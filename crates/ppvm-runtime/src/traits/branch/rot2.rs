@@ -2,7 +2,7 @@ use crate::config::Config;
 
 macro_rules! def_rotation {
     ($name:ident, $x_a:expr, $z_a:expr, $x_b:expr, $z_b:expr) => {
-        fn $name(&mut self, a: usize, b: usize, theta: T::Value) {
+        fn $name(&mut self, a: usize, b: usize, theta: T::Coeff) {
             self.rotate_2($x_a, $z_a, $x_b, $z_b, a, b, theta)
         }
     };
@@ -17,7 +17,7 @@ pub trait RotationTwo<T: Config> {
         axis_b_z: u8,
         a: usize,
         b: usize,
-        theta: T::Value,
+        theta: T::Coeff,
     );
     //                 x, z, x, z
     def_rotation!(rxx, 1, 0, 1, 0);

@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn test_pauli_string_with_phase_creation() {
         let ps = PhasedPauliWord::<u64>::new(4);
-        assert_eq!(ps.word.nqubits(), 4);
+        assert_eq!(ps.word.n_qubits(), 4);
     }
 
     #[test]
@@ -139,28 +139,28 @@ mod tests {
     #[test]
     fn test_pauli_string_with_phase_from_string() {
         let ps: PhasedPauliWord<u64> = "+XYZI".to_string().into();
-        assert_eq!(ps.word.nqubits(), 4);
+        assert_eq!(ps.word.n_qubits(), 4);
         assert_eq!(ps.get(0), Pauli::X);
         assert_eq!(ps.get(1), Pauli::Y);
         assert_eq!(ps.get(2), Pauli::Z);
         assert_eq!(ps.get(3), Pauli::I);
         assert_eq!(ps.phase, 0);
         let ps: PhasedPauliWord<u64> = "-XYZI".to_string().into();
-        assert_eq!(ps.word.nqubits(), 4);
+        assert_eq!(ps.word.n_qubits(), 4);
         assert_eq!(ps.get(0), Pauli::X);
         assert_eq!(ps.get(1), Pauli::Y);
         assert_eq!(ps.get(2), Pauli::Z);
         assert_eq!(ps.get(3), Pauli::I);
         assert_eq!(ps.phase, 1);
         let ps: PhasedPauliWord<u64> = "+iXYZI".to_string().into();
-        assert_eq!(ps.word.nqubits(), 4);
+        assert_eq!(ps.word.n_qubits(), 4);
         assert_eq!(ps.get(0), Pauli::X);
         assert_eq!(ps.get(1), Pauli::Y);
         assert_eq!(ps.get(2), Pauli::Z);
         assert_eq!(ps.get(3), Pauli::I);
         assert_eq!(ps.phase, 2);
         let ps: PhasedPauliWord<u64> = "-iXYZI".to_string().into();
-        assert_eq!(ps.word.nqubits(), 4);
+        assert_eq!(ps.word.n_qubits(), 4);
         assert_eq!(ps.get(0), Pauli::X);
         assert_eq!(ps.get(1), Pauli::Y);
         assert_eq!(ps.get(2), Pauli::Z);

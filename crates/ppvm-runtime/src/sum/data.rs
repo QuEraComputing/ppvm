@@ -1,5 +1,6 @@
 use crate::config::Config;
-use crate::traits::{self, ACMap};
+use crate::traits::{self, ACMap, ACMapIter};
+use crate::word::PauliWord;
 
 #[derive(Clone, Debug)]
 pub struct PauliSum<T: Config> {
@@ -84,8 +85,15 @@ impl<T: Config> PauliSum<T> {
     pub fn len(&self) -> usize {
         self.data().len()
     }
+}
 
-    pub fn iter(&self) -> <<T as Config>::Map as traits::ACMap<T::Storage, T::Coeff>>::Iter {
+impl<'a, T: Config> PauliSum<T>
+where
+    T::Map: ACMapIter<'a, T::Storage, T::Coeff>,
+{
+    pub fn iter(
+        &'a self,
+    ) -> <<T as Config>::Map as traits::ACMapIter<'a, T::Storage, T::Coeff>>::Iter {
         self.data().iter()
     }
 }
@@ -112,5 +120,14 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         self.n_qubits == other.n_qubits && self.data() == other.data()
+    }
+}
+
+impl<T: Config> Extend<(PauliWord<T::Storage>, T::Coeff)> for PauliSum<T>
+where
+    T::Map: Extend<(PauliWord<T::Storage>, T::Coeff)>,
+{
+    fn extend<I: IntoIterator<Item = (PauliWord<T::Storage>, T::Coeff)>>(&mut self, iter: I) {
+        self.data_mut().extend(iter);
     }
 }

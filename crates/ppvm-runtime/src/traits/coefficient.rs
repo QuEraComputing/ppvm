@@ -1,23 +1,17 @@
-use num::traits::{Float, One, Zero};
-use std::fmt::{Debug, Display};
+use num::traits::Float;
 
-pub trait Coefficient:
-    Clone
-    + Display
-    + Debug
-    + Send
-    + Sync
-    + One
-    + Zero
-    + PartialEq
-    + std::ops::Neg<Output = Self>
-    // + std::ops::Add
-    // + std::ops::Sub
-    // + std::ops::Mul
-    + std::ops::AddAssign
-    + std::ops::SubAssign
-    + std::ops::MulAssign
-{
+// + One
+//     + Zero
+//     + PartialEq
+//     + std::ops::Neg<Output = Self>
+//     // + std::ops::Add
+//     // + std::ops::Sub
+//     // + std::ops::Mul
+//     + std::ops::AddAssign
+//     + std::ops::SubAssign
+//     + std::ops::MulAssign
+
+pub trait Coefficient: Clone {
     fn mul_sign(&self, sign: i8) -> Self;
     fn half(&self) -> Self;
     fn sin_cos(&self) -> (Self, Self);

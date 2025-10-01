@@ -8,11 +8,11 @@ impl<'a, A: PauliStorage + 'a> Trace<'a, PauliWord<A>> for PauliWord<A> {
     type Output = bool;
     fn trace(&'a self, value: &'a PauliWord<A>) -> Self::Output {
         debug_assert_eq!(
-            self.nqubits(),
-            value.nqubits(),
+            self.n_qubits(),
+            value.n_qubits(),
             "#qubits mismatch, got {} and {}",
-            self.nqubits(),
-            value.nqubits()
+            self.n_qubits(),
+            value.n_qubits()
         );
         self == value
     }

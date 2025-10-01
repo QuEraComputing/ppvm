@@ -39,7 +39,7 @@ impl<A: PauliStorage> PauliWord<A> {
         }
     }
 
-    pub fn nqubits(&self) -> usize {
+    pub fn n_qubits(&self) -> usize {
         self.nqubits
     }
 

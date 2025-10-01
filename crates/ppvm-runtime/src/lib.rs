@@ -5,3 +5,4 @@ pub mod phase;
 pub mod sum;
 pub mod traits;
 pub mod word;
+mod map;

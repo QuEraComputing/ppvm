@@ -7,14 +7,18 @@ edition = "2024"
 anyhow = "1.0.100"
 bincode = { version = "2.0.1", optional = true }
 bitvec = "1.0.1"
+dashmap = { version = "6.1.0", features = ["rayon"], optional = true }
 gxhash = "3.5.0"
 itertools = "0.14.0"
 num = "0.4.3"
+rayon = { version = "1.11.0", optional = true }
 serde = { version = "1.0.228", optional = true }
 
 [dev-dependencies]
 insta = { version = "1.43.2", features = ["yaml"] }
 
 [features]
+default = ["dashmap"]
 bincode = ["dep:bincode"]
 serde = ["dep:serde"]
+dashmap = ["dep:dashmap", "dep:rayon"]

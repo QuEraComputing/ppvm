@@ -1,0 +1,20 @@
+[package]
+name = "ppvm-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+bincode = { version = "2.0.1", optional = true }
+bitvec = "1.0.1"
+gxhash = "3.5.0"
+itertools = "0.14.0"
+num = "0.4.3"
+serde = { version = "1.0.228", optional = true }
+
+[dev-dependencies]
+insta = { version = "1.43.2", features = ["yaml"] }
+
+[features]
+bincode = ["dep:bincode"]
+serde = ["dep:serde"]

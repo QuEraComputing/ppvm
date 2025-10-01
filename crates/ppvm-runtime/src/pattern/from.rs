@@ -1,0 +1,14 @@
+use super::data::{NotIdentity, PauliPattern};
+use crate::char::Pauli;
+
+impl<S: AsRef<str>> From<S> for PauliPattern {
+    fn from(s: S) -> Self {
+        PauliPattern::parse(s.as_ref()).expect("Failed to parse Pauli pattern")
+    }
+}
+
+impl From<NotIdentity> for Pauli {
+    fn from(op: NotIdentity) -> Self {
+        unsafe { std::mem::transmute(op as u8) }
+    }
+}

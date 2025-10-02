@@ -45,9 +45,9 @@ pub trait ACMapContains<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone 
         F: Fn(&V) -> bool;
 }
 
-pub trait ACMapConsumeUnique {
-    /// consume dest into self, assuming they have unique keys
-    fn consume_unique(&mut self, dest: &mut Self);
+pub trait ACMapConsume {
+    /// consume dest into self, guranteeing accumulation of values with the same key.
+    fn consume(&mut self, dest: &mut Self);
 }
 
 pub trait ACMap<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + Default>:
@@ -56,7 +56,7 @@ pub trait ACMap<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + Defaul
     + ACMapMulAssign<V, H>
     + ACMapInsert<S, V, H>
     + ACMapContains<S, V, H>
-    + ACMapConsumeUnique
+    + ACMapConsume
 {
 }
 
@@ -69,7 +69,7 @@ where
         + ACMapAddAssign<Storage, Coeff, Hasher>
         + ACMapMulAssign<Coeff, Hasher>
         + ACMapInsert<Storage, Coeff, Hasher>
-        + ACMapConsumeUnique
+        + ACMapConsume
         + ACMapContains<Storage, Coeff, Hasher>,
 {
 }

@@ -119,13 +119,13 @@ where
     }
 }
 
-impl<'a, S, C, H> ACMapConsumeUnique for DashMap<PauliWord<S, H>, C, H>
+impl<'a, S, C, H> ACMapConsume for DashMap<PauliWord<S, H>, C, H>
 where
     S: PauliStorage + 'a,
     C: Coefficient + Send + Sync + 'a,
     H: Clone + BuildHasher + 'a + Send + Sync,
 {
-    fn consume_unique(&mut self, dest: &mut Self) {
+    fn consume(&mut self, dest: &mut Self) {
         dest.par_iter().for_each(|entry| {
             self.entry(entry.key().clone())
                 .and_modify(|v| *v += entry.value().clone())

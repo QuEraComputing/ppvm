@@ -98,15 +98,15 @@ impl<T: Config> PauliSum<T> {
         self.data().contains(key, value)
     }
 
-    /// combine entries with the same key assuming unique keys
+    /// combine entries with the same key
     /// in either data or aux. The combined entries are stored in `.data()`.
-    pub fn consume_unique(&mut self) {
+    pub fn consume(&mut self) {
         let (data, aux) = self.data_aux_mut();
         if aux.len() > data.len() {
-            aux.consume_unique(data);
+            aux.consume(data);
             self.swap();
         } else {
-            data.consume_unique(aux);
+            data.consume(aux);
         }
     }
 
@@ -127,7 +127,7 @@ impl<T: Config> PauliSum<T> {
         let (data, aux) = self.data_aux_mut();
         aux.clear();
         data.map_insert(aux, f);
-        self.consume_unique();
+        self.consume();
     }
 }
 

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, hash::BuildHasher};
 
 use crate::{
-    traits::{ACMapConsumeUnique, ACMapContains, ACMapInsert, Coefficient, PauliStorage},
+    traits::{ACMapConsume, ACMapContains, ACMapInsert, Coefficient, PauliStorage},
     word::PauliWord,
 };
 
@@ -127,13 +127,13 @@ macro_rules! impl_acmap_trace {
 
 macro_rules! impl_acmap_combine_unique {
     ($($seg:ident)::+) => {
-        impl<S, C, Hasher> ACMapConsumeUnique for $($seg)::+<PauliWord<S, Hasher>, C, Hasher>
+        impl<S, C, Hasher> ACMapConsume for $($seg)::+<PauliWord<S, Hasher>, C, Hasher>
         where
             S: PauliStorage,
             C: Coefficient,
             Hasher: Default + Clone + BuildHasher,
         {
-            fn consume_unique(&mut self, dest: &mut Self) {
+            fn consume(&mut self, dest: &mut Self) {
                 for (k, v) in dest.drain() {
                     self.entry(k)
                         .and_modify(|val| *val += v.clone())
@@ -220,13 +220,13 @@ mod indexmap_impl {
         }
     }
 
-    impl<S, C, H> ACMapConsumeUnique for indexmap::IndexMap<PauliWord<S, H>, C, H>
+    impl<S, C, H> ACMapConsume for indexmap::IndexMap<PauliWord<S, H>, C, H>
     where
         S: PauliStorage,
         C: Coefficient,
         H: Default + Clone + BuildHasher,
     {
-        fn consume_unique(&mut self, dest: &mut Self) {
+        fn consume(&mut self, dest: &mut Self) {
             for (k, v) in dest.drain(..) {
                 self.entry(k)
                     .and_modify(|val| *val += v.clone())

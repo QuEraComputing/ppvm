@@ -4,7 +4,7 @@ use crate::{config::Config, sum::PauliSum};
 impl<T: Config> RotationOne<T> for PauliSum<T>
 where
     T::Coeff: std::ops::MulAssign,
-    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher> + ACMapConsumeUnique,
+    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher> + ACMapConsume,
 {
     fn rotate_1(&mut self, axis: crate::char::Pauli, addr0: usize, theta: <T as Config>::Coeff) {
         let (sin, cos) = theta.sin_cos();

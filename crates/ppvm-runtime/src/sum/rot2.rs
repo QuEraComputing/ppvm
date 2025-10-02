@@ -4,7 +4,7 @@ use crate::{config::Config, sum::PauliSum};
 impl<T: Config> RotationTwo<T> for PauliSum<T>
 where
     T::Coeff: std::ops::MulAssign,
-    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher> + ACMapConsumeUnique,
+    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher> + ACMapConsume,
 {
     fn rotate_2(
         &mut self,

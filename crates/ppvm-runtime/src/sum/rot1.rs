@@ -65,7 +65,7 @@ pub fn levi_civita(i: u8, j: u8) -> (i8, u8) {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::gxhash::ByteF64;
+    use crate::config::fxhash::ByteF64;
 
     use super::*;
 

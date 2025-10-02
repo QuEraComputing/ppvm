@@ -1,10 +1,7 @@
 use std::hash::BuildHasher;
 
 use super::data::PauliWord;
-use crate::{
-    pattern::{Contains, PauliPattern},
-    traits::{PauliStorage, Trace},
-};
+use crate::traits::{PauliStorage, Trace};
 
 impl<'a, A, H> Trace<'a, PauliWord<A, H>> for PauliWord<A, H>
 where
@@ -21,16 +18,5 @@ where
             value.n_qubits()
         );
         self == value
-    }
-}
-
-impl<'a, A, H> Trace<'a, PauliPattern> for PauliWord<A, H>
-where
-    A: PauliStorage + 'a,
-    H: Default + BuildHasher + Clone + 'a,
-{
-    type Output = bool;
-    fn trace(&'a self, value: &'a PauliPattern) -> Self::Output {
-        value.contains(&self)
     }
 }

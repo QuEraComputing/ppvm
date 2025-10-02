@@ -126,11 +126,17 @@ where
     H: Clone + BuildHasher + 'a + Send + Sync,
 {
     fn consume_unique(&mut self, dest: &mut Self) {
-        // FIXME: clone is not very efficient when T::Coeff is an expression
-        self.par_extend(
-            dest.par_iter()
-                .map(|entry| (entry.key().clone(), entry.value().clone())),
-        );
+        dest.par_iter().for_each(|entry| {
+            self.entry(entry.key().clone())
+                .and_modify(|v| *v += entry.value().clone())
+                .or_insert_with(|| entry.value().clone());
+        });
+
+        // // FIXME: clone is not very efficient when T::Coeff is an expression
+        // self.par_extend(
+        //     dest.par_iter()
+        //         .map(|entry| (entry.key().clone(), entry.value().clone())),
+        // );
         dest.clear();
     }
 }

@@ -135,7 +135,9 @@ macro_rules! impl_acmap_combine_unique {
         {
             fn consume_unique(&mut self, dest: &mut Self) {
                 for (k, v) in dest.drain() {
-                    self.insert(k, v);
+                    self.entry(k)
+                        .and_modify(|val| *val += v.clone())
+                        .or_insert(v);
                 }
             }
         }
@@ -225,8 +227,10 @@ mod indexmap_impl {
         H: Default + Clone + BuildHasher,
     {
         fn consume_unique(&mut self, dest: &mut Self) {
-            for (k, v) in self.drain(..) {
-                dest.insert(k, v);
+            for (k, v) in dest.drain(..) {
+                self.entry(k)
+                    .and_modify(|val| *val += v.clone())
+                    .or_insert(v);
             }
         }
     }

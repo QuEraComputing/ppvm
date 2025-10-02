@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::traits::{self, ACMap, ACMapIter};
+use crate::traits::{self, ACMapBase, ACMapCombineUnique, ACMapInsert, ACMapIter};
 use crate::word::PauliWord;
 
 #[derive(Clone, Debug)]
@@ -89,12 +89,51 @@ impl<T: Config> PauliSum<T> {
 
 impl<'a, T: Config> PauliSum<T>
 where
-    T::Map: ACMapIter<'a, T::Storage, T::Coeff>,
+    T::Map: ACMapIter<'a>,
 {
     pub fn iter(
         &'a self,
-    ) -> <<T as Config>::Map as traits::ACMapIter<'a, T::Storage, T::Coeff>>::Iter {
+    ) -> <<T as Config>::Map as traits::ACMapIter<'a>>::Iter {
         self.data().iter()
+    }
+}
+
+impl<T: Config> PauliSum<T>
+where
+    T::Map: ACMapCombineUnique,
+{
+    /// combine entries with the same key assuming unique keys
+    /// in either data or aux. The combined entries are stored in `.data()`.
+    pub fn combine_unique(&mut self) {
+        let (data, aux) = self.data_aux_mut();
+        if aux.len() > data.len() {
+            aux.combine_unique(data);
+            self.swap();
+        } else {
+            data.combine_unique(aux);
+        }
+    }
+}
+
+impl<T: Config> PauliSum<T>
+where
+    T::Map: ACMapInsert<T::Storage, T::Coeff> + ACMapCombineUnique,
+{
+    /// modify in place existing entries and insert some new entries
+    /// if `f` return Some((k,v)) for an existing entry (k0,v0), then
+    /// the existing entry is modified by `f` and a new entry (k,v) is added.
+    /// if `f` return None, then the existing entry is only modified.
+    /// finally, all entries are combined assuming unique keys.
+    pub fn map_insert<F>(&mut self, f: F)
+    where
+        F: Fn(&PauliWord<T::Storage>, &mut T::Coeff) -> Option<(PauliWord<T::Storage>, T::Coeff)>
+            + Sync
+            + Send,
+    {
+        let (data, aux) = self.data_aux_mut();
+        aux.clear();
+        data.map_insert(aux, f);
+        self.combine_unique();
     }
 }
 

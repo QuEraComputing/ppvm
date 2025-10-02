@@ -9,6 +9,8 @@ mod trace;
 pub use branch::{CRx, Projection, RotationOne, RotationTwo};
 pub use clifford::Clifford;
 pub use coefficient::Coefficient;
-pub use map::{ACMap, ACMapIter, ACMapIterMut, ACMapMulAssign, ACMapAddAssign};
+pub use map::{
+    ACMap, ACMapBase, ACMapAddAssign, ACMapCombineUnique, ACMapInsert, ACMapIter, ACMapMulAssign,
+};
 pub use storage::PauliStorage;
 pub use trace::Trace;

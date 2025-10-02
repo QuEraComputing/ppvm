@@ -2,7 +2,7 @@ use crate::{
     config::Config,
     phase::PhasedPauliWord,
     sum::PauliSum,
-    traits::{ACMap, ACMapAddAssign, Clifford},
+    traits::{ACMapBase, ACMapAddAssign, Clifford},
 };
 
 macro_rules! map_word {
@@ -28,7 +28,6 @@ macro_rules! map_word {
 impl<T: Config> Clifford for PauliSum<T>
 where
     T::Coeff: std::ops::AddAssign + Clone + std::ops::Neg<Output = T::Coeff>,
-    T::Map: ACMap<T::Storage, T::Coeff> + ACMapAddAssign<T::Storage, T::Coeff>,
 {
     map_word!(x, index);
     map_word!(y, index);

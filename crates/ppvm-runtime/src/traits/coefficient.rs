@@ -11,7 +11,7 @@ use num::traits::Float;
 //     + std::ops::SubAssign
 //     + std::ops::MulAssign
 
-pub trait Coefficient: Clone {
+pub trait Coefficient: Clone + num::Zero + std::ops::AddAssign + std::ops::MulAssign + std::iter::Sum {
     fn mul_sign(&self, sign: i8) -> Self;
     fn half(&self) -> Self;
     fn sin_cos(&self) -> (Self, Self);

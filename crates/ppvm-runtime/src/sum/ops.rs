@@ -33,7 +33,7 @@ impl<'a, T: Config> AddAssign<&'a PauliSum<T>> for PauliSum<T>
 where
     T::Coeff: std::ops::AddAssign,
     T::Map: Extend<(PauliWord<T::Storage>, T::Coeff)>
-        + ACMapIter<'a, T::Storage, T::Coeff, Item = (PauliWord<T::Storage>, T::Coeff)>,
+        + ACMapIter<'a, Item = (PauliWord<T::Storage>, T::Coeff)>,
 {
     fn add_assign(&mut self, rhs: &'a PauliSum<T>) {
         debug_assert_eq!(self.n_qubits(), rhs.n_qubits());

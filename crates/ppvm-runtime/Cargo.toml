@@ -4,11 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ahash = { version = "0.8.12", optional = true }
 anyhow = "1.0.100"
 bincode = { version = "2.0.1", optional = true }
 bitvec = "1.0.1"
 dashmap = { version = "6.1.0", features = ["rayon"], optional = true }
+fxhash = { version = "0.2.1", optional = true }
 gxhash = "3.5.0"
+indexmap = { version = "2.11.4", optional = true }
 itertools = "0.14.0"
 num = "0.4.3"
 rayon = { version = "1.11.0", optional = true }
@@ -18,7 +21,10 @@ serde = { version = "1.0.228", optional = true }
 insta = { version = "1.43.2", features = ["yaml"] }
 
 [features]
-default = ["dashmap"]
+default = ["dashmap", "fxhash", "ahash", "indexmap"]
 bincode = ["dep:bincode"]
 serde = ["dep:serde"]
 dashmap = ["dep:dashmap", "dep:rayon"]
+fxhash = ["dep:fxhash"]
+ahash = ["dep:ahash"]
+indexmap = ["dep:indexmap"]

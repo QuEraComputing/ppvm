@@ -1,11 +1,11 @@
-mod data;
-mod ops;
-mod trace;
 mod clifford;
+mod data;
+mod display;
+mod ops;
+mod proj;
 mod rot1;
 mod rot2;
-mod proj;
-mod display;
+mod trace;
 
 #[cfg(feature = "approx")]
 mod approx;

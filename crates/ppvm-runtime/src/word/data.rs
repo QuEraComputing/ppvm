@@ -287,11 +287,7 @@ impl<A: PauliStorage, S> Index<usize> for PauliWord<A, S> {
     }
 }
 
-pub struct PauliWordIter<
-    'a,
-    A: PauliStorage,
-    S
-> {
+pub struct PauliWordIter<'a, A: PauliStorage, S> {
     word: &'a PauliWord<A, S>,
     curr: usize,
 }

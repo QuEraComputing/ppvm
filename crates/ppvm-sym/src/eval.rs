@@ -1,5 +1,5 @@
-use anyhow::Result;
 use super::term::{Prod, Sum, Term};
+use anyhow::Result;
 
 impl Prod {
     pub fn eval(&self, vals: &[f64]) -> Result<f64> {
@@ -9,14 +9,16 @@ impl Prod {
 
         let mut res = 1.0;
         for (k, v) in &self.sin {
-            res *= vals.get(*k as usize)
+            res *= vals
+                .get(*k as usize)
                 .ok_or_else(|| anyhow::anyhow!("variable %{k} not found"))?
                 .sin()
                 .powi(*v as i32);
         }
 
         for (k, v) in &self.cos {
-            res *= vals.get(*k as usize)
+            res *= vals
+                .get(*k as usize)
                 .ok_or_else(|| anyhow::anyhow!("variable %{k} not found"))?
                 .cos()
                 .powi(*v as i32);

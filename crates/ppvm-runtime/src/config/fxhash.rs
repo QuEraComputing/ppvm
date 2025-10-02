@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use crate::{config::Config, word::PauliWord};
 use crate::traits::Coefficient;
+use crate::{config::Config, word::PauliWord};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Byte<const N: usize, C: Coefficient>(PhantomData<C>);

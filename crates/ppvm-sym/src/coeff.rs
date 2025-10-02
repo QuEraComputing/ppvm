@@ -1,6 +1,6 @@
 use ppvm_runtime::traits::Coefficient;
 
-use crate::{term::Inner, Term};
+use crate::{Term, term::Inner};
 
 impl Coefficient for Term {
     fn half(&self) -> Self {

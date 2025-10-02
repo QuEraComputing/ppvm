@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
-use crate::{config::Config, word::PauliWord};
 use crate::traits::Coefficient;
+use crate::{config::Config, word::PauliWord};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ByteFxHash<const N: usize, C: Coefficient + Sync + Send>(PhantomData<C>);

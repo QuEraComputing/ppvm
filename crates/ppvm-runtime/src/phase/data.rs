@@ -50,7 +50,9 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone> PhasedPauliWord<A, H> {
     }
 }
 
-impl<A: PauliStorage, H: BuildHasher + Default + Clone> From<PauliWord<A, H>> for PhasedPauliWord<A, H> {
+impl<A: PauliStorage, H: BuildHasher + Default + Clone> From<PauliWord<A, H>>
+    for PhasedPauliWord<A, H>
+{
     fn from(words: PauliWord<A, H>) -> Self {
         Self {
             word: words,
@@ -76,7 +78,9 @@ impl<S: AsRef<str>, H: BuildHasher + Default + Clone> From<S> for PhasedPauliWor
     }
 }
 
-impl<A: PauliStorage, H: BuildHasher + Default + Clone> std::fmt::Display for PhasedPauliWord<A, H> {
+impl<A: PauliStorage, H: BuildHasher + Default + Clone> std::fmt::Display
+    for PhasedPauliWord<A, H>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.phase {
             0 => write!(f, "+")?,

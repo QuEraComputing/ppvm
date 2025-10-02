@@ -169,11 +169,13 @@ impl<T: Config> Extend<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)> for Pa
 where
     T::Map: Extend<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>,
 {
-    fn extend<I: IntoIterator<Item = (PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>>(&mut self, iter: I) {
+    fn extend<I: IntoIterator<Item = (PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>>(
+        &mut self,
+        iter: I,
+    ) {
         self.data_mut().extend(iter);
     }
 }
-
 
 #[cfg(test)]
 mod tests {

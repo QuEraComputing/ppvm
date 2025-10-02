@@ -111,7 +111,7 @@ impl std::ops::AddAssign<Term> for Term {
                             bare variable is not allowed in expression"
                     );
                 }
-            }
+            },
             Inner::Const(c) => match rhs.inner {
                 Inner::Sum(s) => {
                     self.inner = Inner::Sum(s);
@@ -169,11 +169,17 @@ mod tests {
         let mut t = Term::from_f64(2.0);
         t += Prod::sin(0);
         t += Prod::cos(1);
-        assert_eq!(t.eval(&[1.1, 2.2]).unwrap(), 2.0 + 1.1f64.sin() + 2.2f64.cos());
+        assert_eq!(
+            t.eval(&[1.1, 2.2]).unwrap(),
+            2.0 + 1.1f64.sin() + 2.2f64.cos()
+        );
 
         let mut t = Term::var(0).sin();
         t += Term::from_f64(3.0);
         t += Term::var(1).cos();
-        assert_eq!(t.eval(&[1.1, 2.2]).unwrap(), 3.0 + 1.1f64.sin() + 2.2f64.cos());
+        assert_eq!(
+            t.eval(&[1.1, 2.2]).unwrap(),
+            3.0 + 1.1f64.sin() + 2.2f64.cos()
+        );
     }
 }

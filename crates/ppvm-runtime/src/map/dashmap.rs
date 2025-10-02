@@ -67,7 +67,13 @@ where
     Hasher: Default + Clone + BuildHasher + 'a,
 {
     type Item = dashmap::mapref::multiple::RefMulti<'a, PauliWord<S, Hasher>, V>;
-    type Iter = dashmap::iter::Iter<'a, PauliWord<S, Hasher>, V, Hasher, DashMap<PauliWord<S, Hasher>, V, Hasher>>;
+    type Iter = dashmap::iter::Iter<
+        'a,
+        PauliWord<S, Hasher>,
+        V,
+        Hasher,
+        DashMap<PauliWord<S, Hasher>, V, Hasher>,
+    >;
 
     fn iter(&'a self) -> Self::Iter {
         DashMap::iter(self)
@@ -167,8 +173,9 @@ where
     H: BuildHasher + Clone + Default,
 {
     fn contains_with<F>(&self, key: &PauliWord<S, H>, f: F) -> bool
-        where
-            F: Fn(&C) -> bool {
+    where
+        F: Fn(&C) -> bool,
+    {
         self.get(key).map_or(false, |v| f(v.value()))
     }
 }

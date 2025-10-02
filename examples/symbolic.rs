@@ -1,5 +1,5 @@
-use ppvm_sym::*;
 use ppvm_runtime::prelude::*;
+use ppvm_sym::*;
 
 fn main() {
     let pat: PauliPattern = "Z?*".into();
@@ -9,7 +9,7 @@ fn main() {
     sum.rz(0, Term::var(0));
     sum.ry(0, Term::var(1));
     sum.rz(0, Term::var(0));
- 
+
     sum.rz(1, Term::var(0));
     sum.ry(1, Term::var(1));
     sum.rz(1, Term::var(0));

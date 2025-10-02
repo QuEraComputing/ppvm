@@ -2,7 +2,7 @@ use crate::{
     config::Config,
     phase::PhasedPauliWord,
     sum::PauliSum,
-    traits::{ACMapBase, ACMapAddAssign, Clifford},
+    traits::{ACMapAddAssign, ACMapBase, Clifford},
 };
 
 macro_rules! map_word {

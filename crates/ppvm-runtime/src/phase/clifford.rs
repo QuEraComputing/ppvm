@@ -7,7 +7,7 @@ use crate::traits::PauliStorage;
 impl<S, H> Clifford for PhasedPauliWord<S, H>
 where
     S: PauliStorage,
-    H: BuildHasher + Clone + Default
+    H: BuildHasher + Clone + Default,
 {
     fn x(&mut self, index: usize) {
         let phase = (self.word.zbits[index]) as u8;

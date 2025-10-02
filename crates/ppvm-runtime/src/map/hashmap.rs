@@ -183,7 +183,7 @@ macro_rules! impl_acmap_contains {
                     None => false,
                 }
             }
-        }       
+        }
     };
 }
 

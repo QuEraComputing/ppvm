@@ -2,7 +2,7 @@ use std::hash::BuildHasher;
 
 use crate::traits::{ACMap, Coefficient, PauliStorage};
 
-pub trait Config {
+pub trait Config: Clone {
     type Storage: PauliStorage;
     type Coeff: Coefficient;
     type BuildHasher: BuildHasher + Clone + Default;

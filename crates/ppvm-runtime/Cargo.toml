@@ -19,6 +19,7 @@ rayon = { version = "1.11.0", optional = true }
 serde = { version = "1.0.228", optional = true }
 
 [dev-dependencies]
+criterion = "0.7.0"
 insta = { version = "1.43.2", features = ["yaml"] }
 
 [features]
@@ -30,3 +31,7 @@ gxhash = ["dep:gxhash"]
 ahash = ["dep:ahash"]
 indexmap = ["dep:indexmap"]
 approx = ["dep:approx"]
+
+[[bench]]
+name = "gate"
+harness = false

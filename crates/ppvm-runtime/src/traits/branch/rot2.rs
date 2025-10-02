@@ -2,8 +2,8 @@ use crate::config::Config;
 
 macro_rules! def_rotation {
     ($name:ident, $x_a:expr, $z_a:expr, $x_b:expr, $z_b:expr) => {
-        fn $name(&mut self, a: usize, b: usize, theta: T::Coeff) {
-            self.rotate_2($x_a, $z_a, $x_b, $z_b, a, b, theta)
+        fn $name(&mut self, a: usize, b: usize, theta: impl Into<T::Coeff>) {
+            self.rotate_2($x_a, $z_a, $x_b, $z_b, a, b, theta.into())
         }
     };
 }

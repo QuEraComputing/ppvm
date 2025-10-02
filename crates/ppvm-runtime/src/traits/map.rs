@@ -51,7 +51,7 @@ pub trait ACMapConsumeUnique {
 }
 
 pub trait ACMap<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + Default>:
-    ACMapBase
+    Clone + ACMapBase
     + ACMapAddAssign<S, V, H>
     + ACMapMulAssign<V, H>
     + ACMapInsert<S, V, H>
@@ -65,7 +65,7 @@ where
     Storage: PauliStorage,
     Coeff: Coefficient,
     Hasher: BuildHasher + Clone + Default,
-    T: ACMapBase
+    T: Clone + ACMapBase
         + ACMapAddAssign<Storage, Coeff, Hasher>
         + ACMapMulAssign<Coeff, Hasher>
         + ACMapInsert<Storage, Coeff, Hasher>

@@ -12,7 +12,16 @@ use num::traits::Float;
 //     + std::ops::MulAssign
 
 pub trait Coefficient:
-    PartialEq + Clone + num::Zero + std::ops::AddAssign + std::ops::MulAssign + std::iter::Sum
+    PartialEq
+    + Clone
+    + num::Zero
+    + From<f32>
+    + std::ops::Neg<Output = Self>
+    + std::ops::AddAssign
+    + std::ops::MulAssign
+    + std::iter::Sum
+    + Sync
+    + Send
 {
     fn mul_sign(&self, sign: i8) -> Self;
     fn half(&self) -> Self;

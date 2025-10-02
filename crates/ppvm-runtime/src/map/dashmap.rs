@@ -119,7 +119,7 @@ where
     }
 }
 
-impl<'a, S, C, H> ACMapConsumeUnique for DashMap<PauliWord<S>, C, H>
+impl<'a, S, C, H> ACMapConsumeUnique for DashMap<PauliWord<S, H>, C, H>
 where
     S: PauliStorage + 'a,
     C: Coefficient + Send + Sync + 'a,

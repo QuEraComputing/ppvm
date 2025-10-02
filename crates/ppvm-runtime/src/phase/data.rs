@@ -1,16 +1,18 @@
+use std::hash::BuildHasher;
+
 use num::Integer;
 
 use crate::char::Pauli;
 use crate::traits::PauliStorage;
 use crate::word::PauliWord;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PhasedPauliWord<A: PauliStorage> {
-    pub word: PauliWord<A>,
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct PhasedPauliWord<A: PauliStorage, H = fxhash::FxBuildHasher> {
+    pub word: PauliWord<A, H>,
     pub phase: u8, // 0: +1, 1: -1, 2: +i, 3: -i
 }
 
-impl<A: PauliStorage> PhasedPauliWord<A> {
+impl<A: PauliStorage, H: BuildHasher + Default + Clone> PhasedPauliWord<A, H> {
     pub fn new(n_qubits: usize) -> Self {
         Self {
             word: PauliWord::new(n_qubits),
@@ -48,8 +50,8 @@ impl<A: PauliStorage> PhasedPauliWord<A> {
     }
 }
 
-impl<A: PauliStorage> From<PauliWord<A>> for PhasedPauliWord<A> {
-    fn from(words: PauliWord<A>) -> Self {
+impl<A: PauliStorage, H: BuildHasher + Default + Clone> From<PauliWord<A, H>> for PhasedPauliWord<A, H> {
+    fn from(words: PauliWord<A, H>) -> Self {
         Self {
             word: words,
             phase: 0,
@@ -57,7 +59,7 @@ impl<A: PauliStorage> From<PauliWord<A>> for PhasedPauliWord<A> {
     }
 }
 
-impl<S: AsRef<str>> From<S> for PhasedPauliWord<u64> {
+impl<S: AsRef<str>, H: BuildHasher + Default + Clone> From<S> for PhasedPauliWord<u64, H> {
     fn from(s: S) -> Self {
         let mut chars = s.as_ref().chars();
         let phase: u8 = match (chars.next(), chars.next()) {
@@ -74,7 +76,7 @@ impl<S: AsRef<str>> From<S> for PhasedPauliWord<u64> {
     }
 }
 
-impl<A: PauliStorage> std::fmt::Display for PhasedPauliWord<A> {
+impl<A: PauliStorage, H: BuildHasher + Default + Clone> std::fmt::Display for PhasedPauliWord<A, H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.phase {
             0 => write!(f, "+")?,

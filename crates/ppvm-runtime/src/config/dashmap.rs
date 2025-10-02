@@ -9,7 +9,8 @@ pub struct Byte<const N: usize, C: Coefficient + Sync + Send>(PhantomData<C>);
 impl<const N: usize, C: Coefficient + Sync + Send> Config for Byte<N, C> {
     type Storage = [u8; N];
     type Coeff = C;
-    type Map = dashmap::DashMap<PauliWord<[u8; N]>, C>;
+    type BuildHasher = fxhash::FxBuildHasher;
+    type Map = dashmap::DashMap<PauliWord<[u8; N], Self::BuildHasher>, C, Self::BuildHasher>;
 }
 
 pub type ByteF64<const N: usize> = Byte<N, f64>;

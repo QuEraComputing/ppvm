@@ -12,7 +12,7 @@ macro_rules! map_word {
             aux.clear();
 
             data.map_add_assign(aux, |k, v| {
-                let mut p: PhasedPauliWord<T::Storage> = (*k).into();
+                let mut p: PhasedPauliWord<T::Storage, T::BuildHasher> = k.clone().into();
                 p.$name($($index),*);
                 if p.is_positive() {
                     (p.word, v.clone())

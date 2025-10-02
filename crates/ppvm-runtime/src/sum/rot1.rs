@@ -4,7 +4,7 @@ use crate::{config::Config, sum::PauliSum};
 impl<T: Config> RotationOne<T> for PauliSum<T>
 where
     T::Coeff: std::ops::MulAssign + Sync + Send,
-    T::Map: ACMapInsert<T::Storage, T::Coeff> + ACMapCombineUnique,
+    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher> + ACMapConsumeUnique,
 {
     fn rotate_1(&mut self, axis: crate::char::Pauli, addr0: usize, theta: <T as Config>::Coeff) {
         let (sin, cos) = theta.sin_cos();
@@ -61,4 +61,111 @@ pub fn levi_civita(i: u8, j: u8) -> (i8, u8) {
     let k = k * (1 - commute); // 0 if commute
 
     (eps, k)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::gxhash::ByteF64;
+
+    use super::*;
+
+    #[test]
+    fn test_rx() {
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("X", 1.0);
+        answer.rx(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("X", 1.0);
+        assert_eq!(answer, expect);
+
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("Y", 1.0);
+        answer.rx(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("Y", 2.1_f64.cos());
+        expect += ("Z", -2.1_f64.sin());
+        assert_eq!(answer, expect);
+
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("Z", 1.0);
+        answer.rx(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("Z", 2.1_f64.cos());
+        expect += ("Y", 2.1_f64.sin());
+        assert_eq!(answer, expect);
+
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("I", 1.0);
+        answer.rx(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("I", 1.0);
+        assert_eq!(answer, expect);
+    }
+
+    #[test]
+    fn test_ry() {
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("X", 1.0);
+        answer.ry(0, 2.1);
+
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("X", 2.1_f64.cos());
+        expect += ("Z", 2.1_f64.sin());
+        assert_eq!(answer, expect);
+
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("Y", 1.0);
+        answer.ry(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("Y", 1.0);
+        assert_eq!(answer, expect);
+
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("Z", 1.0);
+        answer.ry(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("Z", 2.1_f64.cos());
+        expect += ("X", -2.1_f64.sin());
+        assert_eq!(answer, expect);
+
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("I", 1.0);
+        answer.ry(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("I", 1.0);
+        assert_eq!(answer, expect);
+    }
+
+    #[test]
+    fn test_rz() {
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("X", 1.0);
+        answer.rz(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("X", 2.1_f64.cos());
+        expect += ("Y", -2.1_f64.sin());
+        assert_eq!(answer, expect);
+
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("Y", 1.0);
+        answer.rz(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("Y", 2.1_f64.cos());
+        expect += ("X", 2.1_f64.sin());
+        assert_eq!(answer, expect);
+
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("Z", 1.0);
+        answer.rz(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("Z", 1.0);
+        assert_eq!(answer, expect);
+
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        answer += ("I", 1.0);
+        answer.rz(0, 2.1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        expect += ("I", 1.0);
+        assert_eq!(answer, expect);
+    }
 }

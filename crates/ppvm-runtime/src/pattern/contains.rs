@@ -2,6 +2,7 @@ use super::data::{Decorated, NotIdentity, OpPattern, PauliPattern};
 use crate::char::Pauli;
 use crate::traits::PauliStorage;
 use crate::word::PauliWord;
+use std::hash::BuildHasher;
 use std::iter::Peekable;
 
 pub trait Contains<T> {
@@ -107,8 +108,8 @@ fn match_repeat<I: Iterator<Item = (usize, Pauli)>>(
     }
 }
 
-impl<A: PauliStorage> Contains<PauliWord<A>> for PauliPattern {
-    fn contains(&self, item: &PauliWord<A>) -> bool {
+impl<A: PauliStorage, H: Default + BuildHasher + Clone> Contains<PauliWord<A, H>> for PauliPattern {
+    fn contains(&self, item: &PauliWord<A, H>) -> bool {
         let mut chars = item.iter().enumerate().peekable();
         let mut patterns = self.iter();
         while let Some(current) = patterns.next() {

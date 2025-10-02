@@ -8,7 +8,7 @@ use crate::{config::Config, sum::PauliSum};
 
 impl<T: Config> MulAssign<T::Coeff> for PauliSum<T>
 where
-    T::Map: ACMapMulAssign<T::Coeff>,
+    T::Map: ACMapMulAssign<T::Coeff, T::BuildHasher>,
     T::Coeff: MulAssign + Clone,
 {
     fn mul_assign(&mut self, rhs: T::Coeff) {
@@ -19,8 +19,8 @@ where
 impl<T: Config> AddAssign<PauliSum<T>> for PauliSum<T>
 where
     T::Coeff: std::ops::AddAssign,
-    T::Map: Extend<(PauliWord<T::Storage>, T::Coeff)>
-        + IntoIterator<Item = (PauliWord<T::Storage>, T::Coeff)>,
+    T::Map: Extend<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>
+        + IntoIterator<Item = (PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>,
 {
     fn add_assign(&mut self, rhs: PauliSum<T>) {
         debug_assert_eq!(self.n_qubits(), rhs.n_qubits());
@@ -32,8 +32,8 @@ where
 impl<'a, T: Config> AddAssign<&'a PauliSum<T>> for PauliSum<T>
 where
     T::Coeff: std::ops::AddAssign,
-    T::Map: Extend<(PauliWord<T::Storage>, T::Coeff)>
-        + ACMapIter<'a, Item = (PauliWord<T::Storage>, T::Coeff)>,
+    T::Map: Extend<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>
+        + ACMapIter<'a, Item = (PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>,
 {
     fn add_assign(&mut self, rhs: &'a PauliSum<T>) {
         debug_assert_eq!(self.n_qubits(), rhs.n_qubits());
@@ -44,9 +44,9 @@ where
 
 impl<T: Config, P> AddAssign<(P, T::Coeff)> for PauliSum<T>
 where
-    P: Into<PauliWord<T::Storage>>,
+    P: Into<PauliWord<T::Storage, T::BuildHasher>>,
     T::Coeff: std::ops::AddAssign,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher>,
 {
     fn add_assign(&mut self, rhs: (P, T::Coeff)) {
         let key = rhs.0.into();
@@ -58,9 +58,9 @@ where
 
 impl<T: Config, P> AddAssign<P> for PauliSum<T>
 where
-    P: Into<PauliWord<T::Storage>>,
+    P: Into<PauliWord<T::Storage, T::BuildHasher>>,
     T::Coeff: std::ops::AddAssign + One,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher>,
 {
     fn add_assign(&mut self, rhs: P) {
         let key = rhs.into();

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use crate::{config::Config, word::PauliWord};
@@ -9,7 +10,8 @@ pub struct Byte<const N: usize, C: Coefficient>(PhantomData<C>);
 impl<const N: usize, C: Coefficient> Config for Byte<N, C> {
     type Storage = [u8; N];
     type Coeff = C;
-    type Map = fxhash::FxHashMap<PauliWord<[u8; N]>, C>;
+    type BuildHasher = fxhash::FxBuildHasher;
+    type Map = HashMap<PauliWord<[u8; N], Self::BuildHasher>, C, Self::BuildHasher>;
 }
 
 pub type ByteF64<const N: usize> = Byte<N, f64>;

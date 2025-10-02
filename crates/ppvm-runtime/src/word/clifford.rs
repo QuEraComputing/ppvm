@@ -1,7 +1,13 @@
+use std::hash::BuildHasher;
+
 use super::data::PauliWord;
 use crate::traits::{Clifford, PauliStorage};
 
-impl<A: PauliStorage> Clifford for PauliWord<A> {
+impl<A, H> Clifford for PauliWord<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Clone + Default
+{
     fn x(&mut self, _index: usize) {
         // X * I * X = I    00 -> 00, 0
         // X * X * X = X    10 -> 10, 0

@@ -1,0 +1,5 @@
+---
+source: crates/ppvm-runtime/src/sum/data.rs
+expression: sum.to_string()
+---
+3.000 * XIII + 3.000 * IIII

@@ -10,7 +10,7 @@ pub use branch::{CRx, Projection, RotationOne, RotationTwo};
 pub use clifford::Clifford;
 pub use coefficient::Coefficient;
 pub use map::{
-    ACMap, ACMapBase, ACMapAddAssign, ACMapCombineUnique, ACMapInsert, ACMapIter, ACMapMulAssign,
+    ACMap, ACMapBase, ACMapAddAssign, ACMapConsumeUnique, ACMapInsert, ACMapIter, ACMapMulAssign, ACMapContains,
 };
 pub use storage::PauliStorage;
 pub use trace::Trace;

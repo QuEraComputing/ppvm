@@ -1,3 +1,5 @@
+use std::hash::BuildHasher;
+
 use crate::{
     traits::{Coefficient, PauliStorage},
     word::PauliWord,
@@ -15,42 +17,59 @@ pub trait ACMapIter<'a> {
     fn iter(&'a self) -> Self::Iter;
 }
 
-pub trait ACMapAddAssign<S: PauliStorage, V: Coefficient> {
-    fn add_assign(&mut self, key: PauliWord<S>, value: V);
+pub trait ACMapAddAssign<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + Default> {
+    fn add_assign(&mut self, key: PauliWord<S, H>, value: V);
     fn map_add_assign<F>(&self, dest: &mut Self, f: F)
     where
-        F: Fn(&PauliWord<S>, &V) -> (PauliWord<S>, V) + Sync + Send;
+        F: Fn(&PauliWord<S, H>, &V) -> (PauliWord<S, H>, V) + Sync + Send;
 }
 
-pub trait ACMapMulAssign<V: Coefficient> {
+pub trait ACMapMulAssign<V: Coefficient, H: BuildHasher + Clone + Default> {
     fn mul_assign(&mut self, value: V);
 }
 
-pub trait ACMapInsert<S: PauliStorage, V: Coefficient> {
+pub trait ACMapInsert<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + Default> {
     /// modify in place and insert some new entry into dest based on
     /// existing entries in self.
     fn map_insert<F>(&mut self, dest: &mut Self, f: F)
     where
-        F: Fn(&PauliWord<S>, &mut V) -> Option<(PauliWord<S>, V)> + Sync + Send;
+        F: Fn(&PauliWord<S, H>, &mut V) -> Option<(PauliWord<S, H>, V)> + Sync + Send;
 }
 
-pub trait ACMapCombineUnique {
-    /// combine two maps, assuming they have unique keys
-    fn combine_unique(&mut self, dest: &mut Self);
+pub trait ACMapContains<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + Default> {
+    fn contains(&self, key: &PauliWord<S, H>, value: &V) -> bool {
+        self.contains_with(key, |v| v == value)
+    }
+    fn contains_with<F>(&self, key: &PauliWord<S, H>, f: F) -> bool
+    where
+        F: Fn(&V) -> bool;
 }
 
-pub trait ACMap<S: PauliStorage, V: Coefficient>:
-    ACMapBase + ACMapAddAssign<S, V> + ACMapMulAssign<V> + ACMapInsert<S, V>
+pub trait ACMapConsumeUnique {
+    /// consume dest into self, assuming they have unique keys
+    fn consume_unique(&mut self, dest: &mut Self);
+}
+
+pub trait ACMap<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + Default>:
+    ACMapBase
+    + ACMapAddAssign<S, V, H>
+    + ACMapMulAssign<V, H>
+    + ACMapInsert<S, V, H>
+    + ACMapContains<S, V, H>
+    + ACMapConsumeUnique
 {
 }
 
-impl<T, Storage, Coeff> ACMap<Storage, Coeff> for T
+impl<T, Storage, Coeff, Hasher> ACMap<Storage, Coeff, Hasher> for T
 where
     Storage: PauliStorage,
     Coeff: Coefficient,
+    Hasher: BuildHasher + Clone + Default,
     T: ACMapBase
-        + ACMapAddAssign<Storage, Coeff>
-        + ACMapMulAssign<Coeff>
-        + ACMapInsert<Storage, Coeff>,
+        + ACMapAddAssign<Storage, Coeff, Hasher>
+        + ACMapMulAssign<Coeff, Hasher>
+        + ACMapInsert<Storage, Coeff, Hasher>
+        + ACMapConsumeUnique
+        + ACMapContains<Storage, Coeff, Hasher>,
 {
 }

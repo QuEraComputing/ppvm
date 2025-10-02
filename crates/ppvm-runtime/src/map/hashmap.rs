@@ -1,20 +1,20 @@
 use std::{collections::HashMap, hash::BuildHasher};
 
 use crate::{
-    traits::{ACMapCombineUnique, ACMapInsert, Coefficient, PauliStorage},
+    traits::{ACMapConsumeUnique, ACMapContains, ACMapInsert, Coefficient, PauliStorage},
     word::PauliWord,
 };
 
 macro_rules! impl_acmap_base {
     ($($seg:ident)::+) => {
-        impl<'a, S, V, State> crate::traits::ACMapBase for $($seg)::+<PauliWord<S>, V, State>
+        impl<'a, S, V, Hasher> crate::traits::ACMapBase for $($seg)::+<PauliWord<S, Hasher>, V, Hasher>
         where
             S: PauliStorage,
             V: Coefficient,
-            State: Clone + BuildHasher + Default,
+            Hasher: Clone + BuildHasher + Default,
         {
             fn with_capacity(capacity: usize) -> Self {
-                Self::with_capacity_and_hasher(capacity, State::default())
+                Self::with_capacity_and_hasher(capacity, Hasher::default())
             }
 
             fn len(&self) -> usize {
@@ -30,13 +30,13 @@ macro_rules! impl_acmap_base {
 
 macro_rules! impl_acmap_add_assign {
     ($($seg:ident)::+) => {
-        impl<'a, S, V, State> crate::traits::ACMapAddAssign<S, V> for $($seg)::+<PauliWord<S>, V, State>
+        impl<'a, S, V, Hasher> crate::traits::ACMapAddAssign<S, V, Hasher> for $($seg)::+<PauliWord<S, Hasher>, V, Hasher>
         where
             S: PauliStorage + 'a,
             V: Coefficient + 'a,
-            State: Clone + BuildHasher + 'a,
+            Hasher: Default + Clone + BuildHasher + 'a,
         {
-            fn add_assign(&mut self, key: PauliWord<S>, value: V) {
+            fn add_assign(&mut self, key: PauliWord<S, Hasher>, value: V) {
                 self.entry(key)
                     .and_modify(|v| *v += value.clone())
                     .or_insert(value);
@@ -44,7 +44,7 @@ macro_rules! impl_acmap_add_assign {
 
             fn map_add_assign<F>(&self, dest: &mut Self, f: F)
             where
-                F: Fn(&PauliWord<S>, &V) -> (PauliWord<S>, V) + Sync + Send,
+                F: Fn(&PauliWord<S, Hasher>, &V) -> (PauliWord<S, Hasher>, V) + Sync + Send,
             {
                 for (k, v) in self.iter() {
                     let (new_k, new_v) = f(k, v);
@@ -57,11 +57,11 @@ macro_rules! impl_acmap_add_assign {
 
 macro_rules! impl_acmap_mul_assign {
     ($($seg:ident)::+) => {
-        impl<'a, S, V, State> crate::traits::ACMapMulAssign<V> for $($seg)::+<PauliWord<S>, V, State>
+        impl<'a, S, V, Hasher> crate::traits::ACMapMulAssign<V, Hasher> for $($seg)::+<PauliWord<S, Hasher>, V, Hasher>
         where
             S: PauliStorage + 'a,
             V: Coefficient + 'a,
-            State: Clone + BuildHasher + 'a,
+            Hasher: Default + Clone + BuildHasher + 'a,
         {
             fn mul_assign(&mut self, value: V) {
                 for v in self.values_mut() {
@@ -74,14 +74,14 @@ macro_rules! impl_acmap_mul_assign {
 
 macro_rules! impl_acmap_iter {
     ($($seg:ident)::+) => {
-        impl<'a, S, V, State> crate::traits::ACMapIter<'a> for $($seg)::+<PauliWord<S>, V, State>
+        impl<'a, S, V, Hasher> crate::traits::ACMapIter<'a> for $($seg)::+<PauliWord<S, Hasher>, V, Hasher>
         where
             S: PauliStorage + 'a,
             V: Coefficient + 'a,
-            State: Clone + BuildHasher + 'a,
+            Hasher: Default + Clone + BuildHasher + 'a,
         {
-            type Item = (&'a PauliWord<S>, &'a V);
-            type Iter = std::collections::hash_map::Iter<'a, PauliWord<S>, V>;
+            type Item = (&'a PauliWord<S, Hasher>, &'a V);
+            type Iter = std::collections::hash_map::Iter<'a, PauliWord<S, Hasher>, V>;
 
             fn iter(&'a self) -> Self::Iter {
                 Self::iter(self)
@@ -106,12 +106,12 @@ macro_rules! impl_acmap_iter {
 
 macro_rules! impl_acmap_trace {
     ($($seg:ident)::+) => {
-        impl<'a, P, S, C, State> crate::traits::Trace<'a, P> for $($seg)::+<PauliWord<S>, C, State>
+        impl<'a, P, S, C, Hasher> crate::traits::Trace<'a, P> for $($seg)::+<PauliWord<S, Hasher>, C, Hasher>
         where
-            P: crate::traits::Trace<'a, PauliWord<S>, Output = bool> + 'a,
+            P: crate::traits::Trace<'a, PauliWord<S, Hasher>, Output = bool> + 'a,
             S: PauliStorage + 'a,
             C: Coefficient + 'a,
-            State: Clone + BuildHasher + 'a,
+            Hasher: Default + Clone + BuildHasher + 'a,
         {
             type Output = C;
             fn trace(&'a self, value: &'a P) -> Self::Output {
@@ -127,14 +127,15 @@ macro_rules! impl_acmap_trace {
 
 macro_rules! impl_acmap_combine_unique {
     ($($seg:ident)::+) => {
-        impl<S, C> ACMapCombineUnique for $($seg)::+<PauliWord<S>, C>
+        impl<S, C, Hasher> ACMapConsumeUnique for $($seg)::+<PauliWord<S, Hasher>, C, Hasher>
         where
             S: PauliStorage,
             C: Coefficient,
+            Hasher: Default + Clone + BuildHasher,
         {
-            fn combine_unique(&mut self, dest: &mut Self) {
-                for (k, v) in self.drain() {
-                    dest.insert(k, v);
+            fn consume_unique(&mut self, dest: &mut Self) {
+                for (k, v) in dest.drain() {
+                    self.insert(k, v);
                 }
             }
         }
@@ -143,15 +144,15 @@ macro_rules! impl_acmap_combine_unique {
 
 macro_rules! impl_acmap_insert {
     ($($seg:ident)::+) => {
-        impl<'a, S, C, State> ACMapInsert<S, C> for $($seg)::+<PauliWord<S>, C, State>
+        impl<'a, S, C, Hasher> ACMapInsert<S, C, Hasher> for $($seg)::+<PauliWord<S, Hasher>, C, Hasher>
         where
             S: PauliStorage + 'a,
             C: Coefficient + 'a,
-            State: Clone + BuildHasher + 'a,
+            Hasher: Default + Clone + BuildHasher + 'a,
         {
             fn map_insert<F>(&mut self, dest: &mut Self, f: F)
             where
-                F: Fn(&PauliWord<S>, &mut C) -> Option<(PauliWord<S>, C)> + Sync + Send,
+                F: Fn(&PauliWord<S, Hasher>, &mut C) -> Option<(PauliWord<S, Hasher>, C)> + Sync + Send,
             {
                 for (k, v) in self.iter_mut() {
                     if let Some((new_k, new_v)) = f(k, v) {
@@ -160,6 +161,27 @@ macro_rules! impl_acmap_insert {
                 }
             }
         }
+    };
+}
+
+macro_rules! impl_acmap_contains {
+    ($($seg:ident)::+) => {
+        impl<S, C, H> ACMapContains<S, C, H> for $($seg)::+<PauliWord<S, H>, C, H>
+        where
+            S: PauliStorage,
+            C: Coefficient,
+            H: Default + Clone + BuildHasher,
+        {
+            fn contains_with<F>(&self, key: &PauliWord<S, H>, f: F) -> bool
+            where
+                F: Fn(&C) -> bool,
+            {
+                match self.get(key) {
+                    Some(v) => f(v),
+                    None => false,
+                }
+            }
+        }       
     };
 }
 
@@ -172,6 +194,7 @@ macro_rules! impl_acmap {
         impl_acmap_trace!($($seg)::+);
         impl_acmap_combine_unique!($($seg)::+);
         impl_acmap_insert!($($seg)::+);
+        impl_acmap_contains!($($seg)::+);
     };
 }
 
@@ -181,26 +204,27 @@ impl_acmap!(HashMap);
 mod indexmap_impl {
     use super::*;
 
-    impl<'a, S, V, State> crate::traits::ACMapIter<'a> for indexmap::IndexMap<PauliWord<S>, V, State>
+    impl<'a, S, V, H> crate::traits::ACMapIter<'a> for indexmap::IndexMap<PauliWord<S, H>, V, H>
     where
         S: PauliStorage + 'a,
         V: Coefficient + 'a,
-        State: Clone + BuildHasher + 'a,
+        H: Default + Clone + BuildHasher + 'a,
     {
-        type Item = (&'a PauliWord<S>, &'a V);
-        type Iter = indexmap::map::Iter<'a, PauliWord<S>, V>;
+        type Item = (&'a PauliWord<S, H>, &'a V);
+        type Iter = indexmap::map::Iter<'a, PauliWord<S, H>, V>;
 
         fn iter(&'a self) -> Self::Iter {
             Self::iter(self)
         }
     }
 
-    impl<S, C> ACMapCombineUnique for indexmap::IndexMap<PauliWord<S>, C>
+    impl<S, C, H> ACMapConsumeUnique for indexmap::IndexMap<PauliWord<S, H>, C, H>
     where
         S: PauliStorage,
         C: Coefficient,
+        H: Default + Clone + BuildHasher,
     {
-        fn combine_unique(&mut self, dest: &mut Self) {
+        fn consume_unique(&mut self, dest: &mut Self) {
             for (k, v) in self.drain(..) {
                 dest.insert(k, v);
             }
@@ -212,20 +236,21 @@ mod indexmap_impl {
     impl_acmap_mul_assign!(indexmap::IndexMap);
     impl_acmap_trace!(indexmap::IndexMap);
     impl_acmap_insert!(indexmap::IndexMap);
+    impl_acmap_contains!(indexmap::IndexMap);
 }
 
 #[cfg(feature = "ahash")]
 mod ahash_impl {
     use super::*;
 
-    impl<'a, S, V, State> crate::traits::ACMapBase for ahash::AHashMap<PauliWord<S>, V, State>
+    impl<S, V, H> crate::traits::ACMapBase for ahash::AHashMap<PauliWord<S, H>, V, H>
     where
         S: PauliStorage,
         V: Coefficient,
-        State: Clone + BuildHasher + Default,
+        H: Clone + BuildHasher + Default,
     {
         fn with_capacity(capacity: usize) -> Self {
-            Self::with_capacity_and_hasher(capacity, State::default())
+            Self::with_capacity_and_hasher(capacity, H::default())
         }
 
         fn len(&self) -> usize {
@@ -237,14 +262,14 @@ mod ahash_impl {
         }
     }
 
-    impl<'a, S, V, State> crate::traits::ACMapIter<'a> for ahash::AHashMap<PauliWord<S>, V, State>
+    impl<'a, S, V, H> crate::traits::ACMapIter<'a> for ahash::AHashMap<PauliWord<S, H>, V, H>
     where
         S: PauliStorage + 'a,
         V: Coefficient + 'a,
-        State: Clone + BuildHasher + 'a,
+        H: Default + Clone + BuildHasher + 'a,
     {
-        type Item = (&'a PauliWord<S>, &'a V);
-        type Iter = std::collections::hash_map::Iter<'a, PauliWord<S>, V>;
+        type Item = (&'a PauliWord<S, H>, &'a V);
+        type Iter = std::collections::hash_map::Iter<'a, PauliWord<S, H>, V>;
 
         fn iter(&'a self) -> Self::Iter {
             HashMap::iter(self)
@@ -256,4 +281,5 @@ mod ahash_impl {
     impl_acmap_trace!(ahash::AHashMap);
     impl_acmap_combine_unique!(ahash::AHashMap);
     impl_acmap_insert!(ahash::AHashMap);
+    impl_acmap_contains!(ahash::AHashMap);
 }

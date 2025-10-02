@@ -4,14 +4,14 @@ use crate::{pattern::PauliPattern, traits::*, word::PauliWord};
 use dashmap::DashMap;
 use rayon::prelude::*;
 
-impl<'a, S, V, State> ACMapBase for DashMap<PauliWord<S>, V, State>
+impl<'a, S, V, Hasher> ACMapBase for DashMap<PauliWord<S, Hasher>, V, Hasher>
 where
     S: PauliStorage,
     V: Coefficient,
-    State: Clone + BuildHasher + Default,
+    Hasher: Clone + BuildHasher + Default,
 {
     fn with_capacity(capacity: usize) -> Self {
-        DashMap::with_capacity_and_hasher(capacity, State::default())
+        DashMap::with_capacity_and_hasher(capacity, Hasher::default())
     }
 
     fn len(&self) -> usize {
@@ -23,13 +23,13 @@ where
     }
 }
 
-impl<'a, S, V, State> ACMapAddAssign<S, V> for DashMap<PauliWord<S>, V, State>
+impl<'a, S, V, Hasher> ACMapAddAssign<S, V, Hasher> for DashMap<PauliWord<S, Hasher>, V, Hasher>
 where
     S: PauliStorage + 'a,
     V: Coefficient + Sync + Send + 'a,
-    State: Clone + BuildHasher + Sync + Send + 'a,
+    Hasher: Default + Clone + BuildHasher + Sync + Send + 'a,
 {
-    fn add_assign(&mut self, key: PauliWord<S>, value: V) {
+    fn add_assign(&mut self, key: PauliWord<S, Hasher>, value: V) {
         self.entry(key)
             .and_modify(|v| *v += value.clone())
             .or_insert(value);
@@ -37,7 +37,7 @@ where
 
     fn map_add_assign<F>(&self, dest: &mut Self, f: F)
     where
-        F: Fn(&PauliWord<S>, &V) -> (PauliWord<S>, V) + Sync + Send,
+        F: Fn(&PauliWord<S, Hasher>, &V) -> (PauliWord<S, Hasher>, V) + Sync + Send,
     {
         self.par_iter().for_each(|entry| {
             let (new_k, new_v) = f(entry.key(), entry.value());
@@ -48,11 +48,11 @@ where
     }
 }
 
-impl<'a, S, V, State> ACMapMulAssign<V> for DashMap<PauliWord<S>, V, State>
+impl<'a, S, V, Hasher> ACMapMulAssign<V, Hasher> for DashMap<PauliWord<S, Hasher>, V, Hasher>
 where
     S: PauliStorage + 'a,
     V: Coefficient + Send + Sync + 'a,
-    State: Clone + BuildHasher + 'a,
+    Hasher: Default + Clone + BuildHasher + Sync + Send + 'a,
 {
     fn mul_assign(&mut self, value: V) {
         self.par_iter_mut()
@@ -60,14 +60,14 @@ where
     }
 }
 
-impl<'a, S, V, State> ACMapIter<'a> for DashMap<PauliWord<S>, V, State>
+impl<'a, S, V, Hasher> ACMapIter<'a> for DashMap<PauliWord<S, Hasher>, V, Hasher>
 where
     S: PauliStorage + 'a,
     V: Coefficient + 'a,
-    State: Clone + BuildHasher + 'a,
+    Hasher: Default + Clone + BuildHasher + 'a,
 {
-    type Item = dashmap::mapref::multiple::RefMulti<'a, PauliWord<S>, V>;
-    type Iter = dashmap::iter::Iter<'a, PauliWord<S>, V, State, DashMap<PauliWord<S>, V, State>>;
+    type Item = dashmap::mapref::multiple::RefMulti<'a, PauliWord<S, Hasher>, V>;
+    type Iter = dashmap::iter::Iter<'a, PauliWord<S, Hasher>, V, Hasher, DashMap<PauliWord<S, Hasher>, V, Hasher>>;
 
     fn iter(&'a self) -> Self::Iter {
         DashMap::iter(self)
@@ -89,14 +89,14 @@ where
 //     }
 // }
 
-impl<'a, S, C, State> Trace<'a, PauliWord<S>> for DashMap<PauliWord<S>, C, State>
+impl<'a, S, C, Hasher> Trace<'a, PauliWord<S, Hasher>> for DashMap<PauliWord<S, Hasher>, C, Hasher>
 where
     S: PauliStorage + 'a,
     C: Coefficient + Send + Sync + 'a,
-    State: Clone + BuildHasher + 'a + Send + Sync,
+    Hasher: Clone + BuildHasher + Default + Send + Sync + 'a,
 {
     type Output = C;
-    fn trace(&'a self, value: &'a PauliWord<S>) -> Self::Output {
+    fn trace(&'a self, value: &'a PauliWord<S, Hasher>) -> Self::Output {
         self.par_iter()
             .filter(|entry| value.trace(entry.key()))
             .map(|entry| entry.value().clone())
@@ -119,13 +119,13 @@ where
     }
 }
 
-impl<'a, S, C, State> ACMapCombineUnique for DashMap<PauliWord<S>, C, State>
+impl<'a, S, C, H> ACMapConsumeUnique for DashMap<PauliWord<S>, C, H>
 where
     S: PauliStorage + 'a,
     C: Coefficient + Send + Sync + 'a,
-    State: Clone + BuildHasher + 'a + Send + Sync,
+    H: Clone + BuildHasher + 'a + Send + Sync,
 {
-    fn combine_unique(&mut self, dest: &mut Self) {
+    fn consume_unique(&mut self, dest: &mut Self) {
         // FIXME: clone is not very efficient when T::Coeff is an expression
         self.par_extend(
             dest.par_iter()
@@ -135,15 +135,15 @@ where
     }
 }
 
-impl<'a, S, C, State> ACMapInsert<S, C> for DashMap<PauliWord<S>, C, State>
+impl<'a, S, C, H> ACMapInsert<S, C, H> for DashMap<PauliWord<S, H>, C, H>
 where
     S: PauliStorage + 'a,
     C: Coefficient + Send + Sync + 'a,
-    State: Clone + BuildHasher + 'a + Send + Sync,
+    H: Default + Clone + BuildHasher + 'a + Send + Sync,
 {
     fn map_insert<F>(&mut self, dest: &mut Self, f: F)
     where
-        F: Fn(&PauliWord<S>, &mut C) -> Option<(PauliWord<S>, C)> + Sync + Send,
+        F: Fn(&PauliWord<S, H>, &mut C) -> Option<(PauliWord<S, H>, C)> + Sync + Send,
     {
         self.par_iter_mut().for_each(|mut entry| {
             let (k, v) = entry.pair_mut();
@@ -151,5 +151,18 @@ where
                 dest.insert(new_k, new_v);
             }
         })
+    }
+}
+
+impl<S, C, H> ACMapContains<S, C, H> for DashMap<PauliWord<S, H>, C, H>
+where
+    S: PauliStorage,
+    C: Coefficient + PartialEq,
+    H: BuildHasher + Clone + Default,
+{
+    fn contains_with<F>(&self, key: &PauliWord<S, H>, f: F) -> bool
+        where
+            F: Fn(&C) -> bool {
+        self.get(key).map_or(false, |v| f(v.value()))
     }
 }

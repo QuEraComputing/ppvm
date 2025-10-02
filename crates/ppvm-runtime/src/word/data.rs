@@ -1,20 +1,20 @@
 use crate::char::Pauli;
 use crate::traits::PauliStorage;
 use bitvec::array::BitArray;
-use gxhash::GxBuildHasher;
 use std::hash::{BuildHasher, Hash};
 use std::ops::Index;
 
-#[derive(Debug, Clone, Copy, Eq)]
-pub struct PauliWord<A: PauliStorage> {
+#[derive(Debug, Clone)]
+pub struct PauliWord<A: PauliStorage, S = fxhash::FxBuildHasher> {
     pub xbits: BitArray<A>,
     pub zbits: BitArray<A>,
     /// Number of qubits
     nqubits: usize,
     hash_cache: u64,
+    _phantom: std::marker::PhantomData<S>,
 }
 
-impl<A: PauliStorage> Hash for PauliWord<A> {
+impl<A: PauliStorage, S> Hash for PauliWord<A, S> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         // self.xbits.data.hash(state);
         // self.zbits.data.hash(state);
@@ -22,20 +22,23 @@ impl<A: PauliStorage> Hash for PauliWord<A> {
     }
 }
 
-impl<A: PauliStorage> PartialEq for PauliWord<A> {
+impl<A: PauliStorage, S> Eq for PauliWord<A, S> {}
+
+impl<A: PauliStorage, S> PartialEq for PauliWord<A, S> {
     fn eq(&self, other: &Self) -> bool {
         self.xbits.data == other.xbits.data && self.zbits.data == other.zbits.data
     }
 }
 
 // implement PauliString where A can be converted to chunks of u8, e.g u64
-impl<A: PauliStorage> PauliWord<A> {
+impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
     pub fn new(nqubits: usize) -> Self {
         Self {
             xbits: BitArray::ZERO,
             zbits: BitArray::ZERO,
             nqubits,
             hash_cache: 0,
+            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -45,7 +48,7 @@ impl<A: PauliStorage> PauliWord<A> {
 
     pub fn rehash(&mut self) {
         use std::hash::Hasher;
-        let mut hasher = GxBuildHasher::default().build_hasher();
+        let mut hasher = S::default().build_hasher();
         self.xbits.data.hash(&mut hasher);
         self.zbits.data.hash(&mut hasher);
         self.hash_cache = hasher.finish();
@@ -113,6 +116,7 @@ impl<A: PauliStorage> PauliWord<A> {
             zbits,
             nqubits: n_qubits,
             hash_cache: 0,
+            _phantom: std::marker::PhantomData,
         };
         ret.rehash();
         ret
@@ -163,7 +167,9 @@ impl<A: PauliStorage> PauliWord<A> {
         if index >= self.nqubits {
             panic!("Index out of bounds");
         }
-        *self.clone().set(index, pauli)
+        let mut new = self.clone();
+        new.set(index, pauli);
+        new
     }
 
     #[inline(always)]
@@ -181,7 +187,7 @@ impl<A: PauliStorage> PauliWord<A> {
     }
 }
 
-impl<A: PauliStorage> Ord for PauliWord<A> {
+impl<A: PauliStorage, S> Ord for PauliWord<A, S> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if self.nqubits != other.nqubits {
             panic!("Cannot compare PauliStrings with different number of qubits");
@@ -192,7 +198,7 @@ impl<A: PauliStorage> Ord for PauliWord<A> {
     }
 }
 
-impl<A: PauliStorage> PartialOrd for PauliWord<A> {
+impl<A: PauliStorage, S> PartialOrd for PauliWord<A, S> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if self.nqubits != other.nqubits {
             return None;
@@ -205,13 +211,13 @@ impl<A: PauliStorage> PartialOrd for PauliWord<A> {
     }
 }
 
-impl<A: PauliStorage> From<&str> for PauliWord<A> {
+impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<&str> for PauliWord<A, S> {
     fn from(value: &str) -> Self {
         PauliWord::from(value.to_string())
     }
 }
 
-impl<A: PauliStorage> From<String> for PauliWord<A> {
+impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<String> for PauliWord<A, S> {
     fn from(value: String) -> Self {
         let n_qubits = value.chars().count();
         let mut x = BitArray::ZERO;
@@ -243,14 +249,15 @@ impl<A: PauliStorage> From<String> for PauliWord<A> {
             zbits: z,
             nqubits: n_qubits,
             hash_cache: 0,
+            _phantom: std::marker::PhantomData,
         };
         ret.rehash();
         ret
     }
 }
 
-impl<A: PauliStorage> From<PauliWord<A>> for usize {
-    fn from(value: PauliWord<A>) -> Self {
+impl<A: PauliStorage, S> From<PauliWord<A, S>> for usize {
+    fn from(value: PauliWord<A, S>) -> Self {
         if value.nqubits > 64 {
             panic!("Cannot convert PauliString with more than 64 qubits to usize");
         }
@@ -263,7 +270,7 @@ impl<A: PauliStorage> From<PauliWord<A>> for usize {
     }
 }
 
-impl<A: PauliStorage> Index<usize> for PauliWord<A> {
+impl<A: PauliStorage, S> Index<usize> for PauliWord<A, S> {
     type Output = Pauli;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -280,12 +287,16 @@ impl<A: PauliStorage> Index<usize> for PauliWord<A> {
     }
 }
 
-pub struct PauliWordIter<'a, A: PauliStorage> {
-    word: &'a PauliWord<A>,
+pub struct PauliWordIter<
+    'a,
+    A: PauliStorage,
+    S
+> {
+    word: &'a PauliWord<A, S>,
     curr: usize,
 }
 
-impl<'a, A: PauliStorage> Iterator for PauliWordIter<'a, A> {
+impl<'a, A: PauliStorage, S: BuildHasher + Clone + Default> Iterator for PauliWordIter<'a, A, S> {
     type Item = Pauli;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -299,7 +310,7 @@ impl<'a, A: PauliStorage> Iterator for PauliWordIter<'a, A> {
     }
 }
 
-impl<A: PauliStorage> std::fmt::Display for PauliWord<A> {
+impl<A: PauliStorage, S: BuildHasher + Clone + Default> std::fmt::Display for PauliWord<A, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for i in 0..self.nqubits {
             let pauli = self.get(i);

@@ -4,7 +4,7 @@ use crate::{char::Pauli, config::Config, sum::PauliSum};
 impl<T: Config> Projection for PauliSum<T>
 where
     T::Coeff: std::ops::MulAssign + std::ops::Neg<Output = T::Coeff> + Clone,
-    T::Map: ACMapInsert<T::Storage, T::Coeff> + ACMapCombineUnique,
+    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher> + ACMapConsumeUnique,
 {
     fn p0(&mut self, pos: usize) {
         self.map_insert(|k, v| {

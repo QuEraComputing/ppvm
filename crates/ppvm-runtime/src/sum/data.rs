@@ -1,8 +1,8 @@
 use crate::config::Config;
-use crate::traits::{self, ACMapBase, ACMapCombineUnique, ACMapInsert, ACMapIter};
+use crate::traits::*;
 use crate::word::PauliWord;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PauliSum<T: Config> {
     map: (T::Map, T::Map),
     aux: bool,
@@ -11,6 +11,10 @@ pub struct PauliSum<T: Config> {
 }
 
 impl<T: Config> PauliSum<T> {
+    pub fn new(n_qubits: usize) -> Self {
+        Self::with_capacity(n_qubits, 1 << n_qubits)
+    }
+
     pub fn with_capacity(n_qubits: usize, capacity: usize) -> Self {
         Self {
             map: (
@@ -85,40 +89,27 @@ impl<T: Config> PauliSum<T> {
     pub fn len(&self) -> usize {
         self.data().len()
     }
-}
 
-impl<'a, T: Config> PauliSum<T>
-where
-    T::Map: ACMapIter<'a>,
-{
-    pub fn iter(
-        &'a self,
-    ) -> <<T as Config>::Map as traits::ACMapIter<'a>>::Iter {
-        self.data().iter()
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
-}
 
-impl<T: Config> PauliSum<T>
-where
-    T::Map: ACMapCombineUnique,
-{
+    pub fn contains(&self, key: &PauliWord<T::Storage, T::BuildHasher>, value: &T::Coeff) -> bool {
+        self.data().contains(key, value)
+    }
+
     /// combine entries with the same key assuming unique keys
     /// in either data or aux. The combined entries are stored in `.data()`.
-    pub fn combine_unique(&mut self) {
+    pub fn consume_unique(&mut self) {
         let (data, aux) = self.data_aux_mut();
         if aux.len() > data.len() {
-            aux.combine_unique(data);
+            aux.consume_unique(data);
             self.swap();
         } else {
-            data.combine_unique(aux);
+            data.consume_unique(aux);
         }
     }
-}
 
-impl<T: Config> PauliSum<T>
-where
-    T::Map: ACMapInsert<T::Storage, T::Coeff> + ACMapCombineUnique,
-{
     /// modify in place existing entries and insert some new entries
     /// if `f` return Some((k,v)) for an existing entry (k0,v0), then
     /// the existing entry is modified by `f` and a new entry (k,v) is added.
@@ -126,14 +117,26 @@ where
     /// finally, all entries are combined assuming unique keys.
     pub fn map_insert<F>(&mut self, f: F)
     where
-        F: Fn(&PauliWord<T::Storage>, &mut T::Coeff) -> Option<(PauliWord<T::Storage>, T::Coeff)>
+        F: Fn(
+                &PauliWord<T::Storage, T::BuildHasher>,
+                &mut T::Coeff,
+            ) -> Option<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>
             + Sync
             + Send,
     {
         let (data, aux) = self.data_aux_mut();
         aux.clear();
         data.map_insert(aux, f);
-        self.combine_unique();
+        self.consume_unique();
+    }
+}
+
+impl<'a, T: Config> PauliSum<T>
+where
+    T::Map: ACMapIter<'a>,
+{
+    pub fn iter(&'a self) -> <<T as Config>::Map as ACMapIter<'a>>::Iter {
+        self.data().iter()
     }
 }
 
@@ -162,11 +165,50 @@ where
     }
 }
 
-impl<T: Config> Extend<(PauliWord<T::Storage>, T::Coeff)> for PauliSum<T>
+impl<T: Config> Extend<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)> for PauliSum<T>
 where
-    T::Map: Extend<(PauliWord<T::Storage>, T::Coeff)>,
+    T::Map: Extend<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>,
 {
-    fn extend<I: IntoIterator<Item = (PauliWord<T::Storage>, T::Coeff)>>(&mut self, iter: I) {
+    fn extend<I: IntoIterator<Item = (PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>>(&mut self, iter: I) {
         self.data_mut().extend(iter);
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_yaml_snapshot;
+
+    use super::*;
+    use crate::config::fxhash::ByteF64;
+
+    #[test]
+    fn test_pauli_sum_creation() {
+        let word = PauliWord::<[u8; 2]>::new(4);
+        let mut sum: PauliSum<ByteF64<2>> = PauliSum::new(word.n_qubits());
+        assert!(sum.data().is_empty());
+        sum += "IIII";
+        assert!(!sum.data().is_empty());
+        assert_yaml_snapshot!(sum.to_string());
+        sum += ("IIII", 2.0);
+        assert_yaml_snapshot!(sum.to_string());
+        sum += ("XIII", 1.0);
+        assert_yaml_snapshot!(sum.to_string());
+        sum += ("XIII", 2.0);
+        assert_yaml_snapshot!(sum.to_string());
+        sum += "IYII";
+        assert_yaml_snapshot!(sum.to_string());
+        assert!(sum.contains(&PauliWord::from("IIII"), &3.0));
+        assert!(sum.contains(&PauliWord::from("XIII"), &3.0));
+        assert!(sum.contains(&PauliWord::from("IYII"), &1.0));
+    }
+
+    #[test]
+    fn test_pauli_sum_top_bottom() {
+        let mut sum: PauliSum<ByteF64<2>> = PauliSum::new(4);
+        assert!(sum.is_empty());
+        sum += ("IIII", 1.0);
+        assert!(!sum.is_empty());
+        sum += ("IIII", 1.0);
     }
 }

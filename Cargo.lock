@@ -553,15 +553,8 @@ name = "ppvm"
 version = "0.1.0"
 dependencies = [
  "fxhash",
-]
-
-[[package]]
-name = "ppvm-derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "ppvm-runtime",
+ "ppvm-sym",
 ]
 
 [[package]]
@@ -589,7 +582,10 @@ dependencies = [
 name = "ppvm-sym"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "fxhash",
+ "num",
+ "ppvm-runtime",
 ]
 
 [[package]]

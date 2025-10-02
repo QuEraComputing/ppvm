@@ -50,20 +50,23 @@ impl Display for crate::term::Sum {
     }
 }
 
-impl Display for crate::term::Item {
+impl Display for crate::term::Term {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use crate::term::Item::*;
-        match self {
-            Sin(u) => write!(f, "sin({u})"),
-            Cos(u) => write!(f, "cos({u})"),
+        use crate::term::Inner::*;
+        match self.inner {
+            Sum(ref s) => s.fmt(f),
+            One(ref p, c) => write!(f, "{:.3} * {}", c, p),
+            Var(u) => write!(f, "%{u}"),
+            Const(c) => write!(f, "{c}"),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::Term;
+
     use super::*;
-    use crate::{cos, sin};
 
     #[test]
     fn test_display_prod() {
@@ -75,18 +78,18 @@ mod tests {
     }
 
     #[test]
-    fn test_display_sum() {
-        let mut s = crate::term::Sum::new(2);
-        s += 3.0;
-        s += sin(1);
-        s += cos(2);
+    fn test_display_term() {
+        let mut s = Term::from_f64(3.0);
+        s += Term::var(1).sin();
+        s += Term::var(2).cos();
         assert_eq!(
             s.to_string(),
             "3.000 + 1.000 * cos^1(%2) + 1.000 * sin^1(%1)"
         );
 
-        s *= sin(2);
-        s *= sin(1);
+        s.set_max_sin(2);
+        s *= Term::var(2).sin();
+        s *= Term::var(1).sin();
         assert_eq!(
             s.to_string(),
             "3.000 * sin^1(%1) sin^1(%2) + 1.000 * sin^1(%1) sin^1(%2) cos^1(%2)"

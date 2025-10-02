@@ -1,0 +1,26 @@
+use ppvm_sym::*;
+use ppvm_runtime::prelude::*;
+
+fn main() {
+    let pat: PauliPattern = "Z?*".into();
+    let mut sum = PauliSum::<config::fxhash::Byte<2, Term>>::new(2);
+    sum += ("ZZ", Term::from(1.0));
+
+    sum.rz(0, Term::var(0));
+    sum.ry(0, Term::var(1));
+    sum.rz(0, Term::var(0));
+ 
+    sum.rz(1, Term::var(0));
+    sum.ry(1, Term::var(1));
+    sum.rz(1, Term::var(0));
+
+    sum.cnot(0, 1);
+
+    sum.rx(0, Term::var(1));
+    sum.rx(1, Term::var(1));
+
+    println!("Final state: {}", sum);
+    let trace = sum.trace(&pat);
+    let value = trace.eval(&[1.1, 2.1]).unwrap();
+    println!("Trace: {}", value);
+}

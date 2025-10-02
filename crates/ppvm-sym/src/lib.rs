@@ -2,13 +2,7 @@ mod add;
 mod display;
 mod mul;
 mod term;
+mod coeff;
+mod eval;
 
-pub use term::{Item, Prod, Sum};
-
-pub fn sin(u: u32) -> Item {
-    Item::Sin(u)
-}
-
-pub fn cos(u: u32) -> Item {
-    Item::Cos(u)
-}
+pub use term::{Term, Prod, Sum};

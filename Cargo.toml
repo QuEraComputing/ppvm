@@ -7,4 +7,4 @@ edition = "2024"
 fxhash = "0.2.1"
 
 [workspace]
-members = ["crates/ppvm-runtime", "crates/ppvm-sym"]
+members = [ "crates/ppvm-derive","crates/ppvm-runtime", "crates/ppvm-sym"]

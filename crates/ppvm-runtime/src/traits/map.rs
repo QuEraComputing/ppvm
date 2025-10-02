@@ -7,6 +7,7 @@ pub trait ACMap<S: PauliStorage, V: Coefficient>
 {
     fn with_capacity(capacity: usize) -> Self;
     fn len(&self) -> usize;
+    fn clear(&mut self);
 }
 
 pub trait ACMapIter<'a, S: PauliStorage, V: Coefficient> {
@@ -23,6 +24,9 @@ pub trait ACMapIterMut<'a, S: PauliStorage, V: Coefficient> {
 
 pub trait ACMapAddAssign<S: PauliStorage, V: Coefficient> {
     fn add_assign(&mut self, key: PauliWord<S>, value: V);
+    fn map_add_assign<F>(&self, dest: &mut Self, f: F)
+    where
+        F: Fn(&PauliWord<S>, &V) -> (PauliWord<S>, V) + Sync + Send;
 }
 
 pub trait ACMapMulAssign<V: Coefficient> {

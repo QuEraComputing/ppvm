@@ -1,10 +1,15 @@
 use std::hash::BuildHasher;
 
 use crate::{
-    traits::{ACMap, ACMapAddAssign, ACMapIter, ACMapIterMut, ACMapMulAssign, Coefficient, PauliStorage},
+    pattern::PauliPattern,
+    traits::{
+        ACMap, ACMapAddAssign, ACMapIter, ACMapIterMut, ACMapMulAssign, Coefficient, PauliStorage,
+        Trace,
+    },
     word::PauliWord,
 };
 use dashmap::DashMap;
+use num::Zero;
 use rayon::prelude::*;
 
 impl<'a, S, V, State> ACMap<S, V> for DashMap<PauliWord<S>, V, State>
@@ -20,18 +25,34 @@ where
     fn len(&self) -> usize {
         self.len()
     }
+
+    fn clear(&mut self) {
+        Self::clear(self);
+    }
 }
 
 impl<'a, S, V, State> ACMapAddAssign<S, V> for DashMap<PauliWord<S>, V, State>
 where
     S: PauliStorage + 'a,
-    V: Coefficient + std::ops::AddAssign + 'a,
-    State: Clone + BuildHasher + 'a,
+    V: Coefficient + std::ops::AddAssign + Sync + Send + 'a,
+    State: Clone + BuildHasher + Sync + Send + 'a,
 {
     fn add_assign(&mut self, key: PauliWord<S>, value: V) {
         self.entry(key)
             .and_modify(|v| *v += value.clone())
             .or_insert(value);
+    }
+
+    fn map_add_assign<F>(&self, dest: &mut Self, f: F)
+    where
+        F: Fn(&PauliWord<S>, &V) -> (PauliWord<S>, V) + Sync + Send,
+    {
+        self.par_iter().for_each(|entry| {
+            let (new_k, new_v) = f(entry.key(), entry.value());
+            dest.entry(new_k)
+                .and_modify(|v| *v += new_v.clone())
+                .or_insert(new_v);
+        });
     }
 }
 
@@ -54,8 +75,7 @@ where
     State: Clone + BuildHasher + 'a,
 {
     type Item = dashmap::mapref::multiple::RefMulti<'a, PauliWord<S>, V>;
-    type Iter =
-        dashmap::iter::Iter<'a, PauliWord<S>, V, State, DashMap<PauliWord<S>, V, State>>;
+    type Iter = dashmap::iter::Iter<'a, PauliWord<S>, V, State, DashMap<PauliWord<S>, V, State>>;
 
     fn iter(&'a self) -> Self::Iter {
         DashMap::iter(self)
@@ -74,5 +94,35 @@ where
 
     fn iter_mut(&'a mut self) -> Self::IterMut {
         DashMap::iter_mut(self)
+    }
+}
+
+impl<'a, S, C, State> Trace<'a, PauliWord<S>> for DashMap<PauliWord<S>, C, State>
+where
+    S: PauliStorage + 'a,
+    C: Coefficient + Zero + Clone + std::ops::AddAssign + Send + Sync + std::iter::Sum + 'a,
+    State: Clone + BuildHasher + 'a + Send + Sync,
+{
+    type Output = C;
+    fn trace(&'a self, value: &'a PauliWord<S>) -> Self::Output {
+        self.par_iter()
+            .filter(|entry| value.trace(entry.key()))
+            .map(|entry| entry.value().clone())
+            .sum()
+    }
+}
+
+impl<'a, S, C, State> Trace<'a, PauliPattern> for DashMap<PauliWord<S>, C, State>
+where
+    S: PauliStorage + 'a,
+    C: Coefficient + Zero + Clone + std::ops::AddAssign + Send + Sync + std::iter::Sum + 'a,
+    State: Clone + BuildHasher + 'a + Send + Sync,
+{
+    type Output = C;
+    fn trace(&'a self, value: &'a PauliPattern) -> Self::Output {
+        self.par_iter()
+            .filter(|entry| entry.key().trace(value))
+            .map(|entry| entry.value().clone())
+            .sum()
     }
 }

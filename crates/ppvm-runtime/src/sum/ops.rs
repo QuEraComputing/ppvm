@@ -52,7 +52,7 @@ where
         let key = rhs.0.into();
         debug_assert_eq!(self.n_qubits(), key.n_qubits());
         debug_assert!(self.len() + 1 <= self.capacity());
-        self.data_mut().add_assign(key, rhs.1);
+        ACMapAddAssign::add_assign(self.data_mut(), key, rhs.1);
     }
 }
 
@@ -66,6 +66,6 @@ where
         let key = rhs.into();
         debug_assert_eq!(self.n_qubits(), key.n_qubits());
         debug_assert!(self.len() + 1 <= self.capacity());
-        self.data_mut().add_assign(key, T::Coeff::one());
+        ACMapAddAssign::add_assign(self.data_mut(), key, T::Coeff::one());
     }
 }

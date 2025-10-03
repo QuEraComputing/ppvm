@@ -1,24 +1,23 @@
 use num::traits::Float;
 
-// + One
-//     + Zero
-//     + PartialEq
-//     + std::ops::Neg<Output = Self>
-//     // + std::ops::Add
-//     // + std::ops::Sub
-//     // + std::ops::Mul
-//     + std::ops::AddAssign
-//     + std::ops::SubAssign
-//     + std::ops::MulAssign
-
 pub trait Coefficient:
     PartialEq
     + Clone
     + num::Zero
+    + From<i32>
     + From<f32>
+    + From<f64>
     + std::ops::Neg<Output = Self>
-    + std::ops::AddAssign
-    + std::ops::MulAssign
+    + std::ops::Add<f64, Output = Self>
+    + std::ops::Add<Self, Output = Self>
+    + std::ops::Sub<f64, Output = Self>
+    + std::ops::Sub<Self, Output = Self>
+    + std::ops::Mul<f64, Output = Self>
+    + std::ops::Mul<Self, Output = Self>
+    + std::ops::AddAssign<f64>
+    + std::ops::AddAssign<Self>
+    + std::ops::MulAssign<f64>
+    + std::ops::MulAssign<Self>
     + std::iter::Sum
     + Sync
     + Send

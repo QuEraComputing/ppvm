@@ -180,3 +180,33 @@ impl std::ops::MulAssign<Term> for Term {
         }
     }
 }
+
+impl std::ops::Mul<f64> for Term {
+    type Output = Term;
+
+    fn mul(self, rhs: f64) -> Self::Output {
+        let mut ret = self;
+        ret *= rhs;
+        ret
+    }
+}
+
+impl std::ops::Mul<Term> for f64 {
+    type Output = Term;
+
+    fn mul(self, rhs: Term) -> Self::Output {
+        let mut ret = rhs;
+        ret *= self;
+        ret
+    }
+}
+
+impl std::ops::Mul<Term> for Term {
+    type Output = Term;
+
+    fn mul(self, rhs: Term) -> Self::Output {
+        let mut ret = self;
+        ret *= rhs;
+        ret
+    }
+}

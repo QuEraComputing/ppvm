@@ -110,6 +110,14 @@ impl<T: Config> PauliSum<T> {
         }
     }
 
+    /// scale all coefficients by a function of the corresponding PauliWord key.
+    pub fn scale<F>(&mut self, f: F)
+    where
+        F: Fn(&PauliWord<T::Storage, T::BuildHasher>, &mut T::Coeff) + Sync + Send,
+    {
+        self.data_mut().scale(f);
+    }
+
     /// modify in place existing entries and insert some new entries
     /// if `f` return Some((k,v)) for an existing entry (k0,v0), then
     /// the existing entry is modified by `f` and a new entry (k,v) is added.

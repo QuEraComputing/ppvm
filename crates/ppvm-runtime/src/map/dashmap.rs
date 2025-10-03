@@ -179,3 +179,20 @@ where
         self.get(key).map_or(false, |v| f(v.value()))
     }
 }
+
+impl<S, C, H> ACMapScale<S, C, H> for DashMap<PauliWord<S, H>, C, H>
+where
+    S: PauliStorage,
+    C: Coefficient + Send + Sync,
+    H: BuildHasher + Clone + Default + Sync + Send,
+{
+    fn scale<F>(&mut self, f: F)
+    where
+        F: Fn(&PauliWord<S, H>, &mut C) + Sync + Send,
+    {
+        self.par_iter_mut().for_each(|mut entry| {
+            let (k, v) = entry.pair_mut();
+            f(k, v);
+        });
+    }
+}

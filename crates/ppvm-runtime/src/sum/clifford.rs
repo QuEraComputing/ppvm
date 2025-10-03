@@ -26,8 +26,6 @@ macro_rules! map_word {
 }
 
 impl<T: Config> Clifford for PauliSum<T>
-where
-    T::Coeff: std::ops::AddAssign + Clone + std::ops::Neg<Output = T::Coeff>,
 {
     map_word!(x, index);
     map_word!(y, index);

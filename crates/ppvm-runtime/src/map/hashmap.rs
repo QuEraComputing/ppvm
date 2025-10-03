@@ -1,7 +1,7 @@
 use std::{collections::HashMap, hash::BuildHasher};
 
 use crate::{
-    traits::{ACMapConsume, ACMapContains, ACMapInsert, Coefficient, PauliStorage},
+    traits::{ACMapConsume, ACMapContains, ACMapInsert, ACMapScale, Coefficient, PauliStorage},
     word::PauliWord,
 };
 
@@ -187,6 +187,26 @@ macro_rules! impl_acmap_contains {
     };
 }
 
+macro_rules! impl_acmap_scale {
+    ($($seg:ident)::+) => {
+        impl<S, V, H> ACMapScale<S, V, H> for $($seg)::+<PauliWord<S, H>, V, H>
+        where
+            S: PauliStorage,
+            V: Coefficient,
+            H: BuildHasher + Clone + Default,
+        {
+            fn scale<F>(&mut self, f: F)
+            where
+                F: Fn(&PauliWord<S, H>, &mut V) + Sync + Send,
+            {
+                for (k, v) in self.iter_mut() {
+                    f(k, v);
+                }
+            }
+        }
+    };
+}
+
 macro_rules! impl_acmap {
     ($($seg:ident)::+) => {
         impl_acmap_base!($($seg)::+);
@@ -197,6 +217,7 @@ macro_rules! impl_acmap {
         impl_acmap_combine_unique!($($seg)::+);
         impl_acmap_insert!($($seg)::+);
         impl_acmap_contains!($($seg)::+);
+        impl_acmap_scale!($($seg)::+);
     };
 }
 
@@ -241,6 +262,7 @@ mod indexmap_impl {
     impl_acmap_trace!(indexmap::IndexMap);
     impl_acmap_insert!(indexmap::IndexMap);
     impl_acmap_contains!(indexmap::IndexMap);
+    impl_acmap_scale!(indexmap::IndexMap);
 }
 
 #[cfg(feature = "ahash")]
@@ -286,4 +308,5 @@ mod ahash_impl {
     impl_acmap_combine_unique!(ahash::AHashMap);
     impl_acmap_insert!(ahash::AHashMap);
     impl_acmap_contains!(ahash::AHashMap);
+    impl_acmap_scale!(ahash::AHashMap);
 }

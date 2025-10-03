@@ -152,6 +152,42 @@ impl std::ops::Add for Term {
     }
 }
 
+impl std::ops::Add<f64> for Term {
+    type Output = Term;
+
+    fn add(mut self, rhs: f64) -> Self::Output {
+        self += rhs;
+        self
+    }
+}
+
+impl std::ops::Add<Term> for f64 {
+    type Output = Term;
+
+    fn add(self, mut rhs: Term) -> Self::Output {
+        rhs += self;
+        rhs
+    }
+}
+
+impl std::ops::Sub<Term> for Term {
+    type Output = Term;
+
+    fn sub(mut self, rhs: Term) -> Self::Output {
+        self += -rhs;
+        self
+    }
+}
+
+impl std::ops::Sub<f64> for Term {
+    type Output = Term;
+
+    fn sub(mut self, rhs: f64) -> Self::Output {
+        self += -rhs;
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

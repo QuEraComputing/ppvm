@@ -44,6 +44,24 @@ impl From<f32> for Term {
     }
 }
 
+impl From<f64> for Term {
+    fn from(value: f64) -> Self {
+        Term::from_f64(value)
+    }
+}
+
+impl From<i32> for Term {
+    fn from(value: i32) -> Self {
+        Term::from_f64(value as f64)
+    }
+}
+
+impl From<i64> for Term {
+    fn from(value: i64) -> Self {
+        Term::from_f64(value as f64)
+    }
+}
+
 impl num::Zero for Term {
     fn zero() -> Self {
         Term::from_f64(0.0)

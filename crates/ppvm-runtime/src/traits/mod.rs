@@ -12,7 +12,8 @@ pub use clifford::Clifford;
 pub use coefficient::Coefficient;
 pub use map::{
     ACMap, ACMapAddAssign, ACMapBase, ACMapConsume, ACMapContains, ACMapInsert, ACMapIter,
-    ACMapMulAssign,
+    ACMapMulAssign, ACMapScale,
 };
+pub use noise::{AmplitudeDamping, Depolarizing, PauliError, PauliErrorAll, TwoPauliError};
 pub use storage::PauliStorage;
 pub use trace::Trace;

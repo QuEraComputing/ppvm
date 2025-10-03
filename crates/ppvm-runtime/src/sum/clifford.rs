@@ -25,8 +25,7 @@ macro_rules! map_word {
     };
 }
 
-impl<T: Config> Clifford for PauliSum<T>
-{
+impl<T: Config> Clifford for PauliSum<T> {
     map_word!(x, index);
     map_word!(y, index);
     map_word!(z, index);

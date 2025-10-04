@@ -56,6 +56,12 @@ pub trait ACMapScale<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + D
         F: Fn(&PauliWord<S, H>, &mut V) + Sync + Send;
 }
 
+pub trait ACMapRetain<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + Default> {
+    fn retain<F>(&mut self, f: F)
+    where
+        F: Fn(&PauliWord<S, H>, &V) -> bool + Sync + Send;
+}
+
 pub trait ACMap<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + Default>:
     Clone
     + ACMapBase
@@ -64,6 +70,7 @@ pub trait ACMap<S: PauliStorage, V: Coefficient, H: BuildHasher + Clone + Defaul
     + ACMapInsert<S, V, H>
     + ACMapContains<S, V, H>
     + ACMapScale<S, V, H>
+    + ACMapRetain<S, V, H>
     + ACMapConsume
 {
 }
@@ -80,6 +87,7 @@ where
         + ACMapInsert<Storage, Coeff, Hasher>
         + ACMapScale<Storage, Coeff, Hasher>
         + ACMapContains<Storage, Coeff, Hasher>
+        + ACMapRetain<Storage, Coeff, Hasher>
         + ACMapConsume,
 {
 }

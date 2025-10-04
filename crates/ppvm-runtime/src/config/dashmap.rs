@@ -1,27 +1,33 @@
 use std::marker::PhantomData;
 
-use crate::traits::Coefficient;
+use crate::traits::{Coefficient, NoStrategy, Strategy};
 use crate::{config::Config, word::PauliWord};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ByteFxHash<const N: usize, C: Coefficient + Sync + Send>(PhantomData<C>);
+pub struct ByteFxHash<const N: usize, C: Coefficient + Sync + Send, St: Strategy = NoStrategy>(
+    PhantomData<(C, St)>,
+);
 
-impl<const N: usize, C: Coefficient + Sync + Send> Config for ByteFxHash<N, C> {
+impl<const N: usize, C: Coefficient + Sync + Send, St: Strategy> Config for ByteFxHash<N, C, St> {
     type Storage = [u8; N];
     type Coeff = C;
     type BuildHasher = fxhash::FxBuildHasher;
     type Map = dashmap::DashMap<PauliWord<[u8; N], Self::BuildHasher>, C, Self::BuildHasher>;
+    type Strategy = St;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ByteGxHash<const N: usize, C: Coefficient + Sync + Send>(PhantomData<C>);
+pub struct ByteGxHash<const N: usize, C: Coefficient + Sync + Send, St: Strategy = NoStrategy>(
+    PhantomData<(C, St)>,
+);
 
-impl<const N: usize, C: Coefficient + Sync + Send> Config for ByteGxHash<N, C> {
+impl<const N: usize, C: Coefficient + Sync + Send, St: Strategy> Config for ByteGxHash<N, C, St> {
     type Storage = [u8; N];
     type Coeff = C;
     type BuildHasher = gxhash::GxBuildHasher;
     type Map = dashmap::DashMap<PauliWord<[u8; N], Self::BuildHasher>, C, Self::BuildHasher>;
+    type Strategy = St;
 }
 
-pub type ByteFxHashF64<const N: usize> = ByteFxHash<N, f64>;
-pub type ByteGxHashF64<const N: usize> = ByteGxHash<N, f64>;
+pub type ByteFxHashF64<const N: usize, St = NoStrategy> = ByteFxHash<N, f64, St>;
+pub type ByteGxHashF64<const N: usize, St = NoStrategy> = ByteGxHash<N, f64, St>;

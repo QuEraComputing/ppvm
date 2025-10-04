@@ -3,7 +3,8 @@ use ppvm_runtime::prelude::*;
 
 #[test]
 fn test_cnot() {
-    let mut state: PauliSum<config::indexmap::ByteFxHashF64<4>> = PauliSum::new(2);
+    let mut state: PauliSum<config::indexmap::ByteFxHashF64<4>> =
+        PauliSum::builder().n_qubits(2).build();
     let pat: PauliPattern = "Z?*".into();
     state += ("ZZ", 1.0);
 

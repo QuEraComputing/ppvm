@@ -25,6 +25,7 @@ pub trait Coefficient:
     fn mul_sign(&self, sign: i8) -> Self;
     fn half(&self) -> Self;
     fn sin_cos(&self) -> (Self, Self);
+    fn cutoff(&self, threshold: f64) -> bool;
 }
 
 impl Coefficient for f64 {
@@ -38,5 +39,9 @@ impl Coefficient for f64 {
 
     fn sin_cos(&self) -> (Self, Self) {
         Float::sin_cos(*self)
+    }
+
+    fn cutoff(&self, threshold: f64) -> bool {
+        self.abs() < threshold
     }
 }

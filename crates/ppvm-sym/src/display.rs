@@ -22,6 +22,7 @@ impl Display for Prod {
 
 impl Display for crate::term::Sum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
         if self.c0 != 0.0 {
             write!(f, "{:.3} ", self.c0)?;
 
@@ -46,6 +47,7 @@ impl Display for crate::term::Sum {
                 write!(f, " + ")?;
             }
         }
+        write!(f, "]")?;
         Ok(())
     }
 }

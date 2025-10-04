@@ -16,6 +16,14 @@ impl Coefficient for Term {
     fn sin_cos(&self) -> (Self, Self) {
         (self.clone().sin(), self.clone().cos())
     }
+
+    fn cutoff(&self, threshold: f64) -> bool {
+        if let Inner::Const(c) = self.inner {
+            c.abs() < threshold
+        } else {
+            false
+        }
+    }
 }
 
 impl std::iter::Sum for Term {

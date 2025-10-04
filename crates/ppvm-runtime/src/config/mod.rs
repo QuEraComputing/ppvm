@@ -1,10 +1,11 @@
 use std::hash::BuildHasher;
 
-use crate::traits::{ACMap, Coefficient, PauliStorage};
+use crate::traits::{ACMap, Coefficient, PauliStorage, Strategy};
 
 pub trait Config: Clone {
     type Storage: PauliStorage;
     type Coeff: Coefficient;
+    type Strategy: Strategy;
     type BuildHasher: BuildHasher + Clone + Default;
     type Map: ACMap<Self::Storage, Self::Coeff, Self::BuildHasher>;
 }

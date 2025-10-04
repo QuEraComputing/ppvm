@@ -71,100 +71,100 @@ mod tests {
 
     #[test]
     fn test_rx() {
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("X", 1.0);
         answer.rx(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("X", 1.0);
         assert_eq!(answer, expect);
 
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("Y", 1.0);
         answer.rx(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("Y", 2.1_f64.cos());
         expect += ("Z", -2.1_f64.sin());
         assert_eq!(answer, expect);
 
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("Z", 1.0);
         answer.rx(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("Z", 2.1_f64.cos());
         expect += ("Y", 2.1_f64.sin());
         assert_eq!(answer, expect);
 
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("I", 1.0);
         answer.rx(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("I", 1.0);
         assert_eq!(answer, expect);
     }
 
     #[test]
     fn test_ry() {
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("X", 1.0);
         answer.ry(0, 2.1);
 
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("X", 2.1_f64.cos());
         expect += ("Z", 2.1_f64.sin());
         assert_eq!(answer, expect);
 
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("Y", 1.0);
         answer.ry(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("Y", 1.0);
         assert_eq!(answer, expect);
 
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("Z", 1.0);
         answer.ry(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("Z", 2.1_f64.cos());
         expect += ("X", -2.1_f64.sin());
         assert_eq!(answer, expect);
 
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("I", 1.0);
         answer.ry(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("I", 1.0);
         assert_eq!(answer, expect);
     }
 
     #[test]
     fn test_rz() {
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("X", 1.0);
         answer.rz(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("X", 2.1_f64.cos());
         expect += ("Y", -2.1_f64.sin());
         assert_eq!(answer, expect);
 
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("Y", 1.0);
         answer.rz(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("Y", 2.1_f64.cos());
         expect += ("X", 2.1_f64.sin());
         assert_eq!(answer, expect);
 
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("Z", 1.0);
         answer.rz(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("Z", 1.0);
         assert_eq!(answer, expect);
 
-        let mut answer: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut answer: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         answer += ("I", 1.0);
         answer.rz(0, 2.1);
-        let mut expect: PauliSum<ByteF64<2>> = PauliSum::new(1);
+        let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("I", 1.0);
         assert_eq!(answer, expect);
     }

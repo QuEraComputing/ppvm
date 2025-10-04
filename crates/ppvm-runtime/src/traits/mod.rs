@@ -6,14 +6,16 @@ mod noise;
 mod ptm;
 mod storage;
 mod trace;
+mod strategy;
 
 pub use branch::{CRx, Projection, RotationOne, RotationTwo};
 pub use clifford::Clifford;
 pub use coefficient::Coefficient;
 pub use map::{
     ACMap, ACMapAddAssign, ACMapBase, ACMapConsume, ACMapContains, ACMapInsert, ACMapIter,
-    ACMapMulAssign, ACMapScale,
+    ACMapMulAssign, ACMapScale, ACMapRetain
 };
 pub use noise::{AmplitudeDamping, Depolarizing, PauliError, PauliErrorAll, TwoPauliError};
 pub use storage::PauliStorage;
 pub use trace::Trace;
+pub use strategy::{Strategy, NoStrategy};

@@ -8,14 +8,25 @@ pub struct PauliSum<T: Config> {
     aux: bool,
     n_qubits: usize,
     capacity: usize,
+    strategy: T::Strategy,
 }
 
+#[bon::bon]
 impl<T: Config> PauliSum<T> {
-    pub fn new(n_qubits: usize) -> Self {
-        Self::with_capacity(n_qubits, 1 << n_qubits)
-    }
-
-    pub fn with_capacity(n_qubits: usize, capacity: usize) -> Self {
+    /// create a new empty PauliSum with given number of qubits.
+    /// 
+    /// One can optionally set
+    /// - the strategy for truncation, initialization etc.
+    /// - the capacity of the internal maps, default is strategy.capacity(n_qubits)
+    #[builder]
+    pub fn new(
+        /// number of qubits
+        n_qubits: usize,
+        /// strategy for truncation, initilization etc.
+        #[builder(default = T::Strategy::default())] strategy: T::Strategy,
+        /// capacity of the internal maps, default is strategy.capacity(n_qubits)
+        #[builder(default = strategy.capacity(n_qubits))] capacity: usize,
+    ) -> Self {
         Self {
             map: (
                 T::Map::with_capacity(capacity),
@@ -24,9 +35,12 @@ impl<T: Config> PauliSum<T> {
             aux: false,
             n_qubits,
             capacity,
+            strategy,
         }
     }
+}
 
+impl<T: Config> PauliSum<T> {
     pub fn n_qubits(&self) -> usize {
         self.n_qubits
     }
@@ -137,6 +151,32 @@ impl<T: Config> PauliSum<T> {
         data.map_insert(aux, f);
         self.consume();
     }
+
+    /// apply a function to each entry (k,v) and store the results in aux.
+    /// finally, swap data and aux.
+    ///
+    /// This assumes the function `f` returns a different Pauli string `k'`
+    /// from the input `k`, otherwise use `scale` to modify coefficients in place
+    /// of the same entry.
+    pub fn map_add<F>(&mut self, f: F)
+    where
+        F: Fn(
+                &PauliWord<T::Storage, T::BuildHasher>,
+                &T::Coeff,
+            ) -> (PauliWord<T::Storage, T::BuildHasher>, T::Coeff)
+            + Sync
+            + Send,
+    {
+        let (data, aux) = self.data_aux_mut();
+        aux.clear();
+        data.map_add_assign(aux, f);
+        self.swap();
+    }
+
+    pub fn truncate(&mut self) {
+        let strategy = self.strategy;
+        strategy.truncate(self.data_mut());
+    }
 }
 
 impl<'a, T: Config> PauliSum<T>
@@ -195,7 +235,7 @@ mod tests {
     #[test]
     fn test_pauli_sum_creation() {
         let word = PauliWord::<[u8; 2]>::new(4);
-        let mut sum: PauliSum<ByteF64<2>> = PauliSum::new(word.n_qubits());
+        let mut sum: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(word.n_qubits()).build();
         assert!(sum.data().is_empty());
         sum += "IIII";
         assert!(!sum.data().is_empty());
@@ -215,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_pauli_sum_top_bottom() {
-        let mut sum: PauliSum<ByteF64<2>> = PauliSum::new(4);
+        let mut sum: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(4).build();
         assert!(sum.is_empty());
         sum += ("IIII", 1.0);
         assert!(!sum.is_empty());

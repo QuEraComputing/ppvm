@@ -196,3 +196,17 @@ where
         });
     }
 }
+
+impl<S, C, H> ACMapRetain<S, C, H> for DashMap<PauliWord<S, H>, C, H>
+where
+    S: PauliStorage,
+    C: Coefficient,
+    H: BuildHasher + Clone + Default + Sync + Send,
+{
+    fn retain<F>(&mut self, f: F)
+    where
+        F: Fn(&PauliWord<S, H>, &C) -> bool + Sync + Send,
+    {
+        Self::retain(self, |k, v| f(k, v));
+    }
+}

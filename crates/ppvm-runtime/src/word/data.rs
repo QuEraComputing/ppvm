@@ -46,6 +46,12 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
         self.nqubits
     }
 
+    pub fn weight(&self) -> usize {
+        (0..self.nqubits)
+            .filter(|&i| self.xbits[i] || self.zbits[i])
+            .count()
+    }
+
     pub fn rehash(&mut self) {
         use std::hash::Hasher;
         let mut hasher = S::default().build_hasher();

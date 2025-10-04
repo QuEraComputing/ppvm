@@ -4,7 +4,9 @@ use crate::traits::{Coefficient, NoStrategy, Strategy};
 use crate::{config::Config, word::PauliWord};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ByteFxHash<const N: usize, C: Coefficient, St: Strategy = NoStrategy>(PhantomData<(C, St)>);
+pub struct ByteFxHash<const N: usize, C: Coefficient, St: Strategy = NoStrategy>(
+    PhantomData<(C, St)>,
+);
 
 impl<const N: usize, C: Coefficient, St: Strategy> Config for ByteFxHash<N, C, St> {
     type Storage = [u8; N];
@@ -16,7 +18,9 @@ impl<const N: usize, C: Coefficient, St: Strategy> Config for ByteFxHash<N, C, S
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ByteGxHash<const N: usize, C: Coefficient, St: Strategy = NoStrategy>(PhantomData<(C, St)>);
+pub struct ByteGxHash<const N: usize, C: Coefficient, St: Strategy = NoStrategy>(
+    PhantomData<(C, St)>,
+);
 
 impl<const N: usize, C: Coefficient, St: Strategy> Config for ByteGxHash<N, C, St> {
     type Storage = [u8; N];

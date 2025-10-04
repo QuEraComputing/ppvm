@@ -14,7 +14,7 @@ pub struct PauliSum<T: Config> {
 #[bon::bon]
 impl<T: Config> PauliSum<T> {
     /// create a new empty PauliSum with given number of qubits.
-    /// 
+    ///
     /// One can optionally set
     /// - the strategy for truncation, initialization etc.
     /// - the capacity of the internal maps, default is strategy.capacity(n_qubits)
@@ -23,9 +23,11 @@ impl<T: Config> PauliSum<T> {
         /// number of qubits
         n_qubits: usize,
         /// strategy for truncation, initilization etc.
-        #[builder(default = T::Strategy::default())] strategy: T::Strategy,
+        #[builder(default = T::Strategy::default())]
+        strategy: T::Strategy,
         /// capacity of the internal maps, default is strategy.capacity(n_qubits)
-        #[builder(default = strategy.capacity(n_qubits))] capacity: usize,
+        #[builder(default = strategy.capacity(n_qubits))]
+        capacity: usize,
     ) -> Self {
         Self {
             map: (

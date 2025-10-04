@@ -5,7 +5,10 @@ use rayon::current_num_threads;
 pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
     let mut group = c.benchmark_group(name.as_ref());
     let n_qubits = 12;
-    let mut state: PauliSum<T> = PauliSum::builder().n_qubits(n_qubits).capacity(1 << 20).build();
+    let mut state: PauliSum<T> = PauliSum::builder()
+        .n_qubits(n_qubits)
+        .capacity(1 << 20)
+        .build();
     let mut term = PauliWord::new(n_qubits);
     term.set(0, Pauli::Z);
     term.set(1, Pauli::Z);

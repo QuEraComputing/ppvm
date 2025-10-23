@@ -31,8 +31,8 @@ where
         // H * X * H = Z    10 -> 01, 0
         // H * Z * H = X    01 -> 10, 0
         // H * Y * H = -Y   11 -> 11, 1
-        let index_z = self.xbits[index];
-        let index_x = self.zbits[index];
+        let index_x = self.xbits[index];
+        let index_z = self.zbits[index];
         self.xbits.set(index, index_z);
         self.zbits.set(index, index_x);
         self.rehash();
@@ -158,6 +158,16 @@ mod tests {
         ] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
             output.cnot(0, 1);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_h() {
+        // NOTE: phase on "Y" not added in words
+        for (input, target) in [("I", "I"), ("X", "Z"), ("Y", "Y"), ("Z", "X")] {
+            let mut output: PauliWord<u64> = PauliWord::from(input);
+            output.h(0);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }

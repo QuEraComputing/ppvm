@@ -52,7 +52,7 @@ pub(crate) enum Decorated {
 ///
 /// # Example
 /// `[XY]2Z3` represents `X2Z3` or `Y2Z3`.
-/// `[IZ]*` represents any Pauli word with `I` or `Z`.
+/// `Z?` represents any Pauli word with `I` or `Z`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]

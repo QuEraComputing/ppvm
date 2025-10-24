@@ -62,6 +62,22 @@ fn test_ghz_backward() {
     // zero state
     let zero_state: PauliPattern = "Z?*".into();
     let result = state.trace(&zero_state);
+    state.data().trace(&zero_state);
+    state.data().iter();
+
+    println!("{:?}", state.data());
 
     assert_eq!(result, 1.0);
+}
+
+#[test]
+fn test_pauli_sum_trace() {
+    let mut state1: PauliSum<config::indexmap::ByteFxHashF64<4>> =
+        PauliSum::builder().n_qubits(2).build();
+
+    // prepare "state" as the final expectation value we want
+    state1 += ("ZZ", 0.5);
+    let state2 = state1.clone();
+    let result = state1.trace(&state2);
+    assert_eq!(result, 0.25);
 }

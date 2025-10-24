@@ -46,6 +46,12 @@ impl std::ops::Neg for Term {
     }
 }
 
+impl From<bool> for Term {
+    fn from(value: bool) -> Self {
+        Term::from_f64(f64::from(value))
+    }
+}
+
 impl From<f32> for Term {
     fn from(value: f32) -> Self {
         Term::from_f64(value as f64)

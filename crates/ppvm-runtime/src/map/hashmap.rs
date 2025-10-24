@@ -103,18 +103,18 @@ macro_rules! impl_acmap_iter {
 
 macro_rules! impl_acmap_trace {
     ($($seg:ident)::+) => {
-        impl<'a, P, S, C, Hasher> crate::traits::Trace<'a, P> for $($seg)::+<PauliWord<S, Hasher>, C, Hasher>
+        impl<'a, P, S, C, Hasher> crate::traits::Trace<'a, P, C> for $($seg)::+<PauliWord<S, Hasher>, C, Hasher>
         where
-            P: crate::traits::Trace<'a, PauliWord<S, Hasher>, Output = bool> + 'a,
+            P: crate::traits::Trace<'a, PauliWord<S, Hasher>, C> + 'a,
             S: PauliStorage + 'a,
             C: Coefficient + 'a,
             Hasher: Default + Clone + BuildHasher + 'a,
         {
-            type Output = C;
-            fn trace(&'a self, value: &'a P) -> Self::Output {
+            fn trace(&'a self, value: &'a P) -> C {
                 let sum = C::zero();
                 self.iter().fold(sum, |mut acc, (k, v)| {
-                    value.trace(k).then(|| acc += v.clone());
+                    let val = value.trace(k);
+                    acc += v.clone() * val;
                     acc
                 })
             }

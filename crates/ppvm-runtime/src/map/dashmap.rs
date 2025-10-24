@@ -95,32 +95,35 @@ where
 //     }
 // }
 
-impl<'a, S, C, Hasher> Trace<'a, PauliWord<S, Hasher>> for DashMap<PauliWord<S, Hasher>, C, Hasher>
+impl<'a, S, C, Hasher> Trace<'a, PauliWord<S, Hasher>, C>
+    for DashMap<PauliWord<S, Hasher>, C, Hasher>
 where
     S: PauliStorage + 'a,
-    C: Coefficient + Send + Sync + 'a,
+    C: Coefficient + Send + Sync + 'a + From<bool>,
     Hasher: Clone + BuildHasher + Default + Send + Sync + 'a,
 {
-    type Output = C;
-    fn trace(&'a self, value: &'a PauliWord<S, Hasher>) -> Self::Output {
+    fn trace(&'a self, value: &'a PauliWord<S, Hasher>) -> C {
         self.par_iter()
-            .filter(|entry| value.trace(entry.key()))
-            .map(|entry| entry.value().clone())
+            .map(|entry| {
+                let tr: C = value.trace(entry.key());
+                tr * entry.value().clone()
+            })
             .sum()
     }
 }
 
-impl<'a, S, C, State> Trace<'a, PauliPattern> for DashMap<PauliWord<S>, C, State>
+impl<'a, S, C, State> Trace<'a, PauliPattern, C> for DashMap<PauliWord<S>, C, State>
 where
     S: PauliStorage + 'a,
-    C: Coefficient + Send + Sync + 'a,
+    C: Coefficient + Send + Sync + 'a + From<bool>,
     State: Clone + BuildHasher + 'a + Send + Sync,
 {
-    type Output = C;
-    fn trace(&'a self, value: &'a PauliPattern) -> Self::Output {
+    fn trace(&'a self, value: &'a PauliPattern) -> C {
         self.par_iter()
-            .filter(|entry| entry.key().trace(value))
-            .map(|entry| entry.value().clone())
+            .map(|entry| {
+                let tr: C = value.trace(entry.key());
+                tr * entry.value().clone()
+            })
             .sum()
     }
 }

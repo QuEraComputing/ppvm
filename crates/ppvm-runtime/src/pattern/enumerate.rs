@@ -6,7 +6,7 @@ use crate::word::PauliWord;
 use itertools::{Itertools, MultiProduct};
 
 impl OpPattern {
-    pub fn enumerate_matches(&self) -> EnumMatchesOpPattern {
+    pub fn enumerate_matches(&self) -> EnumMatchesOpPattern<'_> {
         EnumMatchesOpPattern {
             pattern: self,
             current: 0,

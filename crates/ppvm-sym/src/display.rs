@@ -86,7 +86,7 @@ mod tests {
         s += Term::var(2).cos();
         assert_eq!(
             s.to_string(),
-            "3.000 + 1.000 * cos^1(%2) + 1.000 * sin^1(%1)"
+            "[3.000 + 1.000 * cos^1(%2) + 1.000 * sin^1(%1)]"
         );
 
         s.set_max_sin(2);
@@ -94,7 +94,7 @@ mod tests {
         s *= Term::var(1).sin();
         assert_eq!(
             s.to_string(),
-            "3.000 * sin^1(%1) sin^1(%2) + 1.000 * sin^1(%1) sin^1(%2) cos^1(%2)"
+            "[3.000 * sin^1(%1) sin^1(%2) + 1.000 * sin^1(%1) sin^1(%2) cos^1(%2)]"
         );
     }
 }

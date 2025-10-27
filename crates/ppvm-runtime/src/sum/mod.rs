@@ -1,7 +1,6 @@
 mod clifford;
 mod data;
 mod display;
-mod mul;
 mod noise;
 mod ops;
 mod proj;

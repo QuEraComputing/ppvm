@@ -74,6 +74,6 @@ impl Strategy for CoefficientThreshold {
         H: std::hash::BuildHasher + Clone + Default,
         M: ACMap<S, V, H>,
     {
-        map.retain(|_, v| v.cutoff(self.0));
+        map.retain(|_, v| !v.cutoff(self.0));
     }
 }

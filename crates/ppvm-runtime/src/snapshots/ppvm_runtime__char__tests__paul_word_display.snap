@@ -1,0 +1,5 @@
+---
+source: crates/ppvm-runtime/src/char.rs
+expression: "Pauli::I.to_string()"
+---
+I

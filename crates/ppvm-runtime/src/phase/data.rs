@@ -9,7 +9,13 @@ use crate::word::PauliWord;
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PhasedPauliWord<A: PauliStorage, H = fxhash::FxBuildHasher> {
     pub word: PauliWord<A, H>,
-    pub phase: u8, // 0: +1, 1: -1, 2: +i, 3: -i
+    /// 0: +1, 1: +i, 2: -1, 3: -i
+    ///   sign imag
+    /// +1: 0   0
+    /// +i: 0   1
+    /// -1: 1   0
+    /// -i: 1   1
+    pub phase: u8,
 }
 
 impl<A: PauliStorage, H: BuildHasher + Default + Clone> PhasedPauliWord<A, H> {
@@ -20,8 +26,13 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone> PhasedPauliWord<A, H> {
         }
     }
 
+    pub fn n_qubits(&self) -> usize {
+        self.word.n_qubits()
+    }
+
     pub fn is_positive(&self) -> bool {
-        self.phase.is_even()
+        // is second bit 1
+        (self.phase & 0b10) == 0
     }
 
     #[inline(always)]
@@ -65,14 +76,18 @@ impl<S: AsRef<str>, H: BuildHasher + Default + Clone> From<S> for PhasedPauliWor
     fn from(s: S) -> Self {
         let mut chars = s.as_ref().chars();
         let phase: u8 = match (chars.next(), chars.next()) {
-            (Some('+'), Some('i')) => 2, // +i
+            (Some('+'), Some('i')) => 1, // +i
             (Some('-'), Some('i')) => 3, // -i
             (Some('+'), _) => 0,         // +1
-            (Some('-'), _) => 1,         // -1
+            (Some('-'), _) => 2,         // -1
             _ => panic!("Invalid phase format"),
         };
         // Remaining characters are the Pauli string
-        let s: String = s.as_ref().chars().skip((phase / 2 + 1) as usize).collect();
+        let s: String = s
+            .as_ref()
+            .chars()
+            .skip(if phase.is_odd() { 2 } else { 1 })
+            .collect();
         let words = PauliWord::from(s);
         Self { word: words, phase }
     }
@@ -84,8 +99,8 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone> std::fmt::Display
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.phase {
             0 => write!(f, "+")?,
-            1 => write!(f, "-")?,
-            2 => write!(f, "+i")?,
+            1 => write!(f, "+i")?,
+            2 => write!(f, "-")?,
             3 => write!(f, "-i")?,
             _ => unreachable!("Invalid phase value: {}", self.phase),
         };
@@ -151,20 +166,20 @@ mod tests {
         assert_eq!(ps.get(2), Pauli::Z);
         assert_eq!(ps.get(3), Pauli::I);
         assert_eq!(ps.phase, 0);
-        let ps: PhasedPauliWord<u64> = "-XYZI".to_string().into();
-        assert_eq!(ps.word.n_qubits(), 4);
-        assert_eq!(ps.get(0), Pauli::X);
-        assert_eq!(ps.get(1), Pauli::Y);
-        assert_eq!(ps.get(2), Pauli::Z);
-        assert_eq!(ps.get(3), Pauli::I);
-        assert_eq!(ps.phase, 1);
-        let ps: PhasedPauliWord<u64> = "+iXYZI".to_string().into();
+        let ps: PhasedPauliWord<u64> = "-XYZI".into();
         assert_eq!(ps.word.n_qubits(), 4);
         assert_eq!(ps.get(0), Pauli::X);
         assert_eq!(ps.get(1), Pauli::Y);
         assert_eq!(ps.get(2), Pauli::Z);
         assert_eq!(ps.get(3), Pauli::I);
         assert_eq!(ps.phase, 2);
+        let ps: PhasedPauliWord<u64> = "+iXYZI".to_string().into();
+        assert_eq!(ps.word.n_qubits(), 4);
+        assert_eq!(ps.get(0), Pauli::X);
+        assert_eq!(ps.get(1), Pauli::Y);
+        assert_eq!(ps.get(2), Pauli::Z);
+        assert_eq!(ps.get(3), Pauli::I);
+        assert_eq!(ps.phase, 1);
         let ps: PhasedPauliWord<u64> = "-iXYZI".to_string().into();
         assert_eq!(ps.word.n_qubits(), 4);
         assert_eq!(ps.get(0), Pauli::X);
@@ -172,5 +187,17 @@ mod tests {
         assert_eq!(ps.get(2), Pauli::Z);
         assert_eq!(ps.get(3), Pauli::I);
         assert_eq!(ps.phase, 3);
+    }
+
+    #[test]
+    fn test_is_positive() {
+        let ps: PhasedPauliWord<u64> = "+XYZI".into();
+        assert!(ps.is_positive());
+        let ps: PhasedPauliWord<u64> = "-XYZI".into();
+        assert!(!ps.is_positive());
+        let ps: PhasedPauliWord<u64> = "+iXYZI".into();
+        assert!(ps.is_positive());
+        let ps: PhasedPauliWord<u64> = "-iXYZI".into();
+        assert!(!ps.is_positive());
     }
 }

@@ -226,10 +226,13 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<&str> for PauliWord
 impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<String> for PauliWord<A, S> {
     fn from(value: String) -> Self {
         let n_qubits = value.chars().count();
+        let mut chars = value.chars();
         let mut x = BitArray::ZERO;
         let mut z = BitArray::ZERO;
-        for (i, c) in value.chars().enumerate() {
-            match c {
+
+        let mut i = 0;
+        while let Some(ch) = chars.next() {
+            match ch {
                 'I' => {
                     x.set(i, false);
                     z.set(i, false);
@@ -246,8 +249,12 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<String> for PauliWo
                     x.set(i, true);
                     z.set(i, true);
                 }
-                _ => panic!("Invalid Pauli character: {}", c),
+                '_' => {
+                    continue;
+                }
+                _ => panic!("Invalid Pauli character: {}", ch),
             };
+            i += 1;
         }
 
         let mut ret = Self {

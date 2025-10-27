@@ -23,7 +23,7 @@ impl<S1: Strategy, S2: Strategy> Strategy for CombinedStrategy<S1, S2> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MaxPauliWeight(usize);
+pub struct MaxPauliWeight(pub usize);
 
 impl MaxPauliWeight {
     pub fn max_weight(&self) -> usize {
@@ -74,6 +74,6 @@ impl Strategy for CoefficientThreshold {
         H: std::hash::BuildHasher + Clone + Default,
         M: ACMap<S, V, H>,
     {
-        map.retain(|_, v| v.cutoff(self.0));
+        map.retain(|_, v| !v.cutoff(self.0));
     }
 }

@@ -25,6 +25,9 @@ pub trait Coefficient:
     fn mul_sign(&self, sign: i8) -> Self;
     fn half(&self) -> Self;
     fn sin_cos(&self) -> (Self, Self);
+
+    /// Determine whether this coefficient should be cutoff
+    /// Returns `true`, if the coefficient should be cut, and `false` else.
     fn cutoff(&self, threshold: f64) -> bool;
 }
 

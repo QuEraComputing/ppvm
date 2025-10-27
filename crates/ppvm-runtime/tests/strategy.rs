@@ -1,4 +1,7 @@
-use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
+use ppvm_runtime::{
+    prelude::*,
+    strategy::{CoefficientThreshold, MaxPauliWeight},
+};
 
 #[test]
 fn test_coefficient_threshold() {
@@ -17,6 +20,29 @@ fn test_coefficient_threshold() {
     target_state += ("ZZ", 1.0);
     target_state += ("XX", 1e-3);
     target_state += ("XZ", -0.5);
+
+    assert_eq!(state, target_state);
+}
+
+#[test]
+fn test_pauli_weight() {
+    let strat = MaxPauliWeight(2);
+
+    let mut state: PauliSum<config::indexmap::ByteFxHashF64<4, MaxPauliWeight>> =
+        PauliSum::builder().n_qubits(3).strategy(strat).build();
+
+    state += ("XXX", 1.0);
+    state += ("ZZI", 1e-4);
+    state += ("YZY", -10.0);
+    state += ("IXX", -0.1);
+
+    state.truncate();
+
+    let mut target_state: PauliSum<config::indexmap::ByteFxHashF64<4, MaxPauliWeight>> =
+        PauliSum::builder().n_qubits(3).strategy(strat).build();
+
+    target_state += ("ZZI", 1e-4);
+    target_state += ("IXX", -0.1);
 
     assert_eq!(state, target_state);
 }

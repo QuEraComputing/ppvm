@@ -12,3 +12,4 @@ mod trace;
 mod approx;
 
 pub use data::PauliSum;
+pub use ops::impl_op_mul_assign_coefficient;

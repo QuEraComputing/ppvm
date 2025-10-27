@@ -1,18 +1,106 @@
-use std::ops::{AddAssign, MulAssign};
+use std::ops::AddAssign;
 
 use num::One;
 
+use crate::phase::PhasedPauliWord;
 use crate::traits::*;
 use crate::word::PauliWord;
 use crate::{config::Config, sum::PauliSum};
 
-impl<T: Config> MulAssign<T::Coeff> for PauliSum<T>
+/// Implement multiplication by a scalar coefficient for PauliSum.
+/// Use this macro to implement `MulAssign` for other scalar types
+/// if needed. This macro will forward the multiplication to the underlying map's
+/// `mul_assign` method.
+#[macro_export]
+macro_rules! impl_op_mul_assign_coefficient {
+    ($ty:ty) => {
+        impl<T: Config> std::ops::MulAssign<$ty> for PauliSum<T>
+        where
+            T::Map: ACMapMulAssign<$ty, T::BuildHasher>,
+        {
+            fn mul_assign(&mut self, rhs: $ty) {
+                self.data_mut().mul_assign(rhs.clone());
+            }
+        }
+    };
+}
+
+pub use impl_op_mul_assign_coefficient;
+
+impl_op_mul_assign_coefficient!(f64);
+
+impl<T: Config> std::ops::Mul<PauliSum<T>> for PauliSum<T>
 where
-    T::Map: ACMapMulAssign<T::Coeff, T::BuildHasher>,
-    T::Coeff: MulAssign + Clone,
+    T::BuildHasher: Sync + Send,
+    T::Coeff: ComplexCoefficient,
+    T::Map: for<'a> ACMapIter<'a, Item = (&'a PauliWord<T::Storage, T::BuildHasher>, &'a T::Coeff)>,
 {
-    fn mul_assign(&mut self, rhs: T::Coeff) {
-        self.data_mut().mul_assign(rhs.clone());
+    type Output = PauliSum<T>;
+
+    fn mul(self, rhs: PauliSum<T>) -> Self::Output {
+        let mut output = self.clone();
+        output *= rhs;
+        output
+    }
+}
+
+impl<T: Config> std::ops::Mul<PauliWord<T::Storage, T::BuildHasher>> for PauliSum<T>
+where
+    T::BuildHasher: Sync + Send,
+    T::Coeff: ComplexCoefficient,
+{
+    type Output = PauliSum<T>;
+
+    fn mul(self, rhs: PauliWord<T::Storage, T::BuildHasher>) -> Self::Output {
+        let mut output = self.clone();
+        output *= rhs;
+        output
+    }
+}
+
+impl<T: Config> std::ops::MulAssign<PauliSum<T>> for PauliSum<T>
+where
+    T::BuildHasher: Sync + Send,
+    T::Coeff: ComplexCoefficient,
+    T::Map: for<'a> ACMapIter<'a, Item = (&'a PauliWord<T::Storage, T::BuildHasher>, &'a T::Coeff)>,
+{
+    fn mul_assign(&mut self, rhs: PauliSum<T>) {
+        for (rhs_word, rhs_coeff) in rhs.iter() {
+            let phased_rhs = PhasedPauliWord {
+                word: rhs_word.clone(),
+                phase: 0,
+            };
+            self.map_add(|word, coeff| {
+                let mut phased_word = PhasedPauliWord {
+                    word: word.clone(),
+                    phase: 0,
+                };
+                phased_word *= phased_rhs.clone();
+                let new_coeff = coeff.mul_phase(phased_word.phase);
+                (phased_word.word, new_coeff * rhs_coeff.clone())
+            });
+        }
+    }
+}
+
+impl<T: Config> std::ops::MulAssign<PauliWord<T::Storage, T::BuildHasher>> for PauliSum<T>
+where
+    T::BuildHasher: Sync + Send,
+    T::Coeff: ComplexCoefficient,
+{
+    fn mul_assign(&mut self, rhs: PauliWord<T::Storage, T::BuildHasher>) {
+        let phased_rhs = PhasedPauliWord {
+            word: rhs,
+            phase: 0,
+        };
+        self.map_add(|word, coeff| {
+            let mut phased_word = PhasedPauliWord {
+                word: word.clone(),
+                phase: 0,
+            };
+            phased_word *= phased_rhs.clone();
+            (phased_word.word, coeff.mul_phase(phased_word.phase))
+        });
     }
 }
 

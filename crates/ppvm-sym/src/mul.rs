@@ -1,9 +1,13 @@
 use core::panic;
 
+use ppvm_runtime::prelude::*;
+
 use crate::{
     Term,
     term::{Inner, Prod, Sum},
 };
+
+impl_op_mul_assign_coefficient!(Term);
 
 impl Prod {
     pub fn mul_sin(&mut self, u: u32) {

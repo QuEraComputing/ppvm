@@ -30,7 +30,8 @@ fn main() {
     }
     println!("Initial state: {}", state);
 
-    let results = trotter(&mut state, n, time, dt, j, h);
+    let noise_params = [1e-4; 3];
+    let results = trotter(&mut state, n, time, dt, j, h, noise_params);
 
     // print some output
     println!(
@@ -52,6 +53,7 @@ fn trotter(
     dt: f64,
     interaction_strength: f64,
     external_field: f64,
+    noise_params: [f64; 3],
 ) -> Vec<f64> {
     let steps = (total_time / dt) as usize;
     let zero_state_pattern: PauliPattern = "Z?*".into();
@@ -64,10 +66,13 @@ fn trotter(
 
         // perform trotter step
         for i in 0..n {
-            state.rx(i, theta_x)
+            state.rx(i, theta_x);
+            state.pauli_error(i, noise_params);
         }
         for i in 0..n - 1 {
             zz(state, i, i + 1, theta_zz);
+            state.pauli_error(i, noise_params);
+            state.pauli_error(i + 1, noise_params);
         }
 
         // truncate state in each iteration

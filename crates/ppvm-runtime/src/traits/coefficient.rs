@@ -4,8 +4,6 @@ pub trait Coefficient:
     PartialEq
     + Clone
     + num::Zero
-    + From<i32>
-    + From<f32>
     + From<f64>
     + std::ops::Neg<Output = Self>
     + std::ops::Add<f64, Output = Self>
@@ -46,5 +44,56 @@ impl Coefficient for f64 {
 
     fn cutoff(&self, threshold: f64) -> bool {
         self.abs() < threshold
+    }
+}
+
+pub trait ComplexCoefficient: Coefficient {
+    fn conj(&self) -> Self;
+    /// multiply by phase encoded as:
+    ///
+    /// |  | sign | imag |
+    /// |--|------|------|
+    /// |+1|    0 |    0 |
+    /// |+i|    0 |    1 |
+    /// |-1|    1 |    0 |
+    /// |-i|    1 |    1 |
+    fn mul_phase(&self, phase: u8) -> Self;
+}
+
+impl Coefficient for num::complex::Complex<f64> {
+    fn cutoff(&self, threshold: f64) -> bool {
+        self.norm() < threshold
+    }
+
+    fn half(&self) -> Self {
+        *self / 2.0
+    }
+
+    fn mul_sign(&self, sign: i8) -> Self {
+        (sign as f64) * (*self)
+    }
+
+    fn sin_cos(&self) -> (Self, Self) {
+        let (s, c) = Float::sin_cos(self.re);
+        (
+            num::complex::Complex::new(s, 0.0),
+            num::complex::Complex::new(c, 0.0),
+        )
+    }
+}
+
+impl ComplexCoefficient for num::complex::Complex<f64> {
+    fn conj(&self) -> Self {
+        num::complex::Complex::conj(self)
+    }
+
+    fn mul_phase(&self, phase: u8) -> Self {
+        match phase % 4 {
+            0 => self.clone(),
+            1 => num::complex::Complex::new(-self.im, self.re),
+            2 => -self.clone(),
+            3 => num::complex::Complex::new(self.im, -self.re),
+            _ => unreachable!(),
+        }
     }
 }

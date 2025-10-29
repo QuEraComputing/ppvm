@@ -14,7 +14,7 @@ pub mod prelude {
     pub use crate::config::Config;
     pub use crate::pattern::PauliPattern;
     pub use crate::phase::PhasedPauliWord;
-    pub use crate::sum::PauliSum;
+    pub use crate::sum::{PauliSum, impl_op_mul_assign_coefficient};
     pub use crate::traits::*;
     pub use crate::word::PauliWord;
 }

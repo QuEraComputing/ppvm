@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::traits::*;
 use crate::{config::Config, sum::PauliSum, word::PauliWord};
 use std::fmt::{Debug, Display};
@@ -9,7 +11,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first = true;
-        for (k, v) in self.data().iter() {
+        for (k, v) in self.data().iter().sorted_by_key(|(k, _)| k.weight()) {
             if !first {
                 write!(f, " + ")?;
             }
@@ -27,7 +29,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first = true;
-        for (k, v) in self.data().iter() {
+        for (k, v) in self.data().iter().sorted_by_cached_key(|(k, _)| k.weight()) {
             if !first {
                 write!(f, " + ")?;
             }

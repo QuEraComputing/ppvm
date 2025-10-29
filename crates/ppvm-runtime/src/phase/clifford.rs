@@ -37,21 +37,21 @@ where
     fn cnot(&mut self, control: usize, target: usize) {
         // phase = 1x y1 where x xor y = 0
         // xx zz    xx zz
-        // 11 11 -> 10 01, 1
-        // 10 01 -> 11 11, 1
+        // 11 11 -> 10 01, 2
+        // 10 01 -> 11 11, 2
         let phase = ((self.word.xbits[control] & self.word.zbits[target])
             & (self.word.xbits[target] == self.word.zbits[control])) as u8;
         self.word.cnot(control, target);
-        self.add_phase(phase);
+        self.add_phase(phase << 1);
     }
     fn cz(&mut self, control: usize, target: usize) {
         // phase = 11 10, 11 01 = 11 ab where a ^ b = 1
-        // 11 01 -> 11 10, 1
-        // 11 10 -> 11 01, 1
+        // 11 01 -> 11 10, 2
+        // 11 10 -> 11 01, 2
         let phase = ((self.word.xbits[control] & self.word.xbits[target])
             & (self.word.zbits[control] ^ self.word.zbits[target])) as u8;
         self.word.cz(control, target);
-        self.add_phase(phase);
+        self.add_phase(phase << 1);
     }
 }
 
@@ -67,7 +67,7 @@ mod tests {
     // CNOT * XI * CNOT == XX,  10 00 -> 11 00, 0
     // CNOT * XX * CNOT == XI,  11 00 -> 10 00, 0
     // CNOT * XY * CNOT == YZ,  11 01 -> 10 11, 0
-    // CNOT * XZ * CNOT == -YY, 10 01 -> 11 11, 1
+    // CNOT * XZ * CNOT == -YY, 10 01 -> 11 11, 2
 
     // CNOT * ZI * CNOT == ZI,  00 10 -> 00 10, 0
     // CNOT * ZX * CNOT == ZX,  01 10 -> 01 10, 0
@@ -76,7 +76,7 @@ mod tests {
 
     // CNOT * YI * CNOT == YX,  10 10 -> 11 10, 0
     // CNOT * YX * CNOT == YI,  11 10 -> 10 10, 0
-    // CNOT * YY * CNOT == -XZ, 11 11 -> 10 01, 1
+    // CNOT * YY * CNOT == -XZ, 11 11 -> 10 01, 2
     // CNOT * YZ * CNOT == XY,  10 11 -> 11 01, 0
 
     #[test]

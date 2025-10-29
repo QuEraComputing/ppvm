@@ -70,7 +70,7 @@ fn trotter(
             state.pauli_error(i, noise_params);
         }
         for i in 0..n - 1 {
-            zz(state, i, i + 1, theta_zz);
+            state.rzz(i, i + 1, theta_zz);
             state.pauli_error(i, noise_params);
             state.pauli_error(i + 1, noise_params);
         }
@@ -83,11 +83,4 @@ fn trotter(
     expectation_values.push(state.trace(&zero_state_pattern));
 
     expectation_values
-}
-
-// implement R_zz as CX * Rz * CX
-fn zz(state: &mut State, i: usize, j: usize, theta: f64) {
-    state.cnot(i, j);
-    state.rz(j, theta);
-    state.cnot(i, j);
 }

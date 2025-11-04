@@ -40,3 +40,7 @@ harness = false
 [[bench]]
 name = "random-circuit"
 harness = false
+
+[[bench]]
+name = "trotter"
+harness = false

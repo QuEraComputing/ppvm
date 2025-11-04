@@ -1,0 +1,5 @@
+[deps]
+BenchmarkPlots = "ab8c0f59-4072-4e0d-8f91-a91e1495eb26"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+PauliPropagation = "293282d5-3c99-4fb6-92d0-fd3280a19750"
+StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"

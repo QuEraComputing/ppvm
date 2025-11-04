@@ -18,18 +18,25 @@ fn trotter_func<T: Config<Coeff = f64, Strategy = CoefficientThreshold>>(
     let theta_x = dt * external_field;
     for _ in 0..steps {
         // perform trotter step
+
+        // truncate after each gate application to be consistent with PP.jl
         for i in 0..n {
             state.rx(i, theta_x);
+            state.truncate();
+
             state.pauli_error(i, noise_params);
+            state.truncate();
         }
         for i in 0..n - 1 {
             state.rzz(i, i + 1, theta_zz);
-            state.pauli_error(i, noise_params);
-            state.pauli_error(i + 1, noise_params);
-        }
+            state.truncate();
 
-        // truncate state in each iteration
-        state.truncate();
+            state.pauli_error(i, noise_params);
+            state.truncate();
+
+            state.pauli_error(i + 1, noise_params);
+            state.truncate();
+        }
     }
 }
 
@@ -49,7 +56,6 @@ pub fn benchmark_suite_trotter<T: Config<Coeff = f64, Strategy = CoefficientThre
     let strat = CoefficientThreshold(1e-6);
     let mut state: PauliSum<T> = PauliSum::builder()
         .n_qubits(n_qubits)
-        .capacity(1 << 20)
         .strategy(strat)
         .build();
 
@@ -64,7 +70,7 @@ pub fn benchmark_suite_trotter<T: Config<Coeff = f64, Strategy = CoefficientThre
 
     println!("Initial state has {} terms", state.len());
 
-    let noise_params = [1e-4; 3];
+    let noise_params = [1e-4 / 4.0; 3];
 
     group.bench_function("trotter", |b| {
         b.iter_batched_ref(
@@ -85,29 +91,29 @@ pub fn trotter_benchmarks(c: &mut Criterion) {
         .build_global()
         .unwrap();
     println!("Using {} threads", current_num_threads());
-    benchmark_suite_trotter::<config::gxhash::ByteF64<4, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::gxhash::ByteF64<12, CoefficientThreshold>>(
         c,
-        "ByteF64GxHashMap<4, CoefficientThreshold>",
+        "ByteF64GxHashMap<12, CoefficientThreshold>",
     );
-    benchmark_suite_trotter::<config::fxhash::ByteF64<4, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::fxhash::ByteF64<12, CoefficientThreshold>>(
         c,
-        "ByteF64FxHashMap<4, CoefficientThreshold>",
+        "ByteF64FxHashMap<12, CoefficientThreshold>",
     );
-    benchmark_suite_trotter::<config::dashmap::ByteFxHashF64<4, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::dashmap::ByteFxHashF64<12, CoefficientThreshold>>(
         c,
-        "ByteF64FxDashMap<4, CoefficientThreshold>",
+        "ByteF64FxDashMap<12, CoefficientThreshold>",
     );
-    benchmark_suite_trotter::<config::dashmap::ByteGxHashF64<4, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::dashmap::ByteGxHashF64<12, CoefficientThreshold>>(
         c,
-        "ByteF64GxDashMap<4, CoefficientThreshold>",
+        "ByteF64GxDashMap<12, CoefficientThreshold>",
     );
-    benchmark_suite_trotter::<config::indexmap::ByteFxHashF64<4, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::indexmap::ByteFxHashF64<12, CoefficientThreshold>>(
         c,
-        "ByteF64FxIndexMap<4, CoefficientThreshold>",
+        "ByteF64FxIndexMap<12, CoefficientThreshold>",
     );
-    benchmark_suite_trotter::<config::indexmap::ByteGxHashF64<4, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::indexmap::ByteGxHashF64<12, CoefficientThreshold>>(
         c,
-        "ByteF64GxIndexMap<4, CoefficientThreshold>",
+        "ByteF64GxIndexMap<12, CoefficientThreshold>",
     );
 }
 

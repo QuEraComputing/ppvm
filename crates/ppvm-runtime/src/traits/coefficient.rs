@@ -48,7 +48,6 @@ impl Coefficient for f64 {
 }
 
 pub trait ComplexCoefficient: Coefficient {
-    fn conj(&self) -> Self;
     /// multiply by phase encoded as:
     ///
     /// |  | sign | imag |
@@ -83,10 +82,6 @@ impl Coefficient for num::complex::Complex<f64> {
 }
 
 impl ComplexCoefficient for num::complex::Complex<f64> {
-    fn conj(&self) -> Self {
-        num::complex::Complex::conj(self)
-    }
-
     fn mul_phase(&self, phase: u8) -> Self {
         match phase % 4 {
             0 => self.clone(),

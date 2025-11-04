@@ -1,6 +1,6 @@
-use ppvm_runtime::traits::Coefficient;
+use ppvm_runtime::traits::{Coefficient, ComplexCoefficient};
 
-use crate::{Term, term::Inner};
+use crate::{Prod, Sum, Term, term::Inner};
 
 impl Coefficient for Term {
     fn half(&self) -> Self {
@@ -22,6 +22,52 @@ impl Coefficient for Term {
             c.abs() < threshold
         } else {
             false
+        }
+    }
+}
+
+impl ComplexCoefficient for Term {
+    fn mul_phase(&self, phase: u8) -> Self {
+        match self.inner {
+            Inner::Sum(ref s) => {
+                let mut ret = Sum::new();
+                for (p, c) in s.terms.iter() {
+                    let mut new_p = p.clone();
+                    new_p.add_phase(phase);
+                    ret.add_term(new_p, *c, self.max_sin, self.min_eps);
+                }
+                let mut c0 = Prod::new();
+                c0.add_phase(phase);
+                ret.add_term(c0, s.c0, self.max_sin, self.min_eps);
+                Term {
+                    inner: Inner::Sum(ret),
+                    max_sin: self.max_sin,
+                    min_eps: self.min_eps,
+                }
+            }
+            Inner::Const(f) => {
+                let mut ret = Prod::new();
+                ret.add_phase(phase);
+                Term {
+                    inner: Inner::One(ret, f),
+                    max_sin: self.max_sin,
+                    min_eps: self.min_eps,
+                }
+            }
+            Inner::One(ref p, c) => {
+                let mut ret = p.clone();
+                ret.add_phase(phase);
+                Term {
+                    inner: Inner::One(ret, c),
+                    max_sin: self.max_sin,
+                    min_eps: self.min_eps,
+                }
+            }
+            Inner::Var(_) => {
+                panic!(
+                    "variable is not used in sin/cos expressions, bare variable is not allowed in expression"
+                );
+            }
         }
     }
 }

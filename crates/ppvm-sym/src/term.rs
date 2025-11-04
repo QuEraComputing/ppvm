@@ -12,6 +12,14 @@ pub struct Prod {
     pub(crate) cos: BTreeMap<u32, u32>,
     pub(crate) sin_pow: usize,
     pub(crate) cos_pow: usize,
+    /// phase factor mod 4, encoded as:
+    /// |  | sign | imag |
+    /// |--|------|------|
+    /// |+1|    0 |    0 |
+    /// |+i|    0 |    1 |
+    /// |-1|    1 |    0 |
+    /// |-i|    1 |    1 |
+    pub(crate) phase: u8,
 }
 
 impl Prod {
@@ -21,7 +29,12 @@ impl Prod {
             cos: BTreeMap::new(),
             sin_pow: 0,
             cos_pow: 0,
+            phase: 0,
         }
+    }
+
+    pub fn add_phase(&mut self, phase: u8) {
+        self.phase = (self.phase + phase) % 4;
     }
 
     pub fn sin(id: u32) -> Self {

@@ -36,3 +36,7 @@ approx = ["dep:approx"]
 [[bench]]
 name = "gate"
 harness = false
+
+[[bench]]
+name = "trotter"
+harness = false

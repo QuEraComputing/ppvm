@@ -625,6 +625,7 @@ name = "ppvm"
 version = "0.1.0"
 dependencies = [
  "fxhash",
+ "num",
  "ppvm-runtime",
  "ppvm-sym",
 ]

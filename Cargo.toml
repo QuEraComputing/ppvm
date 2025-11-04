@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 fxhash = "0.2.1"
+num = "0.4.3"
 ppvm-runtime = { version = "0.1.0", path = "crates/ppvm-runtime" }
 ppvm-sym = { version = "0.1.0", path = "crates/ppvm-sym" }
 

@@ -91,29 +91,29 @@ pub fn trotter_benchmarks(c: &mut Criterion) {
         .build_global()
         .unwrap();
     println!("Using {} threads", current_num_threads());
-    benchmark_suite_trotter::<config::gxhash::ByteF64<12, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::gxhash::ByteF64<2, CoefficientThreshold>>(
         c,
-        "ByteF64GxHashMap<12, CoefficientThreshold>",
+        "ByteF64GxHashMap<2, CoefficientThreshold>",
     );
-    benchmark_suite_trotter::<config::fxhash::ByteF64<12, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::fxhash::ByteF64<2, CoefficientThreshold>>(
         c,
-        "ByteF64FxHashMap<12, CoefficientThreshold>",
+        "ByteF64FxHashMap<2, CoefficientThreshold>",
     );
-    benchmark_suite_trotter::<config::dashmap::ByteFxHashF64<12, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::dashmap::ByteFxHashF64<2, CoefficientThreshold>>(
         c,
-        "ByteF64FxDashMap<12, CoefficientThreshold>",
+        "ByteF64FxDashMap<2, CoefficientThreshold>",
     );
-    benchmark_suite_trotter::<config::dashmap::ByteGxHashF64<12, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::dashmap::ByteGxHashF64<2, CoefficientThreshold>>(
         c,
-        "ByteF64GxDashMap<12, CoefficientThreshold>",
+        "ByteF64GxDashMap<2, CoefficientThreshold>",
     );
-    benchmark_suite_trotter::<config::indexmap::ByteFxHashF64<12, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::indexmap::ByteFxHashF64<2, CoefficientThreshold>>(
         c,
-        "ByteF64FxIndexMap<12, CoefficientThreshold>",
+        "ByteF64FxIndexMap<2, CoefficientThreshold>",
     );
-    benchmark_suite_trotter::<config::indexmap::ByteGxHashF64<12, CoefficientThreshold>>(
+    benchmark_suite_trotter::<config::indexmap::ByteGxHashF64<2, CoefficientThreshold>>(
         c,
-        "ByteF64GxIndexMap<12, CoefficientThreshold>",
+        "ByteF64GxIndexMap<2, CoefficientThreshold>",
     );
 }
 

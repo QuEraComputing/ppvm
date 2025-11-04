@@ -1,13 +1,18 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_runtime::prelude::*;
+use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
 use rayon::current_num_threads;
 
-pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
+pub fn benchmark_suite<T: Config<Strategy = CoefficientThreshold>>(
+    c: &mut Criterion,
+    name: impl AsRef<str>,
+) {
     let mut group = c.benchmark_group(name.as_ref());
     let n_qubits = 12;
+    let strat = CoefficientThreshold(1e-10);
     let mut state: PauliSum<T> = PauliSum::builder()
         .n_qubits(n_qubits)
         .capacity(1 << 20)
+        .strategy(strat)
         .build();
     let mut term = PauliWord::new(n_qubits);
     term.set(0, Pauli::Z);
@@ -30,6 +35,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.x(0);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -40,6 +46,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.y(0);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -50,6 +57,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.z(0);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -60,6 +68,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.h(0);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -69,6 +78,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.cnot(0, 1);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -79,6 +89,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.cz(0, 1);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -89,6 +100,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.rx(1, 0.5);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -99,6 +111,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.rz(1, 0.5);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -109,6 +122,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.ry(1, 0.5);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -119,6 +133,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.rxx(1, 2, 0.5);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -129,6 +144,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.ryy(1, 2, 0.5);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -139,6 +155,7 @@ pub fn benchmark_suite<T: Config>(c: &mut Criterion, name: impl AsRef<str>) {
             || state.clone(),
             |state| {
                 state.rzz(1, 2, 0.5);
+                state.truncate();
             },
             criterion::BatchSize::SmallInput,
         );
@@ -152,12 +169,24 @@ pub fn micro_benchmark(c: &mut Criterion) {
         .build_global()
         .unwrap();
     println!("Using {} threads", current_num_threads());
-    benchmark_suite::<config::gxhash::ByteF64<2>>(c, "ByteF64GxHashMap<2>");
-    benchmark_suite::<config::fxhash::ByteF64<2>>(c, "ByteF64FxHashMap<2>");
-    benchmark_suite::<config::dashmap::ByteFxHashF64<2>>(c, "ByteF64FxDashMap<2>");
-    benchmark_suite::<config::dashmap::ByteGxHashF64<2>>(c, "ByteF64GxDashMap<2>");
-    benchmark_suite::<config::indexmap::ByteFxHashF64<2>>(c, "ByteF64FxIndexMap<2>");
-    benchmark_suite::<config::indexmap::ByteGxHashF64<2>>(c, "ByteF64GxIndexMap<2>");
+    benchmark_suite::<config::gxhash::ByteF64<2, CoefficientThreshold>>(c, "ByteF64GxHashMap<2>");
+    benchmark_suite::<config::fxhash::ByteF64<2, CoefficientThreshold>>(c, "ByteF64FxHashMap<2>");
+    benchmark_suite::<config::dashmap::ByteFxHashF64<2, CoefficientThreshold>>(
+        c,
+        "ByteF64FxDashMap<2>",
+    );
+    benchmark_suite::<config::dashmap::ByteGxHashF64<2, CoefficientThreshold>>(
+        c,
+        "ByteF64GxDashMap<2>",
+    );
+    benchmark_suite::<config::indexmap::ByteFxHashF64<2, CoefficientThreshold>>(
+        c,
+        "ByteF64FxIndexMap<2>",
+    );
+    benchmark_suite::<config::indexmap::ByteGxHashF64<2, CoefficientThreshold>>(
+        c,
+        "ByteF64GxIndexMap<2>",
+    );
 }
 
 criterion_group!(benches, micro_benchmark);

@@ -58,21 +58,38 @@ function benchmark_suite()
     rzz = PauliRotation([:Z, :Z], [1, 2], 0.5)
 
     # collect the gate applications into the benchmark group
-    group["x"] = @benchmarkable applytoall!($x, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
-    group["y"] = @benchmarkable applytoall!($y, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
-    group["z"] = @benchmarkable applytoall!($z, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
-    group["h"] = @benchmarkable applytoall!($h, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["x"] = @benchmarkable applytoall!($x, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["y"] = @benchmarkable applytoall!($y, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["z"] = @benchmarkable applytoall!($z, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["h"] = @benchmarkable applytoall!($h, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
     
-    group["cnot"] = @benchmarkable applytoall!($cnot, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
-    group["cz"] = @benchmarkable applytoall!($cz, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["cnot"] = @benchmarkable applytoall!($cnot, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["cz"] = @benchmarkable applytoall!($cz, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
 
-    group["rx"] = @benchmarkable applytoall!($rx, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
-    group["ry"] = @benchmarkable applytoall!($ry, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
-    group["rz"] = @benchmarkable applytoall!($rz, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["rx"] = @benchmarkable applytoall!($rx, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["ry"] = @benchmarkable applytoall!($ry, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["rz"] = @benchmarkable applytoall!($rz, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
 
-    group["rxx"] = @benchmarkable applytoall!($rxx, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
-    group["ryy"] = @benchmarkable applytoall!($ryy, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
-    group["rzz"] = @benchmarkable applytoall!($rzz, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["rxx"] = @benchmarkable applytoall!($rxx, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["ryy"] = @benchmarkable applytoall!($ryy, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    # group["rzz"] = @benchmarkable applytoall!($rzz, nothing, state, cache_state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+
+
+    group["x"] = @benchmarkable propagate!($x, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    group["y"] = @benchmarkable propagate!($y, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    group["z"] = @benchmarkable propagate!($z, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    group["h"] = @benchmarkable propagate!($h, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    
+    group["cnot"] = @benchmarkable propagate!($cnot, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    group["cz"] = @benchmarkable propagate!($cz, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+
+    group["rx"] = @benchmarkable propagate!($rx, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    group["ry"] = @benchmarkable propagate!($ry, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    group["rz"] = @benchmarkable propagate!($rz, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+
+    group["rxx"] = @benchmarkable propagate!($rxx, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    group["ryy"] = @benchmarkable propagate!($ryy, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
+    group["rzz"] = @benchmarkable propagate!($rzz, state) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
 
     return group
 end

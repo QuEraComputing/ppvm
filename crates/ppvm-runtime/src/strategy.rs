@@ -1,5 +1,3 @@
-use num::integer::binomial;
-
 use crate::traits::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

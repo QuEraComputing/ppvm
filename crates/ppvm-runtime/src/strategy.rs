@@ -1,5 +1,3 @@
-use num::integer::binomial;
-
 use crate::traits::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -39,7 +37,9 @@ impl Default for MaxPauliWeight {
 
 impl Strategy for MaxPauliWeight {
     fn capacity(&self, n_qubits: usize) -> usize {
-        (0..=self.0).map(|k| binomial(n_qubits, k)).sum()
+        // the number here should scale binomially, but that can get large
+        // since the capacity has a direct impact on performance, let's be conservative
+        n_qubits * 10
     }
 
     fn truncate<S, V, H, M>(&self, map: &mut M)
@@ -64,7 +64,8 @@ impl Default for CoefficientThreshold {
 
 impl Strategy for CoefficientThreshold {
     fn capacity(&self, n_qubits: usize) -> usize {
-        1 << n_qubits
+        // clearing maps scales as O(capacity), so let's be conservative here
+        n_qubits * 10
     }
 
     fn truncate<S, V, H, M>(&self, map: &mut M)

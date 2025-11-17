@@ -57,6 +57,7 @@ pub fn benchmark_suite_trotter<T: Config<Coeff = f64, Strategy = CoefficientThre
     let mut state: PauliSum<T> = PauliSum::builder()
         .n_qubits(n_qubits)
         .strategy(strat)
+        .capacity(n_qubits.pow(2))
         .build();
 
     // initial state: let's calculate the expectation value of Sum(Z(i))

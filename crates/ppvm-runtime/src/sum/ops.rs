@@ -112,7 +112,6 @@ where
 {
     fn add_assign(&mut self, rhs: PauliSum<T>) {
         debug_assert_eq!(self.n_qubits(), rhs.n_qubits());
-        debug_assert!(self.len() + rhs.len() <= self.capacity());
         self.extend(rhs.into_iter())
     }
 }
@@ -125,7 +124,6 @@ where
 {
     fn add_assign(&mut self, rhs: &'a PauliSum<T>) {
         debug_assert_eq!(self.n_qubits(), rhs.n_qubits());
-        debug_assert!(self.len() + rhs.len() <= self.capacity());
         self.extend(rhs.data().iter().map(|(k, v)| (k.clone(), v.clone())))
     }
 }
@@ -139,7 +137,6 @@ where
     fn add_assign(&mut self, rhs: (P, T::Coeff)) {
         let key = rhs.0.into();
         debug_assert_eq!(self.n_qubits(), key.n_qubits());
-        debug_assert!(self.len() + 1 <= self.capacity());
         ACMapAddAssign::add_assign(self.data_mut(), key, rhs.1);
     }
 }
@@ -153,7 +150,6 @@ where
     fn add_assign(&mut self, rhs: P) {
         let key = rhs.into();
         debug_assert_eq!(self.n_qubits(), key.n_qubits());
-        debug_assert!(self.len() + 1 <= self.capacity());
         ACMapAddAssign::add_assign(self.data_mut(), key, T::Coeff::one());
     }
 }

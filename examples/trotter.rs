@@ -18,7 +18,11 @@ fn main() {
     let j = 1.0 / 8.0 * h;
 
     let strat = CoefficientThreshold(1e-6);
-    let mut state: State = PauliSum::builder().n_qubits(n).strategy(strat).build();
+    let mut state: State = PauliSum::builder()
+        .n_qubits(n)
+        .strategy(strat)
+        .capacity(n.pow(3)) // NOTE: the capacity setting has a big impact on performance
+        .build();
 
     // initial state: let's calculate the expectation value of Sum(Z(i))
     let tmp = vec!['I'; n];

@@ -21,7 +21,7 @@ fn main() {
     let mut state: State = PauliSum::builder()
         .n_qubits(n)
         .strategy(strat)
-        .capacity(n.pow(3)) // NOTE: the capacity setting has a big impact on performance
+        .capacity(n.pow(2)) // NOTE: the capacity setting has a big impact on performance
         .build();
 
     // initial state: let's calculate the expectation value of Sum(Z(i))

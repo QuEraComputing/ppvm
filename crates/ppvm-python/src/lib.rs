@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 pub mod interface;
 
 #[pymodule]
-pub mod ppvm_py {
+pub mod ppvm_python {
     #[pymodule_export]
     pub use crate::interface::PauliSumIndexMapFxHash10;
     #[pymodule_export]

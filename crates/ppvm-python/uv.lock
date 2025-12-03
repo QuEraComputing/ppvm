@@ -5,7 +5,7 @@ requires-python = ">=3.8"
 [manifest]
 members = [
     "pauli-propagation",
-    "ppvm-py",
+    "ppvm-python",
 ]
 
 [[package]]

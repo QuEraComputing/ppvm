@@ -1,7 +1,7 @@
 import math
 from typing import Sequence
 
-import ppvm_py
+import ppvm_python
 
 
 def pauli_sum(
@@ -18,7 +18,7 @@ def pauli_sum(
     possible_interfaces = (10, 100, 500, 1000)
     N_interface = next(n for n in possible_interfaces if n > N)
 
-    interface = getattr(ppvm_py, f"PauliSumIndexMapFxHash{N_interface}")
+    interface = getattr(ppvm_python, f"PauliSumIndexMapFxHash{N_interface}")
 
     if terms and not coefficients:
         coefficients = (1.0,) * len(terms)

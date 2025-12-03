@@ -661,7 +661,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ppvm-py"
+name = "ppvm-python"
 version = "0.1.0"
 dependencies = [
  "ppvm-runtime",

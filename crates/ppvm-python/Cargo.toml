@@ -9,5 +9,6 @@ name = "ppvm_python"
 crate-type = ["cdylib"]
 
 [dependencies]
+paste = "1.0.15"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
 pyo3 = "0.27.0"

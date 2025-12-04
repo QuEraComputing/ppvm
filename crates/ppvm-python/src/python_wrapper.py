@@ -15,16 +15,13 @@ def pauli_sum(
     N = math.ceil(n_qubits / 8.0)
 
     # number of bytes we have
-    possible_interfaces = (10, 100, 500, 1000)
-    N_interface = next(n for n in possible_interfaces if n > N)
+    possible_interfaces = range(15)
+    N_interface = next(n for n in possible_interfaces if 2**n > N)
 
     interface = getattr(ppvm_python, f"PauliSumIndexMapFxHash{N_interface}")
 
     if terms and not coefficients:
         coefficients = (1.0,) * len(terms)
-
-    print(len(terms))
-    print(len(coefficients))
 
     if max_pauli_weight is None:
         # NOTE: let rust handle the default setting for max_pauli_weight

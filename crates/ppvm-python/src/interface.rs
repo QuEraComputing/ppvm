@@ -1,3 +1,4 @@
+use paste::paste;
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
 use pyo3::prelude::*;
@@ -138,18 +139,33 @@ macro_rules! create_interface {
     };
 }
 
-// TODO: use macro to loop over these? Let's check performance first
-type IndexMapFxHash10 =
-    config::indexmap::ByteFxHashF64<10, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
-type IndexMapFxHash100 =
-    config::indexmap::ByteFxHashF64<100, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
-type IndexMapFxHash500 =
-    config::indexmap::ByteFxHashF64<500, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
-type IndexMapFxHash1000 =
-    config::indexmap::ByteFxHashF64<1000, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
+macro_rules! create_interface_range {
+    ($name: ident, $( $n: expr),* ) => {
+        paste! {
+        $(
+            type [<$name$n>] = config::indexmap::ByteFxHashF64<{(2 as usize).pow($n)}, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
+            create_interface!([<PauliSum$name$n>], [<$name$n>]);
+        )*
+        }
+    };
+}
 
-// NOTE: let's hope no one wants to simulate more than 8k qubits
-create_interface!(PauliSumIndexMapFxHash10, IndexMapFxHash10);
-create_interface!(PauliSumIndexMapFxHash100, IndexMapFxHash100);
-create_interface!(PauliSumIndexMapFxHash500, IndexMapFxHash500);
-create_interface!(PauliSumIndexMapFxHash1000, IndexMapFxHash1000);
+create_interface_range!(
+    IndexMapFxHash,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+);

@@ -56,12 +56,38 @@ fn test_two_qubit_pauli_error() {
         PauliSum::builder().n_qubits(2).build();
 
     state += ("YZ", 1.0);
-    let mut state2 = state.clone();
+    let state2 = state.clone();
 
-    p[4] = 1.0;
+    p[4] = 1.0; // XX
     state.two_qubit_pauli_error(0, 1, p);
-    state2.rxx(0, 1, PI);
-    state2.truncate();
+
+    assert_eq!(state, state2);
+
+    p[4] = 0.0;
+    p[9] = 1.0; // YY
+
+    let mut state: PauliSum<config::indexmap::ByteFxHashF64<1, CoefficientThreshold>> =
+        PauliSum::builder().n_qubits(2).build();
+
+    state += ("XI", 1.0);
+    let mut state2 = state.clone();
+    state2 *= -1.0;
+
+    p[9] = 0.0;
+    p[14] = 1.0; // ZZ
+    state.two_qubit_pauli_error(0, 1, p);
+
+    assert_eq!(state, state2);
+
+    let mut state: PauliSum<config::indexmap::ByteFxHashF64<1, CoefficientThreshold>> =
+        PauliSum::builder().n_qubits(2).build();
+
+    state += ("XI", 1.0);
+    let mut state2 = state.clone();
+    state2 *= -1.0;
+
+    p[4] = 1.0; // XX
+    state.two_qubit_pauli_error(0, 1, p);
 
     assert_eq!(state, state2);
 }

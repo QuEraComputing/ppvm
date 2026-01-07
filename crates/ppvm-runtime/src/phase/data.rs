@@ -31,7 +31,7 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone> PhasedPauliWord<A, H> {
     }
 
     pub fn is_positive(&self) -> bool {
-        // is second bit 1
+        // is second bit 0
         (self.phase & 0b10) == 0
     }
 

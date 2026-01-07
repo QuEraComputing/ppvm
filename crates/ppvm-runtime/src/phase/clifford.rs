@@ -12,27 +12,27 @@ where
     fn x(&mut self, index: usize) {
         let phase = (self.word.zbits[index]) as u8;
         self.word.x(index);
-        self.add_phase(phase);
+        self.add_phase(phase << 1);
     }
     fn y(&mut self, index: usize) {
         let phase = (self.word.xbits[index] ^ self.word.zbits[index]) as u8;
         self.word.y(index);
-        self.add_phase(phase);
+        self.add_phase(phase << 1);
     }
     fn z(&mut self, index: usize) {
-        let phase = (self.word.xbits[index] & self.word.zbits[index]) as u8;
+        let phase = (self.word.xbits[index]) as u8;
         self.word.z(index);
-        self.add_phase(phase);
+        self.add_phase(phase << 1);
     }
     fn h(&mut self, index: usize) {
         let phase = (self.word.xbits[index] & self.word.zbits[index]) as u8;
         self.word.h(index);
-        self.add_phase(phase);
+        self.add_phase(phase << 1);
     }
     fn s(&mut self, index: usize) {
-        let phase = (self.word.xbits[index] & self.word.zbits[index]) as u8;
+        let phase = (self.word.xbits[index] & !self.word.zbits[index]) as u8;
         self.word.s(index);
-        self.add_phase(phase);
+        self.add_phase(phase << 1);
     }
     fn cnot(&mut self, control: usize, target: usize) {
         // phase = 1x y1 where x xor y = 0
@@ -102,6 +102,51 @@ mod tests {
             let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
             output.cnot(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_x() {
+        for (input, target) in [("+I", "+I"), ("+X", "+X"), ("+Y", "-Y"), ("+Z", "-Z")] {
+            let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
+            output.x(0);
+            assert_eq!(output.to_string(), target.to_string());
+        }
+    }
+
+    #[test]
+    fn test_y() {
+        for (input, target) in [("+I", "+I"), ("+X", "-X"), ("+Y", "+Y"), ("+Z", "-Z")] {
+            let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
+            output.y(0);
+            assert_eq!(output.to_string(), target.to_string());
+        }
+    }
+
+    #[test]
+    fn test_z() {
+        for (input, target) in [("+I", "+I"), ("+X", "-X"), ("+Y", "-Y"), ("+Z", "+Z")] {
+            let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
+            output.z(0);
+            assert_eq!(output.to_string(), target.to_string());
+        }
+    }
+
+    #[test]
+    fn test_h() {
+        for (input, target) in [("+I", "+I"), ("+X", "+Z"), ("+Y", "-Y"), ("+Z", "+X")] {
+            let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
+            output.h(0);
+            assert_eq!(output.to_string(), target.to_string());
+        }
+    }
+
+    #[test]
+    fn test_s() {
+        for (input, target) in [("+I", "+I"), ("+X", "-Y"), ("+Y", "+X"), ("+Z", "+Z")] {
+            let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
+            output.s(0);
+            assert_eq!(output.to_string(), target.to_string());
         }
     }
 }

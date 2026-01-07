@@ -9,6 +9,8 @@ pub trait PauliErrorAll<T: Config> {
 }
 
 pub trait TwoQubitPauliError<T: Config> {
+    /// Probabilities are given in the order:
+    /// {IX, IY, IZ, XI, XX, XY, XZ, YI, YX, YY, YZ, ZI, ZX, ZY, ZZ}
     fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 15]);
 }
 

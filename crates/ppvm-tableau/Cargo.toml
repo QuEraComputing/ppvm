@@ -1,0 +1,25 @@
+[package]
+name = "ppvm-tableau"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+num = "0.4.3"
+fxhash = "0.2.1"
+ppvm-runtime = { path = "../ppvm-runtime", default-features = false }
+rayon = "1.10.0"
+
+gxhash = { version = "3.5.0", features = ["deterministic"], optional = true }
+indexmap = { version = "2.11.4", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5.1", default-features = false }
+
+[[bench]]
+name = "tableau"
+harness = false
+
+[features]
+default = ["gxhash", "indexmap"]
+gxhash = ["dep:gxhash"]
+indexmap = ["dep:indexmap"]

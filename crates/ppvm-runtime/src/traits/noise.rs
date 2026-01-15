@@ -19,3 +19,10 @@ pub trait Depolarizing<T: Config> {
 pub trait AmplitudeDamping<T: Config> {
     fn amplitude_damping(&mut self, addr0: usize, gamma: T::Coeff);
 }
+
+pub trait LossChannel<T: Config> {
+    /// A simple loss channel that reduces the coefficients of all terms by (1 - p)
+    /// This is equivalent to multiplying the density matrix by (1 - p), thereby reducing
+    /// the trace of the density matrix.
+    fn loss_channel(&mut self, addr0: usize, p: T::Coeff);
+}

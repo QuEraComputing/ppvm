@@ -25,3 +25,18 @@ where
         });
     }
 }
+
+
+impl<T: Config> LossChannel<T> for PauliSum<T>
+where
+    f64: std::ops::Mul<T::Coeff, Output = T::Coeff>
+        + std::ops::Add<T::Coeff, Output = T::Coeff>
+        + std::ops::Sub<T::Coeff, Output = T::Coeff>
+        + std::ops::MulAssign<<T as Config>::Coeff>,
+{
+    fn loss_channel(&mut self, _addr0: usize, p: T::Coeff) {
+        self.scale(|_, v| {
+            *v *= 1.0f64 - p.clone();
+        });
+    }
+}

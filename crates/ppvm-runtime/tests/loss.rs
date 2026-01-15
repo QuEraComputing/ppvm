@@ -12,7 +12,6 @@ fn test_loss_channel() {
     assert!((overlap - 0.7).abs() < 1e-10);
 }
 
-
 #[test]
 fn test_ghz_loss_channel() {
     let mut state: PauliSum<config::indexmap::ByteFxHashF64<4>> =

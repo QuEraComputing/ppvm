@@ -26,7 +26,6 @@ where
     }
 }
 
-
 impl<T: Config> TwoQubitPauliError<T> for PauliSum<T>
 where
     f64: std::ops::Mul<T::Coeff, Output = T::Coeff>
@@ -218,7 +217,6 @@ where
         })
     }
 }
-
 
 impl<T: Config> LossChannel<T> for PauliSum<T>
 where

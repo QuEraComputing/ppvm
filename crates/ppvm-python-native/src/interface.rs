@@ -24,10 +24,10 @@ macro_rules! create_interface {
 
                 // TODO: this is not ideal since we could skip one of the strategies completely; need to look into
                 // how we can do this in the macro here
-                let strat = CombinedStrategy(CoefficientThreshold(min_abs_coeff), MaxPauliWeight(max_pauli_weight));
+                let strategy = CombinedStrategy(CoefficientThreshold(min_abs_coeff), MaxPauliWeight(max_pauli_weight));
                 let mut ps = PauliSum::builder()
                     .n_qubits(n_qubits)
-                    .strategy(strat)
+                    .strategy(strategy)
                     .capacity(n_qubits)
                     .build();
 
@@ -134,6 +134,18 @@ macro_rules! create_interface {
                 self.inner.rzz(addr0, addr1, theta);
                 self.inner.truncate();
             }
+
+            // noise
+            pub fn pauli_error(&mut self, addr0: usize, p: [f64; 3]) {
+                self.inner.pauli_error(addr0, p);
+                self.inner.truncate();
+            }
+
+            pub fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [f64; 15]) {
+                self.inner.two_qubit_pauli_error(addr0, addr1, p);
+                self.inner.truncate();
+            }
+
         }
 
     };

@@ -2,15 +2,15 @@ from ppvm_python import PauliSum
 
 state = PauliSum.from_str("ZZ")
 
-print(state)
-
 state.cnot(0, 1)
 state.h(0)
 
 print(state)
-
 print(state.overlap_with_zero())
-print(state.trace("Z?*"))
+
+state.pauli_error(1, [0.3, 0.23, 0.22])
+
+print(state)
 
 
 n = 200

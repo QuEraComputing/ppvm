@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "David Plankensteiner", email = "dplankensteiner@quera.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "ppvm-python-native",
 ]

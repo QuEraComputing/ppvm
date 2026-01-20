@@ -142,5 +142,14 @@ class PauliSum:
     def pauli_error(self, addr0: int, p: Sequence[float]) -> None:
         self._interface.pauli_error(addr0, p)
 
+    @staticmethod
+    def two_qubit_pauli_error_probabilities(error_probabilities: dict[str, float]) -> list[float]:
+        """Convert a dictionary of two-qubit Pauli error probabilities to a list.
+        
+        Convenience method to convert a dictionary mapping two-qubit Pauli strings ensuring correct order.
+        """
+        keys = ("IX", "IY", "IZ", "XI", "XX", "XY", "XZ", "YI", "YX", "YY", "YZ", "ZI", "ZX", "ZY", "ZZ")
+        return [error_probabilities.get(key, 0.0) for key in keys]
+
     def two_qubit_pauli_error(self, addr0: int, addr1: int, p: Sequence[float]) -> None:
         self._interface.two_qubit_pauli_error(addr0, addr1, p)

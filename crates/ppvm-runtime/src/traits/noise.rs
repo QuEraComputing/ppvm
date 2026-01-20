@@ -8,8 +8,10 @@ pub trait PauliErrorAll<T: Config> {
     fn pauli_error_all(&mut self, p: [T::Coeff; 3]);
 }
 
-pub trait TwoPauliError<T: Config> {
-    fn two_pauli_error(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 15]);
+pub trait TwoQubitPauliError<T: Config> {
+    /// Probabilities are given in the order:
+    /// {IX, IY, IZ, XI, XX, XY, XZ, YI, YX, YY, YZ, ZI, ZX, ZY, ZZ}
+    fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 15]);
 }
 
 pub trait Depolarizing<T: Config> {

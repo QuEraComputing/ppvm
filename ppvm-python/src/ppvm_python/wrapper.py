@@ -1,4 +1,5 @@
 import math
+from dataclasses import dataclass, field
 from typing import Sequence, Union
 
 import ppvm_python_native
@@ -24,29 +25,20 @@ T = Union[
 ]
 
 
+@dataclass(frozen=True)
 class PauliSum:
     n_qubits: int
-    min_abs_coeff: float
-    max_pauli_weight: int | None
     terms: Sequence[str]
-    coefficients: Sequence[float]
+    coefficients: Sequence[float] = ()
+    min_abs_coeff: float = 1e-10
+    max_pauli_weight: int | None = None
 
-    _interface: T
+    _interface: T = field(init=False, repr=False)
 
-    def __init__(
-        self,
-        n_qubits: int,
-        terms: Sequence[str],
-        min_abs_coeff: float = 1e-10,
-        max_pauli_weight: int | None = None,
-        coefficients: Sequence[float] = (),
-    ):
-        self.n_qubits = n_qubits
-        self.min_abs_coeff = min_abs_coeff
-        self.max_pauli_weight = max_pauli_weight
-        self.terms = terms
-        self.coefficients = coefficients
-        self._interface = self._init_ppvm_interface(terms, coefficients)
+    def __post_init__(self):
+        object.__setattr__(
+            self, "_interface", self._init_ppvm_interface(self.terms, self.coefficients)
+        )
 
     def _init_ppvm_interface(self, terms: Sequence[str], coefficients: Sequence[float]):
         n_qubits = self.n_qubits
@@ -79,6 +71,20 @@ class PauliSum:
                 terms=terms,
                 coefficients=coefficients,
             )
+
+    @staticmethod
+    def from_str(s: str) -> "PauliSum":
+        s = s.strip()
+        # Validate the string: must only contain I, X, Y, Z
+        allowed = set("IXYZ")
+        if not set(s).issubset(allowed):
+            raise ValueError(
+                f"Invalid Pauli string: {s!r}. Only 'I', 'X', 'Y', 'Z' are allowed."
+            )
+        n_qubits = len(s)
+        terms = [s]
+        coefficients = [1.0]
+        return PauliSum(n_qubits=n_qubits, terms=terms, coefficients=coefficients)
 
     def __str__(self) -> str:
         return self._interface.__str__()

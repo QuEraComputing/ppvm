@@ -1,6 +1,6 @@
 from ppvm_python import PauliSum
 
-state = PauliSum(2, terms=["ZZ"], coefficients=(1.0,))
+state = PauliSum.from_str("ZZ")
 
 print(state)
 

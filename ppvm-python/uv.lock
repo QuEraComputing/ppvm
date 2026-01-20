@@ -1,0 +1,18 @@
+version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[[package]]
+name = "ppvm-python"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "ppvm-python-native" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "ppvm-python-native", directory = "../crates/ppvm-python-native" }]
+
+[[package]]
+name = "ppvm-python-native"
+source = { directory = "../crates/ppvm-python-native" }

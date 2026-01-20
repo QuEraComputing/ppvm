@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 pub mod interface;
 
 #[pymodule]
-pub mod ppvm_python {
+pub mod ppvm_python_native {
     // NOTE: it's not possible to use #[pymodule_export] inside a macro_rules!
     #[pymodule_export]
     pub use crate::interface::PauliSumIndexMapFxHash0;

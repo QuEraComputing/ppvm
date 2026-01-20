@@ -1,7 +1,27 @@
 import math
-from typing import Sequence, Any
+from typing import Sequence, Union
 
-import ppvm_python
+import ppvm_python_native
+
+
+T = Union[
+    ppvm_python_native.PauliSumIndexMapFxHash0,
+    ppvm_python_native.PauliSumIndexMapFxHash1,
+    ppvm_python_native.PauliSumIndexMapFxHash2,
+    ppvm_python_native.PauliSumIndexMapFxHash3,
+    ppvm_python_native.PauliSumIndexMapFxHash4,
+    ppvm_python_native.PauliSumIndexMapFxHash5,
+    ppvm_python_native.PauliSumIndexMapFxHash6,
+    ppvm_python_native.PauliSumIndexMapFxHash7,
+    ppvm_python_native.PauliSumIndexMapFxHash8,
+    ppvm_python_native.PauliSumIndexMapFxHash9,
+    ppvm_python_native.PauliSumIndexMapFxHash10,
+    ppvm_python_native.PauliSumIndexMapFxHash11,
+    ppvm_python_native.PauliSumIndexMapFxHash12,
+    ppvm_python_native.PauliSumIndexMapFxHash13,
+    ppvm_python_native.PauliSumIndexMapFxHash14,
+    ppvm_python_native.PauliSumIndexMapFxHash15,
+]
 
 
 class PauliSum:
@@ -11,7 +31,7 @@ class PauliSum:
     terms: Sequence[str]
     coefficients: Sequence[float]
 
-    _interface: Any
+    _interface: T
 
     def __init__(
         self,
@@ -38,7 +58,7 @@ class PauliSum:
         possible_interfaces = range(15)
         N_interface = next(n for n in possible_interfaces if 2**n > N)
 
-        interface = getattr(ppvm_python, f"PauliSumIndexMapFxHash{N_interface}")
+        interface = getattr(ppvm_python_native, f"PauliSumIndexMapFxHash{N_interface}")
 
         if terms and not coefficients:
             coefficients = (1.0,) * len(terms)
@@ -59,14 +79,14 @@ class PauliSum:
                 terms=terms,
                 coefficients=coefficients,
             )
-        
+
     def __str__(self) -> str:
         return self._interface.__str__()
-    
+
     # Getting results
     def overlap_with_zero(self) -> float:
         return self._interface.trace("Z?*")
-    
+
     def trace(self, pattern: str) -> float:
         return self._interface.trace(pattern)
 
@@ -79,7 +99,7 @@ class PauliSum:
 
     def z(self, addr0: int) -> None:
         self._interface.z(addr0)
-    
+
     def h(self, addr0: int) -> None:
         self._interface.h(addr0)
 
@@ -95,20 +115,20 @@ class PauliSum:
     # Rotations
     def rx(self, addr0: int, theta: float) -> None:
         self._interface.rx(addr0, theta)
-    
+
     def ry(self, addr0: int, theta: float) -> None:
         self._interface.ry(addr0, theta)
-    
+
     def rz(self, addr0: int, theta: float) -> None:
         self._interface.rz(addr0, theta)
 
     # Two qubit rotations
     def rxx(self, addr0: int, addr1: int, theta: float) -> None:
         self._interface.rxx(addr0, addr1, theta)
-    
+
     def ryy(self, addr0: int, addr1: int, theta: float) -> None:
         self._interface.ryy(addr0, addr1, theta)
-    
+
     def rzz(self, addr0: int, addr1: int, theta: float) -> None:
         self._interface.rzz(addr0, addr1, theta)
 

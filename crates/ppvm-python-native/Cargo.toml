@@ -1,11 +1,11 @@
 [package]
-name = "ppvm-python"
+name = "ppvm-python-native"
 version = "0.1.0"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "ppvm_python"
+name = "ppvm_python_native"
 crate-type = ["cdylib"]
 
 [dependencies]

@@ -667,7 +667,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ppvm-python"
+name = "ppvm-python-native"
 version = "0.1.0"
 dependencies = [
  "paste",

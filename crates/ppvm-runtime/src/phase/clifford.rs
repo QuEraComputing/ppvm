@@ -34,6 +34,11 @@ where
         self.word.s(index);
         self.add_phase(phase << 1);
     }
+    fn s_dagger(&mut self, index: usize) {
+        let phase = (self.word.xbits[index] & self.word.zbits[index]) as u8;
+        self.word.s_dagger(index);
+        self.add_phase(phase << 1);
+    }
     fn cnot(&mut self, control: usize, target: usize) {
         // phase = 1x y1 where x xor y = 0
         // xx zz    xx zz
@@ -146,6 +151,15 @@ mod tests {
         for (input, target) in [("+I", "+I"), ("+X", "-Y"), ("+Y", "+X"), ("+Z", "+Z")] {
             let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
             output.s(0);
+            assert_eq!(output.to_string(), target.to_string());
+        }
+    }
+
+    #[test]
+    fn test_s_dagger() {
+        for (input, target) in [("+I", "+I"), ("+X", "+Y"), ("+Y", "-X"), ("+Z", "+Z")] {
+            let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
+            output.s_dagger(0);
             assert_eq!(output.to_string(), target.to_string());
         }
     }

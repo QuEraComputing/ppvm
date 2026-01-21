@@ -39,12 +39,16 @@ where
     }
     fn s(&mut self, index: usize) {
         // S * I * S = I    00 -> 00, 0
-        // S * X * S = Y    10 -> 11, 0
+        // S * X * S = -Y    10 -> 11, 0
         // S * Z * S = Z    01 -> 01, 0
-        // S * Y * S = -X   11 -> 10, 1
+        // S * Y * S = X   11 -> 10, 1
         let z = self.xbits[index] ^ self.zbits[index];
         self.zbits.set(index, z);
         self.rehash();
+    }
+    fn s_dagger(&mut self, index: usize) {
+        // only adds different phase
+        self.s(index);
     }
     fn cnot(&mut self, control: usize, target: usize) {
         //                          xx zz    xx zz  phase

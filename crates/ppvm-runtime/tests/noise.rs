@@ -91,3 +91,25 @@ fn test_two_qubit_pauli_error() {
 
     assert_eq!(state, state2);
 }
+
+#[test]
+fn test_depolarizing_error() {
+    let mut state: PauliSum<config::indexmap::ByteFxHashF64<1>> =
+        PauliSum::builder().n_qubits(3).build();
+
+    state += ("ZZZ", 1.0);
+
+    let ps = [0.1, 0.2, 0.3];
+    state.depolarize(0, ps[0]);
+    state.depolarize(1, ps[1]);
+    state.depolarize(2, ps[2]);
+
+    println!("State: {}", state);
+    let zero_pattern: PauliPattern = "Z?*".into();
+    let overlap = state.trace(&zero_pattern);
+    println!("Overlap: {}", overlap);
+
+    let result: f64 = ps.map(|p| 1.0 - 4.0 * p / 3.0).iter().product();
+
+    assert!((overlap - result).abs() < 1e-10);
+}

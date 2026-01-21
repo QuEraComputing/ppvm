@@ -217,3 +217,25 @@ where
         })
     }
 }
+
+impl<T: Config> DepolarizingError<T> for PauliSum<T>
+where
+    f64: std::ops::Mul<T::Coeff, Output = T::Coeff>
+        + std::ops::Add<T::Coeff, Output = T::Coeff>
+        + std::ops::Sub<T::Coeff, Output = T::Coeff>,
+{
+    fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
+        self.scale(|k, v| match k.get(addr0) {
+            Pauli::I => {}
+            Pauli::X => {
+                *v *= 1.0f64 - 4.0f64 / 3.0f64 * p.clone();
+            }
+            Pauli::Y => {
+                *v *= 1.0f64 - 4.0f64 / 3.0f64 * p.clone();
+            }
+            Pauli::Z => {
+                *v *= 1.0f64 - 4.0f64 / 3.0f64 * p.clone();
+            }
+        });
+    }
+}

@@ -26,8 +26,8 @@ T = Union[
 
 @dataclass(frozen=True)
 class PauliSum:
-    n_qubits: int
     terms: Sequence[str]
+    n_qubits: int | None = None
     coefficients: Sequence[float] = ()
     min_abs_coeff: float = 1e-10
     max_pauli_weight: int | None = None
@@ -36,11 +36,29 @@ class PauliSum:
 
     def __post_init__(self):
         object.__setattr__(
-            self, "_interface", self._init_ppvm_interface(self.terms, self.coefficients)
+            self,
+            "_interface",
+            self._init_ppvm_interface(self.n_qubits, self.terms, self.coefficients),
         )
 
-    def _init_ppvm_interface(self, terms: Sequence[str], coefficients: Sequence[float]):
-        n_qubits = self.n_qubits
+    def _init_ppvm_interface(
+        self, n_qubits: int | None, terms: Sequence[str], coefficients: Sequence[float]
+    ):
+
+        if not terms:
+            raise ValueError(
+                "At least one term must be provided to initialize PauliSum."
+            )
+
+        if n_qubits is None:
+            n_qubits = len(terms[0])
+
+        for term in terms:
+            if len(term) != n_qubits:
+                raise ValueError(
+                    "All terms must have the same length! Expected length "
+                    f"{n_qubits}, but got term of length {len(term)}: {term!r}"
+                )
 
         # number of bytes we need
         N = math.ceil(n_qubits / 8.0)

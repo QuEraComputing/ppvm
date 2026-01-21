@@ -1,28 +1,34 @@
 from ppvm_python import PauliSum
 
-state = PauliSum.from_str("ZZ")
 
-state.cnot(0, 1)
-state.h(0)
+def test_basics():
+    state = PauliSum(terms=["ZZ"], coefficients=[1.0])  # ZZ
 
-print(state)
-print(state.overlap_with_zero())
+    state.cnot(0, 1)
+    state.h(0)
 
-state.pauli_error(1, [0.3, 0.23, 0.22])
-
-print(state)
+    assert str(state) == "1.000 * IZ"
+    assert state.overlap_with_zero() == 1.0
 
 
-n = 200
-weight = 80
+def test_noise():
+    state = PauliSum(terms=["IZ"], coefficients=[1.0])  # |00><00|
 
-terms = ["".join(["Z" if i == j else "I" for i in range(n)]) for j in range(n)]
-large_state = PauliSum(n, max_pauli_weight=weight, terms=terms)
+    error_probs = {"ZZ": 0.1, "XX": 0.2}
+    error_probs_list = state.two_qubit_pauli_error_probabilities(error_probs)
+    state.two_qubit_pauli_error(0, 1, error_probs_list)
 
 
-for i in reversed(range(1, n)):
-    large_state.cnot(i - 1, i)
+def test_large_state():
+    n = 200
+    weight = 80
 
-large_state.h(0)
+    terms = ["".join(["Z" if i == j else "I" for i in range(n)]) for j in range(n)]
+    large_state = PauliSum(max_pauli_weight=weight, terms=terms)
 
-print(large_state.overlap_with_zero())
+    for i in reversed(range(1, n)):
+        large_state.cnot(i - 1, i)
+
+    large_state.h(0)
+
+    assert large_state.overlap_with_zero() == 0.0

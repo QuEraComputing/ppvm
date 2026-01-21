@@ -38,12 +38,16 @@ class PauliSum:
         object.__setattr__(
             self,
             "_interface",
-            self._init_ppvm_interface(self.n_qubits, self.terms, self.coefficients),
+            self._init_ppvm_interface(),
         )
 
     def _init_ppvm_interface(
-        self, n_qubits: int | None, terms: Sequence[str], coefficients: Sequence[float]
+        self,
     ):
+
+        n_qubits = self.n_qubits
+        terms = self.terms
+        coefficients = self.coefficients
 
         if not terms:
             raise ValueError(

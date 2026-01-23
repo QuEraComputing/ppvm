@@ -120,7 +120,9 @@ fn test_single_qubit_loss() {
     println!("Overlap with {}: {}", zero_pattern, overlap);
 }
 
-fn test_ghz() {
+fn test_ghz_final_loss() {
+    // GHZ state circuit, with loss channels at the end, causing uncorrelated ZZ
+    // expectation values some of the time.
     let mut state = PauliSum::<config::fxhash::Byte<2, f64>>::builder()
         .n_qubits(2)
         .build();
@@ -161,9 +163,49 @@ fn test_ghz() {
     assert!((overlap - prob).abs() < 1e-10);
 }
 
+fn test_ghz() {
+    let mut state = PauliSum::<config::fxhash::Byte<2, f64>>::builder()
+        .n_qubits(2)
+        .build();
+
+    let p_l = 0.1;
+
+    state += ("ZZ", 1.0);
+
+    println!("Initial state: {}", state);
+
+    state.reset_loss_channel(0);
+    state.reset_loss_channel(1);
+
+    state.loss_channel(0, p_l);
+    state.loss_channel(1, p_l);
+
+    println!("After loss channels: {}", state);
+
+    state.cnot(0, 1);
+
+    state.loss_channel(0, 2.0 * p_l);
+    state.h(0);
+
+    println!("Final state: {}", state);
+
+    let zero_pattern: PauliPattern = "Z?*".into();
+    let overlap = state.trace(&zero_pattern);
+    println!("Overlap with {}: {}", zero_pattern, overlap);
+
+    // in 2p_l cases, the first qubit is lost after hadamard
+    let prob = 2.0 * p_l
+        + (1.0 - 2.0 * p_l)
+            * (0.5 + 0.5 * ((1.0 - p_l) * (1.0 - p_l) - 2.0 * p_l * (1.0 - p_l) + p_l * p_l));
+    println!("Expected overlap: {}", prob);
+
+    assert!((overlap - prob).abs() < 1e-10);
+}
+
 fn main() {
     // test_reset_channel();
     // test_loss_channel();
     // test_single_qubit_loss();
+    // test_ghz_final_loss();
     test_ghz();
 }

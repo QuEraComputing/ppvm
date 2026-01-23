@@ -22,10 +22,16 @@ where
 {
     fn mul_assign(&mut self, rhs: Self) {
         for i in 0..self.n_qubits() {
-            let x_i = self.xbits[i] ^ rhs.xbits[i];
-            let z_i = self.zbits[i] ^ rhs.zbits[i];
+            // TODO: this should actually return 0 if there are L bits in either
+            if self.lbits[i] || rhs.lbits[i] {
+                panic!("Multiplication involving L bits is not defined");
+            }
+            let l_i = self.lbits[i] & rhs.lbits[i];
+            let x_i = (self.xbits[i] ^ rhs.xbits[i]) & !l_i;
+            let z_i = (self.zbits[i] ^ rhs.zbits[i]) & !l_i;
             self.xbits.set(i, x_i);
             self.zbits.set(i, z_i);
+            self.lbits.set(i, l_i);
         }
         self.rehash();
     }

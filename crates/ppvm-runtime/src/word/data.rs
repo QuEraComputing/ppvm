@@ -8,6 +8,7 @@ use std::ops::Index;
 pub struct PauliWord<A: PauliStorage, S = fxhash::FxBuildHasher> {
     pub xbits: BitArray<A>,
     pub zbits: BitArray<A>,
+    pub lbits: BitArray<A>,
     /// Number of qubits
     nqubits: usize,
     hash_cache: u64,
@@ -26,7 +27,9 @@ impl<A: PauliStorage, S> Eq for PauliWord<A, S> {}
 
 impl<A: PauliStorage, S> PartialEq for PauliWord<A, S> {
     fn eq(&self, other: &Self) -> bool {
-        self.xbits.data == other.xbits.data && self.zbits.data == other.zbits.data
+        self.xbits.data == other.xbits.data
+            && self.zbits.data == other.zbits.data
+            && self.lbits.data == other.lbits.data
     }
 }
 
@@ -36,6 +39,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
         Self {
             xbits: BitArray::ZERO,
             zbits: BitArray::ZERO,
+            lbits: BitArray::ZERO,
             nqubits,
             hash_cache: 0,
             _phantom: std::marker::PhantomData,
@@ -48,7 +52,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
 
     pub fn weight(&self) -> usize {
         (0..self.nqubits)
-            .filter(|&i| self.xbits[i] || self.zbits[i])
+            .filter(|&i| self.xbits[i] || self.zbits[i] || self.lbits[i]) // TODO: should we actually count L bits?
             .count()
     }
 
@@ -57,6 +61,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
         let mut hasher = S::default().build_hasher();
         self.xbits.data.hash(&mut hasher);
         self.zbits.data.hash(&mut hasher);
+        self.lbits.data.hash(&mut hasher);
         self.hash_cache = hasher.finish();
     }
 
@@ -65,11 +70,13 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
         if index >= self.nqubits {
             panic!("Index out of bounds");
         }
-        match (self.xbits[index], self.zbits[index]) {
-            (false, false) => Pauli::I,
-            (false, true) => Pauli::Z,
-            (true, false) => Pauli::X,
-            (true, true) => Pauli::Y,
+        match (self.xbits[index], self.zbits[index], self.lbits[index]) {
+            (false, false, false) => Pauli::I,
+            (false, true, false) => Pauli::Z,
+            (true, false, false) => Pauli::X,
+            (true, true, false) => Pauli::Y,
+            (false, false, true) => Pauli::L,
+            _ => panic!("Invalid Pauli representation"),
         }
     }
 
@@ -101,6 +108,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
         for (i, &idx) in indices.iter().enumerate() {
             self.xbits.set(idx, values.xbits[i]);
             self.zbits.set(idx, values.zbits[i]);
+            self.lbits.set(idx, values.lbits[i]);
         }
         self.rehash();
     }
@@ -113,13 +121,16 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
         let n_qubits = slice.len();
         let mut xbits = BitArray::ZERO;
         let mut zbits = BitArray::ZERO;
+        let mut lbits = BitArray::ZERO;
         for (i, idx) in slice.into_iter().enumerate() {
             xbits.set(i, self.xbits[idx]);
             zbits.set(i, self.zbits[idx]);
+            lbits.set(i, self.lbits[idx]);
         }
         let mut ret = Self {
             xbits,
             zbits,
+            lbits,
             nqubits: n_qubits,
             hash_cache: 0,
             _phantom: std::marker::PhantomData,
@@ -134,10 +145,11 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
             panic!("Index out of bounds");
         }
         match pauli {
-            Pauli::I => !self.xbits[index] && !self.zbits[index],
-            Pauli::X => self.xbits[index] && !self.zbits[index],
-            Pauli::Z => !self.xbits[index] && self.zbits[index],
-            Pauli::Y => self.xbits[index] && self.zbits[index],
+            Pauli::I => !self.xbits[index] && !self.zbits[index] && !self.lbits[index],
+            Pauli::X => self.xbits[index] && !self.zbits[index] && !self.lbits[index],
+            Pauli::Z => !self.xbits[index] && self.zbits[index] && !self.lbits[index],
+            Pauli::Y => self.xbits[index] && self.zbits[index] && !self.lbits[index],
+            Pauli::L => !self.xbits[index] && !self.zbits[index] && self.lbits[index],
         }
     }
 
@@ -150,18 +162,27 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
             Pauli::I => {
                 self.xbits.set(index, false);
                 self.zbits.set(index, false);
+                self.lbits.set(index, false);
             }
             Pauli::X => {
                 self.xbits.set(index, true);
                 self.zbits.set(index, false);
+                self.lbits.set(index, false);
             }
             Pauli::Z => {
                 self.xbits.set(index, false);
                 self.zbits.set(index, true);
+                self.lbits.set(index, false);
             }
             Pauli::Y => {
                 self.xbits.set(index, true);
                 self.zbits.set(index, true);
+                self.lbits.set(index, false);
+            }
+            Pauli::L => {
+                self.xbits.set(index, false);
+                self.zbits.set(index, false);
+                self.lbits.set(index, true);
             }
         }
         self.rehash();
@@ -201,6 +222,7 @@ impl<A: PauliStorage, S> Ord for PauliWord<A, S> {
         self.xbits
             .cmp(&other.xbits)
             .then(self.zbits.cmp(&other.zbits))
+            .then(self.lbits.cmp(&other.lbits))
     }
 }
 
@@ -212,7 +234,8 @@ impl<A: PauliStorage, S> PartialOrd for PauliWord<A, S> {
         Some(
             self.xbits
                 .cmp(&other.xbits)
-                .then(self.zbits.cmp(&other.zbits)),
+                .then(self.zbits.cmp(&other.zbits))
+                .then(self.lbits.cmp(&other.lbits)),
         )
     }
 }
@@ -229,6 +252,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<String> for PauliWo
         let mut chars = value.chars();
         let mut x = BitArray::ZERO;
         let mut z = BitArray::ZERO;
+        let mut l = BitArray::ZERO;
 
         let mut i = 0;
         while let Some(ch) = chars.next() {
@@ -249,6 +273,9 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<String> for PauliWo
                     x.set(i, true);
                     z.set(i, true);
                 }
+                'L' => {
+                    l.set(i, true);
+                }
                 '_' => {
                     continue;
                 }
@@ -260,6 +287,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<String> for PauliWo
         let mut ret = Self {
             xbits: x,
             zbits: z,
+            lbits: l,
             nqubits: n_qubits,
             hash_cache: 0,
             _phantom: std::marker::PhantomData,
@@ -291,11 +319,13 @@ impl<A: PauliStorage, S> Index<usize> for PauliWord<A, S> {
             panic!("Index out of bounds");
         }
 
-        match (self.xbits[index], self.zbits[index]) {
-            (false, false) => &Pauli::I,
-            (false, true) => &Pauli::Z,
-            (true, false) => &Pauli::X,
-            (true, true) => &Pauli::Y,
+        match (self.xbits[index], self.zbits[index], self.lbits[index]) {
+            (false, false, false) => &Pauli::I,
+            (false, true, false) => &Pauli::Z,
+            (true, false, false) => &Pauli::X,
+            (true, true, false) => &Pauli::Y,
+            (false, false, true) => &Pauli::L,
+            _ => panic!("Invalid Pauli representation"),
         }
     }
 }

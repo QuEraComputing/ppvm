@@ -6,6 +6,7 @@ pub enum Pauli {
     X = 1, // 0b01
     Z = 2, // 0b10
     Y = 3, // 0b11
+    L = 4, // Projector on leakage state
 }
 
 impl std::fmt::Display for Pauli {
@@ -15,6 +16,7 @@ impl std::fmt::Display for Pauli {
             Pauli::X => write!(f, "X"),
             Pauli::Y => write!(f, "Y"),
             Pauli::Z => write!(f, "Z"),
+            Pauli::L => write!(f, "L"),
         }
     }
 }

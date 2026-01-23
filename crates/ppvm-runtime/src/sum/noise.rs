@@ -11,7 +11,7 @@ where
     fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
         self.scale(|k, v| {
             match k.get(addr0) {
-                Pauli::I => {}
+                Pauli::I | Pauli::L => {}
                 Pauli::X => {
                     *v *= 1.0f64 - 2.0f64 * p[1].clone() - 2.0f64 * p[2].clone();
                 }
@@ -214,6 +214,7 @@ where
                     - 2.0f64 * p[6].clone()
                     - 2.0f64 * p[7].clone();
             }
+            _ => {unimplemented!("Need to handle leakage states in two-qubit pauli error")}
         })
     }
 }

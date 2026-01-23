@@ -214,7 +214,46 @@ where
                     - 2.0f64 * p[6].clone()
                     - 2.0f64 * p[7].clone();
             }
-            _ => {unimplemented!("Need to handle leakage states in two-qubit pauli error")}
+            _ => {
+                unimplemented!("Need to handle leakage states in two-qubit pauli error")
+            }
         })
+    }
+}
+
+impl<T: Config> LossChannel<T> for PauliSum<T>
+where
+    f64: std::ops::Sub<T::Coeff, Output = T::Coeff>,
+{
+    fn loss_channel(&mut self, addr0: usize, p: T::Coeff) {
+        self.map_insert(|k, v| match k.get(addr0) {
+            Pauli::L => {
+                let new_v = v.clone() * p.clone();
+                let mut new_k = k.clone();
+                new_k.set(addr0, Pauli::I);
+                Some((new_k, new_v))
+            }
+            Pauli::I | Pauli::X | Pauli::Y | Pauli::Z => {
+                *v *= 1.0f64 - p.clone();
+                None
+            }
+        });
+    }
+}
+
+impl<T: Config> ResetLossChannel<T> for PauliSum<T> {
+    fn reset_loss_channel(&mut self, addr0: usize) {
+        self.map_insert(|k, v| match k.get(addr0) {
+            Pauli::L => {
+                *v *= 0.0;
+                None
+            }
+            Pauli::I | Pauli::Z => {
+                let mut new_k = k.clone();
+                new_k.set(addr0, Pauli::L);
+                Some((new_k, v.clone()))
+            }
+            Pauli::X | Pauli::Y => None,
+        });
     }
 }

@@ -10,26 +10,43 @@ where
     H: BuildHasher + Clone + Default,
 {
     fn x(&mut self, index: usize) {
+        if self.word.lbits[index] {
+            // NOTE: loss is not affected by any gates
+            // the key here is that e.g. X the gate is different from PauliX (PauliX * L == 0)
+            return;
+        }
         let phase = (self.word.zbits[index]) as u8;
         self.word.x(index);
         self.add_phase(phase << 1);
     }
     fn y(&mut self, index: usize) {
+        if self.word.lbits[index] {
+            return;
+        }
         let phase = (self.word.xbits[index] ^ self.word.zbits[index]) as u8;
         self.word.y(index);
         self.add_phase(phase << 1);
     }
     fn z(&mut self, index: usize) {
+        if self.word.lbits[index] {
+            return;
+        }
         let phase = (self.word.xbits[index]) as u8;
         self.word.z(index);
         self.add_phase(phase << 1);
     }
     fn h(&mut self, index: usize) {
+        if self.word.lbits[index] {
+            return;
+        }
         let phase = (self.word.xbits[index] & self.word.zbits[index]) as u8;
         self.word.h(index);
         self.add_phase(phase << 1);
     }
     fn s(&mut self, index: usize) {
+        if self.word.lbits[index] {
+            return;
+        }
         let phase = (self.word.xbits[index] & !self.word.zbits[index]) as u8;
         self.word.s(index);
         self.add_phase(phase << 1);
@@ -39,6 +56,9 @@ where
         // xx zz    xx zz
         // 11 11 -> 10 01, 2
         // 10 01 -> 11 11, 2
+        if self.word.lbits[control] || self.word.lbits[target] {
+            return;
+        }
         let phase = ((self.word.xbits[control] & self.word.zbits[target])
             & (self.word.xbits[target] == self.word.zbits[control])) as u8;
         self.word.cnot(control, target);
@@ -48,6 +68,9 @@ where
         // phase = 11 10, 11 01 = 11 ab where a ^ b = 1
         // 11 01 -> 11 10, 2
         // 11 10 -> 11 01, 2
+        if self.word.lbits[control] || self.word.lbits[target] {
+            return;
+        }
         let phase = ((self.word.xbits[control] & self.word.xbits[target])
             & (self.word.zbits[control] ^ self.word.zbits[target])) as u8;
         self.word.cz(control, target);

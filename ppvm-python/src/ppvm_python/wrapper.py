@@ -94,6 +94,24 @@ class PauliSum:
             self._init_ppvm_interface(),
         )
 
+    def __copy__(self) -> "PauliSum":
+        new = object.__new__(PauliSum)
+        object.__setattr__(new, "terms", self.terms)
+        object.__setattr__(new, "n_qubits", self.n_qubits)
+        object.__setattr__(new, "coefficients", self.coefficients)
+        object.__setattr__(new, "min_abs_coeff", self.min_abs_coeff)
+        object.__setattr__(new, "max_pauli_weight", self.max_pauli_weight)
+        object.__setattr__(new, "_interface", self._interface.__copy__())
+        return new
+
+    def copy(self) -> "PauliSum":
+        """Create a copy of the PauliSum instance.
+
+        Returns:
+            A new PauliSum instance that is a copy of the current one.
+        """
+        return self.__copy__()
+
     def _init_ppvm_interface(
         self,
     ):

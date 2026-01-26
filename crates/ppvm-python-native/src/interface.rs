@@ -146,6 +146,21 @@ macro_rules! create_interface {
                 self.inner.truncate();
             }
 
+
+            // some python niceties
+
+            fn __copy__(&self) -> Self {
+                Self { inner: self.inner.clone() }
+            }
+
+            fn __richcmp__(&self, other: PyRef<$name>, op: pyo3::basic::CompareOp) -> PyResult<bool> {
+                match op {
+                    pyo3::basic::CompareOp::Eq => Ok(self.inner == other.inner),
+                    pyo3::basic::CompareOp::Ne => Ok(self.inner != other.inner),
+                    _ => Err(pyo3::exceptions::PyNotImplementedError::new_err("Only equality and inequality comparisons are supported for PauliSum.")),
+                }
+            }
+
         }
 
     };

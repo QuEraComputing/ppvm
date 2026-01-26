@@ -32,3 +32,19 @@ def test_large_state():
     large_state.h(0)
 
     assert large_state.overlap_with_zero() == 0.0
+
+
+def test_copy():
+
+    state = PauliSum(terms=["ZZ"], coefficients=[1.0])  # ZZ
+
+    state.cnot(0, 1)
+    state.h(0)
+
+    assert str(state) == "1.000 * IZ"
+    assert state.overlap_with_zero() == 1.0
+
+    import copy
+
+    tmp = copy.copy(state)
+    assert tmp == state

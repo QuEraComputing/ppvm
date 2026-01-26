@@ -48,3 +48,5 @@ def test_copy():
     assert tmp == state
 
     assert len(tmp) == len(state) == 1
+
+    assert tmp.terms == [("IZ", 1.0)]

@@ -169,8 +169,10 @@ macro_rules! create_interface {
                 self.inner.len()
             }
 
+            pub fn terms(&self) -> Vec<(String, f64)> {
+                self.inner.data().iter().map(|(k, v)| (k.to_string(), *v)).collect()
+            }
         }
-
     };
 }
 

@@ -202,6 +202,15 @@ class PauliSum:
     def __str__(self) -> str:
         return self._interface.__str__()
 
+    @property
+    def terms(self) -> list[tuple[str, float]]:
+        """Get the list of Pauli terms and their coefficients.
+
+        Returns:
+            A list of tuples, each containing a Pauli string and its coefficient.
+        """
+        return self._interface.terms()
+
     # Getting results
     def overlap_with_zero(self) -> float:
         """Compute the overlap with the all-zeros computational basis state.

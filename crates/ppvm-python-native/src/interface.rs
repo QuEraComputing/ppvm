@@ -161,6 +161,14 @@ macro_rules! create_interface {
                 }
             }
 
+            fn __deepcopy__(&self, _memo: &Bound<'_, PyAny>) -> Self {
+                Self { inner: self.inner.clone() }
+            }
+
+            fn __len__(&self) -> usize {
+                self.inner.len()
+            }
+
         }
 
     };

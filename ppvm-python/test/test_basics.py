@@ -2,7 +2,7 @@ from ppvm_python import PauliSum
 
 
 def test_basics():
-    state = PauliSum(terms=["ZZ"], coefficients=[1.0])  # ZZ
+    state = PauliSum(initial_terms=["ZZ"], coefficients=[1.0])  # ZZ
 
     state.cnot(0, 1)
     state.h(0)
@@ -12,7 +12,7 @@ def test_basics():
 
 
 def test_noise():
-    state = PauliSum(terms=["IZ"], coefficients=[1.0])  # |00><00|
+    state = PauliSum(initial_terms=["IZ"], coefficients=[1.0])  # |00><00|
 
     error_probs = {"ZZ": 0.1, "XX": 0.2}
     error_probs_list = state.two_qubit_pauli_error_probabilities(error_probs)
@@ -24,7 +24,7 @@ def test_large_state():
     weight = 80
 
     terms = ["".join(["Z" if i == j else "I" for i in range(n)]) for j in range(n)]
-    large_state = PauliSum(max_pauli_weight=weight, terms=terms)
+    large_state = PauliSum(max_pauli_weight=weight, initial_terms=terms)
 
     for i in reversed(range(1, n)):
         large_state.cnot(i - 1, i)
@@ -36,7 +36,7 @@ def test_large_state():
 
 def test_copy():
 
-    state = PauliSum(terms=["ZZ"], coefficients=[1.0])  # ZZ
+    state = PauliSum(initial_terms=["ZZ"], coefficients=[1.0])  # ZZ
 
     state.cnot(0, 1)
     state.h(0)
@@ -44,7 +44,7 @@ def test_copy():
     assert str(state) == "1.000 * IZ"
     assert state.overlap_with_zero() == 1.0
 
-    import copy
-
-    tmp = copy.copy(state)
+    tmp = state.copy()
     assert tmp == state
+
+    assert len(tmp) == len(state) == 1

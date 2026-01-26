@@ -34,7 +34,7 @@ class PauliSum:
     expectation values via the trace operation.
 
     Attributes:
-        terms: Pauli strings, each containing only 'I', 'X', 'Y', 'Z' characters.
+        initial_terms: Pauli strings, each containing only 'I', 'X', 'Y', 'Z' characters.
             All terms must have the same length (number of qubits).
         n_qubits: Number of qubits. If None, inferred from the length of the
             first term.
@@ -55,7 +55,7 @@ class PauliSum:
 
         ```python
         # Create a simple Pauli sum: 0.5 * ZZ + 0.3 * XI
-        ps = PauliSum(terms=["ZZ", "XI"], coefficients=[0.5, 0.3])
+        ps = PauliSum(initial_terms=["ZZ", "XI"], coefficients=[0.5, 0.3])
         # For a circuit: RZ(0.5) on qubit 1, then H on qubit 0
         # Apply in reverse order:
         ps.rz(1, 0.5)
@@ -79,7 +79,7 @@ class PauliSum:
         ```
     """
 
-    terms: Sequence[str]
+    initial_terms: Sequence[str]
     n_qubits: int | None = None
     coefficients: Sequence[float] = ()
     min_abs_coeff: float = 1e-10
@@ -96,7 +96,7 @@ class PauliSum:
 
     def __copy__(self) -> "PauliSum":
         new = object.__new__(PauliSum)
-        object.__setattr__(new, "terms", self.terms)
+        object.__setattr__(new, "initial_terms", self.initial_terms)
         object.__setattr__(new, "n_qubits", self.n_qubits)
         object.__setattr__(new, "coefficients", self.coefficients)
         object.__setattr__(new, "min_abs_coeff", self.min_abs_coeff)
@@ -117,7 +117,7 @@ class PauliSum:
     ):
 
         n_qubits = self.n_qubits
-        terms = self.terms
+        terms = self.initial_terms
         coefficients = self.coefficients
 
         if not terms:
@@ -164,6 +164,14 @@ class PauliSum:
                 coefficients=coefficients,
             )
 
+    def __len__(self) -> int:
+        """Get the number of terms in the PauliSum.
+
+        Returns:
+            The number of Pauli terms.
+        """
+        return len(self._interface)
+
     @staticmethod
     def from_str(s: str) -> "PauliSum":
         """Create a PauliSum from a single Pauli string with coefficient 1.0.
@@ -187,7 +195,9 @@ class PauliSum:
         n_qubits = len(s)
         terms = [s]
         coefficients = [1.0]
-        return PauliSum(n_qubits=n_qubits, terms=terms, coefficients=coefficients)
+        return PauliSum(
+            n_qubits=n_qubits, initial_terms=terms, coefficients=coefficients
+        )
 
     def __str__(self) -> str:
         return self._interface.__str__()

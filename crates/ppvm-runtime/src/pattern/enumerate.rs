@@ -1,6 +1,6 @@
 use super::data::{Decorated, OpPattern, PauliPattern};
 use crate::char::Pauli;
-use crate::traits::PauliStorage;
+use crate::traits::{PauliStorage, PauliWordTrait};
 use crate::word::PauliWord;
 
 use itertools::{Itertools, MultiProduct};

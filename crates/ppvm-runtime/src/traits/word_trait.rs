@@ -2,7 +2,13 @@ use crate::char::Pauli;
 use crate::traits::PauliStorage;
 use std::hash::Hash;
 
-pub trait PauliWordTrait<S: PauliStorage, V = fxhash::FxBuildHasher>: Clone + Hash + Eq {
+pub trait PauliIter {
+    fn iter(&self) -> impl Iterator<Item = Pauli>;
+}
+
+pub trait PauliWordTrait<S: PauliStorage, V = fxhash::FxBuildHasher>:
+    Clone + Hash + Eq + PauliIter
+{
     fn new(nqubits: usize) -> Self;
 
     fn n_qubits(&self) -> usize;
@@ -12,8 +18,6 @@ pub trait PauliWordTrait<S: PauliStorage, V = fxhash::FxBuildHasher>: Clone + Ha
     fn rehash(&mut self);
 
     fn get(&self, index: usize) -> Pauli;
-
-    fn iter(&self) -> impl Iterator<Item = Pauli>;
 
     fn get_multiple<const Q: usize>(&self, indices: [usize; Q]) -> Self {
         let mut result = Self::new(Q);

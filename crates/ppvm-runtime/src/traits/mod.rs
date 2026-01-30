@@ -20,4 +20,4 @@ pub use noise::{AmplitudeDamping, Depolarizing, PauliError, PauliErrorAll, TwoQu
 pub use storage::PauliStorage;
 pub use strategy::{NoStrategy, Strategy};
 pub use trace::Trace;
-pub use word_trait::PauliWordTrait;
+pub use word_trait::{PauliIter, PauliWordTrait};

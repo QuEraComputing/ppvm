@@ -1,5 +1,5 @@
 use crate::char::Pauli;
-use crate::traits::{PauliStorage, PauliWordTrait};
+use crate::traits::{PauliIter, PauliStorage, PauliWordTrait};
 use bitvec::array::BitArray;
 use std::hash::{BuildHasher, Hash};
 use std::ops::Index;
@@ -27,6 +27,32 @@ impl<A: PauliStorage, S> Eq for PauliWord<A, S> {}
 impl<A: PauliStorage, S> PartialEq for PauliWord<A, S> {
     fn eq(&self, other: &Self) -> bool {
         self.xbits.data == other.xbits.data && self.zbits.data == other.zbits.data
+    }
+}
+
+impl<A, S> PauliIter for PauliWord<A, S>
+where
+    A: PauliStorage,
+    S: BuildHasher + Clone + Default,
+{
+    fn iter(&self) -> impl Iterator<Item = Pauli> {
+        PauliWordIter {
+            word: self,
+            curr: 0,
+        }
+    }
+}
+
+impl<A, S> PauliIter for &PauliWord<A, S>
+where
+    A: PauliStorage,
+    S: BuildHasher + Clone + Default,
+{
+    fn iter(&self) -> impl Iterator<Item = Pauli> {
+        PauliWordIter {
+            word: self,
+            curr: 0,
+        }
     }
 }
 
@@ -70,13 +96,6 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait<A, S> for
             (false, true) => Pauli::Z,
             (true, false) => Pauli::X,
             (true, true) => Pauli::Y,
-        }
-    }
-
-    fn iter(&self) -> impl Iterator<Item = Pauli> {
-        PauliWordIter {
-            word: self,
-            curr: 0,
         }
     }
 

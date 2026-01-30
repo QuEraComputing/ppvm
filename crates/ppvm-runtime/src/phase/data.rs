@@ -3,12 +3,16 @@ use std::hash::BuildHasher;
 use num::Integer;
 
 use crate::char::Pauli;
-use crate::traits::PauliStorage;
+use crate::traits::{PauliStorage, PauliWordTrait};
 use crate::word::PauliWord;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct PhasedPauliWord<A: PauliStorage, H = fxhash::FxBuildHasher> {
-    pub word: PauliWord<A, H>,
+pub struct PhasedPauliWord<
+    A: PauliStorage,
+    H = fxhash::FxBuildHasher,
+    W: PauliWordTrait<A, H> = PauliWord<A, H>,
+> {
+    pub word: W,
     /// 0: +1, 1: +i, 2: -1, 3: -i
     ///   sign imag
     /// +1: 0   0
@@ -16,6 +20,7 @@ pub struct PhasedPauliWord<A: PauliStorage, H = fxhash::FxBuildHasher> {
     /// -1: 1   0
     /// -i: 1   1
     pub phase: u8,
+    _phantom: std::marker::PhantomData<(A, H)>,
 }
 
 impl<A: PauliStorage, H: BuildHasher + Default + Clone> PhasedPauliWord<A, H> {
@@ -23,6 +28,7 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone> PhasedPauliWord<A, H> {
         Self {
             word: PauliWord::new(n_qubits),
             phase: 0, // Default phase is +1
+            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -57,6 +63,7 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone> PhasedPauliWord<A, H> {
         Self {
             word: new_words,
             phase: self.phase,
+            _phantom: std::marker::PhantomData,
         }
     }
 }
@@ -68,6 +75,7 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone> From<PauliWord<A, H>>
         Self {
             word: words,
             phase: 0,
+            _phantom: std::marker::PhantomData,
         }
     }
 }
@@ -89,7 +97,11 @@ impl<S: AsRef<str>, H: BuildHasher + Default + Clone> From<S> for PhasedPauliWor
             .skip(if phase.is_odd() { 2 } else { 1 })
             .collect();
         let words = PauliWord::from(s);
-        Self { word: words, phase }
+        Self {
+            word: words,
+            phase,
+            _phantom: std::marker::PhantomData,
+        }
     }
 }
 

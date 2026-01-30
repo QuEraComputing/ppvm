@@ -3,8 +3,9 @@ use std::hash::BuildHasher;
 use super::data::PhasedPauliWord;
 use crate::traits::Clifford;
 use crate::traits::PauliStorage;
+use crate::word::PauliWord;
 
-impl<S, H> Clifford for PhasedPauliWord<S, H>
+impl<S, H> Clifford for PhasedPauliWord<S, H, PauliWord<S, H>>
 where
     S: PauliStorage,
     H: BuildHasher + Clone + Default,

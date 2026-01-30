@@ -7,6 +7,7 @@ mod ptm;
 mod storage;
 mod strategy;
 mod trace;
+mod word_trait;
 
 pub use branch::{CRx, Projection, RotationOne, RotationTwo};
 pub use clifford::Clifford;
@@ -19,3 +20,4 @@ pub use noise::{AmplitudeDamping, Depolarizing, PauliError, PauliErrorAll, TwoQu
 pub use storage::PauliStorage;
 pub use strategy::{NoStrategy, Strategy};
 pub use trace::Trace;
+pub use word_trait::PauliWordTrait;

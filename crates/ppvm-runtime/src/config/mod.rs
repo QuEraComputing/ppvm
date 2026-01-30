@@ -1,13 +1,14 @@
 use std::hash::BuildHasher;
 
-use crate::traits::{ACMap, Coefficient, PauliStorage, Strategy};
+use crate::traits::{ACMap, Coefficient, PauliStorage, PauliWordTrait, Strategy};
 
 pub trait Config: Clone {
     type Storage: PauliStorage;
     type Coeff: Coefficient;
     type Strategy: Strategy;
     type BuildHasher: BuildHasher + Clone + Default;
-    type Map: ACMap<Self::Storage, Self::Coeff, Self::BuildHasher>;
+    type PauliWordType: PauliWordTrait<Self::Storage, Self::BuildHasher>;
+    type Map: ACMap<Self::Storage, Self::Coeff, Self::BuildHasher, Self::PauliWordType>;
 }
 
 pub mod fxhash;

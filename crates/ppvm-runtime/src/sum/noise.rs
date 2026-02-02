@@ -277,3 +277,48 @@ where
         });
     }
 }
+
+impl<T> CorrelatedLossChannel<T> for PauliSum<T>
+where
+    T: Config,
+    f64: std::ops::Sub<T::Coeff, Output = T::Coeff>,
+{
+    fn correlated_loss_channel(&mut self, addr0: usize, addr1: usize, p: T::Coeff) {
+        self.map_insert(|k, v| match (k.get(addr0), k.get(addr1)) {
+            (Pauli::L, Pauli::L) => {
+                let new_v = v.clone() * p.clone();
+                let mut new_k = k.clone();
+                new_k.set(addr0, Pauli::I);
+                new_k.set(addr1, Pauli::I);
+                Some((new_k, new_v))
+            }
+            _ => {
+                *v *= 1.0f64 - p.clone();
+                None
+            }
+        });
+
+        // TODO: cleaner insert for multiple values
+        self.map_insert(|k, v| match (k.get(addr0), k.get(addr1)) {
+            (Pauli::L, Pauli::L) => {
+                let new_v = v.clone() * p.clone();
+                let mut new_k = k.clone();
+                new_k.set(addr0, Pauli::I);
+                new_k.set(addr1, Pauli::L);
+                Some((new_k, new_v))
+            }
+            _ => None,
+        });
+
+        self.map_insert(|k, v| match (k.get(addr0), k.get(addr1)) {
+            (Pauli::L, Pauli::L) => {
+                let new_v = v.clone() * p.clone();
+                let mut new_k = k.clone();
+                new_k.set(addr0, Pauli::L);
+                new_k.set(addr1, Pauli::I);
+                Some((new_k, new_v))
+            }
+            _ => None,
+        });
+    }
+}

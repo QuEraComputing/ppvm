@@ -224,3 +224,64 @@ fn test_loss_truncation() {
     state.truncate();
     assert_eq!(state.data().len(), original_len - 1);
 }
+
+#[test]
+fn test_ghz_final_correlated_loss() {
+    // GHZ state circuit, with loss channels at the end, causing uncorrelated ZZ
+    // expectation values some of the time.
+    let mut state = LossyPauliSum::builder().n_qubits(2).build();
+
+    let p_l = 0.1;
+
+    state += ("ZZ", 1.0);
+
+    state.reset_loss_channel(0);
+    state.reset_loss_channel(1);
+
+    // Applying some identity gates shouldn't affect loss
+    state.x(0);
+    state.x(1);
+    state.x(0);
+    state.x(1);
+
+    // just lose at the end, before this we should have a perfect GHZ state
+    state.correlated_loss_channel(0, 1, p_l);
+
+    state.cnot(0, 1);
+    state.h(0);
+
+    let zero_pattern: PauliPattern = "Z?*".into();
+    let overlap = state.trace(&zero_pattern);
+
+    // correlated loss should leave ZZ invariant
+    assert!((overlap - 1.0).abs() < 1e-10);
+
+    // same thing again, but this time we flip one bit leading to |10> + |01>
+    let mut state = LossyPauliSum::builder().n_qubits(2).build();
+
+    let p_l = 0.1;
+
+    state += ("ZZ", 1.0);
+
+    state.reset_loss_channel(0);
+    state.reset_loss_channel(1);
+
+    state.x(0); // flip first qubit
+
+    // just lose at the end, before this we should have a perfect GHZ state
+    state.correlated_loss_channel(0, 1, p_l);
+
+    state.cnot(0, 1);
+    state.h(0);
+
+    println!("{}", state);
+
+    let zero_pattern: PauliPattern = "Z?*".into();
+    let overlap = state.trace(&zero_pattern);
+
+    // in 1 - p cases we have the state invarian (ZZ = -1), in p cases we have |00>
+    let expected_overlap = -1.0 * (1.0 - p_l) + 1.0 * p_l;
+
+    // correlated loss should leave ZZ invariant
+    assert!((overlap - expected_overlap).abs() < 1e-10);
+}

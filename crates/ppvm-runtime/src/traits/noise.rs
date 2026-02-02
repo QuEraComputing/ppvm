@@ -29,3 +29,7 @@ pub trait LossChannel<T: Config> {
 pub trait ResetLossChannel<T: Config> {
     fn reset_loss_channel(&mut self, addr0: usize);
 }
+
+pub trait CorrelatedLossChannel<T: Config> {
+    fn correlated_loss_channel(&mut self, addr0: usize, addr1: usize, p: T::Coeff);
+}

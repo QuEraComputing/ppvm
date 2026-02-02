@@ -81,3 +81,31 @@ impl Strategy for CoefficientThreshold {
         map.retain(|_, v| !v.cutoff(self.0));
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaxLossWeight(pub usize);
+
+impl Default for MaxLossWeight {
+    fn default() -> Self {
+        Self(10)
+    }
+}
+
+impl Strategy for MaxLossWeight {
+    fn capacity(&self, n_qubits: usize) -> usize {
+        // the number here should scale binomially, but that can get large
+        // since the capacity has a direct impact on performance, let's be conservative
+        n_qubits * 10
+    }
+
+    fn truncate<S, V, H, M, W>(&self, map: &mut M)
+    where
+        S: PauliStorage,
+        V: Coefficient,
+        H: std::hash::BuildHasher + Clone + Default,
+        M: ACMap<S, V, H, W>,
+        W: PauliWordTrait,
+    {
+        map.retain(|k, _| k.loss_weight() <= self.0);
+    }
+}

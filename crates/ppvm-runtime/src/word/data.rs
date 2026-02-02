@@ -74,6 +74,11 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for Pauli
     }
 
     #[inline(always)]
+    fn loss_weight(&self) -> usize {
+        0
+    }
+
+    #[inline(always)]
     fn get_xbit(&self, index: usize) -> bool {
         debug_assert!(index < self.nqubits, "Index out of bounds");
         self.xbits[index]

@@ -109,6 +109,10 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for Lossy
             .count()
     }
 
+    fn loss_weight(&self) -> usize {
+        self.lbits.count_ones()
+    }
+
     fn rehash(&mut self) {
         use std::hash::Hasher;
         let mut hasher = S::default().build_hasher();

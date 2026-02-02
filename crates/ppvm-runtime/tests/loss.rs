@@ -1,7 +1,7 @@
-use ppvm_runtime::prelude::*;
+use ppvm_runtime::{prelude::*, strategy::MaxLossWeight};
 
 type LossyPauliSum = PauliSum<
-    config::indexmap::ByteFxHashF64<1, NoStrategy, LossyPauliWord<[u8; 4], fxhash::FxBuildHasher>>,
+    config::indexmap::ByteFxHashF64<1, NoStrategy, LossyPauliWord<[u8; 1], fxhash::FxBuildHasher>>,
 >;
 
 #[test]
@@ -190,26 +190,37 @@ fn test_ghz() {
     assert!((overlap - prob).abs() < 1e-10);
 }
 
-// #[test]
-// fn test_loss_truncation() {
-//     let strat = ppvm_runtime::strategy::MaxLossWeight(2);
-//     let mut state =
-//         PauliSum::<config::fxhash::ByteF64<3, ppvm_runtime::strategy::MaxLossWeight>>::builder()
-//             .n_qubits(3)
-//             .strategy(strat)
-//             .build();
+#[test]
+fn test_loss_truncation() {
+    let strat = ppvm_runtime::strategy::MaxLossWeight(2);
+    let mut state: PauliSum<
+        config::indexmap::ByteFxHashF64<
+            1,
+            MaxLossWeight,
+            LossyPauliWord<[u8; 1], fxhash::FxBuildHasher>,
+        >,
+    > = PauliSum::<
+        config::indexmap::ByteFxHashF64<
+            1,
+            MaxLossWeight,
+            LossyPauliWord<[u8; 1], fxhash::FxBuildHasher>,
+        >,
+    >::builder()
+    .n_qubits(3)
+    .strategy(strat)
+    .build();
 
-//     state += ("ZZZ", 1.0);
-//     state.reset_loss_channel(0);
-//     state.reset_loss_channel(1);
-//     state.reset_loss_channel(2);
+    state += ("ZZZ", 1.0);
+    state.reset_loss_channel(0);
+    state.reset_loss_channel(1);
+    state.reset_loss_channel(2);
 
-//     state.loss_channel(0, 0.1);
-//     state.loss_channel(1, 0.1);
-//     state.loss_channel(2, 0.1);
+    state.loss_channel(0, 0.1);
+    state.loss_channel(1, 0.1);
+    state.loss_channel(2, 0.1);
 
-//     let original_len = state.data().len();
+    let original_len = state.data().len();
 
-//     state.truncate();
-//     assert_eq!(state.data().len(), original_len - 1);
-// }
+    state.truncate();
+    assert_eq!(state.data().len(), original_len - 1);
+}

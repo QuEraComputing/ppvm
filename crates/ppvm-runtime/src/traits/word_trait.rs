@@ -25,6 +25,8 @@ pub trait PauliWordTrait:
 
     fn weight(&self) -> usize;
 
+    fn loss_weight(&self) -> usize;
+
     fn rehash(&mut self);
 
     fn get(&self, index: usize) -> Pauli;

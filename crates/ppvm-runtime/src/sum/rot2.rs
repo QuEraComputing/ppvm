@@ -1,10 +1,13 @@
 use crate::traits::*;
-use crate::{config::Config, sum::PauliSum};
+use crate::{config::Config, sum::PauliSum, word::PauliWord};
 
-impl<T: Config> RotationTwo<T> for PauliSum<T>
+impl<T, S, H> RotationTwo<T> for PauliSum<T>
 where
+    S: PauliStorage,
+    H: std::hash::BuildHasher + Clone + Default,
+    T: Config<Storage = S, BuildHasher = H, PauliWordType = PauliWord<S, H>>,
     T::Coeff: std::ops::MulAssign,
-    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher> + ACMapConsume,
+    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher, PauliWord<S, H>> + ACMapConsume,
 {
     fn rotate_2(
         &mut self,

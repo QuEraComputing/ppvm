@@ -1,4 +1,4 @@
-use std::ops::AddAssign;
+use std::ops::{AddAssign, MulAssign};
 
 use num::One;
 
@@ -33,7 +33,11 @@ impl<T: Config> std::ops::Mul<PauliSum<T>> for PauliSum<T>
 where
     T::BuildHasher: Sync + Send,
     T::Coeff: ComplexCoefficient,
-    T::Map: for<'a> ACMapIter<'a, Item = (&'a PauliWord<T::Storage, T::BuildHasher>, &'a T::Coeff)>,
+    T::Map: for<'a> ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>: for<'a> From<&'a T::PauliWordType>
+        + MulAssign<PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
+        + Send
+        + Sync,
 {
     type Output = PauliSum<T>;
 
@@ -44,14 +48,15 @@ where
     }
 }
 
-impl<T: Config> std::ops::Mul<PauliWord<T::Storage, T::BuildHasher>> for PauliSum<T>
+impl<T: Config, W: PauliWordTrait<T::Storage, T::BuildHasher>> std::ops::Mul<W> for PauliSum<T>
 where
     T::BuildHasher: Sync + Send,
     T::Coeff: ComplexCoefficient,
+    PauliSum<T>: std::ops::MulAssign<W>,
 {
     type Output = PauliSum<T>;
 
-    fn mul(self, rhs: PauliWord<T::Storage, T::BuildHasher>) -> Self::Output {
+    fn mul(self, rhs: W) -> Self::Output {
         let mut output = self.clone();
         output *= rhs;
         output
@@ -62,19 +67,19 @@ impl<T: Config> std::ops::MulAssign<PauliSum<T>> for PauliSum<T>
 where
     T::BuildHasher: Sync + Send,
     T::Coeff: ComplexCoefficient,
-    T::Map: for<'a> ACMapIter<'a, Item = (&'a PauliWord<T::Storage, T::BuildHasher>, &'a T::Coeff)>,
+    T::Map: for<'a> ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>: for<'a> From<&'a T::PauliWordType>
+        + MulAssign<PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
+        + Send
+        + Sync,
 {
     fn mul_assign(&mut self, rhs: PauliSum<T>) {
         for (rhs_word, rhs_coeff) in rhs.iter() {
-            let phased_rhs = PhasedPauliWord {
-                word: rhs_word.clone(),
-                phase: 0,
-            };
+            let phased_rhs: PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType> =
+                rhs_word.into();
             self.map_add(|word, coeff| {
-                let mut phased_word = PhasedPauliWord {
-                    word: word.clone(),
-                    phase: 0,
-                };
+                let mut phased_word: PhasedPauliWord<_, _, <T as Config>::PauliWordType> =
+                    word.into();
                 phased_word *= phased_rhs.clone();
                 let new_coeff = coeff.mul_phase(phased_word.phase);
                 (phased_word.word, new_coeff * rhs_coeff.clone())
@@ -87,17 +92,17 @@ impl<T: Config> std::ops::MulAssign<PauliWord<T::Storage, T::BuildHasher>> for P
 where
     T::BuildHasher: Sync + Send,
     T::Coeff: ComplexCoefficient,
+    T::PauliWordType: From<PauliWord<T::Storage, T::BuildHasher>>,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
+        MulAssign + From<T::PauliWordType> + Send + Sync,
 {
     fn mul_assign(&mut self, rhs: PauliWord<T::Storage, T::BuildHasher>) {
-        let phased_rhs = PhasedPauliWord {
-            word: rhs,
-            phase: 0,
-        };
+        let rhs_word: T::PauliWordType = rhs.into();
+        let phased_rhs: PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType> =
+            rhs_word.into();
         self.map_add(|word, coeff| {
-            let mut phased_word = PhasedPauliWord {
-                word: word.clone(),
-                phase: 0,
-            };
+            let mut phased_word: PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType> =
+                word.clone().into();
             phased_word *= phased_rhs.clone();
             (phased_word.word, coeff.mul_phase(phased_word.phase))
         });
@@ -107,8 +112,8 @@ where
 impl<T: Config> AddAssign<PauliSum<T>> for PauliSum<T>
 where
     T::Coeff: std::ops::AddAssign,
-    T::Map: Extend<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>
-        + IntoIterator<Item = (PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>,
+    T::Map:
+        Extend<(T::PauliWordType, T::Coeff)> + IntoIterator<Item = (T::PauliWordType, T::Coeff)>,
 {
     fn add_assign(&mut self, rhs: PauliSum<T>) {
         debug_assert_eq!(self.n_qubits(), rhs.n_qubits());
@@ -119,8 +124,8 @@ where
 impl<'a, T: Config> AddAssign<&'a PauliSum<T>> for PauliSum<T>
 where
     T::Coeff: std::ops::AddAssign,
-    T::Map: Extend<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>
-        + ACMapIter<'a, Item = (PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>,
+    T::Map:
+        Extend<(T::PauliWordType, T::Coeff)> + ACMapIter<'a, Item = (T::PauliWordType, T::Coeff)>,
 {
     fn add_assign(&mut self, rhs: &'a PauliSum<T>) {
         debug_assert_eq!(self.n_qubits(), rhs.n_qubits());
@@ -130,9 +135,9 @@ where
 
 impl<T: Config, P> AddAssign<(P, T::Coeff)> for PauliSum<T>
 where
-    P: Into<PauliWord<T::Storage, T::BuildHasher>>,
+    P: Into<T::PauliWordType>,
     T::Coeff: std::ops::AddAssign,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
 {
     fn add_assign(&mut self, rhs: (P, T::Coeff)) {
         let key = rhs.0.into();
@@ -141,11 +146,36 @@ where
     }
 }
 
+// NOTE: to avoid conflicts with the (P, T::Coeff) impl above, we implement a custom trait
+// which is not implemented for tuples
+
+mod private_into_pauli_word {
+    // NOTE: sealed trait pattern: so downstream crates can't implement the IntoPauliWord trait
+    // we additionally require this private trait to be implemented; otherwise, we again get
+    // conflicting implementations
+    pub trait SealedIntoPauliWord {}
+}
+
+trait IntoPauliWord<T: Config>:
+    Into<T::PauliWordType> + private_into_pauli_word::SealedIntoPauliWord
+{
+}
+impl<S: PauliStorage, H: std::hash::BuildHasher + Default + Clone>
+    private_into_pauli_word::SealedIntoPauliWord for PauliWord<S, H>
+{
+}
+impl private_into_pauli_word::SealedIntoPauliWord for &str {}
+impl private_into_pauli_word::SealedIntoPauliWord for String {}
+impl<T: Config, P> IntoPauliWord<T> for P where
+    P: Into<T::PauliWordType> + private_into_pauli_word::SealedIntoPauliWord
+{
+}
+
 impl<T: Config, P> AddAssign<P> for PauliSum<T>
 where
-    P: Into<PauliWord<T::Storage, T::BuildHasher>>,
+    P: IntoPauliWord<T>,
     T::Coeff: std::ops::AddAssign + One,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
 {
     fn add_assign(&mut self, rhs: P) {
         let key = rhs.into();

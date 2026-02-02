@@ -23,11 +23,19 @@ pub struct PhasedPauliWord<
     _phantom: std::marker::PhantomData<(A, H)>,
 }
 
-impl<A: PauliStorage, H: BuildHasher + Default + Clone> PhasedPauliWord<A, H> {
+impl<A: PauliStorage, H: BuildHasher, W: PauliWordTrait<A, H>> PhasedPauliWord<A, H, W> {
     pub fn new(n_qubits: usize) -> Self {
         Self {
-            word: PauliWord::new(n_qubits),
+            word: W::new(n_qubits),
             phase: 0, // Default phase is +1
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    pub fn build_from_word(word: W, phase: u8) -> Self {
+        Self {
+            word,
+            phase,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -68,10 +76,10 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone> PhasedPauliWord<A, H> {
     }
 }
 
-impl<A: PauliStorage, H: BuildHasher + Default + Clone> From<PauliWord<A, H>>
-    for PhasedPauliWord<A, H>
+impl<A: PauliStorage, H: BuildHasher + Default + Clone, W: PauliWordTrait<A, H>> From<W>
+    for PhasedPauliWord<A, H, W>
 {
-    fn from(words: PauliWord<A, H>) -> Self {
+    fn from(words: W) -> Self {
         Self {
             word: words,
             phase: 0,

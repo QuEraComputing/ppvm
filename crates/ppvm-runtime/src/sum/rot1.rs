@@ -1,10 +1,14 @@
 use crate::traits::*;
+use crate::word::PauliWord;
 use crate::{config::Config, sum::PauliSum};
 
-impl<T: Config> RotationOne<T> for PauliSum<T>
+impl<T, S, H> RotationOne<T> for PauliSum<T>
 where
+    S: PauliStorage,
+    H: std::hash::BuildHasher + Clone + Default,
+    T: Config<Storage = S, BuildHasher = H, PauliWordType = PauliWord<S, H>>,
     T::Coeff: std::ops::MulAssign,
-    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher> + ACMapConsume,
+    T::Map: ACMapInsert<S, T::Coeff, H, PauliWord<S, H>> + ACMapConsume,
 {
     fn rotate_1(&mut self, axis: crate::char::Pauli, addr0: usize, theta: <T as Config>::Coeff) {
         let (sin, cos) = theta.sin_cos();

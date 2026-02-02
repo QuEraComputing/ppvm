@@ -1,6 +1,5 @@
 use crate::config::Config;
 use crate::traits::*;
-use crate::word::PauliWord;
 
 #[derive(Clone)]
 pub struct PauliSum<T: Config> {

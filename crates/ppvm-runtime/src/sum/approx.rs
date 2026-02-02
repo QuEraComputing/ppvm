@@ -2,7 +2,6 @@ use super::data::PauliSum;
 use crate::{
     config::Config,
     traits::{ACMapContains, ACMapIter},
-    word::PauliWord,
 };
 
 impl<T: Config> approx::AbsDiffEq for PauliSum<T>

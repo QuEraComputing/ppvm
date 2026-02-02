@@ -1,6 +1,6 @@
 use crate::{
     config::Config, phase::PhasedPauliWord, sum::PauliSum, traits::Clifford, traits::PauliStorage,
-    traits::PauliWordTrait, word::PauliWord,
+    word::PauliWord,
 };
 use std::hash::BuildHasher;
 

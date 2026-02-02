@@ -1,5 +1,5 @@
 use crate::traits::*;
-use crate::{config::Config, sum::PauliSum, word::PauliWord};
+use crate::{config::Config, sum::PauliSum};
 
 impl<T, S, H> RotationTwo<T> for PauliSum<T>
 where

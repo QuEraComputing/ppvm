@@ -5,9 +5,9 @@ impl<T, S, H> RotationTwo<T> for PauliSum<T>
 where
     S: PauliStorage,
     H: std::hash::BuildHasher + Clone + Default,
-    T: Config<Storage = S, BuildHasher = H, PauliWordType = PauliWord<S, H>>,
+    T: Config<Storage = S, BuildHasher = H>,
     T::Coeff: std::ops::MulAssign,
-    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher, PauliWord<S, H>> + ACMapConsume,
+    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapConsume,
 {
     fn rotate_2(
         &mut self,
@@ -26,10 +26,10 @@ where
                 axis_a_z,
                 axis_b_x,
                 axis_b_z,
-                k.xbits[a] as u8,
-                k.zbits[a] as u8,
-                k.xbits[b] as u8,
-                k.zbits[b] as u8,
+                k.get_xbit(a) as u8,
+                k.get_zbit(a) as u8,
+                k.get_xbit(b) as u8,
+                k.get_zbit(b) as u8,
             );
 
             if eps == 0 {
@@ -39,10 +39,10 @@ where
                 *v *= cos.clone();
 
                 let mut new_word = k.clone();
-                new_word.xbits.set(a, x_a == 1);
-                new_word.xbits.set(b, x_b == 1);
-                new_word.zbits.set(a, z_a == 1);
-                new_word.zbits.set(b, z_b == 1);
+                new_word.set_xbit(a, x_a == 1);
+                new_word.set_xbit(b, x_b == 1);
+                new_word.set_zbit(a, z_a == 1);
+                new_word.set_zbit(b, z_b == 1);
                 new_word.rehash();
 
                 coeff *= sin.mul_sign(-eps);

@@ -2,36 +2,36 @@ use std::hash::BuildHasher;
 
 use super::data::PhasedPauliWord;
 use crate::traits::Clifford;
-use crate::traits::PauliStorage;
-use crate::word::PauliWord;
+use crate::traits::{PauliStorage, PauliWordTrait};
 
-impl<S, H> Clifford for PhasedPauliWord<S, H, PauliWord<S, H>>
+impl<S, H, W> Clifford for PhasedPauliWord<S, H, W>
 where
     S: PauliStorage,
     H: BuildHasher + Clone + Default,
+    W: PauliWordTrait + Clifford,
 {
     fn x(&mut self, index: usize) {
-        let phase = (self.word.zbits[index]) as u8;
+        let phase = (self.word.get_zbit(index)) as u8;
         self.word.x(index);
         self.add_phase(phase << 1);
     }
     fn y(&mut self, index: usize) {
-        let phase = (self.word.xbits[index] ^ self.word.zbits[index]) as u8;
+        let phase = (self.word.get_xbit(index) ^ self.word.get_zbit(index)) as u8;
         self.word.y(index);
         self.add_phase(phase << 1);
     }
     fn z(&mut self, index: usize) {
-        let phase = (self.word.xbits[index]) as u8;
+        let phase = (self.word.get_xbit(index)) as u8;
         self.word.z(index);
         self.add_phase(phase << 1);
     }
     fn h(&mut self, index: usize) {
-        let phase = (self.word.xbits[index] & self.word.zbits[index]) as u8;
+        let phase = (self.word.get_xbit(index) & self.word.get_zbit(index)) as u8;
         self.word.h(index);
         self.add_phase(phase << 1);
     }
     fn s(&mut self, index: usize) {
-        let phase = (self.word.xbits[index] & !self.word.zbits[index]) as u8;
+        let phase = (self.word.get_xbit(index) & !self.word.get_zbit(index)) as u8;
         self.word.s(index);
         self.add_phase(phase << 1);
     }
@@ -40,8 +40,9 @@ where
         // xx zz    xx zz
         // 11 11 -> 10 01, 2
         // 10 01 -> 11 11, 2
-        let phase = ((self.word.xbits[control] & self.word.zbits[target])
-            & (self.word.xbits[target] == self.word.zbits[control])) as u8;
+        let phase = ((self.word.get_xbit(control) & self.word.get_zbit(target))
+            & (self.word.get_xbit(target) == self.word.get_zbit(control)))
+            as u8;
         self.word.cnot(control, target);
         self.add_phase(phase << 1);
     }
@@ -49,8 +50,8 @@ where
         // phase = 11 10, 11 01 = 11 ab where a ^ b = 1
         // 11 01 -> 11 10, 2
         // 11 10 -> 11 01, 2
-        let phase = ((self.word.xbits[control] & self.word.xbits[target])
-            & (self.word.zbits[control] ^ self.word.zbits[target])) as u8;
+        let phase = ((self.word.get_xbit(control) & self.word.get_xbit(target))
+            & (self.word.get_zbit(control) ^ self.word.get_zbit(target))) as u8;
         self.word.cz(control, target);
         self.add_phase(phase << 1);
     }

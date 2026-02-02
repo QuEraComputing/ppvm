@@ -6,9 +6,9 @@ impl<T, S, H> RotationOne<T> for PauliSum<T>
 where
     S: PauliStorage,
     H: std::hash::BuildHasher + Clone + Default,
-    T: Config<Storage = S, BuildHasher = H, PauliWordType = PauliWord<S, H>>,
+    T: Config<Storage = S, BuildHasher = H>,
     T::Coeff: std::ops::MulAssign,
-    T::Map: ACMapInsert<S, T::Coeff, H, PauliWord<S, H>> + ACMapConsume,
+    T::Map: ACMapInsert<S, T::Coeff, H, T::PauliWordType> + ACMapConsume,
 {
     fn rotate_1(&mut self, axis: crate::char::Pauli, addr0: usize, theta: <T as Config>::Coeff) {
         let (sin, cos) = theta.sin_cos();
@@ -21,8 +21,8 @@ where
                 let mut coeff = v.clone();
                 *v *= cos.clone();
                 let mut new_word = k.clone();
-                new_word.xbits.set(addr0, p_q & 0b01 != 0);
-                new_word.zbits.set(addr0, p_q & 0b10 != 0);
+                new_word.set_xbit(addr0, p_q & 0b01 != 0);
+                new_word.set_zbit(addr0, p_q & 0b10 != 0);
                 new_word.rehash();
 
                 coeff *= sin.mul_sign(eps);

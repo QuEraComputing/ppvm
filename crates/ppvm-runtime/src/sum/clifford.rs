@@ -1,6 +1,5 @@
 use crate::{
     config::Config, phase::PhasedPauliWord, sum::PauliSum, traits::Clifford, traits::PauliStorage,
-    word::PauliWord,
 };
 use std::hash::BuildHasher;
 
@@ -39,13 +38,25 @@ impl<S, H, T> Clifford for PauliSum<T>
 where
     S: PauliStorage,
     H: BuildHasher + Clone + Default,
-    T: Config<Storage = S, BuildHasher = H, PauliWordType = PauliWord<S, H>>,
+    T: Config<Storage = S, BuildHasher = H>,
+    T::PauliWordType: Clifford,
 {
-    map_scale!(x, index);
+    // map_scale!(x, index);
     map_scale!(y, index);
     map_scale!(z, index);
     map_word!(h, index);
     map_word!(s, index);
     map_word!(cnot, a, b);
     map_word!(cz, a, b);
+
+    fn x(&mut self, addr0: usize) {
+        self.scale(|k, v| {
+            let mut p: PhasedPauliWord<T::Storage, T::BuildHasher, <T as Config>::PauliWordType> =
+                k.clone().into();
+            p.x(addr0);
+            if !p.is_positive() {
+                *v *= -1.0;
+            }
+        })
+    }
 }

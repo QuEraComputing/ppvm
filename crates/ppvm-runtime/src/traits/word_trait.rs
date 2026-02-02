@@ -1,15 +1,23 @@
 use crate::char::Pauli;
-use crate::traits::PauliStorage;
+use crate::traits::{Clifford, PauliStorage};
 use std::hash::Hash;
 
 pub trait PauliIter {
     fn iter(&self) -> impl Iterator<Item = Pauli>;
 }
 
-pub trait PauliWordTrait: Clone + Hash + Eq + PauliIter {
+pub trait PauliWordTrait: Clone + Hash + Eq + PauliIter + From<String> + Clifford {
     fn new(nqubits: usize) -> Self;
 
     fn n_qubits(&self) -> usize;
+
+    // getter methods
+    fn get_xbit(&self, index: usize) -> bool;
+    fn get_zbit(&self, index: usize) -> bool;
+
+    // setter methods
+    fn set_xbit(&mut self, index: usize, value: bool);
+    fn set_zbit(&mut self, index: usize, value: bool);
 
     fn weight(&self) -> usize;
 

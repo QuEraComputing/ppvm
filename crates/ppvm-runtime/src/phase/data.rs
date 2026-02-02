@@ -88,9 +88,11 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone, W: PauliWordTrait> From<
     }
 }
 
-impl<S: AsRef<str>, H: BuildHasher + Default + Clone> From<S> for PhasedPauliWord<u64, H> {
-    fn from(s: S) -> Self {
-        let mut chars = s.as_ref().chars();
+impl<H: BuildHasher + Default + Clone, W: PauliWordTrait> From<String>
+    for PhasedPauliWord<u64, H, W>
+{
+    fn from(s: String) -> Self {
+        let mut chars = s.chars();
         let phase: u8 = match (chars.next(), chars.next()) {
             (Some('+'), Some('i')) => 1, // +i
             (Some('-'), Some('i')) => 3, // -i
@@ -99,17 +101,21 @@ impl<S: AsRef<str>, H: BuildHasher + Default + Clone> From<S> for PhasedPauliWor
             _ => panic!("Invalid phase format"),
         };
         // Remaining characters are the Pauli string
-        let s: String = s
-            .as_ref()
-            .chars()
-            .skip(if phase.is_odd() { 2 } else { 1 })
-            .collect();
-        let words = PauliWord::from(s);
+        let s: String = s.chars().skip(if phase.is_odd() { 2 } else { 1 }).collect();
+        let words: W = s.into();
         Self {
             word: words,
             phase,
             _phantom: std::marker::PhantomData,
         }
+    }
+}
+
+impl<H: BuildHasher + Default + Clone, W: PauliWordTrait> From<&str>
+    for PhasedPauliWord<u64, H, W>
+{
+    fn from(s: &str) -> Self {
+        s.to_string().into()
     }
 }
 

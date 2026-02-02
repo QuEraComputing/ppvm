@@ -72,6 +72,29 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for Pauli
         self.nqubits
     }
 
+    #[inline(always)]
+    fn get_xbit(&self, index: usize) -> bool {
+        debug_assert!(index < self.nqubits, "Index out of bounds");
+        self.xbits[index]
+    }
+
+    #[inline(always)]
+    fn get_zbit(&self, index: usize) -> bool {
+        debug_assert!(index < self.nqubits, "Index out of bounds");
+        self.zbits[index]
+    }
+
+    #[inline(always)]
+    fn set_xbit(&mut self, index: usize, value: bool) {
+        debug_assert!(index < self.nqubits, "Index out of bounds");
+        self.xbits.set(index, value);
+    }
+    #[inline(always)]
+    fn set_zbit(&mut self, index: usize, value: bool) {
+        debug_assert!(index < self.nqubits, "Index out of bounds");
+        self.zbits.set(index, value);
+    }
+
     fn weight(&self) -> usize {
         (0..self.nqubits)
             .filter(|&i| self.xbits[i] || self.zbits[i])

@@ -18,7 +18,7 @@ pub trait ACMapAddAssign<
     S: PauliStorage,
     V: Coefficient,
     H: BuildHasher + Clone + Default,
-    W: PauliWordTrait<S, H>,
+    W: PauliWordTrait,
 >
 {
     fn add_assign(&mut self, key: W, value: V);
@@ -35,7 +35,7 @@ pub trait ACMapInsert<
     S: PauliStorage,
     V: Coefficient,
     H: BuildHasher + Clone + Default,
-    W: PauliWordTrait<S, H>,
+    W: PauliWordTrait,
 >
 {
     /// modify in place and insert some new entry into dest based on
@@ -49,7 +49,7 @@ pub trait ACMapContains<
     S: PauliStorage,
     V: Coefficient,
     H: BuildHasher + Clone + Default,
-    W: PauliWordTrait<S, H>,
+    W: PauliWordTrait,
 >
 {
     fn contains(&self, key: &W, value: &V) -> bool {
@@ -69,7 +69,7 @@ pub trait ACMapScale<
     S: PauliStorage,
     V: Coefficient,
     H: BuildHasher + Clone + Default,
-    W: PauliWordTrait<S, H>,
+    W: PauliWordTrait,
 >
 {
     fn scale<F>(&mut self, f: F)
@@ -81,7 +81,7 @@ pub trait ACMapRetain<
     S: PauliStorage,
     V: Coefficient,
     H: BuildHasher + Clone + Default,
-    W: PauliWordTrait<S, H>,
+    W: PauliWordTrait,
 >
 {
     fn retain<F>(&mut self, f: F)
@@ -93,7 +93,7 @@ pub trait ACMap<
     S: PauliStorage,
     V: Coefficient,
     H: BuildHasher + Clone + Default,
-    W: PauliWordTrait<S, H>,
+    W: PauliWordTrait,
 >:
     Clone
     + ACMapBase
@@ -112,7 +112,7 @@ where
     Storage: PauliStorage,
     Coeff: Coefficient,
     Hasher: BuildHasher + Clone + Default,
-    Word: PauliWordTrait<Storage, Hasher>,
+    Word: PauliWordTrait,
     T: Clone
         + ACMapBase
         + ACMapAddAssign<Storage, Coeff, Hasher, Word>

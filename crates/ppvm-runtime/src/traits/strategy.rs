@@ -13,7 +13,7 @@ pub trait Strategy: Default + Clone + Copy {
         S: PauliStorage,
         V: Coefficient,
         H: std::hash::BuildHasher + Clone + Default,
-        W: PauliWordTrait<S, H>,
+        W: PauliWordTrait,
         M: ACMap<S, V, H, W>;
 }
 
@@ -31,7 +31,7 @@ impl Strategy for NoStrategy {
         S: PauliStorage,
         V: Coefficient,
         H: std::hash::BuildHasher + Clone + Default,
-        W: PauliWordTrait<S, H>,
+        W: PauliWordTrait,
         M: ACMap<S, V, H, W>,
     {
     }

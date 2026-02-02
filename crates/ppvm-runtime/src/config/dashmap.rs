@@ -8,15 +8,11 @@ pub struct ByteFxHash<
     const N: usize,
     C: Coefficient + Sync + Send,
     St: Strategy = NoStrategy,
-    W: PauliWordTrait<[u8; N], fxhash::FxBuildHasher> = PauliWord<[u8; N], fxhash::FxBuildHasher>,
+    W: PauliWordTrait = PauliWord<[u8; N], fxhash::FxBuildHasher>,
 >(PhantomData<(C, St, W)>);
 
-impl<
-    const N: usize,
-    C: Coefficient + Sync + Send,
-    St: Strategy,
-    W: PauliWordTrait<[u8; N], fxhash::FxBuildHasher> + Sync + Send,
-> Config for ByteFxHash<N, C, St, W>
+impl<const N: usize, C: Coefficient + Sync + Send, St: Strategy, W: PauliWordTrait + Sync + Send>
+    Config for ByteFxHash<N, C, St, W>
 {
     type Storage = [u8; N];
     type Coeff = C;
@@ -31,18 +27,11 @@ pub struct ByteGxHash<
     const N: usize,
     C: Coefficient + Sync + Send,
     St: Strategy = NoStrategy,
-    W: PauliWordTrait<[u8; N], gxhash::GxBuildHasher> + Sync + Send = PauliWord<
-        [u8; N],
-        gxhash::GxBuildHasher,
-    >,
+    W: PauliWordTrait + Sync + Send = PauliWord<[u8; N], gxhash::GxBuildHasher>,
 >(PhantomData<(C, St, W)>);
 
-impl<
-    const N: usize,
-    C: Coefficient + Sync + Send,
-    St: Strategy,
-    W: PauliWordTrait<[u8; N], gxhash::GxBuildHasher> + Sync + Send,
-> Config for ByteGxHash<N, C, St, W>
+impl<const N: usize, C: Coefficient + Sync + Send, St: Strategy, W: PauliWordTrait + Sync + Send>
+    Config for ByteGxHash<N, C, St, W>
 {
     type Storage = [u8; N];
     type Coeff = C;

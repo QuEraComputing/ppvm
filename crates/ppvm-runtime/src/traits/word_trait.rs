@@ -6,9 +6,7 @@ pub trait PauliIter {
     fn iter(&self) -> impl Iterator<Item = Pauli>;
 }
 
-pub trait PauliWordTrait<S: PauliStorage, V = fxhash::FxBuildHasher>:
-    Clone + Hash + Eq + PauliIter
-{
+pub trait PauliWordTrait: Clone + Hash + Eq + PauliIter {
     fn new(nqubits: usize) -> Self;
 
     fn n_qubits(&self) -> usize;

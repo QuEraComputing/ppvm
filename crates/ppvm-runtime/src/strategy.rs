@@ -13,7 +13,7 @@ impl<S1: Strategy, S2: Strategy> Strategy for CombinedStrategy<S1, S2> {
         S: crate::prelude::PauliStorage,
         V: Coefficient,
         H: std::hash::BuildHasher + Clone + Default,
-        W: PauliWordTrait<S, H>,
+        W: PauliWordTrait,
         M: crate::prelude::ACMap<S, V, H, W>,
     {
         self.0.truncate(map);
@@ -48,7 +48,7 @@ impl Strategy for MaxPauliWeight {
         S: PauliStorage,
         V: Coefficient,
         H: std::hash::BuildHasher + Clone + Default,
-        W: PauliWordTrait<S, H>,
+        W: PauliWordTrait,
         M: ACMap<S, V, H, W>,
     {
         map.retain(|k, _| k.weight() <= self.max_weight());
@@ -75,7 +75,7 @@ impl Strategy for CoefficientThreshold {
         S: PauliStorage,
         V: Coefficient,
         H: std::hash::BuildHasher + Clone + Default,
-        W: PauliWordTrait<S, H>,
+        W: PauliWordTrait,
         M: ACMap<S, V, H, W>,
     {
         map.retain(|_, v| !v.cutoff(self.0));

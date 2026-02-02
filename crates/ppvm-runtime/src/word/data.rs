@@ -57,7 +57,7 @@ where
 }
 
 // implement PauliString where A can be converted to chunks of u8, e.g u64
-impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait<A, S> for PauliWord<A, S> {
+impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for PauliWord<A, S> {
     fn new(nqubits: usize) -> Self {
         Self {
             xbits: BitArray::ZERO,

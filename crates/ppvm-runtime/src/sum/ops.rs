@@ -48,7 +48,7 @@ where
     }
 }
 
-impl<T: Config, W: PauliWordTrait<T::Storage, T::BuildHasher>> std::ops::Mul<W> for PauliSum<T>
+impl<T: Config, W: PauliWordTrait> std::ops::Mul<W> for PauliSum<T>
 where
     T::BuildHasher: Sync + Send,
     T::Coeff: ComplexCoefficient,

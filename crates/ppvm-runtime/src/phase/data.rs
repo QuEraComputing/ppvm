@@ -10,7 +10,7 @@ use crate::word::PauliWord;
 pub struct PhasedPauliWord<
     A: PauliStorage,
     H = fxhash::FxBuildHasher,
-    W: PauliWordTrait<A, H> = PauliWord<A, H>,
+    W: PauliWordTrait = PauliWord<A, H>,
 > {
     pub word: W,
     /// 0: +1, 1: +i, 2: -1, 3: -i
@@ -23,7 +23,7 @@ pub struct PhasedPauliWord<
     _phantom: std::marker::PhantomData<(A, H)>,
 }
 
-impl<A: PauliStorage, H: BuildHasher, W: PauliWordTrait<A, H>> PhasedPauliWord<A, H, W> {
+impl<A: PauliStorage, H: BuildHasher, W: PauliWordTrait> PhasedPauliWord<A, H, W> {
     pub fn new(n_qubits: usize) -> Self {
         Self {
             word: W::new(n_qubits),
@@ -76,7 +76,7 @@ impl<A: PauliStorage, H: BuildHasher, W: PauliWordTrait<A, H>> PhasedPauliWord<A
     }
 }
 
-impl<A: PauliStorage, H: BuildHasher + Default + Clone, W: PauliWordTrait<A, H>> From<W>
+impl<A: PauliStorage, H: BuildHasher + Default + Clone, W: PauliWordTrait> From<W>
     for PhasedPauliWord<A, H, W>
 {
     fn from(words: W) -> Self {

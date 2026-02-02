@@ -28,7 +28,7 @@ where
     S: PauliStorage + 'a,
     V: Coefficient + Sync + Send + 'a,
     Hasher: Default + Clone + BuildHasher + Sync + Send + 'a,
-    W: PauliWordTrait<S, Hasher> + Sync + Send + 'a,
+    W: PauliWordTrait + Sync + Send + 'a,
 {
     fn add_assign(&mut self, key: W, value: V) {
         self.entry(key)
@@ -149,7 +149,7 @@ where
     S: PauliStorage + 'a,
     C: Coefficient + Send + Sync + 'a,
     H: Default + Clone + BuildHasher + 'a + Send + Sync,
-    W: PauliWordTrait<S, H> + Send + Sync + 'a,
+    W: PauliWordTrait + Send + Sync + 'a,
 {
     fn map_insert<F>(&mut self, dest: &mut Self, f: F)
     where
@@ -169,7 +169,7 @@ where
     S: PauliStorage,
     C: Coefficient + PartialEq,
     H: BuildHasher + Clone + Default,
-    W: PauliWordTrait<S, H>,
+    W: PauliWordTrait,
 {
     fn contains_with<F>(&self, key: &W, f: F) -> bool
     where
@@ -184,7 +184,7 @@ where
     S: PauliStorage,
     C: Coefficient + Send + Sync,
     H: BuildHasher + Clone + Default + Sync + Send,
-    W: PauliWordTrait<S, H> + Send + Sync,
+    W: PauliWordTrait + Send + Sync,
 {
     fn scale<F>(&mut self, f: F)
     where
@@ -202,7 +202,7 @@ where
     S: PauliStorage,
     C: Coefficient,
     H: BuildHasher + Clone + Default + Sync + Send,
-    W: PauliWordTrait<S, H>,
+    W: PauliWordTrait,
 {
     fn retain<F>(&mut self, f: F)
     where

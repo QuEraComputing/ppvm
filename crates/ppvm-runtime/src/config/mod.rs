@@ -7,7 +7,7 @@ pub trait Config: Clone {
     type Coeff: Coefficient;
     type Strategy: Strategy;
     type BuildHasher: BuildHasher + Clone + Default;
-    type PauliWordType: PauliWordTrait<Self::Storage, Self::BuildHasher>;
+    type PauliWordType: PauliWordTrait;
     type Map: ACMap<Self::Storage, Self::Coeff, Self::BuildHasher, Self::PauliWordType>;
 }
 

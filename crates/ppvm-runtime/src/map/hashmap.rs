@@ -32,7 +32,7 @@ macro_rules! impl_acmap_add_assign {
             S: PauliStorage + 'a,
             V: Coefficient + 'a,
             Hasher: Default + Clone + BuildHasher + 'a,
-            W: PauliWordTrait<S, Hasher> + 'a,
+            W: PauliWordTrait + 'a,
         {
             fn add_assign(&mut self, key: W, value: V) {
                 self.entry(key)
@@ -46,7 +46,7 @@ macro_rules! impl_acmap_add_assign {
             {
                 for (k, v) in self.iter() {
                     let (new_k, new_v) = f(k, v);
-                    dest.add_assign(new_k, new_v);
+                    <Self as ACMapAddAssign<S, V, Hasher, W>>::add_assign(dest, new_k, new_v);
                 }
             }
         }
@@ -149,7 +149,7 @@ macro_rules! impl_acmap_insert {
             S: PauliStorage + 'a,
             C: Coefficient + 'a,
             Hasher: Default + Clone + BuildHasher + 'a,
-            W: PauliWordTrait<S, Hasher> + 'a,
+            W: PauliWordTrait + 'a,
         {
             fn map_insert<F>(&mut self, dest: &mut Self, f: F)
             where
@@ -172,7 +172,7 @@ macro_rules! impl_acmap_contains {
             S: PauliStorage,
             C: Coefficient,
             H: Default + Clone + BuildHasher,
-            W: PauliWordTrait<S, H>,
+            W: PauliWordTrait,
         {
             fn contains_with<F>(&self, key: &W, f: F) -> bool
             where
@@ -194,7 +194,7 @@ macro_rules! impl_acmap_scale {
             S: PauliStorage,
             V: Coefficient,
             H: BuildHasher + Clone + Default,
-            W: PauliWordTrait<S, H>,
+            W: PauliWordTrait,
         {
             fn scale<F>(&mut self, f: F)
             where
@@ -215,7 +215,7 @@ macro_rules! impl_acmap_retain {
             S: PauliStorage,
             V: Coefficient,
             H: BuildHasher + Clone + Default,
-            W: PauliWordTrait<S, H>,
+            W: PauliWordTrait,
         {
             fn retain<F>(&mut self, f: F)
             where
@@ -329,7 +329,7 @@ mod ahash_impl {
         S: PauliStorage,
         V: Coefficient,
         H: BuildHasher + Clone + Default,
-        W: PauliWordTrait<S, H>,
+        W: PauliWordTrait,
     {
         fn retain<F>(&mut self, f: F)
         where

@@ -41,22 +41,11 @@ where
     T: Config<Storage = S, BuildHasher = H>,
     T::PauliWordType: Clifford,
 {
-    // map_scale!(x, index);
+    map_scale!(x, index);
     map_scale!(y, index);
     map_scale!(z, index);
     map_word!(h, index);
     map_word!(s, index);
     map_word!(cnot, a, b);
     map_word!(cz, a, b);
-
-    fn x(&mut self, addr0: usize) {
-        self.scale(|k, v| {
-            let mut p: PhasedPauliWord<T::Storage, T::BuildHasher, <T as Config>::PauliWordType> =
-                k.clone().into();
-            p.x(addr0);
-            if !p.is_positive() {
-                *v *= -1.0;
-            }
-        })
-    }
 }

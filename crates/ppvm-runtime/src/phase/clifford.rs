@@ -11,26 +11,46 @@ where
     W: PauliWordTrait + Clifford,
 {
     fn x(&mut self, index: usize) {
+        if self.word.get_lbit(index) {
+            // check for loss
+            return;
+        }
         let phase = (self.word.get_zbit(index)) as u8;
         self.word.x(index);
         self.add_phase(phase << 1);
     }
     fn y(&mut self, index: usize) {
+        if self.word.get_lbit(index) {
+            // check for loss
+            return;
+        }
         let phase = (self.word.get_xbit(index) ^ self.word.get_zbit(index)) as u8;
         self.word.y(index);
         self.add_phase(phase << 1);
     }
     fn z(&mut self, index: usize) {
+        if self.word.get_lbit(index) {
+            // check for loss
+            return;
+        }
         let phase = (self.word.get_xbit(index)) as u8;
         self.word.z(index);
         self.add_phase(phase << 1);
     }
     fn h(&mut self, index: usize) {
+        if self.word.get_lbit(index) {
+            // check for loss
+            return;
+        }
         let phase = (self.word.get_xbit(index) & self.word.get_zbit(index)) as u8;
         self.word.h(index);
         self.add_phase(phase << 1);
     }
     fn s(&mut self, index: usize) {
+        if self.word.get_lbit(index) {
+            // check for loss
+            return;
+        }
         let phase = (self.word.get_xbit(index) & !self.word.get_zbit(index)) as u8;
         self.word.s(index);
         self.add_phase(phase << 1);
@@ -40,6 +60,9 @@ where
         // xx zz    xx zz
         // 11 11 -> 10 01, 2
         // 10 01 -> 11 11, 2
+        if self.word.get_lbit(control) || self.word.get_lbit(target) {
+            return;
+        }
         let phase = ((self.word.get_xbit(control) & self.word.get_zbit(target))
             & (self.word.get_xbit(target) == self.word.get_zbit(control)))
             as u8;
@@ -50,6 +73,9 @@ where
         // phase = 11 10, 11 01 = 11 ab where a ^ b = 1
         // 11 01 -> 11 10, 2
         // 11 10 -> 11 01, 2
+        if self.word.get_lbit(control) || self.word.get_lbit(target) {
+            return;
+        }
         let phase = ((self.word.get_xbit(control) & self.word.get_xbit(target))
             & (self.word.get_zbit(control) ^ self.word.get_zbit(target))) as u8;
         self.word.cz(control, target);

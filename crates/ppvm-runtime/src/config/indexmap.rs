@@ -41,5 +41,13 @@ impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait> Config
     type Strategy = St;
 }
 
-pub type ByteFxHashF64<const N: usize, St = NoStrategy> = ByteFxHash<N, f64, St>;
-pub type ByteGxHashF64<const N: usize, St = NoStrategy> = ByteGxHash<N, f64, St>;
+pub type ByteFxHashF64<
+    const N: usize,
+    St = NoStrategy,
+    Wd = PauliWord<[u8; N], fxhash::FxBuildHasher>,
+> = ByteFxHash<N, f64, St, Wd>;
+pub type ByteGxHashF64<
+    const N: usize,
+    St = NoStrategy,
+    Wd = PauliWord<[u8; N], gxhash::GxBuildHasher>,
+> = ByteGxHash<N, f64, St, Wd>;

@@ -21,6 +21,7 @@ where
                 Pauli::Z => {
                     *v *= 1.0f64 - 2.0f64 * p[0].clone() - 2.0f64 * p[1].clone();
                 }
+                Pauli::L => {}
             };
         });
     }
@@ -213,6 +214,10 @@ where
                     - 2.0f64 * p[3].clone()
                     - 2.0f64 * p[6].clone()
                     - 2.0f64 * p[7].clone();
+            }
+
+            _ => {
+                // TODO: no action on loss needs test!
             }
         })
     }

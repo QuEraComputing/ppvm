@@ -6,7 +6,7 @@ use crate::char::Pauli;
 use crate::traits::PauliStorage;
 use crate::word::PauliWord;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PhasedPauliWord<A: PauliStorage, H = fxhash::FxBuildHasher> {
     pub word: PauliWord<A, H>,
     /// 0: +1, 1: +i, 2: -1, 3: -i

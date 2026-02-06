@@ -13,6 +13,10 @@ where
         let (sin, cos) = theta.sin_cos();
         self.map_insert(|k, v| {
             let p_g = k.get(addr0);
+            if p_g as u8 > 3 || axis as u8 > 3 {
+                // Rotation is undefined on loss / non-Pauli symbols; keep term unchanged.
+                return None;
+            }
             let (eps, p_q) = levi_civita(p_g as u8, axis as u8);
             if eps == 0 {
                 return None;

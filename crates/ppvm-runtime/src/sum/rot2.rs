@@ -21,6 +21,10 @@ where
     ) {
         let (sin, cos) = theta.sin_cos();
         self.map_insert(|k, v| {
+            if k.get_lbit(a) || k.get_lbit(b) {
+                // Two-qubit rotations are undefined on loss; keep term unchanged.
+                return None;
+            }
             let (eps, x_a, z_a, x_b, z_b) = comm_2(
                 axis_a_x,
                 axis_a_z,

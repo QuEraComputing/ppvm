@@ -157,7 +157,9 @@ macro_rules! impl_acmap_insert {
             {
                 for (k, v) in self.iter_mut() {
                     if let Some((new_k, new_v)) = f(k, v) {
-                        dest.insert(new_k, new_v);
+                        dest.entry(new_k)
+                            .and_modify(|val| *val += new_v.clone())
+                            .or_insert(new_v);
                     }
                 }
             }

@@ -1,7 +1,11 @@
 use ppvm_runtime::{prelude::*, strategy::MaxLossWeight};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 type LossyPauliSum = PauliSum<
     config::indexmap::ByteFxHashF64<1, NoStrategy, LossyPauliWord<[u8; 1], fxhash::FxBuildHasher>>,
+>;
+type LossyPauliSumHashMap = PauliSum<
+    config::fxhash::Byte<1, f64, NoStrategy, LossyPauliWord<[u8; 1], fxhash::FxBuildHasher>>,
 >;
 
 #[test]
@@ -223,4 +227,66 @@ fn test_loss_truncation() {
 
     state.truncate();
     assert_eq!(state.data().len(), original_len - 1);
+}
+
+#[test]
+fn test_reset_loss_channel_accumulates_duplicate_target_indexmap() {
+    let mut state = LossyPauliSum::builder().n_qubits(1).build();
+    state += ("I", 2.0);
+    state += ("Z", 3.0);
+
+    state.reset_loss_channel(0);
+
+    let i: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "I".into();
+    let z: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "Z".into();
+    let l: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "L".into();
+    assert!(state.contains(&i, &2.0));
+    assert!(state.contains(&z, &3.0));
+    assert!(state.contains(&l, &5.0));
+}
+
+#[test]
+fn test_reset_loss_channel_accumulates_duplicate_target_hashmap() {
+    let mut state = LossyPauliSumHashMap::builder().n_qubits(1).build();
+    state += ("I", 2.0);
+    state += ("Z", 3.0);
+
+    state.reset_loss_channel(0);
+
+    let i: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "I".into();
+    let z: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "Z".into();
+    let l: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "L".into();
+    assert!(state.contains(&i, &2.0));
+    assert!(state.contains(&z, &3.0));
+    assert!(state.contains(&l, &5.0));
+}
+
+#[test]
+fn test_rx_on_lost_qubit_is_noop_and_does_not_panic() {
+    let mut state = LossyPauliSum::builder().n_qubits(1).build();
+    state += ("L", 1.0);
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        state.rx(0, 0.3);
+    }));
+    assert!(result.is_ok());
+
+    let l: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "L".into();
+    assert_eq!(state.data().len(), 1);
+    assert!(state.contains(&l, &1.0));
+}
+
+#[test]
+fn test_rxx_with_loss_is_noop_and_does_not_panic() {
+    let mut state = LossyPauliSum::builder().n_qubits(2).build();
+    state += ("LZ", 1.0);
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        state.rxx(0, 1, 0.3);
+    }));
+    assert!(result.is_ok());
+
+    let lz: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "LZ".into();
+    assert_eq!(state.data().len(), 1);
+    assert!(state.contains(&lz, &1.0));
 }

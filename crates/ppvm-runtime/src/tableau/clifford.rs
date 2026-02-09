@@ -7,9 +7,9 @@ use num::complex::Complex;
 macro_rules! impl_tableau_clifford {
     ($name:ident, $($index:ident),*) => {
         fn $name(&mut self, $($index: usize),*) {
-            // self.destabilizers.iter_mut().for_each(|pw| {
-            //     pw.$name($($index),*);
-            // });
+            self.destabilizers.iter_mut().for_each(|pw| {
+                pw.$name($($index),*);
+            });
             self.stabilizers.iter_mut().for_each(|pw| {
                 pw.$name($($index),*);
             });

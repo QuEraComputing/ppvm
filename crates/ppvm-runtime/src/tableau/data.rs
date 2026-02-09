@@ -57,6 +57,14 @@ where
     }
 
     pub fn t(&mut self, index: usize) {
+        self.t_or_t_adj(index, false);
+    }
+
+    pub fn t_adj(&mut self, index: usize) {
+        self.t_or_t_adj(index, true);
+    }
+
+    fn t_or_t_adj(&mut self, index: usize, adjoint: bool) {
         if self.is_lost[index] {
             return;
         }
@@ -66,9 +74,17 @@ where
             re: COS_PI_OVER_8.into(),
             im: T::Coeff::zero(),
         };
-        let complex_sin = Complex {
-            re: T::Coeff::zero(),
-            im: SIN_PI_OVER_8.into(),
+
+        let complex_sin = if adjoint {
+            Complex {
+                re: T::Coeff::zero(),
+                im: (-SIN_PI_OVER_8).into(),
+            }
+        } else {
+            Complex {
+                re: T::Coeff::zero(),
+                im: SIN_PI_OVER_8.into(),
+            }
         };
 
         for (coeff, idx) in self.coefficients.clone().into_iter() {

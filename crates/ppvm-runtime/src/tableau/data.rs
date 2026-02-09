@@ -60,8 +60,6 @@ where
         if self.is_lost[index] {
             return;
         }
-        let mut new_coefficients = self.coefficients.clone();
-
         let index_shift = self.compute_shift_z(index);
 
         let complex_cos = Complex {
@@ -73,7 +71,6 @@ where
             im: SIN_PI_OVER_8.into(),
         };
 
-        // FIXME: copying coefficients is inefficient
         for (coeff, idx) in self.coefficients.clone().into_iter() {
             debug_assert!(
                 !(coeff.re == T::Coeff::zero() && coeff.im == T::Coeff::zero()),
@@ -81,16 +78,13 @@ where
             );
             let new_coeff = coeff.clone() * complex_sin.clone();
 
-            new_coefficients.mul_element_by(idx, complex_cos.clone());
+            self.coefficients.mul_element_by(idx, complex_cos.clone());
 
             let shifted_index = idx + index_shift;
             // TODO: phase
 
-            new_coefficients.add_or_insert(shifted_index, new_coeff);
+            self.coefficients.add_or_insert(shifted_index, new_coeff);
         }
-
-        // Update coefficients
-        self.coefficients = new_coefficients;
     }
 
     fn compute_shift_z(&self, index: usize) -> usize {

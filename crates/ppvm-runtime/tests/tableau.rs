@@ -20,6 +20,16 @@ fn generalized_tableau() {
     tableau.h(0);
     tableau.cnot(0, 1);
     tableau.t(0);
+
+    assert_eq!(tableau.coefficients.len(), 2);
+    let idx: Vec<_> = tableau
+        .coefficients
+        .clone()
+        .into_iter()
+        .map(|(_, i)| i)
+        .collect();
+    assert_eq!(idx, vec![1, 0]);
+
     tableau.t_adj(0);
 
     println!("{}", tableau);

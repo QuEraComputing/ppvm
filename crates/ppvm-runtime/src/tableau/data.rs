@@ -78,12 +78,12 @@ where
         let complex_sin = if adjoint {
             Complex {
                 re: T::Coeff::zero(),
-                im: (-SIN_PI_OVER_8).into(),
+                im: SIN_PI_OVER_8.into(),
             }
         } else {
             Complex {
                 re: T::Coeff::zero(),
-                im: SIN_PI_OVER_8.into(),
+                im: (-SIN_PI_OVER_8).into(),
             }
         };
 
@@ -104,6 +104,11 @@ where
     }
 
     fn compute_shift_z(&self, index: usize) -> usize {
+        // self.tableau
+        //     .stabilizers
+        //     .iter()
+        //     .map(|pw| pw.word.xbits[index])
+        //     .fold(0usize, |acc, bit| (acc << 1) | bit as usize)
         // compute the index shift for the Z part of the T gate
         let mut shift = 0usize;
         for stab in self.tableau.stabilizers.iter() {

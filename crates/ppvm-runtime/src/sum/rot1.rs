@@ -1,6 +1,43 @@
 use crate::traits::*;
 use crate::{char::Pauli, config::Config, sum::PauliSum};
 
+impl<T: Config> RotationOneMapInsertClosure<T> for PauliSum<T>
+where
+    T::Coeff: std::ops::MulAssign,
+{
+    fn rotate_1_map_insert_closure(
+        k: &T::PauliWordType,
+        v: &mut T::Coeff,
+        axis: Pauli,
+        addr0: usize,
+        sin: &T::Coeff,
+        cos: &T::Coeff,
+    ) -> Option<(T::PauliWordType, T::Coeff)> {
+        let p_g = k.get(addr0);
+        if axis == Pauli::L {
+            panic!("Rotation axis cannot be L");
+        }
+        if p_g == Pauli::L {
+            // Rotation does nothing on lost qubits
+            return None;
+        }
+        let (eps, p_q) = levi_civita(p_g as u8, axis as u8);
+        if eps == 0 {
+            return None;
+        } else {
+            let mut coeff = v.clone();
+            *v *= cos.clone();
+            let mut new_word = k.clone();
+            new_word.set_xbit(addr0, p_q & 0b01 != 0);
+            new_word.set_zbit(addr0, p_q & 0b10 != 0);
+            new_word.rehash();
+
+            coeff *= sin.mul_sign(eps);
+            return Some((new_word, coeff));
+        }
+    }
+}
+
 impl<T, S, H> RotationOne<T> for PauliSum<T>
 where
     S: PauliStorage,
@@ -12,28 +49,7 @@ where
     fn rotate_1(&mut self, axis: Pauli, addr0: usize, theta: <T as Config>::Coeff) {
         let (sin, cos) = theta.sin_cos();
         self.map_insert(|k, v| {
-            let p_g = k.get(addr0);
-            if axis == Pauli::L {
-                panic!("Rotation axis cannot be L");
-            }
-            if p_g == Pauli::L {
-                // Rotation does nothing on lost qubits
-                return None;
-            }
-            let (eps, p_q) = levi_civita(p_g as u8, axis as u8);
-            if eps == 0 {
-                return None;
-            } else {
-                let mut coeff = v.clone();
-                *v *= cos.clone();
-                let mut new_word = k.clone();
-                new_word.set_xbit(addr0, p_q & 0b01 != 0);
-                new_word.set_zbit(addr0, p_q & 0b10 != 0);
-                new_word.rehash();
-
-                coeff *= sin.mul_sign(eps);
-                return Some((new_word, coeff));
-            }
+            PauliSum::<T>::rotate_1_map_insert_closure(k, v, axis, addr0, &sin, &cos)
         });
     }
 }

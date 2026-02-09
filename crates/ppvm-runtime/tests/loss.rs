@@ -280,13 +280,38 @@ fn test_rx_on_lost_qubit_is_noop_and_does_not_panic() {
 fn test_rxx_with_loss_is_noop_and_does_not_panic() {
     let mut state = LossyPauliSum::builder().n_qubits(2).build();
     state += ("LZ", 1.0);
+    let mut state2 = state.clone();
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         state.rxx(0, 1, 0.3);
     }));
     assert!(result.is_ok());
 
-    let lz: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "LZ".into();
-    assert_eq!(state.data().len(), 1);
-    assert!(state.contains(&lz, &1.0));
+    state2.rx(1, 0.3);
+
+    assert_eq!(state, state2);
+
+    let mut state = LossyPauliSum::builder().n_qubits(2).build();
+    state += ("ZL", 1.0);
+    let mut state2 = state.clone();
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        state.rxx(0, 1, 0.3);
+    }));
+    assert!(result.is_ok());
+
+    state2.rx(0, 0.3);
+
+    assert_eq!(state, state2);
+
+    let mut state = LossyPauliSum::builder().n_qubits(2).build();
+    state += ("LL", 1.0);
+    let state2 = state.clone();
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        state.rxx(0, 1, 0.3);
+    }));
+    assert!(result.is_ok());
+
+    assert_eq!(state, state2);
 }

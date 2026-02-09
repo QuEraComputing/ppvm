@@ -1,5 +1,5 @@
 use crate::traits::*;
-use crate::{config::Config, sum::PauliSum};
+use crate::{char::Pauli, config::Config, sum::PauliSum};
 
 impl<T, S, H> RotationTwo<T> for PauliSum<T>
 where
@@ -19,11 +19,33 @@ where
         b: usize,
         theta: T::Coeff,
     ) {
+        if axis_a_x > 3 || axis_a_z > 3 || axis_b_x > 3 || axis_b_z > 3 {
+            panic!("Rotation axis cannot be L");
+        }
         let (sin, cos) = theta.sin_cos();
         self.map_insert(|k, v| {
-            if k.get_lbit(a) || k.get_lbit(b) {
-                // Two-qubit rotations are undefined on loss; keep term unchanged.
-                return None;
+            // NOTE: case of both qubits being lost is handled by single-qubit rotation logic
+            if k.get_lbit(a) {
+                // fall back to single-qubit rotation on qubit b
+                let axis = match (axis_b_x, axis_b_z) {
+                    (0, 0) => Pauli::I,
+                    (1, 0) => Pauli::X,
+                    (0, 1) => Pauli::Z,
+                    (1, 1) => Pauli::Y,
+                    _ => unreachable!(),
+                };
+                return PauliSum::<T>::rotate_1_map_insert_closure(k, v, axis, b, &sin, &cos);
+            }
+            if k.get_lbit(b) {
+                // fall back to single-qubit rotation on qubit a
+                let axis = match (axis_a_x, axis_a_z) {
+                    (0, 0) => Pauli::I,
+                    (1, 0) => Pauli::X,
+                    (0, 1) => Pauli::Z,
+                    (1, 1) => Pauli::Y,
+                    _ => unreachable!(),
+                };
+                return PauliSum::<T>::rotate_1_map_insert_closure(k, v, axis, a, &sin, &cos);
             }
             let (eps, x_a, z_a, x_b, z_b) = comm_2(
                 axis_a_x,

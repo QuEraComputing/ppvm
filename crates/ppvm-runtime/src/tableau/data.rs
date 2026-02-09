@@ -1,8 +1,7 @@
 use super::sparsevec::SparseVector;
 use crate::config::Config;
 use crate::phase::PhasedPauliWord;
-use itertools::Itertools;
-use num::{Num, One, Zero, complex::Complex};
+use num::{One, Zero, complex::Complex};
 
 #[derive(Clone, Debug)]
 pub struct Tableau<const N: usize, T: Config> {
@@ -33,6 +32,7 @@ pub struct GeneralizedTableau<const N: usize, T: Config, C: SparseVector<Complex
     pub tableau: Tableau<N, T>,
     pub coefficients: C,
     pub is_lost: [bool; N],
+    pub coefficient_threshold: T::Coeff,
 }
 
 const COS_PI_OVER_8: f64 = 0.9238795325112867; // cos(pi/8)
@@ -43,7 +43,7 @@ where
     T::Coeff: One + Zero + Clone,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>,
 {
-    pub fn new() -> Self {
+    pub fn new(coefficient_threshold: T::Coeff) -> Self {
         let mut coefficients = C::new();
         let complex_one = Complex {
             re: T::Coeff::one(),
@@ -54,6 +54,7 @@ where
             tableau: Tableau::new(),
             coefficients: coefficients,
             is_lost: [false; N],
+            coefficient_threshold,
         }
     }
 
@@ -105,6 +106,12 @@ where
         }
 
         self.coefficients = new_coefficients;
+
+        // TODO: more efficient trimming above
+        self.coefficients.trim(Complex {
+            re: self.coefficient_threshold.clone(),
+            im: T::Coeff::zero(),
+        });
     }
 
     fn compute_shift_z(&self, index: usize) -> usize {

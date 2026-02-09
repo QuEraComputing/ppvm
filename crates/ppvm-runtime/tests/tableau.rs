@@ -15,7 +15,7 @@ fn test_tableau() {
 #[test]
 fn generalized_tableau() {
     let mut tableau: GeneralizedTableau<2, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
-        GeneralizedTableau::new();
+        GeneralizedTableau::new(1e-12);
 
     tableau.h(0);
     tableau.cnot(0, 1);
@@ -23,4 +23,6 @@ fn generalized_tableau() {
     tableau.t_adj(0);
 
     println!("{}", tableau);
+
+    assert_eq!(tableau.coefficients.len(), 1);
 }

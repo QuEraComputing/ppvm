@@ -1,4 +1,3 @@
-use crate::traits::Coefficient;
 use num::complex::ComplexFloat;
 use num::traits::One;
 

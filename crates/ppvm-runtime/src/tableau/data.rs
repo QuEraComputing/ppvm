@@ -88,8 +88,8 @@ where
             }
         };
 
-        let mut new_coefficients = C::new();
-        for (coeff, idx) in self.coefficients.clone().into_iter() {
+        let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
+        for (coeff, idx) in old_coefficients.into_iter() {
             debug_assert!(
                 !(coeff.re == T::Coeff::zero() && coeff.im == T::Coeff::zero()),
                 "Coefficient should not be zero"
@@ -100,12 +100,11 @@ where
             // TODO: phase
             let branch_index = self.compute_shift_z(idx);
 
-            let nonbranch_coefficient = coeff.clone() * complex_cos.clone();
-            new_coefficients.add_or_insert(branch_index, branch_coefficient);
-            new_coefficients.add_or_insert(idx, nonbranch_coefficient);
+            let nonbranch_coefficient = coeff * complex_cos.clone();
+            self.coefficients
+                .add_or_insert(branch_index, branch_coefficient);
+            self.coefficients.add_or_insert(idx, nonbranch_coefficient);
         }
-
-        self.coefficients = new_coefficients;
 
         // TODO: more efficient trimming above
         self.coefficients.trim(Complex {

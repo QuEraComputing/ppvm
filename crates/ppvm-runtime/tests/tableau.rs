@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use num::complex::Complex64;
 use ppvm_runtime::{config::dashmap::ByteFxHashF64, prelude::*};
 
@@ -27,8 +28,9 @@ fn generalized_tableau() {
         .clone()
         .into_iter()
         .map(|(_, i)| i)
+        .sorted()
         .collect();
-    assert_eq!(idx, vec![1, 0]);
+    assert_eq!(idx, vec![0, 1]);
 
     tableau.t_adj(0);
 

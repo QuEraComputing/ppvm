@@ -1,5 +1,5 @@
 use crate::traits::*;
-use crate::{config::Config, sum::PauliSum};
+use crate::{char::Pauli, config::Config, sum::PauliSum};
 
 impl<T, S, H> RotationOne<T> for PauliSum<T>
 where
@@ -9,12 +9,15 @@ where
     T::Coeff: std::ops::MulAssign,
     T::Map: ACMapInsert<S, T::Coeff, H, T::PauliWordType> + ACMapConsume,
 {
-    fn rotate_1(&mut self, axis: crate::char::Pauli, addr0: usize, theta: <T as Config>::Coeff) {
+    fn rotate_1(&mut self, axis: Pauli, addr0: usize, theta: <T as Config>::Coeff) {
         let (sin, cos) = theta.sin_cos();
         self.map_insert(|k, v| {
             let p_g = k.get(addr0);
-            if p_g as u8 > 3 || axis as u8 > 3 {
-                // Rotation is undefined on loss / non-Pauli symbols; keep term unchanged.
+            if axis == Pauli::L {
+                panic!("Rotation axis cannot be L");
+            }
+            if p_g == Pauli::L {
+                // Rotation does nothing on lost qubits
                 return None;
             }
             let (eps, p_q) = levi_civita(p_g as u8, axis as u8);

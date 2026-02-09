@@ -1,6 +1,8 @@
-use super::data::Tableau;
+use super::data::{GeneralizedTableau, Tableau};
+use super::sparsevec::SparseVector;
 use crate::config::Config;
 use crate::traits::Clifford;
+use num::complex::Complex;
 
 macro_rules! impl_tableau_clifford {
     ($name:ident, $($index:ident),*) => {
@@ -15,6 +17,25 @@ macro_rules! impl_tableau_clifford {
     };
 }
 
+macro_rules! impl_generalized_tableau_clifford {
+    ($name:ident, $index:ident) => {
+        fn $name(&mut self, $index: usize) {
+            if self.is_lost[$index] {
+                return;
+            }
+            self.tableau.$name($index);
+        }
+    };
+    ($name:ident, $index0:ident, $index1:ident) => {
+        fn $name(&mut self, $index0: usize, $index1: usize) {
+            if self.is_lost[$index0] || self.is_lost[$index1] {
+                return;
+            }
+            self.tableau.$name($index0, $index1);
+        }
+    };
+}
+
 impl<const N: usize, T: Config> Clifford for Tableau<N, T> {
     impl_tableau_clifford!(x, index);
     impl_tableau_clifford!(y, index);
@@ -23,4 +44,16 @@ impl<const N: usize, T: Config> Clifford for Tableau<N, T> {
     impl_tableau_clifford!(s, index);
     impl_tableau_clifford!(cnot, control, target);
     impl_tableau_clifford!(cz, control, target);
+}
+
+impl<const N: usize, T: Config, C: SparseVector<Complex<T::Coeff>>> Clifford
+    for GeneralizedTableau<N, T, C>
+{
+    impl_generalized_tableau_clifford!(x, index);
+    impl_generalized_tableau_clifford!(y, index);
+    impl_generalized_tableau_clifford!(z, index);
+    impl_generalized_tableau_clifford!(h, index);
+    impl_generalized_tableau_clifford!(s, index);
+    impl_generalized_tableau_clifford!(cnot, control, target);
+    impl_generalized_tableau_clifford!(cz, control, target);
 }

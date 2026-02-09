@@ -1,5 +1,6 @@
 mod clifford;
 mod data;
 mod display;
+mod sparsevec;
 
-pub use data::Tableau;
+pub use data::{GeneralizedTableau, Tableau};

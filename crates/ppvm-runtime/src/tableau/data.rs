@@ -115,17 +115,10 @@ where
     }
 
     fn compute_shift_z(&self, index: usize) -> usize {
-        let index_bits = (0..N).map(|i| ((index >> i) & 1) != 0); // LSB-first
-        let beta = self.tableau.stabilizers.iter().map(|k| k.word.xbits[index]);
-
-        // mod 2 addition
-        let shift_bits = index_bits.zip(beta).map(|(i, b)| i ^ b);
-
-        let shift = shift_bits
-            .into_iter()
-            .enumerate()
-            .fold(0, |acc, (i, b)| acc | ((b as usize) << i));
-
-        shift
+        let mut beta = 0usize;
+        for (i, stab) in self.tableau.stabilizers.iter().enumerate() {
+            beta |= (stab.word.xbits[index] as usize) << i;
+        }
+        index ^ beta
     }
 }

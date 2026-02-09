@@ -20,6 +20,7 @@ fn generalized_tableau() {
     tableau.h(0);
     tableau.cnot(0, 1);
     tableau.t(0);
+    tableau.t_adj(0);
 
     println!("{}", tableau);
 }

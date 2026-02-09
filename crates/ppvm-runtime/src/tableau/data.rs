@@ -1,7 +1,8 @@
 use super::sparsevec::SparseVector;
 use crate::config::Config;
 use crate::phase::PhasedPauliWord;
-use num::{One, Zero, complex::Complex};
+use itertools::Itertools;
+use num::{Num, One, Zero, complex::Complex};
 
 #[derive(Clone, Debug)]
 pub struct Tableau<const N: usize, T: Config> {
@@ -68,7 +69,6 @@ where
         if self.is_lost[index] {
             return;
         }
-        let index_shift = self.compute_shift_z(index);
 
         let complex_cos = Complex {
             re: COS_PI_OVER_8.into(),
@@ -87,35 +87,38 @@ where
             }
         };
 
+        let mut new_coefficients = C::new();
         for (coeff, idx) in self.coefficients.clone().into_iter() {
             debug_assert!(
                 !(coeff.re == T::Coeff::zero() && coeff.im == T::Coeff::zero()),
                 "Coefficient should not be zero"
             );
-            let new_coeff = coeff.clone() * complex_sin.clone();
 
-            self.coefficients.mul_element_by(idx, complex_cos.clone());
+            let branch_coefficient = coeff.clone() * complex_sin.clone();
 
-            let shifted_index = idx + index_shift;
             // TODO: phase
+            let branch_index = self.compute_shift_z(idx);
 
-            self.coefficients.add_or_insert(shifted_index, new_coeff);
+            let nonbranch_coefficient = coeff.clone() * complex_cos.clone();
+            new_coefficients.add_or_insert(branch_index, branch_coefficient);
+            new_coefficients.add_or_insert(idx, nonbranch_coefficient);
         }
+
+        self.coefficients = new_coefficients;
     }
 
     fn compute_shift_z(&self, index: usize) -> usize {
-        // self.tableau
-        //     .stabilizers
-        //     .iter()
-        //     .map(|pw| pw.word.xbits[index])
-        //     .fold(0usize, |acc, bit| (acc << 1) | bit as usize)
-        // compute the index shift for the Z part of the T gate
-        let mut shift = 0usize;
-        for stab in self.tableau.stabilizers.iter() {
-            shift <<= 1;
-            // word anti-commutes with Z whenever there is an X bit (X or Y)
-            shift |= stab.word.xbits[index] as usize;
-        }
-        shift - 1
+        let index_bits = (0..N).map(|i| ((index >> i) & 1) != 0); // LSB-first
+        let beta = self.tableau.stabilizers.iter().map(|k| k.word.xbits[index]);
+
+        // mod 2 addition
+        let shift_bits = index_bits.zip(beta).map(|(i, b)| i ^ b);
+
+        let shift = shift_bits
+            .into_iter()
+            .enumerate()
+            .fold(0, |acc, (i, b)| acc | ((b as usize) << i));
+
+        shift
     }
 }

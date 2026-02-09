@@ -28,6 +28,7 @@ impl<const N: usize, T: Config> Tableau<N, T> {
     }
 }
 
+// TODO: builder
 pub struct GeneralizedTableau<const N: usize, T: Config, C: SparseVector<Complex<T::Coeff>>> {
     pub tableau: Tableau<N, T>,
     pub coefficients: C,
@@ -88,6 +89,8 @@ where
             }
         };
 
+        let index_shift = self.compute_shift_z(index);
+
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         for (coeff, idx) in old_coefficients.into_iter() {
             debug_assert!(
@@ -98,7 +101,7 @@ where
             let branch_coefficient = coeff.clone() * complex_sin.clone();
 
             // TODO: phase
-            let branch_index = self.compute_shift_z(idx);
+            let branch_index = idx ^ index_shift;
 
             let nonbranch_coefficient = coeff * complex_cos.clone();
             self.coefficients
@@ -114,10 +117,10 @@ where
     }
 
     fn compute_shift_z(&self, index: usize) -> usize {
-        let mut beta = 0usize;
+        let mut shift = 0usize;
         for (i, stab) in self.tableau.stabilizers.iter().enumerate() {
-            beta |= (stab.word.xbits[index] as usize) << i;
+            shift |= (stab.word.xbits[index] as usize) << i;
         }
-        index ^ beta
+        shift
     }
 }

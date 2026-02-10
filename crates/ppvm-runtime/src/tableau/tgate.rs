@@ -1,16 +1,9 @@
 use super::sparsevec::SparseVector;
+use super::traits::GeneralizedTableauTGate;
 use crate::config::Config;
 use crate::tableau::GeneralizedTableau;
 use num::complex::{Complex, Complex64};
 use num::traits::{One, Zero};
-
-pub trait GeneralizedTableauTGate {
-    fn t(&mut self, addr0: usize);
-    fn t_adj(&mut self, addr0: usize);
-    fn t_or_t_adj(&mut self, addr0: usize, adjoint: bool);
-    fn compute_shift_z(&self, addr0: usize) -> usize;
-    fn compute_phase_z(&self, addr0: usize, branch_index: usize) -> u8;
-}
 
 const COS_PI_OVER_8_TIMES_EXPIPI8: Complex64 = Complex {
     re: 0.8535533905932737,

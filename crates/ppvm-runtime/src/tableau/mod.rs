@@ -1,8 +1,10 @@
 mod clifford;
 mod data;
 mod display;
-mod non_clifford;
+mod measure;
 mod sparsevec;
+mod tgate;
+mod traits;
 
 pub use data::{GeneralizedTableau, Tableau};
-pub use non_clifford::GeneralizedTableauTGate;
+pub use traits::{GeneralizedTableauTGate, Measure};

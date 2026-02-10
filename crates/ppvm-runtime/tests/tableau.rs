@@ -45,16 +45,17 @@ fn generalized_tableau() {
     let mut sorted_coefficients = tableau.coefficients.clone();
     sorted_coefficients.sort_by(|entry1, entry2| entry1.1.cmp(&entry2.1));
 
-    const COS_PI_OVER_8: f64 = 0.9238795325112867; // cos(pi/8)
-    const SIN_PI_OVER_8: f64 = 0.3826834323650898; // sin(pi/8)
+    const PI: f64 = std::f64::consts::PI;
+    let cos_pi_8: f64 = (PI / 8.0).cos();
+    let sin_pi_8: f64 = (PI / 8.0).sin();
     let expected_coefficients = vec![
         Complex {
-            re: COS_PI_OVER_8 * COS_PI_OVER_8 - SIN_PI_OVER_8 * SIN_PI_OVER_8,
-            im: 0.0,
+            re: (PI / 4.0).cos() * (cos_pi_8 * cos_pi_8 - sin_pi_8 * sin_pi_8),
+            im: (PI / 4.0).sin() * (cos_pi_8 * cos_pi_8 - sin_pi_8 * sin_pi_8),
         },
         Complex {
-            re: 0.0,
-            im: -2.0 * SIN_PI_OVER_8 * COS_PI_OVER_8,
+            re: (PI / 4.0).cos() * 2.0 * sin_pi_8 * cos_pi_8,
+            im: (PI / 4.0).sin() * -2.0 * sin_pi_8 * cos_pi_8,
         },
     ];
 
@@ -92,6 +93,13 @@ fn test_generalized_tableau_phase() {
         assert!((val1.re - val2.re).abs() < 1e-11);
         assert!((val1.im - val2.im).abs() < 1e-11);
     }
+
+    let mut tableau: GeneralizedTableau<1, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    tableau.h(0);
+    tableau.t(0);
+    tableau.t(0);
 
     println!("{}", tableau);
 }

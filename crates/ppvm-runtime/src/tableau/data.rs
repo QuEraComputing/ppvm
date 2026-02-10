@@ -48,6 +48,13 @@ const ISIN_PI_OVER_8_TIMES_EXPIPI8: Complex64 = Complex {
     im: -0.3535533905932738,
 }; // -im * exp(im * pi / 8) * sin(pi/8)
 
+const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
+    Complex64 { re: 1.0, im: 0.0 },  // +1
+    Complex64 { re: 0.0, im: 1.0 },  // +i
+    Complex64 { re: -1.0, im: 0.0 }, // -1
+    Complex64 { re: 0.0, im: -1.0 }, // -i
+];
+
 impl<const N: usize, T: Config, C: SparseVector<Complex<T::Coeff>>> GeneralizedTableau<N, T, C>
 where
     T::Coeff: One + Zero + Clone,
@@ -76,8 +83,8 @@ where
         self.t_or_t_adj(index, true);
     }
 
-    fn t_or_t_adj(&mut self, index: usize, adjoint: bool) {
-        if self.is_lost[index] {
+    fn t_or_t_adj(&mut self, addr0: usize, adjoint: bool) {
+        if self.is_lost[addr0] {
             return;
         }
 
@@ -93,7 +100,7 @@ where
             ISIN_PI_OVER_8_TIMES_EXPIPI8.into()
         };
 
-        let index_shift = self.compute_shift_z(index);
+        let index_shift = self.compute_shift_z(addr0);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         for (coeff, idx) in old_coefficients.into_iter() {
@@ -103,16 +110,10 @@ where
             );
 
             let branch_index = idx ^ index_shift;
-            let branch_phase = self.compute_phase_z(index, branch_index);
+            let branch_phase = self.compute_phase_z(addr0, branch_index);
 
-            let mut phase_factor: Complex<T::Coeff> = match branch_phase {
-                0 => Complex64 { re: 1.0, im: 0.0 },  // +1
-                1 => Complex64 { re: 0.0, im: 1.0 },  // +i
-                2 => Complex64 { re: -1.0, im: 0.0 }, // -1
-                3 => Complex64 { re: 0.0, im: -1.0 }, // -i
-                _ => unreachable!("Invalid phase value: {}", branch_phase),
-            }
-            .into();
+            let mut phase_factor: Complex<T::Coeff> =
+                COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
 
             if adjoint {
                 phase_factor.im = -phase_factor.im;
@@ -133,10 +134,11 @@ where
         });
     }
 
-    fn compute_shift_z(&self, index: usize) -> usize {
+    fn compute_shift_z(&self, addr0: usize) -> usize {
+        // NOTE: we use LSB ordering
         let mut shift = 0usize;
         for (i, stab) in self.tableau.stabilizers.iter().enumerate() {
-            shift |= (stab.word.xbits[index] as usize) << i;
+            shift |= (stab.word.xbits[addr0] as usize) << i;
         }
         shift
     }
@@ -150,6 +152,7 @@ where
         let mut phase = 0u8;
         for (i, destab) in self.tableau.destabilizers.iter().enumerate() {
             if basis_index & (1 << i) == 0 {
+                // NOTE: LSB ordering; has to be consistent with shift computation
                 continue;
             }
 

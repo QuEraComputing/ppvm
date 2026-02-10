@@ -103,5 +103,28 @@ fn test_generalized_tableau_phase() {
     tableau.x(0);
     tableau.t(0);
 
+    let mut sorted_coefficients = tableau.coefficients.clone();
+    sorted_coefficients.sort_by(|entry1, entry2| entry1.1.cmp(&entry2.1));
+
+    let expected_coefficients = vec![
+        Complex {
+            re: 0.8535533905932737,
+            im: 0.3535533905932738,
+        },
+        Complex {
+            re: -0.14644660940672624,
+            im: 0.3535533905932738,
+        },
+    ];
+
+    for ((val1, idx1), (idx2, val2)) in sorted_coefficients
+        .iter()
+        .zip(expected_coefficients.iter().enumerate())
+    {
+        assert_eq!(idx1, &idx2);
+        assert!((val1.re - val2.re).abs() < 1e-11);
+        assert!((val1.im - val2.im).abs() < 1e-11);
+    }
+
     println!("{}", tableau);
 }

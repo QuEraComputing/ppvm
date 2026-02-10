@@ -149,7 +149,7 @@ where
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
         let mut phase = 0u8;
         for (i, destab) in self.tableau.destabilizers.iter().enumerate() {
-            if basis_index & (1 << i) != 0 {
+            if basis_index & (1 << i) == 0 {
                 continue;
             }
 

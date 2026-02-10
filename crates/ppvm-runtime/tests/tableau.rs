@@ -128,3 +128,19 @@ fn test_generalized_tableau_phase() {
 
     println!("{}", tableau);
 }
+
+#[test]
+fn test_generalized_tableau_multiple_ts() {
+    let mut tableau: GeneralizedTableau<1, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    tableau.h(0);
+
+    tableau.t(0);
+    tableau.t(0);
+    tableau.t(0);
+    tableau.t(0);
+
+    // four T gates should be equivalent to a Z
+    println!("{}", tableau);
+}

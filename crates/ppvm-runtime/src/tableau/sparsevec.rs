@@ -6,11 +6,12 @@ pub trait SparseVector<T>: Clone + IntoIterator<Item = (T, usize)> {
     /// Inserts an element without checking whether the index already exists.
     fn unsafe_insert(&mut self, index: usize, value: T);
     fn add_or_insert(&mut self, index: usize, value: T);
-    fn get(&self, index: usize) -> T;
+    fn get(&self, index: &usize) -> T;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
     fn mul_element_by(&mut self, index: usize, factor: T);
     fn trim(&mut self, cutoff: T);
+    fn retain(&mut self, f: impl FnMut(&(T, usize)) -> bool);
 }
 
 impl<T> SparseVector<T> for Vec<(T, usize)>
@@ -35,9 +36,9 @@ where
         self.push((value, index));
     }
 
-    fn get(&self, index: usize) -> T {
+    fn get(&self, index: &usize) -> T {
         for (v, i) in self.iter() {
-            if *i == index {
+            if i == index {
                 return v.clone();
             }
         }
@@ -64,5 +65,9 @@ where
     fn trim(&mut self, cutoff: T) {
         // TODO: make cutoff real
         self.retain(|(element, _)| element.abs() > cutoff.abs());
+    }
+
+    fn retain(&mut self, f: impl FnMut(&(T, usize)) -> bool) {
+        Vec::retain(self, f);
     }
 }

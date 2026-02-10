@@ -1,7 +1,10 @@
 use super::sparsevec::SparseVector;
 use crate::config::Config;
 use crate::phase::PhasedPauliWord;
-use num::{One, Zero, complex::Complex};
+use num::{
+    One, Zero,
+    complex::{Complex, Complex64},
+};
 
 #[derive(Clone, Debug)]
 pub struct Tableau<const N: usize, T: Config> {
@@ -36,13 +39,19 @@ pub struct GeneralizedTableau<const N: usize, T: Config, C: SparseVector<Complex
     pub coefficient_threshold: T::Coeff,
 }
 
-const COS_PI_OVER_8: f64 = 0.9238795325112867; // cos(pi/8)
-const SIN_PI_OVER_8: f64 = 0.3826834323650898; // sin(pi/8)
+const COS_PI_OVER_8_TIMES_EXPIPI8: Complex64 = Complex {
+    re: 0.8535533905932737,
+    im: 0.3535533905932738,
+}; // exp(im * pi / 8) * cos(pi/8)
+const ISIN_PI_OVER_8_TIMES_EXPIPI8: Complex64 = Complex {
+    re: 0.14644660940672624,
+    im: -0.3535533905932738,
+}; // -im * exp(im * pi / 8) * sin(pi/8)
 
 impl<const N: usize, T: Config, C: SparseVector<Complex<T::Coeff>>> GeneralizedTableau<N, T, C>
 where
     T::Coeff: One + Zero + Clone,
-    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>> + From<Complex64>,
 {
     pub fn new(coefficient_threshold: T::Coeff) -> Self {
         let mut coefficients = C::new();
@@ -72,21 +81,16 @@ where
             return;
         }
 
-        let complex_cos = Complex {
-            re: COS_PI_OVER_8.into(),
-            im: T::Coeff::zero(),
+        let complex_cos: Complex<T::Coeff> = if adjoint {
+            COS_PI_OVER_8_TIMES_EXPIPI8.conj().into()
+        } else {
+            COS_PI_OVER_8_TIMES_EXPIPI8.into()
         };
 
-        let complex_sin = if adjoint {
-            Complex {
-                re: T::Coeff::zero(),
-                im: SIN_PI_OVER_8.into(),
-            }
+        let complex_sin: Complex<T::Coeff> = if adjoint {
+            ISIN_PI_OVER_8_TIMES_EXPIPI8.conj().into()
         } else {
-            Complex {
-                re: T::Coeff::zero(),
-                im: (-SIN_PI_OVER_8).into(),
-            }
+            ISIN_PI_OVER_8_TIMES_EXPIPI8.into()
         };
 
         let index_shift = self.compute_shift_z(index);

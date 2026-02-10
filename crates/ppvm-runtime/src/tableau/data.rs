@@ -102,10 +102,23 @@ where
                 "Coefficient should not be zero"
             );
 
-            let branch_coefficient = coeff.clone() * complex_sin.clone();
-
-            // TODO: phase
             let branch_index = idx ^ index_shift;
+            let branch_phase = self.compute_phase_z(index, branch_index);
+
+            let mut phase_factor: Complex<T::Coeff> = match branch_phase {
+                0 => Complex64 { re: 1.0, im: 0.0 },  // +1
+                1 => Complex64 { re: 0.0, im: 1.0 },  // +i
+                2 => Complex64 { re: -1.0, im: 0.0 }, // -1
+                3 => Complex64 { re: 0.0, im: -1.0 }, // -i
+                _ => unreachable!("Invalid phase value: {}", branch_phase),
+            }
+            .into();
+
+            if adjoint {
+                phase_factor.im = -phase_factor.im;
+            }
+
+            let branch_coefficient = phase_factor * coeff.clone() * complex_sin.clone();
 
             let nonbranch_coefficient = coeff * complex_cos.clone();
             self.coefficients
@@ -126,5 +139,34 @@ where
             shift |= (stab.word.xbits[index] as usize) << i;
         }
         shift
+    }
+
+    /// every basis index is a bit string alpha defining the basis state
+    /// the phase when applying a Pauli is the product of all destabilizer phases
+    /// and the phase contributions from the commutation relations
+    /// we need to check every destabilizer where the basis index has a 1 bit.
+    fn compute_phase_z(&self, addr0: usize, basis_index: usize) -> u8 {
+        // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
+        let mut phase = 0u8;
+        for (i, destab) in self.tableau.destabilizers.iter().enumerate() {
+            if basis_index & (1 << i) != 0 {
+                continue;
+            }
+
+            let has_x = destab.word.xbits[addr0];
+            let has_z = destab.word.zbits[addr0];
+
+            // need to account for destabilizer phase
+            phase = (phase + destab.phase) % 4;
+
+            if has_x && has_z {
+                // Y operator contributes a phase of -i
+                phase = (phase + 3) % 4;
+            } else if has_x {
+                // X operator contributes a phase of -1
+                phase = (phase + 2) % 4;
+            }
+        }
+        phase
     }
 }

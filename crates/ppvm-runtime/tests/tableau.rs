@@ -39,6 +39,8 @@ fn generalized_tableau() {
     tableau.t(0);
     tableau.t(1);
 
+    println!("{}", tableau);
+
     // NOTE: since IZ|psi> = (IZ) * ZZ |psi> = ZI|psi>, we don't branch again
     assert_eq!(tableau.coefficients.len(), 2);
 
@@ -98,7 +100,7 @@ fn test_generalized_tableau_phase() {
         GeneralizedTableau::new(1e-12);
 
     tableau.h(0);
-    tableau.t(0);
+    tableau.x(0);
     tableau.t(0);
 
     println!("{}", tableau);

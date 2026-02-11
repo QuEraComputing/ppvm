@@ -161,4 +161,10 @@ fn test_measure_generalized_tableau() {
     println!("{}", tableau);
 
     assert!(tableau.coefficients.len() == 1);
+
+    let tableau_outcome = tableau.tableau.measure(0);
+    assert_eq!(
+        tableau_outcome, outcome,
+        "Tableau measurement outcome should match sampled outcome"
+    );
 }

@@ -1,90 +1,80 @@
 use super::data::{GeneralizedTableau, Tableau};
 use super::traits::Measure;
 use crate::config::Config;
-use crate::phase::PhasedPauliWord;
 use crate::tableau::sparsevec::SparseVector;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, Zero};
 
-// NOTE: this trait impl was 100% vibe-coded, please don't judge
 impl<const N: usize, T: Config> Measure for Tableau<N, T> {
-    /// Measure qubit `addr0` in the computational (Z) basis.
-    ///
-    /// Returns the measurement outcome: false for |0⟩, true for |1⟩.
-    ///
-    /// This implements the standard stabilizer measurement algorithm:
-    /// - If any stabilizer anticommutes with Z_i (has X or Y), the outcome is random
-    /// - Otherwise, the outcome is deterministic based on stabilizer phases
+    /// Measure qubit `addr0` in Z basis
     fn measure(&mut self, addr0: usize) -> bool {
         // Step 1: Find first stabilizer that anticommutes with Z_addr0
         // (i.e., has X or Y at position addr0)
-        let mut p = None;
+        let mut q = None;
         for (i, stab) in self.stabilizers.iter().enumerate() {
             if stab.word.xbits[addr0] {
-                // Has X or Y (X bit is set)
-                p = Some(i);
+                // X or Y anticommutes with Z
+                q = Some(i);
                 break;
             }
         }
 
-        match p {
-            Some(p_idx) => {
-                // RANDOM MEASUREMENT CASE:
+        match q {
+            Some(q_idx) => {
+                // Case a: random measurement outcome
                 // At least one stabilizer anticommutes with Z_addr0
 
-                // Generate random measurement outcome
+                // Generate random measurement outcome (50/50)
                 let outcome = rand::random::<bool>();
 
-                // Perform Gaussian elimination: multiply other anticommuting stabilizers by g_p
-                // This ensures only g_p has X or Y at addr0
+                // Check if there are other stabilizers that anticommute with Z_addr0
+                // If so, replace with g_j = g_j * g_q
                 for i in 0..N {
-                    if i != p_idx && self.stabilizers[i].word.xbits[addr0] {
-                        // Stabilizer i also anticommutes, so multiply by g_p to eliminate
-                        let g_p = self.stabilizers[p_idx].clone();
-                        self.stabilizers[i] *= g_p;
+                    if i == q_idx {
+                        continue;
+                    }
+                    if self.stabilizers[i].word.xbits[addr0] {
+                        // Stabilizer i also anticommutes, so multiply by g_q to eliminate
+                        let g_q = self.stabilizers[q_idx].clone();
+                        self.stabilizers[i] *= g_q;
+                    }
+                    if self.destabilizers[i].word.xbits[addr0] {
+                        let g_q = self.stabilizers[q_idx].clone();
+                        self.destabilizers[i] *= g_q;
                     }
                 }
 
-                // Also update destabilizers that anticommute with Z_addr0
-                // (skip p_idx since it will be overwritten)
-                for i in 0..N {
-                    if i != p_idx && self.destabilizers[i].word.xbits[addr0] {
-                        let g_p = self.stabilizers[p_idx].clone();
-                        self.destabilizers[i] *= g_p;
-                    }
+                // Update destabilizer q to be the old stabilizer q (before replacement)
+                self.destabilizers[q_idx] = self.stabilizers[q_idx].clone();
+
+                // Finally, replace g_q by \pm Z
+                for i in 0..self.stabilizers[q_idx].n_qubits() {
+                    // set the q_idx stabilizer to the Pauli string IIZIII...I
+                    self.stabilizers[q_idx].word.xbits.set(i, false);
+                    self.stabilizers[q_idx].word.zbits.set(i, i == addr0);
                 }
 
-                // Step (b): Copy old stabilizer to destabilizer
-                // (must happen before overwriting the stabilizer)
-                self.destabilizers[p_idx] = self.stabilizers[p_idx].clone();
-
-                // Step (c): Replace stabilizer p with ±Z_addr0 based on outcome
-                // outcome = false (|0⟩) → +Z, outcome = true (|1⟩) → -Z
-                for i in 0..self.stabilizers[p_idx].n_qubits() {
-                    self.stabilizers[p_idx].word.xbits.set(i, false);
-                    self.stabilizers[p_idx].word.zbits.set(i, i == addr0);
-                }
-                self.stabilizers[p_idx].phase = if outcome { 2 } else { 0 };
+                // Set phase depending on outcome
+                self.stabilizers[q_idx].phase = if outcome { 2 } else { 0 };
 
                 outcome
             }
             None => {
-                // DETERMINISTIC MEASUREMENT CASE (Aaronson-Gottesman Case II):
-                // All stabilizers commute with Z_addr0 (no X or Y at addr0).
-                // Express Z_addr0 as a product of stabilizer generators by
-                // examining which destabilizers anticommute with Z_addr0.
-                // For each destabilizer with X at addr0, multiply the
-                // corresponding stabilizer into a scratch accumulator.
-                let mut scratch = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(N);
+                // Case b: deterministic measurement outcome
+
+                // find the outcome: either Z_addr0 or -Z_addr0 is a stabilizer
+                // the stabilizer can be computed as the product of all destabilizers
+                // it anticommutes with; we do this and then check the phase to determine if it's Z or -Z
+                // NOTE: we can just skip building the actual Pauli string since we only need the phase
+                let mut phase = 0;
                 for (i, destab) in self.destabilizers.iter().enumerate() {
                     if destab.word.xbits[addr0] {
-                        scratch *= self.stabilizers[i].clone();
+                        phase = (phase + self.stabilizers[i].phase) % 4;
                     }
                 }
 
-                // Phase encoding: 0 → +1, 2 → -1
                 // phase >= 2 means -Z eigenvalue → outcome |1⟩ (true)
-                scratch.phase >= 2
+                phase >= 2
             }
         }
     }
@@ -191,7 +181,11 @@ where
         });
 
         // Step 5: Update the underlying tableau to reflect the measurement
-        self.tableau.measure(addr0);
+        let tableau_outcome = self.tableau.measure(addr0);
+        debug_assert_eq!(
+            tableau_outcome, outcome,
+            "Tableau measurement outcome should match sampled outcome"
+        );
 
         // Step 6: Renormalize the remaining state
         if !self.coefficients.is_empty() {

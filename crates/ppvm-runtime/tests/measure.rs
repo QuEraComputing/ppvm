@@ -159,5 +159,6 @@ fn test_measure_generalized_tableau() {
 
     println!("Outcome: {}", outcome);
     println!("{}", tableau);
-    // println!("{}", tableau);
+
+    assert!(tableau.coefficients.len() == 1);
 }

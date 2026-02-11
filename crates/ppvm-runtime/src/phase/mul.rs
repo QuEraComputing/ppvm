@@ -16,10 +16,11 @@ where
             let sign = (a && b && c && !d) || (a && !b && !c && d) || (!a && b && c && d);
             let imag = (a && !b && d) || (a && !c && d) || (!a && b && c) || (b && c && !d);
             let exp = (sign as u8) << 1 | (imag as u8);
-            self.add_phase(rhs.phase + exp);
+            self.add_phase(exp);
             self.word.xbits.set(i, x_i);
             self.word.zbits.set(i, z_i);
         }
+        self.add_phase(rhs.phase);
     }
 }
 

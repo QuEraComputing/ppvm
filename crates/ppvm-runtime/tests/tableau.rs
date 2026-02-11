@@ -144,3 +144,25 @@ fn test_generalized_tableau_multiple_ts() {
     // four T gates should be equivalent to a Z
     println!("{}", tableau);
 }
+
+#[test]
+fn test_generalized_tableau_multiple_ts2() {
+    let mut tableau: GeneralizedTableau<2, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    tableau.h(0);
+    tableau.h(1);
+
+    tableau.t(0);
+    tableau.t(0);
+    tableau.t(0);
+    tableau.t(0);
+
+    tableau.t(1);
+    tableau.t(1);
+    tableau.t(1);
+    tableau.t(1);
+
+    // four T gates should be equivalent to a Z
+    println!("{}", tableau);
+}

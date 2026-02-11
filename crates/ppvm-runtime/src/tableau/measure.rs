@@ -1,15 +1,13 @@
 use super::data::{GeneralizedTableau, Tableau};
-use super::traits::Measure;
+use super::traits::{GeneralizedTableauTGate, Measure};
 use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
 use num::complex::{Complex, Complex64, ComplexFloat};
-use num::traits::{One, Zero};
+use num::traits::{One, ToPrimitive, Zero};
 
 impl<const N: usize, T: Config> Measure for Tableau<N, T> {
-    /// Measure qubit `addr0` in Z basis
-    fn measure(&mut self, addr0: usize) -> bool {
-        // Step 1: Find first stabilizer that anticommutes with Z_addr0
-        // (i.e., has X or Y at position addr0)
+    fn find_anticommuting_stabilizer(&self, addr0: usize) -> Option<usize> {
+        // Find first stabilizer that anticommutes with Z_addr0
         let mut q = None;
         for (i, stab) in self.stabilizers.iter().enumerate() {
             if stab.word.xbits[addr0] {
@@ -18,7 +16,44 @@ impl<const N: usize, T: Config> Measure for Tableau<N, T> {
                 break;
             }
         }
+        q
+    }
 
+    fn update_tableau_according_to_outcome(&mut self, addr0: usize, q_idx: usize, outcome: bool) {
+        // Check if there are other stabilizers that anticommute with Z_addr0
+        // If so, replace with g_j = g_j * g_q
+        for i in 0..N {
+            if i == q_idx {
+                continue;
+            }
+            if self.stabilizers[i].word.xbits[addr0] {
+                // Stabilizer i also anticommutes, so multiply by g_q to eliminate
+                let g_q = self.stabilizers[q_idx].clone();
+                self.stabilizers[i] *= g_q;
+            }
+            if self.destabilizers[i].word.xbits[addr0] {
+                let g_q = self.stabilizers[q_idx].clone();
+                self.destabilizers[i] *= g_q;
+            }
+        }
+
+        // Update destabilizer q to be the old stabilizer q (before replacement)
+        self.destabilizers[q_idx] = self.stabilizers[q_idx].clone();
+
+        // Finally, replace g_q by \pm Z
+        for i in 0..self.stabilizers[q_idx].n_qubits() {
+            // set the q_idx stabilizer to the Pauli string IIZIII...I
+            self.stabilizers[q_idx].word.xbits.set(i, false);
+            self.stabilizers[q_idx].word.zbits.set(i, i == addr0);
+        }
+
+        // Set phase depending on outcome
+        self.stabilizers[q_idx].phase = if outcome { 2 } else { 0 };
+    }
+
+    /// Measure qubit `addr0` in Z basis
+    fn measure(&mut self, addr0: usize) -> bool {
+        let q = self.find_anticommuting_stabilizer(addr0);
         match q {
             Some(q_idx) => {
                 // Case a: random measurement outcome
@@ -27,35 +62,7 @@ impl<const N: usize, T: Config> Measure for Tableau<N, T> {
                 // Generate random measurement outcome (50/50)
                 let outcome = rand::random::<bool>();
 
-                // Check if there are other stabilizers that anticommute with Z_addr0
-                // If so, replace with g_j = g_j * g_q
-                for i in 0..N {
-                    if i == q_idx {
-                        continue;
-                    }
-                    if self.stabilizers[i].word.xbits[addr0] {
-                        // Stabilizer i also anticommutes, so multiply by g_q to eliminate
-                        let g_q = self.stabilizers[q_idx].clone();
-                        self.stabilizers[i] *= g_q;
-                    }
-                    if self.destabilizers[i].word.xbits[addr0] {
-                        let g_q = self.stabilizers[q_idx].clone();
-                        self.destabilizers[i] *= g_q;
-                    }
-                }
-
-                // Update destabilizer q to be the old stabilizer q (before replacement)
-                self.destabilizers[q_idx] = self.stabilizers[q_idx].clone();
-
-                // Finally, replace g_q by \pm Z
-                for i in 0..self.stabilizers[q_idx].n_qubits() {
-                    // set the q_idx stabilizer to the Pauli string IIZIII...I
-                    self.stabilizers[q_idx].word.xbits.set(i, false);
-                    self.stabilizers[q_idx].word.zbits.set(i, i == addr0);
-                }
-
-                // Set phase depending on outcome
-                self.stabilizers[q_idx].phase = if outcome { 2 } else { 0 };
+                self.update_tableau_according_to_outcome(addr0, q_idx, outcome);
 
                 outcome
             }
@@ -80,116 +87,113 @@ impl<const N: usize, T: Config> Measure for Tableau<N, T> {
     }
 }
 
+const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
+    Complex64::new(1.0, 0.0),  // +1
+    Complex64::new(0.0, 1.0),  // +i
+    Complex64::new(-1.0, 0.0), // -1
+    Complex64::new(0.0, -1.0), // -i
+];
+
 impl<const N: usize, T: Config, C: SparseVector<Complex<T::Coeff>>> Measure
     for GeneralizedTableau<N, T, C>
 where
     T: Config,
-    C: SparseVector<Complex<T::Coeff>>,
-    T::Coeff: One + Zero + Clone + num::Num,
+    C: SparseVector<Complex<T::Coeff>> + std::fmt::Debug,
+    T::Coeff: One + Zero + Clone + num::Num + ToPrimitive,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
         + std::ops::AddAssign
         + One
         + ComplexFloat,
-    <Complex<T::Coeff> as ComplexFloat>::Real: num::ToPrimitive,
 {
-    /// Measure qubit `addr0` in Z basis for a generalized stabilizer state.
-    ///
-    /// The state is represented as |ψ⟩ = Σ_i α_i |φ_i⟩ where each |φ_i⟩ is a stabilizer state.
-    /// This implements measurement by:
-    /// 1. Computing the Z eigenvalue (+1 or -1) for each stabilizer state
-    /// 2. Computing Born probabilities for each outcome
-    /// 3. Sampling according to Born rule
-    /// 4. Keeping only coefficients with matching eigenvalue
-    /// 5. Renormalizing the state
+    fn find_anticommuting_stabilizer(&self, addr0: usize) -> Option<usize> {
+        self.tableau.find_anticommuting_stabilizer(addr0)
+    }
+
+    fn update_tableau_according_to_outcome(&mut self, addr0: usize, q_idx: usize, outcome: bool) {
+        self.tableau
+            .update_tableau_according_to_outcome(addr0, q_idx, outcome);
+    }
+
     fn measure(&mut self, addr0: usize) -> bool {
-        // Step 1: For each basis state (indexed by idx), compute eigenvalue of Z_addr0
-        // The eigenvalue is determined by the destabilizers
-        let eigenvalues: Vec<(bool, usize)> = self
-            .coefficients
-            .clone()
-            .into_iter()
-            .map(|(_, idx)| {
-                // Track sign: false = +1 eigenvalue, true = -1 eigenvalue
-                let mut sign = false;
-
-                // Check each destabilizer
-                for (i, destab) in self.tableau.destabilizers.iter().enumerate() {
-                    let bit_i_set = (idx & (1 << i)) != 0;
-
-                    // Case 1: Destabilizer has Z at addr0 (like ZI) → directly determines eigenvalue
-                    // If bit i is set, we're in the -1 eigenstate, so Z eigenvalue is -1
-                    if !destab.word.xbits[addr0] && destab.word.zbits[addr0] {
-                        if bit_i_set {
-                            sign = !sign; // -1 eigenstate of Z means -1 eigenvalue
-                        }
-                    }
-                    // Case 2: Destabilizer has X or Y at addr0 → Z anticommutes with it
-                    // This contributes a phase flip when the bit is set
-                    else if destab.word.xbits[addr0] && bit_i_set {
-                        sign = !sign;
-                    }
-                }
-
-                // Return (is_minus_one_eigenvalue, index)
-                (sign, idx)
-            })
-            .collect();
-
-        // Step 2: Compute Born probabilities for each outcome
-        let mut prob_plus_one = 0.0_f64;
-        let mut prob_minus_one = 0.0_f64;
-
-        for ((coeff, _), (is_minus_one, _)) in
-            self.coefficients.clone().into_iter().zip(&eigenvalues)
-        {
-            // |α_i|² = |re|² + |im|²
-            use num::ToPrimitive;
-            let re_sq = (coeff.re() * coeff.re()).to_f64().unwrap_or(0.0);
-            let im_sq = (coeff.im() * coeff.im()).to_f64().unwrap_or(0.0);
-            let prob = re_sq + im_sq;
-            if *is_minus_one {
-                prob_minus_one += prob;
-            } else {
-                prob_plus_one += prob;
-            }
+        // evaluate the action of Z on the state
+        // i.e. shift + phase
+        let shift = self.compute_shift_z(addr0);
+        let mut z_overlap = Complex64::from(0.0);
+        // Compute the probabilities by computing the overlap <psi|Z|psi>
+        // which is proportional to sum(alpha) conj(v_alpha) * v_(alpha + shift) * xi_(alpha)
+        for (coeff, idx) in self.coefficients.clone().into_iter() {
+            let branch_index = idx ^ shift;
+            // TODO: double-check the phase, this might need to be computed with the branch_index
+            let phase = self.compute_phase_z(addr0, idx);
+            let complex_phase: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase as usize].into();
+            // let eigenvalue = phase >= 2;
+            let coeff_branch = self.coefficients.get(&branch_index);
+            let overlap = complex_phase * coeff.conj() * coeff_branch;
+            z_overlap.re += overlap.re.to_f64().unwrap_or(0.0);
+            z_overlap.im += overlap.im.to_f64().unwrap_or(0.0);
+            // let prob = (complex_phase * coeff.conj() * coeff_branch)
+            //     .re
+            //     .to_f64()
+            //     .unwrap_or(0.0);
+            // if eigenvalue {
+            //     prob_minus += prob;
+            // } else {
+            //     prob_plus += prob;
+            // }
         }
 
-        // Step 3: Sample outcome according to Born rule
-        let total_prob = prob_plus_one + prob_minus_one;
-        let outcome = if total_prob == 0.0 {
-            // Degenerate case: assume |0⟩ outcome
-            false
-        } else {
-            // Generate random number in [0, 1]
-            let r: f64 = rand::random::<f64>();
-            // If r < P(+1) / P(total), measure +1 (outcome=false)
-            // Otherwise measure -1 (outcome=true)
-            let threshold = prob_plus_one / total_prob;
-            r >= threshold
-        };
-
-        // Step 4: Keep only coefficients with matching eigenvalue
-        self.coefficients.retain(|(_, idx)| {
-            let eigenvalue_is_minus_one = eigenvalues
-                .iter()
-                .find(|(_, i)| i == idx)
-                .map(|(sign, _)| *sign)
-                .unwrap_or(false);
-            eigenvalue_is_minus_one == outcome
-        });
-
-        // Step 5: Update the underlying tableau to reflect the measurement
-        let tableau_outcome = self.tableau.measure(addr0);
-        debug_assert_eq!(
-            tableau_outcome, outcome,
-            "Tableau measurement outcome should match sampled outcome"
+        debug_assert!(
+            z_overlap.im.abs() < 1e-6,
+            "Overlap should be real, got {}",
+            z_overlap
         );
 
-        // Step 6: Renormalize the remaining state
-        if !self.coefficients.is_empty() {
-            self.coefficients.normalize();
+        let prob_0 = 0.5 + 0.5 * z_overlap.re;
+        let prob_1 = 0.5 - 0.5 * z_overlap.re;
+
+        debug_assert!(
+            (prob_0 + prob_1 - 1.0).abs() < 1e-6,
+            "Probabilities should sum to 1, got {} + {} = {}",
+            prob_0,
+            prob_1,
+            prob_0 + prob_1
+        );
+
+        let outcome = rand::random::<f64>() < prob_1;
+
+        // update the coefficients so only the ones with the correct outcome are kept
+        let mut new_coefficients = C::new();
+        for (coeff, idx) in self.coefficients.clone().into_iter() {
+            let branch_index = idx ^ shift;
+            let phase = self.compute_phase_z(addr0, idx);
+            let mut complex64_phase = 0.5 * COMPLEX_PHASE_CONVERSION[phase as usize];
+            if outcome {
+                complex64_phase *= -1.0;
+            }
+            let complex_phase: Complex<T::Coeff> = complex64_phase.into();
+
+            let value = complex_phase * coeff;
+            new_coefficients.add_or_insert(branch_index, value);
+        }
+
+        println!("{:?}", new_coefficients);
+
+        for (_coeff, idx) in self.coefficients.clone().into_iter() {
+            self.coefficients
+                .mul_element_by(idx, Complex64::from(0.5).into());
+        }
+
+        for (new_coeff, idx) in new_coefficients.clone().into_iter() {
+            self.coefficients.add_or_insert(idx, new_coeff);
+        }
+
+        let q = self.find_anticommuting_stabilizer(addr0);
+
+        match q {
+            Some(q_idx) => self.update_tableau_according_to_outcome(addr0, q_idx, outcome),
+            None => {} // deterministic outcome leaves tableau invariant
         }
 
         outcome

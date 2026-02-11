@@ -7,4 +7,4 @@ mod tgate;
 mod traits;
 
 pub use data::{GeneralizedTableau, Tableau};
-pub use traits::{GeneralizedTableauTGate, Measure};
+pub use traits::{TGate, Measure};

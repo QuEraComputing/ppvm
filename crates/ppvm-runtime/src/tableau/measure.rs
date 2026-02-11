@@ -1,5 +1,5 @@
 use super::data::{GeneralizedTableau, Tableau};
-use super::traits::{GeneralizedTableauTGate, Measure};
+use super::traits::Measure;
 use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
 use num::complex::{Complex, Complex64, ComplexFloat};

@@ -1,5 +1,5 @@
 use super::sparsevec::SparseVector;
-use super::traits::GeneralizedTableauTGate;
+use super::traits::TGate;
 use crate::config::Config;
 use crate::tableau::GeneralizedTableau;
 use num::complex::{Complex, Complex64};
@@ -21,7 +21,7 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64 { re: 0.0, im: -1.0 }, // -i
 ];
 
-impl<const N: usize, T, C> GeneralizedTableauTGate for GeneralizedTableau<N, T, C>
+impl<const N: usize, T, C> TGate for GeneralizedTableau<N, T, C>
 where
     T: Config,
     C: SparseVector<Complex<T::Coeff>>,
@@ -85,44 +85,5 @@ where
             re: self.coefficient_threshold.clone(),
             im: T::Coeff::zero(),
         });
-    }
-
-    fn compute_shift_z(&self, addr0: usize) -> usize {
-        // NOTE: we use LSB ordering
-        let mut shift = 0usize;
-        for (i, stab) in self.tableau.stabilizers.iter().enumerate() {
-            shift |= (stab.word.xbits[addr0] as usize) << i;
-        }
-        shift
-    }
-
-    /// every basis index is a bit string alpha defining the basis state
-    /// the phase when applying a Pauli is the product of all destabilizer phases
-    /// and the phase contributions from the commutation relations
-    /// we need to check every destabilizer where the basis index has a 1 bit.
-    fn compute_phase_z(&self, addr0: usize, basis_index: usize) -> u8 {
-        // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
-        let mut phase = 0u8;
-        for (i, destab) in self.tableau.destabilizers.iter().enumerate() {
-            if basis_index & (1 << i) == 0 {
-                // NOTE: LSB ordering; has to be consistent with shift computation
-                continue;
-            }
-
-            let has_x = destab.word.xbits[addr0];
-            let has_z = destab.word.zbits[addr0];
-
-            // need to account for destabilizer phase
-            phase = (phase + destab.phase) % 4;
-
-            if has_x && has_z {
-                // Y operator contributes a phase of -i
-                phase = (phase + 3) % 4;
-            } else if has_x {
-                // X operator contributes a phase of -1
-                phase = (phase + 2) % 4;
-            }
-        }
-        phase
     }
 }

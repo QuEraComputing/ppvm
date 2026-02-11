@@ -19,6 +19,22 @@ impl<const N: usize, T: Config> Measure for Tableau<N, T> {
         q
     }
 
+    fn get_deterministic_outcome(&self, addr0: usize) -> bool {
+        // find the outcome: either Z_addr0 or -Z_addr0 is a stabilizer
+        // the stabilizer can be computed as the product of all destabilizers
+        // it anticommutes with; we do this and then check the phase to determine if it's Z or -Z
+        // NOTE: we can just skip building the actual Pauli string since we only need the phase
+        let mut phase = 0;
+        for (i, destab) in self.destabilizers.iter().enumerate() {
+            if destab.word.xbits[addr0] {
+                phase = (phase + self.stabilizers[i].phase) % 4;
+            }
+        }
+
+        // phase >= 2 means -Z eigenvalue → outcome |1⟩ (true)
+        phase >= 2
+    }
+
     fn update_tableau_according_to_outcome(&mut self, addr0: usize, q_idx: usize, outcome: bool) {
         // Check if there are other stabilizers that anticommute with Z_addr0
         // If so, replace with g_j = g_j * g_q
@@ -69,19 +85,7 @@ impl<const N: usize, T: Config> Measure for Tableau<N, T> {
             None => {
                 // Case b: deterministic measurement outcome
 
-                // find the outcome: either Z_addr0 or -Z_addr0 is a stabilizer
-                // the stabilizer can be computed as the product of all destabilizers
-                // it anticommutes with; we do this and then check the phase to determine if it's Z or -Z
-                // NOTE: we can just skip building the actual Pauli string since we only need the phase
-                let mut phase = 0;
-                for (i, destab) in self.destabilizers.iter().enumerate() {
-                    if destab.word.xbits[addr0] {
-                        phase = (phase + self.stabilizers[i].phase) % 4;
-                    }
-                }
-
-                // phase >= 2 means -Z eigenvalue → outcome |1⟩ (true)
-                phase >= 2
+                self.get_deterministic_outcome(addr0)
             }
         }
     }
@@ -116,6 +120,10 @@ where
             .update_tableau_according_to_outcome(addr0, q_idx, outcome);
     }
 
+    fn get_deterministic_outcome(&self, addr0: usize) -> bool {
+        self.tableau.get_deterministic_outcome(addr0)
+    }
+
     fn measure(&mut self, addr0: usize) -> bool {
         let q = self.find_anticommuting_stabilizer(addr0);
 
@@ -135,20 +143,10 @@ where
                     let phase = self.compute_phase_z(addr0, idx);
                     let complex_phase: Complex<T::Coeff> =
                         COMPLEX_PHASE_CONVERSION[phase as usize].into();
-                    // let eigenvalue = phase >= 2;
                     let coeff_branch = self.coefficients.get(&branch_index);
                     let overlap = complex_phase * coeff.conj() * coeff_branch;
                     z_overlap.re += overlap.re.to_f64().unwrap_or(0.0);
                     z_overlap.im += overlap.im.to_f64().unwrap_or(0.0);
-                    // let prob = (complex_phase * coeff.conj() * coeff_branch)
-                    //     .re
-                    //     .to_f64()
-                    //     .unwrap_or(0.0);
-                    // if eigenvalue {
-                    //     prob_minus += prob;
-                    // } else {
-                    //     prob_plus += prob;
-                    // }
                 }
 
                 debug_assert!(
@@ -224,18 +222,7 @@ where
                 // renormalize
                 self.coefficients.normalize();
 
-                // TODO: for this bit, move the logic into a new function and share it for tableau
-                // find the outcome of the deterministic measurement
-                let mut phase = 0;
-                for (i, destab) in self.tableau.destabilizers.iter().enumerate() {
-                    if destab.word.xbits[addr0] {
-                        phase = (phase + self.tableau.stabilizers[i].phase) % 4;
-                    }
-                }
-
-                // phase >= 2 means -Z eigenvalue → outcome |1⟩ (true)
-                let outcome = phase >= 2;
-                outcome
+                self.get_deterministic_outcome(addr0)
             }
         }
     }

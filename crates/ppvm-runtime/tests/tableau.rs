@@ -4,13 +4,21 @@ use ppvm_runtime::{config::dashmap::ByteFxHashF64, prelude::*};
 
 #[test]
 fn test_tableau() {
-    // let conf =
     let mut tableau: Tableau<2, ByteFxHashF64<1>> = Tableau::new();
 
     tableau.h(0);
     tableau.cnot(0, 1);
 
-    println!("{}", tableau);
+    assert_eq!(tableau.stabilizers[0].to_string(), "+XX");
+    assert_eq!(tableau.stabilizers[1].to_string(), "+ZZ");
+
+    let mut tableau: Tableau<1, ByteFxHashF64<1>> = Tableau::new();
+    tableau.h(0);
+    // test nonhermitian forward prop
+    tableau.s(0);
+
+    assert_eq!(tableau.stabilizers[0].to_string(), "+Y");
+    assert_eq!(tableau.destabilizers[0].to_string(), "+Z");
 }
 
 #[test]
@@ -377,10 +385,7 @@ fn test_two_t_gates_coefficients() {
     sorted.sort_by(|a, b| a.1.cmp(&b.1));
 
     // Expected: TT|+⟩ represented as two branches with these coefficients
-    let expected = vec![
-        Complex { re: 0.5, im: 0.5 },
-        Complex { re: 0.5, im: -0.5 },
-    ];
+    let expected = vec![Complex { re: 0.5, im: 0.5 }, Complex { re: 0.5, im: -0.5 }];
 
     for ((val, idx), (exp_idx, exp_val)) in sorted.iter().zip(expected.iter().enumerate()) {
         assert_eq!(idx, &exp_idx);

@@ -41,9 +41,26 @@ impl<const N: usize, T: Config> Clifford for Tableau<N, T> {
     impl_tableau_clifford!(y, index);
     impl_tableau_clifford!(z, index);
     impl_tableau_clifford!(h, index);
-    impl_tableau_clifford!(s, index);
     impl_tableau_clifford!(cnot, control, target);
     impl_tableau_clifford!(cz, control, target);
+
+    fn s(&mut self, index: usize) {
+        // NOTE: S is the only clifford where forward and backward propagation differ
+        // since it's non-hermitian
+        // only difference is the phase though
+        // TODO: just use the conjugate sdagger impl
+        self.destabilizers.iter_mut().for_each(|pw| {
+            let phase = (pw.word.xbits[index] & pw.word.zbits[index]) as u8;
+            pw.word.s(index);
+            pw.add_phase(phase << 1);
+        });
+
+        self.stabilizers.iter_mut().for_each(|pw| {
+            let phase = (pw.word.xbits[index] & pw.word.zbits[index]) as u8;
+            pw.word.s(index);
+            pw.add_phase(phase << 1);
+        });
+    }
 }
 
 impl<const N: usize, T: Config, C: SparseVector<Complex<T::Coeff>>> Clifford

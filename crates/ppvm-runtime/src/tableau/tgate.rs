@@ -21,7 +21,7 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64 { re: 0.0, im: -1.0 }, // -i
 ];
 
-impl<const N: usize, T, C> TGate for GeneralizedTableau<N, T, C>
+impl<T, C> TGate for GeneralizedTableau<T, C>
 where
     T: Config,
     C: SparseVector<Complex<T::Coeff>>,

@@ -5,7 +5,7 @@ use crate::tableau::sparsevec::SparseVector;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 
-impl<const N: usize, T: Config> Measure for Tableau<N, T> {
+impl<T: Config> Measure for Tableau<T> {
     /// Measure qubit `addr0` in Z basis
     fn measure(&mut self, addr0: usize) -> bool {
         let q = self.find_anticommuting_stabilizer(addr0);
@@ -37,8 +37,7 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64::new(0.0, -1.0), // -i
 ];
 
-impl<const N: usize, T: Config, C: SparseVector<Complex<T::Coeff>>> Measure
-    for GeneralizedTableau<N, T, C>
+impl<T: Config, C: SparseVector<Complex<T::Coeff>>> Measure for GeneralizedTableau<T, C>
 where
     T: Config,
     C: SparseVector<Complex<T::Coeff>> + std::fmt::Debug,

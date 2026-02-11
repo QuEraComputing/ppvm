@@ -5,16 +5,16 @@ use crate::config::Config;
 use num::complex::Complex;
 use std::fmt::Display;
 
-impl<const N: usize, T: Config> Display for Tableau<N, T> {
+impl<T: Config> Display for Tableau<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Tableau ({} qubits):", N)?;
+        writeln!(f, "Tableau ({} qubits):", self.n_qubits)?;
         writeln!(f, "  Destabilizers: [")?;
-        for stab in self.destabilizers.iter() {
+        for stab in self.destabilizers().iter() {
             writeln!(f, "    {}", stab)?;
         }
         writeln!(f, "  ]")?;
         writeln!(f, "  Stabilizers: [")?;
-        for stab in self.stabilizers.iter() {
+        for stab in self.stabilizers().iter() {
             writeln!(f, "    {}", stab)?;
         }
         writeln!(f, "  ]")?;
@@ -22,13 +22,13 @@ impl<const N: usize, T: Config> Display for Tableau<N, T> {
     }
 }
 
-impl<const N: usize, T: Config, C: SparseVector<Complex<T::Coeff>>> Display
-    for GeneralizedTableau<N, T, C>
+impl<T: Config, C: SparseVector<Complex<T::Coeff>>> Display for GeneralizedTableau<T, C>
 where
     Complex<T::Coeff>: Display,
+    <T as Config>::Coeff: num::Num,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Generalized Tableau ({} qubits):", N)?;
+        writeln!(f, "Generalized Tableau ({} qubits):", self.n_qubits())?;
         writeln!(f, "  Tableau:")?;
         writeln!(f, "{}", self.tableau)?;
         writeln!(f, "  Coefficients:")?;

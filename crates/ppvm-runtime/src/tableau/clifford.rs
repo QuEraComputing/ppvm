@@ -7,10 +7,7 @@ use num::complex::Complex;
 macro_rules! impl_tableau_clifford {
     ($name:ident, $($index:ident),*) => {
         fn $name(&mut self, $($index: usize),*) {
-            self.destabilizers.iter_mut().for_each(|pw| {
-                pw.$name($($index),*);
-            });
-            self.stabilizers.iter_mut().for_each(|pw| {
+            self.data.iter_mut().for_each(|pw| {
                 pw.$name($($index),*);
             });
         }
@@ -36,7 +33,7 @@ macro_rules! impl_generalized_tableau_clifford {
     };
 }
 
-impl<const N: usize, T: Config> Clifford for Tableau<N, T> {
+impl<T: Config> Clifford for Tableau<T> {
     impl_tableau_clifford!(x, index);
     impl_tableau_clifford!(y, index);
     impl_tableau_clifford!(z, index);
@@ -49,13 +46,7 @@ impl<const N: usize, T: Config> Clifford for Tableau<N, T> {
         // since it's non-hermitian
         // only difference is the phase though
         // TODO: just use the conjugate sdagger impl
-        self.destabilizers.iter_mut().for_each(|pw| {
-            let phase = (pw.word.xbits[index] & pw.word.zbits[index]) as u8;
-            pw.word.s(index);
-            pw.add_phase(phase << 1);
-        });
-
-        self.stabilizers.iter_mut().for_each(|pw| {
+        self.data.iter_mut().for_each(|pw| {
             let phase = (pw.word.xbits[index] & pw.word.zbits[index]) as u8;
             pw.word.s(index);
             pw.add_phase(phase << 1);
@@ -63,9 +54,7 @@ impl<const N: usize, T: Config> Clifford for Tableau<N, T> {
     }
 }
 
-impl<const N: usize, T: Config, C: SparseVector<Complex<T::Coeff>>> Clifford
-    for GeneralizedTableau<N, T, C>
-{
+impl<T: Config, C: SparseVector<Complex<T::Coeff>>> Clifford for GeneralizedTableau<T, C> {
     impl_generalized_tableau_clifford!(x, index);
     impl_generalized_tableau_clifford!(y, index);
     impl_generalized_tableau_clifford!(z, index);

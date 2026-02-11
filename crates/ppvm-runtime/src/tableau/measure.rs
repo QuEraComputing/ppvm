@@ -97,61 +97,17 @@ where
                 self.tableau
                     .update_tableau_according_to_outcome(addr0, q_idx, outcome);
 
-                // TODO: more efficient update of coefficients in-place
-                let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-                for (coeff, alpha) in old_coefficients.into_iter() {
-                    let mut phase = false; // false: 1, true: -1
-
-                    // get the phase from the anti-commutation with the product over all destabilizers
-                    for i in 0..N {
-                        if alpha & (1 << i) == 0 {
-                            // this index doesn't pick D_i
-                            continue;
-                        }
-                        phase ^= self.tableau.destabilizers[i].word.xbits[addr0];
-                    }
-
-                    if !phase {
-                        // keep term
-                        self.coefficients.add_or_insert(alpha, coeff);
-                    } // else drop it
-                }
-
-                // renormalize
-                self.coefficients.normalize();
-
                 outcome
             }
 
             None => {
                 // Case b: deterministic outcome
-
-                // TODO: more efficient update of coefficients in-place
-                let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-                for (coeff, alpha) in old_coefficients.into_iter() {
-                    let mut phase = false; // false: 1, true: -1
-
-                    // get the phase from the anti-commutation with the product over all destabilizers
-                    for i in 0..N {
-                        if alpha & (1 << i) == 0 {
-                            // this index doesn't pick D_i
-                            continue;
-                        }
-                        phase ^= self.tableau.destabilizers[i].word.xbits[addr0];
-                    }
-
-                    if !phase {
-                        // keep term
-                        self.coefficients.add_or_insert(alpha, coeff);
-                    } // else drop it, since it would flip the sign in (1 + P)|b_alpha> regardless of whether P is +Z or -Z
-                }
-
-                // renormalize
-                self.coefficients.normalize();
-
                 self.tableau.get_deterministic_outcome(addr0)
             }
         };
+
+        self.trim_coefficients_for_measurement(addr0);
+
         outcome
     }
 }

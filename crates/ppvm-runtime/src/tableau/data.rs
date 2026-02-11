@@ -125,4 +125,36 @@ where
             coefficient_threshold,
         }
     }
+
+    /// Keep only coefficients that correspond to the correct eigenvalue of
+    /// a Z measurement
+    /// NOTE: this is called AFTER the tableau has been updated
+    pub(crate) fn trim_coefficients_for_measurement(&mut self, addr0: usize) {
+        // TODO: more efficient update of coefficients in-place
+        let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
+        for (coeff, alpha) in old_coefficients.into_iter() {
+            let mut phase = false; // false: 1, true: -1
+
+            // get the phase from the anti-commutation with the product over all destabilizers
+            for i in 0..N {
+                if alpha & (1 << i) == 0 {
+                    // this index doesn't pick D_i
+                    continue;
+                }
+                phase ^= self.tableau.destabilizers[i].word.xbits[addr0];
+            }
+
+            // NOTE: if the term accumulates a phase, then the projector
+            // (I + P) |b_alpha> ~ (I - P) |psi_s>, where P is +Z or -Z
+            // since P is a stabilizer in the updated tableau, any term
+            // where a negative phase is accumulated zeros out
+            if !phase {
+                // keep term
+                self.coefficients.add_or_insert(alpha, coeff);
+            }
+        }
+
+        // renormalize
+        self.coefficients.normalize();
+    }
 }

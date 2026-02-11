@@ -16,10 +16,11 @@ where
             let sign = (a && b && c && !d) || (a && !b && !c && d) || (!a && b && c && d);
             let imag = (a && !b && d) || (a && !c && d) || (!a && b && c) || (b && c && !d);
             let exp = (sign as u8) << 1 | (imag as u8);
-            self.add_phase(rhs.phase + exp);
+            self.add_phase(exp);
             self.word.xbits.set(i, x_i);
             self.word.zbits.set(i, z_i);
         }
+        self.add_phase(rhs.phase);
     }
 }
 
@@ -63,6 +64,20 @@ mod tests {
     #[test]
     fn test_mul() {
         for (lhs, rhs, ans) in [("+X", "+X", "+I"), ("+X", "+Y", "+iZ"), ("+X", "+Z", "-iY")] {
+            let x: PhasedPauliWord<u64> = lhs.into();
+            let y: PhasedPauliWord<u64> = rhs.into();
+            assert_eq!((x * y).to_string(), ans);
+        }
+    }
+
+    #[test]
+    fn test_mul_multi_qubit() {
+        for (lhs, rhs, ans) in [
+            ("+ZI", "-ZI", "-II"),
+            ("+II", "-ZI", "-ZI"),
+            ("+XI", "+iXI", "+iII"),
+            ("-XX", "-XX", "+II"),
+        ] {
             let x: PhasedPauliWord<u64> = lhs.into();
             let y: PhasedPauliWord<u64> = rhs.into();
             assert_eq!((x * y).to_string(), ans);

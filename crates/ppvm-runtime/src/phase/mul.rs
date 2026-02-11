@@ -69,4 +69,18 @@ mod tests {
             assert_eq!((x * y).to_string(), ans);
         }
     }
+
+    #[test]
+    fn test_mul_multi_qubit() {
+        for (lhs, rhs, ans) in [
+            ("+ZI", "-ZI", "-II"),
+            ("+II", "-ZI", "-ZI"),
+            ("+XI", "+iXI", "+iII"),
+            ("-XX", "-XX", "+II"),
+        ] {
+            let x: PhasedPauliWord<u64> = lhs.into();
+            let y: PhasedPauliWord<u64> = rhs.into();
+            assert_eq!((x * y).to_string(), ans);
+        }
+    }
 }

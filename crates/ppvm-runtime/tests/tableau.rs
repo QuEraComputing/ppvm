@@ -142,7 +142,7 @@ fn test_generalized_tableau_multiple_ts() {
     tableau.t(0);
 
     // four T gates should be equivalent to a Z
-    println!("{}", tableau);
+    assert_eq!(tableau.coefficients.len(), 1);
 }
 
 #[test]
@@ -164,5 +164,65 @@ fn test_generalized_tableau_multiple_ts2() {
     tableau.t(1);
 
     // four T gates should be equivalent to a Z
+    assert_eq!(tableau.coefficients.len(), 1);
+}
+
+#[test]
+fn test_generalized_tableau_multiqubit_branching() {
+    const N: usize = 18;
+    let mut tableau: GeneralizedTableau<N, ByteFxHashF64<3>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    for i in 0..N {
+        tableau.h(i);
+    }
+
+    // make sure to branch, but watch out since we have 2 ^ t scaling
+    let mut tgate_counter: u32 = 0;
+    for i in (0..10).step_by(2) {
+        tableau.t(i);
+        tgate_counter += 1;
+    }
+
+    assert_eq!(tableau.coefficients.len(), 2_usize.pow(tgate_counter));
+
+    // test random measurement
+    let outcome = tableau.measure(0);
+
+    // should remove a branch
+    assert_eq!(tableau.coefficients.len(), 2_usize.pow(tgate_counter - 1));
+
+    // let's move it back
+    if outcome {
+        tableau.x(0);
+    }
+
+    tableau.h(0);
+    tableau.t(0);
+    assert_eq!(tableau.coefficients.len(), 2_usize.pow(tgate_counter));
+}
+
+#[test]
+fn test_multiqubit_ghz_state() {
+    const N: usize = 18;
+    let mut tableau: GeneralizedTableau<N, ByteFxHashF64<3>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    tableau.h(0);
+    tableau.t(0);
+    // Let's generate a GHZ state
+    for i in 0..N - 1 {
+        tableau.cnot(i, i + 1);
+    }
+
+    assert_eq!(tableau.coefficients.len(), 2);
+
+    let outcome = tableau.measure(0);
     println!("{}", tableau);
+    println!("{}", tableau.coefficients.len());
+
+    for i in 0..N {
+        let outcome_i = tableau.measure(i);
+        assert_eq!(outcome, outcome_i)
+    }
 }

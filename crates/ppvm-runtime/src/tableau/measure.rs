@@ -157,6 +157,7 @@ where
                     z_overlap
                 );
 
+                // TODO: directly compute one of these probs above and skip the other
                 let prob_0 = 0.5 + 0.5 * z_overlap.re;
                 let prob_1 = 0.5 - 0.5 * z_overlap.re;
 
@@ -169,34 +170,30 @@ where
                 );
 
                 let outcome = rand::random::<f64>() < prob_1;
-
-                // update the coefficients so only the ones with the correct outcome are kept
-                let mut new_coefficients = C::new();
-                for (coeff, idx) in self.coefficients.clone().into_iter() {
-                    let branch_index = idx ^ shift;
-                    let phase = self.compute_phase_z(addr0, idx);
-                    let mut complex64_phase = 0.5 * COMPLEX_PHASE_CONVERSION[phase as usize];
-                    if outcome {
-                        complex64_phase *= -1.0;
-                    }
-                    let complex_phase: Complex<T::Coeff> = complex64_phase.into();
-
-                    let value = complex_phase * coeff;
-                    new_coefficients.add_or_insert(branch_index, value);
-                }
-
-                println!("{:?}", new_coefficients);
-
-                for (_coeff, idx) in self.coefficients.clone().into_iter() {
-                    self.coefficients
-                        .mul_element_by(idx, Complex64::from(0.5).into());
-                }
-
-                for (new_coeff, idx) in new_coefficients.clone().into_iter() {
-                    self.coefficients.add_or_insert(idx, new_coeff);
-                }
-
                 self.update_tableau_according_to_outcome(addr0, q_idx, outcome);
+
+                // TODO: more efficient update of coefficients in-place
+                let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
+                for (coeff, alpha) in old_coefficients.into_iter() {
+                    let mut phase = false; // false: 1, true: -1
+
+                    // get the phase from the anti-commutation with the product over all destabilizers
+                    for i in 0..N {
+                        if alpha & (1 << i) == 0 {
+                            // this index doesn't pick D_i
+                            continue;
+                        }
+                        phase ^= self.tableau.destabilizers[i].word.xbits[addr0];
+                    }
+
+                    if !phase {
+                        // keep term
+                        self.coefficients.add_or_insert(alpha, coeff);
+                    } // else drop it
+                }
+
+                // renormalize
+                self.coefficients.normalize();
 
                 outcome
             }

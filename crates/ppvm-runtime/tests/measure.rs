@@ -159,15 +159,20 @@ fn test_measure_generalized_tableau_bell() {
     println!("{}", tableau);
 
     println!("Outcome: {}", outcome);
-    // println!("{}", tableau);
+    assert!(tableau.coefficients.len() == 1);
 
-    // assert!(tableau.coefficients.len() == 1);
+    let tableau_outcome = tableau.tableau.measure(0);
+    assert_eq!(
+        tableau_outcome, outcome,
+        "Tableau measurement outcome should match sampled outcome"
+    );
 
-    // let tableau_outcome = tableau.tableau.measure(0);
-    // assert_eq!(
-    //     tableau_outcome, outcome,
-    //     "Tableau measurement outcome should match sampled outcome"
-    // );
+    let outcome2 = tableau.measure(1);
+
+    assert_eq!(
+        outcome2, outcome,
+        "Bell state measurement must be consistents"
+    )
 }
 
 #[test]
@@ -176,8 +181,6 @@ fn test_measure_generalized_tableau_deterministic() {
         GeneralizedTableau::new(1e-12);
 
     // Create |+⟩ state
-    // tableau.h(0);
-    // tableau.x(0);
     let outcome = tableau.measure(0);
     assert_eq!(tableau.coefficients.len(), 1);
     assert_eq!(outcome, false);
@@ -190,6 +193,24 @@ fn test_measure_generalized_tableau_deterministic() {
     assert_eq!(outcome, true);
     assert!((tableau.coefficients[0].0 - 1.0).re.abs() < 1e-10);
     assert!(tableau.coefficients[0].0.im.abs() < 1e-10);
+}
+
+#[test]
+fn test_measure_generalized_random() {
+    let mut tableau: GeneralizedTableau<1, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    // Create |+⟩ state
+    tableau.h(0);
+    tableau.t(0);
+    println!("Original tableau: {}", tableau);
+    let outcome = tableau.measure(0);
+    assert_eq!(tableau.coefficients.len(), 1);
+    let r = tableau.coefficients[0].0.re.abs();
+    let i = tableau.coefficients[0].0.im.abs();
+    assert!(((r * r + i * i).sqrt() - 1.0) < 1e-10);
+    println!("{}", tableau);
+    println!("{}", outcome);
 }
 
 #[test]
@@ -207,15 +228,18 @@ fn test_measure_generalized_tableau_statistics() {
         tableau.cnot(0, 1);
 
         tableau.t(0);
-        // tableau.t(1);
+        tableau.t(1);
 
-        println!("{}", tableau);
         let outcome = tableau.measure(0);
         if outcome {
             count_one += 1;
         } else {
             count_zero += 1;
         }
+
+        assert_eq!(tableau.coefficients.len(), 1);
+        let outcome2 = tableau.measure(1);
+        assert_eq!(outcome, outcome2, "Bell measurements must be consistent");
     }
 
     println!("Statistics over {} trials:", trials);

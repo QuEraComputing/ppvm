@@ -8,7 +8,4 @@ pub trait GeneralizedTableauTGate {
 
 pub trait Measure {
     fn measure(&mut self, addr0: usize) -> bool;
-    fn find_anticommuting_stabilizer(&self, addr0: usize) -> Option<usize>;
-    fn update_tableau_according_to_outcome(&mut self, addr0: usize, q_idx: usize, outcome: bool);
-    fn get_deterministic_outcome(&self, addr0: usize) -> bool;
 }

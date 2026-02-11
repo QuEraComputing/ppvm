@@ -267,3 +267,267 @@ fn test_measure_generalized_tableau_statistics() {
         trials
     );
 }
+
+/// Coefficients must be normalized (Σ|c|² = 1) after measurement on a multi-branch state.
+#[test]
+fn test_measure_generalized_normalization() {
+    let mut tableau: GeneralizedTableau<3, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    tableau.h(0);
+    tableau.h(1);
+    tableau.h(2);
+    tableau.t(0);
+    tableau.t(1);
+    tableau.t(2);
+
+    // 8 branches before measurement
+    assert_eq!(tableau.coefficients.len(), 8);
+
+    tableau.measure(0);
+
+    let norm_sq: f64 = tableau
+        .coefficients
+        .clone()
+        .into_iter()
+        .map(|(c, _)| c.re * c.re + c.im * c.im)
+        .sum();
+    assert!(
+        (norm_sq - 1.0).abs() < 1e-8,
+        "Norm² should be 1 after measurement, got {}",
+        norm_sq
+    );
+
+    tableau.measure(1);
+
+    let norm_sq: f64 = tableau
+        .coefficients
+        .clone()
+        .into_iter()
+        .map(|(c, _)| c.re * c.re + c.im * c.im)
+        .sum();
+    assert!(
+        (norm_sq - 1.0).abs() < 1e-8,
+        "Norm² should be 1 after second measurement, got {}",
+        norm_sq
+    );
+}
+
+/// T on |0⟩ doesn't change the state (only global phase), so measurement is still deterministic.
+#[test]
+fn test_measure_generalized_deterministic_with_t() {
+    let mut tableau: GeneralizedTableau<1, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    // T|0⟩ = |0⟩ (no branching, Z eigenstate)
+    tableau.t(0);
+    assert_eq!(tableau.coefficients.len(), 1);
+
+    let outcome = tableau.measure(0);
+    assert_eq!(outcome, false, "T|0⟩ should measure as 0");
+    assert_eq!(tableau.coefficients.len(), 1);
+
+    // T|1⟩ = e^{iπ/4}|1⟩ (no branching, Z eigenstate)
+    let mut tableau: GeneralizedTableau<1, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+    tableau.x(0);
+    tableau.t(0);
+    assert_eq!(tableau.coefficients.len(), 1);
+
+    let outcome = tableau.measure(0);
+    assert_eq!(outcome, true, "T|1⟩ should measure as 1");
+    assert_eq!(tableau.coefficients.len(), 1);
+}
+
+/// Measurement halves the branch count when the measured qubit caused branching.
+#[test]
+fn test_measure_reduces_branches() {
+    let mut tableau: GeneralizedTableau<3, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    tableau.h(0);
+    tableau.h(1);
+    tableau.h(2);
+    tableau.t(0);
+    tableau.t(1);
+    tableau.t(2);
+    assert_eq!(tableau.coefficients.len(), 8);
+
+    tableau.measure(0);
+    assert_eq!(
+        tableau.coefficients.len(),
+        4,
+        "Measuring 1 of 3 T-branched qubits: 8 → 4"
+    );
+
+    tableau.measure(1);
+    assert_eq!(tableau.coefficients.len(), 2, "Measuring 2nd: 4 → 2");
+
+    tableau.measure(2);
+    assert_eq!(tableau.coefficients.len(), 1, "Measuring 3rd: 2 → 1");
+}
+
+/// On a product state with independent T gates, measuring one qubit
+/// should not affect the other qubit's measurement statistics.
+#[test]
+fn test_measure_product_state_independence() {
+    let trials = 1000;
+    let mut count_q1_one = 0;
+
+    for _ in 0..trials {
+        let mut tableau: GeneralizedTableau<2, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+            GeneralizedTableau::new(1e-12);
+
+        tableau.h(0);
+        tableau.h(1);
+        tableau.t(0);
+        tableau.t(1);
+
+        // Measure qubit 0 first (discard result)
+        tableau.measure(0);
+
+        // Qubit 1 should still be 50/50 (T|+⟩ has equal amplitudes)
+        if tableau.measure(1) {
+            count_q1_one += 1;
+        }
+    }
+
+    let prob = count_q1_one as f64 / trials as f64;
+    assert!(
+        (prob - 0.5).abs() < 0.06,
+        "Qubit 1 should be ~50/50 regardless of qubit 0 outcome, got P(1)={:.3}",
+        prob
+    );
+}
+
+/// Measuring all qubits of a GHZ-like state (with T) should give perfectly correlated outcomes.
+#[test]
+fn test_measure_generalized_ghz_correlation() {
+    for _ in 0..50 {
+        let mut tableau: GeneralizedTableau<4, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+            GeneralizedTableau::new(1e-12);
+
+        tableau.h(0);
+        tableau.t(0);
+        for i in 0..3 {
+            tableau.cnot(i, i + 1);
+        }
+
+        let first = tableau.measure(0);
+        for i in 1..4 {
+            let outcome = tableau.measure(i);
+            assert_eq!(
+                outcome, first,
+                "GHZ qubit {} should match qubit 0 (trial outcome={})",
+                i, first
+            );
+        }
+    }
+}
+
+/// After measurement, re-measuring the same qubit must always return the same outcome
+/// and leave coefficients unchanged.
+#[test]
+fn test_measure_generalized_idempotent() {
+    let mut tableau: GeneralizedTableau<2, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    tableau.h(0);
+    tableau.h(1);
+    tableau.t(0);
+    tableau.t(1);
+
+    let outcome = tableau.measure(0);
+    let coeffs_after: Vec<_> = tableau.coefficients.clone().into_iter().collect();
+
+    // Re-measure same qubit multiple times
+    for _ in 0..5 {
+        let repeated = tableau.measure(0);
+        assert_eq!(
+            repeated, outcome,
+            "Repeated measurement must be deterministic"
+        );
+
+        let coeffs_now: Vec<_> = tableau.coefficients.clone().into_iter().collect();
+        assert_eq!(coeffs_now.len(), coeffs_after.len());
+        for ((c1, i1), (c2, i2)) in coeffs_after.iter().zip(coeffs_now.iter()) {
+            assert_eq!(i1, i2);
+            assert!((c1.re - c2.re).abs() < 1e-12);
+            assert!((c1.im - c2.im).abs() < 1e-12);
+        }
+    }
+}
+
+/// Measure on a 4-qubit entangled state with T gates interspersed.
+/// Verifies that measurement collapses branches and maintains valid state.
+#[test]
+fn test_measure_generalized_entangled_chain() {
+    let mut tableau: GeneralizedTableau<4, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1e-12);
+
+    tableau.h(0);
+    tableau.t(0);
+    tableau.cnot(0, 1);
+    tableau.h(2);
+    tableau.t(2);
+    tableau.cnot(2, 3);
+    tableau.cnot(1, 2);
+
+    let branches_before = tableau.coefficients.len();
+    assert!(branches_before > 1, "State should have multiple branches");
+
+    // Measure qubits one by one; each should reduce or maintain branch count
+    let mut prev_branches = branches_before;
+    for i in 0..4 {
+        tableau.measure(i);
+        assert!(
+            tableau.coefficients.len() <= prev_branches,
+            "Branch count should not increase after measurement"
+        );
+
+        let norm_sq: f64 = tableau
+            .coefficients
+            .clone()
+            .into_iter()
+            .map(|(c, _)| c.re * c.re + c.im * c.im)
+            .sum();
+        assert!(
+            (norm_sq - 1.0).abs() < 1e-8,
+            "Norm² should be 1 after measuring qubit {}, got {}",
+            i,
+            norm_sq
+        );
+
+        prev_branches = tableau.coefficients.len();
+    }
+
+    // After measuring all qubits, should have exactly 1 branch
+    assert_eq!(tableau.coefficients.len(), 1);
+}
+
+/// Verify that the generalized tableau and its inner tableau agree on
+/// deterministic measurement outcomes.
+#[test]
+fn test_measure_generalized_agrees_with_inner_tableau() {
+    for _ in 0..20 {
+        let mut tableau: GeneralizedTableau<2, ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+            GeneralizedTableau::new(1e-12);
+
+        tableau.h(0);
+        tableau.cnot(0, 1);
+        tableau.t(0);
+
+        let outcome0 = tableau.measure(0);
+
+        // The inner tableau should now deterministically agree
+        let inner_outcome0 = tableau.tableau.measure(0);
+        assert_eq!(
+            outcome0, inner_outcome0,
+            "Inner tableau must agree with generalized measurement"
+        );
+
+        // Qubit 1 should be correlated (Bell state)
+        let outcome1 = tableau.measure(1);
+        assert_eq!(outcome0, outcome1, "Bell state qubits must be correlated");
+    }
+}

@@ -2,8 +2,9 @@ use super::sparsevec::SparseVector;
 use super::traits::TGate;
 use crate::config::Config;
 use crate::tableau::GeneralizedTableau;
-use num::complex::{Complex, Complex64};
+use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, Zero};
+use std::collections::HashMap;
 
 const COS_PI_OVER_8_TIMES_EXPIPI8: Complex64 = Complex {
     re: 0.8535533905932737,
@@ -26,7 +27,8 @@ where
     T: Config,
     C: SparseVector<Complex<T::Coeff>>,
     T::Coeff: One + Zero + Clone,
-    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>> + From<Complex64>,
+    Complex<T::Coeff>:
+        std::ops::Mul<Output = Complex<T::Coeff>> + std::ops::AddAssign + From<Complex64> + ComplexFloat,
 {
     fn t(&mut self, index: usize) {
         self.t_or_t_adj(index, false);
@@ -57,6 +59,7 @@ where
         let phase_decomp = self.compute_z_decomposition_phase(addr0);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
+        let mut new_coefficients: HashMap<usize, Complex<T::Coeff>> = HashMap::new();
         for (coeff, idx) in old_coefficients.into_iter() {
             debug_assert!(
                 !(coeff.re == T::Coeff::zero() && coeff.im == T::Coeff::zero()),
@@ -78,17 +81,22 @@ where
             }
 
             let branch_coefficient = phase_factor * coeff.clone() * complex_sin.clone();
-
             let nonbranch_coefficient = coeff * complex_cos.clone();
-            self.coefficients
-                .add_or_insert(branch_index, branch_coefficient);
-            self.coefficients.add_or_insert(idx, nonbranch_coefficient);
+
+            *new_coefficients
+                .entry(branch_index)
+                .or_insert(Complex::zero()) += branch_coefficient;
+            *new_coefficients.entry(idx).or_insert(Complex::zero()) += nonbranch_coefficient;
         }
 
-        // TODO: more efficient trimming above
-        self.coefficients.trim(Complex {
+        let cutoff = Complex {
             re: self.coefficient_threshold.clone(),
             im: T::Coeff::zero(),
-        });
+        };
+        for (idx, coeff) in new_coefficients {
+            if coeff.abs() > cutoff.abs() {
+                self.coefficients.unsafe_insert(idx, coeff);
+            }
+        }
     }
 }

@@ -4,6 +4,7 @@ use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
+use std::collections::HashMap;
 
 impl<T: Config> Measure for Tableau<T> {
     /// Measure qubit `addr0` in Z basis
@@ -63,15 +64,25 @@ where
                 let mut z_overlap = Complex64::from(0.0);
                 let phase_decomp = self.compute_z_decomposition_phase(addr0);
 
+                // build a temporary lookup table for faster lookup in the loop
+                let coeff_map: HashMap<usize, Complex<T::Coeff>> = self
+                    .coefficients
+                    .clone()
+                    .into_iter()
+                    .map(|(v, i)| (i, v))
+                    .collect();
                 // Compute the probabilities by computing the overlap <psi|Z|psi>
                 // which is proportional to sum(alpha) conj(v_alpha) * v_(alpha + shift) * xi_(alpha)
-                for (coeff, idx) in self.coefficients.clone().into_iter() {
+                // NOTE: this could probably be optimized
+                for (&idx, coeff) in &coeff_map {
                     let branch_index = idx ^ shift;
-                    // TODO: double-check the phase, this might need to be computed with the branch_index
                     let phase = (phase_decomp + self.compute_phase_z(addr0, idx, shift)) % 4;
                     let complex_phase: Complex<T::Coeff> =
                         COMPLEX_PHASE_CONVERSION[phase as usize].into();
-                    let coeff_branch = self.coefficients.get(&branch_index);
+                    let coeff_branch = coeff_map
+                        .get(&branch_index)
+                        .cloned()
+                        .unwrap_or(Complex::zero());
                     let overlap = complex_phase.conj() * coeff.conj() * coeff_branch;
                     z_overlap.re += overlap.re.to_f64().unwrap_or(0.0);
                     z_overlap.im += overlap.im.to_f64().unwrap_or(0.0);

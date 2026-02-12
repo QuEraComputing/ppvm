@@ -49,3 +49,7 @@ harness = false
 [[bench]]
 name = "trotter-scaling"
 harness = false
+
+[[bench]]
+name = "tableau"
+harness = false

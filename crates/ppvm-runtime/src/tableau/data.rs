@@ -1,10 +1,7 @@
 use super::sparsevec::SparseVector;
 use crate::config::Config;
 use crate::phase::PhasedPauliWord;
-use num::{
-    One, Zero,
-    complex::{Complex, Complex64},
-};
+use num::{One, Zero, complex::Complex};
 
 #[derive(Clone, Debug)]
 pub struct Tableau<T: Config> {
@@ -130,6 +127,7 @@ impl<T: Config> Tableau<T> {
 }
 
 // TODO: builder
+#[derive(Clone)]
 pub struct GeneralizedTableau<T: Config, C: SparseVector<Complex<T::Coeff>>> {
     pub tableau: Tableau<T>,
     pub coefficients: C,

@@ -27,8 +27,10 @@ where
     T: Config,
     C: SparseVector<Complex<T::Coeff>>,
     T::Coeff: One + Zero + Clone,
-    Complex<T::Coeff>:
-        std::ops::Mul<Output = Complex<T::Coeff>> + std::ops::AddAssign + From<Complex64> + ComplexFloat,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + std::ops::AddAssign
+        + From<Complex64>
+        + ComplexFloat,
 {
     fn t(&mut self, index: usize) {
         self.t_or_t_adj(index, false);

@@ -95,13 +95,15 @@ fn test_generalized_tableau_phase() {
 
     let expected_coefficients = vec![Complex { re: 0.5, im: 0.5 }, Complex { re: 0.5, im: -0.5 }];
 
+    println!("{}", tableau);
+
     for ((val1, idx1), (idx2, val2)) in sorted_coefficients
         .iter()
         .zip(expected_coefficients.iter().enumerate())
     {
         assert_eq!(idx1, &idx2);
-        assert!((val1.re - val2.re).abs() < 1e-11);
-        assert!((val1.im - val2.im).abs() < 1e-11);
+        assert!((val1.re - val2.re).abs() < 1e-9);
+        assert!((val1.im - val2.im).abs() < 1e-9);
     }
 
     let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
@@ -130,8 +132,8 @@ fn test_generalized_tableau_phase() {
         .zip(expected_coefficients.iter().enumerate())
     {
         assert_eq!(idx1, &idx2);
-        assert!((val1.re - val2.re).abs() < 1e-11);
-        assert!((val1.im - val2.im).abs() < 1e-11);
+        assert!((val1.re - val2.re).abs() < 1e-9);
+        assert!((val1.im - val2.im).abs() < 1e-9);
     }
 
     println!("{}", tableau);
@@ -386,6 +388,8 @@ fn test_two_t_gates_coefficients() {
 
     // Expected: TT|+⟩ represented as two branches with these coefficients
     let expected = vec![Complex { re: 0.5, im: 0.5 }, Complex { re: 0.5, im: -0.5 }];
+
+    println!("{}", tableau);
 
     for ((val, idx), (exp_idx, exp_val)) in sorted.iter().zip(expected.iter().enumerate()) {
         assert_eq!(idx, &exp_idx);

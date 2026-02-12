@@ -535,3 +535,61 @@ fn test_measure_generalized_agrees_with_inner_tableau() {
         assert_eq!(outcome0, outcome1, "Bell state qubits must be correlated");
     }
 }
+
+#[test]
+fn test_measure_generalized_tableau_t_gate_deterministic() {
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1, 1e-12);
+
+    tableau.h(0);
+
+    // Two T gates + 3S gates should rotate around Z
+    tableau.t(0);
+    tableau.t(0);
+    tableau.s(0);
+    tableau.s(0);
+    tableau.s(0);
+
+    // Another H and we should be back to |0⟩ (deterministic)
+    tableau.h(0);
+
+    println!("Tableau before measurement:\n{}", tableau);
+    let outcome = tableau.measure(0);
+    assert_eq!(
+        outcome, false,
+        "State should be |0⟩ after T and S rotations"
+    );
+}
+
+#[test]
+fn test_measure_generalized_tableau_t_gate_random() {
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1, 1e-12);
+
+    tableau.h(0);
+
+    // Two T gates + 3S gates should rotate around Z
+    tableau.t(0);
+    tableau.t(0);
+    tableau.s(0);
+    tableau.s(0);
+    tableau.s(0);
+
+    let trials = 1000;
+    let mut count_q1_one = 0;
+
+    for _ in 0..trials {
+        let mut copy = tableau.clone();
+        if copy.measure(0) {
+            count_q1_one += 1;
+        }
+    }
+
+    let probability = count_q1_one as f64 / trials as f64;
+    println!("Probability of measuring |1⟩ on qubit 0: {}", probability);
+    assert!(
+        (probability - 0.5).abs() < 0.06,
+        "Measurement should be approximately 50/50 after T and S rotations, got P(1)={:.3}",
+        probability
+    );
+}

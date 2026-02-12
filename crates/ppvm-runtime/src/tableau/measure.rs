@@ -61,7 +61,7 @@ where
                 // i.e. shift + phase
                 let shift = self.compute_shift_z(addr0);
                 let mut z_overlap = Complex64::from(0.0);
-                let phase_decomp = self.find_z_decomposition_phase(addr0);
+                let phase_decomp = self.compute_z_decomposition_phase(addr0);
 
                 // Compute the probabilities by computing the overlap <psi|Z|psi>
                 // which is proportional to sum(alpha) conj(v_alpha) * v_(alpha + shift) * xi_(alpha)

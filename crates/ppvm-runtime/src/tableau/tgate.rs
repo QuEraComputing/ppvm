@@ -54,7 +54,7 @@ where
         };
 
         let index_shift = self.compute_shift_z(addr0);
-        let phase_decomp = self.find_z_decomposition_phase(addr0);
+        let phase_decomp = self.compute_z_decomposition_phase(addr0);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         for (coeff, idx) in old_coefficients.into_iter() {

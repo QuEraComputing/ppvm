@@ -160,7 +160,7 @@ where
 
     // helper functions
 
-    pub(crate) fn find_z_decomposition_phase(&self, addr0: usize) -> u8 {
+    pub(crate) fn compute_z_decomposition_phase(&self, addr0: usize) -> u8 {
         // NOTE: this is O(n ^ 2); can we improve it since we only need the phase?
 
         // Z_addr0 = phase * prod(d_k ^ gamma_k) * prod(s_l ^ lambda_l)
@@ -301,9 +301,9 @@ mod tests {
         // After H: stabilizer = +X, destabilizer = +Z
         // shift = 1 (stabilizer has xbit[0]=true)
         // both phases should be 0
-        let phase0 = tab.find_z_decomposition_phase(0) + tab.compute_phase_z(0, 0, 1);
+        let phase0 = tab.compute_z_decomposition_phase(0) + tab.compute_phase_z(0, 0, 1);
         assert_eq!(phase0, 0);
-        let phase1 = tab.find_z_decomposition_phase(0) + tab.compute_phase_z(0, 1, 1);
+        let phase1 = tab.compute_z_decomposition_phase(0) + tab.compute_phase_z(0, 1, 1);
         assert_eq!(phase1, 0);
     }
 
@@ -314,7 +314,7 @@ mod tests {
         tab.tableau.s(0);
 
         let shift = tab.compute_shift_z(0);
-        let decomp = tab.find_z_decomposition_phase(0);
+        let decomp = tab.compute_z_decomposition_phase(0);
         let phase0 = decomp + tab.compute_phase_z(0, 0, shift);
         assert_eq!(phase0, 0);
         let phase1 = decomp + tab.compute_phase_z(0, 1, shift);
@@ -328,7 +328,7 @@ mod tests {
         tab.tableau.z(0);
 
         let shift = tab.compute_shift_z(0);
-        let decomp = tab.find_z_decomposition_phase(0);
+        let decomp = tab.compute_z_decomposition_phase(0);
         let phase0 = decomp + tab.compute_phase_z(0, 0, shift);
         assert_eq!(phase0, 0);
         let phase1 = decomp + tab.compute_phase_z(0, 1, shift);
@@ -343,7 +343,7 @@ mod tests {
         tab.tableau.h(0);
 
         let shift = tab.compute_shift_z(0);
-        let decomp = tab.find_z_decomposition_phase(0);
+        let decomp = tab.compute_z_decomposition_phase(0);
         let phase0 = (decomp + tab.compute_phase_z(0, 0, shift)) % 4;
         assert_eq!(phase0, 1);
         let phase1 = (decomp + tab.compute_phase_z(0, 1, shift)) % 4;

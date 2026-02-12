@@ -54,6 +54,7 @@ where
         };
 
         let index_shift = self.compute_shift_z(addr0);
+        let phase_decomp = self.find_z_decomposition_phase(addr0);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         for (coeff, idx) in old_coefficients.into_iter() {
@@ -63,8 +64,11 @@ where
             );
 
             let branch_index = idx ^ index_shift;
-            let branch_phase = self.compute_phase_z_2(addr0, idx);
-            // let branch_phase = self.compute_phase_z(addr0, branch_index);
+
+            // get the phase contributions from duplicate destabilizers
+            // and anti-commuting through destabilizers
+            let branch_phase_contribution = self.compute_phase_z(addr0, idx, index_shift);
+            let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
 
             let mut phase_factor: Complex<T::Coeff> =
                 COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();

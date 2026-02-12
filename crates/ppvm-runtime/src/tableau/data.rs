@@ -199,40 +199,6 @@ where
         z_word.phase
     }
 
-    /// Compute the full phase ξ(α) such that Z_{addr0} |b_α⟩ = ξ(α) |b_{α⊕β}⟩.
-    ///
-    /// This decomposes Z into the stabilizer/destabilizer basis using actual
-    /// Pauli word multiplication to get the correct phase.
-    pub(crate) fn compute_phase_z_2(&self, addr0: usize, alpha: usize) -> u8 {
-        let destabilizers = self.tableau.destabilizers();
-
-        // β: which stabilizers anticommute with Z (i.e. have xbit set at addr0)
-        let beta = self.compute_shift_z(addr0);
-
-        // part I of the phase: count the number of anti-commuting destabilizers at alpha
-        let phase_destab = self.compute_phase_z(addr0, alpha);
-
-        // part II of the phase: find the phase of decomposing Z into destabilizers and stabilizers
-        let phase_decomp = self.find_z_decomposition_phase(addr0);
-
-        // part III of the phase: multiply the squared phase of destabilizers occuring both in
-        // the alpha basis state as well as the decomposition of Z
-        let mut phase_duplicate = 0u8;
-        for (i, destab) in destabilizers.iter().enumerate() {
-            if alpha & (1 << i) == 0 || beta & (1 << i) == 0 {
-                // does not occur in both Z and alpha
-                continue;
-            }
-            if destab.phase % 2 != 0 {
-                // phase is 1: i, or 3: -i
-                // multiply the squared phase by -1
-                phase_duplicate = (phase_duplicate + 2) % 4;
-            }
-        }
-
-        (((phase_destab + phase_decomp) % 4) + phase_duplicate) % 4
-    }
-
     /// Compute the index shift when applying a Z Pauli
     pub(crate) fn compute_shift_z(&self, addr0: usize) -> usize {
         // NOTE: we use LSB ordering
@@ -247,17 +213,37 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    pub(crate) fn compute_phase_z(&self, addr0: usize, basis_index: usize) -> u8 {
+    pub(crate) fn compute_phase_z(
+        &self,
+        addr0: usize,
+        basis_index: usize,
+        index_shift: usize,
+    ) -> u8 {
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
         let mut phase = 0u8;
         for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
-            if basis_index & (1 << i) == 0 || !destab.word.xbits[addr0] {
+            if basis_index & (1 << i) == 0 {
                 // NOTE: LSB ordering; has to be consistent with shift computation
                 continue;
             }
 
-            // We have an xbit set, so we anticommute, leading to a -1 sign
-            phase = (phase + 2) % 4;
+            if destab.word.xbits[addr0] {
+                // We have an xbit set, so we anticommute, leading to a -1 sign
+                phase = (phase + 2) % 4;
+            }
+
+            if index_shift & (1 << i) == 0 {
+                continue;
+            }
+
+            // this particular destabilizer occurs twice: once from the Z decomposition
+            // this is given by the index shift, since the corresponding bit in the shift
+            // is only 1 if Z anti-commutes with the stabilizer, meaning its decomposition
+            // features the destabilizer here
+            if destab.phase % 2 != 0 {
+                // phase of the destabilizer is ~i, so its square gives another -1
+                phase = (phase + 2) % 4;
+            }
         }
         phase
     }
@@ -315,8 +301,10 @@ mod tests {
         // After H: stabilizer = +X, destabilizer = +Z
         // shift = 1 (stabilizer has xbit[0]=true)
         // both phases should be 0
-        assert_eq!(tab.compute_phase_z_2(0, 0), 0);
-        assert_eq!(tab.compute_phase_z_2(0, 1), 0);
+        let phase0 = tab.find_z_decomposition_phase(0) + tab.compute_phase_z(0, 0, 1);
+        assert_eq!(phase0, 0);
+        let phase1 = tab.find_z_decomposition_phase(0) + tab.compute_phase_z(0, 1, 1);
+        assert_eq!(phase1, 0);
     }
 
     #[test]
@@ -325,11 +313,12 @@ mod tests {
         tab.tableau.h(0);
         tab.tableau.s(0);
 
-        println!("{}", tab);
-
-        // both phases should again be 0
-        assert_eq!(tab.compute_phase_z_2(0, 0), 0);
-        assert_eq!(tab.compute_phase_z_2(0, 1), 0);
+        let shift = tab.compute_shift_z(0);
+        let decomp = tab.find_z_decomposition_phase(0);
+        let phase0 = decomp + tab.compute_phase_z(0, 0, shift);
+        assert_eq!(phase0, 0);
+        let phase1 = decomp + tab.compute_phase_z(0, 1, shift);
+        assert_eq!(phase1, 0);
     }
 
     #[test]
@@ -338,11 +327,12 @@ mod tests {
         tab.tableau.h(0);
         tab.tableau.z(0);
 
-        println!("{}", tab);
-
-        // both phases should again be 0
-        assert_eq!(tab.compute_phase_z_2(0, 0), 0);
-        assert_eq!(tab.compute_phase_z_2(0, 1), 0);
+        let shift = tab.compute_shift_z(0);
+        let decomp = tab.find_z_decomposition_phase(0);
+        let phase0 = decomp + tab.compute_phase_z(0, 0, shift);
+        assert_eq!(phase0, 0);
+        let phase1 = decomp + tab.compute_phase_z(0, 1, shift);
+        assert_eq!(phase1, 0);
     }
 
     #[test]
@@ -350,14 +340,13 @@ mod tests {
         let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
         tab.tableau.h(0);
         tab.tableau.s(0);
-        // tab.tableau.s(0);
         tab.tableau.h(0);
-        // tab.tableau.s(0);
 
-        println!("{}", tab);
-
-        // both phases should again be 0
-        assert_eq!(tab.compute_phase_z_2(0, 0), 1);
-        assert_eq!(tab.compute_phase_z_2(0, 1), 3);
+        let shift = tab.compute_shift_z(0);
+        let decomp = tab.find_z_decomposition_phase(0);
+        let phase0 = (decomp + tab.compute_phase_z(0, 0, shift)) % 4;
+        assert_eq!(phase0, 1);
+        let phase1 = (decomp + tab.compute_phase_z(0, 1, shift)) % 4;
+        assert_eq!(phase1, 3);
     }
 }

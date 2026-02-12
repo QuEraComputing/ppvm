@@ -61,13 +61,14 @@ where
                 // i.e. shift + phase
                 let shift = self.compute_shift_z(addr0);
                 let mut z_overlap = Complex64::from(0.0);
+                let phase_decomp = self.find_z_decomposition_phase(addr0);
 
                 // Compute the probabilities by computing the overlap <psi|Z|psi>
                 // which is proportional to sum(alpha) conj(v_alpha) * v_(alpha + shift) * xi_(alpha)
                 for (coeff, idx) in self.coefficients.clone().into_iter() {
                     let branch_index = idx ^ shift;
                     // TODO: double-check the phase, this might need to be computed with the branch_index
-                    let phase = self.compute_phase_z_2(addr0, idx) % 4;
+                    let phase = (phase_decomp + self.compute_phase_z(addr0, idx, shift)) % 4;
                     let complex_phase: Complex<T::Coeff> =
                         COMPLEX_PHASE_CONVERSION[phase as usize].into();
                     let coeff_branch = self.coefficients.get(&branch_index);

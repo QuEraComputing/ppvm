@@ -63,7 +63,8 @@ where
             );
 
             let branch_index = idx ^ index_shift;
-            let branch_phase = self.compute_phase_z(addr0, branch_index);
+            let branch_phase = self.compute_phase_z_2(addr0, idx);
+            // let branch_phase = self.compute_phase_z(addr0, branch_index);
 
             let mut phase_factor: Complex<T::Coeff> =
                 COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();

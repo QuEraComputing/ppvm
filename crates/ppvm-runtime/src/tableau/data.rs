@@ -159,6 +159,68 @@ where
     }
 
     // helper functions
+    /// Compute the full phase ξ(α) such that Z_{addr0} |b_α⟩ = ξ(α) |b_{α⊕β}⟩.
+    ///
+    /// This decomposes Z into the stabilizer/destabilizer basis using actual
+    /// Pauli group multiplication to get the correct phase.
+    pub(crate) fn compute_phase_z_2(&self, addr0: usize, alpha: usize) -> u8 {
+        let n = self.n_qubits();
+        let stabilizers = self.tableau.stabilizers();
+        let destabilizers = self.tableau.destabilizers();
+
+        // β: which stabilizers anticommute with Z (i.e. have xbit set at addr0)
+        let beta = self.compute_shift_z(addr0);
+
+        // a: which destabilizers anticommute with Z
+        let mut a_bits = 0usize;
+        for (i, destab) in destabilizers.iter().enumerate() {
+            if destab.word.xbits[addr0] {
+                a_bits |= 1 << i;
+            }
+        }
+
+        // Compute decomposition phase p' via Pauli multiplication:
+        // Z · ∏_{j∈β} h_j · ∏_{i∈a} g_i = i^{p'} · I
+        let mut p_word = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(n);
+        p_word.set(addr0, crate::char::Pauli::Z);
+
+        for i in 0..n {
+            if beta & (1 << i) != 0 {
+                p_word *= destabilizers[i].clone();
+            }
+        }
+        for i in 0..n {
+            if a_bits & (1 << i) != 0 {
+                p_word *= stabilizers[i].clone();
+            }
+        }
+
+        let p_prime = p_word.phase as i32;
+
+        // ξ_Z = i^{p' - 2∑_{i∈a} r_i - 2∑_{j∈β} s_j + 2|a∩β|}
+        // where r_i, s_j are stabilizer/destabilizer stored phases
+        let sum_r: i32 = (0..n)
+            .filter(|&i| a_bits & (1 << i) != 0)
+            .map(|i| stabilizers[i].phase as i32)
+            .sum();
+        let sum_s: i32 = (0..n)
+            .filter(|&i| beta & (1 << i) != 0)
+            .map(|i| destabilizers[i].phase as i32)
+            .sum();
+        let a_cap_beta = (a_bits & beta).count_ones() as i32;
+
+        // Destabilizer commutation phase: (-1) per anticommuting destab with bit in α
+        let commutation = self.compute_phase_z(addr0, alpha) as i32;
+
+        // Destabilizer squaring phase: i^{2s_m} for m ∈ α∩β
+        let squaring: i32 = (0..n)
+            .filter(|&i| alpha & (1 << i) != 0 && beta & (1 << i) != 0)
+            .map(|i| 2 * destabilizers[i].phase as i32)
+            .sum();
+
+        let total = p_prime - 2 * sum_r - 2 * sum_s + 2 * a_cap_beta + commutation + squaring;
+        total.rem_euclid(4) as u8
+    }
 
     /// Compute the index shift when applying a Z Pauli
     pub(crate) fn compute_shift_z(&self, addr0: usize) -> usize {
@@ -178,24 +240,13 @@ where
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
         let mut phase = 0u8;
         for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
-            if basis_index & (1 << i) == 0 {
+            if basis_index & (1 << i) == 0 || !destab.word.xbits[addr0] {
                 // NOTE: LSB ordering; has to be consistent with shift computation
                 continue;
             }
 
-            let has_x = destab.word.xbits[addr0];
-            let has_z = destab.word.zbits[addr0];
-
-            // need to account for destabilizer phase
-            phase = (phase + destab.phase) % 4;
-
-            if has_x && has_z {
-                // Y operator contributes a phase of -i
-                phase = (phase + 3) % 4;
-            } else if has_x {
-                // X operator contributes a phase of -1
-                phase = (phase + 2) % 4;
-            }
+            // We have an xbit set, so we anticommute, leading to a -1 sign
+            phase = (phase + 2) % 4;
         }
         phase
     }
@@ -232,5 +283,70 @@ where
 
         // renormalize
         self.coefficients.normalize();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::fxhash::ByteF64;
+    use crate::traits::Clifford;
+    use num::complex::Complex64;
+
+    type TestConfig = ByteF64<1>;
+    type TestTableau = GeneralizedTableau<TestConfig, Vec<(Complex64, usize)>>;
+
+    #[test]
+    fn test_compute_phase_z_2_single_qubit_plus_state() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.tableau.h(0);
+
+        // After H: stabilizer = +X, destabilizer = +Z
+        // shift = 1 (stabilizer has xbit[0]=true)
+        // both phases should be 0
+        assert_eq!(tab.compute_phase_z_2(0, 0), 0);
+        assert_eq!(tab.compute_phase_z_2(0, 1), 0);
+    }
+
+    #[test]
+    fn test_compute_phase_z_2_y_stabilizer() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.tableau.h(0);
+        tab.tableau.s(0);
+
+        println!("{}", tab);
+
+        // both phases should again be 0
+        assert_eq!(tab.compute_phase_z_2(0, 0), 0);
+        assert_eq!(tab.compute_phase_z_2(0, 1), 0);
+    }
+
+    #[test]
+    fn test_compute_phase_z_2_mx_stabilizer() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.tableau.h(0);
+        tab.tableau.z(0);
+
+        println!("{}", tab);
+
+        // both phases should again be 0
+        assert_eq!(tab.compute_phase_z_2(0, 0), 0);
+        assert_eq!(tab.compute_phase_z_2(0, 1), 0);
+    }
+
+    #[test]
+    fn test_compute_phase_z_2_y_stabilizer_2() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.tableau.h(0);
+        tab.tableau.s(0);
+        // tab.tableau.s(0);
+        tab.tableau.h(0);
+        // tab.tableau.s(0);
+
+        println!("{}", tab);
+
+        // both phases should again be 0
+        assert_eq!(tab.compute_phase_z_2(0, 0), 1);
+        assert_eq!(tab.compute_phase_z_2(0, 1), 3);
     }
 }

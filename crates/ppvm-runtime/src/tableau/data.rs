@@ -159,67 +159,78 @@ where
     }
 
     // helper functions
+
+    pub(crate) fn find_z_decomposition_phase(&self, addr0: usize) -> u8 {
+        // NOTE: this is O(n ^ 2); can we improve it since we only need the phase?
+
+        // Z_addr0 = phase * prod(d_k ^ gamma_k) * prod(s_l ^ lambda_l)
+        // where: gamma_k == 1 iff {Z_addr0, s_k} = 0
+        // lambda_l == 1 iff {Z_addr0, d_l} = 0
+        // Lemma 5. from T. J. Yoder (2012)
+        // now, we just need to invert the expression to compute the phase
+        let n = self.n_qubits();
+        let mut z_word = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(n);
+        z_word.set(addr0, crate::char::Pauli::Z);
+
+        let stabilizers = self.tableau.stabilizers();
+        let destabilizers = self.tableau.destabilizers();
+
+        for (i, stab) in stabilizers.iter().enumerate() {
+            if !destabilizers[i].word.xbits[addr0] {
+                continue;
+            }
+            // destabilizer anti-commutes, so the stabilizer contributes
+            let mut stab_inv = stab.clone();
+            stab_inv.phase = (4 - stab.phase) % 4;
+            z_word *= stab_inv;
+        }
+
+        for (i, destab) in destabilizers.iter().enumerate() {
+            if !stabilizers[i].word.xbits[addr0] {
+                continue;
+            }
+
+            // stabilizer anti-commutes, so the destabilizer contributes
+            let mut destab_inv = destab.clone();
+            destab_inv.phase = (4 - destab.phase) % 4;
+            z_word *= destab_inv;
+        }
+
+        z_word.phase
+    }
+
     /// Compute the full phase ξ(α) such that Z_{addr0} |b_α⟩ = ξ(α) |b_{α⊕β}⟩.
     ///
     /// This decomposes Z into the stabilizer/destabilizer basis using actual
-    /// Pauli group multiplication to get the correct phase.
+    /// Pauli word multiplication to get the correct phase.
     pub(crate) fn compute_phase_z_2(&self, addr0: usize, alpha: usize) -> u8 {
-        let n = self.n_qubits();
-        let stabilizers = self.tableau.stabilizers();
         let destabilizers = self.tableau.destabilizers();
 
         // β: which stabilizers anticommute with Z (i.e. have xbit set at addr0)
         let beta = self.compute_shift_z(addr0);
 
-        // a: which destabilizers anticommute with Z
-        let mut a_bits = 0usize;
+        // part I of the phase: count the number of anti-commuting destabilizers at alpha
+        let phase_destab = self.compute_phase_z(addr0, alpha);
+
+        // part II of the phase: find the phase of decomposing Z into destabilizers and stabilizers
+        let phase_decomp = self.find_z_decomposition_phase(addr0);
+
+        // part III of the phase: multiply the squared phase of destabilizers occuring both in
+        // the alpha basis state as well as the decomposition of Z
+        let mut phase_duplicate = 0u8;
         for (i, destab) in destabilizers.iter().enumerate() {
-            if destab.word.xbits[addr0] {
-                a_bits |= 1 << i;
+            if alpha & (1 << i) == 0 || beta & (1 << i) == 0 {
+                // does not occur in both Z and alpha
+                continue;
+            }
+            if destab.phase % 2 != 0 {
+                // phase is 1: i, or 3: -i
+                // multiply the squared phase by -1
+                phase_duplicate = (phase_duplicate + 2) % 4;
             }
         }
 
-        // Compute decomposition phase p' via Pauli multiplication:
-        // Z · ∏_{j∈β} h_j · ∏_{i∈a} g_i = i^{p'} · I
-        let mut p_word = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(n);
-        p_word.set(addr0, crate::char::Pauli::Z);
-
-        for i in 0..n {
-            if beta & (1 << i) != 0 {
-                p_word *= destabilizers[i].clone();
-            }
-        }
-        for i in 0..n {
-            if a_bits & (1 << i) != 0 {
-                p_word *= stabilizers[i].clone();
-            }
-        }
-
-        let p_prime = p_word.phase as i32;
-
-        // ξ_Z = i^{p' - 2∑_{i∈a} r_i - 2∑_{j∈β} s_j + 2|a∩β|}
-        // where r_i, s_j are stabilizer/destabilizer stored phases
-        let sum_r: i32 = (0..n)
-            .filter(|&i| a_bits & (1 << i) != 0)
-            .map(|i| stabilizers[i].phase as i32)
-            .sum();
-        let sum_s: i32 = (0..n)
-            .filter(|&i| beta & (1 << i) != 0)
-            .map(|i| destabilizers[i].phase as i32)
-            .sum();
-        let a_cap_beta = (a_bits & beta).count_ones() as i32;
-
-        // Destabilizer commutation phase: (-1) per anticommuting destab with bit in α
-        let commutation = self.compute_phase_z(addr0, alpha) as i32;
-
-        // Destabilizer squaring phase: i^{2s_m} for m ∈ α∩β
-        let squaring: i32 = (0..n)
-            .filter(|&i| alpha & (1 << i) != 0 && beta & (1 << i) != 0)
-            .map(|i| 2 * destabilizers[i].phase as i32)
-            .sum();
-
-        let total = p_prime - 2 * sum_r - 2 * sum_s + 2 * a_cap_beta + commutation + squaring;
-        total.rem_euclid(4) as u8
+        (((phase_destab + phase_decomp) % 4) + phase_duplicate) % 4
     }
 
     /// Compute the index shift when applying a Z Pauli

@@ -1,6 +1,7 @@
 use super::data::{GeneralizedTableau, Tableau};
 use super::sparsevec::SparseVector;
 use crate::config::Config;
+use crate::tableau::CliffordExtensions;
 use crate::traits::Clifford;
 use num::complex::Complex;
 
@@ -62,4 +63,18 @@ impl<T: Config, C: SparseVector<Complex<T::Coeff>>> Clifford for GeneralizedTabl
     impl_generalized_tableau_clifford!(s, index);
     impl_generalized_tableau_clifford!(cnot, control, target);
     impl_generalized_tableau_clifford!(cz, control, target);
+}
+
+impl<T: Config, C: SparseVector<Complex<T::Coeff>>> CliffordExtensions
+    for GeneralizedTableau<T, C>
+{
+    fn s_adj(&mut self, addr0: usize) {
+        if self.is_lost[addr0] {
+            return;
+        }
+        // NOTE: the backwards prop version of S is just S_adj
+        self.tableau.data.iter_mut().for_each(|pw| {
+            pw.s(addr0);
+        })
+    }
 }

@@ -185,6 +185,8 @@ where
             z_word *= stab_inv;
         }
 
+        // NOTE: destabilizers also commute with one another in a valid tableau
+        // since the form a basis together with stabilizers
         for (i, destab) in destabilizers.iter().enumerate() {
             if !stabilizers[i].word.xbits[addr0] {
                 continue;

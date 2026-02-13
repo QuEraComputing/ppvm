@@ -22,7 +22,7 @@ impl<T: Config> Display for Tableau<T> {
     }
 }
 
-impl<T: Config, C: SparseVector<Complex<T::Coeff>>> Display for GeneralizedTableau<T, C>
+impl<T: Config, C: SparseVector<Complex<T::Coeff>, u128>> Display for GeneralizedTableau<T, C>
 where
     Complex<T::Coeff>: Display,
     <T as Config>::Coeff: num::Num,

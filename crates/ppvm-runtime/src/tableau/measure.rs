@@ -38,10 +38,10 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64::new(0.0, -1.0), // -i
 ];
 
-impl<T: Config, C: SparseVector<Complex<T::Coeff>>> Measure for GeneralizedTableau<T, C>
+impl<T: Config, C: SparseVector<Complex<T::Coeff>, u128>> Measure for GeneralizedTableau<T, C>
 where
     T: Config,
-    C: SparseVector<Complex<T::Coeff>> + std::fmt::Debug,
+    C: SparseVector<Complex<T::Coeff>, u128> + std::fmt::Debug,
     T::Coeff: One + Zero + Clone + num::Num + ToPrimitive + std::fmt::Debug,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
@@ -68,7 +68,7 @@ where
         let phase_decomp = self.compute_z_decomposition_phase(addr0);
 
         // build a temporary lookup table for faster lookup in the loop
-        let coeff_map: HashMap<usize, Complex<T::Coeff>> = self
+        let coeff_map: HashMap<u128, Complex<T::Coeff>> = self
             .coefficients
             .clone()
             .into_iter()

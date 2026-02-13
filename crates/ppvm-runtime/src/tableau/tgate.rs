@@ -25,7 +25,7 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
 impl<T, C> TGate for GeneralizedTableau<T, C>
 where
     T: Config,
-    C: SparseVector<Complex<T::Coeff>>,
+    C: SparseVector<Complex<T::Coeff>, u128>,
     T::Coeff: One + Zero + Clone,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
@@ -61,7 +61,7 @@ where
         let phase_decomp = self.compute_z_decomposition_phase(addr0);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-        let mut new_coefficients: HashMap<usize, Complex<T::Coeff>> = HashMap::new();
+        let mut new_coefficients: HashMap<u128, Complex<T::Coeff>> = HashMap::new();
         for (coeff, idx) in old_coefficients.into_iter() {
             debug_assert!(
                 !(coeff.re == T::Coeff::zero() && coeff.im == T::Coeff::zero()),

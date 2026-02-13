@@ -23,7 +23,7 @@ fn test_tableau() {
 
 #[test]
 fn generalized_tableau() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(2, 1e-12);
 
     tableau.h(0);
@@ -73,7 +73,7 @@ fn generalized_tableau() {
         .iter()
         .zip(expected_coefficients.iter().enumerate())
     {
-        assert_eq!(idx1, &idx2);
+        assert_eq!(idx1, &(idx2 as u128));
         assert!((val1.re - val2.re).abs() < 1e-11);
         assert!((val1.im - val2.im).abs() < 1e-11);
     }
@@ -83,7 +83,7 @@ fn generalized_tableau() {
 
 #[test]
 fn test_generalized_tableau_phase() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     tableau.h(0);
@@ -101,12 +101,12 @@ fn test_generalized_tableau_phase() {
         .iter()
         .zip(expected_coefficients.iter().enumerate())
     {
-        assert_eq!(idx1, &idx2);
+        assert_eq!(idx1, &(idx2 as u128));
         assert!((val1.re - val2.re).abs() < 1e-9);
         assert!((val1.im - val2.im).abs() < 1e-9);
     }
 
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     tableau.h(0);
@@ -131,7 +131,7 @@ fn test_generalized_tableau_phase() {
         .iter()
         .zip(expected_coefficients.iter().enumerate())
     {
-        assert_eq!(idx1, &idx2);
+        assert_eq!(idx1, &(idx2 as u128));
         assert!((val1.re - val2.re).abs() < 1e-9);
         assert!((val1.im - val2.im).abs() < 1e-9);
     }
@@ -141,7 +141,7 @@ fn test_generalized_tableau_phase() {
 
 #[test]
 fn test_generalized_tableau_multiple_ts() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     tableau.h(0);
@@ -157,7 +157,7 @@ fn test_generalized_tableau_multiple_ts() {
 
 #[test]
 fn test_generalized_tableau_multiple_ts2() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(2, 1e-12);
 
     tableau.h(0);
@@ -180,7 +180,7 @@ fn test_generalized_tableau_multiple_ts2() {
 #[test]
 fn test_generalized_tableau_multiqubit_branching() {
     let n = 18;
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<3>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<3>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(n, 1e-12);
 
     for i in 0..n {
@@ -215,7 +215,7 @@ fn test_generalized_tableau_multiqubit_branching() {
 #[test]
 fn test_multiqubit_ghz_state() {
     let n = 18;
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<3>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<3>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(n, 1e-12);
 
     tableau.h(0);
@@ -241,7 +241,7 @@ fn test_multiqubit_ghz_state() {
 /// so the T gate simply applies a global phase to the single coefficient.
 #[test]
 fn test_t_on_computational_basis_no_branching() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     // |0⟩ is stabilized by +Z; T|0⟩ = |0⟩ (up to global phase)
@@ -257,7 +257,7 @@ fn test_t_on_computational_basis_no_branching() {
 /// Verify that T†T = I: applying T then T† should leave the state unchanged.
 #[test]
 fn test_t_adj_cancels_t() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(2, 1e-12);
 
     tableau.h(0);
@@ -287,7 +287,7 @@ fn test_t_adj_cancels_t() {
 /// Clifford gates (H, X, Y, Z, S, CNOT, CZ) must never change the number of branches.
 #[test]
 fn test_clifford_gates_do_not_branch() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(2, 1e-12);
 
     // Start with a non-trivial state that has 2 branches
@@ -343,7 +343,7 @@ fn test_clifford_gates_do_not_branch() {
 /// After any sequence of gates, the coefficient norm should be 1.
 #[test]
 fn test_normalization_preserved() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(3, 1e-12);
 
     tableau.h(0);
@@ -374,7 +374,7 @@ fn test_normalization_preserved() {
 /// Verify that TT gives the known analytical coefficients for S|+⟩ = (|0⟩+i|1⟩)/√2.
 #[test]
 fn test_two_t_gates_coefficients() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
     tableau.h(0);
     tableau.t(0);
@@ -392,7 +392,7 @@ fn test_two_t_gates_coefficients() {
     println!("{}", tableau);
 
     for ((val, idx), (exp_idx, exp_val)) in sorted.iter().zip(expected.iter().enumerate()) {
-        assert_eq!(idx, &exp_idx);
+        assert_eq!(*idx, exp_idx as u128);
         assert!(
             (val.re - exp_val.re).abs() < 1e-11,
             "re mismatch at index {}: {} vs {}",
@@ -417,7 +417,7 @@ fn test_two_t_gates_coefficients() {
 /// 8 T gates on a superposition state should be equivalent to identity (T⁸ = I).
 #[test]
 fn test_eight_t_gates_is_identity() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     tableau.h(0);
@@ -444,7 +444,7 @@ fn test_eight_t_gates_is_identity() {
 /// +XI → +XZ and +IX → +ZX, so applying CZ and then T should branch correctly.
 #[test]
 fn test_cz_gate_with_t() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(2, 1e-12);
 
     tableau.h(0);
@@ -477,7 +477,7 @@ fn test_cz_gate_with_t() {
 /// preserve normalization and produce consistent outcomes on repeated measurement.
 #[test]
 fn test_measurement_idempotent() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(2, 1e-12);
 
     tableau.h(0);
@@ -504,7 +504,7 @@ fn test_measurement_idempotent() {
 /// Verify that T gates on independent qubits produce the expected exponential branching.
 #[test]
 fn test_independent_t_gates_exponential_branching() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(4, 1e-12);
 
     for i in 0..4 {
@@ -532,7 +532,7 @@ fn test_t_gate_measurement_statistics() {
     let mut count_one = 0;
 
     for _ in 0..trials {
-        let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, u128)>> =
             GeneralizedTableau::new(1, 1e-12);
         tableau.h(0);
         tableau.t(0);

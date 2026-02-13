@@ -128,14 +128,14 @@ impl<T: Config> Tableau<T> {
 
 // TODO: builder
 #[derive(Clone)]
-pub struct GeneralizedTableau<T: Config, C: SparseVector<Complex<T::Coeff>>> {
+pub struct GeneralizedTableau<T: Config, C: SparseVector<Complex<T::Coeff>, u128>> {
     pub tableau: Tableau<T>,
     pub coefficients: C,
     pub is_lost: Vec<bool>,
     pub coefficient_threshold: T::Coeff,
 }
 
-impl<T: Config, C: SparseVector<Complex<T::Coeff>>> GeneralizedTableau<T, C>
+impl<T: Config, C: SparseVector<Complex<T::Coeff>, u128>> GeneralizedTableau<T, C>
 where
     T::Coeff: One + Zero + Clone,
 {
@@ -202,11 +202,11 @@ where
     }
 
     /// Compute the index shift when applying a Z Pauli
-    pub(crate) fn compute_shift_z(&self, addr0: usize) -> usize {
+    pub(crate) fn compute_shift_z(&self, addr0: usize) -> u128 {
         // NOTE: we use LSB ordering
-        let mut shift = 0usize;
+        let mut shift = 0u128;
         for (i, stab) in self.tableau.stabilizers().iter().enumerate() {
-            shift |= (stab.word.xbits[addr0] as usize) << i;
+            shift |= (stab.word.xbits[addr0] as u128) << i;
         }
         shift
     }
@@ -215,12 +215,7 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    pub(crate) fn compute_phase_z(
-        &self,
-        addr0: usize,
-        basis_index: usize,
-        index_shift: usize,
-    ) -> u8 {
+    pub(crate) fn compute_phase_z(&self, addr0: usize, basis_index: u128, index_shift: u128) -> u8 {
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
         let mut phase = 0u8;
         for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
@@ -293,7 +288,7 @@ mod tests {
     use num::complex::Complex64;
 
     type TestConfig = ByteF64<1>;
-    type TestTableau = GeneralizedTableau<TestConfig, Vec<(Complex64, usize)>>;
+    type TestTableau = GeneralizedTableau<TestConfig, Vec<(Complex64, u128)>>;
 
     #[test]
     fn test_compute_phase_z_2_single_qubit_plus_state() {

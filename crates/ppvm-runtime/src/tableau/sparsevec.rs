@@ -1,34 +1,35 @@
 use num::complex::{Complex, ComplexFloat};
 use num::traits::{One, Zero};
 
-pub trait SparseVector<T>: Clone + IntoIterator<Item = (T, usize)> {
+pub trait SparseVector<T, I>: Clone + IntoIterator<Item = (T, I)> {
     fn new() -> Self;
     /// Inserts an element without checking whether the index already exists.
-    fn unsafe_insert(&mut self, index: usize, value: T);
-    fn add_or_insert(&mut self, index: usize, value: T);
-    fn get(&self, index: &usize) -> T;
+    fn unsafe_insert(&mut self, index: I, value: T);
+    fn add_or_insert(&mut self, index: I, value: T);
+    fn get(&self, index: &I) -> T;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
-    fn mul_element_by(&mut self, index: usize, factor: T);
+    fn mul_element_by(&mut self, index: I, factor: T);
     fn trim(&mut self, cutoff: T);
-    fn retain(&mut self, f: impl FnMut(&(T, usize)) -> bool);
+    fn retain(&mut self, f: impl FnMut(&(T, I)) -> bool);
     fn normalize(&mut self);
 }
 
-impl<T> SparseVector<T> for Vec<(T, usize)>
+impl<T, I> SparseVector<T, I> for Vec<(T, I)>
 where
     T: std::ops::AddAssign + std::ops::MulAssign + One + ComplexFloat + Zero,
     f64: std::ops::Div<<T as ComplexFloat>::Real>,
+    I: std::cmp::PartialEq + Clone,
 {
     fn new() -> Self {
         Vec::new()
     }
 
-    fn unsafe_insert(&mut self, index: usize, value: T) {
+    fn unsafe_insert(&mut self, index: I, value: T) {
         self.push((value, index));
     }
 
-    fn add_or_insert(&mut self, index: usize, value: T) {
+    fn add_or_insert(&mut self, index: I, value: T) {
         for (v, i) in self.iter_mut() {
             if *i == index {
                 *v += value;
@@ -38,7 +39,7 @@ where
         self.push((value, index));
     }
 
-    fn get(&self, index: &usize) -> T {
+    fn get(&self, index: &I) -> T {
         for (v, i) in self.iter() {
             if i == index {
                 return v.clone();
@@ -55,7 +56,7 @@ where
         self.is_empty()
     }
 
-    fn mul_element_by(&mut self, index: usize, factor: T) {
+    fn mul_element_by(&mut self, index: I, factor: T) {
         for (v, i) in self.iter_mut() {
             if *i == index {
                 *v *= factor;
@@ -69,7 +70,7 @@ where
         self.retain(|(element, _)| element.abs() > cutoff.abs());
     }
 
-    fn retain(&mut self, f: impl FnMut(&(T, usize)) -> bool) {
+    fn retain(&mut self, f: impl FnMut(&(T, I)) -> bool) {
         Vec::retain(self, f);
     }
 

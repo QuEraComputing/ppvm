@@ -55,7 +55,7 @@ impl<T: Config> Clifford for Tableau<T> {
     }
 }
 
-impl<T: Config, C: SparseVector<Complex<T::Coeff>>> Clifford for GeneralizedTableau<T, C> {
+impl<T: Config, C: SparseVector<Complex<T::Coeff>, u128>> Clifford for GeneralizedTableau<T, C> {
     impl_generalized_tableau_clifford!(x, index);
     impl_generalized_tableau_clifford!(y, index);
     impl_generalized_tableau_clifford!(z, index);
@@ -65,7 +65,7 @@ impl<T: Config, C: SparseVector<Complex<T::Coeff>>> Clifford for GeneralizedTabl
     impl_generalized_tableau_clifford!(cz, control, target);
 }
 
-impl<T: Config, C: SparseVector<Complex<T::Coeff>>> CliffordExtensions
+impl<T: Config, C: SparseVector<Complex<T::Coeff>, u128>> CliffordExtensions
     for GeneralizedTableau<T, C>
 {
     fn s_adj(&mut self, addr0: usize) {

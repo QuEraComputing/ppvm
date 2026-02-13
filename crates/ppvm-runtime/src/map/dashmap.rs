@@ -158,7 +158,9 @@ where
         self.par_iter_mut().for_each(|mut entry| {
             let (k, v) = entry.pair_mut();
             if let Some((new_k, new_v)) = f(k, v) {
-                dest.insert(new_k, new_v);
+                dest.entry(new_k)
+                    .and_modify(|v| *v += new_v.clone())
+                    .or_insert(new_v);
             }
         })
     }

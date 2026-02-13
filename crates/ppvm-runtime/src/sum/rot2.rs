@@ -1,5 +1,7 @@
 use crate::traits::*;
-use crate::{config::Config, sum::PauliSum};
+use crate::{char::Pauli, config::Config, sum::PauliSum};
+
+const PAULIS: [Pauli; 4] = [Pauli::I, Pauli::X, Pauli::Z, Pauli::Y];
 
 impl<T, S, H> RotationTwo<T> for PauliSum<T>
 where
@@ -19,8 +21,22 @@ where
         b: usize,
         theta: T::Coeff,
     ) {
+        if axis_a_x > 3 || axis_a_z > 3 || axis_b_x > 3 || axis_b_z > 3 {
+            panic!("Rotation axis cannot be L");
+        }
         let (sin, cos) = theta.sin_cos();
+        let axis_a = PAULIS[(axis_a_z << 1 | axis_a_x) as usize];
+        let axis_b = PAULIS[(axis_b_z << 1 | axis_b_x) as usize];
         self.map_insert(|k, v| {
+            // NOTE: case of both qubits being lost is handled by single-qubit rotation logic
+            if k.get_lbit(a) {
+                // fall back to single-qubit rotation on qubit b
+                return PauliSum::<T>::rotate_1_map_insert_closure(k, v, axis_b, b, &sin, &cos);
+            }
+            if k.get_lbit(b) {
+                // fall back to single-qubit rotation on qubit a
+                return PauliSum::<T>::rotate_1_map_insert_closure(k, v, axis_a, a, &sin, &cos);
+            }
             let (eps, x_a, z_a, x_b, z_b) = comm_2(
                 axis_a_x,
                 axis_a_z,

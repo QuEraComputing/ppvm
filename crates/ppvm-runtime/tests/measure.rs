@@ -593,3 +593,34 @@ fn test_measure_generalized_tableau_t_gate_random() {
         probability
     );
 }
+
+#[test]
+fn test_measure_z_stabilizer_random() {
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, Vec<(Complex64, usize)>> =
+        GeneralizedTableau::new(1, 1e-12);
+
+    tableau.h(0);
+
+    // rotate quarter around Z with branches
+    tableau.t(0);
+    tableau.t(0);
+
+    // go back towards 0
+    // this will change the tableau but not the state
+    // since we point in Y direction now and rotate around X
+    tableau.h(0);
+
+    println!("{}", tableau);
+
+    let trials = 1000;
+    let mut count_one: u64 = 0;
+
+    for _ in 0..trials {
+        let mut tab = tableau.clone();
+        let outcome = tab.measure(0);
+        count_one += outcome as u64;
+    }
+
+    // about 50% of the time we should measure 1
+    assert!(400 < count_one && count_one < 600);
+}

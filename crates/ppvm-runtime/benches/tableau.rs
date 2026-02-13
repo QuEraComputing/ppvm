@@ -9,7 +9,7 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
     for n_qubits in (2..65).step_by(4) {
         let tableau = GeneralizedTableau::<
             config::indexmap::ByteFxHashF64<8>,
-            Vec<(Complex64, usize)>,
+            Vec<(Complex64, u128)>,
         >::new(n_qubits, 1e-12);
 
         group.bench_function(format!("tableau-scaling-{}", n_qubits), |b| {
@@ -35,7 +35,7 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
 
     let mut tableau = GeneralizedTableau::<
         config::indexmap::ByteFxHashF64<2>,
-        Vec<(Complex64, usize)>,
+        Vec<(Complex64, u128)>,
     >::new(10, 1e-12);
     for i in 0..10 {
         // make sure it branches with t gates

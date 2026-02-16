@@ -1,3 +1,4 @@
+use bnum::types::U256;
 use itertools::Itertools;
 use num::complex::Complex;
 use ppvm_runtime::{config::dashmap::ByteFxHashF64, prelude::*};
@@ -533,4 +534,15 @@ fn test_t_gate_measurement_statistics() {
         "T|+⟩ measurement should be ~50/50, got P(1)={:.3}",
         prob_one
     );
+}
+
+#[test]
+fn test_buint_index() {
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<32>, U256> =
+        GeneralizedTableau::new(130, 1e-12);
+
+    tableau.h(0);
+
+    // NOTE: would overflow at this point for u128 and more than 128 qubits
+    tableau.t(1);
 }

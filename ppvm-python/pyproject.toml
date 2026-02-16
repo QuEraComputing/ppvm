@@ -1,5 +1,5 @@
 [project]
-name = "ppvm-python"
+name = "ppvm"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ppvm-python = "ppvm_python:main"
+ppvm = "ppvm:main"
 
 [build-system]
 requires = ["uv_build>=0.9.21,<0.10.0"]

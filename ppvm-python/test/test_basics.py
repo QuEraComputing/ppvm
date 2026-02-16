@@ -1,4 +1,4 @@
-from ppvm_python import PauliSum
+from ppvm import PauliSum
 
 
 def test_basics():

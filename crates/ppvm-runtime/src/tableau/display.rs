@@ -4,6 +4,7 @@ use super::sparsevec::SparseVector;
 use crate::config::Config;
 use num::complex::Complex;
 use std::fmt::Display;
+use std::ops::{BitAnd, BitOrAssign, Shl};
 
 impl<T: Config> Display for Tableau<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -22,10 +23,18 @@ impl<T: Config> Display for Tableau<T> {
     }
 }
 
-impl<T: Config, C: SparseVector<Complex<T::Coeff>, u128>> Display for GeneralizedTableau<T, C>
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> Display for GeneralizedTableau<T, I, C>
 where
     Complex<T::Coeff>: Display,
     <T as Config>::Coeff: num::Num,
+    I: PartialEq
+        + Copy
+        + From<u8>
+        + Shl<usize>
+        + BitOrAssign<<I as Shl<usize>>::Output>
+        + BitAnd<<I as Shl<usize>>::Output, Output = I>
+        + Display,
+    <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Generalized Tableau ({} qubits):", self.n_qubits())?;

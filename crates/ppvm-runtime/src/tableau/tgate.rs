@@ -5,6 +5,8 @@ use crate::tableau::GeneralizedTableau;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, Zero};
 use std::collections::HashMap;
+use std::hash::Hash;
+use std::ops::{BitAnd, BitOrAssign, BitXor, Shl};
 
 const COS_PI_OVER_8_TIMES_EXPIPI8: Complex64 = Complex {
     re: 0.8535533905932737,
@@ -22,15 +24,25 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64 { re: 0.0, im: -1.0 }, // -i
 ];
 
-impl<T, C> TGate for GeneralizedTableau<T, C>
+impl<T, I, C> TGate for GeneralizedTableau<T, I, C>
 where
     T: Config,
-    C: SparseVector<Complex<T::Coeff>, u128>,
+    C: SparseVector<Complex<T::Coeff>, I>,
     T::Coeff: One + Zero + Clone,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
         + From<Complex64>
         + ComplexFloat,
+    I: PartialEq
+        + Eq
+        + Hash
+        + Copy
+        + From<u8>
+        + Shl<usize>
+        + BitOrAssign<<I as Shl<usize>>::Output>
+        + BitAnd<<I as Shl<usize>>::Output, Output = I>
+        + BitXor<Output = I>,
+    <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     fn t(&mut self, index: usize) {
         self.t_or_t_adj(index, false);
@@ -61,7 +73,7 @@ where
         let phase_decomp = self.compute_z_decomposition_phase(addr0);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-        let mut new_coefficients: HashMap<u128, Complex<T::Coeff>> = HashMap::new();
+        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
         for (coeff, idx) in old_coefficients.into_iter() {
             debug_assert!(
                 !(coeff.re == T::Coeff::zero() && coeff.im == T::Coeff::zero()),

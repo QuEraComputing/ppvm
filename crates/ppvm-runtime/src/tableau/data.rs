@@ -1,7 +1,15 @@
+use std::{
+    marker::PhantomData,
+    ops::{BitAnd, BitOrAssign, Shl},
+};
+
 use super::sparsevec::SparseVector;
 use crate::config::Config;
 use crate::phase::PhasedPauliWord;
-use num::{One, Zero, complex::Complex};
+use num::{
+    One, Zero,
+    complex::{Complex, Complex64},
+};
 
 #[derive(Clone, Debug)]
 pub struct Tableau<T: Config> {
@@ -128,16 +136,28 @@ impl<T: Config> Tableau<T> {
 
 // TODO: builder
 #[derive(Clone)]
-pub struct GeneralizedTableau<T: Config, C: SparseVector<Complex<T::Coeff>, u128>> {
+pub struct GeneralizedTableau<
+    T: Config,
+    IndexType = usize,
+    SparseVectorType: SparseVector<Complex<T::Coeff>, IndexType> = Vec<(Complex64, IndexType)>,
+> {
     pub tableau: Tableau<T>,
-    pub coefficients: C,
+    pub coefficients: SparseVectorType,
     pub is_lost: Vec<bool>,
     pub coefficient_threshold: T::Coeff,
+    _index_phantom: PhantomData<IndexType>,
 }
 
-impl<T: Config, C: SparseVector<Complex<T::Coeff>, u128>> GeneralizedTableau<T, C>
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
 where
     T::Coeff: One + Zero + Clone,
+    I: PartialEq
+        + Copy
+        + From<u8>
+        + Shl<usize>
+        + BitOrAssign<<I as Shl<usize>>::Output>
+        + BitAnd<<I as Shl<usize>>::Output, Output = I>,
+    <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     pub fn new(n_qubits: usize, coefficient_threshold: T::Coeff) -> Self {
         let mut coefficients = C::new();
@@ -145,12 +165,13 @@ where
             re: T::Coeff::one(),
             im: T::Coeff::zero(),
         };
-        coefficients.unsafe_insert(0, complex_one);
+        coefficients.unsafe_insert(I::from(0u8), complex_one);
         Self {
             tableau: Tableau::new(n_qubits),
             coefficients: coefficients,
             is_lost: vec![false; n_qubits],
             coefficient_threshold,
+            _index_phantom: PhantomData,
         }
     }
 
@@ -202,11 +223,14 @@ where
     }
 
     /// Compute the index shift when applying a Z Pauli
-    pub(crate) fn compute_shift_z(&self, addr0: usize) -> u128 {
+    pub(crate) fn compute_shift_z(&self, addr0: usize) -> I {
         // NOTE: we use LSB ordering
-        let mut shift = 0u128;
+        let mut shift = I::from(0u8);
+        let one = I::from(1u8);
         for (i, stab) in self.tableau.stabilizers().iter().enumerate() {
-            shift |= (stab.word.xbits[addr0] as u128) << i;
+            if stab.word.xbits[addr0] {
+                shift |= one << i;
+            }
         }
         shift
     }
@@ -215,11 +239,13 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    pub(crate) fn compute_phase_z(&self, addr0: usize, basis_index: u128, index_shift: u128) -> u8 {
+    pub(crate) fn compute_phase_z(&self, addr0: usize, basis_index: I, index_shift: I) -> u8 {
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
         let mut phase = 0u8;
+        let one = I::from(1u8);
+        let zero = I::from(0u8);
         for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
-            if basis_index & (1 << i) == 0 {
+            if basis_index & (one << i) == zero {
                 // NOTE: LSB ordering; has to be consistent with shift computation
                 continue;
             }
@@ -229,7 +255,7 @@ where
                 phase = (phase + 2) % 4;
             }
 
-            if index_shift & (1 << i) == 0 {
+            if index_shift & (I::from(1u8) << i) == I::from(0u8) {
                 continue;
             }
 
@@ -253,12 +279,14 @@ where
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         let destabilizers = self.tableau.destabilizers();
         let n = self.n_qubits();
+        let one = I::from(1u8);
+        let zero = I::from(0u8);
         for (coeff, alpha) in old_coefficients.into_iter() {
             let mut phase = false; // false: 1, true: -1
 
             // get the phase from the anti-commutation with the product over all destabilizers
             for i in 0..n {
-                if alpha & (1 << i) == 0 {
+                if alpha & (one << i) == zero {
                     // this index doesn't pick D_i
                     continue;
                 }
@@ -282,13 +310,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    use bnum::BUint;
+
     use super::*;
     use crate::config::fxhash::ByteF64;
     use crate::traits::Clifford;
-    use num::complex::Complex64;
 
     type TestConfig = ByteF64<1>;
-    type TestTableau = GeneralizedTableau<TestConfig, Vec<(Complex64, u128)>>;
+    type TestTableau = GeneralizedTableau<TestConfig>;
+    type TestTableauBUint = GeneralizedTableau<TestConfig, BUint<1>>;
 
     #[test]
     fn test_compute_phase_z_2_single_qubit_plus_state() {
@@ -345,5 +375,11 @@ mod tests {
         assert_eq!(phase0, 1);
         let phase1 = (decomp + tab.compute_phase_z(0, 1, shift)) % 4;
         assert_eq!(phase1, 3);
+    }
+
+    #[test]
+    fn test_index_type() {
+        let mut tab: TestTableauBUint = GeneralizedTableau::new(1, 1e-12);
+        tab.tableau.h(0);
     }
 }

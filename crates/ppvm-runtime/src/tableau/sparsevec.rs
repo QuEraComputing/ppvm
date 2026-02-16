@@ -243,4 +243,16 @@ mod tests {
 
         assert_eq!(vec.get(&0), Complex64::new(1.0, 0.0));
     }
+
+    use bnum::types::U256;
+    #[test]
+    fn test_bigint() {
+        let mut vec: Vec<(Complex64, U256)> = SparseVector::new();
+
+        vec.unsafe_insert(U256::from(0u8), Complex64::new(1.0, 0.0));
+
+        vec.normalize(); // Should return early since norm is already 1
+
+        assert_eq!(vec.get(&U256::from(0u8)), Complex64::new(1.0, 0.0));
+    }
 }

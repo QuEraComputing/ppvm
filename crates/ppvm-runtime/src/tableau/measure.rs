@@ -5,6 +5,8 @@ use crate::tableau::sparsevec::SparseVector;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 use std::collections::HashMap;
+use std::hash::Hash;
+use std::ops::{BitAnd, BitOrAssign, BitXor, Shl};
 
 impl<T: Config> Measure for Tableau<T> {
     /// Measure qubit `addr0` in Z basis
@@ -38,10 +40,10 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64::new(0.0, -1.0), // -i
 ];
 
-impl<T: Config, C: SparseVector<Complex<T::Coeff>, u128>> Measure for GeneralizedTableau<T, C>
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> Measure for GeneralizedTableau<T, I, C>
 where
     T: Config,
-    C: SparseVector<Complex<T::Coeff>, u128> + std::fmt::Debug,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
     T::Coeff: One + Zero + Clone + num::Num + ToPrimitive + std::fmt::Debug,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
@@ -49,6 +51,16 @@ where
         + std::ops::AddAssign
         + One
         + ComplexFloat,
+    I: PartialEq
+        + Eq
+        + Hash
+        + Copy
+        + From<u8>
+        + Shl<usize>
+        + BitOrAssign<<I as Shl<usize>>::Output>
+        + BitAnd<<I as Shl<usize>>::Output, Output = I>
+        + BitXor<Output = I>,
+    <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     fn measure(&mut self, addr0: usize) -> bool {
         // NOTE: regardless of whether Z is a stabilizer, we need to compute
@@ -68,7 +80,7 @@ where
         let phase_decomp = self.compute_z_decomposition_phase(addr0);
 
         // build a temporary lookup table for faster lookup in the loop
-        let coeff_map: HashMap<u128, Complex<T::Coeff>> = self
+        let coeff_map: HashMap<I, Complex<T::Coeff>> = self
             .coefficients
             .clone()
             .into_iter()

@@ -1,5 +1,4 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use num::complex::Complex64;
 use ppvm_runtime::prelude::*;
 use rayon::current_num_threads;
 
@@ -7,10 +6,8 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
     let mut group = c.benchmark_group(name.as_ref());
 
     for n_qubits in (2..65).step_by(4) {
-        let tableau = GeneralizedTableau::<
-            config::indexmap::ByteFxHashF64<8>,
-            Vec<(Complex64, u128)>,
-        >::new(n_qubits, 1e-12);
+        let tableau =
+            GeneralizedTableau::<config::indexmap::ByteFxHashF64<8>, usize>::new(n_qubits, 1e-12);
 
         group.bench_function(format!("tableau-scaling-{}", n_qubits), |b| {
             b.iter_batched_ref(
@@ -33,10 +30,8 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
         });
     }
 
-    let mut tableau = GeneralizedTableau::<
-        config::indexmap::ByteFxHashF64<2>,
-        Vec<(Complex64, u128)>,
-    >::new(10, 1e-12);
+    let mut tableau =
+        GeneralizedTableau::<config::indexmap::ByteFxHashF64<2>, usize>::new(10, 1e-12);
     for i in 0..10 {
         // make sure it branches with t gates
         tableau.h(i);

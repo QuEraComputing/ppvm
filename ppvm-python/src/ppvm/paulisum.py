@@ -1,8 +1,30 @@
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Sequence, Union
 
 import ppvm_python_native
+
+_COMPACT_RE = re.compile(r'^([IXYZ])(\d+)$')
+
+
+def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, float]":
+    if isinstance(term, tuple):
+        s, coeff = term
+    else:
+        s, coeff = term, 1.0
+
+    m = _COMPACT_RE.match(s)
+    if m:
+        pauli, idx = m.group(1), int(m.group(2))
+        if idx >= n_qubits:
+            raise ValueError(
+                f"Qubit index {idx} out of range for {n_qubits}-qubit system."
+            )
+        s = 'I' * idx + pauli + 'I' * (n_qubits - idx - 1)
+
+    return s, coeff
+
 
 T = Union[
     ppvm_python_native.PauliSumIndexMapFxHash0,
@@ -68,7 +90,7 @@ class PauliSum:
 
         ```python
         # Start with ZZZ observable (measures all qubits in Z basis)
-        ps = PauliSum.from_str("ZZZ")
+        ps = PauliSum.new(3, "ZZZ")
         # GHZ circuit: H(0), CNOT(0,1), CNOT(1,2)
         # Apply in reverse order:
         ps.cnot(1, 2)
@@ -172,31 +194,54 @@ class PauliSum:
         """
         return len(self._interface)
 
-    @staticmethod
-    def from_str(s: str) -> "PauliSum":
-        """Create a PauliSum from a single Pauli string with coefficient 1.0.
+    @classmethod
+    def new(cls, n_qubits: int, terms: "str | tuple | list") -> "PauliSum":
+        """Create a PauliSum from one or more terms with flexible input formats.
 
         Args:
-            s: A Pauli string containing only 'I', 'X', 'Y', 'Z' characters.
+            n_qubits: Number of qubits.
+            terms: A single term or list of terms. Each term is either:
+                - A full Pauli string (e.g. ``"IX"``), with coefficient 1.0.
+                - A compact string ``"P{i}"`` (e.g. ``"X1"``), placing Pauli P
+                  at 0-based qubit index i with coefficient 1.0.
+                - A tuple ``(str, float)`` pairing either of the above with an
+                  explicit coefficient.
 
         Returns:
-            A PauliSum with a single term and coefficient 1.0.
+            A new PauliSum instance.
 
         Raises:
-            ValueError: If the string contains invalid characters.
+            ValueError: If a compact qubit index is out of range for n_qubits.
+
+        Example:
+            Full Pauli string with implicit coefficient 1.0::
+
+                ps = PauliSum.new(2, "IX")
+
+            Full string with explicit coefficient::
+
+                ps = PauliSum.new(2, ("IX", 0.5))
+
+            Compact notation — X on qubit 1 in a 3-qubit system::
+
+                ps = PauliSum.new(3, "X1")  # equivalent to PauliSum.new(3, "IXI")
+
+            Multiple terms mixing both notations::
+
+                ps = PauliSum.new(3, [("Y1", 0.1), "ZIZ"])
+
+            Building a Z-basis observable for each qubit::
+
+                n = 5
+                ps = PauliSum.new(n, [f"Z{i}" for i in range(n)])
         """
-        s = s.strip()
-        # Validate the string: must only contain I, X, Y, Z
-        allowed = set("IXYZ")
-        if not set(s).issubset(allowed):
-            raise ValueError(
-                f"Invalid Pauli string: {s!r}. Only 'I', 'X', 'Y', 'Z' are allowed."
-            )
-        n_qubits = len(s)
-        terms = [s]
-        coefficients = [1.0]
-        return PauliSum(
-            n_qubits=n_qubits, initial_terms=terms, coefficients=coefficients
+        if isinstance(terms, (str, tuple)):
+            terms = [terms]
+        parsed = [_parse_term(t, n_qubits) for t in terms]
+        return cls(
+            n_qubits=n_qubits,
+            initial_terms=[s for s, _ in parsed],
+            coefficients=[c for _, c in parsed],
         )
 
     def __str__(self) -> str:

@@ -1,3 +1,5 @@
+import pytest
+
 from ppvm import PauliSum
 
 
@@ -76,3 +78,28 @@ def test_overlap():
 
     state2 = PauliSum(initial_terms=["IX"])
     assert state.overlap(state2) == 0.0
+
+
+def test_new():
+    s = PauliSum.new(2, "IX")
+    assert len(s) == 1
+    assert s.terms == [("IX", 1.0)]
+
+    s = PauliSum.new(2, ("IX", 0.25))
+    assert len(s) == 1
+    assert s.terms == [("IX", 0.25)]
+
+    s = PauliSum.new(2, "X1")
+    assert s == PauliSum.new(2, "IX")
+
+    s = PauliSum.new(3, [("Y1", 0.1), "ZIZ"])
+    assert len(s) == 2
+    assert set(s.terms) == {("IYI", 0.1), ("ZIZ", 1.0)}
+
+    n = 17
+    s = PauliSum.new(n, [f"Z{i}" for i in range(n)])
+    assert len(s) == n
+    assert set(s.terms) == {("".join(["Z" if i==j else "I" for i in range(n)]), 1.0) for j in range(n)}
+
+    with pytest.raises(ValueError, match="out of range"):
+        PauliSum.new(2, "X2")

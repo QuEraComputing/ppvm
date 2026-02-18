@@ -235,6 +235,23 @@ class PauliSum:
             The expectation value of the Pauli sum with respect to |0...0>.
         """
         return self._interface.trace("Z?*")
+    
+    def overlap(self, other: "PauliSum") -> float:
+        """Compute the overlap of the current PauliSum with another PauliSum.
+        The overlap is defined as
+
+        ```math
+        \\text{tr}(A^\\dagger \\cdot B),
+        ```
+
+        where
+            self -> A
+            other -> B
+
+        Returns:
+            The trace overlap of the PauliSums.
+        """
+        return self._interface.overlap(other._interface)
 
     def trace(self, pattern: str) -> float:
         """Compute the trace using a pattern string.

@@ -63,6 +63,10 @@ macro_rules! create_interface {
                 self.trace("Z?*".to_owned())
             }
 
+            pub fn overlap(&self, other: &Self) -> f64 {
+                self.inner.overlap(&other.inner)
+            }
+
             // NOTE: macros can't be used in pymethods block
             // could either use multiple-pymethods feature (adds dependencies)
             // or better yet create working impl for all strategies

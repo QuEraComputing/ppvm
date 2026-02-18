@@ -67,3 +67,12 @@ def test_weights():
 
     weights.sort(key=lambda w: w[1])
     assert weights == [('IY', 1), ('ZX', 2)]
+
+
+def test_overlap():
+    state = PauliSum(initial_terms=["IZ"])
+
+    assert state.overlap(state) == 1.0
+
+    state2 = PauliSum(initial_terms=["IX"])
+    assert state.overlap(state2) == 0.0

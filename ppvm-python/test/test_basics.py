@@ -50,3 +50,20 @@ def test_copy():
     assert len(tmp) == len(state) == 1
 
     assert tmp.terms == [("IZ", 1.0)]
+
+
+def test_weights():
+    state = PauliSum(initial_terms=["IZ"])
+
+    assert state.current_max_weight() == 1
+
+    state.cnot(0, 1)
+    state.h(0)
+
+    assert state.current_max_weight() == 2
+
+    state2 = PauliSum(initial_terms=["ZX", "IY"])
+    weights = state2.weights()
+
+    weights.sort(key=lambda w: w[1])
+    assert weights == [('IY', 1), ('ZX', 2)]

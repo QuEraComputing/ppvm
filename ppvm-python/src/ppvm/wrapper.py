@@ -210,6 +210,22 @@ class PauliSum:
             A list of tuples, each containing a Pauli string and its coefficient.
         """
         return self._interface.terms()
+    
+    def weights(self) -> list[tuple[str, int]]:
+        """Get the weight of each Pauli term.
+        
+        Returns:
+            A list of tuples, each containing a Pauli string and its weight.
+        """
+        return self._interface.weights()
+
+    def current_max_weight(self) -> int:
+        """Get the current maximum weight of the Pauli sum.
+        
+        Returns:
+            The weight as integer.
+        """
+        return self._interface.current_max_weight()
 
     # Getting results
     def overlap_with_zero(self) -> float:

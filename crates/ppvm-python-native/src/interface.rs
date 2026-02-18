@@ -172,6 +172,14 @@ macro_rules! create_interface {
             pub fn terms(&self) -> Vec<(String, f64)> {
                 self.inner.data().iter().map(|(k, v)| (k.to_string(), *v)).collect()
             }
+
+            pub fn weights(&self) -> Vec<(String, usize)> {
+                self.inner.data().iter().map(|(k, _v)| (k.to_string(), k.weight())).collect()
+            }
+
+            pub fn current_max_weight(&self) -> usize {
+                self.inner.data().iter().map(|(k, _v)| k.weight()).max().unwrap_or(0)
+            }
         }
     };
 }

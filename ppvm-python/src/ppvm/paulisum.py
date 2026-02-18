@@ -329,6 +329,10 @@ class PauliSum:
     def rx(self, addr0: int, theta: float) -> None:
         """Apply an RX rotation gate to the specified qubit.
 
+        ```math
+        R_X(\\theta) = e^{-i \\frac{\\theta}{2} X} = \\cos\\frac{\\theta}{2} I - i \\sin\\frac{\\theta}{2} X
+        ```
+
         Args:
             addr0: The index of the target qubit.
             theta: The rotation angle in radians.
@@ -338,6 +342,10 @@ class PauliSum:
     def ry(self, addr0: int, theta: float) -> None:
         """Apply an RY rotation gate to the specified qubit.
 
+        ```math
+        R_Y(\\theta) = e^{-i \\frac{\\theta}{2} Y} = \\cos\\frac{\\theta}{2} I - i \\sin\\frac{\\theta}{2} Y
+        ```
+
         Args:
             addr0: The index of the target qubit.
             theta: The rotation angle in radians.
@@ -346,6 +354,10 @@ class PauliSum:
 
     def rz(self, addr0: int, theta: float) -> None:
         """Apply an RZ rotation gate to the specified qubit.
+
+        ```math
+        R_Z(\\theta) = e^{-i \\frac{\\theta}{2} Z} = \\cos\\frac{\\theta}{2} I - i \\sin\\frac{\\theta}{2} Z
+        ```
 
         Args:
             addr0: The index of the target qubit.
@@ -357,6 +369,10 @@ class PauliSum:
     def rxx(self, addr0: int, addr1: int, theta: float) -> None:
         """Apply an RXX (Ising XX) rotation gate to two qubits.
 
+        ```math
+        R_{XX}(\\theta) = e^{-i \\frac{\\theta}{2} X \\otimes X}
+        ```
+
         Args:
             addr0: The index of the first qubit.
             addr1: The index of the second qubit.
@@ -367,6 +383,10 @@ class PauliSum:
     def ryy(self, addr0: int, addr1: int, theta: float) -> None:
         """Apply an RYY (Ising YY) rotation gate to two qubits.
 
+        ```math
+        R_{YY}(\\theta) = e^{-i \\frac{\\theta}{2} Y \\otimes Y}
+        ```
+
         Args:
             addr0: The index of the first qubit.
             addr1: The index of the second qubit.
@@ -376,6 +396,10 @@ class PauliSum:
 
     def rzz(self, addr0: int, addr1: int, theta: float) -> None:
         """Apply an RZZ (Ising ZZ) rotation gate to two qubits.
+
+        ```math
+        R_{ZZ}(\\theta) = e^{-i \\frac{\\theta}{2} Z \\otimes Z}
+        ```
 
         Args:
             addr0: The index of the first qubit.

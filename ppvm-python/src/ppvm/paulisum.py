@@ -195,7 +195,13 @@ class PauliSum:
         return len(self._interface)
 
     @classmethod
-    def new(cls, n_qubits: int, terms: "str | tuple | list") -> "PauliSum":
+    def new(
+        cls,
+        n_qubits: int,
+        terms: "str | tuple | list",
+        min_abs_coeff: float = 1e-10,
+        max_pauli_weight: "int | None" = None,
+    ) -> "PauliSum":
         """Create a PauliSum from one or more terms with flexible input formats.
 
         Args:
@@ -206,6 +212,10 @@ class PauliSum:
                   at 0-based qubit index i with coefficient 1.0.
                 - A tuple ``(str, float)`` pairing either of the above with an
                   explicit coefficient.
+            min_abs_coeff: Terms with absolute coefficient below this threshold
+                are dropped. Defaults to 1e-10.
+            max_pauli_weight: Maximum number of non-identity Paulis per term.
+                If None, the backend default is used.
 
         Returns:
             A new PauliSum instance.
@@ -242,6 +252,8 @@ class PauliSum:
             n_qubits=n_qubits,
             initial_terms=[s for s, _ in parsed],
             coefficients=[c for _, c in parsed],
+            min_abs_coeff=min_abs_coeff,
+            max_pauli_weight=max_pauli_weight,
         )
 
     def __str__(self) -> str:

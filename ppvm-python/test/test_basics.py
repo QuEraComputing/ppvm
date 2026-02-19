@@ -103,3 +103,7 @@ def test_new():
 
     with pytest.raises(ValueError, match="out of range"):
         PauliSum.new(2, "X2")
+
+    n = 5
+    terms = ["Z0", "Z1Z2"]
+    s = PauliSum.new(n, terms)

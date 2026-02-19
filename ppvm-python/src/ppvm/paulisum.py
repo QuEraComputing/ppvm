@@ -5,7 +5,8 @@ from typing import Sequence, Union
 
 import ppvm_python_native
 
-_COMPACT_RE = re.compile(r'^([IXYZ])(\d+)$')
+_COMPACT_RE = re.compile(r'^([IXYZ]\d+)+$')
+_COMPACT_TOKEN_RE = re.compile(r'([IXYZ])(\d+)')
 
 
 def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, float]":
@@ -14,14 +15,16 @@ def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, f
     else:
         s, coeff = term, 1.0
 
-    m = _COMPACT_RE.match(s)
-    if m:
-        pauli, idx = m.group(1), int(m.group(2))
-        if idx >= n_qubits:
-            raise ValueError(
-                f"Qubit index {idx} out of range for {n_qubits}-qubit system."
-            )
-        s = 'I' * idx + pauli + 'I' * (n_qubits - idx - 1)
+    if _COMPACT_RE.match(s):
+        chars = ['I'] * n_qubits
+        for pauli, idx_str in _COMPACT_TOKEN_RE.findall(s):
+            idx = int(idx_str)
+            if idx >= n_qubits:
+                raise ValueError(
+                    f"Qubit index {idx} out of range for {n_qubits}-qubit system."
+                )
+            chars[idx] = pauli
+        s = ''.join(chars)
 
     return s, coeff
 

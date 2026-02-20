@@ -222,13 +222,14 @@ where
         z_word.phase
     }
 
-    /// Compute the index shift when applying a Z Pauli
-    pub(crate) fn compute_shift_z(&self, addr0: usize) -> I {
+    /// Compute the index shift when applying a Pauli
+    pub(crate) fn compute_shift(&self, addr0: usize, pauli: (bool, bool)) -> I {
         // NOTE: we use LSB ordering
         let mut shift = I::from(0u8);
         let one = I::from(1u8);
+        debug_assert!(pauli.0 || pauli.1); // should never be called on Pauli::I
         for (i, stab) in self.tableau.stabilizers().iter().enumerate() {
-            if stab.word.xbits[addr0] {
+            if (stab.word.xbits[addr0] & pauli.1) ^ (stab.word.zbits[addr0] & pauli.0) {
                 shift |= one << i;
             }
         }
@@ -340,7 +341,7 @@ mod tests {
         tab.tableau.h(0);
         tab.tableau.s(0);
 
-        let shift = tab.compute_shift_z(0);
+        let shift = tab.compute_shift(0, (false, true));
         let decomp = tab.compute_z_decomposition_phase(0);
         let phase0 = decomp + tab.compute_phase_z(0, 0, shift);
         assert_eq!(phase0, 0);
@@ -354,7 +355,7 @@ mod tests {
         tab.tableau.h(0);
         tab.tableau.z(0);
 
-        let shift = tab.compute_shift_z(0);
+        let shift = tab.compute_shift(0, (false, true));
         let decomp = tab.compute_z_decomposition_phase(0);
         let phase0 = decomp + tab.compute_phase_z(0, 0, shift);
         assert_eq!(phase0, 0);
@@ -369,7 +370,7 @@ mod tests {
         tab.tableau.s(0);
         tab.tableau.h(0);
 
-        let shift = tab.compute_shift_z(0);
+        let shift = tab.compute_shift(0, (false, true));
         let decomp = tab.compute_z_decomposition_phase(0);
         let phase0 = (decomp + tab.compute_phase_z(0, 0, shift)) % 4;
         assert_eq!(phase0, 1);

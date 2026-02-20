@@ -70,7 +70,7 @@ where
 
         // evaluate the action of Z on the state
         // i.e. shift + phase
-        let shift = self.compute_shift_z(addr0);
+        let shift = self.compute_shift(addr0, (false, true));
         let mut z_overlap = Complex64::from(0.0);
 
         // TODO: this is O(n^2), but we know the probabilities are always real

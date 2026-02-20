@@ -63,17 +63,11 @@ impl<T: Config> Tableau<T> {
     }
 
     // some helper functions for measurement impl
-    pub(crate) fn find_anticommuting_stabilizer(&self, addr0: usize) -> Option<usize> {
+    pub(crate) fn find_z_anticommuting_stabilizer(&self, addr0: usize) -> Option<usize> {
         // Find first stabilizer that anticommutes with Z_addr0
-        let mut q = None;
-        for (i, stab) in self.stabilizers().iter().enumerate() {
-            if stab.word.xbits[addr0] {
-                // X or Y anticommutes with Z
-                q = Some(i);
-                break;
-            }
-        }
-        q
+        self.stabilizers()
+            .iter()
+            .position(|stab| stab.word.anticommutes_at(addr0, (false, true)))
     }
 
     pub(crate) fn get_deterministic_outcome(&self, addr0: usize) -> bool {

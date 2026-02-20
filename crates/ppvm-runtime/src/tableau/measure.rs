@@ -11,7 +11,7 @@ use std::ops::{BitAnd, BitOrAssign, BitXor, Shl};
 impl<T: Config> Measure for Tableau<T> {
     /// Measure qubit `addr0` in Z basis
     fn measure(&mut self, addr0: usize) -> bool {
-        let q = self.find_anticommuting_stabilizer(addr0);
+        let q = self.find_z_anticommuting_stabilizer(addr0);
         match q {
             Some(q_idx) => {
                 // Case a: random measurement outcome
@@ -123,7 +123,7 @@ where
         let outcome = rand::random::<f64>() < prob_1;
 
         // Now, we may need to update the tableau if Z is not a stabilizer
-        let q = self.tableau.find_anticommuting_stabilizer(addr0);
+        let q = self.tableau.find_z_anticommuting_stabilizer(addr0);
 
         match q {
             Some(q_idx) => {

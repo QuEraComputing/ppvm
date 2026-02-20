@@ -205,9 +205,7 @@ where
         let destabilizers = self.tableau.destabilizers();
 
         for (i, stab) in stabilizers.iter().enumerate() {
-            if !((destabilizers[i].word.xbits[addr0] & pauli_bits.1)
-                ^ (destabilizers[i].word.zbits[addr0] & pauli_bits.0))
-            {
+            if !destabilizers[i].word.anticommutes_at(addr0, pauli_bits) {
                 // commutes
                 continue;
             }
@@ -221,9 +219,7 @@ where
         // NOTE: destabilizers also commute with one another in a valid tableau
         // since the form a basis together with stabilizers
         for (i, destab) in destabilizers.iter().enumerate() {
-            if !((stabilizers[i].word.xbits[addr0] & pauli_bits.1)
-                ^ (stabilizers[i].word.zbits[addr0] & pauli_bits.0))
-            {
+            if !stabilizers[i].word.anticommutes_at(addr0, pauli_bits) {
                 // commutes
                 continue;
             }
@@ -244,7 +240,7 @@ where
         let one = I::from(1u8);
         debug_assert!(pauli.0 || pauli.1); // should never be called on Pauli::I
         for (i, stab) in self.tableau.stabilizers().iter().enumerate() {
-            if (stab.word.xbits[addr0] & pauli.1) ^ (stab.word.zbits[addr0] & pauli.0) {
+            if stab.word.anticommutes_at(addr0, pauli) {
                 shift |= one << i;
             }
         }
@@ -272,7 +268,7 @@ where
                 continue;
             }
 
-            if (destab.word.xbits[addr0] & pauli.1) ^ (destab.word.zbits[addr0] & pauli.0) {
+            if destab.word.anticommutes_at(addr0, pauli) {
                 // We have an xbit set, so we anticommute, leading to a -1 sign
                 phase = (phase + 2) % 4;
             }

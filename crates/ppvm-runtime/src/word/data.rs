@@ -128,6 +128,13 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
         ret
     }
 
+    /// Check if this word anticommutes with a single-qubit Pauli at `addr0`,
+    /// where `pauli = (xbit, zbit)`.
+    #[inline(always)]
+    pub fn anticommutes_at(&self, addr0: usize, pauli: (bool, bool)) -> bool {
+        (self.xbits[addr0] & pauli.1) ^ (self.zbits[addr0] & pauli.0)
+    }
+
     #[inline(always)]
     pub fn is(&self, index: usize, pauli: Pauli) -> bool {
         if index >= self.nqubits {

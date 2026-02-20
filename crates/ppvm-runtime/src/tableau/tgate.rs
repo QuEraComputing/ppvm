@@ -114,7 +114,8 @@ where
 
             // get the phase contributions from duplicate destabilizers
             // and anti-commuting through destabilizers
-            let branch_phase_contribution = self.compute_phase_z(addr0, idx, index_shift);
+            let branch_phase_contribution =
+                self.compute_phase(addr0, (false, true), idx, index_shift);
             let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
 
             let phase_factor: Complex<T::Coeff> =

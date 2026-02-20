@@ -91,7 +91,7 @@ where
         // NOTE: this could probably be optimized
         for (&idx, coeff) in &coeff_map {
             let branch_index = idx ^ shift;
-            let phase = (phase_decomp + self.compute_phase_z(addr0, idx, shift)) % 4;
+            let phase = (phase_decomp + self.compute_phase(addr0, (false, true), idx, shift)) % 4;
             let complex_phase: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase as usize].into();
             let coeff_branch = coeff_map
                 .get(&branch_index)

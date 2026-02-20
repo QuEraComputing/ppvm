@@ -2,6 +2,7 @@ use super::sparsevec::SparseVector;
 use super::traits::TGate;
 use crate::config::Config;
 use crate::tableau::GeneralizedTableau;
+use crate::traits::Coefficient;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, Zero};
 use std::collections::HashMap;
@@ -24,7 +25,7 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64 { re: 0.0, im: -1.0 }, // -i
 ];
 
-impl<T, I, C> TGate for GeneralizedTableau<T, I, C>
+impl<T, I, C> TGate<T> for GeneralizedTableau<T, I, C>
 where
     T: Config,
     C: SparseVector<Complex<T::Coeff>, I>,
@@ -69,6 +70,35 @@ where
             ISIN_PI_OVER_8_TIMES_EXPIPI8.into()
         };
 
+        self.branch_z_with_coefficients(addr0, complex_cos, complex_sin);
+    }
+
+    fn rz(&mut self, addr0: usize, theta: T::Coeff) {
+        let (cos, sin) = theta.sin_cos();
+
+        let complex_cos: Complex<T::Coeff> = Complex {
+            re: cos,
+            im: T::Coeff::zero(),
+        };
+
+        let i_complex_sin: Complex<T::Coeff> = Complex {
+            re: T::Coeff::zero(),
+            im: -sin,
+        };
+
+        self.branch_z_with_coefficients(addr0, complex_cos, i_complex_sin);
+    }
+
+    fn branch_z_with_coefficients(
+        &mut self,
+        addr0: usize,
+        complex_cos: Complex<T::Coeff>,
+        complex_sin: Complex<T::Coeff>,
+    ) {
+        if self.is_lost[addr0] {
+            return;
+        }
+
         let index_shift = self.compute_shift_z(addr0);
         let phase_decomp = self.compute_z_decomposition_phase(addr0);
 
@@ -87,12 +117,13 @@ where
             let branch_phase_contribution = self.compute_phase_z(addr0, idx, index_shift);
             let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
 
-            let mut phase_factor: Complex<T::Coeff> =
+            let phase_factor: Complex<T::Coeff> =
                 COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
 
-            if adjoint {
-                phase_factor.im = -phase_factor.im;
-            }
+            // TODO: check if we need the commented out below; isn't this accounted for by the coefficient already?
+            // if adjoint {
+            //     phase_factor.im = -phase_factor.im;
+            // }
 
             let branch_coefficient = phase_factor * coeff.clone() * complex_sin.clone();
             let nonbranch_coefficient = coeff * complex_cos.clone();

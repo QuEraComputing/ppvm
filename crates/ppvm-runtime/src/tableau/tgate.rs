@@ -100,7 +100,7 @@ where
         }
 
         let index_shift = self.compute_shift(addr0, (false, true));
-        let phase_decomp = self.compute_z_decomposition_phase(addr0);
+        let phase_decomp = self.compute_decomposition_phase(addr0, crate::char::Pauli::Z);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();

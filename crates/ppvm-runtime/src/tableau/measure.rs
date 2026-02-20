@@ -77,7 +77,7 @@ where
         // however, whether the decomposition phase is imaginary or not tells us
         // whether we need to pick the real or imaginary part of the overlap
         // we still might be able to optimize here
-        let phase_decomp = self.compute_z_decomposition_phase(addr0);
+        let phase_decomp = self.compute_decomposition_phase(addr0, crate::char::Pauli::Z);
 
         // build a temporary lookup table for faster lookup in the loop
         let coeff_map: HashMap<I, Complex<T::Coeff>> = self

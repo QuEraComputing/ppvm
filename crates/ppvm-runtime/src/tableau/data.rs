@@ -4,8 +4,8 @@ use std::{
 };
 
 use super::sparsevec::SparseVector;
-use crate::config::Config;
 use crate::phase::PhasedPauliWord;
+use crate::{char::Pauli, config::Config};
 use num::{
     One, Zero,
     complex::{Complex, Complex64},
@@ -181,45 +181,60 @@ where
 
     // helper functions
 
-    pub(crate) fn compute_z_decomposition_phase(&self, addr0: usize) -> u8 {
+    pub(crate) fn compute_decomposition_phase(&self, addr0: usize, pauli: Pauli) -> u8 {
         // NOTE: this is O(n ^ 2); can we improve it since we only need the phase?
 
-        // Z_addr0 = phase * prod(d_k ^ gamma_k) * prod(s_l ^ lambda_l)
-        // where: gamma_k == 1 iff {Z_addr0, s_k} = 0
-        // lambda_l == 1 iff {Z_addr0, d_l} = 0
+        // P_addr0 = phase * prod(d_k ^ gamma_k) * prod(s_l ^ lambda_l)
+        // where: gamma_k == 1 iff {P_addr0, s_k} = 0
+        // lambda_l == 1 iff {P_addr0, d_l} = 0
         // Lemma 5. from T. J. Yoder (2012)
         // now, we just need to invert the expression to compute the phase
         let n = self.n_qubits();
-        let mut z_word = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(n);
-        z_word.set(addr0, crate::char::Pauli::Z);
+        let mut p_word = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(n);
+        p_word.set(addr0, pauli);
+
+        debug_assert_ne!(pauli, Pauli::I);
+        let pauli_bits = match pauli {
+            Pauli::I => (false, false),
+            Pauli::X => (true, false),
+            Pauli::Y => (true, true),
+            Pauli::Z => (false, true),
+        };
 
         let stabilizers = self.tableau.stabilizers();
         let destabilizers = self.tableau.destabilizers();
 
         for (i, stab) in stabilizers.iter().enumerate() {
-            if !destabilizers[i].word.xbits[addr0] {
+            if !((destabilizers[i].word.xbits[addr0] & pauli_bits.1)
+                ^ (destabilizers[i].word.zbits[addr0] & pauli_bits.0))
+            {
+                // commutes
                 continue;
             }
+
             // destabilizer anti-commutes, so the stabilizer contributes
             let mut stab_inv = stab.clone();
             stab_inv.phase = (4 - stab.phase) % 4;
-            z_word *= stab_inv;
+            p_word *= stab_inv;
         }
 
         // NOTE: destabilizers also commute with one another in a valid tableau
         // since the form a basis together with stabilizers
         for (i, destab) in destabilizers.iter().enumerate() {
-            if !stabilizers[i].word.xbits[addr0] {
+            if !((stabilizers[i].word.xbits[addr0] & pauli_bits.1)
+                ^ (stabilizers[i].word.zbits[addr0] & pauli_bits.0))
+            {
+                // commutes
                 continue;
             }
 
             // stabilizer anti-commutes, so the destabilizer contributes
             let mut destab_inv = destab.clone();
             destab_inv.phase = (4 - destab.phase) % 4;
-            z_word *= destab_inv;
+            p_word *= destab_inv;
         }
 
-        z_word.phase
+        p_word.phase
     }
 
     /// Compute the index shift when applying a Pauli
@@ -329,9 +344,9 @@ mod tests {
         // After H: stabilizer = +X, destabilizer = +Z
         // shift = 1 (stabilizer has xbit[0]=true)
         // both phases should be 0
-        let phase0 = tab.compute_z_decomposition_phase(0) + tab.compute_phase_z(0, 0, 1);
+        let phase0 = tab.compute_decomposition_phase(0, Pauli::Z) + tab.compute_phase_z(0, 0, 1);
         assert_eq!(phase0, 0);
-        let phase1 = tab.compute_z_decomposition_phase(0) + tab.compute_phase_z(0, 1, 1);
+        let phase1 = tab.compute_decomposition_phase(0, Pauli::Z) + tab.compute_phase_z(0, 1, 1);
         assert_eq!(phase1, 0);
     }
 
@@ -342,7 +357,7 @@ mod tests {
         tab.tableau.s(0);
 
         let shift = tab.compute_shift(0, (false, true));
-        let decomp = tab.compute_z_decomposition_phase(0);
+        let decomp = tab.compute_decomposition_phase(0, Pauli::Z);
         let phase0 = decomp + tab.compute_phase_z(0, 0, shift);
         assert_eq!(phase0, 0);
         let phase1 = decomp + tab.compute_phase_z(0, 1, shift);
@@ -356,7 +371,7 @@ mod tests {
         tab.tableau.z(0);
 
         let shift = tab.compute_shift(0, (false, true));
-        let decomp = tab.compute_z_decomposition_phase(0);
+        let decomp = tab.compute_decomposition_phase(0, Pauli::Z);
         let phase0 = decomp + tab.compute_phase_z(0, 0, shift);
         assert_eq!(phase0, 0);
         let phase1 = decomp + tab.compute_phase_z(0, 1, shift);
@@ -371,7 +386,7 @@ mod tests {
         tab.tableau.h(0);
 
         let shift = tab.compute_shift(0, (false, true));
-        let decomp = tab.compute_z_decomposition_phase(0);
+        let decomp = tab.compute_decomposition_phase(0, Pauli::Z);
         let phase0 = (decomp + tab.compute_phase_z(0, 0, shift)) % 4;
         assert_eq!(phase0, 1);
         let phase1 = (decomp + tab.compute_phase_z(0, 1, shift)) % 4;

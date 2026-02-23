@@ -106,4 +106,36 @@ mod tests {
 
         assert!(!tab.measure(0));
     }
+
+    #[test]
+    fn test_two_qubit_case() {
+        let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-10);
+        tab.rx(0, PI);
+
+        assert_eq!(tab.coefficients.len(), 1);
+
+        assert!(!tab.measure(1));
+        assert!(tab.measure(0));
+
+        tab.rx(1, PI);
+
+        assert_eq!(tab.coefficients.len(), 1);
+
+        assert!(tab.measure(1));
+        assert!(tab.measure(0));
+
+        tab.rx(0, PI);
+
+        assert_eq!(tab.coefficients.len(), 1);
+
+        assert!(tab.measure(1));
+        assert!(!tab.measure(0));
+
+        tab.rx(1, PI);
+
+        assert_eq!(tab.coefficients.len(), 1);
+
+        assert!(!tab.measure(1));
+        assert!(!tab.measure(0));
+    }
 }

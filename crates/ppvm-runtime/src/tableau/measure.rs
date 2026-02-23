@@ -117,22 +117,18 @@ where
         // Now, we may need to update the tableau if Z is not a stabilizer
         let q = self.tableau.find_z_anticommuting_stabilizer(addr0);
 
-        match q {
-            Some(q_idx) => {
-                // Case a: Z is not a stabilizer
-                // tableau needs to be updated
-                self.tableau
-                    .update_tableau_according_to_outcome(addr0, q_idx, outcome);
-            }
+        if let Some(q_idx) = q {
+            // Case a: Z is not a stabilizer — update the tableau first.
+            self.tableau
+                .update_tableau_according_to_outcome(addr0, q_idx, outcome);
+        }
 
-            None => {
-                // Case b: tableau does not change since Z is a stabilizer; no-op
-                // NOTE: the outcome here may still be random and need not match
-                // the deterministic outcome from the tableau
-            }
-        };
-
-        self.trim_coefficients_for_measurement(addr0);
+        // After the tableau update (or if it was already a stabilizer), the reference state
+        // has a definite Z eigenvalue at addr0. We keep the coefficient branches that land in
+        // the measured eigenspace: a branch D^α flips the eigenvalue iff it anticommutes with Z,
+        // so we keep branches where (stab_z_phase XOR phase) == outcome, i.e. phase == (stab_z_phase XOR outcome).
+        let stab_z_phase = self.tableau.get_deterministic_outcome(addr0);
+        self.trim_coefficients_for_measurement(addr0, stab_z_phase ^ outcome);
 
         outcome
     }

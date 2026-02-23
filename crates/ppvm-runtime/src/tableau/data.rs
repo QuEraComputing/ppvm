@@ -291,10 +291,16 @@ where
         phase
     }
 
-    /// Keep only coefficients that correspond to the correct eigenvalue of
-    /// a Z measurement
-    /// NOTE: this is called AFTER the tableau has been updated
-    pub(crate) fn trim_coefficients_for_measurement(&mut self, addr0: usize) {
+    /// Keep only coefficients that correspond to the correct eigenvalue of a Z measurement.
+    ///
+    /// `outcome` controls which eigenspace to project onto:
+    /// - `false` (outcome 0): keep terms where `phase == false` (commutes with Z, +1 eigenspace).
+    ///   Use this when the tableau has already been updated to ±Z, because the new reference
+    ///   state is already the correct eigenstate — `!phase` is always right in that frame.
+    /// - `true` (outcome 1): keep terms where `phase == true` (anticommutes with Z, -1 eigenspace).
+    ///   Use this when the tableau was *not* updated, so the reference state is unchanged and
+    ///   we must explicitly select the -1 eigenspace.
+    pub(crate) fn trim_coefficients_for_measurement(&mut self, addr0: usize, outcome: bool) {
         // TODO: more efficient update of coefficients in-place
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         let destabilizers = self.tableau.destabilizers();
@@ -302,7 +308,7 @@ where
         let one = I::from(1u8);
         let zero = I::from(0u8);
         for (coeff, alpha) in old_coefficients.into_iter() {
-            let mut phase = false; // false: 1, true: -1
+            let mut phase = false; // false: +1 eigenspace of Z, true: -1 eigenspace
 
             // get the phase from the anti-commutation with the product over all destabilizers
             for i in 0..n {
@@ -313,12 +319,7 @@ where
                 phase ^= destabilizers[i].word.xbits[addr0];
             }
 
-            // NOTE: if the term accumulates a phase, then the projector
-            // (I + P) |b_alpha> ~ (I - P) |psi_s>, where P is +Z or -Z
-            // since P is a stabilizer in the updated tableau, any term
-            // where a negative phase is accumulated zeros out
-            if !phase {
-                // keep term
+            if phase == outcome {
                 self.coefficients.add_or_insert(alpha, coeff);
             }
         }

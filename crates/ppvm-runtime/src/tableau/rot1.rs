@@ -41,7 +41,7 @@ mod tests {
     use super::*;
     use crate::config::fxhash::ByteF64;
     use crate::tableau::Measure;
-    use std::f64::consts::PI;
+    use std::f64::consts::{FRAC_PI_2, PI};
 
     type TestConfig = ByteF64<1>;
     type TestTableau = GeneralizedTableau<TestConfig>;
@@ -50,10 +50,60 @@ mod tests {
     #[test]
     fn test_rx_pi_flips_zero_to_one() {
         let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
-        println!("{}", tab);
         tab.rx(0, PI);
-        println!("{}", tab);
+
+        // make sure we don't branch
+        assert_eq!(tab.coefficients.len(), 1);
+
         let result = tab.measure(0);
         assert!(result, "Expected to measure 1, got {}", result);
+    }
+
+    #[test]
+    fn test_ry_pi_flips_zero_to_one() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.ry(0, PI);
+        // make sure we don't branch
+        assert_eq!(tab.coefficients.len(), 1);
+        let result = tab.measure(0);
+        assert!(result, "Expected to measure 1, got {}", result);
+    }
+
+    #[test]
+    fn test_rz_leaves_zero_invariant() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.rz(0, 0.123);
+        // make sure we don't branch
+        assert_eq!(tab.coefficients.len(), 1);
+        let result = tab.measure(0);
+        assert!(!result, "Expected to measure 0, got {}", result);
+    }
+
+    #[test]
+    fn test_rx_pi_2_statistics() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.rx(0, FRAC_PI_2);
+        // make sure we branch
+        assert_eq!(tab.coefficients.len(), 2);
+
+        let trials = 100;
+        let mut count_one = 0;
+        for _ in 0..trials {
+            let mut tmp_tab = tab.clone();
+            let result = tmp_tab.measure(0);
+            count_one += result as u8;
+        }
+        println!("{}", count_one);
+        assert!(35 < count_one && count_one < 65);
+    }
+
+    #[test]
+    fn test_ry_round_trip() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-10);
+        tab.ry(0, 2.0 * PI);
+
+        assert_eq!(tab.coefficients.len(), 1);
+
+        assert!(!tab.measure(0));
     }
 }

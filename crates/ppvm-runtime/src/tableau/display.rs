@@ -2,9 +2,10 @@ use super::GeneralizedTableau;
 use super::Tableau;
 use super::sparsevec::SparseVector;
 use crate::config::Config;
+use crate::tableau::traits::TableauIndex;
 use num::complex::Complex;
 use std::fmt::Display;
-use std::ops::{BitAnd, BitOrAssign, Shl};
+use std::ops::{BitAnd, Shl};
 
 impl<T: Config> Display for Tableau<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -27,13 +28,7 @@ impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> Display for Generalize
 where
     Complex<T::Coeff>: Display,
     <T as Config>::Coeff: num::Num,
-    I: PartialEq
-        + Copy
-        + From<u8>
-        + Shl<usize>
-        + BitOrAssign<<I as Shl<usize>>::Output>
-        + BitAnd<<I as Shl<usize>>::Output, Output = I>
-        + Display,
+    I: TableauIndex + Display,
     <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

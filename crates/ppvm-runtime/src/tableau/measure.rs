@@ -2,11 +2,11 @@ use super::data::{GeneralizedTableau, Tableau};
 use super::traits::Measure;
 use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
+use crate::tableau::traits::TableauIndex;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 use std::collections::HashMap;
-use std::hash::Hash;
-use std::ops::{BitAnd, BitOrAssign, BitXor, Shl};
+use std::ops::{BitAnd, Shl};
 
 impl<T: Config> Measure for Tableau<T> {
     /// Measure qubit `addr0` in Z basis
@@ -51,15 +51,7 @@ where
         + std::ops::AddAssign
         + One
         + ComplexFloat,
-    I: PartialEq
-        + Eq
-        + Hash
-        + Copy
-        + From<u8>
-        + Shl<usize>
-        + BitOrAssign<<I as Shl<usize>>::Output>
-        + BitAnd<<I as Shl<usize>>::Output, Output = I>
-        + BitXor<Output = I>,
+    I: TableauIndex,
     <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     fn measure(&mut self, addr0: usize) -> bool {

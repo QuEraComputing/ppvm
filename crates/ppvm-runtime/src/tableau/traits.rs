@@ -1,5 +1,7 @@
 use crate::config::Config;
 use crate::traits::Clifford;
+use std::hash::Hash;
+use std::ops::{BitAnd, BitOrAssign, BitXor, Shl};
 
 pub trait TGate<T: Config> {
     fn t(&mut self, addr0: usize);
@@ -35,4 +37,30 @@ pub trait CliffordExtensions: Clifford {
         self.sqrt_x_adj(addr0);
         self.s(addr0);
     }
+}
+
+pub trait TableauIndex:
+    PartialEq
+    + Eq
+    + Hash
+    + Copy
+    + From<u8>
+    + Shl<usize>
+    + BitOrAssign<<Self as Shl<usize>>::Output>
+    + BitAnd<<Self as Shl<usize>>::Output, Output = Self>
+    + BitXor<Output = Self>
+{
+}
+
+impl<I> TableauIndex for I where
+    I: PartialEq
+        + Eq
+        + Hash
+        + Copy
+        + From<u8>
+        + Shl<usize>
+        + BitOrAssign<<I as Shl<usize>>::Output>
+        + BitAnd<<I as Shl<usize>>::Output, Output = I>
+        + BitXor<Output = I>
+{
 }

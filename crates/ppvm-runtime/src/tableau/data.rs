@@ -1,13 +1,13 @@
 use std::{
     collections::HashMap,
-    hash::Hash,
+    fmt::Debug,
     marker::PhantomData,
-    ops::{BitAnd, BitOrAssign, BitXor, Shl},
+    ops::{BitAnd, Shl},
 };
 
 use super::sparsevec::SparseVector;
-use crate::phase::PhasedPauliWord;
 use crate::{char::Pauli, config::Config};
+use crate::{phase::PhasedPauliWord, tableau::traits::TableauIndex};
 use num::{
     One, Zero,
     complex::{Complex, Complex64, ComplexFloat},
@@ -158,15 +158,7 @@ where
         + std::ops::AddAssign
         + From<Complex64>
         + ComplexFloat,
-    I: PartialEq
-        + Eq
-        + Hash
-        + Copy
-        + From<u8>
-        + Shl<usize>
-        + BitOrAssign<<I as Shl<usize>>::Output>
-        + BitAnd<<I as Shl<usize>>::Output, Output = I>
-        + BitXor<Output = I>,
+    I: TableauIndex,
     <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     pub fn new(n_qubits: usize, coefficient_threshold: T::Coeff) -> Self {

@@ -1,6 +1,8 @@
 use std::{
+    collections::HashMap,
+    hash::Hash,
     marker::PhantomData,
-    ops::{BitAnd, BitOrAssign, Shl},
+    ops::{BitAnd, BitOrAssign, BitXor, Shl},
 };
 
 use super::sparsevec::SparseVector;
@@ -8,7 +10,7 @@ use crate::phase::PhasedPauliWord;
 use crate::{char::Pauli, config::Config};
 use num::{
     One, Zero,
-    complex::{Complex, Complex64},
+    complex::{Complex, Complex64, ComplexFloat},
 };
 
 #[derive(Clone, Debug)]
@@ -128,6 +130,13 @@ impl<T: Config> Tableau<T> {
     }
 }
 
+const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
+    Complex64 { re: 1.0, im: 0.0 },  // +1
+    Complex64 { re: 0.0, im: 1.0 },  // +i
+    Complex64 { re: -1.0, im: 0.0 }, // -1
+    Complex64 { re: 0.0, im: -1.0 }, // -i
+];
+
 // TODO: builder
 #[derive(Clone)]
 pub struct GeneralizedTableau<
@@ -145,12 +154,19 @@ pub struct GeneralizedTableau<
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
 where
     T::Coeff: One + Zero + Clone,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + std::ops::AddAssign
+        + From<Complex64>
+        + ComplexFloat,
     I: PartialEq
+        + Eq
+        + Hash
         + Copy
         + From<u8>
         + Shl<usize>
         + BitOrAssign<<I as Shl<usize>>::Output>
-        + BitAnd<<I as Shl<usize>>::Output, Output = I>,
+        + BitAnd<<I as Shl<usize>>::Output, Output = I>
+        + BitXor<Output = I>,
     <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     pub fn new(n_qubits: usize, coefficient_threshold: T::Coeff) -> Self {
@@ -317,6 +333,66 @@ where
 
         // renormalize
         self.coefficients.normalize();
+    }
+
+    pub(crate) fn branch_with_coefficients(
+        &mut self,
+        addr0: usize,
+        pauli: Pauli,
+        coefficient_factor: Complex<T::Coeff>,
+        branch_factor: Complex<T::Coeff>,
+    ) {
+        if self.is_lost[addr0] {
+            return;
+        }
+
+        let pauli_booleans = match pauli {
+            Pauli::I => (false, false),
+            Pauli::X => (true, false),
+            Pauli::Y => (true, true),
+            Pauli::Z => (false, true),
+        };
+
+        let index_shift = self.compute_shift(addr0, pauli_booleans);
+        let phase_decomp = self.compute_decomposition_phase(addr0, pauli);
+
+        let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
+        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
+        for (coeff, idx) in old_coefficients.into_iter() {
+            debug_assert!(
+                !(coeff.re == T::Coeff::zero() && coeff.im == T::Coeff::zero()),
+                "Coefficient should not be zero"
+            );
+
+            let branch_index = idx ^ index_shift;
+
+            // get the phase contributions from duplicate destabilizers
+            // and anti-commuting through destabilizers
+            let branch_phase_contribution =
+                self.compute_phase(addr0, pauli_booleans, idx, index_shift);
+            let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
+
+            let phase_factor: Complex<T::Coeff> =
+                COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
+
+            let branch_coefficient = phase_factor * coeff.clone() * branch_factor.clone();
+            let nonbranch_coefficient = coeff * coefficient_factor.clone();
+
+            *new_coefficients
+                .entry(branch_index)
+                .or_insert(Complex::zero()) += branch_coefficient;
+            *new_coefficients.entry(idx).or_insert(Complex::zero()) += nonbranch_coefficient;
+        }
+
+        let cutoff = Complex {
+            re: self.coefficient_threshold.clone(),
+            im: T::Coeff::zero(),
+        };
+        for (idx, coeff) in new_coefficients {
+            if coeff.abs() > cutoff.abs() {
+                self.coefficients.unsafe_insert(idx, coeff);
+            }
+        }
     }
 }
 

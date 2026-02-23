@@ -37,7 +37,7 @@ where
     <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Generalized Tableau ({} qubits):", self.n_qubits())?;
+        writeln!(f, "Generalized Tableau ({} qubits):", self.tableau.n_qubits)?;
         writeln!(f, "  Tableau:")?;
         writeln!(f, "{}", self.tableau)?;
         writeln!(f, "  Coefficients:")?;

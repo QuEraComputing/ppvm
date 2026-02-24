@@ -105,7 +105,11 @@ mod tests {
     fn test_rxx_half_pi_branches() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.rxx(0, 1, FRAC_PI_2);
-        assert_eq!(tab.coefficients.len(), 2, "rxx(π/2) should create 2 branches");
+        assert_eq!(
+            tab.coefficients.len(),
+            2,
+            "rxx(π/2) should create 2 branches"
+        );
     }
 
     /// Two rxx(π/2) compose to rxx(π): |00⟩ → -i|11⟩ (deterministic).
@@ -136,7 +140,11 @@ mod tests {
     fn test_ryy_half_pi_branches() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.ryy(0, 1, FRAC_PI_2);
-        assert_eq!(tab.coefficients.len(), 2, "ryy(π/2) should create 2 branches");
+        assert_eq!(
+            tab.coefficients.len(),
+            2,
+            "ryy(π/2) should create 2 branches"
+        );
     }
 
     /// Two ryy(π/2) compose to ryy(π): |00⟩ → i|11⟩ (deterministic).
@@ -157,7 +165,11 @@ mod tests {
     fn test_rzz_pi_leaves_00() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.rzz(0, 1, PI);
-        assert_eq!(tab.coefficients.len(), 1, "rzz(π) on |00⟩ should not branch");
+        assert_eq!(
+            tab.coefficients.len(),
+            1,
+            "rzz(π) on |00⟩ should not branch"
+        );
         assert!(!tab.measure(0));
         assert!(!tab.measure(1));
     }
@@ -180,7 +192,11 @@ mod tests {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.x(0);
         tab.rzz(0, 1, PI);
-        assert_eq!(tab.coefficients.len(), 1, "rzz(π) on |10⟩ should not branch");
+        assert_eq!(
+            tab.coefficients.len(),
+            1,
+            "rzz(π) on |10⟩ should not branch"
+        );
         assert!(tab.measure(0));
         assert!(!tab.measure(1));
     }
@@ -193,10 +209,17 @@ mod tests {
     fn test_rxx_half_pi_correlated_measurements() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.rxx(0, 1, FRAC_PI_2);
-        assert_eq!(tab.coefficients.len(), 2, "rxx(π/2) should create 2 branches");
+        assert_eq!(
+            tab.coefficients.len(),
+            2,
+            "rxx(π/2) should create 2 branches"
+        );
         let r0 = tab.measure(0);
         let r1 = tab.measure(1);
-        assert_eq!(r0, r1, "rxx(π/2)|00⟩ = (|00⟩-i|11⟩)/√2: measurements must agree");
+        assert_eq!(
+            r0, r1,
+            "rxx(π/2)|00⟩ = (|00⟩-i|11⟩)/√2: measurements must agree"
+        );
     }
 
     /// rxx(π/2)|10⟩ = (|10⟩ - i|01⟩)/√2: XX connects |10⟩↔|01⟩, so the two
@@ -206,10 +229,17 @@ mod tests {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.x(0);
         tab.rxx(0, 1, FRAC_PI_2);
-        assert_eq!(tab.coefficients.len(), 2, "rxx(π/2) on |10⟩ should create 2 branches");
+        assert_eq!(
+            tab.coefficients.len(),
+            2,
+            "rxx(π/2) on |10⟩ should create 2 branches"
+        );
         let r0 = tab.measure(0);
         let r1 = tab.measure(1);
-        assert_ne!(r0, r1, "rxx(π/2)|10⟩ = (|10⟩-i|01⟩)/√2: measurements must differ");
+        assert_ne!(
+            r0, r1,
+            "rxx(π/2)|10⟩ = (|10⟩-i|01⟩)/√2: measurements must differ"
+        );
     }
 
     /// ryy(π/2)|00⟩ = (|00⟩ + i|11⟩)/√2: YY|00⟩ = -|11⟩, so ryy(π/2) only
@@ -218,10 +248,17 @@ mod tests {
     fn test_ryy_half_pi_correlated_measurements() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.ryy(0, 1, FRAC_PI_2);
-        assert_eq!(tab.coefficients.len(), 2, "ryy(π/2) should create 2 branches");
+        assert_eq!(
+            tab.coefficients.len(),
+            2,
+            "ryy(π/2) should create 2 branches"
+        );
         let r0 = tab.measure(0);
         let r1 = tab.measure(1);
-        assert_eq!(r0, r1, "ryy(π/2)|00⟩ = (|00⟩+i|11⟩)/√2: measurements must agree");
+        assert_eq!(
+            r0, r1,
+            "ryy(π/2)|00⟩ = (|00⟩+i|11⟩)/√2: measurements must agree"
+        );
     }
 
     /// H·rzz(π/2)·H on both qubits equals rxx(π/2) (since H·Z·H = X).

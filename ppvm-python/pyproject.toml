@@ -1,0 +1,28 @@
+[project]
+name = "ppvm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "David Plankensteiner", email = "dplankensteiner@quera.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "ppvm-python-native",
+]
+
+[project.scripts]
+ppvm = "ppvm:main"
+
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+ppvm-python-native = { path = "../crates/ppvm-python-native" }
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+]

@@ -387,6 +387,64 @@ where
             }
         }
     }
+
+    pub(crate) fn compute_coefficients_after_pauli_apply(
+        &self,
+        coefficients: &mut C,
+        addr0: usize,
+        pauli: Pauli,
+    ) {
+        if self.is_lost[addr0] {
+            return;
+        }
+
+        let pauli_booleans = match pauli {
+            Pauli::I => (false, false),
+            Pauli::X => (true, false),
+            Pauli::Y => (true, true),
+            Pauli::Z => (false, true),
+        };
+
+        let index_shift = self.compute_shift(addr0, pauli_booleans);
+        let phase_decomp = self.compute_decomposition_phase(addr0, pauli);
+
+        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
+        let old_coefficients = std::mem::replace(coefficients, C::new());
+        for (coeff, idx) in old_coefficients.into_iter() {
+            debug_assert!(
+                !(coeff.re == T::Coeff::zero() && coeff.im == T::Coeff::zero()),
+                "Coefficient should not be zero"
+            );
+
+            let branch_index = idx ^ index_shift;
+
+            // get the phase contributions from duplicate destabilizers
+            // and anti-commuting through destabilizers
+            let branch_phase_contribution =
+                self.compute_phase(addr0, pauli_booleans, idx, index_shift);
+            let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
+
+            let phase_factor: Complex<T::Coeff> =
+                COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
+
+            let branch_coefficient = phase_factor * coeff.clone();
+
+            *new_coefficients
+                .entry(branch_index)
+                .or_insert(Complex::zero()) += branch_coefficient;
+        }
+
+        let cutoff = Complex {
+            re: self.coefficient_threshold.clone(),
+            im: T::Coeff::zero(),
+        };
+
+        for (idx, coeff) in new_coefficients {
+            if coeff.abs() > cutoff.abs() {
+                coefficients.unsafe_insert(idx, coeff);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

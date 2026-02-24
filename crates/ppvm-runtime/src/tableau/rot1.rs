@@ -20,6 +20,9 @@ where
         + ComplexFloat,
 {
     fn rotate_1(&mut self, axis: Pauli, addr0: usize, theta: <T as Config>::Coeff) {
+        if self.is_lost[addr0] {
+            return;
+        }
         let (sin, cos) = (theta * 0.5.into()).sin_cos();
 
         let complex_cos: Complex<T::Coeff> = Complex {

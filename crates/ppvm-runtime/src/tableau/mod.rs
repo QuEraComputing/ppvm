@@ -3,6 +3,7 @@ mod data;
 mod display;
 mod measure;
 mod rot1;
+mod rot2;
 mod sparsevec;
 mod tgate;
 mod traits;

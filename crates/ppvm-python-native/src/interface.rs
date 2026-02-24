@@ -3,9 +3,27 @@ use ppvm_runtime::prelude::*;
 use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
 use pyo3::prelude::*;
 
+macro_rules! create_interface_loss_methods {
+    ($name: ident, $type: ident, false) => {};
+    ($name: ident, $type: ident, true) => {
+        #[pymethods]
+        impl $name {
+            pub fn loss_channel(&mut self, addr0: usize, p: f64) {
+                self.inner.loss_channel(addr0, p);
+                self.inner.truncate();
+            }
+
+            pub fn reset_loss_channel(&mut self, addr0: usize) {
+                self.inner.reset_loss_channel(addr0);
+                self.inner.truncate();
+            }
+        }
+    };
+}
+
 // adapted from https://pyo3.rs/v0.27.1/class.html#no-generic-parameters
 macro_rules! create_interface {
-    ($name: ident, $type: ident) => {
+    ($name: ident, $type: ident, $loss: tt) => {
         #[pyclass]
         pub struct $name {
             inner: PauliSum<$type>,
@@ -25,7 +43,7 @@ macro_rules! create_interface {
                 // TODO: this is not ideal since we could skip one of the strategies completely; need to look into
                 // how we can do this in the macro here
                 let strategy = CombinedStrategy(CoefficientThreshold(min_abs_coeff), MaxPauliWeight(max_pauli_weight));
-                let mut ps = PauliSum::builder()
+                let mut ps = PauliSum::<$type>::builder()
                     .n_qubits(n_qubits)
                     .strategy(strategy)
                     .capacity(n_qubits)
@@ -185,22 +203,55 @@ macro_rules! create_interface {
                 self.inner.data().iter().map(|(k, _v)| k.weight()).max().unwrap_or(0)
             }
         }
+
+        create_interface_loss_methods!($name, $type, $loss);
     };
 }
 
 macro_rules! create_interface_range {
-    ($name: ident, $( $n: expr),* ) => {
+    ($name: ident, false, $( $n: expr),* ) => {
         paste! {
         $(
             type [<$name$n>] = config::indexmap::ByteFxHashF64<{(2 as usize).pow($n)}, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
-            create_interface!([<PauliSum$name$n>], [<$name$n>]);
+            create_interface!([<PauliSum$name$n>], [<$name$n>], false);
         )*
-        }
+    }
+    };
+
+    ($name: ident, true, $( $n: expr),* ) => {
+        paste! {
+        $(
+            type [<Loss$name$n>] = config::indexmap::ByteFxHashF64<{(2 as usize).pow($n)}, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>, LossyPauliWord<[u8; {(2 as usize).pow($n)}]>>;
+            create_interface!([<PauliSumLoss$name$n>], [<Loss$name$n>], true);
+        )*
+    }
     };
 }
 
 create_interface_range!(
     IndexMapFxHash,
+    false,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+);
+
+create_interface_range!(
+    IndexMapFxHashLoss,
+    true,
     0,
     1,
     2,

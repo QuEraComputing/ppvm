@@ -11,4 +11,4 @@ crate-type = ["cdylib"]
 [dependencies]
 paste = "1.0.15"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
-pyo3 = "0.27.0"
+pyo3 = { version = "0.27.0", features = ["multiple-pymethods"] }

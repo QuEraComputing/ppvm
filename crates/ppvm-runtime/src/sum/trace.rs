@@ -2,7 +2,6 @@ use crate::{
     config::Config,
     sum::PauliSum,
     traits::{ACMapIter, Trace},
-    word::PauliWord,
 };
 use num::Zero;
 
@@ -23,8 +22,8 @@ where
 
 impl<T: Config> PauliSum<T>
 where
-    for<'a> T::Map: ACMapIter<'a, Item = (&'a PauliWord<T::Storage, T::BuildHasher>, &'a T::Coeff)>,
-    for<'a> T::Map: Trace<'a, PauliWord<T::Storage, T::BuildHasher>, Output = T::Coeff>,
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    for<'a> T::Map: Trace<'a, T::PauliWordType, Output = T::Coeff>,
     T::Coeff: std::iter::Sum + Copy + std::ops::Mul<Output = T::Coeff>,
 {
     pub fn overlap(&self, other: &Self) -> T::Coeff {

@@ -224,9 +224,12 @@ class PauliSum:
             min_abs_coeff: Terms with absolute coefficient below this threshold
                 are dropped. Defaults to 1e-10.
             max_pauli_weight: Maximum number of non-identity Paulis per term.
-                If None, the backend default is used.
+                If None, truncation is disabled.
             max_loss_weight: Maximum loss weight per term (only used by
-                LossyPauliSum). If None, the backend default is used.
+                LossyPauliSum). If None, truncation is disabled.
+                Note, that this should usually be chosen to be quite low, since
+                e.g. 10 would correspond to keeping terms that contribute if
+                up to 10 qubits are lost simultaneously.
 
         Returns:
             A new instance of the class this method is called on.
@@ -255,6 +258,11 @@ class PauliSum:
 
                 n = 5
                 ps = PauliSum.new(n, [f"Z{i}" for i in range(n)])
+
+            Creating a lossy PauliSum with a loss weight cutoff::
+
+                ps = LossyPauliSum.new(3, "ZZZ", max_loss_weight=1)
+                ps.loss_channel(0, 0.01)
         """
         if isinstance(terms, (str, tuple)):
             terms = [terms]
@@ -559,11 +567,48 @@ class PauliSum:
 
 
 class LossyPauliSum(PauliSum):
+    """A PauliSum that supports modelling qubit loss.
+    
+    This is achieved by extending the set of Pauli basis operators to include
+    an addition operator ``{I, X, Y, Z, L}``, where ``L`` is the projector on
+    a third leakage state. This basis effectively allows simulating qutrits,
+    where we neglect any coherences between the qubit subspace and the leakage
+    state.
+
+    In addition to the new channels, there is also another truncation strategy:
+    Since Pauli Strings that have an `L` at multiple positions contribute only
+    minimally, these can get truncated by setting an appropriate `max_loss_weight`.
+    The truncation is similar to how `max_pauli_weight` truncates strings, but only
+    counting `L`s.
+    """
+
     def _get_interface(self, n_interface: int):
         return getattr(ppvm_python_native, f"PauliSumLossIndexMapFxHash{n_interface}")
 
     def loss_channel(self, addr0: int, p: float) -> None:
+        """Apply a single-qubit loss channel.
+
+        Reduces the trace of qubit-subspace operators by `(1 - p)`.
+        Adds back population into `I` or `Z` if the Pauli string has an `L`
+        at `addr0`. This can only occur if a reset channel has been applied before
+        and accounts for the fact of falsely counting a lost qubit as 0 in a
+        measurement.
+
+        Args:
+            addr0: The index of the target qubit.
+            p: Loss probability in [0, 1].
+        """
         self._interface.loss_channel(addr0, p)
 
     def reset_loss_channel(self, addr0: int) -> None:
+        """Reset a lost qubit to the 0 state. Usually, you want to apply
+        this channel at the end of the circuit, i.e. at the beginning when
+        propagating backwards.
+
+        **NOTE**: This channel causes exponential branching in `I` and `Z`.
+        Make sure to set an appropriate `max_loss_weight` to truncate.
+
+        Args:
+            addr0: The index of the qubit to reset.
+        """
         self._interface.reset_loss_channel(addr0)

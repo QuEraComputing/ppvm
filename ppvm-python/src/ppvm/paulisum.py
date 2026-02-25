@@ -1,7 +1,7 @@
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Sequence, Union
+from typing import ClassVar, Sequence, Self, Union
 
 import ppvm_python_native
 
@@ -46,6 +46,23 @@ T = Union[
     ppvm_python_native.PauliSumIndexMapFxHash13,
     ppvm_python_native.PauliSumIndexMapFxHash14,
     ppvm_python_native.PauliSumIndexMapFxHash15,
+
+    ppvm_python_native.PauliSumLossIndexMapFxHash0,
+    ppvm_python_native.PauliSumLossIndexMapFxHash1,
+    ppvm_python_native.PauliSumLossIndexMapFxHash2,
+    ppvm_python_native.PauliSumLossIndexMapFxHash3,
+    ppvm_python_native.PauliSumLossIndexMapFxHash4,
+    ppvm_python_native.PauliSumLossIndexMapFxHash5,
+    ppvm_python_native.PauliSumLossIndexMapFxHash6,
+    ppvm_python_native.PauliSumLossIndexMapFxHash7,
+    ppvm_python_native.PauliSumLossIndexMapFxHash8,
+    ppvm_python_native.PauliSumLossIndexMapFxHash9,
+    ppvm_python_native.PauliSumLossIndexMapFxHash10,
+    ppvm_python_native.PauliSumLossIndexMapFxHash11,
+    ppvm_python_native.PauliSumLossIndexMapFxHash12,
+    ppvm_python_native.PauliSumLossIndexMapFxHash13,
+    ppvm_python_native.PauliSumLossIndexMapFxHash14,
+    ppvm_python_native.PauliSumLossIndexMapFxHash15,
 ]
 
 
@@ -109,6 +126,7 @@ class PauliSum:
     coefficients: Sequence[float] = ()
     min_abs_coeff: float = 1e-10
     max_pauli_weight: int | None = None
+    max_loss_weight: int | None = None
 
     _interface: T = field(init=False, repr=False)
 
@@ -119,23 +137,8 @@ class PauliSum:
             self._init_ppvm_interface(),
         )
 
-    def __copy__(self) -> "PauliSum":
-        new = object.__new__(PauliSum)
-        object.__setattr__(new, "initial_terms", self.initial_terms)
-        object.__setattr__(new, "n_qubits", self.n_qubits)
-        object.__setattr__(new, "coefficients", self.coefficients)
-        object.__setattr__(new, "min_abs_coeff", self.min_abs_coeff)
-        object.__setattr__(new, "max_pauli_weight", self.max_pauli_weight)
-        object.__setattr__(new, "_interface", self._interface.__copy__())
-        return new
-
-    def copy(self) -> "PauliSum":
-        """Create a copy of the PauliSum instance.
-
-        Returns:
-            A new PauliSum instance that is a copy of the current one.
-        """
-        return self.__copy__()
+    def _get_interface(self, n_interface: int):
+        return getattr(ppvm_python_native, f"PauliSumIndexMapFxHash{n_interface}")
 
     def _init_ppvm_interface(
         self,
@@ -166,28 +169,30 @@ class PauliSum:
         # number of bytes we have
         possible_interfaces = range(15)
         N_interface = next(n for n in possible_interfaces if 2**n > N)
-
-        interface = getattr(ppvm_python_native, f"PauliSumIndexMapFxHash{N_interface}")
+        interface = self._get_interface(N_interface)
 
         if terms and not coefficients:
             coefficients = (1.0,) * len(terms)
 
-        if self.max_pauli_weight is None:
-            # NOTE: let rust handle the default setting for max_pauli_weight
-            return interface(
-                n_qubits,
-                min_abs_coeff=self.min_abs_coeff,
-                terms=terms,
-                coefficients=coefficients,
-            )
-        else:
-            return interface(
-                n_qubits,
-                min_abs_coeff=self.min_abs_coeff,
-                max_pauli_weight=self.max_pauli_weight,
-                terms=terms,
-                coefficients=coefficients,
-            )
+        # set the kwargs for the interface
+        options = {
+            "min_abs_coeff": self.min_abs_coeff,
+            "terms": terms,
+            "coefficients": coefficients
+        }
+
+        # these are just set to the defaults on the rust side if None
+        if self.max_pauli_weight is not None:
+            options["max_pauli_weight"] = self.max_pauli_weight
+        
+        if self.max_loss_weight is not None:
+            options["max_loss_weight"] = self.max_loss_weight
+
+        
+        return interface(
+            n_qubits,
+            **options,
+        )
 
     def __len__(self) -> int:
         """Get the number of terms in the PauliSum.
@@ -203,8 +208,9 @@ class PauliSum:
         n_qubits: int,
         terms: "str | tuple | list",
         min_abs_coeff: float = 1e-10,
-        max_pauli_weight: "int | None" = None,
-    ) -> "PauliSum":
+        max_pauli_weight: int | None = None,
+        max_loss_weight: int | None = None,
+    ) -> Self:
         """Create a PauliSum from one or more terms with flexible input formats.
 
         Args:
@@ -219,9 +225,11 @@ class PauliSum:
                 are dropped. Defaults to 1e-10.
             max_pauli_weight: Maximum number of non-identity Paulis per term.
                 If None, the backend default is used.
+            max_loss_weight: Maximum loss weight per term (only used by
+                LossyPauliSum). If None, the backend default is used.
 
         Returns:
-            A new PauliSum instance.
+            A new instance of the class this method is called on.
 
         Raises:
             ValueError: If a compact qubit index is out of range for n_qubits.
@@ -257,10 +265,30 @@ class PauliSum:
             coefficients=[c for _, c in parsed],
             min_abs_coeff=min_abs_coeff,
             max_pauli_weight=max_pauli_weight,
+            max_loss_weight=max_loss_weight,
         )
 
     def __str__(self) -> str:
         return self._interface.__str__()
+    
+    def __copy__(self) -> Self:
+        new = object.__new__(type(self))
+        object.__setattr__(new, "initial_terms", self.initial_terms)
+        object.__setattr__(new, "n_qubits", self.n_qubits)
+        object.__setattr__(new, "coefficients", self.coefficients)
+        object.__setattr__(new, "min_abs_coeff", self.min_abs_coeff)
+        object.__setattr__(new, "max_pauli_weight", self.max_pauli_weight)
+        object.__setattr__(new, "max_loss_weight", self.max_loss_weight)
+        object.__setattr__(new, "_interface", self._interface.__copy__())
+        return new
+
+    def copy(self) -> Self:
+        """Create a copy of the PauliSum instance.
+
+        Returns:
+            A new PauliSum instance that is a copy of the current one.
+        """
+        return self.__copy__()
 
     @property
     def terms(self) -> list[tuple[str, float]]:
@@ -526,3 +554,16 @@ class PauliSum:
                 from a dictionary format.
         """
         self._interface.two_qubit_pauli_error(addr0, addr1, p)
+
+
+
+
+class LossyPauliSum(PauliSum):
+    def _get_interface(self, n_interface: int):
+        return getattr(ppvm_python_native, f"PauliSumLossIndexMapFxHash{n_interface}")
+
+    def loss_channel(self, addr0: int, p: float) -> None:
+        self._interface.loss_channel(addr0, p)
+
+    def reset_loss_channel(self, addr0: int) -> None:
+        self._interface.reset_loss_channel(addr0)

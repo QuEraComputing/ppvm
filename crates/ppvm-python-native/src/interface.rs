@@ -1,6 +1,8 @@
 use paste::paste;
 use ppvm_runtime::prelude::*;
-use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
+use ppvm_runtime::strategy::{
+    CoefficientThreshold, CombinedStrategy, MaxLossWeight, MaxPauliWeight,
+};
 use pyo3::prelude::*;
 
 macro_rules! create_interface_loss_methods {
@@ -21,6 +23,24 @@ macro_rules! create_interface_loss_methods {
     };
 }
 
+macro_rules! create_strategy {
+    (false, $min_abs_coeff:ident, $max_pauli_weight:ident, $_max_loss_weight:ident) => {
+        CombinedStrategy(
+            CoefficientThreshold($min_abs_coeff),
+            MaxPauliWeight($max_pauli_weight),
+        )
+    };
+    (true, $min_abs_coeff:ident, $max_pauli_weight:ident, $max_loss_weight:ident) => {
+        CombinedStrategy(
+            CombinedStrategy(
+                CoefficientThreshold($min_abs_coeff),
+                MaxPauliWeight($max_pauli_weight),
+            ),
+            MaxLossWeight($max_loss_weight),
+        )
+    };
+}
+
 // adapted from https://pyo3.rs/v0.27.1/class.html#no-generic-parameters
 macro_rules! create_interface {
     ($name: ident, $type: ident, $loss: tt) => {
@@ -31,18 +51,17 @@ macro_rules! create_interface {
         #[pymethods]
         impl $name {
             #[new]
-            #[pyo3(signature = (n_qubits, min_abs_coeff = 1e-10, max_pauli_weight = usize::MAX, terms = Vec::<String>::new(), coefficients = Vec::<f64>::new()))]
+            #[pyo3(signature = (n_qubits, min_abs_coeff = 1e-10, max_pauli_weight = usize::MAX, max_loss_weight = usize::MAX, terms = Vec::<String>::new(), coefficients = Vec::<f64>::new()))]
             pub fn new(
                 n_qubits: usize,
                 min_abs_coeff: f64,
                 max_pauli_weight: usize,
+                max_loss_weight: usize,
                 terms: Vec<String>,
                 coefficients: Vec<f64>
             ) -> Self {
-
-                // TODO: this is not ideal since we could skip one of the strategies completely; need to look into
-                // how we can do this in the macro here
-                let strategy = CombinedStrategy(CoefficientThreshold(min_abs_coeff), MaxPauliWeight(max_pauli_weight));
+                let _ = max_loss_weight; // unused in non-loss variants
+                let strategy = create_strategy!($loss, min_abs_coeff, max_pauli_weight, max_loss_weight);
                 let mut ps = PauliSum::<$type>::builder()
                     .n_qubits(n_qubits)
                     .strategy(strategy)
@@ -221,7 +240,7 @@ macro_rules! create_interface_range {
     ($name: ident, true, $( $n: expr),* ) => {
         paste! {
         $(
-            type [<Loss$name$n>] = config::indexmap::ByteFxHashF64<{(2 as usize).pow($n)}, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>, LossyPauliWord<[u8; {(2 as usize).pow($n)}]>>;
+            type [<Loss$name$n>] = config::indexmap::ByteFxHashF64<{(2 as usize).pow($n)}, CombinedStrategy<CombinedStrategy<CoefficientThreshold, MaxPauliWeight>, MaxLossWeight>, LossyPauliWord<[u8; {(2 as usize).pow($n)}]>>;
             create_interface!([<PauliSumLoss$name$n>], [<Loss$name$n>], true);
         )*
     }
@@ -250,7 +269,7 @@ create_interface_range!(
 );
 
 create_interface_range!(
-    IndexMapFxHashLoss,
+    IndexMapFxHash,
     true,
     0,
     1,

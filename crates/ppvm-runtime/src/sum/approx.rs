@@ -2,14 +2,12 @@ use super::data::PauliSum;
 use crate::{
     config::Config,
     traits::{ACMapContains, ACMapIter},
-    word::PauliWord,
 };
 
 impl<T: Config> approx::AbsDiffEq for PauliSum<T>
 where
     T::Coeff: approx::AbsDiffEq,
-    T::Map: PartialEq
-        + for<'a> ACMapIter<'a, Item = (&'a PauliWord<T::Storage, T::BuildHasher>, &'a T::Coeff)>,
+    T::Map: PartialEq + for<'a> ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
     <T::Coeff as approx::AbsDiffEq>::Epsilon: Copy,
 {
     type Epsilon = <T::Coeff as approx::AbsDiffEq>::Epsilon;
@@ -40,8 +38,7 @@ where
 impl<T: Config> approx::RelativeEq for PauliSum<T>
 where
     T::Coeff: approx::RelativeEq,
-    T::Map: PartialEq
-        + for<'a> ACMapIter<'a, Item = (&'a PauliWord<T::Storage, T::BuildHasher>, &'a T::Coeff)>,
+    T::Map: PartialEq + for<'a> ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
     <T::Coeff as approx::AbsDiffEq>::Epsilon: Copy,
 {
     fn default_max_relative() -> Self::Epsilon {

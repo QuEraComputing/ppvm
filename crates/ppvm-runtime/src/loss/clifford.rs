@@ -1,9 +1,9 @@
 use std::hash::BuildHasher;
 
-use super::data::PauliWord;
+use super::data::LossyPauliWord;
 use crate::traits::{Clifford, PauliStorage, PauliWordTrait};
 
-impl<A, H> Clifford for PauliWord<A, H>
+impl<A, H> Clifford for LossyPauliWord<A, H>
 where
     A: PauliStorage,
     H: BuildHasher + Clone + Default,
@@ -31,6 +31,10 @@ where
         // H * X * H = Z    10 -> 01, 0
         // H * Z * H = X    01 -> 10, 0
         // H * Y * H = -Y   11 -> 11, 1
+        if self.lbits[index] {
+            // Hadamard on loss gives loss
+            return;
+        }
         let index_x = self.xbits[index];
         let index_z = self.zbits[index];
         self.xbits.set(index, index_z);
@@ -42,6 +46,10 @@ where
         // S * X * S = Y    10 -> 11, 0
         // S * Z * S = Z    01 -> 01, 0
         // S * Y * S = -X   11 -> 10, 1
+        if self.lbits[index] {
+            // S on loss gives loss
+            return;
+        }
         let z = self.xbits[index] ^ self.zbits[index];
         self.zbits.set(index, z);
         self.rehash();
@@ -67,6 +75,9 @@ where
         // CNOT * YX * CNOT == YI,  11 10 -> 10 10, 0
         // CNOT * YY * CNOT == -XZ, 11 11 -> 10 01, 1
         // CNOT * YZ * CNOT == XY,  10 11 -> 11 01, 0
+        if self.lbits[control] || self.lbits[target] {
+            return;
+        }
         let control_z = self.zbits[target] ^ self.zbits[control];
         let target_x = self.xbits[control] ^ self.xbits[target];
         self.zbits.set(control, control_z);
@@ -101,6 +112,10 @@ where
         // xx: 01, 00 -> 10, 01 -> 11, 10 -> 00, 11 -> 01
         // xx: 10, 00 -> 01, 01 -> 00, 10 -> 11, 11 -> 10
         // xx: 11, 00 -> 11, 01 -> 10, 10 -> 01, 11 -> 00
+
+        if self.lbits[control] || self.lbits[target] {
+            return;
+        }
 
         // flip the control z if target x is 1
         let control_z = self.zbits[control] ^ self.xbits[target];
@@ -155,8 +170,17 @@ mod tests {
             ("YX", "YI"),
             ("YY", "XZ"),
             ("YZ", "XY"),
+            ("IL", "IL"),
+            ("XL", "XL"),
+            ("YL", "YL"),
+            ("ZL", "ZL"),
+            ("LI", "LI"),
+            ("LX", "LX"),
+            ("LY", "LY"),
+            ("LZ", "LZ"),
+            ("LL", "LL"),
         ] {
-            let mut output: PauliWord<u64> = PauliWord::from(input);
+            let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
             output.cnot(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
@@ -165,8 +189,8 @@ mod tests {
     #[test]
     fn test_h() {
         // NOTE: phase on "Y" not added in words
-        for (input, target) in [("I", "I"), ("X", "Z"), ("Y", "Y"), ("Z", "X")] {
-            let mut output: PauliWord<u64> = PauliWord::from(input);
+        for (input, target) in [("I", "I"), ("X", "Z"), ("Y", "Y"), ("Z", "X"), ("L", "L")] {
+            let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
             output.h(0);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }

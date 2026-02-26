@@ -1,6 +1,5 @@
 use crate::config::Config;
 use crate::traits::*;
-use crate::word::PauliWord;
 
 #[derive(Clone)]
 pub struct PauliSum<T: Config> {
@@ -110,7 +109,7 @@ impl<T: Config> PauliSum<T> {
         self.len() == 0
     }
 
-    pub fn contains(&self, key: &PauliWord<T::Storage, T::BuildHasher>, value: &T::Coeff) -> bool {
+    pub fn contains(&self, key: &<T as Config>::PauliWordType, value: &T::Coeff) -> bool {
         self.data().contains(key, value)
     }
 
@@ -129,7 +128,7 @@ impl<T: Config> PauliSum<T> {
     /// scale all coefficients by a function of the corresponding PauliWord key.
     pub fn scale<F>(&mut self, f: F)
     where
-        F: Fn(&PauliWord<T::Storage, T::BuildHasher>, &mut T::Coeff) + Sync + Send,
+        F: Fn(&<T as Config>::PauliWordType, &mut T::Coeff) + Sync + Send,
     {
         self.data_mut().scale(f);
     }
@@ -142,9 +141,9 @@ impl<T: Config> PauliSum<T> {
     pub fn map_insert<F>(&mut self, f: F)
     where
         F: Fn(
-                &PauliWord<T::Storage, T::BuildHasher>,
+                &<T as Config>::PauliWordType,
                 &mut T::Coeff,
-            ) -> Option<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>
+            ) -> Option<(<T as Config>::PauliWordType, T::Coeff)>
             + Sync
             + Send,
     {
@@ -162,10 +161,7 @@ impl<T: Config> PauliSum<T> {
     /// of the same entry.
     pub fn map_add<F>(&mut self, f: F)
     where
-        F: Fn(
-                &PauliWord<T::Storage, T::BuildHasher>,
-                &T::Coeff,
-            ) -> (PauliWord<T::Storage, T::BuildHasher>, T::Coeff)
+        F: Fn(&<T as Config>::PauliWordType, &T::Coeff) -> (<T as Config>::PauliWordType, T::Coeff)
             + Sync
             + Send,
     {
@@ -215,11 +211,11 @@ where
     }
 }
 
-impl<T: Config> Extend<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)> for PauliSum<T>
+impl<T: Config> Extend<(<T as Config>::PauliWordType, T::Coeff)> for PauliSum<T>
 where
-    T::Map: Extend<(PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>,
+    T::Map: Extend<(<T as Config>::PauliWordType, T::Coeff)>,
 {
-    fn extend<I: IntoIterator<Item = (PauliWord<T::Storage, T::BuildHasher>, T::Coeff)>>(
+    fn extend<I: IntoIterator<Item = (<T as Config>::PauliWordType, T::Coeff)>>(
         &mut self,
         iter: I,
     ) {
@@ -233,6 +229,7 @@ mod tests {
 
     use super::*;
     use crate::config::fxhash::ByteF64;
+    use crate::word::PauliWord;
 
     #[test]
     fn test_pauli_sum_creation() {

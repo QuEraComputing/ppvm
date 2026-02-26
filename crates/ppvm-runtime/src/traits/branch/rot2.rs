@@ -1,3 +1,4 @@
+use super::RotationOneMapInsertClosure;
 use crate::config::Config;
 
 macro_rules! def_rotation {
@@ -8,7 +9,7 @@ macro_rules! def_rotation {
     };
 }
 
-pub trait RotationTwo<T: Config> {
+pub trait RotationTwo<T: Config>: RotationOneMapInsertClosure<T> {
     fn rotate_2(
         &mut self,
         axis_a_x: u8,

@@ -8,12 +8,13 @@ impl<S1: Strategy, S2: Strategy> Strategy for CombinedStrategy<S1, S2> {
         self.0.capacity(n_qubits).min(self.1.capacity(n_qubits))
     }
 
-    fn truncate<S, V, H, M>(&self, map: &mut M)
+    fn truncate<S, V, H, M, W>(&self, map: &mut M)
     where
         S: crate::prelude::PauliStorage,
         V: Coefficient,
         H: std::hash::BuildHasher + Clone + Default,
-        M: crate::prelude::ACMap<S, V, H>,
+        W: PauliWordTrait,
+        M: crate::prelude::ACMap<S, V, H, W>,
     {
         self.0.truncate(map);
         self.1.truncate(map);
@@ -42,12 +43,13 @@ impl Strategy for MaxPauliWeight {
         n_qubits * 10
     }
 
-    fn truncate<S, V, H, M>(&self, map: &mut M)
+    fn truncate<S, V, H, M, W>(&self, map: &mut M)
     where
         S: PauliStorage,
         V: Coefficient,
         H: std::hash::BuildHasher + Clone + Default,
-        M: ACMap<S, V, H>,
+        W: PauliWordTrait,
+        M: ACMap<S, V, H, W>,
     {
         map.retain(|k, _| k.weight() <= self.max_weight());
     }
@@ -68,13 +70,42 @@ impl Strategy for CoefficientThreshold {
         n_qubits * 10
     }
 
-    fn truncate<S, V, H, M>(&self, map: &mut M)
+    fn truncate<S, V, H, M, W>(&self, map: &mut M)
     where
         S: PauliStorage,
         V: Coefficient,
         H: std::hash::BuildHasher + Clone + Default,
-        M: ACMap<S, V, H>,
+        W: PauliWordTrait,
+        M: ACMap<S, V, H, W>,
     {
         map.retain(|_, v| !v.cutoff(self.0));
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaxLossWeight(pub usize);
+
+impl Default for MaxLossWeight {
+    fn default() -> Self {
+        Self(10)
+    }
+}
+
+impl Strategy for MaxLossWeight {
+    fn capacity(&self, n_qubits: usize) -> usize {
+        // the number here should scale binomially, but that can get large
+        // since the capacity has a direct impact on performance, let's be conservative
+        n_qubits * 10
+    }
+
+    fn truncate<S, V, H, M, W>(&self, map: &mut M)
+    where
+        S: PauliStorage,
+        V: Coefficient,
+        H: std::hash::BuildHasher + Clone + Default,
+        M: ACMap<S, V, H, W>,
+        W: PauliWordTrait,
+    {
+        map.retain(|k, _| k.loss_weight() <= self.0);
     }
 }

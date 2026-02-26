@@ -1,10 +1,15 @@
 use crate::traits::*;
-use crate::{config::Config, sum::PauliSum};
+use crate::{char::Pauli, config::Config, sum::PauliSum};
 
-impl<T: Config> RotationTwo<T> for PauliSum<T>
+const PAULIS: [Pauli; 4] = [Pauli::I, Pauli::X, Pauli::Z, Pauli::Y];
+
+impl<T, S, H> RotationTwo<T> for PauliSum<T>
 where
+    S: PauliStorage,
+    H: std::hash::BuildHasher + Clone + Default,
+    T: Config<Storage = S, BuildHasher = H>,
     T::Coeff: std::ops::MulAssign,
-    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher> + ACMapConsume,
+    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapConsume,
 {
     fn rotate_2(
         &mut self,
@@ -16,17 +21,31 @@ where
         b: usize,
         theta: T::Coeff,
     ) {
+        if axis_a_x > 3 || axis_a_z > 3 || axis_b_x > 3 || axis_b_z > 3 {
+            panic!("Rotation axis cannot be L");
+        }
         let (sin, cos) = theta.sin_cos();
+        let axis_a = PAULIS[(axis_a_z << 1 | axis_a_x) as usize];
+        let axis_b = PAULIS[(axis_b_z << 1 | axis_b_x) as usize];
         self.map_insert(|k, v| {
+            // NOTE: case of both qubits being lost is handled by single-qubit rotation logic
+            if k.get_lbit(a) {
+                // fall back to single-qubit rotation on qubit b
+                return PauliSum::<T>::rotate_1_map_insert_closure(k, v, axis_b, b, &sin, &cos);
+            }
+            if k.get_lbit(b) {
+                // fall back to single-qubit rotation on qubit a
+                return PauliSum::<T>::rotate_1_map_insert_closure(k, v, axis_a, a, &sin, &cos);
+            }
             let (eps, x_a, z_a, x_b, z_b) = comm_2(
                 axis_a_x,
                 axis_a_z,
                 axis_b_x,
                 axis_b_z,
-                k.xbits[a] as u8,
-                k.zbits[a] as u8,
-                k.xbits[b] as u8,
-                k.zbits[b] as u8,
+                k.get_xbit(a) as u8,
+                k.get_zbit(a) as u8,
+                k.get_xbit(b) as u8,
+                k.get_zbit(b) as u8,
             );
 
             if eps == 0 {
@@ -36,10 +55,10 @@ where
                 *v *= cos.clone();
 
                 let mut new_word = k.clone();
-                new_word.xbits.set(a, x_a == 1);
-                new_word.xbits.set(b, x_b == 1);
-                new_word.zbits.set(a, z_a == 1);
-                new_word.zbits.set(b, z_b == 1);
+                new_word.set_xbit(a, x_a == 1);
+                new_word.set_xbit(b, x_b == 1);
+                new_word.set_zbit(a, z_a == 1);
+                new_word.set_zbit(b, z_b == 1);
                 new_word.rehash();
 
                 coeff *= sin.mul_sign(-eps);

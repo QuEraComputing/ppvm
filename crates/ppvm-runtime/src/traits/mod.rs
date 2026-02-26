@@ -17,7 +17,7 @@ pub use map::{
 };
 pub use noise::{
     AmplitudeDamping, Depolarizing, Depolarizing2, LossChannel, PauliError, PauliErrorAll,
-    TwoQubitPauliError,
+    ResetLossChannel, TwoQubitPauliError,
 };
 pub use storage::PauliStorage;
 pub use strategy::{NoStrategy, Strategy};

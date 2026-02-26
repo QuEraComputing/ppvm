@@ -249,6 +249,14 @@ where
     }
 }
 
+impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> ResetLossChannel<T>
+    for GeneralizedTableau<T, I, C>
+{
+    fn reset_loss_channel(&mut self, addr0: usize) {
+        self.is_lost[addr0] = false;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,6 +489,36 @@ mod tests {
         t.loss_channel(1, 0.0);
         assert!(!t.is_lost[0]);
         assert!(!t.is_lost[1]);
+    }
+
+    // === ResetLossChannel ===
+
+    #[test]
+    fn reset_loss_channel_clears_lost_flag() {
+        let mut t = tab(1);
+        t.loss_channel(0, 1.0);
+        assert!(t.is_lost[0]);
+        t.reset_loss_channel(0);
+        assert!(!t.is_lost[0]);
+    }
+
+    #[test]
+    fn reset_loss_channel_qubit_in_ground_state() {
+        // loss_channel resets qubit to |0⟩; after reset_loss_channel it should still be |0⟩
+        let mut t = tab(1);
+        t.x(0); // |1⟩
+        t.loss_channel(0, 1.0); // measures, resets to |0⟩, marks lost
+        t.reset_loss_channel(0);
+        assert!(!t.measure(0)); // back in |0⟩
+    }
+
+    #[test]
+    fn reset_loss_channel_gates_work_again() {
+        let mut t = tab(1);
+        t.loss_channel(0, 1.0);
+        t.reset_loss_channel(0);
+        t.x(0); // should no longer be a no-op
+        assert!(t.measure(0));
     }
 
     // === Statistical tests ===

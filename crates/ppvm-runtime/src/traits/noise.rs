@@ -29,3 +29,7 @@ pub trait AmplitudeDamping<T: Config> {
 pub trait LossChannel<T: Config> {
     fn loss_channel(&mut self, addr0: usize, p: T::Coeff);
 }
+
+pub trait ResetLossChannel<T: Config> {
+    fn reset_loss_channel(&mut self, addr0: usize);
+}

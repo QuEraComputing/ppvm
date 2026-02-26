@@ -15,9 +15,17 @@ pub trait TwoQubitPauliError<T: Config> {
 }
 
 pub trait Depolarizing<T: Config> {
-    fn depolarizing(&mut self, addr0: usize, p: T::Coeff);
+    fn depolarize(&mut self, addr0: usize, p: T::Coeff);
+}
+
+pub trait Depolarizing2<T: Config> {
+    fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff);
 }
 
 pub trait AmplitudeDamping<T: Config> {
     fn amplitude_damping(&mut self, addr0: usize, gamma: T::Coeff);
+}
+
+pub trait LossChannel<T: Config> {
+    fn loss_channel(&mut self, addr0: usize, p: T::Coeff);
 }

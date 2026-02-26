@@ -15,7 +15,10 @@ pub use map::{
     ACMap, ACMapAddAssign, ACMapBase, ACMapConsume, ACMapContains, ACMapInsert, ACMapIter,
     ACMapMulAssign, ACMapRetain, ACMapScale,
 };
-pub use noise::{AmplitudeDamping, Depolarizing, PauliError, PauliErrorAll, TwoQubitPauliError};
+pub use noise::{
+    AmplitudeDamping, Depolarizing, Depolarizing2, LossChannel, PauliError, PauliErrorAll,
+    TwoQubitPauliError,
+};
 pub use storage::PauliStorage;
 pub use strategy::{NoStrategy, Strategy};
 pub use trace::Trace;

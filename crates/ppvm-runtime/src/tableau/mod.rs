@@ -2,6 +2,7 @@ mod clifford;
 mod data;
 mod display;
 mod measure;
+mod noise;
 mod rot1;
 mod rot2;
 mod sparsevec;

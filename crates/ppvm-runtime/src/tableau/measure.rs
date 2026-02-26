@@ -55,6 +55,9 @@ where
     <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     fn measure(&mut self, addr0: usize) -> bool {
+        if self.is_lost[addr0] {
+            return false;
+        }
         // NOTE: regardless of whether Z is a stabilizer, we need to compute
         // the probabilities, since the coefficients may make a Z stabilizer
         // state random, or a seemingly random one deterministic

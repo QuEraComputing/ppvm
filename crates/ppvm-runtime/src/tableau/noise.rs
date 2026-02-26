@@ -248,3 +248,331 @@ where
         self.is_lost[addr0] = true;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::fxhash::ByteF64;
+
+    type TestConfig = ByteF64<1>;
+    type TestTab = GeneralizedTableau<TestConfig>;
+
+    fn tab(n: usize) -> TestTab {
+        GeneralizedTableau::new(n, 1e-12)
+    }
+
+    // === Depolarizing ===
+
+    #[test]
+    fn depolarize_p0_no_change() {
+        let mut t = tab(1);
+        t.depolarize(0, 0.0);
+        assert!(!t.measure(0));
+    }
+
+    #[test]
+    fn depolarize_p1_does_not_mark_lost() {
+        // With p=1.0 an error is always applied; verify is_lost is unaffected
+        let mut t = tab(1);
+        t.depolarize(0, 1.0);
+        assert!(!t.is_lost[0]);
+    }
+
+    // === PauliError ===
+
+    #[test]
+    fn pauli_error_zero_prob_no_change() {
+        let mut t = tab(1);
+        t.pauli_error(0, [0.0, 0.0, 0.0]);
+        assert!(!t.measure(0));
+    }
+
+    #[test]
+    fn pauli_error_x_flips_qubit() {
+        let mut t = tab(1);
+        t.pauli_error(0, [1.0, 0.0, 0.0]); // X|0⟩ = |1⟩
+        assert!(t.measure(0));
+    }
+
+    #[test]
+    fn pauli_error_y_flips_qubit() {
+        let mut t = tab(1);
+        t.pauli_error(0, [0.0, 1.0, 0.0]); // Y|0⟩ = i|1⟩
+        assert!(t.measure(0));
+    }
+
+    #[test]
+    fn pauli_error_z_no_measurement_change() {
+        let mut t = tab(1);
+        t.pauli_error(0, [0.0, 0.0, 1.0]); // Z|0⟩ = -|0⟩, still measures 0
+        assert!(!t.measure(0));
+    }
+
+    #[test]
+    fn pauli_error_x_on_excited_qubit_flips_back() {
+        let mut t = tab(1);
+        t.x(0); // |1⟩
+        t.pauli_error(0, [1.0, 0.0, 0.0]); // X|1⟩ = |0⟩
+        assert!(!t.measure(0));
+    }
+
+    // === TwoQubitPauliError ===
+
+    #[test]
+    fn two_qubit_pauli_error_zero_prob_no_change() {
+        let mut t = tab(2);
+        t.two_qubit_pauli_error(0, 1, [0.0; 15]);
+        assert!(!t.measure(0));
+        assert!(!t.measure(1));
+    }
+
+    #[test]
+    fn two_qubit_pauli_error_ix_flips_second_only() {
+        // p[0] = 1.0 → IX: I on addr0, X on addr1
+        let mut t = tab(2);
+        let mut p = [0.0f64; 15];
+        p[0] = 1.0;
+        t.two_qubit_pauli_error(0, 1, p);
+        assert!(!t.measure(0));
+        assert!(t.measure(1));
+    }
+
+    #[test]
+    fn two_qubit_pauli_error_xi_flips_first_only() {
+        // p[3] = 1.0 → XI: X on addr0, I on addr1
+        let mut t = tab(2);
+        let mut p = [0.0f64; 15];
+        p[3] = 1.0;
+        t.two_qubit_pauli_error(0, 1, p);
+        assert!(t.measure(0));
+        assert!(!t.measure(1));
+    }
+
+    #[test]
+    fn two_qubit_pauli_error_xx_flips_both() {
+        // p[4] = 1.0 → XX
+        let mut t = tab(2);
+        let mut p = [0.0f64; 15];
+        p[4] = 1.0;
+        t.two_qubit_pauli_error(0, 1, p);
+        assert!(t.measure(0));
+        assert!(t.measure(1));
+    }
+
+    #[test]
+    fn two_qubit_pauli_error_zz_no_measurement_change() {
+        // p[14] = 1.0 → ZZ: Z|0⟩ = -|0⟩ on both, still measures 0
+        let mut t = tab(2);
+        let mut p = [0.0f64; 15];
+        p[14] = 1.0;
+        t.two_qubit_pauli_error(0, 1, p);
+        assert!(!t.measure(0));
+        assert!(!t.measure(1));
+    }
+
+    #[test]
+    fn two_qubit_pauli_error_both_lost_no_change() {
+        let mut t = tab(2);
+        t.is_lost[0] = true;
+        t.is_lost[1] = true;
+        let mut p = [0.0f64; 15];
+        p[4] = 1.0; // XX — skipped entirely
+        t.two_qubit_pauli_error(0, 1, p);
+        assert!(t.is_lost[0]);
+        assert!(t.is_lost[1]);
+    }
+
+    #[test]
+    fn two_qubit_pauli_error_first_lost_marginalizes_to_second() {
+        // addr0 lost; p[0] = 1.0 (IX) → marginal p_x for addr1 = 1.0
+        let mut t = tab(2);
+        t.is_lost[0] = true;
+        let mut p = [0.0f64; 15];
+        p[0] = 1.0; // IX
+        t.two_qubit_pauli_error(0, 1, p);
+        assert!(t.measure(1)); // X applied to addr1
+    }
+
+    #[test]
+    fn two_qubit_pauli_error_second_lost_marginalizes_to_first() {
+        // addr1 lost; p[3] = 1.0 (XI) → marginal p_x for addr0 = 1.0
+        let mut t = tab(2);
+        t.is_lost[1] = true;
+        let mut p = [0.0f64; 15];
+        p[3] = 1.0; // XI
+        t.two_qubit_pauli_error(0, 1, p);
+        assert!(t.measure(0)); // X applied to addr0
+    }
+
+    // === Depolarizing2 ===
+
+    #[test]
+    fn depolarize2_p0_no_change() {
+        let mut t = tab(2);
+        t.depolarize2(0, 1, 0.0);
+        assert!(!t.measure(0));
+        assert!(!t.measure(1));
+    }
+
+    #[test]
+    fn depolarize2_both_lost_no_change() {
+        let mut t = tab(2);
+        t.is_lost[0] = true;
+        t.is_lost[1] = true;
+        t.depolarize2(0, 1, 1.0);
+        assert!(t.is_lost[0]);
+        assert!(t.is_lost[1]);
+    }
+
+    #[test]
+    fn depolarize2_first_lost_p0_second_unchanged() {
+        let mut t = tab(2);
+        t.is_lost[0] = true;
+        t.depolarize2(0, 1, 0.0); // effective p on addr1 = 4/5 * 0 = 0
+        assert!(!t.measure(1));
+    }
+
+    #[test]
+    fn depolarize2_second_lost_p0_first_unchanged() {
+        let mut t = tab(2);
+        t.is_lost[1] = true;
+        t.depolarize2(0, 1, 0.0); // effective p on addr0 = 4/5 * 0 = 0
+        assert!(!t.measure(0));
+    }
+
+    // === LossChannel ===
+
+    #[test]
+    fn loss_channel_p0_qubit_not_lost() {
+        let mut t = tab(1);
+        t.loss_channel(0, 0.0);
+        assert!(!t.is_lost[0]);
+    }
+
+    #[test]
+    fn loss_channel_p1_qubit_marked_lost() {
+        let mut t = tab(1);
+        t.loss_channel(0, 1.0);
+        assert!(t.is_lost[0]);
+    }
+
+    #[test]
+    fn loss_channel_p1_qubit_reset_to_zero() {
+        // Qubit starts in |1⟩; loss_channel should measure, reset to |0⟩, then mark lost
+        let mut t = tab(1);
+        t.x(0);
+        t.loss_channel(0, 1.0);
+        assert!(t.is_lost[0]);
+        assert!(!t.measure(0)); // Reset to |0⟩ before marking lost
+    }
+
+    #[test]
+    fn loss_channel_p1_subsequent_gate_is_noop() {
+        let mut t = tab(1);
+        t.loss_channel(0, 1.0);
+        t.x(0); // No-op: qubit is lost
+        assert!(!t.measure(0)); // Still |0⟩
+    }
+
+    #[test]
+    fn loss_channel_p0_second_qubit_unaffected() {
+        let mut t = tab(2);
+        t.loss_channel(0, 0.0);
+        t.loss_channel(1, 0.0);
+        assert!(!t.is_lost[0]);
+        assert!(!t.is_lost[1]);
+    }
+
+    // === Statistical tests ===
+
+    #[test]
+    fn depolarize_statistics() {
+        // Starting from |0⟩, P(measure 1) = P(X) + P(Y) = p/3 + p/3 = 2p/3.
+        // Z leaves |0⟩ unchanged; I leaves |0⟩ unchanged.
+        let p = 0.6_f64;
+        let expected = 2.0 * p / 3.0; // 0.4
+        let trials = 500;
+
+        let ones = (0..trials)
+            .filter(|_| {
+                let mut t = tab(1);
+                t.depolarize(0, p);
+                t.measure(0)
+            })
+            .count();
+
+        let fraction = ones as f64 / trials as f64;
+        // tolerance ~5σ: σ = sqrt(expected*(1-expected)/trials) ≈ 0.022
+        assert!(
+            (fraction - expected).abs() < 0.1,
+            "Expected fraction {expected:.3}, got {fraction:.3}"
+        );
+    }
+
+    #[test]
+    fn depolarize2_statistics() {
+        // Starting from |00⟩, errors that flip qubit 0 to |1⟩ are X and Y on that qubit:
+        // XI, XX, XY, XZ, YI, YX, YY, YZ — 8 out of 15, so P(q0=1) = 8p/15.
+        let p = 0.6_f64;
+        let expected = 8.0 * p / 15.0; // 0.32
+        let trials = 500;
+
+        let ones = (0..trials)
+            .filter(|_| {
+                let mut t = tab(2);
+                t.depolarize2(0, 1, p);
+                t.measure(0)
+            })
+            .count();
+
+        let fraction = ones as f64 / trials as f64;
+        // tolerance ~5σ: σ = sqrt(expected*(1-expected)/trials) ≈ 0.021
+        assert!(
+            (fraction - expected).abs() < 0.1,
+            "Expected fraction {expected:.3}, got {fraction:.3}"
+        );
+    }
+
+    #[test]
+    fn test_cnot() {
+        let mut t = tab(2);
+        t.x(0);
+        t.cnot(0, 1);
+        t.loss_channel(0, 1.0);
+        assert!(!t.measure(0));
+        assert!(t.measure(1));
+
+        let mut t = tab(2);
+        t.loss_channel(0, 1.0);
+        t.x(0);
+        t.cnot(0, 1);
+        assert!(!t.measure(1));
+        assert!(!t.measure(0));
+    }
+
+    #[test]
+    fn test_ghz_statistics() {
+        let mut t = tab(2);
+        t.h(0);
+        t.cnot(0, 1);
+
+        let trials = 100;
+        let mut z_avg = 0.0;
+        let p = 0.1;
+        for _ in 0..trials {
+            let mut t_trial = t.clone();
+            t_trial.loss_channel(0, p);
+
+            let outcome0 = t_trial.measure(0);
+            let outcome1 = t_trial.measure(1);
+            if outcome0 == outcome1 {
+                z_avg += 1.0 / trials as f64;
+            } else {
+                z_avg += -1.0 / trials as f64;
+            }
+        }
+
+        println!("{}", z_avg);
+        assert!((z_avg - (1.0 - p)).abs() < 10.0 / trials as f64);
+    }
+}

@@ -161,25 +161,7 @@ where
     T::Coeff: PartialOrd<f64> + Zero,
 {
     fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [<T as Config>::Coeff; 15]) {
-        if self.is_lost[addr0] && self.is_lost[addr1] {
-            return;
-        }
-
-        if self.is_lost[addr0] {
-            // marginalize over addr0: sum columns (k fixed, j varies)
-            let p_x = p[0].clone() + p[4].clone() + p[8].clone() + p[12].clone();
-            let p_y = p[1].clone() + p[5].clone() + p[9].clone() + p[13].clone();
-            let p_z = p[2].clone() + p[6].clone() + p[10].clone() + p[14].clone();
-            self.pauli_error(addr1, [p_x, p_y, p_z]);
-            return;
-        }
-
-        if self.is_lost[addr1] {
-            // marginalize over addr1: sum rows (j fixed, k varies)
-            let p_x = p[3].clone() + p[4].clone() + p[5].clone() + p[6].clone();
-            let p_y = p[7].clone() + p[8].clone() + p[9].clone() + p[10].clone();
-            let p_z = p[11].clone() + p[12].clone() + p[13].clone() + p[14].clone();
-            self.pauli_error(addr0, [p_x, p_y, p_z]);
+        if self.is_lost[addr0] || self.is_lost[addr1] {
             return;
         }
 
@@ -203,17 +185,7 @@ where
     T::Coeff: PartialOrd<f64> + Zero,
 {
     fn depolarize2(&mut self, addr0: usize, addr1: usize, p: <T as Config>::Coeff) {
-        if self.is_lost[addr0] && self.is_lost[addr1] {
-            return;
-        }
-
-        if self.is_lost[addr0] {
-            self.depolarize(addr1, p.clone() * (4.0 / 5.0));
-            return;
-        }
-
-        if self.is_lost[addr1] {
-            self.depolarize(addr0, p * (4.0 / 5.0));
+        if self.is_lost[addr0] || self.is_lost[addr1] {
             return;
         }
 
@@ -391,25 +363,14 @@ mod tests {
     }
 
     #[test]
-    fn two_qubit_pauli_error_first_lost_marginalizes_to_second() {
+    fn two_qubit_pauli_error_first_lost_no_apply() {
         // addr0 lost; p[0] = 1.0 (IX) → marginal p_x for addr1 = 1.0
         let mut t = tab(2);
         t.is_lost[0] = true;
         let mut p = [0.0f64; 15];
         p[0] = 1.0; // IX
         t.two_qubit_pauli_error(0, 1, p);
-        assert!(t.measure(1)); // X applied to addr1
-    }
-
-    #[test]
-    fn two_qubit_pauli_error_second_lost_marginalizes_to_first() {
-        // addr1 lost; p[3] = 1.0 (XI) → marginal p_x for addr0 = 1.0
-        let mut t = tab(2);
-        t.is_lost[1] = true;
-        let mut p = [0.0f64; 15];
-        p[3] = 1.0; // XI
-        t.two_qubit_pauli_error(0, 1, p);
-        assert!(t.measure(0)); // X applied to addr0
+        assert!(!t.measure(1)); // nothing applied to addr1
     }
 
     // === Depolarizing2 ===

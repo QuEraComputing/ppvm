@@ -113,3 +113,22 @@ fn test_depolarizing_error() {
 
     assert!((overlap - result).abs() < 1e-10);
 }
+
+#[test]
+fn test_depolarize2() {
+    let mut state: PauliSum<config::indexmap::ByteFxHashF64<1>> =
+        PauliSum::builder().n_qubits(2).build();
+
+    state += ("ZZ", 1.0);
+
+    let p = 0.1_f64;
+    state.depolarize2(0, 1, p);
+
+    let pattern: PauliPattern = "Z0Z1".into();
+    let overlap = state.trace(&pattern);
+
+    // 8 of the 15 non-trivial two-qubit Paulis anticommute with ZZ,
+    // so the coefficient scales by 1 - 2 * 8 * (p/15) = 1 - 16p/15.
+    let expected = 1.0 - 16.0 * p / 15.0;
+    assert!((overlap - expected).abs() < 1e-10);
+}

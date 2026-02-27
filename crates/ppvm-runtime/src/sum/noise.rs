@@ -219,7 +219,9 @@ where
             }
 
             _ => {
-                // TODO: no action on loss needs test!
+                // NOTE: if just one atom is lost, then there is no
+                // well-defined noise channel on the other atom
+                // so we don't apply any noise
             }
         })
     }

@@ -17,8 +17,8 @@ pub use map::{
     ACMapMulAssign, ACMapRetain, ACMapScale,
 };
 pub use noise::{
-    AmplitudeDamping, DepolarizingError, LossChannel, PauliError, PauliErrorAll, ResetLossChannel,
-    TwoQubitPauliError,
+    AmplitudeDamping, Depolarizing2Error, DepolarizingError, LossChannel, PauliError, PauliErrorAll,
+    ResetLossChannel, TwoQubitPauliError,
 };
 pub use storage::PauliStorage;
 pub use strategy::{NoStrategy, Strategy};

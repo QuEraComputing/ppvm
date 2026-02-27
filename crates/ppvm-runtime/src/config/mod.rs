@@ -19,5 +19,8 @@ pub mod dashmap;
 #[cfg(feature = "indexmap")]
 pub mod indexmap;
 
-#[cfg(feature = "gxhash")]
+#[cfg(all(
+    feature = "gxhash",
+    any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")
+))]
 pub mod gxhash;

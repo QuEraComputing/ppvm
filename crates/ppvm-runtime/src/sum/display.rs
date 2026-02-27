@@ -1,13 +1,13 @@
 use itertools::Itertools;
 
 use crate::traits::*;
-use crate::{config::Config, sum::PauliSum, word::PauliWord};
+use crate::{config::Config, sum::PauliSum};
 use std::fmt::{Debug, Display};
 
 impl<T: Config> Debug for PauliSum<T>
 where
     T::Coeff: Display,
-    T::Map: for<'a> ACMapIter<'a, Item = (&'a PauliWord<T::Storage, T::BuildHasher>, &'a T::Coeff)>,
+    T::Map: for<'a> ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first = true;
@@ -25,7 +25,7 @@ where
 impl<T: Config> Display for PauliSum<T>
 where
     T::Coeff: Display,
-    T::Map: for<'a> ACMapIter<'a, Item = (&'a PauliWord<T::Storage, T::BuildHasher>, &'a T::Coeff)>,
+    T::Map: for<'a> ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first = true;

@@ -1,15 +1,15 @@
 use std::hash::BuildHasher;
 
-use super::data::PauliWord;
+use super::data::LossyPauliWord;
 use crate::traits::{PauliStorage, PauliWordTrait, Trace};
 
-impl<'a, A, H> Trace<'a, PauliWord<A, H>> for PauliWord<A, H>
+impl<'a, A, H> Trace<'a, LossyPauliWord<A, H>> for LossyPauliWord<A, H>
 where
     A: PauliStorage + 'a,
     H: Default + BuildHasher + Clone + 'a,
 {
     type Output = bool;
-    fn trace(&'a self, value: &'a PauliWord<A, H>) -> Self::Output {
+    fn trace(&'a self, value: &'a LossyPauliWord<A, H>) -> Self::Output {
         debug_assert_eq!(
             self.n_qubits(),
             value.n_qubits(),

@@ -6,6 +6,7 @@ use std::{
 };
 
 use super::sparsevec::SparseVector;
+use crate::traits::PauliWordTrait;
 use crate::{char::Pauli, config::Config};
 use crate::{phase::PhasedPauliWord, tableau::traits::TableauIndex};
 use num::{
@@ -201,6 +202,7 @@ where
             Pauli::X => (true, false),
             Pauli::Y => (true, true),
             Pauli::Z => (false, true),
+            _ => unreachable!("Pauli L cannot occur in tableau"),
         };
 
         let stabilizers = self.tableau.stabilizers();
@@ -344,6 +346,7 @@ where
             Pauli::X => (true, false),
             Pauli::Y => (true, true),
             Pauli::Z => (false, true),
+            _ => unreachable!("Pauli L cannot occur in tableau"),
         };
 
         let index_shift = self.compute_shift(addr0, pauli_booleans);
@@ -403,6 +406,7 @@ where
             Pauli::X => (true, false),
             Pauli::Y => (true, true),
             Pauli::Z => (false, true),
+            _ => unreachable!("Pauli L cannot occur in tableau"),
         };
 
         let index_shift = self.compute_shift(addr0, pauli_booleans);

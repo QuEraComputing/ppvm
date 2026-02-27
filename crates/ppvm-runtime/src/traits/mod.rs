@@ -7,8 +7,9 @@ mod ptm;
 mod storage;
 mod strategy;
 mod trace;
+mod word_trait;
 
-pub use branch::{CRx, Projection, RotationOne, RotationTwo};
+pub use branch::{CRx, Projection, RotationOne, RotationOneMapInsertClosure, RotationTwo};
 pub use clifford::Clifford;
 pub use coefficient::{Coefficient, ComplexCoefficient};
 pub use map::{
@@ -22,3 +23,4 @@ pub use noise::{
 pub use storage::PauliStorage;
 pub use strategy::{NoStrategy, Strategy};
 pub use trace::Trace;
+pub use word_trait::{PauliIter, PauliWordTrait};

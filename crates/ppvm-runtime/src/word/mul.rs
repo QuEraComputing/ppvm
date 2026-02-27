@@ -1,6 +1,6 @@
 use std::hash::BuildHasher;
 
-use crate::{traits::PauliStorage, word::PauliWord};
+use crate::{traits::PauliStorage, traits::PauliWordTrait, word::PauliWord};
 
 impl<A, S> std::ops::Mul for PauliWord<A, S>
 where

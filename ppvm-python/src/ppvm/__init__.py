@@ -1,1 +1,1 @@
-from .paulisum import PauliSum as PauliSum
+from .paulisum import PauliSum as PauliSum, LossyPauliSum as LossyPauliSum

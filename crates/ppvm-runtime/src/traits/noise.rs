@@ -21,3 +21,11 @@ pub trait DepolarizingError<T: Config> {
 pub trait AmplitudeDamping<T: Config> {
     fn amplitude_damping(&mut self, addr0: usize, gamma: T::Coeff);
 }
+
+pub trait LossChannel<T: Config> {
+    fn loss_channel(&mut self, addr0: usize, p: T::Coeff);
+}
+
+pub trait ResetLossChannel<T: Config> {
+    fn reset_loss_channel(&mut self, addr0: usize);
+}

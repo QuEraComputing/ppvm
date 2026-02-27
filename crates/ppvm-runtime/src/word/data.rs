@@ -1,6 +1,7 @@
 use crate::char::Pauli;
-use crate::traits::PauliStorage;
+use crate::traits::{PauliIter, PauliStorage, PauliWordTrait};
 use bitvec::array::BitArray;
+use core::panic;
 use std::hash::{BuildHasher, Hash};
 use std::ops::Index;
 
@@ -30,9 +31,35 @@ impl<A: PauliStorage, S> PartialEq for PauliWord<A, S> {
     }
 }
 
+impl<A, S> PauliIter for PauliWord<A, S>
+where
+    A: PauliStorage,
+    S: BuildHasher + Clone + Default,
+{
+    fn iter(&self) -> impl Iterator<Item = Pauli> {
+        PauliWordIter {
+            word: self,
+            curr: 0,
+        }
+    }
+}
+
+impl<A, S> PauliIter for &PauliWord<A, S>
+where
+    A: PauliStorage,
+    S: BuildHasher + Clone + Default,
+{
+    fn iter(&self) -> impl Iterator<Item = Pauli> {
+        PauliWordIter {
+            word: self,
+            curr: 0,
+        }
+    }
+}
+
 // implement PauliString where A can be converted to chunks of u8, e.g u64
-impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
-    pub fn new(nqubits: usize) -> Self {
+impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for PauliWord<A, S> {
+    fn new(nqubits: usize) -> Self {
         Self {
             xbits: BitArray::ZERO,
             zbits: BitArray::ZERO,
@@ -42,17 +69,50 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
         }
     }
 
-    pub fn n_qubits(&self) -> usize {
+    fn n_qubits(&self) -> usize {
         self.nqubits
     }
 
-    pub fn weight(&self) -> usize {
+    #[inline(always)]
+    fn loss_weight(&self) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    fn get_xbit(&self, index: usize) -> bool {
+        debug_assert!(index < self.nqubits, "Index out of bounds");
+        self.xbits[index]
+    }
+
+    #[inline(always)]
+    fn get_zbit(&self, index: usize) -> bool {
+        debug_assert!(index < self.nqubits, "Index out of bounds");
+        self.zbits[index]
+    }
+
+    #[inline(always)]
+    fn get_lbit(&self, _index: usize) -> bool {
+        false
+    }
+
+    #[inline(always)]
+    fn set_xbit(&mut self, index: usize, value: bool) {
+        debug_assert!(index < self.nqubits, "Index out of bounds");
+        self.xbits.set(index, value);
+    }
+    #[inline(always)]
+    fn set_zbit(&mut self, index: usize, value: bool) {
+        debug_assert!(index < self.nqubits, "Index out of bounds");
+        self.zbits.set(index, value);
+    }
+
+    fn weight(&self) -> usize {
         (0..self.nqubits)
             .filter(|&i| self.xbits[i] || self.zbits[i])
             .count()
     }
 
-    pub fn rehash(&mut self) {
+    fn rehash(&mut self) {
         use std::hash::Hasher;
         let mut hasher = S::default().build_hasher();
         self.xbits.data.hash(&mut hasher);
@@ -61,7 +121,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
     }
 
     #[inline(always)]
-    pub fn get(&self, index: usize) -> Pauli {
+    fn get(&self, index: usize) -> Pauli {
         if index >= self.nqubits {
             panic!("Index out of bounds");
         }
@@ -73,15 +133,8 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Pauli> {
-        PauliWordIter {
-            word: self,
-            curr: 0,
-        }
-    }
-
     #[inline(always)]
-    pub fn get_multiple<const Q: usize>(&self, indices: [usize; Q]) -> Self {
+    fn get_multiple<const Q: usize>(&self, indices: [usize; Q]) -> Self {
         let mut result = Self::new(Q);
         for (i, &idx) in indices.iter().enumerate() {
             result.set(i, self.get(idx));
@@ -90,10 +143,10 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
     }
 
     #[inline(always)]
-    pub fn set_multiple<const Q: usize, B: PauliStorage>(
+    fn set_multiple<const Q: usize, B: PauliStorage>(
         &mut self,
         indices: [usize; Q],
-        values: &PauliWord<B>,
+        values: &Self,
     ) {
         if values.nqubits != Q {
             panic!("Values must have the same number of qubits as indices");
@@ -106,7 +159,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
     }
 
     #[inline(always)]
-    pub fn get_slice(&self, slice: std::ops::Range<usize>) -> Self {
+    fn get_slice(&self, slice: std::ops::Range<usize>) -> Self {
         if slice.end > self.nqubits {
             panic!("Slice out of bounds");
         }
@@ -129,7 +182,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
     }
 
     #[inline(always)]
-    pub fn is(&self, index: usize, pauli: Pauli) -> bool {
+    fn is(&self, index: usize, pauli: Pauli) -> bool {
         if index >= self.nqubits {
             panic!("Index out of bounds");
         }
@@ -138,11 +191,12 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
             Pauli::X => self.xbits[index] && !self.zbits[index],
             Pauli::Z => !self.xbits[index] && self.zbits[index],
             Pauli::Y => self.xbits[index] && self.zbits[index],
+            _ => false,
         }
     }
 
     #[inline(always)]
-    pub fn set(&mut self, index: usize, pauli: Pauli) -> &mut Self {
+    fn set(&mut self, index: usize, pauli: Pauli) -> &mut Self {
         if index >= self.nqubits {
             panic!("Index out of bounds");
         }
@@ -163,33 +217,12 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWord<A, S> {
                 self.xbits.set(index, true);
                 self.zbits.set(index, true);
             }
+            _ => {
+                panic!("Loss not supported in PauliWord! Use LossyPauliWord instead.");
+            }
         }
         self.rehash();
         self
-    }
-
-    #[inline(always)]
-    pub fn set_new(&self, index: usize, pauli: Pauli) -> Self {
-        if index >= self.nqubits {
-            panic!("Index out of bounds");
-        }
-        let mut new = self.clone();
-        new.set(index, pauli);
-        new
-    }
-
-    #[inline(always)]
-    pub fn set_new_2(
-        &self,
-        index_0: usize,
-        pauli_0: Pauli,
-        index_1: usize,
-        pauli_1: Pauli,
-    ) -> Self {
-        let mut new = self.clone();
-        new.set(index_0, pauli_0);
-        new.set(index_1, pauli_1);
-        new
     }
 }
 

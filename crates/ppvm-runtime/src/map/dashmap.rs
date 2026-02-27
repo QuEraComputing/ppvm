@@ -1,12 +1,12 @@
 use std::hash::BuildHasher;
 
-use crate::{pattern::PauliPattern, traits::*, word::PauliWord};
+use crate::{pattern::PauliPattern, traits::*};
 use dashmap::DashMap;
 use rayon::prelude::*;
 
-impl<'a, S, V, Hasher> ACMapBase for DashMap<PauliWord<S, Hasher>, V, Hasher>
+impl<'a, V, Hasher, T> ACMapBase for DashMap<T, V, Hasher>
 where
-    S: PauliStorage,
+    T: std::hash::Hash + Eq,
     V: Coefficient,
     Hasher: Clone + BuildHasher + Default,
 {
@@ -23,13 +23,14 @@ where
     }
 }
 
-impl<'a, S, V, Hasher> ACMapAddAssign<S, V, Hasher> for DashMap<PauliWord<S, Hasher>, V, Hasher>
+impl<'a, S, V, Hasher, W> ACMapAddAssign<S, V, Hasher, W> for DashMap<W, V, Hasher>
 where
     S: PauliStorage + 'a,
     V: Coefficient + Sync + Send + 'a,
     Hasher: Default + Clone + BuildHasher + Sync + Send + 'a,
+    W: PauliWordTrait + Sync + Send + 'a,
 {
-    fn add_assign(&mut self, key: PauliWord<S, Hasher>, value: V) {
+    fn add_assign(&mut self, key: W, value: V) {
         self.entry(key)
             .and_modify(|v| *v += value.clone())
             .or_insert(value);
@@ -37,7 +38,7 @@ where
 
     fn map_add_assign<F>(&self, dest: &mut Self, f: F)
     where
-        F: Fn(&PauliWord<S, Hasher>, &V) -> (PauliWord<S, Hasher>, V) + Sync + Send,
+        F: Fn(&W, &V) -> (W, V) + Sync + Send,
     {
         self.par_iter().for_each(|entry| {
             let (new_k, new_v) = f(entry.key(), entry.value());
@@ -48,11 +49,11 @@ where
     }
 }
 
-impl<'a, S, V, Hasher> ACMapMulAssign<V, Hasher> for DashMap<PauliWord<S, Hasher>, V, Hasher>
+impl<V, Hasher, W> ACMapMulAssign<V, Hasher> for DashMap<W, V, Hasher>
 where
-    S: PauliStorage + 'a,
-    V: Coefficient + Send + Sync + 'a,
-    Hasher: Default + Clone + BuildHasher + Sync + Send + 'a,
+    V: Coefficient + Send + Sync,
+    Hasher: Default + Clone + BuildHasher + Sync + Send,
+    W: std::hash::Hash + std::cmp::Eq + Send + Sync,
 {
     fn mul_assign(&mut self, value: V) {
         self.par_iter_mut()
@@ -60,20 +61,14 @@ where
     }
 }
 
-impl<'a, S, V, Hasher> ACMapIter<'a> for DashMap<PauliWord<S, Hasher>, V, Hasher>
+impl<'a, V, Hasher, W> ACMapIter<'a> for DashMap<W, V, Hasher>
 where
-    S: PauliStorage + 'a,
     V: Coefficient + 'a,
     Hasher: Default + Clone + BuildHasher + 'a,
+    W: std::hash::Hash + std::cmp::Eq + 'a,
 {
-    type Item = dashmap::mapref::multiple::RefMulti<'a, PauliWord<S, Hasher>, V>;
-    type Iter = dashmap::iter::Iter<
-        'a,
-        PauliWord<S, Hasher>,
-        V,
-        Hasher,
-        DashMap<PauliWord<S, Hasher>, V, Hasher>,
-    >;
+    type Item = dashmap::mapref::multiple::RefMulti<'a, W, V>;
+    type Iter = dashmap::iter::Iter<'a, W, V, Hasher, DashMap<W, V, Hasher>>;
 
     fn iter(&'a self) -> Self::Iter {
         DashMap::iter(self)
@@ -95,14 +90,15 @@ where
 //     }
 // }
 
-impl<'a, S, C, Hasher> Trace<'a, PauliWord<S, Hasher>> for DashMap<PauliWord<S, Hasher>, C, Hasher>
+impl<'a, C, Hasher, W> Trace<'a, W> for DashMap<W, C, Hasher>
 where
-    S: PauliStorage + 'a,
     C: Coefficient + Send + Sync + 'a,
     Hasher: Clone + BuildHasher + Default + Send + Sync + 'a,
+    W: std::hash::Hash + std::cmp::Eq + Sync + Send + 'a,
+    for<'b> W: Trace<'b, W, Output = bool>,
 {
     type Output = C;
-    fn trace(&'a self, value: &'a PauliWord<S, Hasher>) -> Self::Output {
+    fn trace(&'a self, value: &'a W) -> Self::Output {
         self.par_iter()
             .filter(|entry| value.trace(entry.key()))
             .map(|entry| entry.value().clone())
@@ -110,11 +106,12 @@ where
     }
 }
 
-impl<'a, S, C, State> Trace<'a, PauliPattern> for DashMap<PauliWord<S>, C, State>
+impl<'a, C, State, W> Trace<'a, PauliPattern> for DashMap<W, C, State>
 where
-    S: PauliStorage + 'a,
     C: Coefficient + Send + Sync + 'a,
     State: Clone + BuildHasher + 'a + Send + Sync,
+    W: std::hash::Hash + std::cmp::Eq + Sync + Send + 'a,
+    for<'b> W: Trace<'b, PauliPattern, Output = bool>,
 {
     type Output = C;
     fn trace(&'a self, value: &'a PauliPattern) -> Self::Output {
@@ -125,11 +122,11 @@ where
     }
 }
 
-impl<'a, S, C, H> ACMapConsume for DashMap<PauliWord<S, H>, C, H>
+impl<'a, C, H, W> ACMapConsume for DashMap<W, C, H>
 where
-    S: PauliStorage + 'a,
     C: Coefficient + Send + Sync + 'a,
     H: Clone + BuildHasher + 'a + Send + Sync,
+    W: std::hash::Hash + std::cmp::Eq + Clone + Sync + Send + 'a,
 {
     fn consume(&mut self, dest: &mut Self) {
         dest.par_iter().for_each(|entry| {
@@ -147,32 +144,36 @@ where
     }
 }
 
-impl<'a, S, C, H> ACMapInsert<S, C, H> for DashMap<PauliWord<S, H>, C, H>
+impl<'a, S, C, H, W> ACMapInsert<S, C, H, W> for DashMap<W, C, H>
 where
     S: PauliStorage + 'a,
     C: Coefficient + Send + Sync + 'a,
     H: Default + Clone + BuildHasher + 'a + Send + Sync,
+    W: PauliWordTrait + Send + Sync + 'a,
 {
     fn map_insert<F>(&mut self, dest: &mut Self, f: F)
     where
-        F: Fn(&PauliWord<S, H>, &mut C) -> Option<(PauliWord<S, H>, C)> + Sync + Send,
+        F: Fn(&W, &mut C) -> Option<(W, C)> + Sync + Send,
     {
         self.par_iter_mut().for_each(|mut entry| {
             let (k, v) = entry.pair_mut();
             if let Some((new_k, new_v)) = f(k, v) {
-                dest.insert(new_k, new_v);
+                dest.entry(new_k)
+                    .and_modify(|v| *v += new_v.clone())
+                    .or_insert(new_v);
             }
         })
     }
 }
 
-impl<S, C, H> ACMapContains<S, C, H> for DashMap<PauliWord<S, H>, C, H>
+impl<S, C, H, W> ACMapContains<S, C, H, W> for DashMap<W, C, H>
 where
     S: PauliStorage,
     C: Coefficient + PartialEq,
     H: BuildHasher + Clone + Default,
+    W: PauliWordTrait,
 {
-    fn contains_with<F>(&self, key: &PauliWord<S, H>, f: F) -> bool
+    fn contains_with<F>(&self, key: &W, f: F) -> bool
     where
         F: Fn(&C) -> bool,
     {
@@ -180,15 +181,16 @@ where
     }
 }
 
-impl<S, C, H> ACMapScale<S, C, H> for DashMap<PauliWord<S, H>, C, H>
+impl<S, C, H, W> ACMapScale<S, C, H, W> for DashMap<W, C, H>
 where
     S: PauliStorage,
     C: Coefficient + Send + Sync,
     H: BuildHasher + Clone + Default + Sync + Send,
+    W: PauliWordTrait + Send + Sync,
 {
     fn scale<F>(&mut self, f: F)
     where
-        F: Fn(&PauliWord<S, H>, &mut C) + Sync + Send,
+        F: Fn(&W, &mut C) + Sync + Send,
     {
         self.par_iter_mut().for_each(|mut entry| {
             let (k, v) = entry.pair_mut();
@@ -197,15 +199,16 @@ where
     }
 }
 
-impl<S, C, H> ACMapRetain<S, C, H> for DashMap<PauliWord<S, H>, C, H>
+impl<S, C, H, W> ACMapRetain<S, C, H, W> for DashMap<W, C, H>
 where
     S: PauliStorage,
     C: Coefficient,
     H: BuildHasher + Clone + Default + Sync + Send,
+    W: PauliWordTrait,
 {
     fn retain<F>(&mut self, f: F)
     where
-        F: Fn(&PauliWord<S, H>, &C) -> bool + Sync + Send,
+        F: Fn(&W, &C) -> bool + Sync + Send,
     {
         Self::retain(self, |k, v| f(k, v));
     }

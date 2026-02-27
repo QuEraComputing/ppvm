@@ -1,7 +1,7 @@
 use std::hash::BuildHasher;
 
 use super::data::PauliWord;
-use crate::traits::{Clifford, PauliStorage};
+use crate::traits::{Clifford, PauliStorage, PauliWordTrait};
 
 impl<A, H> Clifford for PauliWord<A, H>
 where

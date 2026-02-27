@@ -1,7 +1,7 @@
 use std::hash::BuildHasher;
 
 use super::data::PauliWord;
-use crate::traits::{PauliStorage, Trace};
+use crate::traits::{PauliStorage, PauliWordTrait, Trace};
 
 impl<'a, A, H> Trace<'a, PauliWord<A, H>> for PauliWord<A, H>
 where

@@ -38,7 +38,7 @@ pub fn benchmark_suite_random_circuit<T: Config>(c: &mut Criterion, name: impl A
     let mut state: PauliSum<T> = PauliSum::builder().n_qubits(n_qubits).build();
 
     // initial state: let's calculate the expectation value of Sum(Z(i))
-    let mut term = PauliWord::new(n_qubits);
+    let mut term = T::PauliWordType::new(n_qubits);
     term.set(0, Pauli::Z);
     term.set(1, Pauli::Z);
     state += (term.clone(), T::Coeff::from(1.0));

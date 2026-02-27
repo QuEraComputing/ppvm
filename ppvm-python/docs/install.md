@@ -6,7 +6,15 @@
 
 ## Install from source
 
-Clone the repository and install with [uv](https://docs.astral.sh/uv/):
+Just `pip install` the directly from git.
+We recommend using [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv pip install git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
+```
+
+
+You can also clone the repository and install with:
 
 ```bash
 git clone https://github.com/QuEraComputing/ppvm
@@ -22,5 +30,5 @@ environment. The first build takes a minute; subsequent builds are cached.
 Activate the environment or prefix commands with `uv run`:
 
 ```bash
-uv run --project ppvm-python python -c "from ppvm import PauliSum; print(PauliSum(initial_terms=['ZZ']))"
+uv run --project ppvm-python python -c "from ppvm import PauliSum; print(PauliSum.new(n_qubits = 2, terms = ['ZZ']))"
 ```

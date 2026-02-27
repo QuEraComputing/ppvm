@@ -1,6 +1,6 @@
 # API Reference
 
-ppvm exposes two public classes:
+ppvm exposes two classes:
 
 | Class | Description |
 |-------|-------------|
@@ -9,3 +9,7 @@ ppvm exposes two public classes:
 
 Both classes share the same gate and noise channel interface. `LossyPauliSum`
 additionally exposes `loss_channel` and `reset_loss_channel`.
+
+Note that the loss simulation comes with a slight memory overhead to track
+the information of which qubit was lost.
+See [../loss.md] for details.

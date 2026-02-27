@@ -1,3 +1,4 @@
+use super::rot1::rotate_1_map_insert_closure;
 use crate::traits::*;
 use crate::{char::Pauli, config::Config, sum::PauliSum};
 
@@ -31,11 +32,11 @@ where
             // NOTE: case of both qubits being lost is handled by single-qubit rotation logic
             if k.get_lbit(a) {
                 // fall back to single-qubit rotation on qubit b
-                return PauliSum::<T>::rotate_1_map_insert_closure(k, v, axis_b, b, &sin, &cos);
+                return rotate_1_map_insert_closure::<T>(k, v, axis_b, b, &sin, &cos);
             }
             if k.get_lbit(b) {
                 // fall back to single-qubit rotation on qubit a
-                return PauliSum::<T>::rotate_1_map_insert_closure(k, v, axis_a, a, &sin, &cos);
+                return rotate_1_map_insert_closure::<T>(k, v, axis_a, a, &sin, &cos);
             }
             let (eps, x_a, z_a, x_b, z_b) = comm_2(
                 axis_a_x,

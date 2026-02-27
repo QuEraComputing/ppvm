@@ -9,7 +9,7 @@ mod strategy;
 mod trace;
 mod word_trait;
 
-pub use branch::{CRx, Projection, RotationOne, RotationOneMapInsertClosure, RotationTwo};
+pub use branch::{CRx, Projection, RotationOne, RotationTwo};
 pub use clifford::Clifford;
 pub use coefficient::{Coefficient, ComplexCoefficient};
 pub use map::{

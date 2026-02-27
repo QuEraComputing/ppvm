@@ -1,7 +1,7 @@
 import math
 import re
 from dataclasses import dataclass, field
-from typing import ClassVar, Sequence, Self, Union
+from typing import Sequence, Self, Union
 
 import ppvm_python_native
 
@@ -403,6 +403,14 @@ class PauliSum:
         """
         self._interface.s(addr0)
 
+    def s_adj(self, addr0: int) -> None:
+        """Apply an adjoint S gate (sqrt(Z)) to the specified qubit.
+
+        Args:
+            addr0: The index of the target qubit.
+        """
+        self._interface.s_adj(addr0)
+
     def cnot(self, addr0: int, addr1: int) -> None:
         """Apply a CNOT (controlled-X) gate.
 
@@ -514,6 +522,16 @@ class PauliSum:
                 The identity probability is implicitly 1 - sum(p).
         """
         self._interface.pauli_error(addr0, p)
+
+    def depolarize(self, addr0: int, p: float) -> None:
+        """Apply a single-qubit depolarization error.
+        
+        Args:
+            addr0: The index of the target qubit
+            p: The probability with which an error is applied.
+                No error is applied with probability 1 - p.
+        """
+        self._interface.depolarize(addr0, p)
 
     @staticmethod
     def two_qubit_pauli_error_probabilities(

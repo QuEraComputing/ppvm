@@ -134,6 +134,11 @@ macro_rules! create_interface {
                 self.inner.truncate();
             }
 
+            pub fn s_adj(&mut self, addr0: usize) {
+                self.inner.s_adj(addr0);
+                self.inner.truncate();
+            }
+
             pub fn cnot(&mut self, addr0: usize, addr1: usize) {
                 self.inner.cnot(addr0, addr1);
                 self.inner.truncate();

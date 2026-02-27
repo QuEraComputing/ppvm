@@ -96,7 +96,7 @@ class PauliSum:
 
         ```python
         # Create a simple Pauli sum: 0.5 * ZZ + 0.3 * XI
-        ps = PauliSum(initial_terms=["ZZ", "XI"], coefficients=[0.5, 0.3])
+        ps = PauliSum(n_qubits = 2, initial_terms=["ZZ", "XI"], coefficients=[0.5, 0.3])
         # For a circuit: RZ(0.5) on qubit 1, then H on qubit 0
         # Apply in reverse order:
         ps.rz(1, 0.5)

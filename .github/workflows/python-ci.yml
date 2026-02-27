@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  RUSTFLAGS: "-C target-feature=+aes,+sse2"
+
 jobs:
   test:
     name: Python tests

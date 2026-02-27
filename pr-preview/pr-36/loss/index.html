@@ -11,10 +11,10 @@
       
       
       
-        <link rel="prev" href="..">
+        <link rel="prev" href="../install/">
       
       
-        <link rel="next" href="../loss/">
+        <link rel="next" href="../examples/">
       
       
         
@@ -25,7 +25,7 @@
     
     
       
-        <title>Installation - ppvm</title>
+        <title>Simulating Loss - ppvm</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#installation" class="md-skip">
+        <a href="#simulating-loss-with-pauli-propagation" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Installation
+              Simulating Loss
             
           </span>
         </div>
@@ -232,11 +232,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="./" class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href="../install/" class="md-tabs__link">
         
   
   
@@ -253,9 +251,11 @@
   
   
   
+    
   
-    <li class="md-tabs__item">
-      <a href="../loss/" class="md-tabs__link">
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
         
   
   
@@ -376,37 +376,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Installation
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
         
   
   
@@ -422,59 +395,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#requirements" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Requirements
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#install-from-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install from source
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#using-the-package" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Using the package
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -483,10 +403,19 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../loss/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -502,6 +431,7 @@
   
 
       </a>
+      
     </li>
   
 
@@ -699,47 +629,6 @@
     
   
   
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#requirements" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Requirements
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#install-from-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install from source
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#using-the-package" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Using the package
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
 </nav>
                   </div>
                 </div>
@@ -755,27 +644,8 @@
 
 
 
-<h1 id="installation">Installation</h1>
-<h2 id="requirements">Requirements</h2>
-<ul>
-<li>Python 3.10 or later</li>
-</ul>
-<h2 id="install-from-source">Install from source</h2>
-<p>Just <code>pip install</code> the directly from git.
-We recommend using <a href="https://docs.astral.sh/uv/">uv</a>.</p>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>git+https://github.com/QuEraComputing/ppvm.git#subdirectory<span class="o">=</span>ppvm-python
-</code></pre></div>
-<p>You can also clone the repository and install with:</p>
-<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/QuEraComputing/ppvm
-<span class="nb">cd</span><span class="w"> </span>ppvm
-uv<span class="w"> </span>sync<span class="w"> </span>--project<span class="w"> </span>ppvm-python
-</code></pre></div>
-<p>This compiles the Rust core and installs the package into a local virtual
-environment. The first build takes a minute; subsequent builds are cached.</p>
-<h2 id="using-the-package">Using the package</h2>
-<p>Activate the environment or prefix commands with <code>uv run</code>:</p>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--project<span class="w"> </span>ppvm-python<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from ppvm import PauliSum; print(PauliSum.new(n_qubits = 2, terms = [&#39;ZZ&#39;]))&quot;</span>
-</code></pre></div>
+<h1 id="simulating-loss-with-pauli-propagation">Simulating loss with Pauli Propagation</h1>
+<p>WIP</p>
 
 
 
@@ -811,7 +681,7 @@ environment. The first build takes a minute; subsequent builds are cached.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href=".." class="md-footer__link md-footer__link--prev" aria-label="Previous: Home">
+          <a href="../install/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Installation">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -821,20 +691,20 @@ environment. The first build takes a minute; subsequent builds are cached.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Home
+                Installation
               </div>
             </div>
           </a>
         
         
           
-          <a href="../loss/" class="md-footer__link md-footer__link--next" aria-label="Next: Simulating Loss">
+          <a href="../examples/" class="md-footer__link md-footer__link--next" aria-label="Next: Examples">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Simulating Loss
+                Examples
               </div>
             </div>
             <div class="md-footer__button md-icon">

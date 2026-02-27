@@ -54,6 +54,10 @@ where
         self.zbits.set(index, z);
         self.rehash();
     }
+    fn s_adj(&mut self, index: usize) {
+        // only affects phase
+        self.s(index);
+    }
     fn cnot(&mut self, control: usize, target: usize) {
         //                          xx zz    xx zz  phase
         // CNOT * II * CNOT == II,  00 00 -> 00 00, 0

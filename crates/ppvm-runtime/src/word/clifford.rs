@@ -46,7 +46,7 @@ where
         self.zbits.set(index, z);
         self.rehash();
     }
-    fn s_dagger(&mut self, index: usize) {
+    fn s_adj(&mut self, index: usize) {
         // only adds different phase
         self.s(index);
     }

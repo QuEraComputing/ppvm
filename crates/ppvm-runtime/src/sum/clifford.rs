@@ -46,7 +46,7 @@ where
     map_scale!(z, index);
     map_word!(h, index);
     map_word!(s, index);
-    map_word!(s_dagger, index);
+    map_word!(s_adj, index);
     map_word!(cnot, a, b);
     map_word!(cz, a, b);
 }

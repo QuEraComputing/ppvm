@@ -2,3 +2,7 @@
 .DS_Store
 .vscode/
 *__pycache__*
+
+# mkdocs build output and cache
+ppvm-python/site/
+ppvm-python/.cache/

@@ -1,0 +1,76 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  RUSTFLAGS: "-C target-feature=+aes,+sse2"
+
+jobs:
+  deploy-preview:
+    name: Deploy preview
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Build docs
+        run: uv run --project ppvm-python --group doc mkdocs build --config-file ppvm-python/mkdocs.yml
+
+      - name: Deploy PR preview
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: ppvm-python/site/
+
+  cleanup-preview:
+    name: Clean up preview
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: ppvm-python/site/
+
+  deploy-dev:
+    name: Deploy dev docs
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # mike needs full history to push to gh-pages
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch gh-pages branch
+        run: git fetch origin gh-pages --depth=1 || true
+
+      - name: Deploy dev docs with mike
+        run: uv run --project ppvm-python --group doc mike deploy dev --push --config-file ppvm-python/mkdocs.yml

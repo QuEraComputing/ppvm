@@ -2,6 +2,7 @@ use crate::char::Pauli;
 use crate::loss::LossyPauliWord;
 use crate::traits::*;
 use crate::{config::Config, sum::PauliSum};
+use num::Float;
 use std::hash::BuildHasher;
 
 impl<T: Config> PauliError<T> for PauliSum<T>
@@ -246,6 +247,34 @@ where
                 *v *= 1.0f64 - 4.0f64 / 3.0f64 * p.clone();
             }
             Pauli::L => {}
+        });
+    }
+}
+
+impl<T: Config> AmplitudeDamping<T> for PauliSum<T>
+where
+    f64: std::ops::Sub<T::Coeff, Output = T::Coeff>,
+    T::Coeff: Float,
+{
+    fn amplitude_damping(&mut self, addr0: usize, gamma: <T as Config>::Coeff) {
+        self.map_insert(|k, v| match k.get(addr0) {
+            Pauli::I | Pauli::L => None,
+
+            Pauli::X | Pauli::Y => {
+                *v *= (1.0 - gamma).sqrt();
+                None
+            }
+
+            Pauli::Z => {
+                // branch to gamma * I
+                let new_v = v.clone() * gamma;
+                let mut new_k = k.clone();
+                new_k.set(addr0, Pauli::I);
+
+                *v *= 1.0 - gamma;
+
+                Some((new_k, new_v))
+            }
         });
     }
 }

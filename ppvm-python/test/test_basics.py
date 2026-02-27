@@ -64,11 +64,11 @@ def test_weights():
 
     assert state.current_max_weight() == 2
 
-    state2 = PauliSum(n_qubits=2, initial_terms=["ZX", "IT"])
+    state2 = PauliSum(n_qubits=2, initial_terms=["ZX", "IY"])
     weights = state2.weights()
 
     weights.sort(key=lambda w: w[1])
-    assert weights == [("IT", 1), ("ZX", 2)]
+    assert weights == [("IY", 1), ("ZX", 2)]
 
 
 def test_overlap():

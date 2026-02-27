@@ -10,7 +10,7 @@ mod trace;
 mod word_trait;
 
 pub use branch::{CRx, Projection, RotationOne, RotationOneMapInsertClosure, RotationTwo};
-pub use clifford::Clifford;
+pub use clifford::{Clifford, CliffordExtensions};
 pub use coefficient::{Coefficient, ComplexCoefficient};
 pub use map::{
     ACMap, ACMapAddAssign, ACMapBase, ACMapConsume, ACMapContains, ACMapInsert, ACMapIter,

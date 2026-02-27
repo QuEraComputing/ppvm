@@ -181,6 +181,27 @@ macro_rules! create_interface {
                 self.inner.truncate();
             }
 
+            // clifford extensions
+            pub fn sqrt_x(&mut self, addr0: usize) {
+                self.inner.sqrt_x(addr0);
+                self.inner.truncate();
+            }
+
+            pub fn sqrt_y(&mut self, addr0: usize) {
+                self.inner.sqrt_y(addr0);
+                self.inner.truncate();
+            }
+
+            pub fn sqrt_x_adj(&mut self, addr0: usize) {
+                self.inner.sqrt_x_adj(addr0);
+                self.inner.truncate();
+            }
+
+            pub fn sqrt_y_adj(&mut self, addr0: usize) {
+                self.inner.sqrt_y_adj(addr0);
+                self.inner.truncate();
+            }
+
             // noise
             pub fn pauli_error(&mut self, addr0: usize, p: [f64; 3]) {
                 self.inner.pauli_error(addr0, p);
@@ -192,6 +213,20 @@ macro_rules! create_interface {
                 self.inner.truncate();
             }
 
+            pub fn depolarize(&mut self, addr0: usize, p: f64) {
+                self.inner.depolarize(addr0, p);
+                self.inner.truncate();
+            }
+
+            pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64) {
+                self.inner.depolarize2(addr0, addr1, p);
+                self.inner.truncate();
+            }
+
+            pub fn amplitude_damping(&mut self, addr0: usize, gamma: f64) {
+                self.inner.amplitude_damping(addr0, gamma);
+                self.inner.truncate();
+            }
 
             // some python niceties
 

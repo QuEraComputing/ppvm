@@ -91,6 +91,7 @@ class PauliSum:
         Gates must be applied in reverse circuit order. This is because PauliSum
         evolves observables in the Heisenberg picture rather than states in the
         Schrödinger picture.
+        Also, it means that a gate `U` is applied to a pauli `P` as `U† * P * U`.
 
     Example:
         Basic usage with a simple Pauli sum:
@@ -512,6 +513,51 @@ class PauliSum:
         """
         self._interface.rzz(addr0, addr1, theta)
 
+    # clifford extensions
+    def sqrt_x(self, addr0: int) -> None:
+        """Apply the sqrt(X) gate (also known as SX or V) to the specified qubit.
+
+        Acts as a square root of the X gate: `sqrt_x @ sqrt_x = X`.
+        Conjugates Paulis as: X → X, Y → -Z, Z → Y.
+
+        Args:
+            addr0: The index of the target qubit.
+        """
+        self._interface.sqrt_x(addr0)
+
+    def sqrt_y(self, addr0: int) -> None:
+        """Apply the sqrt(Y) gate (also known as SY) to the specified qubit.
+
+        Acts as a square root of the Y gate: `sqrt_y @ sqrt_y = Y`.
+        Conjugates Paulis as: X → Z, Y → Y, Z → -X.
+
+        Args:
+            addr0: The index of the target qubit.
+        """
+        self._interface.sqrt_y(addr0)
+
+    def sqrt_x_adj(self, addr0: int) -> None:
+        """Apply the adjoint of the sqrt(X) gate (also known as SX† or V†) to the specified qubit.
+
+        Acts as the inverse of `sqrt_x`: `sqrt_x_adj @ sqrt_x = I`.
+        Conjugates Paulis as: X → X, Y → Z, Z → -Y.
+
+        Args:
+            addr0: The index of the target qubit.
+        """
+        self._interface.sqrt_x_adj(addr0)
+
+    def sqrt_y_adj(self, addr0: int) -> None:
+        """Apply the adjoint of the sqrt(Y) gate (also known as SY†) to the specified qubit.
+
+        Acts as the inverse of `sqrt_y`: `sqrt_y_adj @ sqrt_y = I`.
+        Conjugates Paulis as: X → Z, Y → Y, Z → -X.
+
+        Args:
+            addr0: The index of the target qubit.
+        """
+        self._interface.sqrt_y_adj(addr0)
+
     # Noise operations
     def pauli_error(self, addr0: int, p: Sequence[float]) -> None:
         """Apply a single-qubit Pauli error channel.
@@ -532,6 +578,17 @@ class PauliSum:
                 No error is applied with probability 1 - p.
         """
         self._interface.depolarize(addr0, p)
+
+    def depolarize2(self, addr0: int, addr1: int, p: float) -> None:
+        """Apply a two-qubit depolarization error.
+        
+        Args:
+            addr0: The index of the first qubit
+            addr1: The index of the second qubit
+            p: The probability with which an error is applied.
+                No error is applied with probability 1 - p.
+        """
+        self._interface.depolarize2(addr0, addr1, p)
 
     @staticmethod
     def two_qubit_pauli_error_probabilities(
@@ -581,7 +638,15 @@ class PauliSum:
         """
         self._interface.two_qubit_pauli_error(addr0, addr1, p)
 
-
+    def amplitude_damping(self, addr0: int, gamma: float) -> None:
+        """Apply an amplitude-damping channel.
+        
+        Args:
+            addr0: The index of the target qubit.
+            gamma: The damping rate. `X` and `Y` are damped with `sqrt(1 - gamma)`,
+                whereas `Z` branches into `gamma * I + (1 - gamma) * Z`.
+        """
+        self._interface.amplitude_damping(addr0, gamma)
 
 
 class LossyPauliSum(PauliSum):

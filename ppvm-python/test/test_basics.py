@@ -204,6 +204,58 @@ def test_gate_methods():
     s.rzz(0, 1, -PI / 2)
     assert pytest.approx(t(s).get("YZ", 0.0)) == 1.0
 
+    # sqrt_x (= HSH): X → X, Y → -Z, Z → Y
+    s = PauliSum(initial_terms=["XI"], coefficients=[1.0])
+    s.sqrt_x(0)
+    assert t(s) == {"XI": 1.0}
+
+    s = PauliSum(initial_terms=["YI"], coefficients=[1.0])
+    s.sqrt_x(0)
+    assert pytest.approx(t(s).get("ZI", 0.0)) == -1.0
+
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.sqrt_x(0)
+    assert pytest.approx(t(s).get("YI", 0.0)) == 1.0
+
+    # sqrt_x_adj (= HS†H): X → X, Y → Z, Z → -Y
+    s = PauliSum(initial_terms=["XI"], coefficients=[1.0])
+    s.sqrt_x_adj(0)
+    assert t(s) == {"XI": 1.0}
+
+    s = PauliSum(initial_terms=["YI"], coefficients=[1.0])
+    s.sqrt_x_adj(0)
+    assert pytest.approx(t(s).get("ZI", 0.0)) == 1.0
+
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.sqrt_x_adj(0)
+    assert pytest.approx(t(s).get("YI", 0.0)) == -1.0
+
+    # sqrt_y (= S·sqrt_x·S†): X → Z, Y → Y, Z → -X
+    s = PauliSum(initial_terms=["XI"], coefficients=[1.0])
+    s.sqrt_y(0)
+    assert pytest.approx(t(s).get("ZI", 0.0)) == 1.0
+
+    s = PauliSum(initial_terms=["YI"], coefficients=[1.0])
+    s.sqrt_y(0)
+    assert t(s) == {"YI": 1.0}
+
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.sqrt_y(0)
+    assert pytest.approx(t(s).get("XI", 0.0)) == -1.0
+
+    # sqrt_y_adj (= S†·sqrt_x_adj·S): X → Z, Y → Y, Z → -X
+    s = PauliSum(initial_terms=["XI"], coefficients=[1.0])
+    s.sqrt_y_adj(0)
+    assert pytest.approx(t(s).get("ZI", 0.0)) == 1.0
+
+    s = PauliSum(initial_terms=["YI"], coefficients=[1.0])
+    s.sqrt_y_adj(0)
+    assert t(s) == {"YI": 1.0}
+
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.sqrt_y_adj(0)
+    assert pytest.approx(t(s).get("XI", 0.0)) == -1.0
+
 
 def test_noise_methods():
     """Noise channels act as super-operators E(P) = Σ_k p_k N_k† P N_k + (1−Σp_k)P.
@@ -276,3 +328,67 @@ def test_noise_methods():
     s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
     s.two_qubit_pauli_error(0, 1, p)
     assert t(s) == {"ZI": 1.0}  # ZI commutes with all I⊗{X,Y,Z} → unchanged
+
+    # --- depolarize ---
+
+    # zero probability: no change
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.depolarize(0, 0.0)
+    assert t(s) == {"ZI": 1.0}
+
+    # depolarize(p) with px=py=pz=p/3: non-identity Paulis scale by 1 − 4p/3
+    # (anticommutes with 2 axes, each with prob p/3 → scaling = 1 − 2·p/3 − 2·p/3)
+    p = 0.1
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.depolarize(0, p)
+    assert pytest.approx(t(s).get("ZI", 0.0)) == 1.0 - 4 * p / 3
+
+    # at p=3/4 the channel is completely depolarizing: all Paulis vanish
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.depolarize(0, 0.75)
+    assert len(s) == 0
+
+    # depolarize on qubit 1 does not affect a term with support only on qubit 0
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.depolarize(1, 0.3)
+    assert t(s) == {"ZI": 1.0}
+
+    # --- depolarize2 ---
+
+    # zero probability: no change
+    s = PauliSum(initial_terms=["ZZ"], coefficients=[1.0])
+    s.depolarize2(0, 1, 0.0)
+    assert t(s) == {"ZZ": 1.0}
+
+    # ZZ anticommutes with 8 of 15 non-identity two-qubit Paulis → scales by 1 − 16p/15
+    p = 0.1
+    s = PauliSum(initial_terms=["ZZ"], coefficients=[1.0])
+    s.depolarize2(0, 1, p)
+    assert pytest.approx(t(s).get("ZZ", 0.0)) == 1.0 - 16 * p / 15
+
+    # --- amplitude_damping ---
+
+    # gamma=0: no change
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.amplitude_damping(0, 0.0)
+    assert t(s) == {"ZI": 1.0}
+
+    # E†[Z] = (1−γ)Z + γI: longitudinal Pauli branches into Z and I
+    gamma = 0.2
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.amplitude_damping(0, gamma)
+    assert pytest.approx(t(s).get("ZI", 0.0)) == 1.0 - gamma
+    assert pytest.approx(t(s).get("II", 0.0)) == gamma
+
+    # E†[X] = √(1−γ)·X: transverse Paulis decay
+    s = PauliSum(initial_terms=["XI"], coefficients=[1.0])
+    s.amplitude_damping(0, gamma)
+    assert pytest.approx(t(s).get("XI", 0.0)) == (1.0 - gamma) ** 0.5
+
+    # T₂ = 2T₁ physics: transverse decay factor squared equals longitudinal decay
+    assert pytest.approx(((1.0 - gamma) ** 0.5) ** 2) == 1.0 - gamma
+
+    # amplitude_damping on qubit 1 does not affect a term with support only on qubit 0
+    s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
+    s.amplitude_damping(1, gamma)
+    assert t(s) == {"ZI": 1.0}

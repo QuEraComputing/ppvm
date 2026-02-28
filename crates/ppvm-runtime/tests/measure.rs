@@ -175,7 +175,7 @@ fn test_measure_generalized_tableau_bell() {
 
     assert_eq!(
         outcome2, outcome,
-        "Bell state measurement must be consistents"
+        "Bell state measurement must be consistent"
     )
 }
 

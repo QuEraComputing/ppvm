@@ -415,6 +415,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulating Loss
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -431,6 +449,97 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Background">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#updated-pauli-basis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updated Pauli basis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loss-channel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loss channel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reset-channel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reset channel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comment-on-branching-and-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comment on branching and scaling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -629,6 +738,86 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Background">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#updated-pauli-basis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updated Pauli basis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loss-channel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loss channel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reset-channel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reset channel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comment-on-branching-and-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comment on branching and scaling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -645,7 +834,122 @@
 
 
 <h1 id="simulating-loss-with-pauli-propagation">Simulating loss with Pauli Propagation</h1>
-<p>WIP</p>
+<h2 id="implementation">Implementation</h2>
+<p>To simulate loss, <code>ppvm</code> offers a <a href="/api/ppvm/paulisum/#ppvm.paulisum.LossyPauliSum"><code>LossyPauliSum</code></a> class.
+This is a dedicated class, which behaves just like a <a href="/api/ppvm/paulisum/#ppvm.paulisum.PauliSum"><code>PauliSum</code></a>, but adds additional methods for the loss.</p>
+<p>Also, this separation is there since we need to extend the Pauli basis in order to
+account for loss (see <a href="#background">below</a>). This comes at a storage overhead. Specifically, we now need 3 bits in order to represent a character in a Pauli string rather than just 2.</p>
+<p>Here is a small example:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">ppvm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LossyPauliSum</span>
+
+<span class="n">ps</span> <span class="o">=</span> <span class="n">LossyPauliSum</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">n_qubits</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="n">terms</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Z&quot;</span><span class="p">])</span>
+
+<span class="c1"># Reset at the end of the circuit</span>
+<span class="n">ps</span><span class="o">.</span><span class="n">reset_loss_channel</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="c1"># Loss after an X gate</span>
+<span class="n">ps</span><span class="o">.</span><span class="n">loss_channel</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">)</span>
+
+<span class="c1"># Apply an X gate</span>
+<span class="n">ps</span><span class="o">.</span><span class="n">x</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="n">z_exp</span> <span class="o">=</span> <span class="n">ps</span><span class="o">.</span><span class="n">overlap_with_zero</span><span class="p">()</span>
+
+<span class="c1"># This will be -0.8: in 10% of cases we have &lt;Z&gt; = 1 instead of -1.</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&lt;Z&gt;: </span><span class="si">{</span><span class="n">z_exp</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="background">Background</h2>
+<h3 id="updated-pauli-basis">Updated Pauli basis</h3>
+<p>We can include loss in qubit simulation by adding a third state,
+which we will call the leakage state <span class="arithmatex">\(|L\rangle\)</span>.
+In order to include this in Pauli Propagation, we extend the
+set of Pauli basis operator by an additional operator <span class="arithmatex">\(L = |L\rangle \langle L|\)</span>,
+which is the projector on the leakage state.</p>
+<p>The complete set of Pauli operators we use to describe any Pauli String is then</p>
+<div class="arithmatex">\[\{I, X, Y, Z, L\}.\]</div>
+<p>Neglecting coherences between the qubit subspace and the leakage state, this basis
+fully describes the three-level system.</p>
+<p>For clarity, the corresponding matrix definitions are</p>
+<div class="arithmatex">\[I = \begin{pmatrix} 1 &amp; 0 &amp; 0 \\
+0 &amp; 1 &amp; 0 \\
+0 &amp; 0 &amp; 0
+\end{pmatrix}, ~~ X = \begin{pmatrix} 0 &amp; 1 &amp; 0 \\
+1 &amp; 0 &amp; 0 \\
+0 &amp; 0 &amp; 0
+\end{pmatrix}, ~~Y =\begin{pmatrix} 0 &amp; -i &amp; 0 \\
+i &amp; 0 &amp; 0 \\
+0 &amp; 0 &amp; 0
+\end{pmatrix} , \\
+Z = \begin{pmatrix} 1 &amp; 0 &amp; 0 \\
+0 &amp; -1 &amp; 0 \\
+0 &amp; 0 &amp; 0
+\end{pmatrix}, ~~ L = \begin{pmatrix} 0 &amp; 0 &amp; 0 \\
+0 &amp; 0 &amp; 0 \\
+0 &amp; 0 &amp; 1
+\end{pmatrix}.
+\]</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>In the basis above, gates <strong>no longer correspond to the matrix</strong> definitions.
+The reason for this is simple: applying e.g. an <span class="arithmatex">\(X\)</span> gate to a qubit in <span class="arithmatex">\(|L\rangle\)</span>,
+will leave the qubit invariant. However, it is obvious that multiplying any Pauli
+<span class="arithmatex">\(P \neq L\)</span> from the basis with <span class="arithmatex">\(L\)</span> will give 0. This would correspond to a
+zero-amplitude state. The implementation takes that into account accordingly.</p>
+</div>
+<h3 id="loss-channel">Loss channel</h3>
+<p>The action of an independent loss channel is to map part of the population from
+the qubit subspace into the <span class="arithmatex">\(|L\rangle\)</span> state.
+This corresponds to reducing the trace of the density operator.</p>
+<p>The Kraus operators for a loss channel are</p>
+<div class="arithmatex">\[K_0 = \sqrt{1 - p_L}I + |L\rangle\langle L|, ~~ K_1 = \sqrt{p_L} |L\rangle\langle 0|, ~~ K_2 = \sqrt{p_L} |L\rangle\langle 1|,\]</div>
+<p>where <span class="arithmatex">\(p_L\)</span> is the probability of losing a qubit.</p>
+<p>The action of the channel on the Pauli basis is</p>
+<div class="arithmatex">\[\mathcal{E}(P) = (1 - p_L) P, ~~ P\in\{I, X, Y, Z\},\\
+\mathcal{E}(L) = L + p_L I.
+\]</div>
+<p>Note that this channel is not symmetric under forward and backward propagation.
+Since for any channel <span class="arithmatex">\(\mathcal{E}[\rho] = \sum_i K_i \rho K_i ^\dagger\)</span>, we have <span class="arithmatex">\(\langle A \rangle = \text{tr}(A \mathcal{E}[\rho]) = \text{tr}(\sum_i K_i^\dagger A K_i \rho)\)</span>,
+the above action on Paulis corresponds to the <strong>adjoint</strong> channel.</p>
+<p>The action of the channel is clear from a physical perspective:
+whenever a qubit undergoes a loss channel, we lose population out of the qubit subspace.</p>
+<p>However, we can also see if there is no loss present in the initial state, we will never map any part of a Pauli string to <span class="arithmatex">\(L\)</span>. This might seem a bit surprising, but is accurate. Under the loss channel described here, we simply lose population out of the qubit subspace. Any expectation value of a qubit-subspace operator will tend towards <span class="arithmatex">\(0\)</span> with increasing loss.</p>
+<p>An intuitive picture is also to consider a pure state which describes a single probabilistic trajectory through the circuit. Before loss, a state vector in the qubit subspace is just</p>
+<div class="arithmatex">\[|\psi\rangle = \begin{pmatrix} c_0 \\ c_1 \\ 0 \end{pmatrix}. \]</div>
+<p>Should the qubit be lost, the resulting state vector is</p>
+<div class="arithmatex">\[ |\psi\rangle = |L\rangle.\]</div>
+<p>Since under the described dynamics there is no way to recover a qubit once it has been lost, any trajectory where the qubit has been lost will contribute a 0 overlap for any qubit subspace operator <span class="arithmatex">\(Q\)</span>,</p>
+<div class="arithmatex">\[\langle \psi| Q|\psi\rangle = 0.\]</div>
+<p>While this is conceptually accurate, the resulting loss does not capture what happens on hardware. If there is no loss detection, then a qubit that has been lost will be falsely counted as being in the <span class="arithmatex">\(|0\rangle\)</span> state when being measured. If there is loss detection, we could either reject the trajectory via post-selection, which is equivalent to having no loss in the system. Or, we can reset the qubit to the <span class="arithmatex">\(|0\rangle\)</span> during the circuit.</p>
+<h3 id="reset-channel">Reset channel</h3>
+<p>In order to accurately model the hardware behavior, we will extend the above description by another channel. A reset channel, which incoherently resets a lost qubit into the <span class="arithmatex">\(|0\rangle\)</span> state.</p>
+<p>The underlying dynamics of this channel are equivalent to having amplitude damping from <span class="arithmatex">\(|L\rangle\)</span> to the <span class="arithmatex">\(|0\rangle\)</span> state. The Kraus operators for this channel are</p>
+<p>$$ K_0 = I, ~~~ K_1 = |0\rangle\langle L|.$$
+The corresponding mappings of the Pauli basis are</p>
+<div class="arithmatex">\[\mathcal{E}(P) = P, ~ P\in\{X, Y\},\]</div>
+<div class="arithmatex">\[\mathcal{E}(P) = P + L, ~ P\in \{I, Z\},\]</div>
+<p>$<span class="arithmatex">\(\mathcal{E}(L) = 0.\)</span>$
+Intuitively, these mappings can be understood as
+- Coherences remain unchanged.
+- Lost qubits are reset: lost population is removed (<span class="arithmatex">\(L\)</span> is set to 0) and added to the <span class="arithmatex">\(|0\rangle\)</span> state, which is equivalent to a positive contribution to both <span class="arithmatex">\(Z\)</span> or <span class="arithmatex">\(I\)</span>.</p>
+<p>This reset channel is sufficient in order to model either actually resetting a lost qubit, or the error that arises when falsely counting a lost qubit as 0. For the latter, we simply apply the loss channel to all qubits at the end of the circuit. This ensures that lost qubits to not partake in the dynamics of the circuit, but are then counted as 0 in a measurement.</p>
+<p>Note, that since we are doing Pauli Propagation, we always have to apply the adjoint circuit. Thus, resetting lost qubits at the end of the circuit means that we apply the reset channel at the very beginning when propagating a Pauli string.</p>
+<h3 id="comment-on-branching-and-scaling">Comment on branching and scaling</h3>
+<p>Both channels above branch, which without truncation would lead to exponential scaling.</p>
+<p>For the loss channel, it is easy to see that coefficient truncation can deal with branching,
+since it only branches on <span class="arithmatex">\(L \to p_L I + L\)</span>.
+Branches therefore scale with <span class="arithmatex">\(p_L\)</span>, which is usually <span class="arithmatex">\(\ll 1\)</span>.</p>
+<p>The reset channel, on the other hand, branches on both <span class="arithmatex">\(I\)</span> and <span class="arithmatex">\(Z\)</span> into <span class="arithmatex">\(L\)</span> without
+any leading coefficient.
+The probability of having lost the <span class="arithmatex">\(i\)</span>-th qubit at the end of the circuit is just
+given by <span class="arithmatex">\(\langle L_i\rangle\)</span>.
+Since there are no coherences between <span class="arithmatex">\(L\)</span> and the qubit subspace, expectation values
+factorize, i.e. for any Pauli string, where <span class="arithmatex">\(P_i \neq L_i\)</span>,</p>
+<div class="arithmatex">\[\langle P_1 L_2 P_3 P_4 L_5 P_6 ...\rangle = \langle L_2\rangle\langle L_5\rangle \langle P_1P_3 P_4 P_6...\rangle.\]</div>
+<p>In a slight abuse of notation, we note that $\langle L_i\rangle \propto p_L $,
+the contribution of Pauli Strings that have an <span class="arithmatex">\(L\)</span> on many positions is very small.
+Therefore, we can truncate these in order to suppress exponential branching.</p>
+<p>In practice, this works similar to large weight truncation and is achieved by a designated
+truncation strategy, which you can configure by setting the [<code>max_loss_weight</code>] on a [<code>ppvm.paulisum.LossyPauliSum</code>].</p>
 
 
 

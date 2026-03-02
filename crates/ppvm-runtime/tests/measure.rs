@@ -183,7 +183,6 @@ fn test_measure_generalized_tableau_bell() {
 fn test_measure_generalized_tableau_deterministic() {
     let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(1, 1e-12);
 
-    // Create |+⟩ state
     let outcome = tableau.measure(0);
     assert_eq!(tableau.coefficients.len(), 1);
     assert_eq!(outcome, false);

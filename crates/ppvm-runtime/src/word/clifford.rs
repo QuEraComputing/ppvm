@@ -55,7 +55,7 @@ where
         // CNOT * II * CNOT == II,  00 00 -> 00 00, 0
         // CNOT * IX * CNOT == IX,  01 00 -> 01 00, 0
         // CNOT * IZ * CNOT == ZZ,  00 01 -> 00 11, 0
-        // CNOT * IT * CNOT == ZY,  01 01 -> 01 11, 0
+        // CNOT * "IY" * CNOT == ZY,  01 01 -> 01 11, 0
 
         // CNOT * XI * CNOT == XX,  10 00 -> 11 00, 0
         // CNOT * XX * CNOT == XI,  11 00 -> 10 00, 0
@@ -64,7 +64,7 @@ where
 
         // CNOT * ZI * CNOT == ZI,  00 10 -> 00 10, 0
         // CNOT * ZX * CNOT == ZX,  01 10 -> 01 10, 0
-        // CNOT * ZY * CNOT == IT,  01 11 -> 01 01, 0
+        // CNOT * ZY * CNOT == "IY",  01 11 -> 01 01, 0
         // CNOT * ZZ * CNOT == IZ,  00 11 -> 00 01, 0
 
         // CNOT * YI * CNOT == YX,  10 10 -> 11 10, 0
@@ -81,7 +81,7 @@ where
         // CZ = |0><0| I + |1><1| Z
         // CZ * II * CZ = II,   00 00 -> 00 00, 0
         // CZ * IX * CZ = ZX,   01 00 -> 01 10, 0
-        // CZ * IT * CZ = ZY,   01 01 -> 01 11, 0
+        // CZ * "IY" * CZ = ZY,   01 01 -> 01 11, 0
         // CZ * IZ * CZ = ZZ,   00 01 -> 00 01, 0
 
         // CZ * XI * CZ = XZ,   10 00 -> 10 01, 0
@@ -91,7 +91,7 @@ where
 
         // CZ * ZI * CZ == ZI,  00 10 -> 00 10, 0
         // CZ * ZX * CZ == IX,  01 10 -> 01 00, 0
-        // CZ * ZY * CZ == IT,  01 11 -> 01 01, 0
+        // CZ * ZY * CZ == "IY",  01 11 -> 01 01, 0
         // CZ * ZZ * CZ == ZZ,  00 11 -> 00 11, 0
 
         // CZ * YI * CZ == YZ,  10 10 -> 10 11, 0
@@ -123,7 +123,7 @@ mod tests {
     // CNOT * II * CNOT == II,  00 00 -> 00 00, 0
     // CNOT * IX * CNOT == IX,  01 00 -> 01 00, 0
     // CNOT * IZ * CNOT == ZZ,  00 01 -> 00 11, 0
-    // CNOT * IT * CNOT == ZY,  01 01 -> 01 11, 0
+    // CNOT * "IY" * CNOT == ZY,  01 01 -> 01 11, 0
 
     // CNOT * XI * CNOT == XX,  10 00 -> 11 00, 0
     // CNOT * XX * CNOT == XI,  11 00 -> 10 00, 0
@@ -132,7 +132,7 @@ mod tests {
 
     // CNOT * ZI * CNOT == ZI,  00 10 -> 00 10, 0
     // CNOT * ZX * CNOT == ZX,  01 10 -> 01 10, 0
-    // CNOT * ZY * CNOT == IT,  01 11 -> 01 01, 0
+    // CNOT * ZY * CNOT == "IY",  01 11 -> 01 01, 0
     // CNOT * ZZ * CNOT == IZ,  00 11 -> 00 01, 0
 
     // CNOT * YI * CNOT == YX,  10 10 -> 11 10, 0

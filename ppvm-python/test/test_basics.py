@@ -319,9 +319,9 @@ def test_noise_methods():
     s.two_qubit_pauli_error(0, 1, p)
     assert pytest.approx(t(s).get("IZ", 0.0)) == -1.0
 
-    # p_IX = p_IT = p_IZ = 0.25 (depolarize qubit 1): kills IZ, leaves ZI intact
+    # p_IX = p_"IY" = p_IZ = 0.25 (depolarize qubit 1): kills IZ, leaves ZI intact
     p = [0.0] * 15
-    p[0] = p[1] = p[2] = 0.25  # IX, IT, IZ
+    p[0] = p[1] = p[2] = 0.25  # IX, "IY", IZ
 
     s = PauliSum(initial_terms=["IZ"], coefficients=[1.0])
     s.two_qubit_pauli_error(0, 1, p)

@@ -85,7 +85,14 @@ fn main() {
     println!("2 ^ t : {}", 2_i32.pow(tgate_counter));
 
     let bit_string: String = (0..n_qubits)
-        .map(|i| tab.measure(i))
+        .map(|i| {
+            if i == 22 {
+                println!("Stabs 22: {}", tab.tableau.stabilizers()[22]);
+                println!("Destabs 22: {}", tab.tableau.destabilizers()[22]);
+            }
+            println!("{}", i);
+            tab.measure(i)
+        })
         .map(|outcome| if outcome { '1' } else { '0' })
         .collect();
 
@@ -95,6 +102,14 @@ fn main() {
 fn encode(tab: &mut Tab, qubits: &[usize]) {
     if qubits.len() != 7 && qubits.len() != 17 {
         panic!("Unsupported number of qubits {}", qubits.len());
+    }
+
+    // reset
+    for i in 0..qubits.len() {
+        let m = tab.measure(qubits[i]);
+        if m {
+            tab.x(qubits[i]);
+        }
     }
 
     if qubits.len() == 7 {
@@ -135,8 +150,8 @@ fn encode(tab: &mut Tab, qubits: &[usize]) {
     }
 
     // NOTE: len == 17 here
-    for q in [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16] {
-        tab.sqrt_y(q);
+    for i in [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16] {
+        tab.sqrt_y(qubits[i]);
     }
 
     for [i, j] in [[1, 3], [7, 10], [12, 14], [13, 16]] {

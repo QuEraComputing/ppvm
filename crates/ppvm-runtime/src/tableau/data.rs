@@ -75,20 +75,25 @@ impl<T: Config> Tableau<T> {
 
     pub(crate) fn get_deterministic_outcome(&self, addr0: usize) -> bool {
         // find the outcome: either Z_addr0 or -Z_addr0 is a stabilizer
-        // the stabilizer can be computed as the product of all destabilizers
-        // it anticommutes with; we do this and then check the phase to determine if it's Z or -Z
-        // NOTE: we can just skip building the actual Pauli string since we only need the phase
+        // the stabilizer can be computed as the product of all stabilizers S_i
+        // whose corresponding destabilizer D_i anticommutes with Z_addr0 (has X at addr0).
+        // We have to actually multiply Paulis to also account for products of +i/-i
         let destabilizers = self.destabilizers();
         let stabilizers = self.stabilizers();
-        let mut phase = 0;
+        let n = self.n_qubits;
+        let mut result = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(n);
         for (i, destab) in destabilizers.iter().enumerate() {
             if destab.word.xbits[addr0] {
-                phase = (phase + stabilizers[i].phase) % 4;
+                result *= stabilizers[i].clone();
             }
         }
 
         // phase >= 2 means -Z eigenvalue → outcome |1⟩ (true)
-        phase >= 2
+        debug_assert!(
+            result.phase == 0 || result.phase == 2,
+            "Measurement result cannot be imaginary!"
+        );
+        result.phase >= 2
     }
 
     pub(crate) fn update_tableau_according_to_outcome(

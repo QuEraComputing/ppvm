@@ -623,3 +623,18 @@ fn test_measure_z_stabilizer_random() {
     // about 50% of the time we should measure 1
     assert!(400 < count_one && count_one < 600);
 }
+
+#[test]
+fn test_measure_opposite_deterministic() {
+    let mut tab: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(1, 1e-12);
+
+    // tab.coefficients[0].0 *= Complex64 { re: 0.0, im: -1.0 };
+    tab.coefficients = Vec::<(Complex64, u128)>::new();
+    tab.coefficients
+        .insert(0, (Complex64 { re: 0.0, im: -1.0 }, 1));
+
+    println!("{}", tab);
+
+    println!("{}", tab.measure(0));
+}

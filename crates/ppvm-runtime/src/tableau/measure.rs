@@ -5,7 +5,6 @@ use crate::tableau::sparsevec::SparseVector;
 use crate::tableau::traits::TableauIndex;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
-use std::collections::HashMap;
 use std::ops::{BitAnd, Shl};
 
 impl<T: Config> Measure for Tableau<T> {
@@ -33,18 +32,25 @@ impl<T: Config> Measure for Tableau<T> {
     }
 }
 
-const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
-    Complex64::new(1.0, 0.0),  // +1
-    Complex64::new(0.0, 1.0),  // +i
-    Complex64::new(-1.0, 0.0), // -1
-    Complex64::new(0.0, -1.0), // -i
-];
+// const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
+//     Complex64::new(1.0, 0.0),  // +1
+//     Complex64::new(0.0, 1.0),  // +i
+//     Complex64::new(-1.0, 0.0), // -1
+//     Complex64::new(0.0, -1.0), // -i
+// ];
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> Measure for GeneralizedTableau<T, I, C>
 where
     T: Config,
     C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
-    T::Coeff: One + Zero + Clone + num::Num + ToPrimitive + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
@@ -58,87 +64,76 @@ where
         if self.is_lost[addr0] {
             return false;
         }
-        // NOTE: regardless of whether Z is a stabilizer, we need to compute
-        // the probabilities, since the coefficients may make a Z stabilizer
-        // state random, or a seemingly random one deterministic
-        // the probabilities should just account for that
 
-        // TODO: we can optimize this by looking at which states get eliminated
-        // first and then computing the probabilities as the norm from there
-        // this skips the O(n ^ 2) evaluation of <Z>
-
-        // evaluate the action of Z on the state
-        // i.e. shift + phase
-        let shift = self.compute_shift(addr0, (false, true));
-        let mut z_overlap = Complex64::from(0.0);
-
-        // TODO: this is O(n^2), but we know the probabilities are always real
-        // however, whether the decomposition phase is imaginary or not tells us
-        // whether we need to pick the real or imaginary part of the overlap
-        // we still might be able to optimize here
-        let phase_decomp = self.compute_decomposition_phase(addr0, crate::char::Pauli::Z);
-
-        // build a temporary lookup table for faster lookup in the loop
-        let coeff_map: HashMap<I, Complex<T::Coeff>> = self
+        let norm: T::Coeff = self
             .coefficients
             .clone()
             .into_iter()
-            .map(|(v, i)| (i, v))
-            .collect();
-        // Compute the probabilities by computing the overlap <psi|Z|psi>
-        // which is proportional to sum(alpha) conj(v_alpha) * v_(alpha + shift) * xi_(alpha)
-        // NOTE: this could probably be optimized
-        for (&idx, coeff) in &coeff_map {
-            let branch_index = idx ^ shift;
-            let phase = (phase_decomp + self.compute_phase(addr0, (false, true), idx, shift)) % 4;
-            let complex_phase: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase as usize].into();
-            let coeff_branch = coeff_map
-                .get(&branch_index)
-                .cloned()
-                .unwrap_or(Complex::zero());
-            let overlap = complex_phase.conj() * coeff.conj() * coeff_branch;
-            z_overlap.re += overlap.re.to_f64().unwrap_or(0.0);
-            z_overlap.im += overlap.im.to_f64().unwrap_or(0.0);
-        }
+            .fold(T::Coeff::zero(), |acc, (v, _)| acc + v.norm_sqr());
+        println!("Current norm: {:?}", norm);
+        println!("{:?}", self.coefficients);
 
+        let one_half = Complex {
+            re: T::Coeff::one() * 0.5,
+            im: T::Coeff::zero(),
+        };
+        let mut state0 = self.clone();
+        state0.branch_with_coefficients(addr0, crate::char::Pauli::Z, one_half, one_half);
+        let mut state1 = self.clone();
+        state1.branch_with_coefficients(addr0, crate::char::Pauli::Z, one_half, -one_half);
+
+        let prob_0 = state0
+            .coefficients
+            .clone()
+            .into_iter()
+            .fold(T::Coeff::zero(), |acc, (v, _)| acc + v.norm_sqr());
+        let prob_1 = state1
+            .coefficients
+            .clone()
+            .into_iter()
+            .fold(T::Coeff::zero(), |acc, (v, _)| acc + v.norm_sqr());
+
+        println!("p0: {:?}", prob_0.clone());
+        println!("p1: {:?}", prob_1.clone());
         debug_assert!(
-            z_overlap.im.abs() < 1e-6,
-            "Overlap should be real, got {}",
-            z_overlap
+            (prob_0.clone() + prob_1.clone() - T::Coeff::one()) < 1e-7
+                && (prob_0.clone() + prob_1.clone() - T::Coeff::one() > -1e-7)
         );
 
-        // TODO: directly compute one of these probs above and skip the other
-        let prob_0 = 0.5 + 0.5 * z_overlap.re;
-        let prob_1 = 0.5 - 0.5 * z_overlap.re;
+        let outcome = prob_0 < rand::random::<f64>();
 
-        debug_assert!(
-            (prob_0 + prob_1 - 1.0).abs() < 1e-6,
-            "Probabilities should sum to 1, got {} + {} = {}",
-            prob_0,
-            prob_1,
-            prob_0 + prob_1
-        );
-
-        let outcome = rand::random::<f64>() < prob_1;
-
-        // Now, we may need to update the tableau if Z is not a stabilizer
         let q = self.tableau.find_z_anticommuting_stabilizer(addr0);
 
-        let stab_z_phase = match q {
+        match q {
             Some(q_idx) => {
-                // Case a: Z is not a stabilizer — update the tableau first.
+                if outcome {
+                    self.coefficients = state1.coefficients;
+                } else {
+                    self.coefficients = state0.coefficients;
+                }
+
+                self.coefficients.trim(Complex {
+                    re: self.coefficient_threshold.clone(),
+                    im: T::Coeff::zero(),
+                });
+
+                println!("{}", self.coefficients.len());
+
+                self.coefficients.normalize();
+
                 self.tableau
                     .update_tableau_according_to_outcome(addr0, q_idx, outcome);
-                outcome
-            }
-            None => self.tableau.get_deterministic_outcome(addr0),
-        };
 
-        // After the tableau update (or if it was already a stabilizer), the reference state
-        // has a definite Z eigenvalue at addr0. We keep the coefficient branches that land in
-        // the measured eigenspace: a branch D^α flips the eigenvalue iff it anticommutes with Z,
-        // so we keep branches where (stab_z_phase XOR phase) == outcome, i.e. phase == (stab_z_phase XOR outcome).
-        self.trim_coefficients_for_measurement(addr0, stab_z_phase ^ outcome);
+                // let z_stabilizer_phase = self.tableau.get_deterministic_outcome(addr0);
+            }
+            None => {}
+        };
+        let z_stabilizer_phase = self.tableau.get_deterministic_outcome(addr0);
+
+        println!("Deterministic outcome: {}", z_stabilizer_phase);
+        println!("Actual outcome: {}", outcome);
+
+        self.trim_coefficients_for_measurement(addr0, outcome ^ z_stabilizer_phase);
 
         outcome
     }

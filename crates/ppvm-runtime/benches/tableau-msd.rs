@@ -129,8 +129,8 @@ fn encode(tab: &mut Tab, qubits: &[usize]) {
     }
 
     // NOTE: len == 17 here
-    for q in [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16] {
-        tab.sqrt_y(q);
+    for i in [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16] {
+        tab.sqrt_y(qubits[i]);
     }
 
     for [i, j] in [[1, 3], [7, 10], [12, 14], [13, 16]] {

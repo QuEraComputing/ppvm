@@ -15,7 +15,7 @@ at a fraction of the cost of full statevector simulation.
   channels.
 - Automatic truncation: terms below a coefficient threshold or above a Pauli
   weight cutoff are dropped, controlling the approximation/performance trade-off
-- Optional loss channel support via `LossyPauliSum`. This also includes a reset channel,
+- Optional loss channel support via [`LossyPauliSum`](/api/ppvm/paulisum/#ppvm.paulisum.LossyPauliSum). This also includes a reset channel,
   allowing to reset a qubit from being lost to its zero-state.
 - Python bindings backed by a high-performance Rust core.
 
@@ -59,4 +59,4 @@ print(state.overlap_with_zero())
 ## Similar packages
 
 - [PauliPropagation.jl](https://github.com/MSRudolph/PauliPropagation.jl) - Julia package for Pauli Propagation. They also have a nice paper that explains the underlying theory: [arXiv:2505.21606](https://arxiv.org/abs/2505.21606)
-- [cuPauliProp](https://docs.nvidia.com/cuda/cuquantum/latest/cupauliprop/index.html)
+- [cuPauliProp](https://docs.nvidia.com/cuda/cuquantum/latest/cupauliprop/index.html) - CUDA package by NVIDIA

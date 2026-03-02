@@ -129,10 +129,6 @@ mod tests {
         assert_eq!(p, ps("Z", -1.0));
     }
 
-    // sqrt_y = S (H S H) S†  and  sqrt_y_adj = S† (H S† H) S
-    // Both have identical Pauli conjugation (differ only by global phase):
-    // Z→−X, X→Z, Y→Y (invariant)
-
     #[test]
     fn sqrt_y_x_to_z() {
         let mut p = ps("X", 1.0);

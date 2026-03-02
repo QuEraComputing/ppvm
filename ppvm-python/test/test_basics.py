@@ -66,11 +66,11 @@ def test_weights():
 
     assert state.current_max_weight() == 2
 
-    state2 = PauliSum(initial_terms=["ZX", "IY"])
+    state2 = PauliSum(initial_terms=["ZX", "IT"])
     weights = state2.weights()
 
     weights.sort(key=lambda w: w[1])
-    assert weights == [('IY', 1), ('ZX', 2)]
+    assert weights == [("IT", 1), ("ZX", 2)]
 
 
 def test_overlap():
@@ -101,7 +101,9 @@ def test_new():
     n = 17
     s = PauliSum.new(n, [f"Z{i}" for i in range(n)])
     assert len(s) == n
-    assert set(s.terms) == {("".join(["Z" if i==j else "I" for i in range(n)]), 1.0) for j in range(n)}
+    assert set(s.terms) == {
+        ("".join(["Z" if i == j else "I" for i in range(n)]), 1.0) for j in range(n)
+    }
 
     with pytest.raises(ValueError, match="out of range"):
         PauliSum.new(2, "X2")
@@ -128,9 +130,9 @@ def test_gate_methods():
     assert pytest.approx(t(s)["ZI"]) == -1.0
 
     # y: Y commutes with Y (invariant)
-    s = PauliSum(initial_terms=["IY"], coefficients=[1.0])
+    s = PauliSum(initial_terms=["IT"], coefficients=[1.0])
     s.y(1)
-    assert t(s) == {"IY": 1.0}
+    assert t(s) == {"IT": 1.0}
 
     # z: Z commutes with Z (invariant)
     s = PauliSum(initial_terms=["IZ"], coefficients=[1.0])
@@ -243,10 +245,10 @@ def test_gate_methods():
     s.sqrt_y(0)
     assert pytest.approx(t(s).get("XI", 0.0)) == -1.0
 
-    # sqrt_y_adj (= S†·sqrt_x_adj·S): X → Z, Y → Y, Z → -X
+    # sqrt_y_adj (= S·sqrt_x_adj·S†): X → -Z, Y → Y, Z → X
     s = PauliSum(initial_terms=["XI"], coefficients=[1.0])
     s.sqrt_y_adj(0)
-    assert pytest.approx(t(s).get("ZI", 0.0)) == 1.0
+    assert pytest.approx(t(s).get("ZI", 0.0)) == -1.0
 
     s = PauliSum(initial_terms=["YI"], coefficients=[1.0])
     s.sqrt_y_adj(0)
@@ -254,7 +256,7 @@ def test_gate_methods():
 
     s = PauliSum(initial_terms=["ZI"], coefficients=[1.0])
     s.sqrt_y_adj(0)
-    assert pytest.approx(t(s).get("XI", 0.0)) == -1.0
+    assert pytest.approx(t(s).get("XI", 0.0)) == 1.0
 
 
 def test_noise_methods():
@@ -317,9 +319,9 @@ def test_noise_methods():
     s.two_qubit_pauli_error(0, 1, p)
     assert pytest.approx(t(s).get("IZ", 0.0)) == -1.0
 
-    # p_IX = p_IY = p_IZ = 0.25 (depolarize qubit 1): kills IZ, leaves ZI intact
+    # p_IX = p_IT = p_IZ = 0.25 (depolarize qubit 1): kills IZ, leaves ZI intact
     p = [0.0] * 15
-    p[0] = p[1] = p[2] = 0.25  # IX, IY, IZ
+    p[0] = p[1] = p[2] = 0.25  # IX, IT, IZ
 
     s = PauliSum(initial_terms=["IZ"], coefficients=[1.0])
     s.two_qubit_pauli_error(0, 1, p)

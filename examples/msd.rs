@@ -85,14 +85,7 @@ fn main() {
     println!("2 ^ t : {}", 2_i32.pow(tgate_counter));
 
     let bit_string: String = (0..n_qubits)
-        .map(|i| {
-            if i == 22 {
-                println!("Stabs 22: {}", tab.tableau.stabilizers()[22]);
-                println!("Destabs 22: {}", tab.tableau.destabilizers()[22]);
-            }
-            println!("{}", i);
-            tab.measure(i)
-        })
+        .map(|i| tab.measure(i))
         .map(|outcome| if outcome { '1' } else { '0' })
         .collect();
 

@@ -155,17 +155,17 @@ mod tests {
     }
 
     #[test]
-    fn sqrt_y_adj_x_to_z() {
+    fn sqrt_y_adj_x_to_neg_z() {
         let mut p = ps("X", 1.0);
         p.sqrt_y_adj(0);
-        assert_eq!(p, ps("Z", 1.0));
+        assert_eq!(p, ps("Z", -1.0));
     }
 
     #[test]
-    fn sqrt_y_adj_z_to_neg_x() {
+    fn sqrt_y_adj_z_to_x() {
         let mut p = ps("Z", 1.0);
         p.sqrt_y_adj(0);
-        assert_eq!(p, ps("X", -1.0));
+        assert_eq!(p, ps("X", 1.0));
     }
 
     // (sqrt_y)² conjugates like Y: Z→−Z
@@ -175,5 +175,21 @@ mod tests {
         p.sqrt_y(0);
         p.sqrt_y(0);
         assert_eq!(p, ps("Z", -1.0));
+    }
+
+    #[test]
+    fn sqrt_x_adj_inv() {
+        let mut p = ps("Z", 1.0);
+        p.sqrt_x(0);
+        p.sqrt_x_adj(0);
+        assert_eq!(p, ps("Z", 1.0));
+    }
+
+    #[test]
+    fn sqrt_y_adj_inv() {
+        let mut p = ps("Z", 1.0);
+        p.sqrt_y(0);
+        p.sqrt_y_adj(0);
+        assert_eq!(p, ps("Z", 1.0));
     }
 }

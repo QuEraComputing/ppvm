@@ -66,11 +66,11 @@ def test_weights():
 
     assert state.current_max_weight() == 2
 
-    state2 = PauliSum(initial_terms=["ZX", "IT"])
+    state2 = PauliSum(initial_terms=["ZX", "IY"])
     weights = state2.weights()
 
     weights.sort(key=lambda w: w[1])
-    assert weights == [("IT", 1), ("ZX", 2)]
+    assert weights == [("IY", 1), ("ZX", 2)]
 
 
 def test_overlap():
@@ -130,9 +130,9 @@ def test_gate_methods():
     assert pytest.approx(t(s)["ZI"]) == -1.0
 
     # y: Y commutes with Y (invariant)
-    s = PauliSum(initial_terms=["IT"], coefficients=[1.0])
+    s = PauliSum(initial_terms=["IY"], coefficients=[1.0])
     s.y(1)
-    assert t(s) == {"IT": 1.0}
+    assert t(s) == {"IY": 1.0}
 
     # z: Z commutes with Z (invariant)
     s = PauliSum(initial_terms=["IZ"], coefficients=[1.0])

@@ -2,13 +2,14 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: -all
+#     custom_cell_magics: kql
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.19.1
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: ppvm (3.12.12)
 #     language: python
 #     name: python3
 # ---
@@ -30,35 +31,27 @@
 #
 # $$U(\delta t) \approx \prod_i e^{-i h \delta t X_i} \prod_i e^{-i J \delta t Z_i Z_{i+1}}$$
 #
-# We also include a local depolarising noise channel after the single-qubit layer and a
-# two-qubit depolarising channel after each two-qubit gate to model realistic hardware.
+# We run two simulations: a noiseless baseline and a noisy version with qubit loss,
+# using ppvm's `LossyPauliSum`. Note that the noiseless simulation is still subject
+# to truncation and therefore an approximate solution.
 
 # %%
 import matplotlib.pyplot as plt
 
-from ppvm import PauliSum
+from ppvm import LossyPauliSum, PauliSum
 
 # %% [markdown]
 # ## Parameters
-#
-# | Symbol | Variable | Description |
-# |--------|----------|-------------|
-# | $n$ | `n` | Number of qubits |
-# | $h$ | `h` | Transverse-field strength |
-# | $J$ | `j` | Ising interaction strength ($J = h/8$) |
-# | $\delta t$ | `dt` | Trotter step size |
-# | $T$ | `time` | Total simulation time |
-# | $\varepsilon$ | `min_abs_coeff` | Truncation threshold: Pauli strings with coefficient below this value are discarded after every gate |
 
 # %%
-n = 20
+n = 12
 h = 1.0
-j = h / 8.0
+j = 1.5 * h
 dt = 0.1 / h
-time = 1.0 / h
+time = 3.0 / h
 
 # %% [markdown]
-# ## Initial observable
+# ## Noiseless simulation
 #
 # We want to compute $\langle \sum_i Z_i \rangle$ on the all-zeros state.
 # In the Heisenberg picture, we initialise the observable as
@@ -66,81 +59,133 @@ time = 1.0 / h
 # $$O = \sum_{i=0}^{n-1} Z_i$$
 #
 # using ppvm's compact notation where `"Z3"` means $Z$ on qubit 3 and $I$ everywhere else.
+#
+# Each call to `trotter_step` applies one Trotter step in reverse (Heisenberg picture):
+#
+# 1. **RX** on every qubit — implements $e^{-i h \delta t X_i}$
+# 2. **RZZ** on every neighbouring pair — implements $e^{-i J \delta t Z_i Z_{i+1}}$
+#
+# Truncation applies automatically after every gate and channel.
+# There are currently two possible ways to truncate in a loss-less simulation:
+# * Coefficient truncation: every Pauli string with a leading coefficient, whose absolute value is smaller than `min_abs_coeff` is truncated.
+# * Max Pauli Weight truncation: every Pauli string with more than `max_pauli_weight` non-identity Paulis gets truncated.
 
 # %%
 state = PauliSum.new(
     n_qubits=n,
     terms=[f"Z{i}" for i in range(n)],
     min_abs_coeff=1e-6,
+    max_pauli_weight=8,
 )
-print(state)
 
-# %% [markdown]
-# ## Trotter step
-#
-# Each call to `trotter_step` applies one Trotter step in reverse (Heisenberg picture):
-#
-# 1. **RX** on every qubit — implements $e^{-i h \delta t X_i}$
-# 2. **Single-qubit depolarising noise** on every qubit
-# 3. **RZZ** on every neighbouring pair — implements $e^{-i J \delta t Z_i Z_{i+1}}$
-# 4. **Two-qubit depolarising noise** on every pair
-#
-# The `min_abs_coeff` threshold is applied automatically after every gate, so no explicit
-# truncation call is needed.
-
-# %%
-# Single-qubit depolarising noise: equal probability for X, Y, Z errors
-noise_1q = [1e-4, 1e-4, 1e-4]
-
-# Two-qubit depolarising noise: symmetric over all 15 non-identity two-qubit Pauli operators
-p_2q = 1e-4
-noise_2q = [p_2q / 15.0] * 15
+theta_x = dt * h
+theta_zz = dt * j
 
 
 def trotter_step(state, n, theta_x, theta_zz):
     for i in range(n):
         state.rx(i, theta_x)
+    for i in range(n - 1):
+        state.rzz(i, i + 1, theta_zz)
+
+
+# %% [markdown]
+# ## Noiseless time evolution
+
+# %%
+steps = int(time / dt)
+times = [i * dt for i in range(steps + 1)]
+ev_noiseless = []
+
+for _ in range(steps):
+    ev_noiseless.append(state.overlap_with_zero())
+    trotter_step(state, n, theta_x, theta_zz)
+
+ev_noiseless.append(state.overlap_with_zero())
+print(f"Max Pauli weight (noiseless): {state.current_max_weight()}")
+
+# %% [markdown]
+# ## Noisy simulation with qubit loss
+#
+# We repeat the simulation using `LossyPauliSum`, which extends the Pauli basis with a
+# loss operator $L$ to track qubits that have left the computational subspace.
+#
+# After each gate layer we apply:
+# - a **single-qubit depolarising channel** (`pauli_error`) or
+#   **two-qubit depolarising channel** (`two_qubit_pauli_error`) to model gate errors
+# - a **loss channel** (`loss_channel`) to model qubit loss at the same locations
+#
+# In addition to the two truncation strategies, we can now also truncate using
+# `max_loss_weight`, which removes any Pauli String which has more `L`s than
+# that thresholds. This is justified since these Pauli strings only contribute
+# little to the final average value.
+
+# %%
+noise_1q = [
+    1e-3,
+    1e-3,
+    1e-3,
+]  # symmetric single-qubit depolarising: equal p for X, Y, Z
+noise_2q = [
+    1e-3 / 15.0
+] * 15  # symmetric two-qubit depolarising over all 15 non-identity Paulis
+p_loss = 1e-3  # loss probability per gate location
+
+noisy_state = LossyPauliSum.new(
+    n_qubits=n,
+    terms=[f"Z{i}" for i in range(n)],
+    min_abs_coeff=1e-6,
+    max_pauli_weight=8,
+    max_loss_weight=2,
+)
+
+# Reset the loss register on every qubit before propagation: this ensures that qubits
+# which become lost during the circuit are counted as |0⟩ when computing overlap_with_zero.
+# **NOTE**: without truncation, this scales exponentially
+for i in range(n):
+    noisy_state.reset_loss_channel(i)
+
+
+def noisy_trotter_step(state, n, theta_x, theta_zz):
+    for i in range(n):
+        state.rx(i, theta_x)
         state.pauli_error(i, noise_1q)
+        state.loss_channel(i, p_loss)
 
     for i in range(n - 1):
         state.rzz(i, i + 1, theta_zz)
         state.two_qubit_pauli_error(i, i + 1, noise_2q)
+        state.loss_channel(i, p_loss)
+        state.loss_channel(i + 1, p_loss)
 
 
 # %% [markdown]
-# ## Time evolution
-#
-# We run the Trotter loop and record $\langle \sum_i Z_i \rangle$ (via `overlap_with_zero`)
-# at each time step.
+# ## Noisy time evolution
 
 # %%
-steps = int(time / dt)
-theta_x = dt * h
-theta_zz = dt * j
+ev_noisy = []
 
-times = [i * dt for i in range(steps + 1)]
-expectation_values = []
+for _ in range(steps):
+    ev_noisy.append(noisy_state.overlap_with_zero())
+    noisy_trotter_step(noisy_state, n, theta_x, theta_zz)
 
-for step in range(steps):
-    expectation_values.append(state.overlap_with_zero())
-    trotter_step(state, n, theta_x, theta_zz)
-
-expectation_values.append(state.overlap_with_zero())
-
-print(f"Maximum Pauli weight at final time: {state.current_max_weight()}")
+ev_noisy.append(noisy_state.overlap_with_zero())
+print(f"Max Pauli weight (noisy): {noisy_state.current_max_weight()}")
 
 # %% [markdown]
 # ## Results
 #
-# The plot below shows how $\langle \sum_i Z_i \rangle / n$ decays from 1 (all qubits in the
-# $|0\rangle$ state) as the system evolves under the combined effect of the transverse field,
-# the Ising interaction, and depolarising noise.
+# Both curves start at 1 (all qubits in $|0\rangle$). In the interaction-dominated regime
+# ($J > h$) the magnetisation oscillates before decaying. The noisy simulation decays
+# faster due to depolarisation and qubit loss.
 
 # %%
 fig, ax = plt.subplots()
-ax.plot(times, [ev / n for ev in expectation_values])
+ax.plot(times, [ev / n for ev in ev_noiseless], label="noiseless")
+ax.plot(times, [ev / n for ev in ev_noisy], label="noisy + loss")
 ax.set_xlabel("Time $t$")
 ax.set_ylabel(r"$\langle \sum_i Z_i \rangle / n$")
 ax.set_title("XZZ Ising chain — Trotterized evolution")
+ax.legend()
 plt.tight_layout()
 plt.show()

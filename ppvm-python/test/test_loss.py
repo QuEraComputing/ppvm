@@ -19,3 +19,25 @@ def test_ghz():
     assert abs(ps.overlap_with_zero() - (1 - p)) < 1e-9
 
 
+def test_correlated_loss_ghz():
+    # With only correlated loss (p[0]=0.1, p[1]=0, p[2]=0), both qubits are
+    # always lost together, so measurement outcomes stay perfectly correlated.
+    p = [0.1, 0.0, 0.0]
+
+    ps = LossyPauliSum.new(n_qubits=2, terms=["ZZ"])
+    ps.reset_loss_channel(0)
+    ps.reset_loss_channel(1)
+    ps.correlated_loss_channel(0, 1, p)
+    ps.cnot(0, 1)
+    ps.h(0)
+    assert abs(ps.overlap_with_zero() - 1.0) < 1e-9
+
+    # XX is reduced by the correlated loss probability (both qubits lost → no
+    # XX contribution), leaving a factor of (1 - p[0]).
+    ps = LossyPauliSum.new(n_qubits=2, terms=["XX"])
+    ps.reset_loss_channel(0)
+    ps.reset_loss_channel(1)
+    ps.correlated_loss_channel(0, 1, p)
+    ps.cnot(0, 1)
+    ps.h(0)
+    assert abs(ps.overlap_with_zero() - (1 - p[0])) < 1e-9

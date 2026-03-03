@@ -251,6 +251,78 @@ where
     }
 }
 
+impl<T: Config> CorrelatedLossChannel<T> for PauliSum<T>
+where
+    f64: std::ops::Sub<<T as Config>::Coeff, Output = T::Coeff>
+        + std::ops::Mul<<T as Config>::Coeff, Output = T::Coeff>,
+{
+    /// Apply a correlated loss channel to qubits at `addr0` and `addr1`.
+    ///
+    /// The three probabilities are:
+    /// * `p[0]`: The probability of losing both qubits simultaneously when
+    ///     both of them are in the qubit subspace.
+    /// * `p[1]`: The probability of losing either one qubit when both of them are
+    ///     in the qubit subspace.
+    /// * `p[2]`: The probability of losing one qubit when the other one has already
+    ///     been lost prior to the channel.
+    fn correlated_loss_channel(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 3]) {
+        self.map_insert_multiple(|k, v| {
+            match (k.get(addr0), k.get(addr1)) {
+                (Pauli::L, Pauli::L) => {
+                    // both qubits lost
+                    let v_il = v.clone() * p[2].clone();
+                    let mut k_il = k.clone();
+                    k_il.set(addr0, Pauli::I);
+                    k_il.set(addr1, Pauli::L);
+                    let mut k_li = k.clone();
+                    k_li.set(addr0, Pauli::L);
+                    k_li.set(addr1, Pauli::I);
+
+                    let v_ii = v.clone() * p[0].clone();
+                    let mut k_ii = k.clone();
+                    k_ii.set(addr0, Pauli::I);
+                    k_ii.set(addr1, Pauli::I);
+
+                    Some(Vec::from([
+                        (k_il, v_il.clone()),
+                        (k_li, v_il),
+                        (k_ii, v_ii),
+                    ]))
+                }
+
+                (_, Pauli::L) => {
+                    // case qubit 0 in qubit subspace, qubit 1 is lost
+                    let mut new_k = k.clone();
+                    new_k.set(addr1, Pauli::I);
+                    let new_v = v.clone() * p[1].clone();
+
+                    *v *= 1.0_f64 - p[2].clone();
+
+                    Some(Vec::from([(new_k, new_v)]))
+                }
+
+                (Pauli::L, _) => {
+                    // case qubit 0 is lost, qubit 1 in qubit subspace
+
+                    let mut new_k = k.clone();
+                    new_k.set(addr0, Pauli::I);
+                    let new_v = v.clone() * p[1].clone();
+
+                    *v *= 1.0_f64 - p[2].clone();
+
+                    Some(Vec::from([(new_k, new_v)]))
+                }
+
+                (_, _) => {
+                    // case both qubits in qubit subspace
+                    *v *= 1.0_f64 - 2.0_f64 * p[1].clone() - p[0].clone();
+                    None
+                }
+            }
+        });
+    }
+}
+
 /// Reset-loss channel implementation for PauliSum.
 ///
 /// This trait is **only implemented for `LossyPauliWord`** and cannot be used with

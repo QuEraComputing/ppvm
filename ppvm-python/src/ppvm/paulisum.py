@@ -609,7 +609,7 @@ class LossyPauliSum(PauliSum):
                 has already been lost prior to applying the channel. This is to
                 account for the fact that when one qubit is missing during e.g.
                 a controlled gate, the remaining qubit undergoes a different dynamic.
-                We account for this difference with this distinc probability.
+                We account for this difference with this distinct probability.
         """
         self._interface.correlated_loss_channel(addr0, addr1, p)
 

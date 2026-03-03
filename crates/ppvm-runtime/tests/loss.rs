@@ -315,3 +315,97 @@ fn test_rxx_with_loss_is_noop_and_does_not_panic() {
 
     assert_eq!(state, state2);
 }
+
+#[test]
+fn test_correlated_loss_channel() {
+    let p = [0.1_f64, 0.05, 0.2];
+
+    // Both qubits in qubit subspace: coefficient scaled by (1 - 2*p[1] - p[0])
+    let mut state = LossyPauliSum::builder().n_qubits(2).build();
+    state += ("ZI", 1.0);
+    let mut expected = state.clone();
+    state.correlated_loss_channel(0, 1, p);
+    expected *= 1.0 - 2.0 * p[1] - p[0];
+    assert_eq!(state, expected);
+
+    // Qubit 0 in qubit subspace, qubit 1 already lost:
+    // original entry scaled by (1 - p[2]), new entry (qubit 1 recovered) added with weight p[1]
+    let mut state = LossyPauliSum::builder().n_qubits(2).build();
+    state += ("ZL", 1.0);
+    let mut expected = state.clone();
+    state.correlated_loss_channel(0, 1, p);
+    expected *= 1.0 - p[2];
+    expected += ("ZI", p[1]);
+    assert_eq!(state, expected);
+
+    // Qubit 0 already lost, qubit 1 in qubit subspace:
+    // original entry scaled by (1 - p[2]), new entry (qubit 0 recovered) added with weight p[1]
+    let mut state = LossyPauliSum::builder().n_qubits(2).build();
+    state += ("LZ", 1.0);
+    let mut expected = state.clone();
+    state.correlated_loss_channel(0, 1, p);
+    expected *= 1.0 - p[2];
+    expected += ("IZ", p[1]);
+    assert_eq!(state, expected);
+
+    // Both qubits already lost: original entry unchanged, new entries added for
+    // each qubit being individually recovered (weight p[2]) or both recovered (weight p[0])
+    let mut state = LossyPauliSum::builder().n_qubits(2).build();
+    state += ("LL", 1.0);
+    state.correlated_loss_channel(0, 1, p);
+    let ll: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "LL".into();
+    let il: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "IL".into();
+    let li: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "LI".into();
+    let ii: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "II".into();
+    assert_eq!(state.data().len(), 4);
+    assert!(state.contains(&ll, &1.0));
+    assert!(state.contains(&il, &p[2]));
+    assert!(state.contains(&li, &p[2]));
+    assert!(state.contains(&ii, &p[0]));
+}
+
+#[test]
+fn test_correlated_loss_ghz() {
+    // we either lose both qubits or none of them
+    let p_correlated_only = [0.1_f64, 0.0, 0.0];
+
+    let mut ps = LossyPauliSum::builder().n_qubits(2).build();
+    ps += ("ZZ", 1.0);
+
+    ps.reset_loss_channel(0);
+    ps.reset_loss_channel(1);
+
+    ps.correlated_loss_channel(0, 1, p_correlated_only);
+
+    // GHZ circuit
+    ps.cnot(0, 1);
+    ps.h(0);
+
+    println!("{}", ps);
+
+    let zero_pattern: PauliPattern = "Z?*".into();
+    let z_exp = ps.trace(&zero_pattern);
+
+    // should always be correlated
+    assert!((z_exp - 1.0).abs() < 1e-8);
+
+    let mut ps = LossyPauliSum::builder().n_qubits(2).build();
+    ps += ("XX", 1.0);
+
+    ps.reset_loss_channel(0);
+    ps.reset_loss_channel(1);
+
+    ps.correlated_loss_channel(0, 1, p_correlated_only);
+
+    // GHZ circuit
+    ps.cnot(0, 1);
+    ps.h(0);
+
+    println!("{}", ps);
+
+    let zero_pattern: PauliPattern = "Z?*".into();
+    let x_exp = ps.trace(&zero_pattern);
+
+    // XX should be affected by correlated loss
+    assert!((x_exp - 0.9).abs() < 1e-8);
+}

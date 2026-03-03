@@ -532,7 +532,7 @@ class PauliSum:
         """
         keys = (
             "IX",
-            "IT",
+            "IY",
             "IZ",
             "XI",
             "XX",
@@ -596,7 +596,9 @@ class LossyPauliSum(PauliSum):
         """
         self._interface.loss_channel(addr0, p)
 
-    def correlated_loss_channel(self, addr0: int, addr1: int, p: Sequence[float]) -> None:
+    def correlated_loss_channel(
+        self, addr0: int, addr1: int, p: Sequence[float]
+    ) -> None:
         """Apply a correlated loss channel.
 
         This applies a correlated loss channel to the qubits at `addr0` and `addr1`.

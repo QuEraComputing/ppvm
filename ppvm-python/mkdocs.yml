@@ -11,6 +11,7 @@ nav:
   - Simulating Loss: loss.md
   - Examples:
     - examples/index.md
+    - Trotter simulation: examples/trotter.py
   - API Reference:
     - api/index.md
     - api/ppvm/paulisum.md
@@ -70,9 +71,10 @@ plugins:
         - docs/scripts/gen_ref_nav.py
   - literate-nav:
       nav_file: SUMMARY.md
-  # Uncomment when examples are added:
-  # - mkdocs-jupyter:
-  #     execute: false
+  - mkdocs-jupyter:
+      execute: true
+      allow_errors: false
+      ignore: ['scripts/*']
 
 extra_javascript:
   - javascripts/katex.js

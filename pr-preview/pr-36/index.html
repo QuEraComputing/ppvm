@@ -846,12 +846,12 @@ at a fraction of the cost of full statevector simulation.</p>
   channels.</li>
 <li>Automatic truncation: terms below a coefficient threshold or above a Pauli
   weight cutoff are dropped, controlling the approximation/performance trade-off</li>
-<li>Optional loss channel support via <a href="/api/ppvm/paulisum/#ppvm.paulisum.LossyPauliSum"><code>LossyPauliSum</code></a>. This also includes a reset channel,
+<li>Optional loss channel support via <a href="api/ppvm/paulisum/#ppvm.paulisum.LossyPauliSum"><code>LossyPauliSum</code></a>. This also includes a reset channel,
   allowing to reset a qubit from being lost to its zero-state.</li>
 <li>Python bindings backed by a high-performance Rust core.</li>
 </ul>
 <h2 id="quick-installation">Quick installation</h2>
-<p>Just <code>pip install</code> the directly from git:</p>
+<p>Just <code>pip install</code> directly from git:</p>
 <div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>git+https://github.com/QuEraComputing/ppvm.git#subdirectory<span class="o">=</span>ppvm-python
 </code></pre></div>
 <h2 id="short-example">Short example</h2>

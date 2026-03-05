@@ -870,8 +870,18 @@
 
 <h1 id="simulating-loss-with-pauli-propagation">Simulating loss with Pauli Propagation</h1>
 <h2 id="implementation">Implementation</h2>
-<p>To simulate loss, <code>ppvm</code> offers a <a href="/api/ppvm/paulisum/#ppvm.paulisum.LossyPauliSum"><code>LossyPauliSum</code></a> class.
-This is a dedicated class, which behaves just like a <a href="/api/ppvm/paulisum/#ppvm.paulisum.PauliSum"><code>PauliSum</code></a>, but adds additional methods for the loss.</p>
+<p>To simulate loss, <code>ppvm</code> offers a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LossyPauliSum&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../api/ppvm/paulisum/#ppvm.paulisum.LossyPauliSum"><code>LossyPauliSum</code></a> class.
+This is a dedicated class, which behaves just like a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;PauliSum&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../api/ppvm/paulisum/#ppvm.paulisum.PauliSum"><code>PauliSum</code></a>, but adds additional methods for the loss.</p>
 <p>Also, this separation is there since we need to extend the Pauli basis in order to
 account for loss (see <a href="#background">below</a>). This comes at a storage overhead. Specifically, we now need 3 bits in order to represent a character in a Pauli string rather than just 2.</p>
 <p>Here is a small example:</p>

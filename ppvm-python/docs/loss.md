@@ -3,8 +3,8 @@
 
 ## Implementation
 
-To simulate loss, `ppvm` offers a [`LossyPauliSum`](/api/ppvm/paulisum/#ppvm.paulisum.LossyPauliSum) class.
-This is a dedicated class, which behaves just like a [`PauliSum`](/api/ppvm/paulisum/#ppvm.paulisum.PauliSum), but adds additional methods for the loss.
+To simulate loss, `ppvm` offers a [`LossyPauliSum`][ppvm.paulisum.LossyPauliSum] class.
+This is a dedicated class, which behaves just like a [`PauliSum`][ppvm.paulisum.PauliSum], but adds additional methods for the loss.
 
 Also, this separation is there since we need to extend the Pauli basis in order to
 account for loss (see [below](#background)). This comes at a storage overhead. Specifically, we now need 3 bits in order to represent a character in a Pauli string rather than just 2.

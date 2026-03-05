@@ -1,12 +1,12 @@
 [![Documentation](https://img.shields.io/badge/Documentation-6437FF)](TODO)
 
-* Python build: [![CI - python](https://github.com/QuEraComputing/bloqade/actions/workflows/ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml)
-* Rust build: [![CI - rust](https://github.com/QuEraComputing/bloqade/actions/workflows/ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml)
+* Python build: [![CI - python](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml)
+* Rust build: [![CI - rust](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml)
 
 # ppvm - Pauli Propagation Virtual Machine
 
 **ppvm** is a fast Pauli Propagation engine.
-It is implemented in rust, but also offers [python bindings](#TODO).
+It is implemented in rust, but also offers [python bindings](#python).
 
 # Short example
 

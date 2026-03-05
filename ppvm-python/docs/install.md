@@ -6,7 +6,7 @@
 
 ## Install from source
 
-Just `pip install` the directly from git.
+Just `pip install` directly from git.
 We recommend using [uv](https://docs.astral.sh/uv/).
 
 ```bash

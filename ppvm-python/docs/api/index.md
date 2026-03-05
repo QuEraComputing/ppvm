@@ -12,4 +12,4 @@ additionally exposes `loss_channel` and `reset_loss_channel`.
 
 Note that the loss simulation comes with a slight memory overhead to track
 the information of which qubit was lost.
-See [../loss.md] for details.
+See [loss](../loss.md) for details.

@@ -77,8 +77,7 @@ class PauliSum:
     Attributes:
         initial_terms: Pauli strings, each containing only 'I', 'X', 'Y', 'Z' characters.
             All terms must have the same length (number of qubits).
-        n_qubits: Number of qubits. If None, inferred from the length of the
-            first term.
+        n_qubits: Number of qubits.
         coefficients: Coefficients for each Pauli term. If empty, all terms
             are assigned coefficient 1.0.
         min_abs_coeff: Minimum absolute coefficient value. Terms with smaller
@@ -163,7 +162,7 @@ class PauliSum:
         N = math.ceil(n_qubits / 8.0)
 
         # number of bytes we have
-        possible_interfaces = range(15)
+        possible_interfaces = range(16)
         N_interface = next(n for n in possible_interfaces if 2**n > N)
         interface = self._get_interface(N_interface)
 

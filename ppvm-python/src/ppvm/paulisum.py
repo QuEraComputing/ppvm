@@ -1,12 +1,12 @@
 import math
 import re
 from dataclasses import dataclass, field
-from typing import ClassVar, Sequence, Self, Union
+from typing import Self, Sequence, Union
 
 import ppvm_python_native
 
-_COMPACT_RE = re.compile(r'^([IXYZ]\d+)+$')
-_COMPACT_TOKEN_RE = re.compile(r'([IXYZ])(\d+)')
+_COMPACT_RE = re.compile(r"^([IXYZ]\d+)+$")
+_COMPACT_TOKEN_RE = re.compile(r"([IXYZ])(\d+)")
 
 
 def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, float]":
@@ -16,7 +16,7 @@ def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, f
         s, coeff = term, 1.0
 
     if _COMPACT_RE.match(s):
-        chars = ['I'] * n_qubits
+        chars = ["I"] * n_qubits
         for pauli, idx_str in _COMPACT_TOKEN_RE.findall(s):
             idx = int(idx_str)
             if idx >= n_qubits:
@@ -24,7 +24,7 @@ def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, f
                     f"Qubit index {idx} out of range for {n_qubits}-qubit system."
                 )
             chars[idx] = pauli
-        s = ''.join(chars)
+        s = "".join(chars)
 
     return s, coeff
 
@@ -46,7 +46,6 @@ T = Union[
     ppvm_python_native.PauliSumIndexMapFxHash13,
     ppvm_python_native.PauliSumIndexMapFxHash14,
     ppvm_python_native.PauliSumIndexMapFxHash15,
-
     ppvm_python_native.PauliSumLossIndexMapFxHash0,
     ppvm_python_native.PauliSumLossIndexMapFxHash1,
     ppvm_python_native.PauliSumLossIndexMapFxHash2,
@@ -178,17 +177,16 @@ class PauliSum:
         options = {
             "min_abs_coeff": self.min_abs_coeff,
             "terms": terms,
-            "coefficients": coefficients
+            "coefficients": coefficients,
         }
 
         # these are just set to the defaults on the rust side if None
         if self.max_pauli_weight is not None:
             options["max_pauli_weight"] = self.max_pauli_weight
-        
+
         if self.max_loss_weight is not None:
             options["max_loss_weight"] = self.max_loss_weight
 
-        
         return interface(
             n_qubits,
             **options,
@@ -278,7 +276,7 @@ class PauliSum:
 
     def __str__(self) -> str:
         return self._interface.__str__()
-    
+
     def __copy__(self) -> Self:
         new = object.__new__(type(self))
         object.__setattr__(new, "initial_terms", self.initial_terms)
@@ -306,10 +304,10 @@ class PauliSum:
             A list of tuples, each containing a Pauli string and its coefficient.
         """
         return self._interface.terms()
-    
+
     def weights(self) -> list[tuple[str, int]]:
         """Get the weight of each Pauli term.
-        
+
         Returns:
             A list of tuples, each containing a Pauli string and its weight.
         """
@@ -317,7 +315,7 @@ class PauliSum:
 
     def current_max_weight(self) -> int:
         """Get the current maximum weight of the Pauli sum.
-        
+
         Returns:
             The weight as integer.
         """
@@ -331,7 +329,7 @@ class PauliSum:
             The expectation value of the Pauli sum with respect to |0...0>.
         """
         return self._interface.trace("Z?*")
-    
+
     def overlap(self, other: "PauliSum") -> float:
         """Compute the overlap of the current PauliSum with another PauliSum.
         The overlap is defined as
@@ -564,11 +562,9 @@ class PauliSum:
         self._interface.two_qubit_pauli_error(addr0, addr1, p)
 
 
-
-
 class LossyPauliSum(PauliSum):
     """A PauliSum that supports modelling qubit loss.
-    
+
     This is achieved by extending the set of Pauli basis operators to include
     an addition operator ``{I, X, Y, Z, L}``, where ``L`` is the projector on
     a third leakage state. This basis effectively allows simulating qutrits,

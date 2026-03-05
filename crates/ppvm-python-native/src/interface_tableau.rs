@@ -1,7 +1,7 @@
-use bnum::types::{U256, U512, U1024, U2048, U4096};
+use bnum::types::{U256, U512, U1024};
 use paste::paste;
 use ppvm_runtime::prelude::*;
-use ppvm_runtime::tableau::GeneralizedTableau;
+use ppvm_runtime::tableau::{CliffordExtensions, GeneralizedTableau};
 use pyo3::prelude::*;
 
 macro_rules! create_interface {
@@ -55,6 +55,27 @@ macro_rules! create_interface {
                 self.inner.s(addr0);
             }
 
+            pub fn s_adj(&mut self, addr0: usize) {
+                self.inner.s_adj(addr0);
+            }
+
+            // clifford extensions
+            pub fn sqrt_x(&mut self, addr0: usize) {
+                self.inner.sqrt_x(addr0);
+            }
+
+            pub fn sqrt_x_adj(&mut self, addr0: usize) {
+                self.inner.sqrt_x_adj(addr0);
+            }
+
+            pub fn sqrt_y(&mut self, addr0: usize) {
+                self.inner.sqrt_y(addr0);
+            }
+
+            pub fn sqrt_y_adj(&mut self, addr0: usize) {
+                self.inner.sqrt_y_adj(addr0);
+            }
+
             pub fn cnot(&mut self, addr0: usize, addr1: usize) {
                 self.inner.cnot(addr0, addr1);
             }
@@ -94,8 +115,31 @@ macro_rules! create_interface {
                 self.inner.pauli_error(addr0, p);
             }
 
+            pub fn depolarize(&mut self, addr0: usize, p: f64) {
+                self.inner.depolarize(addr0, p);
+            }
+
+            pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64) {
+                self.inner.depolarize2(addr0, addr1, p);
+            }
+
             pub fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [f64; 15]) {
                 self.inner.two_qubit_pauli_error(addr0, addr1, p);
+            }
+
+            pub fn loss_channel(&mut self, addr0: usize, p: f64) {
+                self.inner.loss_channel(addr0, p);
+            }
+
+            pub fn reset_loss_channel(&mut self, addr0: usize) {
+                self.inner.reset_loss_channel(addr0);
+            }
+
+            pub fn reset(&mut self, addr0: usize) {
+                let m = self.inner.measure(addr0);
+                if m {
+                    self.inner.x(addr0);
+                }
             }
 
             // some python niceties
@@ -134,15 +178,15 @@ macro_rules! create_interface_range {
     ($name: ident, $indexType: ident, $( $n: expr),* ) => {
         paste! {
         $(
-            type [<$name$n>] = config::indexmap::ByteFxHashF64<{(2 as usize).pow($n)}>;
-            create_interface!([<GeneralizedTableau$name$n>], [<$name$n>], $indexType);
+            type [<$name$n>] = config::indexmap::ByteFxHashF64<$n>;
+            create_interface!([<GeneralizedTableau$n>], [<$name$n>], $indexType);
         )*
     }
     };
 }
 
 // up to 64 qubits
-create_interface_range!(IndexMapFxHash, usize, 0, 1, 2, 3, 4, 5, 6, 7, 8);
+create_interface_range!(IndexMapFxHash, usize, 1, 2, 3, 4, 5, 6, 7, 8);
 
 // 64 - 128 qubits
 create_interface_range!(IndexMapFxHash, u128, 9, 10, 11, 12, 13, 14, 15, 16);
@@ -167,4 +211,110 @@ create_interface_range!(
     30,
     31,
     32
+);
+
+create_interface_range!(
+    IndexMapFxHash,
+    U512,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64
+);
+
+create_interface_range!(
+    IndexMapFxHash,
+    U1024,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117,
+    118,
+    119,
+    120,
+    121,
+    122,
+    123,
+    124,
+    125,
+    126,
+    127,
+    128
 );

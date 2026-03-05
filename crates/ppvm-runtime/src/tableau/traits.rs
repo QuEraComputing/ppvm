@@ -33,9 +33,9 @@ pub trait CliffordExtensions: Clifford {
     }
 
     fn sqrt_y_adj(&mut self, addr0: usize) {
-        self.s_adj(addr0);
-        self.sqrt_x_adj(addr0);
         self.s(addr0);
+        self.sqrt_x_adj(addr0);
+        self.s_adj(addr0);
     }
 }
 

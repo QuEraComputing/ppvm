@@ -9,6 +9,20 @@ from .types import GeneralizedTableauInterface
 
 @dataclass(frozen=True)
 class GeneralizedTableau(CliffordMixin, CliffordExtensionMixin, NoiseMixin):
+    """Generalized stabilizer tableau for quantum circuit simulation.
+
+    Represents an arbitrary quantum state in the basis spanned by the
+    stabilizer tableau. It supports Clifford gates, arbitrary single- and two-qubit rotations,
+    noise channels, and mid-circuit measurement.
+    The coefficient vector grows exponentially with the
+    number of non-Clifford operations applied.
+
+    Attributes:
+        n_qubits: The number of qubits.
+        min_abs_coeff: Coefficient threshold - coefficients smaller than this
+            are pruned from the sparse coefficient vector.
+    """
+
     n_qubits: int
     min_abs_coeff: float = 1e-10
 
@@ -25,6 +39,7 @@ class GeneralizedTableau(CliffordMixin, CliffordExtensionMixin, NoiseMixin):
         )
 
     def __str__(self) -> str:
+        """Return a human-readable representation of the tableau state."""
         return self._interface.__str__()
 
     # additional noise methods

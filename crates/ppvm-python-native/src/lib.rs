@@ -1,10 +1,13 @@
 use pyo3::prelude::*;
 
 pub mod interface;
+pub mod interface_tableau;
 
 #[pymodule]
 pub mod ppvm_python_native {
     // NOTE: it's not possible to use #[pymodule_export] inside a macro_rules!
+
+    // PauliSum
     #[pymodule_export]
     pub use crate::interface::PauliSumIndexMapFxHash0;
     #[pymodule_export]
@@ -38,6 +41,7 @@ pub mod ppvm_python_native {
     #[pymodule_export]
     pub use crate::interface::PauliSumIndexMapFxHash15;
 
+    // PauliSum with Loss
     #[pymodule_export]
     pub use crate::interface::PauliSumLossIndexMapFxHash0;
     #[pymodule_export]
@@ -70,4 +74,8 @@ pub mod ppvm_python_native {
     pub use crate::interface::PauliSumLossIndexMapFxHash14;
     #[pymodule_export]
     pub use crate::interface::PauliSumLossIndexMapFxHash15;
+
+    // // Generalized Tableau
+    // #[pymodule_export]
+    // pub use crate::interface_tableau
 }

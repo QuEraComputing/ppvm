@@ -748,6 +748,8 @@ dependencies = [
 name = "ppvm-python-native"
 version = "0.1.0"
 dependencies = [
+ "bnum",
+ "num",
  "paste",
  "ppvm-runtime",
  "pyo3",

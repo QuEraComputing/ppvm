@@ -545,8 +545,7 @@ fn test_sqrt_y_direction() {
     use ppvm_runtime::tableau::CliffordExtensions;
 
     // sqrt_y|0⟩ should be |+⟩
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> =
-        GeneralizedTableau::new(1, 1e-12);
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(1, 1e-12);
     tableau.sqrt_y(0);
     tableau.h(0);
     assert!(
@@ -555,8 +554,7 @@ fn test_sqrt_y_direction() {
     );
 
     // sqrt_y_adj|0⟩ should be |−⟩
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> =
-        GeneralizedTableau::new(1, 1e-12);
+    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(1, 1e-12);
     tableau.sqrt_y_adj(0);
     tableau.h(0);
     assert!(

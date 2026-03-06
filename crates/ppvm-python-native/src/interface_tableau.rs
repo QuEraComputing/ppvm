@@ -84,6 +84,14 @@ macro_rules! create_interface {
                 self.inner.cz(addr0, addr1);
             }
 
+            pub fn t(&mut self, addr0: usize) {
+                self.inner.t(addr0);
+            }
+
+            pub fn t_adj(&mut self, addr0: usize) {
+                self.inner.t_adj(addr0);
+            }
+
             // rot1
             pub fn rx(&mut self, addr0: usize, theta: f64) {
                 self.inner.rx(addr0, theta);

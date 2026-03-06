@@ -3,12 +3,19 @@ from dataclasses import dataclass, field
 
 import ppvm_python_native
 
-from .clifford import CliffordExtensionMixin, CliffordMixin, NoiseMixin
+from .clifford import (
+    CliffordExtensionMixin,
+    CliffordMixin,
+    NoiseMixin,
+    NonCliffordMixin,
+)
 from .types import GeneralizedTableauInterface
 
 
 @dataclass(frozen=True)
-class GeneralizedTableau(CliffordMixin, CliffordExtensionMixin, NoiseMixin):
+class GeneralizedTableau(
+    CliffordMixin, CliffordExtensionMixin, NonCliffordMixin, NoiseMixin
+):
     """Generalized stabilizer tableau for quantum circuit simulation.
 
     Represents an arbitrary quantum state in the basis spanned by the
@@ -41,6 +48,22 @@ class GeneralizedTableau(CliffordMixin, CliffordExtensionMixin, NoiseMixin):
     def __str__(self) -> str:
         """Return a human-readable representation of the tableau state."""
         return self._interface.__str__()
+
+    def t(self, addr0: int) -> None:
+        """Apply a T gate (π/8 rotation) to the specified qubit.
+
+        Args:
+            addr0: The index of the target qubit.
+        """
+        self._interface.t(addr0)
+
+    def t_adj(self, addr0: int) -> None:
+        """Apply a T adjoint gate (negative π/8 rotation) to the specified qubit.
+
+        Args:
+            addr0: The index of the target qubit.
+        """
+        self._interface.t_adj(addr0)
 
     # additional noise methods
     def depolarize(self, addr0: int, p: float) -> None:

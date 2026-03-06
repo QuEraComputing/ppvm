@@ -160,3 +160,28 @@ def test_s_adj():
     tab.s(0)
     tab.s_adj(0)
     assert tab.measure(0)
+
+
+def test_t_gate_on_zero_state():
+    # T|0> = |0>, Z-measurement unchanged
+    tab = GeneralizedTableau(2)
+    tab.t(0)
+    assert not tab.measure(0)
+
+
+def test_t_gate_four_times_equals_z():
+    # T^4 = Z, so T^4|1> = Z|1> = -|1>, still measures as 1
+    tab = GeneralizedTableau(2)
+    tab.x(0)
+    for _ in range(4):
+        tab.t(0)
+    assert tab.measure(0)
+
+
+def test_t_adj_inverse_of_t():
+    # T T† = identity
+    tab = GeneralizedTableau(2)
+    tab.x(0)
+    tab.t(0)
+    tab.t_adj(0)
+    assert tab.measure(0)

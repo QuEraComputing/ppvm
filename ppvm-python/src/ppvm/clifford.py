@@ -64,6 +64,10 @@ class CliffordMixin:
         """
         self._interface.cz(addr0, addr1)
 
+
+class NonCliffordMixin:
+    _interface: Any
+
     # Rotations
     def rx(self, addr0: int, theta: float) -> None:
         """Apply an RX rotation gate to the specified qubit.

@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    marker::PhantomData,
-    ops::{BitAnd, Shl},
-};
+use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
 
 use super::sparsevec::SparseVector;
 use crate::traits::PauliWordTrait;
@@ -165,7 +160,6 @@ where
         + From<Complex64>
         + ComplexFloat,
     I: TableauIndex,
-    <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     pub fn new(n_qubits: usize, coefficient_threshold: T::Coeff) -> Self {
         let mut coefficients = C::new();
@@ -307,7 +301,12 @@ where
     /// - `true` (outcome 1): keep terms where `phase == true` (anticommutes with Z, -1 eigenspace).
     ///   Use this when the tableau was *not* updated, so the reference state is unchanged and
     ///   we must explicitly select the -1 eigenspace.
-    pub(crate) fn trim_coefficients_for_measurement(&mut self, addr0: usize, outcome: bool) {
+    pub(crate) fn trim_coefficients_for_measurement(
+        &mut self,
+        addr0: usize,
+        z_sign: bool,
+        outcome: bool,
+    ) {
         // TODO: more efficient update of coefficients in-place
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         let destabilizers = self.tableau.destabilizers();
@@ -326,7 +325,8 @@ where
                 phase ^= destabilizers[i].word.xbits[addr0];
             }
 
-            if phase == outcome {
+            // (xi * k) == m
+            if (phase ^ z_sign) == outcome {
                 self.coefficients.add_or_insert(alpha, coeff);
             }
         }

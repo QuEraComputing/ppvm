@@ -47,9 +47,9 @@ pub trait TableauIndex:
     + Hash
     + Copy
     + From<u8>
-    + Shl<usize>
-    + BitOrAssign<<Self as Shl<usize>>::Output>
-    + BitAnd<<Self as Shl<usize>>::Output, Output = Self>
+    + Shl<usize, Output = Self>
+    + BitOrAssign<Self>
+    + BitAnd<Self, Output = Self>
     + BitXor<Output = Self>
 {
 }
@@ -60,9 +60,9 @@ impl<I> TableauIndex for I where
         + Hash
         + Copy
         + From<u8>
-        + Shl<usize>
-        + BitOrAssign<<I as Shl<usize>>::Output>
-        + BitAnd<<I as Shl<usize>>::Output, Output = I>
+        + Shl<usize, Output = Self>
+        + BitOrAssign<Self>
+        + BitAnd<I, Output = I>
         + BitXor<Output = I>
 {
 }

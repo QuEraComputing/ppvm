@@ -1,5 +1,7 @@
+use std::f64::consts::FRAC_PI_2;
+
 use num::complex::Complex64;
-use ppvm_runtime::{config::dashmap::ByteFxHashF64, prelude::*};
+use ppvm_runtime::{config::dashmap::ByteFxHashF64, prelude::*, tableau::CliffordExtensions};
 
 #[test]
 fn test_measure_deterministic() {
@@ -636,4 +638,93 @@ fn test_measure_opposite_deterministic() {
     println!("{}", tab);
 
     println!("{}", tab.measure(0));
+}
+
+#[test]
+fn test_measure_order_sqrt_vs_rot() {
+    let theta = -0.9553166181245093; // -np.arccos(np.sqrt(1 / 3))
+    let mut tab_rot: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+        GeneralizedTableau::new(2, 1e-12);
+
+    for i in 0..2 {
+        tab_rot.rx(i, theta);
+    }
+
+    let mut tab_sqrt = tab_rot.clone();
+
+    for i in 0..2 {
+        tab_rot.rx(i, FRAC_PI_2);
+        tab_sqrt.sqrt_x(i);
+    }
+
+    tab_rot.cz(0, 1);
+    tab_sqrt.cz(0, 1);
+
+    tab_rot.rx(0, -FRAC_PI_2);
+    tab_sqrt.sqrt_x_adj(0);
+
+    let n_shots = 20_000;
+
+    let mut samples_sqrt = Vec::<(bool, bool)>::new();
+    let mut samples_rot = Vec::<(bool, bool)>::new();
+
+    let mut samples_sqrt_rev = Vec::<(bool, bool)>::new();
+    let mut samples_rot_rev = Vec::<(bool, bool)>::new();
+
+    for _ in 0..n_shots {
+        let mut tab_sqrt_measure = tab_sqrt.clone();
+        samples_sqrt.push((tab_sqrt_measure.measure(0), tab_sqrt_measure.measure(1)));
+
+        let mut tab_rot_measure = tab_rot.clone();
+        samples_rot.push((tab_rot_measure.measure(0), tab_rot_measure.measure(1)));
+
+        // measure qubit 1 first
+        let mut tab_sqrt_rev_measure = tab_sqrt.clone();
+        let val1 = tab_sqrt_rev_measure.measure(1);
+        samples_sqrt_rev.push((tab_sqrt_rev_measure.measure(0), val1));
+
+        let mut tab_rot_rev_measure = tab_rot.clone();
+        let val1_r = tab_rot_rev_measure.measure(1);
+        samples_rot_rev.push((tab_rot_rev_measure.measure(0), val1_r));
+    }
+
+    println!("Sqrt: {}", tab_sqrt);
+    println!("Rot: {}", tab_rot);
+
+    let avg_sqrt = samples_sqrt
+        .iter()
+        .fold((0.0, 0.0), |mut acc, (val0, val1)| {
+            acc.0 += ((*val0 as u8) as f64) / (n_shots as f64);
+            acc.1 += ((*val1 as u8) as f64) / (n_shots as f64);
+            acc
+        });
+
+    let avg_rot = samples_rot
+        .iter()
+        .fold((0.0, 0.0), |mut acc, (val0, val1)| {
+            acc.0 += ((*val0 as u8) as f64) / (n_shots as f64);
+            acc.1 += ((*val1 as u8) as f64) / (n_shots as f64);
+            acc
+        });
+
+    let avg_sqrt_rev = samples_sqrt_rev
+        .iter()
+        .fold((0.0, 0.0), |mut acc, (val0, val1)| {
+            acc.0 += ((*val0 as u8) as f64) / (n_shots as f64);
+            acc.1 += ((*val1 as u8) as f64) / (n_shots as f64);
+            acc
+        });
+
+    let avg_rot_rev = samples_rot_rev
+        .iter()
+        .fold((0.0, 0.0), |mut acc, (val0, val1)| {
+            acc.0 += ((*val0 as u8) as f64) / (n_shots as f64);
+            acc.1 += ((*val1 as u8) as f64) / (n_shots as f64);
+            acc
+        });
+
+    println!("Avg sqrt {}, {}", avg_sqrt.0, avg_sqrt.1);
+    println!("Avg rot {}, {}", avg_rot.0, avg_rot.1);
+    println!("Avg sqrt rev {}, {}", avg_sqrt_rev.0, avg_sqrt_rev.1);
+    println!("Avg rot rev {}, {}", avg_rot_rev.0, avg_rot_rev.1);
 }

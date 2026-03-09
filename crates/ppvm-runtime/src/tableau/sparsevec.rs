@@ -9,6 +9,7 @@ pub trait SparseVector<T, I>: Clone + IntoIterator<Item = (T, I)> {
     fn get(&self, index: &I) -> T;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
+    fn mul_by(&mut self, factor: T);
     fn mul_element_by(&mut self, index: I, factor: T);
     fn trim(&mut self, cutoff: T);
     fn retain(&mut self, f: impl FnMut(&(T, I)) -> bool);
@@ -54,6 +55,12 @@ where
 
     fn is_empty(&self) -> bool {
         self.is_empty()
+    }
+
+    fn mul_by(&mut self, factor: T) {
+        for (v, _) in self.iter_mut() {
+            *v *= factor;
+        }
     }
 
     fn mul_element_by(&mut self, index: I, factor: T) {

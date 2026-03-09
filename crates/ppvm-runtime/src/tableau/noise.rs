@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 
@@ -35,6 +37,7 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> Depolari
     for GeneralizedTableau<T, I, C>
 where
     T::Coeff: PartialOrd<f64>,
+    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
 {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
         debug_assert!(p >= 0.0 && p <= 1.0);
@@ -80,6 +83,7 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> PauliErr
     for GeneralizedTableau<T, I, C>
 where
     T::Coeff: PartialOrd<f64> + Zero,
+    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
 {
     fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
         debug_assert!(p.iter().all(|p_| *p_ >= 0.0 && *p_ <= 1.0));
@@ -159,6 +163,7 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> TwoQubit
     for GeneralizedTableau<T, I, C>
 where
     T::Coeff: PartialOrd<f64> + Zero,
+    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
 {
     fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [<T as Config>::Coeff; 15]) {
         if self.is_lost[addr0] || self.is_lost[addr1] {
@@ -183,6 +188,7 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> Depolari
     for GeneralizedTableau<T, I, C>
 where
     T::Coeff: PartialOrd<f64> + Zero,
+    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
 {
     fn depolarize2(&mut self, addr0: usize, addr1: usize, p: <T as Config>::Coeff) {
         if self.is_lost[addr0] || self.is_lost[addr1] {
@@ -205,6 +211,7 @@ where
         + std::ops::AddAssign
         + One
         + ComplexFloat,
+    I: Debug,
 {
     fn loss_channel(&mut self, addr0: usize, p: <T as Config>::Coeff) {
         if p < rand::random::<f64>() {

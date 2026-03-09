@@ -6,7 +6,7 @@ use crate::tableau::traits::TableauIndex;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 use std::collections::HashMap;
-use std::ops::{BitAnd, Shl};
+use std::fmt::Debug;
 
 impl<T: Config> Measure for Tableau<T> {
     /// Measure qubit `addr0` in Z basis
@@ -58,8 +58,7 @@ where
         + std::ops::AddAssign
         + One
         + ComplexFloat,
-    I: TableauIndex,
-    <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
+    I: TableauIndex + Debug,
 {
     fn measure(&mut self, addr0: usize) -> bool {
         if self.is_lost[addr0] {
@@ -128,24 +127,95 @@ where
 
         let outcome = rand::random::<f64>() < prob_1;
 
-        // Now, we may need to update the tableau if Z is not a stabilizer
         let q = self.tableau.find_z_anticommuting_stabilizer(addr0);
 
-        let stab_z_phase = match q {
+        match q {
             Some(q_idx) => {
-                // Case a: Z is not a stabilizer — update the tableau first.
+                debug_assert_ne!(shift, I::from(0u8), "Shift 0, but Z is not a stabilizer!");
+                // Case a: Z is not a stabilizer
+
+                // In this case, we cannot simply trim the coefficients (though some
+                // might be smaller than the threshold)
+
+                // coefficient algorithm from T.J. Yoder, adapted for state vectors
+                // see Algorithm 2 in https://www.scottaaronson.com/showcase2/report/ted-yoder.pdf
+
+                // get k: bit string with a single 1 entry at the position
+                // of the first 1 in shift
+                let mut k = I::from(0u8);
+                let one = I::from(1u8);
+                let zero = I::from(0u8);
+                for i in 0..self.n_qubits() {
+                    if shift & (one << i) == one {
+                        k = one << i;
+                        break;
+                    }
+                }
+
+                // Find the stabilizer index of decomposing Z_addr0 into
+                // stabilizers and destabilizers
+                // TODO: combine this with getting the decomposition phase
+                let mut c = I::from(0u8);
+                let destabilizers = self.tableau.destabilizers();
+                for (i, destab) in destabilizers.iter().enumerate() {
+                    if destab.word.xbits[addr0] {
+                        // anti-commuting destabilizer
+                        // meaning the stabilizer contributes to the decomp
+                        c |= one << i;
+                    }
+                }
+
+                // TODO: hashmap for assigning new coefficients
+                let mut new_coefficients = C::new();
+                for (idx, coeff) in &coeff_map {
+                    let mut x = idx.clone();
+                    let mut q: Complex<T::Coeff> = Complex::one();
+                    if *idx ^ k != zero {
+                        // q = phase_decomp * (-1).pow(symplectic_inner(*idx, c)) * q;
+                        let symp_inner = {
+                            let mut parity = 0u32;
+                            for i in 0..self.n_qubits() {
+                                if (*idx & c) & (one << i) != zero {
+                                    parity ^= 1;
+                                }
+                            }
+                            parity
+                        };
+                        let phase_idx = ((phase_decomp as i32
+                            + if symp_inner % 2 == 1 { 2 } else { 0 })
+                            % 4) as usize;
+                        q = COMPLEX_PHASE_CONVERSION[phase_idx].into();
+                        x = *idx ^ shift;
+                    }
+                    let half: Complex<T::Coeff> = Complex64::new(0.5, 0.0).into();
+                    let new_coeff = q * *coeff * half;
+                    new_coefficients.add_or_insert(x, new_coeff);
+                }
+
+                self.coefficients = new_coefficients;
+
+                // update the tableau, coefficients can be updated independently
                 self.tableau
                     .update_tableau_according_to_outcome(addr0, q_idx, outcome);
-                outcome
             }
-            None => self.tableau.get_deterministic_outcome(addr0),
-        };
+            None => {
+                debug_assert_eq!(shift, I::from(0u8), "Shift !=0 but Z is a stabilizer!");
+                // Case b: +Z or -Z already is a stabilizer; we just need
+                // to trim the coefficients accordingly; tableau remains unchanged
 
-        // After the tableau update (or if it was already a stabilizer), the reference state
-        // has a definite Z eigenvalue at addr0. We keep the coefficient branches that land in
-        // the measured eigenspace: a branch D^α flips the eigenvalue iff it anticommutes with Z,
-        // so we keep branches where (stab_z_phase XOR phase) == outcome, i.e. phase == (stab_z_phase XOR outcome).
-        self.trim_coefficients_for_measurement(addr0, stab_z_phase ^ outcome);
+                // Applying the projector to a basis state, we have three phases:
+                // 1. The actual measurement outcome (k)
+                // 2. The sign from whether +Z or -Z is a stabilizer (m)
+                // 3. Contribution from commuting Z_addr0 through the destabilizers (xi)
+                // Only coefficients where m*k*xi == 1 are kept
+
+                // 2. get the sign
+                let z_sign = self.tableau.get_deterministic_outcome(addr0);
+
+                // 3. check the anticommutation -- combine with coefficient update
+                self.trim_coefficients_for_measurement(addr0, outcome, z_sign);
+            }
+        };
 
         outcome
     }

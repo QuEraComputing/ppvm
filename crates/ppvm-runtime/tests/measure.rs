@@ -727,4 +727,12 @@ fn test_measure_order_sqrt_vs_rot() {
     println!("Avg rot {}, {}", avg_rot.0, avg_rot.1);
     println!("Avg sqrt rev {}, {}", avg_sqrt_rev.0, avg_sqrt_rev.1);
     println!("Avg rot rev {}, {}", avg_rot_rev.0, avg_rot_rev.1);
+
+    assert!((avg_sqrt.0 - avg_rot.0).abs() < 1e-2);
+    assert!((avg_rot_rev.0 - avg_rot.0).abs() < 1e-2);
+    assert!((avg_sqrt_rev.0 - avg_rot.0).abs() < 1e-2);
+
+    assert!((avg_sqrt.1 - avg_rot.1).abs() < 1e-2);
+    assert!((avg_rot_rev.1 - avg_rot.1).abs() < 1e-2);
+    assert!((avg_sqrt_rev.1 - avg_rot.1).abs() < 1e-2);
 }

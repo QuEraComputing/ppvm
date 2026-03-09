@@ -146,7 +146,7 @@ where
                 let one = I::from(1u8);
                 let zero = I::from(0u8);
                 for i in 0..self.n_qubits() {
-                    if shift & (one << i) == one {
+                    if shift & (one << i) != zero {
                         k = one << i;
                         break;
                     }
@@ -165,12 +165,18 @@ where
                     }
                 }
 
+                let alpha = if outcome {
+                    (phase_decomp + 2) % 4
+                } else {
+                    phase_decomp
+                };
+
                 // TODO: hashmap for assigning new coefficients
                 let mut new_coefficients = C::new();
                 for (idx, coeff) in &coeff_map {
                     let mut x = idx.clone();
                     let mut q: Complex<T::Coeff> = Complex::one();
-                    if *idx ^ k != zero {
+                    if (*idx & k) != zero {
                         // q = phase_decomp * (-1).pow(symplectic_inner(*idx, c)) * q;
                         let symp_inner = {
                             let mut parity = 0u32;
@@ -181,9 +187,8 @@ where
                             }
                             parity
                         };
-                        let phase_idx = ((phase_decomp as i32
-                            + if symp_inner % 2 == 1 { 2 } else { 0 })
-                            % 4) as usize;
+                        let phase_idx =
+                            ((alpha as i32 + if symp_inner % 2 == 1 { 2 } else { 0 }) % 4) as usize;
                         q = COMPLEX_PHASE_CONVERSION[phase_idx].into();
                         x = *idx ^ shift;
                     }
@@ -191,6 +196,8 @@ where
                     let new_coeff = q * *coeff * half;
                     new_coefficients.add_or_insert(x, new_coeff);
                 }
+
+                new_coefficients.normalize();
 
                 self.coefficients = new_coefficients;
 

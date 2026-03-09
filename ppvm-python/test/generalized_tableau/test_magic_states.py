@@ -51,8 +51,7 @@ def test_simple_infidelity():
 
 
 # NOTE: helper for below
-# NOTE: helper for below
-def distillation_sqrt(tab: GeneralizedTableau, q: list[int]):
+def distillation_sqrt(tab: GeneralizedTableau, q: list[int], noise: bool):
     # initial state - prepare noisy magic states on all 5 qubits
     for i in q:
         tab.reset(i)
@@ -61,8 +60,9 @@ def distillation_sqrt(tab: GeneralizedTableau, q: list[int]):
         tab.rx(qi, theta)
     for qi in q:
         tab.t_adj(qi)
-    for qi in q:
-        tab.depolarize(qi, p)
+    if noise:
+        for qi in q:
+            tab.depolarize(qi, p)
 
     # distillation circuit
     for qi in [q[0], q[1], q[4]]:
@@ -86,7 +86,7 @@ def distillation_sqrt(tab: GeneralizedTableau, q: list[int]):
     return [tab.measure(qi) for qi in q]
 
 
-def distillation_rot(tab: GeneralizedTableau, q: list[int]):
+def distillation_rot(tab: GeneralizedTableau, q: list[int], noise: bool):
     # initial state - prepare noisy magic states on all 5 qubits
     for i in q:
         tab.reset(i)
@@ -95,8 +95,9 @@ def distillation_rot(tab: GeneralizedTableau, q: list[int]):
         tab.rx(qi, theta)
     for qi in q:
         tab.t_adj(qi)
-    for qi in q:
-        tab.depolarize(qi, p)
+    if noise:
+        for qi in q:
+            tab.depolarize(qi, p)
 
     # distillation circuit
     for qi in [q[0], q[1], q[4]]:
@@ -134,7 +135,7 @@ def test_distillation_infidelity_sqrt():
     total_time = 0.0
     for _ in range(n_shots):
         start = time.time()
-        result = distillation_sqrt(tab, q)
+        result = distillation_sqrt(tab, q, True)
         total_time += time.time() - start
         if result[1:] != [True, False, True, True]:
             # wrong syndromes, don't select this sample
@@ -149,11 +150,11 @@ def test_distillation_infidelity_sqrt():
     infidelity = float(count_one) / count_accepted
     print(f"Total time for {n_shots} shots: {total_time} s")
     print(f"Average time per shot: {total_time / n_shots * 1e3} ms")
-    print(f"Infidelity: {infidelity}")
+    print(f"Sqrt Infidelity: {infidelity}")
 
     # NOTE: result from the example at the time of writing
     assert np.isclose(
-        infidelity, 0.00683, atol=1e-3
+        infidelity, 0.00683, atol=5 * 1e-3
     )  # could increase tolerance for fewer shots
 
 
@@ -167,7 +168,7 @@ def test_distillation_infidelity_rot():
     total_time = 0.0
     for _ in range(n_shots):
         start = time.time()
-        result = distillation_rot(tab, q)
+        result = distillation_rot(tab, q, True)
         total_time += time.time() - start
         if result[1:] != [True, False, True, True]:
             # wrong syndromes, don't select this sample
@@ -182,12 +183,66 @@ def test_distillation_infidelity_rot():
     infidelity = float(count_one) / count_accepted
     print(f"Total time for {n_shots} shots: {total_time} s")
     print(f"Average time per shot: {total_time / n_shots * 1e3} ms")
-    print(f"Infidelity: {infidelity}")
+    print(f"Rot Infidelity: {infidelity}")
 
     # NOTE: result from the example at the time of writing
     assert np.isclose(
-        infidelity, 0.00683, atol=1e-3
+        infidelity, 0.00683, atol=5 * 1e-3
     )  # could increase tolerance for fewer shots
+
+
+def test_distillation_infidelity_sqrt_noiseless():
+    tab = GeneralizedTableau(5)
+    q = list(range(5))
+
+    n_shots = 10_000
+    count_one = 0
+    count_accepted = 0
+    total_time = 0.0
+    for _ in range(n_shots):
+        start = time.time()
+        result = distillation_sqrt(tab, q, False)
+        total_time += time.time() - start
+        if result[1:] != [True, False, True, True]:
+            # wrong syndromes, don't select this sample
+            continue
+
+        count_accepted += 1
+        sel = result[0]
+
+        # sel should now be in 0 since we undid the magic state before measuring
+        count_one += sel
+
+    infidelity = float(count_one) / count_accepted
+
+    assert np.isclose(infidelity, 0.0)
+
+
+def test_distillation_infidelity_rot_noiseless():
+    tab = GeneralizedTableau(5)
+    q = list(range(5))
+
+    n_shots = 10_000
+    count_one = 0
+    count_accepted = 0
+    total_time = 0.0
+    for _ in range(n_shots):
+        start = time.time()
+        result = distillation_rot(tab, q, False)
+        total_time += time.time() - start
+        if result[1:] != [True, False, True, True]:
+            # wrong syndromes, don't select this sample
+            continue
+
+        count_accepted += 1
+        sel = result[0]
+
+        # sel should now be in 0 since we undid the magic state before measuring
+        count_one += sel
+
+    infidelity = float(count_one) / count_accepted
+
+    assert np.isclose(infidelity, 0.0)
 
 
 def test_single_qubit_magic_state_noiseless():

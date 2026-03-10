@@ -1,4 +1,5 @@
 use super::data::{GeneralizedTableau, Tableau, symplectic_inner};
+use rand::RngExt;
 use super::traits::Measure;
 use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
@@ -18,7 +19,7 @@ impl<T: Config> Measure for Tableau<T> {
                 // At least one stabilizer anticommutes with Z_addr0
 
                 // Generate random measurement outcome (50/50)
-                let outcome = rand::random::<bool>();
+                let outcome = self.rng.random::<bool>();
 
                 self.update_tableau_according_to_outcome(addr0, q_idx, outcome);
 
@@ -125,7 +126,7 @@ where
             prob_0 + prob_1
         );
 
-        let outcome = rand::random::<f64>() < prob_1;
+        let outcome = self.tableau.rng.random::<f64>() < prob_1;
 
         let q = self.tableau.find_z_anticommuting_stabilizer(addr0);
 

@@ -9,6 +9,7 @@ use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
 use crate::tableau::traits::TableauIndex;
 use crate::traits::*;
+use rand::RngExt;
 
 impl<T: Config> Depolarizing<T> for Tableau<T>
 where
@@ -16,7 +17,7 @@ where
 {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
         debug_assert!(p >= 0.0 && p <= 1.0);
-        let r = rand::random::<f64>();
+        let r = self.rng.random::<f64>();
         if p <= r {
             return;
         }
@@ -41,7 +42,7 @@ where
 {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
         debug_assert!(p >= 0.0 && p <= 1.0);
-        let r = rand::random::<f64>();
+        let r = self.tableau.rng.random::<f64>();
         if p <= r {
             return;
         }
@@ -63,7 +64,7 @@ where
     T::Coeff: PartialOrd<f64> + Zero,
 {
     fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
-        let r = rand::random::<f64>();
+        let r = self.rng.random::<f64>();
         let mut cumulative = T::Coeff::zero();
         for (i, p_) in p.iter().enumerate() {
             cumulative += p_.clone();
@@ -88,7 +89,7 @@ where
     fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
         debug_assert!(p.iter().all(|p_| *p_ >= 0.0 && *p_ <= 1.0));
         debug_assert!(p[0].clone() + p[1].clone() + p[2].clone() - 1.0 < 1e-7);
-        let r = rand::random::<f64>();
+        let r = self.tableau.rng.random::<f64>();
         let mut cumulative = T::Coeff::zero();
         for (i, p_) in p.iter().enumerate() {
             cumulative += p_.clone();
@@ -109,12 +110,12 @@ fn two_qubit_pauli_error_impl<T: Config>(
     addr0: usize,
     addr1: usize,
     p: [T::Coeff; 15],
+    r: f64,
 ) where
     T::Coeff: PartialOrd<f64> + Zero,
 {
     debug_assert!(p.iter().all(|p_| *p_ >= 0.0 && *p_ <= 1.0));
     // debug_assert!(p.iter().sum() - 1.0 < 1e-7);
-    let r = rand::random::<f64>();
     let sum = T::Coeff::zero();
     let idx = p
         .iter()
@@ -155,7 +156,8 @@ where
     T::Coeff: PartialOrd<f64> + Zero,
 {
     fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [<T as Config>::Coeff; 15]) {
-        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p);
+        let r = self.rng.random::<f64>();
+        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p, r);
     }
 }
 
@@ -170,7 +172,8 @@ where
             return;
         }
 
-        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p);
+        let r = self.tableau.rng.random::<f64>();
+        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p, r);
     }
 }
 
@@ -179,8 +182,9 @@ where
     T::Coeff: PartialOrd<f64> + Zero,
 {
     fn depolarize2(&mut self, addr0: usize, addr1: usize, p: <T as Config>::Coeff) {
+        let r = self.rng.random::<f64>();
         let p_arr: [T::Coeff; 15] = core::array::from_fn(|_| p.clone() * (1.0 / 15.0));
-        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p_arr);
+        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p_arr, r);
     }
 }
 
@@ -195,8 +199,9 @@ where
             return;
         }
 
+        let r = self.tableau.rng.random::<f64>();
         let p_arr: [T::Coeff; 15] = core::array::from_fn(|_| p.clone() * (1.0 / 15.0));
-        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p_arr);
+        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p_arr, r);
     }
 }
 
@@ -214,7 +219,7 @@ where
     I: Debug,
 {
     fn loss_channel(&mut self, addr0: usize, p: <T as Config>::Coeff) {
-        if p < rand::random::<f64>() {
+        if p < self.tableau.rng.random::<f64>() {
             return;
         }
 
@@ -562,11 +567,11 @@ mod tests {
         t.h(0);
         t.cnot(0, 1);
 
-        let trials = 100;
+        let trials = 100u64;
         let mut z_avg = 0.0;
         let p = 0.1;
-        for _ in 0..trials {
-            let mut t_trial = t.clone();
+        for i in 0..trials {
+            let mut t_trial = t.fork(Some(i));
             t_trial.loss_channel(0, p);
 
             let outcome0 = t_trial.measure(0);

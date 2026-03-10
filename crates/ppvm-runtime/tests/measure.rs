@@ -578,8 +578,8 @@ fn test_measure_generalized_tableau_t_gate_random() {
     let trials = 1000;
     let mut count_q1_one = 0;
 
-    for _ in 0..trials {
-        let mut copy = tableau.clone();
+    for i in 0..trials {
+        let mut copy = tableau.fork(Some(i as u64));
         if copy.measure(0) {
             count_q1_one += 1;
         }
@@ -615,8 +615,8 @@ fn test_measure_z_stabilizer_random() {
     let trials = 1000;
     let mut count_one: u64 = 0;
 
-    for _ in 0..trials {
-        let mut tab = tableau.clone();
+    for i in 0..trials {
+        let mut tab = tableau.fork(Some(i));
         let outcome = tab.measure(0);
         count_one += outcome as u64;
     }
@@ -671,19 +671,19 @@ fn test_measure_order_sqrt_vs_rot() {
     let mut samples_sqrt_rev = Vec::<(bool, bool)>::new();
     let mut samples_rot_rev = Vec::<(bool, bool)>::new();
 
-    for _ in 0..n_shots {
-        let mut tab_sqrt_measure = tab_sqrt.clone();
+    for i in 0..n_shots {
+        let mut tab_sqrt_measure = tab_sqrt.fork(Some(i as u64));
         samples_sqrt.push((tab_sqrt_measure.measure(0), tab_sqrt_measure.measure(1)));
 
-        let mut tab_rot_measure = tab_rot.clone();
+        let mut tab_rot_measure = tab_rot.fork(Some(i as u64));
         samples_rot.push((tab_rot_measure.measure(0), tab_rot_measure.measure(1)));
 
         // measure qubit 1 first
-        let mut tab_sqrt_rev_measure = tab_sqrt.clone();
+        let mut tab_sqrt_rev_measure = tab_sqrt.fork(Some(i as u64 + n_shots as u64));
         let val1 = tab_sqrt_rev_measure.measure(1);
         samples_sqrt_rev.push((tab_sqrt_rev_measure.measure(0), val1));
 
-        let mut tab_rot_rev_measure = tab_rot.clone();
+        let mut tab_rot_rev_measure = tab_rot.fork(Some(i as u64 + n_shots as u64));
         let val1_r = tab_rot_rev_measure.measure(1);
         samples_rot_rev.push((tab_rot_rev_measure.measure(0), val1_r));
     }
@@ -735,4 +735,39 @@ fn test_measure_order_sqrt_vs_rot() {
     assert!((avg_sqrt.1 - avg_rot.1).abs() < 0.05);
     assert!((avg_rot_rev.1 - avg_rot.1).abs() < 0.05);
     assert!((avg_sqrt_rev.1 - avg_rot.1).abs() < 0.05);
+}
+
+#[test]
+fn test_seed_reproducibility() {
+    // Two tableaux initialized with the same seed must produce identical measurement
+    // trajectories when subjected to the same gate sequence.
+    let seed = 42;
+    let n_shots = 50;
+
+    // Build two identically-seeded base states
+    let mut base_a: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+        GeneralizedTableau::new_with_seed(2, 1e-12, seed);
+    let mut base_b: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+        GeneralizedTableau::new_with_seed(2, 1e-12, seed);
+
+    // Apply the same non-Clifford circuit to create a multi-branch state
+    for tab in [&mut base_a, &mut base_b] {
+        tab.h(0);
+        tab.t(0);
+        tab.cnot(0, 1);
+    }
+
+    // Fork with matching seeds: each pair must produce the same outcomes
+    for shot in 0..n_shots {
+        let mut tab_a = base_a.fork(Some(shot));
+        let mut tab_b = base_b.fork(Some(shot));
+
+        let outcome_a0 = tab_a.measure(0);
+        let outcome_b0 = tab_b.measure(0);
+        assert_eq!(outcome_a0, outcome_b0, "shot {shot}: qubit 0 outcomes diverged");
+
+        let outcome_a1 = tab_a.measure(1);
+        let outcome_b1 = tab_b.measure(1);
+        assert_eq!(outcome_a1, outcome_b1, "shot {shot}: qubit 1 outcomes diverged");
+    }
 }

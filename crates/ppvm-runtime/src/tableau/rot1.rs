@@ -84,15 +84,15 @@ mod tests {
 
     #[test]
     fn test_rx_pi_2_statistics() {
-        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        let mut tab: TestTableau = GeneralizedTableau::new_with_seed(1, 1e-12, 0);
         tab.rx(0, FRAC_PI_2);
         // make sure we branch
         assert_eq!(tab.coefficients.len(), 2);
 
         let trials = 100;
         let mut count_one = 0;
-        for _ in 0..trials {
-            let mut tmp_tab = tab.clone();
+        for i in 0..trials {
+            let mut tmp_tab = tab.fork(Some(i));
             let result = tmp_tab.measure(0);
             count_one += result as u8;
         }

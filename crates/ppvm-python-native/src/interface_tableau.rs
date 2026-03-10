@@ -13,11 +13,12 @@ macro_rules! create_interface {
         #[pymethods]
         impl $name {
             #[new]
-            #[pyo3(signature = (n_qubits, min_abs_coeff = 1e-10))]
-            pub fn new(n_qubits: usize, min_abs_coeff: f64) -> Self {
-                let tab: GeneralizedTableau<$type, $indexType> =
-                    GeneralizedTableau::new(n_qubits, min_abs_coeff);
-
+            #[pyo3(signature = (n_qubits, min_abs_coeff = 1e-10, seed = None))]
+            pub fn new(n_qubits: usize, min_abs_coeff: f64, seed: Option<u64>) -> Self {
+                let tab: GeneralizedTableau<$type, $indexType> = match seed {
+                    Some(s) => GeneralizedTableau::new_with_seed(n_qubits, min_abs_coeff, s),
+                    None => GeneralizedTableau::new(n_qubits, min_abs_coeff),
+                };
                 Self { inner: tab }
             }
 
@@ -152,6 +153,23 @@ macro_rules! create_interface {
 
             // some python niceties
 
+            /// Fork this tableau, cloning all quantum state but reinitializing the RNG.
+            /// If `seed` is provided, the new RNG is seeded deterministically; otherwise
+            /// it is seeded from OS entropy, giving an independent random sequence.
+            ///
+            /// Use this when branching a simulation into independent trajectories.
+            /// To preserve the RNG state exactly (e.g. for checkpointing), use
+            /// `copy.copy()` or `copy.deepcopy()` instead.
+            #[pyo3(signature = (seed = None))]
+            pub fn fork(&self, seed: Option<u64>) -> Self {
+                Self { inner: self.inner.fork(seed) }
+            }
+
+            /// Return a shallow copy of this tableau, including its RNG state.
+            ///
+            /// Both the original and the copy will produce identical random sequences
+            /// from this point forward. To get an independent copy with a fresh RNG,
+            /// use `fork()` instead.
             fn __copy__(&self) -> Self {
                 Self {
                     inner: self.inner.clone(),
@@ -173,6 +191,11 @@ macro_rules! create_interface {
             //     }
             // }
 
+            /// Return a deep copy of this tableau, including its RNG state.
+            ///
+            /// Both the original and the copy will produce identical random sequences
+            /// from this point forward. To get an independent copy with a fresh RNG,
+            /// use `fork()` instead.
             fn __deepcopy__(&self, _memo: &Bound<'_, PyAny>) -> Self {
                 Self {
                     inner: self.inner.clone(),

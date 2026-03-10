@@ -8,6 +8,8 @@ use num::{
     One, Zero,
     complex::{Complex, Complex64, ComplexFloat},
 };
+use rand::rngs::SmallRng;
+use rand::SeedableRng;
 
 #[derive(Clone, Debug)]
 pub struct Tableau<T: Config> {
@@ -16,6 +18,7 @@ pub struct Tableau<T: Config> {
     /// * Entries 0..n are the destabilizers
     /// * Entries n..2n are the stabilizers
     pub data: Vec<PhasedPauliWord<T::Storage, T::BuildHasher>>,
+    pub(crate) rng: SmallRng,
 }
 
 impl<T: Config> Tableau<T> {
@@ -37,7 +40,13 @@ impl<T: Config> Tableau<T> {
             data.push(pw);
         }
 
-        Self { n_qubits, data }
+        Self { n_qubits, data, rng: rand::make_rng() }
+    }
+
+    pub fn new_with_seed(n_qubits: usize, seed: u64) -> Self {
+        let mut t = Self::new(n_qubits);
+        t.rng = SmallRng::seed_from_u64(seed);
+        t
     }
 
     #[inline]
@@ -185,11 +194,29 @@ where
         coefficients.unsafe_insert(I::from(0u8), complex_one);
         Self {
             tableau: Tableau::new(n_qubits),
-            coefficients: coefficients,
+            coefficients,
             is_lost: vec![false; n_qubits],
             coefficient_threshold,
             _index_phantom: PhantomData,
         }
+    }
+
+    pub fn new_with_seed(n_qubits: usize, coefficient_threshold: T::Coeff, seed: u64) -> Self {
+        let mut s = Self::new(n_qubits, coefficient_threshold);
+        s.tableau.rng = SmallRng::seed_from_u64(seed);
+        s
+    }
+
+    /// Clone the quantum state but reinitialize the RNG, producing an independent simulation
+    /// branch. If `seed` is `Some`, the new RNG is seeded deterministically; if `None`, it is
+    /// seeded from OS entropy.
+    pub fn fork(&self, seed: Option<u64>) -> Self {
+        let mut cloned = self.clone();
+        cloned.tableau.rng = match seed {
+            Some(s) => SmallRng::seed_from_u64(s),
+            None => rand::make_rng(),
+        };
+        cloned
     }
 
     pub fn n_qubits(&self) -> usize {

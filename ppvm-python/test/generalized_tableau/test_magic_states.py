@@ -187,7 +187,7 @@ def test_distillation_infidelity_rot():
 
     # NOTE: result from the example at the time of writing
     assert np.isclose(
-        infidelity, 0.00683, atol=5 * 1e-3
+        infidelity, 0.00683, atol=1e-3
     )  # could increase tolerance for fewer shots
 
 
@@ -305,8 +305,3 @@ def test_single_qubit_magic_state_noiseless():
         tab = GeneralizedTableau(n_qubits=1)
         result = distillation_single_qubit(tab, [0])
         assert not result[0]
-
-
-test_single_qubit_magic_state_noiseless()
-test_distillation_infidelity_rot()
-test_distillation_infidelity_sqrt()

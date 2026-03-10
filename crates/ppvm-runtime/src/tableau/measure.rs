@@ -85,7 +85,7 @@ where
             self.compute_decomposition(addr0, crate::char::Pauli::Z);
 
         // build a temporary lookup table for faster lookup in the loop
-        let coeff_map: HashMap<I, Complex<T::Coeff>> = self
+        let mut coeff_map: HashMap<I, Complex<T::Coeff>> = self
             .coefficients
             .clone()
             .into_iter()
@@ -158,27 +158,36 @@ where
                     phase_decomp
                 };
 
-                // TODO: hashmap for assigning new coefficients
-                let mut new_coefficients = C::new();
-                for (idx, coeff) in &coeff_map {
-                    let mut x = idx.clone();
-                    let mut q: Complex<T::Coeff> = Complex::one();
-                    if (*idx & k) != zero {
-                        // q = phase_decomp * (-1).pow(symplectic_inner(*idx, lambda)) * q;
-                        let symp_inner = symplectic_inner(*idx, lambda, self.n_qubits());
-                        let phase_idx =
-                            ((alpha as i32 + if symp_inner % 2 == 1 { 2 } else { 0 }) % 4) as usize;
-                        q = COMPLEX_PHASE_CONVERSION[phase_idx].into();
-                        x = *idx ^ shift;
-                    }
-                    let half: Complex<T::Coeff> = Complex64::new(0.5, 0.0).into();
-                    let new_coeff = q * *coeff * half;
-                    new_coefficients.add_or_insert(x, new_coeff);
+                // Drain B entries (k-bit=1) into their A counterparts (k-bit=0) in-place,
+                // avoiding O(M^2) add_or_insert on Vec
+                let b_keys: Vec<I> = coeff_map
+                    .keys()
+                    .filter(|idx| (**idx & k) != zero)
+                    .cloned()
+                    .collect();
+                let n_qubits = self.n_qubits();
+                for idx in b_keys {
+                    let coeff = coeff_map.remove(&idx).unwrap();
+                    // q = phase_decomp * (-1).pow(symplectic_inner(*idx, lambda)) * q;
+                    let symp_inner = symplectic_inner(idx, lambda, n_qubits);
+                    let phase_idx =
+                        ((alpha as i32 + if symp_inner % 2 == 1 { 2 } else { 0 }) % 4) as usize;
+                    let q: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase_idx].into();
+                    *coeff_map.entry(idx ^ shift).or_insert(Complex::zero()) += q * coeff;
                 }
 
-                new_coefficients.normalize();
-
-                self.coefficients = new_coefficients;
+                // Drain directly into self.coefficients, applying threshold
+                let cutoff = Complex {
+                    re: self.coefficient_threshold.clone(),
+                    im: T::Coeff::zero(),
+                };
+                self.coefficients = C::new();
+                for (idx, coeff) in coeff_map {
+                    if coeff.abs() > cutoff.abs() {
+                        self.coefficients.unsafe_insert(idx, coeff);
+                    }
+                }
+                self.coefficients.normalize();
 
                 // update the tableau, coefficients can be updated independently
                 self.tableau

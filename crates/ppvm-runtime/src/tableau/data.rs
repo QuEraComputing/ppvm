@@ -138,6 +138,21 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64 { re: 0.0, im: -1.0 }, // -i
 ];
 
+pub fn symplectic_inner<I>(alpha: I, beta: I, n_qubits: usize) -> u32
+where
+    I: TableauIndex,
+{
+    let one = I::from(1u8);
+    let zero = I::from(0u8);
+    let mut parity = 0u32;
+    for i in 0..n_qubits {
+        if (alpha & beta) & (one << i) != zero {
+            parity ^= 1;
+        }
+    }
+    parity
+}
+
 // TODO: builder
 #[derive(Clone)]
 pub struct GeneralizedTableau<
@@ -258,41 +273,28 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    pub(crate) fn compute_phase(
-        &self,
-        addr0: usize,
-        pauli: (bool, bool),
-        basis_index: I,
-        index_shift: I,
-    ) -> u8 {
+    pub(crate) fn compute_phase(&self, lambda: I, basis_index: I, index_shift: I) -> u8 {
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
-        let mut phase = 0u8;
         let one = I::from(1u8);
         let zero = I::from(0u8);
+        let n = self.n_qubits();
+
+        // contribution 1: each destabilizer D_i with basis_index[i]=1 that anticommutes
+        // with P (lambda[i]=1) contributes a -1 sign; this is the symplectic inner product
+        let mut phase = (2 * symplectic_inner(lambda, basis_index, n) as u8) % 4;
+
+        // contribution 2: destabilizers that appear twice (basis_index[i]=1 and index_shift[i]=1)
+        // contribute an extra -1 if their phase is imaginary
+        let active = basis_index & index_shift;
         for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
-            if basis_index & (one << i) == zero {
-                // NOTE: LSB ordering; has to be consistent with shift computation
+            if active & (one << i) == zero {
                 continue;
             }
-
-            if destab.word.anticommutes_at(addr0, pauli) {
-                // We have an xbit set, so we anticommute, leading to a -1 sign
-                phase = (phase + 2) % 4;
-            }
-
-            if index_shift & (I::from(1u8) << i) == I::from(0u8) {
-                continue;
-            }
-
-            // this particular destabilizer occurs twice: once from the P decomposition
-            // this is given by the index shift, since the corresponding bit in the shift
-            // is only 1 if P anti-commutes with the stabilizer, meaning its decomposition
-            // features the destabilizer here
             if destab.phase % 2 != 0 {
-                // phase of the destabilizer is ~i, so its square gives another -1
                 phase = (phase + 2) % 4;
             }
         }
+
         phase
     }
 
@@ -350,15 +352,7 @@ where
             return;
         }
 
-        let pauli_booleans = match pauli {
-            Pauli::I => (false, false),
-            Pauli::X => (true, false),
-            Pauli::Y => (true, true),
-            Pauli::Z => (false, true),
-            _ => unreachable!("Pauli L cannot occur in tableau"),
-        };
-
-        let (phase_decomp, index_shift, _) = self.compute_decomposition(addr0, pauli);
+        let (phase_decomp, index_shift, lambda) = self.compute_decomposition(addr0, pauli);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
@@ -372,8 +366,7 @@ where
 
             // get the phase contributions from duplicate destabilizers
             // and anti-commuting through destabilizers
-            let branch_phase_contribution =
-                self.compute_phase(addr0, pauli_booleans, idx, index_shift);
+            let branch_phase_contribution = self.compute_phase(lambda, idx, index_shift);
             let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
 
             let phase_factor: Complex<T::Coeff> =
@@ -409,15 +402,7 @@ where
             return;
         }
 
-        let pauli_booleans = match pauli {
-            Pauli::I => (false, false),
-            Pauli::X => (true, false),
-            Pauli::Y => (true, true),
-            Pauli::Z => (false, true),
-            _ => unreachable!("Pauli L cannot occur in tableau"),
-        };
-
-        let (phase_decomp, index_shift, _) = self.compute_decomposition(addr0, pauli);
+        let (phase_decomp, index_shift, lambda) = self.compute_decomposition(addr0, pauli);
 
         let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
         let old_coefficients = std::mem::replace(coefficients, C::new());
@@ -431,8 +416,7 @@ where
 
             // get the phase contributions from duplicate destabilizers
             // and anti-commuting through destabilizers
-            let branch_phase_contribution =
-                self.compute_phase(addr0, pauli_booleans, idx, index_shift);
+            let branch_phase_contribution = self.compute_phase(lambda, idx, index_shift);
             let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
 
             let phase_factor: Complex<T::Coeff> =
@@ -478,11 +462,10 @@ mod tests {
         // After H: stabilizer = +X, destabilizer = +Z
         // shift = 1 (stabilizer has xbit[0]=true)
         // both phases should be 0
-        let phase0 =
-            tab.compute_decomposition(0, Pauli::Z).0 + tab.compute_phase(0, (false, true), 0, 1);
+        let (decomp, gamma, lambda) = tab.compute_decomposition(0, Pauli::Z);
+        let phase0 = decomp + tab.compute_phase(lambda, 0, gamma);
         assert_eq!(phase0, 0);
-        let phase1 =
-            tab.compute_decomposition(0, Pauli::Z).0 + tab.compute_phase(0, (false, true), 1, 1);
+        let phase1 = decomp + tab.compute_phase(lambda, 1, gamma);
         assert_eq!(phase1, 0);
     }
 
@@ -492,10 +475,10 @@ mod tests {
         tab.tableau.h(0);
         tab.tableau.s(0);
 
-        let (decomp, shift, _) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = decomp + tab.compute_phase(0, (false, true), 0, shift);
+        let (decomp, gamma, lambda) = tab.compute_decomposition(0, Pauli::Z);
+        let phase0 = decomp + tab.compute_phase(lambda, 0, gamma);
         assert_eq!(phase0, 0);
-        let phase1 = decomp + tab.compute_phase(0, (false, true), 1, shift);
+        let phase1 = decomp + tab.compute_phase(lambda, 1, gamma);
         assert_eq!(phase1, 0);
     }
 
@@ -505,10 +488,10 @@ mod tests {
         tab.tableau.h(0);
         tab.tableau.z(0);
 
-        let (decomp, shift, _) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = decomp + tab.compute_phase(0, (false, true), 0, shift);
+        let (decomp, gamma, lambda) = tab.compute_decomposition(0, Pauli::Z);
+        let phase0 = decomp + tab.compute_phase(lambda, 0, gamma);
         assert_eq!(phase0, 0);
-        let phase1 = decomp + tab.compute_phase(0, (false, true), 1, shift);
+        let phase1 = decomp + tab.compute_phase(lambda, 1, gamma);
         assert_eq!(phase1, 0);
     }
 
@@ -519,10 +502,10 @@ mod tests {
         tab.tableau.s(0);
         tab.tableau.h(0);
 
-        let (decomp, shift, _) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = (decomp + tab.compute_phase(0, (false, true), 0, shift)) % 4;
+        let (decomp, gamma, lambda) = tab.compute_decomposition(0, Pauli::Z);
+        let phase0 = (decomp + tab.compute_phase(lambda, 0, gamma)) % 4;
         assert_eq!(phase0, 1);
-        let phase1 = (decomp + tab.compute_phase(0, (false, true), 1, shift)) % 4;
+        let phase1 = (decomp + tab.compute_phase(lambda, 1, gamma)) % 4;
         assert_eq!(phase1, 3);
     }
 

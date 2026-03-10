@@ -1,5 +1,6 @@
 import math
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
+from typing import Optional
 
 import ppvm_python_native
 
@@ -28,22 +29,70 @@ class GeneralizedTableau(
         n_qubits: The number of qubits.
         min_abs_coeff: Coefficient threshold - coefficients smaller than this
             are pruned from the sparse coefficient vector.
+        seed: Optional RNG seed for reproducible simulations. If ``None``
+            (the default), the RNG is seeded from OS entropy.
     """
 
     n_qubits: int
     min_abs_coeff: float = 1e-10
+    seed: InitVar[Optional[int]] = None
 
     _interface: GeneralizedTableauInterface = field(init=False, repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self, seed: Optional[int]):
         N_interface = math.ceil(self.n_qubits / 8.0)
         object.__setattr__(
             self,
             "_interface",
             getattr(ppvm_python_native, f"GeneralizedTableau{N_interface}")(
-                self.n_qubits, self.min_abs_coeff
+                self.n_qubits, self.min_abs_coeff, seed
             ),
         )
+
+    def fork(self, seed: Optional[int] = None) -> "GeneralizedTableau":
+        """Fork this tableau into an independent simulation branch.
+
+        Clones all quantum state but reinitializes the RNG, so the returned
+        tableau evolves independently from this one. If ``seed`` is provided
+        the new RNG is seeded deterministically; otherwise it is seeded from
+        OS entropy.
+
+        Use this when branching a simulation into independent trajectories.
+        To preserve the RNG state exactly (e.g. for checkpointing), use
+        ``copy.copy()`` or ``copy.deepcopy()`` instead.
+
+        Args:
+            seed: Optional integer seed for the forked RNG.
+
+        Returns:
+            A new ``GeneralizedTableau`` with the same quantum state but an
+            independent RNG.
+        """
+        forked = GeneralizedTableau(self.n_qubits, self.min_abs_coeff)
+        object.__setattr__(forked, "_interface", self._interface.fork(seed))
+        return forked
+
+    def __copy__(self) -> "GeneralizedTableau":
+        """Return a copy of this tableau, including its RNG state.
+
+        Both the original and the copy will produce identical random sequences
+        from this point forward. To get an independent copy with a fresh RNG,
+        use :meth:`fork` instead.
+        """
+        copied = GeneralizedTableau(self.n_qubits, self.min_abs_coeff)
+        object.__setattr__(copied, "_interface", self._interface.__copy__())
+        return copied
+
+    def __deepcopy__(self, memo: dict) -> "GeneralizedTableau":
+        """Return a deep copy of this tableau, including its RNG state.
+
+        Both the original and the copy will produce identical random sequences
+        from this point forward. To get an independent copy with a fresh RNG,
+        use :meth:`fork` instead.
+        """
+        copied = GeneralizedTableau(self.n_qubits, self.min_abs_coeff)
+        object.__setattr__(copied, "_interface", self._interface.__deepcopy__(memo))
+        return copied
 
     def __str__(self) -> str:
         """Return a human-readable representation of the tableau state."""

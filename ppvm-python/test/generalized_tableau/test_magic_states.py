@@ -12,7 +12,7 @@ p = 0.05  # Noise probability
 
 
 def test_simple_infidelity():
-    tab = GeneralizedTableau(n_qubits=1)
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
 
     def run_shot(tab: GeneralizedTableau):
 
@@ -126,7 +126,7 @@ def distillation_rot(tab: GeneralizedTableau, q: list[int], noise: bool):
 
 
 def test_distillation_infidelity_sqrt():
-    tab = GeneralizedTableau(5)
+    tab = GeneralizedTableau(5, seed=0)
     q = list(range(5))
 
     n_shots = 50_000
@@ -159,7 +159,7 @@ def test_distillation_infidelity_sqrt():
 
 
 def test_distillation_infidelity_rot():
-    tab = GeneralizedTableau(5)
+    tab = GeneralizedTableau(5, seed=0)
     q = list(range(5))
 
     n_shots = 50_000
@@ -192,7 +192,7 @@ def test_distillation_infidelity_rot():
 
 
 def test_distillation_infidelity_sqrt_noiseless():
-    tab = GeneralizedTableau(5)
+    tab = GeneralizedTableau(5, seed=0)
     q = list(range(5))
 
     n_shots = 10_000
@@ -219,7 +219,7 @@ def test_distillation_infidelity_sqrt_noiseless():
 
 
 def test_distillation_infidelity_rot_noiseless():
-    tab = GeneralizedTableau(5)
+    tab = GeneralizedTableau(5, seed=0)
     q = list(range(5))
 
     n_shots = 10_000

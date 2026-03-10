@@ -75,14 +75,13 @@ where
 
         // evaluate the action of Z on the state
         // i.e. shift + phase
-        let shift = self.compute_shift(addr0, (false, true));
         let mut z_overlap = Complex64::from(0.0);
 
         // TODO: this is O(n^2), but we know the probabilities are always real
         // however, whether the decomposition phase is imaginary or not tells us
         // whether we need to pick the real or imaginary part of the overlap
         // we still might be able to optimize here
-        let phase_decomp = self.compute_decomposition_phase(addr0, crate::char::Pauli::Z);
+        let (phase_decomp, shift, c) = self.compute_decomposition(addr0, crate::char::Pauli::Z);
 
         // build a temporary lookup table for faster lookup in the loop
         let coeff_map: HashMap<I, Complex<T::Coeff>> = self
@@ -149,19 +148,6 @@ where
                     if shift & (one << i) != zero {
                         k = one << i;
                         break;
-                    }
-                }
-
-                // Find the stabilizer index of decomposing Z_addr0 into
-                // stabilizers and destabilizers
-                // TODO: combine this with getting the decomposition phase
-                let mut c = I::from(0u8);
-                let destabilizers = self.tableau.destabilizers();
-                for (i, destab) in destabilizers.iter().enumerate() {
-                    if destab.word.xbits[addr0] {
-                        // anti-commuting destabilizer
-                        // meaning the stabilizer contributes to the decomp
-                        c |= one << i;
                     }
                 }
 

@@ -1,5 +1,12 @@
+use num::Complex;
+use num::complex::{Complex64, ComplexFloat};
+use num::{One, ToPrimitive, Zero};
+
 use crate::config::Config;
+use crate::tableau::sparsevec::SparseVector;
+use crate::tableau::{GeneralizedTableau, Tableau};
 use crate::traits::Clifford;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::{BitAnd, BitOrAssign, BitXor, Shl};
 
@@ -64,5 +71,38 @@ impl<I> TableauIndex for I where
         + BitOrAssign<Self>
         + BitAnd<I, Output = I>
         + BitXor<Output = I>
+{
+}
+
+pub trait Reset: Clifford + Measure {
+    fn reset(&mut self, addr0: usize) {
+        let m = self.measure(addr0);
+        if m {
+            self.x(addr0);
+        }
+    }
+}
+
+impl<T: Config> Reset for Tableau<T> {}
+
+impl<T, I, C> Reset for GeneralizedTableau<T, I, C>
+where
+    T: Config,
+    I: TableauIndex + Debug,
+    C: SparseVector<Complex<T::Coeff>, I> + Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat,
 {
 }

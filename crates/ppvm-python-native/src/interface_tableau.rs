@@ -1,7 +1,7 @@
 use bnum::types::{U256, U512, U1024};
 use paste::paste;
 use ppvm_runtime::prelude::*;
-use ppvm_runtime::tableau::{CliffordExtensions, GeneralizedTableau};
+use ppvm_runtime::tableau::{CliffordExtensions, GeneralizedTableau, Reset};
 use pyo3::prelude::*;
 
 macro_rules! create_interface {
@@ -145,10 +145,7 @@ macro_rules! create_interface {
             }
 
             pub fn reset(&mut self, addr0: usize) {
-                let m = self.inner.measure(addr0);
-                if m {
-                    self.inner.x(addr0);
-                }
+                self.inner.reset(addr0);
             }
 
             // some python niceties
@@ -162,7 +159,9 @@ macro_rules! create_interface {
             /// `copy.copy()` or `copy.deepcopy()` instead.
             #[pyo3(signature = (seed = None))]
             pub fn fork(&self, seed: Option<u64>) -> Self {
-                Self { inner: self.inner.fork(seed) }
+                Self {
+                    inner: self.inner.fork(seed),
+                }
             }
 
             /// Return a shallow copy of this tableau, including its RNG state.

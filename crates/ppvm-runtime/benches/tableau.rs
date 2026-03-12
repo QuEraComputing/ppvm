@@ -71,6 +71,24 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
                 criterion::BatchSize::SmallInput,
             );
         });
+
+        group.bench_function(format!("tableau-measure-t-gate-{}", tgate_num), |b| {
+            b.iter_batched_ref(
+                || {
+                    let mut tab = tableau.fork(None);
+                    for i in 0..tgate_num {
+                        tab.t(i);
+                    }
+                    tab
+                },
+                |tab| {
+                    for i in 0..10 {
+                        tab.measure(i);
+                    }
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
     }
 
     group.finish();

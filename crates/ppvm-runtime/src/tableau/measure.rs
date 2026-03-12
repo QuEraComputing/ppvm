@@ -1,11 +1,11 @@
 use super::data::{GeneralizedTableau, Tableau, symplectic_inner};
-use rand::RngExt;
 use super::traits::Measure;
 use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
 use crate::tableau::traits::TableauIndex;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
+use rand::RngExt;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
@@ -128,91 +128,87 @@ where
 
         let outcome = self.tableau.rng.random::<f64>() < prob_1;
 
-        let q = self.tableau.find_z_anticommuting_stabilizer(addr0);
+        if shift != I::from(0u8) {
+            let q_idx = self
+                .tableau
+                .find_z_anticommuting_stabilizer(addr0)
+                .expect("Shift !=0, but couldn't destabilizer that anti-commutes with Z!");
+            // Case a: Z is not a stabilizer
 
-        match q {
-            Some(q_idx) => {
-                debug_assert_ne!(shift, I::from(0u8), "Shift 0, but Z is not a stabilizer!");
-                // Case a: Z is not a stabilizer
+            // In this case, we cannot simply trim the coefficients (though some
+            // might be smaller than the threshold)
 
-                // In this case, we cannot simply trim the coefficients (though some
-                // might be smaller than the threshold)
+            // coefficient algorithm from T.J. Yoder, adapted for state vectors
+            // see Algorithm 2 in https://www.scottaaronson.com/showcase2/report/ted-yoder.pdf
 
-                // coefficient algorithm from T.J. Yoder, adapted for state vectors
-                // see Algorithm 2 in https://www.scottaaronson.com/showcase2/report/ted-yoder.pdf
-
-                // get k: bit string with a single 1 entry at the position
-                // of the first 1 in shift
-                let mut k = I::from(0u8);
-                let one = I::from(1u8);
-                let zero = I::from(0u8);
-                for i in 0..self.n_qubits() {
-                    if shift & (one << i) != zero {
-                        k = one << i;
-                        break;
-                    }
+            // get k: bit string with a single 1 entry at the position
+            // of the first 1 in shift
+            let mut k = I::from(0u8);
+            let one = I::from(1u8);
+            let zero = I::from(0u8);
+            for i in 0..self.n_qubits() {
+                if shift & (one << i) != zero {
+                    k = one << i;
+                    break;
                 }
-
-                let alpha = if outcome {
-                    (phase_decomp + 2) % 4
-                } else {
-                    phase_decomp
-                };
-
-                // Drain B entries (k-bit=1) into their A counterparts (k-bit=0) in-place,
-                // avoiding O(M^2) add_or_insert on Vec
-                let b_keys: Vec<I> = coeff_map
-                    .keys()
-                    .filter(|idx| (**idx & k) != zero)
-                    .cloned()
-                    .collect();
-                let n_qubits = self.n_qubits();
-                for idx in b_keys {
-                    let coeff = coeff_map.remove(&idx).unwrap();
-                    // q = phase_decomp * (-1).pow(symplectic_inner(*idx, lambda)) * q;
-                    let symp_inner = symplectic_inner(idx, lambda, n_qubits);
-                    let phase_idx =
-                        ((alpha as i32 + if symp_inner % 2 == 1 { 2 } else { 0 }) % 4) as usize;
-                    let q: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase_idx].into();
-                    *coeff_map.entry(idx ^ shift).or_insert(Complex::zero()) += q * coeff;
-                }
-
-                // Drain directly into self.coefficients, applying threshold
-                let cutoff = Complex {
-                    re: self.coefficient_threshold.clone(),
-                    im: T::Coeff::zero(),
-                };
-                self.coefficients = C::new();
-                for (idx, coeff) in coeff_map {
-                    if coeff.abs() > cutoff.abs() {
-                        self.coefficients.unsafe_insert(idx, coeff);
-                    }
-                }
-                self.coefficients.normalize();
-
-                // update the tableau, coefficients can be updated independently
-                self.tableau
-                    .update_tableau_according_to_outcome(addr0, q_idx, outcome);
             }
-            None => {
-                debug_assert_eq!(shift, I::from(0u8), "Shift !=0 but Z is a stabilizer!");
-                // Case b: +Z or -Z already is a stabilizer; we just need
-                // to trim the coefficients accordingly; tableau remains unchanged
 
-                // Applying the projector to a basis state, we have three phases:
-                // 1. The actual measurement outcome (k)
-                // 2. The sign from whether +Z or -Z is a stabilizer (m)
-                // 3. Contribution from commuting Z_addr0 through the destabilizers (xi)
-                // Only coefficients where m*k*xi == 1 are kept
+            let alpha = if outcome {
+                (phase_decomp + 2) % 4
+            } else {
+                phase_decomp
+            };
 
-                // 2. get the sign
-                let z_sign = self.tableau.get_deterministic_outcome(addr0);
-
-                // 3. check the anticommutation -- combine with coefficient update
-                self.trim_coefficients_for_measurement(addr0, outcome, z_sign);
+            // Drain B entries (k-bit=1) into their A counterparts (k-bit=0) in-place,
+            // avoiding O(M^2) add_or_insert on Vec
+            let b_keys: Vec<I> = coeff_map
+                .keys()
+                .filter(|idx| (**idx & k) != zero)
+                .cloned()
+                .collect();
+            let n_qubits = self.n_qubits();
+            for idx in b_keys {
+                let coeff = coeff_map.remove(&idx).unwrap();
+                // q = phase_decomp * (-1).pow(symplectic_inner(*idx, lambda)) * q;
+                let symp_inner = symplectic_inner(idx, lambda, n_qubits);
+                let phase_idx =
+                    ((alpha as i32 + if symp_inner % 2 == 1 { 2 } else { 0 }) % 4) as usize;
+                let q: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase_idx].into();
+                *coeff_map.entry(idx ^ shift).or_insert(Complex::zero()) += q * coeff;
             }
-        };
 
+            // Drain directly into self.coefficients, applying threshold
+            let cutoff = Complex {
+                re: self.coefficient_threshold.clone(),
+                im: T::Coeff::zero(),
+            };
+            self.coefficients = C::new();
+            for (idx, coeff) in coeff_map {
+                if coeff.abs() > cutoff.abs() {
+                    self.coefficients.unsafe_insert(idx, coeff);
+                }
+            }
+            self.coefficients.normalize();
+
+            // update the tableau, coefficients can be updated independently
+            self.tableau
+                .update_tableau_according_to_outcome(addr0, q_idx, outcome);
+        } else {
+            // Case b: +Z or -Z already is a stabilizer; we just need
+            // to trim the coefficients accordingly; tableau remains unchanged
+
+            // Applying the projector to a basis state, we have three phases:
+            // 1. The actual measurement outcome (k)
+            // 2. The sign from whether +Z or -Z is a stabilizer (m)
+            // 3. Contribution from commuting Z_addr0 through the destabilizers (xi)
+            // Only coefficients where m*k*xi == 1 are kept
+
+            // 2. get the sign
+            let z_sign = self.tableau.get_deterministic_outcome(addr0);
+
+            // 3. check the anticommutation -- combine with coefficient update
+            self.trim_coefficients_for_measurement(addr0, outcome, z_sign);
+        }
         outcome
     }
 }

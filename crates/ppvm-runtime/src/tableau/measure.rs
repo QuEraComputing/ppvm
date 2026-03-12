@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
 use crate::tableau::traits::TableauIndex;
 use num::complex::{Complex, Complex64, ComplexFloat};
-use num::traits::{One, ToPrimitive, Zero};
+use num::traits::{Float, One, ToPrimitive, Zero};
 use rand::RngExt;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -177,17 +177,26 @@ where
                 *coeff_map.entry(idx ^ shift).or_insert(Complex::zero()) += q * coeff;
             }
 
-            // Drain directly into self.coefficients, applying threshold
+            // Keep entries where |c|/norm > threshold.
+            let norm_sqr = coeff_map
+                .values()
+                .fold(Zero::zero(), |acc, c: &Complex<T::Coeff>| {
+                    acc + c.abs() * c.abs()
+                });
+            let norm = Float::sqrt(norm_sqr);
+
             let cutoff = Complex {
                 re: self.coefficient_threshold.clone(),
                 im: T::Coeff::zero(),
             };
             self.coefficients = C::new();
             for (idx, coeff) in coeff_map {
-                if coeff.abs() > cutoff.abs() {
+                if coeff.abs() > cutoff.abs() * norm {
                     self.coefficients.unsafe_insert(idx, coeff);
                 }
             }
+
+            // normalize again, since dropping coefficients may reduce the norm
             self.coefficients.normalize();
 
             // update the tableau, coefficients can be updated independently

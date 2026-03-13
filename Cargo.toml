@@ -10,7 +10,7 @@ ppvm-runtime = { version = "0.1.0", path = "crates/ppvm-runtime" }
 ppvm-sym = { version = "0.1.0", path = "crates/ppvm-sym" }
 
 [workspace]
-members = [ "crates/ppvm-runtime", "crates/ppvm-sym", "crates/ppvm-python-native"]
+members = [ "crates/ppvm-runtime", "crates/ppvm-sym", "crates/ppvm-python-native", "crates/ppvm-timeevolve"]
 
 [[example]]
 name = "symbolic"

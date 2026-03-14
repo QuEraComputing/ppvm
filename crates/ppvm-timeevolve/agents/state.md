@@ -1,6 +1,6 @@
 ---
 active_role: developer
-current_task: 7
+current_task: 8
 ---
 
 <!-- This file is the single source of truth for the active role and task.

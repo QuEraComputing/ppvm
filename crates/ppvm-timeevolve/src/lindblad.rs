@@ -105,7 +105,7 @@ where
 
 /// Returns the real part of i^phase: +1 (phase=0), -1 (phase=2), 0 otherwise.
 #[inline]
-#[allow(dead_code)] // used in apply and rhs (Task 6)
+#[allow(dead_code)] // used indirectly via apply, which is called from rhs (used in solve.rs)
 fn re_phase(phase: u8) -> f64 {
     match phase {
         0 => 1.0,
@@ -125,7 +125,7 @@ where
     f64: Into<T::Coeff>,
 {
     /// Accumulates `L(P)` into `result`.
-    #[allow(dead_code)] // called from rhs (Task 6)
+    #[allow(dead_code)] // called from rhs, which is called from solve.rs (Task 7)
     pub(crate) fn apply(&self, p: &PauliSum<T>, result: &mut PauliSum<T>) {
         for term in &self.terms {
             for (w_a, coeff_a) in p.data().iter() {
@@ -165,8 +165,38 @@ where
     }
 }
 
-#[allow(dead_code)] // called from rhs (Task 6)
+/// Computes `dP/dt = i[ham, P] + L(P)` and returns the result.
+#[allow(dead_code)] // called from solve.rs (Task 7)
+///
+/// Creates a fresh zero-initialised `PauliSum` using `T::Strategy::default()`, calls
+/// `commutator_real` if `ham` is provided, then `lindblad.apply`, then `truncate()`.
+pub(crate) fn rhs<T: Config>(
+    ham: Option<&PauliSum<T>>,
+    lindblad: &LindbladOp<T>,
+    p: &PauliSum<T>,
+) -> PauliSum<T>
+where
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
+    T::PauliWordType: Clone,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
+        Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
+        + MulAssign
+        + Clone,
+    f64: Into<T::Coeff>,
+{
+    let mut result = PauliSum::<T>::builder().n_qubits(p.n_qubits()).build();
+    if let Some(h) = ham {
+        commutator_real(h, p, &mut result);
+    }
+    lindblad.apply(p, &mut result);
+    result.truncate();
+    result
+}
+
 /// Accumulates `i[ham, p]` into `result` using real f64 arithmetic.
+#[allow(dead_code)] // called from rhs, which is called from solve.rs (Task 7)
 ///
 /// For each pair of terms (W_a, h_a) in ham and (W_b, p_b) in p:
 ///   - Compute tmp = W_a * W_b as a PhasedPauliWord
@@ -209,6 +239,7 @@ pub(crate) fn commutator_real<T: Config>(
 mod tests {
     use super::*;
     use ppvm_runtime::prelude::{PauliWord, PhasedPauliWord, config::fxhash::ByteF64};
+    use ppvm_runtime::strategy::CoefficientThreshold;
 
     type W1 = PauliWord<[u8; 1], fxhash::FxBuildHasher>;
     type PPW1 = PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, W1>;
@@ -495,5 +526,79 @@ mod tests {
             }
             _ => panic!("expected Dense"),
         }
+    }
+
+    // ---- Task 6 tests ----
+
+    fn empty_lindblad() -> LindbladOp<ByteF64<1>> {
+        LindbladOp::new(vec![], RateMatrix::from(vec![]))
+    }
+
+    #[test]
+    fn rhs_pure_hamiltonian() {
+        // H = 0.5*Z, no Lindblad, P = X
+        // i[0.5Z, X] = 0.5 * (-2Y) = -1.0 * Y
+        let h = sum1(&[("Z", 0.5)]);
+        let p = sum1(&[("X", 1.0)]);
+        let result = rhs(Some(&h), &empty_lindblad(), &p);
+        assert!((get_coeff(&result, "Y") - (-1.0)).abs() < 1e-15);
+        assert_eq!(get_coeff(&result, "X"), 0.0);
+        assert_eq!(get_coeff(&result, "Z"), 0.0);
+    }
+
+    #[test]
+    fn rhs_pure_lindblad() {
+        // c=X, gamma=1, P=Z => L(Z) = -4Z
+        let p = sum1(&[("Z", 1.0)]);
+        let result = rhs(None, &lindblad_x(), &p);
+        assert!((get_coeff(&result, "Z") - (-4.0)).abs() < 1e-15);
+        assert_eq!(get_coeff(&result, "X"), 0.0);
+    }
+
+    #[test]
+    fn rhs_ham_and_lindblad() {
+        // H = 0.5*Z, c=X, gamma=1, P=X
+        // Hamiltonian: i[0.5Z, X] = -Y; Lindblad: L(X) = 0
+        // Result: {Y: -1.0}
+        let h = sum1(&[("Z", 0.5)]);
+        let p = sum1(&[("X", 1.0)]);
+        let result = rhs(Some(&h), &lindblad_x(), &p);
+        assert!((get_coeff(&result, "Y") - (-1.0)).abs() < 1e-15);
+        assert_eq!(get_coeff(&result, "X"), 0.0);
+    }
+
+    #[test]
+    fn rhs_no_ham_no_lindblad() {
+        // No ham, empty Lindblad, P = X => dP/dt = 0
+        let p = sum1(&[("X", 1.0)]);
+        let result = rhs(None, &empty_lindblad(), &p);
+        assert_eq!(get_coeff(&result, "X"), 0.0);
+    }
+
+    #[test]
+    fn rhs_truncates_small_terms() {
+        // Use CoefficientThreshold strategy with a large threshold (1.0).
+        // H = 0.5*Z, P = X gives result Y: -1.0. Since |-1.0| >= 1.0, Y survives.
+        // But if we scale P by 1e-13, the Y term (-1e-13) is below the threshold.
+        type ThreshConfig = ByteF64<1, CoefficientThreshold>;
+
+        let mut h: PauliSum<ThreshConfig> = PauliSum::builder()
+            .n_qubits(1)
+            .strategy(CoefficientThreshold(1.0))
+            .build();
+        h += ("Z", 0.5_f64);
+        let mut p: PauliSum<ThreshConfig> = PauliSum::builder()
+            .n_qubits(1)
+            .strategy(CoefficientThreshold(1.0))
+            .build();
+        // P = 1e-13 * X: result would be Y: -1e-13, which is below threshold 1.0
+        p += ("X", 1e-13_f64);
+        let lop = LindbladOp::<ThreshConfig>::new(vec![], RateMatrix::from(vec![]));
+        let result = rhs(Some(&h), &lop, &p);
+        // Y: -1e-13 * 0.5 * (-2) = -1e-13 should be truncated by threshold 1.0
+        use ppvm_runtime::prelude::Trace;
+        let w = PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from("Y");
+        let y_coeff = result.data().trace(&w);
+        assert_eq!(y_coeff, 0.0, "small term should be truncated");
     }
 }

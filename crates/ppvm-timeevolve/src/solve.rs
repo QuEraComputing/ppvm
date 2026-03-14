@@ -128,8 +128,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::prelude::{PauliSum, PauliWord, Trace, config::fxhash::ByteF64};
-    use crate::lindblad::{LindbladOp, RateMatrix};
+    use ppvm_runtime::prelude::{PauliSum, PauliWord, PhasedPauliWord, Trace, config::fxhash::ByteF64};
+    use crate::lindblad::{CollapseOp, LindbladOp, RateMatrix};
 
     type S = ByteF64<1>;
 
@@ -253,5 +253,48 @@ mod tests {
         // initial unchanged
         assert!((get_coeff(&initial, "X") - 1.0).abs() < 1e-15);
         assert_eq!(get_coeff(&initial, "Y"), 0.0);
+    }
+
+    #[test]
+    fn solve_spontaneous_emission() {
+        // Setup: c = X + iY (un-normalised lowering operator), γ = 1, no Hamiltonian.
+        // P(0) = Z, single qubit.
+        //
+        // Analytic derivation:
+        //   From Task 5: L(Z) = 8I − 8Z  for c = X+iY, γ = 1.
+        //   L(I) = 0 (identity is preserved by the adjoint Lindblad).
+        //   Write P(t) = a_I(t)·I + a_Z(t)·Z.  With P(0) = Z: a_I(0)=0, a_Z(0)=1.
+        //   dP/dt = L(P)  gives:
+        //     d(a_Z)/dt = −8·a_Z   =>   a_Z(t) = e^{−8t}
+        //     d(a_I)/dt =  8·a_Z   =>   a_I(t) = 1 − e^{−8t}
+        //   Callback extracts coefficient of Z, so expected value = e^{−8t}.
+
+        // Build c = X + iY: X has phase 0, iY is Y with phase 1 (i^1 = i).
+        let ppw = |pauli: &str, phase: u8| -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, PauliWord<[u8; 1], fxhash::FxBuildHasher>> {
+            PhasedPauliWord::build_from_word(PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from(pauli), phase)
+        };
+        let mut c = CollapseOp::<S>::new(1);
+        c.push(ppw("X", 0), 1.0);
+        c.push(ppw("Y", 1), 1.0);
+        let lindblad = LindbladOp::new(vec![c], RateMatrix::from(vec![1.0]));
+
+        let initial = sum1(&[("Z", 1.0)]);
+        let save_at = [0.25, 0.5, 1.0, 2.0];
+        let config = SolverConfig::default();
+        let (ts, rs) = solve(
+            None, &lindblad, &initial,
+            (0.0, 2.0), &save_at,
+            |_, p| get_coeff(p, "Z"),
+            config,
+        );
+
+        assert_eq!(ts.as_slice(), &save_at);
+        for (t_s, r) in ts.iter().zip(rs.iter()) {
+            let expected = (-8.0 * t_s).exp();
+            assert!(
+                (r - expected).abs() < 1e-4,
+                "at t={t_s}: got {r}, expected {expected}"
+            );
+        }
     }
 }

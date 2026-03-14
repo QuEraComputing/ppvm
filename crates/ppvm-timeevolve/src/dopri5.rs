@@ -78,6 +78,75 @@ where
 }
 
 // ---------------------------------------------------------------------------
+// h0 auto-estimation (Hairer et al. "Solving ODEs I", §II.4)
+// ---------------------------------------------------------------------------
+
+/// Estimate the initial step size for the ODE solver.
+///
+/// If `config.h0` is set, returns that value clamped to `[hmin, hmax_eff]`.
+/// Otherwise applies the 5-step Hairer procedure and returns a suitable h0.
+/// `hmax_eff = config.hmax.min(t_span.1 - t_span.0)`.
+#[allow(dead_code)] // called from solve.rs (Task 9)
+pub(crate) fn estimate_h0<T: Config>(
+    ham: Option<&PauliSum<T>>,
+    lindblad: &LindbladOp<T>,
+    y0: &PauliSum<T>,
+    t_span: (f64, f64),
+    config: &SolverConfig,
+) -> f64
+where
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
+    T::Coeff: std::ops::AddAssign
+        + Copy
+        + std::ops::Mul<Output = T::Coeff>
+        + std::iter::Sum
+        + Into<f64>,
+    T::PauliWordType: Clone,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
+        Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
+        + MulAssign
+        + Clone,
+    f64: Into<T::Coeff>,
+    for<'a> T::Map: Trace<'a, T::PauliWordType, Output = T::Coeff>,
+{
+    let hmax_eff = config.hmax.min(t_span.1 - t_span.0);
+
+    if let Some(h0) = config.h0 {
+        return h0.clamp(config.hmin, hmax_eff);
+    }
+
+    // Step 1: norms of y0 and f0
+    let d0 = y0.overlap(y0).into().sqrt();
+    let f0 = rhs(ham, lindblad, y0);
+    let d1 = f0.overlap(&f0).into().sqrt();
+
+    // Step 2: rough initial h0 (fallback to 1e-6 if scales are too small)
+    let h0 = if d0 < 1e-5 || d1 < 1e-5 { 1e-6 } else { 0.01 * d0 / d1 };
+
+    // Step 3: one explicit Euler step, compute derivative there
+    let mut y1 = y0.clone();
+    add_scaled(&mut y1, &f0, h0);
+    let f1 = rhs(ham, lindblad, &y1);
+
+    // Step 4: h1 from second-derivative estimate
+    // d2 = ||f1 - f0|| / h0
+    let mut df = f1;
+    add_scaled(&mut df, &f0, -1.0);
+    let d2 = df.overlap(&df).into().sqrt() / h0;
+
+    let h1 = if d1 <= 1e-5 && d2 <= 1e-5 {
+        (1e-6_f64).max(h0 * 1e-3)
+    } else {
+        (0.01 / d1.max(d2)).powf(0.2)
+    };
+
+    // Step 5: pick the smallest of the three candidates, clamped to [hmin, hmax_eff]
+    let h_init = (100.0 * h0).min(h1).min(hmax_eff);
+    h_init.clamp(config.hmin, hmax_eff)
+}
+
+// ---------------------------------------------------------------------------
 // Single adaptive Dormand-Prince step
 // ---------------------------------------------------------------------------
 
@@ -297,5 +366,40 @@ mod tests {
             }
             StepResult::Reject { .. } => panic!("expected Accept"),
         }
+    }
+
+    // ---- Task 8 tests ----
+
+    #[test]
+    fn estimate_h0_uses_specified_h0() {
+        // If config.h0 = Some(x), returns x regardless of the system.
+        let y = sum1(&[("X", 1.0)]);
+        let h = sum1(&[("Z", 0.5)]);
+        let config = SolverConfig { h0: Some(0.1), ..SolverConfig::default() };
+        let h = estimate_h0(Some(&h), &empty_lindblad(), &y, (0.0, 1.0), &config);
+        assert!((h - 0.1).abs() < 1e-15);
+    }
+
+    #[test]
+    fn estimate_h0_zero_rhs_fallback() {
+        // With ham=None and empty Lindblad, f0 = 0 so d1 = 0 => fallback h0 = 1e-6.
+        let y = sum1(&[("X", 1.0)]);
+        let config = SolverConfig::default();
+        let h = estimate_h0(None, &empty_lindblad(), &y, (0.0, 1.0), &config);
+        // d1 = 0 < 1e-5, so h0 = 1e-6; h1 also falls back; result ≥ hmin
+        assert!(h > 0.0);
+        assert!(h <= 1.0); // within t_span
+    }
+
+    #[test]
+    fn estimate_h0_nontrivial_system() {
+        // H = 0.5*Z, P = X. Estimated h0 is positive, finite, ≤ t_span length.
+        let h = sum1(&[("Z", 0.5)]);
+        let y = sum1(&[("X", 1.0)]);
+        let config = SolverConfig::default();
+        let h0 = estimate_h0(Some(&h), &empty_lindblad(), &y, (0.0, 1.0), &config);
+        assert!(h0 > 0.0, "h0 should be positive");
+        assert!(h0.is_finite(), "h0 should be finite");
+        assert!(h0 <= 1.0, "h0 should be ≤ t_span length");
     }
 }

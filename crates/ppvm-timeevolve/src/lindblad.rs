@@ -1,6 +1,6 @@
 use std::ops::{Mul, MulAssign};
 
-use ppvm_runtime::prelude::{Config, PhasedPauliWord};
+use ppvm_runtime::prelude::{ACMapAddAssign, ACMapIter, Config, PauliSum, PhasedPauliWord};
 
 pub enum RateMatrix {
     Vector(Vec<f64>),
@@ -105,6 +105,46 @@ where
     }
 }
 
+#[allow(dead_code)] // called from rhs (Task 6)
+/// Accumulates `i[ham, p]` into `result` using real f64 arithmetic.
+///
+/// For each pair of terms (W_a, h_a) in ham and (W_b, p_b) in p:
+///   - Compute tmp = W_a * W_b as a PhasedPauliWord
+///   - phase 1 (+i): add -2 * h_a * p_b to tmp.word
+///   - phase 3 (-i): add +2 * h_a * p_b to tmp.word
+///   - phase 0, 2: skip (commuting pairs cancel)
+pub(crate) fn commutator_real<T: Config>(
+    ham: &PauliSum<T>,
+    p: &PauliSum<T>,
+    result: &mut PauliSum<T>,
+) where
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
+    T::PauliWordType: Clone,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
+        Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>> + Clone,
+    f64: Into<T::Coeff>,
+{
+    for (w_a, h_a) in ham.data().iter() {
+        for (w_b, p_b) in p.data().iter() {
+            let left = PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
+                w_a.clone(),
+            );
+            let right = PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
+                w_b.clone(),
+            );
+            let tmp = left * right;
+            let coeff = match tmp.phase {
+                1 => (-2.0_f64).into() * (*h_a * *p_b),
+                3 => (2.0_f64).into() * (*h_a * *p_b),
+                _ => continue,
+            };
+            *result += (tmp.word, coeff);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,6 +227,88 @@ mod tests {
         // The (i=0,j=1) term is index 1 (order: (0,0),(0,1),(1,0),(1,1))
         let off_diag = &lop.terms[1];
         assert!((off_diag.weight - 0.25).abs() < 1e-15);
+    }
+
+    // ---- Task 4 tests ----
+
+    fn sum1(terms: &[(&str, f64)]) -> PauliSum<ByteF64<1>> {
+        let mut s: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        for &(w, c) in terms {
+            s += (w, c);
+        }
+        s
+    }
+
+    fn get_coeff(s: &PauliSum<ByteF64<1>>, word: &str) -> f64 {
+        use ppvm_runtime::prelude::Trace;
+        let w = W1::from(word);
+        s.data().trace(&w)
+    }
+
+    #[test]
+    fn commutator_xx_is_zero() {
+        // i[X, X] = 0: XX has phase 0 (commutes)
+        let h = sum1(&[("X", 1.0)]);
+        let p = sum1(&[("X", 1.0)]);
+        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        commutator_real(&h, &p, &mut result);
+        assert_eq!(get_coeff(&result, "X"), 0.0);
+        assert_eq!(get_coeff(&result, "Y"), 0.0);
+    }
+
+    #[test]
+    fn commutator_zx_is_minus_2y() {
+        // i[Z, X]: ZX = +iY (phase 1) → add -2 * 1 * 1 = -2 to Y
+        let h = sum1(&[("Z", 1.0)]);
+        let p = sum1(&[("X", 1.0)]);
+        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        commutator_real(&h, &p, &mut result);
+        assert!((get_coeff(&result, "Y") - (-2.0)).abs() < 1e-15);
+    }
+
+    #[test]
+    fn commutator_xz_is_plus_2y() {
+        // i[X, Z]: XZ = -iY (phase 3) → add +2 * 1 * 1 = +2 to Y
+        let h = sum1(&[("X", 1.0)]);
+        let p = sum1(&[("Z", 1.0)]);
+        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        commutator_real(&h, &p, &mut result);
+        assert!((get_coeff(&result, "Y") - 2.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn commutator_zy_is_plus_2x() {
+        // i[Z, Y]: ZY = -iX (phase 3) → add +2 * 1 * 1 = +2 to X
+        let h = sum1(&[("Z", 1.0)]);
+        let p = sum1(&[("Y", 1.0)]);
+        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        commutator_real(&h, &p, &mut result);
+        assert!((get_coeff(&result, "X") - 2.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn commutator_multiterm_linear() {
+        // H = 0.5*Z, P = X + Y
+        // i[0.5Z, X] = 0.5 * (-2Y) = -1.0 * Y
+        // i[0.5Z, Y] = 0.5 * (+2X) = +1.0 * X
+        // Total: X: +1.0, Y: -1.0
+        let h = sum1(&[("Z", 0.5)]);
+        let p = sum1(&[("X", 1.0), ("Y", 1.0)]);
+        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        commutator_real(&h, &p, &mut result);
+        assert!((get_coeff(&result, "X") - 1.0).abs() < 1e-15);
+        assert!((get_coeff(&result, "Y") - (-1.0)).abs() < 1e-15);
+    }
+
+    #[test]
+    fn commutator_accumulates() {
+        // Calling twice should double the result
+        let h = sum1(&[("Z", 1.0)]);
+        let p = sum1(&[("X", 1.0)]);
+        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        commutator_real(&h, &p, &mut result);
+        commutator_real(&h, &p, &mut result);
+        assert!((get_coeff(&result, "Y") - (-4.0)).abs() < 1e-15);
     }
 
     // ---- Task 2 tests (kept here, same module) ----

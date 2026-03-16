@@ -141,6 +141,14 @@ mod tests {
         s
     }
 
+    fn sum2(terms: &[(&str, f64)]) -> PauliSum<S> {
+        let mut s: PauliSum<S> = PauliSum::builder().n_qubits(2).build();
+        for &(w, c) in terms {
+            s += (w, c);
+        }
+        s
+    }
+
     fn get_coeff(s: &PauliSum<S>, word: &str) -> f64 {
         let w = PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from(word);
         s.data().trace(&w)
@@ -253,6 +261,72 @@ mod tests {
         // initial unchanged
         assert!((get_coeff(&initial, "X") - 1.0).abs() < 1e-15);
         assert_eq!(get_coeff(&initial, "Y"), 0.0);
+    }
+
+    #[test]
+    fn solve_two_qubit_correlated_dephasing() {
+        // Two qubits with correlated Z-dephasing (dipole-dipole-type off-diagonal rate).
+        // c_1 = ZI (Z on qubit 1, I on qubit 2), c_2 = IZ (I on qubit 1, Z on qubit 2).
+        // Rate matrix: Γ = [[γ, γ_12], [γ_12, γ]] with γ=1.0, γ_12=0.5 (γ_12 < γ).
+        // No Hamiltonian.  P(0) = XX + YY, 2-qubit PauliSum.
+        //
+        // Analytic derivation:
+        //   c_1†c_1 = ZI·ZI = II,  c_2†c_2 = IZ·IZ = II,  c_1†c_2 = c_2†c_1 = ZZ.
+        //
+        //   Diagonal term (i=j=1, rate γ): 2 ZI P ZI − {II, P} = 2(ZXZ)⊗X − 2XX = −4XX.
+        //   Diagonal term (i=j=2, rate γ): 2 X⊗(ZXZ) − 2XX = −4XX.
+        //   → diagonal total on XX: −8γ XX.
+        //
+        //   Off-diagonal (1,2) and (2,1), rate γ_12 each:
+        //     sandwich ZI (XX) IZ = (ZX)⊗(XI)(IZ) → (iY)⊗(−iY) = YY  →  +2γ_12 YY each.
+        //     anticommutator {ZZ, XX}: (ZX⊗ZX)+(XZ⊗XZ) = (iY)(iY)+(−iY)(−iY) = −2YY
+        //     → each off-diagonal term contributes 2γ_12(YY−(−YY)) = 4γ_12 YY.
+        //     Two pairs total: 8γ_12 YY.
+        //   → L†(XX) = −8γ XX + 8γ_12 YY.
+        //   → L†(YY) = −8γ YY + 8γ_12 XX.   (by X↔Y symmetry)
+        //
+        //   Normal modes XX±YY:
+        //     d(XX+YY)/dt = −8(γ−γ_12)(XX+YY)   eigenvalue λ₊ = −8(γ−γ_12)
+        //     d(XX−YY)/dt = −8(γ+γ_12)(XX−YY)   eigenvalue λ₋ = −8(γ+γ_12)
+        //
+        //   With γ=1, γ_12=0.5: λ₊ = −4,  λ₋ = −12.
+        //   P(0) = XX+YY lies purely in the λ₊ mode:
+        //     coefficient of XX at time t = e^{−4t}.
+
+        let ppw = |pauli: &str, phase: u8|
+            -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, PauliWord<[u8; 1], fxhash::FxBuildHasher>>
+        {
+            PhasedPauliWord::build_from_word(
+                PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from(pauli), phase)
+        };
+
+        let mut c1 = CollapseOp::<S>::new(2);
+        c1.push(ppw("ZI", 0), 1.0);
+        let mut c2 = CollapseOp::<S>::new(2);
+        c2.push(ppw("IZ", 0), 1.0);
+        let lindblad = LindbladOp::new(
+            vec![c1, c2],
+            RateMatrix::Dense(vec![vec![1.0, 0.5], vec![0.5, 1.0]]),
+        );
+
+        let initial = sum2(&[("XX", 1.0), ("YY", 1.0)]);
+        let save_at = [0.1, 0.25, 0.5, 1.0];
+        let config = SolverConfig::default();
+        let (ts, rs) = solve(
+            None, &lindblad, &initial,
+            (0.0, 1.0), &save_at,
+            |_, p| get_coeff(p, "XX"),
+            config,
+        );
+
+        assert_eq!(ts.as_slice(), &save_at);
+        for (t_s, r) in ts.iter().zip(rs.iter()) {
+            let expected = (-4.0 * t_s).exp();
+            assert!(
+                (r - expected).abs() < 1e-4,
+                "at t={t_s}: got {r}, expected {expected}"
+            );
+        }
     }
 
     #[test]

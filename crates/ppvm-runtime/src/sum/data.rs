@@ -21,7 +21,7 @@ impl<T: Config> PauliSum<T> {
     pub fn new(
         /// number of qubits
         n_qubits: usize,
-        /// strategy for truncation, initilization etc.
+        /// strategy for truncation, initialization etc.
         #[builder(default = T::Strategy::default())]
         strategy: T::Strategy,
         /// capacity of the internal maps, default is strategy.capacity(n_qubits)
@@ -150,6 +150,27 @@ impl<T: Config> PauliSum<T> {
         let (data, aux) = self.data_aux_mut();
         aux.clear();
         data.map_insert(aux, f);
+        self.consume();
+    }
+
+    /// modify in place existing entries and insert some new entries
+    /// if `f` returns Some(Vec<(k,v)>) for an existing entry (k0,v0), then
+    /// the existing entry is modified by `f` and new entries contained in the
+    /// vector are added.
+    /// If `f` returns None, then the existing entry is only modified.
+    /// finally, all entries are combined assuming unique keys.
+    pub fn map_insert_multiple<F>(&mut self, f: F)
+    where
+        F: Fn(
+                &<T as Config>::PauliWordType,
+                &mut T::Coeff,
+            ) -> Option<Vec<(<T as Config>::PauliWordType, T::Coeff)>>
+            + Sync
+            + Send,
+    {
+        let (data, aux) = self.data_aux_mut();
+        aux.clear();
+        data.map_insert_multiple(aux, f);
         self.consume();
     }
 

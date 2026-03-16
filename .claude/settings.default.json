@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "WebFetch(domain:arxiv.org)",
+      "Bash(cargo test:*)"
+    ]
+  }
+}

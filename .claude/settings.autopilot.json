@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check -p ppvm-timeevolve*)",
+      "Bash(cargo test -p ppvm-timeevolve*)",
+      "Bash(cargo build -p ppvm-timeevolve*)",
+      "Bash(cargo clippy -p ppvm-timeevolve*)",
+      "Bash(cargo add *)",
+      "Bash(git add crates/ppvm-timeevolve/*)",
+      "Bash(git add Cargo.toml)",
+      "Bash(git add Cargo.lock)",
+      "Bash(git add ppvm-python/.pre-commit-config.yaml)",
+      "Bash(git commit *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(find *)",
+      "WebFetch(domain:arxiv.org)",
+      "Write",
+      "Edit",
+      "Read",
+      "Glob"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git reset*)",
+      "Bash(git checkout*)",
+      "Bash(git clean*)",
+      "Bash(git branch -D*)",
+      "Bash(git rebase*)",
+      "Bash(git stash*)",
+      "Bash(rm *)",
+      "Bash(cargo publish*)"
+    ]
+  }
+}

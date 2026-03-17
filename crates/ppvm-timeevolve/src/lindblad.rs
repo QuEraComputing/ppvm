@@ -1,6 +1,6 @@
 use std::ops::{Mul, MulAssign};
 
-use ppvm_runtime::prelude::{ACMapAddAssign, ACMapIter, Config, PauliSum, PhasedPauliWord};
+use ppvm_runtime::prelude::{ACMapAddAssign, ACMapIter, Config, PauliSum, PhasedPauliWord, PauliWordTrait};
 
 pub enum RateMatrix {
     Vector(Vec<f64>),
@@ -103,6 +103,18 @@ where
     }
 }
 
+/// Returns the commutation parity of two Pauli words: 1 if they anticommute, 0 if they commute.
+///
+/// Computed as `popcount((a.xbits & b.zbits) XOR (a.zbits & b.xbits)) mod 2`.
+#[inline]
+pub(crate) fn comm_parity<W: PauliWordTrait>(a: &W, b: &W) -> u8 {
+    let mut parity = 0u8;
+    for i in 0..a.n_qubits() {
+        parity ^= ((a.get_xbit(i) & b.get_zbit(i)) ^ (a.get_zbit(i) & b.get_xbit(i))) as u8;
+    }
+    parity
+}
+
 /// Returns the real part of i^phase: +1 (phase=0), -1 (phase=2), 0 otherwise.
 #[inline]
 #[allow(dead_code)] // used indirectly via apply, which is called from rhs (used in solve.rs)
@@ -144,20 +156,19 @@ where
                 }
 
                 // Anticommutator: -(a_kl * W_a + W_a * a_kl)
-                let mut t1 = term.a_kl.clone();
-                t1 *= wa_phased.clone();
-                let s1 = re_phase(t1.phase);
-                if s1 != 0.0 {
-                    let c = (-term.weight * s1).into() * *coeff_a;
-                    *result += (t1.word, c);
-                }
-
-                let mut t2 = wa_phased;
-                t2 *= term.a_kl.clone();
-                let s2 = re_phase(t2.phase);
-                if s2 != 0.0 {
-                    let c = (-term.weight * s2).into() * *coeff_a;
-                    *result += (t2.word, c);
+                // Since (a_kl * wa).word == (wa * a_kl).word, one multiplication suffices.
+                // Combined coefficient is -2 * weight * re_phase(t1) when
+                // (a_kl.phase & 1) == parity, else the two terms cancel exactly.
+                // Check parity before doing the multiplication to skip it entirely when zero.
+                let parity = comm_parity(&term.a_kl.word, &wa_phased.word);
+                if (term.a_kl.phase & 1) == parity {
+                    let mut t1 = term.a_kl.clone();
+                    t1 *= wa_phased.clone();
+                    let s = re_phase(t1.phase);
+                    if s != 0.0 {
+                        let c = (-2.0 * term.weight * s).into() * *coeff_a;
+                        *result += (t1.word, c);
+                    }
                 }
             }
         }
@@ -251,6 +262,43 @@ mod tests {
         let mut op = CollapseOp::new(1);
         op.push(ppw(pauli, phase), 1.0);
         op
+    }
+
+    // ---- Task 13 tests ----
+
+    #[test]
+    fn comm_parity_single_qubit_pairs() {
+        // Commuting pairs: parity = 0
+        assert_eq!(comm_parity(&W1::from("I"), &W1::from("X")), 0); // IX
+        assert_eq!(comm_parity(&W1::from("X"), &W1::from("I")), 0); // XI
+        assert_eq!(comm_parity(&W1::from("X"), &W1::from("X")), 0); // XX
+        assert_eq!(comm_parity(&W1::from("Y"), &W1::from("Y")), 0); // YY
+        assert_eq!(comm_parity(&W1::from("Z"), &W1::from("Z")), 0); // ZZ
+
+        // Anticommuting pairs: parity = 1
+        assert_eq!(comm_parity(&W1::from("X"), &W1::from("Y")), 1); // XY
+        assert_eq!(comm_parity(&W1::from("X"), &W1::from("Z")), 1); // XZ
+        assert_eq!(comm_parity(&W1::from("Y"), &W1::from("Z")), 1); // YZ
+        assert_eq!(comm_parity(&W1::from("Y"), &W1::from("X")), 1); // YX
+        assert_eq!(comm_parity(&W1::from("Z"), &W1::from("X")), 1); // ZX
+        assert_eq!(comm_parity(&W1::from("Z"), &W1::from("Y")), 1); // ZY
+    }
+
+    #[test]
+    fn comm_parity_multi_qubit() {
+        type W2 = PauliWord<[u8; 1], fxhash::FxBuildHasher>;
+
+        // XZ vs ZX: qubit 0 (X,Z)->1, qubit 1 (Z,X)->1; parity = 0 (even number of anticommuting)
+        assert_eq!(comm_parity(&W2::from("XZ"), &W2::from("ZX")), 0);
+
+        // XY vs IZ: qubit 0 (X,I)->0, qubit 1 (Y,Z)->1; parity = 1
+        assert_eq!(comm_parity(&W2::from("XY"), &W2::from("IZ")), 1);
+
+        // XZ vs XI: qubit 0 (X,X)->0, qubit 1 (Z,I)->0; parity = 0
+        assert_eq!(comm_parity(&W2::from("XZ"), &W2::from("XI")), 0);
+
+        // XX vs YI: qubit 0 (X,Y)->1, qubit 1 (X,I)->0; parity = 1
+        assert_eq!(comm_parity(&W2::from("XX"), &W2::from("YI")), 1);
     }
 
     // ---- Task 3 tests ----

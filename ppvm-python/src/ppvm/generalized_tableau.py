@@ -1,7 +1,7 @@
 import enum
 import math
 from dataclasses import InitVar, dataclass, field
-from typing import Optional
+from typing import Optional, Sequence
 
 import ppvm_python_native
 
@@ -152,7 +152,9 @@ class GeneralizedTableau(
         """
         self._interface.loss_channel(addr0, p)
 
-    def correlated_loss_channel(self, addr0: int, addr1: int, p: list[float]) -> None:
+    def correlated_loss_channel(
+        self, addr0: int, addr1: int, p: Sequence[float]
+    ) -> None:
         """Apply a correlated loss channel to two qubits.
 
         Args:
@@ -163,7 +165,7 @@ class GeneralizedTableau(
                 - ``p[0]``: probability of losing both qubits simultaneously
                   when both are in the qubit subspace.
                 - ``p[1]``: probability of losing exactly one qubit when both
-                  are in the qubit subspace (each is chosen with equal probability).
+                  are in the qubit subspace (which qubit is lost is 50/50 random).
                 - ``p[2]``: probability of losing the remaining active qubit
                   when the other has already been lost prior to this channel.
         """

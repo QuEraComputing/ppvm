@@ -148,6 +148,14 @@ macro_rules! create_interface {
                 self.inner.reset(addr0);
             }
 
+            pub fn is_lost(&self, addr0: usize) -> bool {
+                self.inner.is_lost[addr0]
+            }
+
+            pub fn loss_values(&self) -> Vec<bool> {
+                self.inner.is_lost.clone()
+            }
+
             // some python niceties
 
             /// Fork this tableau, cloning all quantum state but reinitializing the RNG.

@@ -92,7 +92,7 @@ impl<T: Config> Tableau<T> {
         let mut result = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(n);
         for (i, destab) in destabilizers.iter().enumerate() {
             if destab.word.xbits[addr0] {
-                result *= stabilizers[i].clone();
+                result *= &stabilizers[i];
             }
         }
 
@@ -124,10 +124,10 @@ impl<T: Config> Tableau<T> {
             }
             if stabilizers[i].word.xbits[addr0] {
                 // Stabilizer i also anticommutes, so multiply by g_q to eliminate
-                stabilizers[i] *= g_q.clone();
+                stabilizers[i] *= &g_q;
             }
             if destabilizers[i].word.xbits[addr0] {
-                destabilizers[i] *= g_q.clone();
+                destabilizers[i] *= &g_q;
             }
         }
 

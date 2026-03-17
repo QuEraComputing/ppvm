@@ -6,6 +6,7 @@ use num::traits::{One, ToPrimitive, Zero};
 use super::data::{GeneralizedTableau, Tableau};
 use super::traits::LossyMeasure;
 use crate::config::Config;
+use crate::tableau::Reset;
 use crate::tableau::sparsevec::SparseVector;
 use crate::tableau::traits::TableauIndex;
 use crate::traits::*;
@@ -230,6 +231,70 @@ where
             self.x(addr0);
         }
         self.is_lost[addr0] = true;
+    }
+}
+
+impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> CorrelatedLossChannel<T>
+    for GeneralizedTableau<T, I, C>
+where
+    C: std::fmt::Debug,
+    T::Coeff: PartialOrd<f64> + One + Zero + Clone + num::Num + ToPrimitive + std::fmt::Debug,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat,
+    I: Debug,
+{
+    /// Apply a correlated loss channel to qubits at `addr0` and `addr1`.
+    ///
+    /// The three probabilities are:
+    /// * `p[0]`: The probability of losing both qubits simultaneously when
+    ///     both of them are in the qubit subspace.
+    /// * `p[1]`: The probability of losing either one qubit when both of them are
+    ///     in the qubit subspace.
+    /// * `p[2]`: The probability of losing one qubit when the other one has already
+    ///     been lost prior to the channel.
+    fn correlated_loss_channel(
+        &mut self,
+        addr0: usize,
+        addr1: usize,
+        p: [<T as Config>::Coeff; 3],
+    ) {
+        if self.is_lost[addr0] {
+            self.loss_channel(addr1, p[2].clone());
+            return;
+        } else if self.is_lost[addr1] {
+            self.loss_channel(addr0, p[2].clone());
+            return;
+        }
+
+        let r = self.tableau.rng.random::<f64>();
+        let mut cumulative = T::Coeff::zero();
+        for i in 0..2 {
+            cumulative += p[i].clone();
+            if cumulative > r {
+                if i == 0 {
+                    // both lost
+                    self.reset(addr0);
+                    self.reset(addr1);
+                    self.is_lost[addr0] = true;
+                    self.is_lost[addr1] = true;
+                } else {
+                    // only losing a single qubit,
+                    let choice = self.tableau.rng.random::<bool>();
+                    if choice {
+                        self.reset(addr1);
+                        self.is_lost[addr1] = true;
+                    } else {
+                        self.reset(addr0);
+                        self.is_lost[addr0] = true;
+                    }
+                }
+                return;
+            }
+        }
     }
 }
 
@@ -587,5 +652,169 @@ mod tests {
 
         println!("{}", z_avg);
         assert!((z_avg - (1.0 - p)).abs() < 10.0 / trials as f64);
+    }
+
+    // === CorrelatedLossChannel ===
+
+    #[test]
+    fn correlated_loss_p0_no_loss() {
+        // All probabilities zero: neither qubit should be lost.
+        let mut t = tab(2);
+        t.correlated_loss_channel(0, 1, [0.0, 0.0, 0.0]);
+        assert!(!t.is_lost[0]);
+        assert!(!t.is_lost[1]);
+    }
+
+    #[test]
+    fn correlated_loss_p0_both_lost() {
+        // p[0]=1 → both qubits always lost.
+        let mut t = tab(2);
+        t.correlated_loss_channel(0, 1, [1.0, 0.0, 0.0]);
+        assert!(t.is_lost[0]);
+        assert!(t.is_lost[1]);
+    }
+
+    #[test]
+    fn correlated_loss_p1_exactly_one_lost() {
+        // p[1]=1 → exactly one qubit lost each time.
+        let trials = 200;
+        for seed in 0..trials {
+            let mut t = tab(2);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0]);
+            assert!(
+                t.is_lost[0] ^ t.is_lost[1],
+                "Expected exactly one lost qubit (seed {seed})"
+            );
+        }
+    }
+
+    #[test]
+    fn correlated_loss_p1_both_qubits_chosen_equally() {
+        // With p[1]=1 the coin flip should lose addr0 and addr1 with equal frequency.
+        let trials = 1000u64;
+        let mut addr0_lost = 0u64;
+        for seed in 0..trials {
+            let mut t = tab(2);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0]);
+            if t.is_lost[0] {
+                addr0_lost += 1;
+            }
+        }
+        let fraction = addr0_lost as f64 / trials as f64;
+        // Expected 0.5; 5σ tolerance with σ ≈ 0.016
+        assert!(
+            (fraction - 0.5).abs() < 0.08,
+            "Expected ~0.5, got {fraction:.3}"
+        );
+    }
+
+    #[test]
+    fn correlated_loss_both_lost_resets_to_zero() {
+        // When both qubits are lost their state should have been reset to |0⟩.
+        let mut t = tab(2);
+        t.x(0);
+        t.x(1);
+        t.correlated_loss_channel(0, 1, [1.0, 0.0, 0.0]);
+        assert!(t.is_lost[0]);
+        assert!(t.is_lost[1]);
+        // Restore so we can measure.
+        t.is_lost[0] = false;
+        t.is_lost[1] = false;
+        assert!(!t.measure(0).unwrap());
+        assert!(!t.measure(1).unwrap());
+    }
+
+    #[test]
+    fn correlated_loss_single_lost_resets_to_zero() {
+        // The lost qubit should be in |0⟩; the surviving qubit keeps its state.
+        // Use a seed where addr0 ends up being the lost one.
+        // We iterate seeds until we get addr0 lost, then verify.
+        for seed in 0..1000u64 {
+            let mut t = tab(2);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.x(0); // put addr0 in |1⟩
+            t.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0]);
+            if t.is_lost[0] {
+                t.is_lost[0] = false;
+                assert!(!t.measure(0).unwrap(), "Lost qubit should be reset to |0⟩");
+                return;
+            }
+        }
+        panic!("addr0 was never chosen as the lost qubit in 1000 trials");
+    }
+
+    #[test]
+    fn correlated_loss_addr0_already_lost_applies_p2_to_addr1() {
+        // addr0 already lost → addr1 should be lost with probability p[2]=1.
+        let mut t = tab(2);
+        t.is_lost[0] = true;
+        t.correlated_loss_channel(0, 1, [0.0, 0.0, 1.0]);
+        assert!(t.is_lost[0]);
+        assert!(t.is_lost[1]);
+    }
+
+    #[test]
+    fn correlated_loss_addr1_already_lost_applies_p2_to_addr0() {
+        // addr1 already lost → addr0 should be lost with probability p[2]=1.
+        let mut t = tab(2);
+        t.is_lost[1] = true;
+        t.correlated_loss_channel(0, 1, [0.0, 0.0, 1.0]);
+        assert!(t.is_lost[0]);
+        assert!(t.is_lost[1]);
+    }
+
+    #[test]
+    fn correlated_loss_addr0_already_lost_p2_zero_addr1_survives() {
+        // addr0 already lost, p[2]=0 → addr1 stays active.
+        let mut t = tab(2);
+        t.is_lost[0] = true;
+        t.correlated_loss_channel(0, 1, [0.0, 0.0, 0.0]);
+        assert!(!t.is_lost[1]);
+    }
+
+    #[test]
+    fn correlated_loss_statistics_both() {
+        // P(both lost) should converge to p[0].
+        let p_both = 0.3_f64;
+        let trials = 1000u64;
+        let mut both_lost = 0u64;
+        for seed in 0..trials {
+            let mut t = tab(2);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.correlated_loss_channel(0, 1, [p_both, 0.0, 0.0]);
+            if t.is_lost[0] && t.is_lost[1] {
+                both_lost += 1;
+            }
+        }
+        let fraction = both_lost as f64 / trials as f64;
+        // 5σ tolerance: σ = sqrt(0.3*0.7/1000) ≈ 0.014
+        assert!(
+            (fraction - p_both).abs() < 0.07,
+            "Expected ~{p_both:.2}, got {fraction:.3}"
+        );
+    }
+
+    #[test]
+    fn correlated_loss_statistics_single() {
+        // P(exactly one lost) should converge to p[1].
+        let p_single = 0.4_f64;
+        let trials = 1000u64;
+        let mut one_lost = 0u64;
+        for seed in 0..trials {
+            let mut t = tab(2);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.correlated_loss_channel(0, 1, [0.0, p_single, 0.0]);
+            if t.is_lost[0] ^ t.is_lost[1] {
+                one_lost += 1;
+            }
+        }
+        let fraction = one_lost as f64 / trials as f64;
+        // 5σ: σ = sqrt(0.4*0.6/1000) ≈ 0.015
+        assert!(
+            (fraction - p_single).abs() < 0.08,
+            "Expected ~{p_single:.2}, got {fraction:.3}"
+        );
     }
 }

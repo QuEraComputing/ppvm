@@ -1,3 +1,4 @@
+import enum
 import math
 from dataclasses import InitVar, dataclass, field
 from typing import Optional
@@ -11,6 +12,14 @@ from .clifford import (
     NonCliffordMixin,
 )
 from .types import GeneralizedTableauInterface
+
+
+class MeasurementResult(enum.IntEnum):
+    """A measurement outcome, which accounts for a qubit being potentially lost."""
+
+    ZERO = 0
+    ONE = 1
+    LOST = 2
 
 
 @dataclass(frozen=True)
@@ -143,16 +152,23 @@ class GeneralizedTableau(
         """
         self._interface.loss_channel(addr0, p)
 
-    def measure(self, addr0: int) -> bool:
+    def measure(self, addr0: int) -> MeasurementResult:
         """Measure the specified qubit in the Z basis.
 
         Args:
             addr0: The index of the target qubit.
 
         Returns:
-            The measurement outcome (False = 0, True = 1).
+            The measurement outcome as a ``MeasurementResult``, which is
+            ``LOST`` if the qubit has been lost, ``ZERO`` or ``ONE`` otherwise.
         """
-        return self._interface.measure(addr0)
+        m = self._interface.measure(addr0)
+        if m is None:
+            return MeasurementResult.LOST
+        elif m:
+            return MeasurementResult.ONE
+        else:
+            return MeasurementResult.ZERO
 
     def reset(self, addr0: int) -> None:
         """Reset the specified qubit to the |0> state.

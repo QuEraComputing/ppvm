@@ -1,4 +1,5 @@
 from ppvm import GeneralizedTableau
+from ppvm.generalized_tableau import MeasurementResult
 
 
 def test_is_lost_initially_false():
@@ -42,3 +43,20 @@ def test_loss_values_after_loss_channel():
     assert values[0] is False
     assert values[1] is True
     assert values[2] is False
+
+
+def test_measure_zero():
+    tab = GeneralizedTableau(n_qubits=1)
+    assert tab.measure(0) == MeasurementResult.ZERO
+
+
+def test_measure_one():
+    tab = GeneralizedTableau(n_qubits=1)
+    tab.x(0)
+    assert tab.measure(0) == MeasurementResult.ONE
+
+
+def test_measure_lost():
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
+    tab.loss_channel(0, 1.0)
+    assert tab.measure(0) == MeasurementResult.LOST

@@ -31,7 +31,7 @@ macro_rules! create_interface {
                 self.inner.to_string()
             }
 
-            pub fn measure(&mut self, addr0: usize) -> bool {
+            pub fn measure(&mut self, addr0: usize) -> Option<bool> {
                 self.inner.measure(addr0)
             }
 

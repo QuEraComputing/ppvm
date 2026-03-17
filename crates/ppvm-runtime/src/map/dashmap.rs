@@ -164,6 +164,20 @@ where
             }
         })
     }
+
+    fn map_insert_multiple<F>(&mut self, dest: &mut Self, f: F)
+    where
+        F: Fn(&W, &mut C) -> Option<Vec<(W, C)>> + Sync + Send,
+    {
+        self.par_iter_mut().for_each(|mut entry| {
+            let (k, v) = entry.pair_mut();
+            if let Some(new_entries) = f(k, v) {
+                for (new_k, new_v) in new_entries {
+                    dest.insert(new_k, new_v);
+                }
+            }
+        })
+    }
 }
 
 impl<S, C, H, W> ACMapContains<S, C, H, W> for DashMap<W, C, H>

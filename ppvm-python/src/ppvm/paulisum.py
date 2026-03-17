@@ -532,7 +532,7 @@ class PauliSum:
         """
         keys = (
             "IX",
-            "IT",
+            "IY",
             "IZ",
             "XI",
             "XX",
@@ -595,6 +595,25 @@ class LossyPauliSum(PauliSum):
             p: Loss probability in [0, 1].
         """
         self._interface.loss_channel(addr0, p)
+
+    def correlated_loss_channel(
+        self, addr0: int, addr1: int, p: Sequence[float]
+    ) -> None:
+        """Apply a correlated loss channel.
+
+        This applies a correlated loss channel to the qubits at `addr0` and `addr1`.
+        The channel accepts 3 probabilities as argument:
+            * `p[0]`: The probability of losing both qubits, when they are originally
+                in the qubit subspace.
+            * `p[1]`: The probability of losing a single qubit, when both qubits
+                are originally in the qubit subspace.
+            * `p[2]`: The probability of losing one qubit when the other one
+                has already been lost prior to applying the channel. This is to
+                account for the fact that when one qubit is missing during e.g.
+                a controlled gate, the remaining qubit undergoes a different dynamic.
+                We account for this difference with this distinct probability.
+        """
+        self._interface.correlated_loss_channel(addr0, addr1, p)
 
     def reset_loss_channel(self, addr0: int) -> None:
         """Reset a lost qubit to the 0 state. Usually, you want to apply

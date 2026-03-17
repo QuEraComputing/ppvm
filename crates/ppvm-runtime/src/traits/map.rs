@@ -43,6 +43,12 @@ pub trait ACMapInsert<
     fn map_insert<F>(&mut self, dest: &mut Self, f: F)
     where
         F: Fn(&W, &mut V) -> Option<(W, V)> + Sync + Send;
+
+    /// modify in place and insert multiple new entries into dest based on
+    /// existing entries in self.
+    fn map_insert_multiple<F>(&mut self, dest: &mut Self, f: F)
+    where
+        F: Fn(&W, &mut V) -> Option<Vec<(W, V)>> + Sync + Send;
 }
 
 pub trait ACMapContains<
@@ -61,7 +67,7 @@ pub trait ACMapContains<
 }
 
 pub trait ACMapConsume {
-    /// consume dest into self, guranteeing accumulation of values with the same key.
+    /// consume dest into self, guaranteeing accumulation of values with the same key.
     fn consume(&mut self, dest: &mut Self);
 }
 

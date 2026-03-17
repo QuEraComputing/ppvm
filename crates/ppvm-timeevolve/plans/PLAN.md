@@ -278,12 +278,13 @@ Add `criterion` to `[dev-dependencies]` and a `[[bench]]` entry in `Cargo.toml`.
 **`commutator_real`**: `left = PhasedPauliWord::from(w_a.clone())` depends only on `w_a`
 (fixed for the inner loop). Move it above the inner loop.
 
-**`apply`**: swap loop order so `p.data().iter()` is the outer loop and `&self.terms` is
-the inner. Hoist `wa_phased = PhasedPauliWord::from(w_a.clone())` to the outer scope.
-
-*Why it is faster:* in the current order, `p`'s HashMap is traversed `|terms|` times.
-After the swap it is traversed once, reducing cache pressure by a factor of `|terms|`.
-`self.terms` is a contiguous `Vec` and remains cache-friendly regardless of loop order.
+*Note on `apply` loop order:* the `p`-outer, `terms`-inner swap was benchmarked and found
+to cause a consistent ~16% regression. Two effects compound: (1) `wa_phased` for the `t2`
+anticommutator term changes from a zero-cost move to an explicit clone; (2) `term.left`,
+`term.right`, `term.a_kl` can no longer be held in registers for the entire inner loop —
+they must be reloaded from L1 each iteration, raising register pressure. The hot-cache
+benchmark also makes the stated cache-traversal benefit invisible. The loop order in `apply`
+is therefore left unchanged.
 
 ### Task 13 — Collapse anticommutator into one multiplication
 

@@ -125,7 +125,6 @@ where
     f64: Into<T::Coeff>,
 {
     /// Accumulates `L(P)` into `result`.
-    #[allow(dead_code)] // called from rhs, which is called from solve.rs (Task 7)
     pub(crate) fn apply(&self, p: &PauliSum<T>, result: &mut PauliSum<T>) {
         for term in &self.terms {
             for (w_a, coeff_a) in p.data().iter() {
@@ -216,14 +215,15 @@ pub(crate) fn commutator_real<T: Config>(
     f64: Into<T::Coeff>,
 {
     for (w_a, h_a) in ham.data().iter() {
+        // Hoist left: depends only on w_a, not on w_b.
+        let left = PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
+            w_a.clone(),
+        );
         for (w_b, p_b) in p.data().iter() {
-            let left = PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
-                w_a.clone(),
-            );
             let right = PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
                 w_b.clone(),
             );
-            let tmp = left * right;
+            let tmp = left.clone() * right;
             let coeff = match tmp.phase {
                 1 => (-2.0_f64).into() * (*h_a * *p_b),
                 3 => (2.0_f64).into() * (*h_a * *p_b),

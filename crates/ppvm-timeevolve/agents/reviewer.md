@@ -45,7 +45,7 @@ hand-off summary. You must verify them as part of the review.
 
 | Task | `bench_rhs` | `bench_solve` |
 |------|-------------|---------------|
-| 12   | strictly lower | expected lower (same hot path) |
+| 12   | neutral (commutator_real change invisible for `ham=None`; report numbers) | neutral |
 | 13   | strictly lower | expected lower (same hot path) |
 | 14   | flat (calls `rhs()` wrapper — improvement is in solver loop, not single-call) | strictly lower |
 
@@ -117,8 +117,8 @@ approved**. Return it with a note requesting investigation.
 
 ### Loop restructuring (Task 12)
 - Verify `left` in `commutator_real` is outside the inner loop.
-- Verify loop order in `apply` is `p` outer, `terms` inner, with a comment justifying it.
-- Verify `wa_phased` is constructed once per `w_a`.
+- Verify loop order in `apply` is unchanged (terms outer, p inner) — the p-outer swap was
+  benchmarked and found to be a ~16% regression; see `PLAN.md §Task 12` for explanation.
 
 ### Anticommutator collapse (Task 13)
 - Re-derive the `comm_parity` formula from first principles: verify that

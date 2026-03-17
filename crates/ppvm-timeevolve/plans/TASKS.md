@@ -453,28 +453,27 @@ begins. Every subsequent task will be judged against this baseline.
 
 ---
 
-## Task 12 — Loop Restructuring in `commutator_real` and `apply`
+## Task 12 — Hoist `left` in `commutator_real`
 
-**Goal:** Eliminate redundant work and reduce cache pressure in the two innermost hot loops.
+**Goal:** Remove the redundant `PhasedPauliWord::from(w_a.clone())` call that was
+previously computed once per `(w_a, w_b)` inner-loop pair.
+
+*Note:* the originally planned `apply` loop swap was benchmarked and found to cause a
+~16% regression (see `PLAN.md §Task 12`). It is not part of this task.
 
 **Steps:**
 1. In `commutator_real`: move `let left = PhasedPauliWord::from(w_a.clone())` above the
-   inner `for (w_b, p_b)` loop.
-2. In `apply`: swap the two loops so `p.data().iter()` is the outer loop and
-   `&self.terms` is the inner. Move `let wa_phased = PhasedPauliWord::from(w_a.clone())`
-   to the outer scope. Add a comment explaining the loop-order choice (see `PLAN.md`).
-3. Run the benchmarks and record the new mean times.
+   inner `for (w_b, p_b)` loop. The inner loop body uses `left.clone() * right` instead.
+2. Run the benchmarks and record the new mean times.
 
 **Unit tests:** all existing tests must pass unchanged — behaviour is identical.
 
 **Review checklist:**
 - [ ] `left` in `commutator_real` is computed once per `w_a`, not once per `(w_a, w_b)` pair.
-- [ ] Loop order in `apply` is `p` outer, `terms` inner.
-- [ ] `wa_phased` is constructed once per `w_a` in `apply`.
-- [ ] A comment explains the loop-order rationale.
+- [ ] Loop order in `apply` is unchanged (terms outer, p inner).
 - [ ] All existing tests pass.
-- [ ] **Benchmark:** mean time for `bench_rhs` is lower than the Task 11 baseline.
-      Report the before/after numbers in the hand-off summary.
+- [ ] **Benchmark:** report bench_rhs and bench_solve; note that the commutator_real change
+      is invisible when `ham = None` so numbers primarily reflect machine state.
 
 ---
 

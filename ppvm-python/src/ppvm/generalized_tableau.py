@@ -152,6 +152,23 @@ class GeneralizedTableau(
         """
         self._interface.loss_channel(addr0, p)
 
+    def correlated_loss_channel(self, addr0: int, addr1: int, p: list[float]) -> None:
+        """Apply a correlated loss channel to two qubits.
+
+        Args:
+            addr0: The index of the first target qubit.
+            addr1: The index of the second target qubit.
+            p: A list of three probabilities:
+
+                - ``p[0]``: probability of losing both qubits simultaneously
+                  when both are in the qubit subspace.
+                - ``p[1]``: probability of losing exactly one qubit when both
+                  are in the qubit subspace (each is chosen with equal probability).
+                - ``p[2]``: probability of losing the remaining active qubit
+                  when the other has already been lost prior to this channel.
+        """
+        self._interface.correlated_loss_channel(addr0, addr1, p)
+
     def measure(self, addr0: int) -> MeasurementResult:
         """Measure the specified qubit in the Z basis.
 

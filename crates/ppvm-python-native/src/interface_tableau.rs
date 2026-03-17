@@ -140,6 +140,10 @@ macro_rules! create_interface {
                 self.inner.loss_channel(addr0, p);
             }
 
+            pub fn correlated_loss_channel(&mut self, addr0: usize, addr1: usize, p: [f64; 3]) {
+                self.inner.correlated_loss_channel(addr0, addr1, p);
+            }
+
             pub fn reset_loss_channel(&mut self, addr0: usize) {
                 self.inner.reset_loss_channel(addr0);
             }

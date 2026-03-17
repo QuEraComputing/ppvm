@@ -414,6 +414,206 @@ asserting against it. (Do not assert against a magic number without a derivation
 
 ---
 
+## Task 11 — Criterion Benchmark Baseline
+
+**Goal:** Establish a reproducible performance baseline before any optimisation work
+begins. Every subsequent task will be judged against this baseline.
+
+**Steps:**
+1. Add `criterion = "0.5"` (or latest) to `[dev-dependencies]` in `Cargo.toml`.
+2. Add a `[[bench]]` entry:
+   ```toml
+   [[bench]]
+   name = "rhs"
+   harness = false
+   ```
+3. Promote `rhs` in `src/lindblad.rs` from `pub(crate)` to `pub`, and add
+   `pub use lindblad::rhs;` to `src/lib.rs`. Bench binaries are separate crates and
+   cannot see `pub(crate)` symbols; this visibility change carries no logic change.
+4. Create `benches/fixture.rs` with a `pub fn build_lindblad()` and `pub fn build_initial()`
+   helper (n=5, lowering operators, dense rate matrix, CoefficientThreshold(1e-6)) as
+   described in `PLAN.md §Benchmark fixture`.
+5. Create `benches/rhs.rs` with two benchmark groups:
+   - `bench_rhs`: one call to `rhs(None, &lindblad, &p)` where `p` is the state after a
+     short warm-up solve (so it is not trivially sparse).
+   - `bench_solve`: full `solve(None, &lindblad, &initial, (0.0, 1.0), save_at, …)` with
+     10 evenly-spaced save points.
+6. Run `cargo bench -p ppvm-timeevolve` and paste the Criterion summary (mean ± stddev for
+   both benchmarks) into the hand-off summary. This becomes the baseline on record.
+
+**Verification:**
+- `cargo bench -p ppvm-timeevolve` compiles and produces Criterion output without panics.
+- `cargo test -p ppvm-timeevolve` still passes.
+
+**Review checklist:**
+- [ ] Benchmark fixture matches the spec in `PLAN.md` (n=5, lowering ops, dense Γ, threshold 1e-6).
+- [ ] Both `bench_rhs` and `bench_solve` are present and produce stable numbers.
+- [ ] Baseline numbers are recorded in the hand-off summary and will be cited by later tasks.
+- [ ] Only `rhs` visibility is changed (`pub(crate)` → `pub`); no logic is modified.
+
+---
+
+## Task 12 — Loop Restructuring in `commutator_real` and `apply`
+
+**Goal:** Eliminate redundant work and reduce cache pressure in the two innermost hot loops.
+
+**Steps:**
+1. In `commutator_real`: move `let left = PhasedPauliWord::from(w_a.clone())` above the
+   inner `for (w_b, p_b)` loop.
+2. In `apply`: swap the two loops so `p.data().iter()` is the outer loop and
+   `&self.terms` is the inner. Move `let wa_phased = PhasedPauliWord::from(w_a.clone())`
+   to the outer scope. Add a comment explaining the loop-order choice (see `PLAN.md`).
+3. Run the benchmarks and record the new mean times.
+
+**Unit tests:** all existing tests must pass unchanged — behaviour is identical.
+
+**Review checklist:**
+- [ ] `left` in `commutator_real` is computed once per `w_a`, not once per `(w_a, w_b)` pair.
+- [ ] Loop order in `apply` is `p` outer, `terms` inner.
+- [ ] `wa_phased` is constructed once per `w_a` in `apply`.
+- [ ] A comment explains the loop-order rationale.
+- [ ] All existing tests pass.
+- [ ] **Benchmark:** mean time for `bench_rhs` is lower than the Task 11 baseline.
+      Report the before/after numbers in the hand-off summary.
+
+---
+
+## Task 13 — Collapse Anticommutator into One Multiplication
+
+**Goal:** Replace the two-multiplication anticommutator in `apply` with a single
+multiplication plus a cheap bitwise commutation-parity check.
+
+**Steps:**
+1. Add `#[inline] pub(crate) fn comm_parity` to `lindblad.rs` as described in `PLAN.md
+   §Task 13`. Use `word.xbits` and `word.zbits` (both `pub`) over the raw byte storage.
+2. Replace the anticommutator block in `apply` with the single-multiplication form derived
+   in `PLAN.md`. The combined coefficient is `−2 × weight × re_phase(t1.phase)` when
+   `(a_kl.phase & 1) == parity`, and zero otherwise.
+3. Run the benchmarks and record the new mean times.
+
+**Unit tests:**
+- A dedicated `comm_parity` test covering all four single-qubit Pauli pairs: IX (0),
+  XI (0), XY (1), XZ (1), YZ (1), XX (0), YY (0), ZZ (0), and a multi-qubit case.
+- All existing `apply` tests must pass unchanged.
+
+**Review checklist:**
+- [ ] `comm_parity` formula matches `PLAN.md` exactly.
+- [ ] The condition `(a_kl.phase & 1) == parity` is correctly derived and applied.
+- [ ] Single-qubit spot checks: `comm_parity(X, Y) == 1`, `comm_parity(X, X) == 0`, etc.
+- [ ] No second `MulAssign` call for the anticommutator.
+- [ ] All existing tests pass.
+- [ ] **Benchmark:** mean time for `bench_rhs` is lower than the Task 12 result.
+      Report the before/after numbers in the hand-off summary.
+
+---
+
+## Task 14 — `SolverCache`: solve-level buffer pre-allocation
+
+**Goal:** Eliminate all per-step allocations by pre-allocating every scratch buffer once
+at the start of `solve` and reusing them throughout. Expose the cache publicly so callers
+doing repeated solves (parameter sweeps, ensembles) can amortise even the one-time cost.
+
+**Allocation accounting:**
+
+| Item                               | Current (per step) | After Task 14 |
+|------------------------------------|--------------------|---------------|
+| `y.clone()` for yi stages + y_new  | 6                  | 0             |
+| `rhs()` internal alloc for k2..k7  | 6                  | 0             |
+| `err_vec` fresh build              | 1                  | 0             |
+| `k1.clone()` in `solve_mut`        | 1                  | 0             |
+| **Total**                          | **14**             | **0**         |
+
+Nine `PauliSum`s are allocated once per `solve` call (or once per user-managed cache).
+`estimate_h0` continues to use `rhs()` and allocates, but is called once per solve and
+is not on the hot path.
+
+**Steps:**
+1. **Add `rhs_into` to `lindblad.rs`.**
+   Add `ACMapBase` to the imports from `ppvm_runtime::prelude`.
+   Add `pub(crate) fn rhs_into<T: Config>(ham, lindblad, p, result: &mut PauliSum<T>)`
+   with `T::Map: ACMapBase` in its where-clause: call `result.data_mut().clear()`, then
+   `commutator_real` + `lindblad.apply` + `result.truncate()`.
+   Rewrite `rhs` as a one-liner: allocate a fresh `PauliSum`, call `rhs_into`, return it.
+   All existing call sites (including `estimate_h0`) stay unchanged.
+
+2. **Define `SolverCache<T>` in `solve.rs`.**
+   ```rust
+   pub struct SolverCache<T: Config> {
+       pub(crate) k:         Vec<PauliSum<T>>,  // len 7; k[0]=FSAL carry-over, k[1..=6]=k2..k7
+       pub(crate) y_scratch: PauliSum<T>,
+       pub(crate) err:       PauliSum<T>,
+   }
+   impl<T: Config> SolverCache<T> {
+       pub fn new(template: &PauliSum<T>) -> Self;  // reads n_qubits/strategy; no data clone
+   }
+   ```
+   Re-export `SolverCache` from `lib.rs`.
+
+3. **Simplify `StepResult` in `dopri5.rs`.**
+   Remove the generic parameter and the `y_new`/`k_next` fields — both now live in the
+   cache. `StepResult` becomes:
+   ```rust
+   pub(crate) enum StepResult {
+       Accept { h_new: f64 },
+       Reject { h_new: f64 },
+   }
+   ```
+
+4. **Rewrite `step` in `dopri5.rs`.**
+   New signature:
+   ```rust
+   pub(crate) fn step<T: Config>(
+       ham: Option<&PauliSum<T>>, lindblad: &LindbladOp<T>,
+       y: &PauliSum<T>, dt: f64, config: &SolverConfig,
+       cache: &mut SolverCache<T>,
+   ) -> StepResult
+   ```
+   - Replace every `let mut yi = y.clone()` with
+     `cache.y_scratch.data_mut().clone_from(y.data())` (add `T::Map: Clone` to
+     the where-clause); then `add_scaled` into `cache.y_scratch` as before.
+   - Replace every `rhs(…)` call with `rhs_into(…, &mut cache.k[i])`.
+   - After computing k7 into `cache.k[6]`, FSAL swap: `cache.k.swap(0, 6)`.
+   - Build `y_new` into `cache.y_scratch`; the state update in the caller is
+     `std::mem::swap(state, &mut cache.y_scratch)`.
+   - Build `err_vec` into `cache.err` (cleared before use with `data_mut().clear()`).
+
+5. **Implement `solve_mut_cached` and `solve_cached` in `solve.rs`.**
+   - Seed `cache.k[0]` with the initial derivative:
+     `rhs_into(ham, lindblad, state, &mut cache.k[0])`.
+   - Step loop: call `step(…, cache)`, then on `Accept`:
+     `std::mem::swap(state, &mut cache.y_scratch)`.
+   - Rewrite `solve_mut` and `solve` as wrappers:
+     `let mut cache = SolverCache::new(state); solve_mut_cached(…, &mut cache)`.
+
+6. **Run the benchmarks and record the new mean times.**
+
+**Unit tests:**
+- All existing `step` and `solve` tests must pass unchanged (they exercise the wrapper
+  paths).
+- Add a test that constructs a `SolverCache` explicitly, calls `solve_cached`, and
+  verifies the result matches `solve` on the same inputs.
+- Add a test that reuses the same `SolverCache` across two consecutive `solve_cached`
+  calls with different initial states and verifies both results are correct (no state
+  bleed between calls).
+
+**Review checklist:**
+- [ ] `rhs_into` calls `data_mut().clear()`; `rhs` is a one-liner wrapper with no
+      duplicated logic.
+- [ ] `T::Map: ACMapBase` and `T::Map: Clone` are the only new trait bounds; no other
+      crate is modified.
+- [ ] `SolverCache::new` allocates exactly 9 `PauliSum`s (7 in `k` + `y_scratch` + `err`).
+- [ ] `StepResult` in `dopri5.rs` has no generic parameter and no `y_new`/`k_next` fields.
+- [ ] `clone_from` is used for all stage-state resets; no `y.clone()` remains in `step`.
+- [ ] `cache.k.swap(0, 6)` is used for FSAL; no `k1.clone()` in `solve_mut_cached`.
+- [ ] `std::mem::swap(state, &mut cache.y_scratch)` is used for the state update.
+- [ ] `SolverCache` is exported from `lib.rs`.
+- [ ] All existing tests pass; both new cache tests pass.
+- [ ] **Benchmark:** `bench_solve` is strictly lower than the Task 13 baseline.
+      `bench_rhs` should show no regression (it still calls the `rhs()` wrapper, so no
+      improvement is expected there). Report before/after/cumulative numbers for all tasks.
+
+---
+
 ## General Review Rules
 
 Before approving any task:

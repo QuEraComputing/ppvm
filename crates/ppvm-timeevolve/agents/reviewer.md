@@ -31,6 +31,27 @@ and the Dormand-Prince method.
 - [ ] `cargo clippy -p ppvm-timeevolve -- -D warnings` is clean.
 - [ ] Commit exists and message names the task.
 
+## Performance checklist (Tasks 12–14)
+
+For every performance task the developer **must** include benchmark results in the
+hand-off summary. You must verify them as part of the review.
+
+- [ ] The hand-off summary contains Criterion mean ± stddev for both `bench_rhs` and
+      `bench_solve`, compared against the previous task's numbers.
+- [ ] The improvement is plausibly explained by the change. If the numbers look
+      suspiciously large or small, ask the developer to re-run before approving.
+
+**Per-task expectations** (what must improve, and what is expected to be flat):
+
+| Task | `bench_rhs` | `bench_solve` |
+|------|-------------|---------------|
+| 12   | strictly lower | expected lower (same hot path) |
+| 13   | strictly lower | expected lower (same hot path) |
+| 14   | flat (calls `rhs()` wrapper — improvement is in solver loop, not single-call) | strictly lower |
+
+A task that is mathematically correct but **fails the benchmark expectation above is not
+approved**. Return it with a note requesting investigation.
+
 ## Physics and math checks (per area)
 
 ### Phase arithmetic (`LindbladOp` preprocessing, Task 3)
@@ -86,6 +107,43 @@ and the Dormand-Prince method.
   - Consider using `P(0) = Z` with trace giving `<Z(0)> = 1`. The physically interesting
     trajectory is the coefficient of Z in the observable, not the expectation value.
     Ensure the test is asserting the right quantity.
+
+### Benchmark baseline (Task 11)
+- Confirm the fixture matches `PLAN.md §Benchmark fixture` (n=5, lowering ops, dense Γ,
+  CoefficientThreshold(1e-6)).
+- Confirm both `bench_rhs` and `bench_solve` groups are present and report stable numbers.
+- Record the baseline mean times in your approval note — they are the reference for all
+  subsequent performance tasks.
+
+### Loop restructuring (Task 12)
+- Verify `left` in `commutator_real` is outside the inner loop.
+- Verify loop order in `apply` is `p` outer, `terms` inner, with a comment justifying it.
+- Verify `wa_phased` is constructed once per `w_a`.
+
+### Anticommutator collapse (Task 13)
+- Re-derive the `comm_parity` formula from first principles: verify that
+  `σ_a` and `σ_b` anti-commute at site i iff `(a.x[i] & b.z[i]) ^ (a.z[i] & b.x[i]) == 1`.
+- Verify the combined-coefficient condition `(a_kl.phase & 1) == parity` against the
+  four-case table in `PLAN.md §Task 13`.
+- Spot-check: `c = X` (phase 0), `c† = X`, `a_kl = I`, applied to `W_a = Z`.
+  `comm_parity(I, Z) = 0`; `a_kl.phase & 1 = 0`; condition true; combined = `2 × re_phase(t1)`.
+  Verify this gives the same result as the old two-multiplication form.
+
+### `SolverCache` (Task 14)
+- Confirm `rhs_into` calls `data_mut().clear()`; `rhs` is a one-line wrapper.
+- Confirm `T::Map: ACMapBase` and `T::Map: Clone` are the only new bounds; no other
+  crate is modified.
+- Confirm `SolverCache::new` allocates exactly 9 `PauliSum`s: 7 in `k` + `y_scratch`
+  + `err`. Check by inspection.
+- Confirm `StepResult` in `dopri5.rs` has no generic parameter and no `y_new`/`k_next`
+  fields.
+- Grep for `y.clone()` inside `step` — there should be none.
+- Grep for `k1.clone()` inside `solve_mut_cached` — there should be none.
+- Confirm `cache.k.swap(0, 6)` is the FSAL mechanism.
+- Confirm `std::mem::swap(state, &mut cache.y_scratch)` is the state update.
+- Confirm `SolverCache` is exported from `lib.rs`.
+- Verify the cache-reuse test: two consecutive `solve_cached` calls on the same cache
+  with different initial states must produce independent, correct results.
 
 ## Sign-off
 

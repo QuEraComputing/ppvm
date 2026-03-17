@@ -233,3 +233,189 @@ Save points are hit exactly by capping `h` when the next save time would be over
   `PhasedPauliWord<...>: From<T::PauliWordType> + MulAssign + Clone` — the same bounds
   already present on `MulAssign<PauliSum>`. Standard configs satisfy these.
 - **No changes to `ppvm-runtime`.**
+
+---
+
+## Performance Work (Tasks 11–14)
+
+*(Tasks 11–14 are the performance-focused phase. Task 11 establishes a baseline; Tasks
+12–14 each introduce one optimisation and must demonstrate measurable improvement.)*
+
+### Motivation
+
+For systems with many collapse operators or large Pauli sums, the solver is bottlenecked
+by three hot paths:
+
+1. **`LindbladOp::apply`** — called 6× per accepted DOPRI5 step. Dominates for large
+   `|terms|` and `|p|`. For n=5 qubits with 5 lowering operators and a dense rate matrix,
+   `|terms| = 100` and `|p|` can reach several hundred after truncation.
+2. **`commutator_real`** — same call count; same structural problems.
+3. **HashMap allocation inside `rhs`** — a fresh `PauliSum` (with two `HashMap`s) is
+   constructed on every call, discarding capacity that was just earned through growth.
+
+### Benchmark fixture (Task 11)
+
+A Criterion benchmark in `benches/rhs.rs` using the `ByteF64<1, CoefficientThreshold>`
+config. The fixture builds:
+
+- **n = 5 qubits**, lowering operators `c_i = X_i + iY_i` for i = 0..4.
+- **Dense 5×5 rate matrix** with `γ_ij = 1 / (1 + |i − j|)`.
+- **Initial state** `P = Σ_i Z_i` (sum of single-qubit Z operators), threshold `1e-6`.
+
+Two benchmarks:
+- `bench_rhs`: a single call to `rhs(None, &lindblad, &p)` where `p` is a snapshot of the
+  state after one warm-up solve step (so it is representative, not trivially sparse).
+- `bench_solve`: `solve(None, &lindblad, &initial, (0.0, 1.0), &[0.1, 0.2, …, 1.0], …)`
+  with default `SolverConfig`.
+
+The fixture and helper to build the Lindblad operator are extracted into a shared
+`benches/fixture.rs` module so subsequent benchmark files can reuse them.
+
+Add `criterion` to `[dev-dependencies]` and a `[[bench]]` entry in `Cargo.toml`.
+
+### Task 12 — Loop restructuring
+
+**`commutator_real`**: `left = PhasedPauliWord::from(w_a.clone())` depends only on `w_a`
+(fixed for the inner loop). Move it above the inner loop.
+
+**`apply`**: swap loop order so `p.data().iter()` is the outer loop and `&self.terms` is
+the inner. Hoist `wa_phased = PhasedPauliWord::from(w_a.clone())` to the outer scope.
+
+*Why it is faster:* in the current order, `p`'s HashMap is traversed `|terms|` times.
+After the swap it is traversed once, reducing cache pressure by a factor of `|terms|`.
+`self.terms` is a contiguous `Vec` and remains cache-friendly regardless of loop order.
+
+### Task 13 — Collapse anticommutator into one multiplication
+
+**Mathematical basis.** For any two `PhasedPauliWord` values A and B:
+
+```
+(A * B).word == (B * A).word       // XOR is commutative on the word bits
+```
+
+The phases differ by exactly `2 × comm_parity(A, B) mod 4`, where `comm_parity` is the
+parity of the number of single-qubit anti-commuting pairs:
+
+```
+comm_parity(A, B) = popcount((A.xbits & B.zbits) XOR (A.zbits & B.xbits)) mod 2
+```
+
+From the four possible combinations of `(a_kl.phase & 1, parity)`:
+
+| `a_kl.phase & 1` | parity | `re_phase(t1) + re_phase(t2)` |
+|------------------|--------|-------------------------------|
+| 0                | 0      | `2 × re_phase(t1.phase)`      |
+| 1                | 1      | `2 × re_phase(t1.phase)`      |
+| 0                | 1      | 0                             |
+| 1                | 0      | 0                             |
+
+So: combined = `2 × re_phase(t1.phase)` when `(a_kl.phase & 1) == parity`, else 0.
+
+**Implementation.** Replace the two-multiplication anticommutator block in `apply` with:
+1. Compute `t1 = a_kl.clone() * wa_phased.clone()` (one `MulAssign`).
+2. Compute `parity = comm_parity(&term.a_kl.word, &wa_phased.word)` (bitwise, O(N_bytes)).
+3. If `(term.a_kl.phase & 1) == parity` and `re_phase(t1.phase) != 0.0`: accumulate
+   `(-2 × term.weight × re_phase(t1.phase)) × coeff_a` into `t1.word`.
+
+Add `#[inline] fn comm_parity<A, S>(a: &PauliWord<A, S>, b: &PauliWord<A, S>) -> u8`
+using `a.xbits`, `a.zbits` (both `pub`) over the raw byte storage. Keep it in
+`lindblad.rs` as a `pub(crate)` helper.
+
+*Why it is faster:* the anticommutator drops from 2 multiplications + up to 2 HashMap
+inserts to 1 multiplication + 1 bitwise check + at most 1 insert. For n=5, |terms|=100,
+|p|=100: saves ~10 000 multiplications per `rhs` call.
+
+### Task 14 — `SolverCache`: solve-level buffer pre-allocation
+
+**Allocation budget.** Counting `PauliSum` allocations per step in the current code:
+
+| Item                               | Count per step |
+|------------------------------------|----------------|
+| `y.clone()` for yi stages + y_new  | 6 (stages 2–6 + y_new) |
+| `rhs()` internal alloc for k2..k7  | 6              |
+| `err_vec` fresh build              | 1              |
+| `k1.clone()` in `solve_mut`        | 1              |
+| **Total**                          | **14**         |
+
+After Task 14 all of these drop to zero per step. Nine `PauliSum`s are allocated once per
+`solve` call (or once per user-managed `SolverCache`). The `estimate_h0` helper still
+allocates via `rhs()` but is called only once per solve and is not on the hot path.
+
+**`rhs_into` (prerequisite, added in this task).** Add
+`pub(crate) fn rhs_into<T: Config>(ham, lindblad, p, result: &mut PauliSum<T>)` that:
+1. Clears the output map: `result.data_mut().clear()` (retains allocated capacity).
+2. Calls `commutator_real` and `lindblad.apply` accumulating into `result`.
+3. Calls `result.truncate()`.
+
+Add `T::Map: ACMapBase` to the where-clause. Keep the existing `rhs` as a one-line
+wrapper (allocates a fresh buffer, calls `rhs_into`) so `estimate_h0` and tests continue
+to compile unchanged.
+
+**`SolverCache` layout.** A flat `Vec<PauliSum<T>>` of length 7 holds all k-vectors:
+index 0 is the FSAL carry-over (k1), indices 1–6 are stage buffers for k2–k7. One
+additional `PauliSum` holds stage states and the 5th-order solution; another holds the
+error estimate.
+
+```rust
+pub struct SolverCache<T: Config> {
+    pub(crate) k:         Vec<PauliSum<T>>,  // length 7; k[0] = FSAL (k1), k[1..=6] = k2..k7
+    pub(crate) y_scratch: PauliSum<T>,        // reused for all yi and y_new
+    pub(crate) err:       PauliSum<T>,        // error estimate vector
+}
+
+impl<T: Config> SolverCache<T> {
+    pub fn new(template: &PauliSum<T>) -> Self;  // allocates all 9 PauliSums
+}
+```
+
+`SolverCache::new` uses `template` only to read `n_qubits` and `strategy`; it does not
+clone `template`'s data.
+
+**`HashMap::clone_from` for stage states.** `T::Map: Clone` is satisfied by all standard
+configs. `clone_from(&other)` clears the map and re-inserts from `other` without a new
+`malloc`, provided the table has sufficient capacity. Replace every `let mut yi = y.clone()`
+in `step` with:
+```rust
+cache.y_scratch.data_mut().clone_from(y.data());
+// then add_scaled calls modify cache.y_scratch in place
+```
+
+**`std::mem::swap` for zero-copy state update.** After accepting a step, instead of
+`*state = y_new` (drops old map, copies new map header):
+```rust
+std::mem::swap(state, &mut cache.y_scratch);
+```
+The old state lands in `cache.y_scratch` and is overwritten by `clone_from` at the start
+of the next stage — no deallocation needed.
+
+**FSAL without clone.** `cache.k[0]` holds the current k1 and is borrowed immutably
+during stage computations. After k7 is written into `cache.k[6]`:
+```rust
+cache.k.swap(0, 6);  // O(1): k[0] ← k7, k[6] ← stale k1 (overwritten next step)
+```
+
+**Seeding `cache.k[0]` at the start of `solve`.** Before entering the step loop, call:
+```rust
+rhs_into(ham, lindblad, state, &mut cache.k[0]);
+```
+This replaces the current `let mut k1 = rhs(ham, lindblad, state)`.
+
+**Modified `step` signature** (lives in `dopri5.rs`):
+```rust
+pub(crate) fn step<T: Config>(
+    ham:      Option<&PauliSum<T>>,
+    lindblad: &LindbladOp<T>,
+    y:        &PauliSum<T>,
+    dt:       f64,
+    config:   &SolverConfig,
+    cache:    &mut SolverCache<T>,
+) -> StepResult    // StepResult loses T: simplified to Accept { h_new } | Reject { h_new }
+```
+
+`StepResult` in `dopri5.rs` is simplified (the generic parameter and the `y_new`/`k_next`
+fields are removed; both Accept and Reject carry only `h_new: f64`).
+
+**User-facing cache.** Expose `SolverCache<T>` publicly. Users calling `solve` many
+times with the same system (parameter sweeps, ensemble averages) can allocate the cache
+once and pass it to `solve_cached` / `solve_mut_cached`. The existing `solve` / `solve_mut`
+remain as backward-compatible wrappers that create a temporary cache internally.

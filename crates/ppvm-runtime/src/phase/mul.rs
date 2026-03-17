@@ -6,6 +6,16 @@ where
     S: std::hash::BuildHasher + Clone + Default,
 {
     fn mul_assign(&mut self, rhs: Self) {
+        *self *= &rhs;
+    }
+}
+
+impl<A, S> std::ops::MulAssign<&Self> for PhasedPauliWord<A, S>
+where
+    A: PauliStorage,
+    S: std::hash::BuildHasher + Clone + Default,
+{
+    fn mul_assign(&mut self, rhs: &Self) {
         for i in 0..self.n_qubits() {
             let x_i = self.word.xbits[i] ^ rhs.word.xbits[i];
             let z_i = self.word.zbits[i] ^ rhs.word.zbits[i];

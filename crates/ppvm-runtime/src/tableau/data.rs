@@ -274,10 +274,11 @@ where
             lambda |= one << i;
 
             // destabilizer anti-commutes, so the stabilizer contributes
-            // FIXME: don't need to clone here, just divide by phase twice
-            let mut stab_inv = stab.clone();
-            stab_inv.phase = (4 - stab.phase) % 4;
-            p_word *= stab_inv;
+            // the stabilizer is its own inverse up to its phase
+            // to avoid inverting the stabilizer, we just multiply by it
+            // and then divide by its phase squared
+            p_word *= stab;
+            p_word.add_phase(8 - 2 * stab.phase);
         }
 
         // NOTE: destabilizers also commute with one another in a valid tableau
@@ -293,9 +294,8 @@ where
             gamma |= one << i;
 
             // stabilizer anti-commutes, so the destabilizer contributes
-            let mut destab_inv = destab.clone();
-            destab_inv.phase = (4 - destab.phase) % 4;
-            p_word *= destab_inv;
+            p_word *= destab;
+            p_word.add_phase(8 - 2 * destab.phase);
         }
 
         (p_word.phase, gamma, lambda)

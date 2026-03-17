@@ -1,5 +1,3 @@
-use std::f64::consts::FRAC_PI_4;
-
 use super::data::{GeneralizedTableau, Tableau};
 use super::sparsevec::SparseVector;
 use crate::config::Config;
@@ -65,25 +63,9 @@ where
     impl_generalized_tableau_clifford!(y, index);
     impl_generalized_tableau_clifford!(z, index);
     impl_generalized_tableau_clifford!(h, index);
-    // impl_generalized_tableau_clifford!(s, index);
+    impl_generalized_tableau_clifford!(s, index);
     impl_generalized_tableau_clifford!(cnot, control, target);
     impl_generalized_tableau_clifford!(cz, control, target);
-
-    fn s(&mut self, index: usize) {
-        if self.is_lost[index] {
-            return;
-        }
-
-        self.tableau.s(index);
-
-        // for generalized tableau, phases actually matter
-        // if S is implemented as Rz(pi / 2), we need to add a phase factor of
-        // exp(-im * pi / 4)
-        let angle = FRAC_PI_4;
-        let (sin, cos) = angle.sin_cos();
-        let phase = Complex { re: cos, im: -sin };
-        self.coefficients.mul_by(phase.into());
-    }
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> CliffordExtensions
@@ -100,13 +82,5 @@ where
         self.tableau.data.iter_mut().for_each(|pw| {
             pw.s(addr0);
         });
-
-        // for generalized tableau, phases actually matter
-        // if S is implemented as Rz(pi / 2), we need to add a phase factor of
-        // exp(-im * pi / 4)
-        let angle = FRAC_PI_4;
-        let (sin, cos) = angle.sin_cos();
-        let phase = Complex { re: cos, im: sin };
-        self.coefficients.mul_by(phase.into());
     }
 }

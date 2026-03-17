@@ -8,8 +8,8 @@ use num::{
     One, Zero,
     complex::{Complex, Complex64, ComplexFloat},
 };
-use rand::rngs::SmallRng;
 use rand::SeedableRng;
+use rand::rngs::SmallRng;
 
 #[derive(Clone, Debug)]
 pub struct Tableau<T: Config> {
@@ -40,7 +40,11 @@ impl<T: Config> Tableau<T> {
             data.push(pw);
         }
 
-        Self { n_qubits, data, rng: rand::make_rng() }
+        Self {
+            n_qubits,
+            data,
+            rng: rand::make_rng(),
+        }
     }
 
     pub fn new_with_seed(n_qubits: usize, seed: u64) -> Self {
@@ -270,6 +274,7 @@ where
             lambda |= one << i;
 
             // destabilizer anti-commutes, so the stabilizer contributes
+            // FIXME: don't need to clone here, just divide by phase twice
             let mut stab_inv = stab.clone();
             stab_inv.phase = (4 - stab.phase) % 4;
             p_word *= stab_inv;

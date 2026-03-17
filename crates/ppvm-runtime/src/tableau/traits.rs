@@ -19,6 +19,10 @@ pub trait Measure {
     fn measure(&mut self, addr0: usize) -> bool;
 }
 
+pub trait LossyMeasure {
+    fn measure(&mut self, addr0: usize) -> Option<bool>;
+}
+
 pub trait CliffordExtensions: Clifford {
     fn s_adj(&mut self, addr0: usize);
     fn sqrt_x(&mut self, addr0: usize) {
@@ -74,7 +78,11 @@ impl<I> TableauIndex for I where
 {
 }
 
-pub trait Reset: Clifford + Measure {
+pub trait Reset {
+    fn reset(&mut self, addr0: usize);
+}
+
+impl<T: Config> Reset for Tableau<T> {
     fn reset(&mut self, addr0: usize) {
         let m = self.measure(addr0);
         if m {
@@ -82,8 +90,6 @@ pub trait Reset: Clifford + Measure {
         }
     }
 }
-
-impl<T: Config> Reset for Tableau<T> {}
 
 impl<T, I, C> Reset for GeneralizedTableau<T, I, C>
 where
@@ -105,4 +111,11 @@ where
         + One
         + ComplexFloat,
 {
+    fn reset(&mut self, addr0: usize) {
+        let m = self.measure(addr0);
+
+        if let Some(true) = m {
+            self.x(addr0);
+        }
+    }
 }

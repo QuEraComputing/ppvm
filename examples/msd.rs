@@ -86,7 +86,7 @@ fn main() {
 
     let bit_string: String = (0..n_qubits)
         .map(|i| tab.measure(i))
-        .map(|outcome| if outcome { '1' } else { '0' })
+        .map(|outcome| if outcome.unwrap() { '1' } else { '0' })
         .collect();
 
     println!("{}", bit_string);
@@ -100,7 +100,7 @@ fn encode(tab: &mut Tab, qubits: &[usize]) {
     // reset
     for i in 0..qubits.len() {
         let m = tab.measure(qubits[i]);
-        if m {
+        if m.unwrap() {
             tab.x(qubits[i]);
         }
     }

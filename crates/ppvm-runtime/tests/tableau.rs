@@ -198,7 +198,7 @@ fn test_generalized_tableau_multiqubit_branching() {
     assert_eq!(tableau.coefficients.len(), 2_usize.pow(tgate_counter - 1));
 
     // let's move it back
-    if outcome {
+    if outcome.unwrap() {
         tableau.x(0);
     }
 
@@ -522,7 +522,7 @@ fn test_t_gate_measurement_statistics() {
         tableau.h(0);
         tableau.t(0);
 
-        if tableau.measure(0) {
+        if tableau.measure(0).unwrap() {
             count_one += 1;
         }
     }
@@ -549,7 +549,7 @@ fn test_sqrt_y_direction() {
     tableau.sqrt_y(0);
     tableau.h(0);
     assert!(
-        !tableau.measure(0),
+        !tableau.measure(0).unwrap(),
         "sqrt_y|0⟩ should be |+⟩; after H measurement must be 0"
     );
 
@@ -558,7 +558,7 @@ fn test_sqrt_y_direction() {
     tableau.sqrt_y_adj(0);
     tableau.h(0);
     assert!(
-        tableau.measure(0),
+        tableau.measure(0).unwrap(),
         "sqrt_y_adj|0⟩ should be |−⟩; after H measurement must be 1"
     );
 }

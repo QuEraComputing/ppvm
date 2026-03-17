@@ -1,5 +1,5 @@
 use super::data::{GeneralizedTableau, Tableau, symplectic_inner};
-use super::traits::Measure;
+use super::traits::{LossyMeasure, Measure};
 use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
 use crate::tableau::traits::TableauIndex;
@@ -41,7 +41,8 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64::new(0.0, -1.0), // -i
 ];
 
-impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> Measure for GeneralizedTableau<T, I, C>
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> LossyMeasure
+    for GeneralizedTableau<T, I, C>
 where
     T: Config,
     C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
@@ -61,9 +62,9 @@ where
         + ComplexFloat,
     I: TableauIndex + Debug,
 {
-    fn measure(&mut self, addr0: usize) -> bool {
+    fn measure(&mut self, addr0: usize) -> Option<bool> {
         if self.is_lost[addr0] {
-            return false;
+            return None;
         }
         // NOTE: regardless of whether Z is a stabilizer, we need to compute
         // the probabilities, since the coefficients may make a Z stabilizer
@@ -218,6 +219,6 @@ where
             // 3. check the anticommutation -- combine with coefficient update
             self.trim_coefficients_for_measurement(addr0, outcome, z_sign);
         }
-        outcome
+        Some(outcome)
     }
 }

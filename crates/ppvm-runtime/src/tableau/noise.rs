@@ -4,7 +4,7 @@ use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 
 use super::data::{GeneralizedTableau, Tableau};
-use super::traits::Measure;
+use super::traits::LossyMeasure;
 use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
 use crate::tableau::traits::TableauIndex;
@@ -225,7 +225,7 @@ where
 
         // NOTE: this is O(n^2) but also potentially removes coefficients, which is nice
         let outcome = self.measure(addr0);
-        if outcome {
+        if let Some(true) = outcome {
             // flip back to 0
             self.x(addr0);
         }
@@ -259,7 +259,7 @@ mod tests {
     fn depolarize_p0_no_change() {
         let mut t = tab(1);
         t.depolarize(0, 0.0);
-        assert!(!t.measure(0));
+        assert!(!t.measure(0).unwrap());
     }
 
     #[test]
@@ -276,28 +276,28 @@ mod tests {
     fn pauli_error_zero_prob_no_change() {
         let mut t = tab(1);
         t.pauli_error(0, [0.0, 0.0, 0.0]);
-        assert!(!t.measure(0));
+        assert!(!t.measure(0).unwrap());
     }
 
     #[test]
     fn pauli_error_x_flips_qubit() {
         let mut t = tab(1);
         t.pauli_error(0, [1.0, 0.0, 0.0]); // X|0⟩ = |1⟩
-        assert!(t.measure(0));
+        assert!(t.measure(0).unwrap());
     }
 
     #[test]
     fn pauli_error_y_flips_qubit() {
         let mut t = tab(1);
         t.pauli_error(0, [0.0, 1.0, 0.0]); // Y|0⟩ = i|1⟩
-        assert!(t.measure(0));
+        assert!(t.measure(0).unwrap());
     }
 
     #[test]
     fn pauli_error_z_no_measurement_change() {
         let mut t = tab(1);
         t.pauli_error(0, [0.0, 0.0, 1.0]); // Z|0⟩ = -|0⟩, still measures 0
-        assert!(!t.measure(0));
+        assert!(!t.measure(0).unwrap());
     }
 
     #[test]
@@ -305,7 +305,7 @@ mod tests {
         let mut t = tab(1);
         t.x(0); // |1⟩
         t.pauli_error(0, [1.0, 0.0, 0.0]); // X|1⟩ = |0⟩
-        assert!(!t.measure(0));
+        assert!(!t.measure(0).unwrap());
     }
 
     // === TwoQubitPauliError ===
@@ -314,8 +314,8 @@ mod tests {
     fn two_qubit_pauli_error_zero_prob_no_change() {
         let mut t = tab(2);
         t.two_qubit_pauli_error(0, 1, [0.0; 15]);
-        assert!(!t.measure(0));
-        assert!(!t.measure(1));
+        assert!(!t.measure(0).unwrap());
+        assert!(!t.measure(1).unwrap());
     }
 
     #[test]
@@ -325,8 +325,8 @@ mod tests {
         let mut p = [0.0f64; 15];
         p[0] = 1.0;
         t.two_qubit_pauli_error(0, 1, p);
-        assert!(!t.measure(0));
-        assert!(t.measure(1));
+        assert!(!t.measure(0).unwrap());
+        assert!(t.measure(1).unwrap());
     }
 
     #[test]
@@ -336,8 +336,8 @@ mod tests {
         let mut p = [0.0f64; 15];
         p[3] = 1.0;
         t.two_qubit_pauli_error(0, 1, p);
-        assert!(t.measure(0));
-        assert!(!t.measure(1));
+        assert!(t.measure(0).unwrap());
+        assert!(!t.measure(1).unwrap());
     }
 
     #[test]
@@ -347,8 +347,8 @@ mod tests {
         let mut p = [0.0f64; 15];
         p[4] = 1.0;
         t.two_qubit_pauli_error(0, 1, p);
-        assert!(t.measure(0));
-        assert!(t.measure(1));
+        assert!(t.measure(0).unwrap());
+        assert!(t.measure(1).unwrap());
     }
 
     #[test]
@@ -358,8 +358,8 @@ mod tests {
         let mut p = [0.0f64; 15];
         p[14] = 1.0;
         t.two_qubit_pauli_error(0, 1, p);
-        assert!(!t.measure(0));
-        assert!(!t.measure(1));
+        assert!(!t.measure(0).unwrap());
+        assert!(!t.measure(1).unwrap());
     }
 
     #[test]
@@ -382,7 +382,7 @@ mod tests {
         let mut p = [0.0f64; 15];
         p[0] = 1.0; // IX
         t.two_qubit_pauli_error(0, 1, p);
-        assert!(!t.measure(1)); // nothing applied to addr1
+        assert!(!t.measure(1).unwrap()); // nothing applied to addr1
     }
 
     // === Depolarizing2 ===
@@ -391,8 +391,8 @@ mod tests {
     fn depolarize2_p0_no_change() {
         let mut t = tab(2);
         t.depolarize2(0, 1, 0.0);
-        assert!(!t.measure(0));
-        assert!(!t.measure(1));
+        assert!(!t.measure(0).unwrap());
+        assert!(!t.measure(1).unwrap());
     }
 
     #[test]
@@ -410,7 +410,7 @@ mod tests {
         let mut t = tab(2);
         t.is_lost[0] = true;
         t.depolarize2(0, 1, 0.0); // effective p on addr1 = 4/5 * 0 = 0
-        assert!(!t.measure(1));
+        assert!(!t.measure(1).unwrap());
     }
 
     #[test]
@@ -418,7 +418,7 @@ mod tests {
         let mut t = tab(2);
         t.is_lost[1] = true;
         t.depolarize2(0, 1, 0.0); // effective p on addr0 = 4/5 * 0 = 0
-        assert!(!t.measure(0));
+        assert!(!t.measure(0).unwrap());
     }
 
     // === LossChannel ===
@@ -444,7 +444,7 @@ mod tests {
         t.x(0);
         t.loss_channel(0, 1.0);
         assert!(t.is_lost[0]);
-        assert!(!t.measure(0)); // Reset to |0⟩ before marking lost
+        assert!(t.measure(0) == None); // Reset to |0⟩ before marking lost
     }
 
     #[test]
@@ -452,7 +452,9 @@ mod tests {
         let mut t = tab(1);
         t.loss_channel(0, 1.0);
         t.x(0); // No-op: qubit is lost
-        assert!(!t.measure(0)); // Still |0⟩
+        assert!(t.measure(0) == None);
+        t.is_lost[0] = false;
+        assert!(!t.measure(0).unwrap()); // still 0
     }
 
     #[test]
@@ -482,7 +484,7 @@ mod tests {
         t.x(0); // |1⟩
         t.loss_channel(0, 1.0); // measures, resets to |0⟩, marks lost
         t.reset_loss_channel(0);
-        assert!(!t.measure(0)); // back in |0⟩
+        assert!(!t.measure(0).unwrap()); // back in |0⟩
     }
 
     #[test]
@@ -491,7 +493,7 @@ mod tests {
         t.loss_channel(0, 1.0);
         t.reset_loss_channel(0);
         t.x(0); // should no longer be a no-op
-        assert!(t.measure(0));
+        assert!(t.measure(0).unwrap());
     }
 
     // === Statistical tests ===
@@ -508,7 +510,7 @@ mod tests {
             .filter(|_| {
                 let mut t = tab(1);
                 t.depolarize(0, p);
-                t.measure(0)
+                t.measure(0).unwrap()
             })
             .count();
 
@@ -532,7 +534,7 @@ mod tests {
             .filter(|_| {
                 let mut t = tab(2);
                 t.depolarize2(0, 1, p);
-                t.measure(0)
+                t.measure(0).unwrap()
             })
             .count();
 
@@ -550,15 +552,15 @@ mod tests {
         t.x(0);
         t.cnot(0, 1);
         t.loss_channel(0, 1.0);
-        assert!(!t.measure(0));
-        assert!(t.measure(1));
+        assert!(t.measure(0) == None);
+        assert!(t.measure(1).unwrap());
 
         let mut t = tab(2);
         t.loss_channel(0, 1.0);
         t.x(0);
         t.cnot(0, 1);
-        assert!(!t.measure(1));
-        assert!(!t.measure(0));
+        assert!(!t.measure(1).unwrap());
+        assert!(t.measure(0) == None);
     }
 
     #[test]
@@ -576,7 +578,7 @@ mod tests {
 
             let outcome0 = t_trial.measure(0);
             let outcome1 = t_trial.measure(1);
-            if outcome0 == outcome1 {
+            if outcome0.unwrap_or(false) == outcome1.unwrap_or(false) {
                 z_avg += 1.0 / trials as f64;
             } else {
                 z_avg += -1.0 / trials as f64;

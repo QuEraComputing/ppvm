@@ -80,7 +80,7 @@ fn msd_func() -> String {
 
     let bit_string: String = (0..n_qubits)
         .map(|i| tab.measure(i))
-        .map(|outcome| if outcome { '1' } else { '0' })
+        .map(|outcome| if outcome.unwrap() { '1' } else { '0' })
         .collect();
 
     bit_string

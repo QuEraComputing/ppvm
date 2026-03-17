@@ -81,7 +81,7 @@ where
 mod tests {
     use super::*;
     use crate::config::fxhash::ByteF64;
-    use crate::tableau::Measure;
+    use crate::tableau::LossyMeasure;
     use crate::traits::Clifford;
     use std::f64::consts::{FRAC_PI_2, PI};
 
@@ -96,8 +96,8 @@ mod tests {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.rxx(0, 1, PI);
         assert_eq!(tab.coefficients.len(), 1, "rxx(π) should not branch");
-        assert!(tab.measure(0));
-        assert!(tab.measure(1));
+        assert!(tab.measure(0).unwrap());
+        assert!(tab.measure(1).unwrap());
     }
 
     /// rxx(π/2) on |00⟩ creates a Bell-like state (|00⟩ - i|11⟩)/√2: two branches.
@@ -118,8 +118,8 @@ mod tests {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.rxx(0, 1, FRAC_PI_2);
         tab.rxx(0, 1, FRAC_PI_2);
-        assert!(tab.measure(0));
-        assert!(tab.measure(1));
+        assert!(tab.measure(0).unwrap());
+        assert!(tab.measure(1).unwrap());
     }
 
     // --- ryy ---
@@ -131,8 +131,8 @@ mod tests {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.ryy(0, 1, PI);
         assert_eq!(tab.coefficients.len(), 1, "ryy(π) should not branch");
-        assert!(tab.measure(0));
-        assert!(tab.measure(1));
+        assert!(tab.measure(0).unwrap());
+        assert!(tab.measure(1).unwrap());
     }
 
     /// ryy(π/2) on |00⟩ creates a Bell-like state (|00⟩ + i|11⟩)/√2: two branches.
@@ -153,8 +153,8 @@ mod tests {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.ryy(0, 1, FRAC_PI_2);
         tab.ryy(0, 1, FRAC_PI_2);
-        assert!(tab.measure(0));
-        assert!(tab.measure(1));
+        assert!(tab.measure(0).unwrap());
+        assert!(tab.measure(1).unwrap());
     }
 
     // --- rzz ---
@@ -170,8 +170,8 @@ mod tests {
             1,
             "rzz(π) on |00⟩ should not branch"
         );
-        assert!(!tab.measure(0));
-        assert!(!tab.measure(1));
+        assert!(!tab.measure(0).unwrap());
+        assert!(!tab.measure(1).unwrap());
     }
 
     /// rzz never branches on a computational basis state: ZZ is diagonal in the Z basis.
@@ -197,8 +197,8 @@ mod tests {
             1,
             "rzz(π) on |10⟩ should not branch"
         );
-        assert!(tab.measure(0));
-        assert!(!tab.measure(1));
+        assert!(tab.measure(0).unwrap());
+        assert!(!tab.measure(1).unwrap());
     }
 
     // --- branching + physical correlation checks ---

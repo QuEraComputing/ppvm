@@ -164,12 +164,13 @@ fn test_measure_generalized_tableau_bell() {
     let outcome = tableau.measure(0);
     println!("{}", tableau);
 
-    println!("Outcome: {}", outcome);
+    println!("Outcome: {:?}", outcome);
     assert!(tableau.coefficients.len() == 1);
 
     let tableau_outcome = tableau.tableau.measure(0);
     assert_eq!(
-        tableau_outcome, outcome,
+        tableau_outcome,
+        outcome.unwrap(),
         "Tableau measurement outcome should match sampled outcome"
     );
 
@@ -187,14 +188,14 @@ fn test_measure_generalized_tableau_deterministic() {
 
     let outcome = tableau.measure(0);
     assert_eq!(tableau.coefficients.len(), 1);
-    assert_eq!(outcome, false);
+    assert_eq!(outcome.unwrap(), false);
     assert!((tableau.coefficients[0].0 - 1.0).re.abs() < 1e-10);
     assert!(tableau.coefficients[0].0.im.abs() < 1e-10);
 
     tableau.x(0);
     let outcome = tableau.measure(0);
     assert_eq!(tableau.coefficients.len(), 1);
-    assert_eq!(outcome, true);
+    assert_eq!(outcome.unwrap(), true);
     assert!((tableau.coefficients[0].0 - 1.0).re.abs() < 1e-10);
     assert!(tableau.coefficients[0].0.im.abs() < 1e-10);
 }
@@ -214,7 +215,7 @@ fn test_measure_generalized_random() {
     let i = tableau.coefficients[0].0.im.abs();
     assert!(((r * r + i * i).sqrt() - 1.0) < 1e-10);
     println!("{}", tableau);
-    println!("{}", outcome);
+    println!("{:?}", outcome);
 }
 
 #[test]
@@ -235,7 +236,7 @@ fn test_measure_generalized_tableau_statistics() {
         tableau.t(1);
 
         let outcome = tableau.measure(0);
-        if outcome {
+        if outcome.unwrap() {
             count_one += 1;
         } else {
             count_zero += 1;
@@ -328,7 +329,7 @@ fn test_measure_generalized_deterministic_with_t() {
     assert_eq!(tableau.coefficients.len(), 1);
 
     let outcome = tableau.measure(0);
-    assert_eq!(outcome, false, "T|0⟩ should measure as 0");
+    assert_eq!(outcome.unwrap(), false, "T|0⟩ should measure as 0");
     assert_eq!(tableau.coefficients.len(), 1);
 
     // T|1⟩ = e^{iπ/4}|1⟩ (no branching, Z eigenstate)
@@ -339,7 +340,7 @@ fn test_measure_generalized_deterministic_with_t() {
     assert_eq!(tableau.coefficients.len(), 1);
 
     let outcome = tableau.measure(0);
-    assert_eq!(outcome, true, "T|1⟩ should measure as 1");
+    assert_eq!(outcome.unwrap(), true, "T|1⟩ should measure as 1");
     assert_eq!(tableau.coefficients.len(), 1);
 }
 
@@ -391,7 +392,7 @@ fn test_measure_product_state_independence() {
         tableau.measure(0);
 
         // Qubit 1 should still be 50/50 (T|+⟩ has equal amplitudes)
-        if tableau.measure(1) {
+        if tableau.measure(1).unwrap() {
             count_q1_one += 1;
         }
     }
@@ -422,7 +423,7 @@ fn test_measure_generalized_ghz_correlation() {
             let outcome = tableau.measure(i);
             assert_eq!(
                 outcome, first,
-                "GHZ qubit {} should match qubit 0 (trial outcome={})",
+                "GHZ qubit {} should match qubit 0 (trial outcome={:?})",
                 i, first
             );
         }
@@ -526,7 +527,8 @@ fn test_measure_generalized_agrees_with_inner_tableau() {
         // The inner tableau should now deterministically agree
         let inner_outcome0 = tableau.tableau.measure(0);
         assert_eq!(
-            outcome0, inner_outcome0,
+            outcome0.unwrap(),
+            inner_outcome0,
             "Inner tableau must agree with generalized measurement"
         );
 
@@ -556,7 +558,8 @@ fn test_measure_generalized_tableau_t_gate_deterministic() {
     println!("Tableau before measurement:\n{}", tableau);
     let outcome = tableau.measure(0);
     assert_eq!(
-        outcome, false,
+        outcome.unwrap(),
+        false,
         "State should be |0⟩ after T and S rotations"
     );
 }
@@ -580,7 +583,7 @@ fn test_measure_generalized_tableau_t_gate_random() {
 
     for i in 0..trials {
         let mut copy = tableau.fork(Some(i as u64));
-        if copy.measure(0) {
+        if copy.measure(0).unwrap() {
             count_q1_one += 1;
         }
     }
@@ -618,7 +621,7 @@ fn test_measure_z_stabilizer_random() {
     for i in 0..trials {
         let mut tab = tableau.fork(Some(i));
         let outcome = tab.measure(0);
-        count_one += outcome as u64;
+        count_one += outcome.unwrap() as u64;
     }
 
     // about 50% of the time we should measure 1
@@ -637,7 +640,7 @@ fn test_measure_opposite_deterministic() {
 
     println!("{}", tab);
 
-    println!("{}", tab.measure(0));
+    println!("{}", tab.measure(0).unwrap());
 }
 
 #[test]
@@ -673,19 +676,25 @@ fn test_measure_order_sqrt_vs_rot() {
 
     for i in 0..n_shots {
         let mut tab_sqrt_measure = tab_sqrt.fork(Some(i as u64));
-        samples_sqrt.push((tab_sqrt_measure.measure(0), tab_sqrt_measure.measure(1)));
+        samples_sqrt.push((
+            tab_sqrt_measure.measure(0).unwrap(),
+            tab_sqrt_measure.measure(1).unwrap(),
+        ));
 
         let mut tab_rot_measure = tab_rot.fork(Some(i as u64));
-        samples_rot.push((tab_rot_measure.measure(0), tab_rot_measure.measure(1)));
+        samples_rot.push((
+            tab_rot_measure.measure(0).unwrap(),
+            tab_rot_measure.measure(1).unwrap(),
+        ));
 
         // measure qubit 1 first
         let mut tab_sqrt_rev_measure = tab_sqrt.fork(Some(i as u64 + n_shots as u64));
         let val1 = tab_sqrt_rev_measure.measure(1);
-        samples_sqrt_rev.push((tab_sqrt_rev_measure.measure(0), val1));
+        samples_sqrt_rev.push((tab_sqrt_rev_measure.measure(0).unwrap(), val1.unwrap()));
 
         let mut tab_rot_rev_measure = tab_rot.fork(Some(i as u64 + n_shots as u64));
         let val1_r = tab_rot_rev_measure.measure(1);
-        samples_rot_rev.push((tab_rot_rev_measure.measure(0), val1_r));
+        samples_rot_rev.push((tab_rot_rev_measure.measure(0).unwrap(), val1_r.unwrap()));
     }
 
     println!("Sqrt: {}", tab_sqrt);
@@ -764,10 +773,16 @@ fn test_seed_reproducibility() {
 
         let outcome_a0 = tab_a.measure(0);
         let outcome_b0 = tab_b.measure(0);
-        assert_eq!(outcome_a0, outcome_b0, "shot {shot}: qubit 0 outcomes diverged");
+        assert_eq!(
+            outcome_a0, outcome_b0,
+            "shot {shot}: qubit 0 outcomes diverged"
+        );
 
         let outcome_a1 = tab_a.measure(1);
         let outcome_b1 = tab_b.measure(1);
-        assert_eq!(outcome_a1, outcome_b1, "shot {shot}: qubit 1 outcomes diverged");
+        assert_eq!(
+            outcome_a1, outcome_b1,
+            "shot {shot}: qubit 1 outcomes diverged"
+        );
     }
 }

@@ -10,4 +10,4 @@ mod tgate;
 mod traits;
 
 pub use data::{GeneralizedTableau, Tableau};
-pub use traits::{CliffordExtensions, Measure, Reset, TGate};
+pub use traits::{CliffordExtensions, LossyMeasure, Measure, Reset, TGate};

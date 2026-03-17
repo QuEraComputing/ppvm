@@ -43,7 +43,7 @@ where
 mod tests {
     use super::*;
     use crate::config::fxhash::ByteF64;
-    use crate::tableau::Measure;
+    use crate::tableau::LossyMeasure;
     use std::f64::consts::{FRAC_PI_2, PI};
 
     type TestConfig = ByteF64<1>;
@@ -59,7 +59,7 @@ mod tests {
         assert_eq!(tab.coefficients.len(), 1);
 
         let result = tab.measure(0);
-        assert!(result, "Expected to measure 1, got {}", result);
+        assert!(result.unwrap(), "Expected to measure 1, got {:?}", result);
     }
 
     #[test]
@@ -69,7 +69,7 @@ mod tests {
         // make sure we don't branch
         assert_eq!(tab.coefficients.len(), 1);
         let result = tab.measure(0);
-        assert!(result, "Expected to measure 1, got {}", result);
+        assert!(result.unwrap(), "Expected to measure 1, got {:?}", result);
     }
 
     #[test]
@@ -79,7 +79,7 @@ mod tests {
         // make sure we don't branch
         assert_eq!(tab.coefficients.len(), 1);
         let result = tab.measure(0);
-        assert!(!result, "Expected to measure 0, got {}", result);
+        assert!(!result.unwrap(), "Expected to measure 0, got {:?}", result);
     }
 
     #[test]
@@ -94,7 +94,7 @@ mod tests {
         for i in 0..trials {
             let mut tmp_tab = tab.fork(Some(i));
             let result = tmp_tab.measure(0);
-            count_one += result as u8;
+            count_one += result.unwrap() as u8;
         }
         println!("{}", count_one);
         assert!(35 < count_one && count_one < 65);
@@ -107,7 +107,7 @@ mod tests {
 
         assert_eq!(tab.coefficients.len(), 1);
 
-        assert!(!tab.measure(0));
+        assert!(!tab.measure(0).unwrap());
     }
 
     #[test]
@@ -117,28 +117,28 @@ mod tests {
 
         assert_eq!(tab.coefficients.len(), 1);
 
-        assert!(!tab.measure(1));
-        assert!(tab.measure(0));
+        assert!(!tab.measure(1).unwrap());
+        assert!(tab.measure(0).unwrap());
 
         tab.rx(1, PI);
 
         assert_eq!(tab.coefficients.len(), 1);
 
-        assert!(tab.measure(1));
-        assert!(tab.measure(0));
+        assert!(tab.measure(1).unwrap());
+        assert!(tab.measure(0).unwrap());
 
         tab.rx(0, PI);
 
         assert_eq!(tab.coefficients.len(), 1);
 
-        assert!(tab.measure(1));
-        assert!(!tab.measure(0));
+        assert!(tab.measure(1).unwrap());
+        assert!(!tab.measure(0).unwrap());
 
         tab.rx(1, PI);
 
         assert_eq!(tab.coefficients.len(), 1);
 
-        assert!(!tab.measure(1));
-        assert!(!tab.measure(0));
+        assert!(!tab.measure(1).unwrap());
+        assert!(!tab.measure(0).unwrap());
     }
 }

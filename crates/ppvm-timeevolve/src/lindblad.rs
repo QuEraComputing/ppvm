@@ -166,11 +166,10 @@ where
 }
 
 /// Computes `dP/dt = i[ham, P] + L(P)` and returns the result.
-#[allow(dead_code)] // called from solve.rs (Task 7)
 ///
 /// Creates a fresh zero-initialised `PauliSum` using `T::Strategy::default()`, calls
 /// `commutator_real` if `ham` is provided, then `lindblad.apply`, then `truncate()`.
-pub(crate) fn rhs<T: Config>(
+pub fn rhs<T: Config>(
     ham: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
     p: &PauliSum<T>,

@@ -17,5 +17,3 @@ def test_ghz():
     # since there is a factor of two from adding up flipped signs, but a factor
     # of 1/2 since it's only the |11> part, we should arrive at 1 - p
     assert abs(ps.overlap_with_zero() - (1 - p)) < 1e-9
-
-

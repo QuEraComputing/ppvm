@@ -163,9 +163,29 @@ class GeneralizedTableau(
         self._interface.reset(addr0)
 
     def reset_loss_channel(self, addr0: int) -> None:
-        """Reset the loss channel for the specified qubit.
+        """Reset a lost qubit to being active again.
 
         Args:
             addr0: The index of the target qubit.
         """
         self._interface.reset_loss_channel(addr0)
+
+    def is_lost(self, addr0: int) -> bool:
+        """Check whether a qubit has been lost.
+
+        Args:
+            addr0: The index of the qubit.
+
+        Returns:
+            True if the qubit is lost, False otherwise.
+        """
+        return self._interface.is_lost(addr0)
+
+    def loss_values(self) -> list[bool]:
+        """Return the loss state of all qubits.
+
+        Returns:
+            A list of booleans of length ``n_qubits``, where each entry is
+            True if the corresponding qubit is lost and False otherwise.
+        """
+        return self._interface.loss_values()

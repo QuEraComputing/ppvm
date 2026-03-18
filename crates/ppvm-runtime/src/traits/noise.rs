@@ -1,5 +1,7 @@
 use crate::config::Config;
 
+// FIXME: most channels don't need to own probs, we can just reference them and clean up the code
+
 pub trait PauliError<T: Config> {
     fn pauli_error(&mut self, addr0: usize, p: [T::Coeff; 3]);
 }

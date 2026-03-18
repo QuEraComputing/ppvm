@@ -6,6 +6,7 @@ mod noise;
 mod rot1;
 mod rot2;
 mod sparsevec;
+mod stim;
 mod tgate;
 mod traits;
 

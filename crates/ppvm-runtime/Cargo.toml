@@ -58,3 +58,7 @@ harness = false
 [[bench]]
 name = "tableau-msd"
 harness = false
+
+[[bench]]
+name = "tableau-msd-stim"
+harness = false

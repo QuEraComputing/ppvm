@@ -13,7 +13,6 @@ use num::{
     Complex, One, ToPrimitive, Zero,
     complex::{Complex64, ComplexFloat},
 };
-use std::collections::HashMap;
 use std::fmt::Debug;
 
 /// Split `s` by commas that are not inside parentheses.
@@ -46,18 +45,13 @@ fn parse_pi_expr(s: &str) -> f64 {
 }
 
 pub trait RunStim {
-    fn run_stim_string(&mut self, circuit: &str) -> HashMap<usize, Option<bool>>;
-    fn parse_line(
-        &mut self,
-        line: &str,
-        line_no: &usize,
-        results: &mut HashMap<usize, Option<bool>>,
-    );
+    fn run_stim_string(&mut self, circuit: &str) -> Vec<Option<bool>>;
+    fn parse_line(&mut self, line: &str, line_no: &usize, results: &mut Vec<Option<bool>>);
     fn parse_instruction(
         line: &str,
         line_no: usize,
     ) -> (&str, Option<Vec<&str>>, Option<Vec<f64>>, &str);
-    fn run_stim_file(&mut self, file_path: &str) -> HashMap<usize, Option<bool>> {
+    fn run_stim_file(&mut self, file_path: &str) -> Vec<Option<bool>> {
         let circuit = std::fs::read_to_string(file_path)
             .unwrap_or_else(|e| panic!("failed to read stim file {}: {}", file_path, e));
         self.run_stim_string(&circuit)
@@ -84,8 +78,8 @@ where
         + ComplexFloat,
     I: TableauIndex + Debug,
 {
-    fn run_stim_string(&mut self, circuit: &str) -> HashMap<usize, Option<bool>> {
-        let mut results = HashMap::new();
+    fn run_stim_string(&mut self, circuit: &str) -> Vec<Option<bool>> {
+        let mut results = Vec::<Option<bool>>::new();
         for (i, line) in circuit.lines().enumerate() {
             let trimmed_line = line.trim();
             if trimmed_line.is_empty() {
@@ -102,12 +96,7 @@ where
         results
     }
 
-    fn parse_line(
-        &mut self,
-        line: &str,
-        line_no: &usize,
-        results: &mut HashMap<usize, Option<bool>>,
-    ) {
+    fn parse_line(&mut self, line: &str, line_no: &usize, results: &mut Vec<Option<bool>>) {
         let (instruction, tags, parens_args, addr_part) = Self::parse_instruction(line, *line_no);
         let addrs = addr_part
             .split_whitespace()
@@ -357,7 +346,7 @@ where
 
             "M" => {
                 for addr in addrs {
-                    results.insert(addr, self.measure(addr));
+                    results.push(self.measure(addr));
                 }
             }
 
@@ -367,7 +356,7 @@ where
                     if outcome == Some(true) {
                         self.x(addr);
                     }
-                    results.insert(addr, outcome);
+                    results.push(outcome);
                 }
             }
 
@@ -604,20 +593,20 @@ mod tests {
 
     #[test]
     fn test_run_stim_string_measurements() {
+        // M 0 1: results[0] = qubit 0, results[1] = qubit 1 (circuit order)
         let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
             GeneralizedTableau::new(2, 1e-10);
         let results = tab.run_stim_string("X 0\nM 0 1");
-        assert_eq!(results.get(&0), Some(&Some(true)));
-        assert_eq!(results.get(&1), Some(&Some(false)));
+        assert_eq!(results, vec![Some(true), Some(false)]);
     }
 
     #[test]
     fn test_run_stim_string_double_measurement() {
-        // Second measurement of qubit 0 overwrites the first in the map
+        // Each M appends in circuit order; qubit 0 measured twice gets two entries
         let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
             GeneralizedTableau::new(1, 1e-10);
         let results = tab.run_stim_string("X 0\nM 0\nM 0");
-        assert_eq!(results.get(&0), Some(&Some(true)));
+        assert_eq!(results, vec![Some(true), Some(true)]);
     }
 
     #[test]
@@ -628,7 +617,6 @@ mod tests {
         let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
             GeneralizedTableau::new(2, 1e-10);
         let results = tab.run_stim_file(path.to_str().unwrap());
-        assert_eq!(results.get(&0), Some(&Some(true)));
-        assert_eq!(results.get(&1), Some(&Some(false)));
+        assert_eq!(results, vec![Some(true), Some(false)]);
     }
 }

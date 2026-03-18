@@ -21,6 +21,14 @@ class MeasurementResult(enum.IntEnum):
     ONE = 1
     LOST = 2
 
+    @staticmethod
+    def _from_raw(result: bool | None) -> "MeasurementResult":
+        if result is None:
+            return MeasurementResult.LOST
+        if result:
+            return MeasurementResult.ONE
+        return MeasurementResult.ZERO
+
 
 @dataclass(frozen=True)
 class GeneralizedTableau(
@@ -182,12 +190,7 @@ class GeneralizedTableau(
             ``LOST`` if the qubit has been lost, ``ZERO`` or ``ONE`` otherwise.
         """
         m = self._interface.measure(addr0)
-        if m is None:
-            return MeasurementResult.LOST
-        elif m:
-            return MeasurementResult.ONE
-        else:
-            return MeasurementResult.ZERO
+        return MeasurementResult._from_raw(m)
 
     def reset(self, addr0: int) -> None:
         """Reset the specified qubit to the |0> state.
@@ -224,3 +227,60 @@ class GeneralizedTableau(
             True if the corresponding qubit is lost and False otherwise.
         """
         return self._interface.loss_values()
+
+    def run_stim_string(self, circuit: str) -> list[MeasurementResult]:
+        """Execute a STIM circuit given as a string and return all measurement results.
+
+        .. note::
+            This method **mutates** the tableau in place. To run multiple
+            independent shots, call :meth:`fork` to obtain a fresh copy before
+            each run.
+
+        Parses and runs a STIM-format circuit, applying each instruction to
+        this tableau in sequence. Only the squin subset of the STIM instruction
+        set is supported; control flow is not supported. Measurements are
+        collected in the order they appear in the circuit, following the STIM
+        convention: each measurement instruction appends its results
+        left-to-right as the qubits are listed, and later instructions append
+        after earlier ones.
+
+        Args:
+            circuit: A multi-line string containing a STIM circuit.
+
+        Returns:
+            A list of ``MeasurementResult`` values, one per measured qubit,
+            in circuit order. Each value is ``ZERO``, ``ONE``, or ``LOST``
+            (if the qubit had been lost prior to measurement).
+        """
+        results = self._interface.run_stim_string(circuit)
+        return list(map(MeasurementResult._from_raw, results))
+
+    def run_stim_file(self, file_path: str) -> list[MeasurementResult]:
+        """Execute a STIM circuit from a file and return all measurement results.
+
+        .. note::
+            This method **mutates** the tableau in place. To run multiple
+            independent shots, call :meth:`fork` to obtain a fresh copy before
+            each run.
+
+        Reads the circuit from ``file_path`` and runs it identically to
+        :meth:`run_stim_string`. Only the squin subset of the STIM instruction
+        set is supported; control flow is not supported. Measurements are
+        collected in the order they appear in the circuit, following the STIM
+        convention: each measurement instruction appends its results
+        left-to-right as the qubits are listed, and later instructions append
+        after earlier ones.
+
+        Args:
+            file_path: Path to a ``.stim`` file containing a STIM circuit.
+
+        Returns:
+            A list of ``MeasurementResult`` values, one per measured qubit,
+            in circuit order. Each value is ``ZERO``, ``ONE``, or ``LOST``
+            (if the qubit had been lost prior to measurement).
+
+        Raises:
+            pyo3_runtime.PanicException: If the file cannot be read.
+        """
+        results = self._interface.run_stim_file(file_path)
+        return list(map(MeasurementResult._from_raw, results))

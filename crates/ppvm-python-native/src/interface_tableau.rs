@@ -1,8 +1,9 @@
 use bnum::types::{U256, U512, U1024};
 use paste::paste;
 use ppvm_runtime::prelude::*;
-use ppvm_runtime::tableau::{CliffordExtensions, GeneralizedTableau, Reset};
+use ppvm_runtime::tableau::{CliffordExtensions, GeneralizedTableau, Reset, RunStim};
 use pyo3::prelude::*;
+use std::collections::HashMap;
 
 macro_rules! create_interface {
     ($name: ident, $type: ident, $indexType: ident) => {
@@ -158,6 +159,15 @@ macro_rules! create_interface {
 
             pub fn loss_values(&self) -> Vec<bool> {
                 self.inner.is_lost.clone()
+            }
+
+            // STIM integration
+            pub fn run_stim_string(&mut self, circuit: &str) -> Vec<Option<bool>> {
+                self.inner.run_stim_string(circuit)
+            }
+
+            pub fn run_stim_file(&mut self, file_path: &str) -> Vec<Option<bool>> {
+                self.inner.run_stim_file(file_path)
             }
 
             // some python niceties

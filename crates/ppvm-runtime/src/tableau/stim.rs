@@ -2,7 +2,10 @@ use super::GeneralizedTableau;
 use super::sparsevec::SparseVector;
 use super::traits::{TGate, TableauIndex};
 use crate::tableau::{CliffordExtensions, LossyMeasure, Reset};
-use crate::traits::{Clifford, Depolarizing2, PauliError, TwoQubitPauliError};
+use crate::traits::{
+    Clifford, CorrelatedLossChannel, Depolarizing2, LossChannel, PauliError, RotationOne,
+    TwoQubitPauliError, U3Gate,
+};
 use crate::{config::Config, traits::Depolarizing};
 use itertools::Itertools;
 use num::Integer;
@@ -12,10 +15,42 @@ use num::{
 };
 use std::fmt::Debug;
 
+/// Split `s` by commas that are not inside parentheses.
+fn split_commas_shallow(s: &str) -> Vec<&str> {
+    let mut depth = 0usize;
+    let mut start = 0;
+    let mut result = Vec::new();
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            ',' if depth == 0 => {
+                result.push(s[start..i].trim());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    result.push(s[start..].trim());
+    result
+}
+
+/// Parse an expression of the form `<coeff>*pi` or a plain float.
+fn parse_pi_expr(s: &str) -> f64 {
+    if let Some(coeff) = s.strip_suffix("*pi") {
+        coeff.trim().parse::<f64>().unwrap() * std::f64::consts::PI
+    } else {
+        s.parse::<f64>().unwrap()
+    }
+}
+
 pub trait RunStim {
     fn run_stim_string(&mut self, circuit: &str);
     fn parse_line(&mut self, line: &str, line_no: &usize);
-    fn parse_instruction(instruction: &str) -> (&str, Option<Vec<&str>>, Option<Vec<f64>>);
+    fn parse_instruction(
+        line: &str,
+        line_no: usize,
+    ) -> (&str, Option<Vec<&str>>, Option<Vec<f64>>, &str);
     // fn run_stim_file(&mut self, file_path: &str);
 }
 
@@ -56,16 +91,77 @@ where
     }
 
     fn parse_line(&mut self, line: &str, line_no: &usize) {
-        let parts: Vec<&str> = line.split(" ").collect();
-
-        let (instruction, tags, parens_args) = Self::parse_instruction(parts[0].trim());
-        let addrs = parts[1..parts.len()]
-            .iter()
-            .map(|&c| c.parse::<usize>().unwrap());
+        let (instruction, tags, parens_args, addr_part) = Self::parse_instruction(line, *line_no);
+        let addrs = addr_part
+            .split_whitespace()
+            .map(|c| c.parse::<usize>().unwrap());
 
         // instruction
         match instruction {
-            "I" => {}
+            "I" => {
+                if let Some([tag]) = tags.as_deref() {
+                    if let Some(paren_start) = tag.find('(') {
+                        let gate = tag[..paren_start].trim();
+                        let inner = tag[paren_start + 1..].strip_suffix(')').unwrap();
+                        let params: Vec<f64> = inner
+                            .split(',')
+                            .map(|p| parse_pi_expr(p.split('=').nth(1).unwrap().trim()))
+                            .collect();
+                        match gate {
+                            "R_X" => {
+                                for addr in addrs {
+                                    self.rx(addr, params[0]);
+                                }
+                            }
+                            "R_Y" => {
+                                for addr in addrs {
+                                    self.ry(addr, params[0]);
+                                }
+                            }
+                            "R_Z" => {
+                                for addr in addrs {
+                                    self.rz(addr, params[0]);
+                                }
+                            }
+                            "U3" => {
+                                for addr in addrs {
+                                    self.u3(
+                                        addr,
+                                        params[0].into(),
+                                        params[1].into(),
+                                        params[2].into(),
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            "I_ERROR" => match tags.as_deref() {
+                Some(["loss"]) => {
+                    let ps = parens_args.unwrap();
+                    debug_assert_eq!(ps.len(), 1);
+                    for addr in addrs {
+                        self.loss_channel(addr, ps[0].into());
+                    }
+                }
+                Some(["correlated_loss"]) => {
+                    let ps = parens_args.unwrap();
+                    let ps_arr: [T::Coeff; 3] = if ps.len() == 1 {
+                        // simple correlated loss
+                        [ps[0].into(), T::Coeff::zero(), T::Coeff::zero()]
+                    } else {
+                        debug_assert_eq!(ps.len(), 3);
+                        [ps[0].into(), ps[1].into(), ps[2].into()]
+                    };
+                    for (control, target) in addrs.tuples() {
+                        self.correlated_loss_channel(control, target, ps_arr.clone());
+                    }
+                }
+                _ => {}
+            },
 
             "R" => {
                 for addr in addrs {
@@ -165,7 +261,7 @@ where
                 }
             }
 
-            "CNOT" => {
+            "CX" => {
                 for (control, target) in addrs.tuples() {
                     self.cnot(control, target);
                 }
@@ -205,6 +301,33 @@ where
                 }
             }
 
+            "X_ERROR" => {
+                let ps = parens_args.unwrap();
+                debug_assert_eq!(ps.len(), 1);
+                let ps_arr: [T::Coeff; 3] = [ps[0].into(), T::Coeff::zero(), T::Coeff::zero()];
+                for addr in addrs {
+                    self.pauli_error(addr, ps_arr.clone());
+                }
+            }
+
+            "Y_ERROR" => {
+                let ps = parens_args.unwrap();
+                debug_assert_eq!(ps.len(), 1);
+                let ps_arr: [T::Coeff; 3] = [T::Coeff::zero(), ps[0].into(), T::Coeff::zero()];
+                for addr in addrs {
+                    self.pauli_error(addr, ps_arr.clone());
+                }
+            }
+
+            "Z_ERROR" => {
+                let ps = parens_args.unwrap();
+                debug_assert_eq!(ps.len(), 1);
+                let ps_arr: [T::Coeff; 3] = [T::Coeff::zero(), T::Coeff::zero(), ps[0].into()];
+                for addr in addrs {
+                    self.pauli_error(addr, ps_arr.clone());
+                }
+            }
+
             "PAULI_CHANNEL_2" => {
                 let ps = parens_args.unwrap();
                 debug_assert_eq!(ps.len(), 15);
@@ -224,55 +347,65 @@ where
             _ => {
                 panic!(
                     "Unknown circuit instruction {} in line {}",
-                    parts[0], line_no
+                    instruction, line_no
                 );
             }
         }
     }
 
     fn parse_instruction(
-        instruction_with_parens: &str,
-    ) -> (&str, Option<Vec<&str>>, Option<Vec<f64>>) {
-        let has_tags = instruction_with_parens.contains("[");
-        let has_parens_args = instruction_with_parens.contains(")");
+        line: &str,
+        line_no: usize,
+    ) -> (&str, Option<Vec<&str>>, Option<Vec<f64>>, &str) {
+        // Find the split between instruction token and addresses (first space at depth 0)
+        let mut depth = 0usize;
+        let mut split = None;
+        for (i, c) in line.char_indices() {
+            match c {
+                '(' | '[' => depth += 1,
+                ')' | ']' => depth -= 1,
+                ' ' if depth == 0 => {
+                    split = Some(i);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let (instr_token, addr_part) = match split {
+            Some(p) => (line[..p].trim(), &line[p + 1..]),
+            None => (line.trim(), ""),
+        };
 
-        if !has_tags && !has_parens_args {
-            return (instruction_with_parens, None, None);
-        } else if !has_parens_args {
-            let parts: Vec<&str> = instruction_with_parens.split("[").collect();
-            debug_assert_eq!(parts.len(), 2);
-            let instruction = parts[0].trim();
-            let tags: Vec<&str> = parts[1]
-                .strip_suffix("]")
-                .unwrap_or(parts[1])
-                .split(",")
-                .map(|c| c.trim())
+        if let Some(bracket_start) = instr_token.find('[') {
+            let instruction = instr_token[..bracket_start].trim();
+            let after_open = &instr_token[bracket_start + 1..];
+            let bracket_end = after_open
+                .find(']')
+                .expect(&format!("unclosed [ in line {}", line_no));
+            let tags: Vec<&str> = split_commas_shallow(&after_open[..bracket_end]);
+            let after_bracket = after_open[bracket_end + 1..].trim();
+            let parens_args = after_bracket
+                .strip_prefix('(')
+                .and_then(|s| s.strip_suffix(')'))
+                .map(|inner| {
+                    inner
+                        .split(',')
+                        .map(|c| c.trim().parse().unwrap())
+                        .collect()
+                });
+            (instruction, Some(tags), parens_args, addr_part)
+        } else if let Some(paren_start) = instr_token.find('(') {
+            let instruction = instr_token[..paren_start].trim();
+            let inner = instr_token[paren_start + 1..]
+                .strip_suffix(')')
+                .expect(&format!("unclosed ( in line {}", line_no));
+            let ps = inner
+                .split(',')
+                .map(|c| c.trim().parse().unwrap())
                 .collect();
-            return (instruction, Some(tags), None);
-        } else if !has_tags {
-            let parts: Vec<&str> = instruction_with_parens.split("(").collect();
-            debug_assert_eq!(parts.len(), 2);
-            let instruction = parts[0].trim();
-            let parens_args = parts[1].strip_suffix(")").unwrap_or(parts[1]).split(",");
-            let ps = parens_args.map(|c| c.parse::<f64>().unwrap());
-            return (instruction, None, Some(ps.collect()));
+            (instruction, None, Some(ps), addr_part)
         } else {
-            let parts: Vec<&str> = instruction_with_parens.split("[").collect();
-            debug_assert_eq!(parts.len(), 2);
-            let instruction = parts[0];
-            let parts_tags_parens: Vec<&str> = parts[1].split("]").collect();
-            debug_assert_eq!(parts_tags_parens.len(), 2);
-            let tags = parts_tags_parens[0].split(",").map(|c| c.trim());
-            let parens_args = parts_tags_parens[1];
-            let ps = parens_args
-                .trim()
-                .strip_prefix("(")
-                .unwrap_or(parens_args)
-                .strip_suffix(")")
-                .unwrap_or(parens_args)
-                .split(",")
-                .map(|c| c.parse::<f64>().unwrap());
-            return (instruction, Some(tags.collect()), Some(ps.collect()));
+            (instr_token, None, None, addr_part)
         }
     }
 }
@@ -281,116 +414,160 @@ where
 mod tests {
     use super::RunStim;
     use crate::config::indexmap::ByteFxHashF64;
+    use crate::tableau::traits::LossyMeasure;
     use crate::tableau::GeneralizedTableau;
 
-    const test_program: &str = "
-    R 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49
-    H 18
-    DEPOLARIZE1(0.4) 18
-    I[R_Y(theta=0.32*pi)] 39
-    PAULI_CHANNEL_1(0.3, 0.2, 0.1) 34
-    H 13
+    const TEST_PROGRAM: &str = "
+    R 0 1 2 3 4 5 6 7 8 9
+    CX 0 7
+    SQRT_Y 1
+    H 5
+    S[T] 3
+    DEPOLARIZE2(0.5) 1 7
+    I[R_Z(theta=0.33*pi)] 7
+    DEPOLARIZE1(0.4) 7
     Z_ERROR(0.4) 5
-    DEPOLARIZE2(0.5) 26 25
-    I[U3(theta=0.34*pi, phi=0.21*pi, lambda=0.46*pi)] 31
-    X_ERROR(1) 14
-    PAULI_CHANNEL_2(0.1, 0.12, 0.2, 0.1, 0.05, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002, 0.001, 0.0005, 0.0003, 0.0002) 40 30
-    DEPOLARIZE1(0.4) 8
-    SQRT_Y 36
-    I[R_X(theta=0.31*pi)] 1
-    H 6
-    I[R_Y(theta=0.32*pi)] 25
-    Z_ERROR(1) 2
+    SQRT_X 6
+    H 7
+    S[T] 2
+    I[R_X(theta=0.31*pi)] 6
+    PAULI_CHANNEL_2(0.1, 0.12, 0.2, 0.1, 0.05, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002, 0.001, 0.0005, 0.0003, 0.0002) 4 3
     Y_ERROR(0.4) 1
-    Z_ERROR(0.4) 23
-    I[R_X(theta=0.31*pi)] 0
-    S 38
-    Y_ERROR(0.4) 8
-    S 11
-    I[R_X(theta=0.31*pi)] 23
-    I[R_Z(theta=0.33*pi)] 22
-    DEPOLARIZE2(0.5) 41 16
-    SQRT_X 40
-    H 12
-    CX 23 25
-    X_ERROR(1) 0
-    I[R_X(theta=0.31*pi)] 46
-    Y 49
-    I[R_Y(theta=0.32*pi)] 19
-    PAULI_CHANNEL_2(0.1, 0.12, 0.2, 0.1, 0.05, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002, 0.001, 0.0005, 0.0003, 0.0002) 18 40
-    SQRT_Y 36
-    S 38
-    DEPOLARIZE1(0.4) 6
-    Y 13
-    I[R_Y(theta=0.32*pi)] 20
-    X_ERROR(1) 0
-    Y 21
-    X_ERROR(0.4) 26 18
-    PAULI_CHANNEL_2(0.1, 0.12, 0.2, 0.1, 0.05, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002, 0.001, 0.0005, 0.0003, 0.0002) 38 18
-    Y_ERROR(0.4) 38
-    DEPOLARIZE1(0.4) 28
-    I[R_X(theta=0.31*pi)] 37
-    PAULI_CHANNEL_1(0.3, 0.2, 0.1) 19
+    CX 3 6
+    DEPOLARIZE2(0.5) 0 4 4 1
+    Z_ERROR(0.4) 8
+    I[R_Z(theta=0.33*pi)] 8
+    H 8
+    X_ERROR(1) 3
+    X_ERROR(0.4) 3
+    Y 5
+    DEPOLARIZE2(0.5) 2 3 3 1
+    I[R_X(theta=0.31*pi)] 8
+    I[U3(theta=0.34*pi, phi=0.21*pi, lambda=0.46*pi)] 5
+    Y 1
+    X_ERROR(0.4) 5
+    X_ERROR(1) 2
     X_ERROR(0.4) 7
-    I[U3(theta=0.34*pi, phi=0.21*pi, lambda=0.46*pi)] 17
-    I[R_Z(theta=0.33*pi)] 20
-    Y 31
-    I[U3(theta=0.34*pi, phi=0.21*pi, lambda=0.46*pi)] 15
-    PAULI_CHANNEL_2(0.1, 0.12, 0.2, 0.1, 0.05, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002, 0.001, 0.0005, 0.0003, 0.0002) 46 6
-    CX 27 28 29 42
-    Y 39
-    DEPOLARIZE1(0.4) 40
-    Y 18
-    PAULI_CHANNEL_1(0.3, 0.2, 0.1) 5
-    Z_ERROR(0.4) 35
-    Z_ERROR(1) 14
-    Y_ERROR(0.4) 35
-    PAULI_CHANNEL_1(0.3, 0.2, 0.1) 46
-    SQRT_X 27
-    Z_ERROR(1) 2
-    DEPOLARIZE1(0.4) 14
-    S[T] 17
-    CX 29 22
-    S 14
-    H 12
-    SQRT_Y 27
-    Z_ERROR(0.4) 16
-    I[R_X(theta=0.31*pi)] 0
-    H 4
-    CX 12 21
-    I[R_Z(theta=0.33*pi)] 2
+    X_ERROR(1) 3
+    S[T] 8
+    X_ERROR(1) 0
+    SQRT_Y 5
     X_ERROR(0.4) 0
-    Y_ERROR(0.4) 40
-    Z_ERROR(0.4) 11
-    SQRT_X 40 15
-    PAULI_CHANNEL_2(0.1, 0.12, 0.2, 0.1, 0.05, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002, 0.001, 0.0005, 0.0003, 0.0002) 41 48
-    I[R_X(theta=0.31*pi)] 29
-    SQRT_Y 6
-    X_ERROR(0.4) 26
-    I[R_X(theta=0.31*pi)] 49
-    X_ERROR(1) 15
-    Y_ERROR(0.4) 30
-    I[U3(theta=0.34*pi, phi=0.21*pi, lambda=0.46*pi)] 10
-    I[R_X(theta=0.31*pi)] 42
-    I[R_Y(theta=0.32*pi)] 11
-    S 25
-    Y_ERROR(0.4) 49
-    PAULI_CHANNEL_1(0.3, 0.2, 0.1) 22
-    SQRT_Y 21
-    I[R_Z(theta=0.33*pi)] 23
-    CX 4 41
-    H 32
-    X_ERROR(1) 15
-    X_ERROR(0.4) 28
-    M 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49
+    Y 5
+    X_ERROR(0.4) 4
+    H 6
+    S[T] 9
+    CX 8 0 7 8
+    SQRT_Y 0
+    X_ERROR(1) 0
+    H 2
+    I[R_Z(theta=0.33*pi)] 0
+    Y 5
+    SQRT_Y 8
+    S[T] 5
+    PAULI_CHANNEL_1(0.3, 0.2, 0.1) 7
+    DEPOLARIZE1(0.4) 7
+    PAULI_CHANNEL_1(0.3, 0.2, 0.1) 2
+    S[T] 4
+    X_ERROR(0.4) 4
+    S[T] 0
+    I[R_Z(theta=0.33*pi)] 3
+    CX 9 5
+    H 2
+    SQRT_Y 3
+    H 8
+    DEPOLARIZE2(0.5) 3 7
+    Z_ERROR(0.4) 5
+    DEPOLARIZE1(0.4) 7
+    I[R_Y(theta=0.32*pi)] 0
+    S[T] 8
+    DEPOLARIZE1(0.4) 8
+    Y 4
+    Z_ERROR(0.4) 8
+    I[R_X(theta=0.31*pi)] 6
+    Z_ERROR(0.4) 6
+    I[R_X(theta=0.31*pi)] 6
+    H 1
+    Z_ERROR(0.4) 5
+    CX 5 4
+    SQRT_X 6
+    S[T] 9
+    SQRT_X 8
+    Y_ERROR(0.4) 8
+    CX 6 5
+    H 6
+    PAULI_CHANNEL_2(0.1, 0.12, 0.2, 0.1, 0.05, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002, 0.001, 0.0005, 0.0003, 0.0002) 2 1
+    S 9
+    PAULI_CHANNEL_1(0.3, 0.2, 0.1) 9
+    X_ERROR(1) 6
+    CX 0 9
+    PAULI_CHANNEL_1(0.3, 0.2, 0.1) 1
+    DEPOLARIZE2(0.5) 3 1
+    S[T] 3
+    Z_ERROR(0.4) 7
+    X_ERROR(1) 6
+    X_ERROR(0.4) 8 9
+    H 7 1
+    I[R_X(theta=0.31*pi)] 2
+    S 9
+    PAULI_CHANNEL_1(0.3, 0.2, 0.1) 8
+    X_ERROR(1) 4 0
+    H 4
+    M 0 1 2 3 4 5 6 7 8 9
     ";
 
     #[test]
     fn test_execution() {
         let n = 50;
-        let mut tab: GeneralizedTableau<ByteFxHashF64<11>, u128> =
-            GeneralizedTableau::new(n, 1e-10);
+        let mut tab: GeneralizedTableau<ByteFxHashF64<7>, u128> = GeneralizedTableau::new(n, 1e-10);
 
-        tab.run_stim_string(test_program);
+        tab.run_stim_string(TEST_PROGRAM);
+    }
+
+    #[test]
+    fn test_i_rotation_x() {
+        // I[R_X(theta=1.0*pi)] should flip |0⟩ → |1⟩
+        let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+            GeneralizedTableau::new(1, 1e-10);
+        tab.run_stim_string("I[R_X(theta=1.0*pi)] 0");
+        assert!(tab.measure(0).unwrap());
+    }
+
+    #[test]
+    fn test_i_rotation_y() {
+        // I[R_Y(theta=1.0*pi)] should flip |0⟩ → |1⟩
+        let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+            GeneralizedTableau::new(1, 1e-10);
+        tab.run_stim_string("I[R_Y(theta=1.0*pi)] 0");
+        assert!(tab.measure(0).unwrap());
+    }
+
+    #[test]
+    fn test_i_rotation_z() {
+        // I[R_Z(theta=1.0*pi)] leaves |0⟩ unchanged (Z rotation only adds phase)
+        let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+            GeneralizedTableau::new(1, 1e-10);
+        tab.run_stim_string("I[R_Z(theta=1.0*pi)] 0");
+        assert!(!tab.measure(0).unwrap());
+    }
+
+    #[test]
+    fn test_i_u3_flip() {
+        // I[U3(theta=1.0*pi, phi=0.0*pi, lambda=0.0*pi)] = RY(π): |0⟩ → |1⟩
+        let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+            GeneralizedTableau::new(1, 1e-10);
+        tab.run_stim_string("I[U3(theta=1.0*pi, phi=0.0*pi, lambda=0.0*pi)] 0");
+        assert!(tab.measure(0).unwrap());
+    }
+
+    #[test]
+    fn test_loss() {
+        let test_program_loss = "I_ERROR[loss](1.0) 0";
+        let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+            GeneralizedTableau::new(1, 1e-10);
+
+        tab.run_stim_string(test_program_loss);
+
+        assert!(tab.is_lost[0])
     }
 }

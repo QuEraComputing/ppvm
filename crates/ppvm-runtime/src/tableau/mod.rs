@@ -9,6 +9,8 @@ mod sparsevec;
 mod stim;
 mod tgate;
 mod traits;
+mod u3;
 
 pub use data::{GeneralizedTableau, Tableau};
+pub use stim::RunStim;
 pub use traits::{CliffordExtensions, LossyMeasure, Measure, Reset, TGate};

@@ -204,7 +204,7 @@ where
                 }
             }
 
-            "H" => {
+            "H" | "H_XZ" => {
                 for addr in addrs {
                     self.h(addr);
                 }
@@ -278,7 +278,7 @@ where
                 }
             }
 
-            "CX" => {
+            "CX" | "CNOT" => {
                 for (control, target) in addrs.tuples() {
                     self.cnot(control, target);
                 }
@@ -358,6 +358,16 @@ where
             "M" => {
                 for addr in addrs {
                     results.insert(addr, self.measure(addr));
+                }
+            }
+
+            "MR" => {
+                for addr in addrs {
+                    let outcome = self.measure(addr);
+                    if outcome == Some(true) {
+                        self.x(addr);
+                    }
+                    results.insert(addr, outcome);
                 }
             }
 

@@ -47,7 +47,12 @@ fn parse_pi_expr(s: &str) -> f64 {
 
 pub trait RunStim {
     fn run_stim_string(&mut self, circuit: &str) -> HashMap<usize, Option<bool>>;
-    fn parse_line(&mut self, line: &str, line_no: &usize, results: &mut HashMap<usize, Option<bool>>);
+    fn parse_line(
+        &mut self,
+        line: &str,
+        line_no: &usize,
+        results: &mut HashMap<usize, Option<bool>>,
+    );
     fn parse_instruction(
         line: &str,
         line_no: usize,
@@ -97,7 +102,12 @@ where
         results
     }
 
-    fn parse_line(&mut self, line: &str, line_no: &usize, results: &mut HashMap<usize, Option<bool>>) {
+    fn parse_line(
+        &mut self,
+        line: &str,
+        line_no: &usize,
+        results: &mut HashMap<usize, Option<bool>>,
+    ) {
         let (instruction, tags, parens_args, addr_part) = Self::parse_instruction(line, *line_no);
         let addrs = addr_part
             .split_whitespace()
@@ -350,6 +360,10 @@ where
                     results.insert(addr, self.measure(addr));
                 }
             }
+
+            // no-ops
+            "DETECTOR" | "MPAD" | "OBSERVABLE_INCLUDE" | "QUBIT_COORDS" | "SHIFT_COORDS"
+            | "TICK" => {}
 
             _ => {
                 panic!(

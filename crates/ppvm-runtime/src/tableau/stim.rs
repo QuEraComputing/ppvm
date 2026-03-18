@@ -51,7 +51,11 @@ pub trait RunStim {
         line: &str,
         line_no: usize,
     ) -> (&str, Option<Vec<&str>>, Option<Vec<f64>>, &str);
-    // fn run_stim_file(&mut self, file_path: &str);
+    fn run_stim_file(&mut self, file_path: &str) {
+        let circuit = std::fs::read_to_string(file_path)
+            .unwrap_or_else(|e| panic!("failed to read stim file {}: {}", file_path, e));
+        self.run_stim_string(&circuit);
+    }
 }
 
 impl<T, I, C> RunStim for GeneralizedTableau<T, I, C>
@@ -414,8 +418,8 @@ where
 mod tests {
     use super::RunStim;
     use crate::config::indexmap::ByteFxHashF64;
-    use crate::tableau::traits::LossyMeasure;
     use crate::tableau::GeneralizedTableau;
+    use crate::tableau::traits::LossyMeasure;
 
     const TEST_PROGRAM: &str = "
     R 0 1 2 3 4 5 6 7 8 9
@@ -569,5 +573,17 @@ mod tests {
         tab.run_stim_string(test_program_loss);
 
         assert!(tab.is_lost[0])
+    }
+
+    #[test]
+    fn test_run_stim_file() {
+        let path = std::env::temp_dir().join("ppvm_test_stim.stim");
+        std::fs::write(&path, "X 0\nM 0").unwrap();
+
+        let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+            GeneralizedTableau::new(1, 1e-10);
+        tab.run_stim_file(path.to_str().unwrap());
+
+        assert!(tab.measure(0).unwrap());
     }
 }

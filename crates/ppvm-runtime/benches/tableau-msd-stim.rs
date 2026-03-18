@@ -53,21 +53,44 @@ fn msd_stim_string() -> String {
 fn encode_stim(lines: &mut Vec<String>, q: &[usize]) {
     assert_eq!(q.len(), 17);
 
-    lines.push(fmt_gate_indices("SQRT_Y", q, &[0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16]));
+    lines.push(fmt_gate_indices(
+        "SQRT_Y",
+        q,
+        &[0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+    ));
 
-    lines.push(fmt_cz_index_pairs(q, &[[1, 3], [7, 10], [12, 14], [13, 16]]));
+    lines.push(fmt_cz_index_pairs(
+        q,
+        &[[1, 3], [7, 10], [12, 14], [13, 16]],
+    ));
     lines.push(fmt_gate_indices("SQRT_Y_DAG", q, &[7, 16]));
 
-    lines.push(fmt_cz_index_pairs(q, &[[4, 7], [8, 10], [11, 14], [15, 16]]));
+    lines.push(fmt_cz_index_pairs(
+        q,
+        &[[4, 7], [8, 10], [11, 14], [15, 16]],
+    ));
     lines.push(fmt_gate_indices("SQRT_Y_DAG", q, &[4, 10, 14, 16]));
 
-    lines.push(fmt_cz_index_pairs(q, &[[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]]));
+    lines.push(fmt_cz_index_pairs(
+        q,
+        &[[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]],
+    ));
     lines.push(fmt_gate_indices("SQRT_Y", q, &[3, 6, 9, 10, 12, 13]));
 
-    lines.push(fmt_cz_index_pairs(q, &[[0, 2], [3, 6], [5, 8], [10, 12], [11, 13]]));
-    lines.push(fmt_gate_indices("SQRT_Y", q, &[1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 14]));
+    lines.push(fmt_cz_index_pairs(
+        q,
+        &[[0, 2], [3, 6], [5, 8], [10, 12], [11, 13]],
+    ));
+    lines.push(fmt_gate_indices(
+        "SQRT_Y",
+        q,
+        &[1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 14],
+    ));
 
-    lines.push(fmt_cz_index_pairs(q, &[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [12, 15]]));
+    lines.push(fmt_cz_index_pairs(
+        q,
+        &[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [12, 15]],
+    ));
     lines.push(fmt_gate_indices("SQRT_Y_DAG", q, &[0, 2, 5, 6, 8, 10, 12]));
 }
 

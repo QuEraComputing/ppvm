@@ -3,7 +3,6 @@ use paste::paste;
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::tableau::{CliffordExtensions, GeneralizedTableau, Reset, RunStim};
 use pyo3::prelude::*;
-use std::collections::HashMap;
 
 macro_rules! create_interface {
     ($name: ident, $type: ident, $indexType: ident) => {

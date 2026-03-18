@@ -13,6 +13,7 @@ use num::{
     Complex, One, ToPrimitive, Zero,
     complex::{Complex64, ComplexFloat},
 };
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 /// Split `s` by commas that are not inside parentheses.
@@ -45,16 +46,16 @@ fn parse_pi_expr(s: &str) -> f64 {
 }
 
 pub trait RunStim {
-    fn run_stim_string(&mut self, circuit: &str);
-    fn parse_line(&mut self, line: &str, line_no: &usize);
+    fn run_stim_string(&mut self, circuit: &str) -> HashMap<usize, Option<bool>>;
+    fn parse_line(&mut self, line: &str, line_no: &usize, results: &mut HashMap<usize, Option<bool>>);
     fn parse_instruction(
         line: &str,
         line_no: usize,
     ) -> (&str, Option<Vec<&str>>, Option<Vec<f64>>, &str);
-    fn run_stim_file(&mut self, file_path: &str) {
+    fn run_stim_file(&mut self, file_path: &str) -> HashMap<usize, Option<bool>> {
         let circuit = std::fs::read_to_string(file_path)
             .unwrap_or_else(|e| panic!("failed to read stim file {}: {}", file_path, e));
-        self.run_stim_string(&circuit);
+        self.run_stim_string(&circuit)
     }
 }
 
@@ -78,7 +79,8 @@ where
         + ComplexFloat,
     I: TableauIndex + Debug,
 {
-    fn run_stim_string(&mut self, circuit: &str) {
+    fn run_stim_string(&mut self, circuit: &str) -> HashMap<usize, Option<bool>> {
+        let mut results = HashMap::new();
         for (i, line) in circuit.lines().enumerate() {
             let trimmed_line = line.trim();
             if trimmed_line.is_empty() {
@@ -90,11 +92,12 @@ where
                 continue;
             }
 
-            self.parse_line(line.trim(), &i);
+            self.parse_line(line.trim(), &i, &mut results);
         }
+        results
     }
 
-    fn parse_line(&mut self, line: &str, line_no: &usize) {
+    fn parse_line(&mut self, line: &str, line_no: &usize, results: &mut HashMap<usize, Option<bool>>) {
         let (instruction, tags, parens_args, addr_part) = Self::parse_instruction(line, *line_no);
         let addrs = addr_part
             .split_whitespace()
@@ -344,7 +347,7 @@ where
 
             "M" => {
                 for addr in addrs {
-                    self.measure(addr);
+                    results.insert(addr, self.measure(addr));
                 }
             }
 
@@ -576,14 +579,32 @@ mod tests {
     }
 
     #[test]
-    fn test_run_stim_file() {
-        let path = std::env::temp_dir().join("ppvm_test_stim.stim");
-        std::fs::write(&path, "X 0\nM 0").unwrap();
+    fn test_run_stim_string_measurements() {
+        let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+            GeneralizedTableau::new(2, 1e-10);
+        let results = tab.run_stim_string("X 0\nM 0 1");
+        assert_eq!(results.get(&0), Some(&Some(true)));
+        assert_eq!(results.get(&1), Some(&Some(false)));
+    }
 
+    #[test]
+    fn test_run_stim_string_double_measurement() {
+        // Second measurement of qubit 0 overwrites the first in the map
         let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
             GeneralizedTableau::new(1, 1e-10);
-        tab.run_stim_file(path.to_str().unwrap());
+        let results = tab.run_stim_string("X 0\nM 0\nM 0");
+        assert_eq!(results.get(&0), Some(&Some(true)));
+    }
 
-        assert!(tab.measure(0).unwrap());
+    #[test]
+    fn test_run_stim_file() {
+        let path = std::env::temp_dir().join("ppvm_test_stim.stim");
+        std::fs::write(&path, "X 0\nM 0 1").unwrap();
+
+        let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+            GeneralizedTableau::new(2, 1e-10);
+        let results = tab.run_stim_file(path.to_str().unwrap());
+        assert_eq!(results.get(&0), Some(&Some(true)));
+        assert_eq!(results.get(&1), Some(&Some(false)));
     }
 }

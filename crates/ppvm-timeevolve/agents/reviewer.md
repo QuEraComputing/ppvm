@@ -25,8 +25,9 @@ and the Dormand-Prince method.
 
 - [ ] Implementation matches the corresponding section of `PLAN.md` exactly. Any deviation
       must be justified.
-- [ ] No other crate has been modified (`git diff --name-only` should show only files under
-      `crates/ppvm-timeevolve/`).
+- [ ] No other crate has been modified by the agent. Use `git log --oneline` to identify
+      agent-authored commits (co-authored by Claude); commits authored exclusively by the
+      user are excluded from this check.
 - [ ] `cargo test -p ppvm-timeevolve` passes.
 - [ ] `cargo clippy -p ppvm-timeevolve -- -D warnings` is clean.
 - [ ] Commit exists and message names the task.

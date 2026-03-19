@@ -301,21 +301,24 @@ parity of the number of single-qubit anti-commuting pairs:
 comm_parity(A, B) = popcount((A.xbits & B.zbits) XOR (A.zbits & B.xbits)) mod 2
 ```
 
-From the four possible combinations of `(a_kl.phase & 1, parity)`:
+The scalar phase of `a_kl` factors out: `-(a_kl·wa + wa·a_kl) = -α·{P_kl, wa}` where
+`a_kl = α·P_kl`. When `parity=1`, `{P_kl, wa} = 0` by definition of anticommutation,
+so the combined contribution is **0 regardless of `a_kl.phase`**. When `parity=0`,
+`{P_kl, wa} = 2·P_kl·wa`, so combined = `2 × re_phase(t1.phase)`.
 
-| `a_kl.phase & 1` | parity | `re_phase(t1) + re_phase(t2)` |
-|------------------|--------|-------------------------------|
-| 0                | 0      | `2 × re_phase(t1.phase)`      |
-| 1                | 1      | `2 × re_phase(t1.phase)`      |
-| 0                | 1      | 0                             |
-| 1                | 0      | 0                             |
+| parity | `re_phase(t1) + re_phase(t2)` |
+|--------|-------------------------------|
+| 0      | `2 × re_phase(t1.phase)`      |
+| 1      | 0                             |
 
-So: combined = `2 × re_phase(t1.phase)` when `(a_kl.phase & 1) == parity`, else 0.
+So: combined = `2 × re_phase(t1.phase)` when `parity == 0`, else 0. (The inner
+`re_phase` guard handles the subcase where `a_kl` has an imaginary phase, giving
+`re_phase(t1) = 0` and therefore no insert.)
 
 **Implementation.** Replace the two-multiplication anticommutator block in `apply` with:
-1. Compute `t1 = a_kl.clone() * wa_phased.clone()` (one `MulAssign`).
-2. Compute `parity = comm_parity(&term.a_kl.word, &wa_phased.word)` (bitwise, O(N_bytes)).
-3. If `(term.a_kl.phase & 1) == parity` and `re_phase(t1.phase) != 0.0`: accumulate
+1. Compute `parity = comm_parity(&term.a_kl.word, &wa_phased.word)` (bitwise, O(N_bytes)).
+2. If `parity == 0`: compute `t1 = a_kl.clone() * wa_phased.clone()` (one `MulAssign`).
+3. If `re_phase(t1.phase) != 0.0`: accumulate
    `(-2 × term.weight × re_phase(t1.phase)) × coeff_a` into `t1.word`.
 
 Add `#[inline] fn comm_parity<A, S>(a: &PauliWord<A, S>, b: &PauliWord<A, S>) -> u8`

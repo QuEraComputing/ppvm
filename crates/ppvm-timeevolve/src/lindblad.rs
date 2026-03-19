@@ -157,11 +157,12 @@ where
 
                 // Anticommutator: -(a_kl * W_a + W_a * a_kl)
                 // Since (a_kl * wa).word == (wa * a_kl).word, one multiplication suffices.
-                // Combined coefficient is -2 * weight * re_phase(t1) when
-                // (a_kl.phase & 1) == parity, else the two terms cancel exactly.
-                // Check parity before doing the multiplication to skip it entirely when zero.
+                // When parity=1, the two terms cancel exactly (anticommutator of
+                // anticommuting Paulis is zero), so skip the multiplication entirely.
+                // When parity=0, combined = 2 * re_phase(t1); the inner guard on s
+                // handles the case where a_kl has an imaginary phase making re_phase zero.
                 let parity = comm_parity(&term.a_kl.word, &wa_phased.word);
-                if (term.a_kl.phase & 1) == parity {
+                if parity == 0 {
                     let mut t1 = term.a_kl.clone();
                     t1 *= wa_phased.clone();
                     let s = re_phase(t1.phase);
@@ -299,6 +300,39 @@ mod tests {
 
         // XX vs YI: qubit 0 (X,Y)->1, qubit 1 (X,I)->0; parity = 1
         assert_eq!(comm_parity(&W2::from("XX"), &W2::from("YI")), 1);
+    }
+
+    #[test]
+    fn anticommutator_imaginary_akl_anticommuting_wa_is_zero() {
+        // Regression for the parity==1 bug: when a_kl has an odd (imaginary) phase
+        // and W_a anticommutes with a_kl.word, the anticommutator must be zero.
+        //
+        // Derivation: -(iX·Z + Z·iX) = -i(XZ + ZX) = -i(-iY + iY) = 0.
+        //
+        // Use c1=Y (phase=0, c†=Y), c2=Z (phase=0) with γ₁₂=1.
+        // Cross-pair (k=Y†=(Y,0), l=Z): φ_k†=0, φ_l=0, p=0.
+        // left={Y,0}, right={Z,0}, a_kl=Y*Z=iX → {word:X, phase:1}.
+        // Apply to P=Z: comm_parity(X,Z)=1 (anticommute), so contribution must be 0.
+        let ops = vec![single_op("Y", 0), single_op("Z", 0)];
+        let rates = RateMatrix::Dense(vec![vec![0.0, 1.0], vec![1.0, 0.0]]);
+        let lop = LindbladOp::new(ops, rates);
+
+        // Find the term with a_kl.word=X (the iX term from Y*Z)
+        let ix_term = lop.terms.iter().find(|t| t.a_kl.word == W1::from("X"));
+        assert!(ix_term.is_some(), "expected a term with a_kl.word=X");
+        assert_eq!(ix_term.unwrap().a_kl.phase, 1, "expected imaginary phase");
+
+        // Applying to P=Z: anticommutator contribution must be zero
+        let p = sum1(&[("Z", 1.0)]);
+        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        lop.apply(&p, &mut result);
+
+        // Sandwich: 2·Y·Z·Z = 2·Y (the non-zero part comes from sandbox, not anticommutator)
+        // We only care that no spurious term appears from a wrong anticommutator condition.
+        // Full L(Z) for this off-diagonal system: verify the X coefficient is zero
+        // (the anticommutator iX·Z + Z·iX = 0, so no X term should appear).
+        assert_eq!(get_coeff(&result, "X"), 0.0,
+            "anticommutator of iX with Z must vanish");
     }
 
     // ---- Task 3 tests ----

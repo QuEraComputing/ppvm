@@ -192,6 +192,24 @@ class GeneralizedTableau(
         m = self._interface.measure(addr0)
         return MeasurementResult._from_raw(m)
 
+    def u3(self, addr0: int, theta: float, phi: float, lam: float):
+        """Apply the U3 gate to the specified qubit.
+
+        U3(θ, φ, λ) = RZ(φ) · RY(θ) · RZ(λ)
+
+        The corresponding unitary matrix is:
+
+            [ cos(θ/2)            -e^(iλ)·sin(θ/2)       ]
+            [ e^(iφ)·sin(θ/2)     e^(i(φ+λ))·cos(θ/2)   ]
+
+        Args:
+            addr0: The address of the qubit to apply the gate to.
+            theta: Rotation angle θ (in radians) for the RY component.
+            phi: Rotation angle φ (in radians) for the first RZ component.
+            lam: Rotation angle λ (in radians) for the second RZ component.
+        """
+        self._interface.u3(addr0, theta, phi, lam)
+
     def reset(self, addr0: int) -> None:
         """Reset the specified qubit to the |0> state.
 

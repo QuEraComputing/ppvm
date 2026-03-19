@@ -110,6 +110,10 @@ macro_rules! create_interface {
                 self.inner.rz(addr0, theta);
             }
 
+            pub fn u3(&mut self, addr0: usize, theta: f64, phi: f64, lam: f64) {
+                self.inner.u3(addr0, theta, phi, lam);
+            }
+
             // rot2
             pub fn rxx(&mut self, addr0: usize, addr1: usize, theta: f64) {
                 self.inner.rxx(addr0, addr1, theta);

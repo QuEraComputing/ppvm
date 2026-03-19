@@ -267,13 +267,19 @@ where
                 }
             }
 
-            "CX" | "CNOT" => {
+            "CX" | "ZCX" | "CNOT" => {
                 for (control, target) in addrs.tuples() {
                     self.cnot(control, target);
                 }
             }
 
-            "CZ" => {
+            "CY" | "ZCY" => {
+                for (control, target) in addrs.tuples() {
+                    self.cy(control, target);
+                }
+            }
+
+            "CZ" | "ZCZ" => {
                 for (control, target) in addrs.tuples() {
                     self.cz(control, target);
                 }

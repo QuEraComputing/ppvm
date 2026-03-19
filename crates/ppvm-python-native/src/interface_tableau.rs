@@ -81,6 +81,10 @@ macro_rules! create_interface {
                 self.inner.cnot(addr0, addr1);
             }
 
+            pub fn cy(&mut self, addr0: usize, addr1: usize) {
+                self.inner.cy(addr0, addr1);
+            }
+
             pub fn cz(&mut self, addr0: usize, addr1: usize) {
                 self.inner.cz(addr0, addr1);
             }

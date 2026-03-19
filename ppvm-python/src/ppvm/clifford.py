@@ -195,6 +195,15 @@ class CliffordExtensionMixin:
         """
         self._interface.sqrt_y_adj(addr0)
 
+    def cy(self, addr0: int, addr1: int) -> None:
+        """Apply a controlled-Y gate.
+
+        Args:
+            addr0: The index of the control qubit.
+            addr1: The index of the target qubit.
+        """
+        self._interface.cy(addr0, addr1)
+
 
 class NoiseMixin:
     _interface: Any

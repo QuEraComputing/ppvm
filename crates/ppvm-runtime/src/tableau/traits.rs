@@ -50,6 +50,12 @@ pub trait CliffordExtensions: Clifford {
         self.sqrt_x_adj(addr0);
         self.s(addr0);
     }
+
+    fn cy(&mut self, addr0: usize, addr1: usize) {
+        self.s(addr1);
+        self.cnot(addr0, addr1);
+        self.s_adj(addr1);
+    }
 }
 
 pub trait TableauIndex:

@@ -169,7 +169,7 @@ where
                 _ => {}
             },
 
-            "R" => {
+            "R" | "RZ" => {
                 for addr in addrs {
                     self.reset(addr);
                 }
@@ -344,7 +344,7 @@ where
                 }
             }
 
-            "M" => {
+            "M" | "MZ" => {
                 for addr in addrs {
                     results.push(self.measure(addr));
                 }
@@ -439,6 +439,7 @@ mod tests {
 
     const TEST_PROGRAM: &str = "
     R 0 1 2 3 4 5 6 7 8 9
+    RZ 0
     CX 0 7
     SQRT_Y 1
     H 5
@@ -533,7 +534,8 @@ mod tests {
     PAULI_CHANNEL_1(0.3, 0.2, 0.1) 8
     X_ERROR(1) 4 0
     H 4
-    M 0 1 2 3 4 5 6 7 8 9
+    M 0 1 2 3 4 5 6 7 8
+    MZ 9
     ";
 
     #[test]

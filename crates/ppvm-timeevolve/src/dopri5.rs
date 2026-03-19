@@ -1,7 +1,7 @@
 use std::ops::{Mul, MulAssign};
 
 use ppvm_runtime::prelude::{
-    ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliSum, PhasedPauliWord, Trace,
+    ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliSum, PauliWordTrait, PhasedPauliWord, Trace,
 };
 
 use crate::lindblad::{LindbladOp, rhs, rhs_into};
@@ -72,7 +72,13 @@ where
 {
     let s: T::Coeff = scale.into();
     for (w, c) in source.data().iter() {
-        *target += (w.clone(), s * *c);
+        // PhasedPauliWord::mul_assign updates xbits/zbits but not hash_cache.
+        // Rehash here so that words from k-vector multiplication entries hash
+        // consistently with words constructed from strings, preventing duplicate
+        // map entries for the same logical Pauli key.
+        let mut key = w.clone();
+        key.rehash();
+        *target += (key, s * *c);
     }
 }
 
@@ -244,6 +250,11 @@ where
     add_scaled(y_scratch, &k[4], dt * B5);
     add_scaled(y_scratch, &k[5], dt * B6);
 
+    // Truncate the new state before FSAL so sub-threshold Pauli strings do not
+    // accumulate across steps. Doing this here (before Stage 7) keeps k[6]
+    // consistent with the truncated state used at the start of the next step.
+    y_scratch.truncate();
+
     // Stage 7 (FSAL): k[6] = rhs(y_scratch)
     rhs_into(ham, lindblad, y_scratch, &mut k[6]);
 
@@ -387,6 +398,118 @@ mod tests {
     }
 
     // ---- Task 8 tests ----
+
+    // ---- Task 15 tests ----
+
+    #[test]
+    fn truncate_state_does_not_accumulate() {
+        // Verify that y_scratch is truncated after each accepted step so sub-threshold
+        // Pauli strings do not accumulate. We drive a single step directly so the test
+        // does not depend on the adaptive step-size controller.
+        //
+        // Setup: 1-qubit X-dephasing, P(0) = Z, CoefficientThreshold(0.5).
+        // After one step the only surviving term should be Z (with coefficient ~1).
+        // Without truncation the step would also insert tiny I, X, Y terms from the
+        // k-vector contributions, growing the state beyond 1 entry.
+        use ppvm_runtime::strategy::CoefficientThreshold;
+        use ppvm_runtime::config::fxhash::ByteF64;
+        use crate::lindblad::{CollapseOp, LindbladOp, RateMatrix};
+        use crate::solve::SolverCache;
+        use ppvm_runtime::prelude::{PauliWord, PhasedPauliWord, PauliSum};
+
+        type S = ByteF64<1, CoefficientThreshold>;
+
+        let ppw_s = |pauli: &str, phase: u8|
+            -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher,
+                               PauliWord<[u8; 1], fxhash::FxBuildHasher>>
+        {
+            PhasedPauliWord::build_from_word(
+                PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from(pauli), phase)
+        };
+
+        let mut c = CollapseOp::<S>::new(1);
+        c.push(ppw_s("X", 0), 1.0);  // c = X (dephasing)
+        let lindblad = LindbladOp::new(vec![c], RateMatrix::from(vec![1.0]));
+
+        // Use an aggressive threshold so anything below 0.5 is truncated.
+        let strat = CoefficientThreshold(0.5);
+        let mut y: PauliSum<S> = PauliSum::builder().n_qubits(1).strategy(strat).build();
+        y += ("Z", 1.0_f64);
+
+        let config = crate::solve::SolverConfig {
+            h0: Some(0.01),  // fixed step so the test is deterministic
+            ..crate::solve::SolverConfig::default()
+        };
+        let mut cache = SolverCache::new(&y);
+        rhs_into(None, &lindblad, &y, &mut cache.k[0]);
+
+        match step(None, &lindblad, &y, 0.01, &config, &mut cache) {
+            StepResult::Accept { .. } => {
+                // y_scratch now holds the truncated new state.
+                // Z decays but remains >> 0.5; I/X/Y contributions are O(dt) << 0.5
+                // and must have been truncated away.
+                let size = cache.y_scratch.data().len();
+                assert_eq!(
+                    size, 1,
+                    "expected only Z to survive truncation, got {size} entries"
+                );
+            }
+            StepResult::Reject { .. } => panic!("expected Accept for dt=0.01"),
+        }
+    }
+
+    #[test]
+    fn truncate_state_preserves_accuracy() {
+        // Spontaneous emission: c = X + iY, γ = 1, P(0) = Z, no Hamiltonian.
+        // Analytic: <Z>(t) = exp(-8t).  Verify the result still matches after adding
+        // the truncation step (regression guard).
+        use ppvm_runtime::prelude::{PauliWord, PhasedPauliWord, Trace};
+        use ppvm_runtime::strategy::CoefficientThreshold;
+        use ppvm_runtime::config::fxhash::ByteF64;
+        use crate::lindblad::{CollapseOp, LindbladOp, RateMatrix};
+        use crate::solve::solve;
+
+        type S = ByteF64<1, CoefficientThreshold>;
+
+        let ppw = |pauli: &str, phase: u8|
+            -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher,
+                               PauliWord<[u8; 1], fxhash::FxBuildHasher>>
+        {
+            PhasedPauliWord::build_from_word(
+                PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from(pauli), phase)
+        };
+
+        let mut c = CollapseOp::<S>::new(1);
+        c.push(ppw("X", 0), 1.0);
+        c.push(ppw("Y", 1), 1.0);
+        let lindblad = LindbladOp::new(vec![c], RateMatrix::from(vec![1.0]));
+
+        let strat = CoefficientThreshold(1e-6);
+        let mut initial: ppvm_runtime::prelude::PauliSum<S> =
+            ppvm_runtime::prelude::PauliSum::builder().n_qubits(1).strategy(strat).build();
+        initial += ("Z", 1.0_f64);
+
+        let save_at = [0.25, 0.5, 1.0, 2.0];
+        let config = crate::solve::SolverConfig::default();
+        let (ts, rs) = solve(
+            None, &lindblad, &initial,
+            (0.0, 2.0), &save_at,
+            |_, p| {
+                let w = PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from("Z");
+                p.data().trace(&w)
+            },
+            config,
+        );
+
+        assert_eq!(ts.as_slice(), &save_at);
+        for (t, r) in ts.iter().zip(rs.iter()) {
+            let expected = (-8.0 * t).exp();
+            assert!(
+                (r - expected).abs() < 1e-4,
+                "at t={t}: got {r}, expected {expected}"
+            );
+        }
+    }
 
     #[test]
     fn estimate_h0_uses_specified_h0() {

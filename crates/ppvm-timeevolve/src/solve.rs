@@ -40,14 +40,28 @@ pub struct SolverCache<T: Config> {
 }
 
 impl<T: Config> SolverCache<T> {
-    /// Allocate a cache sized for `template`.  Only `n_qubits` and the map strategy are
-    /// read from `template`; its coefficients are not copied.
-    pub fn new(template: &PauliSum<T>) -> Self {
-        let make = || PauliSum::<T>::builder().n_qubits(template.n_qubits()).build();
+    /// Allocate a cache sized for `template`, propagating its truncation strategy
+    /// to `y_scratch`.
+    ///
+    /// `y_scratch` is cloned from `template` (then cleared) so its strategy matches
+    /// the user-supplied state — ensuring `y_scratch.truncate()` applies the correct
+    /// threshold.  The k-vectors and error buffer use `T::Strategy::default()` (typically
+    /// a loose 1e-12 threshold) so that `rhs_into` does not aggressively truncate
+    /// derivative data and corrupt the step-size error estimate.
+    pub fn new(template: &PauliSum<T>) -> Self
+    where
+        T::Map: Clone,
+    {
+        let make_numerical = || PauliSum::<T>::builder().n_qubits(template.n_qubits()).build();
+        let make_state = || {
+            let mut s = template.clone();
+            s.data_mut().clear();
+            s
+        };
         SolverCache {
-            k:         (0..7).map(|_| make()).collect(),
-            y_scratch: make(),
-            err:       make(),
+            k:         (0..7).map(|_| make_numerical()).collect(),
+            y_scratch: make_state(),
+            err:       make_numerical(),
         }
     }
 }
@@ -59,6 +73,7 @@ impl<T: Config> SolverCache<T> {
 ///
 /// Identical to [`solve_mut`] but accepts a caller-managed [`SolverCache`] so that
 /// repeated calls (e.g. parameter sweeps) pay zero allocation cost per call.
+#[allow(clippy::too_many_arguments)] // solver API; all arguments are semantically distinct
 pub fn solve_mut_cached<T: Config, R, F>(
     hamiltonian: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
@@ -123,6 +138,7 @@ where
 }
 
 /// Clone `initial` and delegate to [`solve_mut_cached`].  `initial` is not modified.
+#[allow(clippy::too_many_arguments)] // solver API; all arguments are semantically distinct
 pub fn solve_cached<T: Config, R, F>(
     hamiltonian: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,

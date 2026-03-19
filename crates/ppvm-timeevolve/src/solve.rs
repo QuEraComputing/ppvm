@@ -1,11 +1,11 @@
 use std::ops::{Mul, MulAssign};
 
 use ppvm_runtime::prelude::{
-    ACMapAddAssign, ACMapIter, Config, PauliSum, PhasedPauliWord, Trace,
+    ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliSum, PhasedPauliWord, Trace,
 };
 
 use crate::dopri5::{StepResult, estimate_h0, step};
-use crate::lindblad::{LindbladOp, rhs};
+use crate::lindblad::{LindbladOp, rhs_into};
 
 pub struct SolverConfig {
     pub rtol:  f64,
@@ -27,12 +27,39 @@ impl Default for SolverConfig {
     }
 }
 
-/// Advance `state` in-place from `t_span.0` to `t_span.1`.
+/// Pre-allocated scratch buffers for the DOPRI5 solver.
 ///
-/// At each time in `save_at` (sorted, within t_span), the step is capped
-/// exactly to that time and `callback` is invoked.  Returns the recorded
-/// times (equal to `save_at`) and the corresponding callback outputs.
-pub fn solve_mut<T: Config, R, F>(
+/// Allocate once per solve (or once per parameter sweep) and reuse across `solve_cached` /
+/// `solve_mut_cached` calls.  The cache holds 7 k-vectors (k[0] is the FSAL carry-over,
+/// k[1..=6] are stage buffers), one stage-state buffer (`y_scratch`, also holds the
+/// 5th-order solution after each step), and one error-estimate buffer.
+pub struct SolverCache<T: Config> {
+    pub(crate) k:         Vec<PauliSum<T>>,  // length 7; k[0] = FSAL k1, k[1..=6] = k2..k7
+    pub(crate) y_scratch: PauliSum<T>,
+    pub(crate) err:       PauliSum<T>,
+}
+
+impl<T: Config> SolverCache<T> {
+    /// Allocate a cache sized for `template`.  Only `n_qubits` and the map strategy are
+    /// read from `template`; its coefficients are not copied.
+    pub fn new(template: &PauliSum<T>) -> Self {
+        let make = || PauliSum::<T>::builder().n_qubits(template.n_qubits()).build();
+        SolverCache {
+            k:         (0..7).map(|_| make()).collect(),
+            y_scratch: make(),
+            err:       make(),
+        }
+    }
+}
+
+// Macro to avoid repeating the full where-clause for every cached function.
+// (Rust does not have where-clause aliases, so we spell it out each time.)
+
+/// Advance `state` in-place from `t_span.0` to `t_span.1`, reusing `cache`.
+///
+/// Identical to [`solve_mut`] but accepts a caller-managed [`SolverCache`] so that
+/// repeated calls (e.g. parameter sweeps) pay zero allocation cost per call.
+pub fn solve_mut_cached<T: Config, R, F>(
     hamiltonian: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
     state: &mut PauliSum<T>,
@@ -40,10 +67,13 @@ pub fn solve_mut<T: Config, R, F>(
     save_at: &[f64],
     callback: F,
     config: SolverConfig,
+    cache: &mut SolverCache<T>,
 ) -> (Vec<f64>, Vec<R>)
 where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + ACMapBase
+        + Clone,
     T::Coeff: std::ops::AddAssign
         + Copy
         + std::ops::Mul<Output = T::Coeff>
@@ -60,25 +90,23 @@ where
 {
     let mut t = t_span.0;
     let mut dt = estimate_h0(hamiltonian, lindblad, state, t_span, &config);
-    let mut k1 = rhs(hamiltonian, lindblad, state);
+    rhs_into(hamiltonian, lindblad, state, &mut cache.k[0]);
     let mut times = Vec::with_capacity(save_at.len());
     let mut results = Vec::with_capacity(save_at.len());
 
     for &t_save in save_at {
-        // Advance from t to t_save using adaptive steps.
         loop {
             let remaining = t_save - t;
-            // Stop once we are negligibly close to t_save.
             if remaining <= f64::EPSILON * t_save.abs().max(1.0) {
                 break;
             }
             let dt_capped = dt.min(remaining);
 
-            match step(hamiltonian, lindblad, state, k1.clone(), dt_capped, &config) {
-                StepResult::Accept { y_new, k_next, h_new } => {
+            match step(hamiltonian, lindblad, state, dt_capped, &config, cache) {
+                StepResult::Accept { h_new } => {
                     t += dt_capped;
-                    *state = y_new;
-                    k1 = k_next;
+                    std::mem::swap(state, &mut cache.y_scratch);
+                    cache.k.swap(0, 6);
                     dt = h_new;
                 }
                 StepResult::Reject { h_new } => {
@@ -94,8 +122,8 @@ where
     (times, results)
 }
 
-/// Clone `initial` and delegate to [`solve_mut`].  `initial` is not modified.
-pub fn solve<T: Config, R, F>(
+/// Clone `initial` and delegate to [`solve_mut_cached`].  `initial` is not modified.
+pub fn solve_cached<T: Config, R, F>(
     hamiltonian: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
     initial: &PauliSum<T>,
@@ -103,10 +131,13 @@ pub fn solve<T: Config, R, F>(
     save_at: &[f64],
     callback: F,
     config: SolverConfig,
+    cache: &mut SolverCache<T>,
 ) -> (Vec<f64>, Vec<R>)
 where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + ACMapBase
+        + Clone,
     T::Coeff: std::ops::AddAssign
         + Copy
         + std::ops::Mul<Output = T::Coeff>
@@ -122,7 +153,78 @@ where
     F: Fn(f64, &PauliSum<T>) -> R,
 {
     let mut state = initial.clone();
-    solve_mut(hamiltonian, lindblad, &mut state, t_span, save_at, callback, config)
+    solve_mut_cached(hamiltonian, lindblad, &mut state, t_span, save_at, callback, config, cache)
+}
+
+/// Advance `state` in-place from `t_span.0` to `t_span.1`.
+///
+/// At each time in `save_at` (sorted, within t_span), the step is capped
+/// exactly to that time and `callback` is invoked.  Returns the recorded
+/// times (equal to `save_at`) and the corresponding callback outputs.
+pub fn solve_mut<T: Config, R, F>(
+    hamiltonian: Option<&PauliSum<T>>,
+    lindblad: &LindbladOp<T>,
+    state: &mut PauliSum<T>,
+    t_span: (f64, f64),
+    save_at: &[f64],
+    callback: F,
+    config: SolverConfig,
+) -> (Vec<f64>, Vec<R>)
+where
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + ACMapBase
+        + Clone,
+    T::Coeff: std::ops::AddAssign
+        + Copy
+        + std::ops::Mul<Output = T::Coeff>
+        + std::iter::Sum
+        + Into<f64>,
+    T::PauliWordType: Clone,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
+        Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
+        + MulAssign
+        + Clone,
+    f64: Into<T::Coeff>,
+    for<'a> T::Map: Trace<'a, T::PauliWordType, Output = T::Coeff>,
+    F: Fn(f64, &PauliSum<T>) -> R,
+{
+    let mut cache = SolverCache::new(state);
+    solve_mut_cached(hamiltonian, lindblad, state, t_span, save_at, callback, config, &mut cache)
+}
+
+/// Clone `initial` and delegate to [`solve_mut`].  `initial` is not modified.
+pub fn solve<T: Config, R, F>(
+    hamiltonian: Option<&PauliSum<T>>,
+    lindblad: &LindbladOp<T>,
+    initial: &PauliSum<T>,
+    t_span: (f64, f64),
+    save_at: &[f64],
+    callback: F,
+    config: SolverConfig,
+) -> (Vec<f64>, Vec<R>)
+where
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + ACMapBase
+        + Clone,
+    T::Coeff: std::ops::AddAssign
+        + Copy
+        + std::ops::Mul<Output = T::Coeff>
+        + std::iter::Sum
+        + Into<f64>,
+    T::PauliWordType: Clone,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
+        Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
+        + MulAssign
+        + Clone,
+    f64: Into<T::Coeff>,
+    for<'a> T::Map: Trace<'a, T::PauliWordType, Output = T::Coeff>,
+    F: Fn(f64, &PauliSum<T>) -> R,
+{
+    let mut state = initial.clone();
+    let mut cache = SolverCache::new(&state);
+    solve_mut_cached(hamiltonian, lindblad, &mut state, t_span, save_at, callback, config, &mut cache)
 }
 
 #[cfg(test)]
@@ -370,5 +472,46 @@ mod tests {
                 "at t={t_s}: got {r}, expected {expected}"
             );
         }
+    }
+
+    #[test]
+    fn solve_cached_reuse_independent_results() {
+        // Two consecutive solve_cached calls on the same cache with different initial states
+        // must produce independent, correct results.
+        //
+        // H = 0.5*Z, exact: <X|P(t)> = cos(t).
+        // Call 1: P(0) = X, save at t = 1.0. Expected cos(1) ≈ 0.5403.
+        // Call 2: P(0) = X (fresh initial), save at t = 0.5. Expected cos(0.5) ≈ 0.8776.
+        // The cache from call 1 must not corrupt call 2.
+        let h = sum1(&[("Z", 0.5)]);
+        let initial = sum1(&[("X", 1.0)]);
+        let lindblad = empty_lindblad();
+        let mut cache = SolverCache::new(&initial);
+
+        let (_, rs1) = solve_cached(
+            Some(&h), &lindblad, &initial,
+            (0.0, 1.0), &[1.0],
+            |_, p| x_sum_overlap(p),
+            SolverConfig::default(),
+            &mut cache,
+        );
+        let (_, rs2) = solve_cached(
+            Some(&h), &lindblad, &initial,
+            (0.0, 1.0), &[0.5],
+            |_, p| x_sum_overlap(p),
+            SolverConfig::default(),
+            &mut cache,
+        );
+
+        let expected1 = (1.0_f64).cos();
+        let expected2 = (0.5_f64).cos();
+        assert!(
+            (rs1[0] - expected1).abs() < 1e-4,
+            "call 1: got {}, expected {}", rs1[0], expected1
+        );
+        assert!(
+            (rs2[0] - expected2).abs() < 1e-4,
+            "call 2: got {}, expected {}", rs2[0], expected2
+        );
     }
 }

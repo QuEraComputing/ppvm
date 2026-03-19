@@ -1,6 +1,6 @@
 use std::ops::{Mul, MulAssign};
 
-use ppvm_runtime::prelude::{ACMapAddAssign, ACMapIter, Config, PauliSum, PhasedPauliWord, PauliWordTrait};
+use ppvm_runtime::prelude::{ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliSum, PhasedPauliWord, PauliWordTrait};
 
 pub enum RateMatrix {
     Vector(Vec<f64>),
@@ -187,7 +187,7 @@ pub fn rhs<T: Config>(
 ) -> PauliSum<T>
 where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapBase,
     T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
     T::PauliWordType: Clone,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
@@ -197,12 +197,36 @@ where
     f64: Into<T::Coeff>,
 {
     let mut result = PauliSum::<T>::builder().n_qubits(p.n_qubits()).build();
-    if let Some(h) = ham {
-        commutator_real(h, p, &mut result);
-    }
-    lindblad.apply(p, &mut result);
-    result.truncate();
+    rhs_into(ham, lindblad, p, &mut result);
     result
+}
+
+/// In-place version of [`rhs`].
+///
+/// Clears `result`, computes `dP/dt = i[ham, P] + L(P)` into it, then calls `truncate()`.
+/// Retains the allocated capacity of `result`.
+pub(crate) fn rhs_into<T: Config>(
+    ham: Option<&PauliSum<T>>,
+    lindblad: &LindbladOp<T>,
+    p: &PauliSum<T>,
+    result: &mut PauliSum<T>,
+) where
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapBase,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
+    T::PauliWordType: Clone,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
+        Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
+        + MulAssign
+        + Clone,
+    f64: Into<T::Coeff>,
+{
+    result.data_mut().clear();
+    if let Some(h) = ham {
+        commutator_real(h, p, result);
+    }
+    lindblad.apply(p, result);
+    result.truncate();
 }
 
 /// Accumulates `i[ham, p]` into `result` using real f64 arithmetic.

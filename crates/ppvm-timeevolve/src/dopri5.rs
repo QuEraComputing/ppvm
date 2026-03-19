@@ -1,11 +1,11 @@
 use std::ops::{Mul, MulAssign};
 
 use ppvm_runtime::prelude::{
-    ACMapAddAssign, ACMapIter, Config, PauliSum, PhasedPauliWord, Trace,
+    ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliSum, PhasedPauliWord, Trace,
 };
 
-use crate::lindblad::{LindbladOp, rhs};
-use crate::solve::SolverConfig;
+use crate::lindblad::{LindbladOp, rhs, rhs_into};
+use crate::solve::{SolverCache, SolverConfig};
 
 // ---------------------------------------------------------------------------
 // Dormand-Prince 4(5) Butcher tableau
@@ -53,9 +53,8 @@ const E7: f64 = -1.0 / 40.0;
 // Result type
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)] // fields used from solve.rs (Task 9)
-pub(crate) enum StepResult<T: Config> {
-    Accept { y_new: PauliSum<T>, k_next: PauliSum<T>, h_new: f64 },
+pub(crate) enum StepResult {
+    Accept { h_new: f64 },
     Reject { h_new: f64 },
 }
 
@@ -96,7 +95,7 @@ pub(crate) fn estimate_h0<T: Config>(
 ) -> f64
 where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapBase,
     T::Coeff: std::ops::AddAssign
         + Copy
         + std::ops::Mul<Output = T::Coeff>
@@ -152,21 +151,24 @@ where
 
 /// Attempt one DOPRI5 step from `y` with step size `dt`.
 ///
-/// `k1` is `rhs(y)` from the previous step (FSAL).
+/// On entry `cache.k[0]` must hold `rhs(y)` (FSAL carry-over from the previous step).
+/// On `Accept`, `cache.y_scratch` holds the 5th-order solution and `cache.k[6]` holds
+/// `rhs(y_scratch)` (the next k1).  The caller is responsible for swapping state and
+/// advancing the FSAL index (`cache.k.swap(0, 6)`).
 /// Returns `Accept` if the local error is within tolerance, `Reject` otherwise.
-/// In either case `h_new` gives the suggested next step size.
-#[allow(dead_code)] // called from solve.rs (Task 9)
 pub(crate) fn step<T: Config>(
     ham: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
     y: &PauliSum<T>,
-    k1: PauliSum<T>,
     dt: f64,
     config: &SolverConfig,
-) -> StepResult<T>
+    cache: &mut SolverCache<T>,
+) -> StepResult
 where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + ACMapBase
+        + Clone,
     T::Coeff: std::ops::AddAssign
         + Copy
         + std::ops::Mul<Output = T::Coeff>
@@ -180,89 +182,97 @@ where
     f64: Into<T::Coeff>,
     for<'a> T::Map: Trace<'a, T::PauliWordType, Output = T::Coeff>,
 {
-    // Stage 2
-    let k2 = {
-        let mut y2 = y.clone();
-        add_scaled(&mut y2, &k1, dt * A21);
-        rhs(ham, lindblad, &y2)
-    };
+    // Destructure cache fields so the borrow checker can track independent borrows.
+    let SolverCache { k, y_scratch, err } = cache;
 
-    // Stage 3
-    let k3 = {
-        let mut y3 = y.clone();
-        add_scaled(&mut y3, &k1, dt * A31);
-        add_scaled(&mut y3, &k2, dt * A32);
-        rhs(ham, lindblad, &y3)
-    };
+    // Stage 2: y_scratch = y + dt*A21*k[0];  k[1] = rhs(y_scratch)
+    {
+        let (lo, hi) = k.split_at_mut(1);
+        y_scratch.data_mut().clone_from(y.data());
+        add_scaled(y_scratch, &lo[0], dt * A21);
+        rhs_into(ham, lindblad, y_scratch, &mut hi[0]);
+    }
+
+    // Stage 3: y_scratch = y + dt*(A31*k[0] + A32*k[1]);  k[2] = rhs(y_scratch)
+    {
+        let (lo, hi) = k.split_at_mut(2);
+        y_scratch.data_mut().clone_from(y.data());
+        add_scaled(y_scratch, &lo[0], dt * A31);
+        add_scaled(y_scratch, &lo[1], dt * A32);
+        rhs_into(ham, lindblad, y_scratch, &mut hi[0]);
+    }
 
     // Stage 4
-    let k4 = {
-        let mut y4 = y.clone();
-        add_scaled(&mut y4, &k1, dt * A41);
-        add_scaled(&mut y4, &k2, dt * A42);
-        add_scaled(&mut y4, &k3, dt * A43);
-        rhs(ham, lindblad, &y4)
-    };
+    {
+        let (lo, hi) = k.split_at_mut(3);
+        y_scratch.data_mut().clone_from(y.data());
+        add_scaled(y_scratch, &lo[0], dt * A41);
+        add_scaled(y_scratch, &lo[1], dt * A42);
+        add_scaled(y_scratch, &lo[2], dt * A43);
+        rhs_into(ham, lindblad, y_scratch, &mut hi[0]);
+    }
 
     // Stage 5
-    let k5 = {
-        let mut y5 = y.clone();
-        add_scaled(&mut y5, &k1, dt * A51);
-        add_scaled(&mut y5, &k2, dt * A52);
-        add_scaled(&mut y5, &k3, dt * A53);
-        add_scaled(&mut y5, &k4, dt * A54);
-        rhs(ham, lindblad, &y5)
-    };
+    {
+        let (lo, hi) = k.split_at_mut(4);
+        y_scratch.data_mut().clone_from(y.data());
+        add_scaled(y_scratch, &lo[0], dt * A51);
+        add_scaled(y_scratch, &lo[1], dt * A52);
+        add_scaled(y_scratch, &lo[2], dt * A53);
+        add_scaled(y_scratch, &lo[3], dt * A54);
+        rhs_into(ham, lindblad, y_scratch, &mut hi[0]);
+    }
 
     // Stage 6
-    let k6 = {
-        let mut y6 = y.clone();
-        add_scaled(&mut y6, &k1, dt * A61);
-        add_scaled(&mut y6, &k2, dt * A62);
-        add_scaled(&mut y6, &k3, dt * A63);
-        add_scaled(&mut y6, &k4, dt * A64);
-        add_scaled(&mut y6, &k5, dt * A65);
-        rhs(ham, lindblad, &y6)
-    };
+    {
+        let (lo, hi) = k.split_at_mut(5);
+        y_scratch.data_mut().clone_from(y.data());
+        add_scaled(y_scratch, &lo[0], dt * A61);
+        add_scaled(y_scratch, &lo[1], dt * A62);
+        add_scaled(y_scratch, &lo[2], dt * A63);
+        add_scaled(y_scratch, &lo[3], dt * A64);
+        add_scaled(y_scratch, &lo[4], dt * A65);
+        rhs_into(ham, lindblad, y_scratch, &mut hi[0]);
+    }
 
-    // 5th-order update: y_new = y + dt*(b1*k1 + b3*k3 + b4*k4 + b5*k5 + b6*k6)
+    // 5th-order update: y_scratch = y + dt*(b1*k[0] + b3*k[2] + b4*k[3] + b5*k[4] + b6*k[5])
     // b_2 = 0 and b_7 = 0 (FSAL: k7 not used in y_new)
-    let mut y_new = y.clone();
-    add_scaled(&mut y_new, &k1, dt * B1);
-    add_scaled(&mut y_new, &k3, dt * B3);
-    add_scaled(&mut y_new, &k4, dt * B4);
-    add_scaled(&mut y_new, &k5, dt * B5);
-    add_scaled(&mut y_new, &k6, dt * B6);
+    y_scratch.data_mut().clone_from(y.data());
+    add_scaled(y_scratch, &k[0], dt * B1);
+    add_scaled(y_scratch, &k[2], dt * B3);
+    add_scaled(y_scratch, &k[3], dt * B4);
+    add_scaled(y_scratch, &k[4], dt * B5);
+    add_scaled(y_scratch, &k[5], dt * B6);
 
-    // Stage 7 (FSAL: k_next = k1 of the next step, also used in error estimate)
-    let k7 = rhs(ham, lindblad, &y_new);
+    // Stage 7 (FSAL): k[6] = rhs(y_scratch)
+    rhs_into(ham, lindblad, y_scratch, &mut k[6]);
 
-    // Error estimate: e = dt * (e1*k1 + e3*k3 + e4*k4 + e5*k5 + e6*k6 + e7*k7)
+    // Error estimate: e = dt * (e1*k[0] + e3*k[2] + e4*k[3] + e5*k[4] + e6*k[5] + e7*k[6])
     // e_2 = 0
-    let mut err_vec = PauliSum::<T>::builder().n_qubits(y.n_qubits()).build();
-    add_scaled(&mut err_vec, &k1, dt * E1);
-    add_scaled(&mut err_vec, &k3, dt * E3);
-    add_scaled(&mut err_vec, &k4, dt * E4);
-    add_scaled(&mut err_vec, &k5, dt * E5);
-    add_scaled(&mut err_vec, &k6, dt * E6);
-    add_scaled(&mut err_vec, &k7, dt * E7);
+    err.data_mut().clear();
+    add_scaled(err, &k[0], dt * E1);
+    add_scaled(err, &k[2], dt * E3);
+    add_scaled(err, &k[3], dt * E4);
+    add_scaled(err, &k[4], dt * E5);
+    add_scaled(err, &k[5], dt * E6);
+    add_scaled(err, &k[6], dt * E7);
 
     // Error norm: err = ||e|| / (atol + rtol * ||y||)
-    let err_norm_sq: f64 = err_vec.overlap(&err_vec).into();
+    let err_norm_sq: f64 = err.overlap(err).into();
     let y_norm_sq: f64 = y.overlap(y).into();
     let denom = config.atol + config.rtol * y_norm_sq.sqrt();
-    let err = err_norm_sq.sqrt() / denom;
+    let err_scalar = err_norm_sq.sqrt() / denom;
 
     // Step size update (PI controller simplified to I-only)
-    let h_factor = if err == 0.0 {
+    let h_factor = if err_scalar == 0.0 {
         10.0
     } else {
-        f64::clamp(0.9 * err.powf(-0.2), 0.2, 10.0)
+        f64::clamp(0.9 * err_scalar.powf(-0.2), 0.2, 10.0)
     };
     let h_new = dt * h_factor;
 
-    if err < 1.0 {
-        StepResult::Accept { y_new, k_next: k7, h_new }
+    if err_scalar < 1.0 {
+        StepResult::Accept { h_new }
     } else {
         StepResult::Reject { h_new }
     }
@@ -272,7 +282,8 @@ where
 mod tests {
     use super::*;
     use ppvm_runtime::prelude::{config::fxhash::ByteF64, PauliSum};
-    use crate::lindblad::{LindbladOp, RateMatrix};
+    use crate::lindblad::{LindbladOp, RateMatrix, rhs, rhs_into};
+    use crate::solve::SolverCache;
 
     fn sum1(terms: &[(&str, f64)]) -> PauliSum<ByteF64<1>> {
         let mut s: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
@@ -297,12 +308,15 @@ mod tests {
         // With no Hamiltonian and empty Lindblad, rhs = 0.
         // k1 = 0, all k_i = 0, y_new = y, error = 0 => always Accept.
         let y = sum1(&[("X", 1.0)]);
-        let k1 = rhs(None, &empty_lindblad(), &y);
+        let lindblad = empty_lindblad();
+        let mut cache = SolverCache::new(&y);
+        rhs_into(None, &lindblad, &y, &mut cache.k[0]);
         let config = SolverConfig::default();
-        match step(None, &empty_lindblad(), &y, k1, 0.1, &config) {
-            StepResult::Accept { y_new, .. } => {
-                assert!((get_coeff(&y_new, "X") - 1.0).abs() < 1e-15);
-                assert_eq!(get_coeff(&y_new, "Y"), 0.0);
+        match step(None, &lindblad, &y, 0.1, &config, &mut cache) {
+            StepResult::Accept { .. } => {
+                // y_new is in cache.y_scratch after Accept
+                assert!((get_coeff(&cache.y_scratch, "X") - 1.0).abs() < 1e-15);
+                assert_eq!(get_coeff(&cache.y_scratch, "Y"), 0.0);
             }
             StepResult::Reject { .. } => panic!("expected Accept"),
         }
@@ -315,13 +329,15 @@ mod tests {
         // First-order Taylor: X - 0.01*Y, error O(dt^2) ≈ 1e-4
         let h = sum1(&[("Z", 0.5)]);
         let y = sum1(&[("X", 1.0)]);
-        let k1 = rhs(Some(&h), &empty_lindblad(), &y);
+        let lindblad = empty_lindblad();
+        let mut cache = SolverCache::new(&y);
+        rhs_into(Some(&h), &lindblad, &y, &mut cache.k[0]);
         let config = SolverConfig::default();
-        match step(Some(&h), &empty_lindblad(), &y, k1, 0.01, &config) {
-            StepResult::Accept { y_new, .. } => {
-                let x_coeff = get_coeff(&y_new, "X");
-                let y_coeff = get_coeff(&y_new, "Y");
-                // Accept if within 1e-4 of first-order Taylor
+        match step(Some(&h), &lindblad, &y, 0.01, &config, &mut cache) {
+            StepResult::Accept { .. } => {
+                // y_new is in cache.y_scratch
+                let x_coeff = get_coeff(&cache.y_scratch, "X");
+                let y_coeff = get_coeff(&cache.y_scratch, "Y");
                 assert!((x_coeff - 1.0).abs() < 1e-4, "X coeff: {x_coeff}");
                 assert!((y_coeff - (-0.01)).abs() < 1e-4, "Y coeff: {y_coeff}");
             }
@@ -335,10 +351,12 @@ mod tests {
         // The local error grows as O(dt^5), so a large step must be rejected.
         let h = sum1(&[("Z", 0.5)]);
         let y = sum1(&[("X", 1.0)]);
-        let k1 = rhs(Some(&h), &empty_lindblad(), &y);
+        let lindblad = empty_lindblad();
+        let mut cache = SolverCache::new(&y);
+        rhs_into(Some(&h), &lindblad, &y, &mut cache.k[0]);
         // Very tight tolerances to ensure rejection even for moderate dt
         let config = SolverConfig { rtol: 1e-10, atol: 1e-12, ..SolverConfig::default() };
-        match step(Some(&h), &empty_lindblad(), &y, k1, 5.0, &config) {
+        match step(Some(&h), &lindblad, &y, 5.0, &config, &mut cache) {
             StepResult::Reject { h_new } => {
                 assert!(h_new < 5.0, "h_new should be smaller: {h_new}");
             }
@@ -348,18 +366,18 @@ mod tests {
 
     #[test]
     fn step_fsal_k_next_equals_rhs_y_new() {
-        // k_next from Accept must equal rhs(y_new) computed independently.
+        // After Accept, cache.k[6] must equal rhs(cache.y_scratch) computed independently.
         let h = sum1(&[("Z", 0.5)]);
         let y = sum1(&[("X", 1.0)]);
-        let k1 = rhs(Some(&h), &empty_lindblad(), &y);
-        let config = SolverConfig::default();
         let lindblad = empty_lindblad();
-        match step(Some(&h), &lindblad, &y, k1, 0.01, &config) {
-            StepResult::Accept { y_new, k_next, .. } => {
-                let k7_independent = rhs(Some(&h), &lindblad, &y_new);
-                // k_next should equal rhs(y_new) to floating-point precision
+        let mut cache = SolverCache::new(&y);
+        rhs_into(Some(&h), &lindblad, &y, &mut cache.k[0]);
+        let config = SolverConfig::default();
+        match step(Some(&h), &lindblad, &y, 0.01, &config, &mut cache) {
+            StepResult::Accept { .. } => {
+                let k7_independent = rhs(Some(&h), &lindblad, &cache.y_scratch);
                 for w in &["X", "Y", "Z", "I"] {
-                    let a = get_coeff(&k_next, w);
+                    let a = get_coeff(&cache.k[6], w);
                     let b = get_coeff(&k7_independent, w);
                     assert!((a - b).abs() < 1e-15, "k_next differs at {w}: {a} vs {b}");
                 }

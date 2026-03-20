@@ -1,3 +1,5 @@
+use bitvec::view::BitView;
+use num::PrimInt;
 use num::{
     Complex, One, Zero,
     complex::{Complex64, ComplexFloat},
@@ -14,6 +16,7 @@ const PAULIS: [Pauli; 4] = [Pauli::I, Pauli::X, Pauli::Z, Pauli::Y];
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> RotationTwo<T>
     for GeneralizedTableau<T, I, C>
 where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
     T::Coeff: Zero + One,
     I: TableauIndex,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>

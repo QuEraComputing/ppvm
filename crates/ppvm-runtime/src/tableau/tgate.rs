@@ -1,8 +1,10 @@
 use super::sparsevec::SparseVector;
 use super::traits::TGate;
+use bitvec::view::BitView;
 use crate::config::Config;
 use crate::tableau::GeneralizedTableau;
 use crate::tableau::traits::TableauIndex;
+use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, Zero};
 use std::ops::{BitAnd, Shl};
@@ -19,6 +21,7 @@ const ISIN_PI_OVER_8_TIMES_EXPIPI8: Complex64 = Complex {
 impl<T, I, C> TGate<T> for GeneralizedTableau<T, I, C>
 where
     T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: SparseVector<Complex<T::Coeff>, I>,
     T::Coeff: One + Zero + Clone,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>

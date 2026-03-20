@@ -1,6 +1,8 @@
 use super::data::{GeneralizedTableau, Tableau, symplectic_inner};
 use super::traits::{LossyMeasure, Measure};
+use bitvec::view::BitView;
 use crate::config::Config;
+use num::PrimInt;
 use crate::tableau::sparsevec::SparseVector;
 use crate::tableau::traits::TableauIndex;
 use num::complex::{Complex, Complex64, ComplexFloat};
@@ -9,7 +11,10 @@ use rand::RngExt;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-impl<T: Config> Measure for Tableau<T> {
+impl<T: Config> Measure for Tableau<T>
+where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+{
     /// Measure qubit `addr0` in Z basis
     fn measure(&mut self, addr0: usize) -> bool {
         let q = self.find_z_anticommuting_stabilizer(addr0);
@@ -45,6 +50,7 @@ impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> LossyMeasure
     for GeneralizedTableau<T, I, C>
 where
     T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
     T::Coeff: One
         + Zero

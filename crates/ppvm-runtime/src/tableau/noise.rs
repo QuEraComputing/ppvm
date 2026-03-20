@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use bitvec::view::BitView;
+use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 
@@ -209,6 +211,7 @@ where
 impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> LossChannel<T>
     for GeneralizedTableau<T, I, C>
 where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: std::fmt::Debug,
     T::Coeff: PartialOrd<f64> + One + Zero + Clone + num::Num + ToPrimitive + std::fmt::Debug,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -237,6 +240,7 @@ where
 impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> CorrelatedLossChannel<T>
     for GeneralizedTableau<T, I, C>
 where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: std::fmt::Debug,
     T::Coeff: PartialOrd<f64> + One + Zero + Clone + num::Num + ToPrimitive + std::fmt::Debug,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>

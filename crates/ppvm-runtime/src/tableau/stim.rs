@@ -1,6 +1,7 @@
 use super::GeneralizedTableau;
 use super::sparsevec::SparseVector;
 use super::traits::{TGate, TableauIndex};
+use bitvec::view::BitView;
 use crate::tableau::{CliffordExtensions, LossyMeasure, Reset};
 use crate::traits::{
     Clifford, CorrelatedLossChannel, Depolarizing2, LossChannel, PauliError, RotationOne,
@@ -9,6 +10,7 @@ use crate::traits::{
 use crate::{config::Config, traits::Depolarizing};
 use itertools::Itertools;
 use num::Integer;
+use num::PrimInt;
 use num::{
     Complex, One, ToPrimitive, Zero,
     complex::{Complex64, ComplexFloat},
@@ -61,6 +63,7 @@ pub trait RunStim {
 impl<T, I, C> RunStim for GeneralizedTableau<T, I, C>
 where
     T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
     T::Coeff: One
         + Zero

@@ -1,5 +1,8 @@
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
 
+use bitvec::view::BitView;
+use num::PrimInt;
+
 use super::sparsevec::SparseVector;
 use crate::traits::PauliWordTrait;
 use crate::{char::Pauli, config::Config};
@@ -81,7 +84,10 @@ impl<T: Config> Tableau<T> {
             .position(|stab| stab.word.anticommutes_at(addr0, (false, true)))
     }
 
-    pub(crate) fn get_deterministic_outcome(&self, addr0: usize) -> bool {
+    pub(crate) fn get_deterministic_outcome(&self, addr0: usize) -> bool
+    where
+        <<T as Config>::Storage as BitView>::Store: PrimInt,
+    {
         // find the outcome: either Z_addr0 or -Z_addr0 is a stabilizer
         // the stabilizer can be computed as the product of all stabilizers S_i
         // whose corresponding destabilizer D_i anticommutes with Z_addr0 (has X at addr0).
@@ -109,7 +115,9 @@ impl<T: Config> Tableau<T> {
         addr0: usize,
         q_idx: usize,
         outcome: bool,
-    ) {
+    ) where
+        <<T as Config>::Storage as BitView>::Store: PrimInt,
+    {
         let n = self.n_qubits;
         let (destabilizers, stabilizers) = self.data.split_at_mut(n);
 
@@ -239,7 +247,10 @@ where
     /// The function returns `(phase, gamma, lambda)`, where `gamma = (gamma_1, ..., gamma_n) as I`
     /// and `lambda = (lambda_1, ..., lambda_n) as I`. Note that gamma is equal to the shift of
     /// the index when branching (`beta` in Eq(4) of the SOFT paper).
-    pub(crate) fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I) {
+    pub(crate) fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I)
+    where
+        <<T as Config>::Storage as BitView>::Store: PrimInt,
+    {
         let n = self.n_qubits();
 
         // the actual decomposition, which we need to track the phase
@@ -379,7 +390,9 @@ where
         pauli: Pauli,
         coefficient_factor: Complex<T::Coeff>,
         branch_factor: Complex<T::Coeff>,
-    ) {
+    ) where
+        <<T as Config>::Storage as BitView>::Store: PrimInt,
+    {
         if self.is_lost[addr0] {
             return;
         }
@@ -429,7 +442,9 @@ where
         coefficients: &mut C,
         addr0: usize,
         pauli: Pauli,
-    ) {
+    ) where
+        <<T as Config>::Storage as BitView>::Store: PrimInt,
+    {
         if self.is_lost[addr0] {
             return;
         }

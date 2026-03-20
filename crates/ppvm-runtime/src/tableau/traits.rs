@@ -1,3 +1,5 @@
+use bitvec::view::BitView;
+use num::PrimInt;
 use num::Complex;
 use num::complex::{Complex64, ComplexFloat};
 use num::{One, ToPrimitive, Zero};
@@ -88,7 +90,10 @@ pub trait Reset {
     fn reset(&mut self, addr0: usize);
 }
 
-impl<T: Config> Reset for Tableau<T> {
+impl<T: Config> Reset for Tableau<T>
+where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+{
     fn reset(&mut self, addr0: usize) {
         let m = self.measure(addr0);
         if m {
@@ -100,6 +105,7 @@ impl<T: Config> Reset for Tableau<T> {
 impl<T, I, C> Reset for GeneralizedTableau<T, I, C>
 where
     T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
     I: TableauIndex + Debug,
     C: SparseVector<Complex<T::Coeff>, I> + Debug,
     T::Coeff: One

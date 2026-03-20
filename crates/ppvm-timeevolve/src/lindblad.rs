@@ -46,7 +46,6 @@ impl<T: Config> CollapseOp<T> {
 pub(crate) struct LindbladTerm<T: Config> {
     pub(crate) left:   PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>,
     pub(crate) right:  PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>,
-    pub(crate) a_kl:   PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>,
     pub(crate) weight: f64,
 }
 
@@ -91,9 +90,8 @@ where
                             sigma_l.word.clone(),
                             phi_l,
                         );
-                        let a_kl = left.clone() * right.clone();
 
-                        terms.push(LindbladTerm { left, right, a_kl, weight });
+                        terms.push(LindbladTerm { left, right, weight });
                     }
                 }
             }
@@ -145,30 +143,26 @@ where
                         w_a.clone(),
                     );
 
-                // Sandwich: 2 * left * W_a * right
-                let mut tmp = term.left.clone();
-                tmp *= wa_phased.clone();
-                tmp *= term.right.clone();
-                let s = re_phase(tmp.phase);
-                if s != 0.0 {
-                    let c = (2.0 * term.weight * s).into() * *coeff_a;
-                    *result += (tmp.word, c);
-                }
-
-                // Anticommutator: -(a_kl * W_a + W_a * a_kl)
-                // Since (a_kl * wa).word == (wa * a_kl).word, one multiplication suffices.
-                // When parity=1, the two terms cancel exactly (anticommutator of
-                // anticommuting Paulis is zero), so skip the multiplication entirely.
-                // When parity=0, combined = 2 * re_phase(t1); the inner guard on s
-                // handles the case where a_kl has an imaginary phase making re_phase zero.
-                let parity = comm_parity(&term.a_kl.word, &wa_phased.word);
-                if parity == 0 {
-                    let mut t1 = term.a_kl.clone();
-                    t1 *= wa_phased.clone();
-                    let s = re_phase(t1.phase);
+                // Commutator form: 2·left·W_a·right − {left·right, W_a}
+                //   = [left, W_a]·right + left·[W_a, right]
+                // multiplicity = p1 + p2 where p1 = comm_parity(left, W_a),
+                //                               p2 = comm_parity(W_a, right).
+                // multiplicity=0 (~25%): contribution is zero — skip entirely.
+                // multiplicity=1 (~50%): coeff = 2·weight·re_phase·coeff_a.
+                // multiplicity=2 (~25%): coeff = 4·weight·re_phase·coeff_a.
+                // Expected MulAssigns/entry: 1.5 (vs 2.5 in sandwich+anticommutator form).
+                // See PLAN_PHASE2.md §Task 16 for derivation.
+                let p1 = comm_parity(&term.left.word, &wa_phased.word);
+                let p2 = comm_parity(&wa_phased.word, &term.right.word);
+                let multiplicity = p1 + p2;
+                if multiplicity > 0 {
+                    let mut tmp = term.left.clone();
+                    tmp *= wa_phased;           // left * W_a; wa_phased moved here
+                    tmp *= term.right.clone();  // * right
+                    let s = re_phase(tmp.phase);
                     if s != 0.0 {
-                        let c = (-2.0 * term.weight * s).into() * *coeff_a;
-                        *result += (t1.word, c);
+                        let c = (multiplicity as f64 * 2.0 * term.weight * s).into() * *coeff_a;
+                        *result += (tmp.word, c);
                     }
                 }
             }
@@ -327,36 +321,66 @@ mod tests {
     }
 
     #[test]
-    fn anticommutator_imaginary_akl_anticommuting_wa_is_zero() {
-        // Regression for the parity==1 bug: when a_kl has an odd (imaginary) phase
-        // and W_a anticommutes with a_kl.word, the anticommutator must be zero.
+    fn imaginary_phase_term_gives_zero_x() {
+        // Regression: when left*right has an imaginary phase, re_phase filters it.
         //
-        // Derivation: -(iX·Z + Z·iX) = -i(XZ + ZX) = -i(-iY + iY) = 0.
-        //
-        // Use c1=Y (phase=0, c†=Y), c2=Z (phase=0) with γ₁₂=1.
-        // Cross-pair (k=Y†=(Y,0), l=Z): φ_k†=0, φ_l=0, p=0.
-        // left={Y,0}, right={Z,0}, a_kl=Y*Z=iX → {word:X, phase:1}.
-        // Apply to P=Z: comm_parity(X,Z)=1 (anticommute), so contribution must be 0.
+        // Use c1=Y (phase=0), c2=Z (phase=0) with γ₁₂=1 (off-diagonal rate matrix).
+        // Cross-pair: left={Y,0}, right={Z,0}.
+        //   Y*Z = iX (phase=1), so re_phase=0 → no X term from any W_a.
+        // Apply to P=Z: verify no X coefficient appears.
         let ops = vec![single_op("Y", 0), single_op("Z", 0)];
         let rates = RateMatrix::Dense(vec![vec![0.0, 1.0], vec![1.0, 0.0]]);
         let lop = LindbladOp::new(ops, rates);
 
-        // Find the term with a_kl.word=X (the iX term from Y*Z)
-        let ix_term = lop.terms.iter().find(|t| t.a_kl.word == W1::from("X"));
-        assert!(ix_term.is_some(), "expected a term with a_kl.word=X");
-        assert_eq!(ix_term.unwrap().a_kl.phase, 1, "expected imaginary phase");
-
-        // Applying to P=Z: anticommutator contribution must be zero
         let p = sum1(&[("Z", 1.0)]);
         let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
         lop.apply(&p, &mut result);
 
-        // Sandwich: 2·Y·Z·Z = 2·Y (the non-zero part comes from sandbox, not anticommutator)
-        // We only care that no spurious term appears from a wrong anticommutator condition.
-        // Full L(Z) for this off-diagonal system: verify the X coefficient is zero
-        // (the anticommutator iX·Z + Z·iX = 0, so no X term should appear).
         assert_eq!(get_coeff(&result, "X"), 0.0,
-            "anticommutator of iX with Z must vanish");
+            "imaginary-phase product left*W_a*right must produce zero real coefficient");
+    }
+
+    // ---- Task 16 tests ----
+
+    #[test]
+    fn commutator_form_zero() {
+        // multiplicity=0 path: both left and right commute with W_a → no contribution.
+        //
+        // c=Z (phase=0), left={Z,0}, right={Z,0}.
+        // W_a = Z: comm_parity(Z,Z)=0 and comm_parity(Z,Z)=0 → multiplicity=0.
+        // Apply to P=Z only; expect zero output (L_term(Z) = 0 before summing other
+        // contributions; with this single term and W_a=Z, the inner body is skipped).
+        let lop = LindbladOp::new(vec![single_op("Z", 0)], RateMatrix::from(vec![1.0]));
+        // Verify multiplicity=0 for (left=Z, W_a=Z, right=Z)
+        let t = &lop.terms[0];
+        let wa = W1::from("Z");
+        assert_eq!(comm_parity(&t.left.word, &wa), 0);
+        assert_eq!(comm_parity(&wa, &t.right.word), 0);
+        // Behavioral check: L(Z) = 2·Z·Z·Z − {Z·Z,Z} = 2Z − 2Z = 0
+        let result = apply_to(&lop, "Z");
+        assert_eq!(get_coeff(&result, "Z"), 0.0);
+        assert_eq!(get_coeff(&result, "X"), 0.0);
+        assert_eq!(get_coeff(&result, "Y"), 0.0);
+    }
+
+    #[test]
+    fn commutator_form_double() {
+        // multiplicity=2 path: both parities=1 → coefficient = 4·weight·re_phase·coeff_a.
+        //
+        // c=X (phase=0), left={X,0}, right={X,0}, weight=1.
+        // W_a=Z: comm_parity(X,Z)=1, comm_parity(Z,X)=1 → multiplicity=2.
+        // left*W_a*right = X·Z·X: XZ = -iY (phase 3), then (-iY)·X = -i·YX = -i·(-iZ) = -Z.
+        // Phase of X·Z·X: 2 (re_phase = -1).
+        // Coefficient = 2 * 1 * 1 * (-1) = -4 → Z entry gets -4·coeff_a = -4.
+        //
+        // Manual derivation: L_X(Z) = 2·X·Z·X − {X·X,Z} = 2·(-Z) − {I,Z} = -2Z − 2Z = -4Z.
+        let result = apply_to(&lindblad_x(), "Z");
+        // Verify multiplicity=2 for this term
+        let t = &lindblad_x().terms[0];
+        let wz = W1::from("Z");
+        assert_eq!(comm_parity(&t.left.word, &wz) + comm_parity(&wz, &t.right.word), 2);
+        assert!((get_coeff(&result, "Z") - (-4.0)).abs() < 1e-15,
+            "multiplicity=2 must give coefficient 4*weight*re_phase = -4");
     }
 
     // ---- Task 3 tests ----
@@ -366,7 +390,6 @@ mod tests {
         // c = Z (phase=0), rate=1.0
         // phi_k=0, phi_k†=0, phi_l=0
         // left.phase = phi_k† = 0, right.phase = 0
-        // a_kl = (Z,0)*(Z,0) = (I,0)
         // weight = gamma * r_ik * r_jl = 1.0 * 1.0 * 1.0 = 1.0
         let lop = LindbladOp::new(vec![single_op("Z", 0)], RateMatrix::from(vec![1.0]));
         assert_eq!(lop.terms.len(), 1);
@@ -375,8 +398,6 @@ mod tests {
         assert_eq!(t.left.phase, 0);
         assert_eq!(t.right.word, W1::from("Z"));
         assert_eq!(t.right.phase, 0);
-        assert_eq!(t.a_kl.word, W1::from("I"));
-        assert_eq!(t.a_kl.phase, 0);
         assert!((t.weight - 1.0).abs() < 1e-15);
     }
 
@@ -385,7 +406,6 @@ mod tests {
         // c = iY (phase=1), rate=1.0
         // phi_k=1, phi_k†=(4-1)%4=3, phi_l=1
         // left.phase = phi_k† = 3, right.phase = phi_l = 1
-        // a_kl = (Y,3)*(Y,1): phases 3+1=0; bare YY=I; total (I,0)
         // weight = gamma * 1.0 * 1.0 = 1.0
         let lop = LindbladOp::new(vec![single_op("Y", 1)], RateMatrix::from(vec![1.0]));
         assert_eq!(lop.terms.len(), 1);
@@ -394,8 +414,6 @@ mod tests {
         assert_eq!(t.left.phase, 3);
         assert_eq!(t.right.word, W1::from("Y"));
         assert_eq!(t.right.phase, 1);
-        assert_eq!(t.a_kl.word, W1::from("I"));
-        assert_eq!(t.a_kl.phase, 0);
         assert!((t.weight - 1.0).abs() < 1e-15);
     }
 

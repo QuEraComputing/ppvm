@@ -119,8 +119,8 @@ impl<H: BuildHasher + Default + Clone, W: PauliWordTrait> From<&str>
     }
 }
 
-impl<A: PauliStorage, H: BuildHasher + Default + Clone> std::fmt::Display
-    for PhasedPauliWord<A, H>
+impl<A: PauliStorage, H: BuildHasher + Default + Clone, const REHASH: bool> std::fmt::Display
+    for PhasedPauliWord<A, H, PauliWord<A, H, REHASH>>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.phase {

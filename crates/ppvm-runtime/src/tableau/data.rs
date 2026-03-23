@@ -5,6 +5,7 @@ use num::PrimInt;
 
 use super::sparsevec::SparseVector;
 use crate::traits::PauliWordTrait;
+use crate::word::PauliWord;
 use crate::{char::Pauli, config::Config};
 use crate::{phase::PhasedPauliWord, tableau::traits::TableauIndex};
 use num::{
@@ -14,22 +15,24 @@ use num::{
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 
+type PhasedPauliWordNoHash<A, H> = PhasedPauliWord<A, H, PauliWord<A, H, false>>;
+
 #[derive(Clone, Debug)]
 pub struct Tableau<T: Config> {
     pub n_qubits: usize,
     /// Destabilizer / Stabilizer tableau
     /// * Entries 0..n are the destabilizers
     /// * Entries n..2n are the stabilizers
-    pub data: Vec<PhasedPauliWord<T::Storage, T::BuildHasher>>,
+    pub data: Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>>,
     pub(crate) rng: SmallRng,
 }
 
 impl<T: Config> Tableau<T> {
     pub fn new(n_qubits: usize) -> Self {
         // Initialize tableau for 0 state
-        let mut data: Vec<PhasedPauliWord<T::Storage, T::BuildHasher>> =
+        let mut data: Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>> =
             Vec::with_capacity(2 * n_qubits);
-        let pw_cache = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(n_qubits);
+        let pw_cache = PhasedPauliWordNoHash::<T::Storage, T::BuildHasher>::new(n_qubits);
         for i in 0..n_qubits {
             // destabilizer
             let mut pw = pw_cache.clone();
@@ -57,22 +60,24 @@ impl<T: Config> Tableau<T> {
     }
 
     #[inline]
-    pub fn stabilizers(&self) -> &[PhasedPauliWord<T::Storage, T::BuildHasher>] {
+    pub fn stabilizers(&self) -> &[PhasedPauliWordNoHash<T::Storage, T::BuildHasher>] {
         &self.data[self.n_qubits..]
     }
 
     #[inline]
-    pub fn stabilizers_mut(&mut self) -> &mut [PhasedPauliWord<T::Storage, T::BuildHasher>] {
+    pub fn stabilizers_mut(&mut self) -> &mut [PhasedPauliWordNoHash<T::Storage, T::BuildHasher>] {
         &mut self.data[self.n_qubits..]
     }
 
     #[inline]
-    pub fn destabilizers(&self) -> &[PhasedPauliWord<T::Storage, T::BuildHasher>] {
+    pub fn destabilizers(&self) -> &[PhasedPauliWordNoHash<T::Storage, T::BuildHasher>] {
         &self.data[..self.n_qubits]
     }
 
     #[inline]
-    pub fn destabilizers_mut(&mut self) -> &mut [PhasedPauliWord<T::Storage, T::BuildHasher>] {
+    pub fn destabilizers_mut(
+        &mut self,
+    ) -> &mut [PhasedPauliWordNoHash<T::Storage, T::BuildHasher>] {
         &mut self.data[..self.n_qubits]
     }
 
@@ -95,7 +100,7 @@ impl<T: Config> Tableau<T> {
         let destabilizers = self.destabilizers();
         let stabilizers = self.stabilizers();
         let n = self.n_qubits;
-        let mut result = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(n);
+        let mut result = PhasedPauliWordNoHash::<T::Storage, T::BuildHasher>::new(n);
         for (i, destab) in destabilizers.iter().enumerate() {
             if destab.word.xbits[addr0] {
                 result *= &stabilizers[i];
@@ -254,7 +259,7 @@ where
         let n = self.n_qubits();
 
         // the actual decomposition, which we need to track the phase
-        let mut p_word = PhasedPauliWord::<T::Storage, T::BuildHasher>::new(n);
+        let mut p_word = PhasedPauliWordNoHash::<T::Storage, T::BuildHasher>::new(n);
         p_word.set(addr0, pauli);
 
         // the bit strings defining the contributions

@@ -1,9 +1,10 @@
 use bitvec::view::BitView;
 use num::PrimInt;
 
-use crate::{phase::PhasedPauliWord, traits::PauliStorage};
+use crate::{phase::PhasedPauliWord, traits::PauliStorage, word::PauliWord};
 
-impl<A, S> std::ops::MulAssign for PhasedPauliWord<A, S>
+impl<A, S, const REHASH: bool> std::ops::MulAssign
+    for PhasedPauliWord<A, S, PauliWord<A, S, REHASH>>
 where
     A: PauliStorage,
     <A as BitView>::Store: PrimInt,
@@ -14,7 +15,8 @@ where
     }
 }
 
-impl<A, S> std::ops::MulAssign<&Self> for PhasedPauliWord<A, S>
+impl<A, S, const REHASH: bool> std::ops::MulAssign<&Self>
+    for PhasedPauliWord<A, S, PauliWord<A, S, REHASH>>
 where
     A: PauliStorage,
     <A as BitView>::Store: PrimInt,
@@ -36,17 +38,29 @@ where
             }
         }
         self.add_phase(((2 * sign_count + imag_count) % 4) as u8);
-        for (l, r) in self.word.xbits.as_raw_mut_slice().iter_mut().zip(rhs.word.xbits.as_raw_slice()) {
+        for (l, r) in self
+            .word
+            .xbits
+            .as_raw_mut_slice()
+            .iter_mut()
+            .zip(rhs.word.xbits.as_raw_slice())
+        {
             *l = *l ^ *r;
         }
-        for (l, r) in self.word.zbits.as_raw_mut_slice().iter_mut().zip(rhs.word.zbits.as_raw_slice()) {
+        for (l, r) in self
+            .word
+            .zbits
+            .as_raw_mut_slice()
+            .iter_mut()
+            .zip(rhs.word.zbits.as_raw_slice())
+        {
             *l = *l ^ *r;
         }
         self.add_phase(rhs.phase);
     }
 }
 
-impl<A, S> std::ops::Mul for PhasedPauliWord<A, S>
+impl<A, S, const REHASH: bool> std::ops::Mul for PhasedPauliWord<A, S, PauliWord<A, S, REHASH>>
 where
     A: PauliStorage + Clone,
     <A as BitView>::Store: PrimInt,
@@ -72,7 +86,7 @@ where
     // 11 01 01
     // 11 10 11
     // 11 11 00
-    type Output = PhasedPauliWord<A, S>;
+    type Output = PhasedPauliWord<A, S, PauliWord<A, S, REHASH>>;
     fn mul(self, rhs: Self) -> Self::Output {
         let mut output = self.clone();
         output *= rhs;

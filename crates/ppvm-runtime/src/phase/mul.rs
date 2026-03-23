@@ -1,7 +1,11 @@
 use bitvec::view::BitView;
 use num::PrimInt;
 
-use crate::{phase::PhasedPauliWord, traits::PauliStorage, word::PauliWord};
+use crate::{
+    phase::PhasedPauliWord,
+    traits::{PauliStorage, PauliWordTrait},
+    word::PauliWord,
+};
 
 impl<A, S, const REHASH: bool> std::ops::MulAssign
     for PhasedPauliWord<A, S, PauliWord<A, S, REHASH>>
@@ -56,6 +60,7 @@ where
         {
             *l = *l ^ *r;
         }
+        self.word.rehash();
         self.add_phase(rhs.phase);
     }
 }

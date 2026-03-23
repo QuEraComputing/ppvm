@@ -230,7 +230,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Paul
     }
 }
 
-impl<A: PauliStorage, S> Ord for PauliWord<A, S> {
+impl<A: PauliStorage, S, const REHASH: bool> Ord for PauliWord<A, S, REHASH> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if self.nqubits != other.nqubits {
             panic!("Cannot compare PauliStrings with different number of qubits");
@@ -241,7 +241,7 @@ impl<A: PauliStorage, S> Ord for PauliWord<A, S> {
     }
 }
 
-impl<A: PauliStorage, S> PartialOrd for PauliWord<A, S> {
+impl<A: PauliStorage, S, const REHASH: bool> PartialOrd for PauliWord<A, S, REHASH> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if self.nqubits != other.nqubits {
             return None;
@@ -324,7 +324,7 @@ impl<A: PauliStorage, S> From<PauliWord<A, S>> for usize {
     }
 }
 
-impl<A: PauliStorage, S> Index<usize> for PauliWord<A, S> {
+impl<A: PauliStorage, S, const REHASH: bool> Index<usize> for PauliWord<A, S, REHASH> {
     type Output = Pauli;
 
     fn index(&self, index: usize) -> &Self::Output {

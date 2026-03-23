@@ -9,7 +9,7 @@ pub struct Byte8<
     const N: usize,
     C: Coefficient,
     St: Strategy = NoStrategy,
-    W: PauliWordTrait = PauliWord<[u8; N], fxhash::FxBuildHasher>,
+    W: PauliWordTrait = PauliWord<[u64; N], fxhash::FxBuildHasher>,
 >(PhantomData<(C, St, W)>);
 
 impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait> Config

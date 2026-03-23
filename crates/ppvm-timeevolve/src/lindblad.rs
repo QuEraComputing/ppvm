@@ -1,6 +1,10 @@
+use std::borrow::Borrow;
 use std::ops::{Mul, MulAssign};
 
-use ppvm_runtime::prelude::{ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliSum, PhasedPauliWord, PauliWordTrait};
+use ppvm_runtime::prelude::{
+    ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliStorage, PauliSum, PauliWord,
+    PhasedPauliWord,
+};
 
 pub enum RateMatrix {
     Vector(Vec<f64>),
@@ -103,12 +107,24 @@ where
 
 /// Returns the commutation parity of two Pauli words: 1 if they anticommute, 0 if they commute.
 ///
-/// Computed as `popcount((a.xbits & b.zbits) XOR (a.zbits & b.xbits)) mod 2`.
-#[inline]
-pub(crate) fn comm_parity<W: PauliWordTrait>(a: &W, b: &W) -> u8 {
+/// Computed as `parity((a.xbits & b.zbits) XOR (a.zbits & b.xbits))` over `n_qubits` bits.
+/// Accesses `xbits` and `zbits` directly as `BitArray` fields (no trait abstraction).
+/// Per-bit indexing via `a.xbits[i]` generates pure scalar `w`-register ARM code; this
+/// avoids LLVM auto-vectorizing to NEON instructions, which adds scalar↔vector overhead
+/// for the 1–3 byte storage sizes used in practice.
+#[inline(always)]
+pub(crate) fn comm_parity<A: PauliStorage, S>(
+    a: &PauliWord<A, S>,
+    b: &PauliWord<A, S>,
+    n_qubits: usize,
+) -> u8 {
     let mut parity = 0u8;
-    for i in 0..a.n_qubits() {
-        parity ^= ((a.get_xbit(i) & b.get_zbit(i)) ^ (a.get_zbit(i) & b.get_xbit(i))) as u8;
+    for i in 0..n_qubits {
+        let ax = a.xbits[i] as u8;
+        let az = a.zbits[i] as u8;
+        let bx = b.xbits[i] as u8;
+        let bz = b.zbits[i] as u8;
+        parity ^= (ax & bz) ^ (az & bx);
     }
     parity
 }
@@ -129,13 +145,14 @@ where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
     T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
     T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
-    T::PauliWordType: Clone,
+    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>>,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         MulAssign + Clone,
     f64: Into<T::Coeff>,
 {
     /// Accumulates `L(P)` into `result`.
     pub(crate) fn apply(&self, p: &PauliSum<T>, result: &mut PauliSum<T>) {
+        let n = p.n_qubits();
         for term in &self.terms {
             for (w_a, coeff_a) in p.data().iter() {
                 let wa_phased =
@@ -152,8 +169,10 @@ where
                 // multiplicity=2 (~25%): coeff = 4·weight·re_phase·coeff_a.
                 // Expected MulAssigns/entry: 1.5 (vs 2.5 in sandwich+anticommutator form).
                 // See PLAN_PHASE2.md §Task 16 for derivation.
-                let p1 = comm_parity(&term.left.word, &wa_phased.word);
-                let p2 = comm_parity(&wa_phased.word, &term.right.word);
+                // .borrow() coerces T::PauliWordType to &PauliWord<T::Storage, T::BuildHasher>
+                // via std's blanket Borrow<T> for T.
+                let p1 = comm_parity(term.left.word.borrow(), wa_phased.word.borrow(), n);
+                let p2 = comm_parity(wa_phased.word.borrow(), term.right.word.borrow(), n);
                 let multiplicity = p1 + p2;
                 if multiplicity > 0 {
                     let mut tmp = term.left.clone();
@@ -183,7 +202,7 @@ where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
     T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapBase,
     T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
-    T::PauliWordType: Clone,
+    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>>,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
@@ -208,7 +227,7 @@ pub(crate) fn rhs_into<T: Config>(
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
     T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapBase,
     T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
-    T::PauliWordType: Clone,
+    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>>,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
@@ -271,6 +290,7 @@ mod tests {
     use ppvm_runtime::strategy::CoefficientThreshold;
 
     type W1 = PauliWord<[u8; 1], fxhash::FxBuildHasher>;
+    type W3 = PauliWord<[u8; 3], fxhash::FxBuildHasher>;
     type PPW1 = PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, W1>;
 
     fn ppw(pauli: &str, phase: u8) -> PPW1 {
@@ -288,19 +308,19 @@ mod tests {
     #[test]
     fn comm_parity_single_qubit_pairs() {
         // Commuting pairs: parity = 0
-        assert_eq!(comm_parity(&W1::from("I"), &W1::from("X")), 0); // IX
-        assert_eq!(comm_parity(&W1::from("X"), &W1::from("I")), 0); // XI
-        assert_eq!(comm_parity(&W1::from("X"), &W1::from("X")), 0); // XX
-        assert_eq!(comm_parity(&W1::from("Y"), &W1::from("Y")), 0); // YY
-        assert_eq!(comm_parity(&W1::from("Z"), &W1::from("Z")), 0); // ZZ
+        assert_eq!(comm_parity(&W1::from("I"), &W1::from("X"), 1), 0); // IX
+        assert_eq!(comm_parity(&W1::from("X"), &W1::from("I"), 1), 0); // XI
+        assert_eq!(comm_parity(&W1::from("X"), &W1::from("X"), 1), 0); // XX
+        assert_eq!(comm_parity(&W1::from("Y"), &W1::from("Y"), 1), 0); // YY
+        assert_eq!(comm_parity(&W1::from("Z"), &W1::from("Z"), 1), 0); // ZZ
 
         // Anticommuting pairs: parity = 1
-        assert_eq!(comm_parity(&W1::from("X"), &W1::from("Y")), 1); // XY
-        assert_eq!(comm_parity(&W1::from("X"), &W1::from("Z")), 1); // XZ
-        assert_eq!(comm_parity(&W1::from("Y"), &W1::from("Z")), 1); // YZ
-        assert_eq!(comm_parity(&W1::from("Y"), &W1::from("X")), 1); // YX
-        assert_eq!(comm_parity(&W1::from("Z"), &W1::from("X")), 1); // ZX
-        assert_eq!(comm_parity(&W1::from("Z"), &W1::from("Y")), 1); // ZY
+        assert_eq!(comm_parity(&W1::from("X"), &W1::from("Y"), 1), 1); // XY
+        assert_eq!(comm_parity(&W1::from("X"), &W1::from("Z"), 1), 1); // XZ
+        assert_eq!(comm_parity(&W1::from("Y"), &W1::from("Z"), 1), 1); // YZ
+        assert_eq!(comm_parity(&W1::from("Y"), &W1::from("X"), 1), 1); // YX
+        assert_eq!(comm_parity(&W1::from("Z"), &W1::from("X"), 1), 1); // ZX
+        assert_eq!(comm_parity(&W1::from("Z"), &W1::from("Y"), 1), 1); // ZY
     }
 
     #[test]
@@ -308,16 +328,16 @@ mod tests {
         type W2 = PauliWord<[u8; 1], fxhash::FxBuildHasher>;
 
         // XZ vs ZX: qubit 0 (X,Z)->1, qubit 1 (Z,X)->1; parity = 0 (even number of anticommuting)
-        assert_eq!(comm_parity(&W2::from("XZ"), &W2::from("ZX")), 0);
+        assert_eq!(comm_parity(&W2::from("XZ"), &W2::from("ZX"), 2), 0);
 
         // XY vs IZ: qubit 0 (X,I)->0, qubit 1 (Y,Z)->1; parity = 1
-        assert_eq!(comm_parity(&W2::from("XY"), &W2::from("IZ")), 1);
+        assert_eq!(comm_parity(&W2::from("XY"), &W2::from("IZ"), 2), 1);
 
         // XZ vs XI: qubit 0 (X,X)->0, qubit 1 (Z,I)->0; parity = 0
-        assert_eq!(comm_parity(&W2::from("XZ"), &W2::from("XI")), 0);
+        assert_eq!(comm_parity(&W2::from("XZ"), &W2::from("XI"), 2), 0);
 
         // XX vs YI: qubit 0 (X,Y)->1, qubit 1 (X,I)->0; parity = 1
-        assert_eq!(comm_parity(&W2::from("XX"), &W2::from("YI")), 1);
+        assert_eq!(comm_parity(&W2::from("XX"), &W2::from("YI"), 2), 1);
     }
 
     #[test]
@@ -340,6 +360,41 @@ mod tests {
             "imaginary-phase product left*W_a*right must produce zero real coefficient");
     }
 
+    // ---- Task 17 tests ----
+
+    #[test]
+    fn comm_parity_n20() {
+        // Per-bit parity for n=20 qubits using [u8; 3] storage.
+
+        // Single anticommuting pair at qubit 0: parity = 1
+        let x0 = W3::from("XIIIIIIIIIIIIIIIIIII");
+        let z0 = W3::from("ZIIIIIIIIIIIIIIIIIII");
+        assert_eq!(comm_parity(&x0, &z0, 20), 1);
+
+        // Two anticommuting pairs at qubits 0 and 1: parity = 0 (even count)
+        let xz = W3::from("XZIIIIIIIIIIIIIIIIII");
+        let zx = W3::from("ZXIIIIIIIIIIIIIIIIII");
+        assert_eq!(comm_parity(&xz, &zx, 20), 0);
+
+        // 20 anticommuting pairs: parity = 20 & 1 = 0
+        let all_x = W3::from("XXXXXXXXXXXXXXXXXXXX");
+        let all_z = W3::from("ZZZZZZZZZZZZZZZZZZZZ");
+        assert_eq!(comm_parity(&all_x, &all_z, 20), 0);
+    }
+
+    #[test]
+    fn comm_parity_zero_padding() {
+        // Verify unused high bits (bits 5–7 in [u8; 1] for n=5) don't produce
+        // spurious parity. The per-bit loop stops at n_qubits=5, so padding bits
+        // are never accessed — this test confirms the loop bound is correct.
+
+        // 5 anticommuting pairs (XXXXX vs ZZZZZ): 5 XOR 1s → parity = 5 & 1 = 1.
+        assert_eq!(comm_parity(&W1::from("XXXXX"), &W1::from("ZZZZZ"), 5), 1);
+
+        // 4 anticommuting pairs: parity = 4 & 1 = 0
+        assert_eq!(comm_parity(&W1::from("XXXX"), &W1::from("ZZZZ"), 4), 0);
+    }
+
     // ---- Task 16 tests ----
 
     #[test]
@@ -354,8 +409,8 @@ mod tests {
         // Verify multiplicity=0 for (left=Z, W_a=Z, right=Z)
         let t = &lop.terms[0];
         let wa = W1::from("Z");
-        assert_eq!(comm_parity(&t.left.word, &wa), 0);
-        assert_eq!(comm_parity(&wa, &t.right.word), 0);
+        assert_eq!(comm_parity(&t.left.word, &wa, 1), 0);
+        assert_eq!(comm_parity(&wa, &t.right.word, 1), 0);
         // Behavioral check: L(Z) = 2·Z·Z·Z − {Z·Z,Z} = 2Z − 2Z = 0
         let result = apply_to(&lop, "Z");
         assert_eq!(get_coeff(&result, "Z"), 0.0);
@@ -378,7 +433,7 @@ mod tests {
         // Verify multiplicity=2 for this term
         let t = &lindblad_x().terms[0];
         let wz = W1::from("Z");
-        assert_eq!(comm_parity(&t.left.word, &wz) + comm_parity(&wz, &t.right.word), 2);
+        assert_eq!(comm_parity(&t.left.word, &wz, 1) + comm_parity(&wz, &t.right.word, 1), 2);
         assert!((get_coeff(&result, "Z") - (-4.0)).abs() < 1e-15,
             "multiplicity=2 must give coefficient 4*weight*re_phase = -4");
     }

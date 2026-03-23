@@ -423,3 +423,47 @@ fields are removed; both Accept and Reject carry only `h_new: f64`).
 times with the same system (parameter sweeps, ensemble averages) can allocate the cache
 once and pass it to `solve_cached` / `solve_mut_cached`. The existing `solve` / `solve_mut`
 remain as backward-compatible wrappers that create a temporary cache internally.
+
+### Task 15 — Truncate state after each accepted step
+
+**Problem.** The DOPRI5 step builds `y_scratch = y + Σ bᵢ · kᵢ` but never truncates it.
+The kᵢ vectors are each outputs of `rhs_into`, which calls `result.truncate()`, so they
+only contain terms above the threshold. However, `y_scratch` is initialised from `y`
+(`clone_from`) and then has small contributions from the kᵢ added in. Any Pauli string
+that enters the state — even with a tiny coefficient — is never removed. Over many
+accepted steps the state fills with sub-threshold Pauli strings, causing every subsequent
+`rhs_into` call to iterate over them needlessly. For n=5 qubits the state can grow to
+4⁵ = 1024 entries, making each `rhs_into` call O(100 × 1024) instead of O(100 × sparse).
+
+**Fix.** In `dopri5.rs`, call `y_scratch.truncate()` immediately after the 5th-order
+solution is assembled and **before** Stage 7 (the FSAL `rhs_into`):
+
+```rust
+// 5th-order update (unchanged)
+y_scratch.data_mut().clone_from(y.data());
+add_scaled(y_scratch, &k[0], dt * B1);
+add_scaled(y_scratch, &k[2], dt * B3);
+add_scaled(y_scratch, &k[3], dt * B4);
+add_scaled(y_scratch, &k[4], dt * B5);
+add_scaled(y_scratch, &k[5], dt * B6);
+
+y_scratch.truncate();   // ← new: prune sub-threshold terms from new state
+
+// Stage 7 (FSAL): k[6] = rhs(y_scratch)
+rhs_into(ham, lindblad, y_scratch, &mut k[6]);
+```
+
+Truncating before Stage 7 keeps the FSAL carry `k[6]` consistent with the truncated
+state: `k[6] = rhs(truncated y_new)`, which is exactly what will be used as k1 at the
+start of the next step. Truncating after Stage 7 would leave `k[6]` computed from the
+untruncated state — a FSAL inconsistency.
+
+The `err` estimate is computed before Stage 7 and is unaffected.
+
+**Tests to add:**
+- `truncate_state_shrinks_over_steps`: run a short solve (n=2 or n=3, a few steps) and
+  assert that the state size at each save point does not grow beyond the theoretical
+  maximum for the given threshold (i.e. does not monotonically accumulate entries).
+- `truncate_does_not_change_accuracy`: compare `<Z₀>` at t=1 with and without truncation
+  (using `CoefficientThreshold(0.0)` to disable) and confirm the result matches to within
+  `rtol`.

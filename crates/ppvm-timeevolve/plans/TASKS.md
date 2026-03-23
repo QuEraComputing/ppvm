@@ -613,6 +613,46 @@ is not on the hot path.
 
 ---
 
+## Task 15 — Truncate state after each accepted DOPRI5 step
+
+**Goal:** Prevent the solver state from accumulating sub-threshold Pauli strings across
+steps. Currently `y_scratch` inherits the full untruncated `y` at each stage, and once a
+Pauli string enters the state it is never removed. For n=5 qubits this causes the state to
+grow toward 4⁵ = 1024 entries, making every subsequent `rhs_into` call proportionally
+more expensive.
+
+**Steps:**
+1. In `src/dopri5.rs`, after the 5th-order solution is assembled into `cache.y_scratch`
+   (after all `add_scaled` calls for the B-coefficients) and **before** Stage 7
+   (`rhs_into` for the FSAL carry), add:
+   ```rust
+   cache.y_scratch.truncate();
+   ```
+2. No other changes. Stage 7 then computes `k[6] = rhs(truncated y_new)`, which is the
+   correct FSAL carry-over for the next step.
+
+**Unit tests:**
+- **State does not grow unboundedly:** run a short solve (n=2, a few steps,
+  `CoefficientThreshold(1e-4)` to make truncation aggressive). Assert that the number of
+  entries in the state at each save point does not exceed the number of Pauli strings
+  reachable above the threshold (i.e. it is not monotonically accumulating entries from
+  step to step).
+- **Accuracy preserved:** solve the single-qubit spontaneous emission problem from Task 10
+  with `CoefficientThreshold(1e-6)` and confirm the result still matches the analytic
+  solution within `1e-4`.
+
+**Review checklist:**
+- [ ] `truncate()` is called on `cache.y_scratch` after the B-coefficient accumulation
+      and before Stage 7.
+- [ ] Stage 7 (`rhs_into` into `cache.k[6]`) uses the truncated `y_scratch`.
+- [ ] No other logic is changed.
+- [ ] All existing tests pass.
+- [ ] Both new tests pass.
+- [ ] **Benchmark:** report `bench_solve` before and after; expect a speedup for runs
+      where the state would otherwise have grown large.
+
+---
+
 ## General Review Rules
 
 Before approving any task:

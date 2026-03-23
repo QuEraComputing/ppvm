@@ -3,13 +3,14 @@ use std::array;
 use ppvm_runtime::{config::fxhash::ByteF64, prelude::*, strategy::CoefficientThreshold};
 use ppvm_timeevolve::{CollapseOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
 
-type S = ByteF64<1, CoefficientThreshold>;
+const NBYTES: usize = 2;
+type S = ByteF64<NBYTES, CoefficientThreshold>;
 
 fn main() {
     let n = 5;
     let gamma0 = 1.0;
     let d = 0.1;
-    let tmax = 10.0;
+    let tmax = 1.0;
     const TSTEPS: usize = 100;
     let dt = tmax / TSTEPS as f64;
 
@@ -37,12 +38,12 @@ fn main() {
     let ppw = |pauli: &str,
                phase: u8|
      -> PhasedPauliWord<
-        [u8; 1],
+        [u8; NBYTES],
         fxhash::FxBuildHasher,
-        PauliWord<[u8; 1], fxhash::FxBuildHasher>,
+        PauliWord<[u8; NBYTES], fxhash::FxBuildHasher>,
     > {
         PhasedPauliWord::build_from_word(
-            PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from(pauli),
+            PauliWord::<[u8; NBYTES], fxhash::FxBuildHasher>::from(pauli),
             phase,
         )
     };

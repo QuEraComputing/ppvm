@@ -1,7 +1,8 @@
 use std::ops::{Mul, MulAssign};
 
 use ppvm_runtime::prelude::{
-    ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliSum, PauliWordTrait, PhasedPauliWord, Trace,
+    ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliSum, PauliWord, PauliWordTrait,
+    PhasedPauliWord, Trace,
 };
 
 use crate::lindblad::{LindbladOp, rhs, rhs_into};
@@ -107,7 +108,7 @@ where
         + std::ops::Mul<Output = T::Coeff>
         + std::iter::Sum
         + Into<f64>,
-    T::PauliWordType: Clone,
+    T::PauliWordType: Clone + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
@@ -180,7 +181,7 @@ where
         + std::ops::Mul<Output = T::Coeff>
         + std::iter::Sum
         + Into<f64>,
-    T::PauliWordType: Clone,
+    T::PauliWordType: Clone + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign

@@ -1,7 +1,7 @@
 use std::ops::{Mul, MulAssign};
 
 use ppvm_runtime::prelude::{
-    ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliSum, PhasedPauliWord, Trace,
+    ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliSum, PauliWord, PhasedPauliWord, Trace,
 };
 
 use crate::dopri5::{StepResult, estimate_h0, step};
@@ -94,7 +94,7 @@ where
         + std::ops::Mul<Output = T::Coeff>
         + std::iter::Sum
         + Into<f64>,
-    T::PauliWordType: Clone,
+    T::PauliWordType: Clone + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
@@ -159,7 +159,7 @@ where
         + std::ops::Mul<Output = T::Coeff>
         + std::iter::Sum
         + Into<f64>,
-    T::PauliWordType: Clone,
+    T::PauliWordType: Clone + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
@@ -196,7 +196,7 @@ where
         + std::ops::Mul<Output = T::Coeff>
         + std::iter::Sum
         + Into<f64>,
-    T::PauliWordType: Clone,
+    T::PauliWordType: Clone + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
@@ -229,7 +229,7 @@ where
         + std::ops::Mul<Output = T::Coeff>
         + std::iter::Sum
         + Into<f64>,
-    T::PauliWordType: Clone,
+    T::PauliWordType: Clone + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign

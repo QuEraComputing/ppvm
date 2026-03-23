@@ -3,7 +3,7 @@ use std::hash::BuildHasher;
 use super::data::PauliWord;
 use crate::traits::{Clifford, PauliStorage, PauliWordTrait};
 
-impl<A, H> Clifford for PauliWord<A, H>
+impl<A, H, const REHASH: bool> Clifford for PauliWord<A, H, REHASH>
 where
     A: PauliStorage,
     H: BuildHasher + Clone + Default,

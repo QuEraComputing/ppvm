@@ -1,10 +1,10 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::tableau::CliffordExtensions;
 use rayon::current_num_threads;
 
-type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
+type Tab = GeneralizedTableau<ByteF64<11>, u128>;
 
 fn msd_func() -> String {
     // from Rafael:  https://www.notion.so/Simulating-85-qubit-MSD-circuit-using-stabilizer-rank-decomposition-and-pyzx-288f86eeff3c802fb262ef1cfa69dfae?source=copy_link#28df86eeff3c80bfa087ed15bcf49b77

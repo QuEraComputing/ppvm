@@ -1,10 +1,10 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::tableau::RunStim;
 use rayon::current_num_threads;
 
-type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
+type Tab = GeneralizedTableau<ByteF64<11>, u128>;
 
 fn msd_stim_string() -> String {
     let qubits_per_code_block = 17;

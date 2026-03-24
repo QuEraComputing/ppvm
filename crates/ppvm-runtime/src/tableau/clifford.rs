@@ -84,3 +84,119 @@ where
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::fxhash::ByteF64;
+    use crate::tableau::CliffordExtensions;
+
+    type TestConfig = ByteF64<1>;
+    type TestTableau = GeneralizedTableau<TestConfig>;
+
+    /// Returns (xbit, zbit, phase) for each tableau row: (destabilizer, stabilizer).
+    fn rows(tab: &TestTableau) -> [(bool, bool, u8); 2] {
+        [0, 1].map(|i| {
+            let pw = &tab.tableau.data[i];
+            (pw.word.xbits[0], pw.word.zbits[0], pw.phase)
+        })
+    }
+
+    // Initial |0⟩: destabilizer = X (1,0,0), stabilizer = Z (0,1,0)
+
+    #[test]
+    fn test_sqrt_x_stabilizer() {
+        // Z → -Y: forward prop √X P √X†
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.sqrt_x(0);
+        let r = rows(&tab);
+        assert_eq!(r[0], (true, false, 0), "destabilizer X should stay X");
+        assert_eq!(r[1], (true, true, 2), "stabilizer Z should become -Y");
+    }
+
+    #[test]
+    fn test_sqrt_x_adj_stabilizer() {
+        // Z → +Y
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.sqrt_x_adj(0);
+        let r = rows(&tab);
+        assert_eq!(r[0], (true, false, 0), "destabilizer X should stay X");
+        assert_eq!(r[1], (true, true, 0), "stabilizer Z should become +Y");
+    }
+
+    #[test]
+    fn test_sqrt_y_stabilizer() {
+        // Z → +X, X → -Z
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.sqrt_y(0);
+        let r = rows(&tab);
+        assert_eq!(r[0], (false, true, 2), "destabilizer X should become -Z");
+        assert_eq!(r[1], (true, false, 0), "stabilizer Z should become +X");
+    }
+
+    #[test]
+    fn test_sqrt_y_adj_stabilizer() {
+        // Z → -X, X → +Z
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.sqrt_y_adj(0);
+        let r = rows(&tab);
+        assert_eq!(r[0], (false, true, 0), "destabilizer X should become +Z");
+        assert_eq!(r[1], (true, false, 2), "stabilizer Z should become -X");
+    }
+
+    #[test]
+    fn test_sqrt_x_round_trip() {
+        let initial = rows(&GeneralizedTableau::new(1, 1e-12));
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.sqrt_x(0);
+        tab.sqrt_x_adj(0);
+        assert_eq!(rows(&tab), initial);
+    }
+
+    #[test]
+    fn test_sqrt_y_round_trip() {
+        let initial = rows(&GeneralizedTableau::new(1, 1e-12));
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.sqrt_y(0);
+        tab.sqrt_y_adj(0);
+        assert_eq!(rows(&tab), initial);
+    }
+
+    #[test]
+    fn test_sqrt_x_fourth_power_is_identity() {
+        let initial = rows(&GeneralizedTableau::new(1, 1e-12));
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        for _ in 0..4 {
+            tab.sqrt_x(0);
+        }
+        assert_eq!(rows(&tab), initial);
+    }
+
+    #[test]
+    fn test_sqrt_y_fourth_power_is_identity() {
+        let initial = rows(&GeneralizedTableau::new(1, 1e-12));
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        for _ in 0..4 {
+            tab.sqrt_y(0);
+        }
+        assert_eq!(rows(&tab), initial);
+    }
+
+    #[test]
+    fn test_sqrt_x_on_lost_qubit_is_noop() {
+        let initial = rows(&GeneralizedTableau::new(1, 1e-12));
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.is_lost[0] = true;
+        tab.sqrt_x(0);
+        assert_eq!(rows(&tab), initial);
+    }
+
+    #[test]
+    fn test_sqrt_y_on_lost_qubit_is_noop() {
+        let initial = rows(&GeneralizedTableau::new(1, 1e-12));
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.is_lost[0] = true;
+        tab.sqrt_y(0);
+        assert_eq!(rows(&tab), initial);
+    }
+}

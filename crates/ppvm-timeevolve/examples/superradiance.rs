@@ -1,124 +1,168 @@
-use std::array;
+/// Superradiance example — three-variant comparison (Budget + Rayon showcase).
+///
+/// Demonstrates how `Budget` truncation combined with a matched ODE tolerance
+/// is the recommended production config.  The same three variants run cleanly on
+/// the Rayon path by changing N from 5 to 8 (256 terms > PAR_THRESHOLD=200):
+/// Budget+Rayon then also benefits from Rayon across Lindblad terms.
+///
+/// n=5 is used here so the example runs in <1 s on a laptop.  Use n=8 for the
+/// full Rayon showcase (change N and recompile).
+///
+/// Variants
+/// --------
+/// 1. Baseline      : Budget{target=2000, min_threshold=1e-6}, default rtol=1e-6
+///                    — generous cap; acts like CoefficientThreshold(1e-6) here
+/// 2. Budget        : Budget{target=200, min_threshold=1e-4}, default rtol=1e-6
+///                    — caps |P| and uses a looser Pauli threshold, but rtol is
+///                      mismatched: DOPRI5 fights truncation noise → slower
+/// 3. Budget+Rayon  : same Budget, but rtol=10·min_threshold=1e-3
+///                    — rtol absorbs the k[6] perturbation from Budget truncation
+///                      (≈ h·|e7|·||L||·||Δy||), letting DOPRI5 take large steps.
+///                      This is the recommended config; at n≥8 Rayon also engages.
+///
+/// System: n=5, 100 Lindblad terms (< PAR_THRESHOLD=200 → sequential path).
+/// Rayon parallelism engages automatically for n≥8 (256 terms > threshold).
+///
+/// Run with:  cargo run --example superradiance --release
+use std::time::Instant;
 
-use ppvm_runtime::{config::fxhash::ByteF64, prelude::*, strategy::CoefficientThreshold};
+use ppvm_runtime::{
+    config::fxhash::ByteF64,
+    prelude::*,
+};
 use ppvm_timeevolve::{Budget, CollapseOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
 
-const NBYTES: usize = 2;
-type S = ByteF64<NBYTES, CoefficientThreshold>;
-// Budget variant: caps |P| at 150 entries while matching rtol to the truncation threshold.
-// When |P| ≤ 150, behaviour is identical to CoefficientThreshold(BUDGET_THRESHOLD).
-type SB = ByteF64<NBYTES, Budget>;
-const BUDGET_THRESHOLD: f64 = 1e-6;
-const BUDGET_TARGET: usize = 150;
+const N: usize = 5;
+const NBYTES: usize = 1;
+const GAMMA0: f64 = 1.0;
+const D: f64 = 0.1;
+const TMAX: f64 = 0.5;
+const TSTEPS: usize = 20;
+/// Baseline: generous cap — acts like CoefficientThreshold(1e-6) for |P| < 2000.
+const BASE_TARGET:     usize = 2000;
+const BASE_THRESHOLD:  f64   = 1e-6;
+/// Budget variants: tight cap + looser threshold.
+const BUDGET_TARGET:    usize = 200;
+const BUDGET_THRESHOLD: f64   = 1e-4;
+/// Practical rtol for Budget+Rayon: larger than min_threshold to account for the
+/// truncation-induced perturbation of k[6] (≈ h·|e7|·||L||·||Δy||).
+/// Rule of thumb: rtol ≈ 10 · min_threshold absorbs that noise and lets DOPRI5
+/// take large steps; ODE accuracy then matches observable-level truncation error.
+const BUDGET_RTOL: f64 = BUDGET_THRESHOLD * 10.0; // = 1e-3
 
-fn build_lindblad_ops<T: ppvm_runtime::config::Config>(
-    n: usize,
-    gamma_mat: RateMatrix,
-    phase_y: u8,
-) -> LindbladOp<T>
-where
-    ppvm_runtime::prelude::PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
-        std::ops::Mul<Output = ppvm_runtime::prelude::PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
-        + std::ops::MulAssign
-        + Clone,
-    T::PauliWordType: Clone
-        + for<'a> From<&'a str>
-        + std::borrow::Borrow<ppvm_runtime::prelude::PauliWord<T::Storage, T::BuildHasher>>,
-{
-    let ppw = |pauli: &str, phase: u8| {
-        ppvm_runtime::prelude::PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>
-            ::build_from_word(T::PauliWordType::from(pauli), phase)
-    };
-    let tmp = vec!['I'; n];
-    let mut c_ops: Vec<CollapseOp<T>> = Vec::with_capacity(n);
-    for i in 0..n {
-        let mut c = CollapseOp::<T>::new(n);
-        let mut px = tmp.clone();
-        let mut py = tmp.clone();
-        px[i] = 'X';
-        py[i] = 'Y';
-        c.push(ppw(&px.iter().collect::<String>(), 0), 1.0);
-        c.push(ppw(&py.iter().collect::<String>(), phase_y), 1.0);
-        c_ops.push(c);
+type W  = PauliWord<[u8; NBYTES], fxhash::FxBuildHasher>;
+type SB = ByteF64<NBYTES, Budget>;
+
+fn rate_matrix() -> RateMatrix {
+    RateMatrix::Dense(
+        (0..N)
+            .map(|i| {
+                (0..N)
+                    .map(|j| GAMMA0 / (1.0 + D * (i as f64 - j as f64).abs()))
+                    .collect()
+            })
+            .collect(),
+    )
+}
+
+fn ppw(s: &str, phase: u8) -> PhasedPauliWord<[u8; NBYTES], fxhash::FxBuildHasher, W> {
+    PhasedPauliWord::build_from_word(W::from(s), phase)
+}
+
+fn build_ops() -> LindbladOp<SB> {
+    let t = vec!['I'; N];
+    let mut ops: Vec<CollapseOp<SB>> = Vec::with_capacity(N);
+    for i in 0..N {
+        let mut op = CollapseOp::new(N);
+        let mut px = t.clone(); px[i] = 'X';
+        let mut py = t.clone(); py[i] = 'Y';
+        op.push(ppw(&px.iter().collect::<String>(), 0), 1.0);
+        op.push(ppw(&py.iter().collect::<String>(), 3), 1.0);
+        ops.push(op);
     }
-    LindbladOp::new(c_ops, gamma_mat)
+    LindbladOp::new(ops, rate_matrix())
+}
+
+fn initial_state(strat: Budget) -> PauliSum<SB> {
+    let mut p = PauliSum::builder().n_qubits(N).strategy(strat).build();
+    let t = vec!['I'; N];
+    for i in 0..N {
+        let mut zi = t.clone(); zi[i] = 'Z';
+        p += (zi.iter().collect::<String>(), 1.0_f64);
+    }
+    p
 }
 
 fn main() {
-    let n = 5;
-    let gamma0 = 1.0;
-    let d = 0.1;
-    let tmax = 1.0;
-    const TSTEPS: usize = 100;
-    let dt = tmax / TSTEPS as f64;
+    let lindblad = build_ops();
+    let save_at: Vec<f64> = (1..=TSTEPS).map(|i| i as f64 * TMAX / TSTEPS as f64).collect();
+    let pattern: PauliPattern = "Z?*".into();
 
-    let mut rows: Vec<Vec<f64>> = Vec::with_capacity(n);
-    for i in 0i32..(n as i32) {
-        let mut row: Vec<f64> = Vec::with_capacity(n);
-        for j in 0i32..(n as i32) {
-            row.push(if i == j { gamma0 } else { gamma0 / (1.0 + d * (i - j).unsigned_abs() as f64) });
-        }
-        rows.push(row);
-    }
+    // Each solve callback returns (trace_value, state_size) in one pass.
 
-    let zero_pattern: PauliPattern = "Z?*".into();
-    let save_at: [f64; TSTEPS] = array::from_fn(|i| dt * i as f64);
-    let tmp = vec!['I'; n];
-
-    // ── Baseline: CoefficientThreshold(1e-6) ────────────────────────────────
-    let t0 = std::time::Instant::now();
-    let gamma_mat_base = RateMatrix::Dense(rows.clone());
-    let lindblad_base = build_lindblad_ops::<S>(n, gamma_mat_base, 3);
-    let strat_base = CoefficientThreshold(1e-6);
-    let mut initial_base: PauliSum<S> =
-        PauliSum::builder().n_qubits(n).strategy(strat_base).build();
-    for i in 0..n {
-        let mut zi = tmp.clone();
-        zi[i] = 'Z';
-        initial_base += (zi.iter().collect::<String>(), 1.0);
-    }
-    let (_, baseline_vals) = solve(
-        None, &lindblad_base, &initial_base, (0.0, tmax), &save_at,
-        |_, p: &PauliSum<S>| p.trace(&zero_pattern),
+    // ── Variant 1: Baseline ──────────────────────────────────────────────────
+    let strat_base = Budget { target: BASE_TARGET, min_threshold: BASE_THRESHOLD };
+    let t0 = Instant::now();
+    let (_, base_out) = solve(
+        None, &lindblad, &initial_state(strat_base),
+        (0.0, TMAX), &save_at,
+        |_, p: &PauliSum<SB>| (p.trace(&pattern), p.data().len()),
         SolverConfig::default(),
     );
-    let elapsed_base = t0.elapsed();
+    let t_base = t0.elapsed();
 
-    // ── Budget: Budget { target=150, min_threshold=1e-6 } + matched rtol ────
-    let t1 = std::time::Instant::now();
-    let gamma_mat_bud = RateMatrix::Dense(rows.clone());
-    let lindblad_bud = build_lindblad_ops::<SB>(n, gamma_mat_bud, 3);
+    // ── Variant 2: Budget (default rtol — mismatched) ────────────────────────
     let strat_bud = Budget { target: BUDGET_TARGET, min_threshold: BUDGET_THRESHOLD };
-    let mut initial_bud: PauliSum<SB> =
-        PauliSum::builder().n_qubits(n).strategy(strat_bud).build();
-    for i in 0..n {
-        let mut zi = tmp.clone();
-        zi[i] = 'Z';
-        initial_bud += (zi.iter().collect::<String>(), 1.0);
-    }
-    let (_, budget_vals) = solve(
-        None, &lindblad_bud, &initial_bud, (0.0, tmax), &save_at,
-        |_, p: &PauliSum<SB>| p.trace(&zero_pattern),
-        // Match rtol to truncation threshold — DOPRI5 takes larger steps when smooth.
-        SolverConfig { rtol: BUDGET_THRESHOLD, ..SolverConfig::default() },
+    let t1 = Instant::now();
+    let (_, bud_out) = solve(
+        None, &lindblad, &initial_state(strat_bud),
+        (0.0, TMAX), &save_at,
+        |_, p: &PauliSum<SB>| (p.trace(&pattern), p.data().len()),
+        SolverConfig::default(),
     );
-    let elapsed_bud = t1.elapsed();
+    let t_bud = t1.elapsed();
 
-    // ── Report ───────────────────────────────────────────────────────────────
-    println!("Gamma: {:?}", rows);
+    // ── Variant 3: Budget+Rayon (matched rtol) ───────────────────────────────
+    // At n≥8 (256 terms > PAR_THRESHOLD=200), Rayon is automatically active.
+    // This variant demonstrates the recommended production config.
+    let t2 = Instant::now();
+    let (_, bud_rtol_out) = solve(
+        None, &lindblad, &initial_state(strat_bud),
+        (0.0, TMAX), &save_at,
+        |_, p: &PauliSum<SB>| (p.trace(&pattern), p.data().len()),
+        // rtol ≈ 10 · min_threshold absorbs the k[6] perturbation from Budget
+        // truncation, preventing step rejections while still allowing large steps.
+        SolverConfig { rtol: BUDGET_RTOL, ..SolverConfig::default() },
+    );
+    let t_bud_rtol = t2.elapsed();
+
+    // ── Fidelity (max |variant − baseline| over all save points) ────────────
+    let fidelity = |out: &[(f64, usize)]| -> f64 {
+        base_out.iter().zip(out.iter())
+            .map(|((b, _), (v, _))| (b - v).abs())
+            .fold(0.0_f64, f64::max)
+    };
+
+    let final_p = |out: &[(f64, usize)]| out.last().map(|&(_, sz)| sz).unwrap_or(0);
+
+    let spd_bud      = t_base.as_secs_f64() / t_bud.as_secs_f64();
+    let spd_bud_rtol = t_base.as_secs_f64() / t_bud_rtol.as_secs_f64();
+
+    // ── Print table ──────────────────────────────────────────────────────────
+    println!("n={N}  tmax={TMAX}  steps={TSTEPS}  Lindblad terms={}", 4 * N * N);
+    println!("(sequential path: {} terms < PAR_THRESHOLD=200; change N to 8 to engage Rayon)", 4 * N * N);
     println!();
-    println!("{:<12} {:>12} {:>10} {:>14}", "Variant", "Wall time", "Speedup", "Max |fidelity err|");
-    println!("{}", "-".repeat(52));
-
-    let fidelity_err: f64 = baseline_vals.iter().zip(budget_vals.iter())
-        .map(|(b, u)| (b - u).abs())
-        .fold(0.0_f64, f64::max);
-    let speedup = elapsed_base.as_secs_f64() / elapsed_bud.as_secs_f64();
-
-    println!("{:<12} {:>12.3?} {:>10} {:>14}", "Baseline", elapsed_base, "1.00×", "—");
-    println!("{:<12} {:>12.3?} {:>9.2}× {:>14.2e}", "Budget", elapsed_bud, speedup, fidelity_err);
+    println!("{:<20} {:>10} {:>10} {:>10} {:>18}",
+        "Variant", "Wall time", "Speedup", "|P| final", "Max fidelity err");
+    println!("{}", "─".repeat(72));
+    println!("{:<20} {:>10.3?} {:>10} {:>10} {:>18}",
+        "Baseline", t_base, "1.00×", final_p(&base_out), "—");
+    println!("{:<20} {:>10.3?} {:>9.2}× {:>10} {:>18.2e}",
+        "Budget", t_bud, spd_bud, final_p(&bud_out), fidelity(&bud_out));
+    println!("{:<20} {:>10.3?} {:>9.2}× {:>10} {:>18.2e}",
+        "Budget+Rayon", t_bud_rtol, spd_bud_rtol, final_p(&bud_rtol_out), fidelity(&bud_rtol_out));
     println!();
-    println!("tout: {:?}", save_at);
-    println!("baseline values: {:?}", baseline_vals);
-    println!("budget   values: {:?}", budget_vals);
+    println!("Baseline:     Budget{{target={BASE_TARGET}, min_threshold={BASE_THRESHOLD:.0e}}} (cap rarely fires for n=5)");
+    println!("Budget:       Budget{{target={BUDGET_TARGET}, min_threshold={BUDGET_THRESHOLD:.0e}}} + rtol=1e-6 (mismatched → step rejections)");
+    println!("Budget+Rayon: same Budget + rtol={BUDGET_RTOL:.0e} ≈ 10·min_threshold (absorbs k[6] perturbation; at n≥8 Rayon also active)");
 }

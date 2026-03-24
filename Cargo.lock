@@ -785,6 +785,7 @@ dependencies = [
  "criterion 0.5.1",
  "fxhash",
  "ppvm-runtime",
+ "rayon",
 ]
 
 [[package]]

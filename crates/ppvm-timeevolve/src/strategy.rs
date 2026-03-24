@@ -13,12 +13,11 @@ use ppvm_runtime::traits::{Coefficient, PauliWordTrait, Strategy};
 /// takes large steps when the solution is smooth — accuracy of the ODE step then
 /// matches the truncation accuracy automatically.
 ///
-/// **Implementation note:** `Strategy::truncate` exposes only `retain` (no map
-/// iteration), so `V: Coefficient` does not provide a magnitude accessor.
-/// When `|P| > target`, entries are pruned in HashMap iteration order (i.e., an
-/// arbitrary-but-deterministic subset). In practice, `min_threshold` is tuned so
-/// entries near the threshold are removed first and `target` is rarely hit; the
-/// heuristic is acceptable for the expected use pattern.
+/// **Implementation note:** `Strategy::truncate` only exposes `retain` and
+/// `scale` (no `ACMapIter`), and `V: Coefficient` has no magnitude accessor.
+/// We recover iteration via `scale` as a side-effect, then binary-search on
+/// `V::cutoff(t)` to find the kth-largest threshold. Cost: O(n·128) per
+/// truncation call — negligible for practical map sizes.
 #[derive(Clone, Copy, Debug)]
 pub struct Budget {
     /// Hard cap on the number of Pauli entries retained after truncation.
@@ -59,19 +58,66 @@ impl Strategy for Budget {
             return;
         }
 
-        // Step 2: cap at target entries. Entries are pruned in iteration order
-        // (not by magnitude — see struct docstring for why).
-        let target = self.target;
-        let kept = Mutex::new(0usize);
-        map.retain(|_, _| {
-            let mut guard = kept.lock().expect("Budget retain counter");
-            if *guard < target {
-                *guard += 1;
-                true
-            } else {
-                false
-            }
+        // Step 2: find the magnitude threshold t* such that at most `target`
+        // entries have |v| >= t*, then retain those entries.
+        //
+        // Strategy::truncate only has M: ACMap<S, V, H, W> in scope — no
+        // ACMapIter, and V: Coefficient does not expose a magnitude accessor.
+        // We work around this with two passes:
+        //   Pass A: use `scale` as a side-effect iterator to collect all V
+        //           values (without modifying them).
+        //   Pass B: binary-search on t using V::cutoff(t) -> bool, which for
+        //           f64 means |v| < t. This gives O(n·log(1/ε)) comparisons —
+        //           negligible for the map sizes expected in practice.
+        //   Pass C: retain(|_, v| !v.cutoff(t*)) keeps the largest entries.
+        let n = map.len();
+        let collected: Mutex<Vec<V>> = Mutex::new(Vec::with_capacity(n));
+        map.scale(|_, v| {
+            // Read v without modifying it (scale is used purely for iteration).
+            collected.lock().expect("Budget collect").push(v.clone());
         });
+        let values = collected.into_inner().expect("Budget values");
+
+        // Closure: count entries with |v| >= t.
+        let count_ge = |t: f64| -> usize {
+            values.iter().filter(|v| !v.cutoff(t)).count()
+        };
+
+        // Exponential search for hi where count_ge(hi) == 0.
+        let mut hi = self.min_threshold.max(f64::MIN_POSITIVE) * 2.0;
+        while count_ge(hi) > 0 && hi < 1e300 {
+            hi *= 2.0;
+        }
+
+        // Binary search: find t in (lo, hi] where count_ge(t) <= target.
+        // Invariant: count_ge(lo) > target, count_ge(hi) <= target.
+        let mut lo = 0.0_f64;
+        for _ in 0..128 {
+            let mid = lo + (hi - lo) * 0.5;
+            if mid <= lo || mid >= hi {
+                break; // float convergence
+            }
+            if count_ge(mid) > self.target {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+
+        // Retain entries with |v| >= hi (at most `target` of them by construction).
+        map.retain(|_, v| !v.cutoff(hi));
+
+        // Tie-break: if float precision leaves a few extra entries at the
+        // boundary magnitude, trim with a counter. All trimmed entries have
+        // |v| == hi, so the magnitude difference is negligible.
+        if map.len() > self.target {
+            let target = self.target;
+            let kept = Mutex::new(0usize);
+            map.retain(|_, _| {
+                let mut g = kept.lock().expect("Budget tie-break");
+                if *g < target { *g += 1; true } else { false }
+            });
+        }
     }
 }
 

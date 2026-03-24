@@ -1,4 +1,4 @@
-use bnum::types::{U256, U512, U1024};
+use bnum::types::{U256, U512, U1024, U2048};
 use paste::paste;
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::tableau::{CliffordExtensions, GeneralizedTableau, Reset, RunStim};
@@ -237,7 +237,8 @@ macro_rules! create_interface_range {
     ($name: ident, $indexType: ident, $( $n: expr),* ) => {
         paste! {
         $(
-            type [<$name$n>] = config::indexmap::ByteFxHashF64<$n>;
+            type [<$name$n>] = config::fx64hash::Byte8F64<$n>;
+            // type [<$name$n>] = config::indexmap::ByteFxHashF64<$n>;
             create_interface!([<GeneralizedTableau$n>], [<$name$n>], $indexType);
         )*
     }
@@ -245,15 +246,21 @@ macro_rules! create_interface_range {
 }
 
 // up to 64 qubits
-create_interface_range!(IndexMapFxHash, usize, 1, 2, 3, 4, 5, 6, 7, 8);
+create_interface_range!(IndexMapFxHash, usize, 1);
 
 // 64 - 128 qubits
-create_interface_range!(IndexMapFxHash, u128, 9, 10, 11, 12, 13, 14, 15, 16);
+create_interface_range!(IndexMapFxHash, u128, 2);
 
 // 128 - 256 qubits
+create_interface_range!(IndexMapFxHash, U256, 3, 4);
+
+create_interface_range!(IndexMapFxHash, U512, 5, 6, 7, 8);
+
+create_interface_range!(IndexMapFxHash, U1024, 9, 10, 11, 12, 13, 14, 15, 16);
+
 create_interface_range!(
     IndexMapFxHash,
-    U256,
+    U2048,
     17,
     18,
     19,
@@ -270,110 +277,4 @@ create_interface_range!(
     30,
     31,
     32
-);
-
-create_interface_range!(
-    IndexMapFxHash,
-    U512,
-    33,
-    34,
-    35,
-    36,
-    37,
-    38,
-    39,
-    40,
-    41,
-    42,
-    43,
-    44,
-    45,
-    46,
-    47,
-    48,
-    49,
-    50,
-    51,
-    52,
-    53,
-    54,
-    55,
-    56,
-    57,
-    58,
-    59,
-    60,
-    61,
-    62,
-    63,
-    64
-);
-
-create_interface_range!(
-    IndexMapFxHash,
-    U1024,
-    65,
-    66,
-    67,
-    68,
-    69,
-    70,
-    71,
-    72,
-    73,
-    74,
-    75,
-    76,
-    77,
-    78,
-    79,
-    80,
-    81,
-    82,
-    83,
-    84,
-    85,
-    86,
-    87,
-    88,
-    89,
-    90,
-    91,
-    92,
-    93,
-    94,
-    95,
-    96,
-    97,
-    98,
-    99,
-    100,
-    101,
-    102,
-    103,
-    104,
-    105,
-    106,
-    107,
-    108,
-    109,
-    110,
-    111,
-    112,
-    113,
-    114,
-    115,
-    116,
-    117,
-    118,
-    119,
-    120,
-    121,
-    122,
-    123,
-    124,
-    125,
-    126,
-    127,
-    128
 );

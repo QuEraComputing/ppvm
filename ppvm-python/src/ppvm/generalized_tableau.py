@@ -57,7 +57,7 @@ class GeneralizedTableau(
     _interface: GeneralizedTableauInterface = field(init=False, repr=False)
 
     def __post_init__(self, seed: Optional[int]):
-        N_interface = math.ceil(self.n_qubits / 8.0)
+        N_interface = math.ceil(self.n_qubits / 64.0)
         object.__setattr__(
             self,
             "_interface",

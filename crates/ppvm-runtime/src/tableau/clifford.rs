@@ -109,6 +109,29 @@ impl<T: Config> CliffordExtensions for Tableau<T> {
             pw.add_phase((z & !x) as u8 * 2);
         });
     }
+
+    // control: row, target: col
+    // | CY  |  I  |  X  |  Y  |  Z  |
+    // |:---:|:---:|:---:|:---:|:---:|
+    // |  I  | II  | ZX  | IY  | ZZ  |
+    // |  X  | XY  | -YZ | XI  | YX  |
+    // |  Y  | YY  | XZ  | YI  | -XX |
+    // |  Z  | ZI  | IX  | ZY  | IZ  |
+    //
+    // Bit transforms: xc'=xc, zc'=zc^xt^zt, xt'=xt^xc, zt'=zt^xc
+    // Phase +2 when: xc & (xt ^ zt) & !(zc ^ zt)
+    fn cy(&mut self, addr0: usize, addr1: usize) {
+        self.data.iter_mut().for_each(|pw| {
+            let xc = pw.word.xbits[addr0];
+            let zc = pw.word.zbits[addr0];
+            let xt = pw.word.xbits[addr1];
+            let zt = pw.word.zbits[addr1];
+            pw.word.zbits.set(addr0, zc ^ xt ^ zt);
+            pw.word.xbits.set(addr1, xt ^ xc);
+            pw.word.zbits.set(addr1, zt ^ xc);
+            pw.add_phase((xc & (xt ^ zt) & !(zc ^ zt)) as u8 * 2);
+        });
+    }
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> Clifford for GeneralizedTableau<T, I, C>
@@ -250,5 +273,47 @@ mod tests {
         tab.is_lost[0] = true;
         tab.sqrt_y(0);
         assert_eq!(rows(&tab), initial);
+    }
+
+    /// Returns (x0, z0, x1, z1, phase) for each of the 4 tableau rows of a 2-qubit tableau.
+    fn rows2(tab: &GeneralizedTableau<TestConfig>) -> [(bool, bool, bool, bool, u8); 4] {
+        [0, 1, 2, 3].map(|i| {
+            let pw = &tab.tableau.data[i];
+            (
+                pw.word.xbits[0],
+                pw.word.zbits[0],
+                pw.word.xbits[1],
+                pw.word.zbits[1],
+                pw.phase,
+            )
+        })
+    }
+
+    #[test]
+    fn test_cy_stabilizers() {
+        // CY (control=0, target=1) forward-propagates Paulis as CY P CY†.
+        // From the truth table: xc'=xc, zc'=zc^xt^zt, xt'=xt^xc, zt'=zt^xc.
+        // Phase +2 when xc & (xt^zt) & !(zc^zt), i.e. only for XX→-YZ and YZ→-XX.
+        //   XI → +XY  (xt'=0^1=1, zt'=0^1=1; no phase since xt^zt=0)
+        //   IX →  ZX  (zc'=0^1^0=1, xt'=1^0=1; no phase since xc=0)
+        //   ZI →  ZI  (zc'=1^0^0=1; no phase)
+        //   IZ →  ZZ  (zc'=0^0^1=1; no phase since xc=0)
+        let mut tab: GeneralizedTableau<TestConfig> = GeneralizedTableau::new(2, 1e-12);
+        tab.cy(0, 1);
+        let r = rows2(&tab);
+        assert_eq!(r[0], (true, false, true, true, 0), "XI should become +XY");
+        assert_eq!(r[1], (false, true, true, false, 0), "IX should become ZX");
+        assert_eq!(r[2], (false, true, false, false, 0), "ZI should stay ZI");
+        assert_eq!(r[3], (false, true, false, true, 0), "IZ should become ZZ");
+    }
+
+    #[test]
+    fn test_cy_round_trip() {
+        // CY is self-inverse: CY² = I
+        let initial = rows2(&GeneralizedTableau::new(2, 1e-12));
+        let mut tab: GeneralizedTableau<TestConfig> = GeneralizedTableau::new(2, 1e-12);
+        tab.cy(0, 1);
+        tab.cy(0, 1);
+        assert_eq!(rows2(&tab), initial);
     }
 }

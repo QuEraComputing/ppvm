@@ -1,6 +1,6 @@
 use bitvec::view::BitView;
-use num::PrimInt;
 use num::Complex;
+use num::PrimInt;
 use num::complex::{Complex64, ComplexFloat};
 use num::{One, ToPrimitive, Zero};
 
@@ -54,9 +54,11 @@ pub trait CliffordExtensions: Clifford {
     }
 
     fn cy(&mut self, addr0: usize, addr1: usize) {
-        self.s(addr1);
-        self.cnot(addr0, addr1);
+        // NOTE: in matmul (RHS applied first)
+        // CY == (I ⊗ S) * CNOT * (I ⊗ S')
         self.s_adj(addr1);
+        self.cnot(addr0, addr1);
+        self.s(addr1);
     }
 }
 

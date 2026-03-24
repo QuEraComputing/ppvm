@@ -140,9 +140,9 @@ if __name__ == "__main__":
     total_time = 0.0
     n_shots = 100
     for _ in range(n_shots):
-        start = time.time()
+        start = time.perf_counter()
         main()
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         total_time += elapsed
         avg_time += elapsed / n_shots
 

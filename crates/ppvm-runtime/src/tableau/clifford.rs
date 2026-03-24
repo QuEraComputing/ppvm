@@ -55,6 +55,62 @@ impl<T: Config> Clifford for Tableau<T> {
     }
 }
 
+impl<T: Config> CliffordExtensions for Tableau<T> {
+    // |    Gate    |  X  |  Y  |  Z  |
+    // |:----------:|:---:|:---:|:---:|
+    // |     s      |  Y  | -X  |  Z  |
+    // |   s_adj    | -Y  |  X  |  Z  |
+    // |   sqrt_x   |  X  |  Z  | -Y  |
+    // | sqrt_x_adj |  X  | -Z  |  Y  |
+    // |   sqrt_y   | -Z  |  Y  |  X  |
+    // | sqrt_y_adj |  Z  |  Y  | -X  |
+
+    fn s_adj(&mut self, addr0: usize) {
+        // NOTE: the backwards prop version of S is just S_adj
+        self.data.iter_mut().for_each(|pw| {
+            pw.s(addr0);
+        });
+    }
+
+    fn sqrt_x(&mut self, addr0: usize) {
+        self.data.iter_mut().for_each(|pw| {
+            let x = pw.word.xbits[addr0];
+            let z = pw.word.zbits[addr0];
+            pw.word.xbits.set(addr0, x ^ z);
+            pw.add_phase((z & !x) as u8 * 2);
+        });
+    }
+
+    fn sqrt_x_adj(&mut self, addr0: usize) {
+        self.data.iter_mut().for_each(|pw| {
+            let x = pw.word.xbits[addr0];
+            let z = pw.word.zbits[addr0];
+            pw.word.xbits.set(addr0, x ^ z);
+            pw.add_phase((x & z) as u8 * 2);
+        });
+    }
+
+    fn sqrt_y(&mut self, addr0: usize) {
+        self.data.iter_mut().for_each(|pw| {
+            let x = pw.word.xbits[addr0];
+            let z = pw.word.zbits[addr0];
+            pw.word.xbits.set(addr0, z);
+            pw.word.zbits.set(addr0, x);
+            pw.add_phase((x & !z) as u8 * 2);
+        });
+    }
+
+    fn sqrt_y_adj(&mut self, addr0: usize) {
+        self.data.iter_mut().for_each(|pw| {
+            let x = pw.word.xbits[addr0];
+            let z = pw.word.zbits[addr0];
+            pw.word.xbits.set(addr0, z);
+            pw.word.zbits.set(addr0, x);
+            pw.add_phase((z & !x) as u8 * 2);
+        });
+    }
+}
+
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> Clifford for GeneralizedTableau<T, I, C>
 where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
@@ -73,16 +129,12 @@ impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> CliffordExtensions
 where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
 {
-    fn s_adj(&mut self, addr0: usize) {
-        if self.is_lost[addr0] {
-            return;
-        }
-
-        // NOTE: the backwards prop version of S is just S_adj
-        self.tableau.data.iter_mut().for_each(|pw| {
-            pw.s(addr0);
-        });
-    }
+    impl_generalized_tableau_clifford!(s_adj, addr0);
+    impl_generalized_tableau_clifford!(sqrt_x, addr0);
+    impl_generalized_tableau_clifford!(sqrt_x_adj, addr0);
+    impl_generalized_tableau_clifford!(sqrt_y, addr0);
+    impl_generalized_tableau_clifford!(sqrt_y_adj, addr0);
+    impl_generalized_tableau_clifford!(cy, addr0, addr1);
 }
 
 #[cfg(test)]

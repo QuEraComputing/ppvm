@@ -1,13 +1,12 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_runtime::prelude::*;
+use ppvm_runtime::{config::fx64hash::Byte8F64, prelude::*};
 use rayon::current_num_threads;
 
 pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
     let mut group = c.benchmark_group(name.as_ref());
 
-    for n_qubits in (2..65).step_by(4) {
-        let tableau =
-            GeneralizedTableau::<config::indexmap::ByteFxHashF64<8>, usize>::new(n_qubits, 1e-12);
+    for n_qubits in (32..129).step_by(32) {
+        let tableau = GeneralizedTableau::<Byte8F64<2>, usize>::new(n_qubits, 1e-10);
 
         group.bench_function(format!("tableau-scaling-{}", n_qubits), |b| {
             b.iter_batched_ref(
@@ -29,8 +28,7 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
             );
         });
 
-        let mut tab =
-            GeneralizedTableau::<config::indexmap::ByteFxHashF64<8>, usize>::new(n_qubits, 1e-12);
+        let mut tab = GeneralizedTableau::<Byte8F64<2>, usize>::new(n_qubits, 1e-10);
         tab.h(0);
         tab.t(0);
         for i in 0..n_qubits - 1 {
@@ -53,13 +51,12 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
         });
     }
 
-    let mut tableau =
-        GeneralizedTableau::<config::indexmap::ByteFxHashF64<2>, usize>::new(10, 1e-12);
+    let mut tableau = GeneralizedTableau::<Byte8F64<2>, usize>::new(85, 1e-10);
     for i in 0..10 {
         // make sure it branches with t gates
         tableau.h(i);
     }
-    for tgate_num in 1..11 {
+    for tgate_num in [1, 4, 8, 12] {
         group.bench_function(format!("tableau-t-gate-{}", tgate_num), |b| {
             b.iter_batched_ref(
                 || tableau.fork(None),

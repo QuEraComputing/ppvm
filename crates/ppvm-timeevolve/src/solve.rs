@@ -5,7 +5,7 @@ use ppvm_runtime::prelude::{
 };
 
 use crate::dopri5::{StepResult, estimate_h0, step};
-use crate::lindblad::{JumpOp, LindbladOp, rhs_into};
+use crate::lindblad::{LindbladOp, rhs_into};
 
 pub struct SolverConfig {
     pub rtol:  f64,
@@ -279,7 +279,7 @@ where
 mod tests {
     use super::*;
     use ppvm_runtime::prelude::{PauliSum, PauliWord, PhasedPauliWord, Trace, config::fxhash::ByteF64};
-    use crate::lindblad::{CollapseOp, LindbladOp, RateMatrix};
+    use crate::lindblad::{CollapseOp, JumpOp, LindbladOp, RateMatrix};
 
     type S = ByteF64<1>;
 

@@ -1,37 +1,17 @@
 use ppvm_runtime::{config::fxhash::ByteF64, prelude::*, strategy::CoefficientThreshold};
-use ppvm_timeevolve::{CollapseOp, JumpOp, LindbladOp, RateMatrix};
+use ppvm_timeevolve::{JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix};
 
 pub type S = ByteF64<1, CoefficientThreshold>;
 
 const N: usize = 5;
 
 /// Build the benchmark Lindblad operator:
-/// - 5 lowering operators c_i = X_i + iY_i (i = 0..4)
+/// - 5 lowering operators `S_−_i` at qubits 0..4 (using the fast Ladder kernel)
 /// - Dense 5×5 rate matrix γ_ij = 1 / (1 + |i − j|)
 pub fn build_lindblad() -> LindbladOp<S> {
-    let ppw = |pauli: &str, phase: u8|
-        -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, PauliWord<[u8; 1], fxhash::FxBuildHasher>>
-    {
-        PhasedPauliWord::build_from_word(
-            PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from(pauli),
-            phase,
-        )
-    };
-
-    let template = vec!['I'; N];
-    let mut c_ops: Vec<CollapseOp<S>> = Vec::with_capacity(N);
-    for i in 0..N {
-        let mut c = CollapseOp::<S>::new(N);
-        let mut px = template.clone();
-        let mut py = template.clone();
-        px[i] = 'X';
-        py[i] = 'Y';
-        let sx: String = px.into_iter().collect();
-        let sy: String = py.into_iter().collect();
-        c.push(ppw(&sx, 0), 1.0); // X_i (phase 0)
-        c.push(ppw(&sy, 1), 1.0); // iY_i (phase 1 = i)
-        c_ops.push(c);
-    }
+    let ops: Vec<JumpOp<S>> = (0..N)
+        .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+        .collect();
 
     // Dense 5×5 rate matrix: γ_ij = 1 / (1 + |i − j|)
     let rates: Vec<Vec<f64>> = (0..N)
@@ -42,7 +22,7 @@ pub fn build_lindblad() -> LindbladOp<S> {
         })
         .collect();
 
-    LindbladOp::new(c_ops.into_iter().map(JumpOp::Generic).collect(), RateMatrix::Dense(rates))
+    LindbladOp::new(ops, RateMatrix::Dense(rates))
 }
 
 /// Build the benchmark initial state: P = Σ_i Z_i, threshold 1e-6.

@@ -240,6 +240,37 @@ fn re_phase(phase: u8) -> f64 {
     }
 }
 
+/// Returns `true` iff two single-qubit Pauli operators anticommute.
+///
+/// Only I commutes with everything; two distinct non-identity Paulis always anticommute.
+#[inline]
+fn pauli_anticommutes(a: Pauli, b: Pauli) -> bool {
+    !matches!(a, Pauli::I) && !matches!(b, Pauli::I) && a != b
+}
+
+/// Single-qubit Pauli product: returns `(result_pauli, phase_contribution)`.
+///
+/// Phase contribution is the exponent k such that `a * b = i^k * result`.
+/// Table (XY=iZ: phase=1; YX=-iZ: phase=3; cyclic):
+///   I*P=P(0), P*I=P(0), X*X=I(0), Y*Y=I(0), Z*Z=I(0)
+///   X*Y=Z(1), Y*Z=X(1), Z*X=Y(1)
+///   Y*X=Z(3), Z*Y=X(3), X*Z=Y(3)
+#[inline]
+fn pauli_mul(a: Pauli, b: Pauli) -> (Pauli, u8) {
+    match (a, b) {
+        (Pauli::I, _) => (b, 0),
+        (_, Pauli::I) => (a, 0),
+        (Pauli::X, Pauli::X) | (Pauli::Y, Pauli::Y) | (Pauli::Z, Pauli::Z) => (Pauli::I, 0),
+        (Pauli::X, Pauli::Y) => (Pauli::Z, 1),
+        (Pauli::Y, Pauli::Z) => (Pauli::X, 1),
+        (Pauli::Z, Pauli::X) => (Pauli::Y, 1),
+        (Pauli::Y, Pauli::X) => (Pauli::Z, 3),
+        (Pauli::Z, Pauli::Y) => (Pauli::X, 3),
+        (Pauli::X, Pauli::Z) => (Pauli::Y, 3),
+        _ => (Pauli::I, 0), // loss or unknown variants: treat as identity
+    }
+}
+
 /// Parallel fold/reduce over Lindblad terms for large term counts.
 ///
 /// `#[cold]` + `#[inline(never)]` keeps this entirely out of the hot sequential
@@ -318,8 +349,39 @@ fn apply_par<T: Config>(
                         }
                     }
                   }
-                  LindbladTerm::Ladder { .. } => {
-                    todo!("cross-site ladder kernel: Task 23")
+                  LindbladTerm::Ladder { qi, qj, left_dir, right_dir, weight } => {
+                    let l_y_phase: u8 = match left_dir {
+                        LadderDirection::Raise => 3,
+                        LadderDirection::Lower => 1,
+                    };
+                    let r_y_phase: u8 = match right_dir {
+                        LadderDirection::Lower => 1,
+                        LadderDirection::Raise => 3,
+                    };
+                    let left_subs  = [(Pauli::X, 0u8), (Pauli::Y, l_y_phase)];
+                    let right_subs = [(Pauli::X, 0u8), (Pauli::Y, r_y_phase)];
+                    for (w_a, coeff_a) in p.data().iter() {
+                        let p_qi = w_a.get(*qi);
+                        let p_qj = w_a.get(*qj);
+                        for &(l_pauli, l_phase) in &left_subs {
+                            for &(r_pauli, r_phase) in &right_subs {
+                                let p1 = pauli_anticommutes(l_pauli, p_qi) as u8;
+                                let p2 = pauli_anticommutes(p_qj, r_pauli) as u8;
+                                let mult = p1 + p2;
+                                if mult == 0 { continue; }
+                                let (out_qi, qi_phase) = pauli_mul(l_pauli, p_qi);
+                                let (out_qj, qj_phase) = pauli_mul(p_qj, r_pauli);
+                                let total_phase = (l_phase as u16 + qi_phase as u16
+                                    + qj_phase as u16 + r_phase as u16) as u8 % 4;
+                                let s = re_phase(total_phase);
+                                if s != 0.0 {
+                                    let c = (mult as f64 * 2.0 * weight * s).into()
+                                        * *coeff_a;
+                                    local += (w_a.set_new_2(*qi, out_qi, *qj, out_qj), c);
+                                }
+                            }
+                        }
+                    }
                   }
                 }
                 local
@@ -427,8 +489,47 @@ where
                         }
                     }
                 }
-                LindbladTerm::Ladder { .. } => {
-                    todo!("cross-site ladder kernel: Task 23")
+                LindbladTerm::Ladder { qi, qj, left_dir, right_dir, weight } => {
+                    // Cross-site kernel (qi != qj): left acts on qi, right on qj.
+                    // Sub-operators for left (after conjugation) and right:
+                    //   left_dir=Raise (ops[i]† from Lower): [(X,0), (-iY,3)]
+                    //   left_dir=Lower (ops[i]† from Raise): [(X,0), (+iY,1)]
+                    //   right_dir=Lower:                     [(X,0), (+iY,1)]
+                    //   right_dir=Raise:                     [(X,0), (-iY,3)]
+                    let l_y_phase: u8 = match left_dir {
+                        LadderDirection::Raise => 3,
+                        LadderDirection::Lower => 1,
+                    };
+                    let r_y_phase: u8 = match right_dir {
+                        LadderDirection::Lower => 1,
+                        LadderDirection::Raise => 3,
+                    };
+                    let left_subs  = [(Pauli::X, 0u8), (Pauli::Y, l_y_phase)];
+                    let right_subs = [(Pauli::X, 0u8), (Pauli::Y, r_y_phase)];
+                    for (w_a, coeff_a) in p.data().iter() {
+                        let p_qi = w_a.get(*qi);
+                        let p_qj = w_a.get(*qj);
+                        for &(l_pauli, l_phase) in &left_subs {
+                            for &(r_pauli, r_phase) in &right_subs {
+                                let p1 = pauli_anticommutes(l_pauli, p_qi) as u8;
+                                let p2 = pauli_anticommutes(p_qj, r_pauli) as u8;
+                                let mult = p1 + p2;
+                                if mult == 0 {
+                                    continue;
+                                }
+                                let (out_qi, qi_phase) = pauli_mul(l_pauli, p_qi);
+                                let (out_qj, qj_phase) = pauli_mul(p_qj, r_pauli);
+                                let total_phase = (l_phase as u16 + qi_phase as u16
+                                    + qj_phase as u16 + r_phase as u16) as u8 % 4;
+                                let s = re_phase(total_phase);
+                                if s != 0.0 {
+                                    let c = (mult as f64 * 2.0 * weight * s).into()
+                                        * *coeff_a;
+                                    *result += (w_a.set_new_2(*qi, out_qi, *qj, out_qj), c);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1270,6 +1371,94 @@ mod tests {
                 (c_2p - 2.0 * c1).abs() < 1e-13,
                 "linearity violated (n={n}): word {:?}, 2·apply(P)={}, apply(2P)={}",
                 w, 2.0 * c1, c_2p
+            );
+        }
+    }
+
+    // ---- Task 23 tests ----
+
+    #[test]
+    fn ladder_crosssite_matches_generic_n2() {
+        // n=2, two Lower ops at qubit 0 and qubit 1, dense 2×2 rate matrix.
+        // For all 16 two-qubit Pauli inputs the Ladder kernel must agree with the Generic path.
+        use ppvm_runtime::prelude::Trace;
+        let n = 2usize;
+        let ops_ladder: Vec<JumpOp<ByteF64<1>>> = vec![
+            JumpOp::Ladder(LadderOp { qubit: 0, direction: LadderDirection::Lower }),
+            JumpOp::Ladder(LadderOp { qubit: 1, direction: LadderDirection::Lower }),
+        ];
+        let ops_generic: Vec<JumpOp<ByteF64<1>>> = vec![
+            JumpOp::Generic(LadderOp { qubit: 0, direction: LadderDirection::Lower }.expand::<ByteF64<1>>(n)),
+            JumpOp::Generic(LadderOp { qubit: 1, direction: LadderDirection::Lower }.expand::<ByteF64<1>>(n)),
+        ];
+        let rates_ladder = RateMatrix::Dense(vec![vec![1.0, 0.5], vec![0.5, 1.0]]);
+        let rates_generic = RateMatrix::Dense(vec![vec![1.0, 0.5], vec![0.5, 1.0]]);
+        let lop_ladder = LindbladOp::new(ops_ladder, rates_ladder);
+        let lop_generic = LindbladOp::new(ops_generic, rates_generic);
+
+        let all_2q: &[&str] = &[
+            "II", "IX", "IY", "IZ",
+            "XI", "XX", "XY", "XZ",
+            "YI", "YX", "YY", "YZ",
+            "ZI", "ZX", "ZY", "ZZ",
+        ];
+
+        for &input in all_2q {
+            let mut p: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+            p += (input, 1.0_f64);
+
+            let mut r_ladder: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+            let mut r_generic: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+            lop_ladder.apply(&p, &mut r_ladder);
+            lop_generic.apply(&p, &mut r_generic);
+
+            for &output in all_2q {
+                let w = W1::from(output);
+                let c_ladder: f64 = r_ladder.data().trace(&w);
+                let c_generic: f64 = r_generic.data().trace(&w);
+                assert!(
+                    (c_ladder - c_generic).abs() < 1e-12,
+                    "input={input} output={output}: ladder={c_ladder}, generic={c_generic}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn parallel_matches_sequential_with_ladders() {
+        // 15 Lower ops all on qubit 0 of a 1-qubit system → 15×15 = 225 on-site Ladder terms
+        // (> PAR_THRESHOLD=200). lop.apply() is always sequential; rhs_into() dispatches to
+        // apply_par() for ≥200 terms. Using ByteF64<1> keeps the test fast.
+        use ppvm_runtime::prelude::Trace;
+
+        let n_ops = 15usize;
+        let ops: Vec<JumpOp<ByteF64<1>>> = (0..n_ops)
+            .map(|_| JumpOp::Ladder(LadderOp { qubit: 0, direction: LadderDirection::Lower }))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n_ops)
+            .map(|i| (0..n_ops).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        let lop = LindbladOp::new(ops, RateMatrix::Dense(rates));
+        assert!(lop.terms.len() >= 200, "expected parallel path: got {} terms", lop.terms.len());
+
+        // State: Z on the single qubit
+        let p = sum1(&[("Z", 1.0)]);
+
+        // Sequential path: direct apply()
+        let mut result_seq: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        lop.apply(&p, &mut result_seq);
+
+        // Parallel path: rhs_into dispatches to apply_par for ≥200 terms
+        let mut result_par: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        rhs_into::<ByteF64<1>>(None, &lop, &p, &mut result_par);
+
+        for out_word in ["I", "X", "Y", "Z"] {
+            let w = W1::from(out_word);
+            let c_seq: f64 = result_seq.data().trace(&w);
+            let c_par: f64 = result_par.data().trace(&w);
+            assert!(
+                (c_par - c_seq).abs() < 1e-12,
+                "par/seq mismatch: word={out_word}, seq={c_seq}, par={c_par}"
             );
         }
     }

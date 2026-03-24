@@ -164,19 +164,12 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64 { re: 0.0, im: -1.0 }, // -i
 ];
 
-pub fn symplectic_inner<I>(alpha: I, beta: I, n_qubits: usize) -> u32
+#[inline]
+pub fn symplectic_inner<I>(alpha: I, beta: I) -> u32
 where
     I: TableauIndex,
 {
-    let one = <I as From<u8>>::from(1u8);
-    let zero = <I as From<u8>>::from(0u8);
-    let mut parity = 0u32;
-    for i in 0..n_qubits {
-        if (alpha & beta) & (one << i) != zero {
-            parity ^= 1;
-        }
-    }
-    parity
+    (alpha & beta).count_ones()
 }
 
 // TODO: builder
@@ -325,11 +318,10 @@ where
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
         let one = <I as From<u8>>::from(1u8);
         let zero = <I as From<u8>>::from(0u8);
-        let n = self.n_qubits();
 
         // contribution 1: each destabilizer D_i with basis_index[i]=1 that anticommutes
         // with P (lambda[i]=1) contributes a -1 sign; this is the symplectic inner product
-        let mut phase = (2 * symplectic_inner(lambda, basis_index, n) as u8) % 4;
+        let mut phase = (2 * symplectic_inner(lambda, basis_index) as u8) % 4;
 
         // contribution 2: destabilizers that appear twice (basis_index[i]=1 and index_shift[i]=1)
         // contribute an extra -1 if their phase is imaginary
@@ -367,7 +359,7 @@ where
             let mut phase = false; // false: +1 eigenspace of Z, true: -1 eigenspace
 
             // get the phase from the anti-commutation with the product over all destabilizers
-            let parity = (alpha & lambda).count_ones() % 2 != 0;
+            let parity = symplectic_inner(alpha, lambda) % 2 != 0;
             phase ^= parity;
 
             // (xi * k) == m

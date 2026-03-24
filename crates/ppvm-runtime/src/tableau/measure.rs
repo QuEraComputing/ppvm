@@ -173,11 +173,10 @@ where
                 .filter(|idx| (**idx & k) != zero)
                 .cloned()
                 .collect();
-            let n_qubits = self.n_qubits();
             for idx in b_keys {
                 let coeff = coeff_map.remove(&idx).unwrap();
                 // q = phase_decomp * (-1).pow(symplectic_inner(*idx, lambda)) * q;
-                let symp_inner = symplectic_inner(idx, lambda, n_qubits);
+                let symp_inner = symplectic_inner(idx, lambda);
                 let phase_idx =
                     ((alpha as i32 + if symp_inner % 2 == 1 { 2 } else { 0 }) % 4) as usize;
                 let q: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase_idx].into();

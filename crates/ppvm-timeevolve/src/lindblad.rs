@@ -4,9 +4,71 @@ use std::ops::{Mul, MulAssign};
 use rayon::prelude::*;
 
 use ppvm_runtime::prelude::{
-    ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliStorage, PauliSum, PauliWord,
-    PhasedPauliWord,
+    ACMapAddAssign, ACMapBase, ACMapIter, Config, Pauli, PauliStorage, PauliSum, PauliWord,
+    PauliWordTrait, PhasedPauliWord,
 };
+
+/// Direction of a ladder operator: Raise (`S₊ = X − iY`) or Lower (`S₋ = X + iY`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LadderDirection {
+    Raise,
+    Lower,
+}
+
+impl LadderDirection {
+    /// Swaps Raise ↔ Lower (used when conjugating: `S₊† = S₋`).
+    #[inline]
+    pub fn flip(&self) -> Self {
+        match self {
+            LadderDirection::Raise => LadderDirection::Lower,
+            LadderDirection::Lower => LadderDirection::Raise,
+        }
+    }
+}
+
+/// A single-qubit ladder operator with a qubit index and direction.
+#[derive(Debug, Clone, Copy)]
+pub struct LadderOp {
+    pub qubit: usize,
+    pub direction: LadderDirection,
+}
+
+impl LadderOp {
+    /// Expands this ladder operator into a two-term `CollapseOp`.
+    ///
+    /// Lower (`S₋ = X + iY`): X with phase 0, Y with phase 1 (+i).
+    /// Raise  (`S₊ = X − iY`): X with phase 0, Y with phase 3 (−i).
+    pub fn expand<T: Config>(&self, n_qubits: usize) -> CollapseOp<T>
+    where
+        T::PauliWordType: PauliWordTrait,
+        PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>: From<T::PauliWordType>,
+    {
+        let identity = T::PauliWordType::new(n_qubits);
+        let x_word = identity.set_new(self.qubit, Pauli::X);
+        let y_word = identity.set_new(self.qubit, Pauli::Y);
+        let y_phase = match self.direction {
+            LadderDirection::Lower => 1,
+            LadderDirection::Raise => 3,
+        };
+        let mut op = CollapseOp::new(n_qubits);
+        op.push(PhasedPauliWord::build_from_word(x_word, 0), 1.0);
+        op.push(PhasedPauliWord::build_from_word(y_word, y_phase), 1.0);
+        op
+    }
+}
+
+/// User-facing input to `LindbladOp::new`: either a generic `CollapseOp` or a
+/// single-qubit `LadderOp` (enabling the fast ladder kernel in Task 22+).
+pub enum JumpOp<T: Config> {
+    Generic(CollapseOp<T>),
+    Ladder(LadderOp),
+}
+
+impl<T: Config> From<CollapseOp<T>> for JumpOp<T> {
+    fn from(op: CollapseOp<T>) -> Self {
+        JumpOp::Generic(op)
+    }
+}
 
 pub enum RateMatrix {
     Vector(Vec<f64>),
@@ -809,6 +871,42 @@ mod tests {
     fn collapse_op_n_qubits_stored() {
         let op = CollapseOp::<ByteF64<1>>::new(3);
         assert_eq!(op.n_qubits, 3);
+    }
+
+    // ---- Task 21 tests ----
+
+    #[test]
+    fn ladder_direction_flip() {
+        assert_eq!(LadderDirection::Lower.flip(), LadderDirection::Raise);
+        assert_eq!(LadderDirection::Raise.flip(), LadderDirection::Lower);
+    }
+
+    #[test]
+    fn ladder_op_expand_lower() {
+        let op = LadderOp { qubit: 0, direction: LadderDirection::Lower };
+        let expanded = op.expand::<ByteF64<1>>(1);
+        assert_eq!(expanded.terms.len(), 2);
+        // First term: X with phase 0
+        assert_eq!(expanded.terms[0].0.word, W1::from("X"));
+        assert_eq!(expanded.terms[0].0.phase, 0);
+        assert!((expanded.terms[0].1 - 1.0).abs() < 1e-15);
+        // Second term: Y with phase 1 (+i)
+        assert_eq!(expanded.terms[1].0.word, W1::from("Y"));
+        assert_eq!(expanded.terms[1].0.phase, 1);
+        assert!((expanded.terms[1].1 - 1.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn ladder_op_expand_raise() {
+        let op = LadderOp { qubit: 0, direction: LadderDirection::Raise };
+        let expanded = op.expand::<ByteF64<1>>(1);
+        assert_eq!(expanded.terms.len(), 2);
+        // First term: X with phase 0
+        assert_eq!(expanded.terms[0].0.word, W1::from("X"));
+        assert_eq!(expanded.terms[0].0.phase, 0);
+        // Second term: Y with phase 3 (-i)
+        assert_eq!(expanded.terms[1].0.word, W1::from("Y"));
+        assert_eq!(expanded.terms[1].0.phase, 3);
     }
 
     #[test]

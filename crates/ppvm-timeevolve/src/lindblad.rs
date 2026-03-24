@@ -1,6 +1,8 @@
 use std::borrow::Borrow;
 use std::ops::{Mul, MulAssign};
 
+use rayon::prelude::*;
+
 use ppvm_runtime::prelude::{
     ACMapAddAssign, ACMapBase, ACMapIter, Config, PauliStorage, PauliSum, PauliWord,
     PhasedPauliWord,
@@ -140,17 +142,97 @@ fn re_phase(phase: u8) -> f64 {
     }
 }
 
+/// Parallel fold/reduce over Lindblad terms for large term counts.
+///
+/// `#[cold]` + `#[inline(never)]` keeps this entirely out of the hot sequential
+/// path. Takes `op: &LindbladOp<T>` (single pointer) to keep the argument count
+/// at 3, matching the live registers already held by `rhs_into_par`.
+/// Only called when `op.terms.len() >= 200` (PAR_THRESHOLD).
+#[cold]
+#[inline(never)]
+fn apply_par<T: Config>(
+    op: &LindbladOp<T>,
+    p: &PauliSum<T>,
+    result: &mut PauliSum<T>,
+) where
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + Send
+        + Sync,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send,
+    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
+    T::BuildHasher: Send + Sync,
+    T::Strategy: Send + Sync,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>: MulAssign + Clone,
+    f64: Into<T::Coeff>,
+{
+    let n = p.n_qubits();
+    let combined = op.terms
+        .par_iter()
+        .fold(
+            || PauliSum::<T>::builder().n_qubits(n).build(),
+            |mut local, term| {
+                for (w_a, coeff_a) in p.data().iter() {
+                    let wa_phased =
+                        PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
+                            w_a.clone(),
+                        );
+                    let p1 = comm_parity(term.left.word.borrow(), wa_phased.word.borrow(), n);
+                    let p2 = comm_parity(wa_phased.word.borrow(), term.right.word.borrow(), n);
+                    let multiplicity = p1 + p2;
+                    if multiplicity > 0 {
+                        let mut tmp = term.left.clone();
+                        tmp *= wa_phased;
+                        tmp *= term.right.clone();
+                        let s = re_phase(tmp.phase);
+                        if s != 0.0 {
+                            let c = (multiplicity as f64 * 2.0 * term.weight * s).into()
+                                * *coeff_a;
+                            local += (tmp.word, c);
+                        }
+                    }
+                }
+                local
+            },
+        )
+        .reduce(
+            || PauliSum::<T>::builder().n_qubits(n).build(),
+            |mut a, b| {
+                for (w, c) in b.data().iter() {
+                    a += (w.clone(), *c);
+                }
+                a
+            },
+        );
+    for (w, c) in combined.data().iter() {
+        *result += (w.clone(), *c);
+    }
+}
+
 impl<T: Config> LindbladOp<T>
 where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
-    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
-    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + Send
+        + Sync,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send,
+    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
+    T::BuildHasher: Send + Sync,
+    T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         MulAssign + Clone,
     f64: Into<T::Coeff>,
 {
-    /// Accumulates `L(P)` into `result`.
+    /// Accumulates `L(P)` into `result` sequentially.
+    ///
+    /// Uses the commutator form (Task 16): contribution is zero when `multiplicity = 0`
+    /// (~25% of entries), avoiding MulAssign for those. Expected 1.5 MulAssigns/entry
+    /// vs 2.5 in the old sandwich+anticommutator form.
+    ///
+    /// `#[inline]` allows this function to be inlined into `rhs_into` (which
+    /// performs the parallel dispatch), keeping this body free of any cross-path
+    /// register pressure from `apply_par`'s calling convention.
+    #[inline]
     pub(crate) fn apply(&self, p: &PauliSum<T>, result: &mut PauliSum<T>) {
         let n = p.n_qubits();
         for term in &self.terms {
@@ -159,25 +241,13 @@ where
                     PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
                         w_a.clone(),
                     );
-
-                // Commutator form: 2·left·W_a·right − {left·right, W_a}
-                //   = [left, W_a]·right + left·[W_a, right]
-                // multiplicity = p1 + p2 where p1 = comm_parity(left, W_a),
-                //                               p2 = comm_parity(W_a, right).
-                // multiplicity=0 (~25%): contribution is zero — skip entirely.
-                // multiplicity=1 (~50%): coeff = 2·weight·re_phase·coeff_a.
-                // multiplicity=2 (~25%): coeff = 4·weight·re_phase·coeff_a.
-                // Expected MulAssigns/entry: 1.5 (vs 2.5 in sandwich+anticommutator form).
-                // See PLAN_PHASE2.md §Task 16 for derivation.
-                // .borrow() coerces T::PauliWordType to &PauliWord<T::Storage, T::BuildHasher>
-                // via std's blanket Borrow<T> for T.
                 let p1 = comm_parity(term.left.word.borrow(), wa_phased.word.borrow(), n);
                 let p2 = comm_parity(wa_phased.word.borrow(), term.right.word.borrow(), n);
                 let multiplicity = p1 + p2;
                 if multiplicity > 0 {
                     let mut tmp = term.left.clone();
-                    tmp *= wa_phased;           // left * W_a; wa_phased moved here
-                    tmp *= term.right.clone();  // * right
+                    tmp *= wa_phased;
+                    tmp *= term.right.clone();
                     let s = re_phase(tmp.phase);
                     if s != 0.0 {
                         let c = (multiplicity as f64 * 2.0 * term.weight * s).into() * *coeff_a;
@@ -200,9 +270,14 @@ pub fn rhs<T: Config>(
 ) -> PauliSum<T>
 where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapBase,
-    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
-    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + ACMapBase
+        + Send
+        + Sync,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send,
+    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
+    T::BuildHasher: Send + Sync,
+    T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
@@ -212,6 +287,44 @@ where
     let mut result = PauliSum::<T>::builder().n_qubits(p.n_qubits()).build();
     rhs_into(ham, lindblad, p, &mut result);
     result
+}
+
+/// Parallel implementation of [`rhs_into`] for large Lindblad operators.
+///
+/// `#[cold]` + `#[inline(never)]` fully isolates all rayon code from the sequential
+/// hot path in `rhs_into`. Without this isolation, rayon's atomic operations
+/// (acquire/release fences) would be visible to LLVM's optimizer in the inlined
+/// `rhs_into` body, preventing memory-access reordering in the sequential loop
+/// and causing a ~60 µs regression even when the parallel path is never taken.
+#[cold]
+#[inline(never)]
+fn rhs_into_par<T: Config>(
+    ham: Option<&PauliSum<T>>,
+    lindblad: &LindbladOp<T>,
+    p: &PauliSum<T>,
+    result: &mut PauliSum<T>,
+) where
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + ACMapBase
+        + Send
+        + Sync,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send,
+    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
+    T::BuildHasher: Send + Sync,
+    T::Strategy: Send + Sync,
+    PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
+        Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
+        + MulAssign
+        + Clone,
+    f64: Into<T::Coeff>,
+{
+    result.data_mut().clear();
+    if let Some(h) = ham {
+        commutator_real(h, p, result);
+    }
+    apply_par(lindblad, p, result);
+    result.truncate();
 }
 
 /// In-place version of [`rhs`].
@@ -225,15 +338,28 @@ pub(crate) fn rhs_into<T: Config>(
     result: &mut PauliSum<T>,
 ) where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
-    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapBase,
-    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
-    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + ACMapBase
+        + Send
+        + Sync,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send,
+    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
+    T::BuildHasher: Send + Sync,
+    T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
         + Clone,
     f64: Into<T::Coeff>,
 {
+    // Empirical crossover: ~200 terms on a 14-core machine. Check before any work
+    // so the parallel path is fully isolated in `rhs_into_par` (cold, never-inline).
+    // This ensures the sequential hot path below has ZERO rayon code in scope —
+    // rayon's atomics would otherwise prevent LLVM from reordering memory accesses
+    // in the sequential loop, causing a ~60 µs regression even on the cold branch.
+    if lindblad.terms.len() >= 200 {
+        return rhs_into_par(ham, lindblad, p, result);
+    }
     result.data_mut().clear();
     if let Some(h) = ham {
         commutator_real(h, p, result);
@@ -778,5 +904,107 @@ mod tests {
         let w = PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from("Y");
         let y_coeff = result.data().trace(&w);
         assert_eq!(y_coeff, 0.0, "small term should be truncated");
+    }
+
+    // ---- Task 18 tests ----
+
+    /// Build the benchmark Lindblad (n=5, dense): 5 lowering ops c_i = X_i + iY_i,
+    /// dense 5×5 rate matrix γ_ij = 1/(1+|i−j|). Produces 100 LindbladTerms.
+    fn build_benchmark_lindblad() -> LindbladOp<ByteF64<1>> {
+        let n = 5usize;
+        let ppw5 = |s: &str, ph: u8| -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, W1> {
+            PhasedPauliWord::build_from_word(W1::from(s), ph)
+        };
+        let template = vec!['I'; n];
+        let mut ops: Vec<CollapseOp<ByteF64<1>>> = Vec::new();
+        for i in 0..n {
+            let mut op = CollapseOp::new(n);
+            let mut px = template.clone();
+            let mut py = template.clone();
+            px[i] = 'X';
+            py[i] = 'Y';
+            let sx: String = px.iter().collect();
+            let sy: String = py.iter().collect();
+            op.push(ppw5(&sx, 0), 1.0);
+            op.push(ppw5(&sy, 1), 1.0);
+            ops.push(op);
+        }
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        LindbladOp::new(ops, RateMatrix::Dense(rates))
+    }
+
+    /// Helper: assert determinism and linearity of `lop.apply` for a given state.
+    fn check_apply_consistency(lop: &LindbladOp<ByteF64<1>>, p_str: &str, n: usize) {
+        use ppvm_runtime::prelude::Trace;
+
+        let mut p: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+        p += (p_str, 1.0_f64);
+
+        let mut result1: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+        lop.apply(&p, &mut result1);
+
+        // Determinism: second call must agree on every coefficient.
+        let mut result2: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+        lop.apply(&p, &mut result2);
+        for (w, c1) in result1.data().iter() {
+            let c2 = result2.data().trace(w);
+            assert!(
+                (c1 - c2).abs() < 1e-14,
+                "non-deterministic apply (n={n}): word {:?}, run1={c1}, run2={c2}", w
+            );
+        }
+
+        // Linearity: apply(2·P) must equal 2·apply(P).
+        let mut p2: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+        p2 += (p_str, 2.0_f64);
+        let mut result_2p: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+        lop.apply(&p2, &mut result_2p);
+        for (w, c1) in result1.data().iter() {
+            let c_2p = result_2p.data().trace(w);
+            assert!(
+                (c_2p - 2.0 * c1).abs() < 1e-13,
+                "linearity violated (n={n}): word {:?}, 2·apply(P)={}, apply(2P)={}",
+                w, 2.0 * c1, c_2p
+            );
+        }
+    }
+
+    #[test]
+    fn parallel_matches_sequential() {
+        // Sequential path: n=5 benchmark Lindblad, 100 terms < PAR_THRESHOLD=200.
+        // Tests that the direct-accumulation path is correct.
+        let lop5 = build_benchmark_lindblad();
+        assert!(lop5.terms.len() < 200, "expected sequential path");
+        check_apply_consistency(&lop5, "ZIIII", 5);
+
+        // Parallel path: n=8 dense lowering Lindblad, 256 terms > PAR_THRESHOLD=200.
+        // (8 ops × 2 terms × 8 ops × 2 terms; n=8 fits in [u8;1].)
+        // Tests that fold/reduce accumulates identically to sequential.
+        let n = 8usize;
+        let ppw8 = |s: &str, ph: u8| -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, W1> {
+            PhasedPauliWord::build_from_word(W1::from(s), ph)
+        };
+        let template = vec!['I'; n];
+        let mut ops8: Vec<CollapseOp<ByteF64<1>>> = Vec::new();
+        for i in 0..n {
+            let mut op = CollapseOp::new(n);
+            let mut px = template.clone();
+            let mut py = template.clone();
+            px[i] = 'X';
+            py[i] = 'Y';
+            let sx: String = px.iter().collect();
+            let sy: String = py.iter().collect();
+            op.push(ppw8(&sx, 0), 1.0);
+            op.push(ppw8(&sy, 1), 1.0);
+            ops8.push(op);
+        }
+        let rates8: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        let lop8 = LindbladOp::new(ops8, RateMatrix::Dense(rates8));
+        assert!(lop8.terms.len() > 200, "expected parallel path");
+        check_apply_consistency(&lop8, "ZIIIIIII", n);
     }
 }

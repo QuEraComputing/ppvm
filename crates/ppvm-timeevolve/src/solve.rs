@@ -88,13 +88,21 @@ where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
     T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
         + ACMapBase
-        + Clone,
+        + Clone
+        + Send
+        + Sync,
     T::Coeff: std::ops::AddAssign
         + Copy
         + std::ops::Mul<Output = T::Coeff>
         + std::iter::Sum
-        + Into<f64>,
-    T::PauliWordType: Clone + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>,
+        + Into<f64>
+        + Send,
+    T::PauliWordType: Clone
+        + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>
+        + Send
+        + Sync,
+    T::BuildHasher: Send + Sync,
+    T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
@@ -153,13 +161,21 @@ where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
     T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
         + ACMapBase
-        + Clone,
+        + Clone
+        + Send
+        + Sync,
     T::Coeff: std::ops::AddAssign
         + Copy
         + std::ops::Mul<Output = T::Coeff>
         + std::iter::Sum
-        + Into<f64>,
-    T::PauliWordType: Clone + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>,
+        + Into<f64>
+        + Send,
+    T::PauliWordType: Clone
+        + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>
+        + Send
+        + Sync,
+    T::BuildHasher: Send + Sync,
+    T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
@@ -190,13 +206,21 @@ where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
     T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
         + ACMapBase
-        + Clone,
+        + Clone
+        + Send
+        + Sync,
     T::Coeff: std::ops::AddAssign
         + Copy
         + std::ops::Mul<Output = T::Coeff>
         + std::iter::Sum
-        + Into<f64>,
-    T::PauliWordType: Clone + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>,
+        + Into<f64>
+        + Send,
+    T::PauliWordType: Clone
+        + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>
+        + Send
+        + Sync,
+    T::BuildHasher: Send + Sync,
+    T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
@@ -223,13 +247,21 @@ where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
     T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
         + ACMapBase
-        + Clone,
+        + Clone
+        + Send
+        + Sync,
     T::Coeff: std::ops::AddAssign
         + Copy
         + std::ops::Mul<Output = T::Coeff>
         + std::iter::Sum
-        + Into<f64>,
-    T::PauliWordType: Clone + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>,
+        + Into<f64>
+        + Send,
+    T::PauliWordType: Clone
+        + std::borrow::Borrow<PauliWord<T::Storage, T::BuildHasher>>
+        + Send
+        + Sync,
+    T::BuildHasher: Send + Sync,
+    T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign

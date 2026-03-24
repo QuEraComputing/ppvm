@@ -81,3 +81,28 @@ per-qubit accessor loop.
 - [ ] When `|P| ≤ target`, identical to threshold-only truncation.
 - [ ] Exported from `lib.rs`.
 - [ ] Superradiance example updated.
+
+---
+
+## Task 20 — Superradiance example: Budget + Rayon showcase
+
+**Goal:** Extend `examples/superradiance.rs` to demonstrate the combined benefit of
+`Budget` truncation and Rayon parallelism by running three solve variants side-by-side
+and printing a comparison table.
+
+**Steps:**
+1. Run three variants of the superradiance solve (n=8 or larger if feasible):
+   - **Baseline**: `CoefficientThreshold` only, no parallelism.
+   - **Budget**: `Budget { target, min_threshold }` with matched `rtol`, no parallelism.
+   - **Budget + Rayon**: same as above but with the parallel `apply` (Task 18).
+2. For each variant record: wall-clock time, final `|P|`, and fidelity vs. the baseline.
+3. Print a formatted table to stdout showing time, speedup factor, `|P|`, and fidelity loss.
+
+**Unit tests:** None required — this is an example, not library code.
+
+**Review checklist:**
+- [ ] Three variants clearly labelled in output.
+- [ ] Timing uses `std::time::Instant`.
+- [ ] Fidelity computed as overlap with baseline final state.
+- [ ] Example compiles and runs with `cargo run --example superradiance --release`.
+- [ ] Output table is human-readable.

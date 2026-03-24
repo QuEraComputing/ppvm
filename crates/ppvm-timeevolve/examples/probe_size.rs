@@ -1,27 +1,17 @@
 use ppvm_runtime::{config::fxhash::ByteF64, prelude::*, strategy::CoefficientThreshold};
-use ppvm_timeevolve::{CollapseOp, JumpOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
+use ppvm_timeevolve::{JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
 
 type S = ByteF64<1, CoefficientThreshold>;
 const N: usize = 5;
 
 fn main() {
-    let ppw = |pauli: &str, phase: u8|
-        -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, PauliWord<[u8; 1], fxhash::FxBuildHasher>>
-    { PhasedPauliWord::build_from_word(PauliWord::<[u8;1], fxhash::FxBuildHasher>::from(pauli), phase) };
-    let template = vec!['I'; N];
-    let mut c_ops = Vec::with_capacity(N);
-    for i in 0..N {
-        let mut c = CollapseOp::<S>::new(N);
-        let mut px = template.clone(); let mut py = template.clone();
-        px[i] = 'X'; py[i] = 'Y';
-        c.push(ppw(&px.into_iter().collect::<String>(), 0), 1.0);
-        c.push(ppw(&py.into_iter().collect::<String>(), 1), 1.0);
-        c_ops.push(c);
-    }
+    let ops: Vec<JumpOp<S>> = (0..N)
+        .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+        .collect();
     let rates: Vec<Vec<f64>> = (0..N).map(|i|
         (0..N).map(|j| 1.0/(1.0+(i as f64-j as f64).abs())).collect()
     ).collect();
-    let lindblad = LindbladOp::new(c_ops.into_iter().map(JumpOp::Generic).collect(), RateMatrix::Dense(rates));
+    let lindblad = LindbladOp::new(ops, RateMatrix::Dense(rates));
     let strat = CoefficientThreshold(1e-6);
     let mut initial: PauliSum<S> = PauliSum::builder().n_qubits(N).strategy(strat).build();
     let template = vec!['I'; N];

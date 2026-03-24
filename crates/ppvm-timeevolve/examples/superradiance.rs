@@ -2,7 +2,7 @@
 ///
 /// Demonstrates that the speedup from `Budget` comes from the *rtol coupling*,
 /// not from Rayon.  Rayon parallelism is a separate, additive benefit that
-/// engages automatically for n≥8 (256 terms > PAR_THRESHOLD=200).
+/// engages automatically for n≥15 (225 Ladder terms > PAR_THRESHOLD=200).
 ///
 /// Variants
 /// --------
@@ -14,10 +14,10 @@
 /// 3. Budget+rtol   : same Budget, but rtol=10·min_threshold=1e-3
 ///                    — rtol absorbs the k[6] perturbation (≈ h·|e7|·||L||·||Δy||),
 ///                      letting DOPRI5 take large steps.  Speedup is visible even
-///                      on the sequential path (n=5); at n≥8 Rayon adds more.
+///                      on the sequential path (n=5); at n≥15 Rayon adds more.
 ///
-/// System: n=5, 100 Lindblad terms (< PAR_THRESHOLD=200 → sequential path).
-/// Rayon parallelism engages automatically for n≥8 (256 terms > threshold).
+/// System: n=5, 25 Lindblad terms (< PAR_THRESHOLD=200 → sequential path).
+/// Rayon parallelism engages automatically for n≥15 (225 Ladder terms > threshold).
 ///
 /// Run with:  cargo run --example superradiance --release
 use std::time::Instant;
@@ -26,7 +26,7 @@ use ppvm_runtime::{
     config::fxhash::ByteF64,
     prelude::*,
 };
-use ppvm_timeevolve::{Budget, CollapseOp, JumpOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
+use ppvm_timeevolve::{Budget, JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
 
 const N: usize = 5;
 const NBYTES: usize = 1;
@@ -46,7 +46,6 @@ const BUDGET_THRESHOLD: f64   = 1e-4;
 /// take large steps; ODE accuracy then matches observable-level truncation error.
 const BUDGET_RTOL: f64 = BUDGET_THRESHOLD * 10.0; // = 1e-3
 
-type W  = PauliWord<[u8; NBYTES], fxhash::FxBuildHasher>;
 type SB = ByteF64<NBYTES, Budget>;
 
 fn rate_matrix() -> RateMatrix {
@@ -61,22 +60,11 @@ fn rate_matrix() -> RateMatrix {
     )
 }
 
-fn ppw(s: &str, phase: u8) -> PhasedPauliWord<[u8; NBYTES], fxhash::FxBuildHasher, W> {
-    PhasedPauliWord::build_from_word(W::from(s), phase)
-}
-
 fn build_ops() -> LindbladOp<SB> {
-    let t = vec!['I'; N];
-    let mut ops: Vec<CollapseOp<SB>> = Vec::with_capacity(N);
-    for i in 0..N {
-        let mut op = CollapseOp::new(N);
-        let mut px = t.clone(); px[i] = 'X';
-        let mut py = t.clone(); py[i] = 'Y';
-        op.push(ppw(&px.iter().collect::<String>(), 0), 1.0);
-        op.push(ppw(&py.iter().collect::<String>(), 3), 1.0);
-        ops.push(op);
-    }
-    LindbladOp::new(ops.into_iter().map(JumpOp::Generic).collect(), rate_matrix())
+    let ops: Vec<JumpOp<SB>> = (0..N)
+        .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Raise }))
+        .collect();
+    LindbladOp::new(ops, rate_matrix())
 }
 
 fn initial_state(strat: Budget) -> PauliSum<SB> {
@@ -145,8 +133,8 @@ fn main() {
     let spd_bud_rtol = t_base.as_secs_f64() / t_bud_rtol.as_secs_f64();
 
     // ── Print table ──────────────────────────────────────────────────────────
-    println!("n={N}  tmax={TMAX}  steps={TSTEPS}  Lindblad terms={}", 4 * N * N);
-    println!("(sequential path: {} terms < PAR_THRESHOLD=200; change N to 8 to engage Rayon)", 4 * N * N);
+    println!("n={N}  tmax={TMAX}  steps={TSTEPS}  Lindblad terms={}", N * N);
+    println!("(sequential path: {} terms < PAR_THRESHOLD=200; change N to 15 to engage Rayon)", N * N);
     println!();
     println!("{:<20} {:>10} {:>10} {:>10} {:>18}",
         "Variant", "Wall time", "Speedup", "|P| final", "Max fidelity err");
@@ -163,6 +151,6 @@ fn main() {
         "Baseline:",     default_rtol,    BASE_TARGET,   BASE_THRESHOLD);
     println!("{:<20} rtol={:.0e}  Budget{{target={}, min_threshold={:.0e}}}  ← mismatched",
         "Budget:",        default_rtol,   BUDGET_TARGET, BUDGET_THRESHOLD);
-    println!("{:<20} rtol={:.0e}  Budget{{target={}, min_threshold={:.0e}}}  ← matched (10×min_threshold); at n≥8 Rayon also engages",
+    println!("{:<20} rtol={:.0e}  Budget{{target={}, min_threshold={:.0e}}}  ← matched (10×min_threshold); at n≥15 Rayon also engages",
         "Budget+rtol:",   BUDGET_RTOL,    BUDGET_TARGET, BUDGET_THRESHOLD);
 }

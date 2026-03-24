@@ -109,16 +109,24 @@ impl<T: Config> CollapseOp<T> {
     }
 }
 
-// Fields used in apply (Task 5)
-#[allow(dead_code)]
-pub(crate) struct LindbladTerm<T: Config> {
-    pub(crate) left:   PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>,
-    pub(crate) right:  PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>,
-    pub(crate) weight: f64,
+pub(crate) enum LindbladTerm<T: Config> {
+    Generic {
+        left:   PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>,
+        right:  PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>,
+        weight: f64,
+    },
+    /// Single-qubit or two-qubit ladder pair. `qi` = left qubit, `qj` = right qubit.
+    /// `left_dir` = `ops[i].direction.flip()` (conjugated); `right_dir` = `ops[j].direction`.
+    Ladder {
+        qi:        usize,
+        qj:        usize,
+        left_dir:  LadderDirection,
+        right_dir: LadderDirection,
+        weight:    f64,
+    },
 }
 
 pub struct LindbladOp<T: Config> {
-    #[allow(dead_code)] // used in apply (Task 5)
     pub(crate) terms: Vec<LindbladTerm<T>>,
 }
 
@@ -128,9 +136,9 @@ where
         Mul<Output = PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>>
         + MulAssign
         + Clone,
-    T::PauliWordType: Clone,
+    T::PauliWordType: PauliWordTrait + Clone,
 {
-    pub fn new(ops: Vec<CollapseOp<T>>, rates: RateMatrix) -> Self {
+    pub fn new(ops: Vec<JumpOp<T>>, rates: RateMatrix) -> Self {
         let mut terms = Vec::new();
         let n = ops.len();
 
@@ -140,26 +148,54 @@ where
                 if gamma_ij == 0.0 {
                     continue;
                 }
-                for (sigma_k, r_ik) in &ops[i].terms {
-                    for (sigma_l, r_jl) in &ops[j].terms {
-                        let weight = gamma_ij * r_ik * r_jl;
-                        if weight == 0.0 {
-                            continue;
+                match (&ops[i], &ops[j]) {
+                    (JumpOp::Ladder(li), JumpOp::Ladder(lj)) => {
+                        // Both ladder: one fast LindbladTerm::Ladder per pair.
+                        // Conjugate left direction: ops[i]† flips direction.
+                        terms.push(LindbladTerm::Ladder {
+                            qi: li.qubit,
+                            qj: lj.qubit,
+                            left_dir: li.direction.flip(),
+                            right_dir: lj.direction,
+                            weight: gamma_ij,
+                        });
+                    }
+                    _ => {
+                        // At least one Generic: expand any Ladder to CollapseOp at
+                        // construction time, then produce Generic terms as before.
+                        let n_qubits = match &ops[i] {
+                            JumpOp::Generic(op) => op.n_qubits,
+                            JumpOp::Ladder(_) => match &ops[j] {
+                                JumpOp::Generic(op) => op.n_qubits,
+                                JumpOp::Ladder(_) => unreachable!(),
+                            },
+                        };
+                        let expanded_i: Option<CollapseOp<T>>;
+                        let col_i: &CollapseOp<T> = match &ops[i] {
+                            JumpOp::Generic(op) => op,
+                            JumpOp::Ladder(l) => { expanded_i = Some(l.expand(n_qubits)); expanded_i.as_ref().unwrap() }
+                        };
+                        let expanded_j: Option<CollapseOp<T>>;
+                        let col_j: &CollapseOp<T> = match &ops[j] {
+                            JumpOp::Generic(op) => op,
+                            JumpOp::Ladder(l) => { expanded_j = Some(l.expand(n_qubits)); expanded_j.as_ref().unwrap() }
+                        };
+                        for (sigma_k, r_ik) in &col_i.terms {
+                            for (sigma_l, r_jl) in &col_j.terms {
+                                let weight = gamma_ij * r_ik * r_jl;
+                                if weight == 0.0 {
+                                    continue;
+                                }
+                                let phi_k_dag = (4 - sigma_k.phase) % 4;
+                                let left = PhasedPauliWord::build_from_word(
+                                    sigma_k.word.clone(), phi_k_dag,
+                                );
+                                let right = PhasedPauliWord::build_from_word(
+                                    sigma_l.word.clone(), sigma_l.phase,
+                                );
+                                terms.push(LindbladTerm::Generic { left, right, weight });
+                            }
                         }
-
-                        let phi_k_dag = (4 - sigma_k.phase) % 4;
-                        let phi_l = sigma_l.phase;
-
-                        let left = PhasedPauliWord::build_from_word(
-                            sigma_k.word.clone(),
-                            phi_k_dag,
-                        );
-                        let right = PhasedPauliWord::build_from_word(
-                            sigma_l.word.clone(),
-                            phi_l,
-                        );
-
-                        terms.push(LindbladTerm { left, right, weight });
                     }
                 }
             }
@@ -222,7 +258,7 @@ fn apply_par<T: Config>(
         + Send
         + Sync,
     T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send,
-    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
+    T::PauliWordType: PauliWordTrait + Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
     T::BuildHasher: Send + Sync,
     T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>: MulAssign + Clone,
@@ -234,25 +270,57 @@ fn apply_par<T: Config>(
         .fold(
             || PauliSum::<T>::builder().n_qubits(n).build(),
             |mut local, term| {
-                for (w_a, coeff_a) in p.data().iter() {
-                    let wa_phased =
-                        PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
-                            w_a.clone(),
-                        );
-                    let p1 = comm_parity(term.left.word.borrow(), wa_phased.word.borrow(), n);
-                    let p2 = comm_parity(wa_phased.word.borrow(), term.right.word.borrow(), n);
-                    let multiplicity = p1 + p2;
-                    if multiplicity > 0 {
-                        let mut tmp = term.left.clone();
-                        tmp *= wa_phased;
-                        tmp *= term.right.clone();
-                        let s = re_phase(tmp.phase);
-                        if s != 0.0 {
-                            let c = (multiplicity as f64 * 2.0 * term.weight * s).into()
-                                * *coeff_a;
-                            local += (tmp.word, c);
+                match term {
+                  LindbladTerm::Generic { left, right, weight } => {
+                    for (w_a, coeff_a) in p.data().iter() {
+                        let wa_phased =
+                            PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
+                                w_a.clone(),
+                            );
+                        let p1 = comm_parity(left.word.borrow(), wa_phased.word.borrow(), n);
+                        let p2 = comm_parity(wa_phased.word.borrow(), right.word.borrow(), n);
+                        let multiplicity = p1 + p2;
+                        if multiplicity > 0 {
+                            let mut tmp = left.clone();
+                            tmp *= wa_phased;
+                            tmp *= right.clone();
+                            let s = re_phase(tmp.phase);
+                            if s != 0.0 {
+                                let c = (multiplicity as f64 * 2.0 * weight * s).into()
+                                    * *coeff_a;
+                                local += (tmp.word, c);
+                            }
                         }
                     }
+                  }
+                  LindbladTerm::Ladder { qi, qj, left_dir, right_dir, weight } if qi == qj => {
+                    let (z_i_sign, xy_contributes): (f64, bool) = match (left_dir, right_dir) {
+                        (LadderDirection::Raise, LadderDirection::Lower) => (1.0, true),
+                        (LadderDirection::Lower, LadderDirection::Raise) => (-1.0, true),
+                        _ => (0.0, false),
+                    };
+                    if z_i_sign != 0.0 {
+                        for (w_a, coeff_a) in p.data().iter() {
+                            match w_a.get(*qi) {
+                                Pauli::I => {}
+                                Pauli::Z => {
+                                    local += (w_a.set_new(*qi, Pauli::I),
+                                        (8.0 * weight * z_i_sign).into() * *coeff_a);
+                                    local += (w_a.clone(),
+                                        (-8.0 * weight).into() * *coeff_a);
+                                }
+                                Pauli::X | Pauli::Y if xy_contributes => {
+                                    local += (w_a.clone(),
+                                        (-4.0 * weight).into() * *coeff_a);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                  }
+                  LindbladTerm::Ladder { .. } => {
+                    todo!("cross-site ladder kernel: Task 23")
+                  }
                 }
                 local
             },
@@ -278,7 +346,7 @@ where
         + Send
         + Sync,
     T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send,
-    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
+    T::PauliWordType: PauliWordTrait + Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
     T::BuildHasher: Send + Sync,
     T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
@@ -298,23 +366,69 @@ where
     pub(crate) fn apply(&self, p: &PauliSum<T>, result: &mut PauliSum<T>) {
         let n = p.n_qubits();
         for term in &self.terms {
-            for (w_a, coeff_a) in p.data().iter() {
-                let wa_phased =
-                    PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
-                        w_a.clone(),
-                    );
-                let p1 = comm_parity(term.left.word.borrow(), wa_phased.word.borrow(), n);
-                let p2 = comm_parity(wa_phased.word.borrow(), term.right.word.borrow(), n);
-                let multiplicity = p1 + p2;
-                if multiplicity > 0 {
-                    let mut tmp = term.left.clone();
-                    tmp *= wa_phased;
-                    tmp *= term.right.clone();
-                    let s = re_phase(tmp.phase);
-                    if s != 0.0 {
-                        let c = (multiplicity as f64 * 2.0 * term.weight * s).into() * *coeff_a;
-                        *result += (tmp.word, c);
+            match term {
+                LindbladTerm::Generic { left, right, weight } => {
+                    for (w_a, coeff_a) in p.data().iter() {
+                        let wa_phased =
+                            PhasedPauliWord::<T::Storage, T::BuildHasher, T::PauliWordType>::from(
+                                w_a.clone(),
+                            );
+                        let p1 = comm_parity(left.word.borrow(), wa_phased.word.borrow(), n);
+                        let p2 = comm_parity(wa_phased.word.borrow(), right.word.borrow(), n);
+                        let multiplicity = p1 + p2;
+                        if multiplicity > 0 {
+                            let mut tmp = left.clone();
+                            tmp *= wa_phased;
+                            tmp *= right.clone();
+                            let s = re_phase(tmp.phase);
+                            if s != 0.0 {
+                                let c = (multiplicity as f64 * 2.0 * weight * s).into()
+                                    * *coeff_a;
+                                *result += (tmp.word, c);
+                            }
+                        }
                     }
+                }
+                LindbladTerm::Ladder { qi, qj, left_dir, right_dir, weight } if qi == qj => {
+                    // On-site kernel (verified against Generic expand path):
+                    //   I → 0
+                    //   Z → +z_i·8γ·(word with I at qi) + (−8γ)·word
+                    //   X → −4γ·word
+                    //   Y → −4γ·word
+                    // z_i sign and whether X/Y contribute depend on direction pair:
+                    //   (Raise,Lower) [lowering dissipator]: z_i=+1, X/Y contribute
+                    //   (Lower,Raise) [raising dissipator]:  z_i=−1, X/Y contribute
+                    //   (Raise,Raise) or (Lower,Lower):      all zero (cross-direction)
+                    let (z_i_sign, xy_contributes): (f64, bool) = match (left_dir, right_dir) {
+                        (LadderDirection::Raise, LadderDirection::Lower) => (1.0, true),
+                        (LadderDirection::Lower, LadderDirection::Raise) => (-1.0, true),
+                        _ => (0.0, false),
+                    };
+                    if z_i_sign == 0.0 {
+                        // cross-direction term contributes nothing on-site
+                    } else {
+                        for (w_a, coeff_a) in p.data().iter() {
+                            match w_a.get(*qi) {
+                                Pauli::I => {} // always zero
+                                Pauli::Z => {
+                                    // z_i·8γ·(word with I at qi)
+                                    *result += (w_a.set_new(*qi, Pauli::I),
+                                        (8.0 * weight * z_i_sign).into() * *coeff_a);
+                                    // −8γ·word
+                                    *result += (w_a.clone(),
+                                        (-8.0 * weight).into() * *coeff_a);
+                                }
+                                Pauli::X | Pauli::Y if xy_contributes => {
+                                    *result += (w_a.clone(),
+                                        (-4.0 * weight).into() * *coeff_a);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                LindbladTerm::Ladder { .. } => {
+                    todo!("cross-site ladder kernel: Task 23")
                 }
             }
         }
@@ -337,7 +451,7 @@ where
         + Send
         + Sync,
     T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send,
-    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
+    T::PauliWordType: PauliWordTrait + Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
     T::BuildHasher: Send + Sync,
     T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
@@ -372,7 +486,7 @@ fn rhs_into_par<T: Config>(
         + Send
         + Sync,
     T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send,
-    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
+    T::PauliWordType: PauliWordTrait + Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
     T::BuildHasher: Send + Sync,
     T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
@@ -405,7 +519,7 @@ pub(crate) fn rhs_into<T: Config>(
         + Send
         + Sync,
     T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send,
-    T::PauliWordType: Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
+    T::PauliWordType: PauliWordTrait + Clone + Borrow<PauliWord<T::Storage, T::BuildHasher>> + Send + Sync,
     T::BuildHasher: Send + Sync,
     T::Strategy: Send + Sync,
     PhasedPauliWord<T::Storage, T::BuildHasher, T::PauliWordType>:
@@ -536,7 +650,7 @@ mod tests {
         // Cross-pair: left={Y,0}, right={Z,0}.
         //   Y*Z = iX (phase=1), so re_phase=0 → no X term from any W_a.
         // Apply to P=Z: verify no X coefficient appears.
-        let ops = vec![single_op("Y", 0), single_op("Z", 0)];
+        let ops: Vec<JumpOp<ByteF64<1>>> = vec![single_op("Y", 0).into(), single_op("Z", 0).into()];
         let rates = RateMatrix::Dense(vec![vec![0.0, 1.0], vec![1.0, 0.0]]);
         let lop = LindbladOp::new(ops, rates);
 
@@ -593,12 +707,12 @@ mod tests {
         // W_a = Z: comm_parity(Z,Z)=0 and comm_parity(Z,Z)=0 → multiplicity=0.
         // Apply to P=Z only; expect zero output (L_term(Z) = 0 before summing other
         // contributions; with this single term and W_a=Z, the inner body is skipped).
-        let lop = LindbladOp::new(vec![single_op("Z", 0)], RateMatrix::from(vec![1.0]));
+        let lop = LindbladOp::new(vec![single_op("Z", 0).into()], RateMatrix::from(vec![1.0]));
         // Verify multiplicity=0 for (left=Z, W_a=Z, right=Z)
-        let t = &lop.terms[0];
+        let LindbladTerm::Generic { left: tl, right: tr, .. } = &lop.terms[0] else { panic!("expected Generic") };
         let wa = W1::from("Z");
-        assert_eq!(comm_parity(&t.left.word, &wa, 1), 0);
-        assert_eq!(comm_parity(&wa, &t.right.word, 1), 0);
+        assert_eq!(comm_parity(&tl.word, &wa, 1), 0);
+        assert_eq!(comm_parity(&wa, &tr.word, 1), 0);
         // Behavioral check: L(Z) = 2·Z·Z·Z − {Z·Z,Z} = 2Z − 2Z = 0
         let result = apply_to(&lop, "Z");
         assert_eq!(get_coeff(&result, "Z"), 0.0);
@@ -619,9 +733,10 @@ mod tests {
         // Manual derivation: L_X(Z) = 2·X·Z·X − {X·X,Z} = 2·(-Z) − {I,Z} = -2Z − 2Z = -4Z.
         let result = apply_to(&lindblad_x(), "Z");
         // Verify multiplicity=2 for this term
-        let t = &lindblad_x().terms[0];
+        let lx = lindblad_x();
+        let LindbladTerm::Generic { left: tl, right: tr, .. } = &lx.terms[0] else { panic!("expected Generic") };
         let wz = W1::from("Z");
-        assert_eq!(comm_parity(&t.left.word, &wz, 1) + comm_parity(&wz, &t.right.word, 1), 2);
+        assert_eq!(comm_parity(&tl.word, &wz, 1) + comm_parity(&wz, &tr.word, 1), 2);
         assert!((get_coeff(&result, "Z") - (-4.0)).abs() < 1e-15,
             "multiplicity=2 must give coefficient 4*weight*re_phase = -4");
     }
@@ -634,14 +749,14 @@ mod tests {
         // phi_k=0, phi_k†=0, phi_l=0
         // left.phase = phi_k† = 0, right.phase = 0
         // weight = gamma * r_ik * r_jl = 1.0 * 1.0 * 1.0 = 1.0
-        let lop = LindbladOp::new(vec![single_op("Z", 0)], RateMatrix::from(vec![1.0]));
+        let lop = LindbladOp::new(vec![single_op("Z", 0).into()], RateMatrix::from(vec![1.0]));
         assert_eq!(lop.terms.len(), 1);
-        let t = &lop.terms[0];
-        assert_eq!(t.left.word, W1::from("Z"));
-        assert_eq!(t.left.phase, 0);
-        assert_eq!(t.right.word, W1::from("Z"));
-        assert_eq!(t.right.phase, 0);
-        assert!((t.weight - 1.0).abs() < 1e-15);
+        let LindbladTerm::Generic { left, right, weight } = &lop.terms[0] else { panic!("expected Generic") };
+        assert_eq!(left.word, W1::from("Z"));
+        assert_eq!(left.phase, 0);
+        assert_eq!(right.word, W1::from("Z"));
+        assert_eq!(right.phase, 0);
+        assert!((weight - 1.0).abs() < 1e-15);
     }
 
     #[test]
@@ -650,26 +765,120 @@ mod tests {
         // phi_k=1, phi_k†=(4-1)%4=3, phi_l=1
         // left.phase = phi_k† = 3, right.phase = phi_l = 1
         // weight = gamma * 1.0 * 1.0 = 1.0
-        let lop = LindbladOp::new(vec![single_op("Y", 1)], RateMatrix::from(vec![1.0]));
+        let lop = LindbladOp::new(vec![single_op("Y", 1).into()], RateMatrix::from(vec![1.0]));
         assert_eq!(lop.terms.len(), 1);
-        let t = &lop.terms[0];
-        assert_eq!(t.left.word, W1::from("Y"));
-        assert_eq!(t.left.phase, 3);
-        assert_eq!(t.right.word, W1::from("Y"));
-        assert_eq!(t.right.phase, 1);
-        assert!((t.weight - 1.0).abs() < 1e-15);
+        let LindbladTerm::Generic { left, right, weight } = &lop.terms[0] else { panic!("expected Generic") };
+        assert_eq!(left.word, W1::from("Y"));
+        assert_eq!(left.phase, 3);
+        assert_eq!(right.word, W1::from("Y"));
+        assert_eq!(right.phase, 1);
+        assert!((weight - 1.0).abs() < 1e-15);
     }
 
     #[test]
     fn two_term_op_x_plus_iy() {
-        // c = X + iY has 2 terms, so 2x2 = 4 LindbladTerms
-        // none should have weight=0 (gamma=1, r_ik=1, r_jl=1 for all pairs)
+        // Via JumpOp::Generic: 2-term CollapseOp → 2×2 = 4 LindbladTerm::Generic entries.
         let mut op = CollapseOp::<ByteF64<1>>::new(1);
         op.push(ppw("X", 0), 1.0);
         op.push(ppw("Y", 1), 1.0);
-        let lop = LindbladOp::new(vec![op], RateMatrix::from(vec![1.0]));
+        let lop = LindbladOp::new(vec![JumpOp::Generic(op)], RateMatrix::from(vec![1.0]));
         assert_eq!(lop.terms.len(), 4);
-        assert!(lop.terms.iter().all(|t| t.weight != 0.0));
+        assert!(lop.terms.iter().all(|t| matches!(t, LindbladTerm::Generic { weight, .. } if *weight != 0.0)));
+
+        // Via JumpOp::Ladder: single LindbladTerm::Ladder per pair.
+        let lop_ladder = LindbladOp::new(
+            vec![JumpOp::<ByteF64<1>>::Ladder(LadderOp { qubit: 0, direction: LadderDirection::Lower })],
+            RateMatrix::from(vec![1.0]),
+        );
+        assert_eq!(lop_ladder.terms.len(), 1);
+        assert!(matches!(lop_ladder.terms[0], LindbladTerm::Ladder { .. }));
+    }
+
+    // ---- Task 22 tests ----
+
+    fn make_ladder_lop(direction: LadderDirection) -> LindbladOp<ByteF64<1>> {
+        LindbladOp::new(
+            vec![JumpOp::<ByteF64<1>>::Ladder(LadderOp { qubit: 0, direction })],
+            RateMatrix::from(vec![1.0]),
+        )
+    }
+
+    fn apply_ladder_to(direction: LadderDirection, word: &str) -> PauliSum<ByteF64<1>> {
+        let lop = make_ladder_lop(direction);
+        let p = sum1(&[(word, 1.0)]);
+        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        lop.apply(&p, &mut result);
+        result
+    }
+
+    #[test]
+    fn ladder_onsite_lower_all_paulis() {
+        // L_lower(I) = 0
+        let r = apply_ladder_to(LadderDirection::Lower, "I");
+        assert_eq!(get_coeff(&r, "I"), 0.0);
+        assert_eq!(get_coeff(&r, "X"), 0.0);
+        assert_eq!(get_coeff(&r, "Y"), 0.0);
+        assert_eq!(get_coeff(&r, "Z"), 0.0);
+
+        // L_lower(X) = -4X
+        let r = apply_ladder_to(LadderDirection::Lower, "X");
+        assert!((get_coeff(&r, "X") - (-4.0)).abs() < 1e-14, "L_lower(X) = -4X");
+
+        // L_lower(Y) = -4Y
+        let r = apply_ladder_to(LadderDirection::Lower, "Y");
+        assert!((get_coeff(&r, "Y") - (-4.0)).abs() < 1e-14, "L_lower(Y) = -4Y");
+
+        // L_lower(Z) = +8I - 8Z
+        let r = apply_ladder_to(LadderDirection::Lower, "Z");
+        assert!((get_coeff(&r, "I") - 8.0).abs() < 1e-14, "L_lower(Z) has +8I");
+        assert!((get_coeff(&r, "Z") - (-8.0)).abs() < 1e-14, "L_lower(Z) has -8Z");
+    }
+
+    #[test]
+    fn ladder_onsite_raise_all_paulis() {
+        // L_raise(I) = 0
+        let r = apply_ladder_to(LadderDirection::Raise, "I");
+        assert_eq!(get_coeff(&r, "I"), 0.0);
+
+        // L_raise(X) = -4X
+        let r = apply_ladder_to(LadderDirection::Raise, "X");
+        assert!((get_coeff(&r, "X") - (-4.0)).abs() < 1e-14, "L_raise(X) = -4X");
+
+        // L_raise(Y) = -4Y
+        let r = apply_ladder_to(LadderDirection::Raise, "Y");
+        assert!((get_coeff(&r, "Y") - (-4.0)).abs() < 1e-14, "L_raise(Y) = -4Y");
+
+        // L_raise(Z) = -8I - 8Z
+        let r = apply_ladder_to(LadderDirection::Raise, "Z");
+        assert!((get_coeff(&r, "I") - (-8.0)).abs() < 1e-14, "L_raise(Z) has -8I");
+        assert!((get_coeff(&r, "Z") - (-8.0)).abs() < 1e-14, "L_raise(Z) has -8Z");
+    }
+
+    #[test]
+    fn ladder_onsite_matches_generic() {
+        // For each of {I, X, Y, Z}, the Ladder path and Generic path must agree.
+        for dir in [LadderDirection::Lower, LadderDirection::Raise] {
+            let lop_ladder = make_ladder_lop(dir);
+            let lop_generic = {
+                let expanded = LadderOp { qubit: 0, direction: dir }.expand::<ByteF64<1>>(1);
+                LindbladOp::new(vec![JumpOp::Generic(expanded)], RateMatrix::from(vec![1.0]))
+            };
+            for word in ["I", "X", "Y", "Z"] {
+                let p = sum1(&[(word, 1.0)]);
+                let mut r_ladder: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+                let mut r_generic: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+                lop_ladder.apply(&p, &mut r_ladder);
+                lop_generic.apply(&p, &mut r_generic);
+                for out_word in ["I", "X", "Y", "Z"] {
+                    let c_ladder = get_coeff(&r_ladder, out_word);
+                    let c_generic = get_coeff(&r_generic, out_word);
+                    assert!(
+                        (c_ladder - c_generic).abs() < 1e-13,
+                        "dir={dir:?} input={word} output={out_word}: ladder={c_ladder}, generic={c_generic}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -677,19 +886,19 @@ mod tests {
         // c1=X, c2=Y, gamma=[[1.0, 0.5],[0.5, 1.0]]
         // 4 (i,j) pairs, each with 1x1 term pair => 4 LindbladTerms
         // off-diagonal (i=0,j=1): weight = gamma_01 * r_ik * r_jl = 0.5 * 1.0 * 1.0 = 0.5
-        let ops = vec![single_op("X", 0), single_op("Y", 0)];
+        let ops: Vec<JumpOp<ByteF64<1>>> = vec![single_op("X", 0).into(), single_op("Y", 0).into()];
         let rates = RateMatrix::Dense(vec![vec![1.0, 0.5], vec![0.5, 1.0]]);
         let lop = LindbladOp::new(ops, rates);
         assert_eq!(lop.terms.len(), 4);
         // The (i=0,j=1) term is index 1 (order: (0,0),(0,1),(1,0),(1,1))
-        let off_diag = &lop.terms[1];
-        assert!((off_diag.weight - 0.5).abs() < 1e-15);
+        let LindbladTerm::Generic { weight, .. } = &lop.terms[1] else { panic!("expected Generic") };
+        assert!((weight - 0.5).abs() < 1e-15);
     }
 
     // ---- Task 5 tests ----
 
     fn lindblad_x() -> LindbladOp<ByteF64<1>> {
-        LindbladOp::new(vec![single_op("X", 0)], RateMatrix::from(vec![1.0]))
+        LindbladOp::new(vec![single_op("X", 0).into()], RateMatrix::from(vec![1.0]))
     }
 
     fn apply_to(lop: &LindbladOp<ByteF64<1>>, word: &str) -> PauliSum<ByteF64<1>> {
@@ -753,10 +962,10 @@ mod tests {
         //        = 4I - 4Z - (2Z - 2I) - (2Z - 2I)
         //        = 4I - 4Z - 2Z + 2I - 2Z + 2I
         //        = 8I - 8Z
-        let mut op = CollapseOp::<ByteF64<1>>::new(1);
-        op.push(ppw("X", 0), 1.0);
-        op.push(ppw("Y", 1), 1.0);
-        let lop = LindbladOp::new(vec![op], RateMatrix::from(vec![1.0]));
+        let lop = LindbladOp::new(
+            vec![JumpOp::Ladder(LadderOp { qubit: 0, direction: LadderDirection::Lower })],
+            RateMatrix::from(vec![1.0]),
+        );
         let p = sum1(&[("Z", 1.0)]);
         let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
         lop.apply(&p, &mut result);
@@ -1007,26 +1216,22 @@ mod tests {
     // ---- Task 18 tests ----
 
     /// Build the benchmark Lindblad (n=5, dense): 5 lowering ops c_i = X_i + iY_i,
-    /// dense 5×5 rate matrix γ_ij = 1/(1+|i−j|). Produces 100 LindbladTerms.
+    /// dense 5×5 rate matrix γ_ij = 1/(1+|i−j|). Produces 100 LindbladTerm::Generic entries.
     fn build_benchmark_lindblad() -> LindbladOp<ByteF64<1>> {
         let n = 5usize;
         let ppw5 = |s: &str, ph: u8| -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, W1> {
             PhasedPauliWord::build_from_word(W1::from(s), ph)
         };
         let template = vec!['I'; n];
-        let mut ops: Vec<CollapseOp<ByteF64<1>>> = Vec::new();
-        for i in 0..n {
+        let ops: Vec<JumpOp<ByteF64<1>>> = (0..n).map(|i| {
             let mut op = CollapseOp::new(n);
             let mut px = template.clone();
             let mut py = template.clone();
-            px[i] = 'X';
-            py[i] = 'Y';
-            let sx: String = px.iter().collect();
-            let sy: String = py.iter().collect();
-            op.push(ppw5(&sx, 0), 1.0);
-            op.push(ppw5(&sy, 1), 1.0);
-            ops.push(op);
-        }
+            px[i] = 'X'; py[i] = 'Y';
+            op.push(ppw5(&px.iter().collect::<String>(), 0), 1.0);
+            op.push(ppw5(&py.iter().collect::<String>(), 1), 1.0);
+            JumpOp::Generic(op)
+        }).collect();
         let rates: Vec<Vec<f64>> = (0..n)
             .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
             .collect();
@@ -1077,27 +1282,23 @@ mod tests {
         assert!(lop5.terms.len() < 200, "expected sequential path");
         check_apply_consistency(&lop5, "ZIIII", 5);
 
-        // Parallel path: n=8 dense lowering Lindblad, 256 terms > PAR_THRESHOLD=200.
-        // (8 ops × 2 terms × 8 ops × 2 terms; n=8 fits in [u8;1].)
-        // Tests that fold/reduce accumulates identically to sequential.
+        // Parallel path: n=8 dense lowering Lindblad via Generic (256 terms > PAR_THRESHOLD=200).
+        // Uses JumpOp::Generic with 2-term CollapseOp so 8×2×8×2 = 256 LindbladTerm::Generic.
         let n = 8usize;
         let ppw8 = |s: &str, ph: u8| -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, W1> {
             PhasedPauliWord::build_from_word(W1::from(s), ph)
         };
         let template = vec!['I'; n];
-        let mut ops8: Vec<CollapseOp<ByteF64<1>>> = Vec::new();
-        for i in 0..n {
+        let ops8: Vec<JumpOp<ByteF64<1>>> = (0..n).map(|i| {
             let mut op = CollapseOp::new(n);
             let mut px = template.clone();
             let mut py = template.clone();
             px[i] = 'X';
             py[i] = 'Y';
-            let sx: String = px.iter().collect();
-            let sy: String = py.iter().collect();
-            op.push(ppw8(&sx, 0), 1.0);
-            op.push(ppw8(&sy, 1), 1.0);
-            ops8.push(op);
-        }
+            op.push(ppw8(&px.iter().collect::<String>(), 0), 1.0);
+            op.push(ppw8(&py.iter().collect::<String>(), 1), 1.0);
+            JumpOp::Generic(op)
+        }).collect();
         let rates8: Vec<Vec<f64>> = (0..n)
             .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
             .collect();

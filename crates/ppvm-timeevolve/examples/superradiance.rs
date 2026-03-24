@@ -26,7 +26,7 @@ use ppvm_runtime::{
     config::fxhash::ByteF64,
     prelude::*,
 };
-use ppvm_timeevolve::{Budget, CollapseOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
+use ppvm_timeevolve::{Budget, CollapseOp, JumpOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
 
 const N: usize = 5;
 const NBYTES: usize = 1;
@@ -76,7 +76,7 @@ fn build_ops() -> LindbladOp<SB> {
         op.push(ppw(&py.iter().collect::<String>(), 3), 1.0);
         ops.push(op);
     }
-    LindbladOp::new(ops, rate_matrix())
+    LindbladOp::new(ops.into_iter().map(JumpOp::Generic).collect(), rate_matrix())
 }
 
 fn initial_state(strat: Budget) -> PauliSum<SB> {

@@ -431,7 +431,7 @@ mod tests {
         // k-vector contributions, growing the state beyond 1 entry.
         use ppvm_runtime::strategy::CoefficientThreshold;
         use ppvm_runtime::config::fxhash::ByteF64;
-        use crate::lindblad::{CollapseOp, LindbladOp, RateMatrix};
+        use crate::lindblad::{CollapseOp, JumpOp, LindbladOp, RateMatrix};
         use crate::solve::SolverCache;
         use ppvm_runtime::prelude::{PauliWord, PhasedPauliWord, PauliSum};
 
@@ -447,7 +447,7 @@ mod tests {
 
         let mut c = CollapseOp::<S>::new(1);
         c.push(ppw_s("X", 0), 1.0);  // c = X (dephasing)
-        let lindblad = LindbladOp::new(vec![c], RateMatrix::from(vec![1.0]));
+        let lindblad = LindbladOp::new(vec![JumpOp::Generic(c)], RateMatrix::from(vec![1.0]));
 
         // Use an aggressive threshold so anything below 0.5 is truncated.
         let strat = CoefficientThreshold(0.5);
@@ -484,7 +484,7 @@ mod tests {
         use ppvm_runtime::prelude::{PauliWord, PhasedPauliWord, Trace};
         use ppvm_runtime::strategy::CoefficientThreshold;
         use ppvm_runtime::config::fxhash::ByteF64;
-        use crate::lindblad::{CollapseOp, LindbladOp, RateMatrix};
+        use crate::lindblad::{CollapseOp, JumpOp, LindbladOp, RateMatrix};
         use crate::solve::solve;
 
         type S = ByteF64<1, CoefficientThreshold>;
@@ -500,7 +500,7 @@ mod tests {
         let mut c = CollapseOp::<S>::new(1);
         c.push(ppw("X", 0), 1.0);
         c.push(ppw("Y", 1), 1.0);
-        let lindblad = LindbladOp::new(vec![c], RateMatrix::from(vec![1.0]));
+        let lindblad = LindbladOp::new(vec![JumpOp::Generic(c)], RateMatrix::from(vec![1.0]));
 
         let strat = CoefficientThreshold(1e-6);
         let mut initial: ppvm_runtime::prelude::PauliSum<S> =

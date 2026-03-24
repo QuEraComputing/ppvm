@@ -128,7 +128,7 @@ mod tests {
     use ppvm_runtime::prelude::{PauliSum, PauliWord, PhasedPauliWord};
     use ppvm_runtime::strategy::CoefficientThreshold;
 
-    use crate::lindblad::{CollapseOp, LindbladOp, RateMatrix};
+    use crate::lindblad::{CollapseOp, JumpOp, LindbladOp, RateMatrix};
     use crate::solve::{SolverConfig, solve};
 
     type W1 = PauliWord<[u8; 1], fxhash::FxBuildHasher>;
@@ -143,14 +143,14 @@ mod tests {
         let mut op = CollapseOp::new(1);
         op.push(ppw("X", 0), 1.0);
         op.push(ppw("Y", 1), 1.0);
-        LindbladOp::new(vec![op], RateMatrix::from(vec![1.0]))
+        LindbladOp::new(vec![JumpOp::Generic(op)], RateMatrix::from(vec![1.0]))
     }
 
     fn lindblad_lowering_thresh() -> LindbladOp<ThreshConfig> {
         let mut op = CollapseOp::new(1);
         op.push(ppw("X", 0), 1.0);
         op.push(ppw("Y", 1), 1.0);
-        LindbladOp::new(vec![op], RateMatrix::from(vec![1.0]))
+        LindbladOp::new(vec![JumpOp::Generic(op)], RateMatrix::from(vec![1.0]))
     }
 
     /// Budget must keep |P| ≤ target at every save point.

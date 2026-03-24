@@ -5,7 +5,7 @@ use ppvm_runtime::prelude::{
 };
 
 use crate::dopri5::{StepResult, estimate_h0, step};
-use crate::lindblad::{LindbladOp, rhs_into};
+use crate::lindblad::{JumpOp, LindbladOp, rhs_into};
 
 pub struct SolverConfig {
     pub rtol:  f64,
@@ -455,7 +455,7 @@ mod tests {
         let mut c2 = CollapseOp::<S>::new(2);
         c2.push(ppw("IZ", 0), 1.0);
         let lindblad = LindbladOp::new(
-            vec![c1, c2],
+            vec![JumpOp::Generic(c1), JumpOp::Generic(c2)],
             RateMatrix::Dense(vec![vec![1.0, 0.5], vec![0.5, 1.0]]),
         );
 
@@ -500,7 +500,7 @@ mod tests {
         let mut c = CollapseOp::<S>::new(1);
         c.push(ppw("X", 0), 1.0);
         c.push(ppw("Y", 1), 1.0);
-        let lindblad = LindbladOp::new(vec![c], RateMatrix::from(vec![1.0]));
+        let lindblad = LindbladOp::new(vec![JumpOp::Generic(c)], RateMatrix::from(vec![1.0]));
 
         let initial = sum1(&[("Z", 1.0)]);
         let save_at = [0.25, 0.5, 1.0, 2.0];

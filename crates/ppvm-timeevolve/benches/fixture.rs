@@ -1,5 +1,5 @@
 use ppvm_runtime::{config::fxhash::ByteF64, prelude::*, strategy::CoefficientThreshold};
-use ppvm_timeevolve::{CollapseOp, LindbladOp, RateMatrix};
+use ppvm_timeevolve::{CollapseOp, JumpOp, LindbladOp, RateMatrix};
 
 pub type S = ByteF64<1, CoefficientThreshold>;
 
@@ -42,7 +42,7 @@ pub fn build_lindblad() -> LindbladOp<S> {
         })
         .collect();
 
-    LindbladOp::new(c_ops, RateMatrix::Dense(rates))
+    LindbladOp::new(c_ops.into_iter().map(JumpOp::Generic).collect(), RateMatrix::Dense(rates))
 }
 
 /// Build the benchmark initial state: P = Σ_i Z_i, threshold 1e-6.

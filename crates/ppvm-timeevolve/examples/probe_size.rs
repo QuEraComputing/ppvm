@@ -1,5 +1,5 @@
 use ppvm_runtime::{config::fxhash::ByteF64, prelude::*, strategy::CoefficientThreshold};
-use ppvm_timeevolve::{CollapseOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
+use ppvm_timeevolve::{CollapseOp, JumpOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
 
 type S = ByteF64<1, CoefficientThreshold>;
 const N: usize = 5;
@@ -21,7 +21,7 @@ fn main() {
     let rates: Vec<Vec<f64>> = (0..N).map(|i|
         (0..N).map(|j| 1.0/(1.0+(i as f64-j as f64).abs())).collect()
     ).collect();
-    let lindblad = LindbladOp::new(c_ops, RateMatrix::Dense(rates));
+    let lindblad = LindbladOp::new(c_ops.into_iter().map(JumpOp::Generic).collect(), RateMatrix::Dense(rates));
     let strat = CoefficientThreshold(1e-6);
     let mut initial: PauliSum<S> = PauliSum::builder().n_qubits(N).strategy(strat).build();
     let template = vec!['I'; N];

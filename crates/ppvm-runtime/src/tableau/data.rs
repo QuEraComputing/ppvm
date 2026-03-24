@@ -168,8 +168,8 @@ pub fn symplectic_inner<I>(alpha: I, beta: I, n_qubits: usize) -> u32
 where
     I: TableauIndex,
 {
-    let one = I::from(1u8);
-    let zero = I::from(0u8);
+    let one = <I as From<u8>>::from(1u8);
+    let zero = <I as From<u8>>::from(0u8);
     let mut parity = 0u32;
     for i in 0..n_qubits {
         if (alpha & beta) & (one << i) != zero {
@@ -208,7 +208,7 @@ where
             re: T::Coeff::one(),
             im: T::Coeff::zero(),
         };
-        coefficients.unsafe_insert(I::from(0u8), complex_one);
+        coefficients.unsafe_insert(<I as From<u8>>::from(0u8), complex_one);
         Self {
             tableau: Tableau::new(n_qubits),
             coefficients,
@@ -263,8 +263,8 @@ where
         p_word.set(addr0, pauli);
 
         // the bit strings defining the contributions
-        let mut lambda = I::from(0u8);
-        let mut gamma = I::from(0u8);
+        let mut lambda = <I as From<u8>>::from(0u8);
+        let mut gamma = <I as From<u8>>::from(0u8);
 
         debug_assert_ne!(pauli, Pauli::I);
         let pauli_bits = match pauli {
@@ -277,7 +277,7 @@ where
 
         let stabilizers = self.tableau.stabilizers();
         let destabilizers = self.tableau.destabilizers();
-        let one = I::from(1u8);
+        let one = <I as From<u8>>::from(1u8);
 
         for (i, stab) in stabilizers.iter().enumerate() {
             if !destabilizers[i].word.anticommutes_at(addr0, pauli_bits) {
@@ -323,8 +323,8 @@ where
     /// we need to check every destabilizer where the basis index has a 1 bit.
     pub(crate) fn compute_phase(&self, lambda: I, basis_index: I, index_shift: I) -> u8 {
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
-        let one = I::from(1u8);
-        let zero = I::from(0u8);
+        let one = <I as From<u8>>::from(1u8);
+        let zero = <I as From<u8>>::from(0u8);
         let n = self.n_qubits();
 
         // contribution 1: each destabilizer D_i with basis_index[i]=1 that anticommutes
@@ -357,27 +357,18 @@ where
     ///   we must explicitly select the -1 eigenspace.
     pub(crate) fn trim_coefficients_for_measurement(
         &mut self,
-        addr0: usize,
+        lambda: I,
         z_sign: bool,
         outcome: bool,
     ) {
         // TODO: more efficient update of coefficients in-place
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-        let destabilizers = self.tableau.destabilizers();
-        let n = self.n_qubits();
-        let one = I::from(1u8);
-        let zero = I::from(0u8);
         for (coeff, alpha) in old_coefficients.into_iter() {
             let mut phase = false; // false: +1 eigenspace of Z, true: -1 eigenspace
 
             // get the phase from the anti-commutation with the product over all destabilizers
-            for i in 0..n {
-                if alpha & (one << i) == zero {
-                    // this index doesn't pick D_i
-                    continue;
-                }
-                phase ^= destabilizers[i].word.xbits[addr0];
-            }
+            let parity = (alpha & lambda).count_ones() % 2 != 0;
+            phase ^= parity;
 
             // (xi * k) == m
             if (phase ^ z_sign) == outcome {

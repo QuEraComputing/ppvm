@@ -9,7 +9,7 @@ anyhow = "1.0.100"
 approx = { version = "0.5.1", optional = true }
 bincode = { version = "2.0.1", optional = true }
 bitvec = "1.0.1"
-bnum = "0.13.0"
+bnum = { version = "0.13.0", features = ["numtraits"] }
 bon = "3.7.2"
 dashmap = { version = "6.1.0", features = ["rayon"], optional = true }
 fxhash = "0.2.1"

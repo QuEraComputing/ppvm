@@ -135,7 +135,7 @@ where
 
         let outcome = self.tableau.rng.random::<f64>() < prob_1;
 
-        if shift != I::from(0u8) {
+        if shift != <I as From<u8>>::from(0u8) {
             let q_idx = self
                 .tableau
                 .find_z_anticommuting_stabilizer(addr0)
@@ -150,9 +150,9 @@ where
 
             // get k: bit string with a single 1 entry at the position
             // of the first 1 in shift
-            let mut k = I::from(0u8);
-            let one = I::from(1u8);
-            let zero = I::from(0u8);
+            let mut k = <I as From<u8>>::from(0u8);
+            let one = <I as From<u8>>::from(1u8);
+            let zero = <I as From<u8>>::from(0u8);
             for i in 0..self.n_qubits() {
                 if shift & (one << i) != zero {
                     k = one << i;
@@ -215,7 +215,7 @@ where
 
             // Applying the projector to a basis state, we have three phases:
             // 1. The actual measurement outcome (k)
-            // 2. The sign from whether +Z or -Z is a stabilizer (m)
+            // 2. The sign from whether +Z or -Z is a stabilizer (m) - can get that from the decomposition
             // 3. Contribution from commuting Z_addr0 through the destabilizers (xi)
             // Only coefficients where m*k*xi == 1 are kept
 
@@ -227,7 +227,7 @@ where
             let z_sign = phase_decomp == 2;
 
             // 3. check the anticommutation -- combine with coefficient update
-            self.trim_coefficients_for_measurement(addr0, outcome, z_sign);
+            self.trim_coefficients_for_measurement(lambda, outcome, z_sign);
         }
         Some(outcome)
     }

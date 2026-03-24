@@ -72,6 +72,7 @@ pub trait TableauIndex:
     + BitOrAssign<Self>
     + BitAnd<Self, Output = Self>
     + BitXor<Output = Self>
+    + PrimInt
 {
 }
 
@@ -85,6 +86,7 @@ impl<I> TableauIndex for I where
         + BitOrAssign<Self>
         + BitAnd<I, Output = I>
         + BitXor<Output = I>
+        + PrimInt
 {
 }
 

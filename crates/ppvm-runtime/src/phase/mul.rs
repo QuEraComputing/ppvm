@@ -1,8 +1,15 @@
-use crate::{phase::PhasedPauliWord, traits::{PauliStorage, PauliWordTrait}};
+use bitvec::view::BitView;
+use num::PrimInt;
+
+use crate::{
+    phase::PhasedPauliWord,
+    traits::{PauliStorage, PauliWordTrait},
+};
 
 impl<A, S> std::ops::MulAssign for PhasedPauliWord<A, S>
 where
     A: PauliStorage,
+    <A as BitView>::Store: PrimInt,
     S: std::hash::BuildHasher + Clone + Default,
 {
     fn mul_assign(&mut self, rhs: Self) {
@@ -13,26 +20,43 @@ where
 impl<A, S> std::ops::MulAssign<&Self> for PhasedPauliWord<A, S>
 where
     A: PauliStorage,
+    <A as BitView>::Store: PrimInt,
     S: std::hash::BuildHasher + Clone + Default,
 {
     fn mul_assign(&mut self, rhs: &Self) {
-        for i in 0..self.n_qubits() {
-            let x_i = self.word.xbits[i] ^ rhs.word.xbits[i];
-            let z_i = self.word.zbits[i] ^ rhs.word.zbits[i];
-            let a = self.word.xbits[i];
-            let b = self.word.zbits[i];
-            let c = rhs.word.xbits[i];
-            let d = rhs.word.zbits[i];
-            let sign = (a && b && c && !d) || (a && !b && !c && d) || (!a && b && c && d);
-            let imag = (a && !b && d) || (a && !c && d) || (!a && b && c) || (b && c && !d);
-            let exp = (sign as u8) << 1 | (imag as u8);
-            self.add_phase(exp);
-            self.word.xbits.set(i, x_i);
-            self.word.zbits.set(i, z_i);
+        let mut sign_count = 0u32;
+        let mut imag_count = 0u32;
+        {
+            let lhs_x = self.word.xbits.as_raw_slice();
+            let lhs_z = self.word.zbits.as_raw_slice();
+            let rhs_x = rhs.word.xbits.as_raw_slice();
+            let rhs_z = rhs.word.zbits.as_raw_slice();
+            for ((&a, &b), (&c, &d)) in lhs_x.iter().zip(lhs_z).zip(rhs_x.iter().zip(rhs_z)) {
+                let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
+                let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
+                sign_count += sign.count_ones();
+                imag_count += imag.count_ones();
+            }
         }
-        // Rehash after modifying xbits/zbits directly (bypassing PauliWord::MulAssign
-        // which calls rehash internally). Without this, hash_cache is stale and the
-        // word cannot be used as a correct HashMap key.
+        self.add_phase(((2 * sign_count + imag_count) % 4) as u8);
+        for (l, r) in self
+            .word
+            .xbits
+            .as_raw_mut_slice()
+            .iter_mut()
+            .zip(rhs.word.xbits.as_raw_slice())
+        {
+            *l = *l ^ *r;
+        }
+        for (l, r) in self
+            .word
+            .zbits
+            .as_raw_mut_slice()
+            .iter_mut()
+            .zip(rhs.word.zbits.as_raw_slice())
+        {
+            *l = *l ^ *r;
+        }
         self.word.rehash();
         self.add_phase(rhs.phase);
     }
@@ -41,6 +65,7 @@ where
 impl<A, S> std::ops::Mul for PhasedPauliWord<A, S>
 where
     A: PauliStorage + Clone,
+    <A as BitView>::Store: PrimInt,
     S: std::hash::BuildHasher + Clone + Default,
 {
     // xz xz phase
@@ -99,9 +124,20 @@ mod tests {
         assert_eq!(a.word, c.word, "both products must equal I");
         // Hash must be consistent with the bits so HashMap accumulates them.
         let bh = fxhash::FxBuildHasher::default();
-        let hash_a = { let mut h = bh.build_hasher(); a.word.hash(&mut h); h.finish() };
-        let hash_c = { let mut h = bh.build_hasher(); c.word.hash(&mut h); h.finish() };
-        assert_eq!(hash_a, hash_c, "equal words must have equal hashes after MulAssign");
+        let hash_a = {
+            let mut h = bh.build_hasher();
+            a.word.hash(&mut h);
+            h.finish()
+        };
+        let hash_c = {
+            let mut h = bh.build_hasher();
+            c.word.hash(&mut h);
+            h.finish()
+        };
+        assert_eq!(
+            hash_a, hash_c,
+            "equal words must have equal hashes after MulAssign"
+        );
         // Functional check: both should map to the same HashMap entry.
         let mut map: HashMap<W1, i32> = HashMap::new();
         *map.entry(a.word).or_insert(0) += 1;

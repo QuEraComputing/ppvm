@@ -1,10 +1,10 @@
 use super::data::{GeneralizedTableau, Tableau, symplectic_inner};
 use super::traits::{LossyMeasure, Measure};
-use bitvec::view::BitView;
 use crate::config::Config;
-use num::PrimInt;
 use crate::tableau::sparsevec::SparseVector;
 use crate::tableau::traits::TableauIndex;
+use bitvec::view::BitView;
+use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{Float, One, ToPrimitive, Zero};
 use rand::RngExt;
@@ -220,7 +220,11 @@ where
             // Only coefficients where m*k*xi == 1 are kept
 
             // 2. get the sign
-            let z_sign = self.tableau.get_deterministic_outcome(addr0);
+            debug_assert!(
+                phase_decomp == 0 || phase_decomp == 2,
+                "Measurement result cannot be imaginary!"
+            );
+            let z_sign = phase_decomp == 2;
 
             // 3. check the anticommutation -- combine with coefficient update
             self.trim_coefficients_for_measurement(addr0, outcome, z_sign);

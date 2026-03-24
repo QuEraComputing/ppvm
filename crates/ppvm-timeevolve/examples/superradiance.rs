@@ -1,24 +1,20 @@
-/// Superradiance example — three-variant comparison (Budget + Rayon showcase).
+/// Superradiance example — three-variant comparison (Budget truncation showcase).
 ///
-/// Demonstrates how `Budget` truncation combined with a matched ODE tolerance
-/// is the recommended production config.  The same three variants run cleanly on
-/// the Rayon path by changing N from 5 to 8 (256 terms > PAR_THRESHOLD=200):
-/// Budget+Rayon then also benefits from Rayon across Lindblad terms.
-///
-/// n=5 is used here so the example runs in <1 s on a laptop.  Use n=8 for the
-/// full Rayon showcase (change N and recompile).
+/// Demonstrates that the speedup from `Budget` comes from the *rtol coupling*,
+/// not from Rayon.  Rayon parallelism is a separate, additive benefit that
+/// engages automatically for n≥8 (256 terms > PAR_THRESHOLD=200).
 ///
 /// Variants
 /// --------
 /// 1. Baseline      : Budget{target=2000, min_threshold=1e-6}, default rtol=1e-6
 ///                    — generous cap; acts like CoefficientThreshold(1e-6) here
 /// 2. Budget        : Budget{target=200, min_threshold=1e-4}, default rtol=1e-6
-///                    — caps |P| and uses a looser Pauli threshold, but rtol is
-///                      mismatched: DOPRI5 fights truncation noise → slower
-/// 3. Budget+Rayon  : same Budget, but rtol=10·min_threshold=1e-3
-///                    — rtol absorbs the k[6] perturbation from Budget truncation
-///                      (≈ h·|e7|·||L||·||Δy||), letting DOPRI5 take large steps.
-///                      This is the recommended config; at n≥8 Rayon also engages.
+///                    — tight cap + looser threshold, but rtol is mismatched:
+///                      DOPRI5 fights the k[6] truncation perturbation → slower
+/// 3. Budget+rtol   : same Budget, but rtol=10·min_threshold=1e-3
+///                    — rtol absorbs the k[6] perturbation (≈ h·|e7|·||L||·||Δy||),
+///                      letting DOPRI5 take large steps.  Speedup is visible even
+///                      on the sequential path (n=5); at n≥8 Rayon adds more.
 ///
 /// System: n=5, 100 Lindblad terms (< PAR_THRESHOLD=200 → sequential path).
 /// Rayon parallelism engages automatically for n≥8 (256 terms > threshold).
@@ -44,7 +40,7 @@ const BASE_THRESHOLD:  f64   = 1e-6;
 /// Budget variants: tight cap + looser threshold.
 const BUDGET_TARGET:    usize = 200;
 const BUDGET_THRESHOLD: f64   = 1e-4;
-/// Practical rtol for Budget+Rayon: larger than min_threshold to account for the
+/// Practical rtol for Budget+rtol: larger than min_threshold to account for the
 /// truncation-induced perturbation of k[6] (≈ h·|e7|·||L||·||Δy||).
 /// Rule of thumb: rtol ≈ 10 · min_threshold absorbs that noise and lets DOPRI5
 /// take large steps; ODE accuracy then matches observable-level truncation error.
@@ -122,9 +118,9 @@ fn main() {
     );
     let t_bud = t1.elapsed();
 
-    // ── Variant 3: Budget+Rayon (matched rtol) ───────────────────────────────
-    // At n≥8 (256 terms > PAR_THRESHOLD=200), Rayon is automatically active.
-    // This variant demonstrates the recommended production config.
+    // ── Variant 3: Budget+rtol (matched rtol — sequential) ──────────────────
+    // The speedup here comes entirely from the rtol adjustment, not from Rayon.
+    // At n≥8 (256 terms > PAR_THRESHOLD=200), Rayon would add further speedup.
     let t2 = Instant::now();
     let (_, bud_rtol_out) = solve(
         None, &lindblad, &initial_state(strat_bud),
@@ -160,9 +156,13 @@ fn main() {
     println!("{:<20} {:>10.3?} {:>9.2}× {:>10} {:>18.2e}",
         "Budget", t_bud, spd_bud, final_p(&bud_out), fidelity(&bud_out));
     println!("{:<20} {:>10.3?} {:>9.2}× {:>10} {:>18.2e}",
-        "Budget+Rayon", t_bud_rtol, spd_bud_rtol, final_p(&bud_rtol_out), fidelity(&bud_rtol_out));
+        "Budget+rtol", t_bud_rtol, spd_bud_rtol, final_p(&bud_rtol_out), fidelity(&bud_rtol_out));
     println!();
-    println!("Baseline:     Budget{{target={BASE_TARGET}, min_threshold={BASE_THRESHOLD:.0e}}} (cap rarely fires for n=5)");
-    println!("Budget:       Budget{{target={BUDGET_TARGET}, min_threshold={BUDGET_THRESHOLD:.0e}}} + rtol=1e-6 (mismatched → step rejections)");
-    println!("Budget+Rayon: same Budget + rtol={BUDGET_RTOL:.0e} ≈ 10·min_threshold (absorbs k[6] perturbation; at n≥8 Rayon also active)");
+    let default_rtol = SolverConfig::default().rtol;
+    println!("{:<20} rtol={:.0e}  Budget{{target={}, min_threshold={:.0e}}}",
+        "Baseline:",     default_rtol,    BASE_TARGET,   BASE_THRESHOLD);
+    println!("{:<20} rtol={:.0e}  Budget{{target={}, min_threshold={:.0e}}}  ← mismatched",
+        "Budget:",        default_rtol,   BUDGET_TARGET, BUDGET_THRESHOLD);
+    println!("{:<20} rtol={:.0e}  Budget{{target={}, min_threshold={:.0e}}}  ← matched (10×min_threshold); at n≥8 Rayon also engages",
+        "Budget+rtol:",   BUDGET_RTOL,    BUDGET_TARGET, BUDGET_THRESHOLD);
 }

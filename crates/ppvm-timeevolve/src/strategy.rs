@@ -9,10 +9,6 @@ use ppvm_runtime::traits::{Coefficient, PauliWordTrait, Strategy};
 /// First removes entries below `min_threshold` (identical to `CoefficientThreshold`).
 /// Then, if the map still has more than `target` entries, prunes the excess.
 ///
-/// **Recommended coupling:** set `rtol = min_threshold` in `SolverConfig` so DOPRI5
-/// takes large steps when the solution is smooth — accuracy of the ODE step then
-/// matches the truncation accuracy automatically.
-///
 /// **Implementation note:** `Strategy::truncate` only exposes `retain` and
 /// `scale` (no `ACMapIter`), and `V: Coefficient` has no magnitude accessor.
 /// We recover iteration via `scale` as a side-effect, then binary-search on

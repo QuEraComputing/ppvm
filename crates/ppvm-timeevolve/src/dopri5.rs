@@ -172,6 +172,20 @@ where
 /// `rhs(y_scratch)` (the next k1).  The caller is responsible for swapping state and
 /// advancing the FSAL index (`cache.k.swap(0, 6)`).
 /// Returns `Accept` if the local error is within tolerance, `Reject` otherwise.
+///
+/// # Truncation
+///
+/// `y_scratch` is truncated before every `rhs_into` call (stages 2–7).  This means each
+/// stage derivative `k[i]` is evaluated at a truncated stage state, so the Dormand-Prince
+/// error estimate `Σ Ei·ki` is self-consistent within the truncated ODE.  Without this,
+/// `k[6]` (which enters with `E7 = -1/40`) lives on the truncated manifold while
+/// `k[0]…k[5]` live on the untruncated manifold, producing a spurious jump in the error
+/// signal and causing cascading step rejections ("DOPRI5 fighting").
+///
+/// k-buffers (the `k[i]` vectors themselves) are intentionally *not* truncated: they hold
+/// rates-of-change that are used only as `dt`-scaled additive contributions to `y_scratch`,
+/// which is then truncated.  Applying a separate truncation to derivatives would introduce
+/// a different approximation with no physical justification.
 pub(crate) fn step<T: Config>(
     ham: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
@@ -214,6 +228,7 @@ where
         let (lo, hi) = k.split_at_mut(1);
         y_scratch.data_mut().clone_from(y.data());
         add_scaled(y_scratch, &lo[0], dt * A21);
+        y_scratch.truncate();
         rhs_into(ham, lindblad, y_scratch, &mut hi[0]);
     }
 
@@ -223,6 +238,7 @@ where
         y_scratch.data_mut().clone_from(y.data());
         add_scaled(y_scratch, &lo[0], dt * A31);
         add_scaled(y_scratch, &lo[1], dt * A32);
+        y_scratch.truncate();
         rhs_into(ham, lindblad, y_scratch, &mut hi[0]);
     }
 
@@ -233,6 +249,7 @@ where
         add_scaled(y_scratch, &lo[0], dt * A41);
         add_scaled(y_scratch, &lo[1], dt * A42);
         add_scaled(y_scratch, &lo[2], dt * A43);
+        y_scratch.truncate();
         rhs_into(ham, lindblad, y_scratch, &mut hi[0]);
     }
 
@@ -244,6 +261,7 @@ where
         add_scaled(y_scratch, &lo[1], dt * A52);
         add_scaled(y_scratch, &lo[2], dt * A53);
         add_scaled(y_scratch, &lo[3], dt * A54);
+        y_scratch.truncate();
         rhs_into(ham, lindblad, y_scratch, &mut hi[0]);
     }
 
@@ -256,6 +274,7 @@ where
         add_scaled(y_scratch, &lo[2], dt * A63);
         add_scaled(y_scratch, &lo[3], dt * A64);
         add_scaled(y_scratch, &lo[4], dt * A65);
+        y_scratch.truncate();
         rhs_into(ham, lindblad, y_scratch, &mut hi[0]);
     }
 
@@ -526,6 +545,109 @@ mod tests {
                 (r - expected).abs() < 1e-4,
                 "at t={t}: got {r}, expected {expected}"
             );
+        }
+    }
+
+    // ---- Task 26 tests ----
+
+    #[test]
+    fn per_stage_truncation_step_accepted_at_default_rtol() {
+        // With per-stage truncation, Budget truncation is self-consistent: every ki is the
+        // derivative of a truncated stage state.  The error estimate Σ Ei·ki therefore
+        // measures the true local error of the truncated ODE, not an inflated "jump" from
+        // mixing untruncated k[0..5] with truncated k[6].
+        //
+        // Setup: n=3 superradiance, all rates=1, Budget target=8.  Initial state Z0+Z1+Z2
+        // (3 terms).  With dt=0.01 the ODE-local error is O(dt^5)≈1e-10 << rtol=1e-6,
+        // so the step must be accepted even with Budget truncation active during the stages.
+        //
+        // Note: Budget target=4 with dt=0.05 is correctly rejected even with per-stage
+        // truncation — the truncated ODE genuinely has large local error there (aggressive
+        // cap removes significant state content).  The test uses a gentler cap and smaller
+        // step so the truncated-ODE error is provably below rtol.
+        use ppvm_runtime::config::fxhash::ByteF64;
+        use ppvm_runtime::prelude::PauliSum;
+        use crate::lindblad::{JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix};
+        use crate::solve::{SolverCache, SolverConfig};
+        use crate::Budget;
+
+        type S = ByteF64<2, Budget>;
+
+        let n = 3_usize;
+        // target=8: more than the initial 3 terms; Budget fires only on the small-coefficient
+        // terms generated during accumulation, so truncation is mild per stage.
+        let budget = Budget { target: 8, min_threshold: 0.0 };
+        let ops: Vec<JumpOp<S>> = (0..n)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n).map(|_| vec![1.0; n]).collect();
+        let lindblad = LindbladOp::new(ops, RateMatrix::Dense(rates));
+
+        let mut y: PauliSum<S> = PauliSum::builder().n_qubits(n).strategy(budget).build();
+        for i in 0..n {
+            let mut zi = vec!['I'; n]; zi[i] = 'Z';
+            y += (zi.iter().collect::<String>(), 1.0_f64);
+        }
+
+        // Small dt so ODE error << rtol; Budget fires on tiny terms, not the main coefficients.
+        let config = SolverConfig { h0: Some(0.01), ..SolverConfig::default() };
+        let mut cache = SolverCache::new(&y);
+        rhs_into(None, &lindblad, &y, &mut cache.k[0]);
+
+        match step(None, &lindblad, &y, 0.01, &config, &mut cache) {
+            StepResult::Accept { .. } => {} // expected
+            StepResult::Reject { .. } => panic!(
+                "step rejected — per-stage truncation with target=8 and dt=0.01 should accept"
+            ),
+        }
+    }
+
+    #[test]
+    fn per_stage_truncation_fsal_consistent_with_budget() {
+        // After a Budget-truncated step, k[6] must equal rhs(y_scratch) independently.
+        // This verifies FSAL consistency is preserved under per-stage truncation.
+        use ppvm_runtime::config::fxhash::ByteF64;
+        use ppvm_runtime::prelude::PauliSum;
+        use crate::lindblad::{JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix, rhs};
+        use crate::solve::{SolverCache, SolverConfig};
+        use crate::Budget;
+
+        type S = ByteF64<2, Budget>;
+
+        let n = 3_usize;
+        let budget = Budget { target: 6, min_threshold: 0.0 };
+        let ops: Vec<JumpOp<S>> = (0..n)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n).map(|_| vec![1.0; n]).collect();
+        let lindblad = LindbladOp::new(ops, RateMatrix::Dense(rates));
+
+        let mut y: PauliSum<S> = PauliSum::builder().n_qubits(n).strategy(budget).build();
+        for i in 0..n {
+            let mut zi = vec!['I'; n]; zi[i] = 'Z';
+            y += (zi.iter().collect::<String>(), 1.0_f64);
+        }
+
+        let config = SolverConfig { h0: Some(0.02), ..SolverConfig::default() };
+        let mut cache = SolverCache::new(&y);
+        rhs_into(None, &lindblad, &y, &mut cache.k[0]);
+
+        match step(None, &lindblad, &y, 0.02, &config, &mut cache) {
+            StepResult::Accept { .. } => {
+                // k[6] must be rhs(y_scratch) — FSAL carry for the next step.
+                let k6_independent = rhs(None, &lindblad, &cache.y_scratch);
+                // Compare via overlap: if they are identical, ||k6 - k6_ind||² = 0.
+                let mut diff = k6_independent.clone();
+                // Compute k6 - k6_independent by scaling diff by -1 and adding cache.k[6].
+                use super::add_scaled;
+                add_scaled(&mut diff, &cache.k[6], -1.0);
+                let err_sq: f64 = diff.overlap(&diff).into();
+                assert!(
+                    err_sq < 1e-28,
+                    "FSAL k[6] does not match rhs(y_scratch): ||diff||² = {err_sq:.2e}"
+                );
+            }
+            StepResult::Reject { .. } => panic!("expected Accept"),
         }
     }
 

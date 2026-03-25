@@ -2,11 +2,11 @@ use ppvm_runtime::config::fx64hash::Byte8F64;
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::tableau::CliffordExtensions;
 
-type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
+type Tab = GeneralizedTableau<Byte8F64<11>, u128>;
 
 fn main() {
-    for _ in 0..50000 {
-        // from Rafael:  https://www.notion.so/Simulating-85-qubit-MSD-circuit-using-stabilizer-rank-decomposition-and-pyzx-288f86eeff3c802fb262ef1cfa69dfae?source=copy_link#28df86eeff3c80bfa087ed15bcf49b77
+    for _ in 0..10000 {
+        // nonsensical version of MSD: add a bunch of T gates
         let qubits_per_code_block = 17;
         let n_qubits = qubits_per_code_block * 5;
         let mut tab: Tab = GeneralizedTableau::new(n_qubits, 1e-10);
@@ -22,6 +22,10 @@ fn main() {
             let encoding_qubit = if q.len() == 7 { q[6] } else { q[7] };
             tab.h(encoding_qubit);
             tab.t(encoding_qubit);
+            tab.h(encoding_qubit + 1);
+            tab.t(encoding_qubit + 1);
+            // tab.h(encoding_qubit + 2);
+            // tab.t(encoding_qubit + 2);
             encode(&mut tab, q);
         }
 

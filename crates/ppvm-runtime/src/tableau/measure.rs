@@ -6,7 +6,7 @@ use crate::tableau::traits::TableauIndex;
 use bitvec::view::BitView;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
-use num::traits::{Float, One, ToPrimitive, Zero};
+use num::traits::{One, ToPrimitive, Zero};
 use rand::RngExt;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -106,10 +106,9 @@ where
             let branch_index = idx ^ shift;
             let phase = (phase_decomp + self.compute_phase(lambda, idx, shift)) % 4;
             let complex_phase: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase as usize].into();
-            let coeff_branch = coeff_map
-                .get(&branch_index)
-                .cloned()
-                .unwrap_or(Complex::zero());
+            let Some(coeff_branch) = coeff_map.get(&branch_index).copied() else {
+                continue;
+            };
             let overlap = complex_phase.conj() * coeff.conj() * coeff_branch;
             z_overlap.re += overlap.re.to_f64().unwrap_or(0.0);
             z_overlap.im += overlap.im.to_f64().unwrap_or(0.0);
@@ -186,18 +185,15 @@ where
             // Keep entries where |c|/norm > threshold.
             let norm_sqr = coeff_map
                 .values()
-                .fold(Zero::zero(), |acc, c: &Complex<T::Coeff>| {
-                    acc + c.abs() * c.abs()
+                .fold(T::Coeff::zero(), |acc, c: &Complex<T::Coeff>| {
+                    acc + c.norm_sqr()
                 });
-            let norm = Float::sqrt(norm_sqr);
 
-            let cutoff = Complex {
-                re: self.coefficient_threshold.clone(),
-                im: T::Coeff::zero(),
-            };
+            let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
+            let threshold = cutoff_sq.to_f64().unwrap_or(0.0) * norm_sqr.to_f64().unwrap_or(0.0);
             self.coefficients = C::new();
             for (idx, coeff) in coeff_map {
-                if coeff.abs() > cutoff.abs() * norm {
+                if coeff.norm_sqr() > threshold {
                     self.coefficients.unsafe_insert(idx, coeff);
                 }
             }

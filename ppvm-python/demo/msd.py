@@ -11,9 +11,6 @@ def encode(tab: GeneralizedTableau, qubits: list[int]) -> None:
     if len(qubits) not in (7, 17):
         raise ValueError(f"Unsupported number of qubits {len(qubits)}")
 
-    for q in qubits:
-        tab.reset(q)
-
     if len(qubits) == 7:
         for idx, q in enumerate(qubits):
             if idx == 6:

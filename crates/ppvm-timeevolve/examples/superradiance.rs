@@ -19,7 +19,7 @@
 use std::time::Instant;
 
 use ppvm_runtime::{
-    config::fxhash::ByteF64,
+    config::indexmap::ByteFxHashF64,
     prelude::*,
 };
 use ppvm_timeevolve::{Budget, JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
@@ -36,7 +36,7 @@ const BASE_TARGET:   usize = 2000;
 /// Budget: tight cap — forces truncation once the state grows.
 const BUDGET_TARGET: usize = 200;
 
-type SB = ByteF64<NBYTES, Budget>;
+type SB = ByteFxHashF64<NBYTES, Budget>;
 
 fn rate_matrix() -> RateMatrix {
     RateMatrix::Dense(

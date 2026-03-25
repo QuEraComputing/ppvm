@@ -278,10 +278,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::prelude::{PauliSum, PauliWord, PhasedPauliWord, Trace, config::fxhash::ByteF64};
+    use ppvm_runtime::prelude::{PauliSum, PauliWord, PhasedPauliWord, Trace, config::indexmap::ByteFxHashF64};
     use crate::lindblad::{CollapseOp, JumpOp, LindbladOp, RateMatrix};
 
-    type S = ByteF64<1>;
+    type S = ByteFxHashF64<1>;
 
     fn sum1(terms: &[(&str, f64)]) -> PauliSum<S> {
         let mut s: PauliSum<S> = PauliSum::builder().n_qubits(1).build();

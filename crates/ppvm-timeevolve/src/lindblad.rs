@@ -689,7 +689,7 @@ pub(crate) fn commutator_real<T: Config>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::prelude::{PauliWord, PhasedPauliWord, config::fxhash::ByteF64};
+    use ppvm_runtime::prelude::{PauliWord, PhasedPauliWord, config::indexmap::ByteFxHashF64};
     use ppvm_runtime::strategy::CoefficientThreshold;
 
     type W1 = PauliWord<[u8; 1], fxhash::FxBuildHasher>;
@@ -700,7 +700,7 @@ mod tests {
         PhasedPauliWord::build_from_word(W1::from(pauli), phase)
     }
 
-    fn single_op(pauli: &str, phase: u8) -> CollapseOp<ByteF64<1>> {
+    fn single_op(pauli: &str, phase: u8) -> CollapseOp<ByteFxHashF64<1>> {
         let mut op = CollapseOp::new(1);
         op.push(ppw(pauli, phase), 1.0);
         op
@@ -751,12 +751,12 @@ mod tests {
         // Cross-pair: left={Y,0}, right={Z,0}.
         //   Y*Z = iX (phase=1), so re_phase=0 → no X term from any W_a.
         // Apply to P=Z: verify no X coefficient appears.
-        let ops: Vec<JumpOp<ByteF64<1>>> = vec![single_op("Y", 0).into(), single_op("Z", 0).into()];
+        let ops: Vec<JumpOp<ByteFxHashF64<1>>> = vec![single_op("Y", 0).into(), single_op("Z", 0).into()];
         let rates = RateMatrix::Dense(vec![vec![0.0, 1.0], vec![1.0, 0.0]]);
         let lop = LindbladOp::new(ops, rates);
 
         let p = sum1(&[("Z", 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         lop.apply(&p, &mut result);
 
         assert_eq!(get_coeff(&result, "X"), 0.0,
@@ -879,7 +879,7 @@ mod tests {
     #[test]
     fn two_term_op_x_plus_iy() {
         // Via JumpOp::Generic: 2-term CollapseOp → 2×2 = 4 LindbladTerm::Generic entries.
-        let mut op = CollapseOp::<ByteF64<1>>::new(1);
+        let mut op = CollapseOp::<ByteFxHashF64<1>>::new(1);
         op.push(ppw("X", 0), 1.0);
         op.push(ppw("Y", 1), 1.0);
         let lop = LindbladOp::new(vec![JumpOp::Generic(op)], RateMatrix::from(vec![1.0]));
@@ -888,7 +888,7 @@ mod tests {
 
         // Via JumpOp::Ladder: single LindbladTerm::Ladder per pair.
         let lop_ladder = LindbladOp::new(
-            vec![JumpOp::<ByteF64<1>>::Ladder(LadderOp { qubit: 0, direction: LadderDirection::Lower })],
+            vec![JumpOp::<ByteFxHashF64<1>>::Ladder(LadderOp { qubit: 0, direction: LadderDirection::Lower })],
             RateMatrix::from(vec![1.0]),
         );
         assert_eq!(lop_ladder.terms.len(), 1);
@@ -897,17 +897,17 @@ mod tests {
 
     // ---- Task 22 tests ----
 
-    fn make_ladder_lop(direction: LadderDirection) -> LindbladOp<ByteF64<1>> {
+    fn make_ladder_lop(direction: LadderDirection) -> LindbladOp<ByteFxHashF64<1>> {
         LindbladOp::new(
-            vec![JumpOp::<ByteF64<1>>::Ladder(LadderOp { qubit: 0, direction })],
+            vec![JumpOp::<ByteFxHashF64<1>>::Ladder(LadderOp { qubit: 0, direction })],
             RateMatrix::from(vec![1.0]),
         )
     }
 
-    fn apply_ladder_to(direction: LadderDirection, word: &str) -> PauliSum<ByteF64<1>> {
+    fn apply_ladder_to(direction: LadderDirection, word: &str) -> PauliSum<ByteFxHashF64<1>> {
         let lop = make_ladder_lop(direction);
         let p = sum1(&[(word, 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         lop.apply(&p, &mut result);
         result
     }
@@ -961,13 +961,13 @@ mod tests {
         for dir in [LadderDirection::Lower, LadderDirection::Raise] {
             let lop_ladder = make_ladder_lop(dir);
             let lop_generic = {
-                let expanded = LadderOp { qubit: 0, direction: dir }.expand::<ByteF64<1>>(1);
+                let expanded = LadderOp { qubit: 0, direction: dir }.expand::<ByteFxHashF64<1>>(1);
                 LindbladOp::new(vec![JumpOp::Generic(expanded)], RateMatrix::from(vec![1.0]))
             };
             for word in ["I", "X", "Y", "Z"] {
                 let p = sum1(&[(word, 1.0)]);
-                let mut r_ladder: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
-                let mut r_generic: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+                let mut r_ladder: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
+                let mut r_generic: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
                 lop_ladder.apply(&p, &mut r_ladder);
                 lop_generic.apply(&p, &mut r_generic);
                 for out_word in ["I", "X", "Y", "Z"] {
@@ -987,7 +987,7 @@ mod tests {
         // c1=X, c2=Y, gamma=[[1.0, 0.5],[0.5, 1.0]]
         // 4 (i,j) pairs, each with 1x1 term pair => 4 LindbladTerms
         // off-diagonal (i=0,j=1): weight = gamma_01 * r_ik * r_jl = 0.5 * 1.0 * 1.0 = 0.5
-        let ops: Vec<JumpOp<ByteF64<1>>> = vec![single_op("X", 0).into(), single_op("Y", 0).into()];
+        let ops: Vec<JumpOp<ByteFxHashF64<1>>> = vec![single_op("X", 0).into(), single_op("Y", 0).into()];
         let rates = RateMatrix::Dense(vec![vec![1.0, 0.5], vec![0.5, 1.0]]);
         let lop = LindbladOp::new(ops, rates);
         assert_eq!(lop.terms.len(), 4);
@@ -998,13 +998,13 @@ mod tests {
 
     // ---- Task 5 tests ----
 
-    fn lindblad_x() -> LindbladOp<ByteF64<1>> {
+    fn lindblad_x() -> LindbladOp<ByteFxHashF64<1>> {
         LindbladOp::new(vec![single_op("X", 0).into()], RateMatrix::from(vec![1.0]))
     }
 
-    fn apply_to(lop: &LindbladOp<ByteF64<1>>, word: &str) -> PauliSum<ByteF64<1>> {
+    fn apply_to(lop: &LindbladOp<ByteFxHashF64<1>>, word: &str) -> PauliSum<ByteFxHashF64<1>> {
         let p = sum1(&[(word, 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         lop.apply(&p, &mut result);
         result
     }
@@ -1040,7 +1040,7 @@ mod tests {
     fn apply_accumulates() {
         let lop = lindblad_x();
         let p = sum1(&[("Z", 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         lop.apply(&p, &mut result);
         lop.apply(&p, &mut result);
         assert!((get_coeff(&result, "Z") - (-8.0)).abs() < 1e-15);
@@ -1068,7 +1068,7 @@ mod tests {
             RateMatrix::from(vec![1.0]),
         );
         let p = sum1(&[("Z", 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         lop.apply(&p, &mut result);
         assert!((get_coeff(&result, "I") - 8.0).abs() < 1e-14);
         assert!((get_coeff(&result, "Z") - (-8.0)).abs() < 1e-14);
@@ -1076,15 +1076,15 @@ mod tests {
 
     // ---- Task 4 tests ----
 
-    fn sum1(terms: &[(&str, f64)]) -> PauliSum<ByteF64<1>> {
-        let mut s: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+    fn sum1(terms: &[(&str, f64)]) -> PauliSum<ByteFxHashF64<1>> {
+        let mut s: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         for &(w, c) in terms {
             s += (w, c);
         }
         s
     }
 
-    fn get_coeff(s: &PauliSum<ByteF64<1>>, word: &str) -> f64 {
+    fn get_coeff(s: &PauliSum<ByteFxHashF64<1>>, word: &str) -> f64 {
         use ppvm_runtime::prelude::Trace;
         let w = W1::from(word);
         s.data().trace(&w)
@@ -1095,7 +1095,7 @@ mod tests {
         // i[X, X] = 0: XX has phase 0 (commutes)
         let h = sum1(&[("X", 1.0)]);
         let p = sum1(&[("X", 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         commutator_real(&h, &p, &mut result);
         assert_eq!(get_coeff(&result, "X"), 0.0);
         assert_eq!(get_coeff(&result, "Y"), 0.0);
@@ -1106,7 +1106,7 @@ mod tests {
         // i[Z, X]: ZX = +iY (phase 1) → add -2 * 1 * 1 = -2 to Y
         let h = sum1(&[("Z", 1.0)]);
         let p = sum1(&[("X", 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         commutator_real(&h, &p, &mut result);
         assert!((get_coeff(&result, "Y") - (-2.0)).abs() < 1e-15);
     }
@@ -1116,7 +1116,7 @@ mod tests {
         // i[X, Z]: XZ = -iY (phase 3) → add +2 * 1 * 1 = +2 to Y
         let h = sum1(&[("X", 1.0)]);
         let p = sum1(&[("Z", 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         commutator_real(&h, &p, &mut result);
         assert!((get_coeff(&result, "Y") - 2.0).abs() < 1e-15);
     }
@@ -1126,7 +1126,7 @@ mod tests {
         // i[Z, Y]: ZY = -iX (phase 3) → add +2 * 1 * 1 = +2 to X
         let h = sum1(&[("Z", 1.0)]);
         let p = sum1(&[("Y", 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         commutator_real(&h, &p, &mut result);
         assert!((get_coeff(&result, "X") - 2.0).abs() < 1e-15);
     }
@@ -1139,7 +1139,7 @@ mod tests {
         // Total: X: +1.0, Y: -1.0
         let h = sum1(&[("Z", 0.5)]);
         let p = sum1(&[("X", 1.0), ("Y", 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         commutator_real(&h, &p, &mut result);
         assert!((get_coeff(&result, "X") - 1.0).abs() < 1e-15);
         assert!((get_coeff(&result, "Y") - (-1.0)).abs() < 1e-15);
@@ -1150,7 +1150,7 @@ mod tests {
         // Calling twice should double the result
         let h = sum1(&[("Z", 1.0)]);
         let p = sum1(&[("X", 1.0)]);
-        let mut result: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         commutator_real(&h, &p, &mut result);
         commutator_real(&h, &p, &mut result);
         assert!((get_coeff(&result, "Y") - (-4.0)).abs() < 1e-15);
@@ -1160,7 +1160,7 @@ mod tests {
 
     #[test]
     fn collapse_op_x_plus_iy() {
-        let mut op = CollapseOp::<ByteF64<1>>::new(1);
+        let mut op = CollapseOp::<ByteFxHashF64<1>>::new(1);
         op.push(ppw("X", 0), 1.0);
         op.push(ppw("Y", 1), 1.0);
         assert_eq!(op.terms.len(), 2);
@@ -1171,7 +1171,7 @@ mod tests {
 
     #[test]
     fn collapse_op_real_z() {
-        let mut op = CollapseOp::<ByteF64<1>>::new(1);
+        let mut op = CollapseOp::<ByteFxHashF64<1>>::new(1);
         op.push(ppw("Z", 0), 1.0);
         assert_eq!(op.terms.len(), 1);
         assert_eq!(op.terms[0].0.phase, 0);
@@ -1179,7 +1179,7 @@ mod tests {
 
     #[test]
     fn collapse_op_n_qubits_stored() {
-        let op = CollapseOp::<ByteF64<1>>::new(3);
+        let op = CollapseOp::<ByteFxHashF64<1>>::new(3);
         assert_eq!(op.n_qubits, 3);
     }
 
@@ -1194,7 +1194,7 @@ mod tests {
     #[test]
     fn ladder_op_expand_lower() {
         let op = LadderOp { qubit: 0, direction: LadderDirection::Lower };
-        let expanded = op.expand::<ByteF64<1>>(1);
+        let expanded = op.expand::<ByteFxHashF64<1>>(1);
         assert_eq!(expanded.terms.len(), 2);
         // First term: X with phase 0
         assert_eq!(expanded.terms[0].0.word, W1::from("X"));
@@ -1209,7 +1209,7 @@ mod tests {
     #[test]
     fn ladder_op_expand_raise() {
         let op = LadderOp { qubit: 0, direction: LadderDirection::Raise };
-        let expanded = op.expand::<ByteF64<1>>(1);
+        let expanded = op.expand::<ByteFxHashF64<1>>(1);
         assert_eq!(expanded.terms.len(), 2);
         // First term: X with phase 0
         assert_eq!(expanded.terms[0].0.word, W1::from("X"));
@@ -1242,7 +1242,7 @@ mod tests {
 
     // ---- Task 6 tests ----
 
-    fn empty_lindblad() -> LindbladOp<ByteF64<1>> {
+    fn empty_lindblad() -> LindbladOp<ByteFxHashF64<1>> {
         LindbladOp::new(vec![], RateMatrix::from(vec![]))
     }
 
@@ -1292,7 +1292,7 @@ mod tests {
         // Use CoefficientThreshold strategy with a large threshold (1.0).
         // H = 0.5*Z, P = X gives result Y: -1.0. Since |-1.0| >= 1.0, Y survives.
         // But if we scale P by 1e-13, the Y term (-1e-13) is below the threshold.
-        type ThreshConfig = ByteF64<1, CoefficientThreshold>;
+        type ThreshConfig = ByteFxHashF64<1, CoefficientThreshold>;
 
         let mut h: PauliSum<ThreshConfig> = PauliSum::builder()
             .n_qubits(1)
@@ -1318,13 +1318,13 @@ mod tests {
 
     /// Build the benchmark Lindblad (n=5, dense): 5 lowering ops c_i = X_i + iY_i,
     /// dense 5×5 rate matrix γ_ij = 1/(1+|i−j|). Produces 100 LindbladTerm::Generic entries.
-    fn build_benchmark_lindblad() -> LindbladOp<ByteF64<1>> {
+    fn build_benchmark_lindblad() -> LindbladOp<ByteFxHashF64<1>> {
         let n = 5usize;
         let ppw5 = |s: &str, ph: u8| -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, W1> {
             PhasedPauliWord::build_from_word(W1::from(s), ph)
         };
         let template = vec!['I'; n];
-        let ops: Vec<JumpOp<ByteF64<1>>> = (0..n).map(|i| {
+        let ops: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n).map(|i| {
             let mut op = CollapseOp::new(n);
             let mut px = template.clone();
             let mut py = template.clone();
@@ -1340,17 +1340,17 @@ mod tests {
     }
 
     /// Helper: assert determinism and linearity of `lop.apply` for a given state.
-    fn check_apply_consistency(lop: &LindbladOp<ByteF64<1>>, p_str: &str, n: usize) {
+    fn check_apply_consistency(lop: &LindbladOp<ByteFxHashF64<1>>, p_str: &str, n: usize) {
         use ppvm_runtime::prelude::Trace;
 
-        let mut p: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+        let mut p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
         p += (p_str, 1.0_f64);
 
-        let mut result1: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+        let mut result1: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
         lop.apply(&p, &mut result1);
 
         // Determinism: second call must agree on every coefficient.
-        let mut result2: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+        let mut result2: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
         lop.apply(&p, &mut result2);
         for (w, c1) in result1.data().iter() {
             let c2 = result2.data().trace(w);
@@ -1361,9 +1361,9 @@ mod tests {
         }
 
         // Linearity: apply(2·P) must equal 2·apply(P).
-        let mut p2: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+        let mut p2: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
         p2 += (p_str, 2.0_f64);
-        let mut result_2p: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+        let mut result_2p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
         lop.apply(&p2, &mut result_2p);
         for (w, c1) in result1.data().iter() {
             let c_2p = result_2p.data().trace(w);
@@ -1383,13 +1383,13 @@ mod tests {
         // For all 16 two-qubit Pauli inputs the Ladder kernel must agree with the Generic path.
         use ppvm_runtime::prelude::Trace;
         let n = 2usize;
-        let ops_ladder: Vec<JumpOp<ByteF64<1>>> = vec![
+        let ops_ladder: Vec<JumpOp<ByteFxHashF64<1>>> = vec![
             JumpOp::Ladder(LadderOp { qubit: 0, direction: LadderDirection::Lower }),
             JumpOp::Ladder(LadderOp { qubit: 1, direction: LadderDirection::Lower }),
         ];
-        let ops_generic: Vec<JumpOp<ByteF64<1>>> = vec![
-            JumpOp::Generic(LadderOp { qubit: 0, direction: LadderDirection::Lower }.expand::<ByteF64<1>>(n)),
-            JumpOp::Generic(LadderOp { qubit: 1, direction: LadderDirection::Lower }.expand::<ByteF64<1>>(n)),
+        let ops_generic: Vec<JumpOp<ByteFxHashF64<1>>> = vec![
+            JumpOp::Generic(LadderOp { qubit: 0, direction: LadderDirection::Lower }.expand::<ByteFxHashF64<1>>(n)),
+            JumpOp::Generic(LadderOp { qubit: 1, direction: LadderDirection::Lower }.expand::<ByteFxHashF64<1>>(n)),
         ];
         let rates_ladder = RateMatrix::Dense(vec![vec![1.0, 0.5], vec![0.5, 1.0]]);
         let rates_generic = RateMatrix::Dense(vec![vec![1.0, 0.5], vec![0.5, 1.0]]);
@@ -1404,11 +1404,11 @@ mod tests {
         ];
 
         for &input in all_2q {
-            let mut p: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+            let mut p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
             p += (input, 1.0_f64);
 
-            let mut r_ladder: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
-            let mut r_generic: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(n).build();
+            let mut r_ladder: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            let mut r_generic: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
             lop_ladder.apply(&p, &mut r_ladder);
             lop_generic.apply(&p, &mut r_generic);
 
@@ -1428,11 +1428,11 @@ mod tests {
     fn parallel_matches_sequential_with_ladders() {
         // 15 Lower ops all on qubit 0 of a 1-qubit system → 15×15 = 225 on-site Ladder terms
         // (> PAR_THRESHOLD=200). lop.apply() is always sequential; rhs_into() dispatches to
-        // apply_par() for ≥200 terms. Using ByteF64<1> keeps the test fast.
+        // apply_par() for ≥200 terms. Using ByteFxHashF64<1> keeps the test fast.
         use ppvm_runtime::prelude::Trace;
 
         let n_ops = 15usize;
-        let ops: Vec<JumpOp<ByteF64<1>>> = (0..n_ops)
+        let ops: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n_ops)
             .map(|_| JumpOp::Ladder(LadderOp { qubit: 0, direction: LadderDirection::Lower }))
             .collect();
         let rates: Vec<Vec<f64>> = (0..n_ops)
@@ -1445,12 +1445,12 @@ mod tests {
         let p = sum1(&[("Z", 1.0)]);
 
         // Sequential path: direct apply()
-        let mut result_seq: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+        let mut result_seq: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         lop.apply(&p, &mut result_seq);
 
         // Parallel path: rhs_into dispatches to apply_par for ≥200 terms
-        let mut result_par: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
-        rhs_into::<ByteF64<1>>(None, &lop, &p, &mut result_par);
+        let mut result_par: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
+        rhs_into::<ByteFxHashF64<1>>(None, &lop, &p, &mut result_par);
 
         for out_word in ["I", "X", "Y", "Z"] {
             let w = W1::from(out_word);
@@ -1478,7 +1478,7 @@ mod tests {
             PhasedPauliWord::build_from_word(W1::from(s), ph)
         };
         let template = vec!['I'; n];
-        let ops8: Vec<JumpOp<ByteF64<1>>> = (0..n).map(|i| {
+        let ops8: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n).map(|i| {
             let mut op = CollapseOp::new(n);
             let mut px = template.clone();
             let mut py = template.clone();

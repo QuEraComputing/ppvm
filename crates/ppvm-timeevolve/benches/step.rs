@@ -7,7 +7,7 @@
 /// Results are used in Task 28 to decide whether `Budget` is recommended as
 /// a default strategy (see the comment above `Budget` in `src/strategy.rs`).
 use criterion::{criterion_group, criterion_main, Criterion};
-use ppvm_runtime::{config::fxhash::ByteF64, prelude::*, strategy::{CoefficientThreshold, MaxPauliWeight}};
+use ppvm_runtime::{config::indexmap::ByteFxHashF64, prelude::*, strategy::{CoefficientThreshold, MaxPauliWeight}};
 use ppvm_timeevolve::{
     Budget, JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix,
     dopri5::step,
@@ -27,7 +27,7 @@ fn rate_matrix() -> RateMatrix {
 // ── CoefficientThreshold ──────────────────────────────────────────────────────
 
 fn bench_step_ct(c: &mut Criterion) {
-    type S = ByteF64<1, CoefficientThreshold>;
+    type S = ByteFxHashF64<1, CoefficientThreshold>;
     let lop: LindbladOp<S> = LindbladOp::new(
         (0..N).map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower })).collect(),
         rate_matrix(),
@@ -50,7 +50,7 @@ fn bench_step_ct(c: &mut Criterion) {
 // ── MaxPauliWeight ────────────────────────────────────────────────────────────
 
 fn bench_step_mpw(c: &mut Criterion) {
-    type S = ByteF64<1, MaxPauliWeight>;
+    type S = ByteFxHashF64<1, MaxPauliWeight>;
     let lop: LindbladOp<S> = LindbladOp::new(
         (0..N).map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower })).collect(),
         rate_matrix(),
@@ -73,7 +73,7 @@ fn bench_step_mpw(c: &mut Criterion) {
 // ── Budget ────────────────────────────────────────────────────────────────────
 
 fn bench_step_budget(c: &mut Criterion) {
-    type S = ByteF64<1, Budget>;
+    type S = ByteFxHashF64<1, Budget>;
     let lop: LindbladOp<S> = LindbladOp::new(
         (0..N).map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower })).collect(),
         rate_matrix(),

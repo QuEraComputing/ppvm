@@ -1,7 +1,7 @@
-use ppvm_runtime::{config::fxhash::ByteF64, prelude::*, strategy::CoefficientThreshold};
+use ppvm_runtime::{config::indexmap::ByteFxHashF64, prelude::*, strategy::CoefficientThreshold};
 use ppvm_timeevolve::{JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
 
-type S = ByteF64<1, CoefficientThreshold>;
+type S = ByteFxHashF64<1, CoefficientThreshold>;
 const N: usize = 5;
 
 fn main() {

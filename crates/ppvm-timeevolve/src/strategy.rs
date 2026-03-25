@@ -22,7 +22,7 @@ use ppvm_runtime::traits::{Coefficient, PauliWordTrait, Strategy};
 ///
 /// To combine count capping with coefficient pruning, compose the two strategies:
 /// ```text
-/// ByteF64<N, CombinedStrategy<Budget, CoefficientThreshold>>
+/// ByteFxHashF64<N, CombinedStrategy<Budget, CoefficientThreshold>>
 /// ```
 /// `CombinedStrategy` applies them in order — threshold first, then cap — so you
 /// get both behaviours with a single `PauliSum` type.
@@ -128,7 +128,7 @@ impl Strategy for Budget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_runtime::config::indexmap::ByteFxHashF64;
     use ppvm_runtime::prelude::{PauliSum, PauliWord, PhasedPauliWord};
     use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy};
 
@@ -136,9 +136,9 @@ mod tests {
     use crate::solve::{SolverConfig, solve};
 
     type W1 = PauliWord<[u8; 1], fxhash::FxBuildHasher>;
-    type BudgetConfig = ByteF64<1, Budget>;
-    type ThreshConfig = ByteF64<1, CoefficientThreshold>;
-    type CombinedConfig = ByteF64<1, CombinedStrategy<Budget, CoefficientThreshold>>;
+    type BudgetConfig = ByteFxHashF64<1, Budget>;
+    type ThreshConfig = ByteFxHashF64<1, CoefficientThreshold>;
+    type CombinedConfig = ByteFxHashF64<1, CombinedStrategy<Budget, CoefficientThreshold>>;
 
     fn ppw(pauli: &str, phase: u8) -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher, W1> {
         PhasedPauliWord::build_from_word(W1::from(pauli), phase)
@@ -194,7 +194,7 @@ mod tests {
         // After Budget { target: 5 }, only the top 5 (magnitudes 1.0–0.6) survive.
         // Use 2 qubits so we have room for 10 distinct Pauli operators.
         let strat = Budget { target: 5 };
-        let mut p: PauliSum<ByteF64<1, Budget>> =
+        let mut p: PauliSum<ByteFxHashF64<1, Budget>> =
             PauliSum::builder().n_qubits(2).strategy(strat).build();
 
         let labels = ["II","IZ","IX","IY","ZI","ZZ","ZX","ZY","XI","XZ"];

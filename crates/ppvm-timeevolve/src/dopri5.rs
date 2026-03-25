@@ -329,25 +329,25 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::prelude::{config::fxhash::ByteF64, PauliSum};
+    use ppvm_runtime::prelude::{config::indexmap::ByteFxHashF64, PauliSum};
     use crate::lindblad::{LindbladOp, RateMatrix, rhs, rhs_into};
     use crate::solve::SolverCache;
 
-    fn sum1(terms: &[(&str, f64)]) -> PauliSum<ByteF64<1>> {
-        let mut s: PauliSum<ByteF64<1>> = PauliSum::builder().n_qubits(1).build();
+    fn sum1(terms: &[(&str, f64)]) -> PauliSum<ByteFxHashF64<1>> {
+        let mut s: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
         for &(w, c) in terms {
             s += (w, c);
         }
         s
     }
 
-    fn get_coeff(s: &PauliSum<ByteF64<1>>, word: &str) -> f64 {
+    fn get_coeff(s: &PauliSum<ByteFxHashF64<1>>, word: &str) -> f64 {
         use ppvm_runtime::prelude::{Trace, PauliWord};
         let w = PauliWord::<[u8; 1], fxhash::FxBuildHasher>::from(word);
         s.data().trace(&w)
     }
 
-    fn empty_lindblad() -> LindbladOp<ByteF64<1>> {
+    fn empty_lindblad() -> LindbladOp<ByteFxHashF64<1>> {
         LindbladOp::new(vec![], RateMatrix::from(vec![]))
     }
 
@@ -449,12 +449,12 @@ mod tests {
         // Without truncation the step would also insert tiny I, X, Y terms from the
         // k-vector contributions, growing the state beyond 1 entry.
         use ppvm_runtime::strategy::CoefficientThreshold;
-        use ppvm_runtime::config::fxhash::ByteF64;
+        use ppvm_runtime::config::indexmap::ByteFxHashF64;
         use crate::lindblad::{CollapseOp, JumpOp, LindbladOp, RateMatrix};
         use crate::solve::SolverCache;
         use ppvm_runtime::prelude::{PauliWord, PhasedPauliWord, PauliSum};
 
-        type S = ByteF64<1, CoefficientThreshold>;
+        type S = ByteFxHashF64<1, CoefficientThreshold>;
 
         let ppw_s = |pauli: &str, phase: u8|
             -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher,
@@ -502,11 +502,11 @@ mod tests {
         // the truncation step (regression guard).
         use ppvm_runtime::prelude::{PauliWord, PhasedPauliWord, Trace};
         use ppvm_runtime::strategy::CoefficientThreshold;
-        use ppvm_runtime::config::fxhash::ByteF64;
+        use ppvm_runtime::config::indexmap::ByteFxHashF64;
         use crate::lindblad::{CollapseOp, JumpOp, LindbladOp, RateMatrix};
         use crate::solve::solve;
 
-        type S = ByteF64<1, CoefficientThreshold>;
+        type S = ByteFxHashF64<1, CoefficientThreshold>;
 
         let ppw = |pauli: &str, phase: u8|
             -> PhasedPauliWord<[u8; 1], fxhash::FxBuildHasher,
@@ -565,13 +565,13 @@ mod tests {
         // truncation — the truncated ODE genuinely has large local error there (aggressive
         // cap removes significant state content).  The test uses a gentler cap and smaller
         // step so the truncated-ODE error is provably below rtol.
-        use ppvm_runtime::config::fxhash::ByteF64;
+        use ppvm_runtime::config::indexmap::ByteFxHashF64;
         use ppvm_runtime::prelude::PauliSum;
         use crate::lindblad::{JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix};
         use crate::solve::{SolverCache, SolverConfig};
         use crate::Budget;
 
-        type S = ByteF64<2, Budget>;
+        type S = ByteFxHashF64<2, Budget>;
 
         let n = 3_usize;
         // target=8: more than the initial 3 terms; Budget fires only on the small-coefficient
@@ -606,13 +606,13 @@ mod tests {
     fn per_stage_truncation_fsal_consistent_with_budget() {
         // After a Budget-truncated step, k[6] must equal rhs(y_scratch) independently.
         // This verifies FSAL consistency is preserved under per-stage truncation.
-        use ppvm_runtime::config::fxhash::ByteF64;
+        use ppvm_runtime::config::indexmap::ByteFxHashF64;
         use ppvm_runtime::prelude::PauliSum;
         use crate::lindblad::{JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix, rhs};
         use crate::solve::{SolverCache, SolverConfig};
         use crate::Budget;
 
-        type S = ByteF64<2, Budget>;
+        type S = ByteFxHashF64<2, Budget>;
 
         let n = 3_usize;
         let budget = Budget { target: 6 };

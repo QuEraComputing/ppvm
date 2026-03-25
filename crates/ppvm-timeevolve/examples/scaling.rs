@@ -31,7 +31,7 @@
 use std::time::Instant;
 
 use ppvm_runtime::{
-    config::fxhash::ByteF64,
+    config::indexmap::ByteFxHashF64,
     prelude::*,
     strategy::{CoefficientThreshold, MaxPauliWeight},
 };
@@ -45,9 +45,11 @@ const GAMMA0: f64 = 1.0;
 const D:      f64 = 0.1;
 const TMAX:   f64 = 0.5;
 
-/// Atom counts to sweep.  Reference (CoefficientThreshold 1e-8) becomes slow at n≥8
-/// because |P| grows exponentially — change to &[2, 4, 6, 8] to see that regime.
-const N_VALUES: &[usize] = &[2, 4, 6];
+/// Atom counts to sweep.  Reference (CoefficientThreshold 1e-8) is omitted at n=8
+/// because |P| grows exponentially there — cost is O(minutes).
+const N_VALUES: &[usize] = &[4, 6, 8];
+/// Maximum n for which the expensive Reference run is executed.
+const REF_MAX_N: usize = 6;
 
 // ── Strategy parameters ───────────────────────────────────────────────────────
 const REF_THRESHOLD: f64   = 1e-8;
@@ -58,9 +60,9 @@ const BUD_TARGET:    usize = 300;
 
 // ── Config type aliases ───────────────────────────────────────────────────────
 // 2 bytes → up to 16 qubits (covers N_VALUES max = 8 with room to spare).
-type Sct  = ByteF64<2, CoefficientThreshold>;
-type Smpw = ByteF64<2, MaxPauliWeight>;
-type Sbud = ByteF64<2, Budget>;
+type Sct  = ByteFxHashF64<2, CoefficientThreshold>;
+type Smpw = ByteFxHashF64<2, MaxPauliWeight>;
+type Sbud = ByteFxHashF64<2, Budget>;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -209,30 +211,42 @@ fn main() {
     println!("{}", "─".repeat(62));
 
     for &n in N_VALUES {
-        // Reference run (treated as exact).
-        let ref_result = run_ct(n, REF_THRESHOLD);
+        // Reference run — omitted at large n (exponential cost).
+        let ref_obs: Option<f64> = if n <= REF_MAX_N {
+            let r = run_ct(n, REF_THRESHOLD);
+            println!(
+                "{:<4} {:<18} {:>8} {:>12.3?} {:>16}",
+                n, "Reference(1e-8)", r.max_pauli,
+                std::time::Duration::from_secs_f64(r.wall_secs),
+                "—",
+            );
+            Some(r.obs)
+        } else {
+            println!("{:<4} {:<18} {:>8} {:>12} {:>16}",
+                n, "Reference(1e-8)", "—", "(skipped)", "—");
+            None
+        };
 
-        let infidelity = |obs: f64| (obs - ref_result.obs).abs();
+        let infidelity = |obs: f64| -> String {
+            match ref_obs {
+                Some(ref_val) => format!("{:.2e}", (obs - ref_val).abs()),
+                None          => "n/a".to_string(),
+            }
+        };
 
-        let row = |label: &str, r: &RunResult, is_ref: bool| {
-            let inf_str = if is_ref {
-                "—".to_string()
-            } else {
-                format!("{:.2e}", infidelity(r.obs))
-            };
+        let row = |label: &str, r: &RunResult| {
             println!(
                 "{:<4} {:<18} {:>8} {:>12.3?} {:>16}",
                 n, label, r.max_pauli,
                 std::time::Duration::from_secs_f64(r.wall_secs),
-                inf_str,
+                infidelity(r.obs),
             );
         };
 
-        row("Reference(1e-8)", &ref_result, true);
-        row("CT(1e-3)",        &run_ct(n, CT_THRESHOLD), false);
-        row("MPW(2)",          &run_mpw(n, MPW2_WEIGHT), false);
-        row("MPW(4)",          &run_mpw(n, MPW4_WEIGHT), false);
-        row(&format!("Budget({BUD_TARGET})"), &run_bud(n), false);
+        row("CT(1e-3)",        &run_ct(n, CT_THRESHOLD));
+        row("MPW(2)",          &run_mpw(n, MPW2_WEIGHT));
+        row("MPW(4)",          &run_mpw(n, MPW4_WEIGHT));
+        row(&format!("Budget({BUD_TARGET})"), &run_bud(n));
         println!("{}", "─".repeat(62));
     }
 

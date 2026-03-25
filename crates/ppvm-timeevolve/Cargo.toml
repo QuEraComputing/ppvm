@@ -18,3 +18,7 @@ harness = false
 [[bench]]
 name = "step"
 harness = false
+
+[[bench]]
+name = "indexmap"
+harness = false

@@ -14,3 +14,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "rhs"
 harness = false
+
+[[bench]]
+name = "step"
+harness = false

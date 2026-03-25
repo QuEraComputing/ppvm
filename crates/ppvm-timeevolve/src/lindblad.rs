@@ -608,7 +608,7 @@ fn rhs_into_par<T: Config>(
 ///
 /// Clears `result`, computes `dP/dt = i[ham, P] + L(P)` into it, then calls `truncate()`.
 /// Retains the allocated capacity of `result`.
-pub(crate) fn rhs_into<T: Config>(
+pub fn rhs_into<T: Config>(
     ham: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
     p: &PauliSum<T>,

@@ -54,7 +54,7 @@ const E7: f64 = -1.0 / 40.0;
 // Result type
 // ---------------------------------------------------------------------------
 
-pub(crate) enum StepResult {
+pub enum StepResult {
     Accept { h_new: f64 },
     Reject { h_new: f64 },
 }
@@ -186,7 +186,7 @@ where
 /// rates-of-change that are used only as `dt`-scaled additive contributions to `y_scratch`,
 /// which is then truncated.  Applying a separate truncation to derivatives would introduce
 /// a different approximation with no physical justification.
-pub(crate) fn step<T: Config>(
+pub fn step<T: Config>(
     ham: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
     y: &PauliSum<T>,

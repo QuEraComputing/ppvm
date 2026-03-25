@@ -34,9 +34,9 @@ impl Default for SolverConfig {
 /// k[1..=6] are stage buffers), one stage-state buffer (`y_scratch`, also holds the
 /// 5th-order solution after each step), and one error-estimate buffer.
 pub struct SolverCache<T: Config> {
-    pub(crate) k:         Vec<PauliSum<T>>,  // length 7; k[0] = FSAL k1, k[1..=6] = k2..k7
-    pub(crate) y_scratch: PauliSum<T>,
-    pub(crate) err:       PauliSum<T>,
+    pub k:         Vec<PauliSum<T>>,  // length 7; k[0] = FSAL k1, k[1..=6] = k2..k7
+    pub y_scratch: PauliSum<T>,
+    pub err:       PauliSum<T>,
 }
 
 impl<T: Config> SolverCache<T> {

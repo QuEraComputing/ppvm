@@ -6,6 +6,16 @@ use ppvm_runtime::traits::{Coefficient, PauliWordTrait, Strategy};
 
 /// Hard cap on the number of Pauli entries in a `PauliSum`.
 ///
+/// # Performance note (Task 28 benchmark, n=5, target=300)
+///
+/// `bench_step_budget` (446 µs) vs `bench_step_ct` (388 µs): **1.15× overhead** per
+/// DOPRI5 step.  The binary-search pass over |P| entries runs 6 times per step (once per
+/// truncation site); at the benchmark fixture size (~25 live terms, target=300 never fires)
+/// this is negligible.  When the cap fires on a large state the overhead scales as
+/// O(|P|·128) per truncation call.  The 2× threshold that would trigger a "not recommended
+/// as default" advisory was not reached; `Budget` is suitable when a hard memory cap is
+/// needed.
+///
 /// `Budget` is a *pure count cap*: it keeps the `target` entries with the largest
 /// coefficient magnitudes and drops the rest.  It does **not** apply a coefficient
 /// threshold; small-but-nonzero entries survive as long as there is room.

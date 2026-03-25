@@ -130,12 +130,11 @@ where
 
         let outcome = self.tableau.rng.random::<f64>() < prob_1;
 
-        if shift != <I as From<u8>>::from(0u8) {
-            let q_idx = self
-                .tableau
-                .find_z_anticommuting_stabilizer(addr0)
-                .expect("Shift !=0, but couldn't destabilizer that anti-commutes with Z!");
+        if shift != I::zero() {
             // Case a: Z is not a stabilizer
+
+            // first anti-commuting stabilizer is just the first nonzero bit in shift
+            let q_idx = shift.trailing_zeros() as usize;
 
             // In this case, we cannot simply trim the coefficients (though some
             // might be smaller than the threshold)
@@ -145,9 +144,9 @@ where
 
             // get k: bit string with a single 1 entry at the position
             // of the first 1 in shift
-            let mut k = <I as From<u8>>::from(0u8);
-            let one = <I as From<u8>>::from(1u8);
-            let zero = <I as From<u8>>::from(0u8);
+            let mut k = I::zero();
+            let one = I::one();
+            let zero = I::zero();
             for i in 0..self.n_qubits() {
                 if shift & (one << i) != zero {
                     k = one << i;

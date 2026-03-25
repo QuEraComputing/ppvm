@@ -201,7 +201,7 @@ where
             re: T::Coeff::one(),
             im: T::Coeff::zero(),
         };
-        coefficients.unsafe_insert(<I as From<u8>>::from(0u8), complex_one);
+        coefficients.unsafe_insert(I::zero(), complex_one);
         Self {
             tableau: Tableau::new(n_qubits),
             coefficients,
@@ -256,8 +256,8 @@ where
         p_word.set(addr0, pauli);
 
         // the bit strings defining the contributions
-        let mut lambda = <I as From<u8>>::from(0u8);
-        let mut gamma = <I as From<u8>>::from(0u8);
+        let mut lambda = I::zero();
+        let mut gamma = I::zero();
 
         debug_assert_ne!(pauli, Pauli::I);
         let pauli_bits = match pauli {
@@ -270,7 +270,7 @@ where
 
         let stabilizers = self.tableau.stabilizers();
         let destabilizers = self.tableau.destabilizers();
-        let one = <I as From<u8>>::from(1u8);
+        let one = I::one();
 
         for (i, stab) in stabilizers.iter().enumerate() {
             if !destabilizers[i].word.anticommutes_at(addr0, pauli_bits) {
@@ -316,8 +316,8 @@ where
     /// we need to check every destabilizer where the basis index has a 1 bit.
     pub(crate) fn compute_phase(&self, lambda: I, basis_index: I, index_shift: I) -> u8 {
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
-        let one = <I as From<u8>>::from(1u8);
-        let zero = <I as From<u8>>::from(0u8);
+        let one = I::one();
+        let zero = I::zero();
 
         // contribution 1: each destabilizer D_i with basis_index[i]=1 that anticommutes
         // with P (lambda[i]=1) contributes a -1 sign; this is the symplectic inner product

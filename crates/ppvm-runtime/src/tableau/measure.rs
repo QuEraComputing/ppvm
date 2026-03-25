@@ -77,10 +77,6 @@ where
         // state random, or a seemingly random one deterministic
         // the probabilities should just account for that
 
-        // TODO: we can optimize this by looking at which states get eliminated
-        // first and then computing the probabilities as the norm from there
-        // this skips the O(n ^ 2) evaluation of <Z>
-
         // evaluate the action of Z on the state
         // i.e. shift + phase
         let mut z_overlap = Complex64::from(0.0);

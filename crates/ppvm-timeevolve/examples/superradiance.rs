@@ -85,7 +85,7 @@ fn main() {
     // Each solve callback returns (trace_value, state_size) in one pass.
 
     // ── Variant 1: Baseline ──────────────────────────────────────────────────
-    let strat_base = Budget { target: BASE_TARGET, min_threshold: BASE_THRESHOLD };
+    let strat_base = Budget { target: BASE_TARGET };
     let t0 = Instant::now();
     let (_, base_out) = solve(
         None, &lindblad, &initial_state(strat_base),
@@ -96,7 +96,7 @@ fn main() {
     let t_base = t0.elapsed();
 
     // ── Variant 2: Budget (default rtol — mismatched) ────────────────────────
-    let strat_bud = Budget { target: BUDGET_TARGET, min_threshold: BUDGET_THRESHOLD };
+    let strat_bud = Budget { target: BUDGET_TARGET };
     let t1 = Instant::now();
     let (_, bud_out) = solve(
         None, &lindblad, &initial_state(strat_bud),

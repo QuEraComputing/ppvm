@@ -182,7 +182,7 @@ fn run_mpw(n: usize, max_weight: usize) -> RunResult {
 }
 
 fn run_bud(n: usize) -> RunResult {
-    let budget = Budget { target: BUD_TARGET, min_threshold: BUD_MIN_THRESH };
+    let budget = Budget { target: BUD_TARGET };
     let lop    = lindblad_bud(n);
     let init   = initial_bud(n, budget);
     let pat    = z0_pattern();

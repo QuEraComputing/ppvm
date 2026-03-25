@@ -576,7 +576,7 @@ mod tests {
         let n = 3_usize;
         // target=8: more than the initial 3 terms; Budget fires only on the small-coefficient
         // terms generated during accumulation, so truncation is mild per stage.
-        let budget = Budget { target: 8, min_threshold: 0.0 };
+        let budget = Budget { target: 8 };
         let ops: Vec<JumpOp<S>> = (0..n)
             .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
             .collect();
@@ -615,7 +615,7 @@ mod tests {
         type S = ByteF64<2, Budget>;
 
         let n = 3_usize;
-        let budget = Budget { target: 6, min_threshold: 0.0 };
+        let budget = Budget { target: 6 };
         let ops: Vec<JumpOp<S>> = (0..n)
             .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
             .collect();

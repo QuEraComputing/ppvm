@@ -1,8 +1,9 @@
+use ppvm_runtime::config::fx64hash::Byte8F64;
 use ppvm_runtime::config::indexmap::ByteFxHashF64;
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::tableau::CliffordExtensions;
 
-type Tab = GeneralizedTableau<ByteFxHashF64<11>, u128>;
+type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
 
 fn main() {
     for _ in 0..50000 {

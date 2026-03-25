@@ -1,23 +1,19 @@
-/// Superradiance example — three-variant comparison (Budget truncation showcase).
+/// Superradiance example — Budget truncation showcase.
 ///
-/// Demonstrates that the speedup from `Budget` comes from the *rtol coupling*,
-/// not from Rayon.  Rayon parallelism is a separate, additive benefit that
-/// engages automatically for n≥15 (225 Ladder terms > PAR_THRESHOLD=200).
+/// Demonstrates that a tight `Budget` cap achieves a meaningful speedup over a
+/// generous baseline while keeping observable error small.  Per-stage truncation
+/// (Task 26) makes both variants work with `SolverConfig::default()` — no manual
+/// rtol tuning is required.
 ///
 /// Variants
 /// --------
-/// 1. Baseline      : Budget{target=2000, min_threshold=1e-6}, default rtol=1e-6
-///                    — generous cap; acts like CoefficientThreshold(1e-6) here
-/// 2. Budget        : Budget{target=200, min_threshold=1e-4}, default rtol=1e-6
-///                    — tight cap + looser threshold, but rtol is mismatched:
-///                      DOPRI5 fights the k[6] truncation perturbation → slower
-/// 3. Budget+rtol   : same Budget, but rtol=10·min_threshold=1e-3
-///                    — rtol absorbs the k[6] perturbation (≈ h·|e7|·||L||·||Δy||),
-///                      letting DOPRI5 take large steps.  Speedup is visible even
-///                      on the sequential path (n=5); at n≥15 Rayon adds more.
+/// 1. Baseline : Budget { target=2000 } — generous cap; state never hits the limit,
+///               so this behaves like untruncated evolution.
+/// 2. Budget   : Budget { target=200  } — tight cap; DOPRI5 takes fewer RHS evaluations
+///               per unit time because the state is smaller.  Accuracy loss is small.
 ///
-/// System: n=5, 25 Lindblad terms (< PAR_THRESHOLD=200 → sequential path).
-/// Rayon parallelism engages automatically for n≥15 (225 Ladder terms > threshold).
+/// System: n=5, 25 Lindblad raising terms (< PAR_THRESHOLD=200 → sequential path).
+/// Change N to 15 to engage Rayon parallelism (225 terms > threshold).
 ///
 /// Run with:  cargo run --example superradiance --release
 use std::time::Instant;
@@ -28,23 +24,17 @@ use ppvm_runtime::{
 };
 use ppvm_timeevolve::{Budget, JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix, SolverConfig, solve::solve};
 
-const N: usize = 5;
+const N:      usize = 5;
 const NBYTES: usize = 1;
-const GAMMA0: f64 = 1.0;
-const D: f64 = 0.1;
-const TMAX: f64 = 0.5;
+const GAMMA0: f64   = 1.0;
+const D:      f64   = 0.1;
+const TMAX:   f64   = 0.5;
 const TSTEPS: usize = 20;
-/// Baseline: generous cap — acts like CoefficientThreshold(1e-6) for |P| < 2000.
-const BASE_TARGET:     usize = 2000;
-const BASE_THRESHOLD:  f64   = 1e-6;
-/// Budget variants: tight cap + looser threshold.
-const BUDGET_TARGET:    usize = 200;
-const BUDGET_THRESHOLD: f64   = 1e-4;
-/// Practical rtol for Budget+rtol: larger than min_threshold to account for the
-/// truncation-induced perturbation of k[6] (≈ h·|e7|·||L||·||Δy||).
-/// Rule of thumb: rtol ≈ 10 · min_threshold absorbs that noise and lets DOPRI5
-/// take large steps; ODE accuracy then matches observable-level truncation error.
-const BUDGET_RTOL: f64 = BUDGET_THRESHOLD * 10.0; // = 1e-3
+
+/// Baseline: generous cap — state stays well below this for n=5.
+const BASE_TARGET:   usize = 2000;
+/// Budget: tight cap — forces truncation once the state grows.
+const BUDGET_TARGET: usize = 200;
 
 type SB = ByteF64<NBYTES, Budget>;
 
@@ -82,43 +72,27 @@ fn main() {
     let save_at: Vec<f64> = (1..=TSTEPS).map(|i| i as f64 * TMAX / TSTEPS as f64).collect();
     let pattern: PauliPattern = "Z?*".into();
 
-    // Each solve callback returns (trace_value, state_size) in one pass.
-
     // ── Variant 1: Baseline ──────────────────────────────────────────────────
-    let strat_base = Budget { target: BASE_TARGET };
     let t0 = Instant::now();
     let (_, base_out) = solve(
-        None, &lindblad, &initial_state(strat_base),
+        None, &lindblad, &initial_state(Budget { target: BASE_TARGET }),
         (0.0, TMAX), &save_at,
         |_, p: &PauliSum<SB>| (p.trace(&pattern), p.data().len()),
         SolverConfig::default(),
     );
     let t_base = t0.elapsed();
 
-    // ── Variant 2: Budget (default rtol — mismatched) ────────────────────────
-    let strat_bud = Budget { target: BUDGET_TARGET };
+    // ── Variant 2: Budget (tight cap, default rtol) ──────────────────────────
+    // Per-stage truncation keeps the DOPRI5 error estimate consistent with the
+    // truncated ODE, so no rtol adjustment is needed.
     let t1 = Instant::now();
     let (_, bud_out) = solve(
-        None, &lindblad, &initial_state(strat_bud),
+        None, &lindblad, &initial_state(Budget { target: BUDGET_TARGET }),
         (0.0, TMAX), &save_at,
         |_, p: &PauliSum<SB>| (p.trace(&pattern), p.data().len()),
         SolverConfig::default(),
     );
     let t_bud = t1.elapsed();
-
-    // ── Variant 3: Budget+rtol (matched rtol — sequential) ──────────────────
-    // The speedup here comes entirely from the rtol adjustment, not from Rayon.
-    // At n≥8 (256 terms > PAR_THRESHOLD=200), Rayon would add further speedup.
-    let t2 = Instant::now();
-    let (_, bud_rtol_out) = solve(
-        None, &lindblad, &initial_state(strat_bud),
-        (0.0, TMAX), &save_at,
-        |_, p: &PauliSum<SB>| (p.trace(&pattern), p.data().len()),
-        // rtol ≈ 10 · min_threshold absorbs the k[6] perturbation from Budget
-        // truncation, preventing step rejections while still allowing large steps.
-        SolverConfig { rtol: BUDGET_RTOL, ..SolverConfig::default() },
-    );
-    let t_bud_rtol = t2.elapsed();
 
     // ── Fidelity (max |variant − baseline| over all save points) ────────────
     let fidelity = |out: &[(f64, usize)]| -> f64 {
@@ -128,9 +102,7 @@ fn main() {
     };
 
     let final_p = |out: &[(f64, usize)]| out.last().map(|&(_, sz)| sz).unwrap_or(0);
-
-    let spd_bud      = t_base.as_secs_f64() / t_bud.as_secs_f64();
-    let spd_bud_rtol = t_base.as_secs_f64() / t_bud_rtol.as_secs_f64();
+    let spd_bud  = t_base.as_secs_f64() / t_bud.as_secs_f64();
 
     // ── Print table ──────────────────────────────────────────────────────────
     println!("n={N}  tmax={TMAX}  steps={TSTEPS}  Lindblad terms={}", N * N);
@@ -143,14 +115,7 @@ fn main() {
         "Baseline", t_base, "1.00×", final_p(&base_out), "—");
     println!("{:<20} {:>10.3?} {:>9.2}× {:>10} {:>18.2e}",
         "Budget", t_bud, spd_bud, final_p(&bud_out), fidelity(&bud_out));
-    println!("{:<20} {:>10.3?} {:>9.2}× {:>10} {:>18.2e}",
-        "Budget+rtol", t_bud_rtol, spd_bud_rtol, final_p(&bud_rtol_out), fidelity(&bud_rtol_out));
     println!();
-    let default_rtol = SolverConfig::default().rtol;
-    println!("{:<20} rtol={:.0e}  Budget{{target={}, min_threshold={:.0e}}}",
-        "Baseline:",     default_rtol,    BASE_TARGET,   BASE_THRESHOLD);
-    println!("{:<20} rtol={:.0e}  Budget{{target={}, min_threshold={:.0e}}}  ← mismatched",
-        "Budget:",        default_rtol,   BUDGET_TARGET, BUDGET_THRESHOLD);
-    println!("{:<20} rtol={:.0e}  Budget{{target={}, min_threshold={:.0e}}}  ← matched (10×min_threshold); at n≥15 Rayon also engages",
-        "Budget+rtol:",   BUDGET_RTOL,    BUDGET_TARGET, BUDGET_THRESHOLD);
+    println!("Baseline : Budget{{target={BASE_TARGET}}}, default rtol — generous cap, untruncated behaviour");
+    println!("Budget   : Budget{{target={BUDGET_TARGET}}}, default rtol — tight cap, per-stage truncation keeps DOPRI5 stable");
 }

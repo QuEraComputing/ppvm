@@ -10,11 +10,15 @@
 ///
 /// Strategies
 /// ----------
-/// Reference        : CoefficientThreshold(1e-8) — treated as exact
-/// CT(1e-3)         : CoefficientThreshold(1e-3) — coefficient pruning
-/// MPW(2)           : MaxPauliWeight(2)  — O(n²) state size bound
-/// MPW(4)           : MaxPauliWeight(4)  — O(n⁴) state size bound
-/// Budget(300,1e-4) : hard cap + matched rtol (10×min_threshold) for DOPRI5
+/// Reference   : CoefficientThreshold(1e-8) — treated as exact
+/// CT(1e-3)    : CoefficientThreshold(1e-3) — coefficient pruning
+/// MPW(2)      : MaxPauliWeight(2)  — O(n²) state size bound
+/// MPW(4)      : MaxPauliWeight(4)  — O(n⁴) state size bound
+/// Budget(300) : hard cap at 300 terms
+///
+/// All strategies use SolverConfig::default() (rtol=1e-6).  Per-stage truncation
+/// (Task 26) keeps the DOPRI5 error estimate self-consistent so no rtol tuning
+/// is required.
 ///
 /// Scaling
 /// -------
@@ -46,18 +50,11 @@ const TMAX:   f64 = 0.5;
 const N_VALUES: &[usize] = &[2, 4, 6];
 
 // ── Strategy parameters ───────────────────────────────────────────────────────
-const REF_THRESHOLD:   f64   = 1e-8;
-const CT_THRESHOLD:    f64   = 1e-3;
-/// Matched rtol for CT: same logic as Budget — rtol ≈ 10 × threshold avoids
-/// DOPRI5 fighting the coefficient-truncation perturbation on k[6].
-const CT_RTOL:         f64   = CT_THRESHOLD * 10.0;
-const MPW2_WEIGHT:     usize = 2;
-const MPW4_WEIGHT:     usize = 4;
-const BUD_TARGET:      usize = 300;
-const BUD_MIN_THRESH:  f64   = 1e-4;
-/// Matched rtol for Budget: absorbs the k[6] truncation perturbation in DOPRI5.
-/// Rule of thumb: rtol ≈ 10 × min_threshold  (see superradiance example for derivation).
-const BUD_RTOL:        f64   = BUD_MIN_THRESH * 10.0;
+const REF_THRESHOLD: f64   = 1e-8;
+const CT_THRESHOLD:  f64   = 1e-3;
+const MPW2_WEIGHT:   usize = 2;
+const MPW4_WEIGHT:   usize = 4;
+const BUD_TARGET:    usize = 300;
 
 // ── Config type aliases ───────────────────────────────────────────────────────
 // 2 bytes → up to 16 qubits (covers N_VALUES max = 8 with room to spare).
@@ -133,8 +130,6 @@ fn lindblad_bud(n: usize) -> LindbladOp<Sbud> {
 }
 
 /// Pattern for ⟨Z₀⟩: Z at position 0, I on all others.
-/// Syntax: "Z0" = Z at index 0; the contains check rejects any word with
-/// non-identity at other positions, giving the pure single-site Z₀ observable.
 fn z0_pattern() -> PauliPattern {
     "Z0".into()
 }
@@ -145,7 +140,7 @@ struct RunResult {
     obs:       f64,
 }
 
-fn run_ct(n: usize, threshold: f64, rtol: f64) -> RunResult {
+fn run_ct(n: usize, threshold: f64) -> RunResult {
     let lop  = lindblad_ct(n);
     let init = initial_ct(n, threshold);
     let pat  = z0_pattern();
@@ -154,7 +149,7 @@ fn run_ct(n: usize, threshold: f64, rtol: f64) -> RunResult {
         None, &lop, &init,
         (0.0, TMAX), &[TMAX],
         |_, p: &PauliSum<Sct>| (p.trace(&pat), p.data().len()),
-        SolverConfig { rtol, ..SolverConfig::default() },
+        SolverConfig::default(),
     );
     RunResult {
         wall_secs: t0.elapsed().as_secs_f64(),
@@ -191,9 +186,7 @@ fn run_bud(n: usize) -> RunResult {
         None, &lop, &init,
         (0.0, TMAX), &[TMAX],
         |_, p: &PauliSum<Sbud>| (p.trace(&pat), p.data().len()),
-        // rtol matched to Budget min_threshold: absorbs the truncation-induced
-        // k[6] perturbation and lets DOPRI5 take large steps.
-        SolverConfig { rtol: BUD_RTOL, ..SolverConfig::default() },
+        SolverConfig::default(),
     );
     RunResult {
         wall_secs: t0.elapsed().as_secs_f64(),
@@ -210,19 +203,17 @@ fn main() {
          Observable: ⟨Z₀⟩ at T={TMAX}\n"
     );
     println!(
-        "{:<4} {:<22} {:>8} {:>12} {:>16}",
+        "{:<4} {:<18} {:>8} {:>12} {:>16}",
         "n", "Strategy", "|P|", "Time", "Infidelity"
     );
-    println!("{}", "─".repeat(66));
+    println!("{}", "─".repeat(62));
 
     for &n in N_VALUES {
-        // Reference run (treated as exact)
-        // Reference uses default rtol (1e-6); tight threshold keeps state small and clean.
-        let ref_result = run_ct(n, REF_THRESHOLD, SolverConfig::default().rtol);
+        // Reference run (treated as exact).
+        let ref_result = run_ct(n, REF_THRESHOLD);
 
         let infidelity = |obs: f64| (obs - ref_result.obs).abs();
 
-        // Helper closure for a formatted row
         let row = |label: &str, r: &RunResult, is_ref: bool| {
             let inf_str = if is_ref {
                 "—".to_string()
@@ -230,31 +221,29 @@ fn main() {
                 format!("{:.2e}", infidelity(r.obs))
             };
             println!(
-                "{:<4} {:<22} {:>8} {:>12.3?} {:>16}",
+                "{:<4} {:<18} {:>8} {:>12.3?} {:>16}",
                 n, label, r.max_pauli,
                 std::time::Duration::from_secs_f64(r.wall_secs),
                 inf_str,
             );
         };
 
-        row("Reference(1e-8)",  &ref_result, true);
-        // CT_RTOL = 10×CT_THRESHOLD: prevents DOPRI5 fighting the pruning perturbation.
-        row("CT(1e-3+rtol)",    &run_ct(n, CT_THRESHOLD, CT_RTOL), false);
-        row("MPW(2)",           &run_mpw(n, MPW2_WEIGHT), false);
-        row("MPW(4)",           &run_mpw(n, MPW4_WEIGHT), false);
-        row(&format!("Budget({BUD_TARGET},1e-4)"), &run_bud(n), false);
-        println!("{}", "─".repeat(66));
+        row("Reference(1e-8)", &ref_result, true);
+        row("CT(1e-3)",        &run_ct(n, CT_THRESHOLD), false);
+        row("MPW(2)",          &run_mpw(n, MPW2_WEIGHT), false);
+        row("MPW(4)",          &run_mpw(n, MPW4_WEIGHT), false);
+        row(&format!("Budget({BUD_TARGET})"), &run_bud(n), false);
+        println!("{}", "─".repeat(62));
     }
 
     println!();
     println!("Notes:");
-    println!("  Reference      : CoefficientThreshold({REF_THRESHOLD:.0e}), default rtol — treated as exact");
-    println!("  CT(1e-3+rtol)  : CoefficientThreshold({CT_THRESHOLD:.0e}), rtol={CT_RTOL:.0e} (10×threshold, avoids DOPRI5 rejections)");
-    println!("  MPW(w)         : MaxPauliWeight(w), default rtol — hard O(nʷ) bound; slow when n is large");
-    println!("                   because DOPRI5 fights the weight-truncation k[6] perturbation (same cause");
-    println!("                   as Budget without matched rtol); no natural threshold to derive rtol from");
-    println!("  Budget(B,1e-4) : at most {BUD_TARGET} terms, rtol={BUD_RTOL:.0e} — always fast, accuracy degrades as cap bites");
+    println!("  All strategies use SolverConfig::default() (rtol=1e-6).");
+    println!("  Reference   : CoefficientThreshold({REF_THRESHOLD:.0e}) — treated as exact");
+    println!("  CT(1e-3)    : CoefficientThreshold({CT_THRESHOLD:.0e}) — dynamic pruning");
+    println!("  MPW(w)      : MaxPauliWeight(w) — hard O(nʷ) bound on state size");
+    println!("  Budget(B)   : at most {BUD_TARGET} terms — O(1) in n; infidelity may grow as cap bites");
     println!();
     println!("Polynomial scaling: MPW(w) keeps |P| ≤ Σ_{{k=0}}^{{w}} C(n,k)·3^k  (polynomial in n for fixed w).");
-    println!("Budget:             |P| ≤ {BUD_TARGET} always — O(1) in n, but infidelity may grow as the cap becomes tight.");
+    println!("Budget:             |P| ≤ {BUD_TARGET} always — O(1) in n.");
 }

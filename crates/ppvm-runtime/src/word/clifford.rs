@@ -8,24 +8,31 @@ where
     A: PauliStorage,
     H: BuildHasher + Clone + Default,
 {
+    #[inline]
     fn x(&mut self, _index: usize) {
         // X * I * X = I    00 -> 00, 0
         // X * X * X = X    10 -> 10, 0
         // X * Z * X = -Z   01 -> 01, 1
         // X * Y * X = -Y.  11 -> 11, 1
     }
+
+    #[inline]
     fn y(&mut self, _index: usize) {
         // Y * I * Y = I    00 -> 00, 0
         // Y * X * Y = -X   10 -> 10, 1
         // Y * Z * Y = -Z   01 -> 01, 1
         // Y * Y * Y = Y    11 -> 11, 0
     }
+
+    #[inline]
     fn z(&mut self, _index: usize) {
         // Z * I * Z = I    00 -> 00, 0
         // Z * X * Z = -X   10 -> 10, 1
         // Z * Z * Z = Z    01 -> 01, 0
         // Z * Y * Z = -Y   11 -> 11, 1
     }
+
+    #[inline]
     fn h(&mut self, index: usize) {
         // H * I * H = I    00 -> 00, 0
         // H * X * H = Z    10 -> 01, 0
@@ -37,6 +44,8 @@ where
         self.zbits.set(index, index_x);
         self.rehash();
     }
+
+    #[inline]
     fn s(&mut self, index: usize) {
         // S * I * S = I    00 -> 00, 0
         // S * X * S = Y    10 -> 11, 0
@@ -46,6 +55,8 @@ where
         self.zbits.set(index, z);
         self.rehash();
     }
+
+    #[inline]
     fn cnot(&mut self, control: usize, target: usize) {
         //                          xx zz    xx zz  phase
         // CNOT * II * CNOT == II,  00 00 -> 00 00, 0
@@ -73,6 +84,8 @@ where
         self.xbits.set(target, target_x);
         self.rehash();
     }
+
+    #[inline]
     fn cz(&mut self, control: usize, target: usize) {
         // CZ = |0><0| I + |1><1| Z
         // CZ * II * CZ = II,   00 00 -> 00 00, 0

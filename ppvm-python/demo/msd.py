@@ -138,7 +138,7 @@ def main():
 if __name__ == "__main__":
     avg_time = 0.0
     total_time = 0.0
-    n_shots = 100
+    n_shots = 1000
     for _ in range(n_shots):
         start = time.perf_counter()
         main()

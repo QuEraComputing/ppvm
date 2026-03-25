@@ -5,7 +5,7 @@ use ppvm_runtime::tableau::CliffordExtensions;
 type Tab = GeneralizedTableau<ByteFxHashF64<11>, u128>;
 
 fn main() {
-    for _ in 0..10000 {
+    for _ in 0..50000 {
         // from Rafael:  https://www.notion.so/Simulating-85-qubit-MSD-circuit-using-stabilizer-rank-decomposition-and-pyzx-288f86eeff3c802fb262ef1cfa69dfae?source=copy_link#28df86eeff3c80bfa087ed15bcf49b77
         let qubits_per_code_block = 17;
         let n_qubits = qubits_per_code_block * 5;

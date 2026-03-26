@@ -242,9 +242,11 @@ where
     /// Lemma 5. from T. J. Yoder (2012)
     /// NOTE: this is O(n^2)
     ///
-    /// The function returns `(phase, gamma, lambda)`, where `gamma = (gamma_1, ..., gamma_n) as I`
-    /// and `lambda = (lambda_1, ..., lambda_n) as I`. Note that gamma is equal to the shift of
-    /// the index when branching (`beta` in Eq(4) of the SOFT paper).
+    /// The function returns `(phase, stab_anticomm_bits, destab_anticomm_bits_bits)`, where
+    /// `stab_anticomm_bits[k] = 1` iff P_addr0 anticommutes with stabilizer s_k, and
+    /// `destab_anticomm_bits_bits[l] = 1` iff P_addr0 anticommutes with destabilizer d_l.
+    /// Note that stab_anticomm_bits is equal to the shift of the index when branching
+    /// (`beta` in Eq(4) of the SOFT paper).
     pub(crate) fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I)
     where
         <<T as Config>::Storage as BitView>::Store: PrimInt,
@@ -256,8 +258,8 @@ where
         p_word.set(addr0, pauli);
 
         // the bit strings defining the contributions
-        let mut lambda = I::zero();
-        let mut gamma = I::zero();
+        let mut destab_anticomm_bits_bits = I::zero();
+        let mut stab_anticomm_bits = I::zero();
 
         debug_assert_ne!(pauli, Pauli::I);
         let pauli_bits = match pauli {
@@ -278,9 +280,8 @@ where
                 continue;
             }
 
-            // contributes, so set the corresponding bit in the lambda bit string
-            // to 1
-            lambda |= one << i;
+            // contributes, so set the corresponding bit in destab_anticomm_bits_bits to 1
+            destab_anticomm_bits_bits |= one << i;
 
             // destabilizer anti-commutes, so the stabilizer contributes
             // the stabilizer is its own inverse up to its phase
@@ -298,34 +299,33 @@ where
                 continue;
             }
 
-            // contributes, so set the corresponding entry in the gamma bit string
-            // to 1
-            gamma |= one << i;
+            // contributes, so set the corresponding bit in stab_anticomm_bits to 1
+            stab_anticomm_bits |= one << i;
 
             // stabilizer anti-commutes, so the destabilizer contributes
             p_word *= destab;
             p_word.add_phase(8 - 2 * destab.phase);
         }
 
-        (p_word.phase, gamma, lambda)
+        (p_word.phase, stab_anticomm_bits, destab_anticomm_bits_bits)
     }
 
     /// every basis index is a bit string alpha defining the basis state
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    pub(crate) fn compute_phase(&self, lambda: I, basis_index: I, index_shift: I) -> u8 {
+    pub(crate) fn compute_phase(&self, destab_anticomm_bits_bits: I, basis_index: I, stab_anticomm_bits: I) -> u8 {
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
         let one = I::one();
         let zero = I::zero();
 
         // contribution 1: each destabilizer D_i with basis_index[i]=1 that anticommutes
-        // with P (lambda[i]=1) contributes a -1 sign; this is the symplectic inner product
-        let mut phase = (2 * symplectic_inner(lambda, basis_index) as u8) % 4;
+        // with P (destab_anticomm_bits_bits[i]=1) contributes a -1 sign; this is the symplectic inner product
+        let mut phase = (2 * symplectic_inner(destab_anticomm_bits_bits, basis_index) as u8) % 4;
 
-        // contribution 2: destabilizers that appear twice (basis_index[i]=1 and index_shift[i]=1)
+        // contribution 2: destabilizers that appear twice (basis_index[i]=1 and stab_anticomm_bits[i]=1)
         // contribute an extra -1 if their phase is imaginary
-        let active = basis_index & index_shift;
+        let active = basis_index & stab_anticomm_bits;
         for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
             if active & (one << i) == zero {
                 continue;
@@ -349,7 +349,7 @@ where
     ///   we must explicitly select the -1 eigenspace.
     pub(crate) fn trim_coefficients_for_measurement(
         &mut self,
-        lambda: I,
+        destab_anticomm_bits_bits: I,
         z_sign: bool,
         outcome: bool,
     ) {
@@ -359,7 +359,7 @@ where
             let mut phase = false; // false: +1 eigenspace of Z, true: -1 eigenspace
 
             // get the phase from the anti-commutation with the product over all destabilizers
-            let parity = symplectic_inner(alpha, lambda) % 2 != 0;
+            let parity = symplectic_inner(alpha, destab_anticomm_bits_bits) % 2 != 0;
             phase ^= parity;
 
             // (xi * k) == m
@@ -385,7 +385,7 @@ where
             return;
         }
 
-        let (phase_decomp, index_shift, lambda) = self.compute_decomposition(addr0, pauli);
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = self.compute_decomposition(addr0, pauli);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
@@ -395,11 +395,11 @@ where
                 "Coefficient should not be zero"
             );
 
-            let branch_index = idx ^ index_shift;
+            let branch_index = idx ^ stab_anticomm_bits; // stab_anticomm_bits is the index shift
 
             // get the phase contributions from duplicate destabilizers
             // and anti-commuting through destabilizers
-            let branch_phase_contribution = self.compute_phase(lambda, idx, index_shift);
+            let branch_phase_contribution = self.compute_phase(destab_anticomm_bits_bits, idx, stab_anticomm_bits);
             let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
 
             let phase_factor: Complex<T::Coeff> =
@@ -437,7 +437,7 @@ where
             return;
         }
 
-        let (phase_decomp, index_shift, lambda) = self.compute_decomposition(addr0, pauli);
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = self.compute_decomposition(addr0, pauli);
 
         let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
         let old_coefficients = std::mem::replace(coefficients, C::new());
@@ -447,11 +447,11 @@ where
                 "Coefficient should not be zero"
             );
 
-            let branch_index = idx ^ index_shift;
+            let branch_index = idx ^ stab_anticomm_bits; // stab_anticomm_bits is the index shift
 
             // get the phase contributions from duplicate destabilizers
             // and anti-commuting through destabilizers
-            let branch_phase_contribution = self.compute_phase(lambda, idx, index_shift);
+            let branch_phase_contribution = self.compute_phase(destab_anticomm_bits_bits, idx, stab_anticomm_bits);
             let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
 
             let phase_factor: Complex<T::Coeff> =
@@ -495,12 +495,12 @@ mod tests {
         tab.tableau.h(0);
 
         // After H: stabilizer = +X, destabilizer = +Z
-        // shift = 1 (stabilizer has xbit[0]=true)
+        // stab_anticomm_bits = 1 (stabilizer has xbit[0]=true)
         // both phases should be 0
-        let (decomp, gamma, lambda) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = decomp + tab.compute_phase(lambda, 0, gamma);
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = tab.compute_decomposition(0, Pauli::Z);
+        let phase0 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits);
         assert_eq!(phase0, 0);
-        let phase1 = decomp + tab.compute_phase(lambda, 1, gamma);
+        let phase1 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits);
         assert_eq!(phase1, 0);
     }
 
@@ -510,10 +510,10 @@ mod tests {
         tab.tableau.h(0);
         tab.tableau.s(0);
 
-        let (decomp, gamma, lambda) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = decomp + tab.compute_phase(lambda, 0, gamma);
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = tab.compute_decomposition(0, Pauli::Z);
+        let phase0 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits);
         assert_eq!(phase0, 0);
-        let phase1 = decomp + tab.compute_phase(lambda, 1, gamma);
+        let phase1 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits);
         assert_eq!(phase1, 0);
     }
 
@@ -523,10 +523,10 @@ mod tests {
         tab.tableau.h(0);
         tab.tableau.z(0);
 
-        let (decomp, gamma, lambda) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = decomp + tab.compute_phase(lambda, 0, gamma);
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = tab.compute_decomposition(0, Pauli::Z);
+        let phase0 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits);
         assert_eq!(phase0, 0);
-        let phase1 = decomp + tab.compute_phase(lambda, 1, gamma);
+        let phase1 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits);
         assert_eq!(phase1, 0);
     }
 
@@ -537,10 +537,10 @@ mod tests {
         tab.tableau.s(0);
         tab.tableau.h(0);
 
-        let (decomp, gamma, lambda) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = (decomp + tab.compute_phase(lambda, 0, gamma)) % 4;
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = tab.compute_decomposition(0, Pauli::Z);
+        let phase0 = (phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits)) % 4;
         assert_eq!(phase0, 1);
-        let phase1 = (decomp + tab.compute_phase(lambda, 1, gamma)) % 4;
+        let phase1 = (phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits)) % 4;
         assert_eq!(phase1, 3);
     }
 

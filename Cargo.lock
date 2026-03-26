@@ -743,6 +743,7 @@ version = "0.1.0"
 dependencies = [
  "paste",
  "ppvm-runtime",
+ "ppvm-timeevolve",
  "pyo3",
 ]
 

@@ -46,7 +46,7 @@ macro_rules! create_interface {
     ($name: ident, $type: ident, $loss: tt) => {
         #[pyclass]
         pub struct $name {
-            inner: PauliSum<$type>,
+            pub(crate) inner: PauliSum<$type>,
         }
         #[pymethods]
         impl $name {
@@ -231,7 +231,7 @@ macro_rules! create_interface_range {
     ($name: ident, false, $( $n: expr),* ) => {
         paste! {
         $(
-            type [<$name$n>] = config::indexmap::ByteFxHashF64<{(2 as usize).pow($n)}, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
+            pub(crate) type [<$name$n>] = config::indexmap::ByteFxHashF64<{(2 as usize).pow($n)}, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
             create_interface!([<PauliSum$name$n>], [<$name$n>], false);
         )*
     }

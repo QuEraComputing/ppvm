@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
 pub mod interface;
+pub mod interface_timeevolve;
 
 #[pymodule]
 pub mod ppvm_python_native {
@@ -70,4 +71,9 @@ pub mod ppvm_python_native {
     pub use crate::interface::PauliSumLossIndexMapFxHash14;
     #[pymodule_export]
     pub use crate::interface::PauliSumLossIndexMapFxHash15;
+
+    #[pymodule_export]
+    pub use crate::interface_timeevolve::solve_timeevolve_states;
+    #[pymodule_export]
+    pub use crate::interface_timeevolve::solve_timeevolve_observables;
 }

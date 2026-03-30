@@ -109,9 +109,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Paul
     }
 
     fn weight(&self) -> usize {
-        (0..self.nqubits)
-            .filter(|&i| self.xbits[i] || self.zbits[i])
-            .count()
+        (self.xbits | self.zbits).count_ones()
     }
 
     fn rehash(&mut self) {

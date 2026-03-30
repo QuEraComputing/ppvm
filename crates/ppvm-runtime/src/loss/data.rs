@@ -104,9 +104,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for Lossy
     }
 
     fn weight(&self) -> usize {
-        (0..self.nqubits)
-            .filter(|&i| self.xbits[i] || self.zbits[i] || self.lbits[i])
-            .count()
+        (self.xbits | self.zbits | self.lbits).count_ones()
     }
 
     fn loss_weight(&self) -> usize {

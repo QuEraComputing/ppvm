@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use bitvec::view::BitView;
 use num::PrimInt;
 use num::{
@@ -60,22 +62,25 @@ where
         self.compute_coefficients_after_pauli_apply(&mut branch_coefficients, a, pauli_a);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
+        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
+
+        for (coeff, idx) in old_coefficients {
+            *new_coefficients.entry(idx).or_insert(Complex::zero()) += complex_cos * coeff;
+        }
+
+        for (branch_coeff, idx) in branch_coefficients {
+            *new_coefficients.entry(idx).or_insert(Complex::zero()) += i_complex_sin * branch_coeff;
+        }
 
         let cutoff = Complex {
             re: self.coefficient_threshold.clone(),
             im: T::Coeff::zero(),
         };
 
-        for (coeff, idx) in old_coefficients {
-            let updated_coeff = complex_cos * coeff;
-            if updated_coeff.abs() > cutoff.abs() {
-                self.coefficients.unsafe_insert(idx, updated_coeff);
+        for (idx, coeff) in new_coefficients {
+            if coeff.abs() > cutoff.abs() {
+                self.coefficients.unsafe_insert(idx, coeff);
             }
-        }
-
-        for (branch_coeff, idx) in branch_coefficients {
-            let updated_coeff = i_complex_sin * branch_coeff;
-            self.coefficients.add_or_insert(idx, updated_coeff);
         }
     }
 }

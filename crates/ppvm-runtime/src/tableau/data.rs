@@ -353,7 +353,6 @@ where
         z_sign: bool,
         outcome: bool,
     ) {
-        // TODO: more efficient update of coefficients in-place
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         for (coeff, alpha) in old_coefficients.into_iter() {
             let mut phase = false; // false: +1 eigenspace of Z, true: -1 eigenspace
@@ -364,7 +363,7 @@ where
 
             // (xi * k) == m
             if (phase ^ z_sign) == outcome {
-                self.coefficients.add_or_insert(alpha, coeff);
+                self.coefficients.unsafe_insert(alpha, coeff);
             }
         }
 

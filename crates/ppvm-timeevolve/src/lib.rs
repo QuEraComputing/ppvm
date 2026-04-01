@@ -1,5 +1,6 @@
 pub mod dopri5;
 pub mod lindblad;
+pub mod product_state;
 pub mod solve;
 pub mod strategy;
 

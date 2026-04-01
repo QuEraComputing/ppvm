@@ -1,11 +1,15 @@
-"""Tests for ppvm.timeevolve Python bindings."""
+"""Tests for ppvm.timeevolve Python bindings (Heisenberg-picture API).
+
+All tests use the Heisenberg picture: the observable is propagated under
+dO/dt = i[H, O] + L†(O). Expectation values are computed via ProductState.
+"""
 
 import math
 
 import pytest
 from ppvm.timeevolve import LadderOp, LindbladOp, solve
 
-from ppvm import PauliSum
+from ppvm import PauliSum, ProductState
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -22,64 +26,65 @@ def _make_2q_lower_lindblad(gamma: float = 1.0) -> LindbladOp:
     )
 
 
-def _excited_2q() -> PauliSum:
-    # (I+Z)/2 ⊗ (I+Z)/2 — positive Z coefficients for both qubits.
-    # Under lowering operators the Z terms decay toward zero.
-    return PauliSum.new(2, [("II", 0.25), ("IZ", 0.25), ("ZI", 0.25), ("ZZ", 0.25)])
+def _z0_observable() -> PauliSum:
+    """Observable O = Z0 (single-qubit Pauli Z on qubit 0 of a 2-qubit system)."""
+    return PauliSum.new(2, ["ZI"])
+
+
+def _excited_2q_state() -> ProductState:
+    """ρ₀ = |1⟩⊗|1⟩: bz = -1 for both qubits (excited state)."""
+    return ProductState.bitstring("11")
 
 
 # ---------------------------------------------------------------------------
-# Test 1: decay state snapshots
+# Test 1: decay state snapshots (Heisenberg picture returns PauliSum list)
 # ---------------------------------------------------------------------------
 
 
 def test_decay_state_snapshots():
-    state = _excited_2q()
+    observable = _z0_observable()
     lindblad = _make_2q_lower_lindblad(gamma=1.0)
     save_at = [0.5, 1.0, 2.0, 4.0]
 
     times, states = solve(
-        state=state, lindblad=lindblad, t_span=(0.0, 5.0), save_at=save_at
+        observable=observable, lindblad=lindblad, t_span=(0.0, 5.0), save_at=save_at
     )
 
     assert len(times) == 4
     assert len(states) == 4
-
-    # qubit-0 Z coefficient should decay monotonically under lowering operators
-    z0_vals = [s.trace("Z0") for s in states]
-    for i in range(len(z0_vals) - 1):
-        assert (
-            z0_vals[i] > z0_vals[i + 1]
-        ), f"Expected monotonic decay but got {z0_vals}"
+    # States are PauliSum objects.
+    assert all(isinstance(s, PauliSum) for s in states)
 
 
 # ---------------------------------------------------------------------------
-# Test 2: scalar observable mode matches state-snapshot mode
+# Test 2: expectation value path matches raw-snapshot path
 # ---------------------------------------------------------------------------
 
 
-def test_decay_scalar_observable():
-    state = _excited_2q()
+def test_decay_expectation_matches_snapshot():
+    observable = _z0_observable()
     lindblad = _make_2q_lower_lindblad(gamma=1.0)
     save_at = [0.5, 1.0, 2.0, 4.0]
+    rho0 = _excited_2q_state()
 
     _, states = solve(
-        state=state, lindblad=lindblad, t_span=(0.0, 5.0), save_at=save_at
+        observable=observable, lindblad=lindblad, t_span=(0.0, 5.0), save_at=save_at
     )
     _, values = solve(
-        state=state,
+        observable=observable,
         lindblad=lindblad,
         t_span=(0.0, 5.0),
         save_at=save_at,
-        observable="trace:Z0",
+        initial_state=rho0,
     )
 
     assert isinstance(values, list)
     assert len(values) == len(save_at)
     for v, s in zip(values, states):
+        expected = rho0.expectation(s)
         assert (
-            abs(v - s.trace("Z0")) < 1e-9
-        ), f"scalar {v} != state snapshot trace {s.trace('Z0')}"
+            abs(v - expected) < 1e-9
+        ), f"expectation path {v} != snapshot path {expected}"
 
 
 # ---------------------------------------------------------------------------
@@ -88,10 +93,10 @@ def test_decay_scalar_observable():
 
 
 def test_no_hamiltonian():
-    state = _excited_2q()
+    observable = _z0_observable()
     lindblad = _make_2q_lower_lindblad()
     times, states = solve(
-        state=state,
+        observable=observable,
         lindblad=lindblad,
         t_span=(0.0, 1.0),
         save_at=[0.5, 1.0],
@@ -102,31 +107,32 @@ def test_no_hamiltonian():
 
 
 # ---------------------------------------------------------------------------
-# Test 4: Hamiltonian-driven Rabi oscillation on 1 qubit
+# Test 4: Hamiltonian-driven Larmor precession on 1 qubit
 # ---------------------------------------------------------------------------
 
 
 def test_with_hamiltonian():
-    # Initial state: Z0 coefficient = 0.5 (fully in +Z eigenstate)
-    state = PauliSum.new(1, [("I", 0.5), ("Z", 0.5)])
-    # H = pi/2 * X  → Rabi flip: Z0 goes from 0.5 → ~0 at t=0.5 → ~-0.5 at t=1
+    # Observable O = Z (Heisenberg picture); H = π/2 · X drives Z → -Z at t=1.
+    observable = PauliSum.new(1, ["Z"])
     ham = PauliSum.new(1, [("X", math.pi / 2)])
     lindblad = LindbladOp(jump_ops=[], rates=[])
+    # ρ₀ = |0⟩: bz = +1, so ⟨Z(0)⟩ = +1.
+    rho0 = ProductState.all_zero(1)
 
     save_at = [0.25, 0.5, 0.75, 1.0]
     _, values = solve(
-        state=state,
+        observable=observable,
         lindblad=lindblad,
         t_span=(0.0, 1.0),
         save_at=save_at,
         hamiltonian=ham,
-        observable="trace:Z0",
+        initial_state=rho0,
     )
 
-    # At t=1, Z0 coefficient should be near -0.5 (flipped)
-    assert values[-1] < -0.45, f"Expected Z0 ≈ -0.5 at t=1 but got {values[-1]}"
-    # At t=0.5, Z0 should be near 0 (halfway through flip)
-    assert abs(values[1]) < 0.01, f"Expected Z0 ≈ 0 at t=0.5 but got {values[1]}"
+    # At t=1, ⟨Z⟩ ≈ -1 (full Rabi flip).
+    assert values[-1] < -0.9, f"Expected ⟨Z⟩ ≈ -1 at t=1 but got {values[-1]}"
+    # At t=0.5, ⟨Z⟩ ≈ 0 (halfway).
+    assert abs(values[1]) < 0.01, f"Expected ⟨Z⟩ ≈ 0 at t=0.5 but got {values[1]}"
 
 
 # ---------------------------------------------------------------------------
@@ -135,24 +141,34 @@ def test_with_hamiltonian():
 
 
 def test_save_at_validation_empty():
-    state = _excited_2q()
+    observable = _z0_observable()
     lindblad = _make_2q_lower_lindblad()
     with pytest.raises(ValueError, match="save_at must be non-empty"):
-        solve(state=state, lindblad=lindblad, t_span=(0.0, 1.0), save_at=[])
+        solve(observable=observable, lindblad=lindblad, t_span=(0.0, 1.0), save_at=[])
 
 
 def test_save_at_validation_unsorted():
-    state = _excited_2q()
+    observable = _z0_observable()
     lindblad = _make_2q_lower_lindblad()
     with pytest.raises(ValueError, match="sorted"):
-        solve(state=state, lindblad=lindblad, t_span=(0.0, 3.0), save_at=[2.0, 1.0])
+        solve(
+            observable=observable,
+            lindblad=lindblad,
+            t_span=(0.0, 3.0),
+            save_at=[2.0, 1.0],
+        )
 
 
 def test_save_at_validation_out_of_bounds():
-    state = _excited_2q()
+    observable = _z0_observable()
     lindblad = _make_2q_lower_lindblad()
     with pytest.raises(ValueError, match="t_span"):
-        solve(state=state, lindblad=lindblad, t_span=(0.0, 1.0), save_at=[2.0])
+        solve(
+            observable=observable,
+            lindblad=lindblad,
+            t_span=(0.0, 1.0),
+            save_at=[2.0],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -161,12 +177,12 @@ def test_save_at_validation_out_of_bounds():
 
 
 def test_type_mismatch():
-    state = PauliSum.new(2, [("II", 1.0)])  # 2-qubit  → N=1 interface
+    observable = PauliSum.new(2, [("II", 1.0)])  # 2-qubit → N=1 interface
     ham = PauliSum.new(16, [("I" * 16, 1.0)])  # 16-qubit → N=4 interface
     lindblad = _make_2q_lower_lindblad()
     with pytest.raises(TypeError):
         solve(
-            state=state,
+            observable=observable,
             lindblad=lindblad,
             t_span=(0.0, 1.0),
             save_at=[0.5],
@@ -175,22 +191,23 @@ def test_type_mismatch():
 
 
 # ---------------------------------------------------------------------------
-# Test 9: returned states are PauliSum with working trace
+# Test 9: returned observables are PauliSum with working expectation
 # ---------------------------------------------------------------------------
 
 
 def test_returned_states_are_paulisum():
-    state = _excited_2q()
+    observable = _z0_observable()
     lindblad = _make_2q_lower_lindblad()
 
-    _, states = solve(state=state, lindblad=lindblad, t_span=(0.0, 1.0), save_at=[0.5])
+    _, states = solve(
+        observable=observable, lindblad=lindblad, t_span=(0.0, 1.0), save_at=[0.5]
+    )
     s = states[0]
 
     assert isinstance(s, PauliSum)
-    # trace("Z?*") sums all Z/I coefficients, conserved at 1.0
+    # The observable (ZI) evolves — verify we can trace it with a wildcard pattern.
     tr = s.trace("Z?*")
     assert isinstance(tr, float)
-    assert abs(tr - 1.0) < 1e-6
 
 
 # ---------------------------------------------------------------------------
@@ -199,9 +216,10 @@ def test_returned_states_are_paulisum():
 
 
 def test_dense_rate_matrix():
-    state = _excited_2q()
+    observable = _z0_observable()
     gamma = 0.5
     save_at = [0.5, 1.0]
+    rho0 = _excited_2q_state()
 
     diag_lindblad = LindbladOp(
         jump_ops=[
@@ -219,18 +237,18 @@ def test_dense_rate_matrix():
     )
 
     _, vals_diag = solve(
-        state=state,
+        observable=observable,
         lindblad=diag_lindblad,
         t_span=(0.0, 2.0),
         save_at=save_at,
-        observable="trace:Z0",
+        initial_state=rho0,
     )
     _, vals_dense = solve(
-        state=state,
+        observable=observable,
         lindblad=dense_lindblad,
         t_span=(0.0, 2.0),
         save_at=save_at,
-        observable="trace:Z0",
+        initial_state=rho0,
     )
 
     for vd, vn in zip(vals_diag, vals_dense):

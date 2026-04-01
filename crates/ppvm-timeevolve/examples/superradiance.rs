@@ -1,16 +1,19 @@
-/// Superradiance example — Budget truncation showcase.
+/// Superradiance example — Budget truncation showcase (Heisenberg picture).
+///
+/// The propagated object is an **observable** O (a PauliSum of Z operators), NOT a density
+/// matrix.  It evolves under the adjoint Lindblad master equation `dO/dt = L†(O)`.
+/// The raising operators describe collective emission; the adjoint picture keeps the
+/// observable sparse so that Budget truncation is effective.
 ///
 /// Demonstrates that a tight `Budget` cap achieves a meaningful speedup over a
 /// generous baseline while keeping observable error small.  Per-stage truncation
-/// (Task 26) makes both variants work with `SolverConfig::default()` — no manual
-/// rtol tuning is required.
+/// makes both variants work with `SolverConfig::default()` — no manual rtol tuning.
 ///
 /// Variants
 /// --------
-/// 1. Baseline : Budget { target=2000 } — generous cap; state never hits the limit,
-///               so this behaves like untruncated evolution.
+/// 1. Baseline : Budget { target=2000 } — generous cap; observable never hits the limit.
 /// 2. Budget   : Budget { target=200  } — tight cap; DOPRI5 takes fewer RHS evaluations
-///               per unit time because the state is smaller.  Accuracy loss is small.
+///               per unit time because the observable is smaller.  Accuracy loss is small.
 ///
 /// System: n=5, 25 Lindblad raising terms (< PAR_THRESHOLD=200 → sequential path).
 /// Change N to 15 to engage Rayon parallelism (225 terms > threshold).

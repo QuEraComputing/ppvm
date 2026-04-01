@@ -1,3 +1,5 @@
+use ppvm_runtime::prelude::{ACMapIter, Config, Pauli, PauliIter, PauliSum};
+
 /// A separable initial state ρ₀ = ⊗ᵢ ρ₀⁽ⁱ⁾ encoded as per-qubit Bloch vectors.
 ///
 /// Used to compute expectation values ⟨O(t)⟩ = Tr(ρ₀ O(t)) for a Heisenberg-picture
@@ -67,11 +69,44 @@ impl ProductState {
         let bloch = flat.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
         ProductState { bloch }
     }
+
+    /// Computes ⟨O⟩ = Tr(ρ₀ O) = Σ_α c_α · Π_i weight(α_i).
+    ///
+    /// Runs in O(|O| × n). Called only at save checkpoints — not in the RK hot loop.
+    pub fn expectation<T>(&self, observable: &PauliSum<T>) -> f64
+    where
+        T: Config,
+        for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+        T::Coeff: Into<f64> + Copy,
+        T::PauliWordType: PauliIter,
+    {
+        observable.data().iter().map(|(word, coeff)| {
+            let weight: f64 = word.iter().enumerate().map(|(i, pauli)| match pauli {
+                Pauli::I => 1.0,
+                Pauli::X => self.bloch[i][0],
+                Pauli::Y => self.bloch[i][1],
+                Pauli::Z => self.bloch[i][2],
+                _ => 0.0, // Pauli::L (loss) does not contribute
+            }).product();
+            (*coeff).into() * weight
+        }).sum()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ppvm_runtime::prelude::{PauliSum, config::indexmap::ByteFxHashF64};
+
+    type S = ByteFxHashF64<2>;
+
+    fn sum2(terms: &[(&str, f64)]) -> PauliSum<S> {
+        let mut s: PauliSum<S> = PauliSum::builder().n_qubits(2).build();
+        for &(w, c) in terms {
+            s += (w, c);
+        }
+        s
+    }
 
     #[test]
     fn test_all_zero_n_qubits() {
@@ -98,5 +133,46 @@ mod tests {
     #[should_panic(expected = "bit value 2 is not 0 or 1")]
     fn test_bitstring_invalid() {
         ProductState::bitstring(&[2]);
+    }
+
+    // ── expectation tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_all_zero_expectation() {
+        // all_zero: bz = +1 for both qubits.
+        // ZI → weight = (+1)(1) = +1; IZ → (1)(+1) = +1; ZZ → (+1)(+1) = +1; II → 1.
+        // Total = 1 + 1 + 1 + 1 = 4.
+        let rho0 = ProductState::all_zero(2);
+        let obs = sum2(&[("ZI", 1.0), ("IZ", 1.0), ("ZZ", 1.0), ("II", 1.0)]);
+        assert!((rho0.expectation(&obs) - 4.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn test_bitstring_10_expectation() {
+        // bits=[1,0]: bz = [-1, +1].
+        // ZI → (-1)(1) = -1; IZ → (1)(+1) = +1; ZZ → (-1)(+1) = -1; II → 1.
+        // Total = -1 + 1 - 1 + 1 = 0.
+        let rho0 = ProductState::bitstring(&[1, 0]);
+        let obs = sum2(&[("ZI", 1.0), ("IZ", 1.0), ("ZZ", 1.0), ("II", 1.0)]);
+        assert!((rho0.expectation(&obs) - 0.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn test_bloch_x_plus_expectation() {
+        // bx=1, by=bz=0 for both qubits.
+        // Only {I,X}^⊗2 strings survive; Y and Z terms contribute 0.
+        // XI → (1)(1) = 1; IX → (1)(1) = 1; XX → (1)(1) = 1; II → 1. Total = 4.
+        // ZI → (0)(1) = 0 (bz=0).
+        let rho0 = ProductState::bloch_vectors(vec![[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
+        let obs = sum2(&[("XI", 1.0), ("IX", 1.0), ("XX", 1.0), ("II", 1.0), ("ZI", 1.0)]);
+        assert!((rho0.expectation(&obs) - 4.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn test_xy_zero_for_bitstring() {
+        // Bitstring states have bx=by=0; X and Y terms contribute 0.
+        let rho0 = ProductState::bitstring(&[0, 1]);
+        let obs = sum2(&[("XI", 1.0), ("YI", 1.0), ("IX", 1.0), ("IY", 1.0), ("XY", 1.0)]);
+        assert!((rho0.expectation(&obs) - 0.0).abs() < 1e-14);
     }
 }

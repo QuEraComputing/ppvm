@@ -69,15 +69,16 @@ impl<T: Config> SolverCache<T> {
 // Macro to avoid repeating the full where-clause for every cached function.
 // (Rust does not have where-clause aliases, so we spell it out each time.)
 
-/// Advance `state` in-place from `t_span.0` to `t_span.1`, reusing `cache`.
+/// Advance `observable` (observable O) in-place from `t_span.0` to `t_span.1`, reusing `cache`.
 ///
+/// Propagates O under the Heisenberg-picture adjoint master equation `dO/dt = i[H, O] + L†(O)`.
 /// Identical to [`solve_mut`] but accepts a caller-managed [`SolverCache`] so that
 /// repeated calls (e.g. parameter sweeps) pay zero allocation cost per call.
 #[allow(clippy::too_many_arguments)] // solver API; all arguments are semantically distinct
 pub fn solve_mut_cached<T: Config, R, F>(
     hamiltonian: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
-    state: &mut PauliSum<T>,
+    observable: &mut PauliSum<T>,
     t_span: (f64, f64),
     save_at: &[f64],
     callback: F,
@@ -112,8 +113,8 @@ where
     F: Fn(f64, &PauliSum<T>) -> R,
 {
     let mut t = t_span.0;
-    let mut dt = estimate_h0(hamiltonian, lindblad, state, t_span, &config);
-    rhs_into(hamiltonian, lindblad, state, &mut cache.k[0]);
+    let mut dt = estimate_h0(hamiltonian, lindblad, observable, t_span, &config);
+    rhs_into(hamiltonian, lindblad, observable, &mut cache.k[0]);
     let mut times = Vec::with_capacity(save_at.len());
     let mut results = Vec::with_capacity(save_at.len());
 
@@ -125,10 +126,10 @@ where
             }
             let dt_capped = dt.min(remaining);
 
-            match step(hamiltonian, lindblad, state, dt_capped, &config, cache) {
+            match step(hamiltonian, lindblad, observable, dt_capped, &config, cache) {
                 StepResult::Accept { h_new } => {
                     t += dt_capped;
-                    std::mem::swap(state, &mut cache.y_scratch);
+                    std::mem::swap(observable, &mut cache.y_scratch);
                     cache.k.swap(0, 6);
                     dt = h_new;
                 }
@@ -139,18 +140,20 @@ where
         }
 
         times.push(t_save);
-        results.push(callback(t_save, state));
+        results.push(callback(t_save, observable));
     }
 
     (times, results)
 }
 
-/// Clone `initial` and delegate to [`solve_mut_cached`].  `initial` is not modified.
+/// Clone `observable` (O) and delegate to [`solve_mut_cached`].  `observable` is not modified.
+///
+/// Propagates O under the Heisenberg-picture adjoint master equation `dO/dt = i[H, O] + L†(O)`.
 #[allow(clippy::too_many_arguments)] // solver API; all arguments are semantically distinct
 pub fn solve_cached<T: Config, R, F>(
     hamiltonian: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
-    initial: &PauliSum<T>,
+    observable: &PauliSum<T>,
     t_span: (f64, f64),
     save_at: &[f64],
     callback: F,
@@ -184,19 +187,20 @@ where
     for<'a> T::Map: Trace<'a, T::PauliWordType, Output = T::Coeff>,
     F: Fn(f64, &PauliSum<T>) -> R,
 {
-    let mut state = initial.clone();
-    solve_mut_cached(hamiltonian, lindblad, &mut state, t_span, save_at, callback, config, cache)
+    let mut obs = observable.clone();
+    solve_mut_cached(hamiltonian, lindblad, &mut obs, t_span, save_at, callback, config, cache)
 }
 
-/// Advance `state` in-place from `t_span.0` to `t_span.1`.
+/// Advance `observable` (O) in-place from `t_span.0` to `t_span.1`.
 ///
+/// Propagates O under the Heisenberg-picture adjoint master equation `dO/dt = i[H, O] + L†(O)`.
 /// At each time in `save_at` (sorted, within t_span), the step is capped
 /// exactly to that time and `callback` is invoked.  Returns the recorded
 /// times (equal to `save_at`) and the corresponding callback outputs.
 pub fn solve_mut<T: Config, R, F>(
     hamiltonian: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
-    state: &mut PauliSum<T>,
+    observable: &mut PauliSum<T>,
     t_span: (f64, f64),
     save_at: &[f64],
     callback: F,
@@ -229,15 +233,17 @@ where
     for<'a> T::Map: Trace<'a, T::PauliWordType, Output = T::Coeff>,
     F: Fn(f64, &PauliSum<T>) -> R,
 {
-    let mut cache = SolverCache::new(state);
-    solve_mut_cached(hamiltonian, lindblad, state, t_span, save_at, callback, config, &mut cache)
+    let mut cache = SolverCache::new(observable);
+    solve_mut_cached(hamiltonian, lindblad, observable, t_span, save_at, callback, config, &mut cache)
 }
 
-/// Clone `initial` and delegate to [`solve_mut`].  `initial` is not modified.
+/// Clone `observable` (O) and delegate to [`solve_mut`].  `observable` is not modified.
+///
+/// Propagates O under the Heisenberg-picture adjoint master equation `dO/dt = i[H, O] + L†(O)`.
 pub fn solve<T: Config, R, F>(
     hamiltonian: Option<&PauliSum<T>>,
     lindblad: &LindbladOp<T>,
-    initial: &PauliSum<T>,
+    observable: &PauliSum<T>,
     t_span: (f64, f64),
     save_at: &[f64],
     callback: F,
@@ -270,9 +276,9 @@ where
     for<'a> T::Map: Trace<'a, T::PauliWordType, Output = T::Coeff>,
     F: Fn(f64, &PauliSum<T>) -> R,
 {
-    let mut state = initial.clone();
-    let mut cache = SolverCache::new(&state);
-    solve_mut_cached(hamiltonian, lindblad, &mut state, t_span, save_at, callback, config, &mut cache)
+    let mut obs = observable.clone();
+    let mut cache = SolverCache::new(&obs);
+    solve_mut_cached(hamiltonian, lindblad, &mut obs, t_span, save_at, callback, config, &mut cache)
 }
 
 #[cfg(test)]

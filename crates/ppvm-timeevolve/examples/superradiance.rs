@@ -57,7 +57,8 @@ fn build_ops() -> LindbladOp<SB> {
     LindbladOp::new(ops, rate_matrix())
 }
 
-fn initial_state(strat: Budget) -> PauliSum<SB> {
+/// Initial observable O(0). Propagated under `dO/dt = L†(O)` — NOT the density matrix.
+fn initial_observable(strat: Budget) -> PauliSum<SB> {
     let mut p = PauliSum::builder().n_qubits(N).strategy(strat).build();
     let t = vec!['I'; N];
     for i in 0..N {
@@ -75,7 +76,7 @@ fn main() {
     // ── Variant 1: Baseline ──────────────────────────────────────────────────
     let t0 = Instant::now();
     let (_, base_out) = solve(
-        None, &lindblad, &initial_state(Budget { target: BASE_TARGET }),
+        None, &lindblad, &initial_observable(Budget { target: BASE_TARGET }),
         (0.0, TMAX), &save_at,
         |_, p: &PauliSum<SB>| (p.trace(&pattern), p.data().len()),
         SolverConfig::default(),
@@ -87,7 +88,7 @@ fn main() {
     // truncated ODE, so no rtol adjustment is needed.
     let t1 = Instant::now();
     let (_, bud_out) = solve(
-        None, &lindblad, &initial_state(Budget { target: BUDGET_TARGET }),
+        None, &lindblad, &initial_observable(Budget { target: BUDGET_TARGET }),
         (0.0, TMAX), &save_at,
         |_, p: &PauliSum<SB>| (p.trace(&pattern), p.data().len()),
         SolverConfig::default(),

@@ -536,7 +536,10 @@ where
     }
 }
 
-/// Computes `dP/dt = i[ham, P] + L(P)` and returns the result.
+/// Computes the Heisenberg-picture RHS: `dP/dt = i[H, P] + L†(P)`.
+///
+/// `L†` is the adjoint Lindblad superoperator (observable picture). The `LindbladOp`
+/// stores pre-conjugated left operators so `apply` implements the adjoint form directly.
 ///
 /// Creates a fresh zero-initialised `PauliSum` using `T::Strategy::default()`, calls
 /// `commutator_real` if `ham` is provided, then `lindblad.apply`, then `truncate()`.

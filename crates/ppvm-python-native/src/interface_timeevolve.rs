@@ -1,5 +1,6 @@
-use ppvm_runtime::prelude::{Config, PauliPattern, PauliSum, Trace};
+use ppvm_runtime::prelude::{Config, PauliSum};
 use ppvm_timeevolve::lindblad::{JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix};
+use ppvm_timeevolve::product_state::ProductState;
 use ppvm_timeevolve::solve::{SolverCache, SolverConfig, solve_cached};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -58,7 +59,7 @@ fn build_config(
 #[allow(clippy::too_many_arguments)]
 pub fn solve_timeevolve_states(
     py: Python<'_>,
-    state: &Bound<PyAny>,
+    observable: &Bound<PyAny>,
     lindblad_ops: Vec<(usize, String)>,
     rates: &Bound<PyAny>,
     t_span_start: f64,
@@ -78,14 +79,14 @@ pub fn solve_timeevolve_states(
     macro_rules! try_arm {
         ($N:literal) => {
             paste::paste! {
-                if let Ok(s) = state.cast::<crate::interface::[<PauliSumIndexMapFxHash $N>]>() {
+                if let Ok(s) = observable.cast::<crate::interface::[<PauliSumIndexMapFxHash $N>]>() {
                     let s_ref = s.borrow();
                     let ham_opt: Option<PyRef<crate::interface::[<PauliSumIndexMapFxHash $N>]>> =
                         match hamiltonian {
                             Some(h) => Some(
                                 h.cast::<crate::interface::[<PauliSumIndexMapFxHash $N>]>()
                                     .map_err(|_| PyTypeError::new_err(
-                                        "hamiltonian and state must have the same native type"
+                                        "hamiltonian and observable must have the same native type"
                                     ))?
                                     .borrow(),
                             ),
@@ -140,49 +141,49 @@ pub fn solve_timeevolve_states(
     try_arm!(15);
 
     Err(PyTypeError::new_err(
-        "unsupported state type: expected PauliSumIndexMapFxHash0 through PauliSumIndexMapFxHash15",
+        "unsupported observable type: expected PauliSumIndexMapFxHash0 through PauliSumIndexMapFxHash15",
     ))
 }
 
 // ──────────────────────────────────────────────────────────────────
-// solve_timeevolve_observables
-// Returns (times, list-of-list[float]) — outer: save points, inner: one f64 per pattern.
-// No state cloning; scalar traces computed in a single Rust pass.
+// solve_timeevolve_expectation
+// Returns (times, list[float]) — ⟨O(t)⟩ = Tr(ρ₀ O(t)) at each save point.
+// ProductState is constructed once; no PauliSum cloning per save point.
 // ──────────────────────────────────────────────────────────────────
 
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-pub fn solve_timeevolve_observables(
-    state: &Bound<PyAny>,
+pub fn solve_timeevolve_expectation(
+    observable: &Bound<PyAny>,
+    bloch_vectors: Vec<f64>,
     lindblad_ops: Vec<(usize, String)>,
     rates: &Bound<PyAny>,
     t_span_start: f64,
     t_span_end: f64,
     save_at: Vec<f64>,
-    patterns: Vec<String>,
     hamiltonian: Option<&Bound<PyAny>>,
     rtol: f64,
     atol: f64,
     h0: Option<f64>,
     hmin: f64,
     hmax: f64,
-) -> PyResult<(Vec<f64>, Vec<Vec<f64>>)> {
+) -> PyResult<(Vec<f64>, Vec<f64>)> {
     let rate_matrix = parse_rate_matrix(rates)?;
     let config = build_config(rtol, atol, h0, hmin, hmax);
-    // Pre-parse patterns once, before the dispatch.
-    let parsed: Vec<PauliPattern> = patterns.iter().map(|s| PauliPattern::from(s.as_str())).collect();
+    // Construct ProductState once before dispatch; captured by reference in callback.
+    let ps = ProductState::from_flat(&bloch_vectors);
 
     macro_rules! try_arm {
         ($N:literal) => {
             paste::paste! {
-                if let Ok(s) = state.cast::<crate::interface::[<PauliSumIndexMapFxHash $N>]>() {
+                if let Ok(s) = observable.cast::<crate::interface::[<PauliSumIndexMapFxHash $N>]>() {
                     let s_ref = s.borrow();
                     let ham_opt: Option<PyRef<crate::interface::[<PauliSumIndexMapFxHash $N>]>> =
                         match hamiltonian {
                             Some(h) => Some(
                                 h.cast::<crate::interface::[<PauliSumIndexMapFxHash $N>]>()
                                     .map_err(|_| PyTypeError::new_err(
-                                        "hamiltonian and state must have the same native type"
+                                        "hamiltonian and observable must have the same native type"
                                     ))?
                                     .borrow(),
                             ),
@@ -199,9 +200,7 @@ pub fn solve_timeevolve_observables(
                         &s_ref.inner,
                         (t_span_start, t_span_end),
                         &save_at,
-                        |_, p: &PauliSum<crate::interface::[<IndexMapFxHash $N>]>| {
-                            parsed.iter().map(|pat| p.trace(pat).into()).collect::<Vec<f64>>()
-                        },
+                        |_, p: &PauliSum<crate::interface::[<IndexMapFxHash $N>]>| ps.expectation(p),
                         config,
                         &mut cache,
                     );
@@ -229,6 +228,51 @@ pub fn solve_timeevolve_observables(
     try_arm!(15);
 
     Err(PyTypeError::new_err(
-        "unsupported state type: expected PauliSumIndexMapFxHash0 through PauliSumIndexMapFxHash15",
+        "unsupported observable type: expected PauliSumIndexMapFxHash0 through PauliSumIndexMapFxHash15",
+    ))
+}
+
+// ──────────────────────────────────────────────────────────────────
+// product_state_expectation
+// Standalone Tr(ρ₀ O) on a raw PauliSum — no ODE solve.
+// ──────────────────────────────────────────────────────────────────
+
+#[pyfunction]
+pub fn product_state_expectation(
+    observable: &Bound<PyAny>,
+    bloch_vectors: Vec<f64>,
+) -> PyResult<f64> {
+    let ps = ProductState::from_flat(&bloch_vectors);
+
+    macro_rules! try_arm {
+        ($N:literal) => {
+            paste::paste! {
+                if let Ok(s) = observable.cast::<crate::interface::[<PauliSumIndexMapFxHash $N>]>() {
+                    let s_ref = s.borrow();
+                    return Ok(ps.expectation(&s_ref.inner));
+                }
+            }
+        };
+    }
+
+    try_arm!(0);
+    try_arm!(1);
+    try_arm!(2);
+    try_arm!(3);
+    try_arm!(4);
+    try_arm!(5);
+    try_arm!(6);
+    try_arm!(7);
+    try_arm!(8);
+    try_arm!(9);
+    try_arm!(10);
+    try_arm!(11);
+    try_arm!(12);
+    try_arm!(13);
+    try_arm!(14);
+    try_arm!(15);
+
+    Err(PyTypeError::new_err(
+        "unsupported observable type: expected PauliSumIndexMapFxHash0 through PauliSumIndexMapFxHash15",
     ))
 }

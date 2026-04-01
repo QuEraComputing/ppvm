@@ -63,8 +63,9 @@ impl ProductState {
     /// Constructs a `ProductState` from a flat array `[bx₀,by₀,bz₀, bx₁,by₁,bz₁, …]`.
     /// Used by the native Python bridge, which passes Bloch vectors as a flat `Vec<f64>`.
     /// Panics if `flat.len()` is not divisible by 3.
-    #[allow(dead_code)] // called by ppvm-python-native bridge in Task 4
-    pub(crate) fn from_flat(flat: &[f64]) -> Self {
+    /// Called by the Python native bridge (`ppvm-python-native`), which passes Bloch
+    /// vectors as a flat buffer. Must be `pub` so the bridge crate can access it.
+    pub fn from_flat(flat: &[f64]) -> Self {
         assert!(flat.len().is_multiple_of(3), "from_flat: length must be divisible by 3");
         let bloch = flat.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
         ProductState { bloch }

@@ -75,5 +75,7 @@ pub mod ppvm_python_native {
     #[pymodule_export]
     pub use crate::interface_timeevolve::solve_timeevolve_states;
     #[pymodule_export]
-    pub use crate::interface_timeevolve::solve_timeevolve_observables;
+    pub use crate::interface_timeevolve::solve_timeevolve_expectation;
+    #[pymodule_export]
+    pub use crate::interface_timeevolve::product_state_expectation;
 }

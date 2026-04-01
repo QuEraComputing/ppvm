@@ -7,6 +7,7 @@ import ppvm_python_native
 
 if TYPE_CHECKING:
     from .paulisum import PauliSum
+    from .product_state import ProductState
 
 
 @dataclass
@@ -46,33 +47,35 @@ def _wrap_native(native_obj) -> "PauliSum":
 
 
 def solve(
-    state: "PauliSum",
+    observable: "PauliSum",
     lindblad: LindbladOp,
     t_span: tuple[float, float],
     save_at: Sequence[float],
     *,
     hamiltonian: "PauliSum | None" = None,
-    observable: "str | list[str] | None" = None,
+    initial_state: "ProductState | None" = None,
     config: SolverConfig | None = None,
 ) -> "tuple[list[float], list]":
-    """Solve the Lindblad master equation.
+    """Solve the Heisenberg-picture adjoint master equation.
+
+    Propagates an observable O under dO/dt = i[H, O] + L†(O).
+    To obtain expectation values, supply an `initial_state` ρ₀; the solver then
+    returns ⟨O(t)⟩ = Tr(ρ₀ O(t)) at each save point without cloning the full state.
 
     Args:
-        state: Initial density-matrix state as a PauliSum.
+        observable: Initial observable O (PauliSum) in the Heisenberg picture.
         lindblad: Dissipation operator (jump ops + rate matrix).
         t_span: (t_start, t_end) integration interval.
         save_at: Times at which to record results. Must be non-empty,
             sorted ascending, and within t_span.
-        hamiltonian: Optional coherent Hamiltonian (same type as state).
-        observable: Controls what is returned at each save point.
-            - None → list[PauliSum] (full state snapshots)
-            - "trace:<pattern>" → list[float] (single scalar)
-            - ["trace:<p1>", "trace:<p2>", ...] → list[list[float]]
+        hamiltonian: Optional coherent Hamiltonian (same type as observable).
+        initial_state: ρ₀ for computing ⟨O(t)⟩ = Tr(ρ₀ O(t)).
         config: ODE solver parameters (tolerances, step sizes).
 
     Returns:
-        (times, results) where times are the actual save times and
-        results depend on the observable mode.
+        (times, results) where:
+            - `initial_state` given  → results is list[float] (expectation values)
+            - neither given          → results is list[PauliSum] (raw snapshots)
     """
     # --- validation ---
     t0, t1 = t_span
@@ -98,7 +101,7 @@ def solve(
         config = SolverConfig()
 
     # --- build native args ---
-    native_state = state._interface
+    native_observable = observable._interface
     native_ham = hamiltonian._interface if hamiltonian is not None else None
     ops_list = [(op.qubit, op.direction) for op in lindblad.jump_ops]
     rates = lindblad.rates
@@ -118,27 +121,15 @@ def solve(
     )
 
     # --- dispatch ---
-    if observable is None:
-        times, raw_states = ppvm_python_native.solve_timeevolve_states(
-            state=native_state, **kwargs
+    if initial_state is not None:
+        # Fast path: no state clone, single f64 per save point computed in Rust.
+        times, results = ppvm_python_native.solve_timeevolve_expectation(
+            observable=native_observable, bloch_vectors=initial_state._bloch, **kwargs
         )
-        return times, [_wrap_native(s) for s in raw_states]
+        return times, results
 
-    # scalar observable mode
-    single = isinstance(observable, str)
-    obs_list = [observable] if single else list(observable)
-    patterns = []
-    for obs in obs_list:
-        if not obs.startswith("trace:"):
-            raise ValueError(
-                f"unsupported observable {obs!r}: only 'trace:<pattern>' is supported"
-            )
-        patterns.append(obs[len("trace:") :])
-
-    times, results = ppvm_python_native.solve_timeevolve_observables(
-        state=native_state, patterns=patterns, **kwargs
+    # Default: raw PauliSum snapshots.
+    times, raw_states = ppvm_python_native.solve_timeevolve_states(
+        observable=native_observable, **kwargs
     )
-    if single:
-        # unwrap inner list: list[list[float]] → list[float]
-        return times, [row[0] for row in results]
-    return times, results
+    return times, [_wrap_native(s) for s in raw_states]

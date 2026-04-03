@@ -1,13 +1,9 @@
 use super::GeneralizedTableau;
 use super::sparsevec::SparseVector;
-use super::traits::{TGate, TableauIndex};
-use bitvec::view::BitView;
-use crate::tableau::{CliffordExtensions, LossyMeasure, Reset};
-use crate::traits::{
-    Clifford, CorrelatedLossChannel, Depolarizing2, LossChannel, PauliError, RotationOne,
-    TwoQubitPauliError, U3Gate,
-};
+use super::tableau_index::TableauIndex;
+use crate::traits::*;
 use crate::{config::Config, traits::Depolarizing};
+use bitvec::view::BitView;
 use itertools::Itertools;
 use num::Integer;
 use num::PrimInt;
@@ -444,7 +440,7 @@ mod tests {
     use super::RunStim;
     use crate::config::indexmap::ByteFxHashF64;
     use crate::tableau::GeneralizedTableau;
-    use crate::tableau::traits::LossyMeasure;
+    use crate::traits::LossyMeasure;
 
     const TEST_PROGRAM: &str = "
     R 0 1 2 3 4 5 6 7 8 9

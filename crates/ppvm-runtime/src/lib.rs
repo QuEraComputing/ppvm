@@ -18,7 +18,7 @@ pub mod prelude {
     pub use crate::pattern::PauliPattern;
     pub use crate::phase::PhasedPauliWord;
     pub use crate::sum::{PauliSum, impl_op_mul_assign_coefficient};
-    pub use crate::tableau::{GeneralizedTableau, LossyMeasure, Measure, TGate, Tableau};
+    pub use crate::tableau::{GeneralizedTableau, Tableau};
     pub use crate::traits::*;
     pub use crate::word::PauliWord;
 }

@@ -1,8 +1,8 @@
 use super::data::{GeneralizedTableau, Tableau, symplectic_inner};
-use super::traits::{LossyMeasure, Measure};
 use crate::config::Config;
 use crate::tableau::sparsevec::SparseVector;
-use crate::tableau::traits::TableauIndex;
+use crate::tableau::tableau_index::TableauIndex;
+use crate::traits::{LossyMeasure, Measure};
 use bitvec::view::BitView;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
@@ -100,8 +100,9 @@ where
         // NOTE: this could probably be optimized
         for (&idx, coeff) in &coeff_map {
             let branch_index = idx ^ stab_anticomm_bits; // stab_anticomm_bits is the index shift
-            let phase =
-                (phase_decomp + self.compute_phase(destab_anticomm_bits_bits, idx, stab_anticomm_bits)) % 4;
+            let phase = (phase_decomp
+                + self.compute_phase(destab_anticomm_bits_bits, idx, stab_anticomm_bits))
+                % 4;
             let complex_phase: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase as usize].into();
             let Some(coeff_branch) = coeff_map.get(&branch_index).copied() else {
                 continue;

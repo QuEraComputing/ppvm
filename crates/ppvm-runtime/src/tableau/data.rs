@@ -7,7 +7,7 @@ use super::sparsevec::SparseVector;
 use crate::traits::PauliWordTrait;
 use crate::word::PauliWord;
 use crate::{char::Pauli, config::Config};
-use crate::{phase::PhasedPauliWord, tableau::traits::TableauIndex};
+use crate::{phase::PhasedPauliWord, tableau::tableau_index::TableauIndex};
 use num::{
     One, Zero,
     complex::{Complex, Complex64, ComplexFloat},
@@ -314,7 +314,12 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    pub(crate) fn compute_phase(&self, destab_anticomm_bits_bits: I, basis_index: I, stab_anticomm_bits: I) -> u8 {
+    pub(crate) fn compute_phase(
+        &self,
+        destab_anticomm_bits_bits: I,
+        basis_index: I,
+        stab_anticomm_bits: I,
+    ) -> u8 {
         // phase convention: 0: +1, 1: +i, 2: -1, 3: -i
         let one = I::one();
         let zero = I::zero();
@@ -384,7 +389,8 @@ where
             return;
         }
 
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = self.compute_decomposition(addr0, pauli);
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) =
+            self.compute_decomposition(addr0, pauli);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
         let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
@@ -398,7 +404,8 @@ where
 
             // get the phase contributions from duplicate destabilizers
             // and anti-commuting through destabilizers
-            let branch_phase_contribution = self.compute_phase(destab_anticomm_bits_bits, idx, stab_anticomm_bits);
+            let branch_phase_contribution =
+                self.compute_phase(destab_anticomm_bits_bits, idx, stab_anticomm_bits);
             let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
 
             let phase_factor: Complex<T::Coeff> =
@@ -436,7 +443,8 @@ where
             return;
         }
 
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = self.compute_decomposition(addr0, pauli);
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) =
+            self.compute_decomposition(addr0, pauli);
 
         let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
         let old_coefficients = std::mem::replace(coefficients, C::new());
@@ -450,7 +458,8 @@ where
 
             // get the phase contributions from duplicate destabilizers
             // and anti-commuting through destabilizers
-            let branch_phase_contribution = self.compute_phase(destab_anticomm_bits_bits, idx, stab_anticomm_bits);
+            let branch_phase_contribution =
+                self.compute_phase(destab_anticomm_bits_bits, idx, stab_anticomm_bits);
             let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
 
             let phase_factor: Complex<T::Coeff> =
@@ -496,10 +505,13 @@ mod tests {
         // After H: stabilizer = +X, destabilizer = +Z
         // stab_anticomm_bits = 1 (stabilizer has xbit[0]=true)
         // both phases should be 0
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits);
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) =
+            tab.compute_decomposition(0, Pauli::Z);
+        let phase0 =
+            phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits);
         assert_eq!(phase0, 0);
-        let phase1 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits);
+        let phase1 =
+            phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits);
         assert_eq!(phase1, 0);
     }
 
@@ -509,10 +521,13 @@ mod tests {
         tab.tableau.h(0);
         tab.tableau.s(0);
 
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits);
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) =
+            tab.compute_decomposition(0, Pauli::Z);
+        let phase0 =
+            phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits);
         assert_eq!(phase0, 0);
-        let phase1 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits);
+        let phase1 =
+            phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits);
         assert_eq!(phase1, 0);
     }
 
@@ -522,10 +537,13 @@ mod tests {
         tab.tableau.h(0);
         tab.tableau.z(0);
 
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits);
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) =
+            tab.compute_decomposition(0, Pauli::Z);
+        let phase0 =
+            phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits);
         assert_eq!(phase0, 0);
-        let phase1 = phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits);
+        let phase1 =
+            phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits);
         assert_eq!(phase1, 0);
     }
 
@@ -536,10 +554,15 @@ mod tests {
         tab.tableau.s(0);
         tab.tableau.h(0);
 
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) = tab.compute_decomposition(0, Pauli::Z);
-        let phase0 = (phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits)) % 4;
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) =
+            tab.compute_decomposition(0, Pauli::Z);
+        let phase0 = (phase_decomp
+            + tab.compute_phase(destab_anticomm_bits_bits, 0, stab_anticomm_bits))
+            % 4;
         assert_eq!(phase0, 1);
-        let phase1 = (phase_decomp + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits)) % 4;
+        let phase1 = (phase_decomp
+            + tab.compute_phase(destab_anticomm_bits_bits, 1, stab_anticomm_bits))
+            % 4;
         assert_eq!(phase1, 3);
     }
 

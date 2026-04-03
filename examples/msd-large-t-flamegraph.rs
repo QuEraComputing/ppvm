@@ -1,6 +1,5 @@
 use ppvm_runtime::config::fx64hash::Byte8F64;
 use ppvm_runtime::prelude::*;
-use ppvm_runtime::tableau::CliffordExtensions;
 
 type Tab = GeneralizedTableau<Byte8F64<11>, u128>;
 

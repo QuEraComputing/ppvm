@@ -1,7 +1,7 @@
 use bnum::types::{U256, U512, U1024, U2048};
 use paste::paste;
 use ppvm_runtime::prelude::*;
-use ppvm_runtime::tableau::{CliffordExtensions, GeneralizedTableau, Reset, RunStim};
+use ppvm_runtime::tableau::{GeneralizedTableau, RunStim};
 use pyo3::prelude::*;
 
 macro_rules! create_interface {

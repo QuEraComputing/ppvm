@@ -20,7 +20,7 @@ where
 mod tests {
     use super::*;
     use crate::config::fxhash::ByteF64;
-    use crate::tableau::traits::LossyMeasure;
+    use crate::traits::LossyMeasure;
     use crate::traits::RotationOne;
     use std::f64::consts::PI;
 

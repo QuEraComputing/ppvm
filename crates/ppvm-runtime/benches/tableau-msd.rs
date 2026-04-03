@@ -1,7 +1,6 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::config::fx64hash::Byte8F64;
 use ppvm_runtime::prelude::*;
-use ppvm_runtime::tableau::CliffordExtensions;
 use rayon::current_num_threads;
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;

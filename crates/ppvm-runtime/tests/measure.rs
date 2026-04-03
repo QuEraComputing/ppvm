@@ -1,7 +1,7 @@
 use std::f64::consts::FRAC_PI_2;
 
 use num::complex::Complex64;
-use ppvm_runtime::{config::dashmap::ByteFxHashF64, prelude::*, tableau::CliffordExtensions};
+use ppvm_runtime::{config::dashmap::ByteFxHashF64, prelude::*};
 
 #[test]
 fn test_measure_deterministic() {

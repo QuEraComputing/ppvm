@@ -1,9 +1,9 @@
 use super::sparsevec::SparseVector;
-use super::traits::TGate;
-use bitvec::view::BitView;
 use crate::config::Config;
 use crate::tableau::GeneralizedTableau;
-use crate::tableau::traits::TableauIndex;
+use crate::tableau::tableau_index::TableauIndex;
+use crate::traits::TGate;
+use bitvec::view::BitView;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, Zero};

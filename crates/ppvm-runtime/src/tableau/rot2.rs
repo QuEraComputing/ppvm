@@ -11,7 +11,7 @@ use crate::config::Config;
 use crate::tableau::GeneralizedTableau;
 use crate::tableau::sparsevec::SparseVector;
 use crate::traits::*;
-use crate::{char::Pauli, tableau::traits::TableauIndex};
+use crate::{char::Pauli, tableau::tableau_index::TableauIndex};
 
 const PAULIS: [Pauli; 4] = [Pauli::I, Pauli::X, Pauli::Z, Pauli::Y];
 
@@ -89,8 +89,8 @@ where
 mod tests {
     use super::*;
     use crate::config::fxhash::ByteF64;
-    use crate::tableau::LossyMeasure;
     use crate::traits::Clifford;
+    use crate::traits::LossyMeasure;
     use std::f64::consts::{FRAC_PI_2, PI};
 
     type TestConfig = ByteF64<1>;

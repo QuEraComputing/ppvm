@@ -6,11 +6,9 @@ use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 
 use super::data::{GeneralizedTableau, Tableau};
-use super::traits::LossyMeasure;
 use crate::config::Config;
-use crate::tableau::Reset;
 use crate::tableau::sparsevec::SparseVector;
-use crate::tableau::traits::TableauIndex;
+use crate::tableau::tableau_index::TableauIndex;
 use crate::traits::*;
 use rand::RngExt;
 

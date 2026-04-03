@@ -1,6 +1,5 @@
 use ppvm_runtime::config::indexmap::ByteFxHashF64;
 use ppvm_runtime::prelude::*;
-use ppvm_runtime::tableau::CliffordExtensions;
 
 type Tab = GeneralizedTableau<ByteFxHashF64<11>, u128>;
 

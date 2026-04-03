@@ -542,7 +542,7 @@ fn test_t_gate_measurement_statistics() {
 /// This circuit is purely Clifford so the measurement is deterministic.
 #[test]
 fn test_sqrt_y_direction() {
-    use ppvm_runtime::tableau::CliffordExtensions;
+    use ppvm_runtime::traits::CliffordExtensions;
 
     // sqrt_y|0⟩ should be |+⟩
     let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(1, 1e-12);

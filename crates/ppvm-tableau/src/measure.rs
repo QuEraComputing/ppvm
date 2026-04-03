@@ -1,4 +1,4 @@
-use super::data::{GeneralizedTableau, Tableau, symplectic_inner};
+use super::data::symplectic_inner;
 use crate::prelude::*;
 use bitvec::view::BitView;
 use num::PrimInt;

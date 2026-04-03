@@ -1,6 +1,4 @@
-use crate::data::{GeneralizedTableau, Tableau};
 use crate::prelude::*;
-use crate::sparsevec::SparseVector;
 use num::complex::Complex;
 
 macro_rules! impl_tableau_clifford {

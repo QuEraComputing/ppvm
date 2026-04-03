@@ -5,7 +5,6 @@ use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 
-use super::data::{GeneralizedTableau, Tableau};
 use crate::prelude::*;
 use rand::RngExt;
 

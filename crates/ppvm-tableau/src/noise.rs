@@ -6,10 +6,7 @@ use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 
 use super::data::{GeneralizedTableau, Tableau};
-use crate::config::Config;
-use crate::tableau::sparsevec::SparseVector;
-use crate::tableau::tableau_index::TableauIndex;
-use crate::traits::*;
+use crate::prelude::*;
 use rand::RngExt;
 
 impl<T: Config> Depolarizing<T> for Tableau<T>
@@ -311,7 +308,7 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> ResetLos
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::fxhash::ByteF64;
+    use ppvm_runtime::config::fxhash::ByteF64;
 
     type TestConfig = ByteF64<1>;
     type TestTab = GeneralizedTableau<TestConfig>;

@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
-use super::sparsevec::SparseVector;
-use super::tableau_index::TableauIndex;
 use crate::prelude::*;
+use crate::sparsevec::SparseVector;
+use crate::tableau_index::TableauIndex;
 use bitvec::view::BitView;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, PrimInt, ToPrimitive, Zero};

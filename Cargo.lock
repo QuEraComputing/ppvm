@@ -746,6 +746,7 @@ dependencies = [
  "num",
  "ppvm-runtime",
  "ppvm-sym",
+ "ppvm-tableau",
 ]
 
 [[package]]
@@ -756,6 +757,7 @@ dependencies = [
  "num",
  "paste",
  "ppvm-runtime",
+ "ppvm-tableau",
  "pyo3",
 ]
 
@@ -768,7 +770,6 @@ dependencies = [
  "approx",
  "bincode",
  "bitvec",
- "bnum",
  "bon",
  "criterion",
  "dashmap",
@@ -778,7 +779,6 @@ dependencies = [
  "insta",
  "itertools 0.14.0",
  "num",
- "rand",
  "rayon",
  "serde",
 ]
@@ -791,6 +791,20 @@ dependencies = [
  "fxhash",
  "num",
  "ppvm-runtime",
+]
+
+[[package]]
+name = "ppvm-tableau"
+version = "0.1.0"
+dependencies = [
+ "bitvec",
+ "bnum",
+ "criterion",
+ "insta",
+ "itertools 0.14.0",
+ "num",
+ "ppvm-runtime",
+ "rand",
 ]
 
 [[package]]

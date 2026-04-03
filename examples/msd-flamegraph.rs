@@ -1,5 +1,5 @@
 use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_runtime::prelude::*;
+use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
 

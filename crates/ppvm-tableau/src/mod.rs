@@ -1,6 +1,6 @@
-mod clifford;
 mod data;
 mod display;
+mod gates;
 mod measure;
 mod noise;
 mod reset;

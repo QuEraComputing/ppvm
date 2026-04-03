@@ -1,7 +1,8 @@
 use bnum::types::U256;
 use itertools::Itertools;
 use num::complex::Complex;
-use ppvm_runtime::{config::dashmap::ByteFxHashF64, prelude::*};
+use ppvm_runtime::config::dashmap::ByteFxHashF64;
+use ppvm_tableau::prelude::*;
 
 #[test]
 fn test_tableau() {

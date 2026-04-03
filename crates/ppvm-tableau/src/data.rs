@@ -3,11 +3,7 @@ use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
 use bitvec::view::BitView;
 use num::PrimInt;
 
-use super::sparsevec::SparseVector;
-use crate::traits::PauliWordTrait;
-use crate::word::PauliWord;
-use crate::{char::Pauli, config::Config};
-use crate::{phase::PhasedPauliWord, tableau::tableau_index::TableauIndex};
+use crate::prelude::*;
 use num::{
     One, Zero,
     complex::{Complex, Complex64, ComplexFloat},
@@ -36,13 +32,13 @@ impl<T: Config> Tableau<T> {
         for i in 0..n_qubits {
             // destabilizer
             let mut pw = pw_cache.clone();
-            pw.set(i, crate::char::Pauli::X);
+            pw.set(i, Pauli::X);
             data.push(pw);
         }
         for i in 0..n_qubits {
             // stabilizer
             let mut pw = pw_cache.clone();
-            pw.set(i, crate::char::Pauli::Z);
+            pw.set(i, Pauli::Z);
             data.push(pw);
         }
 
@@ -487,11 +483,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bnum::BUint;
-
     use super::*;
-    use crate::config::fxhash::ByteF64;
-    use crate::traits::Clifford;
+    use bnum::BUint;
+    use ppvm_runtime::config::fxhash::ByteF64;
 
     type TestConfig = ByteF64<1>;
     type TestTableau = GeneralizedTableau<TestConfig>;

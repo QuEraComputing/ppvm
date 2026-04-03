@@ -1,8 +1,5 @@
 use super::data::{GeneralizedTableau, Tableau, symplectic_inner};
-use crate::config::Config;
-use crate::tableau::sparsevec::SparseVector;
-use crate::tableau::tableau_index::TableauIndex;
-use crate::traits::{LossyMeasure, Measure};
+use crate::prelude::*;
 use bitvec::view::BitView;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
@@ -86,7 +83,7 @@ where
         // whether we need to pick the real or imaginary part of the overlap
         // we still might be able to optimize here
         let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) =
-            self.compute_decomposition(addr0, crate::char::Pauli::Z);
+            self.compute_decomposition(addr0, Pauli::Z);
 
         // build a temporary lookup table for faster lookup in the loop
         let mut coeff_map: HashMap<I, Complex<T::Coeff>> = self

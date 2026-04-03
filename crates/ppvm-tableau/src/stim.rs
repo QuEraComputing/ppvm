@@ -1,8 +1,4 @@
-use super::GeneralizedTableau;
-use super::sparsevec::SparseVector;
-use super::tableau_index::TableauIndex;
-use crate::traits::*;
-use crate::{config::Config, traits::Depolarizing};
+use crate::prelude::*;
 use bitvec::view::BitView;
 use itertools::Itertools;
 use num::Integer;
@@ -437,10 +433,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::RunStim;
-    use crate::config::indexmap::ByteFxHashF64;
-    use crate::tableau::GeneralizedTableau;
-    use crate::traits::LossyMeasure;
+    use crate::prelude::*;
+    use ppvm_runtime::config::indexmap::ByteFxHashF64;
+    use ppvm_runtime::prelude::*;
 
     const TEST_PROGRAM: &str = "
     R 0 1 2 3 4 5 6 7 8 9

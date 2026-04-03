@@ -1,8 +1,4 @@
-use super::sparsevec::SparseVector;
-use crate::config::Config;
-use crate::tableau::GeneralizedTableau;
-use crate::tableau::tableau_index::TableauIndex;
-use crate::traits::TGate;
+use crate::prelude::*;
 use bitvec::view::BitView;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
@@ -38,7 +34,7 @@ where
 
         let complex_cos: Complex<T::Coeff> = COS_PI_OVER_8_TIMES_EXPIPI8.into();
         let complex_sin: Complex<T::Coeff> = ISIN_PI_OVER_8_TIMES_EXPIPI8.into();
-        self.branch_with_coefficients(index, crate::char::Pauli::Z, complex_cos, complex_sin);
+        self.branch_with_coefficients(index, Pauli::Z, complex_cos, complex_sin);
     }
 
     fn t_adj(&mut self, index: usize) {
@@ -48,6 +44,6 @@ where
 
         let complex_cos: Complex<T::Coeff> = COS_PI_OVER_8_TIMES_EXPIPI8.conj().into();
         let complex_sin: Complex<T::Coeff> = ISIN_PI_OVER_8_TIMES_EXPIPI8.conj().into();
-        self.branch_with_coefficients(index, crate::char::Pauli::Z, complex_cos, complex_sin);
+        self.branch_with_coefficients(index, Pauli::Z, complex_cos, complex_sin);
     }
 }

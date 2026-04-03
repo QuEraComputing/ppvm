@@ -1,7 +1,6 @@
-use super::data::{GeneralizedTableau, Tableau};
-use super::sparsevec::SparseVector;
-use crate::config::Config;
-use crate::traits::{Clifford, CliffordExtensions};
+use crate::data::{GeneralizedTableau, Tableau};
+use crate::prelude::*;
+use crate::sparsevec::SparseVector;
 use num::complex::Complex;
 
 macro_rules! impl_tableau_clifford {
@@ -163,8 +162,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::fxhash::ByteF64;
-    use crate::traits::CliffordExtensions;
+    use ppvm_runtime::config::fxhash::ByteF64;
 
     type TestConfig = ByteF64<1>;
     type TestTableau = GeneralizedTableau<TestConfig>;

@@ -1,7 +1,4 @@
-use crate::config::Config;
-use crate::tableau::GeneralizedTableau;
-use crate::tableau::sparsevec::SparseVector;
-use crate::traits::{RotationOne, U3Gate};
+use crate::prelude::*;
 use num::Complex;
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> U3Gate<T> for GeneralizedTableau<T, I, C>
@@ -19,9 +16,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::fxhash::ByteF64;
-    use crate::traits::LossyMeasure;
-    use crate::traits::RotationOne;
+    use ppvm_runtime::config::fxhash::ByteF64;
     use std::f64::consts::PI;
 
     type TestConfig = ByteF64<1>;

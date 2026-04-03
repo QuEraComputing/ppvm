@@ -1,8 +1,6 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_runtime::prelude::*;
-use ppvm_runtime::tableau::RunStim;
-use rayon::current_num_threads;
+use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
 
@@ -144,11 +142,6 @@ pub fn benchmark_suite_msd_stim(c: &mut Criterion, name: impl AsRef<str>) {
 }
 
 pub fn msd_stim_benchmarks(c: &mut Criterion) {
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(4)
-        .build_global()
-        .unwrap_or(());
-    println!("Using {} threads", current_num_threads());
     benchmark_suite_msd_stim(c, "msd-stim");
 }
 

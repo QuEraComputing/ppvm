@@ -1,6 +1,6 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_runtime::{config::fx64hash::Byte8F64, prelude::*};
-use rayon::current_num_threads;
+use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_tableau::prelude::*;
 
 pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
     let mut group = c.benchmark_group(name.as_ref());
@@ -92,12 +92,6 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
 }
 
 pub fn tableau_scaling_benchmarks(c: &mut Criterion) {
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(4)
-        .build_global()
-        .unwrap();
-    println!("Using {} threads", current_num_threads());
-
     benchmark_suite_tableau(c, "ByteF64FxIndexMap<8, CoefficientThreshold>");
 }
 

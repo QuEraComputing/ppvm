@@ -593,11 +593,8 @@ fn apply_cross_site<T: Config>(
                     .filter(|&idx| w_a.get(cs.ops[idx].0) != Pauli::I)
                     .collect();
                 for ai in 0..active.len() {
-                    let i = active[ai];
-                    for aj in 0..active.len() {
-                        let j = active[aj];
-                        if i == j { continue; }
-                        process_pair(cs, w_a, coeff_a, i, j, result);
+                    for aj in (ai + 1)..active.len() {
+                        process_pair(cs, w_a, coeff_a, active[ai], active[aj], result);
                     }
                 }
             }
@@ -605,8 +602,7 @@ fn apply_cross_site<T: Config>(
                 // One unit of headroom. Skip pairs where BOTH qubits are identity.
                 for i in 0..n_ops {
                     let i_active = w_a.get(cs.ops[i].0) != Pauli::I;
-                    for j in 0..n_ops {
-                        if i == j { continue; }
+                    for j in (i + 1)..n_ops {
                         let j_active = w_a.get(cs.ops[j].0) != Pauli::I;
                         if !i_active && !j_active { continue; }
                         process_pair(cs, w_a, coeff_a, i, j, result);
@@ -614,10 +610,9 @@ fn apply_cross_site<T: Config>(
                 }
             }
             _ => {
-                // Ample headroom: all pairs i != j.
+                // Ample headroom: upper triangle i < j (symmetry doubles gamma).
                 for i in 0..n_ops {
-                    for j in 0..n_ops {
-                        if i == j { continue; }
+                    for j in (i + 1)..n_ops {
                         process_pair(cs, w_a, coeff_a, i, j, result);
                     }
                 }
@@ -640,7 +635,7 @@ fn process_pair<T: Config>(
     T::PauliWordType: PauliWordTrait + Clone,
     f64: Into<T::Coeff>,
 {
-    let gamma = cs.rates[i][j];
+    let gamma = 2.0 * cs.rates[i][j]; // Merged (i,j) + (j,i); symmetry verified for all dir pairs
     if gamma == 0.0 { return; }
     let qi = cs.ops[i].0;
     let qj = cs.ops[j].0;
@@ -2253,6 +2248,146 @@ mod tests {
                 (c_fused - c_generic).abs() < 1e-12,
                 "usize::MAX mismatch (reverse): word={w:?}, fused={c_fused}, generic={c_generic}"
             );
+        }
+    }
+
+    // ---- Task 33 tests: symmetry exploitation ----
+
+    #[test]
+    fn symmetry_verified_all_64_cases() {
+        // Exhaustive algebraic check: for all direction pairs (di,dj) and Pauli pairs,
+        // the (i,j) table entry (left=di†, right=dj, paulis p_qi,p_qj) produces the
+        // same outputs as the (j,i) entry (left=dj†, right=di, paulis p_qj,p_qi)
+        // after swapping qi↔qj. This is the algebraic foundation for the upper-triangle
+        // optimisation: merging (i,j) and (j,i) contributions with doubled gamma is valid.
+        let tables = ActionTables::build();
+        let dirs = [LadderDirection::Raise, LadderDirection::Lower];
+        let paulis = [Pauli::I, Pauli::X, Pauli::Y, Pauli::Z];
+
+        for &di in &dirs {
+            for &dj in &dirs {
+                let left_dir_ij = di.flip();
+                let right_dir_ij = dj;
+                let left_dir_ji = dj.flip();
+                let right_dir_ji = di;
+
+                for &p_qi in &paulis {
+                    for &p_qj in &paulis {
+                        let cell_ij = tables.get(left_dir_ij, right_dir_ij, p_qi, p_qj);
+                        let cell_ji = tables.get(left_dir_ji, right_dir_ji, p_qj, p_qi);
+
+                        assert_eq!(
+                            cell_ij.count, cell_ji.count,
+                            "count mismatch for dirs ({di:?},{dj:?}), paulis ({p_qi:?},{p_qj:?})"
+                        );
+
+                        // Sort both by (out_qi_idx*4+out_qj_idx) for stable comparison.
+                        let sort_key = |&(a, b, _): &(Pauli, Pauli, f64)| pauli_idx(a) * 4 + pauli_idx(b);
+                        let n = cell_ij.count as usize;
+                        let mut ij_sorted: SmallVec<[(Pauli, Pauli, f64); 4]> =
+                            cell_ij.entries[..n].iter().copied().collect();
+                        let mut ji_sorted: SmallVec<[(Pauli, Pauli, f64); 4]> =
+                            cell_ji.entries[..n].iter().map(|&(a, b, f)| (b, a, f)).collect();
+                        ij_sorted.sort_by_key(sort_key);
+                        ji_sorted.sort_by_key(sort_key);
+
+                        for k in 0..n {
+                            let (oqi, oqj, f) = ij_sorted[k];
+                            let (oqi_r, oqj_r, f_r) = ji_sorted[k];
+                            assert_eq!(oqi, oqi_r,
+                                "out_qi mismatch for ({di:?},{dj:?},{p_qi:?},{p_qj:?}) entry {k}");
+                            assert_eq!(oqj, oqj_r,
+                                "out_qj mismatch for ({di:?},{dj:?},{p_qi:?},{p_qj:?}) entry {k}");
+                            assert!((f - f_r).abs() < 1e-15,
+                                "factor mismatch for ({di:?},{dj:?},{p_qi:?},{p_qj:?}) entry {k}: {f} vs {f_r}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn symmetry_all_same_direction() {
+        // n=4 all-Lower, dense rates. Upper-triangle kernel must match Generic expanded path.
+        use ppvm_runtime::prelude::Trace;
+        use crate::rhs;
+
+        let n = 4usize;
+        let ops_fused: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+            .collect();
+        let ops_generic: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n)
+            .map(|i| JumpOp::Generic(
+                LadderOp { qubit: i, direction: LadderDirection::Lower }.expand::<ByteFxHashF64<1>>(n)
+            ))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        let lop_fused = LindbladOp::new(ops_fused, RateMatrix::Dense(rates.clone()));
+        let lop_generic = LindbladOp::new(ops_generic, RateMatrix::Dense(rates));
+
+        let inputs = ["ZIII", "IZZZ", "ZZII", "XIZI"];
+        for &input in &inputs {
+            let mut p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            p += (input, 1.0_f64);
+            let r_fused = rhs(None, &lop_fused, &p);
+            let r_generic = rhs(None, &lop_generic, &p);
+            for (w, c_fused) in r_fused.data().iter() {
+                let c_generic: f64 = r_generic.data().trace(w);
+                assert!((c_fused - c_generic).abs() < 1e-12,
+                    "same-dir n4 input={input} word={w:?}: fused={c_fused}, generic={c_generic}");
+            }
+            for (w, c_generic) in r_generic.data().iter() {
+                let c_fused: f64 = r_fused.data().trace(w);
+                assert!((c_fused - c_generic).abs() < 1e-12,
+                    "same-dir n4 input={input} word={w:?} (reverse): fused={c_fused}, generic={c_generic}");
+            }
+        }
+    }
+
+    #[test]
+    fn symmetry_mixed_directions() {
+        // n=4, 2 Raise + 2 Lower, dense rates. Upper-triangle kernel must match Generic path.
+        use ppvm_runtime::prelude::Trace;
+        use crate::rhs;
+
+        let n = 4usize;
+        let dirs = [
+            LadderDirection::Raise, LadderDirection::Lower,
+            LadderDirection::Raise, LadderDirection::Lower,
+        ];
+        let ops_fused: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: dirs[i] }))
+            .collect();
+        let ops_generic: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n)
+            .map(|i| JumpOp::Generic(
+                LadderOp { qubit: i, direction: dirs[i] }.expand::<ByteFxHashF64<1>>(n)
+            ))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        let lop_fused = LindbladOp::new(ops_fused, RateMatrix::Dense(rates.clone()));
+        let lop_generic = LindbladOp::new(ops_generic, RateMatrix::Dense(rates));
+
+        let inputs = ["ZIII", "IZZZ", "ZZII", "XIZI"];
+        for &input in &inputs {
+            let mut p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            p += (input, 1.0_f64);
+            let r_fused = rhs(None, &lop_fused, &p);
+            let r_generic = rhs(None, &lop_generic, &p);
+            for (w, c_fused) in r_fused.data().iter() {
+                let c_generic: f64 = r_generic.data().trace(w);
+                assert!((c_fused - c_generic).abs() < 1e-12,
+                    "mixed-dir n4 input={input} word={w:?}: fused={c_fused}, generic={c_generic}");
+            }
+            for (w, c_generic) in r_generic.data().iter() {
+                let c_fused: f64 = r_fused.data().trace(w);
+                assert!((c_fused - c_generic).abs() < 1e-12,
+                    "mixed-dir n4 input={input} word={w:?} (reverse): fused={c_fused}, generic={c_generic}");
+            }
         }
     }
 }

@@ -271,6 +271,114 @@ fn pauli_mul(a: Pauli, b: Pauli) -> (Pauli, u8) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Task 30: Precomputed action tables
+// ---------------------------------------------------------------------------
+
+const MAX_ACTIONS: usize = 4;
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ActionCell {
+    pub entries: [(Pauli, Pauli, f64); MAX_ACTIONS],
+    pub count: u8,
+}
+
+pub(crate) struct ActionTables {
+    /// Flat storage: [left_dir][right_dir][p_qi][p_qj].
+    /// Index = left_dir_idx * 32 + right_dir_idx * 16 + p_qi_idx * 4 + p_qj_idx
+    /// where Raise=0, Lower=1; I=0, X=1, Y=2, Z=3.
+    data: [ActionCell; 64],
+}
+
+impl LadderDirection {
+    fn idx(self) -> usize {
+        match self {
+            LadderDirection::Raise => 0,
+            LadderDirection::Lower => 1,
+        }
+    }
+}
+
+fn pauli_idx(p: Pauli) -> usize {
+    match p {
+        Pauli::I => 0,
+        Pauli::X => 1,
+        Pauli::Y => 2,
+        Pauli::Z => 3,
+        _ => 0, // treat unknown as I
+    }
+}
+
+impl ActionTables {
+    fn index(left_dir: LadderDirection, right_dir: LadderDirection, p_qi: Pauli, p_qj: Pauli) -> usize {
+        left_dir.idx() * 32 + right_dir.idx() * 16 + pauli_idx(p_qi) * 4 + pauli_idx(p_qj)
+    }
+
+    pub fn get(&self, left_dir: LadderDirection, right_dir: LadderDirection, p_qi: Pauli, p_qj: Pauli) -> &ActionCell {
+        &self.data[Self::index(left_dir, right_dir, p_qi, p_qj)]
+    }
+
+    pub fn build() -> Self {
+        let empty_cell = ActionCell {
+            entries: [(Pauli::I, Pauli::I, 0.0); MAX_ACTIONS],
+            count: 0,
+        };
+        let mut tables = ActionTables { data: [empty_cell; 64] };
+
+        let dirs = [LadderDirection::Raise, LadderDirection::Lower];
+        let paulis = [Pauli::I, Pauli::X, Pauli::Y, Pauli::Z];
+
+        for &left_dir in &dirs {
+            let l_y_phase: u8 = match left_dir {
+                LadderDirection::Raise => 3,
+                LadderDirection::Lower => 1,
+            };
+            for &right_dir in &dirs {
+                let r_y_phase: u8 = match right_dir {
+                    LadderDirection::Lower => 1,
+                    LadderDirection::Raise => 3,
+                };
+                let left_subs = [(Pauli::X, 0u8), (Pauli::Y, l_y_phase)];
+                let right_subs = [(Pauli::X, 0u8), (Pauli::Y, r_y_phase)];
+
+                for &p_qi in &paulis {
+                    for &p_qj in &paulis {
+                        let idx = Self::index(left_dir, right_dir, p_qi, p_qj);
+                        let cell = &mut tables.data[idx];
+                        cell.count = 0;
+
+                        for &(l_pauli, l_phase) in &left_subs {
+                            for &(r_pauli, r_phase) in &right_subs {
+                                let p1 = pauli_anticommutes(l_pauli, p_qi) as u8;
+                                let p2 = pauli_anticommutes(p_qj, r_pauli) as u8;
+                                let mult = p1 + p2;
+                                if mult == 0 {
+                                    continue;
+                                }
+                                let (out_qi, qi_phase) = pauli_mul(l_pauli, p_qi);
+                                let (out_qj, qj_phase) = pauli_mul(p_qj, r_pauli);
+                                let total_phase = (l_phase as u16 + qi_phase as u16
+                                    + qj_phase as u16 + r_phase as u16) as u8 % 4;
+                                let s = re_phase(total_phase);
+                                if s == 0.0 {
+                                    continue;
+                                }
+                                let factor = mult as f64 * 2.0 * s;
+                                let c = cell.count as usize;
+                                cell.entries[c] = (out_qi, out_qj, factor);
+                                cell.count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        tables
+    }
+}
+
+// ---------------------------------------------------------------------------
+
 /// Parallel fold/reduce over Lindblad terms for large term counts.
 ///
 /// `#[cold]` + `#[inline(never)]` keeps this entirely out of the hot sequential
@@ -1497,5 +1605,164 @@ mod tests {
         let lop8 = LindbladOp::new(ops8, RateMatrix::Dense(rates8));
         assert!(lop8.terms.len() > 200, "expected parallel path");
         check_apply_consistency(&lop8, "ZIIIIIII", n);
+    }
+
+    // ---- Task 30 tests: precomputed action tables ----
+
+    /// Reference cross-site action: mirrors the inline 2×2 loop in the existing kernel.
+    fn reference_cross_site_action(
+        left_dir: LadderDirection,
+        right_dir: LadderDirection,
+        p_qi: Pauli,
+        p_qj: Pauli,
+    ) -> Vec<(Pauli, Pauli, f64)> {
+        let l_y_phase: u8 = match left_dir {
+            LadderDirection::Raise => 3,
+            LadderDirection::Lower => 1,
+        };
+        let r_y_phase: u8 = match right_dir {
+            LadderDirection::Lower => 1,
+            LadderDirection::Raise => 3,
+        };
+        let left_subs = [(Pauli::X, 0u8), (Pauli::Y, l_y_phase)];
+        let right_subs = [(Pauli::X, 0u8), (Pauli::Y, r_y_phase)];
+        let mut results = Vec::new();
+        for &(l_pauli, l_phase) in &left_subs {
+            for &(r_pauli, r_phase) in &right_subs {
+                let p1 = pauli_anticommutes(l_pauli, p_qi) as u8;
+                let p2 = pauli_anticommutes(p_qj, r_pauli) as u8;
+                let mult = p1 + p2;
+                if mult == 0 {
+                    continue;
+                }
+                let (out_qi, qi_phase) = pauli_mul(l_pauli, p_qi);
+                let (out_qj, qj_phase) = pauli_mul(p_qj, r_pauli);
+                let total_phase = (l_phase as u16 + qi_phase as u16
+                    + qj_phase as u16 + r_phase as u16) as u8 % 4;
+                let s = re_phase(total_phase);
+                if s == 0.0 {
+                    continue;
+                }
+                results.push((out_qi, out_qj, mult as f64 * 2.0 * s));
+            }
+        }
+        results
+    }
+
+    #[test]
+    fn action_table_zz_lower_raise() {
+        // (Lower, Raise, Z, Z): hand-computed entries are (Y, Y, 4.0) and (X, X, 4.0).
+        // Derivation:
+        //   left_dir=Lower → l_y_phase=1, right_dir=Raise → r_y_phase=3
+        //   left_subs=[(X,0),(Y,1)], right_subs=[(X,0),(Y,3)], p_qi=Z, p_qj=Z
+        //   (X,0)×(X,0): p1=ac(X,Z)=1, p2=ac(Z,X)=1, mult=2
+        //     mul(X,Z)=(Y,3), mul(Z,X)=(Y,1), total_phase=0+3+1+0=4%4=0, s=1 → (Y,Y,4.0)
+        //   (X,0)×(Y,3): p1=1, p2=ac(Z,Y)=1, mult=2
+        //     mul(X,Z)=(Y,3), mul(Z,Y)=(X,3), total_phase=0+3+3+3=9%4=1, s=0 → skip
+        //   (Y,1)×(X,0): p1=ac(Y,Z)=1, p2=1, mult=2
+        //     mul(Y,Z)=(X,1), mul(Z,X)=(Y,1), total_phase=1+1+1+0=3, s=0 → skip
+        //   (Y,1)×(Y,3): p1=1, p2=1, mult=2
+        //     mul(Y,Z)=(X,1), mul(Z,Y)=(X,3), total_phase=1+1+3+3=8%4=0, s=1 → (X,X,4.0)
+        let tables = ActionTables::build();
+        let cell = tables.get(LadderDirection::Lower, LadderDirection::Raise, Pauli::Z, Pauli::Z);
+        assert_eq!(cell.count, 2, "expected 2 entries for (Lower,Raise,Z,Z)");
+        let entries: Vec<(Pauli, Pauli, f64)> = cell.entries[..cell.count as usize].to_vec();
+        let mut sorted = entries.clone();
+        sorted.sort_by_key(|&(p, _, _)| pauli_idx(p));
+        assert_eq!(sorted[0], (Pauli::X, Pauli::X, 4.0));
+        assert_eq!(sorted[1], (Pauli::Y, Pauli::Y, 4.0));
+    }
+
+    #[test]
+    fn action_table_zi_lower_raise() {
+        // (Lower, Raise, Z, I): expected (Y, Y, -2.0) and (X, X, -2.0).
+        // Derivation:
+        //   left_dir=Lower → l_y_phase=1, right_dir=Raise → r_y_phase=3
+        //   p_qi=Z, p_qj=I
+        //   (X,0)×(X,0): p1=ac(X,Z)=1, p2=ac(I,X)=0, mult=1
+        //     mul(X,Z)=(Y,3), mul(I,X)=(X,0), total_phase=0+3+0+0=3, s=0 → skip
+        //   (X,0)×(Y,3): p1=1, p2=ac(I,Y)=0, mult=1
+        //     mul(X,Z)=(Y,3), mul(I,Y)=(Y,0), total_phase=0+3+0+3=6%4=2, s=-1 → (Y,Y,-2.0)
+        //   (Y,1)×(X,0): p1=ac(Y,Z)=1, p2=0, mult=1
+        //     mul(Y,Z)=(X,1), mul(I,X)=(X,0), total_phase=1+1+0+0=2, s=-1 → (X,X,-2.0)
+        //   (Y,1)×(Y,3): p1=1, p2=0, mult=1
+        //     mul(Y,Z)=(X,1), mul(I,Y)=(Y,0), total_phase=1+1+0+3=5%4=1, s=0 → skip
+        let tables = ActionTables::build();
+        let cell = tables.get(LadderDirection::Lower, LadderDirection::Raise, Pauli::Z, Pauli::I);
+        assert_eq!(cell.count, 2, "expected 2 entries for (Lower,Raise,Z,I)");
+        let entries: Vec<(Pauli, Pauli, f64)> = cell.entries[..cell.count as usize].to_vec();
+        let mut sorted = entries.clone();
+        sorted.sort_by_key(|&(p, _, _)| pauli_idx(p));
+        assert_eq!(sorted[0], (Pauli::X, Pauli::X, -2.0));
+        assert_eq!(sorted[1], (Pauli::Y, Pauli::Y, -2.0));
+    }
+
+    #[test]
+    fn action_table_ii_all_dirs() {
+        // For all 4 direction pairs, (I, I) should give an empty cell.
+        // Identity anticommutes with nothing, so all p1=p2=0, mult=0, all skipped.
+        let tables = ActionTables::build();
+        for &ld in &[LadderDirection::Raise, LadderDirection::Lower] {
+            for &rd in &[LadderDirection::Raise, LadderDirection::Lower] {
+                let cell = tables.get(ld, rd, Pauli::I, Pauli::I);
+                assert_eq!(
+                    cell.count, 0,
+                    "expected count=0 for ({ld:?},{rd:?},I,I)"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn action_table_matches_inline_kernel() {
+        // Exhaustive check: all 64 (dir_pair × Pauli_pair) combinations.
+        let tables = ActionTables::build();
+        let dirs = [LadderDirection::Raise, LadderDirection::Lower];
+        let paulis = [Pauli::I, Pauli::X, Pauli::Y, Pauli::Z];
+
+        for &ld in &dirs {
+            for &rd in &dirs {
+                for &p_qi in &paulis {
+                    for &p_qj in &paulis {
+                        let reference = reference_cross_site_action(ld, rd, p_qi, p_qj);
+                        let cell = tables.get(ld, rd, p_qi, p_qj);
+                        let table_entries: Vec<(Pauli, Pauli, f64)> =
+                            cell.entries[..cell.count as usize].to_vec();
+
+                        assert_eq!(
+                            table_entries.len(), reference.len(),
+                            "count mismatch for ({ld:?},{rd:?},{p_qi:?},{p_qj:?}): \
+                             table={}, reference={}",
+                            table_entries.len(), reference.len()
+                        );
+
+                        // Sort both by (out_qi, out_qj) index for stable comparison.
+                        let sort_key = |&(a, b, _): &(Pauli, Pauli, f64)| {
+                            pauli_idx(a) * 4 + pauli_idx(b)
+                        };
+                        let mut table_sorted = table_entries.clone();
+                        let mut ref_sorted = reference.clone();
+                        table_sorted.sort_by_key(sort_key);
+                        ref_sorted.sort_by_key(sort_key);
+
+                        for (t, r) in table_sorted.iter().zip(ref_sorted.iter()) {
+                            assert_eq!(
+                                t.0, r.0,
+                                "out_qi mismatch for ({ld:?},{rd:?},{p_qi:?},{p_qj:?})"
+                            );
+                            assert_eq!(
+                                t.1, r.1,
+                                "out_qj mismatch for ({ld:?},{rd:?},{p_qi:?},{p_qj:?})"
+                            );
+                            assert!(
+                                (t.2 - r.2).abs() < 1e-15,
+                                "factor mismatch for ({ld:?},{rd:?},{p_qi:?},{p_qj:?}): \
+                                 table={}, reference={}", t.2, r.2
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -15,6 +15,13 @@ pub trait Strategy: Default + Clone + Copy {
         H: std::hash::BuildHasher + Clone + Default,
         W: PauliWordTrait,
         M: ACMap<S, V, H, W>;
+
+    /// Maximum Pauli weight retained by this strategy.
+    /// Returns `usize::MAX` if no weight limit is enforced (default).
+    /// Used by the cross-site kernel in ppvm-timeevolve for generation-time filtering.
+    fn max_weight(&self) -> usize {
+        usize::MAX
+    }
 }
 
 #[derive(Debug, Clone, Default, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

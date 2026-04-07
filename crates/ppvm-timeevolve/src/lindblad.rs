@@ -2,11 +2,13 @@ use std::borrow::Borrow;
 use std::ops::{Mul, MulAssign};
 
 use rayon::prelude::*;
+use smallvec::SmallVec;
 
 use ppvm_runtime::prelude::{
     ACMapAddAssign, ACMapBase, ACMapIter, Config, Pauli, PauliStorage, PauliSum, PauliWord,
     PauliWordTrait, PhasedPauliWord,
 };
+use ppvm_runtime::traits::Strategy;
 
 /// Direction of a ladder operator: Raise (`S₊ = X − iY`) or Lower (`S₋ = X + iY`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,21 +166,21 @@ where
                 }
                 match (&ops[i], &ops[j]) {
                     (JumpOp::Ladder(li), JumpOp::Ladder(lj)) => {
-                        // Both ladder: one fast LindbladTerm::Ladder per pair.
-                        // Conjugate left direction: ops[i]† flips direction.
-                        terms.push(LindbladTerm::Ladder {
-                            qi: li.qubit,
-                            qj: lj.qubit,
-                            left_dir: li.direction.flip(),
-                            right_dir: lj.direction,
-                            weight: gamma_ij,
-                        });
-                        // Also record in CrossSiteLadder sub-matrix for qi != qj pairs.
                         if li.qubit != lj.qubit {
+                            // Cross-site: handled by CrossSiteLadder kernel. Record rate only.
                             let li_idx = op_to_ladder[i].unwrap();
                             let lj_idx = op_to_ladder[j].unwrap();
                             ladder_rates[li_idx][lj_idx] = gamma_ij;
                             has_cross_site = true;
+                        } else {
+                            // On-site: fast LindbladTerm::Ladder path (qi == qj).
+                            terms.push(LindbladTerm::Ladder {
+                                qi: li.qubit,
+                                qj: lj.qubit,
+                                left_dir: li.direction.flip(),
+                                right_dir: lj.direction,
+                                weight: gamma_ij,
+                            });
                         }
                     }
                     _ => {
@@ -436,6 +438,7 @@ fn apply_par<T: Config>(
     op: &LindbladOp<T>,
     p: &PauliSum<T>,
     result: &mut PauliSum<T>,
+    w_max: usize,
 ) where
     for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
     T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
@@ -552,6 +555,103 @@ fn apply_par<T: Config>(
     for (w, c) in combined.data().iter() {
         *result += (w.clone(), *c);
     }
+    if let Some(cs) = &op.cross_site {
+        apply_cross_site(cs, p, result, w_max);
+    }
+}
+
+/// Fused cross-site ladder kernel with weight-filtered generation.
+///
+/// Iterates over observable terms (outer loop) and qubit pairs (inner loop),
+/// using precomputed action tables instead of runtime `pauli_mul`/`re_phase`.
+/// `w_max` controls generation-time filtering: pairs that would increase the term's
+/// Pauli weight beyond `w_max` are skipped before any map insertion.
+#[inline]
+fn apply_cross_site<T: Config>(
+    cs: &CrossSiteLadder,
+    p: &PauliSum<T>,
+    result: &mut PauliSum<T>,
+    w_max: usize,
+) where
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
+    T::PauliWordType: PauliWordTrait + Clone,
+    f64: Into<T::Coeff>,
+{
+    let n_ops = cs.ops.len();
+
+    for (w_a, coeff_a) in p.data().iter() {
+        let weight = w_a.weight();
+        let headroom = w_max.saturating_sub(weight);
+
+        match headroom {
+            0 => {
+                // At weight ceiling. Only pairs where both qubits are already
+                // non-identity can contribute without exceeding w_max.
+                let active: SmallVec<[usize; 32]> = (0..n_ops)
+                    .filter(|&idx| w_a.get(cs.ops[idx].0) != Pauli::I)
+                    .collect();
+                for ai in 0..active.len() {
+                    let i = active[ai];
+                    for aj in 0..active.len() {
+                        let j = active[aj];
+                        if i == j { continue; }
+                        process_pair(cs, w_a, coeff_a, i, j, result);
+                    }
+                }
+            }
+            1 => {
+                // One unit of headroom. Skip pairs where BOTH qubits are identity.
+                for i in 0..n_ops {
+                    let i_active = w_a.get(cs.ops[i].0) != Pauli::I;
+                    for j in 0..n_ops {
+                        if i == j { continue; }
+                        let j_active = w_a.get(cs.ops[j].0) != Pauli::I;
+                        if !i_active && !j_active { continue; }
+                        process_pair(cs, w_a, coeff_a, i, j, result);
+                    }
+                }
+            }
+            _ => {
+                // Ample headroom: all pairs i != j.
+                for i in 0..n_ops {
+                    for j in 0..n_ops {
+                        if i == j { continue; }
+                        process_pair(cs, w_a, coeff_a, i, j, result);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[inline(always)]
+fn process_pair<T: Config>(
+    cs: &CrossSiteLadder,
+    w_a: &T::PauliWordType,
+    coeff_a: &T::Coeff,
+    i: usize,
+    j: usize,
+    result: &mut PauliSum<T>,
+) where
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff>,
+    T::PauliWordType: PauliWordTrait + Clone,
+    f64: Into<T::Coeff>,
+{
+    let gamma = cs.rates[i][j];
+    if gamma == 0.0 { return; }
+    let qi = cs.ops[i].0;
+    let qj = cs.ops[j].0;
+    let left_dir = cs.ops[i].1.flip();
+    let right_dir = cs.ops[j].1;
+    let cell = cs.tables.get(left_dir, right_dir, w_a.get(qi), w_a.get(qj));
+    for k in 0..cell.count as usize {
+        let (out_qi, out_qj, factor) = cell.entries[k];
+        *result += (w_a.set_new_2(qi, out_qi, qj, out_qj),
+                    (gamma * factor).into() * *coeff_a);
+    }
 }
 
 impl<T: Config> LindbladOp<T>
@@ -578,7 +678,7 @@ where
     /// performs the parallel dispatch), keeping this body free of any cross-path
     /// register pressure from `apply_par`'s calling convention.
     #[inline]
-    pub(crate) fn apply(&self, p: &PauliSum<T>, result: &mut PauliSum<T>) {
+    pub(crate) fn apply(&self, p: &PauliSum<T>, result: &mut PauliSum<T>, w_max: usize) {
         let n = p.n_qubits();
         for term in &self.terms {
             match term {
@@ -686,6 +786,9 @@ where
                 }
             }
         }
+        if let Some(cs) = &self.cross_site {
+            apply_cross_site(cs, p, result, w_max);
+        }
     }
 }
 
@@ -752,11 +855,12 @@ fn rhs_into_par<T: Config>(
         + Clone,
     f64: Into<T::Coeff>,
 {
+    let w_max = result.strategy().max_weight();
     result.data_mut().clear();
     if let Some(h) = ham {
         commutator_real(h, p, result);
     }
-    apply_par(lindblad, p, result);
+    apply_par(lindblad, p, result, w_max);
     result.truncate();
 }
 
@@ -790,6 +894,7 @@ pub fn rhs_into<T: Config>(
     // This ensures the sequential hot path below has ZERO rayon code in scope —
     // rayon's atomics would otherwise prevent LLVM from reordering memory accesses
     // in the sequential loop, causing a ~60 µs regression even on the cold branch.
+    let w_max = result.strategy().max_weight();
     if lindblad.terms.len() >= 200 {
         return rhs_into_par(ham, lindblad, p, result);
     }
@@ -797,7 +902,7 @@ pub fn rhs_into<T: Config>(
     if let Some(h) = ham {
         commutator_real(h, p, result);
     }
-    lindblad.apply(p, result);
+    lindblad.apply(p, result, w_max);
     result.truncate();
 }
 
@@ -913,7 +1018,7 @@ mod tests {
 
         let p = sum1(&[("Z", 1.0)]);
         let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
-        lop.apply(&p, &mut result);
+        lop.apply(&p, &mut result, usize::MAX);
 
         assert_eq!(get_coeff(&result, "X"), 0.0,
             "imaginary-phase product left*W_a*right must produce zero real coefficient");
@@ -1064,7 +1169,7 @@ mod tests {
         let lop = make_ladder_lop(direction);
         let p = sum1(&[(word, 1.0)]);
         let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
-        lop.apply(&p, &mut result);
+        lop.apply(&p, &mut result, usize::MAX);
         result
     }
 
@@ -1124,8 +1229,8 @@ mod tests {
                 let p = sum1(&[(word, 1.0)]);
                 let mut r_ladder: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
                 let mut r_generic: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
-                lop_ladder.apply(&p, &mut r_ladder);
-                lop_generic.apply(&p, &mut r_generic);
+                lop_ladder.apply(&p, &mut r_ladder, usize::MAX);
+                lop_generic.apply(&p, &mut r_generic, usize::MAX);
                 for out_word in ["I", "X", "Y", "Z"] {
                     let c_ladder = get_coeff(&r_ladder, out_word);
                     let c_generic = get_coeff(&r_generic, out_word);
@@ -1161,7 +1266,7 @@ mod tests {
     fn apply_to(lop: &LindbladOp<ByteFxHashF64<1>>, word: &str) -> PauliSum<ByteFxHashF64<1>> {
         let p = sum1(&[(word, 1.0)]);
         let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
-        lop.apply(&p, &mut result);
+        lop.apply(&p, &mut result, usize::MAX);
         result
     }
 
@@ -1197,8 +1302,8 @@ mod tests {
         let lop = lindblad_x();
         let p = sum1(&[("Z", 1.0)]);
         let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
-        lop.apply(&p, &mut result);
-        lop.apply(&p, &mut result);
+        lop.apply(&p, &mut result, usize::MAX);
+        lop.apply(&p, &mut result, usize::MAX);
         assert!((get_coeff(&result, "Z") - (-8.0)).abs() < 1e-15);
     }
 
@@ -1225,7 +1330,7 @@ mod tests {
         );
         let p = sum1(&[("Z", 1.0)]);
         let mut result: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
-        lop.apply(&p, &mut result);
+        lop.apply(&p, &mut result, usize::MAX);
         assert!((get_coeff(&result, "I") - 8.0).abs() < 1e-14);
         assert!((get_coeff(&result, "Z") - (-8.0)).abs() < 1e-14);
     }
@@ -1503,11 +1608,11 @@ mod tests {
         p += (p_str, 1.0_f64);
 
         let mut result1: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
-        lop.apply(&p, &mut result1);
+        lop.apply(&p, &mut result1, usize::MAX);
 
         // Determinism: second call must agree on every coefficient.
         let mut result2: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
-        lop.apply(&p, &mut result2);
+        lop.apply(&p, &mut result2, usize::MAX);
         for (w, c1) in result1.data().iter() {
             let c2 = result2.data().trace(w);
             assert!(
@@ -1520,7 +1625,7 @@ mod tests {
         let mut p2: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
         p2 += (p_str, 2.0_f64);
         let mut result_2p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
-        lop.apply(&p2, &mut result_2p);
+        lop.apply(&p2, &mut result_2p, usize::MAX);
         for (w, c1) in result1.data().iter() {
             let c_2p = result_2p.data().trace(w);
             assert!(
@@ -1565,8 +1670,8 @@ mod tests {
 
             let mut r_ladder: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
             let mut r_generic: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
-            lop_ladder.apply(&p, &mut r_ladder);
-            lop_generic.apply(&p, &mut r_generic);
+            lop_ladder.apply(&p, &mut r_ladder, usize::MAX);
+            lop_generic.apply(&p, &mut r_generic, usize::MAX);
 
             for &output in all_2q {
                 let w = W1::from(output);
@@ -1602,7 +1707,7 @@ mod tests {
 
         // Sequential path: direct apply()
         let mut result_seq: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
-        lop.apply(&p, &mut result_seq);
+        lop.apply(&p, &mut result_seq, usize::MAX);
 
         // Parallel path: rhs_into dispatches to apply_par for ≥200 terms
         let mut result_par: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(1).build();
@@ -1881,5 +1986,273 @@ mod tests {
             .filter(|t| matches!(t, LindbladTerm::Generic { .. }))
             .count();
         assert!(generic_count > 0, "Ladder-Generic pairs must be in terms as Generic");
+    }
+
+    // ---- Task 32 tests: fused kernel correctness and weight filtering ----
+
+    // Helper: build n-qubit all-lower Ladder LindbladOp with dense rates γ_ij=1/(1+|i-j|).
+    fn build_ladder_lop_n<const S: usize>(n: usize) -> LindbladOp<ByteFxHashF64<S>> {
+        let ops: Vec<JumpOp<ByteFxHashF64<S>>> = (0..n)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        LindbladOp::new(ops, RateMatrix::Dense(rates))
+    }
+
+    // Helper: build reference LindbladOp using expanded Generic ops (forces old path).
+    fn build_generic_lop_n<const S: usize>(n: usize) -> LindbladOp<ByteFxHashF64<S>> {
+        let ops: Vec<JumpOp<ByteFxHashF64<S>>> = (0..n)
+            .map(|i| JumpOp::Generic(
+                LadderOp { qubit: i, direction: LadderDirection::Lower }.expand::<ByteFxHashF64<S>>(n)
+            ))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        LindbladOp::new(ops, RateMatrix::Dense(rates))
+    }
+
+    #[test]
+    fn fused_kernel_matches_old_path_n3() {
+        // n=3: fused Ladder kernel must agree with Generic expanded path for all weight-1 and
+        // weight-2 inputs, to within f64 epsilon (1e-12).
+        use ppvm_runtime::prelude::Trace;
+        let n = 3usize;
+        let lop_fused = build_ladder_lop_n::<1>(n);
+        let lop_generic = build_generic_lop_n::<1>(n);
+
+        let inputs = [
+            "ZII", "IZI", "IIZ",
+            "XII", "YII",
+            "ZZI", "ZIZ", "IZZ",
+        ];
+        let outputs = [
+            "III", "ZII", "IZI", "IIZ",
+            "XII", "YII", "IXI", "IYI", "IIX", "IIY",
+            "XXI", "XYI", "YXI", "YYI",
+            "ZZI", "ZIZ", "IZZ",
+        ];
+
+        for &input in &inputs {
+            let mut p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            p += (input, 1.0_f64);
+
+            let mut r_fused: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            let mut r_generic: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            lop_fused.apply(&p, &mut r_fused, usize::MAX);
+            lop_generic.apply(&p, &mut r_generic, usize::MAX);
+
+            for &output in &outputs {
+                let w = W1::from(output);
+                let c_fused: f64 = r_fused.data().trace(&w);
+                let c_generic: f64 = r_generic.data().trace(&w);
+                assert!(
+                    (c_fused - c_generic).abs() < 1e-12,
+                    "n3 input={input} output={output}: fused={c_fused}, generic={c_generic}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fused_kernel_matches_old_path_n6() {
+        // n=6 full solve: fused kernel vs Generic expanded path.
+        // Compare saved observables at t=0.05 and t=0.1 within solver tolerance 1e-6.
+        use ppvm_runtime::strategy::CoefficientThreshold;
+        use ppvm_runtime::prelude::Trace;
+        use crate::solve::solve;
+        use crate::SolverConfig;
+
+        type S6 = ByteFxHashF64<1, CoefficientThreshold>;
+        let n = 6usize;
+        let strat = CoefficientThreshold(1e-8);
+
+        let ops_fused: Vec<JumpOp<S6>> = (0..n)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+            .collect();
+        let ops_generic: Vec<JumpOp<S6>> = (0..n)
+            .map(|i| JumpOp::Generic(
+                LadderOp { qubit: i, direction: LadderDirection::Lower }.expand::<S6>(n)
+            ))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        let lop_fused = LindbladOp::new(ops_fused, RateMatrix::Dense(rates.clone()));
+        let lop_generic = LindbladOp::new(ops_generic, RateMatrix::Dense(rates));
+
+        // Initial state: Σ Z_i
+        let mut p0: PauliSum<S6> = PauliSum::builder().n_qubits(n).strategy(strat).build();
+        let template: Vec<char> = vec!['I'; n];
+        for i in 0..n {
+            let mut zi = template.clone();
+            zi[i] = 'Z';
+            p0 += (zi.into_iter().collect::<String>(), 1.0_f64);
+        }
+        let p0_generic = p0.clone();
+
+        let save_at = vec![0.05, 0.1];
+
+        let (_, states_fused) = solve(None, &lop_fused, &p0, (0.0, 0.1), &save_at,
+            |_, p| p.clone(), SolverConfig::default());
+        let (_, states_generic) = solve(None, &lop_generic, &p0_generic, (0.0, 0.1), &save_at,
+            |_, p| p.clone(), SolverConfig::default());
+
+        // Compare all non-zero words at each save point.
+        for (sf, sg) in states_fused.iter().zip(states_generic.iter()) {
+            for (w, c_fused) in sf.data().iter() {
+                let c_generic: f64 = sg.data().trace(w);
+                assert!(
+                    (c_fused - c_generic).abs() < 1e-6,
+                    "n6 fused/generic mismatch: word={w:?}, fused={c_fused}, generic={c_generic}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn weight_filter_skips_correctly() {
+        // n=4, MaxPauliWeight(2). Initial observable: weight-1 terms only.
+        // After one rhs() call, no terms with weight > 2 must appear.
+        // Compare against unfiltered rhs() with manual weight truncation — must match.
+        use ppvm_runtime::strategy::MaxPauliWeight;
+        use ppvm_runtime::prelude::Trace;
+        use crate::rhs;
+
+        type S4W = ByteFxHashF64<1, MaxPauliWeight>;
+        type S4 = ByteFxHashF64<1>;
+        let n = 4usize;
+
+        // Build lops with matching types.
+        let make_ops_ladder = |n: usize| -> Vec<JumpOp<S4W>> {
+            (0..n).map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower })).collect()
+        };
+        let make_ops_ladder_plain = |n: usize| -> Vec<JumpOp<S4>> {
+            (0..n).map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower })).collect()
+        };
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        let lop_f = LindbladOp::<S4W>::new(make_ops_ladder(n), RateMatrix::Dense(rates.clone()));
+        let lop_p = LindbladOp::<S4>::new(make_ops_ladder_plain(n), RateMatrix::Dense(rates));
+
+        let mut p_filtered: PauliSum<S4W> = PauliSum::builder()
+            .n_qubits(n).strategy(MaxPauliWeight(2)).build();
+        let mut p_plain: PauliSum<S4> = PauliSum::builder().n_qubits(n).build();
+
+        // Observable: Z_0 + Z_1 (weight-1 terms)
+        p_filtered += ("ZIII", 1.0_f64);
+        p_filtered += ("IZII", 1.0_f64);
+        p_plain += ("ZIII", 1.0_f64);
+        p_plain += ("IZII", 1.0_f64);
+
+        let r_filtered = rhs(None, &lop_f, &p_filtered);
+        let r_plain = rhs(None, &lop_p, &p_plain);
+
+        // Verify no weight > 2 in filtered result.
+        for (w, _) in r_filtered.data().iter() {
+            assert!(
+                w.weight() <= 2,
+                "weight filter failed: found weight-{} term {:?}", w.weight(), w
+            );
+        }
+
+        // Filtered result must match plain result restricted to weight ≤ 2.
+        // Check all words in filtered result appear with same coefficient in plain.
+        for (w, c_f) in r_filtered.data().iter() {
+            let c_p: f64 = r_plain.data().trace(w);
+            assert!(
+                (c_f - c_p).abs() < 1e-12,
+                "weight≤2 mismatch: word={w:?}, filtered={c_f}, plain={c_p}"
+            );
+        }
+    }
+
+    #[test]
+    fn weight_filter_headroom_1() {
+        // n=4, MaxPauliWeight(3). Observable with weight-2 terms.
+        // Weight-3 outputs must appear (headroom allows +1).
+        // No weight-4 outputs must appear.
+        use ppvm_runtime::strategy::MaxPauliWeight;
+        use crate::rhs;
+
+        type S4W3 = ByteFxHashF64<1, MaxPauliWeight>;
+        let n = 4usize;
+
+        let ops: Vec<JumpOp<S4W3>> = (0..n)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        let lop = LindbladOp::<S4W3>::new(ops, RateMatrix::Dense(rates));
+
+        let mut p: PauliSum<S4W3> = PauliSum::builder()
+            .n_qubits(n).strategy(MaxPauliWeight(3)).build();
+        // ZZ at qubits 0,1: weight-2 input.
+        p += ("ZZII", 1.0_f64);
+
+        let result = rhs(None, &lop, &p);
+
+        // Must have no weight-4 terms.
+        for (w, _) in result.data().iter() {
+            assert!(
+                w.weight() <= 3,
+                "headroom-1 filter failed: found weight-{} term {:?}", w.weight(), w
+            );
+        }
+
+        // Must have at least one weight-3 term (cross-site action on weight-2 input
+        // with one additional site is weight-3, and headroom=1 allows exactly +1).
+        let has_weight_3 = result.data().iter().any(|(w, _)| w.weight() == 3);
+        assert!(has_weight_3, "expected weight-3 terms from cross-site action on weight-2 input");
+    }
+
+    #[test]
+    fn w_max_usize_max_matches_unfiltered() {
+        // CoefficientThreshold strategy (max_weight returns usize::MAX by default).
+        // Fused kernel output with threshold=0 (no pruning) must match Generic expanded path.
+        use ppvm_runtime::prelude::Trace;
+        use crate::rhs;
+
+        let n = 3usize;
+
+        let ops_fused: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+            .collect();
+        let ops_generic: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n)
+            .map(|i| JumpOp::Generic(
+                LadderOp { qubit: i, direction: LadderDirection::Lower }.expand::<ByteFxHashF64<1>>(n)
+            ))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        let lop_fused = LindbladOp::new(ops_fused, RateMatrix::Dense(rates.clone()));
+        let lop_generic = LindbladOp::new(ops_generic, RateMatrix::Dense(rates));
+
+        let mut p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+        p += ("ZII", 1.0_f64);
+        p += ("IZI", 1.0_f64);
+
+        let r_fused = rhs(None, &lop_fused, &p);
+        let r_generic = rhs(None, &lop_generic, &p);
+
+        for (w, c_fused) in r_fused.data().iter() {
+            let c_generic: f64 = r_generic.data().trace(w);
+            assert!(
+                (c_fused - c_generic).abs() < 1e-12,
+                "usize::MAX mismatch: word={w:?}, fused={c_fused}, generic={c_generic}"
+            );
+        }
+        for (w, c_generic) in r_generic.data().iter() {
+            let c_fused: f64 = r_fused.data().trace(w);
+            assert!(
+                (c_fused - c_generic).abs() < 1e-12,
+                "usize::MAX mismatch (reverse): word={w:?}, fused={c_fused}, generic={c_generic}"
+            );
+        }
     }
 }

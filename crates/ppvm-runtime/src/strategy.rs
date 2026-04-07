@@ -19,6 +19,10 @@ impl<S1: Strategy, S2: Strategy> Strategy for CombinedStrategy<S1, S2> {
         self.0.truncate(map);
         self.1.truncate(map);
     }
+
+    fn max_weight(&self) -> usize {
+        self.0.max_weight().min(self.1.max_weight())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +55,11 @@ impl Strategy for MaxPauliWeight {
         W: PauliWordTrait,
         M: ACMap<S, V, H, W>,
     {
-        map.retain(|k, _| k.weight() <= self.max_weight());
+        map.retain(|k, _| k.weight() <= self.0);
+    }
+
+    fn max_weight(&self) -> usize {
+        self.0
     }
 }
 

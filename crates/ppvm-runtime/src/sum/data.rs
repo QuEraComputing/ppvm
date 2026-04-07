@@ -50,6 +50,10 @@ impl<T: Config> PauliSum<T> {
         self.capacity
     }
 
+    pub fn strategy(&self) -> T::Strategy {
+        self.strategy
+    }
+
     #[inline(always)]
     pub fn data(&self) -> &T::Map {
         if self.aux { &self.map.1 } else { &self.map.0 }

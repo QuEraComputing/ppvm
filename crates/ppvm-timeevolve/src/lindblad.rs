@@ -2205,6 +2205,64 @@ mod tests {
     }
 
     #[test]
+    fn solve_superradiance_fused_matches_baseline() {
+        // n=6 superradiance (Raise ops, inhomogeneous rates) fused vs Generic baseline.
+        // Validates the fused kernel across Raise direction and non-uniform rate matrix.
+        use ppvm_runtime::strategy::CoefficientThreshold;
+        use ppvm_runtime::prelude::Trace;
+        use crate::solve::solve;
+        use crate::SolverConfig;
+
+        // γ_ij = γ0 / (1 + D|i-j|) with γ0=1, D=0.1 (superradiance physics).
+        type S6 = ByteFxHashF64<1, CoefficientThreshold>;
+        let n = 6usize;
+        let strat = CoefficientThreshold(1e-8);
+
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + 0.1 * (i as f64 - j as f64).abs())).collect())
+            .collect();
+        let ops_fused: Vec<JumpOp<S6>> = (0..n)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Raise }))
+            .collect();
+        let ops_generic: Vec<JumpOp<S6>> = (0..n)
+            .map(|i| JumpOp::Generic(
+                LadderOp { qubit: i, direction: LadderDirection::Raise }.expand::<S6>(n)
+            ))
+            .collect();
+        let lop_fused = LindbladOp::new(ops_fused, RateMatrix::Dense(rates.clone()));
+        let lop_generic = LindbladOp::new(ops_generic, RateMatrix::Dense(rates));
+
+        let mut p0: PauliSum<S6> = PauliSum::builder().n_qubits(n).strategy(strat).build();
+        for i in 0..n {
+            let mut zi = vec!['I'; n];
+            zi[i] = 'Z';
+            p0 += (zi.into_iter().collect::<String>(), 1.0_f64);
+        }
+
+        // Short solve (t=0.02) to keep debug-mode runtime reasonable.
+        let save_at = vec![0.02];
+        let (_, sf) = solve(None, &lop_fused, &p0, (0.0, 0.02), &save_at,
+            |_, p| p.clone(), SolverConfig::default());
+        let (_, sg) = solve(None, &lop_generic, &p0, (0.0, 0.02), &save_at,
+            |_, p| p.clone(), SolverConfig::default());
+
+        for (w, c_fused) in sf[0].data().iter() {
+            let c_generic: f64 = sg[0].data().trace(w);
+            assert!(
+                (c_fused - c_generic).abs() < 1e-6,
+                "superradiance fused/generic mismatch: word={w:?}, fused={c_fused}, generic={c_generic}"
+            );
+        }
+        for (w, c_generic) in sg[0].data().iter() {
+            let c_fused: f64 = sf[0].data().trace(w);
+            assert!(
+                (c_fused - c_generic).abs() < 1e-6,
+                "superradiance fused/generic mismatch (reverse): word={w:?}, fused={c_fused}, generic={c_generic}"
+            );
+        }
+    }
+
+    #[test]
     fn weight_filter_skips_correctly() {
         // n=4, MaxPauliWeight(2). Initial observable: weight-1 terms only.
         // After one rhs() call, no terms with weight > 2 must appear.

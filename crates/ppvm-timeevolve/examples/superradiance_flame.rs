@@ -10,7 +10,11 @@
 ///
 /// Run with:
 ///   cargo flamegraph --example superradiance_flame --release
-use ppvm_runtime::{config::indexmap::ByteFxHashF64, prelude::*, strategy::CoefficientThreshold};
+use ppvm_runtime::{
+    config::indexmap::ByteFxHashF64,
+    prelude::*,
+    strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight},
+};
 use ppvm_timeevolve::{
     JumpOp, LadderDirection, LadderOp, LindbladOp, RateMatrix, SolverConfig,
     solve::solve,
@@ -24,7 +28,10 @@ const TMAX:   f64   = 0.5;
 const TSTEPS: usize = 20;
 const LOOPS:  usize = 30;
 
-type SB = ByteFxHashF64<NBYTES, CoefficientThreshold>;
+// CombinedStrategy activates both the fused weight filter (MaxPauliWeight) and
+// coefficient pruning (CoefficientThreshold). MaxPauliWeight caps the Pauli weight
+// of generated terms, cutting the cross-site kernel work at the weight ceiling.
+type SB = ByteFxHashF64<NBYTES, CombinedStrategy<MaxPauliWeight, CoefficientThreshold>>;
 
 fn rate_matrix() -> RateMatrix {
     RateMatrix::Dense(
@@ -48,7 +55,7 @@ fn build_ops() -> LindbladOp<SB> {
 fn initial_state() -> PauliSum<SB> {
     let mut p = PauliSum::builder()
         .n_qubits(N)
-        .strategy(CoefficientThreshold(1e-8))
+        .strategy(CombinedStrategy(MaxPauliWeight(4), CoefficientThreshold(1e-8)))
         .build();
     let t = vec!['I'; N];
     for i in 0..N {

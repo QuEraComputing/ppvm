@@ -128,6 +128,7 @@ pub(crate) enum LindbladTerm<T: Config> {
 
 pub struct LindbladOp<T: Config> {
     pub(crate) terms: Vec<LindbladTerm<T>>,
+    pub(crate) cross_site: Option<CrossSiteLadder>,
 }
 
 impl<T: Config> LindbladOp<T>
@@ -141,6 +142,19 @@ where
     pub fn new(ops: Vec<JumpOp<T>>, rates: RateMatrix) -> Self {
         let mut terms = Vec::new();
         let n = ops.len();
+
+        // Collect Ladder op metadata and build op → ladder-sub-index mapping.
+        let mut ladder_meta: Vec<(usize, LadderDirection)> = Vec::new();
+        let mut op_to_ladder: Vec<Option<usize>> = vec![None; n];
+        for (idx, op) in ops.iter().enumerate() {
+            if let JumpOp::Ladder(l) = op {
+                op_to_ladder[idx] = Some(ladder_meta.len());
+                ladder_meta.push((l.qubit, l.direction));
+            }
+        }
+        let n_ladder = ladder_meta.len();
+        let mut ladder_rates = vec![vec![0.0f64; n_ladder]; n_ladder];
+        let mut has_cross_site = false;
 
         for i in 0..n {
             for j in 0..n {
@@ -159,6 +173,13 @@ where
                             right_dir: lj.direction,
                             weight: gamma_ij,
                         });
+                        // Also record in CrossSiteLadder sub-matrix for qi != qj pairs.
+                        if li.qubit != lj.qubit {
+                            let li_idx = op_to_ladder[i].unwrap();
+                            let lj_idx = op_to_ladder[j].unwrap();
+                            ladder_rates[li_idx][lj_idx] = gamma_ij;
+                            has_cross_site = true;
+                        }
                     }
                     _ => {
                         // At least one Generic: expand any Ladder to CollapseOp at
@@ -201,7 +222,16 @@ where
             }
         }
 
-        LindbladOp { terms }
+        let cross_site = if has_cross_site {
+            Some(CrossSiteLadder {
+                ops: ladder_meta,
+                rates: ladder_rates,
+                tables: ActionTables::build(),
+            })
+        } else {
+            None
+        };
+        LindbladOp { terms, cross_site }
     }
 }
 
@@ -375,6 +405,21 @@ impl ActionTables {
         }
         tables
     }
+}
+
+/// Fused cross-site ladder kernel data.
+///
+/// Replaces N(N-1) individual `LindbladTerm::Ladder` entries (qi != qj) with a single
+/// structure that stores the rate matrix and operator metadata directly, enabling
+/// weight-filtered generation and precomputed action tables (Task 32+).
+pub(crate) struct CrossSiteLadder {
+    /// (qubit_index, direction) per operator. Only Ladder ops are included.
+    pub ops: Vec<(usize, LadderDirection)>,
+    /// Rate sub-matrix for the Ladder ops. rates[i][j] is the rate for (ops[i], ops[j]).
+    /// Size: ops.len() × ops.len(). Diagonal entries are 0.0 (on-site handled by terms).
+    pub rates: Vec<Vec<f64>>,
+    /// Precomputed action tables.
+    pub tables: ActionTables,
 }
 
 // ---------------------------------------------------------------------------
@@ -1764,5 +1809,77 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ---- Task 31 tests: CrossSiteLadder routing ----
+
+    #[test]
+    fn cross_site_populated_for_dense_rate_matrix() {
+        // n=3 all-Ladder (distinct qubits) with 3×3 dense rates → cross_site is Some.
+        let ops: Vec<JumpOp<ByteFxHashF64<1>>> = (0..3)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+            .collect();
+        let rates = RateMatrix::Dense(vec![vec![1.0; 3]; 3]);
+        let lop = LindbladOp::new(ops, rates);
+        let cs = lop.cross_site.as_ref().expect("cross_site must be Some for dense rates");
+        assert_eq!(cs.ops.len(), 3);
+        assert_eq!(cs.rates.len(), 3);
+        assert_eq!(cs.rates[0].len(), 3);
+        // Off-diagonal rates recorded; diagonal stays 0 (qi == qj path not recorded).
+        assert!((cs.rates[0][1] - 1.0).abs() < 1e-15);
+        assert!((cs.rates[0][0] - 0.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn cross_site_none_for_diagonal_rate_matrix() {
+        // Vector (diagonal) rates: all off-diagonal gamma_ij = 0.0, so no cross-site pairs.
+        let ops: Vec<JumpOp<ByteFxHashF64<1>>> = (0..3)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+            .collect();
+        let rates = RateMatrix::Vector(vec![1.0; 3]);
+        let lop = LindbladOp::new(ops, rates);
+        assert!(lop.cross_site.is_none(), "diagonal rates must not produce cross_site");
+    }
+
+    #[test]
+    fn cross_site_none_for_generic_ops() {
+        // 2 Generic CollapseOps with dense 2×2 rates: no Ladder ops → no cross-site struct.
+        let ops: Vec<JumpOp<ByteFxHashF64<1>>> = vec![
+            JumpOp::Generic(single_op("X", 0)),
+            JumpOp::Generic(single_op("Y", 0)),
+        ];
+        let rates = RateMatrix::Dense(vec![vec![1.0, 0.5], vec![0.5, 1.0]]);
+        let lop = LindbladOp::new(ops, rates);
+        assert!(lop.cross_site.is_none(), "Generic ops must not produce cross_site");
+    }
+
+    #[test]
+    fn cross_site_mixed_ops() {
+        // 2 Ladder ops (qubits 0,1) + 1 Generic, dense 3×3 rates.
+        // cross_site: ops.len()==2, rates is 2×2.
+        // Ladder-Generic and Generic-Ladder pairs become LindbladTerm::Generic in terms.
+        // Generic op must have n_qubits >= 2 to accommodate qubit indices 0 and 1.
+        let mut generic_op = CollapseOp::<ByteFxHashF64<1>>::new(2);
+        generic_op.push(ppw("Z", 0), 1.0); // single-site Z on qubit 0 within a 2-qubit system
+        let ops: Vec<JumpOp<ByteFxHashF64<1>>> = vec![
+            JumpOp::Ladder(LadderOp { qubit: 0, direction: LadderDirection::Lower }),
+            JumpOp::Ladder(LadderOp { qubit: 1, direction: LadderDirection::Lower }),
+            JumpOp::Generic(generic_op),
+        ];
+        let rates = RateMatrix::Dense(vec![
+            vec![1.0, 0.5, 0.3],
+            vec![0.5, 1.0, 0.2],
+            vec![0.3, 0.2, 1.0],
+        ]);
+        let lop = LindbladOp::new(ops, rates);
+        let cs = lop.cross_site.as_ref().expect("cross_site must be Some: Ladder-Ladder cross-site pair exists");
+        assert_eq!(cs.ops.len(), 2, "only the 2 Ladder ops are in cross_site");
+        assert_eq!(cs.rates.len(), 2);
+        assert_eq!(cs.rates[0].len(), 2);
+        // Ladder-Generic pairs must appear in terms as Generic.
+        let generic_count = lop.terms.iter()
+            .filter(|t| matches!(t, LindbladTerm::Generic { .. }))
+            .count();
+        assert!(generic_count > 0, "Ladder-Generic pairs must be in terms as Generic");
     }
 }

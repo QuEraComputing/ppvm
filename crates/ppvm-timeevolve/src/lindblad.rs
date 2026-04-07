@@ -556,9 +556,23 @@ fn apply_par<T: Config>(
         *result += (w.clone(), *c);
     }
     if let Some(cs) = &op.cross_site {
-        apply_cross_site(cs, p, result, w_max);
+        let estimated_work = p.len() * cs.ops.len() * cs.ops.len();
+        if estimated_work >= CROSS_SITE_PAR_THRESHOLD {
+            apply_cross_site_par(cs, p, result, w_max);
+        } else {
+            apply_cross_site(cs, p, result, w_max);
+        }
     }
 }
+
+/// Work-estimate threshold above which `apply_cross_site_par` is used instead of the
+/// sequential `apply_cross_site`. Estimated work = `p.len() * cs.ops.len()^2`.
+///
+/// Benchmark data (Apple Silicon, `--release`):
+///   n=6, p.len=1054, est=37944  → seq=183µs, par=2000µs  (seq wins; rayon overhead dominates)
+///   n=8, p.len=10466, est=669824 → seq=22µs, par=16µs   (par wins 1.36×)
+/// Crossover is ~200_000: below that sequential is faster; above that parallel saves ~30%.
+const CROSS_SITE_PAR_THRESHOLD: usize = 200_000;
 
 /// Fused cross-site ladder kernel with weight-filtered generation.
 ///
@@ -618,6 +632,84 @@ fn apply_cross_site<T: Config>(
                 }
             }
         }
+    }
+}
+
+/// Parallel version of [`apply_cross_site`] for large observables.
+///
+/// `#[cold]` + `#[inline(never)]` isolates all rayon code from the sequential hot path
+/// in `apply_cross_site`, preventing rayon's acquire/release fences from interfering
+/// with LLVM's memory-access reordering in the sequential loop.
+///
+/// Parallelises over *qubit pairs* `(i, j)` — each pair iterates over all `p.len()`
+/// observable words, giving `O(p.len())` work per rayon task.  Parallelising over
+/// observable words instead (the outer loop of the sequential version) was tried and
+/// found to be 9–27× slower due to tiny per-item work and Vec-collection overhead.
+#[cold]
+#[inline(never)]
+fn apply_cross_site_par<T: Config>(
+    cs: &CrossSiteLadder,
+    p: &PauliSum<T>,
+    result: &mut PauliSum<T>,
+    w_max: usize,
+) where
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a T::PauliWordType, &'a T::Coeff)>,
+    T::Map: ACMapAddAssign<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType>
+        + Send
+        + Sync,
+    T::Coeff: std::ops::AddAssign + Copy + std::ops::Mul<Output = T::Coeff> + Send + Sync,
+    T::PauliWordType: PauliWordTrait + Clone + Send + Sync,
+    T::BuildHasher: Send + Sync,
+    T::Strategy: Send + Sync,
+    f64: Into<T::Coeff>,
+{
+    let n = p.n_qubits();
+    let n_ops = cs.ops.len();
+    // Pre-collect pairs (upper triangle) and observable items so each rayon task gets
+    // O(p.len()) work without needing T::Map to support par_iter.
+    let pairs: Vec<(usize, usize)> = (0..n_ops)
+        .flat_map(|i| ((i + 1)..n_ops).map(move |j| (i, j)))
+        .collect();
+    let items: Vec<(&T::PauliWordType, &T::Coeff)> = p.data().iter().collect();
+    let combined = pairs
+        .par_iter()
+        .fold(
+            || PauliSum::<T>::builder().n_qubits(n).build(),
+            |mut local, &(i, j)| {
+                let gamma = 2.0 * cs.rates[i][j];
+                if gamma == 0.0 { return local; }
+                for &(w_a, coeff_a) in &items {
+                    let weight = w_a.weight();
+                    let headroom = w_max.saturating_sub(weight);
+                    let qi_active = w_a.get(cs.ops[i].0) != Pauli::I;
+                    let qj_active = w_a.get(cs.ops[j].0) != Pauli::I;
+                    let would_add = (!qi_active as usize) + (!qj_active as usize);
+                    if would_add > headroom { continue; }
+                    let qi = cs.ops[i].0;
+                    let qj = cs.ops[j].0;
+                    let left_dir = cs.ops[i].1.flip();
+                    let right_dir = cs.ops[j].1;
+                    let cell = cs.tables.get(left_dir, right_dir, w_a.get(qi), w_a.get(qj));
+                    for k in 0..cell.count as usize {
+                        let (out_qi, out_qj, factor) = cell.entries[k];
+                        local += (w_a.set_new_2(qi, out_qi, qj, out_qj),
+                                  (gamma * factor).into() * *coeff_a);
+                    }
+                }
+                local
+            },
+        )
+        .reduce(
+            || PauliSum::<T>::builder().n_qubits(n).build(),
+            |mut a, b| {
+                for (w, c) in b.data().iter() {
+                    a += (w.clone(), *c);
+                }
+                a
+            },
+        );
+    for (w, c) in combined.data().iter() {
+        *result += (w.clone(), *c);
     }
 }
 
@@ -782,7 +874,12 @@ where
             }
         }
         if let Some(cs) = &self.cross_site {
-            apply_cross_site(cs, p, result, w_max);
+            let estimated_work = p.len() * cs.ops.len() * cs.ops.len();
+            if estimated_work >= CROSS_SITE_PAR_THRESHOLD {
+                apply_cross_site_par(cs, p, result, w_max);
+            } else {
+                apply_cross_site(cs, p, result, w_max);
+            }
         }
     }
 }
@@ -2343,6 +2440,152 @@ mod tests {
                 let c_fused: f64 = r_fused.data().trace(w);
                 assert!((c_fused - c_generic).abs() < 1e-12,
                     "same-dir n4 input={input} word={w:?} (reverse): fused={c_fused}, generic={c_generic}");
+            }
+        }
+    }
+
+    /// Timing micro-benchmark: seq vs par cross-site for n=5 (warm), n=6, n=8 dense observables.
+    /// Run with `cargo test -p ppvm-timeevolve --release -- --ignored crossover_timing --nocapture`.
+    #[test]
+    #[ignore]
+    fn crossover_timing() {
+        use std::time::Instant;
+        // Warm up rayon thread pool before any timing.
+        rayon::join(|| {}, || {});
+        let _warmup: Vec<i32> = (0..1000).into_par_iter().map(|x| x * 2).collect();
+
+        // n=5 at benchmark-fixture density (small p, verifies sequential path dominates)
+        {
+            let n = 5usize;
+            let ops: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n)
+                .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+                .collect();
+            let rates: Vec<Vec<f64>> = (0..n)
+                .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+                .collect();
+            let lop = LindbladOp::<ByteFxHashF64<1>>::new(ops, RateMatrix::Dense(rates));
+            let cs = lop.cross_site.as_ref().unwrap();
+            // Small p (≈ bench_rhs warm state).
+            let mut p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            for i in 0..n { let mut z = vec!['I'; n]; z[i] = 'Z'; p += (z.into_iter().collect::<String>(), 1.0_f64); }
+            let mut dummy: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            let t0 = Instant::now();
+            for _ in 0..2000 { apply_cross_site(cs, &p, &mut dummy, usize::MAX); }
+            let seq_us = t0.elapsed().as_micros() as f64 / 2000.0;
+            let t1 = Instant::now();
+            for _ in 0..2000 { apply_cross_site_par(cs, &p, &mut dummy, usize::MAX); }
+            let par_us = t1.elapsed().as_micros() as f64 / 2000.0;
+            let ops_sq = cs.ops.len() * cs.ops.len();
+            println!("n=5 p.len={} ops^2={ops_sq} est_work={}: seq={seq_us:.2}µs par={par_us:.2}µs",
+                p.len(), p.len() * ops_sq);
+        }
+
+        // n=8 fully grown
+        {
+            let n = 8usize;
+            let ops: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n)
+                .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+                .collect();
+            let rates: Vec<Vec<f64>> = (0..n)
+                .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+                .collect();
+            let lop = LindbladOp::<ByteFxHashF64<1>>::new(ops, RateMatrix::Dense(rates));
+            let cs = lop.cross_site.as_ref().unwrap();
+            let mut p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            for i in 0..n { let mut z = vec!['I'; n]; z[i] = 'Z'; p += (z.into_iter().collect::<String>(), 1.0_f64); }
+            for _ in 0..5 {
+                let mut next: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+                apply_cross_site(cs, &p, &mut next, usize::MAX);
+                for (w, c) in p.data().iter() { next += (w.clone(), *c); }
+                p = next;
+            }
+            let plen = p.len();
+            let ops_sq = cs.ops.len() * cs.ops.len();
+            let est = plen * ops_sq;
+            let mut dummy: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            let t0 = Instant::now();
+            for _ in 0..200 { apply_cross_site(cs, &p, &mut dummy, usize::MAX); }
+            let seq_us = t0.elapsed().as_micros() as f64 / 200.0;
+            let t1 = Instant::now();
+            for _ in 0..200 { apply_cross_site_par(cs, &p, &mut dummy, usize::MAX); }
+            let par_us = t1.elapsed().as_micros() as f64 / 200.0;
+            println!("n=8 p.len={plen} ops^2={ops_sq} est_work={est}: seq={seq_us:.1}µs par={par_us:.1}µs");
+        }
+
+        // n=6 at multiple growth levels to find crossover
+        for grow in [0usize, 2, 3, 4, 5] {
+            let n = 6usize;
+            let ops: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n)
+                .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+                .collect();
+            let rates: Vec<Vec<f64>> = (0..n)
+                .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+                .collect();
+            let lop = LindbladOp::<ByteFxHashF64<1>>::new(ops, RateMatrix::Dense(rates));
+            let cs = lop.cross_site.as_ref().unwrap();
+            let mut p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            for i in 0..n { let mut z = vec!['I'; n]; z[i] = 'Z'; p += (z.into_iter().collect::<String>(), 1.0_f64); }
+            for _ in 0..grow {
+                let mut next: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+                apply_cross_site(cs, &p, &mut next, usize::MAX);
+                for (w, c) in p.data().iter() { next += (w.clone(), *c); }
+                p = next;
+            }
+            let plen = p.len();
+            let ops_sq = cs.ops.len() * cs.ops.len();
+            let est = plen * ops_sq;
+            let iters = if plen < 50 { 5000usize } else if plen < 500 { 1000 } else { 200 };
+            let mut dummy: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            let t0 = Instant::now();
+            for _ in 0..iters { apply_cross_site(cs, &p, &mut dummy, usize::MAX); }
+            let seq_us = t0.elapsed().as_micros() as f64 / iters as f64;
+            let t1 = Instant::now();
+            for _ in 0..iters { apply_cross_site_par(cs, &p, &mut dummy, usize::MAX); }
+            let par_us = t1.elapsed().as_micros() as f64 / iters as f64;
+            println!("n=6 grow={grow} p.len={plen} est_work={est}: seq={seq_us:.2}µs par={par_us:.2}µs");
+        }
+    }
+
+    #[test]
+    fn parallel_fused_matches_sequential() {
+        // n=8 all-Lower, dense rates. Calls apply_cross_site (seq) and apply_cross_site_par
+        // directly (bypassing the threshold) and asserts identical results for several inputs.
+        use ppvm_runtime::prelude::Trace;
+
+        let n = 8usize;
+        let ops: Vec<JumpOp<ByteFxHashF64<1>>> = (0..n)
+            .map(|i| JumpOp::Ladder(LadderOp { qubit: i, direction: LadderDirection::Lower }))
+            .collect();
+        let rates: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| 1.0 / (1.0 + (i as f64 - j as f64).abs())).collect())
+            .collect();
+        let lop = LindbladOp::<ByteFxHashF64<1>>::new(ops, RateMatrix::Dense(rates));
+        let cs = lop.cross_site.as_ref().expect("cross_site must be populated for n=8 Ladder");
+
+        let inputs = ["ZIIIIIII", "IZZZZIII", "ZZIIXXII", "XIZIYIZI", "IIZZZZZZ"];
+        for &input in &inputs {
+            let mut p: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            p += (input, 1.0_f64);
+
+            let mut r_seq: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            apply_cross_site(cs, &p, &mut r_seq, usize::MAX);
+
+            let mut r_par: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n).build();
+            apply_cross_site_par(cs, &p, &mut r_par, usize::MAX);
+
+            for (w, c_seq) in r_seq.data().iter() {
+                let c_par: f64 = r_par.data().trace(w);
+                assert!(
+                    (c_seq - c_par).abs() < 1e-12,
+                    "input={input} word={w:?}: seq={c_seq}, par={c_par}"
+                );
+            }
+            for (w, c_par) in r_par.data().iter() {
+                let c_seq: f64 = r_seq.data().trace(w);
+                assert!(
+                    (c_seq - c_par).abs() < 1e-12,
+                    "input={input} word={w:?} (reverse): seq={c_seq}, par={c_par}"
+                );
             }
         }
     }

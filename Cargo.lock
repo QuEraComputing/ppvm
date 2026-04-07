@@ -787,6 +787,7 @@ dependencies = [
  "fxhash",
  "ppvm-runtime",
  "rayon",
+ "smallvec",
 ]
 
 [[package]]

@@ -107,9 +107,23 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for Pauli
     }
 
     fn weight(&self) -> usize {
-        (0..self.nqubits)
-            .filter(|&i| self.xbits[i] || self.zbits[i])
-            .count()
+        // Hardware popcount: OR the raw storage words of xbits and zbits, then call
+        // count_ones() on each word. For [u8;1] this is one POPCNT instruction;
+        // for [u8;N] it is N POPCNTs rather than N per-bit iterations.
+        //
+        // `as_raw_slice()` from `bitvec::view::BitViewSized` returns &[A::Store] (the
+        // raw integer words). `load_value()` reads the word as `A::Store::Mem` which is
+        // always a primitive integer. We use `funty::Integral::count_ones()` via the
+        // trait that bitvec already exposes in its `mem` module.
+        //
+        // Padding bits beyond nqubits are always zero (initialised with BitArray::ZERO;
+        // set_xbit/set_zbit only write within 0..nqubits), so no masking needed.
+        use bitvec::store::BitStore;
+        use funty::Integral;
+        self.xbits.as_raw_slice().iter()
+            .zip(self.zbits.as_raw_slice().iter())
+            .map(|(x, z)| (x.load_value() | z.load_value()).count_ones() as usize)
+            .sum()
     }
 
     fn rehash(&mut self) {
@@ -424,6 +438,44 @@ mod tests {
         assert_eq!(ps.get(1), Pauli::Y);
         assert_eq!(ps.get(2), Pauli::Z);
         assert_eq!(ps.get(3), Pauli::I);
+    }
+
+    #[test]
+    fn weight_all_identity() {
+        // All-I word must have weight 0, regardless of storage size.
+        let w: PauliWord<[u8; 2]> = PauliWord::new(10);
+        assert_eq!(w.weight(), 0);
+    }
+
+    #[test]
+    fn weight_all_x() {
+        // All-X word (10 qubits) must have weight 10.
+        let mut w: PauliWord<[u8; 2]> = PauliWord::new(10);
+        for i in 0..10 { w = w.set_new(i, Pauli::X); }
+        assert_eq!(w.weight(), 10);
+    }
+
+    #[test]
+    fn weight_mixed() {
+        // Qubits 0=X, 3=Y, 7=Z, rest I → weight 3.
+        let mut w: PauliWord<[u8; 2]> = PauliWord::new(10);
+        w = w.set_new(0, Pauli::X);
+        w = w.set_new(3, Pauli::Y);
+        w = w.set_new(7, Pauli::Z);
+        assert_eq!(w.weight(), 3);
+    }
+
+    #[test]
+    fn weight_boundary() {
+        // n=8: exactly 1 byte, no padding. All-X → weight 8.
+        let mut w8: PauliWord<[u8; 1]> = PauliWord::new(8);
+        for i in 0..8 { w8 = w8.set_new(i, Pauli::X); }
+        assert_eq!(w8.weight(), 8);
+
+        // n=9: 2 bytes, 7 padding bits in byte 1. All-X for 9 qubits → weight 9 (not 16).
+        let mut w9: PauliWord<[u8; 2]> = PauliWord::new(9);
+        for i in 0..9 { w9 = w9.set_new(i, Pauli::X); }
+        assert_eq!(w9.weight(), 9);
     }
 
     #[test]

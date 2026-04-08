@@ -759,6 +759,7 @@ dependencies = [
  "bon",
  "criterion 0.7.0",
  "dashmap",
+ "funty",
  "fxhash",
  "gxhash",
  "indexmap",

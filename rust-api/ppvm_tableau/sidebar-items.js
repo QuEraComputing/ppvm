@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["data","display","gates","measure","noise","prelude","sparsevec","stim","tableau_index"]};

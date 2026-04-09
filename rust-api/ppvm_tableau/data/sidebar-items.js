@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["symplectic_inner"],"struct":["GeneralizedTableau","Tableau"]};

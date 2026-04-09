@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["Byte8"],"type":["Byte8F64"]};

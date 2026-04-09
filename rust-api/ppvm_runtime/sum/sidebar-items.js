@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["impl_op_mul_assign_coefficient"],"struct":["PauliSum"]};

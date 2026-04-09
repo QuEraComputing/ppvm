@@ -82,7 +82,7 @@ where
         // however, whether the decomposition phase is imaginary or not tells us
         // whether we need to pick the real or imaginary part of the overlap
         // we still might be able to optimize here
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits_bits) =
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
             self.compute_decomposition(addr0, Pauli::Z);
 
         // build a temporary lookup table for faster lookup in the loop
@@ -98,7 +98,7 @@ where
         for (&idx, coeff) in &coeff_map {
             let branch_index = idx ^ stab_anticomm_bits; // stab_anticomm_bits is the index shift
             let phase = (phase_decomp
-                + self.compute_phase(destab_anticomm_bits_bits, idx, stab_anticomm_bits))
+                + self.compute_phase(destab_anticomm_bits, idx, stab_anticomm_bits))
                 % 4;
             let complex_phase: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase as usize].into();
             let Some(coeff_branch) = coeff_map.get(&branch_index).copied() else {
@@ -168,8 +168,8 @@ where
                 .collect();
             for idx in b_keys {
                 let coeff = coeff_map.remove(&idx).unwrap();
-                // q = phase_decomp * (-1).pow(symplectic_inner(*idx, destab_anticomm_bits_bits)) * q;
-                let symp_inner = symplectic_inner(idx, destab_anticomm_bits_bits);
+                // q = phase_decomp * (-1).pow(symplectic_inner(*idx, destab_anticomm_bits)) * q;
+                let symp_inner = symplectic_inner(idx, destab_anticomm_bits);
                 let phase_idx =
                     ((alpha as i32 + if symp_inner % 2 == 1 { 2 } else { 0 }) % 4) as usize;
                 let q: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase_idx].into();
@@ -218,7 +218,7 @@ where
             let z_sign = phase_decomp == 2;
 
             // 3. check the anticommutation -- combine with coefficient update
-            self.trim_coefficients_for_measurement(destab_anticomm_bits_bits, outcome, z_sign);
+            self.trim_coefficients_for_measurement(destab_anticomm_bits, outcome, z_sign);
         }
         Some(outcome)
     }

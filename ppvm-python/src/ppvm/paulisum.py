@@ -77,8 +77,7 @@ class PauliSum:
     Attributes:
         initial_terms: Pauli strings, each containing only 'I', 'X', 'Y', 'Z' characters.
             All terms must have the same length (number of qubits).
-        n_qubits: Number of qubits. If None, inferred from the length of the
-            first term.
+        n_qubits: Number of qubits.
         coefficients: Coefficients for each Pauli term. If empty, all terms
             are assigned coefficient 1.0.
         min_abs_coeff: Minimum absolute coefficient value. Terms with smaller
@@ -96,7 +95,7 @@ class PauliSum:
 
         ```python
         # Create a simple Pauli sum: 0.5 * ZZ + 0.3 * XI
-        ps = PauliSum(initial_terms=["ZZ", "XI"], coefficients=[0.5, 0.3])
+        ps = PauliSum(n_qubits = 2, initial_terms=["ZZ", "XI"], coefficients=[0.5, 0.3])
         # For a circuit: RZ(0.5) on qubit 1, then H on qubit 0
         # Apply in reverse order:
         ps.rz(1, 0.5)
@@ -121,7 +120,7 @@ class PauliSum:
     """
 
     initial_terms: Sequence[str]
-    n_qubits: int | None = None
+    n_qubits: int
     coefficients: Sequence[float] = ()
     min_abs_coeff: float = 1e-10
     max_pauli_weight: int | None = None
@@ -152,9 +151,6 @@ class PauliSum:
                 "At least one term must be provided to initialize PauliSum."
             )
 
-        if n_qubits is None:
-            n_qubits = len(terms[0])
-
         for term in terms:
             if len(term) != n_qubits:
                 raise ValueError(
@@ -166,7 +162,7 @@ class PauliSum:
         N = math.ceil(n_qubits / 8.0)
 
         # number of bytes we have
-        possible_interfaces = range(15)
+        possible_interfaces = range(16)
         N_interface = next(n for n in possible_interfaces if 2**n > N)
         interface = self._get_interface(N_interface)
 

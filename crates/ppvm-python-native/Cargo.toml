@@ -9,6 +9,9 @@ name = "ppvm_python_native"
 crate-type = ["cdylib"]
 
 [dependencies]
+bnum = "0.13.0"
+num = "0.4.3"
 paste = "1.0.15"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
+ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
 pyo3 = { version = "0.27.0", features = ["multiple-pymethods"] }

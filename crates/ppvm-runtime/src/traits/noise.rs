@@ -1,5 +1,7 @@
 use crate::config::Config;
 
+// FIXME: most channels don't need to own probs, we can just reference them and clean up the code
+
 pub trait PauliError<T: Config> {
     fn pauli_error(&mut self, addr0: usize, p: [T::Coeff; 3]);
 }
@@ -15,7 +17,11 @@ pub trait TwoQubitPauliError<T: Config> {
 }
 
 pub trait Depolarizing<T: Config> {
-    fn depolarizing(&mut self, addr0: usize, p: T::Coeff);
+    fn depolarize(&mut self, addr0: usize, p: T::Coeff);
+}
+
+pub trait Depolarizing2<T: Config> {
+    fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff);
 }
 
 pub trait AmplitudeDamping<T: Config> {

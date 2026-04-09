@@ -2,6 +2,7 @@ use crate::char::Pauli;
 use crate::loss::LossyPauliWord;
 use crate::traits::*;
 use crate::{config::Config, sum::PauliSum};
+use num::traits::Float;
 use std::hash::BuildHasher;
 
 impl<T: Config> PauliError<T> for PauliSum<T>
@@ -219,9 +220,72 @@ where
             }
 
             _ => {
-                // TODO: no action on loss needs test!
+                // NOTE: if just one atom is lost, then there is no
+                // well-defined noise channel on the other atom
+                // so we don't apply any noise
             }
         })
+    }
+}
+
+impl<T: Config> Depolarizing<T> for PauliSum<T>
+where
+    f64: std::ops::Mul<T::Coeff, Output = T::Coeff>
+        + std::ops::Add<T::Coeff, Output = T::Coeff>
+        + std::ops::Sub<T::Coeff, Output = T::Coeff>,
+{
+    fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
+        self.scale(|k, v| match k.get(addr0) {
+            Pauli::I => {}
+            Pauli::X => {
+                *v *= 1.0f64 - 4.0f64 / 3.0f64 * p.clone();
+            }
+            Pauli::Y => {
+                *v *= 1.0f64 - 4.0f64 / 3.0f64 * p.clone();
+            }
+            Pauli::Z => {
+                *v *= 1.0f64 - 4.0f64 / 3.0f64 * p.clone();
+            }
+            Pauli::L => {}
+        });
+    }
+}
+
+impl<T: Config> Depolarizing2<T> for PauliSum<T>
+where
+    PauliSum<T>: TwoQubitPauliError<T>,
+{
+    fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff) {
+        let ps: [T::Coeff; 15] = core::array::from_fn(|_| p.clone() * (1.0 / 15.0));
+        self.two_qubit_pauli_error(addr0, addr1, ps);
+    }
+}
+
+impl<T: Config> AmplitudeDamping<T> for PauliSum<T>
+where
+    f64: std::ops::Sub<T::Coeff, Output = T::Coeff>,
+    T::Coeff: Float,
+{
+    fn amplitude_damping(&mut self, addr0: usize, gamma: <T as Config>::Coeff) {
+        self.map_insert(|k, v| match k.get(addr0) {
+            Pauli::I | Pauli::L => None,
+
+            Pauli::X | Pauli::Y => {
+                *v *= (1.0 - gamma).sqrt();
+                None
+            }
+
+            Pauli::Z => {
+                // branch to gamma * I
+                let new_v = v.clone() * gamma;
+                let mut new_k = k.clone();
+                new_k.set(addr0, Pauli::I);
+
+                *v *= 1.0 - gamma;
+
+                Some((new_k, new_v))
+            }
+        });
     }
 }
 

@@ -11,26 +11,28 @@
       
       
       
+        <link rel="prev" href="../install/">
       
-        <link rel="next" href="install/">
+      
+        <link rel="next" href="loss/">
       
       
         
       
       
-      <link rel="icon" href="assets/images/favicon.png">
+      <link rel="icon" href="../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>ppvm</title>
+        <title>Pauli Propagation - ppvm</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -49,11 +51,11 @@
       
     
     
-      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
     
       <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -78,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#ppvm" class="md-skip">
+        <a href="#pauli-propagation" class="md-skip">
           Skip to content
         </a>
       
@@ -92,7 +94,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="ppvm" class="md-header__button md-logo" aria-label="ppvm" data-md-component="logo">
+    <a href=".." title="ppvm" class="md-header__button md-logo" aria-label="ppvm" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -112,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Home
+              Pauli Propagation
             
           </span>
         </div>
@@ -211,11 +213,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="." class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
         
   
   
@@ -234,7 +234,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="install/" class="md-tabs__link">
+      <a href="../install/" class="md-tabs__link">
         
   
   
@@ -251,11 +251,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="pauli_sum/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
           
   
   
@@ -275,7 +277,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="generalized_tableau/" class="md-tabs__link">
+      <a href="../generalized_tableau/" class="md-tabs__link">
         
   
   
@@ -296,7 +298,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="examples/" class="md-tabs__link">
+        <a href="../examples/" class="md-tabs__link">
           
   
   
@@ -318,7 +320,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="api/" class="md-tabs__link">
+        <a href="../api/" class="md-tabs__link">
           
   
   
@@ -354,7 +356,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="ppvm" class="md-nav__button md-logo" aria-label="ppvm" data-md-component="logo">
+    <a href=".." title="ppvm" class="md-nav__button md-logo" aria-label="ppvm" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -369,37 +371,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -415,120 +390,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#pauli-propagation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Pauli Propagation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#generalized-stabilizer-tableau" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Generalized Stabilizer Tableau
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#quick-installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick installation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#short-examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Short examples
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Short examples">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#pauli-propagation_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Pauli Propagation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#stabilizer-tableau" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Stabilizer Tableau
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Getting started
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#similar-packages" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Similar packages
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -540,7 +401,7 @@
   
   
     <li class="md-nav__item">
-      <a href="install/" class="md-nav__link">
+      <a href="../install/" class="md-nav__link">
         
   
   
@@ -564,6 +425,8 @@
       
   
   
+    
+  
   
   
     
@@ -579,20 +442,23 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="pauli_sum/" class="md-nav__link ">
+            <a href="./" class="md-nav__link md-nav__link--active">
               
   
   
@@ -610,13 +476,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+              <label class="md-nav__link md-nav__link--active" for="__nav_3" id="__nav_3_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -636,7 +502,7 @@
   
   
     <li class="md-nav__item">
-      <a href="pauli_sum/loss/" class="md-nav__link">
+      <a href="loss/" class="md-nav__link">
         
   
   
@@ -671,7 +537,7 @@
   
   
     <li class="md-nav__item">
-      <a href="generalized_tableau/" class="md-nav__link">
+      <a href="../generalized_tableau/" class="md-nav__link">
         
   
   
@@ -725,7 +591,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="examples/" class="md-nav__link ">
+            <a href="../examples/" class="md-nav__link ">
               
   
   
@@ -769,7 +635,7 @@
   
   
     <li class="md-nav__item">
-      <a href="examples/trotter/" class="md-nav__link">
+      <a href="../examples/trotter/" class="md-nav__link">
         
   
   
@@ -797,7 +663,7 @@
   
   
     <li class="md-nav__item">
-      <a href="examples/msd/" class="md-nav__link">
+      <a href="../examples/msd/" class="md-nav__link">
         
   
   
@@ -859,7 +725,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="api/" class="md-nav__link ">
+            <a href="../api/" class="md-nav__link ">
               
   
   
@@ -903,7 +769,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/ppvm/paulisum/" class="md-nav__link">
+      <a href="../api/ppvm/paulisum/" class="md-nav__link">
         
   
   
@@ -931,7 +797,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/ppvm/generalized_tableau/" class="md-nav__link">
+      <a href="../api/ppvm/generalized_tableau/" class="md-nav__link">
         
   
   
@@ -986,55 +852,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#pauli-propagation" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Pauli Propagation
+        Overview
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#generalized-stabilizer-tableau" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Generalized Stabilizer Tableau
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#quick-installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick installation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#short-examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Short examples
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Short examples">
+    <nav class="md-nav" aria-label="Overview">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#pauli-propagation_1" class="md-nav__link">
+  <a href="#basic-usage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Pauli Propagation
+        Basic usage
       
     </span>
   </a>
@@ -1042,10 +875,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#stabilizer-tableau" class="md-nav__link">
+  <a href="#term-notation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Stabilizer Tableau
+        Term notation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#truncation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Truncation
       
     </span>
   </a>
@@ -1058,21 +902,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
+  <a href="#simulating-loss" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Getting started
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#similar-packages" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Similar packages
+        Simulating loss
       
     </span>
   </a>
@@ -1096,95 +929,99 @@
 
 
 
-<h1 id="ppvm">ppvm</h1>
-<p><strong>ppvm</strong> (Pauli Propagation and Virtual Machine) is a fast and easy-to-use quantum circuit simulator
-backed by a high-performance Rust core with Python bindings.</p>
-<p>It offers two complementary simulation approaches:</p>
-<h2 id="pauli-propagation">Pauli Propagation</h2>
-<p>Instead of tracking a full quantum state vector, ppvm represents the quantum
-state as a sum of Pauli strings with real coefficients.
-Gates are applied by conjugating each term in
-the sum, and noise channels are applied as super-operators. This makes it
-possible to simulate large and deep quantum circuits, including noisy ones,
+<h1 id="pauli-propagation">Pauli Propagation</h1>
+<h2 id="overview">Overview</h2>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;PauliSum&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../api/ppvm/paulisum/#ppvm.paulisum.PauliSum"><code>PauliSum</code></a> simulates quantum circuits in the <strong>Heisenberg picture</strong>.
+Instead of evolving a state vector forward through the circuit, it propagates
+<em>observables</em> backward. The observable is represented as a weighted sum of Pauli
+strings, and each gate is applied analytically by conjugation.</p>
+<p>This makes it possible to simulate large, deep circuits -- including noisy ones --
 at a fraction of the cost of full statevector simulation.</p>
-<ul>
-<li>Clifford gates, arbitrary single- and two-qubit rotations, and common noise
-  channels.</li>
-<li>Automatic truncation: terms below a coefficient threshold or above a Pauli
-  weight cutoff are dropped, controlling the approximation/performance trade-off.</li>
-<li>Optional loss channel support via <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LossyPauliSum&lt;/span&gt;
-
-
-  &lt;span class=&quot;doc doc-labels&quot;&gt;
-      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="api/ppvm/paulisum/#ppvm.paulisum.LossyPauliSum"><code>LossyPauliSum</code></a>,
-  including a reset channel to reset a qubit from being lost to its zero-state.</li>
-</ul>
-<h2 id="generalized-stabilizer-tableau">Generalized Stabilizer Tableau</h2>
-<p>The <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;GeneralizedTableau&lt;/span&gt;
-
-
-  &lt;span class=&quot;doc doc-labels&quot;&gt;
-      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="api/ppvm/generalized_tableau/#ppvm.generalized_tableau.GeneralizedTableau"><code>GeneralizedTableau</code></a>
-simulates quantum circuits in the Schrodinger picture using a generalized stabilizer decomposition.
-Clifford operations are handled efficiently in the tableau, while non-Clifford gates (T gates, arbitrary
-rotations) are tracked via a sparse coefficient vector that grows with the stabilizer rank.</p>
-<ul>
-<li>Clifford gates, T gates, and arbitrary single- and two-qubit rotations.</li>
-<li>Mid-circuit measurement returning <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;MeasurementResult&lt;/span&gt;" href="api/ppvm/generalized_tableau/#ppvm.generalized_tableau.MeasurementResult"><code>MeasurementResult</code></a> (ZERO, ONE, or LOST).</li>
-<li>Noise channels: depolarizing, Pauli error, loss, and correlated loss.</li>
-<li><a href="https://github.com/quantumlib/Stim">STIM</a> circuit format support via <code>run_stim_string</code> and <code>run_stim_file</code>.</li>
-<li><code>fork()</code> for branching into independent simulation trajectories.</li>
-</ul>
-<h2 id="quick-installation">Quick installation</h2>
-<p>Just <code>pip install</code> directly from git:</p>
-<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>git+https://github.com/QuEraComputing/ppvm.git#subdirectory<span class="o">=</span>ppvm-python
-</code></pre></div>
-<h2 id="short-examples">Short examples</h2>
-<h3 id="pauli-propagation_1">Pauli Propagation</h3>
+<h3 id="basic-usage">Basic usage</h3>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">ppvm</span><span class="w"> </span><span class="kn">import</span> <span class="n">PauliSum</span>
 
-<span class="c1"># Start with the terms for which you want to compute the average</span>
-<span class="n">state</span> <span class="o">=</span> <span class="n">PauliSum</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">n_qubits</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">terms</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;ZZ&quot;</span><span class="p">])</span>
+<span class="c1"># Observable: Z on each qubit</span>
+<span class="n">state</span> <span class="o">=</span> <span class="n">PauliSum</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">n_qubits</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">terms</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;Z</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">)])</span>
 
-<span class="c1"># Create a GHZ state</span>
-<span class="c1"># NOTE: since this is Pauli Propagation, we need to backwards propagate, hence</span>
-<span class="c1"># the CNOT needs to precede the Hadamard</span>
+<span class="c1"># Apply gates in reverse circuit order</span>
+<span class="n">state</span><span class="o">.</span><span class="n">cnot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
 <span class="n">state</span><span class="o">.</span><span class="n">cnot</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
 <span class="n">state</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 
-<span class="c1"># The state is now represented as IZ</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>  <span class="c1"># 1.000 * IZ</span>
-
-<span class="c1"># Compute the average value</span>
+<span class="c1"># Expectation value with respect to |0...0&gt;</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">overlap_with_zero</span><span class="p">())</span>
 </code></pre></div>
-<h3 id="stabilizer-tableau">Stabilizer Tableau</h3>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">ppvm</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeneralizedTableau</span>
-
-<span class="n">tab</span> <span class="o">=</span> <span class="n">GeneralizedTableau</span><span class="p">(</span><span class="n">n_qubits</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-<span class="n">tab</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-<span class="n">tab</span><span class="o">.</span><span class="n">cnot</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-
-<span class="c1"># Measure both qubits -- results are always correlated (Bell state)</span>
-<span class="n">r0</span> <span class="o">=</span> <span class="n">tab</span><span class="o">.</span><span class="n">measure</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-<span class="n">r1</span> <span class="o">=</span> <span class="n">tab</span><span class="o">.</span><span class="n">measure</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Qubit 0: </span><span class="si">{</span><span class="n">r0</span><span class="si">}</span><span class="s2">, Qubit 1: </span><span class="si">{</span><span class="n">r1</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Because this is Heisenberg-picture propagation, gates must be applied in
+<strong>reverse circuit order</strong>.</p>
+</div>
+<h3 id="term-notation">Term notation</h3>
+<p>Terms can be specified as full Pauli strings (<code>"XZI"</code>) or in compact notation
+(<code>"X0Z1"</code> -- Pauli + qubit index). Coefficients default to 1.0 but can be set
+explicitly:</p>
+<div class="highlight"><pre><span></span><code><span class="n">ps</span> <span class="o">=</span> <span class="n">PauliSum</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="p">[(</span><span class="s2">&quot;Z0Z1&quot;</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;X2&quot;</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">)])</span>
 </code></pre></div>
-<h2 id="getting-started">Getting started</h2>
+<h3 id="truncation">Truncation</h3>
+<p>Two truncation strategies control the approximation/performance trade-off:</p>
 <ul>
-<li><a href="install/">Installation</a></li>
-<li><a href="examples/">Examples</a></li>
-<li><a href="api/">API Reference</a></li>
-<li><a href="../rust-api/">Rust API Reference</a></li>
+<li><strong>Coefficient truncation</strong> (<code>min_abs_coeff</code>): drops terms with absolute
+  coefficient below a threshold.</li>
+<li><strong>Weight truncation</strong> (<code>max_pauli_weight</code>): drops terms with more non-identity
+  Paulis than the cutoff.</li>
 </ul>
-<h2 id="similar-packages">Similar packages</h2>
+<div class="highlight"><pre><span></span><code><span class="n">ps</span> <span class="o">=</span> <span class="n">PauliSum</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="s2">&quot;Z0&quot;</span><span class="p">,</span> <span class="n">min_abs_coeff</span><span class="o">=</span><span class="mf">1e-8</span><span class="p">,</span> <span class="n">max_pauli_weight</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="simulating-loss">Simulating loss</h2>
+<p>To simulate qubit loss, ppvm offers <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LossyPauliSum&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../api/ppvm/paulisum/#ppvm.paulisum.LossyPauliSum"><code>LossyPauliSum</code></a>.
+This is a dedicated class that behaves just like a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;PauliSum&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../api/ppvm/paulisum/#ppvm.paulisum.PauliSum"><code>PauliSum</code></a>,
+but adds additional methods for the loss.</p>
+<p>This separation exists because we need to extend the Pauli basis to
+account for loss (see <a href="loss/">Loss channel details</a> for the full background). This comes at a storage overhead --
+we now need 3 bits to represent a character in a Pauli string rather than 2.</p>
+<p>Here is a small example:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">ppvm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LossyPauliSum</span>
+
+<span class="n">ps</span> <span class="o">=</span> <span class="n">LossyPauliSum</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">n_qubits</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="n">terms</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Z&quot;</span><span class="p">])</span>
+
+<span class="c1"># Reset at the end of the circuit</span>
+<span class="n">ps</span><span class="o">.</span><span class="n">reset_loss_channel</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="c1"># Loss after an X gate</span>
+<span class="n">ps</span><span class="o">.</span><span class="n">loss_channel</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">)</span>
+
+<span class="c1"># Apply an X gate</span>
+<span class="n">ps</span><span class="o">.</span><span class="n">x</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="n">z_exp</span> <span class="o">=</span> <span class="n">ps</span><span class="o">.</span><span class="n">overlap_with_zero</span><span class="p">()</span>
+
+<span class="c1"># This will be -0.8: in 10% of cases we have &lt;Z&gt; = 1 instead of -1.</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&lt;Z&gt;: </span><span class="si">{</span><span class="n">z_exp</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>A third truncation strategy is available for lossy simulations:</p>
 <ul>
-<li><a href="https://github.com/MSRudolph/PauliPropagation.jl">PauliPropagation.jl</a> - Julia package for Pauli Propagation. They also have a nice paper that explains the underlying theory: <a href="https://arxiv.org/abs/2505.21606">arXiv:2505.21606</a></li>
-<li><a href="https://docs.nvidia.com/cuda/cuquantum/latest/cupauliprop/index.html">cuPauliProp</a> - CUDA package by NVIDIA</li>
-<li><a href="https://github.com/haoliri0/SOFT">SOFT Simulator</a> - package for generalized tableau simulation with CUDA support. For background, see their paper, <a href="https://arxiv.org/pdf/2512.23037">arXiv:2512.23037</a>, and also the nice <a href="https://www.scottaaronson.com/showcase2/report/ted-yoder.pdf">report by Ted Yoder</a></li>
+<li><strong>Loss weight truncation</strong> (<code>max_loss_weight</code>): drops terms with more than a
+  given number of <code>L</code> operators. Since the contribution of strings with <code>L</code> on
+  many positions scales as <span class="arithmatex">\(p_L^k\)</span>, this effectively controls the branching
+  from loss and reset channels.</li>
 </ul>
+<div class="highlight"><pre><span></span><code><span class="n">ps</span> <span class="o">=</span> <span class="n">LossyPauliSum</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;ZZZ&quot;</span><span class="p">,</span> <span class="n">max_loss_weight</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+</code></pre></div>
 
 
 
@@ -1219,15 +1056,31 @@ rotations) are tracked via a sparse coefficient vector that grows with the stabi
       
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
+          
+          <a href="../install/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Installation">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Installation
+              </div>
+            </div>
+          </a>
+        
         
           
-          <a href="install/" class="md-footer__link md-footer__link--next" aria-label="Next: Installation">
+          <a href="loss/" class="md-footer__link md-footer__link--next" aria-label="Next: Loss channel details">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Installation
+                Loss channel details
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -1264,12 +1117,12 @@ rotations) are tracked via a sparse coefficient vector that grows with the stabi
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["content.action.view", "content.code.annotate", "content.code.copy", "content.tooltips", "navigation.indexes", "navigation.sections", "navigation.tabs", "navigation.top", "navigation.tracking", "navigation.footer", "search.highlight", "search.suggest", "toc.follow"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.action.view", "content.code.annotate", "content.code.copy", "content.tooltips", "navigation.indexes", "navigation.sections", "navigation.tabs", "navigation.top", "navigation.tracking", "navigation.footer", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
-        <script src="javascripts/katex.js"></script>
+        <script src="../javascripts/katex.js"></script>
       
         <script src="https://unpkg.com/katex@0/dist/katex.min.js"></script>
       

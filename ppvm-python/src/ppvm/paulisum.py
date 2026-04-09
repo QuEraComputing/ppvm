@@ -5,6 +5,13 @@ from typing import Self, Sequence, Union
 
 import ppvm_python_native
 
+from .mixins import (
+    CliffordExtensionMixin,
+    CliffordMixin,
+    NoiseMixin,
+    RotationsMixin,
+)
+
 _COMPACT_RE = re.compile(r"^([IXYZ]\d+)+$")
 _COMPACT_TOKEN_RE = re.compile(r"([IXYZ])(\d+)")
 
@@ -66,7 +73,12 @@ T = Union[
 
 
 @dataclass(frozen=True)
-class PauliSum:
+class PauliSum(
+    CliffordExtensionMixin,
+    CliffordMixin,
+    NoiseMixin,
+    RotationsMixin,
+):
     """A weighted sum of Pauli strings for quantum simulation.
 
     PauliSum represents a linear combination of Pauli operators, commonly used
@@ -360,206 +372,18 @@ class PauliSum:
         """
         return self._interface.trace(pattern)
 
-    # Clifford operations
-    def x(self, addr0: int) -> None:
-        """Apply a Pauli X gate to the specified qubit.
+    def amplitude_damping(self, addr0: int, gamma: float):
+        """Apply an amplitude-damping channel.
 
         Args:
             addr0: The index of the target qubit.
+            gamma: The damping rate. `X` and `Y` are damped with `sqrt(1 - gamma)`,
+                whereas `Z` branches into `gamma * I + (1 - gamma) * Z`.
         """
-        self._interface.x(addr0)
 
-    def y(self, addr0: int) -> None:
-        """Apply a Pauli Y gate to the specified qubit.
+        # TODO: move to mixins once also implemented for GeneralizedTableau
 
-        Args:
-            addr0: The index of the target qubit.
-        """
-        self._interface.y(addr0)
-
-    def z(self, addr0: int) -> None:
-        """Apply a Pauli Z gate to the specified qubit.
-
-        Args:
-            addr0: The index of the target qubit.
-        """
-        self._interface.z(addr0)
-
-    def h(self, addr0: int) -> None:
-        """Apply a Hadamard gate to the specified qubit.
-
-        Args:
-            addr0: The index of the target qubit.
-        """
-        self._interface.h(addr0)
-
-    def s(self, addr0: int) -> None:
-        """Apply an S gate (sqrt(Z)) to the specified qubit.
-
-        Args:
-            addr0: The index of the target qubit.
-        """
-        self._interface.s(addr0)
-
-    def cnot(self, addr0: int, addr1: int) -> None:
-        """Apply a CNOT (controlled-X) gate.
-
-        Args:
-            addr0: The index of the control qubit.
-            addr1: The index of the target qubit.
-        """
-        self._interface.cnot(addr0, addr1)
-
-    def cz(self, addr0: int, addr1: int) -> None:
-        """Apply a CZ (controlled-Z) gate.
-
-        Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
-        """
-        self._interface.cz(addr0, addr1)
-
-    # Rotations
-    def rx(self, addr0: int, theta: float) -> None:
-        """Apply an RX rotation gate to the specified qubit.
-
-        ```math
-        R_X(\\theta) = e^{-i \\frac{\\theta}{2} X} = \\cos\\frac{\\theta}{2} I - i \\sin\\frac{\\theta}{2} X
-        ```
-
-        Args:
-            addr0: The index of the target qubit.
-            theta: The rotation angle in radians.
-        """
-        self._interface.rx(addr0, theta)
-
-    def ry(self, addr0: int, theta: float) -> None:
-        """Apply an RY rotation gate to the specified qubit.
-
-        ```math
-        R_Y(\\theta) = e^{-i \\frac{\\theta}{2} Y} = \\cos\\frac{\\theta}{2} I - i \\sin\\frac{\\theta}{2} Y
-        ```
-
-        Args:
-            addr0: The index of the target qubit.
-            theta: The rotation angle in radians.
-        """
-        self._interface.ry(addr0, theta)
-
-    def rz(self, addr0: int, theta: float) -> None:
-        """Apply an RZ rotation gate to the specified qubit.
-
-        ```math
-        R_Z(\\theta) = e^{-i \\frac{\\theta}{2} Z} = \\cos\\frac{\\theta}{2} I - i \\sin\\frac{\\theta}{2} Z
-        ```
-
-        Args:
-            addr0: The index of the target qubit.
-            theta: The rotation angle in radians.
-        """
-        self._interface.rz(addr0, theta)
-
-    # Two qubit rotations
-    def rxx(self, addr0: int, addr1: int, theta: float) -> None:
-        """Apply an RXX (Ising XX) rotation gate to two qubits.
-
-        ```math
-        R_{XX}(\\theta) = e^{-i \\frac{\\theta}{2} X \\otimes X}
-        ```
-
-        Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
-            theta: The rotation angle in radians.
-        """
-        self._interface.rxx(addr0, addr1, theta)
-
-    def ryy(self, addr0: int, addr1: int, theta: float) -> None:
-        """Apply an RYY (Ising YY) rotation gate to two qubits.
-
-        ```math
-        R_{YY}(\\theta) = e^{-i \\frac{\\theta}{2} Y \\otimes Y}
-        ```
-
-        Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
-            theta: The rotation angle in radians.
-        """
-        self._interface.ryy(addr0, addr1, theta)
-
-    def rzz(self, addr0: int, addr1: int, theta: float) -> None:
-        """Apply an RZZ (Ising ZZ) rotation gate to two qubits.
-
-        ```math
-        R_{ZZ}(\\theta) = e^{-i \\frac{\\theta}{2} Z \\otimes Z}
-        ```
-
-        Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
-            theta: The rotation angle in radians.
-        """
-        self._interface.rzz(addr0, addr1, theta)
-
-    # Noise operations
-    def pauli_error(self, addr0: int, p: Sequence[float]) -> None:
-        """Apply a single-qubit Pauli error channel.
-
-        Args:
-            addr0: The index of the target qubit.
-            p: Error probabilities [p_x, p_y, p_z] for X, Y, Z errors.
-                The identity probability is implicitly 1 - sum(p).
-        """
-        self._interface.pauli_error(addr0, p)
-
-    @staticmethod
-    def two_qubit_pauli_error_probabilities(
-        error_probabilities: dict[str, float],
-    ) -> list[float]:
-        """Convert a dictionary of two-qubit Pauli error probabilities to a list.
-
-        Convenience method to convert a dictionary mapping two-qubit Pauli
-        strings (e.g., "IX", "ZZ") to their probabilities into the ordered
-        list format required by two_qubit_pauli_error.
-
-        Args:
-            error_probabilities: Dictionary mapping two-qubit Pauli strings
-                to their error probabilities. Missing keys default to 0.0.
-
-        Returns:
-            A list of 15 probabilities in the canonical order (excludes "II").
-        """
-        keys = (
-            "IX",
-            "IY",
-            "IZ",
-            "XI",
-            "XX",
-            "XY",
-            "XZ",
-            "YI",
-            "YX",
-            "YY",
-            "YZ",
-            "ZI",
-            "ZX",
-            "ZY",
-            "ZZ",
-        )
-        return [error_probabilities.get(key, 0.0) for key in keys]
-
-    def two_qubit_pauli_error(self, addr0: int, addr1: int, p: Sequence[float]) -> None:
-        """Apply a two-qubit Pauli error channel.
-
-        Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
-            p: Error probabilities for the 15 non-identity two-qubit Pauli
-                operators. Use two_qubit_pauli_error_probabilities to convert
-                from a dictionary format.
-        """
-        self._interface.two_qubit_pauli_error(addr0, addr1, p)
+        self._interface.amplitude_damping(addr0, gamma)
 
 
 class LossyPauliSum(PauliSum):
@@ -580,6 +404,8 @@ class LossyPauliSum(PauliSum):
 
     def _get_interface(self, n_interface: int):
         return getattr(ppvm_python_native, f"PauliSumLossIndexMapFxHash{n_interface}")
+
+    # NOTE: purposely not using mixin for better docstrings here
 
     def loss_channel(self, addr0: int, p: float) -> None:
         """Apply a single-qubit loss channel.

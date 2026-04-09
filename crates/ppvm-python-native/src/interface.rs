@@ -149,6 +149,32 @@ macro_rules! create_interface {
                 self.inner.truncate();
             }
 
+            // clifford extensions
+            pub fn s_adj(&mut self, addr0: usize) {
+                self.inner.s_adj(addr0);
+                self.inner.truncate();
+            }
+
+            pub fn sqrt_x(&mut self, addr0: usize) {
+                self.inner.sqrt_x(addr0);
+                self.inner.truncate();
+            }
+
+            pub fn sqrt_y(&mut self, addr0: usize) {
+                self.inner.sqrt_y(addr0);
+                self.inner.truncate();
+            }
+
+            pub fn sqrt_x_adj(&mut self, addr0: usize) {
+                self.inner.sqrt_x_adj(addr0);
+                self.inner.truncate();
+            }
+
+            pub fn sqrt_y_adj(&mut self, addr0: usize) {
+                self.inner.sqrt_y_adj(addr0);
+                self.inner.truncate();
+            }
+
             // rot1
             pub fn rx(&mut self, addr0: usize, theta: f64) {
                 self.inner.rx(addr0, theta);
@@ -189,6 +215,21 @@ macro_rules! create_interface {
 
             pub fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [f64; 15]) {
                 self.inner.two_qubit_pauli_error(addr0, addr1, p);
+                self.inner.truncate();
+            }
+
+            pub fn depolarize(&mut self, addr0: usize, p: f64) {
+                self.inner.depolarize(addr0, p);
+                self.inner.truncate();
+            }
+
+            pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64) {
+                self.inner.depolarize2(addr0, addr1, p);
+                self.inner.truncate();
+            }
+
+            pub fn amplitude_damping(&mut self, addr0: usize, gamma: f64) {
+                self.inner.amplitude_damping(addr0, gamma);
                 self.inner.truncate();
             }
 

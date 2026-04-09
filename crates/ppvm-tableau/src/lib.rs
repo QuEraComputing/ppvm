@@ -9,8 +9,6 @@ pub mod tableau_index;
 
 pub mod prelude {
     pub use crate::data::{GeneralizedTableau, Tableau};
-    // pub use crate::gates::*;
-    // pub use crate::noise::*;
     pub use crate::sparsevec::SparseVector;
     pub use crate::stim::RunStim;
     pub use crate::tableau_index::TableauIndex;

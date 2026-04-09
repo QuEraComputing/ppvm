@@ -21,8 +21,12 @@ build-backend = "uv_build"
 [tool.uv.sources]
 ppvm-python-native = { path = "../crates/ppvm-python-native" }
 
+[tool.isort]
+profile = "black"
+
 [dependency-groups]
 dev = [
+    "numpy>=2.2.6",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
 ]

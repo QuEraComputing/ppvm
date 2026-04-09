@@ -6,3 +6,4 @@
 # mkdocs build output and cache
 ppvm-python/site/
 ppvm-python/.cache/
+ppvm-python/extended_tests/stim/stim-programs/

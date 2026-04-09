@@ -15,6 +15,11 @@ macro_rules! create_interface_loss_methods {
                 self.inner.truncate();
             }
 
+            pub fn correlated_loss_channel(&mut self, addr0: usize, addr1: usize, p: [f64; 3]) {
+                self.inner.correlated_loss_channel(addr0, addr1, p);
+                self.inner.truncate();
+            }
+
             pub fn reset_loss_channel(&mut self, addr0: usize) {
                 self.inner.reset_loss_channel(addr0);
                 self.inner.truncate();

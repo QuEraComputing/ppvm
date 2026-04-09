@@ -6,7 +6,7 @@ use crate::char::Pauli;
 use crate::traits::{PauliStorage, PauliWordTrait};
 use crate::word::PauliWord;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PhasedPauliWord<
     A: PauliStorage,
     H = fxhash::FxBuildHasher,
@@ -119,8 +119,8 @@ impl<H: BuildHasher + Default + Clone, W: PauliWordTrait> From<&str>
     }
 }
 
-impl<A: PauliStorage, H: BuildHasher + Default + Clone> std::fmt::Display
-    for PhasedPauliWord<A, H>
+impl<A: PauliStorage, H: BuildHasher + Default + Clone, const REHASH: bool> std::fmt::Display
+    for PhasedPauliWord<A, H, PauliWord<A, H, REHASH>>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.phase {

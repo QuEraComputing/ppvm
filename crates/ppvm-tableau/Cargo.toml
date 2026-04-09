@@ -1,0 +1,28 @@
+[package]
+name = "ppvm-tableau"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitvec = "1.0.1"
+bnum = { version = "0.13.0", features = ["numtraits"] }
+itertools = "0.14.0"
+num = "0.4.3"
+ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
+rand = "0.10.0"
+
+[dev-dependencies]
+criterion = "0.7.0"
+insta = { version = "1.43.2", features = ["yaml"] }
+
+[[bench]]
+name = "tableau"
+harness = false
+
+[[bench]]
+name = "tableau-msd"
+harness = false
+
+[[bench]]
+name = "tableau-msd-stim"
+harness = false

@@ -7,10 +7,11 @@ edition = "2024"
 fxhash = "0.2.1"
 num = "0.4.3"
 ppvm-runtime = { version = "0.1.0", path = "crates/ppvm-runtime" }
+ppvm-tableau = { version = "0.1.0", path = "crates/ppvm-tableau" }
 ppvm-sym = { version = "0.1.0", path = "crates/ppvm-sym" }
 
 [workspace]
-members = [ "crates/ppvm-runtime", "crates/ppvm-sym", "crates/ppvm-python-native"]
+members = [ "crates/ppvm-runtime", "crates/ppvm-sym", "crates/ppvm-python-native", "crates/ppvm-tableau"]
 
 [[example]]
 name = "symbolic"

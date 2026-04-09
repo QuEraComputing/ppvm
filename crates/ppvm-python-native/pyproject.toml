@@ -11,3 +11,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+
+[dependency-groups]
+dev = [
+    "maturin>=1.12.6",
+]

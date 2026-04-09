@@ -64,4 +64,11 @@ pub trait PauliWordTrait:
         new.set(index_1, pauli_1);
         new
     }
+
+    /// Check if this word anticommutes with a single-qubit Pauli at `addr0`,
+    /// where `pauli = (xbit, zbit)`.
+    #[inline(always)]
+    fn anticommutes_at(&self, addr0: usize, pauli: (bool, bool)) -> bool {
+        (self.get_xbit(addr0) & pauli.1) ^ (self.get_zbit(addr0) & pauli.0)
+    }
 }

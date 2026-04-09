@@ -1,0 +1,38 @@
+from typing import Union
+
+import ppvm_python_native
+
+GeneralizedTableauInterface = Union[
+    ppvm_python_native.GeneralizedTableau1,
+    ppvm_python_native.GeneralizedTableau2,
+    ppvm_python_native.GeneralizedTableau3,
+    ppvm_python_native.GeneralizedTableau4,
+    ppvm_python_native.GeneralizedTableau5,
+    ppvm_python_native.GeneralizedTableau6,
+    ppvm_python_native.GeneralizedTableau7,
+    ppvm_python_native.GeneralizedTableau8,
+    ppvm_python_native.GeneralizedTableau9,
+    ppvm_python_native.GeneralizedTableau10,
+    ppvm_python_native.GeneralizedTableau11,
+    ppvm_python_native.GeneralizedTableau12,
+    ppvm_python_native.GeneralizedTableau13,
+    ppvm_python_native.GeneralizedTableau14,
+    ppvm_python_native.GeneralizedTableau15,
+    ppvm_python_native.GeneralizedTableau16,
+    ppvm_python_native.GeneralizedTableau17,
+    ppvm_python_native.GeneralizedTableau18,
+    ppvm_python_native.GeneralizedTableau19,
+    ppvm_python_native.GeneralizedTableau20,
+    ppvm_python_native.GeneralizedTableau21,
+    ppvm_python_native.GeneralizedTableau22,
+    ppvm_python_native.GeneralizedTableau23,
+    ppvm_python_native.GeneralizedTableau24,
+    ppvm_python_native.GeneralizedTableau25,
+    ppvm_python_native.GeneralizedTableau26,
+    ppvm_python_native.GeneralizedTableau27,
+    ppvm_python_native.GeneralizedTableau28,
+    ppvm_python_native.GeneralizedTableau29,
+    ppvm_python_native.GeneralizedTableau30,
+    ppvm_python_native.GeneralizedTableau31,
+    ppvm_python_native.GeneralizedTableau32,
+]

@@ -10,6 +10,7 @@ where
     H: BuildHasher + Clone + Default,
     W: PauliWordTrait + Clifford,
 {
+    #[inline]
     fn x(&mut self, index: usize) {
         if self.word.get_lbit(index) {
             // check for loss
@@ -19,6 +20,8 @@ where
         self.word.x(index);
         self.add_phase(phase << 1);
     }
+
+    #[inline]
     fn y(&mut self, index: usize) {
         if self.word.get_lbit(index) {
             // check for loss
@@ -28,6 +31,8 @@ where
         self.word.y(index);
         self.add_phase(phase << 1);
     }
+
+    #[inline]
     fn z(&mut self, index: usize) {
         if self.word.get_lbit(index) {
             // check for loss
@@ -37,6 +42,8 @@ where
         self.word.z(index);
         self.add_phase(phase << 1);
     }
+
+    #[inline]
     fn h(&mut self, index: usize) {
         if self.word.get_lbit(index) {
             // check for loss
@@ -46,6 +53,8 @@ where
         self.word.h(index);
         self.add_phase(phase << 1);
     }
+
+    #[inline]
     fn s(&mut self, index: usize) {
         if self.word.get_lbit(index) {
             // check for loss
@@ -55,6 +64,8 @@ where
         self.word.s(index);
         self.add_phase(phase << 1);
     }
+
+    #[inline]
     fn cnot(&mut self, control: usize, target: usize) {
         // phase = 1x y1 where x xor y = 0
         // xx zz    xx zz
@@ -69,6 +80,8 @@ where
         self.word.cnot(control, target);
         self.add_phase(phase << 1);
     }
+
+    #[inline]
     fn cz(&mut self, control: usize, target: usize) {
         // phase = 11 10, 11 01 = 11 ab where a ^ b = 1
         // 11 01 -> 11 10, 2

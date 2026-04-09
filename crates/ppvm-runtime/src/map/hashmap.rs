@@ -163,6 +163,21 @@ macro_rules! impl_acmap_insert {
                     }
                 }
             }
+
+            fn map_insert_multiple<F>(&mut self, dest: &mut Self, f: F)
+            where
+                F: Fn(&W, &mut C) -> Option<Vec<(W, C)>> + Sync + Send,
+            {
+                for (k, v) in self.iter_mut() {
+                    if let Some(entries) = f(k, v) {
+                        for (new_k, new_v) in entries {
+                            dest.entry(new_k)
+                                .and_modify(|val| *val += new_v.clone())
+                                .or_insert(new_v);
+                        }
+                    }
+                }
+            }
         }
     };
 }

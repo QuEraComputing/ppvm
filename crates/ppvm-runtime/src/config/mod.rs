@@ -11,6 +11,7 @@ pub trait Config: Clone {
     type Map: ACMap<Self::Storage, Self::Coeff, Self::BuildHasher, Self::PauliWordType>;
 }
 
+pub mod fx64hash;
 pub mod fxhash;
 
 #[cfg(feature = "dashmap")]

@@ -1,15 +1,16 @@
 import enum
 import math
 from dataclasses import InitVar, dataclass, field
-from typing import Optional, Sequence
+from typing import Optional
 
 import ppvm_python_native
 
-from .clifford import (
+from .mixins import (
     CliffordExtensionMixin,
     CliffordMixin,
+    LossMixin,
     NoiseMixin,
-    NonCliffordMixin,
+    RotationsMixin,
 )
 from .types import GeneralizedTableauInterface
 
@@ -32,7 +33,11 @@ class MeasurementResult(enum.IntEnum):
 
 @dataclass(frozen=True)
 class GeneralizedTableau(
-    CliffordMixin, CliffordExtensionMixin, NonCliffordMixin, NoiseMixin
+    CliffordMixin,
+    CliffordExtensionMixin,
+    RotationsMixin,
+    NoiseMixin,
+    LossMixin,
 ):
     """Generalized stabilizer tableau for quantum circuit simulation.
 
@@ -130,54 +135,6 @@ class GeneralizedTableau(
             addr0: The index of the target qubit.
         """
         self._interface.t_adj(addr0)
-
-    # additional noise methods
-    def depolarize(self, addr0: int, p: float) -> None:
-        """Apply a depolarizing channel to the specified qubit.
-
-        Args:
-            addr0: The index of the target qubit.
-            p: The depolarizing probability.
-        """
-        self._interface.depolarize(addr0, p)
-
-    def depolarize2(self, addr0: int, addr1: int, p: float) -> None:
-        """Apply a two-qubit depolarizing channel to the specified qubits.
-
-        Args:
-            addr0: The index of the first target qubit.
-            addr1: The index of the second target qubit.
-            p: The depolarizing probability.
-        """
-        self._interface.depolarize2(addr0, addr1, p)
-
-    def loss_channel(self, addr0: int, p: float) -> None:
-        """Apply a loss channel to the specified qubit.
-
-        Args:
-            addr0: The index of the target qubit.
-            p: The loss probability.
-        """
-        self._interface.loss_channel(addr0, p)
-
-    def correlated_loss_channel(
-        self, addr0: int, addr1: int, p: Sequence[float]
-    ) -> None:
-        """Apply a correlated loss channel to two qubits.
-
-        Args:
-            addr0: The index of the first target qubit.
-            addr1: The index of the second target qubit.
-            p: A list of three probabilities:
-
-                - ``p[0]``: probability of losing both qubits simultaneously
-                  when both are in the qubit subspace.
-                - ``p[1]``: probability of losing exactly one qubit when both
-                  are in the qubit subspace (which qubit is lost is 50/50 random).
-                - ``p[2]``: probability of losing the remaining active qubit
-                  when the other has already been lost prior to this channel.
-        """
-        self._interface.correlated_loss_channel(addr0, addr1, p)
 
     def measure(self, addr0: int) -> MeasurementResult:
         """Measure the specified qubit in the Z basis.

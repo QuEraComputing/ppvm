@@ -1,7 +1,7 @@
 use std::hash::BuildHasher;
 
 use super::data::LossyPauliWord;
-use crate::traits::{Clifford, PauliStorage, PauliWordTrait};
+use crate::traits::{Clifford, CliffordExtensions, PauliStorage, PauliWordTrait};
 
 impl<A, H> Clifford for LossyPauliWord<A, H>
 where
@@ -127,6 +127,97 @@ where
     }
 }
 
+impl<A, H> CliffordExtensions for LossyPauliWord<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Clone + Default,
+{
+    // |    Gate    |  X  |  Y  |  Z  |
+    // |:----------:|:---:|:---:|:---:|
+    // |     s      | -Y  |  X  |  Z  |
+    // |   s_adj    |  Y  | -X  |  Z  |
+    // |   sqrt_x   |  X  | -Z  |  Y  |
+    // | sqrt*x*adj |  X  |  Z  | -Y  |
+    // |   sqrt_y   |  Z  |  Y  | -X  |
+    // | sqrt*y*adj | -Z  |  Y  |  X  |
+
+    #[inline]
+    fn s_adj(&mut self, addr0: usize) {
+        if self.lbits[addr0] {
+            return;
+        }
+        self.s(addr0);
+    }
+
+    #[inline]
+    fn sqrt_x(&mut self, addr0: usize) {
+        if self.lbits[addr0] {
+            return;
+        }
+        let x = self.xbits[addr0];
+        let z = self.zbits[addr0];
+        self.set_xbit(addr0, x ^ z);
+        self.rehash();
+    }
+
+    #[inline]
+    fn sqrt_y(&mut self, addr0: usize) {
+        if self.lbits[addr0] {
+            return;
+        }
+        let x = self.xbits[addr0];
+        let z = self.zbits[addr0];
+        self.set_xbit(addr0, z);
+        self.set_zbit(addr0, x);
+        self.rehash();
+    }
+
+    #[inline]
+    fn sqrt_x_adj(&mut self, addr0: usize) {
+        if self.lbits[addr0] {
+            return;
+        }
+        let x = self.xbits[addr0];
+        let z = self.zbits[addr0];
+        self.set_xbit(addr0, x ^ z);
+        self.rehash();
+    }
+
+    #[inline]
+    fn sqrt_y_adj(&mut self, addr0: usize) {
+        if self.lbits[addr0] {
+            return;
+        }
+        let x = self.xbits[addr0];
+        let z = self.zbits[addr0];
+        self.set_xbit(addr0, z);
+        self.set_zbit(addr0, x);
+        self.rehash();
+    }
+
+    // | CY  |  I  |  X  |  Y  |  Z  |
+    // |:---:|:---:|:---:|:---:|:---:|
+    // |  I  | II  | ZX  | IY  | ZZ  |
+    // |  X  | XY  | -YZ | XI  | YX  |
+    // |  Y  | YY  | XZ  | YI  | -XX |
+    // |  Z  | ZI  | IX  | ZY  | IZ  |
+
+    #[inline]
+    fn cy(&mut self, addr0: usize, addr1: usize) {
+        if self.lbits[addr0] || self.lbits[addr1] {
+            return;
+        }
+        let xc = self.xbits[addr0];
+        let zc = self.zbits[addr0];
+        let xt = self.xbits[addr1];
+        let zt = self.zbits[addr1];
+        self.set_zbit(addr0, zc ^ xt ^ zt);
+        self.set_xbit(addr1, xt ^ xc);
+        self.set_zbit(addr1, zt ^ xc);
+        self.rehash();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,6 +283,130 @@ mod tests {
         for (input, target) in [("I", "I"), ("X", "Z"), ("Y", "Y"), ("Z", "X"), ("L", "L")] {
             let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
             output.h(0);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_s() {
+        for (input, target) in [("I", "I"), ("X", "Y"), ("Z", "Z"), ("Y", "X"), ("L", "L")] {
+            let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
+            output.s(0);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_s_adj() {
+        for (input, target) in [("I", "I"), ("X", "Y"), ("Z", "Z"), ("Y", "X"), ("L", "L")] {
+            let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
+            output.s_adj(0);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_sqrt_x() {
+        for (input, target) in [("I", "I"), ("X", "X"), ("Y", "Z"), ("Z", "Y"), ("L", "L")] {
+            let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
+            output.sqrt_x(0);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_sqrt_x_adj() {
+        for (input, target) in [("I", "I"), ("X", "X"), ("Y", "Z"), ("Z", "Y"), ("L", "L")] {
+            let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
+            output.sqrt_x_adj(0);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_sqrt_y() {
+        for (input, target) in [("I", "I"), ("X", "Z"), ("Y", "Y"), ("Z", "X"), ("L", "L")] {
+            let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
+            output.sqrt_y(0);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_sqrt_y_adj() {
+        for (input, target) in [("I", "I"), ("X", "Z"), ("Y", "Y"), ("Z", "X"), ("L", "L")] {
+            let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
+            output.sqrt_y_adj(0);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_cz() {
+        for (input, target) in [
+            ("II", "II"),
+            ("IX", "ZX"),
+            ("IY", "ZY"),
+            ("IZ", "IZ"),
+            ("XI", "XZ"),
+            ("XX", "YY"),
+            ("XY", "YX"),
+            ("XZ", "XI"),
+            ("ZI", "ZI"),
+            ("ZX", "IX"),
+            ("ZY", "IY"),
+            ("ZZ", "ZZ"),
+            ("YI", "YZ"),
+            ("YX", "XY"),
+            ("YY", "XX"),
+            ("YZ", "YI"),
+            ("IL", "IL"),
+            ("XL", "XL"),
+            ("YL", "YL"),
+            ("ZL", "ZL"),
+            ("LI", "LI"),
+            ("LX", "LX"),
+            ("LY", "LY"),
+            ("LZ", "LZ"),
+            ("LL", "LL"),
+        ] {
+            let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
+            output.cz(0, 1);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_cy() {
+        for (input, target) in [
+            ("II", "II"),
+            ("IX", "ZX"),
+            ("IZ", "ZZ"),
+            ("IY", "IY"),
+            ("XI", "XY"),
+            ("XX", "YZ"),
+            ("XY", "XI"),
+            ("XZ", "YX"),
+            ("ZI", "ZI"),
+            ("ZX", "IX"),
+            ("ZY", "ZY"),
+            ("ZZ", "IZ"),
+            ("YI", "YY"),
+            ("YX", "XZ"),
+            ("YY", "YI"),
+            ("YZ", "XX"),
+            ("IL", "IL"),
+            ("XL", "XL"),
+            ("YL", "YL"),
+            ("ZL", "ZL"),
+            ("LI", "LI"),
+            ("LX", "LX"),
+            ("LY", "LY"),
+            ("LZ", "LZ"),
+            ("LL", "LL"),
+        ] {
+            let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
+            output.cy(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }

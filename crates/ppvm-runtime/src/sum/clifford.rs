@@ -1,5 +1,8 @@
 use crate::{
-    config::Config, phase::PhasedPauliWord, sum::PauliSum, traits::Clifford, traits::PauliStorage,
+    config::Config,
+    phase::PhasedPauliWord,
+    sum::PauliSum,
+    traits::{Clifford, CliffordExtensions, PauliStorage},
 };
 use std::hash::BuildHasher;
 
@@ -48,4 +51,19 @@ where
     map_word!(s, index);
     map_word!(cnot, a, b);
     map_word!(cz, a, b);
+}
+
+impl<S, H, T> CliffordExtensions for PauliSum<T>
+where
+    S: PauliStorage,
+    H: BuildHasher + Clone + Default,
+    T: Config<Storage = S, BuildHasher = H>,
+    T::PauliWordType: Clifford + CliffordExtensions,
+{
+    map_word!(s_adj, index);
+    map_word!(sqrt_x, index);
+    map_word!(sqrt_y, index);
+    map_word!(sqrt_x_adj, index);
+    map_word!(sqrt_y_adj, index);
+    map_word!(cy, a, b);
 }

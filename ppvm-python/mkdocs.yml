@@ -8,13 +8,18 @@ docs_dir: docs
 nav:
   - Home: index.md
   - Installation: install.md
-  - Simulating Loss: loss.md
+  - Pauli Propagation:
+    - pauli_sum/index.md
+    - Loss channel details: pauli_sum/loss.md
+  - Generalized Tableau: generalized_tableau.md
   - Examples:
     - examples/index.md
     - Trotter simulation: examples/trotter.py
+    - Magic State Distillation: examples/msd.py
   - API Reference:
     - api/index.md
     - api/ppvm/paulisum.md
+    - api/ppvm/generalized_tableau.md
 
 theme:
   name: material

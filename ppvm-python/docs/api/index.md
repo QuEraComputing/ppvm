@@ -1,6 +1,8 @@
 # API Reference
 
-ppvm exposes two classes:
+ppvm exposes the following classes:
+
+## Pauli Propagation
 
 | Class | Description |
 |-------|-------------|
@@ -12,4 +14,11 @@ additionally exposes `loss_channel` and `reset_loss_channel`.
 
 Note that the loss simulation comes with a slight memory overhead to track
 the information of which qubit was lost.
-See [loss](../loss.md) for details.
+See [Simulating loss](../pauli_sum/index.md#simulating-loss) for details.
+
+## Generalized Stabilizer Tableau
+
+| Class | Description |
+|-------|-------------|
+| [`GeneralizedTableau`][ppvm.generalized_tableau.GeneralizedTableau] | Generalized stabilizer tableau for circuits with Clifford + non-Clifford gates, noise, and measurement |
+| [`MeasurementResult`][ppvm.generalized_tableau.MeasurementResult] | Measurement outcome enum (`ZERO`, `ONE`, `LOST`) |

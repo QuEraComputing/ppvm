@@ -1,40 +1,11 @@
-# Simulating loss with Pauli Propagation
+# Loss Channel Details
 
+This page provides the mathematical background for simulating qubit loss
+with [`LossyPauliSum`][ppvm.paulisum.LossyPauliSum].
+For usage, see [Simulating loss](index.md#simulating-loss).
 
-## Implementation
+## Updated Pauli basis
 
-To simulate loss, `ppvm` offers a [`LossyPauliSum`][ppvm.paulisum.LossyPauliSum] class.
-This is a dedicated class, which behaves just like a [`PauliSum`][ppvm.paulisum.PauliSum], but adds additional methods for the loss.
-
-Also, this separation is there since we need to extend the Pauli basis in order to
-account for loss (see [below](#background)). This comes at a storage overhead. Specifically, we now need 3 bits in order to represent a character in a Pauli string rather than just 2.
-
-Here is a small example:
-
-```python
-from ppvm import LossyPauliSum
-
-ps = LossyPauliSum.new(n_qubits = 1, terms=["Z"])
-
-# Reset at the end of the circuit
-ps.reset_loss_channel(0)
-
-# Loss after an X gate
-ps.loss_channel(0, 0.1)
-
-# Apply an X gate
-ps.x(0)
-
-z_exp = ps.overlap_with_zero()
-
-# This will be -0.8: in 10% of cases we have <Z> = 1 instead of -1.
-print(f"<Z>: {z_exp}")
-```
-
-
-## Background
-
-### Updated Pauli basis
 We can include loss in qubit simulation by adding a third state,
 which we will call the leakage state $|L\rangle$.
 In order to include this in Pauli Propagation, we extend the
@@ -77,7 +48,7 @@ $$
     zero-amplitude state. The implementation takes that into account accordingly.
 
 
-### Loss channel
+## Loss channel
 
 The action of an independent loss channel is to map part of the population from
 the qubit subspace into the $|L\rangle$ state.
@@ -119,7 +90,7 @@ $$\langle \psi| Q|\psi\rangle = 0.$$
 While this is conceptually accurate, the resulting loss does not capture what happens on hardware. If there is no loss detection, then a qubit that has been lost will be falsely counted as being in the $|0\rangle$ state when being measured. If there is loss detection, we could either reject the trajectory via post-selection, which is equivalent to having no loss in the system. Or, we can reset the qubit to the $|0\rangle$ during the circuit.
 
 
-### Reset channel
+## Reset channel
 
 In order to accurately model the hardware behavior, we will extend the above description by another channel. A reset channel, which incoherently resets a lost qubit into the $|0\rangle$ state.
 
@@ -142,7 +113,7 @@ This reset channel is sufficient in order to model either actually resetting a l
 Note, that since we are doing Pauli Propagation, we always have to apply the adjoint circuit. Thus, resetting lost qubits at the end of the circuit means that we apply the reset channel at the very beginning when propagating a Pauli string.
 
 
-### Comment on branching and scaling
+## Comment on branching and scaling
 
 Both channels above branch, which without truncation would lead to exponential scaling.
 

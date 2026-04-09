@@ -44,7 +44,7 @@ from ppvm import LossyPauliSum, PauliSum
 # ## Parameters
 
 # %%
-n = 12
+n = 6
 h = 1.0
 j = 1.5 * h
 dt = 0.1 / h

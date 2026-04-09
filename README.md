@@ -3,9 +3,9 @@
 * Python build: [![CI - python](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml)
 * Rust build: [![CI - rust](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml)
 
-# ppvm - Pauli Propagation Virtual Machine
+# ppvm - Pauli Propagation and Virtual Machine
 
-**ppvm** is a fast Pauli Propagation engine.
+**ppvm** is a fast quantum circuit simulator.
 It is implemented in rust, but also offers [python bindings](#python).
 
 # Short example
@@ -17,6 +17,8 @@ Install with
 ```bash
 pip install git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
 ```
+
+### Pauli Propagation
 
 ```python
 from ppvm import PauliSum
@@ -37,6 +39,20 @@ print(state)  # 1.000 * IZ
 print(state.overlap_with_zero())
 ```
 
+
+### Generalized Stabilizer Tableau
+
+```python
+from ppvm import GeneralizedTableau
+
+tab = GeneralizedTableau(n_qubits=2)
+tab.h(0)
+tab.cnot(0, 1)
+
+r0 = tab.measure(0)
+r1 = tab.measure(1)
+print(f"Qubit 0: {r0}, Qubit 1: {r1}")  # always correlated
+```
 
 ## Rust
 

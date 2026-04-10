@@ -1,6 +1,8 @@
 use std::time::Duration;
 
+use bnum::types::U256;
 use criterion::{Criterion, criterion_group, criterion_main};
+use num::complex::Complex64;
 use ppvm_runtime::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
 
@@ -13,6 +15,16 @@ fn configure() -> Criterion {
         .warm_up_time(Duration::from_secs(1))
         .measurement_time(Duration::from_secs(3))
         .sample_size(50)
+}
+
+fn make_sparse_vec<I: TableauIndex>(n: usize) -> Vec<(Complex64, I)> {
+    let mut vec: Vec<(Complex64, I)> = SparseVector::new();
+    for k in 0..n {
+        let index = <I as From<u8>>::from(k as u8) << 2;
+        let value = Complex64::new(1.0 / (k as f64 + 1.0), 0.1 * k as f64);
+        vec.unsafe_insert(index, value);
+    }
+    vec
 }
 
 fn bench_single_qubit_gates(c: &mut Criterion) {
@@ -198,10 +210,86 @@ fn bench_noise(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_sparse_vec_for_type<I: TableauIndex + std::fmt::Debug>(
+    group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>,
+    type_name: &str,
+) {
+    let vec16 = make_sparse_vec::<I>(16);
+    let existing_index = <I as From<u8>>::from(4u8) << 2;
+    let new_index = <I as From<u8>>::from(99u8);
+
+    group.bench_function(format!("{type_name}/unsafe_insert"), |b| {
+        b.iter_batched_ref(
+            || vec16.clone(),
+            |v| v.unsafe_insert(new_index, Complex64::new(1.0, 0.0)),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.bench_function(format!("{type_name}/add_or_insert_existing"), |b| {
+        b.iter_batched_ref(
+            || vec16.clone(),
+            |v| v.add_or_insert(existing_index, Complex64::new(0.5, 0.0)),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.bench_function(format!("{type_name}/add_or_insert_new"), |b| {
+        b.iter_batched_ref(
+            || vec16.clone(),
+            |v| v.add_or_insert(new_index, Complex64::new(0.5, 0.0)),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.bench_function(format!("{type_name}/get"), |b| {
+        b.iter_batched_ref(
+            || vec16.clone(),
+            |v| v.get(&existing_index),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.bench_function(format!("{type_name}/mul_by"), |b| {
+        b.iter_batched_ref(
+            || vec16.clone(),
+            |v| v.mul_by(Complex64::new(2.0, 0.0)),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.bench_function(format!("{type_name}/mul_element_by"), |b| {
+        b.iter_batched_ref(
+            || vec16.clone(),
+            |v| v.mul_element_by(existing_index, Complex64::new(2.0, 0.0)),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.bench_function(format!("{type_name}/trim"), |b| {
+        b.iter_batched_ref(
+            || vec16.clone(),
+            |v| v.trim(Complex64::new(0.05, 0.0)),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.bench_function(format!("{type_name}/normalize"), |b| {
+        b.iter_batched_ref(
+            || vec16.clone(),
+            |v| v.normalize(),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_sparse_vec(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sparse-vec");
+
+    bench_sparse_vec_for_type::<usize>(&mut group, "usize");
+    bench_sparse_vec_for_type::<u128>(&mut group, "u128");
+    bench_sparse_vec_for_type::<U256>(&mut group, "U256");
+
+    group.finish();
+}
+
 criterion_group! {
     name = benches;
     config = configure();
     targets = bench_single_qubit_gates, bench_two_qubit_gates, bench_non_clifford_gates,
-              bench_measurement, bench_noise
+              bench_measurement, bench_noise, bench_sparse_vec
 }
 criterion_main!(benches);

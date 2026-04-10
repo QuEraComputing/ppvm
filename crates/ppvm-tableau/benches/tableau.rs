@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
@@ -95,5 +97,12 @@ pub fn tableau_scaling_benchmarks(c: &mut Criterion) {
     benchmark_suite_tableau(c, "ByteF64FxIndexMap<8, CoefficientThreshold>");
 }
 
-criterion_group!(benches, tableau_scaling_benchmarks);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(3))
+        .sample_size(50);
+    targets = tableau_scaling_benchmarks
+}
 criterion_main!(benches);

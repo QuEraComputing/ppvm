@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
@@ -145,5 +147,12 @@ pub fn msd_stim_benchmarks(c: &mut Criterion) {
     benchmark_suite_msd_stim(c, "msd-stim");
 }
 
-criterion_group!(benches, msd_stim_benchmarks);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(3))
+        .sample_size(50);
+    targets = msd_stim_benchmarks
+}
 criterion_main!(benches);

@@ -277,7 +277,7 @@ where
 
             Pauli::Z => {
                 // branch to gamma * I
-                let new_v = v.clone() * gamma;
+                let new_v = *v * gamma;
                 let mut new_k = k.clone();
                 new_k.set(addr0, Pauli::I);
 
@@ -324,11 +324,11 @@ where
     ///
     /// The three probabilities are:
     /// * `p[0]`: The probability of losing both qubits simultaneously when
-    ///     both of them are in the qubit subspace.
+    ///   both of them are in the qubit subspace.
     /// * `p[1]`: The probability of losing either one qubit when both of them are
-    ///     in the qubit subspace.
+    ///   in the qubit subspace.
     /// * `p[2]`: The probability of losing one qubit when the other one has already
-    ///     been lost prior to the channel.
+    ///   been lost prior to the channel.
     fn correlated_loss_channel(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 3]) {
         self.map_insert_multiple(|k, v| {
             match (k.get(addr0), k.get(addr1)) {

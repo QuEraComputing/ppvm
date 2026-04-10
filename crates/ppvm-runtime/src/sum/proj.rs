@@ -13,16 +13,14 @@ where
                 Pauli::I => {
                     *v *= half;
                     let nk = k.set_new(pos, Pauli::Z);
-                    return Some((nk, v.clone()));
+                    Some((nk, v.clone()))
                 }
                 Pauli::Z => {
                     *v *= half;
                     let nk = k.set_new(pos, Pauli::I);
-                    return Some((nk, v.clone()));
+                    Some((nk, v.clone()))
                 }
-                _ => {
-                    return None;
-                }
+                _ => None,
             }
         });
     }
@@ -34,16 +32,14 @@ where
                 Pauli::I => {
                     *v *= half;
                     let nk = k.set_new(pos, Pauli::Z);
-                    return Some((nk, -v.clone()));
+                    Some((nk, -v.clone()))
                 }
                 Pauli::Z => {
                     *v *= half;
                     let nk = k.set_new(pos, Pauli::I);
-                    return Some((nk, -v.clone()));
+                    Some((nk, -v.clone()))
                 }
-                _ => {
-                    return None;
-                }
+                _ => None,
             }
         });
     }

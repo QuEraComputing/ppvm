@@ -1,6 +1,6 @@
 mod clifford;
 mod data;
-mod trace;
 mod mul;
+mod trace;
 
 pub use data::PauliWord;

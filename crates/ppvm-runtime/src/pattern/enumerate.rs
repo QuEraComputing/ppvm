@@ -44,9 +44,9 @@ impl<'a> Iterator for EnumMatchesOpPattern<'a> {
                 };
                 Some(result)
             }
-            XYZ if self.current < 3 => {
+            Xyz if self.current < 3 => {
                 self.current += 1;
-                Some(unsafe { std::mem::transmute(self.current as u8) })
+                Some(unsafe { std::mem::transmute::<u8, Pauli>(self.current as u8) })
             }
             SingleOrIdentity(op) if self.current < 2 => {
                 let result = if self.current == 0 {
@@ -71,8 +71,8 @@ impl<'a> Iterator for EnumMatchesOpPattern<'a> {
                 };
                 Some(result)
             }
-            XYZI => {
-                let result = unsafe { std::mem::transmute(self.current as u8) };
+            Xyzi => {
+                let result = unsafe { std::mem::transmute::<u8, Pauli>(self.current as u8) };
                 self.current += 1;
                 Some(result)
             }
@@ -88,8 +88,8 @@ impl PauliPattern {
     ) -> EnumMatchesPauliPattern<'_, A> {
         let mut start: usize = 0;
         let mut iters = Vec::new();
-        let mut patterns = self.0.iter().peekable();
-        while let Some(pat) = patterns.next() {
+        let patterns = self.0.iter().peekable();
+        for pat in patterns {
             match pat {
                 Decorated::Position(op, pos) => {
                     for _ in start..*pos {

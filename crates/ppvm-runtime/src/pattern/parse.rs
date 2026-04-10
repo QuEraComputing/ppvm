@@ -36,16 +36,16 @@ impl PauliPattern {
 
                     let mut alter_iter = alter.iter();
                     match alter.len() {
-                        1 => OpPattern::Single(alter_iter.next().unwrap().clone()),
+                        1 => OpPattern::Single(*alter_iter.next().unwrap()),
                         2 => OpPattern::Double(
-                            alter_iter.next().unwrap().clone(),
-                            alter_iter.next().unwrap().clone(),
+                            *alter_iter.next().unwrap(),
+                            *alter_iter.next().unwrap(),
                         ),
-                        3 => OpPattern::XYZ,
+                        3 => OpPattern::Xyz,
                         _ => Err(anyhow::anyhow!("Too many Pauli characters in pattern"))?,
                     }
                 }
-                '_' => OpPattern::XYZI,
+                '_' => OpPattern::Xyzi,
                 'X' => OpPattern::Single(NotIdentity::X),
                 'Y' => OpPattern::Single(NotIdentity::Y),
                 'Z' => OpPattern::Single(NotIdentity::Z),
@@ -127,7 +127,7 @@ mod tests {
         let expect = PauliPattern(vec![
             Position(Double(X, Y), 1),
             Position(Single(Y), 2),
-            Position(XYZI, 3),
+            Position(Xyzi, 3),
         ]);
         assert_eq!(answer, expect);
 

@@ -16,10 +16,10 @@ impl std::fmt::Display for OpPattern {
             OpPattern::Identity => write!(f, "I"),
             OpPattern::Single(not_identity) => write!(f, "{}", not_identity),
             OpPattern::Double(left, right) => write!(f, "[{}{}]", left, right),
-            OpPattern::XYZ => write!(f, "[XYZ]"),
+            OpPattern::Xyz => write!(f, "[XYZ]"),
             OpPattern::SingleOrIdentity(not_identity) => write!(f, "{}?", not_identity),
             OpPattern::DoubleOrIdentity(left, right) => write!(f, "[{}{}]?", left, right),
-            OpPattern::XYZI => write!(f, "_"),
+            OpPattern::Xyzi => write!(f, "_"),
         }
     }
 }

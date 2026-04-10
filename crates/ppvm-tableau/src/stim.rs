@@ -100,42 +100,37 @@ where
         // instruction
         match instruction {
             "I" => {
-                if let Some([tag]) = tags.as_deref() {
-                    if let Some(paren_start) = tag.find('(') {
-                        let gate = tag[..paren_start].trim();
-                        let inner = tag[paren_start + 1..].strip_suffix(')').unwrap();
-                        let params: Vec<f64> = inner
-                            .split(',')
-                            .map(|p| parse_pi_expr(p.split('=').nth(1).unwrap().trim()))
-                            .collect();
-                        match gate {
-                            "R_X" => {
-                                for addr in addrs {
-                                    self.rx(addr, params[0]);
-                                }
+                if let Some([tag]) = tags.as_deref()
+                    && let Some(paren_start) = tag.find('(')
+                {
+                    let gate = tag[..paren_start].trim();
+                    let inner = tag[paren_start + 1..].strip_suffix(')').unwrap();
+                    let params: Vec<f64> = inner
+                        .split(',')
+                        .map(|p| parse_pi_expr(p.split('=').nth(1).unwrap().trim()))
+                        .collect();
+                    match gate {
+                        "R_X" => {
+                            for addr in addrs {
+                                self.rx(addr, params[0]);
                             }
-                            "R_Y" => {
-                                for addr in addrs {
-                                    self.ry(addr, params[0]);
-                                }
-                            }
-                            "R_Z" => {
-                                for addr in addrs {
-                                    self.rz(addr, params[0]);
-                                }
-                            }
-                            "U3" => {
-                                for addr in addrs {
-                                    self.u3(
-                                        addr,
-                                        params[0].into(),
-                                        params[1].into(),
-                                        params[2].into(),
-                                    );
-                                }
-                            }
-                            _ => {}
                         }
+                        "R_Y" => {
+                            for addr in addrs {
+                                self.ry(addr, params[0]);
+                            }
+                        }
+                        "R_Z" => {
+                            for addr in addrs {
+                                self.rz(addr, params[0]);
+                            }
+                        }
+                        "U3" => {
+                            for addr in addrs {
+                                self.u3(addr, params[0].into(), params[1].into(), params[2].into());
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -341,7 +336,7 @@ where
                 let ps_arr: [T::Coeff; 15] = std::array::from_fn(|i| ps[i].into());
                 debug_assert!(addrs.clone().collect::<Vec<usize>>().len().is_even());
                 for (control, target) in addrs.tuples() {
-                    self.two_qubit_pauli_error(control.clone(), target.clone(), ps_arr.clone());
+                    self.two_qubit_pauli_error(control, target, ps_arr.clone());
                 }
             }
 
@@ -402,7 +397,7 @@ where
             let after_open = &instr_token[bracket_start + 1..];
             let bracket_end = after_open
                 .find(']')
-                .expect(&format!("unclosed [ in line {}", line_no));
+                .unwrap_or_else(|| panic!("unclosed [ in line {}", line_no));
             let tags: Vec<&str> = split_commas_shallow(&after_open[..bracket_end]);
             let after_bracket = after_open[bracket_end + 1..].trim();
             let parens_args = after_bracket
@@ -419,7 +414,7 @@ where
             let instruction = instr_token[..paren_start].trim();
             let inner = instr_token[paren_start + 1..]
                 .strip_suffix(')')
-                .expect(&format!("unclosed ( in line {}", line_no));
+                .unwrap_or_else(|| panic!("unclosed ( in line {}", line_no));
             let ps = inner
                 .split(',')
                 .map(|c| c.trim().parse().unwrap())

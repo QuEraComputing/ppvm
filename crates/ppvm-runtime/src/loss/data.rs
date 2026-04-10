@@ -254,15 +254,7 @@ impl<A: PauliStorage, S> Ord for LossyPauliWord<A, S> {
 
 impl<A: PauliStorage, S> PartialOrd for LossyPauliWord<A, S> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if self.nqubits != other.nqubits {
-            return None;
-        }
-        Some(
-            self.xbits
-                .cmp(&other.xbits)
-                .then(self.zbits.cmp(&other.zbits))
-                .then(self.lbits.cmp(&other.lbits)),
-        )
+        Some(self.cmp(other))
     }
 }
 
@@ -275,13 +267,13 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<&str> for LossyPaul
 impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<String> for LossyPauliWord<A, S> {
     fn from(value: String) -> Self {
         let n_qubits = value.chars().count();
-        let mut chars = value.chars();
+        let chars = value.chars();
         let mut x = BitArray::ZERO;
         let mut z = BitArray::ZERO;
         let mut l = BitArray::ZERO;
 
         let mut i = 0;
-        while let Some(ch) = chars.next() {
+        for ch in chars {
             match ch {
                 'I' => {
                     x.set(i, false);

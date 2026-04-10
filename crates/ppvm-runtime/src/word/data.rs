@@ -241,14 +241,7 @@ impl<A: PauliStorage, S, const REHASH: bool> Ord for PauliWord<A, S, REHASH> {
 
 impl<A: PauliStorage, S, const REHASH: bool> PartialOrd for PauliWord<A, S, REHASH> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if self.nqubits != other.nqubits {
-            return None;
-        }
-        Some(
-            self.xbits
-                .cmp(&other.xbits)
-                .then(self.zbits.cmp(&other.zbits)),
-        )
+        Some(self.cmp(other))
     }
 }
 
@@ -265,12 +258,12 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> From
 {
     fn from(value: String) -> Self {
         let n_qubits = value.chars().count();
-        let mut chars = value.chars();
+        let chars = value.chars();
         let mut x = BitArray::ZERO;
         let mut z = BitArray::ZERO;
 
         let mut i = 0;
-        while let Some(ch) = chars.next() {
+        for ch in chars {
             match ch {
                 'I' => {
                     x.set(i, false);

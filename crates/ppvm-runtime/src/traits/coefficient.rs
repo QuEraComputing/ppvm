@@ -84,9 +84,9 @@ impl Coefficient for num::complex::Complex<f64> {
 impl ComplexCoefficient for num::complex::Complex<f64> {
     fn mul_phase(&self, phase: u8) -> Self {
         match phase % 4 {
-            0 => self.clone(),
+            0 => *self,
             1 => num::complex::Complex::new(-self.im, self.re),
-            2 => -self.clone(),
+            2 => -*self,
             3 => num::complex::Complex::new(self.im, -self.re),
             _ => unreachable!(),
         }

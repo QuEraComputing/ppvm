@@ -12,45 +12,34 @@ where
     T::Coeff: std::ops::MulAssign,
     T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapConsume,
 {
-    fn rotate_2(
-        &mut self,
-        axis_a_x: u8,
-        axis_a_z: u8,
-        axis_b_x: u8,
-        axis_b_z: u8,
-        a: usize,
-        b: usize,
-        theta: T::Coeff,
-    ) {
+    fn rotate_2(&mut self, axis_a: [u8; 2], axis_b: [u8; 2], a: usize, b: usize, theta: T::Coeff) {
+        let [axis_a_x, axis_a_z] = axis_a;
+        let [axis_b_x, axis_b_z] = axis_b;
         if axis_a_x > 3 || axis_a_z > 3 || axis_b_x > 3 || axis_b_z > 3 {
             panic!("Rotation axis cannot be L");
         }
         let (sin, cos) = theta.sin_cos();
-        let axis_a = PAULIS[(axis_a_z << 1 | axis_a_x) as usize];
-        let axis_b = PAULIS[(axis_b_z << 1 | axis_b_x) as usize];
+        let pauli_a = PAULIS[(axis_a_z << 1 | axis_a_x) as usize];
+        let pauli_b = PAULIS[(axis_b_z << 1 | axis_b_x) as usize];
         self.map_insert(|k, v| {
             // NOTE: case of both qubits being lost is handled by single-qubit rotation logic
             if k.get_lbit(a) {
                 // fall back to single-qubit rotation on qubit b
-                return rotate_1_map_insert_closure::<T>(k, v, axis_b, b, &sin, &cos);
+                return rotate_1_map_insert_closure::<T>(k, v, pauli_b, b, &sin, &cos);
             }
             if k.get_lbit(b) {
                 // fall back to single-qubit rotation on qubit a
-                return rotate_1_map_insert_closure::<T>(k, v, axis_a, a, &sin, &cos);
+                return rotate_1_map_insert_closure::<T>(k, v, pauli_a, a, &sin, &cos);
             }
             let (eps, x_a, z_a, x_b, z_b) = comm_2(
-                axis_a_x,
-                axis_a_z,
-                axis_b_x,
-                axis_b_z,
-                k.get_xbit(a) as u8,
-                k.get_zbit(a) as u8,
-                k.get_xbit(b) as u8,
-                k.get_zbit(b) as u8,
+                axis_a,
+                axis_b,
+                [k.get_xbit(a) as u8, k.get_zbit(a) as u8],
+                [k.get_xbit(b) as u8, k.get_zbit(b) as u8],
             );
 
             if eps == 0 {
-                return None;
+                None
             } else {
                 let mut coeff = v.clone();
                 *v *= cos.clone();
@@ -63,7 +52,7 @@ where
                 new_word.rehash();
 
                 coeff *= sin.mul_sign(-eps);
-                return Some((new_word, coeff));
+                Some((new_word, coeff))
             }
         });
     }
@@ -87,23 +76,18 @@ where
 // (bit-0 = qubit-0, bit-1 = qubit-1).
 /// Branch-free commutator  [ Q , P ] / (2 i )
 ///
-///   Inputs are eight *bool-as-u8* flags (0 or 1):
-///       (x_a,z_a)  Q qubit-0       (x_b,z_b)  Q qubit-1
-///       (x_c,z_c)  P qubit-0       (x_d,z_d)  P qubit-1
+///   Each qubit is encoded as `[x, z]` bits (0 or 1):
+///       `q0 = [x_a, z_a]`  Q qubit-0       `q1 = [x_b, z_b]`  Q qubit-1
+///       `p0 = [x_c, z_c]`  P qubit-0       `p1 = [x_d, z_d]`  P qubit-1
 ///
 ///   Returns (coeff , x_out0 , z_out0 , x_out1 , z_out1)
 ///           coeff ∈ { -1 , 0 , +1 }
 #[inline(always)]
-pub fn comm_2(
-    x_a: u8,
-    z_a: u8, // Q₀
-    x_b: u8,
-    z_b: u8, // Q₁
-    x_c: u8,
-    z_c: u8, // P₀
-    x_d: u8,
-    z_d: u8, // P₁
-) -> (i8, u8, u8, u8, u8) {
+pub fn comm_2(q0: [u8; 2], q1: [u8; 2], p0: [u8; 2], p1: [u8; 2]) -> (i8, u8, u8, u8, u8) {
+    let [x_a, z_a] = q0;
+    let [x_b, z_b] = q1;
+    let [x_c, z_c] = p0;
+    let [x_d, z_d] = p1;
     // ── 1.  per-qubit anticommutation bits  a₀ , a₁  ───────────────────────
     let a0 = (x_a & z_c) ^ (z_a & x_c); // qubit-0 anticommutes?
     let a1 = (x_b & z_d) ^ (z_b & x_d); // qubit-1 anticommutes?

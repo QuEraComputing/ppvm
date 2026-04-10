@@ -344,7 +344,7 @@ where
     /// 1. The actual measurement outcome (k)
     /// 2. The sign from whether +Z or -Z is a stabilizer (m) - can get that from the decomposition
     /// 3. Contribution from commuting Z_addr0 through the destabilizers (xi)
-    /// Only coefficients where m*k*xi == 1 are kept, equivalently written as (xi * k) == m
+    ///    Only coefficients where m*k*xi == 1 are kept, equivalently written as (xi * k) == m
     pub(crate) fn trim_coefficients_for_measurement(
         &mut self,
         destab_anticomm_bits: I,
@@ -406,8 +406,8 @@ where
             let phase_factor: Complex<T::Coeff> =
                 COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
 
-            let branch_coefficient = phase_factor * coeff.clone() * branch_factor.clone();
-            let nonbranch_coefficient = coeff * coefficient_factor.clone();
+            let branch_coefficient = phase_factor * coeff * branch_factor;
+            let nonbranch_coefficient = coeff * coefficient_factor;
 
             *new_coefficients
                 .entry(branch_index)
@@ -461,7 +461,7 @@ where
             let phase_factor: Complex<T::Coeff> =
                 COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
 
-            let branch_coefficient = phase_factor * coeff.clone();
+            let branch_coefficient = phase_factor * coeff;
 
             *new_coefficients
                 .entry(branch_index)

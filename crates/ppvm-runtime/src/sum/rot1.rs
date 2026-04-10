@@ -19,7 +19,7 @@ pub(crate) fn rotate_1_map_insert_closure<T: Config>(
     }
     let (eps, p_q) = levi_civita(p_g as u8, axis as u8);
     if eps == 0 {
-        return None;
+        None
     } else {
         let mut coeff = v.clone();
         *v *= cos.clone();
@@ -29,7 +29,7 @@ pub(crate) fn rotate_1_map_insert_closure<T: Config>(
         new_word.rehash();
 
         coeff *= sin.mul_sign(eps);
-        return Some((new_word, coeff));
+        Some((new_word, coeff))
     }
 }
 

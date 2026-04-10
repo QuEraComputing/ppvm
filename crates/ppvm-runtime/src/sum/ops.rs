@@ -117,7 +117,7 @@ where
 {
     fn add_assign(&mut self, rhs: PauliSum<T>) {
         debug_assert_eq!(self.n_qubits(), rhs.n_qubits());
-        self.extend(rhs.into_iter())
+        self.extend(rhs)
     }
 }
 

@@ -19,12 +19,12 @@ impl Contains<Pauli> for OpPattern {
             OpPattern::Identity => *item == Pauli::I,
             OpPattern::Single(op) => op.contains(item),
             OpPattern::Double(left, right) => left.contains(item) || right.contains(item),
-            OpPattern::XYZ => *item == Pauli::X || *item == Pauli::Y || *item == Pauli::Z,
+            OpPattern::AnyNonIdentity => *item == Pauli::X || *item == Pauli::Y || *item == Pauli::Z,
             OpPattern::SingleOrIdentity(op) => op.contains(item) || *item == Pauli::I,
             OpPattern::DoubleOrIdentity(left, right) => {
                 left.contains(item) || right.contains(item) || *item == Pauli::I
             }
-            OpPattern::XYZI => *item == Pauli::I,
+            OpPattern::AnyPauliOrIdentity => *item == Pauli::I,
         }
     }
 }
@@ -39,7 +39,7 @@ fn match_position<I: Iterator<Item = (usize, Pauli)>>(
     pattern: &OpPattern,
     pos: &usize,
 ) -> Step {
-    while let Some((ch_pos, ch)) = chars.next() {
+    for (ch_pos, ch) in chars.by_ref() {
         if ch_pos == *pos {
             if pattern.contains(&ch) {
                 return Step::NextPattern;
@@ -112,8 +112,8 @@ where
 {
     fn contains(&self, item: &W) -> bool {
         let mut chars = item.iter().enumerate().peekable();
-        let mut patterns = self.iter();
-        while let Some(current) = patterns.next() {
+        let patterns = self.iter();
+        for current in patterns {
             let step = match current {
                 Decorated::Position(op, pos) => match_position(&mut chars, op, pos),
                 Decorated::Star(op) => match_star(&mut chars, op),
@@ -127,7 +127,7 @@ where
         }
 
         // check if there are remaining non-ident in `item`
-        while let Some((_, ch)) = chars.next() {
+        for (_, ch) in chars {
             if ch == Pauli::I {
                 continue;
             } else {

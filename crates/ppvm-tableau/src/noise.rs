@@ -8,12 +8,20 @@ use num::traits::{One, ToPrimitive, Zero};
 use crate::prelude::*;
 use rand::RngExt;
 
+/// Check that a value is a valid probability (in [0, 1]).
+/// Extracted to avoid triggering `clippy::manual_range_contains` when
+/// the generic `T::Coeff` does not implement `PartialOrd` in both directions.
+#[inline]
+fn is_probability(p: &impl PartialOrd<f64>) -> bool {
+    *p >= 0.0 && *p <= 1.0
+}
+
 impl<T: Config> Depolarizing<T> for Tableau<T>
 where
     T::Coeff: PartialOrd<f64>,
 {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        debug_assert!(p >= 0.0 && p <= 1.0);
+        debug_assert!(is_probability(&p));
         let r = self.rng.random::<f64>();
         if p <= r {
             return;
@@ -38,7 +46,7 @@ where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
 {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        debug_assert!(p >= 0.0 && p <= 1.0);
+        debug_assert!(is_probability(&p));
         let r = self.tableau.rng.random::<f64>();
         if p <= r {
             return;
@@ -249,11 +257,11 @@ where
     ///
     /// The three probabilities are:
     /// * `p[0]`: The probability of losing both qubits simultaneously when
-    ///     both of them are in the qubit subspace.
+    ///   both of them are in the qubit subspace.
     /// * `p[1]`: The probability of losing either one qubit when both of them are
-    ///     in the qubit subspace.
+    ///   in the qubit subspace.
     /// * `p[2]`: The probability of losing one qubit when the other one has already
-    ///     been lost prior to the channel.
+    ///   been lost prior to the channel.
     fn correlated_loss_channel(
         &mut self,
         addr0: usize,
@@ -270,8 +278,8 @@ where
 
         let r = self.tableau.rng.random::<f64>();
         let mut cumulative = T::Coeff::zero();
-        for i in 0..2 {
-            cumulative += p[i].clone();
+        for (i, p_i) in p[..2].iter().enumerate() {
+            cumulative += p_i.clone();
             if cumulative > r {
                 if i == 0 {
                     // both lost

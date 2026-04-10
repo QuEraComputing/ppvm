@@ -4,7 +4,7 @@ use crate::{pattern::PauliPattern, traits::*};
 use dashmap::DashMap;
 use rayon::prelude::*;
 
-impl<'a, V, Hasher, T> ACMapBase for DashMap<T, V, Hasher>
+impl<V, Hasher, T> ACMapBase for DashMap<T, V, Hasher>
 where
     T: std::hash::Hash + Eq,
     V: Coefficient,
@@ -23,12 +23,12 @@ where
     }
 }
 
-impl<'a, S, V, Hasher, W> ACMapAddAssign<S, V, Hasher, W> for DashMap<W, V, Hasher>
+impl<S, V, Hasher, W> ACMapAddAssign<S, V, Hasher, W> for DashMap<W, V, Hasher>
 where
-    S: PauliStorage + 'a,
-    V: Coefficient + Sync + Send + 'a,
-    Hasher: Default + Clone + BuildHasher + Sync + Send + 'a,
-    W: PauliWordTrait + Sync + Send + 'a,
+    S: PauliStorage,
+    V: Coefficient + Sync + Send,
+    Hasher: Default + Clone + BuildHasher + Sync + Send,
+    W: PauliWordTrait + Sync + Send,
 {
     fn add_assign(&mut self, key: W, value: V) {
         self.entry(key)
@@ -122,11 +122,11 @@ where
     }
 }
 
-impl<'a, C, H, W> ACMapConsume for DashMap<W, C, H>
+impl<C, H, W> ACMapConsume for DashMap<W, C, H>
 where
-    C: Coefficient + Send + Sync + 'a,
-    H: Clone + BuildHasher + 'a + Send + Sync,
-    W: std::hash::Hash + std::cmp::Eq + Clone + Sync + Send + 'a,
+    C: Coefficient + Send + Sync,
+    H: Clone + BuildHasher + Send + Sync,
+    W: std::hash::Hash + std::cmp::Eq + Clone + Sync + Send,
 {
     fn consume(&mut self, dest: &mut Self) {
         dest.par_iter().for_each(|entry| {
@@ -144,12 +144,12 @@ where
     }
 }
 
-impl<'a, S, C, H, W> ACMapInsert<S, C, H, W> for DashMap<W, C, H>
+impl<S, C, H, W> ACMapInsert<S, C, H, W> for DashMap<W, C, H>
 where
-    S: PauliStorage + 'a,
-    C: Coefficient + Send + Sync + 'a,
-    H: Default + Clone + BuildHasher + 'a + Send + Sync,
-    W: PauliWordTrait + Send + Sync + 'a,
+    S: PauliStorage,
+    C: Coefficient + Send + Sync,
+    H: Default + Clone + BuildHasher + Send + Sync,
+    W: PauliWordTrait + Send + Sync,
 {
     fn map_insert<F>(&mut self, dest: &mut Self, f: F)
     where
@@ -191,7 +191,7 @@ where
     where
         F: Fn(&C) -> bool,
     {
-        self.get(key).map_or(false, |v| f(v.value()))
+        self.get(key).is_some_and(|v| f(v.value()))
     }
 }
 

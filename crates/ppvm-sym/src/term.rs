@@ -22,6 +22,12 @@ pub struct Prod {
     pub(crate) phase: u8,
 }
 
+impl Default for Prod {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Prod {
     pub fn new() -> Self {
         Self {
@@ -68,6 +74,12 @@ impl Prod {
 pub struct Sum {
     pub(crate) c0: f64,
     pub(crate) terms: FxHashMap<Prod, f64>,
+}
+
+impl Default for Sum {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Sum {
@@ -142,7 +154,7 @@ impl Term {
                 panic!("only variable or constant can be input of sin");
             }
         }
-        return self;
+        self
     }
 
     pub fn cos(mut self) -> Self {
@@ -157,7 +169,7 @@ impl Term {
                 panic!("only variable or constant can be input of cos");
             }
         }
-        return self;
+        self
     }
 
     pub fn from_f64(c: f64) -> Self {

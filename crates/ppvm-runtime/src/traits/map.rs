@@ -5,6 +5,9 @@ use crate::traits::{Coefficient, PauliStorage, PauliWordTrait};
 pub trait ACMapBase {
     fn with_capacity(capacity: usize) -> Self;
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     fn clear(&mut self);
 }
 

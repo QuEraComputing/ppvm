@@ -24,14 +24,14 @@ where
 {
     fn rotate_2(
         &mut self,
-        axis_a_x: u8,
-        axis_a_z: u8,
-        axis_b_x: u8,
-        axis_b_z: u8,
+        axis_a: [u8; 2],
+        axis_b: [u8; 2],
         a: usize,
         b: usize,
         theta: <T as Config>::Coeff,
     ) {
+        let [axis_a_x, axis_a_z] = axis_a;
+        let [axis_b_x, axis_b_z] = axis_b;
         let pauli_a = PAULIS[(axis_a_z << 1 | axis_a_x) as usize];
         let pauli_b = PAULIS[(axis_b_z << 1 | axis_b_x) as usize];
         // NOTE: if both qubits are lost, the rot1 will be a no-op

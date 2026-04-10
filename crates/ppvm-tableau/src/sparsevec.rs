@@ -43,7 +43,7 @@ where
     fn get(&self, index: &I) -> T {
         for (v, i) in self.iter() {
             if i == index {
-                return v.clone();
+                return *v;
             }
         }
         T::zero()
@@ -97,7 +97,7 @@ where
         for (v, _) in self.iter_mut() {
             // Scale by multiplying by 1/norm_sqrt
             let scale = Complex::new(inv_norm_sqrt, T::Real::zero());
-            *v = *v * T::from(scale).expect("Failed to convert scale factor");
+            *v *= T::from(scale).expect("Failed to convert scale factor");
         }
     }
 }

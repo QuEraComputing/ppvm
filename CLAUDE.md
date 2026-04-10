@@ -1,0 +1,74 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Build and Test
+
+```bash
+cargo test --workspace                       # Run all Rust tests
+cargo test -p ppvm-tableau                   # Test a single crate
+cargo test -p ppvm-runtime -- test_ghz       # Run a single test by name
+cargo bench -p ppvm-tableau --bench micro    # Run benchmarks for a crate
+cargo bench --bench micro -- "gates/single-qubit/h"  # Run a specific benchmark
+
+# Python tests (requires uv)
+uv run --project ppvm-python --group dev pytest ppvm-python/test/
+```
+
+Rust edition 2024. CI sets `RUSTFLAGS="-C target-feature=+aes,+sse2"` (needed for gxhash on x86).
+
+## Commit Messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <description>`
+
+Examples: `feat(tableau): add correlated loss channel`, `fix(runtime): handle zero-norm in truncation`
+
+## Project Structure
+
+```
+ppvm (root package)
+├── crates/
+│   ├── ppvm-runtime     # Core: Pauli arithmetic, PauliSum, gate traits, configs
+│   ├── ppvm-tableau     # Stabilizer tableau simulator (Clifford + non-Clifford)
+│   ├── ppvm-sym         # Symbolic (parametric) Pauli propagation
+│   └── ppvm-python-native  # PyO3 bindings
+├── ppvm-python/         # Pure Python wrapper (separate build, uses uv)
+└── examples/            # Rust examples (symbolic.rs, trotter.rs)
+```
+
+**Dependency graph:** `ppvm-runtime` is the foundation. `ppvm-tableau` and `ppvm-sym` depend on it. `ppvm-python-native` depends on both `ppvm-runtime` and `ppvm-tableau`.
+
+## Architecture
+
+ppvm implements two quantum simulation backends:
+
+### 1. Pauli Propagation (`ppvm-runtime`)
+
+Tracks Pauli operator evolution through circuits in the **Heisenberg picture** (circuits run backwards). The central type is `PauliSum<T: Config>`, a dictionary of Pauli strings to coefficients.
+
+Key design patterns:
+- **Config-based generics:** `Config` trait bundles Storage, Coefficient, Strategy, Map, and BuildHasher choices at compile time. Implementations live in `config/` (fxhash, indexmap, dashmap, gxhash).
+- **Dual-map optimization:** `PauliSum` maintains two internal maps (main + auxiliary) and swaps between them during gate propagation to avoid repeated allocations.
+- **Strategy pattern:** Truncation policies (`CoefficientThreshold`, `MaxPauliWeight`, `MaxLossWeight`, `CombinedStrategy`) control when small terms are dropped. Call `.truncate()` to apply.
+- **Backward propagation:** Pauli propagation runs circuits backwards. To simulate `H(0); CNOT(0,1)`, call `state.cnot(0,1); state.h(0)` — the CNOT precedes the Hadamard.
+
+### 2. Generalized Stabilizer Tableau (`ppvm-tableau`)
+
+Full state simulation using stabilizer formalism, extended to handle non-Clifford gates (T, rotations) via stabilizer rank decomposition with sparse coefficient tracking.
+
+- **`Tableau<T: Config>`:** 2n-row stabilizer/destabilizer tableau (rows 0..n = destabilizers, n..2n = stabilizers).
+- **`GeneralizedTableau<T: Config, IndexType>`:** Extends Tableau with a sparse coefficient vector for non-Clifford state tracking. `IndexType` can be `usize`, `u128`, or `bnum::types::U256` for large qubit counts.
+- **`SparseVector<T, I>` trait:** Stores coefficients indexed by bitstrings. Indices can be large integers (U256, U512, U1024) for simulations beyond 64 qubits.
+- **Stim compatibility:** `run_stim_string()` / `run_stim_file()` for Stim circuit format I/O.
+
+### Trait hierarchy (in `ppvm-runtime/src/traits/`)
+
+Gate behavior is defined via traits reused across both backends:
+- `Clifford` / `CliffordExtensions` — single/two-qubit Clifford gates
+- `TGate`, `RotationOne`, `RotationTwo`, `U3Gate` — non-Clifford gates (branching)
+- `Measure` / `LossyMeasure` — Z-basis measurement
+- `Depolarizing`, `PauliError`, `LossChannel`, `CorrelatedLossChannel` — noise channels
+
+### Python bindings
+
+`ppvm-python-native` uses PyO3 macros (`create_interface!`, `create_interface_range!`) to generate multiple Python classes per config/qubit-count combination. `ppvm-python` wraps these with Pythonic APIs via mixins.

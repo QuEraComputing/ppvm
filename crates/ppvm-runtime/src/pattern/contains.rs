@@ -19,7 +19,9 @@ impl Contains<Pauli> for OpPattern {
             OpPattern::Identity => *item == Pauli::I,
             OpPattern::Single(op) => op.contains(item),
             OpPattern::Double(left, right) => left.contains(item) || right.contains(item),
-            OpPattern::AnyNonIdentity => *item == Pauli::X || *item == Pauli::Y || *item == Pauli::Z,
+            OpPattern::AnyNonIdentity => {
+                *item == Pauli::X || *item == Pauli::Y || *item == Pauli::Z
+            }
             OpPattern::SingleOrIdentity(op) => op.contains(item) || *item == Pauli::I,
             OpPattern::DoubleOrIdentity(left, right) => {
                 left.contains(item) || right.contains(item) || *item == Pauli::I

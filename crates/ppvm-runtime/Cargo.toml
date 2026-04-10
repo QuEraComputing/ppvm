@@ -48,3 +48,7 @@ harness = false
 [[bench]]
 name = "trotter-scaling"
 harness = false
+
+[[bench]]
+name = "micro"
+harness = false

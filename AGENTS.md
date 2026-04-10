@@ -5,17 +5,29 @@ This file provides guidance to AI agents when working with code in this reposito
 ## Build and Test
 
 ```bash
+# Rust
 cargo test --workspace                       # Run all Rust tests
 cargo test -p ppvm-tableau                   # Test a single crate
 cargo test -p ppvm-runtime -- test_ghz       # Run a single test by name
 cargo bench -p ppvm-tableau --bench micro    # Run benchmarks for a crate
 cargo bench --bench micro -- "gates/single-qubit/h"  # Run a specific benchmark
 
-# Python tests (requires uv)
+# Python (requires uv; compiles ppvm-python-native via maturin automatically)
 uv run --project ppvm-python --group dev pytest ppvm-python/test/
+uv run --project ppvm-python --group dev pytest ppvm-python/test/test_basics.py  # Single file
+uv run --project ppvm-python --group dev pytest ppvm-python/test/ -k test_ghz   # Single test
 ```
 
 Rust edition 2024. CI sets `RUSTFLAGS="-C target-feature=+aes,+sse2"` (needed for gxhash on x86).
+
+## Python Bindings
+
+**Two-layer build:** `ppvm-python-native` (Rust → cdylib via maturin + PyO3 0.27) is compiled automatically when `ppvm-python` is installed. `ppvm-python` is a pure Python wrapper using `uv_build` as its build backend.
+
+- Python ≥ 3.10 required (`.python-version` pins 3.12 for dev)
+- `uv` manages the venv, deps, and triggers the maturin build
+- `ppvm-python/pyproject.toml` references `ppvm-python-native` via `[tool.uv.sources]` path dependency
+- The native module exports 16 PauliSum variants × 2 (with/without loss) + 32 GeneralizedTableau variants (1–32 qubits) via `create_interface!` / `create_interface_range!` macros
 
 ## Commit Messages
 

@@ -21,8 +21,19 @@ build-backend = "uv_build"
 [tool.uv.sources]
 ppvm-python-native = { path = "../crates/ppvm-python-native" }
 
-[tool.isort]
-profile = "black"
+[tool.ruff]
+line-length = 100
+extend-exclude = ["docs/", "demo/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "UP", "SIM", "RUF", "I"]
+ignore = [
+    "RUF002",  # ambiguous unicode in docstrings (math notation)
+    "RUF003",  # ambiguous unicode in comments (math notation)
+    "B905",    # zip() without strict= (too noisy for iterating matched-length lists)
+    "UP007",   # Union[X, Y] → X | Y (32-member unions are more readable with Union)
+    "E501",    # line too long in docstring math formulas
+]
 
 [tool.ty.environment]
 python-version = "3.12"
@@ -34,7 +45,6 @@ exclude = ["docs/"]
 [dependency-groups]
 dev = [
     "numpy>=2.2.6",
-    "pre-commit>=4.5.1",
     "pytest>=9.0.2",
 ]
 doc = [

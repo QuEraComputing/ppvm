@@ -167,12 +167,7 @@ def test_run_stim_string_tick_and_annotations_are_noops():
     # TICK, DETECTOR, OBSERVABLE_INCLUDE, QUBIT_COORDS, SHIFT_COORDS,
     # and MPAD are annotation-only and must not affect circuit outcomes.
     circuit = (
-        "QUBIT_COORDS(0, 0) 0\n"
-        "X 0\n"
-        "TICK\n"
-        "M 0\n"
-        "DETECTOR rec[-1]\n"
-        "OBSERVABLE_INCLUDE(0) rec[-1]\n"
+        "QUBIT_COORDS(0, 0) 0\nX 0\nTICK\nM 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]\n"
     )
     tab = GeneralizedTableau(1)
     results = tab.run_stim_string(circuit)
@@ -211,7 +206,7 @@ def test_run_stim_file_measurement_order_follows_circuit():
 
 def test_run_stim_file_missing_file_raises():
     tab = GeneralizedTableau(1)
-    with pytest.raises(BaseException):
+    with pytest.raises(BaseException):  # noqa: B017
         tab.run_stim_file("/nonexistent/path/circuit.stim")
 
 

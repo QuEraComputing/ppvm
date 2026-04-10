@@ -1,4 +1,5 @@
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 
 # TODO: also use this in PauliSum
@@ -300,9 +301,7 @@ class LossMixin:
         """
         self._interface.loss_channel(addr0, p)
 
-    def correlated_loss_channel(
-        self, addr0: int, addr1: int, p: Sequence[float]
-    ) -> None:
+    def correlated_loss_channel(self, addr0: int, addr1: int, p: Sequence[float]) -> None:
         """Apply a correlated loss channel to two qubits.
 
         Args:

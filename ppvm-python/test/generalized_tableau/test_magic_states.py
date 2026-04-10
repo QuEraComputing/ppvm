@@ -45,9 +45,7 @@ def test_simple_infidelity():
     print(f"Infidelity: {float(count_one) / n_shots}")
 
     # NOTE: result from the example at the time of writing
-    assert np.isclose(
-        infidelity, 0.03355, atol=1e-3
-    )  # could increase tolerance for fewer shots
+    assert np.isclose(infidelity, 0.03355, atol=1e-3)  # could increase tolerance for fewer shots
 
 
 # NOTE: helper for below
@@ -186,9 +184,7 @@ def test_distillation_infidelity_rot():
     print(f"Rot Infidelity: {infidelity}")
 
     # NOTE: result from the example at the time of writing
-    assert np.isclose(
-        infidelity, 0.00683, atol=1e-3
-    )  # could increase tolerance for fewer shots
+    assert np.isclose(infidelity, 0.00683, atol=1e-3)  # could increase tolerance for fewer shots
 
 
 def test_distillation_infidelity_sqrt_noiseless():
@@ -296,12 +292,12 @@ def test_single_qubit_magic_state_noiseless():
 
         return [tab.measure(qi) for qi in q]
 
-    for i in range(100):
+    for _i in range(100):
         tab = GeneralizedTableau(n_qubits=1)
         result = distillation_single_qubit_rots(tab, [0])
         assert not result[0]
 
-    for i in range(100):
+    for _i in range(100):
         tab = GeneralizedTableau(n_qubits=1)
         result = distillation_single_qubit(tab, [0])
         assert not result[0]

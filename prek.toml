@@ -47,6 +47,17 @@ entry = "cargo clippy --workspace -- -D warnings"
 pass_filenames = false
 types = ["rust"]
 
+# Python: ruff format check
+[[repos]]
+repo = "local"
+[[repos.hooks]]
+id = "ruff-format"
+name = "ruff format"
+language = "system"
+entry = "uvx ruff format --check ppvm-python/src ppvm-python/test"
+pass_filenames = false
+types = ["python"]
+
 # Python: ruff lint
 [[repos]]
 repo = "local"

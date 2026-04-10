@@ -84,9 +84,7 @@ def test_correlated_loss_p1_exactly_one_lost():
     for seed in range(200):
         tab = GeneralizedTableau(n_qubits=2, seed=seed)
         tab.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0])
-        assert tab.is_lost(0) ^ tab.is_lost(
-            1
-        ), f"Expected exactly one lost qubit (seed {seed})"
+        assert tab.is_lost(0) ^ tab.is_lost(1), f"Expected exactly one lost qubit (seed {seed})"
 
 
 def test_correlated_loss_p1_both_qubits_chosen_equally():
@@ -127,9 +125,7 @@ def test_correlated_loss_single_lost_resets_to_zero():
         tab.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0])
         if tab.is_lost(0):
             tab.reset_loss_channel(0)
-            assert (
-                tab.measure(0) == MeasurementResult.ZERO
-            ), "Lost qubit should be reset to |0⟩"
+            assert tab.measure(0) == MeasurementResult.ZERO, "Lost qubit should be reset to |0⟩"
             return
     raise AssertionError("addr0 was never chosen as the lost qubit in 1000 trials")
 
@@ -188,6 +184,4 @@ def test_correlated_loss_statistics_single():
         )[-1]
     )
     fraction = one_lost / trials
-    assert (
-        abs(fraction - p_single) < 0.08
-    ), f"Expected ~{p_single:.2f}, got {fraction:.3f}"
+    assert abs(fraction - p_single) < 0.08, f"Expected ~{p_single:.2f}, got {fraction:.3f}"

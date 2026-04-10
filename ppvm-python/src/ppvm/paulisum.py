@@ -1,7 +1,8 @@
 import math
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Self, Sequence, Union
+from typing import Self, Union
 
 import ppvm_python_native
 
@@ -27,9 +28,7 @@ def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, f
         for pauli, idx_str in _COMPACT_TOKEN_RE.findall(s):
             idx = int(idx_str)
             if idx >= n_qubits:
-                raise ValueError(
-                    f"Qubit index {idx} out of range for {n_qubits}-qubit system."
-                )
+                raise ValueError(f"Qubit index {idx} out of range for {n_qubits}-qubit system.")
             chars[idx] = pauli
         s = "".join(chars)
 
@@ -162,9 +161,7 @@ class PauliSum(
         coefficients = self.coefficients
 
         if not terms:
-            raise ValueError(
-                "At least one term must be provided to initialize PauliSum."
-            )
+            raise ValueError("At least one term must be provided to initialize PauliSum.")
 
         for term in terms:
             if len(term) != n_qubits:
@@ -424,9 +421,7 @@ class LossyPauliSum(PauliSum):
         """
         self._interface.loss_channel(addr0, p)
 
-    def correlated_loss_channel(
-        self, addr0: int, addr1: int, p: Sequence[float]
-    ) -> None:
+    def correlated_loss_channel(self, addr0: int, addr1: int, p: Sequence[float]) -> None:
         """Apply a correlated loss channel.
 
         This applies a correlated loss channel to the qubits at `addr0` and `addr1`.

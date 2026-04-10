@@ -1,7 +1,6 @@
 import enum
 import math
 from dataclasses import InitVar, dataclass, field
-from typing import Optional
 
 import ppvm_python_native
 
@@ -57,11 +56,11 @@ class GeneralizedTableau(
 
     n_qubits: int
     min_abs_coeff: float = 1e-10
-    seed: InitVar[Optional[int]] = None
+    seed: InitVar[int | None] = None
 
     _interface: GeneralizedTableauInterface = field(init=False, repr=False)
 
-    def __post_init__(self, seed: Optional[int]):
+    def __post_init__(self, seed: int | None):
         N_interface = math.ceil(self.n_qubits / 64.0)
         object.__setattr__(
             self,
@@ -71,7 +70,7 @@ class GeneralizedTableau(
             ),
         )
 
-    def fork(self, seed: Optional[int] = None) -> "GeneralizedTableau":
+    def fork(self, seed: int | None = None) -> "GeneralizedTableau":
         """Fork this tableau into an independent simulation branch.
 
         Clones all quantum state but reinitializes the RNG, so the returned

@@ -36,7 +36,7 @@ def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, f
     return s, coeff
 
 
-T = Union[
+PauliSumInterface = Union[
     ppvm_python_native.PauliSumIndexMapFxHash0,
     ppvm_python_native.PauliSumIndexMapFxHash1,
     ppvm_python_native.PauliSumIndexMapFxHash2,
@@ -53,6 +53,9 @@ T = Union[
     ppvm_python_native.PauliSumIndexMapFxHash13,
     ppvm_python_native.PauliSumIndexMapFxHash14,
     ppvm_python_native.PauliSumIndexMapFxHash15,
+]
+
+LossyPauliSumInterface = Union[
     ppvm_python_native.PauliSumLossIndexMapFxHash0,
     ppvm_python_native.PauliSumLossIndexMapFxHash1,
     ppvm_python_native.PauliSumLossIndexMapFxHash2,
@@ -138,7 +141,7 @@ class PauliSum(
     max_pauli_weight: int | None = None
     max_loss_weight: int | None = None
 
-    _interface: T = field(init=False, repr=False)
+    _interface: PauliSumInterface = field(init=False, repr=False)
 
     def __post_init__(self):
         object.__setattr__(
@@ -382,6 +385,7 @@ class PauliSum(
         self._interface.amplitude_damping(addr0, gamma)
 
 
+@dataclass(frozen=True)
 class LossyPauliSum(PauliSum):
     """A PauliSum that supports modelling qubit loss.
 
@@ -397,6 +401,8 @@ class LossyPauliSum(PauliSum):
     The truncation is similar to how `max_pauli_weight` truncates strings, but only
     counting `L`s.
     """
+
+    _interface: LossyPauliSumInterface = field(init=False, repr=False)
 
     def _get_interface(self, n_interface: int):
         return getattr(ppvm_python_native, f"PauliSumLossIndexMapFxHash{n_interface}")

@@ -46,3 +46,25 @@ language = "system"
 entry = "cargo clippy --workspace -- -D warnings"
 pass_filenames = false
 types = ["rust"]
+
+# Python: ruff lint
+[[repos]]
+repo = "local"
+[[repos.hooks]]
+id = "ruff-check"
+name = "ruff check"
+language = "system"
+entry = "uvx ruff check ppvm-python/"
+pass_filenames = false
+types = ["python"]
+
+# Python: ty type check
+[[repos]]
+repo = "local"
+[[repos.hooks]]
+id = "ty-check"
+name = "ty check"
+language = "system"
+entry = "uvx ty check --project ppvm-python"
+pass_filenames = false
+types = ["python"]

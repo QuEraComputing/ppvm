@@ -9,6 +9,7 @@ ppvm-python/.cache/
 ppvm-python/extended_tests/stim/stim-programs/
 
 # Managed by ion
+CLAUDE.md
 .agents/skills/ion-cli
 .claude/skills/ion-cli
 .agents/skills/receiving-code-review

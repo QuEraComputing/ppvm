@@ -242,13 +242,11 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for Lossy
 
 impl<A: PauliStorage, S> Ord for LossyPauliWord<A, S> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if self.nqubits != other.nqubits {
-            panic!("Cannot compare PauliStrings with different number of qubits");
-        }
-        self.xbits
-            .cmp(&other.xbits)
-            .then(self.zbits.cmp(&other.zbits))
-            .then(self.lbits.cmp(&other.lbits))
+        self.nqubits
+            .cmp(&other.nqubits)
+            .then_with(|| self.xbits.cmp(&other.xbits))
+            .then_with(|| self.zbits.cmp(&other.zbits))
+            .then_with(|| self.lbits.cmp(&other.lbits))
     }
 }
 

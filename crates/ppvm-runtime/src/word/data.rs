@@ -230,12 +230,10 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Paul
 
 impl<A: PauliStorage, S, const REHASH: bool> Ord for PauliWord<A, S, REHASH> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if self.nqubits != other.nqubits {
-            panic!("Cannot compare PauliStrings with different number of qubits");
-        }
-        self.xbits
-            .cmp(&other.xbits)
-            .then(self.zbits.cmp(&other.zbits))
+        self.nqubits
+            .cmp(&other.nqubits)
+            .then_with(|| self.xbits.cmp(&other.xbits))
+            .then_with(|| self.zbits.cmp(&other.zbits))
     }
 }
 

@@ -4,7 +4,7 @@
 <a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>dashmap::DashMap;
 <a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>rayon::prelude::<span class="kw-2">*</span>;
 <a href=#6 id=6 data-nosnippet>6</a>
-<a href=#7 id=7 data-nosnippet>7</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, V, Hasher, T&gt; ACMapBase <span class="kw">for </span>DashMap&lt;T, V, Hasher&gt;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">impl</span>&lt;V, Hasher, T&gt; ACMapBase <span class="kw">for </span>DashMap&lt;T, V, Hasher&gt;
 <a href=#8 id=8 data-nosnippet>8</a><span class="kw">where
 <a href=#9 id=9 data-nosnippet>9</a>    </span>T: std::hash::Hash + Eq,
 <a href=#10 id=10 data-nosnippet>10</a>    V: Coefficient,
@@ -23,12 +23,12 @@
 <a href=#23 id=23 data-nosnippet>23</a>    }
 <a href=#24 id=24 data-nosnippet>24</a>}
 <a href=#25 id=25 data-nosnippet>25</a>
-<a href=#26 id=26 data-nosnippet>26</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, S, V, Hasher, W&gt; ACMapAddAssign&lt;S, V, Hasher, W&gt; <span class="kw">for </span>DashMap&lt;W, V, Hasher&gt;
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">impl</span>&lt;S, V, Hasher, W&gt; ACMapAddAssign&lt;S, V, Hasher, W&gt; <span class="kw">for </span>DashMap&lt;W, V, Hasher&gt;
 <a href=#27 id=27 data-nosnippet>27</a><span class="kw">where
-<a href=#28 id=28 data-nosnippet>28</a>    </span>S: PauliStorage + <span class="lifetime">'a</span>,
-<a href=#29 id=29 data-nosnippet>29</a>    V: Coefficient + Sync + Send + <span class="lifetime">'a</span>,
-<a href=#30 id=30 data-nosnippet>30</a>    Hasher: Default + Clone + BuildHasher + Sync + Send + <span class="lifetime">'a</span>,
-<a href=#31 id=31 data-nosnippet>31</a>    W: PauliWordTrait + Sync + Send + <span class="lifetime">'a</span>,
+<a href=#28 id=28 data-nosnippet>28</a>    </span>S: PauliStorage,
+<a href=#29 id=29 data-nosnippet>29</a>    V: Coefficient + Sync + Send,
+<a href=#30 id=30 data-nosnippet>30</a>    Hasher: Default + Clone + BuildHasher + Sync + Send,
+<a href=#31 id=31 data-nosnippet>31</a>    W: PauliWordTrait + Sync + Send,
 <a href=#32 id=32 data-nosnippet>32</a>{
 <a href=#33 id=33 data-nosnippet>33</a>    <span class="kw">fn </span>add_assign(<span class="kw-2">&amp;mut </span><span class="self">self</span>, key: W, value: V) {
 <a href=#34 id=34 data-nosnippet>34</a>        <span class="self">self</span>.entry(key)
@@ -122,11 +122,11 @@
 <a href=#122 id=122 data-nosnippet>122</a>    }
 <a href=#123 id=123 data-nosnippet>123</a>}
 <a href=#124 id=124 data-nosnippet>124</a>
-<a href=#125 id=125 data-nosnippet>125</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, C, H, W&gt; ACMapConsume <span class="kw">for </span>DashMap&lt;W, C, H&gt;
+<a href=#125 id=125 data-nosnippet>125</a><span class="kw">impl</span>&lt;C, H, W&gt; ACMapConsume <span class="kw">for </span>DashMap&lt;W, C, H&gt;
 <a href=#126 id=126 data-nosnippet>126</a><span class="kw">where
-<a href=#127 id=127 data-nosnippet>127</a>    </span>C: Coefficient + Send + Sync + <span class="lifetime">'a</span>,
-<a href=#128 id=128 data-nosnippet>128</a>    H: Clone + BuildHasher + <span class="lifetime">'a </span>+ Send + Sync,
-<a href=#129 id=129 data-nosnippet>129</a>    W: std::hash::Hash + std::cmp::Eq + Clone + Sync + Send + <span class="lifetime">'a</span>,
+<a href=#127 id=127 data-nosnippet>127</a>    </span>C: Coefficient + Send + Sync,
+<a href=#128 id=128 data-nosnippet>128</a>    H: Clone + BuildHasher + Send + Sync,
+<a href=#129 id=129 data-nosnippet>129</a>    W: std::hash::Hash + std::cmp::Eq + Clone + Sync + Send,
 <a href=#130 id=130 data-nosnippet>130</a>{
 <a href=#131 id=131 data-nosnippet>131</a>    <span class="kw">fn </span>consume(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dest: <span class="kw-2">&amp;mut </span><span class="self">Self</span>) {
 <a href=#132 id=132 data-nosnippet>132</a>        dest.par_iter().for_each(|entry| {
@@ -144,12 +144,12 @@
 <a href=#144 id=144 data-nosnippet>144</a>    }
 <a href=#145 id=145 data-nosnippet>145</a>}
 <a href=#146 id=146 data-nosnippet>146</a>
-<a href=#147 id=147 data-nosnippet>147</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, S, C, H, W&gt; ACMapInsert&lt;S, C, H, W&gt; <span class="kw">for </span>DashMap&lt;W, C, H&gt;
+<a href=#147 id=147 data-nosnippet>147</a><span class="kw">impl</span>&lt;S, C, H, W&gt; ACMapInsert&lt;S, C, H, W&gt; <span class="kw">for </span>DashMap&lt;W, C, H&gt;
 <a href=#148 id=148 data-nosnippet>148</a><span class="kw">where
-<a href=#149 id=149 data-nosnippet>149</a>    </span>S: PauliStorage + <span class="lifetime">'a</span>,
-<a href=#150 id=150 data-nosnippet>150</a>    C: Coefficient + Send + Sync + <span class="lifetime">'a</span>,
-<a href=#151 id=151 data-nosnippet>151</a>    H: Default + Clone + BuildHasher + <span class="lifetime">'a </span>+ Send + Sync,
-<a href=#152 id=152 data-nosnippet>152</a>    W: PauliWordTrait + Send + Sync + <span class="lifetime">'a</span>,
+<a href=#149 id=149 data-nosnippet>149</a>    </span>S: PauliStorage,
+<a href=#150 id=150 data-nosnippet>150</a>    C: Coefficient + Send + Sync,
+<a href=#151 id=151 data-nosnippet>151</a>    H: Default + Clone + BuildHasher + Send + Sync,
+<a href=#152 id=152 data-nosnippet>152</a>    W: PauliWordTrait + Send + Sync,
 <a href=#153 id=153 data-nosnippet>153</a>{
 <a href=#154 id=154 data-nosnippet>154</a>    <span class="kw">fn </span>map_insert&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dest: <span class="kw-2">&amp;mut </span><span class="self">Self</span>, f: F)
 <a href=#155 id=155 data-nosnippet>155</a>    <span class="kw">where
@@ -191,7 +191,7 @@
 <a href=#191 id=191 data-nosnippet>191</a>    <span class="kw">where
 <a href=#192 id=192 data-nosnippet>192</a>        </span>F: Fn(<span class="kw-2">&amp;</span>C) -&gt; bool,
 <a href=#193 id=193 data-nosnippet>193</a>    {
-<a href=#194 id=194 data-nosnippet>194</a>        <span class="self">self</span>.get(key).map_or(<span class="bool-val">false</span>, |v| f(v.value()))
+<a href=#194 id=194 data-nosnippet>194</a>        <span class="self">self</span>.get(key).is_some_and(|v| f(v.value()))
 <a href=#195 id=195 data-nosnippet>195</a>    }
 <a href=#196 id=196 data-nosnippet>196</a>}
 <a href=#197 id=197 data-nosnippet>197</a>

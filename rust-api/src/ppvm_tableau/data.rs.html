@@ -344,7 +344,7 @@
 <a href=#344 id=344 data-nosnippet>344</a>    /// 1. The actual measurement outcome (k)
 <a href=#345 id=345 data-nosnippet>345</a>    /// 2. The sign from whether +Z or -Z is a stabilizer (m) - can get that from the decomposition
 <a href=#346 id=346 data-nosnippet>346</a>    /// 3. Contribution from commuting Z_addr0 through the destabilizers (xi)
-<a href=#347 id=347 data-nosnippet>347</a>    /// Only coefficients where m*k*xi == 1 are kept, equivalently written as (xi * k) == m
+<a href=#347 id=347 data-nosnippet>347</a>    ///    Only coefficients where m*k*xi == 1 are kept, equivalently written as (xi * k) == m
 <a href=#348 id=348 data-nosnippet>348</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>trim_coefficients_for_measurement(
 <a href=#349 id=349 data-nosnippet>349</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#350 id=350 data-nosnippet>350</a>        destab_anticomm_bits: I,
@@ -406,8 +406,8 @@
 <a href=#406 id=406 data-nosnippet>406</a>            <span class="kw">let </span>phase_factor: Complex&lt;T::Coeff&gt; =
 <a href=#407 id=407 data-nosnippet>407</a>                COMPLEX_PHASE_CONVERSION[branch_phase <span class="kw">as </span>usize].into();
 <a href=#408 id=408 data-nosnippet>408</a>
-<a href=#409 id=409 data-nosnippet>409</a>            <span class="kw">let </span>branch_coefficient = phase_factor * coeff.clone() * branch_factor.clone();
-<a href=#410 id=410 data-nosnippet>410</a>            <span class="kw">let </span>nonbranch_coefficient = coeff * coefficient_factor.clone();
+<a href=#409 id=409 data-nosnippet>409</a>            <span class="kw">let </span>branch_coefficient = phase_factor * coeff * branch_factor;
+<a href=#410 id=410 data-nosnippet>410</a>            <span class="kw">let </span>nonbranch_coefficient = coeff * coefficient_factor;
 <a href=#411 id=411 data-nosnippet>411</a>
 <a href=#412 id=412 data-nosnippet>412</a>            <span class="kw-2">*</span>new_coefficients
 <a href=#413 id=413 data-nosnippet>413</a>                .entry(branch_index)
@@ -461,7 +461,7 @@
 <a href=#461 id=461 data-nosnippet>461</a>            <span class="kw">let </span>phase_factor: Complex&lt;T::Coeff&gt; =
 <a href=#462 id=462 data-nosnippet>462</a>                COMPLEX_PHASE_CONVERSION[branch_phase <span class="kw">as </span>usize].into();
 <a href=#463 id=463 data-nosnippet>463</a>
-<a href=#464 id=464 data-nosnippet>464</a>            <span class="kw">let </span>branch_coefficient = phase_factor * coeff.clone();
+<a href=#464 id=464 data-nosnippet>464</a>            <span class="kw">let </span>branch_coefficient = phase_factor * coeff;
 <a href=#465 id=465 data-nosnippet>465</a>
 <a href=#466 id=466 data-nosnippet>466</a>            <span class="kw-2">*</span>new_coefficients
 <a href=#467 id=467 data-nosnippet>467</a>                .entry(branch_index)

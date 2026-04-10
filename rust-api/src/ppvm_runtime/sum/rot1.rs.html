@@ -19,8 +19,8 @@
 <a href=#19 id=19 data-nosnippet>19</a>    }
 <a href=#20 id=20 data-nosnippet>20</a>    <span class="kw">let </span>(eps, p_q) = levi_civita(p_g <span class="kw">as </span>u8, axis <span class="kw">as </span>u8);
 <a href=#21 id=21 data-nosnippet>21</a>    <span class="kw">if </span>eps == <span class="number">0 </span>{
-<a href=#22 id=22 data-nosnippet>22</a>        <span class="kw">return </span><span class="prelude-val">None</span>;
-<a href=#23 id=23 data-nosnippet>23</a>    } <span class="kw">else </span>{
+<a href=#22 id=22 data-nosnippet>22</a>        <span class="prelude-val">None
+<a href=#23 id=23 data-nosnippet>23</a>    </span>} <span class="kw">else </span>{
 <a href=#24 id=24 data-nosnippet>24</a>        <span class="kw">let </span><span class="kw-2">mut </span>coeff = v.clone();
 <a href=#25 id=25 data-nosnippet>25</a>        <span class="kw-2">*</span>v <span class="kw-2">*</span>= cos.clone();
 <a href=#26 id=26 data-nosnippet>26</a>        <span class="kw">let </span><span class="kw-2">mut </span>new_word = k.clone();
@@ -29,7 +29,7 @@
 <a href=#29 id=29 data-nosnippet>29</a>        new_word.rehash();
 <a href=#30 id=30 data-nosnippet>30</a>
 <a href=#31 id=31 data-nosnippet>31</a>        coeff <span class="kw-2">*</span>= sin.mul_sign(eps);
-<a href=#32 id=32 data-nosnippet>32</a>        <span class="kw">return </span><span class="prelude-val">Some</span>((new_word, coeff));
+<a href=#32 id=32 data-nosnippet>32</a>        <span class="prelude-val">Some</span>((new_word, coeff))
 <a href=#33 id=33 data-nosnippet>33</a>    }
 <a href=#34 id=34 data-nosnippet>34</a>}
 <a href=#35 id=35 data-nosnippet>35</a>

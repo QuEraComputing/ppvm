@@ -22,10 +22,10 @@ pub(crate) enum OpPattern {
     Identity,                                   // I
     Single(NotIdentity),                        // X, Y, Z
     Double(NotIdentity, NotIdentity),           // [XY]
-    Xyz,                                        // [XYZ]
+    AnyNonIdentity,                             // [XYZ]
     SingleOrIdentity(NotIdentity),              // X?
     DoubleOrIdentity(NotIdentity, NotIdentity), // [XY]?
-    Xyzi,                                       // [XYZ]?
+    AnyPauliOrIdentity,                         // [XYZ]?
 }
 
 impl OpPattern {
@@ -33,7 +33,7 @@ impl OpPattern {
         match self {
             OpPattern::Single(not_identity) => OpPattern::SingleOrIdentity(not_identity),
             OpPattern::Double(left, right) => OpPattern::DoubleOrIdentity(left, right),
-            OpPattern::Xyz => OpPattern::Xyzi,
+            OpPattern::AnyNonIdentity => OpPattern::AnyPauliOrIdentity,
             _ => self,
         }
     }

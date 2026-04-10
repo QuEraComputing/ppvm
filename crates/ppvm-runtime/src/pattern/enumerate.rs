@@ -44,7 +44,7 @@ impl<'a> Iterator for EnumMatchesOpPattern<'a> {
                 };
                 Some(result)
             }
-            Xyz if self.current < 3 => {
+            AnyNonIdentity if self.current < 3 => {
                 self.current += 1;
                 Some(unsafe { std::mem::transmute::<u8, Pauli>(self.current as u8) })
             }
@@ -71,7 +71,7 @@ impl<'a> Iterator for EnumMatchesOpPattern<'a> {
                 };
                 Some(result)
             }
-            Xyzi => {
+            AnyPauliOrIdentity => {
                 let result = unsafe { std::mem::transmute::<u8, Pauli>(self.current as u8) };
                 self.current += 1;
                 Some(result)

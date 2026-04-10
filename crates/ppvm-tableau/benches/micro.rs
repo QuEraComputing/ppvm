@@ -21,7 +21,12 @@ fn make_sparse_vec<I: TableauIndex>(n: usize) -> Vec<(Complex64, I)> {
     let mut vec: Vec<(Complex64, I)> = SparseVector::new();
     for k in 0..n {
         let index = <I as From<u8>>::from(k as u8) << 2;
-        let value = Complex64::new(1.0 / (k as f64 + 1.0), 0.1 * k as f64);
+        // Mix large and small entries so trim benchmarks exercise actual removal
+        let value = if k % 4 == 0 {
+            Complex64::new(0.001, 0.0) // small — will be trimmed at cutoff 0.05
+        } else {
+            Complex64::new(1.0 / (k as f64 + 1.0), 0.1 * k as f64)
+        };
         vec.unsafe_insert(index, value);
     }
     vec
@@ -83,36 +88,39 @@ fn bench_two_qubit_gates(c: &mut Criterion) {
 }
 
 fn bench_non_clifford_gates(c: &mut Criterion) {
-    let mut tab = Tab::new(N_QUBITS, 1e-10);
-    tab.h(0);
+    // |+> state: Z-axis rotations (t, t_adj, u3) anticommute with X stabilizer → branching
+    let mut tab_plus = Tab::new(N_QUBITS, 1e-10);
+    tab_plus.h(0);
 
-    let mut tab_2q = Tab::new(N_QUBITS, 1e-10);
-    tab_2q.h(0);
-    tab_2q.h(1);
+    // |0> state: X-axis rotations (rx) anticommute with Z stabilizer → branching
+    let tab_zero = Tab::new(N_QUBITS, 1e-10);
+
+    // |0,0> state: XX anticommutes with Z⊗I stabilizer → branching for rxx
+    let tab_zero_2q = Tab::new(N_QUBITS, 1e-10);
 
     let mut group = c.benchmark_group("gates/non-clifford");
 
     let pi_4 = std::f64::consts::FRAC_PI_4;
 
     group.bench_function("t", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.t(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(|| tab_plus.fork(None), |t| t.t(0), criterion::BatchSize::SmallInput);
     });
     group.bench_function("t_adj", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.t_adj(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(|| tab_plus.fork(None), |t| t.t_adj(0), criterion::BatchSize::SmallInput);
     });
     group.bench_function("rx", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.rx(0, pi_4), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(|| tab_zero.fork(None), |t| t.rx(0, pi_4), criterion::BatchSize::SmallInput);
     });
     group.bench_function("rxx", |b| {
         b.iter_batched_ref(
-            || tab_2q.fork(None),
+            || tab_zero_2q.fork(None),
             |t| t.rxx(0, 1, pi_4),
             criterion::BatchSize::SmallInput,
         );
     });
     group.bench_function("u3", |b| {
         b.iter_batched_ref(
-            || tab.fork(None),
+            || tab_plus.fork(None),
             |t| t.u3(0, pi_4, pi_4, pi_4),
             criterion::BatchSize::SmallInput,
         );
@@ -225,14 +233,14 @@ fn bench_sparse_vec_for_type<I: TableauIndex + std::fmt::Debug>(
             criterion::BatchSize::SmallInput,
         );
     });
-    group.bench_function(format!("{type_name}/add_or_insert_existing"), |b| {
+    group.bench_function(format!("{type_name}/add_or_insert/existing"), |b| {
         b.iter_batched_ref(
             || vec16.clone(),
             |v| v.add_or_insert(existing_index, Complex64::new(0.5, 0.0)),
             criterion::BatchSize::SmallInput,
         );
     });
-    group.bench_function(format!("{type_name}/add_or_insert_new"), |b| {
+    group.bench_function(format!("{type_name}/add_or_insert/new"), |b| {
         b.iter_batched_ref(
             || vec16.clone(),
             |v| v.add_or_insert(new_index, Complex64::new(0.5, 0.0)),

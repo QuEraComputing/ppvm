@@ -1419,7 +1419,9 @@ The channel accepts 3 probabilities as argument:
 <span class="normal">435</span>
 <span class="normal">436</span>
 <span class="normal">437</span>
-<span class="normal">438</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">correlated_loss_channel</span><span class="p">(</span>
+<span class="normal">438</span>
+<span class="normal">439</span>
+<span class="normal">440</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">correlated_loss_channel</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">addr0</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">addr1</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply a correlated loss channel.</span>
@@ -1436,7 +1438,9 @@ The channel accepts 3 probabilities as argument:
 <span class="sd">            a controlled gate, the remaining qubit undergoes a different dynamic.</span>
 <span class="sd">            We account for this difference with this distinct probability.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_interface</span><span class="o">.</span><span class="n">correlated_loss_channel</span><span class="p">(</span><span class="n">addr0</span><span class="p">,</span> <span class="n">addr1</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_interface</span><span class="o">.</span><span class="n">correlated_loss_channel</span><span class="p">(</span>  <span class="c1"># ty: ignore[unresolved-attribute]</span>
+        <span class="n">addr0</span><span class="p">,</span> <span class="n">addr1</span><span class="p">,</span> <span class="n">p</span>
+    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -1539,7 +1543,7 @@ measurement.</p>
 <span class="sd">        addr0: The index of the target qubit.</span>
 <span class="sd">        p: Loss probability in [0, 1].</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_interface</span><span class="o">.</span><span class="n">loss_channel</span><span class="p">(</span><span class="n">addr0</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_interface</span><span class="o">.</span><span class="n">loss_channel</span><span class="p">(</span><span class="n">addr0</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>  <span class="c1"># ty: ignore[unresolved-attribute]</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -1599,9 +1603,7 @@ Make sure to set an appropriate <code>max_loss_weight</code> to truncate.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>ppvm-python/src/ppvm/paulisum.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">440</span>
-<span class="normal">441</span>
-<span class="normal">442</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">442</span>
 <span class="normal">443</span>
 <span class="normal">444</span>
 <span class="normal">445</span>
@@ -1610,7 +1612,9 @@ Make sure to set an appropriate <code>max_loss_weight</code> to truncate.</p>
 <span class="normal">448</span>
 <span class="normal">449</span>
 <span class="normal">450</span>
-<span class="normal">451</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reset_loss_channel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr0</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="normal">451</span>
+<span class="normal">452</span>
+<span class="normal">453</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reset_loss_channel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr0</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Reset a lost qubit to the 0 state. Usually, you want to apply</span>
 <span class="sd">    this channel at the end of the circuit, i.e. at the beginning when</span>
 <span class="sd">    propagating backwards.</span>
@@ -1621,7 +1625,7 @@ Make sure to set an appropriate <code>max_loss_weight</code> to truncate.</p>
 <span class="sd">    Args:</span>
 <span class="sd">        addr0: The index of the qubit to reset.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_interface</span><span class="o">.</span><span class="n">reset_loss_channel</span><span class="p">(</span><span class="n">addr0</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_interface</span><span class="o">.</span><span class="n">reset_loss_channel</span><span class="p">(</span><span class="n">addr0</span><span class="p">)</span>  <span class="c1"># ty: ignore[unresolved-attribute]</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

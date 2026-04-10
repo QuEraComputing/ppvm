@@ -37,34 +37,74 @@ fn bench_single_qubit_gates(c: &mut Criterion) {
     let mut group = c.benchmark_group("gates/single-qubit");
 
     group.bench_function("h", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.h(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.h(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("s", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.s(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.s(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("s_adj", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.s_adj(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.s_adj(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("x", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.x(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.x(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("y", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.y(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.y(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("z", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.z(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.z(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("sqrt_x", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.sqrt_x(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.sqrt_x(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("sqrt_x_adj", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.sqrt_x_adj(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.sqrt_x_adj(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("sqrt_y", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.sqrt_y(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.sqrt_y(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("sqrt_y_adj", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.sqrt_y_adj(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.sqrt_y_adj(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
 
     group.finish();
@@ -75,13 +115,25 @@ fn bench_two_qubit_gates(c: &mut Criterion) {
     let mut group = c.benchmark_group("gates/two-qubit");
 
     group.bench_function("cnot", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.cnot(0, 1), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.cnot(0, 1),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("cz", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.cz(0, 1), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.cz(0, 1),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("cy", |b| {
-        b.iter_batched_ref(|| tab.fork(None), |t| t.cy(0, 1), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab.fork(None),
+            |t| t.cy(0, 1),
+            criterion::BatchSize::SmallInput,
+        );
     });
 
     group.finish();
@@ -103,13 +155,25 @@ fn bench_non_clifford_gates(c: &mut Criterion) {
     let pi_4 = std::f64::consts::FRAC_PI_4;
 
     group.bench_function("t", |b| {
-        b.iter_batched_ref(|| tab_plus.fork(None), |t| t.t(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab_plus.fork(None),
+            |t| t.t(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("t_adj", |b| {
-        b.iter_batched_ref(|| tab_plus.fork(None), |t| t.t_adj(0), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab_plus.fork(None),
+            |t| t.t_adj(0),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("rx", |b| {
-        b.iter_batched_ref(|| tab_zero.fork(None), |t| t.rx(0, pi_4), criterion::BatchSize::SmallInput);
+        b.iter_batched_ref(
+            || tab_zero.fork(None),
+            |t| t.rx(0, pi_4),
+            criterion::BatchSize::SmallInput,
+        );
     });
     group.bench_function("rxx", |b| {
         b.iter_batched_ref(

@@ -56,3 +56,11 @@ msd_msd0_us = 142.14
 msd_baseline_us = 148.13
 improvement_pct = 4.0
 notes = "Bulk BitArray::ZERO in update_tableau_according_to_outcome. 142µs vs 148µs."
+
+[[result]]
+iteration = "avoid-clone-measure"
+outcome = "keep"
+msd_msd0_us = 139.6
+msd_baseline_us = 141.4
+improvement_pct = 1.3
+notes = "Avoid Vec clone in measurement by taking ownership. Trim from HashMap directly."

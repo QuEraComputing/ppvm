@@ -51,3 +51,8 @@ Replaced O(n) bit-by-bit stabilizer reset in `update_tableau_according_to_outcom
 `BitArray::ZERO` bulk assignment + single `set` call.
 **Result:** **4% faster** (142µs vs 148µs). The O(85) individual `BitArray::set` calls were
 measurably slower than 2 bulk zero operations (zeroing [u64; 2] is 2 stores).
+
+### avoid-clone-measure (keep)
+Replaced `self.coefficients.clone().into_iter()` with `std::mem::replace(&mut self.coefficients, C::new()).into_iter()`.
+For Case B, trim from HashMap directly instead of calling `trim_coefficients_for_measurement`.
+**Result:** **1.3% faster** (139.6µs vs 141.4µs). Saves one Vec allocation + memcpy per measurement.

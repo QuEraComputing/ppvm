@@ -58,3 +58,8 @@ Replaced `self.coefficients.clone().into_iter()` with `std::mem::replace`. Case 
 Case B coefficient ordering differed between measurements. Test `test_measure_generalized_idempotent` failed.
 **Finding:** HashMap iteration order is not deterministic in Rust. Code that rebuilds Vec from HashMap
 changes coefficient ordering. The original clone approach preserves Vec ordering for Case B.
+
+### trailing-zeros-k (keep)
+Replaced O(n) loop finding lowest set bit in `stab_anticomm_bits` with `one << q_idx`
+(which is already computed from `trailing_zeros()`). Redundant loop was doing up to 85 iterations.
+**Result:** **1.2% faster** (139µs vs 141µs). Only affects Case A measurements but saves a loop.

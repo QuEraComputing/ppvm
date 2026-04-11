@@ -18,3 +18,11 @@ t_ns = 137.10
 measure_deterministic_ns = 162.57
 measure_random_ns = 210.49
 measure_generalized_us = 1.044
+
+[[result]]
+iteration = "direct-bit-ops"
+outcome = "discard"
+msd_msd0_us = 186.32
+h_ns = 100.99
+cz_ns = 151.77
+notes = "H improved 6% but CZ regressed 28%. MSD 3% slower overall."

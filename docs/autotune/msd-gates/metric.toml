@@ -41,3 +41,10 @@ outcome = "discard"
 msd_msd0_us = 161.0
 msd_baseline_us = 152.4
 notes = "Split measure into Case A/B before HashMap. ~7µs SLOWER — code bloat hurt more than HashMap alloc saved."
+
+[[result]]
+iteration = "avoid-sqrt-normalize"
+outcome = "discard"
+msd_msd0_us = 153.06
+msd_baseline_us = 154.12
+notes = "Replaced abs()*abs() with re()*re()+im()*im() in normalize. No measurable impact — LLVM optimizes this already."

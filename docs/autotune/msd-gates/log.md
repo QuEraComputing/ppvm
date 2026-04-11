@@ -40,3 +40,8 @@ without HashMap allocation. Case A uses existing HashMap path.
 hurt instruction cache. With only ~32 coefficients, HashMap<u128, Complex64> construction is cheap.
 **Finding:** Don't split hot paths to avoid small allocations. The compiler optimizes the unified
 path better. HashMap with 32 entries costs ~200ns to build — negligible.
+
+### avoid-sqrt-normalize (discard)
+Replaced `v.abs() * v.abs()` with `v.re() * v.re() + v.im() * v.im()` in SparseVector::normalize.
+**Result:** No measurable impact (153µs vs 154µs — noise). LLVM likely already optimizes
+`sqrt(x)*sqrt(x)` → `x`. Even if not, 32 sqrts at ~5ns each = ~160ns — negligible.

@@ -94,10 +94,10 @@
 <a href=#94 id=94 data-nosnippet>94</a>        }
 <a href=#95 id=95 data-nosnippet>95</a>        <span class="kw">let </span>norm_sqrt = norm.sqrt();
 <a href=#96 id=96 data-nosnippet>96</a>        <span class="kw">let </span>inv_norm_sqrt = T::Real::one() / norm_sqrt;
-<a href=#97 id=97 data-nosnippet>97</a>        <span class="kw">for </span>(v, <span class="kw">_</span>) <span class="kw">in </span><span class="self">self</span>.iter_mut() {
-<a href=#98 id=98 data-nosnippet>98</a>            <span class="comment">// Scale by multiplying by 1/norm_sqrt
-<a href=#99 id=99 data-nosnippet>99</a>            </span><span class="kw">let </span>scale = Complex::new(inv_norm_sqrt, T::Real::zero());
-<a href=#100 id=100 data-nosnippet>100</a>            <span class="kw-2">*</span>v <span class="kw-2">*</span>= T::from(scale).expect(<span class="string">"Failed to convert scale factor"</span>);
+<a href=#97 id=97 data-nosnippet>97</a>        <span class="kw">let </span>scale: T = T::from(Complex::new(inv_norm_sqrt, T::Real::zero()))
+<a href=#98 id=98 data-nosnippet>98</a>            .expect(<span class="string">"Failed to convert scale factor"</span>);
+<a href=#99 id=99 data-nosnippet>99</a>        <span class="kw">for </span>(v, <span class="kw">_</span>) <span class="kw">in </span><span class="self">self</span>.iter_mut() {
+<a href=#100 id=100 data-nosnippet>100</a>            <span class="kw-2">*</span>v <span class="kw-2">*</span>= scale;
 <a href=#101 id=101 data-nosnippet>101</a>        }
 <a href=#102 id=102 data-nosnippet>102</a>    }
 <a href=#103 id=103 data-nosnippet>103</a>}

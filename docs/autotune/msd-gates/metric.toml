@@ -69,3 +69,11 @@ msd_msd0_us = 139.07
 msd_baseline_us = 140.77
 improvement_pct = 1.2
 notes = "Replace O(n) loop with one << trailing_zeros() in Case A measurement."
+
+[[result]]
+iteration = "xor-phase-update"
+outcome = "keep"
+msd_msd0_us = 136.77
+msd_baseline_us = 140.35
+improvement_pct = 2.5
+notes = "Replace add_phase(x*2) with phase ^= x<<1 in CliffordExtensions and S gate inner loops."

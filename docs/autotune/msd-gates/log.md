@@ -63,3 +63,9 @@ changes coefficient ordering. The original clone approach preserves Vec ordering
 Replaced O(n) loop finding lowest set bit in `stab_anticomm_bits` with `one << q_idx`
 (which is already computed from `trailing_zeros()`). Redundant loop was doing up to 85 iterations.
 **Result:** **1.2% faster** (139µs vs 141µs). Only affects Case A measurements but saves a loop.
+
+### xor-phase-update (keep)
+Replaced `pw.add_phase(condition as u8 * 2)` with `pw.phase ^= (condition as u8) << 1` in all
+Tableau CliffordExtensions gates and the S gate. Adding 0 or 2 mod 4 = XOR with 0 or 2.
+**Result:** **2.5% faster** (137µs vs 140µs). Saves add+and per row (170 rows × 700+ gates).
+**Finding:** Even single-instruction savings compound across the ~120K total inner loop iterations.

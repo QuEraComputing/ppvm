@@ -48,3 +48,11 @@ outcome = "discard"
 msd_msd0_us = 153.06
 msd_baseline_us = 154.12
 notes = "Replaced abs()*abs() with re()*re()+im()*im() in normalize. No measurable impact — LLVM optimizes this already."
+
+[[result]]
+iteration = "bulk-tableau-ops"
+outcome = "keep"
+msd_msd0_us = 142.14
+msd_baseline_us = 148.13
+improvement_pct = 4.0
+notes = "Bulk BitArray::ZERO in update_tableau_according_to_outcome. 142µs vs 148µs."

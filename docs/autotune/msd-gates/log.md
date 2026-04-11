@@ -45,3 +45,9 @@ path better. HashMap with 32 entries costs ~200ns to build — negligible.
 Replaced `v.abs() * v.abs()` with `v.re() * v.re() + v.im() * v.im()` in SparseVector::normalize.
 **Result:** No measurable impact (153µs vs 154µs — noise). LLVM likely already optimizes
 `sqrt(x)*sqrt(x)` → `x`. Even if not, 32 sqrts at ~5ns each = ~160ns — negligible.
+
+### bulk-tableau-ops (keep)
+Replaced O(n) bit-by-bit stabilizer reset in `update_tableau_according_to_outcome` with
+`BitArray::ZERO` bulk assignment + single `set` call.
+**Result:** **4% faster** (142µs vs 148µs). The O(85) individual `BitArray::set` calls were
+measurably slower than 2 bulk zero operations (zeroing [u64; 2] is 2 stores).

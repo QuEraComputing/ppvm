@@ -95,10 +95,16 @@ where
         // Compute the probabilities by computing the overlap <psi|Z|psi>
         // which is proportional to sum(alpha) conj(v_alpha) * v_(alpha + shift) * xi_(alpha)
         // NOTE: this could probably be optimized
+        let odd_phase_mask = self.odd_phase_destabilizer_mask();
         for (&idx, coeff) in &coeff_map {
             let branch_index = idx ^ stab_anticomm_bits; // stab_anticomm_bits is the index shift
             let phase = (phase_decomp
-                + self.compute_phase(destab_anticomm_bits, idx, stab_anticomm_bits))
+                + self.compute_phase_with_mask(
+                    destab_anticomm_bits,
+                    idx,
+                    stab_anticomm_bits,
+                    odd_phase_mask,
+                ))
                 % 4;
             let complex_phase: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase as usize].into();
             let Some(coeff_branch) = coeff_map.get(&branch_index).copied() else {

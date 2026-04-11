@@ -1,0 +1,20 @@
+# Autotune metrics for MSD gate performance
+# Task: msd-gates
+# Target: improve MSD sampling performance via gate-level optimizations
+# Primary benchmarks: micro bench (gates/single-qubit, gates/two-qubit, measurement)
+# End-to-end benchmark: tableau-msd (msd/msd-0)
+
+[[result]]
+iteration = "baseline"
+outcome = "baseline"
+msd_msd0_us = 180.76
+h_ns = 107.16
+sqrt_x_ns = 98.10
+sqrt_x_adj_ns = 115.94
+sqrt_y_ns = 122.38
+sqrt_y_adj_ns = 123.77
+cz_ns = 118.64
+t_ns = 137.10
+measure_deterministic_ns = 162.57
+measure_random_ns = 210.49
+measure_generalized_us = 1.044

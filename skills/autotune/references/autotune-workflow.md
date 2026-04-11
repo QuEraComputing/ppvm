@@ -93,7 +93,7 @@ When 3+ consecutive micro-optimizations show <1% improvement:
 2. **Shift strategy**: Try structural optimizations — data layout changes (e.g., columnar storage), batched operations (processing multiple gates in one pass), SIMD vectorization, or algorithmic rewrites.
 3. **Larger iterations are OK**: Structural changes may touch more files and take longer to implement. Use worktree isolation to keep them safe. Break large changes into compile-first-then-benchmark steps.
 
-## 5. Role separation summary
+## 6. Role separation summary
 
 | Responsibility | Host agent | Subagent (worktree) |
 |---|---|---|

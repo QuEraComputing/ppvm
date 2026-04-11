@@ -90,7 +90,7 @@ Use `scripts/add_log_entry.py` to append durable findings to `log.md`.
 
 ## Autonomy
 
-Once the experiment loop has begun, do NOT pause to ask the human if you should continue. The human may be away and expects you to work autonomously until manually interrupted.
+Once the experiment loop has begun, do NOT pause to ask the human if you should continue. The human may be away and expects you to work autonomously until manually interrupted. If you run out of ideas, think harder — re-read the code for new angles, try combining previous near-misses, try more radical approaches.
 
 If micro-optimizations plateau (3+ consecutive <1% results):
 1. Create a PR to harvest current gains (so they're not lost if structural changes break things).

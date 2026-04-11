@@ -85,10 +85,13 @@ where
         let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
             self.compute_decomposition(addr0, Pauli::Z);
 
-        // Take ownership of coefficients and build lookup table (avoids clone)
-        let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-        let mut coeff_map: HashMap<I, Complex<T::Coeff>> =
-            old_coefficients.into_iter().map(|(v, i)| (i, v)).collect();
+        // build a temporary lookup table for faster lookup in the loop
+        let mut coeff_map: HashMap<I, Complex<T::Coeff>> = self
+            .coefficients
+            .clone()
+            .into_iter()
+            .map(|(v, i)| (i, v))
+            .collect();
         // Compute the probabilities by computing the overlap <psi|Z|psi>
         // which is proportional to sum(alpha) conj(v_alpha) * v_(alpha + shift) * xi_(alpha)
         // NOTE: this could probably be optimized
@@ -220,15 +223,8 @@ where
             );
             let z_sign = phase_decomp == 2;
 
-            // 3. trim coefficients directly from the HashMap (avoids separate Vec iteration)
-            // self.coefficients is already empty from mem::replace above
-            for (idx, coeff) in coeff_map {
-                let parity = symplectic_inner(idx, destab_anticomm_bits) % 2 != 0;
-                if (parity ^ z_sign) == outcome {
-                    self.coefficients.unsafe_insert(idx, coeff);
-                }
-            }
-            self.coefficients.normalize();
+            // 3. check the anticommutation -- combine with coefficient update
+            self.trim_coefficients_for_measurement(destab_anticomm_bits, outcome, z_sign);
         }
         Some(outcome)
     }

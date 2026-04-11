@@ -375,7 +375,6 @@ where
     /// 2. The sign from whether +Z or -Z is a stabilizer (m) - can get that from the decomposition
     /// 3. Contribution from commuting Z_addr0 through the destabilizers (xi)
     ///    Only coefficients where m*k*xi == 1 are kept, equivalently written as (xi * k) == m
-    #[allow(dead_code)]
     pub(crate) fn trim_coefficients_for_measurement(
         &mut self,
         destab_anticomm_bits: I,

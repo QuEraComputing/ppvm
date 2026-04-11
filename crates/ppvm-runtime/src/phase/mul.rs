@@ -29,37 +29,23 @@ where
     fn mul_assign(&mut self, rhs: &Self) {
         let mut sign_count = 0u32;
         let mut imag_count = 0u32;
-        {
-            let lhs_x = self.word.xbits.as_raw_slice();
-            let lhs_z = self.word.zbits.as_raw_slice();
-            let rhs_x = rhs.word.xbits.as_raw_slice();
-            let rhs_z = rhs.word.zbits.as_raw_slice();
-            for ((&a, &b), (&c, &d)) in lhs_x.iter().zip(lhs_z).zip(rhs_x.iter().zip(rhs_z)) {
-                let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
-                let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
-                sign_count += sign.count_ones();
-                imag_count += imag.count_ones();
-            }
+        let lhs_x = &mut self.word.xbits.data;
+        let lhs_z = &mut self.word.zbits.data;
+        let rhs_x = &rhs.word.xbits.data;
+        let rhs_z = &rhs.word.zbits.data;
+        for i in 0..lhs_x.as_raw_slice().len() {
+            let a = lhs_x.as_raw_slice()[i];
+            let b = lhs_z.as_raw_slice()[i];
+            let c = rhs_x.as_raw_slice()[i];
+            let d = rhs_z.as_raw_slice()[i];
+            let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
+            let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
+            sign_count += sign.count_ones();
+            imag_count += imag.count_ones();
+            lhs_x.as_raw_mut_slice()[i] = a ^ c;
+            lhs_z.as_raw_mut_slice()[i] = b ^ d;
         }
         self.add_phase(((2 * sign_count + imag_count) % 4) as u8);
-        for (l, r) in self
-            .word
-            .xbits
-            .as_raw_mut_slice()
-            .iter_mut()
-            .zip(rhs.word.xbits.as_raw_slice())
-        {
-            *l = *l ^ *r;
-        }
-        for (l, r) in self
-            .word
-            .zbits
-            .as_raw_mut_slice()
-            .iter_mut()
-            .zip(rhs.word.zbits.as_raw_slice())
-        {
-            *l = *l ^ *r;
-        }
         self.word.rehash();
         self.add_phase(rhs.phase);
     }

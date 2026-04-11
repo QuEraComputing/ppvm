@@ -1,11 +1,11 @@
 use super::data::symplectic_inner;
 use crate::prelude::*;
 use bitvec::view::BitView;
+use fxhash::FxHashMap as HashMap;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 use rand::RngExt;
-use std::collections::HashMap;
 use std::fmt::Debug;
 
 impl<T: Config> Measure for Tableau<T>

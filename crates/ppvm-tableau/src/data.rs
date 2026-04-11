@@ -1,4 +1,6 @@
-use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData};
+
+use fxhash::FxHashMap as HashMap;
 
 use bitvec::array::BitArray;
 use bitvec::view::BitView;
@@ -417,7 +419,7 @@ where
 
         let odd_phase_mask = self.odd_phase_destabilizer_mask();
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
+        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::default();
         for (coeff, idx) in old_coefficients.into_iter() {
             debug_assert!(
                 !(coeff.re == T::Coeff::zero() && coeff.im == T::Coeff::zero()),
@@ -478,7 +480,7 @@ where
             self.compute_decomposition(addr0, pauli);
 
         let odd_phase_mask = self.odd_phase_destabilizer_mask();
-        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
+        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::default();
         let old_coefficients = std::mem::replace(coefficients, C::new());
         for (coeff, idx) in old_coefficients.into_iter() {
             debug_assert!(

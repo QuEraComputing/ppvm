@@ -800,6 +800,7 @@ dependencies = [
  "bitvec",
  "bnum",
  "criterion",
+ "fxhash",
  "insta",
  "itertools 0.14.0",
  "num",

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bitvec = "1.0.1"
+fxhash = "0.2.1"
 bnum = { version = "0.13.0", features = ["numtraits"] }
 itertools = "0.14.0"
 num = "0.4.3"

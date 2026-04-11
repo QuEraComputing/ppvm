@@ -1,11 +1,11 @@
 use super::data::symplectic_inner;
 use crate::prelude::*;
 use bitvec::view::BitView;
+use fxhash::FxHashMap as HashMap;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 use rand::RngExt;
-use std::collections::HashMap;
 use std::fmt::Debug;
 
 impl<T: Config> Measure for Tableau<T>
@@ -95,10 +95,16 @@ where
         // Compute the probabilities by computing the overlap <psi|Z|psi>
         // which is proportional to sum(alpha) conj(v_alpha) * v_(alpha + shift) * xi_(alpha)
         // NOTE: this could probably be optimized
+        let odd_phase_mask = self.odd_phase_destabilizer_mask();
         for (&idx, coeff) in &coeff_map {
             let branch_index = idx ^ stab_anticomm_bits; // stab_anticomm_bits is the index shift
             let phase = (phase_decomp
-                + self.compute_phase(destab_anticomm_bits, idx, stab_anticomm_bits))
+                + self.compute_phase_with_mask(
+                    destab_anticomm_bits,
+                    idx,
+                    stab_anticomm_bits,
+                    odd_phase_mask,
+                ))
                 % 4;
             let complex_phase: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase as usize].into();
             let Some(coeff_branch) = coeff_map.get(&branch_index).copied() else {
@@ -141,17 +147,10 @@ where
             // coefficient algorithm from T.J. Yoder, adapted for state vectors
             // see Algorithm 2 in https://www.scottaaronson.com/showcase2/report/ted-yoder.pdf
 
-            // get k: bit string with a single 1 entry at the position
-            // of the first 1 in shift
-            let mut k = I::zero();
+            // k = lowest set bit of stab_anticomm_bits (same position as q_idx)
             let one = I::one();
             let zero = I::zero();
-            for i in 0..self.n_qubits() {
-                if stab_anticomm_bits & (one << i) != zero {
-                    k = one << i;
-                    break;
-                }
-            }
+            let k = one << q_idx;
 
             let alpha = if outcome {
                 (phase_decomp + 2) % 4

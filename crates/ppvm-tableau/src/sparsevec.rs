@@ -94,10 +94,10 @@ where
         }
         let norm_sqrt = norm.sqrt();
         let inv_norm_sqrt = T::Real::one() / norm_sqrt;
+        let scale: T = T::from(Complex::new(inv_norm_sqrt, T::Real::zero()))
+            .expect("Failed to convert scale factor");
         for (v, _) in self.iter_mut() {
-            // Scale by multiplying by 1/norm_sqrt
-            let scale = Complex::new(inv_norm_sqrt, T::Real::zero());
-            *v *= T::from(scale).expect("Failed to convert scale factor");
+            *v *= scale;
         }
     }
 }

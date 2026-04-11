@@ -85,7 +85,15 @@ Remove the worktree directory (git does this automatically if you used the Agent
 - Fix obvious trivial failures (typo, missing import) and rerun.
 - Mark fundamentally broken ideas as `crash` and continue to the next iteration.
 
-## 5. Role separation summary
+## 5. When to escalate
+
+When 3+ consecutive micro-optimizations show <1% improvement:
+
+1. **Harvest gains**: Create a PR from the current working branch to lock in micro wins.
+2. **Shift strategy**: Try structural optimizations — data layout changes (e.g., columnar storage), batched operations (processing multiple gates in one pass), SIMD vectorization, or algorithmic rewrites.
+3. **Larger iterations are OK**: Structural changes may touch more files and take longer to implement. Use worktree isolation to keep them safe. Break large changes into compile-first-then-benchmark steps.
+
+## 6. Role separation summary
 
 | Responsibility | Host agent | Subagent (worktree) |
 |---|---|---|

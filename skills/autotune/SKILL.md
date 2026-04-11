@@ -10,11 +10,27 @@ Use this skill only for a narrow, measurable performance target. If the request 
 ## Core Rules
 
 - Prefer targeted microbenchmarks and profiling over full benchmark suites.
-- Keep each iteration short enough to fit roughly within 10 minutes including measurement.
 - Once the loop starts, continue autonomously until interrupted unless a hard blocker requires human input.
 - Restrict implementation subagents to crate source directories and the active `docs/autotune/` experiment area.
 - Record every attempt with `keep`, `discard`, or `crash`.
 - Keep ledger updates in a separate commit from code changes so discarded results survive code reverts.
+
+## Escalation Strategy
+
+The autotune loop has three phases. Micro-optimizations are where you start, not where you stop.
+
+### Phase 1: Micro-optimizations
+Quick, surgical changes — precomputing values, replacing algorithms for hot-path operations, avoiding allocations, changing data structures (e.g. HashMap hasher). Each iteration is small and fast to benchmark. This is the default starting phase.
+
+### Phase 2: Harvest and escalate
+When 3+ consecutive micro-optimizations show <1% improvement, the micro well is dry. Do NOT conclude "diminishing returns" and stop. Instead:
+1. **Harvest**: Create a PR on a new branch from the current gains so the user can review and merge the micro wins independently.
+2. **Escalate**: Return to the working branch and shift to structural optimizations — data layout changes, batched operations, algorithmic rewrites, SIMD. These changes are larger, may touch more files, and take longer per iteration. That is expected and acceptable.
+
+### Phase 3: Architectural changes
+Major refactors — columnar data layouts, new data structures, parallelism. These may require multiple subagent iterations to get right. Use worktree isolation aggressively. If a change is large, break it into sub-steps: first make it compile and pass tests, then benchmark. A failed architectural attempt that compiles and tests correctly is valuable — it narrows the search space.
+
+The key principle: **consecutive failures at one level of abstraction are a signal to move up, not to stop.** "I ran out of micro-optimizations" means "time for structural changes", not "time to give up."
 
 ## Branching Model
 
@@ -74,4 +90,11 @@ Use `scripts/add_log_entry.py` to append durable findings to `log.md`.
 
 ## Autonomy
 
-Once the experiment loop has begun, do NOT pause to ask the human if you should continue. The human may be away and expects you to work autonomously until manually interrupted. If you run out of ideas, think harder — re-read the code for new angles, try combining previous near-misses, try more radical approaches. The loop runs until the human interrupts.
+Once the experiment loop has begun, do NOT pause to ask the human if you should continue. The human may be away and expects you to work autonomously until manually interrupted. If you run out of ideas, think harder — re-read the code for new angles, try combining previous near-misses, try more radical approaches.
+
+If micro-optimizations plateau (3+ consecutive <1% results):
+1. Create a PR to harvest current gains (so they're not lost if structural changes break things).
+2. Escalate to Phase 2/3 — try structural changes like data layout rewrites, batched operations, SIMD, or algorithmic improvements.
+3. If a structural change is risky, the worktree isolation protects the working branch. Failed experiments get reverted as usual.
+
+Never conclude "diminishing returns" as a reason to stop. Instead, escalate the approach. The loop runs until the human interrupts.

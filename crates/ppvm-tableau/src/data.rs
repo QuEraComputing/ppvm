@@ -1,5 +1,8 @@
-use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData};
 
+use fxhash::FxHashMap as HashMap;
+
+use bitvec::array::BitArray;
 use bitvec::view::BitView;
 use num::PrimInt;
 
@@ -145,10 +148,9 @@ impl<T: Config> Tableau<T> {
 
         // Finally, replace g_q by ±Z
         let stab_q = &mut stabilizers[q_idx];
-        for i in 0..stab_q.n_qubits() {
-            stab_q.word.xbits.set(i, false);
-            stab_q.word.zbits.set(i, i == addr0);
-        }
+        stab_q.word.xbits = BitArray::ZERO;
+        stab_q.word.zbits = BitArray::ZERO;
+        stab_q.word.zbits.set(addr0, true);
         stab_q.phase = if outcome { 2 } else { 0 };
     }
 }
@@ -310,6 +312,7 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
+    #[allow(dead_code)]
     pub(crate) fn compute_phase(
         &self,
         destab_anticomm_bits: I,
@@ -339,6 +342,35 @@ where
         phase
     }
 
+    /// Build a bitmask where bit i is set if destabilizer i has odd phase (phase % 2 != 0).
+    pub(crate) fn odd_phase_destabilizer_mask(&self) -> I {
+        let mut mask = I::zero();
+        let one = I::one();
+        for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
+            if destab.phase % 2 != 0 {
+                mask |= one << i;
+            }
+        }
+        mask
+    }
+
+    /// Like `compute_phase`, but uses a precomputed odd-phase bitmask instead of
+    /// looping over all destabilizers. The mask should be obtained from
+    /// `odd_phase_destabilizer_mask()`.
+    pub(crate) fn compute_phase_with_mask(
+        &self,
+        destab_anticomm_bits: I,
+        basis_index: I,
+        stab_anticomm_bits: I,
+        odd_phase_mask: I,
+    ) -> u8 {
+        let mut phase = (2 * symplectic_inner(destab_anticomm_bits, basis_index) as u8) % 4;
+        let active = basis_index & stab_anticomm_bits;
+        let parity = (active & odd_phase_mask).count_ones() % 2;
+        phase = (phase + 2 * parity as u8) % 4;
+        phase
+    }
+
     /// Keep only coefficients that correspond to the correct eigenvalue of a Z measurement.
     /// Applying the projector to a basis state, we have three phases:
     /// 1. The actual measurement outcome (k)
@@ -352,6 +384,7 @@ where
         outcome: bool,
     ) {
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
+        let old_len = old_coefficients.len();
         for (coeff, alpha) in old_coefficients.into_iter() {
             let mut phase = false; // false: +1 eigenspace of Z, true: -1 eigenspace
 
@@ -365,8 +398,10 @@ where
             }
         }
 
-        // renormalize
-        self.coefficients.normalize();
+        // renormalize only if coefficients were actually trimmed
+        if self.coefficients.len() < old_len {
+            self.coefficients.normalize();
+        }
     }
 
     pub(crate) fn branch_with_coefficients(
@@ -385,8 +420,9 @@ where
         let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
             self.compute_decomposition(addr0, pauli);
 
+        let odd_phase_mask = self.odd_phase_destabilizer_mask();
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
+        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::default();
         for (coeff, idx) in old_coefficients.into_iter() {
             debug_assert!(
                 !(coeff.re == T::Coeff::zero() && coeff.im == T::Coeff::zero()),
@@ -397,8 +433,12 @@ where
 
             // get the phase contributions from duplicate destabilizers
             // and anti-commuting through destabilizers
-            let branch_phase_contribution =
-                self.compute_phase(destab_anticomm_bits, idx, stab_anticomm_bits);
+            let branch_phase_contribution = self.compute_phase_with_mask(
+                destab_anticomm_bits,
+                idx,
+                stab_anticomm_bits,
+                odd_phase_mask,
+            );
 
             // the total phase is the product of the above with the decomposition phase
             let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
@@ -442,7 +482,8 @@ where
         let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
             self.compute_decomposition(addr0, pauli);
 
-        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
+        let odd_phase_mask = self.odd_phase_destabilizer_mask();
+        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::default();
         let old_coefficients = std::mem::replace(coefficients, C::new());
         for (coeff, idx) in old_coefficients.into_iter() {
             debug_assert!(
@@ -454,8 +495,12 @@ where
 
             // get the phase contributions from duplicate destabilizers
             // and anti-commuting through destabilizers
-            let branch_phase_contribution =
-                self.compute_phase(destab_anticomm_bits, idx, stab_anticomm_bits);
+            let branch_phase_contribution = self.compute_phase_with_mask(
+                destab_anticomm_bits,
+                idx,
+                stab_anticomm_bits,
+                odd_phase_mask,
+            );
             let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
 
             let phase_factor: Complex<T::Coeff> =

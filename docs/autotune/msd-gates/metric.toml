@@ -1,0 +1,103 @@
+# Autotune metrics for MSD gate performance
+# Task: msd-gates
+# Target: improve MSD sampling performance via gate-level optimizations
+# Primary benchmarks: micro bench (gates/single-qubit, gates/two-qubit, measurement)
+# End-to-end benchmark: tableau-msd (msd/msd-0)
+
+[[result]]
+iteration = "baseline"
+outcome = "baseline"
+msd_msd0_us = 180.76
+h_ns = 107.16
+sqrt_x_ns = 98.10
+sqrt_x_adj_ns = 115.94
+sqrt_y_ns = 122.38
+sqrt_y_adj_ns = 123.77
+cz_ns = 118.64
+t_ns = 137.10
+measure_deterministic_ns = 162.57
+measure_random_ns = 210.49
+measure_generalized_us = 1.044
+
+[[result]]
+iteration = "direct-bit-ops"
+outcome = "discard"
+msd_msd0_us = 186.32
+h_ns = 100.99
+cz_ns = 151.77
+notes = "H improved 6% but CZ regressed 28%. MSD 3% slower overall."
+
+[[result]]
+iteration = "precompute-phase-mask"
+outcome = "keep"
+msd_msd0_us = 170.47
+msd_baseline_us = 205.64
+improvement_pct = 17.1
+notes = "Precomputed odd-phase destabilizer bitmask. Back-to-back: 170µs vs 206µs baseline."
+
+[[result]]
+iteration = "fast-deterministic-measure"
+outcome = "discard"
+msd_msd0_us = 161.0
+msd_baseline_us = 152.4
+notes = "Split measure into Case A/B before HashMap. ~7µs SLOWER — code bloat hurt more than HashMap alloc saved."
+
+[[result]]
+iteration = "avoid-sqrt-normalize"
+outcome = "discard"
+msd_msd0_us = 153.06
+msd_baseline_us = 154.12
+notes = "Replaced abs()*abs() with re()*re()+im()*im() in normalize. No measurable impact — LLVM optimizes this already."
+
+[[result]]
+iteration = "bulk-tableau-ops"
+outcome = "keep"
+msd_msd0_us = 142.14
+msd_baseline_us = 148.13
+improvement_pct = 4.0
+notes = "Bulk BitArray::ZERO in update_tableau_according_to_outcome. 142µs vs 148µs."
+
+[[result]]
+iteration = "avoid-clone-measure"
+outcome = "reverted"
+notes = "1.3% faster but correctness bug: HashMap non-deterministic ordering broke idempotent measurement test."
+
+[[result]]
+iteration = "trailing-zeros-k"
+outcome = "keep"
+msd_msd0_us = 139.07
+msd_baseline_us = 140.77
+improvement_pct = 1.2
+notes = "Replace O(n) loop with one << trailing_zeros() in Case A measurement."
+
+[[result]]
+iteration = "xor-phase-update"
+outcome = "keep"
+msd_msd0_us = 136.77
+msd_baseline_us = 140.35
+improvement_pct = 2.5
+notes = "Replace add_phase(x*2) with phase ^= x<<1 in CliffordExtensions and S gate inner loops."
+
+[[result]]
+iteration = "fxhashmap"
+outcome = "keep"
+msd_msd0_us = 126.10
+msd_baseline_us = 136.44
+improvement_pct = 7.6
+notes = "FxHashMap instead of std HashMap for u128 keys. Huge speedup in measurement and branching."
+
+[[result]]
+iteration = "fuse-mul-loops"
+outcome = "keep"
+msd_msd0_us = 124.51
+msd_baseline_us = 128.54
+improvement_pct = 3.1
+notes = "Fused PauliWord multiplication phase+XOR loops into single pass."
+
+[[result]]
+iteration = "skip-normalize-trim"
+outcome = "keep"
+msd_msd0_us = 123.5
+msd_baseline_us = 125.3
+improvement_pct = 1.4
+notes = "Skip normalize when no coefficients trimmed in Case B measurement."

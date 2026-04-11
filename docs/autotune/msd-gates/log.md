@@ -22,3 +22,13 @@ MSD end-to-end 3% slower (181→186 µs).
 Manually inlining the same operations didn't help and may have inhibited compiler optimizations
 (possibly register allocation or instruction scheduling). The CliffordExtensions direct style
 isn't universally faster than the macro delegation. Don't assume bitvec overhead is a bottleneck.
+
+### precompute-phase-mask (keep)
+Added `odd_phase_destabilizer_mask()` to precompute a bitmask of destabilizers with odd phase.
+New `compute_phase_with_mask()` replaces the O(n) loop with `(active & mask).count_ones()`.
+Applied in `branch_with_coefficients`, `compute_coefficients_after_pauli_apply`, and `measure`.
+**Result:** MSD **17% faster** (170µs vs 206µs back-to-back). The O(n) loop per coefficient
+entry was a significant cost for MSD with 85 qubits and ~32 coefficients.
+**Finding:** `compute_phase` was a hidden bottleneck. Precomputing masks that are constant
+across the coefficient loop is highly effective. The measurement generalized microbench (32 qubits,
+16 coefficients) showed no improvement — the optimization pays off proportionally to n×k.

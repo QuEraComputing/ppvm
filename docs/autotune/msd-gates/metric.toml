@@ -26,3 +26,11 @@ msd_msd0_us = 186.32
 h_ns = 100.99
 cz_ns = 151.77
 notes = "H improved 6% but CZ regressed 28%. MSD 3% slower overall."
+
+[[result]]
+iteration = "precompute-phase-mask"
+outcome = "keep"
+msd_msd0_us = 170.47
+msd_baseline_us = 205.64
+improvement_pct = 17.1
+notes = "Precomputed odd-phase destabilizer bitmask. Back-to-back: 170µs vs 206µs baseline."

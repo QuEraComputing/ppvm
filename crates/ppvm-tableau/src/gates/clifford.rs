@@ -47,7 +47,7 @@ impl<T: Config> Clifford for Tableau<T> {
         self.data.iter_mut().for_each(|pw| {
             let phase = (pw.word.xbits[index] & pw.word.zbits[index]) as u8;
             pw.word.s(index);
-            pw.add_phase(phase << 1);
+            pw.phase ^= phase << 1;
         });
     }
 }
@@ -74,7 +74,7 @@ impl<T: Config> CliffordExtensions for Tableau<T> {
             let x = pw.word.xbits[addr0];
             let z = pw.word.zbits[addr0];
             pw.word.xbits.set(addr0, x ^ z);
-            pw.add_phase((z & !x) as u8 * 2);
+            pw.phase ^= ((z & !x) as u8) << 1;
         });
     }
 
@@ -83,7 +83,7 @@ impl<T: Config> CliffordExtensions for Tableau<T> {
             let x = pw.word.xbits[addr0];
             let z = pw.word.zbits[addr0];
             pw.word.xbits.set(addr0, x ^ z);
-            pw.add_phase((x & z) as u8 * 2);
+            pw.phase ^= ((x & z) as u8) << 1;
         });
     }
 
@@ -93,7 +93,7 @@ impl<T: Config> CliffordExtensions for Tableau<T> {
             let z = pw.word.zbits[addr0];
             pw.word.xbits.set(addr0, z);
             pw.word.zbits.set(addr0, x);
-            pw.add_phase((x & !z) as u8 * 2);
+            pw.phase ^= ((x & !z) as u8) << 1;
         });
     }
 
@@ -103,7 +103,7 @@ impl<T: Config> CliffordExtensions for Tableau<T> {
             let z = pw.word.zbits[addr0];
             pw.word.xbits.set(addr0, z);
             pw.word.zbits.set(addr0, x);
-            pw.add_phase((z & !x) as u8 * 2);
+            pw.phase ^= ((z & !x) as u8) << 1;
         });
     }
 
@@ -126,7 +126,7 @@ impl<T: Config> CliffordExtensions for Tableau<T> {
             pw.word.zbits.set(addr0, zc ^ xt ^ zt);
             pw.word.xbits.set(addr1, xt ^ xc);
             pw.word.zbits.set(addr1, zt ^ xc);
-            pw.add_phase((xc & (xt ^ zt) & !(zc ^ zt)) as u8 * 2);
+            pw.phase ^= ((xc & (xt ^ zt) & !(zc ^ zt)) as u8) << 1;
         });
     }
 }

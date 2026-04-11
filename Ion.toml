@@ -1,5 +1,6 @@
 [skills]
 ion-cli = { type = "local" }
+autotune = { type = "local", path = "skills/autotune" }
 receiving-code-review = { source = "obra/superpowers/skills/receiving-code-review" }
 requesting-code-review = { source = "obra/superpowers/skills/requesting-code-review" }
 using-git-worktrees = { source = "obra/superpowers/skills/using-git-worktrees" }
@@ -14,10 +15,8 @@ using-superpowers = { source = "obra/superpowers/skills/using-superpowers" }
 verification-before-completion = { source = "obra/superpowers/skills/verification-before-completion" }
 writing-plans = { source = "obra/superpowers/skills/writing-plans" }
 writing-skills = { source = "obra/superpowers/skills/writing-skills" }
-autotune = { type = "local", path = "skills/autotune" }
 
 [options]
-skills-dir = "skills"
 
 [options.targets]
 claude = ".claude/skills"

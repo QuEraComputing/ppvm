@@ -103,4 +103,16 @@ No further attempts to modify PhasedPauliWord methods.
 
 ## Summary (current best: ~125µs, from 181µs = 31% improvement)
 **Kept:** precompute-phase-mask, bulk-tableau-ops, trailing-zeros-k, xor-phase-update, fxhashmap, fuse-mul-loops
+### skip-normalize-trim (keep)
+Skip `normalize()` in `trim_coefficients_for_measurement` when no coefficients are actually removed.
+Deterministic measurements where all basis states are in the same eigenspace don't trim anything.
+**Result:** **~1.5% faster** (123.5µs vs 125.3µs). Many MSD measurements are deterministic, saving
+O(32) float ops per normalize call for each one.
+
+### specialized-decomp-z (discard, not committed)
+Specialized `compute_decomposition` for Z measurement. Compiler already constant-folds the generic version.
+
+### lto-bench (discard, not committed)
+Tried thin LTO and full LTO + codegen-units=1. No improvement or slightly worse.
+
 **Anti-patterns:** Don't manually inline PhasedPauliWord delegation chain. Don't split hot paths for small allocation savings. Don't use non-deterministic HashMap ordering for coefficient Vecs.

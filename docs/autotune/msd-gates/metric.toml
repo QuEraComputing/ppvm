@@ -93,3 +93,11 @@ msd_msd0_us = 124.51
 msd_baseline_us = 128.54
 improvement_pct = 3.1
 notes = "Fused PauliWord multiplication phase+XOR loops into single pass."
+
+[[result]]
+iteration = "skip-normalize-trim"
+outcome = "keep"
+msd_msd0_us = 123.5
+msd_baseline_us = 125.3
+improvement_pct = 1.4
+notes = "Skip normalize when no coefficients trimmed in Case B measurement."

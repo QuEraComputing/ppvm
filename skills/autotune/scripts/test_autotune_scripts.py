@@ -199,6 +199,35 @@ class AutotuneScriptTests(unittest.TestCase):
             self.assertFalse(metric_file.exists())
             self.assertIn("duplicate metric key", result.stderr.lower())
 
+    def test_record_result_rejects_non_finite_metrics(self) -> None:
+        for metric_value in ("nan", "inf", "-inf"):
+            with self.subTest(metric_value=metric_value):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    metric_file = Path(tmpdir) / "metric.toml"
+
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            str(RECORD_RESULT),
+                            str(metric_file),
+                            "--commit",
+                            "abc123",
+                            "--status",
+                            "keep",
+                            "--description",
+                            "baseline run",
+                            "--metric",
+                            f"score={metric_value}",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(metric_file.exists())
+                    self.assertIn("finite numeric value", result.stderr.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

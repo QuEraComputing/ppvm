@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 
@@ -36,9 +37,12 @@ def main() -> int:
             parser.error(f"invalid --metric value: {item!r}; duplicate metric key {key!r} in a single invocation")
         seen_keys.add(key)
         try:
-            entries.append((key, float(value)))
+            numeric_value = float(value)
         except ValueError:
             parser.error(f"invalid --metric value: {item!r}; expected key=value with a numeric value")
+        if not math.isfinite(numeric_value):
+            parser.error(f"invalid --metric value: {item!r}; expected key=value with a finite numeric value")
+        entries.append((key, numeric_value))
 
     lines = [
         "[[metric]]",

@@ -77,3 +77,11 @@ msd_msd0_us = 136.77
 msd_baseline_us = 140.35
 improvement_pct = 2.5
 notes = "Replace add_phase(x*2) with phase ^= x<<1 in CliffordExtensions and S gate inner loops."
+
+[[result]]
+iteration = "fxhashmap"
+outcome = "keep"
+msd_msd0_us = 126.10
+msd_baseline_us = 136.44
+improvement_pct = 7.6
+notes = "FxHashMap instead of std HashMap for u128 keys. Huge speedup in measurement and branching."

@@ -76,3 +76,10 @@ Extended XOR phase optimization to PhasedPauliWord Clifford/CliffordExtensions m
 optimization of the macro delegation path, same pattern as iteration 1.
 **Finding:** Only optimize at the Tableau level for gates that have direct implementations.
 Don't touch PhasedPauliWord methods — the compiler optimizes the layered path better.
+
+### fxhashmap (keep)
+Replaced `std::collections::HashMap` with `fxhash::FxHashMap` in measurement and branching code.
+FxHash is much faster than SipHash for integer keys like u128.
+**Result:** **7.6% faster** (126µs vs 136µs). The hashing overhead was a significant hidden cost.
+**Finding:** For small HashMaps with integer keys, the hasher choice dominates insertion/lookup cost.
+SipHash is designed for DoS resistance, not speed. FxHash is ~5x faster for u128 keys.

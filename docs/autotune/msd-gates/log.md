@@ -52,7 +52,9 @@ Replaced O(n) bit-by-bit stabilizer reset in `update_tableau_according_to_outcom
 **Result:** **4% faster** (142µs vs 148µs). The O(85) individual `BitArray::set` calls were
 measurably slower than 2 bulk zero operations (zeroing [u64; 2] is 2 stores).
 
-### avoid-clone-measure (keep)
-Replaced `self.coefficients.clone().into_iter()` with `std::mem::replace(&mut self.coefficients, C::new()).into_iter()`.
-For Case B, trim from HashMap directly instead of calling `trim_coefficients_for_measurement`.
-**Result:** **1.3% faster** (139.6µs vs 141.4µs). Saves one Vec allocation + memcpy per measurement.
+### avoid-clone-measure (REVERTED — correctness bug)
+Replaced `self.coefficients.clone().into_iter()` with `std::mem::replace`. Case B trimmed from HashMap.
+**Result:** 1.3% faster but introduced a bug: HashMap iteration order is non-deterministic, so
+Case B coefficient ordering differed between measurements. Test `test_measure_generalized_idempotent` failed.
+**Finding:** HashMap iteration order is not deterministic in Rust. Code that rebuilds Vec from HashMap
+changes coefficient ordering. The original clone approach preserves Vec ordering for Case B.

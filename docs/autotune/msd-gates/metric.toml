@@ -59,8 +59,5 @@ notes = "Bulk BitArray::ZERO in update_tableau_according_to_outcome. 142µs vs 1
 
 [[result]]
 iteration = "avoid-clone-measure"
-outcome = "keep"
-msd_msd0_us = 139.6
-msd_baseline_us = 141.4
-improvement_pct = 1.3
-notes = "Avoid Vec clone in measurement by taking ownership. Trim from HashMap directly."
+outcome = "reverted"
+notes = "1.3% faster but correctness bug: HashMap non-deterministic ordering broke idempotent measurement test."

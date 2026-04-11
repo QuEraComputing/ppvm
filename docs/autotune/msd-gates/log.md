@@ -88,3 +88,19 @@ SipHash is designed for DoS resistance, not speed. FxHash is ~5x faster for u128
 Fused the 3 separate loops in PauliWord MulAssign (phase computation + 2 XOR loops) into a single loop.
 For [u64; 2], reduces from 6 loop iterations to 2 with better register reuse.
 **Result:** **3.1% faster** (124.5µs vs 128.5µs). Better cache/register behavior from single-pass.
+
+### xor-decomp-phase (discard, not committed)
+Replaced `add_phase(8 - 2*stab.phase)` with `phase ^= (stab.phase & 1) << 1` in compute_decomposition.
+**Result:** No measurable impact (124.6µs vs 125.2µs — noise). Only called ~5-10 times per measurement.
+
+### direct-cz-v2 (discard, not committed)
+Second attempt at direct CZ implementation on Tableau with XOR phase.
+**Result:** ~5.5% SLOWER (131µs vs 124µs). Confirmed: the PhasedPauliWord delegation path for
+CZ is consistently faster. Three separate failed attempts to optimize this path (iterations 1, 9, and this).
+
+### xor-phase-phasedpauliword-v2 (discard, not committed)
+No further attempts to modify PhasedPauliWord methods.
+
+## Summary (current best: ~125µs, from 181µs = 31% improvement)
+**Kept:** precompute-phase-mask, bulk-tableau-ops, trailing-zeros-k, xor-phase-update, fxhashmap, fuse-mul-loops
+**Anti-patterns:** Don't manually inline PhasedPauliWord delegation chain. Don't split hot paths for small allocation savings. Don't use non-deterministic HashMap ordering for coefficient Vecs.

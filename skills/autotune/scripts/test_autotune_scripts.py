@@ -11,6 +11,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 ADD_LOG_ENTRY = SCRIPT_DIR / "add_log_entry.py"
 INIT_EXPERIMENT = SCRIPT_DIR / "init_experiment.py"
+RECORD_RESULT = SCRIPT_DIR / "record_result.py"
 
 
 class AutotuneScriptTests(unittest.TestCase):
@@ -50,6 +51,96 @@ class AutotuneScriptTests(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(root.exists())
+            self.assertIn("error", result.stderr.lower())
+
+    def test_record_result_writes_metric_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            metric_file = Path(tmpdir) / "metric.toml"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_RESULT),
+                    str(metric_file),
+                    "--commit",
+                    "abc123",
+                    "--status",
+                    "keep",
+                    "--description",
+                    "baseline run",
+                    "--metric",
+                    "score=1.5",
+                    "--metric",
+                    "time=2",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                metric_file.read_text(encoding="utf-8"),
+                (
+                    "[[metric]]\n"
+                    '"commit" = "abc123"\n'
+                    '"status" = "keep"\n'
+                    '"description" = "baseline run"\n'
+                    '"score" = 1.5\n'
+                    '"time" = 2.0\n\n'
+                ),
+            )
+
+    def test_record_result_rejects_missing_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            metric_file = Path(tmpdir) / "metric.toml"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_RESULT),
+                    str(metric_file),
+                    "--commit",
+                    "abc123",
+                    "--status",
+                    "keep",
+                    "--description",
+                    "baseline run",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(metric_file.exists())
+            self.assertIn("error", result.stderr.lower())
+
+    def test_record_result_rejects_malformed_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            metric_file = Path(tmpdir) / "metric.toml"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_RESULT),
+                    str(metric_file),
+                    "--commit",
+                    "abc123",
+                    "--status",
+                    "keep",
+                    "--description",
+                    "baseline run",
+                    "--metric",
+                    "invalid",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(metric_file.exists())
             self.assertIn("error", result.stderr.lower())
 
 

@@ -15,10 +15,21 @@ def main() -> int:
     parser.add_argument("--metric", action="append", default=[])
     args = parser.parse_args()
 
+    if not args.metric:
+        parser.error("at least one --metric is required")
+
     entries = []
     for item in args.metric:
-        key, value = item.split("=", 1)
-        entries.append((key, float(value)))
+        try:
+            key, value = item.split("=", 1)
+        except ValueError:
+            parser.error(f"invalid --metric value: {item!r}; expected key=value")
+        if not key or not value:
+            parser.error(f"invalid --metric value: {item!r}; expected key=value")
+        try:
+            entries.append((key, float(value)))
+        except ValueError:
+            parser.error(f"invalid --metric value: {item!r}; expected key=value with a numeric value")
 
     lines = [
         "[[metric]]",

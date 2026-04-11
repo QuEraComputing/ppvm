@@ -91,6 +91,54 @@ class AutotuneScriptTests(unittest.TestCase):
                 ),
             )
 
+    def test_record_result_separates_existing_content_without_trailing_newline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            metric_file = Path(tmpdir) / "metric.toml"
+            metric_file.write_text(
+                (
+                    "[[metric]]\n"
+                    '"commit" = "old"\n'
+                    '"status" = "keep"\n'
+                    '"description" = "previous run"'
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_RESULT),
+                    str(metric_file),
+                    "--commit",
+                    "abc123",
+                    "--status",
+                    "keep",
+                    "--description",
+                    "baseline run",
+                    "--metric",
+                    "score=1.5",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                metric_file.read_text(encoding="utf-8"),
+                (
+                    "[[metric]]\n"
+                    '"commit" = "old"\n'
+                    '"status" = "keep"\n'
+                    '"description" = "previous run"\n'
+                    "[[metric]]\n"
+                    '"commit" = "abc123"\n'
+                    '"status" = "keep"\n'
+                    '"description" = "baseline run"\n'
+                    '"score" = 1.5\n\n'
+                ),
+            )
+
     def test_record_result_rejects_missing_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             metric_file = Path(tmpdir) / "metric.toml"

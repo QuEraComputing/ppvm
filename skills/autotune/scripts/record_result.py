@@ -51,7 +51,13 @@ def main() -> int:
         f"{json.dumps('description')} = {json.dumps(args.description)}",
     ]
     lines.extend(f"{json.dumps(key)} = {value}" for key, value in entries)
-    with Path(args.metric_file).open("a", encoding="utf-8") as fh:
+    metric_path = Path(args.metric_file)
+    with metric_path.open("a", encoding="utf-8") as fh:
+        if metric_path.exists() and metric_path.stat().st_size > 0:
+            with metric_path.open("rb") as existing:
+                existing.seek(-1, 2)
+                if existing.read(1) != b"\n":
+                    fh.write("\n")
         fh.write("\n".join(lines) + "\n\n")
     return 0
 

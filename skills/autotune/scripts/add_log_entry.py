@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from datetime import date
 from pathlib import Path
+import re
 
 
 def main() -> int:
@@ -14,13 +15,16 @@ def main() -> int:
 
     log_file = Path(args.log_file)
     today = date.today().isoformat()
-    prefix = f"## {today}\n"
+    heading = f"## {today}"
     content = log_file.read_text(encoding="utf-8") if log_file.exists() else ""
+    has_heading = any(
+        re.fullmatch(re.escape(heading), line) for line in content.splitlines()
+    )
     with log_file.open("a", encoding="utf-8") as fh:
-        if prefix not in content:
+        if not has_heading:
             if content and not content.endswith("\n"):
                 fh.write("\n")
-            fh.write(f"\n{prefix}")
+            fh.write(f"{heading}\n")
         fh.write(f"- {args.entry}\n")
     return 0
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 
@@ -21,11 +22,11 @@ def main() -> int:
 
     lines = [
         "[[metric]]",
-        f'commit = "{args.commit}"',
-        f'status = "{args.status}"',
-        f'description = "{args.description}"',
+        f"{json.dumps('commit')} = {json.dumps(args.commit)}",
+        f"{json.dumps('status')} = {json.dumps(args.status)}",
+        f"{json.dumps('description')} = {json.dumps(args.description)}",
     ]
-    lines.extend(f"{key} = {value}" for key, value in entries)
+    lines.extend(f"{json.dumps(key)} = {value}" for key, value in entries)
     with Path(args.metric_file).open("a", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n\n")
     return 0

@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 
 
+RESERVED_METRIC_KEYS = {"commit", "status", "description"}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("metric_file")
@@ -19,6 +22,7 @@ def main() -> int:
         parser.error("at least one --metric is required")
 
     entries = []
+    seen_keys = set()
     for item in args.metric:
         try:
             key, value = item.split("=", 1)
@@ -26,6 +30,11 @@ def main() -> int:
             parser.error(f"invalid --metric value: {item!r}; expected key=value")
         if not key or not value:
             parser.error(f"invalid --metric value: {item!r}; expected key=value")
+        if key in RESERVED_METRIC_KEYS:
+            parser.error(f"invalid --metric value: {item!r}; {key!r} is a reserved metric key")
+        if key in seen_keys:
+            parser.error(f"invalid --metric value: {item!r}; duplicate metric key {key!r} in a single invocation")
+        seen_keys.add(key)
         try:
             entries.append((key, float(value)))
         except ValueError:

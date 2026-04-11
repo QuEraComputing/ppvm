@@ -20,9 +20,10 @@
 5. Dispatch a subagent to implement only the approach.
 6. Run the relevant microbenchmarks.
 7. Commit the code changes on the worktree branch first.
-8. Return to the main branch and append the measured result to the ledger in a separate commit.
-9. Keep both commits if metrics improve; otherwise revert only the code commit and leave the ledger commit intact.
-10. Append any durable finding to `log.md`.
+8. If the code change wins, switch back to the canonical branch and integrate only the code commit from the worktree branch there, keeping that code commit separate from the later ledger update.
+9. Append the measured result to the ledger on the canonical branch in a separate commit.
+10. Keep both commits if metrics improve; otherwise revert only the code commit and leave the ledger commit intact.
+11. Append any durable finding to `log.md`.
 
 ## 4. Crash policy
 

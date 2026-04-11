@@ -143,6 +143,62 @@ class AutotuneScriptTests(unittest.TestCase):
             self.assertFalse(metric_file.exists())
             self.assertIn("error", result.stderr.lower())
 
+    def test_record_result_rejects_reserved_metric_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            metric_file = Path(tmpdir) / "metric.toml"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_RESULT),
+                    str(metric_file),
+                    "--commit",
+                    "abc123",
+                    "--status",
+                    "keep",
+                    "--description",
+                    "baseline run",
+                    "--metric",
+                    "commit=1",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(metric_file.exists())
+            self.assertIn("reserved metric key", result.stderr.lower())
+
+    def test_record_result_rejects_duplicate_metric_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            metric_file = Path(tmpdir) / "metric.toml"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RECORD_RESULT),
+                    str(metric_file),
+                    "--commit",
+                    "abc123",
+                    "--status",
+                    "keep",
+                    "--description",
+                    "baseline run",
+                    "--metric",
+                    "score=1.5",
+                    "--metric",
+                    "score=2.5",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(metric_file.exists())
+            self.assertIn("duplicate metric key", result.stderr.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

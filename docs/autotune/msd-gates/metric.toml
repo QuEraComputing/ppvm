@@ -34,3 +34,10 @@ msd_msd0_us = 170.47
 msd_baseline_us = 205.64
 improvement_pct = 17.1
 notes = "Precomputed odd-phase destabilizer bitmask. Back-to-back: 170µs vs 206µs baseline."
+
+[[result]]
+iteration = "fast-deterministic-measure"
+outcome = "discard"
+msd_msd0_us = 161.0
+msd_baseline_us = 152.4
+notes = "Split measure into Case A/B before HashMap. ~7µs SLOWER — code bloat hurt more than HashMap alloc saved."

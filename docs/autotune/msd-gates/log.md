@@ -32,3 +32,11 @@ entry was a significant cost for MSD with 85 qubits and ~32 coefficients.
 **Finding:** `compute_phase` was a hidden bottleneck. Precomputing masks that are constant
 across the coefficient loop is highly effective. The measurement generalized microbench (32 qubits,
 16 coefficients) showed no improvement — the optimization pays off proportionally to n×k.
+
+### fast-deterministic-measure (discard)
+Split measurement into two paths: Case B (Z is stabilizer) computes overlap directly from Vec
+without HashMap allocation. Case A uses existing HashMap path.
+**Result:** ~7µs SLOWER (161µs vs 152µs baseline). Code duplication increased binary size and
+hurt instruction cache. With only ~32 coefficients, HashMap<u128, Complex64> construction is cheap.
+**Finding:** Don't split hot paths to avoid small allocations. The compiler optimizes the unified
+path better. HashMap with 32 entries costs ~200ns to build — negligible.

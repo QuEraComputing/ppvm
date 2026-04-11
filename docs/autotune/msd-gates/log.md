@@ -69,3 +69,10 @@ Replaced `pw.add_phase(condition as u8 * 2)` with `pw.phase ^= (condition as u8)
 Tableau CliffordExtensions gates and the S gate. Adding 0 or 2 mod 4 = XOR with 0 or 2.
 **Result:** **2.5% faster** (137µs vs 140µs). Saves add+and per row (170 rows × 700+ gates).
 **Finding:** Even single-instruction savings compound across the ~120K total inner loop iterations.
+
+### xor-phase-phasedpauliword (discard, not committed)
+Extended XOR phase optimization to PhasedPauliWord Clifford/CliffordExtensions methods.
+**Result:** ~4% SLOWER (142µs vs 137µs). Changing PhasedPauliWord methods disrupts compiler
+optimization of the macro delegation path, same pattern as iteration 1.
+**Finding:** Only optimize at the Tableau level for gates that have direct implementations.
+Don't touch PhasedPauliWord methods — the compiler optimizes the layered path better.

@@ -19,9 +19,10 @@
 4. Create `docs/autotune/<task>/<approach>/prompts.md`.
 5. Dispatch a subagent to implement only the approach.
 6. Run the relevant microbenchmarks.
-7. Append the measured result on the main branch ledger.
-8. Keep the code change if metrics improve; otherwise revert only the code commit.
-9. Append any durable finding to `log.md`.
+7. Commit the code changes on the worktree branch first.
+8. Return to the main branch and append the measured result to the ledger in a separate commit.
+9. Keep both commits if metrics improve; otherwise revert only the code commit and leave the ledger commit intact.
+10. Append any durable finding to `log.md`.
 
 ## 4. Crash policy
 

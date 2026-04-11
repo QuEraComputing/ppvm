@@ -1,0 +1,6 @@
+[[metric]]
+commit = "abc123"
+status = "keep"
+description = "baseline performance"
+xgate = 1000.0
+hgate = 2000.0

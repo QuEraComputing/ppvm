@@ -1,3 +1,3 @@
-display_name: autotune
-short_description: scaffold for the autotune skill
-default_prompt: scaffold placeholder for the autotune skill
+display_name: Autotune
+short_description: Run autonomous performance experiments against a specific benchmark metric.
+default_prompt: Improve a specific numeric benchmark metric in this repository by running short autonomous experiments, preserving every measured result, and keeping only the changes that improve the target.

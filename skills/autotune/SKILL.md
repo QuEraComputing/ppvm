@@ -7,7 +7,7 @@ description: Run autonomous benchmark-driven performance tuning loops for this r
 
 Use this skill only for a narrow, measurable performance target. If the request is vague or broad, narrow it to one or two numeric metrics before starting.
 
-Read `references/autotune-workflow.md` for the full loop, workflow, and helper script usage.
+See `references/autotune-workflow.md` for the full loop, workflow, and helper script usage.
 
 ## Core Rules
 

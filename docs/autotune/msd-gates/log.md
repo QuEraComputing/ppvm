@@ -115,4 +115,16 @@ Specialized `compute_decomposition` for Z measurement. Compiler already constant
 ### lto-bench (discard, not committed)
 Tried thin LTO and full LTO + codegen-units=1. No improvement or slightly worse.
 
-**Anti-patterns:** Don't manually inline PhasedPauliWord delegation chain. Don't split hot paths for small allocation savings. Don't use non-deterministic HashMap ordering for coefficient Vecs.
+### overlap-self-pairing (discard, not committed)
+Skip HashMap lookup when stab_anticomm_bits == 0 (branch_index == idx). No measurable impact
+because FxHash lookups are already ~10ns — the code duplication isn't worth 0.3%.
+
+### norm-sqr-cutoff (discard, not committed)
+Replace `coeff.abs() > cutoff` with `norm_sqr > cutoff_sq` in branch_with_coefficients.
+Compile error: generic type bounds don't support `norm_sqr()`. Only 5 T gates anyway — negligible.
+
+## Final summary (current best: ~122.5µs, from 181µs = 32.3% improvement)
+**Kept:** precompute-phase-mask (+17%), bulk-tableau-ops (+4%), trailing-zeros-k (+1.2%),
+xor-phase-update (+2.5%), fxhashmap (+7.6%), fuse-mul-loops (+3.1%), skip-normalize-trim (+1.5%)
+
+**Anti-patterns:** Don't manually inline PhasedPauliWord delegation chain. Don't split hot paths for small allocation savings. Don't use non-deterministic HashMap ordering for coefficient Vecs. FxHash lookups are fast enough that skipping them doesn't help.

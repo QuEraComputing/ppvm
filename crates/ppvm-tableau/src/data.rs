@@ -384,6 +384,7 @@ where
         outcome: bool,
     ) {
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
+        let old_len = old_coefficients.len();
         for (coeff, alpha) in old_coefficients.into_iter() {
             let mut phase = false; // false: +1 eigenspace of Z, true: -1 eigenspace
 
@@ -397,8 +398,10 @@ where
             }
         }
 
-        // renormalize
-        self.coefficients.normalize();
+        // renormalize only if coefficients were actually trimmed
+        if self.coefficients.len() < old_len {
+            self.coefficients.normalize();
+        }
     }
 
     pub(crate) fn branch_with_coefficients(

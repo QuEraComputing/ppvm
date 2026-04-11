@@ -83,3 +83,8 @@ FxHash is much faster than SipHash for integer keys like u128.
 **Result:** **7.6% faster** (126µs vs 136µs). The hashing overhead was a significant hidden cost.
 **Finding:** For small HashMaps with integer keys, the hasher choice dominates insertion/lookup cost.
 SipHash is designed for DoS resistance, not speed. FxHash is ~5x faster for u128 keys.
+
+### fuse-mul-loops (keep)
+Fused the 3 separate loops in PauliWord MulAssign (phase computation + 2 XOR loops) into a single loop.
+For [u64; 2], reduces from 6 loop iterations to 2 with better register reuse.
+**Result:** **3.1% faster** (124.5µs vs 128.5µs). Better cache/register behavior from single-pass.

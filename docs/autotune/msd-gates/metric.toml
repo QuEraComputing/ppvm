@@ -85,3 +85,11 @@ msd_msd0_us = 126.10
 msd_baseline_us = 136.44
 improvement_pct = 7.6
 notes = "FxHashMap instead of std HashMap for u128 keys. Huge speedup in measurement and branching."
+
+[[result]]
+iteration = "fuse-mul-loops"
+outcome = "keep"
+msd_msd0_us = 124.51
+msd_baseline_us = 128.54
+improvement_pct = 3.1
+notes = "Fused PauliWord multiplication phase+XOR loops into single pass."

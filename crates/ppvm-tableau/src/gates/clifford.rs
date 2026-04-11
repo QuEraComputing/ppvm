@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use num::complex::Complex;
 
-#[allow(unused_macros)]
 macro_rules! impl_tableau_clifford {
     ($name:ident, $($index:ident),*) => {
         #[inline]
@@ -33,41 +32,12 @@ macro_rules! impl_generalized_tableau_clifford {
 }
 
 impl<T: Config> Clifford for Tableau<T> {
-    #[inline]
-    fn x(&mut self, index: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let z = pw.word.zbits[index];
-            pw.add_phase(z as u8 * 2);
-        });
-    }
-
-    #[inline]
-    fn y(&mut self, index: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let x = pw.word.xbits[index];
-            let z = pw.word.zbits[index];
-            pw.add_phase((x ^ z) as u8 * 2);
-        });
-    }
-
-    #[inline]
-    fn z(&mut self, index: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let x = pw.word.xbits[index];
-            pw.add_phase(x as u8 * 2);
-        });
-    }
-
-    #[inline]
-    fn h(&mut self, index: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let x = pw.word.xbits[index];
-            let z = pw.word.zbits[index];
-            pw.word.xbits.set(index, z);
-            pw.word.zbits.set(index, x);
-            pw.add_phase((x & z) as u8 * 2);
-        });
-    }
+    impl_tableau_clifford!(x, index);
+    impl_tableau_clifford!(y, index);
+    impl_tableau_clifford!(z, index);
+    impl_tableau_clifford!(h, index);
+    impl_tableau_clifford!(cnot, control, target);
+    impl_tableau_clifford!(cz, control, target);
 
     fn s(&mut self, index: usize) {
         // NOTE: S is the only clifford where forward and backward propagation differ
@@ -78,36 +48,6 @@ impl<T: Config> Clifford for Tableau<T> {
             let phase = (pw.word.xbits[index] & pw.word.zbits[index]) as u8;
             pw.word.s(index);
             pw.add_phase(phase << 1);
-        });
-    }
-
-    #[inline]
-    fn cnot(&mut self, control: usize, target: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let xc = pw.word.xbits[control];
-            let zc = pw.word.zbits[control];
-            let xt = pw.word.xbits[target];
-            let zt = pw.word.zbits[target];
-            // phase: +2 when xc & zt & (xt == zc)
-            pw.add_phase((xc & zt & (xt == zc)) as u8 * 2);
-            // bit transform: zc' = zc ^ zt, xt' = xc ^ xt
-            pw.word.zbits.set(control, zc ^ zt);
-            pw.word.xbits.set(target, xc ^ xt);
-        });
-    }
-
-    #[inline]
-    fn cz(&mut self, control: usize, target: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let xc = pw.word.xbits[control];
-            let xt = pw.word.xbits[target];
-            let zc = pw.word.zbits[control];
-            let zt = pw.word.zbits[target];
-            // phase: +2 when xc & xt & (zc ^ zt)
-            pw.add_phase((xc & xt & (zc ^ zt)) as u8 * 2);
-            // bit transform: zc' = zc ^ xt, zt' = zt ^ xc
-            pw.word.zbits.set(control, zc ^ xt);
-            pw.word.zbits.set(target, zt ^ xc);
         });
     }
 }

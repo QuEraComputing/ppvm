@@ -17,7 +17,11 @@ def main() -> int:
     parser.add_argument("--root", default="docs/autotune")
     args = parser.parse_args()
 
-    task = f"{date.today().isoformat()}-{slugify(args.name)}"
+    slug = slugify(args.name)
+    if not slug:
+        parser.error("task name must contain at least one ASCII letter or digit")
+
+    task = f"{date.today().isoformat()}-{slug}"
     root = Path(args.root) / task
     root.mkdir(parents=True, exist_ok=True)
 

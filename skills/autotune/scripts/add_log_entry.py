@@ -21,9 +21,9 @@ def main() -> int:
         re.fullmatch(re.escape(heading), line) for line in content.splitlines()
     )
     with log_file.open("a", encoding="utf-8") as fh:
+        if content and not content.endswith("\n"):
+            fh.write("\n")
         if not has_heading:
-            if content and not content.endswith("\n"):
-                fh.write("\n")
             fh.write(f"{heading}\n")
         fh.write(f"- {args.entry}\n")
     return 0

@@ -147,17 +147,10 @@ where
             // coefficient algorithm from T.J. Yoder, adapted for state vectors
             // see Algorithm 2 in https://www.scottaaronson.com/showcase2/report/ted-yoder.pdf
 
-            // get k: bit string with a single 1 entry at the position
-            // of the first 1 in shift
-            let mut k = I::zero();
+            // k = lowest set bit of stab_anticomm_bits (same position as q_idx)
             let one = I::one();
             let zero = I::zero();
-            for i in 0..self.n_qubits() {
-                if stab_anticomm_bits & (one << i) != zero {
-                    k = one << i;
-                    break;
-                }
-            }
+            let k = one << q_idx;
 
             let alpha = if outcome {
                 (phase_decomp + 2) % 4

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
 
+use bitvec::array::BitArray;
 use bitvec::view::BitView;
 use num::PrimInt;
 
@@ -145,10 +146,9 @@ impl<T: Config> Tableau<T> {
 
         // Finally, replace g_q by ±Z
         let stab_q = &mut stabilizers[q_idx];
-        for i in 0..stab_q.n_qubits() {
-            stab_q.word.xbits.set(i, false);
-            stab_q.word.zbits.set(i, i == addr0);
-        }
+        stab_q.word.xbits = BitArray::ZERO;
+        stab_q.word.zbits = BitArray::ZERO;
+        stab_q.word.zbits.set(addr0, true);
         stab_q.phase = if outcome { 2 } else { 0 };
     }
 }

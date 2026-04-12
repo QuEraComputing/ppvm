@@ -1,0 +1,9 @@
+[[metric]]
+"commit" = "5da53ba128809b6598a477b0cd8207b72216014b"
+"status" = "keep"
+"description" = "baseline (no rayon)"
+"t_gate_1_ns" = 192.0
+"t_gate_4_us" = 1.07
+"t_gate_8_us" = 8.25
+"t_gate_12_us" = 50.87
+"msd_us" = 124.97

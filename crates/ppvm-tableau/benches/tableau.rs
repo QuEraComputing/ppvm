@@ -91,6 +91,42 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
     }
 
     group.finish();
+
+    // Large-coefficient T-gate benchmarks: measures the cost of a single T gate
+    // applied to a pre-built state with a known number of coefficients.
+    // This isolates the coefficient branching hot path for rayon testing.
+    let mut large_group = c.benchmark_group("large-tgate");
+    large_group
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5))
+        .sample_size(20);
+
+    // Use 128 qubits (u128 index) so we have enough room for many distinct T targets
+    type LargeTab = GeneralizedTableau<Byte8F64<2>, u128>;
+
+    for n_tgates in [12, 14, 16, 18] {
+        // Pre-build the state with (n_tgates - 1) T gates already applied,
+        // then benchmark applying the last one.
+        let mut setup: LargeTab = GeneralizedTableau::new(128, 1e-10);
+        for i in 0..n_tgates {
+            setup.h(i);
+        }
+        for i in 0..n_tgates - 1 {
+            setup.t(i);
+        }
+        let last_qubit = n_tgates - 1;
+        let n_coeffs = setup.coefficients.len();
+
+        large_group.bench_function(format!("single-t-on-{n_coeffs}-coeffs"), |b| {
+            b.iter_batched_ref(
+                || setup.fork(None),
+                |tab| tab.t(last_qubit),
+                criterion::BatchSize::LargeInput,
+            );
+        });
+    }
+
+    large_group.finish();
 }
 
 pub fn tableau_scaling_benchmarks(c: &mut Criterion) {

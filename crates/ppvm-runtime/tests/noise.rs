@@ -134,6 +134,63 @@ fn test_depolarize2() {
 }
 
 #[test]
+fn test_pauli_error() {
+    let px = 0.05_f64;
+    let py = 0.10_f64;
+    let pz = 0.15_f64;
+    let p = [px, py, pz];
+
+    // I at addr0: coefficient should be unchanged
+    let mut state_i: PauliSum<config::indexmap::ByteFxHashF64<1>> =
+        PauliSum::builder().n_qubits(1).build();
+    state_i += ("I", 1.0);
+    let state_i_before = state_i.clone();
+    state_i.pauli_error(0, p);
+    assert_eq!(state_i, state_i_before);
+
+    // X at addr0: scales by 1 - 2*py - 2*pz (Y and Z errors anticommute with X)
+    let mut state_x: PauliSum<config::indexmap::ByteFxHashF64<1>> =
+        PauliSum::builder().n_qubits(1).build();
+    state_x += ("X", 1.0);
+    state_x.pauli_error(0, p);
+    let x_coeff = state_x.trace(&PauliPattern::from("X0"));
+    let expected_x = 1.0 - 2.0 * py - 2.0 * pz;
+    assert!((x_coeff - expected_x).abs() < 1e-10);
+
+    // Y at addr0: scales by 1 - 2*px - 2*pz (X and Z errors anticommute with Y)
+    let mut state_y: PauliSum<config::indexmap::ByteFxHashF64<1>> =
+        PauliSum::builder().n_qubits(1).build();
+    state_y += ("Y", 1.0);
+    state_y.pauli_error(0, p);
+    let y_coeff = state_y.trace(&PauliPattern::from("Y0"));
+    let expected_y = 1.0 - 2.0 * px - 2.0 * pz;
+    assert!((y_coeff - expected_y).abs() < 1e-10);
+
+    // Z at addr0: scales by 1 - 2*px - 2*py (X and Y errors anticommute with Z)
+    let mut state_z: PauliSum<config::indexmap::ByteFxHashF64<1>> =
+        PauliSum::builder().n_qubits(1).build();
+    state_z += ("Z", 1.0);
+    state_z.pauli_error(0, p);
+    let z_coeff = state_z.trace(&PauliPattern::from("Z0"));
+    let expected_z = 1.0 - 2.0 * px - 2.0 * py;
+    assert!((z_coeff - expected_z).abs() < 1e-10);
+
+    // L at addr0: coefficient should be unchanged (lost qubit is skipped)
+    type LossyPauliSum = PauliSum<
+        config::indexmap::ByteFxHashF64<
+            1,
+            NoStrategy,
+            LossyPauliWord<[u8; 1], fxhash::FxBuildHasher>,
+        >,
+    >;
+    let mut state_l: LossyPauliSum = LossyPauliSum::builder().n_qubits(1).build();
+    state_l += ("L", 1.0);
+    let state_l_before = state_l.clone();
+    state_l.pauli_error(0, p);
+    assert_eq!(state_l, state_l_before);
+}
+
+#[test]
 fn test_amplitude_damping() {
     let gamma = 0.3_f64;
 

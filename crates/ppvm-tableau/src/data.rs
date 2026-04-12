@@ -295,10 +295,11 @@ fn compute_phase_with_mask_static<I: TableauIndex>(
 }
 
 /// Minimum number of coefficients before engaging rayon parallelism.
-/// Below this threshold, the sequential path is always used even with the `rayon` feature,
-/// because rayon's thread-pool overhead (~20µs) dominates the per-coefficient work.
+/// Below this threshold, the sequential path is always used even with the `rayon` feature.
+/// Benchmarked: at 8K coefficients rayon has ~24% overhead; at 32K it's 35% faster.
+/// Set to 16384 to avoid regressions while capturing the large-coefficient wins.
 #[cfg(feature = "rayon")]
-const RAYON_COEFF_THRESHOLD: usize = 4096;
+const RAYON_COEFF_THRESHOLD: usize = 16384;
 
 /// Sequential accumulation of branch coefficients.
 fn branch_coefficients_seq<I, CoeffType>(
@@ -358,37 +359,42 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    #[cfg(feature = "rayon")]
     if items.len() >= RAYON_COEFF_THRESHOLD {
         use rayon::prelude::*;
-        return items
+
+        // Parallel phase: compute all (branch_idx, branch_coeff, idx, nonbranch_coeff) tuples.
+        // This is pure math with no shared mutable state.
+        let pairs: Vec<(I, Complex<CoeffType>, I, Complex<CoeffType>)> = items
             .par_iter()
-            .fold(
-                HashMap::<I, Complex<CoeffType>>::default,
-                |mut map, &(coeff, idx)| {
-                    let branch_index = idx ^ stab_anticomm_bits;
-                    let branch_phase_contribution = compute_phase_with_mask_static(
-                        destab_anticomm_bits,
-                        idx,
-                        stab_anticomm_bits,
-                        odd_phase_mask,
-                    );
-                    let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
-                    let phase_factor: Complex<CoeffType> =
-                        COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
-                    let branch_coefficient = phase_factor * coeff * branch_factor;
-                    let nonbranch_coefficient = coeff * coefficient_factor;
-                    *map.entry(branch_index).or_insert(Complex::zero()) += branch_coefficient;
-                    *map.entry(idx).or_insert(Complex::zero()) += nonbranch_coefficient;
-                    map
-                },
-            )
-            .reduce(HashMap::default, |mut a, b| {
-                for (k, v) in b {
-                    *a.entry(k).or_insert(Complex::zero()) += v;
-                }
-                a
-            });
+            .map(|&(coeff, idx)| {
+                let branch_index = idx ^ stab_anticomm_bits;
+                let branch_phase_contribution = compute_phase_with_mask_static(
+                    destab_anticomm_bits,
+                    idx,
+                    stab_anticomm_bits,
+                    odd_phase_mask,
+                );
+                let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
+                let phase_factor: Complex<CoeffType> =
+                    COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
+                (
+                    branch_index,
+                    phase_factor * coeff * branch_factor,
+                    idx,
+                    coeff * coefficient_factor,
+                )
+            })
+            .collect();
+
+        // Sequential phase: accumulate into a pre-sized HashMap.
+        // HashMap inserts dominate the cost but benefit from cache locality.
+        let mut map: HashMap<I, Complex<CoeffType>> =
+            HashMap::with_capacity_and_hasher(2 * pairs.len(), Default::default());
+        for (branch_idx, branch_coeff, idx, nonbranch_coeff) in pairs {
+            *map.entry(branch_idx).or_insert(Complex::zero()) += branch_coeff;
+            *map.entry(idx).or_insert(Complex::zero()) += nonbranch_coeff;
+        }
+        return map;
     }
 
     branch_coefficients_seq(
@@ -454,35 +460,32 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    #[cfg(feature = "rayon")]
     if items.len() >= RAYON_COEFF_THRESHOLD {
         use rayon::prelude::*;
-        return items
+
+        let pairs: Vec<(I, Complex<CoeffType>)> = items
             .par_iter()
-            .fold(
-                HashMap::<I, Complex<CoeffType>>::default,
-                |mut map, &(coeff, idx)| {
-                    let branch_index = idx ^ stab_anticomm_bits;
-                    let branch_phase_contribution = compute_phase_with_mask_static(
-                        destab_anticomm_bits,
-                        idx,
-                        stab_anticomm_bits,
-                        odd_phase_mask,
-                    );
-                    let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
-                    let phase_factor: Complex<CoeffType> =
-                        COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
-                    let branch_coefficient = phase_factor * coeff;
-                    *map.entry(branch_index).or_insert(Complex::zero()) += branch_coefficient;
-                    map
-                },
-            )
-            .reduce(HashMap::default, |mut a, b| {
-                for (k, v) in b {
-                    *a.entry(k).or_insert(Complex::zero()) += v;
-                }
-                a
-            });
+            .map(|&(coeff, idx)| {
+                let branch_index = idx ^ stab_anticomm_bits;
+                let branch_phase_contribution = compute_phase_with_mask_static(
+                    destab_anticomm_bits,
+                    idx,
+                    stab_anticomm_bits,
+                    odd_phase_mask,
+                );
+                let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
+                let phase_factor: Complex<CoeffType> =
+                    COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
+                (branch_index, phase_factor * coeff)
+            })
+            .collect();
+
+        let mut map: HashMap<I, Complex<CoeffType>> =
+            HashMap::with_capacity_and_hasher(pairs.len(), Default::default());
+        for (branch_idx, branch_coeff) in pairs {
+            *map.entry(branch_idx).or_insert(Complex::zero()) += branch_coeff;
+        }
+        return map;
     }
 
     apply_coefficients_seq(

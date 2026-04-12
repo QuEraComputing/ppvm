@@ -202,6 +202,33 @@ where
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_x() {
+        for (input, target) in [("I", "I"), ("X", "X"), ("Y", "Y"), ("Z", "Z")] {
+            let mut output: PauliWord<u64> = PauliWord::from(input);
+            output.x(0);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_y() {
+        for (input, target) in [("I", "I"), ("X", "X"), ("Y", "Y"), ("Z", "Z")] {
+            let mut output: PauliWord<u64> = PauliWord::from(input);
+            output.y(0);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_z() {
+        for (input, target) in [("I", "I"), ("X", "X"), ("Y", "Y"), ("Z", "Z")] {
+            let mut output: PauliWord<u64> = PauliWord::from(input);
+            output.z(0);
+            assert_eq!((input, output.to_string()), (input, target.to_string()));
+        }
+    }
+
     // CNOT * II * CNOT == II,  00 00 -> 00 00, 0
     // CNOT * IX * CNOT == IX,  01 00 -> 01 00, 0
     // CNOT * IZ * CNOT == ZZ,  00 01 -> 00 11, 0

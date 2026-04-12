@@ -1,0 +1,54 @@
+[[metric]]
+"commit" = "d2d5a2afbc8bf45d0db64869f563778a50a13b90"
+"status" = "keep"
+"description" = "Baseline measurement before SIMD optimizations"
+"msd_ns" = 123886.0
+"h_ns" = 101.0
+"sqrt_x_ns" = 103.0
+"sqrt_y_ns" = 129.0
+"cz_ns" = 149.0
+"t_ns" = 156.0
+"measure_gen_ns" = 398.0
+
+[[metric]]
+"commit" = "0b35a4e665614014c01004b8930dcb9e9c6a929c"
+"status" = "discard"
+"description" = "NEON MulAssign for [u64;2]: no measurable improvement, LLVM auto-vectorizes the 2-iteration loop"
+"msd_ns" = 123682.0
+
+[[metric]]
+"commit" = "7d8fd96780bacfb01f4b51c6e74a6a3c390408e6"
+"status" = "discard"
+"description" = "Circuit fusion with match dispatch: 3x SLOWER (370\u00b5s vs 126\u00b5s), dispatch overhead dominates"
+"msd_fused_ns" = 370465.0
+"msd_baseline_ns" = 126291.0
+
+[[metric]]
+"commit" = "d71ad473a1a26fa36c8d55e9a29ecc22d8e472e1"
+"status" = "discard"
+"description" = "Batch same-type gates: 1.66x slower per batch (variable addr0 prevents constant folding)"
+"sqrt_y_16x_individual_ns" = 2877.0
+"sqrt_y_16x_batch_ns" = 4766.0
+"msd_fused_ns" = 247804.0
+
+[[metric]]
+"commit" = "c48f1a8d2d08bb51fe75741841fabf760d471ce5"
+"status" = "keep"
+"description" = "Combined bitmask Clifford gates: 36% faster MSD (81.4\u00b5s vs 127.4\u00b5s)"
+"msd_fused_ns" = 81443.0
+"msd_baseline_ns" = 127360.0
+
+[[metric]]
+"commit" = "77008c6e06bf6f192385d210f851780b53d68d39"
+"status" = "keep"
+"description" = "CZ block pairs + combined bitmask: 70.4\u00b5s vs 126.9\u00b5s = 44.5% faster"
+"msd_fused_ns" = 70375.0
+"msd_baseline_ns" = 126868.0
+
+[[metric]]
+"commit" = "df9e1b89c807f3214d2552cff95da564e1258475"
+"status" = "keep"
+"description" = "Cross-word CZ block pairs: 63.4\u00b5s vs 70.4\u00b5s = 10% faster, 50% from baseline"
+"msd_fused_ns" = 63432.0
+"msd_baseline_ns" = 125925.0
+

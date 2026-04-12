@@ -29,3 +29,5 @@
 3. Measurement coefficient update (measure.rs) — processing b_keys entries.
 
 **Design constraint:** All parallelism behind `features = ["rayon"]`. When off, zero regression — identical codepath.
+## 2026-04-12
+- Iteration 1: Added rayon feature with threshold-based parallel coefficient branching. No regression without feature. With feature enabled, rayon overhead dominates at current benchmark sizes (4096 coefficients). The Vec::collect + par_iter + HashMap fold/reduce pattern adds ~20µs per rayon call. Threshold set to 4096 items; below that sequential path is used. At 65536 coefficients (16 T gates), rayon is still ~2x slower than sequential due to HashMap merge overhead. The per-coefficient work is too cheap for rayon. Next steps: explore chunked accumulation or different data structures for the parallel path.

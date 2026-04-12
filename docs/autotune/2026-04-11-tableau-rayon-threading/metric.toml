@@ -7,3 +7,14 @@
 "t_gate_8_us" = 8.25
 "t_gate_12_us" = 50.87
 "msd_us" = 124.97
+[[metric]]
+"commit" = "b574c45828cc59daa0c00a7084f911536a31013a"
+"status" = "keep"
+"description" = "rayon feature with threshold=4096 for coefficient branching"
+"t_gate_1_ns" = 206.0
+"t_gate_4_us" = 1.08
+"t_gate_8_us" = 8.46
+"t_gate_12_us" = 51.3
+"msd_us" = 127.8
+"t_gate_12_rayon_us" = 52.3
+"msd_rayon_us" = 125.3

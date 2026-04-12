@@ -11,12 +11,13 @@ impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> RotationOne<T>
     for GeneralizedTableau<T, I, C>
 where
     <<T as Config>::Storage as BitView>::Store: PrimInt,
-    T::Coeff: Zero + One,
-    I: TableauIndex,
+    T::Coeff: Zero + One + Send + Sync + num::Num,
+    I: TableauIndex + Send + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
         + From<Complex64>
-        + ComplexFloat,
+        + ComplexFloat
+        + Copy,
 {
     fn rotate_1(&mut self, axis: Pauli, addr0: usize, theta: <T as Config>::Coeff) {
         if self.is_lost[addr0] {

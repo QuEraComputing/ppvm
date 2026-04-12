@@ -806,6 +806,7 @@ dependencies = [
  "num",
  "ppvm-runtime",
  "rand",
+ "rayon",
 ]
 
 [[package]]

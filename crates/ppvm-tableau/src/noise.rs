@@ -210,18 +210,27 @@ where
     }
 }
 
-impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> LossChannel<T>
+impl<T: Config, I: TableauIndex + Send + Sync, C: SparseVector<Complex<T::Coeff>, I>> LossChannel<T>
     for GeneralizedTableau<T, I, C>
 where
     <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: std::fmt::Debug,
-    T::Coeff: PartialOrd<f64> + One + Zero + Clone + num::Num + ToPrimitive + std::fmt::Debug,
+    T::Coeff: PartialOrd<f64>
+        + One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + Send
+        + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
         + std::ops::AddAssign
         + One
-        + ComplexFloat,
+        + ComplexFloat
+        + Copy,
     I: Debug,
 {
     fn loss_channel(&mut self, addr0: usize, p: <T as Config>::Coeff) {
@@ -239,18 +248,27 @@ where
     }
 }
 
-impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> CorrelatedLossChannel<T>
-    for GeneralizedTableau<T, I, C>
+impl<T: Config, I: TableauIndex + Send + Sync, C: SparseVector<Complex<T::Coeff>, I>>
+    CorrelatedLossChannel<T> for GeneralizedTableau<T, I, C>
 where
     <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: std::fmt::Debug,
-    T::Coeff: PartialOrd<f64> + One + Zero + Clone + num::Num + ToPrimitive + std::fmt::Debug,
+    T::Coeff: PartialOrd<f64>
+        + One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + Send
+        + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
         + std::ops::AddAssign
         + One
-        + ComplexFloat,
+        + ComplexFloat
+        + Copy,
     I: Debug,
 {
     /// Apply a correlated loss channel to qubits at `addr0` and `addr1`.

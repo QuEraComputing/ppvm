@@ -64,14 +64,17 @@ where
         + ToPrimitive
         + std::fmt::Debug
         + std::ops::Mul<f64>
-        + PartialOrd<f64>,
+        + PartialOrd<f64>
+        + Send
+        + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
         + std::ops::AddAssign
         + One
-        + ComplexFloat,
-    I: TableauIndex + Debug,
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
 {
     fn run_stim_string(&mut self, circuit: &str) -> Vec<Option<bool>> {
         let mut results = Vec::<Option<bool>>::new();

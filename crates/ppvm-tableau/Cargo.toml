@@ -3,6 +3,10 @@ name = "ppvm-tableau"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+rayon = ["dep:rayon"]
+
 [dependencies]
 bitvec = "1.0.1"
 fxhash = "0.2.1"
@@ -11,6 +15,7 @@ itertools = "0.14.0"
 num = "0.4.3"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
 rand = "0.10.0"
+rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]
 criterion = "0.7.0"

@@ -95,10 +95,24 @@ fn bench_clifford_single(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
+    group.bench_function("sqrt_x_adj", |b| {
+        b.iter_batched_ref(
+            || state.clone(),
+            |s| s.sqrt_x_adj(0),
+            criterion::BatchSize::SmallInput,
+        );
+    });
     group.bench_function("sqrt_y", |b| {
         b.iter_batched_ref(
             || state.clone(),
             |s| s.sqrt_y(0),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.bench_function("sqrt_y_adj", |b| {
+        b.iter_batched_ref(
+            || state.clone(),
+            |s| s.sqrt_y_adj(0),
             criterion::BatchSize::SmallInput,
         );
     });

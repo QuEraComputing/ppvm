@@ -7,6 +7,7 @@
 "t_gate_8_us" = 8.25
 "t_gate_12_us" = 50.87
 "msd_us" = 124.97
+
 [[metric]]
 "commit" = "b574c45828cc59daa0c00a7084f911536a31013a"
 "status" = "keep"
@@ -18,6 +19,7 @@
 "msd_us" = 127.8
 "t_gate_12_rayon_us" = 52.3
 "msd_rayon_us" = 125.3
+
 [[metric]]
 "commit" = "d5db5a83efc4d7838bb0aca607e777e50139dd75"
 "status" = "keep"

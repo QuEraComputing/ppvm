@@ -5,6 +5,11 @@ use crate::{config::Config, sum::PauliSum};
 use num::traits::Float;
 use std::hash::BuildHasher;
 
+#[inline(always)]
+fn pauli_code<W: PauliWordTrait>(word: &W, addr: usize) -> usize {
+    (word.get_xbit(addr) as usize) | ((word.get_zbit(addr) as usize) << 1)
+}
+
 impl<T: Config> PauliError<T> for PauliSum<T>
 where
     f64: std::ops::Mul<T::Coeff, Output = T::Coeff>
@@ -12,20 +17,21 @@ where
         + std::ops::Sub<T::Coeff, Output = T::Coeff>,
 {
     fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
-        self.scale(|k, v| {
-            match k.get(addr0) {
-                Pauli::I => {}
-                Pauli::X => {
-                    *v *= 1.0f64 - 2.0f64 * p[1].clone() - 2.0f64 * p[2].clone();
-                }
-                Pauli::Y => {
-                    *v *= 1.0f64 - 2.0f64 * p[0].clone() - 2.0f64 * p[2].clone();
-                }
-                Pauli::Z => {
-                    *v *= 1.0f64 - 2.0f64 * p[0].clone() - 2.0f64 * p[1].clone();
-                }
-                Pauli::L => {}
-            };
+        let x_factor = 1.0f64 - 2.0f64 * p[1].clone() - 2.0f64 * p[2].clone();
+        let z_factor = 1.0f64 - 2.0f64 * p[0].clone() - 2.0f64 * p[1].clone();
+        let y_factor = 1.0f64 - 2.0f64 * p[0].clone() - 2.0f64 * p[2].clone();
+
+        self.scale(move |k, v| {
+            if k.get_lbit(addr0) {
+                return;
+            }
+            match pauli_code(k, addr0) {
+                0 => {}
+                1 => *v *= x_factor.clone(),
+                2 => *v *= z_factor.clone(),
+                3 => *v *= y_factor.clone(),
+                _ => unreachable!(),
+            }
         });
     }
 }
@@ -235,29 +241,31 @@ where
         + std::ops::Sub<T::Coeff, Output = T::Coeff>,
 {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        self.scale(|k, v| match k.get(addr0) {
-            Pauli::I => {}
-            Pauli::X => {
-                *v *= 1.0f64 - 4.0f64 / 3.0f64 * p.clone();
+        let factor = 1.0f64 - 4.0f64 / 3.0f64 * p;
+        self.scale(move |k, v| {
+            if !k.get_lbit(addr0) && pauli_code(k, addr0) != 0 {
+                *v *= factor.clone();
             }
-            Pauli::Y => {
-                *v *= 1.0f64 - 4.0f64 / 3.0f64 * p.clone();
-            }
-            Pauli::Z => {
-                *v *= 1.0f64 - 4.0f64 / 3.0f64 * p.clone();
-            }
-            Pauli::L => {}
         });
     }
 }
 
 impl<T: Config> Depolarizing2<T> for PauliSum<T>
 where
-    PauliSum<T>: TwoQubitPauliError<T>,
+    f64: std::ops::Mul<T::Coeff, Output = T::Coeff>
+        + std::ops::Add<T::Coeff, Output = T::Coeff>
+        + std::ops::Sub<T::Coeff, Output = T::Coeff>,
 {
     fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff) {
-        let ps: [T::Coeff; 15] = core::array::from_fn(|_| p.clone() * (1.0 / 15.0));
-        self.two_qubit_pauli_error(addr0, addr1, ps);
+        let factor = 1.0f64 - (16.0f64 / 15.0f64) * p;
+        self.scale(move |k, v| {
+            if k.get_lbit(addr0) || k.get_lbit(addr1) {
+                return;
+            }
+            if pauli_code(k, addr0) != 0 || pauli_code(k, addr1) != 0 {
+                *v *= factor.clone();
+            }
+        });
     }
 }
 

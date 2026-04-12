@@ -29,5 +29,9 @@ name = "tableau-msd-stim"
 harness = false
 
 [[bench]]
+name = "tableau-msd-fused"
+harness = false
+
+[[bench]]
 name = "micro"
 harness = false

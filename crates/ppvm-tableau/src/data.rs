@@ -3,7 +3,7 @@ use std::{fmt::Debug, marker::PhantomData};
 use fxhash::FxHashMap as HashMap;
 
 use bitvec::array::BitArray;
-use bitvec::view::BitView;
+use bitvec::view::{BitView, BitViewSized};
 use num::PrimInt;
 
 use crate::prelude::*;
@@ -153,6 +153,113 @@ impl<T: Config> Tableau<T> {
         stab_q.word.zbits.set(addr0, true);
         stab_q.phase = if outcome { 2 } else { 0 };
     }
+
+    /// Apply CZ to N pairs with constant offset: (base+i, base+offset+i) for i in 0..count.
+    /// All pairs must be in the same u64 word. This replaces N individual CZ calls
+    /// with a single word-level shift+XOR operation per row.
+    ///
+    /// # Panics
+    /// Debug-asserts that all bits are within the same word.
+    #[inline]
+    pub fn cz_block_pairs(&mut self, base: usize, offset: usize, count: usize)
+    where
+        <<T::Storage as BitView>::Store as TryFrom<usize>>::Error: Debug,
+        <T::Storage as BitView>::Store: PrimInt + TryFrom<usize>,
+    {
+        if count == 0 {
+            return;
+        }
+        let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let base_bit = base % bits_per_word;
+        let word_idx = base / bits_per_word;
+
+        debug_assert_eq!(
+            (base + offset + count - 1) / bits_per_word,
+            word_idx,
+            "All CZ pairs must be in the same word"
+        );
+
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let count_mask = if count >= bits_per_word {
+            !zero
+        } else {
+            (one << count) - one
+        };
+        let mask_c = count_mask << base_bit;
+        let mask_t = count_mask << (base_bit + offset);
+
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let x = xp[word_idx];
+            let z = zp[word_idx];
+
+            // Phase computation (must use original z before update)
+            let xc = (x >> base_bit) & count_mask;
+            let xt = (x >> (base_bit + offset)) & count_mask;
+            let zc = (z >> base_bit) & count_mask;
+            let zt = (z >> (base_bit + offset)) & count_mask;
+            let phase_bits = xc & xt & (zc ^ zt);
+            pw.phase ^= ((phase_bits.count_ones() & 1) as u8) << 1;
+
+            // Z update: z[c] ^= x[t], z[t] ^= x[c]
+            let z_delta = ((x >> offset) & mask_c) | ((x << offset) & mask_t);
+            zp[word_idx] = z ^ z_delta;
+        });
+    }
+
+    /// Apply CZ to N pairs with constant offset across two different words.
+    /// Controls at (word_c, base_bit_c+i) and targets at (word_t, base_bit_t+i) for i in 0..count.
+    /// word_c and word_t must be different.
+    #[inline]
+    pub fn cz_block_pairs_cross_word(
+        &mut self,
+        word_c: usize,
+        base_bit_c: usize,
+        word_t: usize,
+        base_bit_t: usize,
+        count: usize,
+    ) where
+        <T::Storage as BitView>::Store: PrimInt,
+    {
+        if count == 0 {
+            return;
+        }
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+
+        debug_assert!(base_bit_c + count <= bits_per_word);
+        debug_assert!(base_bit_t + count <= bits_per_word);
+        debug_assert_ne!(word_c, word_t);
+
+        let count_mask = if count >= bits_per_word {
+            !zero
+        } else {
+            (one << count) - one
+        };
+
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+
+            // Extract aligned bits (shifted to 0..count-1)
+            let xc = (xp[word_c] >> base_bit_c) & count_mask;
+            let xt = (xp[word_t] >> base_bit_t) & count_mask;
+            let zc = (zp[word_c] >> base_bit_c) & count_mask;
+            let zt = (zp[word_t] >> base_bit_t) & count_mask;
+
+            // Phase: x[c] & x[t] & (z[c] ^ z[t]) per pair
+            let phase_bits = xc & xt & (zc ^ zt);
+            pw.phase ^= ((phase_bits.count_ones() & 1) as u8) << 1;
+
+            // z[c] ^= x[t]: place target x-bits at control positions
+            zp[word_c] = zp[word_c] ^ (xt << base_bit_c);
+            // z[t] ^= x[c]: place control x-bits at target positions
+            zp[word_t] = zp[word_t] ^ (xc << base_bit_t);
+        });
+    }
 }
 
 const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
@@ -229,6 +336,62 @@ where
 
     pub fn n_qubits(&self) -> usize {
         self.tableau.n_qubits
+    }
+
+    /// Apply CZ to N pairs with constant offset: (base+i, base+offset+i) for i in 0..count.
+    /// Falls back to individual CZ calls if any qubit in the range is lost.
+    pub fn cz_block_pairs(&mut self, base: usize, offset: usize, count: usize)
+    where
+        <<T::Storage as BitView>::Store as TryFrom<usize>>::Error: Debug,
+        <T::Storage as BitView>::Store: PrimInt + TryFrom<usize>,
+    {
+        // Check if any qubit in the range is lost
+        let any_lost =
+            (0..count).any(|i| self.is_lost[base + i] || self.is_lost[base + offset + i]);
+        if !any_lost {
+            self.tableau.cz_block_pairs(base, offset, count);
+        } else {
+            // Fallback to individual CZ calls
+            for i in 0..count {
+                let c = base + i;
+                let t = base + offset + i;
+                if !self.is_lost[c] && !self.is_lost[t] {
+                    Clifford::cz(&mut self.tableau, c, t);
+                }
+            }
+        }
+    }
+
+    /// Apply CZ to N cross-word pairs. Controls at word_c, targets at word_t.
+    /// Falls back to individual CZ calls if any qubit is lost.
+    pub fn cz_block_pairs_cross_word(
+        &mut self,
+        word_c: usize,
+        base_bit_c: usize,
+        word_t: usize,
+        base_bit_t: usize,
+        count: usize,
+    ) where
+        <T::Storage as BitView>::Store: PrimInt,
+    {
+        let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let any_lost = (0..count).any(|i| {
+            let c = word_c * bits_per_word + base_bit_c + i;
+            let t = word_t * bits_per_word + base_bit_t + i;
+            self.is_lost[c] || self.is_lost[t]
+        });
+        if !any_lost {
+            self.tableau
+                .cz_block_pairs_cross_word(word_c, base_bit_c, word_t, base_bit_t, count);
+        } else {
+            for i in 0..count {
+                let c = word_c * bits_per_word + base_bit_c + i;
+                let t = word_t * bits_per_word + base_bit_t + i;
+                if !self.is_lost[c] && !self.is_lost[t] {
+                    Clifford::cz(&mut self.tableau, c, t);
+                }
+            }
+        }
     }
 
     // helper functions
@@ -602,5 +765,175 @@ mod tests {
     fn test_index_type() {
         let mut tab: TestTableauBUint = GeneralizedTableau::new(1, 1e-12);
         tab.tableau.h(0);
+    }
+
+    /// Snapshot all rows (xbits, zbits, phase) for comparison.
+    fn snapshot_tableau<C: Config>(tab: &Tableau<C>) -> Vec<(C::Storage, C::Storage, u8)> {
+        tab.data
+            .iter()
+            .map(|pw| (pw.word.xbits.data, pw.word.zbits.data, pw.phase))
+            .collect()
+    }
+
+    #[test]
+    fn test_cz_block_pairs_matches_individual() {
+        // Test CZ pairs (0,4), (1,5), (2,6), (3,7) — offset=4, count=4
+        type TTab = Tableau<ByteF64<1>>;
+        let n = 8;
+        let base = 0;
+        let offset = 4;
+        let count = 4;
+
+        let mut tab1 = TTab::new(n);
+        Clifford::h(&mut tab1, 0);
+        Clifford::h(&mut tab1, 3);
+        Clifford::s(&mut tab1, 1);
+        let mut tab2 = tab1.clone();
+
+        // Individual
+        for i in 0..count {
+            Clifford::cz(&mut tab1, base + i, base + offset + i);
+        }
+
+        // Batch
+        tab2.cz_block_pairs(base, offset, count);
+
+        assert_eq!(snapshot_tableau(&tab1), snapshot_tableau(&tab2));
+    }
+
+    #[test]
+    fn test_cz_block_pairs_offset_17() {
+        // Simulate MSD-like CZ: (0,17), (1,18), ..., (16,33) — all in one u64 word
+        use ppvm_runtime::config::fx64hash::Byte8F64;
+        type LargeTab = Tableau<Byte8F64<2>>;
+        let n = 34;
+        let mut tab1 = LargeTab::new(n);
+        // Apply some gates to create non-trivial state
+        for i in 0..n {
+            Clifford::h(&mut tab1, i);
+        }
+        let mut tab2 = tab1.clone();
+
+        // Individual
+        for i in 0..17 {
+            Clifford::cz(&mut tab1, i, 17 + i);
+        }
+
+        // Batch
+        tab2.cz_block_pairs(0, 17, 17);
+
+        assert_eq!(snapshot_tableau(&tab1), snapshot_tableau(&tab2));
+    }
+
+    #[test]
+    fn test_cz_block_pairs_nonzero_base() {
+        // Test CZ pairs starting from a non-zero base: (10,27), (11,28), ..., (14,31)
+        // All within one u64 word (bits 0-63)
+        use ppvm_runtime::config::fx64hash::Byte8F64;
+        type LargeTab = Tableau<Byte8F64<2>>;
+        let n = 32;
+        let base = 10;
+        let offset = 17;
+        let count = 5;
+
+        let mut tab1 = LargeTab::new(n);
+        for i in 0..n {
+            Clifford::h(&mut tab1, i);
+        }
+        Clifford::s(&mut tab1, 12);
+        Clifford::s(&mut tab1, 28);
+        let mut tab2 = tab1.clone();
+
+        for i in 0..count {
+            Clifford::cz(&mut tab1, base + i, base + offset + i);
+        }
+
+        tab2.cz_block_pairs(base, offset, count);
+
+        assert_eq!(snapshot_tableau(&tab1), snapshot_tableau(&tab2));
+    }
+
+    #[test]
+    fn test_cz_block_pairs_single_pair() {
+        // Degenerate case: count=1 should be same as one CZ
+        type TTab = Tableau<ByteF64<1>>;
+        let n = 8;
+        let mut tab1 = TTab::new(n);
+        Clifford::h(&mut tab1, 2);
+        Clifford::s(&mut tab1, 5);
+        let mut tab2 = tab1.clone();
+
+        Clifford::cz(&mut tab1, 2, 5);
+        tab2.cz_block_pairs(2, 3, 1);
+
+        assert_eq!(snapshot_tableau(&tab1), snapshot_tableau(&tab2));
+    }
+
+    #[test]
+    fn test_cz_block_pairs_zero_count() {
+        // count=0 should be a no-op
+        type TTab = Tableau<ByteF64<1>>;
+        let n = 8;
+        let mut tab1 = TTab::new(n);
+        Clifford::h(&mut tab1, 0);
+        let before = snapshot_tableau(&tab1);
+        tab1.cz_block_pairs(0, 4, 0);
+        assert_eq!(before, snapshot_tableau(&tab1));
+    }
+
+    #[test]
+    fn test_generalized_tableau_cz_block_pairs() {
+        // Test through GeneralizedTableau wrapper
+        use ppvm_runtime::config::fx64hash::Byte8F64;
+        type GTab = GeneralizedTableau<Byte8F64<2>>;
+        let n = 34;
+        let mut tab1: GTab = GeneralizedTableau::new(n, 1e-12);
+        for i in 0..n {
+            Clifford::h(&mut tab1.tableau, i);
+        }
+        let mut tab2 = tab1.clone();
+
+        // Individual via Clifford trait
+        for i in 0..17 {
+            Clifford::cz(&mut tab1, i, 17 + i);
+        }
+
+        // Batch
+        tab2.cz_block_pairs(0, 17, 17);
+
+        assert_eq!(
+            snapshot_tableau(&tab1.tableau),
+            snapshot_tableau(&tab2.tableau)
+        );
+    }
+
+    #[test]
+    fn test_generalized_tableau_cz_block_pairs_with_loss() {
+        // When a qubit is lost, should fall back to individual CZ (skipping lost ones)
+        type GTab = GeneralizedTableau<ByteF64<1>>;
+        let n = 8;
+        let mut tab1: GTab = GeneralizedTableau::new(n, 1e-12);
+        for i in 0..n {
+            Clifford::h(&mut tab1.tableau, i);
+        }
+        tab1.is_lost[2] = true; // Mark qubit 2 as lost
+        let mut tab2 = tab1.clone();
+
+        // Individual, skipping lost qubits
+        for i in 0..4 {
+            let c = i;
+            let t = 4 + i;
+            if !tab1.is_lost[c] && !tab1.is_lost[t] {
+                Clifford::cz(&mut tab1.tableau, c, t);
+            }
+        }
+
+        // Batch (should fall back internally)
+        tab2.cz_block_pairs(0, 4, 4);
+
+        assert_eq!(
+            snapshot_tableau(&tab1.tableau),
+            snapshot_tableau(&tab2.tableau)
+        );
     }
 }

@@ -18,3 +18,16 @@
 "msd_us" = 127.8
 "t_gate_12_rayon_us" = 52.3
 "msd_rayon_us" = 125.3
+[[metric]]
+"commit" = "d5db5a83efc4d7838bb0aca607e777e50139dd75"
+"status" = "keep"
+"description" = "parallel map + sequential accumulate, threshold=16384"
+"t_gate_12_us" = 53.3
+"single_t_on_2048_us" = 62.0
+"single_t_on_8192_us" = 275.0
+"single_t_on_32768_us" = 748.0
+"single_t_on_131072_us" = 2517.0
+"single_t_on_32768_seq_us" = 1150.0
+"single_t_on_131072_seq_us" = 4140.0
+"total_20t_seq_us" = 45819.0
+"total_20t_rayon_us" = 24126.0

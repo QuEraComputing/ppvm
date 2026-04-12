@@ -56,14 +56,17 @@ where
         + ToPrimitive
         + std::fmt::Debug
         + std::ops::Mul<f64>
-        + PartialOrd<f64>,
+        + PartialOrd<f64>
+        + Send
+        + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
         + std::ops::AddAssign
         + One
-        + ComplexFloat,
-    I: TableauIndex + Debug,
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
 {
     fn measure(&mut self, addr0: usize) -> Option<bool> {
         if self.is_lost[addr0] {

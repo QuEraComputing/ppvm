@@ -91,6 +91,92 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
     }
 
     group.finish();
+
+    // Large-coefficient T-gate benchmarks: measures the cost of a single T gate
+    // applied to a pre-built state with a known number of coefficients.
+    // This isolates the coefficient branching hot path for rayon testing.
+    let mut large_group = c.benchmark_group("large-tgate");
+    large_group
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5))
+        .sample_size(20);
+
+    // Use 128 qubits (u128 index) so we have enough room for many distinct T targets
+    type LargeTab = GeneralizedTableau<Byte8F64<2>, u128>;
+
+    for n_tgates in [12, 14, 16, 18] {
+        // Pre-build the state with (n_tgates - 1) T gates already applied,
+        // then benchmark applying the last one.
+        let mut setup: LargeTab = GeneralizedTableau::new(128, 1e-10);
+        for i in 0..n_tgates {
+            setup.h(i);
+        }
+        for i in 0..n_tgates - 1 {
+            setup.t(i);
+        }
+        let last_qubit = n_tgates - 1;
+        let n_coeffs = setup.coefficients.len();
+
+        large_group.bench_function(format!("single-t-on-{n_coeffs}-coeffs"), |b| {
+            b.iter_batched_ref(
+                || setup.fork(Some(0)),
+                |tab| tab.t(last_qubit),
+                criterion::BatchSize::LargeInput,
+            );
+        });
+    }
+
+    large_group.finish();
+
+    // Combined benchmark: fused Clifford batches + variable T gates + measurement.
+    // Shows how fusion and rayon compose in a realistic circuit.
+    let mut combined_group = c.benchmark_group("fused-tgate-circuit");
+    combined_group
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5))
+        .sample_size(20);
+
+    for n_tgates in [8, 12, 16] {
+        // Circuit: batched Cliffords → H (ensure branching) → T gates → batched Cliffords → measure.
+        // H is applied AFTER Cliffords to ensure T gates see non-stabilizer states and branch.
+        let n_qubits: usize = 85;
+
+        // Pre-build the Clifford portion so the setup cost is excluded
+        let mut setup = GeneralizedTableau::<Byte8F64<2>, u128>::new(n_qubits, 1e-10);
+        let block1: Vec<usize> = (0..17).collect();
+        let block2: Vec<usize> = (17..34).collect();
+        setup.sqrt_y_batch(&block1);
+        setup.sqrt_x_batch(&block2);
+        setup.cz_block_pairs(0, 17, 17);
+        // H on qubits that will get T gates — applied after Cliffords to guarantee branching
+        for i in 0..n_tgates {
+            setup.h(i);
+        }
+
+        combined_group.bench_function(format!("fused-{n_tgates}t-{n_qubits}q"), |b| {
+            b.iter_batched_ref(
+                || setup.fork(Some(0)),
+                |tab| {
+                    // T gates (coefficient branching — rayon target)
+                    for i in 0..n_tgates {
+                        tab.t(i);
+                    }
+
+                    // More batched Cliffords after T gates
+                    tab.sqrt_x_adj_batch(&block1);
+                    tab.sqrt_y_adj_batch(&block2);
+
+                    // Measure all
+                    for i in 0..n_qubits {
+                        tab.measure(i);
+                    }
+                },
+                criterion::BatchSize::LargeInput,
+            );
+        });
+    }
+
+    combined_group.finish();
 }
 
 pub fn tableau_scaling_benchmarks(c: &mut Criterion) {

@@ -19,12 +19,13 @@ where
     T: Config,
     <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: SparseVector<Complex<T::Coeff>, I>,
-    T::Coeff: One + Zero + Clone,
+    T::Coeff: One + Zero + Clone + Send + Sync + num::Num,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
         + From<Complex64>
-        + ComplexFloat,
-    I: TableauIndex,
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Send + Sync,
     <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     fn t(&mut self, index: usize) {

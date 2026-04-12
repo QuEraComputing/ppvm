@@ -7,3 +7,29 @@
 "t_gate_8_us" = 8.25
 "t_gate_12_us" = 50.87
 "msd_us" = 124.97
+
+[[metric]]
+"commit" = "b574c45828cc59daa0c00a7084f911536a31013a"
+"status" = "keep"
+"description" = "rayon feature with threshold=4096 for coefficient branching"
+"t_gate_1_ns" = 206.0
+"t_gate_4_us" = 1.08
+"t_gate_8_us" = 8.46
+"t_gate_12_us" = 51.3
+"msd_us" = 127.8
+"t_gate_12_rayon_us" = 52.3
+"msd_rayon_us" = 125.3
+
+[[metric]]
+"commit" = "d5db5a83efc4d7838bb0aca607e777e50139dd75"
+"status" = "keep"
+"description" = "parallel map + sequential accumulate, threshold=16384"
+"t_gate_12_us" = 53.3
+"single_t_on_2048_us" = 62.0
+"single_t_on_8192_us" = 275.0
+"single_t_on_32768_us" = 748.0
+"single_t_on_131072_us" = 2517.0
+"single_t_on_32768_seq_us" = 1150.0
+"single_t_on_131072_seq_us" = 4140.0
+"total_20t_seq_us" = 45819.0
+"total_20t_rayon_us" = 24126.0

@@ -1,10 +1,11 @@
 # Autotune Workflow
 
-## 1. Validate the target metric
+## 1. Validate the target metric and profile
 
 - Ensure the target metric is numeric and available from a focused benchmark.
 - If no good target exists, inspect benchmarks or profile and propose one.
 - Identify the exact benchmark command (e.g., `cargo bench -p crate --bench micro -- "gates/x"`).
+- **Profile the benchmark to get a time breakdown.** Before the first optimization iteration, measure how time is distributed across major code sections. Use an ad-hoc timing binary with section markers (e.g., `Instant::now()` around each phase), not just the overall benchmark number. This prevents wasting iterations on non-bottlenecks. Record the breakdown in `log.md` under "Architecture Notes". Re-profile after major gains to update the breakdown — the bottleneck shifts as you optimize.
 
 ## 2. Prepare the experiment
 

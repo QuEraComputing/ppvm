@@ -119,7 +119,7 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
 
         large_group.bench_function(format!("single-t-on-{n_coeffs}-coeffs"), |b| {
             b.iter_batched_ref(
-                || setup.fork(None),
+                || setup.fork(Some(0)),
                 |tab| tab.t(last_qubit),
                 criterion::BatchSize::LargeInput,
             );

@@ -341,8 +341,9 @@ where
     map
 }
 
-/// Accumulate branch coefficients. Uses rayon parallel fold/reduce when the feature
-/// is enabled AND the coefficient count exceeds `RAYON_COEFF_THRESHOLD`.
+/// Accumulate branch coefficients. When the coefficient count exceeds
+/// `RAYON_COEFF_THRESHOLD`, uses parallel map/collect into a Vec followed
+/// by sequential accumulation. Below the threshold, falls back to sequential.
 #[cfg(feature = "rayon")]
 fn branch_coefficients_parallel<I, CoeffType>(
     items: &[(Complex<CoeffType>, I)],
@@ -444,8 +445,9 @@ where
     map
 }
 
-/// Accumulate coefficients for pauli application. Uses rayon when the feature is
-/// enabled AND the coefficient count exceeds `RAYON_COEFF_THRESHOLD`.
+/// Accumulate coefficients for pauli application. When the coefficient count
+/// exceeds `RAYON_COEFF_THRESHOLD`, uses parallel map/collect followed by
+/// sequential accumulation. Below the threshold, falls back to sequential.
 #[cfg(feature = "rayon")]
 fn apply_coefficients_parallel<I, CoeffType>(
     items: &[(Complex<CoeffType>, I)],
@@ -807,13 +809,26 @@ where
 
         let odd_phase_mask = self.odd_phase_destabilizer_mask();
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-
-        // Only collect to Vec when rayon might be used; otherwise iterate directly
         #[cfg(feature = "rayon")]
-        let new_coefficients = {
+        let n_coefficients = old_coefficients.len();
+
+        // When rayon is enabled and above the threshold, collect to Vec for parallel map;
+        // otherwise iterate directly with the sequential path.
+        #[cfg(feature = "rayon")]
+        let new_coefficients = if n_coefficients >= RAYON_COEFF_THRESHOLD {
             let items: Vec<_> = old_coefficients.into_iter().collect();
             branch_coefficients_parallel(
                 &items,
+                stab_anticomm_bits,
+                destab_anticomm_bits,
+                odd_phase_mask,
+                phase_decomp,
+                coefficient_factor,
+                branch_factor,
+            )
+        } else {
+            branch_coefficients_seq(
+                old_coefficients,
                 stab_anticomm_bits,
                 destab_anticomm_bits,
                 odd_phase_mask,
@@ -862,13 +877,23 @@ where
             self.compute_decomposition(addr0, pauli);
 
         let odd_phase_mask = self.odd_phase_destabilizer_mask();
+        #[cfg(feature = "rayon")]
+        let n_coefficients = coefficients.len();
         let old_coefficients = std::mem::replace(coefficients, C::new());
 
         #[cfg(feature = "rayon")]
-        let new_coefficients = {
+        let new_coefficients = if n_coefficients >= RAYON_COEFF_THRESHOLD {
             let items: Vec<_> = old_coefficients.into_iter().collect();
             apply_coefficients_parallel(
                 &items,
+                stab_anticomm_bits,
+                destab_anticomm_bits,
+                odd_phase_mask,
+                phase_decomp,
+            )
+        } else {
+            apply_coefficients_seq(
+                old_coefficients,
                 stab_anticomm_bits,
                 destab_anticomm_bits,
                 odd_phase_mask,

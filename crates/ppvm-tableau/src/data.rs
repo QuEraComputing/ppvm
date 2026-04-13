@@ -281,7 +281,7 @@ where
 /// This is a pure function of its arguments (no self access needed), extracted to enable
 /// use in parallel contexts where borrowing self is not possible.
 #[inline]
-fn compute_phase_with_mask_static<I: TableauIndex>(
+pub(crate) fn compute_phase_with_mask_static<I: TableauIndex>(
     destab_anticomm_bits: I,
     basis_index: I,
     stab_anticomm_bits: I,
@@ -299,7 +299,7 @@ fn compute_phase_with_mask_static<I: TableauIndex>(
 /// Benchmarked: at 8K coefficients rayon has ~24% overhead; at 32K it's 35% faster.
 /// Set to 16384 to avoid regressions while capturing the large-coefficient wins.
 #[cfg(feature = "rayon")]
-const RAYON_COEFF_THRESHOLD: usize = 16384;
+pub(crate) const RAYON_COEFF_THRESHOLD: usize = 16384;
 
 /// Sequential accumulation of branch coefficients.
 fn branch_coefficients_seq<I, CoeffType>(
@@ -738,57 +738,6 @@ where
             }
         }
         mask
-    }
-
-    /// Like `compute_phase`, but uses a precomputed odd-phase bitmask instead of
-    /// looping over all destabilizers. The mask should be obtained from
-    /// `odd_phase_destabilizer_mask()`.
-    pub(crate) fn compute_phase_with_mask(
-        &self,
-        destab_anticomm_bits: I,
-        basis_index: I,
-        stab_anticomm_bits: I,
-        odd_phase_mask: I,
-    ) -> u8 {
-        compute_phase_with_mask_static(
-            destab_anticomm_bits,
-            basis_index,
-            stab_anticomm_bits,
-            odd_phase_mask,
-        )
-    }
-
-    /// Keep only coefficients that correspond to the correct eigenvalue of a Z measurement.
-    /// Applying the projector to a basis state, we have three phases:
-    /// 1. The actual measurement outcome (k)
-    /// 2. The sign from whether +Z or -Z is a stabilizer (m) - can get that from the decomposition
-    /// 3. Contribution from commuting Z_addr0 through the destabilizers (xi)
-    ///    Only coefficients where m*k*xi == 1 are kept, equivalently written as (xi * k) == m
-    pub(crate) fn trim_coefficients_for_measurement(
-        &mut self,
-        destab_anticomm_bits: I,
-        z_sign: bool,
-        outcome: bool,
-    ) {
-        let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-        let old_len = old_coefficients.len();
-        for (coeff, alpha) in old_coefficients.into_iter() {
-            let mut phase = false; // false: +1 eigenspace of Z, true: -1 eigenspace
-
-            // get the phase from the anti-commutation with the product over all destabilizers
-            let parity = symplectic_inner(alpha, destab_anticomm_bits) % 2 != 0;
-            phase ^= parity;
-
-            // (xi * k) == m
-            if (phase ^ z_sign) == outcome {
-                self.coefficients.unsafe_insert(alpha, coeff);
-            }
-        }
-
-        // renormalize only if coefficients were actually trimmed
-        if self.coefficients.len() < old_len {
-            self.coefficients.normalize();
-        }
     }
 
     pub(crate) fn branch_with_coefficients(

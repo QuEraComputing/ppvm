@@ -40,3 +40,7 @@ harness = false
 [[bench]]
 name = "micro"
 harness = false
+
+[[bench]]
+name = "measure-scaling"
+harness = false

@@ -1,4 +1,4 @@
-use super::data::symplectic_inner;
+use super::data::{compute_phase_with_mask_static, symplectic_inner};
 use crate::prelude::*;
 use bitvec::view::BitView;
 use fxhash::FxHashMap as HashMap;
@@ -72,85 +72,76 @@ where
         if self.is_lost[addr0] {
             return None;
         }
-        // NOTE: regardless of whether Z is a stabilizer, we need to compute
-        // the probabilities, since the coefficients may make a Z stabilizer
-        // state random, or a seemingly random one deterministic
-        // the probabilities should just account for that
 
-        // evaluate the action of Z on the state
-        // i.e. shift + phase
-        let mut z_overlap = Complex64::from(0.0);
-
-        // TODO: this is O(n^2), but we know the probabilities are always real
-        // however, whether the decomposition phase is imaginary or not tells us
-        // whether we need to pick the real or imaginary part of the overlap
-        // we still might be able to optimize here
         let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
             self.compute_decomposition(addr0, Pauli::Z);
 
-        // build a temporary lookup table for faster lookup in the loop
-        let mut coeff_map: HashMap<I, Complex<T::Coeff>> = self
-            .coefficients
-            .clone()
-            .into_iter()
-            .map(|(v, i)| (i, v))
-            .collect();
-        // Compute the probabilities by computing the overlap <psi|Z|psi>
-        // which is proportional to sum(alpha) conj(v_alpha) * v_(alpha + shift) * xi_(alpha)
-        // NOTE: this could probably be optimized
-        let odd_phase_mask = self.odd_phase_destabilizer_mask();
-        for (&idx, coeff) in &coeff_map {
-            let branch_index = idx ^ stab_anticomm_bits; // stab_anticomm_bits is the index shift
-            let phase = (phase_decomp
-                + self.compute_phase_with_mask(
-                    destab_anticomm_bits,
-                    idx,
-                    stab_anticomm_bits,
-                    odd_phase_mask,
-                ))
-                % 4;
-            let complex_phase: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase as usize].into();
-            let Some(coeff_branch) = coeff_map.get(&branch_index).copied() else {
-                continue;
-            };
-            let overlap = complex_phase.conj() * coeff.conj() * coeff_branch;
-            z_overlap.re += overlap.re.to_f64().unwrap_or(0.0);
-            z_overlap.im += overlap.im.to_f64().unwrap_or(0.0);
-        }
+        if stab_anticomm_bits == I::zero() {
+            // Case b (fast path): Z is already a stabilizer.
+            // branch_index = idx ^ 0 = idx, so the overlap is self-pairing:
+            //   z_overlap = sum_alpha phase_factor(alpha).conj() * |c_alpha|^2
+            // No HashMap needed — work directly on the Vec.
 
-        debug_assert!(
-            z_overlap.im.abs() < 1e-6,
-            "Overlap should be real, got {}",
-            z_overlap
-        );
+            // Collect into a Vec so we can iterate twice: once for overlap,
+            // once for filtering. The collect from Vec IntoIter→Vec is a no-op.
+            let entries: Vec<(Complex<T::Coeff>, I)> =
+                std::mem::replace(&mut self.coefficients, C::new())
+                    .into_iter()
+                    .collect();
+            let old_len = entries.len();
 
-        // TODO: directly compute one of these probs above and skip the other
-        let prob_0 = 0.5 + 0.5 * z_overlap.re;
-        let prob_1 = 0.5 - 0.5 * z_overlap.re;
+            // Pass 1: compute overlap (read-only, real-only accumulation)
+            // Since conj(c)*c = |c|^2 (always real), the phase factor contribution
+            // to z_overlap.re is: phase 0 → +|c|^2, phase 2 → −|c|^2,
+            // phase 1,3 → 0 (imaginary × real = imaginary, doesn't contribute to .re)
+            let z_overlap_re =
+                Self::compute_overlap_case_b(&entries, phase_decomp, destab_anticomm_bits);
 
-        debug_assert!(
-            (prob_0 + prob_1 - 1.0).abs() < 1e-6,
-            "Probabilities should sum to 1, got {} + {} = {}",
-            prob_0,
-            prob_1,
-            prob_0 + prob_1
-        );
+            let prob_1 = 0.5 - 0.5 * z_overlap_re;
+            let outcome = self.tableau.rng.random::<f64>() < prob_1;
 
-        let outcome = self.tableau.rng.random::<f64>() < prob_1;
+            debug_assert!(
+                phase_decomp == 0 || phase_decomp == 2,
+                "Measurement result cannot be imaginary!"
+            );
+            let z_sign = phase_decomp == 2;
 
-        if stab_anticomm_bits != I::zero() {
-            // Case a: Z is not a stabilizer
+            // Pass 2: filter directly into self.coefficients (no retain needed)
+            for (coeff, alpha) in entries {
+                let parity = symplectic_inner(alpha, destab_anticomm_bits) % 2 != 0;
+                if (parity ^ outcome) == z_sign {
+                    self.coefficients.unsafe_insert(alpha, coeff);
+                }
+            }
 
-            // first anti-commuting stabilizer is just the first nonzero bit in stab_anticomm_bits
+            if self.coefficients.len() < old_len {
+                self.coefficients.normalize();
+            }
+
+            Some(outcome)
+        } else {
+            // Case a: Z is not a stabilizer — need HashMap for cross-index lookups
+            let mut coeff_map: HashMap<I, Complex<T::Coeff>> =
+                std::mem::replace(&mut self.coefficients, C::new())
+                    .into_iter()
+                    .map(|(v, i)| (i, v))
+                    .collect();
+
+            // Compute z_overlap.re directly (the imaginary part is always ~0)
+            let odd_phase_mask = self.odd_phase_destabilizer_mask();
+            let z_overlap_re = Self::compute_overlap_case_a(
+                &coeff_map,
+                phase_decomp,
+                destab_anticomm_bits,
+                stab_anticomm_bits,
+                odd_phase_mask,
+            );
+
+            let prob_1 = 0.5 - 0.5 * z_overlap_re;
+            let outcome = self.tableau.rng.random::<f64>() < prob_1;
+
             let q_idx = stab_anticomm_bits.trailing_zeros() as usize;
 
-            // In this case, we cannot simply trim the coefficients (though some
-            // might be smaller than the threshold)
-
-            // coefficient algorithm from T.J. Yoder, adapted for state vectors
-            // see Algorithm 2 in https://www.scottaaronson.com/showcase2/report/ted-yoder.pdf
-
-            // k = lowest set bit of stab_anticomm_bits (same position as q_idx)
             let one = I::one();
             let zero = I::zero();
             let k = one << q_idx;
@@ -161,24 +152,27 @@ where
                 phase_decomp
             };
 
-            // Drain B entries (k-bit=1) into their A counterparts (k-bit=0) in-place,
-            // avoiding O(M^2) add_or_insert on Vec
-            let b_keys: Vec<I> = coeff_map
-                .keys()
-                .filter(|idx| (**idx & k) != zero)
-                .cloned()
-                .collect();
-            for idx in b_keys {
-                let coeff = coeff_map.remove(&idx).unwrap();
-                // q = phase_decomp * (-1).pow(symplectic_inner(*idx, destab_anticomm_bits)) * q;
-                let symp_inner = symplectic_inner(idx, destab_anticomm_bits);
-                let phase_idx =
-                    ((alpha as i32 + if symp_inner % 2 == 1 { 2 } else { 0 }) % 4) as usize;
-                let q: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase_idx].into();
-                *coeff_map
-                    .entry(idx ^ stab_anticomm_bits) // stab_anticomm_bits is the index shift
-                    .or_insert(Complex::zero()) += q * coeff;
-            }
+            // Partition into A (k-bit=0) and B (k-bit=1) via retain, then merge.
+            // This avoids allocating a separate b_keys Vec and eliminates
+            // individual HashMap removes (which require probe+shift).
+            let half = coeff_map.len() / 2 + 1;
+            let mut b_entries: Vec<(I, Complex<T::Coeff>)> = Vec::with_capacity(half);
+            coeff_map.retain(|idx, coeff| {
+                if (*idx & k) != zero {
+                    b_entries.push((*idx, *coeff));
+                    false // remove B entry
+                } else {
+                    true // keep A entry
+                }
+            });
+            // Merge B entries into their A partners with phase adjustment.
+            Self::merge_b_into_a(
+                &mut coeff_map,
+                &b_entries,
+                alpha,
+                destab_anticomm_bits,
+                stab_anticomm_bits,
+            );
 
             // Keep entries where |c|/norm > threshold.
             let norm_sqr = coeff_map
@@ -196,32 +190,121 @@ where
                 }
             }
 
-            // normalize again, since dropping coefficients may reduce the norm
             self.coefficients.normalize();
 
-            // update the tableau, coefficients can be updated independently
             self.tableau
                 .update_tableau_according_to_outcome(addr0, q_idx, outcome);
-        } else {
-            // Case b: +Z or -Z already is a stabilizer; we just need
-            // to trim the coefficients accordingly; tableau remains unchanged
 
-            // Applying the projector to a basis state, we have three phases:
-            // 1. The actual measurement outcome (k)
-            // 2. The sign from whether +Z or -Z is a stabilizer (m) - can get that from the decomposition
-            // 3. Contribution from commuting Z_addr0 through the destabilizers (xi)
-            // Only coefficients where m*k*xi == 1 are kept
-
-            // 2. get the sign
-            debug_assert!(
-                phase_decomp == 0 || phase_decomp == 2,
-                "Measurement result cannot be imaginary!"
-            );
-            let z_sign = phase_decomp == 2;
-
-            // 3. check the anticommutation -- combine with coefficient update
-            self.trim_coefficients_for_measurement(destab_anticomm_bits, outcome, z_sign);
+            Some(outcome)
         }
-        Some(outcome)
+    }
+}
+
+/// Measurement overlap helper functions, with optional rayon parallelism.
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+{
+    /// Case_b overlap: self-pairing (branch_index = idx), so overlap = ±|c|^2.
+    /// Only even phases contribute to the real part.
+    fn compute_overlap_case_b(
+        entries: &[(Complex<T::Coeff>, I)],
+        phase_decomp: u8,
+        destab_anticomm_bits: I,
+    ) -> f64 {
+        let mut z_overlap_re = 0.0f64;
+        for &(coeff, idx) in entries {
+            let phase =
+                (phase_decomp + (2 * symplectic_inner(destab_anticomm_bits, idx) as u8) % 4) % 4;
+            if !phase.is_multiple_of(2) {
+                continue;
+            }
+            let norm_sq = coeff.norm_sqr().to_f64().unwrap_or(0.0);
+            if phase == 0 {
+                z_overlap_re += norm_sq;
+            } else {
+                z_overlap_re -= norm_sq;
+            }
+        }
+        z_overlap_re
+    }
+
+    /// Case_a overlap: cross-index pairing via HashMap lookup.
+    /// Accumulates only the real part of z_overlap.
+    fn compute_overlap_case_a(
+        coeff_map: &HashMap<I, Complex<T::Coeff>>,
+        phase_decomp: u8,
+        destab_anticomm_bits: I,
+        stab_anticomm_bits: I,
+        odd_phase_mask: I,
+    ) -> f64 {
+        let mut z_overlap_re = 0.0f64;
+        for (&idx, coeff) in coeff_map {
+            let branch_index = idx ^ stab_anticomm_bits;
+            let phase = (phase_decomp
+                + compute_phase_with_mask_static(
+                    destab_anticomm_bits,
+                    idx,
+                    stab_anticomm_bits,
+                    odd_phase_mask,
+                ))
+                % 4;
+            let Some(coeff_branch) = coeff_map.get(&branch_index).copied() else {
+                continue;
+            };
+            let a_re = coeff.re.to_f64().unwrap_or(0.0);
+            let a_im = coeff.im.to_f64().unwrap_or(0.0);
+            let b_re = coeff_branch.re.to_f64().unwrap_or(0.0);
+            let b_im = coeff_branch.im.to_f64().unwrap_or(0.0);
+            let re_w = a_re * b_re + a_im * b_im;
+            let im_w = a_re * b_im - a_im * b_re;
+            match phase {
+                0 => z_overlap_re += re_w,
+                1 => z_overlap_re += im_w,
+                2 => z_overlap_re -= re_w,
+                3 => z_overlap_re -= im_w,
+                _ => unreachable!(),
+            }
+        }
+        z_overlap_re
+    }
+
+    /// Merge B entries (k-bit=1) into their A counterparts in coeff_map.
+    /// With rayon: parallel phase computation, sequential HashMap accumulation.
+    fn merge_b_into_a(
+        coeff_map: &mut HashMap<I, Complex<T::Coeff>>,
+        b_entries: &[(I, Complex<T::Coeff>)],
+        alpha: u8,
+        destab_anticomm_bits: I,
+        stab_anticomm_bits: I,
+    ) {
+        for &(idx, coeff) in b_entries {
+            let symp_inner = symplectic_inner(idx, destab_anticomm_bits);
+            let phase_idx = ((alpha as i32 + if symp_inner % 2 == 1 { 2 } else { 0 }) % 4) as usize;
+            let q: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase_idx].into();
+            *coeff_map
+                .entry(idx ^ stab_anticomm_bits)
+                .or_insert(Complex::zero()) += q * coeff;
+        }
     }
 }

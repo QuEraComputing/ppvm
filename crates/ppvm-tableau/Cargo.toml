@@ -14,7 +14,7 @@ bnum = { version = "0.13.0", features = ["numtraits"] }
 itertools = "0.14.0"
 num = "0.4.3"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
-rand = "0.10.0"
+rand = "0.10.1"
 rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]

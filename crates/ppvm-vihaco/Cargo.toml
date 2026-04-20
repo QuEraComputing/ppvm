@@ -1,0 +1,10 @@
+[package]
+name = "ppvm-vihaco"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eyre = "0.6.12"
+ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
+ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau", features = ["rayon"] }
+vihaco = { git = "https://github.com/QuEraComputing/stellarscope.git", version = "0.1.0" }

@@ -5,6 +5,15 @@ use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_tableau::prelude::*;
 use vihaco::{Event, ExecContext, component};
 
+macro_rules! batch_for {
+    ($tab:expr, $method:ident, $addrs:expr) => {
+        for addr in &$addrs { $tab.$method(*addr); }
+    };
+    ($tab:expr, $method:ident, $addrs:expr, $($arg:expr),+) => {
+        for addr in &$addrs { $tab.$method(*addr, $($arg),+); }
+    };
+}
+
 pub struct Circuit<const NBytes: usize, I: TableauIndex> {
     pub tab: GeneralizedTableau<ByteF64<NBytes>, I>,
 }
@@ -15,6 +24,13 @@ pub struct MeasurementResult {
 
     /// None if lost, else 0 or 1 according to outcome
     outcome: Option<bool>,
+}
+
+#[derive(Debug, Clone, Event)]
+pub struct MeasurementResultBatch {
+    qubits: Vec<usize>,
+
+    outcomes: Vec<Option<bool>>,
 }
 
 #[component(instruction = CircuitInstruction, message = CircuitMessage)]
@@ -28,99 +44,149 @@ where
         msg: CircuitMessage,
         ctx: &mut ExecContext,
     ) -> Result<()> {
+        use CircuitInstruction::*;
+        use CircuitMessage::*;
+
         match (inst, msg) {
             // Single-qubit Clifford
-            (CircuitInstruction::X, CircuitMessage::Qubit(addr)) => self.tab.x(addr),
-            (CircuitInstruction::Y, CircuitMessage::Qubit(addr)) => self.tab.y(addr),
-            (CircuitInstruction::Z, CircuitMessage::Qubit(addr)) => self.tab.z(addr),
-            (CircuitInstruction::H, CircuitMessage::Qubit(addr)) => self.tab.h(addr),
-            (CircuitInstruction::S, CircuitMessage::Qubit(addr)) => self.tab.s(addr),
-            (CircuitInstruction::SAdj, CircuitMessage::Qubit(addr)) => self.tab.s_adj(addr),
-            (CircuitInstruction::SqrtX, CircuitMessage::Qubit(addr)) => self.tab.sqrt_x(addr),
-            (CircuitInstruction::SqrtY, CircuitMessage::Qubit(addr)) => self.tab.sqrt_y(addr),
-            (CircuitInstruction::SqrtXAdj, CircuitMessage::Qubit(addr)) => {
-                self.tab.sqrt_x_adj(addr)
-            }
-            (CircuitInstruction::SqrtYAdj, CircuitMessage::Qubit(addr)) => {
-                self.tab.sqrt_y_adj(addr)
-            }
+            (X, Qubit(addr)) => self.tab.x(addr),
+            (Y, Qubit(addr)) => self.tab.y(addr),
+            (Z, Qubit(addr)) => self.tab.z(addr),
+            (H, Qubit(addr)) => self.tab.h(addr),
+            (S, Qubit(addr)) => self.tab.s(addr),
+            (SAdj, Qubit(addr)) => self.tab.s_adj(addr),
+            (SqrtX, Qubit(addr)) => self.tab.sqrt_x(addr),
+            (SqrtY, Qubit(addr)) => self.tab.sqrt_y(addr),
+            (SqrtXAdj, Qubit(addr)) => self.tab.sqrt_x_adj(addr),
+            (SqrtYAdj, Qubit(addr)) => self.tab.sqrt_y_adj(addr),
 
             // Controlled gates
-            (CircuitInstruction::CNOT, CircuitMessage::TwoQubit(addr0, addr1)) => {
-                self.tab.cnot(addr0, addr1)
-            }
-            (CircuitInstruction::CZ, CircuitMessage::TwoQubit(addr0, addr1)) => {
-                self.tab.cz(addr0, addr1)
-            }
+            (CNOT, TwoQubit(addr0, addr1)) => self.tab.cnot(addr0, addr1),
+            (CZ, TwoQubit(addr0, addr1)) => self.tab.cz(addr0, addr1),
 
             // T gate
-            (CircuitInstruction::T, CircuitMessage::Qubit(addr)) => self.tab.t(addr),
-            (CircuitInstruction::TAdj, CircuitMessage::Qubit(addr)) => self.tab.t_adj(addr),
+            (T, Qubit(addr)) => self.tab.t(addr),
+            (TAdj, Qubit(addr)) => self.tab.t_adj(addr),
 
             // Single-qubit rotations
-            (CircuitInstruction::RX, CircuitMessage::QubitAndFloat(addr, angle)) => {
-                self.tab.rx(addr, angle)
-            }
-            (CircuitInstruction::RY, CircuitMessage::QubitAndFloat(addr, angle)) => {
-                self.tab.ry(addr, angle)
-            }
-            (CircuitInstruction::RZ, CircuitMessage::QubitAndFloat(addr, angle)) => {
-                self.tab.rz(addr, angle)
-            }
+            (RX, QubitAndFloat(addr, angle)) => self.tab.rx(addr, angle),
+            (RY, QubitAndFloat(addr, angle)) => self.tab.ry(addr, angle),
+            (RZ, QubitAndFloat(addr, angle)) => self.tab.rz(addr, angle),
 
             // Two-qubit rotations
-            (CircuitInstruction::RXX, CircuitMessage::TwoQubitAndFloat(addr0, addr1, angle)) => {
-                self.tab.rxx(addr0, addr1, angle)
-            }
-            (CircuitInstruction::RYY, CircuitMessage::TwoQubitAndFloat(addr0, addr1, angle)) => {
-                self.tab.ryy(addr0, addr1, angle)
-            }
-            (CircuitInstruction::RZZ, CircuitMessage::TwoQubitAndFloat(addr0, addr1, angle)) => {
-                self.tab.rzz(addr0, addr1, angle)
-            }
+            (RXX, TwoQubitAndFloat(addr0, addr1, angle)) => self.tab.rxx(addr0, addr1, angle),
+            (RYY, TwoQubitAndFloat(addr0, addr1, angle)) => self.tab.ryy(addr0, addr1, angle),
+            (RZZ, TwoQubitAndFloat(addr0, addr1, angle)) => self.tab.rzz(addr0, addr1, angle),
 
             // U3
-            (CircuitInstruction::U3, CircuitMessage::QubitU3(addr, theta, phi, lam)) => {
-                self.tab.u3(addr, theta, phi, lam)
-            }
+            (U3, QubitU3(addr, theta, phi, lam)) => self.tab.u3(addr, theta, phi, lam),
 
             // Measure & Reset
-            (CircuitInstruction::Measure, CircuitMessage::Qubit(addr)) => {
+            (Measure, Qubit(addr)) => {
                 let outcome = self.tab.measure(addr);
                 ctx.emit(MeasurementResult {
                     qubit: addr,
                     outcome: outcome,
                 });
             }
-            (CircuitInstruction::Reset, CircuitMessage::Qubit(addr)) => self.tab.reset(addr),
+            (Reset, Qubit(addr)) => self.tab.reset(addr),
 
             // Noise
-            (CircuitInstruction::Depolarize, CircuitMessage::QubitAndFloat(addr, p)) => {
-                self.tab.depolarize(addr, p)
+            (Depolarize, QubitAndFloat(addr, p)) => self.tab.depolarize(addr, p),
+            (Depolarize2, TwoQubitAndFloat(addr0, addr1, p)) => {
+                self.tab.depolarize2(addr0, addr1, p)
             }
-            (
-                CircuitInstruction::Depolarize2,
-                CircuitMessage::TwoQubitAndFloat(addr0, addr1, p),
-            ) => self.tab.depolarize2(addr0, addr1, p),
-            (CircuitInstruction::PauliError, CircuitMessage::QubitAndFloatArr3(addr0, ps)) => {
-                self.tab.pauli_error(addr0, ps)
+            (PauliError, QubitAndFloatArr3(addr0, ps)) => self.tab.pauli_error(addr0, ps),
+            (TwoQubitPauliError, TwoQubitAndFloatArr15(addr0, addr1, ps)) => {
+                self.tab.two_qubit_pauli_error(addr0, addr1, ps)
             }
-            (
-                CircuitInstruction::TwoQubitPauliError,
-                CircuitMessage::TwoQubitAndFloatArr15(addr0, addr1, ps),
-            ) => self.tab.two_qubit_pauli_error(addr0, addr1, ps),
 
             // Loss
-            (CircuitInstruction::Loss, CircuitMessage::QubitAndFloat(addr, p)) => {
-                self.tab.loss_channel(addr, p)
+            (Loss, QubitAndFloat(addr, p)) => self.tab.loss_channel(addr, p),
+            (CorrelatedLoss, TwoQubitAndFloatArr3(addr0, addr1, ps)) => {
+                self.tab.correlated_loss_channel(addr0, addr1, ps)
             }
-            (
-                CircuitInstruction::CorrelatedLoss,
-                CircuitMessage::TwoQubitAndFloatArr3(addr0, addr1, ps),
-            ) => self.tab.correlated_loss_channel(addr0, addr1, ps),
+
+            // Batch: dedicated batch methods
+            (SqrtX, QubitBatch(addrs)) => self.tab.sqrt_x_batch(&addrs),
+            (SqrtY, QubitBatch(addrs)) => self.tab.sqrt_y_batch(&addrs),
+            (SqrtXAdj, QubitBatch(addrs)) => self.tab.sqrt_x_adj_batch(&addrs),
+            (SqrtYAdj, QubitBatch(addrs)) => self.tab.sqrt_y_adj_batch(&addrs),
+            (H, QubitBatch(addrs)) => self.tab.h_batch(&addrs),
+            (CZ, TwoQubitBatch(pairs)) => self.tab.cz_batch(&pairs),
+
+            // Batch: single-qubit for loops
+            (X, QubitBatch(addrs)) => batch_for!(self.tab, x, addrs),
+            (Y, QubitBatch(addrs)) => batch_for!(self.tab, y, addrs),
+            (Z, QubitBatch(addrs)) => batch_for!(self.tab, z, addrs),
+            (S, QubitBatch(addrs)) => batch_for!(self.tab, s, addrs),
+            (SAdj, QubitBatch(addrs)) => batch_for!(self.tab, s_adj, addrs),
+            (T, QubitBatch(addrs)) => batch_for!(self.tab, t, addrs),
+            (TAdj, QubitBatch(addrs)) => batch_for!(self.tab, t_adj, addrs),
+            (Reset, QubitBatch(addrs)) => batch_for!(self.tab, reset, addrs),
+            (RX, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.tab, rx, addrs, angle),
+            (RY, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.tab, ry, addrs, angle),
+            (RZ, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.tab, rz, addrs, angle),
+            (Depolarize, QubitBatchAndFloat(addrs, p)) => {
+                batch_for!(self.tab, depolarize, addrs, p)
+            }
+            (Loss, QubitBatchAndFloat(addrs, p)) => batch_for!(self.tab, loss_channel, addrs, p),
+            (PauliError, QubitBatchAndFloatArr3(addrs, ps)) => {
+                batch_for!(self.tab, pauli_error, addrs, ps)
+            }
+            (U3, QubitBatchU3(addrs, theta, phi, lam)) => {
+                batch_for!(self.tab, u3, addrs, theta, phi, lam)
+            }
+
+            // Batch: two-qubit for loops
+            (CNOT, TwoQubitBatch(pairs)) => {
+                for (a, b) in &pairs {
+                    self.tab.cnot(*a, *b);
+                }
+            }
+            (RXX, TwoQubitBatchAndFloat(pairs, angle)) => {
+                for (a, b) in &pairs {
+                    self.tab.rxx(*a, *b, angle);
+                }
+            }
+            (RYY, TwoQubitBatchAndFloat(pairs, angle)) => {
+                for (a, b) in &pairs {
+                    self.tab.ryy(*a, *b, angle);
+                }
+            }
+            (RZZ, TwoQubitBatchAndFloat(pairs, angle)) => {
+                for (a, b) in &pairs {
+                    self.tab.rzz(*a, *b, angle);
+                }
+            }
+            (Depolarize2, TwoQubitBatchAndFloat(pairs, p)) => {
+                for (a, b) in &pairs {
+                    self.tab.depolarize2(*a, *b, p);
+                }
+            }
+            (TwoQubitPauliError, TwoQubitBatchAndFloatArr15(pairs, ps)) => {
+                for (a, b) in &pairs {
+                    self.tab.two_qubit_pauli_error(*a, *b, ps);
+                }
+            }
+            (CorrelatedLoss, TwoQubitBatchAndFloatArr3(pairs, ps)) => {
+                for (a, b) in &pairs {
+                    self.tab.correlated_loss_channel(*a, *b, ps);
+                }
+            }
+
+            // Batch: measure (emits per qubit)
+            (Measure, QubitBatch(addrs)) => {
+                let outcomes = addrs.iter().map(|&addr| self.tab.measure(addr));
+                let results = MeasurementResultBatch {
+                    qubits: addrs.clone(),
+                    outcomes: outcomes.collect(),
+                };
+                ctx.emit(results);
+            }
 
             // Fallback
-            _ => {
+            (inst, msg) => {
                 return Err(eyre!(
                     "Invalid gate arguments {:?} for gate {:?}",
                     msg,

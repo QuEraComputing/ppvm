@@ -13,6 +13,6 @@ CLAUDE.md
 .agents/skills/
 .claude/skills/
 
-.claude/
+.claude/worktrees
 .autotune/
 .autotune.toml

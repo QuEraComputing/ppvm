@@ -12,3 +12,5 @@ ppvm-python/extended_tests/stim/stim-programs/
 CLAUDE.md
 .agents/skills/
 .claude/skills/
+
+.autotune.toml

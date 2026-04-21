@@ -18,12 +18,9 @@ pub struct Circuit<const NBytes: usize, I: TableauIndex> {
     pub tab: GeneralizedTableau<ByteF64<NBytes>, I>,
 }
 
-pub enum CircuitOutcome {
-    MeasurementResult(Option<bool>),
-    MeasurementResultBatch(Vec<Option<bool>>),
-}
+pub type MeasurementResult = Vec<Option<bool>>;
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, outcome = Option<CircuitOutcome>)]
+#[component(instruction = CircuitInstruction, message = CircuitMessage, outcome = Option<MeasurementResult>)]
 impl<const NBytes: usize, I> Circuit<NBytes, I>
 where
     I: TableauIndex + Send + Sync + std::fmt::Debug,
@@ -33,7 +30,7 @@ where
         inst: CircuitInstruction,
         msg: CircuitMessage,
         _ctx: &mut ExecContext,
-    ) -> Result<Option<CircuitOutcome>> {
+    ) -> Result<Option<MeasurementResult>> {
         use CircuitInstruction::*;
         use CircuitMessage::*;
 
@@ -74,7 +71,7 @@ where
             // Measure & Reset
             (Measure, Qubit(addr)) => {
                 let outcome = self.tab.measure(addr);
-                return Ok(Some(CircuitOutcome::MeasurementResult(outcome)));
+                return Ok(Some(vec![outcome]));
             }
             (Reset, Qubit(addr)) => self.tab.reset(addr),
 
@@ -167,9 +164,7 @@ where
             // Batch: measure (emits per qubit)
             (Measure, QubitBatch(addrs)) => {
                 let outcomes = addrs.iter().map(|&addr| self.tab.measure(addr));
-                return Ok(Some(CircuitOutcome::MeasurementResultBatch(
-                    outcomes.collect(),
-                )));
+                return Ok(Some(outcomes.collect()));
             }
 
             // Fallback

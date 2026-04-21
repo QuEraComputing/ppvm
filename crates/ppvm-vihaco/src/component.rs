@@ -3,7 +3,7 @@ use crate::message::CircuitMessage;
 use eyre::{Result, eyre};
 use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_tableau::prelude::*;
-use vihaco::{Event, ExecContext, component};
+use vihaco::{ExecContext, component};
 
 macro_rules! batch_for {
     ($tab:expr, $method:ident, $addrs:expr) => {
@@ -18,22 +18,12 @@ pub struct Circuit<const NBytes: usize, I: TableauIndex> {
     pub tab: GeneralizedTableau<ByteF64<NBytes>, I>,
 }
 
-#[derive(Debug, Clone, Event)]
-pub struct MeasurementResult {
-    qubit: usize,
-
-    /// None if lost, else 0 or 1 according to outcome
-    outcome: Option<bool>,
+pub enum CircuitOutcome {
+    MeasurementResult(Option<bool>),
+    MeasurementResultBatch(Vec<Option<bool>>),
 }
 
-#[derive(Debug, Clone, Event)]
-pub struct MeasurementResultBatch {
-    qubits: Vec<usize>,
-
-    outcomes: Vec<Option<bool>>,
-}
-
-#[component(instruction = CircuitInstruction, message = CircuitMessage)]
+#[component(instruction = CircuitInstruction, message = CircuitMessage, outcome = Option<CircuitOutcome>)]
 impl<const NBytes: usize, I> Circuit<NBytes, I>
 where
     I: TableauIndex + Send + Sync + std::fmt::Debug,
@@ -42,8 +32,8 @@ where
         &mut self,
         inst: CircuitInstruction,
         msg: CircuitMessage,
-        ctx: &mut ExecContext,
-    ) -> Result<()> {
+        _ctx: &mut ExecContext,
+    ) -> Result<Option<CircuitOutcome>> {
         use CircuitInstruction::*;
         use CircuitMessage::*;
 
@@ -84,10 +74,7 @@ where
             // Measure & Reset
             (Measure, Qubit(addr)) => {
                 let outcome = self.tab.measure(addr);
-                ctx.emit(MeasurementResult {
-                    qubit: addr,
-                    outcome: outcome,
-                });
+                return Ok(Some(CircuitOutcome::MeasurementResult(outcome)));
             }
             (Reset, Qubit(addr)) => self.tab.reset(addr),
 
@@ -107,6 +94,7 @@ where
                 self.tab.correlated_loss_channel(addr0, addr1, ps)
             }
 
+            /* BATCH OPERATIONS START HERE */
             // Batch: dedicated batch methods
             (SqrtX, QubitBatch(addrs)) => self.tab.sqrt_x_batch(&addrs),
             (SqrtY, QubitBatch(addrs)) => self.tab.sqrt_y_batch(&addrs),
@@ -115,6 +103,7 @@ where
             (H, QubitBatch(addrs)) => self.tab.h_batch(&addrs),
             (CZ, TwoQubitBatch(pairs)) => self.tab.cz_batch(&pairs),
 
+            // TODO: replace things below by actual batched methods once they are available
             // Batch: single-qubit for loops
             (X, QubitBatch(addrs)) => batch_for!(self.tab, x, addrs),
             (Y, QubitBatch(addrs)) => batch_for!(self.tab, y, addrs),
@@ -178,11 +167,9 @@ where
             // Batch: measure (emits per qubit)
             (Measure, QubitBatch(addrs)) => {
                 let outcomes = addrs.iter().map(|&addr| self.tab.measure(addr));
-                let results = MeasurementResultBatch {
-                    qubits: addrs.clone(),
-                    outcomes: outcomes.collect(),
-                };
-                ctx.emit(results);
+                return Ok(Some(CircuitOutcome::MeasurementResultBatch(
+                    outcomes.collect(),
+                )));
             }
 
             // Fallback
@@ -194,6 +181,7 @@ where
                 ));
             }
         };
-        Ok(())
+
+        Ok(None)
     }
 }

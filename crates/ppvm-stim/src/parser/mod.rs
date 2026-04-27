@@ -2,8 +2,7 @@ pub mod ast;
 pub mod table;
 
 use ast::{
-    AnnotationKind, ArgCount, GateName, MeasureName, NoiseName,
-    ParseError, Program, RawInstruction, TargetArity,
+    ArgCount, ParseError, Program, RawInstruction, TargetArity,
 };
 use table::{TableEntry, lookup};
 
@@ -273,7 +272,90 @@ fn parse_line(line: &str, line_no: usize, _line_map: &LineMap) -> Result<RawInst
         }))
         .collect::<Result<_, _>>()?;
 
+    // Validate arg count and target arity.
+    let (arg_rule, target_rule, canonical) = arity_of(entry);
+
+    // Validate arg count.
+    // - Annotations have variable-arity args (coordinate lists, observable indices, etc.);
+    //   skip parse-time arg validation for them.
+    // - Noise entries with ArgCount::None are also exempt (e.g. I_ERROR whose arg count
+    //   depends on the tag; the normalizer enforces tag-specific count later).
+    // - For all other entries (Gates, Measures, and Noise with Exact(n)):
+    //     ArgCount::None  → must have exactly 0 args
+    //     ArgCount::Exact(n) → must have exactly n args
+    let skip_arg_validation = matches!(entry, TableEntry::Annotation { .. })
+        || matches!(entry, TableEntry::Noise { args: ArgCount::None, .. });
+
+    if !skip_arg_validation {
+        match arg_rule {
+            ArgCount::None => {
+                if !args.is_empty() {
+                    return Err(ParseError::ArgCount {
+                        name: canonical.to_string(),
+                        expected: 0,
+                        found: args.len(),
+                        line: line_no,
+                    });
+                }
+            }
+            ArgCount::Exact(n) => {
+                if args.len() != n {
+                    return Err(ParseError::ArgCount {
+                        name: canonical.to_string(),
+                        expected: n,
+                        found: args.len(),
+                        line: line_no,
+                    });
+                }
+            }
+        }
+    }
+
+    // Validate target arity.
+    match target_rule {
+        TargetArity::Any => {}
+        TargetArity::AtLeastOne => {
+            if targets.is_empty() {
+                return Err(ParseError::TargetCount {
+                    name: canonical.to_string(),
+                    divisor: 1,
+                    found: 0,
+                    line: line_no,
+                });
+            }
+        }
+        TargetArity::Pairs => {
+            if targets.len() % 2 != 0 || targets.is_empty() {
+                return Err(ParseError::TargetCount {
+                    name: canonical.to_string(),
+                    divisor: 2,
+                    found: targets.len(),
+                    line: line_no,
+                });
+            }
+        }
+        TargetArity::Quadruples => {
+            if targets.len() % 4 != 0 || targets.is_empty() {
+                return Err(ParseError::TargetCount {
+                    name: canonical.to_string(),
+                    divisor: 4,
+                    found: targets.len(),
+                    line: line_no,
+                });
+            }
+        }
+    }
+
     Ok(build_instruction(entry, name_str, tags, args, targets, line_no))
+}
+
+fn arity_of(entry: TableEntry) -> (ArgCount, TargetArity, &'static str) {
+    match entry {
+        TableEntry::Gate { name, args, targets } => (args, targets, name.canonical_name()),
+        TableEntry::Noise { name, args, targets } => (args, targets, name.canonical_name()),
+        TableEntry::Measure { name, args, targets } => (args, targets, name.canonical_name()),
+        TableEntry::Annotation { kind, args, targets } => (args, targets, kind.canonical_name()),
+    }
 }
 
 fn split_head_and_targets(line: &str) -> (&str, &str) {
@@ -344,14 +426,3 @@ fn build_instruction(
         TableEntry::Annotation { kind, .. } => RawInstruction::Annotation { kind, args, targets, line },
     }
 }
-
-// Suppress dead_code warnings for entries used in later tasks.
-#[allow(dead_code)]
-const _: (TargetArity, ArgCount, NoiseName, MeasureName, AnnotationKind, GateName) = (
-    TargetArity::Any,
-    ArgCount::None,
-    NoiseName::Depolarize1,
-    MeasureName::M,
-    AnnotationKind::Detector,
-    GateName::H,
-);

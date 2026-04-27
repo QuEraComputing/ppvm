@@ -22,3 +22,7 @@ pub use parser::ast::{
     RawInstruction, Tag, TagParam,
 };
 pub use parser::parse;
+
+pub use tableau_program::{
+    GateKind, Instruction, MeasureKind, NoiseKind, TableauProgram,
+};

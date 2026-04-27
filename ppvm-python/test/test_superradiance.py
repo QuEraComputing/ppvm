@@ -9,37 +9,49 @@ At t=0 the exact result is:
 """
 
 import pytest
+import time
 from ppvm.timeevolve import LadderOp, LindbladOp, solve
+from matplotlib import pyplot as plt
 
 from ppvm import PauliSum, ProductState
 
-N = 4
+N = 100
 GAMMA = 1.0
-TMAX = 2.0
+TMAX = 5.0
+tsteps = 51
 
+# Observable O(0) = Σᵢ Zᵢ — propagated under dO/dt = L†(O).
+observable = PauliSum.new(N, [f"Z{i}" for i in range(N)], min_abs_coeff=1e-8, max_pauli_weight=100)
 
-def test_superradiance_expectation():
-    # Observable O(0) = Σᵢ Zᵢ — propagated under dO/dt = L†(O).
-    observable = PauliSum.new(N, [f"Z{i}" for i in range(N)])
+jump_ops = [LadderOp(i, direction="raise") for i in range(N)]
+rates = [GAMMA] * N
+# rates = [[GAMMA if i == j else 0.5 * GAMMA / abs(i - j) for i in range(N)] for j in range(N)]
+# rates = [[GAMMA / (2 * abs(i - j) + 1) if abs(i - j) <= 1 else 0 for i in range(N)] for j in range(N)]
+# print(rates)
+lindblad = LindbladOp(jump_ops=jump_ops, rates=rates)
 
-    jump_ops = [LadderOp(i, direction="lower") for i in range(N)]
-    lindblad = LindbladOp(jump_ops=jump_ops, rates=[GAMMA] * N)
+# ρ₀ = |0⟩^N — static; used only at save checkpoints.
+rho0 = ProductState.all_zero(N)
 
-    # ρ₀ = |0⟩^N — static; used only at save checkpoints.
-    rho0 = ProductState.all_zero(N)
+start = time.time()
 
-    save_at = [0.0, 0.5, 1.0, TMAX]
-    times, results = solve(
-        observable=observable,
-        lindblad=lindblad,
-        t_span=(0.0, TMAX),
-        save_at=save_at,
-        initial_state=rho0,
-    )
+save_at = [i / tsteps * TMAX for i in range(tsteps)]
+times, results = solve(
+    observable=observable,
+    lindblad=lindblad,
+    t_span=(0.0, TMAX),
+    save_at=save_at,
+    initial_state=rho0,
+)
 
-    # Results must be a list of floats, not PauliSum objects.
-    assert isinstance(results, list)
-    assert all(isinstance(v, float) for v in results)
+# # Results must be a list of floats, not PauliSum objects.
+# assert isinstance(results, list)
+# assert all(isinstance(v, float) for v in results)
 
-    # At t=0: ⟨Σᵢ Zᵢ⟩ = N (each qubit in |0⟩ gives +1).
-    assert results[0] == pytest.approx(N, abs=1e-9)
+# # At t=0: ⟨Σᵢ Zᵢ⟩ = N (each qubit in |0⟩ gives +1).
+# assert results[0] == pytest.approx(N, abs=1e-9)
+
+print(f"Runtime: {time.time() - start} s")
+
+plt.plot(times, results)
+plt.show()

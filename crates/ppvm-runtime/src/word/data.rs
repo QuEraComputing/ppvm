@@ -5,6 +5,44 @@ use core::panic;
 use std::hash::{BuildHasher, Hash};
 use std::ops::Index;
 
+const PREHASH_SEED: u64 = 0x9e37_79b9_7f4a_7c15;
+const PREHASH_MIX: u64 = 0xbf58_476d_1ce4_e5b9;
+const PREHASH_FINAL: u64 = 0x94d0_49bb_1331_11eb;
+
+#[inline(always)]
+fn mix_prehash(mut hash: u64, value: u64) -> u64 {
+    hash ^= value.wrapping_add(PREHASH_SEED);
+    hash = hash.rotate_left(27);
+    hash = hash.wrapping_mul(PREHASH_MIX);
+    hash ^ (hash >> 33)
+}
+
+#[inline(always)]
+fn prehash_storage<T>(value: &T) -> u64 {
+    let bytes = unsafe {
+        std::slice::from_raw_parts((value as *const T).cast::<u8>(), std::mem::size_of::<T>())
+    };
+    let mut hash = PREHASH_SEED ^ (bytes.len() as u64).wrapping_mul(PREHASH_FINAL);
+    let mut chunks = bytes.chunks_exact(8);
+
+    for chunk in &mut chunks {
+        let mut word = [0u8; 8];
+        word.copy_from_slice(chunk);
+        hash = mix_prehash(hash, u64::from_le_bytes(word));
+    }
+
+    let remainder = chunks.remainder();
+    if !remainder.is_empty() {
+        let mut tail = [0u8; 8];
+        tail[..remainder.len()].copy_from_slice(remainder);
+        hash = mix_prehash(hash, u64::from_le_bytes(tail));
+    }
+
+    hash ^= hash >> 29;
+    hash = hash.wrapping_mul(PREHASH_FINAL);
+    hash ^ (hash >> 32)
+}
+
 #[derive(Debug, Clone)]
 pub struct PauliWord<A: PauliStorage, S = fxhash::FxBuildHasher, const REHASH: bool = true> {
     pub xbits: BitArray<A>,
@@ -114,11 +152,10 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Paul
 
     fn rehash(&mut self) {
         if REHASH {
-            use std::hash::Hasher;
-            let mut hasher = S::default().build_hasher();
-            self.xbits.data.hash(&mut hasher);
-            self.zbits.data.hash(&mut hasher);
-            self.hash_cache = hasher.finish();
+            // This stays an internal prehash; the map hasher still hashes the cached u64.
+            let mut hash = prehash_storage(&self.xbits.data);
+            hash = mix_prehash(hash, prehash_storage(&self.zbits.data));
+            self.hash_cache = hash;
         }
     }
 

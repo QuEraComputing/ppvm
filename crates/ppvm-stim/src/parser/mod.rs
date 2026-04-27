@@ -54,6 +54,49 @@ fn split_commas_shallow(s: &str) -> Vec<&str> {
     result
 }
 
+fn parse_tags(tags_src: &str, line_no: usize) -> Result<Vec<crate::parser::ast::Tag>, ParseError> {
+    use crate::parser::ast::{Tag, TagParam};
+    let mut out = Vec::new();
+    for tag in split_commas_shallow(tags_src) {
+        let tag = tag.trim();
+        if tag.is_empty() {
+            continue;
+        }
+        if let Some(paren_start) = tag.find('(') {
+            let name = tag[..paren_start].trim().to_string();
+            let inner = tag[paren_start + 1..]
+                .strip_suffix(')')
+                .ok_or(ParseError::Syntax {
+                    line: line_no,
+                    col: paren_start + 1,
+                    message: "unclosed '(' in tag".into(),
+                })?;
+            let mut params = Vec::new();
+            for raw in split_commas_shallow(inner) {
+                let raw = raw.trim();
+                if raw.is_empty() {
+                    continue;
+                }
+                if let Some(eq_idx) = raw.find('=') {
+                    let key = raw[..eq_idx].trim().to_string();
+                    let value = parse_pi_expr(raw[eq_idx + 1..].trim(), line_no)?;
+                    params.push(TagParam::Named { key, value });
+                } else {
+                    let value = parse_pi_expr(raw, line_no)?;
+                    params.push(TagParam::Positional(value));
+                }
+            }
+            out.push(Tag { name, params });
+        } else {
+            out.push(Tag {
+                name: tag.to_string(),
+                params: vec![],
+            });
+        }
+    }
+    Ok(out)
+}
+
 /// Map a byte offset in `src` to a 1-indexed line number.
 struct LineMap {
     /// `starts[i]` = byte offset of the start of line (i+1).
@@ -101,12 +144,17 @@ pub fn parse(src: &str) -> Result<Program, ParseError> {
 
 fn parse_line(line: &str, line_no: usize, _line_map: &LineMap) -> Result<RawInstruction, ParseError> {
     let (head, targets_part) = split_head_and_targets(line);
-    let (name_str, _tags_src, args_src) = parse_head(head, line_no)?;
+    let (name_str, tags_src, args_src) = parse_head(head, line_no)?;
 
     let entry = lookup(name_str).ok_or(ParseError::UnknownInstruction {
         name: name_str.to_string(),
         line: line_no,
     })?;
+
+    let tags = match tags_src {
+        Some(s) => parse_tags(s, line_no)?,
+        None => Vec::new(),
+    };
 
     let args: Vec<f64> = match args_src {
         Some(s) if !s.trim().is_empty() => split_commas_shallow(s)
@@ -125,7 +173,7 @@ fn parse_line(line: &str, line_no: usize, _line_map: &LineMap) -> Result<RawInst
         }))
         .collect::<Result<_, _>>()?;
 
-    Ok(build_instruction(entry, name_str, vec![], args, targets, line_no))
+    Ok(build_instruction(entry, name_str, tags, args, targets, line_no))
 }
 
 fn split_head_and_targets(line: &str) -> (&str, &str) {
@@ -184,39 +232,16 @@ fn parse_head<'a>(
 fn build_instruction(
     entry: TableEntry,
     _name_str: &str,
-    _tags: Vec<crate::parser::ast::Tag>,
+    tags: Vec<crate::parser::ast::Tag>,
     args: Vec<f64>,
     targets: Vec<usize>,
     line: usize,
 ) -> RawInstruction {
     match entry {
-        TableEntry::Gate { name, .. } => RawInstruction::Gate {
-            name,
-            tags: vec![],
-            args,
-            targets,
-            line,
-        },
-        TableEntry::Noise { name, .. } => RawInstruction::Noise {
-            name,
-            tags: vec![],
-            args,
-            targets,
-            line,
-        },
-        TableEntry::Measure { name, .. } => RawInstruction::Measure {
-            name,
-            tags: vec![],
-            args,
-            targets,
-            line,
-        },
-        TableEntry::Annotation { kind, .. } => RawInstruction::Annotation {
-            kind,
-            args,
-            targets,
-            line,
-        },
+        TableEntry::Gate { name, .. } => RawInstruction::Gate { name, tags, args, targets, line },
+        TableEntry::Noise { name, .. } => RawInstruction::Noise { name, tags, args, targets, line },
+        TableEntry::Measure { name, .. } => RawInstruction::Measure { name, tags, args, targets, line },
+        TableEntry::Annotation { kind, .. } => RawInstruction::Annotation { kind, args, targets, line },
     }
 }
 

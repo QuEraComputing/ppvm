@@ -28,3 +28,5 @@ pub use tableau_program::{
 };
 
 pub use normalize::NormalizeError;
+
+pub use executor::{ExecError, execute, sample};

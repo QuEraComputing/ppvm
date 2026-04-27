@@ -325,7 +325,7 @@ fn parse_line(line: &str, line_no: usize, _line_map: &LineMap) -> Result<RawInst
             }
         }
         TargetArity::Pairs => {
-            if targets.len() % 2 != 0 || targets.is_empty() {
+            if !targets.len().is_multiple_of(2) || targets.is_empty() {
                 return Err(ParseError::TargetCount {
                     name: canonical.to_string(),
                     divisor: 2,
@@ -335,7 +335,7 @@ fn parse_line(line: &str, line_no: usize, _line_map: &LineMap) -> Result<RawInst
             }
         }
         TargetArity::Quadruples => {
-            if targets.len() % 4 != 0 || targets.is_empty() {
+            if !targets.len().is_multiple_of(4) || targets.is_empty() {
                 return Err(ParseError::TargetCount {
                     name: canonical.to_string(),
                     divisor: 4,

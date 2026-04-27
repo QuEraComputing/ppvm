@@ -56,6 +56,45 @@ where
             }
         });
     }
+
+    #[inline]
+    fn rxx(&mut self, a: usize, b: usize, theta: impl Into<T::Coeff>) {
+        let (sin, cos) = theta.into().sin_cos();
+        self.map_insert(|k, v| {
+            if k.get_lbit(a) {
+                return rotate_1_map_insert_closure::<T>(k, v, Pauli::X, b, &sin, &cos);
+            }
+            if k.get_lbit(b) {
+                return rotate_1_map_insert_closure::<T>(k, v, Pauli::X, a, &sin, &cos);
+            }
+
+            let z_a = k.get_zbit(a);
+            let z_b = k.get_zbit(b);
+            if z_a == z_b {
+                return None;
+            }
+
+            let x_a = k.get_xbit(a);
+            let x_b = k.get_xbit(b);
+            let mut coeff = v.clone();
+            *v *= cos.clone();
+
+            let mut new_word = k.clone();
+            new_word.set_xbit(a, !x_a);
+            new_word.set_xbit(b, !x_b);
+            new_word.rehash();
+
+            let eps: i8 = if z_a {
+                if x_a { -1 } else { 1 }
+            } else if x_b {
+                -1
+            } else {
+                1
+            };
+            coeff *= sin.mul_sign(eps);
+            Some((new_word, coeff))
+        });
+    }
 }
 
 // R_{G}[P] = cos(theta) P - sin(theta) [G, P]/2i

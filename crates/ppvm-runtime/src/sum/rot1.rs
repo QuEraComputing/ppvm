@@ -55,11 +55,7 @@ where
         // Anticommuting: Z(xbit=0)→new Y, eps=+1; Y(xbit=1)→new Z, eps=-1
         let (sin, cos) = theta.into().sin_cos();
         self.map_insert(|k, v| {
-            if k.get_lbit(addr0) {
-                return None;
-            }
-            let zbit = k.get_zbit(addr0);
-            if !zbit {
+            if k.get_lbit(addr0) || !k.get_zbit(addr0) {
                 return None;
             }
             let xbit = k.get_xbit(addr0);

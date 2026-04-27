@@ -16,3 +16,8 @@ pub mod parser;
 pub mod tableau_program;
 pub mod normalize;
 pub mod executor;
+
+pub use parser::ast::{
+    AnnotationKind, GateName, MeasureName, NoiseName, ParseError, Program,
+    RawInstruction, Tag, TagParam,
+};

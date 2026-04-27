@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod table;
 
 use ast::{ParseError, Program};
 

@@ -87,8 +87,13 @@ fn parse_repeat_then_following_instruction() {
 
 #[test]
 fn parse_repeat_one_line() {
-    let src = "REPEAT 5 { H 0 ; M 0 }"; // optional ';' as a stretch goal
-    // For phase 1 we only require multi-line REPEAT to work, but this test
-    // documents the single-line shape Stim itself accepts; it's allowed to fail.
-    let _ = parse(src);
+    // Single-line REPEAT works because the tokenizer splits `{` and `}`
+    // out wherever they appear, not just at line boundaries.
+    let p = parse("REPEAT 5 { H 0 }").unwrap();
+    let RawInstruction::Repeat { count, body, .. } = &p.instructions[0] else {
+        panic!("expected Repeat, got {:?}", &p.instructions[0]);
+    };
+    assert_eq!(*count, 5);
+    assert_eq!(body.len(), 1);
+    assert!(matches!(body[0], RawInstruction::Gate { name: GateName::H, .. }));
 }

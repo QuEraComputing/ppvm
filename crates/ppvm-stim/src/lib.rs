@@ -21,3 +21,4 @@ pub use parser::ast::{
     AnnotationKind, GateName, MeasureName, NoiseName, ParseError, Program,
     RawInstruction, Tag, TagParam,
 };
+pub use parser::parse;

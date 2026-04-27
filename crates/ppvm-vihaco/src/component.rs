@@ -1,7 +1,9 @@
 use crate::instruction::CircuitInstruction;
 use crate::message::CircuitMessage;
+use bitvec::view::BitView;
 use eyre::{Result, eyre};
-use ppvm_runtime::config::fxhash::ByteF64;
+use num::PrimInt;
+use num::complex::Complex64;
 use ppvm_tableau::prelude::*;
 use vihaco::{ExecContext, component};
 
@@ -14,16 +16,19 @@ macro_rules! batch_for {
     };
 }
 
-pub struct Circuit<const NBytes: usize, I: TableauIndex> {
-    pub tab: GeneralizedTableau<ByteF64<NBytes>, I>,
+pub struct Circuit<T: Config<Coeff = f64>, I: TableauIndex, C: SparseVector<Complex64, I>> {
+    pub tab: GeneralizedTableau<T, I, C>,
 }
 
 pub type MeasurementResult = Vec<Option<bool>>;
 
 #[component(instruction = CircuitInstruction, message = CircuitMessage, outcome = Option<MeasurementResult>)]
-impl<const NBytes: usize, I> Circuit<NBytes, I>
+impl<T, I, C> Circuit<T, I, C>
 where
+    T: Config<Coeff = f64>,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
     I: TableauIndex + Send + Sync + std::fmt::Debug,
+    C: SparseVector<Complex64, I> + std::fmt::Debug,
 {
     fn execute(
         &mut self,

@@ -26,3 +26,5 @@ pub use parser::parse;
 pub use tableau_program::{
     GateKind, Instruction, MeasureKind, NoiseKind, TableauProgram,
 };
+
+pub use normalize::NormalizeError;

@@ -7,6 +7,53 @@ use ast::{
 };
 use table::{TableEntry, lookup};
 
+/// Parse `<coeff>*pi`, `pi`, or a plain f64.
+fn parse_pi_expr(s: &str, line_no: usize) -> Result<f64, ParseError> {
+    let s = s.trim();
+    if s == "pi" {
+        return Ok(std::f64::consts::PI);
+    }
+    if let Some(coeff) = s.strip_suffix("*pi") {
+        return coeff
+            .trim()
+            .parse::<f64>()
+            .map(|c| c * std::f64::consts::PI)
+            .map_err(|_| ParseError::Syntax {
+                line: line_no,
+                col: 1,
+                message: format!("invalid pi-expression {s:?}"),
+            });
+    }
+    s.parse::<f64>().map_err(|_| ParseError::Syntax {
+        line: line_no,
+        col: 1,
+        message: format!("invalid number {s:?}"),
+    })
+}
+
+/// Split `s` by commas that are not inside parentheses or brackets.
+fn split_commas_shallow(s: &str) -> Vec<&str> {
+    let mut depth = 0usize;
+    let mut start = 0;
+    let mut result = Vec::new();
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                result.push(s[start..i].trim());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let last = s[start..].trim();
+    if !last.is_empty() {
+        result.push(last);
+    }
+    result
+}
+
 /// Map a byte offset in `src` to a 1-indexed line number.
 struct LineMap {
     /// `starts[i]` = byte offset of the start of line (i+1).
@@ -53,15 +100,21 @@ pub fn parse(src: &str) -> Result<Program, ParseError> {
 }
 
 fn parse_line(line: &str, line_no: usize, _line_map: &LineMap) -> Result<RawInstruction, ParseError> {
-    // Split off the instruction token: name (possibly followed by `[…]` and/or `(…)`)
-    // separated from targets by the first whitespace at bracket-depth 0.
     let (head, targets_part) = split_head_and_targets(line);
-    let (name_str, _tags_src, _args_src) = parse_head(head, line_no)?;
+    let (name_str, _tags_src, args_src) = parse_head(head, line_no)?;
 
     let entry = lookup(name_str).ok_or(ParseError::UnknownInstruction {
         name: name_str.to_string(),
         line: line_no,
     })?;
+
+    let args: Vec<f64> = match args_src {
+        Some(s) if !s.trim().is_empty() => split_commas_shallow(s)
+            .into_iter()
+            .map(|p| parse_pi_expr(p, line_no))
+            .collect::<Result<_, _>>()?,
+        _ => Vec::new(),
+    };
 
     let targets: Vec<usize> = targets_part
         .split_whitespace()
@@ -72,7 +125,7 @@ fn parse_line(line: &str, line_no: usize, _line_map: &LineMap) -> Result<RawInst
         }))
         .collect::<Result<_, _>>()?;
 
-    Ok(build_instruction(entry, name_str, vec![], vec![], targets, line_no))
+    Ok(build_instruction(entry, name_str, vec![], args, targets, line_no))
 }
 
 fn split_head_and_targets(line: &str) -> (&str, &str) {
@@ -92,11 +145,40 @@ fn split_head_and_targets(line: &str) -> (&str, &str) {
 /// Both `tags_src` and `args_src` are returned without their delimiters.
 fn parse_head<'a>(
     head: &'a str,
-    _line_no: usize,
+    line_no: usize,
 ) -> Result<(&'a str, Option<&'a str>, Option<&'a str>), ParseError> {
-    // Tasks 5–6 fill in tag and arg parsing. For Task 4 we only need to support
-    // a bare instruction name with no `[…]` and no `(…)`.
-    Ok((head.trim(), None, None))
+    if let Some(bracket_start) = head.find('[') {
+        let name = head[..bracket_start].trim();
+        let after_open = &head[bracket_start + 1..];
+        let bracket_end = after_open.find(']').ok_or(ParseError::Syntax {
+            line: line_no,
+            col: bracket_start + 1,
+            message: "unclosed '['".into(),
+        })?;
+        let tags_src = &after_open[..bracket_end];
+        let after_bracket = after_open[bracket_end + 1..].trim();
+        let args_src = match after_bracket.strip_prefix('(') {
+            Some(rest) => Some(rest.strip_suffix(')').ok_or(ParseError::Syntax {
+                line: line_no,
+                col: bracket_start + bracket_end + 2,
+                message: "unclosed '('".into(),
+            })?),
+            None => None,
+        };
+        Ok((name, Some(tags_src), args_src))
+    } else if let Some(paren_start) = head.find('(') {
+        let name = head[..paren_start].trim();
+        let inner = head[paren_start + 1..]
+            .strip_suffix(')')
+            .ok_or(ParseError::Syntax {
+                line: line_no,
+                col: paren_start + 1,
+                message: "unclosed '('".into(),
+            })?;
+        Ok((name, None, Some(inner)))
+    } else {
+        Ok((head.trim(), None, None))
+    }
 }
 
 fn build_instruction(

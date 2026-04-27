@@ -108,3 +108,47 @@ fn measurement_buffer_is_pre_sized() {
     let results = execute(&tprog, &mut tab).unwrap();
     assert_eq!(results.len(), 5);
 }
+
+#[test]
+fn sample_runs_n_shots_each_with_fresh_tableau() {
+    use ppvm_stim::sample;
+    let prog = parse("X 0\nM 0").unwrap();
+    let tprog = normalize::to_tableau(&prog).unwrap();
+    let shots = sample::<_, _, _, _>(&tprog, 5, || GeneralizedTableau::<ByteFxHashF64<1>, usize>::new(1, 1e-10))
+        .unwrap();
+    assert_eq!(shots.len(), 5);
+    for shot in &shots {
+        assert_eq!(shot, &vec![Some(true)]);
+    }
+}
+
+#[test]
+fn sample_zero_shots_returns_empty() {
+    use ppvm_stim::sample;
+    let prog = parse("X 0\nM 0").unwrap();
+    let tprog = normalize::to_tableau(&prog).unwrap();
+    let shots = sample::<_, _, _, _>(&tprog, 0, || GeneralizedTableau::<ByteFxHashF64<1>, usize>::new(1, 1e-10)).unwrap();
+    assert!(shots.is_empty());
+}
+
+#[test]
+fn sample_random_h_distribution_within_3_sigma() {
+    // H 0; M 0 — over 4096 shots, expect ≈50% ones, allow 3σ slack.
+    use ppvm_stim::sample;
+    let prog = parse("H 0\nM 0").unwrap();
+    let tprog = normalize::to_tableau(&prog).unwrap();
+    let n = 4096;
+    let mut seed_counter: u64 = 0;
+    let shots = sample::<_, _, _, _>(&tprog, n, || {
+        seed_counter += 1;
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+    })
+    .unwrap();
+    let ones = shots.iter().filter(|s| s[0] == Some(true)).count();
+    let mean = (n / 2) as f64;
+    let std = ((n as f64 * 0.25).sqrt()) as f64;
+    assert!(
+        (ones as f64 - mean).abs() < 3.0 * std,
+        "got {ones} ones, mean={mean}, std={std}"
+    );
+}

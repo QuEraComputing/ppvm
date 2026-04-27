@@ -1,0 +1,17 @@
+[package]
+name = "ppvm-stim"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
+ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+bitvec = "1.0.1"
+chumsky = "0.12"
+itertools = "0.14"
+num = "0.4.3"
+thiserror = "2"
+
+[dev-dependencies]
+# Used by tests/data fixtures and statistical assertions.
+rand = "0.10"

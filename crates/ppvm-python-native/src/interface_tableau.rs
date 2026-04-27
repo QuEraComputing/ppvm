@@ -167,13 +167,34 @@ macro_rules! create_interface {
                 self.inner.is_lost.clone()
             }
 
-            // STIM integration
-            pub fn run_stim_string(&mut self, circuit: &str) -> Vec<Option<bool>> {
-                self.inner.run_stim_string(circuit)
+            // STIM integration — runs a parsed+normalized StimProgram.
+            pub fn run(&mut self, prog: &crate::stim_program::PyStimProgram) -> pyo3::PyResult<Vec<Option<bool>>> {
+                ppvm_stim::execute(&prog.inner, &mut self.inner)
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))
             }
 
-            pub fn run_stim_file(&mut self, file_path: &str) -> Vec<Option<bool>> {
-                self.inner.run_stim_file(file_path)
+            /// Multi-shot sampling: builds a fresh tableau per shot.
+            #[staticmethod]
+            #[pyo3(signature = (prog, n_qubits, min_abs_coeff = 1e-10, num_shots = 1, seed = None))]
+            pub fn sample(
+                prog: &crate::stim_program::PyStimProgram,
+                n_qubits: usize,
+                min_abs_coeff: f64,
+                num_shots: usize,
+                seed: Option<u64>,
+            ) -> pyo3::PyResult<Vec<Vec<Option<bool>>>> {
+                let mut next_seed = seed;
+                ppvm_stim::sample(&prog.inner, num_shots, || {
+                    let s = next_seed;
+                    if let Some(ref mut v) = next_seed {
+                        *v = v.wrapping_add(1);
+                    }
+                    match s {
+                        Some(s) => GeneralizedTableau::<$type, $indexType>::new_with_seed(n_qubits, min_abs_coeff, s),
+                        None => GeneralizedTableau::<$type, $indexType>::new(n_qubits, min_abs_coeff),
+                    }
+                })
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))
             }
 
             // some python niceties

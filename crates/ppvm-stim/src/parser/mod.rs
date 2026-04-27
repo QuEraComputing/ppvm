@@ -127,19 +127,119 @@ impl LineMap {
 /// Parse Stim source into a [`Program`].
 pub fn parse(src: &str) -> Result<Program, ParseError> {
     let line_map = LineMap::new(src);
-    let mut instructions = Vec::new();
+    let tokens = tokenize_lines(src);
+    let (instructions, rest) = parse_block(&tokens, &line_map, false)?;
+    if !rest.is_empty() {
+        return Err(ParseError::Syntax {
+            line: tokens[tokens.len() - rest.len()].line,
+            col: 1,
+            message: "unexpected '}' without matching REPEAT".into(),
+        });
+    }
+    Ok(Program { instructions })
+}
 
-    for (line_idx, raw_line) in src.lines().enumerate() {
-        let line_no = line_idx + 1;
-        let trimmed = raw_line.trim();
+#[derive(Debug)]
+struct LineToken<'src> {
+    line: usize,
+    text: &'src str,
+}
+
+/// Split source into logical-line tokens. A logical line is a non-empty,
+/// non-comment trimmed line, except that `{` and `}` are always emitted as
+/// their own tokens so that `parse_block` can recognise block boundaries
+/// without needing a sub-grammar.
+fn tokenize_lines(src: &str) -> Vec<LineToken<'_>> {
+    let mut out = Vec::new();
+    for (i, raw) in src.lines().enumerate() {
+        let line_no = i + 1;
+        let trimmed = raw.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let instr = parse_line(trimmed, line_no, &line_map)?;
-        instructions.push(instr);
+        // Split the line on `{` and `}` delimiters, emitting each as its own
+        // token.  Everything between delimiters is trimmed; empty pieces are
+        // dropped.
+        let mut start = 0;
+        let bytes = trimmed.as_bytes();
+        for j in 0..bytes.len() {
+            if bytes[j] == b'{' || bytes[j] == b'}' {
+                let piece = trimmed[start..j].trim();
+                if !piece.is_empty() {
+                    out.push(LineToken { line: line_no, text: piece });
+                }
+                out.push(LineToken { line: line_no, text: &trimmed[j..j + 1] });
+                start = j + 1;
+            }
+        }
+        let piece = trimmed[start..].trim();
+        if !piece.is_empty() {
+            out.push(LineToken { line: line_no, text: piece });
+        }
     }
+    out
+}
 
-    Ok(Program { instructions })
+fn parse_block<'a, 'src>(
+    tokens: &'a [LineToken<'src>],
+    line_map: &LineMap,
+    inside_repeat: bool,
+) -> Result<(Vec<RawInstruction>, &'a [LineToken<'src>]), ParseError> {
+    let mut out = Vec::new();
+    let mut rest = tokens;
+    while let Some((tok, tail)) = rest.split_first() {
+        match tok.text {
+            "}" if inside_repeat => return Ok((out, tail)),
+            "}" => return Err(ParseError::Syntax {
+                line: tok.line,
+                col: 1,
+                message: "unexpected '}' without matching REPEAT".into(),
+            }),
+            "{" => return Err(ParseError::Syntax {
+                line: tok.line,
+                col: 1,
+                message: "unexpected '{'".into(),
+            }),
+            _ => {
+                if let Some(after_repeat) = tok.text.strip_prefix("REPEAT") {
+                    let count_str = after_repeat.trim();
+                    let count = count_str.parse::<u64>().map_err(|_| ParseError::Syntax {
+                        line: tok.line,
+                        col: 1,
+                        message: format!("invalid REPEAT count {count_str:?}"),
+                    })?;
+                    // Next token must be "{".
+                    let (open_tok, after_open) = tail.split_first().ok_or(ParseError::Syntax {
+                        line: tok.line,
+                        col: 1,
+                        message: "expected '{' after REPEAT".into(),
+                    })?;
+                    if open_tok.text != "{" {
+                        return Err(ParseError::Syntax {
+                            line: open_tok.line,
+                            col: 1,
+                            message: "expected '{' after REPEAT count".into(),
+                        });
+                    }
+                    let (body, after_body) = parse_block(after_open, line_map, true)?;
+                    out.push(RawInstruction::Repeat { count, body, line: tok.line });
+                    rest = after_body;
+                } else {
+                    let instr = parse_line(tok.text, tok.line, line_map)?;
+                    out.push(instr);
+                    rest = tail;
+                }
+            }
+        }
+    }
+    if inside_repeat {
+        return Err(ParseError::Syntax {
+            line: tokens.last().map(|t| t.line).unwrap_or(0),
+            col: 1,
+            message: "unclosed REPEAT block".into(),
+        });
+    }
+    Ok((out, rest))
 }
 
 fn parse_line(line: &str, line_no: usize, _line_map: &LineMap) -> Result<RawInstruction, ParseError> {

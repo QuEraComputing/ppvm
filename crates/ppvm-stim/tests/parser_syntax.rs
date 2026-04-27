@@ -52,3 +52,43 @@ fn leading_indentation_tolerated() {
     let p = parse("    H 0\n\tH 1").unwrap();
     assert_eq!(p.instructions.len(), 2);
 }
+
+#[test]
+fn parse_simple_repeat() {
+    let src = "REPEAT 3 {\n    X 0\n    M 0\n}";
+    let p = parse(src).unwrap();
+    assert_eq!(p.instructions.len(), 1);
+    match &p.instructions[0] {
+        RawInstruction::Repeat { count, body, line } => {
+            assert_eq!(*count, 3);
+            assert_eq!(body.len(), 2);
+            assert_eq!(*line, 1);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn parse_nested_repeat() {
+    let src = "REPEAT 2 {\n    REPEAT 3 {\n        H 0\n    }\n}";
+    let p = parse(src).unwrap();
+    let RawInstruction::Repeat { body, .. } = &p.instructions[0] else { panic!() };
+    assert!(matches!(body[0], RawInstruction::Repeat { count: 3, .. }));
+}
+
+#[test]
+fn parse_repeat_then_following_instruction() {
+    let src = "REPEAT 2 { H 0 }\nM 0";
+    let p = parse(src).unwrap();
+    assert_eq!(p.instructions.len(), 2);
+    assert!(matches!(p.instructions[0], RawInstruction::Repeat { .. }));
+    assert!(matches!(p.instructions[1], RawInstruction::Measure { .. }));
+}
+
+#[test]
+fn parse_repeat_one_line() {
+    let src = "REPEAT 5 { H 0 ; M 0 }"; // optional ';' as a stretch goal
+    // For phase 1 we only require multi-line REPEAT to work, but this test
+    // documents the single-line shape Stim itself accepts; it's allowed to fail.
+    let _ = parse(src);
+}

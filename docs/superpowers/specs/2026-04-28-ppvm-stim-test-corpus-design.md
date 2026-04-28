@@ -15,7 +15,8 @@ The expansion uses Stim's own sampler as a cross-check oracle for every fixture 
 ## Non-Goals
 
 - Reaching 100% line coverage. Coverage emerges as a side effect, not a target.
-- Cross-checking ppvm-specific dialect instructions (`I[R_X(theta=…)]`, `S[T]`, `I_ERROR[loss]`) against Stim — Stim doesn't simulate them. Those use deterministic-mode reference outputs derived by hand or by running ppvm itself.
+- Cross-checking ppvm-specific dialect instructions (`I[R_X(theta=…)]`, `S[T]`) against Stim — Stim doesn't simulate them. Those use deterministic-mode reference outputs derived by hand or by running ppvm itself.
+- **Loss in the corpus.** Stim does not simulate loss (`I_ERROR[loss]` / `I_ERROR[correlated_loss]`), so loss circuits have no Stim oracle and don't fit the corpus's cross-check architecture. Loss is exercised by standalone Rust tests in `crates/ppvm-stim/tests/executor.rs` (already covering the main paths) and by Python tests in `ppvm-python/test/`. The corpus's measurement assertions assume every measurement returns `Some(bool)`.
 - Property-based testing with `proptest` / `quickcheck`. Considered and deferred — useful but a sizable infra add and orthogonal to corpus expansion. Track separately.
 - CI tiering. We aren't splitting fast vs slow tests yet. If runtime becomes a problem we can revisit.
 - Performance regression benchmarks. Already partially covered by `tableau-msd-stim`; threshold work is bench-suite scope.
@@ -24,7 +25,7 @@ The expansion uses Stim's own sampler as a cross-check oracle for every fixture 
 
 ```
                  ┌─────────────────────┐
-                 │ regen.py            │  Run by humans with `pip install stim`.
+                 │ regen-stim CLI      │  Run by humans (uv-managed venv, `stim` dep).
                  │ (dev-time only)     │  Not invoked in CI.
                  └────────┬────────────┘
                           │ produces:
@@ -62,23 +63,25 @@ Every fixture is two committed files: `<name>.stim` (the source circuit) and `<n
 
 ### Mode 1: deterministic
 
-For circuits with no noise instructions. The bitstring is unique given the circuit; one shot suffices.
+For circuits whose measurement outcomes are uniquely determined regardless of RNG seed — i.e. no noise instructions **and** no quantum measurement randomness. Examples: `X 0; M 0` (always 1), `H 0; H 0; M 0` (always 0), `CX 0 1; M 0 1` after preparing both qubits. One shot suffices.
+
+This mode is narrower than "no noise" — `H 0; M 0` produces a 50/50 random outcome despite having no noise, and goes in distribution mode, not here.
 
 ```jsonc
 {
   "mode": "deterministic",
   "ppvm_seed": 0,
-  "bitstring": [true, false, false, true, null, true]
+  "bitstring": [true, false, false, true, true, false]
   // length matches the circuit's measurement count
-  // null entries represent measurements on lost qubits
+  // every entry is a concrete bool — see Non-Goals re: loss
 }
 ```
 
-Test action: parse + normalize + execute once with `ppvm_seed`; assert returned `Vec<Option<bool>>` equals `bitstring` (mapping `null` → `None`).
+Test action: parse + normalize + execute once with `ppvm_seed`; for each measurement result, expect `Some(bool)` matching the corresponding `bitstring` entry. Encountering `None` (loss) is a hard test failure — the corpus excludes loss.
 
 ### Mode 2: distribution
 
-For circuits with noise. Stim cross-check is meaningful here.
+For circuits with any source of randomness — either noise instructions or quantum measurement randomness from non-trivial superpositions. This is the **default mode** for most fixtures; deterministic is the narrow special case.
 
 ```jsonc
 {
@@ -91,7 +94,7 @@ For circuits with noise. Stim cross-check is meaningful here.
   "stim_num_shots": 10000,
   "stim_bit_means": [0.5, 0.5, 0.0, 0.01, ...],
   "tolerance_sigma_at_regen": 5.0,
-  "stim_version": "1.13.0"
+  "stim_version": "1.15.0"
 }
 ```
 
@@ -110,7 +113,7 @@ For fixtures using a phase-1-unsupported instruction. The Stim reference data is
   "stim_num_shots": 10000,
   "stim_bit_means": [0.5, 0.5, 0.0, ...],
   "tolerance_sigma_at_regen": 5.0,
-  "stim_version": "1.13.0"
+  "stim_version": "1.15.0"
 }
 ```
 
@@ -129,14 +132,17 @@ Fixtures live in subdirectories under `crates/ppvm-stim/tests/data/`. Each subdi
 
 | Subdir | Source | Approx count | Purpose |
 |---|---|---|---|
-| `generated/codes/` | `stim gen` with sweeps over `(code, distance, rounds, basis, noise)` | 80–100 | Real-world fault-tolerance circuits with realistic noise |
-| `generated/dialect/` | Programmatic via Python + Stim's circuit-construction API | 10–15 | ppvm-specific dialect (`I[R_*]`, `S[T]`, `I_ERROR[loss]`); deterministic-mode only |
-| `generated/random/` | Our own random-walk Python generator | 20–30 | Random sequences of supported instructions; broad shape coverage |
+| `generated/codes/` | `stim gen` with sweeps over `(code, distance, rounds, basis, noise)` | 80–100 | Real-world fault-tolerance circuits; noisy variants exercise hundreds of `DEPOLARIZE1/2`, `X_ERROR`, reset-flip noise instructions per circuit |
+| `generated/noise_sweeps/` | Programmatic, per-channel sweeps | 30–50 | Per-`NoiseKind` parameter sweeps producing dozens of generated fixtures across probability values — covers `PauliChannel1/2` and skewed parameter spaces that `stim gen` doesn't naturally emit |
+| `generated/random/` | Our own random-walk Python generator | 30–40 | Random sequences of supported instructions; parameterized to vary noise density (low/medium/high) so a meaningful fraction is noise-heavy |
+| `generated/dialect/` | Programmatic via Python + Stim's API | 10–15 | ppvm-specific dialect (`I[R_X/Y/Z(...)]`, `I[U3(...)]`, `S[T]`, `S_DAG[T]`); mostly deterministic mode (no Stim oracle for these) |
 | `unsupported/` | `stim gen` natural emission + programmatic templates | 20–25 | One fixture per phase-1-unsupported instruction; flips in phase-2 |
-| `edge_cases/` | Hand-written | 20–25 | Empty programs, deeply nested REPEAT, every Pi-expression form, every tag form, dense/sparse measurement patterns, comment/whitespace stress |
-| `noise_channels/` | Hand-written | 10–12 | One fixture per supported `NoiseKind`, plus a few channel combinations; statistical-power-sensitive |
+| `edge_cases/` | Hand-written | 20–25 | Empty programs, deeply nested REPEAT, every Pi-expression form, every tag form, dense/sparse measurement patterns, comment/whitespace stress, boundary noise probabilities (p=0.0, p=1.0) |
+| `noise_channels/` | Hand-written | 8–10 | Hand-written corner cases the sweeps don't naturally cover (e.g. `M(0.0)` ≡ `M`; `MR(1.0)` always-flips-recorded-bit; readout-noise-on-already-flipped bits) |
 
-**Total: ~160–200 committed fixtures** (`.stim` + `.expected.json` pairs).
+**Total: ~200–250 committed fixtures** (`.stim` + `.expected.json` pairs).
+
+Noise gets multi-source coverage: every realistic-noise surface code in `generated/codes/` (~30–50 of them) exercises DEPOLARIZE1/2 and X_ERROR heavily; `generated/noise_sweeps/` adds explicit per-channel breadth; `generated/random/` adds noise-heavy random programs; and `noise_channels/` + `edge_cases/` cover boundary values. Cumulatively this is the bulk of the fixture corpus.
 
 ### `generated/codes/` — `stim gen` sweeps
 
@@ -152,17 +158,42 @@ Some `(code, task)` combinations naturally emit phase-1-unsupported instructions
 
 ### `generated/dialect/` — ppvm-specific instructions
 
-Stim itself cannot simulate `I[R_X(theta=…)]`, `S[T]`, or `I_ERROR[loss]`, so cross-check via Stim is impossible. These fixtures use **deterministic mode**: the regen script runs ppvm itself and records the bitstring. Verification is structural (the circuit produces the bitstring derivable from inspection) rather than oracle-driven. ~15 hand-templated programmatic fixtures: each combines a few rotation/noise instructions in a small circuit with a known expected outcome.
+Stim itself cannot simulate `I[R_X(theta=…)]`, `I[R_Y(theta=…)]`, `I[R_Z(theta=…)]`, `I[U3(theta=…, phi=…, lambda=…)]`, `S[T]`, or `S_DAG[T]`, so Stim cross-check is impossible. Each fixture combines one or more dialect instructions in a small circuit whose expected outcome is hand-derivable (e.g. `I[R_X(theta=1.0*pi)] 0; M 0` → always 1; `S[T] 0; S_DAG[T] 0; M 0` after `X 0` → always 1).
+
+Where the resulting circuit is uniquely determined (no superposition at measurement time), the fixture is **deterministic mode**. Where it has measurement randomness (e.g. `H 0; I[R_X(theta=0.5*pi)] 0; M 0`), it's **distribution mode** with `ppvm_bit_means` recorded by running ppvm itself — no oracle, but the test still locks down the output against future regression. The dialect-only restriction means we can't catch ppvm bugs by comparing against another simulator, only by detecting drift from a previously-recorded ppvm output.
+
+~10–15 fixtures total, programmatically generated by a per-instruction template that emits a known-outcome circuit.
+
+### `generated/noise_sweeps/` — per-channel parameter sweeps
+
+A Python script emits one `.stim` per `(NoiseKind, qubit_count, probability)` triple. The circuit shape per fixture is small and uniform: prepare a known state → apply the noise channel under test N times → measure all qubits. Sweeping the probability axis gives the regen-time Stim cross-check enough breadth to catch slope/sign bugs on each channel.
+
+Sweep axes:
+
+| Channel | Probabilities | Qubit counts | Approx fixtures |
+|---|---|---|---|
+| `DEPOLARIZE1` | 0.001, 0.01, 0.1, 0.5 | 1, 4 | 8 |
+| `DEPOLARIZE2` | 0.001, 0.01, 0.1, 0.5 | 2, 4 | 8 |
+| `PAULI_CHANNEL_1` | 3 hand-picked skewed parameter sets | 1, 4 | 6 |
+| `PAULI_CHANNEL_2` | 3 hand-picked skewed parameter sets (15-arg) | 2, 4 | 6 |
+| `X_ERROR` / `Y_ERROR` / `Z_ERROR` | 0.001, 0.01, 0.5 | 1 | 9 |
+| readout-noise: `M(p)` / `MR(p)` | 0.001, 0.01, 0.5 | 1 | 6 |
+
+~30–50 fixtures total (the upper bound includes optional sweeps over different state-prep contexts: `M(p)` after `X 0` vs after `H 0` etc., to validate Stim agreement on both rare-1 and 50/50 outcomes).
+
+Stim cross-check works on every entry except `Loss`/`CorrelatedLoss` (which Stim doesn't support — those are out of corpus scope per Non-Goals). Distribution mode for everything except possibly the `M(0.0)`/`MR(0.0)` cases which collapse to deterministic.
 
 ### `generated/random/` — random-walk programs
 
-A Python script that emits random sequences of supported instructions. Parameterized by:
+A Python script emits random sequences of supported instructions. Parameterized by:
 - Number of qubits ∈ {2, 4, 8, 16}
 - Number of instructions ∈ {10, 50, 200}
-- Mix ratios (Clifford : non-Clifford : noise : measurement : annotation)
-- RNG seed
+- Mix ratios — three regimes: `clifford-only`, `clifford+noise (high noise density, ~30% of instructions)`, `clifford+noise+measurement-readout`
+- RNG seed (8 distinct seeds per combo for diversity)
 
-For each combination the script emits a `.stim` file. Cross-check via Stim works for any sequence using only Stim-supported instructions; falls back to deterministic mode for sequences mixing in dialect-specific ones.
+The high-noise-density regime is intentional: it produces fixtures with many noise instructions per circuit, complementing `noise_sweeps/`'s "single channel per circuit" coverage with "many mixed channels per circuit".
+
+Cross-check via Stim works for any sequence using only Stim-supported instructions; falls back to deterministic mode for sequences mixing in dialect-specific ones (though the random generator can be configured to omit dialect instructions for full Stim coverage).
 
 ### `unsupported/` — flips in phase-2
 
@@ -185,56 +216,64 @@ Specific cases covered:
 - Maximum-target-count circuits (limited by tableau size).
 - Programs that mix every supported gate family in a single circuit.
 
-### `noise_channels/` — statistical-power-sensitive
+### `noise_channels/` — hand-written corner cases
 
-One small (1–3 qubit) fixture per supported `NoiseKind`:
-- `Depolarize1` at p=0.5 over a single qubit.
-- `Depolarize2` at p=0.5 over a single pair.
-- `PauliChannel1` with skewed probabilities `[0.1, 0.2, 0.3]`.
-- `PauliChannel2` with all 15 args set.
-- `XError` / `YError` / `ZError` at extreme probabilities (`p ∈ {0.0, 0.5, 1.0}` to lock down the boundary cases).
-- `I_ERROR[loss]` at p=0.5 → measurement must produce mixed `Some(_)`/`None`.
-- `I_ERROR[correlated_loss]` at `(p_x=0.3, p_y=0.2, p_z=0.1)`.
-- `M(p)` / `MR(p)` with `p ∈ {0.0, 0.5, 1.0}` to verify the readout-noise path that the recent `MZ(p)` bug fix exercised.
+This category is the smallest of the noise-exercising subdirs — the per-channel breadth lives in `generated/noise_sweeps/`. What stays here are small hand-written corner cases that the parameter sweeps don't naturally produce:
+- Boundary probabilities: `M(0.0) 0` (must equal noiseless `M`), `MR(1.0) 0` (always-flips-recorded-bit but resets correctly), `X_ERROR(1.0) 0` followed by readout (recorded bit is forced).
+- Ordering invariants: noise applied between two measurements of the same qubit; verifies the recorded bit reflects state at that moment.
+- Composition: `DEPOLARIZE1` followed by `M(p)` on the same qubit; verifies the two noise sources compose multiplicatively as expected.
 
-Higher `num_shots` (4096) than other categories because the circuits are tiny and statistical drift in noise is the failure mode this category exists to detect.
+Higher `num_shots` (4096) than other categories because the circuits are tiny (single shot is fast) and statistical drift in noise is the exact failure mode these locked-down corner cases exist to detect. ~8–10 fixtures.
+
+**Loss tests are deliberately absent.** Per Non-Goals, loss has no Stim oracle and is exercised by Rust unit tests in `crates/ppvm-stim/tests/executor.rs` (which already cover loss-marking, correlated-loss, and the `Option::None` measurement path).
 
 ## Per-Category Shot Defaults
 
 Tests bit-exact-compare ppvm's empirical means against committed `ppvm_bit_means`, so `num_shots` only affects test runtime — not test precision. The defaults below balance regen-time cross-check tightness against test-time speed:
 
+Per-fixture, the JSON's `num_shots` field is the source of truth — the regen script picks defaults at fixture-creation time per the table below. The category-level defaults are:
+
 | Category | num_shots | per-shot cost (release) | per-fixture wall time |
 |---|---|---|---|
-| `edge_cases/` (mostly deterministic) | 1 | <0.1 ms | <1 ms |
+| `edge_cases/` deterministic | 1 | <0.1 ms | <1 ms |
+| `edge_cases/` distribution | 256 | ~0.1–0.5 ms | ~50 ms |
 | `generated/codes/` distance ≤ 5 | 256 | ~0.5 ms | ~125 ms |
 | `generated/codes/` distance = 7 | 64 | ~5 ms | ~325 ms |
-| `generated/dialect/` no noise | 1 | <0.1 ms | <1 ms |
-| `generated/dialect/` with noise | 256 | ~0.5 ms | ~125 ms |
+| `generated/noise_sweeps/` | 4096 | ~0.05 ms | ~200 ms |
+| `generated/dialect/` deterministic | 1 | <0.1 ms | <1 ms |
+| `generated/dialect/` distribution | 256 | ~0.5 ms | ~125 ms |
 | `generated/random/` | 128 | ~1 ms | ~130 ms |
 | `noise_channels/` | 4096 | ~0.05 ms | ~200 ms |
 | `unsupported/` | n/a | n/a | <1 ms (parse + normalize only) |
 
-**Estimated total fixture-test runtime: ~25–30 seconds**, on top of the existing ~2 seconds of unit tests.
+Note that "deterministic" is selected based on whether the circuit's outcome is uniquely determined by the program (no measurement randomness, no noise) — not just on the absence of noise instructions. The regen script detects this by inspecting the AST and falls back to distribution mode whenever there's any source of randomness.
 
-If runtime later becomes a problem, the simplest knob is dropping `d=7` fixtures or reducing their `num_shots` to 32. We aren't tiering the suite into core/extended yet; revisit if the budget is exceeded in practice.
+**Estimated total fixture-test runtime: ~30–40 seconds**, on top of the existing ~2 seconds of unit tests. Larger than the previous estimate because the `noise_sweeps/` category adds 30–50 statistical fixtures at 4096 shots each.
 
-## Regen Script
+If runtime later becomes a problem, the simplest knobs are: dropping the `d=7` codes fixtures, reducing `noise_sweeps/`'s shot count to 2048, or splitting the suite into core/extended tiers. We aren't tiering yet; revisit if the budget is exceeded in practice.
 
-Single Python entry point at `crates/ppvm-stim/tests/data/regen.py`. Subcommands:
+## Regen Tool
+
+Lives at `crates/ppvm-stim/tests/regen-stim/` — its own uv-managed Python project with `pyproject.toml`, `uv.lock`, and `.python-version` for reproducibility. Standalone from `ppvm-python/` deliberately: `regen-stim` only needs `stim`; `ppvm-python` doesn't need `stim` as a runtime dep. Keeping them separate avoids contaminating the ppvm wheel's transitive dep graph and lets `regen-stim` pin its own Python version (currently 3.12).
+
+Direct dep: `stim>=1.15.0`. Indirectly the regen tool also needs `ppvm` installed to drive ppvm's sampler — added at implementation time as a path source pointing back at `../../../../../ppvm-python` (or via PYTHONPATH; the implementation plan picks the cleanest option).
+
+Entry point: a CLI (`regen-stim` script in `pyproject.toml`'s `[project.scripts]`) with subcommands:
 
 ```bash
-regen.py codes      [--distance 3,5,7] [--rounds 1,3,5] [--noise 0,0.001,0.01]
-regen.py dialect    [--name <name>]
-regen.py random     [--seed 0] [--count 25]
-regen.py unsupported [--name <name>]
-regen.py refresh    <fixture-path>     # re-record one fixture (e.g. after bumping Stim)
-regen.py verify     <fixture-path>     # re-run cross-check, error on mismatch, write nothing
-regen.py all                            # regenerate everything
+regen-stim codes      [--distance 3,5,7] [--rounds 1,3,5] [--noise 0,0.001,0.01]
+regen-stim noise-sweeps  [--channel <name>]
+regen-stim dialect    [--name <name>]
+regen-stim random     [--seed 0] [--count 25]
+regen-stim unsupported [--name <name>]
+regen-stim refresh    <fixture-path>      # re-record one fixture (e.g. after bumping Stim)
+regen-stim verify     <fixture-path>      # re-run cross-check, error on mismatch, write nothing
+regen-stim all                              # regenerate everything
 ```
 
-Inputs the script needs:
-- `stim` Python package installed in the regen environment.
-- A working ppvm install (the script imports `ppvm` to drive ppvm's sampler).
+Run from the regen-stim folder via `uv run regen-stim …` (uv handles venv + dep resolution).
+
+Output: writes `.stim` and `.expected.json` files into `crates/ppvm-stim/tests/data/<category>/` (the corpus directory). The path from regen-stim to corpus is `../data/`, hard-coded in the script (we're committing both, they live next to each other in the repo).
 
 Loop for distribution-mode fixtures:
 
@@ -298,20 +337,21 @@ Each snapshot captures the parsed `Program` debug-formatted via `insta::assert_d
 
 ## Implementation Order
 
-The corpus expansion is a substantial chunk of work; phasing it lets the test improvements land incrementally.
+The corpus expansion is a substantial chunk of work; phasing it lets the test improvements land incrementally. The `regen-stim/` Python project is already scaffolded (uv-managed, `stim>=1.15.0`); steps 5+ build on top of it.
 
-1. **Harness rewrite** — extend `stim_corpus.rs` to handle the three modes; add `serde_json` dep; keep the existing 8 fixtures working in their new schema.
-2. **Edge cases corpus** — fully hand-written, no Stim dependency, ~25 fixtures. Ships value immediately.
-3. **Noise channels corpus** — fully hand-written for deterministic-mode corner cases (p=0.0, p=1.0). Stim cross-check the rest at regen time.
-4. **Snapshot tests** — small, independent, useful immediately.
-5. **`regen.py` skeleton** — supports all three modes, but only wired to a few fixtures initially.
-6. **Generated codes corpus** — `regen.py codes` with full sweeps. Bulk of the new fixtures.
-7. **Generated dialect corpus** — Python templates for ppvm-specific instructions.
-8. **Generated random corpus** — random-walk generator.
-9. **Unsupported corpus** — auto-routed from `regen.py codes` (natural emission) plus per-instruction templates.
-10. **Documentation** — README per category, top-level `tests/data/README.md` describing the regen workflow.
+1. **Harness rewrite** — extend `stim_corpus.rs` to walk subdirectories recursively, dispatch on JSON `mode`, support all three modes; add `serde_json` dev-dep on `ppvm-stim`; convert the existing 8 fixtures to the new schema (most will be deterministic mode).
+2. **Edge cases corpus** — fully hand-written, no Stim dependency, ~20-25 fixtures. Ships value immediately.
+3. **Noise channels corpus** — hand-written corner cases (p=0.0/1.0 boundaries, ordering invariants); Stim cross-check the non-trivial ones at regen time. ~8-10 fixtures.
+4. **Snapshot tests** — `tests/parser_snapshots.rs` with `insta`, ~15 representative programs. Small, independent, useful immediately.
+5. **regen-stim CLI scaffolding** — fill in the empty `regen-stim/` project: shared library code (Stim invocation, ppvm invocation, JSON read/write, seed search loop, tolerance check), `[project.scripts]` entry, common subcommand framework. No fixtures generated yet — just the plumbing.
+6. **Generated codes corpus** — `regen-stim codes` with full sweeps. Bulk of the new fixtures (~80-100).
+7. **Generated noise_sweeps corpus** — `regen-stim noise-sweeps` with per-channel sweeps (~30-50 fixtures).
+8. **Generated dialect corpus** — Python templates for ppvm-specific instructions; deterministic-mode predominantly. (~10-15 fixtures)
+9. **Generated random corpus** — random-walk generator with three regimes (clifford-only / +noise / +readout). (~30-40 fixtures)
+10. **Unsupported corpus** — auto-routed from `regen-stim codes` natural emission + per-instruction templates. ~20-25 fixtures.
+11. **Documentation** — README per category subdir, top-level `tests/data/README.md` describing the regen workflow, regen-stim's own README.
 
-Each step ends with a passing `cargo test`. Steps 6–9 require Stim installed.
+Each step ends with a passing `cargo test`. Steps 5–10 require `stim` installed in the regen-stim venv (which `uv sync` from `regen-stim/` handles automatically).
 
 ## Out of Scope
 
@@ -322,6 +362,6 @@ Each step ends with a passing `cargo test`. Steps 6–9 require Stim installed.
 
 ## Open Questions for Phase-2 Test Work
 
-- When phase-2 implements an unsupported instruction (e.g. SWAP), `regen.py refresh tests/data/unsupported/swap.stim` flips it to a passing fixture. We need to commit to running this on every unsupported instruction phase-2 implements — easy to forget. Worth adding a CI check that asserts every `unsupported/` JSON's `awaiting_phase2_instruction` actually maps to an unsupported variant (would catch a stale mode after phase-2 lifted the restriction).
+- When phase-2 implements an unsupported instruction (e.g. SWAP), `uv run regen-stim refresh ../data/unsupported/swap.stim` flips it to a passing fixture. We need to commit to running this on every unsupported instruction phase-2 implements — easy to forget. Worth adding a CI check that asserts every `unsupported/` JSON's `awaiting_phase2_instruction` actually maps to an unsupported variant (would catch a stale mode after phase-2 lifted the restriction).
 - A future "fuzz" tier that generates malformed input and asserts the parser never panics — independent of the corpus, lives next to `parser_proptest.rs` if we adopt proptest.
 - Cross-check fidelity at higher `stim_num_shots` (e.g. 100k) is cheap but produces slightly more accurate `stim_bit_means`. We default to 10k; can revisit if cross-check tolerance starts producing false positives.

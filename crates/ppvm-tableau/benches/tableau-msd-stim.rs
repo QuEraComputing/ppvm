@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_stim::{execute, normalize, parse};
 use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
@@ -120,22 +121,22 @@ fn fmt_cz_index_pairs(q: &[usize], pairs: &[[usize; 2]]) -> String {
     format!("CZ {}", targets.join(" "))
 }
 
-fn msd_stim_func(circuit: &str) {
+fn msd_stim_func(prog: &ppvm_stim::TableauProgram) {
     let n_qubits = 17 * 5;
     let mut tab: Tab = GeneralizedTableau::new(n_qubits, 1e-10);
-    tab.run_stim_string(circuit);
+    execute(prog, &mut tab).expect("execute");
 }
 
 pub fn benchmark_suite_msd_stim(c: &mut Criterion, name: impl AsRef<str>) {
     let circuit = msd_stim_string();
+    let parsed = parse(&circuit).expect("parse");
+    let prog = normalize::to_tableau(&parsed).expect("normalize");
 
     let mut group = c.benchmark_group(name.as_ref());
     group.bench_function("msd-stim-0", |b| {
         b.iter_batched_ref(
             || {},
-            |_| {
-                msd_stim_func(&circuit);
-            },
+            |_| msd_stim_func(&prog),
             criterion::BatchSize::SmallInput,
         );
     });

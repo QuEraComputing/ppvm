@@ -20,6 +20,7 @@ rayon = { version = "1.10", optional = true }
 [dev-dependencies]
 criterion = "0.7.0"
 insta = { version = "1.43.2", features = ["yaml"] }
+ppvm-stim = { version = "0.1.0", path = "../ppvm-stim" }
 
 [[bench]]
 name = "tableau"

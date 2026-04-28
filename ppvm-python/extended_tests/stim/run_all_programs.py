@@ -2,7 +2,7 @@ import os
 import time
 from pathlib import Path
 
-from ppvm import GeneralizedTableau
+from ppvm import GeneralizedTableau, StimProgram
 
 folder = str(Path(__file__).parent / "stim-programs/")
 
@@ -43,7 +43,7 @@ for file in os.listdir(folder):
     tab = GeneralizedTableau(n_qubits[file])
 
     start = time.time()
-    tab.run_stim_file(file_path)
+    tab.run(StimProgram.from_file(file_path))
 
     print(f"Finished running {file}")
     print(f"Runtime (n_qubits = {n_qubits[file]}): {(time.time() - start) * 1e3} ms")

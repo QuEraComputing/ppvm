@@ -202,59 +202,51 @@ class GeneralizedTableau(
         """
         return self._interface.loss_values()
 
-    def run_stim_string(self, circuit: str) -> list[MeasurementResult]:
-        """Execute a STIM circuit given as a string and return all measurement results.
+    def run(self, prog: "StimProgram") -> list[MeasurementResult]:
+        """Execute a parsed Stim program against this tableau (single shot).
 
         .. note::
-            This method **mutates** the tableau in place. To run multiple
-            independent shots, call :meth:`fork` to obtain a fresh copy before
-            each run.
-
-        Parses and runs a STIM-format circuit, applying each instruction to
-        this tableau in sequence. Only the squin subset of the STIM instruction
-        set is supported; control flow is not supported. Measurements are
-        collected in the order they appear in the circuit, following the STIM
-        convention: each measurement instruction appends its results
-        left-to-right as the qubits are listed, and later instructions append
-        after earlier ones.
-
-        Args:
-            circuit: A multi-line string containing a STIM circuit.
-
-        Returns:
-            A list of ``MeasurementResult`` values, one per measured qubit,
-            in circuit order. Each value is ``ZERO``, ``ONE``, or ``LOST``
-            (if the qubit had been lost prior to measurement).
+            This **mutates** the tableau in place. For independent shots use
+            :meth:`fork` or the :func:`ppvm.sample_stim` / :meth:`sample`
+            helpers (which build a fresh tableau per shot).
         """
-        results = self._interface.run_stim_string(circuit)
+        from .stim_program import StimProgram  # avoid import cycle
+        if not isinstance(prog, StimProgram):
+            raise TypeError("expected StimProgram")
+        results = self._interface.run(prog._inner)
         return list(map(MeasurementResult._from_raw, results))
 
-    def run_stim_file(self, file_path: str) -> list[MeasurementResult]:
-        """Execute a STIM circuit from a file and return all measurement results.
+    @classmethod
+    def sample(
+        cls,
+        prog: "StimProgram",
+        n_qubits: int,
+        min_abs_coeff: float = 1e-10,
+        num_shots: int = 1,
+        seed: int | None = None,
+    ) -> list[list[MeasurementResult]]:
+        """Run ``num_shots`` shots of ``prog`` and return all measurement results.
 
-        .. note::
-            This method **mutates** the tableau in place. To run multiple
-            independent shots, call :meth:`fork` to obtain a fresh copy before
-            each run.
-
-        Reads the circuit from ``file_path`` and runs it identically to
-        :meth:`run_stim_string`. Only the squin subset of the STIM instruction
-        set is supported; control flow is not supported. Measurements are
-        collected in the order they appear in the circuit, following the STIM
-        convention: each measurement instruction appends its results
-        left-to-right as the qubits are listed, and later instructions append
-        after earlier ones.
-
-        Args:
-            file_path: Path to a ``.stim`` file containing a STIM circuit.
-
-        Returns:
-            A list of ``MeasurementResult`` values, one per measured qubit,
-            in circuit order. Each value is ``ZERO``, ``ONE``, or ``LOST``
-            (if the qubit had been lost prior to measurement).
-
-        Raises:
-            pyo3_runtime.PanicException: If the file cannot be read.
+        Each shot starts from a fresh tableau, so this is the right entry
+        point for multi-shot sampling.
         """
-        results = self._interface.run_stim_file(file_path)
-        return list(map(MeasurementResult._from_raw, results))
+        from .stim_program import StimProgram
+        if not isinstance(prog, StimProgram):
+            raise TypeError("expected StimProgram")
+        N_interface = math.ceil(n_qubits / 64.0)
+        native_cls = getattr(ppvm_python_native, f"GeneralizedTableau{N_interface}")
+        raw = native_cls.sample(prog._inner, n_qubits, min_abs_coeff, num_shots, seed)
+        return [list(map(MeasurementResult._from_raw, shot)) for shot in raw]
+
+
+def sample_stim(
+    prog: "StimProgram",
+    n_qubits: int,
+    min_abs_coeff: float = 1e-10,
+    num_shots: int = 1,
+    seed: int | None = None,
+) -> list[list[MeasurementResult]]:
+    """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``."""
+    return GeneralizedTableau.sample(
+        prog, n_qubits, min_abs_coeff=min_abs_coeff, num_shots=num_shots, seed=seed
+    )

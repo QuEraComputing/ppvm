@@ -846,12 +846,16 @@ version = "0.1.0"
 dependencies = [
  "bitvec",
  "chumsky",
+ "insta",
  "itertools 0.14.0",
  "num",
  "ppvm-runtime",
  "ppvm-tableau",
  "rand",
+ "serde",
+ "serde_json",
  "thiserror",
+ "walkdir",
 ]
 
 [[package]]

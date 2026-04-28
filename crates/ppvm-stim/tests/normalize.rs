@@ -202,3 +202,26 @@ fn untagged_i_error_rejected_as_invalid_tag() {
     let err = norm_err("I_ERROR(0.1) 0");
     assert!(matches!(err, NormalizeError::InvalidTag { .. }));
 }
+
+#[test]
+fn measure_noise_arg_passes_through_normalize() {
+    let p = norm("MZ(0.01) 0");
+    let Instruction::Measure { kind, noise, .. } = &p.instructions[0] else { panic!() };
+    assert_eq!(*kind, MeasureKind::M);
+    assert!((*noise - 0.01).abs() < 1e-12);
+}
+
+#[test]
+fn measure_no_noise_arg_defaults_to_zero() {
+    let p = norm("M 0");
+    let Instruction::Measure { noise, .. } = &p.instructions[0] else { panic!() };
+    assert_eq!(*noise, 0.0);
+}
+
+#[test]
+fn mr_noise_passes_through() {
+    let p = norm("MR(0.5) 0");
+    let Instruction::Measure { kind, noise, .. } = &p.instructions[0] else { panic!() };
+    assert_eq!(*kind, MeasureKind::MR);
+    assert!((*noise - 0.5).abs() < 1e-12);
+}

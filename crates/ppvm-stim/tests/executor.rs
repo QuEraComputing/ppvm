@@ -327,3 +327,69 @@ fn test_stim_zcz_alias() {
     let results = run_str("X 0\nX 1\nZCZ 0 1\nM 0 1", &mut tab);
     assert_eq!(results, vec![Some(true), Some(true)]);
 }
+
+// ============================================================
+// Measurement readout noise tests
+// ============================================================
+
+#[test]
+fn measure_noise_zero_equals_noiseless() {
+    // X 0; MZ(0.0) 0 should always give Some(true).
+    let (results, _) = run("X 0\nMZ(0.0) 0", 1);
+    assert_eq!(results, vec![Some(true)]);
+}
+
+#[test]
+fn measure_noise_one_always_flips() {
+    // X 0; MZ(1.0) 0 — the true outcome is 1, but readout always flips it to 0.
+    for _ in 0..16 {
+        let (results, _) = run("X 0\nMZ(1.0) 0", 1);
+        assert_eq!(results, vec![Some(false)]);
+    }
+    // Also check on |0>: MZ(1.0) of |0> always records 1.
+    for _ in 0..16 {
+        let (results, _) = run("MZ(1.0) 0", 1);
+        assert_eq!(results, vec![Some(true)]);
+    }
+}
+
+#[test]
+fn measure_noise_does_not_affect_state() {
+    // After X 0; MZ(1.0) 0; MZ 0:
+    //   First measurement records 0 (true outcome 1, noise flipped).
+    //   Second measurement reads the *true* state (still |1>) and records 1.
+    let (results, _) = run("X 0\nMZ(1.0) 0\nMZ 0", 1);
+    assert_eq!(results, vec![Some(false), Some(true)]);
+}
+
+#[test]
+fn mr_noise_one_flips_recorded_but_resets_correctly() {
+    // X 0; MR(1.0) 0; MZ 0:
+    //   MR(1.0): measures (true outcome 1), records flipped 0, resets to |0>.
+    //   MZ 0: measures |0>, records 0.
+    let (results, _) = run("X 0\nMR(1.0) 0\nMZ 0", 1);
+    assert_eq!(results, vec![Some(false), Some(false)]);
+}
+
+#[test]
+fn measure_noise_distribution_within_3_sigma() {
+    use ppvm_stim::sample;
+    // X 0; MZ(0.3) 0 — true outcome is 1, recorded bit flips with prob 0.3.
+    // So recorded == 0 with probability 0.3 over many shots.
+    let prog = parse("X 0\nMZ(0.3) 0").unwrap();
+    let tprog = normalize::to_tableau(&prog).unwrap();
+    let n = 4096usize;
+    let mut seed_counter: u64 = 0;
+    let shots = sample::<_, _, _, _>(&tprog, n, || {
+        seed_counter += 1;
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+    })
+    .unwrap();
+    let zeros = shots.iter().filter(|s| s[0] == Some(false)).count();
+    let mean = (n as f64) * 0.3;
+    let std = ((n as f64) * 0.3 * 0.7).sqrt();
+    assert!(
+        ((zeros as f64) - mean).abs() < 3.0 * std,
+        "got {zeros} zeros, expected mean {mean} +/- 3*{std}"
+    );
+}

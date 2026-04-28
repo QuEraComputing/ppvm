@@ -263,13 +263,24 @@ fn parse_line(line: &str, line_no: usize, _line_map: &LineMap) -> Result<RawInst
         _ => Vec::new(),
     };
 
+    // Annotations carry free-form targets (e.g. `DETECTOR rec[-1]`,
+    // `OBSERVABLE_INCLUDE(0) rec[-3] rec[-1]`). Phase-1 cannot represent
+    // measurement-record / sweep / Pauli-product targets, but annotations are
+    // executed as no-ops so dropping non-numeric tokens is safe and matches
+    // the silent tolerance of the previous `RunStim` impl.
+    let tolerate_non_numeric_targets = matches!(entry, TableEntry::Annotation { .. });
+
     let targets: Vec<usize> = targets_part
         .split_whitespace()
-        .map(|t| t.parse::<usize>().map_err(|_| ParseError::Syntax {
-            line: line_no,
-            col: 1,
-            message: format!("invalid target {t:?}"),
-        }))
+        .filter_map(|t| match t.parse::<usize>() {
+            Ok(n) => Some(Ok(n)),
+            Err(_) if tolerate_non_numeric_targets => None,
+            Err(_) => Some(Err(ParseError::Syntax {
+                line: line_no,
+                col: 1,
+                message: format!("invalid target {t:?}"),
+            })),
+        })
         .collect::<Result<_, _>>()?;
 
     // Validate arg count and target arity.
@@ -300,6 +311,16 @@ fn parse_line(line: &str, line_no: usize, _line_map: &LineMap) -> Result<RawInst
             }
             ArgCount::Exact(n) => {
                 if args.len() != n {
+                    return Err(ParseError::ArgCount {
+                        name: canonical.to_string(),
+                        expected: n,
+                        found: args.len(),
+                        line: line_no,
+                    });
+                }
+            }
+            ArgCount::Optional(n) => {
+                if !args.is_empty() && args.len() != n {
                     return Err(ParseError::ArgCount {
                         name: canonical.to_string(),
                         expected: n,

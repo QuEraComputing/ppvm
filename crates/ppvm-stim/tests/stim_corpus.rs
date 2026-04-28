@@ -22,7 +22,11 @@ const CASES: &[(&str, Expect)] = &[
     ("depolarize_smoke.stim",      Expect::Ok),
     ("swap_unsupported.stim",      Expect::NormalizeUnsupported("SWAP")),
     ("mx_unsupported.stim",        Expect::NormalizeUnsupported("MX")),
-    ("repetition_code_d3_r3.stim", Expect::ParseFails),
+    // The file uses `rec[-k]` targets on `DETECTOR` / `OBSERVABLE_INCLUDE`.
+    // Phase-1 cannot represent measurement-record targets, but the parser
+    // tolerates non-numeric tokens on annotations (which are no-ops in our
+    // pipeline) so the file parses, normalizes, and executes cleanly.
+    ("repetition_code_d3_r3.stim", Expect::Ok),
 ];
 
 fn data_dir() -> PathBuf {

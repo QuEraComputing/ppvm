@@ -182,19 +182,26 @@ where
                     }
                 }
             },
-            Instruction::Measure { kind, targets, .. } => match kind {
+            Instruction::Measure { kind, targets, noise, .. } => match kind {
                 MeasureKind::M => {
                     for &q in targets {
-                        results.push(tab.measure(q));
+                        results.push(tab.measure_noisy(q, *noise));
                     }
                 }
                 MeasureKind::MR => {
                     for &q in targets {
-                        let outcome = tab.measure(q);
-                        if outcome == Some(true) {
+                        // Use the true outcome to decide whether to reset, then apply
+                        // measurement noise only to the *recorded* bit.
+                        let true_outcome = tab.measure(q);
+                        if true_outcome == Some(true) {
                             tab.x(q);
                         }
-                        results.push(outcome);
+                        // Apply readout noise to the recorded bit.
+                        let recorded = match true_outcome {
+                            Some(b) if *noise > 0.0 && tab.bernoulli(*noise) => Some(!b),
+                            other => other,
+                        };
+                        results.push(recorded);
                     }
                 }
             },

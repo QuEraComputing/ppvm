@@ -52,12 +52,18 @@ fn normalize_slice(
                     line: *line,
                 });
             }
-            RawInstruction::Measure { name, targets, line, .. } => {
+            RawInstruction::Measure { name, args, targets, line, .. } => {
                 let kind = measure_to_kind(*name, *line)?;
+                let noise = args.first().copied().unwrap_or(0.0);
                 *measure_count = measure_count.saturating_add(
                     targets.len().saturating_mul(enclosing_repeat_factor as usize),
                 );
-                out.push(Instruction::Measure { kind, targets: targets.clone(), line: *line });
+                out.push(Instruction::Measure {
+                    kind,
+                    targets: targets.clone(),
+                    noise,
+                    line: *line,
+                });
             }
             RawInstruction::Annotation { line, .. } => {
                 out.push(Instruction::Annotation { line: *line });

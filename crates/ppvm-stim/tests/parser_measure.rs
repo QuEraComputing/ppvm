@@ -1,4 +1,4 @@
-use ppvm_stim::{parse, RawInstruction, MeasureName, AnnotationKind};
+use ppvm_stim::{parse, ParseError, RawInstruction, MeasureName, AnnotationKind};
 
 #[test]
 fn parse_m_targets() {
@@ -56,4 +56,59 @@ fn parse_observable_include_with_paren_arg() {
     let RawInstruction::Annotation { kind, args, .. } = &p.instructions[0] else { panic!() };
     assert_eq!(*kind, AnnotationKind::ObservableInclude);
     assert_eq!(args.len(), 1);
+}
+
+#[test]
+fn parse_m_with_noise_arg() {
+    let p = parse("M(0.001) 0 1 2").unwrap();
+    match &p.instructions[0] {
+        RawInstruction::Measure { name, args, targets, .. } => {
+            assert_eq!(*name, MeasureName::M);
+            assert_eq!(args.len(), 1);
+            assert!((args[0] - 0.001).abs() < 1e-12);
+            assert_eq!(targets, &[0, 1, 2]);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn parse_mz_with_noise_arg() {
+    let p = parse("MZ(0.5) 5").unwrap();
+    let RawInstruction::Measure { name, args, .. } = &p.instructions[0] else {
+        panic!()
+    };
+    assert_eq!(*name, MeasureName::MZ);
+    assert_eq!(args.len(), 1);
+    assert!((args[0] - 0.5).abs() < 1e-12);
+}
+
+#[test]
+fn parse_mr_with_noise_arg() {
+    let p = parse("MR(0.01) 0").unwrap();
+    let RawInstruction::Measure { name, args, .. } = &p.instructions[0] else {
+        panic!()
+    };
+    assert_eq!(*name, MeasureName::MR);
+    assert_eq!(args[0], 0.01);
+}
+
+#[test]
+fn parse_m_without_noise_still_works() {
+    let p = parse("M 0").unwrap();
+    let RawInstruction::Measure { args, .. } = &p.instructions[0] else { panic!() };
+    assert!(args.is_empty());
+}
+
+#[test]
+fn parse_m_with_two_args_rejected() {
+    let err = parse("M(0.1, 0.2) 0").unwrap_err();
+    match err {
+        ParseError::ArgCount { name, expected, found, .. } => {
+            assert_eq!(name, "M");
+            assert_eq!(expected, 1);
+            assert_eq!(found, 2);
+        }
+        other => panic!("{other:?}"),
+    }
 }

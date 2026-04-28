@@ -104,17 +104,17 @@ const TABLE: &[(&str, TableEntry)] = &[
     ("ELSE_CORRELATED_ERROR",   TableEntry::Noise { name: NoiseName::ElseCorrelatedError,    args: ArgCount::Exact(1), targets: TargetArity::AtLeastOne }),
 
     // --- Measurements ---
-    ("M",   TableEntry::Measure { name: MeasureName::M,   args: ArgCount::None, targets: TargetArity::AtLeastOne }),
-    ("MZ",  TableEntry::Measure { name: MeasureName::MZ,  args: ArgCount::None, targets: TargetArity::AtLeastOne }),
-    ("MR",  TableEntry::Measure { name: MeasureName::MR,  args: ArgCount::None, targets: TargetArity::AtLeastOne }),
-    ("MX",  TableEntry::Measure { name: MeasureName::MX,  args: ArgCount::None, targets: TargetArity::AtLeastOne }),
-    ("MY",  TableEntry::Measure { name: MeasureName::MY,  args: ArgCount::None, targets: TargetArity::AtLeastOne }),
-    ("MRX", TableEntry::Measure { name: MeasureName::MRX, args: ArgCount::None, targets: TargetArity::AtLeastOne }),
-    ("MRY", TableEntry::Measure { name: MeasureName::MRY, args: ArgCount::None, targets: TargetArity::AtLeastOne }),
-    ("MXX", TableEntry::Measure { name: MeasureName::MXX, args: ArgCount::None, targets: TargetArity::Pairs }),
-    ("MYY", TableEntry::Measure { name: MeasureName::MYY, args: ArgCount::None, targets: TargetArity::Pairs }),
-    ("MZZ", TableEntry::Measure { name: MeasureName::MZZ, args: ArgCount::None, targets: TargetArity::Pairs }),
-    ("MPP", TableEntry::Measure { name: MeasureName::MPP, args: ArgCount::None, targets: TargetArity::AtLeastOne }),
+    ("M",   TableEntry::Measure { name: MeasureName::M,   args: ArgCount::Optional(1), targets: TargetArity::AtLeastOne }),
+    ("MZ",  TableEntry::Measure { name: MeasureName::MZ,  args: ArgCount::Optional(1), targets: TargetArity::AtLeastOne }),
+    ("MR",  TableEntry::Measure { name: MeasureName::MR,  args: ArgCount::Optional(1), targets: TargetArity::AtLeastOne }),
+    ("MX",  TableEntry::Measure { name: MeasureName::MX,  args: ArgCount::Optional(1), targets: TargetArity::AtLeastOne }),
+    ("MY",  TableEntry::Measure { name: MeasureName::MY,  args: ArgCount::Optional(1), targets: TargetArity::AtLeastOne }),
+    ("MRX", TableEntry::Measure { name: MeasureName::MRX, args: ArgCount::Optional(1), targets: TargetArity::AtLeastOne }),
+    ("MRY", TableEntry::Measure { name: MeasureName::MRY, args: ArgCount::Optional(1), targets: TargetArity::AtLeastOne }),
+    ("MXX", TableEntry::Measure { name: MeasureName::MXX, args: ArgCount::Optional(1), targets: TargetArity::Pairs }),
+    ("MYY", TableEntry::Measure { name: MeasureName::MYY, args: ArgCount::Optional(1), targets: TargetArity::Pairs }),
+    ("MZZ", TableEntry::Measure { name: MeasureName::MZZ, args: ArgCount::Optional(1), targets: TargetArity::Pairs }),
+    ("MPP", TableEntry::Measure { name: MeasureName::MPP, args: ArgCount::Optional(1), targets: TargetArity::AtLeastOne }),
 
     // --- Annotations ---
     ("DETECTOR",           TableEntry::Annotation { kind: AnnotationKind::Detector,          args: ArgCount::None, targets: TargetArity::Any }),

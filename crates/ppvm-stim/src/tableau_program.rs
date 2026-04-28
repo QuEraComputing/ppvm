@@ -25,6 +25,9 @@ pub enum Instruction {
     Measure {
         kind: MeasureKind,
         targets: Vec<usize>,
+        /// Probability of the *recorded* bit being flipped (Stim's M(p) semantics).
+        /// 0.0 means no noise.
+        noise: f64,
         line: usize,
     },
     /// Phase-1 no-op; preserved so executor can track them for future tooling.

@@ -128,6 +128,10 @@ pub enum ArgCount {
     None,
     /// Exactly `n` args.
     Exact(usize),
+    /// Either no args or exactly `n` args. Used by Stim measurement
+    /// instructions, where the optional single arg is the readout-flip
+    /// probability.
+    Optional(usize),
 }
 
 /// Required target-count rule for a Stim instruction.

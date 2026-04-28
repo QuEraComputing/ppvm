@@ -15,7 +15,9 @@ pub enum CircuitInstruction {
     SqrtYAdj,
 
     // Controlled gates
+    #[mnemonic = "cnot"]
     CNOT,
+    #[mnemonic = "cz"]
     CZ,
 
     // T gate
@@ -23,13 +25,19 @@ pub enum CircuitInstruction {
     TAdj,
 
     // Single-qubit rotations
+    #[mnemonic = "rx"]
     RX,
+    #[mnemonic = "ry"]
     RY,
+    #[mnemonic = "rz"]
     RZ,
 
     // Two-qubit rotations
+    #[mnemonic = "rxx"]
     RXX,
+    #[mnemonic = "ryy"]
     RYY,
+    #[mnemonic = "rzz"]
     RZZ,
 
     // U3

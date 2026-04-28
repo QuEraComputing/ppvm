@@ -27,7 +27,7 @@ pub struct Tableau<T: Config> {
 }
 
 impl<T: Config> Tableau<T> {
-    pub fn new(n_qubits: usize) -> Self {
+    fn new_data(n_qubits: usize) -> Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>> {
         // Initialize tableau for 0 state
         let mut data: Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>> =
             Vec::with_capacity(2 * n_qubits);
@@ -44,7 +44,11 @@ impl<T: Config> Tableau<T> {
             pw.set(i, Pauli::Z);
             data.push(pw);
         }
+        data
+    }
 
+    pub fn new(n_qubits: usize) -> Self {
+        let data = Tableau::<T>::new_data(n_qubits);
         Self {
             n_qubits,
             data,
@@ -56,6 +60,11 @@ impl<T: Config> Tableau<T> {
         let mut t = Self::new(n_qubits);
         t.rng = SmallRng::seed_from_u64(seed);
         t
+    }
+
+    pub fn reset_all(&mut self) {
+        let data = Tableau::<T>::new_data(self.n_qubits);
+        self.data = data;
     }
 
     #[inline]
@@ -543,6 +552,18 @@ where
         let mut s = Self::new(n_qubits, coefficient_threshold);
         s.tableau.rng = SmallRng::seed_from_u64(seed);
         s
+    }
+
+    pub fn reset_all(&mut self) {
+        self.tableau.reset_all();
+
+        let mut coefficients = C::new();
+        let complex_one = Complex {
+            re: T::Coeff::one(),
+            im: T::Coeff::zero(),
+        };
+        coefficients.unsafe_insert(I::zero(), complex_one);
+        self.coefficients = coefficients;
     }
 
     /// Clone the quantum state but reinitialize the RNG, producing an independent simulation

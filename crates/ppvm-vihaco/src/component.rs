@@ -185,3 +185,15 @@ where
         Ok(None)
     }
 }
+
+impl<T, I, C> vihaco::Reset for Circuit<T, I, C>
+where
+    T: Config<Coeff = f64>,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    I: TableauIndex + Send + Sync + std::fmt::Debug,
+    C: SparseVector<Complex64, I> + std::fmt::Debug,
+{
+    fn reset(&mut self) {
+        self.tab.reset_all();
+    }
+}

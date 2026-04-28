@@ -1,0 +1,12 @@
+fn @main() {
+    const.u64 0
+    gate h
+
+    const.u64 0
+    const.u64 1
+    gate cnot
+
+    const.u64 0
+    const.f64 0.1
+    gate rx
+}

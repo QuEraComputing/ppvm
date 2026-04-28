@@ -1161,6 +1161,8 @@ dependencies = [
  "ppvm-runtime",
  "ppvm-tableau",
  "vihaco",
+ "vihaco-cpu",
+ "vihaco-parser",
 ]
 
 [[package]]
@@ -1613,6 +1615,16 @@ dependencies = [
  "eyre",
  "log",
  "vihaco-macros",
+ "vihaco-parser",
+]
+
+[[package]]
+name = "vihaco-cpu"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "log",
+ "vihaco",
  "vihaco-parser",
 ]
 

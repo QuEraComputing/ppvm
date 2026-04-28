@@ -10,3 +10,5 @@ num = "0.4.3"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau", features = ["rayon"] }
 vihaco = { version = "0.1.0", path = "../../../stellarscope/crates/vihaco" }
+vihaco-cpu = { version = "0.1.0", path = "../../../stellarscope/crates/vihaco-cpu" }
+vihaco-parser = { version = "0.1.0", path = "../../../stellarscope/crates/vihaco-parser" }

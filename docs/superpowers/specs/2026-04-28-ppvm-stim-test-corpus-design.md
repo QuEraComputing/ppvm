@@ -98,7 +98,7 @@ For circuits with any source of randomness — either noise instructions or quan
 }
 ```
 
-Test action: parse + normalize; call `sample(prog, num_shots, || GeneralizedTableau::new_with_seed(n, 1e-10, ppvm_seed))`; compute per-measurement empirical means; assert exact f64 equality with `ppvm_bit_means`.
+Test action: parse + normalize; call `sample(prog, num_shots, ...)` with a closure that returns `GeneralizedTableau::new_with_seed(n, 1e-10, ppvm_seed + k)` for shot `k` (i.e. shot 0 uses `ppvm_seed`, shot 1 uses `ppvm_seed + 1`, etc.); compute per-bit empirical means as `sum_over_shots(bit) / num_shots`; assert exact f64 equality with `ppvm_bit_means`. The regen tool must replicate this exact seed sequence and summation order — any deviation breaks the bit-exact compare.
 
 ### Mode 3: unsupported
 

@@ -37,28 +37,38 @@ enum Expected {
         ppvm_bit_means: Vec<f64>,
         // Documentation-only fields; harness does not use them.
         #[serde(default)]
+        #[allow(dead_code)]
         stim_seed: Option<u64>,
         #[serde(default)]
+        #[allow(dead_code)]
         stim_num_shots: Option<usize>,
         #[serde(default)]
+        #[allow(dead_code)]
         stim_bit_means: Option<Vec<f64>>,
         #[serde(default)]
+        #[allow(dead_code)]
         tolerance_sigma_at_regen: Option<f64>,
         #[serde(default)]
+        #[allow(dead_code)]
         stim_version: Option<String>,
     },
     Unsupported {
         awaiting_phase2_instruction: String,
         // Pre-recorded for phase-2 flip; harness does not use them.
         #[serde(default)]
+        #[allow(dead_code)]
         stim_seed: Option<u64>,
         #[serde(default)]
+        #[allow(dead_code)]
         stim_num_shots: Option<usize>,
         #[serde(default)]
+        #[allow(dead_code)]
         stim_bit_means: Option<Vec<f64>>,
         #[serde(default)]
+        #[allow(dead_code)]
         tolerance_sigma_at_regen: Option<f64>,
         #[serde(default)]
+        #[allow(dead_code)]
         stim_version: Option<String>,
     },
 }
@@ -261,11 +271,11 @@ fn run_one(label: &str, src: &str, expected: &Expected) -> Result<(), String> {
         } => {
             let tprog = normalize::to_tableau(&prog)
                 .map_err(|e| format!("{label}: normalize failed: {e}"))?;
-            // Single seed reused across all shots — sample() builds a fresh
-            // tableau per shot, but seeds them from a counter starting at
-            // ppvm_seed. We rely on `new_with_seed` advancing the seed by 1
-            // per call so ppvm's internal RNG stream is fully determined by
-            // (program, ppvm_seed, num_shots).
+            // sample() builds a fresh tableau per shot via this closure; the
+            // closure increments `next_seed` so shot k uses `ppvm_seed + k`.
+            // The regen tool MUST replicate this exact sequence (same start,
+            // same +1 step, same per-bit `sum / num_shots` summation order) —
+            // any deviation makes the bit-exact f64 compare below fail.
             let mut next_seed = *ppvm_seed;
             let shots = sample(&tprog, *num_shots, || {
                 let s = next_seed;

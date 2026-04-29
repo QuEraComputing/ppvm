@@ -12,15 +12,18 @@
 use std::path::{Path, PathBuf};
 
 use ppvm_runtime::config::indexmap::ByteFxHashF64;
-use ppvm_stim::{NormalizeError, execute, normalize, parse, sample};
+use ppvm_stim::{NormalizeError, ParseError, execute, normalize, parse, sample};
 use ppvm_tableau::prelude::*;
 use serde::Deserialize;
 use walkdir::WalkDir;
 
 type Tab = GeneralizedTableau<ByteFxHashF64<8>, usize>;
 
-/// 64-qubit tableau is enough for every fixture we plan to commit
-/// (max distance-7 surface code is ~50 data qubits + ancillas).
+/// Storage `<8>` (64 bits per Pauli word) caps the tableau at 64 qubits.
+/// `regen-stim codes` skips circuits that exceed this; bumping the budget
+/// requires changing the storage parameter and regenerating every committed
+/// `ppvm_bit_means` (because the bit-exact compare is sensitive to tableau
+/// shape).
 const N_QUBITS: usize = 64;
 const COEFF_THRESHOLD: f64 = 1e-10;
 
@@ -204,28 +207,51 @@ fn corpus_obeys_expectations() {
 }
 
 fn run_one(label: &str, src: &str, expected: &Expected) -> Result<(), String> {
+    // Unsupported mode: rejection may come from either parse (unknown
+    // instruction) or normalize. Both are "phase-1 doesn't support this"
+    // signals; phase-2 will lift either.
+    if let Expected::Unsupported {
+        awaiting_phase2_instruction,
+        ..
+    } = expected
+    {
+        match parse(src) {
+            Err(ParseError::UnknownInstruction { name, .. }) => {
+                if name == *awaiting_phase2_instruction {
+                    return Ok(());
+                }
+                return Err(format!(
+                    "{label}: expected Unsupported({awaiting_phase2_instruction}), parser rejected '{name}'"
+                ));
+            }
+            Err(other) => {
+                return Err(format!("{label}: parse failed: {other}"));
+            }
+            Ok(prog) => match normalize::to_tableau(&prog) {
+                Err(NormalizeError::Unsupported { name, .. }) => {
+                    if name != *awaiting_phase2_instruction {
+                        return Err(format!(
+                            "{label}: expected Unsupported({awaiting_phase2_instruction}), got Unsupported({name})"
+                        ));
+                    }
+                    return Ok(());
+                }
+                Err(other) => {
+                    return Err(format!("{label}: expected Unsupported, got {other:?}"));
+                }
+                Ok(_) => {
+                    return Err(format!(
+                        "{label}: expected Unsupported({awaiting_phase2_instruction}), but normalize succeeded"
+                    ));
+                }
+            },
+        }
+    }
+
     let prog = parse(src).map_err(|e| format!("{label}: parse failed: {e}"))?;
 
     match expected {
-        Expected::Unsupported {
-            awaiting_phase2_instruction,
-            ..
-        } => match normalize::to_tableau(&prog) {
-            Err(NormalizeError::Unsupported { name, .. }) => {
-                if name != *awaiting_phase2_instruction {
-                    return Err(format!(
-                        "{label}: expected Unsupported({awaiting_phase2_instruction}), got Unsupported({name})"
-                    ));
-                }
-                Ok(())
-            }
-            Err(other) => Err(format!(
-                "{label}: expected Unsupported, got {other:?}"
-            )),
-            Ok(_) => Err(format!(
-                "{label}: expected Unsupported({awaiting_phase2_instruction}), but normalize succeeded"
-            )),
-        },
+        Expected::Unsupported { .. } => unreachable!("handled above"),
 
         Expected::Deterministic {
             ppvm_seed,

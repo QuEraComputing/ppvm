@@ -1,0 +1,26 @@
+{
+  "mode": "unsupported",
+  "awaiting_phase2_instruction": "C_XYZ",
+  "stim_seed": 0,
+  "stim_num_shots": 10000,
+  "stim_bit_means": [
+    0.5018,
+    0.4961,
+    0.4925,
+    0.5024,
+    0.4953,
+    0.4942,
+    0.0351,
+    0.0325,
+    0.0365,
+    0.4974,
+    0.506,
+    0.4973,
+    0.4892,
+    0.5008,
+    0.5055,
+    0.5021
+  ],
+  "tolerance_sigma_at_regen": 5.0,
+  "stim_version": "1.15.0"
+}

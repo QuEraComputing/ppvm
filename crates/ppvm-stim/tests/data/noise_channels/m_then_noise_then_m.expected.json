@@ -1,0 +1,6 @@
+{
+  "mode": "distribution",
+  "num_shots": 4096,
+  "ppvm_seed": 0,
+  "ppvm_bit_means": [0.0, 0.3017578125]
+}

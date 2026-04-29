@@ -127,7 +127,7 @@ def _verify(path: Path) -> int:
         return 0
     ref = core.run_stim(
         src,
-        num_shots=existing["stim_num_shots"],
+        num_shots=existing.get("stim_num_shots", core.DEFAULT_STIM_SHOTS),
         seed=existing.get("stim_seed", 0),
     )
     ppvm_run = core.run_ppvm(

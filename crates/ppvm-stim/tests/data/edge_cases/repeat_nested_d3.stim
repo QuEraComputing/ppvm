@@ -1,0 +1,8 @@
+REPEAT 2 {
+    REPEAT 2 {
+        REPEAT 2 {
+            X 0
+        }
+    }
+}
+M 0

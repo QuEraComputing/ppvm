@@ -1,0 +1,11 @@
+# Many single-target M's interleaved with gates.
+H 0
+M 0
+X 1
+M 1
+H 0
+M 0
+H 1
+M 1
+S 0
+M 0

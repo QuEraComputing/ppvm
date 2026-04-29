@@ -1,0 +1,7 @@
+# All pi-expression shapes; each rotation cancels with its inverse.
+I[R_X(theta=pi)] 0
+I[R_X(theta=pi)] 0
+I[R_X(theta=2.0*pi)] 1
+I[R_X(theta=0.5*pi)] 2
+I[R_X(theta=1.5*pi)] 2
+M 0 1 2

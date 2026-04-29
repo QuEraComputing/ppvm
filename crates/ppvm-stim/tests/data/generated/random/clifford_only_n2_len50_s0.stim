@@ -1,0 +1,52 @@
+R 0 1
+CY 0 1
+CY 1 0
+CY 0 1
+S 1
+CZ 0 1
+S 1
+S 1
+X 1
+Y 0
+CZ 0 1
+CY 0 1
+CY 0 1
+CX 0 1
+S_DAG 1
+Z 1
+Y 0
+X 1
+SQRT_X 1
+Y 0
+S_DAG 0
+CZ 1 0
+S_DAG 0
+CX 1 0
+X 0
+CZ 1 0
+Z 0
+S 1
+Z 0
+Y 0
+CY 0 1
+H 0
+CZ 0 1
+CZ 0 1
+X 0
+Z 0
+H 0
+CX 0 1
+H 0
+S 1
+S 1
+S_DAG 0
+H 0
+CY 0 1
+SQRT_Y 0
+CX 0 1
+CY 1 0
+SQRT_Y 0
+SQRT_X 1
+CY 1 0
+H 1
+M 0 1

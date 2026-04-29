@@ -1,0 +1,29 @@
+{
+  "mode": "distribution",
+  "num_shots": 128,
+  "ppvm_seed": 0,
+  "ppvm_bit_means": [
+    0.0,
+    0.0859375,
+    1.0,
+    0.5,
+    0.0859375,
+    0.53125,
+    0.0,
+    0.5234375
+  ],
+  "stim_seed": 0,
+  "stim_num_shots": 10000,
+  "stim_bit_means": [
+    0.0,
+    0.1002,
+    0.9993,
+    0.4971,
+    0.1203,
+    0.5073,
+    0.0,
+    0.4996
+  ],
+  "tolerance_sigma_at_regen": 5.0,
+  "stim_version": "1.15.0"
+}

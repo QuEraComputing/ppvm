@@ -1,0 +1,43 @@
+---
+source: crates/ppvm-stim/tests/parser_snapshots.rs
+expression: prog
+---
+Program {
+    instructions: [
+        Repeat {
+            count: 3,
+            body: [
+                Gate {
+                    name: H,
+                    tags: [],
+                    args: [],
+                    targets: [
+                        0,
+                    ],
+                    line: 2,
+                },
+                Gate {
+                    name: CX,
+                    tags: [],
+                    args: [],
+                    targets: [
+                        0,
+                        1,
+                    ],
+                    line: 3,
+                },
+                Measure {
+                    name: M,
+                    tags: [],
+                    args: [],
+                    targets: [
+                        0,
+                        1,
+                    ],
+                    line: 4,
+                },
+            ],
+            line: 1,
+        },
+    ],
+}

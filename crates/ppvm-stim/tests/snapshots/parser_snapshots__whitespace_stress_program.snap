@@ -1,0 +1,37 @@
+---
+source: crates/ppvm-stim/tests/parser_snapshots.rs
+expression: prog
+---
+Program {
+    instructions: [
+        Gate {
+            name: H,
+            tags: [],
+            args: [],
+            targets: [
+                0,
+            ],
+            line: 1,
+        },
+        Gate {
+            name: CX,
+            tags: [],
+            args: [],
+            targets: [
+                0,
+                1,
+            ],
+            line: 2,
+        },
+        Measure {
+            name: M,
+            tags: [],
+            args: [],
+            targets: [
+                0,
+                1,
+            ],
+            line: 3,
+        },
+    ],
+}

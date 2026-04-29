@@ -1,0 +1,13 @@
+---
+source: crates/ppvm-stim/tests/parser_snapshots.rs
+expression: prog
+---
+Program {
+    instructions: [
+        Repeat {
+            count: 5,
+            body: [],
+            line: 1,
+        },
+    ],
+}

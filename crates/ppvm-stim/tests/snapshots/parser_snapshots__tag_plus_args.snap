@@ -1,0 +1,27 @@
+---
+source: crates/ppvm-stim/tests/parser_snapshots.rs
+expression: prog
+---
+Program {
+    instructions: [
+        Noise {
+            name: IError,
+            tags: [
+                Tag {
+                    name: "correlated_loss",
+                    params: [],
+                },
+            ],
+            args: [
+                0.1,
+                0.2,
+                0.3,
+            ],
+            targets: [
+                0,
+                1,
+            ],
+            line: 1,
+        },
+    ],
+}

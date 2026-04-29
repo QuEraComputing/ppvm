@@ -1,0 +1,27 @@
+---
+source: crates/ppvm-stim/tests/parser_snapshots.rs
+expression: prog
+---
+Program {
+    instructions: [
+        Gate {
+            name: Identity,
+            tags: [
+                Tag {
+                    name: "R_X",
+                    params: [
+                        Named {
+                            key: "theta",
+                            value: 1.5707963267948966,
+                        },
+                    ],
+                },
+            ],
+            args: [],
+            targets: [
+                0,
+            ],
+            line: 1,
+        },
+    ],
+}

@@ -1,0 +1,16 @@
+---
+source: crates/ppvm-stim/tests/parser_snapshots.rs
+expression: prog
+---
+Program {
+    instructions: [
+        Annotation {
+            kind: ObservableInclude,
+            args: [
+                0.0,
+            ],
+            targets: [],
+            line: 1,
+        },
+    ],
+}

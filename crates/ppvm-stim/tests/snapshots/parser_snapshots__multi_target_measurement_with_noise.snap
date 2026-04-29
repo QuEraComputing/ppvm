@@ -1,0 +1,21 @@
+---
+source: crates/ppvm-stim/tests/parser_snapshots.rs
+expression: prog
+---
+Program {
+    instructions: [
+        Measure {
+            name: M,
+            tags: [],
+            args: [
+                0.001,
+            ],
+            targets: [
+                0,
+                1,
+                2,
+            ],
+            line: 1,
+        },
+    ],
+}

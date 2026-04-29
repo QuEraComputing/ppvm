@@ -1,0 +1,14 @@
+---
+source: crates/ppvm-stim/tests/parser_snapshots.rs
+expression: prog
+---
+Program {
+    instructions: [
+        Annotation {
+            kind: Detector,
+            args: [],
+            targets: [],
+            line: 1,
+        },
+    ],
+}

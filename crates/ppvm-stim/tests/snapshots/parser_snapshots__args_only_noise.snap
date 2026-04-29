@@ -1,0 +1,19 @@
+---
+source: crates/ppvm-stim/tests/parser_snapshots.rs
+expression: prog
+---
+Program {
+    instructions: [
+        Noise {
+            name: Depolarize1,
+            tags: [],
+            args: [
+                0.5,
+            ],
+            targets: [
+                0,
+            ],
+            line: 1,
+        },
+    ],
+}

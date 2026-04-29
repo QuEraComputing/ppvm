@@ -84,3 +84,15 @@ Gate behavior is defined via traits reused across both backends:
 ### Python bindings
 
 `ppvm-python-native` uses PyO3 macros (`create_interface!`, `create_interface_range!`) to generate multiple Python classes per config/qubit-count combination. `ppvm-python` wraps these with Pythonic APIs via mixins.
+
+## `crates/ppvm-stim` test corpus
+
+Tests under `crates/ppvm-stim/tests/data/` are committed `.stim` + `.expected.json` pairs consumed by `tests/stim_corpus.rs`. The harness asserts ppvm's output matches the committed reference bit-for-bit. Cross-check against `quantumlib/Stim` happens at regen time, not at test time:
+
+```bash
+cd crates/ppvm-stim/tests/regen-stim
+uv sync
+uv run regen-stim all
+```
+
+When phase-2 lifts a restriction, `uv run regen-stim refresh ../data/unsupported/<name>.stim` flips that fixture from "expected to fail normalize" to "expected to match Stim's pre-recorded distribution". Schema and category overview: `crates/ppvm-stim/tests/data/README.md`; design rationale: `docs/superpowers/specs/2026-04-28-ppvm-stim-test-corpus-design.md`.

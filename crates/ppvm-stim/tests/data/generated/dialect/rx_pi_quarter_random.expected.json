@@ -1,0 +1,9 @@
+{
+  "mode": "distribution",
+  "num_shots": 256,
+  "ppvm_seed": 0,
+  "ppvm_bit_means": [
+    0.13671875
+  ],
+  "note": "no Stim oracle (ppvm dialect); means recorded directly from ppvm"
+}

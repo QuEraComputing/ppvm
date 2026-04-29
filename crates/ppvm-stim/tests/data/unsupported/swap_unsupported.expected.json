@@ -1,4 +1,12 @@
 {
   "mode": "unsupported",
-  "awaiting_phase2_instruction": "SWAP"
+  "awaiting_phase2_instruction": "SWAP",
+  "stim_seed": 0,
+  "stim_num_shots": 10000,
+  "stim_bit_means": [
+    0.0,
+    1.0
+  ],
+  "tolerance_sigma_at_regen": 5.0,
+  "stim_version": "1.15.0"
 }

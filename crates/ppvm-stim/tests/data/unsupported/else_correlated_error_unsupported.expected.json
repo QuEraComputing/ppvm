@@ -1,10 +1,11 @@
 {
   "mode": "unsupported",
-  "awaiting_phase2_instruction": "MX",
+  "awaiting_phase2_instruction": "ELSE_CORRELATED_ERROR",
   "stim_seed": 0,
   "stim_num_shots": 10000,
   "stim_bit_means": [
-    0.0
+    0.1002,
+    0.091
   ],
   "tolerance_sigma_at_regen": 5.0,
   "stim_version": "1.15.0"

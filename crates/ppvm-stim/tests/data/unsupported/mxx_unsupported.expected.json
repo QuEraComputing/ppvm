@@ -1,6 +1,6 @@
 {
   "mode": "unsupported",
-  "awaiting_phase2_instruction": "MX",
+  "awaiting_phase2_instruction": "MXX",
   "stim_seed": 0,
   "stim_num_shots": 10000,
   "stim_bit_means": [

@@ -1,0 +1,31 @@
+[project]
+name = "regen-stim"
+version = "0.1.0"
+description = "Generate ppvm-stim test corpus fixtures by cross-checking against quantumlib/Stim."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "stim>=1.15.0",
+    "ppvm",
+]
+
+[project.scripts]
+regen-stim = "regen_stim.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10,<0.11"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+ppvm = { path = "../../../../ppvm-python", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "UP", "SIM", "I"]

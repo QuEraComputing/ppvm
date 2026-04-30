@@ -915,8 +915,12 @@
 <code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">StimProgram</span>
 
 
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
 </h2>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">StimProgram</span><span class="p">(</span><span class="n">_inner</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">StimProgram</span><span class="p">(</span><span class="n">_inner</span><span class="p">:</span> <span class="n">StimProgram</span><span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents ">
@@ -937,13 +941,6 @@ shots.</p>
 
 
 
-                  <details class="mkdocstrings-source">
-                    <summary>Source code in <code>ppvm-python/src/ppvm/stim_program.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">20</span>
-<span class="normal">21</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_inner</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># internal</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_inner</span> <span class="o">=</span> <span class="n">_inner</span>
-</code></pre></div></td></tr></table></div>
-                  </details>
 
 
 

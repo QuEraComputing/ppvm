@@ -1093,7 +1093,7 @@ independent copies. Use <code>fork()</code> to clone the quantum state with a fr
 <p>To preserve the RNG state exactly (e.g. for checkpointing), use <code>copy.copy()</code> instead.</p>
 <h3 id="stim-circuit-support">STIM circuit support</h3>
 <p>Circuits in <a href="https://github.com/quantumlib/Stim">STIM</a> format are parsed and
-normalized once into a <code>StimProgram</code>, then executed.</p>
+prepared once into a <code>StimProgram</code>, then executed.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">ppvm</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeneralizedTableau</span><span class="p">,</span> <span class="n">StimProgram</span><span class="p">,</span> <span class="n">sample_stim</span>
 
 <span class="n">prog</span> <span class="o">=</span> <span class="n">StimProgram</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>

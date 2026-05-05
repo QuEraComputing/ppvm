@@ -886,7 +886,7 @@
 <a id="ppvm.stim_program"></a>
     <div class="doc doc-contents first">
 
-        <p>StimProgram: parsed + normalized Stim circuit, ready for many shots.</p>
+        <p>StimProgram: parsed and prepared Stim circuit, ready for many shots.</p>
 
 
 
@@ -927,11 +927,11 @@
 
 
 
-        <p>A parsed and normalized Stim circuit.</p>
+        <p>A parsed and prepared Stim circuit.</p>
 <p>Use <code>parse</code> to construct from a source string, or <code>from_file</code> to read
 a <code>.stim</code> file. The resulting object is a thin handle around a
-pre-normalized program; passing it to <code>tab.run(prog)</code> or
-<code>GeneralizedTableau.sample(prog, ...)</code> reuses the normalized form across
+prepared program; passing it to <code>tab.run(prog)</code> or
+<code>GeneralizedTableau.sample(prog, ...)</code> reuses validation across
 shots.</p>
 
 

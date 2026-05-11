@@ -6,3 +6,9 @@ from .squin_interpreter.device import (
     GeneralizedTableauSimulator as GeneralizedTableauSimulator,
     GeneralizedTableauSimulatorTask as GeneralizedTableauSimulatorTask,
 )
+
+# NOTE: just to register methods
+from .squin_interpreter.impls import (
+    gate as _gate,
+    noise as _noise
+)

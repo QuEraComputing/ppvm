@@ -13,6 +13,12 @@ def _turns_to_radian(turns: float):
     return 2 * turns * math.pi
 
 
+_SQRT_MAP = {
+    "sqrtx": "sqrt_x",
+    "sqrty": "sqrt_y",
+}
+
+
 @gate.dialect.register(key="generalized_tableau")
 class GateMethods(interp.MethodTable):
 
@@ -42,6 +48,7 @@ class GateMethods(interp.MethodTable):
         stmt: gate.stmts.S | gate.stmts.T | gate.stmts.SqrtX | gate.stmts.SqrtY,
     ):
         method_name = stmt.name.lower()
+        method_name = _SQRT_MAP.get(method_name, method_name)
 
         if stmt.adjoint:
             method_name += "_adj"

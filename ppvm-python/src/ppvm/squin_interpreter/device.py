@@ -10,7 +10,6 @@ from ._interp import GeneralizedTableauInterpreter
 
 RetType = TypeVar("RetType")
 Param = ParamSpec("Param")
-InternalState = TypeVar("InternalState")
 
 
 @dataclass

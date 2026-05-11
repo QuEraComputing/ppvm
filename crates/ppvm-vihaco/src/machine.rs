@@ -12,6 +12,8 @@ use crate::prelude::{Circuit, CircuitInstruction};
 
 pub type Instruction = PPVM128Instruction;
 
+// TODO: move hard-coding multiple bit widths to wrapper component and switch on component execution during runtime
+
 #[derive(vihaco::Machine)]
 pub struct PPVM128 {
     #[program]

@@ -1,6 +1,6 @@
 from dataclasses import field, dataclass
 
-from ppvm import GeneralizedTableau
+from ..generalized_tableau import GeneralizedTableau
 from kirin import interp
 from typing_extensions import Self
 

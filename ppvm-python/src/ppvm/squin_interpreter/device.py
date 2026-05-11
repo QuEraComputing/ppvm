@@ -1,7 +1,7 @@
 from typing import Any, TypeVar, ParamSpec, cast
 from dataclasses import field, dataclass
 
-from ppvm import GeneralizedTableau
+from ..generalized_tableau import GeneralizedTableau
 from kirin import ir
 from bloqade.device import AbstractSimulatorTask, AbstractSimulatorDevice
 from bloqade.analysis.address import UnknownReg, UnknownQubit, AddressAnalysis

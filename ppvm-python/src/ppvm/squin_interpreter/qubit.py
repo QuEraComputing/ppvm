@@ -1,7 +1,7 @@
 from typing import Any
 from dataclasses import dataclass
 
-from ppvm import MeasurementResult
+from ..generalized_tableau import MeasurementResult
 from kirin import interp
 from bloqade.types import Qubit
 from kirin.dialects import ilist

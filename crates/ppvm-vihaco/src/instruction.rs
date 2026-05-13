@@ -1,44 +1,50 @@
 use vihaco::Instruction;
+use vihaco_parser::Parse;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Instruction)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Instruction, Parse)]
 pub enum CircuitInstruction {
+    // NOTE: longer tokens need to go first
+    TwoQubitPauliError, // needs to go before T
+
     // Single-Qubit Clifford gates
     X,
     Y,
     Z,
     H,
-    S,
-    SAdj,
-    SqrtX,
-    SqrtY,
+
+    #[token = "sqrt_x_adj"]
     SqrtXAdj,
+
+    #[token = "sqrt_x"]
+    SqrtX,
+
+    #[token = "sqrt_y_adj"]
     SqrtYAdj,
 
+    #[token = "sqrt_y"]
+    SqrtY,
+
+    #[token = "s_adj"]
+    SAdj,
+    S,
+
     // Controlled gates
-    #[mnemonic = "cnot"]
     CNOT,
-    #[mnemonic = "cz"]
     CZ,
 
     // T gate
-    T,
     TAdj,
-
-    // Single-qubit rotations
-    #[mnemonic = "rx"]
-    RX,
-    #[mnemonic = "ry"]
-    RY,
-    #[mnemonic = "rz"]
-    RZ,
+    T,
 
     // Two-qubit rotations
-    #[mnemonic = "rxx"]
     RXX,
-    #[mnemonic = "ryy"]
     RYY,
-    #[mnemonic = "rzz"]
     RZZ,
+
+    // Single-qubit rotations
+    RX,
+    RY,
+    RZ,
 
     // U3
     U3,
@@ -53,7 +59,6 @@ pub enum CircuitInstruction {
 
     // Noise
     PauliError,
-    TwoQubitPauliError,
-    Depolarize,
     Depolarize2,
+    Depolarize,
 }

@@ -5,7 +5,7 @@ use eyre::{Result, eyre};
 use num::PrimInt;
 use num::complex::Complex64;
 use ppvm_tableau::prelude::*;
-use vihaco::{ExecContext, component};
+use vihaco::{Effects, component};
 
 macro_rules! batch_for {
     ($tab:expr, $method:ident, $addrs:expr) => {
@@ -22,7 +22,12 @@ pub struct Circuit<T: Config<Coeff = f64>, I: TableauIndex, C: SparseVector<Comp
 
 pub type MeasurementResult = Vec<Option<bool>>;
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, outcome = Option<MeasurementResult>)]
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MeasurementEffect {
+    measurement_results: MeasurementResult,
+}
+
+#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
 impl<T, I, C> Circuit<T, I, C>
 where
     T: Config<Coeff = f64>,
@@ -34,8 +39,7 @@ where
         &mut self,
         inst: CircuitInstruction,
         msg: CircuitMessage,
-        _ctx: &mut ExecContext,
-    ) -> Result<Option<MeasurementResult>> {
+    ) -> Result<Effects<MeasurementEffect>> {
         use CircuitInstruction::*;
         use CircuitMessage::*;
 
@@ -76,7 +80,9 @@ where
             // Measure & Reset
             (Measure, Qubit(addr)) => {
                 let outcome = self.tab.measure(addr);
-                return Ok(Some(vec![outcome]));
+                return Ok(Effects::one(MeasurementEffect {
+                    measurement_results: vec![outcome],
+                }));
             }
             (Reset, Qubit(addr)) => self.tab.reset(addr),
 
@@ -169,7 +175,9 @@ where
             // Batch: measure (emits per qubit)
             (Measure, QubitBatch(addrs)) => {
                 let outcomes = addrs.iter().map(|&addr| self.tab.measure(addr));
-                return Ok(Some(outcomes.collect()));
+                return Ok(Effects::one(MeasurementEffect {
+                    measurement_results: outcomes.collect(),
+                }));
             }
 
             // Fallback
@@ -182,8 +190,15 @@ where
             }
         };
 
-        Ok(None)
+        Ok(Effects::None)
     }
+
+    // #[derive(observe)]
+    // fn foo(&mut self, effect: Effect) {
+    //     match (effect.msg, effect.inst) {
+    //         (CircuitInstruction, _) => self._execute(inst, msg, ctx),
+    //     }
+    // }
 }
 
 impl<T, I, C> vihaco::Reset for Circuit<T, I, C>

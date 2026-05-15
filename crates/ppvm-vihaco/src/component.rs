@@ -16,7 +16,7 @@ macro_rules! batch_for {
     };
 }
 
-pub struct Circuit<T: Config<Coeff = f64>, I: TableauIndex, C: SparseVector<Complex64, I>> {
+pub struct CircuitExecutor<T: Config<Coeff = f64>, I: TableauIndex, C: SparseVector<Complex64, I>> {
     pub tab: GeneralizedTableau<T, I, C>,
 }
 
@@ -28,7 +28,7 @@ pub struct MeasurementEffect {
 }
 
 #[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
-impl<T, I, C> Circuit<T, I, C>
+impl<T, I, C> CircuitExecutor<T, I, C>
 where
     T: Config<Coeff = f64>,
     <<T as Config>::Storage as BitView>::Store: PrimInt,
@@ -201,7 +201,7 @@ where
     // }
 }
 
-impl<T, I, C> vihaco::Reset for Circuit<T, I, C>
+impl<T, I, C> vihaco::Reset for CircuitExecutor<T, I, C>
 where
     T: Config<Coeff = f64>,
     <<T as Config>::Storage as BitView>::Store: PrimInt,

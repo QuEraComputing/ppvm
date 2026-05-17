@@ -59,7 +59,7 @@ fn generalized_tableau() {
     const PI: f64 = std::f64::consts::PI;
     let cos_pi_8: f64 = (PI / 8.0).cos();
     let sin_pi_8: f64 = (PI / 8.0).sin();
-    let expected_coefficients = vec![
+    let expected_coefficients = [
         Complex {
             re: (PI / 4.0).cos() * (cos_pi_8 * cos_pi_8 - sin_pi_8 * sin_pi_8),
             im: (PI / 4.0).sin() * (cos_pi_8 * cos_pi_8 - sin_pi_8 * sin_pi_8),
@@ -93,7 +93,7 @@ fn test_generalized_tableau_phase() {
     let mut sorted_coefficients = tableau.coefficients.clone();
     sorted_coefficients.sort_by(|entry1, entry2| entry1.1.cmp(&entry2.1));
 
-    let expected_coefficients = vec![Complex { re: 0.5, im: 0.5 }, Complex { re: 0.5, im: -0.5 }];
+    let expected_coefficients = [Complex { re: 0.5, im: 0.5 }, Complex { re: 0.5, im: -0.5 }];
 
     println!("{}", tableau);
 
@@ -115,7 +115,7 @@ fn test_generalized_tableau_phase() {
     let mut sorted_coefficients = tableau.coefficients.clone();
     sorted_coefficients.sort_by(|entry1, entry2| entry1.1.cmp(&entry2.1));
 
-    let expected_coefficients = vec![
+    let expected_coefficients = [
         Complex {
             re: 0.8535533905932737,
             im: 0.3535533905932738,
@@ -377,7 +377,7 @@ fn test_two_t_gates_coefficients() {
     sorted.sort_by(|a, b| a.1.cmp(&b.1));
 
     // Expected: TT|+⟩ represented as two branches with these coefficients
-    let expected = vec![Complex { re: 0.5, im: 0.5 }, Complex { re: 0.5, im: -0.5 }];
+    let expected = [Complex { re: 0.5, im: 0.5 }, Complex { re: 0.5, im: -0.5 }];
 
     println!("{}", tableau);
 

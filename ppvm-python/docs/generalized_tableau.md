@@ -44,30 +44,29 @@ To preserve the RNG state exactly (e.g. for checkpointing), use `copy.copy()` in
 
 ### STIM circuit support
 
-Circuits in [STIM](https://github.com/quantumlib/Stim) format can be executed
-directly via `run_stim_string` or `run_stim_file`. Only the gate/measurement
-subset of STIM is supported; control flow instructions are not.
+Circuits in [STIM](https://github.com/quantumlib/Stim) format are parsed and
+prepared once into a `StimProgram`, then executed.
 
 ```python
-from ppvm import GeneralizedTableau
+from ppvm import GeneralizedTableau, StimProgram, sample_stim
 
-tab = GeneralizedTableau(n_qubits=2)
-
-stim_circuit = """
+prog = StimProgram.parse("""
 H 0
 CX 0 1
 M 0 1
-"""
+""")
 
-results = tab.run_stim_string(stim_circuit)
+# Single shot:
+tab = GeneralizedTableau(n_qubits=2)
+results = tab.run(prog)
 print(f"Bell state measurement: {results}")
-```
 
-For larger circuits stored as `.stim` files, use `run_stim_file`:
+# Many shots — fresh tableau per shot:
+shots = sample_stim(prog, n_qubits=2, num_shots=10_000, seed=0)
 
-```python
-tab = GeneralizedTableau(n_qubits=85)
-results = tab.run_stim_file("path/to/circuit.stim")
+# .stim file:
+prog = StimProgram.from_file("path/to/circuit.stim")
+shots = GeneralizedTableau.sample(prog, n_qubits=85, num_shots=100, seed=0)
 ```
 
 ## Noise and loss

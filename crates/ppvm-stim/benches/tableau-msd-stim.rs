@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_stim::{execute, parse_extended};
 use ppvm_tableau::prelude::*;
+use stim_parser::extended::ExtendedProgram;
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
 
@@ -40,8 +42,8 @@ fn msd_stim_string() -> String {
     lines.push(fmt_cz_pairs(ql[0], ql[4]));
     lines.push(fmt_cz_pairs(ql[1], ql[3]));
 
-    for i in 0..5 {
-        lines.push(fmt_gate("SQRT_X_DAG", ql[i]));
+    for q in ql.iter().take(5) {
+        lines.push(fmt_gate("SQRT_X_DAG", q));
     }
 
     let all_qubits: Vec<usize> = (0..n_qubits).collect();
@@ -120,22 +122,21 @@ fn fmt_cz_index_pairs(q: &[usize], pairs: &[[usize; 2]]) -> String {
     format!("CZ {}", targets.join(" "))
 }
 
-fn msd_stim_func(circuit: &str) {
+fn msd_stim_func(prog: &ExtendedProgram) {
     let n_qubits = 17 * 5;
     let mut tab: Tab = GeneralizedTableau::new(n_qubits, 1e-10);
-    tab.run_stim_string(circuit);
+    execute(prog, &mut tab).expect("execute");
 }
 
 pub fn benchmark_suite_msd_stim(c: &mut Criterion, name: impl AsRef<str>) {
     let circuit = msd_stim_string();
+    let prog = parse_extended(&circuit).expect("parse_extended");
 
     let mut group = c.benchmark_group(name.as_ref());
     group.bench_function("msd-stim-0", |b| {
         b.iter_batched_ref(
             || {},
-            |_| {
-                msd_stim_func(&circuit);
-            },
+            |_| msd_stim_func(&prog),
             criterion::BatchSize::SmallInput,
         );
     });

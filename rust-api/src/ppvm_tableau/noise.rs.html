@@ -429,7 +429,7 @@
 <a href=#429 id=429 data-nosnippet>429</a>        t.x(<span class="number">0</span>);
 <a href=#430 id=430 data-nosnippet>430</a>        t.loss_channel(<span class="number">0</span>, <span class="number">1.0</span>);
 <a href=#431 id=431 data-nosnippet>431</a>        <span class="macro">assert!</span>(t.is_lost[<span class="number">0</span>]);
-<a href=#432 id=432 data-nosnippet>432</a>        <span class="macro">assert!</span>(t.measure(<span class="number">0</span>) == <span class="prelude-val">None</span>); <span class="comment">// Reset to |0⟩ before marking lost
+<a href=#432 id=432 data-nosnippet>432</a>        <span class="macro">assert!</span>(t.measure(<span class="number">0</span>).is_none()); <span class="comment">// Reset to |0⟩ before marking lost
 <a href=#433 id=433 data-nosnippet>433</a>    </span>}
 <a href=#434 id=434 data-nosnippet>434</a>
 <a href=#435 id=435 data-nosnippet>435</a>    <span class="attr">#[test]
@@ -437,7 +437,7 @@
 <a href=#437 id=437 data-nosnippet>437</a>        <span class="kw">let </span><span class="kw-2">mut </span>t = tab(<span class="number">1</span>);
 <a href=#438 id=438 data-nosnippet>438</a>        t.loss_channel(<span class="number">0</span>, <span class="number">1.0</span>);
 <a href=#439 id=439 data-nosnippet>439</a>        t.x(<span class="number">0</span>); <span class="comment">// No-op: qubit is lost
-<a href=#440 id=440 data-nosnippet>440</a>        </span><span class="macro">assert!</span>(t.measure(<span class="number">0</span>) == <span class="prelude-val">None</span>);
+<a href=#440 id=440 data-nosnippet>440</a>        </span><span class="macro">assert!</span>(t.measure(<span class="number">0</span>).is_none());
 <a href=#441 id=441 data-nosnippet>441</a>        t.is_lost[<span class="number">0</span>] = <span class="bool-val">false</span>;
 <a href=#442 id=442 data-nosnippet>442</a>        <span class="macro">assert!</span>(!t.measure(<span class="number">0</span>).unwrap()); <span class="comment">// still 0
 <a href=#443 id=443 data-nosnippet>443</a>    </span>}
@@ -577,7 +577,7 @@
 <a href=#577 id=577 data-nosnippet>577</a>        t.x(<span class="number">0</span>);
 <a href=#578 id=578 data-nosnippet>578</a>        t.cnot(<span class="number">0</span>, <span class="number">1</span>);
 <a href=#579 id=579 data-nosnippet>579</a>        t.loss_channel(<span class="number">0</span>, <span class="number">1.0</span>);
-<a href=#580 id=580 data-nosnippet>580</a>        <span class="macro">assert!</span>(t.measure(<span class="number">0</span>) == <span class="prelude-val">None</span>);
+<a href=#580 id=580 data-nosnippet>580</a>        <span class="macro">assert!</span>(t.measure(<span class="number">0</span>).is_none());
 <a href=#581 id=581 data-nosnippet>581</a>        <span class="macro">assert!</span>(t.measure(<span class="number">1</span>).unwrap());
 <a href=#582 id=582 data-nosnippet>582</a>
 <a href=#583 id=583 data-nosnippet>583</a>        <span class="kw">let </span><span class="kw-2">mut </span>t = tab(<span class="number">2</span>);
@@ -585,7 +585,7 @@
 <a href=#585 id=585 data-nosnippet>585</a>        t.x(<span class="number">0</span>);
 <a href=#586 id=586 data-nosnippet>586</a>        t.cnot(<span class="number">0</span>, <span class="number">1</span>);
 <a href=#587 id=587 data-nosnippet>587</a>        <span class="macro">assert!</span>(!t.measure(<span class="number">1</span>).unwrap());
-<a href=#588 id=588 data-nosnippet>588</a>        <span class="macro">assert!</span>(t.measure(<span class="number">0</span>) == <span class="prelude-val">None</span>);
+<a href=#588 id=588 data-nosnippet>588</a>        <span class="macro">assert!</span>(t.measure(<span class="number">0</span>).is_none());
 <a href=#589 id=589 data-nosnippet>589</a>    }
 <a href=#590 id=590 data-nosnippet>590</a>
 <a href=#591 id=591 data-nosnippet>591</a>    <span class="attr">#[test]

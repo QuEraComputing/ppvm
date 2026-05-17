@@ -7,208 +7,104 @@ use num::traits::{One, ToPrimitive, Zero};
 
 use crate::prelude::*;
 use rand::RngExt;
+use rand::rngs::SmallRng;
 
-/// Check that a value is a valid probability (in [0, 1]).
-/// Extracted to avoid triggering `clippy::manual_range_contains` when
-/// the generic `T::Coeff` does not implement `PartialOrd` in both directions.
-#[inline]
-fn is_probability(p: &impl PartialOrd<f64>) -> bool {
-    *p >= 0.0 && *p <= 1.0
-}
+// === TableauLike impls ===
+//
+// Implementing TableauLike grants automatic implementations of all
+// single- and two-qubit Pauli noise channels via default methods.
 
-impl<T: Config> Depolarizing<T> for Tableau<T>
+impl<T: Config> TableauLike for Tableau<T>
 where
     T::Coeff: PartialOrd<f64>,
 {
-    fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        debug_assert!(is_probability(&p));
-        let r = self.rng.random::<f64>();
-        if p <= r {
-            return;
-        }
-        if p > r * 3.0 {
-            // p / 3 > r >= 0
-            self.x(addr0);
-        } else if p > r * 1.5 {
-            // 2p/3 > r >= p / 3
-            self.y(addr0);
-        } else {
-            // p > r >= 2p/3
-            self.z(addr0);
-        }
+    type Coeff = T::Coeff;
+    type Rng = SmallRng;
+
+    #[inline]
+    fn rng_mut(&mut self) -> &mut Self::Rng {
+        &mut self.rng
     }
 }
 
-impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> Depolarizing<T>
+impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> TableauLike
     for GeneralizedTableau<T, I, C>
 where
     T::Coeff: PartialOrd<f64>,
-    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
+    Complex<T::Coeff>: From<Complex<f64>>,
 {
-    fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        debug_assert!(is_probability(&p));
-        let r = self.tableau.rng.random::<f64>();
-        if p <= r {
-            return;
-        }
-        if p > r * 3.0 {
-            // p / 3 > r >= 0
-            self.x(addr0);
-        } else if p > r * 1.5 {
-            // 2p/3 > r >= p / 3
-            self.y(addr0);
-        } else {
-            // p > r >= 2p/3
-            self.z(addr0);
-        }
+    type Coeff = T::Coeff;
+    type Rng = SmallRng;
+
+    #[inline]
+    fn rng_mut(&mut self) -> &mut Self::Rng {
+        &mut self.tableau.rng
+    }
+
+    #[inline]
+    fn is_qubit_lost(&self, addr: usize) -> bool {
+        self.is_lost[addr]
     }
 }
 
-impl<T: Config> PauliError<T> for Tableau<T>
-where
-    T::Coeff: PartialOrd<f64> + Zero,
-{
-    fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
-        let r = self.rng.random::<f64>();
-        let mut cumulative = T::Coeff::zero();
-        for (i, p_) in p.iter().enumerate() {
-            cumulative += p_.clone();
-            if cumulative > r {
-                match i {
-                    0 => self.x(addr0),
-                    1 => self.y(addr0),
-                    _ => self.z(addr0),
-                }
-                return;
+// === Noise trait impls ===
+//
+// Orphan rules (E0210) forbid `impl<X: TableauLike<Coeff = T::Coeff>> Depolarizing<T> for X`,
+// so we expand the four noise traits per backend via a macro. Each backend only
+// has to list its generics + where-clause once.
+
+macro_rules! impl_tableau_noise {
+    (generics: [$($gen:tt)*], ty: $ty:ty, where: [$($bound:tt)*] $(,)?) => {
+        impl<T: Config $($gen)*> Depolarizing<T> for $ty
+        where $($bound)*
+        {
+            fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
+                self.depolarize_impl(addr0, p);
             }
         }
-    }
-}
 
-impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> PauliError<T>
-    for GeneralizedTableau<T, I, C>
-where
-    T::Coeff: PartialOrd<f64> + Zero,
-    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
-{
-    fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
-        debug_assert!(p.iter().all(|p_| *p_ >= 0.0 && *p_ <= 1.0));
-        debug_assert!(p[0].clone() + p[1].clone() + p[2].clone() - 1.0 < 1e-7);
-        let r = self.tableau.rng.random::<f64>();
-        let mut cumulative = T::Coeff::zero();
-        for (i, p_) in p.iter().enumerate() {
-            cumulative += p_.clone();
-            if cumulative > r {
-                match i {
-                    0 => self.x(addr0),
-                    1 => self.y(addr0),
-                    _ => self.z(addr0),
-                }
-                return;
+        impl<T: Config $($gen)*> PauliError<T> for $ty
+        where $($bound)*
+        {
+            fn pauli_error(&mut self, addr0: usize, p: [T::Coeff; 3]) {
+                self.pauli_error_impl(addr0, p);
             }
         }
-    }
-}
 
-fn two_qubit_pauli_error_impl<T: Config>(
-    this: &mut impl Clifford,
-    addr0: usize,
-    addr1: usize,
-    p: [T::Coeff; 15],
-    r: f64,
-) where
-    T::Coeff: PartialOrd<f64> + Zero,
-{
-    debug_assert!(p.iter().all(|p_| *p_ >= 0.0 && *p_ <= 1.0));
-    // debug_assert!(p.iter().sum() - 1.0 < 1e-7);
-    let sum = T::Coeff::zero();
-    let idx = p
-        .iter()
-        .scan(sum, |acc, p_| {
-            *acc += p_.clone();
-            Some(acc.clone())
-        })
-        .position(|cum_prob| cum_prob > r);
-
-    if let Some(i) = idx {
-        #[rustfmt::skip]
-        const PAULI_PAIRS: [(u8, u8); 16] = [
-            (0,0),(0,1),(0,2),(0,3),
-            (1,0),(1,1),(1,2),(1,3),
-            (2,0),(2,1),(2,2),(2,3),
-            (3,0),(3,1),(3,2),(3,3),
-        ];
-        let cartesian_index = PAULI_PAIRS[i + 1]; // skip II entry
-
-        match cartesian_index.0 {
-            0 => {}
-            1 => this.x(addr0),
-            2 => this.y(addr0),
-            _ => this.z(addr0),
+        impl<T: Config $($gen)*> TwoQubitPauliError<T> for $ty
+        where $($bound)*
+        {
+            fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 15]) {
+                self.two_qubit_pauli_error_impl(addr0, addr1, p);
+            }
         }
 
-        match cartesian_index.1 {
-            0 => {}
-            1 => this.x(addr1),
-            2 => this.y(addr1),
-            _ => this.z(addr1),
+        impl<T: Config $($gen)*> Depolarizing2<T> for $ty
+        where $($bound)*
+        {
+            fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff) {
+                self.depolarize2_impl(addr0, addr1, p);
+            }
         }
-    }
+    };
 }
 
-impl<T: Config> TwoQubitPauliError<T> for Tableau<T>
-where
-    T::Coeff: PartialOrd<f64> + Zero,
-{
-    fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [<T as Config>::Coeff; 15]) {
-        let r = self.rng.random::<f64>();
-        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p, r);
-    }
+impl_tableau_noise! {
+    generics: [],
+    ty: Tableau<T>,
+    where: [T::Coeff: PartialOrd<f64>],
 }
 
-impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> TwoQubitPauliError<T>
-    for GeneralizedTableau<T, I, C>
-where
-    T::Coeff: PartialOrd<f64> + Zero,
-    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
-{
-    fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [<T as Config>::Coeff; 15]) {
-        if self.is_lost[addr0] || self.is_lost[addr1] {
-            return;
-        }
-
-        let r = self.tableau.rng.random::<f64>();
-        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p, r);
-    }
+impl_tableau_noise! {
+    generics: [, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>],
+    ty: GeneralizedTableau<T, I, C>,
+    where: [
+        T::Coeff: PartialOrd<f64>,
+        Complex<T::Coeff>: From<Complex<f64>>,
+    ],
 }
 
-impl<T: Config> Depolarizing2<T> for Tableau<T>
-where
-    T::Coeff: PartialOrd<f64> + Zero,
-{
-    fn depolarize2(&mut self, addr0: usize, addr1: usize, p: <T as Config>::Coeff) {
-        let r = self.rng.random::<f64>();
-        let p_arr: [T::Coeff; 15] = core::array::from_fn(|_| p.clone() * (1.0 / 15.0));
-        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p_arr, r);
-    }
-}
-
-impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> Depolarizing2<T>
-    for GeneralizedTableau<T, I, C>
-where
-    T::Coeff: PartialOrd<f64> + Zero,
-    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
-{
-    fn depolarize2(&mut self, addr0: usize, addr1: usize, p: <T as Config>::Coeff) {
-        if self.is_lost[addr0] || self.is_lost[addr1] {
-            return;
-        }
-
-        let r = self.tableau.rng.random::<f64>();
-        let p_arr: [T::Coeff; 15] = core::array::from_fn(|_| p.clone() * (1.0 / 15.0));
-        two_qubit_pauli_error_impl::<T>(self, addr0, addr1, p_arr, r);
-    }
-}
+// === GeneralizedTableau-specific loss channels (no Tableau equivalent) ===
 
 impl<T: Config, I: TableauIndex + Send + Sync, C: SparseVector<Complex<T::Coeff>, I>> LossChannel<T>
     for GeneralizedTableau<T, I, C>
@@ -583,6 +479,46 @@ mod tests {
         t.reset_loss_channel(0);
         t.x(0); // should no longer be a no-op
         assert!(t.measure(0).unwrap());
+    }
+
+    // === Seeded RNG ordering ===
+    //
+    // `Depolarizing` and `PauliError` must consume RNG unconditionally so
+    // that seeded traces are reproducible regardless of loss events. The
+    // selected Clifford gate no-ops on lost qubits (see gates/clifford.rs).
+
+    #[test]
+    fn depolarize_rng_consumed_on_lost_qubit() {
+        let seed = 42u64;
+        let mut t_active = tab(1);
+        t_active.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+        t_active.depolarize(0, 0.3);
+        let next_active: f64 = t_active.tableau.rng.random();
+
+        let mut t_lost = tab(1);
+        t_lost.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+        t_lost.is_lost[0] = true;
+        t_lost.depolarize(0, 0.3);
+        let next_lost: f64 = t_lost.tableau.rng.random();
+
+        assert_eq!(next_active, next_lost);
+    }
+
+    #[test]
+    fn pauli_error_rng_consumed_on_lost_qubit() {
+        let seed = 42u64;
+        let mut t_active = tab(1);
+        t_active.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+        t_active.pauli_error(0, [0.1, 0.1, 0.1]);
+        let next_active: f64 = t_active.tableau.rng.random();
+
+        let mut t_lost = tab(1);
+        t_lost.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+        t_lost.is_lost[0] = true;
+        t_lost.pauli_error(0, [0.1, 0.1, 0.1]);
+        let next_lost: f64 = t_lost.tableau.rng.random();
+
+        assert_eq!(next_active, next_lost);
     }
 
     // === Statistical tests ===

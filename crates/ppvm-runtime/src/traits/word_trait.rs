@@ -1,5 +1,5 @@
 use crate::char::Pauli;
-use crate::traits::{Clifford, PauliStorage};
+use crate::traits::PauliStorage;
 use std::fmt::Display;
 use std::hash::Hash;
 
@@ -7,9 +7,28 @@ pub trait PauliIter {
     fn iter(&self) -> impl Iterator<Item = Pauli>;
 }
 
-pub trait PauliWordTrait:
-    Clone + Hash + Eq + PauliIter + From<String> + Clifford + Display
-{
+/// Word-level Pauli operations. Types implementing this trait automatically
+/// gain [`crate::traits::Clifford`] and [`crate::traits::CliffordExtensions`]
+/// behavior via blanket impls in [`crate::traits::clifford`], using
+/// `get_lbit` / `get_xbit` / `set_xbit` / `set_zbit` / `rehash` to transform
+/// Pauli words.
+///
+/// # Word-level vs. state-level gate semantics
+///
+/// The blanket `Clifford` impl applies gates at the *bit* level of a single
+/// Pauli word. X / Y / Z are bit-level no-ops on a Pauli word — they affect
+/// phase, not the X/Z bits — so `word.x(i)`, `word.y(i)`, `word.z(i)` are
+/// deliberately silent. Phase is tracked separately by
+/// [`crate::phase::PhasedPauliWord`], which implements `Clifford` manually.
+///
+/// If you need a word representation whose gate behavior is *not* pure
+/// bit manipulation (phase tracking, fused multi-qubit updates, alternative
+/// loss semantics), do **not** implement `PauliWordTrait` on it — define a
+/// specialized `Clifford` impl instead, the way `PhasedPauliWord` does.
+/// Implementing both `PauliWordTrait` and a custom `impl Clifford for ...`
+/// for the same type will not compile: the blanket impl overlaps with your
+/// custom impl (coherence error), not silently shadows it.
+pub trait PauliWordTrait: Clone + Hash + Eq + PauliIter + From<String> + Display {
     fn new(nqubits: usize) -> Self;
 
     fn n_qubits(&self) -> usize;

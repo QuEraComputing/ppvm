@@ -429,7 +429,7 @@ mod tests {
         t.x(0);
         t.loss_channel(0, 1.0);
         assert!(t.is_lost[0]);
-        assert!(t.measure(0) == None); // Reset to |0⟩ before marking lost
+        assert!(t.measure(0).is_none()); // Reset to |0⟩ before marking lost
     }
 
     #[test]
@@ -437,7 +437,7 @@ mod tests {
         let mut t = tab(1);
         t.loss_channel(0, 1.0);
         t.x(0); // No-op: qubit is lost
-        assert!(t.measure(0) == None);
+        assert!(t.measure(0).is_none());
         t.is_lost[0] = false;
         assert!(!t.measure(0).unwrap()); // still 0
     }
@@ -577,7 +577,7 @@ mod tests {
         t.x(0);
         t.cnot(0, 1);
         t.loss_channel(0, 1.0);
-        assert!(t.measure(0) == None);
+        assert!(t.measure(0).is_none());
         assert!(t.measure(1).unwrap());
 
         let mut t = tab(2);
@@ -585,7 +585,7 @@ mod tests {
         t.x(0);
         t.cnot(0, 1);
         assert!(!t.measure(1).unwrap());
-        assert!(t.measure(0) == None);
+        assert!(t.measure(0).is_none());
     }
 
     #[test]

@@ -31,7 +31,7 @@ rotations) are tracked via a sparse coefficient vector that grows with the stabi
 - Clifford gates, T gates, and arbitrary single- and two-qubit rotations.
 - Mid-circuit measurement returning [`MeasurementResult`][ppvm.generalized_tableau.MeasurementResult] (ZERO, ONE, or LOST).
 - Noise channels: depolarizing, Pauli error, loss, and correlated loss.
-- [STIM](https://github.com/quantumlib/Stim) circuit format support via `run_stim_string` and `run_stim_file`.
+- [STIM](https://github.com/quantumlib/Stim) circuit format support via `StimProgram` + `tab.run` + `sample_stim`.
 - `fork()` for branching into independent simulation trajectories.
 
 ## Quick installation

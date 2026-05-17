@@ -3,6 +3,14 @@ use paste::paste;
 use ppvm_tableau::prelude::*;
 use pyo3::prelude::*;
 
+fn measurement_to_u8(m: Option<bool>) -> u8 {
+    match m {
+        Some(false) => 0,
+        Some(true) => 1,
+        None => 2,
+    }
+}
+
 macro_rules! create_interface {
     ($name: ident, $type: ident, $indexType: ident) => {
         #[pyclass]
@@ -167,16 +175,55 @@ macro_rules! create_interface {
                 self.inner.is_lost.clone()
             }
 
-            // STIM integration
-            pub fn run_stim_string(&mut self, circuit: &str) -> Vec<Option<bool>> {
-                self.inner.run_stim_string(circuit)
+            pub fn run(
+                &mut self,
+                prog: &crate::stim_program::PyStimProgram,
+            ) -> pyo3::PyResult<Vec<u8>> {
+                let mut results = Vec::with_capacity(prog.measurement_count());
+                ppvm_stim::execute_prepared(&prog.instructions, &mut self.inner, &mut results);
+                Ok(results
+                    .into_iter()
+                    .map(crate::interface_tableau::measurement_to_u8)
+                    .collect())
             }
 
-            pub fn run_stim_file(&mut self, file_path: &str) -> Vec<Option<bool>> {
-                self.inner.run_stim_file(file_path)
+            /// Multi-shot sampling: builds a fresh tableau per shot.
+            #[staticmethod]
+            #[pyo3(signature = (prog, n_qubits, min_abs_coeff = 1e-10, num_shots = 1, seed = None))]
+            pub fn sample(
+                prog: &crate::stim_program::PyStimProgram,
+                n_qubits: usize,
+                min_abs_coeff: f64,
+                num_shots: usize,
+                seed: Option<u64>,
+            ) -> pyo3::PyResult<Vec<Vec<u8>>> {
+                let mut next_seed = seed;
+                let raw = ppvm_stim::sample(prog, num_shots, || {
+                    let s = next_seed;
+                    if let Some(ref mut v) = next_seed {
+                        *v = v.wrapping_add(1);
+                    }
+                    match s {
+                        Some(s) => GeneralizedTableau::<$type, $indexType>::new_with_seed(
+                            n_qubits,
+                            min_abs_coeff,
+                            s,
+                        ),
+                        None => {
+                            GeneralizedTableau::<$type, $indexType>::new(n_qubits, min_abs_coeff)
+                        }
+                    }
+                })
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
+                Ok(raw
+                    .into_iter()
+                    .map(|shot| {
+                        shot.into_iter()
+                            .map(crate::interface_tableau::measurement_to_u8)
+                            .collect()
+                    })
+                    .collect())
             }
-
-            // some python niceties
 
             /// Fork this tableau, cloning all quantum state but reinitializing the RNG.
             /// If `seed` is provided, the new RNG is seeded deterministically; otherwise
@@ -202,21 +249,6 @@ macro_rules! create_interface {
                     inner: self.inner.clone(),
                 }
             }
-
-            // NOTE: PartialEq not implemented for Tableau
-            // fn __richcmp__(
-            //     &self,
-            //     other: PyRef<$name>,
-            //     op: pyo3::basic::CompareOp,
-            // ) -> PyResult<bool> {
-            //     match op {
-            //         pyo3::basic::CompareOp::Eq => Ok(self.inner == other.inner),
-            //         pyo3::basic::CompareOp::Ne => Ok(self.inner != other.inner),
-            //         _ => Err(pyo3::exceptions::PyNotImplementedError::new_err(
-            //             "Only equality and inequality comparisons are supported for PauliSum.",
-            //         )),
-            //     }
-            // }
 
             /// Return a deep copy of this tableau, including its RNG state.
             ///

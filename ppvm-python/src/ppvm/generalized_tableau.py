@@ -1,8 +1,8 @@
 import enum
-import math
 from dataclasses import InitVar, dataclass, field
 
 import ppvm_python_native
+from ppvm_python_native import StimProgram
 
 from .mixins import (
     CliffordExtensionMixin,
@@ -20,14 +20,6 @@ class MeasurementResult(enum.IntEnum):
     ZERO = 0
     ONE = 1
     LOST = 2
-
-    @staticmethod
-    def _from_raw(result: bool | None) -> "MeasurementResult":
-        if result is None:
-            return MeasurementResult.LOST
-        if result:
-            return MeasurementResult.ONE
-        return MeasurementResult.ZERO
 
 
 @dataclass(frozen=True)
@@ -61,7 +53,7 @@ class GeneralizedTableau(
     _interface: GeneralizedTableauInterface = field(init=False, repr=False)
 
     def __post_init__(self, seed: int | None):
-        N_interface = math.ceil(self.n_qubits / 64.0)
+        N_interface = (self.n_qubits + 63) // 64
         object.__setattr__(
             self,
             "_interface",
@@ -146,7 +138,9 @@ class GeneralizedTableau(
             ``LOST`` if the qubit has been lost, ``ZERO`` or ``ONE`` otherwise.
         """
         m = self._interface.measure(addr0)
-        return MeasurementResult._from_raw(m)
+        if m is None:
+            return MeasurementResult.LOST
+        return MeasurementResult.ONE if m else MeasurementResult.ZERO
 
     def u3(self, addr0: int, theta: float, phi: float, lam: float):
         """Apply the U3 gate to the specified qubit.
@@ -202,59 +196,45 @@ class GeneralizedTableau(
         """
         return self._interface.loss_values()
 
-    def run_stim_string(self, circuit: str) -> list[MeasurementResult]:
-        """Execute a STIM circuit given as a string and return all measurement results.
+    def run(self, prog: StimProgram) -> list[MeasurementResult]:
+        """Execute a parsed Stim program against this tableau (single shot).
 
         .. note::
-            This method **mutates** the tableau in place. To run multiple
-            independent shots, call :meth:`fork` to obtain a fresh copy before
-            each run.
-
-        Parses and runs a STIM-format circuit, applying each instruction to
-        this tableau in sequence. Only the squin subset of the STIM instruction
-        set is supported; control flow is not supported. Measurements are
-        collected in the order they appear in the circuit, following the STIM
-        convention: each measurement instruction appends its results
-        left-to-right as the qubits are listed, and later instructions append
-        after earlier ones.
-
-        Args:
-            circuit: A multi-line string containing a STIM circuit.
-
-        Returns:
-            A list of ``MeasurementResult`` values, one per measured qubit,
-            in circuit order. Each value is ``ZERO``, ``ONE``, or ``LOST``
-            (if the qubit had been lost prior to measurement).
+            This **mutates** the tableau in place. For independent shots use
+            :meth:`fork` or the :func:`ppvm.sample_stim` / :meth:`sample`
+            helpers (which build a fresh tableau per shot).
         """
-        results = self._interface.run_stim_string(circuit)
-        return list(map(MeasurementResult._from_raw, results))
+        raw = self._interface.run(prog)
+        return [MeasurementResult(x) for x in raw]
 
-    def run_stim_file(self, file_path: str) -> list[MeasurementResult]:
-        """Execute a STIM circuit from a file and return all measurement results.
+    @classmethod
+    def sample(
+        cls,
+        prog: StimProgram,
+        n_qubits: int,
+        min_abs_coeff: float = 1e-10,
+        num_shots: int = 1,
+        seed: int | None = None,
+    ) -> list[list[MeasurementResult]]:
+        """Run ``num_shots`` shots of ``prog`` and return all measurement results.
 
-        .. note::
-            This method **mutates** the tableau in place. To run multiple
-            independent shots, call :meth:`fork` to obtain a fresh copy before
-            each run.
-
-        Reads the circuit from ``file_path`` and runs it identically to
-        :meth:`run_stim_string`. Only the squin subset of the STIM instruction
-        set is supported; control flow is not supported. Measurements are
-        collected in the order they appear in the circuit, following the STIM
-        convention: each measurement instruction appends its results
-        left-to-right as the qubits are listed, and later instructions append
-        after earlier ones.
-
-        Args:
-            file_path: Path to a ``.stim`` file containing a STIM circuit.
-
-        Returns:
-            A list of ``MeasurementResult`` values, one per measured qubit,
-            in circuit order. Each value is ``ZERO``, ``ONE``, or ``LOST``
-            (if the qubit had been lost prior to measurement).
-
-        Raises:
-            pyo3_runtime.PanicException: If the file cannot be read.
+        Each shot starts from a fresh tableau, so this is the right entry
+        point for multi-shot sampling.
         """
-        results = self._interface.run_stim_file(file_path)
-        return list(map(MeasurementResult._from_raw, results))
+        N_interface = (n_qubits + 63) // 64
+        native_cls = getattr(ppvm_python_native, f"GeneralizedTableau{N_interface}")
+        raw = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
+        return [[MeasurementResult(x) for x in shot] for shot in raw]
+
+
+def sample_stim(
+    prog: StimProgram,
+    n_qubits: int,
+    min_abs_coeff: float = 1e-10,
+    num_shots: int = 1,
+    seed: int | None = None,
+) -> list[list[MeasurementResult]]:
+    """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``."""
+    return GeneralizedTableau.sample(
+        prog, n_qubits, min_abs_coeff=min_abs_coeff, num_shots=num_shots, seed=seed
+    )

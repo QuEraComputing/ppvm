@@ -36,13 +36,10 @@ pub(crate) fn rotate_1_map_insert_closure<T: Config>(
     }
 }
 
-impl<T, S, H> RotationOne<T> for PauliSum<T>
+impl<T: Config> RotationOne<T> for PauliSum<T>
 where
-    S: PauliStorage,
-    H: std::hash::BuildHasher + Clone + Default,
-    T: Config<Storage = S, BuildHasher = H>,
     T::Coeff: std::ops::MulAssign,
-    T::Map: ACMapInsert<S, T::Coeff, H, T::PauliWordType> + ACMapConsume,
+    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapConsume,
 {
     fn rotate_1(&mut self, axis: Pauli, addr0: usize, theta: <T as Config>::Coeff) {
         let (sin, cos) = theta.sin_cos();

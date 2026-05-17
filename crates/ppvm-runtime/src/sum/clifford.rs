@@ -2,9 +2,8 @@ use crate::{
     config::Config,
     phase::PhasedPauliWord,
     sum::PauliSum,
-    traits::{Clifford, CliffordExtensions, PauliStorage, PauliWordTrait},
+    traits::{Clifford, CliffordExtensions, PauliWordTrait},
 };
-use std::hash::BuildHasher;
 
 macro_rules! map_word {
     ($name:ident, $($index:ident),*) => {
@@ -22,14 +21,11 @@ macro_rules! map_word {
     };
 }
 
-// NOTE: impl for PauliWord only; not a blanket, since PhasedPauliWord Clifford also isn't
-impl<S, H, T> Clifford for PauliSum<T>
-where
-    S: PauliStorage,
-    H: BuildHasher + Clone + Default,
-    T: Config<Storage = S, BuildHasher = H>,
-    T::PauliWordType: Clifford,
-{
+// Single- and two-qubit Clifford action on a `PauliSum`. Single-qubit gates
+// are specialised to bit-level updates so we avoid round-tripping through
+// `PhasedPauliWord`; the two-qubit gates still go through the macro because
+// their sign rules are easier to reuse from the `PhasedPauliWord` impl.
+impl<T: Config> Clifford for PauliSum<T> {
     #[inline]
     fn x(&mut self, index: usize) {
         // X conjugation: only flips sign for Z and Y (zbit set); word unchanged
@@ -105,13 +101,7 @@ where
     map_word!(cz, a, b);
 }
 
-impl<S, H, T> CliffordExtensions for PauliSum<T>
-where
-    S: PauliStorage,
-    H: BuildHasher + Clone + Default,
-    T: Config<Storage = S, BuildHasher = H>,
-    T::PauliWordType: Clifford + CliffordExtensions,
-{
+impl<T: Config> CliffordExtensions for PauliSum<T> {
     #[inline]
     fn s_adj(&mut self, addr0: usize) {
         // S†: same bit map as S; phase flip for Y (both bits set)

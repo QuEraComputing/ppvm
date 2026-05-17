@@ -194,7 +194,7 @@ const TABLE: &[(&str, TableEntry)] = &[
         "TICK",
         TableEntry {
             kind: EntryKind::Annotation(AnnotationKind::Tick),
-            args: NoArgs,
+            args: ArgCount::None,
             targets: TargetArity::Any,
         },
     ),

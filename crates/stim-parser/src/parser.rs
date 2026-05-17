@@ -115,7 +115,6 @@ fn validate_node(
             let skip_arg_validation = matches!(arg_rule, ArgCount::Deferred | ArgCount::Any);
             if !skip_arg_validation {
                 match arg_rule {
-                    ArgCount::Any => {}
                     ArgCount::None if !args.is_empty() => {
                         return Err(ParseError::ArgCount {
                             name: canonical.to_string(),

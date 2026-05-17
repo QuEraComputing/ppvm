@@ -1,5 +1,4 @@
 import math
-import time
 
 from bloqade.decoders.dialects.annotate.types import MeasurementResultValue
 from kirin.dialects import ilist
@@ -41,16 +40,15 @@ def test_basic_execution():
 
         return squin.broadcast.measure(q)
 
-    options = {"min_abs_coeff": 1e-8}
-    sim = GeneralizedTableauSimulator(85, options=options)
-    task = sim.task(main)
-
-    start = time.time()
-    result = task.run()
-    print(result)
-    print(f"Runtime: {(time.time() - start) * 1e3} ms")
-
-    assert result[81] == ZERO
+    # The CX chain entangles q[0..84]; measuring q[80] collapses every
+    # qubit to the same value. The conditional `x(q[81])` then flips q[81]
+    # to ZERO when q[80] is ONE, so q[81] is always ZERO and every other
+    # qubit agrees with q[80].
+    for seed in range(8):
+        result = _run_kernel(main, 85, seed=seed)
+        assert result[81] == ZERO
+        bulk = [result[i] for i in range(85) if i != 81]
+        assert all(m == bulk[0] for m in bulk)
 
 
 def test_basis_state_gates_return_expected_measurements():
@@ -65,8 +63,8 @@ def test_basis_state_gates_return_expected_measurements():
         squin.z(q[3])
         squin.h(q[3])
 
-        squin.rx(3.141592653589793, q[4])
-        squin.ry(3.141592653589793, q[5])
+        squin.rx(math.pi, q[4])
+        squin.ry(math.pi, q[5])
 
         return squin.broadcast.measure(q)
 

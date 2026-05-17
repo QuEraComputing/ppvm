@@ -54,10 +54,17 @@ class GeneralizedTableauSimulator(
                 "All addresses must be resolved. Or set n_qubits to a positive integer."
             )
 
+        if self.n_qubits is not None and self.n_qubits <= 0:
+            raise ValueError(
+                f"n_qubits must be a positive integer, got {self.n_qubits}."
+            )
+
         n_qubits = max(self.n_qubits or 0, address_analysis.qubit_count)
 
-        tab = GeneralizedTableau(n_qubits=n_qubits, **self.options)
+        tableau_options = dict(self.options)
+        seed = tableau_options.pop("seed", None)
+        tab = GeneralizedTableau(n_qubits=n_qubits, seed=seed, **tableau_options)
         interp = GeneralizedTableauInterpreter(
-            kernel.dialects, backend=tab, rng_seed=self.options.get("seed")
+            kernel.dialects, backend=tab, rng_seed=seed
         )
         return GeneralizedTableauSimulatorTask(kernel, args, kwargs or {}, interp)

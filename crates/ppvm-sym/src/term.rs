@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, hash::Hash};
 
 use fxhash::FxHashMap;
 
-/// <coff> sin^m cos^n
+/// `<coeff> sin^m cos^n`
 ///
 /// note: the order of the variables matters, we always sort them in ascending order
 /// so that we can have a canonical representation of the terms.

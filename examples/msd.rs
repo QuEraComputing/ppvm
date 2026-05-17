@@ -73,8 +73,8 @@ fn main() {
         tab.cz(*control, *target);
     }
 
-    for i in 0..5 {
-        for q in ql[i] {
+    for block in ql.iter().take(5) {
+        for q in *block {
             tab.sqrt_x_adj(*q);
         }
     }
@@ -97,10 +97,10 @@ fn encode(tab: &mut Tab, qubits: &[usize]) {
     }
 
     // reset
-    for i in 0..qubits.len() {
-        let m = tab.measure(qubits[i]);
+    for &qubit in qubits {
+        let m = tab.measure(qubit);
         if m.unwrap() {
-            tab.x(qubits[i]);
+            tab.x(qubit);
         }
     }
 

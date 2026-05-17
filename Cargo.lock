@@ -850,6 +850,7 @@ dependencies = [
  "num",
  "ppvm-runtime",
  "ppvm-tableau",
+ "rand",
  "stim-parser",
  "thiserror",
 ]

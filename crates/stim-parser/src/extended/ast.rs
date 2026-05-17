@@ -78,13 +78,14 @@ impl ExtendedProgram {
 
 fn count_in_slice(instructions: &[ExtendedInstruction], factor: u64) -> usize {
     let mut total = 0usize;
+    let factor_usize = usize::try_from(factor).unwrap_or(usize::MAX);
     for instr in instructions {
         match instr {
             ExtendedInstruction::Raw(RawInstruction::Measure { targets, .. }) => {
-                total = total.saturating_add(targets.len().saturating_mul(factor as usize));
+                total = total.saturating_add(targets.len().saturating_mul(factor_usize));
             }
             ExtendedInstruction::MPad { bits, .. } => {
-                total = total.saturating_add(bits.len().saturating_mul(factor as usize));
+                total = total.saturating_add(bits.len().saturating_mul(factor_usize));
             }
             ExtendedInstruction::Repeat { count, body, .. } => {
                 total = total.saturating_add(count_in_slice(body, factor.saturating_mul(*count)));

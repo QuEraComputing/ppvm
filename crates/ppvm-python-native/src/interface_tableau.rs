@@ -198,25 +198,28 @@ macro_rules! create_interface {
                 seed: Option<u64>,
             ) -> pyo3::PyResult<Vec<Vec<u8>>> {
                 let mut next_seed = seed;
-                let raw = ppvm_stim::sample(prog, num_shots, || {
-                    let s = next_seed;
-                    if let Some(ref mut v) = next_seed {
-                        *v = v.wrapping_add(1);
-                    }
-                    match s {
-                        Some(s) => GeneralizedTableau::<$type, $indexType>::new_with_seed(
-                            n_qubits,
-                            min_abs_coeff,
-                            s,
-                        ),
-                        None => {
-                            GeneralizedTableau::<$type, $indexType>::new(n_qubits, min_abs_coeff)
+                let count = prog.measurement_count();
+                Ok((0..num_shots)
+                    .map(|_| {
+                        let s = next_seed;
+                        if let Some(ref mut v) = next_seed {
+                            *v = v.wrapping_add(1);
                         }
-                    }
-                })
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
-                Ok(raw
-                    .into_iter()
+                        let mut tab = match s {
+                            Some(s) => GeneralizedTableau::<$type, $indexType>::new_with_seed(
+                                n_qubits,
+                                min_abs_coeff,
+                                s,
+                            ),
+                            None => GeneralizedTableau::<$type, $indexType>::new(
+                                n_qubits,
+                                min_abs_coeff,
+                            ),
+                        };
+                        let mut shot = Vec::with_capacity(count);
+                        ppvm_stim::execute_prepared(&prog.instructions, &mut tab, &mut shot);
+                        shot
+                    })
                     .map(|shot| {
                         shot.into_iter()
                             .map(crate::interface_tableau::measurement_to_u8)

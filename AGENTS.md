@@ -71,7 +71,7 @@ Full state simulation using stabilizer formalism, extended to handle non-Cliffor
 - **`Tableau<T: Config>`:** 2n-row stabilizer/destabilizer tableau (rows 0..n = destabilizers, n..2n = stabilizers).
 - **`GeneralizedTableau<T: Config, IndexType>`:** Extends Tableau with a sparse coefficient vector for non-Clifford state tracking. `IndexType` can be `usize`, `u128`, or `bnum::types::U256` for large qubit counts.
 - **`SparseVector<T, I>` trait:** Stores coefficients indexed by bitstrings. Indices can be large integers (U256, U512, U1024) for simulations beyond 64 qubits.
-- **Stim compatibility:** Parse Stim circuits with `ppvm-stim` (`StimProgram.parse` / `StimProgram.from_file`); execute with `tab.run(prog)` or sample many shots with `ppvm.sample_stim` / `GeneralizedTableau.sample`.
+- **Stim compatibility:** Rust-side Stim support lives in `ppvm_stim` (for example, `ppvm_stim::parse_extended`, `ppvm_stim::run_string`, and `ppvm_stim::run_file`). Python-side Stim parsing uses `StimProgram.parse` / `StimProgram.from_file`. Execute parsed programs with `tab.run(prog)` or sample many shots with `ppvm.sample_stim` / `GeneralizedTableau.sample`.
 
 ### Trait hierarchy (in `ppvm-runtime/src/traits/`)
 

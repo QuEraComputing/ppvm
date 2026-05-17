@@ -72,7 +72,7 @@ const fn measure_pairs(name: MeasureName) -> TableEntry {
 const fn annotation(kind: AnnotationKind) -> TableEntry {
     TableEntry {
         kind: EntryKind::Annotation(kind),
-        args: ArgCount::None,
+        args: ArgCount::Any,
         targets: TargetArity::Any,
     }
 }
@@ -190,7 +190,14 @@ const TABLE: &[(&str, TableEntry)] = &[
     ),
     ("QUBIT_COORDS", annotation(AnnotationKind::QubitCoords)),
     ("SHIFT_COORDS", annotation(AnnotationKind::ShiftCoords)),
-    ("TICK", annotation(AnnotationKind::Tick)),
+    (
+        "TICK",
+        TableEntry {
+            kind: EntryKind::Annotation(AnnotationKind::Tick),
+            args: NoArgs,
+            targets: TargetArity::Any,
+        },
+    ),
 ];
 
 /// Look up a Stim instruction name. `None` means unknown.

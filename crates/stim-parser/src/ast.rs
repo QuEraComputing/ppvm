@@ -172,6 +172,8 @@ pub enum AnnotationKind {
 /// Required argument-count rule for a Stim instruction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgCount {
+    /// Any arg count is accepted.
+    Any,
     /// No args allowed. `(…)` parens must be absent.
     None,
     /// Exactly `n` args.

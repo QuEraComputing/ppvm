@@ -1,7 +1,7 @@
 //! Post-pass interpretation from the vanilla Stim AST to the extended AST.
 
 use crate::ast::{GateName, NoiseName, Program, RawInstruction, Tag, TagParam};
-use crate::extended::ast::{Axis, ExtendedInstruction, ExtendedProgram};
+use crate::extended::ast::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 use crate::extended::parser::ExtendedParseError;
 
 pub(crate) fn interpret(prog: Program) -> Result<ExtendedProgram, ExtendedParseError> {
@@ -36,8 +36,30 @@ fn interpret_one(raw: RawInstruction) -> Result<ExtendedInstruction, ExtendedPar
             targets,
             line,
         } => interpret_noise(name, tags, args, targets, line),
-        m @ RawInstruction::Measure { .. } => Ok(ExtendedInstruction::Raw(m)),
-        a @ RawInstruction::Annotation { .. } => Ok(ExtendedInstruction::Raw(a)),
+        RawInstruction::Measure {
+            name,
+            tags,
+            args,
+            targets,
+            line,
+        } => Ok(ExtendedInstruction::Raw(RawPassthrough::Measure {
+            name,
+            tags,
+            args,
+            targets,
+            line,
+        })),
+        RawInstruction::Annotation {
+            kind,
+            args,
+            targets,
+            line,
+        } => Ok(ExtendedInstruction::Raw(RawPassthrough::Annotation {
+            kind,
+            args,
+            targets,
+            line,
+        })),
         RawInstruction::MPad {
             tags,
             prob,
@@ -72,7 +94,7 @@ fn interpret_gate(
 
     match name {
         S | SDag => match tags.as_slice() {
-            [] => Ok(ExtendedInstruction::Raw(RawInstruction::Gate {
+            [] => Ok(ExtendedInstruction::Raw(RawPassthrough::Gate {
                 name,
                 tags,
                 args,
@@ -101,7 +123,7 @@ fn interpret_gate(
             )),
         },
         Identity => match tags.as_slice() {
-            [] => Ok(ExtendedInstruction::Raw(RawInstruction::Gate {
+            [] => Ok(ExtendedInstruction::Raw(RawPassthrough::Gate {
                 name,
                 tags,
                 args,
@@ -116,7 +138,7 @@ fn interpret_gate(
                 "expected exactly one tag",
             )),
         },
-        _ => Ok(ExtendedInstruction::Raw(RawInstruction::Gate {
+        _ => Ok(ExtendedInstruction::Raw(RawPassthrough::Gate {
             name,
             tags,
             args,
@@ -254,7 +276,7 @@ fn interpret_noise(
             line,
             "expected exactly one tag",
         )),
-        _ => Ok(ExtendedInstruction::Raw(RawInstruction::Noise {
+        _ => Ok(ExtendedInstruction::Raw(RawPassthrough::Noise {
             name,
             tags,
             args,

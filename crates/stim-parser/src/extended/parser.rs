@@ -24,6 +24,10 @@ pub enum ExtendedParseError {
 }
 
 pub fn parse_extended(src: &str) -> Result<ExtendedProgram, ExtendedParseError> {
-    let prog = crate::parser::parse(src)?;
-    interpret(prog)
+    // Both `parse_impl` and `interpret` recurse through REPEAT bodies,
+    // so run the whole pipeline on the oversized parser stack.
+    crate::parser::run_on_parser_stack(|| {
+        let prog = crate::parser::parse_impl(src)?;
+        interpret(prog)
+    })
 }

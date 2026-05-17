@@ -101,15 +101,14 @@ proptest! {
         let _ = parse_extended(&src);
     }
 
-    /// Many nested REPEATs — guards against stack-blowing recursion.
-    ///
-    /// NOTE: capped at depth 16. The chumsky grammar uses `recursive(...)`
-    /// for REPEAT bodies and overflows the default thread stack somewhere
-    /// past depth ~24 in debug builds. Filed as a known limitation; not
-    /// addressed here since the fix is a grammar rewrite, not a test
-    /// change.
+    /// Many nested REPEATs. The grammar's chumsky `recursive(...)`
+    /// descends recursively through REPEAT bodies; `parse` /
+    /// `parse_extended` run on a 16 MiB dedicated stack thread, which is
+    /// large enough to handle a few hundred levels comfortably in debug
+    /// builds. 128 is a generous upper bound for any realistic Stim
+    /// program.
     #[test]
-    fn nested_repeats_never_panic(depth in 0usize..16) {
+    fn nested_repeats_never_panic(depth in 0usize..=128) {
         let mut src = String::new();
         for _ in 0..depth {
             src.push_str("REPEAT 1 {\n");

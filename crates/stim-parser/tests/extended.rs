@@ -1,6 +1,6 @@
-use stim_parser::ast::{AnnotationKind, GateName, MeasureName, NoiseName, RawInstruction};
+use stim_parser::ast::{AnnotationKind, GateName, MeasureName, NoiseName};
 use stim_parser::extended::{
-    Axis, ExtendedInstruction, ExtendedParseError, ExtendedProgram, parse_extended,
+    Axis, ExtendedInstruction, ExtendedParseError, ExtendedProgram, RawPassthrough, parse_extended,
 };
 
 fn parse_ok(src: &str) -> ExtendedProgram {
@@ -20,7 +20,7 @@ fn vanilla_h_passes_through() {
     let p = parse_ok("H 0\n");
     assert_eq!(p.instructions.len(), 1);
     match &p.instructions[0] {
-        ExtendedInstruction::Raw(RawInstruction::Gate {
+        ExtendedInstruction::Raw(RawPassthrough::Gate {
             name,
             tags,
             targets,
@@ -40,7 +40,7 @@ fn vanilla_h_passes_through() {
 fn vanilla_measure_passes_through() {
     let p = parse_ok("M 0 1\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Raw(RawInstruction::Measure { name, targets, .. }) => {
+        ExtendedInstruction::Raw(RawPassthrough::Measure { name, targets, .. }) => {
             assert_eq!(*name, MeasureName::M);
             assert_eq!(targets, &vec![0, 1]);
         }
@@ -52,7 +52,7 @@ fn vanilla_measure_passes_through() {
 fn vanilla_depolarize1_noise_passes_through() {
     let p = parse_ok("DEPOLARIZE1(0.01) 0\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Raw(RawInstruction::Noise { name, args, .. }) => {
+        ExtendedInstruction::Raw(RawPassthrough::Noise { name, args, .. }) => {
             assert_eq!(*name, NoiseName::Depolarize1);
             assert_eq!(args, &vec![0.01]);
         }
@@ -64,7 +64,7 @@ fn vanilla_depolarize1_noise_passes_through() {
 fn vanilla_annotation_passes_through() {
     let p = parse_ok("TICK\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Raw(RawInstruction::Annotation { kind, .. }) => {
+        ExtendedInstruction::Raw(RawPassthrough::Annotation { kind, .. }) => {
             assert_eq!(*kind, AnnotationKind::Tick);
         }
         other => panic!("{other:?}"),
@@ -105,7 +105,7 @@ fn repeat_recurses_into_body() {
             assert_eq!(body.len(), 1);
             assert!(matches!(
                 &body[0],
-                ExtendedInstruction::Raw(RawInstruction::Gate {
+                ExtendedInstruction::Raw(RawPassthrough::Gate {
                     name: GateName::H,
                     ..
                 })
@@ -150,7 +150,7 @@ fn repeat_invalid_extended_tag_in_body_errors() {
 fn lenient_unknown_tag_on_h_passes_through() {
     let p = parse_ok("H[unrelated] 0\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Raw(RawInstruction::Gate { name, tags, .. }) => {
+        ExtendedInstruction::Raw(RawPassthrough::Gate { name, tags, .. }) => {
             assert_eq!(*name, GateName::H);
             assert_eq!(tags.len(), 1);
             assert_eq!(tags[0].name, "unrelated");
@@ -200,7 +200,7 @@ fn s_dag_t_promotes_to_t_dag() {
 fn s_with_no_tag_is_vanilla_gate() {
     let p = parse_ok("S 0\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Raw(RawInstruction::Gate { name, tags, .. }) => {
+        ExtendedInstruction::Raw(RawPassthrough::Gate { name, tags, .. }) => {
             assert_eq!(*name, GateName::S);
             assert!(tags.is_empty());
         }
@@ -212,7 +212,7 @@ fn s_with_no_tag_is_vanilla_gate() {
 fn s_dag_with_no_tag_is_vanilla_gate() {
     let p = parse_ok("S_DAG 0\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Raw(RawInstruction::Gate { name, tags, .. }) => {
+        ExtendedInstruction::Raw(RawPassthrough::Gate { name, tags, .. }) => {
             assert_eq!(*name, GateName::SDag);
             assert!(tags.is_empty());
         }
@@ -344,7 +344,7 @@ fn i_u3_missing_phi_errors() {
 fn i_with_no_tag_is_vanilla_identity() {
     let p = parse_ok("I 0\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Raw(RawInstruction::Gate { name, tags, .. }) => {
+        ExtendedInstruction::Raw(RawPassthrough::Gate { name, tags, .. }) => {
             assert_eq!(*name, GateName::Identity);
             assert!(tags.is_empty());
         }

@@ -91,8 +91,8 @@ fn corpus_obeys_expectations() {
                     Err(ExecError::Unsupported { name: n, .. }) => {
                         assert_eq!(n, *expected_name, "{name}: wrong unsupported name");
                     }
-                    Err(ExecError::Malformed { .. }) => {
-                        panic!("{name}: corpus program produced Malformed; should not happen")
+                    Err(other) => {
+                        panic!("{name}: expected Unsupported, got {other:?}")
                     }
                     Ok(_) => panic!("{name}: expected Unsupported, but execute succeeded"),
                 }

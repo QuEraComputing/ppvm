@@ -1092,25 +1092,27 @@ independent copies. Use <code>fork()</code> to clone the quantum state with a fr
 </code></pre></div>
 <p>To preserve the RNG state exactly (e.g. for checkpointing), use <code>copy.copy()</code> instead.</p>
 <h3 id="stim-circuit-support">STIM circuit support</h3>
-<p>Circuits in <a href="https://github.com/quantumlib/Stim">STIM</a> format can be executed
-directly via <code>run_stim_string</code> or <code>run_stim_file</code>. Only the gate/measurement
-subset of STIM is supported; control flow instructions are not.</p>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">ppvm</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeneralizedTableau</span>
+<p>Circuits in <a href="https://github.com/quantumlib/Stim">STIM</a> format are parsed and
+prepared once into a <code>StimProgram</code>, then executed.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">ppvm</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeneralizedTableau</span><span class="p">,</span> <span class="n">StimProgram</span><span class="p">,</span> <span class="n">sample_stim</span>
 
-<span class="n">tab</span> <span class="o">=</span> <span class="n">GeneralizedTableau</span><span class="p">(</span><span class="n">n_qubits</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-
-<span class="n">stim_circuit</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="n">prog</span> <span class="o">=</span> <span class="n">StimProgram</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">H 0</span>
 <span class="s2">CX 0 1</span>
 <span class="s2">M 0 1</span>
-<span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
 
-<span class="n">results</span> <span class="o">=</span> <span class="n">tab</span><span class="o">.</span><span class="n">run_stim_string</span><span class="p">(</span><span class="n">stim_circuit</span><span class="p">)</span>
+<span class="c1"># Single shot:</span>
+<span class="n">tab</span> <span class="o">=</span> <span class="n">GeneralizedTableau</span><span class="p">(</span><span class="n">n_qubits</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">tab</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">prog</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Bell state measurement: </span><span class="si">{</span><span class="n">results</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</code></pre></div>
-<p>For larger circuits stored as <code>.stim</code> files, use <code>run_stim_file</code>:</p>
-<div class="highlight"><pre><span></span><code><span class="n">tab</span> <span class="o">=</span> <span class="n">GeneralizedTableau</span><span class="p">(</span><span class="n">n_qubits</span><span class="o">=</span><span class="mi">85</span><span class="p">)</span>
-<span class="n">results</span> <span class="o">=</span> <span class="n">tab</span><span class="o">.</span><span class="n">run_stim_file</span><span class="p">(</span><span class="s2">&quot;path/to/circuit.stim&quot;</span><span class="p">)</span>
+
+<span class="c1"># Many shots — fresh tableau per shot:</span>
+<span class="n">shots</span> <span class="o">=</span> <span class="n">sample_stim</span><span class="p">(</span><span class="n">prog</span><span class="p">,</span> <span class="n">n_qubits</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">num_shots</span><span class="o">=</span><span class="mi">10_000</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="c1"># .stim file:</span>
+<span class="n">prog</span> <span class="o">=</span> <span class="n">StimProgram</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;path/to/circuit.stim&quot;</span><span class="p">)</span>
+<span class="n">shots</span> <span class="o">=</span> <span class="n">GeneralizedTableau</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">prog</span><span class="p">,</span> <span class="n">n_qubits</span><span class="o">=</span><span class="mi">85</span><span class="p">,</span> <span class="n">num_shots</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="noise-and-loss">Noise and loss</h2>
 <p><code>GeneralizedTableau</code> supports the same noise channels as <code>PauliSum</code>:</p>

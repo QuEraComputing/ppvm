@@ -15,7 +15,7 @@ pub enum ExtendedParseError {
         line: usize,
         message: String,
     },
-    #[error("'MPAD' at line {line} target #{index} = {value}, must be 0 or 1")]
+    #[error("'MPAD' at line {line} bit at position {index} (zero-based) = {value}, must be 0 or 1")]
     InvalidMPadBit {
         line: usize,
         index: usize,

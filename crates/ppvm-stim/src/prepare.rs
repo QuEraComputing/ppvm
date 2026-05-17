@@ -5,6 +5,15 @@ use stim_parser::extended::{ExtendedInstruction, ExtendedProgram};
 pub enum ExecError {
     #[error("unsupported instruction '{name}' at line {line}")]
     Unsupported { name: String, line: usize },
+    /// Raised for `ExtendedInstruction::Raw(_)` values that the extended
+    /// interpreter would have lowered to typed variants (`MPad`, `Repeat`).
+    /// `parse_extended` never produces these; only a caller hand-constructing
+    /// an `ExtendedProgram` can. Reported as a recoverable error rather than
+    /// a panic.
+    #[error(
+        "malformed ExtendedProgram: Raw({kind}) at line {line} should have been lowered to ExtendedInstruction::{kind} by the interpreter"
+    )]
+    Malformed { kind: &'static str, line: usize },
 }
 
 pub fn prepare(program: &ExtendedProgram) -> Result<(), ExecError> {
@@ -32,11 +41,17 @@ fn validate_slice(instructions: &[ExtendedInstruction]) -> Result<(), ExecError>
             | ExtendedInstruction::U3 { .. }
             | ExtendedInstruction::Loss { .. }
             | ExtendedInstruction::CorrelatedLoss { .. } => {}
-            ExtendedInstruction::Raw(RawInstruction::MPad { .. }) => {
-                unreachable!("MPad never appears as Raw — interpret pass consumes it");
+            ExtendedInstruction::Raw(RawInstruction::MPad { line, .. }) => {
+                return Err(ExecError::Malformed {
+                    kind: "MPad",
+                    line: *line,
+                });
             }
-            ExtendedInstruction::Raw(RawInstruction::Repeat { .. }) => {
-                unreachable!("Repeat never appears as Raw — interpret pass consumes it");
+            ExtendedInstruction::Raw(RawInstruction::Repeat { line, .. }) => {
+                return Err(ExecError::Malformed {
+                    kind: "Repeat",
+                    line: *line,
+                });
             }
         }
     }

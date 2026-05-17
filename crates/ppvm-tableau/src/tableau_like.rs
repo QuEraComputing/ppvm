@@ -1,10 +1,10 @@
-//! [`TableauLike`] trait: shared interface for stabilizer-tableau backends.
+//! [`TableauLike`](crate::tableau_like::TableauLike) trait: shared interface for stabilizer-tableau backends.
 //!
-//! Any type implementing [`TableauLike`] gets default implementations of
+//! Any type implementing [`TableauLike`](crate::tableau_like::TableauLike) gets default implementations of
 //! single- and two-qubit Pauli noise channels (Depolarizing, PauliError,
 //! Depolarizing2, TwoQubitPauliError). New tableau backends only need to
-//! provide [`TableauLike::rng_mut`] and (optionally) override
-//! [`TableauLike::is_qubit_lost`].
+//! provide [`TableauLike::rng_mut`](crate::tableau_like::TableauLike::rng_mut) and (optionally) override
+//! [`TableauLike::is_qubit_lost`](crate::tableau_like::TableauLike::is_qubit_lost).
 
 use num::Zero;
 use rand::{Rng, RngExt};

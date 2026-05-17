@@ -1,6 +1,9 @@
 use bitvec::view::BitViewSized;
 use std::hash::Hash;
 
+/// Backing storage for a [`PauliWord`](crate::word::PauliWord) — a
+/// fixed-size, `Copy`-able block of bits (typically `[u8; N]` or
+/// `[u64; N]`).
 pub trait PauliStorage:
     BitViewSized
     + Clone

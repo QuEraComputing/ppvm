@@ -12,10 +12,10 @@ It is implemented in rust, but also offers [python bindings](#python).
 
 ## Python
 
-Install with
+Install with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-pip install git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
+uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
 ```
 
 ### Pauli Propagation

@@ -1,18 +1,34 @@
 use num::complex::{Complex, ComplexFloat};
 use num::traits::{One, Zero};
 
+/// A sparse vector keyed by index type `I` with values of type `T`.
+///
+/// Used by [`GeneralizedTableau`](crate::data::GeneralizedTableau) to
+/// store the coefficient over each branching bitstring. The default
+/// implementation is `Vec<(T, I)>`; alternative backings (BTreeMap,
+/// HashMap, etc.) can be provided by downstream code.
 pub trait SparseVector<T, I>: Clone + IntoIterator<Item = (T, I)> {
+    /// Construct an empty sparse vector.
     fn new() -> Self;
     /// Inserts an element without checking whether the index already exists.
     fn unsafe_insert(&mut self, index: I, value: T);
+    /// Add `value` into the entry at `index`, creating it if absent.
     fn add_or_insert(&mut self, index: I, value: T);
+    /// Retrieve the value at `index`, or zero if absent.
     fn get(&self, index: &I) -> T;
+    /// Number of stored entries.
     fn len(&self) -> usize;
+    /// `true` if no entries are stored.
     fn is_empty(&self) -> bool;
+    /// Multiply every entry's value by `factor`.
     fn mul_by(&mut self, factor: T);
+    /// Multiply the value at `index` by `factor`. No-op if absent.
     fn mul_element_by(&mut self, index: I, factor: T);
+    /// Drop entries whose magnitude is at most `|cutoff|`.
     fn trim(&mut self, cutoff: T);
+    /// Drop entries failing the predicate `f`.
     fn retain(&mut self, f: impl FnMut(&(T, I)) -> bool);
+    /// L2-normalize the vector in place. Panics on zero norm.
     fn normalize(&mut self);
 }
 

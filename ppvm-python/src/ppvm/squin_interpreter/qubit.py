@@ -1,14 +1,13 @@
-from typing import Any
 from dataclasses import dataclass
-
-from ..generalized_tableau import MeasurementResult
-from kirin import interp
-from bloqade.types import Qubit
-from kirin.dialects import ilist
-from bloqade.decoders.dialects.annotate.types import MeasurementResultValue
+from typing import Any
 
 from bloqade import qubit
+from bloqade.decoders.dialects.annotate.types import MeasurementResultValue
+from bloqade.types import Qubit
+from kirin import interp
+from kirin.dialects import ilist
 
+from ..generalized_tableau import MeasurementResult
 from ._interp import GeneralizedTableauInterpreter
 
 
@@ -27,7 +26,6 @@ def _measurement_result_conversion(result: MeasurementResult):
 
 @qubit.dialect.register(key="generalized_tableau")
 class QubitMethods(interp.MethodTable):
-
     @interp.impl(qubit.stmts.New)
     def new(
         self,
@@ -47,9 +45,7 @@ class QubitMethods(interp.MethodTable):
     ):
         qubits: ilist.IList[GeneralizedTableauQubit, Any] = frame.get(stmt.qubits)
         results = [interp_.backend.measure(qbit.addr) for qbit in qubits]
-        results_converted = ilist.IList(
-            list(map(_measurement_result_conversion, results))
-        )
+        results_converted = ilist.IList(list(map(_measurement_result_conversion, results)))
         return (results_converted,)
 
     @interp.impl(qubit.stmts.Reset)

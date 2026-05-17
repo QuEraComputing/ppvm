@@ -1,11 +1,11 @@
 from typing import Any
 
-from kirin import interp
 from bloqade.squin import noise
+from kirin import interp
 from kirin.dialects import ilist
 
-from ..qubit import GeneralizedTableauQubit
 from .._interp import GeneralizedTableauInterpreter
+from ..qubit import GeneralizedTableauQubit
 
 
 @noise.dialect.register(key="generalized_tableau")

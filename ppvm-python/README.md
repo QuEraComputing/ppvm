@@ -6,11 +6,14 @@
 
 ## Installation
 
+We recommend using [uv](https://docs.astral.sh/uv/) to manage your Python
+environment. Install directly from git:
+
 ```bash
-pip install git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
+uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
 ```
 
-Or clone and install locally (using [uv](https://docs.astral.sh/uv/)):
+Or clone and install locally:
 
 ```bash
 git clone https://github.com/QuEraComputing/ppvm

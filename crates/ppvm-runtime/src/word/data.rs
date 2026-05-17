@@ -5,9 +5,42 @@ use core::panic;
 use std::hash::{BuildHasher, Hash};
 use std::ops::Index;
 
+/// A fixed-width Pauli string stored as parallel `x` and `z` bit arrays.
+///
+/// Each qubit slot is encoded by two bits, `(x, z)`, giving the four
+/// Pauli operators `I = (0,0)`, `X = (1,0)`, `Z = (0,1)`, `Y = (1,1)` —
+/// the same encoding stabilizer-formalism tools use. The bit arrays live
+/// in a single `PauliStorage` blob (typically `[u8; N]` or `[u64; N]`),
+/// so a `PauliWord<[u8; 1]>` packs up to 8 qubits, `[u8; 2]` up to 16,
+/// etc.
+///
+/// A cached hash speeds up use as a map key; pass `REHASH = false` if
+/// you build words in bulk and want to control rehashing manually.
+///
+/// # Examples
+///
+/// ```
+/// use ppvm_runtime::char::Pauli;
+/// use ppvm_runtime::traits::PauliWordTrait;
+/// use ppvm_runtime::word::PauliWord;
+///
+/// // Build a word from a string …
+/// let w: PauliWord<[u8; 1]> = "XYZI".into();
+/// assert_eq!(w.n_qubits(), 4);
+/// assert_eq!(w.get(0), Pauli::X);
+/// assert_eq!(w.get(3), Pauli::I);
+///
+/// // … or build it slot-by-slot.
+/// let mut w2: PauliWord<[u8; 1]> = PauliWord::new(2);
+/// w2.set(0, Pauli::X).set(1, Pauli::Y);
+/// assert_eq!(w2.to_string(), "XY");
+/// assert_eq!(w2.weight(), 2);
+/// ```
 #[derive(Debug, Clone)]
 pub struct PauliWord<A: PauliStorage, S = fxhash::FxBuildHasher, const REHASH: bool = true> {
+    /// X-bit array (one bit per qubit).
     pub xbits: BitArray<A>,
+    /// Z-bit array (one bit per qubit).
     pub zbits: BitArray<A>,
     /// Number of qubits
     nqubits: usize,
@@ -330,6 +363,7 @@ impl<A: PauliStorage, S, const REHASH: bool> Index<usize> for PauliWord<A, S, RE
     }
 }
 
+/// Iterator over the individual [`Pauli`] symbols of a [`PauliWord`].
 pub struct PauliWordIter<'a, A: PauliStorage, S, const REHASH: bool = true> {
     word: &'a PauliWord<A, S, REHASH>,
     curr: usize,

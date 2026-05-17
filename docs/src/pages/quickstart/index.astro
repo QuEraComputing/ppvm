@@ -1,0 +1,54 @@
+---
+import Base from "../../layouts/Base.astro";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+<Base title="Quick Start" current="quickstart">
+  <article class="shell">
+    <div class="titleblock">
+      <div class="eyebrow">Pick your path</div>
+      <h1>Quick Start</h1>
+      <p class="byline">
+        ppvm has two audiences. Choose the path that matches yours — the
+        material differs because the goals differ.
+      </p>
+    </div>
+
+    <div class="qs-chooser">
+      <a class="qs-card qs-card--python" href={`${base}/quickstart/python`}>
+        <span class="qs-chip"><span class="chip-dot"></span>Python</span>
+        <h3>Python Quick Start</h3>
+        <span class="audience-tag">For researchers</span>
+        <p>
+          You have a Stim program or a Bloqade circuit and you want to run it
+          under realistic noise, sample many shots, and look at the outcomes.
+          No Rust knowledge required.
+        </p>
+        <ul class="qs-bullets">
+          <li>Install via <code>uv</code></li>
+          <li>Parse and execute Stim programs</li>
+          <li>Sample shots, inspect loss-aware outcomes</li>
+          <li>Try the generalized tableau with non-Clifford gates</li>
+        </ul>
+        <span class="qs-cta">Open the Python Quick Start</span>
+      </a>
+
+      <a class="qs-card qs-card--rust" href={`${base}/quickstart/rust`}>
+        <span class="qs-chip"><span class="chip-dot"></span>Rust</span>
+        <h3>Rust Quick Start</h3>
+        <span class="audience-tag">For library developers</span>
+        <p>
+          You want to embed ppvm in a simulator, build a new gate or noise
+          model on top of the trait hierarchy, or run benchmark sweeps from
+          native code. The Python wrapper would be a tax you don't need.
+        </p>
+        <ul class="qs-bullets">
+          <li>Add <code>ppvm-runtime</code> and <code>ppvm-tableau</code> as Cargo deps</li>
+          <li>Build a typed <code>PauliSum&lt;Config&gt;</code></li>
+          <li>Use the gate/noise/measurement traits</li>
+          <li>Plug in your own truncation strategy</li>
+        </ul>
+        <span class="qs-cta">Open the Rust Quick Start</span>
+      </a>
+    </div>
+  </article>
+</Base>

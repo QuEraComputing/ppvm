@@ -6,6 +6,7 @@ use crate::word::PauliWord;
 use itertools::{Itertools, MultiProduct};
 
 impl OpPattern {
+    /// Iterate over every [`Pauli`] symbol matching this op pattern.
     pub fn enumerate_matches(&self) -> EnumMatchesOpPattern<'_> {
         EnumMatchesOpPattern {
             pattern: self,
@@ -14,6 +15,7 @@ impl OpPattern {
     }
 }
 
+/// Iterator over the Pauli symbols accepted by an [`OpPattern`].
 #[derive(Debug, Clone)]
 pub struct EnumMatchesOpPattern<'a> {
     pattern: &'a OpPattern,
@@ -82,6 +84,9 @@ impl<'a> Iterator for EnumMatchesOpPattern<'a> {
 }
 
 impl PauliPattern {
+    /// Iterate over every [`PauliWord`] over `n_qubits` qubits that
+    /// matches this pattern. Star patterns are not supported and will
+    /// panic.
     pub fn enumerate_matches<A: PauliStorage>(
         &self,
         n_qubits: usize,
@@ -120,6 +125,7 @@ impl PauliPattern {
     }
 }
 
+/// Iterator over the concrete [`PauliWord`]s accepted by a [`PauliPattern`].
 #[derive(Debug, Clone)]
 pub struct EnumMatchesPauliPattern<'a, A: PauliStorage> {
     n_qubits: usize,

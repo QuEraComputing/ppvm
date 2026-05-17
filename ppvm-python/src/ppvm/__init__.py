@@ -7,5 +7,7 @@ from .paulisum import LossyPauliSum as LossyPauliSum
 from .paulisum import PauliSum as PauliSum
 from .squin_interpreter.device import (
     GeneralizedTableauSimulator as GeneralizedTableauSimulator,
+)
+from .squin_interpreter.device import (
     GeneralizedTableauSimulatorTask as GeneralizedTableauSimulatorTask,
 )

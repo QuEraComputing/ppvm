@@ -36,10 +36,10 @@ rotations) are tracked via a sparse coefficient vector that grows with the stabi
 
 ## Quick installation
 
-Just `pip install` directly from git:
+Install directly from git with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-pip install git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
+uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
 ```
 
 ## Short examples

@@ -10,16 +10,12 @@ fn pauli_code<W: PauliWordTrait>(word: &W, addr: usize) -> usize {
     (word.get_xbit(addr) as usize) | ((word.get_zbit(addr) as usize) << 1)
 }
 
-impl<T: Config> PauliError<T> for PauliSum<T>
-where
-    f64: std::ops::Mul<T::Coeff, Output = T::Coeff>
-        + std::ops::Add<T::Coeff, Output = T::Coeff>
-        + std::ops::Sub<T::Coeff, Output = T::Coeff>,
-{
+impl<T: Config> PauliError<T> for PauliSum<T> {
     fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
-        let x_factor = 1.0f64 - 2.0f64 * p[1].clone() - 2.0f64 * p[2].clone();
-        let z_factor = 1.0f64 - 2.0f64 * p[0].clone() - 2.0f64 * p[1].clone();
-        let y_factor = 1.0f64 - 2.0f64 * p[0].clone() - 2.0f64 * p[2].clone();
+        let one = T::Coeff::from(1.0);
+        let x_factor = one.clone() - p[1].clone() * 2.0 - p[2].clone() * 2.0;
+        let z_factor = one.clone() - p[0].clone() * 2.0 - p[1].clone() * 2.0;
+        let y_factor = one - p[0].clone() * 2.0 - p[2].clone() * 2.0;
 
         self.scale(move |k, v| {
             if k.get_lbit(addr0) {
@@ -36,195 +32,65 @@ where
     }
 }
 
-impl<T: Config> TwoQubitPauliError<T> for PauliSum<T>
-where
-    f64: std::ops::Mul<T::Coeff, Output = T::Coeff>
-        + std::ops::Add<T::Coeff, Output = T::Coeff>
-        + std::ops::Sub<T::Coeff, Output = T::Coeff>,
-{
+/// Helper: compute `1 - 2 * (p[i_0] + p[i_1] + ... + p[i_n])`.
+#[inline]
+fn one_minus_two_sum<C: Coefficient, const N: usize>(p: &[C; 15], indices: [usize; N]) -> C {
+    let mut acc = C::from(1.0);
+    for i in indices {
+        acc = acc - p[i].clone() * 2.0;
+    }
+    acc
+}
+
+impl<T: Config> TwoQubitPauliError<T> for PauliSum<T> {
     fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [<T as Config>::Coeff; 15]) {
         self.scale(|k, v| match (k.get(addr0), k.get(addr1)) {
             (Pauli::I, Pauli::I) => {}
             (Pauli::I, Pauli::X) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[1].clone()
-                    - 2.0f64 * p[10].clone()
-                    - 2.0f64 * p[13].clone()
-                    - 2.0f64 * p[14].clone()
-                    - 2.0f64 * p[2].clone()
-                    - 2.0f64 * p[5].clone()
-                    - 2.0f64 * p[6].clone()
-                    - 2.0f64 * p[9].clone();
+                *v *= one_minus_two_sum(&p, [1, 10, 13, 14, 2, 5, 6, 9]);
             }
-
             (Pauli::I, Pauli::Y) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[0].clone()
-                    - 2.0f64 * p[10].clone()
-                    - 2.0f64 * p[12].clone()
-                    - 2.0f64 * p[14].clone()
-                    - 2.0f64 * p[2].clone()
-                    - 2.0f64 * p[4].clone()
-                    - 2.0f64 * p[6].clone()
-                    - 2.0f64 * p[8].clone();
+                *v *= one_minus_two_sum(&p, [0, 10, 12, 14, 2, 4, 6, 8]);
             }
-
             (Pauli::I, Pauli::Z) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[0].clone()
-                    - 2.0f64 * p[1].clone()
-                    - 2.0f64 * p[12].clone()
-                    - 2.0f64 * p[13].clone()
-                    - 2.0f64 * p[4].clone()
-                    - 2.0f64 * p[5].clone()
-                    - 2.0f64 * p[8].clone()
-                    - 2.0f64 * p[9].clone();
+                *v *= one_minus_two_sum(&p, [0, 1, 12, 13, 4, 5, 8, 9]);
             }
-
             (Pauli::X, Pauli::I) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[10].clone()
-                    - 2.0f64 * p[11].clone()
-                    - 2.0f64 * p[12].clone()
-                    - 2.0f64 * p[13].clone()
-                    - 2.0f64 * p[14].clone()
-                    - 2.0f64 * p[7].clone()
-                    - 2.0f64 * p[8].clone()
-                    - 2.0f64 * p[9].clone();
+                *v *= one_minus_two_sum(&p, [10, 11, 12, 13, 14, 7, 8, 9]);
             }
-
             (Pauli::X, Pauli::X) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[1].clone()
-                    - 2.0f64 * p[11].clone()
-                    - 2.0f64 * p[12].clone()
-                    - 2.0f64 * p[2].clone()
-                    - 2.0f64 * p[5].clone()
-                    - 2.0f64 * p[6].clone()
-                    - 2.0f64 * p[7].clone()
-                    - 2.0f64 * p[8].clone();
+                *v *= one_minus_two_sum(&p, [1, 11, 12, 2, 5, 6, 7, 8]);
             }
-
             (Pauli::X, Pauli::Y) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[0].clone()
-                    - 2.0f64 * p[11].clone()
-                    - 2.0f64 * p[13].clone()
-                    - 2.0f64 * p[2].clone()
-                    - 2.0f64 * p[4].clone()
-                    - 2.0f64 * p[6].clone()
-                    - 2.0f64 * p[7].clone()
-                    - 2.0f64 * p[9].clone();
+                *v *= one_minus_two_sum(&p, [0, 11, 13, 2, 4, 6, 7, 9]);
             }
-
             (Pauli::X, Pauli::Z) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[0].clone()
-                    - 2.0f64 * p[1].clone()
-                    - 2.0f64 * p[10].clone()
-                    - 2.0f64 * p[11].clone()
-                    - 2.0f64 * p[14].clone()
-                    - 2.0f64 * p[4].clone()
-                    - 2.0f64 * p[5].clone()
-                    - 2.0f64 * p[7].clone();
+                *v *= one_minus_two_sum(&p, [0, 1, 10, 11, 14, 4, 5, 7]);
             }
-
             (Pauli::Y, Pauli::I) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[11].clone()
-                    - 2.0f64 * p[12].clone()
-                    - 2.0f64 * p[13].clone()
-                    - 2.0f64 * p[14].clone()
-                    - 2.0f64 * p[3].clone()
-                    - 2.0f64 * p[4].clone()
-                    - 2.0f64 * p[5].clone()
-                    - 2.0f64 * p[6].clone();
+                *v *= one_minus_two_sum(&p, [11, 12, 13, 14, 3, 4, 5, 6]);
             }
-
             (Pauli::Y, Pauli::X) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[1].clone()
-                    - 2.0f64 * p[10].clone()
-                    - 2.0f64 * p[11].clone()
-                    - 2.0f64 * p[12].clone()
-                    - 2.0f64 * p[2].clone()
-                    - 2.0f64 * p[3].clone()
-                    - 2.0f64 * p[4].clone()
-                    - 2.0f64 * p[9].clone();
+                *v *= one_minus_two_sum(&p, [1, 10, 11, 12, 2, 3, 4, 9]);
             }
-
             (Pauli::Y, Pauli::Y) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[0].clone()
-                    - 2.0f64 * p[10].clone()
-                    - 2.0f64 * p[11].clone()
-                    - 2.0f64 * p[13].clone()
-                    - 2.0f64 * p[2].clone()
-                    - 2.0f64 * p[3].clone()
-                    - 2.0f64 * p[5].clone()
-                    - 2.0f64 * p[8].clone();
+                *v *= one_minus_two_sum(&p, [0, 10, 11, 13, 2, 3, 5, 8]);
             }
-
             (Pauli::Y, Pauli::Z) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[0].clone()
-                    - 2.0f64 * p[1].clone()
-                    - 2.0f64 * p[11].clone()
-                    - 2.0f64 * p[14].clone()
-                    - 2.0f64 * p[3].clone()
-                    - 2.0f64 * p[6].clone()
-                    - 2.0f64 * p[8].clone()
-                    - 2.0f64 * p[9].clone();
+                *v *= one_minus_two_sum(&p, [0, 1, 11, 14, 3, 6, 8, 9]);
             }
-
             (Pauli::Z, Pauli::I) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[10].clone()
-                    - 2.0f64 * p[3].clone()
-                    - 2.0f64 * p[4].clone()
-                    - 2.0f64 * p[5].clone()
-                    - 2.0f64 * p[6].clone()
-                    - 2.0f64 * p[7].clone()
-                    - 2.0f64 * p[8].clone()
-                    - 2.0f64 * p[9].clone();
+                *v *= one_minus_two_sum(&p, [10, 3, 4, 5, 6, 7, 8, 9]);
             }
-
             (Pauli::Z, Pauli::X) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[1].clone()
-                    - 2.0f64 * p[13].clone()
-                    - 2.0f64 * p[14].clone()
-                    - 2.0f64 * p[2].clone()
-                    - 2.0f64 * p[3].clone()
-                    - 2.0f64 * p[4].clone()
-                    - 2.0f64 * p[7].clone()
-                    - 2.0f64 * p[8].clone();
+                *v *= one_minus_two_sum(&p, [1, 13, 14, 2, 3, 4, 7, 8]);
             }
-
             (Pauli::Z, Pauli::Y) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[0].clone()
-                    - 2.0f64 * p[12].clone()
-                    - 2.0f64 * p[14].clone()
-                    - 2.0f64 * p[2].clone()
-                    - 2.0f64 * p[3].clone()
-                    - 2.0f64 * p[5].clone()
-                    - 2.0f64 * p[7].clone()
-                    - 2.0f64 * p[9].clone();
+                *v *= one_minus_two_sum(&p, [0, 12, 14, 2, 3, 5, 7, 9]);
             }
-
             (Pauli::Z, Pauli::Z) => {
-                *v *= 1.0f64
-                    - 2.0f64 * p[0].clone()
-                    - 2.0f64 * p[1].clone()
-                    - 2.0f64 * p[10].clone()
-                    - 2.0f64 * p[12].clone()
-                    - 2.0f64 * p[13].clone()
-                    - 2.0f64 * p[3].clone()
-                    - 2.0f64 * p[6].clone()
-                    - 2.0f64 * p[7].clone();
+                *v *= one_minus_two_sum(&p, [0, 1, 10, 12, 13, 3, 6, 7]);
             }
-
             _ => {
                 // NOTE: if just one atom is lost, then there is no
                 // well-defined noise channel on the other atom
@@ -234,14 +100,9 @@ where
     }
 }
 
-impl<T: Config> Depolarizing<T> for PauliSum<T>
-where
-    f64: std::ops::Mul<T::Coeff, Output = T::Coeff>
-        + std::ops::Add<T::Coeff, Output = T::Coeff>
-        + std::ops::Sub<T::Coeff, Output = T::Coeff>,
-{
+impl<T: Config> Depolarizing<T> for PauliSum<T> {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        let factor = 1.0f64 - 4.0f64 / 3.0f64 * p;
+        let factor = T::Coeff::from(1.0) - p * (4.0 / 3.0);
         self.scale(move |k, v| {
             if !k.get_lbit(addr0) && pauli_code(k, addr0) != 0 {
                 *v *= factor.clone();
@@ -250,14 +111,9 @@ where
     }
 }
 
-impl<T: Config> Depolarizing2<T> for PauliSum<T>
-where
-    f64: std::ops::Mul<T::Coeff, Output = T::Coeff>
-        + std::ops::Add<T::Coeff, Output = T::Coeff>
-        + std::ops::Sub<T::Coeff, Output = T::Coeff>,
-{
+impl<T: Config> Depolarizing2<T> for PauliSum<T> {
     fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff) {
-        let factor = 1.0f64 - (16.0f64 / 15.0f64) * p;
+        let factor = T::Coeff::from(1.0) - p * (16.0 / 15.0);
         self.scale(move |k, v| {
             if k.get_lbit(addr0) || k.get_lbit(addr1) {
                 return;
@@ -271,7 +127,6 @@ where
 
 impl<T: Config> AmplitudeDamping<T> for PauliSum<T>
 where
-    f64: std::ops::Sub<T::Coeff, Output = T::Coeff>,
     T::Coeff: Float,
 {
     fn amplitude_damping(&mut self, addr0: usize, gamma: <T as Config>::Coeff) {
@@ -279,7 +134,7 @@ where
             Pauli::I | Pauli::L => None,
 
             Pauli::X | Pauli::Y => {
-                *v *= (1.0 - gamma).sqrt();
+                *v *= (T::Coeff::from(1.0) - gamma).sqrt();
                 None
             }
 
@@ -289,7 +144,7 @@ where
                 let mut new_k = k.clone();
                 new_k.set(addr0, Pauli::I);
 
-                *v *= 1.0 - gamma;
+                *v *= T::Coeff::from(1.0) - gamma;
 
                 Some((new_k, new_v))
             }
@@ -303,10 +158,7 @@ where
 /// While this is technically correct, you may want to count loss as a contribution
 /// to the zero state of a qubit. Refer to `LossyPauliWord` and the `ResetLossChannel`
 /// trait for that functionality.
-impl<T: Config> LossChannel<T> for PauliSum<T>
-where
-    f64: std::ops::Sub<T::Coeff, Output = T::Coeff>,
-{
+impl<T: Config> LossChannel<T> for PauliSum<T> {
     fn loss_channel(&mut self, addr0: usize, p: T::Coeff) {
         self.map_insert(|k, v| match k.get(addr0) {
             Pauli::L => {
@@ -316,18 +168,14 @@ where
                 Some((new_k, new_v))
             }
             Pauli::I | Pauli::X | Pauli::Y | Pauli::Z => {
-                *v *= 1.0f64 - p.clone();
+                *v *= T::Coeff::from(1.0) - p.clone();
                 None
             }
         });
     }
 }
 
-impl<T: Config> CorrelatedLossChannel<T> for PauliSum<T>
-where
-    f64: std::ops::Sub<<T as Config>::Coeff, Output = T::Coeff>
-        + std::ops::Mul<<T as Config>::Coeff, Output = T::Coeff>,
-{
+impl<T: Config> CorrelatedLossChannel<T> for PauliSum<T> {
     /// Apply a correlated loss channel to qubits at `addr0` and `addr1`.
     ///
     /// The three probabilities are:
@@ -368,7 +216,7 @@ where
                     new_k.set(addr1, Pauli::I);
                     let new_v = v.clone() * p[1].clone();
 
-                    *v *= 1.0_f64 - p[2].clone();
+                    *v *= T::Coeff::from(1.0) - p[2].clone();
 
                     Some(Vec::from([(new_k, new_v)]))
                 }
@@ -380,14 +228,14 @@ where
                     new_k.set(addr0, Pauli::I);
                     let new_v = v.clone() * p[1].clone();
 
-                    *v *= 1.0_f64 - p[2].clone();
+                    *v *= T::Coeff::from(1.0) - p[2].clone();
 
                     Some(Vec::from([(new_k, new_v)]))
                 }
 
                 (_, _) => {
                     // case both qubits in qubit subspace
-                    *v *= 1.0_f64 - 2.0_f64 * p[1].clone() - p[0].clone();
+                    *v *= T::Coeff::from(1.0) - p[1].clone() * 2.0 - p[0].clone();
                     None
                 }
             }

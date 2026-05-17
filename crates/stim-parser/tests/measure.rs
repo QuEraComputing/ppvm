@@ -40,6 +40,24 @@ fn parse_annotation_tick() {
 }
 
 #[test]
+fn parse_annotation_tick_with_args_rejected() {
+    let err = parse("TICK(0.1)").unwrap_err();
+    match err {
+        ParseError::ArgCount {
+            name,
+            expected,
+            found,
+            ..
+        } => {
+            assert_eq!(name, "TICK");
+            assert_eq!(expected, 0);
+            assert_eq!(found, 1);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn parse_annotation_with_args_and_targets() {
     let p = parse("QUBIT_COORDS(0, 0) 0").unwrap();
     let RawInstruction::Annotation {

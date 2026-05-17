@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::ast::{ArgCount, ParseError, Program, RawInstruction, SyntaxError, Tag, TargetArity};
+use crate::ast::{
+    AnnotationKind, ArgCount, ParseError, Program, RawInstruction, SyntaxError, Tag, TargetArity,
+};
 use crate::grammar;
 use crate::line_map::LineMap;
 use crate::table::{EntryKind, TableEntry, lookup};
@@ -112,7 +114,11 @@ fn validate_node(
                 }
             }
 
-            let skip_arg_validation = is_annotation || matches!(arg_rule, ArgCount::Deferred);
+            let skip_arg_validation = matches!(arg_rule, ArgCount::Deferred)
+                || matches!(
+                    entry.kind,
+                    EntryKind::Annotation(kind) if kind != AnnotationKind::Tick
+                );
             if !skip_arg_validation {
                 match arg_rule {
                     ArgCount::None if !args.is_empty() => {

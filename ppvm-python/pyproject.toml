@@ -8,6 +8,8 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
+    "bloqade-circuit>=0.14.1",
+    "kirin>=0.0.15",
     "ppvm-python-native",
 ]
 

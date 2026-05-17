@@ -42,3 +42,23 @@ fn supported_structural_instructions_are_not_rejected_by_prepare() {
         parse_extended("MPAD 0 1\nI_ERROR[correlated_loss](0.5) 0 1\n").expect("parse_extended");
     assert_eq!(prepare(&prog), Ok(()));
 }
+
+#[test]
+fn invalid_measure_probability_rejected() {
+    let ExecError::InvalidProbability { name, line, value } = err_from_src("M(2.0) 0") else {
+        panic!("expected ExecError::InvalidProbability");
+    };
+    assert_eq!(name, "M");
+    assert_eq!(line, 1);
+    assert_eq!(value, 2.0);
+}
+
+#[test]
+fn invalid_mpad_probability_rejected() {
+    let ExecError::InvalidProbability { name, line, value } = err_from_src("MPAD(-0.1) 0") else {
+        panic!("expected ExecError::InvalidProbability");
+    };
+    assert_eq!(name, "MPAD");
+    assert_eq!(line, 1);
+    assert_eq!(value, -0.1);
+}

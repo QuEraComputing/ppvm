@@ -14,6 +14,12 @@ pub enum ExecError {
         "malformed ExtendedProgram: Raw({kind}) at line {line} should have been lowered to ExtendedInstruction::{kind} by the interpreter"
     )]
     Malformed { kind: &'static str, line: usize },
+    #[error("invalid probability {value} for '{name}' at line {line}; expected value in [0, 1]")]
+    InvalidProbability {
+        name: String,
+        line: usize,
+        value: f64,
+    },
 }
 
 pub fn prepare(program: &ExtendedProgram) -> Result<(), ExecError> {
@@ -29,18 +35,30 @@ fn validate_slice(instructions: &[ExtendedInstruction]) -> Result<(), ExecError>
             ExtendedInstruction::Raw(RawInstruction::Noise { name, line, .. }) => {
                 check_noise_supported(*name, *line)?;
             }
-            ExtendedInstruction::Raw(RawInstruction::Measure { name, line, .. }) => {
+            ExtendedInstruction::Raw(RawInstruction::Measure {
+                name,
+                args,
+                line,
+                ..
+            }) => {
                 check_measure_supported(*name, *line)?;
+                if let Some(&p) = args.first() {
+                    check_probability(p, name.canonical_name(), *line)?;
+                }
             }
             ExtendedInstruction::Repeat { body, .. } => validate_slice(body)?,
             ExtendedInstruction::Raw(RawInstruction::Annotation { .. })
-            | ExtendedInstruction::MPad { .. }
             | ExtendedInstruction::T { .. }
             | ExtendedInstruction::TDag { .. }
             | ExtendedInstruction::Rotation { .. }
             | ExtendedInstruction::U3 { .. }
             | ExtendedInstruction::Loss { .. }
             | ExtendedInstruction::CorrelatedLoss { .. } => {}
+            ExtendedInstruction::MPad { prob, line, .. } => {
+                if let Some(p) = prob {
+                    check_probability(*p, "MPAD", *line)?;
+                }
+            }
             ExtendedInstruction::Raw(RawInstruction::MPad { line, .. }) => {
                 return Err(ExecError::Malformed {
                     kind: "MPad",
@@ -94,5 +112,17 @@ fn check_measure_supported(name: MeasureName, line: usize) -> Result<(), ExecErr
             name: name.canonical_name().to_string(),
             line,
         }),
+    }
+}
+
+fn check_probability(p: f64, name: &str, line: usize) -> Result<(), ExecError> {
+    if p.is_finite() && (0.0..=1.0).contains(&p) {
+        Ok(())
+    } else {
+        Err(ExecError::InvalidProbability {
+            name: name.to_string(),
+            line,
+            value: p,
+        })
     }
 }

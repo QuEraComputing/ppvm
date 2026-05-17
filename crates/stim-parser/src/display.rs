@@ -258,10 +258,11 @@ fn write_usize_targets(f: &mut fmt::Formatter<'_>, targets: &[usize]) -> fmt::Re
     Ok(())
 }
 
-/// f64 formatter that always emits a decimal point so the result re-parses
-/// as a float (otherwise integer-valued floats like `1.0` would print as
-/// `1`, and our grammar's `signed_float` requires either a decimal point
-/// or an exponent).
+/// f64 formatter that always emits a decimal point. The grammar's
+/// `signed_float` accepts bare integers too (`42` parses), so this is
+/// purely a readability choice — printing `1.0` instead of `1` keeps the
+/// canonical output looking like floating-point everywhere args are
+/// expected.
 struct FloatLit(f64);
 
 impl fmt::Display for FloatLit {

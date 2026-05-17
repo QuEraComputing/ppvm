@@ -7,7 +7,9 @@ fn err_from_src(src: &str) -> ExecError {
 
 #[test]
 fn unsupported_swap_rejected() {
-    let ExecError::Unsupported { name, line } = err_from_src("SWAP 0 1");
+    let ExecError::Unsupported { name, line } = err_from_src("SWAP 0 1") else {
+        panic!("expected ExecError::Unsupported");
+    };
     assert_eq!(name, "SWAP");
     assert_eq!(line, 1);
 }
@@ -26,7 +28,10 @@ fn unsupported_heralded_erase_rejected() {
 
 #[test]
 fn unsupported_swap_inside_repeat_rejected() {
-    let ExecError::Unsupported { name, line } = err_from_src("REPEAT 3 {\n    SWAP 0 1\n}\n");
+    let ExecError::Unsupported { name, line } = err_from_src("REPEAT 3 {\n    SWAP 0 1\n}\n")
+    else {
+        panic!("expected ExecError::Unsupported");
+    };
     assert_eq!(name, "SWAP");
     assert_eq!(line, 2);
 }

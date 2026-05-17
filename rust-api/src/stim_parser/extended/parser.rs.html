@@ -24,7 +24,11 @@
 <a href=#24 id=24 data-nosnippet>24</a>}
 <a href=#25 id=25 data-nosnippet>25</a>
 <a href=#26 id=26 data-nosnippet>26</a><span class="kw">pub fn </span>parse_extended(src: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Result</span>&lt;ExtendedProgram, ExtendedParseError&gt; {
-<a href=#27 id=27 data-nosnippet>27</a>    <span class="kw">let </span>prog = <span class="kw">crate</span>::parser::parse(src)<span class="question-mark">?</span>;
-<a href=#28 id=28 data-nosnippet>28</a>    interpret(prog)
-<a href=#29 id=29 data-nosnippet>29</a>}
+<a href=#27 id=27 data-nosnippet>27</a>    <span class="comment">// Both `parse_impl` and `interpret` recurse through REPEAT bodies,
+<a href=#28 id=28 data-nosnippet>28</a>    // so run the whole pipeline on the oversized parser stack.
+<a href=#29 id=29 data-nosnippet>29</a>    </span><span class="kw">crate</span>::parser::run_on_parser_stack(|| {
+<a href=#30 id=30 data-nosnippet>30</a>        <span class="kw">let </span>prog = <span class="kw">crate</span>::parser::parse_impl(src)<span class="question-mark">?</span>;
+<a href=#31 id=31 data-nosnippet>31</a>        interpret(prog)
+<a href=#32 id=32 data-nosnippet>32</a>    })
+<a href=#33 id=33 data-nosnippet>33</a>}
 </code></pre></div></section></main></body></html>

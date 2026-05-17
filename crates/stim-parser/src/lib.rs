@@ -14,7 +14,8 @@ pub mod prelude {
         TagParam,
     };
     pub use crate::extended::{
-        Axis, ExtendedInstruction, ExtendedParseError, ExtendedProgram, parse_extended,
+        Axis, ExtendedInstruction, ExtendedParseError, ExtendedProgram, RawPassthrough,
+        parse_extended,
     };
     pub use crate::parser::parse;
 }

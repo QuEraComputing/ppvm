@@ -124,7 +124,10 @@ fn fmt_raw(i: &RawInstruction, f: &mut fmt::Formatter<'_>, depth: usize) -> fmt:
 
 fn fmt_ext(i: &ExtendedInstruction, f: &mut fmt::Formatter<'_>, depth: usize) -> fmt::Result {
     match i {
-        ExtendedInstruction::Raw(r) => return fmt_raw(r, f, depth),
+        ExtendedInstruction::Raw(r) => {
+            let owned: RawInstruction = r.clone().into_raw();
+            return fmt_raw(&owned, f, depth);
+        }
         ExtendedInstruction::Repeat { count, body, .. } => {
             write_indent(f, depth)?;
             writeln!(f, "REPEAT {count} {{")?;

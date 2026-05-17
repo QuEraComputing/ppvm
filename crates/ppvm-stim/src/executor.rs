@@ -8,8 +8,8 @@ use std::fmt::Debug;
 
 use ppvm_runtime::prelude::*;
 use ppvm_tableau::prelude::*;
-use stim_parser::ast::{GateName, MeasureName, NoiseName, RawInstruction};
-use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram};
+use stim_parser::ast::{GateName, MeasureName, NoiseName};
+use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 
 use crate::prepare::{ExecError, prepare};
 
@@ -125,7 +125,7 @@ pub fn execute_prepared<T, I, C>(
 {
     for instr in instructions {
         match instr {
-            ExtendedInstruction::Raw(RawInstruction::Gate { name, targets, .. }) => match name {
+            ExtendedInstruction::Raw(RawPassthrough::Gate { name, targets, .. }) => match name {
                 GateName::Reset | GateName::ResetZ => targets.iter().for_each(|&q| tab.reset(q)),
                 GateName::X => targets.iter().for_each(|&q| tab.x(q)),
                 GateName::Y => targets.iter().for_each(|&q| tab.y(q)),
@@ -193,7 +193,7 @@ pub fn execute_prepared<T, I, C>(
             } => targets
                 .iter()
                 .for_each(|&q| tab.u3(q, (*theta).into(), (*phi).into(), (*lambda).into())),
-            ExtendedInstruction::Raw(RawInstruction::Noise {
+            ExtendedInstruction::Raw(RawPassthrough::Noise {
                 name,
                 targets,
                 args,
@@ -261,7 +261,7 @@ pub fn execute_prepared<T, I, C>(
                     tab.correlated_loss_channel(a, b, ps.clone());
                 }
             }
-            ExtendedInstruction::Raw(RawInstruction::Measure {
+            ExtendedInstruction::Raw(RawPassthrough::Measure {
                 name,
                 args,
                 targets,
@@ -307,17 +307,11 @@ pub fn execute_prepared<T, I, C>(
                     results.push(Some(tab.flip_with_prob(bit, noise)));
                 }
             }
-            ExtendedInstruction::Raw(RawInstruction::Annotation { .. }) => { /* no-op */ }
+            ExtendedInstruction::Raw(RawPassthrough::Annotation { .. }) => { /* no-op */ }
             ExtendedInstruction::Repeat { count, body, .. } => {
                 for _ in 0..*count {
                     execute_prepared(body, tab, results);
                 }
-            }
-            ExtendedInstruction::Raw(RawInstruction::MPad { .. }) => {
-                unreachable!("MPad is consumed into the extended dialect; never reaches Raw");
-            }
-            ExtendedInstruction::Raw(RawInstruction::Repeat { .. }) => {
-                unreachable!("Repeat is consumed into the extended dialect; never reaches Raw");
             }
         }
     }

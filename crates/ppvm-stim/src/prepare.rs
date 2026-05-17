@@ -36,10 +36,7 @@ fn validate_slice(instructions: &[ExtendedInstruction]) -> Result<(), ExecError>
                 check_noise_supported(*name, *line)?;
             }
             ExtendedInstruction::Raw(RawInstruction::Measure {
-                name,
-                args,
-                line,
-                ..
+                name, args, line, ..
             }) => {
                 check_measure_supported(*name, *line)?;
                 if let Some(&p) = args.first() {

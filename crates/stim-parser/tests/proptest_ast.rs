@@ -298,6 +298,20 @@ fn ext_noise_instr() -> impl Strategy<Value = RawPassthrough> {
             targets,
             line: 0,
         }),
+        (prob_lit(), one_q_targets()).prop_map(|(p, targets)| RawPassthrough::Noise {
+            name: NoiseName::YError,
+            tags: vec![],
+            args: vec![p],
+            targets,
+            line: 0,
+        }),
+        (prob_lit(), one_q_targets()).prop_map(|(p, targets)| RawPassthrough::Noise {
+            name: NoiseName::ZError,
+            tags: vec![],
+            args: vec![p],
+            targets,
+            line: 0,
+        }),
     ]
 }
 

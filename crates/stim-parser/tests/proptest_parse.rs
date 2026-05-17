@@ -108,7 +108,7 @@ proptest! {
     /// builds. 128 is a generous upper bound for any realistic Stim
     /// program.
     #[test]
-    fn nested_repeats_never_panic(depth in 0usize..128) {
+    fn nested_repeats_never_panic(depth in 0usize..=128) {
         let mut src = String::new();
         for _ in 0..depth {
             src.push_str("REPEAT 1 {\n");

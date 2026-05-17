@@ -8,7 +8,7 @@
 use std::fmt;
 
 use crate::ast::{Program, RawInstruction, Tag, TagParam};
-use crate::extended::ast::{Axis, ExtendedInstruction, ExtendedProgram};
+use crate::extended::ast::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 
 const INDENT: &str = "    ";
 
@@ -122,12 +122,66 @@ fn fmt_raw(i: &RawInstruction, f: &mut fmt::Formatter<'_>, depth: usize) -> fmt:
     writeln!(f)
 }
 
+fn fmt_raw_passthrough(
+    i: &RawPassthrough,
+    f: &mut fmt::Formatter<'_>,
+    depth: usize,
+) -> fmt::Result {
+    write_indent(f, depth)?;
+    match i {
+        RawPassthrough::Gate {
+            name,
+            tags,
+            args,
+            targets,
+            ..
+        } => {
+            f.write_str(name.canonical_name())?;
+            write_tags(f, tags)?;
+            write_args(f, args)?;
+            write_usize_targets(f, targets)?;
+        }
+        RawPassthrough::Noise {
+            name,
+            tags,
+            args,
+            targets,
+            ..
+        } => {
+            f.write_str(name.canonical_name())?;
+            write_tags(f, tags)?;
+            write_args(f, args)?;
+            write_usize_targets(f, targets)?;
+        }
+        RawPassthrough::Measure {
+            name,
+            tags,
+            args,
+            targets,
+            ..
+        } => {
+            f.write_str(name.canonical_name())?;
+            write_tags(f, tags)?;
+            write_args(f, args)?;
+            write_usize_targets(f, targets)?;
+        }
+        RawPassthrough::Annotation {
+            kind,
+            args,
+            targets,
+            ..
+        } => {
+            f.write_str(kind.canonical_name())?;
+            write_args(f, args)?;
+            write_usize_targets(f, targets)?;
+        }
+    }
+    writeln!(f)
+}
+
 fn fmt_ext(i: &ExtendedInstruction, f: &mut fmt::Formatter<'_>, depth: usize) -> fmt::Result {
     match i {
-        ExtendedInstruction::Raw(r) => {
-            let owned: RawInstruction = r.clone().into_raw();
-            return fmt_raw(&owned, f, depth);
-        }
+        ExtendedInstruction::Raw(r) => return fmt_raw_passthrough(r, f, depth),
         ExtendedInstruction::Repeat { count, body, .. } => {
             write_indent(f, depth)?;
             writeln!(f, "REPEAT {count} {{")?;

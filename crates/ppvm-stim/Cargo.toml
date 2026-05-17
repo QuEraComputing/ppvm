@@ -13,8 +13,7 @@ thiserror = "2"
 stim-parser = { version = "0.1.0", path = "../stim-parser" }
 
 [dev-dependencies]
-# Used by tests/data fixtures and statistical assertions.
-rand = "0.10"
+# Used by benchmarks.
 criterion = "0.7.0"
 
 [[bench]]

@@ -42,8 +42,41 @@ pub(crate) struct RawTarget {
     pub span: SimpleSpan<usize>,
 }
 
+/// Stack size for the dedicated parsing thread. The chumsky grammar
+/// is built around `recursive(...)`, which descends into REPEAT bodies
+/// via recursive parser calls; on the default thread stack (typically
+/// 2–8 MiB), deeply nested programs overflow somewhere past ~24 levels
+/// in debug builds. Running on an oversized dedicated stack lets us
+/// support thousands of nested REPEATs without rewriting the grammar.
+const PARSER_STACK_SIZE: usize = 16 * 1024 * 1024;
+
+/// Run `f` on a dedicated thread with [`PARSER_STACK_SIZE`] bytes of
+/// stack. Used by both [`parse`] and [`parse_extended`] (which also
+/// recurses into REPEAT bodies during the interpret pass).
+pub(crate) fn run_on_parser_stack<R, F>(f: F) -> R
+where
+    R: Send,
+    F: FnOnce() -> R + Send,
+{
+    std::thread::scope(|s| {
+        let handle = std::thread::Builder::new()
+            .stack_size(PARSER_STACK_SIZE)
+            .name("stim-parser".to_string())
+            .spawn_scoped(s, f)
+            .expect("failed to spawn parser thread");
+        match handle.join() {
+            Ok(value) => value,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    })
+}
+
 /// Parse Stim source into a [`Program`].
 pub fn parse(src: &str) -> Result<Program, ParseError> {
+    run_on_parser_stack(|| parse_impl(src))
+}
+
+pub(crate) fn parse_impl(src: &str) -> Result<Program, ParseError> {
     use chumsky::Parser;
     let line_map = Arc::new(LineMap::new(src));
     let parse_result = grammar::program_parser().parse(src);

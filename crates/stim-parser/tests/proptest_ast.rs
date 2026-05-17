@@ -15,7 +15,7 @@
 use proptest::prelude::*;
 use stim_parser::ast::{AnnotationKind, GateName, MeasureName, NoiseName, Program, RawInstruction};
 use stim_parser::extended::parse_extended;
-use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram};
+use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 use stim_parser::prelude::parse;
 
 // ---- generators --------------------------------------------------------
@@ -241,24 +241,126 @@ fn program() -> impl Strategy<Value = Program> {
 
 // ---- extended-AST generators ------------------------------------------
 
-/// Subset of `flat_instr` safe to wrap in `ExtendedInstruction::Raw`.
-///
-/// Excludes `MPad`, because `parse_extended` unconditionally promotes
-/// `MPAD …` to `ExtendedInstruction::MPad { bits: Vec<bool>, … }`. A
-/// generated `Raw(MPad)` would print as `MPAD …` and reparse as
-/// `ExtendedInstruction::MPad`, never round-tripping to itself.
-fn ext_raw_passthrough() -> impl Strategy<Value = RawInstruction> {
+/// `RawPassthrough` generators mirror the raw-AST generators for the four
+/// variants that survive the interpret pass unchanged.
+fn ext_gate_instr() -> impl Strategy<Value = RawPassthrough> {
     prop_oneof![
-        gate_instr(),
-        noise_instr(),
-        measure_instr(),
-        annotation_instr(),
+        (single_qubit_clifford(), one_q_targets()).prop_map(|(name, targets)| {
+            RawPassthrough::Gate {
+                name,
+                tags: vec![],
+                args: vec![],
+                targets,
+                line: 0,
+            }
+        }),
+        (two_qubit_clifford(), two_q_pair_targets()).prop_map(|(name, targets)| {
+            RawPassthrough::Gate {
+                name,
+                tags: vec![],
+                args: vec![],
+                targets,
+                line: 0,
+            }
+        }),
+    ]
+}
+
+fn ext_noise_instr() -> impl Strategy<Value = RawPassthrough> {
+    prop_oneof![
+        (prob_lit(), one_q_targets()).prop_map(|(p, targets)| RawPassthrough::Noise {
+            name: NoiseName::Depolarize1,
+            tags: vec![],
+            args: vec![p],
+            targets,
+            line: 0,
+        }),
+        (prob_lit(), two_q_pair_targets()).prop_map(|(p, targets)| RawPassthrough::Noise {
+            name: NoiseName::Depolarize2,
+            tags: vec![],
+            args: vec![p],
+            targets,
+            line: 0,
+        }),
+        (prob_lit(), prob_lit(), prob_lit(), one_q_targets()).prop_map(|(a, b, c, targets)| {
+            RawPassthrough::Noise {
+                name: NoiseName::PauliChannel1,
+                tags: vec![],
+                args: vec![a, b, c],
+                targets,
+                line: 0,
+            }
+        }),
+        (prob_lit(), one_q_targets()).prop_map(|(p, targets)| RawPassthrough::Noise {
+            name: NoiseName::XError,
+            tags: vec![],
+            args: vec![p],
+            targets,
+            line: 0,
+        }),
+        (prob_lit(), one_q_targets()).prop_map(|(p, targets)| RawPassthrough::Noise {
+            name: NoiseName::YError,
+            tags: vec![],
+            args: vec![p],
+            targets,
+            line: 0,
+        }),
+        (prob_lit(), one_q_targets()).prop_map(|(p, targets)| RawPassthrough::Noise {
+            name: NoiseName::ZError,
+            tags: vec![],
+            args: vec![p],
+            targets,
+            line: 0,
+        }),
+    ]
+}
+
+fn ext_measure_instr() -> impl Strategy<Value = RawPassthrough> {
+    let name = prop_oneof![
+        Just(MeasureName::M),
+        Just(MeasureName::MZ),
+        Just(MeasureName::MR),
+    ];
+    (name, proptest::option::of(prob_lit()), one_q_targets()).prop_map(|(name, args, targets)| {
+        RawPassthrough::Measure {
+            name,
+            tags: vec![],
+            args: args.map(|p| vec![p]).unwrap_or_default(),
+            targets,
+            line: 0,
+        }
+    })
+}
+
+fn ext_annotation_instr() -> impl Strategy<Value = RawPassthrough> {
+    prop_oneof![
+        Just(RawPassthrough::Annotation {
+            kind: AnnotationKind::Tick,
+            args: vec![],
+            targets: vec![],
+            line: 0,
+        }),
+        Just(RawPassthrough::Annotation {
+            kind: AnnotationKind::Detector,
+            args: vec![],
+            targets: vec![],
+            line: 0,
+        }),
+    ]
+}
+
+fn ext_raw() -> impl Strategy<Value = RawPassthrough> {
+    prop_oneof![
+        ext_gate_instr(),
+        ext_noise_instr(),
+        ext_measure_instr(),
+        ext_annotation_instr(),
     ]
 }
 
 fn ext_flat() -> impl Strategy<Value = ExtendedInstruction> {
     prop_oneof![
-        ext_raw_passthrough().prop_map(ExtendedInstruction::Raw),
+        ext_raw().prop_map(ExtendedInstruction::Raw),
         one_q_targets().prop_map(|targets| ExtendedInstruction::T { targets, line: 0 }),
         one_q_targets().prop_map(|targets| ExtendedInstruction::TDag { targets, line: 0 }),
         (
@@ -347,10 +449,19 @@ fn zero_lines_raw(instrs: &mut [RawInstruction]) {
     }
 }
 
+fn zero_lines_raw_passthrough(r: &mut RawPassthrough) {
+    match r {
+        RawPassthrough::Gate { line, .. }
+        | RawPassthrough::Noise { line, .. }
+        | RawPassthrough::Measure { line, .. }
+        | RawPassthrough::Annotation { line, .. } => *line = 0,
+    }
+}
+
 fn zero_lines_ext(instrs: &mut [ExtendedInstruction]) {
     for i in instrs {
         match i {
-            ExtendedInstruction::Raw(r) => zero_lines_raw(std::slice::from_mut(r)),
+            ExtendedInstruction::Raw(r) => zero_lines_raw_passthrough(r),
             ExtendedInstruction::T { line, .. }
             | ExtendedInstruction::TDag { line, .. }
             | ExtendedInstruction::Rotation { line, .. }

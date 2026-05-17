@@ -1,19 +1,10 @@
-use stim_parser::ast::{GateName, MeasureName, NoiseName, RawInstruction};
-use stim_parser::extended::{ExtendedInstruction, ExtendedProgram};
+use stim_parser::ast::{GateName, MeasureName, NoiseName};
+use stim_parser::extended::{ExtendedInstruction, ExtendedProgram, RawPassthrough};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum ExecError {
     #[error("unsupported instruction '{name}' at line {line}")]
     Unsupported { name: String, line: usize },
-    /// Raised for `ExtendedInstruction::Raw(_)` values that the extended
-    /// interpreter would have lowered to typed variants (`MPad`, `Repeat`).
-    /// `parse_extended` never produces these; only a caller hand-constructing
-    /// an `ExtendedProgram` can. Reported as a recoverable error rather than
-    /// a panic.
-    #[error(
-        "malformed ExtendedProgram: Raw({kind}) at line {line} should have been lowered to ExtendedInstruction::{kind} by the interpreter"
-    )]
-    Malformed { kind: &'static str, line: usize },
     #[error("invalid probability {value} for '{name}' at line {line}; expected value in [0, 1]")]
     InvalidProbability {
         name: String,
@@ -29,13 +20,13 @@ pub fn prepare(program: &ExtendedProgram) -> Result<(), ExecError> {
 fn validate_slice(instructions: &[ExtendedInstruction]) -> Result<(), ExecError> {
     for instr in instructions {
         match instr {
-            ExtendedInstruction::Raw(RawInstruction::Gate { name, line, .. }) => {
+            ExtendedInstruction::Raw(RawPassthrough::Gate { name, line, .. }) => {
                 check_gate_supported(*name, *line)?;
             }
-            ExtendedInstruction::Raw(RawInstruction::Noise { name, line, .. }) => {
+            ExtendedInstruction::Raw(RawPassthrough::Noise { name, line, .. }) => {
                 check_noise_supported(*name, *line)?;
             }
-            ExtendedInstruction::Raw(RawInstruction::Measure {
+            ExtendedInstruction::Raw(RawPassthrough::Measure {
                 name, args, line, ..
             }) => {
                 check_measure_supported(*name, *line)?;
@@ -44,7 +35,7 @@ fn validate_slice(instructions: &[ExtendedInstruction]) -> Result<(), ExecError>
                 }
             }
             ExtendedInstruction::Repeat { body, .. } => validate_slice(body)?,
-            ExtendedInstruction::Raw(RawInstruction::Annotation { .. })
+            ExtendedInstruction::Raw(RawPassthrough::Annotation { .. })
             | ExtendedInstruction::T { .. }
             | ExtendedInstruction::TDag { .. }
             | ExtendedInstruction::Rotation { .. }
@@ -55,18 +46,6 @@ fn validate_slice(instructions: &[ExtendedInstruction]) -> Result<(), ExecError>
                 if let Some(p) = prob {
                     check_probability(*p, "MPAD", *line)?;
                 }
-            }
-            ExtendedInstruction::Raw(RawInstruction::MPad { line, .. }) => {
-                return Err(ExecError::Malformed {
-                    kind: "MPad",
-                    line: *line,
-                });
-            }
-            ExtendedInstruction::Raw(RawInstruction::Repeat { line, .. }) => {
-                return Err(ExecError::Malformed {
-                    kind: "Repeat",
-                    line: *line,
-                });
             }
         }
     }

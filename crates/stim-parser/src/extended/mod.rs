@@ -5,5 +5,5 @@ pub mod ast;
 mod interpret;
 pub mod parser;
 
-pub use ast::{Axis, ExtendedInstruction, ExtendedProgram};
+pub use ast::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 pub use parser::{ExtendedParseError, parse_extended};

@@ -46,7 +46,10 @@ Python hides all of this; the binding picks the variant automatically from `n_qu
 
 ### 3. Truncation is the only reason large circuits stay tractable
 
-Non-Clifford gates *branch*: one Pauli term becomes a small linear combination. Without truncation, the sum grows unboundedly. Configure truncation at construction time — it then applies automatically as gates run; you never call `.truncate()` manually.
+Non-Clifford gates *branch*: one Pauli term becomes a small linear combination. Without truncation, the sum grows unboundedly. Configure truncation at construction time, then apply it. **The when-to-apply rule differs by language:**
+
+- **Python**: the binding calls `truncate()` for you after every gate, so once you've passed the thresholds at construction time you don't touch `.truncate()` yourself. There is no `.truncate()` method on the Python `PauliSum` either.
+- **Rust**: `state.truncate()` is the user-driven trigger — gate methods do not call it for you. Call it at the points in your circuit where pruning makes sense (typically after each gate layer, or once per Trotter step). Without this call the policy you configured in the `Config` does nothing.
 
 **Python — kwargs on `PauliSum.new`:**
 
@@ -203,27 +206,61 @@ For single-shot demos there are also `run_string` / `run_file`, but they re-pars
 
 ## Gate / noise / measurement vocabulary
 
-Available on both `PauliSum` and `GeneralizedTableau` unless noted. Names are identical in Rust and Python (Python is `snake_case`; Rust uses `_adj` for daggers — there is no `_dag`).
+Availability varies by backend and language binding. Don't trust intuition: the Python `PauliSum` exposes a deliberately narrower surface than the Rust `PauliSum` or the `GeneralizedTableau`. Names: Python is `snake_case`; Rust uses `_adj` for daggers (there is no `_dag`).
 
-| Group              | Methods                                                              |
-|--------------------|----------------------------------------------------------------------|
-| Clifford 1q        | `x`, `y`, `z`, `h`, `s`, `s_adj`, `sqrt_x`, `sqrt_x_adj`, `sqrt_y`, `sqrt_y_adj` |
-| Clifford 2q        | `cnot`, `cz`, `cy`                                                   |
-| Non-Clifford 1q    | `t` (tableau only), `t_adj` (tableau only), `rx`, `ry`, `rz`, `u3` (tableau only) |
-| Non-Clifford 2q    | `rxx`, `rxy`, `rxz`, `ryx`, `ryy`, `ryz`, `rzx`, `rzy`, `rzz`, `crx` (Rust trait) |
-| Measurement        | `measure(q)` (tableau): returns `MeasurementResult`                  |
-| Noise              | `depolarize(q, p)`, `depolarize2(q0, q1, p)`, `pauli_error(q, [px,py,pz])`, `two_qubit_pauli_error(q0, q1, p15)`, `amplitude_damping(q, gamma)` |
-| Loss (lossy types) | `loss_channel(q, p)`, `correlated_loss_channel(q0, q1, [px,py,pz])`, `reset_loss_channel(q)` |
-| Reset              | `reset(q)` (tableau)                                                 |
+In the tables below: **R** = Rust on both backends, **P-S** = Python `PauliSum` / `LossyPauliSum`, **P-T** = Python `GeneralizedTableau`. A check means the method is exposed there.
 
-The noise method is **`depolarize`** (not `depolarizing`) — easy to get wrong from intuition. Daggers are **`_adj`** (not `_dag`). `t` and `u3` exist on the tableau backend; they are non-Clifford and branch the Pauli sum, so on `PauliSum` you typically use `rz`/`rx`/`ry` instead.
+### Clifford gates
+
+| Method                                   | R | P-S | P-T |
+|------------------------------------------|---|-----|-----|
+| `x`, `y`, `z`, `h`, `s`, `s_adj`         | ✓ | ✓   | ✓   |
+| `sqrt_x`, `sqrt_x_adj`, `sqrt_y`, `sqrt_y_adj` | ✓ | ✓ | ✓ |
+| `cnot`, `cz`                             | ✓ | ✓   | ✓   |
+| `cy`                                     | ✓ |  —  | ✓   |
+
+### Non-Clifford gates (branch the Pauli sum)
+
+| Method                       | R | P-S | P-T |
+|------------------------------|---|-----|-----|
+| `rx`, `ry`, `rz`             | ✓ | ✓   | ✓   |
+| `rxx`, `ryy`, `rzz`          | ✓ | ✓   | ✓   |
+| `rxy`, `rxz`, `ryx`, `ryz`, `rzx`, `rzy` | ✓ | — | — |
+| `t`, `t_adj`                 | ✓ |  —  | ✓   |
+| `u3(q, theta, phi, lam)`     | ✓ |  —  | ✓   |
+| `crx(c, t, theta)`           | trait only (no impl) | — | — |
+
+Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`, `rzx`, `rzy`) come from the Rust `RotationTwo` trait's `def_rotation!` macro; the Python bindings only forward the diagonal three (`rxx`, `ryy`, `rzz`). Calling any of the off-diagonal names on Python `PauliSum` or `GeneralizedTableau` raises `AttributeError`.
+
+### Measurement, reset, noise
+
+| Method                                                                      | R | P-S | P-T |
+|-----------------------------------------------------------------------------|---|-----|-----|
+| `measure(q)` → `MeasurementResult` (`ZERO`/`ONE`/`LOST` on tableau)         | ✓ | —   | ✓   |
+| `reset(q)`                                                                  | ✓ | —   | ✓   |
+| `depolarize(q, p)`                                                          | ✓ | ✓   | ✓   |
+| `depolarize2(q0, q1, p)`                                                    | ✓ | —   | —   |
+| `pauli_error(q, [px,py,pz])`                                                | ✓ | ✓   | ✓   |
+| `two_qubit_pauli_error(q0, q1, p[15])`                                      | ✓ | ✓   | ✓   |
+| `amplitude_damping(q, gamma)`                                               | ✓ | ✓   | —   |
+| `loss_channel(q, p)` (Lossy types)                                          | ✓ | ✓\* | ✓   |
+| `correlated_loss_channel(q0, q1, [px,py,pz])`                               | ✓ | ✓\* | ✓   |
+| `reset_loss_channel(q)`                                                     | ✓ | ✓\* | ✓   |
+
+\* Python side: loss methods live on `LossyPauliSum`, not the plain `PauliSum`.
+
+### Naming traps
+
+- `depolarize` (not `depolarizing`).
+- `_adj` (not `_dag`).
+- The Python `PauliSum` is intentionally a narrow workhorse focused on noisy-circuit observables. For `t`, `u3`, `cy`, mid-circuit `measure`, or `reset`, use `GeneralizedTableau` (Python) or drop to Rust.
 
 ## Common pitfalls (rank-ordered by how often agents hit them)
 
 1. **Forgot to reverse the gate order in Pauli propagation.** Symptom: expectation values look like the inverse circuit. Re-read §1.
 2. **Used `depolarizing` or `_dag` from intuition.** Symptom: `AttributeError` / `no method named …`. Correct names are `depolarize` and `_adj`.
 3. **Tried to import `CoefficientThreshold` / `MaxPauliWeight` from Python.** Those are Rust-only. Use kwargs on `PauliSum.new`.
-4. **Called `.truncate()` in Python.** Doesn't exist. Truncation is automatic once configured.
+4. **`.truncate()` on the wrong side.** In Python, calling `.truncate()` raises `AttributeError` — the binding already truncates after every gate. In Rust, *not* calling `state.truncate()` means your configured policy never runs and the sum grows unboundedly. See §3 above.
 5. **`GeneralizedTableau::new(n)` in Rust.** It takes two args: `(n_qubits, coefficient_threshold)`.
 6. **`IndexType = usize` for >64 qubits.** Silently overflows. Use `u128` or a `bnum` type.
 7. **`pip install` in docs.** Project policy is `uv` everywhere — `uv add`, `uv run`, `uv sync`. Fix any pip references you find.

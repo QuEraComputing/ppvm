@@ -1,18 +1,20 @@
 ---
-import Base from "../../layouts/Base.astro";
+import Base from "../../../layouts/Base.astro";
+import ExampleBlock from "../../../components/ExampleBlock.astro";
+import paulisumGhz from "../../../../examples/paulisum_ghz.py?raw";
+import { pyQuickStartSections } from "../../../data/pyQuickStart";
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const toc = [
-  { label: "Overview",   href: "#overview" },
-  { label: "Basic usage", href: "#basic-usage" },
-  { label: "Term notation", href: "#term-notation" },
-  { label: "Truncation",  href: "#truncation" },
+  { label: "Overview",       href: "#overview" },
+  { label: "Basic usage",    href: "#basic-usage" },
+  { label: "Term notation",  href: "#term-notation" },
+  { label: "GHZ example",    href: "#ghz" },
+  { label: "Truncation",     href: "#truncation" },
   { label: "Simulating loss", href: "#loss" },
 ];
 
-// Code snippets live in the frontmatter as raw strings so the
-// `<pre><code>` body stays a plain `{snippet}` expression. Embedding
-// Python f-strings directly in Astro JSX would otherwise need awkward
-// brace escapes (`{`{i}`}`) that obscure the rendered code.
+// Inline Python snippets — f-string `{...}` braces inside JSX would need
+// awkward escaping, so we keep them as raw strings in the frontmatter.
 const basicUsage = `from ppvm import PauliSum
 
 # Observable: Z on each qubit
@@ -50,10 +52,16 @@ print(f"<Z>: {z_exp}")`;
 
 const lossWeight = `ps = LossyPauliSum.new(3, "ZZZ", max_loss_weight=2)`;
 ---
-<Base title="Pauli Propagation" current="tutorials" toc={toc}>
-  <article class="shell narrow tutorial">
+<Base
+  title="Python Quick Start — Pauli Propagation"
+  current="quickstart"
+  toc={toc}
+  sections={pyQuickStartSections}
+  currentSection="pauli-propagation"
+>
+  <article class="shell narrow qs-page qs-page--python tutorial">
     <div class="titleblock">
-      <div class="eyebrow"><a href={`${base}/tutorials`}>Tutorials</a></div>
+      <div class="eyebrow"><a href={`${base}/quickstart/python`}>Python Quick Start</a></div>
       <h1>Pauli Propagation</h1>
       <p class="byline">
         Heisenberg-picture observable propagation through deep noisy
@@ -74,7 +82,8 @@ const lossWeight = `ps = LossyPauliSum.new(3, "ZZZ", max_loss_weight=2)`;
       </p>
       <p>
         This makes it possible to simulate large, deep circuits — including
-        noisy ones — at a fraction of the cost of full state-vector simulation.
+        noisy ones — at a fraction of the cost of full state-vector
+        simulation.
       </p>
     </section>
 
@@ -90,11 +99,22 @@ const lossWeight = `ps = LossyPauliSum.new(3, "ZZZ", max_loss_weight=2)`;
     <section id="term-notation">
       <h2>Term notation</h2>
       <p>
-        Terms can be specified as full Pauli strings (<code>"XZI"</code>) or
-        in compact notation (<code>"X0Z1"</code> — Pauli + qubit index).
+        Terms can be specified as full Pauli strings (<code>"XZI"</code>)
+        or in compact notation (<code>"X0Z1"</code> — Pauli + qubit index).
         Coefficients default to <code>1.0</code> but can be set explicitly:
       </p>
 <pre><code class="language-python">{termNotation}</code></pre>
+    </section>
+
+    <section id="ghz">
+      <h2>End-to-end: GHZ expectation values</h2>
+      <p>
+        For observable-centric studies — “what is the expectation value of
+        this operator after this circuit?” — the snippet below propagates
+        the all-<code>Z</code> observable backwards through a GHZ-prep
+        circuit and prints its overlap with |0…0⟩:
+      </p>
+      <ExampleBlock code={paulisumGhz} file="docs/examples/paulisum_ghz.py" />
     </section>
 
     <section id="truncation">
@@ -111,6 +131,14 @@ const lossWeight = `ps = LossyPauliSum.new(3, "ZZZ", max_loss_weight=2)`;
         </li>
       </ul>
 <pre><code class="language-python">{truncationKwargs}</code></pre>
+      <p>
+        Pauli propagation scales well when the observable has small support
+        and the circuit doesn't grow that support too quickly. Truncation
+        strategies (<code>CoefficientThreshold</code>,
+        <code>MaxPauliWeight</code>, <code>MaxLossWeight</code>,
+        <code>CombinedStrategy</code>) let you bound the working set on the
+        fly.
+      </p>
     </section>
 
     <section id="loss">
@@ -124,9 +152,10 @@ const lossWeight = `ps = LossyPauliSum.new(3, "ZZZ", max_loss_weight=2)`;
       <p>
         This separation exists because we need to extend the Pauli basis to
         account for loss (see
-        <a href={`${base}/tutorials/loss-channel`}>Loss channel details</a>
-        for the full background). This comes at a storage overhead — we now
-        need 3 bits to represent a character in a Pauli string rather than 2.
+        <a href={`${base}/quickstart/python/loss-channel`}>§ 5 Loss channel
+        details</a> for the full background). This comes at a storage
+        overhead — we now need 3 bits to represent a character in a Pauli
+        string rather than 2.
       </p>
       <p>Here is a small example:</p>
 <pre><code class="language-python">{lossExample}</code></pre>
@@ -134,9 +163,9 @@ const lossWeight = `ps = LossyPauliSum.new(3, "ZZZ", max_loss_weight=2)`;
       <ul>
         <li>
           <strong>Loss weight truncation</strong>
-          (<code>max_loss_weight</code>): drops terms with more than a given
-          number of <code>L</code> operators. Since the contribution of
-          strings with <code>L</code> on many positions scales as
+          (<code>max_loss_weight</code>): drops terms with more than a
+          given number of <code>L</code> operators. Since the contribution
+          of strings with <code>L</code> on many positions scales as
           $p_L^k$, this effectively controls the branching from loss and
           reset channels.
         </li>

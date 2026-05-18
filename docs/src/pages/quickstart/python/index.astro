@@ -1,0 +1,79 @@
+---
+import Base from "../../../layouts/Base.astro";
+import { pyQuickStartSections } from "../../../data/pyQuickStart";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const toc = [
+  { label: "Audience",     href: "#audience" },
+  { label: "Install ppvm", href: "#install" },
+  { label: "Verify",       href: "#verify" },
+];
+---
+<Base
+  title="Python Quick Start — Install"
+  current="quickstart"
+  toc={toc}
+  sections={pyQuickStartSections}
+  currentSection="install"
+>
+  <div class="qs-hero qs-hero--python">
+    <div class="qs-hero-inner">
+      <span class="chip"><span class="chip-dot"></span>Python · For researchers</span>
+      <h1><span class="lang">py</span>Quick Start</h1>
+      <p class="audience">
+        For physicists and students who want to <strong>run circuits under
+        noise</strong> and inspect outcomes — without writing any Rust.
+        Code you'd paste into a Jupyter cell.
+      </p>
+    </div>
+  </div>
+
+  <article class="shell narrow qs-page qs-page--python">
+    <section id="audience">
+      <h2>Audience</h2>
+      <p>
+        This Quick Start walks you through the Python interface end-to-end:
+        how to install ppvm, parse and sample Stim circuits, drive the
+        generalized stabilizer tableau gate-by-gate, compute expectation
+        values via Pauli propagation, and model neutral-atom qubit loss.
+        Each topic is its own section on the left.
+      </p>
+      <p>
+        If you'd rather embed ppvm into a Rust simulator or build on its
+        trait hierarchy, jump to the
+        <a href={`${base}/quickstart/rust`}>Rust Quick Start</a> instead.
+      </p>
+    </section>
+
+    <section id="install">
+      <h2>Install ppvm</h2>
+      <p>
+        Requires Python ≥ 3.10. The native extension is compiled
+        automatically from Rust during install. We recommend using
+        <a href="https://docs.astral.sh/uv/">uv</a> to manage your Python
+        environment.
+      </p>
+<pre><code class="language-bash">uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python</code></pre>
+      <p>
+        If you prefer plain <code>pip</code> inside an existing virtualenv,
+        the same source URL works there too — the project policy in this
+        repository's own docs is <code>uv</code>, but the wheel itself
+        carries no opinions.
+      </p>
+    </section>
+
+    <section id="verify">
+      <h2>Verify the install</h2>
+      <p>Drop the following into a Python REPL or a Jupyter cell:</p>
+<pre><code class="language-python">from ppvm import GeneralizedTableau
+
+tab = GeneralizedTableau(n_qubits=1)
+tab.h(0)
+print(tab.measure(0))  # MeasurementResult.ZERO or MeasurementResult.ONE</code></pre>
+      <p>
+        If that prints a <code>MeasurementResult</code>, you're ready to
+        move on to <a href={`${base}/quickstart/python/stim`}>§ 2 Stim
+        circuits &amp; sampling</a>.
+      </p>
+    </section>
+  </article>
+</Base>

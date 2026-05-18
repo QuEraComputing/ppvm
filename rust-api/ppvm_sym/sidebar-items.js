@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["Prod","Sum","Term"]};
+window.SIDEBAR_ITEMS = {"enum":["Inner"],"struct":["Prod","Sum","Term"]};

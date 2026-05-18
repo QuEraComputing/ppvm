@@ -21,13 +21,15 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
     paths:
       # Site sources. Other paths (crates/, ppvm-python/) don't affect
       # the build because the API JSON consumed by /api/ is committed
       # under docs/src/data/ and regenerated manually.
       - "docs/**"
       - ".github/workflows/docs.yml"
+  pull_request_target:
+    types: [closed]
 
 permissions:
   contents: write
@@ -114,7 +116,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
-      group: deploy-docs
+      group: deploy-gh-pages
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
@@ -139,6 +141,9 @@ jobs:
     needs: build
     if: github.event_name == 'pull_request' && github.event.action != 'closed'
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-gh-pages
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -156,8 +161,11 @@ jobs:
 
   cleanup-preview:
     name: Clean up PR preview
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    if: github.event_name == 'pull_request_target' && github.event.action == 'closed'
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-gh-pages
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 

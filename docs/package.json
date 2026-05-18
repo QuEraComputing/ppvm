@@ -7,7 +7,7 @@
     "//extract": "Build steps that produce inputs the Astro pages depend on.",
     "extract:rust": "node scripts/extract-rust.mjs",
     "extract:python": "node scripts/extract-python.mjs",
-    "extract:notebooks": "uv run --project ../ppvm-python --with jupytext --with nbconvert --with nbclient --with ipykernel --with matplotlib --with numpy python scripts/build-notebooks.py",
+    "extract:notebooks": "uv run --project ../ppvm-python --with jupytext --with nbconvert --with nbclient --with ipykernel --with matplotlib --with numpy --with bleach python scripts/build-notebooks.py",
     "extract": "npm run extract:rust && npm run extract:python && npm run extract:notebooks",
     "//astro": "Raw Astro commands — use these only if you've extracted the inputs yourself.",
     "astro:dev": "astro dev --host 127.0.0.1 --port 4321",

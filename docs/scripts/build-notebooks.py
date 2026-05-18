@@ -27,6 +27,7 @@ import re
 import sys
 from pathlib import Path
 
+import bleach
 import jupytext
 import nbformat
 from nbclient import NotebookClient
@@ -37,18 +38,22 @@ DOCS = HERE.parent
 SOURCE_DIR = DOCS / "notebooks"
 OUTPUT_DIR = DOCS / "src" / "generated" / "notebooks"
 
-# Force a non-interactive matplotlib backend before any cell runs so
-# inline ``plt.show()`` calls produce embedded PNGs rather than trying
-# to open a window. We prepend this as the first code cell of every
-# notebook with the ``ppvm-hidden-setup`` tag, execute the notebook,
-# and then drop the tagged cell entirely via ``drop_hidden_setup_cells``
-# before rendering — so neither the input nor any output of this cell
-# survives into the HTML fragment that the site embeds.
+# Switch matplotlib to the IPython "inline" backend before any cell
+# runs so ``plt.show()`` triggers Jupyter's display hook and embeds
+# the figure as a base64 PNG inside the cell's output. The plain
+# ``Agg`` backend renders to a buffer but never reaches the
+# notebook output stream, which is why an early version of this
+# pipeline silently dropped every plot.
+#
+# We prepend this as the first code cell of every notebook with the
+# ``ppvm-hidden-setup`` tag, execute the notebook, and then drop the
+# tagged cell entirely via ``drop_hidden_setup_cells`` before
+# rendering — so neither the input nor any output of this cell
+# survives into the HTML fragment the site embeds.
 MATPLOTLIB_SETUP = (
+    "%matplotlib inline\n"
     "import matplotlib\n"
-    "matplotlib.use('Agg')\n"
-    "from matplotlib import pyplot as _ppvm_plt\n"
-    "_ppvm_plt.rcParams['figure.dpi'] = 110\n"
+    "matplotlib.rcParams['figure.dpi'] = 110\n"
 )
 
 
@@ -110,24 +115,74 @@ def execute(nb: nbformat.NotebookNode, source_label: str) -> None:
 
 _BODY_PATTERN = re.compile(r"<body[^>]*>(.*)</body>", re.DOTALL)
 _MAIN_PATTERN = re.compile(r"</?main[^>]*>", re.IGNORECASE)
-_SCRIPT_PATTERN = re.compile(r"<script\b[^>]*>.*?</script>", re.DOTALL | re.IGNORECASE)
-_EVENT_HANDLER_PATTERN = re.compile(r"\s+on[a-z]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
+
+# Tag and attribute allow-lists for the rendered notebook HTML
+# fragment. Notebook authors live in this repo and we trust their
+# .py source, but nbconvert's ``basic`` template will faithfully
+# emit any HTML a cell produces as rich output. We hand the
+# fragment to ``bleach`` (html5lib-based, parses to a real DOM
+# rather than string-matching) so a future notebook that prints
+# an ``<iframe>`` or a ``javascript:`` URL can't smuggle active
+# content into the page.
+ALLOWED_TAGS = frozenset({
+    # Block structure used by nbconvert's `basic` template
+    "div", "section", "article", "header", "footer", "main",
+    "p", "br", "hr",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "ul", "ol", "li", "dl", "dt", "dd",
+    "blockquote",
+    "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption",
+    # Inline prose
+    "a", "em", "strong", "i", "b", "u", "s", "sub", "sup", "small", "mark", "code", "kbd", "samp",
+    "span", "abbr", "cite", "q", "del", "ins",
+    # Code rendering (Pygments wraps tokens in nested spans)
+    "pre",
+    # Images: matplotlib figures embed as `data:image/png;base64,...`
+    "img",
+    # Math from notebook LaTeX (rare, but `nbconvert` may pass through)
+    "math", "mrow", "mi", "mn", "mo", "ms", "mtext", "mfrac", "msup", "msub",
+    "msubsup", "msqrt", "mroot", "mfenced", "mtable", "mtr", "mtd",
+    "annotation", "annotation-xml", "semantics",
+})
+
+ALLOWED_ATTRS = {
+    "*": ["class", "id", "title", "aria-hidden", "aria-label", "role",
+          "tabindex", "data-mime-type", "lang"],
+    "a": ["href", "rel", "target"],
+    "img": ["src", "alt", "width", "height"],
+    "td": ["colspan", "rowspan", "headers", "scope"],
+    "th": ["colspan", "rowspan", "headers", "scope"],
+    "ol": ["start", "type"],
+    "li": ["value"],
+}
+
+# Permitted URL schemes for `<a href>` and `<img src>`. `data:` is
+# allowed so matplotlib figures (which arrive as
+# `data:image/png;base64,...`) can survive — `bleach` enforces this
+# at the attribute level.
+ALLOWED_PROTOCOLS = frozenset({"http", "https", "mailto", "data"})
 
 
 def sanitise(fragment: str) -> str:
-    """Defense-in-depth scrub of the rendered notebook HTML before we
-    embed it via ``set:html``. Notebook authors are trusted (the source
-    .py files live in this repo and run during CI), but nbconvert's
-    ``basic`` template will faithfully include any HTML a cell emits as
-    rich output — including ``<script>`` and inline event handlers.
-    Drop both, plus the ``<main>`` wrapper nbconvert adds (the page
-    already has its own ``<main>`` from ``Base.astro``; nesting two is
-    invalid HTML).
+    """Parse the rendered notebook HTML with bleach and re-serialise
+    with only tags/attrs/URL schemes on the allow-list above.
+    Anything else — `<script>`, `<iframe>`, inline event handlers,
+    `javascript:` hrefs — is stripped at the DOM level, so we
+    don't accidentally delete legitimate text that happens to
+    mention `onload="…"` in prose or a code block.
+
+    Drop nbconvert's `<main>` wrapper first because the surrounding
+    page layout already provides its own `<main>` (one per page).
     """
-    fragment = _SCRIPT_PATTERN.sub("", fragment)
-    fragment = _EVENT_HANDLER_PATTERN.sub("", fragment)
     fragment = _MAIN_PATTERN.sub("", fragment)
-    return fragment.strip()
+    return bleach.clean(
+        fragment,
+        tags=ALLOWED_TAGS,
+        attributes=ALLOWED_ATTRS,
+        protocols=ALLOWED_PROTOCOLS,
+        strip=True,
+        strip_comments=False,
+    ).strip()
 
 
 def render_html(nb: nbformat.NotebookNode) -> str:

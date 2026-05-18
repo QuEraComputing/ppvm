@@ -135,10 +135,22 @@ print(f"Simulated {n_shots} shots of the {n_qubits}-qubit MSD circuit")
 print(f"Total time: {elapsed:.2f} s ({elapsed / n_shots * 1e3:.2f} ms per shot)")
 
 # %% [markdown]
-# Let's look at the measurement outcomes.
+# Let's look at the measurement outcomes. Each shot produces an
+# 85-bit string (one bit per measured qubit). We summarise rather
+# than dump every shot — printing all `n_shots` strings would balloon
+# the rendered notebook page without telling the reader anything
+# new.
 
 # %%
+from collections import Counter
+
 bitstrings = [
     "".join("1" if r == MeasurementResult.ONE else "0" for r in shot)
     for shot in results
 ]
+counts = Counter(bitstrings)
+
+print(f"Distinct outcomes: {len(counts)} / {n_shots}")
+print("Most common 5 patterns:")
+for pattern, count in counts.most_common(5):
+    print(f"  {count:>4}×  {pattern}")

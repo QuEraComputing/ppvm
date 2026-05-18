@@ -7,9 +7,9 @@ It is adapted from the Apache Software Foundation Individual Contributor
 License Agreement v2.2 and complements the Project's Apache License,
 Version 2.0 (see `LICENSE`).
 
-To make this Agreement effective, please indicate your acceptance by signing
-your commits as described in the "How to accept this Agreement" section
-below, or by signing electronically when prompted on a pull request.
+To make this Agreement effective, please indicate your acceptance by
+following the procedure in the "How to accept this Agreement" section
+below.
 
 You accept and agree to the following terms and conditions for Your present
 and future Contributions submitted to Us. Except for the license granted

@@ -2486,6 +2486,11 @@ details.side-nav > summary {
   display: block;
   list-style: none;
   cursor: default;
+  /* On wide viewports the disclosure is forced open and the summary
+     reads as a plain heading. Disable pointer events so a stray click
+     can't toggle the <details> closed — the mobile breakpoint below
+     restores them. */
+  pointer-events: none;
 }
 details.side-nav > summary::-webkit-details-marker { display: none; }
 details.side-nav > summary::marker { content: ""; }
@@ -2498,12 +2503,16 @@ details.side-nav > summary::marker { content: ""; }
   margin: 0.2em 0 1rem;
   list-style: none;
   cursor: default;
+  pointer-events: none;
 }
 .api-toc.side-nav > .api-toc-summary::-webkit-details-marker { display: none; }
 .api-toc.side-nav > .api-toc-summary::marker { content: ""; }
+@media (max-width: 980px) {
+  .api-toc.side-nav > .api-toc-summary { pointer-events: auto; cursor: pointer; }
+}
 
 @media (max-width: 900px) {
-  details.side-nav > summary { cursor: pointer; }
+  details.side-nav > summary { cursor: pointer; pointer-events: auto; }
   details.side-nav > summary::after {
     content: "▾";
     float: right;

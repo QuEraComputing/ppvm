@@ -238,10 +238,13 @@ const nav = [
             const open = toggle.getAttribute("aria-expanded") !== "true";
             setOpen(open);
           });
-          // Close after following an in-page link on mobile.
+          // Close after following an in-page link on mobile. Use
+          // closest("a") so this stays correct if a nav link ever
+          // wraps an icon or other inline element.
           nav.addEventListener("click", (e) => {
-            const target = e.target;
-            if (target && target.tagName === "A") setOpen(false);
+            if (e.target && e.target.closest && e.target.closest("a")) {
+              setOpen(false);
+            }
           });
           // Reset state when crossing the breakpoint.
           const mqNav = window.matchMedia("(min-width: 721px)");

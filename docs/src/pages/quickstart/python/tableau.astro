@@ -1,28 +1,20 @@
 ---
-import Base from "../../layouts/Base.astro";
+import Base from "../../../layouts/Base.astro";
+import ExampleBlock from "../../../components/ExampleBlock.astro";
+import tableauGhz from "../../../../examples/tableau_ghz.py?raw";
+import { pyQuickStartSections } from "../../../data/pyQuickStart";
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const toc = [
-  { label: "Overview",              href: "#overview" },
-  { label: "Basic usage",           href: "#basic-usage" },
+  { label: "Overview",               href: "#overview" },
+  { label: "Drive it from Python",   href: "#basic-usage" },
   { label: "Forking for multi-shot", href: "#forking" },
-  { label: "Stim circuit support",  href: "#stim" },
-  { label: "Noise and loss",        href: "#noise" },
-  { label: "Coefficient pruning",   href: "#pruning" },
+  { label: "Stim circuit support",   href: "#stim" },
+  { label: "Noise and loss",         href: "#noise" },
+  { label: "Coefficient pruning",    href: "#pruning" },
 ];
 
-// Python snippets live in the frontmatter so f-string `{...}` braces
-// don't fight Astro's JSX parser. See the matching note in
-// `pauli-propagation.astro`.
-const basicUsage = `from ppvm import GeneralizedTableau
-
-tab = GeneralizedTableau(n_qubits=2)
-tab.h(0)
-tab.cnot(0, 1)
-
-r0 = tab.measure(0)
-r1 = tab.measure(1)
-print(f"Qubit 0: {r0}, Qubit 1: {r1}")  # always correlated (Bell state)`;
-
+// Snippets in the frontmatter so f-string `{...}` braces don't fight
+// Astro's JSX parser.
 const forking = `tab = GeneralizedTableau(n_qubits=2, seed=42)
 tab.h(0)
 tab.cnot(0, 1)
@@ -54,23 +46,29 @@ shots = GeneralizedTableau.sample(prog, n_qubits=85, num_shots=100, seed=0)`;
 const lossExample = `tab = GeneralizedTableau(n_qubits=1, seed=0)
 tab.loss_channel(0, 1.0)  # deterministic loss
 
-print(tab.is_lost(0))   # True
+print(tab.is_lost(0))    # True
 print(tab.measure(0))    # MeasurementResult.LOST
 
 tab.reset_loss_channel(0)
-print(tab.is_lost(0))   # False`;
+print(tab.is_lost(0))    # False`;
 
 const pruning = `tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)`;
 ---
-<Base title="Generalized Stabilizer Tableau" current="tutorials" toc={toc}>
-  <article class="shell narrow tutorial">
+<Base
+  title="Python Quick Start — Generalized Tableau"
+  current="quickstart"
+  toc={toc}
+  sections={pyQuickStartSections}
+  currentSection="tableau"
+>
+  <article class="shell narrow qs-page qs-page--python">
     <div class="titleblock">
-      <div class="eyebrow"><a href={`${base}/tutorials`}>Tutorials</a></div>
+      <div class="eyebrow"><a href={`${base}/quickstart/python`}>Python Quick Start</a></div>
       <h1>Generalized Stabilizer Tableau</h1>
       <p class="byline">
-        Schrödinger-picture state simulation: stabilizer tableau for the
-        Clifford fragment, sparse coefficient vector for the non-Clifford
-        part.
+        Schrödinger-picture state simulation: a stabilizer tableau for the
+        Clifford fragment of the circuit and a sparse coefficient vector
+        for the non-Clifford part.
       </p>
     </div>
 
@@ -84,40 +82,58 @@ const pruning = `tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)`;
       <p>
         Clifford operations are tracked efficiently in the stabilizer
         tableau. Non-Clifford gates (T gates, arbitrary rotations) expand
-        the state into a superposition of stabilizer states, tracked via
-        a sparse coefficient vector. The cost scales exponentially only
-        in the number of non-Clifford gates, making it well-suited for
-        circuits with few T gates and many Clifford operations.
+        the state into a superposition of stabilizer states, tracked via a
+        sparse coefficient vector. The cost scales exponentially only in
+        the number of non-Clifford gates, making this backend well-suited
+        for circuits with few T gates and many Clifford operations.
       </p>
     </section>
 
     <section id="basic-usage">
-      <h2>Basic usage</h2>
-<pre><code class="language-python">{basicUsage}</code></pre>
+      <h2>Drive it from Python</h2>
+      <p>
+        When you'd rather build the circuit gate-by-gate in Python — or
+        when you need non-Clifford gates the Stim grammar can't express —
+        drive a <code>GeneralizedTableau</code> directly:
+      </p>
+      <ExampleBlock code={tableauGhz} file="docs/examples/tableau_ghz.py" />
+      <p>
+        The tableau exposes single- and two-qubit Clifford gates, T and
+        rotation gates for non-Clifford steps, projective Z-basis
+        measurements, and depolarizing / loss / Pauli-error noise channels.
+        See the <a href={`${base}/api#python-section`}>Python API
+        reference</a> for the full list.
+      </p>
     </section>
 
     <section id="forking">
       <h2>Forking for multiple shots</h2>
       <p>
-        Measurement mutates the tableau, so running multiple shots
-        requires creating independent copies. Use <code>fork()</code> to
-        clone the quantum state with a fresh RNG:
+        Measurement mutates the tableau, so running multiple shots requires
+        creating independent copies. Use <code>fork()</code> to clone the
+        quantum state with a fresh RNG:
       </p>
 <pre><code class="language-python">{forking}</code></pre>
       <p>
-        To preserve the RNG state exactly (e.g., for checkpointing),
-        use <code>copy.copy()</code> instead.
+        To preserve the RNG state exactly (e.g. for checkpointing), use
+        <code>copy.copy()</code> instead.
       </p>
     </section>
 
     <section id="stim">
       <h2>Stim circuit support</h2>
       <p>
-        Circuits in <a href="https://github.com/quantumlib/Stim">STIM</a>
+        Circuits in <a href="https://github.com/quantumlib/Stim">Stim</a>
         format are parsed and prepared once into a <code>StimProgram</code>,
-        then executed.
+        then executed:
       </p>
 <pre><code class="language-python">{stimUsage}</code></pre>
+      <p>
+        For the sample-many-shots shortcut you saw in
+        <a href={`${base}/quickstart/python/stim`}>§ 2</a>, the
+        <code>sample_stim</code> helper takes care of forking and
+        bookkeeping for you.
+      </p>
     </section>
 
     <section id="noise">
@@ -132,12 +148,18 @@ const pruning = `tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)`;
         <li><strong>Loss:</strong> <code>loss_channel(addr, p)</code> and <code>correlated_loss_channel(addr0, addr1, p)</code>.</li>
       </ul>
       <p>
-        When a qubit is lost, subsequent measurement returns
+        When a qubit is lost, a subsequent measurement returns
         <a href={`${base}/api#py-ppvm-generalized_tableau-MeasurementResult`}><code>MeasurementResult.LOST</code></a>
         instead of <code>ZERO</code> or <code>ONE</code>. You can check and
         reset loss state:
       </p>
 <pre><code class="language-python">{lossExample}</code></pre>
+      <p>
+        The mathematical model behind the loss and reset channels is
+        documented in
+        <a href={`${base}/quickstart/python/loss-channel`}>§ 5 Loss channel
+        details</a>.
+      </p>
     </section>
 
     <section id="pruning">

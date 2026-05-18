@@ -1,16 +1,16 @@
 ---
-import Base from "../../layouts/Base.astro";
+import Base from "../../../layouts/Base.astro";
+import { pyQuickStartSections } from "../../../data/pyQuickStart";
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const toc = [
-  { label: "Updated Pauli basis", href: "#basis" },
-  { label: "Loss channel",        href: "#loss-channel" },
-  { label: "Reset channel",       href: "#reset-channel" },
+  { label: "Updated Pauli basis",   href: "#basis" },
+  { label: "Loss channel",          href: "#loss-channel" },
+  { label: "Reset channel",         href: "#reset-channel" },
   { label: "Branching and scaling", href: "#scaling" },
 ];
 
-// LaTeX expressions kept as raw strings in the frontmatter so JSX
-// never sees their `{ ... }` (curly braces inside `\begin{pmatrix}`
-// trip up the Astro/JSX parser).
+// LaTeX expressions kept as raw strings so JSX never sees their `{...}`
+// (curly braces inside `\begin{pmatrix}` trip up the Astro/JSX parser).
 const matrixIX = String.raw`$$I = \begin{pmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & 0 \end{pmatrix}, ~~ X = \begin{pmatrix} 0 & 1 & 0 \\ 1 & 0 & 0 \\ 0 & 0 & 0 \end{pmatrix}, ~~ Y = \begin{pmatrix} 0 & -i & 0 \\ i & 0 & 0 \\ 0 & 0 & 0 \end{pmatrix},$$`;
 const matrixZL = String.raw`$$Z = \begin{pmatrix} 1 & 0 & 0 \\ 0 & -1 & 0 \\ 0 & 0 & 0 \end{pmatrix}, ~~ L = \begin{pmatrix} 0 & 0 & 0 \\ 0 & 0 & 0 \\ 0 & 0 & 1 \end{pmatrix}.$$`;
 const krausLoss = String.raw`$$K_0 = \sqrt{1 - p_L}\, I + |L\rangle\langle L|, ~~ K_1 = \sqrt{p_L}\, |L\rangle\langle 0|, ~~ K_2 = \sqrt{p_L}\, |L\rangle\langle 1|,$$`;
@@ -27,16 +27,23 @@ const factorize = String.raw`$$\langle P_1 L_2 P_3 P_4 L_5 P_6 \ldots \rangle = 
 const basisSet = String.raw`$$\{I, X, Y, Z, L\}.$$`;
 const adjointInline = String.raw`$\langle A \rangle = \operatorname{tr}(A\, \mathcal{E}[\rho]) = \operatorname{tr}(\sum_i K_i^\dagger A K_i\, \rho)$`;
 ---
-<Base title="Loss Channel Details" current="tutorials" toc={toc}>
-  <article class="shell narrow tutorial">
+<Base
+  title="Python Quick Start — Loss Channel"
+  current="quickstart"
+  toc={toc}
+  sections={pyQuickStartSections}
+  currentSection="loss-channel"
+>
+  <article class="shell narrow qs-page qs-page--python tutorial">
     <div class="titleblock">
-      <div class="eyebrow"><a href={`${base}/tutorials`}>Tutorials</a></div>
+      <div class="eyebrow"><a href={`${base}/quickstart/python`}>Python Quick Start</a></div>
       <h1>Loss Channel Details</h1>
       <p class="byline">
         Mathematical background for simulating qubit loss with
         <a href={`${base}/api#py-ppvm-paulisum-LossyPauliSum`}><code>LossyPauliSum</code></a>.
-        For usage, see
-        <a href={`${base}/tutorials/pauli-propagation#loss`}>Simulating loss</a>.
+        For day-to-day usage, see
+        <a href={`${base}/quickstart/python/pauli-propagation#loss`}>§ 4 →
+        Simulating loss</a>.
       </p>
     </div>
 
@@ -45,10 +52,9 @@ const adjointInline = String.raw`$\langle A \rangle = \operatorname{tr}(A\, \mat
       <p>
         We can include loss in qubit simulation by adding a third state,
         which we will call the leakage state $|L\rangle$. In order to
-        include this in Pauli Propagation, we extend the set of Pauli
-        basis operators by an additional operator
-        $L = |L\rangle\langle L|$, which is the projector on the leakage
-        state.
+        include this in Pauli Propagation, we extend the set of Pauli basis
+        operators by an additional operator $L = |L\rangle\langle L|$,
+        which is the projector on the leakage state.
       </p>
       <p>The complete set of Pauli operators we use to describe any Pauli String is then</p>
       <p>{basisSet}</p>
@@ -63,8 +69,8 @@ const adjointInline = String.raw`$\langle A \rangle = \operatorname{tr}(A\, \mat
         In the basis above, gates <strong>no longer correspond to the
         matrix</strong> definitions. The reason for this is simple:
         applying e.g. an $X$ gate to a qubit in $|L\rangle$ will leave the
-        qubit invariant. However, it is obvious that multiplying any
-        Pauli $P \neq L$ from the basis with $L$ will give 0. This would
+        qubit invariant. However, it is obvious that multiplying any Pauli
+        $P \neq L$ from the basis with $L$ will give 0. This would
         correspond to a zero-amplitude state. The implementation takes
         that into account accordingly.
       </aside>
@@ -74,8 +80,8 @@ const adjointInline = String.raw`$\langle A \rangle = \operatorname{tr}(A\, \mat
       <h2>Loss channel</h2>
       <p>
         The action of an independent loss channel is to map part of the
-        population from the qubit subspace into the $|L\rangle$ state.
-        This corresponds to reducing the trace of the density operator.
+        population from the qubit subspace into the $|L\rangle$ state. This
+        corresponds to reducing the trace of the density operator.
       </p>
       <p>The Kraus operators for a loss channel are</p>
       <p>{krausLoss}</p>
@@ -84,9 +90,9 @@ const adjointInline = String.raw`$\langle A \rangle = \operatorname{tr}(A\, \mat
       <p>{chanPauli}</p>
       <p>{chanLossL}</p>
       <p>
-        Note that this channel is not symmetric under forward and
-        backward propagation. The above action on Paulis corresponds to
-        the <strong>adjoint</strong> channel: {adjointInline}.
+        Note that this channel is not symmetric under forward and backward
+        propagation. The above action on Paulis corresponds to the
+        <strong>adjoint</strong> channel: {adjointInline}.
       </p>
       <p>
         The action of the channel is clear from a physical perspective:
@@ -94,8 +100,8 @@ const adjointInline = String.raw`$\langle A \rangle = \operatorname{tr}(A\, \mat
         of the qubit subspace.
       </p>
       <p>
-        However, if there is no loss present in the initial state, we
-        will never map any part of a Pauli string to $L$. This might seem
+        However, if there is no loss present in the initial state, we will
+        never map any part of a Pauli string to $L$. This might seem
         surprising, but is accurate. Under the loss channel described
         here, we simply lose population out of the qubit subspace. Any
         expectation value of a qubit-subspace operator will tend towards
@@ -119,11 +125,11 @@ const adjointInline = String.raw`$\langle A \rangle = \operatorname{tr}(A\, \mat
       <p>
         While this is conceptually accurate, the resulting loss does not
         capture what happens on hardware. If there is no loss detection,
-        then a qubit that has been lost will be falsely counted as being
-        in the $|0\rangle$ state when measured. If there is loss
-        detection, we could either reject the trajectory via
-        post-selection (equivalent to having no loss in the system), or
-        reset the qubit to $|0\rangle$ during the circuit.
+        then a qubit that has been lost will be falsely counted as being in
+        the $|0\rangle$ state when measured. If there is loss detection, we
+        could either reject the trajectory via post-selection (equivalent
+        to having no loss in the system), or reset the qubit to $|0\rangle$
+        during the circuit.
       </p>
     </section>
 
@@ -148,23 +154,23 @@ const adjointInline = String.raw`$\langle A \rangle = \operatorname{tr}(A\, \mat
       <ul>
         <li>Coherences remain unchanged.</li>
         <li>
-          Lost qubits are reset: lost population is removed ($L$ is set
-          to 0) and added to the $|0\rangle$ state, which is equivalent
-          to a positive contribution to both $Z$ and $I$.
+          Lost qubits are reset: lost population is removed ($L$ is set to
+          0) and added to the $|0\rangle$ state, which is equivalent to a
+          positive contribution to both $Z$ and $I$.
         </li>
       </ul>
       <p>
-        This reset channel is sufficient to model either actually
-        resetting a lost qubit, or the error that arises when falsely
-        counting a lost qubit as 0. For the latter, we simply apply the
-        loss channel to all qubits at the end of the circuit. This
-        ensures lost qubits don't partake in the dynamics of the
-        circuit, but are then counted as 0 in a measurement.
+        This reset channel is sufficient to model either actually resetting
+        a lost qubit, or the error that arises when falsely counting a lost
+        qubit as 0. For the latter, we simply apply the loss channel to all
+        qubits at the end of the circuit. This ensures lost qubits don't
+        partake in the dynamics of the circuit, but are then counted as 0
+        in a measurement.
       </p>
       <p>
-        Note that since we are doing Pauli Propagation, we always have
-        to apply the adjoint circuit. Thus, resetting lost qubits at the
-        end of the circuit means we apply the reset channel at the very
+        Note that since we are doing Pauli Propagation, we always have to
+        apply the adjoint circuit. Thus, resetting lost qubits at the end
+        of the circuit means we apply the reset channel at the very
         beginning when propagating a Pauli string.
       </p>
     </section>
@@ -172,35 +178,33 @@ const adjointInline = String.raw`$\langle A \rangle = \operatorname{tr}(A\, \mat
     <section id="scaling">
       <h2>Comment on branching and scaling</h2>
       <p>
-        Both channels above branch, which without truncation would lead
-        to exponential scaling.
+        Both channels above branch, which without truncation would lead to
+        exponential scaling.
       </p>
       <p>
-        For the loss channel, it is easy to see that coefficient
-        truncation can deal with branching, since it only branches on
-        $L \to p_L I + L$. Branches therefore scale with $p_L$, which is
-        usually $\ll 1$.
+        For the loss channel, it is easy to see that coefficient truncation
+        can deal with branching, since it only branches on $L \to p_L I +
+        L$. Branches therefore scale with $p_L$, which is usually $\ll 1$.
       </p>
       <p>
-        The reset channel, on the other hand, branches on both $I$ and
-        $Z$ into $L$ without any leading coefficient. The probability of
-        having lost the $i$-th qubit at the end of the circuit is just
-        given by $\langle L_i \rangle$. Since there are no coherences
-        between $L$ and the qubit subspace, expectation values
-        factorize — for any Pauli string with $P_i \neq L_i$:
+        The reset channel, on the other hand, branches on both $I$ and $Z$
+        into $L$ without any leading coefficient. The probability of having
+        lost the $i$-th qubit at the end of the circuit is just given by
+        $\langle L_i \rangle$. Since there are no coherences between $L$
+        and the qubit subspace, expectation values factorize — for any
+        Pauli string with $P_i \neq L_i$:
       </p>
       <p>{factorize}</p>
       <p>
-        In a slight abuse of notation, we note that
-        $\langle L_i \rangle \propto p_L$; the contribution of Pauli
-        strings that have an $L$ on many positions is very small.
-        Therefore, we can truncate these to suppress exponential
-        branching.
+        In a slight abuse of notation, we note that $\langle L_i \rangle
+        \propto p_L$; the contribution of Pauli strings that have an $L$ on
+        many positions is very small. Therefore, we can truncate these to
+        suppress exponential branching.
       </p>
       <p>
-        In practice, this works similarly to large-weight truncation and
-        is achieved by a designated truncation strategy, configured
-        through <code>max_loss_weight</code> on
+        In practice, this works similarly to large-weight truncation and is
+        achieved by a designated truncation strategy, configured through
+        <code>max_loss_weight</code> on
         <a href={`${base}/api#py-ppvm-paulisum-LossyPauliSum`}><code>LossyPauliSum</code></a>.
       </p>
     </section>

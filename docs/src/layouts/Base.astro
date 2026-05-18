@@ -5,20 +5,27 @@ interface TocItem {
   label: string;
   href: string;
 }
+interface SectionItem {
+  id: string;
+  label: string;
+  href: string;
+}
 interface Props {
   title: string;
   description?: string;
-  current?: "home" | "quickstart" | "tutorials" | "examples" | "develop" | "api";
+  current?: "home" | "quickstart" | "examples" | "develop" | "api";
   toc?: TocItem[];
   tocTitle?: string;
+  sections?: SectionItem[];
+  currentSection?: string;
+  sectionsTitle?: string;
 }
 
-const { title, description = "ppvm — fast Pauli propagation and stabilizer-tableau quantum simulator.", current, toc, tocTitle = "On this page" } = Astro.props;
+const { title, description = "ppvm — fast Pauli propagation and stabilizer-tableau quantum simulator.", current, toc, tocTitle = "On this page", sections, currentSection, sectionsTitle = "Sections" } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const nav = [
   { id: "home", label: "Overview", href: `${base}/` },
   { id: "quickstart", label: "Quick Start", href: `${base}/quickstart` },
-  { id: "tutorials", label: "Tutorials", href: `${base}/tutorials` },
   { id: "examples", label: "Examples", href: `${base}/examples` },
   { id: "develop", label: "Develop", href: `${base}/develop` },
   { id: "api", label: "Reference", href: `${base}/api` },
@@ -77,7 +84,38 @@ const nav = [
       </div>
     </header>
     <main>
-      {toc && toc.length > 0 ? (
+      {sections && sections.length > 0 ? (
+        <div class="page-shell page-shell--3col">
+          <aside class="page-sections" aria-label={sectionsTitle}>
+            <div class="page-toc-label">{sectionsTitle}</div>
+            <ol>
+              {sections.map((s) => (
+                <li>
+                  <a
+                    href={s.href}
+                    aria-current={currentSection === s.id ? "page" : undefined}
+                  >{s.label}</a>
+                </li>
+              ))}
+            </ol>
+          </aside>
+          <div class="page-toc-content">
+            <slot />
+          </div>
+          {toc && toc.length > 0 ? (
+            <aside class="page-toc page-toc--right" aria-label={tocTitle}>
+              <div class="page-toc-label">{tocTitle}</div>
+              <ol>
+                {toc.map((t) => (
+                  <li><a href={t.href} data-toc-link={t.href}>{t.label}</a></li>
+                ))}
+              </ol>
+            </aside>
+          ) : (
+            <aside class="page-toc page-toc--right page-toc--empty" aria-hidden="true"></aside>
+          )}
+        </div>
+      ) : toc && toc.length > 0 ? (
         <div class="page-shell">
           <aside class="page-toc" aria-label={tocTitle}>
             <div class="page-toc-label">{tocTitle}</div>

@@ -1,0 +1,433 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="ppvm — fast Pauli propagation and stabilizer-tableau quantum simulator."><title>Trotterized Time Evolution of the XZZ Ising Chain — ppvm</title><script>
+      (() => {
+        const stored = localStorage.getItem("ppvm-theme") || "auto";
+        const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const resolved = stored === "auto" ? (sysDark ? "dark" : "light") : stored;
+        document.documentElement.setAttribute("data-theme", resolved);
+        document.documentElement.setAttribute("data-theme-pref", stored);
+      })();
+    </script><link rel="stylesheet" href="/pr-preview/pr-79/_astro/api.IxhKXFO2.css"></head> <body> <header class="masthead"> <div class="masthead-inner"> <a class="brand" href="/pr-preview/pr-79/"> <span class="brand-mark" aria-hidden="true"></span> <span class="brand-mono">ppvm</span> <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span> </a> <nav class="nav-links"> <a href="/pr-preview/pr-79/">Overview</a><a href="/pr-preview/pr-79/quickstart">Quick Start</a><a href="/pr-preview/pr-79/tutorials">Tutorials</a><a href="/pr-preview/pr-79/examples" aria-current="page">Examples</a><a href="/pr-preview/pr-79/develop">Develop</a><a href="/pr-preview/pr-79/api">Reference</a> <div class="theme-toggle" role="group" aria-label="Theme"> <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path> </svg> </button> <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path> </svg> </button> <button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <rect x="3" y="4" width="18" height="13" rx="2"></rect> <path d="M8 21h8M12 17v4"></path> </svg> </button> </div> </nav> </div> </header> <main> <div class="page-shell"> <aside class="page-toc" aria-label="On this page"> <div class="page-toc-label">On this page</div> <ol> <li><a href="#Parameters" data-toc-link="#Parameters">Parameters</a></li><li><a href="#Noiseless-simulation" data-toc-link="#Noiseless-simulation">Noiseless simulation</a></li><li><a href="#Noiseless-time-evolution" data-toc-link="#Noiseless-time-evolution">Noiseless time evolution</a></li><li><a href="#Noisy-simulation-with-qubit-loss" data-toc-link="#Noisy-simulation-with-qubit-loss">Noisy simulation with qubit loss</a></li><li><a href="#Noisy-time-evolution" data-toc-link="#Noisy-time-evolution">Noisy time evolution</a></li><li><a href="#Results" data-toc-link="#Results">Results</a></li> </ol> </aside> <div class="page-toc-content">  <article class="shell narrow notebook"> <div class="titleblock"> <div class="eyebrow"> <a href="/pr-preview/pr-79/examples">Examples</a> &middot; executed during build
+</div> <h1>Trotterized Time Evolution of the XZZ Ising Chain</h1> <p class="byline">
+Source:
+<code><a href="https://github.com/QuEraComputing/ppvm/blob/main/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a></code> </p> </div> <div class="notebook-body"><main>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=8fe65ffb">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h1 id="Trotterized-Time-Evolution-of-the-XZZ-Ising-Chain">Trotterized Time Evolution of the XZZ Ising Chain<a class="anchor-link" href="#Trotterized-Time-Evolution-of-the-XZZ-Ising-Chain">¶</a></h1><p>In this example we simulate the time evolution of the <strong>XZZ Ising chain Hamiltonian</strong></p>
+<p>$$H = h \sum_i X_i + J \sum_i Z_i Z_{i+1}$$</p>
+<p>using first-order Trotterized time evolution and <strong>Heisenberg-picture Pauli propagation</strong>.</p>
+<p>In the Heisenberg picture we propagate <em>observables</em> backwards through the circuit rather
+than evolving a state vector forwards. ppvm represents the observable as a weighted sum of
+Pauli strings and applies each gate layer analytically.</p>
+<p>One Trotter step of duration $\delta t$ decomposes the unitary as</p>
+<p>$$U(\delta t) \approx \prod_i e^{-i h \delta t X_i} \prod_i e^{-i J \delta t Z_i Z_{i+1}}$$</p>
+<p>We run two simulations: a noiseless baseline and a noisy version with qubit loss,
+using ppvm's <code>LossyPauliSum</code>. Note that the noiseless simulation is still subject
+to truncation and therefore an approximate solution.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=012dc1d0">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">ppvm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LossyPauliSum</span><span class="p">,</span> <span class="n">PauliSum</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=553fc69c">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="Parameters">Parameters<a class="anchor-link" href="#Parameters">¶</a></h2>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=68447c27">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">n</span> <span class="o">=</span> <span class="mi">6</span>
+<span class="n">h</span> <span class="o">=</span> <span class="mf">1.0</span>
+<span class="n">j</span> <span class="o">=</span> <span class="mf">1.5</span> <span class="o">*</span> <span class="n">h</span>
+<span class="n">dt</span> <span class="o">=</span> <span class="mf">0.1</span> <span class="o">/</span> <span class="n">h</span>
+<span class="n">time</span> <span class="o">=</span> <span class="mf">3.0</span> <span class="o">/</span> <span class="n">h</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=2cb59054">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="Noiseless-simulation">Noiseless simulation<a class="anchor-link" href="#Noiseless-simulation">¶</a></h2><p>We want to compute $\langle \sum_i Z_i \rangle$ on the all-zeros state.
+In the Heisenberg picture, we initialise the observable as</p>
+<p>$$O = \sum_{i=0}^{n-1} Z_i$$</p>
+<p>using ppvm's compact notation where <code>"Z3"</code> means $Z$ on qubit 3 and $I$ everywhere else.</p>
+<p>Each call to <code>trotter_step</code> applies one Trotter step in reverse (Heisenberg picture):</p>
+<ol>
+<li><strong>RX</strong> on every qubit — implements $e^{-i h \delta t X_i}$</li>
+<li><strong>RZZ</strong> on every neighbouring pair — implements $e^{-i J \delta t Z_i Z_{i+1}}$</li>
+</ol>
+<p>Truncation applies automatically after every gate and channel.
+There are currently two possible ways to truncate in a loss-less simulation:</p>
+<ul>
+<li>Coefficient truncation: every Pauli string with a leading coefficient, whose absolute value is smaller than <code>min_abs_coeff</code> is truncated.</li>
+<li>Max Pauli Weight truncation: every Pauli string with more than <code>max_pauli_weight</code> non-identity Paulis gets truncated.</li>
+</ul>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=3224c266">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">state</span> <span class="o">=</span> <span class="n">PauliSum</span><span class="o">.</span><span class="n">new</span><span class="p">(</span>
+    <span class="n">n_qubits</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+    <span class="n">terms</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">"Z</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">)],</span>
+    <span class="n">min_abs_coeff</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span>
+    <span class="n">max_pauli_weight</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">theta_x</span> <span class="o">=</span> <span class="n">dt</span> <span class="o">*</span> <span class="n">h</span>
+<span class="n">theta_zz</span> <span class="o">=</span> <span class="n">dt</span> <span class="o">*</span> <span class="n">j</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">trotter_step</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">theta_x</span><span class="p">,</span> <span class="n">theta_zz</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">rx</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">theta_x</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">rzz</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">theta_zz</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=1965fecb">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="Noiseless-time-evolution">Noiseless time evolution<a class="anchor-link" href="#Noiseless-time-evolution">¶</a></h2>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=7bd4164e">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">steps</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">time</span> <span class="o">/</span> <span class="n">dt</span><span class="p">)</span>
+<span class="n">times</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="n">dt</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span>
+<span class="n">ev_noiseless</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
+    <span class="n">ev_noiseless</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">overlap_with_zero</span><span class="p">())</span>
+    <span class="n">trotter_step</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">theta_x</span><span class="p">,</span> <span class="n">theta_zz</span><span class="p">)</span>
+
+<span class="n">ev_noiseless</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">overlap_with_zero</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Max Pauli weight (noiseless): </span><span class="si">{</span><span class="n">state</span><span class="o">.</span><span class="n">current_max_weight</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child">
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>Max Pauli weight (noiseless): 6
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=cbe0c3bc">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="Noisy-simulation-with-qubit-loss">Noisy simulation with qubit loss<a class="anchor-link" href="#Noisy-simulation-with-qubit-loss">¶</a></h2><p>We repeat the simulation using <code>LossyPauliSum</code>, which extends the Pauli basis with a
+loss operator $L$ to track qubits that have left the computational subspace.</p>
+<p>After each gate layer we apply:</p>
+<ul>
+<li>a <strong>single-qubit depolarising channel</strong> (<code>pauli_error</code>) or
+<strong>two-qubit depolarising channel</strong> (<code>two_qubit_pauli_error</code>) to model gate errors</li>
+<li>a <strong>loss channel</strong> (<code>loss_channel</code>) to model qubit loss at the same locations</li>
+</ul>
+<p>In addition to the two truncation strategies, we can now also truncate using
+<code>max_loss_weight</code>, which removes any Pauli String which has more <code>L</code>s than
+that thresholds. This is justified since these Pauli strings only contribute
+little to the final average value.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=f2d3f57f">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">noise_1q</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="mf">1e-3</span><span class="p">,</span>
+    <span class="mf">1e-3</span><span class="p">,</span>
+    <span class="mf">1e-3</span><span class="p">,</span>
+<span class="p">]</span>  <span class="c1"># symmetric single-qubit depolarising: equal p for X, Y, Z</span>
+<span class="n">noise_2q</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="mf">1e-3</span> <span class="o">/</span> <span class="mf">15.0</span>
+<span class="p">]</span> <span class="o">*</span> <span class="mi">15</span>  <span class="c1"># symmetric two-qubit depolarising over all 15 non-identity Paulis</span>
+<span class="n">p_loss</span> <span class="o">=</span> <span class="mf">1e-3</span>  <span class="c1"># loss probability per gate location</span>
+
+<span class="n">noisy_state</span> <span class="o">=</span> <span class="n">LossyPauliSum</span><span class="o">.</span><span class="n">new</span><span class="p">(</span>
+    <span class="n">n_qubits</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+    <span class="n">terms</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">"Z</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">)],</span>
+    <span class="n">min_abs_coeff</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span>
+    <span class="n">max_pauli_weight</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+    <span class="n">max_loss_weight</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Reset the loss register on every qubit before propagation: this ensures that qubits</span>
+<span class="c1"># which become lost during the circuit are counted as |0⟩ when computing overlap_with_zero.</span>
+<span class="c1"># **NOTE**: without truncation, this scales exponentially</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="n">noisy_state</span><span class="o">.</span><span class="n">reset_loss_channel</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">noisy_trotter_step</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">theta_x</span><span class="p">,</span> <span class="n">theta_zz</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">rx</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">theta_x</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">pauli_error</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">noise_1q</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">loss_channel</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">p_loss</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">rzz</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">theta_zz</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">two_qubit_pauli_error</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">noise_2q</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">loss_channel</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">p_loss</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">loss_channel</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">p_loss</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=94693e68">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="Noisy-time-evolution">Noisy time evolution<a class="anchor-link" href="#Noisy-time-evolution">¶</a></h2>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=f869f13c">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">ev_noisy</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
+    <span class="n">ev_noisy</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">noisy_state</span><span class="o">.</span><span class="n">overlap_with_zero</span><span class="p">())</span>
+    <span class="n">noisy_trotter_step</span><span class="p">(</span><span class="n">noisy_state</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">theta_x</span><span class="p">,</span> <span class="n">theta_zz</span><span class="p">)</span>
+
+<span class="n">ev_noisy</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">noisy_state</span><span class="o">.</span><span class="n">overlap_with_zero</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Max Pauli weight (noisy): </span><span class="si">{</span><span class="n">noisy_state</span><span class="o">.</span><span class="n">current_max_weight</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child">
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>Max Pauli weight (noisy): 6
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=ac099594">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="Results">Results<a class="anchor-link" href="#Results">¶</a></h2><p>Both curves start at 1 (all qubits in $|0\rangle$). In the interaction-dominated regime
+($J &gt; h$) the magnetisation oscillates before decaying. The noisy simulation decays
+faster due to depolarisation and qubit loss.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=27c44fea">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">times</span><span class="p">,</span> <span class="p">[</span><span class="n">ev</span> <span class="o">/</span> <span class="n">n</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">ev_noiseless</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s2">"noiseless"</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">times</span><span class="p">,</span> <span class="p">[</span><span class="n">ev</span> <span class="o">/</span> <span class="n">n</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">ev_noisy</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s2">"noisy + loss"</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">"Time $t$"</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">"$\langle \sum_i Z_i \rangle / n$"</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">"XZZ Ising chain — Trotterized evolution"</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main></div> </article>  </div> </div> </main> <script>
+        // Scroll-spy: mark the TOC link for the section currently in view.
+        // Strategy: track each section's distance from the top of the
+        // viewport and pick whichever sits closest to (but above) a small
+        // anchor line near the top, so the link flips just as a section's
+        // heading scrolls past.
+        (() => {
+          const links = Array.from(document.querySelectorAll(".page-toc [data-toc-link]"));
+          if (!links.length) return;
+
+          // Pair each link with its target heading.
+          const targets = links
+            .map((a) => {
+              const href = a.getAttribute("data-toc-link") || "";
+              const id = href.startsWith("#") ? href.slice(1) : null;
+              const el = id ? document.getElementById(id) : null;
+              return el ? { link: a, el } : null;
+            })
+            .filter(Boolean);
+          if (!targets.length) return;
+
+          const ANCHOR = 120; // px from top of viewport
+
+          function update() {
+            let activeIdx = 0;
+            for (let i = 0; i < targets.length; i++) {
+              const top = targets[i].el.getBoundingClientRect().top;
+              if (top - ANCHOR <= 0) activeIdx = i;
+              else break;
+            }
+            for (let i = 0; i < targets.length; i++) {
+              const isActive = i === activeIdx;
+              targets[i].link.setAttribute("aria-current", isActive ? "true" : "false");
+            }
+          }
+
+          update();
+          window.addEventListener("scroll", update, { passive: true });
+          window.addEventListener("resize", update);
+        })();
+      </script> <script>
+      // Inject a copy button into every <pre> block.
+      (() => {
+        const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+        const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+        for (const pre of document.querySelectorAll("pre")) {
+          if (pre.querySelector(".copy-btn")) continue;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "copy-btn";
+          btn.setAttribute("aria-label", "Copy code to clipboard");
+          btn.innerHTML = COPY_SVG + "<span>Copy</span>";
+          pre.appendChild(btn);
+
+          btn.addEventListener("click", async () => {
+            const code = pre.querySelector("code");
+            const text = (code ? code.innerText : pre.innerText).replace(/\n$/, "");
+            try {
+              await navigator.clipboard.writeText(text);
+            } catch {
+              // Fallback for non-secure contexts.
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.style.position = "fixed";
+              ta.style.opacity = "0";
+              document.body.appendChild(ta);
+              ta.select();
+              try { document.execCommand("copy"); } catch {}
+              document.body.removeChild(ta);
+            }
+            btn.dataset.state = "copied";
+            btn.innerHTML = CHECK_SVG + "<span>Copied</span>";
+            setTimeout(() => {
+              btn.removeAttribute("data-state");
+              btn.innerHTML = COPY_SVG + "<span>Copy</span>";
+            }, 1500);
+          });
+        }
+      })();
+    </script> <script>
+      // Theme switcher: light / dark / auto, persisted in localStorage.
+      (() => {
+        const root = document.documentElement;
+        const mql = window.matchMedia("(prefers-color-scheme: dark)");
+        const buttons = document.querySelectorAll(".theme-toggle button[data-theme-set]");
+
+        function apply(pref) {
+          const resolved = pref === "auto" ? (mql.matches ? "dark" : "light") : pref;
+          root.setAttribute("data-theme", resolved);
+          root.setAttribute("data-theme-pref", pref);
+          localStorage.setItem("ppvm-theme", pref);
+          for (const b of buttons) {
+            b.setAttribute("aria-pressed", b.dataset.themeSet === pref ? "true" : "false");
+          }
+        }
+
+        const initial = localStorage.getItem("ppvm-theme") || "auto";
+        apply(initial);
+
+        for (const b of buttons) {
+          b.addEventListener("click", () => apply(b.dataset.themeSet));
+        }
+
+        mql.addEventListener("change", () => {
+          if ((localStorage.getItem("ppvm-theme") || "auto") === "auto") apply("auto");
+        });
+      })();
+    </script> <footer class="foot"> <div class="foot-inner"> <span>ppvm · QuEra Computing · open source, MIT-style license</span> <span> <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
+          documentation generated <time>2026-05-18</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous" onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}, {left: '\(', right: '\)', display: false}, {left: '\[', right: '\]', display: true}], throwOnError: false});"></script>  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js"></script> <script>
+      (() => {
+        if (typeof hljs === "undefined") return;
+        // Only highlight blocks that opt in via `class="language-…"`.
+        // Unhinted blocks (project trees, prompts, ASCII art) stay plain.
+        for (const el of document.querySelectorAll("pre code[class*='language-']")) {
+          hljs.highlightElement(el);
+        }
+      })();
+    </script> </body> </html>

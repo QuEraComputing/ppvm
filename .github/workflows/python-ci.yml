@@ -22,4 +22,4 @@ jobs:
       - uses: astral-sh/setup-uv@v5
 
       - name: Run Python tests
-        run: uv run --project ppvm-python --group dev pytest ppvm-python/test/
+        run: uv run --project ppvm-python --group dev pytest ppvm-python/test/ docs/examples/

@@ -26,7 +26,9 @@ shots = sample_stim(prog, n_qubits=2, num_shots=200, seed=42)
 patterns = Counter(tuple(int(r) for r in shot) for shot in shots)
 for pattern, count in sorted(patterns.items()):
     print(f"{pattern}: {count}")
+# → (0, 0): 102
+# → (1, 1): 98
 
 # A GHZ state should only produce (0, 0) or (1, 1) — never (0, 1) or (1, 0).
 correlated_fraction = sum(c for p, c in patterns.items() if p[0] == p[1]) / len(shots)
-print(f"correlated fraction: {correlated_fraction}")
+print(f"correlated fraction: {correlated_fraction}")  # → correlated fraction: 1.0

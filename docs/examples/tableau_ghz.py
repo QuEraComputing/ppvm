@@ -14,5 +14,5 @@ tab.cnot(0, 1)
 r0 = tab.measure(0)
 r1 = tab.measure(1)
 
-print(f"qubit 0: {r0}, qubit 1: {r1}")
-print("correlated:", r0 == r1)
+print(f"qubit 0: {r0}, qubit 1: {r1}")  # → qubit 0: 1, qubit 1: 1
+print("correlated:", r0 == r1)  # → correlated: True

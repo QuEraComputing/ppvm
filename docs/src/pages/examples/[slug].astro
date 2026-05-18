@@ -6,6 +6,7 @@ interface Meta {
   slug: string;
   title: string;
   headings: string[];
+  language: string;
   source: string;
 }
 const notebooks = index as Meta[];
@@ -33,6 +34,7 @@ export async function getStaticPaths() {
 }
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const gitRef = process.env.PPVM_GIT_REF || "main";
 const { meta, html } = Astro.props as { meta: Meta; html: string };
 
 const toc = meta.headings.map((h) => ({
@@ -48,11 +50,15 @@ const toc = meta.headings.map((h) => ({
       </div>
       <h1>{meta.title}</h1>
       <p class="byline">
-        Source:
-        <code><a href={`https://github.com/QuEraComputing/ppvm/blob/main/${meta.source}`}>{meta.source}</a></code>
+        <span class="examples-lang">{meta.language}</span>
+        <span class="examples-source-label">Source</span>
+        <a
+          class="examples-source"
+          href={`https://github.com/QuEraComputing/ppvm/blob/${gitRef}/${meta.source}`}
+        >{meta.source}</a>
       </p>
     </div>
 
-    <div class="notebook-body" set:html={html}></div>
+    <div class="notebook-body" data-language={meta.language} set:html={html}></div>
   </article>
 </Base>

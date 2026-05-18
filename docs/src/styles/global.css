@@ -2061,7 +2061,7 @@ html[data-theme="dark"] .kind-module   { color: var(--ink); background: var(--bg
   padding: 0;
   margin: 1.6rem 0 0;
   display: grid;
-  gap: 1.8rem;
+  gap: 1.6rem;
 }
 .examples-list > li {
   padding-top: 1.4rem;
@@ -2076,23 +2076,48 @@ html[data-theme="dark"] .kind-module   { color: var(--ink); background: var(--bg
   letter-spacing: -0.005em;
   color: var(--ink);
   text-decoration: none;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.45rem;
 }
 .examples-title:hover { color: var(--accent); }
-.examples-meta { font-size: 0.82rem; color: var(--ink-faint); margin-bottom: 0.5rem; }
-.examples-meta code { background: none; border: 0; padding: 0; font-size: inherit; }
-.examples-meta a { color: var(--ink-soft); }
-.examples-meta a:hover { color: var(--accent); }
-.examples-headings {
-  margin: 0.2rem 0 0 1.2rem;
-  padding: 0;
-  font-size: 0.92rem;
-  color: var(--ink-soft);
-  columns: 2;
-  column-gap: 1.6rem;
+
+/* Source line: `<lang badge>  Source: <path>` on one row. The
+   "Source:" label is what makes the path obviously a link to the
+   file rather than a project-relative folder name. */
+.examples-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.7rem;
+  font-size: 0.85rem;
+  color: var(--ink-faint);
+  margin: 0;
 }
-.examples-headings li { break-inside: avoid; margin: 0.15rem 0; }
-@media (max-width: 720px) { .examples-headings { columns: 1; } }
+.examples-source-label {
+  font-family: var(--sans-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.examples-source {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1px;
+}
+.examples-source:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.examples-lang {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--rule));
+  border-radius: 3px;
+  padding: 0.1rem 0.45rem;
+  line-height: 1.3;
+}
 
 /* Notebook body: nbconvert's `basic` template wraps cells in
    `.jp-Cell` containers with input + output regions. We translate
@@ -2143,6 +2168,38 @@ html[data-theme="dark"] .kind-module   { color: var(--ink); background: var(--bg
    palette so we don't have to re-theme every Pygments class. */
 .notebook-body .jp-CodeCell .jp-InputArea {
   margin: 0.4rem 0;
+}
+.notebook-body .jp-CodeCell .jp-InputArea-editor,
+.notebook-body .jp-CodeCell > .jp-Cell-inputWrapper > .jp-InputArea {
+  /* Position the language badge relative to the cell. */
+  position: relative;
+}
+/* Tiny language label in the top-right of every input cell, sourced
+   from the wrapper's `data-language` attribute. Falls back to
+   "python" if the attribute is missing. */
+.notebook-body[data-language] .jp-CodeCell .jp-InputArea::after {
+  content: attr(data-cell-lang, "");
+}
+.notebook-body .jp-CodeCell .jp-InputArea::after {
+  content: "";
+}
+.notebook-body[data-language="python"] .jp-CodeCell .jp-InputArea::after { content: "python"; }
+.notebook-body[data-language="rust"]   .jp-CodeCell .jp-InputArea::after { content: "rust"; }
+.notebook-body[data-language="julia"]  .jp-CodeCell .jp-InputArea::after { content: "julia"; }
+.notebook-body[data-language] .jp-CodeCell .jp-InputArea::after {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  background: var(--bg);
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  padding: 0.05rem 0.4rem;
+  pointer-events: none;
+  z-index: 1;
 }
 .notebook-body .jp-CodeCell .highlight,
 .notebook-body .jp-CodeCell pre {

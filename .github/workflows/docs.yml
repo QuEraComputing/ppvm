@@ -85,6 +85,19 @@ jobs:
             echo "base=/" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Compute git ref for source links
+        id: compute-ref
+        # "Source" links on the Examples pages resolve against this ref.
+        # PR previews use the PR head SHA so new files (that aren't on
+        # main yet) still link correctly; main deploys use the merge
+        # commit SHA so the link is stable forever.
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build site
         # `npm run build` aggregates the three extraction steps
         # (`extract:rust`, `extract:python`, `extract:notebooks`) plus
@@ -95,6 +108,7 @@ jobs:
         env:
           PPVM_SITE: https://congenial-bassoon-l436wp3.pages.github.io
           PPVM_BASE: ${{ steps.compute-base.outputs.base }}
+          PPVM_GIT_REF: ${{ steps.compute-ref.outputs.ref }}
           RUSTFLAGS: "-C target-feature=+aes,+sse2"
         run: npm run build
 

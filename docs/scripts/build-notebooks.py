@@ -124,11 +124,20 @@ def render_html(nb: nbformat.NotebookNode) -> str:
     return match.group(1).strip() if match else body
 
 
+def detect_language(nb: nbformat.NotebookNode) -> str:
+    kernelspec = (nb.metadata or {}).get("kernelspec", {}) or {}
+    lang = kernelspec.get("language") or (
+        (nb.metadata or {}).get("language_info", {}) or {}
+    ).get("name")
+    return (lang or "python").lower()
+
+
 def build_one(source: Path) -> dict:
     sys.stderr.write(f"[notebooks] building {source.name}\n")
     nb = jupytext.read(source, fmt="py:percent")
     title, headings = extract_title_and_headings(nb)
     slug = slug_for(source)
+    language = detect_language(nb)
 
     prepend_setup_cell(nb)
     execute(nb, source.name)
@@ -140,6 +149,7 @@ def build_one(source: Path) -> dict:
         "slug": slug,
         "title": title,
         "headings": headings,
+        "language": language,
         "source": f"docs/notebooks/{source.name}",
     }
     (OUTPUT_DIR / f"{slug}.json").write_text(

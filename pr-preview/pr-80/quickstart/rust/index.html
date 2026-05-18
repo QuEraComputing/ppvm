@@ -1,0 +1,373 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="ppvm — fast Pauli propagation and stabilizer-tableau quantum simulator."><title>Rust Quick Start — ppvm</title><script>
+      (() => {
+        const stored = localStorage.getItem("ppvm-theme") || "auto";
+        const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const resolved = stored === "auto" ? (sysDark ? "dark" : "light") : stored;
+        document.documentElement.setAttribute("data-theme", resolved);
+        document.documentElement.setAttribute("data-theme-pref", stored);
+      })();
+    </script><link rel="stylesheet" href="/pr-preview/pr-80/_astro/api.DKEoF9hc.css"></head> <body> <header class="masthead"> <div class="masthead-inner"> <a class="brand" href="/pr-preview/pr-80/"> <span class="brand-mark" aria-hidden="true"></span> <span class="brand-mono">ppvm</span> <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span> </a> <nav class="nav-links"> <a href="/pr-preview/pr-80/">Overview</a><a href="/pr-preview/pr-80/quickstart" aria-current="page">Quick Start</a><a href="/pr-preview/pr-80/examples">Examples</a><a href="/pr-preview/pr-80/develop">Develop</a><a href="/pr-preview/pr-80/api">Reference</a> <div class="theme-toggle" role="group" aria-label="Theme"> <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path> </svg> </button> <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path> </svg> </button> <button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <rect x="3" y="4" width="18" height="13" rx="2"></rect> <path d="M8 21h8M12 17v4"></path> </svg> </button> </div> </nav> </div> </header> <main> <div class="page-shell"> <aside class="page-toc" aria-label="On this page"> <div class="page-toc-label">On this page</div> <ol> <li><a href="#workspace" data-toc-link="#workspace">§ 1 Workspace at a glance</a></li><li><a href="#pick" data-toc-link="#pick">§ 2 Pick crates by use case</a></li><li><a href="#setup" data-toc-link="#setup">§ 3 Setup</a></li><li><a href="#runtime" data-toc-link="#runtime">§ 4 ppvm-runtime</a></li><li><a href="#tableau" data-toc-link="#tableau">§ 5 ppvm-tableau</a></li><li><a href="#stim" data-toc-link="#stim">§ 6 ppvm-stim</a></li><li><a href="#sym" data-toc-link="#sym">§ 7 ppvm-sym</a></li><li><a href="#stim-parser" data-toc-link="#stim-parser">§ 8 stim-parser</a></li><li><a href="#traits" data-toc-link="#traits">§ 9 The trait hierarchy</a></li><li><a href="#truncation" data-toc-link="#truncation">§ 10 Truncation strategies</a></li><li><a href="#next" data-toc-link="#next">§ 11 Next steps</a></li> </ol> </aside> <div class="page-toc-content">  <div class="qs-hero qs-hero--rust"> <div class="qs-hero-inner"> <span class="chip"><span class="chip-dot"></span>Rust · For library developers</span> <h1><span class="lang">rs</span>Quick Start</h1> <p class="audience">
+For developers who want to <strong>embed ppvm</strong> in another tool,
+        extend its trait hierarchy, or run heavy benchmark sweeps from native
+        Rust without paying for the Python bridge.
+</p> </div> </div> <article class="shell narrow qs-page qs-page--rust"> <h2 id="workspace"><span class="sec-num">§ 1</span>Workspace at a glance</h2> <p>
+ppvm is a Cargo workspace of five focused crates. <code>ppvm-runtime</code> is
+      the foundation; everything else builds on it. Depend on what your
+      workload actually needs — there is no umbrella crate.
+</p> <dl class="crate-list"> <dt><code>ppvm-runtime</code> <span class="crate-tag">foundation</span></dt> <dd>
+Core Pauli arithmetic, the <code>PauliSum&lt;Config&gt;</code> type, the
+<code>Config</code> trait that bundles storage / coefficient type /
+        hasher / truncation strategy, and the gate &amp; noise trait hierarchy
+        (Clifford, <code>TGate</code>, rotations, depolarizing, loss, …).
+        Required by every other ppvm crate.
+</dd> <dt><code>ppvm-tableau</code> <span class="crate-tag">backend</span></dt> <dd>
+Generalized stabilizer-tableau simulator with non-Clifford support via
+        sparse coefficient tracking. Provides <code>Tableau</code>,
+<code>GeneralizedTableau</code>, and the <code>SparseVector</code> trait
+        (indexable by <code>usize</code>, <code>u128</code>, or
+<code>bnum</code> types for &gt; 64 qubits). Optional <code>rayon</code>
+feature for parallel sampling.
+</dd> <dt><code>ppvm-stim</code> <span class="crate-tag">interop</span></dt> <dd>
+Parse and execute Stim programs against
+<code>ppvm-tableau</code>. Re-exports the parser, provides
+<code>parse_extended</code>, <code>execute</code>, and a
+<code>sample</code> helper for multi-shot loops. Depends on
+<code>ppvm-runtime</code>, <code>ppvm-tableau</code>, and
+<code>stim-parser</code>.
+</dd> <dt><code>ppvm-sym</code> <span class="crate-tag">backend</span></dt> <dd>
+Symbolic (parametric) Pauli propagation. Pauli sums carry coefficients
+        of type <code>Term</code> — polynomials in sines and cosines of
+        symbolic parameters — useful for analytic studies of variational
+        circuits and Trotter schedules.
+</dd> <dt><code>stim-parser</code> <span class="crate-tag">parser</span></dt> <dd>
+Standalone parser for the Stim circuit format. Use directly if you want
+        to consume Stim programs without pulling in a simulator;
+<code>ppvm-stim</code> already depends on it.
+</dd> </dl> <h2 id="pick"><span class="sec-num">§ 2</span>Pick crates by use case</h2> <ul class="crate-pick"> <li> <strong>Pauli propagation only</strong> (Heisenberg-picture observables,
+        noisy circuits at scale): <code>ppvm-runtime</code>.
+</li> <li> <strong>Stabilizer / generalized-tableau simulation</strong>
+(Schrödinger picture, mid-circuit measurement, loss):
+<code>ppvm-runtime</code> + <code>ppvm-tableau</code>.
+</li> <li> <strong>Run Stim programs</strong> against the tableau:
+<code>ppvm-runtime</code> + <code>ppvm-tableau</code> +
+<code>ppvm-stim</code>.
+</li> <li> <strong>Symbolic / parametric circuits</strong>:
+<code>ppvm-runtime</code> + <code>ppvm-sym</code>.
+</li> <li> <strong>Just parse Stim</strong>, no simulator: <code>stim-parser</code>.
+</li> </ul> <h2 id="setup"><span class="sec-num">§ 3</span>Setup</h2> <p>
+Requires Rust ≥ 1.83 (edition 2024). Add the crates relevant to your
+      workload — the git dependency form is identical for each:
+</p> <pre><code class="language-toml">[dependencies]
+ppvm-runtime = { git = &quot;https://github.com/QuEraComputing/ppvm&quot; }
+ppvm-tableau = { git = &quot;https://github.com/QuEraComputing/ppvm&quot; }
+ppvm-stim    = { git = &quot;https://github.com/QuEraComputing/ppvm&quot; }
+ppvm-sym     = { git = &quot;https://github.com/QuEraComputing/ppvm&quot; }</code></pre> <p>
+On x86_64, set <code>RUSTFLAGS="-C target-feature=+aes,+sse2"</code> —
+      gxhash, used by the default <code>Config</code> bundles, needs the AES
+      instruction set. CI sets this automatically. On targets without AES, build
+      with <code>--no-default-features --features=indexmap,ahash</code> to drop
+      gxhash.
+</p> <h2 id="runtime"><span class="sec-num">§ 4</span><code>ppvm-runtime</code> — Pauli propagation</h2> <p> <code>PauliSum&lt;T: Config&gt;</code> is generic over a configuration
+      bundle (storage, coefficient type, hasher, truncation strategy). Pick a
+      pre-built config from <code>ppvm_runtime::config</code>:
+</p> <ul> <li><code>indexmap::ByteFxHashF64&lt;N&gt;</code> — deterministic ordering, <code>f64</code> coefficients. Good default.</li> <li><code>dashmap::ByteFxHash&lt;N&gt;</code> — concurrent map for use with <code>rayon</code>.</li> <li><code>fxhash::Byte&lt;N&gt;</code> — plain <code>HashMap</code>; fastest single-threaded.</li> </ul> <p> <code>N</code> is the number of bytes per Pauli word: <code>N = ceil(n_qubits / 8)</code>.
+      Twelve qubits → <code>N = 2</code>.
+</p> <pre><code class="language-rust">use ppvm_runtime::prelude::*;
+
+fn main() {
+    let mut state: PauliSum&lt;config::indexmap::ByteFxHashF64&lt;1&gt;&gt; =
+        PauliSum::builder().n_qubits(2).build();
+    state += ("ZZ", 1.0);
+
+    // Circuit is H(0); CNOT(0, 1) — apply in reverse for Heisenberg propagation.
+    state.cnot(0, 1);
+    state.h(0);
+
+    // &lt;0…0| state |0…0&gt; via a pattern match.
+    let zero_state: PauliPattern = "Z?*".into();
+    println!("{}", state.trace(&zero_state));
+}</code></pre> <p>
+The same circuit and the same gate vocabulary the Python bindings sit on
+      top of — every Python call goes through this layer.
+</p> <h2 id="tableau"><span class="sec-num">§ 5</span><code>ppvm-tableau</code> — generalized stabilizer tableau</h2> <p>
+For full-state simulation in the Schrödinger picture, use
+<code>GeneralizedTableau&lt;T, I, C&gt;</code>. The <code>I</code>
+parameter is the bitstring index type for the sparse coefficient
+      vector — pick by qubit count:
+</p> <ul> <li><code>usize</code> — up to ~64 qubits (platform dependent).</li> <li><code>u128</code> — up to 128 qubits.</li> <li><code>bnum::types::U256</code> / <code>U512</code> / <code>U1024</code> — for larger systems.</li> </ul> <p>
+Using <code>usize</code> past 64 qubits silently overflows — pick the
+      next-larger type if in doubt.
+</p> <pre><code class="language-rust">use ppvm_runtime::prelude::*;
+use ppvm_tableau::prelude::*;
+
+fn main() {
+    // GeneralizedTableau::new takes (n_qubits, coefficient_threshold).
+    let mut tab: GeneralizedTableau&lt;config::indexmap::ByteFxHashF64&lt;1&gt;, usize, _&gt;
+        = GeneralizedTableau::new(2, 1e-10);
+
+    tab.h(0);
+    tab.cnot(0, 1);
+
+    let r0 = tab.measure(0);
+    let r1 = tab.measure(1);
+    assert_eq!(r0, r1); // GHZ correlation
+}</code></pre> <p>
+Gates run in <em>forward</em> order here — the tableau is in the
+      Schrödinger picture, not the Heisenberg picture that
+<code>ppvm-runtime</code> uses. The same trait methods
+      (<code>h</code>, <code>cnot</code>, <code>rx</code>, <code>t</code>, …)
+      apply to both backends; only the picture changes.
+</p> <p>
+Non-Clifford gates (<code>t</code>, <code>u3</code>, rotations) and
+<code>reset</code> live on the tableau. For mid-circuit measurement, the
+      outcome is a tri-state value (<code>Some(true)</code>, <code>Some(false)</code>,
+<code>None</code> for loss) — loss is first-class.
+</p> <h2 id="stim"><span class="sec-num">§ 6</span><code>ppvm-stim</code> — running Stim programs</h2> <p> <code>ppvm-stim</code> parses extended Stim and executes against a
+<code>GeneralizedTableau</code>. The two-stage pipeline — parse once,
+      reuse the program across shots — matters when sampling at scale.
+</p> <pre><code class="language-rust">use ppvm_stim::{parse_extended, sample};
+use ppvm_tableau::prelude::*;
+use ppvm_runtime::prelude::*;
+
+fn run_shots(src: &str, n_qubits: usize) -&gt; Result&lt;Vec&lt;Vec&lt;Option&lt;bool&gt;&gt;&gt;, ppvm_stim::Error&gt; {
+    let prog = parse_extended(src)?;
+
+    // Multi-shot: pass a factory closure — sample reuses the parsed program.
+    let shots = sample(&prog, 10_000, || {
+        GeneralizedTableau::&lt;config::indexmap::ByteFxHashF64&lt;1&gt;, usize, _&gt;::new(n_qubits, 1e-10)
+    })?;
+    Ok(shots)
+}</code></pre> <p>
+For single-shot demos there are also <code>run_string</code> /
+<code>run_file</code>, but they re-parse on every call — never use them
+      inside a sampling loop.
+</p> <h2 id="sym"><span class="sec-num">§ 7</span><code>ppvm-sym</code> — symbolic propagation</h2> <p>
+Substitute <code>f64</code> coefficients for <code>Term</code> — the
+<code>ppvm-sym</code> polynomial-in-sin/cos representation — to propagate
+      Paulis through parametric circuits without committing to angle values:
+</p> <pre><code class="language-rust">use ppvm_runtime::prelude::*;
+use ppvm_sym::Term;
+
+fn main() {
+    let mut sum = PauliSum::&lt;config::fxhash::Byte&lt;2, Term&gt;&gt;::builder()
+        .n_qubits(2)
+        .build();
+    sum += ("ZZ", Term::from(1.0));
+
+    sum.rz(0, Term::var(0));
+    sum.ry(0, Term::var(1));
+    sum.cnot(0, 1);
+    sum.rx(1, Term::var(1));
+
+    let pat: PauliPattern = "Z?*".into();
+    println!("Trace expression: {}", sum.trace(&pat));
+
+    // Evaluate at concrete angles.
+    let value = sum.trace(&pat).eval(&[0.3, 0.5]).unwrap();
+    println!("Value at (0.3, 0.5): {}", value);
+}</code></pre> <p>
+The same <code>PauliSum</code>, the same gate trait set — only the
+      coefficient type changes. <code>Term::var(i)</code> introduces a free
+      parameter; gate methods accept anything implementing
+<code>Into&lt;T::Coeff&gt;</code>. Call <code>.eval(&amp;[...])</code> on
+      a <code>Term</code> to substitute numeric values at the end.
+</p> <h2 id="stim-parser"><span class="sec-num">§ 8</span><code>stim-parser</code> — standalone Stim parsing</h2> <p>
+Use <code>stim-parser</code> when you want to consume the Stim circuit
+      format without a simulator — e.g., to translate Stim into your own IR or
+      to lint circuits in CI. <code>ppvm-stim</code> already depends on this
+      crate and re-exports its prelude.
+</p> <pre><code class="language-rust">use stim_parser::prelude::*;
+
+let prog = parse_extended(stim_src)?;
+for inst in prog.instructions() {
+    // walk gates, measurements, annotations…
+}</code></pre> <h2 id="traits"><span class="sec-num">§ 9</span>The trait hierarchy</h2> <p>
+Gate behaviour is exposed through small, composable traits defined once
+      in <code>ppvm_runtime::traits</code> and implemented by every backend.
+      Generic code that takes a <code>T: Clifford + RotationOne</code> bound
+      works against <code>PauliSum</code> and <code>GeneralizedTableau</code>
+alike:
+</p> <ul> <li><code>Clifford</code> / <code>CliffordExtensions</code> — Pauli, Hadamard, S, CNOT, CZ, CY, √X, √Y (and their adjoints).</li> <li><code>TGate</code>, <code>RotationOne</code>, <code>RotationTwo</code>, <code>U3Gate</code> — non-Clifford rotations that branch the Pauli sum.</li> <li><code>Measure</code> / <code>LossyMeasure</code> — Z-basis measurement, with and without loss-aware outcomes.</li> <li><code>Depolarizing</code>, <code>PauliError</code>, <code>LossChannel</code>, <code>CorrelatedLossChannel</code>, <code>AmplitudeDamping</code> — noise channels.</li> <li><code>Reset</code> — ground-state reset (tableau).</li> </ul> <p>
+Adding a new gate is a matter of implementing the relevant trait for
+      whichever simulator types you care about — see the
+<a href="/pr-preview/pr-80/develop#extending">Developer Guide</a> for the
+      end-to-end recipe.
+</p> <h2 id="truncation"><span class="sec-num">§ 10</span>Custom truncation strategies</h2> <p> <code>PauliSum</code> takes a truncation policy as part of its
+<code>Config</code>. Pre-built strategies in
+<code>ppvm_runtime::strategy</code> cover the common cases —
+<code>CoefficientThreshold(eps)</code>, <code>MaxPauliWeight(w)</code>,
+<code>MaxLossWeight(w)</code>, <code>CombinedStrategy(a, b)</code>.
+      Pass one through the builder:
+</p> <pre><code class="language-rust">use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
+
+type State = PauliSum&lt;config::indexmap::ByteFxHashF64&lt;2, CoefficientThreshold&gt;&gt;;
+
+let mut state: State = PauliSum::builder()
+    .n_qubits(12)
+    .strategy(CoefficientThreshold(1e-6))
+    .capacity(400)            // capacity tuning has a large perf impact
+    .build();</code></pre> <p>
+To roll your own, implement the <code>Strategy</code> trait — which
+      provides <code>capacity</code> (an initial-size hint for the map) and a
+<code>truncate</code> method that drops entries from the map according to
+      your policy:
+</p> <pre><code class="language-rust">use ppvm_runtime::traits::strategy::Strategy;
+
+#[derive(Debug, Clone, Copy, Default)]
+struct DropTinyHighWeight;
+
+impl Strategy for DropTinyHighWeight {
+    fn capacity(&self, n_qubits: usize) -&gt; usize {
+        16 * n_qubits
+    }
+
+    fn truncate&lt;S, V, H, M, W&gt;(&self, map: &mut M)
+    where
+        // bounds elided — see ppvm_runtime::traits::strategy
+    {
+        map.retain(|word, coeff| {
+            coeff.abs() &gt; 1e-8 || word.weight() &lt;= 8
+        });
+    }
+}</code></pre> <p>
+Once the strategy is part of the <code>Config</code>, truncation runs
+      automatically inside the gate methods. You can also call
+<code>state.truncate()</code> manually at sync points if you want
+      explicit control.
+</p> <h2 id="next"><span class="sec-num">§ 11</span>Next steps</h2> <ul> <li>Browse the full <a href="/pr-preview/pr-80/api#rust-section">Rust API reference</a>, grouped by crate and kind.</li> <li>Read <code>examples/symbolic.rs</code>, <code>examples/trotter.rs</code>, and <code>examples/msd.rs</code> in the repository for end-to-end pipelines.</li> <li>If your user-facing surface is Python, you don't have to drop down to Rust — the <a href="/pr-preview/pr-80/quickstart/python">Python Quick Start</a> covers the common cases.</li> <li>For architecture details (Config-trait generics, dual-map optimisation, where to put new gates), see the <a href="/pr-preview/pr-80/develop">Developer Guide</a>.</li> </ul> <div class="qs-crosslink"> <div> <span class="label">Other path</span>
+Just want to run circuits, not extend the library?
+</div> <a href="/pr-preview/pr-80/quickstart/python">Open the Python Quick Start</a> </div> </article>  </div> </div> </main> <script>
+        // Scroll-spy: mark the TOC link for the section currently in view.
+        // Strategy: track each section's distance from the top of the
+        // viewport and pick whichever sits closest to (but above) a small
+        // anchor line near the top, so the link flips just as a section's
+        // heading scrolls past.
+        (() => {
+          const links = Array.from(document.querySelectorAll(".page-toc [data-toc-link]"));
+          if (!links.length) return;
+
+          // Pair each link with its target heading.
+          const targets = links
+            .map((a) => {
+              const href = a.getAttribute("data-toc-link") || "";
+              const id = href.startsWith("#") ? href.slice(1) : null;
+              const el = id ? document.getElementById(id) : null;
+              return el ? { link: a, el } : null;
+            })
+            .filter(Boolean);
+          if (!targets.length) return;
+
+          const ANCHOR = 120; // px from top of viewport
+
+          function update() {
+            let activeIdx = 0;
+            for (let i = 0; i < targets.length; i++) {
+              const top = targets[i].el.getBoundingClientRect().top;
+              if (top - ANCHOR <= 0) activeIdx = i;
+              else break;
+            }
+            for (let i = 0; i < targets.length; i++) {
+              const isActive = i === activeIdx;
+              targets[i].link.setAttribute("aria-current", isActive ? "true" : "false");
+            }
+          }
+
+          update();
+          window.addEventListener("scroll", update, { passive: true });
+          window.addEventListener("resize", update);
+        })();
+      </script> <script>
+      // Inject a copy button into every <pre> block.
+      (() => {
+        const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+        const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+        for (const pre of document.querySelectorAll("pre")) {
+          if (pre.querySelector(".copy-btn")) continue;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "copy-btn";
+          btn.setAttribute("aria-label", "Copy code to clipboard");
+          btn.innerHTML = COPY_SVG + "<span>Copy</span>";
+          pre.appendChild(btn);
+
+          btn.addEventListener("click", async () => {
+            const code = pre.querySelector("code");
+            const text = (code ? code.innerText : pre.innerText).replace(/\n$/, "");
+            try {
+              await navigator.clipboard.writeText(text);
+            } catch {
+              // Fallback for non-secure contexts.
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.style.position = "fixed";
+              ta.style.opacity = "0";
+              document.body.appendChild(ta);
+              ta.select();
+              try { document.execCommand("copy"); } catch {}
+              document.body.removeChild(ta);
+            }
+            btn.dataset.state = "copied";
+            btn.innerHTML = CHECK_SVG + "<span>Copied</span>";
+            setTimeout(() => {
+              btn.removeAttribute("data-state");
+              btn.innerHTML = COPY_SVG + "<span>Copy</span>";
+            }, 1500);
+          });
+        }
+      })();
+    </script> <script>
+      // Theme switcher: light / dark / auto, persisted in localStorage.
+      (() => {
+        const root = document.documentElement;
+        const mql = window.matchMedia("(prefers-color-scheme: dark)");
+        const buttons = document.querySelectorAll(".theme-toggle button[data-theme-set]");
+
+        function apply(pref) {
+          const resolved = pref === "auto" ? (mql.matches ? "dark" : "light") : pref;
+          root.setAttribute("data-theme", resolved);
+          root.setAttribute("data-theme-pref", pref);
+          localStorage.setItem("ppvm-theme", pref);
+          for (const b of buttons) {
+            b.setAttribute("aria-pressed", b.dataset.themeSet === pref ? "true" : "false");
+          }
+        }
+
+        const initial = localStorage.getItem("ppvm-theme") || "auto";
+        apply(initial);
+
+        for (const b of buttons) {
+          b.addEventListener("click", () => apply(b.dataset.themeSet));
+        }
+
+        mql.addEventListener("change", () => {
+          if ((localStorage.getItem("ppvm-theme") || "auto") === "auto") apply("auto");
+        });
+      })();
+    </script> <footer class="foot"> <div class="foot-inner"> <span>ppvm · QuEra Computing · open source, MIT-style license</span> <span> <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
+          documentation generated <time>2026-05-18</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (typeof renderMathInElement !== "function") return;
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$",  right: "$",  display: false },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "\\[", right: "\\]", display: true },
+          ],
+          // Skip code spans and code blocks — `[7, 16]` and friends
+          // shouldn't accidentally trigger as math delimiters.
+          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+          throwOnError: false,
+        });
+      });
+    </script>  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js"></script> <script>
+      (() => {
+        if (typeof hljs === "undefined") return;
+        // Only highlight blocks that opt in via `class="language-…"`.
+        // Unhinted blocks (project trees, prompts, ASCII art) stay plain.
+        for (const el of document.querySelectorAll("pre code[class*='language-']")) {
+          hljs.highlightElement(el);
+        }
+      })();
+    </script> </body> </html>

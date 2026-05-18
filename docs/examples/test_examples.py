@@ -17,11 +17,10 @@ Format:
     # → first
     # → second
 
-Every example must end up registered: ``test_all_examples_are_covered``
-fails if a ``.py`` file in the examples directories is missing from the
-discovered set, and a per-file precondition check fails if a file has
-zero ``# → `` markers (we don't want examples that silently pass without
-verifying any output).
+Example files are auto-discovered from the examples directories via
+``_discover()``; there is no separate registration step. A per-file
+precondition check still fails if a file has zero ``# → `` markers (we
+don't want examples that silently pass without verifying any output).
 
 Run from the repository root:
 

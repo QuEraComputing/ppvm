@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Build inputs: nightly Rust for the rustdoc-JSON extractor,
-      # uv to run griffe for the Python extractor, Node 20 for Astro.
+      # uv to run griffe for the Python extractor, Node 22 for Astro.
       - uses: dtolnay/rust-toolchain@nightly
 
       - uses: Swatinem/rust-cache@v2
@@ -74,7 +74,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: docs/package-lock.json
 

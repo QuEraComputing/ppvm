@@ -40,3 +40,4 @@ overlap = ps.overlap_with_zero()
 assert top_weight <= MAX_WEIGHT, top_weight
 assert math.isfinite(overlap), overlap
 print(f"layers={LAYERS} terms={len(ps)} max_weight={top_weight} finite_overlap=True")
+# → layers=5 terms=7 max_weight=4 finite_overlap=True

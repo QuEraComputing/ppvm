@@ -13,4 +13,4 @@ ps = PauliSum.new(2, "ZZ")
 ps.cnot(0, 1)
 ps.h(0)
 assert ps.overlap_with_zero() == 1.0, ps.overlap_with_zero()
-print("ok")
+print("ok")  # → ok

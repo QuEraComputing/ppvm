@@ -8,6 +8,47 @@ const toc = [
   { label: "Truncation",  href: "#truncation" },
   { label: "Simulating loss", href: "#loss" },
 ];
+
+// Code snippets live in the frontmatter as raw strings so the
+// `<pre><code>` body stays a plain `{snippet}` expression. Embedding
+// Python f-strings directly in Astro JSX would otherwise need awkward
+// brace escapes (`{`{i}`}`) that obscure the rendered code.
+const basicUsage = `from ppvm import PauliSum
+
+# Observable: Z on each qubit
+state = PauliSum.new(n_qubits=3, terms=[f"Z{i}" for i in range(3)])
+
+# Apply gates in reverse circuit order
+state.cnot(1, 2)
+state.cnot(0, 1)
+state.h(0)
+
+# Expectation value with respect to |0...0>
+print(state.overlap_with_zero())`;
+
+const termNotation = `ps = PauliSum.new(4, [("Z0Z1", 0.5), ("X2", 0.3)])`;
+
+const truncationKwargs = `ps = PauliSum.new(10, "Z0", min_abs_coeff=1e-8, max_pauli_weight=5)`;
+
+const lossExample = `from ppvm import LossyPauliSum
+
+ps = LossyPauliSum.new(n_qubits=1, terms=["Z"])
+
+# Reset at the end of the circuit
+ps.reset_loss_channel(0)
+
+# Loss after an X gate
+ps.loss_channel(0, 0.1)
+
+# Apply an X gate
+ps.x(0)
+
+z_exp = ps.overlap_with_zero()
+
+# This will be -0.8: in 10% of cases we have <Z> = 1 instead of -1.
+print(f"<Z>: {z_exp}")`;
+
+const lossWeight = `ps = LossyPauliSum.new(3, "ZZZ", max_loss_weight=2)`;
 ---
 <Base title="Pauli Propagation" current="tutorials" toc={toc}>
   <article class="shell narrow tutorial">
@@ -39,18 +80,7 @@ const toc = [
 
     <section id="basic-usage">
       <h2>Basic usage</h2>
-<pre><code class="language-python">from ppvm import PauliSum
-
-# Observable: Z on each qubit
-state = PauliSum.new(n_qubits=3, terms=[f"Z{`{i}`}" for i in range(3)])
-
-# Apply gates in reverse circuit order
-state.cnot(1, 2)
-state.cnot(0, 1)
-state.h(0)
-
-# Expectation value with respect to |0...0>
-print(state.overlap_with_zero())</code></pre>
+<pre><code class="language-python">{basicUsage}</code></pre>
       <aside class="callout">
         Because this is Heisenberg-picture propagation, gates must be
         applied in <strong>reverse circuit order</strong>.
@@ -64,7 +94,7 @@ print(state.overlap_with_zero())</code></pre>
         in compact notation (<code>"X0Z1"</code> — Pauli + qubit index).
         Coefficients default to <code>1.0</code> but can be set explicitly:
       </p>
-<pre><code class="language-python">ps = PauliSum.new(4, [("Z0Z1", 0.5), ("X2", 0.3)])</code></pre>
+<pre><code class="language-python">{termNotation}</code></pre>
     </section>
 
     <section id="truncation">
@@ -80,7 +110,7 @@ print(state.overlap_with_zero())</code></pre>
           drops terms with more non-identity Paulis than the cutoff.
         </li>
       </ul>
-<pre><code class="language-python">ps = PauliSum.new(10, "Z0", min_abs_coeff=1e-8, max_pauli_weight=5)</code></pre>
+<pre><code class="language-python">{truncationKwargs}</code></pre>
     </section>
 
     <section id="loss">
@@ -99,23 +129,7 @@ print(state.overlap_with_zero())</code></pre>
         need 3 bits to represent a character in a Pauli string rather than 2.
       </p>
       <p>Here is a small example:</p>
-<pre><code class="language-python">from ppvm import LossyPauliSum
-
-ps = LossyPauliSum.new(n_qubits=1, terms=["Z"])
-
-# Reset at the end of the circuit
-ps.reset_loss_channel(0)
-
-# Loss after an X gate
-ps.loss_channel(0, 0.1)
-
-# Apply an X gate
-ps.x(0)
-
-z_exp = ps.overlap_with_zero()
-
-# This will be -0.8: in 10% of cases we have &lt;Z&gt; = 1 instead of -1.
-print(f"&lt;Z&gt;: {`{z_exp}`}")</code></pre>
+<pre><code class="language-python">{lossExample}</code></pre>
       <p>A third truncation strategy is available for lossy simulations:</p>
       <ul>
         <li>
@@ -127,7 +141,7 @@ print(f"&lt;Z&gt;: {`{z_exp}`}")</code></pre>
           reset channels.
         </li>
       </ul>
-<pre><code class="language-python">ps = LossyPauliSum.new(3, "ZZZ", max_loss_weight=2)</code></pre>
+<pre><code class="language-python">{lossWeight}</code></pre>
     </section>
   </article>
 </Base>

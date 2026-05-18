@@ -2126,7 +2126,6 @@ html[data-theme="dark"] .kind-module   { color: var(--ink); background: var(--bg
    markdown cells, plots embedded as their natural images. */
 .notebook { max-width: 50rem; }
 .notebook-body { margin-top: 2rem; }
-.notebook-body > main { display: contents; }
 .notebook-body .jp-Cell {
   margin: 1.4rem 0;
   padding: 0;
@@ -2174,15 +2173,12 @@ html[data-theme="dark"] .kind-module   { color: var(--ink); background: var(--bg
   /* Position the language badge relative to the cell. */
   position: relative;
 }
-/* Tiny language label in the top-right of every input cell, sourced
-   from the wrapper's `data-language` attribute. Falls back to
-   "python" if the attribute is missing. */
-.notebook-body[data-language] .jp-CodeCell .jp-InputArea::after {
-  content: attr(data-cell-lang, "");
-}
-.notebook-body .jp-CodeCell .jp-InputArea::after {
-  content: "";
-}
+/* Tiny language label in the top-right of every input cell. The
+   wrapper's `data-language` attribute selects which literal to emit
+   — we use literal `content:` per language rather than `attr()`
+   because the two-argument `attr(..., fallback)` form isn't yet
+   widely supported. Add a new language by appending a rule here
+   plus listing it in build-notebooks.py's `detect_language`. */
 .notebook-body[data-language="python"] .jp-CodeCell .jp-InputArea::after { content: "python"; }
 .notebook-body[data-language="rust"]   .jp-CodeCell .jp-InputArea::after { content: "rust"; }
 .notebook-body[data-language="julia"]  .jp-CodeCell .jp-InputArea::after { content: "julia"; }

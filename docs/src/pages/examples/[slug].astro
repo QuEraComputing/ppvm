@@ -1,6 +1,5 @@
 ---
 import Base from "../../layouts/Base.astro";
-import index from "../../generated/notebooks/index.json";
 
 interface Meta {
   slug: string;
@@ -9,7 +8,6 @@ interface Meta {
   language: string;
   source: string;
 }
-const notebooks = index as Meta[];
 
 export async function getStaticPaths() {
   const idx = (await import("../../generated/notebooks/index.json")).default as Meta[];
@@ -23,12 +21,19 @@ export async function getStaticPaths() {
   return idx.map((nb) => {
     // Vite glob keys look like "../../generated/notebooks/trotter.html".
     const key = Object.keys(htmls).find((k) => k.endsWith(`/${nb.slug}.html`));
+    if (!key) {
+      // Fail the build loudly rather than silently producing an
+      // empty Examples page — a missing fragment usually means
+      // `npm run extract:notebooks` wasn't run after a rename.
+      throw new Error(
+        `notebook fragment missing for slug "${nb.slug}". ` +
+        `Expected docs/src/generated/notebooks/${nb.slug}.html. ` +
+        `Run \`npm run extract:notebooks\` to regenerate it.`
+      );
+    }
     return {
       params: { slug: nb.slug },
-      props: {
-        meta: nb,
-        html: key ? htmls[key] : "",
-      },
+      props: { meta: nb, html: htmls[key] },
     };
   });
 }

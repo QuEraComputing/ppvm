@@ -9,6 +9,58 @@ const toc = [
   { label: "Noise and loss",        href: "#noise" },
   { label: "Coefficient pruning",   href: "#pruning" },
 ];
+
+// Python snippets live in the frontmatter so f-string `{...}` braces
+// don't fight Astro's JSX parser. See the matching note in
+// `pauli-propagation.astro`.
+const basicUsage = `from ppvm import GeneralizedTableau
+
+tab = GeneralizedTableau(n_qubits=2)
+tab.h(0)
+tab.cnot(0, 1)
+
+r0 = tab.measure(0)
+r1 = tab.measure(1)
+print(f"Qubit 0: {r0}, Qubit 1: {r1}")  # always correlated (Bell state)`;
+
+const forking = `tab = GeneralizedTableau(n_qubits=2, seed=42)
+tab.h(0)
+tab.cnot(0, 1)
+
+for shot in range(100):
+    t = tab.fork(seed=shot)
+    print(t.measure(0), t.measure(1))`;
+
+const stimUsage = `from ppvm import GeneralizedTableau, StimProgram, sample_stim
+
+prog = StimProgram.parse("""
+H 0
+CX 0 1
+M 0 1
+""")
+
+# Single shot:
+tab = GeneralizedTableau(n_qubits=2)
+results = tab.run(prog)
+print(f"Bell state measurement: {results}")
+
+# Many shots — fresh tableau per shot:
+shots = sample_stim(prog, n_qubits=2, num_shots=10_000, seed=0)
+
+# .stim file:
+prog = StimProgram.from_file("path/to/circuit.stim")
+shots = GeneralizedTableau.sample(prog, n_qubits=85, num_shots=100, seed=0)`;
+
+const lossExample = `tab = GeneralizedTableau(n_qubits=1, seed=0)
+tab.loss_channel(0, 1.0)  # deterministic loss
+
+print(tab.is_lost(0))   # True
+print(tab.measure(0))    # MeasurementResult.LOST
+
+tab.reset_loss_channel(0)
+print(tab.is_lost(0))   # False`;
+
+const pruning = `tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)`;
 ---
 <Base title="Generalized Stabilizer Tableau" current="tutorials" toc={toc}>
   <article class="shell narrow tutorial">
@@ -41,15 +93,7 @@ const toc = [
 
     <section id="basic-usage">
       <h2>Basic usage</h2>
-<pre><code class="language-python">from ppvm import GeneralizedTableau
-
-tab = GeneralizedTableau(n_qubits=2)
-tab.h(0)
-tab.cnot(0, 1)
-
-r0 = tab.measure(0)
-r1 = tab.measure(1)
-print(f"Qubit 0: {`{r0}`}, Qubit 1: {`{r1}`}")  # always correlated (Bell state)</code></pre>
+<pre><code class="language-python">{basicUsage}</code></pre>
     </section>
 
     <section id="forking">
@@ -59,13 +103,7 @@ print(f"Qubit 0: {`{r0}`}, Qubit 1: {`{r1}`}")  # always correlated (Bell state)
         requires creating independent copies. Use <code>fork()</code> to
         clone the quantum state with a fresh RNG:
       </p>
-<pre><code class="language-python">tab = GeneralizedTableau(n_qubits=2, seed=42)
-tab.h(0)
-tab.cnot(0, 1)
-
-for shot in range(100):
-    t = tab.fork(seed=shot)
-    print(t.measure(0), t.measure(1))</code></pre>
+<pre><code class="language-python">{forking}</code></pre>
       <p>
         To preserve the RNG state exactly (e.g., for checkpointing),
         use <code>copy.copy()</code> instead.
@@ -79,25 +117,7 @@ for shot in range(100):
         format are parsed and prepared once into a <code>StimProgram</code>,
         then executed.
       </p>
-<pre><code class="language-python">from ppvm import GeneralizedTableau, StimProgram, sample_stim
-
-prog = StimProgram.parse("""
-H 0
-CX 0 1
-M 0 1
-""")
-
-# Single shot:
-tab = GeneralizedTableau(n_qubits=2)
-results = tab.run(prog)
-print(f"Bell state measurement: {`{results}`}")
-
-# Many shots — fresh tableau per shot:
-shots = sample_stim(prog, n_qubits=2, num_shots=10_000, seed=0)
-
-# .stim file:
-prog = StimProgram.from_file("path/to/circuit.stim")
-shots = GeneralizedTableau.sample(prog, n_qubits=85, num_shots=100, seed=0)</code></pre>
+<pre><code class="language-python">{stimUsage}</code></pre>
     </section>
 
     <section id="noise">
@@ -117,14 +137,7 @@ shots = GeneralizedTableau.sample(prog, n_qubits=85, num_shots=100, seed=0)</cod
         instead of <code>ZERO</code> or <code>ONE</code>. You can check and
         reset loss state:
       </p>
-<pre><code class="language-python">tab = GeneralizedTableau(n_qubits=1, seed=0)
-tab.loss_channel(0, 1.0)  # deterministic loss
-
-print(tab.is_lost(0))   # True
-print(tab.measure(0))    # MeasurementResult.LOST
-
-tab.reset_loss_channel(0)
-print(tab.is_lost(0))   # False</code></pre>
+<pre><code class="language-python">{lossExample}</code></pre>
     </section>
 
     <section id="pruning">
@@ -134,7 +147,7 @@ print(tab.is_lost(0))   # False</code></pre>
         coefficient vector. The <code>min_abs_coeff</code> parameter
         controls pruning of small coefficients:
       </p>
-<pre><code class="language-python">tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)</code></pre>
+<pre><code class="language-python">{pruning}</code></pre>
     </section>
   </article>
 </Base>

@@ -39,10 +39,11 @@ OUTPUT_DIR = DOCS / "src" / "generated" / "notebooks"
 
 # Force a non-interactive matplotlib backend before any cell runs so
 # inline ``plt.show()`` calls produce embedded PNGs rather than trying
-# to open a window. This is appended as the first code cell of every
-# notebook before execution; it never appears in the rendered output
-# because the cell is tagged ``remove-input`` (and we filter outputs
-# from it below).
+# to open a window. We prepend this as the first code cell of every
+# notebook with the ``ppvm-hidden-setup`` tag, execute the notebook,
+# and then drop the tagged cell entirely via ``drop_hidden_setup_cells``
+# before rendering — so neither the input nor any output of this cell
+# survives into the HTML fragment that the site embeds.
 MATPLOTLIB_SETUP = (
     "import matplotlib\n"
     "matplotlib.use('Agg')\n"
@@ -108,6 +109,25 @@ def execute(nb: nbformat.NotebookNode, source_label: str) -> None:
 
 
 _BODY_PATTERN = re.compile(r"<body[^>]*>(.*)</body>", re.DOTALL)
+_MAIN_PATTERN = re.compile(r"</?main[^>]*>", re.IGNORECASE)
+_SCRIPT_PATTERN = re.compile(r"<script\b[^>]*>.*?</script>", re.DOTALL | re.IGNORECASE)
+_EVENT_HANDLER_PATTERN = re.compile(r"\s+on[a-z]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
+
+
+def sanitise(fragment: str) -> str:
+    """Defense-in-depth scrub of the rendered notebook HTML before we
+    embed it via ``set:html``. Notebook authors are trusted (the source
+    .py files live in this repo and run during CI), but nbconvert's
+    ``basic`` template will faithfully include any HTML a cell emits as
+    rich output — including ``<script>`` and inline event handlers.
+    Drop both, plus the ``<main>`` wrapper nbconvert adds (the page
+    already has its own ``<main>`` from ``Base.astro``; nesting two is
+    invalid HTML).
+    """
+    fragment = _SCRIPT_PATTERN.sub("", fragment)
+    fragment = _EVENT_HANDLER_PATTERN.sub("", fragment)
+    fragment = _MAIN_PATTERN.sub("", fragment)
+    return fragment.strip()
 
 
 def render_html(nb: nbformat.NotebookNode) -> str:
@@ -121,7 +141,8 @@ def render_html(nb: nbformat.NotebookNode) -> str:
     exporter.exclude_output_prompt = True
     body, _ = exporter.from_notebook_node(nb)
     match = _BODY_PATTERN.search(body)
-    return match.group(1).strip() if match else body
+    inner = match.group(1) if match else body
+    return sanitise(inner)
 
 
 def detect_language(nb: nbformat.NotebookNode) -> str:

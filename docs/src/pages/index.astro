@@ -81,26 +81,30 @@ const tableauCode = stripDocstring(tableauGhz);
       <figure class="hero-code" data-example-active="paulisum">
         <figcaption>
           <div class="hero-code-tabs" role="tablist" aria-label="Backend example">
-            <button type="button" role="tab" data-example-set="paulisum" aria-selected="true" class="hero-code-tab">Pauli propagation</button>
-            <button type="button" role="tab" data-example-set="tableau" aria-selected="false" class="hero-code-tab">Generalized tableau</button>
+            <button type="button" role="tab" id="hero-tab-paulisum" aria-controls="hero-panel-paulisum" aria-selected="true" tabindex="0" data-example-set="paulisum" class="hero-code-tab">Pauli propagation</button>
+            <button type="button" role="tab" id="hero-tab-tableau" aria-controls="hero-panel-tableau" aria-selected="false" tabindex="-1" data-example-set="tableau" class="hero-code-tab">Generalized tableau</button>
           </div>
           <span class="hero-code-file">
             <code data-example-pane="paulisum">paulisum_ghz.py</code><code data-example-pane="tableau" hidden>tableau_ghz.py</code>
             · tested
           </span>
         </figcaption>
-        <pre data-example-pane="paulisum"><code class="language-python">{paulisumCode}</code></pre>
-        <pre data-example-pane="tableau" hidden><code class="language-python">{tableauCode}</code></pre>
-        <p class="hero-code-note" data-example-pane="paulisum">
-          Pauli propagation moves observables <em>backwards</em> through the
-          circuit, so gates are applied in reverse of the textbook order.
-          Same idea in Python and Rust.
-        </p>
-        <p class="hero-code-note" data-example-pane="tableau" hidden>
-          The generalized tableau evolves the state <em>forwards</em> and
-          samples measurement outcomes. GHZ correlations fall out of two
-          single-qubit measurements.
-        </p>
+        <div role="tabpanel" id="hero-panel-paulisum" aria-labelledby="hero-tab-paulisum" data-example-pane="paulisum">
+          <pre><code class="language-python">{paulisumCode}</code></pre>
+          <p class="hero-code-note">
+            Pauli propagation moves observables <em>backwards</em> through the
+            circuit, so gates are applied in reverse of the textbook order.
+            Same idea in Python and Rust.
+          </p>
+        </div>
+        <div role="tabpanel" id="hero-panel-tableau" aria-labelledby="hero-tab-tableau" data-example-pane="tableau" hidden>
+          <pre><code class="language-python">{tableauCode}</code></pre>
+          <p class="hero-code-note">
+            The generalized tableau evolves the state <em>forwards</em> and
+            samples measurement outcomes. GHZ correlations fall out of two
+            single-qubit measurements.
+          </p>
+        </div>
       </figure>
     </section>
   </div>
@@ -223,18 +227,50 @@ what it covers, then wait for my actual task.</code></pre>
     (() => {
       const figure = document.querySelector(".hero-code");
       if (!figure) return;
-      const tabs = figure.querySelectorAll("[data-example-set]");
+      const tabs = Array.from(figure.querySelectorAll('[role="tab"][data-example-set]'));
       const panes = figure.querySelectorAll("[data-example-pane]");
-      tabs.forEach((tab) => {
-        tab.addEventListener("click", () => {
-          const target = tab.getAttribute("data-example-set");
-          figure.setAttribute("data-example-active", target);
-          tabs.forEach((t) => t.setAttribute("aria-selected", t === tab ? "true" : "false"));
-          panes.forEach((p) => {
-            const match = p.getAttribute("data-example-pane") === target;
-            if (match) p.removeAttribute("hidden");
-            else p.setAttribute("hidden", "");
-          });
+      if (tabs.length === 0) return;
+
+      const activate = (tab, { focus } = { focus: false }) => {
+        const target = tab.getAttribute("data-example-set");
+        figure.setAttribute("data-example-active", target);
+        tabs.forEach((t) => {
+          const selected = t === tab;
+          t.setAttribute("aria-selected", selected ? "true" : "false");
+          t.setAttribute("tabindex", selected ? "0" : "-1");
+        });
+        panes.forEach((p) => {
+          const match = p.getAttribute("data-example-pane") === target;
+          if (match) p.removeAttribute("hidden");
+          else p.setAttribute("hidden", "");
+        });
+        if (focus) tab.focus();
+      };
+
+      tabs.forEach((tab, i) => {
+        tab.addEventListener("click", () => activate(tab));
+        tab.addEventListener("keydown", (e) => {
+          let next = null;
+          switch (e.key) {
+            case "ArrowRight":
+            case "ArrowDown":
+              next = tabs[(i + 1) % tabs.length];
+              break;
+            case "ArrowLeft":
+            case "ArrowUp":
+              next = tabs[(i - 1 + tabs.length) % tabs.length];
+              break;
+            case "Home":
+              next = tabs[0];
+              break;
+            case "End":
+              next = tabs[tabs.length - 1];
+              break;
+          }
+          if (next) {
+            e.preventDefault();
+            activate(next, { focus: true });
+          }
         });
       });
     })();

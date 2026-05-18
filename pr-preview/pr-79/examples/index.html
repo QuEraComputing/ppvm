@@ -12,7 +12,7 @@ End-to-end Jupyter notebooks executed at build time, with stdout,
         is also a runnable Jupytext <code>.py</code> file in the repo —
         the "Source" link below opens it on GitHub at the commit that
         produced this page.
-</p> </div> <ul class="examples-list"> <li> <a class="examples-title" href="/pr-preview/pr-79/examples/msd">Magic State Distillation with the Generalized Stabilizer Tableau</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/ff1b8b59502f05eccd42e7f5371d1d6ef126156b/docs/notebooks/msd.py">docs/notebooks/msd.py</a> </p> </li><li> <a class="examples-title" href="/pr-preview/pr-79/examples/trotter">Trotterized Time Evolution of the XZZ Ising Chain</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/ff1b8b59502f05eccd42e7f5371d1d6ef126156b/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a> </p> </li> </ul> </article>  </main>  <script>
+</p> </div> <ul class="examples-list"> <li> <a class="examples-title" href="/pr-preview/pr-79/examples/msd">Magic State Distillation with the Generalized Stabilizer Tableau</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/151001958f46e704b31b0ce2a5455029193224e3/docs/notebooks/msd.py">docs/notebooks/msd.py</a> </p> </li><li> <a class="examples-title" href="/pr-preview/pr-79/examples/trotter">Trotterized Time Evolution of the XZZ Ising Chain</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/151001958f46e704b31b0ce2a5455029193224e3/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a> </p> </li> </ul> </article>  </main>  <script>
       // Inject a copy button into every <pre> block.
       (() => {
         const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
@@ -81,7 +81,23 @@ End-to-end Jupyter notebooks executed at build time, with stdout,
         });
       })();
     </script> <footer class="foot"> <div class="foot-inner"> <span>ppvm · QuEra Computing · open source, MIT-style license</span> <span> <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
-          documentation generated <time>2026-05-18</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous" onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}, {left: '\(', right: '\)', display: false}, {left: '\[', right: '\]', display: true}], throwOnError: false});"></script>  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js"></script> <script>
+          documentation generated <time>2026-05-18</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (typeof renderMathInElement !== "function") return;
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$",  right: "$",  display: false },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "\\[", right: "\\]", display: true },
+          ],
+          // Skip code spans and code blocks — `[7, 16]` and friends
+          // shouldn't accidentally trigger as math delimiters.
+          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+          throwOnError: false,
+        });
+      });
+    </script>  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js"></script> <script>
       (() => {
         if (typeof hljs === "undefined") return;
         // Only highlight blocks that opt in via `class="language-…"`.

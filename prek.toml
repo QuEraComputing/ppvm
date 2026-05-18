@@ -70,15 +70,16 @@ pass_filenames = false
 types = ["python"]
 
 # License headers: hawkeye (Rust-based SPDX header checker)
-# Install once with: cargo install hawkeye  (or: cargo binstall hawkeye)
-# Run `hawkeye format` manually to apply headers to new files.
+# Installed via mise (see mise.toml); `mise exec --` is used so the hook
+# works even outside a mise-activated shell. Run `mise exec -- hawkeye
+# format` manually to apply headers to new files.
 [[repos]]
 repo = "local"
 [[repos.hooks]]
 id = "hawkeye"
 name = "hawkeye license header check"
 language = "system"
-entry = "hawkeye check"
+entry = "mise exec -- hawkeye check"
 pass_filenames = false
 
 # Python: ty type check

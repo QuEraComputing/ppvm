@@ -1,6 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
 import paulisumGhz from "../../examples/paulisum_ghz.py?raw";
+import tableauGhz from "../../examples/tableau_ghz.py?raw";
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function stripDocstring(src: string): string {
@@ -9,7 +10,8 @@ function stripDocstring(src: string): string {
   if (m) s = s.slice(m[0].length);
   return s.trimEnd() + "\n";
 }
-const heroCode = stripDocstring(paulisumGhz);
+const paulisumCode = stripDocstring(paulisumGhz);
+const tableauCode = stripDocstring(tableauGhz);
 ---
 <Base title="Overview" current="home">
   <div class="hero-wrap">
@@ -76,16 +78,28 @@ const heroCode = stripDocstring(paulisumGhz);
         </div>
       </div>
 
-      <figure class="hero-code">
+      <figure class="hero-code" data-example-active="paulisum">
         <figcaption>
-          <span class="hero-code-title">Heisenberg-picture GHZ in 6 lines</span>
-          <span class="hero-code-file"><code>paulisum_ghz.py</code> · tested</span>
+          <div class="hero-code-tabs" role="tablist" aria-label="Backend example">
+            <button type="button" role="tab" data-example-set="paulisum" aria-selected="true" class="hero-code-tab">Pauli propagation</button>
+            <button type="button" role="tab" data-example-set="tableau" aria-selected="false" class="hero-code-tab">Generalized tableau</button>
+          </div>
+          <span class="hero-code-file">
+            <code data-example-pane="paulisum">paulisum_ghz.py</code><code data-example-pane="tableau" hidden>tableau_ghz.py</code>
+            · tested
+          </span>
         </figcaption>
-        <pre><code class="language-python">{heroCode}</code></pre>
-        <p class="hero-code-note">
+        <pre data-example-pane="paulisum"><code class="language-python">{paulisumCode}</code></pre>
+        <pre data-example-pane="tableau" hidden><code class="language-python">{tableauCode}</code></pre>
+        <p class="hero-code-note" data-example-pane="paulisum">
           Pauli propagation moves observables <em>backwards</em> through the
           circuit, so gates are applied in reverse of the textbook order.
           Same idea in Python and Rust.
+        </p>
+        <p class="hero-code-note" data-example-pane="tableau" hidden>
+          The generalized tableau evolves the state <em>forwards</em> and
+          samples measurement outcomes. GHZ correlations fall out of two
+          single-qubit measurements.
         </p>
       </figure>
     </section>
@@ -204,6 +218,27 @@ what it covers, then wait for my actual task.</code></pre>
       or browse the <a href={`${base}/api`}>API Reference</a>.
     </p>
   </article>
+
+  <script is:inline>
+    (() => {
+      const figure = document.querySelector(".hero-code");
+      if (!figure) return;
+      const tabs = figure.querySelectorAll("[data-example-set]");
+      const panes = figure.querySelectorAll("[data-example-pane]");
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const target = tab.getAttribute("data-example-set");
+          figure.setAttribute("data-example-active", target);
+          tabs.forEach((t) => t.setAttribute("aria-selected", t === tab ? "true" : "false"));
+          panes.forEach((p) => {
+            const match = p.getAttribute("data-example-pane") === target;
+            if (match) p.removeAttribute("hidden");
+            else p.setAttribute("hidden", "");
+          });
+        });
+      });
+    })();
+  </script>
 
   <script is:inline>
     (() => {

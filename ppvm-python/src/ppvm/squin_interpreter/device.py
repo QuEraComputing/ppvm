@@ -1,11 +1,11 @@
-from typing import Any, TypeVar, ParamSpec, cast
-from dataclasses import field, dataclass
+from dataclasses import dataclass, field
+from typing import Any, ParamSpec, TypeVar, cast
+
+from bloqade.analysis.address import AddressAnalysis, UnknownQubit, UnknownReg
+from bloqade.device import AbstractSimulatorDevice, AbstractSimulatorTask
+from kirin import ir
 
 from ..generalized_tableau import GeneralizedTableau
-from kirin import ir
-from bloqade.device import AbstractSimulatorTask, AbstractSimulatorDevice
-from bloqade.analysis.address import UnknownReg, UnknownQubit, AddressAnalysis
-
 from ._interp import GeneralizedTableauInterpreter
 
 RetType = TypeVar("RetType")
@@ -13,9 +13,7 @@ Param = ParamSpec("Param")
 
 
 @dataclass
-class GeneralizedTableauSimulatorTask(
-    AbstractSimulatorTask[Param, RetType, GeneralizedTableau]
-):
+class GeneralizedTableauSimulatorTask(AbstractSimulatorTask[Param, RetType, GeneralizedTableau]):
     generalized_tableau_interp: GeneralizedTableauInterpreter
 
     def run(self) -> RetType:
@@ -32,9 +30,7 @@ class GeneralizedTableauSimulatorTask(
 
 
 @dataclass
-class GeneralizedTableauSimulator(
-    AbstractSimulatorDevice[GeneralizedTableauSimulatorTask]
-):
+class GeneralizedTableauSimulator(AbstractSimulatorDevice[GeneralizedTableauSimulatorTask]):
     n_qubits: int | None = None
     options: dict[str, Any] = field(default_factory=dict)
 
@@ -55,16 +51,12 @@ class GeneralizedTableauSimulator(
             )
 
         if self.n_qubits is not None and self.n_qubits <= 0:
-            raise ValueError(
-                f"n_qubits must be a positive integer, got {self.n_qubits}."
-            )
+            raise ValueError(f"n_qubits must be a positive integer, got {self.n_qubits}.")
 
         n_qubits = max(self.n_qubits or 0, address_analysis.qubit_count)
 
         tableau_options = dict(self.options)
         seed = tableau_options.pop("seed", None)
         tab = GeneralizedTableau(n_qubits=n_qubits, seed=seed, **tableau_options)
-        interp = GeneralizedTableauInterpreter(
-            kernel.dialects, backend=tab, rng_seed=seed
-        )
+        interp = GeneralizedTableauInterpreter(kernel.dialects, backend=tab, rng_seed=seed)
         return GeneralizedTableauSimulatorTask(kernel, args, kwargs or {}, interp)

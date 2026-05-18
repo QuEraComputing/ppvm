@@ -1,0 +1,251 @@
+---
+import { marked } from "marked";
+
+interface ParameterItem {
+  name: string;
+  annotation?: string;
+  default?: string | null;
+  description?: string;
+}
+interface ReturnItem {
+  name?: string;
+  annotation?: string;
+  description?: string;
+}
+interface RaiseItem {
+  annotation?: string;
+  description?: string;
+}
+type Section =
+  | { kind: "text"; value: string }
+  | { kind: "parameters"; items: ParameterItem[] }
+  | { kind: "returns" | "yields"; items: ReturnItem[] }
+  | { kind: "raises"; items: RaiseItem[] }
+  | { kind: "examples" | "admonition"; value: string }
+  | { kind: string; value?: string };
+
+interface Props {
+  item: {
+    name: string;
+    kind: string;
+    path: string;
+    signature: string;
+    summary: string;
+    docs: string;
+    span?: string | null;
+    sections?: Section[] | null;
+    links?: Record<string, string> | null;
+  };
+  idPrefix: string;
+  /** Set of every Rust path the docs site indexes — used to decide whether
+   * an intra-doc-link target should become a link or render as plain code. */
+  knownPaths?: Set<string>;
+}
+const { item, idPrefix, knownPaths } = Astro.props;
+const id = `${idPrefix}-${item.path.replace(/[^a-zA-Z0-9]+/g, "-")}`;
+
+function slugFor(path: string): string {
+  return "rs-" + path.replace(/[^a-zA-Z0-9]+/g, "-");
+}
+
+// Resolve a rustdoc link target to a `#anchor` in our docs site. If the
+// exact path isn't indexed (e.g. it's an enum variant) walk up segments
+// until we find one that is. Returns `null` for unresolvable targets.
+function rustAnchor(target: string): string | null {
+  if (!knownPaths) return null;
+  let p = target;
+  for (let i = 0; i < 6; i++) {
+    if (knownPaths.has(p)) return "#" + slugFor(p);
+    const idx = p.lastIndexOf("::");
+    if (idx < 0) return null;
+    p = p.slice(0, idx);
+  }
+  return null;
+}
+
+function escapeReg(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Rewrite rustdoc intra-doc links inside a docstring chunk so that
+// `marked` can render them as proper anchor links.
+//
+// Two forms exist:
+//   shortcut: `[`Foo`]`                  — key in link map is "`Foo`"
+//   inline:   `[`Foo`](crate::path::Foo)` — key in link map is "crate::path::Foo"
+function rewriteRustLinks(text: string, links: Record<string, string>): string {
+  let out = text;
+  for (const [key, target] of Object.entries(links)) {
+    const anchor = rustAnchor(target);
+    const replacementUrl = anchor ?? "";
+    if (key.startsWith("`") && key.endsWith("`")) {
+      // Shortcut: [`Foo`] not followed by `(`. Convert to inline form.
+      const re = new RegExp(
+        "\\[" + escapeReg(key) + "\\](?!\\()",
+        "g",
+      );
+      if (replacementUrl) {
+        out = out.replace(re, `[${key}](${replacementUrl})`);
+      } else {
+        // Unresolvable shortcut → strip brackets, leave the code span.
+        out = out.replace(re, key);
+      }
+    } else {
+      // Inline form: ](URL). Replace just the URL portion.
+      const re = new RegExp("\\]\\(" + escapeReg(key) + "\\)", "g");
+      if (replacementUrl) {
+        out = out.replace(re, `](${replacementUrl})`);
+      } else {
+        // Unresolvable inline → drop the bracket+url, leave the inner text.
+        const reFull = new RegExp(
+          "\\[([^\\]]+)\\]\\(" + escapeReg(key) + "\\)",
+          "g",
+        );
+        out = out.replace(reFull, "$1");
+      }
+    }
+  }
+  return out;
+}
+
+// Configure marked once per render: GFM, no auto-mangling of links/headings.
+marked.setOptions({ gfm: true, breaks: false });
+
+// Helper: render a string of Markdown to HTML, treating bare backtick blocks
+// as code. We trust our own source-tree docstrings, so no sanitization step.
+function md(text: string | undefined | null): string {
+  if (!text) return "";
+  return marked.parse(text.trim(), { async: false }) as string;
+}
+
+// Inline-only Markdown rendering — for the one-line summary, we want
+// `code` spans and *emphasis* without the wrapping <p>.
+function mdInline(text: string | undefined | null): string {
+  if (!text) return "";
+  return marked.parseInline(text.trim(), { async: false }) as string;
+}
+
+// Strip rST/Sphinx double-backtick markers so they render as <code> in
+// our Markdown step. We don't try to interpret rST directives further.
+function preprocessText(text: string): string {
+  return text.replace(/``([^`]+)``/g, "`$1`");
+}
+
+// For Python: did griffe give us structured sections?
+const hasSections = Array.isArray(item.sections) && item.sections.length > 0;
+const isPython = idPrefix === "py";
+const isRust = idPrefix === "rs";
+
+// Decide whether expandable "full docstring" content exists beyond the summary.
+const showDocs = !!item.docs && item.docs.trim() !== item.summary.trim();
+
+// Resolve rustdoc cross-references inside the Markdown source before
+// handing it to `marked`. For Python items we leave the text alone.
+const rustLinks = item.links ?? {};
+const rewrite = (text: string) => (isRust ? rewriteRustLinks(text, rustLinks) : text);
+---
+<article class="api-item" id={id} data-name={item.name.toLowerCase()} data-path={item.path.toLowerCase()} data-kind={item.kind}>
+  <div class="row1">
+    <span class={`kind kind-${item.kind}`}>{item.kind.replace("_", " ")}</span>
+    <span class="name"><a href={`#${id}`}>{item.name}</a></span>
+    <span class="path">{item.path}</span>
+  </div>
+  <div class="signature">{item.signature}</div>
+  {item.summary && <p class="summary" set:html={mdInline(rewrite(preprocessText(item.summary)))}></p>}
+
+  {showDocs && (
+    <details>
+      <summary>Full docstring</summary>
+      <div class="docstring">
+        {isPython && hasSections && item.sections!.map((sec: Section) => {
+          if (sec.kind === "text") {
+            return <div class="doc-prose" set:html={md(preprocessText(sec.value))} />;
+          }
+          if (sec.kind === "parameters") {
+            return (
+              <section class="doc-section">
+                <h5>Parameters</h5>
+                <dl class="param-list">
+                  {sec.items.map((p) => (
+                    <>
+                      <dt>
+                        <code class="param-name">{p.name}</code>
+                        {p.annotation && <code class="param-type">{p.annotation}</code>}
+                        {p.default && p.default !== "None" && (
+                          <span class="param-default">= <code>{p.default}</code></span>
+                        )}
+                        {p.default === "None" && (
+                          <span class="param-default param-optional">optional</span>
+                        )}
+                      </dt>
+                      <dd set:html={md(preprocessText(p.description || ""))}></dd>
+                    </>
+                  ))}
+                </dl>
+              </section>
+            );
+          }
+          if (sec.kind === "returns" || sec.kind === "yields") {
+            return (
+              <section class="doc-section">
+                <h5>{sec.kind === "returns" ? "Returns" : "Yields"}</h5>
+                <dl class="return-list">
+                  {sec.items.map((r) => (
+                    <>
+                      <dt>
+                        {r.name && <code class="param-name">{r.name}</code>}
+                        {r.annotation && <code class="param-type">{r.annotation}</code>}
+                      </dt>
+                      <dd set:html={md(preprocessText(r.description || ""))}></dd>
+                    </>
+                  ))}
+                </dl>
+              </section>
+            );
+          }
+          if (sec.kind === "raises") {
+            return (
+              <section class="doc-section">
+                <h5>Raises</h5>
+                <dl class="return-list">
+                  {sec.items.map((r) => (
+                    <>
+                      <dt>
+                        {r.annotation && <code class="param-type">{r.annotation}</code>}
+                      </dt>
+                      <dd set:html={md(preprocessText(r.description || ""))}></dd>
+                    </>
+                  ))}
+                </dl>
+              </section>
+            );
+          }
+          if (sec.kind === "examples") {
+            return (
+              <section class="doc-section">
+                <h5>Examples</h5>
+                <pre><code>{sec.value}</code></pre>
+              </section>
+            );
+          }
+          if (sec.kind === "admonition") {
+            return (
+              <aside class="doc-admonition">
+                <div set:html={md(preprocessText(sec.value || ""))} />
+              </aside>
+            );
+          }
+          return null;
+        })}
+
+        {isPython && !hasSections && (
+          <div class="doc-prose" set:html={md(preprocessText(item.docs))} />
+        )}
+
+        {isRust && (
+          <div class="doc-prose" set:html={md(rewrite(item.docs))} />
+        )}
+      </div>
+    </details>
+  )}
+</article>

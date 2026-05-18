@@ -1,0 +1,109 @@
+---
+import Base from "../../layouts/Base.astro";
+import ExampleBlock from "../../components/ExampleBlock.astro";
+import paulisumGhz from "../../../examples/paulisum_ghz.py?raw";
+import tableauGhz from "../../../examples/tableau_ghz.py?raw";
+import stimSampling from "../../../examples/stim_sampling.py?raw";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const toc = [
+  { label: "§ 1 Install", href: "#install" },
+  { label: "§ 2 Run a Stim circuit", href: "#stim" },
+  { label: "§ 3 Use the generalized tableau", href: "#tableau" },
+  { label: "§ 4 Pauli propagation", href: "#paulisum" },
+  { label: "§ 5 Next steps", href: "#next" },
+];
+---
+<Base title="Python Quick Start" current="quickstart" toc={toc}>
+  <div class="qs-hero qs-hero--python">
+    <div class="qs-hero-inner">
+      <span class="chip"><span class="chip-dot"></span>Python · For researchers</span>
+      <h1><span class="lang">py</span>Quick Start</h1>
+      <p class="audience">
+        For physicists and students who want to <strong>run circuits under noise</strong>
+        and inspect outcomes — without writing any Rust. Code you'd paste into a
+        Jupyter cell.
+      </p>
+    </div>
+  </div>
+
+  <article class="shell narrow qs-page qs-page--python">
+    <h2 id="install"><span class="sec-num">§ 1</span>Install</h2>
+
+    <p>
+      Requires Python ≥ 3.10. The native extension is compiled automatically
+      from Rust during install. We recommend using
+      <a href="https://docs.astral.sh/uv/">uv</a> to manage your Python environment.
+    </p>
+
+<pre><code class="language-bash">uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python</code></pre>
+
+    <h2 id="stim"><span class="sec-num">§ 2</span>Run a Stim circuit, sample shots</h2>
+
+    <p>
+      The most common entry point for a researcher: parse a Stim program,
+      sample it many times, and look at the empirical distribution of
+      measurement outcomes. The snippet below prepares a GHZ-2 state and
+      tallies the (q₀, q₁) outcomes over 200 shots.
+    </p>
+
+    <ExampleBlock code={stimSampling} file="docs/examples/stim_sampling.py" />
+
+    <p>
+      Every shot is a list of <code>MeasurementResult</code> values:
+      <code>ZERO</code>, <code>ONE</code>, or <code>LOST</code> when an atom
+      has been lost. Loss is first-class, so you can model neutral-atom
+      hardware effects without leaving the Stim flow.
+    </p>
+
+    <h2 id="tableau"><span class="sec-num">§ 3</span>Use the generalized tableau directly</h2>
+
+    <p>
+      When you'd rather build the circuit gate-by-gate in Python — or when
+      you need non-Clifford gates the Stim grammar can't express — drive a
+      <code>GeneralizedTableau</code> directly:
+    </p>
+
+    <ExampleBlock code={tableauGhz} file="docs/examples/tableau_ghz.py" />
+
+    <p>
+      The tableau exposes single- and two-qubit Clifford gates, T and rotation
+      gates for non-Clifford steps, projective Z-basis measurements, and
+      depolarizing / loss / Pauli-error noise channels. See the
+      <a href={`${base}/api#python-section`}>Python API reference</a> for the full
+      list.
+    </p>
+
+    <h2 id="paulisum"><span class="sec-num">§ 4</span>Compute expectation values with Pauli propagation</h2>
+
+    <p>
+      For observable-centric studies — “what is the expectation value of this
+      operator after this circuit?” — use <code>PauliSum</code> and propagate
+      backwards in the Heisenberg picture:
+    </p>
+
+    <ExampleBlock code={paulisumGhz} file="docs/examples/paulisum_ghz.py" />
+
+    <p>
+      Pauli propagation scales well when the observable has small support and
+      the circuit doesn't grow that support too quickly. Truncation strategies
+      (<code>CoefficientThreshold</code>, <code>MaxPauliWeight</code>,
+      <code>MaxLossWeight</code>, <code>CombinedStrategy</code>) let you bound
+      the working set on the fly.
+    </p>
+
+    <h2 id="next"><span class="sec-num">§ 5</span>Next steps</h2>
+    <ul>
+      <li>Browse the full <a href={`${base}/api#python-section`}>Python API reference</a>.</li>
+      <li>Read the <a href="https://github.com/QuEraComputing/bloqade">Bloqade SDK</a> docs to see how ppvm fits into circuit authoring and dispatch.</li>
+      <li>If you start customizing low-level behaviour or want to embed ppvm in another tool, jump to the <a href={`${base}/quickstart/rust`}>Rust Quick Start</a>.</li>
+    </ul>
+
+    <div class="qs-crosslink">
+      <div>
+        <span class="label">Other path</span>
+        Building a library on top of ppvm?
+      </div>
+      <a href={`${base}/quickstart/rust`}>Open the Rust Quick Start</a>
+    </div>
+  </article>
+</Base>

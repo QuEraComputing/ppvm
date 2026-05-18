@@ -3,7 +3,13 @@ use crate::char::Pauli;
 use crate::traits::PauliIter;
 use std::iter::Peekable;
 
+/// Membership test for pattern types.
+///
+/// Implemented by Pauli patterns over symbols (`Contains<Pauli>`) and
+/// over whole words (`Contains<W: PauliIter>`); used by the masking
+/// machinery to ask "does this pattern accept this concrete word?"
 pub trait Contains<T> {
+    /// `true` if `item` matches this pattern.
     fn contains(&self, item: &T) -> bool;
 }
 

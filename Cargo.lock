@@ -887,6 +887,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-skill-examples"
+version = "0.0.0"
+dependencies = [
+ "ppvm-runtime",
+ "ppvm-stim",
+ "ppvm-sym",
+ "ppvm-tableau",
+]
+
+[[package]]
 name = "ppvm-stim"
 version = "0.1.0"
 dependencies = [

@@ -1,22 +1,60 @@
 use crate::traits::PauliWordTrait;
 
+/// The minimal Clifford gate set: the single-qubit Paulis (`X`, `Y`, `Z`),
+/// Hadamard (`H`), phase gate (`S`), and the two entangling Cliffords
+/// `CNOT` and `CZ`.
+///
+/// Implemented by `PauliSum`, by every tableau type, and — via the
+/// blanket impl in this module — by every [`PauliWordTrait`]
+/// implementor.
+///
+/// # Examples
+///
+/// Build the GHZ-preparation circuit on a `PauliSum` (Heisenberg picture,
+/// so gates are applied in reverse):
+///
+/// ```
+/// use ppvm_runtime::prelude::*;
+///
+/// let mut state: PauliSum<config::indexmap::ByteFxHashF64<1>> =
+///     PauliSum::builder().n_qubits(2).build();
+/// state += ("ZZ", 1.0);
+/// state.cnot(0, 1);
+/// state.h(0);
+/// assert_eq!(state.len(), 1);
+/// ```
 pub trait Clifford {
+    /// Apply Pauli `X` to qubit `index`.
     fn x(&mut self, index: usize);
+    /// Apply Pauli `Y` to qubit `index`.
     fn y(&mut self, index: usize);
+    /// Apply Pauli `Z` to qubit `index`.
     fn z(&mut self, index: usize);
+    /// Apply Hadamard `H` to qubit `index`.
     fn h(&mut self, index: usize);
+    /// Apply phase gate `S` to qubit `index`.
     fn s(&mut self, index: usize);
+    /// Apply `CNOT(control, target)`.
     fn cnot(&mut self, control: usize, target: usize);
+    /// Apply `CZ(control, target)`.
     fn cz(&mut self, control: usize, target: usize);
 }
 
+/// Additional Clifford gates beyond the minimal set: `S†`, `√X`, `√X†`,
+/// `√Y`, `√Y†`, and `CY`.
 pub trait CliffordExtensions: Clifford {
+    /// Apply `S†` (the adjoint of `S`) to qubit `addr0`.
     fn s_adj(&mut self, addr0: usize);
+    /// Apply `√X` to qubit `addr0`.
     fn sqrt_x(&mut self, addr0: usize);
+    /// Apply `(√X)†` to qubit `addr0`.
     fn sqrt_x_adj(&mut self, addr0: usize);
+    /// Apply `√Y` to qubit `addr0`.
     fn sqrt_y(&mut self, addr0: usize);
+    /// Apply `(√Y)†` to qubit `addr0`.
     fn sqrt_y_adj(&mut self, addr0: usize);
 
+    /// Apply `CY(addr0, addr1)`.
     fn cy(&mut self, addr0: usize, addr1: usize);
 }
 

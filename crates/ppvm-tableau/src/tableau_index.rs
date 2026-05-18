@@ -2,6 +2,15 @@ use num::PrimInt;
 use std::hash::Hash;
 use std::ops::{BitAnd, BitOrAssign, BitXor, Shl};
 
+/// Bit-string index type used by
+/// [`GeneralizedTableau`](crate::data::GeneralizedTableau) to address
+/// individual branches of its sparse coefficient vector.
+///
+/// Blanket-implemented for every primitive (and `bnum`-style) integer
+/// type that supports the required bit operations. Pick:
+/// * `usize` for ≤ 64 qubits,
+/// * `u128` for ≤ 128,
+/// * `bnum::types::U256` / `U512` / `U1024` for the wide regime.
 pub trait TableauIndex:
     PartialEq
     + Eq

@@ -1,12 +1,12 @@
 import math
 from typing import Any
 
-from kirin import interp
 from bloqade.squin import gate
+from kirin import interp
 from kirin.dialects import ilist
 
-from ..qubit import GeneralizedTableauQubit
 from .._interp import GeneralizedTableauInterpreter
+from ..qubit import GeneralizedTableauQubit
 
 
 def _turns_to_radian(turns: float):
@@ -21,7 +21,6 @@ _SQRT_MAP = {
 
 @gate.dialect.register(key="generalized_tableau")
 class GateMethods(interp.MethodTable):
-
     @interp.impl(gate.stmts.X)
     @interp.impl(gate.stmts.Y)
     @interp.impl(gate.stmts.Z)

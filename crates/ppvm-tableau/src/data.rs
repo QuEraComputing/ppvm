@@ -16,8 +16,29 @@ use rand::rngs::SmallRng;
 
 type PhasedPauliWordNoHash<A, H> = PhasedPauliWord<A, H, PauliWord<A, H, false>>;
 
+/// A `2n`-row stabilizer / destabilizer tableau.
+///
+/// Rows `0..n` hold the destabilizers; rows `n..2n` hold the
+/// stabilizers. Each row is a [`PhasedPauliWord`] tracking both its
+/// `X`/`Z` bits and a phase in `{±1, ±i}`. Implements every
+/// Clifford-only operation natively (Hadamard, phase, CNOT, CZ, etc.).
+///
+/// # Examples
+///
+/// ```
+/// use ppvm_runtime::config::fxhash::ByteF64;
+/// use ppvm_runtime::traits::Clifford;
+/// use ppvm_tableau::data::Tableau;
+///
+/// let mut tab: Tableau<ByteF64<1>> = Tableau::new(2);
+/// tab.h(0);
+/// tab.cnot(0, 1);
+/// assert_eq!(tab.n_qubits, 2);
+/// assert_eq!(tab.stabilizers().len(), 2);
+/// ```
 #[derive(Clone, Debug)]
 pub struct Tableau<T: Config> {
+    /// Number of qubits.
     pub n_qubits: usize,
     /// Destabilizer / Stabilizer tableau
     /// * Entries 0..n are the destabilizers
@@ -27,6 +48,7 @@ pub struct Tableau<T: Config> {
 }
 
 impl<T: Config> Tableau<T> {
+    /// Construct a fresh tableau initialised to `|0…0⟩`.
     pub fn new(n_qubits: usize) -> Self {
         // Initialize tableau for 0 state
         let mut data: Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>> =
@@ -52,27 +74,32 @@ impl<T: Config> Tableau<T> {
         }
     }
 
+    /// Same as [`Tableau::new`], but seed the RNG deterministically.
     pub fn new_with_seed(n_qubits: usize, seed: u64) -> Self {
         let mut t = Self::new(n_qubits);
         t.rng = SmallRng::seed_from_u64(seed);
         t
     }
 
+    /// View of the stabilizer rows (the upper half of the tableau).
     #[inline]
     pub fn stabilizers(&self) -> &[PhasedPauliWordNoHash<T::Storage, T::BuildHasher>] {
         &self.data[self.n_qubits..]
     }
 
+    /// Mutable view of the stabilizer rows.
     #[inline]
     pub fn stabilizers_mut(&mut self) -> &mut [PhasedPauliWordNoHash<T::Storage, T::BuildHasher>] {
         &mut self.data[self.n_qubits..]
     }
 
+    /// View of the destabilizer rows (the lower half of the tableau).
     #[inline]
     pub fn destabilizers(&self) -> &[PhasedPauliWordNoHash<T::Storage, T::BuildHasher>] {
         &self.data[..self.n_qubits]
     }
 
+    /// Mutable view of the destabilizer rows.
     #[inline]
     pub fn destabilizers_mut(
         &mut self,
@@ -269,6 +296,8 @@ const COMPLEX_PHASE_CONVERSION: [Complex64; 4] = [
     Complex64 { re: 0.0, im: -1.0 }, // -i
 ];
 
+/// Symplectic inner product of two tableau index values — the count of
+/// shared set bits, used in stabilizer phase calculations.
 #[inline]
 pub fn symplectic_inner<I>(alpha: I, beta: I) -> u32
 where
@@ -499,16 +528,69 @@ where
     )
 }
 
-// TODO: builder
+/// A [`Tableau`] extended with sparse coefficient tracking to handle
+/// non-Clifford gates.
+///
+/// Non-Clifford gates (T, rotations) split a single tableau into a sum
+/// of weighted branches indexed by bitstrings. `GeneralizedTableau`
+/// stores those weights in a [`SparseVector`] keyed by an
+/// [`IndexType`](TableauIndex). Choose:
+/// * `IndexType = usize` for up to 64 qubits,
+/// * `IndexType = u128` for up to 128,
+/// * `IndexType = bnum::types::U256` and friends for the very wide
+///   regime.
+///
+/// Per-qubit loss is tracked in [`is_lost`](GeneralizedTableau::is_lost);
+/// gates respect it automatically.
+///
+/// # Examples
+///
+/// Prepare a Bell pair and sample one shot. With a fixed seed the two
+/// measurements are perfectly correlated on every shot:
+///
+/// ```
+/// use ppvm_runtime::config::fxhash::ByteF64;
+/// use ppvm_runtime::traits::{Clifford, LossyMeasure};
+/// use ppvm_tableau::data::GeneralizedTableau;
+///
+/// let mut tab: GeneralizedTableau<ByteF64<1>> =
+///     GeneralizedTableau::new_with_seed(2, 1e-12, 0);
+/// tab.h(0);
+/// tab.cnot(0, 1);
+///
+/// let r0 = LossyMeasure::measure(&mut tab, 0);
+/// let r1 = LossyMeasure::measure(&mut tab, 1);
+/// assert_eq!(r0, r1);
+/// ```
+///
+/// Non-Clifford gates work through the same interface — apply a `T` gate
+/// followed by `T†` and the state is unchanged:
+///
+/// ```
+/// use ppvm_runtime::config::fxhash::ByteF64;
+/// use ppvm_runtime::traits::{Clifford, TGate};
+/// use ppvm_tableau::data::GeneralizedTableau;
+///
+/// let mut tab: GeneralizedTableau<ByteF64<1>> =
+///     GeneralizedTableau::new_with_seed(1, 1e-12, 0);
+/// tab.h(0);
+/// tab.t(0);
+/// tab.t_adj(0);
+/// // T followed by T† is the identity; the |+⟩ state is restored.
+/// ```
 #[derive(Clone)]
 pub struct GeneralizedTableau<
     T: Config,
     IndexType = usize,
     SparseVectorType: SparseVector<Complex<T::Coeff>, IndexType> = Vec<(Complex64, IndexType)>,
 > {
+    /// Underlying Clifford tableau.
     pub tableau: Tableau<T>,
+    /// Sparse coefficient vector indexed by bitstrings.
     pub coefficients: SparseVectorType,
+    /// Per-qubit loss flags.
     pub is_lost: Vec<bool>,
+    /// Coefficient-magnitude threshold below which branches are dropped.
     pub coefficient_threshold: T::Coeff,
     _index_phantom: PhantomData<IndexType>,
 }
@@ -523,6 +605,10 @@ where
         + Copy,
     I: TableauIndex + Send + Sync,
 {
+    /// Construct a generalized tableau in the `|0…0⟩` state.
+    ///
+    /// Branches whose coefficient magnitude falls below
+    /// `coefficient_threshold` are dropped during gate application.
     pub fn new(n_qubits: usize, coefficient_threshold: T::Coeff) -> Self {
         let mut coefficients = C::new();
         let complex_one = Complex {
@@ -539,6 +625,7 @@ where
         }
     }
 
+    /// Same as [`GeneralizedTableau::new`], but seed the RNG deterministically.
     pub fn new_with_seed(n_qubits: usize, coefficient_threshold: T::Coeff, seed: u64) -> Self {
         let mut s = Self::new(n_qubits, coefficient_threshold);
         s.tableau.rng = SmallRng::seed_from_u64(seed);
@@ -557,6 +644,7 @@ where
         cloned
     }
 
+    /// Number of qubits.
     pub fn n_qubits(&self) -> usize {
         self.tableau.n_qubits
     }

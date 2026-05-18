@@ -1,9 +1,9 @@
 import math
 
+from bloqade import squin
 from bloqade.decoders.dialects.annotate.types import MeasurementResultValue
 from kirin.dialects import ilist
 
-from bloqade import squin
 from ppvm import GeneralizedTableauSimulator
 
 ZERO = MeasurementResultValue.Zero

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Robustness fuzz: arbitrary inputs must never panic the parser.
 //!
 //! Both `parse` and `parse_extended` are public entry points that consume

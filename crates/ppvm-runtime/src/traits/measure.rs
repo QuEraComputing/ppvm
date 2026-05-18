@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 /// Projective Z-basis measurement returning a bare boolean outcome.
 pub trait Measure {
     /// Measure qubit `addr0` in the computational basis. Returns

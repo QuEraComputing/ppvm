@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Generalized stabilizer-tableau simulator built on top of `ppvm-runtime`.
 //!
 //! Provides a forward-evolving state representation using the stabilizer

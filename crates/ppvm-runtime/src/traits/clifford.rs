@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::traits::PauliWordTrait;
 
 /// The minimal Clifford gate set: the single-qubit Paulis (`X`, `Y`, `Z`),

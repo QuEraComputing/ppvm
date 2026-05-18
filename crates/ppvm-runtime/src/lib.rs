@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Core runtime for the ppvm quantum-circuit simulator.
 //!
 //! `ppvm-runtime` defines the low-level types every ppvm backend uses:

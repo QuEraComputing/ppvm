@@ -1,0 +1,23 @@
+headerPath = "licenserc.header.txt"
+
+includes = [
+  "crates/**/*.rs",
+  "ppvm-python/src/**/*.py",
+]
+
+excludes = [
+  "**/target/**",
+  "**/node_modules/**",
+  "**/.venv/**",
+  "**/generated/**",
+  "**/*.lock",
+  "docs/**",
+  "examples/**",
+  "julia-benchmarks/**",
+]
+
+useDefaultMapping = true
+
+[properties]
+inceptionYear = 2026
+copyrightOwner = "QuEra Computing Inc."

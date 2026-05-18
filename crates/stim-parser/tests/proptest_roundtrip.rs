@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Printer-fixpoint property checked over generated inputs.
 //!
 //! The hand-written corpus in `tests/roundtrip.rs` covers ~22 cases.

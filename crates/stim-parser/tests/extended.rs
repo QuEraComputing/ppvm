@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 use stim_parser::ast::{AnnotationKind, GateName, MeasureName, NoiseName};
 use stim_parser::extended::{
     Axis, ExtendedInstruction, ExtendedParseError, ExtendedProgram, RawPassthrough, parse_extended,

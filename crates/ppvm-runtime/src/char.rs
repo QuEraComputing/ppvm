@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 /// A single-qubit Pauli symbol.
 ///
 /// The four standard Paulis are encoded so that the low two bits identify

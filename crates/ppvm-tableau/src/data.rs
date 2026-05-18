@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 use std::{fmt::Debug, marker::PhantomData};
 
 use fxhash::FxHashMap as HashMap;

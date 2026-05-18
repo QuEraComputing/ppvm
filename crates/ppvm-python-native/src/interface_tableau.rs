@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 use bnum::types::{U256, U512, U1024, U2048};
 use paste::paste;
 use ppvm_tableau::prelude::*;

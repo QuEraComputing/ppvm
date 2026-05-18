@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 use paste::paste;
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::strategy::{

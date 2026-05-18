@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Instruction lookup table for the Stim parser.
 //!
 //! [`lookup`] maps a raw instruction name (e.g. `"H"`) to a [`TableEntry`]

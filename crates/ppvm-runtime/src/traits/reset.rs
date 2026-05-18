@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 /// Reset a qubit to the `|0⟩` computational-basis state.
 pub trait Reset {
     /// Reset qubit `addr0` to `|0⟩`.

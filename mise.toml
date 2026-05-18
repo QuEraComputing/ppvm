@@ -1,2 +1,4 @@
 [tools]
 prek = "latest"
+# License header checker/formatter (used by prek hawkeye hook)
+"github:korandoru/hawkeye" = "latest"

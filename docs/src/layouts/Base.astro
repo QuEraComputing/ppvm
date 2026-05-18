@@ -222,20 +222,40 @@ const nav = [
         carry `$ … $` and `$$ … $$` LaTeX in their markdown cells; KaTeX
         renders them after page load. Loaded on every page so the
         markup is consistent — the auto-renderer is cheap when there
-        is no math to find. */}
+        is no math to find.
+
+        The auto-render call is in a separate inline `<script>` (not
+        an `onload` attribute) because Astro re-encodes attribute
+        values and would collapse our `\\(` JS escape into `\(`,
+        which `auto-render` then treats as a literal `(` delimiter —
+        leading to every parenthesised phrase being rendered as math. */}
     <link rel="stylesheet"
           href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
           integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+"
           crossorigin="anonymous" />
-    <script defer
-            src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
             integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg"
             crossorigin="anonymous"></script>
-    <script defer
-            src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
             integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk"
-            crossorigin="anonymous"
-            onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}, {left: '\\(', right: '\\)', display: false}, {left: '\\[', right: '\\]', display: true}], throwOnError: false});"></script>
+            crossorigin="anonymous"></script>
+    <script is:inline>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (typeof renderMathInElement !== "function") return;
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$",  right: "$",  display: false },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "\\[", right: "\\]", display: true },
+          ],
+          // Skip code spans and code blocks — `[7, 16]` and friends
+          // shouldn't accidentally trigger as math delimiters.
+          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+          throwOnError: false,
+        });
+      });
+    </script>
 
     {/* Syntax highlighting — highlight.js, languages we use bundled in
         one UMD script. The colour theme is defined in global.css using

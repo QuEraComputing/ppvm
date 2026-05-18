@@ -1945,6 +1945,56 @@ html[data-theme="dark"] .kind-module   { color: var(--ink); background: var(--bg
 .tut-toc a { border: 0; color: var(--ink); }
 .tut-toc a:hover { color: var(--accent); }
 
+/* Dev guide command tables. Plain hairline-row tables — Swiss
+   restraint, no zebra striping, no borders around the whole block. */
+.dev-cmd-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.6rem;
+  font-size: 0.92rem;
+}
+.dev-cmd-table thead th {
+  text-align: left;
+  font-family: var(--sans-display);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  font-weight: 500;
+  padding: 0.4rem 0.7rem 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.dev-cmd-table tbody td {
+  vertical-align: top;
+  padding: 0.55rem 0.7rem 0.55rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+.dev-cmd-table tbody tr:last-child td { border-bottom: 0; }
+.dev-cmd-table td:first-child {
+  white-space: nowrap;
+  color: var(--ink);
+}
+.dev-cmd-table code {
+  font-family: var(--mono);
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.85em;
+}
+@media (max-width: 720px) {
+  .dev-cmd-table, .dev-cmd-table thead, .dev-cmd-table tbody,
+  .dev-cmd-table tr, .dev-cmd-table th, .dev-cmd-table td { display: block; }
+  .dev-cmd-table thead { display: none; }
+  .dev-cmd-table tbody tr {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .dev-cmd-table tbody td { border-bottom: 0; padding: 0.15rem 0; }
+  .dev-cmd-table td:first-child { margin-bottom: 0.2rem; }
+}
+
 /* ──────────── Tutorials (long-form prose pages) ──────────── */
 
 .tutorial section { margin: 3rem 0; }

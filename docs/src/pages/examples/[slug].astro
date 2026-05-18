@@ -1,0 +1,58 @@
+---
+import Base from "../../layouts/Base.astro";
+import index from "../../generated/notebooks/index.json";
+
+interface Meta {
+  slug: string;
+  title: string;
+  headings: string[];
+  source: string;
+}
+const notebooks = index as Meta[];
+
+export async function getStaticPaths() {
+  const idx = (await import("../../generated/notebooks/index.json")).default as Meta[];
+  // Pull the HTML fragment for each slug at build time so the page is
+  // a single static document — no runtime fetch.
+  const htmls = import.meta.glob("../../generated/notebooks/*.html", {
+    eager: true,
+    query: "?raw",
+    import: "default",
+  }) as Record<string, string>;
+  return idx.map((nb) => {
+    // Vite glob keys look like "../../generated/notebooks/trotter.html".
+    const key = Object.keys(htmls).find((k) => k.endsWith(`/${nb.slug}.html`));
+    return {
+      params: { slug: nb.slug },
+      props: {
+        meta: nb,
+        html: key ? htmls[key] : "",
+      },
+    };
+  });
+}
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const { meta, html } = Astro.props as { meta: Meta; html: string };
+
+const toc = meta.headings.map((h) => ({
+  label: h,
+  href: `#${h.replace(/[^a-zA-Z0-9]+/g, "-")}`,
+}));
+---
+<Base title={meta.title} current="examples" toc={toc}>
+  <article class="shell narrow notebook">
+    <div class="titleblock">
+      <div class="eyebrow">
+        <a href={`${base}/examples`}>Examples</a> &middot; executed during build
+      </div>
+      <h1>{meta.title}</h1>
+      <p class="byline">
+        Source:
+        <code><a href={`https://github.com/QuEraComputing/ppvm/blob/main/${meta.source}`}>{meta.source}</a></code>
+      </p>
+    </div>
+
+    <div class="notebook-body" set:html={html}></div>
+  </article>
+</Base>

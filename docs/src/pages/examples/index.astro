@@ -1,0 +1,45 @@
+---
+import Base from "../../layouts/Base.astro";
+import index from "../../generated/notebooks/index.json";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+interface Meta {
+  slug: string;
+  title: string;
+  headings: string[];
+  source: string;
+}
+const notebooks = index as Meta[];
+---
+<Base title="Examples" current="examples">
+  <article class="shell narrow">
+    <div class="titleblock">
+      <div class="eyebrow">End-to-end notebooks</div>
+      <h1>Examples</h1>
+      <p class="byline">
+        Jupyter notebooks (authored as Jupytext <code>.py</code> scripts under
+        <code>docs/notebooks/</code>) executed during the site build, with
+        outputs and plots embedded inline. The source for each notebook is
+        a runnable Python file — open the link beside the title to read or
+        adapt it.
+      </p>
+    </div>
+
+    <ul class="examples-list">
+      {notebooks.map((nb) => (
+        <li>
+          <a class="examples-title" href={`${base}/examples/${nb.slug}`}>{nb.title}</a>
+          <div class="examples-meta">
+            <code><a href={`https://github.com/QuEraComputing/ppvm/blob/main/${nb.source}`}>{nb.source}</a></code>
+          </div>
+          {nb.headings.length > 0 && (
+            <ul class="examples-headings">
+              {nb.headings.map((h) => <li>{h}</li>)}
+            </ul>
+          )}
+        </li>
+      ))}
+    </ul>
+  </article>
+</Base>

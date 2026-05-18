@@ -1,0 +1,140 @@
+---
+import Base from "../../layouts/Base.astro";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const toc = [
+  { label: "Overview",              href: "#overview" },
+  { label: "Basic usage",           href: "#basic-usage" },
+  { label: "Forking for multi-shot", href: "#forking" },
+  { label: "Stim circuit support",  href: "#stim" },
+  { label: "Noise and loss",        href: "#noise" },
+  { label: "Coefficient pruning",   href: "#pruning" },
+];
+---
+<Base title="Generalized Stabilizer Tableau" current="tutorials" toc={toc}>
+  <article class="shell narrow tutorial">
+    <div class="titleblock">
+      <div class="eyebrow"><a href={`${base}/tutorials`}>Tutorials</a></div>
+      <h1>Generalized Stabilizer Tableau</h1>
+      <p class="byline">
+        Schrödinger-picture state simulation: stabilizer tableau for the
+        Clifford fragment, sparse coefficient vector for the non-Clifford
+        part.
+      </p>
+    </div>
+
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>
+        <a href={`${base}/api#py-ppvm-generalized_tableau-GeneralizedTableau`}><code>GeneralizedTableau</code></a>
+        simulates quantum circuits in the <strong>Schrödinger picture</strong>
+        using a generalized stabilizer decomposition.
+      </p>
+      <p>
+        Clifford operations are tracked efficiently in the stabilizer
+        tableau. Non-Clifford gates (T gates, arbitrary rotations) expand
+        the state into a superposition of stabilizer states, tracked via
+        a sparse coefficient vector. The cost scales exponentially only
+        in the number of non-Clifford gates, making it well-suited for
+        circuits with few T gates and many Clifford operations.
+      </p>
+    </section>
+
+    <section id="basic-usage">
+      <h2>Basic usage</h2>
+<pre><code class="language-python">from ppvm import GeneralizedTableau
+
+tab = GeneralizedTableau(n_qubits=2)
+tab.h(0)
+tab.cnot(0, 1)
+
+r0 = tab.measure(0)
+r1 = tab.measure(1)
+print(f"Qubit 0: {`{r0}`}, Qubit 1: {`{r1}`}")  # always correlated (Bell state)</code></pre>
+    </section>
+
+    <section id="forking">
+      <h2>Forking for multiple shots</h2>
+      <p>
+        Measurement mutates the tableau, so running multiple shots
+        requires creating independent copies. Use <code>fork()</code> to
+        clone the quantum state with a fresh RNG:
+      </p>
+<pre><code class="language-python">tab = GeneralizedTableau(n_qubits=2, seed=42)
+tab.h(0)
+tab.cnot(0, 1)
+
+for shot in range(100):
+    t = tab.fork(seed=shot)
+    print(t.measure(0), t.measure(1))</code></pre>
+      <p>
+        To preserve the RNG state exactly (e.g., for checkpointing),
+        use <code>copy.copy()</code> instead.
+      </p>
+    </section>
+
+    <section id="stim">
+      <h2>Stim circuit support</h2>
+      <p>
+        Circuits in <a href="https://github.com/quantumlib/Stim">STIM</a>
+        format are parsed and prepared once into a <code>StimProgram</code>,
+        then executed.
+      </p>
+<pre><code class="language-python">from ppvm import GeneralizedTableau, StimProgram, sample_stim
+
+prog = StimProgram.parse("""
+H 0
+CX 0 1
+M 0 1
+""")
+
+# Single shot:
+tab = GeneralizedTableau(n_qubits=2)
+results = tab.run(prog)
+print(f"Bell state measurement: {`{results}`}")
+
+# Many shots — fresh tableau per shot:
+shots = sample_stim(prog, n_qubits=2, num_shots=10_000, seed=0)
+
+# .stim file:
+prog = StimProgram.from_file("path/to/circuit.stim")
+shots = GeneralizedTableau.sample(prog, n_qubits=85, num_shots=100, seed=0)</code></pre>
+    </section>
+
+    <section id="noise">
+      <h2>Noise and loss</h2>
+      <p>
+        <code>GeneralizedTableau</code> supports the same noise channels as
+        <code>PauliSum</code>:
+      </p>
+      <ul>
+        <li><strong>Depolarizing:</strong> <code>depolarize(addr, p)</code> and <code>depolarize2(addr0, addr1, p)</code>.</li>
+        <li><strong>Pauli error:</strong> <code>pauli_error(addr, [p_x, p_y, p_z])</code>.</li>
+        <li><strong>Loss:</strong> <code>loss_channel(addr, p)</code> and <code>correlated_loss_channel(addr0, addr1, p)</code>.</li>
+      </ul>
+      <p>
+        When a qubit is lost, subsequent measurement returns
+        <a href={`${base}/api#py-ppvm-generalized_tableau-MeasurementResult`}><code>MeasurementResult.LOST</code></a>
+        instead of <code>ZERO</code> or <code>ONE</code>. You can check and
+        reset loss state:
+      </p>
+<pre><code class="language-python">tab = GeneralizedTableau(n_qubits=1, seed=0)
+tab.loss_channel(0, 1.0)  # deterministic loss
+
+print(tab.is_lost(0))   # True
+print(tab.measure(0))    # MeasurementResult.LOST
+
+tab.reset_loss_channel(0)
+print(tab.is_lost(0))   # False</code></pre>
+    </section>
+
+    <section id="pruning">
+      <h2>Coefficient pruning</h2>
+      <p>
+        Each non-Clifford gate doubles the number of terms in the internal
+        coefficient vector. The <code>min_abs_coeff</code> parameter
+        controls pruning of small coefficients:
+      </p>
+<pre><code class="language-python">tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)</code></pre>
+    </section>
+  </article>
+</Base>

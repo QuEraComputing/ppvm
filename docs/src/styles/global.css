@@ -1945,6 +1945,233 @@ html[data-theme="dark"] .kind-module   { color: var(--ink); background: var(--bg
 .tut-toc a { border: 0; color: var(--ink); }
 .tut-toc a:hover { color: var(--accent); }
 
+/* ──────────── Tutorials (long-form prose pages) ──────────── */
+
+.tutorial section { margin: 3rem 0; }
+.tutorial section:first-of-type { margin-top: 1.6rem; }
+.tutorial h2 {
+  font-family: var(--sans-display);
+  font-size: 1.45rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  margin: 0 0 1rem;
+}
+.tutorial p { margin: 0.7rem 0; color: var(--ink-soft); line-height: 1.65; }
+.tutorial ul, .tutorial ol { color: var(--ink-soft); margin: 0.7rem 0 0.7rem 1.4rem; }
+.tutorial pre {
+  margin: 0.9rem 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: 0.9rem 1.05rem;
+  font-size: 0.84rem;
+}
+
+.callout {
+  margin: 1rem 0;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.tutorials-list {
+  list-style: none;
+  padding: 0;
+  margin: 1.6rem 0 0;
+  display: grid;
+  gap: 1.6rem;
+}
+.tutorials-list > li {
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule-soft);
+}
+.tutorials-list > li:first-child { border-top: 0; padding-top: 0; }
+.tutorials-title {
+  display: block;
+  font-family: var(--sans-display);
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  text-decoration: none;
+  margin-bottom: 0.4rem;
+}
+.tutorials-title:hover { color: var(--accent); }
+.tutorials-list > li p { font-size: 0.95rem; color: var(--ink-soft); margin: 0; }
+
+/* ──────────── Examples (executed Jupyter notebooks) ──────────── */
+
+.examples-list {
+  list-style: none;
+  padding: 0;
+  margin: 1.6rem 0 0;
+  display: grid;
+  gap: 1.8rem;
+}
+.examples-list > li {
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule-soft);
+}
+.examples-list > li:first-child { border-top: 0; padding-top: 0; }
+.examples-title {
+  display: block;
+  font-family: var(--sans-display);
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  text-decoration: none;
+  margin-bottom: 0.3rem;
+}
+.examples-title:hover { color: var(--accent); }
+.examples-meta { font-size: 0.82rem; color: var(--ink-faint); margin-bottom: 0.5rem; }
+.examples-meta code { background: none; border: 0; padding: 0; font-size: inherit; }
+.examples-meta a { color: var(--ink-soft); }
+.examples-meta a:hover { color: var(--accent); }
+.examples-headings {
+  margin: 0.2rem 0 0 1.2rem;
+  padding: 0;
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  columns: 2;
+  column-gap: 1.6rem;
+}
+.examples-headings li { break-inside: avoid; margin: 0.15rem 0; }
+@media (max-width: 720px) { .examples-headings { columns: 1; } }
+
+/* Notebook body: nbconvert's `basic` template wraps cells in
+   `.jp-Cell` containers with input + output regions. We translate
+   the JupyterLab look into the site's Swiss vocabulary — hairline
+   rules between cells, brand-tinted code blocks, plain prose for
+   markdown cells, plots embedded as their natural images. */
+.notebook { max-width: 50rem; }
+.notebook-body { margin-top: 2rem; }
+.notebook-body > main { display: contents; }
+.notebook-body .jp-Cell {
+  margin: 1.4rem 0;
+  padding: 0;
+  border: 0;
+}
+.notebook-body .jp-Cell + .jp-Cell { border-top: 1px solid var(--rule-soft); padding-top: 1.4rem; }
+.notebook-body .jp-MarkdownCell .jp-RenderedHTMLCommon {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.notebook-body .jp-MarkdownCell h1 {
+  font-family: var(--sans-display);
+  font-size: 1.65rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0.6rem 0 1rem;
+}
+.notebook-body .jp-MarkdownCell h2 {
+  font-family: var(--sans-display);
+  font-size: 1.3rem;
+  font-weight: 500;
+  margin: 1.4rem 0 0.8rem;
+}
+.notebook-body .jp-MarkdownCell h3 { font-size: 1.05rem; font-weight: 500; margin: 1rem 0 0.5rem; }
+.notebook-body .jp-MarkdownCell .anchor-link { display: none; }
+.notebook-body .jp-MarkdownCell p { margin: 0.6rem 0; color: var(--ink-soft); }
+.notebook-body .jp-MarkdownCell code {
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-soft);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.notebook-body .jp-MarkdownCell ul,
+.notebook-body .jp-MarkdownCell ol { color: var(--ink-soft); margin: 0.6rem 0 0.6rem 1.4rem; }
+
+/* Input code cells. nbconvert wraps them in `.jp-CodeMirrorEditor`
+   with Pygments classes. Let the site's design tokens carry the
+   palette so we don't have to re-theme every Pygments class. */
+.notebook-body .jp-CodeCell .jp-InputArea {
+  margin: 0.4rem 0;
+}
+.notebook-body .jp-CodeCell .highlight,
+.notebook-body .jp-CodeCell pre {
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: 0.85rem 1rem;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+.notebook-body .jp-CodeCell pre { margin: 0; border: 0; padding: 0; background: transparent; }
+/* Pygments token mapping (light + dark via var(--syntax-*) tokens
+   already defined for the highlight.js theme). */
+.notebook-body .highlight .k,  /* keyword */
+.notebook-body .highlight .kn,
+.notebook-body .highlight .kc,
+.notebook-body .highlight .o   /* operator (e.g. `import` rules) */ { color: var(--syntax-keyword); font-weight: 500; }
+.notebook-body .highlight .s,
+.notebook-body .highlight .s1,
+.notebook-body .highlight .s2,
+.notebook-body .highlight .sa  { color: var(--syntax-string); }
+.notebook-body .highlight .mi,
+.notebook-body .highlight .mf,
+.notebook-body .highlight .m   { color: var(--syntax-number); }
+.notebook-body .highlight .c,
+.notebook-body .highlight .c1,
+.notebook-body .highlight .cm  { color: var(--syntax-comment); font-style: italic; }
+.notebook-body .highlight .nn,
+.notebook-body .highlight .nc,
+.notebook-body .highlight .nb,
+.notebook-body .highlight .nf  { color: var(--syntax-ink); }
+.notebook-body .highlight .n,
+.notebook-body .highlight .p,
+.notebook-body .highlight .w   { color: var(--syntax-soft); }
+
+/* Output regions: text outputs (stdout/stderr) get a slight inset
+   so they read as the *result* of the cell above; images render
+   at their natural width inside the column. */
+.notebook-body .jp-OutputArea {
+  margin: 0.4rem 0 0;
+  padding-left: 0;
+}
+.notebook-body .jp-OutputArea-output {
+  padding: 0.5rem 0;
+}
+.notebook-body .jp-OutputArea pre {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.notebook-body .jp-OutputArea img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.6rem auto;
+  background: white;
+  border: 1px solid var(--rule-soft);
+  border-radius: 3px;
+}
+html[data-theme="dark"] .notebook-body .jp-OutputArea img {
+  /* matplotlib figures default to a white facecolor; soften the
+     contrast slightly on dark canvases so they sit better. */
+  filter: brightness(0.95);
+}
+
+/* Hide the JupyterLab gutter glyphs (collapse arrows, prompts)
+   that the `basic` template still emits — we want a clean read,
+   not an IDE recreation. */
+.notebook-body .jp-Collapser,
+.notebook-body .jp-InputPrompt,
+.notebook-body .jp-OutputPrompt { display: none !important; }
+
 /* ──────────── Footer ──────────── */
 .foot {
   margin-top: 5rem;

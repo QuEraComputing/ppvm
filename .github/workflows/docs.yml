@@ -23,10 +23,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      # Site sources. Other paths (crates/, ppvm-python/) don't affect
-      # the build because the API JSON consumed by /api/ is committed
-      # under docs/src/data/ and regenerated manually.
+      # Site sources, the Rust workspace (consumed by the API JSON
+      # extractor), and the Python package (consumed by the notebook
+      # build step + the Python API extractor).
       - "docs/**"
+      - "crates/**"
+      - "ppvm-python/**"
       - ".github/workflows/docs.yml"
   pull_request_target:
     types: [closed]
@@ -94,6 +96,19 @@ jobs:
         run: |
           node scripts/extract-rust.mjs
           node scripts/extract-python.mjs
+
+      - name: Build Jupyter notebooks
+        # `docs/scripts/build-notebooks.py` executes every Jupytext
+        # `.py` under `docs/notebooks/` and writes HTML fragments to
+        # `docs/src/generated/notebooks/`, where the dynamic
+        # `examples/[slug].astro` route picks them up. Uses the
+        # ppvm-python venv so the notebooks can `import ppvm`, plus
+        # the jupyter stack via `uv run --with`.
+        run: |
+          uv run --project ppvm-python \
+            --with jupytext --with nbconvert --with nbclient \
+            --with ipykernel --with matplotlib --with numpy \
+            python docs/scripts/build-notebooks.py
 
       - name: Build site
         working-directory: docs

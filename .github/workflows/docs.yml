@@ -51,6 +51,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Build inputs: nightly Rust for the rustdoc-JSON extractor,
+      # uv to run griffe for the Python extractor, Node 20 for Astro.
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: astral-sh/setup-uv@v5
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -73,11 +81,19 @@ jobs:
             echo "base=/" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Generate API JSON
+        # The /api/ page reads docs/src/data/{rust,python}-api.json,
+        # which are .gitignore'd and produced by docs/scripts/. The
+        # Rust extractor needs nightly for `--output-format json`;
+        # the Python extractor uses griffe via `uv run --with griffe`.
+        working-directory: docs
+        env:
+          RUSTFLAGS: "-C target-feature=+aes,+sse2"
+        run: |
+          node scripts/extract-rust.mjs
+          node scripts/extract-python.mjs
+
       - name: Build site
-        # The Rust/Python API JSON consumed by the /api/ page is
-        # committed under docs/src/data/ (regenerated locally via the
-        # scripts in docs/scripts/). We don't refresh them in CI
-        # because the Rust extractor needs the nightly toolchain.
         working-directory: docs
         env:
           PPVM_SITE: https://congenial-bassoon-l436wp3.pages.github.io

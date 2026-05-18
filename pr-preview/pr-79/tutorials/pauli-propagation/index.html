@@ -6,7 +6,7 @@
         document.documentElement.setAttribute("data-theme", resolved);
         document.documentElement.setAttribute("data-theme-pref", stored);
       })();
-    </script><link rel="stylesheet" href="/pr-preview/pr-79/_astro/api.dJEFcby_.css"></head> <body> <header class="masthead"> <div class="masthead-inner"> <a class="brand" href="/pr-preview/pr-79/"> <span class="brand-mark" aria-hidden="true"></span> <span class="brand-mono">ppvm</span> <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span> </a> <nav class="nav-links"> <a href="/pr-preview/pr-79/">Overview</a><a href="/pr-preview/pr-79/quickstart">Quick Start</a><a href="/pr-preview/pr-79/tutorials" aria-current="page">Tutorials</a><a href="/pr-preview/pr-79/examples">Examples</a><a href="/pr-preview/pr-79/develop">Develop</a><a href="/pr-preview/pr-79/api">Reference</a> <div class="theme-toggle" role="group" aria-label="Theme"> <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path> </svg> </button> <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path> </svg> </button> <button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <rect x="3" y="4" width="18" height="13" rx="2"></rect> <path d="M8 21h8M12 17v4"></path> </svg> </button> </div> </nav> </div> </header> <main> <div class="page-shell"> <aside class="page-toc" aria-label="On this page"> <div class="page-toc-label">On this page</div> <ol> <li><a href="#overview" data-toc-link="#overview">Overview</a></li><li><a href="#basic-usage" data-toc-link="#basic-usage">Basic usage</a></li><li><a href="#term-notation" data-toc-link="#term-notation">Term notation</a></li><li><a href="#truncation" data-toc-link="#truncation">Truncation</a></li><li><a href="#loss" data-toc-link="#loss">Simulating loss</a></li> </ol> </aside> <div class="page-toc-content">  <article class="shell narrow tutorial"> <div class="titleblock"> <div class="eyebrow"><a href="/pr-preview/pr-79/tutorials">Tutorials</a></div> <h1>Pauli Propagation</h1> <p class="byline">
+    </script><link rel="stylesheet" href="/pr-preview/pr-79/_astro/api.Q-T_g48t.css"></head> <body> <header class="masthead"> <div class="masthead-inner"> <a class="brand" href="/pr-preview/pr-79/"> <span class="brand-mark" aria-hidden="true"></span> <span class="brand-mono">ppvm</span> <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span> </a> <nav class="nav-links"> <a href="/pr-preview/pr-79/">Overview</a><a href="/pr-preview/pr-79/quickstart">Quick Start</a><a href="/pr-preview/pr-79/tutorials" aria-current="page">Tutorials</a><a href="/pr-preview/pr-79/examples">Examples</a><a href="/pr-preview/pr-79/develop">Develop</a><a href="/pr-preview/pr-79/api">Reference</a> <div class="theme-toggle" role="group" aria-label="Theme"> <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path> </svg> </button> <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path> </svg> </button> <button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <rect x="3" y="4" width="18" height="13" rx="2"></rect> <path d="M8 21h8M12 17v4"></path> </svg> </button> </div> </nav> </div> </header> <main> <div class="page-shell"> <aside class="page-toc" aria-label="On this page"> <div class="page-toc-label">On this page</div> <ol> <li><a href="#overview" data-toc-link="#overview">Overview</a></li><li><a href="#basic-usage" data-toc-link="#basic-usage">Basic usage</a></li><li><a href="#term-notation" data-toc-link="#term-notation">Term notation</a></li><li><a href="#truncation" data-toc-link="#truncation">Truncation</a></li><li><a href="#loss" data-toc-link="#loss">Simulating loss</a></li> </ol> </aside> <div class="page-toc-content">  <article class="shell narrow tutorial"> <div class="titleblock"> <div class="eyebrow"><a href="/pr-preview/pr-79/tutorials">Tutorials</a></div> <h1>Pauli Propagation</h1> <p class="byline">
 Heisenberg-picture observable propagation through deep noisy
         circuits, at a fraction of the cost of full state-vector
         simulation.
@@ -22,14 +22,14 @@ This makes it possible to simulate large, deep circuits — including
 </p> </section> <section id="basic-usage"> <h2>Basic usage</h2> <pre><code class="language-python">from ppvm import PauliSum
 
 # Observable: Z on each qubit
-state = PauliSum.new(n_qubits=3, terms=[f"Z{i}" for i in range(3)])
+state = PauliSum.new(n_qubits=3, terms=[f&quot;Z{i}&quot; for i in range(3)])
 
 # Apply gates in reverse circuit order
 state.cnot(1, 2)
 state.cnot(0, 1)
 state.h(0)
 
-# Expectation value with respect to |0...0>
+# Expectation value with respect to |0...0&gt;
 print(state.overlap_with_zero())</code></pre> <aside class="callout">
 Because this is Heisenberg-picture propagation, gates must be
         applied in <strong>reverse circuit order</strong>.
@@ -37,11 +37,11 @@ Because this is Heisenberg-picture propagation, gates must be
 Terms can be specified as full Pauli strings (<code>"XZI"</code>) or
         in compact notation (<code>"X0Z1"</code> — Pauli + qubit index).
         Coefficients default to <code>1.0</code> but can be set explicitly:
-</p> <pre><code class="language-python">ps = PauliSum.new(4, [("Z0Z1", 0.5), ("X2", 0.3)])</code></pre> </section> <section id="truncation"> <h2>Truncation</h2> <p>Two truncation strategies control the approximation/performance trade-off:</p> <ul> <li> <strong>Coefficient truncation</strong> (<code>min_abs_coeff</code>):
+</p> <pre><code class="language-python">ps = PauliSum.new(4, [(&quot;Z0Z1&quot;, 0.5), (&quot;X2&quot;, 0.3)])</code></pre> </section> <section id="truncation"> <h2>Truncation</h2> <p>Two truncation strategies control the approximation/performance trade-off:</p> <ul> <li> <strong>Coefficient truncation</strong> (<code>min_abs_coeff</code>):
           drops terms with absolute coefficient below a threshold.
 </li> <li> <strong>Weight truncation</strong> (<code>max_pauli_weight</code>):
           drops terms with more non-identity Paulis than the cutoff.
-</li> </ul> <pre><code class="language-python">ps = PauliSum.new(10, "Z0", min_abs_coeff=1e-8, max_pauli_weight=5)</code></pre> </section> <section id="loss"> <h2>Simulating loss</h2> <p>
+</li> </ul> <pre><code class="language-python">ps = PauliSum.new(10, &quot;Z0&quot;, min_abs_coeff=1e-8, max_pauli_weight=5)</code></pre> </section> <section id="loss"> <h2>Simulating loss</h2> <p>
 To simulate qubit loss, ppvm offers
 <a href="/pr-preview/pr-79/api#py-ppvm-paulisum-LossyPauliSum"><code>LossyPauliSum</code></a>.
         This is a dedicated class that behaves just like a
@@ -54,7 +54,7 @@ for the full background). This comes at a storage overhead — we now
         need 3 bits to represent a character in a Pauli string rather than 2.
 </p> <p>Here is a small example:</p> <pre><code class="language-python">from ppvm import LossyPauliSum
 
-ps = LossyPauliSum.new(n_qubits=1, terms=["Z"])
+ps = LossyPauliSum.new(n_qubits=1, terms=[&quot;Z&quot;])
 
 # Reset at the end of the circuit
 ps.reset_loss_channel(0)
@@ -68,13 +68,13 @@ ps.x(0)
 z_exp = ps.overlap_with_zero()
 
 # This will be -0.8: in 10% of cases we have &lt;Z&gt; = 1 instead of -1.
-print(f"&lt;Z&gt;: {z_exp}")</code></pre> <p>A third truncation strategy is available for lossy simulations:</p> <ul> <li> <strong>Loss weight truncation</strong>
+print(f&quot;&lt;Z&gt;: {z_exp}&quot;)</code></pre> <p>A third truncation strategy is available for lossy simulations:</p> <ul> <li> <strong>Loss weight truncation</strong>
 (<code>max_loss_weight</code>): drops terms with more than a given
           number of <code>L</code> operators. Since the contribution of
           strings with <code>L</code> on many positions scales as
           $p_L^k$, this effectively controls the branching from loss and
           reset channels.
-</li> </ul> <pre><code class="language-python">ps = LossyPauliSum.new(3, "ZZZ", max_loss_weight=2)</code></pre> </section> </article>  </div> </div> </main> <script>
+</li> </ul> <pre><code class="language-python">ps = LossyPauliSum.new(3, &quot;ZZZ&quot;, max_loss_weight=2)</code></pre> </section> </article>  </div> </div> </main> <script>
         // Scroll-spy: mark the TOC link for the section currently in view.
         // Strategy: track each section's distance from the top of the
         // viewport and pick whichever sits closest to (but above) a small

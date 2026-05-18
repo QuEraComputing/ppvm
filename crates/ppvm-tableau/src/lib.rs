@@ -34,6 +34,9 @@ pub mod display;
 pub mod gates;
 /// Z-basis measurement, including loss-aware variants.
 pub mod measure;
+
+pub mod measure_all;
+
 /// Noise channels: depolarizing, Pauli error, loss.
 pub mod noise;
 /// [`SparseVector`](sparsevec::SparseVector) trait and implementations.

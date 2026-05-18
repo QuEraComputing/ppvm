@@ -81,7 +81,7 @@ const heroCode = stripDocstring(paulisumGhz);
           <span class="hero-code-title">Heisenberg-picture GHZ in 6 lines</span>
           <span class="hero-code-file"><code>paulisum_ghz.py</code> · tested</span>
         </figcaption>
-        <pre><code>{heroCode}</code></pre>
+        <pre><code class="language-python">{heroCode}</code></pre>
         <p class="hero-code-note">
           Pauli propagation moves observables <em>backwards</em> through the
           circuit, so gates are applied in reverse of the textbook order.
@@ -146,7 +146,7 @@ const heroCode = stripDocstring(paulisumGhz);
           your Python environment. The native extension compiles automatically
           on install.
         </p>
-<pre><code>uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python</code></pre>
+<pre><code class="language-bash">uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python</code></pre>
         <a class="install-pane-link" href={`${base}/quickstart/python`}>Continue to the Python Quick Start →</a>
       </section>
 
@@ -155,7 +155,7 @@ const heroCode = stripDocstring(paulisumGhz);
           Add the crates relevant to your workload. <code>ppvm-runtime</code>
           is required; the others layer on top.
         </p>
-<pre><code>[dependencies]
+<pre><code class="language-toml">[dependencies]
 ppvm-runtime = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
 ppvm-tableau = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
 ppvm-stim    = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}

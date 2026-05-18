@@ -113,7 +113,7 @@ const toc = [
       workload — the git dependency form is identical for each:
     </p>
 
-<pre><code>[dependencies]
+<pre><code class="language-toml">[dependencies]
 ppvm-runtime = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
 ppvm-tableau = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
 ppvm-stim    = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
@@ -146,7 +146,7 @@ ppvm-sym     = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}</code></pr
       Twelve qubits → <code>N = 2</code>.
     </p>
 
-<pre><code>use ppvm_runtime::prelude::*;
+<pre><code class="language-rust">use ppvm_runtime::prelude::*;
 
 fn main() {`{`}
     let mut state: PauliSum&lt;config::indexmap::ByteFxHashF64&lt;1&gt;&gt; =
@@ -187,7 +187,7 @@ fn main() {`{`}
       next-larger type if in doubt.
     </p>
 
-<pre><code>use ppvm_runtime::prelude::*;
+<pre><code class="language-rust">use ppvm_runtime::prelude::*;
 use ppvm_tableau::prelude::*;
 
 fn main() {`{`}
@@ -226,7 +226,7 @@ fn main() {`{`}
       reuse the program across shots — matters when sampling at scale.
     </p>
 
-<pre><code>use ppvm_stim::{`{parse_extended, sample}`};
+<pre><code class="language-rust">use ppvm_stim::{`{parse_extended, sample}`};
 use ppvm_tableau::prelude::*;
 use ppvm_runtime::prelude::*;
 
@@ -254,7 +254,7 @@ fn run_shots(src: &str, n_qubits: usize) -&gt; Result&lt;Vec&lt;Vec&lt;Option&lt
       Paulis through parametric circuits without committing to angle values:
     </p>
 
-<pre><code>use ppvm_runtime::prelude::*;
+<pre><code class="language-rust">use ppvm_runtime::prelude::*;
 use ppvm_sym::Term;
 
 fn main() {`{`}
@@ -293,7 +293,7 @@ fn main() {`{`}
       crate and re-exports its prelude.
     </p>
 
-<pre><code>use stim_parser::prelude::*;
+<pre><code class="language-rust">use stim_parser::prelude::*;
 
 let prog = parse_extended(stim_src)?;
 for inst in prog.instructions() {`{`}
@@ -336,7 +336,7 @@ for inst in prog.instructions() {`{`}
       Pass one through the builder:
     </p>
 
-<pre><code>use ppvm_runtime::{`{prelude::*, strategy::CoefficientThreshold}`};
+<pre><code class="language-rust">use ppvm_runtime::{`{prelude::*, strategy::CoefficientThreshold}`};
 
 type State = PauliSum&lt;config::indexmap::ByteFxHashF64&lt;2, CoefficientThreshold&gt;&gt;;
 
@@ -353,7 +353,7 @@ let mut state: State = PauliSum::builder()
       your policy:
     </p>
 
-<pre><code>use ppvm_runtime::traits::strategy::Strategy;
+<pre><code class="language-rust">use ppvm_runtime::traits::strategy::Strategy;
 
 #[derive(Debug, Clone, Copy, Default)]
 struct DropTinyHighWeight;

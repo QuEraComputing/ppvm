@@ -141,7 +141,7 @@ const toc = [
     <h2 id="build"><span class="sec-num">§ 2</span>Build &amp; test</h2>
 
     <h3>Rust</h3>
-<pre><code># All Rust tests
+<pre><code class="language-bash"># All Rust tests
 cargo test --workspace
 
 # A single crate
@@ -162,7 +162,7 @@ cargo bench --bench micro -- "gates/single-qubit/h"</code></pre>
     </p>
 
     <h3>Python</h3>
-<pre><code># Requires uv (https://docs.astral.sh/uv/)
+<pre><code class="language-bash"># Requires uv (https://docs.astral.sh/uv/)
 # The native module compiles automatically via maturin on first run.
 
 uv run --project ppvm-python --group dev pytest ppvm-python/test/

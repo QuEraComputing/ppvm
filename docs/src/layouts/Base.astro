@@ -215,5 +215,21 @@ const nav = [
         </span>
       </div>
     </footer>
+
+    {/* Syntax highlighting — highlight.js, languages we use bundled in
+        one UMD script. The colour theme is defined in global.css using
+        the same design tokens as the rest of the page (brand purple,
+        dawn-orange for strings, ink-faint italic for comments). */}
+    <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js" is:inline></script>
+    <script is:inline>
+      (() => {
+        if (typeof hljs === "undefined") return;
+        // Only highlight blocks that opt in via `class="language-…"`.
+        // Unhinted blocks (project trees, prompts, ASCII art) stay plain.
+        for (const el of document.querySelectorAll("pre code[class*='language-']")) {
+          hljs.highlightElement(el);
+        }
+      })();
+    </script>
   </body>
 </html>

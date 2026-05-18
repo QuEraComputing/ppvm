@@ -428,6 +428,70 @@ pre:hover .copy-btn,
 }
 pre code { background: none; border: 0; padding: 0; font-size: 1em; color: var(--ink); }
 
+/* ──────────── Syntax highlighting ────────────
+   highlight.js applies these classes after page load. The palette is
+   deliberately restrained — five distinct tones (brand purple,
+   string-warm, number-violet, comment-mute, plain ink) instead of a
+   full rainbow — to match the Swiss / flat-academic vocabulary.
+   Highlighting is opt-in: only <pre><code class="language-…"> blocks
+   get themed; everything else falls through to the plain pre style.
+   ─────────────────────────────────────────── */
+:root {
+  --syntax-keyword: var(--brand);
+  --syntax-string:  #8c4a18;   /* muted dawn-orange on off-white   */
+  --syntax-number:  #6a3aa5;   /* muted dawn-violet                */
+  --syntax-comment: var(--ink-faint);
+  --syntax-ink:     var(--ink);
+  --syntax-soft:    var(--ink-soft);
+}
+html[data-theme="dark"] {
+  --syntax-keyword: var(--brand);
+  --syntax-string:  #ffa56b;
+  --syntax-number:  #c8a8ff;
+  --syntax-comment: var(--ink-faint);
+  --syntax-ink:     var(--ink);
+  --syntax-soft:    var(--ink-soft);
+}
+.hljs { color: var(--syntax-ink); background: transparent; }
+/* Keywords, decorators, attributes, TOML/INI section headers. */
+.hljs-keyword,
+.hljs-meta,
+.hljs-meta-keyword,
+.hljs-section,
+.hljs-tag,
+.hljs-selector-tag { color: var(--syntax-keyword); font-weight: 500; }
+/* Strings, regex, doctags. */
+.hljs-string,
+.hljs-regexp,
+.hljs-symbol,
+.hljs-quote { color: var(--syntax-string); }
+/* Numbers, literals. */
+.hljs-number,
+.hljs-literal,
+.hljs-bullet,
+.hljs-link { color: var(--syntax-number); }
+/* Comments. Italic, low-contrast. */
+.hljs-comment,
+.hljs-doctag { color: var(--syntax-comment); font-style: italic; }
+/* Function and type names — leave at body colour, lean on weight. */
+.hljs-title,
+.hljs-title.function_,
+.hljs-title.class_,
+.hljs-function .hljs-title,
+.hljs-type,
+.hljs-built_in { color: var(--syntax-ink); }
+/* Properties, attributes, parameters — slightly softer ink. */
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable,
+.hljs-params,
+.hljs-operator,
+.hljs-punctuation { color: var(--syntax-soft); }
+/* Diff / addition / deletion */
+.hljs-addition { background: color-mix(in srgb, var(--syntax-keyword) 8%, transparent); color: var(--ink); }
+.hljs-deletion { background: color-mix(in srgb, var(--syntax-string) 10%, transparent); color: var(--ink); text-decoration: line-through; }
+
 /* Example blocks (figure + caption + tested badge) */
 figure.example {
   margin: 1.2em 0 1.6em;

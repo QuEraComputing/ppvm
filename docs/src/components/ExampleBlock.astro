@@ -29,6 +29,22 @@ function strip(src: string): string {
 }
 
 const displayed = stripDocstring ? strip(code) : code;
+
+// Infer the highlight.js language hint from the file extension so the
+// site's syntax theme can paint the right tokens.
+function detectLang(name: string | undefined): string | null {
+  if (!name) return null;
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  return {
+    py: "python",
+    rs: "rust",
+    toml: "toml",
+    sh: "bash",
+    bash: "bash",
+  }[ext] ?? null;
+}
+const lang = detectLang(file);
+const codeClass = lang ? `language-${lang}` : "";
 ---
 <figure class="example">
   {file && (
@@ -37,5 +53,5 @@ const displayed = stripDocstring ? strip(code) : code;
       <span class="example-tested" title="Executed by docs/examples/test_examples.py">tested</span>
     </figcaption>
   )}
-  <pre><code>{displayed}</code></pre>
+  <pre><code class={codeClass}>{displayed}</code></pre>
 </figure>

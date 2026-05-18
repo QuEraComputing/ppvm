@@ -1,4 +1,4 @@
-[![Documentation](https://img.shields.io/badge/Documentation-6437FF)](https://congenial-bassoon-l436wp3.pages.github.io/dev/)
+[![Documentation](https://img.shields.io/badge/Documentation-6437FF)](https://congenial-bassoon-l436wp3.pages.github.io/)
 
 * Python build: [![CI - python](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml)
 * Rust build: [![CI - rust](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml)

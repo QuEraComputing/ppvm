@@ -1,0 +1,69 @@
+---
+import Base from "../../layouts/Base.astro";
+
+interface Meta {
+  slug: string;
+  title: string;
+  headings: string[];
+  language: string;
+  source: string;
+}
+
+export async function getStaticPaths() {
+  const idx = (await import("../../generated/notebooks/index.json")).default as Meta[];
+  // Pull the HTML fragment for each slug at build time so the page is
+  // a single static document — no runtime fetch.
+  const htmls = import.meta.glob("../../generated/notebooks/*.html", {
+    eager: true,
+    query: "?raw",
+    import: "default",
+  }) as Record<string, string>;
+  return idx.map((nb) => {
+    // Vite glob keys look like "../../generated/notebooks/trotter.html".
+    const key = Object.keys(htmls).find((k) => k.endsWith(`/${nb.slug}.html`));
+    if (!key) {
+      // Fail the build loudly rather than silently producing an
+      // empty Examples page — a missing fragment usually means
+      // `npm run extract:notebooks` wasn't run after a rename.
+      throw new Error(
+        `notebook fragment missing for slug "${nb.slug}". ` +
+        `Expected docs/src/generated/notebooks/${nb.slug}.html. ` +
+        `Run \`npm run extract:notebooks\` to regenerate it.`
+      );
+    }
+    return {
+      params: { slug: nb.slug },
+      props: { meta: nb, html: htmls[key] },
+    };
+  });
+}
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const gitRef = process.env.PPVM_GIT_REF || "main";
+const { meta, html } = Astro.props as { meta: Meta; html: string };
+
+const toc = meta.headings.map((h) => ({
+  label: h,
+  href: `#${h.replace(/[^a-zA-Z0-9]+/g, "-")}`,
+}));
+---
+<Base title={meta.title} current="examples" toc={toc}>
+  <article class="shell narrow notebook">
+    <div class="titleblock">
+      <div class="eyebrow">
+        <a href={`${base}/examples`}>Examples</a> &middot; executed during build
+      </div>
+      <h1>{meta.title}</h1>
+      <p class="byline">
+        <span class="examples-lang">{meta.language}</span>
+        <span class="examples-source-label">Source</span>
+        <a
+          class="examples-source"
+          href={`https://github.com/QuEraComputing/ppvm/blob/${gitRef}/${meta.source}`}
+        >{meta.source}</a>
+      </p>
+    </div>
+
+    <div class="notebook-body" data-language={meta.language} set:html={html}></div>
+  </article>
+</Base>

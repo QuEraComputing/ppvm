@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Comprehensive gate and public-API tests for ppvm-tableau.
 //!
 //! Covers:

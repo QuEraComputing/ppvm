@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Chumsky 0.12 grammar for Stim source.
 //!
 //! Reads top-to-bottom: whitespace/comments -> numbers -> pi-expressions ->

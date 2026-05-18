@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 //! [`TableauLike`](crate::tableau_like::TableauLike) trait: shared interface for stabilizer-tableau backends.
 //!
 //! Any type implementing [`TableauLike`](crate::tableau_like::TableauLike) gets default implementations of

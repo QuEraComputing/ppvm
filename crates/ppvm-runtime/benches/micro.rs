@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};

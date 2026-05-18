@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+# SPDX-License-Identifier: Apache-2.0
+
 """TODO: once we open-source, all of this will be moved into bloqade-circuit"""
 
 from ._interp import GeneralizedTableauInterpreter as GeneralizedTableauInterpreter

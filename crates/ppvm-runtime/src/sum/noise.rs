@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::char::Pauli;
 use crate::loss::LossyPauliWord;
 use crate::traits::*;

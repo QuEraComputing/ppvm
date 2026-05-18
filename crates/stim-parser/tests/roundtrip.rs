@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Printer-fixpoint roundtrip tests for both AST layers.
 //!
 //! The grammar accepts a much wider input surface than the printer

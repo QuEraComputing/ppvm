@@ -86,3 +86,14 @@ fn main() {
     println!("{}", state.trace(&zero_state));  // 1
 }
 ```
+
+# License
+
+ppvm is licensed under the [Apache License, Version 2.0](LICENSE).
+See [NOTICE](NOTICE) for attribution requirements.
+
+# Contributing
+
+Contributions are welcome. By submitting a pull request to this repository,
+you agree to license your contribution under the Apache License, Version 2.0
+and to the terms of the [Contributor License Agreement](CLA.md).

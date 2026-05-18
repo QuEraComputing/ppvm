@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 use super::data::{Decorated, NotIdentity, OpPattern, PauliPattern};
 use crate::char::Pauli;
 use crate::traits::PauliIter;

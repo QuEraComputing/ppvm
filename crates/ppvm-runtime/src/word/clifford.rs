@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 // Clifford behavior for `PauliWord` is provided by the blanket impl
 // `impl<T: PauliWordTrait> Clifford for T` in `crate::traits::clifford`.
 

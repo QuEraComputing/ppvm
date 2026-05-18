@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+# SPDX-License-Identifier: Apache-2.0
+
 from ppvm_python_native import StimProgram as StimProgram
 
 from .generalized_tableau import GeneralizedTableau as GeneralizedTableau

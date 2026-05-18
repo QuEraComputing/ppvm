@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Profile the time breakdown inside branch_with_coefficients:
 //! computation (phase + multiply) vs HashMap accumulation.
 

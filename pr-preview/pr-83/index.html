@@ -38,8 +38,8 @@ tab.cnot(0, 1)
 r0 = tab.measure(0)
 r1 = tab.measure(1)
 
-print(f&quot;qubit 0: {r0}, qubit 1: {r1}&quot;)
-print(&quot;correlated:&quot;, r0 == r1)
+print(f&quot;qubit 0: {r0}, qubit 1: {r1}&quot;)  # → qubit 0: 1, qubit 1: 1
+print(&quot;correlated:&quot;, r0 == r1)  # → correlated: True
 </code></pre> <p class="hero-code-note" data-example-pane="paulisum">
 Pauli propagation moves observables <em>backwards</em> through the
           circuit, so gates are applied in reverse of the textbook order.

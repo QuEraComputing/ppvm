@@ -24,5 +24,11 @@ members = [
     "skills/ppvm-usage/examples/rust",
 ]
 
+# Keep function names and line numbers in release builds so profilers
+# (cargo-flamegraph, samply, Instruments) produce readable output. Adds
+# negligible binary bloat compared to full debug info.
+[profile.release]
+debug = "line-tables-only"
+
 [[example]]
 name = "symbolic"

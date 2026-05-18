@@ -57,6 +57,27 @@ correlated fraction: 1.0
     ),
 ]
 
+# Runnable copies of the Python code blocks in
+# ``skills/ppvm-usage/SKILL.md`` live alongside the skill (so ``ion add``
+# fetches them with the rest of the skill). They are exercised here so
+# CI catches drift between the snippets the skill ships to agents and
+# the actual public ppvm-python API.
+SKILL_DIR = (Path(__file__).resolve().parents[2] / "skills/ppvm-usage/examples/python").resolve()
+SKILL_EXAMPLES: list[tuple[str, str]] = [
+    (
+        "verify.py",
+        """\
+ok
+""",
+    ),
+    (
+        "noise_truncation.py",
+        """\
+layers=5 terms=7 max_weight=4 finite_overlap=True
+""",
+    ),
+]
+
 
 def _run(path: Path) -> str:
     result = subprocess.run(
@@ -92,11 +113,42 @@ def test_example_runs_and_matches_expected_output(filename: str, expected: str) 
     )
 
 
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    SKILL_EXAMPLES,
+    ids=[f"skill/{e[0]}" for e in SKILL_EXAMPLES],
+)
+def test_skill_example_runs_and_matches_expected_output(filename: str, expected: str) -> None:
+    path = SKILL_DIR / filename
+    assert path.exists(), f"missing skill example file: {path}"
+
+    stdout = _run(path)
+
+    assert _normalize(stdout) == _normalize(expected), (
+        f"\nskill example {filename} produced unexpected output.\n"
+        f"--- expected ---\n{expected}"
+        f"--- got ---\n{stdout}"
+    )
+
+
 def test_all_examples_are_covered() -> None:
-    """Guard against forgetting to register a new example in EXAMPLES."""
-    on_disk = {p.name for p in EXAMPLES_DIR.glob("*.py") if p.name not in {"__init__.py", "test_examples.py"}}
+    """Guard against forgetting to register a new example in either list."""
+    skip = {"__init__.py", "test_examples.py"}
+
+    on_disk = {
+        p.name
+        for p in EXAMPLES_DIR.glob("*.py")
+        if p.name not in skip and "__pycache__" not in p.parts
+    }
     registered = {name for name, _ in EXAMPLES}
     missing = on_disk - registered
     assert not missing, (
-        f"example file(s) present on disk but not registered in EXAMPLES: {sorted(missing)}"
+        f"docs/examples file(s) present on disk but not registered in EXAMPLES: {sorted(missing)}"
+    )
+
+    skill_on_disk = {p.name for p in SKILL_DIR.glob("*.py")}
+    skill_registered = {name for name, _ in SKILL_EXAMPLES}
+    skill_missing = skill_on_disk - skill_registered
+    assert not skill_missing, (
+        f"skill example file(s) present on disk but not registered in SKILL_EXAMPLES: {sorted(skill_missing)}"
     )

@@ -71,6 +71,13 @@ Without truncation, a 20-qubit Trotter circuit with `rx` rotations will exhaust 
 
 Install with `uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python`. Project policy: never use `pip` in examples or docs.
 
+> **Runnable copies:** the Python snippets below also live as standalone
+> scripts under [`examples/python/`](examples/python/) inside this skill
+> (`verify.py`, `noise_truncation.py`). They're executed in CI by
+> `docs/examples/test_examples.py` against the live ppvm-python API, so
+> if a method here breaks, that test fails and the skill is updated in
+> the same PR. Treat the files as canonical when in doubt.
+
 ### Pauli propagation
 
 ```python
@@ -136,6 +143,15 @@ shots = sample_stim(prog, shots=1000, n_qubits=5)
 `MeasurementResult` is an `IntEnum` (`ZERO`, `ONE`, `LOST`). Loss is first-class — neutral-atom hardware effects model directly.
 
 ## Rust API
+
+> **Runnable copies:** the four Rust snippets below also live as a
+> `ppvm-skill-examples` Cargo crate under
+> [`examples/rust/`](examples/rust/) inside this skill
+> (`src/bin/paulisum.rs`, `tableau.rs`, `stim_sample.rs`, `sym.rs`). The
+> crate is a workspace member, so `cargo build --workspace
+> --all-targets` and `cargo test -p ppvm-skill-examples` exercise them
+> in CI. A signature change anywhere in the public Rust API breaks the
+> build before the skill ships to agents.
 
 In `Cargo.toml`:
 
@@ -267,7 +283,7 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 
 ## Verifying you got the API right
 
-Before writing a non-trivial script, sanity-check your imports with this minimal example:
+Before writing a non-trivial script, sanity-check your imports with this minimal example. The same snippet ships as a runnable file at [`examples/python/verify.py`](examples/python/verify.py) and is executed in CI — if your install is bad, the next line will be the failure surface.
 
 ```python
 from ppvm import PauliSum

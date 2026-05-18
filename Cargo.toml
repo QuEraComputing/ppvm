@@ -17,6 +17,10 @@ members = [
     "crates/ppvm-python-native",
     "crates/ppvm-tableau",
     "crates/ppvm-stim", "crates/stim-parser",
+    # Runnable copies of the Rust code blocks in skills/ppvm-usage/SKILL.md.
+    # Built by `cargo build --workspace --all-targets` in CI so the skill
+    # can't silently drift away from the public API.
+    "skills/ppvm-usage/examples/rust",
 ]
 
 [[example]]

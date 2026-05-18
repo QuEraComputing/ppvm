@@ -40,8 +40,8 @@ jobs:
     permissions:
       contents: write
     concurrency:
-      group: deploy-rust-docs
-      cancel-in-progress: true
+      group: deploy-gh-pages
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 

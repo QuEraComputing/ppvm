@@ -23,17 +23,23 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      # Site sources. Other paths (crates/, ppvm-python/) don't affect
-      # the build because the API JSON consumed by /api/ is committed
-      # under docs/src/data/ and regenerated manually.
+      # Site sources, the Rust workspace (consumed by the API JSON
+      # extractor), and the Python package (consumed by the notebook
+      # build step + the Python API extractor).
       - "docs/**"
+      - "crates/**"
+      - "ppvm-python/**"
       - ".github/workflows/docs.yml"
   pull_request_target:
     types: [closed]
 
+# No workflow-wide write privileges. Each job declares the narrowest
+# token scope it actually needs. The `build` job executes user-controlled
+# notebooks via `npm run extract:notebooks`, so its token must not be
+# able to push to `gh-pages` (or anything else). Deploys run on
+# separately-scoped jobs that don't see the notebook execution context.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   # Serialise per-PR (and main); a fresh build cancels any in-flight one
@@ -48,6 +54,11 @@ jobs:
     if: github.event.action != 'closed'
     name: Build Astro site
     runs-on: ubuntu-latest
+    # Notebook execution runs arbitrary repo-controlled Python here;
+    # the token in this job stays read-only so a malicious PR can't
+    # exfiltrate it into a gh-pages write.
+    permissions:
+      contents: read
     outputs:
       base: ${{ steps.compute-base.outputs.base }}
     steps:
@@ -83,24 +94,32 @@ jobs:
             echo "base=/" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Generate API JSON
-        # The /api/ page reads docs/src/data/{rust,python}-api.json,
-        # which are .gitignore'd and produced by docs/scripts/. The
-        # Rust extractor needs nightly for `--output-format json`;
-        # the Python extractor uses griffe via `uv run --with griffe`.
-        working-directory: docs
-        env:
-          RUSTFLAGS: "-C target-feature=+aes,+sse2"
+      - name: Compute git ref for source links
+        id: compute-ref
+        # "Source" links on the Examples pages resolve against this ref.
+        # PR previews use the PR head SHA so new files (that aren't on
+        # main yet) still link correctly; main deploys use the merge
+        # commit SHA so the link is stable forever.
         run: |
-          node scripts/extract-rust.mjs
-          node scripts/extract-python.mjs
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build site
+        # `npm run build` aggregates the three extraction steps
+        # (`extract:rust`, `extract:python`, `extract:notebooks`) plus
+        # `astro build` into a single command. See `docs/README.md`
+        # for the per-step breakdown and the per-component escape
+        # hatches a developer would use locally.
         working-directory: docs
         env:
           PPVM_SITE: https://congenial-bassoon-l436wp3.pages.github.io
           PPVM_BASE: ${{ steps.compute-base.outputs.base }}
-        run: npx astro build
+          PPVM_GIT_REF: ${{ steps.compute-ref.outputs.ref }}
+          RUSTFLAGS: "-C target-feature=+aes,+sse2"
+        run: npm run build
 
       - name: Upload built site
         uses: actions/upload-artifact@v4
@@ -115,6 +134,10 @@ jobs:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Only this job writes to gh-pages; it doesn't run any
+    # repo-controlled scripts (the artifact is already built).
+    permissions:
+      contents: write
     concurrency:
       group: deploy-gh-pages
       cancel-in-progress: false
@@ -141,6 +164,11 @@ jobs:
     needs: build
     if: github.event_name == 'pull_request' && github.event.action != 'closed'
     runs-on: ubuntu-latest
+    # Writes the pre-built artifact to gh-pages/pr-preview/pr-<N>/
+    # and comments back on the PR.
+    permissions:
+      contents: write
+      pull-requests: write
     concurrency:
       group: deploy-gh-pages
       cancel-in-progress: false
@@ -163,6 +191,11 @@ jobs:
     name: Clean up PR preview
     if: github.event_name == 'pull_request_target' && github.event.action == 'closed'
     runs-on: ubuntu-latest
+    # Removes the gh-pages/pr-preview/pr-<N>/ subtree and edits the
+    # PR's preview comment; nothing else.
+    permissions:
+      contents: write
+      pull-requests: write
     concurrency:
       group: deploy-gh-pages
       cancel-in-progress: false

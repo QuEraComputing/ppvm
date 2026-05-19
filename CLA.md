@@ -1,6 +1,6 @@
-# ppvm Individual Contributor License Agreement
+# PPVM Individual Contributor License Agreement
 
-Thank you for your interest in contributing to **ppvm** (the "Project"),
+Thank you for your interest in contributing to **PPVM** (the "Project"),
 maintained by QuEra Computing Inc. ("We" or "Us"). This Contributor License
 Agreement ("Agreement") documents the rights granted by contributors to Us.
 It is adapted from the Apache Software Foundation Individual Contributor

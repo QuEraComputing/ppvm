@@ -20,4 +20,4 @@ useDefaultMapping = true
 
 [properties]
 inceptionYear = 2026
-copyrightOwner = "QuEra Computing Inc."
+copyrightOwner = "The PPVM Authors"

@@ -186,7 +186,10 @@
       same "printed page" as the copyright notice for easier
       identification within third-party archives.
 
-   Copyright 2026 QuEra Computing Inc.
+   Copyright 2026 The PPVM Authors.
+
+   For a list of copyright holders, see the AUTHORS file at the root of
+   this repository.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

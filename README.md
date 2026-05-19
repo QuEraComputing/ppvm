@@ -3,9 +3,9 @@
 * Python build: [![CI - python](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml)
 * Rust build: [![CI - rust](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml)
 
-# ppvm - Pauli Propagation and Virtual Machine
+# PPVM - Pauli Propagation and Virtual Machine
 
-**ppvm** is a fast quantum circuit simulator.
+**PPVM** is a fast quantum circuit simulator.
 It is implemented in rust, but also offers [python bindings](#python).
 
 # Short example
@@ -89,7 +89,7 @@ fn main() {
 
 # License
 
-ppvm is licensed under the [Apache License, Version 2.0](LICENSE).
+PPVM is licensed under the [Apache License, Version 2.0](LICENSE).
 See [NOTICE](NOTICE) for attribution requirements.
 
 # Contributing

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 QuEra Computing Inc.
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
 //! Integration test: verify that the full MSD circuit using batch methods

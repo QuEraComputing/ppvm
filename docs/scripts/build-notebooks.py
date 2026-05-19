@@ -19,11 +19,20 @@ Pipeline per notebook (``foo.py``):
 
 Executed outputs are also written to a content-addressed cache under
 ``docs/.notebook-cache/`` (or ``$PPVM_NOTEBOOK_CACHE_DIR``). The cache
-key is ``sha256(notebook source + Cargo.lock + Cargo.toml files +
-uv.lock)`` — so docs-only or CSS-only PRs reuse already-executed
-notebooks instead of re-running them. GH Actions persists this
-directory across runs via ``actions/cache``; the nightly full-rebuild
-catches numerical drift that the lockfile-only fingerprint misses.
+key is ``sha256(CACHE_SCHEMA_VERSION + this script's source + notebook
+source + Cargo.lock + Cargo.toml files + uv.lock)`` — so docs-only or
+CSS-only PRs reuse already-executed notebooks, and any change to the
+extractor itself (rendering, sanitiser, matplotlib setup) invalidates
+every entry automatically. Bump ``CACHE_SCHEMA_VERSION`` if you need
+to force a global invalidation for some other reason. GH Actions
+persists this directory across runs via ``actions/cache``.
+
+The fingerprint deliberately does not hash Rust ``.rs`` or Python
+package sources, so a numerical change inside a crate that doesn't
+touch a lockfile or ``Cargo.toml`` will not invalidate cached
+outputs. Rely on ``cargo test --workspace`` / ``pytest`` to catch
+those; if we add a scheduled full-rebuild workflow in the future, it
+will serve as a second safety net.
 
 Designed to be invoked from CI as the step before ``npx astro build``.
 """
@@ -62,6 +71,12 @@ CACHE_DIR = Path(
 # Set ``PPVM_NOTEBOOK_CACHE=0`` to force re-execution regardless of
 # what's on disk (useful when investigating numerical drift).
 CACHE_ENABLED = os.environ.get("PPVM_NOTEBOOK_CACHE", "1") != "0"
+# Bump this to force-invalidate every cached notebook output. Useful
+# when the cached artefact layout changes incompatibly (e.g. a new
+# field in the sidecar JSON that downstream Astro pages depend on).
+# Routine pipeline edits don't need a bump because the script's own
+# source is part of the fingerprint via ``_shared_fingerprint_files``.
+CACHE_SCHEMA_VERSION = "1"
 
 # Switch matplotlib to the IPython "inline" backend before any cell
 # runs so ``plt.show()`` triggers Jupyter's display hook and embeds
@@ -233,16 +248,22 @@ def detect_language(nb: nbformat.NotebookNode) -> str:
     return (lang or "python").lower()
 
 
-# Files outside ``docs/notebooks/`` whose contents influence notebook
-# numerics. Hashed once into ``_shared_fingerprint`` and combined with
-# the notebook source to form each notebook's cache key.
+# Files whose contents influence notebook outputs. Hashed once into
+# ``_shared_fingerprint`` and combined with the notebook source to
+# form each notebook's cache key.
 #
-# We intentionally do NOT hash Rust ``.rs`` sources — that would blow
-# up the fingerprint on cosmetic changes. Cargo.toml + Cargo.lock +
-# uv.lock cover dependency bumps and version changes; the nightly
-# full-rebuild job catches drift that slips through.
+# Includes this script itself so changes to the rendering / sanitiser
+# / matplotlib-setup path invalidate cached outputs automatically —
+# without that, a fix to (say) the bleach allow-list would silently
+# keep serving the previous (potentially insecure or broken) HTML
+# for every unchanged notebook source.
+#
+# We intentionally do NOT hash Rust ``.rs`` or Python package
+# sources — that would blow up the fingerprint on cosmetic changes.
+# Cargo.toml + Cargo.lock + uv.lock cover dependency bumps and
+# version changes; ``cargo test`` / ``pytest`` catch the rest.
 def _shared_fingerprint_files() -> list[Path]:
-    files: list[Path] = []
+    files: list[Path] = [Path(__file__).resolve()]
     for name in ("Cargo.lock", "Cargo.toml"):
         p = REPO_ROOT / name
         if p.exists():
@@ -256,9 +277,15 @@ def _shared_fingerprint_files() -> list[Path]:
 
 def _compute_shared_fingerprint() -> bytes:
     h = hashlib.sha256()
+    h.update(b"schema=")
+    h.update(CACHE_SCHEMA_VERSION.encode("utf-8"))
+    h.update(b"\0")
     for f in _shared_fingerprint_files():
-        rel = f.relative_to(REPO_ROOT).as_posix()
-        h.update(rel.encode("utf-8"))
+        try:
+            label = f.relative_to(REPO_ROOT).as_posix()
+        except ValueError:
+            label = f.name
+        h.update(label.encode("utf-8"))
         h.update(b"\0")
         h.update(f.read_bytes())
         h.update(b"\0")

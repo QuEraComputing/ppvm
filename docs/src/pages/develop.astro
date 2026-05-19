@@ -246,6 +246,123 @@ npm run build          # extract everything, then `astro build` → dist/</code>
       <code>src/generated/notebooks/index.json</code>.
     </p>
 
+    <h3 id="notebook-pipeline">2.1 Notebook execution &amp; caching</h3>
+
+    <p>
+      The script behind <code>npm run extract:notebooks</code> lives at
+      <code><a href="https://github.com/QuEraComputing/ppvm/blob/main/docs/scripts/build-notebooks.py">docs/scripts/build-notebooks.py</a></code>.
+      Per-notebook pipeline:
+    </p>
+
+    <ol>
+      <li>
+        Read the Jupytext <code>percent</code>-format <code>.py</code> file
+        and convert to an in-memory <code>ipynb</code>.
+      </li>
+      <li>
+        Prepend a hidden setup cell that switches matplotlib to the
+        IPython <code>inline</code> backend — without this, <code>plt.show()</code>
+        renders to a buffer that never reaches the cell output and plots
+        are silently dropped.
+      </li>
+      <li>
+        Execute every code cell via <code>nbclient</code>. Text output,
+        tracebacks, and matplotlib figures are captured inline; figures
+        are embedded as base64 PNGs.
+      </li>
+      <li>
+        Drop the hidden setup cell, render to an HTML fragment via
+        <code>nbconvert</code>'s <code>basic</code> template (no
+        JupyterLab chrome — the site stylesheet themes the
+        <code>.jp-*</code> classes), and sanitise through
+        <code>bleach</code> against an allow-list that permits
+        <code>data:image/png</code> URLs but strips scripts and
+        iframes.
+      </li>
+      <li>
+        Write <code>docs/src/generated/notebooks/&lt;slug&gt;.html</code> +
+        <code>&lt;slug&gt;.json</code> (title, ordered headings,
+        language, source path). The Astro routes at
+        <code>docs/src/pages/examples/index.astro</code> and
+        <code>[slug].astro</code> consume <code>index.json</code> +
+        the per-slug fragments at build time.
+      </li>
+    </ol>
+
+    <p>
+      <strong>Content-addressed cache.</strong> Executing every notebook
+      from scratch on every PR is expensive — the long-running examples
+      can dominate CI. To avoid that, every successful run also writes
+      its output to <code>docs/.notebook-cache/&lt;hash&gt;.&lbrace;html,json&rbrace;</code>,
+      keyed by
+    </p>
+
+    <pre><code class="language-text">sha256(notebook source + Cargo.lock + Cargo.toml + crates/*/Cargo.toml + ppvm-python/uv.lock)</code></pre>
+
+    <p>
+      On the next run the script restores from the cache when the hash
+      matches and only re-executes notebooks whose fingerprint
+      changed. CI persists the directory via <code>actions/cache</code>
+      keyed on the same set of files (see the "Restore executed-notebook
+      cache" step in
+      <code><a href="https://github.com/QuEraComputing/ppvm/blob/main/.github/workflows/docs.yml">.github/workflows/docs.yml</a></code>),
+      so a docs-only PR that touches only <code>.astro</code> or
+      <code>.css</code> hits the cache for every notebook and the
+      build takes seconds.
+    </p>
+
+    <p>
+      <strong>What the fingerprint deliberately does <em>not</em>
+      include</strong>: Rust <code>.rs</code> sources and Python
+      package sources. Hashing every workspace file would force a
+      re-execution on any cosmetic edit, which is exactly the cost we
+      want to avoid. The tradeoff is that a numerical change inside a
+      Rust crate without a dependency or Cargo.toml bump won't
+      invalidate cached notebook outputs on a docs-only PR — rely on
+      the standard test suites (<code>cargo test --workspace</code>,
+      <code>pytest</code>) plus the nightly full-rebuild to catch
+      those.
+    </p>
+
+    <p>
+      Override knobs (mostly for debugging):
+    </p>
+
+    <ul>
+      <li>
+        <code>PPVM_NOTEBOOK_CACHE=0</code> — force re-execution of every
+        notebook regardless of cache state (use when investigating
+        suspected numerical drift).
+      </li>
+      <li>
+        <code>PPVM_NOTEBOOK_CACHE_DIR=&lt;path&gt;</code> — point the
+        cache at a non-default directory (CI uses this implicitly via
+        the default <code>docs/.notebook-cache</code>; tweak only if
+        you need to share a cache across worktrees).
+      </li>
+    </ul>
+
+    <p>
+      <strong>Where to look when you need to change this.</strong>
+      Adding a new notebook: drop a Jupytext file under
+      <code>docs/notebooks/</code> — no extractor change needed.
+      Changing how notebooks render (sanitiser allow-list, matplotlib
+      DPI, output format): <code>docs/scripts/build-notebooks.py</code>.
+      Changing the fingerprint inputs (e.g. another lockfile becomes
+      relevant): edit <code>_shared_fingerprint_files()</code> in that
+      same script <em>and</em> the <code>hashFiles(...)</code> argument
+      on the cache step in
+      <code>.github/workflows/docs.yml</code> — those two lists must
+      stay in sync, otherwise the GH Actions cache key drifts from the
+      script's per-notebook key and you get either stale outputs or
+      perpetual misses. Bump the <code>notebooks-v1-</code> prefix in
+      the workflow to force-invalidate every cache entry if the
+      schema of cached artefacts changes incompatibly. Changing the
+      Examples landing or per-notebook page chrome: the two
+      <code>.astro</code> files under
+      <code>docs/src/pages/examples/</code>.
+    </p>
+
     <p>
       Local prerequisites the scripts assume: <code>node ≥ 20</code>
       (Astro 5), <code>uv</code>, Rust nightly

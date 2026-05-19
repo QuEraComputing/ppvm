@@ -45,6 +45,20 @@ If you are an AI agent picking up a task in this repository:
      Per-step commands and the `astro:dev` / `astro:build` escape
      hatches are documented under `§ 2 → "This docs site"` in the
      Developer Guide and in [`docs/README.md`](docs/README.md).
+   - **Docs notebooks (`docs/notebooks/*.py`)**: executed at build time
+     by [`docs/scripts/build-notebooks.py`](docs/scripts/build-notebooks.py)
+     and embedded into `/examples/<slug>`. Outputs are content-addressed
+     cached under `docs/.notebook-cache/`, fingerprinted by notebook
+     source + every `Cargo.toml` + `Cargo.lock` + `ppvm-python/uv.lock`.
+     CI persists this via `actions/cache` (see the "Restore
+     executed-notebook cache" step in
+     [`.github/workflows/docs.yml`](.github/workflows/docs.yml)).
+     **If you change the fingerprint inputs**, update both
+     `_shared_fingerprint_files()` in the script *and* the
+     `hashFiles(...)` call in the workflow — they must stay in sync.
+     Force a clean re-execution with `PPVM_NOTEBOOK_CACHE=0`. Full
+     rationale lives under `§ 2.1 Notebook execution & caching` in the
+     Developer Guide.
 5. Respect the `Config`-trait generics in `ppvm-runtime`; do not introduce
    runtime dispatch where a compile-time bound suffices.
 6. Pauli propagation runs **backwards** (Heisenberg picture). Reverse the

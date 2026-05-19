@@ -33,6 +33,11 @@ pub trait SparseVector<T, I>: Clone + IntoIterator<Item = (T, I)> {
     /// Reserve capacity for at least `additional` more entries. Backings
     /// that don't support pre-allocation can leave this as a no-op.
     fn reserve(&mut self, _additional: usize) {}
+    /// Borrow the stored entries as an iterator without consuming the vector.
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a (T, I)>
+    where
+        T: 'a,
+        I: 'a;
 }
 
 impl<T, I> SparseVector<T, I> for Vec<(T, I)>
@@ -109,6 +114,14 @@ where
 
     fn reserve(&mut self, additional: usize) {
         Vec::reserve(self, additional);
+    }
+
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a (T, I)>
+    where
+        T: 'a,
+        I: 'a,
+    {
+        <[(T, I)]>::iter(self)
     }
 
     fn normalize(&mut self) {

@@ -21,6 +21,11 @@ pub struct GeneralizedTableauSum<
 > {
     pub n_qubits: usize,
     pub(crate) entries: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
+    /// Per-entry cached fingerprint, parallel to `entries`. `None` means
+    /// the slot's fingerprint must be recomputed (e.g. after a Clifford
+    /// gate mutated every tableau). Maintained in lockstep with
+    /// `entries` by every method that pushes/removes/reorders entries.
+    pub(crate) entry_fingerprints: Vec<Option<u64>>,
     pub(crate) rng: SmallRng,
     pub(crate) sum_cutoff: T::Coeff,
 }
@@ -42,6 +47,7 @@ where
         Self {
             n_qubits: n_qubits,
             entries: [(g_tab, T::Coeff::one())].to_vec(),
+            entry_fingerprints: vec![None],
             rng: rng,
             sum_cutoff: sum_cutoff,
         }
@@ -60,6 +66,7 @@ where
         Self {
             n_qubits: n_qubits,
             entries: [(g_tab, T::Coeff::one())].to_vec(),
+            entry_fingerprints: vec![None],
             rng: rng,
             sum_cutoff: sum_cutoff,
         }
@@ -74,12 +81,20 @@ where
         branches: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
     ) {
         // Build a fingerprint index over the current entries so each branch
-        // lookup is O(1) expected instead of O(M) linear scan. Push-only
-        // mutations during the batch let us maintain the index incrementally.
+        // lookup is O(1) expected instead of O(M) linear scan. Per-entry
+        // fingerprints are cached on `self.entry_fingerprints` and reused
+        // across consecutive noise calls; Clifford/T gates clear the cache.
         let mut fp_index: FxHashMap<u64, Vec<usize>> =
             FxHashMap::with_capacity_and_hasher(self.entries.len(), Default::default());
-        for (i, (entry_tab, _)) in self.entries.iter().enumerate() {
-            let fp = Self::fingerprint(entry_tab);
+        for i in 0..self.entries.len() {
+            let fp = match self.entry_fingerprints[i] {
+                Some(fp) => fp,
+                None => {
+                    let fp = Self::fingerprint(&self.entries[i].0);
+                    self.entry_fingerprints[i] = Some(fp);
+                    fp
+                }
+            };
             fp_index.entry(fp).or_default().push(i);
         }
 
@@ -99,6 +114,9 @@ where
         p: T::Coeff,
         fp_index: &mut FxHashMap<u64, Vec<usize>>,
     ) -> bool {
+        // New branches always come from a freshly-mutated fork (X/Y/Z or
+        // is_lost flip applied just before this call), so their cached
+        // fingerprint would always be stale — compute fresh.
         let fp = Self::fingerprint(&tab);
 
         // Only run the full equality check on entries whose fingerprint matches.
@@ -123,6 +141,7 @@ where
                 if p > self.sum_cutoff {
                     let new_idx = self.entries.len();
                     self.entries.push((tab, p));
+                    self.entry_fingerprints.push(Some(fp));
                     fp_index.entry(fp).or_default().push(new_idx);
                 } else {
                     needs_normalize = true;
@@ -145,7 +164,19 @@ where
 
     pub fn truncate(&mut self) {
         let length_before_truncation = self.entries.len();
-        self.entries.retain(|entry| entry.1 > self.sum_cutoff);
+        let cutoff = self.sum_cutoff.clone();
+        // Filter both vectors in lockstep so `entry_fingerprints` stays
+        // aligned with `entries` after retain shifts indices.
+        let mut i = 0;
+        self.entries.retain(|entry| {
+            let keep = entry.1 > cutoff;
+            if !keep {
+                self.entry_fingerprints.remove(i);
+            } else {
+                i += 1;
+            }
+            keep
+        });
         if self.entries.len() < length_before_truncation {
             self.normalize_probabilities();
         }
@@ -183,8 +214,8 @@ where
         // Build a HashMap over tab1's coefficients so each tab0 lookup is O(1).
         let mut tab1_map: FxHashMap<I, Complex<T::Coeff>> =
             FxHashMap::with_capacity_and_hasher(tab1.coefficients.len(), Default::default());
-        for (val, idx) in tab1.coefficients.clone().into_iter() {
-            tab1_map.insert(idx, val);
+        for (val, idx) in tab1.coefficients.iter() {
+            tab1_map.insert(*idx, *val);
         }
 
         let threshold_sq = tab0.coefficient_threshold.clone() * tab0.coefficient_threshold.clone();
@@ -192,9 +223,9 @@ where
             re: T::Coeff::zero(),
             im: T::Coeff::zero(),
         };
-        for (val0, idx0) in tab0.coefficients.clone().into_iter() {
-            let val1 = tab1_map.get(&idx0).copied().unwrap_or(zero);
-            if (val0 - val1).norm_sqr() >= threshold_sq {
+        for (val0, idx0) in tab0.coefficients.iter() {
+            let val1 = tab1_map.get(idx0).copied().unwrap_or(zero);
+            if (*val0 - val1).norm_sqr() >= threshold_sq {
                 return false;
             }
         }
@@ -203,6 +234,10 @@ where
     }
 
     pub fn sampler(&mut self) -> Sampler<T, I, C> {
+        // Sorting reorders entries; drop the parallel fingerprint cache
+        // rather than permuting it (cheaper, and the sampler doesn't read
+        // it). Subsequent noise ops on this sum would just recompute.
+        self.entry_fingerprints.iter_mut().for_each(|fp| *fp = None);
         self.entries
             .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -276,6 +311,7 @@ mod tests {
         let mut tab = make(2);
         let cloned = tab.entries[0].0.clone();
         tab.entries.push((cloned, 3.0));
+        tab.entry_fingerprints.push(None);
         tab.normalize_probabilities();
         assert!((sum_of_probabilities(&tab) - 1.0).abs() < 1e-12);
         assert!((tab.entries[0].1 - 0.25).abs() < 1e-12);
@@ -288,6 +324,7 @@ mod tests {
         let mut tab: TestSum = GeneralizedTableauSum::new_with_seed(2, 1e-12, 0.1, 42);
         let cloned = tab.entries[0].0.clone();
         tab.entries.push((cloned, 0.05));
+        tab.entry_fingerprints.push(None);
         tab.normalize_probabilities();
         // entries are now ~ (0.952, 0.048); 0.048 is below the 0.1 cutoff
         tab.truncate();

@@ -22,7 +22,7 @@ uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
 ppvm-runtime = { git = "https://github.com/QuEraComputing/ppvm" }
 ```
 
-## Example
+## Examples
 
 Pauli propagation runs **backwards** (Heisenberg picture): write gates in reverse order.
 
@@ -37,7 +37,22 @@ print(state)                    # 1.000 * IZ
 print(state.overlap_with_zero())
 ```
 
-See the [documentation](https://congenial-bassoon-l436wp3.pages.github.io/) for the Rust API, the generalized stabilizer tableau, Stim integration, and symbolic propagation.
+The generalized stabilizer tableau is itself a form of Pauli propagation — it
+tracks stabilizer generators under Heisenberg evolution, extended to handle
+non-Clifford gates and measurements:
+
+```python
+from ppvm import GeneralizedTableau
+
+tab = GeneralizedTableau(n_qubits=2)
+tab.h(0)
+tab.cnot(0, 1)
+
+r0, r1 = tab.measure(0), tab.measure(1)
+print(f"Qubit 0: {r0}, Qubit 1: {r1}")  # always correlated
+```
+
+See the [documentation](https://congenial-bassoon-l436wp3.pages.github.io/) for the Rust API, Stim integration, and symbolic propagation.
 
 ## License & contributing
 

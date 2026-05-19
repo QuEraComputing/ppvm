@@ -40,6 +40,14 @@ where
         inst: CircuitInstruction,
         msg: CircuitMessage,
     ) -> Result<Effects<MeasurementEffect>> {
+        self.execute_instruction(inst, msg)
+    }
+
+    fn execute_instruction(
+        &mut self,
+        inst: CircuitInstruction,
+        msg: CircuitMessage,
+    ) -> Result<Effects<MeasurementEffect>> {
         use CircuitInstruction::*;
         use CircuitMessage::*;
 
@@ -194,7 +202,7 @@ where
     }
 
     // #[derive(observe)]
-    // fn foo(&mut self, effect: Effect) {
+    // fn observe_circuit_instruction(&mut self, effect: Effect) {
     //     match (effect.msg, effect.inst) {
     //         (CircuitInstruction, _) => self._execute(inst, msg, ctx),
     //     }

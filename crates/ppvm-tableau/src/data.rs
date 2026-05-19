@@ -653,6 +653,9 @@ where
         };
         coefficients.unsafe_insert(I::zero(), complex_one);
         self.coefficients = coefficients;
+        for l in self.is_lost.iter_mut() {
+            *l &= false;
+        }
     }
 
     /// Clone the quantum state but reinitialize the RNG, producing an independent simulation

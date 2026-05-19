@@ -1159,6 +1159,7 @@ name = "ppvm-vihaco"
 version = "0.1.0"
 dependencies = [
  "bitvec",
+ "bnum",
  "chumsky 0.10.1",
  "eyre",
  "num",

@@ -827,7 +827,18 @@ where
         }
         mask
     }
+}
 
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
+where
+    T::Coeff: One + Zero + Clone + Send + Sync + num::Num + PartialOrd,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + std::ops::AddAssign
+        + From<Complex64>
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Send + Sync,
+{
     pub(crate) fn branch_with_coefficients(
         &mut self,
         addr0: usize,
@@ -886,13 +897,9 @@ where
             branch_factor,
         );
 
-        let cutoff = Complex {
-            re: self.coefficient_threshold.clone(),
-            im: T::Coeff::zero(),
-        }
-        .abs();
+        let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
         for (idx, coeff) in new_coefficients {
-            if coeff.abs() > cutoff {
+            if coeff.norm_sqr() > cutoff_sq {
                 self.coefficients.unsafe_insert(idx, coeff);
             }
         }
@@ -947,14 +954,9 @@ where
             phase_decomp,
         );
 
-        let cutoff = Complex {
-            re: self.coefficient_threshold.clone(),
-            im: T::Coeff::zero(),
-        }
-        .abs();
-
+        let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
         for (idx, coeff) in new_coefficients {
-            if coeff.abs() > cutoff {
+            if coeff.norm_sqr() > cutoff_sq {
                 coefficients.unsafe_insert(idx, coeff);
             }
         }

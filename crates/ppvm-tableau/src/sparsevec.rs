@@ -93,7 +93,14 @@ where
 
     fn trim(&mut self, cutoff: T) {
         // TODO: make cutoff real
-        self.retain(|(element, _)| element.abs() > cutoff.abs());
+        let c_re = cutoff.re();
+        let c_im = cutoff.im();
+        let cutoff_sq = c_re * c_re + c_im * c_im;
+        self.retain(|(element, _)| {
+            let e_re = element.re();
+            let e_im = element.im();
+            e_re * e_re + e_im * e_im > cutoff_sq
+        });
     }
 
     fn retain(&mut self, f: impl FnMut(&(T, I)) -> bool) {

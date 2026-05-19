@@ -144,12 +144,24 @@ fn main() {
     let fork_median = median(fork_times);
 
     let measure_only_median = shot_median.saturating_sub(fork_median);
-    println!("per-shot (fork + measure_all) median over {n_runs} runs: {:?}", shot_median);
-    println!("    fork only:           {:?}  ({:5.1}%)", fork_median,
-        100.0 * fork_median.as_secs_f64() / shot_median.as_secs_f64());
-    println!("    measure_all only:    {:?}  ({:5.1}%)", measure_only_median,
-        100.0 * measure_only_median.as_secs_f64() / shot_median.as_secs_f64());
-    println!("    avg per qubit (measure_all): {:?}", measure_only_median / n as u32);
+    println!(
+        "per-shot (fork + measure_all) median over {n_runs} runs: {:?}",
+        shot_median
+    );
+    println!(
+        "    fork only:           {:?}  ({:5.1}%)",
+        fork_median,
+        100.0 * fork_median.as_secs_f64() / shot_median.as_secs_f64()
+    );
+    println!(
+        "    measure_all only:    {:?}  ({:5.1}%)",
+        measure_only_median,
+        100.0 * measure_only_median.as_secs_f64() / shot_median.as_secs_f64()
+    );
+    println!(
+        "    avg per qubit (measure_all): {:?}",
+        measure_only_median / n as u32
+    );
     println!();
 
     // ---- Per-qubit breakdown ----
@@ -165,8 +177,7 @@ fn main() {
             per_qubit_runs[q].push(start.elapsed());
         }
     }
-    let per_qubit_medians: Vec<Duration> =
-        per_qubit_runs.into_iter().map(median).collect();
+    let per_qubit_medians: Vec<Duration> = per_qubit_runs.into_iter().map(median).collect();
 
     // Bucket by speed to surface the bimodal distribution.
     let mut sorted = per_qubit_medians.clone();
@@ -188,12 +199,8 @@ fn main() {
     // path; case-a is the expensive path with HashMap + tableau row updates.
     // Use 2× the minimum as a heuristic cutoff.
     let cutoff = pmin * 2;
-    let cheap: Vec<usize> = (0..n)
-        .filter(|&q| per_qubit_medians[q] <= cutoff)
-        .collect();
-    let expensive: Vec<usize> = (0..n)
-        .filter(|&q| per_qubit_medians[q] > cutoff)
-        .collect();
+    let cheap: Vec<usize> = (0..n).filter(|&q| per_qubit_medians[q] <= cutoff).collect();
+    let expensive: Vec<usize> = (0..n).filter(|&q| per_qubit_medians[q] > cutoff).collect();
 
     let cheap_total: Duration = cheap.iter().map(|&q| per_qubit_medians[q]).sum();
     let expensive_total: Duration = expensive.iter().map(|&q| per_qubit_medians[q]).sum();

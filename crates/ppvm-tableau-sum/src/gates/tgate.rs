@@ -16,7 +16,7 @@ where
     T: Config,
     <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: SparseVector<Complex<T::Coeff>, I>,
-    T::Coeff: One + Zero + Clone + Send + Sync + num::Num,
+    T::Coeff: One + Zero + Clone + Send + Sync + num::Num + PartialOrd,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
         + From<Complex64>

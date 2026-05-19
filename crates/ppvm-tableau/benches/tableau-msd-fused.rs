@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_tableau::prelude::*;
+use ppvm_tableau::{measure_all::LossyMeasureAll, prelude::*};
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
 
@@ -69,8 +69,9 @@ fn msd_func_fused<const MEASURE: bool>() -> (String, Tab) {
     }
 
     if MEASURE {
-        let bit_string: String = (0..n_qubits)
-            .map(|i| tab.measure(i))
+        let bit_string: String = tab
+            .measure_all()
+            .into_iter()
             .map(|outcome| if outcome.unwrap() { '1' } else { '0' })
             .collect();
         (bit_string, tab)

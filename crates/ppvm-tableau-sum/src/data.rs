@@ -131,6 +131,18 @@ where
             return false;
         }
 
+        if tab0.coefficients.len() != tab1.coefficients.len() {
+            return false;
+        }
+
+        let threshold_sq = tab0.coefficient_threshold.clone() * tab0.coefficient_threshold.clone();
+        for (val0, idx0) in tab0.coefficients.clone().into_iter() {
+            let val1 = tab1.coefficients.get(&idx0);
+            if (val0 - val1).norm_sqr() >= threshold_sq {
+                return false;
+            }
+        }
+
         for (row0, row1) in tab0.tableau.data.iter().zip(tab1.tableau.data.iter()) {
             if row0.phase != row1.phase || row0.word != row1.word {
                 return false;
@@ -327,7 +339,11 @@ mod tests {
         // so we expect >= 2 entries and total probability == 1.
         let mut tab = make(2);
         tab.depolarize(0, 0.6);
-        assert!(tab.len() > 1, "depolarize should create branches, got len={}", tab.len());
+        assert!(
+            tab.len() > 1,
+            "depolarize should create branches, got len={}",
+            tab.len()
+        );
         assert!((sum_of_probabilities(&tab) - 1.0).abs() < 1e-12);
     }
 

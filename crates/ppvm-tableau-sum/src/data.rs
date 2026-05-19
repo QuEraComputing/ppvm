@@ -1,3 +1,6 @@
+use std::hash::{Hash, Hasher};
+
+use fxhash::{FxHashMap, FxHasher};
 use num::{
     One, Zero,
     complex::{Complex, Complex64, ComplexFloat},
@@ -70,9 +73,19 @@ where
         &mut self,
         branches: &Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
     ) {
+        // Build a fingerprint index over the current entries so each branch
+        // lookup is O(1) expected instead of O(M) linear scan. Push-only
+        // mutations during the batch let us maintain the index incrementally.
+        let mut fp_index: FxHashMap<u64, Vec<usize>> =
+            FxHashMap::with_capacity_and_hasher(self.entries.len(), Default::default());
+        for (i, (entry_tab, _)) in self.entries.iter().enumerate() {
+            let fp = Self::fingerprint(entry_tab);
+            fp_index.entry(fp).or_default().push(i);
+        }
+
         let mut needs_renormalize = false;
         for branch in branches.iter() {
-            let dropped_any = self.insert_or_update(&branch.0, &branch.1);
+            let dropped_any = self.insert_or_update(&branch.0, &branch.1, &mut fp_index);
             needs_renormalize |= dropped_any;
         }
         if needs_renormalize {
@@ -80,13 +93,27 @@ where
         }
     }
 
-    fn insert_or_update(&mut self, tab: &GeneralizedTableau<T, I, C>, p: &T::Coeff) -> bool {
-        let idx = self
-            .entries
-            .iter()
-            .position(|entry| Self::unsafe_equal_tableau_data_and_is_lost(&entry.0, &tab));
+    fn insert_or_update(
+        &mut self,
+        tab: &GeneralizedTableau<T, I, C>,
+        p: &T::Coeff,
+        fp_index: &mut FxHashMap<u64, Vec<usize>>,
+    ) -> bool {
+        let fp = Self::fingerprint(tab);
+
+        // Only run the full equality check on entries whose fingerprint matches.
+        let mut found: Option<usize> = None;
+        if let Some(candidates) = fp_index.get(&fp) {
+            for &i in candidates {
+                if Self::unsafe_equal_tableau_data_and_is_lost(&self.entries[i].0, tab) {
+                    found = Some(i);
+                    break;
+                }
+            }
+        }
+
         let mut needs_normalize = false;
-        match idx {
+        match found {
             Some(i) => {
                 let p0 = &self.entries[i].1;
                 self.entries[i].1 = p0.clone() + p.clone();
@@ -95,7 +122,9 @@ where
             // TODO: avoid cloning here
             None => {
                 if p > &self.sum_cutoff {
+                    let new_idx = self.entries.len();
                     self.entries.push((tab.clone(), p.clone()));
+                    fp_index.entry(fp).or_default().push(new_idx);
                 } else {
                     needs_normalize = true;
                 }
@@ -103,6 +132,16 @@ where
         }
 
         needs_normalize
+    }
+
+    fn fingerprint(tab: &GeneralizedTableau<T, I, C>) -> u64 {
+        let mut hasher = FxHasher::default();
+        tab.is_lost.hash(&mut hasher);
+        for row in tab.tableau.data.iter() {
+            row.phase.hash(&mut hasher);
+            row.word.hash(&mut hasher);
+        }
+        hasher.finish()
     }
 
     pub fn truncate(&mut self) {
@@ -135,16 +174,28 @@ where
             return false;
         }
 
-        let threshold_sq = tab0.coefficient_threshold.clone() * tab0.coefficient_threshold.clone();
-        for (val0, idx0) in tab0.coefficients.clone().into_iter() {
-            let val1 = tab1.coefficients.get(&idx0);
-            if (val0 - val1).norm_sqr() >= threshold_sq {
+        // Cheaper row comparison first; coefficient compare is O(K) below.
+        for (row0, row1) in tab0.tableau.data.iter().zip(tab1.tableau.data.iter()) {
+            if row0.phase != row1.phase || row0.word != row1.word {
                 return false;
             }
         }
 
-        for (row0, row1) in tab0.tableau.data.iter().zip(tab1.tableau.data.iter()) {
-            if row0.phase != row1.phase || row0.word != row1.word {
+        // Build a HashMap over tab1's coefficients so each tab0 lookup is O(1).
+        let mut tab1_map: FxHashMap<I, Complex<T::Coeff>> =
+            FxHashMap::with_capacity_and_hasher(tab1.coefficients.len(), Default::default());
+        for (val, idx) in tab1.coefficients.clone().into_iter() {
+            tab1_map.insert(idx, val);
+        }
+
+        let threshold_sq = tab0.coefficient_threshold.clone() * tab0.coefficient_threshold.clone();
+        let zero = Complex {
+            re: T::Coeff::zero(),
+            im: T::Coeff::zero(),
+        };
+        for (val0, idx0) in tab0.coefficients.clone().into_iter() {
+            let val1 = tab1_map.get(&idx0).copied().unwrap_or(zero);
+            if (val0 - val1).norm_sqr() >= threshold_sq {
                 return false;
             }
         }

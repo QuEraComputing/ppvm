@@ -996,6 +996,7 @@ version = "0.1.0"
 dependencies = [
  "bitvec",
  "criterion 0.8.2",
+ "fxhash",
  "num",
  "ppvm-runtime",
  "ppvm-tableau",

@@ -91,7 +91,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: docs/.notebook-cache
-          key: notebooks-v1-${{ hashFiles('docs/notebooks/**/*.py', 'Cargo.lock', 'Cargo.toml', 'crates/*/Cargo.toml', 'ppvm-python/uv.lock') }}
+          key: notebooks-v1-${{ hashFiles('docs/notebooks/**/*.py', 'docs/scripts/build-notebooks.py', 'Cargo.lock', 'Cargo.toml', 'crates/*/Cargo.toml', 'ppvm-python/uv.lock') }}
           restore-keys: |
             notebooks-v1-
 

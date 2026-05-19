@@ -375,4 +375,4 @@ plt.show()
 
 # %% [markdown]
 #
-# While small dt value improve accuracy for larger $\gamma$, this is not true for smaller ones - this is because we kept the truncation error fixed and at small time step, more truncations happen which dominate at small $\gamma$. We therefore recommend the following convergence procedure: fix $\delta t$, converge with respect to truncation. Then decrease $\delta t$ and repeat until time-step error negligible.
+# While smaller dt values improve accuracy for larger $\gamma$, this is not true for smaller ones - this is because we kept the truncation error fixed and at small time step, more truncations happen which dominate at small $\gamma$. We therefore recommend the following convergence procedure: fix $\delta t$, converge with respect to truncation. Then decrease $\delta t$ and repeat until time-step error negligible.

@@ -6,7 +6,7 @@ use num::{
     complex::{Complex64, ComplexFloat},
 };
 use ppvm_runtime::config::Config;
-use ppvm_tableau::measure_all::LossyMeasureAll;
+use ppvm_tableau::measure::MeasureScratch;
 use ppvm_tableau::{sparsevec::SparseVector, tableau_index::TableauIndex};
 use rand::RngExt;
 
@@ -15,6 +15,10 @@ use crate::data::GeneralizedTableauSum;
 pub struct Sampler<T: Config, I, C: SparseVector<Complex<T::Coeff>, I> = Vec<(Complex64, I)>> {
     pub(crate) p_cumulative: Vec<T::Coeff>,
     pub generalized_tableau_sum: GeneralizedTableauSum<T, I, C>,
+    /// Per-thread scratch buffers reused across all shots taken on this
+    /// sampler. Keeps the case-a HashMap and b_entries Vec allocations off
+    /// the per-shot critical path.
+    pub(crate) scratch: MeasureScratch<I, T::Coeff>,
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> Sampler<T, I, C>
@@ -50,7 +54,7 @@ where
                 let mut tab = self.generalized_tableau_sum.entries[i]
                     .0
                     .fork(Some(tab_seed));
-                return tab.measure_all();
+                tab.measure_all_with_scratch(&mut self.scratch)
             }
             None => unreachable!("GeneralizedTableauSum normalization error!"),
         }

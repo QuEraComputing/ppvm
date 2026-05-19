@@ -30,6 +30,9 @@ pub trait SparseVector<T, I>: Clone + IntoIterator<Item = (T, I)> {
     fn retain(&mut self, f: impl FnMut(&(T, I)) -> bool);
     /// L2-normalize the vector in place. Panics on zero norm.
     fn normalize(&mut self);
+    /// Reserve capacity for at least `additional` more entries. Backings
+    /// that don't support pre-allocation can leave this as a no-op.
+    fn reserve(&mut self, _additional: usize) {}
 }
 
 impl<T, I> SparseVector<T, I> for Vec<(T, I)>
@@ -97,10 +100,18 @@ where
         Vec::retain(self, f);
     }
 
+    fn reserve(&mut self, additional: usize) {
+        Vec::reserve(self, additional);
+    }
+
     fn normalize(&mut self) {
-        let norm: T::Real = self
-            .iter()
-            .fold(T::Real::zero(), |acc, (v, _)| acc + v.abs() * v.abs());
+        // `re*re + im*im` directly; `abs() * abs()` would compute
+        // `hypot(re, im)` (a sqrt) only to immediately square it again.
+        let norm: T::Real = self.iter().fold(T::Real::zero(), |acc, (v, _)| {
+            let re = v.re();
+            let im = v.im();
+            acc + re * re + im * im
+        });
 
         if norm == T::Real::zero() {
             panic!("Zero norm encountered during normalization");

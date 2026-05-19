@@ -154,6 +154,7 @@ where
         Sampler {
             p_cumulative: p_cum,
             generalized_tableau_sum: self.clone(),
+            scratch: ppvm_tableau::measure::MeasureScratch::new(),
         }
     }
 }

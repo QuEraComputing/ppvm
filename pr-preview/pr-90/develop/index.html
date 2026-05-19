@@ -126,7 +126,17 @@ Write <code>docs/src/generated/notebooks/&lt;slug&gt;.html</code> +
       can dominate CI. To avoid that, every successful run also writes
       its output to <code>docs/.notebook-cache/&lt;hash&gt;.&lbrace;html,json&rbrace;</code>,
       keyed by
-</p> <pre><code class="language-text">sha256(notebook source + Cargo.lock + Cargo.toml + crates/*/Cargo.toml + ppvm-python/uv.lock)</code></pre> <p>
+</p> <pre><code class="language-text">sha256(CACHE_SCHEMA_VERSION + docs/scripts/build-notebooks.py + notebook source + Cargo.lock + Cargo.toml + crates/*/Cargo.toml + ppvm-python/uv.lock)</code></pre> <p>
+Hashing the extractor itself means that a change to the
+      rendering / sanitiser / matplotlib-setup logic invalidates
+      every cached entry automatically — without that, a tweak to the
+      bleach allow-list would silently keep serving the previous
+      HTML for every unchanged notebook source. The
+<code>CACHE_SCHEMA_VERSION</code> constant at the top of the
+      script is an explicit global invalidation knob for changes the
+      hash can't see (e.g. a new field in the sidecar JSON that
+      downstream Astro pages start depending on).
+</p> <p>
 On the next run the script restores from the cache when the hash
       matches and only re-executes notebooks whose fingerprint
       changed. CI persists the directory via <code>actions/cache</code>
@@ -144,8 +154,11 @@ include</strong>: Rust <code>.rs</code> sources and Python
       Rust crate without a dependency or Cargo.toml bump won't
       invalidate cached notebook outputs on a docs-only PR — rely on
       the standard test suites (<code>cargo test --workspace</code>,
-<code>pytest</code>) plus the nightly full-rebuild to catch
-      those.
+<code>pytest</code>) to catch those. (A scheduled full-rebuild
+      workflow as a second safety net would be a reasonable future
+      addition, but none exists today; bump
+<code>CACHE_SCHEMA_VERSION</code> manually if you ever need to
+      force a global re-execution.)
 </p> <p>
 Override knobs (mostly for debugging):
 </p> <ul> <li> <code>PPVM_NOTEBOOK_CACHE=0</code> — force re-execution of every
@@ -159,17 +172,23 @@ Override knobs (mostly for debugging):
 Adding a new notebook: drop a Jupytext file under
 <code>docs/notebooks/</code> — no extractor change needed.
       Changing how notebooks render (sanitiser allow-list, matplotlib
-      DPI, output format): <code>docs/scripts/build-notebooks.py</code>.
-      Changing the fingerprint inputs (e.g. another lockfile becomes
-      relevant): edit <code>_shared_fingerprint_files()</code> in that
-      same script <em>and</em> the <code>hashFiles(...)</code> argument
-      on the cache step in
-<code>.github/workflows/docs.yml</code> — those two lists must
-      stay in sync, otherwise the GH Actions cache key drifts from the
+      DPI, output format): <code>docs/scripts/build-notebooks.py</code>
+— every edit to this file already invalidates the cache via the
+      fingerprint, so no version bump is needed for routine pipeline
+      tweaks. Changing the fingerprint <em>inputs</em> (e.g. another
+      lockfile becomes relevant): edit
+<code>_shared_fingerprint_files()</code> in that same script
+<em>and</em> the <code>hashFiles(...)</code> argument on the
+      cache step in <code>.github/workflows/docs.yml</code> — those
+      two lists must stay in sync (note that
+<code>docs/scripts/build-notebooks.py</code> itself appears in
+      both), otherwise the GH Actions cache key drifts from the
       script's per-notebook key and you get either stale outputs or
-      perpetual misses. Bump the <code>notebooks-v1-</code> prefix in
-      the workflow to force-invalidate every cache entry if the
-      schema of cached artefacts changes incompatibly. Changing the
+      perpetual misses. To force a global invalidation independent of
+      file content (e.g. cached-artefact schema change), bump
+<code>CACHE_SCHEMA_VERSION</code> in the script; bump the
+<code>notebooks-v1-</code> prefix in the workflow when the GH
+      Actions cache itself needs a clean slate. Changing the
       Examples landing or per-notebook page chrome: the two
 <code>.astro</code> files under
 <code>docs/src/pages/examples/</code>.

@@ -1,0 +1,57 @@
+---
+/**
+ * Render a Python example file as a code block.
+ *
+ * The same file is executed by pytest in docs/examples/test_examples.py,
+ * so the snippet on the page is guaranteed to be the snippet that's tested.
+ *
+ * Pass the raw file content from a `?raw` Vite import:
+ *
+ *   import code from "../../examples/paulisum_ghz.py?raw";
+ *   <ExampleBlock code={code} file="paulisum_ghz.py" />
+ */
+
+interface Props {
+  code: string;
+  file?: string;
+  /** Strip the leading triple-quoted module docstring before rendering. */
+  stripDocstring?: boolean;
+}
+
+const { code, file, stripDocstring = true } = Astro.props;
+
+function strip(src: string): string {
+  let s = src.replace(/^\s+/, "");
+  // Match triple-quoted docstring at the top of the file (single or double).
+  const m = /^(?:"""|''')[\s\S]*?(?:"""|''')\s*\n/.exec(s);
+  if (m) s = s.slice(m[0].length);
+  return s.trimEnd() + "\n";
+}
+
+const displayed = stripDocstring ? strip(code) : code;
+
+// Infer the highlight.js language hint from the file extension so the
+// site's syntax theme can paint the right tokens.
+function detectLang(name: string | undefined): string | null {
+  if (!name) return null;
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  return {
+    py: "python",
+    rs: "rust",
+    toml: "toml",
+    sh: "bash",
+    bash: "bash",
+  }[ext] ?? null;
+}
+const lang = detectLang(file);
+const codeClass = lang ? `language-${lang}` : "";
+---
+<figure class="example">
+  {file && (
+    <figcaption class="example-caption">
+      <span class="example-file"><code>{file}</code></span>
+      <span class="example-tested" title="Executed by docs/examples/test_examples.py">tested</span>
+    </figcaption>
+  )}
+  <pre><code class={codeClass}>{displayed}</code></pre>
+</figure>

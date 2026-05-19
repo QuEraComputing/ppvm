@@ -6,11 +6,11 @@
 
 ## Install from source
 
-Just `pip install` directly from git.
-We recommend using [uv](https://docs.astral.sh/uv/).
+We recommend using [uv](https://docs.astral.sh/uv/) to manage your Python
+environment. Install directly from git:
 
 ```bash
-uv pip install git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
+uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
 ```
 
 

@@ -1,5 +1,13 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::traits::*;
 
+/// Two strategies run in sequence: `S1` then `S2`.
+///
+/// The capacity hint is the smaller of the two; truncation applies both
+/// policies in order, so use this when you want, e.g.,
+/// "drop by coefficient threshold *and* cap maximum Pauli weight".
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct CombinedStrategy<S1: Strategy, S2: Strategy>(pub S1, pub S2);
 
@@ -21,10 +29,29 @@ impl<S1: Strategy, S2: Strategy> Strategy for CombinedStrategy<S1, S2> {
     }
 }
 
+/// Drop terms whose Pauli weight (number of non-identity slots) exceeds
+/// the given bound.
+///
+/// # Examples
+///
+/// ```
+/// use ppvm_runtime::prelude::*;
+/// use ppvm_runtime::strategy::MaxPauliWeight;
+///
+/// // Keep only weight-1 terms.
+/// let strat = MaxPauliWeight(1);
+/// let mut state: PauliSum<config::indexmap::ByteFxHashF64<1, MaxPauliWeight>> =
+///     PauliSum::builder().n_qubits(3).strategy(strat).build();
+/// state += ("XII", 1.0);              // weight 1, kept
+/// state += ("XYI", 1.0);              // weight 2, dropped
+/// state.truncate();
+/// assert_eq!(state.len(), 1);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MaxPauliWeight(pub usize);
 
 impl MaxPauliWeight {
+    /// Maximum Pauli weight retained.
     pub fn max_weight(&self) -> usize {
         self.0
     }
@@ -55,6 +82,23 @@ impl Strategy for MaxPauliWeight {
     }
 }
 
+/// Drop terms whose coefficient magnitude falls below the given threshold.
+/// Defaults to `1e-12`.
+///
+/// # Examples
+///
+/// ```
+/// use ppvm_runtime::prelude::*;
+/// use ppvm_runtime::strategy::CoefficientThreshold;
+///
+/// let strict = CoefficientThreshold(1e-6);
+/// let mut state: PauliSum<config::indexmap::ByteFxHashF64<1, CoefficientThreshold>> =
+///     PauliSum::builder().n_qubits(2).strategy(strict).build();
+/// state += ("ZZ", 1.0);
+/// state += ("XX", 1e-9);              // below threshold
+/// state.truncate();
+/// assert_eq!(state.len(), 1);         // the XX term was dropped
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CoefficientThreshold(pub f64);
 
@@ -82,6 +126,8 @@ impl Strategy for CoefficientThreshold {
     }
 }
 
+/// Drop terms whose loss weight (number of lost qubits) exceeds the
+/// given bound. Only meaningful for [`LossyPauliWord`](crate::loss::LossyPauliWord).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MaxLossWeight(pub usize);
 

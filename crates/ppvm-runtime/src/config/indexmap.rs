@@ -1,8 +1,12 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use std::marker::PhantomData;
 
 use crate::traits::{Coefficient, NoStrategy, PauliWordTrait, Strategy};
 use crate::{config::Config, word::PauliWord};
 
+/// `IndexMap`-backed [`Config`] with `[u8; N]` storage and `FxHasher`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ByteFxHash<
     const N: usize,
@@ -22,6 +26,7 @@ impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait> Config
     type Strategy = St;
 }
 
+/// `IndexMap`-backed [`Config`] with `[u8; N]` storage and `gxhash`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ByteGxHash<
     const N: usize,
@@ -41,11 +46,13 @@ impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait> Config
     type Strategy = St;
 }
 
+/// [`ByteFxHash`] specialised to `f64` coefficients.
 pub type ByteFxHashF64<
     const N: usize,
     St = NoStrategy,
     Wd = PauliWord<[u8; N], fxhash::FxBuildHasher>,
 > = ByteFxHash<N, f64, St, Wd>;
+/// [`ByteGxHash`] specialised to `f64` coefficients.
 pub type ByteGxHashF64<
     const N: usize,
     St = NoStrategy,

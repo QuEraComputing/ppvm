@@ -1,9 +1,34 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use anyhow::Result;
 use std::collections::BTreeSet;
 
 use super::data::{Decorated, NotIdentity, OpPattern, PauliPattern};
 
 impl PauliPattern {
+    /// Parse a pattern from its textual form.
+    ///
+    /// The grammar supports literal Paulis (`X`, `Y`, `Z`), the
+    /// don't-care symbol `_`, alternation in brackets (`[XY]`),
+    /// optional-identity suffix (`X?`), star repetition (`X*`),
+    /// counted repetition (`X{3}`), and absolute-position anchoring
+    /// (`X3` matches an `X` at qubit 3).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ppvm_runtime::pattern::{Contains, PauliPattern};
+    /// use ppvm_runtime::word::PauliWord;
+    ///
+    /// let pat = PauliPattern::parse("X0Y1Z2").unwrap();
+    /// let w: PauliWord<u64> = "XYZ".into();
+    /// assert!(pat.contains(&w));
+    ///
+    /// let alt = PauliPattern::parse("[XY]0Y1Z2").unwrap();
+    /// let w2: PauliWord<u64> = "YYZ".into();
+    /// assert!(alt.contains(&w2));
+    /// ```
     pub fn parse(input: impl AsRef<str>) -> Result<Self> {
         let mut patterns = Vec::new();
         let mut chars = input.as_ref().trim().chars().peekable();

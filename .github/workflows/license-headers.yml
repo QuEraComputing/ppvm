@@ -1,0 +1,16 @@
+name: License headers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: hawkeye check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check SPDX headers
+        uses: korandoru/hawkeye@v6

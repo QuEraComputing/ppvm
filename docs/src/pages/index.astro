@@ -1,0 +1,299 @@
+---
+import Base from "../layouts/Base.astro";
+import paulisumGhz from "../../examples/paulisum_ghz.py?raw";
+import tableauGhz from "../../examples/tableau_ghz.py?raw";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+function stripDocstring(src: string): string {
+  let s = src.replace(/^\s+/, "");
+  const m = /^(?:"""|''')[\s\S]*?(?:"""|''')\s*\n/.exec(s);
+  if (m) s = s.slice(m[0].length);
+  return s.trimEnd() + "\n";
+}
+const paulisumCode = stripDocstring(paulisumGhz);
+const tableauCode = stripDocstring(tableauGhz);
+---
+<Base title="Overview" current="home">
+  <div class="hero-wrap">
+    <!-- QuEra atom cloud: ~11 overlapping spheres, all filled with
+         the dawn linear-gradient, heavily blurred and concentrated
+         in the upper-right via a radial mask so the reading column
+         on the left stays clean. The cloud is the only brand
+         atmosphere on the page; everything below the hero is
+         strict monochrome. -->
+    <svg class="atom-cloud" viewBox="0 0 1600 700" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="quera-dawn" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"  stop-color="#7f3eff"/>
+          <stop offset="50%" stop-color="#fa82ec"/>
+          <stop offset="100%" stop-color="#ff7c24"/>
+        </linearGradient>
+        <radialGradient id="cloud-mask" cx="78%" cy="35%" r="55%">
+          <stop offset="0%"  stop-color="#fff" stop-opacity="1"/>
+          <stop offset="55%" stop-color="#fff" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+        </radialGradient>
+        <mask id="cloud-fade">
+          <rect x="0" y="0" width="1600" height="700" fill="url(#cloud-mask)"/>
+        </mask>
+        <filter id="cloud-blur" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="14"/>
+        </filter>
+      </defs>
+      <g class="cloud-atoms" fill="url(#quera-dawn)" mask="url(#cloud-fade)" filter="url(#cloud-blur)">
+        <circle cx="900"  cy="120" r="120"/>
+        <circle cx="1060" cy="230" r="160"/>
+        <circle cx="1240" cy="140" r="110"/>
+        <circle cx="1380" cy="260" r="140"/>
+        <circle cx="1500" cy="160" r="100"/>
+        <circle cx="980"  cy="360" r="130"/>
+        <circle cx="1180" cy="400" r="150"/>
+        <circle cx="1360" cy="450" r="110"/>
+        <circle cx="1520" cy="350" r="90"/>
+        <circle cx="780"  cy="220" r="90"/>
+        <circle cx="820"  cy="480" r="100"/>
+      </g>
+    </svg>
+
+    <section class="hero">
+      <div class="hero-text">
+        <p class="eyebrow">Part of the Bloqade SDK · v0.1</p>
+        <h1>ppvm</h1>
+        <p class="byline">
+          Fast Pauli propagation and generalized stabilizer-tableau
+          simulation for noisy quantum circuits — built to scale with the
+          programs you actually run on
+          <a href="https://www.quera.com">QuEra</a>'s neutral-atom
+          hardware.
+        </p>
+        <div class="meta">
+          <span><strong>Rust</strong> 2024</span>
+          <span><strong>Python</strong> ≥ 3.10</span>
+          <span><strong>Source</strong> <a href="https://github.com/QuEraComputing/ppvm">github.com/QuEraComputing/ppvm</a></span>
+        </div>
+        <div class="hero-cta">
+          <a class="btn btn--primary" href={`${base}/quickstart`}>Quick Start</a>
+          <a class="btn" href={`${base}/develop`}>Developer Guide</a>
+          <a class="btn" href={`${base}/api`}>API Reference</a>
+        </div>
+      </div>
+
+      <figure class="hero-code" data-example-active="paulisum">
+        <figcaption>
+          <div class="hero-code-tabs" role="tablist" aria-label="Backend example">
+            <button type="button" role="tab" id="hero-tab-paulisum" aria-controls="hero-panel-paulisum" aria-selected="true" tabindex="0" data-example-set="paulisum" class="hero-code-tab">Pauli propagation</button>
+            <button type="button" role="tab" id="hero-tab-tableau" aria-controls="hero-panel-tableau" aria-selected="false" tabindex="-1" data-example-set="tableau" class="hero-code-tab">Generalized tableau</button>
+          </div>
+          <span class="hero-code-file">
+            <code data-example-pane="paulisum">paulisum_ghz.py</code><code data-example-pane="tableau" hidden>tableau_ghz.py</code>
+            · tested
+          </span>
+        </figcaption>
+        <div role="tabpanel" id="hero-panel-paulisum" aria-labelledby="hero-tab-paulisum" data-example-pane="paulisum">
+          <pre><code class="language-python">{paulisumCode}</code></pre>
+          <p class="hero-code-note">
+            Pauli propagation moves observables <em>backwards</em> through the
+            circuit, so gates are applied in reverse of the textbook order.
+            Same idea in Python and Rust.
+          </p>
+        </div>
+        <div role="tabpanel" id="hero-panel-tableau" aria-labelledby="hero-tab-tableau" data-example-pane="tableau" hidden>
+          <pre><code class="language-python">{tableauCode}</code></pre>
+          <p class="hero-code-note">
+            The generalized tableau evolves the state <em>forwards</em> and
+            samples measurement outcomes. GHZ correlations fall out of two
+            single-qubit measurements.
+          </p>
+        </div>
+      </figure>
+    </section>
+  </div>
+
+  <article class="shell home">
+    <section class="triptych" aria-label="What ppvm is for">
+      <div class="panel">
+        <span class="num">i. Noisy QEC</span>
+        <h3>QEC circuits under realistic noise</h3>
+        <p>
+          Depolarizing, Pauli-error, and atom-loss channels through deep
+          stabilizer circuits. Loss is a first-class concept, not bolted
+          on after the fact.
+        </p>
+      </div>
+      <div class="panel">
+        <span class="num">ii. At scale</span>
+        <h3>Past state-vector limits</h3>
+        <p>
+          Both backends scale past the comfort zone of state-vector
+          simulation. The generalized tableau handles hundreds of qubits
+          when non-Clifford weight stays modest; Pauli propagation scales
+          by truncating low-magnitude terms.
+        </p>
+      </div>
+      <div class="panel">
+        <span class="num">iii. Hardware-aware</span>
+        <h3>Matches the device</h3>
+        <p>
+          Noise models, loss channels, and gate sets mirror what QuEra's
+          neutral-atom devices actually do — built to shorten the loop
+          between paper circuit and machine.
+        </p>
+      </div>
+    </section>
+
+    <section class="install-tabs" data-install-active="python" aria-label="Install ppvm">
+      <h2 class="section-h"><span class="section-h-num">§ 2</span>Install</h2>
+      <div class="install-tablist" role="tablist">
+        <button type="button" role="tab" data-install-set="python" aria-selected="true" class="install-tab install-tab--python">
+          <span class="install-tab-label">Python</span>
+          <span class="install-tab-sub">researchers · notebooks</span>
+        </button>
+        <button type="button" role="tab" data-install-set="rust" aria-selected="false" class="install-tab install-tab--rust">
+          <span class="install-tab-label">Rust</span>
+          <span class="install-tab-sub">library developers</span>
+        </button>
+        <button type="button" role="tab" data-install-set="agents" aria-selected="false" class="install-tab install-tab--agents">
+          <span class="install-tab-label">Agents</span>
+          <span class="install-tab-sub">Claude · Cursor · Codex</span>
+        </button>
+      </div>
+
+      <section class="install-pane" data-install-pane="python" role="tabpanel">
+        <p>
+          We recommend <a href="https://docs.astral.sh/uv/">uv</a> for managing
+          your Python environment. The native extension compiles automatically
+          on install.
+        </p>
+<pre><code class="language-bash">uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python</code></pre>
+        <a class="install-pane-link" href={`${base}/quickstart/python`}>Continue to the Python Quick Start →</a>
+      </section>
+
+      <section class="install-pane" data-install-pane="rust" role="tabpanel" hidden>
+        <p>
+          Add the crates relevant to your workload. <code>ppvm-runtime</code>
+          is required; the others layer on top.
+        </p>
+<pre><code class="language-toml">[dependencies]
+ppvm-runtime = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
+ppvm-tableau = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
+ppvm-stim    = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
+ppvm-sym     = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}</code></pre>
+        <p class="install-pane-note">
+          Requires Rust edition 2024. On x86, set
+          <code>RUSTFLAGS="-C target-feature=+aes,+sse2"</code> — gxhash needs AES.
+        </p>
+        <a class="install-pane-link" href={`${base}/quickstart/rust`}>Continue to the Rust Quick Start →</a>
+      </section>
+
+      <section class="install-pane" data-install-pane="agents" role="tabpanel" hidden>
+        <p>
+          Paste this prompt into your agent (Claude Code, Cursor, Codex, …)
+          before asking it to write ppvm code. The agent installs
+          <a href="https://ion.rogerluo.dev">ion</a> if needed, fetches the
+          <code>ppvm-usage</code> skill, and confirms it's active — no manual
+          steps on your side.
+        </p>
+<pre><code>Before you write any ppvm code for me, set up the ppvm-usage skill so you
+follow the project's API conventions correctly.
+
+1. Check whether the `ion` CLI is on PATH. If not, install it from
+   https://ion.rogerluo.dev and add it to PATH. ion is the skill manager
+   this project uses to distribute agent-facing documentation.
+2. Install the ppvm-usage skill:
+     ion add QuEraComputing/ppvm/skills/ppvm-usage
+   The skill lives at https://github.com/QuEraComputing/ppvm under
+   skills/ppvm-usage/SKILL.md and covers the Heisenberg-picture gate
+   order, the Config-generic PauliSum, truncation kwargs, and the full
+   Python + Rust call surface for both backends.
+3. Reload your available skills if your agent needs that, then confirm
+   that ppvm-usage is active before continuing.
+4. Read the skill end-to-end before producing ppvm code. When you start
+   writing, read it again for the specific section you need.
+
+Reply with the skill version you installed and a one-line summary of
+what it covers, then wait for my actual task.</code></pre>
+      </section>
+    </section>
+
+    <p class="home-foot">
+      Continue to the
+      <a href={`${base}/quickstart`}>Quick Start</a>,
+      read the <a href={`${base}/develop`}>Developer Guide</a>,
+      or browse the <a href={`${base}/api`}>API Reference</a>.
+    </p>
+  </article>
+
+  <script is:inline>
+    (() => {
+      const figure = document.querySelector(".hero-code");
+      if (!figure) return;
+      const tabs = Array.from(figure.querySelectorAll('[role="tab"][data-example-set]'));
+      const panes = figure.querySelectorAll("[data-example-pane]");
+      if (tabs.length === 0) return;
+
+      const activate = (tab, { focus } = { focus: false }) => {
+        const target = tab.getAttribute("data-example-set");
+        figure.setAttribute("data-example-active", target);
+        tabs.forEach((t) => {
+          const selected = t === tab;
+          t.setAttribute("aria-selected", selected ? "true" : "false");
+          t.setAttribute("tabindex", selected ? "0" : "-1");
+        });
+        panes.forEach((p) => {
+          const match = p.getAttribute("data-example-pane") === target;
+          if (match) p.removeAttribute("hidden");
+          else p.setAttribute("hidden", "");
+        });
+        if (focus) tab.focus();
+      };
+
+      tabs.forEach((tab, i) => {
+        tab.addEventListener("click", () => activate(tab));
+        tab.addEventListener("keydown", (e) => {
+          let next = null;
+          switch (e.key) {
+            case "ArrowRight":
+            case "ArrowDown":
+              next = tabs[(i + 1) % tabs.length];
+              break;
+            case "ArrowLeft":
+            case "ArrowUp":
+              next = tabs[(i - 1 + tabs.length) % tabs.length];
+              break;
+            case "Home":
+              next = tabs[0];
+              break;
+            case "End":
+              next = tabs[tabs.length - 1];
+              break;
+          }
+          if (next) {
+            e.preventDefault();
+            activate(next, { focus: true });
+          }
+        });
+      });
+    })();
+  </script>
+
+  <script is:inline>
+    (() => {
+      const root = document.querySelector(".install-tabs");
+      if (!root) return;
+      const tabs = root.querySelectorAll("[data-install-set]");
+      const panes = root.querySelectorAll("[data-install-pane]");
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const target = tab.getAttribute("data-install-set");
+          root.setAttribute("data-install-active", target);
+          tabs.forEach((t) => t.setAttribute("aria-selected", t === tab ? "true" : "false"));
+          panes.forEach((p) => {
+            const match = p.getAttribute("data-install-pane") === target;
+            if (match) p.removeAttribute("hidden");
+            else p.setAttribute("hidden", "");
+          });
+        });
+      });
+    })();
+  </script>
+</Base>

@@ -1,13 +1,41 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::char::Pauli;
 use crate::traits::{PauliIter, PauliStorage, PauliWordTrait};
 use bitvec::prelude::BitArray;
 use std::hash::{BuildHasher, Hash};
 use std::ops::Index;
 
+/// A [`PauliWord`](crate::word::PauliWord)-like type that additionally
+/// tracks per-qubit loss.
+///
+/// In neutral-atom hardware (and in any loss-aware error model), a
+/// measurement can return "lost" instead of `0` or `1`. `LossyPauliWord`
+/// adds a parallel `lbits` array marking which qubits have been lost; a
+/// set loss bit excludes that qubit from the standard Pauli operations
+/// and shows up as the [`Pauli::L`] symbol.
+///
+/// # Examples
+///
+/// ```
+/// use ppvm_runtime::char::Pauli;
+/// use ppvm_runtime::loss::LossyPauliWord;
+/// use ppvm_runtime::traits::PauliWordTrait;
+///
+/// let w: LossyPauliWord<[u8; 1]> = "XLZL".into();
+/// assert_eq!(w.weight(), 4);          // X, L, Z, L are all non-identity
+/// assert_eq!(w.loss_weight(), 2);     // two qubits are lost
+/// assert!(w.is(1, Pauli::L));
+/// assert!(w.is(0, Pauli::X));
+/// ```
 #[derive(Debug, Clone)]
 pub struct LossyPauliWord<A: PauliStorage, S = fxhash::FxBuildHasher> {
+    /// X-bit array.
     pub xbits: BitArray<A>,
+    /// Z-bit array.
     pub zbits: BitArray<A>,
+    /// Loss bit array — `1` at index `i` means qubit `i` has been lost.
     pub lbits: BitArray<A>,
     /// Number of qubits
     nqubits: usize,
@@ -338,6 +366,7 @@ impl<A: PauliStorage, S> Index<usize> for LossyPauliWord<A, S> {
     }
 }
 
+/// Iterator over the [`Pauli`] symbols of a [`LossyPauliWord`].
 pub struct LossyPauliWordIter<'a, A: PauliStorage, S> {
     word: &'a LossyPauliWord<A, S>,
     curr: usize,

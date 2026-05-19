@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::traits::*;
 use crate::{char::Pauli, config::Config, sum::PauliSum};
 
@@ -9,15 +12,18 @@ pub(crate) fn rotate_1_map_insert_closure<T: Config>(
     sin: &T::Coeff,
     cos: &T::Coeff,
 ) -> Option<(T::PauliWordType, T::Coeff)> {
-    let p_g = k.get(addr0);
     if axis == Pauli::L {
         panic!("Rotation axis cannot be L");
     }
-    if p_g == Pauli::L {
-        // Rotation does nothing on lost qubits
+    // Check loss first — avoids reading xbit/zbit on lost qubits
+    if k.get_lbit(addr0) {
         return None;
     }
-    let (eps, p_q) = levi_civita(p_g as u8, axis as u8);
+    let xbit = k.get_xbit(addr0);
+    let zbit = k.get_zbit(addr0);
+    // Reconstruct 2-bit Pauli code (I=00, X=01, Z=10, Y=11) from bits
+    let p_g = (zbit as u8) << 1 | (xbit as u8);
+    let (eps, p_q) = levi_civita(p_g, axis as u8);
     if eps == 0 {
         None
     } else {
@@ -33,17 +39,90 @@ pub(crate) fn rotate_1_map_insert_closure<T: Config>(
     }
 }
 
-impl<T, S, H> RotationOne<T> for PauliSum<T>
+impl<T: Config> RotationOne<T> for PauliSum<T>
 where
-    S: PauliStorage,
-    H: std::hash::BuildHasher + Clone + Default,
-    T: Config<Storage = S, BuildHasher = H>,
     T::Coeff: std::ops::MulAssign,
-    T::Map: ACMapInsert<S, T::Coeff, H, T::PauliWordType> + ACMapConsume,
+    T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapConsume,
 {
     fn rotate_1(&mut self, axis: Pauli, addr0: usize, theta: <T as Config>::Coeff) {
         let (sin, cos) = theta.sin_cos();
         self.map_insert(|k, v| rotate_1_map_insert_closure::<T>(k, v, axis, addr0, &sin, &cos));
+    }
+
+    #[inline]
+    fn rx(&mut self, addr0: usize, theta: impl Into<T::Coeff>) {
+        // Axis = X (xbit=1, zbit=0). Commutes when zbit==false (I or X).
+        // Anticommuting: Z(xbit=0)→new Y, eps=+1; Y(xbit=1)→new Z, eps=-1
+        let (sin, cos) = theta.into().sin_cos();
+        self.map_insert(|k, v| {
+            if k.get_lbit(addr0) {
+                return None;
+            }
+            let zbit = k.get_zbit(addr0);
+            if !zbit {
+                return None;
+            }
+            let xbit = k.get_xbit(addr0);
+            let mut coeff = v.clone();
+            *v *= cos.clone();
+            let mut new_word = k.clone();
+            new_word.set_xbit(addr0, !xbit);
+            new_word.rehash();
+            let eps: i8 = if xbit { -1 } else { 1 };
+            coeff *= sin.mul_sign(eps);
+            Some((new_word, coeff))
+        });
+    }
+
+    #[inline]
+    fn ry(&mut self, addr0: usize, theta: impl Into<T::Coeff>) {
+        // Axis = Y (xbit=1, zbit=1). Commutes when xbit==zbit (I or Y).
+        // Anticommuting: X(zbit=0)→new Z, eps=+1; Z(zbit=1)→new X, eps=-1
+        let (sin, cos) = theta.into().sin_cos();
+        self.map_insert(|k, v| {
+            if k.get_lbit(addr0) {
+                return None;
+            }
+            let xbit = k.get_xbit(addr0);
+            let zbit = k.get_zbit(addr0);
+            if xbit == zbit {
+                return None;
+            }
+            let mut coeff = v.clone();
+            *v *= cos.clone();
+            let mut new_word = k.clone();
+            new_word.set_xbit(addr0, !xbit);
+            new_word.set_zbit(addr0, !zbit);
+            new_word.rehash();
+            let eps: i8 = if zbit { -1 } else { 1 };
+            coeff *= sin.mul_sign(eps);
+            Some((new_word, coeff))
+        });
+    }
+
+    #[inline]
+    fn rz(&mut self, addr0: usize, theta: impl Into<T::Coeff>) {
+        // Axis = Z (xbit=0, zbit=1). Commutes when xbit==false (I or Z).
+        // Anticommuting: X(zbit=0)→new Y, eps=-1; Y(zbit=1)→new X, eps=+1
+        let (sin, cos) = theta.into().sin_cos();
+        self.map_insert(|k, v| {
+            if k.get_lbit(addr0) {
+                return None;
+            }
+            let xbit = k.get_xbit(addr0);
+            if !xbit {
+                return None;
+            }
+            let zbit = k.get_zbit(addr0);
+            let mut coeff = v.clone();
+            *v *= cos.clone();
+            let mut new_word = k.clone();
+            new_word.set_zbit(addr0, !zbit);
+            new_word.rehash();
+            let eps: i8 = if zbit { 1 } else { -1 };
+            coeff *= sin.mul_sign(eps);
+            Some((new_word, coeff))
+        });
     }
 }
 

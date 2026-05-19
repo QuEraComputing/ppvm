@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Integration test: verify that the full MSD circuit using batch methods
 //! produces identical measurement outcomes to the naive individual-gate version.
 
@@ -114,8 +117,8 @@ fn run_msd_naive(seed: u64) -> String {
     for (c, t) in ql[1].iter().zip(ql[3]) {
         tab.cz(*c, *t);
     }
-    for i in 0..5 {
-        for q in ql[i] {
+    for block in ql.iter().take(5) {
+        for q in *block {
             tab.sqrt_x_adj(*q);
         }
     }
@@ -150,8 +153,8 @@ fn run_msd_batch(seed: u64) -> String {
     tab.cz_block_pairs_cross_word(0, 0, 1, 4, 17);
     tab.cz_block_pairs(17, 34, 13);
     tab.cz_block_pairs_cross_word(0, 30, 1, 0, 4);
-    for i in 0..5 {
-        tab.sqrt_x_adj_batch(ql[i]);
+    for block in ql.iter().take(5) {
+        tab.sqrt_x_adj_batch(block);
     }
     (0..n)
         .map(|i| if tab.measure(i).unwrap() { '1' } else { '0' })

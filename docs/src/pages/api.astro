@@ -1,0 +1,307 @@
+---
+import Base from "../layouts/Base.astro";
+import ApiItem from "../components/ApiItem.astro";
+import rustData from "../data/rust-api.json";
+import pythonData from "../data/python-api.json";
+
+interface ApiItemT {
+  name: string;
+  kind: string;
+  path: string;
+  signature: string;
+  summary: string;
+  docs: string;
+  span?: string | null;
+}
+
+// Group Python items by their top-level submodule
+const pythonGroups: Record<string, ApiItemT[]> = {};
+for (const item of pythonData.items as ApiItemT[]) {
+  const parts = item.path.split(".");
+  const group = parts.length >= 2 ? parts[1] : "ppvm";
+  (pythonGroups[group] ??= []).push(item);
+}
+const pythonGroupNames = Object.keys(pythonGroups).sort();
+const rustCrates = rustData.crates as { crate: string; blurb: string; items: ApiItemT[] }[];
+
+// Build a set of every Rust item path we actually render, so link rewriting
+// inside docstrings can resolve cross-references to anchors that exist.
+const knownRustPaths = new Set<string>();
+for (const c of rustCrates) for (const it of c.items) knownRustPaths.add(it.path);
+
+// Group items in a crate by kind, in a stable display order. Kinds the user
+// doesn't recognise (or that we haven't picked a label for) fall through to
+// the catch-all "other" bucket at the end.
+type KindGroup = { kind: string; label: string; items: ApiItemT[] };
+const RUST_KIND_ORDER: { kind: string; label: string }[] = [
+  { kind: "module",     label: "Modules" },
+  { kind: "struct",     label: "Structs" },
+  { kind: "enum",       label: "Enums" },
+  { kind: "trait",      label: "Traits" },
+  { kind: "function",   label: "Functions" },
+  { kind: "macro",      label: "Macros" },
+  { kind: "type_alias", label: "Type aliases" },
+];
+function groupByKind(items: ApiItemT[]): KindGroup[] {
+  const groups: KindGroup[] = RUST_KIND_ORDER.map((g) => ({ ...g, items: [] }));
+  const other: KindGroup = { kind: "other", label: "Other", items: [] };
+  const byKind = new Map(groups.map((g) => [g.kind, g]));
+  for (const it of items) {
+    const target = byKind.get(it.kind) ?? other;
+    target.items.push(it);
+  }
+  return [...groups, other].filter((g) => g.items.length > 0);
+}
+---
+<Base title="Reference" current="api">
+  <div class="api-shell" data-lang-filter="all">
+    <details class="api-toc side-nav" aria-label="API contents">
+      <summary class="api-toc-summary">API contents</summary>
+      <input type="search" class="toc-filter" placeholder="search the API…" autocomplete="off" />
+
+      <div class="lang-toggle" role="tablist" aria-label="Filter by language">
+        <button type="button" data-lang-set="all"    aria-pressed="true">All</button>
+        <button type="button" data-lang-set="python" aria-pressed="false" class="lang-toggle--python">
+          <span class="dot"></span>Python
+        </button>
+        <button type="button" data-lang-set="rust"   aria-pressed="false" class="lang-toggle--rust">
+          <span class="dot"></span>Rust
+        </button>
+      </div>
+
+      <h4 data-lang="python">Python — <code>ppvm</code></h4>
+      {pythonGroupNames.map((g) => (
+        <ul data-lang="python">
+          <li><span class="toc-group">{g}</span></li>
+          {pythonGroups[g].map((it) => (
+            <li><a href={`#py-${it.path.replace(/[^a-zA-Z0-9]+/g, "-")}`}>{it.kind === "method" ? "·" : ""} {it.name}</a></li>
+          ))}
+        </ul>
+      ))}
+
+      <h4 data-lang="rust">Rust</h4>
+      {rustCrates.map((c) => (
+        <div data-lang="rust" class="toc-crate">
+          <span class="toc-group">{c.crate}</span>
+          {groupByKind(c.items).map((g) => (
+            <ul class={`toc-kind toc-kind--${g.kind}`}>
+              <li>
+                <span class="toc-kind-label">
+                  <span class={`kind-dot kind-dot--${g.kind}`} aria-hidden="true"></span>
+                  {g.label}
+                </span>
+              </li>
+              {g.items.map((it) => (
+                <li><a href={`#rs-${it.path.replace(/[^a-zA-Z0-9]+/g, "-")}`}>{it.name}</a></li>
+              ))}
+            </ul>
+          ))}
+        </div>
+      ))}
+    </details>
+
+    <div>
+      <div class="titleblock" style="margin-bottom: 1.5rem;">
+        <div class="eyebrow">Generated reference</div>
+        <h1 style="font-size: 2.2rem;">API Reference</h1>
+        <p class="byline">
+          Built directly from in-source docstrings: rustdoc JSON for the Rust
+          crates, griffe for the Python package. Use the language filter to
+          narrow the view; the search box always queries across both.
+        </p>
+        <div class="meta">
+          <span><strong>Python items</strong> {(pythonData.items as ApiItemT[]).length}</span>
+          <span><strong>Rust items</strong> {rustCrates.reduce((n, c) => n + c.items.length, 0)}</span>
+          <span><strong>Generated</strong> <time>{(rustData.generatedAt as string).slice(0, 10)}</time></span>
+        </div>
+      </div>
+
+      <p class="api-search-status" hidden></p>
+
+      <!-- Python section -->
+      <section class="api-section api-section--python" id="python-section" data-lang="python">
+        <h2>
+          <span class="lang-chip lang-chip--python"><span class="dot"></span>Python</span>
+          <span class="api-section-title"><code>ppvm</code></span>
+        </h2>
+        <p class="crate-blurb">
+          Pythonic wrapper around the native Rust runtime. All items below
+          live under the <code>ppvm</code> top-level module.
+        </p>
+        {pythonGroupNames.map((g) => (
+          <div>
+            <h3 id={`py-group-${g}`}>
+              <code>{g}</code>
+            </h3>
+            {pythonGroups[g].map((item) => (
+              <ApiItem item={item} idPrefix="py" />
+            ))}
+          </div>
+        ))}
+      </section>
+
+      <!-- Rust section -->
+      <section class="api-section api-section--rust" id="rust-section" data-lang="rust">
+        <h2>
+          <span class="lang-chip lang-chip--rust"><span class="dot"></span>Rust</span>
+          <span class="api-section-title">crates</span>
+        </h2>
+        {rustCrates.map((c) => (
+          <div>
+            <h3><code>{c.crate}</code></h3>
+            {c.blurb && <p class="crate-blurb">{c.blurb}</p>}
+            {c.items.length === 0 ? (
+              <p style="color: var(--ink-faint); font-style: italic;">No publicly documented items in this crate yet.</p>
+            ) : c.items.map((item) => (
+              <ApiItem item={item} idPrefix="rs" knownPaths={knownRustPaths} />
+            ))}
+          </div>
+        ))}
+      </section>
+    </div>
+  </div>
+
+  <script is:inline>
+    // Card-level click → toggle the `<details>` inside.
+    //
+    // Two rules:
+    //  1. Clicks on interactive descendants (links, buttons, the existing
+    //     <summary>, code blocks) get to run their native handler — we
+    //     never hijack a real action.
+    //  2. If the user has highlighted text inside the card, we treat that
+    //     as a selection gesture and don't toggle. This makes copy/paste
+    //     out of a docstring work normally.
+    //  3. Once the card is open, clicks inside the docstring body don't
+    //     collapse it (text inside there often contains long paragraphs
+    //     you want to read without accidentally folding the card). The
+    //     header (kind/name/signature/summary) still toggles it back.
+    (() => {
+      const items = document.querySelectorAll(".api-item");
+      for (const item of items) {
+        const details = item.querySelector("details");
+        if (!details) {
+          item.classList.add("no-toggle");
+          continue;
+        }
+        item.addEventListener("click", (ev) => {
+          const t = /** @type {Element} */ (ev.target);
+          if (!t) return;
+          // Skip native-interactive descendants.
+          if (t.closest("a, button, input, textarea, select, .copy-btn")) return;
+          if (t.closest("summary")) return; // <summary> toggles natively
+          // When already open, only the header collapses; clicks in the
+          // docstring body itself stay inert.
+          if (details.open && t.closest(".docstring")) return;
+          // Don't toggle if the user is selecting text.
+          const sel = window.getSelection();
+          if (sel && !sel.isCollapsed && sel.toString().length > 0) return;
+
+          details.open = !details.open;
+          ev.preventDefault();
+        });
+      }
+    })();
+  </script>
+
+  <script is:inline>
+    // Combined search + language filter for the API reference.
+    //
+    // Two independent dimensions:
+    //   · language toggle  → show only Python / Rust / both (persists in localStorage)
+    //   · search query     → matches name/path/kind, ALWAYS global across languages
+    //
+    // When a search is active, the language filter is bypassed so users can find
+    // anything regardless of which tab they last left selected.
+    (() => {
+      const shell = document.querySelector(".api-shell");
+      if (!shell) return;
+      const input = shell.querySelector(".toc-filter");
+      const status = document.querySelector(".api-search-status");
+      const items = Array.from(shell.querySelectorAll(".api-item"));
+      const tocLinks = Array.from(shell.querySelectorAll(".api-toc a"));
+      const langButtons = Array.from(shell.querySelectorAll(".lang-toggle button[data-lang-set]"));
+
+      let lang = localStorage.getItem("ppvm-api-lang") || "all";
+      let query = "";
+
+      function setLang(next) {
+        lang = next;
+        shell.setAttribute("data-lang-filter", lang);
+        for (const b of langButtons) {
+          b.setAttribute("aria-pressed", b.dataset.langSet === lang ? "true" : "false");
+        }
+        localStorage.setItem("ppvm-api-lang", lang);
+        applyFilter();
+      }
+
+      function langOf(el) {
+        // Closest [data-lang] ancestor wins; api-items inherit from their section.
+        const sec = el.closest("[data-lang]");
+        return sec ? sec.dataset.lang : null;
+      }
+
+      function matchesQuery(el) {
+        if (!query) return true;
+        const d = el.dataset;
+        return (
+          (d.name && d.name.includes(query)) ||
+          (d.path && d.path.includes(query)) ||
+          (d.kind && d.kind.includes(query))
+        );
+      }
+
+      function applyFilter() {
+        let visible = 0;
+        for (const it of items) {
+          const itemLang = langOf(it);
+          // Language filter (overridden by an active search)
+          const langOK = !!query || lang === "all" || itemLang === lang || itemLang === null;
+          const queryOK = matchesQuery(it);
+          const show = langOK && queryOK;
+          it.style.display = show ? "" : "none";
+          if (show) visible++;
+        }
+
+        for (const a of tocLinks) {
+          const linkLang = langOf(a);
+          const langOK = !!query || lang === "all" || linkLang === lang || linkLang === null;
+          const t = a.textContent.toLowerCase();
+          const queryOK = !query || t.includes(query);
+          a.style.display = langOK && queryOK ? "" : "none";
+        }
+
+        // Hide the section heading & subgroup titles when language-filtered
+        // (the items themselves are already hidden, this just removes the
+        // empty header).
+        for (const sec of shell.querySelectorAll(".api-section, .api-toc [data-lang]")) {
+          const secLang = sec.dataset.lang;
+          if (!secLang) continue;
+          const hideForLang = !query && lang !== "all" && secLang !== lang;
+          sec.style.display = hideForLang ? "none" : "";
+        }
+
+        if (status) {
+          if (query) {
+            status.hidden = false;
+            status.textContent = `${visible} match${visible === 1 ? "" : "es"} for “${query}” across Python and Rust.`;
+          } else {
+            status.hidden = true;
+            status.textContent = "";
+          }
+        }
+      }
+
+      if (input) {
+        input.addEventListener("input", (e) => {
+          query = e.target.value.trim().toLowerCase();
+          applyFilter();
+        });
+      }
+      for (const b of langButtons) {
+        b.addEventListener("click", () => setLang(b.dataset.langSet));
+      }
+
+      setLang(lang);
+    })();
+  </script>
+</Base>

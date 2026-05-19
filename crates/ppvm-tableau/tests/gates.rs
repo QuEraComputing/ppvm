@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Comprehensive gate and public-API tests for ppvm-tableau.
 //!
 //! Covers:
@@ -13,7 +16,6 @@
 
 use num::complex::Complex64;
 use ppvm_runtime::config::fxhash::ByteF64;
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
 use ppvm_tableau::prelude::*;
 use std::f64::consts::{FRAC_PI_2, PI};
 
@@ -801,179 +803,6 @@ fn test_coefficient_threshold_rot2_trimming() {
         1,
         "rxx with tiny angle and large threshold should trim the small branch"
     );
-}
-
-// ============================================================
-// 8. Stim parser additional instruction tests
-// ============================================================
-
-type StimTab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
-
-#[test]
-fn test_stim_mr_measure_and_reset() {
-    // MR should measure then reset to |0⟩
-    let mut tab: StimTab = GeneralizedTableau::new(1, 1e-10);
-    let results = tab.run_stim_string("X 0\nMR 0");
-    // Measurement should give 1 (since qubit was |1⟩)
-    assert_eq!(results, vec![Some(true)]);
-    // After MR, qubit should be reset to |0⟩
-    let results2 = tab.run_stim_string("M 0");
-    assert_eq!(results2, vec![Some(false)]);
-}
-
-#[test]
-fn test_stim_mr_zero_state() {
-    // MR on |0⟩ should give 0 and leave in |0⟩
-    let mut tab: StimTab = GeneralizedTableau::new(1, 1e-10);
-    let results = tab.run_stim_string("MR 0");
-    assert_eq!(results, vec![Some(false)]);
-    let results2 = tab.run_stim_string("M 0");
-    assert_eq!(results2, vec![Some(false)]);
-}
-
-#[test]
-fn test_stim_cy_gate() {
-    // CY should entangle qubits like CX but with Y-basis on target
-    // CY|10⟩ = |1⟩ ⊗ Y|0⟩ = |1⟩ ⊗ i|1⟩ (up to phase)
-    let mut tab: StimTab = GeneralizedTableau::new(2, 1e-10);
-    let results = tab.run_stim_string("X 0\nCY 0 1\nM 0 1");
-    // Control was |1⟩, so CY flips target
-    assert_eq!(results[0], Some(true));
-    assert_eq!(results[1], Some(true));
-}
-
-#[test]
-fn test_stim_cy_control_zero() {
-    // CY|00⟩ = |00⟩ (control is 0, no action)
-    let mut tab: StimTab = GeneralizedTableau::new(2, 1e-10);
-    let results = tab.run_stim_string("CY 0 1\nM 0 1");
-    assert_eq!(results, vec![Some(false), Some(false)]);
-}
-
-#[test]
-fn test_stim_cz_gate() {
-    // CZ|11⟩ = -|11⟩ (phase flip, but measurement outcome same)
-    let mut tab: StimTab = GeneralizedTableau::new(2, 1e-10);
-    let results = tab.run_stim_string("X 0\nX 1\nCZ 0 1\nM 0 1");
-    assert_eq!(results, vec![Some(true), Some(true)]);
-}
-
-#[test]
-fn test_stim_cz_on_zero() {
-    // CZ|00⟩ = |00⟩
-    let mut tab: StimTab = GeneralizedTableau::new(2, 1e-10);
-    let results = tab.run_stim_string("CZ 0 1\nM 0 1");
-    assert_eq!(results, vec![Some(false), Some(false)]);
-}
-
-#[test]
-fn test_stim_s_dag() {
-    // S_DAG on |0⟩: Z stabilizer unchanged (Z phase invariant)
-    let mut tab: StimTab = GeneralizedTableau::new(1, 1e-10);
-    let results = tab.run_stim_string("S_DAG 0\nM 0");
-    assert_eq!(results, vec![Some(false)]);
-}
-
-#[test]
-fn test_stim_s_dag_t_is_t_adj() {
-    // S_DAG[T] should be T†. T†T = I on |+⟩ should leave 1 branch.
-    let mut tab: StimTab = GeneralizedTableau::new(1, 1e-10);
-    tab.run_stim_string("H 0\nS[T] 0\nS_DAG[T] 0");
-    assert_eq!(tab.coefficients.len(), 1, "T†T should cancel to 1 branch");
-}
-
-#[test]
-fn test_stim_sqrt_x_dag() {
-    // SQRT_X_DAG then SQRT_X should compose to identity
-    let mut tab: StimTab = GeneralizedTableau::new(1, 1e-10);
-    let results = tab.run_stim_string("SQRT_X_DAG 0\nSQRT_X 0\nM 0");
-    assert_eq!(results, vec![Some(false)], "SQRT_X_DAG · SQRT_X = I");
-}
-
-#[test]
-fn test_stim_sqrt_y_dag() {
-    // SQRT_Y_DAG then SQRT_Y should compose to identity
-    let mut tab: StimTab = GeneralizedTableau::new(1, 1e-10);
-    let results = tab.run_stim_string("SQRT_Y_DAG 0\nSQRT_Y 0\nM 0");
-    assert_eq!(results, vec![Some(false)], "SQRT_Y_DAG · SQRT_Y = I");
-}
-
-#[test]
-fn test_stim_sqrt_z_is_s() {
-    // SQRT_Z should be the same as S
-    let mut tab: StimTab = GeneralizedTableau::new(1, 1e-10);
-    let results = tab.run_stim_string("SQRT_Z 0\nM 0");
-    assert_eq!(results, vec![Some(false)]);
-}
-
-#[test]
-fn test_stim_sqrt_z_dag_is_s_adj() {
-    // SQRT_Z_DAG then SQRT_Z = I
-    let mut tab: StimTab = GeneralizedTableau::new(1, 1e-10);
-    let results = tab.run_stim_string("SQRT_Z_DAG 0\nSQRT_Z 0\nM 0");
-    assert_eq!(results, vec![Some(false)]);
-}
-
-#[test]
-fn test_stim_correlated_loss_simple() {
-    // I_ERROR[correlated_loss](1.0) should lose both qubits
-    let mut tab: StimTab = GeneralizedTableau::new(2, 1e-10);
-    tab.run_stim_string("I_ERROR[correlated_loss](1.0) 0 1");
-    assert!(
-        tab.is_lost[0] || tab.is_lost[1],
-        "At least one qubit should be lost"
-    );
-}
-
-#[test]
-fn test_stim_correlated_loss_zero_prob() {
-    // I_ERROR[correlated_loss](0.0) should not lose any qubits
-    let mut tab: StimTab = GeneralizedTableau::new(2, 1e-10);
-    tab.run_stim_string("I_ERROR[correlated_loss](0.0) 0 1");
-    assert!(
-        !tab.is_lost[0] && !tab.is_lost[1],
-        "No qubits should be lost"
-    );
-}
-
-#[test]
-fn test_stim_comments_and_empty_lines() {
-    let mut tab: StimTab = GeneralizedTableau::new(1, 1e-10);
-    let results = tab.run_stim_string("# This is a comment\n\nX 0\n# Another comment\nM 0");
-    assert_eq!(results, vec![Some(true)]);
-}
-
-#[test]
-fn test_stim_noop_instructions() {
-    // TICK, DETECTOR, QUBIT_COORDS, SHIFT_COORDS, MPAD, OBSERVABLE_INCLUDE should not crash
-    let mut tab: StimTab = GeneralizedTableau::new(1, 1e-10);
-    let results = tab.run_stim_string("TICK\nDETECTOR\nQUBIT_COORDS\nSHIFT_COORDS\nX 0\nM 0");
-    assert_eq!(results, vec![Some(true)]);
-}
-
-#[test]
-fn test_stim_zcx_alias() {
-    // ZCX should be equivalent to CX/CNOT
-    let mut tab: StimTab = GeneralizedTableau::new(2, 1e-10);
-    let results = tab.run_stim_string("X 0\nZCX 0 1\nM 0 1");
-    assert_eq!(results, vec![Some(true), Some(true)]);
-}
-
-#[test]
-fn test_stim_zcy_alias() {
-    // ZCY should be equivalent to CY
-    let mut tab: StimTab = GeneralizedTableau::new(2, 1e-10);
-    let results = tab.run_stim_string("X 0\nZCY 0 1\nM 0 1");
-    assert_eq!(results[0], Some(true));
-    assert_eq!(results[1], Some(true));
-}
-
-#[test]
-fn test_stim_zcz_alias() {
-    // ZCZ should be equivalent to CZ
-    let mut tab: StimTab = GeneralizedTableau::new(2, 1e-10);
-    let results = tab.run_stim_string("X 0\nX 1\nZCZ 0 1\nM 0 1");
-    assert_eq!(results, vec![Some(true), Some(true)]);
 }
 
 // ============================================================

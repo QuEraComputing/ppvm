@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use core::panic;
 
 use ppvm_runtime::prelude::*;
@@ -10,11 +13,13 @@ use crate::{
 impl_op_mul_assign_coefficient!(Term);
 
 impl Prod {
+    /// Multiply this product by an additional `sin(x_u)`.
     pub fn mul_sin(&mut self, u: u32) {
         *self.sin.entry(u).or_insert(0) += 1;
         self.sin_pow += 1;
     }
 
+    /// Multiply this product by an additional `cos(x_u)`.
     pub fn mul_cos(&mut self, u: u32) {
         *self.cos.entry(u).or_insert(0) += 1;
         self.cos_pow += 1;
@@ -22,6 +27,8 @@ impl Prod {
 }
 
 impl Sum {
+    /// Multiply this sum in place by `coeff · p`, respecting the same
+    /// `max` / `min_eps` truncation bounds used elsewhere.
     pub fn mul_term(&mut self, p: Prod, coeff: f64, max: usize, min_eps: f64) {
         if p.sin_pow() > max || coeff.abs() < min_eps {
             self.terms.clear();

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
 use rayon::current_num_threads;

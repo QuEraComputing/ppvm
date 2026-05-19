@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::{
     config::Config,
     sum::PauliSum,
@@ -26,6 +29,7 @@ where
     for<'a> T::Map: Trace<'a, T::PauliWordType, Output = T::Coeff>,
     T::Coeff: std::iter::Sum + Copy + std::ops::Mul<Output = T::Coeff>,
 {
+    /// Inner-product-style overlap with another sum: `Σ_k self[k] · other[k]`.
     pub fn overlap(&self, other: &Self) -> T::Coeff {
         other
             .data()

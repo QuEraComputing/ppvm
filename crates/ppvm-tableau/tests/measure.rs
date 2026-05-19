@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use std::f64::consts::FRAC_PI_2;
 
 use num::complex::Complex64;
@@ -13,10 +16,7 @@ fn test_measure_deterministic() {
     println!("Initial tableau:\n{}", tableau);
 
     let outcome = tableau.measure(0);
-    assert_eq!(
-        outcome, false,
-        "Measuring |0⟩ should give outcome 0 (false)"
-    );
+    assert!(!outcome, "Measuring |0⟩ should give outcome 0 (false)");
 
     println!("\nAfter measurement:\n{}", tableau);
 }
@@ -31,7 +31,7 @@ fn test_measure_after_x() {
     println!("After X gate:\n{}", tableau);
 
     let outcome = tableau.measure(0);
-    assert_eq!(outcome, true, "Measuring |1⟩ should give outcome 1 (true)");
+    assert!(outcome, "Measuring |1⟩ should give outcome 1 (true)");
 
     println!("\nAfter measurement:\n{}", tableau);
 }
@@ -137,13 +137,13 @@ fn test_measure_statistics() {
     // For 1000 trials, standard deviation is sqrt(1000 * 0.5 * 0.5) ≈ 15.8
     // 3 sigma ≈ 47.4, so we expect outcomes in range [450, 550]
     assert!(
-        count_zero >= 400 && count_zero <= 600,
+        (400..=600).contains(&count_zero),
         "Measurement statistics should be approximately 50/50 (got {} zeros out of {})",
         count_zero,
         trials
     );
     assert!(
-        count_one >= 400 && count_one <= 600,
+        (400..=600).contains(&count_one),
         "Measurement statistics should be approximately 50/50 (got {} ones out of {})",
         count_one,
         trials
@@ -189,14 +189,14 @@ fn test_measure_generalized_tableau_deterministic() {
 
     let outcome = tableau.measure(0);
     assert_eq!(tableau.coefficients.len(), 1);
-    assert_eq!(outcome.unwrap(), false);
+    assert!(!outcome.unwrap());
     assert!((tableau.coefficients[0].0 - 1.0).re.abs() < 1e-10);
     assert!(tableau.coefficients[0].0.im.abs() < 1e-10);
 
     tableau.x(0);
     let outcome = tableau.measure(0);
     assert_eq!(tableau.coefficients.len(), 1);
-    assert_eq!(outcome.unwrap(), true);
+    assert!(outcome.unwrap());
     assert!((tableau.coefficients[0].0 - 1.0).re.abs() < 1e-10);
     assert!(tableau.coefficients[0].0.im.abs() < 1e-10);
 }
@@ -261,13 +261,13 @@ fn test_measure_generalized_tableau_statistics() {
     );
 
     assert!(
-        count_zero >= 400 && count_zero <= 600,
+        (400..=600).contains(&count_zero),
         "Measurement statistics should be approximately 50/50 (got {} zeros out of {})",
         count_zero,
         trials
     );
     assert!(
-        count_one >= 400 && count_one <= 600,
+        (400..=600).contains(&count_one),
         "Measurement statistics should be approximately 50/50 (got {} ones out of {})",
         count_one,
         trials
@@ -330,7 +330,7 @@ fn test_measure_generalized_deterministic_with_t() {
     assert_eq!(tableau.coefficients.len(), 1);
 
     let outcome = tableau.measure(0);
-    assert_eq!(outcome.unwrap(), false, "T|0⟩ should measure as 0");
+    assert!(!outcome.unwrap(), "T|0⟩ should measure as 0");
     assert_eq!(tableau.coefficients.len(), 1);
 
     // T|1⟩ = e^{iπ/4}|1⟩ (no branching, Z eigenstate)
@@ -341,7 +341,7 @@ fn test_measure_generalized_deterministic_with_t() {
     assert_eq!(tableau.coefficients.len(), 1);
 
     let outcome = tableau.measure(0);
-    assert_eq!(outcome.unwrap(), true, "T|1⟩ should measure as 1");
+    assert!(outcome.unwrap(), "T|1⟩ should measure as 1");
     assert_eq!(tableau.coefficients.len(), 1);
 }
 
@@ -558,9 +558,8 @@ fn test_measure_generalized_tableau_t_gate_deterministic() {
 
     println!("Tableau before measurement:\n{}", tableau);
     let outcome = tableau.measure(0);
-    assert_eq!(
-        outcome.unwrap(),
-        false,
+    assert!(
+        !outcome.unwrap(),
         "State should be |0⟩ after T and S rotations"
     );
 }

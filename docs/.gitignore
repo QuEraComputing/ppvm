@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.astro/
+src/data/rust-api.json
+src/data/python-api.json
+# Outputs from `docs/scripts/build-notebooks.py`. The Jupytext sources
+# under `docs/notebooks/` are tracked; the executed HTML fragments,
+# their metadata, and the index are regenerated on every build.
+src/generated/

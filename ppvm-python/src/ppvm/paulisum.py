@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 The PPVM Authors
+# SPDX-License-Identifier: Apache-2.0
+
 import math
 import re
 from collections.abc import Sequence
@@ -6,12 +9,7 @@ from typing import Self, Union
 
 import ppvm_python_native
 
-from .mixins import (
-    CliffordExtensionMixin,
-    CliffordMixin,
-    NoiseMixin,
-    RotationsMixin,
-)
+from .mixins import CliffordExtensionMixin, CliffordMixin, NoiseMixin, RotationsMixin
 
 _COMPACT_RE = re.compile(r"^([IXYZ]\d+)+$")
 _COMPACT_TOKEN_RE = re.compile(r"([IXYZ])(\d+)")

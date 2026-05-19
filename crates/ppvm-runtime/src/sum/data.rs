@@ -1,6 +1,40 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::config::Config;
 use crate::traits::*;
 
+/// A sparse formal sum `Σ cᵢ Pᵢ` of Pauli strings.
+///
+/// The central data type of the Pauli-propagation backend. Keys are
+/// [`PauliWord`](crate::word::PauliWord)-shaped Pauli strings; values are
+/// numeric coefficients. Generic over a [`Config`] that fixes the
+/// concrete storage / hasher / coefficient / strategy.
+///
+/// Internally `PauliSum` holds *two* maps — a primary and an auxiliary —
+/// and swaps between them during gate propagation to avoid repeated
+/// allocations. The [`PauliSum::data`] / [`PauliSum::aux`] accessors
+/// expose the current orientation; most callers will only ever touch
+/// the primary side via the high-level gate / measurement traits.
+///
+/// # Examples
+///
+/// Heisenberg-picture propagation of `ZZ` through the GHZ circuit:
+///
+/// ```
+/// use ppvm_runtime::prelude::*;
+///
+/// let mut state: PauliSum<config::indexmap::ByteFxHashF64<1>> =
+///     PauliSum::builder().n_qubits(2).build();
+/// state += ("ZZ", 1.0);
+///
+/// // Circuit: H(0); CNOT(0, 1) — apply in reverse for Heisenberg propagation.
+/// state.cnot(0, 1);
+/// state.h(0);
+///
+/// // ZZ → IZ under the GHZ circuit, with coefficient 1.0.
+/// assert_eq!(state.len(), 1);
+/// ```
 #[derive(Clone)]
 pub struct PauliSum<T: Config> {
     map: (T::Map, T::Map),
@@ -42,19 +76,24 @@ impl<T: Config> PauliSum<T> {
 }
 
 impl<T: Config> PauliSum<T> {
+    /// Number of qubits the sum is defined over.
     pub fn n_qubits(&self) -> usize {
         self.n_qubits
     }
 
+    /// Capacity (in entries) reserved in the underlying maps.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
+    /// Reference to the primary map — the one that currently holds the
+    /// "active" entries.
     #[inline(always)]
     pub fn data(&self) -> &T::Map {
         if self.aux { &self.map.1 } else { &self.map.0 }
     }
 
+    /// Mutable reference to the primary map.
     #[inline(always)]
     pub fn data_mut(&mut self) -> &mut T::Map {
         if self.aux {
@@ -64,11 +103,13 @@ impl<T: Config> PauliSum<T> {
         }
     }
 
+    /// Reference to the auxiliary map — the scratch buffer gates write into.
     #[inline(always)]
     pub fn aux(&self) -> &T::Map {
         if self.aux { &self.map.0 } else { &self.map.1 }
     }
 
+    /// Mutable reference to the auxiliary map.
     #[inline(always)]
     pub fn aux_mut(&mut self) -> &mut T::Map {
         if self.aux {
@@ -78,6 +119,7 @@ impl<T: Config> PauliSum<T> {
         }
     }
 
+    /// Both maps as a `(primary, auxiliary)` tuple.
     #[inline(always)]
     pub fn data_aux(&self) -> (&T::Map, &T::Map) {
         if self.aux {
@@ -87,6 +129,7 @@ impl<T: Config> PauliSum<T> {
         }
     }
 
+    /// Both maps mutably as a `(primary, auxiliary)` tuple.
     #[inline(always)]
     pub fn data_aux_mut(&mut self) -> (&mut T::Map, &mut T::Map) {
         if self.aux {
@@ -96,19 +139,23 @@ impl<T: Config> PauliSum<T> {
         }
     }
 
+    /// Swap the primary and auxiliary maps without touching their contents.
     #[inline(always)]
     pub fn swap(&mut self) {
         self.aux = !self.aux;
     }
 
+    /// Number of entries in the primary map.
     pub fn len(&self) -> usize {
         self.data().len()
     }
 
+    /// `true` if the primary map has no entries.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// `true` if `(key, value)` is present in the primary map.
     pub fn contains(&self, key: &<T as Config>::PauliWordType, value: &T::Coeff) -> bool {
         self.data().contains(key, value)
     }
@@ -192,6 +239,8 @@ impl<T: Config> PauliSum<T> {
         self.swap();
     }
 
+    /// Apply the configured truncation [`Strategy`](crate::traits::Strategy)
+    /// to the primary map, dropping entries that fall outside its policy.
     pub fn truncate(&mut self) {
         let strategy = self.strategy;
         strategy.truncate(self.data_mut());
@@ -202,6 +251,7 @@ impl<'a, T: Config> PauliSum<T>
 where
     T::Map: ACMapIter<'a>,
 {
+    /// Iterate over the primary map's entries.
     pub fn iter(&'a self) -> <<T as Config>::Map as ACMapIter<'a>>::Iter {
         self.data().iter()
     }

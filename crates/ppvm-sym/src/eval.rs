@@ -1,7 +1,12 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use super::term::{Prod, Sum, Term};
 use anyhow::Result;
 
 impl Prod {
+    /// Evaluate the product at the variable assignment `vals`, where
+    /// `vals[i]` is the value substituted for variable `i`.
     pub fn eval(&self, vals: &[f64]) -> Result<f64> {
         if self.pow() == 0 {
             return Ok(1.0);
@@ -28,6 +33,7 @@ impl Prod {
 }
 
 impl Sum {
+    /// Evaluate the sum at `vals`.
     pub fn eval(&self, vals: &[f64]) -> Result<f64> {
         let mut res = self.c0;
         for (p, c) in &self.terms {
@@ -38,6 +44,7 @@ impl Sum {
 }
 
 impl Term {
+    /// Evaluate this symbolic term at `vals`.
     pub fn eval(&self, vals: &[f64]) -> Result<f64> {
         use crate::term::Inner::*;
         match self.inner {

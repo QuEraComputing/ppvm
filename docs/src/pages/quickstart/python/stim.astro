@@ -1,0 +1,68 @@
+---
+import Base from "../../../layouts/Base.astro";
+import ExampleBlock from "../../../components/ExampleBlock.astro";
+import stimSampling from "../../../../examples/stim_sampling.py?raw";
+import { pyQuickStartSections } from "../../../data/pyQuickStart";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const toc = [
+  { label: "Parse and sample",  href: "#sample" },
+  { label: "Measurement results", href: "#results" },
+  { label: "Where to go next", href: "#next" },
+];
+---
+<Base
+  title="Python Quick Start — Stim circuits"
+  current="quickstart"
+  toc={toc}
+  sections={pyQuickStartSections}
+  currentSection="stim"
+>
+  <article class="shell narrow qs-page qs-page--python">
+    <div class="titleblock">
+      <div class="eyebrow"><a href={`${base}/quickstart/python`}>Python Quick Start</a></div>
+      <h1>Stim circuits &amp; sampling</h1>
+      <p class="byline">
+        The most common entry point for a researcher: parse a Stim program,
+        sample it many times, and look at the empirical distribution of
+        measurement outcomes.
+      </p>
+    </div>
+
+    <section id="sample">
+      <h2>Parse and sample a Stim program</h2>
+      <p>
+        The snippet below prepares a GHZ-2 state and tallies the (q₀, q₁)
+        outcomes over 200 shots.
+      </p>
+      <ExampleBlock code={stimSampling} file="docs/examples/stim_sampling.py" />
+    </section>
+
+    <section id="results">
+      <h2>Loss-aware measurement results</h2>
+      <p>
+        Every shot is a list of <code>MeasurementResult</code> values:
+        <code>ZERO</code>, <code>ONE</code>, or <code>LOST</code> when an
+        atom has been lost. Loss is first-class, so you can model
+        neutral-atom hardware effects without leaving the Stim flow.
+      </p>
+      <p>
+        The mathematical background for how loss is represented internally
+        — the extended five-symbol Pauli basis and the channel mappings —
+        is covered in
+        <a href={`${base}/quickstart/python/loss-channel`}>§ 5 Loss channel
+        details</a>.
+      </p>
+    </section>
+
+    <section id="next">
+      <h2>Where to go next</h2>
+      <p>
+        Stim is convenient when you already have a circuit description in
+        that grammar. When you'd rather build the circuit gate-by-gate from
+        Python — or you need non-Clifford gates the Stim grammar can't
+        express — continue to <a href={`${base}/quickstart/python/tableau`}>§
+        3 Generalized Tableau</a>.
+      </p>
+    </section>
+  </article>
+</Base>

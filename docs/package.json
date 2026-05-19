@@ -1,0 +1,24 @@
+{
+  "name": "ppvm-docs",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "//extract": "Build steps that produce inputs the Astro pages depend on.",
+    "extract:rust": "node scripts/extract-rust.mjs",
+    "extract:python": "node scripts/extract-python.mjs",
+    "extract:notebooks": "uv run --project ../ppvm-python --with jupytext --with nbconvert --with nbclient --with ipykernel --with matplotlib --with numpy --with bleach python scripts/build-notebooks.py",
+    "extract": "npm run extract:rust && npm run extract:python && npm run extract:notebooks",
+    "//astro": "Raw Astro commands — use these only if you've extracted the inputs yourself.",
+    "astro:dev": "astro dev --host 127.0.0.1 --port 4321",
+    "astro:build": "astro build",
+    "//run": "Default entry points: extract everything first, then start the server / produce dist/.",
+    "dev": "npm run extract && npm run astro:dev",
+    "build": "npm run extract && npm run astro:build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "^6.3.4",
+    "marked": "^18.0.3"
+  }
+}

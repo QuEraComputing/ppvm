@@ -2,7 +2,7 @@
 name = "autotune"
 source = ""
 kind = "local"
-checksum = "sha256:bbf35167348a10718574c76d1a828f53685da8bd251a3fa5557b68cc06a567cd"
+checksum = "sha256:f93f7a185639c11e9f85bc9ac1823950e549dff88e5c71f1a0f4b89e14c8f870"
 
 [[skill]]
 name = "brainstorming"
@@ -40,7 +40,7 @@ checksum = "sha256:9edba9a38684c060fdc38290f640e1dc0c37de286723ac9be73bacacf7cd6
 name = "ion-cli"
 source = ""
 kind = "local"
-checksum = "sha256:4207f3d4f43e93120acd5fdc26c60badab389e59d1a2caab74724ab0776a49ff"
+checksum = "sha256:bd5d3a00554413b17ddca6c53aa2f639a7a0c5bdfd8d300126ea6a471d5d669c"
 
 [[skill]]
 name = "receiving-code-review"

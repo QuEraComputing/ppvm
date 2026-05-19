@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -64,8 +67,8 @@ fn msd_func_fused() -> String {
     tab.cz_block_pairs_cross_word(0, 30, 1, 0, 4);
 
     // sqrt_x_adj on all blocks
-    for i in 0..5 {
-        tab.sqrt_x_adj_batch(ql[i]);
+    for block in ql.iter().take(5) {
+        tab.sqrt_x_adj_batch(block);
     }
 
     let bit_string: String = (0..n_qubits)

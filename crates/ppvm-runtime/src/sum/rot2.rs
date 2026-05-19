@@ -1,14 +1,14 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use super::rot1::rotate_1_map_insert_closure;
 use crate::traits::*;
 use crate::{char::Pauli, config::Config, sum::PauliSum};
 
 const PAULIS: [Pauli; 4] = [Pauli::I, Pauli::X, Pauli::Z, Pauli::Y];
 
-impl<T, S, H> RotationTwo<T> for PauliSum<T>
+impl<T: Config> RotationTwo<T> for PauliSum<T>
 where
-    S: PauliStorage,
-    H: std::hash::BuildHasher + Clone + Default,
-    T: Config<Storage = S, BuildHasher = H>,
     T::Coeff: std::ops::MulAssign,
     T::Map: ACMapInsert<T::Storage, T::Coeff, T::BuildHasher, T::PauliWordType> + ACMapConsume,
 {

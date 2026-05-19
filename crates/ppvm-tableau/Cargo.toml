@@ -30,10 +30,6 @@ name = "tableau-msd"
 harness = false
 
 [[bench]]
-name = "tableau-msd-stim"
-harness = false
-
-[[bench]]
 name = "tableau-msd-fused"
 harness = false
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -72,8 +75,8 @@ fn msd_func() -> String {
         tab.cz(*control, *target);
     }
 
-    for i in 0..5 {
-        for q in ql[i] {
+    for block in ql.iter().take(5) {
+        for q in *block {
             tab.sqrt_x_adj(*q);
         }
     }

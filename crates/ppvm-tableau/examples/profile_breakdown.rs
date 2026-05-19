@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Profile the time breakdown inside branch_with_coefficients:
 //! computation (phase + multiply) vs HashMap accumulation.
 
@@ -49,7 +52,7 @@ fn main() {
                 let parity = (active & odd_phase_mask).count_ones() % 2;
                 phase = (phase + 2 * parity as u8) % 4;
                 let branch_phase = (phase + phase_decomp) % 4;
-                let phase_factor: Complex<f64> = phase_table[branch_phase as usize].into();
+                let phase_factor: Complex<f64> = phase_table[branch_phase as usize];
                 let branch_coeff = phase_factor * coeff * branch_factor;
                 let nonbranch_coeff = coeff * coefficient_factor;
                 results.push((branch_index, branch_coeff, idx, nonbranch_coeff));
@@ -69,7 +72,7 @@ fn main() {
             let parity = (active & odd_phase_mask).count_ones() % 2;
             phase = (phase + 2 * parity as u8) % 4;
             let branch_phase = (phase + phase_decomp) % 4;
-            let phase_factor: Complex<f64> = phase_table[branch_phase as usize].into();
+            let phase_factor: Complex<f64> = phase_table[branch_phase as usize];
             precomputed.push((
                 branch_index,
                 phase_factor * coeff * branch_factor,
@@ -104,7 +107,7 @@ fn main() {
                 let parity = (active & odd_phase_mask).count_ones() % 2;
                 phase = (phase + 2 * parity as u8) % 4;
                 let branch_phase = (phase + phase_decomp) % 4;
-                let phase_factor: Complex<f64> = phase_table[branch_phase as usize].into();
+                let phase_factor: Complex<f64> = phase_table[branch_phase as usize];
                 let branch_coeff = phase_factor * coeff * branch_factor;
                 let nonbranch_coeff = coeff * coefficient_factor;
                 *map.entry(branch_index).or_insert(Complex::zero()) += branch_coeff;

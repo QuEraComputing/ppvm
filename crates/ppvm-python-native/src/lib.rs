@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use pyo3::prelude::*;
 
 pub mod interface;
 pub mod interface_tableau;
+pub mod stim_program;
 
 #[pymodule]
 pub mod ppvm_python_native {
@@ -140,4 +144,8 @@ pub mod ppvm_python_native {
     pub use crate::interface_tableau::GeneralizedTableau31;
     #[pymodule_export]
     pub use crate::interface_tableau::GeneralizedTableau32;
+
+    // Stim
+    #[pymodule_export]
+    pub use crate::stim_program::PyStimProgram;
 }

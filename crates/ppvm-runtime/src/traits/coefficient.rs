@@ -1,5 +1,16 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use num::traits::Float;
 
+/// Numeric coefficient type usable inside a
+/// [`PauliSum`](crate::sum::PauliSum).
+///
+/// `Coefficient` bundles every arithmetic operation a Pauli-propagation
+/// step needs — addition, multiplication, signed multiplication, half,
+/// sin/cos, and a `cutoff` predicate used by truncation strategies. The
+/// built-in `f64` impl covers the common case; `Complex<f64>` is
+/// available when phase tracking is required.
 pub trait Coefficient:
     PartialEq
     + Clone
@@ -20,8 +31,11 @@ pub trait Coefficient:
     + Sync
     + Send
 {
+    /// Multiply by `sign ∈ {-1, +1}` (encoded as `i8`).
     fn mul_sign(&self, sign: i8) -> Self;
+    /// Divide by two.
     fn half(&self) -> Self;
+    /// Return `(sin θ, cos θ)`.
     fn sin_cos(&self) -> (Self, Self);
 
     /// Determine whether this coefficient should be cutoff
@@ -47,6 +61,8 @@ impl Coefficient for f64 {
     }
 }
 
+/// A [`Coefficient`] extended with multiplication by a fourth-root-of-unity
+/// phase. Used by [`PhasedPauliWord`](crate::phase::PhasedPauliWord).
 pub trait ComplexCoefficient: Coefficient {
     /// multiply by phase encoded as:
     ///

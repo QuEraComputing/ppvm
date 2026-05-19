@@ -1,0 +1,20 @@
+# Runnable copies of the Rust code blocks in ../../SKILL.md.
+#
+# This crate exists for CI: every binary here is the exact code an agent
+# would paste from the skill, compiled and run against the local
+# workspace crates. A signature change in the public API will break the
+# build, surfacing the drift before the skill ships.
+#
+# The crate is intentionally minimal — no library, just a handful of
+# binaries — and is added to the workspace via the root Cargo.toml.
+[package]
+name = "ppvm-skill-examples"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+ppvm-runtime = { version = "0.1.0", path = "../../../../crates/ppvm-runtime" }
+ppvm-tableau = { version = "0.1.0", path = "../../../../crates/ppvm-tableau" }
+ppvm-sym    = { version = "0.1.0", path = "../../../../crates/ppvm-sym" }
+ppvm-stim   = { version = "0.1.0", path = "../../../../crates/ppvm-stim" }

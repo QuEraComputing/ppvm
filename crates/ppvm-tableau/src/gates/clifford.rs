@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::prelude::*;
 use bitvec::view::BitView;
 use bitvec::view::BitViewSized;
@@ -187,7 +190,7 @@ where
         Some((masks, n_words))
     }
 
-    /// Apply sqrt_y to multiple qubits using combined bitmask operations.
+    /// Apply `√Y` to multiple qubits using combined bitmask operations.
     /// All qubits targeting the same word are merged into a single mask,
     /// reducing N individual operations to O(n_words) per row.
     #[inline]
@@ -364,6 +367,7 @@ where
             .any(|&(c, t)| self.is_lost[c] || self.is_lost[t])
     }
 
+    /// Batched `√Y`, skipping lost qubits.
     pub fn sqrt_y_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_y_batch(indices);
@@ -377,6 +381,7 @@ where
         self.tableau.sqrt_y_batch(&filtered);
     }
 
+    /// Batched `(√Y)†`, skipping lost qubits.
     pub fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_y_adj_batch(indices);
@@ -390,6 +395,7 @@ where
         self.tableau.sqrt_y_adj_batch(&filtered);
     }
 
+    /// Batched `√X`, skipping lost qubits.
     pub fn sqrt_x_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_x_batch(indices);
@@ -403,6 +409,7 @@ where
         self.tableau.sqrt_x_batch(&filtered);
     }
 
+    /// Batched `(√X)†`, skipping lost qubits.
     pub fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_x_adj_batch(indices);
@@ -416,6 +423,7 @@ where
         self.tableau.sqrt_x_adj_batch(&filtered);
     }
 
+    /// Batched `CZ`, skipping pairs with a lost qubit.
     pub fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
         if !self.any_lost_pair(pairs) {
             self.tableau.cz_batch(pairs);
@@ -429,6 +437,7 @@ where
         self.tableau.cz_batch(&filtered);
     }
 
+    /// Batched `H`, skipping lost qubits.
     pub fn h_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.h_batch(indices);

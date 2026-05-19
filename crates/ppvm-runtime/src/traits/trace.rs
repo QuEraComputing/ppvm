@@ -1,6 +1,13 @@
-/// Trait for computing trace(self * RHS)
-/// if type implements `Trace` an implementation of `TraceBy` is also provided.
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
+/// Trait for computing `trace(self * RHS)`.
+///
+/// If a type implements `Trace`, a corresponding `TraceBy` implementation
+/// is also provided automatically.
 pub trait Trace<'a, RHS: 'a> {
+    /// Numeric output of the trace.
     type Output;
+    /// Compute `tr(self · value)`.
     fn trace(&'a self, value: &'a RHS) -> Self::Output;
 }

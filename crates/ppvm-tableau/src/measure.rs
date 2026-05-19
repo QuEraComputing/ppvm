@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use super::data::{compute_phase_with_mask_static, symplectic_inner};
 use crate::prelude::*;
 use bitvec::view::BitView;
@@ -196,6 +199,66 @@ where
                 .update_tableau_according_to_outcome(addr0, q_idx, outcome);
 
             Some(outcome)
+        }
+    }
+}
+
+impl<T, I, C> GeneralizedTableau<T, I, C>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+{
+    /// Measure qubit `addr0` in Z basis with optional readout noise.
+    ///
+    /// Behaves like [`measure`](LossyMeasure::measure), then with probability
+    /// `flip_prob` flips the *recorded* bit. The qubit's quantum state stays
+    /// consistent with the true outcome — only the returned value flips.
+    /// `flip_prob = 0.0` is equivalent to `measure`.
+    ///
+    /// If the qubit is lost, returns `None` regardless of `flip_prob`.
+    pub fn measure_noisy(&mut self, addr0: usize, flip_prob: f64) -> Option<bool> {
+        debug_assert!(
+            (0.0..=1.0).contains(&flip_prob),
+            "flip_prob must be in [0, 1], got {flip_prob}"
+        );
+        let outcome = self.measure(addr0)?;
+        Some(self.flip_with_prob(outcome, flip_prob))
+    }
+
+    /// Sample a Bernoulli(`p`) outcome using the tableau's internal RNG.
+    /// Used by Stim measurement-noise dispatch in `ppvm-stim`.
+    pub fn bernoulli(&mut self, p: f64) -> bool {
+        debug_assert!((0.0..=1.0).contains(&p), "p must be in [0, 1], got {p}");
+        self.tableau.rng.random::<f64>() < p
+    }
+
+    /// Flip `bit` with probability `p`. Used by Stim MR/MPad readout-noise
+    /// dispatch in `ppvm-stim`. Returns `bit` unchanged when `p <= 0.0`.
+    pub fn flip_with_prob(&mut self, bit: bool, p: f64) -> bool {
+        debug_assert!((0.0..=1.0).contains(&p), "p must be in [0, 1], got {p}");
+        if p > 0.0 && self.bernoulli(p) {
+            !bit
+        } else {
+            bit
         }
     }
 }

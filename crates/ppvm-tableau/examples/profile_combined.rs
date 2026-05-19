@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Profile the time breakdown of a fused circuit with variable T gates.
 
 use std::time::Instant;

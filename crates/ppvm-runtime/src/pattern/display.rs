@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use super::data::{Decorated, NotIdentity, OpPattern, PauliPattern};
 
 impl std::fmt::Display for NotIdentity {

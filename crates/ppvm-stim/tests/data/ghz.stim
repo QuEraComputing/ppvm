@@ -1,0 +1,6 @@
+# 4-qubit GHZ
+H 0
+CX 0 1
+CX 1 2
+CX 2 3
+M 0 1 2 3

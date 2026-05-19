@@ -71,7 +71,7 @@ where
 
     pub(crate) fn insert_or_update_batch(
         &mut self,
-        branches: &Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
+        branches: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
     ) {
         // Build a fingerprint index over the current entries so each branch
         // lookup is O(1) expected instead of O(M) linear scan. Push-only
@@ -84,8 +84,8 @@ where
         }
 
         let mut needs_renormalize = false;
-        for branch in branches.iter() {
-            let dropped_any = self.insert_or_update(&branch.0, &branch.1, &mut fp_index);
+        for (tab, p) in branches {
+            let dropped_any = self.insert_or_update(tab, p, &mut fp_index);
             needs_renormalize |= dropped_any;
         }
         if needs_renormalize {
@@ -95,17 +95,17 @@ where
 
     fn insert_or_update(
         &mut self,
-        tab: &GeneralizedTableau<T, I, C>,
-        p: &T::Coeff,
+        tab: GeneralizedTableau<T, I, C>,
+        p: T::Coeff,
         fp_index: &mut FxHashMap<u64, Vec<usize>>,
     ) -> bool {
-        let fp = Self::fingerprint(tab);
+        let fp = Self::fingerprint(&tab);
 
         // Only run the full equality check on entries whose fingerprint matches.
         let mut found: Option<usize> = None;
         if let Some(candidates) = fp_index.get(&fp) {
             for &i in candidates {
-                if Self::unsafe_equal_tableau_data_and_is_lost(&self.entries[i].0, tab) {
+                if Self::unsafe_equal_tableau_data_and_is_lost(&self.entries[i].0, &tab) {
                     found = Some(i);
                     break;
                 }
@@ -116,14 +116,13 @@ where
         match found {
             Some(i) => {
                 let p0 = &self.entries[i].1;
-                self.entries[i].1 = p0.clone() + p.clone();
+                self.entries[i].1 = p0.clone() + p;
             }
 
-            // TODO: avoid cloning here
             None => {
-                if p > &self.sum_cutoff {
+                if p > self.sum_cutoff {
                     let new_idx = self.entries.len();
-                    self.entries.push((tab.clone(), p.clone()));
+                    self.entries.push((tab, p));
                     fp_index.entry(fp).or_default().push(new_idx);
                 } else {
                     needs_normalize = true;

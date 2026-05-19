@@ -55,7 +55,7 @@ where
             *p_sum *= T::Coeff::one() - p.clone();
         }
 
-        self.insert_or_update_batch(&branches);
+        self.insert_or_update_batch(branches);
         self.truncate();
     }
 }
@@ -112,7 +112,7 @@ where
             *p_sum *= T::Coeff::one() - p.clone();
         }
 
-        self.insert_or_update_batch(&branches);
+        self.insert_or_update_batch(branches);
         self.truncate();
     }
 }

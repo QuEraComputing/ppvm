@@ -94,6 +94,6 @@ See [NOTICE](NOTICE) for attribution requirements.
 
 # Contributing
 
-Contributions are welcome. By submitting a pull request to this repository,
-you agree to license your contribution under the Apache License, Version 2.0
-and to the terms of the [Contributor License Agreement](CLA.md).
+Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for
+the workflow and licensing terms. By opening a pull request you agree to
+the Apache License 2.0 and the [Contributor License Agreement](CLA.md).

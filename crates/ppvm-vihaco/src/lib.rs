@@ -4,6 +4,7 @@ pub mod instruction;
 pub mod message;
 
 pub mod prelude {
-    pub use crate::component::CircuitExecutor;
+    pub use crate::component::{Circuit, CircuitEffect};
     pub use crate::instruction::CircuitInstruction;
+    pub use crate::message::CircuitMessage;
 }

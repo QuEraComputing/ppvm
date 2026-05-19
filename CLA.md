@@ -116,13 +116,13 @@ which You are personally aware, and conspicuously marking the work as
 
 ## How to accept this Agreement
 
-By submitting a pull request to this repository, You indicate Your
-acceptance of this Agreement for all Contributions in that pull request and
-for all future Contributions You submit to the Project. For non-trivial
-contributions, We may additionally request that You sign this Agreement
-electronically via [CLA Assistant](https://cla-assistant.io/) or an
-equivalent tool linked from the pull request.
+By opening a pull request against this repository, You indicate Your
+acceptance of this Agreement for all Contributions in that pull request
+and for all future Contributions You submit to the Project. The pull
+request itself, together with the notice in
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and the welcome comment posted on
+Your first pull request, constitutes Your record of acceptance.
 
-Contributors who are submitting on behalf of an employer should arrange for
-a Corporate CLA to be executed separately; contact the maintainers if one
-is required for your contribution.
+Contributors who are submitting on behalf of an employer should arrange
+for a Corporate CLA to be executed separately; contact the maintainers
+if one is required for your contribution.

@@ -6,6 +6,7 @@ use ppvm_runtime::prelude::*;
 use ppvm_runtime::strategy::{
     CoefficientThreshold, CombinedStrategy, MaxLossWeight, MaxPauliWeight,
 };
+use ppvm_runtime::sum::PreserveConfig;
 use pyo3::prelude::*;
 
 macro_rules! create_interface_loss_methods {
@@ -59,21 +60,40 @@ macro_rules! create_interface {
         #[pymethods]
         impl $name {
             #[new]
-            #[pyo3(signature = (n_qubits, min_abs_coeff = 1e-10, max_pauli_weight = usize::MAX, max_loss_weight = usize::MAX, terms = Vec::<String>::new(), coefficients = Vec::<f64>::new()))]
+            #[pyo3(signature = (n_qubits, min_abs_coeff = 1e-10, max_pauli_weight = usize::MAX, max_loss_weight = usize::MAX, terms = Vec::<String>::new(), coefficients = Vec::<f64>::new(), preserve = Vec::<String>::new(), preserve_threshold = 0.0_f64, preserve_weight_lambda = 0.0_f64))]
+            #[allow(clippy::too_many_arguments)]
             pub fn new(
                 n_qubits: usize,
                 min_abs_coeff: f64,
                 max_pauli_weight: usize,
                 max_loss_weight: usize,
                 terms: Vec<String>,
-                coefficients: Vec<f64>
+                coefficients: Vec<f64>,
+                preserve: Vec<String>,
+                preserve_threshold: f64,
+                preserve_weight_lambda: f64,
             ) -> Self {
                 let _ = max_loss_weight; // unused in non-loss variants
                 let strategy = create_strategy!($loss, min_abs_coeff, max_pauli_weight, max_loss_weight);
+                // Build the optional preserve-aware truncation policy. When
+                // `preserve` is empty the configured `strategy` is used as
+                // before; when non-empty the listed Pauli strings are kept
+                // regardless of coefficient and the rest are dropped below
+                // `preserve_threshold * exp(preserve_weight_lambda * weight)`.
+                let preserve_config = if preserve.is_empty() {
+                    None
+                } else {
+                    Some(PreserveConfig::from_strings(
+                        preserve.into_iter(),
+                        preserve_threshold,
+                        preserve_weight_lambda,
+                    ))
+                };
                 let mut ps = PauliSum::<$type>::builder()
                     .n_qubits(n_qubits)
                     .strategy(strategy)
                     .capacity(n_qubits)
+                    .maybe_preserve(preserve_config)
                     .build();
 
                 assert_eq!(

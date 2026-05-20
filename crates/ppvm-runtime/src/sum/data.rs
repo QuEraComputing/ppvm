@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::config::Config;
+use crate::sum::preserve::PreserveConfig;
 use crate::traits::*;
 
 /// A sparse formal sum `Σ cᵢ Pᵢ` of Pauli strings.
@@ -42,6 +43,12 @@ pub struct PauliSum<T: Config> {
     n_qubits: usize,
     capacity: usize,
     strategy: T::Strategy,
+    /// Optional observable-aware truncation policy. When `Some(...)`,
+    /// [`PauliSum::truncate`] uses this instead of `strategy`: the
+    /// chosen Pauli strings are never dropped, and the rest are
+    /// truncated with a weight-biased threshold. See
+    /// [`PreserveConfig`].
+    preserve: Option<PreserveConfig<T::PauliWordType>>,
 }
 
 #[bon::bon]
@@ -51,6 +58,8 @@ impl<T: Config> PauliSum<T> {
     /// One can optionally set
     /// - the strategy for truncation, initialization etc.
     /// - the capacity of the internal maps, default is strategy.capacity(n_qubits)
+    /// - a [`PreserveConfig`] for observable-aware truncation; when set
+    ///   it supersedes `strategy` inside [`truncate`](Self::truncate).
     #[builder]
     pub fn new(
         /// number of qubits
@@ -61,6 +70,8 @@ impl<T: Config> PauliSum<T> {
         /// capacity of the internal maps, default is strategy.capacity(n_qubits)
         #[builder(default = strategy.capacity(n_qubits))]
         capacity: usize,
+        /// optional observable-aware truncation policy
+        preserve: Option<PreserveConfig<T::PauliWordType>>,
     ) -> Self {
         Self {
             map: (
@@ -71,6 +82,7 @@ impl<T: Config> PauliSum<T> {
             n_qubits,
             capacity,
             strategy,
+            preserve,
         }
     }
 }
@@ -240,10 +252,39 @@ impl<T: Config> PauliSum<T> {
     }
 
     /// Apply the configured truncation [`Strategy`](crate::traits::Strategy)
-    /// to the primary map, dropping entries that fall outside its policy.
+    /// — or, if a [`PreserveConfig`] was supplied at construction, use
+    /// the preserve-aware policy instead — to the primary map, dropping
+    /// entries that fall outside the active policy.
     pub fn truncate(&mut self) {
-        let strategy = self.strategy;
-        strategy.truncate(self.data_mut());
+        if self.preserve.is_some() {
+            // The preserve closure has to be `Sync + Send` (the
+            // `ACMap::retain` contract). Capturing the `keep`
+            // `HashSet<W>` directly would require `W: Sync + Send`,
+            // which is not a `PauliWordTrait` bound and would force the
+            // bound onto every caller of `truncate()`. Capture a string
+            // snapshot instead — strings are unconditionally Sync+Send.
+            let preserve = self.preserve.as_ref().unwrap();
+            let keep: std::collections::HashSet<String> =
+                preserve.keep.iter().map(|w| w.to_string()).collect();
+            let base = preserve.base_threshold;
+            let lambda = preserve.weight_lambda;
+            let data = self.data_mut();
+            data.retain(|k, v| {
+                if keep.contains(&k.to_string()) {
+                    return true;
+                }
+                let eff = base * (lambda * k.weight() as f64).exp();
+                !v.cutoff(eff)
+            });
+        } else {
+            let strategy = self.strategy;
+            strategy.truncate(self.data_mut());
+        }
+    }
+
+    /// Read-only access to the active [`PreserveConfig`], if any.
+    pub fn preserve(&self) -> Option<&PreserveConfig<T::PauliWordType>> {
+        self.preserve.as_ref()
     }
 }
 

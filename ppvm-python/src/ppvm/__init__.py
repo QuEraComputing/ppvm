@@ -8,6 +8,7 @@ from .generalized_tableau import MeasurementResult as MeasurementResult
 from .generalized_tableau import sample_stim as sample_stim
 from .paulisum import LossyPauliSum as LossyPauliSum
 from .paulisum import PauliSum as PauliSum
+from .paulisum import preserve_single_z as preserve_single_z
 from .squin_interpreter.device import (
     GeneralizedTableauSimulator as GeneralizedTableauSimulator,
 )

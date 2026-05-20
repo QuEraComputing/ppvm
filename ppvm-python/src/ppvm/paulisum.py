@@ -15,6 +15,26 @@ _COMPACT_RE = re.compile(r"^([IXYZ]\d+)+$")
 _COMPACT_TOKEN_RE = re.compile(r"([IXYZ])(\d+)")
 
 
+def preserve_single_z(n_qubits: int) -> list[str]:
+    """Return the list of all single-`Z` Pauli strings on `n_qubits` qubits.
+
+    Suitable as the ``preserve_strings`` argument when computing a
+    `<Σ_j Z_j(t) Z_i(0)>`-style transport diagnostic: every Pauli string
+    that contributes to the projection onto total magnetization gets
+    exempted from truncation, so the conserved-charge component of the
+    propagated observable is preserved exactly regardless of how
+    aggressively the rest of the operator is truncated.
+
+    Args:
+        n_qubits: Number of qubits.
+
+    Returns:
+        ``["ZII...I", "IZI...I", ..., "II...IZ"]`` — `n_qubits` strings
+        in site order.
+    """
+    return ["".join("Z" if i == j else "I" for i in range(n_qubits)) for j in range(n_qubits)]
+
+
 def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, float]":
     if isinstance(term, tuple):
         s, coeff = term
@@ -137,6 +157,9 @@ class PauliSum(
     min_abs_coeff: float = 1e-10
     max_pauli_weight: int | None = None
     max_loss_weight: int | None = None
+    preserve_strings: Sequence[str] | None = None
+    preserve_threshold: float | None = None
+    preserve_weight_lambda: float = 0.0
 
     _interface: PauliSumInterface = field(init=False, repr=False)
 
@@ -193,6 +216,22 @@ class PauliSum(
         if self.max_loss_weight is not None:
             options["max_loss_weight"] = self.max_loss_weight
 
+        if self.preserve_strings:
+            preserve_list = list(self.preserve_strings)
+            for s in preserve_list:
+                if len(s) != n_qubits:
+                    raise ValueError(
+                        "All preserve strings must have length n_qubits "
+                        f"({n_qubits}); got {len(s)}: {s!r}"
+                    )
+            options["preserve"] = preserve_list
+            options["preserve_threshold"] = (
+                self.preserve_threshold
+                if self.preserve_threshold is not None
+                else self.min_abs_coeff
+            )
+            options["preserve_weight_lambda"] = self.preserve_weight_lambda
+
         return interface(
             n_qubits,
             **options,
@@ -214,6 +253,9 @@ class PauliSum(
         min_abs_coeff: float = 1e-10,
         max_pauli_weight: int | None = None,
         max_loss_weight: int | None = None,
+        preserve_strings: Sequence[str] | None = None,
+        preserve_threshold: float | None = None,
+        preserve_weight_lambda: float = 0.0,
     ) -> Self:
         """Create a PauliSum from one or more terms with flexible input formats.
 
@@ -234,6 +276,27 @@ class PauliSum(
                 Note, that this should usually be chosen to be quite low, since
                 e.g. 10 would correspond to keeping terms that contribute if
                 up to 10 qubits are lost simultaneously.
+            preserve_strings: Optional list of Pauli strings (each of length
+                ``n_qubits``) that should never be dropped by truncation,
+                regardless of coefficient magnitude. Useful for transport
+                diagnostics where the answer depends on the projection onto
+                a small fixed set of Pauli strings (e.g. ``Σ_j Z_j``). When
+                set, the underlying ``truncate()`` switches from
+                ``CoefficientThreshold`` / ``MaxPauliWeight`` to a
+                preserve-aware policy: listed strings always survive, the
+                rest are dropped below ``preserve_threshold``. See also
+                :func:`preserve_single_z`.
+            preserve_threshold: Coefficient cutoff applied to non-preserved
+                strings. Defaults to ``min_abs_coeff`` if ``preserve_strings``
+                is set, else ignored.
+            preserve_weight_lambda: Weight-biased multiplier for the
+                non-preserved threshold ("virtual DAOE"): a term of weight
+                ``k`` is dropped below ``preserve_threshold * exp(λ k)``.
+                Setting ``λ > 0`` makes high-weight strings be truncated
+                more aggressively without modifying the dynamics, inspired
+                by `Rakovszky, Pollmann, von Keyserlingk (2020)
+                <https://arxiv.org/abs/2004.05177>`_. Default ``0`` gives a
+                uniform threshold.
 
         Returns:
             A new instance of the class this method is called on.
@@ -278,6 +341,9 @@ class PauliSum(
             min_abs_coeff=min_abs_coeff,
             max_pauli_weight=max_pauli_weight,
             max_loss_weight=max_loss_weight,
+            preserve_strings=preserve_strings,
+            preserve_threshold=preserve_threshold,
+            preserve_weight_lambda=preserve_weight_lambda,
         )
 
     def __str__(self) -> str:
@@ -291,6 +357,9 @@ class PauliSum(
         object.__setattr__(new, "min_abs_coeff", self.min_abs_coeff)
         object.__setattr__(new, "max_pauli_weight", self.max_pauli_weight)
         object.__setattr__(new, "max_loss_weight", self.max_loss_weight)
+        object.__setattr__(new, "preserve_strings", self.preserve_strings)
+        object.__setattr__(new, "preserve_threshold", self.preserve_threshold)
+        object.__setattr__(new, "preserve_weight_lambda", self.preserve_weight_lambda)
         object.__setattr__(new, "_interface", self._interface.__copy__())
         return new
 

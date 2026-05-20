@@ -10,6 +10,7 @@ mod proj;
 mod rot1;
 mod rot2;
 mod trace;
+mod u1;
 
 #[cfg(feature = "approx")]
 mod approx;

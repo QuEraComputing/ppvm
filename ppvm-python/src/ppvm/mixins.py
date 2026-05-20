@@ -155,6 +155,72 @@ class RotationsMixin:
         """
         self._interface.rzz(addr0, addr1, theta)
 
+    # U(1)-conserving two-qubit gates for XY / Heisenberg-style dynamics.
+    def exchange(self, addr0: int, addr1: int, theta: float) -> None:
+        """Apply the fused XY exchange rotation to two qubits.
+
+        ```math
+        \\mathrm{exchange}(\\theta) = e^{-i \\frac{\\theta}{2} (X \\otimes X + Y \\otimes Y)}
+        ```
+
+        The `XX` and `YY` generators commute, so this is mathematically
+        equivalent to ``rxx(addr0, addr1, theta)`` followed by
+        ``ryy(addr0, addr1, theta)``, but exposed as a single routine for
+        building U(1)-symmetric (z-magnetization-conserving) dynamics such
+        as XY or Heisenberg spin models without manually composing the
+        XX / YY decomposition. Like every other PauliSum gate this acts in
+        the Heisenberg picture.
+
+        Conservation under truncation:
+            ``exchange`` commutes with the total Z magnetization
+            :math:`\\sum_k Z_k`. Observables built from `{I, Z}`-only Pauli
+            strings (e.g. :math:`\\sum_i Z_i`, :math:`\\sum_{i<j} Z_i Z_j`)
+            are conserved through repeated ``exchange`` calls up to
+            per-gate floating-point precision (~1e-15 per gate). Standard
+            truncation settings — `min_abs_coeff` well below 1 and any
+            `max_pauli_weight` that accommodates the starting observable —
+            preserve this guarantee. See :py:meth:`apply_u1_trotter_step`
+            for the broader story when composing several U(1) gates.
+
+        Args:
+            addr0: The index of the first qubit.
+            addr1: The index of the second qubit.
+            theta: The rotation angle in radians.
+        """
+        self._interface.exchange(addr0, addr1, theta)
+
+    def xyzz(self, addr0: int, addr1: int, theta_xy: float, theta_zz: float) -> None:
+        """Apply a combined XY exchange + ZZ interaction to two qubits.
+
+        ```math
+        e^{-i \\frac{\\theta_{xy}}{2} (X \\otimes X + Y \\otimes Y)}
+        \\cdot e^{-i \\frac{\\theta_{zz}}{2} Z \\otimes Z}
+        ```
+
+        The two factors commute, so the ordering of the (Heisenberg-picture)
+        XX+YY and ZZ pieces does not matter mathematically. This is the
+        convenience method to use for one site-pair of an XXZ-style
+        z-magnetization-conserving Hamiltonian.
+
+        Conservation under truncation:
+            Like :py:meth:`exchange`, ``xyzz`` commutes with the total Z
+            magnetization :math:`\\sum_k Z_k`. The same truncation-robust
+            guarantee applies: `{I, Z}`-polynomial observables (e.g.
+            :math:`\\sum_i Z_i`, :math:`\\sum_{i<j} Z_i Z_j` over all
+            pairs) are conserved through repeated ``xyzz`` calls up to
+            per-gate floating-point precision, as long as the truncation
+            cutoff stays comfortably below the conserved coefficient
+            magnitude. See :py:meth:`apply_u1_trotter_step` for the
+            broader discussion.
+
+        Args:
+            addr0: The index of the first qubit.
+            addr1: The index of the second qubit.
+            theta_xy: Rotation angle for the `XX + YY` (exchange) generator.
+            theta_zz: Rotation angle for the `ZZ` generator.
+        """
+        self._interface.xyzz(addr0, addr1, theta_xy, theta_zz)
+
 
 class CliffordExtensionMixin:
     _interface: Any

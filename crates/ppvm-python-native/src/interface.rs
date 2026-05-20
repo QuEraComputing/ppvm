@@ -210,6 +210,17 @@ macro_rules! create_interface {
                 self.inner.truncate();
             }
 
+            // U(1)-conserving exchange/Heisenberg-style gates
+            pub fn exchange(&mut self, addr0: usize, addr1: usize, theta: f64) {
+                self.inner.exchange(addr0, addr1, theta);
+                self.inner.truncate();
+            }
+
+            pub fn xyzz(&mut self, addr0: usize, addr1: usize, theta_xy: f64, theta_zz: f64) {
+                self.inner.xyzz(addr0, addr1, theta_xy, theta_zz);
+                self.inner.truncate();
+            }
+
             // noise
             pub fn pauli_error(&mut self, addr0: usize, p: [f64; 3]) {
                 self.inner.pauli_error(addr0, p);

@@ -297,3 +297,9 @@ impl vihaco::Reset for Circuit {
         };
     }
 }
+
+impl Default for Circuit {
+    fn default() -> Self {
+        Self::new(0, 1e-10)
+    }
+}

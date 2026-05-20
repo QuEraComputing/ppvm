@@ -14,12 +14,27 @@ use crate::measurement_observer::{MeasurementEffect, MeasurementObserver};
 use crate::message::CircuitMessage;
 use crate::prelude::{Circuit, CircuitInstruction};
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PPVMDeviceInfo {
+    pub n_qubits: usize,
+    pub coefficient_threshold: f64,
+}
+impl Default for PPVMDeviceInfo {
+    fn default() -> Self {
+        Self {
+            n_qubits: 0,
+            coefficient_threshold: 1e-10,
+        }
+    }
+}
+
 pub type Instruction = PPVMInstruction;
 
 #[composite]
+#[derive(Default)]
 pub struct PPVM {
     #[program]
-    loader: ProgramLoader<PPVMInstruction>,
+    loader: ProgramLoader<PPVMInstruction, PPVMDeviceInfo>,
 
     #[device(0x00, resolve_with = resolve_cpu, custom_parser)]
     cpu: CPU,
@@ -196,20 +211,17 @@ impl PPVM {
     }
 
     pub fn init(&mut self) -> eyre::Result<()> {
-        let n_qubits = 10;
-        let coefficient_threshold = 1e-10;
-        self.circuit = Circuit::new(n_qubits, coefficient_threshold);
+        let info = &self.loader.module.extra;
+        if info.n_qubits == 0 {
+            return Err(eyre::eyre!("device circuit.n_qubits must be declared"));
+        }
+        self.circuit = Circuit::new(info.n_qubits, info.coefficient_threshold);
         Ok(())
     }
 
     pub fn load(
         &mut self,
-        module: &vihaco::module::Module<
-            Instruction,
-            vihaco::Value,
-            vihaco::Type,
-            vihaco::module::NoInfo,
-        >,
+        module: &vihaco::module::Module<Instruction, vihaco::Value, vihaco::Type, PPVMDeviceInfo>,
     ) -> eyre::Result<()> {
         self.loader.module = module.clone();
         Ok(())
@@ -352,7 +364,9 @@ mod tests {
 
     #[test]
     fn test_run_ppvm() -> eyre::Result<()> {
-        let mut module: Module<PPVMInstruction, Value, Type> = Module::default();
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+
+        module.extra.n_qubits = 2;
 
         /*
         const.u64 0
@@ -386,17 +400,9 @@ mod tests {
             .code
             .push(PPVMInstruction::Circuit(CircuitInstruction::CNOT));
 
-        let mut machine = PPVM {
-            loader: ProgramLoader::default(),
-            cpu: CPU::default(),
-            circuit: Circuit::new(2, 1e-10),
-            stdout: StdoutObserver::default(),
-            measurement_record: MeasurementObserver { record: Vec::new() },
-        };
-
-        println!("{:?}", module.code);
-
+        let mut machine = PPVM::default();
         machine.load(&module)?;
+        machine.init()?;
 
         for _ in 0..module.code.len() {
             machine.step_once()?;
@@ -431,6 +437,83 @@ mod tests {
         };
 
         assert_eq!(num_coefficients, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_device_decl() -> eyre::Result<()> {
+        // Equivalent .sst source:
+        //
+        //     device circuit.n_qubits 5;
+        //     device circuit.coefficient_threshold 1e-10;
+        //
+        //     fn @main() { ...5-qubit GHZ + 5 measurements... }
+
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+
+        module.extra.n_qubits = 5;
+        module.extra.coefficient_threshold = 1e-10;
+
+        // 5-qubit GHZ: H on q0, then CNOT(q_i, q_{i+1}) for i = 0..4.
+        /*
+        const.u64 0
+        gate h
+        */
+        module
+            .code
+            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                Value::U64(0),
+            )));
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::H));
+
+        for i in 0..4u64 {
+            /*
+            const.u64 i
+            const.u64 i+1
+            gate cnot
+            */
+            module
+                .code
+                .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                    Value::U64(i),
+                )));
+            module
+                .code
+                .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                    Value::U64(i + 1),
+                )));
+            module
+                .code
+                .push(PPVMInstruction::Circuit(CircuitInstruction::CNOT));
+        }
+
+        // Measure all 5 qubits.
+        for q in 0..5u64 {
+            /*
+            const.u64 q
+            gate measure
+            */
+            module
+                .code
+                .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                    Value::U64(q),
+                )));
+            module
+                .code
+                .push(PPVMInstruction::Circuit(CircuitInstruction::Measure));
+        }
+
+        let mut machine = PPVM::default();
+        machine.load(&module)?;
+        machine.init()?;
+
+        for _ in 0..module.code.len() {
+            machine.step_once()?;
+        }
+
+        assert_eq!(machine.measurement_record().len(), 5);
         Ok(())
     }
 }

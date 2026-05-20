@@ -78,6 +78,23 @@ jobs:
           cache: "npm"
           cache-dependency-path: docs/package-lock.json
 
+      - name: Restore executed-notebook cache
+        # Reuses already-executed notebook HTML across runs. The key
+        # mirrors what `build-notebooks.py` hashes per-notebook: every
+        # Jupytext source + the lockfiles + every Cargo.toml. If any
+        # of those change, the cache misses and the build script
+        # re-executes the affected notebooks (still reusing the
+        # unchanged ones via the per-notebook content hash). The
+        # `restore-keys` fallback gives us a partial hit when *some*
+        # of those inputs change — the script then re-executes only
+        # the notebooks whose fingerprint no longer matches.
+        uses: actions/cache@v4
+        with:
+          path: docs/.notebook-cache
+          key: notebooks-v1-${{ hashFiles('docs/notebooks/**/*.py', 'docs/scripts/build-notebooks.py', 'Cargo.lock', 'Cargo.toml', 'crates/*/Cargo.toml', 'ppvm-python/uv.lock') }}
+          restore-keys: |
+            notebooks-v1-
+
       - name: Install Astro deps
         # `npm ci` is faster than `npm install` and asserts the
         # lockfile is in sync; it fails loudly if package.json and

@@ -133,10 +133,6 @@ impl PPVM {
                     value => Ok(CPUMessage::Print(value.to_string())),
                 }
             }
-            vihaco_cpu::Instruction::Const(v) => {
-                self.cpu.stack_push(*v);
-                Ok(CPUMessage::None)
-            }
             _ => Ok(CPUMessage::None),
         }
     }
@@ -266,15 +262,17 @@ impl PPVM {
             }
             PPVMInstruction::Circuit(inst) => {
                 let msg = self.resolve_circuit(&inst)?;
-                let measurement_effect = vihaco::expect_exactly_one_effect(
-                    <Circuit as vihaco::GeneratedComponent>::execute_generated(
-                        &mut self.circuit,
-                        inst,
-                        msg,
-                    )?,
+                let circuit_effects = <Circuit as vihaco::GeneratedComponent>::execute_generated(
+                    &mut self.circuit,
+                    inst,
+                    msg,
                 )?;
                 *self.loader.pc_mut() += 1;
-                Ok(Effects::one(PPVMEffect::Measurement(measurement_effect)))
+                let mut effects = Effects::one(PPVMEffect::Step(StepOutcome::Continue));
+                for measurement_effect in circuit_effects {
+                    effects = effects.append(PPVMEffect::Measurement(measurement_effect));
+                }
+                Ok(effects)
             }
         }
     }
@@ -414,6 +412,7 @@ mod tests {
 
         for _ in 0..module.code.len() {
             machine.step_once()?;
+            assert!(machine.cpu.stack().len() <= 2);
         }
 
         let num_coefficients = match &machine.circuit {

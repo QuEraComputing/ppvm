@@ -1162,6 +1162,7 @@ dependencies = [
  "bnum",
  "chumsky 0.10.1",
  "eyre",
+ "log",
  "num",
  "ppvm-runtime",
  "ppvm-tableau",

@@ -1,6 +1,7 @@
 pub mod component;
+pub mod composite;
 pub mod instruction;
-// pub mod machine;
+pub mod measurement_observer;
 pub mod message;
 
 pub mod prelude {

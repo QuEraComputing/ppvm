@@ -8,6 +8,7 @@ bitvec = "1.0.1"
 bnum = { version = "0.13.0", features = ["num-traits"] }
 chumsky = "0.10.0"
 eyre = "0.6.12"
+log = "0.4.29"
 num = "0.4.3"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau", features = ["rayon"] }

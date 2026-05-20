@@ -1,0 +1,449 @@
+use vihaco::Effects;
+use vihaco::Observe;
+use vihaco::ProgramLoader;
+use vihaco::composite;
+use vihaco::observe;
+use vihaco::observer::stdio::StdoutEffect;
+use vihaco::observer::stdio::StdoutObserver;
+use vihaco::traits::{GetProgramGlobal, ProgramCounter, StackMemory};
+use vihaco_cpu::{CPU, CPUMessage, StepOutcome};
+
+use crate::component::CircuitEffect;
+use crate::measurement_observer::MeasurementResult;
+use crate::measurement_observer::{MeasurementEffect, MeasurementObserver};
+use crate::message::CircuitMessage;
+use crate::prelude::{Circuit, CircuitInstruction};
+
+pub type Instruction = PPVMInstruction;
+
+#[composite]
+pub struct PPVM {
+    #[program]
+    loader: ProgramLoader<PPVMInstruction>,
+
+    #[device(0x00, resolve_with = resolve_cpu, custom_parser)]
+    cpu: CPU,
+
+    #[device(0x01, resolve_with = resolve_circuit)]
+    circuit: Circuit,
+
+    stdout: StdoutObserver,
+
+    measurement_record: MeasurementObserver,
+}
+
+// impl From<vihaco_cpu::Instruction> for PPVMInstruction {
+//     fn from(value: vihaco_cpu::Instruction) -> Self {
+//         Self::Cpu(value)
+//     }
+// }
+
+// impl From<CircuitInstruction> for PPVMInstruction {
+//     fn from(value: CircuitInstruction) -> Self {
+//         Self::Circuit(value)
+//     }
+// }
+
+#[derive(Debug, Clone)]
+pub enum PPVMEffect {
+    Step(StepOutcome),
+    Stdout(StdoutEffect),
+    Circuit(CircuitEffect),
+    Measurement(MeasurementEffect),
+}
+
+#[observe(vihaco::observer::stdio::StdoutEffect, effect = PPVMEffect)]
+impl PPVM {
+    fn observe_stdout_effect(&mut self, effect: &StdoutEffect) -> eyre::Result<Effects<()>> {
+        Observe::<StdoutEffect>::observe(&mut self.stdout, effect)
+    }
+}
+
+#[observe(CircuitEffect, effect = PPVMEffect)]
+impl PPVM {
+    fn observe_circuit_effect(
+        &mut self,
+        effect: &CircuitEffect,
+    ) -> eyre::Result<Effects<MeasurementEffect>> {
+        Observe::<CircuitEffect>::observe(&mut self.circuit, effect)
+    }
+}
+
+#[observe(MeasurementEffect, effect = PPVMEffect)]
+impl PPVM {
+    fn observe_measurement_effect(
+        &mut self,
+        effect: &MeasurementEffect,
+    ) -> eyre::Result<Effects<()>> {
+        Observe::<MeasurementEffect>::observe(&mut self.measurement_record, effect)
+    }
+}
+
+impl From<StdoutEffect> for PPVMEffect {
+    fn from(value: StdoutEffect) -> Self {
+        Self::Stdout(value)
+    }
+}
+
+impl From<MeasurementEffect> for PPVMEffect {
+    fn from(value: MeasurementEffect) -> Self {
+        Self::Measurement(value)
+    }
+}
+
+impl std::fmt::Display for PPVMInstruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PPVMInstruction::Cpu(inst) => inst.fmt(f),
+            PPVMInstruction::Circuit(inst) => inst.fmt(f),
+        }
+    }
+}
+
+impl From<vihaco_cpu::Instruction> for PPVMInstruction {
+    fn from(value: vihaco_cpu::Instruction) -> Self {
+        Self::Cpu(value)
+    }
+}
+
+impl From<CircuitInstruction> for PPVMInstruction {
+    fn from(value: CircuitInstruction) -> Self {
+        Self::Circuit(value)
+    }
+}
+
+impl PPVM {
+    fn resolve_cpu(&mut self, inst: &vihaco_cpu::Instruction) -> eyre::Result<CPUMessage> {
+        match inst {
+            vihaco_cpu::Instruction::IndirectCall => {
+                let function_id: u32 = self.cpu.stack_top()?.get_function_ref()?;
+                let function = self.loader.get_function(function_id as usize)?;
+                Ok(CPUMessage::FunctionInfo {
+                    arity: function.signature.params.len() as u32,
+                    start_address: function.start_address,
+                })
+            }
+            vihaco_cpu::Instruction::Print => {
+                let value = *self.cpu.stack_top()?;
+                match value {
+                    vihaco::Value::String(addr) => {
+                        let string = self.loader.get_string(addr as usize)?.clone();
+                        Ok(CPUMessage::Print(string))
+                    }
+                    value => Ok(CPUMessage::Print(value.to_string())),
+                }
+            }
+            vihaco_cpu::Instruction::Const(v) => {
+                self.cpu.stack_push(*v);
+                Ok(CPUMessage::None)
+            }
+            _ => Ok(CPUMessage::None),
+        }
+    }
+
+    fn resolve_circuit(&mut self, inst: &CircuitInstruction) -> eyre::Result<CircuitMessage> {
+        use crate::instruction::CircuitInstruction::*;
+        match inst {
+            X | Y | Z | H | S | SAdj | SqrtX | SqrtY | SqrtXAdj | SqrtYAdj | T | TAdj | Measure
+            | Reset => {
+                let q = self.pop_qubit()?;
+                Ok(CircuitMessage::Qubit(q))
+            }
+            CNOT | CZ => {
+                let q1 = self.pop_qubit()?;
+                let q0 = self.pop_qubit()?;
+                Ok(CircuitMessage::TwoQubit(q0, q1))
+            }
+            RX | RY | RZ | Depolarize | Loss => {
+                let theta = self.pop_f64()?;
+                let q = self.pop_qubit()?;
+                Ok(CircuitMessage::QubitAndFloat(q, theta))
+            }
+            RXX | RYY | RZZ | Depolarize2 => {
+                let theta = self.pop_f64()?;
+                let q0 = self.pop_qubit()?;
+                let q1 = self.pop_qubit()?;
+                Ok(CircuitMessage::TwoQubitAndFloat(q0, q1, theta))
+            }
+            U3 => {
+                let lam = self.pop_f64()?;
+                let phi = self.pop_f64()?;
+                let theta = self.pop_f64()?;
+                let q = self.pop_qubit()?;
+                Ok(CircuitMessage::QubitU3(q, theta, phi, lam))
+            }
+
+            // TODO: pop actual float arrays?
+            PauliError => {
+                let pz = self.pop_f64()?;
+                let py = self.pop_f64()?;
+                let px = self.pop_f64()?;
+                let q = self.pop_qubit()?;
+                Ok(CircuitMessage::QubitAndFloatArr3(q, [px, py, pz]))
+            }
+            CorrelatedLoss => {
+                let p2 = self.pop_f64()?;
+                let p1 = self.pop_f64()?;
+                let p0 = self.pop_f64()?;
+                let q0 = self.pop_qubit()?;
+                let q1 = self.pop_qubit()?;
+                Ok(CircuitMessage::TwoQubitAndFloatArr3(q0, q1, [p0, p1, p2]))
+            }
+            TwoQubitPauliError => {
+                todo!()
+            }
+        }
+    }
+
+    fn pop_qubit(&mut self) -> eyre::Result<usize> {
+        match self.cpu.stack_pop()? {
+            vihaco::Value::U32(v) => Ok(v as usize),
+            vihaco::Value::U64(v) => usize::try_from(v).map_err(Into::into),
+            vihaco::Value::I64(v) => usize::try_from(v).map_err(Into::into),
+            v => Err(eyre::eyre!("Expected qubit address, got {:?}", v)),
+        }
+    }
+
+    fn pop_f64(&mut self) -> eyre::Result<f64> {
+        match self.cpu.stack_pop()? {
+            vihaco::Value::F64(v) => Ok(v),
+            v => Err(eyre::eyre!("Expected f64 argument, got {:?}", v)),
+        }
+    }
+
+    pub fn init(&mut self) -> eyre::Result<()> {
+        let n_qubits = 10;
+        let coefficient_threshold = 1e-10;
+        self.circuit = Circuit::new(n_qubits, coefficient_threshold);
+        Ok(())
+    }
+
+    pub fn load(
+        &mut self,
+        module: &vihaco::module::Module<
+            Instruction,
+            vihaco::Value,
+            vihaco::Type,
+            vihaco::module::NoInfo,
+        >,
+    ) -> eyre::Result<()> {
+        self.loader.module = module.clone();
+        Ok(())
+    }
+
+    pub fn step_once(&mut self) -> eyre::Result<StepOutcome> {
+        let inst = self.peek_instruction()?.clone();
+        let effects = self.execute_effects(inst)?;
+        self.continue_effects(effects)
+    }
+
+    fn execute_effects(&mut self, inst: Instruction) -> eyre::Result<Effects<PPVMEffect>> {
+        log::debug!("exec inst: {:?}, stack: {:?}", inst, self.cpu.stack());
+        match inst {
+            PPVMInstruction::Cpu(cpu_inst) => {
+                let msg = self.resolve_cpu(&cpu_inst)?;
+                let stdout_effect = match (&cpu_inst, &msg) {
+                    (vihaco_cpu::Instruction::Print, vihaco_cpu::CPUMessage::Print(text)) => {
+                        Some(PPVMEffect::Stdout(StdoutEffect(text.clone())))
+                    }
+                    _ => None,
+                };
+                let outcome = vihaco::expect_exactly_one_effect(
+                    vihaco::GeneratedComponent::execute_generated(&mut self.cpu, cpu_inst, msg)?,
+                )?;
+                if outcome == StepOutcome::Continue {
+                    if let Some(target) = self.cpu.take_pending_pc() {
+                        *self.loader.pc_mut() = target;
+                    } else {
+                        *self.loader.pc_mut() += 1;
+                    }
+                }
+                let mut effects = Effects::one(PPVMEffect::Step(outcome));
+                if let Some(stdout_effect) = stdout_effect {
+                    effects = effects.append(stdout_effect);
+                }
+                Ok(effects)
+            }
+            PPVMInstruction::Circuit(inst) => {
+                let msg = self.resolve_circuit(&inst)?;
+                let measurement_effect = vihaco::expect_exactly_one_effect(
+                    <Circuit as vihaco::GeneratedComponent>::execute_generated(
+                        &mut self.circuit,
+                        inst,
+                        msg,
+                    )?,
+                )?;
+                *self.loader.pc_mut() += 1;
+                Ok(Effects::one(PPVMEffect::Measurement(measurement_effect)))
+            }
+        }
+    }
+
+    fn continue_effects(&mut self, effects: Effects<PPVMEffect>) -> eyre::Result<StepOutcome> {
+        let mut step_outcome = None;
+        for effect in effects {
+            match effect {
+                PPVMEffect::Step(outcome) => {
+                    if step_outcome.replace(outcome).is_some() {
+                        return Err(eyre::eyre!(
+                            "expected exactly one PPVM step effect, got multiple"
+                        ));
+                    }
+                }
+                effect => self.continue_observer_effect(effect)?,
+            }
+        }
+
+        step_outcome.ok_or_else(|| eyre::eyre!("expected exactly one PPVM step effect, got 0"))
+    }
+
+    fn continue_observer_effect(&mut self, effect: PPVMEffect) -> eyre::Result<()> {
+        match effect {
+            PPVMEffect::Stdout(effect) => {
+                let follow_ups = Observe::<StdoutEffect>::observe(self, &effect)?;
+                self.continue_observer_effects(follow_ups)
+            }
+            PPVMEffect::Circuit(effect) => {
+                let follow_ups = Observe::<CircuitEffect>::observe(self, &effect)?;
+                self.continue_observer_effects(follow_ups)
+            }
+            PPVMEffect::Measurement(effect) => {
+                let follow_ups = Observe::<MeasurementEffect>::observe(self, &effect)?;
+                // TODO: do I need to push those values to stack?
+                // If so, what should we do with None (= lost qubit)?
+                // for outcome in effect.measurement_results {
+                //     self.cpu.stack_push(outcome)
+                // }
+                self.continue_observer_effects(follow_ups)
+            }
+            PPVMEffect::Step(_) => Err(eyre::eyre!(
+                "unexpected Step effect while continuing PPVM observer follow-ups"
+            )),
+        }
+    }
+
+    fn continue_observer_effects(&mut self, effects: Effects<PPVMEffect>) -> eyre::Result<()> {
+        for effect in effects {
+            self.continue_observer_effect(effect)?;
+        }
+        Ok(())
+    }
+
+    pub fn run(&mut self) -> eyre::Result<StepOutcome> {
+        self.init()?;
+
+        loop {
+            let action = self.step_once()?;
+            if action == StepOutcome::Continue {
+                continue;
+            }
+            return Ok(action);
+        }
+    }
+
+    pub fn stdout(&self) -> &[u8] {
+        self.stdout.output()
+    }
+
+    pub fn measurement_record(&self) -> Vec<MeasurementResult> {
+        self.measurement_record.record.clone()
+    }
+}
+
+impl vihaco::Reset for PPVM {
+    fn reset(&mut self) {
+        self.cpu.reset();
+        self.circuit.reset();
+        self.loader.pc = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use vihaco::{Type, Value, module::Module};
+
+    use super::*;
+
+    #[test]
+    fn test_run_ppvm() -> eyre::Result<()> {
+        let mut module: Module<PPVMInstruction, Value, Type> = Module::default();
+
+        /*
+        const.u64 0
+        gate h
+        */
+        let zero = PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(0)));
+        let one = PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(1)));
+        module.code.push(zero.clone());
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::H));
+
+        /*
+        const.u64 0
+        gate t
+        */
+
+        module.code.push(zero.clone());
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::T));
+
+        /*
+        const.u64 0
+        const.u64 1
+        gate cnot
+        */
+        module.code.push(zero.clone());
+        module.code.push(one.clone());
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::CNOT));
+
+        let mut machine = PPVM {
+            loader: ProgramLoader::default(),
+            cpu: CPU::default(),
+            circuit: Circuit::new(2, 1e-10),
+            stdout: StdoutObserver::default(),
+            measurement_record: MeasurementObserver { record: Vec::new() },
+        };
+
+        println!("{:?}", module.code);
+
+        machine.load(&module)?;
+
+        for _ in 0..module.code.len() {
+            machine.step_once()?;
+        }
+
+        let num_coefficients = match &machine.circuit {
+            Circuit::Bits64(ex) => {
+                println!("{}", ex.tab);
+                ex.tab.coefficients.len()
+            }
+            Circuit::Bits128(ex) => {
+                println!("{}", ex.tab);
+                ex.tab.coefficients.len()
+            }
+            Circuit::Bits256(ex) => {
+                println!("{}", ex.tab);
+                ex.tab.coefficients.len()
+            }
+            Circuit::Bits512(ex) => {
+                println!("{}", ex.tab);
+                ex.tab.coefficients.len()
+            }
+            Circuit::Bits1024(ex) => {
+                println!("{}", ex.tab);
+                ex.tab.coefficients.len()
+            }
+            Circuit::Bits2048(ex) => {
+                println!("{}", ex.tab);
+                ex.tab.coefficients.len()
+            }
+        };
+
+        assert_eq!(num_coefficients, 2);
+        Ok(())
+    }
+}

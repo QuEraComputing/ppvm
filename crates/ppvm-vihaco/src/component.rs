@@ -1,4 +1,5 @@
 use crate::instruction::CircuitInstruction;
+use crate::measurement_observer::MeasurementEffect;
 use crate::message::CircuitMessage;
 use bitvec::view::BitView;
 use bnum::types::{U256, U512, U1024, U2048};
@@ -20,13 +21,6 @@ macro_rules! batch_for {
 
 pub struct CircuitExecutor<T: Config<Coeff = f64>, I: TableauIndex, C: SparseVector<Complex64, I>> {
     pub tab: GeneralizedTableau<T, I, C>,
-}
-
-pub type MeasurementResult = Vec<Option<bool>>;
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MeasurementEffect {
-    measurement_results: MeasurementResult,
 }
 
 #[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
@@ -275,6 +269,7 @@ impl Circuit {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct CircuitEffect {
     pub inst: CircuitInstruction,
     pub msg: CircuitMessage,
@@ -287,5 +282,18 @@ impl Circuit {
         effect: &CircuitEffect,
     ) -> Result<Effects<MeasurementEffect>> {
         self.execute_instruction(&effect.inst, &effect.msg)
+    }
+}
+
+impl vihaco::Reset for Circuit {
+    fn reset(&mut self) {
+        match self {
+            Self::Bits64(ex) => ex.reset(),
+            Self::Bits128(ex) => ex.reset(),
+            Self::Bits256(ex) => ex.reset(),
+            Self::Bits512(ex) => ex.reset(),
+            Self::Bits1024(ex) => ex.reset(),
+            Self::Bits2048(ex) => ex.reset(),
+        };
     }
 }

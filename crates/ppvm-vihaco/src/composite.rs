@@ -32,18 +32,6 @@ pub struct PPVM {
     measurement_record: MeasurementObserver,
 }
 
-// impl From<vihaco_cpu::Instruction> for PPVMInstruction {
-//     fn from(value: vihaco_cpu::Instruction) -> Self {
-//         Self::Cpu(value)
-//     }
-// }
-
-// impl From<CircuitInstruction> for PPVMInstruction {
-//     fn from(value: CircuitInstruction) -> Self {
-//         Self::Circuit(value)
-//     }
-// }
-
 #[derive(Debug, Clone)]
 pub enum PPVMEffect {
     Step(StepOutcome),

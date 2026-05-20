@@ -123,6 +123,13 @@ pub trait ACMapScale<
 
 /// Drop entries that don't satisfy a predicate — used by truncation
 /// strategies.
+///
+/// The predicate is `FnMut` and *not* required to be `Sync + Send`. All
+/// existing backing maps (`HashMap`, `IndexMap`, `DashMap`) implement
+/// `retain` sequentially anyway — the prior `Fn + Sync + Send` bound
+/// was overly restrictive and prevented closures from capturing
+/// non-Sync data (e.g. a `HashSet<PauliWord>`, since `PauliWordTrait`
+/// itself does not require `Send + Sync`).
 pub trait ACMapRetain<
     S: PauliStorage,
     V: Coefficient,
@@ -133,7 +140,7 @@ pub trait ACMapRetain<
     /// Keep only entries for which `f(key, value)` returns `true`.
     fn retain<F>(&mut self, f: F)
     where
-        F: Fn(&W, &V) -> bool + Sync + Send;
+        F: FnMut(&W, &V) -> bool;
 }
 
 /// Aggregate trait combining every operation a backing map must support

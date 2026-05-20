@@ -257,20 +257,17 @@ impl<T: Config> PauliSum<T> {
     /// entries that fall outside the active policy.
     pub fn truncate(&mut self) {
         if self.preserve.is_some() {
-            // The preserve closure has to be `Sync + Send` (the
-            // `ACMap::retain` contract). Capturing the `keep`
-            // `HashSet<W>` directly would require `W: Sync + Send`,
-            // which is not a `PauliWordTrait` bound and would force the
-            // bound onto every caller of `truncate()`. Capture a string
-            // snapshot instead — strings are unconditionally Sync+Send.
+            // Capture the keep-set directly as `HashSet<W>` so per-key
+            // lookup is O(1) with no string conversion. `W: Send + Sync`
+            // is part of the `PauliWordTrait` bundle, so the closure
+            // satisfies `ACMap::retain`'s `Sync + Send` requirement.
             let preserve = self.preserve.as_ref().unwrap();
-            let keep: std::collections::HashSet<String> =
-                preserve.keep.iter().map(|w| w.to_string()).collect();
+            let keep = preserve.keep.clone();
             let base = preserve.base_threshold;
             let lambda = preserve.weight_lambda;
             let data = self.data_mut();
             data.retain(|k, v| {
-                if keep.contains(&k.to_string()) {
+                if keep.contains(k) {
                     return true;
                 }
                 let eff = base * (lambda * k.weight() as f64).exp();

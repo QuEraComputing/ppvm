@@ -223,9 +223,9 @@ where
     H: BuildHasher + Clone + Default + Sync + Send,
     W: PauliWordTrait,
 {
-    fn retain<F>(&mut self, f: F)
+    fn retain<F>(&mut self, mut f: F)
     where
-        F: Fn(&W, &C) -> bool + Sync + Send,
+        F: FnMut(&W, &C) -> bool,
     {
         Self::retain(self, |k, v| f(k, v));
     }

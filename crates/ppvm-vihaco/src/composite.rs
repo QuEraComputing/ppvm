@@ -315,11 +315,15 @@ impl PPVM {
             }
             PPVMEffect::Measurement(effect) => {
                 let follow_ups = Observe::<MeasurementEffect>::observe(self, &effect)?;
-                // TODO: do I need to push those values to stack?
-                // If so, what should we do with None (= lost qubit)?
-                // for outcome in effect.measurement_results {
-                //     self.cpu.stack_push(outcome)
-                // }
+                // NOTE: push measurements to stack; two booleans: outcome, is_lost
+                for outcome in effect.measurement_results {
+                    let (is_lost, m) = match outcome {
+                        Some(m) => (false, m),
+                        None => (true, false),
+                    };
+                    self.cpu.stack_push(m);
+                    self.cpu.stack_push(is_lost);
+                }
                 self.continue_observer_effects(follow_ups)
             }
             PPVMEffect::Step(_) => Err(eyre::eyre!(

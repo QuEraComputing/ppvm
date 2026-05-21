@@ -1,0 +1,33 @@
+device circuit.n_qubits 2;
+
+fn @main() {
+    // Scratch slot at local 0 for dropping the is_lost flag after measure.
+    const.bool false
+
+    // X on q0 -> |1>, measure -> outcome is deterministically 1.
+    const.u64 0
+    gate x
+
+    const.u64 0
+    gate measure
+
+    // Stack here: [scratch=false, outcome, is_lost]. `store.bool 0` pops
+    // is_lost and writes it into the scratch slot, leaving [is_lost, outcome]
+    // with the outcome on top — exactly what `cond_br` needs.
+    store.bool 0
+
+    cond_br @one, @zero
+
+    @one:
+        const.u64 1
+        gate x
+        br @measure_q1
+
+    @zero:
+        br @measure_q1
+
+    @measure_q1:
+        const.u64 1
+        gate measure
+        ret
+}

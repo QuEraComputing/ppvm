@@ -1,18 +1,16 @@
-use vihaco::Effects;
-use vihaco::Observe;
-use vihaco::ProgramLoader;
-use vihaco::composite;
-use vihaco::observe;
-use vihaco::observer::stdio::StdoutEffect;
-use vihaco::observer::stdio::StdoutObserver;
+use chumsky::Parser;
+use vihaco::observer::stdio::{StdoutEffect, StdoutObserver};
+use vihaco::syntax::{ParsedModule, Resolve};
 use vihaco::traits::{GetProgramGlobal, ProgramCounter, StackMemory};
+use vihaco::{Effects, Observe, ProgramLoader, composite, observe};
 use vihaco_cpu::{CPU, CPUMessage, StepOutcome};
+use vihaco_parser_core::Parse;
 
-use crate::component::CircuitEffect;
-use crate::measurement_observer::MeasurementResult;
-use crate::measurement_observer::{MeasurementEffect, MeasurementObserver};
+use crate::component::{Circuit, CircuitEffect};
+use crate::instruction::CircuitInstruction;
+use crate::measurement_observer::{MeasurementEffect, MeasurementObserver, MeasurementResult};
 use crate::message::CircuitMessage;
-use crate::prelude::{Circuit, CircuitInstruction};
+use crate::syntax::{PPVMHeader, PPVMResolver};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PPVMDeviceInfo {
@@ -36,7 +34,7 @@ pub struct PPVM {
     #[program]
     loader: ProgramLoader<PPVMInstruction, PPVMDeviceInfo>,
 
-    #[device(0x00, resolve_with = resolve_cpu, custom_parser)]
+    #[device(0x00, resolve_with = resolve_cpu)]
     cpu: CPU,
 
     #[device(0x01, resolve_with = resolve_circuit)]
@@ -345,6 +343,33 @@ impl PPVM {
 
     pub fn measurement_record(&self) -> Vec<MeasurementResult> {
         self.measurement_record.record.clone()
+    }
+
+    pub fn load_program(&mut self, program: &str) -> eyre::Result<()> {
+        let parsed = ParsedModule::<PPVMInstruction, PPVMHeader>::parser()
+            .parse(program)
+            .into_result()
+            .map_err(|errs| eyre::eyre!("parsing failed: {errs:?}"))?;
+        let module = PPVMResolver::new().resolve_module(parsed)?;
+        self.load(&module)?;
+        Ok(())
+    }
+
+    pub fn load_file(&mut self, path: &str) -> eyre::Result<()> {
+        let raw_program = std::fs::read_to_string(path)?;
+        self.load_program(&raw_program)
+    }
+
+    pub fn run_program(&mut self, program: &str) -> eyre::Result<()> {
+        self.load_program(program)?;
+        self.run()?;
+        Ok(())
+    }
+
+    pub fn run_file(&mut self, path: &str) -> eyre::Result<()> {
+        self.load_file(path)?;
+        self.run()?;
+        Ok(())
     }
 }
 

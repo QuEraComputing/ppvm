@@ -1,3 +1,5 @@
+device circuit.n_qubits 2;
+
 fn @main() {
     const.u64 0
     gate h
@@ -9,4 +11,6 @@ fn @main() {
     const.u64 0
     const.f64 0.1
     gate rx
+
+    ret
 }

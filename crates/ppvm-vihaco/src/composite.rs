@@ -1,4 +1,6 @@
 use chumsky::Parser;
+use vihaco::frame::Frame;
+use vihaco::machine::StackFrame;
 use vihaco::observer::stdio::{StdoutEffect, StdoutObserver};
 use vihaco::syntax::{ParsedModule, Resolve};
 use vihaco::traits::{GetProgramGlobal, ProgramCounter, StackMemory};
@@ -214,6 +216,14 @@ impl PPVM {
             return Err(eyre::eyre!("device circuit.n_qubits must be declared"));
         }
         self.circuit = Circuit::new(info.n_qubits, info.coefficient_threshold);
+
+        // push entry frame
+        self.cpu.push_frame(Frame {
+            base: 0,
+            span: (0, 0, 0),
+            function: None,
+        });
+
         Ok(())
     }
 
@@ -540,5 +550,73 @@ mod tests {
 
         assert_eq!(machine.measurement_record().len(), 5);
         Ok(())
+    }
+
+    // ─── Parser-driven entry points ───────────────────────────────────────
+
+    #[test]
+    fn load_program_populates_device_info_and_code() -> eyre::Result<()> {
+        let source = "device circuit.n_qubits 2;\n\
+                      device circuit.coefficient_threshold 1e-8;\n\
+                      fn @main() {\n\
+                          const.u64 0\n\
+                          gate h\n\
+                          ret\n\
+                      }\n";
+        let mut machine = PPVM::default();
+        machine.load_program(source)?;
+        assert_eq!(machine.loader.module.extra.n_qubits, 2);
+        assert_eq!(machine.loader.module.extra.coefficient_threshold, 1e-8);
+        // const.u64 0 / gate h / ret = 3
+        assert_eq!(machine.loader.module.code.len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn run_program_executes_bell_circuit() -> eyre::Result<()> {
+        let source = "device circuit.n_qubits 2;\n\
+                      fn @main() {\n\
+                          const.u64 0\n\
+                          gate h\n\
+                          const.u64 0\n\
+                          const.u64 1\n\
+                          gate cnot\n\
+                          const.u64 0\n\
+                          gate measure\n\
+                          const.u64 1\n\
+                          gate measure\n\
+                          ret\n\
+                      }\n";
+        let mut machine = PPVM::default();
+        machine.run_program(source)?;
+        let record = machine.measurement_record();
+        assert_eq!(record.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn init_fails_when_n_qubits_undeclared() -> eyre::Result<()> {
+        let source = "fn @main() { ret }\n";
+        let mut machine = PPVM::default();
+        machine.load_program(source)?;
+        let err = machine.init().unwrap_err();
+        assert!(err.to_string().contains("circuit.n_qubits"), "err: {err}");
+        Ok(())
+    }
+
+    #[test]
+    fn run_program_reports_parse_errors() {
+        let source = "device circuit.n_qubits 2;\n\
+                      fn @main() {\n\
+                          gate not_a_real_gate\n\
+                          ret\n\
+                      }\n";
+        let mut machine = PPVM::default();
+        let err = machine.run_program(source).unwrap_err();
+        assert!(
+            err.to_string().contains("parsing failed")
+                || err.to_string().contains("unhandled raw form"),
+            "err: {err}"
+        );
     }
 }

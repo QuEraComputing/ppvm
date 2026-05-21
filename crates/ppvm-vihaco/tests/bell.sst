@@ -1,4 +1,4 @@
-device circuit.n_qubits 2
+device circuit.n_qubits 2;
 
 fn @main() {
     const.u64 0

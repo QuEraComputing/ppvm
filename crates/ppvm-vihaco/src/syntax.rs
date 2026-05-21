@@ -234,7 +234,6 @@ impl BranchPatch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chumsky::Parser as _;
     use vihaco::syntax::ParsedModule;
 
     fn parse_module(source: &str) -> ParsedModule<PPVMInstruction, PPVMHeader> {

@@ -1,0 +1,46 @@
+device circuit.n_qubits 2;
+
+// TODO: aspirational — depends on `ret <n>` restoring the caller's PC and
+// leaving the top `n` values on the caller's stack. The runtime doesn't do
+// this today (Frame has no return_pc), so this fixture currently fails.
+
+fn @main() {
+    // Put q0 into |+>.
+    const.u64 0
+    gate h
+
+    // Measure q1 via a helper that returns the outcome on top of the stack.
+    call 0, @measure_q1
+
+    // Stack: [outcome]. cond_br pops it and branches on its value.
+    cond_br @one, @zero
+
+    @one:
+        // outcome was 1: apply X to q0 as a correction.
+        const.u64 0
+        gate x
+        br @done
+
+    @zero:
+        br @done
+
+    @done:
+        ret
+}
+
+fn @measure_q1() -> bool {
+    // Scratch slot at local 0 so we can `store.bool 0` away the is_lost flag
+    // after measure, leaving outcome on top — same trick as branch_on_outcome.
+    const.bool false
+
+    const.u64 1
+    gate h
+
+    const.u64 1
+    gate measure
+    // Frame: [scratch=false, outcome, is_lost].
+    store.bool 0
+    // Frame: [is_lost, outcome] with outcome on top.
+
+    ret 1
+}

@@ -1,0 +1,18 @@
+device circuit.n_qubits 2;
+
+fn @main() {
+    // Jump into the helper, which finishes the program with `halt`.
+    // Using `halt` instead of `ret` from the callee avoids depending on
+    // vihaco-cpu restoring a return PC, which it doesn't track today.
+    call 0, @run_circuit
+}
+
+fn @run_circuit() {
+    const.u64 1
+    gate h
+
+    const.u64 1
+    gate measure
+
+    halt
+}

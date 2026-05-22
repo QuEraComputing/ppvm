@@ -59,8 +59,17 @@ impl PPVMResolver {
     fn lower_raw(&mut self, raw: RawForm) -> eyre::Result<Vec<PPVMInstruction>> {
         match raw.mnemonic.as_str() {
             "ret" => {
-                require_no_operands(&raw)?;
-                Ok(vec![vihaco_cpu::Instruction::Return(0).into()])
+                let keep = match raw.operands.as_slice() {
+                    [] => 0u32,
+                    [RawOperand::UInt(n)] => u32::try_from(*n)
+                        .map_err(|_| eyre::eyre!("`ret` keep count {n} does not fit in u32"))?,
+                    other => {
+                        return Err(eyre::eyre!(
+                            "`ret` takes 0 or 1 unsigned int operands, got {other:?}"
+                        ));
+                    }
+                };
+                Ok(vec![vihaco_cpu::Instruction::Return(keep).into()])
             }
             other => Err(eyre::eyre!(
                 "PPVMResolver: unhandled raw form `{other}` (operands: {:?})",
@@ -83,8 +92,15 @@ impl Resolve<PPVMInstruction, PPVMHeader> for PPVMResolver {
 
         let mut code: Vec<PPVMInstruction> = Vec::new();
         let mut labels: HashMap<String, u32> = HashMap::new();
-        let mut patches: Vec<(usize, BranchPatch)> = Vec::new();
+        let mut branch_patches: Vec<(usize, BranchPatch)> = Vec::new();
+        let mut call_patches: Vec<(usize, CallPatch)> = Vec::new();
         for function in parsed.functions {
+            if labels
+                .insert(function.name.clone(), code.len() as u32)
+                .is_some()
+            {
+                return Err(eyre::eyre!("duplicate function name `@{}`", function.name));
+            }
             for item in function.body {
                 match item {
                     BodyItem::Direct(inst) => code.push(inst),
@@ -98,7 +114,13 @@ impl Resolve<PPVMInstruction, PPVMHeader> for PPVMResolver {
                         if let Some(patch) = raw_as_branch(&raw) {
                             let idx = code.len();
                             code.push(patch.placeholder());
-                            patches.push((idx, patch));
+                            branch_patches.push((idx, patch));
+                            continue;
+                        }
+                        if let Some(patch) = raw_as_call(&raw)? {
+                            let idx = code.len();
+                            code.push(patch.placeholder());
+                            call_patches.push((idx, patch));
                             continue;
                         }
                         code.extend(self.lower_raw(raw)?);
@@ -106,7 +128,10 @@ impl Resolve<PPVMInstruction, PPVMHeader> for PPVMResolver {
                 }
             }
         }
-        for (idx, patch) in patches {
+        for (idx, patch) in branch_patches {
+            patch.apply(&mut code, idx, &labels)?;
+        }
+        for (idx, patch) in call_patches {
             patch.apply(&mut code, idx, &labels)?;
         }
 
@@ -139,17 +164,6 @@ impl<'src> Parse<'src> for PPVMInstruction {
 }
 
 // ---- Everything below is 1:1 copy from Acamar with Acamar -> PPVM renaming ----
-
-fn require_no_operands(raw: &RawForm) -> eyre::Result<()> {
-    if !raw.operands.is_empty() {
-        return Err(eyre::eyre!(
-            "`{}` takes no operands, got {}",
-            raw.mnemonic,
-            raw.operands.len()
-        ));
-    }
-    Ok(())
-}
 
 /// A deferred branch whose target(s) couldn't be resolved at lowering time
 /// because the label may appear later in the function body. Patched in a
@@ -227,6 +241,55 @@ impl BranchPatch {
             }
         };
         code[idx] = resolved;
+        Ok(())
+    }
+}
+
+/// `call <arity>, @target` — symbolic target resolved in a second pass against
+/// the same label table that holds branch targets and function entry points.
+#[derive(Debug)]
+struct CallPatch {
+    arity: u32,
+    target: String,
+}
+
+/// `call <arity>, @target` → `Some(CallPatch)`. Returns `Ok(None)` for any
+/// other mnemonic so the resolver can fall through to `lower_raw`.
+fn raw_as_call(raw: &RawForm) -> eyre::Result<Option<CallPatch>> {
+    if raw.mnemonic != "call" {
+        return Ok(None);
+    }
+    match raw.operands.as_slice() {
+        [RawOperand::UInt(arity), RawOperand::Symbol(target)] => {
+            let arity = u32::try_from(*arity)
+                .map_err(|_| eyre::eyre!("`call` arity {arity} does not fit in u32"))?;
+            Ok(Some(CallPatch {
+                arity,
+                target: target.clone(),
+            }))
+        }
+        other => Err(eyre::eyre!(
+            "`call` expects `<arity:uint>, @<target>`, got operands {other:?}"
+        )),
+    }
+}
+
+impl CallPatch {
+    fn placeholder(&self) -> PPVMInstruction {
+        vihaco_cpu::Instruction::Call(self.arity, u32::MAX).into()
+    }
+
+    fn apply(
+        self,
+        code: &mut [PPVMInstruction],
+        idx: usize,
+        labels: &HashMap<String, u32>,
+    ) -> eyre::Result<()> {
+        let target = labels
+            .get(&self.target)
+            .copied()
+            .ok_or_else(|| eyre::eyre!("undefined function `@{}`", self.target))?;
+        code[idx] = vihaco_cpu::Instruction::Call(self.arity, target).into();
         Ok(())
     }
 }
@@ -396,12 +459,26 @@ mod tests {
     }
 
     #[test]
-    fn lower_raw_ret_with_operand_errors() {
+    fn lower_raw_ret_with_uint_operand_emits_return_n() {
+        let mut r = PPVMResolver::new();
+        let out = r.lower_raw(raw("ret", vec![RawOperand::UInt(2)])).unwrap();
+        assert_eq!(out.len(), 1);
+        assert!(matches!(
+            out[0],
+            PPVMInstruction::Cpu(vihaco_cpu::Instruction::Return(2))
+        ));
+    }
+
+    #[test]
+    fn lower_raw_ret_with_non_uint_operand_errors() {
         let mut r = PPVMResolver::new();
         let err = r
-            .lower_raw(raw("ret", vec![RawOperand::UInt(1)]))
+            .lower_raw(raw("ret", vec![RawOperand::Symbol("foo".into())]))
             .unwrap_err();
-        assert!(err.to_string().contains("takes no operands"), "err: {err}");
+        assert!(
+            err.to_string().contains("`ret` takes 0 or 1 unsigned int"),
+            "err: {err}"
+        );
     }
 
     #[test]

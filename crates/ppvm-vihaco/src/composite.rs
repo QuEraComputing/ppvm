@@ -4,13 +4,13 @@ use vihaco::machine::StackFrame;
 use vihaco::observer::stdio::{StdoutEffect, StdoutObserver};
 use vihaco::syntax::{ParsedModule, Resolve};
 use vihaco::traits::{GetProgramGlobal, ProgramCounter, StackMemory};
-use vihaco::{Effects, Observe, ProgramLoader, composite, observe};
+use vihaco::{Effects, Observe, ProgramLoader, Value, composite, observe};
 use vihaco_cpu::{CPU, CPUMessage, StepOutcome};
 use vihaco_parser_core::Parse;
 
 use crate::component::{Circuit, CircuitEffect};
 use crate::instruction::CircuitInstruction;
-use crate::measurement_observer::{MeasurementEffect, MeasurementObserver, MeasurementResult};
+use crate::measurements::{MeasurementEffect, MeasurementObserver, MeasurementResult};
 use crate::message::CircuitMessage;
 use crate::syntax::{PPVMHeader, PPVMResolver};
 
@@ -324,12 +324,8 @@ impl PPVM {
                 let follow_ups = Observe::<MeasurementEffect>::observe(self, &effect)?;
                 // NOTE: push measurements to stack; two booleans: outcome, is_lost
                 for outcome in effect.measurement_results {
-                    let (is_lost, m) = match outcome {
-                        Some(m) => (false, m),
-                        None => (true, false),
-                    };
+                    let m = Value::U32(outcome as u32);
                     self.cpu.stack_push(m);
-                    self.cpu.stack_push(is_lost);
                 }
                 self.continue_observer_effects(follow_ups)
             }

@@ -2,6 +2,7 @@
 //! this directory via the public `PPVM` API.
 
 use ppvm_vihaco::composite::PPVM;
+use ppvm_vihaco::measurements::MeasurementOutcome;
 
 #[test]
 fn bell_sst_runs_and_records_two_measurements() {
@@ -39,7 +40,10 @@ fn function_call_jumps_into_callee_body() {
     let record = machine.measurement_record();
     assert_eq!(record.len(), 1, "expected exactly one measurement");
     assert_eq!(record[0].len(), 1);
-    assert!(record[0][0].is_some(), "measurement should not be lost");
+    assert!(
+        record[0][0] != MeasurementOutcome::Lost,
+        "measurement should not be lost"
+    );
 }
 
 #[test]
@@ -49,7 +53,10 @@ fn function_call_returns() {
     let record = machine.measurement_record();
     assert_eq!(record.len(), 1, "expected exactly one measurement");
     assert_eq!(record[0].len(), 1);
-    assert!(record[0][0].is_some(), "measurement should not be lost");
+    assert!(
+        record[0][0] != MeasurementOutcome::Lost,
+        "measurement should not be lost"
+    );
 }
 
 #[test]
@@ -61,8 +68,16 @@ fn branch_on_outcome_deterministic_x_path() {
         .unwrap_or_else(|e| panic!("run branch_on_outcome_x.sst: {e:?}"));
     let record = machine.measurement_record();
     assert_eq!(record.len(), 2, "expected exactly two measurements");
-    assert_eq!(record[0], vec![Some(true)], "X-prepared q0 must measure 1");
-    assert_eq!(record[1], vec![Some(true)], "branch must have flipped q1");
+    assert_eq!(
+        record[0],
+        vec![MeasurementOutcome::One],
+        "X-prepared q0 must measure 1"
+    );
+    assert_eq!(
+        record[1],
+        vec![MeasurementOutcome::One],
+        "branch must have flipped q1"
+    );
 }
 
 #[test]
@@ -77,10 +92,14 @@ fn branch_on_outcome_statistics_balanced_and_invariant_holds() {
             .unwrap_or_else(|e| panic!("run branch_on_outcome.sst: {e:?}"));
         let record = machine.measurement_record();
         assert_eq!(record.len(), 2);
-        let m0 = record[0][0].expect("q0 should not be lost");
-        let m1 = record[1][0].expect("q1 should not be lost");
+        let m0 = record[0][0];
+        let m1 = record[1][0];
         assert_eq!(m0, m1, "branch must steer q1 to match q0 on every shot");
-        if m0 {
+        assert!(
+            m0 != MeasurementOutcome::Lost,
+            "measurement should not be lost"
+        );
+        if m0 == MeasurementOutcome::One {
             ones += 1;
         }
     }
@@ -96,11 +115,11 @@ fn branch_on_outcome_statistics_balanced_and_invariant_holds() {
 
 #[test]
 fn function_call_branch_on_both_returned_values() {
-    // `function_call_branch_both.sst`: helper returns BOTH outcome and
-    // is_lost via `ret 2`. Main first branches on is_lost, then on outcome,
-    // steering q1 to |1> on the lost path and on the kept-outcome=1 path,
-    // leaving q1 in |0> only on the kept-outcome=0 path. With loss prob 0.5
-    // and a |+> prep:
+    // `function_call_branch_both.sst`: helper returns the tri-state outcome
+    // (0/1/Lost) via `ret 1`. Main first branches on is_lost, then on the
+    // 0/1 outcome, steering q1 to |1> on the lost path and on the
+    // kept-outcome=1 path, leaving q1 in |0> only on the kept-outcome=0
+    // path. With loss prob 0.5 and a |+> prep:
     //   P(m1 = 1) = P(lost) + P(kept) · P(outcome = 1 | kept)
     //             = 0.5     + 0.5 · 0.5  = 0.75
     //   P(m0 = lost) = 0.5
@@ -114,10 +133,10 @@ fn function_call_branch_on_both_returned_values() {
         assert_eq!(record.len(), 2, "expected exactly two measurements");
         assert_eq!(record[0].len(), 1);
         assert_eq!(record[1].len(), 1);
-        if record[0][0].is_none() {
+        if record[0][0] == MeasurementOutcome::Lost {
             q0_lost += 1;
         }
-        if record[1][0] == Some(true) {
+        if record[1][0] == MeasurementOutcome::One {
             q1_ones += 1;
         }
     }

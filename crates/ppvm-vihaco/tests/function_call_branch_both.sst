@@ -1,10 +1,10 @@
 device circuit.n_qubits 2;
 
-// Exercises a helper that returns BOTH measurement outputs (outcome and
-// is_lost) via `ret 2`, with main branching on both values in sequence.
+// Exercises a helper that returns the tri-state measurement outcome via
+// `ret 1`, with main branching on loss first, then on the 0/1 outcome.
 //
-// Layout after `call 0, @measure_q0_both` returns: stack = [outcome, is_lost]
-// with is_lost on top (gate measure pushes outcome, then is_lost).
+// Layout after `call 0, @measure_q0` returns: stack = [outcome] where
+// outcome ∈ {0, 1, 2} (2 = Lost).
 //
 // Loss prob is 0.5, so:
 //   P(lost)               = 0.5  → q1 flipped to |1>          → m1 = 1
@@ -19,9 +19,12 @@ fn @main() {
     const.f64 0.5
     gate loss
 
-    call 0, @measure_q0_both
+    call 0, @measure_q0
 
-    // Stack: [outcome, is_lost]. cond_br pops is_lost.
+    // Stack: [outcome]. Branch on Lost (outcome == 2) first.
+    dup
+    const.u32 2
+    eq.u32
     cond_br @lost, @kept
 
     @lost:
@@ -33,7 +36,9 @@ fn @main() {
         br @final
 
     @kept:
-        // is_lost = false. Stack: [outcome]. cond_br pops outcome.
+        // Stack: [outcome (0 or 1)]. Compare to 1 to derive a bool.
+        const.u32 1
+        eq.u32
         cond_br @outcome_one, @outcome_zero
 
     @outcome_one:
@@ -50,9 +55,9 @@ fn @main() {
         halt
 }
 
-fn @measure_q0_both() {
+fn @measure_q0() {
     const.u64 0
     gate measure
-    // Stack: [outcome, is_lost]
-    ret 2
+    // Stack: [outcome]
+    ret 1
 }

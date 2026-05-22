@@ -1,6 +1,6 @@
-use crate::instruction::CircuitInstruction;
-use crate::measurement_observer::MeasurementEffect;
+use crate::measurements::MeasurementEffect;
 use crate::message::CircuitMessage;
+use crate::{instruction::CircuitInstruction, measurements::MeasurementOutcome};
 use bitvec::view::BitView;
 use bnum::types::{U256, U512, U1024, U2048};
 use eyre::{Result, eyre};
@@ -83,7 +83,7 @@ where
 
             // Measure & Reset
             (Measure, &Qubit(addr)) => {
-                let outcome = self.tab.measure(addr);
+                let outcome: MeasurementOutcome = self.tab.measure(addr).into();
                 return Ok(Effects::one(MeasurementEffect {
                     measurement_results: vec![outcome],
                 }));
@@ -178,7 +178,7 @@ where
 
             // Batch: measure (emits per qubit)
             (Measure, QubitBatch(addrs)) => {
-                let outcomes = addrs.iter().map(|&addr| self.tab.measure(addr));
+                let outcomes = addrs.iter().map(|&addr| self.tab.measure(addr).into());
                 return Ok(Effects::one(MeasurementEffect {
                     measurement_results: outcomes.collect(),
                 }));

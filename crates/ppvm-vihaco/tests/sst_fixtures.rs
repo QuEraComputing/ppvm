@@ -24,9 +24,33 @@ fn hello_circuit_sst_parses_and_runs() {
 
 #[test]
 fn run_file_via_library_helper() {
-    let machine = ppvm_vihaco::run_file("tests/bell.sst")
-        .unwrap_or_else(|e| panic!("run bell.sst: {e:?}"));
+    let machine =
+        ppvm_vihaco::run_file("tests/bell.sst").unwrap_or_else(|e| panic!("run bell.sst: {e:?}"));
     assert_eq!(machine.measurement_record().len(), 2);
+}
+
+#[test]
+fn function_call_jumps_into_callee_body() {
+    // `function_call.sst` has main `call` into `@run_circuit`, which puts q1
+    // in |+>, measures it, and `halt`s. Verifies CallPatch resolves the
+    // symbolic target and op_call actually transfers control there.
+    let machine = ppvm_vihaco::run_file("tests/function_call.sst")
+        .unwrap_or_else(|e| panic!("run function_call.sst: {e:?}"));
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1, "expected exactly one measurement");
+    assert_eq!(record[0].len(), 1);
+    assert!(record[0][0].is_some(), "measurement should not be lost");
+}
+
+#[test]
+#[ignore]
+fn function_call_returns() {
+    let machine = ppvm_vihaco::run_file("tests/function_call_ret.sst")
+        .unwrap_or_else(|e| panic!("run function_call.sst: {e:?}"));
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1, "expected exactly one measurement");
+    assert_eq!(record[0].len(), 1);
+    assert!(record[0][0].is_some(), "measurement should not be lost");
 }
 
 #[test]

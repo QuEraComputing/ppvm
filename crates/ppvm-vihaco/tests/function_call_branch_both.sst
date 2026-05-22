@@ -1,0 +1,59 @@
+magic ppvm;
+device circuit.n_qubits 2;
+
+// Exercises a helper that returns BOTH measurement outputs (outcome and
+// is_lost) via `ret 2`, with main branching on both values in sequence.
+//
+// Layout after `call 0, @measure_q0_both` returns: stack = [outcome, is_lost]
+// with is_lost on top (gate measure pushes outcome, then is_lost).
+//
+// Loss prob is 0.5, so:
+//   P(lost)               = 0.5  → q1 flipped to |1>          → m1 = 1
+//   P(kept ∧ outcome = 1) = 0.25 → q1 flipped to |1>          → m1 = 1
+//   P(kept ∧ outcome = 0) = 0.25 → q1 stays in |0>             → m1 = 0
+// → P(m1 = 1) = 0.75.
+fn @main() {
+    const.u64 0
+    gate h
+
+    const.u64 0
+    const.f64 0.5
+    gate loss
+
+    call 0, @measure_q0_both
+
+    // Stack: [outcome, is_lost]. cond_br pops is_lost.
+    cond_br @lost, @kept
+
+    @lost:
+        // is_lost = true: outcome is meaningless. Flip q1 to mark "lost"
+        // path. The leftover `outcome` value on the stack is harmless because
+        // we halt at @final without reading it.
+        const.u64 1
+        gate x
+        br @final
+
+    @kept:
+        // is_lost = false. Stack: [outcome]. cond_br pops outcome.
+        cond_br @outcome_one, @outcome_zero
+
+    @outcome_one:
+        const.u64 1
+        gate x
+        br @final
+
+    @outcome_zero:
+        br @final
+
+    @final:
+        const.u64 1
+        gate measure
+        halt
+}
+
+fn @measure_q0_both() {
+    const.u64 0
+    gate measure
+    // Stack: [outcome, is_lost]
+    ret 2
+}

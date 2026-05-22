@@ -1,3 +1,4 @@
+magic ppvm;
 device circuit.n_qubits 2;
 
 // TODO: aspirational — depends on `ret <n>` restoring the caller's PC and

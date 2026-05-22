@@ -3,7 +3,7 @@ use crate::composite::PPVM;
 pub mod component;
 pub mod composite;
 pub mod instruction;
-mod measurement_observer;
+pub mod measurements;
 pub mod message;
 mod syntax;
 

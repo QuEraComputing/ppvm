@@ -1,19 +1,16 @@
 device circuit.n_qubits 2;
 
 fn @main() {
-    // Scratch slot at local 0 for dropping the is_lost flag after measure.
-    const.bool false
-
     const.u64 0
     gate h
 
     const.u64 0
     gate measure
 
-    // Stack here: [scratch=false, outcome, is_lost]. `store.bool 0` pops is_lost
-    // and writes it into the scratch slot, leaving [is_lost, outcome] with the
-    // outcome on top — exactly what `cond_br` needs.
-    store.bool 0
+    // Stack: [outcome]. No loss gate, so outcome is 0 or 1. Compare to 1
+    // to derive a bool for cond_br.
+    const.u32 1
+    eq.u32
 
     cond_br @one, @zero
 

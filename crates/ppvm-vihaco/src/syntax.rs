@@ -13,18 +13,14 @@ use crate::{
     instruction::CircuitInstruction,
 };
 
-pub const PPVM_MAGIC: u32 = 0x5050564D;
-
 #[derive(Debug, Clone, PartialEq, vihaco_parser::Parse)]
+#[head = "device "]
 pub enum PPVMHeader {
-    #[token = "magic ppvm"]
-    Magic,
-
-    #[token = "device circuit.n_qubits"]
+    #[token = "circuit.n_qubits"]
     #[delimiters(open = "", close = "", separator = "")]
     NumQubits(usize),
 
-    #[token = "device circuit.coefficient_threshold"]
+    #[token = "circuit.coefficient_threshold"]
     #[delimiters(open = "", close = "", separator = "")]
     CoefficientThrehsold(f64),
 }
@@ -39,20 +35,8 @@ impl PPVMResolver {
         Self::default()
     }
 
-    // fn intern(&mut self, s: &str) -> u32 {
-    //     if let Some(idx) = self.strings.iter().position(|existing| existing == s) {
-    //         return idx as u32;
-    //     }
-    //     let idx = self.strings.len() as u32;
-    //     self.strings.push(s.to_string());
-    //     idx
-    // }
-
     fn apply_header(info: &mut PPVMDeviceInfo, header: PPVMHeader) -> eyre::Result<()> {
         match header {
-            PPVMHeader::Magic => {
-                info.magic = PPVM_MAGIC;
-            }
             PPVMHeader::NumQubits(n) => {
                 info.n_qubits = n;
             }

@@ -12,7 +12,9 @@ use crate::component::{Circuit, CircuitEffect};
 use crate::instruction::CircuitInstruction;
 use crate::measurement_observer::{MeasurementEffect, MeasurementObserver, MeasurementResult};
 use crate::message::CircuitMessage;
-use crate::syntax::{PPVM_MAGIC, PPVMHeader, PPVMResolver};
+use crate::syntax::{PPVMHeader, PPVMResolver};
+
+pub const PPVM_MAGIC: u32 = 0x5050564D;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PPVMDeviceInfo {
@@ -24,7 +26,7 @@ pub struct PPVMDeviceInfo {
 impl Default for PPVMDeviceInfo {
     fn default() -> Self {
         Self {
-            magic: 0,
+            magic: PPVM_MAGIC,
             n_qubits: 0,
             coefficient_threshold: 1e-10,
         }
@@ -215,16 +217,6 @@ impl PPVM {
 
     pub fn init(&mut self) -> eyre::Result<()> {
         let info = &self.loader.module.extra;
-        if info.magic != PPVM_MAGIC {
-            if info.magic == 0 {
-                return Err(eyre::eyre!("missing 'magic ppvm;' header (0x5050564D)"));
-            } else {
-                return Err(eyre::eyre!(
-                    "Expected magic header 'ppvm' (0x5050564D), got {}",
-                    info.magic
-                ));
-            }
-        }
         if info.n_qubits == 0 {
             return Err(eyre::eyre!("device circuit.n_qubits must be declared"));
         }
@@ -420,7 +412,6 @@ mod tests {
     fn test_run_ppvm() -> eyre::Result<()> {
         let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
 
-        module.extra.magic = PPVM_MAGIC;
         module.extra.n_qubits = 2;
 
         /*
@@ -506,7 +497,6 @@ mod tests {
 
         let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
 
-        module.extra.magic = PPVM_MAGIC;
         module.extra.n_qubits = 5;
         module.extra.coefficient_threshold = 1e-10;
 
@@ -595,7 +585,7 @@ mod tests {
 
     #[test]
     fn run_program_executes_bell_circuit() -> eyre::Result<()> {
-        let source = "magic ppvm;\ndevice circuit.n_qubits 2;\n\
+        let source = "device circuit.n_qubits 2;\n\
                       fn @main() {\n\
                           const.u64 0\n\
                           gate h\n\
@@ -617,21 +607,11 @@ mod tests {
 
     #[test]
     fn init_fails_when_n_qubits_undeclared() -> eyre::Result<()> {
-        let source = "magic ppvm;\nfn @main() { ret }\n";
-        let mut machine = PPVM::default();
-        machine.load_program(source)?;
-        let err = machine.init().unwrap_err();
-        assert!(err.to_string().contains("circuit.n_qubits"), "err: {err}");
-        Ok(())
-    }
-
-    #[test]
-    fn init_fails_when_magic_undeclared() -> eyre::Result<()> {
         let source = "fn @main() { ret }\n";
         let mut machine = PPVM::default();
         machine.load_program(source)?;
         let err = machine.init().unwrap_err();
-        assert!(err.to_string().contains("magic"), "err: {err}");
+        assert!(err.to_string().contains("circuit.n_qubits"), "err: {err}");
         Ok(())
     }
 

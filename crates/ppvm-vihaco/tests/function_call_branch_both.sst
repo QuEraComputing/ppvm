@@ -1,4 +1,3 @@
-magic ppvm;
 device circuit.n_qubits 2;
 
 // Exercises a helper that returns BOTH measurement outputs (outcome and

@@ -1,4 +1,3 @@
-magic ppvm;
 device circuit.n_qubits 2;
 
 fn @main() {

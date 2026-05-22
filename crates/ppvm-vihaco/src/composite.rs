@@ -235,6 +235,7 @@ impl PPVM {
             base: 0,
             span: (0, 0, 0),
             function: None,
+            ret_pc: 0,
         });
 
         Ok(())
@@ -259,6 +260,7 @@ impl PPVM {
         match inst {
             PPVMInstruction::Cpu(cpu_inst) => {
                 let msg = self.resolve_cpu(&cpu_inst)?;
+                self.cpu.set_current_pc(self.loader.pc());
                 let stdout_effect = match (&cpu_inst, &msg) {
                     (vihaco_cpu::Instruction::Print, vihaco_cpu::CPUMessage::Print(text)) => {
                         Some(PPVMEffect::Stdout(StdoutEffect(text.clone())))

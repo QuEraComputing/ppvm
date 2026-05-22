@@ -43,7 +43,6 @@ fn function_call_jumps_into_callee_body() {
 }
 
 #[test]
-#[ignore]
 fn function_call_returns() {
     let machine = ppvm_vihaco::run_file("tests/function_call_ret.sst")
         .unwrap_or_else(|e| panic!("run function_call.sst: {e:?}"));
@@ -92,5 +91,44 @@ fn branch_on_outcome_statistics_balanced_and_invariant_holds() {
     assert!(
         (lo..=hi).contains(&ones),
         "expected {lo}..={hi} ones out of {SHOTS}, got {ones}"
+    );
+}
+
+#[test]
+fn function_call_branch_on_both_returned_values() {
+    // `function_call_branch_both.sst`: helper returns BOTH outcome and
+    // is_lost via `ret 2`. Main first branches on is_lost, then on outcome,
+    // steering q1 to |1> on the lost path and on the kept-outcome=1 path,
+    // leaving q1 in |0> only on the kept-outcome=0 path. With loss prob 0.5
+    // and a |+> prep:
+    //   P(m1 = 1) = P(lost) + P(kept) · P(outcome = 1 | kept)
+    //             = 0.5     + 0.5 · 0.5  = 0.75
+    //   P(m0 = lost) = 0.5
+    const SHOTS: usize = 400;
+    let mut q0_lost = 0usize;
+    let mut q1_ones = 0usize;
+    for _ in 0..SHOTS {
+        let machine = ppvm_vihaco::run_file("tests/function_call_branch_both.sst")
+            .unwrap_or_else(|e| panic!("run function_call_branch_both.sst: {e:?}"));
+        let record = machine.measurement_record();
+        assert_eq!(record.len(), 2, "expected exactly two measurements");
+        assert_eq!(record[0].len(), 1);
+        assert_eq!(record[1].len(), 1);
+        if record[0][0].is_none() {
+            q0_lost += 1;
+        }
+        if record[1][0] == Some(true) {
+            q1_ones += 1;
+        }
+    }
+    // P(lost) = 0.5, SHOTS=400: mean=200, stddev=10. ±6σ window.
+    assert!(
+        (140..=260).contains(&q0_lost),
+        "expected ~200 lost shots, got {q0_lost}"
+    );
+    // P(m1=1) = 0.75, SHOTS=400: mean=300, stddev≈8.66. ±6σ → ~248..352.
+    assert!(
+        (240..=360).contains(&q1_ones),
+        "expected ~300 q1=true shots, got {q1_ones}"
     );
 }

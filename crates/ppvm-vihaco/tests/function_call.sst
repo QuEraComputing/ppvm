@@ -6,6 +6,7 @@ fn @main() {
     // Using `halt` instead of `ret` from the callee avoids depending on
     // vihaco-cpu restoring a return PC, which it doesn't track today.
     call 0, @run_circuit
+    ret
 }
 
 fn @run_circuit() {
@@ -15,5 +16,5 @@ fn @run_circuit() {
     const.u64 1
     gate measure
 
-    halt
+    ret 1
 }

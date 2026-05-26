@@ -17,6 +17,9 @@ pub struct VecStorage<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coe
     pub entries: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
     pub fingerprints: Vec<u64>,
     pub dirty: bool,
+    /// Reusable scratch buffer for `structurally_equal`'s coefficient lookup
+    /// map. Cleared and refilled per call; keeps its capacity across calls.
+    scratch: FxHashMap<I, Complex<T::Coeff>>,
 }
 
 impl<T, I, C> VecStorage<T, I, C>
@@ -47,7 +50,7 @@ where
         let mut found: Option<usize> = None;
         if let Some(candidates) = fp_index.get(&fp) {
             for &i in candidates {
-                if structurally_equal(&self.entries[i].0, &tab) {
+                if structurally_equal(&self.entries[i].0, &tab, &mut self.scratch) {
                     found = Some(i);
                     break;
                 }
@@ -94,6 +97,7 @@ where
             entries: Vec::with_capacity(cap),
             fingerprints: Vec::with_capacity(cap),
             dirty: false,
+            scratch: FxHashMap::default(),
         }
     }
 

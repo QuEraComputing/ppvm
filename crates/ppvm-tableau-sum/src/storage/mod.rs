@@ -35,6 +35,7 @@ where
 pub(crate) fn structurally_equal<T, I, C>(
     tab0: &GeneralizedTableau<T, I, C>,
     tab1: &GeneralizedTableau<T, I, C>,
+    scratch: &mut FxHashMap<I, Complex<T::Coeff>>,
 ) -> bool
 where
     T: Config,
@@ -64,11 +65,12 @@ where
         }
     }
 
-    // Build a HashMap over tab1's coefficients so each tab0 lookup is O(1).
-    let mut tab1_map: FxHashMap<I, Complex<T::Coeff>> =
-        FxHashMap::with_capacity_and_hasher(tab1.coefficients.len(), Default::default());
+    // Reuse the caller-owned scratch map instead of allocating per call.
+    // Clear retains capacity across invocations.
+    scratch.clear();
+    scratch.reserve(tab1.coefficients.len());
     for (val, idx) in tab1.coefficients.iter() {
-        tab1_map.insert(*idx, *val);
+        scratch.insert(*idx, *val);
     }
 
     let threshold_sq = tab0.coefficient_threshold.clone() * tab0.coefficient_threshold.clone();
@@ -77,7 +79,7 @@ where
         im: T::Coeff::zero(),
     };
     for (val0, idx0) in tab0.coefficients.iter() {
-        let val1 = tab1_map.get(idx0).copied().unwrap_or(zero);
+        let val1 = scratch.get(idx0).copied().unwrap_or(zero);
         if (*val0 - val1).norm_sqr() >= threshold_sq {
             return false;
         }

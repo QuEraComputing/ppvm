@@ -19,6 +19,9 @@ type Bucket<T, I, C> = SmallVec<[(GeneralizedTableau<T, I, C>, <T as Config>::Co
 pub struct MapStorage<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> {
     pub buckets: FxHashMap<u64, Bucket<T, I, C>>,
     pub dirty: bool,
+    /// Reusable scratch buffer for `structurally_equal`'s coefficient lookup
+    /// map. Cleared and refilled per call; keeps its capacity across calls.
+    scratch: FxHashMap<I, Complex<T::Coeff>>,
 }
 
 impl<T, I, C> MapStorage<T, I, C>
@@ -68,6 +71,7 @@ where
         Self {
             buckets: FxHashMap::with_capacity_and_hasher(cap, Default::default()),
             dirty: false,
+            scratch: FxHashMap::default(),
         }
     }
 
@@ -121,7 +125,7 @@ where
 
             let mut found: Option<usize> = None;
             for (i, (existing, _)) in bucket.iter().enumerate() {
-                if structurally_equal(existing, &tab) {
+                if structurally_equal(existing, &tab, &mut self.scratch) {
                     found = Some(i);
                     break;
                 }

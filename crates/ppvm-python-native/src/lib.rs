@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 
 pub mod interface;
 pub mod interface_tableau;
+pub mod lindblad;
 pub mod stim_program;
 
 #[pymodule]
@@ -148,4 +149,8 @@ pub mod ppvm_python_native {
     // Stim
     #[pymodule_export]
     pub use crate::stim_program::PyStimProgram;
+
+    // Lindbladian time evolution shim
+    #[pymodule_export]
+    pub use crate::lindblad::LindbladSpec;
 }

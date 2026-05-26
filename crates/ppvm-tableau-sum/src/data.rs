@@ -1,6 +1,5 @@
-use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 
-use fxhash::{FxHashMap, FxHasher};
 use num::{
     One, Zero,
     complex::{Complex, Complex64, ComplexFloat},
@@ -11,38 +10,27 @@ use ppvm_tableau::{
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
-use crate::sampler::Sampler;
+use crate::{
+    sampler::Sampler,
+    storage::{EntryStore, vec::VecStorage},
+};
 
 #[derive(Clone)]
 pub struct GeneralizedTableauSum<
     T: Config,
     I,
     C: SparseVector<Complex<T::Coeff>, I> = Vec<(Complex64, I)>,
+    S: EntryStore<T, I, C> = VecStorage<T, I, C>,
 > {
     pub n_qubits: usize,
-    pub entries: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
-    /// Per-entry cached fingerprint, parallel to `entries`. `None` means
-    /// the slot's fingerprint must be recomputed (e.g. after a Clifford
-    /// gate mutated every tableau). Maintained in lockstep with
-    /// `entries` by every method that pushes/removes/reorders entries.
-    pub entry_fingerprints: Vec<Option<u64>>,
+    pub entries: S,
     pub(crate) rng: SmallRng,
     pub(crate) sum_cutoff: T::Coeff,
+    _phantom: PhantomData<(I, C)>,
 }
 
-impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableauSum<T, I, C> {
-    pub(crate) fn fingerprint(tab: &GeneralizedTableau<T, I, C>) -> u64 {
-        let mut hasher = FxHasher::default();
-        tab.is_lost.hash(&mut hasher);
-        for row in tab.tableau.data.iter() {
-            row.phase.hash(&mut hasher);
-            row.word.hash(&mut hasher);
-        }
-        hasher.finish()
-    }
-}
-
-impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableauSum<T, I, C>
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>, S: EntryStore<T, I, C>>
+    GeneralizedTableauSum<T, I, C, S>
 where
     T::Coeff: One + Zero + Clone + Send + Sync + num::Num + PartialOrd,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -56,12 +44,14 @@ where
         let rng = rand::make_rng();
         let g_tab: GeneralizedTableau<T, I, C> =
             GeneralizedTableau::new(n_qubits, coefficient_threshold);
+        let mut storage = S::with_capacity(1);
+        storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one())], &sum_cutoff);
         Self {
             n_qubits: n_qubits,
-            entries: [(g_tab, T::Coeff::one())].to_vec(),
-            entry_fingerprints: vec![None],
+            entries: storage,
             rng: rng,
             sum_cutoff: sum_cutoff,
+            _phantom: PhantomData,
         }
     }
 
@@ -75,12 +65,14 @@ where
         let tab_seed = rng.random::<u64>();
         let g_tab: GeneralizedTableau<T, I, C> =
             GeneralizedTableau::new_with_seed(n_qubits, coefficient_threshold, tab_seed);
+        let mut storage = S::with_capacity(1);
+        storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one())], &sum_cutoff);
         Self {
             n_qubits: n_qubits,
-            entries: [(g_tab, T::Coeff::one())].to_vec(),
-            entry_fingerprints: vec![None],
+            entries: storage,
             rng: rng,
             sum_cutoff: sum_cutoff,
+            _phantom: PhantomData,
         }
     }
 
@@ -88,97 +80,12 @@ where
         self.entries.len()
     }
 
-    pub(crate) fn insert_or_update_batch(
-        &mut self,
-        branches: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
-    ) {
-        // Build a fingerprint index over the current entries so each branch
-        // lookup is O(1) expected instead of O(M) linear scan. Per-entry
-        // fingerprints are cached on `self.entry_fingerprints` and reused
-        // across consecutive noise calls; Clifford/T gates clear the cache.
-        let mut fp_index: FxHashMap<u64, Vec<usize>> =
-            FxHashMap::with_capacity_and_hasher(self.entries.len(), Default::default());
-        for i in 0..self.entries.len() {
-            let fp = match self.entry_fingerprints[i] {
-                Some(fp) => fp,
-                None => {
-                    let fp = Self::fingerprint(&self.entries[i].0);
-                    self.entry_fingerprints[i] = Some(fp);
-                    fp
-                }
-            };
-            fp_index.entry(fp).or_default().push(i);
-        }
-
-        let mut needs_renormalize = false;
-        for (tab, p) in branches {
-            let dropped_any = self.insert_or_update(tab, p, &mut fp_index);
-            needs_renormalize |= dropped_any;
-        }
-        if needs_renormalize {
-            self.normalize_probabilities();
-        }
-    }
-
-    fn insert_or_update(
-        &mut self,
-        tab: GeneralizedTableau<T, I, C>,
-        p: T::Coeff,
-        fp_index: &mut FxHashMap<u64, Vec<usize>>,
-    ) -> bool {
-        // New branches always come from a freshly-mutated fork (X/Y/Z or
-        // is_lost flip applied just before this call), so their cached
-        // fingerprint would always be stale — compute fresh.
-        let fp = Self::fingerprint(&tab);
-
-        // Only run the full equality check on entries whose fingerprint matches.
-        let mut found: Option<usize> = None;
-        if let Some(candidates) = fp_index.get(&fp) {
-            for &i in candidates {
-                if Self::unsafe_equal_tableau_data_and_is_lost(&self.entries[i].0, &tab) {
-                    found = Some(i);
-                    break;
-                }
-            }
-        }
-
-        let mut needs_normalize = false;
-        match found {
-            Some(i) => {
-                let p0 = &self.entries[i].1;
-                self.entries[i].1 = p0.clone() + p;
-            }
-
-            None => {
-                if p > self.sum_cutoff {
-                    let new_idx = self.entries.len();
-                    self.entries.push((tab, p));
-                    self.entry_fingerprints.push(Some(fp));
-                    fp_index.entry(fp).or_default().push(new_idx);
-                } else {
-                    needs_normalize = true;
-                }
-            }
-        }
-
-        needs_normalize
-    }
-
     pub fn truncate(&mut self) {
         let length_before_truncation = self.entries.len();
         let cutoff = self.sum_cutoff.clone();
         // Filter both vectors in lockstep so `entry_fingerprints` stays
         // aligned with `entries` after retain shifts indices.
-        let mut i = 0;
-        self.entries.retain(|entry| {
-            let keep = entry.1 > cutoff;
-            if !keep {
-                self.entry_fingerprints.remove(i);
-            } else {
-                i += 1;
-            }
-            keep
-        });
+        self.entries.retain(|_, p| *p > cutoff);
         if self.entries.len() < length_before_truncation {
             self.normalize_probabilities();
         }
@@ -189,70 +96,33 @@ where
             .entries
             .iter()
             .fold(T::Coeff::zero(), |acc, entry| acc + entry.1.clone());
-        for (_, p) in self.entries.iter_mut() {
+        self.entries.for_each_mut(|_, p| {
             *p = p.clone() / norm.clone();
-        }
-    }
-
-    fn unsafe_equal_tableau_data_and_is_lost(
-        tab0: &GeneralizedTableau<T, I, C>,
-        tab1: &GeneralizedTableau<T, I, C>,
-    ) -> bool {
-        if tab0.is_lost != tab1.is_lost {
-            return false;
-        }
-
-        if tab0.coefficients.len() != tab1.coefficients.len() {
-            return false;
-        }
-
-        // Cheaper row comparison first; coefficient compare is O(K) below.
-        for (row0, row1) in tab0.tableau.data.iter().zip(tab1.tableau.data.iter()) {
-            if row0.phase != row1.phase || row0.word != row1.word {
-                return false;
-            }
-        }
-
-        // Build a HashMap over tab1's coefficients so each tab0 lookup is O(1).
-        let mut tab1_map: FxHashMap<I, Complex<T::Coeff>> =
-            FxHashMap::with_capacity_and_hasher(tab1.coefficients.len(), Default::default());
-        for (val, idx) in tab1.coefficients.iter() {
-            tab1_map.insert(*idx, *val);
-        }
-
-        let threshold_sq = tab0.coefficient_threshold.clone() * tab0.coefficient_threshold.clone();
-        let zero = Complex {
-            re: T::Coeff::zero(),
-            im: T::Coeff::zero(),
-        };
-        for (val0, idx0) in tab0.coefficients.iter() {
-            let val1 = tab1_map.get(idx0).copied().unwrap_or(zero);
-            if (*val0 - val1).norm_sqr() >= threshold_sq {
-                return false;
-            }
-        }
-
-        true
+        });
     }
 
     pub fn sampler(&mut self) -> Sampler<T, I, C> {
         // Sorting reorders entries; drop the parallel fingerprint cache
         // rather than permuting it (cheaper, and the sampler doesn't read
         // it). Subsequent noise ops on this sum would just recompute.
-        self.entry_fingerprints.iter_mut().for_each(|fp| *fp = None);
-        self.entries
-            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut entries: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)> = self
+            .entries
+            .iter()
+            .map(|(t, c)| (t.clone(), c.clone()))
+            .collect();
+        entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut p_acc = T::Coeff::zero();
-        let mut p_cum = Vec::<T::Coeff>::new();
-        for entry in self.entries.iter() {
+        let mut p_cum = Vec::<T::Coeff>::with_capacity(entries.len());
+        for entry in entries.iter() {
             p_acc += entry.1.clone();
             p_cum.push(p_acc.clone())
         }
 
         Sampler {
             p_cumulative: p_cum,
-            generalized_tableau_sum: self.clone(),
+            entries: entries,
+            rng: self.rng.clone(),
             scratch: ppvm_tableau::measure::MeasureScratch::new(),
         }
     }
@@ -272,7 +142,7 @@ mod tests {
     }
 
     fn sum_of_probabilities(tab: &TestSum) -> f64 {
-        tab.entries.iter().map(|e| e.1).sum()
+        tab.entries.iter().map(|e| *e.1).sum()
     }
 
     #[test]
@@ -280,8 +150,8 @@ mod tests {
         let tab = make(3);
         assert_eq!(tab.len(), 1);
         assert_eq!(tab.n_qubits, 3);
-        assert!((tab.entries[0].1 - 1.0).abs() < 1e-12);
-        assert!(tab.entries[0].0.is_lost.iter().all(|x| !x));
+        assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
+        assert!(tab.entries.entries[0].0.is_lost.iter().all(|x| !x));
     }
 
     #[test]
@@ -295,7 +165,7 @@ mod tests {
         tab.y(0);
         tab.z(1);
         assert_eq!(tab.len(), 1);
-        assert!((tab.entries[0].1 - 1.0).abs() < 1e-12);
+        assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
     }
 
     #[test]
@@ -305,28 +175,30 @@ mod tests {
         tab.t(0);
         tab.t_adj(0);
         assert_eq!(tab.len(), 1);
-        assert!((tab.entries[0].1 - 1.0).abs() < 1e-12);
+        assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
     }
 
     #[test]
     fn test_normalize_probabilities() {
         let mut tab = make(2);
-        let cloned = tab.entries[0].0.clone();
-        tab.entries.push((cloned, 3.0));
-        tab.entry_fingerprints.push(None);
+        let cloned = tab.entries.entries[0].0.clone();
+        tab.entries.entries.push((cloned, 3.0));
+        tab.entries.fingerprints.push(0);
+        tab.entries.mark_keys_dirty();
         tab.normalize_probabilities();
         assert!((sum_of_probabilities(&tab) - 1.0).abs() < 1e-12);
-        assert!((tab.entries[0].1 - 0.25).abs() < 1e-12);
-        assert!((tab.entries[1].1 - 0.75).abs() < 1e-12);
+        assert!((tab.entries.entries[0].1 - 0.25).abs() < 1e-12);
+        assert!((tab.entries.entries[1].1 - 0.75).abs() < 1e-12);
     }
 
     #[test]
     fn test_truncate_removes_low_probability_entries() {
         // sum_cutoff = 0.1
         let mut tab: TestSum = GeneralizedTableauSum::new_with_seed(2, 1e-12, 0.1, 42);
-        let cloned = tab.entries[0].0.clone();
-        tab.entries.push((cloned, 0.05));
-        tab.entry_fingerprints.push(None);
+        let cloned = tab.entries.entries[0].0.clone();
+        tab.entries.entries.push((cloned, 0.05));
+        tab.entries.fingerprints.push(0);
+        tab.entries.mark_keys_dirty();
         tab.normalize_probabilities();
         // entries are now ~ (0.952, 0.048); 0.048 is below the 0.1 cutoff
         tab.truncate();
@@ -339,8 +211,8 @@ mod tests {
         let mut tab = make(2);
         tab.loss_channel(0, 0.0);
         assert_eq!(tab.len(), 1);
-        assert!((tab.entries[0].1 - 1.0).abs() < 1e-12);
-        assert!(!tab.entries[0].0.is_lost[0]);
+        assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
+        assert!(!tab.entries.entries[0].0.is_lost[0]);
     }
 
     #[test]
@@ -352,7 +224,7 @@ mod tests {
         let lost_count = tab.entries.iter().filter(|e| e.0.is_lost[0]).count();
         assert_eq!(lost_count, 1);
         for entry in tab.entries.iter() {
-            assert!((entry.1 - 0.5).abs() < 1e-12);
+            assert!((*entry.1 - 0.5).abs() < 1e-12);
         }
     }
 
@@ -361,7 +233,7 @@ mod tests {
         let mut tab = make(2);
         tab.depolarize(0, 0.0);
         assert_eq!(tab.len(), 1);
-        assert!((tab.entries[0].1 - 1.0).abs() < 1e-12);
+        assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
     }
 
     #[test]
@@ -443,9 +315,9 @@ mod tests {
         let mut tab = make(2);
         tab.loss_channel(0, 1.0);
         assert_eq!(tab.len(), 1);
-        assert!((tab.entries[0].1 - 1.0).abs() < 1e-12);
-        assert!(tab.entries[0].0.is_lost[0]);
-        assert!(!tab.entries[0].0.is_lost[1]);
+        assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
+        assert!(tab.entries.entries[0].0.is_lost[0]);
+        assert!(!tab.entries.entries[0].0.is_lost[1]);
     }
 
     #[test]
@@ -457,8 +329,8 @@ mod tests {
         assert_eq!(tab.len(), 1);
         tab.loss_channel(0, 0.5);
         assert_eq!(tab.len(), 1);
-        assert!((tab.entries[0].1 - 1.0).abs() < 1e-12);
-        assert!(tab.entries[0].0.is_lost[0]);
+        assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
+        assert!(tab.entries.entries[0].0.is_lost[0]);
     }
 
     #[test]
@@ -468,7 +340,7 @@ mod tests {
         tab.loss_channel(0, 1.0);
         tab.depolarize(0, 0.3);
         assert_eq!(tab.len(), 1);
-        assert!((tab.entries[0].1 - 1.0).abs() < 1e-12);
+        assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
     }
 
     #[test]
@@ -482,6 +354,29 @@ mod tests {
             assert_eq!(m[0], Some(false));
             assert_eq!(m[1], None);
         }
+    }
+
+    #[test]
+    fn test_sampler_respects_sorted_branch_probabilities() {
+        // loss_channel(0, 0.9) leaves the storage in insertion order
+        // [(orig, 0.1), (lost, 0.9)]. The sampler sorts entries by descending
+        // probability before building p_cumulative, so the cumulative array
+        // must be derived from the sorted view — otherwise sampling picks
+        // the wrong tableau and the lost/unlost frequencies invert.
+        let mut tab = make(1);
+        tab.loss_channel(0, 0.9);
+        let mut sampler = tab.sampler();
+        let n_shots = 4000;
+        let lost_count = (0..n_shots)
+            .filter(|_| sampler.sample()[0].is_none())
+            .count();
+        let lost_frac = lost_count as f64 / n_shots as f64;
+        // Expect ~0.9; the bug produces ~0.1.
+        assert!(
+            (lost_frac - 0.9).abs() < 0.03,
+            "expected ~90% lost shots, got {:.3}",
+            lost_frac
+        );
     }
 
     #[test]

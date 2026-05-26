@@ -10,6 +10,7 @@ use ppvm_tableau::{sparsevec::SparseVector, tableau_index::TableauIndex};
 
 use super::clifford::impl_generalized_tableau_sum_gate;
 use crate::data::GeneralizedTableauSum;
+use crate::storage::EntryStore;
 
 impl<T, I, C> TGate<T> for GeneralizedTableauSum<T, I, C>
 where

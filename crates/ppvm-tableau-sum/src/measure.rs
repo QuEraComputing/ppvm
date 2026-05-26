@@ -4,13 +4,14 @@ use ppvm_tableau::sparsevec::SparseVector;
 use ppvm_tableau::tableau_index::TableauIndex;
 
 use crate::prelude::*;
+use crate::storage::EntryStore;
 use bitvec::view::BitView;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 use std::fmt::Debug;
 
-impl<T, I, C> LossyMeasure for GeneralizedTableauSum<T, I, C>
+impl<T, I, C, S> LossyMeasure for GeneralizedTableauSum<T, I, C, S>
 where
     T: Config,
     <<T as Config>::Storage as BitView>::Store: PrimInt,
@@ -33,6 +34,7 @@ where
         + ComplexFloat
         + Copy,
     I: TableauIndex + Debug + Send + Sync,
+    S: EntryStore<T, I, C>,
 {
     fn measure(&mut self, _addr0: usize) -> Option<bool> {
         todo!("Measure needs to branch")

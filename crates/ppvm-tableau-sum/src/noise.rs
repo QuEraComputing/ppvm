@@ -14,10 +14,14 @@ use ppvm_tableau::{
 };
 use rand::RngExt;
 
-use crate::data::GeneralizedTableauSum;
+use crate::{data::GeneralizedTableauSum, storage::EntryStore};
 
-impl<T: Config, I: TableauIndex + Send + Sync, C: SparseVector<Complex<T::Coeff>, I>> LossChannel<T>
-    for GeneralizedTableauSum<T, I, C>
+impl<
+    T: Config,
+    I: TableauIndex + Send + Sync,
+    C: SparseVector<Complex<T::Coeff>, I>,
+    S: EntryStore<T, I, C>,
+> LossChannel<T> for GeneralizedTableauSum<T, I, C, S>
 where
     <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: std::fmt::Debug,
@@ -42,10 +46,10 @@ where
 {
     fn loss_channel(&mut self, addr0: usize, p: <T as Config>::Coeff) {
         let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff)>::new();
-        for (tab, p_sum) in self.entries.iter_mut() {
+        self.entries.for_each_mut(|tab, p_sum| {
             if tab.is_lost[addr0] {
                 // Don't branch if it's already lost
-                continue;
+                return;
             }
 
             let tab_seed = self.rng.random::<u64>();
@@ -53,9 +57,14 @@ where
             tab_branch.is_lost[addr0] = true;
             branches.push((tab_branch, p_sum.clone() * p.clone()));
             *p_sum *= T::Coeff::one() - p.clone();
-        }
+        });
 
-        self.insert_or_update_batch(branches);
+        let needs_renormalize = self
+            .entries
+            .insert_or_merge_batch(branches, &self.sum_cutoff);
+        if needs_renormalize {
+            self.normalize_probabilities();
+        }
         self.truncate();
     }
 }
@@ -88,9 +97,9 @@ where
         let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff)>::new();
         let p_3 = p.clone() / 3.0.into();
 
-        for (tab, p_sum) in self.entries.iter_mut() {
+        self.entries.for_each_mut(|tab, p_sum| {
             if tab.is_lost[addr0] {
-                continue;
+                return;
             }
 
             let tab_seed_x = self.rng.random::<u64>();
@@ -110,9 +119,14 @@ where
             branches.push((tab_branch_z, p_sum.clone() * p_3.clone()));
 
             *p_sum *= T::Coeff::one() - p.clone();
-        }
+        });
 
-        self.insert_or_update_batch(branches);
+        let needs_normalize = self
+            .entries
+            .insert_or_merge_batch(branches, &self.sum_cutoff);
+        if needs_normalize {
+            self.normalize_probabilities();
+        }
         self.truncate();
     }
 }

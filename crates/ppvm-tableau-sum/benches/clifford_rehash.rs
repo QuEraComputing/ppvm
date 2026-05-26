@@ -19,8 +19,6 @@ type GTabSum = GeneralizedTableauSum<Byte8F64<2>, u128>;
 /// Build a state with enough entries that per-entry rehash cost is visible.
 fn build_state(n_qubits: usize) -> GTabSum {
     let mut tab: GTabSum = GeneralizedTableauSum::new_with_seed(n_qubits, 1e-12, 1e-8, 42);
-    tab.entries.reserve(1024);
-    tab.entry_fingerprints.reserve(1024);
     tab.h(0);
     tab.cnot(0, 1);
     tab.cnot(1, 2);

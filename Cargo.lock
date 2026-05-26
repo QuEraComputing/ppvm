@@ -1001,6 +1001,7 @@ dependencies = [
  "ppvm-runtime",
  "ppvm-tableau",
  "rand 0.10.1",
+ "smallvec",
 ]
 
 [[package]]

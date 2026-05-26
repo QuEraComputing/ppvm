@@ -1,4 +1,5 @@
 pub mod entry_store;
+pub mod map;
 pub mod vec;
 
 pub use entry_store::EntryStore;

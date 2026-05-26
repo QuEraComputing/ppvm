@@ -10,6 +10,7 @@ num = "0.4.3"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau", features = ["rayon"] }
 rand = "0.10.1"
+smallvec = "1.15"
 
 [dev-dependencies]
 criterion = "0.8.2"

@@ -20,14 +20,26 @@ pub struct GeneralizedTableauSum<
     C: SparseVector<Complex<T::Coeff>, I> = Vec<(Complex64, I)>,
 > {
     pub n_qubits: usize,
-    pub(crate) entries: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
+    pub entries: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
     /// Per-entry cached fingerprint, parallel to `entries`. `None` means
     /// the slot's fingerprint must be recomputed (e.g. after a Clifford
     /// gate mutated every tableau). Maintained in lockstep with
     /// `entries` by every method that pushes/removes/reorders entries.
-    pub(crate) entry_fingerprints: Vec<Option<u64>>,
+    pub entry_fingerprints: Vec<Option<u64>>,
     pub(crate) rng: SmallRng,
     pub(crate) sum_cutoff: T::Coeff,
+}
+
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableauSum<T, I, C> {
+    pub(crate) fn fingerprint(tab: &GeneralizedTableau<T, I, C>) -> u64 {
+        let mut hasher = FxHasher::default();
+        tab.is_lost.hash(&mut hasher);
+        for row in tab.tableau.data.iter() {
+            row.phase.hash(&mut hasher);
+            row.word.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableauSum<T, I, C>
@@ -150,16 +162,6 @@ where
         }
 
         needs_normalize
-    }
-
-    fn fingerprint(tab: &GeneralizedTableau<T, I, C>) -> u64 {
-        let mut hasher = FxHasher::default();
-        tab.is_lost.hash(&mut hasher);
-        for row in tab.tableau.data.iter() {
-            row.phase.hash(&mut hasher);
-            row.word.hash(&mut hasher);
-        }
-        hasher.finish()
     }
 
     pub fn truncate(&mut self) {

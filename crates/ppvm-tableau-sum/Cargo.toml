@@ -18,3 +18,7 @@ criterion = "0.8.2"
 [[bench]]
 name = "msd"
 harness = false
+
+[[bench]]
+name = "clifford_rehash"
+harness = false

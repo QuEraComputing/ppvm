@@ -23,3 +23,7 @@ harness = false
 [[bench]]
 name = "clifford_rehash"
 harness = false
+
+[[bench]]
+name = "storage_compare"
+harness = false

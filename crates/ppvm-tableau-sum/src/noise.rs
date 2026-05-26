@@ -69,8 +69,12 @@ where
     }
 }
 
-impl<T: Config, I: TableauIndex + Send + Sync, C: SparseVector<Complex<T::Coeff>, I>>
-    Depolarizing<T> for GeneralizedTableauSum<T, I, C>
+impl<
+    T: Config,
+    I: TableauIndex + Send + Sync,
+    C: SparseVector<Complex<T::Coeff>, I>,
+    S: EntryStore<T, I, C>,
+> Depolarizing<T> for GeneralizedTableauSum<T, I, C, S>
 where
     <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: std::fmt::Debug,

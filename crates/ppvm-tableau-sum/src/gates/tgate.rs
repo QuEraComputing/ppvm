@@ -12,11 +12,12 @@ use super::clifford::impl_generalized_tableau_sum_gate;
 use crate::data::GeneralizedTableauSum;
 use crate::storage::EntryStore;
 
-impl<T, I, C> TGate<T> for GeneralizedTableauSum<T, I, C>
+impl<T, I, C, S> TGate<T> for GeneralizedTableauSum<T, I, C, S>
 where
     T: Config,
     <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: SparseVector<Complex<T::Coeff>, I>,
+    S: EntryStore<T, I, C>,
     T::Coeff: One + Zero + Clone + Send + Sync + num::Num + PartialOrd,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign

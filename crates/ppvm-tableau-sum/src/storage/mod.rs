@@ -21,6 +21,8 @@ use std::{
 /// expensive component (each word is several machine words wide) and is
 /// *invariant* under X/Y/Z and `is_lost` flips, so a branch inherits it from
 /// its parent unchanged.
+/// NOTE: this inheritance is only valid right now (loss + depolarize channels)
+/// but may need re-evaluation in the future when more gates are added
 pub fn word_fingerprint<T, I, C>(tab: &GeneralizedTableau<T, I, C>) -> u64
 where
     T: Config,
@@ -29,7 +31,11 @@ where
 {
     let mut hasher = FxHasher::default();
     for row in tab.tableau.data.iter() {
-        row.word.hash(&mut hasher);
+        // Hash the Pauli bits directly: the `PauliWord` hash cache is disabled
+        // for tableau rows (`REHASH = false`), so `row.word.hash()` would feed
+        // a stale zero and make every tableau collide.
+        row.word.xbits.data.hash(&mut hasher);
+        row.word.zbits.data.hash(&mut hasher);
     }
     hasher.finish()
 }
@@ -144,6 +150,19 @@ mod fingerprint_tests {
             fingerprint(&t),
             word_fingerprint(&t) ^ phase_lost_fingerprint(&t)
         );
+    }
+
+    #[test]
+    fn word_fingerprint_distinguishes_different_words() {
+        // H on different qubits produces different Pauli words, so their
+        // word-fingerprints must differ. The per-row hash cache is disabled for
+        // tableau words, so this only holds if word_fingerprint hashes the bits
+        // directly instead of the (stale, zero) cache.
+        let mut a: Tab = GeneralizedTableau::new_with_seed(4, 1e-12, 7);
+        a.h(0);
+        let mut b: Tab = GeneralizedTableau::new_with_seed(4, 1e-12, 7);
+        b.h(1);
+        assert_ne!(word_fingerprint(&a), word_fingerprint(&b));
     }
 
     #[test]

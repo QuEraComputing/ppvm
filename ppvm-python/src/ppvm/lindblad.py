@@ -21,10 +21,13 @@ construction entirely — at ~10^5 basis rows per evolution step, per-row
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
-import scipy.sparse as sp
 from ppvm_python_native import LindbladSpec as _LindbladSpec
+
+if TYPE_CHECKING:
+    import scipy.sparse as sp
 
 _PAULI_CODE = {"I": 0, "X": 1, "Z": 2, "Y": 3}
 # Lookup table mapping code -> ASCII byte for vectorised string output.
@@ -143,7 +146,13 @@ class Lindbladian:
         )
 
     def generator_arr(self, basis_arr: np.ndarray) -> sp.csc_matrix:
-        """Sparse generator matrix in CSC form, basis given as uint8 codes."""
+        """Sparse generator matrix in CSC form, basis given as uint8 codes.
+
+        Requires SciPy (imported lazily): only the sparse-matrix convenience
+        needs it; the ``action``/``leakage`` primitives do not.
+        """
+        import scipy.sparse as sp
+
         n_basis = basis_arr.shape[0]
         rows, cols, vals = self._spec.generator(np.ascontiguousarray(basis_arr, dtype=np.uint8))
         return sp.coo_matrix((vals, (rows, cols)), shape=(n_basis, n_basis)).tocsc()

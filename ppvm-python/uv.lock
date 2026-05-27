@@ -3045,6 +3045,7 @@ source = { editable = "." }
 dependencies = [
     { name = "bloqade-circuit" },
     { name = "kirin" },
+    { name = "numpy" },
     { name = "ppvm-python-native" },
 ]
 
@@ -3069,6 +3070,7 @@ doc = [
 requires-dist = [
     { name = "bloqade-circuit", specifier = ">=0.14.1" },
     { name = "kirin", specifier = ">=0.0.15" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "ppvm-python-native", directory = "../crates/ppvm-python-native" },
 ]
 

@@ -49,11 +49,17 @@ fn tvd(a: &HashMap<Vec<Option<bool>>, f64>, b: &HashMap<Vec<Option<bool>>, f64>)
     0.5 * total
 }
 
-fn run_sum<F>(n_qubits: usize, shots: usize, sum_cutoff: f64, mut circuit: F) -> Vec<Vec<Option<bool>>>
+fn run_sum<F>(
+    n_qubits: usize,
+    shots: usize,
+    sum_cutoff: f64,
+    mut circuit: F,
+) -> Vec<Vec<Option<bool>>>
 where
     F: FnMut(&mut TabSum),
 {
-    let mut tab: TabSum = GeneralizedTableauSum::new_with_seed(n_qubits, 1e-12, sum_cutoff, SEED_SUM);
+    let mut tab: TabSum =
+        GeneralizedTableauSum::new_with_seed(n_qubits, 1e-12, sum_cutoff, SEED_SUM);
     circuit(&mut tab);
     tab.sampler().sample_shots(shots)
 }
@@ -64,7 +70,8 @@ where
 {
     (0..shots as u64)
         .map(|i| {
-            let mut t: Tab = GeneralizedTableau::new_with_seed(n_qubits, 1e-12, SEED_PURE.wrapping_add(i));
+            let mut t: Tab =
+                GeneralizedTableau::new_with_seed(n_qubits, 1e-12, SEED_PURE.wrapping_add(i));
             circuit(&mut t);
             t.measure_all()
         })
@@ -83,7 +90,12 @@ fn assert_distributions_match(
     let fp = frequencies(pure);
     let d = tvd(&fs, &fp);
     if d >= tol {
-        let mut keys: Vec<_> = fs.keys().chain(fp.keys()).collect::<HashSet<_>>().into_iter().collect();
+        let mut keys: Vec<_> = fs
+            .keys()
+            .chain(fp.keys())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
         keys.sort();
         let mut report = String::new();
         for k in keys {
@@ -343,7 +355,12 @@ fn repeated_depolarize_creates_many_branches() {
             t.depolarize(1, p);
         }
     });
-    assert_distributions_match(&sum, &pure, 0.06, "repeated_depolarize_creates_many_branches");
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.06,
+        "repeated_depolarize_creates_many_branches",
+    );
 }
 
 #[test]
@@ -385,7 +402,12 @@ fn clifford_layer_with_sqrt_gates_and_noise() {
             t.loss_channel(q, 0.05);
         }
     });
-    assert_distributions_match(&sum, &pure, 0.08, "clifford_layer_with_sqrt_gates_and_noise");
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.08,
+        "clifford_layer_with_sqrt_gates_and_noise",
+    );
 }
 
 #[test]

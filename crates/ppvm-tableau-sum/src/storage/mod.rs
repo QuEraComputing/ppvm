@@ -17,7 +17,27 @@ use std::{
     ops::AddAssign,
 };
 
-pub(crate) fn fingerprint<T, I, C>(tab: &GeneralizedTableau<T, I, C>) -> u64
+/// Hash of the `word` (Pauli content) of every row, in order. This is the
+/// expensive component (each word is several machine words wide) and is
+/// *invariant* under X/Y/Z and `is_lost` flips, so a branch inherits it from
+/// its parent unchanged.
+pub fn word_fingerprint<T, I, C>(tab: &GeneralizedTableau<T, I, C>) -> u64
+where
+    T: Config,
+    I:,
+    C: SparseVector<Complex<T::Coeff>, I>,
+{
+    let mut hasher = FxHasher::default();
+    for row in tab.tableau.data.iter() {
+        row.word.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// Hash of `is_lost` plus every row's `phase`. Cheap (one byte per row) and
+/// the only part that changes under the noise branch ops, so it is recomputed
+/// per branch while [`word_fingerprint`] is reused.
+pub(crate) fn phase_lost_fingerprint<T, I, C>(tab: &GeneralizedTableau<T, I, C>) -> u64
 where
     T: Config,
     I:,
@@ -27,9 +47,20 @@ where
     tab.is_lost.hash(&mut hasher);
     for row in tab.tableau.data.iter() {
         row.phase.hash(&mut hasher);
-        row.word.hash(&mut hasher);
     }
     hasher.finish()
+}
+
+/// Full structural fingerprint: the word component combined with the
+/// phase/loss component. Equals `word_fingerprint ^ phase_lost_fingerprint`,
+/// which lets branch generation reuse a cached `word_fingerprint`.
+pub(crate) fn fingerprint<T, I, C>(tab: &GeneralizedTableau<T, I, C>) -> u64
+where
+    T: Config,
+    I:,
+    C: SparseVector<Complex<T::Coeff>, I>,
+{
+    word_fingerprint(tab) ^ phase_lost_fingerprint(tab)
 }
 
 pub(crate) fn structurally_equal<T, I, C>(
@@ -86,4 +117,65 @@ where
     }
 
     true
+}
+
+#[cfg(test)]
+mod fingerprint_tests {
+    use super::{fingerprint, phase_lost_fingerprint, word_fingerprint};
+    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_runtime::traits::Clifford;
+    use ppvm_tableau::data::GeneralizedTableau;
+
+    type Cfg = ByteF64<1>;
+    type Tab = GeneralizedTableau<Cfg, u128>;
+
+    fn make() -> Tab {
+        let mut t: Tab = GeneralizedTableau::new_with_seed(4, 1e-12, 7);
+        t.h(0);
+        t.cnot(0, 1);
+        t.h(2);
+        t
+    }
+
+    #[test]
+    fn fingerprint_is_word_xor_phase_lost() {
+        let t = make();
+        assert_eq!(
+            fingerprint(&t),
+            word_fingerprint(&t) ^ phase_lost_fingerprint(&t)
+        );
+    }
+
+    #[test]
+    fn pauli_and_loss_preserve_word_fingerprint() {
+        // X/Y/Z flip only phase bits and loss flips only is_lost; neither
+        // touches `word`. So a branch may inherit its parent's word-hash, and
+        // inherited-word XOR fresh-phase_lost must equal a full recompute.
+        let parent = make();
+        let parent_word = word_fingerprint(&parent);
+
+        for op in 0..3u8 {
+            let mut b = parent.clone();
+            match op {
+                0 => b.x(0),
+                1 => b.y(1),
+                _ => b.z(2),
+            };
+            assert_eq!(word_fingerprint(&b), parent_word, "Pauli changed word-hash");
+            assert_eq!(
+                parent_word ^ phase_lost_fingerprint(&b),
+                fingerprint(&b),
+                "incremental fingerprint != full recompute after Pauli"
+            );
+        }
+
+        let mut b = parent.clone();
+        b.is_lost[0] = true;
+        assert_eq!(word_fingerprint(&b), parent_word, "loss changed word-hash");
+        assert_eq!(
+            parent_word ^ phase_lost_fingerprint(&b),
+            fingerprint(&b),
+            "incremental fingerprint != full recompute after loss"
+        );
+    }
 }

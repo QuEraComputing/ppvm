@@ -45,19 +45,22 @@ where
     I: Debug,
 {
     fn loss_channel(&mut self, addr0: usize, p: <T as Config>::Coeff) {
-        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff)>::new();
-        self.entries.for_each_mut(|tab, p_sum| {
-            if tab.is_lost[addr0] {
-                // Don't branch if it's already lost
-                return;
-            }
+        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64)>::new();
+        self.entries
+            .for_each_mut_with_word_key(|tab, p_sum, word_fp| {
+                if tab.is_lost[addr0] {
+                    // Don't branch if it's already lost
+                    return;
+                }
 
-            let tab_seed = self.rng.random::<u64>();
-            let mut tab_branch = tab.fork(Some(tab_seed));
-            tab_branch.is_lost[addr0] = true;
-            branches.push((tab_branch, p_sum.clone() * p.clone()));
-            *p_sum *= T::Coeff::one() - p.clone();
-        });
+                let tab_seed = self.rng.random::<u64>();
+                let mut tab_branch = tab.fork(Some(tab_seed));
+                tab_branch.is_lost[addr0] = true;
+                // is_lost flip leaves the Pauli words unchanged, so the branch
+                // reuses its parent's word-fingerprint.
+                branches.push((tab_branch, p_sum.clone() * p.clone(), word_fp));
+                *p_sum *= T::Coeff::one() - p.clone();
+            });
 
         let needs_renormalize = self
             .entries
@@ -98,32 +101,35 @@ where
     I: Debug,
 {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff)>::new();
+        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64)>::new();
         let p_3 = p.clone() / 3.0.into();
 
-        self.entries.for_each_mut(|tab, p_sum| {
-            if tab.is_lost[addr0] {
-                return;
-            }
+        self.entries
+            .for_each_mut_with_word_key(|tab, p_sum, word_fp| {
+                if tab.is_lost[addr0] {
+                    return;
+                }
 
-            let tab_seed_x = self.rng.random::<u64>();
-            let tab_seed_y = self.rng.random::<u64>();
-            let tab_seed_z = self.rng.random::<u64>();
+                let tab_seed_x = self.rng.random::<u64>();
+                let tab_seed_y = self.rng.random::<u64>();
+                let tab_seed_z = self.rng.random::<u64>();
 
-            let mut tab_branch_x = tab.fork(Some(tab_seed_x));
-            let mut tab_branch_y = tab.fork(Some(tab_seed_y));
-            let mut tab_branch_z = tab.fork(Some(tab_seed_z));
+                let mut tab_branch_x = tab.fork(Some(tab_seed_x));
+                let mut tab_branch_y = tab.fork(Some(tab_seed_y));
+                let mut tab_branch_z = tab.fork(Some(tab_seed_z));
 
-            tab_branch_x.x(addr0);
-            tab_branch_y.y(addr0);
-            tab_branch_z.z(addr0);
+                tab_branch_x.x(addr0);
+                tab_branch_y.y(addr0);
+                tab_branch_z.z(addr0);
 
-            branches.push((tab_branch_x, p_sum.clone() * p_3.clone()));
-            branches.push((tab_branch_y, p_sum.clone() * p_3.clone()));
-            branches.push((tab_branch_z, p_sum.clone() * p_3.clone()));
+                // X/Y/Z flip only phase bits, never the Pauli words, so all three
+                // branches reuse the parent's word-fingerprint.
+                branches.push((tab_branch_x, p_sum.clone() * p_3.clone(), word_fp));
+                branches.push((tab_branch_y, p_sum.clone() * p_3.clone(), word_fp));
+                branches.push((tab_branch_z, p_sum.clone() * p_3.clone(), word_fp));
 
-            *p_sum *= T::Coeff::one() - p.clone();
-        });
+                *p_sum *= T::Coeff::one() - p.clone();
+            });
 
         let needs_normalize = self
             .entries

@@ -26,7 +26,7 @@ use ppvm_runtime::traits::{Clifford, CliffordExtensions, Depolarizing, LossChann
 use ppvm_tableau::data::GeneralizedTableau;
 use ppvm_tableau_sum::{
     data::GeneralizedTableauSum,
-    storage::{EntryStore, vec::VecStorage},
+    storage::{EntryStore, vec::VecStorage, word_fingerprint},
 };
 
 type Cfg = Byte8F64<2>;
@@ -57,7 +57,7 @@ const HIGH_CUTOFF: f64 = 1e-5;
 const TARGET_N: usize = 4000;
 
 /// Depolarize-shaped Phase 1: 3 forks + X/Y/Z per non-lost entry. Serial.
-fn gen_serial(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64)> {
+fn gen_serial(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64, u64)> {
     entries
         .iter()
         .enumerate()
@@ -66,7 +66,7 @@ fn gen_serial(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64)> {
 }
 
 /// Same work as `gen_serial`, but the per-entry fork loop runs on rayon.
-fn gen_parallel(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64)> {
+fn gen_parallel(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64, u64)> {
     entries
         .par_iter()
         .enumerate()
@@ -76,12 +76,20 @@ fn gen_parallel(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64)>
 
 /// The independent per-entry work. SmallVec<[_; 3]> keeps the 3 branches
 /// inline (no per-entry heap alloc), so serial and parallel are comparable.
+/// Each branch carries the parent's word-fingerprint (X/Y/Z leave words
+/// unchanged), matching what the noise channels now feed the merge.
 #[inline]
-fn branch_entry(seed: u64, tab: &Tableau, p_sum: f64, addr0: usize) -> SmallVec<[(Tableau, f64); 3]> {
-    let mut out: SmallVec<[(Tableau, f64); 3]> = SmallVec::new();
+fn branch_entry(
+    seed: u64,
+    tab: &Tableau,
+    p_sum: f64,
+    addr0: usize,
+) -> SmallVec<[(Tableau, f64, u64); 3]> {
+    let mut out: SmallVec<[(Tableau, f64, u64); 3]> = SmallVec::new();
     if tab.is_lost[addr0] {
         return out;
     }
+    let word_fp = word_fingerprint(tab);
     let mut bx = tab.fork(Some(seed));
     let mut by = tab.fork(Some(seed ^ 1));
     let mut bz = tab.fork(Some(seed ^ 2));
@@ -89,9 +97,9 @@ fn branch_entry(seed: u64, tab: &Tableau, p_sum: f64, addr0: usize) -> SmallVec<
     by.y(addr0);
     bz.z(addr0);
     let w = p_sum / 3.0;
-    out.push((bx, w));
-    out.push((by, w));
-    out.push((bz, w));
+    out.push((bx, w, word_fp));
+    out.push((by, w, word_fp));
+    out.push((bz, w, word_fp));
     out
 }
 

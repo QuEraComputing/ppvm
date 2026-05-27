@@ -32,11 +32,8 @@ const SEED: u64 = 42;
 fn apply_circuit<S>(tab: &mut GeneralizedTableauSum<Cfg, Idx, Coef, S>)
 where
     S: EntryStore<Cfg, Idx, Coef>,
-    GeneralizedTableauSum<Cfg, Idx, Coef, S>: Clifford
-        + CliffordExtensions
-        + TGate<Cfg>
-        + LossChannel<Cfg>
-        + Depolarizing<Cfg>,
+    GeneralizedTableauSum<Cfg, Idx, Coef, S>:
+        Clifford + CliffordExtensions + TGate<Cfg> + LossChannel<Cfg> + Depolarizing<Cfg>,
 {
     // Single-qubit Cliffords, two noise channels each.
     for q in 0..N_QUBITS {

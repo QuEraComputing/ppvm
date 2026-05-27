@@ -10,12 +10,16 @@ use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
 
-use crate::storage::{EntryStore, fingerprint, structurally_equal};
+use crate::storage::{EntryStore, phase_lost_fingerprint, structurally_equal, word_fingerprint};
 
 #[derive(Clone)]
 pub struct VecStorage<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> {
     pub entries: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,
     pub fingerprints: Vec<u64>,
+    /// Cached `word_fingerprint` per entry, kept in lockstep with `entries`.
+    /// A branch inherits its parent's value (its Pauli words are unchanged),
+    /// so the merge avoids re-hashing the words — the dominant fingerprint cost.
+    pub word_fingerprints: Vec<u64>,
     pub dirty: bool,
     /// Reusable scratch buffer for `structurally_equal`'s coefficient lookup
     /// map. Cleared and refilled per call; keeps its capacity across calls.
@@ -38,13 +42,14 @@ where
         &mut self,
         tab: GeneralizedTableau<T, I, C>,
         p: T::Coeff,
+        word_fp: u64,
         fp_index: &mut FxHashMap<u64, Vec<usize>>,
         sum_cutoff: &T::Coeff,
     ) -> bool {
-        // New branches always come from a freshly-mutated fork (X/Y/Z or
-        // is_lost flip applied just before this call), so their cached
-        // fingerprint would always be stale — compute fresh.
-        let fp = fingerprint(&tab);
+        // The branch inherited its parent's word-fingerprint (X/Y/Z and
+        // is_lost don't touch the Pauli words), so recover the full
+        // fingerprint from the cheap phase/loss component only.
+        let fp = word_fp ^ phase_lost_fingerprint(&tab);
 
         // Only run the full equality check on entries whose fingerprint matches.
         let mut found: Option<usize> = None;
@@ -69,6 +74,7 @@ where
                     let new_idx = self.entries.len();
                     self.entries.push((tab, p));
                     self.fingerprints.push(fp);
+                    self.word_fingerprints.push(word_fp);
                     fp_index.entry(fp).or_default().push(new_idx);
                 } else {
                     needs_normalize = true;
@@ -77,6 +83,22 @@ where
         }
 
         needs_normalize
+    }
+
+    /// Recompute `fingerprints` and `word_fingerprints` from scratch when a
+    /// Clifford/T gate has invalidated them. No-op when clean.
+    fn rebuild_fingerprints_if_dirty(&mut self) {
+        if !self.dirty {
+            return;
+        }
+        self.fingerprints.clear();
+        self.word_fingerprints.clear();
+        for (t, _) in self.entries.iter() {
+            let wfp = word_fingerprint(t);
+            self.word_fingerprints.push(wfp);
+            self.fingerprints.push(wfp ^ phase_lost_fingerprint(t));
+        }
+        self.dirty = false;
     }
 }
 
@@ -96,6 +118,7 @@ where
         Self {
             entries: Vec::with_capacity(cap),
             fingerprints: Vec::with_capacity(cap),
+            word_fingerprints: Vec::with_capacity(cap),
             dirty: false,
             scratch: FxHashMap::default(),
         }
@@ -127,22 +150,27 @@ where
         self.entries.iter_mut().for_each(|(tab, c)| f(tab, c));
     }
 
+    fn for_each_mut_with_word_key<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&mut GeneralizedTableau<T, I, C>, &mut <T as Config>::Coeff, u64),
+    {
+        self.rebuild_fingerprints_if_dirty();
+        for (i, (tab, c)) in self.entries.iter_mut().enumerate() {
+            f(tab, c, self.word_fingerprints[i]);
+        }
+    }
+
     fn insert_or_merge_batch(
         &mut self,
-        branches: Vec<(GeneralizedTableau<T, I, C>, <T as Config>::Coeff)>,
+        branches: Vec<(GeneralizedTableau<T, I, C>, <T as Config>::Coeff, u64)>,
         cutoff: &<T as Config>::Coeff,
     ) -> bool {
-        if self.dirty {
-            self.fingerprints.clear();
-            self.fingerprints
-                .extend(self.entries.iter().map(|(t, _)| fingerprint(t)));
-            self.dirty = false;
-        }
+        self.rebuild_fingerprints_if_dirty();
 
         // Build a fingerprint index over the current entries so each branch
         // lookup is O(1) expected instead of O(M) linear scan. Per-entry
-        // fingerprints are cached on `self.entry_fingerprints` and reused
-        // across consecutive noise calls; Clifford/T gates clear the cache.
+        // fingerprints are cached on `self.fingerprints` and reused across
+        // consecutive noise calls; Clifford/T gates clear the cache.
         let mut fp_index: FxHashMap<u64, Vec<usize>> =
             FxHashMap::with_capacity_and_hasher(self.entries.len(), Default::default());
         for i in 0..self.entries.len() {
@@ -151,8 +179,8 @@ where
         }
 
         let mut needs_renormalize = false;
-        for (tab, p) in branches {
-            let dropped_any = self.insert_or_merge_entry(tab, p, &mut fp_index, cutoff);
+        for (tab, p, word_fp) in branches {
+            let dropped_any = self.insert_or_merge_entry(tab, p, word_fp, &mut fp_index, cutoff);
             needs_renormalize |= dropped_any;
         }
 
@@ -172,11 +200,13 @@ where
                 if read != write {
                     self.entries.swap(read, write);
                     self.fingerprints.swap(read, write);
+                    self.word_fingerprints.swap(read, write);
                 }
                 write += 1;
             }
         }
         self.entries.truncate(write);
         self.fingerprints.truncate(write);
+        self.word_fingerprints.truncate(write);
     }
 }

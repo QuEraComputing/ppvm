@@ -11,7 +11,9 @@ use ppvm_tableau::{
 };
 use smallvec::SmallVec;
 
-use crate::storage::{EntryStore, fingerprint, structurally_equal};
+use crate::storage::{
+    EntryStore, fingerprint, phase_lost_fingerprint, structurally_equal, word_fingerprint,
+};
 
 type Bucket<T, I, C> = SmallVec<[(GeneralizedTableau<T, I, C>, <T as Config>::Coeff); 1]>;
 
@@ -108,19 +110,32 @@ where
         }
     }
 
+    fn for_each_mut_with_word_key<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&mut GeneralizedTableau<T, I, C>, &mut <T as Config>::Coeff, u64),
+    {
+        self.rebuild_if_dirty();
+        for v in self.buckets.values_mut() {
+            for (tab, c) in v.iter_mut() {
+                let word_fp = word_fingerprint(tab);
+                f(tab, c, word_fp);
+            }
+        }
+    }
+
     fn insert_or_merge_batch(
         &mut self,
-        branches: Vec<(GeneralizedTableau<T, I, C>, <T as Config>::Coeff)>,
+        branches: Vec<(GeneralizedTableau<T, I, C>, <T as Config>::Coeff, u64)>,
         cutoff: &<T as Config>::Coeff,
     ) -> bool {
         self.rebuild_if_dirty();
 
         let mut needs_renormalize = false;
-        for (tab, p) in branches {
-            // New branches always come from a freshly-mutated fork (X/Y/Z or
-            // is_lost flip applied just before this call), so we always hash
-            // fresh here rather than trusting any cached value.
-            let fp = fingerprint(&tab);
+        for (tab, p, word_fp) in branches {
+            // The branch inherited its parent's word-fingerprint (X/Y/Z and
+            // is_lost leave the Pauli words unchanged), so the full fingerprint
+            // is the cheap phase/loss component XOR'd with the inherited word.
+            let fp = word_fp ^ phase_lost_fingerprint(&tab);
             let bucket = self.buckets.entry(fp).or_default();
 
             let mut found: Option<usize> = None;

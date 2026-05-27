@@ -12,7 +12,7 @@ use rand::{RngExt, SeedableRng};
 
 use crate::{
     sampler::Sampler,
-    storage::{EntryStore, vec::VecStorage},
+    storage::{EntryStore, vec::VecStorage, word_fingerprint},
 };
 
 #[derive(Clone)]
@@ -44,8 +44,9 @@ where
         let rng = rand::make_rng();
         let g_tab: GeneralizedTableau<T, I, C> =
             GeneralizedTableau::new(n_qubits, coefficient_threshold);
+        let wfp = word_fingerprint(&g_tab);
         let mut storage = S::with_capacity(1);
-        storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one())], &sum_cutoff);
+        storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one(), wfp)], &sum_cutoff);
         Self {
             n_qubits: n_qubits,
             entries: storage,
@@ -65,8 +66,9 @@ where
         let tab_seed = rng.random::<u64>();
         let g_tab: GeneralizedTableau<T, I, C> =
             GeneralizedTableau::new_with_seed(n_qubits, coefficient_threshold, tab_seed);
+        let wfp = word_fingerprint(&g_tab);
         let mut storage = S::with_capacity(1);
-        storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one())], &sum_cutoff);
+        storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one(), wfp)], &sum_cutoff);
         Self {
             n_qubits: n_qubits,
             entries: storage,
@@ -184,6 +186,7 @@ mod tests {
         let cloned = tab.entries.entries[0].0.clone();
         tab.entries.entries.push((cloned, 3.0));
         tab.entries.fingerprints.push(0);
+        tab.entries.word_fingerprints.push(0);
         tab.entries.mark_keys_dirty();
         tab.normalize_probabilities();
         assert!((sum_of_probabilities(&tab) - 1.0).abs() < 1e-12);
@@ -198,6 +201,7 @@ mod tests {
         let cloned = tab.entries.entries[0].0.clone();
         tab.entries.entries.push((cloned, 0.05));
         tab.entries.fingerprints.push(0);
+        tab.entries.word_fingerprints.push(0);
         tab.entries.mark_keys_dirty();
         tab.normalize_probabilities();
         // entries are now ~ (0.952, 0.048); 0.048 is below the 0.1 cutoff
@@ -377,6 +381,36 @@ mod tests {
             "expected ~90% lost shots, got {:.3}",
             lost_frac
         );
+    }
+
+    #[test]
+    fn test_word_fingerprint_cache_stays_consistent() {
+        // After a real gate+noise sequence (ending on a merge), the cached
+        // per-entry fingerprints must stay aligned with `entries` and equal a
+        // from-scratch recompute — i.e. the inherited word-hash never drifts.
+        use crate::storage::{fingerprint, word_fingerprint};
+        let mut tab = make(3);
+        tab.h(0);
+        tab.cnot(0, 1);
+        tab.loss_channel(0, 0.3);
+        tab.depolarize(1, 0.3);
+
+        assert!(!tab.entries.dirty);
+        let n = tab.entries.entries.len();
+        assert_eq!(tab.entries.fingerprints.len(), n);
+        assert_eq!(tab.entries.word_fingerprints.len(), n);
+        for (i, (t, _)) in tab.entries.entries.iter().enumerate() {
+            assert_eq!(
+                tab.entries.word_fingerprints[i],
+                word_fingerprint(t),
+                "word-fingerprint cache drifted at entry {i}"
+            );
+            assert_eq!(
+                tab.entries.fingerprints[i],
+                fingerprint(t),
+                "full-fingerprint cache drifted at entry {i}"
+            );
+        }
     }
 
     #[test]

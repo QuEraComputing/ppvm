@@ -40,33 +40,113 @@ where
     hasher.finish()
 }
 
-/// Hash of `is_lost` plus every row's `phase`. Cheap (one byte per row) and
-/// the only part that changes under the noise branch ops, so it is recomputed
-/// per branch while [`word_fingerprint`] is reused.
-pub(crate) fn phase_lost_fingerprint<T, I, C>(tab: &GeneralizedTableau<T, I, C>) -> u64
+/// Per-row mask (splitmix64 of `(index, salt)`); a stable pure function used
+/// to build the XOR-combinable [`phase_loss_hash`].
+#[inline]
+fn row_mask(index: usize, salt: u64) -> u64 {
+    let mut z = (index as u64)
+        .wrapping_mul(0x9E3779B97F4A7C15)
+        .wrapping_add(salt);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+    z ^ (z >> 31)
+}
+
+/// Mask XORed into the phase/loss hash when a row's sign bit (phase bit 1) is
+/// set. A Pauli flips only this bit, so a branch updates its hash by XORing
+/// `sign_mask(row)` for each row it flips.
+#[inline]
+pub(crate) fn sign_mask(row: usize) -> u64 {
+    row_mask(row, 0xA1A1_A1A1_A1A1_A1A1)
+}
+
+/// Mask for a row's imaginary bit (phase bit 0). Stabilizer phases are `±1`,
+/// so this is rarely set, but it keeps the hash a faithful function of `phase`.
+#[inline]
+fn imag_mask(row: usize) -> u64 {
+    row_mask(row, 0xB2B2_B2B2_B2B2_B2B2)
+}
+
+/// Mask XORed in when qubit `q` is lost. Marking a qubit lost is a single XOR
+/// of `loss_mask(q)`.
+#[inline]
+pub(crate) fn loss_mask(q: usize) -> u64 {
+    row_mask(q, 0xC3C3_C3C3_C3C3_C3C3)
+}
+
+/// XOR contribution of a single row's phase.
+#[inline]
+fn phase_contrib(row: usize, phase: u8) -> u64 {
+    let mut h = 0;
+    if phase & 1 != 0 {
+        h ^= imag_mask(row);
+    }
+    if phase & 2 != 0 {
+        h ^= sign_mask(row);
+    }
+    h
+}
+
+/// XOR-combinable hash of `is_lost` plus every row's `phase`, formed as the
+/// XOR of per-row contributions (the phase/loss half of [`fingerprint`]). Being
+/// XOR-combinable lets a branch inherit its parent's value and update only the
+/// rows it changed — a sign flip XORs [`sign_mask`], a loss XORs [`loss_mask`].
+pub fn phase_loss_hash<T, I, C>(tab: &GeneralizedTableau<T, I, C>) -> u64
 where
     T: Config,
-    I:,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
-    let mut hasher = FxHasher::default();
-    tab.is_lost.hash(&mut hasher);
-    for row in tab.tableau.data.iter() {
-        row.phase.hash(&mut hasher);
+    let mut h = 0u64;
+    for (row, ppw) in tab.tableau.data.iter().enumerate() {
+        h ^= phase_contrib(row, ppw.phase);
     }
-    hasher.finish()
+    for (q, lost) in tab.is_lost.iter().enumerate() {
+        if *lost {
+            h ^= loss_mask(q);
+        }
+    }
+    h
+}
+
+/// Phase/loss hash of a Pauli (depolarize) branch: the parent's hash with
+/// [`sign_mask`] XORed in for each row whose phase the Pauli flipped. The
+/// branch shares the parent's words and `is_lost`, and a Pauli flips only sign
+/// bits, so this single walk over the (already-forked) rows reproduces a
+/// from-scratch [`phase_loss_hash`] without re-hashing anything.
+pub(crate) fn pauli_branch_phase_loss<T, I, C>(
+    parent: &GeneralizedTableau<T, I, C>,
+    branch: &GeneralizedTableau<T, I, C>,
+    parent_phase_loss: u64,
+) -> u64
+where
+    T: Config,
+    C: SparseVector<Complex<T::Coeff>, I>,
+{
+    let mut h = parent_phase_loss;
+    for (row, (pp, bp)) in parent
+        .tableau
+        .data
+        .iter()
+        .zip(branch.tableau.data.iter())
+        .enumerate()
+    {
+        if pp.phase != bp.phase {
+            h ^= sign_mask(row);
+        }
+    }
+    h
 }
 
 /// Full structural fingerprint: the word component combined with the
-/// phase/loss component. Equals `word_fingerprint ^ phase_lost_fingerprint`,
-/// which lets branch generation reuse a cached `word_fingerprint`.
+/// phase/loss component. Equals `word_fingerprint ^ phase_loss_hash`, which
+/// lets branch generation reuse a cached `word_fingerprint` and incrementally
+/// update the phase/loss component.
 pub(crate) fn fingerprint<T, I, C>(tab: &GeneralizedTableau<T, I, C>) -> u64
 where
     T: Config,
-    I:,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
-    word_fingerprint(tab) ^ phase_lost_fingerprint(tab)
+    word_fingerprint(tab) ^ phase_loss_hash(tab)
 }
 
 pub(crate) fn structurally_equal<T, I, C>(
@@ -127,7 +207,9 @@ where
 
 #[cfg(test)]
 mod fingerprint_tests {
-    use super::{fingerprint, phase_lost_fingerprint, word_fingerprint};
+    use super::{
+        fingerprint, loss_mask, pauli_branch_phase_loss, phase_loss_hash, word_fingerprint,
+    };
     use ppvm_runtime::config::fxhash::ByteF64;
     use ppvm_runtime::traits::Clifford;
     use ppvm_tableau::data::GeneralizedTableau;
@@ -144,11 +226,43 @@ mod fingerprint_tests {
     }
 
     #[test]
-    fn fingerprint_is_word_xor_phase_lost() {
+    fn fingerprint_is_word_xor_phase_loss() {
         let t = make();
+        assert_eq!(fingerprint(&t), word_fingerprint(&t) ^ phase_loss_hash(&t));
+    }
+
+    #[test]
+    fn phase_loss_hash_changes_on_sign_flip() {
+        // Applying X flips the sign of the rows that anticommute, so the
+        // phase/loss hash must change.
+        let parent = make();
+        let mut branch = parent.clone();
+        branch.x(0);
+        assert_ne!(phase_loss_hash(&parent), phase_loss_hash(&branch));
+    }
+
+    #[test]
+    fn phase_loss_hash_sign_flip_delta_matches_recompute() {
+        // The core invariant: the incremental branch hash (parent's hash with
+        // sign_mask XORed in per flipped row) must equal a from-scratch
+        // recompute on the branch. Only holds if phase_loss_hash is
+        // XOR-combinable with sign-bit contribution == sign_mask(row).
+        let parent = make();
+        let mut branch = parent.clone();
+        branch.x(0);
+        let incremental = pauli_branch_phase_loss(&parent, &branch, phase_loss_hash(&parent));
+        assert_eq!(incremental, phase_loss_hash(&branch));
+    }
+
+    #[test]
+    fn phase_loss_hash_loss_delta_matches_recompute() {
+        // Marking a qubit lost must equal XORing loss_mask(q) into the hash.
+        let parent = make();
+        let mut branch = parent.clone();
+        branch.is_lost[1] = true;
         assert_eq!(
-            fingerprint(&t),
-            word_fingerprint(&t) ^ phase_lost_fingerprint(&t)
+            phase_loss_hash(&parent) ^ loss_mask(1),
+            phase_loss_hash(&branch)
         );
     }
 
@@ -182,7 +296,7 @@ mod fingerprint_tests {
             };
             assert_eq!(word_fingerprint(&b), parent_word, "Pauli changed word-hash");
             assert_eq!(
-                parent_word ^ phase_lost_fingerprint(&b),
+                parent_word ^ phase_loss_hash(&b),
                 fingerprint(&b),
                 "incremental fingerprint != full recompute after Pauli"
             );
@@ -192,7 +306,7 @@ mod fingerprint_tests {
         b.is_lost[0] = true;
         assert_eq!(word_fingerprint(&b), parent_word, "loss changed word-hash");
         assert_eq!(
-            parent_word ^ phase_lost_fingerprint(&b),
+            parent_word ^ phase_loss_hash(&b),
             fingerprint(&b),
             "incremental fingerprint != full recompute after loss"
         );

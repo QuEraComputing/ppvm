@@ -19,13 +19,14 @@ pub trait EntryStore<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>>: Clone
         F: FnMut(&mut GeneralizedTableau<T, I, C>, &mut T::Coeff);
 
     /// Like [`for_each_mut`](Self::for_each_mut), but first ensures cached
-    /// word-fingerprints are current, then passes each entry's
-    /// word-fingerprint to the closure. Noise channels use this so a spawned
-    /// branch can inherit its parent's word-hash (invariant under X/Y/Z and
-    /// `is_lost`) instead of re-hashing the Pauli words.
-    fn for_each_mut_with_word_key<F>(&mut self, f: F)
+    /// fingerprints are current, then passes each entry's `word_fingerprint`
+    /// and `phase_loss_hash` to the closure. Noise channels use this so a
+    /// spawned branch can inherit its parent's word-hash (invariant under
+    /// X/Y/Z and `is_lost`) and incrementally update the phase/loss hash,
+    /// instead of re-hashing the tableau.
+    fn for_each_mut_with_keys<F>(&mut self, f: F)
     where
-        F: FnMut(&mut GeneralizedTableau<T, I, C>, &mut T::Coeff, u64);
+        F: FnMut(&mut GeneralizedTableau<T, I, C>, &mut T::Coeff, u64, u64);
 
     /// O(1) flag that gates have touched every tableau and cached fingerprints
     /// are stale. Implementations recompute lazily on the next branching call.
@@ -36,13 +37,12 @@ pub trait EntryStore<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>>: Clone
     /// `cutoff`. Returns true if any incoming branch was dropped (caller
     /// renormalizes).
     ///
-    /// Each branch carries its parent's word-fingerprint (third tuple field);
-    /// since the branch ops leave `word` unchanged, the full fingerprint is
-    /// recovered as `word_fp ^ phase_lost_fingerprint(branch)` without
-    /// re-hashing the Pauli words.
+    /// Each branch carries its parent's word-fingerprint and its own
+    /// phase/loss hash (third and fourth tuple fields), so the full
+    /// fingerprint is `word_fp ^ phase_loss` — no re-hashing of the tableau.
     fn insert_or_merge_batch(
         &mut self,
-        branches: Vec<(GeneralizedTableau<T, I, C>, T::Coeff, u64)>,
+        branches: Vec<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>,
         cutoff: &T::Coeff,
     ) -> bool;
 

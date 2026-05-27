@@ -12,7 +12,7 @@ use rand::{RngExt, SeedableRng};
 
 use crate::{
     sampler::Sampler,
-    storage::{EntryStore, vec::VecStorage, word_fingerprint},
+    storage::{EntryStore, phase_loss_hash, vec::VecStorage, word_fingerprint},
 };
 
 #[derive(Clone)]
@@ -45,8 +45,9 @@ where
         let g_tab: GeneralizedTableau<T, I, C> =
             GeneralizedTableau::new(n_qubits, coefficient_threshold);
         let wfp = word_fingerprint(&g_tab);
+        let plh = phase_loss_hash(&g_tab);
         let mut storage = S::with_capacity(1);
-        storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one(), wfp)], &sum_cutoff);
+        storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one(), wfp, plh)], &sum_cutoff);
         Self {
             n_qubits: n_qubits,
             entries: storage,
@@ -67,8 +68,9 @@ where
         let g_tab: GeneralizedTableau<T, I, C> =
             GeneralizedTableau::new_with_seed(n_qubits, coefficient_threshold, tab_seed);
         let wfp = word_fingerprint(&g_tab);
+        let plh = phase_loss_hash(&g_tab);
         let mut storage = S::with_capacity(1);
-        storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one(), wfp)], &sum_cutoff);
+        storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one(), wfp, plh)], &sum_cutoff);
         Self {
             n_qubits: n_qubits,
             entries: storage,
@@ -187,6 +189,7 @@ mod tests {
         tab.entries.entries.push((cloned, 3.0));
         tab.entries.fingerprints.push(0);
         tab.entries.word_fingerprints.push(0);
+        tab.entries.phase_loss_hashes.push(0);
         tab.entries.mark_keys_dirty();
         tab.normalize_probabilities();
         assert!((sum_of_probabilities(&tab) - 1.0).abs() < 1e-12);
@@ -202,6 +205,7 @@ mod tests {
         tab.entries.entries.push((cloned, 0.05));
         tab.entries.fingerprints.push(0);
         tab.entries.word_fingerprints.push(0);
+        tab.entries.phase_loss_hashes.push(0);
         tab.entries.mark_keys_dirty();
         tab.normalize_probabilities();
         // entries are now ~ (0.952, 0.048); 0.048 is below the 0.1 cutoff
@@ -387,8 +391,9 @@ mod tests {
     fn test_word_fingerprint_cache_stays_consistent() {
         // After a real gate+noise sequence (ending on a merge), the cached
         // per-entry fingerprints must stay aligned with `entries` and equal a
-        // from-scratch recompute — i.e. the inherited word-hash never drifts.
-        use crate::storage::{fingerprint, word_fingerprint};
+        // from-scratch recompute — i.e. the inherited word-hash and the
+        // incrementally-maintained phase/loss hash never drift.
+        use crate::storage::{fingerprint, phase_loss_hash, word_fingerprint};
         let mut tab = make(3);
         tab.h(0);
         tab.cnot(0, 1);
@@ -399,11 +404,17 @@ mod tests {
         let n = tab.entries.entries.len();
         assert_eq!(tab.entries.fingerprints.len(), n);
         assert_eq!(tab.entries.word_fingerprints.len(), n);
+        assert_eq!(tab.entries.phase_loss_hashes.len(), n);
         for (i, (t, _)) in tab.entries.entries.iter().enumerate() {
             assert_eq!(
                 tab.entries.word_fingerprints[i],
                 word_fingerprint(t),
                 "word-fingerprint cache drifted at entry {i}"
+            );
+            assert_eq!(
+                tab.entries.phase_loss_hashes[i],
+                phase_loss_hash(t),
+                "phase/loss-hash cache drifted at entry {i}"
             );
             assert_eq!(
                 tab.entries.fingerprints[i],

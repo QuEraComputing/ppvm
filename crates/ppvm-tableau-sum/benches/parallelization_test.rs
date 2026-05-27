@@ -26,7 +26,7 @@ use ppvm_runtime::traits::{Clifford, CliffordExtensions, Depolarizing, LossChann
 use ppvm_tableau::data::GeneralizedTableau;
 use ppvm_tableau_sum::{
     data::GeneralizedTableauSum,
-    storage::{EntryStore, vec::VecStorage, word_fingerprint},
+    storage::{EntryStore, phase_loss_hash, vec::VecStorage, word_fingerprint},
 };
 
 type Cfg = Byte8F64<2>;
@@ -57,7 +57,7 @@ const HIGH_CUTOFF: f64 = 1e-5;
 const TARGET_N: usize = 4000;
 
 /// Depolarize-shaped Phase 1: 3 forks + X/Y/Z per non-lost entry. Serial.
-fn gen_serial(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64, u64)> {
+fn gen_serial(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64, u64, u64)> {
     entries
         .iter()
         .enumerate()
@@ -66,7 +66,7 @@ fn gen_serial(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64, u6
 }
 
 /// Same work as `gen_serial`, but the per-entry fork loop runs on rayon.
-fn gen_parallel(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64, u64)> {
+fn gen_parallel(entries: &[(Tableau, f64)], addr0: usize) -> Vec<(Tableau, f64, u64, u64)> {
     entries
         .par_iter()
         .enumerate()
@@ -84,8 +84,8 @@ fn branch_entry(
     tab: &Tableau,
     p_sum: f64,
     addr0: usize,
-) -> SmallVec<[(Tableau, f64, u64); 3]> {
-    let mut out: SmallVec<[(Tableau, f64, u64); 3]> = SmallVec::new();
+) -> SmallVec<[(Tableau, f64, u64, u64); 3]> {
+    let mut out: SmallVec<[(Tableau, f64, u64, u64); 3]> = SmallVec::new();
     if tab.is_lost[addr0] {
         return out;
     }
@@ -97,9 +97,14 @@ fn branch_entry(
     by.y(addr0);
     bz.z(addr0);
     let w = p_sum / 3.0;
-    out.push((bx, w, word_fp));
-    out.push((by, w, word_fp));
-    out.push((bz, w, word_fp));
+    let (hx, hy, hz) = (
+        phase_loss_hash(&bx),
+        phase_loss_hash(&by),
+        phase_loss_hash(&bz),
+    );
+    out.push((bx, w, word_fp, hx));
+    out.push((by, w, word_fp, hy));
+    out.push((bz, w, word_fp, hz));
     out
 }
 

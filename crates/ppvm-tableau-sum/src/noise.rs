@@ -14,7 +14,10 @@ use ppvm_tableau::{
 };
 use rand::RngExt;
 
-use crate::{data::GeneralizedTableauSum, storage::EntryStore};
+use crate::{
+    data::GeneralizedTableauSum,
+    storage::{EntryStore, loss_mask, pauli_branch_phase_loss},
+};
 
 impl<
     T: Config,
@@ -45,9 +48,9 @@ where
     I: Debug,
 {
     fn loss_channel(&mut self, addr0: usize, p: <T as Config>::Coeff) {
-        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64)>::new();
+        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::new();
         self.entries
-            .for_each_mut_with_word_key(|tab, p_sum, word_fp| {
+            .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
                 if tab.is_lost[addr0] {
                     // Don't branch if it's already lost
                     return;
@@ -56,9 +59,15 @@ where
                 let tab_seed = self.rng.random::<u64>();
                 let mut tab_branch = tab.fork(Some(tab_seed));
                 tab_branch.is_lost[addr0] = true;
-                // is_lost flip leaves the Pauli words unchanged, so the branch
-                // reuses its parent's word-fingerprint.
-                branches.push((tab_branch, p_sum.clone() * p.clone(), word_fp));
+                // is_lost flip leaves the Pauli words and phases unchanged, so
+                // the branch reuses its parent's word-fingerprint and the only
+                // change to the phase/loss hash is the lost qubit's mask.
+                branches.push((
+                    tab_branch,
+                    p_sum.clone() * p.clone(),
+                    word_fp,
+                    phase_loss ^ loss_mask(addr0),
+                ));
                 *p_sum *= T::Coeff::one() - p.clone();
             });
 
@@ -101,11 +110,11 @@ where
     I: Debug,
 {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64)>::new();
+        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::new();
         let p_3 = p.clone() / 3.0.into();
 
         self.entries
-            .for_each_mut_with_word_key(|tab, p_sum, word_fp| {
+            .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
                 if tab.is_lost[addr0] {
                     return;
                 }
@@ -123,10 +132,14 @@ where
                 tab_branch_z.z(addr0);
 
                 // X/Y/Z flip only phase bits, never the Pauli words, so all three
-                // branches reuse the parent's word-fingerprint.
-                branches.push((tab_branch_x, p_sum.clone() * p_3.clone(), word_fp));
-                branches.push((tab_branch_y, p_sum.clone() * p_3.clone(), word_fp));
-                branches.push((tab_branch_z, p_sum.clone() * p_3.clone(), word_fp));
+                // branches reuse the parent's word-fingerprint and derive their
+                // phase/loss hash from the parent's by XORing the flipped rows.
+                let hx = pauli_branch_phase_loss(tab, &tab_branch_x, phase_loss);
+                let hy = pauli_branch_phase_loss(tab, &tab_branch_y, phase_loss);
+                let hz = pauli_branch_phase_loss(tab, &tab_branch_z, phase_loss);
+                branches.push((tab_branch_x, p_sum.clone() * p_3.clone(), word_fp, hx));
+                branches.push((tab_branch_y, p_sum.clone() * p_3.clone(), word_fp, hy));
+                branches.push((tab_branch_z, p_sum.clone() * p_3.clone(), word_fp, hz));
 
                 *p_sum *= T::Coeff::one() - p.clone();
             });

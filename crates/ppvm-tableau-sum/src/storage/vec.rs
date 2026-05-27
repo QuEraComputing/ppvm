@@ -10,7 +10,7 @@ use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
 
-use crate::storage::{EntryStore, phase_lost_fingerprint, structurally_equal, word_fingerprint};
+use crate::storage::{EntryStore, phase_loss_hash, structurally_equal, word_fingerprint};
 
 #[derive(Clone)]
 pub struct VecStorage<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> {
@@ -20,6 +20,10 @@ pub struct VecStorage<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coe
     /// A branch inherits its parent's value (its Pauli words are unchanged),
     /// so the merge avoids re-hashing the words — the dominant fingerprint cost.
     pub word_fingerprints: Vec<u64>,
+    /// Cached `phase_loss_hash` per entry, kept in lockstep with `entries`.
+    /// XOR-combinable, so a branch inherits its parent's value and updates only
+    /// the rows it changed — the merge never walks the phases again.
+    pub phase_loss_hashes: Vec<u64>,
     pub dirty: bool,
     /// Reusable scratch buffer for `structurally_equal`'s coefficient lookup
     /// map. Cleared and refilled per call; keeps its capacity across calls.
@@ -43,13 +47,14 @@ where
         tab: GeneralizedTableau<T, I, C>,
         p: T::Coeff,
         word_fp: u64,
+        phase_loss: u64,
         fp_index: &mut FxHashMap<u64, Vec<usize>>,
         sum_cutoff: &T::Coeff,
     ) -> bool {
-        // The branch inherited its parent's word-fingerprint (X/Y/Z and
-        // is_lost don't touch the Pauli words), so recover the full
-        // fingerprint from the cheap phase/loss component only.
-        let fp = word_fp ^ phase_lost_fingerprint(&tab);
+        // The branch carries both components — its inherited word-fingerprint
+        // and its incrementally-maintained phase/loss hash — so the full
+        // fingerprint is their XOR, with no walk over the tableau.
+        let fp = word_fp ^ phase_loss;
 
         // Only run the full equality check on entries whose fingerprint matches.
         let mut found: Option<usize> = None;
@@ -75,6 +80,7 @@ where
                     self.entries.push((tab, p));
                     self.fingerprints.push(fp);
                     self.word_fingerprints.push(word_fp);
+                    self.phase_loss_hashes.push(phase_loss);
                     fp_index.entry(fp).or_default().push(new_idx);
                 } else {
                     needs_normalize = true;
@@ -93,10 +99,13 @@ where
         }
         self.fingerprints.clear();
         self.word_fingerprints.clear();
+        self.phase_loss_hashes.clear();
         for (t, _) in self.entries.iter() {
             let wfp = word_fingerprint(t);
+            let plh = phase_loss_hash(t);
             self.word_fingerprints.push(wfp);
-            self.fingerprints.push(wfp ^ phase_lost_fingerprint(t));
+            self.phase_loss_hashes.push(plh);
+            self.fingerprints.push(wfp ^ plh);
         }
         self.dirty = false;
     }
@@ -119,6 +128,7 @@ where
             entries: Vec::with_capacity(cap),
             fingerprints: Vec::with_capacity(cap),
             word_fingerprints: Vec::with_capacity(cap),
+            phase_loss_hashes: Vec::with_capacity(cap),
             dirty: false,
             scratch: FxHashMap::default(),
         }
@@ -150,19 +160,19 @@ where
         self.entries.iter_mut().for_each(|(tab, c)| f(tab, c));
     }
 
-    fn for_each_mut_with_word_key<F>(&mut self, mut f: F)
+    fn for_each_mut_with_keys<F>(&mut self, mut f: F)
     where
-        F: FnMut(&mut GeneralizedTableau<T, I, C>, &mut <T as Config>::Coeff, u64),
+        F: FnMut(&mut GeneralizedTableau<T, I, C>, &mut <T as Config>::Coeff, u64, u64),
     {
         self.rebuild_fingerprints_if_dirty();
         for (i, (tab, c)) in self.entries.iter_mut().enumerate() {
-            f(tab, c, self.word_fingerprints[i]);
+            f(tab, c, self.word_fingerprints[i], self.phase_loss_hashes[i]);
         }
     }
 
     fn insert_or_merge_batch(
         &mut self,
-        branches: Vec<(GeneralizedTableau<T, I, C>, <T as Config>::Coeff, u64)>,
+        branches: Vec<(GeneralizedTableau<T, I, C>, <T as Config>::Coeff, u64, u64)>,
         cutoff: &<T as Config>::Coeff,
     ) -> bool {
         self.rebuild_fingerprints_if_dirty();
@@ -179,8 +189,9 @@ where
         }
 
         let mut needs_renormalize = false;
-        for (tab, p, word_fp) in branches {
-            let dropped_any = self.insert_or_merge_entry(tab, p, word_fp, &mut fp_index, cutoff);
+        for (tab, p, word_fp, phase_loss) in branches {
+            let dropped_any =
+                self.insert_or_merge_entry(tab, p, word_fp, phase_loss, &mut fp_index, cutoff);
             needs_renormalize |= dropped_any;
         }
 
@@ -201,6 +212,7 @@ where
                     self.entries.swap(read, write);
                     self.fingerprints.swap(read, write);
                     self.word_fingerprints.swap(read, write);
+                    self.phase_loss_hashes.swap(read, write);
                 }
                 write += 1;
             }
@@ -208,5 +220,6 @@ where
         self.entries.truncate(write);
         self.fingerprints.truncate(write);
         self.word_fingerprints.truncate(write);
+        self.phase_loss_hashes.truncate(write);
     }
 }

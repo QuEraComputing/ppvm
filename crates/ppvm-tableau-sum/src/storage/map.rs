@@ -12,7 +12,7 @@ use ppvm_tableau::{
 use smallvec::SmallVec;
 
 use crate::storage::{
-    EntryStore, fingerprint, phase_lost_fingerprint, structurally_equal, word_fingerprint,
+    EntryStore, fingerprint, phase_loss_hash, structurally_equal, word_fingerprint,
 };
 
 type Bucket<T, I, C> = SmallVec<[(GeneralizedTableau<T, I, C>, <T as Config>::Coeff); 1]>;
@@ -110,32 +110,32 @@ where
         }
     }
 
-    fn for_each_mut_with_word_key<F>(&mut self, mut f: F)
+    fn for_each_mut_with_keys<F>(&mut self, mut f: F)
     where
-        F: FnMut(&mut GeneralizedTableau<T, I, C>, &mut <T as Config>::Coeff, u64),
+        F: FnMut(&mut GeneralizedTableau<T, I, C>, &mut <T as Config>::Coeff, u64, u64),
     {
         self.rebuild_if_dirty();
         for v in self.buckets.values_mut() {
             for (tab, c) in v.iter_mut() {
                 let word_fp = word_fingerprint(tab);
-                f(tab, c, word_fp);
+                let phase_loss = phase_loss_hash(tab);
+                f(tab, c, word_fp, phase_loss);
             }
         }
     }
 
     fn insert_or_merge_batch(
         &mut self,
-        branches: Vec<(GeneralizedTableau<T, I, C>, <T as Config>::Coeff, u64)>,
+        branches: Vec<(GeneralizedTableau<T, I, C>, <T as Config>::Coeff, u64, u64)>,
         cutoff: &<T as Config>::Coeff,
     ) -> bool {
         self.rebuild_if_dirty();
 
         let mut needs_renormalize = false;
-        for (tab, p, word_fp) in branches {
-            // The branch inherited its parent's word-fingerprint (X/Y/Z and
-            // is_lost leave the Pauli words unchanged), so the full fingerprint
-            // is the cheap phase/loss component XOR'd with the inherited word.
-            let fp = word_fp ^ phase_lost_fingerprint(&tab);
+        for (tab, p, word_fp, phase_loss) in branches {
+            // The branch carries both fingerprint components, so the full
+            // fingerprint is their XOR — no walk over the tableau.
+            let fp = word_fp ^ phase_loss;
             let bucket = self.buckets.entry(fp).or_default();
 
             let mut found: Option<usize> = None;

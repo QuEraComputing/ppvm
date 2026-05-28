@@ -49,4 +49,9 @@ pub trait EntryStore<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>>: Clone
     fn retain<F>(&mut self, f: F)
     where
         F: FnMut(&GeneralizedTableau<T, I, C>, &T::Coeff) -> bool;
+
+    /// Rebuild identity caches after in-place tableau mutations and coalesce
+    /// structurally equal entries by summing their probabilities. Returns true
+    /// when at least one pair of entries was merged.
+    fn merge_equal_entries(&mut self) -> bool;
 }

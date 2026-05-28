@@ -46,7 +46,11 @@ where
         if !self.dirty {
             return;
         }
-        let old = std::mem::take(&mut self.buckets);
+        let entry_count = self.buckets.values().map(|v| v.len()).sum();
+        let old = std::mem::replace(
+            &mut self.buckets,
+            FxHashMap::with_capacity_and_hasher(entry_count, Default::default()),
+        );
         for (_, bucket) in old {
             for (tab, p) in bucket {
                 let fp = fingerprint(&tab);
@@ -178,5 +182,45 @@ where
             v.retain(|(tab, c)| f(tab, c));
             !v.is_empty()
         });
+    }
+
+    fn merge_equal_entries(&mut self) -> bool {
+        let entry_count = self.len();
+        if entry_count < 2 {
+            self.rebuild_if_dirty();
+            return false;
+        }
+
+        let old = std::mem::replace(
+            &mut self.buckets,
+            FxHashMap::with_capacity_and_hasher(entry_count, Default::default()),
+        );
+        let mut merged_any = false;
+
+        for (_, bucket) in old {
+            for (tab, p) in bucket {
+                let fp = fingerprint(&tab);
+                let bucket = self.buckets.entry(fp).or_default();
+
+                let mut found: Option<usize> = None;
+                for (i, (existing, _)) in bucket.iter().enumerate() {
+                    if structurally_equal(existing, &tab, &mut self.scratch) {
+                        found = Some(i);
+                        break;
+                    }
+                }
+
+                match found {
+                    Some(i) => {
+                        bucket[i].1 = bucket[i].1.clone() + p;
+                        merged_any = true;
+                    }
+                    None => bucket.push((tab, p)),
+                }
+            }
+        }
+
+        self.dirty = false;
+        merged_any
     }
 }

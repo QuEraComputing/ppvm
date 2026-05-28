@@ -7,7 +7,7 @@ use num::{
 };
 use ppvm_runtime::{
     config::Config,
-    traits::{Clifford, Depolarizing, LossChannel},
+    traits::{Clifford, Depolarizing, LossChannel, ResetLossChannel},
 };
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
@@ -155,5 +155,48 @@ where
             self.normalize_probabilities();
         }
         self.truncate();
+    }
+}
+
+impl<T, I, C, S> ResetLossChannel<T> for GeneralizedTableauSum<T, I, C, S>
+where
+    T: Config,
+    I: TableauIndex + Send + Sync,
+    C: SparseVector<Complex<T::Coeff>, I>,
+    S: EntryStore<T, I, C>,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: std::fmt::Debug,
+    T::Coeff: PartialOrd<f64>
+        + PartialOrd
+        + One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+{
+    fn reset_loss_channel(&mut self, addr0: usize) {
+        let mut had_changes = false;
+        self.entries.for_each_mut(|tab, _p| {
+            if tab.is_lost[addr0] {
+                tab.is_lost[addr0] = false;
+                had_changes = true;
+            }
+        });
+        if had_changes {
+            self.entries.mark_keys_dirty();
+            if self.entries.merge_equal_entries() {
+                self.normalize_probabilities();
+            }
+        }
     }
 }

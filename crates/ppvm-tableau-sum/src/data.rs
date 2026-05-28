@@ -136,10 +136,19 @@ where
 mod tests {
     use super::*;
     use ppvm_runtime::config::fxhash::ByteF64;
-    use ppvm_runtime::traits::{Clifford, Depolarizing, LossChannel, TGate};
+    use ppvm_runtime::traits::{Clifford, Depolarizing, LossChannel, ResetLossChannel, TGate};
+
+    use crate::storage::map::MapStorage;
 
     type TestConfig = ByteF64<1>;
+    type TestCoeffVec = Vec<(Complex64, u128)>;
     type TestSum = GeneralizedTableauSum<TestConfig, u128>;
+    type TestMapSum = GeneralizedTableauSum<
+        TestConfig,
+        u128,
+        TestCoeffVec,
+        MapStorage<TestConfig, u128, TestCoeffVec>,
+    >;
 
     fn make(n: usize) -> TestSum {
         GeneralizedTableauSum::new_with_seed(n, 1e-12, 1e-10, 42)
@@ -234,6 +243,35 @@ mod tests {
         for entry in tab.entries.iter() {
             assert!((*entry.1 - 0.5).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn test_reset_loss_channel_merges_equal_vec_entries() {
+        let mut tab = make(1);
+        tab.loss_channel(0, 0.5);
+        assert_eq!(tab.len(), 2);
+
+        tab.reset_loss_channel(0);
+
+        assert_eq!(tab.len(), 1);
+        let (entry, p) = tab.entries.iter().next().unwrap();
+        assert!(!entry.is_lost[0]);
+        assert!((*p - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_reset_loss_channel_merges_equal_map_entries() {
+        let mut tab: TestMapSum = GeneralizedTableauSum::new_with_seed(1, 1e-12, 1e-10, 42);
+        tab.loss_channel(0, 0.5);
+        assert_eq!(tab.len(), 2);
+
+        tab.reset_loss_channel(0);
+
+        assert_eq!(tab.len(), 1);
+        assert_eq!(tab.entries.buckets.len(), 1);
+        let (entry, p) = tab.entries.iter().next().unwrap();
+        assert!(!entry.is_lost[0]);
+        assert!((*p - 1.0).abs() < 1e-12);
     }
 
     #[test]

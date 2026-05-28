@@ -37,6 +37,8 @@ where
     S: EntryStore<T, I, C>,
 {
     fn measure(&mut self, _addr0: usize) -> Option<bool> {
-        todo!("Measure needs to branch")
+        todo!(
+            "Measure needs to branch and needs a different return value (e.g. probabilities for 0, 1, lost)"
+        )
     }
 }

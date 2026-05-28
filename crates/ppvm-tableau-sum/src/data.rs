@@ -275,6 +275,35 @@ mod tests {
     }
 
     #[test]
+    fn test_reset_loss_merge_store_api_vec_entries() {
+        let mut tab = make(1);
+        tab.loss_channel(0, 0.5);
+        assert_eq!(tab.len(), 2);
+
+        assert!(tab.entries.reset_loss_and_merge(0));
+
+        assert_eq!(tab.len(), 1);
+        let (entry, p) = tab.entries.iter().next().unwrap();
+        assert!(!entry.is_lost[0]);
+        assert!((*p - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_reset_loss_merge_store_api_map_entries() {
+        let mut tab: TestMapSum = GeneralizedTableauSum::new_with_seed(1, 1e-12, 1e-10, 42);
+        tab.loss_channel(0, 0.5);
+        assert_eq!(tab.len(), 2);
+
+        assert!(tab.entries.reset_loss_and_merge(0));
+
+        assert_eq!(tab.len(), 1);
+        assert_eq!(tab.entries.buckets.len(), 1);
+        let (entry, p) = tab.entries.iter().next().unwrap();
+        assert!(!entry.is_lost[0]);
+        assert!((*p - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
     fn test_depolarize_zero_probability_doesnt_branch() {
         let mut tab = make(2);
         tab.depolarize(0, 0.0);

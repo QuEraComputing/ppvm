@@ -185,18 +185,8 @@ where
         + Copy,
 {
     fn reset_loss_channel(&mut self, addr0: usize) {
-        let mut had_changes = false;
-        self.entries.for_each_mut(|tab, _p| {
-            if tab.is_lost[addr0] {
-                tab.is_lost[addr0] = false;
-                had_changes = true;
-            }
-        });
-        if had_changes {
-            self.entries.mark_keys_dirty();
-            if self.entries.merge_equal_entries() {
-                self.normalize_probabilities();
-            }
+        if self.entries.reset_loss_and_merge(addr0) {
+            self.normalize_probabilities();
         }
     }
 }

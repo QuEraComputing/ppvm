@@ -168,6 +168,8 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone, const REHASH: bool> std:
     }
 }
 
+impl<A: PauliStorage, H: Clone, W: PauliWordTrait + Copy> Copy for PhasedPauliWord<A, H, W> {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

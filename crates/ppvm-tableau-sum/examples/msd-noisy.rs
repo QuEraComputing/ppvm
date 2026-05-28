@@ -85,8 +85,9 @@ fn main() {
     let n_qubits = 85;
     let p_loss = 1e-4;
     let p_depolarize = 1e-4;
-    let sum_cutoff = 1e-8;
+    let sum_cutoff = 1e-7;
     let n_shots = 1000;
+    let build_start = Instant::now();
 
     let mut tab: GTabSum = GeneralizedTableauSum::new(n_qubits, 1e-10, sum_cutoff);
     let qubit_addrs: Vec<usize> = (0..n_qubits).collect();
@@ -186,6 +187,8 @@ fn main() {
     }
 
     println!("Branches: {}", tab.len());
+    let total_build_time = Instant::now() - build_start;
+    println!("Build time: {} ms", total_build_time.as_millis());
 
     let mut sampler = tab.sampler();
     let now = Instant::now();

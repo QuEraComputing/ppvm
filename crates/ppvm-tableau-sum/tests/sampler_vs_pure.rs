@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_runtime::traits::{
     Clifford, CliffordExtensions, Depolarizing, LossChannel, PauliError, Reset, RotationOne,
-    RotationTwo, TGate, U3Gate,
+    RotationTwo, TGate, TwoQubitPauliError, U3Gate,
 };
 use ppvm_tableau::measure_all::LossyMeasureAll;
 use ppvm_tableau::prelude::*;
@@ -784,6 +784,168 @@ fn rxy_three_qubit_chain_with_loss() {
         t.loss_channel(2, 0.1);
     });
     assert_distributions_match(&sum, &pure, 0.08, "rxy_three_qubit_chain_with_loss");
+}
+
+// ---------------------------------------------------------------------------
+// Two-qubit Pauli error channel
+// ---------------------------------------------------------------------------
+//
+// Probability-array index layout (matches GeneralizedTableau and the sum
+// backend): IX, IY, IZ, XI, XX, XY, XZ, YI, YX, YY, YZ, ZI, ZX, ZY, ZZ.
+
+#[test]
+fn two_qubit_pauli_error_zero_prob_is_noop() {
+    let shots = 1000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.two_qubit_pauli_error(0, 1, [0.0; 15]);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.two_qubit_pauli_error(0, 1, [0.0; 15]);
+    });
+    assert!(sum.iter().all(|s| s == &vec![Some(false), Some(false)]));
+    assert!(pure.iter().all(|s| s == &vec![Some(false), Some(false)]));
+}
+
+#[test]
+fn two_qubit_pauli_error_xx_certain_flips_both() {
+    // p[4] = XX with probability 1.0: |00⟩ → |11⟩ deterministically.
+    let shots = 1000;
+    let mut p = [0.0_f64; 15];
+    p[4] = 1.0;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    assert!(sum.iter().all(|s| s == &vec![Some(true), Some(true)]));
+    assert!(pure.iter().all(|s| s == &vec![Some(true), Some(true)]));
+}
+
+#[test]
+fn two_qubit_pauli_error_zz_invariant_in_z_basis() {
+    // p[14] = ZZ with probability 1.0: |00⟩ is a ZZ eigenstate, no flips.
+    let shots = 1000;
+    let mut p = [0.0_f64; 15];
+    p[14] = 1.0;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    assert!(sum.iter().all(|s| s == &vec![Some(false), Some(false)]));
+    assert!(pure.iter().all(|s| s == &vec![Some(false), Some(false)]));
+}
+
+#[test]
+fn two_qubit_pauli_error_xi_flips_q0_only() {
+    // p[3] = XI with probability 1.0: q0 flips, q1 stays.
+    let shots = 1000;
+    let mut p = [0.0_f64; 15];
+    p[3] = 1.0;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    assert!(sum.iter().all(|s| s == &vec![Some(true), Some(false)]));
+    assert!(pure.iter().all(|s| s == &vec![Some(true), Some(false)]));
+}
+
+#[test]
+fn two_qubit_pauli_error_uniform_on_ground_state() {
+    // Uniform 1/15 weighting: total probability 1, every non-identity Pauli
+    // equally likely. Flip distribution on |00⟩:
+    //   |00⟩: I⊗Z, Z⊗I, Z⊗Z       (3/15)
+    //   |01⟩: I⊗{X,Y}, Z⊗{X,Y}    (4/15)
+    //   |10⟩: {X,Y}⊗I, {X,Y}⊗Z    (4/15)
+    //   |11⟩: {X,Y}⊗{X,Y}         (4/15)
+    let shots = 8000;
+    let p = [1.0 / 15.0_f64; 15];
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "two_qubit_pauli_error_uniform_on_ground_state",
+    );
+}
+
+#[test]
+fn two_qubit_pauli_error_nonuniform_on_ground_state() {
+    // Nontrivial heterogeneous probabilities: exercises that each p[k] lands
+    // at the right Pauli pair on both backends.
+    let shots = 8000;
+    let p = [
+        0.01, 0.02, 0.03, // IX, IY, IZ
+        0.04, 0.05, 0.06, 0.07, // XI, XX, XY, XZ
+        0.05, 0.04, 0.03, 0.02, // YI, YX, YY, YZ
+        0.01, 0.02, 0.03, 0.04, // ZI, ZX, ZY, ZZ
+    ];
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "two_qubit_pauli_error_nonuniform_on_ground_state",
+    );
+}
+
+#[test]
+fn two_qubit_pauli_error_on_lost_qubit_is_noop() {
+    // If either input qubit is lost the channel short-circuits to a no-op.
+    let shots = 1000;
+    let p = [1.0 / 15.0_f64; 15];
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.loss_channel(0, 1.0);
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.loss_channel(0, 1.0);
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    assert!(sum.iter().all(|s| s == &vec![None, Some(false)]));
+    assert!(pure.iter().all(|s| s == &vec![None, Some(false)]));
+}
+
+#[test]
+fn bell_pair_with_two_qubit_pauli_error_nonuniform() {
+    // Bell pair + nontrivial two-qubit Pauli noise; statistics must agree.
+    let shots = 8000;
+    let p = [
+        0.02, 0.03, 0.04, // IX, IY, IZ
+        0.05, 0.06, 0.04, 0.03, // XI, XX, XY, XZ
+        0.04, 0.05, 0.03, 0.02, // YI, YX, YY, YZ
+        0.02, 0.03, 0.04, 0.05, // ZI, ZX, ZY, ZZ
+    ];
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.two_qubit_pauli_error(0, 1, p);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.05,
+        "bell_pair_with_two_qubit_pauli_error_nonuniform",
+    );
 }
 
 // ---------------------------------------------------------------------------

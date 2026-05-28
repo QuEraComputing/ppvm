@@ -7,7 +7,9 @@ use num::{
 };
 use ppvm_runtime::{
     config::Config,
-    traits::{Clifford, Depolarizing, LossChannel, PauliError, ResetLossChannel},
+    traits::{
+        Clifford, Depolarizing, LossChannel, PauliError, ResetLossChannel, TwoQubitPauliError,
+    },
 };
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
@@ -178,6 +180,90 @@ where
                 branches.push((tab_branch_x, p_sum.clone() * p[0].clone(), word_fp, hx));
                 branches.push((tab_branch_y, p_sum.clone() * p[1].clone(), word_fp, hy));
                 branches.push((tab_branch_z, p_sum.clone() * p[2].clone(), word_fp, hz));
+
+                *p_sum *= T::Coeff::one() - p_total.clone();
+            });
+
+        let needs_normalize = self
+            .entries
+            .insert_or_merge_batch(branches, &self.sum_cutoff);
+        if needs_normalize {
+            self.normalize_probabilities();
+        }
+        self.truncate();
+    }
+}
+
+impl<
+    T: Config,
+    I: TableauIndex + Send + Sync,
+    C: SparseVector<Complex<T::Coeff>, I>,
+    S: EntryStore<T, I, C>,
+> TwoQubitPauliError<T> for GeneralizedTableauSum<T, I, C, S>
+where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: std::fmt::Debug,
+    T::Coeff: PartialOrd<f64>
+        + PartialOrd
+        + One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: Debug,
+{
+    fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [<T as Config>::Coeff; 15]) {
+        let p_total: T::Coeff = p
+            .iter()
+            .fold(T::Coeff::zero(), |acc, prob| acc + prob.clone());
+        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::with_capacity(
+            15 * self.entries.len(),
+        );
+
+        // Non-identity two-qubit Pauli pairs on (addr0, addr1), in the same
+        // order as the probability array: IX, IY, IZ, XI, XX, XY, XZ, YI,
+        // YX, YY, YZ, ZI, ZX, ZY, ZZ. Encoding: 0 = I, 1 = X, 2 = Y, 3 = Z.
+        #[rustfmt::skip]
+        const PAULI_PAIRS: [(u8, u8); 15] = [
+            (0, 1), (0, 2), (0, 3),
+            (1, 0), (1, 1), (1, 2), (1, 3),
+            (2, 0), (2, 1), (2, 2), (2, 3),
+            (3, 0), (3, 1), (3, 2), (3, 3),
+        ];
+
+        let apply = |t: &mut GeneralizedTableau<T, I, C>, op: u8, addr: usize| match op {
+            1 => t.x(addr),
+            2 => t.y(addr),
+            3 => t.z(addr),
+            _ => {}
+        };
+
+        self.entries
+            .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
+                if tab.is_lost[addr0] || tab.is_lost[addr1] {
+                    return;
+                }
+
+                for (k, &(op0, op1)) in PAULI_PAIRS.iter().enumerate() {
+                    let tab_seed = self.rng.random::<u64>();
+                    let mut tab_branch = tab.fork(Some(tab_seed));
+                    apply(&mut tab_branch, op0, addr0);
+                    apply(&mut tab_branch, op1, addr1);
+                    // X/Y/Z flips only phase bits, so the word-fingerprint is
+                    // preserved and the phase/loss hash is derived incrementally.
+                    let h = pauli_branch_phase_loss(tab, &tab_branch, phase_loss);
+                    branches.push((tab_branch, p_sum.clone() * p[k].clone(), word_fp, h));
+                }
 
                 *p_sum *= T::Coeff::one() - p_total.clone();
             });

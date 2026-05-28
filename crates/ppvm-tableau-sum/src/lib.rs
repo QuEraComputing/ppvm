@@ -7,4 +7,5 @@ pub mod storage;
 
 pub mod prelude {
     pub use super::data::GeneralizedTableauSum;
+    pub use ppvm_runtime::prelude::*;
 }

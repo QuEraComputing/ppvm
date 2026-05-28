@@ -7,7 +7,7 @@ use num::{
 };
 use ppvm_runtime::{
     config::Config,
-    traits::{Clifford, Depolarizing, LossChannel, ResetLossChannel},
+    traits::{Clifford, Depolarizing, LossChannel, PauliError, ResetLossChannel},
 };
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
@@ -112,10 +112,44 @@ where
     I: Debug,
 {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
+        let p_3 = p.clone() / 3.0.into();
+        self.pauli_error(addr0, [p_3.clone(), p_3.clone(), p_3]);
+    }
+}
+
+impl<
+    T: Config,
+    I: TableauIndex + Send + Sync,
+    C: SparseVector<Complex<T::Coeff>, I>,
+    S: EntryStore<T, I, C>,
+> PauliError<T> for GeneralizedTableauSum<T, I, C, S>
+where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: std::fmt::Debug,
+    T::Coeff: PartialOrd<f64>
+        + PartialOrd
+        + One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: Debug,
+{
+    fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
+        let p_total: T::Coeff = p[0].clone() + p[1].clone() + p[2].clone();
         let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::with_capacity(
             3 * self.entries.len(),
         );
-        let p_3 = p.clone() / 3.0.into();
 
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
@@ -141,11 +175,11 @@ where
                 let hx = pauli_branch_phase_loss(tab, &tab_branch_x, phase_loss);
                 let hy = pauli_branch_phase_loss(tab, &tab_branch_y, phase_loss);
                 let hz = pauli_branch_phase_loss(tab, &tab_branch_z, phase_loss);
-                branches.push((tab_branch_x, p_sum.clone() * p_3.clone(), word_fp, hx));
-                branches.push((tab_branch_y, p_sum.clone() * p_3.clone(), word_fp, hy));
-                branches.push((tab_branch_z, p_sum.clone() * p_3.clone(), word_fp, hz));
+                branches.push((tab_branch_x, p_sum.clone() * p[0].clone(), word_fp, hx));
+                branches.push((tab_branch_y, p_sum.clone() * p[1].clone(), word_fp, hy));
+                branches.push((tab_branch_z, p_sum.clone() * p[2].clone(), word_fp, hz));
 
-                *p_sum *= T::Coeff::one() - p.clone();
+                *p_sum *= T::Coeff::one() - p_total.clone();
             });
 
         let needs_normalize = self

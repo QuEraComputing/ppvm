@@ -136,7 +136,9 @@ where
 mod tests {
     use super::*;
     use ppvm_runtime::config::fxhash::ByteF64;
-    use ppvm_runtime::traits::{Clifford, Depolarizing, LossChannel, ResetLossChannel, TGate};
+    use ppvm_runtime::traits::{
+        Clifford, Depolarizing, LossChannel, LossyMeasure, PauliError, ResetLossChannel, TGate,
+    };
 
     use crate::storage::map::MapStorage;
 
@@ -156,6 +158,16 @@ mod tests {
 
     fn sum_of_probabilities(tab: &TestSum) -> f64 {
         tab.entries.iter().map(|e| *e.1).sum()
+    }
+
+    fn outcome_probability(tab: &TestSum, outcome: bool) -> f64 {
+        tab.entries
+            .iter()
+            .filter_map(|(entry, p)| {
+                let mut entry = entry.clone();
+                (entry.measure(0) == Some(outcome)).then_some(*p)
+            })
+            .sum()
     }
 
     #[test]
@@ -309,6 +321,36 @@ mod tests {
         tab.depolarize(0, 0.0);
         assert_eq!(tab.len(), 1);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_pauli_error_zero_probability_doesnt_branch() {
+        let mut tab = make(1);
+        tab.pauli_error(0, [0.0, 0.0, 0.0]);
+        assert_eq!(tab.len(), 1);
+        assert!((sum_of_probabilities(&tab) - 1.0).abs() < 1e-12);
+        assert!((outcome_probability(&tab, false) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_pauli_error_nonuniform_probabilities_on_zero_state() {
+        let mut tab = make(1);
+        tab.pauli_error(0, [0.2, 0.3, 0.1]);
+
+        assert!((sum_of_probabilities(&tab) - 1.0).abs() < 1e-12);
+        assert!((outcome_probability(&tab, true) - 0.5).abs() < 1e-12);
+        assert!((outcome_probability(&tab, false) - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_pauli_error_skips_already_lost_qubit() {
+        let mut tab = make(1);
+        tab.loss_channel(0, 1.0);
+        tab.pauli_error(0, [0.2, 0.3, 0.1]);
+
+        assert_eq!(tab.len(), 1);
+        assert!((sum_of_probabilities(&tab) - 1.0).abs() < 1e-12);
+        assert!(tab.entries.entries[0].0.is_lost[0]);
     }
 
     #[test]

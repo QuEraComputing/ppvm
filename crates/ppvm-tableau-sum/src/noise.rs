@@ -8,7 +8,8 @@ use num::{
 use ppvm_runtime::{
     config::Config,
     traits::{
-        Clifford, Depolarizing, LossChannel, PauliError, ResetLossChannel, TwoQubitPauliError,
+        Clifford, Depolarizing, Depolarizing2, LossChannel, PauliError, ResetLossChannel,
+        TwoQubitPauliError,
     },
 };
 use ppvm_tableau::{
@@ -275,6 +276,40 @@ where
             self.normalize_probabilities();
         }
         self.truncate();
+    }
+}
+
+impl<
+    T: Config,
+    I: TableauIndex + Send + Sync,
+    C: SparseVector<Complex<T::Coeff>, I>,
+    S: EntryStore<T, I, C>,
+> Depolarizing2<T> for GeneralizedTableauSum<T, I, C, S>
+where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: std::fmt::Debug,
+    T::Coeff: PartialOrd<f64>
+        + PartialOrd
+        + One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: Debug,
+{
+    fn depolarize2(&mut self, addr0: usize, addr1: usize, p: <T as Config>::Coeff) {
+        let ps: [T::Coeff; 15] = std::array::from_fn(|_| p.clone() / 15.0.into());
+        self.two_qubit_pauli_error(addr0, addr1, ps);
     }
 }
 

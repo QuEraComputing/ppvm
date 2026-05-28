@@ -16,8 +16,8 @@ use std::collections::{HashMap, HashSet};
 
 use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_runtime::traits::{
-    Clifford, CliffordExtensions, Depolarizing, LossChannel, PauliError, Reset, RotationOne,
-    RotationTwo, TGate, TwoQubitPauliError, U3Gate,
+    Clifford, CliffordExtensions, Depolarizing, Depolarizing2, LossChannel, PauliError, Reset,
+    RotationOne, RotationTwo, TGate, TwoQubitPauliError, U3Gate,
 };
 use ppvm_tableau::measure_all::LossyMeasureAll;
 use ppvm_tableau::prelude::*;
@@ -918,6 +918,39 @@ fn two_qubit_pauli_error_on_lost_qubit_is_noop() {
     });
     assert!(sum.iter().all(|s| s == &vec![None, Some(false)]));
     assert!(pure.iter().all(|s| s == &vec![None, Some(false)]));
+}
+
+#[test]
+fn depolarize2_on_ground_state() {
+    // depolarize2(p) = two_qubit_pauli_error with uniform p/15 weights. From
+    // |00⟩, 12 of the 15 non-identity Paulis cause a Z-basis flip on at
+    // least one qubit (only IZ, ZI, ZZ leave |00⟩ invariant), so
+    // P(any flip) = 12p/15 = 4p/5.
+    let shots = 8000;
+    let p = 0.6_f64;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.depolarize2(0, 1, p);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.depolarize2(0, 1, p);
+    });
+    let flipped_sum =
+        sum.iter().filter(|s| s != &&vec![Some(false), Some(false)]).count() as f64 / shots as f64;
+    let flipped_pure = pure
+        .iter()
+        .filter(|s| s != &&vec![Some(false), Some(false)])
+        .count() as f64
+        / shots as f64;
+    let expected = 4.0 * p / 5.0;
+    assert!(
+        (flipped_sum - expected).abs() < 0.04,
+        "sum P(flip)={flipped_sum:.4}, expected {expected:.4}"
+    );
+    assert!(
+        (flipped_pure - expected).abs() < 0.04,
+        "pure P(flip)={flipped_pure:.4}, expected {expected:.4}"
+    );
+    assert_distributions_match(&sum, &pure, 0.04, "depolarize2_on_ground_state");
 }
 
 #[test]

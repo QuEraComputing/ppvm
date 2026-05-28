@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use super::impl_generalized_tableau_sum_gate;
 use crate::data::GeneralizedTableauSum;
 use crate::storage::entry_store::EntryStore;
 use bitvec::view::BitView;
@@ -37,5 +36,8 @@ where
         + Copy,
     S: EntryStore<T, I, C>,
 {
-    impl_generalized_tableau_sum_gate!(reset, index);
+    fn reset(&mut self, _addr0: usize) {
+        todo!("This needs to branch to account for resets where the qubit is entangled");
+    }
+    // impl_generalized_tableau_sum_gate!(reset, index);
 }

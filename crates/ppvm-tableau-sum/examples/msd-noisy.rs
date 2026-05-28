@@ -4,6 +4,9 @@ use ppvm_runtime::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
 use ppvm_tableau_sum::data::GeneralizedTableauSum;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 type GTabSum = GeneralizedTableauSum<Byte8F64<2>, u128>;
 
 fn encode(tab: &mut GTabSum, qubits: &[usize], p_loss: f64, p_depolarize: f64) {

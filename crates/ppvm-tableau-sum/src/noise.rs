@@ -340,8 +340,6 @@ where
         + Copy,
 {
     fn reset_loss_channel(&mut self, addr0: usize) {
-        if self.entries.reset_loss_and_merge(addr0) {
-            self.normalize_probabilities();
-        }
+        self.entries.reset_loss_and_merge(addr0);
     }
 }

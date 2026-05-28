@@ -16,8 +16,8 @@ use std::collections::{HashMap, HashSet};
 
 use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_runtime::traits::{
-    Clifford, CliffordExtensions, Depolarizing, Depolarizing2, LossChannel, PauliError, Reset,
-    RotationOne, RotationTwo, TGate, TwoQubitPauliError, U3Gate,
+    Clifford, CliffordExtensions, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel,
+    PauliError, Reset, RotationOne, RotationTwo, TGate, TwoQubitPauliError, U3Gate,
 };
 use ppvm_tableau::measure_all::LossyMeasureAll;
 use ppvm_tableau::prelude::*;
@@ -979,6 +979,197 @@ fn bell_pair_with_two_qubit_pauli_error_nonuniform() {
         0.05,
         "bell_pair_with_two_qubit_pauli_error_nonuniform",
     );
+}
+
+// ---------------------------------------------------------------------------
+// Correlated two-qubit loss channel
+// ---------------------------------------------------------------------------
+//
+// Probability layout (matches the trait spec and GeneralizedTableau):
+//   p[0] = P(lose both | both present)
+//   p[1] = P(lose either one | both present)      → split 50/50 across q0/q1
+//   p[2] = P(lose remaining | the other was lost prior)
+
+#[test]
+fn correlated_loss_channel_zero_prob_is_noop() {
+    let shots = 1000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.correlated_loss_channel(0, 1, [0.0, 0.0, 0.0]);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.correlated_loss_channel(0, 1, [0.0, 0.0, 0.0]);
+    });
+    // Both qubits remain in the qubit subspace and stay |0⟩.
+    assert!(sum.iter().all(|s| s == &vec![Some(false), Some(false)]));
+    assert!(pure.iter().all(|s| s == &vec![Some(false), Some(false)]));
+}
+
+#[test]
+fn correlated_loss_channel_both_certain() {
+    // p[0] = 1.0: both qubits deterministically lost.
+    let shots = 1000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.correlated_loss_channel(0, 1, [1.0, 0.0, 0.0]);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.correlated_loss_channel(0, 1, [1.0, 0.0, 0.0]);
+    });
+    assert!(sum.iter().all(|s| s == &vec![None, None]));
+    assert!(pure.iter().all(|s| s == &vec![None, None]));
+}
+
+#[test]
+fn correlated_loss_channel_single_loss_certain_is_5050_between_qubits() {
+    // p[1] = 1.0: exactly one of the two qubits is lost, 50/50 which one.
+    // Never both, never neither.
+    let shots = 8000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0]);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0]);
+    });
+    // Sanity: no shot has both lost or neither lost.
+    assert!(
+        sum.iter().all(|s| s[0].is_none() ^ s[1].is_none()),
+        "sum: every shot must lose exactly one qubit"
+    );
+    assert!(
+        pure.iter().all(|s| s[0].is_none() ^ s[1].is_none()),
+        "pure: every shot must lose exactly one qubit"
+    );
+    // q0-lost frequency should converge to 1/2 on both backends.
+    let q0_lost_sum = sum.iter().filter(|s| s[0].is_none()).count() as f64 / shots as f64;
+    let q0_lost_pure = pure.iter().filter(|s| s[0].is_none()).count() as f64 / shots as f64;
+    assert!(
+        (q0_lost_sum - 0.5).abs() < 0.04,
+        "sum P(q0 lost)={q0_lost_sum:.4}"
+    );
+    assert!(
+        (q0_lost_pure - 0.5).abs() < 0.04,
+        "pure P(q0 lost)={q0_lost_pure:.4}"
+    );
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "correlated_loss_channel_single_loss_certain_is_5050_between_qubits",
+    );
+}
+
+#[test]
+fn correlated_loss_channel_marginals_on_ground_state() {
+    // Mid-probability values, |00⟩ input. Check both the analytic outcome
+    // probabilities and TVD against pure.
+    // p[0] = 0.20, p[1] = 0.40, p[2] is unused (no qubit pre-lost).
+    // Expected outcome probabilities:
+    //   P(both lost)    = 0.20
+    //   P(only q0 lost) = 0.20  (p[1]/2)
+    //   P(only q1 lost) = 0.20
+    //   P(none lost)    = 0.40
+    let shots = 8000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.correlated_loss_channel(0, 1, [0.20, 0.40, 0.0]);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.correlated_loss_channel(0, 1, [0.20, 0.40, 0.0]);
+    });
+    for (label, data) in [("sum", &sum), ("pure", &pure)] {
+        let both = data.iter().filter(|s| s[0].is_none() && s[1].is_none()).count() as f64
+            / shots as f64;
+        let only_q0 = data.iter().filter(|s| s[0].is_none() && s[1].is_some()).count() as f64
+            / shots as f64;
+        let only_q1 = data.iter().filter(|s| s[0].is_some() && s[1].is_none()).count() as f64
+            / shots as f64;
+        let none = data.iter().filter(|s| s[0].is_some() && s[1].is_some()).count() as f64
+            / shots as f64;
+        assert!((both - 0.20).abs() < 0.04, "{label} P(both)={both:.4}");
+        assert!(
+            (only_q0 - 0.20).abs() < 0.04,
+            "{label} P(only q0)={only_q0:.4}"
+        );
+        assert!(
+            (only_q1 - 0.20).abs() < 0.04,
+            "{label} P(only q1)={only_q1:.4}"
+        );
+        assert!((none - 0.40).abs() < 0.04, "{label} P(none)={none:.4}");
+    }
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.05,
+        "correlated_loss_channel_marginals_on_ground_state",
+    );
+}
+
+#[test]
+fn correlated_loss_channel_preexisting_loss_falls_back_to_p2() {
+    // q0 is already lost (prior loss_channel with p=1.0). Channel must
+    // reduce to a single-qubit Bernoulli loss on q1 with probability p[2].
+    let shots = 8000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.loss_channel(0, 1.0);
+        t.correlated_loss_channel(0, 1, [0.5, 0.5, 0.3]);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.loss_channel(0, 1.0);
+        t.correlated_loss_channel(0, 1, [0.5, 0.5, 0.3]);
+    });
+    // q0 must be lost every shot. q1 must be lost with frequency p[2].
+    assert!(sum.iter().all(|s| s[0].is_none()));
+    assert!(pure.iter().all(|s| s[0].is_none()));
+    let q1_lost_sum = sum.iter().filter(|s| s[1].is_none()).count() as f64 / shots as f64;
+    let q1_lost_pure = pure.iter().filter(|s| s[1].is_none()).count() as f64 / shots as f64;
+    assert!(
+        (q1_lost_sum - 0.3).abs() < 0.04,
+        "sum P(q1 lost)={q1_lost_sum:.4}, expected 0.3"
+    );
+    assert!(
+        (q1_lost_pure - 0.3).abs() < 0.04,
+        "pure P(q1 lost)={q1_lost_pure:.4}, expected 0.3"
+    );
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "correlated_loss_channel_preexisting_loss_falls_back_to_p2",
+    );
+}
+
+#[test]
+fn correlated_loss_channel_both_preexisting_loss_is_noop() {
+    // Both qubits pre-lost: channel must leave the state untouched.
+    let shots = 1000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.loss_channel(0, 1.0);
+        t.loss_channel(1, 1.0);
+        t.correlated_loss_channel(0, 1, [0.5, 0.5, 0.5]);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.loss_channel(0, 1.0);
+        t.loss_channel(1, 1.0);
+        t.correlated_loss_channel(0, 1, [0.5, 0.5, 0.5]);
+    });
+    assert!(sum.iter().all(|s| s == &vec![None, None]));
+    assert!(pure.iter().all(|s| s == &vec![None, None]));
+}
+
+#[test]
+fn bell_pair_with_correlated_loss_channel() {
+    // Bell pair (|00⟩+|11⟩)/√2, then correlated loss. Mid-probability values.
+    // Statistics on both backends must agree.
+    let shots = 8000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.correlated_loss_channel(0, 1, [0.10, 0.20, 0.15]);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.correlated_loss_channel(0, 1, [0.10, 0.20, 0.15]);
+    });
+    assert_distributions_match(&sum, &pure, 0.05, "bell_pair_with_correlated_loss_channel");
 }
 
 // ---------------------------------------------------------------------------

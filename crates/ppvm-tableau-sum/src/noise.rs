@@ -8,19 +8,72 @@ use num::{
 use ppvm_runtime::{
     config::Config,
     traits::{
-        Clifford, Depolarizing, Depolarizing2, LossChannel, PauliError, ResetLossChannel,
-        TwoQubitPauliError,
+        Clifford, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel, PauliError,
+        ResetLossChannel, TwoQubitPauliError,
     },
 };
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
-use rand::RngExt;
+use rand::{RngExt, rngs::SmallRng};
 
 use crate::{
     data::GeneralizedTableauSum,
     storage::{EntryStore, loss_mask, pauli_branch_phase_loss},
 };
+
+fn single_qubit_loss_branch<T, I, C>(
+    addr0: usize,
+    p: &T::Coeff,
+    rng: &mut SmallRng,
+    branches: &mut Vec<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>,
+    tab: &mut GeneralizedTableau<T, I, C>,
+    p_sum: &mut T::Coeff,
+    word_fp: u64,
+    phase_loss: u64,
+) where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: std::fmt::Debug,
+    T::Coeff: PartialOrd<f64>
+        + PartialOrd
+        + One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Send + Sync + Debug,
+    C: SparseVector<Complex<T::Coeff>, I>,
+{
+    if tab.is_lost[addr0] {
+        // Don't branch if it's already lost
+        return;
+    }
+
+    let tab_seed = rng.random::<u64>();
+    let mut tab_branch = tab.fork(Some(tab_seed));
+    tab_branch.is_lost[addr0] = true;
+    // is_lost flip leaves the Pauli words and phases unchanged, so
+    // the branch reuses its parent's word-fingerprint and the only
+    // change to the phase/loss hash is the lost qubit's mask.
+    branches.push((
+        tab_branch,
+        p_sum.clone() * p.clone(),
+        word_fp,
+        phase_loss ^ loss_mask(addr0),
+    ));
+    *p_sum *= T::Coeff::one() - p.clone();
+}
 
 impl<
     T: Config,
@@ -56,24 +109,16 @@ where
         );
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
-                if tab.is_lost[addr0] {
-                    // Don't branch if it's already lost
-                    return;
-                }
-
-                let tab_seed = self.rng.random::<u64>();
-                let mut tab_branch = tab.fork(Some(tab_seed));
-                tab_branch.is_lost[addr0] = true;
-                // is_lost flip leaves the Pauli words and phases unchanged, so
-                // the branch reuses its parent's word-fingerprint and the only
-                // change to the phase/loss hash is the lost qubit's mask.
-                branches.push((
-                    tab_branch,
-                    p_sum.clone() * p.clone(),
+                single_qubit_loss_branch(
+                    addr0,
+                    &p,
+                    &mut self.rng,
+                    &mut branches,
+                    tab,
+                    p_sum,
                     word_fp,
-                    phase_loss ^ loss_mask(addr0),
-                ));
-                *p_sum *= T::Coeff::one() - p.clone();
+                    phase_loss,
+                );
             });
 
         let needs_renormalize = self
@@ -310,6 +355,124 @@ where
     fn depolarize2(&mut self, addr0: usize, addr1: usize, p: <T as Config>::Coeff) {
         let ps: [T::Coeff; 15] = std::array::from_fn(|_| p.clone() / 15.0.into());
         self.two_qubit_pauli_error(addr0, addr1, ps);
+    }
+}
+
+impl<
+    T: Config,
+    I: TableauIndex + Send + Sync,
+    C: SparseVector<Complex<T::Coeff>, I>,
+    S: EntryStore<T, I, C>,
+> CorrelatedLossChannel<T> for GeneralizedTableauSum<T, I, C, S>
+where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: std::fmt::Debug,
+    T::Coeff: PartialOrd<f64>
+        + PartialOrd
+        + One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: Debug,
+{
+    fn correlated_loss_channel(
+        &mut self,
+        addr0: usize,
+        addr1: usize,
+        p: [<T as Config>::Coeff; 3],
+    ) {
+        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::with_capacity(
+            3 * self.entries.len(),
+        );
+        self.entries
+            .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
+                // if either is lost already, we just lose the other with probability p[2]
+                if tab.is_lost[addr0] {
+                    single_qubit_loss_branch(
+                        addr1,
+                        &p[2],
+                        &mut self.rng,
+                        &mut branches,
+                        tab,
+                        p_sum,
+                        word_fp,
+                        phase_loss,
+                    );
+                    return;
+                } else if tab.is_lost[addr1] {
+                    single_qubit_loss_branch(
+                        addr0,
+                        &p[2],
+                        &mut self.rng,
+                        &mut branches,
+                        tab,
+                        p_sum,
+                        word_fp,
+                        phase_loss,
+                    );
+                    return;
+                }
+
+                // if both are present, then we create 3 new branches:
+                // losing both (p[0]), one, or the other qubit (p[1])
+
+                let tab_seed_both = self.rng.random::<u64>();
+                let mut tab_lose_both = tab.fork(Some(tab_seed_both));
+                tab_lose_both.is_lost[addr0] = true;
+                tab_lose_both.is_lost[addr1] = true;
+
+                // is_lost flip leaves the Pauli words and phases unchanged, so
+                // the branch reuses its parent's word-fingerprint and the only
+                // change to the phase/loss hash is the lost qubit's mask.
+                branches.push((
+                    tab_lose_both,
+                    p_sum.clone() * p[0].clone(),
+                    word_fp,
+                    phase_loss ^ loss_mask(addr0) ^ loss_mask(addr1),
+                ));
+
+                let tab_seed_0 = self.rng.random::<u64>();
+                let mut tab_lose_0 = tab.fork(Some(tab_seed_0));
+                tab_lose_0.is_lost[addr0] = true;
+                branches.push((
+                    tab_lose_0,
+                    p_sum.clone() * (p[1].clone() / 2.0.into()),
+                    word_fp,
+                    phase_loss ^ loss_mask(addr0),
+                ));
+
+                let tab_seed_1 = self.rng.random::<u64>();
+                let mut tab_lose_1 = tab.fork(Some(tab_seed_1));
+                tab_lose_1.is_lost[addr1] = true;
+                branches.push((
+                    tab_lose_1,
+                    p_sum.clone() * (p[1].clone() / 2.0.into()),
+                    word_fp,
+                    phase_loss ^ loss_mask(addr1),
+                ));
+
+                let p_total = p[0].clone() + p[1].clone();
+                *p_sum *= T::Coeff::one() - p_total;
+            });
+
+        let needs_renormalize = self
+            .entries
+            .insert_or_merge_batch(branches, &self.sum_cutoff);
+        if needs_renormalize {
+            self.normalize_probabilities();
+        }
+        self.truncate();
     }
 }
 

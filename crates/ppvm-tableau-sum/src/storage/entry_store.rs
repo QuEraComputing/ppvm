@@ -50,11 +50,6 @@ pub trait EntryStore<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>>: Clone
     where
         F: FnMut(&GeneralizedTableau<T, I, C>, &T::Coeff) -> bool;
 
-    /// Rebuild identity caches after in-place tableau mutations and coalesce
-    /// structurally equal entries by summing their probabilities. Returns true
-    /// when at least one pair of entries was merged.
-    fn merge_equal_entries(&mut self) -> bool;
-
     /// Reset `is_lost[addr0]` only on entries where it is currently set, update
     /// the corresponding loss-fingerprint delta, and coalesce any entries made
     /// structurally equal by that reset. Returns true when at least one pair of

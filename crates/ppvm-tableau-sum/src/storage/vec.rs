@@ -226,68 +226,6 @@ where
         self.phase_loss_hashes.truncate(write);
     }
 
-    fn merge_equal_entries(&mut self) -> bool {
-        self.rebuild_fingerprints_if_dirty();
-        if self.entries.len() < 2 {
-            return false;
-        }
-
-        let entry_capacity = self.entries.capacity();
-        let fingerprint_capacity = self.fingerprints.capacity();
-        let word_fingerprint_capacity = self.word_fingerprints.capacity();
-        let phase_loss_hash_capacity = self.phase_loss_hashes.capacity();
-        let entries = std::mem::replace(&mut self.entries, Vec::with_capacity(entry_capacity));
-        let fingerprints = std::mem::replace(
-            &mut self.fingerprints,
-            Vec::with_capacity(fingerprint_capacity),
-        );
-        let word_fingerprints = std::mem::replace(
-            &mut self.word_fingerprints,
-            Vec::with_capacity(word_fingerprint_capacity),
-        );
-        let phase_loss_hashes = std::mem::replace(
-            &mut self.phase_loss_hashes,
-            Vec::with_capacity(phase_loss_hash_capacity),
-        );
-
-        let mut fp_index: FxHashMap<u64, SmallVec<[usize; 1]>> =
-            FxHashMap::with_capacity_and_hasher(entries.len(), Default::default());
-        let mut merged_any = false;
-
-        for (old_idx, (tab, p)) in entries.into_iter().enumerate() {
-            let fp = fingerprints[old_idx];
-            let word_fp = word_fingerprints[old_idx];
-            let phase_loss = phase_loss_hashes[old_idx];
-
-            let mut found: Option<usize> = None;
-            if let Some(candidates) = fp_index.get(&fp) {
-                for &i in candidates {
-                    if structurally_equal(&self.entries[i].0, &tab, &mut self.scratch) {
-                        found = Some(i);
-                        break;
-                    }
-                }
-            }
-
-            match found {
-                Some(i) => {
-                    self.entries[i].1 = self.entries[i].1.clone() + p;
-                    merged_any = true;
-                }
-                None => {
-                    let new_idx = self.entries.len();
-                    self.entries.push((tab, p));
-                    self.fingerprints.push(fp);
-                    self.word_fingerprints.push(word_fp);
-                    self.phase_loss_hashes.push(phase_loss);
-                    fp_index.entry(fp).or_default().push(new_idx);
-                }
-            }
-        }
-
-        merged_any
-    }
-
     fn reset_loss_and_merge(&mut self, addr0: usize) -> bool {
         self.rebuild_fingerprints_if_dirty();
 

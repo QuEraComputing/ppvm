@@ -3,7 +3,8 @@ pub mod map;
 pub mod vec;
 
 pub use entry_store::EntryStore;
-use fxhash::{FxHashMap, FxHasher};
+use fxhash::FxHashMap;
+use gxhash::GxHasher;
 use num::{
     Complex, One, Zero,
     complex::{Complex64, ComplexFloat},
@@ -29,7 +30,7 @@ where
     I:,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
-    let mut hasher = FxHasher::default();
+    let mut hasher = GxHasher::default();
     for row in tab.tableau.data.iter() {
         // Hash the Pauli bits directly: the `PauliWord` hash cache is disabled
         // for tableau rows (`REHASH = false`), so `row.word.hash()` would feed

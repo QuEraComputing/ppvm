@@ -1015,6 +1015,7 @@ dependencies = [
  "bitvec",
  "criterion 0.8.2",
  "fxhash",
+ "gxhash",
  "mimalloc",
  "num",
  "ppvm-runtime",

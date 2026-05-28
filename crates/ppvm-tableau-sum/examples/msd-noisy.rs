@@ -82,7 +82,7 @@ fn main() {
     let n_qubits = 85;
     let p_loss = 1e-4;
     let p_depolarize = 1e-4;
-    let sum_cutoff = 1e-7;
+    let sum_cutoff = 1e-8;
     let n_shots = 1000;
 
     let mut tab: GTabSum = GeneralizedTableauSum::new(n_qubits, 1e-10, sum_cutoff);

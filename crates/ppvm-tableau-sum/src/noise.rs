@@ -48,7 +48,9 @@ where
     I: Debug,
 {
     fn loss_channel(&mut self, addr0: usize, p: <T as Config>::Coeff) {
-        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::new();
+        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::with_capacity(
+            self.entries.len(),
+        );
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
                 if tab.is_lost[addr0] {
@@ -110,7 +112,9 @@ where
     I: Debug,
 {
     fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::new();
+        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::with_capacity(
+            3 * self.entries.len(),
+        );
         let p_3 = p.clone() / 3.0.into();
 
         self.entries

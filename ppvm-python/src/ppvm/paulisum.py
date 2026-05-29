@@ -158,8 +158,6 @@ class PauliSum(
     max_pauli_weight: int | None = None
     max_loss_weight: int | None = None
     preserve_strings: Sequence[str] | None = None
-    preserve_threshold: float | None = None
-    preserve_weight_lambda: float = 0.0
 
     _interface: PauliSumInterface = field(init=False, repr=False)
 
@@ -224,13 +222,7 @@ class PauliSum(
                         "All preserve strings must have length n_qubits "
                         f"({n_qubits}); got {len(s)}: {s!r}"
                     )
-            options["preserve"] = preserve_list
-            options["preserve_threshold"] = (
-                self.preserve_threshold
-                if self.preserve_threshold is not None
-                else self.min_abs_coeff
-            )
-            options["preserve_weight_lambda"] = self.preserve_weight_lambda
+            options["preserve_strings"] = preserve_list
 
         return interface(
             n_qubits,
@@ -254,8 +246,6 @@ class PauliSum(
         max_pauli_weight: int | None = None,
         max_loss_weight: int | None = None,
         preserve_strings: Sequence[str] | None = None,
-        preserve_threshold: float | None = None,
-        preserve_weight_lambda: float = 0.0,
     ) -> Self:
         """Create a PauliSum from one or more terms with flexible input formats.
 
@@ -278,25 +268,15 @@ class PauliSum(
                 up to 10 qubits are lost simultaneously.
             preserve_strings: Optional list of Pauli strings (each of length
                 ``n_qubits``) that should never be dropped by truncation,
-                regardless of coefficient magnitude. Useful for transport
-                diagnostics where the answer depends on the projection onto
-                a small fixed set of Pauli strings (e.g. ``Σ_j Z_j``). When
-                set, the underlying ``truncate()`` switches from
-                ``CoefficientThreshold`` / ``MaxPauliWeight`` to a
-                preserve-aware policy: listed strings always survive, the
-                rest are dropped below ``preserve_threshold``. See also
+                regardless of what the active strategy decides. Useful for
+                transport diagnostics where the answer depends on the
+                projection onto a small fixed set of Pauli strings (e.g.
+                ``Σ_j Z_j``). The mechanism is a post-filter on
+                ``truncate()`` — the configured strategy
+                (``min_abs_coeff`` / ``max_pauli_weight``) runs unchanged,
+                then any preserved string the strategy dropped is
+                re-inserted with its pre-truncate coefficient. See also
                 :func:`preserve_single_z`.
-            preserve_threshold: Coefficient cutoff applied to non-preserved
-                strings. Defaults to ``min_abs_coeff`` if ``preserve_strings``
-                is set, else ignored.
-            preserve_weight_lambda: Weight-biased multiplier for the
-                non-preserved threshold ("virtual DAOE"): a term of weight
-                ``k`` is dropped below ``preserve_threshold * exp(λ k)``.
-                Setting ``λ > 0`` makes high-weight strings be truncated
-                more aggressively without modifying the dynamics, inspired
-                by `Rakovszky, Pollmann, von Keyserlingk (2020)
-                <https://arxiv.org/abs/2004.05177>`_. Default ``0`` gives a
-                uniform threshold.
 
         Returns:
             A new instance of the class this method is called on.
@@ -342,8 +322,6 @@ class PauliSum(
             max_pauli_weight=max_pauli_weight,
             max_loss_weight=max_loss_weight,
             preserve_strings=preserve_strings,
-            preserve_threshold=preserve_threshold,
-            preserve_weight_lambda=preserve_weight_lambda,
         )
 
     def __str__(self) -> str:
@@ -358,8 +336,6 @@ class PauliSum(
         object.__setattr__(new, "max_pauli_weight", self.max_pauli_weight)
         object.__setattr__(new, "max_loss_weight", self.max_loss_weight)
         object.__setattr__(new, "preserve_strings", self.preserve_strings)
-        object.__setattr__(new, "preserve_threshold", self.preserve_threshold)
-        object.__setattr__(new, "preserve_weight_lambda", self.preserve_weight_lambda)
         object.__setattr__(new, "_interface", self._interface.__copy__())
         return new
 

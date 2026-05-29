@@ -6,7 +6,7 @@ mod data;
 mod display;
 mod noise;
 mod ops;
-mod preserve;
+pub mod preserve;
 mod proj;
 mod rot1;
 mod rot2;
@@ -17,4 +17,3 @@ mod approx;
 
 pub use data::PauliSum;
 pub use ops::impl_op_mul_assign_coefficient;
-pub use preserve::PreserveConfig;

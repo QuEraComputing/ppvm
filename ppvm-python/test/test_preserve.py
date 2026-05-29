@@ -31,12 +31,8 @@ def test_preserve_strings_round_trip():
         3,
         "Z1",
         preserve_strings=preserve_single_z(3),
-        preserve_threshold=1e-4,
-        preserve_weight_lambda=0.0,
     )
     assert list(ps.preserve_strings) == ["ZII", "IZI", "IIZ"]
-    assert ps.preserve_threshold == 1e-4
-    assert ps.preserve_weight_lambda == 0.0
 
 
 def test_preserve_strings_length_validated():
@@ -45,48 +41,67 @@ def test_preserve_strings_length_validated():
             3,
             "Z1",
             preserve_strings=["ZI"],  # wrong length
-            preserve_threshold=0.1,
         )
 
 
 # =============================================================================
-# Behavior: a preserved string with tiny coefficient survives truncation.
+# Behavior: a preserved string with tiny coefficient survives truncation,
+# regardless of which truncation strategy is active. The preserve mechanism
+# is a post-filter that re-inserts dropped preserved keys after the strategy
+# runs — it composes with any strategy.
 # =============================================================================
 
 
-def test_preserved_string_survives_below_threshold():
-    """A single-Z string with coefficient well below the cutoff must
-    survive truncation. Without preserve, it would be dropped."""
-    # Start with a tiny-coefficient Z0 plus a normal-coefficient XII; the
-    # preserve-aware truncate should keep both — Z0 because it's preserved,
-    # XII because its magnitude (0.5) is above the 1e-3 threshold.
+def test_preserved_string_survives_coefficient_truncation():
+    """`min_abs_coeff` would drop a tiny-coefficient single-Z, but the
+    preserve mechanism puts it back."""
     ps = PauliSum.new(
         3,
-        [("Z0", 1e-8), ("X0", 0.5)],
+        [("Z0", 1e-8), ("X0", 0.5), ("X1", 1e-8)],
+        min_abs_coeff=1e-3,
         preserve_strings=preserve_single_z(3),
-        preserve_threshold=1e-3,
     )
-    # The XII below-threshold-non-preserved version: also include something
-    # that should be dropped to make sure the policy does drop non-preserved
-    # below-threshold things.
-    ps2 = PauliSum.new(
-        3,
-        [("Z0", 1e-8), ("X0", 1e-6), ("X1", 0.5)],
-        preserve_strings=preserve_single_z(3),
-        preserve_threshold=1e-3,
-    )
-    # Manually trigger the truncation via a no-op-on-this-state gate that
-    # auto-truncates: apply rx(addr0, 0.0) — does nothing arithmetically
-    # but triggers the auto-truncate.
+    # Trigger auto-truncate via a no-op gate.
     ps.rx(0, 0.0)
-    ps2.rx(0, 0.0)
-    kept_ps = {t for t, _ in ps.terms}
-    kept_ps2 = {t for t, _ in ps2.terms}
-    assert "ZII" in kept_ps, "preserved tiny Z0 must survive (ps)"
-    assert "XII" in kept_ps, "above-threshold XII must survive (ps)"
-    assert "ZII" in kept_ps2, "preserved tiny Z0 must survive (ps2)"
-    assert "IXI" in kept_ps2, "above-threshold X1 must survive (ps2)"
-    assert "XII" not in kept_ps2, "below-threshold non-preserved X0 must be dropped"
+    kept = {t for t, _ in ps.terms}
+    assert "ZII" in kept, "preserved tiny Z0 must survive"
+    assert "XII" in kept, "above-threshold XII must survive"
+    assert "IXI" not in kept, "below-threshold non-preserved IXI must be dropped"
+
+
+def test_preserved_string_survives_weight_truncation():
+    """`max_pauli_weight` would drop a high-weight string; if that string
+    happens to be in the preserve set, it's restored."""
+    # Build a 4-qubit sum where one term has weight 3 (X0X1X2 → "XXXI")
+    # and we cap max_pauli_weight at 2. Without preserve, the weight-3
+    # term is dropped. With preserve including it, it survives.
+    ps = PauliSum.new(
+        4,
+        [("Z0", 1.0), ("X0X1X2", 0.7)],
+        max_pauli_weight=2,
+        preserve_strings=["XXXI"],
+    )
+    ps.rx(0, 0.0)  # no-op triggers truncate
+    kept = {t for t, _ in ps.terms}
+    assert "ZIII" in kept, "weight-1 Z0 must survive"
+    assert "XXXI" in kept, "weight-3 XXXI is in preserve set and must survive"
+
+
+def test_preserved_string_survives_combined_truncation():
+    """The strategy combines coefficient *and* weight cuts; preserve still
+    works orthogonally on top."""
+    ps = PauliSum.new(
+        4,
+        [("Z0", 1e-8), ("X0X1X2", 1e-8), ("Y0", 0.5)],
+        min_abs_coeff=1e-3,
+        max_pauli_weight=2,
+        preserve_strings=["ZIII", "XXXI"],  # one tiny-coef, one high-weight
+    )
+    ps.rx(0, 0.0)
+    kept = {t for t, _ in ps.terms}
+    assert "ZIII" in kept, "preserved tiny Z0 must survive coefficient cut"
+    assert "XXXI" in kept, "preserved weight-3 XXXI must survive weight cut"
+    assert "YIII" in kept, "above-threshold YIII must survive"
 
 
 # =============================================================================
@@ -96,17 +111,10 @@ def test_preserved_string_survives_below_threshold():
 
 
 def test_total_z_conservation_with_preserve_vs_without():
-    """Reproduces a tiny-scale version of the user's main.py setup:
-    propagate a localized Z_i under XY exchange + Z-dephasing, with
-    aggressive truncation, and check that single-Z preserve substantially
-    reduces the drift in `result.sum(axis=1)` versus the same run with
-    plain `CoefficientThreshold` truncation.
-
-    The drift is not zero in either case (small θ ⇒ direct loss
-    dominates and preserve closes most of the gap; but some indirect loss
-    via dropped off-diagonal terms always remains). The test asserts
-    only that preserve reduces drift by an order of magnitude or more.
-    """
+    """Propagate a localized Z_i under XY exchange + Z-dephasing with
+    aggressive truncation. Single-Z preserve substantially reduces the
+    drift in `result.sum(axis=1)` versus the same run with plain
+    `min_abs_coeff` truncation."""
     L = 8
     i = L // 2
     threshold = 0.02
@@ -115,8 +123,6 @@ def test_total_z_conservation_with_preserve_vs_without():
     steps = 6
     noise = (1 - math.exp(-gamma * dt)) / 2
 
-    # Small angle so far-site Z_j coefficients drift toward the cutoff
-    # — the regime where preserve actually helps.
     edges = [(a, a + 1, 0.08) for a in range(L - 1)]
     z_observables = [PauliSum.new(L, f"Z{j}") for j in range(L)]
 
@@ -126,8 +132,6 @@ def test_total_z_conservation_with_preserve_vs_without():
             sums.append(sum(ps.overlap(zz) for zz in z_observables))
             for q in range(L):
                 ps.pauli_error(q, [0.0, 0.0, noise])
-            # XY exchange on each edge: rxx then ryy (both commute and
-            # together preserve total Z magnetization).
             for a, b, th in reversed(edges):
                 ps.rxx(a, b, th)
                 ps.ryy(a, b, th)
@@ -139,14 +143,13 @@ def test_total_z_conservation_with_preserve_vs_without():
     ps_plain = PauliSum.new(L, f"Z{i}", min_abs_coeff=threshold, max_pauli_weight=L)
     drift_plain = evolve(ps_plain)
 
-    # Preserve-aware truncation with single-Z exempt.
+    # Same strategy + preserve-set on top.
     ps_pres = PauliSum.new(
         L,
         f"Z{i}",
         min_abs_coeff=threshold,
         max_pauli_weight=L,
         preserve_strings=preserve_single_z(L),
-        preserve_threshold=threshold,
     )
     drift_pres = evolve(ps_pres)
 
@@ -160,46 +163,6 @@ def test_total_z_conservation_with_preserve_vs_without():
         f"preserve should reduce drift by >= 10x; "
         f"got preserve_drift={pres_drift:.2e}, plain_drift={plain_drift:.2e}"
     )
-
-
-# =============================================================================
-# Virtual DAOE: weight_lambda > 0 makes high-weight terms get truncated more
-# aggressively, even when the base threshold would have kept them.
-# =============================================================================
-
-
-def test_weight_lambda_drops_high_weight_more_aggressively():
-    """A weight-3 term at coefficient 0.05 should survive a uniform 0.01
-    threshold, but should be dropped by a `λ = 1.0` weight-biased
-    threshold (whose effective cutoff at weight 3 is 0.01·e^3 ≈ 0.2)."""
-    # Build a PauliSum with several terms of varying weight.
-    ps = PauliSum.new(
-        4,
-        [("X0", 0.05), ("X0X1", 0.05), ("X0X1X2", 0.05)],
-        preserve_strings=[],  # no preserve; use only weight-biased cutoff
-        preserve_threshold=0.01,
-        preserve_weight_lambda=1.0,
-    )
-    # We can't pass preserve_strings=[] currently — the dataclass treats
-    # falsy as "no preserve". So instead pass a dummy preserve set with
-    # something we don't have, plus set the threshold. Re-do via a
-    # weight-only style:
-    ps = PauliSum.new(
-        4,
-        [("X0", 0.05), ("X0X1", 0.05), ("X0X1X2", 0.05)],
-        preserve_strings=["IIII"],  # never-matching keep-set; pure weighted cutoff
-        preserve_threshold=0.01,
-        preserve_weight_lambda=1.0,
-    )
-    # Trigger truncate (no-op gate).
-    ps.rx(3, 0.0)
-    kept = {t for t, _ in ps.terms}
-    # Weight 1: cutoff = 0.01·e ≈ 0.0272. 0.05 > cutoff → survives.
-    assert "XIII" in kept, "weight-1 above weighted cutoff should survive"
-    # Weight 2: cutoff = 0.01·e^2 ≈ 0.0739. 0.05 < cutoff → dropped.
-    assert "XXII" not in kept, "weight-2 below weighted cutoff should be dropped"
-    # Weight 3: cutoff = 0.01·e^3 ≈ 0.2008. 0.05 < cutoff → dropped.
-    assert "XXXI" not in kept, "weight-3 below weighted cutoff should be dropped"
 
 
 # =============================================================================

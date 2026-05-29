@@ -13,19 +13,34 @@ macro_rules! create_interface_loss_methods {
     ($name: ident, $type: ident, true) => {
         #[pymethods]
         impl $name {
-            pub fn loss_channel(&mut self, addr0: usize, p: f64) {
+            #[pyo3(signature = (addr0, p, truncate = true))]
+            pub fn loss_channel(&mut self, addr0: usize, p: f64, truncate: bool) {
                 self.inner.loss_channel(addr0, p);
-                self.inner.truncate();
+                if truncate {
+                    self.inner.truncate();
+                }
             }
 
-            pub fn correlated_loss_channel(&mut self, addr0: usize, addr1: usize, p: [f64; 3]) {
+            #[pyo3(signature = (addr0, addr1, p, truncate = true))]
+            pub fn correlated_loss_channel(
+                &mut self,
+                addr0: usize,
+                addr1: usize,
+                p: [f64; 3],
+                truncate: bool,
+            ) {
                 self.inner.correlated_loss_channel(addr0, addr1, p);
-                self.inner.truncate();
+                if truncate {
+                    self.inner.truncate();
+                }
             }
 
-            pub fn reset_loss_channel(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn reset_loss_channel(&mut self, addr0: usize, truncate: bool) {
                 self.inner.reset_loss_channel(addr0);
-                self.inner.truncate();
+                if truncate {
+                    self.inner.truncate();
+                }
             }
         }
     };
@@ -115,125 +130,169 @@ macro_rules! create_interface {
             // NOTE: macros can't be used in pymethods block
             // could either use multiple-pymethods feature (adds dependencies)
             // or better yet create working impl for all strategies
+            //
+            // Every gate exposes a `truncate: bool = True` kwarg. When
+            // `True` (the default) the inner `truncate()` runs immediately
+            // after the gate, matching the historical behaviour. Pass
+            // `truncate=False` to defer the cut — useful for chaining
+            // commuting gates (e.g. `rxx + ryy` on the same edge, or any
+            // other U(1)/Z₂-conserving composition) where truncating
+            // between them would break a conserved-charge structure that
+            // truncating only once at the end preserves.
+
+            /// Explicit truncate. Use with `truncate=False` on the gates
+            /// above to control exactly when the active strategy fires.
+            pub fn truncate(&mut self) {
+                self.inner.truncate();
+            }
 
             // clifford
-            pub fn x(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn x(&mut self, addr0: usize, truncate: bool) {
                 self.inner.x(addr0);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn y(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn y(&mut self, addr0: usize, truncate: bool) {
                 self.inner.y(addr0);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn z(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn z(&mut self, addr0: usize, truncate: bool) {
                 self.inner.z(addr0);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn h(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn h(&mut self, addr0: usize, truncate: bool) {
                 self.inner.h(addr0);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn s(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn s(&mut self, addr0: usize, truncate: bool) {
                 self.inner.s(addr0);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn cnot(&mut self, addr0: usize, addr1: usize) {
+            #[pyo3(signature = (addr0, addr1, truncate = true))]
+            pub fn cnot(&mut self, addr0: usize, addr1: usize, truncate: bool) {
                 self.inner.cnot(addr0, addr1);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn cz(&mut self, addr0: usize, addr1: usize) {
+            #[pyo3(signature = (addr0, addr1, truncate = true))]
+            pub fn cz(&mut self, addr0: usize, addr1: usize, truncate: bool) {
                 self.inner.cz(addr0, addr1);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
             // clifford extensions
-            pub fn s_adj(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn s_adj(&mut self, addr0: usize, truncate: bool) {
                 self.inner.s_adj(addr0);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn sqrt_x(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn sqrt_x(&mut self, addr0: usize, truncate: bool) {
                 self.inner.sqrt_x(addr0);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn sqrt_y(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn sqrt_y(&mut self, addr0: usize, truncate: bool) {
                 self.inner.sqrt_y(addr0);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn sqrt_x_adj(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn sqrt_x_adj(&mut self, addr0: usize, truncate: bool) {
                 self.inner.sqrt_x_adj(addr0);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn sqrt_y_adj(&mut self, addr0: usize) {
+            #[pyo3(signature = (addr0, truncate = true))]
+            pub fn sqrt_y_adj(&mut self, addr0: usize, truncate: bool) {
                 self.inner.sqrt_y_adj(addr0);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
             // rot1
-            pub fn rx(&mut self, addr0: usize, theta: f64) {
+            #[pyo3(signature = (addr0, theta, truncate = true))]
+            pub fn rx(&mut self, addr0: usize, theta: f64, truncate: bool) {
                 self.inner.rx(addr0, theta);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn ry(&mut self, addr0: usize, theta: f64) {
+            #[pyo3(signature = (addr0, theta, truncate = true))]
+            pub fn ry(&mut self, addr0: usize, theta: f64, truncate: bool) {
                 self.inner.ry(addr0, theta);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn rz(&mut self, addr0: usize, theta: f64) {
+            #[pyo3(signature = (addr0, theta, truncate = true))]
+            pub fn rz(&mut self, addr0: usize, theta: f64, truncate: bool) {
                 self.inner.rz(addr0, theta);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
             // rot2
-            pub fn rxx(&mut self, addr0: usize, addr1: usize, theta: f64) {
+            #[pyo3(signature = (addr0, addr1, theta, truncate = true))]
+            pub fn rxx(&mut self, addr0: usize, addr1: usize, theta: f64, truncate: bool) {
                 self.inner.rxx(addr0, addr1, theta);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn ryy(&mut self, addr0: usize, addr1: usize, theta: f64) {
+            #[pyo3(signature = (addr0, addr1, theta, truncate = true))]
+            pub fn ryy(&mut self, addr0: usize, addr1: usize, theta: f64, truncate: bool) {
                 self.inner.ryy(addr0, addr1, theta);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn rzz(&mut self, addr0: usize, addr1: usize, theta: f64) {
+            #[pyo3(signature = (addr0, addr1, theta, truncate = true))]
+            pub fn rzz(&mut self, addr0: usize, addr1: usize, theta: f64, truncate: bool) {
                 self.inner.rzz(addr0, addr1, theta);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
             // noise
-            pub fn pauli_error(&mut self, addr0: usize, p: [f64; 3]) {
+            #[pyo3(signature = (addr0, p, truncate = true))]
+            pub fn pauli_error(&mut self, addr0: usize, p: [f64; 3], truncate: bool) {
                 self.inner.pauli_error(addr0, p);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [f64; 15]) {
+            #[pyo3(signature = (addr0, addr1, p, truncate = true))]
+            pub fn two_qubit_pauli_error(
+                &mut self,
+                addr0: usize,
+                addr1: usize,
+                p: [f64; 15],
+                truncate: bool,
+            ) {
                 self.inner.two_qubit_pauli_error(addr0, addr1, p);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn depolarize(&mut self, addr0: usize, p: f64) {
+            #[pyo3(signature = (addr0, p, truncate = true))]
+            pub fn depolarize(&mut self, addr0: usize, p: f64, truncate: bool) {
                 self.inner.depolarize(addr0, p);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64) {
+            #[pyo3(signature = (addr0, addr1, p, truncate = true))]
+            pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64, truncate: bool) {
                 self.inner.depolarize2(addr0, addr1, p);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
-            pub fn amplitude_damping(&mut self, addr0: usize, gamma: f64) {
+            #[pyo3(signature = (addr0, gamma, truncate = true))]
+            pub fn amplitude_damping(&mut self, addr0: usize, gamma: f64, truncate: bool) {
                 self.inner.amplitude_damping(addr0, gamma);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
 

@@ -5,7 +5,7 @@ use num::{
     Complex, One, PrimInt, ToPrimitive, Zero,
     complex::{Complex64, ComplexFloat},
 };
-use ppvm_runtime::config::Config;
+use ppvm_runtime::{char::Pauli, config::Config};
 
 use crate::measure::MeasureScratch;
 use crate::{data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex};
@@ -86,7 +86,21 @@ where
         scratch: &mut MeasureScratch<I, T::Coeff>,
     ) -> Vec<Option<bool>> {
         (0..self.n_qubits())
-            .map(|idx| self.measure_with_scratch(idx, scratch))
+            .map(|idx| {
+                if self.is_lost[idx] {
+                    return None;
+                } else {
+                    let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
+                        self.compute_decomposition(idx, Pauli::Z);
+                    return self.measure_with_scratch(
+                        idx,
+                        scratch,
+                        phase_decomp,
+                        stab_anticomm_bits,
+                        destab_anticomm_bits,
+                    );
+                }
+            })
             .collect()
     }
 }

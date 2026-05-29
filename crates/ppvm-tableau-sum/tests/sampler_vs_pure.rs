@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_runtime::traits::{
     Clifford, CliffordExtensions, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel,
-    PauliError, Reset, RotationOne, RotationTwo, TGate, TwoQubitPauliError, U3Gate,
+    LossyMeasure, PauliError, Reset, RotationOne, RotationTwo, TGate, TwoQubitPauliError, U3Gate,
 };
 use ppvm_tableau::measure_all::LossyMeasureAll;
 use ppvm_tableau::prelude::*;
@@ -1354,4 +1354,354 @@ fn truncation_does_not_break_statistics() {
     });
     // Slightly looser tolerance to allow for truncation-induced bias.
     assert_distributions_match(&sum, &pure, 0.1, "truncation_does_not_break_statistics");
+}
+
+// ---------------------------------------------------------------------------
+// Mid-circuit measurement
+// ---------------------------------------------------------------------------
+//
+// `GeneralizedTableauSum::measure(addr0)` branches the sum into the possible
+// outcomes (and a separate lost-qubit bucket) rather than collapsing to a
+// single trajectory. After a mid-circuit measurement, sampling the resulting
+// sum + `measure_all` on the chosen branch must reproduce the same joint
+// distribution as the pure backend, which collapses stochastically per shot
+// via `LossyMeasure::measure`.
+
+#[test]
+fn mid_circuit_measure_on_zero_state_is_deterministic() {
+    // |0⟩ is a Z eigenstate (case b, no branching). Both backends must
+    // return Some(false) for every shot.
+    let shots = 1000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.measure(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        let _ = t.measure(0);
+    });
+    assert!(sum.iter().all(|s| s[0] == Some(false)));
+    assert!(pure.iter().all(|s| s[0] == Some(false)));
+}
+
+#[test]
+fn mid_circuit_measure_after_x_is_deterministic_one() {
+    // X|0⟩ = |1⟩ — also a Z eigenstate (case b), deterministic outcome 1.
+    let shots = 1000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.x(0);
+        t.measure(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.x(0);
+        let _ = t.measure(0);
+    });
+    assert!(sum.iter().all(|s| s[0] == Some(true)));
+    assert!(pure.iter().all(|s| s[0] == Some(true)));
+}
+
+#[test]
+fn mid_circuit_measure_after_h_is_unbiased() {
+    // H|0⟩ = |+⟩ is not a Z eigenstate → case a, sum branches 50/50.
+    // Sampled marginal must match pure backend's 50/50.
+    let shots = 8000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.measure(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        let _ = t.measure(0);
+    });
+    assert_distributions_match(&sum, &pure, 0.04, "mid_circuit_measure_after_h_is_unbiased");
+}
+
+#[test]
+fn mid_circuit_measure_then_h_back_is_unbiased() {
+    // After the measurement the qubit is in |0⟩ or |1⟩ (each 50%);
+    // H sends both to |±⟩ which measure to 50/50 in Z. Total: 50/50.
+    // Verifies that post-measurement state evolution is consistent
+    // across both backends (gates must apply correctly to the branched sum).
+    let shots = 8000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.measure(0);
+        t.h(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        let _ = t.measure(0);
+        t.h(0);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "mid_circuit_measure_then_h_back_is_unbiased",
+    );
+}
+
+#[test]
+fn mid_circuit_measure_bell_pair_correlates_outcomes() {
+    // Bell pair (|00⟩+|11⟩)/√2, then measure q0 mid-circuit. The post-state
+    // collapses both qubits to the same basis vector, so final measure_all
+    // yields only (0,0) and (1,1) (each ~50%).
+    let shots = 8000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.measure(0);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        let _ = t.measure(0);
+    });
+    assert!(
+        sum.iter().all(|s| s[0] == s[1]),
+        "sum: Bell pair must remain correlated through mid-circuit measure"
+    );
+    assert!(
+        pure.iter().all(|s| s[0] == s[1]),
+        "pure: Bell pair must remain correlated through mid-circuit measure"
+    );
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "mid_circuit_measure_bell_pair_correlates_outcomes",
+    );
+}
+
+#[test]
+fn mid_circuit_measure_bell_pair_then_h_q1_decorrelates() {
+    // After measuring q0, q1 is in a definite state (|0⟩ or |1⟩, 50/50).
+    // H on q1 puts it in |+⟩ or |−⟩ — measure_all gives independent 50/50.
+    // Joint: q0 ∈ {0,1} 50/50, q1 ∈ {0,1} 50/50, independent → 4 bins ×25%.
+    let shots = 8000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.measure(0);
+        t.h(1);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        let _ = t.measure(0);
+        t.h(1);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.05,
+        "mid_circuit_measure_bell_pair_then_h_q1_decorrelates",
+    );
+}
+
+#[test]
+fn mid_circuit_measure_consecutive_is_idempotent() {
+    // Two measurements on the same qubit with nothing between them must
+    // agree (case a then case b). The second is a no-op on the post-state.
+    let shots = 8000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.measure(0);
+        t.measure(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        let _ = t.measure(0);
+        let _ = t.measure(0);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "mid_circuit_measure_consecutive_is_idempotent",
+    );
+}
+
+#[test]
+fn mid_circuit_measure_on_lost_qubit_stays_lost() {
+    // Loss at p=1.0 marks q0 lost; subsequent measure must leave the
+    // qubit lost (`None`) on both backends.
+    let shots = 1000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.loss_channel(0, 1.0);
+        t.measure(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.loss_channel(0, 1.0);
+        let _ = t.measure(0);
+    });
+    assert!(sum.iter().all(|s| s[0].is_none()));
+    assert!(pure.iter().all(|s| s[0].is_none()));
+}
+
+// ---------------------------------------------------------------------------
+// Mid-circuit measurement with multiple incoming branches
+//
+// Noise channels create multiple sum entries; measure() must branch each one
+// independently and keep the joint distribution correct after merge.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mid_circuit_measure_after_depolarize_on_plus_state() {
+    // h(0) puts q0 in |+⟩; depolarize creates 4 branches (I/X/Y/Z applied),
+    // then measure on the resulting mixture. |+⟩ and X|+⟩=|+⟩ measure 50/50,
+    // Y|+⟩=-i|−⟩ and Z|+⟩=|−⟩ also measure 50/50, so total is 50/50 — but
+    // the test value is in covering the multi-branch-into-measure path.
+    let shots = 8000;
+    let p = 0.3_f64;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.depolarize(0, p);
+        t.measure(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        t.depolarize(0, p);
+        let _ = t.measure(0);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "mid_circuit_measure_after_depolarize_on_plus_state",
+    );
+}
+
+#[test]
+fn mid_circuit_measure_bell_pair_after_depolarize() {
+    // Bell pair, depolarize on q0 (4 branches), then measure(q0) mid-circuit,
+    // then measure_all. The depolarize breaks the Bell correlation: with
+    // probability 2p/3 the two qubits disagree, otherwise they agree. The
+    // mid-circuit measure on q0 must propagate that disagreement correctly
+    // through the rest of the circuit.
+    let shots = 8000;
+    let p = 0.25_f64;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.depolarize(0, p);
+        t.measure(0);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.depolarize(0, p);
+        let _ = t.measure(0);
+    });
+    // Sanity: P(q0 ≠ q1) should be ~2p/3 on both backends.
+    let disagree_sum = sum.iter().filter(|s| s[0] != s[1]).count() as f64 / shots as f64;
+    let disagree_pure = pure.iter().filter(|s| s[0] != s[1]).count() as f64 / shots as f64;
+    let expected = 2.0 * p / 3.0;
+    assert!(
+        (disagree_sum - expected).abs() < 0.04,
+        "sum P(disagree)={disagree_sum:.4}, expected {expected:.4}"
+    );
+    assert!(
+        (disagree_pure - expected).abs() < 0.04,
+        "pure P(disagree)={disagree_pure:.4}, expected {expected:.4}"
+    );
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.05,
+        "mid_circuit_measure_bell_pair_after_depolarize",
+    );
+}
+
+#[test]
+fn mid_circuit_measure_after_loss_includes_none_bucket() {
+    // Loss at p=0.4 splits the sum into present/lost branches; measure
+    // operates on both. The lost branch passes through as None; the
+    // present branch (originally |+⟩) gives 50/50.
+    // Expected per qubit: P(None) = 0.4, P(0) = 0.3, P(1) = 0.3.
+    let shots = 8000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.loss_channel(0, 0.4);
+        t.measure(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        t.loss_channel(0, 0.4);
+        let _ = t.measure(0);
+    });
+    let lost_sum = sum.iter().filter(|s| s[0].is_none()).count() as f64 / shots as f64;
+    let lost_pure = pure.iter().filter(|s| s[0].is_none()).count() as f64 / shots as f64;
+    assert!(
+        (lost_sum - 0.4).abs() < 0.04,
+        "sum P(lost)={lost_sum:.4}, expected 0.4"
+    );
+    assert!(
+        (lost_pure - 0.4).abs() < 0.04,
+        "pure P(lost)={lost_pure:.4}, expected 0.4"
+    );
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "mid_circuit_measure_after_loss_includes_none_bucket",
+    );
+}
+
+#[test]
+fn mid_circuit_measure_then_depolarize_then_measure() {
+    // Interleave measure with noise: first measure collapses to |0⟩/|1⟩,
+    // depolarize creates branches, second measure resolves each. Stresses
+    // the storage layer's ability to handle measure → re-bucket → noise
+    // → re-bucket cycles.
+    let shots = 8000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.measure(0);
+        t.depolarize(0, 0.2);
+        t.measure(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        let _ = t.measure(0);
+        t.depolarize(0, 0.2);
+        let _ = t.measure(0);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "mid_circuit_measure_then_depolarize_then_measure",
+    );
+}
+
+#[test]
+fn mid_circuit_measure_three_qubit_with_noise() {
+    // Larger circuit: GHZ-like state, mid-circuit measure on the middle
+    // qubit, then more gates and a final measure_all. Verifies that the
+    // sum's bookkeeping (fingerprint cache, merge, normalize) survives a
+    // realistic measurement-aware noisy circuit.
+    let shots = 8000;
+    let sum = run_sum(3, shots, 1e-12, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
+        t.depolarize(1, 0.1);
+        t.measure(1);
+        t.h(2);
+        t.depolarize(0, 0.1);
+    });
+    let pure = run_pure(3, shots, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
+        t.depolarize(1, 0.1);
+        let _ = t.measure(1);
+        t.h(2);
+        t.depolarize(0, 0.1);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.08,
+        "mid_circuit_measure_three_qubit_with_noise",
+    );
 }

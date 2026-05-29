@@ -719,7 +719,7 @@ where
     /// `destab_anticomm_bits[l] = 1` iff P_addr0 anticommutes with destabilizer d_l.
     /// Note that stab_anticomm_bits is equal to the shift of the index when branching
     /// (`beta` in Eq(4) of the SOFT paper).
-    pub(crate) fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I)
+    pub fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I)
     where
         <<T as Config>::Storage as BitView>::Store: PrimInt,
     {
@@ -817,7 +817,7 @@ where
     }
 
     /// Build a bitmask where bit i is set if destabilizer i has odd phase (phase % 2 != 0).
-    pub(crate) fn odd_phase_destabilizer_mask(&self) -> I {
+    pub fn odd_phase_destabilizer_mask(&self) -> I {
         let mut mask = I::zero();
         let one = I::one();
         for (i, destab) in self.tableau.destabilizers().iter().enumerate() {

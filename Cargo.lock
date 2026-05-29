@@ -902,6 +902,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-lindblad"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "dashmap",
+ "fxhash",
+ "num",
+ "ppvm-runtime",
+ "rayon",
+]
+
+[[package]]
 name = "ppvm-python-native"
 version = "0.1.0"
 dependencies = [
@@ -911,6 +923,7 @@ dependencies = [
  "num",
  "numpy",
  "paste",
+ "ppvm-lindblad",
  "ppvm-runtime",
  "ppvm-stim",
  "ppvm-tableau",

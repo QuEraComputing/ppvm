@@ -1,0 +1,15 @@
+[package]
+name = "ppvm-lindblad"
+version = "0.1.0"
+edition = "2024"
+description = "Direct Heisenberg-picture Lindbladian evolution on an adaptive Pauli-string basis."
+
+[dependencies]
+dashmap = "6.1.0"
+fxhash = "0.2.1"
+num = "0.4.3"
+ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
+rayon = "1.11"
+
+[dev-dependencies]
+approx = "0.5.1"

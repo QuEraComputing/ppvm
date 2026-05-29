@@ -49,11 +49,13 @@ where
         let mut branches =
             Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::with_capacity(n_entries);
 
+        let mut scratch = MeasureScratch::<I, T::Coeff>::new();
+        let mut scratch_other_outcome = scratch.clone();
+
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss_fp| {
                 if tab.is_lost[addr0] {
                     // NOTE: deterministically outputs lost, no branching
-                    // p_lost = p_lost + p_sum.clone();
                     p_lost.push(p_sum.clone());
                     return;
                 }
@@ -63,7 +65,6 @@ where
 
                 // fork BEFORE draining coefficients
                 let tab_seed = self.rng.random::<u64>();
-                let mut tab_other_outcome = tab.fork(Some(tab_seed));
 
                 if stab_anticomm_bits == I::zero() {
                     // case b
@@ -71,10 +72,11 @@ where
                         std::mem::replace(&mut tab.coefficients, C::new())
                             .into_iter()
                             .collect();
-                    let entries_other_outcome: Vec<(Complex<T::Coeff>, I)> =
-                        std::mem::replace(&mut tab_other_outcome.coefficients, C::new())
-                            .into_iter()
-                            .collect();
+                    let entries_other_outcome = entries.clone();
+
+                    // NOTE: fork AFTER draining coefficients, so we only copy an
+                    // empty coefficients vec
+                    let mut tab_other_outcome = tab.fork(Some(tab_seed));
 
                     // Pass 1: compute overlap (read-only, real-only accumulation)
                     // Since conj(c)*c = |c|^2 (always real), the phase factor contribution
@@ -133,8 +135,7 @@ where
                     *p_sum *= p_likely;
                 } else {
                     // case a
-                    let mut scratch = MeasureScratch::<I, T::Coeff>::new();
-                    // scratch.coeff_map.clear();
+                    scratch.coeff_map.clear();
                     scratch.coeff_map.reserve(tab.coefficients.len());
                     {
                         let coeff_map = &mut scratch.coeff_map;
@@ -143,6 +144,14 @@ where
                             false // drain — keeps allocation
                         });
                     }
+
+                    scratch_other_outcome
+                        .coeff_map
+                        .clone_from(&scratch.coeff_map);
+
+                    // NOTE: fork AFTER draining coefficients, so we only copy an
+                    // empty coefficients vec
+                    let mut tab_other_outcome = tab.fork(Some(tab_seed));
 
                     // Compute z_overlap.re directly (the imaginary part is always ~0).
                     // The mask is a pure function of destabilizer phases — cache it across
@@ -157,8 +166,6 @@ where
                         stab_anticomm_bits,
                         odd_phase_mask,
                     );
-
-                    let mut scratch_other_outcome = scratch.clone();
 
                     let prob_1 = 0.5 - 0.5 * z_overlap_re;
                     let prob_0 = 1.0 - prob_1;
@@ -213,19 +220,15 @@ where
         }
         self.truncate();
 
-        let denom = n_entries as f64;
         let p_0 = p_zero
             .iter()
-            .fold(T::Coeff::zero(), |acc, p| acc + p.clone())
-            / denom.into();
+            .fold(T::Coeff::zero(), |acc, p| acc + p.clone());
         let p_1 = p_one
             .iter()
-            .fold(T::Coeff::zero(), |acc, p| acc + p.clone())
-            / denom.into();
+            .fold(T::Coeff::zero(), |acc, p| acc + p.clone());
         let p_l = p_lost
             .iter()
-            .fold(T::Coeff::zero(), |acc, p| acc + p.clone())
-            / denom.into();
+            .fold(T::Coeff::zero(), |acc, p| acc + p.clone());
         (p_0, p_1, p_l)
     }
 }

@@ -1705,3 +1705,56 @@ fn mid_circuit_measure_three_qubit_with_noise() {
         "mid_circuit_measure_three_qubit_with_noise",
     );
 }
+
+#[test]
+fn mid_circuit_measure_case_a_many_entries_with_other_outcome_retained() {
+    // Regression test for the case-a path of GeneralizedTableauSum::measure
+    // when (a) the sum holds many entries and (b) both projection outcomes
+    // are above sum_cutoff on every iteration, so both project_case_a calls
+    // fire for every entry.
+    //
+    // This stresses the shared-across-iterations scratch refactor:
+    //   - `scratch.coeff_map` must be cleared between iterations, else stale
+    //     entries from the previous tableau leak into compute_overlap_case_a
+    //     and the partition inside project_case_a.
+    //   - `scratch_other_outcome.coeff_map` must be repopulated (via
+    //     clone_from) before the other-outcome project_case_a — otherwise
+    //     the branch keeps its forked, un-projected coefficients.
+    //
+    // GHZ + repeated depolarize on q1/q2 keeps q0 in superposition for every
+    // sum entry (so measure(0) is case-a everywhere) while multiplying the
+    // entry count. Post-measurement gates probe the projected state on both
+    // branches; a wrong projection on the other-outcome branch shows up as
+    // statistical divergence from the per-shot pure backend.
+    let shots = 8000;
+    let sum = run_sum(3, shots, 1e-12, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.cnot(0, 2);
+        for _ in 0..3 {
+            t.depolarize(1, 0.18);
+            t.depolarize(2, 0.18);
+        }
+        t.measure(0);
+        t.h(1);
+        t.h(2);
+    });
+    let pure = run_pure(3, shots, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.cnot(0, 2);
+        for _ in 0..3 {
+            t.depolarize(1, 0.18);
+            t.depolarize(2, 0.18);
+        }
+        let _ = t.measure(0);
+        t.h(1);
+        t.h(2);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.08,
+        "mid_circuit_measure_case_a_many_entries_with_other_outcome_retained",
+    );
+}

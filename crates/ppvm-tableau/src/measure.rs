@@ -246,15 +246,6 @@ where
         // Drain self.coefficients into scratch.coeff_map via `retain` so the
         // Vec's capacity survives and we can refill it at the end without a
         // fresh allocation.
-        // scratch.coeff_map.clear();
-        // scratch.coeff_map.reserve(self.coefficients.len());
-        // {
-        //     let coeff_map = &mut scratch.coeff_map;
-        //     self.coefficients.retain(|(v, i)| {
-        //         coeff_map.insert(*i, *v);
-        //         false // drain — keeps allocation
-        //     });
-        // }
 
         let q_idx = stab_anticomm_bits.trailing_zeros() as usize;
 

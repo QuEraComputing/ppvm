@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Direct Pauli-Lindbladian time evolution on an adaptive Pauli-string basis.
 
-Given a Hermitian Pauli Hamiltonian H = Σ c_i P_i and Hermitian Pauli jump
-operators L_k with rates γ_k ≥ 0, this module exposes three primitives
-needed for adaptive Heisenberg-picture evolution:
+Given a Hermitian Pauli Hamiltonian H = Σ c_i P_i and jump operators
+L_k = Σ_a λ_{k,a} P_{k,a} (each a complex linear combination of Pauli
+strings) with rates γ_k ≥ 0, this module exposes three primitives needed
+for adaptive Heisenberg-picture evolution:
 
 - ``action(p)`` / ``action_arr(p)``: L*(p) for one Pauli string p
 - ``leakage(basis, coeffs)`` / ``leakage_arr(...)``: off-basis component of
@@ -16,12 +17,23 @@ The ``*_arr`` variants pass Pauli strings as ``(N, n_qubits)`` ``uint8``
 arrays of Pauli codes (``0=I, 1=X, 2=Z, 3=Y``) and skip string
 construction entirely — at ~10^5 basis rows per evolution step, per-row
 ``str.join`` dominates wall time.
+
+Each jump term can be either:
+
+- a single Hermitian Pauli (`("ZZII", γ)`), routed to a fast diagonal path,
+  or
+- a complex Pauli sum (`([("XIII", 0.5+0j), ("YIII", 0+0.5j)], γ)`) to
+  describe e.g. amplitude-damping (`σ⁻`) and excitation (`σ⁺`) operators.
+
+For the general case the shim evaluates
+``γ ( L† p L − ½ {L†L, p} )`` directly; the L†L Pauli expansion is
+precomputed once at construction.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 import numpy as np
 from ppvm_python_native import LindbladSpec as _LindbladSpec
@@ -32,6 +44,11 @@ if TYPE_CHECKING:
 _PAULI_CODE = {"I": 0, "X": 1, "Z": 2, "Y": 3}
 # Lookup table mapping code -> ASCII byte for vectorised string output.
 _CODE_TO_ASCII = np.array([ord("I"), ord("X"), ord("Z"), ord("Y")], dtype=np.uint8)
+
+# A jump operator is either a Hermitian Pauli (single string) or a complex
+# linear combination of Pauli strings.
+PauliLincomb = Iterable[tuple[str, complex]]
+JumpSpec = Union[tuple[str, float], tuple[PauliLincomb, float]]
 
 
 def string_to_codes(s: str, n_qubits: int) -> np.ndarray:
@@ -61,6 +78,43 @@ def codes_to_basis(arr: np.ndarray) -> list[str]:
     return [bytes_per_row[i * n : (i + 1) * n].decode("ascii") for i in range(arr.shape[0])]
 
 
+def sigma_plus(site: int, n_qubits: int) -> list[tuple[str, complex]]:
+    """``σ⁺_q = (X_q + i Y_q) / 2``. Use as a Lindblad jump for excitation."""
+    if not 0 <= site < n_qubits:
+        raise ValueError(f"site {site} out of range for n_qubits={n_qubits}")
+    x_str = "I" * site + "X" + "I" * (n_qubits - site - 1)
+    y_str = "I" * site + "Y" + "I" * (n_qubits - site - 1)
+    return [(x_str, 0.5 + 0.0j), (y_str, 0.0 + 0.5j)]
+
+
+def sigma_minus(site: int, n_qubits: int) -> list[tuple[str, complex]]:
+    """``σ⁻_q = (X_q − i Y_q) / 2``. Use as a Lindblad jump for amplitude damping."""
+    if not 0 <= site < n_qubits:
+        raise ValueError(f"site {site} out of range for n_qubits={n_qubits}")
+    x_str = "I" * site + "X" + "I" * (n_qubits - site - 1)
+    y_str = "I" * site + "Y" + "I" * (n_qubits - site - 1)
+    return [(x_str, 0.5 + 0.0j), (y_str, 0.0 - 0.5j)]
+
+
+def _normalize_jump(jump_op: object) -> list[tuple[str, float, float]]:
+    """Convert a user-supplied jump operator to ``[(pauli_str, re, im), ...]``.
+
+    Accepts either a single Pauli string (treated as a Hermitian-Pauli jump
+    with coefficient 1) or an iterable of ``(pauli_str, complex_coeff)``
+    pairs.
+    """
+    if isinstance(jump_op, str):
+        return [(jump_op, 1.0, 0.0)]
+    out: list[tuple[str, float, float]] = []
+    for term in jump_op:
+        s, c = term
+        cc = complex(c)
+        out.append((str(s), float(cc.real), float(cc.imag)))
+    if not out:
+        raise ValueError("jump operator lincomb must contain at least one Pauli term")
+    return out
+
+
 class Lindbladian:
     """Pre-compiled adjoint Pauli-Lindbladian acting on Pauli strings.
 
@@ -73,15 +127,31 @@ class Lindbladian:
         Hermitian Hamiltonian ``H = Σ c_i P_i``. Each ``pauli_string`` is
         a length-``n_qubits`` ``str`` over ``"IXYZ"``.
     jump_terms:
-        Iterable of ``(pauli_string, rate)`` pairs for the Hermitian Pauli
-        jump operators ``L_k`` with non-negative rates ``γ_k``.
+        Iterable of ``(jump_op, rate)`` pairs. ``jump_op`` is either a
+        Pauli string ``"XYZI..."`` (treated as a Hermitian-Pauli jump
+        with coefficient 1, hitting the fast path) or an iterable of
+        ``(pauli_string, complex_coeff)`` pairs for a general complex
+        Pauli linear combination such as :func:`sigma_plus` or
+        :func:`sigma_minus`. ``rate`` is the non-negative GKSL rate
+        ``γ_k``.
+
+    Examples
+    --------
+    Dephasing (Hermitian Pauli):
+
+    >>> Lindbladian(2, [("XX", 1.0)], [("ZI", 0.3), ("IZ", 0.3)])
+
+    Amplitude damping on site 0 (non-Hermitian):
+
+    >>> jumps = [(sigma_minus(0, 2), 0.5)]
+    >>> Lindbladian(2, [("XX", 1.0)], jumps)
     """
 
     def __init__(
         self,
         n_qubits: int,
         h_terms: Iterable[tuple[str, float]],
-        jump_terms: Iterable[tuple[str, float]] = (),
+        jump_terms: Iterable[tuple[object, float]] = (),
     ):
         self.n_qubits = int(n_qubits)
         h_strs: list[str] = []
@@ -89,12 +159,12 @@ class Lindbladian:
         for s, c in h_terms:
             h_strs.append(s)
             h_coeffs.append(float(c))
-        j_strs: list[str] = []
+        j_lincombs: list[list[tuple[str, float, float]]] = []
         j_rates: list[float] = []
-        for s, g in jump_terms:
-            j_strs.append(s)
-            j_rates.append(float(g))
-        self._spec = _LindbladSpec(self.n_qubits, h_strs, h_coeffs, j_strs, j_rates)
+        for jump_op, rate in jump_terms:
+            j_lincombs.append(_normalize_jump(jump_op))
+            j_rates.append(float(rate))
+        self._spec = _LindbladSpec(self.n_qubits, h_strs, h_coeffs, j_lincombs, j_rates)
 
     @property
     def num_h_terms(self) -> int:
@@ -144,6 +214,73 @@ class Lindbladian:
             np.ascontiguousarray(coeffs, dtype=np.float64),
             np.ascontiguousarray(protected_arr, dtype=np.uint8),
         )
+
+    def pc_step_arr(
+        self,
+        basis_arr: np.ndarray,
+        coeffs: np.ndarray,
+        dt: float,
+        tau_add: float,
+        protected_arr: np.ndarray | None = None,
+        expm_tol: float = 1e-12,
+        parallel_threshold: int = 50_000,
+        num_threads: int | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """One predictor-corrector adaptive step.
+
+        All work — leakage expansion, matrix-exponential step, second-hop
+        re-expansion, corrector — runs in Rust; SciPy is not required.
+        The matrix exponential uses Al-Mohy & Higham scaling-and-squaring
+        with rayon-parallel SpMV when the restricted generator has more
+        than ``parallel_threshold`` nonzeros.
+
+        ``num_threads``, when set, pins this call to a freshly-built rayon
+        pool of that size — useful for benchmarking parallel scaling.
+
+        Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown.
+        """
+        n = self.n_qubits
+        if protected_arr is None:
+            protected_arr = np.zeros((0, n), dtype=np.uint8)
+        return self._spec.pc_step(
+            np.ascontiguousarray(basis_arr, dtype=np.uint8),
+            np.ascontiguousarray(coeffs, dtype=np.float64),
+            float(dt),
+            float(tau_add),
+            np.ascontiguousarray(protected_arr, dtype=np.uint8),
+            float(expm_tol),
+            int(parallel_threshold),
+            None if num_threads is None else int(num_threads),
+        )
+
+    def pc_step(
+        self,
+        basis: Sequence[str],
+        coeffs: np.ndarray,
+        dt: float,
+        tau_add: float,
+        protected: Sequence[str] | None = None,
+        expm_tol: float = 1e-12,
+        parallel_threshold: int = 50_000,
+        num_threads: int | None = None,
+    ) -> tuple[list[str], np.ndarray]:
+        """String-keyed variant of :meth:`pc_step_arr`."""
+        n = self.n_qubits
+        basis_arr = basis_to_codes(basis, n)
+        protected_arr = (
+            basis_to_codes(list(protected), n) if protected else np.zeros((0, n), dtype=np.uint8)
+        )
+        new_basis_arr, new_coeffs = self.pc_step_arr(
+            basis_arr,
+            coeffs,
+            dt,
+            tau_add,
+            protected_arr,
+            expm_tol,
+            parallel_threshold,
+            num_threads,
+        )
+        return codes_to_basis(new_basis_arr), new_coeffs
 
     def generator_arr(self, basis_arr: np.ndarray) -> sp.csc_matrix:
         """Sparse generator matrix in CSC form, basis given as uint8 codes.

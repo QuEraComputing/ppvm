@@ -89,17 +89,16 @@ where
             .map(|idx| {
                 if self.is_lost[idx] {
                     return None;
-                } else {
-                    let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
-                        self.compute_decomposition(idx, Pauli::Z);
-                    return self.measure_with_scratch(
-                        idx,
-                        scratch,
-                        phase_decomp,
-                        stab_anticomm_bits,
-                        destab_anticomm_bits,
-                    );
                 }
+                let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
+                    self.compute_decomposition(idx, Pauli::Z);
+                self.measure_with_scratch(
+                    idx,
+                    scratch,
+                    phase_decomp,
+                    stab_anticomm_bits,
+                    destab_anticomm_bits,
+                )
             })
             .collect()
     }

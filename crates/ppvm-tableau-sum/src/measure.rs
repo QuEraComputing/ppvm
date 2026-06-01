@@ -39,6 +39,7 @@ where
     I: TableauIndex + Debug + Send + Sync,
     S: EntryStore<T, I, C>,
 {
+    /// Routine for mid-circuit measurements (for obtaining results use sampling)
     /// branch into different outcomes and return probabilities for outcomes (zero, one, lost)
     pub fn measure(&mut self, addr0: usize) -> (T::Coeff, T::Coeff, T::Coeff) {
         let mut p_zero = Vec::<T::Coeff>::new();

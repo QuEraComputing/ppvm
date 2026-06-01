@@ -93,9 +93,7 @@ where
         + ToPrimitive
         + std::fmt::Debug
         + std::ops::Mul<f64>
-        + PartialOrd<f64>
-        + Send
-        + Sync,
+        + PartialOrd<f64>,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
@@ -103,7 +101,7 @@ where
         + One
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Debug + Send + Sync,
+    I: TableauIndex + Debug,
 {
     fn measure(&mut self, addr0: usize) -> Option<bool> {
         if self.is_lost[addr0] {
@@ -138,9 +136,7 @@ where
         + ToPrimitive
         + std::fmt::Debug
         + std::ops::Mul<f64>
-        + PartialOrd<f64>
-        + Send
-        + Sync,
+        + PartialOrd<f64>,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
@@ -148,7 +144,7 @@ where
         + One
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Debug + Send + Sync,
+    I: TableauIndex + Debug,
 {
     pub(crate) fn measure_with_scratch(
         &mut self,
@@ -351,9 +347,7 @@ where
         + ToPrimitive
         + std::fmt::Debug
         + std::ops::Mul<f64>
-        + PartialOrd<f64>
-        + Send
-        + Sync,
+        + PartialOrd<f64>,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
@@ -361,7 +355,7 @@ where
         + One
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Debug + Send + Sync,
+    I: TableauIndex + Debug,
 {
     /// Measure qubit `addr0` in Z basis with optional readout noise.
     ///
@@ -412,9 +406,7 @@ where
         + ToPrimitive
         + std::fmt::Debug
         + std::ops::Mul<f64>
-        + PartialOrd<f64>
-        + Send
-        + Sync,
+        + PartialOrd<f64>,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
@@ -422,7 +414,7 @@ where
         + One
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Debug + Send + Sync,
+    I: TableauIndex + Debug,
 {
     /// Case_b overlap: self-pairing (branch_index = idx), so overlap = ±|c|^2.
     /// Only even phases contribute to the real part.

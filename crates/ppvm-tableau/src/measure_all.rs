@@ -27,9 +27,7 @@ where
         + ToPrimitive
         + std::fmt::Debug
         + std::ops::Mul<f64>
-        + PartialOrd<f64>
-        + Send
-        + Sync,
+        + PartialOrd<f64>,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
@@ -37,7 +35,7 @@ where
         + One
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Debug + Send + Sync,
+    I: TableauIndex + Debug,
 {
     fn measure_all(&mut self) -> Vec<Option<bool>> {
         // One scratch reused across all n measurements: keeps the HashMap and
@@ -62,9 +60,7 @@ where
         + ToPrimitive
         + std::fmt::Debug
         + std::ops::Mul<f64>
-        + PartialOrd<f64>
-        + Send
-        + Sync,
+        + PartialOrd<f64>,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
@@ -72,7 +68,7 @@ where
         + One
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Debug + Send + Sync,
+    I: TableauIndex + Debug,
 {
     /// Same as [`LossyMeasureAll::measure_all`], but the caller supplies a
     /// `MeasureScratch` that's reused across the n per-qubit measurements

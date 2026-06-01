@@ -597,13 +597,13 @@ pub struct GeneralizedTableau<
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
 where
-    T::Coeff: One + Zero + Clone + Send + Sync + num::Num,
+    T::Coeff: One + Zero + Clone + num::Num,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
         + From<Complex64>
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Send + Sync,
+    I: TableauIndex,
 {
     /// Construct a generalized tableau in the `|0…0⟩` state.
     ///

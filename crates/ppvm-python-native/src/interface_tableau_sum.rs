@@ -18,25 +18,25 @@ macro_rules! create_sum_interface {
         impl $tab_name {
             #[new]
             #[pyo3(signature = (
-                        n_qubits,
-                        coefficient_threshold = 1e-12,
-                        sum_cutoff = 1e-10,
-                        seed = None,
-                    ))]
+                n_qubits,
+                min_abs_coeff = 1e-10,
+                sum_cutoff = 1e-8,
+                seed = None,
+            ))]
             pub fn new(
                 n_qubits: usize,
-                coefficient_threshold: f64,
+                min_abs_coeff: f64,
                 sum_cutoff: f64,
                 seed: Option<u64>,
             ) -> Self {
                 let inner: GeneralizedTableauSum<$type, $indexType> = match seed {
                     Some(s) => GeneralizedTableauSum::new_with_seed(
                         n_qubits,
-                        coefficient_threshold,
+                        min_abs_coeff,
                         sum_cutoff,
                         s,
                     ),
-                    None => GeneralizedTableauSum::new(n_qubits, coefficient_threshold, sum_cutoff),
+                    None => GeneralizedTableauSum::new(n_qubits, min_abs_coeff, sum_cutoff),
                 };
                 Self { inner }
             }

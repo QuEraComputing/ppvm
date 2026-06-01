@@ -59,13 +59,12 @@ where
         }
     }
 
-    #[cfg(not(feature = "rayon"))]
-    pub fn sample_shots(&mut self, n_shots: usize) -> Vec<Vec<Option<bool>>> {
+    pub fn sample_shots_serial(&mut self, n_shots: usize) -> Vec<Vec<Option<bool>>> {
         (0..n_shots).map(|_| self.sample()).collect()
     }
 
     #[cfg(feature = "rayon")]
-    pub fn sample_shots(&mut self, n_shots: usize) -> Vec<Vec<Option<bool>>>
+    pub fn sample_shots_parallel(&mut self, n_shots: usize) -> Vec<Vec<Option<bool>>>
     where
         T::Coeff: Send + Sync,
         <T as Config>::BuildHasher: Sync,
@@ -94,5 +93,31 @@ where
                 },
             )
             .collect()
+    }
+
+    #[cfg(not(feature = "rayon"))]
+    pub fn sample_shots(&mut self, n_shots: usize) -> Vec<Vec<Option<bool>>> {
+        self.sample_shots_serial(n_shots)
+    }
+
+    /// Dispatches to the serial implementation when there are too few shots
+    /// for rayon's per-call scheduling overhead (~25 µs) to be amortised.
+    /// Each thread needs ~4 shots of work to be worth waking up; with only
+    /// one thread the parallel path has no upside and is never chosen. See
+    /// `examples/sample_threshold_bench.rs`.
+    #[cfg(feature = "rayon")]
+    pub fn sample_shots(&mut self, n_shots: usize) -> Vec<Vec<Option<bool>>>
+    where
+        T::Coeff: Send + Sync,
+        <T as Config>::BuildHasher: Sync,
+        I: Send + Sync,
+        C: Send + Sync,
+    {
+        let n_threads = rayon::current_num_threads();
+        if n_threads <= 1 || n_shots < 4 * n_threads {
+            self.sample_shots_serial(n_shots)
+        } else {
+            self.sample_shots_parallel(n_shots)
+        }
     }
 }

@@ -9,15 +9,19 @@ fxhash = "0.2.1"
 gxhash = "3.5.0"
 num = "0.4.3"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
-ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau", features = ["rayon"] }
+ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
 rand = "0.10.1"
 smallvec = "1.15"
+rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 criterion = "0.8.2"
 rayon = "1"
 mimalloc = { version = "0.1", default-features = false }
 
+[features]
+default = []
+rayon = ["dep:rayon", "ppvm-tableau/rayon"]
 
 [[bench]]
 name = "msd"

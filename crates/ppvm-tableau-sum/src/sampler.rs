@@ -1,5 +1,8 @@
 use std::fmt::Debug;
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 use bitvec::view::BitView;
 use num::{
     Complex, One, PrimInt, ToPrimitive, Zero,
@@ -57,7 +60,38 @@ where
         }
     }
 
+    #[cfg(not(feature = "rayon"))]
     pub fn sample_shots(&mut self, n_shots: usize) -> Vec<Vec<Option<bool>>> {
         (0..n_shots).map(|_| self.sample()).collect()
+    }
+
+    #[cfg(feature = "rayon")]
+    pub fn sample_shots(&mut self, n_shots: usize) -> Vec<Vec<Option<bool>>>
+    where
+        <T as Config>::BuildHasher: Sync,
+        C: Send + Sync,
+    {
+        let sample_inds_and_seeds: Vec<(usize, u64)> = (0..n_shots)
+            .map(|_| {
+                let p = self.rng.random::<f64>();
+                let idx = self
+                    .p_cumulative
+                    .iter()
+                    .position(|p_| *p_ > p)
+                    .expect("GeneralizedTableauSum normalization error!");
+                (idx, self.rng.random::<u64>())
+            })
+            .collect();
+
+        sample_inds_and_seeds
+            .par_iter()
+            .map_init(
+                MeasureScratch::<I, T::Coeff>::new,
+                |mut scratch, &(i, seed)| {
+                    let mut tab = self.entries[i].0.fork(Some(seed));
+                    tab.measure_all_with_scratch(&mut scratch)
+                },
+            )
+            .collect()
     }
 }

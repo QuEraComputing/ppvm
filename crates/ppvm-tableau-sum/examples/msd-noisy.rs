@@ -194,11 +194,11 @@ fn main() {
     let now = Instant::now();
     sampler.sample_shots(n_shots);
     let sample_time = Instant::now() - now;
-    let per_shot_us = sample_time.as_micros() / n_shots as u128;
+    let per_shot_us = sample_time.as_nanos() / n_shots as u128;
     println!(
         "Time to {} samples: {} us",
         n_shots,
         sample_time.as_micros()
     );
-    println!("Time per shot: {} us", per_shot_us);
+    println!("Time per shot: {} ns", per_shot_us);
 }

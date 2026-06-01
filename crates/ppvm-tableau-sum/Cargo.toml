@@ -38,3 +38,11 @@ harness = false
 [[bench]]
 name = "storage_compare"
 harness = false
+
+[[example]]
+name = "sample_threshold_bench"
+required-features = ["rayon"]
+
+[[example]]
+name = "msd-noisy-compare"
+required-features = ["rayon"]

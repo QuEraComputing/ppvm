@@ -498,7 +498,6 @@ fn clifford_layer_with_sqrt_gates_and_noise() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "TODO"]
 fn reset_after_hadamard_collapses_to_zero() {
     // Reset is `measure + flip-if-1`, so after any single-qubit state it
     // forces the qubit to |0⟩. Both backends must give Some(false) every shot.
@@ -515,23 +514,7 @@ fn reset_after_hadamard_collapses_to_zero() {
     assert!(pure.iter().all(|s| s[0] == Some(false)));
 }
 
-// Known failure: `GeneralizedTableauSum::reset` delegates to per-entry
-// `GeneralizedTableau::reset`, which is `measure + flip-if-1`. The inner
-// measurement consumes the entry's RNG to commit to one outcome, so for any
-// state where q0 is entangled with other qubits the "build once, sample many"
-// model collapses the entry to a single product state and the other branch's
-// probability mass is lost.
-//
-// Pure backend: rebuilds the state per shot, so the stochastic reset is
-// spread across shots — 50/50 between (0,0) and (0,1).
-// Sum backend:  one entry; reset picks one outcome; all 8000 shots return it.
-//
-// Correct fix is to make `reset` branch on the sum (each entry → 2 sum-level
-// entries with probabilities ⟨0|ρ|0⟩ and ⟨1|ρ|1⟩, both with q0=0 post-state),
-// analogous to how `loss_channel` / `depolarize` already work. Tracking this
-// here so future work on `Reset` lands together with re-enabling the test.
 #[test]
-#[ignore = "Reset on the sum backend doesn't branch; see comment above"]
 fn reset_bell_pair_q0_decorrelates() {
     // Bell pair then reset(q0): q0 is forced to 0 and the reset's
     // measurement collapses q1 to a definite (but random) value. So
@@ -554,7 +537,6 @@ fn reset_bell_pair_q0_decorrelates() {
 }
 
 #[test]
-#[ignore = "TODO"]
 fn reset_after_depolarize_still_zero() {
     // Depolarize then reset: regardless of which Pauli error fired,
     // reset projects back to |0⟩ deterministically.
@@ -572,7 +554,6 @@ fn reset_after_depolarize_still_zero() {
 }
 
 #[test]
-#[ignore = "TODO"]
 fn reset_on_lost_qubit_is_no_op() {
     // GeneralizedTableau::reset is `measure + flip`; measurement on a lost
     // qubit returns None, so the reset leaves is_lost set. Both backends
@@ -588,6 +569,224 @@ fn reset_on_lost_qubit_is_no_op() {
     });
     assert!(sum.iter().all(|s| s[0].is_none()));
     assert!(pure.iter().all(|s| s[0].is_none()));
+}
+
+#[test]
+fn reset_on_one_state_case_b_flips_to_zero() {
+    // X|0⟩ = |1⟩ is a Z eigenstate (case b, no branching). Reset must flip
+    // it back to |0⟩ deterministically — exercises the case-b branch where
+    // `likely_outcome = true` and `tab.x(addr0)` runs on the surviving entry.
+    let shots = 1000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.x(0);
+        t.reset(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.x(0);
+        t.reset(0);
+    });
+    assert!(sum.iter().all(|s| s[0] == Some(false)));
+    assert!(pure.iter().all(|s| s[0] == Some(false)));
+}
+
+#[test]
+fn reset_on_zero_state_case_b_is_noop() {
+    // |0⟩ is a Z eigenstate with eigenvalue +1 (case b, no branching).
+    // Reset must leave the state untouched — exercises the case-b branch
+    // where `likely_outcome = false` and no `x` is applied.
+    let shots = 1000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.reset(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.reset(0);
+    });
+    assert!(sum.iter().all(|s| s[0] == Some(false)));
+    assert!(pure.iter().all(|s| s[0] == Some(false)));
+}
+
+#[test]
+fn reset_then_hadamard_gives_unbiased_distribution() {
+    // After reset(0) the qubit is in |0⟩ on every branch; H(0) takes it to
+    // |+⟩, so a final Z-basis measurement is 50/50. Verifies the post-reset
+    // state composes correctly with subsequent gates across the branched sum.
+    let shots = 8000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.reset(0);
+        t.h(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        t.reset(0);
+        t.h(0);
+    });
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "reset_then_hadamard_gives_unbiased_distribution",
+    );
+}
+
+#[test]
+fn reset_after_t_gate_collapses_to_zero() {
+    // Non-Clifford state: H · T · H |0⟩ has non-trivial Z-basis probabilities.
+    // Reset must still collapse q0 to |0⟩ on every shot.
+    let shots = 4000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.t(0);
+        t.h(0);
+        t.reset(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        t.t(0);
+        t.h(0);
+        t.reset(0);
+    });
+    assert!(sum.iter().all(|s| s[0] == Some(false)));
+    assert!(pure.iter().all(|s| s[0] == Some(false)));
+}
+
+#[test]
+fn reset_ghz_q0_decorrelates_remaining_pair() {
+    // GHZ on q0,q1,q2; reset(q0) projects q0 to 0 and inherits the random
+    // measurement outcome onto the remaining pair: q1 == q2 ∈ {0,1} each
+    // 50/50. Stresses entanglement breaking across multiple qubits.
+    let shots = 8000;
+    let sum = run_sum(3, shots, 1e-12, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.cnot(0, 2);
+        t.reset(0);
+    });
+    let pure = run_pure(3, shots, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.cnot(0, 2);
+        t.reset(0);
+    });
+    assert!(
+        sum.iter().all(|s| s[0] == Some(false) && s[1] == s[2]),
+        "sum: q0 must be 0 and q1==q2 after GHZ reset(q0)"
+    );
+    assert!(
+        pure.iter().all(|s| s[0] == Some(false) && s[1] == s[2]),
+        "pure: q0 must be 0 and q1==q2 after GHZ reset(q0)"
+    );
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "reset_ghz_q0_decorrelates_remaining_pair",
+    );
+}
+
+#[test]
+fn reset_middle_qubit_of_three_qubit_chain() {
+    // CNOT chain on |+00⟩: H(0), CNOT(0,1), CNOT(1,2) → GHZ on q0,q1,q2.
+    // reset(q1) leaves q0 and q2 in a definite (but random) state, with
+    // q0 == q2 ∈ {0,1} each 50/50.
+    let shots = 8000;
+    let sum = run_sum(3, shots, 1e-12, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
+        t.reset(1);
+    });
+    let pure = run_pure(3, shots, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
+        t.reset(1);
+    });
+    assert!(
+        sum.iter().all(|s| s[1] == Some(false) && s[0] == s[2]),
+        "sum: q1 must be 0 and q0==q2 after chain reset(q1)"
+    );
+    assert!(
+        pure.iter().all(|s| s[1] == Some(false) && s[0] == s[2]),
+        "pure: q1 must be 0 and q0==q2 after chain reset(q1)"
+    );
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.04,
+        "reset_middle_qubit_of_three_qubit_chain",
+    );
+}
+
+#[test]
+fn double_reset_is_idempotent() {
+    // Resetting twice in a row must give the same distribution as one reset:
+    // the second reset hits case b on the already-|0⟩ state and is a no-op.
+    let shots = 4000;
+    let sum = run_sum(2, shots, 1e-12, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.reset(0);
+        t.reset(0);
+    });
+    let pure = run_pure(2, shots, |t| {
+        t.h(0);
+        t.cnot(0, 1);
+        t.reset(0);
+        t.reset(0);
+    });
+    assert!(sum.iter().all(|s| s[0] == Some(false)));
+    assert!(pure.iter().all(|s| s[0] == Some(false)));
+    assert_distributions_match(&sum, &pure, 0.04, "double_reset_is_idempotent");
+}
+
+#[test]
+fn reset_then_depolarize_then_measure_all() {
+    // Reset followed by a noise channel and a Hadamard: verifies that the
+    // post-reset branches compose cleanly with subsequent noise + gates.
+    let shots = 8000;
+    let p = 0.2_f64;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.reset(0);
+        t.depolarize(0, p);
+        t.h(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        t.reset(0);
+        t.depolarize(0, p);
+        t.h(0);
+    });
+    assert_distributions_match(&sum, &pure, 0.05, "reset_then_depolarize_then_measure_all");
+}
+
+#[test]
+fn reset_after_partial_loss_keeps_lost_branch() {
+    // loss_channel(q, 0.4) creates two sum entries: one with the qubit lost,
+    // one with the qubit alive. reset(q) must (a) leave the lost branch
+    // alone (no measurement on a lost qubit) and (b) drive the live branch
+    // to |0⟩. Final marginal: P(lost) = 0.4, P(0) = 0.6.
+    let shots = 8000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.loss_channel(0, 0.4);
+        t.reset(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        t.loss_channel(0, 0.4);
+        t.reset(0);
+    });
+    assert!(
+        sum.iter().all(|s| s[0].is_none() || s[0] == Some(false)),
+        "sum: live branches must reset to 0"
+    );
+    assert!(
+        pure.iter().all(|s| s[0].is_none() || s[0] == Some(false)),
+        "pure: live branches must reset to 0"
+    );
+    assert_distributions_match(&sum, &pure, 0.05, "reset_after_partial_loss_keeps_lost_branch");
 }
 
 // ---------------------------------------------------------------------------
@@ -1290,7 +1489,6 @@ fn t_h_t_adj_with_depolarize() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "TODO"]
 fn mixed_rotations_reset_t_noise() {
     // Exercise all newly-wired gate impls together with both noise channels.
     let shots = 8000;

@@ -137,7 +137,8 @@ mod tests {
     use super::*;
     use ppvm_runtime::config::fxhash::ByteF64;
     use ppvm_runtime::traits::{
-        Clifford, Depolarizing, LossChannel, LossyMeasure, PauliError, ResetLossChannel, TGate,
+        Clifford, Depolarizing, LossChannel, LossyMeasure, PauliError, Reset, ResetLossChannel,
+        TGate,
     };
 
     use crate::storage::map::MapStorage;
@@ -255,6 +256,65 @@ mod tests {
         for entry in tab.entries.iter() {
             assert!((*entry.1 - 0.5).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn test_reset_case_a_branch_fingerprint_lets_branches_merge() {
+        // h(0) prepares |+⟩, which makes reset(0) take the case-a path
+        // (Z anticommutes with the X stabilizer). prob_0 = prob_1 = 0.5,
+        // and BOTH outcome branches end up at |0⟩:
+        //   - existing entry: project_case_a(outcome=false)  → |0⟩, p=0.5
+        //   - new branch:     project_case_a(outcome=true), x(0) → |0⟩, p=0.5
+        //
+        // The two tableaux are structurally identical, so
+        // `insert_or_merge_batch` MUST coalesce them into a single entry
+        // with p=1.0. That coalescence relies on the pushed branch carrying
+        // a phase/loss fingerprint that matches its actual post-x tableau:
+        // if the fingerprint is captured BEFORE x(addr0) it hashes to the
+        // wrong bucket / fp_index slot, `structurally_equal` is never
+        // consulted, and the branch silently sticks around as a duplicate
+        // entry (the sampling distribution stays correct, but the merge
+        // optimisation is lost). This test fails (len == 2) if anyone
+        // re-introduces that ordering.
+        let mut tab = make(1);
+        tab.h(0);
+        tab.reset(0);
+        assert_eq!(
+            tab.len(),
+            1,
+            "case-a reset of |+⟩ must merge its two |0⟩ branches into one entry"
+        );
+        assert!(
+            (tab.entries.entries[0].1 - 1.0).abs() < 1e-12,
+            "merged entry must carry the full probability mass"
+        );
+    }
+
+    #[test]
+    fn test_reset_case_a_branch_fingerprint_lets_branches_merge_map() {
+        // Same invariant as the Vec test above, but on `MapStorage`. The
+        // bucket key is `word_fp ^ phase_loss`, so a stale phase/loss
+        // fingerprint puts the branch in a different bucket from the
+        // existing structurally-equal entry — `buckets.len()` would jump
+        // to 2.
+        let mut tab: TestMapSum = GeneralizedTableauSum::new_with_seed(1, 1e-12, 1e-10, 42);
+        tab.h(0);
+        tab.reset(0);
+        assert_eq!(
+            tab.len(),
+            1,
+            "case-a reset of |+⟩ must merge its two |0⟩ branches into one entry"
+        );
+        assert_eq!(
+            tab.entries.buckets.len(),
+            1,
+            "merged entry must occupy a single fingerprint bucket"
+        );
+        let (_, p) = tab.entries.iter().next().unwrap();
+        assert!(
+            (*p - 1.0).abs() < 1e-12,
+            "merged entry must carry the full probability mass"
+        );
     }
 
     #[test]

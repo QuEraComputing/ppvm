@@ -63,7 +63,6 @@ where
                 let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
                     tab.compute_decomposition(addr0, Pauli::Z);
 
-                // fork BEFORE draining coefficients
                 let tab_seed = self.rng.random::<u64>();
 
                 if stab_anticomm_bits == I::zero() {
@@ -72,7 +71,6 @@ where
                         std::mem::replace(&mut tab.coefficients, C::new())
                             .into_iter()
                             .collect();
-                    let entries_other_outcome = entries.clone();
 
                     // NOTE: fork AFTER draining coefficients, so we only copy an
                     // empty coefficients vec
@@ -112,7 +110,7 @@ where
                     // dropping terms < sum_cutoff even if they'd merge with another one
                     if Into::<T::Coeff>::into(p_other) > self.sum_cutoff {
                         tab_other_outcome.project_case_b(
-                            &entries_other_outcome,
+                            &entries,
                             !likely_outcome,
                             phase_decomp,
                             destab_anticomm_bits,

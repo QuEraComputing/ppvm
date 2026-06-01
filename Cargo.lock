@@ -933,6 +933,7 @@ dependencies = [
  "ppvm-runtime",
  "ppvm-stim",
  "ppvm-tableau",
+ "ppvm-tableau-sum",
  "pyo3",
 ]
 

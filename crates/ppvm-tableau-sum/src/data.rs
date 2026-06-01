@@ -123,10 +123,13 @@ where
             p_cum.push(p_acc.clone())
         }
 
+        let seed = self.rng.random::<u64>();
+        let rng = SmallRng::seed_from_u64(seed);
+
         Sampler {
             p_cumulative: p_cum,
             entries: entries,
-            rng: self.rng.clone(),
+            rng: rng,
             scratch: ppvm_tableau::measure::MeasureScratch::new(),
         }
     }

@@ -13,6 +13,7 @@ use ppvm_tableau::{data::GeneralizedTableau, measure::MeasureScratch};
 use ppvm_tableau::{sparsevec::SparseVector, tableau_index::TableauIndex};
 use rand::{RngExt, rngs::SmallRng};
 
+#[derive(Clone)]
 pub struct Sampler<T: Config, I, C: SparseVector<Complex<T::Coeff>, I> = Vec<(Complex64, I)>> {
     pub(crate) p_cumulative: Vec<T::Coeff>,
     pub entries: Vec<(GeneralizedTableau<T, I, C>, T::Coeff)>,

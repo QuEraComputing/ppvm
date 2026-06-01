@@ -66,7 +66,9 @@ where
     #[cfg(feature = "rayon")]
     pub fn sample_shots(&mut self, n_shots: usize) -> Vec<Vec<Option<bool>>>
     where
+        T::Coeff: Send + Sync,
         <T as Config>::BuildHasher: Sync,
+        I: Send + Sync,
         C: Send + Sync,
     {
         let sample_inds_and_seeds: Vec<(usize, u64)> = (0..n_shots)

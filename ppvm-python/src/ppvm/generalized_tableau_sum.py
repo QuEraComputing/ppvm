@@ -13,6 +13,12 @@ from .mixins import (
 )
 from .types import GeneralizedTableauSumInterface, TableauSumSamplerInterface
 
+# Indexed by integer outcome value (0/1/2) to reuse the singleton enum members.
+# This is much faster than calling ``MeasurementResult(i)`` per element: the
+# IntEnum constructor dominates large shot batches, while a tuple index just
+# bumps a refcount.
+_BY_VALUE = (MeasurementResult.ZERO, MeasurementResult.ONE, MeasurementResult.LOST)
+
 
 @dataclass(frozen=True)
 class GeneralizedTableauSum(
@@ -68,6 +74,10 @@ class GeneralizedTableauSum(
     def __str__(self) -> str:
         """Return a human-readable representation of the tableau state."""
         return self._interface.__str__()
+
+    def __len__(self) -> int:
+        """Return the number of branches currently in the sum."""
+        return len(self._interface)
 
     def t(self, addr0: int) -> None:
         """Apply a T gate (π/8 rotation) to the specified qubit.
@@ -153,15 +163,14 @@ class TableauSumSampler:
     _interface: TableauSumSamplerInterface = field(repr=False)
 
     def sample(self) -> list[MeasurementResult]:
-        raw_ints = self._interface.sample()
-        return list(map(MeasurementResult, raw_ints))
-    
+        return [_BY_VALUE[i] for i in self._interface.sample()]
+
     def raw_sample(self) -> list[int]:
         return self._interface.sample()
-    
+
     def sample_shots(self, num_shots: int) -> list[list[MeasurementResult]]:
         raw_samples = self._interface.sample_shots(num_shots=num_shots)
-        return [list(map(MeasurementResult, ints)) for ints in raw_samples]
+        return [[_BY_VALUE[i] for i in ints] for ints in raw_samples]
 
     def raw_shots(self, num_shots: int) -> list[list[int]]:
         return self._interface.sample_shots(num_shots=num_shots)

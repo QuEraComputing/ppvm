@@ -7,17 +7,11 @@ import math
 
 import pytest
 
-from ppvm import PauliSum, preserve_single_z
-
-# =============================================================================
-# Helper: `preserve_single_z` returns the right strings.
-# =============================================================================
+from ppvm import PauliSum
 
 
-def test_preserve_single_z_helper():
-    assert preserve_single_z(1) == ["Z"]
-    assert preserve_single_z(2) == ["ZI", "IZ"]
-    assert preserve_single_z(4) == ["ZIII", "IZII", "IIZI", "IIIZ"]
+def _single_z(n_qubits: int) -> list[str]:
+    return ["".join("Z" if i == j else "I" for i in range(n_qubits)) for j in range(n_qubits)]
 
 
 # =============================================================================
@@ -30,7 +24,7 @@ def test_preserve_strings_round_trip():
     ps = PauliSum.new(
         3,
         "Z1",
-        preserve_strings=preserve_single_z(3),
+        preserve_strings=_single_z(3),
     )
     assert list(ps.preserve_strings) == ["ZII", "IZI", "IIZ"]
 
@@ -59,7 +53,7 @@ def test_preserved_string_survives_coefficient_truncation():
         3,
         [("Z0", 1e-8), ("X0", 0.5), ("X1", 1e-8)],
         min_abs_coeff=1e-3,
-        preserve_strings=preserve_single_z(3),
+        preserve_strings=_single_z(3),
     )
     # Trigger auto-truncate via a no-op gate.
     ps.rx(0, 0.0)
@@ -149,7 +143,7 @@ def test_total_z_conservation_with_preserve_vs_without():
         f"Z{i}",
         min_abs_coeff=threshold,
         max_pauli_weight=L,
-        preserve_strings=preserve_single_z(L),
+        preserve_strings=_single_z(L),
     )
     drift_pres = evolve(ps_pres)
 

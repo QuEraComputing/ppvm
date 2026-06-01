@@ -15,26 +15,6 @@ _COMPACT_RE = re.compile(r"^([IXYZ]\d+)+$")
 _COMPACT_TOKEN_RE = re.compile(r"([IXYZ])(\d+)")
 
 
-def preserve_single_z(n_qubits: int) -> list[str]:
-    """Return the list of all single-`Z` Pauli strings on `n_qubits` qubits.
-
-    Suitable as the ``preserve_strings`` argument when computing a
-    `<Σ_j Z_j(t) Z_i(0)>`-style transport diagnostic: every Pauli string
-    that contributes to the projection onto total magnetization gets
-    exempted from truncation, so the conserved-charge component of the
-    propagated observable is preserved exactly regardless of how
-    aggressively the rest of the operator is truncated.
-
-    Args:
-        n_qubits: Number of qubits.
-
-    Returns:
-        ``["ZII...I", "IZI...I", ..., "II...IZ"]`` — `n_qubits` strings
-        in site order.
-    """
-    return ["".join("Z" if i == j else "I" for i in range(n_qubits)) for j in range(n_qubits)]
-
-
 def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, float]":
     if isinstance(term, tuple):
         s, coeff = term
@@ -266,17 +246,8 @@ class PauliSum(
                 Note, that this should usually be chosen to be quite low, since
                 e.g. 10 would correspond to keeping terms that contribute if
                 up to 10 qubits are lost simultaneously.
-            preserve_strings: Optional list of Pauli strings (each of length
-                ``n_qubits``) that should never be dropped by truncation,
-                regardless of what the active strategy decides. Useful for
-                transport diagnostics where the answer depends on the
-                projection onto a small fixed set of Pauli strings (e.g.
-                ``Σ_j Z_j``). The mechanism is a post-filter on
-                ``truncate()`` — the configured strategy
-                (``min_abs_coeff`` / ``max_pauli_weight``) runs unchanged,
-                then any preserved string the strategy dropped is
-                re-inserted with its pre-truncate coefficient. See also
-                :func:`preserve_single_z`.
+            preserve_strings: Pauli strings (length ``n_qubits`` each) that
+                truncation must never drop. Empty by default.
 
         Returns:
             A new instance of the class this method is called on.

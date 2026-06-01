@@ -1,12 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::HashSet;
+
 use paste::paste;
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::strategy::{
     CoefficientThreshold, CombinedStrategy, MaxLossWeight, MaxPauliWeight,
 };
-use ppvm_runtime::sum::preserve;
 use pyo3::prelude::*;
 
 macro_rules! create_interface_loss_methods {
@@ -73,10 +74,8 @@ macro_rules! create_interface {
             ) -> Self {
                 let _ = max_loss_weight; // unused in non-loss variants
                 let strategy = create_strategy!($loss, min_abs_coeff, max_pauli_weight, max_loss_weight);
-                // Pauli strings that `truncate()` must never drop. Composes
-                // with the active `strategy` as a snapshot-and-restore
-                // post-filter; see `PauliSum::truncate`.
-                let preserve_set = preserve::from_strings(preserve_strings.into_iter());
+                let preserve_set: HashSet<_> =
+                    preserve_strings.into_iter().map(Into::into).collect();
                 let mut ps = PauliSum::<$type>::builder()
                     .n_qubits(n_qubits)
                     .strategy(strategy)

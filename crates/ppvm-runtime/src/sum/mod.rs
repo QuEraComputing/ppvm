@@ -6,7 +6,6 @@ mod data;
 mod display;
 mod noise;
 mod ops;
-pub mod preserve;
 mod proj;
 mod rot1;
 mod rot2;

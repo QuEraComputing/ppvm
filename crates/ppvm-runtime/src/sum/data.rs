@@ -44,13 +44,8 @@ pub struct PauliSum<T: Config> {
     n_qubits: usize,
     capacity: usize,
     strategy: T::Strategy,
-    /// Pauli strings that [`PauliSum::truncate`] must never drop,
-    /// regardless of what the active [`Strategy`] would decide. Used
-    /// for observable-aware truncation (e.g. preserving the support of
-    /// a transport observable while letting the strategy aggressively
-    /// trim everything else). Composes with any strategy via a
-    /// snapshot-and-restore post-filter; see [`PauliSum::truncate`].
-    /// Empty by default. See helpers in [`crate::sum::preserve`].
+    /// Keep-set: strings [`PauliSum::truncate`] must always re-insert
+    /// after the strategy runs. Empty by default.
     preserve_strings: HashSet<T::PauliWordType>,
 }
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::traits::*;
 
 /// Two strategies run in sequence: `S1` then `S2`.

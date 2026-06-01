@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Integration test: verify that the full MSD circuit using batch methods
 //! produces identical measurement outcomes to the naive individual-gate version.
 

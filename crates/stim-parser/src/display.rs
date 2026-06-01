@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Display` impls for both Stim AST layers.
 //!
 //! Output is canonical Stim: 4-space indentation inside `REPEAT` blocks,

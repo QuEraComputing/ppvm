@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 /// Ad-hoc profiling binary to measure measurement time scaling.
 /// Run: cargo run -p ppvm-tableau --example profile_measure --release
 use ppvm_runtime::config::fx64hash::Byte8F64;

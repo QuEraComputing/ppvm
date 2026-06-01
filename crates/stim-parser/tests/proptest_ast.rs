@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! AST-level property test: `parse(print(p))` reaches `p` (modulo
 //! source-derived `line` metadata).
 //!

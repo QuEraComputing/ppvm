@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use stim_parser::ast::{GateName, MeasureName, NoiseName};
 use stim_parser::extended::{ExtendedInstruction, ExtendedProgram, RawPassthrough};
 

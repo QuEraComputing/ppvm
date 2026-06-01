@@ -258,8 +258,8 @@ def test_correlated_qubit_loss_loses_both_qubits_in_pair():
     def main():
         q = squin.qalloc(4)
 
-        squin.correlated_qubit_loss(1.0, [q[0], q[1]])
-        squin.correlated_qubit_loss(0.0, [q[2], q[3]])
+        squin.correlated_qubit_loss(1.0, ilist.IList([q[0], q[1]]))
+        squin.correlated_qubit_loss(0.0, ilist.IList([q[2], q[3]]))
 
         return squin.broadcast.measure(q)
 

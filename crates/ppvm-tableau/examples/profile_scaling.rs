@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use std::time::Instant;
 
 use ppvm_runtime::config::fx64hash::Byte8F64;

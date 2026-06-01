@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 /// Maps byte offsets in source to 1-indexed line/column positions.
 pub struct LineMap {
     /// `starts[i]` = byte offset of the start of line (i+1).

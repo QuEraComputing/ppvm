@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Typed AST for Stim with PPVM tag-based extensions promoted to
 //! first-class instruction variants.
 

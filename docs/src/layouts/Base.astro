@@ -5,19 +5,38 @@ interface TocItem {
   label: string;
   href: string;
 }
+interface SectionItem {
+  id: string;
+  label: string;
+  href: string;
+}
 interface Props {
   title: string;
   description?: string;
-  current?: "home" | "quickstart" | "develop" | "api";
+  current?: "home" | "quickstart" | "examples" | "develop" | "api";
   toc?: TocItem[];
   tocTitle?: string;
+  sections?: SectionItem[];
+  currentSection?: string;
+  sectionsTitle?: string;
 }
 
-const { title, description = "ppvm — fast Pauli propagation and stabilizer-tableau quantum simulator.", current, toc, tocTitle = "On this page" } = Astro.props;
+const { title, description = "ppvm — fast Pauli propagation and stabilizer-tableau quantum simulator.", current, toc, tocTitle = "On this page", sections, currentSection, sectionsTitle = "Sections" } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// Compute prev/next links for the section pager when the page is part
+// of a multi-section walk-through (currently the Python Quick Start).
+let prevSection: SectionItem | undefined;
+let nextSection: SectionItem | undefined;
+if (sections && currentSection) {
+  const idx = sections.findIndex((s) => s.id === currentSection);
+  if (idx > 0) prevSection = sections[idx - 1];
+  if (idx >= 0 && idx < sections.length - 1) nextSection = sections[idx + 1];
+}
 const nav = [
   { id: "home", label: "Overview", href: `${base}/` },
   { id: "quickstart", label: "Quick Start", href: `${base}/quickstart` },
+  { id: "examples", label: "Examples", href: `${base}/examples` },
   { id: "develop", label: "Develop", href: `${base}/develop` },
   { id: "api", label: "Reference", href: `${base}/api` },
 ];
@@ -48,7 +67,10 @@ const nav = [
           <span class="brand-mono">ppvm</span>
           <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span>
         </a>
-        <nav class="nav-links">
+        <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation menu">
+          <span class="nav-toggle-bars" aria-hidden="true"></span>
+        </button>
+        <nav class="nav-links" id="primary-nav">
           {nav.map((n) => (
             <a href={n.href} aria-current={current === n.id ? "page" : undefined}>{n.label}</a>
           ))}
@@ -75,16 +97,63 @@ const nav = [
       </div>
     </header>
     <main>
-      {toc && toc.length > 0 ? (
+      {sections && sections.length > 0 ? (
+        <div class="page-shell page-shell--3col">
+          <details class="page-sections side-nav" aria-label={sectionsTitle}>
+            <summary class="page-toc-label">{sectionsTitle}</summary>
+            <ol>
+              {sections.map((s) => (
+                <li>
+                  <a
+                    href={s.href}
+                    aria-current={currentSection === s.id ? "page" : undefined}
+                  >{s.label}</a>
+                </li>
+              ))}
+            </ol>
+          </details>
+          <div class="page-toc-content">
+            <slot />
+            {(prevSection || nextSection) && (
+              <nav class="section-pager" aria-label="Section navigation">
+                {prevSection ? (
+                  <a class="section-pager-link section-pager-prev" href={prevSection.href} rel="prev">
+                    <span class="section-pager-dir">← Previous</span>
+                    <span class="section-pager-label">{prevSection.label}</span>
+                  </a>
+                ) : <span class="section-pager-link section-pager-prev section-pager-empty" aria-hidden="true"></span>}
+                {nextSection ? (
+                  <a class="section-pager-link section-pager-next" href={nextSection.href} rel="next">
+                    <span class="section-pager-dir">Next →</span>
+                    <span class="section-pager-label">{nextSection.label}</span>
+                  </a>
+                ) : <span class="section-pager-link section-pager-next section-pager-empty" aria-hidden="true"></span>}
+              </nav>
+            )}
+          </div>
+          {toc && toc.length > 0 ? (
+            <details class="page-toc page-toc--right side-nav" aria-label={tocTitle}>
+              <summary class="page-toc-label">{tocTitle}</summary>
+              <ol>
+                {toc.map((t) => (
+                  <li><a href={t.href} data-toc-link={t.href}>{t.label}</a></li>
+                ))}
+              </ol>
+            </details>
+          ) : (
+            <aside class="page-toc page-toc--right page-toc--empty" aria-hidden="true"></aside>
+          )}
+        </div>
+      ) : toc && toc.length > 0 ? (
         <div class="page-shell">
-          <aside class="page-toc" aria-label={tocTitle}>
-            <div class="page-toc-label">{tocTitle}</div>
+          <details class="page-toc side-nav" aria-label={tocTitle}>
+            <summary class="page-toc-label">{tocTitle}</summary>
             <ol>
               {toc.map((t) => (
                 <li><a href={t.href} data-toc-link={t.href}>{t.label}</a></li>
               ))}
             </ol>
-          </aside>
+          </details>
           <div class="page-toc-content">
             <slot />
           </div>
@@ -136,6 +205,53 @@ const nav = [
         })();
       </script>
     )}
+    <script is:inline>
+      // Mobile navigation drawer + responsive open-state for the
+      // sidebar TOCs. On wide viewports the TOCs are always open and
+      // the disclosure widget on .side-nav is visually neutralised by
+      // CSS; on narrow viewports they default to closed so the long
+      // navigation list doesn't push content below the fold.
+      (() => {
+        const mq = window.matchMedia("(min-width: 901px)");
+        const sideNavs = document.querySelectorAll("details.side-nav");
+        function syncSideNavs() {
+          for (const d of sideNavs) {
+            if (mq.matches) d.setAttribute("open", "");
+            else d.removeAttribute("open");
+          }
+        }
+        syncSideNavs();
+        mq.addEventListener("change", syncSideNavs);
+
+        const toggle = document.querySelector(".nav-toggle");
+        const nav = document.getElementById("primary-nav");
+        if (toggle && nav) {
+          function setOpen(open) {
+            toggle.setAttribute("aria-expanded", open ? "true" : "false");
+            toggle.setAttribute(
+              "aria-label",
+              open ? "Close navigation menu" : "Open navigation menu",
+            );
+            nav.toggleAttribute("data-open", open);
+          }
+          toggle.addEventListener("click", () => {
+            const open = toggle.getAttribute("aria-expanded") !== "true";
+            setOpen(open);
+          });
+          // Close after following an in-page link on mobile. Use
+          // closest("a") so this stays correct if a nav link ever
+          // wraps an icon or other inline element.
+          nav.addEventListener("click", (e) => {
+            if (e.target && e.target.closest && e.target.closest("a")) {
+              setOpen(false);
+            }
+          });
+          // Reset state when crossing the breakpoint.
+          const mqNav = window.matchMedia("(min-width: 721px)");
+          mqNav.addEventListener("change", () => setOpen(false));
+        }
+      })();
+    </script>
     <script is:inline>
       // Inject a copy button into every <pre> block.
       (() => {
@@ -206,15 +322,83 @@ const nav = [
         });
       })();
     </script>
+    <button type="button" class="back-to-top" aria-label="Back to top" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 19V5"/>
+        <path d="m5 12 7-7 7 7"/>
+      </svg>
+    </button>
+    <script is:inline>
+      // Show the back-to-top button after the reader has scrolled past
+      // ~1.2× the viewport — far enough that "scroll back up" is a real
+      // chore. Clicking smooth-scrolls to the top and (for keyboard
+      // users) returns focus to the masthead brand.
+      (() => {
+        const btn = document.querySelector(".back-to-top");
+        if (!btn) return;
+        const threshold = () => Math.max(window.innerHeight * 1.2, 600);
+        function sync() {
+          const show = window.scrollY > threshold();
+          btn.toggleAttribute("hidden", !show);
+        }
+        btn.addEventListener("click", () => {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          const brand = document.querySelector(".brand");
+          if (brand && brand.focus) brand.focus({ preventScroll: true });
+        });
+        window.addEventListener("scroll", sync, { passive: true });
+        window.addEventListener("resize", sync);
+        sync();
+      })();
+    </script>
     <footer class="foot">
       <div class="foot-inner">
-        <span>ppvm · QuEra Computing · open source, MIT-style license</span>
+        <span>PPVM · QuEra Computing · open source, Apache License 2.0</span>
         <span>
           <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
           documentation generated <time>{new Date().toISOString().slice(0, 10)}</time>
         </span>
       </div>
     </footer>
+
+    {/* Math rendering for executed notebook content. The notebooks
+        carry `$ … $` and `$$ … $$` LaTeX in their markdown cells; KaTeX
+        renders them after page load. Loaded on every page so the
+        markup is consistent — the auto-renderer is cheap when there
+        is no math to find.
+
+        The auto-render call is in a separate inline `<script>` (not
+        an `onload` attribute) because Astro re-encodes attribute
+        values and would collapse our `\\(` JS escape into `\(`,
+        which `auto-render` then treats as a literal `(` delimiter —
+        leading to every parenthesised phrase being rendered as math. */}
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+          integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+"
+          crossorigin="anonymous" />
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
+            integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg"
+            crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+            integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk"
+            crossorigin="anonymous"></script>
+    <script is:inline>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (typeof renderMathInElement !== "function") return;
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$",  right: "$",  display: false },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "\\[", right: "\\]", display: true },
+          ],
+          // Skip code spans and code blocks — `[7, 16]` and friends
+          // shouldn't accidentally trigger as math delimiters.
+          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+          throwOnError: false,
+        });
+      });
+    </script>
 
     {/* Syntax highlighting — highlight.js, languages we use bundled in
         one UMD script. The colour theme is defined in global.css using

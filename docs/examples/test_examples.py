@@ -1,10 +1,26 @@
 """
 Documentation doctests.
 
-Each example shipped in ``docs/examples/*.py`` is executed end-to-end as a
-subprocess. The expected stdout, recorded below, must match exactly. If you
-edit an example file (or the API it exercises) you must also update the
-expected output here — that is the point: docs and code cannot drift.
+Each example shipped in ``docs/examples/*.py`` (and the runnable Python
+snippets shipped with the ``ppvm-usage`` skill) is executed end-to-end as
+a subprocess. Expected output lives **inside the example file**, as
+``# → <line>`` comments next to the ``print`` statements (or in a small
+trailing block when one ``print`` is called from a loop). The test
+extracts those markers in source order, joins them, and compares against
+the captured stdout.
+
+Format:
+
+    print(f"qubit 0: {r0}")  # → qubit 0: 1
+    for x in xs:
+        print(x)
+    # → first
+    # → second
+
+Example files are auto-discovered from the examples directories via
+``_discover()``; there is no separate registration step. A per-file
+precondition check still fails if a file has zero ``# → `` markers (we
+don't want examples that silently pass without verifying any output).
 
 Run from the repository root:
 
@@ -13,70 +29,29 @@ Run from the repository root:
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = Path(__file__).resolve().parent
+SKILL_DIR = (REPO_ROOT / "skills/ppvm-usage/examples/python").resolve()
 
-# (filename, expected_stdout) pairs. Expected output is matched exactly
-# after stripping trailing whitespace from each line.
-EXAMPLES: list[tuple[str, str]] = [
-    (
-        "paulisum_ghz.py",
-        """\
-1.000 * IZ
-1.0
-""",
-    ),
-    (
-        "tableau_ghz.py",
-        """\
-qubit 0: 1, qubit 1: 1
-correlated: True
-""",
-    ),
-    (
-        "stim_program.py",
-        """\
-single-run ok
-sampled 16 shots
-first shot: [<MeasurementResult.ONE: 1>, <MeasurementResult.ONE: 1>]
-all shots correlated: True
-""",
-    ),
-    (
-        "stim_sampling.py",
-        """\
-(0, 0): 102
-(1, 1): 98
-correlated fraction: 1.0
-""",
-    ),
-]
+# Match any line containing "# → <text>" — the marker is the arrow
+# (U+2192), preceded by "# " and an optional single space afterwards.
+_MARKER = re.compile(r"#\s*→\s?(.*?)\s*$")
 
-# Runnable copies of the Python code blocks in
-# ``skills/ppvm-usage/SKILL.md`` live alongside the skill (so ``ion add``
-# fetches them with the rest of the skill). They are exercised here so
-# CI catches drift between the snippets the skill ships to agents and
-# the actual public ppvm-python API.
-SKILL_DIR = (Path(__file__).resolve().parents[2] / "skills/ppvm-usage/examples/python").resolve()
-SKILL_EXAMPLES: list[tuple[str, str]] = [
-    (
-        "verify.py",
-        """\
-ok
-""",
-    ),
-    (
-        "noise_truncation.py",
-        """\
-layers=5 terms=7 max_weight=4 finite_overlap=True
-""",
-    ),
-]
+
+def _expected_from_source(path: Path) -> str:
+    lines: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        m = _MARKER.search(raw)
+        if m is not None:
+            lines.append(m.group(1))
+    return ("\n".join(lines) + "\n") if lines else ""
 
 
 def _run(path: Path) -> str:
@@ -99,56 +74,52 @@ def _normalize(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.splitlines()).strip() + "\n"
 
 
-@pytest.mark.parametrize(("filename", "expected"), EXAMPLES, ids=[e[0] for e in EXAMPLES])
-def test_example_runs_and_matches_expected_output(filename: str, expected: str) -> None:
-    path = EXAMPLES_DIR / filename
-    assert path.exists(), f"missing example file: {path}"
+def _discover(directory: Path) -> list[Path]:
+    skip = {"__init__.py", "test_examples.py"}
+    return sorted(
+        p
+        for p in directory.glob("*.py")
+        if p.name not in skip and "__pycache__" not in p.parts
+    )
 
+
+DOCS_EXAMPLES = _discover(EXAMPLES_DIR)
+SKILL_EXAMPLES = _discover(SKILL_DIR)
+
+
+@pytest.mark.parametrize("path", DOCS_EXAMPLES, ids=[p.name for p in DOCS_EXAMPLES])
+def test_docs_example(path: Path) -> None:
+    expected = _expected_from_source(path)
+    assert expected, (
+        f"{path.relative_to(REPO_ROOT)} has no `# → ` expected-output markers; "
+        "add at least one next to a print() so CI verifies behavior."
+    )
     stdout = _run(path)
-
     assert _normalize(stdout) == _normalize(expected), (
-        f"\nexample {filename} produced unexpected output.\n"
-        f"--- expected ---\n{expected}"
+        f"\nexample {path.name} produced unexpected output.\n"
+        f"--- expected (from `# → ` markers) ---\n{expected}"
         f"--- got ---\n{stdout}"
     )
 
 
 @pytest.mark.parametrize(
-    ("filename", "expected"),
-    SKILL_EXAMPLES,
-    ids=[f"skill/{e[0]}" for e in SKILL_EXAMPLES],
+    "path", SKILL_EXAMPLES, ids=[f"skill/{p.name}" for p in SKILL_EXAMPLES]
 )
-def test_skill_example_runs_and_matches_expected_output(filename: str, expected: str) -> None:
-    path = SKILL_DIR / filename
-    assert path.exists(), f"missing skill example file: {path}"
-
+def test_skill_example(path: Path) -> None:
+    expected = _expected_from_source(path)
+    assert expected, (
+        f"{path.relative_to(REPO_ROOT)} has no `# → ` expected-output markers; "
+        "add at least one next to a print() so CI verifies behavior."
+    )
     stdout = _run(path)
-
     assert _normalize(stdout) == _normalize(expected), (
-        f"\nskill example {filename} produced unexpected output.\n"
-        f"--- expected ---\n{expected}"
+        f"\nskill example {path.name} produced unexpected output.\n"
+        f"--- expected (from `# → ` markers) ---\n{expected}"
         f"--- got ---\n{stdout}"
     )
 
 
-def test_all_examples_are_covered() -> None:
-    """Guard against forgetting to register a new example in either list."""
-    skip = {"__init__.py", "test_examples.py"}
-
-    on_disk = {
-        p.name
-        for p in EXAMPLES_DIR.glob("*.py")
-        if p.name not in skip and "__pycache__" not in p.parts
-    }
-    registered = {name for name, _ in EXAMPLES}
-    missing = on_disk - registered
-    assert not missing, (
-        f"docs/examples file(s) present on disk but not registered in EXAMPLES: {sorted(missing)}"
-    )
-
-    skill_on_disk = {p.name for p in SKILL_DIR.glob("*.py")}
-    skill_registered = {name for name, _ in SKILL_EXAMPLES}
-    skill_missing = skill_on_disk - skill_registered
-    assert not skill_missing, (
-        f"skill example file(s) present on disk but not registered in SKILL_EXAMPLES: {sorted(skill_missing)}"
-    )
+def test_examples_directories_are_nonempty() -> None:
+    """Guard against an accidentally empty examples directory hiding the matrix."""
+    assert DOCS_EXAMPLES, f"no example files discovered under {EXAMPLES_DIR}"
+    assert SKILL_EXAMPLES, f"no skill example files discovered under {SKILL_DIR}"

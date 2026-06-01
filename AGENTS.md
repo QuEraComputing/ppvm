@@ -1,14 +1,17 @@
 # AGENTS.md
 
 > **Read the Developer Guide first.** The canonical contributor reference for
-> this repository — for both human and AI contributors — lives in the docs
-> site at `docs/src/pages/develop.astro` (rendered at `/develop/`). It covers
-> project layout, build/test commands, architecture, conventions, the Python
-> binding pipeline, and where to look for each subsystem.
+> this repository — for both human and AI contributors — is the Astro page
+> at [`docs/src/pages/develop.astro`](docs/src/pages/develop.astro) (rendered
+> at `/develop/` on the live site). It covers project layout, build/test
+> commands for the Rust workspace, the Python package, **and the docs site
+> itself** (`§ 2 Build & test`), architecture, conventions, the Python
+> binding pipeline, extension recipes, and the file-by-file "where to look
+> for X" table.
 >
-> This file is a short pointer so agents can find that guide quickly. Do not
-> add content here that belongs in the Developer Guide — keep the guide as
-> the single source of truth.
+> This file is a short pointer so agents can find that guide quickly. Do
+> not add content here that belongs in the Developer Guide — keep the
+> guide as the single source of truth.
 
 ## Install the ppvm-usage skill
 
@@ -29,13 +32,38 @@ internals.
 
 If you are an AI agent picking up a task in this repository:
 
-1. Open `docs/src/pages/develop.astro` and read the sections relevant to your
-   task. The "For AI agents" callout at the top tells you which sections are
-   load-bearing.
+1. Open [`docs/src/pages/develop.astro`](docs/src/pages/develop.astro) and
+   read the sections relevant to your task. The "For AI agents" callout at
+   the top tells you which sections are load-bearing.
 2. Use `uv` for anything Python; never `pip`.
 3. Use Conventional Commits: `<type>(<scope>): <description>`.
-4. Build & test with the commands documented in the guide
-   (`cargo test --workspace`, `uv run --project ppvm-python --group dev pytest …`).
+4. Build & test the relevant target:
+   - **Rust workspace**: `cargo test --workspace`
+   - **Python package**: `uv run --project ppvm-python --group dev pytest …`
+   - **Docs site**: `cd docs && npm run build` (chains `extract:rust`,
+     `extract:python`, `extract:notebooks`, then `astro build`).
+     Per-step commands and the `astro:dev` / `astro:build` escape
+     hatches are documented under `§ 2 → "This docs site"` in the
+     Developer Guide and in [`docs/README.md`](docs/README.md).
+   - **Docs notebooks (`docs/notebooks/*.py`)**: executed at build time
+     by [`docs/scripts/build-notebooks.py`](docs/scripts/build-notebooks.py)
+     and embedded into `/examples/<slug>`. Outputs are content-addressed
+     cached under `docs/.notebook-cache/`, fingerprinted by
+     `CACHE_SCHEMA_VERSION` + the extractor script itself + the
+     notebook source + every `Cargo.toml` + `Cargo.lock` +
+     `ppvm-python/uv.lock`. (The extractor is in the fingerprint so
+     rendering/sanitiser edits invalidate cached outputs automatically.)
+     CI persists the directory via `actions/cache` (see the "Restore
+     executed-notebook cache" step in
+     [`.github/workflows/docs.yml`](.github/workflows/docs.yml)).
+     **If you change the fingerprint inputs**, update both
+     `_shared_fingerprint_files()` in the script *and* the
+     `hashFiles(...)` call in the workflow — they must stay in sync
+     (both already list `docs/scripts/build-notebooks.py`). Force a
+     clean re-execution with `PPVM_NOTEBOOK_CACHE=0`, or bump
+     `CACHE_SCHEMA_VERSION` for a global invalidation that survives
+     in the cache. Full rationale lives under `§ 2.1 Notebook
+     execution & caching` in the Developer Guide.
 5. Respect the `Config`-trait generics in `ppvm-runtime`; do not introduce
    runtime dispatch where a compile-time bound suffices.
 6. Pauli propagation runs **backwards** (Heisenberg picture). Reverse the

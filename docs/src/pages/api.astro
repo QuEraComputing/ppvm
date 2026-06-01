@@ -55,7 +55,8 @@ function groupByKind(items: ApiItemT[]): KindGroup[] {
 ---
 <Base title="Reference" current="api">
   <div class="api-shell" data-lang-filter="all">
-    <aside class="api-toc" aria-label="API contents">
+    <details class="api-toc side-nav" aria-label="API contents">
+      <summary class="api-toc-summary">API contents</summary>
       <input type="search" class="toc-filter" placeholder="search the API…" autocomplete="off" />
 
       <div class="lang-toggle" role="tablist" aria-label="Filter by language">
@@ -97,7 +98,7 @@ function groupByKind(items: ApiItemT[]): KindGroup[] {
           ))}
         </div>
       ))}
-    </aside>
+    </details>
 
     <div>
       <div class="titleblock" style="margin-bottom: 1.5rem;">

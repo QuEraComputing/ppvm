@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use std::marker::PhantomData;
 
 use crate::traits::{Coefficient, NoStrategy, PauliWordTrait, Strategy};

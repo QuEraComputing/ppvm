@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use super::rot1::rotate_1_map_insert_closure;
 use crate::traits::*;
 use crate::{char::Pauli, config::Config, sum::PauliSum};

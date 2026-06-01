@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Post-pass interpretation from the vanilla Stim AST to the extended AST.
 
 use crate::ast::{GateName, NoiseName, Program, RawInstruction, Tag, TagParam};

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use super::data::{Decorated, OpPattern, PauliPattern};
 use crate::char::Pauli;
 use crate::traits::{PauliStorage, PauliWordTrait};

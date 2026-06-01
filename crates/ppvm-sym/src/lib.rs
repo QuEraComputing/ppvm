@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Symbolic, parametric Pauli propagation.
 //!
 //! `ppvm-sym` provides a [`Term`] type that represents a polynomial in

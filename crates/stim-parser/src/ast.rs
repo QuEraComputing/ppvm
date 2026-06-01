@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Pure-Stim AST. Tags are preserved verbatim; the parser does not
 //! resolve the Stim dialect — that is the consumer's responsibility.
 

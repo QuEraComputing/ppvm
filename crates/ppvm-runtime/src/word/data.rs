@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::char::Pauli;
 use crate::traits::{PauliIter, PauliStorage, PauliWordTrait};
 use bitvec::array::BitArray;

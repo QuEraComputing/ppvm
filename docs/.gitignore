@@ -3,3 +3,11 @@ dist/
 .astro/
 src/data/rust-api.json
 src/data/python-api.json
+# Outputs from `docs/scripts/build-notebooks.py`. The Jupytext sources
+# under `docs/notebooks/` are tracked; the executed HTML fragments,
+# their metadata, and the index are regenerated on every build.
+src/generated/
+# Content-addressed cache for executed notebooks. CI populates this
+# via `actions/cache`; locally it survives across builds so editing
+# a CSS rule doesn't force a 10-minute notebook re-run.
+.notebook-cache/

@@ -1,0 +1,50 @@
+---
+import Base from "../../../layouts/Base.astro";
+import { pyQuickStartSections } from "../../../data/pyQuickStart";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const toc = [
+  { label: "Keep exploring", href: "#explore" },
+  { label: "Other path",     href: "#other" },
+];
+---
+<Base
+  title="Python Quick Start — Next steps"
+  current="quickstart"
+  toc={toc}
+  sections={pyQuickStartSections}
+  currentSection="next-steps"
+>
+  <article class="shell narrow qs-page qs-page--python">
+    <div class="titleblock">
+      <div class="eyebrow"><a href={`${base}/quickstart/python`}>Python Quick Start</a></div>
+      <h1>Next steps</h1>
+      <p class="byline">
+        You've installed ppvm, sampled a Stim circuit, driven the
+        generalized tableau directly, propagated a Pauli observable, and
+        read the loss-channel background. Here's where to go next.
+      </p>
+    </div>
+
+    <section id="explore">
+      <h2>Keep exploring</h2>
+      <ul>
+        <li>Browse the full <a href={`${base}/api#python-section`}>Python API reference</a>.</li>
+        <li>Walk through the <a href={`${base}/examples`}>executed notebooks</a> — end-to-end examples with plots and outputs inline.</li>
+        <li>Read the <a href="https://github.com/QuEraComputing/bloqade">Bloqade SDK</a> docs to see how ppvm fits into circuit authoring and dispatch.</li>
+      </ul>
+    </section>
+
+    <section id="other">
+      <h2>Other path</h2>
+      <div class="qs-crosslink">
+        <div>
+          <span class="label">Building a library on top of ppvm?</span>
+          The Rust Quick Start covers the trait hierarchy, the
+          <code>Config</code> generics, and how to embed ppvm in a
+          simulator.
+        </div>
+        <a href={`${base}/quickstart/rust`}>Open the Rust Quick Start</a>
+      </div>
+    </section>
+  </article>
+</Base>

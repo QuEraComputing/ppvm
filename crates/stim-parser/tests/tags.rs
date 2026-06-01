@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use stim_parser::prelude::*;
 
 fn approx_eq(a: f64, b: f64) {

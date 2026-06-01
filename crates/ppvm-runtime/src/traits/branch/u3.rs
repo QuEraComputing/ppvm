@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::config::Config;
 
 /// The general single-qubit `U3(θ, φ, λ)` gate.

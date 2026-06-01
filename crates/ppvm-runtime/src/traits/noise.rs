@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::config::Config;
 
 // FIXME: most channels don't need to own probs, we can just reference them and clean up the code

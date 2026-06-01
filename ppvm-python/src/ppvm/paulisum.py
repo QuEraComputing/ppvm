@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 The PPVM Authors
+# SPDX-License-Identifier: Apache-2.0
+
 import math
 import re
 from collections.abc import Sequence

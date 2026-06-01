@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use ppvm_stim::{ExecError, parse_extended, prepare};
 
 fn err_from_src(src: &str) -> ExecError {

@@ -1,0 +1,52 @@
+---
+import Base from "../../layouts/Base.astro";
+import index from "../../generated/notebooks/index.json";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// The git ref the "Source" links resolve against. CI sets PPVM_GIT_REF
+// per build target (PR head SHA for PR previews, push SHA on main).
+// Local dev falls back to `main`, which is fine for read-only browsing
+// once the PR has merged.
+const gitRef = process.env.PPVM_GIT_REF || "main";
+
+interface Meta {
+  slug: string;
+  title: string;
+  headings: string[];
+  language: string;
+  source: string;
+}
+const notebooks = index as Meta[];
+---
+<Base title="Examples" current="examples">
+  <article class="shell narrow">
+    <div class="titleblock">
+      <div class="eyebrow">Executed notebooks</div>
+      <h1>Examples</h1>
+      <p class="byline">
+        End-to-end Jupyter notebooks executed at build time, with stdout,
+        return values, and matplotlib plots embedded inline. Each notebook
+        is also a runnable Jupytext <code>.py</code> file in the repo —
+        the "Source" link below opens it on GitHub at the commit that
+        produced this page.
+      </p>
+    </div>
+
+    <ul class="examples-list">
+      {notebooks.map((nb) => (
+        <li>
+          <a class="examples-title" href={`${base}/examples/${nb.slug}`}>{nb.title}</a>
+          <p class="examples-meta">
+            <span class="examples-lang">{nb.language}</span>
+            <span class="examples-source-label">Source</span>
+            <a
+              class="examples-source"
+              href={`https://github.com/QuEraComputing/ppvm/blob/${gitRef}/${nb.source}`}
+            >{nb.source}</a>
+          </p>
+        </li>
+      ))}
+    </ul>
+  </article>
+</Base>

@@ -632,6 +632,74 @@ li { margin: 0.25em 0; }
   .page-toc ol { columns: 1; }
 }
 
+/* Three-column layout: sections nav (left) | content | per-page TOC (right).
+   Used by the consolidated Python Quick Start so readers can jump between
+   sections on the left while still seeing the in-page anchors on the right. */
+.page-shell--3col {
+  max-width: 86rem;
+  grid-template-columns: 14rem minmax(0, 1fr) 13rem;
+  gap: 2.2rem;
+}
+.page-sections {
+  position: sticky;
+  top: 4.5rem;
+  max-height: calc(100vh - 5.5rem);
+  overflow-y: auto;
+  font-size: 0.88rem;
+  padding-right: 0.6rem;
+  border-right: 1px solid var(--rule);
+}
+.page-sections ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  counter-reset: sec;
+}
+.page-sections li { margin: 0; counter-increment: sec; }
+.page-sections a {
+  display: block;
+  color: var(--ink-soft);
+  border: 0;
+  padding: 0.4em 0.6em 0.4em 0.9em;
+  border-left: 2px solid transparent;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  text-decoration: none;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.page-sections a:hover { color: var(--ink); }
+.page-sections a[aria-current="page"] {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+.page-toc--right {
+  border-right: 0;
+  border-left: 1px solid var(--rule);
+  padding-right: 0;
+  padding-left: 0.6rem;
+}
+.page-toc--empty { visibility: hidden; }
+
+@media (max-width: 1100px) {
+  .page-shell--3col { grid-template-columns: 13rem minmax(0, 1fr); }
+  .page-toc--right { display: none; }
+}
+@media (max-width: 900px) {
+  .page-shell--3col { grid-template-columns: 1fr; }
+  .page-sections {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    padding: 0 0 1rem;
+  }
+  .page-sections ol { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; }
+  .page-sections a { padding: 0.2em 0; border-left: 0; }
+  .page-sections a[aria-current="page"] { border-left: 0; }
+}
+
 /* Title block */
 .titleblock { margin-bottom: 2.6rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--rule); }
 .titleblock .eyebrow {
@@ -1067,6 +1135,42 @@ li { margin: 0.25em 0; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-faint);
+}
+.hero-code-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.2rem;
+  align-items: baseline;
+  min-width: 0;
+}
+.hero-code-tab {
+  background: transparent;
+  border: 0;
+  padding: 0 0 0.15rem;
+  margin: 0;
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.hero-code-tab:hover { color: var(--ink-soft); }
+.hero-code-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 1px;
+}
+.hero-code-tab[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+@media (max-width: 480px) {
+  .hero-code-tabs { gap: 0.3rem 0.9rem; }
+  .hero-code-tab { font-size: 0.68rem; letter-spacing: 0.06em; }
 }
 .hero-code-file { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-mute); }
 .hero-code-file code { background: none; border: 0; padding: 0; font-size: inherit; color: inherit; }
@@ -1945,6 +2049,336 @@ html[data-theme="dark"] .kind-module   { color: var(--ink); background: var(--bg
 .tut-toc a { border: 0; color: var(--ink); }
 .tut-toc a:hover { color: var(--accent); }
 
+/* Dev guide command tables. Plain hairline-row tables — Swiss
+   restraint, no zebra striping, no borders around the whole block. */
+.dev-cmd-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.6rem;
+  font-size: 0.92rem;
+}
+.dev-cmd-table thead th {
+  text-align: left;
+  font-family: var(--sans-display);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  font-weight: 500;
+  padding: 0.4rem 0.7rem 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.dev-cmd-table tbody td {
+  vertical-align: top;
+  padding: 0.55rem 0.7rem 0.55rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+.dev-cmd-table tbody tr:last-child td { border-bottom: 0; }
+.dev-cmd-table td:first-child {
+  white-space: nowrap;
+  color: var(--ink);
+}
+.dev-cmd-table code {
+  font-family: var(--mono);
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.85em;
+}
+@media (max-width: 720px) {
+  .dev-cmd-table, .dev-cmd-table thead, .dev-cmd-table tbody,
+  .dev-cmd-table tr, .dev-cmd-table th, .dev-cmd-table td { display: block; }
+  .dev-cmd-table thead { display: none; }
+  .dev-cmd-table tbody tr {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .dev-cmd-table tbody td { border-bottom: 0; padding: 0.15rem 0; }
+  .dev-cmd-table td:first-child { margin-bottom: 0.2rem; }
+}
+
+/* ──────────── Tutorials (long-form prose pages) ──────────── */
+
+.tutorial section { margin: 3rem 0; }
+.tutorial section:first-of-type { margin-top: 1.6rem; }
+.tutorial h2 {
+  font-family: var(--sans-display);
+  font-size: 1.45rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  margin: 0 0 1rem;
+}
+.tutorial p { margin: 0.7rem 0; color: var(--ink-soft); line-height: 1.65; }
+.tutorial ul, .tutorial ol { color: var(--ink-soft); margin: 0.7rem 0 0.7rem 1.4rem; }
+.tutorial pre {
+  margin: 0.9rem 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: 0.9rem 1.05rem;
+  font-size: 0.84rem;
+}
+
+.callout {
+  margin: 1rem 0;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.tutorials-list {
+  list-style: none;
+  padding: 0;
+  margin: 1.6rem 0 0;
+  display: grid;
+  gap: 1.6rem;
+}
+.tutorials-list > li {
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule-soft);
+}
+.tutorials-list > li:first-child { border-top: 0; padding-top: 0; }
+.tutorials-title {
+  display: block;
+  font-family: var(--sans-display);
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  text-decoration: none;
+  margin-bottom: 0.4rem;
+}
+.tutorials-title:hover { color: var(--accent); }
+.tutorials-list > li p { font-size: 0.95rem; color: var(--ink-soft); margin: 0; }
+
+/* ──────────── Examples (executed Jupyter notebooks) ──────────── */
+
+.examples-list {
+  list-style: none;
+  padding: 0;
+  margin: 1.6rem 0 0;
+  display: grid;
+  gap: 1.6rem;
+}
+.examples-list > li {
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule-soft);
+}
+.examples-list > li:first-child { border-top: 0; padding-top: 0; }
+.examples-title {
+  display: block;
+  font-family: var(--sans-display);
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  text-decoration: none;
+  margin-bottom: 0.45rem;
+}
+.examples-title:hover { color: var(--accent); }
+
+/* Source line: `<lang badge>  Source: <path>` on one row. The
+   "Source:" label is what makes the path obviously a link to the
+   file rather than a project-relative folder name. */
+.examples-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.7rem;
+  font-size: 0.85rem;
+  color: var(--ink-faint);
+  margin: 0;
+}
+.examples-source-label {
+  font-family: var(--sans-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.examples-source {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1px;
+}
+.examples-source:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.examples-lang {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--rule));
+  border-radius: 3px;
+  padding: 0.1rem 0.45rem;
+  line-height: 1.3;
+}
+
+/* Notebook body: nbconvert's `basic` template wraps cells in
+   `.jp-Cell` containers with input + output regions. We translate
+   the JupyterLab look into the site's Swiss vocabulary — hairline
+   rules between cells, brand-tinted code blocks, plain prose for
+   markdown cells, plots embedded as their natural images. */
+.notebook { max-width: 50rem; }
+.notebook-body { margin-top: 2rem; }
+.notebook-body .jp-Cell {
+  margin: 1.4rem 0;
+  padding: 0;
+  border: 0;
+}
+.notebook-body .jp-Cell + .jp-Cell { border-top: 1px solid var(--rule-soft); padding-top: 1.4rem; }
+.notebook-body .jp-MarkdownCell .jp-RenderedHTMLCommon {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.notebook-body .jp-MarkdownCell h1 {
+  font-family: var(--sans-display);
+  font-size: 1.65rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0.6rem 0 1rem;
+}
+.notebook-body .jp-MarkdownCell h2 {
+  font-family: var(--sans-display);
+  font-size: 1.3rem;
+  font-weight: 500;
+  margin: 1.4rem 0 0.8rem;
+}
+.notebook-body .jp-MarkdownCell h3 { font-size: 1.05rem; font-weight: 500; margin: 1rem 0 0.5rem; }
+.notebook-body .jp-MarkdownCell .anchor-link { display: none; }
+.notebook-body .jp-MarkdownCell p { margin: 0.6rem 0; color: var(--ink-soft); }
+.notebook-body .jp-MarkdownCell code {
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-soft);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.notebook-body .jp-MarkdownCell ul,
+.notebook-body .jp-MarkdownCell ol { color: var(--ink-soft); margin: 0.6rem 0 0.6rem 1.4rem; }
+
+/* Input code cells. nbconvert wraps them in `.jp-CodeMirrorEditor`
+   with Pygments classes. Let the site's design tokens carry the
+   palette so we don't have to re-theme every Pygments class. */
+.notebook-body .jp-CodeCell .jp-InputArea {
+  margin: 0.4rem 0;
+}
+.notebook-body .jp-CodeCell .jp-InputArea-editor,
+.notebook-body .jp-CodeCell > .jp-Cell-inputWrapper > .jp-InputArea {
+  /* Position the language badge relative to the cell. */
+  position: relative;
+}
+/* Tiny language label in the top-right of every input cell. The
+   wrapper's `data-language` attribute selects which literal to emit
+   — we use literal `content:` per language rather than `attr()`
+   because the two-argument `attr(..., fallback)` form isn't yet
+   widely supported. Add a new language by appending a rule here
+   plus listing it in build-notebooks.py's `detect_language`. */
+.notebook-body[data-language="python"] .jp-CodeCell .jp-InputArea::after { content: "python"; }
+.notebook-body[data-language="rust"]   .jp-CodeCell .jp-InputArea::after { content: "rust"; }
+.notebook-body[data-language="julia"]  .jp-CodeCell .jp-InputArea::after { content: "julia"; }
+.notebook-body[data-language] .jp-CodeCell .jp-InputArea::after {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  background: var(--bg);
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  padding: 0.05rem 0.4rem;
+  pointer-events: none;
+  z-index: 1;
+}
+.notebook-body .jp-CodeCell .highlight,
+.notebook-body .jp-CodeCell pre {
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: 0.85rem 1rem;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+.notebook-body .jp-CodeCell pre { margin: 0; border: 0; padding: 0; background: transparent; }
+/* Pygments token mapping (light + dark via var(--syntax-*) tokens
+   already defined for the highlight.js theme). */
+.notebook-body .highlight .k,  /* keyword */
+.notebook-body .highlight .kn,
+.notebook-body .highlight .kc,
+.notebook-body .highlight .o   /* operator (e.g. `import` rules) */ { color: var(--syntax-keyword); font-weight: 500; }
+.notebook-body .highlight .s,
+.notebook-body .highlight .s1,
+.notebook-body .highlight .s2,
+.notebook-body .highlight .sa  { color: var(--syntax-string); }
+.notebook-body .highlight .mi,
+.notebook-body .highlight .mf,
+.notebook-body .highlight .m   { color: var(--syntax-number); }
+.notebook-body .highlight .c,
+.notebook-body .highlight .c1,
+.notebook-body .highlight .cm  { color: var(--syntax-comment); font-style: italic; }
+.notebook-body .highlight .nn,
+.notebook-body .highlight .nc,
+.notebook-body .highlight .nb,
+.notebook-body .highlight .nf  { color: var(--syntax-ink); }
+.notebook-body .highlight .n,
+.notebook-body .highlight .p,
+.notebook-body .highlight .w   { color: var(--syntax-soft); }
+
+/* Output regions: text outputs (stdout/stderr) get a slight inset
+   so they read as the *result* of the cell above; images render
+   at their natural width inside the column. */
+.notebook-body .jp-OutputArea {
+  margin: 0.4rem 0 0;
+  padding-left: 0;
+}
+.notebook-body .jp-OutputArea-output {
+  padding: 0.5rem 0;
+}
+.notebook-body .jp-OutputArea pre {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.notebook-body .jp-OutputArea img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.6rem auto;
+  background: white;
+  border: 1px solid var(--rule-soft);
+  border-radius: 3px;
+}
+html[data-theme="dark"] .notebook-body .jp-OutputArea img {
+  /* matplotlib figures default to a white facecolor; soften the
+     contrast slightly on dark canvases so they sit better. */
+  filter: brightness(0.95);
+}
+
+/* Hide the JupyterLab gutter glyphs (collapse arrows, prompts)
+   that the `basic` template still emits — we want a clean read,
+   not an IDE recreation. */
+.notebook-body .jp-Collapser,
+.notebook-body .jp-InputPrompt,
+.notebook-body .jp-OutputPrompt { display: none !important; }
+
 /* ──────────── Footer ──────────── */
 .foot {
   margin-top: 5rem;
@@ -1966,6 +2400,347 @@ html[data-theme="dark"] .kind-module   { color: var(--ink); background: var(--bg
 
 /* Smooth scroll */
 html { scroll-behavior: smooth; scroll-padding-top: 4.5rem; }
+
+/* ──────────── Section pager ────────────
+   Rendered automatically by Base.astro at the end of every page that
+   belongs to a multi-section walk-through (Python Quick Start). Reads
+   as two hairline-bordered text links — prev on the left, next on the
+   right — and stacks vertically on phones. Uses the same arrow motif
+   as `.btn` so the affordance is consistent. */
+.section-pager {
+  display: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem;
+  margin: 3.6rem 0 0;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule);
+}
+@media (max-width: 900px) {
+  .section-pager { display: grid; }
+}
+.section-pager-link {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  text-decoration: none;
+  transition: color 120ms ease;
+  min-height: 1px; /* keep the empty placeholder column stable */
+}
+.section-pager-link.section-pager-empty {
+  visibility: hidden;
+}
+.section-pager-prev { text-align: left; }
+.section-pager-next { text-align: right; align-items: flex-end; }
+.section-pager-dir {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  transition: color 120ms ease, transform 160ms ease;
+}
+.section-pager-label {
+  font-family: var(--sans-display);
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+}
+.section-pager-link:hover { color: var(--accent); }
+.section-pager-link:hover .section-pager-dir { color: var(--accent); }
+.section-pager-link:hover .section-pager-label { color: var(--accent); }
+.section-pager-prev:hover .section-pager-dir { transform: translateX(-2px); }
+.section-pager-next:hover .section-pager-dir { transform: translateX(2px); }
+
+@media (max-width: 540px) {
+  .section-pager { grid-template-columns: 1fr; gap: 0.6rem; }
+  .section-pager-next { text-align: left; align-items: flex-start; }
+  .section-pager-link { padding: 0.4rem 0; }
+}
+
+/* ──────────── Back-to-top floating button ────────────
+   Bottom-right pill that fades in once the reader has scrolled past
+   roughly 1.2× the viewport. Reverts to off-canvas via [hidden] so
+   it's a no-op above the fold. */
+.back-to-top {
+  position: fixed;
+  right: 1.4rem;
+  bottom: 1.4rem;
+  z-index: 20;
+  width: 40px;
+  height: 40px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  cursor: pointer;
+  padding: 0;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px -8px rgba(15, 12, 36, 0.25);
+  transition: opacity 180ms ease, transform 180ms ease, color 120ms ease, border-color 120ms ease, background 120ms ease;
+  opacity: 1;
+}
+@media (max-width: 900px) {
+  .back-to-top { display: inline-flex; }
+  .back-to-top[hidden] {
+    display: inline-flex;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.back-to-top:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.back-to-top:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.back-to-top svg { width: 18px; height: 18px; display: block; }
+
+@media (max-width: 720px) {
+  .back-to-top { right: 0.9rem; bottom: 0.9rem; width: 38px; height: 38px; }
+}
+
+/* ──────────── Side-nav disclosures ────────────
+   `.page-toc`, `.page-sections`, and `.api-toc` use a <details> element
+   so they can collapse on narrow viewports. On wide viewports the
+   inline script forces them open and the disclosure widget below is
+   neutralised so the summary reads as a plain heading (matches the
+   former <aside> + .page-toc-label layout). */
+details.side-nav { display: block; }
+details.side-nav > summary {
+  display: block;
+  list-style: none;
+  cursor: default;
+  /* On wide viewports the disclosure is forced open and the summary
+     reads as a plain heading. Disable pointer events so a stray click
+     can't toggle the <details> closed — the mobile breakpoint below
+     restores them. */
+  pointer-events: none;
+}
+details.side-nav > summary::-webkit-details-marker { display: none; }
+details.side-nav > summary::marker { content: ""; }
+.api-toc.side-nav > .api-toc-summary {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0.2em 0 1rem;
+  list-style: none;
+  cursor: default;
+  pointer-events: none;
+}
+.api-toc.side-nav > .api-toc-summary::-webkit-details-marker { display: none; }
+.api-toc.side-nav > .api-toc-summary::marker { content: ""; }
+@media (max-width: 980px) {
+  .api-toc.side-nav > .api-toc-summary { pointer-events: auto; cursor: pointer; }
+}
+
+@media (max-width: 900px) {
+  details.side-nav > summary { cursor: pointer; pointer-events: auto; }
+  details.side-nav > summary::after {
+    content: "▾";
+    float: right;
+    color: var(--ink-faint);
+    font-size: 0.85em;
+    margin-left: 0.4em;
+    transition: transform 160ms ease;
+  }
+  details.side-nav[open] > summary::after { transform: rotate(180deg); }
+  details.side-nav > summary:hover { color: var(--ink); }
+  details.side-nav > summary {
+    padding: 0.55rem 0;
+    margin: 0;
+  }
+  details.side-nav:not([open]) {
+    padding-bottom: 0.4rem !important;
+  }
+  /* The right-hand "On this page" TOC duplicates the left-hand nav on
+     small screens; hide it so the reader only sees one stacked list. */
+  details.page-toc--right.side-nav { display: none; }
+}
+
+/* ──────────── Mobile nav drawer ────────────
+   The hamburger sits to the right of the brand; it's hidden until the
+   masthead would otherwise overflow. When open, `.nav-links` becomes a
+   stacked drawer that slides out from beneath the masthead. */
+.nav-toggle {
+  display: none;
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  width: 38px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--ink);
+  padding: 0;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.nav-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.nav-toggle-bars,
+.nav-toggle-bars::before,
+.nav-toggle-bars::after {
+  display: block;
+  width: 18px;
+  height: 1.5px;
+  background: currentColor;
+  border-radius: 1px;
+  transition: transform 180ms ease, opacity 120ms ease;
+}
+.nav-toggle-bars { position: relative; }
+.nav-toggle-bars::before,
+.nav-toggle-bars::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+.nav-toggle-bars::before { top: -6px; }
+.nav-toggle-bars::after  { top:  6px; }
+.nav-toggle[aria-expanded="true"] .nav-toggle-bars { background: transparent; }
+.nav-toggle[aria-expanded="true"] .nav-toggle-bars::before { transform: translateY(6px) rotate(45deg); }
+.nav-toggle[aria-expanded="true"] .nav-toggle-bars::after  { transform: translateY(-6px) rotate(-45deg); }
+
+@media (max-width: 720px) {
+  .masthead-inner {
+    padding: 0.7rem var(--gutter);
+    gap: 0.8rem;
+  }
+  .brand .brand-sub { display: none; }
+  .nav-toggle { display: inline-flex; }
+  .nav-links {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--rule);
+    padding: 0.4rem var(--gutter) 0.9rem;
+    font-size: 1rem;
+    /* Collapsed by default; toggled open by JS via [data-open]. */
+    max-height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    transition: max-height 220ms ease, padding 220ms ease, visibility 0s linear 220ms;
+  }
+  .nav-links[data-open] {
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
+    visibility: visible;
+    transition: max-height 220ms ease, padding 220ms ease, visibility 0s;
+  }
+  .nav-links a {
+    padding: 0.65rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .nav-links a:last-of-type { border-bottom: 0; }
+  .nav-links a[aria-current="page"] {
+    color: var(--accent);
+    border-bottom-color: var(--rule-soft);
+  }
+  .nav-links .theme-toggle {
+    margin: 0.6rem 0 0;
+    align-self: flex-start;
+  }
+}
+
+/* ──────────── Small-screen typography & spacing ────────────
+   Tightens the global rhythm so long-form pages don't feel cramped at
+   the top (huge h1) and starved at the sides (excessive padding). */
+@media (max-width: 720px) {
+  html { font-size: 16px; }
+  h1 { font-size: clamp(2rem, 7.5vw, 2.6rem); }
+  h2 { font-size: 1.32rem; margin: 2em 0 0.5em; }
+  h3 { font-size: 1.02rem; margin: 1.5em 0 0.4em; }
+  p.lede { font-size: 1.06rem; }
+
+  .shell { padding: 2.4rem var(--gutter) 3.4rem; }
+  .titleblock { margin-bottom: 1.8rem; padding-bottom: 1.1rem; }
+  .titleblock .meta { gap: 0.6rem 1.4rem; margin-top: 1rem; }
+  .titleblock .byline { font-size: 1rem; }
+
+  pre {
+    padding: 0.85rem 0.9rem;
+    font-size: 0.8rem;
+    /* On very narrow viewports, let pre extend to the gutter so long
+       code lines have a bit more breathing room. */
+    margin-left: calc(-1 * var(--gutter) * 0.4);
+    margin-right: calc(-1 * var(--gutter) * 0.4);
+    border-left-width: 2px;
+    border-radius: 3px;
+  }
+  figure.example pre { margin-left: 0; margin-right: 0; }
+
+  .copy-btn { font-size: 0.62rem; padding: 2px 6px; }
+}
+
+@media (max-width: 480px) {
+  h1 { font-size: clamp(1.8rem, 8.5vw, 2.3rem); letter-spacing: -0.02em; }
+  .titleblock .meta { font-size: 0.72rem; }
+}
+
+/* Hero — phone layout. The atom cloud is a brand signature, not a
+   foreground element; on small screens we shrink the hero copy and
+   pull the cloud's centre of mass off the reading column. */
+@media (max-width: 720px) {
+  .hero {
+    padding: 2.6rem var(--gutter) 2.8rem;
+    gap: 2rem;
+  }
+  .hero-text h1 { font-size: clamp(2.4rem, 11vw, 3rem); margin-bottom: 1rem; }
+  .hero-text .byline { font-size: 1.02rem; margin-bottom: 1.6rem; }
+  .hero-text .meta { gap: 0.6rem 1.4rem; padding-top: 0.9rem; margin-bottom: 1.6rem; }
+  .hero-cta { gap: 0.9rem 1.6rem; }
+  .hero-code { padding: 0.8rem 0.85rem; }
+  .hero-code pre { font-size: 0.78rem; }
+  .hero-code figcaption { flex-wrap: wrap; gap: 0.3rem 0.8rem; }
+  /* The cloud reads well above 720px; on phones, fade it harder so it
+     doesn't compete with the reading column. */
+  .atom-cloud { opacity: 0.55; }
+  .shell.home { padding-top: 2.4rem; padding-bottom: 3rem; }
+  .shell.home .triptych { gap: 1.6rem; margin: 2.4rem 0 2.8rem; }
+}
+
+/* QS hero + API title — keep them in scale. */
+@media (max-width: 720px) {
+  .qs-hero { padding: 2rem var(--gutter) 1.8rem; }
+  .qs-hero h1 { font-size: clamp(1.8rem, 7vw, 2.4rem); }
+  .qs-hero .audience { font-size: 0.98rem; }
+  .qs-crosslink { padding: 1rem 1.1rem; }
+  .api-shell { padding: 2rem var(--gutter) 4rem; }
+  .api-item { padding: 0.8rem 0.9rem 0.85rem; }
+  .api-item .path { margin-left: 0; width: 100%; }
+}
+
+/* Footer stacks vertically on phones with smaller gaps. */
+@media (max-width: 540px) {
+  .foot-inner { flex-direction: column; gap: 0.4rem; }
+  .foot { padding: 1.2rem var(--gutter) 1.6rem; font-size: 0.78rem; }
+}
+
+/* Tap-target hygiene: the theme toggle is a primary control and needs
+   to clear ~36px so iOS doesn't double-tap-zoom it. */
+@media (max-width: 720px) {
+  .theme-toggle { padding: 3px; }
+  .theme-toggle button { width: 34px; height: 30px; }
+  .theme-toggle button svg { width: 16px; height: 16px; }
+}
 
 /* Print */
 @media print {

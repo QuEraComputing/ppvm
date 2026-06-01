@@ -710,12 +710,7 @@ fn reset_middle_qubit_of_three_qubit_chain() {
         pure.iter().all(|s| s[1] == Some(false) && s[0] == s[2]),
         "pure: q1 must be 0 and q0==q2 after chain reset(q1)"
     );
-    assert_distributions_match(
-        &sum,
-        &pure,
-        0.04,
-        "reset_middle_qubit_of_three_qubit_chain",
-    );
+    assert_distributions_match(&sum, &pure, 0.04, "reset_middle_qubit_of_three_qubit_chain");
 }
 
 #[test]
@@ -786,7 +781,12 @@ fn reset_after_partial_loss_keeps_lost_branch() {
         pure.iter().all(|s| s[0].is_none() || s[0] == Some(false)),
         "pure: live branches must reset to 0"
     );
-    assert_distributions_match(&sum, &pure, 0.05, "reset_after_partial_loss_keeps_lost_branch");
+    assert_distributions_match(
+        &sum,
+        &pure,
+        0.05,
+        "reset_after_partial_loss_keeps_lost_branch",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1133,8 +1133,11 @@ fn depolarize2_on_ground_state() {
     let pure = run_pure(2, shots, |t| {
         t.depolarize2(0, 1, p);
     });
-    let flipped_sum =
-        sum.iter().filter(|s| s != &&vec![Some(false), Some(false)]).count() as f64 / shots as f64;
+    let flipped_sum = sum
+        .iter()
+        .filter(|s| s != &&vec![Some(false), Some(false)])
+        .count() as f64
+        / shots as f64;
     let flipped_pure = pure
         .iter()
         .filter(|s| s != &&vec![Some(false), Some(false)])
@@ -1274,13 +1277,25 @@ fn correlated_loss_channel_marginals_on_ground_state() {
         t.correlated_loss_channel(0, 1, [0.20, 0.40, 0.0]);
     });
     for (label, data) in [("sum", &sum), ("pure", &pure)] {
-        let both = data.iter().filter(|s| s[0].is_none() && s[1].is_none()).count() as f64
+        let both = data
+            .iter()
+            .filter(|s| s[0].is_none() && s[1].is_none())
+            .count() as f64
             / shots as f64;
-        let only_q0 = data.iter().filter(|s| s[0].is_none() && s[1].is_some()).count() as f64
+        let only_q0 = data
+            .iter()
+            .filter(|s| s[0].is_none() && s[1].is_some())
+            .count() as f64
             / shots as f64;
-        let only_q1 = data.iter().filter(|s| s[0].is_some() && s[1].is_none()).count() as f64
+        let only_q1 = data
+            .iter()
+            .filter(|s| s[0].is_some() && s[1].is_none())
+            .count() as f64
             / shots as f64;
-        let none = data.iter().filter(|s| s[0].is_some() && s[1].is_some()).count() as f64
+        let none = data
+            .iter()
+            .filter(|s| s[0].is_some() && s[1].is_some())
+            .count() as f64
             / shots as f64;
         assert!((both - 0.20).abs() < 0.04, "{label} P(both)={both:.4}");
         assert!(

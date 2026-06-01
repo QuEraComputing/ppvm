@@ -12,7 +12,7 @@ use ppvm_tableau::{
 use smallvec::SmallVec;
 
 use crate::storage::{
-    EntryStore, fingerprint, loss_mask, phase_loss_hash, structurally_equal, word_fingerprint,
+    EntryStore, fingerprint, phase_loss_hash, structurally_equal, word_fingerprint,
 };
 
 type Bucket<T, I, C> = SmallVec<[(GeneralizedTableau<T, I, C>, <T as Config>::Coeff); 1]>;
@@ -184,59 +184,31 @@ where
         });
     }
 
-    fn reset_loss_and_merge(&mut self, addr0: usize) -> bool {
+    fn drain_where<F>(
+        &mut self,
+        mut pred: F,
+    ) -> Vec<(GeneralizedTableau<T, I, C>, <T as Config>::Coeff, u64, u64)>
+    where
+        F: FnMut(&GeneralizedTableau<T, I, C>) -> bool,
+    {
         self.rebuild_if_dirty();
 
-        let delta = loss_mask(addr0);
-        let mut changed = Vec::new();
-        let mut empty_buckets = Vec::new();
-
-        for (&old_fp, bucket) in self.buckets.iter_mut() {
+        let mut drained = Vec::new();
+        // Buckets store entries under the full fingerprint, so the split is
+        // (fp, 0). XORing a delta into either component during the caller's
+        // mutation produces the right new bucket key in insert_or_merge_batch.
+        self.buckets.retain(|&fp, bucket| {
             let mut i = 0;
             while i < bucket.len() {
-                if bucket[i].0.is_lost[addr0] {
-                    let (mut tab, p) = bucket.swap_remove(i);
-                    tab.is_lost[addr0] = false;
-                    changed.push((tab, p, old_fp ^ delta));
+                if pred(&bucket[i].0) {
+                    let (tab, p) = bucket.swap_remove(i);
+                    drained.push((tab, p, fp, 0));
                 } else {
                     i += 1;
                 }
             }
-
-            if bucket.is_empty() {
-                empty_buckets.push(old_fp);
-            }
-        }
-
-        if changed.is_empty() {
-            return false;
-        }
-
-        for fp in empty_buckets {
-            self.buckets.remove(&fp);
-        }
-
-        let mut merged_any = false;
-        for (tab, p, fp) in changed {
-            let bucket = self.buckets.entry(fp).or_default();
-
-            let mut found: Option<usize> = None;
-            for (i, (existing, _)) in bucket.iter().enumerate() {
-                if structurally_equal(existing, &tab, &mut self.scratch) {
-                    found = Some(i);
-                    break;
-                }
-            }
-
-            match found {
-                Some(i) => {
-                    bucket[i].1 = bucket[i].1.clone() + p;
-                    merged_any = true;
-                }
-                None => bucket.push((tab, p)),
-            }
-        }
-
-        merged_any
+            !bucket.is_empty()
+        });
+        drained
     }
 }

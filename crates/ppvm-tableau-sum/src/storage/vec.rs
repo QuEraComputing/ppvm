@@ -1,6 +1,6 @@
 use std::ops::AddAssign;
 
-use fxhash::{FxHashMap, FxHashSet};
+use fxhash::FxHashMap;
 use num::{
     Complex, One, Zero,
     complex::{Complex64, ComplexFloat},
@@ -9,11 +9,8 @@ use ppvm_runtime::config::Config;
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
-use smallvec::SmallVec;
 
-use crate::storage::{
-    EntryStore, loss_mask, phase_loss_hash, structurally_equal, word_fingerprint,
-};
+use crate::storage::{EntryStore, phase_loss_hash, structurally_equal, word_fingerprint};
 
 #[derive(Clone)]
 pub struct VecStorage<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> {
@@ -226,88 +223,29 @@ where
         self.phase_loss_hashes.truncate(write);
     }
 
-    fn reset_loss_and_merge(&mut self, addr0: usize) -> bool {
+    fn drain_where<F>(
+        &mut self,
+        mut pred: F,
+    ) -> Vec<(GeneralizedTableau<T, I, C>, <T as Config>::Coeff, u64, u64)>
+    where
+        F: FnMut(&GeneralizedTableau<T, I, C>) -> bool,
+    {
         self.rebuild_fingerprints_if_dirty();
 
-        let delta = loss_mask(addr0);
-        let mut changed_indices = Vec::new();
-        let mut target_fingerprints: FxHashSet<u64> = FxHashSet::default();
-        for (i, (tab, _)) in self.entries.iter().enumerate() {
-            if tab.is_lost[addr0] {
-                changed_indices.push(i);
-                target_fingerprints.insert(self.fingerprints[i] ^ delta);
-            }
+        let mut indices: Vec<usize> = (0..self.entries.len())
+            .filter(|&i| pred(&self.entries[i].0))
+            .collect();
+        // Drain back-to-front so swap_remove indices remain valid.
+        indices.sort_unstable_by(|a, b| b.cmp(a));
+
+        let mut drained = Vec::with_capacity(indices.len());
+        for i in indices {
+            let (tab, p) = self.entries.swap_remove(i);
+            let word_fp = self.word_fingerprints.swap_remove(i);
+            let phase_loss = self.phase_loss_hashes.swap_remove(i);
+            self.fingerprints.swap_remove(i);
+            drained.push((tab, p, word_fp, phase_loss));
         }
-        if changed_indices.is_empty() {
-            return false;
-        }
-
-        let mut changed = vec![false; self.entries.len()];
-        for &i in &changed_indices {
-            changed[i] = true;
-        }
-
-        let mut fp_index: FxHashMap<u64, SmallVec<[usize; 1]>> =
-            FxHashMap::with_capacity_and_hasher(target_fingerprints.len(), Default::default());
-        for i in 0..self.entries.len() {
-            if changed[i] {
-                continue;
-            }
-
-            let fp = self.fingerprints[i];
-            if target_fingerprints.contains(&fp) {
-                fp_index.entry(fp).or_default().push(i);
-            }
-        }
-
-        let mut remove = vec![false; self.entries.len()];
-        let mut merged_any = false;
-        for i in changed_indices {
-            self.entries[i].0.is_lost[addr0] = false;
-            self.phase_loss_hashes[i] ^= delta;
-            self.fingerprints[i] ^= delta;
-            let fp = self.fingerprints[i];
-
-            let found = {
-                let tab = &self.entries[i].0;
-                let scratch = &mut self.scratch;
-                fp_index.get(&fp).and_then(|candidates| {
-                    candidates.iter().copied().find(|&candidate| {
-                        structurally_equal(&self.entries[candidate].0, tab, scratch)
-                    })
-                })
-            };
-
-            match found {
-                Some(candidate) => {
-                    self.entries[candidate].1 =
-                        self.entries[candidate].1.clone() + self.entries[i].1.clone();
-                    remove[i] = true;
-                    merged_any = true;
-                }
-                None => fp_index.entry(fp).or_default().push(i),
-            }
-        }
-
-        if merged_any {
-            let mut write = 0;
-            for read in 0..self.entries.len() {
-                if !remove[read] {
-                    if read != write {
-                        self.entries.swap(read, write);
-                        self.fingerprints.swap(read, write);
-                        self.word_fingerprints.swap(read, write);
-                        self.phase_loss_hashes.swap(read, write);
-                    }
-                    write += 1;
-                }
-            }
-            self.entries.truncate(write);
-            self.fingerprints.truncate(write);
-            self.word_fingerprints.truncate(write);
-            self.phase_loss_hashes.truncate(write);
-        }
-
-        merged_any
+        drained
     }
 }

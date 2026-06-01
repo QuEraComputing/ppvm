@@ -50,9 +50,13 @@ pub trait EntryStore<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>>: Clone
     where
         F: FnMut(&GeneralizedTableau<T, I, C>, &T::Coeff) -> bool;
 
-    /// Reset `is_lost[addr0]` only on entries where it is currently set, update
-    /// the corresponding loss-fingerprint delta, and coalesce any entries made
-    /// structurally equal by that reset. Returns true when at least one pair of
-    /// entries was merged.
-    fn reset_loss_and_merge(&mut self, addr0: usize) -> bool;
+    /// Remove every entry whose tableau matches `pred` and return it together
+    /// with its cached fingerprint components, so the caller can mutate the
+    /// drained entries and re-insert them via [`insert_or_merge_batch`]. For
+    /// storage backends that don't cache `word_fp` and `phase_loss` separately
+    /// (e.g. map-keyed buckets), the split is `(fp, 0)`; either component may
+    /// be XORed against the change delta — the merge sees their XOR.
+    fn drain_where<F>(&mut self, pred: F) -> Vec<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>
+    where
+        F: FnMut(&GeneralizedTableau<T, I, C>) -> bool;
 }

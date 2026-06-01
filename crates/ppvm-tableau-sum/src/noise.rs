@@ -503,6 +503,17 @@ where
         + Copy,
 {
     fn reset_loss_channel(&mut self, addr0: usize) {
-        self.entries.reset_loss_and_merge(addr0);
+        let delta = loss_mask(addr0);
+        let mut branches = self.entries.drain_where(|tab| tab.is_lost[addr0]);
+        for (tab, _, _, phase_loss) in branches.iter_mut() {
+            tab.is_lost[addr0] = false;
+            *phase_loss ^= delta;
+        }
+        // reset_loss preserves total probability mass and never drops entries
+        // below sum_cutoff (merges only ever sum existing coefficients), so no
+        // renormalize is needed regardless of insert_or_merge_batch's result.
+        let _ = self
+            .entries
+            .insert_or_merge_batch(branches, &self.sum_cutoff);
     }
 }

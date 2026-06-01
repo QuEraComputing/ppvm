@@ -146,6 +146,14 @@ class GeneralizedTableauSum(
         self._interface.reset_loss_channel(addr0)
     
     def sampler(self) -> "TableauSumSampler":
+        """Compile a sampler over a snapshot of the current state.
+
+        The sampler holds its own RNG and a copy of the sum's branches, so
+        further gates applied to this tableau do not affect it.
+
+        Returns:
+            A sampler drawing shots from the current state.
+        """
         base_sampler = self._interface.sampler()
         return TableauSumSampler(
             cast(TableauSumSamplerInterface, base_sampler)
@@ -163,14 +171,44 @@ class TableauSumSampler:
     _interface: TableauSumSamplerInterface = field(repr=False)
 
     def sample(self) -> list[MeasurementResult]:
+        """Draw a single shot: one measurement outcome per qubit.
+
+        Returns:
+            Per-qubit outcomes, indexed by qubit address.
+        """
         return [_BY_VALUE[i] for i in self._interface.sample()]
 
     def raw_sample(self) -> list[int]:
+        """Draw a single shot as raw integer codes (0/1/2 for |0>/|1>/lost).
+
+        Faster than `sample`, as it skips the `MeasurementResult` conversion.
+
+        Returns:
+            Per-qubit integer outcome codes, indexed by qubit address.
+        """
         return self._interface.sample()
 
     def sample_shots(self, num_shots: int) -> list[list[MeasurementResult]]:
+        """Draw `num_shots` shots, each with one outcome per qubit.
+
+        Args:
+            num_shots: The number of shots to draw.
+
+        Returns:
+            One list of per-qubit outcomes per shot.
+        """
         raw_samples = self._interface.sample_shots(num_shots=num_shots)
         return [[_BY_VALUE[i] for i in ints] for ints in raw_samples]
 
     def raw_shots(self, num_shots: int) -> list[list[int]]:
+        """Draw `num_shots` shots as raw integer codes (0/1/2 for |0>/|1>/lost).
+
+        Faster than `sample_shots`, as it skips the `MeasurementResult` conversion.
+
+        Args:
+            num_shots: The number of shots to draw.
+
+        Returns:
+            One list of per-qubit integer outcome codes per shot.
+        """
         return self._interface.sample_shots(num_shots=num_shots)

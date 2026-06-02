@@ -16,10 +16,7 @@ pub enum MeasurementOutcome {
     Lost = 2,
 }
 
-/// Inline outcomes per measurement effect before spilling to heap storage.
-pub const MEASUREMENT_RESULT_INLINE_CAPACITY: usize = 8;
-
-pub type MeasurementResult = SmallVec<[MeasurementOutcome; MEASUREMENT_RESULT_INLINE_CAPACITY]>;
+pub type MeasurementResult = SmallVec<[MeasurementOutcome; 8]>;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MeasurementEffect {

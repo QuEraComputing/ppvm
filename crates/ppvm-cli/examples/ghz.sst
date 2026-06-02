@@ -1,0 +1,27 @@
+device circuit.n_qubits 3;
+
+// Prepare a 3-qubit GHZ state (|000> + |111>)/sqrt(2) and measure every qubit.
+// The three outcomes are perfectly correlated, so each shot reads 0 0 0 or 1 1 1.
+fn @main() {
+    const.u64 0
+    gate h
+
+    const.u64 0
+    const.u64 1
+    gate cnot
+
+    const.u64 1
+    const.u64 2
+    gate cnot
+
+    const.u64 0
+    gate measure
+
+    const.u64 1
+    gate measure
+
+    const.u64 2
+    gate measure
+
+    ret
+}

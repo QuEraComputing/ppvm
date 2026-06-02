@@ -253,6 +253,17 @@ impl PPVM {
         self.continue_effects(effects)
     }
 
+    /// Program counter: the index of the next instruction to execute.
+    pub fn current_pc(&self) -> u32 {
+        self.loader.pc()
+    }
+
+    /// The next instruction to execute, or `None` once execution has run off
+    /// the end of the code. Intended for debuggers/inspection.
+    pub fn current_instruction(&self) -> Option<PPVMInstruction> {
+        self.peek_instruction().ok().cloned()
+    }
+
     fn execute_effects(&mut self, inst: Instruction) -> eyre::Result<Effects<PPVMEffect>> {
         log::debug!("exec inst: {:?}, stack: {:?}", inst, self.cpu.stack());
         match inst {
@@ -268,7 +279,9 @@ impl PPVM {
                 let outcome = vihaco::expect_exactly_one_effect(
                     vihaco::GeneratedComponent::execute_generated(&mut self.cpu, cpu_inst, msg)?,
                 )?;
-                if outcome == StepOutcome::Continue {
+                // Advance past a breakpoint as well, so the debugger that paused
+                // on it doesn't re-hit the same instruction on the next step.
+                if matches!(outcome, StepOutcome::Continue | StepOutcome::Breakpoint) {
                     if let Some(target) = self.cpu.take_pending_pc() {
                         *self.loader.pc_mut() = target;
                     } else {
@@ -352,11 +365,12 @@ impl PPVM {
         self.init()?;
 
         loop {
-            let action = self.step_once()?;
-            if action == StepOutcome::Continue {
-                continue;
+            // Breakpoints only pause the interactive debugger; a batch run
+            // skips straight past them.
+            match self.step_once()? {
+                StepOutcome::Continue | StepOutcome::Breakpoint => continue,
+                action => return Ok(action),
             }
-            return Ok(action);
         }
     }
 
@@ -647,5 +661,59 @@ mod tests {
                 || err.to_string().contains("unhandled raw form"),
             "err: {err}"
         );
+    }
+
+    // ─── Breakpoints ──────────────────────────────────────────────────────
+
+    /// Bell circuit with a `breakpoint` between the two measurements.
+    const BREAKPOINT_PROGRAM: &str = "device circuit.n_qubits 2;\n\
+                                      fn @main() {\n\
+                                          const.u64 0\n\
+                                          gate h\n\
+                                          const.u64 0\n\
+                                          const.u64 1\n\
+                                          gate cnot\n\
+                                          const.u64 0\n\
+                                          gate measure\n\
+                                          breakpoint\n\
+                                          const.u64 1\n\
+                                          gate measure\n\
+                                          ret\n\
+                                      }\n";
+
+    #[test]
+    fn run_ignores_breakpoints() -> eyre::Result<()> {
+        // A batch run must execute straight through the breakpoint and record
+        // both measurements, exactly as if it weren't there.
+        let mut machine = PPVM::default();
+        machine.run_program(BREAKPOINT_PROGRAM)?;
+        assert_eq!(machine.measurement_record().len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn step_once_advances_past_breakpoint() -> eyre::Result<()> {
+        let mut machine = PPVM::default();
+        machine.load_program(BREAKPOINT_PROGRAM)?;
+        machine.init()?;
+
+        // Step until the breakpoint pauses us.
+        let mut outcome = StepOutcome::Continue;
+        for _ in 0..machine.loader.module.code.len() {
+            outcome = machine.step_once()?;
+            if outcome == StepOutcome::Breakpoint {
+                break;
+            }
+        }
+        assert_eq!(outcome, StepOutcome::Breakpoint, "breakpoint should pause");
+        let pc_at_break = machine.current_pc();
+
+        // Stepping again must make progress (advance the pc) rather than
+        // re-hitting the same breakpoint instruction.
+        let next = machine.step_once()?;
+        assert_ne!(next, StepOutcome::Breakpoint, "must move past the breakpoint");
+        assert!(machine.current_pc() > pc_at_break, "pc must advance");
+
+        Ok(())
     }
 }

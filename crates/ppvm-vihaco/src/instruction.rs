@@ -49,7 +49,7 @@ pub enum CircuitInstruction {
     // U3
     U3,
 
-    // Measureme & Reset
+    // Measurement & Reset
     Measure,
     Reset,
 

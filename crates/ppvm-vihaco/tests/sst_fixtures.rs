@@ -4,6 +4,23 @@
 use ppvm_vihaco::composite::PPVM;
 use ppvm_vihaco::measurements::MeasurementOutcome;
 
+/// Dump a fixture to a `.ssb` file, load it back, and run it. Exercises the
+/// full bytecode round-trip through disk: `dump_file` → `load_bytecode_file`.
+fn dump_load_run(sst_path: &str, ssb_name: &str) -> PPVM {
+    let out = std::env::temp_dir().join(ssb_name);
+    let out = out.to_str().expect("utf-8 temp path");
+    ppvm_vihaco::dump_file(sst_path, out).unwrap_or_else(|e| panic!("dump {sst_path}: {e:?}"));
+
+    let mut machine = PPVM::default();
+    machine
+        .load_bytecode_file(out)
+        .unwrap_or_else(|e| panic!("load {out}: {e:?}"));
+    machine.run().unwrap_or_else(|e| panic!("run {out}: {e:?}"));
+
+    let _ = std::fs::remove_file(out);
+    machine
+}
+
 #[test]
 fn bell_sst_runs_and_records_two_measurements() {
     let mut machine = PPVM::default();
@@ -150,4 +167,71 @@ fn function_call_branch_on_both_returned_values() {
         (240..=360).contains(&q1_ones),
         "expected ~300 q1=true shots, got {q1_ones}"
     );
+}
+
+// ─── Bytecode round-trip: dump → load → execute each fixture ──────────────
+
+#[test]
+fn dumped_bell_records_two_measurements() {
+    let machine = dump_load_run("tests/bell.sst", "ppvm_dump_bell.ssb");
+    assert_eq!(machine.measurement_record().len(), 2);
+}
+
+#[test]
+fn dumped_hello_circuit_runs_with_no_measurements() {
+    let machine = dump_load_run("tests/hello_circuit.sst", "ppvm_dump_hello_circuit.ssb");
+    assert_eq!(machine.measurement_record().len(), 0);
+}
+
+#[test]
+fn dumped_function_call_executes_callee() {
+    let machine = dump_load_run("tests/function_call.sst", "ppvm_dump_function_call.ssb");
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1);
+    assert_eq!(record[0].len(), 1);
+    assert!(record[0][0] != MeasurementOutcome::Lost);
+}
+
+#[test]
+fn dumped_function_call_ret_executes() {
+    let machine = dump_load_run(
+        "tests/function_call_ret.sst",
+        "ppvm_dump_function_call_ret.ssb",
+    );
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1);
+    assert_eq!(record[0].len(), 1);
+}
+
+#[test]
+fn dumped_branch_on_outcome_x_is_deterministic() {
+    // X-prepared q0 measures 1, so the branch flips q1 → both outcomes are 1.
+    // Confirms branch targets survive the dump/load round-trip.
+    let machine = dump_load_run("tests/branch_on_outcome_x.sst", "ppvm_dump_branch_x.ssb");
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 2);
+    assert_eq!(record[0].as_slice(), &[MeasurementOutcome::One]);
+    assert_eq!(record[1].as_slice(), &[MeasurementOutcome::One]);
+}
+
+#[test]
+fn dumped_branch_on_outcome_preserves_invariant() {
+    // q0 in |+> is a fair coin, but the branch steers q1 to match q0 every
+    // shot — that invariant must hold after a round-trip.
+    let machine = dump_load_run("tests/branch_on_outcome.sst", "ppvm_dump_branch.ssb");
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 2);
+    assert_eq!(record[0][0], record[1][0]);
+}
+
+#[test]
+fn dumped_function_call_branch_both_runs() {
+    let machine = dump_load_run(
+        "tests/function_call_branch_both.sst",
+        "ppvm_dump_function_call_branch_both.ssb",
+    );
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 2);
+    assert_eq!(record[0].len(), 1);
+    assert_eq!(record[1].len(), 1);
 }

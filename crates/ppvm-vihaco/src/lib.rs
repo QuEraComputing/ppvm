@@ -26,15 +26,18 @@ pub fn run_program(program: &str) -> eyre::Result<PPVM> {
     Ok(machine)
 }
 
-/// Parse and resolve `.sst` source into a runnable module.
+/// Parse `.sst` source into the unresolved AST.
+pub fn parse_program(source: &str) -> eyre::Result<ParsedModule<PPVMInstruction, PPVMHeader>> {
+    ParsedModule::<PPVMInstruction, PPVMHeader>::parser()
+        .parse(source)
+        .into_result()
+        .map_err(|errs| eyre::eyre!("parsing failed: {errs:?}"))
+}
+
 pub fn compile_program(
     source: &str,
 ) -> eyre::Result<Module<PPVMInstruction, Value, Type, PPVMDeviceInfo>> {
-    let parsed = ParsedModule::<PPVMInstruction, PPVMHeader>::parser()
-        .parse(source)
-        .into_result()
-        .map_err(|errs| eyre::eyre!("parsing failed: {errs:?}"))?;
-    PPVMResolver::new().resolve_module(parsed)
+    PPVMResolver::new().resolve_module(parse_program(source)?)
 }
 
 /// Dump `.sst` source to a `.ssb` bytecode file.
@@ -53,6 +56,7 @@ pub fn dump_file(input_path: &str, output_path: &str) -> eyre::Result<()> {
 pub mod prelude {
     pub use crate::component::Circuit;
     pub use crate::composite::PPVM;
+    pub use crate::syntax::{PPVMHeader, PPVMResolver};
 }
 
 #[cfg(test)]

@@ -85,7 +85,7 @@ where
             (Measure, &Qubit(addr)) => {
                 let outcome: MeasurementOutcome = self.tab.measure(addr).into();
                 return Ok(Effects::one(MeasurementEffect {
-                    measurement_results: vec![outcome],
+                    measurement_results: smallvec::smallvec![outcome],
                 }));
             }
             (Reset, &Qubit(addr)) => self.tab.reset(addr),

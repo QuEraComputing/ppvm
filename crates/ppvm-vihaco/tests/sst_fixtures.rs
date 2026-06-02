@@ -69,13 +69,13 @@ fn branch_on_outcome_deterministic_x_path() {
     let record = machine.measurement_record();
     assert_eq!(record.len(), 2, "expected exactly two measurements");
     assert_eq!(
-        record[0],
-        vec![MeasurementOutcome::One],
+        record[0].as_slice(),
+        &[MeasurementOutcome::One],
         "X-prepared q0 must measure 1"
     );
     assert_eq!(
-        record[1],
-        vec![MeasurementOutcome::One],
+        record[1].as_slice(),
+        &[MeasurementOutcome::One],
         "branch must have flipped q1"
     );
 }

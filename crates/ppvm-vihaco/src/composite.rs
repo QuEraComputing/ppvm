@@ -1,18 +1,14 @@
-use chumsky::Parser;
 use vihaco::frame::Frame;
 use vihaco::machine::StackFrame;
 use vihaco::observer::stdio::{StdoutEffect, StdoutObserver};
-use vihaco::syntax::{ParsedModule, Resolve};
 use vihaco::traits::{GetProgramGlobal, ProgramCounter, StackMemory};
 use vihaco::{Effects, Observe, ProgramLoader, Value, composite, observe};
 use vihaco_cpu::{CPU, CPUMessage, StepOutcome};
-use vihaco_parser_core::Parse;
 
 use crate::component::{Circuit, CircuitEffect};
 use crate::instruction::CircuitInstruction;
 use crate::measurements::{MeasurementEffect, MeasurementObserver, MeasurementResult};
 use crate::message::CircuitMessage;
-use crate::syntax::{PPVMHeader, PPVMResolver};
 
 pub const PPVM_MAGIC: u32 = 0x5050564D;
 
@@ -104,6 +100,16 @@ impl std::fmt::Display for PPVMInstruction {
         match self {
             PPVMInstruction::Cpu(inst) => inst.fmt(f),
             PPVMInstruction::Circuit(inst) => inst.fmt(f),
+        }
+    }
+}
+
+impl PartialEq for PPVMInstruction {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (PPVMInstruction::Cpu(a), PPVMInstruction::Cpu(b)) => a == b,
+            (PPVMInstruction::Circuit(a), PPVMInstruction::Circuit(b)) => a == b,
+            _ => false,
         }
     }
 }
@@ -363,11 +369,7 @@ impl PPVM {
     }
 
     pub fn load_program(&mut self, program: &str) -> eyre::Result<()> {
-        let parsed = ParsedModule::<PPVMInstruction, PPVMHeader>::parser()
-            .parse(program)
-            .into_result()
-            .map_err(|errs| eyre::eyre!("parsing failed: {errs:?}"))?;
-        let module = PPVMResolver::new().resolve_module(parsed)?;
+        let module = crate::compile_program(program)?;
         self.load(&module)?;
         Ok(())
     }
@@ -375,6 +377,18 @@ impl PPVM {
     pub fn load_file(&mut self, path: &str) -> eyre::Result<()> {
         let raw_program = std::fs::read_to_string(path)?;
         self.load_program(&raw_program)
+    }
+
+    /// Load a module from an in-memory `.ssb` byte stream.
+    pub fn load_bytecode(&mut self, bytes: &[u8]) -> eyre::Result<()> {
+        let module = crate::bytecode::module_from_bytes(bytes)?;
+        self.load(&module)
+    }
+
+    /// Read a `.ssb` file and load the module it contains.
+    pub fn load_bytecode_file(&mut self, path: &str) -> eyre::Result<()> {
+        let bytes = std::fs::read(path)?;
+        self.load_bytecode(&bytes)
     }
 
     pub fn run_program(&mut self, program: &str) -> eyre::Result<()> {

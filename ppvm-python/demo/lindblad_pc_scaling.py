@@ -1,46 +1,69 @@
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: -all
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.1
+#   kernelspec:
+#     display_name: ppvm (3.12.12)
+#     language: python
+#     name: python3
+# ---
+
 # SPDX-FileCopyrightText: 2026 The PPVM Authors
 # SPDX-License-Identifier: Apache-2.0
-"""End-to-end wall-time scaling of the pure-Rust predictor-corrector step
-with rayon thread count.
 
-The entire ``pc_step`` body (both leakage calls, the generator build, and
-both ``expm_multiply`` calls) is wrapped in a rayon pool of the requested
-size — leakage and generator parallelise over basis elements, the matrix
-exponential parallelises over SpMV rows. So the speedup numbers reflect
-overall PC throughput, not just SpMV.
+# %% [markdown]
+# # `pc_step` parallel scaling
+#
+# End-to-end wall-time scaling of the pure-Rust predictor-corrector step
+# (`ppvm.Lindbladian.pc_step`) with rayon thread count. The entire `pc_step`
+# body — both leakage calls, the generator build, and both matrix
+# exponentials — runs inside a rayon pool of the requested size:
+#
+# * leakage and generator parallelise over basis elements;
+# * the matrix exponential parallelises over SpMV rows.
+#
+# So the speedup numbers reflect overall PC throughput, not just SpMV.
 
-Usage::
-
-    python lindblad_pc_scaling.py --L 51 --steps 20 --max-cores 16
-
-For HPC: ``--max-cores`` is the upper bound of the thread sweep, so on a
-32-core node you'd pass ``--max-cores 32`` (or any subset).
-"""
-
-from __future__ import annotations
-
-import argparse
-import importlib.util as _ilu
-import sys as _sys
-import time
-from pathlib import Path as _Path
+# %%
 from statistics import median
+import time
 
+import matplotlib.pyplot as plt
 import numpy as np
 
-# Bypass the `ppvm` package __init__ to avoid a pre-existing stim/bloqade
-# version mismatch in the dev env. Pull the bare submodule path directly.
-_spec = _ilu.spec_from_file_location(
-    "_ppvm_lindblad",
-    _Path(__file__).resolve().parent.parent / "src" / "ppvm" / "lindblad.py",
-)
-_mod = _ilu.module_from_spec(_spec)
-_sys.modules["_ppvm_lindblad"] = _mod
-_spec.loader.exec_module(_mod)
-Lindbladian = _mod.Lindbladian
+from ppvm import Lindbladian
 
 
-def build_nn_xy_dephasing(L: int, J: float, gamma: float):
+# %% [markdown]
+# ## Parameters
+
+# %%
+L = 51
+J = 1.0
+gamma = 1.0
+alpha = 1.0
+dt = 0.05
+n_steps = 20
+tau_add = 1e-8
+max_cores = 4
+warmup_steps = 4
+model = "long-range"  # "nn" or "long-range"
+
+
+# %% [markdown]
+# ## Model
+#
+# All-to-all XY with $1/r^\alpha$ couplings (Kac-normalised) and per-site Z
+# dephasing. Long-range activates every bond every step, giving a basis
+# size that meaningfully exercises parallel scaling.
+
+# %%
+def build_nn_xy_dephasing(L, J, gamma):
     h_terms = []
     for i in range(L - 1):
         a, b = i, i + 1
@@ -53,11 +76,7 @@ def build_nn_xy_dephasing(L: int, J: float, gamma: float):
     return h_terms, jump_terms
 
 
-def build_long_range_xy_dephasing(L: int, J: float, alpha: float, gamma: float):
-    """All-to-all XY with 1/r^α couplings (matches the lindblad_adaptive
-    demo). Operator weight grows much faster than NN because every bond
-    activates every step, giving a basis size that meaningfully exercises
-    parallel scaling."""
+def build_long_range_xy_dephasing(L, J, alpha, gamma):
     pairs = [
         (a, b, 1.0 / min(b - a, L - b + a) ** alpha)
         for a in range(L)
@@ -75,6 +94,22 @@ def build_long_range_xy_dephasing(L: int, J: float, alpha: float, gamma: float):
     return h_terms, jump_terms
 
 
+if model == "nn":
+    h_terms, jump_terms = build_nn_xy_dephasing(L, J, gamma)
+else:
+    h_terms, jump_terms = build_long_range_xy_dephasing(L, J, alpha, gamma)
+L_op = Lindbladian(L, h_terms, jump_terms)
+
+
+# %% [markdown]
+# ## Timing harness
+#
+# Each call to `run_pc_steps` runs `n_steps` consecutive PC steps from
+# $Z_{L/2}$, returning the per-step wall times and the final basis size.
+# The `num_threads` kwarg pins this call to a freshly-built rayon pool of
+# that size, isolating thread-count effects from JIT cache state.
+
+# %%
 def run_pc_steps(L_op, L, site0, dt, n_steps, tau_add, num_threads):
     z_strings = ["I" * j + "Z" + "I" * (L - j - 1) for j in range(L)]
     basis = [z_strings[site0]]
@@ -96,89 +131,58 @@ def run_pc_steps(L_op, L, site0, dt, n_steps, tau_add, num_threads):
     return times, len(basis)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--L", type=int, default=51, help="number of qubits")
-    parser.add_argument("--steps", type=int, default=20, help="PC steps per measurement")
-    parser.add_argument("--dt", type=float, default=0.05, help="time step")
-    parser.add_argument("--J", type=float, default=1.0, help="XY exchange")
-    parser.add_argument("--gamma", type=float, default=1.0, help="Z dephasing rate")
-    parser.add_argument(
-        "--model",
-        choices=("nn", "long-range"),
-        default="long-range",
-        help="NN XY or all-to-all 1/r^alpha XY (default: long-range)",
-    )
-    parser.add_argument(
-        "--alpha", type=float, default=1.0, help="power-law exponent for long-range model"
-    )
-    parser.add_argument(
-        "--tau", type=float, default=1e-8, help="leakage threshold for basis expansion"
-    )
-    parser.add_argument(
-        "--max-cores", type=int, default=4, help="upper bound of the thread sweep"
-    )
-    parser.add_argument(
-        "--warmup-steps",
-        type=int,
-        default=4,
-        help="PC steps to discard before timing (lets the basis settle)",
-    )
-    args = parser.parse_args()
+# %% [markdown]
+# ## Warmup
+#
+# Each thread count pre-builds its rayon pool and amortises one-time setup
+# before the real timing pass.
 
-    L = args.L
-    site0 = L // 2
-    if args.model == "nn":
-        h_terms, jump_terms = build_nn_xy_dephasing(L, args.J, args.gamma)
-    else:
-        h_terms, jump_terms = build_long_range_xy_dephasing(
-            L, args.J, args.alpha, args.gamma
-        )
-    L_op = Lindbladian(L, h_terms, jump_terms)
+# %%
+site0 = L // 2
+for n in range(1, max_cores + 1):
+    run_pc_steps(L_op, L, site0, dt, warmup_steps, tau_add, n)
+L_op.clear_cache()
 
-    # Warmup: pre-build pools at each thread count and amortise one-time setup.
-    print(f"Warmup (L={L}, {args.warmup_steps} steps per pool size)...")
-    for n in range(1, args.max_cores + 1):
-        run_pc_steps(L_op, L, site0, args.dt, args.warmup_steps, args.tau, n)
+
+# %% [markdown]
+# ## Scaling sweep
+
+# %%
+results = []
+for n in range(1, max_cores + 1):
     L_op.clear_cache()
+    times, basis_size = run_pc_steps(L_op, L, site0, dt, n_steps, tau_add, n)
+    first = times[0] * 1000.0
+    steady = median(times[1:]) * 1000.0
+    results.append({"threads": n, "first_ms": first, "steady_ms": steady,
+                    "basis": basis_size})
 
-    print()
-    model_str = (
-        "NN XY (OBC)" if args.model == "nn" else f"long-range XY alpha={args.alpha}"
-    )
-    print(
-        f"{model_str} + Z-dephasing  L={L}  J={args.J}  gamma={args.gamma}  "
-        f"dt={args.dt}  tau={args.tau:g}"
-    )
-    print(
-        f"{args.steps} PC steps per measurement, parallel_threshold=0 "
-        f"(force parallel SpMV); rayon pool wraps the entire PC step "
-        f"(leakage + generator + expm)."
-    )
-    print()
-    header = (
-        f"{'threads':>8s}  {'first-step (ms)':>16s}  {'steady (ms)':>12s}  "
-        f"{'speedup':>9s}  {'|basis|':>8s}"
-    )
-    print(header)
-    print("-" * len(header))
-
-    baseline = None
-    for n in range(1, args.max_cores + 1):
-        L_op.clear_cache()
-        times, basis_size = run_pc_steps(
-            L_op, L, site0, args.dt, args.steps, args.tau, n
-        )
-        first = times[0] * 1000.0
-        steady = median(times[1:]) * 1000.0
-        if baseline is None:
-            baseline = steady
-        speedup = baseline / steady
-        print(
-            f"{n:>8d}  {first:>16.1f}  {steady:>12.2f}  {speedup:>8.2f}x  "
-            f"{basis_size:>8d}"
-        )
+baseline = results[0]["steady_ms"]
+print(f"{'threads':>8s}  {'first-step (ms)':>16s}  {'steady (ms)':>12s}  "
+      f"{'speedup':>9s}  {'|basis|':>8s}")
+for r in results:
+    speedup = baseline / r["steady_ms"]
+    print(f"{r['threads']:>8d}  {r['first_ms']:>16.1f}  {r['steady_ms']:>12.2f}  "
+          f"{speedup:>8.2f}x  {r['basis']:>8d}")
 
 
-if __name__ == "__main__":
-    main()
+# %% [markdown]
+# ## Plot
+#
+# Steady-state speedup vs thread count, with the linear-scaling reference.
+
+# %%
+threads = np.array([r["threads"] for r in results])
+steady_ms = np.array([r["steady_ms"] for r in results])
+speedup = steady_ms[0] / steady_ms
+
+fig, ax = plt.subplots()
+ax.plot(threads, speedup, "o-", label="measured")
+ax.plot(threads, threads, "k--", alpha=0.4, label="linear")
+ax.set_xlabel("threads")
+ax.set_ylabel("speedup (vs 1 thread)")
+ax.set_title(f"pc_step parallel scaling  L={L}  model={model}  "
+             f"|basis|={results[-1]['basis']}")
+ax.legend()
+plt.tight_layout()
+plt.show()

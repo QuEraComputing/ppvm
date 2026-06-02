@@ -11,8 +11,10 @@ for adaptive Heisenberg-picture evolution:
 - ``action(p)`` / ``action_arr(p)``: L*(p) for one Pauli string p
 - ``leakage(basis, coeffs)`` / ``leakage_arr(...)``: off-basis component of
   L*(Σ c_j p_j), driving basis expansion
-- ``generator(basis)``: scipy CSC matrix M such that L* restricted to
-  ``basis`` is ``M @ coeffs``
+- ``generator(basis)``: COO triples ``(rows, cols, vals)`` for the generator
+  matrix M such that L* restricted to ``basis`` is ``M @ coeffs``. Users
+  wanting a sparse matrix can wrap them — e.g.
+  ``scipy.sparse.coo_matrix((vals, (rows, cols)), shape=(N, N)).tocsc()``
 
 The ``*_arr`` variants pass Pauli strings as ``(N, n_qubits)`` ``uint8``
 arrays of Pauli codes (``0=I, 1=X, 2=Z, 3=Y``) and skip string
@@ -34,13 +36,10 @@ precomputed once at construction.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, Union
+from typing import Union
 
 import numpy as np
 from ppvm_python_native import LindbladSpec as _LindbladSpec
-
-if TYPE_CHECKING:
-    import scipy.sparse as sp
 
 _PAULI_CODE = {"I": 0, "X": 1, "Z": 2, "Y": 3}
 # Lookup table mapping code -> ASCII byte for vectorised string output.
@@ -52,28 +51,44 @@ PauliLincomb = Iterable[tuple[str, complex]]
 JumpSpec = Union[tuple[str, float], tuple[PauliLincomb, float]]
 
 
-def string_to_codes(s: str, n_qubits: int) -> np.ndarray:
-    """Encode a Pauli string ``"IXYZ..."`` as a length-``n_qubits`` uint8 array."""
-    if len(s) != n_qubits:
-        raise ValueError(f"Pauli string {s!r} has length {len(s)} != n_qubits {n_qubits}")
-    return np.array([_PAULI_CODE[c] for c in s], dtype=np.uint8)
+def _string_to_codes(s: str, n_qubits: int) -> np.ndarray:
+    """Encode a Pauli string ``"IXYZ..."`` as a length-``n_qubits`` uint8 array.
+
+    Underscores in the input are ignored, matching the Rust parser
+    (``parse_pauli_string`` in `ppvm-lindblad`) so users can write
+    ``"X_Y_Z"`` for readability.
+    """
+    s_clean = s.replace("_", "")
+    if len(s_clean) != n_qubits:
+        raise ValueError(
+            f"Pauli string {s!r} has length {len(s_clean)} (after stripping '_') "
+            f"!= n_qubits {n_qubits}"
+        )
+    try:
+        return np.array([_PAULI_CODE[c] for c in s_clean], dtype=np.uint8)
+    except KeyError as exc:
+        bad = exc.args[0]
+        raise ValueError(
+            f"Pauli string {s!r} contains invalid character {bad!r}; "
+            f"expected one of 'I', 'X', 'Y', 'Z' (and '_' is allowed as a separator)"
+        ) from None
 
 
-def codes_to_string(codes: np.ndarray) -> str:
+def _codes_to_string(codes: np.ndarray) -> str:
     """Decode one length-``n_qubits`` row of Pauli codes back to a string."""
     return _CODE_TO_ASCII[codes].tobytes().decode("ascii")
 
 
-def basis_to_codes(basis: Sequence[str], n_qubits: int) -> np.ndarray:
+def _basis_to_codes(basis: Sequence[str], n_qubits: int) -> np.ndarray:
     """Stack a sequence of Pauli strings into an ``(N, n_qubits)`` uint8 array."""
     arr = np.zeros((len(basis), n_qubits), dtype=np.uint8)
     for i, s in enumerate(basis):
-        arr[i] = string_to_codes(s, n_qubits)
+        arr[i] = _string_to_codes(s, n_qubits)
     return arr
 
 
-def codes_to_basis(arr: np.ndarray) -> list[str]:
-    """Inverse of :func:`basis_to_codes`. One call into C per row."""
+def _codes_to_basis(arr: np.ndarray) -> list[str]:
+    """Inverse of :func:`_basis_to_codes`. One call into C per row."""
     bytes_per_row = _CODE_TO_ASCII[arr].tobytes()
     n = arr.shape[1]
     return [bytes_per_row[i * n : (i + 1) * n].decode("ascii") for i in range(arr.shape[0])]
@@ -267,9 +282,9 @@ class Lindbladian:
     ) -> tuple[list[str], np.ndarray]:
         """String-keyed variant of :meth:`pc_step_arr`."""
         n = self.n_qubits
-        basis_arr = basis_to_codes(basis, n)
+        basis_arr = _basis_to_codes(basis, n)
         protected_arr = (
-            basis_to_codes(list(protected), n) if protected else np.zeros((0, n), dtype=np.uint8)
+            _basis_to_codes(list(protected), n) if protected else np.zeros((0, n), dtype=np.uint8)
         )
         new_basis_arr, new_coeffs = self.pc_step_arr(
             basis_arr,
@@ -281,27 +296,30 @@ class Lindbladian:
             parallel_threshold,
             num_threads,
         )
-        return codes_to_basis(new_basis_arr), new_coeffs
+        return _codes_to_basis(new_basis_arr), new_coeffs
 
-    def generator_arr(self, basis_arr: np.ndarray) -> sp.csc_matrix:
-        """Sparse generator matrix in CSC form, basis given as uint8 codes.
+    def generator_arr(
+        self, basis_arr: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Generator matrix as COO triples ``(rows, cols, vals)``.
 
-        Requires SciPy (imported lazily): only the sparse-matrix convenience
-        needs it; the ``action``/``leakage`` primitives do not.
+        Basis given as uint8 codes. To get a SciPy sparse matrix:
+
+        >>> import scipy.sparse as sp
+        >>> rows, cols, vals = L_op.generator_arr(basis_arr)
+        >>> M = sp.coo_matrix(
+        ...     (vals, (rows, cols)), shape=(len(basis_arr), len(basis_arr))
+        ... ).tocsc()
         """
-        import scipy.sparse as sp
-
-        n_basis = basis_arr.shape[0]
-        rows, cols, vals = self._spec.generator(np.ascontiguousarray(basis_arr, dtype=np.uint8))
-        return sp.coo_matrix((vals, (rows, cols)), shape=(n_basis, n_basis)).tocsc()
+        return self._spec.generator(np.ascontiguousarray(basis_arr, dtype=np.uint8))
 
     # ── String-keyed convenience API (slower; for tests / display) ──
 
     def action(self, p: str) -> dict[str, float]:
         """Apply ``L*`` to a single Pauli string ``p`` (string-keyed dict)."""
-        codes = string_to_codes(p, self.n_qubits)
+        codes = _string_to_codes(p, self.n_qubits)
         out_basis, out_coeffs = self._spec.action(codes)
-        keys = codes_to_basis(out_basis)
+        keys = _codes_to_basis(out_basis)
         return {k: float(v) for k, v in zip(keys, out_coeffs) if v != 0.0}
 
     def leakage(
@@ -312,20 +330,24 @@ class Lindbladian:
     ) -> dict[str, float]:
         """Off-basis leakage as a ``dict[str, float]`` (slower API)."""
         n = self.n_qubits
-        basis_arr = basis_to_codes(basis, n)
+        basis_arr = _basis_to_codes(basis, n)
         protected_arr = (
-            basis_to_codes(list(protected), n) if protected else np.zeros((0, n), dtype=np.uint8)
+            _basis_to_codes(list(protected), n) if protected else np.zeros((0, n), dtype=np.uint8)
         )
         out_basis, out_coeffs = self._spec.leakage(
             basis_arr,
             np.ascontiguousarray(coeffs, dtype=np.float64),
             protected_arr,
         )
-        keys = codes_to_basis(out_basis)
+        keys = _codes_to_basis(out_basis)
         return {k: float(v) for k, v in zip(keys, out_coeffs) if v != 0.0}
 
-    def generator(self, basis: Sequence[str]) -> sp.csc_matrix:
-        """Sparse generator matrix in CSC form, basis given as strings."""
+    def generator(
+        self, basis: Sequence[str]
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Generator matrix as COO triples ``(rows, cols, vals)``,
+        basis given as strings. See :meth:`generator_arr` for the conversion
+        to a SciPy sparse matrix."""
         n = self.n_qubits
-        basis_arr = basis_to_codes(basis, n)
+        basis_arr = _basis_to_codes(basis, n)
         return self.generator_arr(basis_arr)

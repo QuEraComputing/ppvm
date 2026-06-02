@@ -906,6 +906,7 @@ name = "ppvm-lindblad"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "criterion",
  "dashmap",
  "fxhash",
  "num",

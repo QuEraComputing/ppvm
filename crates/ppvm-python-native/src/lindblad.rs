@@ -10,6 +10,8 @@
 //! `(N, n_qubits)` numpy uint8 arrays into [`ppvm_lindblad::Word`] vectors,
 //! and re-encoding outputs back into numpy.
 
+use std::collections::HashMap;
+
 use num::Complex;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use ppvm_lindblad::{
@@ -26,6 +28,21 @@ type PyCoo<'py> = (
 
 fn map_err(e: ppvm_lindblad::Error) -> PyErr {
     PyValueError::new_err(e.to_string())
+}
+
+/// Reject a basis that contains the same Pauli word at two distinct rows.
+/// Duplicate rows would silently overwrite each other in the generator's
+/// row-index map and produce an incorrect sparse matrix.
+fn assert_basis_unique(basis: &[Word]) -> PyResult<()> {
+    let mut seen: HashMap<&Word, usize> = HashMap::with_capacity(basis.len());
+    for (i, w) in basis.iter().enumerate() {
+        if let Some(prev) = seen.insert(w, i) {
+            return Err(PyValueError::new_err(format!(
+                "basis contains duplicate Pauli word at row {prev} and row {i}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Decode a `(N, n_qubits)` uint8 ndarray view into `N` packed [`Word`]s.
@@ -218,6 +235,7 @@ impl LindbladSpec {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
         let mut basis_words = decode_basis(&basis_view, n_q)?;
+        assert_basis_unique(&basis_words)?;
         let mut coeffs_vec = coeffs.as_slice()?.to_vec();
         if coeffs_vec.len() != basis_words.len() {
             return Err(PyValueError::new_err(format!(
@@ -277,6 +295,7 @@ impl LindbladSpec {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
         let mut basis_words = decode_basis(&basis_view, n_q)?;
+        assert_basis_unique(&basis_words)?;
         let mut coeffs_vec = coeffs.as_slice()?.to_vec();
         if coeffs_vec.len() != basis_words.len() {
             return Err(PyValueError::new_err(format!(
@@ -330,6 +349,7 @@ impl LindbladSpec {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
         let basis_words = decode_basis(&basis_view, n_q)?;
+        assert_basis_unique(&basis_words)?;
         let triplets = self.inner.generator(&basis_words);
         let total = triplets.len();
         let mut rows = Vec::with_capacity(total);

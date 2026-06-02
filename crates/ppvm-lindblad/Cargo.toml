@@ -13,3 +13,8 @@ rayon = "1.11"
 
 [dev-dependencies]
 approx = "0.5.1"
+criterion = "0.7.0"
+
+[[bench]]
+name = "spmv_scaling"
+harness = false

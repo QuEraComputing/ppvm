@@ -625,12 +625,11 @@ impl LindbladSpec {
     /// Sparse generator matrix in COO form: returns `(row, col, val)`
     /// triplets. Row = output Pauli's position in `basis`; col = input
     /// Pauli's position. Output Paulis not in `basis` are silently dropped.
+    ///
+    /// Precondition: `basis` must not contain duplicate Pauli words
+    /// (asserted in debug builds).
     pub fn generator(&self, basis: &[Word]) -> Vec<(usize, usize, f64)> {
-        let index: FxHashMap<Word, u32> = basis
-            .iter()
-            .enumerate()
-            .map(|(i, w)| (w.clone(), i as u32))
-            .collect();
+        let index = build_basis_index(basis);
 
         // The cached `L*(p)` is already a deduplicated `Vec<(Word, f64)>`,
         // so we can iterate it directly without going through a per-task
@@ -705,11 +704,7 @@ impl LindbladSpec {
             };
         }
 
-        let index: FxHashMap<Word, u32> = basis
-            .iter()
-            .enumerate()
-            .map(|(i, w)| (w.clone(), i as u32))
-            .collect();
+        let index = build_basis_index(basis);
 
         // Phase 1: per-column, collect `(row, value)` pairs (already
         // filtered to in-basis), in parallel with thread-local scratch.
@@ -1106,6 +1101,22 @@ fn word_hash(w: &Word) -> u64 {
     let mut h = fxhash::FxHasher::default();
     w.hash(&mut h);
     h.finish()
+}
+
+/// Build a `word → row` map for a basis assumed to contain unique Pauli
+/// words; debug-asserts the uniqueness invariant.
+fn build_basis_index(basis: &[Word]) -> FxHashMap<Word, u32> {
+    let mut index: FxHashMap<Word, u32> = FxHashMap::default();
+    for (i, w) in basis.iter().enumerate() {
+        let prev = index.insert(w.clone(), i as u32);
+        debug_assert!(
+            prev.is_none(),
+            "basis contains duplicate Pauli word at positions {} and {}",
+            prev.unwrap(),
+            i,
+        );
+    }
+    index
 }
 
 /// Union of `index[q]` for each `q ∈ p_support`, deduped.

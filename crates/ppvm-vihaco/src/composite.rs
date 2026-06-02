@@ -374,9 +374,17 @@ impl PPVM {
         Ok(())
     }
 
+    /// Load from a file, auto-detecting the format: if it starts with the PPVM
+    /// magic it is loaded as `.ssb` bytecode, otherwise it is parsed as `.sst`
+    /// source text. A magic match commits to the bytecode path — a corrupt
+    /// `.ssb` errors rather than silently falling back to the text parser.
     pub fn load_file(&mut self, path: &str) -> eyre::Result<()> {
-        let raw_program = std::fs::read_to_string(path)?;
-        self.load_program(&raw_program)
+        let bytes = std::fs::read(path)?;
+        if crate::bytecode::is_bytecode(&bytes) {
+            self.load_bytecode(&bytes)
+        } else {
+            self.load_program(std::str::from_utf8(&bytes)?)
+        }
     }
 
     /// Load a module from an in-memory `.ssb` byte stream.

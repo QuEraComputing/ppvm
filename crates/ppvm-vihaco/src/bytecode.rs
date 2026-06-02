@@ -146,6 +146,16 @@ pub fn module_from_bytes(bytes: &[u8]) -> eyre::Result<PPVMModule> {
     read_module(&mut &bytes[..])
 }
 
+/// Cheap sniff: does this byte stream begin with the PPVM `.ssb` magic?
+///
+/// Reads the leading four bytes the same way [`read_module`] does — as a
+/// little-endian `u32` — so a positive result here means [`read_module`] will
+/// accept the magic. A stream shorter than the magic is not bytecode.
+pub fn is_bytecode(bytes: &[u8]) -> bool {
+    bytes.len() >= 4
+        && u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) == PPVM_MAGIC
+}
+
 /// "Dump": compile `.sst` source straight to the `.ssb` byte stream.
 pub fn compile_to_bytes(source: &str) -> eyre::Result<Vec<u8>> {
     let module = crate::compile_program(source)?;

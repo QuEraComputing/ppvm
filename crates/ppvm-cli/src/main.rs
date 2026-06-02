@@ -52,6 +52,17 @@ enum Commands {
         #[arg(short, long, value_enum, default_value = "bits")]
         format: commands::MeasurementFormat,
     },
+
+    /// Step through a program interactively, pausing at `breakpoint` instructions
+    Debug {
+        /// Input file (.sst source or .ssb bytecode)
+        #[arg(value_name = "FILE")]
+        file: String,
+
+        /// Pause before the first instruction so any program can be stepped
+        #[arg(short, long)]
+        break_at_start: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -74,6 +85,12 @@ fn main() -> Result<()> {
             format,
         } => {
             commands::run(&file, quiet, format)?;
+        }
+        Commands::Debug {
+            file,
+            break_at_start,
+        } => {
+            commands::debug(&file, break_at_start)?;
         }
     }
 

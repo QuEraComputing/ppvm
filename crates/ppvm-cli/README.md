@@ -1,7 +1,8 @@
 # ppvm-cli
 
 Command-line front-end for the Pauli-propagation virtual machine. Parses,
-dumps, and runs `.sst` programs (and their compiled `.ssb` bytecode).
+dumps, runs, and steps through `.sst` programs (and their compiled `.ssb`
+bytecode).
 
 ## Install
 
@@ -61,3 +62,51 @@ Measurements: 0 0 0
 ```
 
 `dump` refuses to overwrite an existing file unless you pass `-f`/`--force`.
+
+## Debug
+
+`debug` steps through a program interactively. At each pause it prints the
+program counter, the next instruction, and the measurements so far, then waits
+for a command (type the letter and press Enter; a bare Enter steps):
+
+- `s` — step one instruction
+- `c` — continue to the next breakpoint (or the end)
+- `q` — quit
+
+By default it pauses at `breakpoint` instructions in the program. Add one
+wherever you want execution to stop:
+
+```
+fn @main() {
+    const.u64 0
+    gate h
+    breakpoint        // execution pauses here
+    const.u64 0
+    gate measure
+    ret
+}
+```
+
+```sh
+$ printf 's\nc\n' | ppvm debug program.sst
+-- breakpoint hit --
+pc=3  next: const.u64 0
+measurements: (none)
+> s step | c continue | q quit: pc=4  next: Measure
+measurements: (none)
+> s step | c continue | q quit: Program finished.
+Measurements: 0
+```
+
+To step through a program that has no breakpoints, pass `-b`/`--break-at-start`
+to pause before the very first instruction:
+
+```sh
+$ ppvm debug examples/ghz.sst -b
+pc=0  next: const.u64 0
+measurements: (none)
+> s step | c continue | q quit:
+```
+
+Batch `run` ignores `breakpoint` instructions entirely, so the same file still
+runs straight through with `ppvm run`.

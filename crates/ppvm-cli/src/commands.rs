@@ -1,6 +1,8 @@
 use eyre::{Result, WrapErr};
+use ppvm_vihaco::composite::{PPVM, StepOutcome};
 use ppvm_vihaco::measurements::{MeasurementOutcome, MeasurementResult};
 use ppvm_vihaco::run_file;
+use std::io::{BufRead, Write};
 use std::path::Path;
 
 /// Output format for `parse`.
@@ -110,6 +112,121 @@ pub fn dump(file: &str, output: Option<&str>, force: bool) -> Result<()> {
         .wrap_err_with(|| format!("failed to dump {file}"))?;
     eprintln!("Bytecode written to {output_file}");
     Ok(())
+}
+
+/// A command entered at the debugger prompt.
+enum DebugCommand {
+    Step,
+    Continue,
+    Quit,
+}
+
+/// Step through a program interactively, pausing at `breakpoint` instructions.
+/// With `break_at_start`, also pauses before the first instruction so any
+/// program can be stepped from the beginning.
+pub fn debug(file: &str, break_at_start: bool) -> Result<()> {
+    let stdin = std::io::stdin();
+    let mut input = stdin.lock();
+    let mut output = std::io::stdout();
+    debug_loop(file, break_at_start, &mut input, &mut output)
+}
+
+/// Core debugger loop, generic over its IO so it can be driven by tests.
+fn debug_loop(
+    file: &str,
+    break_at_start: bool,
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+) -> Result<()> {
+    let mut machine = PPVM::default();
+    machine
+        .load_file(file)
+        .wrap_err_with(|| format!("failed to load {file}"))?;
+    machine.init()?;
+
+    let mut paused = break_at_start;
+    let mut ever_paused = paused;
+
+    loop {
+        // Safety net: stop if execution has run off the end of the code.
+        if machine.current_instruction().is_none() {
+            writeln!(output, "Program counter past end of code.")?;
+            break;
+        }
+
+        if paused {
+            print_location(&machine, output)?;
+            match read_command(input, output)? {
+                DebugCommand::Quit => {
+                    writeln!(output, "Quit.")?;
+                    return Ok(());
+                }
+                DebugCommand::Continue => paused = false,
+                DebugCommand::Step => {}
+            }
+        }
+
+        match machine.step_once()? {
+            StepOutcome::Continue => {}
+            StepOutcome::Breakpoint => {
+                paused = true;
+                ever_paused = true;
+                writeln!(output, "-- breakpoint hit --")?;
+            }
+            StepOutcome::Return | StepOutcome::Halt => {
+                writeln!(output, "Program finished.")?;
+                break;
+            }
+        }
+    }
+
+    writeln!(
+        output,
+        "Measurements: {}",
+        format_bits(&machine.measurement_record())
+    )?;
+    if !ever_paused {
+        writeln!(
+            output,
+            "(no breakpoint was hit; pass --break-at-start to step from the beginning)"
+        )?;
+    }
+    Ok(())
+}
+
+/// Print the program counter, the next instruction, and measurements so far.
+fn print_location(machine: &PPVM, output: &mut impl Write) -> Result<()> {
+    let pc = machine.current_pc();
+    match machine.current_instruction() {
+        Some(inst) => writeln!(output, "pc={pc}  next: {inst}")?,
+        None => writeln!(output, "pc={pc}  (end of code)")?,
+    }
+    writeln!(
+        output,
+        "measurements: {}",
+        format_bits(&machine.measurement_record())
+    )?;
+    Ok(())
+}
+
+/// Prompt for and read a debugger command. A bare Enter steps; EOF quits.
+fn read_command(input: &mut impl BufRead, output: &mut impl Write) -> Result<DebugCommand> {
+    loop {
+        write!(output, "> s step | c continue | q quit: ")?;
+        output.flush()?;
+
+        let mut line = String::new();
+        if input.read_line(&mut line)? == 0 {
+            // EOF (e.g. stdin closed): treat as quit so we never spin.
+            return Ok(DebugCommand::Quit);
+        }
+        match line.trim() {
+            "" | "s" | "step" => return Ok(DebugCommand::Step),
+            "c" | "continue" => return Ok(DebugCommand::Continue),
+            "q" | "quit" => return Ok(DebugCommand::Quit),
+            other => writeln!(output, "unknown command: {other:?}")?,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -254,5 +371,69 @@ mod tests {
 
         let _ = fs::remove_file(&src);
         let _ = fs::remove_file(&out);
+    }
+
+    // ─── debug ─────────────────────────────────────────────────────────
+
+    /// Program with a `breakpoint` before measuring q0 in |0> (deterministic).
+    const BREAKPOINT_PROGRAM: &str =
+        "device circuit.n_qubits 1;\nfn @main() { breakpoint\n const.u64 0\n gate measure\n ret }\n";
+
+    /// Drive `debug_loop` with scripted input, returning the captured output.
+    fn run_debug(program: &str, name: &str, break_at_start: bool, script: &str) -> String {
+        let src = temp_file(name, program);
+        let mut input = script.as_bytes();
+        let mut output: Vec<u8> = Vec::new();
+        debug_loop(&src, break_at_start, &mut input, &mut output).unwrap();
+        let _ = fs::remove_file(&src);
+        String::from_utf8(output).unwrap()
+    }
+
+    #[test]
+    fn debug_break_at_start_steps_through_to_finish() {
+        // PROGRAM is const.u64 0 / gate measure / ret = 3 steps.
+        let out = run_debug(PROGRAM, "ppvm_cli_debug_step.sst", true, "s\ns\ns\n");
+        assert!(out.contains("next: Measure"), "should display the gate: {out}");
+        assert!(out.contains("Program finished."), "{out}");
+        assert!(out.contains("Measurements: 0"), "q0 in |0> measures 0: {out}");
+    }
+
+    #[test]
+    fn debug_continue_runs_to_end() {
+        let out = run_debug(PROGRAM, "ppvm_cli_debug_continue.sst", true, "c\n");
+        assert!(out.contains("Program finished."), "{out}");
+        assert!(out.contains("Measurements: 0"), "{out}");
+    }
+
+    #[test]
+    fn debug_honors_authored_breakpoint() {
+        // Not breaking at start: must run until the `breakpoint` pauses it.
+        let out = run_debug(
+            BREAKPOINT_PROGRAM,
+            "ppvm_cli_debug_bp.sst",
+            false,
+            "c\n",
+        );
+        assert!(out.contains("-- breakpoint hit --"), "{out}");
+        assert!(out.contains("Program finished."), "{out}");
+        // A breakpoint was hit, so no "use --break-at-start" hint.
+        assert!(!out.contains("no breakpoint was hit"), "{out}");
+    }
+
+    #[test]
+    fn debug_quit_stops_before_finishing() {
+        let out = run_debug(PROGRAM, "ppvm_cli_debug_quit.sst", true, "q\n");
+        assert!(out.contains("Quit."), "{out}");
+        assert!(!out.contains("Program finished."), "{out}");
+        assert!(!out.contains("Measurements:"), "quit prints no record: {out}");
+    }
+
+    #[test]
+    fn debug_without_breakpoint_prints_hint() {
+        // No breakpoint, no break-at-start, empty input: runs straight through
+        // and tells the user how to step.
+        let out = run_debug(PROGRAM, "ppvm_cli_debug_hint.sst", false, "");
+        assert!(out.contains("Program finished."), "{out}");
+        assert!(out.contains("no breakpoint was hit"), "{out}");
     }
 }

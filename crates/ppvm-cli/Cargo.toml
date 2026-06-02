@@ -1,0 +1,13 @@
+[package]
+name = "ppvm-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+eyre = "0.6.12"
+ppvm-vihaco = { version = "0.1.0", path = "../ppvm-vihaco" }
+
+[[bin]]
+name = "ppvm"
+path = "src/main.rs"

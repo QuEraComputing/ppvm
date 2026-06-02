@@ -111,3 +111,148 @@ pub fn dump(file: &str, output: Option<&str>, force: bool) -> Result<()> {
     eprintln!("Bytecode written to {output_file}");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// Minimal program that compiles and measures q0 in |0> (deterministic).
+    const PROGRAM: &str =
+        "device circuit.n_qubits 1;\nfn @main() { const.u64 0\n gate measure\n ret }\n";
+
+    fn row(outcomes: &[MeasurementOutcome]) -> MeasurementResult {
+        outcomes.iter().copied().collect()
+    }
+
+    /// Write `contents` to a uniquely-named temp file and return its path.
+    fn temp_file(name: &str, contents: &str) -> String {
+        let path = std::env::temp_dir().join(name);
+        fs::write(&path, contents).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    // ─── format_bits ───────────────────────────────────────────────────
+
+    #[test]
+    fn format_bits_empty_record_is_none() {
+        assert_eq!(format_bits(&[]), "(none)");
+    }
+
+    #[test]
+    fn format_bits_concatenates_qubits_within_an_event() {
+        let record = vec![row(&[
+            MeasurementOutcome::One,
+            MeasurementOutcome::Zero,
+            MeasurementOutcome::One,
+        ])];
+        assert_eq!(format_bits(&record), "101");
+    }
+
+    #[test]
+    fn format_bits_separates_events_with_spaces() {
+        let record = vec![
+            row(&[MeasurementOutcome::One]),
+            row(&[MeasurementOutcome::Zero]),
+        ];
+        assert_eq!(format_bits(&record), "1 0");
+    }
+
+    #[test]
+    fn format_bits_renders_lost_qubit_as_l() {
+        let record = vec![
+            row(&[MeasurementOutcome::One, MeasurementOutcome::Lost]),
+            row(&[MeasurementOutcome::Zero]),
+        ];
+        assert_eq!(format_bits(&record), "1L 0");
+    }
+
+    // ─── run ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn run_succeeds_on_valid_file() {
+        let src = temp_file("ppvm_cli_run_ok.sst", PROGRAM);
+        let res = run(&src, true, MeasurementFormat::Bits);
+        let _ = fs::remove_file(&src);
+        assert!(res.is_ok(), "got: {res:?}");
+    }
+
+    #[test]
+    fn run_errors_with_context_on_missing_file() {
+        let err = run("/no/such/file.sst", false, MeasurementFormat::Bits).unwrap_err();
+        assert!(err.to_string().contains("failed to run"), "got: {err}");
+    }
+
+    // ─── parse ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_succeeds_on_valid_file() {
+        let src = temp_file("ppvm_cli_parse_ok.sst", PROGRAM);
+        let res = parse(&src, Format::Debug);
+        let _ = fs::remove_file(&src);
+        assert!(res.is_ok(), "got: {res:?}");
+    }
+
+    #[test]
+    fn parse_errors_with_context_on_missing_file() {
+        let err = parse("/no/such/file.sst", Format::Pretty).unwrap_err();
+        assert!(err.to_string().contains("failed to read"), "got: {err}");
+    }
+
+    // ─── dump ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn dump_writes_default_ssb_path_when_output_omitted() {
+        let src = temp_file("ppvm_cli_dump_default.sst", PROGRAM);
+        let expected = Path::new(&src).with_extension("ssb");
+        let _ = fs::remove_file(&expected); // clear any leftover from a prior run
+
+        dump(&src, None, false).unwrap();
+        assert!(expected.exists(), "default .ssb should have been written");
+
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&expected);
+    }
+
+    #[test]
+    fn dump_writes_explicit_output_path() {
+        let src = temp_file("ppvm_cli_dump_explicit.sst", PROGRAM);
+        let out = std::env::temp_dir().join("ppvm_cli_dump_explicit_out.ssb");
+        let _ = fs::remove_file(&out);
+
+        dump(&src, Some(out.to_str().unwrap()), false).unwrap();
+        assert!(out.exists());
+
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&out);
+    }
+
+    #[test]
+    fn dump_refuses_to_clobber_without_force() {
+        let src = temp_file("ppvm_cli_dump_clobber.sst", PROGRAM);
+        let out = std::env::temp_dir().join("ppvm_cli_dump_clobber_out.ssb");
+        fs::write(&out, b"existing").unwrap();
+
+        let err = dump(&src, Some(out.to_str().unwrap()), false).unwrap_err();
+        assert!(err.to_string().contains("already exists"), "got: {err}");
+        // The existing file must be left untouched.
+        assert_eq!(fs::read(&out).unwrap(), b"existing");
+
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&out);
+    }
+
+    #[test]
+    fn dump_overwrites_existing_with_force() {
+        let src = temp_file("ppvm_cli_dump_force.sst", PROGRAM);
+        let out = std::env::temp_dir().join("ppvm_cli_dump_force_out.ssb");
+        fs::write(&out, b"existing").unwrap();
+
+        dump(&src, Some(out.to_str().unwrap()), true).unwrap();
+        // Replaced with real bytecode, not the placeholder.
+        assert_ne!(fs::read(&out).unwrap(), b"existing");
+
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&out);
+    }
+}

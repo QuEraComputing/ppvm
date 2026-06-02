@@ -18,9 +18,9 @@ enum Commands {
         #[arg(value_name = "FILE")]
         file: String,
 
-        /// Output format (json, debug, pretty)
-        #[arg(short, long, default_value = "pretty")]
-        format: String,
+        /// Output format
+        #[arg(short, long, value_enum, default_value = "pretty")]
+        format: commands::Format,
     },
     /// Compile a .sst file to bytecode
     Dump {
@@ -31,6 +31,10 @@ enum Commands {
         /// Output file (optional, defaults to <file_name>.ssb)
         #[arg(short, long)]
         output: Option<String>,
+
+        /// Overwrite the output file if it already exists
+        #[arg(short, long)]
+        force: bool,
     },
 
     /// Run a .sst or .ssb program
@@ -39,9 +43,9 @@ enum Commands {
         #[arg(value_name = "FILE")]
         file: String,
 
-        /// Show measurement output
-        #[arg(short, long, default_value = "true")]
-        show_measurements: bool,
+        /// Suppress the measurement record
+        #[arg(short, long)]
+        quiet: bool,
     },
 }
 
@@ -50,16 +54,17 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Parse { file, format } => {
-            commands::parse(&file, &format)?;
+            commands::parse(&file, format)?;
         }
-        Commands::Dump { file, output } => {
-            commands::dump(&file, output.as_deref())?;
-        }
-        Commands::Run {
+        Commands::Dump {
             file,
-            show_measurements,
+            output,
+            force,
         } => {
-            commands::run(&file, show_measurements)?;
+            commands::dump(&file, output.as_deref(), force)?;
+        }
+        Commands::Run { file, quiet } => {
+            commands::run(&file, quiet)?;
         }
     }
 

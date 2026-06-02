@@ -1,4 +1,5 @@
 use eyre::Result;
+use smallvec::SmallVec;
 use vihaco::{Effects, observe};
 
 /// Measurement results are represent as an integer enum
@@ -15,7 +16,10 @@ pub enum MeasurementOutcome {
     Lost = 2,
 }
 
-pub type MeasurementResult = Vec<MeasurementOutcome>;
+/// Inline outcomes per measurement effect before spilling to heap storage.
+pub const MEASUREMENT_RESULT_INLINE_CAPACITY: usize = 8;
+
+pub type MeasurementResult = SmallVec<[MeasurementOutcome; MEASUREMENT_RESULT_INLINE_CAPACITY]>;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MeasurementEffect {

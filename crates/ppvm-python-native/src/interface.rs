@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::HashSet;
+
 use paste::paste;
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::strategy::{
@@ -59,21 +61,26 @@ macro_rules! create_interface {
         #[pymethods]
         impl $name {
             #[new]
-            #[pyo3(signature = (n_qubits, min_abs_coeff = 1e-10, max_pauli_weight = usize::MAX, max_loss_weight = usize::MAX, terms = Vec::<String>::new(), coefficients = Vec::<f64>::new()))]
+            #[pyo3(signature = (n_qubits, min_abs_coeff = 1e-10, max_pauli_weight = usize::MAX, max_loss_weight = usize::MAX, terms = Vec::<String>::new(), coefficients = Vec::<f64>::new(), preserve_strings = Vec::<String>::new()))]
+            #[allow(clippy::too_many_arguments)]
             pub fn new(
                 n_qubits: usize,
                 min_abs_coeff: f64,
                 max_pauli_weight: usize,
                 max_loss_weight: usize,
                 terms: Vec<String>,
-                coefficients: Vec<f64>
+                coefficients: Vec<f64>,
+                preserve_strings: Vec<String>,
             ) -> Self {
                 let _ = max_loss_weight; // unused in non-loss variants
                 let strategy = create_strategy!($loss, min_abs_coeff, max_pauli_weight, max_loss_weight);
+                let preserve_set: HashSet<_> =
+                    preserve_strings.into_iter().map(Into::into).collect();
                 let mut ps = PauliSum::<$type>::builder()
                     .n_qubits(n_qubits)
                     .strategy(strategy)
                     .capacity(n_qubits)
+                    .preserve_strings(preserve_set)
                     .build();
 
                 assert_eq!(

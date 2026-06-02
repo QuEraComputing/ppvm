@@ -237,9 +237,9 @@ macro_rules! impl_acmap_retain {
             H: BuildHasher + Clone + Default,
             W: PauliWordTrait,
         {
-            fn retain<F>(&mut self, f: F)
+            fn retain<F>(&mut self, mut f: F)
             where
-                F: Fn(&W, &V) -> bool + Sync + Send,
+                F: FnMut(&W, &V) -> bool,
             {
                 Self::retain(self, |k, v| f(k, v));
             }
@@ -351,9 +351,9 @@ mod ahash_impl {
         H: BuildHasher + Clone + Default,
         W: PauliWordTrait,
     {
-        fn retain<F>(&mut self, f: F)
+        fn retain<F>(&mut self, mut f: F)
         where
-            F: Fn(&W, &V) -> bool + Sync + Send,
+            F: FnMut(&W, &V) -> bool,
         {
             HashMap::retain(self, |k, v| f(k, v));
         }

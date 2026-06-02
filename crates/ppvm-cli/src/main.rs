@@ -46,6 +46,10 @@ enum Commands {
         /// Suppress the measurement record
         #[arg(short, long)]
         quiet: bool,
+
+        /// Measurement output format
+        #[arg(short, long, value_enum, default_value = "bits")]
+        format: commands::MeasurementFormat,
     },
 }
 
@@ -63,8 +67,12 @@ fn main() -> Result<()> {
         } => {
             commands::dump(&file, output.as_deref(), force)?;
         }
-        Commands::Run { file, quiet } => {
-            commands::run(&file, quiet)?;
+        Commands::Run {
+            file,
+            quiet,
+            format,
+        } => {
+            commands::run(&file, quiet, format)?;
         }
     }
 

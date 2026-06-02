@@ -1,4 +1,5 @@
 use eyre::{Result, WrapErr};
+use ppvm_vihaco::measurements::{MeasurementOutcome, MeasurementResult};
 use ppvm_vihaco::run_file;
 use std::path::Path;
 
@@ -10,15 +11,48 @@ pub enum Format {
     Json,
 }
 
-pub fn run(file: &str, quiet: bool) -> Result<()> {
+/// Output format for the measurement record from `run`.
+#[derive(Clone, Debug, clap::ValueEnum)]
+pub enum MeasurementFormat {
+    /// One bit string per measurement event, space-separated; lost qubit = `L`.
+    Bits,
+    /// Raw debug representation of the record.
+    Debug,
+}
+
+pub fn run(file: &str, quiet: bool, format: MeasurementFormat) -> Result<()> {
     let ppvm = run_file(file).wrap_err_with(|| format!("failed to run {file}"))?;
     if quiet {
-        println!("Successfully ran file {file}");
-    } else {
-        let outcomes = ppvm.measurement_record();
-        println!("Measurement record:\n{:?}", outcomes);
+        return Ok(());
+    }
+    let record = ppvm.measurement_record();
+    match format {
+        MeasurementFormat::Bits => println!("Measurements: {}", format_bits(&record)),
+        MeasurementFormat::Debug => println!("Measurement record:\n{:?}", record),
     }
     Ok(())
+}
+
+/// Render each measurement event as a bit string (lost qubit = `L`), events
+/// space-separated. Empty record renders as `(none)`.
+fn format_bits(record: &[MeasurementResult]) -> String {
+    if record.is_empty() {
+        return "(none)".to_string();
+    }
+    record
+        .iter()
+        .map(|event| {
+            event
+                .iter()
+                .map(|outcome| match outcome {
+                    MeasurementOutcome::Zero => '0',
+                    MeasurementOutcome::One => '1',
+                    MeasurementOutcome::Lost => 'L',
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn parse(file: &str, format: Format) -> Result<()> {

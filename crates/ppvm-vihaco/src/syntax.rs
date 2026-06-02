@@ -134,10 +134,10 @@ impl Resolve<PPVMInstruction, PPVMHeader> for PPVMResolver {
     }
 }
 
-type E<'src> = extra::Err<Simple<'src, char>>;
+type Err<'src> = extra::Err<Simple<'src, char>>;
 
 impl<'src> Parse<'src> for PPVMInstruction {
-    fn parser() -> impl Parser<'src, &'src str, Self, E<'src>> {
+    fn parser() -> impl Parser<'src, &'src str, Self, Err<'src>> {
         use chumsky::prelude::*;
 
         let cpu = <vihaco_cpu::Instruction as Parse>::parser().map(PPVMInstruction::Cpu);

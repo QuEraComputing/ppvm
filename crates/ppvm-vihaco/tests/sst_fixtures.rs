@@ -169,6 +169,67 @@ fn function_call_branch_on_both_returned_values() {
     );
 }
 
+// ─── Auto-detect via load_file: route by content, not extension ───────────
+
+#[test]
+fn is_bytecode_distinguishes_ssb_from_sst() {
+    let sst = std::fs::read("tests/bell.sst").expect("read bell.sst");
+    assert!(
+        !ppvm_vihaco::bytecode::is_bytecode(&sst),
+        ".sst source must not be detected as bytecode"
+    );
+
+    let ssb = ppvm_vihaco::bytecode::compile_to_bytes(
+        &String::from_utf8(sst).expect("bell.sst is utf-8"),
+    )
+    .expect("compile bell.sst");
+    assert!(
+        ppvm_vihaco::bytecode::is_bytecode(&ssb),
+        "dumped .ssb must be detected as bytecode"
+    );
+
+    // Inputs shorter than the 4-byte magic are never bytecode. Note "PPVM" as
+    // text also fails: the magic is a little-endian u32, so its on-disk bytes
+    // are "MVPP", not "PPVM".
+    assert!(!ppvm_vihaco::bytecode::is_bytecode(b"PPV"));
+    assert!(!ppvm_vihaco::bytecode::is_bytecode(b""));
+    assert!(!ppvm_vihaco::bytecode::is_bytecode(b"PPVM"));
+}
+
+#[test]
+fn load_file_auto_detects_bytecode_and_text() {
+    // Use the deterministic X-prepared fixture: q0 measures 1, the branch
+    // flips q1, so both routes must yield exactly [1], [1]. Any divergence —
+    // or a binary file mis-parsed as text — fails loudly.
+    let from_text = ppvm_vihaco::run_file("tests/branch_on_outcome_x.sst")
+        .unwrap_or_else(|e| panic!("run .sst via load_file: {e:?}"));
+
+    // Dump the same fixture to a `.ssb` and run *that file* through the same
+    // run_file entry point. If load_file didn't sniff the magic it would try
+    // to parse the binary as text and error.
+    let out = std::env::temp_dir().join("ppvm_autodetect_branch_x.ssb");
+    let out = out.to_str().expect("utf-8 temp path");
+    ppvm_vihaco::dump_file("tests/branch_on_outcome_x.sst", out)
+        .unwrap_or_else(|e| panic!("dump: {e:?}"));
+    let from_binary = ppvm_vihaco::run_file(out).unwrap_or_else(|e| panic!("run .ssb: {e:?}"));
+    let _ = std::fs::remove_file(out);
+
+    for (label, machine) in [("text", &from_text), ("binary", &from_binary)] {
+        let record = machine.measurement_record();
+        assert_eq!(record.len(), 2, "{label}: expected two measurements");
+        assert_eq!(
+            record[0].as_slice(),
+            &[MeasurementOutcome::One],
+            "{label}: X-prepared q0 must measure 1"
+        );
+        assert_eq!(
+            record[1].as_slice(),
+            &[MeasurementOutcome::One],
+            "{label}: branch must flip q1"
+        );
+    }
+}
+
 // ─── Bytecode round-trip: dump → load → execute each fixture ──────────────
 
 #[test]

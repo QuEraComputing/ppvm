@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 The PPVM Authors
 # SPDX-License-Identifier: Apache-2.0
+
 """Direct Pauli-Lindbladian time evolution on an adaptive Pauli-string basis.
 
 Given a Hermitian Pauli Hamiltonian H = Σ c_i P_i and jump operators

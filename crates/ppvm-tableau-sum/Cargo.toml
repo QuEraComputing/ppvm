@@ -46,3 +46,7 @@ required-features = ["rayon"]
 [[example]]
 name = "msd-noisy-compare"
 required-features = ["rayon"]
+
+[[example]]
+name = "truncation-scaling"
+required-features = ["rayon"]

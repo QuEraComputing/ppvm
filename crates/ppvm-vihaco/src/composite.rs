@@ -3,7 +3,11 @@ use vihaco::machine::StackFrame;
 use vihaco::observer::stdio::{StdoutEffect, StdoutObserver};
 use vihaco::traits::{GetProgramGlobal, ProgramCounter, StackMemory};
 use vihaco::{Effects, Observe, ProgramLoader, Value, composite, observe};
-use vihaco_cpu::{CPU, CPUMessage, StepOutcome};
+use vihaco_cpu::{CPU, CPUMessage};
+
+/// Re-exported so consumers (e.g. the CLI debugger) can match on step results
+/// without depending on `vihaco-cpu` directly.
+pub use vihaco_cpu::StepOutcome;
 
 use crate::component::{Circuit, CircuitEffect};
 use crate::instruction::CircuitInstruction;

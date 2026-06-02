@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use eyre::Result;
-use ppvm_cli::commands;
+
+mod commands;
 
 #[derive(Parser)]
 #[command(name = "ppvm")]

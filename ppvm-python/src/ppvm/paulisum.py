@@ -137,6 +137,7 @@ class PauliSum(
     min_abs_coeff: float = 1e-10
     max_pauli_weight: int | None = None
     max_loss_weight: int | None = None
+    preserve_strings: Sequence[str] | None = None
 
     _interface: PauliSumInterface = field(init=False, repr=False)
 
@@ -193,6 +194,16 @@ class PauliSum(
         if self.max_loss_weight is not None:
             options["max_loss_weight"] = self.max_loss_weight
 
+        if self.preserve_strings:
+            preserve_list = list(self.preserve_strings)
+            for s in preserve_list:
+                if len(s) != n_qubits:
+                    raise ValueError(
+                        "All preserve strings must have length n_qubits "
+                        f"({n_qubits}); got {len(s)}: {s!r}"
+                    )
+            options["preserve_strings"] = preserve_list
+
         return interface(
             n_qubits,
             **options,
@@ -214,6 +225,7 @@ class PauliSum(
         min_abs_coeff: float = 1e-10,
         max_pauli_weight: int | None = None,
         max_loss_weight: int | None = None,
+        preserve_strings: Sequence[str] | None = None,
     ) -> Self:
         """Create a PauliSum from one or more terms with flexible input formats.
 
@@ -234,6 +246,8 @@ class PauliSum(
                 Note, that this should usually be chosen to be quite low, since
                 e.g. 10 would correspond to keeping terms that contribute if
                 up to 10 qubits are lost simultaneously.
+            preserve_strings: Pauli strings (length ``n_qubits`` each) that
+                truncation must never drop. Empty by default.
 
         Returns:
             A new instance of the class this method is called on.
@@ -278,6 +292,7 @@ class PauliSum(
             min_abs_coeff=min_abs_coeff,
             max_pauli_weight=max_pauli_weight,
             max_loss_weight=max_loss_weight,
+            preserve_strings=preserve_strings,
         )
 
     def __str__(self) -> str:
@@ -291,6 +306,7 @@ class PauliSum(
         object.__setattr__(new, "min_abs_coeff", self.min_abs_coeff)
         object.__setattr__(new, "max_pauli_weight", self.max_pauli_weight)
         object.__setattr__(new, "max_loss_weight", self.max_loss_weight)
+        object.__setattr__(new, "preserve_strings", self.preserve_strings)
         object.__setattr__(new, "_interface", self._interface.__copy__())
         return new
 

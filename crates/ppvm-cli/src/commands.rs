@@ -1,32 +1,40 @@
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use ppvm_vihaco::run_file;
 use std::path::Path;
 
-pub fn run(file: &str, show_measurements: bool) -> Result<()> {
-    let ppvm = run_file(file)?;
-    if show_measurements {
+/// Output format for `parse`.
+#[derive(Clone, Debug, clap::ValueEnum)]
+pub enum Format {
+    Pretty,
+    Debug,
+    Json,
+}
+
+pub fn run(file: &str, quiet: bool) -> Result<()> {
+    let ppvm = run_file(file).wrap_err_with(|| format!("failed to run {file}"))?;
+    if quiet {
+        println!("Successfully ran file {file}");
+    } else {
         let outcomes = ppvm.measurement_record();
         println!("Measurement record:\n{:?}", outcomes);
-    } else {
-        println!("Successfully ran file {}", file);
     }
     Ok(())
 }
 
-pub fn parse(file: &str, format: &str) -> Result<()> {
-    let source = std::fs::read_to_string(file)?;
+pub fn parse(file: &str, format: Format) -> Result<()> {
+    let source =
+        std::fs::read_to_string(file).wrap_err_with(|| format!("failed to read {file}"))?;
     let parsed = ppvm_vihaco::parse_program(&source)?;
 
     match format {
-        "json" => {
+        Format::Json => {
             eprintln!("Warning: JSON format not yet supported for AST, using debug format");
             println!("{:#?}", parsed);
         }
-        "debug" => {
+        Format::Debug => {
             println!("{:#?}", parsed);
         }
-        _ => {
-            // Pretty summary.
+        Format::Pretty => {
             println!("Module:");
             println!("  Headers: {}", parsed.headers.len());
             for (i, header) in parsed.headers.iter().enumerate() {
@@ -48,7 +56,7 @@ pub fn parse(file: &str, format: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn dump(file: &str, output: Option<&str>) -> Result<()> {
+pub fn dump(file: &str, output: Option<&str>, force: bool) -> Result<()> {
     let output_file = match output {
         Some(output_file_name) => output_file_name.to_string(),
         None => Path::new(file)
@@ -57,7 +65,15 @@ pub fn dump(file: &str, output: Option<&str>) -> Result<()> {
             .into_owned(),
     };
 
-    ppvm_vihaco::dump_file(file, &output_file)?;
+    // Don't clobber an existing file unless asked to.
+    if !force && Path::new(&output_file).exists() {
+        return Err(eyre::eyre!(
+            "{output_file} already exists; pass --force to overwrite"
+        ));
+    }
+
+    ppvm_vihaco::dump_file(file, &output_file)
+        .wrap_err_with(|| format!("failed to dump {file}"))?;
     eprintln!("Bytecode written to {output_file}");
     Ok(())
 }

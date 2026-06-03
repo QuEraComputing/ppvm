@@ -42,7 +42,7 @@ use std::fmt;
 use std::time::Instant;
 
 pub mod expm;
-pub use expm::{CsrMatrix, ExpmOpts, expm_multiply};
+pub use expm::{Csr, ExpmOpts, csr_from_triplets, csr_one_norm, expm_multiply, spmv_parallel};
 
 /// Words pack up to 128 qubits.
 const W_U64: usize = 2;
@@ -693,15 +693,10 @@ impl LindbladSpec {
     /// `Vec<Vec<...>>` → `Vec<...>` flatten *and* the sequential
     /// `from_triplets` count-and-scatter that dominated the original
     /// `generator_csr` (~40% of PC-step wall time).
-    pub fn generator_csr(&self, basis: &[Word]) -> CsrMatrix {
+    pub fn generator_csr(&self, basis: &[Word]) -> Csr {
         let n = basis.len();
         if n == 0 {
-            return CsrMatrix {
-                n: 0,
-                row_ptr: vec![0],
-                col_idx: Vec::new(),
-                values: Vec::new(),
-            };
+            return Csr::new((0, 0), vec![0], Vec::new(), Vec::new());
         }
 
         let index = build_basis_index(basis);
@@ -773,15 +768,15 @@ impl LindbladSpec {
         for c in row_counts.iter() {
             c.store(0, Ordering::Relaxed);
         }
-        // We need parallel writes into shared `col_idx` and `values`.
+        // We need parallel writes into shared `indices` and `data`.
         // Safety: each `(row, slot)` pair is unique by construction (every
         // (row, col) appears at most once per column, and atomic increment
         // gives a unique slot per (row, write) event). We use raw-pointer
         // writes inside `unsafe` to express this without RwLock overhead.
-        let mut col_idx = vec![0u32; nnz];
-        let mut values = vec![0f64; nnz];
-        let col_idx_ptr = SendPtr(col_idx.as_mut_ptr());
-        let values_ptr = SendPtr(values.as_mut_ptr());
+        let mut indices = vec![0u32; nnz];
+        let mut data = vec![0f64; nnz];
+        let indices_ptr = SendPtr(indices.as_mut_ptr());
+        let data_ptr = SendPtr(data.as_mut_ptr());
         let row_ptr_ref: &[usize] = &row_ptr;
         let row_counts_ref: &[AtomicU32] = &row_counts;
         // `move` on the closure forces whole-struct capture of `SendPtr`
@@ -798,18 +793,15 @@ impl LindbladSpec {
                     // per (row, write event)) and `pos < nnz` (counter bounded
                     // by precomputed row count).
                     unsafe {
-                        col_idx_ptr.write(pos, col as u32);
-                        values_ptr.write(pos, v);
+                        indices_ptr.write(pos, col as u32);
+                        data_ptr.write(pos, v);
                     }
                 }
             });
 
-        CsrMatrix {
-            n,
-            row_ptr,
-            col_idx,
-            values,
-        }
+        Csr::new_from_unsorted((n, n), row_ptr, indices, data)
+            .map_err(|(_, _, _, e)| e)
+            .expect("invalid CSR structure")
     }
 
     /// Predictor-corrector adaptive step.

@@ -8,14 +8,21 @@
 //! with `(m, s)` chosen from a precomputed table that minimises total SpMV
 //! count subject to a double-precision truncation bound.
 //!
-//! The hot path is repeated sparse-matrix × dense-vector products. SpMV is
-//! parallelised over rows with `rayon` when the matrix has more than
-//! [`ExpmOpts::parallel_threshold`] nonzeros; below that, the task-spawn
-//! overhead beats the cache-friendliness of the serial loop, so we stay
-//! single-threaded. Both branches share the same CSR storage and produce
-//! bit-identical output.
+//! Storage is `Csr`. The hot path is repeated sparse-matrix ×
+//! dense-vector products; SpMV is parallelised over rows with `rayon` when
+//! the matrix has more than [`ExpmOpts::parallel_threshold`] nonzeros (below
+//! that the task-spawn overhead beats the cache-friendly serial loop).
+//! Both branches produce bit-identical output.
 
 use rayon::prelude::*;
+use sprs::CsMatI;
+
+/// Sparse CSR matrix with `u32` column indices and `usize` indptr.
+///
+/// `u32` keeps memory traffic in SpMV minimal (4 bytes per nonzero for the
+/// column index instead of 8) — important for bandwidth-bound regimes.
+/// `usize` indptr accommodates `nnz > 2^32` even when individual indices fit.
+pub type Csr = CsMatI<f64, u32, usize>;
 
 /// `θ_m` table from Al-Mohy & Higham (2011), Table A.3, for double
 /// precision (unit roundoff `u = 2^{-53}`).
@@ -56,101 +63,89 @@ const THETA: &[(u32, f64)] = &[
     (30, 3.54),
 ];
 
-/// Compressed Sparse Row matrix (square, `n × n`).
-#[derive(Clone, Debug)]
-pub struct CsrMatrix {
-    pub n: usize,
-    /// Length `n+1`; row `i` spans `[row_ptr[i], row_ptr[i+1])` in
-    /// `col_idx` and `values`.
-    pub row_ptr: Vec<usize>,
-    pub col_idx: Vec<u32>,
-    pub values: Vec<f64>,
+/// Build a `Csr` (square, `n × n`) from `(row, col, value)`
+/// triplets. Duplicate triplets at the same `(row, col)` are summed.
+pub fn csr_from_triplets(n: usize, triplets: &[(usize, usize, f64)]) -> Csr {
+    let mut counts = vec![0usize; n];
+    for &(r, _, _) in triplets {
+        debug_assert!(r < n, "row index {r} out of range");
+        counts[r] += 1;
+    }
+    let mut indptr = vec![0usize; n + 1];
+    for i in 0..n {
+        indptr[i + 1] = indptr[i] + counts[i];
+    }
+    let nnz = indptr[n];
+    let mut indices = vec![0u32; nnz];
+    let mut data = vec![0f64; nnz];
+    let mut offset = vec![0usize; n];
+    for &(r, c, v) in triplets {
+        debug_assert!(c < n, "col index {c} out of range");
+        let pos = indptr[r] + offset[r];
+        indices[pos] = c as u32;
+        data[pos] = v;
+        offset[r] += 1;
+    }
+    Csr::new_from_unsorted((n, n), indptr, indices, data)
+        .map_err(|(_, _, _, e)| e)
+        .expect("invalid CSR structure")
 }
 
-impl CsrMatrix {
-    /// Number of structural nonzeros.
-    pub fn nnz(&self) -> usize {
-        self.values.len()
+/// Matrix 1-norm: `max_j Σ_i |A_{ij}|` (max column sum of absolute values).
+/// Used to pick the Taylor parameters `(m, s)`.
+pub fn csr_one_norm(m: &Csr) -> f64 {
+    if m.cols() == 0 {
+        return 0.0;
     }
-
-    /// Build CSR from a list of `(row, col, value)` triplets. Duplicate
-    /// triplets at the same `(row, col)` are summed.
-    pub fn from_triplets(n: usize, triplets: &[(usize, usize, f64)]) -> Self {
-        let mut counts = vec![0usize; n];
-        for &(r, _, _) in triplets {
-            debug_assert!(r < n, "row index {r} out of range");
-            counts[r] += 1;
-        }
-        let mut row_ptr = vec![0usize; n + 1];
-        for i in 0..n {
-            row_ptr[i + 1] = row_ptr[i] + counts[i];
-        }
-        let mut col_idx = vec![0u32; triplets.len()];
-        let mut values = vec![0f64; triplets.len()];
-        let mut offset = vec![0usize; n];
-        for &(r, c, v) in triplets {
-            debug_assert!(c < n, "col index {c} out of range");
-            let pos = row_ptr[r] + offset[r];
-            col_idx[pos] = c as u32;
-            values[pos] = v;
-            offset[r] += 1;
-        }
-        Self {
-            n,
-            row_ptr,
-            col_idx,
-            values,
-        }
+    let mut col_sums = vec![0f64; m.cols()];
+    for (k, &col) in m.indices().iter().enumerate() {
+        col_sums[col as usize] += m.data()[k].abs();
     }
+    col_sums.into_iter().fold(0f64, f64::max)
+}
 
-    /// Matrix 1-norm: `max_j Σ_i |A_{ij}|` (max column sum of absolute
-    /// values). Used to pick the Taylor parameters `(m, s)`.
-    pub fn one_norm(&self) -> f64 {
-        if self.n == 0 {
-            return 0.0;
+/// `y ← A · x` (serial).
+pub fn spmv_serial(m: &Csr, x: &[f64], y: &mut [f64]) {
+    debug_assert_eq!(x.len(), m.cols());
+    debug_assert_eq!(y.len(), m.rows());
+    let indptr_raw = m.indptr();
+    let indptr = indptr_raw.raw_storage();
+    let indices = m.indices();
+    let data = m.data();
+    for (i, yi) in y.iter_mut().enumerate() {
+        let mut sum = 0.0;
+        for k in indptr[i]..indptr[i + 1] {
+            sum += data[k] * x[indices[k] as usize];
         }
-        let mut col_sums = vec![0f64; self.n];
-        for k in 0..self.values.len() {
-            col_sums[self.col_idx[k] as usize] += self.values[k].abs();
-        }
-        col_sums.into_iter().fold(0f64, f64::max)
+        *yi = sum;
     }
+}
 
-    /// `y ← A · x` (serial).
-    pub fn spmv_serial(&self, x: &[f64], y: &mut [f64]) {
-        debug_assert_eq!(x.len(), self.n);
-        debug_assert_eq!(y.len(), self.n);
-        for (i, yi) in y.iter_mut().enumerate() {
-            let mut sum = 0.0;
-            for k in self.row_ptr[i]..self.row_ptr[i + 1] {
-                sum += self.values[k] * x[self.col_idx[k] as usize];
-            }
-            *yi = sum;
+/// `y ← A · x` (rayon-parallel over rows).
+pub fn spmv_parallel(m: &Csr, x: &[f64], y: &mut [f64]) {
+    debug_assert_eq!(x.len(), m.cols());
+    debug_assert_eq!(y.len(), m.rows());
+    let indptr_raw = m.indptr();
+    let indptr = indptr_raw.raw_storage();
+    let indices = m.indices();
+    let data = m.data();
+    y.par_iter_mut().enumerate().for_each(|(i, yi)| {
+        let mut sum = 0.0;
+        for k in indptr[i]..indptr[i + 1] {
+            sum += data[k] * x[indices[k] as usize];
         }
-    }
+        *yi = sum;
+    });
+}
 
-    /// `y ← A · x` (rayon-parallel over rows).
-    pub fn spmv_parallel(&self, x: &[f64], y: &mut [f64]) {
-        debug_assert_eq!(x.len(), self.n);
-        debug_assert_eq!(y.len(), self.n);
-        y.par_iter_mut().enumerate().for_each(|(i, yi)| {
-            let mut sum = 0.0;
-            for k in self.row_ptr[i]..self.row_ptr[i + 1] {
-                sum += self.values[k] * x[self.col_idx[k] as usize];
-            }
-            *yi = sum;
-        });
-    }
-
-    /// Dispatches to [`Self::spmv_parallel`] when `nnz ≥ parallel_threshold`,
-    /// else [`Self::spmv_serial`].
-    #[inline]
-    pub fn spmv(&self, x: &[f64], y: &mut [f64], parallel_threshold: usize) {
-        if self.nnz() >= parallel_threshold {
-            self.spmv_parallel(x, y);
-        } else {
-            self.spmv_serial(x, y);
-        }
+/// Dispatches to [`spmv_parallel`] when `nnz ≥ parallel_threshold`,
+/// else [`spmv_serial`].
+#[inline]
+pub fn spmv(m: &Csr, x: &[f64], y: &mut [f64], parallel_threshold: usize) {
+    if m.nnz() >= parallel_threshold {
+        spmv_parallel(m, x, y);
+    } else {
+        spmv_serial(m, x, y);
     }
 }
 
@@ -202,28 +197,28 @@ fn inf_norm(v: &[f64]) -> f64 {
     v.iter().fold(0f64, |acc, &x| acc.max(x.abs()))
 }
 
-/// Compute `exp(t · A) · b` for a real square sparse matrix `A` in CSR
-/// form. Allocates a fresh `Vec<f64>` of length `A.n`.
+/// Compute `exp(t · A) · b` for a real square sparse matrix `A`. Allocates
+/// a fresh `Vec<f64>` of length `A.rows()`.
 ///
 /// The algorithm is Al-Mohy & Higham (2011) Algorithm 3.2: pick
 /// `(m, s)` from the precomputed `θ_m` table to minimise SpMV count,
 /// then iteratively apply a degree-`m` Horner-form Taylor polynomial
 /// `s` times. Inside each Horner sweep we terminate early once two
 /// successive Taylor terms have norm below `opts.tol · ‖F‖`.
-pub fn expm_multiply(a: &CsrMatrix, t: f64, b: &[f64], opts: ExpmOpts) -> Vec<f64> {
+pub fn expm_multiply(a: &Csr, t: f64, b: &[f64], opts: ExpmOpts) -> Vec<f64> {
     assert_eq!(
-        a.n,
+        a.rows(),
         b.len(),
         "matrix size {} mismatches vector length {}",
-        a.n,
+        a.rows(),
         b.len()
     );
-    let n = a.n;
+    let n = a.rows();
     if n == 0 {
         return Vec::new();
     }
 
-    let t_a_one_norm = t.abs() * a.one_norm();
+    let t_a_one_norm = t.abs() * csr_one_norm(a);
     let (m_star, s) = select_ms(t_a_one_norm);
     let scale = t / s as f64;
 
@@ -235,7 +230,7 @@ pub fn expm_multiply(a: &CsrMatrix, t: f64, b: &[f64], opts: ExpmOpts) -> Vec<f6
         let mut c1 = inf_norm(&bk);
         for i in 1..=m_star {
             // bk ← (scale / i) · A · bk
-            a.spmv(&bk, &mut work, opts.parallel_threshold);
+            spmv(a, &bk, &mut work, opts.parallel_threshold);
             let factor = scale / i as f64;
             for j in 0..n {
                 bk[j] = factor * work[j];
@@ -264,9 +259,9 @@ mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
 
-    fn diag(vals: &[f64]) -> CsrMatrix {
+    fn diag(vals: &[f64]) -> Csr {
         let trips: Vec<_> = vals.iter().enumerate().map(|(i, &v)| (i, i, v)).collect();
-        CsrMatrix::from_triplets(vals.len(), &trips)
+        csr_from_triplets(vals.len(), &trips)
     }
 
     #[test]
@@ -274,7 +269,7 @@ mod tests {
         // [[1, 0, 2],
         //  [0, 3, 0],
         //  [4, 0, 5]]
-        let m = CsrMatrix::from_triplets(
+        let m = csr_from_triplets(
             3,
             &[
                 (0, 0, 1.0),
@@ -286,17 +281,17 @@ mod tests {
         );
         let x = vec![1.0, 1.0, 1.0];
         let mut y = vec![0.0; 3];
-        m.spmv_serial(&x, &mut y);
+        spmv_serial(&m, &x, &mut y);
         assert_eq!(y, vec![3.0, 3.0, 9.0]);
         let mut y_par = vec![0.0; 3];
-        m.spmv_parallel(&x, &mut y_par);
+        spmv_parallel(&m, &x, &mut y_par);
         assert_eq!(y_par, vec![3.0, 3.0, 9.0]);
     }
 
     #[test]
     fn one_norm() {
         // 1-norm = max column abs-sum. Above: col0=5, col1=3, col2=7 → 7.
-        let m = CsrMatrix::from_triplets(
+        let m = csr_from_triplets(
             3,
             &[
                 (0, 0, 1.0),
@@ -306,7 +301,7 @@ mod tests {
                 (2, 2, 5.0),
             ],
         );
-        assert_abs_diff_eq!(m.one_norm(), 7.0);
+        assert_abs_diff_eq!(csr_one_norm(&m), 7.0);
     }
 
     #[test]
@@ -335,7 +330,7 @@ mod tests {
     fn expm_skew_rotation() {
         // A = [[0, 1], [-1, 0]]: exp(tA) is rotation by t.
         // exp(t·A)·(1, 0)^T = (cos t, -sin t)^T.
-        let m = CsrMatrix::from_triplets(2, &[(0, 1, 1.0), (1, 0, -1.0)]);
+        let m = csr_from_triplets(2, &[(0, 1, 1.0), (1, 0, -1.0)]);
         let b = vec![1.0, 0.0];
         let t = 0.7;
         let r = expm_multiply(&m, t, &b, ExpmOpts::default());
@@ -362,7 +357,7 @@ mod tests {
                     .flatten()
             })
             .collect();
-        let m = CsrMatrix::from_triplets(50, &trips);
+        let m = csr_from_triplets(50, &trips);
         let b: Vec<f64> = (0..50).map(|i| 1.0 / (i + 1) as f64).collect();
         let r_serial = expm_multiply(
             &m,

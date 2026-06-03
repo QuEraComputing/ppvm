@@ -133,7 +133,7 @@ pub trait ACMapRetain<
     /// Keep only entries for which `f(key, value)` returns `true`.
     fn retain<F>(&mut self, f: F)
     where
-        F: Fn(&W, &V) -> bool + Sync + Send;
+        F: FnMut(&W, &V) -> bool;
 }
 
 /// Aggregate trait combining every operation a backing map must support

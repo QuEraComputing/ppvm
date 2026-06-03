@@ -237,6 +237,7 @@ class Lindbladian:
         coeffs: np.ndarray,
         dt: float,
         tau_add: float,
+        drop_tol: float = 0.0,
         protected_arr: np.ndarray | None = None,
         expm_tol: float = 1e-12,
         parallel_threshold: int = 50_000,
@@ -250,10 +251,16 @@ class Lindbladian:
         with rayon-parallel SpMV when the restricted generator has more
         than ``parallel_threshold`` nonzeros.
 
+        When ``drop_tol > 0``, basis entries whose absolute coefficient is
+        below ``drop_tol`` after the corrector are pruned from the returned
+        basis (unless the word is in ``protected_arr``). Useful at γ = 0,
+        where there is no physical damping of small-coefficient strings.
+
         ``num_threads``, when set, pins this call to a freshly-built rayon
         pool of that size — useful for benchmarking parallel scaling.
 
-        Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown.
+        Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown
+        (or shrunk, if ``drop_tol`` pruned entries).
         """
         n = self.n_qubits
         if protected_arr is None:
@@ -263,6 +270,7 @@ class Lindbladian:
             np.ascontiguousarray(coeffs, dtype=np.float64),
             float(dt),
             float(tau_add),
+            float(drop_tol),
             np.ascontiguousarray(protected_arr, dtype=np.uint8),
             float(expm_tol),
             int(parallel_threshold),
@@ -275,6 +283,7 @@ class Lindbladian:
         coeffs: np.ndarray,
         dt: float,
         tau_add: float,
+        drop_tol: float = 0.0,
         protected: Sequence[str] | None = None,
         expm_tol: float = 1e-12,
         parallel_threshold: int = 50_000,
@@ -291,6 +300,7 @@ class Lindbladian:
             coeffs,
             dt,
             tau_add,
+            drop_tol,
             protected_arr,
             expm_tol,
             parallel_threshold,

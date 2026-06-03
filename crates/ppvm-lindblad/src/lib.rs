@@ -33,7 +33,7 @@
 //! operate directly on raw `u64` chunks for speed.
 
 use dashmap::DashMap;
-use fxhash::{FxBuildHasher, FxHashMap};
+use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use num::Complex;
 use ppvm_runtime::traits::PauliWordTrait;
 use ppvm_runtime::word::PauliWord;
@@ -836,6 +836,7 @@ impl LindbladSpec {
         coeffs: &mut Vec<f64>,
         dt: f64,
         tau_add: f64,
+        drop_tol: f64,
         protected: &[Word],
         opts: ExpmOpts,
         num_threads: Option<usize>,
@@ -845,9 +846,9 @@ impl LindbladSpec {
                 .num_threads(n)
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
-            pool.install(|| self.pc_step_inner(basis, coeffs, dt, tau_add, protected, opts))
+            pool.install(|| self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected, opts))
         } else {
-            self.pc_step_inner(basis, coeffs, dt, tau_add, protected, opts)
+            self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected, opts)
         }
     }
 
@@ -862,6 +863,7 @@ impl LindbladSpec {
         coeffs: &mut Vec<f64>,
         dt: f64,
         tau_add: f64,
+        drop_tol: f64,
         protected: &[Word],
         opts: ExpmOpts,
         num_threads: Option<usize>,
@@ -871,9 +873,9 @@ impl LindbladSpec {
                 .num_threads(n)
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
-            pool.install(|| self.pc_step_inner_timed(basis, coeffs, dt, tau_add, protected, opts))
+            pool.install(|| self.pc_step_inner_timed(basis, coeffs, dt, tau_add, drop_tol, protected, opts))
         } else {
-            self.pc_step_inner_timed(basis, coeffs, dt, tau_add, protected, opts)
+            self.pc_step_inner_timed(basis, coeffs, dt, tau_add, drop_tol, protected, opts)
         }
     }
 
@@ -883,6 +885,7 @@ impl LindbladSpec {
         coeffs: &mut Vec<f64>,
         dt: f64,
         tau_add: f64,
+        drop_tol: f64,
         protected: &[Word],
         opts: ExpmOpts,
     ) -> Result<PcStepTimings, Error> {
@@ -933,6 +936,8 @@ impl LindbladSpec {
         *coeffs = expm_multiply(&csr, dt, &coeffs_pre_padded, opts);
         t.expm2_us = t0.elapsed().as_micros() as u64;
 
+        prune_basis(basis, coeffs, drop_tol, protected);
+
         Ok(t)
     }
 
@@ -942,6 +947,7 @@ impl LindbladSpec {
         coeffs: &mut Vec<f64>,
         dt: f64,
         tau_add: f64,
+        drop_tol: f64,
         protected: &[Word],
         opts: ExpmOpts,
     ) -> Result<(), Error> {
@@ -969,6 +975,8 @@ impl LindbladSpec {
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.
         let csr = self.generator_csr(basis);
         *coeffs = expm_multiply(&csr, dt, &coeffs_pre_padded, opts);
+        // 5. Prune basis entries below `drop_tol` (protected words never dropped).
+        prune_basis(basis, coeffs, drop_tol, protected);
         Ok(())
     }
 
@@ -1093,6 +1101,29 @@ fn word_hash(w: &Word) -> u64 {
     let mut h = fxhash::FxHasher::default();
     w.hash(&mut h);
     h.finish()
+}
+
+/// Compact `basis` / `coeffs` in place: drop entries whose absolute
+/// coefficient is below `drop_tol` unless the word appears in `protected`.
+/// No-op when `drop_tol ≤ 0`.
+fn prune_basis(basis: &mut Vec<Word>, coeffs: &mut Vec<f64>, drop_tol: f64, protected: &[Word]) {
+    if drop_tol <= 0.0 {
+        return;
+    }
+    debug_assert_eq!(basis.len(), coeffs.len());
+    let protected_set: FxHashSet<&Word> = protected.iter().collect();
+    let mut write = 0;
+    for read in 0..basis.len() {
+        if coeffs[read].abs() >= drop_tol || protected_set.contains(&basis[read]) {
+            if write != read {
+                basis.swap(write, read);
+                coeffs.swap(write, read);
+            }
+            write += 1;
+        }
+    }
+    basis.truncate(write);
+    coeffs.truncate(write);
 }
 
 /// Build a `word → row` map for a basis assumed to contain unique Pauli

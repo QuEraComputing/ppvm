@@ -214,6 +214,7 @@ impl LindbladSpec {
     /// Returns `(new_basis, new_coeffs)`.
     #[pyo3(signature = (
         basis, coeffs, dt, tau_add,
+        drop_tol = 0.0,
         protected = None,
         expm_tol = 1e-12,
         parallel_threshold = 50_000,
@@ -227,6 +228,7 @@ impl LindbladSpec {
         coeffs: PyReadonlyArray1<'py, f64>,
         dt: f64,
         tau_add: f64,
+        drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
         expm_tol: f64,
         parallel_threshold: usize,
@@ -259,6 +261,7 @@ impl LindbladSpec {
                 &mut coeffs_vec,
                 dt,
                 tau_add,
+                drop_tol,
                 &protected_words,
                 opts,
                 num_threads,
@@ -274,6 +277,7 @@ impl LindbladSpec {
     /// name → microseconds spent in that phase, for profiling.
     #[pyo3(signature = (
         basis, coeffs, dt, tau_add,
+        drop_tol = 0.0,
         protected = None,
         expm_tol = 1e-12,
         parallel_threshold = 50_000,
@@ -287,6 +291,7 @@ impl LindbladSpec {
         coeffs: PyReadonlyArray1<'py, f64>,
         dt: f64,
         tau_add: f64,
+        drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
         expm_tol: f64,
         parallel_threshold: usize,
@@ -320,6 +325,7 @@ impl LindbladSpec {
                 &mut coeffs_vec,
                 dt,
                 tau_add,
+                drop_tol,
                 &protected_words,
                 opts,
                 num_threads,

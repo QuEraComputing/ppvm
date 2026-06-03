@@ -9,7 +9,12 @@ use eyre::{Result, WrapErr, bail, eyre};
 use ppvm_vihaco::CircuitInstruction;
 use ppvm_vihaco::composite::PPVM;
 use ppvm_vihaco::measurements::MeasurementResult;
-use std::io::{BufRead, Write};
+use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
+#[cfg(test)]
+use std::io::BufRead;
+use std::io::Write;
+use std::path::PathBuf;
 
 /// How a gate command lowers: the engine instruction plus how many qubit and
 /// float operands it consumes (qubits first, then floats — the order
@@ -69,17 +74,61 @@ enum Outcome {
     Quit,
 }
 
-/// Launch the REPL on stdin/stdout.
+/// Launch the interactive REPL with line editing and command history.
+/// History recall (up/down arrows), cursor movement, and Ctrl-R search come
+/// from rustyline; the per-command logic is the same `dispatch` the scripted
+/// tests drive through `repl_loop`.
 pub fn repl() -> Result<()> {
-    let stdin = std::io::stdin();
-    let mut input = stdin.lock();
+    let mut rl = DefaultEditor::new()?;
+    let history = history_path();
+    if let Some(path) = &history {
+        let _ = rl.load_history(path); // best-effort: a missing file is fine
+    }
+
+    let mut machine: Option<PPVM> = None;
     let mut output = std::io::stdout();
-    repl_loop(&mut input, &mut output)
+    loop {
+        match rl.readline("ppvm> ") {
+            Ok(line) => {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let _ = rl.add_history_entry(trimmed);
+                match dispatch(trimmed, &mut machine, &mut output) {
+                    Ok(Outcome::Continue) => {}
+                    Ok(Outcome::Quit) => break,
+                    Err(e) => writeln!(output, "error: {e}")?,
+                }
+            }
+            // Ctrl-C: abandon the current line, keep the session (shell-like).
+            Err(ReadlineError::Interrupted) => continue,
+            // Ctrl-D on an empty line: leave cleanly.
+            Err(ReadlineError::Eof) => break,
+            Err(e) => return Err(e).wrap_err("readline failed"),
+        }
+    }
+
+    if let Some(path) = &history {
+        let _ = rl.save_history(path); // best-effort: don't fail the session
+    }
+    Ok(())
+}
+
+/// Where to persist history across sessions: `$HOME/.ppvm_history`. `None`
+/// (so history is session-only) when there's no `HOME` — e.g. on Windows,
+/// where you'd reach for the `dirs` crate instead.
+fn history_path() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".ppvm_history"))
 }
 
 /// Core REPL loop, generic over its IO so tests can drive it with scripted
 /// input. Holds a single `Option<PPVM>` — `None` until `device N`. Command-level
 /// errors are printed and the loop continues; only `quit`/`exit`/EOF exit.
+///
+/// Test-only: the interactive entry point is `repl`, which runs the same
+/// `dispatch` under a rustyline editor for history and line editing.
+#[cfg(test)]
 fn repl_loop(input: &mut impl BufRead, output: &mut impl Write) -> Result<()> {
     let mut machine: Option<PPVM> = None;
     loop {

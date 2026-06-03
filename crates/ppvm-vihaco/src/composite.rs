@@ -435,6 +435,7 @@ impl vihaco::Reset for PPVM {
         self.cpu.reset();
         self.circuit.reset();
         self.loader.pc = 0;
+        self.measurement_record.record.clear();
     }
 }
 
@@ -642,6 +643,38 @@ mod tests {
     }
 
     #[test]
+    fn reset_clears_the_measurement_record() -> eyre::Result<()> {
+        use vihaco::Reset;
+
+        let source = "device circuit.n_qubits 2;\n\
+                      fn @main() {\n\
+                          const.u64 0\n\
+                          gate h\n\
+                          const.u64 0\n\
+                          const.u64 1\n\
+                          gate cnot\n\
+                          const.u64 0\n\
+                          gate measure\n\
+                          const.u64 1\n\
+                          gate measure\n\
+                          ret\n\
+                      }\n";
+        let mut machine = PPVM::default();
+        machine.run_program(source)?;
+        assert_eq!(machine.measurement_record().len(), 2);
+
+        // Resetting the machine must discard the recorded measurements, so a
+        // subsequent run does not see stale results leaking in from before.
+        machine.reset();
+        assert!(
+            machine.measurement_record().is_empty(),
+            "reset must clear the measurement record"
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn init_fails_when_n_qubits_undeclared() -> eyre::Result<()> {
         let source = "fn @main() { ret }\n";
         let mut machine = PPVM::default();
@@ -715,7 +748,11 @@ mod tests {
         // Stepping again must make progress (advance the pc) rather than
         // re-hitting the same breakpoint instruction.
         let next = machine.step_once()?;
-        assert_ne!(next, StepOutcome::Breakpoint, "must move past the breakpoint");
+        assert_ne!(
+            next,
+            StepOutcome::Breakpoint,
+            "must move past the breakpoint"
+        );
         assert!(machine.current_pc() > pc_at_break, "pc must advance");
 
         Ok(())

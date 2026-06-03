@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Running a compiled program for many shots, optionally across threads.
 //!
 //! Each shot runs on a fresh [`PPVM`] so shots are fully independent; the

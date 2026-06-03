@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use eyre::{Result, WrapErr};
 use ppvm_vihaco::composite::{PPVM, StepOutcome};
 use ppvm_vihaco::measurements::MeasurementResult;

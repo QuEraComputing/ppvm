@@ -8,6 +8,11 @@ pub mod measurements;
 pub mod shots;
 mod syntax;
 
+/// Re-exported so consumers (e.g. the CLI REPL) can name gates for
+/// [`composite::PPVM::apply_circuit_instruction`] without depending on the ISA
+/// crate directly.
+pub use vihaco_circuit_isa::CircuitInstruction;
+
 use chumsky::Parser;
 use vihaco::syntax::{ParsedModule, Resolve};
 use vihaco::{Type, Value, module::Module};

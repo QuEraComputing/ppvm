@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 use eyre::Result;
 
 mod commands;
+mod repl;
 
 #[derive(Parser)]
 #[command(name = "ppvm")]
@@ -14,8 +15,9 @@ pub struct Cli {
     #[arg(short, long, default_value = "1")]
     threads: usize,
 
+    /// Subcommand to run; with none, drops into the interactive REPL.
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -92,30 +94,31 @@ fn main() -> Result<()> {
     ppvm_vihaco::shots::set_global_threads(cli.threads)?;
 
     match cli.command {
-        Commands::Parse { file, format } => {
+        None => repl::repl()?,
+        Some(Commands::Parse { file, format }) => {
             commands::parse(&file, format)?;
         }
-        Commands::Dump {
+        Some(Commands::Dump {
             file,
             output,
             force,
-        } => {
+        }) => {
             commands::dump(&file, output.as_deref(), force)?;
         }
-        Commands::Run {
+        Some(Commands::Run {
             file,
             shots,
             seed,
             output,
             quiet,
             format,
-        } => {
+        }) => {
             commands::run(&file, shots, seed, output.as_deref(), quiet, format)?;
         }
-        Commands::Debug {
+        Some(Commands::Debug {
             file,
             break_at_start,
-        } => {
+        }) => {
             commands::debug(&file, break_at_start)?;
         }
     }

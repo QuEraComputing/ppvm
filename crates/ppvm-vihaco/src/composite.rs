@@ -177,8 +177,8 @@ impl PPVM {
             }
             RXX | RYY | RZZ | Depolarize2 => {
                 let theta = self.pop_f64()?;
-                let q0 = self.pop_qubit()?;
                 let q1 = self.pop_qubit()?;
+                let q0 = self.pop_qubit()?;
                 Ok(CircuitMessage::TwoQubitAndFloat(q0, q1, theta))
             }
             R => {
@@ -207,8 +207,8 @@ impl PPVM {
                 let p2 = self.pop_f64()?;
                 let p1 = self.pop_f64()?;
                 let p0 = self.pop_f64()?;
-                let q0 = self.pop_qubit()?;
                 let q1 = self.pop_qubit()?;
+                let q0 = self.pop_qubit()?;
                 Ok(CircuitMessage::TwoQubitAndFloatArr3(q0, q1, [p0, p1, p2]))
             }
             TwoQubitPauliError => {
@@ -216,8 +216,8 @@ impl PPVM {
                 for p in ps.iter_mut().rev() {
                     *p = self.pop_f64()?;
                 }
-                let q0 = self.pop_qubit()?;
                 let q1 = self.pop_qubit()?;
+                let q0 = self.pop_qubit()?;
                 Ok(CircuitMessage::TwoQubitAndFloatArr15(q0, q1, ps))
             }
         }
@@ -313,6 +313,56 @@ impl PPVM {
     /// `show` command. Delegates to the circuit's size-specific tableau.
     pub fn state_string(&self) -> String {
         self.circuit.state_string()
+    }
+
+    /// Build a fresh, initialized `n_qubits`-qubit device with no code. The
+    /// REPL's `device` command uses this to (re)create the machine. Errors if
+    /// `n_qubits` is zero (a device must have at least one qubit).
+    pub fn with_qubits(n_qubits: usize) -> eyre::Result<Self> {
+        let mut machine = Self::default();
+        let mut module = vihaco::module::Module::<
+            PPVMInstruction,
+            Value,
+            vihaco::Type,
+            PPVMDeviceInfo,
+        >::default();
+        module.extra.n_qubits = n_qubits;
+        machine.load(&module)?;
+        machine.init()?;
+        Ok(machine)
+    }
+
+    /// Lower a single circuit instruction — qubit operands first, then float
+    /// params, per the push-in-order / pop-in-reverse convention — and execute
+    /// it against the persistent state. Qubit indices are bounds-checked against
+    /// the device size first, because the tableau panics (rather than erroring)
+    /// on an out-of-range qubit.
+    pub fn apply_circuit_instruction(
+        &mut self,
+        inst: CircuitInstruction,
+        qubits: &[usize],
+        params: &[f64],
+    ) -> eyre::Result<()> {
+        let n_qubits = self.loader.module.extra.n_qubits;
+        for &q in qubits {
+            if q >= n_qubits {
+                eyre::bail!("qubit {q} out of range for {n_qubits}-qubit device");
+            }
+        }
+
+        let mut instrs = Vec::with_capacity(qubits.len() + params.len() + 1);
+        for &q in qubits {
+            instrs.push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                Value::U64(q as u64),
+            )));
+        }
+        for &p in params {
+            instrs.push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                Value::F64(p),
+            )));
+        }
+        instrs.push(PPVMInstruction::Circuit(inst));
+        self.execute_single_instruction(&instrs)
     }
 
     fn execute_effects(&mut self, inst: Instruction) -> eyre::Result<Effects<PPVMEffect>> {
@@ -734,6 +784,79 @@ mod tests {
         );
         // PPVM delegates to the circuit.
         assert_eq!(rendered, machine.circuit.state_string());
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_circuit_pops_operands_in_reverse_of_push_order() -> eyre::Result<()> {
+        // Convention: operands are pushed in argument order (q0, q1, then any
+        // floats) and popped in reverse. So every two-qubit gate must read q0 as
+        // the first operand pushed, consistently, with or without trailing
+        // floats. (CNOT already obeyed this; the float-carrying arms did not.)
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 8;
+        let mut machine = PPVM::default();
+        machine.load(&module)?;
+        machine.init()?;
+
+        // CNOT: push q0=2, q1=5.
+        machine.cpu.stack_push(Value::U32(2));
+        machine.cpu.stack_push(Value::U32(5));
+        assert_eq!(
+            machine.resolve_circuit(&CircuitInstruction::CNOT)?,
+            CircuitMessage::TwoQubit(2, 5)
+        );
+
+        // RXX: push q0=2, q1=5, theta — same qubit order as CNOT.
+        machine.cpu.stack_push(Value::U32(2));
+        machine.cpu.stack_push(Value::U32(5));
+        machine.cpu.stack_push(Value::F64(0.3));
+        assert_eq!(
+            machine.resolve_circuit(&CircuitInstruction::RXX)?,
+            CircuitMessage::TwoQubitAndFloat(2, 5, 0.3)
+        );
+
+        // CorrelatedLoss: push q0=2, q1=5, p0, p1, p2.
+        machine.cpu.stack_push(Value::U32(2));
+        machine.cpu.stack_push(Value::U32(5));
+        machine.cpu.stack_push(Value::F64(0.1));
+        machine.cpu.stack_push(Value::F64(0.2));
+        machine.cpu.stack_push(Value::F64(0.3));
+        assert_eq!(
+            machine.resolve_circuit(&CircuitInstruction::CorrelatedLoss)?,
+            CircuitMessage::TwoQubitAndFloatArr3(2, 5, [0.1, 0.2, 0.3])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn with_qubits_builds_an_initialized_device() -> eyre::Result<()> {
+        use crate::measurements::MeasurementOutcome;
+
+        let mut m = PPVM::with_qubits(2)?;
+        // The device is ready to take instructions immediately.
+        m.apply_circuit_instruction(CircuitInstruction::X, &[0], &[])?;
+        m.apply_circuit_instruction(CircuitInstruction::Measure, &[0], &[])?;
+        let record = m.measurement_record();
+        assert_eq!(record.len(), 1);
+        assert_eq!(record[0].as_slice(), [MeasurementOutcome::One]);
+        Ok(())
+    }
+
+    #[test]
+    fn with_qubits_zero_is_an_error() {
+        assert!(PPVM::with_qubits(0).is_err());
+    }
+
+    #[test]
+    fn apply_circuit_instruction_bounds_checks_qubits() -> eyre::Result<()> {
+        // q1 is out of range on a 1-qubit device: this must error rather than
+        // panic in the tableau.
+        let mut m = PPVM::with_qubits(1)?;
+        let err = m
+            .apply_circuit_instruction(CircuitInstruction::X, &[1], &[])
+            .unwrap_err();
+        assert!(err.to_string().contains("out of range"), "got: {err}");
         Ok(())
     }
 

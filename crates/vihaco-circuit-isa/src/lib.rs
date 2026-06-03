@@ -124,7 +124,7 @@ impl std::fmt::Display for CircuitInstruction {
     }
 }
 
-#[derive(Debug, Clone, Message)]
+#[derive(Debug, Clone, PartialEq, Message)]
 pub enum CircuitMessage {
     Qubit(usize),                                   // X, Y, Z, ...
     QubitAndFloat(usize, f64),                      // RX, depolarize, ...

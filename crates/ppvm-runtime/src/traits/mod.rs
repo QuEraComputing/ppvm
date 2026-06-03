@@ -14,7 +14,7 @@ mod strategy;
 mod trace;
 mod word_trait;
 
-pub use branch::{CRx, Projection, RotationOne, RotationTwo, TGate, U3Gate};
+pub use branch::{CRx, Projection, RotXY, RotationOne, RotationTwo, TGate, U3Gate};
 pub use clifford::{Clifford, CliffordExtensions};
 pub use coefficient::{Coefficient, ComplexCoefficient};
 pub use map::{

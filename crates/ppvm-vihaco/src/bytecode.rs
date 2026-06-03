@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Binary bytecode (`.ssb`) round-trip for PPVM modules.
 //!
 //! Serializes a resolved [`Module`] to a little-endian container — header

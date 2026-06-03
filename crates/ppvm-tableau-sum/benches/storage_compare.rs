@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Compares `VecStorage` and `MapStorage` on an msd-noisy-shaped workload:
 //! every gate is followed by 1-4 noise channels on the qubits it touched.
 //! Mixes Clifford, T, loss, and depolarize so `insert_or_merge_batch` runs

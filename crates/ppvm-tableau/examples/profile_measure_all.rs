@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Per-qubit timing breakdown of `measure_all` on the MSD workload.
 //!
 //! Builds the same 85-qubit MSD state used by the `measure-all` bench, then on

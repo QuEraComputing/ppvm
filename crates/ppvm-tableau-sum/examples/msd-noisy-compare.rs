@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Statistical comparison between `GeneralizedTableauSum` (probability-
 //! weighted branched representation, sampled at the end) and the pure
 //! `GeneralizedTableau` (one stochastic trajectory per shot) on the noisy

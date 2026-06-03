@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Statistical equivalence tests between the noise-aware `Sampler` (sum
 //! backend) and the pure `GeneralizedTableau` simulator.
 //!

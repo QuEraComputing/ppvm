@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Truncation-error scaling study on a small random noisy circuit.
 //!
 //! Builds one seeded brickwork random circuit (single-qubit Cliffords + T,

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Benchmark the cost of a Clifford burst followed by a noise call.
 //!
 //! Used to estimate the overhead of moving from today's lazy-fingerprint

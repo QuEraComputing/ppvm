@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 use num::Complex;
 use ppvm_runtime::config::Config;
 use ppvm_tableau::{data::GeneralizedTableau, sparsevec::SparseVector};

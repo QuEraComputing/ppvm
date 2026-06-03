@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Quick heuristic benchmark to find the n_shots crossover between
 //! the serial and parallel implementations of `Sampler::sample_shots`.
 

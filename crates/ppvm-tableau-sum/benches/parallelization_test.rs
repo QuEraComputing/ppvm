@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Decides whether parallelizing the noise-channel "Phase 1" (per-entry
 //! `fork` + Pauli, before the merge) is worth implementing.
 //!

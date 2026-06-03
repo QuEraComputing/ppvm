@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tight-loop driver for `cargo flamegraph` of the per-shot sampling cost
 //! (fork + measure_all) on the 85-qubit MSD state.
 //!

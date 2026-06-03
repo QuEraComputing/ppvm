@@ -9,10 +9,9 @@ use vihaco_cpu::{CPU, CPUMessage};
 /// without depending on `vihaco-cpu` directly.
 pub use vihaco_cpu::StepOutcome;
 
-use crate::component::{Circuit, CircuitEffect};
-use crate::instruction::CircuitInstruction;
+use crate::component::Circuit;
 use crate::measurements::{MeasurementEffect, MeasurementObserver, MeasurementResult};
-use crate::message::CircuitMessage;
+use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
 
 pub const PPVM_MAGIC: u32 = 0x5050564D;
 
@@ -156,7 +155,7 @@ impl PPVM {
     }
 
     fn resolve_circuit(&mut self, inst: &CircuitInstruction) -> eyre::Result<CircuitMessage> {
-        use crate::instruction::CircuitInstruction::*;
+        use CircuitInstruction::*;
         match inst {
             X | Y | Z | H | S | SAdj | SqrtX | SqrtY | SqrtXAdj | SqrtYAdj | T | TAdj | Measure
             | Reset => {

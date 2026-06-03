@@ -6,12 +6,10 @@ use vihaco::{
     module::Module,
     syntax::{BodyItem, RawForm, RawOperand, Resolve},
 };
+use vihaco_circuit_isa::CircuitInstruction;
 use vihaco_parser_core::Parse;
 
-use crate::{
-    composite::{PPVMDeviceInfo, PPVMInstruction},
-    instruction::CircuitInstruction,
-};
+use crate::composite::{PPVMDeviceInfo, PPVMInstruction};
 
 #[derive(Debug, Clone, PartialEq, vihaco_parser::Parse)]
 #[head = "device "]

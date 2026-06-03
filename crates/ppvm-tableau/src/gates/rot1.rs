@@ -112,6 +112,62 @@ mod tests {
         assert!(!tab.measure(0).unwrap());
     }
 
+    /// R(axis_angle=0, θ=0) = identity: |0⟩ stays |0⟩, no branching.
+    #[test]
+    fn test_r_identity() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.r(0, 0.0, 0.0);
+        assert_eq!(tab.coefficients.len(), 1);
+        assert!(!tab.measure(0).unwrap());
+    }
+
+    /// R(axis_angle=0, θ=π) = RX(π): flips |0⟩ → |1⟩ with no branching.
+    #[test]
+    fn test_r_axis_zero_is_rx() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.r(0, 0.0, PI);
+        assert_eq!(tab.coefficients.len(), 1);
+        assert!(tab.measure(0).unwrap());
+    }
+
+    /// R(axis_angle=π/2, θ=π) = RY(π): flips |0⟩ → |1⟩ with no branching.
+    #[test]
+    fn test_r_axis_half_pi_is_ry() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.r(0, FRAC_PI_2, PI);
+        assert_eq!(tab.coefficients.len(), 1);
+        assert!(tab.measure(0).unwrap());
+    }
+
+    /// A partial rotation about an in-plane axis branches into two terms.
+    #[test]
+    fn test_r_branches() {
+        let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
+        tab.r(0, 0.37 * PI, FRAC_PI_2);
+        assert_eq!(tab.coefficients.len(), 2);
+    }
+
+    /// R(axis_angle, θ) must give identical per-seed measurement statistics
+    /// to the manual decomposition RZ(axis_angle)·RX(θ)·RZ(−axis_angle).
+    #[test]
+    fn test_r_matches_rz_rx_rz() {
+        let (axis_angle, theta) = (0.21 * PI, 0.34 * PI);
+
+        let mut tab_r: TestTableau = GeneralizedTableau::new_with_seed(1, 1e-12, 0);
+        tab_r.r(0, axis_angle, theta);
+
+        let mut tab_manual: TestTableau = GeneralizedTableau::new_with_seed(1, 1e-12, 0);
+        tab_manual.rz(0, -axis_angle);
+        tab_manual.rx(0, theta);
+        tab_manual.rz(0, axis_angle);
+
+        for seed in 0..200 {
+            let result_r = tab_r.fork(Some(seed)).measure(0).unwrap();
+            let result_manual = tab_manual.fork(Some(seed)).measure(0).unwrap();
+            assert_eq!(result_r, result_manual, "mismatch at seed {}", seed);
+        }
+    }
+
     #[test]
     fn test_two_qubit_case() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-10);

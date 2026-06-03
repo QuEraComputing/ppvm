@@ -204,7 +204,13 @@ impl PPVM {
                 Ok(CircuitMessage::TwoQubitAndFloatArr3(q0, q1, [p0, p1, p2]))
             }
             TwoQubitPauliError => {
-                todo!()
+                let mut ps = [0.0; 15];
+                for p in ps.iter_mut() {
+                    *p = self.pop_f64()?;
+                }
+                let q0 = self.pop_qubit()?;
+                let q1 = self.pop_qubit()?;
+                Ok(CircuitMessage::TwoQubitAndFloatArr15(q0, q1, ps))
             }
         }
     }

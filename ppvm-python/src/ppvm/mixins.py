@@ -112,6 +112,22 @@ class RotationsMixin:
         """
         self._interface.rz(addr0, theta)
 
+    def r(self, addr0: int, axis_angle: float, theta: float) -> None:
+        """Apply a rotation about an axis in the X-Y plane to the specified qubit.
+
+        ```math
+        R(\\phi, \\theta) = e^{-i \\frac{\\theta}{2} (\\cos\\phi\\, X + \\sin\\phi\\, Y)}
+            = R_Z(\\phi) R_X(\\theta) R_Z(-\\phi)
+        ```
+
+        Args:
+            addr0: The index of the target qubit.
+            axis_angle: The angle ``φ`` (in radians) of the rotation axis
+                within the X-Y plane, measured from the X-axis.
+            theta: The rotation angle in radians.
+        """
+        self._interface.r(addr0, axis_angle, theta)
+
     # Two qubit rotations
     def rxx(self, addr0: int, addr1: int, theta: float) -> None:
         """Apply an RXX (Ising XX) rotation gate to two qubits.

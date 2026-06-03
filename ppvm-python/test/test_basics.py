@@ -191,6 +191,16 @@ def test_gate_methods():
     s.rz(0, -PI / 2)
     assert pytest.approx(t(s).get("YI", 0.0)) == 1.0
 
+    # r(axis_angle=0, θ=π/2) = rx(π/2): ZI → YI
+    s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
+    s.r(0, 0.0, PI / 2)
+    assert pytest.approx(t(s).get("YI", 0.0)) == 1.0
+
+    # r(axis_angle=π/2, θ=π/2) = ry(π/2): ZI → −XI
+    s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
+    s.r(0, PI / 2, PI / 2)
+    assert pytest.approx(t(s).get("XI", 0.0)) == -1.0
+
     # rxx(π/2): ZI → YX  [cos·ZI + sin·YX at θ=π/2 → YX]
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
     s.rxx(0, 1, PI / 2)

@@ -245,6 +245,32 @@ impl Circuit {
         }
     }
 
+    /// Same as [`Circuit::new`], but seed the RNG deterministically so a shot
+    /// is reproducible.
+    pub fn new_with_seed(n_qubits: usize, coefficient_threshold: f64, seed: u64) -> Self {
+        macro_rules! seeded {
+            ($variant:ident) => {{
+                let tab = GeneralizedTableau::new_with_seed(n_qubits, coefficient_threshold, seed);
+                Self::$variant(CircuitExecutor { tab })
+            }};
+        }
+        if n_qubits <= 64 {
+            seeded!(Bits64)
+        } else if n_qubits <= 128 {
+            seeded!(Bits128)
+        } else if n_qubits <= 256 {
+            seeded!(Bits256)
+        } else if n_qubits <= 512 {
+            seeded!(Bits512)
+        } else if n_qubits <= 1024 {
+            seeded!(Bits1024)
+        } else if n_qubits <= 2048 {
+            seeded!(Bits2048)
+        } else {
+            panic!("No matching executor for {} qubits", n_qubits);
+        }
+    }
+
     fn execute(
         &mut self,
         inst: CircuitInstruction,

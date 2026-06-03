@@ -226,11 +226,24 @@ impl PPVM {
     }
 
     pub fn init(&mut self) -> eyre::Result<()> {
+        self.init_inner(None)
+    }
+
+    /// Like [`PPVM::init`], but seed the circuit RNG deterministically so the
+    /// run is reproducible.
+    pub fn init_with_seed(&mut self, seed: u64) -> eyre::Result<()> {
+        self.init_inner(Some(seed))
+    }
+
+    fn init_inner(&mut self, seed: Option<u64>) -> eyre::Result<()> {
         let info = &self.loader.module.extra;
         if info.n_qubits == 0 {
             return Err(eyre::eyre!("device circuit.n_qubits must be declared"));
         }
-        self.circuit = Circuit::new(info.n_qubits, info.coefficient_threshold);
+        self.circuit = match seed {
+            Some(seed) => Circuit::new_with_seed(info.n_qubits, info.coefficient_threshold, seed),
+            None => Circuit::new(info.n_qubits, info.coefficient_threshold),
+        };
 
         // push entry frame
         self.cpu.push_frame(Frame {
@@ -366,7 +379,16 @@ impl PPVM {
     }
 
     pub fn run(&mut self) -> eyre::Result<StepOutcome> {
-        self.init()?;
+        self.run_with_seed(None)
+    }
+
+    /// Like [`PPVM::run`], but seed the circuit RNG deterministically when
+    /// `seed` is `Some`, making the run reproducible.
+    pub fn run_with_seed(&mut self, seed: Option<u64>) -> eyre::Result<StepOutcome> {
+        match seed {
+            Some(seed) => self.init_with_seed(seed)?,
+            None => self.init()?,
+        }
 
         loop {
             // Breakpoints only pause the interactive debugger; a batch run

@@ -4,6 +4,7 @@ pub mod composite;
 pub mod instruction;
 pub mod measurements;
 pub mod message;
+pub mod shots;
 mod syntax;
 
 use chumsky::Parser;
@@ -13,6 +14,22 @@ use vihaco_parser_core::Parse;
 
 use crate::composite::{PPVM, PPVMDeviceInfo, PPVMInstruction};
 use crate::syntax::{PPVMHeader, PPVMResolver};
+
+/// A fully resolved PPVM module, ready to load into a [`PPVM`].
+pub type PPVMModule = Module<PPVMInstruction, Value, Type, PPVMDeviceInfo>;
+
+/// Read a file and produce a loadable module, auto-detecting the format: a
+/// leading PPVM magic is parsed as `.ssb` bytecode, otherwise as `.sst` source.
+/// Mirrors [`PPVM::load_file`] but returns the module so it can be compiled once
+/// and run for many shots.
+pub fn load_module_file(path: &str) -> eyre::Result<PPVMModule> {
+    let bytes = std::fs::read(path)?;
+    if bytecode::is_bytecode(&bytes) {
+        bytecode::module_from_bytes(&bytes)
+    } else {
+        compile_program(std::str::from_utf8(&bytes)?)
+    }
+}
 
 pub fn run_file(path: &str) -> eyre::Result<PPVM> {
     let mut machine = PPVM::default();

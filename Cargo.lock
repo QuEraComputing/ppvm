@@ -1193,6 +1193,7 @@ dependencies = [
  "rayon",
  "smallvec",
  "vihaco",
+ "vihaco-circuit-isa",
  "vihaco-cpu",
  "vihaco-parser",
  "vihaco-parser-core",
@@ -1760,6 +1761,18 @@ dependencies = [
  "log",
  "smallvec",
  "vihaco-macros",
+ "vihaco-parser",
+ "vihaco-parser-core",
+]
+
+[[package]]
+name = "vihaco-circuit-isa"
+version = "0.1.0"
+dependencies = [
+ "chumsky 0.10.1",
+ "eyre",
+ "smallvec",
+ "vihaco",
  "vihaco-parser",
  "vihaco-parser-core",
 ]

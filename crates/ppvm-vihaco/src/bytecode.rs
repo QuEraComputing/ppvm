@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn round_trips_code() {
-        use crate::instruction::CircuitInstruction;
+        use vihaco_circuit_isa::CircuitInstruction;
         use vihaco_cpu::Instruction as Cpu;
 
         let mut m = empty_module();

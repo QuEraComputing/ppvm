@@ -1,6 +1,5 @@
 use crate::measurements::MeasurementEffect;
-use crate::message::CircuitMessage;
-use crate::{instruction::CircuitInstruction, measurements::MeasurementOutcome};
+use crate::measurements::MeasurementOutcome;
 use bitvec::view::BitView;
 use bnum::types::{U256, U512, U1024, U2048};
 use eyre::{Result, eyre};
@@ -9,6 +8,7 @@ use num::complex::Complex64;
 use ppvm_runtime::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
 use vihaco::{Effects, component, observe};
+use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
 
 macro_rules! batch_for {
     ($tab:expr, $method:ident, $addrs:expr) => {
@@ -296,12 +296,6 @@ impl Circuit {
             Self::Bits2048(ex) => ex.execute_instruction(inst, msg),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct CircuitEffect {
-    pub inst: CircuitInstruction,
-    pub msg: CircuitMessage,
 }
 
 #[observe(CircuitEffect, effect=MeasurementEffect)]

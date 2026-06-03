@@ -1,0 +1,12 @@
+[package]
+name = "vihaco-circuit-isa"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chumsky = "0.10"
+eyre = "0.6.12"
+smallvec = "1.15.1"
+vihaco = { version = "0.1.0", path = "../../../vihaco/crates/vihaco" }
+vihaco-parser = { version = "0.1.0", path = "../../../vihaco/crates/vihaco-parser" }
+vihaco-parser-core = { version = "0.1.0", path = "../../../vihaco/crates/vihaco-parser-core" }

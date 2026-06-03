@@ -22,3 +22,4 @@ vihaco = { version = "0.1.0", path = "../../../vihaco/crates/vihaco" }
 vihaco-cpu = { version = "0.1.0", path = "../../../vihaco/crates/vihaco-cpu" }
 vihaco-parser = { version = "0.1.0", path = "../../../vihaco/crates/vihaco-parser" }
 vihaco-parser-core = { version = "0.1.0", path = "../../../vihaco/crates/vihaco-parser-core" }
+vihaco-circuit-isa = { version = "0.1.0", path = "../vihaco-circuit-isa" }

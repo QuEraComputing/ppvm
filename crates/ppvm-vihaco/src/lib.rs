@@ -1,9 +1,7 @@
 pub mod bytecode;
 pub mod component;
 pub mod composite;
-pub mod instruction;
 pub mod measurements;
-pub mod message;
 pub mod shots;
 mod syntax;
 

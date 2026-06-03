@@ -137,6 +137,7 @@ class PauliSum(
     min_abs_coeff: float = 1e-10
     max_pauli_weight: int | None = None
     max_loss_weight: int | None = None
+    preserve_strings: Sequence[str] | None = None
 
     _interface: PauliSumInterface = field(init=False, repr=False)
 
@@ -193,6 +194,16 @@ class PauliSum(
         if self.max_loss_weight is not None:
             options["max_loss_weight"] = self.max_loss_weight
 
+        if self.preserve_strings:
+            preserve_list = list(self.preserve_strings)
+            for s in preserve_list:
+                if len(s) != n_qubits:
+                    raise ValueError(
+                        "All preserve strings must have length n_qubits "
+                        f"({n_qubits}); got {len(s)}: {s!r}"
+                    )
+            options["preserve_strings"] = preserve_list
+
         return interface(
             n_qubits,
             **options,
@@ -214,6 +225,7 @@ class PauliSum(
         min_abs_coeff: float = 1e-10,
         max_pauli_weight: int | None = None,
         max_loss_weight: int | None = None,
+        preserve_strings: Sequence[str] | None = None,
     ) -> Self:
         """Create a PauliSum from one or more terms with flexible input formats.
 
@@ -234,6 +246,8 @@ class PauliSum(
                 Note, that this should usually be chosen to be quite low, since
                 e.g. 10 would correspond to keeping terms that contribute if
                 up to 10 qubits are lost simultaneously.
+            preserve_strings: Pauli strings (length ``n_qubits`` each) that
+                truncation must never drop. Empty by default.
 
         Returns:
             A new instance of the class this method is called on.
@@ -278,6 +292,7 @@ class PauliSum(
             min_abs_coeff=min_abs_coeff,
             max_pauli_weight=max_pauli_weight,
             max_loss_weight=max_loss_weight,
+            preserve_strings=preserve_strings,
         )
 
     def __str__(self) -> str:
@@ -291,6 +306,7 @@ class PauliSum(
         object.__setattr__(new, "min_abs_coeff", self.min_abs_coeff)
         object.__setattr__(new, "max_pauli_weight", self.max_pauli_weight)
         object.__setattr__(new, "max_loss_weight", self.max_loss_weight)
+        object.__setattr__(new, "preserve_strings", self.preserve_strings)
         object.__setattr__(new, "_interface", self._interface.__copy__())
         return new
 
@@ -366,18 +382,34 @@ class PauliSum(
         """
         return self._interface.trace(pattern)
 
-    def amplitude_damping(self, addr0: int, gamma: float):
+    def amplitude_damping(self, addr0: int, gamma: float, *, truncate: bool = True):
         """Apply an amplitude-damping channel.
 
         Args:
             addr0: The index of the target qubit.
             gamma: The damping rate. `X` and `Y` are damped with `sqrt(1 - gamma)`,
                 whereas `Z` branches into `gamma * I + (1 - gamma) * Z`.
+            truncate: If ``True`` (default), run the configured truncation
+                strategy after the channel; if ``False``, defer it (use
+                :meth:`truncate` to fire the cut later).
         """
 
         # TODO: move to mixins once also implemented for GeneralizedTableau
 
-        self._interface.amplitude_damping(addr0, gamma)
+        self._interface.amplitude_damping(addr0, gamma, truncate=truncate)
+
+    def truncate(self) -> None:
+        """Run the configured truncation strategy (``min_abs_coeff`` and/or
+        ``max_pauli_weight``) on the current state.
+
+        Useful when gates were called with ``truncate=False`` to chain a
+        composition of commuting operations (e.g. ``rxx + ryy`` on the
+        same edge, an exchange-like step that conserves total ``Z``), so
+        that intermediate truncation does not drop conserved-charge
+        components. Call :meth:`truncate` once at the end of the
+        composition to apply the cut to the combined result.
+        """
+        self._interface.truncate()
 
 
 @dataclass(frozen=True)
@@ -404,7 +436,7 @@ class LossyPauliSum(PauliSum):
 
     # NOTE: purposely not using mixin for better docstrings here
 
-    def loss_channel(self, addr0: int, p: float) -> None:
+    def loss_channel(self, addr0: int, p: float, *, truncate: bool = True) -> None:
         """Apply a single-qubit loss channel.
 
         Reduces the trace of qubit-subspace operators by `(1 - p)`.
@@ -416,10 +448,19 @@ class LossyPauliSum(PauliSum):
         Args:
             addr0: The index of the target qubit.
             p: Loss probability in [0, 1].
+            truncate: If ``True`` (default), run the configured truncation
+                strategy after the channel; if ``False``, defer it.
         """
-        self._interface.loss_channel(addr0, p)
+        self._interface.loss_channel(addr0, p, truncate=truncate)
 
-    def correlated_loss_channel(self, addr0: int, addr1: int, p: Sequence[float]) -> None:
+    def correlated_loss_channel(
+        self,
+        addr0: int,
+        addr1: int,
+        p: Sequence[float],
+        *,
+        truncate: bool = True,
+    ) -> None:
         """Apply a correlated loss channel.
 
         This applies a correlated loss channel to the qubits at `addr0` and `addr1`.
@@ -433,10 +474,12 @@ class LossyPauliSum(PauliSum):
                 account for the fact that when one qubit is missing during e.g.
                 a controlled gate, the remaining qubit undergoes a different dynamic.
                 We account for this difference with this distinct probability.
+            truncate: If ``True`` (default), run the configured truncation
+                strategy after the channel; if ``False``, defer it.
         """
-        self._interface.correlated_loss_channel(addr0, addr1, p)
+        self._interface.correlated_loss_channel(addr0, addr1, p, truncate=truncate)
 
-    def reset_loss_channel(self, addr0: int) -> None:
+    def reset_loss_channel(self, addr0: int, *, truncate: bool = True) -> None:
         """Reset a lost qubit to the 0 state. Usually, you want to apply
         this channel at the end of the circuit, i.e. at the beginning when
         propagating backwards.
@@ -446,5 +489,7 @@ class LossyPauliSum(PauliSum):
 
         Args:
             addr0: The index of the qubit to reset.
+            truncate: If ``True`` (default), run the configured truncation
+                strategy after the channel; if ``False``, defer it.
         """
-        self._interface.reset_loss_channel(addr0)
+        self._interface.reset_loss_channel(addr0, truncate=truncate)

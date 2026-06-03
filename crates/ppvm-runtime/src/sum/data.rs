@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::HashSet;
+
 use crate::config::Config;
 use crate::traits::*;
 
@@ -42,6 +44,9 @@ pub struct PauliSum<T: Config> {
     n_qubits: usize,
     capacity: usize,
     strategy: T::Strategy,
+    /// Keep-set: strings [`PauliSum::truncate`] must always re-insert
+    /// after the strategy runs. Empty by default.
+    preserve_strings: HashSet<T::PauliWordType>,
 }
 
 #[bon::bon]
@@ -51,6 +56,8 @@ impl<T: Config> PauliSum<T> {
     /// One can optionally set
     /// - the strategy for truncation, initialization etc.
     /// - the capacity of the internal maps, default is strategy.capacity(n_qubits)
+    /// - a set of `preserve_strings` that [`truncate`](Self::truncate) must
+    ///   never drop, on top of whatever the strategy decides.
     #[builder]
     pub fn new(
         /// number of qubits
@@ -61,6 +68,9 @@ impl<T: Config> PauliSum<T> {
         /// capacity of the internal maps, default is strategy.capacity(n_qubits)
         #[builder(default = strategy.capacity(n_qubits))]
         capacity: usize,
+        /// Pauli strings that truncate must always keep. Empty by default.
+        #[builder(default)]
+        preserve_strings: HashSet<T::PauliWordType>,
     ) -> Self {
         Self {
             map: (
@@ -71,6 +81,7 @@ impl<T: Config> PauliSum<T> {
             n_qubits,
             capacity,
             strategy,
+            preserve_strings,
         }
     }
 }
@@ -241,9 +252,53 @@ impl<T: Config> PauliSum<T> {
 
     /// Apply the configured truncation [`Strategy`](crate::traits::Strategy)
     /// to the primary map, dropping entries that fall outside its policy.
+    ///
+    /// If `preserve_strings` is non-empty, any of those Pauli strings
+    /// that the strategy would have dropped are re-inserted afterwards
+    /// with their pre-truncate coefficient. The mechanism composes with
+    /// any [`Strategy`] (coefficient-magnitude, max-weight, combinations
+    /// — anything) because the strategy runs unchanged in the middle.
     pub fn truncate(&mut self) {
+        // Hot path: empty preserve set → just run the strategy.
+        if self.preserve_strings.is_empty() {
+            let strategy = self.strategy;
+            strategy.truncate(self.data_mut());
+            return;
+        }
+
+        // Snapshot the current coefficients of preserved keys. We piggy-
+        // back on `retain` (which always returns true here, so it's a
+        // pure scan) to walk `(k, v)` pairs without needing a separate
+        // `get`/`iter` route through the `ACMap` traits.
+        let preserve = self.preserve_strings.clone();
+        let mut saved: Vec<(T::PauliWordType, T::Coeff)> = Vec::new();
+        self.data_mut().retain(|k, v| {
+            if preserve.contains(k) {
+                saved.push((k.clone(), v.clone()));
+            }
+            true
+        });
+
+        // Run the configured strategy verbatim.
         let strategy = self.strategy;
         strategy.truncate(self.data_mut());
+
+        // Restore any preserved entry the strategy dropped. We use
+        // `add_assign` because the trait does not expose a plain
+        // "insert if absent"; on a missing key it inserts, which is
+        // what we want here (the guarded `contains_with` keeps us from
+        // accidentally summing into a kept entry).
+        let data = self.data_mut();
+        for (k, v) in saved {
+            if !data.contains_with(&k, |_| true) {
+                data.add_assign(k, v);
+            }
+        }
+    }
+
+    /// Read-only access to the active preserve set.
+    pub fn preserve_strings(&self) -> &HashSet<T::PauliWordType> {
+        &self.preserve_strings
     }
 }
 

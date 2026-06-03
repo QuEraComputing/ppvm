@@ -129,6 +129,11 @@ where
         let seed = self.rng.random::<u64>();
         let rng = SmallRng::seed_from_u64(seed);
 
+        debug_assert!(
+            *p_cum.last().unwrap_or(&T::Coeff::zero()) >= T::Coeff::one() - self.sum_cutoff.clone(),
+            "Normalization error in sum"
+        );
+
         Sampler {
             p_cumulative: p_cum,
             entries: entries,

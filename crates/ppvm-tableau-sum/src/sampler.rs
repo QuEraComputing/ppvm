@@ -51,15 +51,13 @@ where
 {
     pub fn sample(&mut self) -> Vec<Option<bool>> {
         let p = self.rng.random::<f64>();
-        let idx = self.p_cumulative.iter().position(|p_| *p_ > p);
-        match idx {
-            Some(i) => {
-                let tab_seed = self.rng.random::<u64>();
-                let mut tab = self.entries[i].0.fork(Some(tab_seed));
-                tab.measure_all_with_scratch(&mut self.scratch)
-            }
-            None => unreachable!("GeneralizedTableauSum normalization error!"),
-        }
+        let idx = self
+            .p_cumulative
+            .partition_point(|p_| *p_ <= p)
+            .min(self.entries.len().saturating_sub(1));
+        let tab_seed = self.rng.random::<u64>();
+        let mut tab = self.entries[idx].0.fork(Some(tab_seed));
+        tab.measure_all_with_scratch(&mut self.scratch)
     }
 
     pub fn sample_shots_serial(&mut self, n_shots: usize) -> Vec<Vec<Option<bool>>> {
@@ -79,9 +77,8 @@ where
                 let p = self.rng.random::<f64>();
                 let idx = self
                     .p_cumulative
-                    .iter()
-                    .position(|p_| *p_ > p)
-                    .expect("GeneralizedTableauSum normalization error!");
+                    .partition_point(|p_| *p_ <= p)
+                    .min(self.entries.len().saturating_sub(1));
                 (idx, self.rng.random::<u64>())
             })
             .collect();

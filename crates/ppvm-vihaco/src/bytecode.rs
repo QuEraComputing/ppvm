@@ -9,14 +9,12 @@
 use std::io::{Read, Write};
 
 use vihaco::instruction::{FromBytes, WriteBytes};
-use vihaco::{Type, Value, module::Module};
 
+use crate::PPVMModule;
 use crate::composite::{PPVM_MAGIC, PPVMDeviceInfo, PPVMInstruction};
 
 /// Current `.ssb` format version. The reader rejects any other version.
 pub const PPVM_BYTECODE_VERSION: u16 = 1;
-
-type PPVMModule = Module<PPVMInstruction, Value, Type, PPVMDeviceInfo>;
 
 /// Byte length of the fixed v1 header (magic 4, version 2, header_size 4,
 /// n_qubits 4, coefficient_threshold 8) and the offset where the strings
@@ -152,8 +150,7 @@ pub fn module_from_bytes(bytes: &[u8]) -> eyre::Result<PPVMModule> {
 /// little-endian `u32` — so a positive result here means [`read_module`] will
 /// accept the magic. A stream shorter than the magic is not bytecode.
 pub fn is_bytecode(bytes: &[u8]) -> bool {
-    bytes.len() >= 4
-        && u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) == PPVM_MAGIC
+    bytes.len() >= 4 && u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) == PPVM_MAGIC
 }
 
 /// "Dump": compile `.sst` source straight to the `.ssb` byte stream.

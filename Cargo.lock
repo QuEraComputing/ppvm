@@ -1190,6 +1190,7 @@ dependencies = [
  "num",
  "ppvm-runtime",
  "ppvm-tableau",
+ "rayon",
  "smallvec",
  "vihaco",
  "vihaco-cpu",

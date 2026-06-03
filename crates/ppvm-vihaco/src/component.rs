@@ -299,6 +299,19 @@ impl Circuit {
             Self::Bits2048(ex) => ex.execute_instruction(inst, msg),
         }
     }
+
+    /// Render the current tableau / Pauli state, dispatching across the executor
+    /// size variants. Used by the REPL's `show` command.
+    pub fn state_string(&self) -> String {
+        match self {
+            Self::Bits64(ex) => ex.tab.to_string(),
+            Self::Bits128(ex) => ex.tab.to_string(),
+            Self::Bits256(ex) => ex.tab.to_string(),
+            Self::Bits512(ex) => ex.tab.to_string(),
+            Self::Bits1024(ex) => ex.tab.to_string(),
+            Self::Bits2048(ex) => ex.tab.to_string(),
+        }
+    }
 }
 
 #[observe(CircuitEffect, effect=MeasurementEffect)]

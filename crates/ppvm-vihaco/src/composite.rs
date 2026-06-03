@@ -295,6 +295,26 @@ impl PPVM {
         self.peek_instruction().ok().cloned()
     }
 
+    /// Append one REPL command's lowered VM ops and run just that block against
+    /// the persistent state, advancing the pc through it. NOTE: an out-of-range
+    /// qubit index *panics* in the tableau rather than erroring, so callers must
+    /// bounds-check qubit operands against `n_qubits` first.
+    pub fn execute_single_instruction(&mut self, instrs: &[PPVMInstruction]) -> eyre::Result<()> {
+        let start = self.loader.module.code.len() as u32;
+        self.loader.module.code.extend_from_slice(instrs);
+        *self.loader.pc_mut() = start;
+        for _ in 0..instrs.len() {
+            self.step_once()?;
+        }
+        Ok(())
+    }
+
+    /// Render the current circuit state (tableau / Pauli sum) for the REPL's
+    /// `show` command. Delegates to the circuit's size-specific tableau.
+    pub fn state_string(&self) -> String {
+        self.circuit.state_string()
+    }
+
     fn execute_effects(&mut self, inst: Instruction) -> eyre::Result<Effects<PPVMEffect>> {
         log::debug!("exec inst: {:?}, stack: {:?}", inst, self.cpu.stack());
         match inst {
@@ -633,6 +653,87 @@ mod tests {
         }
 
         assert_eq!(machine.measurement_record().len(), 5);
+        Ok(())
+    }
+
+    // ─── Incremental execution (REPL) ─────────────────────────────────────
+
+    #[test]
+    fn execute_single_instruction_persists_state_across_calls() -> eyre::Result<()> {
+        use crate::measurements::MeasurementOutcome;
+
+        // A 1-qubit device with no code; the REPL builds up instructions
+        // incrementally, one command at a time, rather than loading a program.
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 1;
+
+        let mut machine = PPVM::default();
+        machine.load(&module)?;
+        machine.init()?;
+
+        // First command: X on q0 (|0> -> |1>).
+        let x = [
+            PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(0))),
+            PPVMInstruction::Circuit(CircuitInstruction::X),
+        ];
+        machine.execute_single_instruction(&x)?;
+        // No measurement yet.
+        assert!(machine.measurement_record().is_empty());
+
+        // Second command: measure q0. The X from the first command must persist,
+        // so the outcome is deterministically |1>.
+        let measure = [
+            PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(0))),
+            PPVMInstruction::Circuit(CircuitInstruction::Measure),
+        ];
+        machine.execute_single_instruction(&measure)?;
+
+        let record = machine.measurement_record();
+        assert_eq!(record.len(), 1);
+        assert_eq!(record[0].as_slice(), [MeasurementOutcome::One]);
+        Ok(())
+    }
+
+    #[test]
+    fn execute_single_instruction_propagates_engine_errors() -> eyre::Result<()> {
+        // The REPL relies on engine errors surfacing as `Err` (so it can print
+        // them and keep looping) rather than panicking. A gate with no qubit
+        // operand on the stack is one such propagating error.
+        //
+        // NOTE: an out-of-range qubit index (>= n_qubits) currently *panics* in
+        // the tableau rather than erroring, so the REPL command layer must
+        // bounds-check qubit indices before calling `execute`.
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 1;
+
+        let mut machine = PPVM::default();
+        machine.load(&module)?;
+        machine.init()?;
+
+        // `gate h` with nothing on the stack: `pop_qubit` fails.
+        let missing_operand = [PPVMInstruction::Circuit(CircuitInstruction::H)];
+        assert!(
+            machine
+                .execute_single_instruction(&missing_operand)
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn state_string_renders_a_small_device() -> eyre::Result<()> {
+        let source = "device circuit.n_qubits 2;\nfn @main() { ret }\n";
+        let mut machine = PPVM::default();
+        machine.load_program(source)?;
+        machine.init()?;
+
+        let rendered = machine.state_string();
+        assert!(
+            !rendered.is_empty(),
+            "state_string should render the tableau"
+        );
+        // PPVM delegates to the circuit.
+        assert_eq!(rendered, machine.circuit.state_string());
         Ok(())
     }
 

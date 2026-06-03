@@ -41,6 +41,32 @@ fn hello_circuit_sst_parses_and_runs() {
 }
 
 #[test]
+fn rotxy_sst_runs_and_flips_qubit() {
+    // `rotxy.sst` applies R(axis_angle=π/2, θ=π) = RY(π) to q0, deterministically
+    // sending |0> → |1>, then measures it. Exercises the `gate r` path end to
+    // end: parse → resolve (pop θ, axis_angle, qubit) → execute via `tab.r`.
+    let machine =
+        ppvm_vihaco::run_file("tests/rotxy.sst").unwrap_or_else(|e| panic!("run rotxy.sst: {e:?}"));
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1, "expected exactly one measurement");
+    assert_eq!(
+        record[0].as_slice(),
+        &[MeasurementOutcome::One],
+        "R(π/2, π) = RY(π) must flip q0 to 1"
+    );
+}
+
+#[test]
+fn dumped_rotxy_runs_and_flips_qubit() {
+    // Same program, but through the bytecode round-trip: confirms the `R`
+    // instruction survives dump → `.ssb` → load → execute.
+    let machine = dump_load_run("tests/rotxy.sst", "ppvm_dump_rotxy.ssb");
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1);
+    assert_eq!(record[0].as_slice(), &[MeasurementOutcome::One]);
+}
+
+#[test]
 fn run_file_via_library_helper() {
     let machine =
         ppvm_vihaco::run_file("tests/bell.sst").unwrap_or_else(|e| panic!("run bell.sst: {e:?}"));

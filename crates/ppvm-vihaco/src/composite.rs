@@ -179,6 +179,12 @@ impl PPVM {
                 let q1 = self.pop_qubit()?;
                 Ok(CircuitMessage::TwoQubitAndFloat(q0, q1, theta))
             }
+            R => {
+                let theta = self.pop_f64()?;
+                let axis_angle = self.pop_f64()?;
+                let q = self.pop_qubit()?;
+                Ok(CircuitMessage::QubitAndTwoFloats(q, axis_angle, theta))
+            }
             U3 => {
                 let lam = self.pop_f64()?;
                 let phi = self.pop_f64()?;

@@ -53,6 +53,9 @@ pub enum CircuitInstruction {
     Measure,
     Reset,
 
+    // RXY
+    R,
+
     // Loss
     Loss,
     CorrelatedLoss,
@@ -103,6 +106,8 @@ impl std::fmt::Display for CircuitInstruction {
 
             Measure => write!(f, "Measure"),
             Reset => write!(f, "Reset"),
+
+            R => write!(f, "R"),
 
             Loss => write!(f, "Loss"),
             CorrelatedLoss => write!(f, "CorrelatedLoss"),

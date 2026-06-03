@@ -81,6 +81,9 @@ where
             // U3
             (U3, &QubitU3(addr, theta, phi, lam)) => self.tab.u3(addr, theta, phi, lam),
 
+            // RXY: rotation about an axis in the x/y plane
+            (R, &QubitAndTwoFloats(addr, axis_angle, theta)) => self.tab.r(addr, axis_angle, theta),
+
             // Measure & Reset
             (Measure, &Qubit(addr)) => {
                 let outcome: MeasurementOutcome = self.tab.measure(addr).into();

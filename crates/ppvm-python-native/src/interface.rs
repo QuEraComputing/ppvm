@@ -194,6 +194,11 @@ macro_rules! create_interface {
                 self.inner.truncate();
             }
 
+            pub fn r(&mut self, addr0: usize, axis_angle: f64, theta: f64) {
+                self.inner.r(addr0, axis_angle, theta);
+                self.inner.truncate();
+            }
+
             // rot2
             pub fn rxx(&mut self, addr0: usize, addr1: usize, theta: f64) {
                 self.inner.rxx(addr0, addr1, theta);

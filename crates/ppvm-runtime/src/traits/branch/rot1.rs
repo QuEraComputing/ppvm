@@ -23,19 +23,11 @@ pub trait RotationOne<T: Config> {
 }
 
 /// Rotation about an axis in the x/y plane:
-/// `exp(-i θ/2 · (cos(axis_angle)·X + sin(axis_angle)·Y))`.
+/// `R(axis_angle, θ) = exp(-i θ/2 · (cos(axis_angle)·X + sin(axis_angle)·Y))`.
+///
+/// The in-plane axis is `X` rotated about `Z` by `axis_angle`, so
+/// `R(axis_angle, θ) = RZ(axis_angle)·RX(θ)·RZ(−axis_angle)`.
 pub trait RotXY<T: Config> {
     /// `R(axis_angle, θ)` on qubit `addr0`.
     fn r(&mut self, addr0: usize, axis_angle: T::Coeff, theta: T::Coeff);
-}
-
-impl<T: Config, S: RotationOne<T>> RotXY<T> for S {
-    fn r(&mut self, addr0: usize, axis_angle: <T as Config>::Coeff, theta: <T as Config>::Coeff) {
-        // R(axis_angle, θ) = RZ(axis_angle)·RX(θ)·RZ(−axis_angle), since the
-        // in-plane axis is X rotated about Z by `axis_angle`. Applied in
-        // forward (Schrödinger) order, the rightmost factor goes first.
-        self.rz(addr0, -axis_angle.clone());
-        self.rx(addr0, theta);
-        self.rz(addr0, axis_angle);
-    }
 }

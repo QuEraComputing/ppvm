@@ -42,6 +42,20 @@ where
     }
 }
 
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> RotXY<T> for GeneralizedTableau<T, I, C>
+where
+    GeneralizedTableau<T, I, C>: RotationOne<T>,
+{
+    fn r(&mut self, addr0: usize, axis_angle: T::Coeff, theta: T::Coeff) {
+        // R(axis_angle, θ) = RZ(axis_angle)·RX(θ)·RZ(−axis_angle). The tableau
+        // runs in the Schrödinger picture, so the sub-rotations are applied in
+        // forward order: RZ(−axis_angle) first, then RX(θ), then RZ(axis_angle).
+        self.rz(addr0, -axis_angle.clone());
+        self.rx(addr0, theta);
+        self.rz(addr0, axis_angle);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

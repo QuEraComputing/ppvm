@@ -205,7 +205,7 @@ impl PPVM {
             }
             TwoQubitPauliError => {
                 let mut ps = [0.0; 15];
-                for p in ps.iter_mut() {
+                for p in ps.iter_mut().rev() {
                     *p = self.pop_f64()?;
                 }
                 let q0 = self.pop_qubit()?;

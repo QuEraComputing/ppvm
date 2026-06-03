@@ -96,13 +96,14 @@ class GeneralizedTableauSum(
         self._interface.t_adj(addr0)
 
     def measure(self, addr0: int) -> dict[MeasurementResult, float]:
-        """Branch on a mid-circuit measurement and return probabilities for outcomes
+        """Branch on a mid-circuit Z measurement and return outcome probabilities.
 
         Args:
             addr0: The index of the target qubit.
 
         Returns:
-            
+            A mapping from ``MeasurementResult`` (``ZERO``, ``ONE``, ``LOST``) to
+            the corresponding outcome probability.
         """
         p0, p1, pl = self._interface.measure(addr0)
         return {

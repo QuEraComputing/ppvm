@@ -400,7 +400,11 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    if items.len() >= RAYON_COEFF_THRESHOLD {
+    // Skip intra-shot parallelism when we are already running inside a rayon
+    // worker (i.e. shot-level parallelism is driving this call): nesting would
+    // just oversubscribe the pool. Single-shot runs are on the main thread
+    // (`current_thread_index() == None`) and still parallelize as before.
+    if items.len() >= RAYON_COEFF_THRESHOLD && rayon::current_thread_index().is_none() {
         use rayon::prelude::*;
 
         // Parallel phase: compute all (branch_idx, branch_coeff, idx, nonbranch_coeff) tuples.
@@ -502,7 +506,9 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    if items.len() >= RAYON_COEFF_THRESHOLD {
+    // See `branch_coefficients_parallel`: avoid nesting rayon inside shot-level
+    // parallelism; the main-thread (single-shot) path is unaffected.
+    if items.len() >= RAYON_COEFF_THRESHOLD && rayon::current_thread_index().is_none() {
         use rayon::prelude::*;
 
         let pairs: Vec<(I, Complex<CoeffType>)> = items

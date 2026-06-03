@@ -187,6 +187,8 @@ fn skip_bytes<R: Read>(r: &mut R, n: u64) -> eyre::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use vihaco::Value;
+
     use super::*;
 
     fn empty_module() -> PPVMModule {
@@ -216,6 +218,7 @@ mod tests {
         m.code = vec![
             PPVMInstruction::Cpu(Cpu::Const(Value::U64(0))),
             PPVMInstruction::Circuit(CircuitInstruction::H),
+            PPVMInstruction::Circuit(CircuitInstruction::R),
             PPVMInstruction::Cpu(Cpu::Branch(1)),
             PPVMInstruction::Cpu(Cpu::ConditionalBranch(0, 1)),
             PPVMInstruction::Cpu(Cpu::Call(0, 1)),

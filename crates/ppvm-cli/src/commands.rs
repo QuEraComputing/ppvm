@@ -1,7 +1,6 @@
 use eyre::{Result, WrapErr};
 use ppvm_vihaco::composite::{PPVM, StepOutcome};
-use ppvm_vihaco::measurements::{MeasurementOutcome, MeasurementResult};
-use ppvm_vihaco::run_file;
+use ppvm_vihaco::measurements::MeasurementResult;
 use std::io::{BufRead, Write};
 use std::path::Path;
 
@@ -16,45 +15,64 @@ pub enum Format {
 /// Output format for the measurement record from `run`.
 #[derive(Clone, Debug, clap::ValueEnum)]
 pub enum MeasurementFormat {
-    /// One bit string per measurement event, space-separated; lost qubit = `L`.
+    /// One flat bit string per shot: `0`/`1`, lost qubit = `2`.
     Bits,
-    /// Raw debug representation of the record.
+    /// Raw debug representation of all shots.
     Debug,
 }
 
-pub fn run(file: &str, quiet: bool, format: MeasurementFormat) -> Result<()> {
-    let ppvm = run_file(file).wrap_err_with(|| format!("failed to run {file}"))?;
+pub fn run(
+    file: &str,
+    shots: usize,
+    threads: usize,
+    seed: Option<u64>,
+    output: Option<&str>,
+    quiet: bool,
+    format: MeasurementFormat,
+) -> Result<()> {
+    // Compile once, then run every shot against the shared module.
+    let module =
+        ppvm_vihaco::load_module_file(file).wrap_err_with(|| format!("failed to load {file}"))?;
+    let records = ppvm_vihaco::shots::run_shots(&module, shots, threads, seed)
+        .wrap_err_with(|| format!("failed to run {file}"))?;
     if quiet {
         return Ok(());
     }
-    let record = ppvm.measurement_record();
-    match format {
-        MeasurementFormat::Bits => println!("Measurements: {}", format_bits(&record)),
-        MeasurementFormat::Debug => println!("Measurement record:\n{:?}", record),
+
+    let text = match format {
+        MeasurementFormat::Bits => format_shots(&records),
+        MeasurementFormat::Debug => format!("{records:?}"),
+    };
+
+    match output {
+        Some(path) => {
+            std::fs::write(path, format!("{text}\n"))
+                .wrap_err_with(|| format!("failed to write {path}"))?;
+            eprintln!("Results written to {path}");
+        }
+        None => println!("{text}"),
     }
     Ok(())
 }
 
-/// Render each measurement event as a bit string (lost qubit = `L`), events
-/// space-separated. Empty record renders as `(none)`.
-fn format_bits(record: &[MeasurementResult]) -> String {
-    if record.is_empty() {
-        return "(none)".to_string();
-    }
+/// Render one shot per line, each as a flat bit string.
+fn format_shots(records: &[Vec<MeasurementResult>]) -> String {
+    records
+        .iter()
+        .map(|shot| format_shot(shot))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Render a shot's full measurement record as one flat bit string, all events
+/// and qubits concatenated: `Zero` → `0`, `One` → `1`, `Lost` → `2` (the
+/// outcome's own enum value). An empty record renders as the empty string.
+fn format_shot(record: &[MeasurementResult]) -> String {
     record
         .iter()
-        .map(|event| {
-            event
-                .iter()
-                .map(|outcome| match outcome {
-                    MeasurementOutcome::Zero => '0',
-                    MeasurementOutcome::One => '1',
-                    MeasurementOutcome::Lost => 'L',
-                })
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+        .flatten()
+        .map(|outcome| char::from(b'0' + *outcome as u8))
+        .collect()
 }
 
 pub fn parse(file: &str, format: Format) -> Result<()> {
@@ -183,7 +201,7 @@ fn debug_loop(
     writeln!(
         output,
         "Measurements: {}",
-        format_bits(&machine.measurement_record())
+        format_shot(&machine.measurement_record())
     )?;
     if !ever_paused {
         writeln!(
@@ -204,7 +222,7 @@ fn print_location(machine: &PPVM, output: &mut impl Write) -> Result<()> {
     writeln!(
         output,
         "measurements: {}",
-        format_bits(&machine.measurement_record())
+        format_shot(&machine.measurement_record())
     )?;
     Ok(())
 }
@@ -232,6 +250,7 @@ fn read_command(input: &mut impl BufRead, output: &mut impl Write) -> Result<Deb
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ppvm_vihaco::measurements::MeasurementOutcome;
     use std::fs;
 
     /// Minimal program that compiles and measures q0 in |0> (deterministic).
@@ -249,39 +268,48 @@ mod tests {
         path.to_string_lossy().into_owned()
     }
 
-    // ─── format_bits ───────────────────────────────────────────────────
+    // ─── format_shot ─────────────────────────────────────────────────────
 
     #[test]
-    fn format_bits_empty_record_is_none() {
-        assert_eq!(format_bits(&[]), "(none)");
+    fn format_shot_empty_record_is_empty() {
+        assert_eq!(format_shot(&[]), "");
     }
 
     #[test]
-    fn format_bits_concatenates_qubits_within_an_event() {
+    fn format_shot_concatenates_qubits_within_an_event() {
         let record = vec![row(&[
             MeasurementOutcome::One,
             MeasurementOutcome::Zero,
             MeasurementOutcome::One,
         ])];
-        assert_eq!(format_bits(&record), "101");
+        assert_eq!(format_shot(&record), "101");
     }
 
     #[test]
-    fn format_bits_separates_events_with_spaces() {
+    fn format_shot_flattens_events_with_no_separator() {
         let record = vec![
             row(&[MeasurementOutcome::One]),
             row(&[MeasurementOutcome::Zero]),
         ];
-        assert_eq!(format_bits(&record), "1 0");
+        assert_eq!(format_shot(&record), "10");
     }
 
     #[test]
-    fn format_bits_renders_lost_qubit_as_l() {
+    fn format_shot_renders_lost_qubit_as_two() {
         let record = vec![
             row(&[MeasurementOutcome::One, MeasurementOutcome::Lost]),
             row(&[MeasurementOutcome::Zero]),
         ];
-        assert_eq!(format_bits(&record), "1L 0");
+        assert_eq!(format_shot(&record), "120");
+    }
+
+    #[test]
+    fn format_shots_joins_shots_with_newlines() {
+        let shots = vec![
+            vec![row(&[MeasurementOutcome::One])],
+            vec![row(&[MeasurementOutcome::Zero])],
+        ];
+        assert_eq!(format_shots(&shots), "1\n0");
     }
 
     // ─── run ───────────────────────────────────────────────────────────
@@ -289,15 +317,48 @@ mod tests {
     #[test]
     fn run_succeeds_on_valid_file() {
         let src = temp_file("ppvm_cli_run_ok.sst", PROGRAM);
-        let res = run(&src, true, MeasurementFormat::Bits);
+        let res = run(&src, 3, 1, None, None, true, MeasurementFormat::Bits);
         let _ = fs::remove_file(&src);
         assert!(res.is_ok(), "got: {res:?}");
     }
 
     #[test]
+    fn run_writes_one_line_per_shot_to_output_file() {
+        let src = temp_file("ppvm_cli_run_output.sst", PROGRAM);
+        let out = std::env::temp_dir().join("ppvm_cli_run_output.txt");
+        let _ = fs::remove_file(&out);
+
+        run(
+            &src,
+            4,
+            1,
+            None,
+            out.to_str(),
+            false,
+            MeasurementFormat::Bits,
+        )
+        .unwrap();
+        let contents = fs::read_to_string(&out).unwrap();
+        // Four deterministic shots of |0>, one per line.
+        assert_eq!(contents, "0\n0\n0\n0\n");
+
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&out);
+    }
+
+    #[test]
     fn run_errors_with_context_on_missing_file() {
-        let err = run("/no/such/file.sst", false, MeasurementFormat::Bits).unwrap_err();
-        assert!(err.to_string().contains("failed to run"), "got: {err}");
+        let err = run(
+            "/no/such/file.sst",
+            1,
+            1,
+            None,
+            None,
+            false,
+            MeasurementFormat::Bits,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("failed to load"), "got: {err}");
     }
 
     // ─── parse ─────────────────────────────────────────────────────────
@@ -376,8 +437,7 @@ mod tests {
     // ─── debug ─────────────────────────────────────────────────────────
 
     /// Program with a `breakpoint` before measuring q0 in |0> (deterministic).
-    const BREAKPOINT_PROGRAM: &str =
-        "device circuit.n_qubits 1;\nfn @main() { breakpoint\n const.u64 0\n gate measure\n ret }\n";
+    const BREAKPOINT_PROGRAM: &str = "device circuit.n_qubits 1;\nfn @main() { breakpoint\n const.u64 0\n gate measure\n ret }\n";
 
     /// Drive `debug_loop` with scripted input, returning the captured output.
     fn run_debug(program: &str, name: &str, break_at_start: bool, script: &str) -> String {
@@ -393,9 +453,15 @@ mod tests {
     fn debug_break_at_start_steps_through_to_finish() {
         // PROGRAM is const.u64 0 / gate measure / ret = 3 steps.
         let out = run_debug(PROGRAM, "ppvm_cli_debug_step.sst", true, "s\ns\ns\n");
-        assert!(out.contains("next: Measure"), "should display the gate: {out}");
+        assert!(
+            out.contains("next: Measure"),
+            "should display the gate: {out}"
+        );
         assert!(out.contains("Program finished."), "{out}");
-        assert!(out.contains("Measurements: 0"), "q0 in |0> measures 0: {out}");
+        assert!(
+            out.contains("Measurements: 0"),
+            "q0 in |0> measures 0: {out}"
+        );
     }
 
     #[test]
@@ -408,12 +474,7 @@ mod tests {
     #[test]
     fn debug_honors_authored_breakpoint() {
         // Not breaking at start: must run until the `breakpoint` pauses it.
-        let out = run_debug(
-            BREAKPOINT_PROGRAM,
-            "ppvm_cli_debug_bp.sst",
-            false,
-            "c\n",
-        );
+        let out = run_debug(BREAKPOINT_PROGRAM, "ppvm_cli_debug_bp.sst", false, "c\n");
         assert!(out.contains("-- breakpoint hit --"), "{out}");
         assert!(out.contains("Program finished."), "{out}");
         // A breakpoint was hit, so no "use --break-at-start" hint.
@@ -425,7 +486,10 @@ mod tests {
         let out = run_debug(PROGRAM, "ppvm_cli_debug_quit.sst", true, "q\n");
         assert!(out.contains("Quit."), "{out}");
         assert!(!out.contains("Program finished."), "{out}");
-        assert!(!out.contains("Measurements:"), "quit prints no record: {out}");
+        assert!(
+            !out.contains("Measurements:"),
+            "quit prints no record: {out}"
+        );
     }
 
     #[test]

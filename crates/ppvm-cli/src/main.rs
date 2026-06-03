@@ -44,6 +44,22 @@ enum Commands {
         #[arg(value_name = "FILE")]
         file: String,
 
+        /// Number of shots to run
+        #[arg(short, long, default_value = "1")]
+        shots: usize,
+
+        /// Number of threads (> 1 enables parallel execution)
+        #[arg(short, long, default_value = "1")]
+        threads: usize,
+
+        /// Seed the RNG for reproducible results
+        #[arg(long)]
+        seed: Option<u64>,
+
+        /// Write results to a file instead of stdout
+        #[arg(short, long)]
+        output: Option<String>,
+
         /// Suppress the measurement record
         #[arg(short, long)]
         quiet: bool,
@@ -81,10 +97,22 @@ fn main() -> Result<()> {
         }
         Commands::Run {
             file,
+            shots,
+            threads,
+            seed,
+            output,
             quiet,
             format,
         } => {
-            commands::run(&file, quiet, format)?;
+            commands::run(
+                &file,
+                shots,
+                threads,
+                seed,
+                output.as_deref(),
+                quiet,
+                format,
+            )?;
         }
         Commands::Debug {
             file,

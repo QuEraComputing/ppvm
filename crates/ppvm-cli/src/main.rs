@@ -10,6 +10,10 @@ mod commands;
 #[command(name = "ppvm")]
 #[command(about = "Pauli propagation virtual machine", long_about = None)]
 pub struct Cli {
+    /// Number of threads for all parallel work (1 = fully serial & deterministic)
+    #[arg(short, long, default_value = "1")]
+    threads: usize,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -51,10 +55,6 @@ enum Commands {
         #[arg(short, long, default_value = "1")]
         shots: usize,
 
-        /// Number of threads (> 1 enables parallel execution)
-        #[arg(short, long, default_value = "1")]
-        threads: usize,
-
         /// Seed the RNG for reproducible results
         #[arg(long)]
         seed: Option<u64>,
@@ -87,6 +87,10 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Size the process-wide thread pool once; governs all parallelism (across
+    // shots and within a single machine). `--threads 1` is fully serial.
+    ppvm_vihaco::shots::set_global_threads(cli.threads)?;
+
     match cli.command {
         Commands::Parse { file, format } => {
             commands::parse(&file, format)?;
@@ -101,21 +105,12 @@ fn main() -> Result<()> {
         Commands::Run {
             file,
             shots,
-            threads,
             seed,
             output,
             quiet,
             format,
         } => {
-            commands::run(
-                &file,
-                shots,
-                threads,
-                seed,
-                output.as_deref(),
-                quiet,
-                format,
-            )?;
+            commands::run(&file, shots, seed, output.as_deref(), quiet, format)?;
         }
         Commands::Debug {
             file,

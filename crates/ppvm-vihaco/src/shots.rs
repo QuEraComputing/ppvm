@@ -5,8 +5,9 @@
 //!
 //! Each shot runs on a fresh [`PPVM`] so shots are fully independent; the
 //! module is compiled once and shared. With the `rayon` feature, [`run_shots`]
-//! parallelizes across shots when asked for more than one thread and there are
-//! enough shots to amortize the overhead.
+//! parallelizes across shots when the global pool (sized once by
+//! [`set_global_threads`]) has more than one thread and there are enough shots
+//! to amortize the overhead.
 
 use crate::PPVMModule;
 use crate::composite::PPVM;
@@ -43,45 +44,69 @@ pub fn run_shots_serial(
         .collect()
 }
 
-/// Run `shots` shots across a scoped rayon pool of `threads` threads. One entry
-/// per shot, in order (preserved by the indexed parallel iterator).
+/// Run `shots` shots across the global rayon pool. One entry per shot, in order
+/// (preserved by the indexed parallel iterator). The pool size is whatever
+/// [`set_global_threads`] configured at startup; each shot runs on a worker
+/// thread, so the intra-shot parallelism guard keeps a single shot serial and
+/// the pool is never oversubscribed.
 #[cfg(feature = "rayon")]
 pub fn run_shots_parallel(
     module: &PPVMModule,
     shots: usize,
-    threads: usize,
     seed: Option<u64>,
 ) -> eyre::Result<Vec<Vec<MeasurementResult>>> {
     use rayon::prelude::*;
 
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build()?;
-    pool.install(|| {
-        (0..shots)
-            .into_par_iter()
-            .map(|i| run_one_shot(module, shot_seed(seed, i)))
-            .collect()
-    })
+    (0..shots)
+        .into_par_iter()
+        .map(|i| run_one_shot(module, shot_seed(seed, i)))
+        .collect()
+}
+
+/// Decide whether to spread shots across the rayon pool. Worth it only with a
+/// multi-thread pool and enough shots to amortize the overhead; a single-thread
+/// pool always takes the serial path, keeping results deterministic.
+#[cfg(feature = "rayon")]
+fn should_parallelize(num_threads: usize, shots: usize) -> bool {
+    num_threads > 1 && shots >= PARALLEL_SHOT_THRESHOLD
 }
 
 /// Run `shots` shots, choosing serial or parallel execution. Goes parallel only
-/// when built with `rayon`, more than one thread is requested, and there are
-/// enough shots to be worth it; otherwise runs serially.
+/// when built with `rayon`, the global pool has more than one thread, and there
+/// are enough shots to be worth it; otherwise runs serially. The pool size is
+/// set once at startup by [`set_global_threads`].
 pub fn run_shots(
     module: &PPVMModule,
     shots: usize,
-    threads: usize,
     seed: Option<u64>,
 ) -> eyre::Result<Vec<Vec<MeasurementResult>>> {
     #[cfg(feature = "rayon")]
-    if threads > 1 && shots >= PARALLEL_SHOT_THRESHOLD {
-        return run_shots_parallel(module, shots, threads, seed);
+    if should_parallelize(rayon::current_num_threads(), shots) {
+        return run_shots_parallel(module, shots, seed);
     }
-    #[cfg(not(feature = "rayon"))]
-    let _ = threads;
 
     run_shots_serial(module, shots, seed)
+}
+
+/// Configure the process-wide rayon thread pool. Call once, before any parallel
+/// work runs. A count of `1` forces fully serial, deterministic execution — both
+/// across shots and within a single machine's coefficient propagation.
+#[cfg(feature = "rayon")]
+pub fn set_global_threads(threads: usize) -> eyre::Result<()> {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build_global()?;
+    Ok(())
+}
+
+/// Without the `rayon` feature there is no pool to size; anything but a single
+/// thread is meaningless, so reject it rather than silently run serially.
+#[cfg(not(feature = "rayon"))]
+pub fn set_global_threads(threads: usize) -> eyre::Result<()> {
+    if threads > 1 {
+        eyre::bail!("this build has no parallelism support; --threads must be 1");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -116,8 +141,8 @@ mod tests {
     #[test]
     fn dispatcher_runs_all_shots() {
         let m = module(DETERMINISTIC);
-        // threads = 1 forces the serial path regardless of the rayon feature.
-        let records = run_shots(&m, 10, 1, None).unwrap();
+        // 10 shots is below the parallel threshold, so this takes the serial path.
+        let records = run_shots(&m, 10, None).unwrap();
         assert_eq!(records.len(), 10);
     }
 
@@ -147,7 +172,20 @@ mod tests {
     fn serial_and_parallel_match_for_same_seed() {
         let m = module(RANDOM);
         let serial = run_shots_serial(&m, 64, Some(7)).unwrap();
-        let parallel = run_shots_parallel(&m, 64, 4, Some(7)).unwrap();
+        let parallel = run_shots_parallel(&m, 64, Some(7)).unwrap();
         assert_eq!(serial, parallel);
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn parallelizes_only_with_multiple_threads_above_threshold() {
+        // A single-thread pool is always serial, no matter how many shots.
+        assert!(!should_parallelize(1, 100_000));
+        // Multiple threads, but too few shots to amortize the overhead: serial.
+        assert!(!should_parallelize(8, PARALLEL_SHOT_THRESHOLD - 1));
+        // Multiple threads at the threshold: parallel.
+        assert!(should_parallelize(8, PARALLEL_SHOT_THRESHOLD));
+        // Multiple threads, plenty of shots: parallel.
+        assert!(should_parallelize(8, 100_000));
     }
 }

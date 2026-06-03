@@ -27,16 +27,16 @@ pub enum MeasurementFormat {
 pub fn run(
     file: &str,
     shots: usize,
-    threads: usize,
     seed: Option<u64>,
     output: Option<&str>,
     quiet: bool,
     format: MeasurementFormat,
 ) -> Result<()> {
-    // Compile once, then run every shot against the shared module.
+    // Compile once, then run every shot against the shared module. The thread
+    // pool is sized once in `main` via the top-level `--threads` flag.
     let module =
         ppvm_vihaco::load_module_file(file).wrap_err_with(|| format!("failed to load {file}"))?;
-    let records = ppvm_vihaco::shots::run_shots(&module, shots, threads, seed)
+    let records = ppvm_vihaco::shots::run_shots(&module, shots, seed)
         .wrap_err_with(|| format!("failed to run {file}"))?;
     if quiet {
         return Ok(());
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn run_succeeds_on_valid_file() {
         let src = temp_file("ppvm_cli_run_ok.sst", PROGRAM);
-        let res = run(&src, 3, 1, None, None, true, MeasurementFormat::Bits);
+        let res = run(&src, 3, None, None, true, MeasurementFormat::Bits);
         let _ = fs::remove_file(&src);
         assert!(res.is_ok(), "got: {res:?}");
     }
@@ -331,16 +331,7 @@ mod tests {
         let out = std::env::temp_dir().join("ppvm_cli_run_output.txt");
         let _ = fs::remove_file(&out);
 
-        run(
-            &src,
-            4,
-            1,
-            None,
-            out.to_str(),
-            false,
-            MeasurementFormat::Bits,
-        )
-        .unwrap();
+        run(&src, 4, None, out.to_str(), false, MeasurementFormat::Bits).unwrap();
         let contents = fs::read_to_string(&out).unwrap();
         // Four deterministic shots of |0>, one per line.
         assert_eq!(contents, "0\n0\n0\n0\n");
@@ -353,7 +344,6 @@ mod tests {
     fn run_errors_with_context_on_missing_file() {
         let err = run(
             "/no/such/file.sst",
-            1,
             1,
             None,
             None,

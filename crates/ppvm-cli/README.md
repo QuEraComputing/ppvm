@@ -24,23 +24,45 @@ cargo run -p ppvm-cli -- run examples/ghz.sst
 
 ## Run
 
-`run` executes a program and prints its measurement record. The example
-[`examples/ghz.sst`](examples/ghz.sst) prepares a 3-qubit GHZ state and measures
-every qubit, so each shot reads `0 0 0` or `1 1 1`:
+`run` executes a program for one or more shots and prints the measurement
+results. The example [`examples/ghz.sst`](examples/ghz.sst) prepares a 3-qubit
+GHZ state and measures every qubit, so each shot reads `000` or `111`:
 
 ```sh
 $ ppvm run examples/ghz.sst
-Measurements: 1 1 1
+000
 ```
 
-Each measurement event is shown as a bit string (a lost qubit prints as `L`),
-events separated by spaces. Use `-f debug` for the raw record, or `-q` to
-suppress the output entirely:
+Each shot is printed as a single flat bit string — `0`/`1`, with a lost qubit
+shown as `2` — and shots are separated by newlines. Use `-s`/`--shots` to run
+more than one:
 
 ```sh
-$ ppvm run examples/ghz.sst -f debug
-Measurement record:
-[[One], [One], [One]]
+$ ppvm run examples/ghz.sst --shots 5
+000
+000
+111
+000
+111
+```
+
+Other options:
+
+- `-t`/`--threads <N>` — run shots across `N` threads. More than one enables
+  parallel execution (defaults to 1).
+- `--seed <N>` — seed the RNG for reproducible results. The same seed yields the
+  same shots regardless of the thread count.
+- `-o`/`--output <FILE>` — write the results to a file (one shot per line)
+  instead of stdout.
+- `-f debug` — print the raw record for every shot instead of bit strings.
+- `-q`/`--quiet` — run without printing anything.
+
+```sh
+$ ppvm run examples/ghz.sst --shots 2 -f debug
+[[[Zero], [Zero], [Zero]], [[One], [One], [One]]]
+
+$ ppvm run examples/ghz.sst --shots 1000 --threads 8 -o results.txt
+Results written to results.txt
 ```
 
 ## Dump
@@ -58,7 +80,7 @@ same way as the source:
 
 ```sh
 $ ppvm run examples/ghz.ssb
-Measurements: 0 0 0
+000
 ```
 
 `dump` refuses to overwrite an existing file unless you pass `-f`/`--force`.
@@ -91,9 +113,9 @@ fn @main() {
 $ printf 's\nc\n' | ppvm debug program.sst
 -- breakpoint hit --
 pc=3  next: const.u64 0
-measurements: (none)
+measurements:
 > s step | c continue | q quit: pc=4  next: Measure
-measurements: (none)
+measurements:
 > s step | c continue | q quit: Program finished.
 Measurements: 0
 ```
@@ -104,7 +126,7 @@ to pause before the very first instruction:
 ```sh
 $ ppvm debug examples/ghz.sst -b
 pc=0  next: const.u64 0
-measurements: (none)
+measurements:
 > s step | c continue | q quit:
 ```
 

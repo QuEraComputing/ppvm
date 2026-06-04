@@ -556,43 +556,49 @@ impl LindbladSpec {
         let protected_set: FxHashMap<u64, ()> =
             protected.iter().map(|w| (word_hash(w), ())).collect();
 
-        // `map_init` gives each rayon worker a thread-local scratch tuple
-        // that lives for the duration of the par_iter. We reuse the
-        // hashmap + scratch vectors across all basis elements processed
-        // by the same thread — the previous per-task allocations were a
-        // real cost at large basis sizes.
-        let local: Vec<Vec<(Word, f64)>> = basis
-            .par_iter()
-            .zip(coeffs.par_iter())
-            .map_init(
-                || {
-                    (
-                        Vec::<u32>::with_capacity(self.n_qubits),
-                        Vec::<u32>::with_capacity(128),
-                        FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
-                            128,
-                            FxBuildHasher::default(),
-                        ),
-                    )
-                },
-                |(s1, s2, lm), (p, &c)| {
-                    let terms = self.compute_action_terms(p, s1, s2, lm);
-                    let mut out = Vec::with_capacity(terms.len());
-                    for (w, v) in terms.iter() {
-                        let h = word_hash(w);
-                        if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
-                            out.push((w.clone(), c * *v));
-                        }
-                    }
-                    out
-                },
-            )
-            .collect();
-
+        // Chunked parallel pass. Materialising the full `Vec<Vec<(Word, f64)>>`
+        // at once held N · A · 24 B bytes simultaneously (~430 MB at L=51
+        // LR-XY, N=14 K, A≈1275). Processing in chunks of `CHUNK_SIZE`
+        // basis rows bounds the in-flight per-Pauli output Vecs to one
+        // chunk's worth, and merging immediately into `merged` returns
+        // those bytes to the allocator before the next chunk starts.
+        const CHUNK_SIZE: usize = 4096;
         let mut merged: FxHashMap<Word, f64> = FxHashMap::default();
-        for v in local {
-            for (k, val) in v {
-                *merged.entry(k).or_insert(0.0) += val;
+        for chunk_start in (0..basis.len()).step_by(CHUNK_SIZE) {
+            let chunk_end = (chunk_start + CHUNK_SIZE).min(basis.len());
+            let chunk_basis = &basis[chunk_start..chunk_end];
+            let chunk_coeffs = &coeffs[chunk_start..chunk_end];
+            let local: Vec<Vec<(Word, f64)>> = chunk_basis
+                .par_iter()
+                .zip(chunk_coeffs.par_iter())
+                .map_init(
+                    || {
+                        (
+                            Vec::<u32>::with_capacity(self.n_qubits),
+                            Vec::<u32>::with_capacity(128),
+                            FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                                128,
+                                FxBuildHasher::default(),
+                            ),
+                        )
+                    },
+                    |(s1, s2, lm), (p, &c)| {
+                        let terms = self.compute_action_terms(p, s1, s2, lm);
+                        let mut out = Vec::with_capacity(terms.len());
+                        for (w, v) in terms.iter() {
+                            let h = word_hash(w);
+                            if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
+                                out.push((w.clone(), c * *v));
+                            }
+                        }
+                        out
+                    },
+                )
+                .collect();
+            for v in local {
+                for (k, val) in v {
+                    *merged.entry(k).or_insert(0.0) += val;
+                }
             }
         }
         Ok(merged.into_iter().filter(|(_, c)| *c != 0.0).collect())

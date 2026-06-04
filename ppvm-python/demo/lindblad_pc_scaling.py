@@ -141,7 +141,6 @@ def run_pc_steps(L_op, L, site0, dt, n_steps, tau_add, num_threads):
 site0 = L // 2
 for n in range(1, max_cores + 1):
     run_pc_steps(L_op, L, site0, dt, warmup_steps, tau_add, n)
-L_op.clear_cache()
 
 
 # %% [markdown]
@@ -150,7 +149,6 @@ L_op.clear_cache()
 # %%
 results = []
 for n in range(1, max_cores + 1):
-    L_op.clear_cache()
     times, basis_size = run_pc_steps(L_op, L, site0, dt, n_steps, tau_add, n)
     first = times[0] * 1000.0
     steady = median(times[1:]) * 1000.0

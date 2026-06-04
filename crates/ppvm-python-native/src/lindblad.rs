@@ -134,15 +134,6 @@ impl LindbladSpec {
         Ok(Self { inner })
     }
 
-    fn clear_cache(&self) {
-        self.inner.clear_cache();
-    }
-
-    #[getter]
-    fn cache_size(&self) -> usize {
-        self.inner.cache_size()
-    }
-
     #[getter]
     fn n_qubits(&self) -> usize {
         self.inner.n_qubits()

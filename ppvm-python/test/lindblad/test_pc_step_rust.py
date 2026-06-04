@@ -62,9 +62,7 @@ def test_pc_step_rust_matches_python_pc():
     h_terms, jump_terms = nn_xy_z_dephasing_obc(L, J, gamma)
     L_op = Lindbladian(L, h_terms, jump_terms)
 
-    L_op.clear_cache()
     rust = _adaptive_z_correlator_pc_rust(L_op, L, site0, dt, n_steps, tau_add)
-    L_op.clear_cache()
     py_ref = adaptive_z_correlator_pc(L_op, L, site0, dt, n_steps, tau_add)
 
     diff = float(np.max(np.abs(rust - py_ref)))
@@ -90,7 +88,6 @@ def test_pc_step_rust_dt_scaling_is_cubic():
         n_steps = round(T / dt)
         times = np.arange(n_steps + 1) * dt
         exact = bilinear_nn_xy_z_dephasing_obc(L, J, gamma, times, site0)
-        L_op.clear_cache()
         rust = _adaptive_z_correlator_pc_rust(L_op, L, site0, dt, n_steps, tau_add)
         err.append(float(np.max(np.abs(rust[-1] - exact[-1]))))
 

@@ -190,13 +190,6 @@ class Lindbladian:
     def num_jump_terms(self) -> int:
         return self._spec.num_jump_terms
 
-    @property
-    def cache_size(self) -> int:
-        return self._spec.cache_size
-
-    def clear_cache(self) -> None:
-        self._spec.clear_cache()
-
     # ── Pure-ndarray hot path ──
 
     def action_arr(self, p: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

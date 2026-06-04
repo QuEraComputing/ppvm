@@ -231,7 +231,6 @@ def run_mode(kk):
     max_w_t = np.empty(steps + 1, dtype=np.int64)
     discarded_cum = np.zeros(steps + 1)
 
-    L_op.clear_cache()
     for nt in range(steps + 1):
         # Overlap with the (fixed) initial target.
         c_t = sum(coeff[index[trow.tobytes()]] * tc

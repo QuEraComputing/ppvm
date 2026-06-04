@@ -32,7 +32,6 @@
 //! hot-path commutator/product loops bypass the higher-level word API and
 //! operate directly on raw `u64` chunks for speed.
 
-use dashmap::DashMap;
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use num::Complex;
 use ppvm_runtime::traits::PauliWordTrait;
@@ -398,10 +397,11 @@ fn precompute_ldagger_l(terms: &[PauliTerm]) -> Vec<PauliTerm> {
 
 /// Precompiled Lindbladian. Constructed once from string-form Hamiltonian
 /// terms + jump operators; reused across many calls to [`Self::action`],
-/// [`Self::leakage`], [`Self::generator`].
-///
-/// `action_cache` memoises the per-input contribution list — without it,
-/// every call re-derives the same `L*(p)` from scratch for the same input.
+/// [`Self::leakage`], [`Self::generator`]. `L*(p)` is recomputed fresh on
+/// every call — empirical benchmarks showed that the previous global
+/// `action_cache` hurt wall time for sparse-local Hamiltonians (hash-map
+/// lookup ≳ recompute) and consumed several KB per cached Pauli word, which
+/// blocked us from reaching the basis sizes needed for L=41 sweeps.
 pub struct LindbladSpec {
     n_qubits: usize,
     h_terms: Vec<HTerm>,
@@ -410,7 +410,6 @@ pub struct LindbladSpec {
     h_support: Vec<Vec<u32>>,
     /// `j_support[q]` = indices of jumps whose support contains qubit `q`.
     j_support: Vec<Vec<u32>>,
-    action_cache: DashMap<Word, Vec<(Word, f64)>, FxBuildHasher>,
 }
 
 /// User-facing description of one jump operator: a complex Pauli linear
@@ -504,17 +503,7 @@ impl LindbladSpec {
             j_kinds,
             h_support: h_support_idx,
             j_support: j_support_idx,
-            action_cache: DashMap::with_hasher(FxBuildHasher::default()),
         })
-    }
-
-    /// Drop all memoised `L*(p)` entries.
-    pub fn clear_cache(&self) {
-        self.action_cache.clear();
-    }
-
-    pub fn cache_size(&self) -> usize {
-        self.action_cache.len()
     }
 
     pub fn n_qubits(&self) -> usize {
@@ -587,28 +576,15 @@ impl LindbladSpec {
                     )
                 },
                 |(s1, s2, lm), (p, &c)| {
-                    if let Some(r) = self.action_cache.get(p) {
-                        let terms = r.value();
-                        let mut out = Vec::with_capacity(terms.len());
-                        for (w, v) in terms.iter() {
-                            let h = word_hash(w);
-                            if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
-                                out.push((w.clone(), c * *v));
-                            }
+                    let terms = self.compute_action_terms(p, s1, s2, lm);
+                    let mut out = Vec::with_capacity(terms.len());
+                    for (w, v) in terms.iter() {
+                        let h = word_hash(w);
+                        if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
+                            out.push((w.clone(), c * *v));
                         }
-                        out
-                    } else {
-                        let terms = self.compute_action_terms(p, s1, s2, lm);
-                        let mut out = Vec::with_capacity(terms.len());
-                        for (w, v) in terms.iter() {
-                            let h = word_hash(w);
-                            if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
-                                out.push((w.clone(), c * *v));
-                            }
-                        }
-                        self.action_cache.insert(p.clone(), terms);
-                        out
                     }
+                    out
                 },
             )
             .collect();
@@ -649,24 +625,12 @@ impl LindbladSpec {
                     )
                 },
                 |(s1, s2, lm), (col, p)| {
-                    let mut out: Vec<(usize, usize, f64)>;
-                    if let Some(r) = self.action_cache.get(p) {
-                        let terms = r.value();
-                        out = Vec::with_capacity(terms.len());
-                        for (w, v) in terms.iter() {
-                            if let Some(&row) = index.get(w) {
-                                out.push((row as usize, col, *v));
-                            }
+                    let terms = self.compute_action_terms(p, s1, s2, lm);
+                    let mut out = Vec::with_capacity(terms.len());
+                    for (w, v) in terms.iter() {
+                        if let Some(&row) = index.get(w) {
+                            out.push((row as usize, col, *v));
                         }
-                    } else {
-                        let terms = self.compute_action_terms(p, s1, s2, lm);
-                        out = Vec::with_capacity(terms.len());
-                        for (w, v) in terms.iter() {
-                            if let Some(&row) = index.get(w) {
-                                out.push((row as usize, col, *v));
-                            }
-                        }
-                        self.action_cache.insert(p.clone(), terms);
                     }
                     out
                 },
@@ -717,24 +681,12 @@ impl LindbladSpec {
                     )
                 },
                 |(s1, s2, lm), p| {
-                    let mut out: Vec<(u32, f64)>;
-                    if let Some(r) = self.action_cache.get(p) {
-                        let terms = r.value();
-                        out = Vec::with_capacity(terms.len());
-                        for (w, v) in terms.iter() {
-                            if let Some(&row) = index.get(w) {
-                                out.push((row, *v));
-                            }
+                    let terms = self.compute_action_terms(p, s1, s2, lm);
+                    let mut out = Vec::with_capacity(terms.len());
+                    for (w, v) in terms.iter() {
+                        if let Some(&row) = index.get(w) {
+                            out.push((row, *v));
                         }
-                    } else {
-                        let terms = self.compute_action_terms(p, s1, s2, lm);
-                        out = Vec::with_capacity(terms.len());
-                        for (w, v) in terms.iter() {
-                            if let Some(&row) = index.get(w) {
-                                out.push((row, *v));
-                            }
-                        }
-                        self.action_cache.insert(p.clone(), terms);
                     }
                     out
                 },
@@ -1059,7 +1011,7 @@ impl LindbladSpec {
             .collect()
     }
 
-    /// Accumulate `scale · L*(p)` into `out`, hitting the cache when warm.
+    /// Accumulate `scale · L*(p)` into `out`.
     fn accumulate_action(
         &self,
         p: &Word,
@@ -1068,19 +1020,12 @@ impl LindbladSpec {
         scratch_support: &mut Vec<u32>,
         scratch_cands: &mut Vec<u32>,
     ) {
-        if let Some(r) = self.action_cache.get(p) {
-            for (w, c) in r.value().iter() {
-                *out.entry(w.clone()).or_insert(0.0) += scale * c;
-            }
-            return;
-        }
         let mut scratch_local = FxHashMap::default();
         let terms =
             self.compute_action_terms(p, scratch_support, scratch_cands, &mut scratch_local);
         for (w, c) in terms.iter() {
             *out.entry(w.clone()).or_insert(0.0) += scale * c;
         }
-        self.action_cache.insert(p.clone(), terms);
     }
 }
 

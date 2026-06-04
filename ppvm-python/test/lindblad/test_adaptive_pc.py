@@ -47,7 +47,6 @@ def test_adaptive_converges_to_nn_xy_z_dephasing_bilinear():
         n_steps = round(T / dt)
         times = np.arange(n_steps + 1) * dt
         exact = bilinear_nn_xy_z_dephasing_obc(L, J, gamma, times, site0)
-        L_op.clear_cache()
         shim = adaptive_z_correlator(L_op, L, site0, dt, n_steps, tau_add)
         # Endpoint comparison only — independent of which step counts we use.
         errors.append(float(np.max(np.abs(shim[-1] - exact[-1]))))
@@ -86,9 +85,7 @@ def test_predictor_corrector_lifts_dt_scaling_to_cubic():
         n_steps = round(T / dt)
         times = np.arange(n_steps + 1) * dt
         exact = bilinear_nn_xy_z_dephasing_obc(L, J, gamma, times, site0)
-        L_op.clear_cache()
         single = adaptive_z_correlator(L_op, L, site0, dt, n_steps, tau_add)
-        L_op.clear_cache()
         pc = adaptive_z_correlator_pc(L_op, L, site0, dt, n_steps, tau_add)
         err_single.append(float(np.max(np.abs(single[-1] - exact[-1]))))
         err_pc.append(float(np.max(np.abs(pc[-1] - exact[-1]))))

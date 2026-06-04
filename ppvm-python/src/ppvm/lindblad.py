@@ -229,8 +229,9 @@ class Lindbladian:
         basis_arr: np.ndarray,
         coeffs: np.ndarray,
         dt: float,
-        tau_add: float,
+        tau_add: float | None = None,
         drop_tol: float = 0.0,
+        K: float = 5.0,
         protected_arr: np.ndarray | None = None,
         expm_tol: float = 1e-12,
         parallel_threshold: int = 50_000,
@@ -244,10 +245,14 @@ class Lindbladian:
         with rayon-parallel SpMV when the restricted generator has more
         than ``parallel_threshold`` nonzeros.
 
-        When ``drop_tol > 0``, basis entries whose absolute coefficient is
-        below ``drop_tol`` after the corrector are pruned from the returned
-        basis (unless the word is in ``protected_arr``). Useful at γ = 0,
-        where there is no physical damping of small-coefficient strings.
+        Tolerances. ``drop_tol`` prunes basis entries whose absolute
+        coefficient is below this threshold after the corrector (unless
+        the word is ``protected``). ``tau_add`` is the leakage-rate
+        threshold for adding new strings. The default policy ties them via
+        ``tau_add = K * drop_tol / dt`` (with ``K = 5``): the LR-XY
+        γ=1, L=51 Pareto study showed K≈5 lies on the front, with
+        ``drop_tol`` the natural accuracy knob. Pass ``tau_add`` explicitly
+        to override.
 
         ``num_threads``, when set, pins this call to a freshly-built rayon
         pool of that size — useful for benchmarking parallel scaling.
@@ -255,6 +260,13 @@ class Lindbladian:
         Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown
         (or shrunk, if ``drop_tol`` pruned entries).
         """
+        if tau_add is None:
+            if drop_tol <= 0.0:
+                raise ValueError(
+                    "must provide tau_add explicitly, or drop_tol > 0 "
+                    "(tau_add defaults to K * drop_tol / dt)"
+                )
+            tau_add = K * drop_tol / dt
         n = self.n_qubits
         if protected_arr is None:
             protected_arr = np.zeros((0, n), dtype=np.uint8)
@@ -275,8 +287,9 @@ class Lindbladian:
         basis: Sequence[str],
         coeffs: np.ndarray,
         dt: float,
-        tau_add: float,
+        tau_add: float | None = None,
         drop_tol: float = 0.0,
+        K: float = 5.0,
         protected: Sequence[str] | None = None,
         expm_tol: float = 1e-12,
         parallel_threshold: int = 50_000,
@@ -294,6 +307,7 @@ class Lindbladian:
             dt,
             tau_add,
             drop_tol,
+            K,
             protected_arr,
             expm_tol,
             parallel_threshold,

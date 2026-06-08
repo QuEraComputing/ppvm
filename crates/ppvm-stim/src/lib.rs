@@ -21,7 +21,7 @@
 //! use ppvm_tableau::prelude::*;
 //!
 //! let prog = parse_extended(circuit_src)?;
-//! let shots = sample(&prog, 10_000, || {
+//! let shots = sample(&prog, 10_000, |_| {
 //!     GeneralizedTableau::<_, usize, _>::new(n_qubits, 1e-10)
 //! })?;
 //! # Ok::<(), ppvm_stim::Error>(())
@@ -38,7 +38,9 @@ pub mod prepare;
 
 pub use stim_parser::prelude::*;
 
-pub use executor::{execute, execute_prepared, sample};
+#[cfg(feature = "rayon")]
+pub use executor::sample_parallel;
+pub use executor::{execute, execute_prepared, sample, sample_serial};
 pub use prepare::{ExecError, prepare};
 
 use std::path::{Path, PathBuf};

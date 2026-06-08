@@ -223,6 +223,13 @@ class GeneralizedTableau(
 
         Each shot starts from a fresh tableau, so this is the right entry
         point for multi-shot sampling.
+
+        Shots run in parallel across CPU cores (the GIL is released during
+        sampling), with a serial fallback for small batches. When ``seed`` is
+        given, shot ``i`` uses ``seed + i``, so results are reproducible and
+        independent of the number of threads. Set the ``RAYON_NUM_THREADS``
+        environment variable before the first call to control the pool size
+        (it defaults to the number of logical cores).
         """
         N_interface = (n_qubits + 63) // 64
         native_cls = getattr(ppvm_python_native, f"GeneralizedTableau{N_interface}")
@@ -237,7 +244,11 @@ def sample_stim(
     num_shots: int = 1,
     seed: int | None = None,
 ) -> list[list[MeasurementResult]]:
-    """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``."""
+    """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``.
+
+    Shots are sampled in parallel across CPU cores with the GIL released; see
+    :meth:`GeneralizedTableau.sample` for seeding and ``RAYON_NUM_THREADS``.
+    """
     return GeneralizedTableau.sample(
         prog, n_qubits, min_abs_coeff=min_abs_coeff, num_shots=num_shots, seed=seed
     )

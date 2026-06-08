@@ -254,6 +254,21 @@ def test_sample_stim_zero_shots_returns_empty():
     assert sample_stim(prog, n_qubits=1, num_shots=0) == []
 
 
+def test_sample_stim_seeded_is_reproducible_across_the_parallel_path():
+    # A randomising circuit at a shot count high enough to trigger the
+    # parallel sampling path. With a fixed seed the per-shot seeds are
+    # derived from the shot index, so two runs must agree exactly and the
+    # result must be independent of how rayon schedules the shots.
+    prog = StimProgram.parse("H 0\nM 0")
+    a = sample_stim(prog, n_qubits=1, num_shots=512, seed=7)
+    b = sample_stim(prog, n_qubits=1, num_shots=512, seed=7)
+    assert a == b
+    assert len(a) == 512
+    # Not degenerate: an H gate should produce a mix of outcomes.
+    flat = {shot[0] for shot in a}
+    assert flat == {MeasurementResult.ZERO, MeasurementResult.ONE}
+
+
 def test_run_propagates_parse_error_as_value_error():
     with pytest.raises(ValueError):
         StimProgram.parse("FROBNICATE 0")

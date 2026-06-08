@@ -110,7 +110,7 @@ fn measurement_buffer_is_pre_sized() {
 fn sample_runs_n_shots_each_with_fresh_tableau() {
     use ppvm_stim::sample;
     let prog = parse_extended("X 0\nM 0").unwrap();
-    let shots = sample::<_, _, _, _>(&prog, 5, || {
+    let shots = sample::<_, _, _, _>(&prog, 5, |_| {
         GeneralizedTableau::<ByteFxHashF64<1>, usize>::new(1, 1e-10)
     })
     .unwrap();
@@ -124,7 +124,7 @@ fn sample_runs_n_shots_each_with_fresh_tableau() {
 fn sample_zero_shots_returns_empty() {
     use ppvm_stim::sample;
     let prog = parse_extended("X 0\nM 0").unwrap();
-    let shots = sample::<_, _, _, _>(&prog, 0, || {
+    let shots = sample::<_, _, _, _>(&prog, 0, |_| {
         GeneralizedTableau::<ByteFxHashF64<1>, usize>::new(1, 1e-10)
     })
     .unwrap();
@@ -137,10 +137,8 @@ fn sample_random_h_distribution_within_3_sigma() {
     use ppvm_stim::sample;
     let prog = parse_extended("H 0\nM 0").unwrap();
     let n = 4096;
-    let mut seed_counter: u64 = 0;
-    let shots = sample::<_, _, _, _>(&prog, n, || {
-        seed_counter += 1;
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+    let shots = sample::<_, _, _, _>(&prog, n, |i| {
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1)
     })
     .unwrap();
     let ones = shots.iter().filter(|s| s[0] == Some(true)).count();
@@ -383,10 +381,8 @@ fn measure_noise_distribution_within_3_sigma() {
     // So recorded == 0 with probability 0.3 over many shots.
     let prog = parse_extended("X 0\nMZ(0.3) 0").unwrap();
     let n = 4096usize;
-    let mut seed_counter: u64 = 0;
-    let shots = sample::<_, _, _, _>(&prog, n, || {
-        seed_counter += 1;
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+    let shots = sample::<_, _, _, _>(&prog, n, |i| {
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1)
     })
     .unwrap();
     let zeros = shots.iter().filter(|s| s[0] == Some(false)).count();
@@ -437,10 +433,8 @@ fn mpad_noise_distribution_within_3_sigma() {
     // MPAD(0.3) 0 — pad value is 0; recorded bit flips to 1 with prob 0.3.
     let prog = parse_extended("MPAD(0.3) 0").unwrap();
     let n = 4096usize;
-    let mut seed_counter: u64 = 0;
-    let shots = sample::<_, _, _, _>(&prog, n, || {
-        seed_counter += 1;
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+    let shots = sample::<_, _, _, _>(&prog, n, |i| {
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1)
     })
     .unwrap();
     let ones = shots.iter().filter(|s| s[0] == Some(true)).count();
@@ -450,4 +444,22 @@ fn mpad_noise_distribution_within_3_sigma() {
         ((ones as f64) - mean).abs() < 3.0 * std,
         "got {ones} ones, expected mean {mean} +/- 3*{std}"
     );
+}
+
+#[cfg(feature = "rayon")]
+#[test]
+fn sample_parallel_matches_sample_serial_for_seeded_factory() {
+    use ppvm_stim::{sample_parallel, sample_serial};
+    // A randomising circuit (H then measure on two qubits, with a noisy
+    // readout) so each shot's outcome depends on its RNG draws. With a
+    // per-shot seed derived from the index, the parallel result must match
+    // the serial result shot-for-shot regardless of thread scheduling.
+    let prog = parse_extended("H 0\nH 1\nM 0\nMZ(0.2) 1").unwrap();
+    let n = 1024usize;
+    let factory = |i: usize| {
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(2, 1e-10, i as u64 + 1)
+    };
+    let serial = sample_serial::<_, _, _, _>(&prog, n, factory).unwrap();
+    let parallel = sample_parallel::<_, _, _, _>(&prog, n, factory).unwrap();
+    assert_eq!(serial, parallel);
 }

@@ -906,6 +906,7 @@ dependencies = [
  "num",
  "ppvm-runtime",
  "ppvm-tableau",
+ "rayon",
  "stim-parser",
  "thiserror",
 ]

@@ -52,11 +52,16 @@ where
     Ok(results)
 }
 
-/// Execute many shots, building a fresh tableau per shot via `make_tableau`.
-pub fn sample<T, I, C, F>(
+/// Execute many shots serially, building a fresh tableau for shot `i` via
+/// `make_tableau(i)`.
+///
+/// The shot index lets callers derive a deterministic per-shot seed (e.g.
+/// `seed + i`) so results are independent of evaluation order — the same
+/// factory then yields identical results from [`sample_parallel`].
+pub fn sample_serial<T, I, C, F>(
     program: &ExtendedProgram,
     num_shots: usize,
-    mut make_tableau: F,
+    make_tableau: F,
 ) -> Result<Vec<Vec<Option<bool>>>, ExecError>
 where
     T: Config,
@@ -80,13 +85,117 @@ where
         + ComplexFloat
         + Copy,
     I: TableauIndex + Debug + Send + Sync,
-    F: FnMut() -> GeneralizedTableau<T, I, C>,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C>,
 {
     prepare(program)?;
     let count = program.measurement_count();
     Ok((0..num_shots)
-        .map(|_| {
-            let mut tab = make_tableau();
+        .map(|i| {
+            let mut tab = make_tableau(i);
+            let mut results = Vec::with_capacity(count);
+            execute_prepared(&program.instructions, &mut tab, &mut results);
+            results
+        })
+        .collect())
+}
+
+/// Execute many shots, building a fresh tableau for shot `i` via
+/// `make_tableau(i)`.
+///
+/// When the `rayon` feature is enabled this dispatches to [`sample_parallel`]
+/// for batches large enough to amortise thread-scheduling overhead, and to
+/// [`sample_serial`] otherwise. Without the feature it is always serial. Use
+/// [`sample_serial`] / [`sample_parallel`] directly to force one or the other.
+pub fn sample<T, I, C, F>(
+    program: &ExtendedProgram,
+    num_shots: usize,
+    make_tableau: F,
+) -> Result<Vec<Vec<Option<bool>>>, ExecError>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C> + Sync,
+{
+    #[cfg(feature = "rayon")]
+    {
+        // Below ~4 shots per thread, rayon's scheduling overhead outweighs
+        // the gain, so stay serial; with a single thread there is no upside.
+        let n_threads = rayon::current_num_threads();
+        if n_threads <= 1 || num_shots < 4 * n_threads {
+            sample_serial(program, num_shots, make_tableau)
+        } else {
+            sample_parallel(program, num_shots, make_tableau)
+        }
+    }
+    #[cfg(not(feature = "rayon"))]
+    {
+        sample_serial(program, num_shots, make_tableau)
+    }
+}
+
+/// Execute many shots in parallel across the global rayon thread pool,
+/// building a fresh tableau for shot `i` via `make_tableau(i)`.
+///
+/// Per-shot seeds derived from `i` make the result independent of how rayon
+/// schedules the work, so a seeded factory yields the same shots (in the same
+/// order) as [`sample_serial`]. Thread count follows rayon's global pool
+/// (set `RAYON_NUM_THREADS` to override).
+#[cfg(feature = "rayon")]
+pub fn sample_parallel<T, I, C, F>(
+    program: &ExtendedProgram,
+    num_shots: usize,
+    make_tableau: F,
+) -> Result<Vec<Vec<Option<bool>>>, ExecError>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C> + Sync,
+{
+    use rayon::prelude::*;
+    prepare(program)?;
+    let count = program.measurement_count();
+    Ok((0..num_shots)
+        .into_par_iter()
+        .map(|i| {
+            let mut tab = make_tableau(i);
             let mut results = Vec::with_capacity(count);
             execute_prepared(&program.instructions, &mut tab, &mut results);
             results

@@ -268,9 +268,11 @@ impl PPVM {
                 let q0 = self.pop_qubit()?;
                 Ok(CircuitMessage::TwoQubitAndFloatArr15(q0, q1, ps))
             }
-            Trace | Truncate => Err(eyre::eyre!(
-                "{inst} operand resolution not yet wired (Phase 2 Task 7)"
-            )),
+            Trace => {
+                let s = self.pop_string()?;
+                Ok(CircuitMessage::PauliPatternStr(s))
+            }
+            Truncate => Ok(CircuitMessage::None),
         }
     }
 
@@ -287,6 +289,16 @@ impl PPVM {
         match self.cpu.stack_pop()? {
             vihaco::Value::F64(v) => Ok(v),
             v => Err(eyre::eyre!("Expected f64 argument, got {:?}", v)),
+        }
+    }
+
+    /// Pop a `Value::String(addr)`, look up the addr in the module's string
+    /// table, and return the owned string. Used by `Trace` to resolve its
+    /// Pauli-pattern operand before the executor sees the message.
+    fn pop_string(&mut self) -> eyre::Result<String> {
+        match self.cpu.stack_pop()? {
+            vihaco::Value::String(addr) => Ok(self.loader.get_string(addr as usize)?.clone()),
+            v => Err(eyre::eyre!("Expected string operand, got {:?}", v)),
         }
     }
 
@@ -1086,6 +1098,58 @@ mod tests {
         );
         assert!(machine.current_pc() > pc_at_break, "pc must advance");
 
+        Ok(())
+    }
+
+    #[test]
+    fn paulisum_truncate_runs_without_error() -> eyre::Result<()> {
+        // Smoke test: a `gate truncate` reaches the PauliSum executor's
+        // Truncate arm and calls `state.truncate()`. No observer effect, no
+        // stack changes — the test passes if init + step_once both succeed.
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 1;
+        module.extra.backend = BackendKind::PauliSum;
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::Truncate));
+
+        let mut machine = PPVM::default();
+        machine.load(&module)?;
+        machine.init()?;
+        machine.step_once()?;
+        Ok(())
+    }
+
+    #[test]
+    fn paulisum_trace_populates_trace_record() -> eyre::Result<()> {
+        // End-to-end smoke test for Task 7: a `gate trace` pops a string
+        // operand, parses it as a PauliPattern, computes the trace, emits a
+        // TraceEffect, and the value lands in both `trace_record()` and the
+        // CPU stack. State is an empty PauliSum (no observable seeded — that's
+        // Task 8), so the trace should be exactly 0.0.
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 1;
+        module.extra.backend = BackendKind::PauliSum;
+        // `Z0` matches a Z on qubit 0; the parser requires position anchors.
+        module.strings.push("Z0".to_string());
+
+        module
+            .code
+            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                Value::String(0),
+            )));
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::Trace));
+
+        let mut machine = PPVM::default();
+        machine.load(&module)?;
+        machine.init()?;
+        for _ in 0..module.code.len() {
+            machine.step_once()?;
+        }
+
+        assert_eq!(machine.trace_record(), vec![0.0]);
         Ok(())
     }
 }

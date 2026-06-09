@@ -10,6 +10,8 @@ use vihaco_parser::Parse;
 pub enum CircuitInstruction {
     // NOTE: longer tokens need to go first
     TwoQubitPauliError, // needs to go before T
+    Truncate,           // needs to go before T
+    Trace,              // needs to go before T
 
     // Single-Qubit Clifford gates
     X,
@@ -76,6 +78,8 @@ impl std::fmt::Display for CircuitInstruction {
         use CircuitInstruction::*;
         match self {
             TwoQubitPauliError => write!(f, "TwoQubitPauliError"),
+            Truncate => write!(f, "Truncate"),
+            Trace => write!(f, "Trace"),
 
             X => write!(f, "X"),
             Y => write!(f, "Y"),
@@ -126,6 +130,7 @@ impl std::fmt::Display for CircuitInstruction {
 
 #[derive(Debug, Clone, PartialEq, Message)]
 pub enum CircuitMessage {
+    None,                                           // Truncate (no operand)
     Qubit(usize),                                   // X, Y, Z, ...
     QubitAndFloat(usize, f64),                      // RX, depolarize, ...
     QubitAndTwoFloats(usize, f64, f64),             // R
@@ -135,6 +140,7 @@ pub enum CircuitMessage {
     QubitAndFloatArr3(usize, [f64; 3]),             // PauliError
     TwoQubitAndFloatArr3(usize, usize, [f64; 3]),   // Correlated loss
     TwoQubitAndFloatArr15(usize, usize, [f64; 15]), // TwoQubitPauliError
+    PauliPatternStr(u32),                           // Trace (string-table addr)
 
     // batched instructions
     QubitBatch(SmallVec<[usize; 8]>),              // X, Y, Z, ...
@@ -167,6 +173,8 @@ mod tests {
     /// newly added variant is automatically covered.
     const ALL: &[CircuitInstruction] = &[
         TwoQubitPauliError,
+        Truncate,
+        Trace,
         X,
         Y,
         Z,
@@ -230,9 +238,11 @@ mod tests {
 
     #[test]
     fn parses_t_family_without_prefix_collision() {
-        // `t` is a prefix of both `tadj` and `twoqubitpaulierror`.
+        // `t` is a prefix of `tadj`, `trace`, `truncate`, and `twoqubitpaulierror`.
         assert_eq!(parse("t"), T);
         assert_eq!(parse("tadj"), TAdj);
+        assert_eq!(parse("trace"), Trace);
+        assert_eq!(parse("truncate"), Truncate);
         assert_eq!(parse("twoqubitpaulierror"), TwoQubitPauliError);
     }
 
@@ -265,6 +275,8 @@ mod tests {
         assert_eq!(H.to_string(), "H");
         assert_eq!(CNOT.to_string(), "CNOT");
         assert_eq!(TwoQubitPauliError.to_string(), "TwoQubitPauliError");
+        assert_eq!(Trace.to_string(), "Trace");
+        assert_eq!(Truncate.to_string(), "Truncate");
         // Custom-token variants display their Rust name, not the parse token.
         assert_eq!(SqrtXAdj.to_string(), "SqrtXAdj");
         assert_eq!(SAdj.to_string(), "SAdj");

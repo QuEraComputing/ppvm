@@ -18,11 +18,26 @@ use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
 
 pub const PPVM_MAGIC: u32 = 0x5050564D;
 
+/// Which execution backend the circuit runs on. Selected via the
+/// `device circuit.backend` header; defaults to `Tableau` so existing
+/// programs that don't declare a backend keep working.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, vihaco_parser::Parse)]
+pub enum BackendKind {
+    #[default]
+    Tableau,
+    PauliSum,
+    #[token = "lossy_paulisum"]
+    LossyPauliSum,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PPVMDeviceInfo {
     pub magic: u32,
     pub n_qubits: usize,
     pub coefficient_threshold: f64,
+    pub backend: BackendKind,
+    pub observable: Option<String>,
+    pub max_pauli_weight: Option<usize>,
 }
 
 impl Default for PPVMDeviceInfo {
@@ -31,6 +46,9 @@ impl Default for PPVMDeviceInfo {
             magic: PPVM_MAGIC,
             n_qubits: 0,
             coefficient_threshold: 1e-10,
+            backend: BackendKind::default(),
+            observable: None,
+            max_pauli_weight: None,
         }
     }
 }
@@ -220,6 +238,9 @@ impl PPVM {
                 let q0 = self.pop_qubit()?;
                 Ok(CircuitMessage::TwoQubitAndFloatArr15(q0, q1, ps))
             }
+            Trace | Truncate => Err(eyre::eyre!(
+                "{inst} operand resolution not yet wired (Phase 2 Task 7)"
+            )),
         }
     }
 

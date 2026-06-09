@@ -14,15 +14,19 @@ use std::io::{Read, Write};
 use vihaco::instruction::{FromBytes, WriteBytes};
 
 use crate::PPVMModule;
-use crate::composite::{PPVM_MAGIC, PPVMDeviceInfo, PPVMInstruction};
+use crate::composite::{BackendKind, PPVM_MAGIC, PPVMDeviceInfo, PPVMInstruction};
 
 /// Current `.ssb` format version. The reader rejects any other version.
 pub const PPVM_BYTECODE_VERSION: u16 = 1;
 
-/// Byte length of the fixed v1 header (magic 4, version 2, header_size 4,
-/// n_qubits 4, coefficient_threshold 8) and the offset where the strings
-/// section begins.
-const HEADER_SIZE: u32 = 4 + 2 + 4 + 4 + 8;
+/// Byte length of the fixed portion of the header. The actual `header_size`
+/// in the stream may exceed this when the optional `observable` string is
+/// populated; the reader uses `header_size` to skip to the strings section.
+///
+/// Field widths (bytes): magic(4) + version(2) + header_size(4) + n_qubits(4)
+/// + coefficient_threshold(8) + backend(1) + max_pauli_weight_present(1)
+/// + max_pauli_weight(8) + observable_present(1) = 33.
+const FIXED_HEADER_SIZE: u32 = 4 + 2 + 4 + 4 + 8 + 1 + 1 + 8 + 1;
 
 /// Serialize a resolved module to the v1 `.ssb` byte stream.
 pub fn write_module<W: Write>(module: &PPVMModule, w: &mut W) -> eyre::Result<()> {
@@ -53,12 +57,49 @@ pub fn write_module<W: Write>(module: &PPVMModule, w: &mut W) -> eyre::Result<()
     let n_qubits = u32::try_from(info.n_qubits)
         .map_err(|_| eyre::eyre!("n_qubits {} does not fit in u32", info.n_qubits))?;
 
+    // The header is `FIXED_HEADER_SIZE` bytes plus, when an observable is
+    // present, a u32 length followed by its UTF-8 bytes.
+    let observable_bytes: &[u8] = info
+        .observable
+        .as_ref()
+        .map(String::as_bytes)
+        .unwrap_or(&[]);
+    let observable_present: u8 = u8::from(info.observable.is_some());
+    let observable_len = u32::try_from(observable_bytes.len()).map_err(|_| {
+        eyre::eyre!(
+            "observable length {} does not fit in u32",
+            observable_bytes.len()
+        )
+    })?;
+    let observable_trailer: u32 = if info.observable.is_some() {
+        4 + observable_len
+    } else {
+        0
+    };
+    let header_size = FIXED_HEADER_SIZE + observable_trailer;
+
     // Header.
     w.write_all(&PPVM_MAGIC.to_le_bytes())?;
     w.write_all(&PPVM_BYTECODE_VERSION.to_le_bytes())?;
-    w.write_all(&HEADER_SIZE.to_le_bytes())?;
+    w.write_all(&header_size.to_le_bytes())?;
     w.write_all(&n_qubits.to_le_bytes())?;
     w.write_all(&info.coefficient_threshold.to_le_bytes())?;
+    w.write_all(&[backend_to_u8(info.backend)])?;
+    let (mpw_present, mpw_value) = match info.max_pauli_weight {
+        Some(w) => (
+            1u8,
+            u64::try_from(w)
+                .map_err(|_| eyre::eyre!("max_pauli_weight {} does not fit in u64", w))?,
+        ),
+        None => (0u8, 0u64),
+    };
+    w.write_all(&[mpw_present])?;
+    w.write_all(&mpw_value.to_le_bytes())?;
+    w.write_all(&[observable_present])?;
+    if info.observable.is_some() {
+        w.write_all(&observable_len.to_le_bytes())?;
+        w.write_all(observable_bytes)?;
+    }
 
     // Strings section: count, then each entry as len-prefixed UTF-8.
     let string_count =
@@ -97,15 +138,49 @@ pub fn read_module<R: Read>(r: &mut R) -> eyre::Result<PPVMModule> {
     let header_size = read_u32(r)?;
     let n_qubits = read_u32(r)? as usize;
     let coefficient_threshold = read_f64(r)?;
+    let backend = backend_from_u8(read_u8(r)?)?;
+    let mpw_present = read_u8(r)?;
+    let mpw_value = read_u64(r)?;
+    let max_pauli_weight = match mpw_present {
+        0 => None,
+        1 => Some(usize::try_from(mpw_value).map_err(|_| {
+            eyre::eyre!("max_pauli_weight {mpw_value} does not fit in usize on this platform")
+        })?),
+        other => {
+            return Err(eyre::eyre!(
+                "invalid max_pauli_weight presence byte {other}"
+            ));
+        }
+    };
+    let observable_present = read_u8(r)?;
+    let observable = match observable_present {
+        0 => None,
+        1 => {
+            let len = read_u32(r)? as usize;
+            let mut bytes = vec![0u8; len];
+            r.read_exact(&mut bytes)?;
+            Some(String::from_utf8(bytes)?)
+        }
+        other => {
+            return Err(eyre::eyre!("invalid observable presence byte {other}"));
+        }
+    };
 
-    // Sections begin at `header_size`; skip any header bytes beyond v1's fixed
-    // fields (forward compat / self-description).
-    if header_size < HEADER_SIZE {
+    // Sections begin at `header_size`; skip any header bytes beyond what this
+    // reader knows about (forward compat / self-description).
+    let consumed = FIXED_HEADER_SIZE
+        + if observable.is_some() {
+            4 + u32::try_from(observable.as_deref().unwrap().len())
+                .map_err(|_| eyre::eyre!("observable length does not fit in u32"))?
+        } else {
+            0
+        };
+    if header_size < consumed {
         return Err(eyre::eyre!(
-            "header_size {header_size} smaller than minimum {HEADER_SIZE}"
+            "header_size {header_size} smaller than the {consumed} bytes already consumed"
         ));
     }
-    skip_bytes(r, u64::from(header_size - HEADER_SIZE))?;
+    skip_bytes(r, u64::from(header_size - consumed))?;
 
     // Don't pre-allocate from an untrusted count; grow as entries are read.
     let string_count = read_u32(r)?;
@@ -128,11 +203,31 @@ pub fn read_module<R: Read>(r: &mut R) -> eyre::Result<PPVMModule> {
             magic,
             n_qubits,
             coefficient_threshold,
+            backend,
+            observable,
+            max_pauli_weight,
         },
         strings,
         code,
         ..Default::default()
     })
+}
+
+fn backend_to_u8(backend: BackendKind) -> u8 {
+    match backend {
+        BackendKind::Tableau => 0,
+        BackendKind::PauliSum => 1,
+        BackendKind::LossyPauliSum => 2,
+    }
+}
+
+fn backend_from_u8(byte: u8) -> eyre::Result<BackendKind> {
+    match byte {
+        0 => Ok(BackendKind::Tableau),
+        1 => Ok(BackendKind::PauliSum),
+        2 => Ok(BackendKind::LossyPauliSum),
+        other => Err(eyre::eyre!("invalid backend tag {other}")),
+    }
 }
 
 /// Serialize a module to an owned byte vector.
@@ -162,6 +257,12 @@ pub fn compile_to_bytes(source: &str) -> eyre::Result<Vec<u8>> {
     module_to_bytes(&module)
 }
 
+fn read_u8<R: Read>(r: &mut R) -> eyre::Result<u8> {
+    let mut b = [0u8; 1];
+    r.read_exact(&mut b)?;
+    Ok(b[0])
+}
+
 fn read_u16<R: Read>(r: &mut R) -> eyre::Result<u16> {
     let mut b = [0u8; 2];
     r.read_exact(&mut b)?;
@@ -172,6 +273,12 @@ fn read_u32<R: Read>(r: &mut R) -> eyre::Result<u32> {
     let mut b = [0u8; 4];
     r.read_exact(&mut b)?;
     Ok(u32::from_le_bytes(b))
+}
+
+fn read_u64<R: Read>(r: &mut R) -> eyre::Result<u64> {
+    let mut b = [0u8; 8];
+    r.read_exact(&mut b)?;
+    Ok(u64::from_le_bytes(b))
 }
 
 fn read_f64<R: Read>(r: &mut R) -> eyre::Result<f64> {
@@ -212,6 +319,37 @@ mod tests {
     }
 
     #[test]
+    fn round_trips_paulisum_device_info() {
+        let mut m = empty_module();
+        m.extra.n_qubits = 6;
+        m.extra.backend = BackendKind::PauliSum;
+        m.extra.observable = Some("ZZIIII".to_string());
+        m.extra.max_pauli_weight = Some(8);
+
+        let mut buf = Vec::new();
+        write_module(&m, &mut buf).unwrap();
+        let back = read_module(&mut buf.as_slice()).unwrap();
+
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn round_trips_lossy_backend_without_observable() {
+        let mut m = empty_module();
+        m.extra.n_qubits = 4;
+        m.extra.backend = BackendKind::LossyPauliSum;
+        // observable and max_pauli_weight stay None — verifies the absent path.
+
+        let mut buf = Vec::new();
+        write_module(&m, &mut buf).unwrap();
+        let back = read_module(&mut buf.as_slice()).unwrap();
+
+        assert_eq!(back, m);
+        assert_eq!(back.extra.observable, None);
+        assert_eq!(back.extra.max_pauli_weight, None);
+    }
+
+    #[test]
     fn round_trips_code() {
         use vihaco_circuit_isa::CircuitInstruction;
         use vihaco_cpu::Instruction as Cpu;
@@ -247,9 +385,11 @@ mod tests {
 
         // Simulate a larger header: 4 padding bytes after the fixed fields,
         // with header_size bumped to match. The reader must skip to it.
-        buf[6..10].copy_from_slice(&(HEADER_SIZE + 4).to_le_bytes());
+        // (This test uses an empty observable, so the on-disk header size
+        // equals FIXED_HEADER_SIZE.)
+        buf[6..10].copy_from_slice(&(FIXED_HEADER_SIZE + 4).to_le_bytes());
         for i in 0..4 {
-            buf.insert(HEADER_SIZE as usize + i, 0x00);
+            buf.insert(FIXED_HEADER_SIZE as usize + i, 0x00);
         }
 
         let back = read_module(&mut buf.as_slice()).unwrap();

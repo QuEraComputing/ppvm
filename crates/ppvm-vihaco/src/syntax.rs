@@ -12,7 +12,7 @@ use vihaco::{
 use vihaco_circuit_isa::CircuitInstruction;
 use vihaco_parser_core::Parse;
 
-use crate::composite::{PPVMDeviceInfo, PPVMInstruction};
+use crate::composite::{BackendKind, PPVMDeviceInfo, PPVMInstruction};
 
 #[derive(Debug, Clone, PartialEq, vihaco_parser::Parse)]
 #[head = "device "]
@@ -24,6 +24,18 @@ pub enum PPVMHeader {
     #[token = "circuit.coefficient_threshold"]
     #[delimiters(open = "", close = "", separator = "")]
     CoefficientThrehsold(f64),
+
+    #[token = "circuit.backend"]
+    #[delimiters(open = "", close = "", separator = "")]
+    Backend(BackendKind),
+
+    #[token = "circuit.observable"]
+    #[delimiters(open = "", close = "", separator = "")]
+    Observable(#[parse_with = "vihaco_parser_core::ident"] String),
+
+    #[token = "circuit.max_pauli_weight"]
+    #[delimiters(open = "", close = "", separator = "")]
+    MaxPauliWeight(usize),
 }
 
 #[derive(Debug, Default)]
@@ -43,6 +55,15 @@ impl PPVMResolver {
             }
             PPVMHeader::CoefficientThrehsold(t) => {
                 info.coefficient_threshold = t;
+            }
+            PPVMHeader::Backend(b) => {
+                info.backend = b;
+            }
+            PPVMHeader::Observable(s) => {
+                info.observable = Some(s);
+            }
+            PPVMHeader::MaxPauliWeight(w) => {
+                info.max_pauli_weight = Some(w);
             }
         }
         Ok(())
@@ -351,6 +372,51 @@ mod tests {
     }
 
     #[test]
+    fn header_parses_backend_tableau() {
+        let got = <PPVMHeader as Parse>::parser()
+            .parse("device circuit.backend tableau")
+            .into_result()
+            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
+        assert_eq!(got, PPVMHeader::Backend(BackendKind::Tableau));
+    }
+
+    #[test]
+    fn header_parses_backend_paulisum() {
+        let got = <PPVMHeader as Parse>::parser()
+            .parse("device circuit.backend paulisum")
+            .into_result()
+            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
+        assert_eq!(got, PPVMHeader::Backend(BackendKind::PauliSum));
+    }
+
+    #[test]
+    fn header_parses_backend_lossy_paulisum() {
+        let got = <PPVMHeader as Parse>::parser()
+            .parse("device circuit.backend lossy_paulisum")
+            .into_result()
+            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
+        assert_eq!(got, PPVMHeader::Backend(BackendKind::LossyPauliSum));
+    }
+
+    #[test]
+    fn header_parses_observable_single_pauli_word() {
+        let got = <PPVMHeader as Parse>::parser()
+            .parse("device circuit.observable ZZIIII")
+            .into_result()
+            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
+        assert_eq!(got, PPVMHeader::Observable("ZZIIII".to_string()));
+    }
+
+    #[test]
+    fn header_parses_max_pauli_weight() {
+        let got = <PPVMHeader as Parse>::parser()
+            .parse("device circuit.max_pauli_weight 8")
+            .into_result()
+            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
+        assert_eq!(got, PPVMHeader::MaxPauliWeight(8));
+    }
+
+    #[test]
     fn apply_header_sets_n_qubits() {
         let mut info = PPVMDeviceInfo::default();
         PPVMResolver::apply_header(&mut info, PPVMHeader::NumQubits(7)).unwrap();
@@ -362,6 +428,35 @@ mod tests {
         let mut info = PPVMDeviceInfo::default();
         PPVMResolver::apply_header(&mut info, PPVMHeader::CoefficientThrehsold(5e-6)).unwrap();
         assert_eq!(info.coefficient_threshold, 5e-6);
+    }
+
+    #[test]
+    fn apply_header_sets_backend() {
+        let mut info = PPVMDeviceInfo::default();
+        PPVMResolver::apply_header(&mut info, PPVMHeader::Backend(BackendKind::PauliSum)).unwrap();
+        assert_eq!(info.backend, BackendKind::PauliSum);
+    }
+
+    #[test]
+    fn apply_header_sets_observable() {
+        let mut info = PPVMDeviceInfo::default();
+        PPVMResolver::apply_header(&mut info, PPVMHeader::Observable("ZZ".to_string())).unwrap();
+        assert_eq!(info.observable.as_deref(), Some("ZZ"));
+    }
+
+    #[test]
+    fn apply_header_sets_max_pauli_weight() {
+        let mut info = PPVMDeviceInfo::default();
+        PPVMResolver::apply_header(&mut info, PPVMHeader::MaxPauliWeight(4)).unwrap();
+        assert_eq!(info.max_pauli_weight, Some(4));
+    }
+
+    #[test]
+    fn device_info_defaults_match_tableau_no_observable_no_truncation() {
+        let info = PPVMDeviceInfo::default();
+        assert_eq!(info.backend, BackendKind::Tableau);
+        assert_eq!(info.observable, None);
+        assert_eq!(info.max_pauli_weight, None);
     }
 
     // ─── PPVMInstruction parser dispatch ──────────────────────────────────
@@ -492,6 +587,22 @@ mod tests {
         let m = PPVMResolver::new().resolve_module(parsed).unwrap();
         assert_eq!(m.extra.n_qubits, 3);
         assert_eq!(m.extra.coefficient_threshold, 1e-8);
+    }
+
+    #[test]
+    fn resolver_populates_paulisum_headers() {
+        let parsed = parse_module(
+            "device circuit.n_qubits 4;\n\
+             device circuit.backend paulisum;\n\
+             device circuit.observable ZZII;\n\
+             device circuit.max_pauli_weight 8;\n\
+             fn @main() { ret }\n",
+        );
+        let m = PPVMResolver::new().resolve_module(parsed).unwrap();
+        assert_eq!(m.extra.n_qubits, 4);
+        assert_eq!(m.extra.backend, BackendKind::PauliSum);
+        assert_eq!(m.extra.observable.as_deref(), Some("ZZII"));
+        assert_eq!(m.extra.max_pauli_weight, Some(8));
     }
 
     #[test]

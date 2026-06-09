@@ -50,6 +50,17 @@ macro_rules! batch_for {
     };
 }
 
+/// Two-qubit sibling of [`batch_for!`]: drives a method that takes two qubit
+/// addresses (plus optional extra args) over a slice of `(usize, usize)` pairs.
+macro_rules! batch_pairs_for {
+    ($state:expr, $method:ident, $pairs:expr) => {
+        for &(a, b) in $pairs { $state.$method(a, b); }
+    };
+    ($state:expr, $method:ident, $pairs:expr, $($arg:expr),+) => {
+        for &(a, b) in $pairs { $state.$method(a, b, $($arg),+); }
+    };
+}
+
 pub struct CircuitExecutor<T: Config<Coeff = f64>, I: TableauIndex, C: SparseVector<Complex64, I>> {
     pub tab: GeneralizedTableau<T, I, C>,
 }
@@ -273,10 +284,132 @@ where
         inst: &CircuitInstruction,
         msg: &CircuitMessage,
     ) -> Result<Effects<MeasurementEffect>> {
-        let _ = (inst, msg, &mut self.state);
-        // TODO(Task 5): dispatch (inst, msg) onto self.state per the Gate
-        // Support Matrix; reject Measure / Reset / Loss / CorrelatedLoss with
-        // a clear "not supported on PauliSum backend" error.
+        use CircuitInstruction::*;
+        use CircuitMessage::*;
+
+        match (inst, msg) {
+            // Single-qubit Clifford
+            (X, &Qubit(addr)) => self.state.x(addr),
+            (Y, &Qubit(addr)) => self.state.y(addr),
+            (Z, &Qubit(addr)) => self.state.z(addr),
+            (H, &Qubit(addr)) => self.state.h(addr),
+            (S, &Qubit(addr)) => self.state.s(addr),
+            (SAdj, &Qubit(addr)) => self.state.s_adj(addr),
+            (SqrtX, &Qubit(addr)) => self.state.sqrt_x(addr),
+            (SqrtY, &Qubit(addr)) => self.state.sqrt_y(addr),
+            (SqrtXAdj, &Qubit(addr)) => self.state.sqrt_x_adj(addr),
+            (SqrtYAdj, &Qubit(addr)) => self.state.sqrt_y_adj(addr),
+
+            // Controlled gates
+            (CNOT, &TwoQubit(addr0, addr1)) => self.state.cnot(addr0, addr1),
+            (CZ, &TwoQubit(addr0, addr1)) => self.state.cz(addr0, addr1),
+
+            // Single-qubit rotations
+            (RX, &QubitAndFloat(addr, angle)) => self.state.rx(addr, angle),
+            (RY, &QubitAndFloat(addr, angle)) => self.state.ry(addr, angle),
+            (RZ, &QubitAndFloat(addr, angle)) => self.state.rz(addr, angle),
+
+            // Two-qubit rotations
+            (RXX, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.rxx(addr0, addr1, angle),
+            (RYY, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.ryy(addr0, addr1, angle),
+            (RZZ, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.rzz(addr0, addr1, angle),
+
+            // RXY: rotation about an axis in the x/y plane
+            (R, &QubitAndTwoFloats(addr, axis_angle, theta)) => {
+                self.state.r(addr, axis_angle, theta)
+            }
+
+            // Noise
+            (Depolarize, &QubitAndFloat(addr, p)) => self.state.depolarize(addr, p),
+            (Depolarize2, &TwoQubitAndFloat(addr0, addr1, p)) => {
+                self.state.depolarize2(addr0, addr1, p)
+            }
+            (PauliError, QubitAndFloatArr3(addr0, ps)) => self.state.pauli_error(*addr0, *ps),
+            (TwoQubitPauliError, TwoQubitAndFloatArr15(addr0, addr1, ps)) => {
+                self.state.two_qubit_pauli_error(*addr0, *addr1, *ps)
+            }
+
+            // Truncate: pruning per the configured strategy.
+            (Truncate, None) => self.state.truncate(),
+
+            // Batched arms: simple for-loop dispatch (no dedicated batch
+            // methods on PauliSum<T>, unlike GeneralizedTableau).
+            (X, QubitBatch(addrs)) => batch_for!(self.state, x, addrs),
+            (Y, QubitBatch(addrs)) => batch_for!(self.state, y, addrs),
+            (Z, QubitBatch(addrs)) => batch_for!(self.state, z, addrs),
+            (H, QubitBatch(addrs)) => batch_for!(self.state, h, addrs),
+            (S, QubitBatch(addrs)) => batch_for!(self.state, s, addrs),
+            (SAdj, QubitBatch(addrs)) => batch_for!(self.state, s_adj, addrs),
+            (SqrtX, QubitBatch(addrs)) => batch_for!(self.state, sqrt_x, addrs),
+            (SqrtY, QubitBatch(addrs)) => batch_for!(self.state, sqrt_y, addrs),
+            (SqrtXAdj, QubitBatch(addrs)) => batch_for!(self.state, sqrt_x_adj, addrs),
+            (SqrtYAdj, QubitBatch(addrs)) => batch_for!(self.state, sqrt_y_adj, addrs),
+            (RX, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, rx, addrs, *angle),
+            (RY, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, ry, addrs, *angle),
+            (RZ, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, rz, addrs, *angle),
+            (Depolarize, QubitBatchAndFloat(addrs, p)) => {
+                batch_for!(self.state, depolarize, addrs, *p)
+            }
+            (PauliError, QubitBatchAndFloatArr3(addrs, ps)) => {
+                batch_for!(self.state, pauli_error, addrs, *ps)
+            }
+            (CNOT, TwoQubitBatch(pairs)) => batch_pairs_for!(self.state, cnot, pairs),
+            (CZ, TwoQubitBatch(pairs)) => batch_pairs_for!(self.state, cz, pairs),
+            (RXX, TwoQubitBatchAndFloat(pairs, angle)) => {
+                batch_pairs_for!(self.state, rxx, pairs, *angle)
+            }
+            (RYY, TwoQubitBatchAndFloat(pairs, angle)) => {
+                batch_pairs_for!(self.state, ryy, pairs, *angle)
+            }
+            (RZZ, TwoQubitBatchAndFloat(pairs, angle)) => {
+                batch_pairs_for!(self.state, rzz, pairs, *angle)
+            }
+            (Depolarize2, TwoQubitBatchAndFloat(pairs, p)) => {
+                batch_pairs_for!(self.state, depolarize2, pairs, *p)
+            }
+            (TwoQubitPauliError, TwoQubitBatchAndFloatArr15(pairs, ps)) => {
+                batch_pairs_for!(self.state, two_qubit_pauli_error, pairs, *ps)
+            }
+
+            // Not supported on PauliSum (Decision 11 + Gate Support Matrix).
+            (Measure | Reset, _) => {
+                return Err(eyre!("{inst} is not supported on the PauliSum backend"));
+            }
+            (Loss | CorrelatedLoss, _) => {
+                return Err(eyre!(
+                    "{inst} is not supported on the PauliSum backend; use the LossyPauliSum backend instead"
+                ));
+            }
+
+            // T / T_adj / U3 are listed as supported on PauliSum in the plan's
+            // Gate Support Matrix, but ppvm-runtime does not yet implement
+            // TGate or U3Gate for PauliSum<T> (only for GeneralizedTableau).
+            // Flag this finding here; lifting the upstream impls is out of
+            // scope for Task 5.
+            (T | TAdj | U3, _) => {
+                return Err(eyre!(
+                    "{inst} on PauliSum requires upstream ppvm-runtime support that is not yet implemented"
+                ));
+            }
+
+            // Trace: deferred until Task 6 introduces `TraceEffect` and the
+            // effect-union for the Circuit component.
+            (Trace, _) => {
+                return Err(eyre!(
+                    "Trace is not yet wired on the PauliSum backend (Phase 2 Task 6)"
+                ));
+            }
+
+            // Fallback (batched messages, mismatched shapes, etc.)
+            (inst, msg) => {
+                return Err(eyre!(
+                    "Invalid gate arguments {:?} for gate {:?} on the PauliSum backend",
+                    msg,
+                    inst
+                ));
+            }
+        };
+
         Ok(Effects::None)
     }
 }
@@ -319,10 +452,137 @@ where
         inst: &CircuitInstruction,
         msg: &CircuitMessage,
     ) -> Result<Effects<MeasurementEffect>> {
-        let _ = (inst, msg, &mut self.state);
-        // TODO(Task 5): dispatch (inst, msg) onto self.state per the Gate
-        // Support Matrix; reject Measure / Reset with a clear "not supported
-        // on LossyPauliSum backend" error.
+        use CircuitInstruction::*;
+        use CircuitMessage::*;
+
+        match (inst, msg) {
+            // Single-qubit Clifford
+            (X, &Qubit(addr)) => self.state.x(addr),
+            (Y, &Qubit(addr)) => self.state.y(addr),
+            (Z, &Qubit(addr)) => self.state.z(addr),
+            (H, &Qubit(addr)) => self.state.h(addr),
+            (S, &Qubit(addr)) => self.state.s(addr),
+            (SAdj, &Qubit(addr)) => self.state.s_adj(addr),
+            (SqrtX, &Qubit(addr)) => self.state.sqrt_x(addr),
+            (SqrtY, &Qubit(addr)) => self.state.sqrt_y(addr),
+            (SqrtXAdj, &Qubit(addr)) => self.state.sqrt_x_adj(addr),
+            (SqrtYAdj, &Qubit(addr)) => self.state.sqrt_y_adj(addr),
+
+            // Controlled gates
+            (CNOT, &TwoQubit(addr0, addr1)) => self.state.cnot(addr0, addr1),
+            (CZ, &TwoQubit(addr0, addr1)) => self.state.cz(addr0, addr1),
+
+            // Single-qubit rotations
+            (RX, &QubitAndFloat(addr, angle)) => self.state.rx(addr, angle),
+            (RY, &QubitAndFloat(addr, angle)) => self.state.ry(addr, angle),
+            (RZ, &QubitAndFloat(addr, angle)) => self.state.rz(addr, angle),
+
+            // Two-qubit rotations
+            (RXX, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.rxx(addr0, addr1, angle),
+            (RYY, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.ryy(addr0, addr1, angle),
+            (RZZ, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.rzz(addr0, addr1, angle),
+
+            // RXY: rotation about an axis in the x/y plane
+            (R, &QubitAndTwoFloats(addr, axis_angle, theta)) => {
+                self.state.r(addr, axis_angle, theta)
+            }
+
+            // Noise
+            (Depolarize, &QubitAndFloat(addr, p)) => self.state.depolarize(addr, p),
+            (Depolarize2, &TwoQubitAndFloat(addr0, addr1, p)) => {
+                self.state.depolarize2(addr0, addr1, p)
+            }
+            (PauliError, QubitAndFloatArr3(addr0, ps)) => self.state.pauli_error(*addr0, *ps),
+            (TwoQubitPauliError, TwoQubitAndFloatArr15(addr0, addr1, ps)) => {
+                self.state.two_qubit_pauli_error(*addr0, *addr1, *ps)
+            }
+
+            // Loss (accepted on LossyPauliSum; rejected on plain PauliSum)
+            (Loss, &QubitAndFloat(addr, p)) => self.state.loss_channel(addr, p),
+            (CorrelatedLoss, TwoQubitAndFloatArr3(addr0, addr1, ps)) => {
+                self.state.correlated_loss_channel(*addr0, *addr1, *ps)
+            }
+
+            // Truncate: pruning per the configured strategy.
+            (Truncate, None) => self.state.truncate(),
+
+            // Batched arms: simple for-loop dispatch (no dedicated batch
+            // methods on PauliSum<T>).
+            (X, QubitBatch(addrs)) => batch_for!(self.state, x, addrs),
+            (Y, QubitBatch(addrs)) => batch_for!(self.state, y, addrs),
+            (Z, QubitBatch(addrs)) => batch_for!(self.state, z, addrs),
+            (H, QubitBatch(addrs)) => batch_for!(self.state, h, addrs),
+            (S, QubitBatch(addrs)) => batch_for!(self.state, s, addrs),
+            (SAdj, QubitBatch(addrs)) => batch_for!(self.state, s_adj, addrs),
+            (SqrtX, QubitBatch(addrs)) => batch_for!(self.state, sqrt_x, addrs),
+            (SqrtY, QubitBatch(addrs)) => batch_for!(self.state, sqrt_y, addrs),
+            (SqrtXAdj, QubitBatch(addrs)) => batch_for!(self.state, sqrt_x_adj, addrs),
+            (SqrtYAdj, QubitBatch(addrs)) => batch_for!(self.state, sqrt_y_adj, addrs),
+            (RX, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, rx, addrs, *angle),
+            (RY, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, ry, addrs, *angle),
+            (RZ, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, rz, addrs, *angle),
+            (Depolarize, QubitBatchAndFloat(addrs, p)) => {
+                batch_for!(self.state, depolarize, addrs, *p)
+            }
+            (Loss, QubitBatchAndFloat(addrs, p)) => {
+                batch_for!(self.state, loss_channel, addrs, *p)
+            }
+            (PauliError, QubitBatchAndFloatArr3(addrs, ps)) => {
+                batch_for!(self.state, pauli_error, addrs, *ps)
+            }
+            (CNOT, TwoQubitBatch(pairs)) => batch_pairs_for!(self.state, cnot, pairs),
+            (CZ, TwoQubitBatch(pairs)) => batch_pairs_for!(self.state, cz, pairs),
+            (RXX, TwoQubitBatchAndFloat(pairs, angle)) => {
+                batch_pairs_for!(self.state, rxx, pairs, *angle)
+            }
+            (RYY, TwoQubitBatchAndFloat(pairs, angle)) => {
+                batch_pairs_for!(self.state, ryy, pairs, *angle)
+            }
+            (RZZ, TwoQubitBatchAndFloat(pairs, angle)) => {
+                batch_pairs_for!(self.state, rzz, pairs, *angle)
+            }
+            (Depolarize2, TwoQubitBatchAndFloat(pairs, p)) => {
+                batch_pairs_for!(self.state, depolarize2, pairs, *p)
+            }
+            (CorrelatedLoss, TwoQubitBatchAndFloatArr3(pairs, ps)) => {
+                batch_pairs_for!(self.state, correlated_loss_channel, pairs, *ps)
+            }
+            (TwoQubitPauliError, TwoQubitBatchAndFloatArr15(pairs, ps)) => {
+                batch_pairs_for!(self.state, two_qubit_pauli_error, pairs, *ps)
+            }
+
+            // Not supported on LossyPauliSum (Decision 11 + Gate Support Matrix).
+            (Measure | Reset, _) => {
+                return Err(eyre!(
+                    "{inst} is not supported on the LossyPauliSum backend"
+                ));
+            }
+
+            // See PauliSumExecutor: T/T_adj/U3 require upstream ppvm-runtime
+            // impls that don't exist yet.
+            (T | TAdj | U3, _) => {
+                return Err(eyre!(
+                    "{inst} on LossyPauliSum requires upstream ppvm-runtime support that is not yet implemented"
+                ));
+            }
+
+            // Trace: deferred until Task 6 introduces `TraceEffect`.
+            (Trace, _) => {
+                return Err(eyre!(
+                    "Trace is not yet wired on the LossyPauliSum backend (Phase 2 Task 6)"
+                ));
+            }
+
+            // Fallback (batched messages, mismatched shapes, etc.)
+            (inst, msg) => {
+                return Err(eyre!(
+                    "Invalid gate arguments {:?} for gate {:?} on the LossyPauliSum backend",
+                    msg,
+                    inst
+                ));
+            }
+        };
+
         Ok(Effects::None)
     }
 }

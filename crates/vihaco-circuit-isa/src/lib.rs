@@ -140,7 +140,8 @@ pub enum CircuitMessage {
     QubitAndFloatArr3(usize, [f64; 3]),             // PauliError
     TwoQubitAndFloatArr3(usize, usize, [f64; 3]),   // Correlated loss
     TwoQubitAndFloatArr15(usize, usize, [f64; 15]), // TwoQubitPauliError
-    PauliPatternStr(u32),                           // Trace (string-table addr)
+
+    PauliPatternStr(String), // Trace (resolved Pauli-pattern source)
 
     // batched instructions
     QubitBatch(SmallVec<[usize; 8]>),              // X, Y, Z, ...

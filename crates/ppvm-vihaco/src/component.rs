@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::composite::{BackendKind, PPVMDeviceInfo};
-use crate::measurements::{CircuitOutcomeEffect, MeasurementEffect, MeasurementOutcome};
+use crate::measurements::{
+    CircuitOutcomeEffect, MeasurementEffect, MeasurementOutcome, TraceEffect,
+};
 use bitvec::view::BitView;
 use bnum::types::{U256, U512, U1024, U2048};
 use eyre::{Result, eyre};
@@ -273,6 +275,7 @@ pub struct PauliSumExecutor<T: Config<Coeff = f64>> {
 impl<T> PauliSumExecutor<T>
 where
     T: Config<Coeff = f64>,
+    for<'a> PauliSum<T>: Trace<'a, PauliPattern, Output = f64>,
 {
     fn execute(
         &mut self,
@@ -395,12 +398,16 @@ where
                 ));
             }
 
-            // Trace: deferred until Task 6 introduces `TraceEffect` and the
-            // effect-union for the Circuit component.
-            (Trace, _) => {
-                return Err(eyre!(
-                    "Trace is not yet wired on the PauliSum backend (Phase 2 Task 7)"
-                ));
+            // Trace: parse the resolved pattern string and compute the trace.
+            // Per plan Decision 9, parsing happens on every execution; no
+            // module-load caching.
+            (Trace, PauliPatternStr(s)) => {
+                let pat = PauliPattern::parse(s)
+                    .map_err(|e| eyre!("invalid Pauli pattern `{s}`: {e:?}"))?;
+                let value = self.state.trace(&pat);
+                return Ok(Effects::one(CircuitOutcomeEffect::Trace(TraceEffect {
+                    value,
+                })));
             }
 
             // Fallback (batched messages, mismatched shapes, etc.)
@@ -441,6 +448,7 @@ pub struct LossyPauliSumExecutor<T: Config<Coeff = f64>> {
 impl<T> LossyPauliSumExecutor<T>
 where
     T: Config<Coeff = f64>,
+    for<'a> PauliSum<T>: Trace<'a, PauliPattern, Output = f64>,
 {
     fn execute(
         &mut self,
@@ -569,11 +577,16 @@ where
                 ));
             }
 
-            // Trace: deferred until Task 6 introduces `TraceEffect`.
-            (Trace, _) => {
-                return Err(eyre!(
-                    "Trace is not yet wired on the LossyPauliSum backend (Phase 2 Task 7)"
-                ));
+            // Trace: parse the resolved pattern string and compute the trace.
+            // Per plan Decision 9, parsing happens on every execution; no
+            // module-load caching.
+            (Trace, PauliPatternStr(s)) => {
+                let pat = PauliPattern::parse(s)
+                    .map_err(|e| eyre!("invalid Pauli pattern `{s}`: {e:?}"))?;
+                let value = self.state.trace(&pat);
+                return Ok(Effects::one(CircuitOutcomeEffect::Trace(TraceEffect {
+                    value,
+                })));
             }
 
             // Fallback (batched messages, mismatched shapes, etc.)

@@ -518,6 +518,44 @@ impl LindbladSpec {
         self.j_kinds.len()
     }
 
+    /// Conservative upper bound on `max_{p, w} |⟨w| L*(p) |p⟩|`, the
+    /// largest coefficient any single input Pauli can produce in any
+    /// single output Pauli through one action of `L*`. Used by
+    /// [`Self::leakage`] to safely prune candidates whose accumulated
+    /// partial sum + remaining-contribution budget cannot reach the
+    /// `tau_add` keep threshold (Cauchy-Schwarz style streaming bound).
+    ///
+    /// The bound is `2 · max |h_i|` (commutator factor) plus a per-jump
+    /// term. For the common case of Hermitian-Pauli H and Hermitian-Pauli
+    /// jumps this collapses to `2 · max(|h_i|, γ_k)`.
+    pub fn max_action_coef(&self) -> f64 {
+        let mut m = 0.0_f64;
+        for h in &self.h_terms {
+            // `i [H_i, p]` has coefficient `±2 i · h_i · eps`; magnitude ≤ 2|h_i|.
+            m = m.max(2.0 * h.coeff.abs());
+        }
+        for jk in &self.j_kinds {
+            match jk {
+                JumpKind::HermitianPauli { rate, .. } => {
+                    // sandwich + anticommutator → max |2γ| on anticommuting p
+                    m = m.max(2.0 * rate.abs());
+                }
+                JumpKind::General {
+                    terms,
+                    rate,
+                    dagger_dagger,
+                } => {
+                    let lam_sum: f64 = terms.iter().map(|t| t.coeff.norm()).sum();
+                    let dd_sum: f64 = dagger_dagger.iter().map(|t| t.coeff.norm()).sum();
+                    // Sandwich `γ Σ_{a,b} λ_a* λ_b P_a p P_b`: per-output ≤ γ · (Σ|λ|)²
+                    // L†L anticommutator: per-output ≤ γ · Σ|c_dd|
+                    m = m.max(rate * (lam_sum * lam_sum + dd_sum));
+                }
+            }
+        }
+        m
+    }
+
     /// Apply `L*` to a single Pauli string `p`. Returns the output Pauli
     /// strings and their real coefficients (zero entries omitted).
     pub fn action(&self, p: &Word) -> Vec<(Word, f64)> {
@@ -536,6 +574,29 @@ impl LindbladSpec {
         coeffs: &[f64],
         protected: &[Word],
     ) -> Result<Vec<(Word, f64)>, Error> {
+        self.leakage_with_prune(basis, coeffs, protected, None)
+    }
+
+    /// Like [`Self::leakage`], but when `tau_add` is `Some(τ)` runs the
+    /// streaming Cauchy-Schwarz prune: after each chunk the remaining
+    /// possible contribution to any not-yet-final candidate is bounded
+    /// by `max_action_coef × Σ_{i not yet processed} |c_i|`. Entries
+    /// whose `|partial_sum| + remaining_bound < τ` are dropped. The
+    /// final keep filter `|sum| ≥ τ` is still applied by the caller.
+    ///
+    /// Processing the largest-`|c|` basis indices first shrinks the
+    /// remaining budget fastest, so the prune kicks in earlier.
+    /// Memory savings depend on how skewed the `coeffs` distribution
+    /// is — power-law distributions win the most. Worst case (uniform
+    /// `|c|`): the bound stays above `τ` until late in the basis,
+    /// pruning kicks in only near the end, savings approach zero.
+    pub fn leakage_with_prune(
+        &self,
+        basis: &[Word],
+        coeffs: &[f64],
+        protected: &[Word],
+        tau_add: Option<f64>,
+    ) -> Result<Vec<(Word, f64)>, Error> {
         if basis.len() != coeffs.len() {
             return Err(Error::LengthMismatch {
                 what: "basis and coeffs",
@@ -546,31 +607,37 @@ impl LindbladSpec {
         // Hash-only membership tables: storing 8-byte `u64` keys instead
         // of 48-byte Words shrinks the in-basis structure ~6×, keeping it
         // in L3 (and often L2) at basis sizes where the full-Word version
-        // would spill to DRAM. Each query then costs ~30 ns instead of
-        // ~500 ns. False-positive risk from a 64-bit hash collision is
-        // ≈ N/2⁶⁴ per lookup (e.g. ≈ 3·10⁻¹⁴ at N = 5·10⁵); the worst-case
-        // cost is occasionally dropping a single leakage entry that should
-        // have been kept, which is negligible against `tau_add` and other
-        // approximations.
+        // would spill to DRAM.
         let in_basis: FxHashMap<u64, ()> = basis.iter().map(|w| (word_hash(w), ())).collect();
         let protected_set: FxHashMap<u64, ()> =
             protected.iter().map(|w| (word_hash(w), ())).collect();
 
-        // Chunked parallel pass. Materialising the full `Vec<Vec<(Word, f64)>>`
-        // at once held N · A · 24 B bytes simultaneously (~430 MB at L=51
-        // LR-XY, N=14 K, A≈1275). Processing in chunks of `CHUNK_SIZE`
-        // basis rows bounds the in-flight per-Pauli output Vecs to one
-        // chunk's worth, and merging immediately into `merged` returns
-        // those bytes to the allocator before the next chunk starts.
+        // Streaming-prune setup. If `tau_add` is None, fall through to the
+        // un-pruned path (process basis in original order, no prune).
+        let (order, mut remaining_budget): (Vec<usize>, f64) = if tau_add.is_some() {
+            let mut idx: Vec<usize> = (0..basis.len()).collect();
+            // Descending sort by |c|: process largest-magnitude contributors
+            // first so the Cauchy-Schwarz remaining bound shrinks fast.
+            idx.sort_by(|&a, &b| {
+                coeffs[b]
+                    .abs()
+                    .partial_cmp(&coeffs[a].abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let max_coef = self.max_action_coef();
+            let total: f64 = coeffs.iter().map(|c| c.abs()).sum();
+            (idx, max_coef * total)
+        } else {
+            ((0..basis.len()).collect(), f64::INFINITY)
+        };
+        let max_coef = self.max_action_coef();
+        let tau = tau_add.unwrap_or(0.0);
+
         const CHUNK_SIZE: usize = 4096;
         let mut merged: FxHashMap<Word, f64> = FxHashMap::default();
-        for chunk_start in (0..basis.len()).step_by(CHUNK_SIZE) {
-            let chunk_end = (chunk_start + CHUNK_SIZE).min(basis.len());
-            let chunk_basis = &basis[chunk_start..chunk_end];
-            let chunk_coeffs = &coeffs[chunk_start..chunk_end];
-            let local: Vec<Vec<(Word, f64)>> = chunk_basis
+        for chunk_indices in order.chunks(CHUNK_SIZE) {
+            let local: Vec<Vec<(Word, f64)>> = chunk_indices
                 .par_iter()
-                .zip(chunk_coeffs.par_iter())
                 .map_init(
                     || {
                         (
@@ -582,7 +649,9 @@ impl LindbladSpec {
                             ),
                         )
                     },
-                    |(s1, s2, lm), (p, &c)| {
+                    |(s1, s2, lm), &i| {
+                        let p = &basis[i];
+                        let c = coeffs[i];
                         let terms = self.compute_action_terms(p, s1, s2, lm);
                         let mut out = Vec::with_capacity(terms.len());
                         for (w, v) in terms.iter() {
@@ -598,6 +667,19 @@ impl LindbladSpec {
             for v in local {
                 for (k, val) in v {
                     *merged.entry(k).or_insert(0.0) += val;
+                }
+            }
+
+            if tau_add.is_some() {
+                // Decrement the remaining-contribution budget by what this
+                // chunk has now processed. Once `remaining_budget < τ`,
+                // every entry has `|true_sum| ≤ |partial_sum| + remaining`,
+                // so we can drop entries with `|partial_sum| < τ − remaining`.
+                let chunk_abs_sum: f64 = chunk_indices.iter().map(|&i| coeffs[i].abs()).sum();
+                remaining_budget = (remaining_budget - max_coef * chunk_abs_sum).max(0.0);
+                if remaining_budget < tau {
+                    let threshold = tau - remaining_budget;
+                    merged.retain(|_, &mut v| v.abs() >= threshold);
                 }
             }
         }
@@ -762,6 +844,320 @@ impl LindbladSpec {
             .expect("invalid CSR structure")
     }
 
+    /// Matrix-free SpMV: `y ← M · x` where `M` is the in-basis-restricted
+    /// generator (same matrix that [`Self::generator_csr`] would build, but
+    /// never materialised). For each basis column `j` with `x[j] != 0`,
+    /// compute `L*(basis[j])`, look up each output Pauli in `basis_index`,
+    /// and accumulate `v · x[j]` into `y` at the matching row.
+    ///
+    /// `basis_index` must be the `Word → row` map for `basis` (use
+    /// [`build_basis_index`]). It is the caller's responsibility to build
+    /// it once and reuse across all SpMVs within an expm call.
+    ///
+    /// Threading uses `rayon::current_num_threads()` per-task dense
+    /// accumulators, reduced into `y` at the end. Peak transient memory is
+    /// roughly `T × n × 8 B` where `T` = thread count, `n` = basis size.
+    pub fn spmv_matrix_free(
+        &self,
+        basis: &[Word],
+        basis_index: &FxHashMap<Word, u32>,
+        x: &[f64],
+        y: &mut [f64],
+    ) {
+        debug_assert_eq!(basis.len(), x.len());
+        debug_assert_eq!(basis.len(), y.len());
+        let n = basis.len();
+        if n == 0 {
+            return;
+        }
+        let num_threads = rayon::current_num_threads().max(1);
+        let chunk_size = n.div_ceil(num_threads);
+
+        let partial_ys: Vec<Vec<f64>> = basis
+            .par_chunks(chunk_size)
+            .enumerate()
+            .map(|(chunk_idx, chunk)| {
+                let c_offset = chunk_idx * chunk_size;
+                let mut y_local = vec![0.0; n];
+                let mut s1 = Vec::<u32>::with_capacity(self.n_qubits);
+                let mut s2 = Vec::<u32>::with_capacity(128);
+                let mut lm = FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                    128,
+                    FxBuildHasher::default(),
+                );
+                for (c_local, p) in chunk.iter().enumerate() {
+                    let c = c_offset + c_local;
+                    let xc = x[c];
+                    if xc == 0.0 {
+                        continue;
+                    }
+                    let terms = self.compute_action_terms(p, &mut s1, &mut s2, &mut lm);
+                    for (w, v) in terms.iter() {
+                        if let Some(&row) = basis_index.get(w) {
+                            y_local[row as usize] += *v * xc;
+                        }
+                    }
+                }
+                y_local
+            })
+            .collect();
+
+        // Sequential reduce. T × n adds; at T=8, n=10⁶ this is ~8M adds
+        // (~10 ms), trivial vs the action evaluations above.
+        y.fill(0.0);
+        for partial in &partial_ys {
+            for (yi, &pi) in y.iter_mut().zip(partial.iter()) {
+                *yi += pi;
+            }
+        }
+    }
+
+    /// Matrix 1-norm `max_j Σ_i |M_{ij}|` of the in-basis-restricted
+    /// generator, computed matrix-free. Used by [`expm::expm_multiply_mf`]
+    /// to pick the Taylor `(m, s)` parameters.
+    pub fn one_norm_matrix_free(
+        &self,
+        basis: &[Word],
+        basis_index: &FxHashMap<Word, u32>,
+    ) -> f64 {
+        if basis.is_empty() {
+            return 0.0;
+        }
+        basis
+            .par_iter()
+            .map_init(
+                || {
+                    (
+                        Vec::<u32>::with_capacity(self.n_qubits),
+                        Vec::<u32>::with_capacity(128),
+                        FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                            128,
+                            FxBuildHasher::default(),
+                        ),
+                    )
+                },
+                |(s1, s2, lm), p| {
+                    let terms = self.compute_action_terms(p, s1, s2, lm);
+                    terms
+                        .iter()
+                        .filter(|(w, _)| basis_index.contains_key(w))
+                        .map(|(_, v)| v.abs())
+                        .sum::<f64>()
+                },
+            )
+            .reduce(|| 0.0, f64::max)
+    }
+
+    /// Apply `L*` to the Pauli sum `Σ_j coeffs[j] · basis[j]` and return
+    /// the result as a (Word → real coefficient) map. The basis of the
+    /// returned operator is determined by the action — entries appear
+    /// for every Pauli that `L*` reaches with nonzero coefficient.
+    ///
+    /// Same parallel structure and chunked merge as [`Self::leakage`],
+    /// without the in-basis / protected filter: this returns the full
+    /// `L*(O)`, not just its off-basis component.
+    pub fn compute_action_sum(
+        &self,
+        basis: &[Word],
+        coeffs: &[f64],
+    ) -> Result<FxHashMap<Word, f64>, Error> {
+        if basis.len() != coeffs.len() {
+            return Err(Error::LengthMismatch {
+                what: "basis and coeffs",
+                a: basis.len(),
+                b: coeffs.len(),
+            });
+        }
+        const CHUNK_SIZE: usize = 4096;
+        let mut merged: FxHashMap<Word, f64> = FxHashMap::default();
+        for chunk_start in (0..basis.len()).step_by(CHUNK_SIZE) {
+            let chunk_end = (chunk_start + CHUNK_SIZE).min(basis.len());
+            let chunk_basis = &basis[chunk_start..chunk_end];
+            let chunk_coeffs = &coeffs[chunk_start..chunk_end];
+            let local: Vec<Vec<(Word, f64)>> = chunk_basis
+                .par_iter()
+                .zip(chunk_coeffs.par_iter())
+                .map_init(
+                    || {
+                        (
+                            Vec::<u32>::with_capacity(self.n_qubits),
+                            Vec::<u32>::with_capacity(128),
+                            FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                                128,
+                                FxBuildHasher::default(),
+                            ),
+                        )
+                    },
+                    |(s1, s2, lm), (p, &c)| {
+                        let terms = self.compute_action_terms(p, s1, s2, lm);
+                        terms.into_iter().map(|(w, v)| (w, c * v)).collect()
+                    },
+                )
+                .collect();
+            for v in local {
+                for (k, val) in v {
+                    *merged.entry(k).or_insert(0.0) += val;
+                }
+            }
+        }
+        Ok(merged)
+    }
+
+    /// One classical RK4 step on `O ← O + dt · L*(O)`, expanding the basis
+    /// naturally as the action explores new strings. After the step, drops
+    /// any string whose absolute coefficient is below `drop_tol` (protected
+    /// words always kept). No predictor-corrector enrichment, no Krylov
+    /// machinery, no CSR build — just four matrix-free action evaluations
+    /// followed by a magnitude prune.
+    ///
+    /// Per-step local truncation error is `O(dt^5)` from the integrator.
+    /// **Stability** requires `dt ≤ 2.78 / ‖L*‖` (RK4 absolute-stability
+    /// boundary). For an n-qubit lattice Hamiltonian with bounded local
+    /// terms this typically means `dt ≲ O(1) / n`; the dissipator further
+    /// shrinks the bound at large `γ`. Violating the bound is **not
+    /// signalled** — the trajectory will norm-conserve but individual Pauli
+    /// coefficients diverge to oscillating ±large values that cancel; the
+    /// observable looks fine, the basis still grows, but local quantities
+    /// like MSD blow up. Always verify against a small in-band
+    /// truncation case (e.g. against ED, or against [`Self::pc_step`]
+    /// which is unconditionally stable) before trusting tight-`drop_tol`
+    /// results at large `dt`.
+    ///
+    /// For stiff problems where the stability bound is restrictive, prefer
+    /// [`Self::pc_step`], which integrates `exp(dt·L*)` via Krylov scaling-
+    /// and-squaring and is unconditionally stable in `dt`.
+    ///
+    /// `num_threads`, when set, runs the entire step inside a freshly built
+    /// rayon thread pool of that size.
+    pub fn rk4_step(
+        &self,
+        basis: &mut Vec<Word>,
+        coeffs: &mut Vec<f64>,
+        dt: f64,
+        drop_tol: f64,
+        protected: &[Word],
+        num_threads: Option<usize>,
+    ) -> Result<(), Error> {
+        if let Some(n) = num_threads {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build()
+                .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
+            pool.install(|| self.rk4_step_inner(basis, coeffs, dt, drop_tol, protected))
+        } else {
+            self.rk4_step_inner(basis, coeffs, dt, drop_tol, protected)
+        }
+    }
+
+    fn rk4_step_inner(
+        &self,
+        basis: &mut Vec<Word>,
+        coeffs: &mut Vec<f64>,
+        dt: f64,
+        drop_tol: f64,
+        protected: &[Word],
+    ) -> Result<(), Error> {
+        // Helper: convert HashMap form back to (Vec<Word>, Vec<f64>) so we
+        // can hand it to compute_action_sum, which expects slices.
+        fn map_to_vecs(m: FxHashMap<Word, f64>) -> (Vec<Word>, Vec<f64>) {
+            let n = m.len();
+            let mut b = Vec::with_capacity(n);
+            let mut c = Vec::with_capacity(n);
+            for (w, v) in m {
+                b.push(w);
+                c.push(v);
+            }
+            (b, c)
+        }
+
+        // Helper: returns a fresh map representing O + α · K, where O is
+        // (basis, coeffs) and K is a HashMap. We seed `out` with K (which
+        // is typically smaller / has different support than O) so the
+        // .entry() merges are fewer.
+        fn scale_add(
+            basis: &[Word],
+            coeffs: &[f64],
+            k: &FxHashMap<Word, f64>,
+            alpha: f64,
+        ) -> FxHashMap<Word, f64> {
+            let mut out: FxHashMap<Word, f64> =
+                FxHashMap::with_capacity_and_hasher(basis.len() + k.len(), FxBuildHasher::default());
+            for (p, &c) in basis.iter().zip(coeffs.iter()) {
+                out.insert(p.clone(), c);
+            }
+            for (w, v) in k {
+                *out.entry(w.clone()).or_insert(0.0) += alpha * v;
+            }
+            out
+        }
+
+        // k1 = L*(O)
+        let k1 = self.compute_action_sum(basis, coeffs)?;
+
+        // k2 = L*(O + dt/2 · k1)
+        let (b1, c1) = map_to_vecs(scale_add(basis, coeffs, &k1, dt / 2.0));
+        let k2 = self.compute_action_sum(&b1, &c1)?;
+        drop(b1);
+        drop(c1);
+
+        // k3 = L*(O + dt/2 · k2)
+        let (b2, c2) = map_to_vecs(scale_add(basis, coeffs, &k2, dt / 2.0));
+        let k3 = self.compute_action_sum(&b2, &c2)?;
+        drop(b2);
+        drop(c2);
+
+        // k4 = L*(O + dt · k3)
+        let (b3, c3) = map_to_vecs(scale_add(basis, coeffs, &k3, dt));
+        let k4 = self.compute_action_sum(&b3, &c3)?;
+        drop(b3);
+        drop(c3);
+
+        // O_new = O + dt/6 · (k1 + 2 k2 + 2 k3 + k4)
+        let dt6 = dt / 6.0;
+        let est_cap = basis.len() + k1.len() + k2.len() + k3.len() + k4.len();
+        let mut out_map: FxHashMap<Word, f64> =
+            FxHashMap::with_capacity_and_hasher(est_cap, FxBuildHasher::default());
+        for (p, &c) in basis.iter().zip(coeffs.iter()) {
+            out_map.insert(p.clone(), c);
+        }
+        for (w, v) in &k1 {
+            *out_map.entry(w.clone()).or_insert(0.0) += dt6 * v;
+        }
+        for (w, v) in &k2 {
+            *out_map.entry(w.clone()).or_insert(0.0) += dt6 * 2.0 * v;
+        }
+        for (w, v) in &k3 {
+            *out_map.entry(w.clone()).or_insert(0.0) += dt6 * 2.0 * v;
+        }
+        for (w, v) in &k4 {
+            *out_map.entry(w.clone()).or_insert(0.0) += dt6 * v;
+        }
+        drop(k1);
+        drop(k2);
+        drop(k3);
+        drop(k4);
+
+        // Prune below drop_tol; never drop a protected word, even if its
+        // coefficient happens to land below threshold.
+        let protected_hashes: FxHashSet<u64> = protected.iter().map(word_hash).collect();
+        if drop_tol > 0.0 {
+            out_map.retain(|w, &mut v| {
+                v.abs() >= drop_tol || protected_hashes.contains(&word_hash(w))
+            });
+        }
+
+        // Repack into the caller's Vec storage.
+        basis.clear();
+        coeffs.clear();
+        basis.reserve(out_map.len());
+        coeffs.reserve(out_map.len());
+        for (w, v) in out_map {
+            basis.push(w);
+            coeffs.push(v);
+        }
+        Ok(())
+    }
+
     /// Predictor-corrector adaptive step.
     ///
     /// Mutates `basis` (may grow) and `coeffs` in place to reflect the
@@ -787,6 +1183,13 @@ impl LindbladSpec {
     /// `num_threads`, when set, runs the entire step inside a freshly built
     /// rayon thread pool of that size — useful for benchmarking parallel
     /// scaling. When `None`, the global rayon pool is used.
+    ///
+    /// `matrix_free`, when `true`, computes `exp(dt·M)·b` without
+    /// materialising the in-basis CSR generator: each Krylov-Taylor SpMV
+    /// re-evaluates `L*(p)` per basis column. Trades wall (more compute
+    /// per matvec) for memory (no CSR storage). Default `false` keeps the
+    /// pre-existing CSR path. Useful when the basis is large enough that
+    /// CSR storage dominates peak RSS — typically at `n_basis ≳ 10⁵`.
     #[allow(clippy::too_many_arguments)]
     pub fn pc_step(
         &self,
@@ -798,15 +1201,18 @@ impl LindbladSpec {
         protected: &[Word],
         opts: ExpmOpts,
         num_threads: Option<usize>,
+        matrix_free: bool,
     ) -> Result<(), Error> {
         if let Some(n) = num_threads {
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(n)
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
-            pool.install(|| self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected, opts))
+            pool.install(|| {
+                self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected, opts, matrix_free)
+            })
         } else {
-            self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected, opts)
+            self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected, opts, matrix_free)
         }
     }
 
@@ -825,15 +1231,22 @@ impl LindbladSpec {
         protected: &[Word],
         opts: ExpmOpts,
         num_threads: Option<usize>,
+        matrix_free: bool,
     ) -> Result<PcStepTimings, Error> {
         if let Some(n) = num_threads {
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(n)
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
-            pool.install(|| self.pc_step_inner_timed(basis, coeffs, dt, tau_add, drop_tol, protected, opts))
+            pool.install(|| {
+                self.pc_step_inner_timed(
+                    basis, coeffs, dt, tau_add, drop_tol, protected, opts, matrix_free,
+                )
+            })
         } else {
-            self.pc_step_inner_timed(basis, coeffs, dt, tau_add, drop_tol, protected, opts)
+            self.pc_step_inner_timed(
+                basis, coeffs, dt, tau_add, drop_tol, protected, opts, matrix_free,
+            )
         }
     }
 
@@ -846,11 +1259,12 @@ impl LindbladSpec {
         drop_tol: f64,
         protected: &[Word],
         opts: ExpmOpts,
+        matrix_free: bool,
     ) -> Result<PcStepTimings, Error> {
         let mut t = PcStepTimings::default();
 
         let t0 = Instant::now();
-        let leak = self.leakage(basis, coeffs, protected)?;
+        let leak = self.leakage_with_prune(basis, coeffs, protected, Some(tau_add))?;
         t.leakage1_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
@@ -862,37 +1276,37 @@ impl LindbladSpec {
         }
         t.expand1_us = t0.elapsed().as_micros() as u64;
 
-        let coeffs_pre = coeffs.clone();
-
+        // Predictor: gencsr1 (or one_norm build for mf) + expm1.
+        // For matrix-free, the "gencsr" timer captures the one-norm pass.
+        // `coeffs` is read-only here, so we don't clone it — it serves as
+        // the pre-step input for the corrector below as well.
         let t0 = Instant::now();
-        let csr = self.generator_csr(basis);
-        t.gencsr1_us = t0.elapsed().as_micros() as u64;
-
-        let t0 = Instant::now();
-        let coeffs_predict = expm_multiply(&csr, dt, coeffs, opts);
+        let coeffs_predict = self.expm_step(basis, dt, coeffs, opts, matrix_free);
         t.expm1_us = t0.elapsed().as_micros() as u64;
+        if !matrix_free {
+            t.gencsr1_us = 0;
+        }
 
         let t0 = Instant::now();
-        let leak2 = self.leakage(basis, &coeffs_predict, protected)?;
+        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, Some(tau_add))?;
         t.leakage2_us = t0.elapsed().as_micros() as u64;
+        drop(coeffs_predict);
 
         let t0 = Instant::now();
-        let mut coeffs_pre_padded = coeffs_pre;
         for (w, v) in leak2 {
             if v.abs() > tau_add {
                 basis.push(w);
-                coeffs_pre_padded.push(0.0);
+                coeffs.push(0.0);
             }
         }
         t.expand2_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
-        let csr = self.generator_csr(basis);
-        t.gencsr2_us = t0.elapsed().as_micros() as u64;
-
-        let t0 = Instant::now();
-        *coeffs = expm_multiply(&csr, dt, &coeffs_pre_padded, opts);
+        *coeffs = self.expm_step(basis, dt, coeffs, opts, matrix_free);
         t.expm2_us = t0.elapsed().as_micros() as u64;
+        if !matrix_free {
+            t.gencsr2_us = 0;
+        }
 
         prune_basis(basis, coeffs, drop_tol, protected);
 
@@ -908,34 +1322,68 @@ impl LindbladSpec {
         drop_tol: f64,
         protected: &[Word],
         opts: ExpmOpts,
+        matrix_free: bool,
     ) -> Result<(), Error> {
-        // 1. First-hop expansion.
-        let leak = self.leakage(basis, coeffs, protected)?;
+        // 1. First-hop expansion. After this, `coeffs` contains the pre-step
+        // coefficients followed by zeros for the newly-added leakage strings.
+        // We rely on `coeffs` itself as the pre-step buffer for the corrector
+        // — no `.clone()` is needed because `expm_step` only borrows it.
+        let leak = self.leakage_with_prune(basis, coeffs, protected, Some(tau_add))?;
         for (w, v) in leak {
             if v.abs() > tau_add {
                 basis.push(w);
                 coeffs.push(0.0);
             }
         }
-        // 2. Predictor.
-        let coeffs_pre = coeffs.clone();
-        let csr = self.generator_csr(basis);
-        let coeffs_predict = expm_multiply(&csr, dt, coeffs, opts);
-        // 3. Second-hop expansion from the predicted state.
-        let leak2 = self.leakage(basis, &coeffs_predict, protected)?;
-        let mut coeffs_pre_padded = coeffs_pre;
+        // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
+        // new owned vector with the predicted state.
+        let coeffs_predict = self.expm_step(basis, dt, coeffs, opts, matrix_free);
+        // 3. Second-hop expansion from the predicted state. After leakage2
+        // we no longer need `coeffs_predict`. Extend `coeffs` with zeros for
+        // any newly-added second-hop strings so it remains a valid input
+        // (pre-step state) for the corrector.
+        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, Some(tau_add))?;
+        drop(coeffs_predict);
         for (w, v) in leak2 {
             if v.abs() > tau_add {
                 basis.push(w);
-                coeffs_pre_padded.push(0.0);
+                coeffs.push(0.0);
             }
         }
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.
-        let csr = self.generator_csr(basis);
-        *coeffs = expm_multiply(&csr, dt, &coeffs_pre_padded, opts);
+        *coeffs = self.expm_step(basis, dt, coeffs, opts, matrix_free);
         // 5. Prune basis entries below `drop_tol` (protected words never dropped).
         prune_basis(basis, coeffs, drop_tol, protected);
         Ok(())
+    }
+
+    /// Compute `exp(dt · M) · b` for the in-basis-restricted generator
+    /// `M`, either by building a CSR (`matrix_free == false`, default) or
+    /// matrix-free (`matrix_free == true`). Both paths use the same
+    /// Al-Mohy & Higham scaling-and-squaring algorithm.
+    fn expm_step(
+        &self,
+        basis: &[Word],
+        dt: f64,
+        b: &[f64],
+        opts: ExpmOpts,
+        matrix_free: bool,
+    ) -> Vec<f64> {
+        if matrix_free {
+            let basis_index = build_basis_index(basis);
+            let one_norm = self.one_norm_matrix_free(basis, &basis_index);
+            expm::expm_multiply_mf(
+                basis.len(),
+                one_norm,
+                |x, y| self.spmv_matrix_free(basis, &basis_index, x, y),
+                dt,
+                b,
+                opts,
+            )
+        } else {
+            let csr = self.generator_csr(basis);
+            expm_multiply(&csr, dt, b, opts)
+        }
     }
 
     /// Compute the unscaled list of `(output, coefficient)` pairs that
@@ -1079,7 +1527,7 @@ fn prune_basis(basis: &mut Vec<Word>, coeffs: &mut Vec<f64>, drop_tol: f64, prot
 
 /// Build a `word → row` map for a basis assumed to contain unique Pauli
 /// words; debug-asserts the uniqueness invariant.
-fn build_basis_index(basis: &[Word]) -> FxHashMap<Word, u32> {
+pub fn build_basis_index(basis: &[Word]) -> FxHashMap<Word, u32> {
     let mut index: FxHashMap<Word, u32> = FxHashMap::default();
     for (i, w) in basis.iter().enumerate() {
         let prev = index.insert(w.clone(), i as u32);

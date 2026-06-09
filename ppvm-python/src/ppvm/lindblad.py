@@ -236,6 +236,8 @@ class Lindbladian:
         expm_tol: float = 1e-12,
         parallel_threshold: int = 50_000,
         num_threads: int | None = None,
+        matrix_free: bool = False,
+        max_krylov_m: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """One predictor-corrector adaptive step.
 
@@ -256,6 +258,20 @@ class Lindbladian:
 
         ``num_threads``, when set, pins this call to a freshly-built rayon
         pool of that size — useful for benchmarking parallel scaling.
+
+        ``matrix_free``, when ``True``, skips the per-step CSR build and
+        does each Krylov-Taylor SpMV by recomputing ``L*`` on the fly.
+        Saves ~CSR storage worth of RSS (significant once
+        ``n_basis ≳ 10⁵``); costs more compute per matvec, so wall is
+        higher except in the bandwidth-bound regime. Default ``False``
+        keeps the CSR path.
+
+        ``max_krylov_m``, when set, caps the Krylov-Taylor degree
+        ``m_star`` considered by the inner ``select_ms``. ``None``
+        (default) uses the full table up to ``m=30``; smaller values
+        trade more outer scaling-and-squaring iterations (more matvecs)
+        for less Krylov scratch memory. Mostly relevant at large ``n``
+        when ``m × n × 8 B`` of Krylov vectors dominates RSS.
 
         Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown
         (or shrunk, if ``drop_tol`` pruned entries).
@@ -279,6 +295,48 @@ class Lindbladian:
             np.ascontiguousarray(protected_arr, dtype=np.uint8),
             float(expm_tol),
             int(parallel_threshold),
+            None if num_threads is None else int(num_threads),
+            bool(matrix_free),
+            None if max_krylov_m is None else int(max_krylov_m),
+        )
+
+    def rk4_step_arr(
+        self,
+        basis_arr: np.ndarray,
+        coeffs: np.ndarray,
+        dt: float,
+        drop_tol: float = 0.0,
+        protected_arr: np.ndarray | None = None,
+        num_threads: int | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """One classical fourth-order Runge-Kutta step on ``L*``.
+
+        Matrix-free: no CSR build, no Krylov subspace, no predictor-
+        corrector basis enrichment. Four action evaluations per step;
+        the basis grows naturally as new strings emerge from each
+        commutator. After the step, drops any string with
+        ``|coeff| < drop_tol`` unless it appears in ``protected_arr``.
+
+        Per-step local truncation error is ``O(dt^5)``.
+        **Stability** requires ``dt ≤ 2.78 / ‖L*‖``. Violating the bound
+        is silent — the trajectory still norm-conserves, but individual
+        Pauli coefficients diverge to oscillating ±large values; local
+        observables (e.g. MSD) blow up. Verify against a stable reference
+        before trusting tight-``drop_tol`` results at large ``dt``.
+
+        For stiff problems where that bound is restrictive, prefer
+        :meth:`pc_step_arr`, which integrates ``exp(dt·L*)`` via Krylov
+        and is unconditionally stable.
+        """
+        n = self.n_qubits
+        if protected_arr is None:
+            protected_arr = np.zeros((0, n), dtype=np.uint8)
+        return self._spec.rk4_step(
+            np.ascontiguousarray(basis_arr, dtype=np.uint8),
+            np.ascontiguousarray(coeffs, dtype=np.float64),
+            float(dt),
+            float(drop_tol),
+            np.ascontiguousarray(protected_arr, dtype=np.uint8),
             None if num_threads is None else int(num_threads),
         )
 

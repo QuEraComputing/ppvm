@@ -159,6 +159,14 @@ pub struct ExpmOpts {
     /// this rayon's task overhead beats cache-friendly serial. Default
     /// `50_000`.
     pub parallel_threshold: usize,
+    /// Maximum Krylov-Taylor degree `m_star` considered by `select_ms`.
+    /// `None` (default) uses the full table up to `m=30`. Capping at a
+    /// smaller value (e.g. `Some(10)`) trades wall (more outer
+    /// scaling-and-squaring `s` steps, so more total matvecs) for
+    /// instantaneous memory (no `m`-sized stack of vectors held in the
+    /// matrix-free SpMV's per-thread accumulators). Useful when `n` is
+    /// large enough that `m × n × 8 B` of Krylov scratch dominates RSS.
+    pub max_krylov_m: Option<u32>,
 }
 
 impl Default for ExpmOpts {
@@ -166,13 +174,15 @@ impl Default for ExpmOpts {
         Self {
             tol: 1e-12,
             parallel_threshold: 50_000,
+            max_krylov_m: None,
         }
     }
 }
 
 /// Pick `(m, s)` minimising `s·m` subject to `s ≥ ⌈t_norm / θ_m⌉, s ≥ 1`.
 /// Restricted to `m ≤ 30`; for larger norms `s` simply grows linearly.
-fn select_ms(t_norm: f64) -> (u32, u32) {
+/// When `max_m` is set, only entries with `m ≤ max_m` are considered.
+fn select_ms(t_norm: f64, max_m: Option<u32>) -> (u32, u32) {
     if t_norm <= 0.0 {
         return (1, 1);
     }
@@ -180,6 +190,11 @@ fn select_ms(t_norm: f64) -> (u32, u32) {
     let mut best_s = 1u32;
     let mut best_cost = u64::MAX;
     for &(m, theta) in THETA {
+        if let Some(cap) = max_m {
+            if m > cap {
+                continue;
+            }
+        }
         let s_f = (t_norm / theta).ceil();
         let s = if s_f >= 1.0 { s_f as u32 } else { 1 };
         let cost = (m as u64) * (s as u64);
@@ -219,7 +234,7 @@ pub fn expm_multiply(a: &Csr, t: f64, b: &[f64], opts: ExpmOpts) -> Vec<f64> {
     }
 
     let t_a_one_norm = t.abs() * csr_one_norm(a);
-    let (m_star, s) = select_ms(t_a_one_norm);
+    let (m_star, s) = select_ms(t_a_one_norm, opts.max_krylov_m);
     let scale = t / s as f64;
 
     let mut f = b.to_vec();
@@ -248,6 +263,74 @@ pub fn expm_multiply(a: &Csr, t: f64, b: &[f64], opts: ExpmOpts) -> Vec<f64> {
             c1 = c2;
         }
         // Outer step: `f` becomes the input for the next scaling power.
+        bk.copy_from_slice(&f);
+    }
+
+    f
+}
+
+/// Matrix-free variant of [`expm_multiply`]. Same Al-Mohy & Higham
+/// algorithm, but takes the matrix 1-norm and SpMV operation as
+/// arguments instead of a [`Csr`].
+///
+/// `spmv_fn(x, y)` must compute `y ← M · x` where `M` is the linear
+/// operator being exponentiated. `one_norm` must be the 1-norm of `M`
+/// (`max_j Σ_i |M_{ij}|`); the caller computes it once before the call.
+///
+/// Use this when materialising `M` as a [`Csr`] would dominate memory.
+/// Trade: every SpMV recomputes the action instead of streaming through
+/// pre-stored values, costing more compute per matvec. Wall time is
+/// (per-eval cost × `s × m_star`), vs CSR's (build cost + `s × m_star ×
+/// matvec cost`), so matrix-free is wall-competitive only when CSR
+/// matvec is memory-bandwidth-bound (i.e. at large `n`).
+pub fn expm_multiply_mf<F>(
+    n: usize,
+    one_norm: f64,
+    spmv_fn: F,
+    t: f64,
+    b: &[f64],
+    opts: ExpmOpts,
+) -> Vec<f64>
+where
+    F: Fn(&[f64], &mut [f64]),
+{
+    assert_eq!(
+        n,
+        b.len(),
+        "matrix dimension {} mismatches vector length {}",
+        n,
+        b.len()
+    );
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let t_a_one_norm = t.abs() * one_norm;
+    let (m_star, s) = select_ms(t_a_one_norm, opts.max_krylov_m);
+    let scale = t / s as f64;
+
+    let mut f = b.to_vec();
+    let mut bk = b.to_vec();
+    let mut work = vec![0f64; n];
+
+    for _ in 0..s {
+        let mut c1 = inf_norm(&bk);
+        for i in 1..=m_star {
+            spmv_fn(&bk, &mut work);
+            let factor = scale / i as f64;
+            for j in 0..n {
+                bk[j] = factor * work[j];
+            }
+            for j in 0..n {
+                f[j] += bk[j];
+            }
+            let c2 = inf_norm(&bk);
+            let f_norm = inf_norm(&f).max(f64::MIN_POSITIVE);
+            if c1 + c2 <= opts.tol * f_norm {
+                break;
+            }
+            c1 = c2;
+        }
         bk.copy_from_slice(&f);
     }
 
@@ -385,16 +468,16 @@ mod tests {
     #[test]
     fn ms_selection_sane() {
         // tiny norm → small m, s = 1
-        let (m, s) = select_ms(1e-9);
+        let (m, s) = select_ms(1e-9, None);
         assert!(m <= 5, "expected small m for tiny norm, got m={m}");
         assert_eq!(s, 1);
 
         // moderate norm → m·s should be ~10-50
-        let (m, s) = select_ms(1.0);
+        let (m, s) = select_ms(1.0, None);
         assert!((m * s) <= 50, "moderate norm cost too high: m={m} s={s}");
 
         // large norm → s grows
-        let (_m, s) = select_ms(100.0);
+        let (_m, s) = select_ms(100.0, None);
         assert!(s >= 20, "large norm should require many steps, got s={s}");
     }
 }

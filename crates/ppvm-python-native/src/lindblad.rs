@@ -210,6 +210,8 @@ impl LindbladSpec {
         expm_tol = 1e-12,
         parallel_threshold = 50_000,
         num_threads = None,
+        matrix_free = false,
+        max_krylov_m = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step<'py>(
@@ -224,6 +226,8 @@ impl LindbladSpec {
         expm_tol: f64,
         parallel_threshold: usize,
         num_threads: Option<usize>,
+        matrix_free: bool,
+        max_krylov_m: Option<u32>,
     ) -> PyResult<PyPauliMap<'py>> {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
@@ -245,6 +249,7 @@ impl LindbladSpec {
         let opts = ExpmOpts {
             tol: expm_tol,
             parallel_threshold,
+            max_krylov_m,
         };
         self.inner
             .pc_step(
@@ -256,6 +261,7 @@ impl LindbladSpec {
                 &protected_words,
                 opts,
                 num_threads,
+                matrix_free,
             )
             .map_err(map_err)?;
 
@@ -273,6 +279,8 @@ impl LindbladSpec {
         expm_tol = 1e-12,
         parallel_threshold = 50_000,
         num_threads = None,
+        matrix_free = false,
+        max_krylov_m = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step_timed<'py>(
@@ -287,6 +295,8 @@ impl LindbladSpec {
         expm_tol: f64,
         parallel_threshold: usize,
         num_threads: Option<usize>,
+        matrix_free: bool,
+        max_krylov_m: Option<u32>,
     ) -> PyResult<(PyPauliMap<'py>, Bound<'py, pyo3::types::PyDict>)> {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
@@ -308,6 +318,7 @@ impl LindbladSpec {
         let opts = ExpmOpts {
             tol: expm_tol,
             parallel_threshold,
+            max_krylov_m,
         };
         let timings = self
             .inner
@@ -320,6 +331,7 @@ impl LindbladSpec {
                 &protected_words,
                 opts,
                 num_threads,
+                matrix_free,
             )
             .map_err(map_err)?;
 
@@ -335,6 +347,57 @@ impl LindbladSpec {
         d.set_item("gencsr2_us", timings.gencsr2_us)?;
         d.set_item("expm2_us", timings.expm2_us)?;
         Ok((map, d))
+    }
+
+    /// One classical RK4 step on the adjoint Lindbladian. Matrix-free: no
+    /// CSR, no Krylov, no predictor-corrector enrichment. Four action
+    /// evaluations per step, basis grows naturally, magnitude-prune at end.
+    #[pyo3(signature = (
+        basis, coeffs, dt,
+        drop_tol = 0.0,
+        protected = None,
+        num_threads = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn rk4_step<'py>(
+        &self,
+        py: Python<'py>,
+        basis: PyReadonlyArray2<'py, u8>,
+        coeffs: PyReadonlyArray1<'py, f64>,
+        dt: f64,
+        drop_tol: f64,
+        protected: Option<PyReadonlyArray2<'py, u8>>,
+        num_threads: Option<usize>,
+    ) -> PyResult<PyPauliMap<'py>> {
+        let n_q = self.inner.n_qubits();
+        let basis_view = basis.as_array();
+        let mut basis_words = decode_basis(&basis_view, n_q)?;
+        assert_basis_unique(&basis_words)?;
+        let mut coeffs_vec = coeffs.as_slice()?.to_vec();
+        if coeffs_vec.len() != basis_words.len() {
+            return Err(PyValueError::new_err(format!(
+                "coeffs has length {} but basis has {} rows",
+                coeffs_vec.len(),
+                basis_words.len()
+            )));
+        }
+        let protected_words: Vec<Word> = if let Some(ref p) = protected {
+            decode_basis(&p.as_array(), n_q)?
+        } else {
+            Vec::new()
+        };
+        self.inner
+            .rk4_step(
+                &mut basis_words,
+                &mut coeffs_vec,
+                dt,
+                drop_tol,
+                &protected_words,
+                num_threads,
+            )
+            .map_err(map_err)?;
+        let pairs: Vec<(Word, f64)> = basis_words.into_iter().zip(coeffs_vec).collect();
+        pack_pauli_map(py, pairs, n_q)
     }
 
     /// Sparse generator matrix in COO form: `(rows, cols, vals)`.

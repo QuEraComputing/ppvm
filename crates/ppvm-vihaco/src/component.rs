@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::composite::{BackendKind, PPVMDeviceInfo};
-use crate::measurements::MeasurementEffect;
-use crate::measurements::MeasurementOutcome;
+use crate::measurements::{CircuitOutcomeEffect, MeasurementEffect, MeasurementOutcome};
 use bitvec::view::BitView;
 use bnum::types::{U256, U512, U1024, U2048};
 use eyre::{Result, eyre};
@@ -65,7 +64,7 @@ pub struct CircuitExecutor<T: Config<Coeff = f64>, I: TableauIndex, C: SparseVec
     pub tab: GeneralizedTableau<T, I, C>,
 }
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
+#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
 impl<T, I, C> CircuitExecutor<T, I, C>
 where
     T: Config<Coeff = f64>,
@@ -77,7 +76,7 @@ where
         &mut self,
         inst: CircuitInstruction,
         msg: CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         self.execute_instruction(&inst, &msg)
     }
 
@@ -85,7 +84,7 @@ where
         &mut self,
         inst: &CircuitInstruction,
         msg: &CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         use CircuitInstruction::*;
         use CircuitMessage::*;
 
@@ -129,9 +128,11 @@ where
             // Measure & Reset
             (Measure, &Qubit(addr)) => {
                 let outcome: MeasurementOutcome = self.tab.measure(addr).into();
-                return Ok(Effects::one(MeasurementEffect {
-                    measurement_results: smallvec::smallvec![outcome],
-                }));
+                return Ok(Effects::one(CircuitOutcomeEffect::Measurement(
+                    MeasurementEffect {
+                        measurement_results: smallvec::smallvec![outcome],
+                    },
+                )));
             }
             (Reset, &Qubit(addr)) => self.tab.reset(addr),
 
@@ -224,9 +225,11 @@ where
             // Batch: measure (emits per qubit)
             (Measure, QubitBatch(addrs)) => {
                 let outcomes = addrs.iter().map(|&addr| self.tab.measure(addr).into());
-                return Ok(Effects::one(MeasurementEffect {
-                    measurement_results: outcomes.collect(),
-                }));
+                return Ok(Effects::one(CircuitOutcomeEffect::Measurement(
+                    MeasurementEffect {
+                        measurement_results: outcomes.collect(),
+                    },
+                )));
             }
 
             // Fallback
@@ -266,7 +269,7 @@ pub struct PauliSumExecutor<T: Config<Coeff = f64>> {
     pub state: PauliSum<T>,
 }
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
+#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
 impl<T> PauliSumExecutor<T>
 where
     T: Config<Coeff = f64>,
@@ -275,7 +278,7 @@ where
         &mut self,
         inst: CircuitInstruction,
         msg: CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         self.execute_instruction(&inst, &msg)
     }
 
@@ -283,7 +286,7 @@ where
         &mut self,
         inst: &CircuitInstruction,
         msg: &CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         use CircuitInstruction::*;
         use CircuitMessage::*;
 
@@ -396,7 +399,7 @@ where
             // effect-union for the Circuit component.
             (Trace, _) => {
                 return Err(eyre!(
-                    "Trace is not yet wired on the PauliSum backend (Phase 2 Task 6)"
+                    "Trace is not yet wired on the PauliSum backend (Phase 2 Task 7)"
                 ));
             }
 
@@ -434,7 +437,7 @@ pub struct LossyPauliSumExecutor<T: Config<Coeff = f64>> {
     pub state: PauliSum<T>,
 }
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
+#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
 impl<T> LossyPauliSumExecutor<T>
 where
     T: Config<Coeff = f64>,
@@ -443,7 +446,7 @@ where
         &mut self,
         inst: CircuitInstruction,
         msg: CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         self.execute_instruction(&inst, &msg)
     }
 
@@ -451,7 +454,7 @@ where
         &mut self,
         inst: &CircuitInstruction,
         msg: &CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         use CircuitInstruction::*;
         use CircuitMessage::*;
 
@@ -569,7 +572,7 @@ where
             // Trace: deferred until Task 6 introduces `TraceEffect`.
             (Trace, _) => {
                 return Err(eyre!(
-                    "Trace is not yet wired on the LossyPauliSum backend (Phase 2 Task 6)"
+                    "Trace is not yet wired on the LossyPauliSum backend (Phase 2 Task 7)"
                 ));
             }
 
@@ -662,7 +665,7 @@ impl TableauCircuit {
         &mut self,
         inst: &CircuitInstruction,
         msg: &CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         match self {
             Self::Bits64(ex) => ex.execute_instruction(inst, msg),
             Self::Bits128(ex) => ex.execute_instruction(inst, msg),
@@ -744,7 +747,7 @@ impl PauliSumCircuit {
         &mut self,
         inst: &CircuitInstruction,
         msg: &CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         match self {
             Self::Bits64(ex) => ex.execute_instruction(inst, msg),
             Self::Bits128(ex) => ex.execute_instruction(inst, msg),
@@ -826,7 +829,7 @@ impl LossyPauliSumCircuit {
         &mut self,
         inst: &CircuitInstruction,
         msg: &CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         match self {
             Self::Bits64(ex) => ex.execute_instruction(inst, msg),
             Self::Bits128(ex) => ex.execute_instruction(inst, msg),
@@ -871,7 +874,7 @@ pub enum Circuit {
     LossyPauliSum(LossyPauliSumCircuit),
 }
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
+#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
 impl Circuit {
     pub fn new(info: &PPVMDeviceInfo) -> Self {
         match info.backend {
@@ -903,7 +906,7 @@ impl Circuit {
         &mut self,
         inst: CircuitInstruction,
         msg: CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         self.execute_instruction(&inst, &msg)
     }
 
@@ -911,7 +914,7 @@ impl Circuit {
         &mut self,
         inst: &CircuitInstruction,
         msg: &CircuitMessage,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         match self {
             Self::Tableau(c) => c.execute_instruction(inst, msg),
             Self::PauliSum(c) => c.execute_instruction(inst, msg),
@@ -929,12 +932,12 @@ impl Circuit {
     }
 }
 
-#[observe(CircuitEffect, effect=MeasurementEffect)]
+#[observe(CircuitEffect, effect=CircuitOutcomeEffect)]
 impl Circuit {
     fn observe_circuit_effect(
         &mut self,
         effect: &CircuitEffect,
-    ) -> Result<Effects<MeasurementEffect>> {
+    ) -> Result<Effects<CircuitOutcomeEffect>> {
         self.execute_instruction(&effect.inst, &effect.msg)
     }
 }

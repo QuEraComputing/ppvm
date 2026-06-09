@@ -15,7 +15,10 @@ pub use vihaco_cpu::StepOutcome;
 use crate::component::Circuit;
 #[cfg(test)]
 use crate::component::TableauCircuit;
-use crate::measurements::{MeasurementEffect, MeasurementObserver, MeasurementResult};
+use crate::measurements::{
+    CircuitOutcomeEffect, MeasurementEffect, MeasurementObserver, MeasurementResult, TraceEffect,
+    TraceObserver,
+};
 use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
 
 pub const PPVM_MAGIC: u32 = 0x5050564D;
@@ -72,6 +75,8 @@ pub struct PPVM {
     stdout: StdoutObserver,
 
     measurement_record: MeasurementObserver,
+
+    trace_record: TraceObserver,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +85,7 @@ pub enum PPVMEffect {
     Stdout(StdoutEffect),
     Circuit(CircuitEffect),
     Measurement(MeasurementEffect),
+    Trace(TraceEffect),
 }
 
 #[observe(vihaco::observer::stdio::StdoutEffect, effect = PPVMEffect)]
@@ -94,7 +100,7 @@ impl PPVM {
     fn observe_circuit_effect(
         &mut self,
         effect: &CircuitEffect,
-    ) -> eyre::Result<Effects<MeasurementEffect>> {
+    ) -> eyre::Result<Effects<CircuitOutcomeEffect>> {
         Observe::<CircuitEffect>::observe(&mut self.circuit, effect)
     }
 }
@@ -109,6 +115,13 @@ impl PPVM {
     }
 }
 
+#[observe(TraceEffect, effect = PPVMEffect)]
+impl PPVM {
+    fn observe_trace_effect(&mut self, effect: &TraceEffect) -> eyre::Result<Effects<()>> {
+        Observe::<TraceEffect>::observe(&mut self.trace_record, effect)
+    }
+}
+
 impl From<StdoutEffect> for PPVMEffect {
     fn from(value: StdoutEffect) -> Self {
         Self::Stdout(value)
@@ -118,6 +131,21 @@ impl From<StdoutEffect> for PPVMEffect {
 impl From<MeasurementEffect> for PPVMEffect {
     fn from(value: MeasurementEffect) -> Self {
         Self::Measurement(value)
+    }
+}
+
+impl From<TraceEffect> for PPVMEffect {
+    fn from(value: TraceEffect) -> Self {
+        Self::Trace(value)
+    }
+}
+
+impl From<CircuitOutcomeEffect> for PPVMEffect {
+    fn from(value: CircuitOutcomeEffect) -> Self {
+        match value {
+            CircuitOutcomeEffect::Measurement(m) => Self::Measurement(m),
+            CircuitOutcomeEffect::Trace(t) => Self::Trace(t),
+        }
     }
 }
 
@@ -427,8 +455,8 @@ impl PPVM {
                 )?;
                 *self.loader.pc_mut() += 1;
                 let mut effects = Effects::one(PPVMEffect::Step(StepOutcome::Continue));
-                for measurement_effect in circuit_effects {
-                    effects = effects.append(PPVMEffect::Measurement(measurement_effect));
+                for outcome in circuit_effects {
+                    effects = effects.append(PPVMEffect::from(outcome));
                 }
                 Ok(effects)
             }
@@ -472,6 +500,15 @@ impl PPVM {
                 }
                 self.continue_observer_effects(follow_ups)
             }
+            PPVMEffect::Trace(effect) => {
+                let value = effect.value;
+                let follow_ups = Observe::<TraceEffect>::observe(self, &effect)?;
+                // Mirror the measurement wiring: append to the trace record
+                // (via the observer above) AND push the value onto the CPU
+                // stack so user bytecode can consume it. Plan Task 7.
+                self.cpu.stack_push(Value::F64(value));
+                self.continue_observer_effects(follow_ups)
+            }
             PPVMEffect::Step(_) => Err(eyre::eyre!(
                 "unexpected Step effect while continuing PPVM observer follow-ups"
             )),
@@ -513,6 +550,13 @@ impl PPVM {
 
     pub fn measurement_record(&self) -> Vec<MeasurementResult> {
         self.measurement_record.record.clone()
+    }
+
+    /// Per-trace values collected by `Trace` instructions during the run.
+    /// Parallel to [`PPVM::measurement_record`]: one f64 per `Trace` executed,
+    /// in execution order.
+    pub fn trace_record(&self) -> Vec<f64> {
+        self.trace_record.record.clone()
     }
 
     pub fn load_program(&mut self, program: &str) -> eyre::Result<()> {
@@ -565,6 +609,7 @@ impl vihaco::Reset for PPVM {
         self.circuit.reset();
         self.loader.pc = 0;
         self.measurement_record.record.clear();
+        self.trace_record.record.clear();
     }
 }
 

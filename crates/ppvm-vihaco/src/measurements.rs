@@ -48,3 +48,46 @@ impl MeasurementObserver {
         Ok(Effects::none())
     }
 }
+
+/// Per-step trace value emitted by the `Trace` instruction on the PauliSum and
+/// LossyPauliSum backends. The plan's Decision 5 keeps trace and measurement
+/// records as two parallel streams; this effect feeds the trace stream.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraceEffect {
+    pub value: f64,
+}
+
+#[derive(Debug, Default)]
+pub struct TraceObserver {
+    pub record: Vec<f64>,
+}
+
+#[observe(TraceEffect)]
+impl TraceObserver {
+    fn observe_trace_effect(&mut self, effect: &TraceEffect) -> Result<Effects<()>> {
+        self.record.push(effect.value);
+        Ok(Effects::none())
+    }
+}
+
+/// Union of the two effect types a circuit instruction can produce. The plan's
+/// structural note (Task 6) calls for broadening the `#[component(..., effect =
+/// ...)]` annotation on `Circuit` and the executors to a union so a single
+/// `Trace` (or `Measure`) instruction can fan out to the right observer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CircuitOutcomeEffect {
+    Measurement(MeasurementEffect),
+    Trace(TraceEffect),
+}
+
+impl From<MeasurementEffect> for CircuitOutcomeEffect {
+    fn from(value: MeasurementEffect) -> Self {
+        Self::Measurement(value)
+    }
+}
+
+impl From<TraceEffect> for CircuitOutcomeEffect {
+    fn from(value: TraceEffect) -> Self {
+        Self::Trace(value)
+    }
+}

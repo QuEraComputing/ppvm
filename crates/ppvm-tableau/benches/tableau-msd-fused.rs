@@ -187,6 +187,8 @@ pub fn benchmark_suite_msd_fused(c: &mut Criterion, name: impl AsRef<str>) {
             criterion::BatchSize::SmallInput,
         );
     });
+
+    group.finish();
 }
 
 pub fn msd_fused_benchmarks(c: &mut Criterion) {

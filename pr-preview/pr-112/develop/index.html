@@ -1,0 +1,517 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="ppvm — fast Pauli propagation and stabilizer-tableau quantum simulator."><title>Developer Guide — ppvm</title><script>
+      (() => {
+        const stored = localStorage.getItem("ppvm-theme") || "auto";
+        const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const resolved = stored === "auto" ? (sysDark ? "dark" : "light") : stored;
+        document.documentElement.setAttribute("data-theme", resolved);
+        document.documentElement.setAttribute("data-theme-pref", stored);
+      })();
+    </script><link rel="stylesheet" href="/pr-preview/pr-112/_astro/Base.BN0a5DSp.css"></head> <body> <header class="masthead"> <div class="masthead-inner"> <a class="brand" href="/pr-preview/pr-112/"> <span class="brand-mark" aria-hidden="true"></span> <span class="brand-mono">ppvm</span> <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span> </a> <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation menu"> <span class="nav-toggle-bars" aria-hidden="true"></span> </button> <nav class="nav-links" id="primary-nav"> <a href="/pr-preview/pr-112/">Overview</a><a href="/pr-preview/pr-112/quickstart">Quick Start</a><a href="/pr-preview/pr-112/examples">Examples</a><a href="/pr-preview/pr-112/develop" aria-current="page">Develop</a><a href="/pr-preview/pr-112/api">Reference</a> <div class="theme-toggle" role="group" aria-label="Theme"> <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path> </svg> </button> <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path> </svg> </button> <button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <rect x="3" y="4" width="18" height="13" rx="2"></rect> <path d="M8 21h8M12 17v4"></path> </svg> </button> </div> </nav> </div> </header> <main> <div class="page-shell"> <details class="page-toc side-nav" aria-label="On this page"> <summary class="page-toc-label">On this page</summary> <ol> <li><a href="#orient" data-toc-link="#orient">§ 1 Orient yourself</a></li><li><a href="#build" data-toc-link="#build">§ 2 Build &amp; test</a></li><li><a href="#architecture" data-toc-link="#architecture">§ 3 Architecture</a></li><li><a href="#conventions" data-toc-link="#conventions">§ 4 Conventions</a></li><li><a href="#python-bindings" data-toc-link="#python-bindings">§ 5 Python bindings</a></li><li><a href="#extending" data-toc-link="#extending">§ 6 Extending ppvm</a></li><li><a href="#where-to-look" data-toc-link="#where-to-look">§ 7 Where to look for X</a></li> </ol> </details> <div class="page-toc-content">  <article class="shell narrow"> <div class="titleblock"> <div class="eyebrow">For contributors &middot; humans &amp; agents</div> <h1>Developer Guide</h1> <p class="byline">
+How the ppvm repository is organised, how to build and test it, and
+        where to look when you want to extend it. Written so that an AI agent
+        can read just the sections it needs.
+</p> </div> <aside class="agent-callout" aria-label="Notes for AI agents"> <div class="agent-callout-label">For AI agents</div> <p>
+If a human delegated a task to you in this repository, this page is the
+        canonical guide. Read sections in this order:
+</p> <ol> <li><a href="#orient">§ 1 Orient yourself</a> &mdash; what each crate does and where to look.</li> <li><a href="#build">§ 2 Build &amp; test</a> &mdash; the exact commands to run.</li> <li><a href="#architecture">§ 3 Architecture</a> &mdash; design patterns you must respect.</li> <li><a href="#conventions">§ 4 Conventions</a> &mdash; commits, formatting, file organisation.</li> <li>Specific sections below only if relevant to your task.</li> </ol> <p>
+The root <code>AGENTS.md</code> file is a short pointer to this page;
+        it intentionally does not duplicate this content so that it stays in
+        sync with the docs.
+</p> </aside> <h2 id="orient"><span class="sec-num">§ 1</span>Orient yourself</h2> <p>
+ppvm is a Cargo workspace with a Python wrapper layered on top. The
+      Rust crates are the source of truth; the Python package is a thin
+      PyO3-based binding.
+</p> <pre><code>ppvm/
+├── crates/
+│   ├── ppvm-runtime         # Core: Pauli arithmetic, PauliSum, gate traits, Config trait
+│   ├── ppvm-tableau         # Stabilizer + generalized-tableau simulator
+│   ├── ppvm-sym             # Symbolic (parametric) Pauli propagation
+│   ├── ppvm-stim            # Stim program execution against the tableau
+│   ├── stim-parser          # Standalone parser for the Stim circuit format
+│   └── ppvm-python-native   # PyO3 bindings (cdylib via maturin)
+├── ppvm-python/             # Pure-Python wrapper (uv_build backend)
+├── docs/                    # This documentation site (Astro)
+├── examples/                # Rust examples (symbolic.rs, trotter.rs)
+└── AGENTS.md                # Pointer to this guide
+</code></pre> <p> <strong>Dependency graph.</strong> <code>ppvm-runtime</code> is the
+      foundation. <code>ppvm-tableau</code>, <code>ppvm-sym</code>, and
+<code>ppvm-stim</code> depend on it. <code>ppvm-stim</code> additionally
+      depends on <code>ppvm-tableau</code> and <code>stim-parser</code>.
+<code>ppvm-python-native</code> depends on <code>ppvm-runtime</code>
+and <code>ppvm-tableau</code>.
+</p> <h2 id="build"><span class="sec-num">§ 2</span>Build &amp; test</h2> <h3>Rust</h3> <pre><code class="language-bash"># All Rust tests
+cargo test --workspace
+
+# A single crate
+cargo test -p ppvm-tableau
+
+# A single test by name
+cargo test -p ppvm-runtime -- test_ghz
+
+# Benchmarks
+cargo bench -p ppvm-tableau --bench micro
+cargo bench --bench micro -- "gates/single-qubit/h"</code></pre> <p>
+Rust edition 2024. On x86 the default hasher (gxhash) needs
+<code>RUSTFLAGS="-C target-feature=+aes,+sse2"</code>; CI sets this
+      automatically. On non-x86 hosts, build with
+<code>--no-default-features --features=indexmap,ahash</code> or similar.
+</p> <h3>Python</h3> <pre><code class="language-bash"># Requires uv (https://docs.astral.sh/uv/)
+# The native module compiles automatically via maturin on first run.
+
+uv run --project ppvm-python --group dev pytest ppvm-python/test/
+
+# A single file
+uv run --project ppvm-python --group dev pytest ppvm-python/test/test_basics.py
+
+# A single test by name
+uv run --project ppvm-python --group dev pytest ppvm-python/test/ -k test_ghz</code></pre> <p>
+If the native module has changed but the wrapper has not, force a
+      rebuild with <code>uv sync --project ppvm-python --reinstall-package
+      ppvm-python-native</code>.
+</p> <h3>This docs site</h3> <p>
+The Astro site you're reading lives under <code>docs/</code>. Every
+      build step (rustdoc-JSON extraction, griffe-based Python API
+      extraction, notebook execution, Astro build) is wired into
+<code>docs/package.json</code>, so a fresh checkout has one command
+      to remember:
+</p> <pre><code class="language-bash">cd docs
+npm install            # one-time
+npm run dev            # extract everything, then `astro dev` (port 4321)
+npm run build          # extract everything, then `astro build` → dist/</code></pre> <p> <code>npm run dev</code> / <code>npm run build</code> chain the
+      three extraction steps in order so the rendered site picks up
+      every public API change automatically. When you're iterating on a
+      single layer, run that step on its own and refresh the
+      already-running <code>astro dev</code>:
+</p> <table class="dev-cmd-table"> <thead> <tr><th>Command</th><th>Rebuilds</th><th>When to use</th></tr> </thead> <tbody> <tr> <td><code>npm run extract:rust</code></td> <td><code>src/data/rust-api.json</code></td> <td>You changed a public Rust item — trait, struct, doc comment — and want it surfaced on <code>/api/</code>. Needs <code>cargo +nightly</code>.</td> </tr> <tr> <td><code>npm run extract:python</code></td> <td><code>src/data/python-api.json</code></td> <td>You changed a public Python item under <code>ppvm-python/src/ppvm/</code> and want it surfaced on <code>/api/</code>. Uses <code>griffe</code> via <code>uv</code>.</td> </tr> <tr> <td><code>npm run extract:notebooks</code></td> <td><code>src/generated/notebooks/*</code></td> <td>You edited or added a Jupytext file under <code>docs/notebooks/</code>. Re-executes the notebooks against the current ppvm-python build and embeds outputs.</td> </tr> <tr> <td><code>npm run extract</code></td> <td>All of the above, in order.</td> <td>Touched several layers at once.</td> </tr> <tr> <td><code>npm run astro:dev</code> / <code>npm run astro:build</code></td> <td>Just Astro.</td> <td>You're only editing <code>.astro</code> / <code>.css</code> files and trust the existing extractor outputs — fastest loop.</td> </tr> </tbody> </table> <p> <code>docs/src/data/</code> and <code>docs/src/generated/</code> are
+      both <code>.gitignore</code>'d; the only sources of truth for those
+      files are the extractor scripts, which CI re-runs on every build.
+      Adding a notebook is a single drop-in:
+<code>docs/notebooks/my_notebook.py</code> (Jupytext-percent
+      format) → <code>npm run extract:notebooks</code> → the Examples
+      landing page picks it up from
+<code>src/generated/notebooks/index.json</code>.
+</p> <h3 id="notebook-pipeline">2.1 Notebook execution &amp; caching</h3> <p>
+The script behind <code>npm run extract:notebooks</code> lives at
+<code><a href="https://github.com/QuEraComputing/ppvm/blob/main/docs/scripts/build-notebooks.py">docs/scripts/build-notebooks.py</a></code>.
+      Per-notebook pipeline:
+</p> <ol> <li>
+Read the Jupytext <code>percent</code>-format <code>.py</code> file
+        and convert to an in-memory <code>ipynb</code>.
+</li> <li>
+Prepend a hidden setup cell that switches matplotlib to the
+        IPython <code>inline</code> backend — without this, <code>plt.show()</code>
+renders to a buffer that never reaches the cell output and plots
+        are silently dropped.
+</li> <li>
+Execute every code cell via <code>nbclient</code>. Text output,
+        tracebacks, and matplotlib figures are captured inline; figures
+        are embedded as base64 PNGs.
+</li> <li>
+Drop the hidden setup cell, render to an HTML fragment via
+<code>nbconvert</code>'s <code>basic</code> template (no
+        JupyterLab chrome — the site stylesheet themes the
+<code>.jp-*</code> classes), and sanitise through
+<code>bleach</code> against an allow-list that permits
+<code>data:image/png</code> URLs but strips scripts and
+        iframes.
+</li> <li>
+Write <code>docs/src/generated/notebooks/&lt;slug&gt;.html</code> +
+<code>&lt;slug&gt;.json</code> (title, ordered headings,
+        language, source path). The Astro routes at
+<code>docs/src/pages/examples/index.astro</code> and
+<code>[slug].astro</code> consume <code>index.json</code> +
+        the per-slug fragments at build time.
+</li> </ol> <p> <strong>Content-addressed cache.</strong> Executing every notebook
+      from scratch on every PR is expensive — the long-running examples
+      can dominate CI. To avoid that, every successful run also writes
+      its output to <code>docs/.notebook-cache/&lt;hash&gt;.&lbrace;html,json&rbrace;</code>,
+      keyed by
+</p> <pre><code class="language-text">sha256(CACHE_SCHEMA_VERSION + docs/scripts/build-notebooks.py + notebook source + Cargo.lock + Cargo.toml + crates/*/Cargo.toml + ppvm-python/uv.lock)</code></pre> <p>
+Hashing the extractor itself means that a change to the
+      rendering / sanitiser / matplotlib-setup logic invalidates
+      every cached entry automatically — without that, a tweak to the
+      bleach allow-list would silently keep serving the previous
+      HTML for every unchanged notebook source. The
+<code>CACHE_SCHEMA_VERSION</code> constant at the top of the
+      script is an explicit global invalidation knob for changes the
+      hash can't see (e.g. a new field in the sidecar JSON that
+      downstream Astro pages start depending on).
+</p> <p>
+On the next run the script restores from the cache when the hash
+      matches and only re-executes notebooks whose fingerprint
+      changed. CI persists the directory via <code>actions/cache</code>
+keyed on the same set of files (see the "Restore executed-notebook
+      cache" step in
+<code><a href="https://github.com/QuEraComputing/ppvm/blob/main/.github/workflows/docs.yml">.github/workflows/docs.yml</a></code>),
+      so a docs-only PR that touches only <code>.astro</code> or
+<code>.css</code> hits the cache for every notebook and the
+      build takes seconds.
+</p> <p> <strong>What the fingerprint deliberately does <em>not</em>
+include</strong>: Rust <code>.rs</code> sources and Python
+      package sources. Hashing every workspace file would force a
+      re-execution on any cosmetic edit, which is exactly the cost we
+      want to avoid. The tradeoff is that a numerical change inside a
+      Rust crate without a dependency or Cargo.toml bump won't
+      invalidate cached notebook outputs on a docs-only PR — rely on
+      the standard test suites (<code>cargo test --workspace</code>,
+<code>pytest</code>) to catch those. (A scheduled full-rebuild
+      workflow as a second safety net would be a reasonable future
+      addition, but none exists today; bump
+<code>CACHE_SCHEMA_VERSION</code> manually if you ever need to
+      force a global re-execution.)
+</p> <p>
+Override knobs (mostly for debugging):
+</p> <ul> <li> <code>PPVM_NOTEBOOK_CACHE=0</code> — force re-execution of every
+        notebook regardless of cache state (use when investigating
+        suspected numerical drift).
+</li> <li> <code>PPVM_NOTEBOOK_CACHE_DIR=&lt;path&gt;</code> — point the
+        cache at a non-default directory (CI uses this implicitly via
+        the default <code>docs/.notebook-cache</code>; tweak only if
+        you need to share a cache across worktrees).
+</li> </ul> <p> <strong>Where to look when you need to change this.</strong>
+Adding a new notebook: drop a Jupytext file under
+<code>docs/notebooks/</code> — no extractor change needed.
+      Changing how notebooks render (sanitiser allow-list, matplotlib
+      DPI, output format): <code>docs/scripts/build-notebooks.py</code>
+— every edit to this file already invalidates the cache via the
+      fingerprint, so no version bump is needed for routine pipeline
+      tweaks. Changing the fingerprint <em>inputs</em> (e.g. another
+      lockfile becomes relevant): edit
+<code>_shared_fingerprint_files()</code> in that same script
+<em>and</em> the <code>hashFiles(...)</code> argument on the
+      cache step in <code>.github/workflows/docs.yml</code> — those
+      two lists must stay in sync (note that
+<code>docs/scripts/build-notebooks.py</code> itself appears in
+      both), otherwise the GH Actions cache key drifts from the
+      script's per-notebook key and you get either stale outputs or
+      perpetual misses. To force a global invalidation independent of
+      file content (e.g. cached-artefact schema change), bump
+<code>CACHE_SCHEMA_VERSION</code> in the script; bump the
+<code>notebooks-v1-</code> prefix in the workflow when the GH
+      Actions cache itself needs a clean slate. Changing the
+      Examples landing or per-notebook page chrome: the two
+<code>.astro</code> files under
+<code>docs/src/pages/examples/</code>.
+</p> <p>
+Local prerequisites the scripts assume: <code>node ≥ 20</code>
+(Astro 5), <code>uv</code>, Rust nightly
+      (<code>rustup toolchain install nightly</code>). The full layout
+      and rationale live in
+<code><a href="https://github.com/QuEraComputing/ppvm/blob/main/docs/README.md">docs/README.md</a></code>.
+</p> <h2 id="architecture"><span class="sec-num">§ 3</span>Architecture</h2> <p>
+ppvm implements two complementary quantum simulation backends. They
+      share a common gate / noise trait hierarchy from <code>ppvm-runtime</code>.
+</p> <h3>3.1 Pauli propagation (<code>ppvm-runtime</code>)</h3> <p>
+Tracks Pauli operator evolution through circuits in the
+<strong>Heisenberg picture</strong> (circuits run backwards). The
+      central type is <a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-sum-data-PauliSum"><code>PauliSum&lt;T: Config&gt;</code></a>,
+      a dictionary of Pauli strings to coefficients.
+</p> <p>Key design patterns &mdash; respect these when editing:</p> <ul> <li> <strong>Config-based generics.</strong> The <a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-config-Config"><code>Config</code></a> trait
+        bundles Storage, Coefficient, Strategy, Map, and BuildHasher choices
+        at compile time. Implementations live in <code>config/</code>
+(<code>fxhash</code>, <code>indexmap</code>, <code>dashmap</code>,
+<code>gxhash</code>). Do not introduce runtime dispatch where a
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-config-Config"><code>Config</code></a> bound would do.
+</li> <li> <strong>Dual-map optimisation.</strong> <a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-sum-data-PauliSum"><code>PauliSum</code></a>
+maintains two internal maps (main + auxiliary) and swaps between
+        them during gate propagation to avoid repeated allocations.
+        Any new gate that writes to a fresh map must respect this swap.
+</li> <li> <strong>Strategy pattern.</strong> Truncation policies
+        (<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-strategy-CoefficientThreshold"><code>CoefficientThreshold</code></a>,
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-strategy-MaxPauliWeight"><code>MaxPauliWeight</code></a>,
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-strategy-MaxLossWeight"><code>MaxLossWeight</code></a>,
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-strategy-CombinedStrategy"><code>CombinedStrategy</code></a>) decide
+        when small terms are dropped. Call <code>.truncate()</code> to apply.
+</li> <li> <strong>Backward propagation.</strong> Circuits run backwards. To
+        simulate <code>H(0); CNOT(0,1)</code> in the Heisenberg picture, call
+<code>state.cnot(0,1); state.h(0)</code>: the CNOT precedes the
+        Hadamard in code.
+</li> </ul> <h3>3.2 Generalized stabilizer tableau (<code>ppvm-tableau</code>)</h3> <p>
+Full state simulation using stabilizer formalism, extended to handle
+      non-Clifford gates (T, rotations) via stabilizer rank decomposition
+      with sparse coefficient tracking.
+</p> <ul> <li> <a href="/pr-preview/pr-112/api/#rs-ppvm-tableau-data-Tableau"><code>Tableau&lt;T: Config&gt;</code></a> &mdash; 2n-row stabilizer /
+        destabilizer tableau (rows <code>0..n</code> = destabilizers,
+<code>n..2n</code> = stabilizers).
+</li> <li> <a href="/pr-preview/pr-112/api/#rs-ppvm-tableau-data-GeneralizedTableau"><code>GeneralizedTableau&lt;T: Config, IndexType&gt;</code></a> &mdash;
+        extends <a href="/pr-preview/pr-112/api/#rs-ppvm-tableau-data-Tableau"><code>Tableau</code></a> with a sparse coefficient vector for
+        non-Clifford state tracking. <code>IndexType</code> can be
+<code>usize</code>, <code>u128</code>, or
+<code>bnum::types::U256</code> for large qubit counts.
+</li> <li> <a href="/pr-preview/pr-112/api/#rs-ppvm-tableau-sparsevec-SparseVector"><code>SparseVector&lt;T, I&gt;</code></a> &mdash; stores coefficients
+        indexed by bitstrings. Indices can be large integers (U256, U512,
+        U1024) for simulations beyond 64 qubits.
+</li> <li> <strong>Stim compatibility.</strong> Rust-side Stim support lives in
+<code>ppvm_stim</code> (<code>parse_extended</code>,
+<code>run_string</code>, <code>run_file</code>). Python-side Stim
+        parsing uses <code>StimProgram.parse</code> /
+<code>StimProgram.from_file</code>. Execute parsed programs with
+<code>tab.run(prog)</code> or sample many shots with
+<code>ppvm.sample_stim</code> / <code>GeneralizedTableau.sample</code>.
+</li> </ul> <h3>3.3 Trait hierarchy (<code>ppvm-runtime/src/traits/</code>)</h3> <p>Gate behaviour is defined via traits reused across both backends:</p> <ul> <li> <a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-clifford-Clifford"><code>Clifford</code></a> /
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-clifford-CliffordExtensions"><code>CliffordExtensions</code></a> &mdash;
+        single- and two-qubit Clifford gates.
+</li> <li> <a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-branch-tgate-TGate"><code>TGate</code></a>,
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-branch-rot1-RotationOne"><code>RotationOne</code></a>,
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-branch-rot2-RotationTwo"><code>RotationTwo</code></a>,
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-branch-u3-U3Gate"><code>U3Gate</code></a> &mdash;
+        non-Clifford gates (branching).
+</li> <li> <a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-measure-Measure"><code>Measure</code></a> /
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-measure-LossyMeasure"><code>LossyMeasure</code></a> &mdash;
+        Z-basis measurement.
+</li> <li> <a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-noise-Depolarizing"><code>Depolarizing</code></a>,
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-noise-PauliError"><code>PauliError</code></a>,
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-noise-LossChannel"><code>LossChannel</code></a>,
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-noise-CorrelatedLossChannel"><code>CorrelatedLossChannel</code></a> &mdash;
+        noise channels.
+</li> </ul> <h2 id="conventions"><span class="sec-num">§ 4</span>Conventions</h2> <h3>4.1 Commit messages</h3> <p>
+Use <a href="https://www.conventionalcommits.org/">Conventional Commits</a>:
+<code>&lt;type&gt;(&lt;scope&gt;): &lt;description&gt;</code>.
+</p> <pre><code>feat(tableau): add correlated loss channel
+fix(runtime): handle zero-norm in truncation
+test(stim-parser): add fast fuzz/proptest suite
+chore: restore lockfile consistency</code></pre> <h3>4.2 Code style</h3> <ul> <li>Run <code>cargo fmt --all</code> before committing Rust.</li> <li>Run <code>cargo clippy --workspace --all-targets</code>; fix or justify all warnings.</li> <li>Python is formatted with <code>ruff format</code> and linted with <code>ruff check</code>.</li> <li>Public Rust items should have doc comments; <code>cargo doc --no-deps</code> must build cleanly because the API site is built from rustdoc JSON.</li> </ul> <h3>4.3 Tests</h3> <p>
+Add tests in the same crate as the code they cover. Prefer property
+      tests (<code>proptest</code>) for parser and arithmetic changes;
+<code>stim-parser</code> already has a proptest suite worth modelling
+      new tests on.
+</p> <h2 id="python-bindings"><span class="sec-num">§ 5</span>Python bindings</h2> <p> <strong>Two-layer build.</strong> <code>ppvm-python-native</code>
+(Rust &rarr; cdylib via maturin + PyO3 0.27) is compiled automatically
+      when <code>ppvm-python</code> is installed. <code>ppvm-python</code>
+is a pure-Python wrapper using <code>uv_build</code> as its build
+      backend.
+</p> <ul> <li>Python &ge; 3.10 required (<code>.python-version</code> pins 3.12 for dev).</li> <li><code>uv</code> manages the venv, deps, and triggers the maturin build.</li> <li><code>ppvm-python/pyproject.toml</code> references <code>ppvm-python-native</code> via <code>[tool.uv.sources]</code> path dependency.</li> <li>The native module exports 16 <code>PauliSum</code> variants &times; 2 (with/without loss) + 32 <code>GeneralizedTableau</code> variants (1&ndash;32 qubits) via the <code>create_interface!</code> / <code>create_interface_range!</code> macros.</li> </ul> <p>
+When adding a new method to a Python-facing type, edit the macro
+      invocation in <code>ppvm-python-native</code> so every config variant
+      picks it up; do not hand-write methods for one variant.
+</p> <h2 id="extending"><span class="sec-num">§ 6</span>Extending ppvm</h2> <h3>Adding a new gate</h3> <ol> <li>
+Decide which trait it belongs to
+        (<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-clifford-Clifford"><code>Clifford</code></a>,
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-branch-rot1-RotationOne"><code>RotationOne</code></a>, etc.) in
+<code>ppvm-runtime/src/traits/</code>.
+</li> <li>
+Implement it for
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-sum-data-PauliSum"><code>PauliSum&lt;T: Config&gt;</code></a> in
+<code>ppvm-runtime/src/traits/&lt;trait&gt;.rs</code>.
+</li> <li>
+Implement it for <a href="/pr-preview/pr-112/api/#rs-ppvm-tableau-data-Tableau"><code>Tableau</code></a> /
+<a href="/pr-preview/pr-112/api/#rs-ppvm-tableau-data-GeneralizedTableau"><code>GeneralizedTableau</code></a> in
+<code>ppvm-tableau/src/gates/</code>.
+</li> <li>Expose it in <code>ppvm-python-native</code> through the relevant <code>create_interface!</code> macro, and wrap it in <code>ppvm-python/src/ppvm/&hellip;</code>.</li> <li>Add tests on both sides and a benchmark if it is on a hot path.</li> </ol> <h3>Adding a new noise channel</h3> <p>
+Follow the pattern of
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-noise-LossChannel"><code>LossChannel</code></a> /
+<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-traits-noise-CorrelatedLossChannel"><code>CorrelatedLossChannel</code></a>.
+      Implement the trait in <code>ppvm-runtime/src/traits/noise.rs</code>,
+      then mirror in <code>ppvm-tableau</code> if it is meaningful in the
+      tableau picture.
+</p> <h3>Adding a new <code>Config</code></h3> <p>
+Create a module under <code>ppvm-runtime/src/config/</code>, implement
+      the <a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-config-Config"><code>Config</code></a> trait, and re-export it from
+<code>config/mod.rs</code>. If it should be exposed to Python, add a
+      variant to the <code>create_interface!</code> macro call.
+</p> <h2 id="where-to-look"><span class="sec-num">§ 7</span>Where to look for X</h2> <dl class="lookup"> <dt>Pauli arithmetic, <a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-sum-data-PauliSum"><code>PauliSum</code></a></dt> <dd><code>crates/ppvm-runtime/src/sum/</code>, <code>word/</code>, <code>pattern/</code></dd> <dt>Gate &amp; noise traits</dt> <dd><code>crates/ppvm-runtime/src/traits/</code></dd> <dt>Truncation strategies (<a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-strategy-CoefficientThreshold"><code>CoefficientThreshold</code></a>, <a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-strategy-MaxPauliWeight"><code>MaxPauliWeight</code></a>, &hellip;)</dt> <dd><code>crates/ppvm-runtime/src/strategy.rs</code>, <code>traits/strategy.rs</code></dd> <dt><a href="/pr-preview/pr-112/api/#rs-ppvm-runtime-config-Config"><code>Config</code></a> implementations</dt> <dd><code>crates/ppvm-runtime/src/config/</code></dd> <dt>Stabilizer tableau core (<a href="/pr-preview/pr-112/api/#rs-ppvm-tableau-data-Tableau"><code>Tableau</code></a>, <a href="/pr-preview/pr-112/api/#rs-ppvm-tableau-data-GeneralizedTableau"><code>GeneralizedTableau</code></a>)</dt> <dd><code>crates/ppvm-tableau/src/data.rs</code>, <code>tableau_like.rs</code></dd> <dt>Tableau gates</dt> <dd><code>crates/ppvm-tableau/src/gates/</code></dd> <dt>Stim parsing</dt> <dd><code>crates/stim-parser/</code> (parser only) and <code>crates/ppvm-stim/</code> (execution)</dd> <dt>PyO3 bindings &amp; macros</dt> <dd><code>crates/ppvm-python-native/src/</code></dd> <dt>Python wrapper &amp; mixins</dt> <dd><code>ppvm-python/src/ppvm/</code></dd> <dt>Python tests</dt> <dd><code>ppvm-python/test/</code></dd> </dl> <hr class="ornament"> <p style="text-align: center; color: var(--ink-faint); font-style: italic;">
+Found something out of date? Send a PR &mdash; this guide is the canonical
+      source for both human and agent contributors.
+</p> </article>  </div> </div> </main> <script>
+        // Scroll-spy: mark the TOC link for the section currently in view.
+        // Strategy: track each section's distance from the top of the
+        // viewport and pick whichever sits closest to (but above) a small
+        // anchor line near the top, so the link flips just as a section's
+        // heading scrolls past.
+        (() => {
+          const links = Array.from(document.querySelectorAll(".page-toc [data-toc-link]"));
+          if (!links.length) return;
+
+          // Pair each link with its target heading.
+          const targets = links
+            .map((a) => {
+              const href = a.getAttribute("data-toc-link") || "";
+              const id = href.startsWith("#") ? href.slice(1) : null;
+              const el = id ? document.getElementById(id) : null;
+              return el ? { link: a, el } : null;
+            })
+            .filter(Boolean);
+          if (!targets.length) return;
+
+          const ANCHOR = 120; // px from top of viewport
+
+          function update() {
+            let activeIdx = 0;
+            for (let i = 0; i < targets.length; i++) {
+              const top = targets[i].el.getBoundingClientRect().top;
+              if (top - ANCHOR <= 0) activeIdx = i;
+              else break;
+            }
+            for (let i = 0; i < targets.length; i++) {
+              const isActive = i === activeIdx;
+              targets[i].link.setAttribute("aria-current", isActive ? "true" : "false");
+            }
+          }
+
+          update();
+          window.addEventListener("scroll", update, { passive: true });
+          window.addEventListener("resize", update);
+        })();
+      </script> <script>
+      // Mobile navigation drawer + responsive open-state for the
+      // sidebar TOCs. On wide viewports the TOCs are always open and
+      // the disclosure widget on .side-nav is visually neutralised by
+      // CSS; on narrow viewports they default to closed so the long
+      // navigation list doesn't push content below the fold.
+      (() => {
+        const mq = window.matchMedia("(min-width: 901px)");
+        const sideNavs = document.querySelectorAll("details.side-nav");
+        function syncSideNavs() {
+          for (const d of sideNavs) {
+            if (mq.matches) d.setAttribute("open", "");
+            else d.removeAttribute("open");
+          }
+        }
+        syncSideNavs();
+        mq.addEventListener("change", syncSideNavs);
+
+        const toggle = document.querySelector(".nav-toggle");
+        const nav = document.getElementById("primary-nav");
+        if (toggle && nav) {
+          function setOpen(open) {
+            toggle.setAttribute("aria-expanded", open ? "true" : "false");
+            toggle.setAttribute(
+              "aria-label",
+              open ? "Close navigation menu" : "Open navigation menu",
+            );
+            nav.toggleAttribute("data-open", open);
+          }
+          toggle.addEventListener("click", () => {
+            const open = toggle.getAttribute("aria-expanded") !== "true";
+            setOpen(open);
+          });
+          // Close after following an in-page link on mobile. Use
+          // closest("a") so this stays correct if a nav link ever
+          // wraps an icon or other inline element.
+          nav.addEventListener("click", (e) => {
+            if (e.target && e.target.closest && e.target.closest("a")) {
+              setOpen(false);
+            }
+          });
+          // Reset state when crossing the breakpoint.
+          const mqNav = window.matchMedia("(min-width: 721px)");
+          mqNav.addEventListener("change", () => setOpen(false));
+        }
+      })();
+    </script> <script>
+      // Inject a copy button into every <pre> block.
+      (() => {
+        const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+        const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+        for (const pre of document.querySelectorAll("pre")) {
+          if (pre.querySelector(".copy-btn")) continue;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "copy-btn";
+          btn.setAttribute("aria-label", "Copy code to clipboard");
+          btn.innerHTML = COPY_SVG + "<span>Copy</span>";
+          pre.appendChild(btn);
+
+          btn.addEventListener("click", async () => {
+            const code = pre.querySelector("code");
+            const text = (code ? code.innerText : pre.innerText).replace(/\n$/, "");
+            try {
+              await navigator.clipboard.writeText(text);
+            } catch {
+              // Fallback for non-secure contexts.
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.style.position = "fixed";
+              ta.style.opacity = "0";
+              document.body.appendChild(ta);
+              ta.select();
+              try { document.execCommand("copy"); } catch {}
+              document.body.removeChild(ta);
+            }
+            btn.dataset.state = "copied";
+            btn.innerHTML = CHECK_SVG + "<span>Copied</span>";
+            setTimeout(() => {
+              btn.removeAttribute("data-state");
+              btn.innerHTML = COPY_SVG + "<span>Copy</span>";
+            }, 1500);
+          });
+        }
+      })();
+    </script> <script>
+      // Theme switcher: light / dark / auto, persisted in localStorage.
+      (() => {
+        const root = document.documentElement;
+        const mql = window.matchMedia("(prefers-color-scheme: dark)");
+        const buttons = document.querySelectorAll(".theme-toggle button[data-theme-set]");
+
+        function apply(pref) {
+          const resolved = pref === "auto" ? (mql.matches ? "dark" : "light") : pref;
+          root.setAttribute("data-theme", resolved);
+          root.setAttribute("data-theme-pref", pref);
+          localStorage.setItem("ppvm-theme", pref);
+          for (const b of buttons) {
+            b.setAttribute("aria-pressed", b.dataset.themeSet === pref ? "true" : "false");
+          }
+        }
+
+        const initial = localStorage.getItem("ppvm-theme") || "auto";
+        apply(initial);
+
+        for (const b of buttons) {
+          b.addEventListener("click", () => apply(b.dataset.themeSet));
+        }
+
+        mql.addEventListener("change", () => {
+          if ((localStorage.getItem("ppvm-theme") || "auto") === "auto") apply("auto");
+        });
+      })();
+    </script> <button type="button" class="back-to-top" aria-label="Back to top" hidden> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M12 19V5"></path> <path d="m5 12 7-7 7 7"></path> </svg> </button> <script>
+      // Show the back-to-top button after the reader has scrolled past
+      // ~1.2× the viewport — far enough that "scroll back up" is a real
+      // chore. Clicking smooth-scrolls to the top and (for keyboard
+      // users) returns focus to the masthead brand.
+      (() => {
+        const btn = document.querySelector(".back-to-top");
+        if (!btn) return;
+        const threshold = () => Math.max(window.innerHeight * 1.2, 600);
+        function sync() {
+          const show = window.scrollY > threshold();
+          btn.toggleAttribute("hidden", !show);
+        }
+        btn.addEventListener("click", () => {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          const brand = document.querySelector(".brand");
+          if (brand && brand.focus) brand.focus({ preventScroll: true });
+        });
+        window.addEventListener("scroll", sync, { passive: true });
+        window.addEventListener("resize", sync);
+        sync();
+      })();
+    </script> <footer class="foot"> <div class="foot-inner"> <span>PPVM · QuEra Computing · open source, Apache License 2.0</span> <span> <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
+          documentation generated <time>2026-06-09</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (typeof renderMathInElement !== "function") return;
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$",  right: "$",  display: false },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "\\[", right: "\\]", display: true },
+          ],
+          // Skip code spans and code blocks — `[7, 16]` and friends
+          // shouldn't accidentally trigger as math delimiters.
+          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+          throwOnError: false,
+        });
+      });
+    </script>  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js"></script> <script>
+      (() => {
+        if (typeof hljs === "undefined") return;
+        // Only highlight blocks that opt in via `class="language-…"`.
+        // Unhinted blocks (project trees, prompts, ASCII art) stay plain.
+        for (const el of document.querySelectorAll("pre code[class*='language-']")) {
+          hljs.highlightElement(el);
+        }
+      })();
+    </script> </body> </html>

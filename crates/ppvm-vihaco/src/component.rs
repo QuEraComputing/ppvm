@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::composite::{BackendKind, PPVMDeviceInfo};
 use crate::measurements::MeasurementEffect;
 use crate::measurements::MeasurementOutcome;
 use bitvec::view::BitView;
@@ -9,9 +10,36 @@ use eyre::{Result, eyre};
 use num::PrimInt;
 use num::complex::Complex64;
 use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
 use ppvm_tableau::prelude::*;
 use vihaco::{Effects, component, observe};
 use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
+
+/// Truncation strategy used by every `PauliSum` / `LossyPauliSum` size bucket.
+/// Coefficient-threshold pruning is always on; the Pauli-weight cap is set per
+/// run from the header (defaults to `usize::MAX` = no cap).
+type PauliSumStrategy = CombinedStrategy<CoefficientThreshold, MaxPauliWeight>;
+
+/// `PauliSum<T>`'s `T` for the lossless backend: `[u8; N]` storage, fx hash,
+/// f64 coefficients, the strategy above.
+type PauliSumConfig<const N: usize> = ByteFxHashF64<N, PauliSumStrategy>;
+
+/// Same as `PauliSumConfig` but with `LossyPauliWord` as the word type, so the
+/// loss-channel methods are dispatchable on the resulting `PauliSum<T>`.
+/// `LossyPauliWord`'s second type parameter (hasher) defaults to
+/// `fxhash::FxBuildHasher`, matching `ByteFxHashF64`'s internal hasher.
+type LossyPauliSumConfig<const N: usize> =
+    ByteFxHashF64<N, PauliSumStrategy, LossyPauliWord<[u8; N]>>;
+
+/// Build a `PauliSumStrategy` value from a `PPVMDeviceInfo`. Pulled out so the
+/// six size-bucket constructors don't each repeat the strategy spelling.
+fn paulisum_strategy(info: &PPVMDeviceInfo) -> PauliSumStrategy {
+    CombinedStrategy(
+        CoefficientThreshold(info.coefficient_threshold),
+        MaxPauliWeight(info.max_pauli_weight.unwrap_or(usize::MAX)),
+    )
+}
 
 macro_rules! batch_for {
     ($tab:expr, $method:ident, $addrs:expr) => {
@@ -216,7 +244,101 @@ where
     }
 }
 
-pub enum Circuit {
+/// PauliSum-backed executor (Heisenberg picture). Holds a `PauliSum<T>` and
+/// answers the same `CircuitInstruction` vocabulary as `CircuitExecutor`, but
+/// without measurement / reset support.
+///
+/// Skeleton only — `execute_instruction` is a no-op until Task 5 fills in the
+/// gate-dispatch table per the plan's Gate Support Matrix. Not yet wired into
+/// the `Circuit` enum (that happens in Task 4).
+pub struct PauliSumExecutor<T: Config<Coeff = f64>> {
+    pub state: PauliSum<T>,
+}
+
+#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
+impl<T> PauliSumExecutor<T>
+where
+    T: Config<Coeff = f64>,
+{
+    fn execute(
+        &mut self,
+        inst: CircuitInstruction,
+        msg: CircuitMessage,
+    ) -> Result<Effects<MeasurementEffect>> {
+        self.execute_instruction(&inst, &msg)
+    }
+
+    fn execute_instruction(
+        &mut self,
+        inst: &CircuitInstruction,
+        msg: &CircuitMessage,
+    ) -> Result<Effects<MeasurementEffect>> {
+        let _ = (inst, msg, &mut self.state);
+        // TODO(Task 5): dispatch (inst, msg) onto self.state per the Gate
+        // Support Matrix; reject Measure / Reset / Loss / CorrelatedLoss with
+        // a clear "not supported on PauliSum backend" error.
+        Ok(Effects::None)
+    }
+}
+
+impl<T> vihaco::Reset for PauliSumExecutor<T>
+where
+    T: Config<Coeff = f64>,
+{
+    fn reset(&mut self) {
+        // TODO(Task 5/6): rebuild self.state from the seeded observable.
+    }
+}
+
+/// LossyPauliSum-backed executor. Same shape as `PauliSumExecutor`; the
+/// distinction lives at the dispatch level (this executor accepts `Loss` /
+/// `CorrelatedLoss`) and at the concrete `T` used by the enclosing
+/// `Circuit::LossyPauliSum` variant (a Config whose `PauliWordType` is
+/// `LossyPauliWord`, picked in Task 4).
+///
+/// Skeleton only — Task 5 fills in the dispatch.
+pub struct LossyPauliSumExecutor<T: Config<Coeff = f64>> {
+    pub state: PauliSum<T>,
+}
+
+#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
+impl<T> LossyPauliSumExecutor<T>
+where
+    T: Config<Coeff = f64>,
+{
+    fn execute(
+        &mut self,
+        inst: CircuitInstruction,
+        msg: CircuitMessage,
+    ) -> Result<Effects<MeasurementEffect>> {
+        self.execute_instruction(&inst, &msg)
+    }
+
+    fn execute_instruction(
+        &mut self,
+        inst: &CircuitInstruction,
+        msg: &CircuitMessage,
+    ) -> Result<Effects<MeasurementEffect>> {
+        let _ = (inst, msg, &mut self.state);
+        // TODO(Task 5): dispatch (inst, msg) onto self.state per the Gate
+        // Support Matrix; reject Measure / Reset with a clear "not supported
+        // on LossyPauliSum backend" error.
+        Ok(Effects::None)
+    }
+}
+
+impl<T> vihaco::Reset for LossyPauliSumExecutor<T>
+where
+    T: Config<Coeff = f64>,
+{
+    fn reset(&mut self) {
+        // TODO(Task 5/6): rebuild self.state from the seeded observable.
+    }
+}
+
+/// Tableau-backed inner enum (Schrödinger picture). Carries the six
+/// size-bucketed `CircuitExecutor` variants; bucket is picked from `n_qubits`.
+pub enum TableauCircuit {
     Bits64(CircuitExecutor<Byte8F64<1>, usize, Vec<(Complex64, usize)>>),
     Bits128(CircuitExecutor<Byte8F64<2>, u128, Vec<(Complex64, u128)>>),
     Bits256(CircuitExecutor<Byte8F64<4>, U256, Vec<(Complex64, U256)>>),
@@ -225,8 +347,7 @@ pub enum Circuit {
     Bits2048(CircuitExecutor<Byte8F64<32>, U2048, Vec<(Complex64, U2048)>>),
 }
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
-impl Circuit {
+impl TableauCircuit {
     pub fn new(n_qubits: usize, coefficient_threshold: f64) -> Self {
         if n_qubits <= 64 {
             let tab = GeneralizedTableau::new(n_qubits, coefficient_threshold);
@@ -251,8 +372,8 @@ impl Circuit {
         }
     }
 
-    /// Same as [`Circuit::new`], but seed the RNG deterministically so a shot
-    /// is reproducible.
+    /// Same as [`TableauCircuit::new`], but seed the RNG deterministically so a
+    /// shot is reproducible.
     pub fn new_with_seed(n_qubits: usize, coefficient_threshold: f64, seed: u64) -> Self {
         macro_rules! seeded {
             ($variant:ident) => {{
@@ -277,12 +398,86 @@ impl Circuit {
         }
     }
 
-    fn execute(
+    fn execute_instruction(
         &mut self,
-        inst: CircuitInstruction,
-        msg: CircuitMessage,
+        inst: &CircuitInstruction,
+        msg: &CircuitMessage,
     ) -> Result<Effects<MeasurementEffect>> {
-        self.execute_instruction(&inst, &msg)
+        match self {
+            Self::Bits64(ex) => ex.execute_instruction(inst, msg),
+            Self::Bits128(ex) => ex.execute_instruction(inst, msg),
+            Self::Bits256(ex) => ex.execute_instruction(inst, msg),
+            Self::Bits512(ex) => ex.execute_instruction(inst, msg),
+            Self::Bits1024(ex) => ex.execute_instruction(inst, msg),
+            Self::Bits2048(ex) => ex.execute_instruction(inst, msg),
+        }
+    }
+
+    pub fn state_string(&self) -> String {
+        match self {
+            Self::Bits64(ex) => ex.tab.to_string(),
+            Self::Bits128(ex) => ex.tab.to_string(),
+            Self::Bits256(ex) => ex.tab.to_string(),
+            Self::Bits512(ex) => ex.tab.to_string(),
+            Self::Bits1024(ex) => ex.tab.to_string(),
+            Self::Bits2048(ex) => ex.tab.to_string(),
+        }
+    }
+}
+
+impl vihaco::Reset for TableauCircuit {
+    fn reset(&mut self) {
+        match self {
+            Self::Bits64(ex) => ex.reset(),
+            Self::Bits128(ex) => ex.reset(),
+            Self::Bits256(ex) => ex.reset(),
+            Self::Bits512(ex) => ex.reset(),
+            Self::Bits1024(ex) => ex.reset(),
+            Self::Bits2048(ex) => ex.reset(),
+        };
+    }
+}
+
+/// PauliSum-backed inner enum (Heisenberg picture). Per Decision 7 of the plan,
+/// the size buckets carry `[u8; N]`-storage `ByteFxHashF64` configs (N = 8, 16,
+/// …, 256) rather than the tableau's `[u64; N]` configs; bucket labels match
+/// the semantic qubit count (`Bits64` = 64 qubits) so the outer enum's dispatch
+/// is uniform across backends.
+pub enum PauliSumCircuit {
+    Bits64(PauliSumExecutor<PauliSumConfig<8>>),
+    Bits128(PauliSumExecutor<PauliSumConfig<16>>),
+    Bits256(PauliSumExecutor<PauliSumConfig<32>>),
+    Bits512(PauliSumExecutor<PauliSumConfig<64>>),
+    Bits1024(PauliSumExecutor<PauliSumConfig<128>>),
+    Bits2048(PauliSumExecutor<PauliSumConfig<256>>),
+}
+
+impl PauliSumCircuit {
+    pub fn new(info: &PPVMDeviceInfo) -> Self {
+        macro_rules! build {
+            ($variant:ident, $N:literal) => {{
+                let state = PauliSum::<PauliSumConfig<$N>>::builder()
+                    .n_qubits(info.n_qubits)
+                    .strategy(paulisum_strategy(info))
+                    .build();
+                Self::$variant(PauliSumExecutor { state })
+            }};
+        }
+        if info.n_qubits <= 64 {
+            build!(Bits64, 8)
+        } else if info.n_qubits <= 128 {
+            build!(Bits128, 16)
+        } else if info.n_qubits <= 256 {
+            build!(Bits256, 32)
+        } else if info.n_qubits <= 512 {
+            build!(Bits512, 64)
+        } else if info.n_qubits <= 1024 {
+            build!(Bits1024, 128)
+        } else if info.n_qubits <= 2048 {
+            build!(Bits2048, 256)
+        } else {
+            panic!("No matching PauliSum executor for {} qubits", info.n_qubits);
+        }
     }
 
     fn execute_instruction(
@@ -300,16 +495,176 @@ impl Circuit {
         }
     }
 
-    /// Render the current tableau / Pauli state, dispatching across the executor
-    /// size variants. Used by the REPL's `show` command.
     pub fn state_string(&self) -> String {
         match self {
-            Self::Bits64(ex) => ex.tab.to_string(),
-            Self::Bits128(ex) => ex.tab.to_string(),
-            Self::Bits256(ex) => ex.tab.to_string(),
-            Self::Bits512(ex) => ex.tab.to_string(),
-            Self::Bits1024(ex) => ex.tab.to_string(),
-            Self::Bits2048(ex) => ex.tab.to_string(),
+            Self::Bits64(ex) => ex.state.to_string(),
+            Self::Bits128(ex) => ex.state.to_string(),
+            Self::Bits256(ex) => ex.state.to_string(),
+            Self::Bits512(ex) => ex.state.to_string(),
+            Self::Bits1024(ex) => ex.state.to_string(),
+            Self::Bits2048(ex) => ex.state.to_string(),
+        }
+    }
+}
+
+impl vihaco::Reset for PauliSumCircuit {
+    fn reset(&mut self) {
+        match self {
+            Self::Bits64(ex) => ex.reset(),
+            Self::Bits128(ex) => ex.reset(),
+            Self::Bits256(ex) => ex.reset(),
+            Self::Bits512(ex) => ex.reset(),
+            Self::Bits1024(ex) => ex.reset(),
+            Self::Bits2048(ex) => ex.reset(),
+        };
+    }
+}
+
+/// LossyPauliSum-backed inner enum. Identical shape to [`PauliSumCircuit`]
+/// but with `LossyPauliWord`-keyed configs so loss-channel methods dispatch.
+pub enum LossyPauliSumCircuit {
+    Bits64(LossyPauliSumExecutor<LossyPauliSumConfig<8>>),
+    Bits128(LossyPauliSumExecutor<LossyPauliSumConfig<16>>),
+    Bits256(LossyPauliSumExecutor<LossyPauliSumConfig<32>>),
+    Bits512(LossyPauliSumExecutor<LossyPauliSumConfig<64>>),
+    Bits1024(LossyPauliSumExecutor<LossyPauliSumConfig<128>>),
+    Bits2048(LossyPauliSumExecutor<LossyPauliSumConfig<256>>),
+}
+
+impl LossyPauliSumCircuit {
+    pub fn new(info: &PPVMDeviceInfo) -> Self {
+        macro_rules! build {
+            ($variant:ident, $N:literal) => {{
+                let state = PauliSum::<LossyPauliSumConfig<$N>>::builder()
+                    .n_qubits(info.n_qubits)
+                    .strategy(paulisum_strategy(info))
+                    .build();
+                Self::$variant(LossyPauliSumExecutor { state })
+            }};
+        }
+        if info.n_qubits <= 64 {
+            build!(Bits64, 8)
+        } else if info.n_qubits <= 128 {
+            build!(Bits128, 16)
+        } else if info.n_qubits <= 256 {
+            build!(Bits256, 32)
+        } else if info.n_qubits <= 512 {
+            build!(Bits512, 64)
+        } else if info.n_qubits <= 1024 {
+            build!(Bits1024, 128)
+        } else if info.n_qubits <= 2048 {
+            build!(Bits2048, 256)
+        } else {
+            panic!(
+                "No matching LossyPauliSum executor for {} qubits",
+                info.n_qubits
+            );
+        }
+    }
+
+    fn execute_instruction(
+        &mut self,
+        inst: &CircuitInstruction,
+        msg: &CircuitMessage,
+    ) -> Result<Effects<MeasurementEffect>> {
+        match self {
+            Self::Bits64(ex) => ex.execute_instruction(inst, msg),
+            Self::Bits128(ex) => ex.execute_instruction(inst, msg),
+            Self::Bits256(ex) => ex.execute_instruction(inst, msg),
+            Self::Bits512(ex) => ex.execute_instruction(inst, msg),
+            Self::Bits1024(ex) => ex.execute_instruction(inst, msg),
+            Self::Bits2048(ex) => ex.execute_instruction(inst, msg),
+        }
+    }
+
+    pub fn state_string(&self) -> String {
+        match self {
+            Self::Bits64(ex) => ex.state.to_string(),
+            Self::Bits128(ex) => ex.state.to_string(),
+            Self::Bits256(ex) => ex.state.to_string(),
+            Self::Bits512(ex) => ex.state.to_string(),
+            Self::Bits1024(ex) => ex.state.to_string(),
+            Self::Bits2048(ex) => ex.state.to_string(),
+        }
+    }
+}
+
+impl vihaco::Reset for LossyPauliSumCircuit {
+    fn reset(&mut self) {
+        match self {
+            Self::Bits64(ex) => ex.reset(),
+            Self::Bits128(ex) => ex.reset(),
+            Self::Bits256(ex) => ex.reset(),
+            Self::Bits512(ex) => ex.reset(),
+            Self::Bits1024(ex) => ex.reset(),
+            Self::Bits2048(ex) => ex.reset(),
+        };
+    }
+}
+
+/// Outer `Circuit` enum: backend selector. Picks one of the three inner enums
+/// based on `info.backend` at construction time; from there, every per-step
+/// call routes outer → inner → executor.
+pub enum Circuit {
+    Tableau(TableauCircuit),
+    PauliSum(PauliSumCircuit),
+    LossyPauliSum(LossyPauliSumCircuit),
+}
+
+#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = MeasurementEffect)]
+impl Circuit {
+    pub fn new(info: &PPVMDeviceInfo) -> Self {
+        match info.backend {
+            BackendKind::Tableau => Self::Tableau(TableauCircuit::new(
+                info.n_qubits,
+                info.coefficient_threshold,
+            )),
+            BackendKind::PauliSum => Self::PauliSum(PauliSumCircuit::new(info)),
+            BackendKind::LossyPauliSum => Self::LossyPauliSum(LossyPauliSumCircuit::new(info)),
+        }
+    }
+
+    /// Same as [`Circuit::new`], but seed the RNG deterministically so a shot
+    /// is reproducible. PauliSum / LossyPauliSum are deterministic — the seed
+    /// is accepted but ignored on those backends.
+    pub fn new_with_seed(info: &PPVMDeviceInfo, seed: u64) -> Self {
+        match info.backend {
+            BackendKind::Tableau => Self::Tableau(TableauCircuit::new_with_seed(
+                info.n_qubits,
+                info.coefficient_threshold,
+                seed,
+            )),
+            BackendKind::PauliSum => Self::PauliSum(PauliSumCircuit::new(info)),
+            BackendKind::LossyPauliSum => Self::LossyPauliSum(LossyPauliSumCircuit::new(info)),
+        }
+    }
+
+    fn execute(
+        &mut self,
+        inst: CircuitInstruction,
+        msg: CircuitMessage,
+    ) -> Result<Effects<MeasurementEffect>> {
+        self.execute_instruction(&inst, &msg)
+    }
+
+    fn execute_instruction(
+        &mut self,
+        inst: &CircuitInstruction,
+        msg: &CircuitMessage,
+    ) -> Result<Effects<MeasurementEffect>> {
+        match self {
+            Self::Tableau(c) => c.execute_instruction(inst, msg),
+            Self::PauliSum(c) => c.execute_instruction(inst, msg),
+            Self::LossyPauliSum(c) => c.execute_instruction(inst, msg),
+        }
+    }
+
+    /// Render the current state. Used by the REPL's `show` command.
+    pub fn state_string(&self) -> String {
+        match self {
+            Self::Tableau(c) => c.state_string(),
+            Self::PauliSum(c) => c.state_string(),
+            Self::LossyPauliSum(c) => c.state_string(),
         }
     }
 }
@@ -327,18 +682,15 @@ impl Circuit {
 impl vihaco::Reset for Circuit {
     fn reset(&mut self) {
         match self {
-            Self::Bits64(ex) => ex.reset(),
-            Self::Bits128(ex) => ex.reset(),
-            Self::Bits256(ex) => ex.reset(),
-            Self::Bits512(ex) => ex.reset(),
-            Self::Bits1024(ex) => ex.reset(),
-            Self::Bits2048(ex) => ex.reset(),
+            Self::Tableau(c) => c.reset(),
+            Self::PauliSum(c) => c.reset(),
+            Self::LossyPauliSum(c) => c.reset(),
         };
     }
 }
 
 impl Default for Circuit {
     fn default() -> Self {
-        Self::new(0, 1e-10)
+        Self::new(&PPVMDeviceInfo::default())
     }
 }

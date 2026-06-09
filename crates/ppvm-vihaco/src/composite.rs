@@ -13,6 +13,8 @@ use vihaco_cpu::{CPU, CPUMessage};
 pub use vihaco_cpu::StepOutcome;
 
 use crate::component::Circuit;
+#[cfg(test)]
+use crate::component::TableauCircuit;
 use crate::measurements::{MeasurementEffect, MeasurementObserver, MeasurementResult};
 use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
 
@@ -276,8 +278,8 @@ impl PPVM {
             return Err(eyre::eyre!("device circuit.n_qubits must be declared"));
         }
         self.circuit = match seed {
-            Some(seed) => Circuit::new_with_seed(info.n_qubits, info.coefficient_threshold, seed),
-            None => Circuit::new(info.n_qubits, info.coefficient_threshold),
+            Some(seed) => Circuit::new_with_seed(info, seed),
+            None => Circuit::new(info),
         };
 
         // push entry frame
@@ -620,29 +622,32 @@ mod tests {
         }
 
         let num_coefficients = match &machine.circuit {
-            Circuit::Bits64(ex) => {
+            Circuit::Tableau(TableauCircuit::Bits64(ex)) => {
                 println!("{}", ex.tab);
                 ex.tab.coefficients.len()
             }
-            Circuit::Bits128(ex) => {
+            Circuit::Tableau(TableauCircuit::Bits128(ex)) => {
                 println!("{}", ex.tab);
                 ex.tab.coefficients.len()
             }
-            Circuit::Bits256(ex) => {
+            Circuit::Tableau(TableauCircuit::Bits256(ex)) => {
                 println!("{}", ex.tab);
                 ex.tab.coefficients.len()
             }
-            Circuit::Bits512(ex) => {
+            Circuit::Tableau(TableauCircuit::Bits512(ex)) => {
                 println!("{}", ex.tab);
                 ex.tab.coefficients.len()
             }
-            Circuit::Bits1024(ex) => {
+            Circuit::Tableau(TableauCircuit::Bits1024(ex)) => {
                 println!("{}", ex.tab);
                 ex.tab.coefficients.len()
             }
-            Circuit::Bits2048(ex) => {
+            Circuit::Tableau(TableauCircuit::Bits2048(ex)) => {
                 println!("{}", ex.tab);
                 ex.tab.coefficients.len()
+            }
+            Circuit::PauliSum(_) | Circuit::LossyPauliSum(_) => {
+                panic!("test expects the default Tableau backend, got a PauliSum variant");
             }
         };
 

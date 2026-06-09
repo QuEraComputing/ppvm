@@ -12,7 +12,9 @@ preserves the historical behaviour.
 
 import math
 
-from ppvm import PauliSum
+import pytest
+
+from ppvm import GeneralizedTableau, PauliSum
 
 
 def _total_z(ps: PauliSum, n: int) -> float:
@@ -175,3 +177,55 @@ def test_noise_channels_accept_truncate_kwarg():
     for q in range(n):
         ps_ref.pauli_error(q, [0.0, 0.0, p_z])
     assert dict(ps.terms) == dict(ps_ref.terms)
+
+
+# =============================================================================
+# The `truncate` kwarg is a PauliSum-only feature. The generalized stabilizer
+# tableau is an exact representation with no per-gate truncation, so its gates
+# do not accept the kwarg.
+# =============================================================================
+
+
+def test_pauli_sum_gates_accept_truncate_kwarg():
+    """Every truncating gate on ``PauliSum`` accepts ``truncate=`` and the
+    Clifford gates are a no-op so far as the kwarg's effect goes."""
+    ps = PauliSum.new(2, "ZZ", min_abs_coeff=1e-10)
+    ps.x(0, truncate=False)
+    ps.cnot(0, 1, truncate=True)
+    ps.rx(0, 0.3, truncate=False)
+    ps.rxx(0, 1, 0.2, truncate=False)
+    ps.depolarize(0, 1e-3, truncate=False)
+    ps.truncate()
+
+
+def test_generalized_tableau_gates_reject_truncate_kwarg():
+    """The tableau backend exposes the same gate names without ``truncate``.
+
+    Passing it is a ``TypeError`` rather than a silently-ignored no-op, so the
+    kwarg cannot be mistaken for having an effect on the tableau.
+    """
+    tab = GeneralizedTableau(n_qubits=2)
+    for call in (
+        lambda: tab.x(0, truncate=False),
+        lambda: tab.cnot(0, 1, truncate=True),
+        lambda: tab.rx(0, 0.3, truncate=False),
+        lambda: tab.rxx(0, 1, 0.2, truncate=False),
+        lambda: tab.depolarize(0, 1e-3, truncate=False),
+    ):
+        with pytest.raises(TypeError):
+            call()
+
+
+def test_generalized_tableau_gates_still_work_without_kwarg():
+    """The plain gate calls (no ``truncate``) keep working on the tableau."""
+    # Non-Clifford / noise gates run without error.
+    tab = GeneralizedTableau(n_qubits=2)
+    tab.rx(0, 0.3)
+    tab.rxx(0, 1, 0.2)
+    tab.depolarize(0, 1e-3)
+
+    # A Bell pair still yields correlated measurements.
+    bell = GeneralizedTableau(n_qubits=2)
+    bell.h(0)
+    bell.cnot(0, 1)
+    assert bell.measure(0) == bell.measure(1)

@@ -12,7 +12,7 @@ End-to-end Jupyter notebooks executed at build time, with stdout,
         is also a runnable Jupytext <code>.py</code> file in the repo —
         the "Source" link below opens it on GitHub at the commit that
         produced this page.
-</p> </div> <ul class="examples-list"> <li> <a class="examples-title" href="/examples/msd">Magic State Distillation with the Generalized Stabilizer Tableau</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/55a66ca39a1398d6281c7d3162bc01e1211edaa3/docs/notebooks/msd.py">docs/notebooks/msd.py</a> </p> </li><li> <a class="examples-title" href="/examples/nearest-neighbor-dephasing">Dephased Nearest-Neighbour XY Chain</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/55a66ca39a1398d6281c7d3162bc01e1211edaa3/docs/notebooks/nearest_neighbor_dephasing.py">docs/notebooks/nearest_neighbor_dephasing.py</a> </p> </li><li> <a class="examples-title" href="/examples/trotter">Trotterized Time Evolution of the XZZ Ising Chain</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/55a66ca39a1398d6281c7d3162bc01e1211edaa3/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a> </p> </li> </ul> </article>  </main>  <script>
+</p> </div> <ul class="examples-list"> <li> <a class="examples-title" href="/examples/msd">Magic State Distillation with the Generalized Stabilizer Tableau</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/2fca819db8d11a4fafa56b7b54469c6a40005011/docs/notebooks/msd.py">docs/notebooks/msd.py</a> </p> </li><li> <a class="examples-title" href="/examples/nearest-neighbor-dephasing">Dephased Nearest-Neighbour XY Chain</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/2fca819db8d11a4fafa56b7b54469c6a40005011/docs/notebooks/nearest_neighbor_dephasing.py">docs/notebooks/nearest_neighbor_dephasing.py</a> </p> </li><li> <a class="examples-title" href="/examples/trotter">Trotterized Time Evolution of the XZZ Ising Chain</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/2fca819db8d11a4fafa56b7b54469c6a40005011/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a> </p> </li> </ul> </article>  </main>  <script>
       // Mobile navigation drawer + responsive open-state for the
       // sidebar TOCs. On wide viewports the TOCs are always open and
       // the disclosure widget on .side-nav is visually neutralised by
@@ -74,8 +74,19 @@ End-to-end Jupyter notebooks executed at build time, with stdout,
           pre.appendChild(btn);
 
           btn.addEventListener("click", async () => {
+            // nbconvert-rendered cells have no <code> inside <pre>, so we'd
+            // fall back to pre.innerText — which includes this button's
+            // "Copy" label. Strip copy buttons from a clone before reading.
             const code = pre.querySelector("code");
-            const text = (code ? code.innerText : pre.innerText).replace(/\n$/, "");
+            let raw;
+            if (code) {
+              raw = code.innerText;
+            } else {
+              const clone = pre.cloneNode(true);
+              for (const el of clone.querySelectorAll(".copy-btn")) el.remove();
+              raw = clone.innerText;
+            }
+            const text = raw.replace(/\n$/, "");
             try {
               await navigator.clipboard.writeText(text);
             } catch {

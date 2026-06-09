@@ -157,8 +157,19 @@ Stim is convenient when you already have a circuit description in
           pre.appendChild(btn);
 
           btn.addEventListener("click", async () => {
+            // nbconvert-rendered cells have no <code> inside <pre>, so we'd
+            // fall back to pre.innerText — which includes this button's
+            // "Copy" label. Strip copy buttons from a clone before reading.
             const code = pre.querySelector("code");
-            const text = (code ? code.innerText : pre.innerText).replace(/\n$/, "");
+            let raw;
+            if (code) {
+              raw = code.innerText;
+            } else {
+              const clone = pre.cloneNode(true);
+              for (const el of clone.querySelectorAll(".copy-btn")) el.remove();
+              raw = clone.innerText;
+            }
+            const text = raw.replace(/\n$/, "");
             try {
               await navigator.clipboard.writeText(text);
             } catch {

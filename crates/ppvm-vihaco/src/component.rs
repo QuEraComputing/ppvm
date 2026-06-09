@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::composite::{BackendKind, PPVMDeviceInfo};
+use crate::composite::PPVMDeviceInfo;
 use crate::measurements::{
     CircuitOutcomeEffect, MeasurementEffect, MeasurementOutcome, TraceEffect,
 };
@@ -729,13 +729,17 @@ pub enum PauliSumCircuit {
 }
 
 impl PauliSumCircuit {
-    pub fn new(info: &PPVMDeviceInfo) -> Self {
+    /// Build a PauliSum-backed circuit, seeding `state += (observable, 1.0)`.
+    /// `observable` must already be validated against `info.n_qubits` (use
+    /// [`validate_single_pauli_observable`] at the boundary).
+    pub fn new(info: &PPVMDeviceInfo, observable: &str) -> Self {
         macro_rules! build {
             ($variant:ident, $N:literal) => {{
-                let state = PauliSum::<PauliSumConfig<$N>>::builder()
+                let mut state = PauliSum::<PauliSumConfig<$N>>::builder()
                     .n_qubits(info.n_qubits)
                     .strategy(paulisum_strategy(info))
                     .build();
+                state += (observable, 1.0);
                 Self::$variant(PauliSumExecutor { state })
             }};
         }
@@ -808,13 +812,16 @@ pub enum LossyPauliSumCircuit {
 }
 
 impl LossyPauliSumCircuit {
-    pub fn new(info: &PPVMDeviceInfo) -> Self {
+    /// Build a LossyPauliSum-backed circuit, seeding `state += (observable,
+    /// 1.0)`. `observable` must already be validated against `info.n_qubits`.
+    pub fn new(info: &PPVMDeviceInfo, observable: &str) -> Self {
         macro_rules! build {
             ($variant:ident, $N:literal) => {{
-                let state = PauliSum::<LossyPauliSumConfig<$N>>::builder()
+                let mut state = PauliSum::<LossyPauliSumConfig<$N>>::builder()
                     .n_qubits(info.n_qubits)
                     .strategy(paulisum_strategy(info))
                     .build();
+                state += (observable, 1.0);
                 Self::$variant(LossyPauliSumExecutor { state })
             }};
         }
@@ -889,30 +896,37 @@ pub enum Circuit {
 
 #[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
 impl Circuit {
-    pub fn new(info: &PPVMDeviceInfo) -> Self {
-        match info.backend {
-            BackendKind::Tableau => Self::Tableau(TableauCircuit::new(
-                info.n_qubits,
-                info.coefficient_threshold,
-            )),
-            BackendKind::PauliSum => Self::PauliSum(PauliSumCircuit::new(info)),
-            BackendKind::LossyPauliSum => Self::LossyPauliSum(LossyPauliSumCircuit::new(info)),
-        }
+    /// Build a Tableau-backed circuit. Tableau init only needs `n_qubits` and
+    /// `coefficient_threshold` from `info`; no observable required.
+    pub fn tableau(info: &PPVMDeviceInfo) -> Self {
+        Self::Tableau(TableauCircuit::new(
+            info.n_qubits,
+            info.coefficient_threshold,
+        ))
     }
 
-    /// Same as [`Circuit::new`], but seed the RNG deterministically so a shot
-    /// is reproducible. PauliSum / LossyPauliSum are deterministic — the seed
-    /// is accepted but ignored on those backends.
-    pub fn new_with_seed(info: &PPVMDeviceInfo, seed: u64) -> Self {
-        match info.backend {
-            BackendKind::Tableau => Self::Tableau(TableauCircuit::new_with_seed(
-                info.n_qubits,
-                info.coefficient_threshold,
-                seed,
-            )),
-            BackendKind::PauliSum => Self::PauliSum(PauliSumCircuit::new(info)),
-            BackendKind::LossyPauliSum => Self::LossyPauliSum(LossyPauliSumCircuit::new(info)),
-        }
+    /// Same as [`Circuit::tableau`], but seed the tableau RNG deterministically
+    /// so a shot is reproducible.
+    pub fn tableau_with_seed(info: &PPVMDeviceInfo, seed: u64) -> Self {
+        Self::Tableau(TableauCircuit::new_with_seed(
+            info.n_qubits,
+            info.coefficient_threshold,
+            seed,
+        ))
+    }
+
+    /// Build a PauliSum-backed circuit, seeding the state with `(observable,
+    /// 1.0)`. `observable` must already be validated against `info.n_qubits`
+    /// (see [`validate_single_pauli_observable`]); passing invalid input
+    /// results in a panic from the underlying word parser.
+    pub fn paulisum(info: &PPVMDeviceInfo, observable: &str) -> Self {
+        Self::PauliSum(PauliSumCircuit::new(info, observable))
+    }
+
+    /// Build a LossyPauliSum-backed circuit. Same contract as
+    /// [`Circuit::paulisum`].
+    pub fn lossy_paulisum(info: &PPVMDeviceInfo, observable: &str) -> Self {
+        Self::LossyPauliSum(LossyPauliSumCircuit::new(info, observable))
     }
 
     fn execute(
@@ -967,6 +981,7 @@ impl vihaco::Reset for Circuit {
 
 impl Default for Circuit {
     fn default() -> Self {
-        Self::new(&PPVMDeviceInfo::default())
+        // Default backend is Tableau, which doesn't require an observable.
+        Self::tableau(&PPVMDeviceInfo::default())
     }
 }

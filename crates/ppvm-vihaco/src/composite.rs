@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use eyre::{Result, eyre};
 use vihaco::frame::Frame;
 use vihaco::machine::StackFrame;
 use vihaco::observer::stdio::{StdoutEffect, StdoutObserver};
@@ -317,9 +318,17 @@ impl PPVM {
         if info.n_qubits == 0 {
             return Err(eyre::eyre!("device circuit.n_qubits must be declared"));
         }
-        self.circuit = match seed {
-            Some(seed) => Circuit::new_with_seed(info, seed),
-            None => Circuit::new(info),
+        self.circuit = match (info.backend, seed) {
+            (BackendKind::Tableau, None) => Circuit::tableau(info),
+            (BackendKind::Tableau, Some(seed)) => Circuit::tableau_with_seed(info, seed),
+            (BackendKind::PauliSum, _) => {
+                let observable = validate_single_pauli_observable(info)?;
+                Circuit::paulisum(info, observable)
+            }
+            (BackendKind::LossyPauliSum, _) => {
+                let observable = validate_single_pauli_observable(info)?;
+                Circuit::lossy_paulisum(info, observable)
+            }
         };
 
         // push entry frame
@@ -623,6 +632,35 @@ impl vihaco::Reset for PPVM {
         self.measurement_record.record.clear();
         self.trace_record.record.clear();
     }
+}
+
+/// Validate a single-Pauli-word observable header against `info.n_qubits` and
+/// return the string slice for seeding. Phase 2 accepts dense words built from
+/// `I`, `X`, `Y`, `Z` of length exactly `n_qubits`; Phase 3 (Task 11) replaces
+/// this with the multi-term sum parser.
+fn validate_single_pauli_observable(info: &PPVMDeviceInfo) -> Result<&str> {
+    let observable = info.observable.as_deref().ok_or_else(|| {
+        eyre!(
+            "the {:?} backend requires `device circuit.observable` to be set",
+            info.backend
+        )
+    })?;
+    let len = observable.chars().count();
+    if len != info.n_qubits {
+        return Err(eyre!(
+            "observable length {len} does not match circuit.n_qubits {}",
+            info.n_qubits
+        ));
+    }
+    if let Some(bad) = observable
+        .chars()
+        .find(|c| !matches!(c, 'I' | 'X' | 'Y' | 'Z'))
+    {
+        return Err(eyre!(
+            "observable contains invalid Pauli character `{bad}`; Phase 2 accepts only I/X/Y/Z (multi-term sums land in Phase 3)"
+        ));
+    }
+    Ok(observable)
 }
 
 #[cfg(test)]
@@ -1104,11 +1142,12 @@ mod tests {
     #[test]
     fn paulisum_truncate_runs_without_error() -> eyre::Result<()> {
         // Smoke test: a `gate truncate` reaches the PauliSum executor's
-        // Truncate arm and calls `state.truncate()`. No observer effect, no
-        // stack changes — the test passes if init + step_once both succeed.
+        // Truncate arm and calls `state.truncate()`. Task 8 makes the
+        // observable mandatory for PauliSum init, so seed `Z` here.
         let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::PauliSum;
+        module.extra.observable = Some("Z".to_string());
         module
             .code
             .push(PPVMInstruction::Circuit(CircuitInstruction::Truncate));
@@ -1122,14 +1161,13 @@ mod tests {
 
     #[test]
     fn paulisum_trace_populates_trace_record() -> eyre::Result<()> {
-        // End-to-end smoke test for Task 7: a `gate trace` pops a string
-        // operand, parses it as a PauliPattern, computes the trace, emits a
-        // TraceEffect, and the value lands in both `trace_record()` and the
-        // CPU stack. State is an empty PauliSum (no observable seeded — that's
-        // Task 8), so the trace should be exactly 0.0.
+        // End-to-end Trace pipeline: with the observable `Z` seeded (Task 8),
+        // tracing the `Z0` pattern picks up that one term with coefficient
+        // 1.0, so the trace should be exactly 1.0.
         let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::PauliSum;
+        module.extra.observable = Some("Z".to_string());
         // `Z0` matches a Z on qubit 0; the parser requires position anchors.
         module.strings.push("Z0".to_string());
 
@@ -1149,7 +1187,40 @@ mod tests {
             machine.step_once()?;
         }
 
-        assert_eq!(machine.trace_record(), vec![0.0]);
+        assert_eq!(machine.trace_record(), vec![1.0]);
         Ok(())
+    }
+
+    #[test]
+    fn paulisum_init_rejects_missing_observable() {
+        // Task 8 requires `device circuit.observable` for PauliSum / Lossy.
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 1;
+        module.extra.backend = BackendKind::PauliSum;
+
+        let mut machine = PPVM::default();
+        machine.load(&module).unwrap();
+        let err = machine.init().unwrap_err();
+        assert!(
+            err.to_string().contains("observable"),
+            "expected observable-related error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn paulisum_init_rejects_mismatched_observable_length() {
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 2;
+        module.extra.backend = BackendKind::PauliSum;
+        // Three letters but only two qubits — should error.
+        module.extra.observable = Some("ZZZ".to_string());
+
+        let mut machine = PPVM::default();
+        machine.load(&module).unwrap();
+        let err = machine.init().unwrap_err();
+        assert!(
+            err.to_string().contains("does not match"),
+            "expected length-mismatch error, got: {err}"
+        );
     }
 }

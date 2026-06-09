@@ -234,6 +234,20 @@ where
                 )));
             }
 
+            // Truncate is a silent no-op on the Tableau backend — the tableau's
+            // gate methods already prune via the configured coefficient
+            // threshold, so there's nothing extra to do here.
+            (Truncate, None) => {}
+
+            // Trace is not yet implemented for the Tableau backend; Phase 5
+            // (plan Task 15) adds the `⟨ψ|P|ψ⟩` primitive upstream in
+            // `ppvm-tableau` and wires it through here.
+            (Trace, _) => {
+                return Err(eyre!(
+                    "Trace is not yet implemented on the Tableau backend (Phase 5)"
+                ));
+            }
+
             // Fallback
             (inst, msg) => {
                 return Err(eyre!(

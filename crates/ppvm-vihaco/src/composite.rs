@@ -1223,4 +1223,56 @@ mod tests {
             "expected length-mismatch error, got: {err}"
         );
     }
+
+    #[test]
+    fn tableau_truncate_is_silent_no_op() -> eyre::Result<()> {
+        // Task 9: `gate truncate` on the default Tableau backend should run
+        // without error — the tableau prunes via coefficient_threshold during
+        // every gate, so the explicit Truncate instruction has nothing to do.
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 1;
+        // backend defaults to Tableau; no observable needed.
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::Truncate));
+
+        let mut machine = PPVM::default();
+        machine.load(&module)?;
+        machine.init()?;
+        machine.step_once()?;
+        // No observer effects emitted by Truncate.
+        assert!(machine.measurement_record().is_empty());
+        assert!(machine.trace_record().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn tableau_trace_returns_phase_5_error() {
+        // Task 9: `gate trace` on the Tableau backend errors cleanly until
+        // Phase 5 (Task 15) lands the upstream `⟨ψ|P|ψ⟩` primitive.
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 1;
+        module.strings.push("Z0".to_string());
+        module
+            .code
+            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                Value::String(0),
+            )));
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::Trace));
+
+        let mut machine = PPVM::default();
+        machine.load(&module).unwrap();
+        machine.init().unwrap();
+        // First step: const.string — succeeds.
+        machine.step_once().unwrap();
+        // Second step: gate trace — errors with the Phase-5 message.
+        let err = machine.step_once().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("not yet implemented on the Tableau backend"),
+            "expected Phase 5 placeholder error, got: {err}"
+        );
+    }
 }

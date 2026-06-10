@@ -743,17 +743,19 @@ pub enum PauliSumCircuit {
 }
 
 impl PauliSumCircuit {
-    /// Build a PauliSum-backed circuit, seeding `state += (observable, 1.0)`.
-    /// `observable` must already be validated against `info.n_qubits` (use
-    /// [`validate_single_pauli_observable`] at the boundary).
-    pub fn new(info: &PPVMDeviceInfo, observable: &str) -> Self {
+    /// Build a PauliSum-backed circuit, seeding the state with every term:
+    /// `for (word, coef) in terms { state += (word, coef); }`. Words must
+    /// already be validated against `info.n_qubits` by the caller.
+    pub fn new(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Self {
         macro_rules! build {
             ($variant:ident, $N:literal) => {{
                 let mut state = PauliSum::<PauliSumConfig<$N>>::builder()
                     .n_qubits(info.n_qubits)
                     .strategy(paulisum_strategy(info))
                     .build();
-                state += (observable, 1.0);
+                for (word, coef) in terms {
+                    state += (word.as_str(), *coef);
+                }
                 Self::$variant(PauliSumExecutor { state })
             }};
         }
@@ -826,16 +828,19 @@ pub enum LossyPauliSumCircuit {
 }
 
 impl LossyPauliSumCircuit {
-    /// Build a LossyPauliSum-backed circuit, seeding `state += (observable,
-    /// 1.0)`. `observable` must already be validated against `info.n_qubits`.
-    pub fn new(info: &PPVMDeviceInfo, observable: &str) -> Self {
+    /// Build a LossyPauliSum-backed circuit, seeding every term via
+    /// `state += (word, coef)`. Words must already be validated against
+    /// `info.n_qubits` by the caller.
+    pub fn new(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Self {
         macro_rules! build {
             ($variant:ident, $N:literal) => {{
                 let mut state = PauliSum::<LossyPauliSumConfig<$N>>::builder()
                     .n_qubits(info.n_qubits)
                     .strategy(paulisum_strategy(info))
                     .build();
-                state += (observable, 1.0);
+                for (word, coef) in terms {
+                    state += (word.as_str(), *coef);
+                }
                 Self::$variant(LossyPauliSumExecutor { state })
             }};
         }
@@ -929,18 +934,18 @@ impl Circuit {
         ))
     }
 
-    /// Build a PauliSum-backed circuit, seeding the state with `(observable,
-    /// 1.0)`. `observable` must already be validated against `info.n_qubits`
-    /// (see [`validate_single_pauli_observable`]); passing invalid input
-    /// results in a panic from the underlying word parser.
-    pub fn paulisum(info: &PPVMDeviceInfo, observable: &str) -> Self {
-        Self::PauliSum(PauliSumCircuit::new(info, observable))
+    /// Build a PauliSum-backed circuit, seeding the state with every term in
+    /// `terms`. Each `(word, coef)` is added via `state += (word, coef)`; the
+    /// caller is responsible for having parsed/validated the words against
+    /// `info.n_qubits` (see `parse_observable_terms` in `composite.rs`).
+    pub fn paulisum(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Self {
+        Self::PauliSum(PauliSumCircuit::new(info, terms))
     }
 
     /// Build a LossyPauliSum-backed circuit. Same contract as
     /// [`Circuit::paulisum`].
-    pub fn lossy_paulisum(info: &PPVMDeviceInfo, observable: &str) -> Self {
-        Self::LossyPauliSum(LossyPauliSumCircuit::new(info, observable))
+    pub fn lossy_paulisum(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Self {
+        Self::LossyPauliSum(LossyPauliSumCircuit::new(info, terms))
     }
 
     fn execute(

@@ -1,0 +1,13 @@
+device circuit.n_qubits 1;
+
+fn @main() {
+    // RY(θ)|0⟩ = cos(θ/2)|0⟩ + sin(θ/2)|1⟩, so ⟨ψ|Z|ψ⟩ = cos(θ).
+    // Hard-coded θ = 0.7 → cos(0.7) ≈ 0.7648421872844885.
+    const.u64 0
+    const.f64 0.7
+    gate ry
+
+    const.str "Z{1}"
+    gate trace
+    ret
+}

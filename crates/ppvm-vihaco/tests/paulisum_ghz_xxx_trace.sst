@@ -1,0 +1,27 @@
+device circuit.n_qubits 3;
+device circuit.backend paulisum;
+device circuit.observable XXX;
+
+fn @main() {
+    // Heisenberg backward through GHZ prep: forward is H(0); CNOT(0,1); CNOT(1,2),
+    // so we apply CNOT(1,2); CNOT(0,1); H(0) here.
+    //
+    // XXX --CNOT(1,2)--> XXI (X_2 on target absorbs into X_1 on control)
+    //      --CNOT(0,1)--> XII
+    //      --H(0)------> ZII
+    // Trace against Z/I-only Paulis picks up the coefficient of ZII = 1.0.
+    const.u64 1
+    const.u64 2
+    gate cnot
+
+    const.u64 0
+    const.u64 1
+    gate cnot
+
+    const.u64 0
+    gate h
+
+    const.str "Z?*"
+    gate trace
+    ret
+}

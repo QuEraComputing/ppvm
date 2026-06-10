@@ -279,6 +279,46 @@ fn paulisum_trotter_matches_pure_rust_reference() {
 }
 
 #[test]
+fn lossy_paulisum_loss_trace_matches_pure_rust_reference() {
+    // End-to-end LossyPauliSum: header seeds ZZ, body applies CNOT(0,1)
+    // then loss(q0, 0.3), then traces. The .sst-driven trace must agree
+    // bit-for-bit with a pure-Rust reference using the same Config (a
+    // `LossyPauliSumConfig<8>` matching the Bits64 bucket) and operations.
+    let machine = ppvm_vihaco::run_file("tests/lossy_paulisum_loss_trace.sst")
+        .unwrap_or_else(|e| panic!("run lossy_paulisum_loss_trace.sst: {e:?}"));
+    let through_sst = machine.trace_record();
+    assert_eq!(through_sst.len(), 1, "expected one trace emission");
+
+    use ppvm_runtime::config::indexmap::ByteFxHashF64;
+    use ppvm_runtime::prelude::*;
+    use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
+    type RefConfig = ByteFxHashF64<
+        8,
+        CombinedStrategy<CoefficientThreshold, MaxPauliWeight>,
+        LossyPauliWord<[u8; 8]>,
+    >;
+
+    let mut state: PauliSum<RefConfig> = PauliSum::builder()
+        .n_qubits(2)
+        .strategy(CombinedStrategy(
+            CoefficientThreshold(1e-10),
+            MaxPauliWeight(usize::MAX),
+        ))
+        .build();
+    state += ("ZZ", 1.0);
+    state.cnot(0, 1);
+    state.loss_channel(0, 0.3);
+    state.truncate();
+    let pat = PauliPattern::parse("Z?*").expect("parse pattern");
+    let reference = state.trace(&pat);
+
+    assert_eq!(
+        through_sst[0], reference,
+        ".sst-driven trace must match pure Rust reference bit-for-bit"
+    );
+}
+
+#[test]
 fn paulisum_measure_returns_unsupported_error() {
     // Per Decision 11, Measure on PauliSum hits the dispatch fallback with a
     // clear "not supported on the PauliSum backend" error.

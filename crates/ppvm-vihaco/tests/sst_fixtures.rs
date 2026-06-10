@@ -294,6 +294,75 @@ fn paulisum_measure_returns_unsupported_error() {
     );
 }
 
+// ─── Task 16: Tableau-side Trace, cross-backend agreement ────────────────
+
+#[test]
+fn tableau_bell_zz_trace_through_sst() {
+    // Bell-state ⟨ZZ⟩ via the Tableau backend's `Trace` instruction:
+    // forward H(0); CNOT(0, 1) leaves |ψ⟩ = |Φ+⟩, and `Z0Z1` matches exactly
+    // the Pauli word ZZ, so `tab.trace(&pat) = ⟨Φ+|ZZ|Φ+⟩ = 1`.
+    let machine = ppvm_vihaco::run_file("tests/tableau_bell_trace.sst")
+        .unwrap_or_else(|e| panic!("run tableau_bell_trace.sst: {e:?}"));
+    let trace = machine.trace_record();
+    assert_eq!(trace.len(), 1, "expected one trace emission");
+    assert!(
+        (trace[0] - 1.0).abs() < 1e-12,
+        "expected ⟨ZZ⟩ = 1.0, got {}",
+        trace[0]
+    );
+}
+
+fn assert_cross_backend_agreement(tableau_sst: &str, paulisum_sst: &str) {
+    let tab =
+        ppvm_vihaco::run_file(tableau_sst).unwrap_or_else(|e| panic!("run {tableau_sst}: {e:?}"));
+    let ps =
+        ppvm_vihaco::run_file(paulisum_sst).unwrap_or_else(|e| panic!("run {paulisum_sst}: {e:?}"));
+    let tab_v = tab.trace_record();
+    let ps_v = ps.trace_record();
+    assert_eq!(tab_v.len(), 1, "{tableau_sst}: expected one trace emission");
+    assert_eq!(ps_v.len(), 1, "{paulisum_sst}: expected one trace emission");
+    assert!(
+        (tab_v[0] - ps_v[0]).abs() < 1e-12,
+        "tableau {} vs PauliSum {} (|Δ|={}) for {tableau_sst} ↔ {paulisum_sst}",
+        tab_v[0],
+        ps_v[0],
+        (tab_v[0] - ps_v[0]).abs()
+    );
+}
+
+#[test]
+fn tableau_and_paulisum_agree_on_bell_zz_trace() {
+    // ⟨Φ+|ZZ|Φ+⟩ = 1. Tableau forward-evolves |0…0⟩ and matches `Z0Z1`;
+    // PauliSum Heisenberg-propagates ZZ backward through the reversed
+    // circuit, then sums Z/I-only coefficients.
+    assert_cross_backend_agreement(
+        "tests/tableau_bell_trace.sst",
+        "tests/paulisum_bell_trace.sst",
+    );
+}
+
+#[test]
+fn tableau_and_paulisum_agree_on_ghz_xxx_trace() {
+    // ⟨GHZ|XXX|GHZ⟩ = 1. Exercises a 3-qubit Clifford chain (H + two
+    // CNOTs) and the non-trivial Heisenberg evolution XXX → ZII through
+    // the reversed circuit on the PauliSum side.
+    assert_cross_backend_agreement(
+        "tests/tableau_ghz_xxx_trace.sst",
+        "tests/paulisum_ghz_xxx_trace.sst",
+    );
+}
+
+#[test]
+fn tableau_and_paulisum_agree_on_ry_z_trace() {
+    // ⟨RY(θ)|0⟩|Z|RY(θ)|0⟩⟩ = cos(θ). Exercises a non-Clifford rotation:
+    // the tableau opens a branch via `tab.ry`, while the PauliSum applies
+    // the Heisenberg dual RY(θ)†·Z·RY(θ) = cos(θ)·Z + sin(θ)·X in one step.
+    assert_cross_backend_agreement(
+        "tests/tableau_ry_z_trace.sst",
+        "tests/paulisum_ry_z_trace.sst",
+    );
+}
+
 // ─── Auto-detect via load_file: route by content, not extension ───────────
 
 #[test]

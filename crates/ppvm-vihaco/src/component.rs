@@ -239,13 +239,17 @@ where
             // threshold, so there's nothing extra to do here.
             (Truncate, None) => {}
 
-            // Trace is not yet implemented for the Tableau backend; Phase 5
-            // (plan Task 15) adds the `⟨ψ|P|ψ⟩` primitive upstream in
-            // `ppvm-tableau` and wires it through here.
-            (Trace, _) => {
-                return Err(eyre!(
-                    "Trace is not yet implemented on the Tableau backend (Phase 5)"
-                ));
+            // Trace: parse the resolved pattern and compute Σ_{P matches} ⟨ψ|P|ψ⟩
+            // on the tableau state. Asymmetric with the PauliSum semantics by
+            // design (Decision 9): on the tableau this is a sum of expectations,
+            // not a coefficient filter.
+            (Trace, PauliPatternStr(s)) => {
+                let pat = PauliPattern::parse(s)
+                    .map_err(|e| eyre!("invalid Pauli pattern `{s}`: {e:?}"))?;
+                let value = self.tab.trace(&pat);
+                return Ok(Effects::one(CircuitOutcomeEffect::Trace(TraceEffect {
+                    value,
+                })));
             }
 
             // Fallback

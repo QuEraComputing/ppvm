@@ -1263,9 +1263,11 @@ mod tests {
     }
 
     #[test]
-    fn tableau_trace_returns_phase_5_error() {
-        // Task 9: `gate trace` on the Tableau backend errors cleanly until
-        // Phase 5 (Task 15) lands the upstream `⟨ψ|P|ψ⟩` primitive.
+    fn tableau_trace_emits_expectation_on_zero_state() {
+        // Task 16: `gate trace` on the Tableau backend now computes
+        // Σ_{P matches pat} ⟨ψ|P|ψ⟩ via `GeneralizedTableau::trace`. On the
+        // freshly-initialized |0⟩ state, pattern `Z0` matches the single
+        // Pauli Z and ⟨0|Z|0⟩ = 1, so the trace_record gets one entry: 1.0.
         let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
         module.extra.n_qubits = 1;
         module.strings.push("Z0".to_string());
@@ -1281,14 +1283,14 @@ mod tests {
         let mut machine = PPVM::default();
         machine.load(&module).unwrap();
         machine.init().unwrap();
-        // First step: const.string — succeeds.
-        machine.step_once().unwrap();
-        // Second step: gate trace — errors with the Phase-5 message.
-        let err = machine.step_once().unwrap_err();
+        machine.step_once().unwrap(); // const.string
+        machine.step_once().unwrap(); // gate trace
+        let trace = machine.trace_record();
+        assert_eq!(trace.len(), 1);
         assert!(
-            err.to_string()
-                .contains("not yet implemented on the Tableau backend"),
-            "expected Phase 5 placeholder error, got: {err}"
+            (trace[0] - 1.0).abs() < 1e-12,
+            "expected ⟨0|Z|0⟩ = 1.0, got {}",
+            trace[0]
         );
     }
 }

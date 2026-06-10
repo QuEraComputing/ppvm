@@ -322,12 +322,12 @@ impl PPVM {
             (BackendKind::Tableau, None) => Circuit::tableau(info),
             (BackendKind::Tableau, Some(seed)) => Circuit::tableau_with_seed(info, seed),
             (BackendKind::PauliSum, _) => {
-                let observable = validate_single_pauli_observable(info)?;
-                Circuit::paulisum(info, observable)
+                let terms = parse_observable_terms(info)?;
+                Circuit::paulisum(info, &terms)
             }
             (BackendKind::LossyPauliSum, _) => {
-                let observable = validate_single_pauli_observable(info)?;
-                Circuit::lossy_paulisum(info, observable)
+                let terms = parse_observable_terms(info)?;
+                Circuit::lossy_paulisum(info, &terms)
             }
         };
 
@@ -634,33 +634,18 @@ impl vihaco::Reset for PPVM {
     }
 }
 
-/// Validate a single-Pauli-word observable header against `info.n_qubits` and
-/// return the string slice for seeding. Phase 2 accepts dense words built from
-/// `I`, `X`, `Y`, `Z` of length exactly `n_qubits`; Phase 3 (Task 11) replaces
-/// this with the multi-term sum parser.
-fn validate_single_pauli_observable(info: &PPVMDeviceInfo) -> Result<&str> {
+/// Parse the `device circuit.observable` header into Pauli-sum terms ready to
+/// seed a `PauliSum` / `LossyPauliSum` state. Single-Pauli observables from
+/// Phase 2 keep working as the degenerate one-term case; multi-term sums like
+/// `"1.0*ZZ + 0.5*XX"` are handled by [`parse_pauli_sum_terms`].
+fn parse_observable_terms(info: &PPVMDeviceInfo) -> Result<Vec<(String, f64)>> {
     let observable = info.observable.as_deref().ok_or_else(|| {
         eyre!(
             "the {:?} backend requires `device circuit.observable` to be set",
             info.backend
         )
     })?;
-    let len = observable.chars().count();
-    if len != info.n_qubits {
-        return Err(eyre!(
-            "observable length {len} does not match circuit.n_qubits {}",
-            info.n_qubits
-        ));
-    }
-    if let Some(bad) = observable
-        .chars()
-        .find(|c| !matches!(c, 'I' | 'X' | 'Y' | 'Z'))
-    {
-        return Err(eyre!(
-            "observable contains invalid Pauli character `{bad}`; Phase 2 accepts only I/X/Y/Z (multi-term sums land in Phase 3)"
-        ));
-    }
-    Ok(observable)
+    crate::observable::parse_pauli_sum_terms(observable, info.n_qubits)
 }
 
 #[cfg(test)]
@@ -1192,6 +1177,37 @@ mod tests {
     }
 
     #[test]
+    fn paulisum_multi_term_observable_seeds_all_terms() -> eyre::Result<()> {
+        // Task 11: a sum-valued observable seeds every term. With
+        // `"ZZ + 0.5*XX"` the state holds `1.0 * ZZ + 0.5 * XX`; tracing
+        // `[XZ]0[XZ]1` matches both words and returns 1.0 + 0.5 = 1.5.
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 2;
+        module.extra.backend = BackendKind::PauliSum;
+        module.extra.observable = Some("ZZ + 0.5*XX".to_string());
+        module.strings.push("[XZ]0[XZ]1".to_string());
+
+        module
+            .code
+            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                Value::String(0),
+            )));
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::Trace));
+
+        let mut machine = PPVM::default();
+        machine.load(&module)?;
+        machine.init()?;
+        for _ in 0..module.code.len() {
+            machine.step_once()?;
+        }
+
+        assert_eq!(machine.trace_record(), vec![1.5]);
+        Ok(())
+    }
+
+    #[test]
     fn paulisum_init_rejects_missing_observable() {
         // Task 8 requires `device circuit.observable` for PauliSum / Lossy.
         let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
@@ -1219,8 +1235,8 @@ mod tests {
         machine.load(&module).unwrap();
         let err = machine.init().unwrap_err();
         assert!(
-            err.to_string().contains("does not match"),
-            "expected length-mismatch error, got: {err}"
+            err.to_string().contains("invalid Pauli-sum"),
+            "expected parser rejection, got: {err}"
         );
     }
 

@@ -246,9 +246,10 @@ macro_rules! create_interface {
                 if truncate { self.inner.truncate(); }
             }
 
-            pub fn r(&mut self, addr0: usize, axis_angle: f64, theta: f64) {
+            #[pyo3(signature = (addr0, axis_angle, theta, truncate = true))]
+            pub fn r(&mut self, addr0: usize, axis_angle: f64, theta: f64, truncate: bool) {
                 self.inner.r(addr0, axis_angle, theta);
-                self.inner.truncate();
+                if truncate { self.inner.truncate(); }
             }
 
             // rot2

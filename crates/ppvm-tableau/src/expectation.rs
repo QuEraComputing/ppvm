@@ -264,4 +264,53 @@ mod tests {
         let pat = PauliPattern::parse("Z0Z1").expect("parse Z0Z1");
         assert_close(tab.trace(&pat), 1.0, 1e-12);
     }
+
+    // ─── Cross-backend: forward tableau shots vs backward PauliSum ────────
+    //
+    // Run a noisy Clifford circuit many times on a tableau and average the
+    // per-shot ⟨ψ|ZZ|ψ⟩. Independently, Heisenberg-propagate ZZ backward
+    // through the same circuit via `PauliSum` and read off ⟨0…0|U†ZZ U|0…0⟩
+    // as the sum of coefficients over Z/I-only Paulis. The Monte-Carlo
+    // average and the deterministic value must agree within sampling error.
+    //
+    // `PauliSum::g(i)` performs O → g† O g, so the backward sweep applies
+    // gates in reverse time order. Depolarize is self-dual under Heisenberg.
+    #[test]
+    fn forward_shots_match_backward_pauli_sum_under_depolarizing_noise() {
+        use ppvm_runtime::config::indexmap::ByteFxHashF64;
+
+        let p = 0.05_f64;
+        let n_shots: u64 = 4000;
+        let n_qubits = 2;
+
+        let mut sum = 0.0_f64;
+        for shot in 0..n_shots {
+            let mut tab: TestTableau = GeneralizedTableau::new_with_seed(n_qubits, 1e-12, shot);
+            tab.h(0);
+            tab.depolarize(0, p);
+            tab.cnot(0, 1);
+            tab.depolarize(0, p);
+            tab.depolarize(1, p);
+            sum += tab.expectation(&word("ZZ"));
+        }
+        let avg = sum / (n_shots as f64);
+
+        let mut ps: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n_qubits).build();
+        ps += ("ZZ", 1.0);
+        ps.depolarize(1, p);
+        ps.depolarize(0, p);
+        ps.cnot(0, 1);
+        ps.depolarize(0, p);
+        ps.h(0);
+        let z_or_i = PauliPattern::parse("Z?{2}").expect("parse Z?{2}");
+        let exact = ps.trace(&z_or_i);
+
+        // Per-shot |⟨ZZ⟩| ≤ 1 ⇒ σ_mean ≤ 1/√N; 5σ keeps this robust to RNG draws.
+        let tol = 5.0 / (n_shots as f64).sqrt();
+        assert!(
+            (avg - exact).abs() < tol,
+            "tableau avg {avg} vs PauliSum exact {exact}, |Δ|={} (tol {tol})",
+            (avg - exact).abs()
+        );
+    }
 }

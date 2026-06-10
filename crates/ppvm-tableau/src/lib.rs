@@ -33,6 +33,8 @@
 pub mod data;
 /// `Display` implementations for tableau types.
 pub mod display;
+/// Pauli-string expectation values and pattern traces.
+pub mod expectation;
 /// Gate implementations (Clifford, T, rotations).
 pub mod gates;
 /// Z-basis measurement, including loss-aware variants.

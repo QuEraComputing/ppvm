@@ -97,8 +97,7 @@ where
             // Since conj(c)*c = |c|^2 (always real), the phase factor contribution
             // to z_overlap.re is: phase 0 → +|c|^2, phase 2 → −|c|^2,
             // phase 1,3 → 0 (imaginary × real = imaginary, doesn't contribute to .re)
-            let z_overlap_re =
-                Self::compute_overlap_case_b(&entries, phase_decomp, destab_anticomm_bits);
+            let z_overlap_re = Self::overlap_case_b(&entries, phase_decomp, destab_anticomm_bits);
 
             let prob_1 = 0.5 - 0.5 * z_overlap_re;
             let outcome = self.tableau.rng.random::<f64>() < prob_1;
@@ -132,7 +131,7 @@ where
 
             // Compute z_overlap.re directly (the imaginary part is always ~0)
             let odd_phase_mask = self.odd_phase_destabilizer_mask();
-            let z_overlap_re = Self::compute_overlap_case_a(
+            let z_overlap_re = Self::overlap_case_a(
                 &coeff_map,
                 phase_decomp,
                 destab_anticomm_bits,
@@ -290,7 +289,7 @@ where
 {
     /// Case_b overlap: self-pairing (branch_index = idx), so overlap = ±|c|^2.
     /// Only even phases contribute to the real part.
-    fn compute_overlap_case_b(
+    pub(crate) fn overlap_case_b(
         entries: &[(Complex<T::Coeff>, I)],
         phase_decomp: u8,
         destab_anticomm_bits: I,
@@ -314,7 +313,7 @@ where
 
     /// Case_a overlap: cross-index pairing via HashMap lookup.
     /// Accumulates only the real part of z_overlap.
-    fn compute_overlap_case_a(
+    pub(crate) fn overlap_case_a(
         coeff_map: &HashMap<I, Complex<T::Coeff>>,
         phase_decomp: u8,
         destab_anticomm_bits: I,

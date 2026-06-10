@@ -355,7 +355,7 @@ What *not* to do:
 
 `.sst` is the textual program format that `ppvm-cli` runs. A module has a
 `device` header block selecting the backend and any initial state, then one
-or more `fn @<name>()` bodies. Each `gate <name>` instruction pops typed
+or more `fn @<name>()` bodies. Each `circuit <name>` instruction pops typed
 operands from the CPU stack and dispatches to the runtime.
 
 ### Backend selection
@@ -383,18 +383,18 @@ word is optional. **No internal whitespace is allowed in the header value**
 
 ### Gate-order convention
 
-The runtime applies `gate ...` instructions in code order on every backend.
+The runtime applies `circuit ...` instructions in code order on every backend.
 Whoever emits the `.sst` is responsible for emitting gates in the right
 direction for the chosen picture: **forward** for Tableau (Schrödinger),
 **reversed** for PauliSum/Lossy (Heisenberg). Textbook `H(0); CNOT(0,1)` on
-a PauliSum target compiles to `gate cnot; gate h`, not the other way around.
+a PauliSum target compiles to `circuit cnot; circuit h`, not the other way around.
 
-### `gate trace` and `gate truncate`
+### `circuit trace` and `circuit truncate`
 
 ```sst
 const.str "Z?*"
-gate trace        // PauliSum/Lossy: pushes state.trace(&pattern) as f64
-gate truncate     // PauliSum/Lossy: state.truncate(); Tableau: silent no-op
+circuit trace        // PauliSum/Lossy: pushes state.trace(&pattern) as f64
+circuit truncate     // PauliSum/Lossy: state.truncate(); Tableau: silent no-op
 ```
 
 `trace` pops a `Value::String` (Pauli-pattern source — same grammar as
@@ -405,9 +405,10 @@ the machine's `trace_record` *and* pushes the value back as `Value::F64`.
 - **PauliSum / LossyPauliSum:** `state.trace(&pat)` is a filter coefficient
   sum — sum of `c_P` over terms whose word matches `pat`. Use `"Z?*"` to
   compute `⟨0…0|state|0…0⟩`.
-- **Tableau:** `trace` returns `Σ_{P matches pat} ⟨ψ|P|ψ⟩` (Phase 5, not
-  yet wired — currently errors with "trace not yet implemented on the
-  Tableau backend").
+- **Tableau:** `trace` returns `Σ_{P matches pat} ⟨ψ|P|ψ⟩` — the sum of
+  Pauli expectation values over every word the pattern enumerates. Bounded
+  patterns only (`Z?{n}`, positional anchors, character classes); star
+  quantifiers panic because they enumerate an infinite set.
 
 These are honest natural primitives for each backend; the same operand
 will not give the same number across backends. Users shouldn't expect
@@ -416,7 +417,7 @@ agreement on a shared input.
 `truncate` takes no operand and applies the configured strategy
 (`CoefficientThreshold` + `MaxPauliWeight`) to the current state. On
 Tableau it's a silent no-op — gate methods already prune via
-`coefficient_threshold`. **Without explicit `gate truncate` calls in the
+`coefficient_threshold`. **Without explicit `circuit truncate` calls in the
 .sst, PauliSum runs do not truncate** — the compiler that emits the .sst
 decides where to place them.
 

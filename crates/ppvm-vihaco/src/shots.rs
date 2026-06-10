@@ -13,6 +13,14 @@ use crate::PPVMModule;
 use crate::composite::PPVM;
 use crate::measurements::MeasurementResult;
 
+/// One shot's full output: the measurement record and the trace-instruction
+/// record. Either may be empty depending on what the program emits.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ShotRecord {
+    pub measurements: Vec<MeasurementResult>,
+    pub traces: Vec<f64>,
+}
+
 /// Below this many shots, parallelism's overhead outweighs its benefit and we
 /// always run serially. Provisional — tune with benchmarks.
 pub const PARALLEL_SHOT_THRESHOLD: usize = 128;
@@ -25,12 +33,15 @@ fn shot_seed(base: Option<u64>, index: usize) -> Option<u64> {
     base.map(|b| b.wrapping_add(index as u64))
 }
 
-/// Run a single shot on a fresh machine and return its measurement record.
-fn run_one_shot(module: &PPVMModule, seed: Option<u64>) -> eyre::Result<Vec<MeasurementResult>> {
+/// Run a single shot on a fresh machine and return both records.
+fn run_one_shot(module: &PPVMModule, seed: Option<u64>) -> eyre::Result<ShotRecord> {
     let mut machine = PPVM::default();
     machine.load(module)?;
     machine.run_with_seed(seed)?;
-    Ok(machine.measurement_record())
+    Ok(ShotRecord {
+        measurements: machine.measurement_record(),
+        traces: machine.trace_record(),
+    })
 }
 
 /// Run `shots` shots serially. One entry per shot, in order.
@@ -38,7 +49,7 @@ pub fn run_shots_serial(
     module: &PPVMModule,
     shots: usize,
     seed: Option<u64>,
-) -> eyre::Result<Vec<Vec<MeasurementResult>>> {
+) -> eyre::Result<Vec<ShotRecord>> {
     (0..shots)
         .map(|i| run_one_shot(module, shot_seed(seed, i)))
         .collect()
@@ -54,7 +65,7 @@ pub fn run_shots_parallel(
     module: &PPVMModule,
     shots: usize,
     seed: Option<u64>,
-) -> eyre::Result<Vec<Vec<MeasurementResult>>> {
+) -> eyre::Result<Vec<ShotRecord>> {
     use rayon::prelude::*;
 
     (0..shots)
@@ -79,7 +90,7 @@ pub fn run_shots(
     module: &PPVMModule,
     shots: usize,
     seed: Option<u64>,
-) -> eyre::Result<Vec<Vec<MeasurementResult>>> {
+) -> eyre::Result<Vec<ShotRecord>> {
     #[cfg(feature = "rayon")]
     if should_parallelize(rayon::current_num_threads(), shots) {
         return run_shots_parallel(module, shots, seed);
@@ -133,8 +144,9 @@ mod tests {
         assert_eq!(records.len(), 5);
         for shot in &records {
             // One measurement event, one qubit, deterministically |0>.
-            assert_eq!(shot.len(), 1);
-            assert_eq!(shot[0].as_slice(), [MeasurementOutcome::Zero]);
+            assert_eq!(shot.measurements.len(), 1);
+            assert_eq!(shot.measurements[0].as_slice(), [MeasurementOutcome::Zero]);
+            assert!(shot.traces.is_empty(), "Tableau backend emits no traces");
         }
     }
 

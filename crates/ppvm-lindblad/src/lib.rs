@@ -1614,4 +1614,124 @@ mod tests {
         codes_from_word(&w, &mut out);
         assert_eq!(out.as_slice(), &codes);
     }
+
+    /// Small-system end-to-end check that orbit-rep merging gives the
+    /// same physics as standard evolution, when no truncation is applied.
+    ///
+    /// Setup: n=4 qubit chain, PBC, translation-invariant XY Hamiltonian
+    /// `H = Σ_j (X_j X_{j+1} + Y_j Y_{j+1})`, no dissipation. Initial
+    /// operator `O(0) = Σ_j Z_j` is translation-invariant (k=0 sector).
+    ///
+    /// Run 10 pc_step iterations with `drop_tol = 0` (no truncation):
+    /// once without merging, once applying `canonicalize_pauli_sum`
+    /// after each step. Canonicalize the un-merged final state once at
+    /// the end. The two orbit-rep representations should be
+    /// bit-identical up to FP noise.
+    #[test]
+    fn pc_step_matches_symmetry_merged_on_small_chain() {
+        use ppvm_runtime::symmetry::{TranslationGroup, canonicalize_pauli_sum};
+
+        let n = 4usize;
+        let dt = 0.05f64;
+        let n_steps = 10usize;
+
+        // Build XY-chain Hamiltonian with PBC. 8 terms (4 bonds × {XX, YY}).
+        let mut h_terms: Vec<(String, f64)> = Vec::new();
+        for j in 0..n {
+            let nxt = (j + 1) % n;
+            for op in ["X", "Y"] {
+                let mut s = vec!['I'; n];
+                s[j] = op.chars().next().unwrap();
+                s[nxt] = op.chars().next().unwrap();
+                h_terms.push((s.into_iter().collect(), 1.0));
+            }
+        }
+        // No dissipation.
+        let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
+        let group = TranslationGroup::chain_1d(n);
+
+        // Initial: O(0) = Σ_j Z_j (translation-invariant).
+        let mut basis_u: Vec<Word> = (0..n)
+            .map(|j| {
+                let mut s = vec!['I'; n];
+                s[j] = 'Z';
+                let st: String = s.into_iter().collect();
+                let (w, _) = parse_pauli_string(&st, n).unwrap();
+                w
+            })
+            .collect();
+        let mut coeffs_u: Vec<f64> = vec![1.0; n];
+
+        // Mirror state for the "with merging" run.
+        let mut basis_m = basis_u.clone();
+        let mut coeffs_m = coeffs_u.clone();
+
+        let opts = ExpmOpts::default();
+        let protected: Vec<Word> = Vec::new();
+        for _ in 0..n_steps {
+            // tau_add chosen large enough that pc_step doesn't add any
+            // new strings beyond what the Krylov-expm naturally reaches
+            // through the basis already present — i.e. we want NO
+            // leakage enrichment, only the expm step (closest analog of
+            // standard PP). Set tau_add = +infinity → leakage threshold
+            // never met → expand step is a no-op.
+            let tau_add = f64::INFINITY;
+            spec.pc_step(
+                &mut basis_u,
+                &mut coeffs_u,
+                dt,
+                tau_add,
+                0.0, // drop_tol = 0 → no truncation
+                &protected,
+                opts,
+                None,
+                false,
+            )
+            .unwrap();
+
+            spec.pc_step(
+                &mut basis_m,
+                &mut coeffs_m,
+                dt,
+                tau_add,
+                0.0,
+                &protected,
+                opts,
+                None,
+                false,
+            )
+            .unwrap();
+            // Apply symmetry merging on the "with merging" run only.
+            canonicalize_pauli_sum(&mut basis_m, &mut coeffs_m, &group);
+        }
+
+        // Canonicalize the un-merged final state once.
+        canonicalize_pauli_sum(&mut basis_u, &mut coeffs_u, &group);
+
+        // Both representations should now be in orbit-rep form; compare
+        // as (word → coeff) maps with FP tolerance.
+        let map_u: FxHashMap<Word, f64> = basis_u.into_iter().zip(coeffs_u).collect();
+        let map_m: FxHashMap<Word, f64> = basis_m.into_iter().zip(coeffs_m).collect();
+        assert_eq!(
+            map_u.len(),
+            map_m.len(),
+            "merged basis size {} != post-merged-unmerged basis size {}",
+            map_m.len(),
+            map_u.len()
+        );
+        let mut max_diff = 0.0f64;
+        for (w, c_u) in &map_u {
+            let c_m = map_m.get(w).copied().unwrap_or_else(|| {
+                panic!(
+                    "rep {:?} present in un-merged-then-canonicalized but not in merged",
+                    w
+                );
+            });
+            max_diff = max_diff.max((c_u - c_m).abs());
+        }
+        assert!(
+            max_diff < 1e-9,
+            "with-merging vs without-merging diverged: max |Δc| = {max_diff:e}"
+        );
+    }
 }

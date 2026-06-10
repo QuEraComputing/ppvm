@@ -449,6 +449,7 @@ mod tests {
             ExpmOpts {
                 tol: 1e-14,
                 parallel_threshold: usize::MAX,
+                max_krylov_m: None,
             },
         );
         let r_parallel = expm_multiply(
@@ -458,6 +459,7 @@ mod tests {
             ExpmOpts {
                 tol: 1e-14,
                 parallel_threshold: 0,
+                max_krylov_m: None,
             },
         );
         for (a, b) in r_serial.iter().zip(r_parallel.iter()) {

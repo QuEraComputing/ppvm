@@ -14,6 +14,7 @@ pub mod interface;
 pub mod interface_tableau;
 pub mod lindblad;
 pub mod stim_program;
+pub mod symmetry;
 
 #[pymodule]
 pub mod ppvm_python_native {
@@ -160,4 +161,10 @@ pub mod ppvm_python_native {
     // Lindbladian time evolution shim
     #[pymodule_export]
     pub use crate::lindblad::LindbladSpec;
+
+    // Symmetry merging
+    #[pymodule_export]
+    pub use crate::symmetry::TranslationGroup;
+    #[pymodule_export]
+    pub use crate::symmetry::canonicalize_basis_arr;
 }

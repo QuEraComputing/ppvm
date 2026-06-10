@@ -52,6 +52,9 @@ pub mod phase;
 /// Truncation strategies that decide when low-weight or low-magnitude
 /// terms are dropped from a [`PauliSum`](sum::PauliSum).
 pub mod strategy;
+/// Lattice translation-symmetry groups and the orbit-representative
+/// merging primitive used by operator-space evolution methods.
+pub mod symmetry;
 /// The [`PauliSum`](sum::PauliSum) type and its builder.
 pub mod sum;
 /// Gate, measurement, and noise-channel traits shared across backends.

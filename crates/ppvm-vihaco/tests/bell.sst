@@ -2,17 +2,17 @@ device circuit.n_qubits 2;
 
 fn @main() {
     const.u64 0
-    gate h
+    circuit h
 
     const.u64 0
     const.u64 1
-    gate cnot
+    circuit cnot
 
     const.u64 0
-    gate measure
+    circuit measure
 
     const.u64 0
-    gate measure
+    circuit measure
 
     ret
 }

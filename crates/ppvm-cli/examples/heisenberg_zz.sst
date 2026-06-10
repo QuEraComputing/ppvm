@@ -8,10 +8,10 @@ device circuit.coefficient_threshold 1e-10;
 // (coef 1.0) and XX (coef 0.5), so the trace is their coefficient sum.
 //
 // No gates here, so the trace returns the seeded observable's coefficient
-// sum directly: 1.0 + 0.5 = 1.5. Add `gate cnot; gate h; gate truncate`
+// sum directly: 1.0 + 0.5 = 1.5. Add `circuit cnot; circuit h; circuit truncate`
 // in textbook-reversed order to evolve before tracing.
 fn @main() {
     const.str "[XZ]?*"
-    gate trace
+    circuit trace
     ret
 }

@@ -13,11 +13,11 @@ device circuit.n_qubits 2;
 // → P(m1 = 1) = 0.75.
 fn @main() {
     const.u64 0
-    gate h
+    circuit h
 
     const.u64 0
     const.f64 0.5
-    gate loss
+    circuit loss
 
     call 0, @measure_q0
 
@@ -32,7 +32,7 @@ fn @main() {
         // path. The leftover `outcome` value on the stack is harmless because
         // we halt at @final without reading it.
         const.u64 1
-        gate x
+        circuit x
         br @final
 
     @kept:
@@ -43,7 +43,7 @@ fn @main() {
 
     @outcome_one:
         const.u64 1
-        gate x
+        circuit x
         br @final
 
     @outcome_zero:
@@ -51,13 +51,13 @@ fn @main() {
 
     @final:
         const.u64 1
-        gate measure
+        circuit measure
         halt
 }
 
 fn @measure_q0() {
     const.u64 0
-    gate measure
+    circuit measure
     // Stack: [outcome]
     ret 1
 }

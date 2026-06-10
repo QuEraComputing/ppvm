@@ -12,16 +12,16 @@ fn @main() {
     // Trace against Z/I-only Paulis picks up the coefficient of ZII = 1.0.
     const.u64 1
     const.u64 2
-    gate cnot
+    circuit cnot
 
     const.u64 0
     const.u64 1
-    gate cnot
+    circuit cnot
 
     const.u64 0
-    gate h
+    circuit h
 
     const.str "Z?*"
-    gate trace
+    circuit trace
     ret
 }

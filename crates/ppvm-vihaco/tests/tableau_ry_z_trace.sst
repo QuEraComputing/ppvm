@@ -5,9 +5,9 @@ fn @main() {
     // Hard-coded θ = 0.7 → cos(0.7) ≈ 0.7648421872844885.
     const.u64 0
     const.f64 0.7
-    gate ry
+    circuit ry
 
     const.str "Z{1}"
-    gate trace
+    circuit trace
     ret
 }

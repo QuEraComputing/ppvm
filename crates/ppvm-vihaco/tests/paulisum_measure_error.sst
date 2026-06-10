@@ -4,6 +4,6 @@ device circuit.observable Z;
 
 fn @main() {
     const.u64 0
-    gate measure
+    circuit measure
     ret
 }

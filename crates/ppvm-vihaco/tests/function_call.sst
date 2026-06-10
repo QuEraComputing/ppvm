@@ -10,10 +10,10 @@ fn @main() {
 
 fn @run_circuit() {
     const.u64 1
-    gate h
+    circuit h
 
     const.u64 1
-    gate measure
+    circuit measure
 
     ret 1
 }

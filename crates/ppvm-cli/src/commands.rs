@@ -293,7 +293,7 @@ mod tests {
 
     /// Minimal program that compiles and measures q0 in |0> (deterministic).
     const PROGRAM: &str =
-        "device circuit.n_qubits 1;\nfn @main() { const.u64 0\n gate measure\n ret }\n";
+        "device circuit.n_qubits 1;\nfn @main() { const.u64 0\n circuit measure\n ret }\n";
 
     fn row(outcomes: &[MeasurementOutcome]) -> MeasurementResult {
         outcomes.iter().copied().collect()
@@ -411,7 +411,7 @@ mod tests {
         const TRACE_PROGRAM: &str = "device circuit.n_qubits 1;\n\
              device circuit.backend paulisum;\n\
              device circuit.observable Z;\n\
-             fn @main() { const.str \"Z?*\"\n gate trace\n ret }\n";
+             fn @main() { const.str \"Z?*\"\n circuit trace\n ret }\n";
         let src = temp_file("ppvm_cli_run_trace.sst", TRACE_PROGRAM);
         let out = std::env::temp_dir().join("ppvm_cli_run_trace.txt");
         let _ = fs::remove_file(&out);
@@ -514,7 +514,7 @@ mod tests {
     // ─── debug ─────────────────────────────────────────────────────────
 
     /// Program with a `breakpoint` before measuring q0 in |0> (deterministic).
-    const BREAKPOINT_PROGRAM: &str = "device circuit.n_qubits 1;\nfn @main() { breakpoint\n const.u64 0\n gate measure\n ret }\n";
+    const BREAKPOINT_PROGRAM: &str = "device circuit.n_qubits 1;\nfn @main() { breakpoint\n const.u64 0\n circuit measure\n ret }\n";
 
     /// Drive `debug_loop` with scripted input, returning the captured output.
     fn run_debug(program: &str, name: &str, break_at_start: bool, script: &str) -> String {
@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn debug_break_at_start_steps_through_to_finish() {
-        // PROGRAM is const.u64 0 / gate measure / ret = 3 steps.
+        // PROGRAM is const.u64 0 / circuit measure / ret = 3 steps.
         let out = run_debug(PROGRAM, "ppvm_cli_debug_step.sst", true, "s\ns\ns\n");
         assert!(
             out.contains("next: Measure"),

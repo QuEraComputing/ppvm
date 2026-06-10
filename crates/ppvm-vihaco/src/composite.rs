@@ -662,7 +662,7 @@ mod tests {
 
         /*
         const.u64 0
-        gate h
+        circuit h
         */
         let zero = PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(0)));
         let one = PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(1)));
@@ -673,7 +673,7 @@ mod tests {
 
         /*
         const.u64 0
-        gate t
+        circuit t
         */
 
         module.code.push(zero.clone());
@@ -684,7 +684,7 @@ mod tests {
         /*
         const.u64 0
         const.u64 1
-        gate cnot
+        circuit cnot
         */
         module.code.push(zero.clone());
         module.code.push(one.clone());
@@ -752,7 +752,7 @@ mod tests {
         // 5-qubit GHZ: H on q0, then CNOT(q_i, q_{i+1}) for i = 0..4.
         /*
         const.u64 0
-        gate h
+        circuit h
         */
         module
             .code
@@ -767,7 +767,7 @@ mod tests {
             /*
             const.u64 i
             const.u64 i+1
-            gate cnot
+            circuit cnot
             */
             module
                 .code
@@ -788,7 +788,7 @@ mod tests {
         for q in 0..5u64 {
             /*
             const.u64 q
-            gate measure
+            circuit measure
             */
             module
                 .code
@@ -853,7 +853,7 @@ mod tests {
     #[test]
     fn execute_single_instruction_propagates_engine_errors() -> eyre::Result<()> {
         // The REPL relies on engine errors surfacing as `Err` (so it can print
-        // them and keep looping) rather than panicking. A gate with no qubit
+        // them and keep looping) rather than panicking. A circuit with no qubit
         // operand on the stack is one such propagating error.
         //
         // NOTE: an out-of-range qubit index (>= n_qubits) currently *panics* in
@@ -866,7 +866,7 @@ mod tests {
         machine.load(&module)?;
         machine.init()?;
 
-        // `gate h` with nothing on the stack: `pop_qubit` fails.
+        // `circuit h` with nothing on the stack: `pop_qubit` fails.
         let missing_operand = [PPVMInstruction::Circuit(CircuitInstruction::H)];
         assert!(
             machine
@@ -896,7 +896,7 @@ mod tests {
     #[test]
     fn resolve_circuit_pops_operands_in_reverse_of_push_order() -> eyre::Result<()> {
         // Convention: operands are pushed in argument order (q0, q1, then any
-        // floats) and popped in reverse. So every two-qubit gate must read q0 as
+        // floats) and popped in reverse. So every two-qubit circuit must read q0 as
         // the first operand pushed, consistently, with or without trailing
         // floats. (CNOT already obeyed this; the float-carrying arms did not.)
         let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
@@ -974,14 +974,14 @@ mod tests {
                       device circuit.coefficient_threshold 1e-8;\n\
                       fn @main() {\n\
                           const.u64 0\n\
-                          gate h\n\
+                          circuit h\n\
                           ret\n\
                       }\n";
         let mut machine = PPVM::default();
         machine.load_program(source)?;
         assert_eq!(machine.loader.module.extra.n_qubits, 2);
         assert_eq!(machine.loader.module.extra.coefficient_threshold, 1e-8);
-        // const.u64 0 / gate h / ret = 3
+        // const.u64 0 / circuit h / ret = 3
         assert_eq!(machine.loader.module.code.len(), 3);
         Ok(())
     }
@@ -991,14 +991,14 @@ mod tests {
         let source = "device circuit.n_qubits 2;\n\
                       fn @main() {\n\
                           const.u64 0\n\
-                          gate h\n\
+                          circuit h\n\
                           const.u64 0\n\
                           const.u64 1\n\
-                          gate cnot\n\
+                          circuit cnot\n\
                           const.u64 0\n\
-                          gate measure\n\
+                          circuit measure\n\
                           const.u64 1\n\
-                          gate measure\n\
+                          circuit measure\n\
                           ret\n\
                       }\n";
         let mut machine = PPVM::default();
@@ -1015,14 +1015,14 @@ mod tests {
         let source = "device circuit.n_qubits 2;\n\
                       fn @main() {\n\
                           const.u64 0\n\
-                          gate h\n\
+                          circuit h\n\
                           const.u64 0\n\
                           const.u64 1\n\
-                          gate cnot\n\
+                          circuit cnot\n\
                           const.u64 0\n\
-                          gate measure\n\
+                          circuit measure\n\
                           const.u64 1\n\
-                          gate measure\n\
+                          circuit measure\n\
                           ret\n\
                       }\n";
         let mut machine = PPVM::default();
@@ -1054,7 +1054,7 @@ mod tests {
     fn run_program_reports_parse_errors() {
         let source = "device circuit.n_qubits 2;\n\
                       fn @main() {\n\
-                          gate not_a_real_gate\n\
+                          circuit not_a_real_gate\n\
                           ret\n\
                       }\n";
         let mut machine = PPVM::default();
@@ -1072,15 +1072,15 @@ mod tests {
     const BREAKPOINT_PROGRAM: &str = "device circuit.n_qubits 2;\n\
                                       fn @main() {\n\
                                           const.u64 0\n\
-                                          gate h\n\
+                                          circuit h\n\
                                           const.u64 0\n\
                                           const.u64 1\n\
-                                          gate cnot\n\
+                                          circuit cnot\n\
                                           const.u64 0\n\
-                                          gate measure\n\
+                                          circuit measure\n\
                                           breakpoint\n\
                                           const.u64 1\n\
-                                          gate measure\n\
+                                          circuit measure\n\
                                           ret\n\
                                       }\n";
 
@@ -1126,7 +1126,7 @@ mod tests {
 
     #[test]
     fn paulisum_truncate_runs_without_error() -> eyre::Result<()> {
-        // Smoke test: a `gate truncate` reaches the PauliSum executor's
+        // Smoke test: a `circuit truncate` reaches the PauliSum executor's
         // Truncate arm and calls `state.truncate()`. Task 8 makes the
         // observable mandatory for PauliSum init, so seed `Z` here.
         let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
@@ -1242,7 +1242,7 @@ mod tests {
 
     #[test]
     fn tableau_truncate_is_silent_no_op() -> eyre::Result<()> {
-        // Task 9: `gate truncate` on the default Tableau backend should run
+        // Task 9: `circuit truncate` on the default Tableau backend should run
         // without error — the tableau prunes via coefficient_threshold during
         // every gate, so the explicit Truncate instruction has nothing to do.
         let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
@@ -1264,7 +1264,7 @@ mod tests {
 
     #[test]
     fn tableau_trace_emits_expectation_on_zero_state() {
-        // Task 16: `gate trace` on the Tableau backend now computes
+        // Task 16: `circuit trace` on the Tableau backend now computes
         // Σ_{P matches pat} ⟨ψ|P|ψ⟩ via `GeneralizedTableau::trace`. On the
         // freshly-initialized |0⟩ state, pattern `Z0` matches the single
         // Pauli Z and ⟨0|Z|0⟩ = 1, so the trace_record gets one entry: 1.0.
@@ -1284,7 +1284,7 @@ mod tests {
         machine.load(&module).unwrap();
         machine.init().unwrap();
         machine.step_once().unwrap(); // const.string
-        machine.step_once().unwrap(); // gate trace
+        machine.step_once().unwrap(); // circuit trace
         let trace = machine.trace_record();
         assert_eq!(trace.len(), 1);
         assert!(

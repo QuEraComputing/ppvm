@@ -46,7 +46,7 @@ fn hello_circuit_sst_parses_and_runs() {
 #[test]
 fn rotxy_sst_runs_and_flips_qubit() {
     // `rotxy.sst` applies R(axis_angle=π/2, θ=π) = RY(π) to q0, deterministically
-    // sending |0> → |1>, then measures it. Exercises the `gate r` path end to
+    // sending |0> → |1>, then measures it. Exercises the `circuit r` path end to
     // end: parse → resolve (pop θ, axis_angle, qubit) → execute via `tab.r`.
     let machine =
         ppvm_vihaco::run_file("tests/rotxy.sst").unwrap_or_else(|e| panic!("run rotxy.sst: {e:?}"));
@@ -203,7 +203,7 @@ fn function_call_branch_on_both_returned_values() {
 #[test]
 fn paulisum_bell_zz_trace_through_sst() {
     // Bell-state ⟨ZZ⟩ via PauliSum. Textbook circuit H(0); CNOT(0,1) is
-    // emitted reversed for Heisenberg propagation: `gate cnot; gate h`.
+    // emitted reversed for Heisenberg propagation: `circuit cnot; circuit h`.
     // Conjugating ZZ by CNOT(0,1) gives Z_1 (= IZ); H on q0 leaves IZ
     // untouched. Tracing against |00> matches IZ (pattern `Z?*`) and
     // returns +1.0 — matching ⟨Φ+|ZZ|Φ+⟩ = 1.
@@ -238,7 +238,7 @@ fn paulisum_multi_term_observable_trace_through_sst() {
 #[test]
 fn paulisum_trotter_matches_pure_rust_reference() {
     // Two Trotter layers of RXX(0.1) + RZZ(0.05), interleaved with explicit
-    // `gate truncate`. The .sst-driven path should agree bit-for-bit with a
+    // `circuit truncate`. The .sst-driven path should agree bit-for-bit with a
     // pure Rust PauliSum running the same gates: `indexmap::ByteFxHashF64`
     // gives deterministic iteration order (Decision 7), so truncation order
     // and float accumulation are stable across both paths.
@@ -248,7 +248,7 @@ fn paulisum_trotter_matches_pure_rust_reference() {
     let through_sst = machine.trace_record();
     assert_eq!(through_sst.len(), 1, "expected one trace emission");
 
-    // Pure Rust reference: same N=8 / strategy / gate order as the PauliSum
+    // Pure Rust reference: same N=8 / strategy / circuit order as the PauliSum
     // Bits64 bucket in `ppvm_vihaco::component`.
     use ppvm_runtime::config::indexmap::ByteFxHashF64;
     use ppvm_runtime::prelude::*;

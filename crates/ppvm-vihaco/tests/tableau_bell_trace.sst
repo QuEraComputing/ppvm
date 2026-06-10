@@ -3,16 +3,16 @@ device circuit.n_qubits 2;
 fn @main() {
     // Forward Bell prep: H(0); CNOT(0, 1) → |Φ+⟩.
     const.u64 0
-    gate h
+    circuit h
 
     const.u64 0
     const.u64 1
-    gate cnot
+    circuit cnot
 
     // Tableau-side trace: Σ_{P matches pat} ⟨ψ|P|ψ⟩. Positional `Z0Z1` matches
     // exactly the ZZ word, so this returns ⟨Φ+|ZZ|Φ+⟩ = 1.0 — the same value
     // the PauliSum backend produces by Heisenberg-propagating ZZ backward.
     const.str "Z0Z1"
-    gate trace
+    circuit trace
     ret
 }

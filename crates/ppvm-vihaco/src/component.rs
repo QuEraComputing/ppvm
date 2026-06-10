@@ -255,7 +255,7 @@ where
             // Fallback
             (inst, msg) => {
                 return Err(eyre!(
-                    "Invalid gate arguments {:?} for gate {:?}",
+                    "Invalid circuit instruction arguments {:?} for instruction {:?}",
                     msg,
                     inst
                 ));
@@ -431,7 +431,7 @@ where
             // Fallback (batched messages, mismatched shapes, etc.)
             (inst, msg) => {
                 return Err(eyre!(
-                    "Invalid gate arguments {:?} for gate {:?} on the PauliSum backend",
+                    "Invalid circuit instruction arguments {:?} for instruction {:?} on the PauliSum backend",
                     msg,
                     inst
                 ));
@@ -610,7 +610,7 @@ where
             // Fallback (batched messages, mismatched shapes, etc.)
             (inst, msg) => {
                 return Err(eyre!(
-                    "Invalid gate arguments {:?} for gate {:?} on the LossyPauliSum backend",
+                    "Invalid circuit instruction arguments {:?} for instruction {:?} on the LossyPauliSum backend",
                     msg,
                     inst
                 ));

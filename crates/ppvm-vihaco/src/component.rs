@@ -278,13 +278,165 @@ where
     }
 }
 
-/// PauliSum-backed executor (Heisenberg picture). Holds a `PauliSum<T>` and
-/// answers the same `CircuitInstruction` vocabulary as `CircuitExecutor`, but
-/// without measurement / reset support.
+/// Shared dispatch body for `PauliSumExecutor` and `LossyPauliSumExecutor`.
+/// Every non-loss `CircuitInstruction` lands here. `LossyPauliSumExecutor`
+/// matches `Loss` / `CorrelatedLoss` (single + batched) before invoking this
+/// macro and never reaches the loss-rejection arm below.
 ///
-/// Skeleton only — `execute_instruction` is a no-op until Task 5 fills in the
-/// gate-dispatch table per the plan's Gate Support Matrix. Not yet wired into
-/// the `Circuit` enum (that happens in Task 4).
+/// `$self` is passed as an `ident` (typically `self`) so the macro's
+/// expansion shares hygiene with the surrounding method's `self` parameter.
+/// `$inst` / `$msg` are passed the same way; `$backend` is the human-readable
+/// backend name baked into error messages.
+macro_rules! dispatch_common_paulisum {
+    ($self:ident, $inst:ident, $msg:ident, $backend:literal) => {{
+        use CircuitInstruction::*;
+        use CircuitMessage::*;
+        match ($inst, $msg) {
+            // Single-qubit Clifford
+            (X, &Qubit(addr)) => $self.state.x(addr),
+            (Y, &Qubit(addr)) => $self.state.y(addr),
+            (Z, &Qubit(addr)) => $self.state.z(addr),
+            (H, &Qubit(addr)) => $self.state.h(addr),
+            (S, &Qubit(addr)) => $self.state.s(addr),
+            (SAdj, &Qubit(addr)) => $self.state.s_adj(addr),
+            (SqrtX, &Qubit(addr)) => $self.state.sqrt_x(addr),
+            (SqrtY, &Qubit(addr)) => $self.state.sqrt_y(addr),
+            (SqrtXAdj, &Qubit(addr)) => $self.state.sqrt_x_adj(addr),
+            (SqrtYAdj, &Qubit(addr)) => $self.state.sqrt_y_adj(addr),
+
+            // Controlled gates
+            (CNOT, &TwoQubit(addr0, addr1)) => $self.state.cnot(addr0, addr1),
+            (CZ, &TwoQubit(addr0, addr1)) => $self.state.cz(addr0, addr1),
+
+            // Single-qubit rotations
+            (RX, &QubitAndFloat(addr, angle)) => $self.state.rx(addr, angle),
+            (RY, &QubitAndFloat(addr, angle)) => $self.state.ry(addr, angle),
+            (RZ, &QubitAndFloat(addr, angle)) => $self.state.rz(addr, angle),
+
+            // Two-qubit rotations
+            (RXX, &TwoQubitAndFloat(addr0, addr1, angle)) => {
+                $self.state.rxx(addr0, addr1, angle)
+            }
+            (RYY, &TwoQubitAndFloat(addr0, addr1, angle)) => {
+                $self.state.ryy(addr0, addr1, angle)
+            }
+            (RZZ, &TwoQubitAndFloat(addr0, addr1, angle)) => {
+                $self.state.rzz(addr0, addr1, angle)
+            }
+
+            // RXY: rotation about an axis in the x/y plane
+            (R, &QubitAndTwoFloats(addr, axis_angle, theta)) => {
+                $self.state.r(addr, axis_angle, theta)
+            }
+
+            // Noise
+            (Depolarize, &QubitAndFloat(addr, p)) => $self.state.depolarize(addr, p),
+            (Depolarize2, &TwoQubitAndFloat(addr0, addr1, p)) => {
+                $self.state.depolarize2(addr0, addr1, p)
+            }
+            (PauliError, QubitAndFloatArr3(addr0, ps)) => {
+                $self.state.pauli_error(*addr0, *ps)
+            }
+            (TwoQubitPauliError, TwoQubitAndFloatArr15(addr0, addr1, ps)) => {
+                $self.state.two_qubit_pauli_error(*addr0, *addr1, *ps)
+            }
+
+            // Truncate: pruning per the configured strategy.
+            (Truncate, None) => $self.state.truncate(),
+
+            // Batched arms: simple for-loop dispatch (no dedicated batch
+            // methods on PauliSum<T>, unlike GeneralizedTableau).
+            (X, QubitBatch(addrs)) => batch_for!($self.state, x, addrs),
+            (Y, QubitBatch(addrs)) => batch_for!($self.state, y, addrs),
+            (Z, QubitBatch(addrs)) => batch_for!($self.state, z, addrs),
+            (H, QubitBatch(addrs)) => batch_for!($self.state, h, addrs),
+            (S, QubitBatch(addrs)) => batch_for!($self.state, s, addrs),
+            (SAdj, QubitBatch(addrs)) => batch_for!($self.state, s_adj, addrs),
+            (SqrtX, QubitBatch(addrs)) => batch_for!($self.state, sqrt_x, addrs),
+            (SqrtY, QubitBatch(addrs)) => batch_for!($self.state, sqrt_y, addrs),
+            (SqrtXAdj, QubitBatch(addrs)) => batch_for!($self.state, sqrt_x_adj, addrs),
+            (SqrtYAdj, QubitBatch(addrs)) => batch_for!($self.state, sqrt_y_adj, addrs),
+            (RX, QubitBatchAndFloat(addrs, angle)) => {
+                batch_for!($self.state, rx, addrs, *angle)
+            }
+            (RY, QubitBatchAndFloat(addrs, angle)) => {
+                batch_for!($self.state, ry, addrs, *angle)
+            }
+            (RZ, QubitBatchAndFloat(addrs, angle)) => {
+                batch_for!($self.state, rz, addrs, *angle)
+            }
+            (Depolarize, QubitBatchAndFloat(addrs, p)) => {
+                batch_for!($self.state, depolarize, addrs, *p)
+            }
+            (PauliError, QubitBatchAndFloatArr3(addrs, ps)) => {
+                batch_for!($self.state, pauli_error, addrs, *ps)
+            }
+            (CNOT, TwoQubitBatch(pairs)) => batch_pairs_for!($self.state, cnot, pairs),
+            (CZ, TwoQubitBatch(pairs)) => batch_pairs_for!($self.state, cz, pairs),
+            (RXX, TwoQubitBatchAndFloat(pairs, angle)) => {
+                batch_pairs_for!($self.state, rxx, pairs, *angle)
+            }
+            (RYY, TwoQubitBatchAndFloat(pairs, angle)) => {
+                batch_pairs_for!($self.state, ryy, pairs, *angle)
+            }
+            (RZZ, TwoQubitBatchAndFloat(pairs, angle)) => {
+                batch_pairs_for!($self.state, rzz, pairs, *angle)
+            }
+            (Depolarize2, TwoQubitBatchAndFloat(pairs, p)) => {
+                batch_pairs_for!($self.state, depolarize2, pairs, *p)
+            }
+            (TwoQubitPauliError, TwoQubitBatchAndFloatArr15(pairs, ps)) => {
+                batch_pairs_for!($self.state, two_qubit_pauli_error, pairs, *ps)
+            }
+
+            // Not supported on either backend (Decision 11 + Gate Support
+            // Matrix). Loss / CorrelatedLoss handling differs by backend
+            // and lives in the caller's impl block, not this macro.
+            (Measure | Reset, _) => {
+                return Err(eyre!("{} is not supported on the {} backend", $inst, $backend));
+            }
+
+            // T / T_adj / U3 are listed as supported on PauliSum in the
+            // plan's Gate Support Matrix, but ppvm-runtime does not yet
+            // implement TGate or U3Gate for PauliSum<T> (only for
+            // GeneralizedTableau).
+            (T | TAdj | U3, _) => {
+                return Err(eyre!(
+                    "{} on {} requires upstream ppvm-runtime support that is not yet implemented",
+                    $inst,
+                    $backend
+                ));
+            }
+
+            // Trace: parse the resolved pattern string and compute the
+            // trace. Per plan Decision 9, parsing happens on every
+            // execution; no module-load caching.
+            (Trace, PauliPatternStr(s)) => {
+                let pat = PauliPattern::parse(s)
+                    .map_err(|e| eyre!("invalid Pauli pattern `{}`: {:?}", s, e))?;
+                let value = $self.state.trace(&pat);
+                return Ok(Effects::one(CircuitOutcomeEffect::Trace(TraceEffect {
+                    value,
+                })));
+            }
+
+            // Fallback (mismatched shapes, etc.)
+            (inst, msg) => {
+                return Err(eyre!(
+                    "Invalid circuit instruction arguments {:?} for instruction {:?} on the {} backend",
+                    msg,
+                    inst,
+                    $backend
+                ));
+            }
+        };
+        Ok(Effects::None)
+    }};
+}
+
+/// PauliSum-backed executor (Heisenberg picture). Holds a `PauliSum<T>` and
+/// answers the same `CircuitInstruction` vocabulary as `CircuitExecutor`,
+/// but without measurement / reset / loss support.
 pub struct PauliSumExecutor<T: Config<Coeff = f64>> {
     pub state: PauliSum<T>,
 }
@@ -309,136 +461,14 @@ where
         msg: &CircuitMessage,
     ) -> Result<Effects<CircuitOutcomeEffect>> {
         use CircuitInstruction::*;
-        use CircuitMessage::*;
 
-        match (inst, msg) {
-            // Single-qubit Clifford
-            (X, &Qubit(addr)) => self.state.x(addr),
-            (Y, &Qubit(addr)) => self.state.y(addr),
-            (Z, &Qubit(addr)) => self.state.z(addr),
-            (H, &Qubit(addr)) => self.state.h(addr),
-            (S, &Qubit(addr)) => self.state.s(addr),
-            (SAdj, &Qubit(addr)) => self.state.s_adj(addr),
-            (SqrtX, &Qubit(addr)) => self.state.sqrt_x(addr),
-            (SqrtY, &Qubit(addr)) => self.state.sqrt_y(addr),
-            (SqrtXAdj, &Qubit(addr)) => self.state.sqrt_x_adj(addr),
-            (SqrtYAdj, &Qubit(addr)) => self.state.sqrt_y_adj(addr),
+        if matches!(inst, Loss | CorrelatedLoss) {
+            return Err(eyre!(
+                "{inst} is not supported on the PauliSum backend; use the LossyPauliSum backend instead"
+            ));
+        }
 
-            // Controlled gates
-            (CNOT, &TwoQubit(addr0, addr1)) => self.state.cnot(addr0, addr1),
-            (CZ, &TwoQubit(addr0, addr1)) => self.state.cz(addr0, addr1),
-
-            // Single-qubit rotations
-            (RX, &QubitAndFloat(addr, angle)) => self.state.rx(addr, angle),
-            (RY, &QubitAndFloat(addr, angle)) => self.state.ry(addr, angle),
-            (RZ, &QubitAndFloat(addr, angle)) => self.state.rz(addr, angle),
-
-            // Two-qubit rotations
-            (RXX, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.rxx(addr0, addr1, angle),
-            (RYY, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.ryy(addr0, addr1, angle),
-            (RZZ, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.rzz(addr0, addr1, angle),
-
-            // RXY: rotation about an axis in the x/y plane
-            (R, &QubitAndTwoFloats(addr, axis_angle, theta)) => {
-                self.state.r(addr, axis_angle, theta)
-            }
-
-            // Noise
-            (Depolarize, &QubitAndFloat(addr, p)) => self.state.depolarize(addr, p),
-            (Depolarize2, &TwoQubitAndFloat(addr0, addr1, p)) => {
-                self.state.depolarize2(addr0, addr1, p)
-            }
-            (PauliError, QubitAndFloatArr3(addr0, ps)) => self.state.pauli_error(*addr0, *ps),
-            (TwoQubitPauliError, TwoQubitAndFloatArr15(addr0, addr1, ps)) => {
-                self.state.two_qubit_pauli_error(*addr0, *addr1, *ps)
-            }
-
-            // Truncate: pruning per the configured strategy.
-            (Truncate, None) => self.state.truncate(),
-
-            // Batched arms: simple for-loop dispatch (no dedicated batch
-            // methods on PauliSum<T>, unlike GeneralizedTableau).
-            (X, QubitBatch(addrs)) => batch_for!(self.state, x, addrs),
-            (Y, QubitBatch(addrs)) => batch_for!(self.state, y, addrs),
-            (Z, QubitBatch(addrs)) => batch_for!(self.state, z, addrs),
-            (H, QubitBatch(addrs)) => batch_for!(self.state, h, addrs),
-            (S, QubitBatch(addrs)) => batch_for!(self.state, s, addrs),
-            (SAdj, QubitBatch(addrs)) => batch_for!(self.state, s_adj, addrs),
-            (SqrtX, QubitBatch(addrs)) => batch_for!(self.state, sqrt_x, addrs),
-            (SqrtY, QubitBatch(addrs)) => batch_for!(self.state, sqrt_y, addrs),
-            (SqrtXAdj, QubitBatch(addrs)) => batch_for!(self.state, sqrt_x_adj, addrs),
-            (SqrtYAdj, QubitBatch(addrs)) => batch_for!(self.state, sqrt_y_adj, addrs),
-            (RX, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, rx, addrs, *angle),
-            (RY, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, ry, addrs, *angle),
-            (RZ, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, rz, addrs, *angle),
-            (Depolarize, QubitBatchAndFloat(addrs, p)) => {
-                batch_for!(self.state, depolarize, addrs, *p)
-            }
-            (PauliError, QubitBatchAndFloatArr3(addrs, ps)) => {
-                batch_for!(self.state, pauli_error, addrs, *ps)
-            }
-            (CNOT, TwoQubitBatch(pairs)) => batch_pairs_for!(self.state, cnot, pairs),
-            (CZ, TwoQubitBatch(pairs)) => batch_pairs_for!(self.state, cz, pairs),
-            (RXX, TwoQubitBatchAndFloat(pairs, angle)) => {
-                batch_pairs_for!(self.state, rxx, pairs, *angle)
-            }
-            (RYY, TwoQubitBatchAndFloat(pairs, angle)) => {
-                batch_pairs_for!(self.state, ryy, pairs, *angle)
-            }
-            (RZZ, TwoQubitBatchAndFloat(pairs, angle)) => {
-                batch_pairs_for!(self.state, rzz, pairs, *angle)
-            }
-            (Depolarize2, TwoQubitBatchAndFloat(pairs, p)) => {
-                batch_pairs_for!(self.state, depolarize2, pairs, *p)
-            }
-            (TwoQubitPauliError, TwoQubitBatchAndFloatArr15(pairs, ps)) => {
-                batch_pairs_for!(self.state, two_qubit_pauli_error, pairs, *ps)
-            }
-
-            // Not supported on PauliSum (Decision 11 + Gate Support Matrix).
-            (Measure | Reset, _) => {
-                return Err(eyre!("{inst} is not supported on the PauliSum backend"));
-            }
-            (Loss | CorrelatedLoss, _) => {
-                return Err(eyre!(
-                    "{inst} is not supported on the PauliSum backend; use the LossyPauliSum backend instead"
-                ));
-            }
-
-            // T / T_adj / U3 are listed as supported on PauliSum in the plan's
-            // Gate Support Matrix, but ppvm-runtime does not yet implement
-            // TGate or U3Gate for PauliSum<T> (only for GeneralizedTableau).
-            // Flag this finding here; lifting the upstream impls is out of
-            // scope for Task 5.
-            (T | TAdj | U3, _) => {
-                return Err(eyre!(
-                    "{inst} on PauliSum requires upstream ppvm-runtime support that is not yet implemented"
-                ));
-            }
-
-            // Trace: parse the resolved pattern string and compute the trace.
-            // Per plan Decision 9, parsing happens on every execution; no
-            // module-load caching.
-            (Trace, PauliPatternStr(s)) => {
-                let pat = PauliPattern::parse(s)
-                    .map_err(|e| eyre!("invalid Pauli pattern `{s}`: {e:?}"))?;
-                let value = self.state.trace(&pat);
-                return Ok(Effects::one(CircuitOutcomeEffect::Trace(TraceEffect {
-                    value,
-                })));
-            }
-
-            // Fallback (batched messages, mismatched shapes, etc.)
-            (inst, msg) => {
-                return Err(eyre!(
-                    "Invalid circuit instruction arguments {:?} for instruction {:?} on the PauliSum backend",
-                    msg,
-                    inst
-                ));
-            }
-        };
-
-        Ok(Effects::None)
+        dispatch_common_paulisum!(self, inst, msg, "PauliSum")
     }
 }
 
@@ -451,13 +481,10 @@ where
     }
 }
 
-/// LossyPauliSum-backed executor. Same shape as `PauliSumExecutor`; the
-/// distinction lives at the dispatch level (this executor accepts `Loss` /
-/// `CorrelatedLoss`) and at the concrete `T` used by the enclosing
-/// `Circuit::LossyPauliSum` variant (a Config whose `PauliWordType` is
-/// `LossyPauliWord`, picked in Task 4).
-///
-/// Skeleton only — Task 5 fills in the dispatch.
+/// LossyPauliSum-backed executor. Same dispatch as `PauliSumExecutor` plus
+/// `Loss` / `CorrelatedLoss` channels. The concrete `T` used by the
+/// enclosing `Circuit::LossyPauliSum` variant is a `Config` whose
+/// `PauliWordType` is `LossyPauliWord` (see `LossyPauliSumConfig`).
 pub struct LossyPauliSumExecutor<T: Config<Coeff = f64>> {
     pub state: PauliSum<T>,
 }
@@ -484,140 +511,30 @@ where
         use CircuitInstruction::*;
         use CircuitMessage::*;
 
+        // Loss / CorrelatedLoss are the only instructions that differ from
+        // PauliSum; handle them here then delegate everything else to the
+        // shared dispatch.
         match (inst, msg) {
-            // Single-qubit Clifford
-            (X, &Qubit(addr)) => self.state.x(addr),
-            (Y, &Qubit(addr)) => self.state.y(addr),
-            (Z, &Qubit(addr)) => self.state.z(addr),
-            (H, &Qubit(addr)) => self.state.h(addr),
-            (S, &Qubit(addr)) => self.state.s(addr),
-            (SAdj, &Qubit(addr)) => self.state.s_adj(addr),
-            (SqrtX, &Qubit(addr)) => self.state.sqrt_x(addr),
-            (SqrtY, &Qubit(addr)) => self.state.sqrt_y(addr),
-            (SqrtXAdj, &Qubit(addr)) => self.state.sqrt_x_adj(addr),
-            (SqrtYAdj, &Qubit(addr)) => self.state.sqrt_y_adj(addr),
-
-            // Controlled gates
-            (CNOT, &TwoQubit(addr0, addr1)) => self.state.cnot(addr0, addr1),
-            (CZ, &TwoQubit(addr0, addr1)) => self.state.cz(addr0, addr1),
-
-            // Single-qubit rotations
-            (RX, &QubitAndFloat(addr, angle)) => self.state.rx(addr, angle),
-            (RY, &QubitAndFloat(addr, angle)) => self.state.ry(addr, angle),
-            (RZ, &QubitAndFloat(addr, angle)) => self.state.rz(addr, angle),
-
-            // Two-qubit rotations
-            (RXX, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.rxx(addr0, addr1, angle),
-            (RYY, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.ryy(addr0, addr1, angle),
-            (RZZ, &TwoQubitAndFloat(addr0, addr1, angle)) => self.state.rzz(addr0, addr1, angle),
-
-            // RXY: rotation about an axis in the x/y plane
-            (R, &QubitAndTwoFloats(addr, axis_angle, theta)) => {
-                self.state.r(addr, axis_angle, theta)
+            (Loss, &QubitAndFloat(addr, p)) => {
+                self.state.loss_channel(addr, p);
+                return Ok(Effects::None);
             }
-
-            // Noise
-            (Depolarize, &QubitAndFloat(addr, p)) => self.state.depolarize(addr, p),
-            (Depolarize2, &TwoQubitAndFloat(addr0, addr1, p)) => {
-                self.state.depolarize2(addr0, addr1, p)
-            }
-            (PauliError, QubitAndFloatArr3(addr0, ps)) => self.state.pauli_error(*addr0, *ps),
-            (TwoQubitPauliError, TwoQubitAndFloatArr15(addr0, addr1, ps)) => {
-                self.state.two_qubit_pauli_error(*addr0, *addr1, *ps)
-            }
-
-            // Loss (accepted on LossyPauliSum; rejected on plain PauliSum)
-            (Loss, &QubitAndFloat(addr, p)) => self.state.loss_channel(addr, p),
             (CorrelatedLoss, TwoQubitAndFloatArr3(addr0, addr1, ps)) => {
-                self.state.correlated_loss_channel(*addr0, *addr1, *ps)
-            }
-
-            // Truncate: pruning per the configured strategy.
-            (Truncate, None) => self.state.truncate(),
-
-            // Batched arms: simple for-loop dispatch (no dedicated batch
-            // methods on PauliSum<T>).
-            (X, QubitBatch(addrs)) => batch_for!(self.state, x, addrs),
-            (Y, QubitBatch(addrs)) => batch_for!(self.state, y, addrs),
-            (Z, QubitBatch(addrs)) => batch_for!(self.state, z, addrs),
-            (H, QubitBatch(addrs)) => batch_for!(self.state, h, addrs),
-            (S, QubitBatch(addrs)) => batch_for!(self.state, s, addrs),
-            (SAdj, QubitBatch(addrs)) => batch_for!(self.state, s_adj, addrs),
-            (SqrtX, QubitBatch(addrs)) => batch_for!(self.state, sqrt_x, addrs),
-            (SqrtY, QubitBatch(addrs)) => batch_for!(self.state, sqrt_y, addrs),
-            (SqrtXAdj, QubitBatch(addrs)) => batch_for!(self.state, sqrt_x_adj, addrs),
-            (SqrtYAdj, QubitBatch(addrs)) => batch_for!(self.state, sqrt_y_adj, addrs),
-            (RX, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, rx, addrs, *angle),
-            (RY, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, ry, addrs, *angle),
-            (RZ, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.state, rz, addrs, *angle),
-            (Depolarize, QubitBatchAndFloat(addrs, p)) => {
-                batch_for!(self.state, depolarize, addrs, *p)
+                self.state.correlated_loss_channel(*addr0, *addr1, *ps);
+                return Ok(Effects::None);
             }
             (Loss, QubitBatchAndFloat(addrs, p)) => {
-                batch_for!(self.state, loss_channel, addrs, *p)
-            }
-            (PauliError, QubitBatchAndFloatArr3(addrs, ps)) => {
-                batch_for!(self.state, pauli_error, addrs, *ps)
-            }
-            (CNOT, TwoQubitBatch(pairs)) => batch_pairs_for!(self.state, cnot, pairs),
-            (CZ, TwoQubitBatch(pairs)) => batch_pairs_for!(self.state, cz, pairs),
-            (RXX, TwoQubitBatchAndFloat(pairs, angle)) => {
-                batch_pairs_for!(self.state, rxx, pairs, *angle)
-            }
-            (RYY, TwoQubitBatchAndFloat(pairs, angle)) => {
-                batch_pairs_for!(self.state, ryy, pairs, *angle)
-            }
-            (RZZ, TwoQubitBatchAndFloat(pairs, angle)) => {
-                batch_pairs_for!(self.state, rzz, pairs, *angle)
-            }
-            (Depolarize2, TwoQubitBatchAndFloat(pairs, p)) => {
-                batch_pairs_for!(self.state, depolarize2, pairs, *p)
+                batch_for!(self.state, loss_channel, addrs, *p);
+                return Ok(Effects::None);
             }
             (CorrelatedLoss, TwoQubitBatchAndFloatArr3(pairs, ps)) => {
-                batch_pairs_for!(self.state, correlated_loss_channel, pairs, *ps)
+                batch_pairs_for!(self.state, correlated_loss_channel, pairs, *ps);
+                return Ok(Effects::None);
             }
-            (TwoQubitPauliError, TwoQubitBatchAndFloatArr15(pairs, ps)) => {
-                batch_pairs_for!(self.state, two_qubit_pauli_error, pairs, *ps)
-            }
+            _ => {}
+        }
 
-            // Not supported on LossyPauliSum (Decision 11 + Gate Support Matrix).
-            (Measure | Reset, _) => {
-                return Err(eyre!(
-                    "{inst} is not supported on the LossyPauliSum backend"
-                ));
-            }
-
-            // See PauliSumExecutor: T/T_adj/U3 require upstream ppvm-runtime
-            // impls that don't exist yet.
-            (T | TAdj | U3, _) => {
-                return Err(eyre!(
-                    "{inst} on LossyPauliSum requires upstream ppvm-runtime support that is not yet implemented"
-                ));
-            }
-
-            // Trace: parse the resolved pattern string and compute the trace.
-            // Per plan Decision 9, parsing happens on every execution; no
-            // module-load caching.
-            (Trace, PauliPatternStr(s)) => {
-                let pat = PauliPattern::parse(s)
-                    .map_err(|e| eyre!("invalid Pauli pattern `{s}`: {e:?}"))?;
-                let value = self.state.trace(&pat);
-                return Ok(Effects::one(CircuitOutcomeEffect::Trace(TraceEffect {
-                    value,
-                })));
-            }
-
-            // Fallback (batched messages, mismatched shapes, etc.)
-            (inst, msg) => {
-                return Err(eyre!(
-                    "Invalid circuit instruction arguments {:?} for instruction {:?} on the LossyPauliSum backend",
-                    msg,
-                    inst
-                ));
-            }
-        };
-
-        Ok(Effects::None)
+        dispatch_common_paulisum!(self, inst, msg, "LossyPauliSum")
     }
 }
 

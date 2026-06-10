@@ -4,6 +4,7 @@
 use eyre::{Result, WrapErr};
 use ppvm_vihaco::composite::{PPVM, StepOutcome};
 use ppvm_vihaco::measurements::MeasurementResult;
+use ppvm_vihaco::shots::ShotRecord;
 use std::io::{BufRead, Write};
 use std::path::Path;
 
@@ -43,7 +44,7 @@ pub fn run(
     }
 
     let text = match format {
-        MeasurementFormat::Bits => format_shots(&records),
+        MeasurementFormat::Bits => format_shot_records(&records),
         MeasurementFormat::Debug => format!("{records:?}"),
     };
 
@@ -58,13 +59,29 @@ pub fn run(
     Ok(())
 }
 
-/// Render one shot per line, each as a flat bit string.
-fn format_shots(records: &[Vec<MeasurementResult>]) -> String {
+/// Render one shot per line.
+fn format_shot_records(records: &[ShotRecord]) -> String {
     records
         .iter()
-        .map(|shot| format_shot(shot))
+        .map(format_shot_record)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Render one shot. Layout:
+/// - Tableau-style (only measurements): `bits` — same as the pre-trace format.
+/// - PauliSum-style (only traces): comma-separated floats.
+/// - Both present: `bits | t0,t1,...`.
+/// - Both empty: empty string.
+fn format_shot_record(record: &ShotRecord) -> String {
+    let bits = format_shot(&record.measurements);
+    let traces = format_traces(&record.traces);
+    match (bits.is_empty(), traces.is_empty()) {
+        (false, false) => format!("{bits} | {traces}"),
+        (false, true) => bits,
+        (true, false) => traces,
+        (true, true) => String::new(),
+    }
 }
 
 /// Render a shot's full measurement record as one flat bit string, all events
@@ -76,6 +93,16 @@ fn format_shot(record: &[MeasurementResult]) -> String {
         .flatten()
         .map(|outcome| char::from(b'0' + *outcome as u8))
         .collect()
+}
+
+/// Render trace values as comma-separated floats with default `f64` formatting
+/// (`1.0` → `"1"`, `1.5` → `"1.5"`, etc.). Empty record renders as empty string.
+fn format_traces(traces: &[f64]) -> String {
+    traces
+        .iter()
+        .map(|t| format!("{t}"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 pub fn parse(file: &str, format: Format) -> Result<()> {
@@ -206,6 +233,10 @@ fn debug_loop(
         "Measurements: {}",
         format_shot(&machine.measurement_record())
     )?;
+    let traces = machine.trace_record();
+    if !traces.is_empty() {
+        writeln!(output, "Traces: {}", format_traces(&traces))?;
+    }
     if !ever_paused {
         writeln!(
             output,
@@ -227,6 +258,10 @@ fn print_location(machine: &PPVM, output: &mut impl Write) -> Result<()> {
         "measurements: {}",
         format_shot(&machine.measurement_record())
     )?;
+    let traces = machine.trace_record();
+    if !traces.is_empty() {
+        writeln!(output, "traces: {}", format_traces(&traces))?;
+    }
     Ok(())
 }
 
@@ -307,12 +342,41 @@ mod tests {
     }
 
     #[test]
-    fn format_shots_joins_shots_with_newlines() {
+    fn format_shot_records_joins_shots_with_newlines() {
         let shots = vec![
-            vec![row(&[MeasurementOutcome::One])],
-            vec![row(&[MeasurementOutcome::Zero])],
+            ShotRecord {
+                measurements: vec![row(&[MeasurementOutcome::One])],
+                traces: vec![],
+            },
+            ShotRecord {
+                measurements: vec![row(&[MeasurementOutcome::Zero])],
+                traces: vec![],
+            },
         ];
-        assert_eq!(format_shots(&shots), "1\n0");
+        assert_eq!(format_shot_records(&shots), "1\n0");
+    }
+
+    #[test]
+    fn format_shot_record_traces_only_shows_floats() {
+        let shot = ShotRecord {
+            measurements: vec![],
+            traces: vec![1.0, 0.5],
+        };
+        assert_eq!(format_shot_record(&shot), "1,0.5");
+    }
+
+    #[test]
+    fn format_shot_record_both_present_joins_with_pipe() {
+        let shot = ShotRecord {
+            measurements: vec![row(&[MeasurementOutcome::One])],
+            traces: vec![0.25],
+        };
+        assert_eq!(format_shot_record(&shot), "1 | 0.25");
+    }
+
+    #[test]
+    fn format_shot_record_both_empty_is_empty_string() {
+        assert_eq!(format_shot_record(&ShotRecord::default()), "");
     }
 
     // ─── run ───────────────────────────────────────────────────────────
@@ -335,6 +399,26 @@ mod tests {
         let contents = fs::read_to_string(&out).unwrap();
         // Four deterministic shots of |0>, one per line.
         assert_eq!(contents, "0\n0\n0\n0\n");
+
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&out);
+    }
+
+    #[test]
+    fn run_outputs_trace_record_for_paulisum_backend() {
+        // Single-qubit PauliSum with observable Z, no gates, trace `Z?*` → 1.0.
+        // The .sst-driven path should surface the trace value in `run`'s output.
+        const TRACE_PROGRAM: &str = "device circuit.n_qubits 1;\n\
+             device circuit.backend paulisum;\n\
+             device circuit.observable Z;\n\
+             fn @main() { const.str \"Z?*\"\n gate trace\n ret }\n";
+        let src = temp_file("ppvm_cli_run_trace.sst", TRACE_PROGRAM);
+        let out = std::env::temp_dir().join("ppvm_cli_run_trace.txt");
+        let _ = fs::remove_file(&out);
+
+        run(&src, 1, None, out.to_str(), false, MeasurementFormat::Bits).unwrap();
+        let contents = fs::read_to_string(&out).unwrap();
+        assert_eq!(contents, "1\n", "expected trace value 1.0 in output");
 
         let _ = fs::remove_file(&src);
         let _ = fs::remove_file(&out);

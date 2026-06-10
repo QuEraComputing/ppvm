@@ -198,6 +198,102 @@ fn function_call_branch_on_both_returned_values() {
     );
 }
 
+// ─── Task 12: PauliSum / LossyPauliSum end-to-end via .sst source ────────
+
+#[test]
+fn paulisum_bell_zz_trace_through_sst() {
+    // Bell-state ⟨ZZ⟩ via PauliSum. Textbook circuit H(0); CNOT(0,1) is
+    // emitted reversed for Heisenberg propagation: `gate cnot; gate h`.
+    // Conjugating ZZ by CNOT(0,1) gives Z_1 (= IZ); H on q0 leaves IZ
+    // untouched. Tracing against |00> matches IZ (pattern `Z?*`) and
+    // returns +1.0 — matching ⟨Φ+|ZZ|Φ+⟩ = 1.
+    let machine = ppvm_vihaco::run_file("tests/paulisum_bell_trace.sst")
+        .unwrap_or_else(|e| panic!("run paulisum_bell_trace.sst: {e:?}"));
+    let trace = machine.trace_record();
+    assert_eq!(trace.len(), 1, "expected one trace emission");
+    assert!(
+        (trace[0] - 1.0).abs() < 1e-12,
+        "expected ⟨ZZ⟩ = 1.0, got {}",
+        trace[0]
+    );
+}
+
+#[test]
+fn paulisum_multi_term_observable_trace_through_sst() {
+    // Phase 3 wiring: a 2-term observable `1.0*ZZ+0.5*XX` parses on the
+    // header, seeds both terms, and an end-of-program trace picks up their
+    // contributions. With no gates applied, tracing `[XZ]?*` matches both
+    // ZZ and XX directly → coef sum = 1.0 + 0.5 = 1.5.
+    let machine = ppvm_vihaco::run_file("tests/paulisum_multi_term_trace.sst")
+        .unwrap_or_else(|e| panic!("run paulisum_multi_term_trace.sst: {e:?}"));
+    let trace = machine.trace_record();
+    assert_eq!(trace.len(), 1);
+    assert!(
+        (trace[0] - 1.5).abs() < 1e-12,
+        "expected 1.5, got {}",
+        trace[0]
+    );
+}
+
+#[test]
+fn paulisum_trotter_matches_pure_rust_reference() {
+    // Two Trotter layers of RXX(0.1) + RZZ(0.05), interleaved with explicit
+    // `gate truncate`. The .sst-driven path should agree bit-for-bit with a
+    // pure Rust PauliSum running the same gates: `indexmap::ByteFxHashF64`
+    // gives deterministic iteration order (Decision 7), so truncation order
+    // and float accumulation are stable across both paths.
+
+    let machine = ppvm_vihaco::run_file("tests/paulisum_trotter_truncate.sst")
+        .unwrap_or_else(|e| panic!("run paulisum_trotter_truncate.sst: {e:?}"));
+    let through_sst = machine.trace_record();
+    assert_eq!(through_sst.len(), 1, "expected one trace emission");
+
+    // Pure Rust reference: same N=8 / strategy / gate order as the PauliSum
+    // Bits64 bucket in `ppvm_vihaco::component`.
+    use ppvm_runtime::config::indexmap::ByteFxHashF64;
+    use ppvm_runtime::prelude::*;
+    use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
+    type RefConfig = ByteFxHashF64<8, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
+
+    let mut state: PauliSum<RefConfig> = PauliSum::builder()
+        .n_qubits(2)
+        .strategy(CombinedStrategy(
+            CoefficientThreshold(1e-6),
+            MaxPauliWeight(usize::MAX),
+        ))
+        .build();
+    state += ("ZZ", 1.0);
+    state.rxx(0, 1, 0.1);
+    state.rzz(0, 1, 0.05);
+    state.truncate();
+    state.rxx(0, 1, 0.1);
+    state.rzz(0, 1, 0.05);
+    state.truncate();
+    let pat = PauliPattern::parse("Z?*").expect("parse pattern");
+    let reference = state.trace(&pat);
+
+    assert_eq!(
+        through_sst[0], reference,
+        ".sst-driven trace must match pure Rust reference bit-for-bit"
+    );
+}
+
+#[test]
+fn paulisum_measure_returns_unsupported_error() {
+    // Per Decision 11, Measure on PauliSum hits the dispatch fallback with a
+    // clear "not supported on the PauliSum backend" error.
+    let mut machine = PPVM::default();
+    machine
+        .load_file("tests/paulisum_measure_error.sst")
+        .unwrap_or_else(|e| panic!("load paulisum_measure_error.sst: {e:?}"));
+    let err = machine.run().unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("not supported on the PauliSum backend"),
+        "expected PauliSum-rejection error, got: {msg}"
+    );
+}
+
 // ─── Auto-detect via load_file: route by content, not extension ───────────
 
 #[test]

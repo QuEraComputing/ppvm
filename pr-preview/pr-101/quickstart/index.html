@@ -79,8 +79,19 @@ You want to embed ppvm in a simulator, build a new gate or noise
           pre.appendChild(btn);
 
           btn.addEventListener("click", async () => {
+            // nbconvert-rendered cells have no <code> inside <pre>, so we'd
+            // fall back to pre.innerText — which includes this button's
+            // "Copy" label. Strip copy buttons from a clone before reading.
             const code = pre.querySelector("code");
-            const text = (code ? code.innerText : pre.innerText).replace(/\n$/, "");
+            let raw;
+            if (code) {
+              raw = code.innerText;
+            } else {
+              const clone = pre.cloneNode(true);
+              for (const el of clone.querySelectorAll(".copy-btn")) el.remove();
+              raw = clone.innerText;
+            }
+            const text = raw.replace(/\n$/, "");
             try {
               await navigator.clipboard.writeText(text);
             } catch {
@@ -154,7 +165,7 @@ You want to embed ppvm in a simulator, build a new gate or noise
         sync();
       })();
     </script> <footer class="foot"> <div class="foot-inner"> <span>PPVM · QuEra Computing · open source, Apache License 2.0</span> <span> <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
-          documentation generated <time>2026-06-09</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
+          documentation generated <time>2026-06-10</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
       document.addEventListener("DOMContentLoaded", () => {
         if (typeof renderMathInElement !== "function") return;
         renderMathInElement(document.body, {

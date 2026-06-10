@@ -12,7 +12,7 @@ End-to-end Jupyter notebooks executed at build time, with stdout,
         is also a runnable Jupytext <code>.py</code> file in the repo —
         the "Source" link below opens it on GitHub at the commit that
         produced this page.
-</p> </div> <ul class="examples-list"> <li> <a class="examples-title" href="/pr-preview/pr-101/examples/msd">Magic State Distillation with the Generalized Stabilizer Tableau</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/f1090f18e29e0632c621fa637ce31fe2a8427c3d/docs/notebooks/msd.py">docs/notebooks/msd.py</a> </p> </li><li> <a class="examples-title" href="/pr-preview/pr-101/examples/nearest-neighbor-dephasing">Dephased Nearest-Neighbour XY Chain</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/f1090f18e29e0632c621fa637ce31fe2a8427c3d/docs/notebooks/nearest_neighbor_dephasing.py">docs/notebooks/nearest_neighbor_dephasing.py</a> </p> </li><li> <a class="examples-title" href="/pr-preview/pr-101/examples/trotter">Trotterized Time Evolution of the XZZ Ising Chain</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/f1090f18e29e0632c621fa637ce31fe2a8427c3d/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a> </p> </li> </ul> </article>  </main>  <script>
+</p> </div> <ul class="examples-list"> <li> <a class="examples-title" href="/pr-preview/pr-101/examples/msd">Magic State Distillation with the Generalized Stabilizer Tableau</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/80844f8ff4be8d35489fb583be0f476b7b9353d6/docs/notebooks/msd.py">docs/notebooks/msd.py</a> </p> </li><li> <a class="examples-title" href="/pr-preview/pr-101/examples/nearest-neighbor-dephasing">Dephased Nearest-Neighbour XY Chain</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/80844f8ff4be8d35489fb583be0f476b7b9353d6/docs/notebooks/nearest_neighbor_dephasing.py">docs/notebooks/nearest_neighbor_dephasing.py</a> </p> </li><li> <a class="examples-title" href="/pr-preview/pr-101/examples/trotter">Trotterized Time Evolution of the XZZ Ising Chain</a> <p class="examples-meta"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/80844f8ff4be8d35489fb583be0f476b7b9353d6/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a> </p> </li> </ul> </article>  </main>  <script>
       // Mobile navigation drawer + responsive open-state for the
       // sidebar TOCs. On wide viewports the TOCs are always open and
       // the disclosure widget on .side-nav is visually neutralised by
@@ -74,8 +74,19 @@ End-to-end Jupyter notebooks executed at build time, with stdout,
           pre.appendChild(btn);
 
           btn.addEventListener("click", async () => {
+            // nbconvert-rendered cells have no <code> inside <pre>, so we'd
+            // fall back to pre.innerText — which includes this button's
+            // "Copy" label. Strip copy buttons from a clone before reading.
             const code = pre.querySelector("code");
-            const text = (code ? code.innerText : pre.innerText).replace(/\n$/, "");
+            let raw;
+            if (code) {
+              raw = code.innerText;
+            } else {
+              const clone = pre.cloneNode(true);
+              for (const el of clone.querySelectorAll(".copy-btn")) el.remove();
+              raw = clone.innerText;
+            }
+            const text = raw.replace(/\n$/, "");
             try {
               await navigator.clipboard.writeText(text);
             } catch {
@@ -149,7 +160,7 @@ End-to-end Jupyter notebooks executed at build time, with stdout,
         sync();
       })();
     </script> <footer class="foot"> <div class="foot-inner"> <span>PPVM · QuEra Computing · open source, Apache License 2.0</span> <span> <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
-          documentation generated <time>2026-06-09</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
+          documentation generated <time>2026-06-10</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
       document.addEventListener("DOMContentLoaded", () => {
         if (typeof renderMathInElement !== "function") return;
         renderMathInElement(document.body, {

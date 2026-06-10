@@ -1,0 +1,37 @@
+device circuit.n_qubits 2;
+device circuit.backend paulisum;
+device circuit.observable ZZ;
+device circuit.coefficient_threshold 1e-6;
+
+fn @main() {
+    // Two Trotter layers of RXX(0.1) RZZ(0.05), with explicit truncate
+    // between layers. RXX branches Z->Y so the sum grows; truncate prunes
+    // small-coefficient terms via `coefficient_threshold`.
+    const.u64 0
+    const.u64 1
+    const.f64 0.1
+    gate rxx
+
+    const.u64 0
+    const.u64 1
+    const.f64 0.05
+    gate rzz
+
+    gate truncate
+
+    const.u64 0
+    const.u64 1
+    const.f64 0.1
+    gate rxx
+
+    const.u64 0
+    const.u64 1
+    const.f64 0.05
+    gate rzz
+
+    gate truncate
+
+    const.str "Z?*"
+    gate trace
+    ret
+}

@@ -84,6 +84,23 @@ impl PPVMResolver {
                 };
                 Ok(vec![vihaco_cpu::Instruction::Return(keep).into()])
             }
+            "const.str" => {
+                let lit = match raw.operands.as_slice() {
+                    [RawOperand::StringLit(s)] => s.clone(),
+                    other => {
+                        return Err(eyre::eyre!(
+                            "`const.str` takes one string literal, got {other:?}"
+                        ));
+                    }
+                };
+                let addr = u32::try_from(self.strings.len()).map_err(|_| {
+                    eyre::eyre!("string table overflowed u32 at `const.str` lowering")
+                })?;
+                self.strings.push(lit);
+                Ok(vec![
+                    vihaco_cpu::Instruction::Const(vihaco::Value::String(addr)).into(),
+                ])
+            }
             other => Err(eyre::eyre!(
                 "PPVMResolver: unhandled raw form `{other}` (operands: {:?})",
                 raw.operands

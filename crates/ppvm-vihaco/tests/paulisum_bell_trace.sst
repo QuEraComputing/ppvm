@@ -1,0 +1,18 @@
+device circuit.n_qubits 2;
+device circuit.backend paulisum;
+device circuit.observable ZZ;
+
+fn @main() {
+    // Textbook H(0); CNOT(0,1) — emit reversed for Heisenberg propagation.
+    const.u64 0
+    const.u64 1
+    gate cnot
+
+    const.u64 0
+    gate h
+
+    // Trace against |00>: match Z-or-identity on every qubit.
+    const.str "Z?*"
+    gate trace
+    ret
+}

@@ -16,6 +16,27 @@ from .mixins import (
 )
 from .types import GeneralizedTableauInterface
 
+MAX_N_QUBITS = 2048
+"""Maximum number of qubits supported by the Python bindings.
+
+The native module pre-compiles a fixed set of tableau interfaces; beyond this
+limit, use the Rust crate directly.
+"""
+
+
+def _native_tableau_cls(n_qubits: int):
+    if n_qubits < 1:
+        raise ValueError(
+            f"n_qubits must be between 1 and {MAX_N_QUBITS} (got {n_qubits})."
+        )
+    if n_qubits > MAX_N_QUBITS:
+        raise ValueError(
+            f"n_qubits must be between 1 and {MAX_N_QUBITS} (got {n_qubits}); "
+            "to simulate more qubits, use the ppvm-tableau Rust crate directly."
+        )
+    N_interface = (n_qubits + 63) // 64
+    return getattr(ppvm_python_native, f"GeneralizedTableau{N_interface}")
+
 
 class MeasurementResult(enum.IntEnum):
     """A measurement outcome, which accounts for a qubit being potentially lost."""
@@ -56,13 +77,11 @@ class GeneralizedTableau(
     _interface: GeneralizedTableauInterface = field(init=False, repr=False)
 
     def __post_init__(self, seed: int | None):
-        N_interface = (self.n_qubits + 63) // 64
+        native_cls = _native_tableau_cls(self.n_qubits)
         object.__setattr__(
             self,
             "_interface",
-            getattr(ppvm_python_native, f"GeneralizedTableau{N_interface}")(
-                self.n_qubits, self.min_abs_coeff, seed
-            ),
+            native_cls(self.n_qubits, self.min_abs_coeff, seed),
         )
 
     def fork(self, seed: int | None = None) -> "GeneralizedTableau":
@@ -232,8 +251,7 @@ class GeneralizedTableau(
         ``RAYON_NUM_THREADS`` environment variable before the first call to
         control the pool size (it defaults to the number of logical cores).
         """
-        N_interface = (n_qubits + 63) // 64
-        native_cls = getattr(ppvm_python_native, f"GeneralizedTableau{N_interface}")
+        native_cls = _native_tableau_cls(n_qubits)
         raw = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
         return [[MeasurementResult(x) for x in shot] for shot in raw]
 

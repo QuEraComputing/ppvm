@@ -1,11 +1,9 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{
-    config::Config,
-    sum::PauliSum,
-    traits::{ACMapIter, Trace},
-};
+use crate::sum::PauliSum;
+use ppvm_runtime::config::Config;
+use ppvm_runtime::traits::{ACMapIter, Trace};
 use num::Zero;
 
 impl<'a, T: Config, Rhs> Trace<'a, Rhs> for PauliSum<T>
@@ -42,7 +40,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::fxhash::ByteF64;
+    use ppvm_runtime::config::fxhash::ByteF64;
 
     fn sum(terms: &[(&str, f64)]) -> PauliSum<ByteF64<2>> {
         let mut s: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(4).build();

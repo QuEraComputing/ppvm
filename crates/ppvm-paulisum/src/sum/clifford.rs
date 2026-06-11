@@ -1,12 +1,10 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{
-    config::Config,
-    phase::PhasedPauliWord,
-    sum::PauliSum,
-    traits::{Clifford, CliffordExtensions, PauliWordTrait},
-};
+use crate::sum::PauliSum;
+use ppvm_runtime::config::Config;
+use ppvm_runtime::phase::PhasedPauliWord;
+use ppvm_runtime::traits::{Clifford, CliffordExtensions, PauliWordTrait};
 
 macro_rules! map_word {
     ($name:ident, $($index:ident),*) => {

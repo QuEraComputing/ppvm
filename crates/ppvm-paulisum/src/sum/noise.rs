@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::char::Pauli;
-use crate::loss::LossyPauliWord;
-use crate::traits::*;
-use crate::{config::Config, sum::PauliSum};
+use ppvm_runtime::char::Pauli;
+use ppvm_runtime::loss::LossyPauliWord;
+use ppvm_runtime::traits::*;
+use ppvm_runtime::config::Config;
+use crate::sum::PauliSum;
 use num::traits::Float;
 use std::hash::BuildHasher;
 

@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::data::PauliSum;
-use crate::{
-    config::Config,
-    traits::{ACMapContains, ACMapIter},
-};
+use ppvm_runtime::config::Config;
+use ppvm_runtime::traits::{ACMapContains, ACMapIter};
 
 impl<T: Config> approx::AbsDiffEq for PauliSum<T>
 where

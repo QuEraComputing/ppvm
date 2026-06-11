@@ -2,6 +2,3 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod hashmap;
-
-#[cfg(feature = "dashmap")]
-mod dashmap;

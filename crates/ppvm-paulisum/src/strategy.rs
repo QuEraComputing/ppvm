@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::traits::*;
+use ppvm_runtime::traits::*;
 
 /// Two strategies run in sequence: `S1` then `S2`.
 ///
@@ -18,11 +18,11 @@ impl<S1: Strategy, S2: Strategy> Strategy for CombinedStrategy<S1, S2> {
 
     fn truncate<S, V, H, M, W>(&self, map: &mut M)
     where
-        S: crate::prelude::PauliStorage,
+        S: ppvm_runtime::prelude::PauliStorage,
         V: Coefficient,
         H: std::hash::BuildHasher + Clone + Default,
         W: PauliWordTrait,
-        M: crate::prelude::ACMap<S, V, H, W>,
+        M: ppvm_runtime::prelude::ACMap<S, V, H, W>,
     {
         self.0.truncate(map);
         self.1.truncate(map);
@@ -127,7 +127,7 @@ impl Strategy for CoefficientThreshold {
 }
 
 /// Drop terms whose loss weight (number of lost qubits) exceeds the
-/// given bound. Only meaningful for [`LossyPauliWord`](crate::loss::LossyPauliWord).
+/// given bound. Only meaningful for [`LossyPauliWord`](ppvm_runtime::loss::LossyPauliWord).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MaxLossWeight(pub usize);
 

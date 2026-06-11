@@ -3,8 +3,9 @@
 
 use std::marker::PhantomData;
 
-use crate::traits::{Coefficient, NoStrategy, PauliWordTrait, Strategy};
-use crate::{config::Config, word::PauliWord};
+use ppvm_runtime::traits::{Coefficient, NoStrategy, PauliWordTrait, Strategy};
+use ppvm_runtime::config::Config;
+use ppvm_runtime::word::PauliWord;
 
 /// `DashMap`-backed concurrent [`Config`] with `[u8; N]` storage and `FxHasher`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

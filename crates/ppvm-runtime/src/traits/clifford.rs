@@ -10,22 +10,6 @@ use crate::traits::PauliWordTrait;
 /// Implemented by `PauliSum`, by every tableau type, and — via the
 /// blanket impl in this module — by every [`PauliWordTrait`]
 /// implementor.
-///
-/// # Examples
-///
-/// Build the GHZ-preparation circuit on a `PauliSum` (Heisenberg picture,
-/// so gates are applied in reverse):
-///
-/// ```
-/// use ppvm_runtime::prelude::*;
-///
-/// let mut state: PauliSum<config::indexmap::ByteFxHashF64<1>> =
-///     PauliSum::builder().n_qubits(2).build();
-/// state += ("ZZ", 1.0);
-/// state.cnot(0, 1);
-/// state.h(0);
-/// assert_eq!(state.len(), 1);
-/// ```
 pub trait Clifford {
     /// Apply Pauli `X` to qubit `index`.
     fn x(&mut self, index: usize);

@@ -854,6 +854,22 @@ dependencies = [
 [[package]]
 name = "ppvm-paulisum"
 version = "0.1.0"
+dependencies = [
+ "ahash",
+ "approx",
+ "bitvec",
+ "bon",
+ "criterion",
+ "dashmap",
+ "fxhash",
+ "gxhash",
+ "indexmap",
+ "insta",
+ "itertools 0.14.0",
+ "num",
+ "ppvm-runtime",
+ "rayon",
+]
 
 [[package]]
 name = "ppvm-python-native"
@@ -872,21 +888,13 @@ dependencies = [
 name = "ppvm-runtime"
 version = "0.1.0"
 dependencies = [
- "ahash",
  "anyhow",
- "approx",
  "bincode",
  "bitvec",
- "bon",
- "criterion",
- "dashmap",
  "fxhash",
- "gxhash",
- "indexmap",
  "insta",
  "itertools 0.14.0",
  "num",
- "rayon",
  "serde",
 ]
 

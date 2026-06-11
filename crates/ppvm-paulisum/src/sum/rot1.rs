@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::traits::*;
-use crate::{char::Pauli, config::Config, sum::PauliSum};
+use ppvm_runtime::traits::*;
+use ppvm_runtime::char::Pauli;
+use ppvm_runtime::config::Config;
+use crate::sum::PauliSum;
 
 pub(crate) fn rotate_1_map_insert_closure<T: Config>(
     k: &T::PauliWordType,
@@ -163,7 +165,7 @@ pub fn levi_civita(i: u8, j: u8) -> (i8, u8) {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::fxhash::ByteF64;
+    use ppvm_runtime::config::fxhash::ByteF64;
 
     use super::*;
 

@@ -3,13 +3,13 @@
 
 use std::collections::HashSet;
 
-use crate::config::Config;
-use crate::traits::*;
+use ppvm_runtime::config::Config;
+use ppvm_runtime::traits::*;
 
 /// A sparse formal sum `Σ cᵢ Pᵢ` of Pauli strings.
 ///
 /// The central data type of the Pauli-propagation backend. Keys are
-/// [`PauliWord`](crate::word::PauliWord)-shaped Pauli strings; values are
+/// [`PauliWord`](ppvm_runtime::word::PauliWord)-shaped Pauli strings; values are
 /// numeric coefficients. Generic over a [`Config`] that fixes the
 /// concrete storage / hasher / coefficient / strategy.
 ///
@@ -250,7 +250,7 @@ impl<T: Config> PauliSum<T> {
         self.swap();
     }
 
-    /// Apply the configured truncation [`Strategy`](crate::traits::Strategy)
+    /// Apply the configured truncation [`Strategy`](ppvm_runtime::traits::Strategy)
     /// to the primary map, dropping entries that fall outside its policy.
     ///
     /// If `preserve_strings` is non-empty, any of those Pauli strings
@@ -354,8 +354,8 @@ mod tests {
     use insta::assert_yaml_snapshot;
 
     use super::*;
-    use crate::config::fxhash::ByteF64;
-    use crate::word::PauliWord;
+    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_runtime::word::PauliWord;
 
     #[test]
     fn test_pauli_sum_creation() {

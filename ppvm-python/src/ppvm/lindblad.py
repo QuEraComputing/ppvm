@@ -300,6 +300,59 @@ class Lindbladian:
             None if max_krylov_m is None else int(max_krylov_m),
         )
 
+    def pc_step_complex(
+        self,
+        basis_arr: np.ndarray,
+        coeffs: np.ndarray,
+        dt: float,
+        tau_add: float,
+        drop_tol: float = 0.0,
+        protected_arr: np.ndarray | None = None,
+        expm_tol: float = 1e-12,
+        parallel_threshold: int = 50_000,
+        num_threads: int | None = None,
+        max_krylov_m: int | None = None,
+        group=None,
+        momentum: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Complex-coefficient predictor-corrector step.
+
+        Same algorithm as :meth:`pc_step_arr` but with complex
+        ``coeffs``. Use when tracking a momentum-projected operator
+        (a single sector of the translation group). Matrix elements of
+        ``L*`` remain real (Hermiticity-preserving); the SpMV and
+        scaling-and-squaring all happen on complex vectors.
+
+        When ``group`` and ``momentum`` are both provided, a pre-step
+        sector check ensures the input ``(basis, coeffs)`` is a
+        momentum-``momentum`` eigenstate under ``group``. ``momentum``
+        is an integer array of length ``group.n_generators``.
+
+        **Symmetry merging is NOT applied automatically inside the
+        step** — per-step orbit-rep evolution would require phase-aware
+        action / complex CSR (a follow-up). Use
+        ``canonicalize_basis_arr_complex(basis, coeffs, group, momentum)``
+        from ``ppvm_python_native`` at snapshot points to project to
+        orbit-rep form.
+        """
+        n = self.n_qubits
+        if protected_arr is None:
+            protected_arr = np.zeros((0, n), dtype=np.uint8)
+        return self._spec.pc_step_complex(
+            np.ascontiguousarray(basis_arr, dtype=np.uint8),
+            np.ascontiguousarray(coeffs, dtype=np.complex128),
+            float(dt),
+            float(tau_add),
+            float(drop_tol),
+            np.ascontiguousarray(protected_arr, dtype=np.uint8),
+            float(expm_tol),
+            int(parallel_threshold),
+            None if num_threads is None else int(num_threads),
+            None if max_krylov_m is None else int(max_krylov_m),
+            group,
+            None if momentum is None else np.ascontiguousarray(momentum, dtype=np.int32),
+        )
+
     def rk4_step_arr(
         self,
         basis_arr: np.ndarray,

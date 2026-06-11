@@ -34,6 +34,7 @@
 
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use num::Complex;
+use ppvm_runtime::symmetry::TranslationGroup;
 use ppvm_runtime::traits::PauliWordTrait;
 use ppvm_runtime::word::PauliWord;
 use rayon::prelude::*;
@@ -1003,6 +1004,255 @@ impl LindbladSpec {
         Ok(merged)
     }
 
+    /// Complex-coefficient variant of [`Self::compute_action_sum`]:
+    /// `L*( Σ_j coeffs[j] · basis[j] )` with complex coefficients.
+    /// Matrix elements of `L*` are real (Hermiticity-preserving), so
+    /// each complex coefficient just multiplies into the real action
+    /// outputs.
+    pub fn compute_action_sum_complex(
+        &self,
+        basis: &[Word],
+        coeffs: &[Complex<f64>],
+    ) -> Result<FxHashMap<Word, Complex<f64>>, Error> {
+        if basis.len() != coeffs.len() {
+            return Err(Error::LengthMismatch {
+                what: "basis and coeffs",
+                a: basis.len(),
+                b: coeffs.len(),
+            });
+        }
+        const CHUNK_SIZE: usize = 4096;
+        let mut merged: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
+        for chunk_start in (0..basis.len()).step_by(CHUNK_SIZE) {
+            let chunk_end = (chunk_start + CHUNK_SIZE).min(basis.len());
+            let chunk_basis = &basis[chunk_start..chunk_end];
+            let chunk_coeffs = &coeffs[chunk_start..chunk_end];
+            let local: Vec<Vec<(Word, Complex<f64>)>> = chunk_basis
+                .par_iter()
+                .zip(chunk_coeffs.par_iter())
+                .map_init(
+                    || {
+                        (
+                            Vec::<u32>::with_capacity(self.n_qubits),
+                            Vec::<u32>::with_capacity(128),
+                            FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                                128,
+                                FxBuildHasher::default(),
+                            ),
+                        )
+                    },
+                    |(s1, s2, lm), (p, &c)| {
+                        let terms = self.compute_action_terms(p, s1, s2, lm);
+                        terms
+                            .into_iter()
+                            .map(|(w, v)| (w, c * v))
+                            .collect()
+                    },
+                )
+                .collect();
+            for v in local {
+                for (k, val) in v {
+                    *merged.entry(k).or_insert(Complex::new(0.0, 0.0)) += val;
+                }
+            }
+        }
+        Ok(merged)
+    }
+
+    /// Complex-coefficient variant of [`Self::leakage`]: off-basis
+    /// component of `L*( Σ_j coeffs[j] · basis[j] )` with complex `coeffs`.
+    pub fn leakage_complex(
+        &self,
+        basis: &[Word],
+        coeffs: &[Complex<f64>],
+        protected: &[Word],
+    ) -> Result<Vec<(Word, Complex<f64>)>, Error> {
+        if basis.len() != coeffs.len() {
+            return Err(Error::LengthMismatch {
+                what: "basis and coeffs",
+                a: basis.len(),
+                b: coeffs.len(),
+            });
+        }
+        let in_basis: FxHashMap<u64, ()> =
+            basis.iter().map(|w| (word_hash(w), ())).collect();
+        let protected_set: FxHashMap<u64, ()> =
+            protected.iter().map(|w| (word_hash(w), ())).collect();
+
+        const CHUNK_SIZE: usize = 4096;
+        let mut merged: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
+        for chunk_start in (0..basis.len()).step_by(CHUNK_SIZE) {
+            let chunk_end = (chunk_start + CHUNK_SIZE).min(basis.len());
+            let chunk_basis = &basis[chunk_start..chunk_end];
+            let chunk_coeffs = &coeffs[chunk_start..chunk_end];
+            let local: Vec<Vec<(Word, Complex<f64>)>> = chunk_basis
+                .par_iter()
+                .zip(chunk_coeffs.par_iter())
+                .map_init(
+                    || {
+                        (
+                            Vec::<u32>::with_capacity(self.n_qubits),
+                            Vec::<u32>::with_capacity(128),
+                            FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                                128,
+                                FxBuildHasher::default(),
+                            ),
+                        )
+                    },
+                    |(s1, s2, lm), (p, &c)| {
+                        let terms = self.compute_action_terms(p, s1, s2, lm);
+                        let mut out = Vec::with_capacity(terms.len());
+                        for (w, v) in terms.iter() {
+                            let h = word_hash(w);
+                            if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
+                                out.push((w.clone(), c * *v));
+                            }
+                        }
+                        out
+                    },
+                )
+                .collect();
+            for v in local {
+                for (k, val) in v {
+                    *merged.entry(k).or_insert(Complex::new(0.0, 0.0)) += val;
+                }
+            }
+        }
+        Ok(merged.into_iter().filter(|(_, c)| c.norm() > 0.0).collect())
+    }
+
+    /// Complex-coefficient predictor-corrector step.
+    ///
+    /// Same algorithm as [`Self::pc_step`]: first-hop leakage expansion,
+    /// predictor `exp(dt·M)`, second-hop expansion from predicted state,
+    /// corrector `exp(dt·M)` from saved pre-step state, then `drop_tol`
+    /// prune. Coefficients are complex throughout; `L*` matrix elements
+    /// are real, so the underlying CSR matrix is shared with the real
+    /// path and only the vector arithmetic is complexified
+    /// ([`expm::expm_multiply_complex`]).
+    ///
+    /// `drop_tol` is compared against `|c|` (complex magnitude). The
+    /// `protected` set is honoured exactly as in the real path.
+    ///
+    /// When `sym_group` and `momentum` are both `Some`, the input
+    /// `(basis, coeffs)` is checked against the momentum sector using
+    /// [`ppvm_runtime::symmetry::check_momentum_sector`] before any
+    /// evolution. If the input is not in sector `momentum`, an error
+    /// is returned and no evolution is performed. This is purely
+    /// validation — pc_step itself evolves in the standard full-basis
+    /// representation, and translation symmetry of `L*` keeps the
+    /// state inside the input's momentum sector throughout.
+    ///
+    /// **For memory reduction**: this function does NOT merge into
+    /// orbit-rep form during evolution. The correct workflow is to
+    /// evolve as many steps as desired in full-basis form, then
+    /// call [`ppvm_runtime::symmetry::canonicalize_pauli_sum_complex`]
+    /// at observable-readout / snapshot points. Per-step orbit-rep
+    /// evolution would require phase-aware action / CSR (complex matrix
+    /// elements, not just complex vectors) — a separate code path to
+    /// be added later.
+    #[allow(clippy::too_many_arguments)]
+    pub fn pc_step_complex(
+        &self,
+        basis: &mut Vec<Word>,
+        coeffs: &mut Vec<Complex<f64>>,
+        dt: f64,
+        tau_add: f64,
+        drop_tol: f64,
+        protected: &[Word],
+        opts: ExpmOpts,
+        num_threads: Option<usize>,
+        sym_group: Option<&TranslationGroup>,
+        momentum: Option<&[i32]>,
+    ) -> Result<(), Error> {
+        if let Some(n) = num_threads {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build()
+                .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
+            pool.install(|| {
+                self.pc_step_complex_inner(
+                    basis, coeffs, dt, tau_add, drop_tol, protected, opts, sym_group, momentum,
+                )
+            })
+        } else {
+            self.pc_step_complex_inner(
+                basis, coeffs, dt, tau_add, drop_tol, protected, opts, sym_group, momentum,
+            )
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn pc_step_complex_inner(
+        &self,
+        basis: &mut Vec<Word>,
+        coeffs: &mut Vec<Complex<f64>>,
+        dt: f64,
+        tau_add: f64,
+        drop_tol: f64,
+        protected: &[Word],
+        opts: ExpmOpts,
+        sym_group: Option<&TranslationGroup>,
+        momentum: Option<&[i32]>,
+    ) -> Result<(), Error> {
+        // 0. Optional sector check on the input state.
+        if let (Some(g), Some(k)) = (sym_group, momentum) {
+            ppvm_runtime::symmetry::check_momentum_sector(basis, coeffs, g, k, 1e-8)
+                .map_err(|e| Error::Internal(format!(
+                    "pc_step_complex: input is not in momentum sector {:?}: {}",
+                    k, e
+                )))?;
+        }
+
+        // 1. First-hop expansion (complex leakage).
+        let leak = self.leakage_complex(basis, coeffs, protected)?;
+        for (w, v) in leak {
+            if v.norm() > tau_add {
+                basis.push(w);
+                coeffs.push(Complex::new(0.0, 0.0));
+            }
+        }
+        // 2. Predictor.
+        let coeffs_predict = self.expm_step_complex(basis, dt, coeffs, opts);
+        // 3. Second-hop expansion from the predicted state.
+        let leak2 = self.leakage_complex(basis, &coeffs_predict, protected)?;
+        drop(coeffs_predict);
+        for (w, v) in leak2 {
+            if v.norm() > tau_add {
+                basis.push(w);
+                coeffs.push(Complex::new(0.0, 0.0));
+            }
+        }
+        // 4. Corrector.
+        *coeffs = self.expm_step_complex(basis, dt, coeffs, opts);
+        // 5. Prune below drop_tol (complex magnitude).
+        prune_basis_complex(basis, coeffs, drop_tol, protected);
+        // NOTE: NO automatic symmetry-merge here. The orbit-rep
+        // representation cannot be self-consistently evolved by the
+        // standard L* action — applying L* to a single orbit-rep
+        // would treat it as one Pauli string, not as the implicit
+        // sum of orbit members with momentum-phases. Per-step
+        // orbit-rep evolution requires phase-aware action with
+        // complex CSR (to be added). The user is expected to call
+        // `canonicalize_pauli_sum_complex` at observable-readout /
+        // snapshot points instead.
+        Ok(())
+    }
+
+    /// Complex SpMV-by-CSR variant of [`Self::expm_step`]. The matrix
+    /// is real; only the vector is complex. Always uses the CSR path
+    /// (matrix-free for complex deferred).
+    fn expm_step_complex(
+        &self,
+        basis: &[Word],
+        dt: f64,
+        b: &[Complex<f64>],
+        opts: ExpmOpts,
+    ) -> Vec<Complex<f64>> {
+        let csr = self.generator_csr(basis);
+        expm::expm_multiply_complex(&csr, dt, b, opts)
+    }
+
     /// One classical RK4 step on `O ← O + dt · L*(O)`, expanding the basis
     /// naturally as the action explores new strings. After the step, drops
     /// any string whose absolute coefficient is below `drop_tol` (protected
@@ -1502,6 +1752,34 @@ fn word_hash(w: &Word) -> u64 {
     h.finish()
 }
 
+/// Complex-coefficient counterpart of [`prune_basis`]: drops entries
+/// whose `|c|` (complex magnitude) is below `drop_tol`, never dropping
+/// `protected` words.
+fn prune_basis_complex(
+    basis: &mut Vec<Word>,
+    coeffs: &mut Vec<Complex<f64>>,
+    drop_tol: f64,
+    protected: &[Word],
+) {
+    if drop_tol <= 0.0 {
+        return;
+    }
+    debug_assert_eq!(basis.len(), coeffs.len());
+    let protected_set: FxHashSet<&Word> = protected.iter().collect();
+    let mut write = 0;
+    for read in 0..basis.len() {
+        if coeffs[read].norm() >= drop_tol || protected_set.contains(&basis[read]) {
+            if write != read {
+                basis.swap(write, read);
+                coeffs.swap(write, read);
+            }
+            write += 1;
+        }
+    }
+    basis.truncate(write);
+    coeffs.truncate(write);
+}
+
 /// Compact `basis` / `coeffs` in place: drop entries whose absolute
 /// coefficient is below `drop_tol` unless the word appears in `protected`.
 /// No-op when `drop_tol ≤ 0`.
@@ -1613,6 +1891,231 @@ mod tests {
         let mut out = vec![0u8; codes.len()];
         codes_from_word(&w, &mut out);
         assert_eq!(out.as_slice(), &codes);
+    }
+
+    /// `pc_step_complex` correctly preserves the momentum sector of an
+    /// initial k-eigenstate: evolve in full-basis form, project at the
+    /// end, get a consistent orbit-rep representation.
+    ///
+    /// Also exercises the sector check on the input.
+    #[test]
+    fn pc_step_complex_preserves_momentum_sector() {
+        use std::f64::consts::PI;
+        let n = 4usize;
+        let dt = 0.01f64;
+        let n_steps = 3usize;
+        let mut h_terms: Vec<(String, f64)> = Vec::new();
+        for j in 0..n {
+            let nxt = (j + 1) % n;
+            for op in ["X", "Y"] {
+                let mut s = vec!['I'; n];
+                s[j] = op.chars().next().unwrap();
+                s[nxt] = op.chars().next().unwrap();
+                h_terms.push((s.into_iter().collect(), 1.0));
+            }
+        }
+        let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
+        let group = ppvm_runtime::symmetry::TranslationGroup::chain_1d(n);
+        let k_mode: i32 = 1;
+        let k = vec![k_mode];
+
+        // Momentum-k eigenstate.
+        let mut basis: Vec<Word> = (0..n)
+            .map(|j| {
+                let mut s = vec!['I'; n];
+                s[j] = 'Z';
+                let (w, _) =
+                    parse_pauli_string(&s.into_iter().collect::<String>(), n).unwrap();
+                w
+            })
+            .collect();
+        let mut coeffs: Vec<Complex<f64>> = (0..n as i32)
+            .map(|a| Complex::from_polar(1.0, -2.0 * PI * (k_mode as f64) * (a as f64) / (n as f64)))
+            .collect();
+
+        let opts = ExpmOpts::default();
+        let protected: Vec<Word> = Vec::new();
+
+        // First step: pass sym_group + k to exercise the sector check.
+        spec.pc_step_complex(
+            &mut basis,
+            &mut coeffs,
+            dt,
+            1.0,
+            0.0,
+            &protected,
+            opts,
+            None,
+            Some(&group),
+            Some(&k),
+        )
+        .expect("sector check on k-eigenstate input should pass");
+        // Subsequent steps without re-checking (would also pass).
+        for _ in 1..n_steps {
+            spec.pc_step_complex(
+                &mut basis,
+                &mut coeffs,
+                dt,
+                1.0,
+                0.0,
+                &protected,
+                opts,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        }
+        // After evolution, the state should STILL be in sector k.
+        ppvm_runtime::symmetry::check_momentum_sector(&basis, &coeffs, &group, &k, 1e-8)
+            .expect("evolved state should remain in k-sector by translation-symmetry of L*");
+
+        // Projecting to orbit-rep form should give a non-empty basis
+        // with finite coefficients.
+        let mut basis_proj = basis.clone();
+        let mut coeffs_proj = coeffs.clone();
+        ppvm_runtime::symmetry::canonicalize_pauli_sum_complex(
+            &mut basis_proj,
+            &mut coeffs_proj,
+            &group,
+            &k,
+        );
+        assert!(basis_proj.len() > 0, "projected basis empty");
+        assert!(basis_proj.len() <= basis.len(), "projection should shrink basis");
+        assert!(
+            coeffs_proj.iter().any(|c| c.norm() > 1e-10),
+            "projected basis has only ~zero coefficients"
+        );
+    }
+
+    /// Sector check rejects an input that mixes momentum components.
+    #[test]
+    fn pc_step_complex_rejects_wrong_sector() {
+        let n = 4usize;
+        let spec = LindbladSpec::new(n, &[("XIII".to_string(), 1.0)], &[]).unwrap();
+        let group = ppvm_runtime::symmetry::TranslationGroup::chain_1d(n);
+
+        // A k=1 eigenstate (Z-sum with twist).
+        let mut basis: Vec<Word> = (0..n)
+            .map(|j| {
+                let mut s = vec!['I'; n];
+                s[j] = 'Z';
+                let (w, _) =
+                    parse_pauli_string(&s.into_iter().collect::<String>(), n).unwrap();
+                w
+            })
+            .collect();
+        use std::f64::consts::PI;
+        let mut coeffs: Vec<Complex<f64>> = (0..n as i32)
+            .map(|a| Complex::from_polar(1.0, -2.0 * PI * 1.0 * (a as f64) / (n as f64)))
+            .collect();
+        // Now try to evolve this k=1 state under the WRONG momentum (k=2).
+        let wrong_k = vec![2_i32];
+        let protected: Vec<Word> = Vec::new();
+        let res = spec.pc_step_complex(
+            &mut basis,
+            &mut coeffs,
+            0.01,
+            1.0,
+            0.0,
+            &protected,
+            ExpmOpts::default(),
+            None,
+            Some(&group),
+            Some(&wrong_k),
+        );
+        assert!(res.is_err(), "wrong-sector input should be rejected");
+    }
+
+    /// Complex pc_step at momentum k=0 (and no symmetry merging) must
+    /// reproduce the real pc_step on the same trajectory exactly.
+    #[test]
+    fn pc_step_complex_matches_real_at_kzero_no_merge() {
+        let n = 4usize;
+        let dt = 0.01f64;
+        let n_steps = 5usize;
+        let mut h_terms: Vec<(String, f64)> = Vec::new();
+        for j in 0..n {
+            let nxt = (j + 1) % n;
+            for op in ["X", "Y"] {
+                let mut s = vec!['I'; n];
+                s[j] = op.chars().next().unwrap();
+                s[nxt] = op.chars().next().unwrap();
+                h_terms.push((s.into_iter().collect(), 1.0));
+            }
+        }
+        let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
+
+        let mut basis_r: Vec<Word> = (0..n)
+            .map(|j| {
+                let mut s = vec!['I'; n];
+                s[j] = 'Z';
+                let st: String = s.into_iter().collect();
+                let (w, _) = parse_pauli_string(&st, n).unwrap();
+                w
+            })
+            .collect();
+        let mut coeffs_r: Vec<f64> = vec![1.0; n];
+
+        let mut basis_c = basis_r.clone();
+        let mut coeffs_c: Vec<Complex<f64>> =
+            coeffs_r.iter().map(|&v| Complex::new(v, 0.0)).collect();
+
+        let opts = ExpmOpts::default();
+        let protected: Vec<Word> = Vec::new();
+        for _ in 0..n_steps {
+            let tau_add = 1.0; // very loose — no leakage adds
+            spec.pc_step(
+                &mut basis_r,
+                &mut coeffs_r,
+                dt,
+                tau_add,
+                0.0,
+                &protected,
+                opts,
+                None,
+                false,
+            )
+            .unwrap();
+            spec.pc_step_complex(
+                &mut basis_c,
+                &mut coeffs_c,
+                dt,
+                tau_add,
+                0.0,
+                &protected,
+                opts,
+                None,
+                None, // no symmetry merging
+                None,
+            )
+            .unwrap();
+        }
+        // Match as (word → coeff) maps.
+        let map_r: FxHashMap<Word, f64> =
+            basis_r.into_iter().zip(coeffs_r).collect();
+        let map_c: FxHashMap<Word, Complex<f64>> =
+            basis_c.into_iter().zip(coeffs_c).collect();
+        assert_eq!(
+            map_r.len(),
+            map_c.len(),
+            "real and complex pc_step produced different basis sizes ({} vs {})",
+            map_r.len(),
+            map_c.len()
+        );
+        let mut max_diff = 0.0_f64;
+        for (w, cr) in &map_r {
+            let cc = map_c
+                .get(w)
+                .copied()
+                .unwrap_or_else(|| panic!("word {:?} in real but not complex", w));
+            assert!(cc.im.abs() < 1e-10, "expected zero imag at k=0, got {cc:?}");
+            max_diff = max_diff.max((cr - cc.re).abs());
+        }
+        assert!(
+            max_diff < 1e-10,
+            "real vs complex pc_step diverged: max |Δc| = {max_diff:e}"
+        );
     }
 
     /// Small-system end-to-end check that orbit-rep merging gives the

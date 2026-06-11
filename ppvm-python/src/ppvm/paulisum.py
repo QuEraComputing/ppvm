@@ -382,6 +382,27 @@ class PauliSum(
         """
         return self._interface.trace(pattern)
 
+    def symmetry_merge(self, group) -> None:
+        """Merge entries into orbit-representative form under a translation group.
+
+        Each Pauli word in the sum is replaced by its canonical (lex-min)
+        representative under the action of ``group``; coefficients of words
+        that collapse to the same representative are summed. Entry count
+        reduces by up to ``|group|×`` for translation-invariant operators.
+
+        For a translation-invariant dynamics that you apply between
+        merging steps, this preserves all ``group``-invariant expectation
+        values (Theorem 1 of Teng et al., arXiv:2512.12094). Plain
+        real-coefficient merge — handles the trivial (``k=0``) momentum
+        sector only.
+
+        Args:
+            group: A :class:`ppvm_python_native.TranslationGroup`
+                (use ``TranslationGroup.chain_1d(n)``, ``.torus_2d``,
+                ``.torus_3d``, ``.ladder``, or ``.from_generators``).
+        """
+        self._interface.symmetry_merge(group)
+
     def amplitude_damping(self, addr0: int, gamma: float, *, truncate: bool = True):
         """Apply an amplitude-damping channel.
 

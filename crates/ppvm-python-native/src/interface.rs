@@ -48,6 +48,39 @@ macro_rules! create_interface_loss_methods {
     };
 }
 
+macro_rules! create_interface_symmetry_methods {
+    // Skip loss variants: LossyPauliWord canonicalization would need
+    // simultaneous permutation of the loss bitmap, which we don't
+    // implement here.
+    ($name: ident, $type: ident, true) => {};
+    ($name: ident, $type: ident, false) => {
+        #[pymethods]
+        impl $name {
+            /// Symmetry-merge this PauliSum in place: replace every
+            /// Pauli word by its canonical orbit representative under
+            /// `group`, accumulating coefficients on collision. Reduces
+            /// entry count by up to `|group|×` for translation-invariant
+            /// operators.
+            ///
+            /// See `ppvm.symmetry.TranslationGroup` for constructors
+            /// (`chain_1d`, `torus_2d`, `torus_3d`, `ladder`).
+            ///
+            /// Plain real-coefficient merge (the `k=0` symmetry sector).
+            /// Phase-aware merging for non-trivial momentum sectors is
+            /// not yet implemented.
+            pub fn symmetry_merge(
+                &mut self,
+                group: &crate::symmetry::TranslationGroup,
+            ) {
+                ppvm_runtime::symmetry::symmetry_merge_pauli_sum(
+                    &mut self.inner,
+                    group.core(),
+                );
+            }
+        }
+    };
+}
+
 macro_rules! create_strategy {
     (false, $min_abs_coeff:ident, $max_pauli_weight:ident, $_max_loss_weight:ident) => {
         CombinedStrategy(
@@ -337,6 +370,12 @@ macro_rules! create_interface {
                 self.inner.data().iter().map(|(k, _v)| k.weight()).max().unwrap_or(0)
             }
         }
+
+        // `symmetry_merge` only makes sense on non-loss variants — the
+        // canonicalization permutes qubit positions and the loss
+        // bitmap would need a parallel permutation that we don't
+        // attempt here.
+        create_interface_symmetry_methods!($name, $type, $loss);
 
         create_interface_loss_methods!($name, $type, $loss);
     };

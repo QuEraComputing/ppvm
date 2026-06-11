@@ -14,6 +14,7 @@
 //! that the task-spawn overhead beats the cache-friendly serial loop).
 //! Both branches produce bit-identical output.
 
+use num::Complex;
 use rayon::prelude::*;
 use sprs::CsMatI;
 
@@ -267,6 +268,85 @@ pub fn expm_multiply(a: &Csr, t: f64, b: &[f64], opts: ExpmOpts) -> Vec<f64> {
     }
 
     f
+}
+
+/// Complex-coefficient SpMV: `y ← A · x` where `A` is real-valued (CSR
+/// of `f64`) and `x`, `y` are complex.
+///
+/// Implemented as two real SpMVs on the real and imaginary parts, then
+/// combined. Identical numerics to a single complex SpMV by linearity.
+pub fn spmv_complex(m: &Csr, x: &[Complex<f64>], y: &mut [Complex<f64>], parallel_threshold: usize) {
+    debug_assert_eq!(x.len(), m.cols());
+    debug_assert_eq!(y.len(), m.rows());
+    let n = m.cols();
+    let mut x_re: Vec<f64> = x.iter().map(|c| c.re).collect();
+    let mut x_im: Vec<f64> = x.iter().map(|c| c.im).collect();
+    let mut y_re = vec![0.0_f64; n];
+    let mut y_im = vec![0.0_f64; n];
+    spmv(m, &x_re, &mut y_re, parallel_threshold);
+    spmv(m, &x_im, &mut y_im, parallel_threshold);
+    for (yi, (re, im)) in y.iter_mut().zip(y_re.iter().zip(y_im.iter())) {
+        *yi = Complex::new(*re, *im);
+    }
+    // Silence unused-mut warnings on Vec<f64> intermediates if they were
+    // ever needed for further reuse.
+    let _ = (&mut x_re, &mut x_im);
+}
+
+/// Compute `exp(t · A) · b` where `A` is a real CSR and `b` is a complex
+/// vector. Result is a fresh `Vec<Complex<f64>>` of length `A.rows()`.
+///
+/// Algorithm: same Al-Mohy & Higham scaling-and-squaring as the real
+/// [`expm_multiply`], with the inner SpMV replaced by [`spmv_complex`].
+/// Vector arithmetic is in `Complex<f64>` throughout.
+pub fn expm_multiply_complex(a: &Csr, t: f64, b: &[Complex<f64>], opts: ExpmOpts) -> Vec<Complex<f64>> {
+    assert_eq!(
+        a.rows(),
+        b.len(),
+        "matrix size {} mismatches vector length {}",
+        a.rows(),
+        b.len()
+    );
+    let n = a.rows();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let t_a_one_norm = t.abs() * csr_one_norm(a);
+    let (m_star, s) = select_ms(t_a_one_norm, opts.max_krylov_m);
+    let scale = t / s as f64;
+
+    let mut f = b.to_vec();
+    let mut bk = b.to_vec();
+    let mut work = vec![Complex::new(0.0, 0.0); n];
+
+    for _ in 0..s {
+        let mut c1 = inf_norm_c(&bk);
+        for i in 1..=m_star {
+            spmv_complex(a, &bk, &mut work, opts.parallel_threshold);
+            let factor = scale / i as f64;
+            for j in 0..n {
+                bk[j] = work[j] * factor;
+            }
+            for j in 0..n {
+                f[j] += bk[j];
+            }
+            let c2 = inf_norm_c(&bk);
+            let f_norm = inf_norm_c(&f).max(f64::MIN_POSITIVE);
+            if c1 + c2 <= opts.tol * f_norm {
+                break;
+            }
+            c1 = c2;
+        }
+        bk.copy_from_slice(&f);
+    }
+
+    f
+}
+
+#[inline]
+fn inf_norm_c(v: &[Complex<f64>]) -> f64 {
+    v.iter().fold(0f64, |acc, c| acc.max(c.norm()))
 }
 
 /// Matrix-free variant of [`expm_multiply`]. Same Al-Mohy & Higham

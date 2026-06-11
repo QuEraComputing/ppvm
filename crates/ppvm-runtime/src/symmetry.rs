@@ -52,6 +52,8 @@ use crate::sum::PauliSum;
 use crate::traits::{PauliStorage, PauliWordTrait};
 use crate::word::PauliWord;
 use fxhash::FxHashMap;
+use num::Complex;
+use std::f64::consts::PI;
 use std::hash::BuildHasher;
 
 /// A finite abelian symmetry group acting on qubit positions by
@@ -313,6 +315,81 @@ impl TranslationGroup {
         best
     }
 
+    /// Lex-min canonical representative `r` of `w` together with the
+    /// **mixed-radix counter** `c = (c_0, c_1, …)` of the group element
+    /// `g` such that `g·r = w`.
+    ///
+    /// In other words: if `r = self.canonicalize(w)`, this returns
+    /// `(r, c)` where applying generator `i` exactly `c[i]` times in
+    /// sequence to `r` produces `w`. The counter is used to compute
+    /// momentum phases by the phase-aware merge routines.
+    ///
+    /// Same `O(|G| × n_qubits)` cost as `canonicalize`.
+    pub fn canonicalize_with_shift<A, S, const R: bool>(
+        &self,
+        w: &PauliWord<A, S, R>,
+    ) -> (PauliWord<A, S, R>, Vec<u32>)
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default,
+    {
+        debug_assert_eq!(w.n_qubits(), self.n_qubits);
+        if self.perms.is_empty() {
+            return (w.clone(), Vec::new());
+        }
+        let mut best = w.clone();
+        let mut best_counter: Vec<u32> = vec![0; self.perms.len()];
+        let order = self.order();
+        for idx in 0..order {
+            // Decode `idx` to mixed-radix counter.
+            let mut rem = idx;
+            let mut counter: Vec<u32> = Vec::with_capacity(self.perms.len());
+            for &o in &self.orders {
+                counter.push((rem as u32) % o);
+                rem /= o as usize;
+            }
+            // Build the candidate by applying generator `g` exactly
+            // `counter[g]` times.
+            let mut cur = w.clone();
+            for (g, &c) in counter.iter().enumerate() {
+                for _ in 0..c {
+                    cur = self.apply_generator(&cur, g);
+                }
+            }
+            if cur < best {
+                best = cur;
+                // We need the counter such that g·best = w. The loop
+                // above computed cur = g·w with counter, so w = g^{-1}·cur.
+                // For abelian cyclic groups, g^{-1} = g^{order-1}, i.e.
+                // the counter `(orders[g] - counter[g]) mod orders[g]`.
+                best_counter = counter
+                    .iter()
+                    .zip(self.orders.iter())
+                    .map(|(&c, &o)| (o - c) % o)
+                    .collect();
+            }
+        }
+        (best, best_counter)
+    }
+
+    /// Momentum-sector character `χ_k(g) = exp(i Σ_g 2π · k[g] · counter[g] / orders[g])`
+    /// where `k[g] ∈ ℤ` is the integer momentum mode along generator `g`
+    /// (the corresponding wavenumber is `2π · k[g] / orders[g]`).
+    ///
+    /// `k.len()` must equal `self.n_generators()`. The character of the
+    /// identity element (`counter = [0, …]`) is `1`. For the trivial
+    /// (`k = [0, …]`) sector all characters are `1` — phase-aware merging
+    /// reduces to plain merging.
+    pub fn character(&self, k_modes: &[i32], counter: &[u32]) -> Complex<f64> {
+        debug_assert_eq!(k_modes.len(), self.perms.len());
+        debug_assert_eq!(counter.len(), self.perms.len());
+        let mut phase = 0.0_f64;
+        for ((&k, &c), &o) in k_modes.iter().zip(counter.iter()).zip(self.orders.iter()) {
+            phase += 2.0 * PI * (k as f64) * (c as f64) / (o as f64);
+        }
+        Complex::from_polar(1.0, phase)
+    }
+
     /// Iterate over all group elements applied to `w`. Yields `|G|`
     /// Pauli words (including `w` itself for the identity element).
     pub fn orbit<'a, A, S, const R: bool>(
@@ -372,6 +449,155 @@ pub fn canonicalize_pauli_sum<A, S, const R: bool>(
     for (w, c) in merged {
         basis.push(w);
         coeffs.push(c);
+    }
+}
+
+/// Replace `(basis, complex_coeffs)` in-place with the orbit-rep form
+/// **projected onto momentum sector `k_modes`**.
+///
+/// Each Pauli `p` is replaced by its canonical rep `r`; the contribution
+/// is `(1/|G|) · χ_k(g) · c_p` where `g` is the group element such that
+/// `g · r = p` and `χ_k(g) = exp(2πi · Σ_g k_modes[g] · counter[g] / orders[g])`.
+///
+/// If the input was already a momentum-`k_modes` eigenstate (i.e. the
+/// coefficients satisfy `c_{g·p} = χ_k(g)⁻¹ · c_p` for every orbit),
+/// the output is the orbit-rep coefficients of that state unchanged.
+/// Otherwise the merge discards the components in other sectors —
+/// use [`check_momentum_sector`] beforehand to validate.
+///
+/// For the `k_modes = [0, 0, …]` (trivial) sector this reduces to plain
+/// [`canonicalize_pauli_sum`] (real coefficients work, but on complex
+/// input the result is complex with vanishing imaginary part).
+pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
+    basis: &mut Vec<PauliWord<A, S, R>>,
+    coeffs: &mut Vec<Complex<f64>>,
+    group: &TranslationGroup,
+    k_modes: &[i32],
+) where
+    A: PauliStorage,
+    S: BuildHasher + Clone + Default,
+{
+    assert_eq!(basis.len(), coeffs.len(), "basis and coeffs length mismatch");
+    assert_eq!(
+        k_modes.len(),
+        group.n_generators(),
+        "k_modes length {} != number of generators {}",
+        k_modes.len(),
+        group.n_generators()
+    );
+    let inv_g: f64 = 1.0 / (group.order() as f64);
+    let mut merged: FxHashMap<PauliWord<A, S, R>, Complex<f64>> =
+        FxHashMap::with_capacity_and_hasher(basis.len(), Default::default());
+    for (w, &c) in basis.iter().zip(coeffs.iter()) {
+        let (rep, cnt) = group.canonicalize_with_shift(w);
+        let chi = group.character(k_modes, &cnt);
+        let contrib = inv_g * chi * c;
+        *merged.entry(rep).or_insert(Complex::new(0.0, 0.0)) += contrib;
+    }
+    basis.clear();
+    coeffs.clear();
+    basis.reserve(merged.len());
+    coeffs.reserve(merged.len());
+    for (w, c) in merged {
+        basis.push(w);
+        coeffs.push(c);
+    }
+}
+
+/// Verify that a `(basis, complex_coeffs)` Pauli sum lies entirely in
+/// the momentum sector `k_modes` under `group`.
+///
+/// Concretely: for every orbit represented in the basis, all members
+/// must satisfy `c_{g·r} = χ_k(g)⁻¹ · c_r` for some choice of orbit-rep
+/// coefficient `c_r`.
+///
+/// Returns `Ok(())` on pass; `Err(SectorCheckError)` on fail with the
+/// offending orbit-rep, expected coefficient, and actual coefficient.
+///
+/// Use this on a user-supplied initial state before feeding it to a
+/// phase-aware merging pipeline — silently projecting a wrongly-typed
+/// input throws away meaningful physics.
+pub fn check_momentum_sector<A, S, const R: bool>(
+    basis: &[PauliWord<A, S, R>],
+    coeffs: &[Complex<f64>],
+    group: &TranslationGroup,
+    k_modes: &[i32],
+    tol: f64,
+) -> Result<(), SectorCheckError<A, S, R>>
+where
+    A: PauliStorage,
+    S: BuildHasher + Clone + Default,
+{
+    assert_eq!(basis.len(), coeffs.len());
+    assert_eq!(k_modes.len(), group.n_generators());
+
+    // Group entries by orbit rep, picking the first-seen member as
+    // reference and checking later members against it.
+    let mut reference: FxHashMap<PauliWord<A, S, R>, (Complex<f64>, Vec<u32>)> =
+        FxHashMap::default();
+    for (p, &c) in basis.iter().zip(coeffs.iter()) {
+        let (rep, cnt) = group.canonicalize_with_shift(p);
+        let chi = group.character(k_modes, &cnt);
+        // expected c_p given the rep coefficient c_r:
+        //   c_p = χ_k(g)⁻¹ · c_r,  where p = g·r
+        // equivalently, c_r = χ_k(g) · c_p (a rearrangement).
+        let implied_rep_coeff = chi * c;
+        if let Some((rep_coeff, _ref_cnt)) = reference.get(&rep) {
+            if (implied_rep_coeff - rep_coeff).norm() > tol * rep_coeff.norm().max(1.0) {
+                return Err(SectorCheckError {
+                    rep: rep.clone(),
+                    expected: *rep_coeff,
+                    got_implied: implied_rep_coeff,
+                    offending_pauli: p.clone(),
+                    offending_coeff: c,
+                    shift: cnt.clone(),
+                });
+            }
+        } else {
+            reference.insert(rep, (implied_rep_coeff, cnt));
+        }
+    }
+    Ok(())
+}
+
+/// Detail report for a failed [`check_momentum_sector`].
+pub struct SectorCheckError<A: PauliStorage, S, const R: bool> {
+    /// Canonical orbit representative for which the check failed.
+    pub rep: PauliWord<A, S, R>,
+    /// Coefficient that the *first* basis entry implied for `rep`.
+    pub expected: Complex<f64>,
+    /// Coefficient that `offending_pauli` implies for `rep` under the
+    /// purported momentum sector.
+    pub got_implied: Complex<f64>,
+    /// The basis entry whose coefficient is inconsistent with the
+    /// expected `rep` value.
+    pub offending_pauli: PauliWord<A, S, R>,
+    /// Original coefficient of `offending_pauli` in the input basis.
+    pub offending_coeff: Complex<f64>,
+    /// Counter encoding the group element `g` such that
+    /// `g · rep == offending_pauli`.
+    pub shift: Vec<u32>,
+}
+
+impl<A: PauliStorage, S, const R: bool> std::fmt::Debug for SectorCheckError<A, S, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "SectorCheckError {{ rep: <Word>, expected: {:?}, got_implied: {:?}, \
+             offending: <Word>, offending_coeff: {:?}, shift: {:?} }}",
+            self.expected, self.got_implied, self.offending_coeff, self.shift,
+        )
+    }
+}
+
+impl<A: PauliStorage, S, const R: bool> std::fmt::Display for SectorCheckError<A, S, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "input not in target momentum sector: orbit rep expected c={:?}, but \
+             orbit member (shift {:?}, coeff {:?}) implies c={:?}",
+            self.expected, self.shift, self.offending_coeff, self.got_implied,
+        )
     }
 }
 
@@ -505,6 +731,132 @@ mod tests {
         cs.sort_by(|a, b| a.partial_cmp(b).unwrap());
         assert!((cs[0] - 2.0).abs() < 1e-12);
         assert!((cs[1] - 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn canonicalize_with_shift_round_trip() {
+        // For each cyclic shift of "IIXY" by `a` positions, the shift
+        // counter returned should reproduce the original word when
+        // applied to the canonical rep.
+        let g = TranslationGroup::chain_1d(4);
+        for src in ["IIXY", "IXYI", "XYII", "YIIX"] {
+            let w = word(src);
+            let (rep, cnt) = g.canonicalize_with_shift(&w);
+            // Apply gen 0 `cnt[0]` times to rep, should equal w.
+            let mut cur = rep;
+            for _ in 0..cnt[0] {
+                cur = g.apply_generator(&cur, 0);
+            }
+            assert_eq!(cur, w, "shift {cnt:?} doesn't reproduce {src}");
+        }
+    }
+
+    #[test]
+    fn character_trivial_sector_is_one() {
+        let g = TranslationGroup::chain_1d(4);
+        // k=0 mode → character is always 1.
+        for cnt in [vec![0u32], vec![1u32], vec![2u32], vec![3u32]] {
+            let chi = g.character(&[0], &cnt);
+            assert!((chi - Complex::new(1.0, 0.0)).norm() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn character_obeys_unit_modulus() {
+        let g = TranslationGroup::chain_1d(4);
+        for k in 0..4 {
+            for a in 0..4 {
+                let chi = g.character(&[k], &[a as u32]);
+                assert!(
+                    (chi.norm() - 1.0).abs() < 1e-12,
+                    "|χ_{k}(T^{a})| should be 1, got {}",
+                    chi.norm()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn momentum_zero_complex_merge_matches_real_merge() {
+        // k=0 sector: complex merge with all-real input should give
+        // real-valued orbit-rep coefficients equal to the plain
+        // canonicalize_pauli_sum result.
+        let g = TranslationGroup::chain_1d(4);
+        let mut basis: Vec<W> = vec![word("XIII"), word("IXII"), word("IIXI"), word("IIIX")];
+        let real_coeffs = vec![1.0, 2.0, 3.0, 4.0];
+
+        let mut basis_real = basis.clone();
+        let mut coeffs_real = real_coeffs.clone();
+        canonicalize_pauli_sum(&mut basis_real, &mut coeffs_real, &g);
+
+        let mut basis_c = basis.clone();
+        let mut coeffs_c: Vec<Complex<f64>> =
+            real_coeffs.iter().map(|&v| Complex::new(v, 0.0)).collect();
+        canonicalize_pauli_sum_complex(&mut basis_c, &mut coeffs_c, &g, &[0]);
+
+        // Plain merge sums all coefficients onto the single orbit-rep:
+        // 1+2+3+4 = 10. Complex merge does the same with a 1/|G|
+        // prefactor, so we expect 10/4 = 2.5 on the rep.
+        assert_eq!(basis_real.len(), 1);
+        assert_eq!(basis_c.len(), 1);
+        assert!((coeffs_real[0] - 10.0).abs() < 1e-12);
+        assert!((coeffs_c[0].re - 2.5).abs() < 1e-12);
+        assert!(coeffs_c[0].im.abs() < 1e-12);
+    }
+
+    #[test]
+    fn momentum_eigenstate_check_passes() {
+        // O = Σ_j e^{ikj} Z_j for k = 2π/4 (mode 1) is a momentum-k
+        // eigenstate. check_momentum_sector should accept.
+        let g = TranslationGroup::chain_1d(4);
+        let basis: Vec<W> = vec![word("ZIII"), word("IZII"), word("IIZI"), word("IIIZ")];
+        let k_mode: i32 = 1;
+        // Sector condition: c_{T^a p} = e^{-2πi k a / N} c_p.
+        // Picking c_{Z_0} = 1: c_{Z_a} = e^{-2πi · 1 · a / 4} = (-i)^a.
+        let coeffs: Vec<Complex<f64>> = (0..4_i32)
+            .map(|a| Complex::from_polar(1.0, -2.0 * PI * (k_mode as f64) * (a as f64) / 4.0))
+            .collect();
+        let res = check_momentum_sector(&basis, &coeffs, &g, &[k_mode], 1e-10);
+        assert!(res.is_ok(), "valid k-eigenstate failed sector check: {res:?}");
+    }
+
+    #[test]
+    fn momentum_eigenstate_check_fails_for_wrong_sector() {
+        // Same eigenstate as above, but check against the wrong momentum.
+        let g = TranslationGroup::chain_1d(4);
+        let basis: Vec<W> = vec![word("ZIII"), word("IZII"), word("IIZI"), word("IIIZ")];
+        let coeffs: Vec<Complex<f64>> = (0..4_i32)
+            .map(|a| Complex::from_polar(1.0, -2.0 * PI * 1.0 * (a as f64) / 4.0))
+            .collect();
+        // Check against k=0 (constant) — should fail.
+        let res = check_momentum_sector(&basis, &coeffs, &g, &[0], 1e-10);
+        assert!(
+            res.is_err(),
+            "k=1 eigenstate wrongly passed as k=0 sector"
+        );
+    }
+
+    #[test]
+    fn momentum_eigenstate_round_trip_merge_preserves_rep_coeff() {
+        // Merge a k=1 eigenstate; the orbit-rep coefficient should be
+        // unchanged (= 1.0 for our chosen normalization, picking
+        // c_{Z_0} = 1).
+        let g = TranslationGroup::chain_1d(4);
+        let mut basis: Vec<W> = vec![word("ZIII"), word("IZII"), word("IIZI"), word("IIIZ")];
+        let mut coeffs: Vec<Complex<f64>> = (0..4_i32)
+            .map(|a| Complex::from_polar(1.0, -2.0 * PI * 1.0 * (a as f64) / 4.0))
+            .collect();
+        canonicalize_pauli_sum_complex(&mut basis, &mut coeffs, &g, &[1]);
+        assert_eq!(basis.len(), 1);
+        // The canonical rep of single-Z orbit is Z_0 (lex-min of
+        // {ZIII, IZII, IIZI, IIIZ} is IIIZ since 'I' < 'Z' lex-wise on
+        // the (xbits, zbits) tuple; let's just check we got a single
+        // entry with norm 1.
+        assert!(
+            (coeffs[0].norm() - 1.0).abs() < 1e-10,
+            "expected |c_rep|=1, got {}",
+            coeffs[0].norm()
+        );
     }
 
     /// Trotter-mode end-to-end check that `PauliSum::symmetry_merge`

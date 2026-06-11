@@ -10,12 +10,30 @@
 //!   `(basis_arr, coeffs)` representation used by `Lindbladian.pc_step_arr`
 //!   /  `rk4_step_arr` and merges in place.
 
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
-use ppvm_lindblad::{Word, word_from_codes, codes_from_word};
+use num::Complex;
+use numpy::{
+    Complex64, IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1,
+    PyReadonlyArray2,
+};
+use ppvm_lindblad::{Word, codes_from_word, word_from_codes};
 use ppvm_runtime::symmetry as core_sym;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
+type PyPauliMapComplex<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>);
+
+fn decode_basis_words(view: &numpy::ndarray::ArrayView2<u8>, n_q: usize) -> PyResult<Vec<Word>> {
+    let n = view.shape()[0];
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let row = view.row(i);
+        let row_slice = row.as_slice().ok_or_else(|| {
+            PyValueError::new_err("basis rows are not contiguous; pass a C-order array")
+        })?;
+        out.push(word_from_codes(row_slice).map_err(|e| PyValueError::new_err(e.to_string()))?);
+    }
+    Ok(out)
+}
 
 /// A finite abelian symmetry group acting on qubit positions by
 /// permutations. Use this to merge translation-equivalent Pauli strings
@@ -35,7 +53,16 @@ type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
 ///   arbitrary list of generator permutations + cyclic orders.
 #[pyclass(frozen)]
 pub struct TranslationGroup {
-    inner: core_sym::TranslationGroup,
+    pub(crate) inner: core_sym::TranslationGroup,
+}
+
+impl TranslationGroup {
+    /// Accessor for the underlying [`ppvm_runtime::symmetry::TranslationGroup`].
+    /// Used by other crate-internal modules (e.g. the PauliSum interface
+    /// macro) to call into the core merging API.
+    pub fn core(&self) -> &core_sym::TranslationGroup {
+        &self.inner
+    }
 }
 
 #[pymethods]
@@ -149,6 +176,113 @@ impl TranslationGroup {
         codes_from_word(&canon, &mut out);
         Ok(out.into_pyarray(py))
     }
+}
+
+/// Phase-aware merge of a complex-coefficient `(basis_arr, coeffs)`
+/// Pauli sum into orbit-rep form, projected onto momentum sector
+/// `momentum`.
+///
+/// `momentum` is a length-`group.n_generators` integer array of mode
+/// indices; the wavenumber along generator `g` is
+/// `2π · momentum[g] / group.generator_order(g)`. Use `momentum=[0, …]`
+/// for the trivial (k=0) sector — equivalent to plain merging modulo
+/// the 1/|G| normalization the complex merge applies.
+///
+/// If the input is **not** in sector `momentum`, the projection
+/// silently throws away the other components. Use
+/// [`check_momentum_sector_arr`] beforehand to validate.
+#[pyfunction]
+pub fn canonicalize_basis_arr_complex<'py>(
+    py: Python<'py>,
+    basis: PyReadonlyArray2<'py, u8>,
+    coeffs: PyReadonlyArray1<'py, Complex64>,
+    group: &TranslationGroup,
+    momentum: PyReadonlyArray1<'py, i32>,
+) -> PyResult<PyPauliMapComplex<'py>> {
+    let basis_view = basis.as_array();
+    let n_q = group.inner.n_qubits();
+    if basis_view.shape().get(1).copied() != Some(n_q) {
+        return Err(PyValueError::new_err(format!(
+            "basis has {} qubits per row but group acts on {n_q}",
+            basis_view.shape().get(1).copied().unwrap_or(0)
+        )));
+    }
+    let n = basis_view.shape()[0];
+    let coeffs_slice = coeffs.as_slice()?;
+    if coeffs_slice.len() != n {
+        return Err(PyValueError::new_err(format!(
+            "coeffs has length {} but basis has {} rows",
+            coeffs_slice.len(),
+            n
+        )));
+    }
+    let k_slice = momentum.as_slice()?;
+    if k_slice.len() != group.inner.n_generators() {
+        return Err(PyValueError::new_err(format!(
+            "momentum has {} entries but group has {} generators",
+            k_slice.len(),
+            group.inner.n_generators()
+        )));
+    }
+    let mut basis_words = decode_basis_words(&basis_view, n_q)?;
+    let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
+        .iter()
+        .map(|c| Complex::new(c.re, c.im))
+        .collect();
+
+    core_sym::canonicalize_pauli_sum_complex(
+        &mut basis_words,
+        &mut coeffs_vec,
+        &group.inner,
+        k_slice,
+    );
+
+    let m = basis_words.len();
+    let mut out_basis = vec![0u8; m * n_q];
+    for (i, w) in basis_words.iter().enumerate() {
+        codes_from_word(w, &mut out_basis[i * n_q..(i + 1) * n_q]);
+    }
+    let out_coeffs: Vec<Complex64> =
+        coeffs_vec.iter().map(|c| Complex64::new(c.re, c.im)).collect();
+    let basis_arr = out_basis
+        .into_pyarray(py)
+        .reshape([m, n_q])
+        .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
+    Ok((basis_arr, out_coeffs.into_pyarray(py)))
+}
+
+/// Verify that a `(basis_arr, complex_coeffs)` Pauli sum lies in the
+/// momentum sector `momentum` under `group`. Returns `None` on pass,
+/// raises a `ValueError` with diagnostic info on fail.
+///
+/// `tol` is the relative tolerance on coefficient comparison; default
+/// `1e-8`.
+#[pyfunction]
+#[pyo3(signature = (basis, coeffs, group, momentum, tol = 1e-8))]
+pub fn check_momentum_sector_arr<'py>(
+    basis: PyReadonlyArray2<'py, u8>,
+    coeffs: PyReadonlyArray1<'py, Complex64>,
+    group: &TranslationGroup,
+    momentum: PyReadonlyArray1<'py, i32>,
+    tol: f64,
+) -> PyResult<()> {
+    let basis_view = basis.as_array();
+    let n_q = group.inner.n_qubits();
+    if basis_view.shape().get(1).copied() != Some(n_q) {
+        return Err(PyValueError::new_err(format!(
+            "basis has {} qubits per row but group acts on {n_q}",
+            basis_view.shape().get(1).copied().unwrap_or(0)
+        )));
+    }
+    let coeffs_slice = coeffs.as_slice()?;
+    let k_slice = momentum.as_slice()?;
+    let basis_words = decode_basis_words(&basis_view, n_q)?;
+    let coeffs_vec: Vec<Complex<f64>> = coeffs_slice
+        .iter()
+        .map(|c| Complex::new(c.re, c.im))
+        .collect();
+    core_sym::check_momentum_sector(&basis_words, &coeffs_vec, &group.inner, k_slice, tol)
+        .map_err(|e| PyValueError::new_err(format!("{e}")))
 }
 
 /// Merge a `(basis_arr, coeffs)` Pauli sum (the representation used by

@@ -167,4 +167,8 @@ pub mod ppvm_python_native {
     pub use crate::symmetry::TranslationGroup;
     #[pymodule_export]
     pub use crate::symmetry::canonicalize_basis_arr;
+    #[pymodule_export]
+    pub use crate::symmetry::canonicalize_basis_arr_complex;
+    #[pymodule_export]
+    pub use crate::symmetry::check_momentum_sector_arr;
 }

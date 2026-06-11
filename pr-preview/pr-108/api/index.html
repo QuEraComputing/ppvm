@@ -56,10 +56,11 @@ To preserve the RNG state exactly (e.g. for checkpointing), use
 point for multi-shot sampling.</p>
 <p>Shots run in parallel across CPU cores (the GIL is released during
 sampling), with a serial fallback for small batches. When <code>seed</code> is
-given, shot <code>i</code> uses <code>seed + i</code>, so results are reproducible and
-independent of the number of threads. Set the <code>RAYON_NUM_THREADS</code>
-environment variable before the first call to control the pool size
-(it defaults to the number of logical cores).</p>
+given, shot <code>i</code> uses <code>(seed + i) % 2**64</code> (wrapping <code>u64</code>
+arithmetic), so results are reproducible and independent of the number
+of threads. Set the <code>RAYON_NUM_THREADS</code> environment variable before
+the first call to control the pool size (it defaults to the number of
+logical cores).</p>
 </div>   </div> </details> </article><article class="api-item" id="py-ppvm-generalized-tableau-GeneralizedTableau-t" data-name="t" data-path="ppvm.generalized_tableau.generalizedtableau.t" data-kind="method"> <div class="row1"> <span class="kind kind-method">method</span> <span class="name"><a href="#py-ppvm-generalized-tableau-GeneralizedTableau-t">t</a></span> <span class="path">ppvm.generalized_tableau.GeneralizedTableau.t</span> </div> <div class="signature">t(addr0: int) -&gt; None</div> <p class="summary">Apply a T gate (π/8 rotation) to the specified qubit.</p> <details> <summary>Full docstring</summary> <div class="docstring"> <div class="doc-prose"><p>Apply a T gate (π/8 rotation) to the specified qubit.</p>
 </div><section class="doc-section"> <h5>Parameters</h5> <dl class="param-list">  <dt> <code class="param-name">addr0</code> <code class="param-type">int</code>   </dt> <dd><p>The index of the target qubit.</p>
 </dd>  </dl> </section>   </div> </details> </article><article class="api-item" id="py-ppvm-generalized-tableau-GeneralizedTableau-t-adj" data-name="t_adj" data-path="ppvm.generalized_tableau.generalizedtableau.t_adj" data-kind="method"> <div class="row1"> <span class="kind kind-method">method</span> <span class="name"><a href="#py-ppvm-generalized-tableau-GeneralizedTableau-t-adj">t_adj</a></span> <span class="path">ppvm.generalized_tableau.GeneralizedTableau.t_adj</span> </div> <div class="signature">t_adj(addr0: int) -&gt; None</div> <p class="summary">Apply a T adjoint gate (negative π/8 rotation) to the specified qubit.</p> <details> <summary>Full docstring</summary> <div class="docstring"> <div class="doc-prose"><p>Apply a T adjoint gate (negative π/8 rotation) to the specified qubit.</p>

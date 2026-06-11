@@ -270,7 +270,11 @@ Use <a href="https://www.conventionalcommits.org/">Conventional Commits</a>:
 </p> <pre><code>feat(tableau): add correlated loss channel
 fix(runtime): handle zero-norm in truncation
 test(stim-parser): add fast fuzz/proptest suite
-chore: restore lockfile consistency</code></pre> <h3>4.2 Code style</h3> <ul> <li>Run <code>cargo fmt --all</code> before committing Rust.</li> <li>Run <code>cargo clippy --workspace --all-targets</code>; fix or justify all warnings.</li> <li>Python is formatted with <code>ruff format</code> and linted with <code>ruff check</code>.</li> <li>Public Rust items should have doc comments; <code>cargo doc --no-deps</code> must build cleanly because the API site is built from rustdoc JSON.</li> </ul> <h3>4.3 Tests</h3> <p>
+chore: restore lockfile consistency</code></pre> <h3>4.2 Code style</h3> <ul> <li>Run <code>cargo fmt --all</code> before committing Rust.</li> <li>Run <code>cargo clippy --workspace --all-targets</code>; fix or justify all warnings.</li> <li>Python is formatted with <code>ruff format</code> and linted with <code>ruff check</code>.</li> <li>Public Rust items should have doc comments; <code>cargo doc --no-deps</code> must build cleanly because the API site is built from rustdoc JSON.</li> <li>
+Python docstrings use <strong>Google style</strong> (griffe parses with <code>-d google</code>)
+        and are rendered as <strong>Markdown</strong> via <code>marked</code>. Use backtick spans for
+        cross-references — <em>not</em> Sphinx/RST syntax:
+<ul> <li>✅ <code>`fork`</code> or <code>`GeneralizedTableau.sample`</code></li> <li>❌ <code>:meth:`fork`</code>, <code>:func:`ppvm.sample_stim`</code> — these are never parsed and appear as literal text.</li> </ul> </li> </ul> <h3>4.3 Tests</h3> <p>
 Add tests in the same crate as the code they cover. Prefer property
       tests (<code>proptest</code>) for parser and arithmetic changes;
 <code>stim-parser</code> already has a proptest suite worth modelling

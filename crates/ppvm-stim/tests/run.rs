@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_stim::{Error, ExecError, ExtendedParseError, ParseError, run_file, run_string};
 use ppvm_tableau::prelude::*;
 
-type Tab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
+type Tab = GeneralizedTableau<ByteF64<1>, usize>;
 
 #[test]
 fn run_string_executes_one_shot() {
@@ -20,9 +20,9 @@ fn run_file_round_trips_with_run_string() {
     let path = std::env::temp_dir().join("ppvm_stim_test.stim");
     std::fs::write(&path, circuit).unwrap();
 
-    let mut a: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+    let mut a: GeneralizedTableau<ByteF64<1>, usize> =
         GeneralizedTableau::new_with_seed(3, 1e-10, 7);
-    let mut b: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+    let mut b: GeneralizedTableau<ByteF64<1>, usize> =
         GeneralizedTableau::new_with_seed(3, 1e-10, 7);
     let r_str = run_string(circuit, &mut a).unwrap();
     let r_file = run_file(&path, &mut b).unwrap();

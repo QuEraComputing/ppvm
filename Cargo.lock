@@ -852,6 +852,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-paulisum"
+version = "0.1.0"
+
+[[package]]
 name = "ppvm-python-native"
 version = "0.1.0"
 dependencies = [

@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_stim::{execute, parse_extended};
 use ppvm_tableau::prelude::*;
 
-type Tab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
+type Tab = GeneralizedTableau<ByteF64<1>, usize>;
 
 fn run(src: &str, n_qubits: usize) -> (Vec<Option<bool>>, Tab) {
     let prog = parse_extended(src).expect("parse_extended");
@@ -111,7 +111,7 @@ fn sample_runs_n_shots_each_with_fresh_tableau() {
     use ppvm_stim::sample;
     let prog = parse_extended("X 0\nM 0").unwrap();
     let shots = sample::<_, _, _, _>(&prog, 5, || {
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new(1, 1e-10)
+        GeneralizedTableau::<ByteF64<1>, usize>::new(1, 1e-10)
     })
     .unwrap();
     assert_eq!(shots.len(), 5);
@@ -125,7 +125,7 @@ fn sample_zero_shots_returns_empty() {
     use ppvm_stim::sample;
     let prog = parse_extended("X 0\nM 0").unwrap();
     let shots = sample::<_, _, _, _>(&prog, 0, || {
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new(1, 1e-10)
+        GeneralizedTableau::<ByteF64<1>, usize>::new(1, 1e-10)
     })
     .unwrap();
     assert!(shots.is_empty());
@@ -140,7 +140,7 @@ fn sample_random_h_distribution_within_3_sigma() {
     let mut seed_counter: u64 = 0;
     let shots = sample::<_, _, _, _>(&prog, n, || {
         seed_counter += 1;
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+        GeneralizedTableau::<ByteF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
     })
     .unwrap();
     let ones = shots.iter().filter(|s| s[0] == Some(true)).count();
@@ -386,7 +386,7 @@ fn measure_noise_distribution_within_3_sigma() {
     let mut seed_counter: u64 = 0;
     let shots = sample::<_, _, _, _>(&prog, n, || {
         seed_counter += 1;
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+        GeneralizedTableau::<ByteF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
     })
     .unwrap();
     let zeros = shots.iter().filter(|s| s[0] == Some(false)).count();
@@ -440,7 +440,7 @@ fn mpad_noise_distribution_within_3_sigma() {
     let mut seed_counter: u64 = 0;
     let shots = sample::<_, _, _, _>(&prog, n, || {
         seed_counter += 1;
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+        GeneralizedTableau::<ByteF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
     })
     .unwrap();
     let ones = shots.iter().filter(|s| s[0] == Some(true)).count();

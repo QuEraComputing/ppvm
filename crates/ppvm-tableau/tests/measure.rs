@@ -4,13 +4,13 @@
 use std::f64::consts::FRAC_PI_2;
 
 use num::complex::Complex64;
-use ppvm_runtime::config::dashmap::ByteFxHashF64;
+use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_tableau::prelude::*;
 
 #[test]
 fn test_measure_deterministic() {
     // Test deterministic measurement: |0⟩ state
-    let mut tableau: Tableau<ByteFxHashF64<1>> = Tableau::new(1);
+    let mut tableau: Tableau<ByteF64<1>> = Tableau::new(1);
 
     // Initial state is |0⟩, stabilizer is +Z
     println!("Initial tableau:\n{}", tableau);
@@ -24,7 +24,7 @@ fn test_measure_deterministic() {
 #[test]
 fn test_measure_after_x() {
     // Test deterministic measurement: |1⟩ state
-    let mut tableau: Tableau<ByteFxHashF64<1>> = Tableau::new(1);
+    let mut tableau: Tableau<ByteF64<1>> = Tableau::new(1);
 
     // Apply X to get |1⟩, stabilizer becomes -Z
     tableau.x(0);
@@ -39,7 +39,7 @@ fn test_measure_after_x() {
 #[test]
 fn test_measure_after_hadamard() {
     // Test random measurement: |+⟩ state
-    let mut tableau: Tableau<ByteFxHashF64<1>> = Tableau::new(1);
+    let mut tableau: Tableau<ByteF64<1>> = Tableau::new(1);
 
     // Apply H to get |+⟩ = (|0⟩ + |1⟩)/√2
     // Stabilizer becomes +X
@@ -77,7 +77,7 @@ fn test_measure_after_hadamard() {
 #[test]
 fn test_measure_two_qubits_bell_state() {
     // Test measurement on Bell state |Φ+⟩ = (|00⟩ + |11⟩)/√2
-    let mut tableau: Tableau<ByteFxHashF64<1>> = Tableau::new(2);
+    let mut tableau: Tableau<ByteF64<1>> = Tableau::new(2);
 
     // Create Bell state: H on qubit 0, then CNOT(0,1)
     tableau.h(0);
@@ -110,7 +110,7 @@ fn test_measure_statistics() {
     let mut count_one = 0;
 
     for _ in 0..trials {
-        let mut tableau: Tableau<ByteFxHashF64<1>> = Tableau::new(1);
+        let mut tableau: Tableau<ByteF64<1>> = Tableau::new(1);
         tableau.h(0); // Create |+⟩ state
 
         let outcome = tableau.measure(0);
@@ -152,7 +152,7 @@ fn test_measure_statistics() {
 
 #[test]
 fn test_measure_generalized_tableau_bell() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(2, 1e-12);
 
     // Create Bell state: H on qubit 0, then CNOT(0,1)
@@ -185,7 +185,7 @@ fn test_measure_generalized_tableau_bell() {
 
 #[test]
 fn test_measure_generalized_tableau_deterministic() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(1, 1e-12);
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128> = GeneralizedTableau::new(1, 1e-12);
 
     let outcome = tableau.measure(0);
     assert_eq!(tableau.coefficients.len(), 1);
@@ -203,7 +203,7 @@ fn test_measure_generalized_tableau_deterministic() {
 
 #[test]
 fn test_measure_generalized_random() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     // Create |+⟩ state
@@ -226,7 +226,7 @@ fn test_measure_generalized_tableau_statistics() {
     let mut count_one = 0;
 
     for _ in 0..trials {
-        let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
             GeneralizedTableau::new(2, 1e-12);
 
         // Create Bell state: H on qubit 0, then CNOT(0,1)
@@ -277,7 +277,7 @@ fn test_measure_generalized_tableau_statistics() {
 /// Coefficients must be normalized (Σ|c|² = 1) after measurement on a multi-branch state.
 #[test]
 fn test_measure_generalized_normalization() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(3, 1e-12);
 
     tableau.h(0);
@@ -322,7 +322,7 @@ fn test_measure_generalized_normalization() {
 /// T on |0⟩ doesn't change the state (only global phase), so measurement is still deterministic.
 #[test]
 fn test_measure_generalized_deterministic_with_t() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     // T|0⟩ = |0⟩ (no branching, Z eigenstate)
@@ -334,7 +334,7 @@ fn test_measure_generalized_deterministic_with_t() {
     assert_eq!(tableau.coefficients.len(), 1);
 
     // T|1⟩ = e^{iπ/4}|1⟩ (no branching, Z eigenstate)
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
     tableau.x(0);
     tableau.t(0);
@@ -348,7 +348,7 @@ fn test_measure_generalized_deterministic_with_t() {
 /// Measurement halves the branch count when the measured qubit caused branching.
 #[test]
 fn test_measure_reduces_branches() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(3, 1e-12);
 
     tableau.h(0);
@@ -381,7 +381,7 @@ fn test_measure_product_state_independence() {
     let mut count_q1_one = 0;
 
     for _ in 0..trials {
-        let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
             GeneralizedTableau::new(2, 1e-12);
 
         tableau.h(0);
@@ -410,7 +410,7 @@ fn test_measure_product_state_independence() {
 #[test]
 fn test_measure_generalized_ghz_correlation() {
     for _ in 0..50 {
-        let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
             GeneralizedTableau::new(4, 1e-12);
 
         tableau.h(0);
@@ -435,7 +435,7 @@ fn test_measure_generalized_ghz_correlation() {
 /// and leave coefficients unchanged.
 #[test]
 fn test_measure_generalized_idempotent() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(2, 1e-12);
 
     tableau.h(0);
@@ -468,7 +468,7 @@ fn test_measure_generalized_idempotent() {
 /// Verifies that measurement collapses branches and maintains valid state.
 #[test]
 fn test_measure_generalized_entangled_chain() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(4, 1e-12);
 
     tableau.h(0);
@@ -516,7 +516,7 @@ fn test_measure_generalized_entangled_chain() {
 #[test]
 fn test_measure_generalized_agrees_with_inner_tableau() {
     for _ in 0..20 {
-        let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
             GeneralizedTableau::new(2, 1e-12);
 
         tableau.h(0);
@@ -541,7 +541,7 @@ fn test_measure_generalized_agrees_with_inner_tableau() {
 
 #[test]
 fn test_measure_generalized_tableau_t_gate_deterministic() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     tableau.h(0);
@@ -566,7 +566,7 @@ fn test_measure_generalized_tableau_t_gate_deterministic() {
 
 #[test]
 fn test_measure_generalized_tableau_t_gate_random() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     tableau.h(0);
@@ -599,7 +599,7 @@ fn test_measure_generalized_tableau_t_gate_random() {
 
 #[test]
 fn test_measure_z_stabilizer_random() {
-    let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tableau: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     tableau.h(0);
@@ -630,7 +630,7 @@ fn test_measure_z_stabilizer_random() {
 
 #[test]
 fn test_measure_opposite_deterministic() {
-    let mut tab: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+    let mut tab: GeneralizedTableau<ByteF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(1, 1e-12);
 
     // tab.coefficients[0].0 *= Complex64 { re: 0.0, im: -1.0 };
@@ -646,7 +646,7 @@ fn test_measure_opposite_deterministic() {
 #[test]
 fn test_measure_order_sqrt_vs_rot() {
     let theta = -0.9553166181245093; // -np.arccos(np.sqrt(1 / 3))
-    let mut tab_rot: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+    let mut tab_rot: GeneralizedTableau<ByteF64<1>, usize> =
         GeneralizedTableau::new(2, 1e-12);
 
     for i in 0..2 {
@@ -754,9 +754,9 @@ fn test_seed_reproducibility() {
     let n_shots = 50;
 
     // Build two identically-seeded base states
-    let mut base_a: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+    let mut base_a: GeneralizedTableau<ByteF64<1>, usize> =
         GeneralizedTableau::new_with_seed(2, 1e-12, seed);
-    let mut base_b: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+    let mut base_b: GeneralizedTableau<ByteF64<1>, usize> =
         GeneralizedTableau::new_with_seed(2, 1e-12, seed);
 
     // Apply the same non-Clifford circuit to create a multi-branch state

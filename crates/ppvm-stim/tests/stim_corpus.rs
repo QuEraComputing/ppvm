@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_stim::{ExecError, execute, parse_extended};
 use ppvm_tableau::prelude::*;
 
@@ -71,7 +71,7 @@ fn corpus_table_covers_every_file() {
 
 #[test]
 fn corpus_obeys_expectations() {
-    type Tab = GeneralizedTableau<ByteFxHashF64<8>, usize>;
+    type Tab = GeneralizedTableau<ByteF64<8>, usize>;
 
     for (name, expect) in CASES {
         let src = read(name);

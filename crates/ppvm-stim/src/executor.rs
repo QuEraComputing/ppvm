@@ -102,10 +102,10 @@ where
 /// Execute many shots, building a fresh tableau for shot `i` via
 /// `make_tableau(i)`.
 ///
-/// When the `rayon` feature is enabled this dispatches to [`sample_parallel`]
+/// When the `rayon` feature is enabled this dispatches to `sample_parallel`
 /// for batches large enough to amortise thread-scheduling overhead, and to
 /// [`sample_serial`] otherwise. Without the feature it is always serial. Use
-/// [`sample_serial`] / [`sample_parallel`] directly to force one or the other.
+/// [`sample_serial`] / `sample_parallel` directly to force one or the other.
 pub fn sample<T, I, C, F>(
     program: &ExtendedProgram,
     num_shots: usize,

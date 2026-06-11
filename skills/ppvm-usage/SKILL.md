@@ -214,7 +214,7 @@ let prog = parse_extended(stim_src)?;
 
 // Multi-shot: pass a factory closure to `sample` — it reuses the parsed
 // program. The closure receives the shot index `i`; derive a per-shot seed
-// from it (e.g. `new_with_seed(.., base + i as u64)`) for reproducible runs.
+// from it (e.g. `new_with_seed(.., base.wrapping_add(i as u64))`) for reproducible runs.
 let shots = sample(&prog, 10_000, |_i| {
     GeneralizedTableau::<_, usize, _>::new(n_qubits, 1e-10)
 })?;

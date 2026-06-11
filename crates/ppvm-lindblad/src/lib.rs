@@ -42,7 +42,11 @@ use std::fmt;
 use std::time::Instant;
 
 pub mod expm;
-pub use expm::{Csr, ExpmOpts, csr_from_triplets, csr_one_norm, expm_multiply, spmv_parallel};
+pub use expm::{Csr, CsrCx, ExpmOpts, csr_from_triplets, csr_one_norm, expm_multiply, spmv_parallel};
+
+/// Per-step orbit-rep evolution under translation symmetry — phase-aware
+/// action + complex CSR throughout. See module docs.
+pub mod orbit_rep;
 
 /// Words pack up to 128 qubits.
 const W_U64: usize = 2;
@@ -1638,7 +1642,7 @@ impl LindbladSpec {
 
     /// Compute the unscaled list of `(output, coefficient)` pairs that
     /// `L*(p)` contributes (without the input coefficient).
-    fn compute_action_terms(
+    pub(crate) fn compute_action_terms(
         &self,
         p: &Word,
         scratch_support: &mut Vec<u32>,
@@ -1891,6 +1895,97 @@ mod tests {
         let mut out = vec![0u8; codes.len()];
         codes_from_word(&w, &mut out);
         assert_eq!(out.as_slice(), &codes);
+    }
+
+    /// Per-step orbit-rep evolution gives the SAME final orbit-rep
+    /// state as full-basis complex evolution followed by a single
+    /// projection at the end. Validates that the phase-aware action
+    /// + complex CSR machinery is consistent with the full-basis
+    /// reference.
+    #[test]
+    fn pc_step_orbit_rep_matches_full_basis_projection() {
+        use std::f64::consts::PI;
+        use ppvm_runtime::symmetry::canonicalize_pauli_sum_complex;
+        let n = 4usize;
+        let dt = 0.01f64;
+        let n_steps = 3usize;
+        let mut h_terms: Vec<(String, f64)> = Vec::new();
+        for j in 0..n {
+            let nxt = (j + 1) % n;
+            for op in ["X", "Y"] {
+                let mut s = vec!['I'; n];
+                s[j] = op.chars().next().unwrap();
+                s[nxt] = op.chars().next().unwrap();
+                h_terms.push((s.into_iter().collect(), 1.0));
+            }
+        }
+        let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
+        let group = ppvm_runtime::symmetry::TranslationGroup::chain_1d(n);
+        let k_mode: i32 = 1;
+        let k = vec![k_mode];
+
+        // Build the k=1 eigenstate in FULL basis form.
+        let basis_full: Vec<Word> = (0..n)
+            .map(|j| {
+                let mut s = vec!['I'; n];
+                s[j] = 'Z';
+                let (w, _) = parse_pauli_string(&s.into_iter().collect::<String>(), n).unwrap();
+                w
+            })
+            .collect();
+        let coeffs_full: Vec<Complex<f64>> = (0..n as i32)
+            .map(|a| Complex::from_polar(1.0, -2.0 * PI * (k_mode as f64) * (a as f64) / (n as f64)))
+            .collect();
+
+        // ----- Full-basis path -----
+        let mut bf = basis_full.clone();
+        let mut cf = coeffs_full.clone();
+        let opts = ExpmOpts::default();
+        let protected: Vec<Word> = Vec::new();
+        for _ in 0..n_steps {
+            spec.pc_step_complex(
+                &mut bf, &mut cf, dt, 1.0, 0.0, &protected, opts, None, None, None,
+            )
+            .unwrap();
+        }
+        // Project at the end.
+        canonicalize_pauli_sum_complex(&mut bf, &mut cf, &group, &k);
+
+        // ----- Orbit-rep path -----
+        // Initial orbit-rep form: project the full-basis input.
+        let mut br = basis_full.clone();
+        let mut cr = coeffs_full.clone();
+        canonicalize_pauli_sum_complex(&mut br, &mut cr, &group, &k);
+        // Evolve in orbit-rep form.
+        for _ in 0..n_steps {
+            orbit_rep::pc_step_orbit_rep(
+                &spec, &mut br, &mut cr, dt, 1.0, 0.0, &protected, opts, &group, &k,
+            )
+            .unwrap();
+        }
+
+        // Compare.
+        let mf: FxHashMap<Word, Complex<f64>> = bf.into_iter().zip(cf).collect();
+        let mr: FxHashMap<Word, Complex<f64>> = br.into_iter().zip(cr).collect();
+        assert_eq!(
+            mf.len(),
+            mr.len(),
+            "orbit-rep ({}) and full-basis-projected ({}) basis sizes differ",
+            mr.len(),
+            mf.len()
+        );
+        let mut max_diff = 0.0_f64;
+        for (w, cm) in &mr {
+            let cf_val = mf
+                .get(w)
+                .copied()
+                .unwrap_or_else(|| panic!("rep {:?} in orbit-rep but not in full-basis", w));
+            max_diff = max_diff.max((cm - cf_val).norm());
+        }
+        assert!(
+            max_diff < 1e-9,
+            "orbit-rep diverged from full-basis: max |Δc| = {max_diff:e}"
+        );
     }
 
     /// `pc_step_complex` correctly preserves the momentum sector of an

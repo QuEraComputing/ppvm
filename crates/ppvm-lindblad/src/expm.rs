@@ -25,6 +25,11 @@ use sprs::CsMatI;
 /// `usize` indptr accommodates `nnz > 2^32` even when individual indices fit.
 pub type Csr = CsMatI<f64, u32, usize>;
 
+/// Complex-coefficient CSR matrix. Used by the orbit-rep evolution
+/// path, where matrix elements pick up `χ_k(g)` phases from the
+/// translation generator and become complex.
+pub type CsrCx = CsMatI<Complex<f64>, u32, usize>;
+
 /// `θ_m` table from Al-Mohy & Higham (2011), Table A.3, for double
 /// precision (unit roundoff `u = 2^{-53}`).
 ///
@@ -264,6 +269,109 @@ pub fn expm_multiply(a: &Csr, t: f64, b: &[f64], opts: ExpmOpts) -> Vec<f64> {
             c1 = c2;
         }
         // Outer step: `f` becomes the input for the next scaling power.
+        bk.copy_from_slice(&f);
+    }
+
+    f
+}
+
+/// Matrix 1-norm `max_j Σ_i |A_{ij}|` for a complex CSR.
+pub fn csr_cx_one_norm(m: &CsrCx) -> f64 {
+    if m.cols() == 0 {
+        return 0.0;
+    }
+    let mut col_sums = vec![0f64; m.cols()];
+    for (k, &col) in m.indices().iter().enumerate() {
+        col_sums[col as usize] += m.data()[k].norm();
+    }
+    col_sums.into_iter().fold(0f64, f64::max)
+}
+
+/// `y ← A · x` for a complex CSR + complex vector. Serial.
+pub fn spmv_cx_serial(m: &CsrCx, x: &[Complex<f64>], y: &mut [Complex<f64>]) {
+    debug_assert_eq!(x.len(), m.cols());
+    debug_assert_eq!(y.len(), m.rows());
+    let indptr_raw = m.indptr();
+    let indptr = indptr_raw.raw_storage();
+    let indices = m.indices();
+    let data = m.data();
+    for (i, yi) in y.iter_mut().enumerate() {
+        let mut sum = Complex::new(0.0, 0.0);
+        for k in indptr[i]..indptr[i + 1] {
+            sum += data[k] * x[indices[k] as usize];
+        }
+        *yi = sum;
+    }
+}
+
+/// `y ← A · x` for a complex CSR + complex vector. Rayon-parallel over rows.
+pub fn spmv_cx_parallel(m: &CsrCx, x: &[Complex<f64>], y: &mut [Complex<f64>]) {
+    debug_assert_eq!(x.len(), m.cols());
+    debug_assert_eq!(y.len(), m.rows());
+    let indptr_raw = m.indptr();
+    let indptr = indptr_raw.raw_storage();
+    let indices = m.indices();
+    let data = m.data();
+    y.par_iter_mut().enumerate().for_each(|(i, yi)| {
+        let mut sum = Complex::new(0.0, 0.0);
+        for k in indptr[i]..indptr[i + 1] {
+            sum += data[k] * x[indices[k] as usize];
+        }
+        *yi = sum;
+    });
+}
+
+#[inline]
+pub fn spmv_cx(m: &CsrCx, x: &[Complex<f64>], y: &mut [Complex<f64>], parallel_threshold: usize) {
+    if m.nnz() >= parallel_threshold {
+        spmv_cx_parallel(m, x, y);
+    } else {
+        spmv_cx_serial(m, x, y);
+    }
+}
+
+/// Compute `exp(t · A) · b` for a **complex** CSR matrix `A` and
+/// complex vector `b`. Same Al-Mohy & Higham scaling-and-squaring as
+/// [`expm_multiply`].
+pub fn expm_multiply_cx(a: &CsrCx, t: f64, b: &[Complex<f64>], opts: ExpmOpts) -> Vec<Complex<f64>> {
+    assert_eq!(
+        a.rows(),
+        b.len(),
+        "matrix size {} mismatches vector length {}",
+        a.rows(),
+        b.len()
+    );
+    let n = a.rows();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let t_a_one_norm = t.abs() * csr_cx_one_norm(a);
+    let (m_star, s) = select_ms(t_a_one_norm, opts.max_krylov_m);
+    let scale = t / s as f64;
+
+    let mut f = b.to_vec();
+    let mut bk = b.to_vec();
+    let mut work = vec![Complex::new(0.0, 0.0); n];
+
+    for _ in 0..s {
+        let mut c1 = inf_norm_c(&bk);
+        for i in 1..=m_star {
+            spmv_cx(a, &bk, &mut work, opts.parallel_threshold);
+            let factor = scale / i as f64;
+            for j in 0..n {
+                bk[j] = work[j] * factor;
+            }
+            for j in 0..n {
+                f[j] += bk[j];
+            }
+            let c2 = inf_norm_c(&bk);
+            let f_norm = inf_norm_c(&f).max(f64::MIN_POSITIVE);
+            if c1 + c2 <= opts.tol * f_norm {
+                break;
+            }
+            c1 = c2;
+        }
         bk.copy_from_slice(&f);
     }
 

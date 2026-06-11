@@ -353,6 +353,51 @@ class Lindbladian:
             None if momentum is None else np.ascontiguousarray(momentum, dtype=np.int32),
         )
 
+    def pc_step_orbit_rep(
+        self,
+        basis_arr: np.ndarray,
+        coeffs: np.ndarray,
+        dt: float,
+        tau_add: float,
+        group,
+        momentum: np.ndarray,
+        drop_tol: float = 0.0,
+        protected_arr: np.ndarray | None = None,
+        expm_tol: float = 1e-12,
+        parallel_threshold: int = 50_000,
+        max_krylov_m: int | None = None,
+        canonicalize_first: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Per-step orbit-representative pc evolution.
+
+        State lives entirely in orbit-rep form throughout: ``basis_arr``
+        contains only canonical translation-orbit representatives,
+        ``coeffs`` are complex. Phase-aware action + complex CSR. Basis
+        is ~``|group|×`` smaller than the equivalent full-basis complex
+        evolution, and the reduction persists across every step.
+
+        ``basis_arr`` is assumed to contain canonical reps only. Pass
+        ``canonicalize_first=True`` to rewrite each row to its canonical
+        rep on entry (coefficients unchanged).
+        """
+        n = self.n_qubits
+        if protected_arr is None:
+            protected_arr = np.zeros((0, n), dtype=np.uint8)
+        return self._spec.pc_step_orbit_rep(
+            np.ascontiguousarray(basis_arr, dtype=np.uint8),
+            np.ascontiguousarray(coeffs, dtype=np.complex128),
+            float(dt),
+            float(tau_add),
+            group,
+            np.ascontiguousarray(momentum, dtype=np.int32),
+            float(drop_tol),
+            np.ascontiguousarray(protected_arr, dtype=np.uint8),
+            float(expm_tol),
+            int(parallel_threshold),
+            None if max_krylov_m is None else int(max_krylov_m),
+            bool(canonicalize_first),
+        )
+
     def rk4_step_arr(
         self,
         basis_arr: np.ndarray,

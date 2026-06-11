@@ -57,7 +57,7 @@ where
 ///
 /// The shot index lets callers derive a deterministic per-shot seed (e.g.
 /// `seed + i`) so results are independent of evaluation order — the same
-/// factory then yields identical results from [`sample_parallel`].
+/// factory then yields identical results from `sample_parallel` (when the `rayon` feature is enabled).
 pub fn sample_serial<T, I, C, F>(
     program: &ExtendedProgram,
     num_shots: usize,

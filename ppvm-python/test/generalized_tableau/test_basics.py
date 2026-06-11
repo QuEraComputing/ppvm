@@ -1,12 +1,30 @@
 import math
 
+import pytest
+
 from ppvm import GeneralizedTableau
+from ppvm.generalized_tableau import MAX_N_QUBITS, sample_stim
 
 
 def test_construction():
     tab = GeneralizedTableau(4)
     assert tab.n_qubits == 4
     assert str(tab) is not None
+
+
+def test_too_many_qubits_raises_clear_error():
+    with pytest.raises(ValueError, match=f"between 1 and {MAX_N_QUBITS}"):
+        GeneralizedTableau(MAX_N_QUBITS + 1)
+
+
+def test_zero_qubits_raises_clear_error():
+    with pytest.raises(ValueError, match="between 1"):
+        GeneralizedTableau(0)
+
+
+def test_sample_too_many_qubits_raises_clear_error():
+    with pytest.raises(ValueError, match=f"between 1 and {MAX_N_QUBITS}"):
+        sample_stim(prog=None, n_qubits=MAX_N_QUBITS + 1)
 
 
 def test_measure_zero_state():

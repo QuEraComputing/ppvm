@@ -255,7 +255,7 @@ macro_rules! create_interface {
                 prog: &crate::stim_program::PyStimProgram,
             ) -> pyo3::PyResult<Vec<u8>> {
                 let mut results = Vec::with_capacity(prog.measurement_count());
-                ppvm_stim::execute_prepared(&prog.instructions, &mut self.inner, &mut results);
+                ppvm_stim::execute_validated(&prog.instructions, &mut self.inner, &mut results);
                 Ok(results
                     .into_iter()
                     .map(crate::interface_tableau::measurement_to_u8)
@@ -266,10 +266,10 @@ macro_rules! create_interface {
             ///
             /// Shots run in parallel on rayon's global thread pool (GIL
             /// released), falling back to serial for small batches. Shot `i`
-            /// is seeded with `seed + i` when `seed` is given, so results are
-            /// reproducible and independent of the thread count; set the
-            /// `RAYON_NUM_THREADS` environment variable to control the pool
-            /// size.
+            /// is seeded with `seed.wrapping_add(i)` when `seed` is given
+            /// (wrapping mod 2⁶⁴), so results are reproducible and
+            /// independent of the thread count; set the `RAYON_NUM_THREADS`
+            /// environment variable to control the pool size.
             #[staticmethod]
             #[pyo3(signature = (prog, n_qubits, min_abs_coeff = 1e-10, num_shots = 1, seed = None))]
             pub fn sample(
@@ -280,9 +280,14 @@ macro_rules! create_interface {
                 num_shots: usize,
                 seed: Option<u64>,
             ) -> pyo3::PyResult<Vec<Vec<u8>>> {
-                let raw = py
-                    .detach(|| {
-                        ppvm_stim::sample(&prog.0, num_shots, |i| match seed {
+                // `prog` was already validated at `StimProgram.parse()` time;
+                // use the validated path to skip redundant re-validation.
+                let raw = py.detach(|| {
+                    ppvm_stim::sample_validated::<_, _, _, _>(
+                        &prog.0.instructions,
+                        prog.0.measurement_count(),
+                        num_shots,
+                        |i| match seed {
                             Some(s) => GeneralizedTableau::<$type, $indexType>::new_with_seed(
                                 n_qubits,
                                 min_abs_coeff,
@@ -292,9 +297,9 @@ macro_rules! create_interface {
                                 n_qubits,
                                 min_abs_coeff,
                             ),
-                        })
-                    })
-                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{e}")))?;
+                        },
+                    )
+                });
                 Ok(raw
                     .into_iter()
                     .map(|shot| {

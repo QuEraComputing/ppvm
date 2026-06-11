@@ -16,7 +16,7 @@ pub enum ExecError {
     },
 }
 
-pub fn prepare(program: &ExtendedProgram) -> Result<(), ExecError> {
+pub fn validate(program: &ExtendedProgram) -> Result<(), ExecError> {
     validate_slice(&program.instructions)
 }
 

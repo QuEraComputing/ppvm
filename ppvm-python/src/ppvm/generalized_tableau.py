@@ -226,10 +226,11 @@ class GeneralizedTableau(
 
         Shots run in parallel across CPU cores (the GIL is released during
         sampling), with a serial fallback for small batches. When ``seed`` is
-        given, shot ``i`` uses ``seed + i``, so results are reproducible and
-        independent of the number of threads. Set the ``RAYON_NUM_THREADS``
-        environment variable before the first call to control the pool size
-        (it defaults to the number of logical cores).
+        given, shot ``i`` uses ``(seed + i) % 2**64`` (wrapping ``u64``
+        arithmetic), so results are reproducible and independent of the number
+        of threads. Set the ``RAYON_NUM_THREADS`` environment variable before
+        the first call to control the pool size (it defaults to the number of
+        logical cores).
         """
         N_interface = (n_qubits + 63) // 64
         native_cls = getattr(ppvm_python_native, f"GeneralizedTableau{N_interface}")

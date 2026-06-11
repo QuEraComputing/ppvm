@@ -1,0 +1,33 @@
+device circuit.n_qubits 1;
+
+fn @main() {
+    const.u64 0
+
+@loop:
+    const.u64 0
+    circuit h
+    const.u64 0
+    circuit measure
+
+    // stop here to investigate
+    breakpoint
+    
+    const.u32 1
+    eq.u32
+    cond_br @flip, @next
+
+@flip:
+    const.u64 0
+    circuit x
+
+@next:
+    const.u64 1
+    add.u64
+    dup
+    const.u64 2
+    lt.u64
+    cond_br @loop, @done
+
+@done:
+    ret
+}

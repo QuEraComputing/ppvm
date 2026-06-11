@@ -25,7 +25,11 @@ limit, use the Rust crate directly.
 
 
 def _native_tableau_cls(n_qubits: int):
-    if n_qubits < 1 or n_qubits > MAX_N_QUBITS:
+    if n_qubits < 1:
+        raise ValueError(
+            f"n_qubits must be between 1 and {MAX_N_QUBITS} (got {n_qubits})."
+        )
+    if n_qubits > MAX_N_QUBITS:
         raise ValueError(
             f"n_qubits must be between 1 and {MAX_N_QUBITS} (got {n_qubits}); "
             "to simulate more qubits, use the ppvm-tableau Rust crate directly."

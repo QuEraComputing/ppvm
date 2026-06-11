@@ -22,3 +22,6 @@ jobs:
 
       - name: Run workspace tests
         run: cargo test --workspace
+
+      - name: Run ppvm-stim tests with rayon feature
+        run: cargo test -p ppvm-stim --features rayon

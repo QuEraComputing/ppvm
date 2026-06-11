@@ -93,7 +93,7 @@ class GeneralizedTableau(
 
         Both the original and the copy will produce identical random sequences
         from this point forward. To get an independent copy with a fresh RNG,
-        use :meth:`fork` instead.
+        use `fork` instead.
         """
         copied = GeneralizedTableau(self.n_qubits, self.min_abs_coeff)
         object.__setattr__(copied, "_interface", self._interface.__copy__())
@@ -104,7 +104,7 @@ class GeneralizedTableau(
 
         Both the original and the copy will produce identical random sequences
         from this point forward. To get an independent copy with a fresh RNG,
-        use :meth:`fork` instead.
+        use `fork` instead.
         """
         copied = GeneralizedTableau(self.n_qubits, self.min_abs_coeff)
         object.__setattr__(copied, "_interface", self._interface.__deepcopy__(memo))
@@ -204,8 +204,8 @@ class GeneralizedTableau(
 
         .. note::
             This **mutates** the tableau in place. For independent shots use
-            :meth:`fork` or the :func:`ppvm.sample_stim` / :meth:`sample`
-            helpers (which build a fresh tableau per shot).
+            `fork` or `ppvm.sample_stim` / `sample` helpers (which build a
+            fresh tableau per shot).
         """
         raw = self._interface.run(prog)
         return [MeasurementResult(x) for x in raw]
@@ -248,7 +248,7 @@ def sample_stim(
     """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``.
 
     Shots are sampled in parallel across CPU cores with the GIL released; see
-    :meth:`GeneralizedTableau.sample` for seeding and ``RAYON_NUM_THREADS``.
+    `GeneralizedTableau.sample` for seeding and ``RAYON_NUM_THREADS``.
     """
     return GeneralizedTableau.sample(
         prog, n_qubits, min_abs_coeff=min_abs_coeff, num_shots=num_shots, seed=seed

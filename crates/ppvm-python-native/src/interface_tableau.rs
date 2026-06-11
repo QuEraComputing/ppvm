@@ -283,7 +283,7 @@ macro_rules! create_interface {
                 // `prog` was already validated at `StimProgram.parse()` time;
                 // use the validated path to skip redundant re-validation.
                 let raw = py.detach(|| {
-                    ppvm_stim::sample_validated::<_, _, _, _>(
+                    ppvm_stim::sample_validated(
                         &prog.0.instructions,
                         prog.0.measurement_count(),
                         num_shots,

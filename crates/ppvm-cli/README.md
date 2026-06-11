@@ -102,7 +102,10 @@ wherever you want execution to stop:
 fn @main() {
     const.u64 0
     circuit h
-    breakpoint        // execution pauses here
+
+    // execution pauses here
+    breakpoint
+    
     const.u64 0
     circuit measure
     ret

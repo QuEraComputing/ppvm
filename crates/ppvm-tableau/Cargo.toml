@@ -44,3 +44,7 @@ harness = false
 [[bench]]
 name = "clifford_batch"
 harness = false
+
+[[bench]]
+name = "clifford_crossover"
+harness = false

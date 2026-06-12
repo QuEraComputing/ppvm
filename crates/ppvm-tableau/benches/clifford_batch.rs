@@ -95,11 +95,7 @@ macro_rules! bench_single_batch {
             ),
             $idx,
             |b, idx| {
-                b.iter_batched_ref(
-                    || $tab.clone(),
-                    |t| t.$method(idx),
-                    BatchSize::SmallInput,
-                );
+                b.iter_batched_ref(|| $tab.clone(), |t| t.$method(idx), BatchSize::SmallInput);
             },
         );
     }};
@@ -137,11 +133,7 @@ macro_rules! bench_pair_batch {
             ),
             $pairs,
             |b, pairs| {
-                b.iter_batched_ref(
-                    || $tab.clone(),
-                    |t| t.$method(pairs),
-                    BatchSize::SmallInput,
-                );
+                b.iter_batched_ref(|| $tab.clone(), |t| t.$method(pairs), BatchSize::SmallInput);
             },
         );
     }};
@@ -157,33 +149,41 @@ fn bench_clifford_batch(c: &mut Criterion) {
         let pairs_half = pairs_every_other(n);
 
         // --- Clifford trait ---
-        // x, y, z, s, cnot have no batched impl today.
-        // h and cz do — bench both paths.
         bench_single_loop!(group, tab, n, "all", x, &all);
         bench_single_loop!(group, tab, n, "every_other", x, &half);
+        bench_single_batch!(group, tab, n, "all", x_batch, &all);
+        bench_single_batch!(group, tab, n, "every_other", x_batch, &half);
         bench_single_loop!(group, tab, n, "all", y, &all);
         bench_single_loop!(group, tab, n, "every_other", y, &half);
+        bench_single_batch!(group, tab, n, "all", y_batch, &all);
+        bench_single_batch!(group, tab, n, "every_other", y_batch, &half);
         bench_single_loop!(group, tab, n, "all", z, &all);
         bench_single_loop!(group, tab, n, "every_other", z, &half);
+        bench_single_batch!(group, tab, n, "all", z_batch, &all);
+        bench_single_batch!(group, tab, n, "every_other", z_batch, &half);
         bench_single_loop!(group, tab, n, "all", h, &all);
         bench_single_loop!(group, tab, n, "every_other", h, &half);
         bench_single_batch!(group, tab, n, "all", h_batch, &all);
         bench_single_batch!(group, tab, n, "every_other", h_batch, &half);
         bench_single_loop!(group, tab, n, "all", s, &all);
         bench_single_loop!(group, tab, n, "every_other", s, &half);
+        bench_single_batch!(group, tab, n, "all", s_batch, &all);
+        bench_single_batch!(group, tab, n, "every_other", s_batch, &half);
 
         bench_pair_loop!(group, tab, n, "all", cnot, &pairs_full);
         bench_pair_loop!(group, tab, n, "every_other", cnot, &pairs_half);
+        bench_pair_batch!(group, tab, n, "all", cnot_batch, &pairs_full);
+        bench_pair_batch!(group, tab, n, "every_other", cnot_batch, &pairs_half);
         bench_pair_loop!(group, tab, n, "all", cz, &pairs_full);
         bench_pair_loop!(group, tab, n, "every_other", cz, &pairs_half);
         bench_pair_batch!(group, tab, n, "all", cz_batch, &pairs_full);
         bench_pair_batch!(group, tab, n, "every_other", cz_batch, &pairs_half);
 
         // --- CliffordExtensions trait ---
-        // s_adj, cy have no batched impl today.
-        // sqrt_x, sqrt_x_adj, sqrt_y, sqrt_y_adj do — bench both paths.
         bench_single_loop!(group, tab, n, "all", s_adj, &all);
         bench_single_loop!(group, tab, n, "every_other", s_adj, &half);
+        bench_single_batch!(group, tab, n, "all", s_adj_batch, &all);
+        bench_single_batch!(group, tab, n, "every_other", s_adj_batch, &half);
         bench_single_loop!(group, tab, n, "all", sqrt_x, &all);
         bench_single_loop!(group, tab, n, "every_other", sqrt_x, &half);
         bench_single_batch!(group, tab, n, "all", sqrt_x_batch, &all);
@@ -203,6 +203,8 @@ fn bench_clifford_batch(c: &mut Criterion) {
 
         bench_pair_loop!(group, tab, n, "all", cy, &pairs_full);
         bench_pair_loop!(group, tab, n, "every_other", cy, &pairs_half);
+        bench_pair_batch!(group, tab, n, "all", cy_batch, &pairs_full);
+        bench_pair_batch!(group, tab, n, "every_other", cy_batch, &pairs_half);
     }
     group.finish();
 }

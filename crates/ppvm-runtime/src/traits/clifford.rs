@@ -148,6 +148,98 @@ impl<T: PauliWordTrait> Clifford for T {
     }
 }
 
+/// Batched Clifford gates: apply the same gate to many qubits in one call.
+///
+/// Default implementations loop over the corresponding single-qubit
+/// (or single-pair) method on [`Clifford`]. Types like the stabilizer
+/// `Tableau` override the defaults with a fused inner-loop or bitmask
+/// implementation; types without a faster path inherit the loop and
+/// still benefit from the trait's uniform API.
+pub trait CliffordBatch: Clifford {
+    /// Apply Pauli `X` to every qubit in `indices`.
+    fn x_batch(&mut self, indices: &[usize]) {
+        for &q in indices {
+            self.x(q);
+        }
+    }
+    /// Apply Pauli `Y` to every qubit in `indices`.
+    fn y_batch(&mut self, indices: &[usize]) {
+        for &q in indices {
+            self.y(q);
+        }
+    }
+    /// Apply Pauli `Z` to every qubit in `indices`.
+    fn z_batch(&mut self, indices: &[usize]) {
+        for &q in indices {
+            self.z(q);
+        }
+    }
+    /// Apply Hadamard `H` to every qubit in `indices`.
+    fn h_batch(&mut self, indices: &[usize]) {
+        for &q in indices {
+            self.h(q);
+        }
+    }
+    /// Apply phase gate `S` to every qubit in `indices`.
+    fn s_batch(&mut self, indices: &[usize]) {
+        for &q in indices {
+            self.s(q);
+        }
+    }
+    /// Apply `CNOT` to every `(control, target)` pair.
+    fn cnot_batch(&mut self, pairs: &[(usize, usize)]) {
+        for &(c, t) in pairs {
+            self.cnot(c, t);
+        }
+    }
+    /// Apply `CZ` to every `(control, target)` pair.
+    fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
+        for &(c, t) in pairs {
+            self.cz(c, t);
+        }
+    }
+}
+
+/// Batched form of [`CliffordExtensions`].
+pub trait CliffordExtensionsBatch: CliffordExtensions + CliffordBatch {
+    /// Apply `S†` to every qubit in `indices`.
+    fn s_adj_batch(&mut self, indices: &[usize]) {
+        for &q in indices {
+            self.s_adj(q);
+        }
+    }
+    /// Apply `√X` to every qubit in `indices`.
+    fn sqrt_x_batch(&mut self, indices: &[usize]) {
+        for &q in indices {
+            self.sqrt_x(q);
+        }
+    }
+    /// Apply `(√X)†` to every qubit in `indices`.
+    fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
+        for &q in indices {
+            self.sqrt_x_adj(q);
+        }
+    }
+    /// Apply `√Y` to every qubit in `indices`.
+    fn sqrt_y_batch(&mut self, indices: &[usize]) {
+        for &q in indices {
+            self.sqrt_y(q);
+        }
+    }
+    /// Apply `(√Y)†` to every qubit in `indices`.
+    fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
+        for &q in indices {
+            self.sqrt_y_adj(q);
+        }
+    }
+    /// Apply `CY` to every `(control, target)` pair.
+    fn cy_batch(&mut self, pairs: &[(usize, usize)]) {
+        for &(c, t) in pairs {
+            self.cy(c, t);
+        }
+    }
+}
+
 impl<T: PauliWordTrait> CliffordExtensions for T {
     // |    Gate    |  X  |  Y  |  Z  |
     // |:----------:|:---:|:---:|:---:|

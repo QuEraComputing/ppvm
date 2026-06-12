@@ -15,7 +15,7 @@ mod trace;
 mod word_trait;
 
 pub use branch::{CRx, Projection, RotationOne, RotationTwo, TGate, U3Gate};
-pub use clifford::{Clifford, CliffordExtensions};
+pub use clifford::{Clifford, CliffordBatch, CliffordExtensions, CliffordExtensionsBatch};
 pub use coefficient::{Coefficient, ComplexCoefficient};
 pub use map::{
     ACMap, ACMapAddAssign, ACMapBase, ACMapConsume, ACMapContains, ACMapInsert, ACMapIter,

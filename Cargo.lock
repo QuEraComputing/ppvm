@@ -934,6 +934,7 @@ dependencies = [
  "ppvm-runtime",
  "rand 0.10.1",
  "rayon",
+ "smallvec",
 ]
 
 [[package]]

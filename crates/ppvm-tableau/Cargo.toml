@@ -15,6 +15,7 @@ itertools = "0.14.0"
 num = "0.4.3"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
 rand = "0.10.1"
+smallvec = "1.15"
 rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]

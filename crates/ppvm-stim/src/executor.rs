@@ -130,27 +130,31 @@ pub fn execute_prepared<T, I, C>(
         match instr {
             ExtendedInstruction::Raw(RawPassthrough::Gate { name, targets, .. }) => match name {
                 GateName::Reset | GateName::ResetZ => targets.iter().for_each(|&q| tab.reset(q)),
-                GateName::X => targets.iter().for_each(|&q| tab.x(q)),
-                GateName::Y => targets.iter().for_each(|&q| tab.y(q)),
-                GateName::Z => targets.iter().for_each(|&q| tab.z(q)),
-                GateName::H | GateName::HXZ => targets.iter().for_each(|&q| tab.h(q)),
-                GateName::S | GateName::SqrtZ => targets.iter().for_each(|&q| tab.s(q)),
-                GateName::SDag | GateName::SqrtZDag => {
-                    targets.iter().for_each(|&q| tab.s_adj(q));
-                }
-                GateName::SqrtX => targets.iter().for_each(|&q| tab.sqrt_x(q)),
-                GateName::SqrtXDag => targets.iter().for_each(|&q| tab.sqrt_x_adj(q)),
-                GateName::SqrtY => targets.iter().for_each(|&q| tab.sqrt_y(q)),
-                GateName::SqrtYDag => targets.iter().for_each(|&q| tab.sqrt_y_adj(q)),
+                GateName::X => tab.x_batch(targets),
+                GateName::Y => tab.y_batch(targets),
+                GateName::Z => tab.z_batch(targets),
+                GateName::H | GateName::HXZ => tab.h_batch(targets),
+                GateName::S | GateName::SqrtZ => tab.s_batch(targets),
+                GateName::SDag | GateName::SqrtZDag => tab.s_adj_batch(targets),
+                GateName::SqrtX => tab.sqrt_x_batch(targets),
+                GateName::SqrtXDag => tab.sqrt_x_adj_batch(targets),
+                GateName::SqrtY => tab.sqrt_y_batch(targets),
+                GateName::SqrtYDag => tab.sqrt_y_adj_batch(targets),
                 GateName::Identity => {}
                 GateName::CX | GateName::ZCX | GateName::CNot => {
-                    targets.chunks_exact(2).for_each(|p| tab.cnot(p[0], p[1]));
+                    let pairs: Vec<(usize, usize)> =
+                        targets.chunks_exact(2).map(|p| (p[0], p[1])).collect();
+                    tab.cnot_batch(&pairs);
                 }
                 GateName::CY | GateName::ZCY => {
-                    targets.chunks_exact(2).for_each(|p| tab.cy(p[0], p[1]));
+                    let pairs: Vec<(usize, usize)> =
+                        targets.chunks_exact(2).map(|p| (p[0], p[1])).collect();
+                    tab.cy_batch(&pairs);
                 }
                 GateName::CZ | GateName::ZCZ => {
-                    targets.chunks_exact(2).for_each(|p| tab.cz(p[0], p[1]));
+                    let pairs: Vec<(usize, usize)> =
+                        targets.chunks_exact(2).map(|p| (p[0], p[1])).collect();
+                    tab.cz_batch(&pairs);
                 }
                 GateName::Swap
                 | GateName::ISwap

@@ -908,6 +908,7 @@ dependencies = [
 name = "ppvm-skill-examples"
 version = "0.0.0"
 dependencies = [
+ "ppvm-paulisum",
  "ppvm-runtime",
  "ppvm-stim",
  "ppvm-sym",

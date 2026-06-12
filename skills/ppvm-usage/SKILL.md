@@ -32,7 +32,7 @@ ppvm propagation:    state.cnot(0, 1); state.h(0)
 
 In Rust, `PauliSum<T: Config>` fixes storage, coefficient type, hasher, and truncation strategy at compile time. You pick a pre-built config and pass it as a type parameter. Don't try to make this dynamic — the bound propagates through every gate method and resisting it just fights the compiler.
 
-Common picks from `ppvm_runtime::config`:
+Common picks from `ppvm_paulisum::config`:
 
 | Config                                  | When                              |
 |-----------------------------------------|-----------------------------------|
@@ -63,7 +63,7 @@ PauliSum.new(
 )
 ```
 
-**Rust — strategy types from `ppvm_runtime::strategy`:** `CoefficientThreshold(eps)`, `MaxPauliWeight(w)`, `MaxLossWeight(w)`, `CombinedStrategy(a, b)`. Pass via the builder's `.strategy(...)`. These are Rust-only types — they are *not* exposed to Python.
+**Rust — strategy types from `ppvm_paulisum::strategy`:** `CoefficientThreshold(eps)`, `MaxPauliWeight(w)`, `MaxLossWeight(w)`, `CombinedStrategy(a, b)`. Pass via the builder's `.strategy(...)`. These are Rust-only types — they are *not* exposed to Python.
 
 Without truncation, a 20-qubit Trotter circuit with `rx` rotations will exhaust memory in a few layers. Always set a threshold before scaling up.
 
@@ -157,10 +157,11 @@ In `Cargo.toml`:
 
 ```toml
 [dependencies]
-ppvm-runtime = { git = "https://github.com/QuEraComputing/ppvm" }   # always
-ppvm-tableau = { git = "https://github.com/QuEraComputing/ppvm" }   # for the tableau backend
-ppvm-stim    = { git = "https://github.com/QuEraComputing/ppvm" }   # for Stim execution
-ppvm-sym     = { git = "https://github.com/QuEraComputing/ppvm" }   # for symbolic propagation
+ppvm-runtime  = { git = "https://github.com/QuEraComputing/ppvm" }   # always
+ppvm-paulisum = { git = "https://github.com/QuEraComputing/ppvm" }   # for PauliSum (Pauli propagation)
+ppvm-tableau  = { git = "https://github.com/QuEraComputing/ppvm" }   # for the tableau backend
+ppvm-stim     = { git = "https://github.com/QuEraComputing/ppvm" }   # for Stim execution
+ppvm-sym      = { git = "https://github.com/QuEraComputing/ppvm" }   # for symbolic propagation
 ```
 
 On x86, set `RUSTFLAGS="-C target-feature=+aes,+sse2"` (gxhash needs AES). On other targets, build with `--no-default-features --features=indexmap,ahash` to drop gxhash.
@@ -168,7 +169,7 @@ On x86, set `RUSTFLAGS="-C target-feature=+aes,+sse2"` (gxhash needs AES). On ot
 ### Pauli propagation
 
 ```rust
-use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
+use ppvm_paulisum::{prelude::*, strategy::CoefficientThreshold};
 
 type State = PauliSum<config::indexmap::ByteFxHashF64<4, CoefficientThreshold>>;
 
@@ -195,7 +196,7 @@ use ppvm_runtime::prelude::*;
 use ppvm_tableau::prelude::*;
 
 // GeneralizedTableau takes (n_qubits, coefficient_threshold).
-let mut tab: GeneralizedTableau<config::indexmap::ByteFxHashF64<2>, u128, _>
+let mut tab: GeneralizedTableau<config::fxhash::ByteF64<2>, u128, _>
     = GeneralizedTableau::new(8, 1e-10);
 tab.h(0);
 tab.cnot(0, 1);

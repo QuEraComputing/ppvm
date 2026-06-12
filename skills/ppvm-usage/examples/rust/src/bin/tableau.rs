@@ -13,7 +13,7 @@ fn main() {
     // GeneralizedTableau::new takes (n_qubits, coefficient_threshold).
     // The third generic parameter (sparse-vector backing) defaults to
     // Vec<(Complex64, IndexType)>, so we leave it implicit.
-    let mut tab: GeneralizedTableau<ppvm_runtime::config::indexmap::ByteFxHashF64<1>, usize> =
+    let mut tab: GeneralizedTableau<ppvm_runtime::config::fxhash::ByteF64<1>, usize> =
         GeneralizedTableau::new(2, 1e-10);
 
     tab.h(0);

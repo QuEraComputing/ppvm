@@ -14,6 +14,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+ppvm-paulisum = { version = "0.1.0", path = "../../../../crates/ppvm-paulisum" }
 ppvm-runtime = { version = "0.1.0", path = "../../../../crates/ppvm-runtime" }
 ppvm-tableau = { version = "0.1.0", path = "../../../../crates/ppvm-tableau" }
 ppvm-sym    = { version = "0.1.0", path = "../../../../crates/ppvm-sym" }

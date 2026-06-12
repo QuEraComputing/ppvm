@@ -90,14 +90,12 @@ impl Strategy for MaxPauliWeight {
         map.retain(|k, _| k.weight() <= self.max_weight());
     }
 
-    #[inline]
-    fn discard<V, W>(&self, key: &W, _value: &V) -> bool
-    where
-        V: Coefficient,
-        W: PauliWordTrait,
-    {
-        key.weight() > self.max_weight()
-    }
+    // Deliberately no `discard` override: Pauli weight is *not* monotonic
+    // under gate propagation (a gate can map a high-weight term to a
+    // lower-weight one), so skipping insertion of an over-weight term could
+    // suppress a valid lower-weight term it would have produced in a later
+    // operation. The default (`false`, never discard) keeps `map_insert`
+    // exact for this strategy.
 }
 
 /// Drop terms whose coefficient magnitude falls below the given threshold.
@@ -182,12 +180,10 @@ impl Strategy for MaxLossWeight {
         map.retain(|k, _| k.loss_weight() <= self.0);
     }
 
-    #[inline]
-    fn discard<V, W>(&self, key: &W, _value: &V) -> bool
-    where
-        V: Coefficient,
-        W: PauliWordTrait,
-    {
-        key.loss_weight() > self.0
-    }
+    // Deliberately no `discard` override: loss weight is *not* monotonic
+    // under propagation — `loss_channel` rewrites `L → I`, lowering a term's
+    // loss weight, so an over-weight term can still produce a valid in-budget
+    // term in a later channel. Skipping its insertion would drop that
+    // descendant. The default (`false`, never discard) keeps `map_insert`
+    // exact for this strategy.
 }

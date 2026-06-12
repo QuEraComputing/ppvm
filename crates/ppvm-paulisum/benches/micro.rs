@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::config::fxhash::ByteF64;
-use ppvm_runtime::prelude::*;
-use ppvm_runtime::strategy::CoefficientThreshold;
+use ppvm_paulisum::prelude::*;
+use ppvm_paulisum::strategy::CoefficientThreshold;
 
 type Cfg = ByteF64<2, CoefficientThreshold>;
 

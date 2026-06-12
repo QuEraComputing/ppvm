@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_runtime::prelude::*;
+use ppvm_paulisum::prelude::*;
 use rayon::current_num_threads;
 
 fn layer<T: Config>(state: &mut PauliSum<T>, n: usize) {

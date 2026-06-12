@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_runtime::{prelude::*, strategy::MaxLossWeight};
+use ppvm_paulisum::{prelude::*, strategy::MaxLossWeight};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 type LossyPauliSum = PauliSum<
@@ -199,7 +199,7 @@ fn test_ghz() {
 
 #[test]
 fn test_loss_truncation() {
-    let strat = ppvm_runtime::strategy::MaxLossWeight(2);
+    let strat = ppvm_paulisum::strategy::MaxLossWeight(2);
     let mut state: PauliSum<
         config::indexmap::ByteFxHashF64<
             1,

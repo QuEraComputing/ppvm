@@ -855,7 +855,6 @@ dependencies = [
 name = "ppvm-paulisum"
 version = "0.1.0"
 dependencies = [
- "ahash",
  "approx",
  "bitvec",
  "bon",
@@ -888,13 +887,18 @@ dependencies = [
 name = "ppvm-runtime"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "anyhow",
  "bincode",
  "bitvec",
+ "dashmap",
  "fxhash",
+ "gxhash",
+ "indexmap",
  "insta",
  "itertools 0.14.0",
  "num",
+ "rayon",
  "serde",
 ]
 
@@ -929,6 +933,7 @@ dependencies = [
  "anyhow",
  "fxhash",
  "num",
+ "ppvm-paulisum",
  "ppvm-runtime",
 ]
 

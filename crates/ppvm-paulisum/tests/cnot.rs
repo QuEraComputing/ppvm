@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use approx::assert_relative_eq;
-use ppvm_runtime::prelude::*;
+use ppvm_paulisum::prelude::*;
 
 #[test]
 fn test_cnot() {

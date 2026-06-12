@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
+use ppvm_paulisum::{prelude::*, strategy::CoefficientThreshold};
 use rayon::current_num_threads;
 
 pub fn benchmark_suite<T: Config<Strategy = CoefficientThreshold>>(

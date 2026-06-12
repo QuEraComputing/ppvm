@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
+use ppvm_paulisum::{prelude::*, strategy::CoefficientThreshold};
 use std::f64::consts::PI;
 
 #[test]

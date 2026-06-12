@@ -3,8 +3,8 @@
 
 use std::hash::BuildHasher;
 
-use ppvm_runtime::pattern::PauliPattern;
-use ppvm_runtime::traits::*;
+use crate::pattern::PauliPattern;
+use crate::traits::*;
 use dashmap::DashMap;
 use rayon::prelude::*;
 

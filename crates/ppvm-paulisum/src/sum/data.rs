@@ -24,7 +24,7 @@ use ppvm_runtime::traits::*;
 /// Heisenberg-picture propagation of `ZZ` through the GHZ circuit:
 ///
 /// ```
-/// use ppvm_runtime::prelude::*;
+/// use ppvm_paulisum::prelude::*;
 ///
 /// let mut state: PauliSum<config::indexmap::ByteFxHashF64<1>> =
 ///     PauliSum::builder().n_qubits(2).build();

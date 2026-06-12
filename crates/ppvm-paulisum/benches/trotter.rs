@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_runtime::prelude::*;
-use ppvm_runtime::strategy::CoefficientThreshold;
+use ppvm_paulisum::prelude::*;
+use ppvm_paulisum::strategy::CoefficientThreshold;
 use rayon::current_num_threads;
 
 fn trotter_func<T: Config<Coeff = f64, Strategy = CoefficientThreshold>>(

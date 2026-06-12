@@ -35,8 +35,8 @@ impl<S1: Strategy, S2: Strategy> Strategy for CombinedStrategy<S1, S2> {
 /// # Examples
 ///
 /// ```
-/// use ppvm_runtime::prelude::*;
-/// use ppvm_runtime::strategy::MaxPauliWeight;
+/// use ppvm_paulisum::prelude::*;
+/// use ppvm_paulisum::strategy::MaxPauliWeight;
 ///
 /// // Keep only weight-1 terms.
 /// let strat = MaxPauliWeight(1);
@@ -88,8 +88,8 @@ impl Strategy for MaxPauliWeight {
 /// # Examples
 ///
 /// ```
-/// use ppvm_runtime::prelude::*;
-/// use ppvm_runtime::strategy::CoefficientThreshold;
+/// use ppvm_paulisum::prelude::*;
+/// use ppvm_paulisum::strategy::CoefficientThreshold;
 ///
 /// let strict = CoefficientThreshold(1e-6);
 /// let mut state: PauliSum<config::indexmap::ByteFxHashF64<1, CoefficientThreshold>> =

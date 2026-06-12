@@ -6,6 +6,11 @@ use bitvec::view::BitView;
 use bitvec::view::BitViewSized;
 use num::complex::Complex;
 use num::{One, PrimInt, Zero};
+use smallvec::{SmallVec, smallvec};
+
+/// Per-word bitmask buffer used by the batched Clifford gates.
+/// Stack-allocates for up to 8 storage words; spills to heap beyond.
+type MaskBuf<T> = SmallVec<[<<T as Config>::Storage as BitView>::Store; 8]>;
 
 macro_rules! impl_tableau_clifford {
     ($name:ident, $($index:ident),*) => {
@@ -168,21 +173,18 @@ where
     <T::Storage as BitView>::Store: PrimInt,
 {
     /// Build per-word bitmasks from a list of qubit indices.
-    /// Returns (masks, n_words) on a stack-allocated array (max 8 words = 512 qubits).
+    /// Returns `(masks, n_words)`. Stack-allocates for up to 8 storage words;
+    /// spills to the heap beyond that, so there is no hard qubit cap.
     #[inline]
-    fn build_masks(
-        &self,
-        indices: &[usize],
-    ) -> Option<([<T::Storage as BitView>::Store; 8], usize)> {
+    fn build_masks(&self, indices: &[usize]) -> Option<(MaskBuf<T>, usize)> {
         if self.data.is_empty() {
             return None;
         }
         let n_words = self.data[0].word.xbits.data.as_raw_slice().len();
-        debug_assert!(n_words <= 8, "Storage exceeds 8 words");
         let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
         let one = <T::Storage as BitView>::Store::one();
         let zero = <T::Storage as BitView>::Store::zero();
-        let mut masks = [zero; 8];
+        let mut masks: MaskBuf<T> = smallvec![zero; n_words];
         for &addr0 in indices {
             masks[addr0 / bits_per_word] =
                 masks[addr0 / bits_per_word] | (one << (addr0 % bits_per_word));
@@ -1054,6 +1056,46 @@ mod tests {
             tab_batch.s(4);
             tab_batch.cy_batch(&pairs);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_batch_more_than_8_storage_words() {
+            // 16 storage words exceeds the previous fixed-array limit of 8;
+            // verifies the SmallVec heap-spill path in `build_masks`.
+            type BigConfig = ByteF64<16>;
+            type BigTab = Tableau<BigConfig>;
+
+            fn big_snapshot(tab: &BigTab) -> Vec<(Vec<u8>, Vec<u8>, u8)> {
+                tab.data
+                    .iter()
+                    .map(|pw| {
+                        (
+                            pw.word.xbits.data.as_raw_slice().to_vec(),
+                            pw.word.zbits.data.as_raw_slice().to_vec(),
+                            pw.phase,
+                        )
+                    })
+                    .collect()
+            }
+
+            let n = 128;
+            // Indices straddle word 0 (qubits 0..8), middle words, and the
+            // last word (qubits 120..128).
+            let indices: Vec<usize> = vec![0, 7, 8, 63, 64, 71, 72, 120, 127];
+
+            let mut tab_ind = BigTab::new(n);
+            tab_ind.h(3);
+            tab_ind.s(60);
+            for &i in &indices {
+                tab_ind.h(i);
+            }
+
+            let mut tab_batch = BigTab::new(n);
+            tab_batch.h(3);
+            tab_batch.s(60);
+            tab_batch.h_batch(&indices);
+
+            assert_eq!(big_snapshot(&tab_ind), big_snapshot(&tab_batch));
         }
 
         #[test]

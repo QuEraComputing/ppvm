@@ -355,14 +355,32 @@ where
         });
     }
 
-    /// Apply CZ to multiple pairs in a single pass.
-    /// CZ pairs have cross-qubit dependencies so we use per-pair delegation (proven faster).
-    #[inline]
+    /// Apply CZ to many pairs on raw storage words. CZ is symmetric and touches
+    /// only z-bits; pairs are applied sequentially per row, so semantics match
+    /// the per-pair `cz` loop exactly.
     fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+
         self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let mut phase_flips = zero;
             for &(control, target) in pairs {
-                pw.cz(control, target);
+                let (wc, sc) = (control / bits, control % bits);
+                let (wt, st) = (target / bits, target % bits);
+                let xa = (xp[wc] >> sc) & one;
+                let za = (zp[wc] >> sc) & one;
+                let xb = (xp[wt] >> st) & one;
+                let zb = (zp[wt] >> st) & one;
+                // +2 phase when x_a & x_b & (z_a ^ z_b)
+                phase_flips = phase_flips ^ ((xa & xb) & (za ^ zb));
+                // z_a ^= x_b ; z_b ^= x_a
+                zp[wc] = zp[wc] ^ (xb << sc);
+                zp[wt] = zp[wt] ^ (xa << st);
             }
+            pw.phase ^= (((phase_flips & one) != zero) as u8) << 1;
         });
     }
 }
@@ -399,11 +417,32 @@ where
         });
     }
 
+    /// Apply CY to many pairs on raw storage words. Pairs are applied
+    /// sequentially per row, so semantics match the per-pair `cy` loop exactly.
     fn cy_batch(&mut self, pairs: &[(usize, usize)]) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+
         self.data.iter_mut().for_each(|pw| {
-            for &(addr0, addr1) in pairs {
-                pw.cy(addr0, addr1);
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let mut phase_flips = zero;
+            for &(control, target) in pairs {
+                let (wc, sc) = (control / bits, control % bits);
+                let (wt, st) = (target / bits, target % bits);
+                let xc = (xp[wc] >> sc) & one;
+                let zc = (zp[wc] >> sc) & one;
+                let xt = (xp[wt] >> st) & one;
+                let zt = (zp[wt] >> st) & one;
+                // +2 phase when x_c & (x_t ^ z_t) & !(z_c ^ z_t)
+                phase_flips = phase_flips ^ ((xc & (xt ^ zt)) & (zc ^ zt ^ one));
+                // z_c ^= x_t ^ z_t ; x_t ^= x_c ; z_t ^= x_c
+                zp[wc] = zp[wc] ^ ((xt ^ zt) << sc);
+                xp[wt] = xp[wt] ^ (xc << st);
+                zp[wt] = zp[wt] ^ (xc << st);
             }
+            pw.phase ^= (((phase_flips & one) != zero) as u8) << 1;
         });
     }
 
@@ -904,6 +943,29 @@ mod tests {
         }
 
         #[test]
+        fn test_cz_batch_cross_word() {
+            // Pairs straddle the two storage words (qubits 0..8 and 8..16).
+            let n = 16;
+            let pairs = vec![(1, 9), (8, 2), (7, 15), (10, 0)];
+            let setup = [0usize, 7, 8, 9, 15];
+            let mut tab_ind = TTab::new(n);
+            for &q in &setup {
+                tab_ind.h(q);
+            }
+            tab_ind.s(2);
+            for &(c, t) in &pairs {
+                tab_ind.cz(c, t);
+            }
+            let mut tab_batch = TTab::new(n);
+            for &q in &setup {
+                tab_batch.h(q);
+            }
+            tab_batch.s(2);
+            tab_batch.cz_batch(&pairs);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
         fn test_batch_empty_indices() {
             let n = 4;
             let initial = {
@@ -1098,6 +1160,29 @@ mod tests {
             tab_batch.h(0);
             tab_batch.h(2);
             tab_batch.s(4);
+            tab_batch.cy_batch(&pairs);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_cy_batch_cross_word() {
+            // Pairs straddle the two storage words (qubits 0..8 and 8..16).
+            let n = 16;
+            let pairs = vec![(1, 9), (8, 2), (7, 15), (10, 0)];
+            let setup = [0usize, 7, 8, 9, 15];
+            let mut tab_ind = TTab::new(n);
+            for &q in &setup {
+                tab_ind.h(q);
+            }
+            tab_ind.s(2);
+            for &(c, t) in &pairs {
+                tab_ind.cy(c, t);
+            }
+            let mut tab_batch = TTab::new(n);
+            for &q in &setup {
+                tab_batch.h(q);
+            }
+            tab_batch.s(2);
             tab_batch.cy_batch(&pairs);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }

@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_runtime::prelude::*;
 use ppvm_tableau::prelude::*;
 
@@ -17,6 +18,13 @@ use ppvm_tableau::prelude::*;
 type Tab = Tableau<Byte8F64<2>>;
 
 const SIZES: &[usize] = &[128];
+
+// Wide u8-word regime mirroring the surface_d30 workload: 256 bytes/word =
+// 2048 qubits, ~2 MB tableau (out of L1). This is where the raw-word two-qubit
+// gates are expected to win; the u64/L1-resident `Tab` above does not show it.
+type WideTab = Tableau<ByteF64<256>>;
+
+const WIDE_N: usize = 2048;
 
 fn configure() -> Criterion {
     Criterion::default()
@@ -28,6 +36,18 @@ fn configure() -> Criterion {
 /// Non-trivial starting tableau so bit patterns aren't all identity.
 fn setup(n: usize) -> Tab {
     let mut tab = Tab::new(n);
+    for q in 0..n.min(8) {
+        tab.h(q);
+    }
+    for q in (0..n.min(8)).step_by(2) {
+        tab.s(q);
+    }
+    tab
+}
+
+/// Non-trivial starting tableau in the wide u8-word config.
+fn setup_wide(n: usize) -> WideTab {
+    let mut tab = WideTab::new(n);
     for q in 0..n.min(8) {
         tab.h(q);
     }
@@ -209,9 +229,35 @@ fn bench_clifford_batch(c: &mut Criterion) {
     group.finish();
 }
 
+/// Two-qubit gates in the wide u8-word regime where raw-word batching is
+/// expected to pay off. `cnot` is included as a control: it already gained the
+/// raw-word rewrite, so its `batch` should clearly beat its `loop` here.
+fn bench_clifford_batch_wide(c: &mut Criterion) {
+    let mut group = c.benchmark_group("clifford-batch-wide");
+    let n = WIDE_N;
+    let tab = setup_wide(n);
+    let pairs_full = pairs_all(n);
+    let pairs_half = pairs_every_other(n);
+
+    bench_pair_loop!(group, tab, n, "all", cnot, &pairs_full);
+    bench_pair_batch!(group, tab, n, "all", cnot_batch, &pairs_full);
+
+    bench_pair_loop!(group, tab, n, "all", cz, &pairs_full);
+    bench_pair_loop!(group, tab, n, "every_other", cz, &pairs_half);
+    bench_pair_batch!(group, tab, n, "all", cz_batch, &pairs_full);
+    bench_pair_batch!(group, tab, n, "every_other", cz_batch, &pairs_half);
+
+    bench_pair_loop!(group, tab, n, "all", cy, &pairs_full);
+    bench_pair_loop!(group, tab, n, "every_other", cy, &pairs_half);
+    bench_pair_batch!(group, tab, n, "all", cy_batch, &pairs_full);
+    bench_pair_batch!(group, tab, n, "every_other", cy_batch, &pairs_half);
+
+    group.finish();
+}
+
 criterion_group! {
     name = benches;
     config = configure();
-    targets = bench_clifford_batch
+    targets = bench_clifford_batch, bench_clifford_batch_wide
 }
 criterion_main!(benches);

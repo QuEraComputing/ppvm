@@ -226,19 +226,17 @@ impl<T: Config> PauliSum<T> {
 
         let data = self.data_mut();
         for (k, v) in scratch.drain(..) {
+            // A produced term the strategy would immediately discard is
+            // dropped at production (matching reference PP.jl semantics),
+            // rather than probed and inserted-then-truncated. We no longer
+            // call `contains_with` to fold a colliding term's value in: that
+            // contribution is below the truncation threshold by construction,
+            // so dropping it removes a hashmap probe per discarded term with
+            // no above-threshold effect.
             if prune && strategy.discard(&k, &v) {
-                // The next `truncate` would drop this term. Keep it only if
-                // it merges into an existing entry (preserving that entry's
-                // value); if its key is absent, skip the insert — avoiding an
-                // insert now and the index rebuild the following truncate
-                // would trigger. Identical net result to "insert then
-                // truncate".
-                if data.contains_with(&k, |_| true) {
-                    data.add_assign(k, v);
-                }
-            } else {
-                data.add_assign(k, v);
+                continue;
             }
+            data.add_assign(k, v);
         }
         self.scratch = scratch;
     }

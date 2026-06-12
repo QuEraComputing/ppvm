@@ -5,11 +5,11 @@ use std::ops::{AddAssign, MulAssign};
 
 use num::One;
 
+use crate::sum::PauliSum;
+use ppvm_runtime::config::Config;
 use ppvm_runtime::phase::PhasedPauliWord;
 use ppvm_runtime::traits::*;
 use ppvm_runtime::word::PauliWord;
-use ppvm_runtime::config::Config;
-use crate::sum::PauliSum;
 
 /// Implement multiplication by a scalar coefficient for PauliSum.
 /// Use this macro to implement `MulAssign` for other scalar types

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::rot1::rotate_1_map_insert_closure;
-use ppvm_runtime::traits::*;
+use crate::sum::PauliSum;
 use ppvm_runtime::char::Pauli;
 use ppvm_runtime::config::Config;
-use crate::sum::PauliSum;
+use ppvm_runtime::traits::*;
 
 const PAULIS: [Pauli; 4] = [Pauli::I, Pauli::X, Pauli::Z, Pauli::Y];
 

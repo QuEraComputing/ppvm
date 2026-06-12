@@ -646,8 +646,7 @@ fn test_measure_opposite_deterministic() {
 #[test]
 fn test_measure_order_sqrt_vs_rot() {
     let theta = -0.9553166181245093; // -np.arccos(np.sqrt(1 / 3))
-    let mut tab_rot: GeneralizedTableau<ByteF64<1>, usize> =
-        GeneralizedTableau::new(2, 1e-12);
+    let mut tab_rot: GeneralizedTableau<ByteF64<1>, usize> = GeneralizedTableau::new(2, 1e-12);
 
     for i in 0..2 {
         tab_rot.rx(i, theta);

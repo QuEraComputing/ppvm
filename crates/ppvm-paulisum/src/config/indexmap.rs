@@ -3,8 +3,8 @@
 
 use std::marker::PhantomData;
 
-use ppvm_runtime::traits::{Coefficient, NoStrategy, PauliWordTrait, Strategy};
 use ppvm_runtime::config::Config;
+use ppvm_runtime::traits::{Coefficient, NoStrategy, PauliWordTrait, Strategy};
 use ppvm_runtime::word::PauliWord;
 
 /// `IndexMap`-backed [`Config`] with `[u8; N]` storage and `FxHasher`.

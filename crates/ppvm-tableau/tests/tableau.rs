@@ -521,8 +521,7 @@ fn test_t_gate_measurement_statistics() {
     let mut count_one = 0;
 
     for _ in 0..trials {
-        let mut tableau: GeneralizedTableau<ByteF64<1>, u128> =
-            GeneralizedTableau::new(1, 1e-12);
+        let mut tableau: GeneralizedTableau<ByteF64<1>, u128> = GeneralizedTableau::new(1, 1e-12);
         tableau.h(0);
         tableau.t(0);
 
@@ -569,8 +568,7 @@ fn test_sqrt_y_direction() {
 
 #[test]
 fn test_buint_index() {
-    let mut tableau: GeneralizedTableau<ByteF64<32>, U256> =
-        GeneralizedTableau::new(130, 1e-12);
+    let mut tableau: GeneralizedTableau<ByteF64<32>, U256> = GeneralizedTableau::new(130, 1e-12);
 
     tableau.h(0);
 

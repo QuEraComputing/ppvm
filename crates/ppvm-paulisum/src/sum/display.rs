@@ -3,9 +3,9 @@
 
 use itertools::Itertools;
 
-use ppvm_runtime::traits::*;
-use ppvm_runtime::config::Config;
 use crate::sum::PauliSum;
+use ppvm_runtime::config::Config;
+use ppvm_runtime::traits::*;
 use std::fmt::{Debug, Display};
 
 impl<T: Config> Debug for PauliSum<T>

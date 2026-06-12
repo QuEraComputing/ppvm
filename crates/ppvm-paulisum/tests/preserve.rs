@@ -7,11 +7,11 @@
 
 use std::collections::HashSet;
 
-use ppvm_runtime::config::Config;
-use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_paulisum::prelude::*;
 use ppvm_paulisum::strategy::CoefficientThreshold;
 use ppvm_paulisum::sum::PauliSum;
+use ppvm_runtime::config::Config;
+use ppvm_runtime::config::fxhash::ByteF64;
 
 type Cfg = ByteF64<1>;
 type CfgThr = ByteF64<1, CoefficientThreshold>;

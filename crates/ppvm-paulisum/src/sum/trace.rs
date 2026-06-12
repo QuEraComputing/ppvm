@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::sum::PauliSum;
+use num::Zero;
 use ppvm_runtime::config::Config;
 use ppvm_runtime::traits::{ACMapIter, Trace};
-use num::Zero;
 
 impl<'a, T: Config, Rhs> Trace<'a, Rhs> for PauliSum<T>
 where

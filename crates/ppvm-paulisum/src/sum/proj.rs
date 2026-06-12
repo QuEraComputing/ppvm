@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_runtime::traits::*;
+use crate::sum::PauliSum;
 use ppvm_runtime::char::Pauli;
 use ppvm_runtime::config::Config;
-use crate::sum::PauliSum;
+use ppvm_runtime::traits::*;
 
 impl<T: Config> Projection for PauliSum<T>
 where

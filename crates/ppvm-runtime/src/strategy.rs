@@ -27,6 +27,15 @@ impl<S1: Strategy, S2: Strategy> Strategy for CombinedStrategy<S1, S2> {
         self.0.truncate(map);
         self.1.truncate(map);
     }
+
+    #[inline]
+    fn discard<V, W>(&self, key: &W, value: &V) -> bool
+    where
+        V: Coefficient,
+        W: PauliWordTrait,
+    {
+        self.0.discard(key, value) || self.1.discard(key, value)
+    }
 }
 
 /// Drop terms whose Pauli weight (number of non-identity slots) exceeds
@@ -80,6 +89,15 @@ impl Strategy for MaxPauliWeight {
     {
         map.retain(|k, _| k.weight() <= self.max_weight());
     }
+
+    #[inline]
+    fn discard<V, W>(&self, key: &W, _value: &V) -> bool
+    where
+        V: Coefficient,
+        W: PauliWordTrait,
+    {
+        key.weight() > self.max_weight()
+    }
 }
 
 /// Drop terms whose coefficient magnitude falls below the given threshold.
@@ -124,6 +142,15 @@ impl Strategy for CoefficientThreshold {
     {
         map.retain(|_, v| !v.cutoff(self.0));
     }
+
+    #[inline]
+    fn discard<V, W>(&self, _key: &W, value: &V) -> bool
+    where
+        V: Coefficient,
+        W: PauliWordTrait,
+    {
+        value.cutoff(self.0)
+    }
 }
 
 /// Drop terms whose loss weight (number of lost qubits) exceeds the
@@ -153,5 +180,14 @@ impl Strategy for MaxLossWeight {
         W: PauliWordTrait,
     {
         map.retain(|k, _| k.loss_weight() <= self.0);
+    }
+
+    #[inline]
+    fn discard<V, W>(&self, key: &W, _value: &V) -> bool
+    where
+        V: Coefficient,
+        W: PauliWordTrait,
+    {
+        key.loss_weight() > self.0
     }
 }

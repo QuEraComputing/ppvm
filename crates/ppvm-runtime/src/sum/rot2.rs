@@ -56,6 +56,46 @@ where
             }
         });
     }
+
+    #[inline]
+    fn rzz(&mut self, a: usize, b: usize, theta: impl Into<T::Coeff>) {
+        let (sin, cos) = theta.into().sin_cos();
+        self.map_insert(|k, v| {
+            // Loss fallbacks — identical to the generic `rotate_2` path
+            // (axis on the surviving qubit is Z for a ZZ rotation). These
+            // branches are dead-code-eliminated for non-lossy PauliWord,
+            // since `get_lbit` is a const `false`.
+            if k.get_lbit(a) {
+                return rotate_1_map_insert_closure::<T>(k, v, Pauli::Z, b, &sin, &cos);
+            }
+            if k.get_lbit(b) {
+                return rotate_1_map_insert_closure::<T>(k, v, Pauli::Z, a, &sin, &cos);
+            }
+            let xa = k.get_xbit(a);
+            let xb = k.get_xbit(b);
+            // ZZ commutes iff both qubits agree on having an X-component.
+            if xa == xb {
+                return None;
+            }
+            let za = k.get_zbit(a);
+            let zb = k.get_zbit(b);
+            // The anticommuting qubit is the one with xbit == 1.
+            // sign = +1 if it is Y (zbit set), -1 if it is X (zbit clear).
+            let z_anti = if xa { za } else { zb };
+            let eps: i8 = if z_anti { 1 } else { -1 };
+
+            let mut coeff = v.clone();
+            *v *= cos.clone();
+
+            let mut new_word = k.clone();
+            new_word.set_zbit(a, !za);
+            new_word.set_zbit(b, !zb);
+            new_word.rehash();
+
+            coeff *= sin.mul_sign(eps);
+            Some((new_word, coeff))
+        });
+    }
 }
 
 // R_{G}[P] = cos(theta) P - sin(theta) [G, P]/2i

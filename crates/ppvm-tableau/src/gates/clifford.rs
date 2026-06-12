@@ -294,11 +294,32 @@ where
         });
     }
 
+    /// Apply CNOT to many pairs, operating on raw storage words to avoid
+    /// per-bit `bitvec` addressing. Pairs are applied sequentially per row,
+    /// so semantics match the per-pair `cnot` loop exactly.
     fn cnot_batch(&mut self, pairs: &[(usize, usize)]) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+
         self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let mut phase_flips = zero;
             for &(control, target) in pairs {
-                pw.cnot(control, target);
+                let (wc, sc) = (control / bits, control % bits);
+                let (wt, st) = (target / bits, target % bits);
+                let xa = (xp[wc] >> sc) & one;
+                let za = (zp[wc] >> sc) & one;
+                let xb = (xp[wt] >> st) & one;
+                let zb = (zp[wt] >> st) & one;
+                // +2 phase when x_a & z_b & !(x_b ^ z_a); 2+2 == 0 mod 4 so XOR-accumulate
+                phase_flips = phase_flips ^ ((xa & zb) & (xb ^ za ^ one));
+                // z_a ^= z_b ; x_b ^= x_a
+                zp[wc] = zp[wc] ^ (zb << sc);
+                xp[wt] = xp[wt] ^ (xa << st);
             }
+            pw.phase ^= (((phase_flips & one) != zero) as u8) << 1;
         });
     }
 
@@ -1035,6 +1056,29 @@ mod tests {
             tab_batch.h(0);
             tab_batch.h(2);
             tab_batch.h(4);
+            tab_batch.cnot_batch(&pairs);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_cnot_batch_cross_word() {
+            // Pairs straddle the two storage words (qubits 0..8 and 8..16).
+            let n = 16;
+            let pairs = vec![(1, 9), (8, 2), (7, 15), (10, 0)];
+            let setup = [0usize, 7, 8, 9, 15];
+            let mut tab_ind = TTab::new(n);
+            for &q in &setup {
+                tab_ind.h(q);
+            }
+            tab_ind.s(2);
+            for &(c, t) in &pairs {
+                tab_ind.cnot(c, t);
+            }
+            let mut tab_batch = TTab::new(n);
+            for &q in &setup {
+                tab_batch.h(q);
+            }
+            tab_batch.s(2);
             tab_batch.cnot_batch(&pairs);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }

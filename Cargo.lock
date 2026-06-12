@@ -901,6 +901,7 @@ name = "ppvm-stim"
 version = "0.1.0"
 dependencies = [
  "bitvec",
+ "bnum",
  "criterion",
  "itertools 0.14.0",
  "num",

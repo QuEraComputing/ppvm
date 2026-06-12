@@ -15,6 +15,7 @@ stim-parser = { version = "0.1.0", path = "../stim-parser" }
 [dev-dependencies]
 # Used by benchmarks.
 criterion = "0.7.0"
+bnum = { version = "0.13", features = ["numtraits"] }
 
 [[bench]]
 name = "tableau-msd-stim"

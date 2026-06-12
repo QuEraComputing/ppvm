@@ -4,8 +4,8 @@
 use std::collections::HashSet;
 
 use paste::paste;
-use ppvm_runtime::prelude::*;
-use ppvm_runtime::strategy::{
+use ppvm_paulisum::prelude::*;
+use ppvm_paulisum::strategy::{
     CoefficientThreshold, CombinedStrategy, MaxLossWeight, MaxPauliWeight,
 };
 use pyo3::prelude::*;

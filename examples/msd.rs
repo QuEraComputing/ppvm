@@ -1,7 +1,7 @@
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_runtime::config::fxhash::ByteF64;
 use ppvm_tableau::prelude::*;
 
-type Tab = GeneralizedTableau<ByteFxHashF64<11>, u128>;
+type Tab = GeneralizedTableau<ByteF64<11>, u128>;
 
 fn main() {
     // from Rafael:  https://www.notion.so/Simulating-85-qubit-MSD-circuit-using-stabilizer-rank-decomposition-and-pyzx-288f86eeff3c802fb262ef1cfa69dfae?source=copy_link#28df86eeff3c80bfa087ed15bcf49b77

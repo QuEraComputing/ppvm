@@ -846,6 +846,7 @@ version = "0.1.0"
 dependencies = [
  "fxhash",
  "num",
+ "ppvm-paulisum",
  "ppvm-runtime",
  "ppvm-sym",
  "ppvm-tableau",
@@ -877,6 +878,7 @@ dependencies = [
  "bnum",
  "num",
  "paste",
+ "ppvm-paulisum",
  "ppvm-runtime",
  "ppvm-stim",
  "ppvm-tableau",

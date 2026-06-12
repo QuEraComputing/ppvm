@@ -1,4 +1,4 @@
-use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
+use ppvm_paulisum::{prelude::*, strategy::CoefficientThreshold};
 
 /*
 Implementation of the XZZ Ising chain Hamiltonian.

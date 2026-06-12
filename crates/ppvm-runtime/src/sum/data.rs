@@ -47,6 +47,10 @@ pub struct PauliSum<T: Config> {
     /// Keep-set: strings [`PauliSum::truncate`] must always re-insert
     /// after the strategy runs. Empty by default.
     preserve_strings: HashSet<T::PauliWordType>,
+    /// Reusable scratch buffer for [`map_insert`](Self::map_insert): produced
+    /// entries are pushed here (no hashing) then merged into the primary map,
+    /// avoiding a second hashmap probe per entry.
+    scratch: Vec<(T::PauliWordType, T::Coeff)>,
 }
 
 #[bon::bon]
@@ -82,6 +86,7 @@ impl<T: Config> PauliSum<T> {
             capacity,
             strategy,
             preserve_strings,
+            scratch: Vec::new(),
         }
     }
 }
@@ -205,10 +210,18 @@ impl<T: Config> PauliSum<T> {
             + Sync
             + Send,
     {
-        let (data, aux) = self.data_aux_mut();
-        aux.clear();
-        data.map_insert(aux, f);
-        self.consume();
+        // Collect produced terms into a reusable scratch Vec (cheap pushes,
+        // no hashing), then merge them into the primary map in one pass. This
+        // avoids the extra hashmap probe + insert the old aux-map buffer paid
+        // for every produced term, and makes the per-call clear O(1).
+        let mut scratch = std::mem::take(&mut self.scratch);
+        scratch.clear();
+        self.data_mut().map_insert_vec(&mut scratch, f);
+        let data = self.data_mut();
+        for (k, v) in scratch.drain(..) {
+            data.add_assign(k, v);
+        }
+        self.scratch = scratch;
     }
 
     /// modify in place existing entries and insert some new entries

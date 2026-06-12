@@ -168,6 +168,20 @@ where
         })
     }
 
+    fn map_insert_vec<F>(&mut self, dest: &mut Vec<(W, C)>, f: F)
+    where
+        F: Fn(&W, &mut C) -> Option<(W, C)> + Sync + Send,
+    {
+        let mut collected: Vec<(W, C)> = self
+            .par_iter_mut()
+            .filter_map(|mut entry| {
+                let (k, v) = entry.pair_mut();
+                f(k, v)
+            })
+            .collect();
+        dest.append(&mut collected);
+    }
+
     fn map_insert_multiple<F>(&mut self, dest: &mut Self, f: F)
     where
         F: Fn(&W, &mut C) -> Option<Vec<(W, C)>> + Sync + Send,

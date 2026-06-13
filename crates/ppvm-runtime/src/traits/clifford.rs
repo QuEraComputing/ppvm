@@ -152,9 +152,9 @@ impl<T: PauliWordTrait> Clifford for T {
 ///
 /// Default implementations loop over the corresponding single-qubit
 /// (or single-pair) method on [`Clifford`]. Types like the stabilizer
-/// `Tableau` override the defaults with a fused inner-loop or bitmask
-/// implementation; types without a faster path inherit the loop and
-/// still benefit from the trait's uniform API.
+/// `Tableau` override these methods with a fused inner-loop or bitmask
+/// implementation. Types that don't need specialization can implement
+/// this trait with an empty `impl` to use the defaults.
 pub trait CliffordBatch: Clifford {
     /// Apply Pauli `X` to every qubit in `indices`.
     fn x_batch(&mut self, indices: &[usize]) {

@@ -12,11 +12,10 @@
 //! 1. **Math regression** — the exact (untruncated, `NoStrategy`) expectation
 //!    value matches a frozen golden constant.
 //! 2. **Truncation fidelity** — the `CoefficientThreshold(1e-6)` run stays
-//!    within a tight tolerance of the exact run. This is the guard that the
-//!    insertion-pruning fast path in `map_insert` must remain faithful to
-//!    standard magnitude truncation: an over-aggressive approximation (e.g.
-//!    dropping sub-threshold contributions to surviving terms) would drift
-//!    past the bound and fail here.
+//!    within a tight tolerance of the exact run, confirming magnitude
+//!    truncation drops only genuinely negligible mass: an over-aggressive
+//!    approximation (e.g. dropping sub-threshold contributions to surviving
+//!    terms) would drift past the bound and fail here.
 
 use ppvm_runtime::prelude::*;
 use ppvm_runtime::strategy::CoefficientThreshold;
@@ -108,11 +107,10 @@ fn trotter_result_is_stable_and_truncation_is_faithful() {
     );
 
     // (2) Truncation-fidelity guard: the truncated run must stay within one
-    // truncation unit (1e-6) of exact. Faithful magnitude truncation — what
-    // the current `map_insert` insertion-pruning does — drifts only ~2.4e-8
-    // here. An over-aggressive approximation that drops sub-threshold
-    // contributions to *surviving* terms (the reverted iteration-5 behavior)
-    // drifts ~2.2e-6 and trips this bound, which is the regression we guard.
+    // truncation unit (1e-6) of exact. Standard magnitude truncation drifts
+    // only ~2.4e-8 here. An over-aggressive approximation that drops
+    // sub-threshold contributions to *surviving* terms drifts ~2.2e-6 and
+    // trips this bound, which is the regression we guard.
     const TOL: f64 = 1e-6;
     let drift = (exact_val - approx_val).abs();
     assert!(

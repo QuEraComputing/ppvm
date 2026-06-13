@@ -214,31 +214,13 @@ impl<T: Config> PauliSum<T> {
         // no hashing), then merge them into the primary map in one pass. This
         // avoids the extra hashmap probe + insert the old aux-map buffer paid
         // for every produced term, and makes the per-call clear O(1).
-        let strategy = self.strategy; // Strategy: Copy
-        // Only prune when no preserve-set is active; otherwise a preserved-
-        // but-droppable term would be wrongly skipped (truncate re-inserts
-        // such terms, so they must exist for that mechanism to see them).
-        let prune = self.preserve_strings.is_empty();
-
         let mut scratch = std::mem::take(&mut self.scratch);
         scratch.clear();
         self.data_mut().map_insert_vec(&mut scratch, f);
 
         let data = self.data_mut();
         for (k, v) in scratch.drain(..) {
-            if prune && strategy.discard(&k, &v) {
-                // The next `truncate` would drop this term. Keep it only if
-                // it merges into an existing entry (preserving that entry's
-                // value); if its key is absent, skip the insert — avoiding an
-                // insert now and the index rebuild the following truncate
-                // would trigger. Identical net result to "insert then
-                // truncate".
-                if data.contains_with(&k, |_| true) {
-                    data.add_assign(k, v);
-                }
-            } else {
-                data.add_assign(k, v);
-            }
+            data.add_assign(k, v);
         }
         self.scratch = scratch;
     }

@@ -152,16 +152,12 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Paul
         if REHASH {
             use std::hash::Hasher;
             let mut hasher = S::default().build_hasher();
-            let n = std::mem::size_of::<A>();
-            // Feed raw storage bytes through the Hasher's byte-slice path so
-            // FxHasher consumes 8 bytes per round instead of one byte at a
-            // time. A is a Copy POD array with no padding, so this is sound.
-            let xb =
-                unsafe { std::slice::from_raw_parts(&self.xbits.data as *const A as *const u8, n) };
-            let zb =
-                unsafe { std::slice::from_raw_parts(&self.zbits.data as *const A as *const u8, n) };
-            hasher.write(xb);
-            hasher.write(zb);
+            // Feed the raw storage bytes through the Hasher's byte-slice path
+            // so FxHasher consumes 8 bytes per round instead of one byte at a
+            // time. `A: bytemuck::Pod` (via the `PauliStorage` bound) makes
+            // the `&[u8]` view safe — no padding, all bytes initialized.
+            hasher.write(bytemuck::bytes_of(&self.xbits.data));
+            hasher.write(bytemuck::bytes_of(&self.zbits.data));
             self.hash_cache = hasher.finish();
         }
     }

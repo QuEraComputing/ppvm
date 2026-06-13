@@ -28,22 +28,6 @@ pub trait Strategy: Default + Clone + Copy {
         H: std::hash::BuildHasher + Clone + Default,
         W: PauliWordTrait,
         M: ACMap<S, V, H, W>;
-
-    /// Whether a freshly produced term `(key, value)` would be dropped by
-    /// this strategy's [`truncate`](Self::truncate). Gate propagation uses
-    /// this to skip inserting new terms a following `truncate` would remove
-    /// anyway. The default returns `false` ("never discard") so any strategy
-    /// that does not override it — including [`NoStrategy`] and user
-    /// strategies — simply forgoes the optimization and behaves unchanged.
-    #[inline]
-    fn discard<V, W>(&self, key: &W, value: &V) -> bool
-    where
-        V: Coefficient,
-        W: PauliWordTrait,
-    {
-        let _ = (key, value);
-        false
-    }
 }
 
 /// Strategy that never truncates — exact simulation, all entries kept.

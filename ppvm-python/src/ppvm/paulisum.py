@@ -403,6 +403,29 @@ class PauliSum(
         """
         self._interface.symmetry_merge(group)
 
+    def momentum_merge(self, other: "PauliSum", group, momentum) -> None:
+        """Phase-aware (momentum-sector) merge for a complex operator stored
+        as a *real pair*: ``self`` is the real part and ``other`` the
+        imaginary part of ``O = self + i·other``. Both are overwritten in
+        place with the orbit-representative form projected onto momentum
+        sector ``momentum``.
+
+        Generalizes :meth:`symmetry_merge` to non-trivial momentum sectors
+        (``k != 0``) while keeping real coefficients on both PauliSums — the
+        only complex arithmetic is the internal character-weighted fold.
+        ``self`` and ``other`` must be distinct objects with the same qubit
+        count. Exact after a translation-covariant gate layer; under a
+        generic Trotter step it carries the same ``O(dt^{p+1})`` equivariance
+        error as the ``k=0`` merge.
+
+        Args:
+            other: the PauliSum holding the imaginary component (modified in place).
+            group: a :class:`ppvm_python_native.TranslationGroup`.
+            momentum: sequence of integer modes, one per group generator
+                (e.g. ``[k]`` for a 1D chain; ``[0, ...]`` is the trivial sector).
+        """
+        self._interface.momentum_merge(other._interface, group, list(momentum))
+
     def amplitude_damping(self, addr0: int, gamma: float, *, truncate: bool = True):
         """Apply an amplitude-damping channel.
 

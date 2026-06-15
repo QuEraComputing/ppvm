@@ -11,12 +11,19 @@
 //! and compute by a factor up to `|G|`.
 //!
 //! Following Teng, Chang, Rudolph, and Holmes (arXiv:2512.12094), this
-//! module implements the **plain (real-coefficient) merging** of Pauli
-//! sums into orbit-representative form. It is sufficient for evolution
-//! of observables that lie in the trivial (`k=0`) symmetry sector, e.g.
-//! sums of single-Z operators over the lattice. For non-trivial momentum
-//! sectors (`k ≠ 0`) the merge step needs an additional phase factor —
-//! that extension is left for a follow-up.
+//! module implements **plain (real-coefficient) merging** of Pauli sums
+//! into orbit-representative form — see [`canonicalize_pauli_sum`] and
+//! [`symmetry_merge_pauli_sum`]. This handles observables in the trivial
+//! (`k=0`) symmetry sector, e.g. sums of single-Z operators over the
+//! lattice.
+//!
+//! **Non-trivial momentum sectors (`k ≠ 0`)** are handled by
+//! [`canonicalize_pauli_sum_complex`], which folds with the character
+//! phase `χ_k(g)` of each translation. On the Python side, an operator in
+//! sector `k` is carried as a *real pair* (real + imaginary components, two
+//! real `PauliSum`s) and merged via `PauliSum.momentum_merge`, which reuses
+//! this routine — letting gate-based Trotter evolution stay symmetry-
+//! compressed in any momentum sector with real coefficients throughout.
 //!
 //! ## Data model
 //!

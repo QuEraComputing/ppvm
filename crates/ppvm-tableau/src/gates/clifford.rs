@@ -177,7 +177,7 @@ where
     /// spills to the heap beyond that, so there is no hard qubit cap.
     #[inline]
     fn build_masks(&self, indices: &[usize]) -> Option<(MaskBuf<T>, usize)> {
-        if self.data.is_empty() {
+        if self.data.is_empty() || indices.is_empty() {
             return None;
         }
         let n_words = self.data[0].word.xbits.data.as_raw_slice().len();

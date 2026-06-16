@@ -142,18 +142,18 @@ pub fn execute_prepared<T, I, C>(
                 GateName::SqrtYDag => tab.sqrt_y_adj_batch(targets),
                 GateName::Identity => {}
                 GateName::CX | GateName::ZCX | GateName::CNot => {
-                    let pairs: Vec<(usize, usize)> =
-                        targets.chunks_exact(2).map(|p| (p[0], p[1])).collect();
+                    let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(targets.len() / 2);
+                    pairs.extend(targets.chunks_exact(2).map(|p| (p[0], p[1])));
                     tab.cnot_batch(&pairs);
                 }
                 GateName::CY | GateName::ZCY => {
-                    let pairs: Vec<(usize, usize)> =
-                        targets.chunks_exact(2).map(|p| (p[0], p[1])).collect();
+                    let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(targets.len() / 2);
+                    pairs.extend(targets.chunks_exact(2).map(|p| (p[0], p[1])));
                     tab.cy_batch(&pairs);
                 }
                 GateName::CZ | GateName::ZCZ => {
-                    let pairs: Vec<(usize, usize)> =
-                        targets.chunks_exact(2).map(|p| (p[0], p[1])).collect();
+                    let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(targets.len() / 2);
+                    pairs.extend(targets.chunks_exact(2).map(|p| (p[0], p[1])));
                     tab.cz_batch(&pairs);
                 }
                 GateName::Swap

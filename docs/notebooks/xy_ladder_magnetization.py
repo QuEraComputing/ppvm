@@ -39,7 +39,7 @@ import matplotlib.pyplot as plt
 from ppvm import PauliSum
 
 # two-leg ladder: L rungs, N = 2L qubits; qubit (rung j, leg a) -> j + a*L
-L, dt, steps, delta = 10, 0.1, 20, 1e-3
+L, dt, steps, delta = 10, 0.1, 20, 3e-3
 N = 2 * L
 site = lambda j, a: j + a * L
 bonds = [(site(j, a), site((j + 1) % L, a)) for a in (0, 1) for j in range(L)]  # legs (periodic)
@@ -49,11 +49,15 @@ M = PauliSum.new(n_qubits=N, terms=[f"Z{q}" for q in range(N)])  # total magneti
 z_strings = ["I" * q + "Z" + "I" * (N - 1 - q) for q in range(N)]  # the single-site Z_i
 
 # %% [markdown]
-# One first-order Trotter step. Each bond gate $e^{-i\theta(X_iX_j+Y_iY_j)}$ commutes
-# with $M$, but its `rxx` factor alone does not — so we truncate **only after** the
-# full gate is applied: `rxx` runs with `truncate=False`, and the following `ryy`
-# performs the truncation. We seed the observable with a unit of magnetization on
-# the central rung and track $\sum_i a_i$ with and without protecting the $\{Z_i\}$.
+# One first-order Trotter step, applied in reverse bond order because Pauli
+# propagation runs in the Heisenberg picture (observables are propagated backwards
+# through the circuit). ppvm's two-qubit rotations use the half-angle convention,
+# `rxx(θ) = exp(-i·θ/2·X_iX_j)`, so we pass `2 * dt` to realise the bond gate
+# $e^{-i\,dt\,(X_iX_j+Y_iY_j)}$. This gate commutes with $M$, but its `rxx` factor
+# alone does not — so we truncate **only after** the full gate is applied: `rxx`
+# runs with `truncate=False`, and the following `ryy` performs the truncation. We
+# seed a unit of magnetization on the central rung and track $\sum_i a_i$ with and
+# without protecting the $\{Z_i\}$.
 
 # %%
 def run(preserve):
@@ -65,9 +69,9 @@ def run(preserve):
     )
     total_z = [o.overlap(M)]
     for _ in range(steps):
-        for a, b in bonds:
-            o.rxx(a, b, dt, truncate=False)  # no truncation between the two factors
-            o.ryy(a, b, dt)                  # ... truncate only once the bond gate is complete
+        for a, b in reversed(bonds):             # Heisenberg picture -> reverse circuit order
+            o.rxx(a, b, 2 * dt, truncate=False)  # half-angle: 2*dt gives e^{-i dt X_iX_j}, no truncation
+            o.ryy(a, b, 2 * dt)                  # ... truncate only once the bond gate is complete
         total_z.append(o.overlap(M))
     return total_z
 

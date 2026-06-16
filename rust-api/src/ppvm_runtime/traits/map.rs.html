@@ -74,106 +74,114 @@
 <a href=#74 id=74 data-nosnippet>74</a>    <span class="kw">where
 <a href=#75 id=75 data-nosnippet>75</a>        </span>F: Fn(<span class="kw-2">&amp;</span>W, <span class="kw-2">&amp;mut </span>V) -&gt; <span class="prelude-ty">Option</span>&lt;(W, V)&gt; + Sync + Send;
 <a href=#76 id=76 data-nosnippet>76</a>
-<a href=#77 id=77 data-nosnippet>77</a>    <span class="doccomment">/// Same as [`map_insert`](Self::map_insert) but `f` may return a
-<a href=#78 id=78 data-nosnippet>78</a>    /// `Vec` of new entries to be inserted into `dest`.
-<a href=#79 id=79 data-nosnippet>79</a>    </span><span class="kw">fn </span>map_insert_multiple&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dest: <span class="kw-2">&amp;mut </span><span class="self">Self</span>, f: F)
-<a href=#80 id=80 data-nosnippet>80</a>    <span class="kw">where
-<a href=#81 id=81 data-nosnippet>81</a>        </span>F: Fn(<span class="kw-2">&amp;</span>W, <span class="kw-2">&amp;mut </span>V) -&gt; <span class="prelude-ty">Option</span>&lt;Vec&lt;(W, V)&gt;&gt; + Sync + Send;
-<a href=#82 id=82 data-nosnippet>82</a>}
-<a href=#83 id=83 data-nosnippet>83</a>
-<a href=#84 id=84 data-nosnippet>84</a><span class="doccomment">/// Membership queries — `(key, value)` exact match or with a custom
-<a href=#85 id=85 data-nosnippet>85</a>/// predicate on the value.
-<a href=#86 id=86 data-nosnippet>86</a></span><span class="kw">pub trait </span>ACMapContains&lt;
-<a href=#87 id=87 data-nosnippet>87</a>    S: PauliStorage,
-<a href=#88 id=88 data-nosnippet>88</a>    V: Coefficient,
-<a href=#89 id=89 data-nosnippet>89</a>    H: BuildHasher + Clone + Default,
-<a href=#90 id=90 data-nosnippet>90</a>    W: PauliWordTrait,
-<a href=#91 id=91 data-nosnippet>91</a>&gt;
-<a href=#92 id=92 data-nosnippet>92</a>{
-<a href=#93 id=93 data-nosnippet>93</a>    <span class="doccomment">/// `true` if an entry with this exact `(key, value)` is present.
-<a href=#94 id=94 data-nosnippet>94</a>    </span><span class="kw">fn </span>contains(<span class="kw-2">&amp;</span><span class="self">self</span>, key: <span class="kw-2">&amp;</span>W, value: <span class="kw-2">&amp;</span>V) -&gt; bool {
-<a href=#95 id=95 data-nosnippet>95</a>        <span class="self">self</span>.contains_with(key, |v| v == value)
-<a href=#96 id=96 data-nosnippet>96</a>    }
-<a href=#97 id=97 data-nosnippet>97</a>    <span class="doccomment">/// `true` if an entry for `key` exists whose value satisfies `f`.
-<a href=#98 id=98 data-nosnippet>98</a>    </span><span class="kw">fn </span>contains_with&lt;F&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, key: <span class="kw-2">&amp;</span>W, f: F) -&gt; bool
-<a href=#99 id=99 data-nosnippet>99</a>    <span class="kw">where
-<a href=#100 id=100 data-nosnippet>100</a>        </span>F: Fn(<span class="kw-2">&amp;</span>V) -&gt; bool;
-<a href=#101 id=101 data-nosnippet>101</a>}
-<a href=#102 id=102 data-nosnippet>102</a>
-<a href=#103 id=103 data-nosnippet>103</a><span class="doccomment">/// Merge two maps with accumulation: drain `dest` into `self`,
-<a href=#104 id=104 data-nosnippet>104</a>/// summing values that share a key.
-<a href=#105 id=105 data-nosnippet>105</a></span><span class="kw">pub trait </span>ACMapConsume {
-<a href=#106 id=106 data-nosnippet>106</a>    <span class="doccomment">/// Drain `dest` into `self`, accumulating values on key collision.
-<a href=#107 id=107 data-nosnippet>107</a>    </span><span class="kw">fn </span>consume(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dest: <span class="kw-2">&amp;mut </span><span class="self">Self</span>);
-<a href=#108 id=108 data-nosnippet>108</a>}
-<a href=#109 id=109 data-nosnippet>109</a>
-<a href=#110 id=110 data-nosnippet>110</a><span class="doccomment">/// In-place per-entry transformation of values.
-<a href=#111 id=111 data-nosnippet>111</a></span><span class="kw">pub trait </span>ACMapScale&lt;
-<a href=#112 id=112 data-nosnippet>112</a>    S: PauliStorage,
-<a href=#113 id=113 data-nosnippet>113</a>    V: Coefficient,
-<a href=#114 id=114 data-nosnippet>114</a>    H: BuildHasher + Clone + Default,
-<a href=#115 id=115 data-nosnippet>115</a>    W: PauliWordTrait,
-<a href=#116 id=116 data-nosnippet>116</a>&gt;
-<a href=#117 id=117 data-nosnippet>117</a>{
-<a href=#118 id=118 data-nosnippet>118</a>    <span class="doccomment">/// Apply `f(key, value)` to every entry; only the value is mutable.
-<a href=#119 id=119 data-nosnippet>119</a>    </span><span class="kw">fn </span>scale&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, f: F)
-<a href=#120 id=120 data-nosnippet>120</a>    <span class="kw">where
-<a href=#121 id=121 data-nosnippet>121</a>        </span>F: Fn(<span class="kw-2">&amp;</span>W, <span class="kw-2">&amp;mut </span>V) + Sync + Send;
-<a href=#122 id=122 data-nosnippet>122</a>}
-<a href=#123 id=123 data-nosnippet>123</a>
-<a href=#124 id=124 data-nosnippet>124</a><span class="doccomment">/// Drop entries that don't satisfy a predicate — used by truncation
-<a href=#125 id=125 data-nosnippet>125</a>/// strategies.
-<a href=#126 id=126 data-nosnippet>126</a></span><span class="kw">pub trait </span>ACMapRetain&lt;
-<a href=#127 id=127 data-nosnippet>127</a>    S: PauliStorage,
-<a href=#128 id=128 data-nosnippet>128</a>    V: Coefficient,
-<a href=#129 id=129 data-nosnippet>129</a>    H: BuildHasher + Clone + Default,
-<a href=#130 id=130 data-nosnippet>130</a>    W: PauliWordTrait,
-<a href=#131 id=131 data-nosnippet>131</a>&gt;
-<a href=#132 id=132 data-nosnippet>132</a>{
-<a href=#133 id=133 data-nosnippet>133</a>    <span class="doccomment">/// Keep only entries for which `f(key, value)` returns `true`.
-<a href=#134 id=134 data-nosnippet>134</a>    </span><span class="kw">fn </span>retain&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, f: F)
-<a href=#135 id=135 data-nosnippet>135</a>    <span class="kw">where
-<a href=#136 id=136 data-nosnippet>136</a>        </span>F: FnMut(<span class="kw-2">&amp;</span>W, <span class="kw-2">&amp;</span>V) -&gt; bool;
-<a href=#137 id=137 data-nosnippet>137</a>}
-<a href=#138 id=138 data-nosnippet>138</a>
-<a href=#139 id=139 data-nosnippet>139</a><span class="doccomment">/// Aggregate trait combining every operation a backing map must support
-<a href=#140 id=140 data-nosnippet>140</a>/// to be usable as the storage for a [`PauliSum`](crate::sum::PauliSum).
-<a href=#141 id=141 data-nosnippet>141</a>///
-<a href=#142 id=142 data-nosnippet>142</a>/// You don't normally implement `ACMap` directly: the blanket impl below
-<a href=#143 id=143 data-nosnippet>143</a>/// covers any type that implements all the constituent traits.
-<a href=#144 id=144 data-nosnippet>144</a></span><span class="kw">pub trait </span>ACMap&lt;
-<a href=#145 id=145 data-nosnippet>145</a>    S: PauliStorage,
-<a href=#146 id=146 data-nosnippet>146</a>    V: Coefficient,
-<a href=#147 id=147 data-nosnippet>147</a>    H: BuildHasher + Clone + Default,
-<a href=#148 id=148 data-nosnippet>148</a>    W: PauliWordTrait,
-<a href=#149 id=149 data-nosnippet>149</a>&gt;:
-<a href=#150 id=150 data-nosnippet>150</a>    Clone
-<a href=#151 id=151 data-nosnippet>151</a>    + ACMapBase
-<a href=#152 id=152 data-nosnippet>152</a>    + ACMapAddAssign&lt;S, V, H, W&gt;
-<a href=#153 id=153 data-nosnippet>153</a>    + ACMapMulAssign&lt;V, H&gt;
-<a href=#154 id=154 data-nosnippet>154</a>    + ACMapInsert&lt;S, V, H, W&gt;
-<a href=#155 id=155 data-nosnippet>155</a>    + ACMapContains&lt;S, V, H, W&gt;
-<a href=#156 id=156 data-nosnippet>156</a>    + ACMapScale&lt;S, V, H, W&gt;
-<a href=#157 id=157 data-nosnippet>157</a>    + ACMapRetain&lt;S, V, H, W&gt;
-<a href=#158 id=158 data-nosnippet>158</a>    + ACMapConsume
-<a href=#159 id=159 data-nosnippet>159</a>{
-<a href=#160 id=160 data-nosnippet>160</a>}
-<a href=#161 id=161 data-nosnippet>161</a>
-<a href=#162 id=162 data-nosnippet>162</a><span class="kw">impl</span>&lt;T, Storage, Coeff, Hasher, Word&gt; ACMap&lt;Storage, Coeff, Hasher, Word&gt; <span class="kw">for </span>T
-<a href=#163 id=163 data-nosnippet>163</a><span class="kw">where
-<a href=#164 id=164 data-nosnippet>164</a>    </span>Storage: PauliStorage,
-<a href=#165 id=165 data-nosnippet>165</a>    Coeff: Coefficient,
-<a href=#166 id=166 data-nosnippet>166</a>    Hasher: BuildHasher + Clone + Default,
-<a href=#167 id=167 data-nosnippet>167</a>    Word: PauliWordTrait,
-<a href=#168 id=168 data-nosnippet>168</a>    T: Clone
-<a href=#169 id=169 data-nosnippet>169</a>        + ACMapBase
-<a href=#170 id=170 data-nosnippet>170</a>        + ACMapAddAssign&lt;Storage, Coeff, Hasher, Word&gt;
-<a href=#171 id=171 data-nosnippet>171</a>        + ACMapMulAssign&lt;Coeff, Hasher&gt;
-<a href=#172 id=172 data-nosnippet>172</a>        + ACMapInsert&lt;Storage, Coeff, Hasher, Word&gt;
-<a href=#173 id=173 data-nosnippet>173</a>        + ACMapScale&lt;Storage, Coeff, Hasher, Word&gt;
-<a href=#174 id=174 data-nosnippet>174</a>        + ACMapContains&lt;Storage, Coeff, Hasher, Word&gt;
-<a href=#175 id=175 data-nosnippet>175</a>        + ACMapRetain&lt;Storage, Coeff, Hasher, Word&gt;
-<a href=#176 id=176 data-nosnippet>176</a>        + ACMapConsume,
-<a href=#177 id=177 data-nosnippet>177</a>{
-<a href=#178 id=178 data-nosnippet>178</a>}
+<a href=#77 id=77 data-nosnippet>77</a>    <span class="doccomment">/// Like [`map_insert`](Self::map_insert) but appends produced entries
+<a href=#78 id=78 data-nosnippet>78</a>    /// into a plain `Vec` (a push per entry, no hashing) instead of a map.
+<a href=#79 id=79 data-nosnippet>79</a>    /// The caller merges the buffer into the destination map afterwards,
+<a href=#80 id=80 data-nosnippet>80</a>    /// avoiding a second hashmap probe per produced entry.
+<a href=#81 id=81 data-nosnippet>81</a>    </span><span class="kw">fn </span>map_insert_vec&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dest: <span class="kw-2">&amp;mut </span>Vec&lt;(W, V)&gt;, f: F)
+<a href=#82 id=82 data-nosnippet>82</a>    <span class="kw">where
+<a href=#83 id=83 data-nosnippet>83</a>        </span>F: Fn(<span class="kw-2">&amp;</span>W, <span class="kw-2">&amp;mut </span>V) -&gt; <span class="prelude-ty">Option</span>&lt;(W, V)&gt; + Sync + Send;
+<a href=#84 id=84 data-nosnippet>84</a>
+<a href=#85 id=85 data-nosnippet>85</a>    <span class="doccomment">/// Same as [`map_insert`](Self::map_insert) but `f` may return a
+<a href=#86 id=86 data-nosnippet>86</a>    /// `Vec` of new entries to be inserted into `dest`.
+<a href=#87 id=87 data-nosnippet>87</a>    </span><span class="kw">fn </span>map_insert_multiple&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dest: <span class="kw-2">&amp;mut </span><span class="self">Self</span>, f: F)
+<a href=#88 id=88 data-nosnippet>88</a>    <span class="kw">where
+<a href=#89 id=89 data-nosnippet>89</a>        </span>F: Fn(<span class="kw-2">&amp;</span>W, <span class="kw-2">&amp;mut </span>V) -&gt; <span class="prelude-ty">Option</span>&lt;Vec&lt;(W, V)&gt;&gt; + Sync + Send;
+<a href=#90 id=90 data-nosnippet>90</a>}
+<a href=#91 id=91 data-nosnippet>91</a>
+<a href=#92 id=92 data-nosnippet>92</a><span class="doccomment">/// Membership queries — `(key, value)` exact match or with a custom
+<a href=#93 id=93 data-nosnippet>93</a>/// predicate on the value.
+<a href=#94 id=94 data-nosnippet>94</a></span><span class="kw">pub trait </span>ACMapContains&lt;
+<a href=#95 id=95 data-nosnippet>95</a>    S: PauliStorage,
+<a href=#96 id=96 data-nosnippet>96</a>    V: Coefficient,
+<a href=#97 id=97 data-nosnippet>97</a>    H: BuildHasher + Clone + Default,
+<a href=#98 id=98 data-nosnippet>98</a>    W: PauliWordTrait,
+<a href=#99 id=99 data-nosnippet>99</a>&gt;
+<a href=#100 id=100 data-nosnippet>100</a>{
+<a href=#101 id=101 data-nosnippet>101</a>    <span class="doccomment">/// `true` if an entry with this exact `(key, value)` is present.
+<a href=#102 id=102 data-nosnippet>102</a>    </span><span class="kw">fn </span>contains(<span class="kw-2">&amp;</span><span class="self">self</span>, key: <span class="kw-2">&amp;</span>W, value: <span class="kw-2">&amp;</span>V) -&gt; bool {
+<a href=#103 id=103 data-nosnippet>103</a>        <span class="self">self</span>.contains_with(key, |v| v == value)
+<a href=#104 id=104 data-nosnippet>104</a>    }
+<a href=#105 id=105 data-nosnippet>105</a>    <span class="doccomment">/// `true` if an entry for `key` exists whose value satisfies `f`.
+<a href=#106 id=106 data-nosnippet>106</a>    </span><span class="kw">fn </span>contains_with&lt;F&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, key: <span class="kw-2">&amp;</span>W, f: F) -&gt; bool
+<a href=#107 id=107 data-nosnippet>107</a>    <span class="kw">where
+<a href=#108 id=108 data-nosnippet>108</a>        </span>F: Fn(<span class="kw-2">&amp;</span>V) -&gt; bool;
+<a href=#109 id=109 data-nosnippet>109</a>}
+<a href=#110 id=110 data-nosnippet>110</a>
+<a href=#111 id=111 data-nosnippet>111</a><span class="doccomment">/// Merge two maps with accumulation: drain `dest` into `self`,
+<a href=#112 id=112 data-nosnippet>112</a>/// summing values that share a key.
+<a href=#113 id=113 data-nosnippet>113</a></span><span class="kw">pub trait </span>ACMapConsume {
+<a href=#114 id=114 data-nosnippet>114</a>    <span class="doccomment">/// Drain `dest` into `self`, accumulating values on key collision.
+<a href=#115 id=115 data-nosnippet>115</a>    </span><span class="kw">fn </span>consume(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dest: <span class="kw-2">&amp;mut </span><span class="self">Self</span>);
+<a href=#116 id=116 data-nosnippet>116</a>}
+<a href=#117 id=117 data-nosnippet>117</a>
+<a href=#118 id=118 data-nosnippet>118</a><span class="doccomment">/// In-place per-entry transformation of values.
+<a href=#119 id=119 data-nosnippet>119</a></span><span class="kw">pub trait </span>ACMapScale&lt;
+<a href=#120 id=120 data-nosnippet>120</a>    S: PauliStorage,
+<a href=#121 id=121 data-nosnippet>121</a>    V: Coefficient,
+<a href=#122 id=122 data-nosnippet>122</a>    H: BuildHasher + Clone + Default,
+<a href=#123 id=123 data-nosnippet>123</a>    W: PauliWordTrait,
+<a href=#124 id=124 data-nosnippet>124</a>&gt;
+<a href=#125 id=125 data-nosnippet>125</a>{
+<a href=#126 id=126 data-nosnippet>126</a>    <span class="doccomment">/// Apply `f(key, value)` to every entry; only the value is mutable.
+<a href=#127 id=127 data-nosnippet>127</a>    </span><span class="kw">fn </span>scale&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, f: F)
+<a href=#128 id=128 data-nosnippet>128</a>    <span class="kw">where
+<a href=#129 id=129 data-nosnippet>129</a>        </span>F: Fn(<span class="kw-2">&amp;</span>W, <span class="kw-2">&amp;mut </span>V) + Sync + Send;
+<a href=#130 id=130 data-nosnippet>130</a>}
+<a href=#131 id=131 data-nosnippet>131</a>
+<a href=#132 id=132 data-nosnippet>132</a><span class="doccomment">/// Drop entries that don't satisfy a predicate — used by truncation
+<a href=#133 id=133 data-nosnippet>133</a>/// strategies.
+<a href=#134 id=134 data-nosnippet>134</a></span><span class="kw">pub trait </span>ACMapRetain&lt;
+<a href=#135 id=135 data-nosnippet>135</a>    S: PauliStorage,
+<a href=#136 id=136 data-nosnippet>136</a>    V: Coefficient,
+<a href=#137 id=137 data-nosnippet>137</a>    H: BuildHasher + Clone + Default,
+<a href=#138 id=138 data-nosnippet>138</a>    W: PauliWordTrait,
+<a href=#139 id=139 data-nosnippet>139</a>&gt;
+<a href=#140 id=140 data-nosnippet>140</a>{
+<a href=#141 id=141 data-nosnippet>141</a>    <span class="doccomment">/// Keep only entries for which `f(key, value)` returns `true`.
+<a href=#142 id=142 data-nosnippet>142</a>    </span><span class="kw">fn </span>retain&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, f: F)
+<a href=#143 id=143 data-nosnippet>143</a>    <span class="kw">where
+<a href=#144 id=144 data-nosnippet>144</a>        </span>F: FnMut(<span class="kw-2">&amp;</span>W, <span class="kw-2">&amp;</span>V) -&gt; bool;
+<a href=#145 id=145 data-nosnippet>145</a>}
+<a href=#146 id=146 data-nosnippet>146</a>
+<a href=#147 id=147 data-nosnippet>147</a><span class="doccomment">/// Aggregate trait combining every operation a backing map must support
+<a href=#148 id=148 data-nosnippet>148</a>/// to be usable as the storage for a [`PauliSum`](crate::sum::PauliSum).
+<a href=#149 id=149 data-nosnippet>149</a>///
+<a href=#150 id=150 data-nosnippet>150</a>/// You don't normally implement `ACMap` directly: the blanket impl below
+<a href=#151 id=151 data-nosnippet>151</a>/// covers any type that implements all the constituent traits.
+<a href=#152 id=152 data-nosnippet>152</a></span><span class="kw">pub trait </span>ACMap&lt;
+<a href=#153 id=153 data-nosnippet>153</a>    S: PauliStorage,
+<a href=#154 id=154 data-nosnippet>154</a>    V: Coefficient,
+<a href=#155 id=155 data-nosnippet>155</a>    H: BuildHasher + Clone + Default,
+<a href=#156 id=156 data-nosnippet>156</a>    W: PauliWordTrait,
+<a href=#157 id=157 data-nosnippet>157</a>&gt;:
+<a href=#158 id=158 data-nosnippet>158</a>    Clone
+<a href=#159 id=159 data-nosnippet>159</a>    + ACMapBase
+<a href=#160 id=160 data-nosnippet>160</a>    + ACMapAddAssign&lt;S, V, H, W&gt;
+<a href=#161 id=161 data-nosnippet>161</a>    + ACMapMulAssign&lt;V, H&gt;
+<a href=#162 id=162 data-nosnippet>162</a>    + ACMapInsert&lt;S, V, H, W&gt;
+<a href=#163 id=163 data-nosnippet>163</a>    + ACMapContains&lt;S, V, H, W&gt;
+<a href=#164 id=164 data-nosnippet>164</a>    + ACMapScale&lt;S, V, H, W&gt;
+<a href=#165 id=165 data-nosnippet>165</a>    + ACMapRetain&lt;S, V, H, W&gt;
+<a href=#166 id=166 data-nosnippet>166</a>    + ACMapConsume
+<a href=#167 id=167 data-nosnippet>167</a>{
+<a href=#168 id=168 data-nosnippet>168</a>}
+<a href=#169 id=169 data-nosnippet>169</a>
+<a href=#170 id=170 data-nosnippet>170</a><span class="kw">impl</span>&lt;T, Storage, Coeff, Hasher, Word&gt; ACMap&lt;Storage, Coeff, Hasher, Word&gt; <span class="kw">for </span>T
+<a href=#171 id=171 data-nosnippet>171</a><span class="kw">where
+<a href=#172 id=172 data-nosnippet>172</a>    </span>Storage: PauliStorage,
+<a href=#173 id=173 data-nosnippet>173</a>    Coeff: Coefficient,
+<a href=#174 id=174 data-nosnippet>174</a>    Hasher: BuildHasher + Clone + Default,
+<a href=#175 id=175 data-nosnippet>175</a>    Word: PauliWordTrait,
+<a href=#176 id=176 data-nosnippet>176</a>    T: Clone
+<a href=#177 id=177 data-nosnippet>177</a>        + ACMapBase
+<a href=#178 id=178 data-nosnippet>178</a>        + ACMapAddAssign&lt;Storage, Coeff, Hasher, Word&gt;
+<a href=#179 id=179 data-nosnippet>179</a>        + ACMapMulAssign&lt;Coeff, Hasher&gt;
+<a href=#180 id=180 data-nosnippet>180</a>        + ACMapInsert&lt;Storage, Coeff, Hasher, Word&gt;
+<a href=#181 id=181 data-nosnippet>181</a>        + ACMapScale&lt;Storage, Coeff, Hasher, Word&gt;
+<a href=#182 id=182 data-nosnippet>182</a>        + ACMapContains&lt;Storage, Coeff, Hasher, Word&gt;
+<a href=#183 id=183 data-nosnippet>183</a>        + ACMapRetain&lt;Storage, Coeff, Hasher, Word&gt;
+<a href=#184 id=184 data-nosnippet>184</a>        + ACMapConsume,
+<a href=#185 id=185 data-nosnippet>185</a>{
+<a href=#186 id=186 data-nosnippet>186</a>}
 </code></pre></div></section></main></body></html>

@@ -7,33 +7,41 @@
 <a href=#7 id=7 data-nosnippet>7</a><span class="doccomment">/// Backing storage for a [`PauliWord`](crate::word::PauliWord) — a
 <a href=#8 id=8 data-nosnippet>8</a>/// fixed-size, `Copy`-able block of bits (typically `[u8; N]` or
 <a href=#9 id=9 data-nosnippet>9</a>/// `[u64; N]`).
-<a href=#10 id=10 data-nosnippet>10</a></span><span class="kw">pub trait </span>PauliStorage:
-<a href=#11 id=11 data-nosnippet>11</a>    BitViewSized
-<a href=#12 id=12 data-nosnippet>12</a>    + Clone
-<a href=#13 id=13 data-nosnippet>13</a>    + Copy
-<a href=#14 id=14 data-nosnippet>14</a>    + Hash
-<a href=#15 id=15 data-nosnippet>15</a>    + Eq
-<a href=#16 id=16 data-nosnippet>16</a>    + PartialEq
-<a href=#17 id=17 data-nosnippet>17</a>    + Send
-<a href=#18 id=18 data-nosnippet>18</a>    + Sync
-<a href=#19 id=19 data-nosnippet>19</a>    + std::fmt::Debug
-<a href=#20 id=20 data-nosnippet>20</a>    + Ord
-<a href=#21 id=21 data-nosnippet>21</a>    + PartialOrd
-<a href=#22 id=22 data-nosnippet>22</a>{
-<a href=#23 id=23 data-nosnippet>23</a>}
-<a href=#24 id=24 data-nosnippet>24</a><span class="kw">impl</span>&lt;
-<a href=#25 id=25 data-nosnippet>25</a>    A: BitViewSized
-<a href=#26 id=26 data-nosnippet>26</a>        + Clone
-<a href=#27 id=27 data-nosnippet>27</a>        + Copy
-<a href=#28 id=28 data-nosnippet>28</a>        + Hash
-<a href=#29 id=29 data-nosnippet>29</a>        + Eq
-<a href=#30 id=30 data-nosnippet>30</a>        + PartialEq
-<a href=#31 id=31 data-nosnippet>31</a>        + Send
-<a href=#32 id=32 data-nosnippet>32</a>        + Sync
-<a href=#33 id=33 data-nosnippet>33</a>        + std::fmt::Debug
-<a href=#34 id=34 data-nosnippet>34</a>        + Ord
-<a href=#35 id=35 data-nosnippet>35</a>        + PartialOrd,
-<a href=#36 id=36 data-nosnippet>36</a>&gt; PauliStorage <span class="kw">for </span>A
-<a href=#37 id=37 data-nosnippet>37</a>{
-<a href=#38 id=38 data-nosnippet>38</a>}
+<a href=#10 id=10 data-nosnippet>10</a>///
+<a href=#11 id=11 data-nosnippet>11</a>/// The [`bytemuck::Pod`] bound guarantees the storage is a plain-old-data
+<a href=#12 id=12 data-nosnippet>12</a>/// type with no padding and all bit patterns valid, which lets
+<a href=#13 id=13 data-nosnippet>13</a>/// [`PauliWord::rehash`](crate::word::PauliWord) view it as a `&amp;[u8]` for
+<a href=#14 id=14 data-nosnippet>14</a>/// fast byte-slice hashing *without* `unsafe`. Every concrete storage used
+<a href=#15 id=15 data-nosnippet>15</a>/// here (`[u8; N]`, `[u64; N]`) is already `Pod`.
+<a href=#16 id=16 data-nosnippet>16</a></span><span class="kw">pub trait </span>PauliStorage:
+<a href=#17 id=17 data-nosnippet>17</a>    BitViewSized
+<a href=#18 id=18 data-nosnippet>18</a>    + Clone
+<a href=#19 id=19 data-nosnippet>19</a>    + Copy
+<a href=#20 id=20 data-nosnippet>20</a>    + Hash
+<a href=#21 id=21 data-nosnippet>21</a>    + Eq
+<a href=#22 id=22 data-nosnippet>22</a>    + PartialEq
+<a href=#23 id=23 data-nosnippet>23</a>    + Send
+<a href=#24 id=24 data-nosnippet>24</a>    + Sync
+<a href=#25 id=25 data-nosnippet>25</a>    + std::fmt::Debug
+<a href=#26 id=26 data-nosnippet>26</a>    + Ord
+<a href=#27 id=27 data-nosnippet>27</a>    + PartialOrd
+<a href=#28 id=28 data-nosnippet>28</a>    + bytemuck::Pod
+<a href=#29 id=29 data-nosnippet>29</a>{
+<a href=#30 id=30 data-nosnippet>30</a>}
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">impl</span>&lt;
+<a href=#32 id=32 data-nosnippet>32</a>    A: BitViewSized
+<a href=#33 id=33 data-nosnippet>33</a>        + Clone
+<a href=#34 id=34 data-nosnippet>34</a>        + Copy
+<a href=#35 id=35 data-nosnippet>35</a>        + Hash
+<a href=#36 id=36 data-nosnippet>36</a>        + Eq
+<a href=#37 id=37 data-nosnippet>37</a>        + PartialEq
+<a href=#38 id=38 data-nosnippet>38</a>        + Send
+<a href=#39 id=39 data-nosnippet>39</a>        + Sync
+<a href=#40 id=40 data-nosnippet>40</a>        + std::fmt::Debug
+<a href=#41 id=41 data-nosnippet>41</a>        + Ord
+<a href=#42 id=42 data-nosnippet>42</a>        + PartialOrd
+<a href=#43 id=43 data-nosnippet>43</a>        + bytemuck::Pod,
+<a href=#44 id=44 data-nosnippet>44</a>&gt; PauliStorage <span class="kw">for </span>A
+<a href=#45 id=45 data-nosnippet>45</a>{
+<a href=#46 id=46 data-nosnippet>46</a>}
 </code></pre></div></section></main></body></html>

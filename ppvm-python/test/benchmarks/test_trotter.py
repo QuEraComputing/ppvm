@@ -7,8 +7,7 @@ IndexMap + FxHash storage variant, so this corresponds to exactly the
 
 Run the timed benchmark with:
 
-    uv run pytest test/benchmarks/test_trotter.py --benchmark-enable
-
+    uv run --project ppvm-python --group dev pytest ppvm-python/test/benchmarks/test_trotter.py --benchmark-enable
 Without ``--benchmark-enable`` it runs once as a smoke test (see ``addopts`` in
 pyproject.toml).
 """

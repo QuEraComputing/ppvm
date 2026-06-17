@@ -154,145 +154,189 @@ macro_rules! create_interface {
             }
 
             // clifford
-            #[pyo3(signature = (addr0, truncate = true))]
-            pub fn x(&mut self, addr0: usize, truncate: bool) {
-                self.inner.x(addr0);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn x(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.x(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, truncate = true))]
-            pub fn y(&mut self, addr0: usize, truncate: bool) {
-                self.inner.y(addr0);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn y(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.y(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, truncate = true))]
-            pub fn z(&mut self, addr0: usize, truncate: bool) {
-                self.inner.z(addr0);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn z(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.z(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, truncate = true))]
-            pub fn h(&mut self, addr0: usize, truncate: bool) {
-                self.inner.h(addr0);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn h(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.h(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, truncate = true))]
-            pub fn s(&mut self, addr0: usize, truncate: bool) {
-                self.inner.s(addr0);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn s(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.s(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, addr1, truncate = true))]
-            pub fn cnot(&mut self, addr0: usize, addr1: usize, truncate: bool) {
-                self.inner.cnot([addr0, addr1]);
+            // two-qubit clifford (+ stim aliases)
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn cnot(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.cnot(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, addr1, truncate = true))]
-            pub fn cz(&mut self, addr0: usize, addr1: usize, truncate: bool) {
-                self.inner.cz([addr0, addr1]);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn cx(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.cnot(targets, truncate);
+            }
+
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn zcx(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.cnot(targets, truncate);
+            }
+
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn cz(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.cz(targets.as_slice());
                 if truncate { self.inner.truncate(); }
+            }
+
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn zcz(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.cz(targets, truncate);
+            }
+
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn cy(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.cy(targets.as_slice());
+                if truncate { self.inner.truncate(); }
+            }
+
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn zcy(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.cy(targets, truncate);
             }
 
             // clifford extensions
-            #[pyo3(signature = (addr0, truncate = true))]
-            pub fn s_adj(&mut self, addr0: usize, truncate: bool) {
-                self.inner.s_dag(addr0);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn s_dag(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.s_dag(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, truncate = true))]
-            pub fn sqrt_x(&mut self, addr0: usize, truncate: bool) {
-                self.inner.sqrt_x(addr0);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn sqrt_x(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.sqrt_x(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, truncate = true))]
-            pub fn sqrt_y(&mut self, addr0: usize, truncate: bool) {
-                self.inner.sqrt_y(addr0);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn sqrt_y(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.sqrt_y(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, truncate = true))]
-            pub fn sqrt_x_adj(&mut self, addr0: usize, truncate: bool) {
-                self.inner.sqrt_x_dag(addr0);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn sqrt_x_dag(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.sqrt_x_dag(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, truncate = true))]
-            pub fn sqrt_y_adj(&mut self, addr0: usize, truncate: bool) {
-                self.inner.sqrt_y_dag(addr0);
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn sqrt_y_dag(&mut self, targets: Vec<usize>, truncate: bool) {
+                self.inner.sqrt_y_dag(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             // rot1
-            #[pyo3(signature = (addr0, theta, truncate = true))]
-            pub fn rx(&mut self, addr0: usize, theta: f64, truncate: bool) {
-                self.inner.rx(addr0, theta);
+            #[pyo3(signature = (targets, theta, truncate = true))]
+            pub fn rx(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
+                self.inner.rx(targets.as_slice(), theta);
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, theta, truncate = true))]
-            pub fn ry(&mut self, addr0: usize, theta: f64, truncate: bool) {
-                self.inner.ry(addr0, theta);
+            #[pyo3(signature = (targets, theta, truncate = true))]
+            pub fn ry(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
+                self.inner.ry(targets.as_slice(), theta);
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, theta, truncate = true))]
-            pub fn rz(&mut self, addr0: usize, theta: f64, truncate: bool) {
-                self.inner.rz(addr0, theta);
+            #[pyo3(signature = (targets, theta, truncate = true))]
+            pub fn rz(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
+                self.inner.rz(targets.as_slice(), theta);
                 if truncate { self.inner.truncate(); }
             }
 
             // rot2
-            #[pyo3(signature = (addr0, addr1, theta, truncate = true))]
-            pub fn rxx(&mut self, addr0: usize, addr1: usize, theta: f64, truncate: bool) {
-                self.inner.rxx([addr0, addr1], theta);
+            #[pyo3(signature = (targets, theta, truncate = true))]
+            pub fn rxx(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
+                self.inner.rxx(targets.as_slice(), theta);
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, addr1, theta, truncate = true))]
-            pub fn ryy(&mut self, addr0: usize, addr1: usize, theta: f64, truncate: bool) {
-                self.inner.ryy([addr0, addr1], theta);
+            #[pyo3(signature = (targets, theta, truncate = true))]
+            pub fn ryy(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
+                self.inner.ryy(targets.as_slice(), theta);
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, addr1, theta, truncate = true))]
-            pub fn rzz(&mut self, addr0: usize, addr1: usize, theta: f64, truncate: bool) {
-                self.inner.rzz([addr0, addr1], theta);
+            #[pyo3(signature = (targets, theta, truncate = true))]
+            pub fn rzz(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
+                self.inner.rzz(targets.as_slice(), theta);
                 if truncate { self.inner.truncate(); }
             }
 
             // noise
-            #[pyo3(signature = (addr0, p, truncate = true))]
-            pub fn pauli_error(&mut self, addr0: usize, p: [f64; 3], truncate: bool) {
-                self.inner.pauli_error(addr0, p);
+            #[pyo3(signature = (targets, p, truncate = true))]
+            pub fn x_error(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
+                self.inner.x_error(targets.as_slice(), p);
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, addr1, p, truncate = true))]
+            #[pyo3(signature = (targets, p, truncate = true))]
+            pub fn y_error(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
+                self.inner.y_error(targets.as_slice(), p);
+                if truncate { self.inner.truncate(); }
+            }
+
+            #[pyo3(signature = (targets, p, truncate = true))]
+            pub fn z_error(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
+                self.inner.z_error(targets.as_slice(), p);
+                if truncate { self.inner.truncate(); }
+            }
+
+            #[pyo3(signature = (targets, p, truncate = true))]
+            pub fn pauli_error(&mut self, targets: Vec<usize>, p: [f64; 3], truncate: bool) {
+                self.inner.pauli_error(targets.as_slice(), p);
+                if truncate { self.inner.truncate(); }
+            }
+
+            #[pyo3(signature = (targets, p, truncate = true))]
             pub fn two_qubit_pauli_error(
                 &mut self,
-                addr0: usize,
-                addr1: usize,
+                targets: Vec<usize>,
                 p: [f64; 15],
                 truncate: bool,
             ) {
-                self.inner.two_qubit_pauli_error([addr0, addr1], p);
+                self.inner.two_qubit_pauli_error(targets.as_slice(), p);
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, p, truncate = true))]
-            pub fn depolarize(&mut self, addr0: usize, p: f64, truncate: bool) {
-                self.inner.depolarize1(addr0, p);
+            #[pyo3(signature = (targets, p, truncate = true))]
+            pub fn depolarize1(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
+                self.inner.depolarize1(targets.as_slice(), p);
                 if truncate { self.inner.truncate(); }
             }
 
-            #[pyo3(signature = (addr0, addr1, p, truncate = true))]
-            pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64, truncate: bool) {
-                self.inner.depolarize2([addr0, addr1], p);
+            #[pyo3(signature = (targets, p, truncate = true))]
+            pub fn depolarize2(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
+                self.inner.depolarize2(targets.as_slice(), p);
                 if truncate { self.inner.truncate(); }
             }
 

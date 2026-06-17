@@ -10,7 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 bnum = "0.13.0"
-mimalloc = { version = "0.1", default-features = false }
 dashmap = "6.1.0"
 fxhash = "0.2.1"
 num = "0.4.3"

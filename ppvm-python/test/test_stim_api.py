@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: 2026 The PPVM Authors
 # SPDX-License-Identifier: Apache-2.0
 
-import ppvm
 from ppvm import GeneralizedTableau, MeasurementResult
 
 
@@ -22,9 +21,23 @@ def test_two_qubit_pair_broadcast():
 
 def test_renamed_methods_exist():
     t = GeneralizedTableau(1)
-    for name in ["s_dag", "sqrt_x_dag", "sqrt_y_dag", "t_dag",
-                 "depolarize1", "x_error", "y_error", "z_error",
-                 "reset_x", "reset_y", "reset_z", "cx", "zcx", "zcz", "zcy"]:
+    for name in [
+        "s_dag",
+        "sqrt_x_dag",
+        "sqrt_y_dag",
+        "t_dag",
+        "depolarize1",
+        "x_error",
+        "y_error",
+        "z_error",
+        "reset_x",
+        "reset_y",
+        "reset_z",
+        "cx",
+        "zcx",
+        "zcz",
+        "zcy",
+    ]:
         assert hasattr(t, name), name
 
 

@@ -617,9 +617,7 @@ class TruncatingNoiseMixin(NoiseMixin):
     :class:`NoiseMixin`.
     """
 
-    def pauli_error(
-        self, *targets: int, p: Sequence[float], truncate: bool = True
-    ) -> None:
+    def pauli_error(self, *targets: int, p: Sequence[float], truncate: bool = True) -> None:
         """Apply a single-qubit Pauli error channel to each target qubit.
 
         Args:

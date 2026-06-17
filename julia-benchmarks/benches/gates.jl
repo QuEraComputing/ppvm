@@ -49,13 +49,13 @@ function benchmark_suite()
     cnot = CliffordGate(:CNOT, [1, 2])
     cz = CliffordGate(:CZ, [1, 2])
 
-    rx = PauliRotation([:X], [1], 0.5)
-    ry = PauliRotation([:Y], [1], 0.5)
-    rz = PauliRotation([:Z], [1], 0.5)
+    rx = PauliRotation([:X], [2], 0.5)
+    ry = PauliRotation([:Y], [2], 0.5)
+    rz = PauliRotation([:Z], [2], 0.5)
 
-    rxx = PauliRotation([:X, :X], [1, 2], 0.5)
-    ryy = PauliRotation([:Y, :Y], [1, 2], 0.5)
-    rzz = PauliRotation([:Z, :Z], [1, 2], 0.5)
+    rxx = PauliRotation([:X, :X], [2, 3], 0.5)
+    ryy = PauliRotation([:Y, :Y], [2, 3], 0.5)
+    rzz = PauliRotation([:Z, :Z], [2, 3], 0.5)
 
     # collect the gate applications into the benchmark group
     group["x"] = @benchmarkable propagate!($x, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))

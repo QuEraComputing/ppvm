@@ -91,7 +91,7 @@ pub fn benchmark_suite_trotter<T: Config<Coeff = f64, Strategy = CoefficientThre
 
 pub fn trotter_benchmarks(c: &mut Criterion) {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(4)
+        .num_threads(1)
         .build_global()
         .unwrap();
     println!("Using {} threads", current_num_threads());

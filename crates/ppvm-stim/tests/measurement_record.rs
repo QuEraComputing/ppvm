@@ -19,3 +19,18 @@ fn run_populates_measurement_record() {
     assert_eq!(t.current_measurement_record(), results.as_slice());
     assert_eq!(results, vec![Some(true), Some(false)]);
 }
+
+#[test]
+fn mr_record_matches_reported_value_under_readout_noise() {
+    // Qubit 0 starts in |1>. MR with readout noise p=1.0 always flips the
+    // reported bit, so the returned result is the flipped value. The record
+    // must hold the *reported* value too (consistent with M), not the true
+    // pre-flip outcome.
+    let prog = parse_extended("X 0\nMR(1.0) 0").unwrap();
+    let mut t: Tab = GeneralizedTableau::new(1, 1e-12);
+    let results = execute(&prog, &mut t).unwrap();
+    assert_eq!(results, vec![Some(false)]); // true outcome 1, flipped to 0
+    assert_eq!(t.current_measurement_record(), results.as_slice());
+    // And the reset actually happened: qubit is back in |0>.
+    assert_eq!(t.measure(0), Some(false));
+}

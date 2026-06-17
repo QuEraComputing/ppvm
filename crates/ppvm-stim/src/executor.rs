@@ -287,6 +287,12 @@ pub fn execute_prepared<T, I, C>(
                                 tab.x(q);
                             }
                             let recorded = true_outcome.map(|b| tab.flip_with_prob(b, noise));
+                            // `measure` recorded the true (pre-flip) outcome; overwrite it
+                            // with the reported value so the measurement record matches the
+                            // returned result, consistent with `measure_noisy`/`M`.
+                            if let Some(last) = tab.measurement_record.last_mut() {
+                                *last = recorded;
+                            }
                             results.push(recorded);
                         }
                     }

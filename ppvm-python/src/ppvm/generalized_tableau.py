@@ -133,21 +133,21 @@ class GeneralizedTableau(
         """Return a human-readable representation of the tableau state."""
         return self._interface.__str__()
 
-    def t(self, addr0: int) -> None:
-        """Apply a T gate (π/8 rotation) to the specified qubit.
+    def t(self, *targets: int) -> None:
+        """Apply a T gate (π/8 rotation) to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.t(addr0)
+        self._interface.t(list(targets))
 
-    def t_adj(self, addr0: int) -> None:
-        """Apply a T adjoint gate (negative π/8 rotation) to the specified qubit.
+    def t_dag(self, *targets: int) -> None:
+        """Apply a T adjoint gate (negative π/8 rotation) to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.t_adj(addr0)
+        self._interface.t_dag(list(targets))
 
     def measure(self, addr0: int) -> MeasurementResult:
         """Measure the specified qubit in the Z basis.
@@ -159,10 +159,26 @@ class GeneralizedTableau(
             The measurement outcome as a ``MeasurementResult``, which is
             ``LOST`` if the qubit has been lost, ``ZERO`` or ``ONE`` otherwise.
         """
-        m = self._interface.measure(addr0)
-        if m is None:
-            return MeasurementResult.LOST
-        return MeasurementResult.ONE if m else MeasurementResult.ZERO
+        return MeasurementResult(self._interface.measure(addr0))
+
+    def measure_many(self, *targets: int) -> list[MeasurementResult]:
+        """Measure several qubits in the Z basis.
+
+        Args:
+            *targets: The indices of the target qubits.
+
+        Returns:
+            A list of ``MeasurementResult`` outcomes, one per target.
+        """
+        return [MeasurementResult(v) for v in self._interface.measure_many(list(targets))]
+
+    def current_measurement_record(self) -> list[MeasurementResult]:
+        """Return all measurement outcomes recorded so far.
+
+        Returns:
+            A list of ``MeasurementResult`` outcomes in measurement order.
+        """
+        return [MeasurementResult(v) for v in self._interface.current_measurement_record()]
 
     def u3(self, addr0: int, theta: float, phi: float, lam: float):
         """Apply the U3 gate to the specified qubit.
@@ -182,13 +198,37 @@ class GeneralizedTableau(
         """
         self._interface.u3(addr0, theta, phi, lam)
 
-    def reset(self, addr0: int) -> None:
-        """Reset the specified qubit to the |0> state.
+    def reset(self, *targets: int) -> None:
+        """Reset each target qubit to the |0> state.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.reset(addr0)
+        self._interface.reset(list(targets))
+
+    def reset_x(self, *targets: int) -> None:
+        """Reset each target qubit to the |+> state.
+
+        Args:
+            *targets: The indices of the target qubits.
+        """
+        self._interface.reset_x(list(targets))
+
+    def reset_y(self, *targets: int) -> None:
+        """Reset each target qubit to the |+i> state.
+
+        Args:
+            *targets: The indices of the target qubits.
+        """
+        self._interface.reset_y(list(targets))
+
+    def reset_z(self, *targets: int) -> None:
+        """Reset each target qubit to the |0> state.
+
+        Args:
+            *targets: The indices of the target qubits.
+        """
+        self._interface.reset_z(list(targets))
 
     def reset_loss_channel(self, addr0: int) -> None:
         """Reset a lost qubit to being active again.
@@ -228,6 +268,9 @@ class GeneralizedTableau(
         """
         raw = self._interface.run(prog)
         return [MeasurementResult(x) for x in raw]
+
+    # stim familiarity alias
+    do = run
 
     @classmethod
     def sample(

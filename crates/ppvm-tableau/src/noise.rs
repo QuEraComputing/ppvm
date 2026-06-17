@@ -35,6 +35,7 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> TableauL
 where
     T::Coeff: PartialOrd<f64>,
     Complex<T::Coeff>: From<Complex<f64>>,
+    <T::Storage as BitView>::Store: PrimInt,
 {
     type Coeff = T::Coeff;
     type Rng = SmallRng;
@@ -104,6 +105,7 @@ impl_tableau_noise! {
     where: [
         T::Coeff: PartialOrd<f64>,
         Complex<T::Coeff>: From<Complex<f64>>,
+        <T::Storage as BitView>::Store: PrimInt,
     ],
 }
 
@@ -578,7 +580,7 @@ mod tests {
     fn test_cnot() {
         let mut t = tab(2);
         t.x(0);
-        t.cnot(0, 1);
+        t.cnot([0, 1]);
         t.loss_channel(0, 1.0);
         assert!(t.measure(0).is_none());
         assert!(t.measure(1).unwrap());
@@ -586,7 +588,7 @@ mod tests {
         let mut t = tab(2);
         t.loss_channel(0, 1.0);
         t.x(0);
-        t.cnot(0, 1);
+        t.cnot([0, 1]);
         assert!(!t.measure(1).unwrap());
         assert!(t.measure(0).is_none());
     }
@@ -595,7 +597,7 @@ mod tests {
     fn test_ghz_statistics() {
         let mut t = tab(2);
         t.h(0);
-        t.cnot(0, 1);
+        t.cnot([0, 1]);
 
         let trials = 100u64;
         let mut z_avg = 0.0;

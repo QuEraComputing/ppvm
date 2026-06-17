@@ -20,7 +20,7 @@ fn main() {
     state += ("ZZIIIIIIIIIIIIIIIIII", 1.0);
 
     // Textbook H(0); CNOT(0, 1) → reversed for Heisenberg propagation.
-    state.cnot(0, 1);
+    state.cnot([0, 1]);
     state.h(0);
     state.truncate();
 

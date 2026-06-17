@@ -27,7 +27,7 @@
 //! state += ("ZZ", 1.0);
 //!
 //! // Circuit is H(0); CNOT(0, 1) — apply in reverse for Heisenberg propagation.
-//! state.cnot(0, 1);
+//! state.cnot([0, 1]);
 //! state.h(0);
 //!
 //! // ZZ has propagated to a single term.

@@ -7,54 +7,84 @@ use bitvec::view::BitViewSized;
 use num::complex::Complex;
 use num::{One, PrimInt, Zero};
 
-macro_rules! impl_tableau_clifford {
-    ($name:ident, $($index:ident),*) => {
+// Single-qubit gate on a `Tableau`: broadcast over each target, applying the
+// per-word action to every row.
+macro_rules! impl_tableau_clifford_single {
+    ($name:ident) => {
         #[inline]
-        fn $name(&mut self, $($index: usize),*) {
-            self.data.iter_mut().for_each(|pw| {
-                pw.$name($($index),*);
-            });
+        fn $name(&mut self, targets: impl Targets) {
+            for index in targets.each() {
+                self.data.iter_mut().for_each(|pw| {
+                    pw.$name(index);
+                });
+            }
         }
     };
 }
 
-macro_rules! impl_generalized_tableau_clifford {
-    ($name:ident, $index:ident) => {
-        fn $name(&mut self, $index: usize) {
-            if self.is_lost[$index] {
-                return;
+// Two-qubit gate on a `Tableau`: broadcast over consecutive pairs.
+macro_rules! impl_tableau_clifford_pair {
+    ($name:ident) => {
+        #[inline]
+        fn $name(&mut self, targets: impl Targets) {
+            for (control, target) in targets.pairs() {
+                self.data.iter_mut().for_each(|pw| {
+                    pw.$name([control, target]);
+                });
             }
-            self.tableau.$name($index);
         }
     };
-    ($name:ident, $index0:ident, $index1:ident) => {
-        fn $name(&mut self, $index0: usize, $index1: usize) {
-            if self.is_lost[$index0] || self.is_lost[$index1] {
-                return;
+}
+
+// Single-qubit gate on a `GeneralizedTableau`: skip lost qubits, delegate to
+// the inner tableau per target.
+macro_rules! impl_generalized_tableau_clifford {
+    ($name:ident) => {
+        fn $name(&mut self, targets: impl Targets) {
+            for index in targets.each() {
+                if self.is_lost[index] {
+                    continue;
+                }
+                self.tableau.$name(index);
             }
-            self.tableau.$name($index0, $index1);
+        }
+    };
+}
+
+// Two-qubit gate on a `GeneralizedTableau`: skip pairs with a lost qubit.
+macro_rules! impl_generalized_tableau_clifford_pair {
+    ($name:ident) => {
+        fn $name(&mut self, targets: impl Targets) {
+            for (control, target) in targets.pairs() {
+                if self.is_lost[control] || self.is_lost[target] {
+                    continue;
+                }
+                self.tableau.$name([control, target]);
+            }
         }
     };
 }
 
 impl<T: Config> Clifford for Tableau<T> {
-    impl_tableau_clifford!(x, index);
-    impl_tableau_clifford!(y, index);
-    impl_tableau_clifford!(z, index);
-    impl_tableau_clifford!(h, index);
-    impl_tableau_clifford!(cnot, control, target);
-    impl_tableau_clifford!(cz, control, target);
+    impl_tableau_clifford_single!(x);
+    impl_tableau_clifford_single!(y);
+    impl_tableau_clifford_single!(z);
+    impl_tableau_clifford_single!(h);
+    impl_tableau_clifford_pair!(cnot);
+    impl_tableau_clifford_pair!(cz);
 
-    fn s(&mut self, index: usize) {
+    fn s(&mut self, targets: impl Targets) {
         // NOTE: S is the only clifford where forward and backward propagation differ
         // since it's non-hermitian
         // only difference is the phase though
         // TODO: just use the conjugate sdagger impl
-        self.data.iter_mut().for_each(|pw| {
-            let phase = (pw.word.xbits[index] & pw.word.zbits[index]) as u8;
-            pw.word.s(index);
-            pw.phase ^= phase << 1;
-        });
+        for index in targets.each() {
+            self.data.iter_mut().for_each(|pw| {
+                let phase = (pw.word.xbits[index] & pw.word.zbits[index]) as u8;
+                pw.word.s(index);
+                pw.phase ^= phase << 1;
+            });
+        }
     }
 }
 
@@ -68,49 +98,59 @@ impl<T: Config> CliffordExtensions for Tableau<T> {
     // |   sqrt_y   | -Z  |  Y  |  X  |
     // | sqrt_y_adj |  Z  |  Y  | -X  |
 
-    fn s_adj(&mut self, addr0: usize) {
-        // NOTE: the backwards prop version of S is just S_adj
-        self.data.iter_mut().for_each(|pw| {
-            pw.s(addr0);
-        });
+    fn s_dag(&mut self, targets: impl Targets) {
+        // NOTE: the backwards prop version of S is just S_dag
+        for addr0 in targets.each() {
+            self.data.iter_mut().for_each(|pw| {
+                pw.s(addr0);
+            });
+        }
     }
 
-    fn sqrt_x(&mut self, addr0: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let x = pw.word.xbits[addr0];
-            let z = pw.word.zbits[addr0];
-            pw.word.xbits.set(addr0, x ^ z);
-            pw.phase ^= ((z & !x) as u8) << 1;
-        });
+    fn sqrt_x(&mut self, targets: impl Targets) {
+        for addr0 in targets.each() {
+            self.data.iter_mut().for_each(|pw| {
+                let x = pw.word.xbits[addr0];
+                let z = pw.word.zbits[addr0];
+                pw.word.xbits.set(addr0, x ^ z);
+                pw.phase ^= ((z & !x) as u8) << 1;
+            });
+        }
     }
 
-    fn sqrt_x_adj(&mut self, addr0: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let x = pw.word.xbits[addr0];
-            let z = pw.word.zbits[addr0];
-            pw.word.xbits.set(addr0, x ^ z);
-            pw.phase ^= ((x & z) as u8) << 1;
-        });
+    fn sqrt_x_dag(&mut self, targets: impl Targets) {
+        for addr0 in targets.each() {
+            self.data.iter_mut().for_each(|pw| {
+                let x = pw.word.xbits[addr0];
+                let z = pw.word.zbits[addr0];
+                pw.word.xbits.set(addr0, x ^ z);
+                pw.phase ^= ((x & z) as u8) << 1;
+            });
+        }
     }
 
-    fn sqrt_y(&mut self, addr0: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let x = pw.word.xbits[addr0];
-            let z = pw.word.zbits[addr0];
-            pw.word.xbits.set(addr0, z);
-            pw.word.zbits.set(addr0, x);
-            pw.phase ^= ((x & !z) as u8) << 1;
-        });
+    fn sqrt_y(&mut self, targets: impl Targets) {
+        for addr0 in targets.each() {
+            self.data.iter_mut().for_each(|pw| {
+                let x = pw.word.xbits[addr0];
+                let z = pw.word.zbits[addr0];
+                pw.word.xbits.set(addr0, z);
+                pw.word.zbits.set(addr0, x);
+                pw.phase ^= ((x & !z) as u8) << 1;
+            });
+        }
     }
 
-    fn sqrt_y_adj(&mut self, addr0: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let x = pw.word.xbits[addr0];
-            let z = pw.word.zbits[addr0];
-            pw.word.xbits.set(addr0, z);
-            pw.word.zbits.set(addr0, x);
-            pw.phase ^= ((z & !x) as u8) << 1;
-        });
+    fn sqrt_y_dag(&mut self, targets: impl Targets) {
+        for addr0 in targets.each() {
+            self.data.iter_mut().for_each(|pw| {
+                let x = pw.word.xbits[addr0];
+                let z = pw.word.zbits[addr0];
+                pw.word.xbits.set(addr0, z);
+                pw.word.zbits.set(addr0, x);
+                pw.phase ^= ((z & !x) as u8) << 1;
+            });
+        }
     }
 
     // control: row, target: col
@@ -123,44 +163,72 @@ impl<T: Config> CliffordExtensions for Tableau<T> {
     //
     // Bit transforms: xc'=xc, zc'=zc^xt^zt, xt'=xt^xc, zt'=zt^xc
     // Phase +2 when: xc & (xt ^ zt) & !(zc ^ zt)
-    fn cy(&mut self, addr0: usize, addr1: usize) {
-        self.data.iter_mut().for_each(|pw| {
-            let xc = pw.word.xbits[addr0];
-            let zc = pw.word.zbits[addr0];
-            let xt = pw.word.xbits[addr1];
-            let zt = pw.word.zbits[addr1];
-            pw.word.zbits.set(addr0, zc ^ xt ^ zt);
-            pw.word.xbits.set(addr1, xt ^ xc);
-            pw.word.zbits.set(addr1, zt ^ xc);
-            pw.phase ^= ((xc & (xt ^ zt) & !(zc ^ zt)) as u8) << 1;
-        });
+    fn cy(&mut self, targets: impl Targets) {
+        for (addr0, addr1) in targets.pairs() {
+            self.data.iter_mut().for_each(|pw| {
+                let xc = pw.word.xbits[addr0];
+                let zc = pw.word.zbits[addr0];
+                let xt = pw.word.xbits[addr1];
+                let zt = pw.word.zbits[addr1];
+                pw.word.zbits.set(addr0, zc ^ xt ^ zt);
+                pw.word.xbits.set(addr1, xt ^ xc);
+                pw.word.zbits.set(addr1, zt ^ xc);
+                pw.phase ^= ((xc & (xt ^ zt) & !(zc ^ zt)) as u8) << 1;
+            });
+        }
     }
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> Clifford for GeneralizedTableau<T, I, C>
 where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
+    <T::Storage as BitView>::Store: PrimInt,
 {
-    impl_generalized_tableau_clifford!(x, index);
-    impl_generalized_tableau_clifford!(y, index);
-    impl_generalized_tableau_clifford!(z, index);
-    impl_generalized_tableau_clifford!(h, index);
-    impl_generalized_tableau_clifford!(s, index);
-    impl_generalized_tableau_clifford!(cnot, control, target);
-    impl_generalized_tableau_clifford!(cz, control, target);
+    impl_generalized_tableau_clifford!(x);
+    impl_generalized_tableau_clifford!(y);
+    impl_generalized_tableau_clifford!(z);
+    impl_generalized_tableau_clifford!(s);
+    impl_generalized_tableau_clifford_pair!(cnot);
+
+    fn h(&mut self, targets: impl Targets) {
+        let indices: Vec<usize> = targets.each().collect();
+        self.h_batch(&indices);
+    }
+
+    fn cz(&mut self, targets: impl Targets) {
+        let pairs: Vec<(usize, usize)> = targets.pairs().collect();
+        self.cz_batch(&pairs);
+    }
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> CliffordExtensions
     for GeneralizedTableau<T, I, C>
 where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
+    <T::Storage as BitView>::Store: PrimInt,
 {
-    impl_generalized_tableau_clifford!(s_adj, addr0);
-    impl_generalized_tableau_clifford!(sqrt_x, addr0);
-    impl_generalized_tableau_clifford!(sqrt_x_adj, addr0);
-    impl_generalized_tableau_clifford!(sqrt_y, addr0);
-    impl_generalized_tableau_clifford!(sqrt_y_adj, addr0);
-    impl_generalized_tableau_clifford!(cy, addr0, addr1);
+    impl_generalized_tableau_clifford!(s_dag);
+    impl_generalized_tableau_clifford_pair!(cy);
+
+    fn sqrt_x(&mut self, targets: impl Targets) {
+        let indices: Vec<usize> = targets.each().collect();
+        self.sqrt_x_batch(&indices);
+    }
+
+    fn sqrt_x_dag(&mut self, targets: impl Targets) {
+        let indices: Vec<usize> = targets.each().collect();
+        self.sqrt_x_adj_batch(&indices);
+    }
+
+    fn sqrt_y(&mut self, targets: impl Targets) {
+        let indices: Vec<usize> = targets.each().collect();
+        self.sqrt_y_batch(&indices);
+    }
+
+    fn sqrt_y_dag(&mut self, targets: impl Targets) {
+        let indices: Vec<usize> = targets.each().collect();
+        self.sqrt_y_adj_batch(&indices);
+    }
 }
 
 impl<T: Config> Tableau<T>
@@ -194,7 +262,7 @@ where
     /// All qubits targeting the same word are merged into a single mask,
     /// reducing N individual operations to O(n_words) per row.
     #[inline]
-    pub fn sqrt_y_batch(&mut self, indices: &[usize]) {
+    pub(crate) fn sqrt_y_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -224,7 +292,7 @@ where
 
     /// Apply sqrt_y_adj to multiple qubits using combined bitmask operations.
     #[inline]
-    pub fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
+    pub(crate) fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -254,7 +322,7 @@ where
 
     /// Apply sqrt_x to multiple qubits using combined bitmask operations.
     #[inline]
-    pub fn sqrt_x_batch(&mut self, indices: &[usize]) {
+    pub(crate) fn sqrt_x_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -280,7 +348,7 @@ where
 
     /// Apply sqrt_x_adj to multiple qubits using combined bitmask operations.
     #[inline]
-    pub fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
+    pub(crate) fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -307,10 +375,10 @@ where
     /// Apply CZ to multiple pairs in a single pass.
     /// CZ pairs have cross-qubit dependencies so we use per-pair delegation (proven faster).
     #[inline]
-    pub fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
+    pub(crate) fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
         self.data.iter_mut().for_each(|pw| {
             for &(control, target) in pairs {
-                pw.cz(control, target);
+                pw.cz([control, target]);
             }
         });
     }
@@ -319,7 +387,7 @@ where
     /// H swaps x<->z bits (same as sqrt_y) but with different phase:
     /// phase += 2 when x=1 & z=1 (Y goes to -Y).
     #[inline]
-    pub fn h_batch(&mut self, indices: &[usize]) {
+    pub(crate) fn h_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -368,7 +436,7 @@ where
     }
 
     /// Batched `√Y`, skipping lost qubits.
-    pub fn sqrt_y_batch(&mut self, indices: &[usize]) {
+    pub(crate) fn sqrt_y_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_y_batch(indices);
             return;
@@ -382,7 +450,7 @@ where
     }
 
     /// Batched `(√Y)†`, skipping lost qubits.
-    pub fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
+    pub(crate) fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_y_adj_batch(indices);
             return;
@@ -396,7 +464,7 @@ where
     }
 
     /// Batched `√X`, skipping lost qubits.
-    pub fn sqrt_x_batch(&mut self, indices: &[usize]) {
+    pub(crate) fn sqrt_x_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_x_batch(indices);
             return;
@@ -410,7 +478,7 @@ where
     }
 
     /// Batched `(√X)†`, skipping lost qubits.
-    pub fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
+    pub(crate) fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_x_adj_batch(indices);
             return;
@@ -424,7 +492,7 @@ where
     }
 
     /// Batched `CZ`, skipping pairs with a lost qubit.
-    pub fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
+    pub(crate) fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
         if !self.any_lost_pair(pairs) {
             self.tableau.cz_batch(pairs);
             return;
@@ -438,7 +506,7 @@ where
     }
 
     /// Batched `H`, skipping lost qubits.
-    pub fn h_batch(&mut self, indices: &[usize]) {
+    pub(crate) fn h_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.h_batch(indices);
             return;
@@ -484,7 +552,7 @@ mod tests {
     fn test_sqrt_x_adj_stabilizer() {
         // Z → +Y
         let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
-        tab.sqrt_x_adj(0);
+        tab.sqrt_x_dag(0);
         let r = rows(&tab);
         assert_eq!(r[0], (true, false, 0), "destabilizer X should stay X");
         assert_eq!(r[1], (true, true, 0), "stabilizer Z should become +Y");
@@ -504,7 +572,7 @@ mod tests {
     fn test_sqrt_y_adj_stabilizer() {
         // Z → -X, X → +Z
         let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
-        tab.sqrt_y_adj(0);
+        tab.sqrt_y_dag(0);
         let r = rows(&tab);
         assert_eq!(r[0], (false, true, 0), "destabilizer X should become +Z");
         assert_eq!(r[1], (true, false, 2), "stabilizer Z should become -X");
@@ -515,7 +583,7 @@ mod tests {
         let initial = rows(&GeneralizedTableau::new(1, 1e-12));
         let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
         tab.sqrt_x(0);
-        tab.sqrt_x_adj(0);
+        tab.sqrt_x_dag(0);
         assert_eq!(rows(&tab), initial);
     }
 
@@ -524,7 +592,7 @@ mod tests {
         let initial = rows(&GeneralizedTableau::new(1, 1e-12));
         let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
         tab.sqrt_y(0);
-        tab.sqrt_y_adj(0);
+        tab.sqrt_y_dag(0);
         assert_eq!(rows(&tab), initial);
     }
 
@@ -590,7 +658,7 @@ mod tests {
         //   ZI →  ZI  (zc'=1^0^0=1; no phase)
         //   IZ →  ZZ  (zc'=0^0^1=1; no phase since xc=0)
         let mut tab: GeneralizedTableau<TestConfig> = GeneralizedTableau::new(2, 1e-12);
-        tab.cy(0, 1);
+        tab.cy([0, 1]);
         let r = rows2(&tab);
         assert_eq!(r[0], (true, false, true, true, 0), "XI should become +XY");
         assert_eq!(r[1], (false, true, true, false, 0), "IX should become ZX");
@@ -603,8 +671,8 @@ mod tests {
         // CY is self-inverse: CY² = I
         let initial = rows2(&GeneralizedTableau::new(2, 1e-12));
         let mut tab: GeneralizedTableau<TestConfig> = GeneralizedTableau::new(2, 1e-12);
-        tab.cy(0, 1);
-        tab.cy(0, 1);
+        tab.cy([0, 1]);
+        tab.cy([0, 1]);
         assert_eq!(rows2(&tab), initial);
     }
 
@@ -671,7 +739,7 @@ mod tests {
             tab_ind.h(0);
             tab_ind.s(2);
             for &i in &indices {
-                tab_ind.sqrt_y_adj(i);
+                tab_ind.sqrt_y_dag(i);
             }
             let mut tab_batch = TTab::new(n);
             tab_batch.h(0);
@@ -705,7 +773,7 @@ mod tests {
             tab_ind.h(1);
             tab_ind.s(4);
             for &i in &indices {
-                tab_ind.sqrt_x_adj(i);
+                tab_ind.sqrt_x_dag(i);
             }
             let mut tab_batch = TTab::new(n);
             tab_batch.h(1);
@@ -740,7 +808,7 @@ mod tests {
             tab_ind.h(2);
             tab_ind.h(4);
             for &(c, t) in &pairs {
-                tab_ind.cz(c, t);
+                tab_ind.cz([c, t]);
             }
             let mut tab_batch = TTab::new(n);
             tab_batch.h(0);

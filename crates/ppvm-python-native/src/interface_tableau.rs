@@ -67,7 +67,7 @@ macro_rules! create_interface {
             }
 
             pub fn s_adj(&mut self, addr0: usize) {
-                self.inner.s_adj(addr0);
+                self.inner.s_dag(addr0);
             }
 
             // clifford extensions
@@ -76,7 +76,7 @@ macro_rules! create_interface {
             }
 
             pub fn sqrt_x_adj(&mut self, addr0: usize) {
-                self.inner.sqrt_x_adj(addr0);
+                self.inner.sqrt_x_dag(addr0);
             }
 
             pub fn sqrt_y(&mut self, addr0: usize) {
@@ -84,19 +84,19 @@ macro_rules! create_interface {
             }
 
             pub fn sqrt_y_adj(&mut self, addr0: usize) {
-                self.inner.sqrt_y_adj(addr0);
+                self.inner.sqrt_y_dag(addr0);
             }
 
             pub fn cnot(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cnot(addr0, addr1);
+                self.inner.cnot([addr0, addr1]);
             }
 
             pub fn cy(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cy(addr0, addr1);
+                self.inner.cy([addr0, addr1]);
             }
 
             pub fn cz(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cz(addr0, addr1);
+                self.inner.cz([addr0, addr1]);
             }
 
             pub fn t(&mut self, addr0: usize) {

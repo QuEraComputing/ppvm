@@ -186,20 +186,20 @@ macro_rules! create_interface {
 
             #[pyo3(signature = (addr0, addr1, truncate = true))]
             pub fn cnot(&mut self, addr0: usize, addr1: usize, truncate: bool) {
-                self.inner.cnot(addr0, addr1);
+                self.inner.cnot([addr0, addr1]);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (addr0, addr1, truncate = true))]
             pub fn cz(&mut self, addr0: usize, addr1: usize, truncate: bool) {
-                self.inner.cz(addr0, addr1);
+                self.inner.cz([addr0, addr1]);
                 if truncate { self.inner.truncate(); }
             }
 
             // clifford extensions
             #[pyo3(signature = (addr0, truncate = true))]
             pub fn s_adj(&mut self, addr0: usize, truncate: bool) {
-                self.inner.s_adj(addr0);
+                self.inner.s_dag(addr0);
                 if truncate { self.inner.truncate(); }
             }
 
@@ -217,13 +217,13 @@ macro_rules! create_interface {
 
             #[pyo3(signature = (addr0, truncate = true))]
             pub fn sqrt_x_adj(&mut self, addr0: usize, truncate: bool) {
-                self.inner.sqrt_x_adj(addr0);
+                self.inner.sqrt_x_dag(addr0);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (addr0, truncate = true))]
             pub fn sqrt_y_adj(&mut self, addr0: usize, truncate: bool) {
-                self.inner.sqrt_y_adj(addr0);
+                self.inner.sqrt_y_dag(addr0);
                 if truncate { self.inner.truncate(); }
             }
 

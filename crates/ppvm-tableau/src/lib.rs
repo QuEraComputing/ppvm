@@ -21,7 +21,7 @@
 //! let mut tab: GeneralizedTableau<ByteF64<1>> =
 //!     GeneralizedTableau::new_with_seed(2, 1e-12, 0);
 //! tab.h(0);
-//! tab.cnot(0, 1);
+//! tab.cnot([0, 1]);
 //!
 //! let r0 = LossyMeasure::measure(&mut tab, 0);
 //! let r1 = LossyMeasure::measure(&mut tab, 1);

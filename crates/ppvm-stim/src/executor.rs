@@ -136,21 +136,21 @@ pub fn execute_prepared<T, I, C>(
                 GateName::H | GateName::HXZ => targets.iter().for_each(|&q| tab.h(q)),
                 GateName::S | GateName::SqrtZ => targets.iter().for_each(|&q| tab.s(q)),
                 GateName::SDag | GateName::SqrtZDag => {
-                    targets.iter().for_each(|&q| tab.s_adj(q));
+                    targets.iter().for_each(|&q| tab.s_dag(q));
                 }
                 GateName::SqrtX => targets.iter().for_each(|&q| tab.sqrt_x(q)),
-                GateName::SqrtXDag => targets.iter().for_each(|&q| tab.sqrt_x_adj(q)),
+                GateName::SqrtXDag => targets.iter().for_each(|&q| tab.sqrt_x_dag(q)),
                 GateName::SqrtY => targets.iter().for_each(|&q| tab.sqrt_y(q)),
-                GateName::SqrtYDag => targets.iter().for_each(|&q| tab.sqrt_y_adj(q)),
+                GateName::SqrtYDag => targets.iter().for_each(|&q| tab.sqrt_y_dag(q)),
                 GateName::Identity => {}
                 GateName::CX | GateName::ZCX | GateName::CNot => {
-                    targets.chunks_exact(2).for_each(|p| tab.cnot(p[0], p[1]));
+                    targets.chunks_exact(2).for_each(|p| tab.cnot([p[0], p[1]]));
                 }
                 GateName::CY | GateName::ZCY => {
-                    targets.chunks_exact(2).for_each(|p| tab.cy(p[0], p[1]));
+                    targets.chunks_exact(2).for_each(|p| tab.cy([p[0], p[1]]));
                 }
                 GateName::CZ | GateName::ZCZ => {
-                    targets.chunks_exact(2).for_each(|p| tab.cz(p[0], p[1]));
+                    targets.chunks_exact(2).for_each(|p| tab.cz([p[0], p[1]]));
                 }
                 GateName::Swap
                 | GateName::ISwap

@@ -35,7 +35,7 @@ type PhasedPauliWordNoHash<A, H> = PhasedPauliWord<A, H, PauliWord<A, H, false>>
 ///
 /// let mut tab: Tableau<ByteF64<1>> = Tableau::new(2);
 /// tab.h(0);
-/// tab.cnot(0, 1);
+/// tab.cnot([0, 1]);
 /// assert_eq!(tab.n_qubits, 2);
 /// assert_eq!(tab.stabilizers().len(), 2);
 /// ```
@@ -559,7 +559,7 @@ where
 /// let mut tab: GeneralizedTableau<ByteF64<1>> =
 ///     GeneralizedTableau::new_with_seed(2, 1e-12, 0);
 /// tab.h(0);
-/// tab.cnot(0, 1);
+/// tab.cnot([0, 1]);
 ///
 /// let r0 = LossyMeasure::measure(&mut tab, 0);
 /// let r1 = LossyMeasure::measure(&mut tab, 1);
@@ -670,7 +670,7 @@ where
                 let c = base + i;
                 let t = base + offset + i;
                 if !self.is_lost[c] && !self.is_lost[t] {
-                    Clifford::cz(&mut self.tableau, c, t);
+                    Clifford::cz(&mut self.tableau, [c, t]);
                 }
             }
         }
@@ -702,7 +702,7 @@ where
                 let c = word_c * bits_per_word + base_bit_c + i;
                 let t = word_t * bits_per_word + base_bit_t + i;
                 if !self.is_lost[c] && !self.is_lost[t] {
-                    Clifford::cz(&mut self.tableau, c, t);
+                    Clifford::cz(&mut self.tableau, [c, t]);
                 }
             }
         }
@@ -1066,7 +1066,7 @@ mod tests {
 
         // Individual
         for i in 0..count {
-            Clifford::cz(&mut tab1, base + i, base + offset + i);
+            Clifford::cz(&mut tab1, [base + i, base + offset + i]);
         }
 
         // Batch
@@ -1090,7 +1090,7 @@ mod tests {
 
         // Individual
         for i in 0..17 {
-            Clifford::cz(&mut tab1, i, 17 + i);
+            Clifford::cz(&mut tab1, [i, 17 + i]);
         }
 
         // Batch
@@ -1119,7 +1119,7 @@ mod tests {
         let mut tab2 = tab1.clone();
 
         for i in 0..count {
-            Clifford::cz(&mut tab1, base + i, base + offset + i);
+            Clifford::cz(&mut tab1, [base + i, base + offset + i]);
         }
 
         tab2.cz_block_pairs(base, offset, count);
@@ -1137,7 +1137,7 @@ mod tests {
         Clifford::s(&mut tab1, 5);
         let mut tab2 = tab1.clone();
 
-        Clifford::cz(&mut tab1, 2, 5);
+        Clifford::cz(&mut tab1, [2, 5]);
         tab2.cz_block_pairs(2, 3, 1);
 
         assert_eq!(snapshot_tableau(&tab1), snapshot_tableau(&tab2));
@@ -1169,7 +1169,7 @@ mod tests {
 
         // Individual via Clifford trait
         for i in 0..17 {
-            Clifford::cz(&mut tab1, i, 17 + i);
+            Clifford::cz(&mut tab1, [i, 17 + i]);
         }
 
         // Batch
@@ -1198,7 +1198,7 @@ mod tests {
             let c = i;
             let t = 4 + i;
             if !tab1.is_lost[c] && !tab1.is_lost[t] {
-                Clifford::cz(&mut tab1.tableau, c, t);
+                Clifford::cz(&mut tab1.tableau, [c, t]);
             }
         }
 

@@ -56,6 +56,7 @@ impl Coefficient for f64 {
         Float::sin_cos(*self)
     }
 
+    #[inline]
     fn cutoff(&self, threshold: f64) -> bool {
         self.abs() < threshold
     }
@@ -76,6 +77,7 @@ pub trait ComplexCoefficient: Coefficient {
 }
 
 impl Coefficient for num::complex::Complex<f64> {
+    #[inline]
     fn cutoff(&self, threshold: f64) -> bool {
         self.norm() < threshold
     }

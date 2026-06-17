@@ -10,6 +10,7 @@ approx = { version = "0.5.1", optional = true }
 bincode = { version = "2.0.1", optional = true }
 bitvec = "1.0.1"
 bon = "3.7.2"
+bytemuck = { version = "1", features = ["min_const_generics"] }
 dashmap = { version = "6.1.0", features = ["rayon"], optional = true }
 fxhash = "0.2.1"
 gxhash = { version = "3.5.0", features = ["deterministic"], optional = true }
@@ -51,4 +52,8 @@ harness = false
 
 [[bench]]
 name = "micro"
+harness = false
+
+[[bench]]
+name = "truncation-weight"
 harness = false

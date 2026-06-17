@@ -41,6 +41,7 @@ use std::fmt;
 use std::time::Instant;
 
 pub mod expm;
+mod mf_expm;
 pub use expm::{Csr, ExpmOpts, csr_from_triplets, csr_one_norm, expm_multiply, spmv_parallel};
 
 /// Words pack up to 128 qubits.
@@ -1357,33 +1358,24 @@ impl LindbladSpec {
         Ok(())
     }
 
-    /// Compute `exp(dt · M) · b` for the in-basis-restricted generator
-    /// `M`, either by building a CSR (`matrix_free == false`, default) or
-    /// matrix-free (`matrix_free == true`). Both paths use the same
-    /// Al-Mohy & Higham scaling-and-squaring algorithm.
+    /// Compute `exp(dt · M) · b` for the in-basis-restricted generator `M`,
+    /// matrix-free, via the external `quspin-expm` engine
+    /// ([`mf_expm::expm_apply_mf`]).
+    ///
+    /// `opts` and `matrix_free` are retained on the public [`Self::pc_step`]
+    /// surface for API stability (the Python bindings pass them), but the
+    /// real (`f64`) path is now unconditionally matrix-free and the
+    /// quspin engine selects its own truncation tolerance, so both are
+    /// ignored here.
     fn expm_step(
         &self,
         basis: &[Word],
         dt: f64,
         b: &[f64],
-        opts: ExpmOpts,
-        matrix_free: bool,
+        _opts: ExpmOpts,
+        _matrix_free: bool,
     ) -> Vec<f64> {
-        if matrix_free {
-            let basis_index = build_basis_index(basis);
-            let one_norm = self.one_norm_matrix_free(basis, &basis_index);
-            expm::expm_multiply_mf(
-                basis.len(),
-                one_norm,
-                |x, y| self.spmv_matrix_free(basis, &basis_index, x, y),
-                dt,
-                b,
-                opts,
-            )
-        } else {
-            let csr = self.generator_csr(basis);
-            expm_multiply(&csr, dt, b, opts)
-        }
+        mf_expm::expm_apply_mf(self, basis, dt, b)
     }
 
     /// Compute the unscaled list of `(output, coefficient)` pairs that

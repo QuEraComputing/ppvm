@@ -769,6 +769,36 @@ fn fork_copies_measurement_record() {
 }
 
 #[test]
+fn measure_many_returns_per_target() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(3, 1e-12);
+    t.x([0, 2]);
+    assert_eq!(
+        t.measure_many([0, 1, 2]),
+        vec![Some(true), Some(false), Some(true)]
+    );
+}
+
+#[test]
+fn reset_clears_to_zero() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(1, 1e-12);
+    t.x(0);
+    t.reset(0);
+    assert_eq!(t.measure(0), Some(false));
+}
+
+#[test]
+fn reset_x_then_measure_records_one() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(1, 1e-12);
+    t.x(0);
+    t.reset_x(0);
+    let _ = t.measure(0);
+    assert_eq!(t.current_measurement_record().len(), 1);
+}
+
+#[test]
 fn test_seed_reproducibility() {
     // Two tableaux initialized with the same seed must produce identical measurement
     // trajectories when subjected to the same gate sequence.

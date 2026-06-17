@@ -280,19 +280,19 @@ macro_rules! create_interface {
                 p: [f64; 15],
                 truncate: bool,
             ) {
-                self.inner.two_qubit_pauli_error(addr0, addr1, p);
+                self.inner.two_qubit_pauli_error([addr0, addr1], p);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (addr0, p, truncate = true))]
             pub fn depolarize(&mut self, addr0: usize, p: f64, truncate: bool) {
-                self.inner.depolarize(addr0, p);
+                self.inner.depolarize1(addr0, p);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (addr0, addr1, p, truncate = true))]
             pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64, truncate: bool) {
-                self.inner.depolarize2(addr0, addr1, p);
+                self.inner.depolarize2([addr0, addr1], p);
                 if truncate { self.inner.truncate(); }
             }
 

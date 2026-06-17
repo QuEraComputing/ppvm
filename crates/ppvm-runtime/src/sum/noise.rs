@@ -14,24 +14,27 @@ fn pauli_code<W: PauliWordTrait>(word: &W, addr: usize) -> usize {
 }
 
 impl<T: Config> PauliError<T> for PauliSum<T> {
-    fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
-        let one = T::Coeff::from(1.0);
-        let x_factor = one.clone() - p[1].clone() * 2.0 - p[2].clone() * 2.0;
-        let z_factor = one.clone() - p[0].clone() * 2.0 - p[1].clone() * 2.0;
-        let y_factor = one - p[0].clone() * 2.0 - p[2].clone() * 2.0;
+    fn pauli_error(&mut self, targets: impl Targets, p: [<T as Config>::Coeff; 3]) {
+        for addr0 in targets.each() {
+            let p = p.clone();
+            let one = T::Coeff::from(1.0);
+            let x_factor = one.clone() - p[1].clone() * 2.0 - p[2].clone() * 2.0;
+            let z_factor = one.clone() - p[0].clone() * 2.0 - p[1].clone() * 2.0;
+            let y_factor = one - p[0].clone() * 2.0 - p[2].clone() * 2.0;
 
-        self.scale(move |k, v| {
-            if k.get_lbit(addr0) {
-                return;
-            }
-            match pauli_code(k, addr0) {
-                0 => {}
-                1 => *v *= x_factor.clone(),
-                2 => *v *= z_factor.clone(),
-                3 => *v *= y_factor.clone(),
-                _ => unreachable!(),
-            }
-        });
+            self.scale(move |k, v| {
+                if k.get_lbit(addr0) {
+                    return;
+                }
+                match pauli_code(k, addr0) {
+                    0 => {}
+                    1 => *v *= x_factor.clone(),
+                    2 => *v *= z_factor.clone(),
+                    3 => *v *= y_factor.clone(),
+                    _ => unreachable!(),
+                }
+            });
+        }
     }
 }
 
@@ -46,7 +49,9 @@ fn one_minus_two_sum<C: Coefficient, const N: usize>(p: &[C; 15], indices: [usiz
 }
 
 impl<T: Config> TwoQubitPauliError<T> for PauliSum<T> {
-    fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [<T as Config>::Coeff; 15]) {
+    fn two_qubit_pauli_error(&mut self, targets: impl Targets, p: [<T as Config>::Coeff; 15]) {
+        for (addr0, addr1) in targets.pairs() {
+        let p = p.clone();
         self.scale(|k, v| match (k.get(addr0), k.get(addr1)) {
             (Pauli::I, Pauli::I) => {}
             (Pauli::I, Pauli::X) => {
@@ -100,31 +105,36 @@ impl<T: Config> TwoQubitPauliError<T> for PauliSum<T> {
                 // so we don't apply any noise
             }
         })
+        }
     }
 }
 
 impl<T: Config> Depolarizing<T> for PauliSum<T> {
-    fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        let factor = T::Coeff::from(1.0) - p * (4.0 / 3.0);
-        self.scale(move |k, v| {
-            if !k.get_lbit(addr0) && pauli_code(k, addr0) != 0 {
-                *v *= factor.clone();
-            }
-        });
+    fn depolarize1(&mut self, targets: impl Targets, p: T::Coeff) {
+        for addr0 in targets.each() {
+            let factor = T::Coeff::from(1.0) - p.clone() * (4.0 / 3.0);
+            self.scale(move |k, v| {
+                if !k.get_lbit(addr0) && pauli_code(k, addr0) != 0 {
+                    *v *= factor.clone();
+                }
+            });
+        }
     }
 }
 
 impl<T: Config> Depolarizing2<T> for PauliSum<T> {
-    fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff) {
-        let factor = T::Coeff::from(1.0) - p * (16.0 / 15.0);
-        self.scale(move |k, v| {
-            if k.get_lbit(addr0) || k.get_lbit(addr1) {
-                return;
-            }
-            if pauli_code(k, addr0) != 0 || pauli_code(k, addr1) != 0 {
-                *v *= factor.clone();
-            }
-        });
+    fn depolarize2(&mut self, targets: impl Targets, p: T::Coeff) {
+        for (addr0, addr1) in targets.pairs() {
+            let factor = T::Coeff::from(1.0) - p.clone() * (16.0 / 15.0);
+            self.scale(move |k, v| {
+                if k.get_lbit(addr0) || k.get_lbit(addr1) {
+                    return;
+                }
+                if pauli_code(k, addr0) != 0 || pauli_code(k, addr1) != 0 {
+                    *v *= factor.clone();
+                }
+            });
+        }
     }
 }
 

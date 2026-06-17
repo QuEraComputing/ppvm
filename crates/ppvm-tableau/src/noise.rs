@@ -62,32 +62,40 @@ macro_rules! impl_tableau_noise {
         impl<T: Config $($gen)*> Depolarizing<T> for $ty
         where $($bound)*
         {
-            fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-                self.depolarize_impl(addr0, p);
+            fn depolarize1(&mut self, targets: impl Targets, p: T::Coeff) {
+                for addr0 in targets.each() {
+                    self.depolarize_impl(addr0, p.clone());
+                }
             }
         }
 
         impl<T: Config $($gen)*> PauliError<T> for $ty
         where $($bound)*
         {
-            fn pauli_error(&mut self, addr0: usize, p: [T::Coeff; 3]) {
-                self.pauli_error_impl(addr0, p);
+            fn pauli_error(&mut self, targets: impl Targets, p: [T::Coeff; 3]) {
+                for addr0 in targets.each() {
+                    self.pauli_error_impl(addr0, p.clone());
+                }
             }
         }
 
         impl<T: Config $($gen)*> TwoQubitPauliError<T> for $ty
         where $($bound)*
         {
-            fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 15]) {
-                self.two_qubit_pauli_error_impl(addr0, addr1, p);
+            fn two_qubit_pauli_error(&mut self, targets: impl Targets, p: [T::Coeff; 15]) {
+                for (addr0, addr1) in targets.pairs() {
+                    self.two_qubit_pauli_error_impl(addr0, addr1, p.clone());
+                }
             }
         }
 
         impl<T: Config $($gen)*> Depolarizing2<T> for $ty
         where $($bound)*
         {
-            fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff) {
-                self.depolarize2_impl(addr0, addr1, p);
+            fn depolarize2(&mut self, targets: impl Targets, p: T::Coeff) {
+                for (addr0, addr1) in targets.pairs() {
+                    self.depolarize2_impl(addr0, addr1, p.clone());
+                }
             }
         }
     };
@@ -248,7 +256,7 @@ mod tests {
     #[test]
     fn depolarize_p0_no_change() {
         let mut t = tab(1);
-        t.depolarize(0, 0.0);
+        t.depolarize1(0, 0.0);
         assert!(!t.measure(0).unwrap());
     }
 
@@ -256,7 +264,7 @@ mod tests {
     fn depolarize_p1_does_not_mark_lost() {
         // With p=1.0 an error is always applied; verify is_lost is unaffected
         let mut t = tab(1);
-        t.depolarize(0, 1.0);
+        t.depolarize1(0, 1.0);
         assert!(!t.is_lost[0]);
     }
 
@@ -303,7 +311,7 @@ mod tests {
     #[test]
     fn two_qubit_pauli_error_zero_prob_no_change() {
         let mut t = tab(2);
-        t.two_qubit_pauli_error(0, 1, [0.0; 15]);
+        t.two_qubit_pauli_error([0, 1], [0.0; 15]);
         assert!(!t.measure(0).unwrap());
         assert!(!t.measure(1).unwrap());
     }
@@ -314,7 +322,7 @@ mod tests {
         let mut t = tab(2);
         let mut p = [0.0f64; 15];
         p[0] = 1.0;
-        t.two_qubit_pauli_error(0, 1, p);
+        t.two_qubit_pauli_error([0, 1], p);
         assert!(!t.measure(0).unwrap());
         assert!(t.measure(1).unwrap());
     }
@@ -325,7 +333,7 @@ mod tests {
         let mut t = tab(2);
         let mut p = [0.0f64; 15];
         p[3] = 1.0;
-        t.two_qubit_pauli_error(0, 1, p);
+        t.two_qubit_pauli_error([0, 1], p);
         assert!(t.measure(0).unwrap());
         assert!(!t.measure(1).unwrap());
     }
@@ -336,7 +344,7 @@ mod tests {
         let mut t = tab(2);
         let mut p = [0.0f64; 15];
         p[4] = 1.0;
-        t.two_qubit_pauli_error(0, 1, p);
+        t.two_qubit_pauli_error([0, 1], p);
         assert!(t.measure(0).unwrap());
         assert!(t.measure(1).unwrap());
     }
@@ -347,7 +355,7 @@ mod tests {
         let mut t = tab(2);
         let mut p = [0.0f64; 15];
         p[14] = 1.0;
-        t.two_qubit_pauli_error(0, 1, p);
+        t.two_qubit_pauli_error([0, 1], p);
         assert!(!t.measure(0).unwrap());
         assert!(!t.measure(1).unwrap());
     }
@@ -359,7 +367,7 @@ mod tests {
         t.is_lost[1] = true;
         let mut p = [0.0f64; 15];
         p[4] = 1.0; // XX — skipped entirely
-        t.two_qubit_pauli_error(0, 1, p);
+        t.two_qubit_pauli_error([0, 1], p);
         assert!(t.is_lost[0]);
         assert!(t.is_lost[1]);
     }
@@ -371,7 +379,7 @@ mod tests {
         t.is_lost[0] = true;
         let mut p = [0.0f64; 15];
         p[0] = 1.0; // IX
-        t.two_qubit_pauli_error(0, 1, p);
+        t.two_qubit_pauli_error([0, 1], p);
         assert!(!t.measure(1).unwrap()); // nothing applied to addr1
     }
 
@@ -380,7 +388,7 @@ mod tests {
     #[test]
     fn depolarize2_p0_no_change() {
         let mut t = tab(2);
-        t.depolarize2(0, 1, 0.0);
+        t.depolarize2([0, 1], 0.0);
         assert!(!t.measure(0).unwrap());
         assert!(!t.measure(1).unwrap());
     }
@@ -390,7 +398,7 @@ mod tests {
         let mut t = tab(2);
         t.is_lost[0] = true;
         t.is_lost[1] = true;
-        t.depolarize2(0, 1, 1.0);
+        t.depolarize2([0, 1], 1.0);
         assert!(t.is_lost[0]);
         assert!(t.is_lost[1]);
     }
@@ -399,7 +407,7 @@ mod tests {
     fn depolarize2_first_lost_p0_second_unchanged() {
         let mut t = tab(2);
         t.is_lost[0] = true;
-        t.depolarize2(0, 1, 0.0); // effective p on addr1 = 4/5 * 0 = 0
+        t.depolarize2([0, 1], 0.0); // effective p on addr1 = 4/5 * 0 = 0
         assert!(!t.measure(1).unwrap());
     }
 
@@ -407,7 +415,7 @@ mod tests {
     fn depolarize2_second_lost_p0_first_unchanged() {
         let mut t = tab(2);
         t.is_lost[1] = true;
-        t.depolarize2(0, 1, 0.0); // effective p on addr0 = 4/5 * 0 = 0
+        t.depolarize2([0, 1], 0.0); // effective p on addr0 = 4/5 * 0 = 0
         assert!(!t.measure(0).unwrap());
     }
 
@@ -497,13 +505,13 @@ mod tests {
         let seed = 42u64;
         let mut t_active = tab(1);
         t_active.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
-        t_active.depolarize(0, 0.3);
+        t_active.depolarize1(0, 0.3);
         let next_active: f64 = t_active.tableau.rng.random();
 
         let mut t_lost = tab(1);
         t_lost.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
         t_lost.is_lost[0] = true;
-        t_lost.depolarize(0, 0.3);
+        t_lost.depolarize1(0, 0.3);
         let next_lost: f64 = t_lost.tableau.rng.random();
 
         assert_eq!(next_active, next_lost);
@@ -539,7 +547,7 @@ mod tests {
         let ones = (0..trials)
             .filter(|_| {
                 let mut t = tab(1);
-                t.depolarize(0, p);
+                t.depolarize1(0, p);
                 t.measure(0).unwrap()
             })
             .count();
@@ -563,7 +571,7 @@ mod tests {
         let ones = (0..trials)
             .filter(|_| {
                 let mut t = tab(2);
-                t.depolarize2(0, 1, p);
+                t.depolarize2([0, 1], p);
                 t.measure(0).unwrap()
             })
             .count();

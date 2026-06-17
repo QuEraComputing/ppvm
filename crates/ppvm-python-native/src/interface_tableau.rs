@@ -143,15 +143,15 @@ macro_rules! create_interface {
             }
 
             pub fn depolarize(&mut self, addr0: usize, p: f64) {
-                self.inner.depolarize(addr0, p);
+                self.inner.depolarize1(addr0, p);
             }
 
             pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64) {
-                self.inner.depolarize2(addr0, addr1, p);
+                self.inner.depolarize2([addr0, addr1], p);
             }
 
             pub fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [f64; 15]) {
-                self.inner.two_qubit_pauli_error(addr0, addr1, p);
+                self.inner.two_qubit_pauli_error([addr0, addr1], p);
             }
 
             pub fn loss_channel(&mut self, addr0: usize, p: f64) {

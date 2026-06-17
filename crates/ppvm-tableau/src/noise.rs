@@ -149,6 +149,9 @@ where
 
         // NOTE: this is O(n^2) but also potentially removes coefficients, which is nice
         let outcome = self.measure(addr0);
+        // A loss event is not a logical measurement: keep the measurement
+        // record neutral by dropping the entry the internal `measure` pushed.
+        self.measurement_record.pop();
         if let Some(true) = outcome {
             // flip back to 0
             self.x(addr0);
@@ -443,6 +446,16 @@ mod tests {
         t.loss_channel(0, 1.0);
         assert!(t.is_lost[0]);
         assert!(t.measure(0).is_none()); // Reset to |0⟩ before marking lost
+    }
+
+    #[test]
+    fn loss_channel_does_not_pollute_measurement_record() {
+        // A loss event is not a logical measurement and must leave the
+        // measurement record untouched.
+        let mut t = tab(1);
+        t.x(0);
+        t.loss_channel(0, 1.0);
+        assert!(t.current_measurement_record().is_empty());
     }
 
     #[test]

@@ -15,13 +15,16 @@ pub trait Targets {
     where
         Self: Sized,
     {
-        let v: Vec<usize> = self.each().collect();
-        assert!(
-            v.len() % 2 == 0,
-            "two-qubit gate requires an even number of targets, got {}",
-            v.len()
-        );
-        (0..v.len() / 2).map(move |i| (v[2 * i], v[2 * i + 1]))
+        let mut it = self.each();
+        std::iter::from_fn(move || match it.next() {
+            None => None,
+            Some(a) => {
+                let b = it
+                    .next()
+                    .expect("two-qubit gate requires an even number of targets");
+                Some((a, b))
+            }
+        })
     }
 }
 
@@ -33,7 +36,7 @@ impl Targets for usize {
 
 impl Targets for &[usize] {
     fn each(self) -> impl Iterator<Item = usize> {
-        self.to_vec().into_iter()
+        self.iter().copied()
     }
 }
 

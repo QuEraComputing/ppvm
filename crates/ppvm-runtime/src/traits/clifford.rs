@@ -95,25 +95,22 @@ pub trait CliffordExtensions: Clifford {
 
 impl<T: PauliWordTrait> Clifford for T {
     #[inline]
-    fn x(&mut self, targets: impl crate::traits::Targets) {
+    fn x(&mut self, _targets: impl crate::traits::Targets) {
         // X * I * X = I    00 -> 00, 0
         // X * X * X = X    10 -> 10, 0
         // X * Z * X = -Z   01 -> 01, 1
         // X * Y * X = -Y   11 -> 11, 1
         // word-level no-op: phase tracked at PhasedPauliWord level
-        for _index in targets.each() {}
     }
 
     #[inline]
-    fn y(&mut self, targets: impl crate::traits::Targets) {
+    fn y(&mut self, _targets: impl crate::traits::Targets) {
         // word-level no-op
-        for _index in targets.each() {}
     }
 
     #[inline]
-    fn z(&mut self, targets: impl crate::traits::Targets) {
+    fn z(&mut self, _targets: impl crate::traits::Targets) {
         // word-level no-op
-        for _index in targets.each() {}
     }
 
     #[inline]

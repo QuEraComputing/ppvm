@@ -24,8 +24,8 @@ use quspin_types::{ExpmComputation, LinearOperator, QuSpinError};
 use rayon::prelude::*;
 
 /// Borrowed matrix-free view of the in-basis-restricted Lindbladian
-/// generator `M` (the same matrix [`LindbladSpec::generator_csr`] would
-/// build, never materialised).
+/// generator `M` (the in-basis-restricted generator `M`, never
+/// materialised).
 ///
 /// Borrowed, not owned: `quspin-types` provides a blanket
 /// `LinearOperator` impl for `&T`, so `ExpmOp::from_parts(op, …)` accepts a

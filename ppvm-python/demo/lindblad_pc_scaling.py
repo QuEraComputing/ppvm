@@ -124,7 +124,6 @@ def run_pc_steps(L_op, L, site0, dt, n_steps, tau_add, num_threads):
             dt,
             tau_add,
             protected=protected,
-            parallel_threshold=0,
             num_threads=num_threads,
         )
         times.append(time.perf_counter() - t0)

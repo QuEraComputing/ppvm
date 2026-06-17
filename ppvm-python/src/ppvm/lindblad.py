@@ -233,19 +233,14 @@ class Lindbladian:
         drop_tol: float = 0.0,
         K: float = 5.0,
         protected_arr: np.ndarray | None = None,
-        expm_tol: float = 1e-12,
-        parallel_threshold: int = 50_000,
         num_threads: int | None = None,
-        matrix_free: bool = False,
-        max_krylov_m: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """One predictor-corrector adaptive step.
 
         All work — leakage expansion, matrix-exponential step, second-hop
         re-expansion, corrector — runs in Rust; SciPy is not required.
-        The matrix exponential uses Al-Mohy & Higham scaling-and-squaring
-        with rayon-parallel SpMV when the restricted generator has more
-        than ``parallel_threshold`` nonzeros.
+        The matrix-exponential action is computed matrix-free via the external
+        ``quspin-expm`` crate (Al-Mohy & Higham scaling-and-squaring).
 
         Tolerances. ``drop_tol`` prunes basis entries whose absolute
         coefficient is below this threshold after the corrector (unless
@@ -258,20 +253,6 @@ class Lindbladian:
 
         ``num_threads``, when set, pins this call to a freshly-built rayon
         pool of that size — useful for benchmarking parallel scaling.
-
-        ``matrix_free``, when ``True``, skips the per-step CSR build and
-        does each Krylov-Taylor SpMV by recomputing ``L*`` on the fly.
-        Saves ~CSR storage worth of RSS (significant once
-        ``n_basis ≳ 10⁵``); costs more compute per matvec, so wall is
-        higher except in the bandwidth-bound regime. Default ``False``
-        keeps the CSR path.
-
-        ``max_krylov_m``, when set, caps the Krylov-Taylor degree
-        ``m_star`` considered by the inner ``select_ms``. ``None``
-        (default) uses the full table up to ``m=30``; smaller values
-        trade more outer scaling-and-squaring iterations (more matvecs)
-        for less Krylov scratch memory. Mostly relevant at large ``n``
-        when ``m × n × 8 B`` of Krylov vectors dominates RSS.
 
         Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown
         (or shrunk, if ``drop_tol`` pruned entries).
@@ -293,11 +274,7 @@ class Lindbladian:
             float(tau_add),
             float(drop_tol),
             np.ascontiguousarray(protected_arr, dtype=np.uint8),
-            float(expm_tol),
-            int(parallel_threshold),
             None if num_threads is None else int(num_threads),
-            bool(matrix_free),
-            None if max_krylov_m is None else int(max_krylov_m),
         )
 
     def rk4_step_arr(
@@ -349,8 +326,6 @@ class Lindbladian:
         drop_tol: float = 0.0,
         K: float = 5.0,
         protected: Sequence[str] | None = None,
-        expm_tol: float = 1e-12,
-        parallel_threshold: int = 50_000,
         num_threads: int | None = None,
     ) -> tuple[list[str], np.ndarray]:
         """String-keyed variant of :meth:`pc_step_arr`."""
@@ -367,8 +342,6 @@ class Lindbladian:
             drop_tol,
             K,
             protected_arr,
-            expm_tol,
-            parallel_threshold,
             num_threads,
         )
         return _codes_to_basis(new_basis_arr), new_coeffs

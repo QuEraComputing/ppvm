@@ -42,7 +42,6 @@ use std::time::Instant;
 
 pub mod expm;
 mod mf_expm;
-pub use expm::{Csr, ExpmOpts, csr_from_triplets, csr_one_norm, expm_multiply, spmv_parallel};
 
 /// Words pack up to 128 qubits.
 const W_U64: usize = 2;
@@ -125,28 +124,6 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
-
-/// `Send + Sync` wrapper around `*mut T` for parallel scatter writes from
-/// rayon tasks into pre-allocated arrays. Caller must guarantee that the
-/// writes target disjoint indices.
-///
-/// The field is intentionally private so closures that use [`Self::write`]
-/// capture the whole struct (which is `Send + Sync`) rather than the
-/// inner `*mut T` (which is not) — Rust 2021's disjoint-field capture
-/// would otherwise peel the wrapper.
-#[derive(Clone, Copy)]
-struct SendPtr<T>(*mut T);
-unsafe impl<T> Send for SendPtr<T> {}
-unsafe impl<T> Sync for SendPtr<T> {}
-
-impl<T> SendPtr<T> {
-    /// SAFETY: caller guarantees `offset` is in bounds and that no other
-    /// thread writes to the same offset.
-    #[inline(always)]
-    unsafe fn write(self, offset: usize, value: T) {
-        unsafe { self.0.add(offset).write(value) }
-    }
-}
 
 /// Per-phase timing breakdown (microseconds) returned by
 /// [`LindbladSpec::pc_step_timed`].
@@ -735,119 +712,9 @@ impl LindbladSpec {
         flat
     }
 
-    /// Build the generator restricted to `basis` directly in CSR form,
-    /// skipping the intermediate `(row, col, val)` triplet materialisation.
-    ///
-    /// Algorithm: each task computes its column's contributions and writes
-    /// them into a thread-local `(col_idx, values)` buffer plus a per-row
-    /// count. Counts are then prefix-summed across threads into the final
-    /// CSR `row_ptr`, and a second parallel pass scatters each task's data
-    /// into the right CSR positions. This avoids both the
-    /// `Vec<Vec<...>>` → `Vec<...>` flatten *and* the sequential
-    /// `from_triplets` count-and-scatter that dominated the original
-    /// `generator_csr` (~40% of PC-step wall time).
-    pub fn generator_csr(&self, basis: &[Word]) -> Csr {
-        let n = basis.len();
-        if n == 0 {
-            return Csr::new((0, 0), vec![0], Vec::new(), Vec::new());
-        }
-
-        let index = build_basis_index(basis);
-
-        // Phase 1: per-column, collect `(row, value)` pairs (already
-        // filtered to in-basis), in parallel with thread-local scratch.
-        let cols: Vec<Vec<(u32, f64)>> = basis
-            .par_iter()
-            .map_init(
-                || {
-                    (
-                        Vec::<u32>::with_capacity(self.n_qubits),
-                        Vec::<u32>::with_capacity(128),
-                        FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
-                            128,
-                            FxBuildHasher::default(),
-                        ),
-                    )
-                },
-                |(s1, s2, lm), p| {
-                    let terms = self.compute_action_terms(p, s1, s2, lm);
-                    let mut out = Vec::with_capacity(terms.len());
-                    for (w, v) in terms.iter() {
-                        if let Some(&row) = index.get(w) {
-                            out.push((row, *v));
-                        }
-                    }
-                    out
-                },
-            )
-            .collect();
-
-        // Phase 2: per-row counts. Each task scans its column and bumps
-        // an atomic per-row counter; total cost is `O(nnz / threads)`.
-        use std::sync::atomic::{AtomicU32, Ordering};
-        let row_counts: Vec<AtomicU32> = (0..n).map(|_| AtomicU32::new(0)).collect();
-        cols.par_iter().for_each(|col_data| {
-            for &(row, _) in col_data.iter() {
-                row_counts[row as usize].fetch_add(1, Ordering::Relaxed);
-            }
-        });
-
-        // Phase 3: prefix-sum the counts into `row_ptr`. Sequential but
-        // tiny (`O(n)`).
-        let mut row_ptr = vec![0usize; n + 1];
-        for i in 0..n {
-            let c = row_counts[i].load(Ordering::Relaxed) as usize;
-            row_ptr[i + 1] = row_ptr[i] + c;
-        }
-        let nnz = row_ptr[n];
-
-        // Phase 4: scatter. Reuse `row_counts` as a per-row write offset
-        // (atomic fetch-and-add); each task writes its column's entries
-        // into the row's allocated slot. The increments target distinct
-        // rows mostly, and even when they collide, atomics on `Relaxed`
-        // are cheap on modern x86 / ARM.
-        for c in row_counts.iter() {
-            c.store(0, Ordering::Relaxed);
-        }
-        // We need parallel writes into shared `indices` and `data`.
-        // Safety: each `(row, slot)` pair is unique by construction (every
-        // (row, col) appears at most once per column, and atomic increment
-        // gives a unique slot per (row, write) event). We use raw-pointer
-        // writes inside `unsafe` to express this without RwLock overhead.
-        let mut indices = vec![0u32; nnz];
-        let mut data = vec![0f64; nnz];
-        let indices_ptr = SendPtr(indices.as_mut_ptr());
-        let data_ptr = SendPtr(data.as_mut_ptr());
-        let row_ptr_ref: &[usize] = &row_ptr;
-        let row_counts_ref: &[AtomicU32] = &row_counts;
-        // `move` on the closure forces whole-struct capture of `SendPtr`
-        // (rust 2021 edition does field-level capture by default, which
-        // would peel the inner `*mut T` and leak the !Sync). All captures
-        // are Copy (SendPtr) or `&` (refs), so `Fn` is still satisfied.
-        cols.par_iter()
-            .enumerate()
-            .for_each(move |(col, col_data)| {
-                for &(row, v) in col_data.iter() {
-                    let slot_offset = row_counts_ref[row as usize].fetch_add(1, Ordering::Relaxed);
-                    let pos = row_ptr_ref[row as usize] + slot_offset as usize;
-                    // SAFETY: each `pos` is unique (atomic gives a unique slot
-                    // per (row, write event)) and `pos < nnz` (counter bounded
-                    // by precomputed row count).
-                    unsafe {
-                        indices_ptr.write(pos, col as u32);
-                        data_ptr.write(pos, v);
-                    }
-                }
-            });
-
-        Csr::new_from_unsorted((n, n), row_ptr, indices, data)
-            .map_err(|(_, _, _, e)| e)
-            .expect("invalid CSR structure")
-    }
-
     /// Matrix-free SpMV: `y ← M · x` where `M` is the in-basis-restricted
-    /// generator (same matrix that [`Self::generator_csr`] would build, but
-    /// never materialised). For each basis column `j` with `x[j] != 0`,
+    /// generator (the in-basis-restricted generator `M`, never materialised).
+    /// For each basis column `j` with `x[j] != 0`,
     /// compute `L*(basis[j])`, look up each output Pauli in `basis_index`,
     /// and accumulate `v · x[j]` into `y` at the matching row.
     ///
@@ -911,42 +778,6 @@ impl LindbladSpec {
                 *yi += pi;
             }
         }
-    }
-
-    /// Matrix 1-norm `max_j Σ_i |M_{ij}|` of the in-basis-restricted
-    /// generator, computed matrix-free. Used by [`expm::expm_multiply_mf`]
-    /// to pick the Taylor `(m, s)` parameters.
-    pub fn one_norm_matrix_free(
-        &self,
-        basis: &[Word],
-        basis_index: &FxHashMap<Word, u32>,
-    ) -> f64 {
-        if basis.is_empty() {
-            return 0.0;
-        }
-        basis
-            .par_iter()
-            .map_init(
-                || {
-                    (
-                        Vec::<u32>::with_capacity(self.n_qubits),
-                        Vec::<u32>::with_capacity(128),
-                        FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
-                            128,
-                            FxBuildHasher::default(),
-                        ),
-                    )
-                },
-                |(s1, s2, lm), p| {
-                    let terms = self.compute_action_terms(p, s1, s2, lm);
-                    terms
-                        .iter()
-                        .filter(|(w, _)| basis_index.contains_key(w))
-                        .map(|(_, v)| v.abs())
-                        .sum::<f64>()
-                },
-            )
-            .reduce(|| 0.0, f64::max)
     }
 
     /// Apply `L*` to the Pauli sum `Σ_j coeffs[j] · basis[j]` and return
@@ -1185,12 +1016,8 @@ impl LindbladSpec {
     /// rayon thread pool of that size — useful for benchmarking parallel
     /// scaling. When `None`, the global rayon pool is used.
     ///
-    /// `matrix_free`, when `true`, computes `exp(dt·M)·b` without
-    /// materialising the in-basis CSR generator: each Krylov-Taylor SpMV
-    /// re-evaluates `L*(p)` per basis column. Trades wall (more compute
-    /// per matvec) for memory (no CSR storage). Default `false` keeps the
-    /// pre-existing CSR path. Useful when the basis is large enough that
-    /// CSR storage dominates peak RSS — typically at `n_basis ≳ 10⁵`.
+    /// The matrix-exponential action is computed matrix-free via the external
+    /// `quspin-expm` engine; the in-basis generator is never materialised.
     #[allow(clippy::too_many_arguments)]
     pub fn pc_step(
         &self,
@@ -1200,9 +1027,7 @@ impl LindbladSpec {
         tau_add: f64,
         drop_tol: f64,
         protected: &[Word],
-        opts: ExpmOpts,
         num_threads: Option<usize>,
-        matrix_free: bool,
     ) -> Result<(), Error> {
         if let Some(n) = num_threads {
             let pool = rayon::ThreadPoolBuilder::new()
@@ -1210,10 +1035,10 @@ impl LindbladSpec {
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
             pool.install(|| {
-                self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected, opts, matrix_free)
+                self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected)
             })
         } else {
-            self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected, opts, matrix_free)
+            self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected)
         }
     }
 
@@ -1230,9 +1055,7 @@ impl LindbladSpec {
         tau_add: f64,
         drop_tol: f64,
         protected: &[Word],
-        opts: ExpmOpts,
         num_threads: Option<usize>,
-        matrix_free: bool,
     ) -> Result<PcStepTimings, Error> {
         if let Some(n) = num_threads {
             let pool = rayon::ThreadPoolBuilder::new()
@@ -1240,14 +1063,10 @@ impl LindbladSpec {
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
             pool.install(|| {
-                self.pc_step_inner_timed(
-                    basis, coeffs, dt, tau_add, drop_tol, protected, opts, matrix_free,
-                )
+                self.pc_step_inner_timed(basis, coeffs, dt, tau_add, drop_tol, protected)
             })
         } else {
-            self.pc_step_inner_timed(
-                basis, coeffs, dt, tau_add, drop_tol, protected, opts, matrix_free,
-            )
+            self.pc_step_inner_timed(basis, coeffs, dt, tau_add, drop_tol, protected)
         }
     }
 
@@ -1259,8 +1078,6 @@ impl LindbladSpec {
         tau_add: f64,
         drop_tol: f64,
         protected: &[Word],
-        opts: ExpmOpts,
-        matrix_free: bool,
     ) -> Result<PcStepTimings, Error> {
         let mut t = PcStepTimings::default();
 
@@ -1277,16 +1094,12 @@ impl LindbladSpec {
         }
         t.expand1_us = t0.elapsed().as_micros() as u64;
 
-        // Predictor: gencsr1 (or one_norm build for mf) + expm1.
-        // For matrix-free, the "gencsr" timer captures the one-norm pass.
-        // `coeffs` is read-only here, so we don't clone it — it serves as
-        // the pre-step input for the corrector below as well.
+        // Predictor: expm1. `coeffs` is read-only here, so we don't clone
+        // it — it serves as the pre-step input for the corrector below as
+        // well.
         let t0 = Instant::now();
-        let coeffs_predict = self.expm_step(basis, dt, coeffs, opts, matrix_free);
+        let coeffs_predict = self.expm_step(basis, dt, coeffs);
         t.expm1_us = t0.elapsed().as_micros() as u64;
-        if !matrix_free {
-            t.gencsr1_us = 0;
-        }
 
         let t0 = Instant::now();
         let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, Some(tau_add))?;
@@ -1303,11 +1116,8 @@ impl LindbladSpec {
         t.expand2_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
-        *coeffs = self.expm_step(basis, dt, coeffs, opts, matrix_free);
+        *coeffs = self.expm_step(basis, dt, coeffs);
         t.expm2_us = t0.elapsed().as_micros() as u64;
-        if !matrix_free {
-            t.gencsr2_us = 0;
-        }
 
         prune_basis(basis, coeffs, drop_tol, protected);
 
@@ -1322,8 +1132,6 @@ impl LindbladSpec {
         tau_add: f64,
         drop_tol: f64,
         protected: &[Word],
-        opts: ExpmOpts,
-        matrix_free: bool,
     ) -> Result<(), Error> {
         // 1. First-hop expansion. After this, `coeffs` contains the pre-step
         // coefficients followed by zeros for the newly-added leakage strings.
@@ -1338,7 +1146,7 @@ impl LindbladSpec {
         }
         // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
         // new owned vector with the predicted state.
-        let coeffs_predict = self.expm_step(basis, dt, coeffs, opts, matrix_free);
+        let coeffs_predict = self.expm_step(basis, dt, coeffs);
         // 3. Second-hop expansion from the predicted state. After leakage2
         // we no longer need `coeffs_predict`. Extend `coeffs` with zeros for
         // any newly-added second-hop strings so it remains a valid input
@@ -1352,7 +1160,7 @@ impl LindbladSpec {
             }
         }
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.
-        *coeffs = self.expm_step(basis, dt, coeffs, opts, matrix_free);
+        *coeffs = self.expm_step(basis, dt, coeffs);
         // 5. Prune basis entries below `drop_tol` (protected words never dropped).
         prune_basis(basis, coeffs, drop_tol, protected);
         Ok(())
@@ -1360,21 +1168,9 @@ impl LindbladSpec {
 
     /// Compute `exp(dt · M) · b` for the in-basis-restricted generator `M`,
     /// matrix-free, via the external `quspin-expm` engine
-    /// ([`mf_expm::expm_apply_mf`]).
-    ///
-    /// `opts` and `matrix_free` are retained on the public [`Self::pc_step`]
-    /// surface for API stability (the Python bindings pass them), but the
-    /// real (`f64`) path is now unconditionally matrix-free and the
-    /// quspin engine selects its own truncation tolerance, so both are
-    /// ignored here.
-    fn expm_step(
-        &self,
-        basis: &[Word],
-        dt: f64,
-        b: &[f64],
-        _opts: ExpmOpts,
-        _matrix_free: bool,
-    ) -> Vec<f64> {
+    /// ([`mf_expm::expm_apply_mf`]). The generator is never materialised and
+    /// the quspin engine selects its own truncation tolerance.
+    fn expm_step(&self, basis: &[Word], dt: f64, b: &[f64]) -> Vec<f64> {
         mf_expm::expm_apply_mf(self, basis, dt, b)
     }
 

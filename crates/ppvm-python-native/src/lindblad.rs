@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use num::Complex;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use ppvm_lindblad::{
-    ExpmOpts, JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes,
+    JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes,
 };
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -207,11 +207,7 @@ impl LindbladSpec {
         basis, coeffs, dt, tau_add,
         drop_tol = 0.0,
         protected = None,
-        expm_tol = 1e-12,
-        parallel_threshold = 50_000,
         num_threads = None,
-        matrix_free = false,
-        max_krylov_m = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step<'py>(
@@ -223,11 +219,7 @@ impl LindbladSpec {
         tau_add: f64,
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
-        expm_tol: f64,
-        parallel_threshold: usize,
         num_threads: Option<usize>,
-        matrix_free: bool,
-        max_krylov_m: Option<u32>,
     ) -> PyResult<PyPauliMap<'py>> {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
@@ -246,11 +238,6 @@ impl LindbladSpec {
         } else {
             Vec::new()
         };
-        let opts = ExpmOpts {
-            tol: expm_tol,
-            parallel_threshold,
-            max_krylov_m,
-        };
         self.inner
             .pc_step(
                 &mut basis_words,
@@ -259,9 +246,7 @@ impl LindbladSpec {
                 tau_add,
                 drop_tol,
                 &protected_words,
-                opts,
                 num_threads,
-                matrix_free,
             )
             .map_err(map_err)?;
 
@@ -276,11 +261,7 @@ impl LindbladSpec {
         basis, coeffs, dt, tau_add,
         drop_tol = 0.0,
         protected = None,
-        expm_tol = 1e-12,
-        parallel_threshold = 50_000,
         num_threads = None,
-        matrix_free = false,
-        max_krylov_m = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step_timed<'py>(
@@ -292,11 +273,7 @@ impl LindbladSpec {
         tau_add: f64,
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
-        expm_tol: f64,
-        parallel_threshold: usize,
         num_threads: Option<usize>,
-        matrix_free: bool,
-        max_krylov_m: Option<u32>,
     ) -> PyResult<(PyPauliMap<'py>, Bound<'py, pyo3::types::PyDict>)> {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
@@ -315,11 +292,6 @@ impl LindbladSpec {
         } else {
             Vec::new()
         };
-        let opts = ExpmOpts {
-            tol: expm_tol,
-            parallel_threshold,
-            max_krylov_m,
-        };
         let timings = self
             .inner
             .pc_step_timed(
@@ -329,9 +301,7 @@ impl LindbladSpec {
                 tau_add,
                 drop_tol,
                 &protected_words,
-                opts,
                 num_threads,
-                matrix_free,
             )
             .map_err(map_err)?;
 

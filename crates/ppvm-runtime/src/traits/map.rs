@@ -74,6 +74,14 @@ pub trait ACMapInsert<
     where
         F: Fn(&W, &mut V) -> Option<(W, V)> + Sync + Send;
 
+    /// Like [`map_insert`](Self::map_insert) but appends produced entries
+    /// into a plain `Vec` (a push per entry, no hashing) instead of a map.
+    /// The caller merges the buffer into the destination map afterwards,
+    /// avoiding a second hashmap probe per produced entry.
+    fn map_insert_vec<F>(&mut self, dest: &mut Vec<(W, V)>, f: F)
+    where
+        F: Fn(&W, &mut V) -> Option<(W, V)> + Sync + Send;
+
     /// Same as [`map_insert`](Self::map_insert) but `f` may return a
     /// `Vec` of new entries to be inserted into `dest`.
     fn map_insert_multiple<F>(&mut self, dest: &mut Self, f: F)

@@ -236,7 +236,11 @@ where
     <T::Storage as BitView>::Store: PrimInt,
 {
     /// Build per-word bitmasks from a list of qubit indices.
-    /// Returns (masks, n_words) on a stack-allocated array (max 8 words = 512 qubits).
+    ///
+    /// Returns `(masks, n_words)` on a stack-allocated array that holds at most
+    /// 8 words (512 qubits). Returns `None` when there are no rows OR when the
+    /// storage is wider than the mask array can hold; callers must fall back to
+    /// the per-qubit gate path in that case.
     #[inline]
     fn build_masks(
         &self,
@@ -246,7 +250,11 @@ where
             return None;
         }
         let n_words = self.data[0].word.xbits.data.as_raw_slice().len();
-        debug_assert!(n_words <= 8, "Storage exceeds 8 words");
+        if n_words > 8 {
+            // Storage too wide for the stack-allocated mask array; the caller
+            // falls back to applying the gate one qubit at a time.
+            return None;
+        }
         let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
         let one = <T::Storage as BitView>::Store::one();
         let zero = <T::Storage as BitView>::Store::zero();
@@ -265,7 +273,10 @@ where
     pub fn sqrt_y_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
-            None => return,
+            None => {
+                <Self as CliffordExtensions>::sqrt_y(self, indices);
+                return;
+            }
         };
         let zero = <T::Storage as BitView>::Store::zero();
 
@@ -295,7 +306,10 @@ where
     pub fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
-            None => return,
+            None => {
+                <Self as CliffordExtensions>::sqrt_y_dag(self, indices);
+                return;
+            }
         };
         let zero = <T::Storage as BitView>::Store::zero();
 
@@ -325,7 +339,10 @@ where
     pub fn sqrt_x_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
-            None => return,
+            None => {
+                <Self as CliffordExtensions>::sqrt_x(self, indices);
+                return;
+            }
         };
         let zero = <T::Storage as BitView>::Store::zero();
 
@@ -351,7 +368,10 @@ where
     pub fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
-            None => return,
+            None => {
+                <Self as CliffordExtensions>::sqrt_x_dag(self, indices);
+                return;
+            }
         };
         let zero = <T::Storage as BitView>::Store::zero();
 
@@ -390,7 +410,10 @@ where
     pub(crate) fn h_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
-            None => return,
+            None => {
+                <Self as Clifford>::h(self, indices);
+                return;
+            }
         };
         let zero = <T::Storage as BitView>::Store::zero();
 

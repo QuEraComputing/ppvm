@@ -18,7 +18,7 @@ use numpy::{
     PyReadonlyArray2,
 };
 use ppvm_lindblad::{
-    ExpmOpts, JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes,
+    JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes,
 };
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -210,11 +210,7 @@ impl LindbladSpec {
         basis, coeffs, dt, tau_add,
         drop_tol = 0.0,
         protected = None,
-        expm_tol = 1e-12,
-        parallel_threshold = 50_000,
         num_threads = None,
-        matrix_free = false,
-        max_krylov_m = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step<'py>(
@@ -226,11 +222,7 @@ impl LindbladSpec {
         tau_add: f64,
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
-        expm_tol: f64,
-        parallel_threshold: usize,
         num_threads: Option<usize>,
-        matrix_free: bool,
-        max_krylov_m: Option<u32>,
     ) -> PyResult<PyPauliMap<'py>> {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
@@ -249,11 +241,6 @@ impl LindbladSpec {
         } else {
             Vec::new()
         };
-        let opts = ExpmOpts {
-            tol: expm_tol,
-            parallel_threshold,
-            max_krylov_m,
-        };
         self.inner
             .pc_step(
                 &mut basis_words,
@@ -262,9 +249,7 @@ impl LindbladSpec {
                 tau_add,
                 drop_tol,
                 &protected_words,
-                opts,
                 num_threads,
-                matrix_free,
             )
             .map_err(map_err)?;
 
@@ -279,11 +264,7 @@ impl LindbladSpec {
         basis, coeffs, dt, tau_add,
         drop_tol = 0.0,
         protected = None,
-        expm_tol = 1e-12,
-        parallel_threshold = 50_000,
         num_threads = None,
-        matrix_free = false,
-        max_krylov_m = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step_timed<'py>(
@@ -295,11 +276,7 @@ impl LindbladSpec {
         tau_add: f64,
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
-        expm_tol: f64,
-        parallel_threshold: usize,
         num_threads: Option<usize>,
-        matrix_free: bool,
-        max_krylov_m: Option<u32>,
     ) -> PyResult<(PyPauliMap<'py>, Bound<'py, pyo3::types::PyDict>)> {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
@@ -318,11 +295,6 @@ impl LindbladSpec {
         } else {
             Vec::new()
         };
-        let opts = ExpmOpts {
-            tol: expm_tol,
-            parallel_threshold,
-            max_krylov_m,
-        };
         let timings = self
             .inner
             .pc_step_timed(
@@ -332,9 +304,7 @@ impl LindbladSpec {
                 tau_add,
                 drop_tol,
                 &protected_words,
-                opts,
                 num_threads,
-                matrix_free,
             )
             .map_err(map_err)?;
 
@@ -371,10 +341,7 @@ impl LindbladSpec {
         basis, coeffs, dt, tau_add,
         drop_tol = 0.0,
         protected = None,
-        expm_tol = 1e-12,
-        parallel_threshold = 50_000,
         num_threads = None,
-        max_krylov_m = None,
         group = None,
         momentum = None,
     ))]
@@ -388,10 +355,7 @@ impl LindbladSpec {
         tau_add: f64,
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
-        expm_tol: f64,
-        parallel_threshold: usize,
         num_threads: Option<usize>,
-        max_krylov_m: Option<u32>,
         group: Option<&crate::symmetry::TranslationGroup>,
         momentum: Option<PyReadonlyArray1<'py, i32>>,
     ) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>)> {
@@ -417,11 +381,6 @@ impl LindbladSpec {
         } else {
             Vec::new()
         };
-        let opts = ExpmOpts {
-            tol: expm_tol,
-            parallel_threshold,
-            max_krylov_m,
-        };
         let momentum_vec = momentum.as_ref().map(|m| m.as_slice().map(|s| s.to_vec()));
         let momentum_owned = match momentum_vec {
             Some(Ok(v)) => Some(v),
@@ -438,7 +397,6 @@ impl LindbladSpec {
                 tau_add,
                 drop_tol,
                 &protected_words,
-                opts,
                 num_threads,
                 sym_core,
                 momentum_owned.as_deref(),
@@ -482,9 +440,6 @@ impl LindbladSpec {
         group, momentum,
         drop_tol = 0.0,
         protected = None,
-        expm_tol = 1e-12,
-        parallel_threshold = 50_000,
-        max_krylov_m = None,
         canonicalize_first = false,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -499,9 +454,6 @@ impl LindbladSpec {
         momentum: PyReadonlyArray1<'py, i32>,
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
-        expm_tol: f64,
-        parallel_threshold: usize,
-        max_krylov_m: Option<u32>,
         canonicalize_first: bool,
     ) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>)> {
         use num::Complex;
@@ -538,11 +490,6 @@ impl LindbladSpec {
         if canonicalize_first {
             orbit_rep::canonicalize_basis_to_rep(&mut basis_words, group.core());
         }
-        let opts = ExpmOpts {
-            tol: expm_tol,
-            parallel_threshold,
-            max_krylov_m,
-        };
         orbit_rep::pc_step_orbit_rep(
             &self.inner,
             &mut basis_words,
@@ -551,7 +498,6 @@ impl LindbladSpec {
             tau_add,
             drop_tol,
             &protected_words,
-            opts,
             group.core(),
             k_slice,
         )

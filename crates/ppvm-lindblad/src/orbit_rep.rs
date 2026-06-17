@@ -30,7 +30,7 @@
 //!   `pc_step_orbit_rep` once per momentum mode and inverse-Fourier
 //!   the results.
 
-use crate::expm::{CsrCx, ExpmOpts};
+use crate::expm::CsrCx;
 use crate::{Error, LindbladSpec};
 use fxhash::{FxBuildHasher, FxHashMap};
 use num::Complex;
@@ -239,7 +239,6 @@ pub fn pc_step_orbit_rep(
     tau_add: f64,
     drop_tol: f64,
     protected: &[Word],
-    _opts: ExpmOpts,
     group: &TranslationGroup,
     k_modes: &[i32],
 ) -> Result<(), Error> {

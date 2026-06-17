@@ -22,8 +22,3 @@ quspin-types = { git = "https://github.com/QuSpin/QuSpin-rust", rev = "6f4a1581e
 
 [dev-dependencies]
 approx = "0.5.1"
-criterion = "0.7.0"
-
-[[bench]]
-name = "spmv_scaling"
-harness = false

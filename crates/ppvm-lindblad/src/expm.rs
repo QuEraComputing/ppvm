@@ -36,7 +36,7 @@ pub type CsrCx = CsMatI<Complex<f64>, u32, usize>;
 /// `θ_m` bounds `‖A‖₁` such that the degree-`m` Taylor polynomial
 /// approximates `exp(A)` to within `u`. We pick `(m, s)` with
 /// `s ≥ ⌈‖tA‖₁ / θ_m⌉` and minimise `m·s` (total SpMV count).
-const THETA: &[(u32, f64)] = &[
+pub(crate) const THETA: &[(u32, f64)] = &[
     (1, 2.29e-16),
     (2, 2.58e-8),
     (3, 1.39e-5),
@@ -188,7 +188,7 @@ impl Default for ExpmOpts {
 /// Pick `(m, s)` minimising `s·m` subject to `s ≥ ⌈t_norm / θ_m⌉, s ≥ 1`.
 /// Restricted to `m ≤ 30`; for larger norms `s` simply grows linearly.
 /// When `max_m` is set, only entries with `m ≤ max_m` are considered.
-fn select_ms(t_norm: f64, max_m: Option<u32>) -> (u32, u32) {
+pub(crate) fn select_ms(t_norm: f64, max_m: Option<u32>) -> (u32, u32) {
     if t_norm <= 0.0 {
         return (1, 1);
     }

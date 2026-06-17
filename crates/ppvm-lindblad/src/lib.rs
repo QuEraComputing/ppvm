@@ -44,6 +44,9 @@ use std::time::Instant;
 pub mod expm;
 pub use expm::{Csr, CsrCx, ExpmOpts, csr_from_triplets, csr_one_norm, expm_multiply, spmv_parallel};
 
+/// Matrix-free / quspin-expm-backed `exp(dt·L*)·b` engine. See module docs.
+pub(crate) mod mf_expm;
+
 /// Per-step orbit-rep evolution under translation symmetry — phase-aware
 /// action + complex CSR throughout. See module docs.
 pub mod orbit_rep;
@@ -1251,10 +1254,13 @@ impl LindbladSpec {
         basis: &[Word],
         dt: f64,
         b: &[Complex<f64>],
-        opts: ExpmOpts,
+        _opts: ExpmOpts,
     ) -> Vec<Complex<f64>> {
-        let csr = self.generator_csr(basis);
-        expm::expm_multiply_complex(&csr, dt, b, opts)
+        // The generator is the REAL in-basis-restricted matrix; only the
+        // vector `b` is complex. By linearity,
+        // `exp(dt·M)·(re + i·im) = exp(dt·M)·re + i·exp(dt·M)·im`, so this is
+        // two real matrix-free applies recombined. Fully matrix-free; no CSR.
+        mf_expm::expm_apply_mf_cxvec(self, basis, dt, b)
     }
 
     /// One classical RK4 step on `O ← O + dt · L*(O)`, expanding the basis
@@ -1620,24 +1626,10 @@ impl LindbladSpec {
         basis: &[Word],
         dt: f64,
         b: &[f64],
-        opts: ExpmOpts,
-        matrix_free: bool,
+        _opts: ExpmOpts,
+        _matrix_free: bool,
     ) -> Vec<f64> {
-        if matrix_free {
-            let basis_index = build_basis_index(basis);
-            let one_norm = self.one_norm_matrix_free(basis, &basis_index);
-            expm::expm_multiply_mf(
-                basis.len(),
-                one_norm,
-                |x, y| self.spmv_matrix_free(basis, &basis_index, x, y),
-                dt,
-                b,
-                opts,
-            )
-        } else {
-            let csr = self.generator_csr(basis);
-            expm_multiply(&csr, dt, b, opts)
-        }
+        mf_expm::expm_apply_mf(self, basis, dt, b)
     }
 
     /// Compute the unscaled list of `(output, coefficient)` pairs that
@@ -1886,6 +1878,63 @@ mod tests {
         }
         assert!((i_coeff - (-1.0)).abs() < 1e-10, "I coeff = {i_coeff}");
         assert!((z_coeff - (-1.0)).abs() < 1e-10, "Z coeff = {z_coeff}");
+    }
+
+    /// Parity: the new quspin-expm matrix-free real engine
+    /// (`mf_expm::expm_apply_mf`) must agree with the retired CSR engine
+    /// (`expm::expm_multiply`) on a small random case to < 1e-9.
+    #[test]
+    fn parity_real_mf_against_retired_engine() {
+        let n = 4usize;
+        let mut h_terms: Vec<(String, f64)> = Vec::new();
+        for j in 0..n {
+            let nxt = (j + 1) % n;
+            for op in ['X', 'Z'] {
+                let mut s = vec!['I'; n];
+                s[j] = op;
+                s[nxt] = op;
+                h_terms.push((s.into_iter().collect(), 0.7));
+            }
+        }
+        // Single-site Z dephasing jump on qubit 0 (length-n string).
+        let mut zj = vec!['I'; n];
+        zj[0] = 'Z';
+        let jump = jump_hpauli(&zj.into_iter().collect::<String>(), 0.3);
+        let spec = LindbladSpec::new(n, &h_terms, &[jump]).unwrap();
+
+        // Basis: all single-site Z and X words.
+        let mut basis: Vec<Word> = Vec::new();
+        for j in 0..n {
+            for op in ['Z', 'X'] {
+                let mut s = vec!['I'; n];
+                s[j] = op;
+                let (w, _) = parse_pauli_string(&s.into_iter().collect::<String>(), n).unwrap();
+                basis.push(w);
+            }
+        }
+
+        // Deterministic pseudo-random input vector.
+        let mut seed = 0xdead_beef_0000_0001u64;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64 * 2.0 - 1.0
+        };
+        let b: Vec<f64> = (0..basis.len()).map(|_| next()).collect();
+        let dt = 0.23;
+
+        let new = mf_expm::expm_apply_mf(&spec, &basis, dt, &b);
+        let csr = spec.generator_csr(&basis);
+        let old = expm::expm_multiply(&csr, dt, &b, ExpmOpts::default());
+
+        assert_eq!(new.len(), old.len());
+        let mut worst = 0.0_f64;
+        for (a, c) in new.iter().zip(old.iter()) {
+            worst = worst.max((a - c).abs());
+        }
+        assert!(worst < 1e-9, "real MF parity mismatch: worst |Δ| = {worst:e}");
+        eprintln!("parity_real_mf_against_retired_engine: worst |Δ| = {worst:e}");
     }
 
     #[test]

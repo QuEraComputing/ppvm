@@ -16,8 +16,9 @@
 //! representation, throughout the entire evolution.
 //!
 //! The CSR matrix that the Krylov-expm machinery operates on has
-//! **complex entries** (because of the `χ_k(g)` phase factors), so
-//! `expm_multiply_cx` is used instead of the real `expm_multiply`.
+//! **complex entries** (because of the `χ_k(g)` phase factors), so the
+//! complex CSR-backed `mf_expm::expm_apply_csr_cx` (driving the external
+//! `quspin-expm` engine) is used instead of the real path.
 //!
 //! ## Limitations
 //!
@@ -29,7 +30,7 @@
 //!   `pc_step_orbit_rep` once per momentum mode and inverse-Fourier
 //!   the results.
 
-use crate::expm::{CsrCx, ExpmOpts, expm_multiply_cx};
+use crate::expm::{CsrCx, ExpmOpts};
 use crate::{Error, LindbladSpec};
 use fxhash::{FxBuildHasher, FxHashMap};
 use num::Complex;
@@ -238,7 +239,7 @@ pub fn pc_step_orbit_rep(
     tau_add: f64,
     drop_tol: f64,
     protected: &[Word],
-    opts: ExpmOpts,
+    _opts: ExpmOpts,
     group: &TranslationGroup,
     k_modes: &[i32],
 ) -> Result<(), Error> {
@@ -252,7 +253,7 @@ pub fn pc_step_orbit_rep(
     }
     // 2. Predictor: build CSR + expm.
     let csr = generator_csr_orbit_rep(spec, basis, group, k_modes);
-    let coeffs_predict = expm_multiply_cx(&csr, dt, coeffs, opts);
+    let coeffs_predict = crate::mf_expm::expm_apply_csr_cx(&csr, dt, coeffs);
     drop(csr);
     // 3. Second-hop leakage from predicted state.
     let leak2 = leakage_orbit_rep(spec, basis, &coeffs_predict, protected, group, k_modes)?;
@@ -265,7 +266,7 @@ pub fn pc_step_orbit_rep(
     }
     // 4. Corrector: rebuild + expm from pre-step state.
     let csr = generator_csr_orbit_rep(spec, basis, group, k_modes);
-    *coeffs = expm_multiply_cx(&csr, dt, coeffs, opts);
+    *coeffs = crate::mf_expm::expm_apply_csr_cx(&csr, dt, coeffs);
     drop(csr);
     // 5. Prune.
     if drop_tol > 0.0 {

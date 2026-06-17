@@ -32,8 +32,8 @@ fn main() {
 
             // Clifford layer 1 (fused)
             let t0 = Instant::now();
-            tab.sqrt_y_batch(&block1);
-            tab.sqrt_x_batch(&block2);
+            block1.iter().for_each(|&i| tab.sqrt_y(i));
+            block2.iter().for_each(|&i| tab.sqrt_x(i));
             tab.cz_block_pairs(0, 17, 17);
             for i in 0..n_tgates {
                 tab.h(i);
@@ -49,8 +49,8 @@ fn main() {
 
             // Clifford layer 2 (fused)
             let t2 = Instant::now();
-            tab.sqrt_x_adj_batch(&block1);
-            tab.sqrt_y_adj_batch(&block2);
+            block1.iter().for_each(|&i| tab.sqrt_x_dag(i));
+            block2.iter().for_each(|&i| tab.sqrt_y_dag(i));
             clif_ns += t2.elapsed().as_nanos();
 
             // Measure

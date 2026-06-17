@@ -19,7 +19,7 @@ fn test_cnot() {
     state.ry(1, 2.1);
     state.rz(1, 1.1);
 
-    state.cnot(0, 1);
+    state.cnot([0, 1]);
 
     state.rx(0, 2.1);
     state.rx(1, 2.1);

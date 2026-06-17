@@ -156,7 +156,7 @@ fn test_ghz_final_loss() {
     state.loss_channel(0, p_l);
     state.loss_channel(1, p_l);
 
-    state.cnot(0, 1);
+    state.cnot([0, 1]);
     state.h(0);
 
     let zero_pattern: PauliPattern = "Z?*".into();
@@ -182,7 +182,7 @@ fn test_ghz() {
     state.loss_channel(0, p_l);
     state.loss_channel(1, p_l);
 
-    state.cnot(0, 1);
+    state.cnot([0, 1]);
 
     state.loss_channel(0, 2.0 * p_l);
     state.h(0);
@@ -286,7 +286,7 @@ fn test_rxx_with_loss_is_noop_and_does_not_panic() {
     let mut state2 = state.clone();
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        state.rxx(0, 1, 0.3);
+        state.rxx([0, 1], 0.3);
     }));
     assert!(result.is_ok());
 
@@ -299,7 +299,7 @@ fn test_rxx_with_loss_is_noop_and_does_not_panic() {
     let mut state2 = state.clone();
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        state.rxx(0, 1, 0.3);
+        state.rxx([0, 1], 0.3);
     }));
     assert!(result.is_ok());
 
@@ -312,7 +312,7 @@ fn test_rxx_with_loss_is_noop_and_does_not_panic() {
     let state2 = state.clone();
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        state.rxx(0, 1, 0.3);
+        state.rxx([0, 1], 0.3);
     }));
     assert!(result.is_ok());
 
@@ -381,7 +381,7 @@ fn test_correlated_loss_ghz() {
     ps.correlated_loss_channel(0, 1, p_correlated_only);
 
     // GHZ circuit
-    ps.cnot(0, 1);
+    ps.cnot([0, 1]);
     ps.h(0);
 
     println!("{}", ps);
@@ -401,7 +401,7 @@ fn test_correlated_loss_ghz() {
     ps.correlated_loss_channel(0, 1, p_correlated_only);
 
     // GHZ circuit
-    ps.cnot(0, 1);
+    ps.cnot([0, 1]);
     ps.h(0);
 
     println!("{}", ps);

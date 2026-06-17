@@ -14,34 +14,34 @@ fn encode_naive(tab: &mut Tab, q: &[usize]) {
         tab.sqrt_y(q[i]);
     }
     for [i, j] in [[1, 3], [7, 10], [12, 14], [13, 16]] {
-        tab.cz(q[i], q[j]);
+        tab.cz([q[i], q[j]]);
     }
     for i in [7, 16] {
-        tab.sqrt_y_adj(q[i]);
+        tab.sqrt_y_dag(q[i]);
     }
     for [i, j] in [[4, 7], [8, 10], [11, 14], [15, 16]] {
-        tab.cz(q[i], q[j]);
+        tab.cz([q[i], q[j]]);
     }
     for i in [4, 10, 14, 16] {
-        tab.sqrt_y_adj(q[i]);
+        tab.sqrt_y_dag(q[i]);
     }
     for [i, j] in [[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]] {
-        tab.cz(q[i], q[j]);
+        tab.cz([q[i], q[j]]);
     }
     for i in [3, 6, 9, 10, 12, 13] {
         tab.sqrt_y(q[i]);
     }
     for [i, j] in [[0, 2], [3, 6], [5, 8], [10, 12], [11, 13]] {
-        tab.cz(q[i], q[j]);
+        tab.cz([q[i], q[j]]);
     }
     for i in [1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 14] {
         tab.sqrt_y(q[i]);
     }
     for [i, j] in [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [12, 15]] {
-        tab.cz(q[i], q[j]);
+        tab.cz([q[i], q[j]]);
     }
     for i in [0, 2, 5, 6, 8, 10, 12] {
-        tab.sqrt_y_adj(q[i]);
+        tab.sqrt_y_dag(q[i]);
     }
 }
 
@@ -51,25 +51,25 @@ fn encode_batch(tab: &mut Tab, q: &[usize]) {
         q[15], q[16],
     ]);
     for [i, j] in [[1, 3], [7, 10], [12, 14], [13, 16]] {
-        tab.cz(q[i], q[j]);
+        tab.cz([q[i], q[j]]);
     }
     tab.sqrt_y_adj_batch(&[q[7], q[16]]);
     for [i, j] in [[4, 7], [8, 10], [11, 14], [15, 16]] {
-        tab.cz(q[i], q[j]);
+        tab.cz([q[i], q[j]]);
     }
     tab.sqrt_y_adj_batch(&[q[4], q[10], q[14], q[16]]);
     for [i, j] in [[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]] {
-        tab.cz(q[i], q[j]);
+        tab.cz([q[i], q[j]]);
     }
     tab.sqrt_y_batch(&[q[3], q[6], q[9], q[10], q[12], q[13]]);
     for [i, j] in [[0, 2], [3, 6], [5, 8], [10, 12], [11, 13]] {
-        tab.cz(q[i], q[j]);
+        tab.cz([q[i], q[j]]);
     }
     tab.sqrt_y_batch(&[
         q[1], q[2], q[3], q[4], q[6], q[7], q[8], q[9], q[11], q[12], q[14],
     ]);
     for [i, j] in [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [12, 15]] {
-        tab.cz(q[i], q[j]);
+        tab.cz([q[i], q[j]]);
     }
     tab.sqrt_y_adj_batch(&[q[0], q[2], q[5], q[6], q[8], q[10], q[12]]);
 }
@@ -91,10 +91,10 @@ fn run_msd_naive(seed: u64) -> String {
         }
     }
     for (c, t) in ql[0].iter().zip(ql[1]) {
-        tab.cz(*c, *t);
+        tab.cz([*c, *t]);
     }
     for (c, t) in ql[2].iter().zip(ql[3]) {
-        tab.cz(*c, *t);
+        tab.cz([*c, *t]);
     }
     for q in ql[0] {
         tab.sqrt_y(*q);
@@ -103,23 +103,23 @@ fn run_msd_naive(seed: u64) -> String {
         tab.sqrt_y(*q);
     }
     for (c, t) in ql[0].iter().zip(ql[2]) {
-        tab.cz(*c, *t);
+        tab.cz([*c, *t]);
     }
     for (c, t) in ql[3].iter().zip(ql[4]) {
-        tab.cz(*c, *t);
+        tab.cz([*c, *t]);
     }
     for q in ql[0] {
-        tab.sqrt_x_adj(*q);
+        tab.sqrt_x_dag(*q);
     }
     for (c, t) in ql[0].iter().zip(ql[4]) {
-        tab.cz(*c, *t);
+        tab.cz([*c, *t]);
     }
     for (c, t) in ql[1].iter().zip(ql[3]) {
-        tab.cz(*c, *t);
+        tab.cz([*c, *t]);
     }
     for block in ql.iter().take(5) {
         for q in *block {
-            tab.sqrt_x_adj(*q);
+            tab.sqrt_x_dag(*q);
         }
     }
     (0..n)

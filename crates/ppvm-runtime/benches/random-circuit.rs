@@ -15,7 +15,7 @@ fn layer<T: Config>(state: &mut PauliSum<T>, n: usize) {
 
 fn entangle<T: Config>(state: &mut PauliSum<T>, n: usize) {
     for i in 0..n {
-        state.cnot(i, (i + 1) % n)
+        state.cnot([i, (i + 1) % n])
     }
 }
 

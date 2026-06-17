@@ -262,7 +262,7 @@ where
     /// All qubits targeting the same word are merged into a single mask,
     /// reducing N individual operations to O(n_words) per row.
     #[inline]
-    pub(crate) fn sqrt_y_batch(&mut self, indices: &[usize]) {
+    pub fn sqrt_y_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -292,7 +292,7 @@ where
 
     /// Apply sqrt_y_adj to multiple qubits using combined bitmask operations.
     #[inline]
-    pub(crate) fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
+    pub fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -322,7 +322,7 @@ where
 
     /// Apply sqrt_x to multiple qubits using combined bitmask operations.
     #[inline]
-    pub(crate) fn sqrt_x_batch(&mut self, indices: &[usize]) {
+    pub fn sqrt_x_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -348,7 +348,7 @@ where
 
     /// Apply sqrt_x_adj to multiple qubits using combined bitmask operations.
     #[inline]
-    pub(crate) fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
+    pub fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -436,7 +436,7 @@ where
     }
 
     /// Batched `√Y`, skipping lost qubits.
-    pub(crate) fn sqrt_y_batch(&mut self, indices: &[usize]) {
+    pub fn sqrt_y_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_y_batch(indices);
             return;
@@ -450,7 +450,7 @@ where
     }
 
     /// Batched `(√Y)†`, skipping lost qubits.
-    pub(crate) fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
+    pub fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_y_adj_batch(indices);
             return;
@@ -464,7 +464,7 @@ where
     }
 
     /// Batched `√X`, skipping lost qubits.
-    pub(crate) fn sqrt_x_batch(&mut self, indices: &[usize]) {
+    pub fn sqrt_x_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_x_batch(indices);
             return;
@@ -478,7 +478,7 @@ where
     }
 
     /// Batched `(√X)†`, skipping lost qubits.
-    pub(crate) fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
+    pub fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
         if !self.any_lost_single(indices) {
             self.tableau.sqrt_x_adj_batch(indices);
             return;

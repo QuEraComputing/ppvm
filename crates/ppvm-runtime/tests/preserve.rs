@@ -79,8 +79,8 @@ fn preserve_single_z_conserves_total_z_under_aggressive_truncation() {
     // Apply a few rxx+ryy pairs (= XY exchange on each edge). This commutes
     // with Σ Z_k, so the coefficients on Z_j should remain at 1.0.
     for (a, b) in [(0, 1), (1, 2), (2, 3)] {
-        s.rxx(a, b, 0.37);
-        s.ryy(a, b, 0.37);
+        s.rxx([a, b], 0.37);
+        s.ryy([a, b], 0.37);
         s.truncate();
     }
 

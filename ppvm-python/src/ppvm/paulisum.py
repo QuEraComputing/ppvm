@@ -9,7 +9,12 @@ from typing import Self, Union
 
 import ppvm_python_native
 
-from .mixins import CliffordExtensionMixin, CliffordMixin, NoiseMixin, RotationsMixin
+from .mixins import (
+    TruncatingCliffordExtensionMixin,
+    TruncatingCliffordMixin,
+    TruncatingNoiseMixin,
+    TruncatingRotationsMixin,
+)
 
 _COMPACT_RE = re.compile(r"^([IXYZ]\d+)+$")
 _COMPACT_TOKEN_RE = re.compile(r"([IXYZ])(\d+)")
@@ -74,10 +79,10 @@ LossyPauliSumInterface = Union[
 
 @dataclass(frozen=True)
 class PauliSum(
-    CliffordExtensionMixin,
-    CliffordMixin,
-    NoiseMixin,
-    RotationsMixin,
+    TruncatingCliffordExtensionMixin,
+    TruncatingCliffordMixin,
+    TruncatingNoiseMixin,
+    TruncatingRotationsMixin,
 ):
     """A weighted sum of Pauli strings for quantum simulation.
 

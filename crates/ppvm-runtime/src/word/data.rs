@@ -144,8 +144,39 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Paul
         self.zbits.set(index, value);
     }
 
+    #[inline]
     fn weight(&self) -> usize {
-        (self.xbits | self.zbits).count_ones()
+        let xs: &[u8] = bytemuck::bytes_of(&self.xbits.data);
+        let zs: &[u8] = bytemuck::bytes_of(&self.zbits.data);
+        debug_assert_eq!(xs.len(), zs.len());
+
+        let mut total: u32 = 0;
+        let (mut i, n) = (0usize, xs.len());
+
+        // u64 chunks — one popcnt per chunk (x86 +popcnt; AArch64 CNT+ADDV).
+        while i + 8 <= n {
+            let x = u64::from_ne_bytes(xs[i..i + 8].try_into().unwrap());
+            let z = u64::from_ne_bytes(zs[i..i + 8].try_into().unwrap());
+            total += (x | z).count_ones();
+            i += 8;
+        }
+        if i + 4 <= n {
+            let x = u32::from_ne_bytes(xs[i..i + 4].try_into().unwrap());
+            let z = u32::from_ne_bytes(zs[i..i + 4].try_into().unwrap());
+            total += (x | z).count_ones();
+            i += 4;
+        }
+        if i + 2 <= n {
+            let x = u16::from_ne_bytes(xs[i..i + 2].try_into().unwrap());
+            let z = u16::from_ne_bytes(zs[i..i + 2].try_into().unwrap());
+            total += (x | z).count_ones();
+            i += 2;
+        }
+        if i < n {
+            total += (xs[i] | zs[i]).count_ones();
+        }
+
+        total as usize
     }
 
     fn rehash(&mut self) {

@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "bloqade-circuit>=0.14.1",
     "kirin>=0.0.15",
+    "numpy>=1.26",
     "ppvm-python-native",
 ]
 
@@ -44,10 +45,21 @@ extra-paths = ["../crates/ppvm-python-native"]
 [tool.ty.src]
 exclude = ["docs/"]
 
+[tool.pytest.ini_options]
+# Benchmarks (test/benchmarks/) only time when explicitly enabled via
+# --benchmark-enable; otherwise they run once as smoke tests.
+addopts = "--benchmark-disable"
+
 [dependency-groups]
 dev = [
     "numpy>=2.2.6",
     "pytest>=9.0.2",
+    "pytest-benchmark>=5.2.3",
+]
+# Optional: only the `demo/` scripts use it (`expm_multiply` for the reference
+# matrix exponential). Runtime ppvm and the test suite have no scipy dep.
+demo = [
+    "scipy>=1.13",
 ]
 doc = [
     "griffe-inherited-docstrings>=1.1.1",

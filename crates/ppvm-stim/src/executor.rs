@@ -175,7 +175,7 @@ pub fn execute_prepared<T, I, C>(
             },
             ExtendedInstruction::T { targets, .. } => targets.iter().for_each(|&q| tab.t(q)),
             ExtendedInstruction::TDag { targets, .. } => {
-                targets.iter().for_each(|&q| tab.t_adj(q));
+                targets.iter().for_each(|&q| tab.t_dag(q));
             }
             ExtendedInstruction::Rotation {
                 axis,

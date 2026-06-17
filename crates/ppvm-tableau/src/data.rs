@@ -578,7 +578,7 @@ where
 ///     GeneralizedTableau::new_with_seed(1, 1e-12, 0);
 /// tab.h(0);
 /// tab.t(0);
-/// tab.t_adj(0);
+/// tab.t_dag(0);
 /// // T followed by T† is the identity; the |+⟩ state is restored.
 /// ```
 #[derive(Clone)]

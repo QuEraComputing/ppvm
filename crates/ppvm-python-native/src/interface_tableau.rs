@@ -104,7 +104,7 @@ macro_rules! create_interface {
             }
 
             pub fn t_adj(&mut self, addr0: usize) {
-                self.inner.t_adj(addr0);
+                self.inner.t_dag(addr0);
             }
 
             // rot1

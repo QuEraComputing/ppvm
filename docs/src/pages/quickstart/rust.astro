@@ -154,7 +154,7 @@ fn main() {`{`}
     state += ("ZZ", 1.0);
 
     // Circuit is H(0); CNOT(0, 1) — apply in reverse for Heisenberg propagation.
-    state.cnot(0, 1);
+    state.cnot([0, 1]);
     state.h(0);
 
     // &lt;0…0| state |0…0&gt; via a pattern match.
@@ -196,7 +196,7 @@ fn main() {`{`}
         = GeneralizedTableau::new(2, 1e-10);
 
     tab.h(0);
-    tab.cnot(0, 1);
+    tab.cnot([0, 1]);
 
     let r0 = tab.measure(0);
     let r1 = tab.measure(1);
@@ -265,7 +265,7 @@ fn main() {`{`}
 
     sum.rz(0, Term::var(0));
     sum.ry(0, Term::var(1));
-    sum.cnot(0, 1);
+    sum.cnot([0, 1]);
     sum.rx(1, Term::var(1));
 
     let pat: PauliPattern = "Z?*".into();

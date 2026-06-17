@@ -15,10 +15,13 @@
 //! symmetry-merging paper: basis is ~|G|× smaller than the full-basis
 //! representation, throughout the entire evolution.
 //!
-//! The CSR matrix that the Krylov-expm machinery operates on has
-//! **complex entries** (because of the `χ_k(g)` phase factors), so the
-//! complex CSR-backed `mf_expm::expm_apply_csr_cx` (driving the external
-//! `quspin-expm` engine) is used instead of the real path.
+//! The phase-aware action is genuinely **complex** (because of the
+//! `χ_k(g)` phase factors). Rather than materialise a CSR, the per-column
+//! action — for each input rep, the list of `(row, χ_k·v)` pairs for the
+//! in-basis outputs — is computed **once per expm call** (via
+//! [`build_orbit_rep_cols`]) and then reused, CSC-style, across every
+//! Krylov–Taylor matvec driving the external `quspin-expm` engine. No CSR
+//! is ever materialised on the production path.
 //!
 //! ## Limitations
 //!
@@ -35,6 +38,8 @@ use crate::{Error, LindbladSpec};
 use fxhash::{FxBuildHasher, FxHashMap};
 use num::Complex;
 use ppvm_runtime::symmetry::TranslationGroup;
+use quspin_expm::ExpmOp;
+use quspin_types::{ExpmComputation, LinearOperator, QuSpinError};
 use rayon::prelude::*;
 use sprs::CsMatI;
 
@@ -84,33 +89,7 @@ pub fn generator_csr_orbit_rep(
     let index = build_basis_index(basis);
 
     // Per-column accumulation: for each rep r, list of (row, phase × v).
-    let cols: Vec<Vec<(u32, Complex<f64>)>> = basis
-        .par_iter()
-        .map_init(
-            || {
-                (
-                    Vec::<u32>::with_capacity(spec.n_qubits()),
-                    Vec::<u32>::with_capacity(128),
-                    FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
-                        128,
-                        FxBuildHasher::default(),
-                    ),
-                )
-            },
-            |(s1, s2, lm), r| {
-                let terms = spec.compute_action_terms(r, s1, s2, lm);
-                let mut out = Vec::with_capacity(terms.len());
-                for (q, v) in terms.iter() {
-                    let (r_q, cnt_q) = group.canonicalize_with_shift(q);
-                    if let Some(&row) = index.get(&r_q) {
-                        let phase = group.character(k_modes, &cnt_q);
-                        out.push((row, phase * (*v as f64)));
-                    }
-                }
-                out
-            },
-        )
-        .collect();
+    let cols = build_orbit_rep_cols(spec, basis, &index, group, k_modes);
 
     // Build per-row (col, value) lists. Multiple (col, row) entries
     // for the same (row, col) cell get summed (sprs's `new_from_unsorted`
@@ -143,6 +122,262 @@ pub fn generator_csr_orbit_rep(
     }
 
     CsMatI::new((n, n), row_ptr, indices, data)
+}
+
+/// Build the per-column phase-aware action of the in-basis-restricted
+/// orbit-rep generator `M` at momentum sector `k_modes`.
+///
+/// Returns, for each input rep `basis[c]` (column `c`), the list of
+/// `(row, χ_k(g_{cnt_q}) · v_q)` pairs for every action output Pauli `q`
+/// of `L*(basis[c])` whose orbit rep `r_q` is in `basis` at index `row`.
+/// Outputs not in `basis` are dropped. This is the expensive part of the
+/// orbit-rep dynamics (`compute_action_terms` + `canonicalize_with_shift`
+/// + `character`); it is computed once and reused, both by
+/// [`generator_csr_orbit_rep`] (which transposes it into a CSR) and by the
+/// CSC-style matvec in [`OrbitRepCscOp`] (which reads it directly).
+pub(crate) fn build_orbit_rep_cols(
+    spec: &LindbladSpec,
+    basis: &[Word],
+    index: &FxHashMap<Word, u32>,
+    group: &TranslationGroup,
+    k_modes: &[i32],
+) -> Vec<Vec<(u32, Complex<f64>)>> {
+    basis
+        .par_iter()
+        .map_init(
+            || {
+                (
+                    Vec::<u32>::with_capacity(spec.n_qubits()),
+                    Vec::<u32>::with_capacity(128),
+                    FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                        128,
+                        FxBuildHasher::default(),
+                    ),
+                )
+            },
+            |(s1, s2, lm), r| {
+                let terms = spec.compute_action_terms(r, s1, s2, lm);
+                let mut out = Vec::with_capacity(terms.len());
+                for (q, v) in terms.iter() {
+                    let (r_q, cnt_q) = group.canonicalize_with_shift(q);
+                    if let Some(&row) = index.get(&r_q) {
+                        let phase = group.character(k_modes, &cnt_q);
+                        out.push((row, phase * (*v as f64)));
+                    }
+                }
+                out
+            },
+        )
+        .collect()
+}
+
+/// Borrowed CSC-style view of the in-basis-restricted orbit-rep generator
+/// `M`, backed by the cached per-column action [`build_orbit_rep_cols`]
+/// (computed once per expm call). The momentum-character phases make the
+/// entries complex, so this implements `LinearOperator<Complex<f64>>`.
+///
+/// `cols[c]` holds `(row, χ_k·v)` pairs for column `c`; `dot` does a CSC
+/// matvec `y = M·x` against the cached action, with no per-matvec action
+/// recompute and no CSR materialisation.
+pub(crate) struct OrbitRepCscOp<'a> {
+    cols: &'a [Vec<(u32, Complex<f64>)>],
+    dim: usize,
+}
+
+impl LinearOperator<Complex<f64>> for OrbitRepCscOp<'_> {
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    fn parallel_hint(&self) -> bool {
+        // `dot` parallelises internally over column chunks, and we drive
+        // the sequential single-vector `apply` path; never let quspin run
+        // its persistent-thread pool on top of our rayon parallelism.
+        false
+    }
+
+    fn dot(
+        &self,
+        overwrite: bool,
+        input: &[Complex<f64>],
+        output: &mut [Complex<f64>],
+    ) -> Result<(), QuSpinError> {
+        let n = self.dim;
+        let zero = Complex::new(0.0, 0.0);
+        if n == 0 {
+            return Ok(());
+        }
+        let num_threads = rayon::current_num_threads().max(1);
+        let chunk_size = n.div_ceil(num_threads);
+
+        // Parallelise over column chunks: each thread accumulates into a
+        // dense local `y` of length `dim`, reading the cached action.
+        let partial_ys: Vec<Vec<Complex<f64>>> = self
+            .cols
+            .par_chunks(chunk_size)
+            .enumerate()
+            .map(|(chunk_idx, chunk)| {
+                let c_offset = chunk_idx * chunk_size;
+                let mut y_local = vec![zero; n];
+                for (c_local, col) in chunk.iter().enumerate() {
+                    let c = c_offset + c_local;
+                    let xc = input[c];
+                    if xc == zero {
+                        continue;
+                    }
+                    for &(row, val) in col.iter() {
+                        y_local[row as usize] += val * xc;
+                    }
+                }
+                y_local
+            })
+            .collect();
+
+        if overwrite {
+            output.fill(zero);
+        }
+        for partial in &partial_ys {
+            for (oi, &pi) in output.iter_mut().zip(partial.iter()) {
+                *oi += pi;
+            }
+        }
+        Ok(())
+    }
+
+    fn trace(&self) -> Complex<f64> {
+        // Computed eagerly in `expm_apply_orbit_rep_cached`; never reached
+        // on the `from_parts` + single-vector `apply` path.
+        unreachable!("OrbitRepCscOp::trace not used on the from_parts apply path")
+    }
+
+    fn onenorm(&self, _shift: Complex<f64>) -> f64 {
+        unreachable!("OrbitRepCscOp::onenorm not used on the from_parts apply path")
+    }
+
+    fn dot_transpose(
+        &self,
+        _overwrite: bool,
+        _input: &[Complex<f64>],
+        _output: &mut [Complex<f64>],
+    ) -> Result<(), QuSpinError> {
+        Err(QuSpinError::RuntimeError(
+            "OrbitRepCscOp: dot_transpose not used on the from_parts apply path".into(),
+        ))
+    }
+
+    fn dot_many(
+        &self,
+        _overwrite: bool,
+        _input: ndarray::ArrayView2<'_, Complex<f64>>,
+        _output: ndarray::ArrayViewMut2<'_, Complex<f64>>,
+    ) -> Result<(), QuSpinError> {
+        Err(QuSpinError::RuntimeError(
+            "OrbitRepCscOp: dot_many not used on the from_parts apply path".into(),
+        ))
+    }
+
+    fn dot_chunk(
+        &self,
+        _overwrite: bool,
+        _input: &[Complex<f64>],
+        _output_chunk: &mut [Complex<f64>],
+        _row_start: usize,
+    ) -> Result<(), QuSpinError> {
+        Err(QuSpinError::RuntimeError(
+            "OrbitRepCscOp: dot_chunk not used on the from_parts apply path".into(),
+        ))
+    }
+
+    fn dot_transpose_chunk(
+        &self,
+        _input: &[Complex<f64>],
+        _output: &[<Complex<f64> as ExpmComputation>::Atomic],
+        _rows: std::ops::Range<usize>,
+    ) -> Result<(), QuSpinError> {
+        Err(QuSpinError::RuntimeError(
+            "OrbitRepCscOp: dot_transpose_chunk not used on the from_parts apply path".into(),
+        ))
+    }
+}
+
+/// Compute `exp(dt · M) · coeffs` for the in-basis-restricted orbit-rep
+/// generator `M` at momentum sector `k_modes`, via `quspin-expm`. Returns
+/// a fresh `Vec<Complex<f64>>` of length `basis.len()`. No `CsrCx` is
+/// materialised.
+///
+/// The expensive phase-aware action is computed ONCE here (via
+/// [`build_orbit_rep_cols`]) and reused, CSC-style, across every Krylov–
+/// Taylor matvec (see [`OrbitRepCscOp`]). One pass over the cached columns
+/// extracts the diagonal shift `μ = tr(M)/n` and a valid upper bound on
+/// the column 1-norm of `M − μ·I`; from `‖dt·(M−μI)‖₁` we pick the Taylor
+/// partition `(m*, s)` and hand everything to
+/// [`quspin_expm::ExpmOp::from_parts`] (mirroring
+/// [`crate::mf_expm::expm_apply_mf`]).
+pub(crate) fn expm_apply_orbit_rep_cached(
+    spec: &LindbladSpec,
+    basis: &[Word],
+    group: &TranslationGroup,
+    k_modes: &[i32],
+    dt: f64,
+    coeffs: &[Complex<f64>],
+) -> Vec<Complex<f64>> {
+    let n = basis.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let index = crate::build_basis_index(basis);
+    // Phase-aware action: computed ONCE, reused across every matvec below.
+    let cols = build_orbit_rep_cols(spec, basis, &index, group, k_modes);
+
+    // One pass over the cached columns: per column `c` (rep `basis[c]`)
+    // gather `raw = Σ|val|` (an upper bound on the absolute column sum) and
+    // the exact diagonal entry `diag = M[c,c] = Σ_{row==c} val` (summing
+    // duplicates). From these: `trace = Σ diag`, `μ = trace/n`, and an
+    // upper bound on the column 1-norm of `M − μ·I`:
+    // `raw − |diag| + |diag − μ|`.
+    let per_col: Vec<(f64, Complex<f64>)> = cols
+        .par_iter()
+        .enumerate()
+        .map(|(c, col)| {
+            let mut raw = 0.0_f64;
+            let mut diag = Complex::new(0.0, 0.0);
+            for &(row, val) in col.iter() {
+                raw += val.norm();
+                if row as usize == c {
+                    diag += val;
+                }
+            }
+            (raw, diag)
+        })
+        .collect();
+
+    let trace: Complex<f64> = per_col.iter().map(|(_, d)| *d).sum();
+    let mu = trace / n as f64;
+    let onenorm = per_col
+        .iter()
+        .map(|(raw, diag)| raw - diag.norm() + (diag - mu).norm())
+        .fold(0.0_f64, f64::max);
+
+    let (m_star, s) = crate::expm::select_ms(dt.abs() * onenorm, None);
+
+    let op = OrbitRepCscOp {
+        cols: &cols,
+        dim: n,
+    };
+    let e = ExpmOp::from_parts(
+        op,
+        Complex::new(dt, 0.0),
+        mu,
+        s as usize,
+        m_star as usize,
+        1e-12_f64,
+    );
+
+    let mut v = coeffs.to_vec();
+    e.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
+        .expect("expm apply (orbit-rep cached)");
+    v
 }
 
 /// Phase-aware leakage: out-of-basis component of `L*(O_k)` where `O_k`
@@ -250,10 +485,9 @@ pub fn pc_step_orbit_rep(
             coeffs.push(Complex::new(0.0, 0.0));
         }
     }
-    // 2. Predictor: build CSR + expm.
-    let csr = generator_csr_orbit_rep(spec, basis, group, k_modes);
-    let coeffs_predict = crate::mf_expm::expm_apply_csr_cx(&csr, dt, coeffs);
-    drop(csr);
+    // 2. Predictor: cache-the-action expm (no CSR materialised; the
+    //    phase-aware action is built once via `build_orbit_rep_cols`).
+    let coeffs_predict = expm_apply_orbit_rep_cached(spec, basis, group, k_modes, dt, coeffs);
     // 3. Second-hop leakage from predicted state.
     let leak2 = leakage_orbit_rep(spec, basis, &coeffs_predict, protected, group, k_modes)?;
     drop(coeffs_predict);
@@ -263,10 +497,8 @@ pub fn pc_step_orbit_rep(
             coeffs.push(Complex::new(0.0, 0.0));
         }
     }
-    // 4. Corrector: rebuild + expm from pre-step state.
-    let csr = generator_csr_orbit_rep(spec, basis, group, k_modes);
-    *coeffs = crate::mf_expm::expm_apply_csr_cx(&csr, dt, coeffs);
-    drop(csr);
+    // 4. Corrector: cache-the-action expm from pre-step state (basis grew).
+    *coeffs = expm_apply_orbit_rep_cached(spec, basis, group, k_modes, dt, coeffs);
     // 5. Prune.
     if drop_tol > 0.0 {
         prune_basis_complex_local(basis, coeffs, drop_tol, protected);
@@ -310,4 +542,80 @@ fn build_basis_index(basis: &[Word]) -> FxHashMap<Word, u32> {
         );
     }
     index
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ppvm_runtime::symmetry::canonicalize_pauli_sum_complex;
+
+    /// Cache-the-action orbit-rep expm must agree with the CSR-backed
+    /// reference to numerical round-off. Setup mirrors the end-to-end
+    /// `pc_step_orbit_rep_matches_full_basis_projection` test in lib.rs:
+    /// an n=4 translation-invariant XY chain, an orbit-rep basis built by
+    /// canonicalizing the Σ Z_j seed, deterministic pseudo-random complex
+    /// coeffs, dt=0.37. Checked at momenta k=0 and k=1.
+    #[test]
+    fn parity_orbit_rep_cached_vs_csr() {
+        let n = 4usize;
+        let dt = 0.37f64;
+
+        // Translation-invariant XY Hamiltonian.
+        let mut h_terms: Vec<(String, f64)> = Vec::new();
+        for j in 0..n {
+            let nxt = (j + 1) % n;
+            for op in ["X", "Y"] {
+                let mut s = vec!['I'; n];
+                s[j] = op.chars().next().unwrap();
+                s[nxt] = op.chars().next().unwrap();
+                h_terms.push((s.into_iter().collect(), 1.0));
+            }
+        }
+        let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
+        let group = TranslationGroup::chain_1d(n);
+
+        for k_mode in [0i32, 1i32] {
+            let k = vec![k_mode];
+
+            // Seed: Σ_j Z_j, then canonicalize to an orbit-rep basis at k.
+            let mut basis: Vec<Word> = (0..n)
+                .map(|j| {
+                    let mut s = vec!['I'; n];
+                    s[j] = 'Z';
+                    let (w, _) =
+                        crate::parse_pauli_string(&s.into_iter().collect::<String>(), n).unwrap();
+                    w
+                })
+                .collect();
+            let mut seed_coeffs: Vec<Complex<f64>> =
+                (0..n).map(|_| Complex::new(1.0, 0.0)).collect();
+            canonicalize_pauli_sum_complex(&mut basis, &mut seed_coeffs, &group, &k);
+            assert!(!basis.is_empty(), "orbit-rep basis empty for k={k_mode}");
+
+            // Deterministic pseudo-random complex coeffs on the rep basis.
+            let coeffs: Vec<Complex<f64>> = (0..basis.len())
+                .map(|i| {
+                    let a = ((i as u64).wrapping_mul(2654435761) % 1000) as f64 / 1000.0 - 0.5;
+                    let b = ((i as u64).wrapping_mul(40503).wrapping_add(7) % 1000) as f64 / 1000.0
+                        - 0.5;
+                    Complex::new(a, b)
+                })
+                .collect();
+
+            let cached = expm_apply_orbit_rep_cached(&spec, &basis, &group, &k, dt, &coeffs);
+            let csr = generator_csr_orbit_rep(&spec, &basis, &group, &k);
+            let reference = crate::mf_expm::expm_apply_csr_cx(&csr, dt, &coeffs);
+
+            assert_eq!(cached.len(), reference.len());
+            let max_diff = cached
+                .iter()
+                .zip(reference.iter())
+                .map(|(a, b)| (a - b).norm())
+                .fold(0.0_f64, f64::max);
+            assert!(
+                max_diff < 1e-10,
+                "orbit-rep cached vs csr parity failed at k={k_mode}: max|Δ| = {max_diff:e}"
+            );
+        }
+    }
 }

@@ -211,6 +211,12 @@ pub(crate) fn expm_apply_mf_cxvec(
 /// momentum-character phases make the entries complex). There is no
 /// matrix-free complex action available, so this drives the materialised
 /// `CsrCx` through `quspin-expm`.
+///
+/// Retained only as the parity reference for the cache-the-action orbit-rep
+/// path (`orbit_rep::expm_apply_orbit_rep_cached`); the production
+/// `pc_step_orbit_rep` no longer materialises a `CsrCx`. May be removed in a
+/// follow-up.
+#[allow(dead_code)]
 pub(crate) struct CsrCxOp<'a> {
     csr: &'a CsrCx,
 }
@@ -306,6 +312,12 @@ impl LinearOperator<Complex<f64>> for CsrCxOp<'_> {
 /// optimisation and orbit-rep matrices are small). The Taylor partition
 /// `(m*, s)` is picked from `‖dt·M‖₁` via the same selection table as the
 /// retired hand-rolled engine in [`crate::expm`].
+///
+/// Retained only as the parity reference for the cache-the-action orbit-rep
+/// path (`orbit_rep::expm_apply_orbit_rep_cached`); the production
+/// `pc_step_orbit_rep` no longer materialises a `CsrCx`. May be removed in a
+/// follow-up.
+#[allow(dead_code)]
 pub(crate) fn expm_apply_csr_cx(
     csr: &CsrCx,
     dt: f64,

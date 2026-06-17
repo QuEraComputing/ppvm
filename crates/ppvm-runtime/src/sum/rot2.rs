@@ -58,8 +58,9 @@ where
     }
 
     #[inline]
-    fn rzz(&mut self, a: usize, b: usize, theta: impl Into<T::Coeff>) {
+    fn rzz(&mut self, targets: impl crate::traits::Targets, theta: impl Into<T::Coeff>) {
         let (sin, cos) = theta.into().sin_cos();
+        for (a, b) in targets.pairs() {
         self.map_insert(|k, v| {
             // Loss fallbacks — identical to the generic `rotate_2` path
             // (axis on the surviving qubit is Z for a ZZ rotation). These
@@ -95,11 +96,13 @@ where
             coeff *= sin.mul_sign(eps);
             Some((new_word, coeff))
         });
+        }
     }
 
     #[inline]
-    fn rxx(&mut self, a: usize, b: usize, theta: impl Into<T::Coeff>) {
+    fn rxx(&mut self, targets: impl crate::traits::Targets, theta: impl Into<T::Coeff>) {
         let (sin, cos) = theta.into().sin_cos();
+        for (a, b) in targets.pairs() {
         self.map_insert(|k, v| {
             // Loss fallback: a lost qubit leaves a single-qubit X rotation on
             // the surviving partner (axis on the surviving qubit is X for an
@@ -135,11 +138,13 @@ where
             coeff *= sin.mul_sign(eps);
             Some((new_word, coeff))
         });
+        }
     }
 
     #[inline]
-    fn ryy(&mut self, a: usize, b: usize, theta: impl Into<T::Coeff>) {
+    fn ryy(&mut self, targets: impl crate::traits::Targets, theta: impl Into<T::Coeff>) {
         let (sin, cos) = theta.into().sin_cos();
+        for (a, b) in targets.pairs() {
         self.map_insert(|k, v| {
             // Loss fallback: a lost qubit leaves a single-qubit Y rotation on
             // the surviving partner (axis on the surviving qubit is Y for a
@@ -179,6 +184,7 @@ where
             coeff *= sin.mul_sign(eps);
             Some((new_word, coeff))
         });
+        }
     }
 }
 
@@ -283,17 +289,17 @@ mod tests {
 
     #[test]
     fn rxx_matches_generic() {
-        assert_matches_generic([1, 0], |s, a, b, t| s.rxx(a, b, t));
+        assert_matches_generic([1, 0], |s, a, b, t| s.rxx([a, b], t));
     }
 
     #[test]
     fn ryy_matches_generic() {
-        assert_matches_generic([1, 1], |s, a, b, t| s.ryy(a, b, t));
+        assert_matches_generic([1, 1], |s, a, b, t| s.ryy([a, b], t));
     }
 
     #[test]
     fn rzz_matches_generic() {
-        assert_matches_generic([0, 1], |s, a, b, t| s.rzz(a, b, t));
+        assert_matches_generic([0, 1], |s, a, b, t| s.rzz([a, b], t));
     }
 
     /// Explicit hand-computed values, independent of `rotate_2`/`comm_2`, so a
@@ -304,7 +310,7 @@ mod tests {
 
         // X_0 I_1 --rzz--> cos·XI − sin·YZ  (anticommutes; X-carrier → −1)
         let mut s = sum_with("XI");
-        s.rzz(0, 1, t);
+        s.rzz([0, 1], t);
         let mut want: PauliSum<C> = PauliSum::builder().n_qubits(2).build();
         want += ("XI", t.cos());
         want += ("YZ", -t.sin());
@@ -312,7 +318,7 @@ mod tests {
 
         // Y_0 I_1 --rzz--> cos·YI + sin·XZ  (anticommutes; Y-carrier → +1)
         let mut s = sum_with("YI");
-        s.rzz(0, 1, t);
+        s.rzz([0, 1], t);
         let mut want: PauliSum<C> = PauliSum::builder().n_qubits(2).build();
         want += ("YI", t.cos());
         want += ("XZ", t.sin());
@@ -320,7 +326,7 @@ mod tests {
 
         // ZZ commutes with the ZZ generator → unchanged.
         let mut s = sum_with("ZZ");
-        s.rzz(0, 1, t);
+        s.rzz([0, 1], t);
         assert_eq!(s, sum_with("ZZ"));
     }
 
@@ -336,7 +342,7 @@ mod tests {
 
                 let mut got: PauliSum<C> = PauliSum::builder().n_qubits(3).build();
                 got += (word.as_str(), 1.0);
-                got.rzz(0, 2, theta);
+                got.rzz([0, 2], theta);
 
                 let mut want: PauliSum<C> = PauliSum::builder().n_qubits(3).build();
                 want += (word.as_str(), 1.0);

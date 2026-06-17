@@ -249,19 +249,19 @@ macro_rules! create_interface {
             // rot2
             #[pyo3(signature = (addr0, addr1, theta, truncate = true))]
             pub fn rxx(&mut self, addr0: usize, addr1: usize, theta: f64, truncate: bool) {
-                self.inner.rxx(addr0, addr1, theta);
+                self.inner.rxx([addr0, addr1], theta);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (addr0, addr1, theta, truncate = true))]
             pub fn ryy(&mut self, addr0: usize, addr1: usize, theta: f64, truncate: bool) {
-                self.inner.ryy(addr0, addr1, theta);
+                self.inner.ryy([addr0, addr1], theta);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (addr0, addr1, theta, truncate = true))]
             pub fn rzz(&mut self, addr0: usize, addr1: usize, theta: f64, truncate: bool) {
-                self.inner.rzz(addr0, addr1, theta);
+                self.inner.rzz([addr0, addr1], theta);
                 if truncate { self.inner.truncate(); }
             }
 

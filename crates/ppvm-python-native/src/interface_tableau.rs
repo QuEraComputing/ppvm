@@ -126,15 +126,15 @@ macro_rules! create_interface {
 
             // rot2
             pub fn rxx(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.rxx(addr0, addr1, theta);
+                self.inner.rxx([addr0, addr1], theta);
             }
 
             pub fn ryy(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.ryy(addr0, addr1, theta);
+                self.inner.ryy([addr0, addr1], theta);
             }
 
             pub fn rzz(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.rzz(addr0, addr1, theta);
+                self.inner.rzz([addr0, addr1], theta);
             }
 
             // noise

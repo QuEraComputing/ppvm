@@ -61,41 +61,41 @@ where
     fn rzz(&mut self, targets: impl crate::traits::Targets, theta: impl Into<T::Coeff>) {
         let (sin, cos) = theta.into().sin_cos();
         for (a, b) in targets.pairs() {
-        self.map_insert(|k, v| {
-            // Loss fallbacks — identical to the generic `rotate_2` path
-            // (axis on the surviving qubit is Z for a ZZ rotation). These
-            // branches are dead-code-eliminated for non-lossy PauliWord,
-            // since `get_lbit` is a const `false`.
-            if k.get_lbit(a) {
-                return rotate_1_map_insert_closure::<T>(k, v, Pauli::Z, b, &sin, &cos);
-            }
-            if k.get_lbit(b) {
-                return rotate_1_map_insert_closure::<T>(k, v, Pauli::Z, a, &sin, &cos);
-            }
-            let xa = k.get_xbit(a);
-            let xb = k.get_xbit(b);
-            // ZZ commutes iff both qubits agree on having an X-component.
-            if xa == xb {
-                return None;
-            }
-            let za = k.get_zbit(a);
-            let zb = k.get_zbit(b);
-            // The anticommuting qubit is the one with xbit == 1.
-            // sign = +1 if it is Y (zbit set), -1 if it is X (zbit clear).
-            let z_anti = if xa { za } else { zb };
-            let eps: i8 = if z_anti { 1 } else { -1 };
+            self.map_insert(|k, v| {
+                // Loss fallbacks — identical to the generic `rotate_2` path
+                // (axis on the surviving qubit is Z for a ZZ rotation). These
+                // branches are dead-code-eliminated for non-lossy PauliWord,
+                // since `get_lbit` is a const `false`.
+                if k.get_lbit(a) {
+                    return rotate_1_map_insert_closure::<T>(k, v, Pauli::Z, b, &sin, &cos);
+                }
+                if k.get_lbit(b) {
+                    return rotate_1_map_insert_closure::<T>(k, v, Pauli::Z, a, &sin, &cos);
+                }
+                let xa = k.get_xbit(a);
+                let xb = k.get_xbit(b);
+                // ZZ commutes iff both qubits agree on having an X-component.
+                if xa == xb {
+                    return None;
+                }
+                let za = k.get_zbit(a);
+                let zb = k.get_zbit(b);
+                // The anticommuting qubit is the one with xbit == 1.
+                // sign = +1 if it is Y (zbit set), -1 if it is X (zbit clear).
+                let z_anti = if xa { za } else { zb };
+                let eps: i8 = if z_anti { 1 } else { -1 };
 
-            let mut coeff = v.clone();
-            *v *= cos.clone();
+                let mut coeff = v.clone();
+                *v *= cos.clone();
 
-            let mut new_word = k.clone();
-            new_word.set_zbit(a, !za);
-            new_word.set_zbit(b, !zb);
-            new_word.rehash();
+                let mut new_word = k.clone();
+                new_word.set_zbit(a, !za);
+                new_word.set_zbit(b, !zb);
+                new_word.rehash();
 
-            coeff *= sin.mul_sign(eps);
-            Some((new_word, coeff))
-        });
+                coeff *= sin.mul_sign(eps);
+                Some((new_word, coeff))
+            });
         }
     }
 
@@ -103,41 +103,41 @@ where
     fn rxx(&mut self, targets: impl crate::traits::Targets, theta: impl Into<T::Coeff>) {
         let (sin, cos) = theta.into().sin_cos();
         for (a, b) in targets.pairs() {
-        self.map_insert(|k, v| {
-            // Loss fallback: a lost qubit leaves a single-qubit X rotation on
-            // the surviving partner (axis on the surviving qubit is X for an
-            // XX rotation), matching the generic `rotate_2` path.
-            if k.get_lbit(a) {
-                return rotate_1_map_insert_closure::<T>(k, v, Pauli::X, b, &sin, &cos);
-            }
-            if k.get_lbit(b) {
-                return rotate_1_map_insert_closure::<T>(k, v, Pauli::X, a, &sin, &cos);
-            }
-            let za = k.get_zbit(a);
-            let zb = k.get_zbit(b);
-            // X anticommutes with a qubit's Pauli iff that Pauli carries a
-            // Z-component (Z or Y). XX commutes iff both qubits agree on that.
-            if za == zb {
-                return None;
-            }
-            let xa = k.get_xbit(a);
-            let xb = k.get_xbit(b);
-            // The anticommuting qubit is the one carrying Z (its z-bit set).
-            // sign = +1 if it is Z (x-bit clear), -1 if it is Y (x-bit set).
-            let x_anti = if za { xa } else { xb };
-            let eps: i8 = if x_anti { -1 } else { 1 };
+            self.map_insert(|k, v| {
+                // Loss fallback: a lost qubit leaves a single-qubit X rotation on
+                // the surviving partner (axis on the surviving qubit is X for an
+                // XX rotation), matching the generic `rotate_2` path.
+                if k.get_lbit(a) {
+                    return rotate_1_map_insert_closure::<T>(k, v, Pauli::X, b, &sin, &cos);
+                }
+                if k.get_lbit(b) {
+                    return rotate_1_map_insert_closure::<T>(k, v, Pauli::X, a, &sin, &cos);
+                }
+                let za = k.get_zbit(a);
+                let zb = k.get_zbit(b);
+                // X anticommutes with a qubit's Pauli iff that Pauli carries a
+                // Z-component (Z or Y). XX commutes iff both qubits agree on that.
+                if za == zb {
+                    return None;
+                }
+                let xa = k.get_xbit(a);
+                let xb = k.get_xbit(b);
+                // The anticommuting qubit is the one carrying Z (its z-bit set).
+                // sign = +1 if it is Z (x-bit clear), -1 if it is Y (x-bit set).
+                let x_anti = if za { xa } else { xb };
+                let eps: i8 = if x_anti { -1 } else { 1 };
 
-            let mut coeff = v.clone();
-            *v *= cos.clone();
+                let mut coeff = v.clone();
+                *v *= cos.clone();
 
-            let mut new_word = k.clone();
-            new_word.set_xbit(a, !xa);
-            new_word.set_xbit(b, !xb);
-            new_word.rehash();
+                let mut new_word = k.clone();
+                new_word.set_xbit(a, !xa);
+                new_word.set_xbit(b, !xb);
+                new_word.rehash();
 
-            coeff *= sin.mul_sign(eps);
-            Some((new_word, coeff))
-        });
+                coeff *= sin.mul_sign(eps);
+                Some((new_word, coeff))
+            });
         }
     }
 
@@ -145,45 +145,45 @@ where
     fn ryy(&mut self, targets: impl crate::traits::Targets, theta: impl Into<T::Coeff>) {
         let (sin, cos) = theta.into().sin_cos();
         for (a, b) in targets.pairs() {
-        self.map_insert(|k, v| {
-            // Loss fallback: a lost qubit leaves a single-qubit Y rotation on
-            // the surviving partner (axis on the surviving qubit is Y for a
-            // YY rotation), matching the generic `rotate_2` path.
-            if k.get_lbit(a) {
-                return rotate_1_map_insert_closure::<T>(k, v, Pauli::Y, b, &sin, &cos);
-            }
-            if k.get_lbit(b) {
-                return rotate_1_map_insert_closure::<T>(k, v, Pauli::Y, a, &sin, &cos);
-            }
-            let xa = k.get_xbit(a);
-            let za = k.get_zbit(a);
-            let xb = k.get_xbit(b);
-            let zb = k.get_zbit(b);
-            // Y anticommutes with a qubit's Pauli iff it is X or Z, i.e. iff
-            // its x-bit and z-bit differ. YY commutes iff both qubits agree.
-            let pa = xa ^ za;
-            let pb = xb ^ zb;
-            if pa == pb {
-                return None;
-            }
-            // The anticommuting qubit is X or Z (x-bit != z-bit).
-            // sign = +1 if it is X (x-bit set), -1 if it is Z (x-bit clear).
-            let x_anti = if pa { xa } else { xb };
-            let eps: i8 = if x_anti { 1 } else { -1 };
+            self.map_insert(|k, v| {
+                // Loss fallback: a lost qubit leaves a single-qubit Y rotation on
+                // the surviving partner (axis on the surviving qubit is Y for a
+                // YY rotation), matching the generic `rotate_2` path.
+                if k.get_lbit(a) {
+                    return rotate_1_map_insert_closure::<T>(k, v, Pauli::Y, b, &sin, &cos);
+                }
+                if k.get_lbit(b) {
+                    return rotate_1_map_insert_closure::<T>(k, v, Pauli::Y, a, &sin, &cos);
+                }
+                let xa = k.get_xbit(a);
+                let za = k.get_zbit(a);
+                let xb = k.get_xbit(b);
+                let zb = k.get_zbit(b);
+                // Y anticommutes with a qubit's Pauli iff it is X or Z, i.e. iff
+                // its x-bit and z-bit differ. YY commutes iff both qubits agree.
+                let pa = xa ^ za;
+                let pb = xb ^ zb;
+                if pa == pb {
+                    return None;
+                }
+                // The anticommuting qubit is X or Z (x-bit != z-bit).
+                // sign = +1 if it is X (x-bit set), -1 if it is Z (x-bit clear).
+                let x_anti = if pa { xa } else { xb };
+                let eps: i8 = if x_anti { 1 } else { -1 };
 
-            let mut coeff = v.clone();
-            *v *= cos.clone();
+                let mut coeff = v.clone();
+                *v *= cos.clone();
 
-            let mut new_word = k.clone();
-            new_word.set_xbit(a, !xa);
-            new_word.set_zbit(a, !za);
-            new_word.set_xbit(b, !xb);
-            new_word.set_zbit(b, !zb);
-            new_word.rehash();
+                let mut new_word = k.clone();
+                new_word.set_xbit(a, !xa);
+                new_word.set_zbit(a, !za);
+                new_word.set_xbit(b, !xb);
+                new_word.set_zbit(b, !zb);
+                new_word.rehash();
 
-            coeff *= sin.mul_sign(eps);
-            Some((new_word, coeff))
-        });
+                coeff *= sin.mul_sign(eps);
+                Some((new_word, coeff))
+            });
         }
     }
 }

@@ -15,7 +15,11 @@ macro_rules! map_word {
         fn $name(&mut self, targets: impl Targets) {
             for (a, b) in targets.pairs() {
                 self.map_add(|k, v| {
-                    let mut p: PhasedPauliWord<T::Storage, T::BuildHasher, <T as Config>::PauliWordType> = k.clone().into();
+                    let mut p: PhasedPauliWord<
+                        T::Storage,
+                        T::BuildHasher,
+                        <T as Config>::PauliWordType,
+                    > = k.clone().into();
                     p.$name([a, b]);
                     if p.is_positive() {
                         (p.word, v.clone())

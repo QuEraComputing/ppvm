@@ -1,6 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+// Use mimalloc as the global allocator. It returns freed pages to the OS
+// more aggressively than the default system allocator, which materially
+// reduces peak RSS on the allocation-heavy Pauli-propagation paths — each
+// gate / truncation step churns large transient `Vec` / `HashMap` buffers.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use pyo3::prelude::*;
 
 pub mod interface;

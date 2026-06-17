@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 bnum = "0.13.0"
+mimalloc = { version = "0.1", default-features = false }
 num = "0.4.3"
 paste = "1.0.15"
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }

@@ -595,6 +595,8 @@ pub struct GeneralizedTableau<
     pub is_lost: Vec<bool>,
     /// Coefficient-magnitude threshold below which branches are dropped.
     pub coefficient_threshold: T::Coeff,
+    /// Ordered log of every measurement performed (mirrors stim's record).
+    pub measurement_record: Vec<Option<bool>>,
     _index_phantom: PhantomData<IndexType>,
 }
 
@@ -624,6 +626,7 @@ where
             coefficients,
             is_lost: vec![false; n_qubits],
             coefficient_threshold,
+            measurement_record: Vec::new(),
             _index_phantom: PhantomData,
         }
     }
@@ -650,6 +653,11 @@ where
     /// Number of qubits.
     pub fn n_qubits(&self) -> usize {
         self.tableau.n_qubits
+    }
+
+    /// All measurement outcomes recorded so far, in order.
+    pub fn current_measurement_record(&self) -> &[Option<bool>] {
+        &self.measurement_record
     }
 
     /// Apply CZ to N pairs with constant offset: (base+i, base+offset+i) for i in 0..count.

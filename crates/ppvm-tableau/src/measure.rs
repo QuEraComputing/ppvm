@@ -73,6 +73,7 @@ where
 {
     fn measure(&mut self, addr0: usize) -> Option<bool> {
         if self.is_lost[addr0] {
+            self.measurement_record.push(None);
             return None;
         }
 
@@ -121,6 +122,7 @@ where
                 self.coefficients.normalize();
             }
 
+            self.measurement_record.push(Some(outcome));
             Some(outcome)
         } else {
             // Case a: Z is not a stabilizer — need HashMap for cross-index lookups
@@ -198,6 +200,7 @@ where
             self.tableau
                 .update_tableau_according_to_outcome(addr0, q_idx, outcome);
 
+            self.measurement_record.push(Some(outcome));
             Some(outcome)
         }
     }
@@ -240,8 +243,16 @@ where
             (0.0..=1.0).contains(&flip_prob),
             "flip_prob must be in [0, 1], got {flip_prob}"
         );
+        // `measure` already pushed the (un-flipped) outcome onto the record.
+        // Overwrite that last entry with the post-noise value so exactly one
+        // push occurs per logical measurement and the record matches what we
+        // return.
         let outcome = self.measure(addr0)?;
-        Some(self.flip_with_prob(outcome, flip_prob))
+        let noisy = self.flip_with_prob(outcome, flip_prob);
+        if let Some(last) = self.measurement_record.last_mut() {
+            *last = Some(noisy);
+        }
+        Some(noisy)
     }
 
     /// Sample a Bernoulli(`p`) outcome using the tableau's internal RNG.

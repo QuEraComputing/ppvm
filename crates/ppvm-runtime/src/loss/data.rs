@@ -132,11 +132,15 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for Lossy
     }
 
     fn weight(&self) -> usize {
-        (self.xbits | self.zbits | self.lbits).count_ones()
+        crate::word::or_popcount([
+            bytemuck::bytes_of(&self.xbits.data),
+            bytemuck::bytes_of(&self.zbits.data),
+            bytemuck::bytes_of(&self.lbits.data),
+        ])
     }
 
     fn loss_weight(&self) -> usize {
-        self.lbits.count_ones()
+        crate::word::or_popcount([bytemuck::bytes_of(&self.lbits.data)])
     }
 
     fn rehash(&mut self) {

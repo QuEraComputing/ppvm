@@ -37,93 +37,46 @@ use num::Complex;
 use ppvm_runtime::traits::PauliWordTrait;
 use ppvm_runtime::word::PauliWord;
 use rayon::prelude::*;
-use std::fmt;
 use std::time::Instant;
 
+pub mod config;
+mod error;
 pub mod expm;
 mod mf_expm;
 
-/// Words pack up to 128 qubits.
+pub use config::PcStepConfig;
+pub use error::Error;
+
+/// Number of 64-bit words used to back a [`Word`]'s X/Z bit-pair storage.
+///
+/// A Pauli string is stored as a fixed-width `[u64; W_U64]` pair of bitsets
+/// (one `u64` array for the X bits, one for the Z bits). Each `u64` packs 64
+/// qubits, so `W_U64` u64 words cover `64 · W_U64` qubits. The width is a
+/// compile-time constant rather than a runtime-sized `Vec` on purpose: an
+/// inline fixed array keeps the whole word in a single cache line, makes the
+/// hot-path commutator/product loops branch-free over a known iteration count,
+/// and gives O(1) clone/hash without heap indirection. Widen this constant
+/// (and rebuild) to support more qubits at a proportional memory/per-op cost.
 const W_U64: usize = 2;
 
-/// Maximum number of qubits supported by [`Word`] (= `8 · W_U64 · sizeof(u64)`).
+/// Maximum number of qubits supported by [`Word`] (`= 64 · W_U64`).
+///
+/// The fixed-width `[u64; W_U64]` bit-pair backing (see [`W_U64`]) packs 64
+/// qubits per `u64`, so the current `W_U64 = 2` covers up to 128 qubits.
+/// There is nothing fundamental about the value — it is purely the storage
+/// width chosen for cache-friendly O(1) Pauli ops. Constructing a
+/// [`LindbladSpec`] (or any [`Word`]) for more than `MAX_QUBITS` qubits is
+/// rejected with [`Error::TooManyQubits`] rather than silently truncated.
 pub const MAX_QUBITS: usize = 64 * W_U64;
 
 /// The Pauli-word storage type used throughout this crate.
 ///
-/// `[u64; 2]` covers up to 128 qubits; the `FxBuildHasher` matches the
+/// A fixed-width `[u64; W_U64]` bit-pair array (X bits + Z bits) packing up to
+/// [`MAX_QUBITS`] qubits with no heap allocation, so commutator/product/hash
+/// operations are cache-friendly and O(1). The `FxBuildHasher` matches the
 /// hash used by the `FxHashMap` keys we wrap with; `REHASH=true` means
 /// `set()` keeps the cached hash in sync.
 pub type Word = PauliWord<[u64; W_U64], FxBuildHasher, true>;
-
-/// Errors raised when constructing a [`LindbladSpec`].
-#[derive(Debug, Clone)]
-pub enum Error {
-    TooManyQubits {
-        got: usize,
-    },
-    LengthMismatch {
-        what: &'static str,
-        a: usize,
-        b: usize,
-    },
-    InvalidPauliCode {
-        code: u8,
-    },
-    InvalidPauliChar {
-        c: char,
-    },
-    WrongLength {
-        expected: usize,
-        got: usize,
-    },
-    NegativeRate {
-        index: usize,
-        rate: f64,
-    },
-    EmptyLincomb {
-        index: usize,
-    },
-    Internal(String),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::TooManyQubits { got } => {
-                write!(
-                    f,
-                    "LindbladSpec supports n_qubits ≤ {MAX_QUBITS}; got {got}"
-                )
-            }
-            Error::LengthMismatch { what, a, b } => {
-                write!(f, "{what}: expected matching lengths, got {a} and {b}")
-            }
-            Error::InvalidPauliCode { code } => write!(
-                f,
-                "Pauli code must be 0 (I), 1 (X), 2 (Z), or 3 (Y); got {code}"
-            ),
-            Error::InvalidPauliChar { c } => {
-                write!(f, "invalid Pauli character '{c}'; expected I, X, Y, or Z")
-            }
-            Error::WrongLength { expected, got } => {
-                write!(f, "Pauli string has length {got} but n_qubits = {expected}")
-            }
-            Error::NegativeRate { index, rate } => {
-                write!(f, "jump rate must be non-negative; got γ_{index} = {rate}")
-            }
-            Error::EmptyLincomb { index } => {
-                write!(
-                    f,
-                    "jump {index}: lincomb must contain at least one Pauli term"
-                )
-            }
-            Error::Internal(msg) => write!(f, "internal error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 /// Per-phase timing breakdown (microseconds) returned by
 /// [`LindbladSpec::pc_step_timed`].
@@ -614,11 +567,20 @@ impl LindbladSpec {
         const CHUNK_SIZE: usize = 4096;
         let mut merged: FxHashMap<Word, f64> = FxHashMap::default();
         for chunk_indices in order.chunks(CHUNK_SIZE) {
-            let local: Vec<Vec<(Word, f64)>> = chunk_indices
+            // Rayon fold/reduce: each worker folds its share of the chunk into
+            // a thread-local `FxHashMap`, then maps are pairwise reduced. This
+            // avoids materialising the full `Vec<Vec<(Word, f64)>>` of every
+            // term before merging — intermediates stay one-map-per-active-task
+            // instead of one-Vec-per-basis-element. The fold accumulator also
+            // carries the per-thread scratch buffers (`s1`, `s2`, `lm`) used by
+            // `compute_action_terms`, reused across all items folded by that
+            // task. Sum coefficients per key; identical final map.
+            let chunk_merged: FxHashMap<Word, f64> = chunk_indices
                 .par_iter()
-                .map_init(
+                .fold(
                     || {
                         (
+                            FxHashMap::<Word, f64>::default(),
                             Vec::<u32>::with_capacity(self.n_qubits),
                             Vec::<u32>::with_capacity(128),
                             FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
@@ -627,25 +589,30 @@ impl LindbladSpec {
                             ),
                         )
                     },
-                    |(s1, s2, lm), &i| {
+                    |(mut acc, mut s1, mut s2, mut lm), &i| {
                         let p = &basis[i];
                         let c = coeffs[i];
-                        let terms = self.compute_action_terms(p, s1, s2, lm);
-                        let mut out = Vec::with_capacity(terms.len());
+                        let terms = self.compute_action_terms(p, &mut s1, &mut s2, &mut lm);
                         for (w, v) in terms.iter() {
                             let h = word_hash(w);
                             if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
-                                out.push((w.clone(), c * *v));
+                                *acc.entry(w.clone()).or_insert(0.0) += c * *v;
                             }
                         }
-                        out
+                        (acc, s1, s2, lm)
                     },
                 )
-                .collect();
-            for v in local {
-                for (k, val) in v {
-                    *merged.entry(k).or_insert(0.0) += val;
-                }
+                .map(|(acc, ..)| acc)
+                .reduce(FxHashMap::default, |a, b| {
+                    // Merge the smaller map into the larger to minimise work.
+                    let (mut big, small) = if a.len() >= b.len() { (a, b) } else { (b, a) };
+                    for (k, val) in small {
+                        *big.entry(k).or_insert(0.0) += val;
+                    }
+                    big
+                });
+            for (k, val) in chunk_merged {
+                *merged.entry(k).or_insert(0.0) += val;
             }
 
             if tau_add.is_some() {
@@ -1018,27 +985,25 @@ impl LindbladSpec {
     ///
     /// The matrix-exponential action is computed matrix-free via the external
     /// `quspin-expm` engine; the in-basis generator is never materialised.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// Policy options (`tau_add`, `drop_tol`, `num_threads`) are bundled in
+    /// [`PcStepConfig`].
     pub fn pc_step(
         &self,
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        tau_add: f64,
-        drop_tol: f64,
         protected: &[Word],
-        num_threads: Option<usize>,
+        cfg: PcStepConfig,
     ) -> Result<(), Error> {
-        if let Some(n) = num_threads {
+        if let Some(n) = cfg.num_threads {
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(n)
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
-            pool.install(|| {
-                self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected)
-            })
+            pool.install(|| self.pc_step_inner(basis, coeffs, dt, protected, cfg))
         } else {
-            self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected)
+            self.pc_step_inner(basis, coeffs, dt, protected, cfg)
         }
     }
 
@@ -1046,27 +1011,25 @@ impl LindbladSpec {
     /// breakdown (microseconds), for profiling parallel scaling and hot
     /// spots. Output: `(leakage1, expand1, gencsr1, expm1, leakage2,
     /// expand2, gencsr2, expm2)`.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// Policy options (`tau_add`, `drop_tol`, `num_threads`) are bundled in
+    /// [`PcStepConfig`].
     pub fn pc_step_timed(
         &self,
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        tau_add: f64,
-        drop_tol: f64,
         protected: &[Word],
-        num_threads: Option<usize>,
+        cfg: PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
-        if let Some(n) = num_threads {
+        if let Some(n) = cfg.num_threads {
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(n)
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
-            pool.install(|| {
-                self.pc_step_inner_timed(basis, coeffs, dt, tau_add, drop_tol, protected)
-            })
+            pool.install(|| self.pc_step_inner_timed(basis, coeffs, dt, protected, cfg))
         } else {
-            self.pc_step_inner_timed(basis, coeffs, dt, tau_add, drop_tol, protected)
+            self.pc_step_inner_timed(basis, coeffs, dt, protected, cfg)
         }
     }
 
@@ -1075,10 +1038,12 @@ impl LindbladSpec {
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        tau_add: f64,
-        drop_tol: f64,
         protected: &[Word],
+        cfg: PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
+        let PcStepConfig {
+            tau_add, drop_tol, ..
+        } = cfg;
         let mut t = PcStepTimings::default();
 
         let t0 = Instant::now();
@@ -1129,10 +1094,12 @@ impl LindbladSpec {
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        tau_add: f64,
-        drop_tol: f64,
         protected: &[Word],
+        cfg: PcStepConfig,
     ) -> Result<(), Error> {
+        let PcStepConfig {
+            tau_add, drop_tol, ..
+        } = cfg;
         // 1. First-hop expansion. After this, `coeffs` contains the pre-step
         // coefficients followed by zeros for the newly-added leakage strings.
         // We rely on `coeffs` itself as the pre-step buffer for the corrector

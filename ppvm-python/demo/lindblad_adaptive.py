@@ -76,7 +76,7 @@ predictor_corrector = True
 times = np.arange(steps + 1) * dt
 k_indices = np.arange(1, kmax + 1)
 k_modes = 2 * np.pi * k_indices / L
-x = (np.arange(L) - L // 2 + L // 2) % L - L // 2
+x = np.arange(L) - L // 2
 
 
 # %% [markdown]

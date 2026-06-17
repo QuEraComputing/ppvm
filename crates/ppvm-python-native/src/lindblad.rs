@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use num::Complex;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use ppvm_lindblad::{
-    JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes,
+    JumpInput, LindbladSpec as CoreSpec, PcStepConfig, Word, codes_from_word, word_from_codes,
 };
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -243,10 +243,12 @@ impl LindbladSpec {
                 &mut basis_words,
                 &mut coeffs_vec,
                 dt,
-                tau_add,
-                drop_tol,
                 &protected_words,
-                num_threads,
+                PcStepConfig {
+                    tau_add,
+                    drop_tol,
+                    num_threads,
+                },
             )
             .map_err(map_err)?;
 
@@ -298,10 +300,12 @@ impl LindbladSpec {
                 &mut basis_words,
                 &mut coeffs_vec,
                 dt,
-                tau_add,
-                drop_tol,
                 &protected_words,
-                num_threads,
+                PcStepConfig {
+                    tau_add,
+                    drop_tol,
+                    num_threads,
+                },
             )
             .map_err(map_err)?;
 

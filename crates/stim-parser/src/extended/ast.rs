@@ -4,7 +4,7 @@
 //! Typed AST for Stim with PPVM tag-based extensions promoted to
 //! first-class instruction variants.
 
-use crate::ast::{AnnotationKind, GateName, MeasureName, NoiseName, RawInstruction, Tag};
+use crate::ast::{AnnotationKind, GateName, MeasureName, NoiseName, RawInstruction, Tag, Target};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtendedProgram {
@@ -22,7 +22,7 @@ pub enum RawPassthrough {
         name: GateName,
         tags: Vec<Tag>,
         args: Vec<f64>,
-        targets: Vec<usize>,
+        targets: Vec<Target>,
         line: usize,
     },
     Noise {

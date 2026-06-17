@@ -3,7 +3,7 @@
 
 //! Post-pass interpretation from the vanilla Stim AST to the extended AST.
 
-use crate::ast::{GateName, NoiseName, Program, RawInstruction, Tag, TagParam};
+use crate::ast::{GateName, NoiseName, Program, RawInstruction, Tag, TagParam, Target};
 use crate::extended::ast::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 use crate::extended::parser::ExtendedParseError;
 
@@ -90,7 +90,7 @@ fn interpret_gate(
     name: GateName,
     tags: Vec<Tag>,
     args: Vec<f64>,
-    targets: Vec<usize>,
+    targets: Vec<Target>,
     line: usize,
 ) -> Result<ExtendedInstruction, ExtendedParseError> {
     use GateName::*;
@@ -106,6 +106,7 @@ fn interpret_gate(
             })),
             [t] if t.name == "T" => {
                 require_no_params(t, name.canonical_name(), line)?;
+                let targets = qubit_targets(targets);
                 Ok(if matches!(name, S) {
                     ExtendedInstruction::T { targets, line }
                 } else {
@@ -133,7 +134,7 @@ fn interpret_gate(
                 targets,
                 line,
             })),
-            [t] => interpret_identity_tag(t, targets, line),
+            [t] => interpret_identity_tag(t, qubit_targets(targets), line),
             _ => Err(invalid_tag(
                 tags[0].name.clone(),
                 "I",
@@ -313,6 +314,20 @@ fn convert_mpad_bits(bits: &[usize], line: usize) -> Result<Vec<bool>, ExtendedP
         }
     }
     Ok(out)
+}
+
+/// Lower gate targets to bare qubit indices for the extended-dialect sugar
+/// variants (`T`, rotations, `U3`). Those gates only ever take qubit targets,
+/// so a `rec[...]` here is a parser-level impossibility — only the controlled
+/// Clifford gates carry record controls.
+fn qubit_targets(targets: Vec<Target>) -> Vec<usize> {
+    targets
+        .into_iter()
+        .map(|t| {
+            t.as_qubit()
+                .expect("extended-dialect sugar gates only take qubit targets")
+        })
+        .collect()
 }
 
 fn pair_targets(targets: &[usize]) -> Vec<(usize, usize)> {

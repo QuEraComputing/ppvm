@@ -10,19 +10,7 @@
 //!
 //! - the `(m, s)` selection table [`THETA`] / [`select_ms`] from Al-Mohy &
 //!   Higham (2011), used to pick the Taylor partition handed to
-//!   `quspin-expm`'s `from_parts`;
-//! - the complex CSR type [`CsrCx`] and its 1-norm / SpMV
-//!   ([`csr_cx_one_norm`], [`spmv_cx`]), used by the orbit-rep evolution
-//!   path (whose momentum-character phases make the matrix complex).
-
-use num::Complex;
-use rayon::prelude::*;
-use sprs::CsMatI;
-
-/// Complex-coefficient CSR matrix. Used by the orbit-rep evolution
-/// path, where matrix elements pick up `χ_k(g)` phases from the
-/// translation generator and become complex.
-pub type CsrCx = CsMatI<Complex<f64>, u32, usize>;
+//!   `quspin-expm`'s `from_parts`.
 
 /// `θ_m` table from Al-Mohy & Higham (2011), Table A.3, for double
 /// precision (unit roundoff `u = 2^{-53}`).
@@ -89,61 +77,6 @@ pub(crate) fn select_ms(t_norm: f64, max_m: Option<u32>) -> (u32, u32) {
         }
     }
     (best_m, best_s)
-}
-
-/// Matrix 1-norm `max_j Σ_i |A_{ij}|` for a complex CSR.
-pub fn csr_cx_one_norm(m: &CsrCx) -> f64 {
-    if m.cols() == 0 {
-        return 0.0;
-    }
-    let mut col_sums = vec![0f64; m.cols()];
-    for (k, &col) in m.indices().iter().enumerate() {
-        col_sums[col as usize] += m.data()[k].norm();
-    }
-    col_sums.into_iter().fold(0f64, f64::max)
-}
-
-/// `y ← A · x` for a complex CSR + complex vector. Serial.
-pub fn spmv_cx_serial(m: &CsrCx, x: &[Complex<f64>], y: &mut [Complex<f64>]) {
-    debug_assert_eq!(x.len(), m.cols());
-    debug_assert_eq!(y.len(), m.rows());
-    let indptr_raw = m.indptr();
-    let indptr = indptr_raw.raw_storage();
-    let indices = m.indices();
-    let data = m.data();
-    for (i, yi) in y.iter_mut().enumerate() {
-        let mut sum = Complex::new(0.0, 0.0);
-        for k in indptr[i]..indptr[i + 1] {
-            sum += data[k] * x[indices[k] as usize];
-        }
-        *yi = sum;
-    }
-}
-
-/// `y ← A · x` for a complex CSR + complex vector. Rayon-parallel over rows.
-pub fn spmv_cx_parallel(m: &CsrCx, x: &[Complex<f64>], y: &mut [Complex<f64>]) {
-    debug_assert_eq!(x.len(), m.cols());
-    debug_assert_eq!(y.len(), m.rows());
-    let indptr_raw = m.indptr();
-    let indptr = indptr_raw.raw_storage();
-    let indices = m.indices();
-    let data = m.data();
-    y.par_iter_mut().enumerate().for_each(|(i, yi)| {
-        let mut sum = Complex::new(0.0, 0.0);
-        for k in indptr[i]..indptr[i + 1] {
-            sum += data[k] * x[indices[k] as usize];
-        }
-        *yi = sum;
-    });
-}
-
-#[inline]
-pub fn spmv_cx(m: &CsrCx, x: &[Complex<f64>], y: &mut [Complex<f64>], parallel_threshold: usize) {
-    if m.nnz() >= parallel_threshold {
-        spmv_cx_parallel(m, x, y);
-    } else {
-        spmv_cx_serial(m, x, y);
-    }
 }
 
 #[cfg(test)]

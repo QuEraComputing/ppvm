@@ -33,7 +33,6 @@
 //!   `pc_step_orbit_rep` once per momentum mode and inverse-Fourier
 //!   the results.
 
-use crate::expm::CsrCx;
 use crate::{Error, LindbladSpec};
 use fxhash::{FxBuildHasher, FxHashMap};
 use num::Complex;
@@ -41,7 +40,6 @@ use ppvm_runtime::symmetry::TranslationGroup;
 use quspin_expm::ExpmOp;
 use quspin_types::{ExpmComputation, LinearOperator, QuSpinError};
 use rayon::prelude::*;
-use sprs::CsMatI;
 
 // Word type re-exported from lib.rs.
 use crate::Word;
@@ -60,70 +58,6 @@ pub fn canonicalize_basis_to_rep(basis: &mut [Word], group: &TranslationGroup) {
     }
 }
 
-/// Build the in-basis-restricted complex CSR of the L* generator,
-/// **in orbit-rep form** at momentum sector `k_modes`.
-///
-/// For each input rep `r` (column index) and each output Pauli `q` of
-/// `L*(r) = Σ_q v_q · q`:
-/// 1. Canonicalize `q` → `(r_q, cnt_q)`.
-/// 2. If `r_q` is in `basis` at row index `i`, add `χ_k(g_{cnt_q}) · v_q`
-///    to `M[i, col_r]`.
-/// 3. Outputs not in `basis` are silently dropped (they would be
-///    handled by [`leakage_orbit_rep`] in the surrounding pc_step).
-///
-/// Returns a `(basis.len() × basis.len())` complex CSR.
-pub fn generator_csr_orbit_rep(
-    spec: &LindbladSpec,
-    basis: &[Word],
-    group: &TranslationGroup,
-    k_modes: &[i32],
-) -> CsrCx {
-    let n = basis.len();
-    if n == 0 {
-        return CsMatI::new_from_unsorted((0, 0), vec![0], Vec::new(), Vec::new())
-            .map_err(|(_, _, _, e)| e)
-            .expect("empty CSR");
-    }
-
-    // Build a Word → row index map.
-    let index = build_basis_index(basis);
-
-    // Per-column accumulation: for each rep r, list of (row, phase × v).
-    let cols = build_orbit_rep_cols(spec, basis, &index, group, k_modes);
-
-    // Build per-row (col, value) lists. Multiple (col, row) entries
-    // for the same (row, col) cell get summed (sprs's `new_from_unsorted`
-    // doesn't dedup, and would also choke on unsorted within-row
-    // indices); we do both up front.
-    let mut row_data: Vec<Vec<(u32, Complex<f64>)>> = vec![Vec::new(); n];
-    for (col, col_data) in cols.iter().enumerate() {
-        for &(row, v) in col_data.iter() {
-            row_data[row as usize].push((col as u32, v));
-        }
-    }
-    let mut row_ptr = vec![0usize; n + 1];
-    let mut indices: Vec<u32> = Vec::new();
-    let mut data: Vec<Complex<f64>> = Vec::new();
-    for (i, mut rd) in row_data.into_iter().enumerate() {
-        // sort by col, then sum duplicates.
-        rd.sort_by_key(|&(c, _)| c);
-        let mut last_col: Option<u32> = None;
-        for (c, v) in rd {
-            if last_col == Some(c) {
-                let n_so_far = data.len();
-                data[n_so_far - 1] += v;
-            } else {
-                indices.push(c);
-                data.push(v);
-                last_col = Some(c);
-            }
-        }
-        row_ptr[i + 1] = indices.len();
-    }
-
-    CsMatI::new((n, n), row_ptr, indices, data)
-}
-
 /// Build the per-column phase-aware action of the in-basis-restricted
 /// orbit-rep generator `M` at momentum sector `k_modes`.
 ///
@@ -132,9 +66,8 @@ pub fn generator_csr_orbit_rep(
 /// of `L*(basis[c])` whose orbit rep `r_q` is in `basis` at index `row`.
 /// Outputs not in `basis` are dropped. This is the expensive part of the
 /// orbit-rep dynamics (`compute_action_terms` + `canonicalize_with_shift`
-/// + `character`); it is computed once and reused, both by
-/// [`generator_csr_orbit_rep`] (which transposes it into a CSR) and by the
-/// CSC-style matvec in [`OrbitRepCscOp`] (which reads it directly).
+/// + `character`); it is computed once and reused by the CSC-style matvec
+/// in [`OrbitRepCscOp`] (which reads it directly).
 pub(crate) fn build_orbit_rep_cols(
     spec: &LindbladSpec,
     basis: &[Word],
@@ -302,7 +235,7 @@ impl LinearOperator<Complex<f64>> for OrbitRepCscOp<'_> {
 
 /// Compute `exp(dt · M) · coeffs` for the in-basis-restricted orbit-rep
 /// generator `M` at momentum sector `k_modes`, via `quspin-expm`. Returns
-/// a fresh `Vec<Complex<f64>>` of length `basis.len()`. No `CsrCx` is
+/// a fresh `Vec<Complex<f64>>` of length `basis.len()`. No CSR is
 /// materialised.
 ///
 /// The expensive phase-aware action is computed ONCE here (via
@@ -528,94 +461,4 @@ fn prune_basis_complex_local(
     }
     basis.truncate(write);
     coeffs.truncate(write);
-}
-
-fn build_basis_index(basis: &[Word]) -> FxHashMap<Word, u32> {
-    let mut index: FxHashMap<Word, u32> = FxHashMap::default();
-    for (i, w) in basis.iter().enumerate() {
-        let prev = index.insert(w.clone(), i as u32);
-        debug_assert!(
-            prev.is_none(),
-            "orbit-rep basis contains duplicate at positions {} and {}",
-            prev.unwrap(),
-            i,
-        );
-    }
-    index
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ppvm_runtime::symmetry::canonicalize_pauli_sum_complex;
-
-    /// Cache-the-action orbit-rep expm must agree with the CSR-backed
-    /// reference to numerical round-off. Setup mirrors the end-to-end
-    /// `pc_step_orbit_rep_matches_full_basis_projection` test in lib.rs:
-    /// an n=4 translation-invariant XY chain, an orbit-rep basis built by
-    /// canonicalizing the Σ Z_j seed, deterministic pseudo-random complex
-    /// coeffs, dt=0.37. Checked at momenta k=0 and k=1.
-    #[test]
-    fn parity_orbit_rep_cached_vs_csr() {
-        let n = 4usize;
-        let dt = 0.37f64;
-
-        // Translation-invariant XY Hamiltonian.
-        let mut h_terms: Vec<(String, f64)> = Vec::new();
-        for j in 0..n {
-            let nxt = (j + 1) % n;
-            for op in ["X", "Y"] {
-                let mut s = vec!['I'; n];
-                s[j] = op.chars().next().unwrap();
-                s[nxt] = op.chars().next().unwrap();
-                h_terms.push((s.into_iter().collect(), 1.0));
-            }
-        }
-        let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
-        let group = TranslationGroup::chain_1d(n);
-
-        for k_mode in [0i32, 1i32] {
-            let k = vec![k_mode];
-
-            // Seed: Σ_j Z_j, then canonicalize to an orbit-rep basis at k.
-            let mut basis: Vec<Word> = (0..n)
-                .map(|j| {
-                    let mut s = vec!['I'; n];
-                    s[j] = 'Z';
-                    let (w, _) =
-                        crate::parse_pauli_string(&s.into_iter().collect::<String>(), n).unwrap();
-                    w
-                })
-                .collect();
-            let mut seed_coeffs: Vec<Complex<f64>> =
-                (0..n).map(|_| Complex::new(1.0, 0.0)).collect();
-            canonicalize_pauli_sum_complex(&mut basis, &mut seed_coeffs, &group, &k);
-            assert!(!basis.is_empty(), "orbit-rep basis empty for k={k_mode}");
-
-            // Deterministic pseudo-random complex coeffs on the rep basis.
-            let coeffs: Vec<Complex<f64>> = (0..basis.len())
-                .map(|i| {
-                    let a = ((i as u64).wrapping_mul(2654435761) % 1000) as f64 / 1000.0 - 0.5;
-                    let b = ((i as u64).wrapping_mul(40503).wrapping_add(7) % 1000) as f64 / 1000.0
-                        - 0.5;
-                    Complex::new(a, b)
-                })
-                .collect();
-
-            let cached = expm_apply_orbit_rep_cached(&spec, &basis, &group, &k, dt, &coeffs);
-            let csr = generator_csr_orbit_rep(&spec, &basis, &group, &k);
-            let reference = crate::mf_expm::expm_apply_csr_cx(&csr, dt, &coeffs);
-
-            assert_eq!(cached.len(), reference.len());
-            let max_diff = cached
-                .iter()
-                .zip(reference.iter())
-                .map(|(a, b)| (a - b).norm())
-                .fold(0.0_f64, f64::max);
-            assert!(
-                max_diff < 1e-10,
-                "orbit-rep cached vs csr parity failed at k={k_mode}: max|Δ| = {max_diff:e}"
-            );
-        }
-    }
 }

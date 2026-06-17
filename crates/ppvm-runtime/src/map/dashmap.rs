@@ -169,6 +169,17 @@ where
         })
     }
 
+    fn map_insert_vec<F>(&mut self, dest: &mut Vec<(W, C)>, f: F)
+    where
+        F: Fn(&W, &mut C) -> Option<(W, C)> + Sync + Send,
+    {
+        use rayon::iter::ParallelExtend;
+        dest.par_extend(self.par_iter_mut().filter_map(|mut entry| {
+            let (k, v) = entry.pair_mut();
+            f(k, v)
+        }));
+    }
+
     fn map_insert_multiple<F>(&mut self, dest: &mut Self, f: F)
     where
         F: Fn(&W, &mut C) -> Option<Vec<(W, C)>> + Sync + Send,

@@ -161,6 +161,17 @@ macro_rules! impl_acmap_insert {
                 }
             }
 
+            fn map_insert_vec<F>(&mut self, dest: &mut Vec<(W, C)>, f: F)
+            where
+                F: Fn(&W, &mut C) -> Option<(W, C)> + Sync + Send,
+            {
+                for (k, v) in self.iter_mut() {
+                    if let Some(entry) = f(k, v) {
+                        dest.push(entry);
+                    }
+                }
+            }
+
             fn map_insert_multiple<F>(&mut self, dest: &mut Self, f: F)
             where
                 F: Fn(&W, &mut C) -> Option<Vec<(W, C)>> + Sync + Send,

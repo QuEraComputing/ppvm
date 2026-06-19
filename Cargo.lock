@@ -1840,6 +1840,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vihaco"
 version = "0.1.0"
+source = "git+https://github.com/QuEraComputing/vihaco#171aab75054f08954fc7ccf3374c9525df1fa7ae"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -1869,6 +1870,7 @@ dependencies = [
 [[package]]
 name = "vihaco-cpu"
 version = "0.1.0"
+source = "git+https://github.com/QuEraComputing/vihaco#171aab75054f08954fc7ccf3374c9525df1fa7ae"
 dependencies = [
  "chumsky 0.10.1",
  "codespan",
@@ -1883,6 +1885,7 @@ dependencies = [
 [[package]]
 name = "vihaco-macros"
 version = "0.1.0"
+source = "git+https://github.com/QuEraComputing/vihaco#171aab75054f08954fc7ccf3374c9525df1fa7ae"
 dependencies = [
  "convert_case",
  "proc-macro2",
@@ -1893,6 +1896,7 @@ dependencies = [
 [[package]]
 name = "vihaco-parser"
 version = "0.1.0"
+source = "git+https://github.com/QuEraComputing/vihaco#171aab75054f08954fc7ccf3374c9525df1fa7ae"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1903,6 +1907,7 @@ dependencies = [
 [[package]]
 name = "vihaco-parser-core"
 version = "0.1.0"
+source = "git+https://github.com/QuEraComputing/vihaco#171aab75054f08954fc7ccf3374c9525df1fa7ae"
 dependencies = [
  "chumsky 0.10.1",
 ]

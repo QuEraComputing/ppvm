@@ -67,10 +67,10 @@ pub struct PPVM {
     #[program]
     loader: ProgramLoader<PPVMInstruction, PPVMDeviceInfo>,
 
-    #[device(0x00, resolve_with = resolve_cpu)]
+    #[device(0x00)]
     cpu: CPU,
 
-    #[device(0x01, resolve_with = resolve_circuit)]
+    #[device(0x01)]
     circuit: Circuit,
 
     stdout: StdoutObserver,

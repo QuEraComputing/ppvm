@@ -53,3 +53,7 @@ harness = false
 [[bench]]
 name = "micro"
 harness = false
+
+[[bench]]
+name = "truncation-weight"
+harness = false

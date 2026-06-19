@@ -189,7 +189,9 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Paul
             // the `&[u8]` view safe — no padding, all bytes initialized.
             hasher.write(bytemuck::bytes_of(&self.xbits.data));
             hasher.write(bytemuck::bytes_of(&self.zbits.data));
-            self.hash_cache = hasher.finish();
+            // Fold high bits into the low ones — fxhash on short storages leaves the low bits correlated, which clusters hashbrown buckets at high fill.
+            let h = hasher.finish();
+            self.hash_cache = h ^ (h >> 32);
         }
     }
 

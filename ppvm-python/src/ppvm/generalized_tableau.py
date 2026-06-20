@@ -112,7 +112,7 @@ class GeneralizedTableau(
 
         Both the original and the copy will produce identical random sequences
         from this point forward. To get an independent copy with a fresh RNG,
-        use :meth:`fork` instead.
+        use `fork` instead.
         """
         copied = GeneralizedTableau(self.n_qubits, self.min_abs_coeff)
         object.__setattr__(copied, "_interface", self._interface.__copy__())
@@ -123,7 +123,7 @@ class GeneralizedTableau(
 
         Both the original and the copy will produce identical random sequences
         from this point forward. To get an independent copy with a fresh RNG,
-        use :meth:`fork` instead.
+        use `fork` instead.
         """
         copied = GeneralizedTableau(self.n_qubits, self.min_abs_coeff)
         object.__setattr__(copied, "_interface", self._interface.__deepcopy__(memo))
@@ -223,8 +223,8 @@ class GeneralizedTableau(
 
         .. note::
             This **mutates** the tableau in place. For independent shots use
-            :meth:`fork` or the :func:`ppvm.sample_stim` / :meth:`sample`
-            helpers (which build a fresh tableau per shot).
+            `fork` or `ppvm.sample_stim` / `sample` helpers (which build a
+            fresh tableau per shot).
         """
         raw = self._interface.run(prog)
         return [MeasurementResult(x) for x in raw]
@@ -242,6 +242,14 @@ class GeneralizedTableau(
 
         Each shot starts from a fresh tableau, so this is the right entry
         point for multi-shot sampling.
+
+        Shots run in parallel across CPU cores (the GIL is released during
+        sampling), with a serial fallback for small batches. When ``seed`` is
+        given (it must fit in an unsigned 64-bit integer), shot ``i`` uses
+        ``(seed + i) % 2**64`` (wrapping ``u64`` arithmetic), so results are
+        reproducible and independent of the number of threads. Set the
+        ``RAYON_NUM_THREADS`` environment variable before the first call to
+        control the pool size (it defaults to the number of logical cores).
         """
         native_cls = _native_tableau_cls(n_qubits)
         raw = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
@@ -255,7 +263,11 @@ def sample_stim(
     num_shots: int = 1,
     seed: int | None = None,
 ) -> list[list[MeasurementResult]]:
-    """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``."""
+    """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``.
+
+    Shots are sampled in parallel across CPU cores with the GIL released; see
+    `GeneralizedTableau.sample` for seeding and ``RAYON_NUM_THREADS``.
+    """
     return GeneralizedTableau.sample(
         prog, n_qubits, min_abs_coeff=min_abs_coeff, num_shots=num_shots, seed=seed
     )

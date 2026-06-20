@@ -49,3 +49,7 @@ harness = false
 [[bench]]
 name = "clifford_crossover"
 harness = false
+
+[[bench]]
+name = "measure-all"
+harness = false

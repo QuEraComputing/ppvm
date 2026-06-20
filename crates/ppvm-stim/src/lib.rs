@@ -7,7 +7,7 @@
 //!
 //! 1. [`parse_extended`] — `&str` → [`ExtendedProgram`] (re-exported from
 //!    [`stim_parser`]).
-//! 2. [`execute`] / [`sample`] — call [`prepare`] to validate the
+//! 2. [`execute`] / [`sample`] — call [`validate`](fn@validate) to validate the
 //!    [`ExtendedProgram`], then apply it to a [`GeneralizedTableau`].
 //!
 //! Multi-shot usage should call [`parse_extended`] once and pass the parsed
@@ -21,7 +21,7 @@
 //! use ppvm_tableau::prelude::*;
 //!
 //! let prog = parse_extended(circuit_src)?;
-//! let shots = sample(&prog, 10_000, || {
+//! let shots = sample(&prog, 10_000, |_| {
 //!     GeneralizedTableau::<_, usize, _>::new(n_qubits, 1e-10)
 //! })?;
 //! # Ok::<(), ppvm_stim::Error>(())
@@ -34,12 +34,16 @@
 //! [`GeneralizedTableau`]: ppvm_tableau::prelude::GeneralizedTableau
 
 pub mod executor;
-pub mod prepare;
+pub mod validate;
 
 pub use stim_parser::prelude::*;
 
-pub use executor::{execute, execute_prepared, sample};
-pub use prepare::{ExecError, prepare};
+pub use executor::{
+    execute, execute_validated, sample, sample_serial, sample_serial_validated, sample_validated,
+};
+#[cfg(feature = "rayon")]
+pub use executor::{sample_parallel, sample_parallel_validated};
+pub use validate::{ExecError, validate};
 
 use std::path::{Path, PathBuf};
 
@@ -75,6 +79,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     num::Complex<T::Coeff>: std::ops::Mul<Output = num::Complex<T::Coeff>>
@@ -107,6 +112,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     num::Complex<T::Coeff>: std::ops::Mul<Output = num::Complex<T::Coeff>>

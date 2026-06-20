@@ -1,4 +1,6 @@
+/debug
 /target
+/debug
 .DS_Store
 .vscode/
 *__pycache__*

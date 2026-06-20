@@ -31,7 +31,7 @@ fn main() -> Result<(), ppvm_stim::Error> {
 
     // Parse once, build a fresh tableau per shot via the factory closure.
     let start = Instant::now();
-    let shots = sample(&prog, SHOTS, || Tab::new(N_QUBITS, 1e-10))?;
+    let shots = sample(&prog, SHOTS, |_| Tab::new(N_QUBITS, 1e-10))?;
     let elapsed = start.elapsed();
 
     for (i, shot) in shots.iter().enumerate() {

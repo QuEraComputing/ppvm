@@ -5,11 +5,11 @@ use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_tableau::prelude::*;
+use ppvm_tableau::{measure_all::LossyMeasureAll, prelude::*};
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
 
-fn msd_func_fused() -> String {
+fn msd_func_fused<const MEASURE: bool>() -> (String, Tab) {
     let qubits_per_code_block = 17;
     let n_qubits = qubits_per_code_block * 5;
     debug_assert!(
@@ -71,12 +71,16 @@ fn msd_func_fused() -> String {
         tab.sqrt_x_adj_batch(block);
     }
 
-    let bit_string: String = (0..n_qubits)
-        .map(|i| tab.measure(i))
-        .map(|outcome| if outcome.unwrap() { '1' } else { '0' })
-        .collect();
-
-    bit_string
+    if MEASURE {
+        let bit_string: String = tab
+            .measure_all()
+            .into_iter()
+            .map(|outcome| if outcome.unwrap() { '1' } else { '0' })
+            .collect();
+        (bit_string, tab)
+    } else {
+        ("".to_owned(), tab)
+    }
 }
 
 fn encode_fused(tab: &mut Tab, qubits: &[usize]) {
@@ -186,7 +190,24 @@ pub fn benchmark_suite_msd_fused(c: &mut Criterion, name: impl AsRef<str>) {
         b.iter_batched_ref(
             || {},
             |_| {
-                msd_func_fused();
+                msd_func_fused::<true>();
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+
+    // propagate up to measurements
+    let (_, tab) = msd_func_fused::<false>();
+    group.bench_function("msd-fused-sample", |b| {
+        b.iter_batched_ref(
+            || {},
+            |_| {
+                let mut tab_sample = tab.fork(None);
+                let bit_string: String = (0..85)
+                    .map(|i| tab_sample.measure(i))
+                    .map(|outcome| if outcome.unwrap() { '1' } else { '0' })
+                    .collect();
+                std::hint::black_box(bit_string);
             },
             criterion::BatchSize::SmallInput,
         );

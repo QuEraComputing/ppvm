@@ -146,16 +146,51 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Paul
         self.zbits.set(index, value);
     }
 
+    #[inline]
     fn weight(&self) -> usize {
-        (self.xbits | self.zbits).count_ones()
+        let xs: &[u8] = bytemuck::bytes_of(&self.xbits.data);
+        let zs: &[u8] = bytemuck::bytes_of(&self.zbits.data);
+        debug_assert_eq!(xs.len(), zs.len());
+
+        let mut total: u32 = 0;
+        let (mut i, n) = (0usize, xs.len());
+
+        // u64 chunks — one popcnt per chunk (x86 +popcnt; AArch64 CNT+ADDV).
+        while i + 8 <= n {
+            let x = u64::from_ne_bytes(xs[i..i + 8].try_into().unwrap());
+            let z = u64::from_ne_bytes(zs[i..i + 8].try_into().unwrap());
+            total += (x | z).count_ones();
+            i += 8;
+        }
+        if i + 4 <= n {
+            let x = u32::from_ne_bytes(xs[i..i + 4].try_into().unwrap());
+            let z = u32::from_ne_bytes(zs[i..i + 4].try_into().unwrap());
+            total += (x | z).count_ones();
+            i += 4;
+        }
+        if i + 2 <= n {
+            let x = u16::from_ne_bytes(xs[i..i + 2].try_into().unwrap());
+            let z = u16::from_ne_bytes(zs[i..i + 2].try_into().unwrap());
+            total += (x | z).count_ones();
+            i += 2;
+        }
+        if i < n {
+            total += (xs[i] | zs[i]).count_ones();
+        }
+
+        total as usize
     }
 
     fn rehash(&mut self) {
         if REHASH {
             use std::hash::Hasher;
             let mut hasher = S::default().build_hasher();
-            self.xbits.data.hash(&mut hasher);
-            self.zbits.data.hash(&mut hasher);
+            // Feed the raw storage bytes through the Hasher's byte-slice path
+            // so FxHasher consumes 8 bytes per round instead of one byte at a
+            // time. `A: bytemuck::Pod` (via the `PauliStorage` bound) makes
+            // the `&[u8]` view safe — no padding, all bytes initialized.
+            hasher.write(bytemuck::bytes_of(&self.xbits.data));
+            hasher.write(bytemuck::bytes_of(&self.zbits.data));
             self.hash_cache = hasher.finish();
         }
     }

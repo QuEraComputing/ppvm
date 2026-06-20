@@ -3,10 +3,12 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_runtime::prelude::*;
-use ppvm_runtime::strategy::CoefficientThreshold;
+use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
 use rayon::current_num_threads;
 
-fn trotter_func<T: Config<Coeff = f64, Strategy = CoefficientThreshold>>(
+fn trotter_func<
+    T: Config<Coeff = f64, Strategy = CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
+>(
     state: &mut PauliSum<T>,
     n: usize,
     total_time: &f64,
@@ -43,7 +45,9 @@ fn trotter_func<T: Config<Coeff = f64, Strategy = CoefficientThreshold>>(
     }
 }
 
-pub fn benchmark_suite_trotter<T: Config<Coeff = f64, Strategy = CoefficientThreshold>>(
+pub fn benchmark_suite_trotter<
+    T: Config<Coeff = f64, Strategy = CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
+>(
     c: &mut Criterion,
     name: impl AsRef<str>,
 ) {
@@ -56,7 +60,8 @@ pub fn benchmark_suite_trotter<T: Config<Coeff = f64, Strategy = CoefficientThre
     let time = 1.0 / h;
     let j = 1.0 / 8.0 * h;
 
-    let strat = CoefficientThreshold(1e-6);
+    // let strat = CoefficientThreshold(1e-6);
+    let strat = CombinedStrategy(CoefficientThreshold(1e-6), MaxPauliWeight(usize::MAX));
     let mut state: PauliSum<T> = PauliSum::builder()
         .n_qubits(n_qubits)
         .strategy(strat)
@@ -91,34 +96,28 @@ pub fn benchmark_suite_trotter<T: Config<Coeff = f64, Strategy = CoefficientThre
 
 pub fn trotter_benchmarks(c: &mut Criterion) {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(4)
+        .num_threads(1)
         .build_global()
         .unwrap();
     println!("Using {} threads", current_num_threads());
-    benchmark_suite_trotter::<config::gxhash::ByteF64<2, CoefficientThreshold>>(
-        c,
-        "ByteF64GxHashMap<2, CoefficientThreshold>",
-    );
-    benchmark_suite_trotter::<config::fxhash::ByteF64<2, CoefficientThreshold>>(
-        c,
-        "ByteF64FxHashMap<2, CoefficientThreshold>",
-    );
-    benchmark_suite_trotter::<config::dashmap::ByteFxHashF64<2, CoefficientThreshold>>(
-        c,
-        "ByteF64FxDashMap<2, CoefficientThreshold>",
-    );
-    benchmark_suite_trotter::<config::dashmap::ByteGxHashF64<2, CoefficientThreshold>>(
-        c,
-        "ByteF64GxDashMap<2, CoefficientThreshold>",
-    );
-    benchmark_suite_trotter::<config::indexmap::ByteFxHashF64<2, CoefficientThreshold>>(
-        c,
-        "ByteF64FxIndexMap<2, CoefficientThreshold>",
-    );
-    benchmark_suite_trotter::<config::indexmap::ByteGxHashF64<2, CoefficientThreshold>>(
-        c,
-        "ByteF64GxIndexMap<2, CoefficientThreshold>",
-    );
+    benchmark_suite_trotter::<
+        config::gxhash::ByteF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
+    >(c, "ByteF64GxHashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    benchmark_suite_trotter::<
+        config::fxhash::ByteF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
+    >(c, "ByteF64FxHashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    benchmark_suite_trotter::<
+        config::dashmap::ByteFxHashF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
+    >(c, "ByteF64FxDashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    benchmark_suite_trotter::<
+        config::dashmap::ByteGxHashF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
+    >(c, "ByteF64GxDashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    benchmark_suite_trotter::<
+        config::indexmap::ByteFxHashF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
+    >(c, "ByteF64FxIndexMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    benchmark_suite_trotter::<
+        config::indexmap::ByteGxHashF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
+    >(c, "ByteF64GxIndexMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
 }
 
 criterion_group!(benches, trotter_benchmarks);

@@ -131,12 +131,72 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for Lossy
         self.zbits.set(index, value);
     }
 
+    #[inline]
     fn weight(&self) -> usize {
-        (self.xbits | self.zbits | self.lbits).count_ones()
+        let xs: &[u8] = bytemuck::bytes_of(&self.xbits.data);
+        let zs: &[u8] = bytemuck::bytes_of(&self.zbits.data);
+        let ls: &[u8] = bytemuck::bytes_of(&self.lbits.data);
+        debug_assert_eq!(xs.len(), zs.len());
+        debug_assert_eq!(xs.len(), ls.len());
+
+        let mut total: u32 = 0;
+        let (mut i, n) = (0usize, xs.len());
+
+        while i + 8 <= n {
+            let x = u64::from_ne_bytes(xs[i..i + 8].try_into().unwrap());
+            let z = u64::from_ne_bytes(zs[i..i + 8].try_into().unwrap());
+            let l = u64::from_ne_bytes(ls[i..i + 8].try_into().unwrap());
+            total += (x | z | l).count_ones();
+            i += 8;
+        }
+        if i + 4 <= n {
+            let x = u32::from_ne_bytes(xs[i..i + 4].try_into().unwrap());
+            let z = u32::from_ne_bytes(zs[i..i + 4].try_into().unwrap());
+            let l = u32::from_ne_bytes(ls[i..i + 4].try_into().unwrap());
+            total += (x | z | l).count_ones();
+            i += 4;
+        }
+        if i + 2 <= n {
+            let x = u16::from_ne_bytes(xs[i..i + 2].try_into().unwrap());
+            let z = u16::from_ne_bytes(zs[i..i + 2].try_into().unwrap());
+            let l = u16::from_ne_bytes(ls[i..i + 2].try_into().unwrap());
+            total += (x | z | l).count_ones();
+            i += 2;
+        }
+        if i < n {
+            total += (xs[i] | zs[i] | ls[i]).count_ones();
+        }
+
+        total as usize
     }
 
+    #[inline]
     fn loss_weight(&self) -> usize {
-        self.lbits.count_ones()
+        let ls: &[u8] = bytemuck::bytes_of(&self.lbits.data);
+
+        let mut total: u32 = 0;
+        let (mut i, n) = (0usize, ls.len());
+
+        while i + 8 <= n {
+            let l = u64::from_ne_bytes(ls[i..i + 8].try_into().unwrap());
+            total += l.count_ones();
+            i += 8;
+        }
+        if i + 4 <= n {
+            let l = u32::from_ne_bytes(ls[i..i + 4].try_into().unwrap());
+            total += l.count_ones();
+            i += 4;
+        }
+        if i + 2 <= n {
+            let l = u16::from_ne_bytes(ls[i..i + 2].try_into().unwrap());
+            total += l.count_ones();
+            i += 2;
+        }
+        if i < n {
+            total += ls[i].count_ones();
+        }
+
+        total as usize
     }
 
     fn rehash(&mut self) {

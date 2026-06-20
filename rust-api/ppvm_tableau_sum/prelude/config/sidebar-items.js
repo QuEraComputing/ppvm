@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["dashmap","fx64hash","fxhash","gxhash","indexmap"],"trait":["Config"]};

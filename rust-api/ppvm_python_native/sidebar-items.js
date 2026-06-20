@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["interface","interface_tableau","ppvm_python_native","stim_program"]};
+window.SIDEBAR_ITEMS = {"mod":["interface","interface_tableau","interface_tableau_sum","ppvm_python_native","stim_program"]};

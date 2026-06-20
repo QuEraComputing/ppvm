@@ -22,7 +22,7 @@
 <a href=#22 id=22 data-nosnippet>22</a>    </span>T: Config,
 <a href=#23 id=23 data-nosnippet>23</a>    &lt;&lt;T <span class="kw">as </span>Config&gt;::Storage <span class="kw">as </span>BitView&gt;::Store: PrimInt,
 <a href=#24 id=24 data-nosnippet>24</a>    C: SparseVector&lt;Complex&lt;T::Coeff&gt;, I&gt;,
-<a href=#25 id=25 data-nosnippet>25</a>    T::Coeff: One + Zero + Clone + Send + Sync + num::Num,
+<a href=#25 id=25 data-nosnippet>25</a>    T::Coeff: One + Zero + Clone + Send + Sync + num::Num + PartialOrd,
 <a href=#26 id=26 data-nosnippet>26</a>    Complex&lt;T::Coeff&gt;: std::ops::Mul&lt;Output = Complex&lt;T::Coeff&gt;&gt;
 <a href=#27 id=27 data-nosnippet>27</a>        + std::ops::AddAssign
 <a href=#28 id=28 data-nosnippet>28</a>        + From&lt;Complex64&gt;

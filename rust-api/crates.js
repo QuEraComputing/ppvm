@@ -1,2 +1,2 @@
-window.ALL_CRATES = ["paulisum","ppvm_python_native","ppvm_runtime","ppvm_stim","ppvm_sym","ppvm_tableau","stim_parser","stim_sample","sym","tableau"];
-//{"start":21,"fragment_lengths":[10,21,15,12,11,15,14,14,6,10]}
+window.ALL_CRATES = ["paulisum","ppvm_python_native","ppvm_runtime","ppvm_stim","ppvm_sym","ppvm_tableau","ppvm_tableau_sum","stim_parser","stim_sample","sym","tableau"];
+//{"start":21,"fragment_lengths":[10,21,15,12,11,15,19,14,14,6,10]}

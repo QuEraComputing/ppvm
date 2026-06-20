@@ -254,11 +254,12 @@ def test_sample_stim_zero_shots_returns_empty():
     assert sample_stim(prog, n_qubits=1, num_shots=0) == []
 
 
-def test_sample_stim_seeded_is_reproducible_across_the_parallel_path():
-    # A randomising circuit at a shot count high enough to trigger the
-    # parallel sampling path. With a fixed seed the per-shot seeds are
-    # derived from the shot index, so two runs must agree exactly and the
-    # result must be independent of how rayon schedules the shots.
+def test_sample_stim_seeded_is_reproducible_for_large_batches():
+    # A randomising circuit at a large shot count. Per-shot seeds are derived
+    # from the shot index, so two runs must agree exactly regardless of whether
+    # the batch runs serially or in parallel (the serial/parallel cutoff depends
+    # on rayon's pool size, which we don't control here) and independent of how
+    # rayon schedules the shots.
     prog = StimProgram.parse("H 0\nM 0")
     a = sample_stim(prog, n_qubits=1, num_shots=512, seed=7)
     b = sample_stim(prog, n_qubits=1, num_shots=512, seed=7)

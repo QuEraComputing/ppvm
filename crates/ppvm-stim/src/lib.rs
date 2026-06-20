@@ -7,7 +7,7 @@
 //!
 //! 1. [`parse_extended`] — `&str` → [`ExtendedProgram`] (re-exported from
 //!    [`stim_parser`]).
-//! 2. [`execute`] / [`sample`] — call [`validate`] to validate the
+//! 2. [`execute`] / [`sample`] — call [`validate`](fn@validate) to validate the
 //!    [`ExtendedProgram`], then apply it to a [`GeneralizedTableau`].
 //!
 //! Multi-shot usage should call [`parse_extended`] once and pass the parsed
@@ -38,11 +38,11 @@ pub mod validate;
 
 pub use stim_parser::prelude::*;
 
-#[cfg(feature = "rayon")]
-pub use executor::{sample_parallel, sample_parallel_validated};
 pub use executor::{
     execute, execute_validated, sample, sample_serial, sample_serial_validated, sample_validated,
 };
+#[cfg(feature = "rayon")]
+pub use executor::{sample_parallel, sample_parallel_validated};
 pub use validate::{ExecError, validate};
 
 use std::path::{Path, PathBuf};

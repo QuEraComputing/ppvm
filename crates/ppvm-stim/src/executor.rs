@@ -99,7 +99,7 @@ where
 }
 
 /// Like [`sample_serial`] but skips validation — call only when the program
-/// has already been validated (e.g. via [`validate`]).
+/// has already been validated (e.g. via [`validate`](fn@validate)).
 pub fn sample_serial_validated<T, I, C, F>(
     instructions: &[stim_parser::extended::ExtendedInstruction],
     measurement_count: usize,
@@ -118,6 +118,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -165,6 +166,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -187,7 +189,7 @@ where
 }
 
 /// Like [`sample`] but skips validation — call only when the program has
-/// already been validated (e.g. via [`validate`]).
+/// already been validated (e.g. via [`validate`](fn@validate)).
 ///
 /// When the `rayon` feature is enabled this dispatches to
 /// [`sample_parallel_validated`] for large batches, falling back to
@@ -211,6 +213,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -234,7 +237,7 @@ where
 }
 
 /// Like [`sample`] but skips validation — call only when the program has
-/// already been validated (e.g. via [`validate`]). Without the `rayon`
+/// already been validated (e.g. via [`validate`](fn@validate)). Without the `rayon`
 /// feature this always runs serially.
 #[cfg(not(feature = "rayon"))]
 pub fn sample_validated<T, I, C, F>(
@@ -255,6 +258,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -295,6 +299,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -335,6 +340,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -357,7 +363,7 @@ where
 }
 
 /// Like [`sample_parallel`] but skips validation — call only when the program
-/// has already been validated (e.g. via [`validate`]).
+/// has already been validated (e.g. via [`validate`](fn@validate)).
 #[cfg(feature = "rayon")]
 pub fn sample_parallel_validated<T, I, C, F>(
     instructions: &[stim_parser::extended::ExtendedInstruction],
@@ -377,6 +383,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -403,7 +410,7 @@ where
 
 /// Dispatch a slice of validated instructions onto a tableau, appending
 /// measurement bits to `results`. Skips validation — the caller is responsible
-/// for having run [`validate`] on the originating program. Used by
+/// for having run [`validate`](fn@validate) on the originating program. Used by
 /// [`execute`] / [`sample`] internally and by the Python `tab.run()` path
 /// where `StimProgram` already cached the validate step.
 pub fn execute_validated<T, I, C>(

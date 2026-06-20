@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["execute","execute_prepared","sample"]};
+window.SIDEBAR_ITEMS = {"fn":["execute","execute_validated","sample","sample_parallel","sample_parallel_validated","sample_serial","sample_serial_validated","sample_validated"]};

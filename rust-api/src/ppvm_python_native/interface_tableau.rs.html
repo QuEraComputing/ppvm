@@ -183,7 +183,7 @@
 <a href=#183 id=183 data-nosnippet>183</a>                prog: <span class="kw-2">&amp;</span><span class="kw">crate</span>::stim_program::PyStimProgram,
 <a href=#184 id=184 data-nosnippet>184</a>            ) -&gt; pyo3::PyResult&lt;Vec&lt;u8&gt;&gt; {
 <a href=#185 id=185 data-nosnippet>185</a>                <span class="kw">let </span><span class="kw-2">mut </span>results = Vec::with_capacity(prog.measurement_count());
-<a href=#186 id=186 data-nosnippet>186</a>                ppvm_stim::execute_prepared(<span class="kw-2">&amp;</span>prog.instructions, <span class="kw-2">&amp;mut </span><span class="self">self</span>.inner, <span class="kw-2">&amp;mut </span>results);
+<a href=#186 id=186 data-nosnippet>186</a>                ppvm_stim::execute_validated(<span class="kw-2">&amp;</span>prog.instructions, <span class="kw-2">&amp;mut </span><span class="self">self</span>.inner, <span class="kw-2">&amp;mut </span>results);
 <a href=#187 id=187 data-nosnippet>187</a>                <span class="prelude-val">Ok</span>(results
 <a href=#188 id=188 data-nosnippet>188</a>                    .into_iter()
 <a href=#189 id=189 data-nosnippet>189</a>                    .map(<span class="kw">crate</span>::interface_tableau::measurement_to_u8)
@@ -191,128 +191,135 @@
 <a href=#191 id=191 data-nosnippet>191</a>            }
 <a href=#192 id=192 data-nosnippet>192</a>
 <a href=#193 id=193 data-nosnippet>193</a>            <span class="doccomment">/// Multi-shot sampling: builds a fresh tableau per shot.
-<a href=#194 id=194 data-nosnippet>194</a>            </span><span class="attr">#[staticmethod]
-<a href=#195 id=195 data-nosnippet>195</a>            #[pyo3(signature = (prog, n_qubits, min_abs_coeff = <span class="number">1e-10</span>, num_shots = <span class="number">1</span>, seed = <span class="prelude-val">None</span>))]
-<a href=#196 id=196 data-nosnippet>196</a>            </span><span class="kw">pub fn </span>sample(
-<a href=#197 id=197 data-nosnippet>197</a>                prog: <span class="kw-2">&amp;</span><span class="kw">crate</span>::stim_program::PyStimProgram,
-<a href=#198 id=198 data-nosnippet>198</a>                n_qubits: usize,
-<a href=#199 id=199 data-nosnippet>199</a>                min_abs_coeff: f64,
-<a href=#200 id=200 data-nosnippet>200</a>                num_shots: usize,
-<a href=#201 id=201 data-nosnippet>201</a>                seed: <span class="prelude-ty">Option</span>&lt;u64&gt;,
-<a href=#202 id=202 data-nosnippet>202</a>            ) -&gt; pyo3::PyResult&lt;Vec&lt;Vec&lt;u8&gt;&gt;&gt; {
-<a href=#203 id=203 data-nosnippet>203</a>                <span class="kw">let </span><span class="kw-2">mut </span>next_seed = seed;
-<a href=#204 id=204 data-nosnippet>204</a>                <span class="kw">let </span>count = prog.measurement_count();
-<a href=#205 id=205 data-nosnippet>205</a>                <span class="prelude-val">Ok</span>((<span class="number">0</span>..num_shots)
-<a href=#206 id=206 data-nosnippet>206</a>                    .map(|<span class="kw">_</span>| {
-<a href=#207 id=207 data-nosnippet>207</a>                        <span class="kw">let </span>s = next_seed;
-<a href=#208 id=208 data-nosnippet>208</a>                        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref mut </span>v) = next_seed {
-<a href=#209 id=209 data-nosnippet>209</a>                            <span class="kw-2">*</span>v = v.wrapping_add(<span class="number">1</span>);
-<a href=#210 id=210 data-nosnippet>210</a>                        }
-<a href=#211 id=211 data-nosnippet>211</a>                        <span class="kw">let </span><span class="kw-2">mut </span>tab = <span class="kw">match </span>s {
-<a href=#212 id=212 data-nosnippet>212</a>                            <span class="prelude-val">Some</span>(s) =&gt; GeneralizedTableau::&lt;<span class="macro-nonterminal">$type</span>, <span class="macro-nonterminal">$indexType</span>&gt;::new_with_seed(
-<a href=#213 id=213 data-nosnippet>213</a>                                n_qubits,
-<a href=#214 id=214 data-nosnippet>214</a>                                min_abs_coeff,
-<a href=#215 id=215 data-nosnippet>215</a>                                s,
-<a href=#216 id=216 data-nosnippet>216</a>                            ),
-<a href=#217 id=217 data-nosnippet>217</a>                            <span class="prelude-val">None </span>=&gt; GeneralizedTableau::&lt;<span class="macro-nonterminal">$type</span>, <span class="macro-nonterminal">$indexType</span>&gt;::new(
-<a href=#218 id=218 data-nosnippet>218</a>                                n_qubits,
-<a href=#219 id=219 data-nosnippet>219</a>                                min_abs_coeff,
-<a href=#220 id=220 data-nosnippet>220</a>                            ),
-<a href=#221 id=221 data-nosnippet>221</a>                        };
-<a href=#222 id=222 data-nosnippet>222</a>                        <span class="kw">let </span><span class="kw-2">mut </span>shot = Vec::with_capacity(count);
-<a href=#223 id=223 data-nosnippet>223</a>                        ppvm_stim::execute_prepared(<span class="kw-2">&amp;</span>prog.instructions, <span class="kw-2">&amp;mut </span>tab, <span class="kw-2">&amp;mut </span>shot);
-<a href=#224 id=224 data-nosnippet>224</a>                        shot
-<a href=#225 id=225 data-nosnippet>225</a>                    })
-<a href=#226 id=226 data-nosnippet>226</a>                    .map(|shot| {
-<a href=#227 id=227 data-nosnippet>227</a>                        shot.into_iter()
-<a href=#228 id=228 data-nosnippet>228</a>                            .map(<span class="kw">crate</span>::interface_tableau::measurement_to_u8)
-<a href=#229 id=229 data-nosnippet>229</a>                            .collect()
-<a href=#230 id=230 data-nosnippet>230</a>                    })
-<a href=#231 id=231 data-nosnippet>231</a>                    .collect())
-<a href=#232 id=232 data-nosnippet>232</a>            }
-<a href=#233 id=233 data-nosnippet>233</a>
-<a href=#234 id=234 data-nosnippet>234</a>            <span class="doccomment">/// Fork this tableau, cloning all quantum state but reinitializing the RNG.
-<a href=#235 id=235 data-nosnippet>235</a>            /// If `seed` is provided, the new RNG is seeded deterministically; otherwise
-<a href=#236 id=236 data-nosnippet>236</a>            /// it is seeded from OS entropy, giving an independent random sequence.
-<a href=#237 id=237 data-nosnippet>237</a>            ///
-<a href=#238 id=238 data-nosnippet>238</a>            /// Use this when branching a simulation into independent trajectories.
-<a href=#239 id=239 data-nosnippet>239</a>            /// To preserve the RNG state exactly (e.g. for checkpointing), use
-<a href=#240 id=240 data-nosnippet>240</a>            /// `copy.copy()` or `copy.deepcopy()` instead.
-<a href=#241 id=241 data-nosnippet>241</a>            </span><span class="attr">#[pyo3(signature = (seed = <span class="prelude-val">None</span>))]
-<a href=#242 id=242 data-nosnippet>242</a>            </span><span class="kw">pub fn </span>fork(<span class="kw-2">&amp;</span><span class="self">self</span>, seed: <span class="prelude-ty">Option</span>&lt;u64&gt;) -&gt; <span class="self">Self </span>{
-<a href=#243 id=243 data-nosnippet>243</a>                <span class="self">Self </span>{
-<a href=#244 id=244 data-nosnippet>244</a>                    inner: <span class="self">self</span>.inner.fork(seed),
-<a href=#245 id=245 data-nosnippet>245</a>                }
-<a href=#246 id=246 data-nosnippet>246</a>            }
-<a href=#247 id=247 data-nosnippet>247</a>
-<a href=#248 id=248 data-nosnippet>248</a>            <span class="doccomment">/// Return a shallow copy of this tableau, including its RNG state.
-<a href=#249 id=249 data-nosnippet>249</a>            ///
-<a href=#250 id=250 data-nosnippet>250</a>            /// Both the original and the copy will produce identical random sequences
-<a href=#251 id=251 data-nosnippet>251</a>            /// from this point forward. To get an independent copy with a fresh RNG,
-<a href=#252 id=252 data-nosnippet>252</a>            /// use `fork()` instead.
-<a href=#253 id=253 data-nosnippet>253</a>            </span><span class="kw">fn </span>__copy__(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="self">Self </span>{
-<a href=#254 id=254 data-nosnippet>254</a>                <span class="self">Self </span>{
-<a href=#255 id=255 data-nosnippet>255</a>                    inner: <span class="self">self</span>.inner.clone(),
-<a href=#256 id=256 data-nosnippet>256</a>                }
-<a href=#257 id=257 data-nosnippet>257</a>            }
-<a href=#258 id=258 data-nosnippet>258</a>
-<a href=#259 id=259 data-nosnippet>259</a>            <span class="doccomment">/// Return a deep copy of this tableau, including its RNG state.
-<a href=#260 id=260 data-nosnippet>260</a>            ///
-<a href=#261 id=261 data-nosnippet>261</a>            /// Both the original and the copy will produce identical random sequences
-<a href=#262 id=262 data-nosnippet>262</a>            /// from this point forward. To get an independent copy with a fresh RNG,
-<a href=#263 id=263 data-nosnippet>263</a>            /// use `fork()` instead.
-<a href=#264 id=264 data-nosnippet>264</a>            </span><span class="kw">fn </span>__deepcopy__(<span class="kw-2">&amp;</span><span class="self">self</span>, _memo: <span class="kw-2">&amp;</span>Bound&lt;<span class="lifetime">'_</span>, PyAny&gt;) -&gt; <span class="self">Self </span>{
-<a href=#265 id=265 data-nosnippet>265</a>                <span class="self">Self </span>{
-<a href=#266 id=266 data-nosnippet>266</a>                    inner: <span class="self">self</span>.inner.clone(),
-<a href=#267 id=267 data-nosnippet>267</a>                }
-<a href=#268 id=268 data-nosnippet>268</a>            }
-<a href=#269 id=269 data-nosnippet>269</a>        }
-<a href=#270 id=270 data-nosnippet>270</a>    };
-<a href=#271 id=271 data-nosnippet>271</a>}
-<a href=#272 id=272 data-nosnippet>272</a>
-<a href=#273 id=273 data-nosnippet>273</a><span class="macro">macro_rules!</span> create_interface_range {
-<a href=#274 id=274 data-nosnippet>274</a>    (<span class="macro-nonterminal">$name</span>: ident, <span class="macro-nonterminal">$indexType</span>: ident, $( <span class="macro-nonterminal">$n</span>: expr),* ) =&gt; {
-<a href=#275 id=275 data-nosnippet>275</a>        <span class="macro">paste!</span> {
-<a href=#276 id=276 data-nosnippet>276</a>        $(
-<a href=#277 id=277 data-nosnippet>277</a>            <span class="kw">type </span>[&lt;<span class="macro-nonterminal">$name$n</span>&gt;] = config::fx64hash::Byte8F64&lt;<span class="macro-nonterminal">$n</span>&gt;;
-<a href=#278 id=278 data-nosnippet>278</a>            <span class="comment">// type [&lt;$name$n&gt;] = config::indexmap::ByteFxHashF64&lt;$n&gt;;
-<a href=#279 id=279 data-nosnippet>279</a>            </span><span class="macro">create_interface!</span>([&lt;GeneralizedTableau<span class="macro-nonterminal">$n</span>&gt;], [&lt;<span class="macro-nonterminal">$name$n</span>&gt;], <span class="macro-nonterminal">$indexType</span>);
-<a href=#280 id=280 data-nosnippet>280</a>        )*
-<a href=#281 id=281 data-nosnippet>281</a>    }
-<a href=#282 id=282 data-nosnippet>282</a>    };
-<a href=#283 id=283 data-nosnippet>283</a>}
-<a href=#284 id=284 data-nosnippet>284</a>
-<a href=#285 id=285 data-nosnippet>285</a><span class="comment">// up to 64 qubits
-<a href=#286 id=286 data-nosnippet>286</a></span><span class="macro">create_interface_range!</span>(IndexMapFxHash, usize, <span class="number">1</span>);
-<a href=#287 id=287 data-nosnippet>287</a>
-<a href=#288 id=288 data-nosnippet>288</a><span class="comment">// 64 - 128 qubits
-<a href=#289 id=289 data-nosnippet>289</a></span><span class="macro">create_interface_range!</span>(IndexMapFxHash, u128, <span class="number">2</span>);
-<a href=#290 id=290 data-nosnippet>290</a>
-<a href=#291 id=291 data-nosnippet>291</a><span class="comment">// 128 - 256 qubits
-<a href=#292 id=292 data-nosnippet>292</a></span><span class="macro">create_interface_range!</span>(IndexMapFxHash, U256, <span class="number">3</span>, <span class="number">4</span>);
-<a href=#293 id=293 data-nosnippet>293</a>
-<a href=#294 id=294 data-nosnippet>294</a><span class="macro">create_interface_range!</span>(IndexMapFxHash, U512, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>);
-<a href=#295 id=295 data-nosnippet>295</a>
-<a href=#296 id=296 data-nosnippet>296</a><span class="macro">create_interface_range!</span>(IndexMapFxHash, U1024, <span class="number">9</span>, <span class="number">10</span>, <span class="number">11</span>, <span class="number">12</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">16</span>);
+<a href=#194 id=194 data-nosnippet>194</a>            ///
+<a href=#195 id=195 data-nosnippet>195</a>            /// Shots run in parallel on rayon's global thread pool (GIL
+<a href=#196 id=196 data-nosnippet>196</a>            /// released), falling back to serial for small batches. Shot `i`
+<a href=#197 id=197 data-nosnippet>197</a>            /// is seeded with `seed.wrapping_add(i)` when `seed` is given
+<a href=#198 id=198 data-nosnippet>198</a>            /// (wrapping mod 2⁶⁴), so results are reproducible and
+<a href=#199 id=199 data-nosnippet>199</a>            /// independent of the thread count; set the `RAYON_NUM_THREADS`
+<a href=#200 id=200 data-nosnippet>200</a>            /// environment variable to control the pool size.
+<a href=#201 id=201 data-nosnippet>201</a>            </span><span class="attr">#[staticmethod]
+<a href=#202 id=202 data-nosnippet>202</a>            #[pyo3(signature = (prog, n_qubits, min_abs_coeff = <span class="number">1e-10</span>, num_shots = <span class="number">1</span>, seed = <span class="prelude-val">None</span>))]
+<a href=#203 id=203 data-nosnippet>203</a>            </span><span class="kw">pub fn </span>sample(
+<a href=#204 id=204 data-nosnippet>204</a>                py: Python&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#205 id=205 data-nosnippet>205</a>                prog: <span class="kw-2">&amp;</span><span class="kw">crate</span>::stim_program::PyStimProgram,
+<a href=#206 id=206 data-nosnippet>206</a>                n_qubits: usize,
+<a href=#207 id=207 data-nosnippet>207</a>                min_abs_coeff: f64,
+<a href=#208 id=208 data-nosnippet>208</a>                num_shots: usize,
+<a href=#209 id=209 data-nosnippet>209</a>                seed: <span class="prelude-ty">Option</span>&lt;u64&gt;,
+<a href=#210 id=210 data-nosnippet>210</a>            ) -&gt; pyo3::PyResult&lt;Vec&lt;Vec&lt;u8&gt;&gt;&gt; {
+<a href=#211 id=211 data-nosnippet>211</a>                <span class="comment">// `prog` was already validated at `StimProgram.parse()` time;
+<a href=#212 id=212 data-nosnippet>212</a>                // use the validated path to skip redundant re-validation.
+<a href=#213 id=213 data-nosnippet>213</a>                </span><span class="kw">let </span>raw = py.detach(|| {
+<a href=#214 id=214 data-nosnippet>214</a>                    ppvm_stim::sample_validated(
+<a href=#215 id=215 data-nosnippet>215</a>                        <span class="kw-2">&amp;</span>prog.<span class="number">0</span>.instructions,
+<a href=#216 id=216 data-nosnippet>216</a>                        prog.<span class="number">0</span>.measurement_count(),
+<a href=#217 id=217 data-nosnippet>217</a>                        num_shots,
+<a href=#218 id=218 data-nosnippet>218</a>                        |i| <span class="kw">match </span>seed {
+<a href=#219 id=219 data-nosnippet>219</a>                            <span class="prelude-val">Some</span>(s) =&gt; GeneralizedTableau::&lt;<span class="macro-nonterminal">$type</span>, <span class="macro-nonterminal">$indexType</span>&gt;::new_with_seed(
+<a href=#220 id=220 data-nosnippet>220</a>                                n_qubits,
+<a href=#221 id=221 data-nosnippet>221</a>                                min_abs_coeff,
+<a href=#222 id=222 data-nosnippet>222</a>                                s.wrapping_add(i <span class="kw">as </span>u64),
+<a href=#223 id=223 data-nosnippet>223</a>                            ),
+<a href=#224 id=224 data-nosnippet>224</a>                            <span class="prelude-val">None </span>=&gt; GeneralizedTableau::&lt;<span class="macro-nonterminal">$type</span>, <span class="macro-nonterminal">$indexType</span>&gt;::new(
+<a href=#225 id=225 data-nosnippet>225</a>                                n_qubits,
+<a href=#226 id=226 data-nosnippet>226</a>                                min_abs_coeff,
+<a href=#227 id=227 data-nosnippet>227</a>                            ),
+<a href=#228 id=228 data-nosnippet>228</a>                        },
+<a href=#229 id=229 data-nosnippet>229</a>                    )
+<a href=#230 id=230 data-nosnippet>230</a>                });
+<a href=#231 id=231 data-nosnippet>231</a>                <span class="prelude-val">Ok</span>(raw
+<a href=#232 id=232 data-nosnippet>232</a>                    .into_iter()
+<a href=#233 id=233 data-nosnippet>233</a>                    .map(|shot| {
+<a href=#234 id=234 data-nosnippet>234</a>                        shot.into_iter()
+<a href=#235 id=235 data-nosnippet>235</a>                            .map(<span class="kw">crate</span>::interface_tableau::measurement_to_u8)
+<a href=#236 id=236 data-nosnippet>236</a>                            .collect()
+<a href=#237 id=237 data-nosnippet>237</a>                    })
+<a href=#238 id=238 data-nosnippet>238</a>                    .collect())
+<a href=#239 id=239 data-nosnippet>239</a>            }
+<a href=#240 id=240 data-nosnippet>240</a>
+<a href=#241 id=241 data-nosnippet>241</a>            <span class="doccomment">/// Fork this tableau, cloning all quantum state but reinitializing the RNG.
+<a href=#242 id=242 data-nosnippet>242</a>            /// If `seed` is provided, the new RNG is seeded deterministically; otherwise
+<a href=#243 id=243 data-nosnippet>243</a>            /// it is seeded from OS entropy, giving an independent random sequence.
+<a href=#244 id=244 data-nosnippet>244</a>            ///
+<a href=#245 id=245 data-nosnippet>245</a>            /// Use this when branching a simulation into independent trajectories.
+<a href=#246 id=246 data-nosnippet>246</a>            /// To preserve the RNG state exactly (e.g. for checkpointing), use
+<a href=#247 id=247 data-nosnippet>247</a>            /// `copy.copy()` or `copy.deepcopy()` instead.
+<a href=#248 id=248 data-nosnippet>248</a>            </span><span class="attr">#[pyo3(signature = (seed = <span class="prelude-val">None</span>))]
+<a href=#249 id=249 data-nosnippet>249</a>            </span><span class="kw">pub fn </span>fork(<span class="kw-2">&amp;</span><span class="self">self</span>, seed: <span class="prelude-ty">Option</span>&lt;u64&gt;) -&gt; <span class="self">Self </span>{
+<a href=#250 id=250 data-nosnippet>250</a>                <span class="self">Self </span>{
+<a href=#251 id=251 data-nosnippet>251</a>                    inner: <span class="self">self</span>.inner.fork(seed),
+<a href=#252 id=252 data-nosnippet>252</a>                }
+<a href=#253 id=253 data-nosnippet>253</a>            }
+<a href=#254 id=254 data-nosnippet>254</a>
+<a href=#255 id=255 data-nosnippet>255</a>            <span class="doccomment">/// Return a shallow copy of this tableau, including its RNG state.
+<a href=#256 id=256 data-nosnippet>256</a>            ///
+<a href=#257 id=257 data-nosnippet>257</a>            /// Both the original and the copy will produce identical random sequences
+<a href=#258 id=258 data-nosnippet>258</a>            /// from this point forward. To get an independent copy with a fresh RNG,
+<a href=#259 id=259 data-nosnippet>259</a>            /// use `fork()` instead.
+<a href=#260 id=260 data-nosnippet>260</a>            </span><span class="kw">fn </span>__copy__(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="self">Self </span>{
+<a href=#261 id=261 data-nosnippet>261</a>                <span class="self">Self </span>{
+<a href=#262 id=262 data-nosnippet>262</a>                    inner: <span class="self">self</span>.inner.clone(),
+<a href=#263 id=263 data-nosnippet>263</a>                }
+<a href=#264 id=264 data-nosnippet>264</a>            }
+<a href=#265 id=265 data-nosnippet>265</a>
+<a href=#266 id=266 data-nosnippet>266</a>            <span class="doccomment">/// Return a deep copy of this tableau, including its RNG state.
+<a href=#267 id=267 data-nosnippet>267</a>            ///
+<a href=#268 id=268 data-nosnippet>268</a>            /// Both the original and the copy will produce identical random sequences
+<a href=#269 id=269 data-nosnippet>269</a>            /// from this point forward. To get an independent copy with a fresh RNG,
+<a href=#270 id=270 data-nosnippet>270</a>            /// use `fork()` instead.
+<a href=#271 id=271 data-nosnippet>271</a>            </span><span class="kw">fn </span>__deepcopy__(<span class="kw-2">&amp;</span><span class="self">self</span>, _memo: <span class="kw-2">&amp;</span>Bound&lt;<span class="lifetime">'_</span>, PyAny&gt;) -&gt; <span class="self">Self </span>{
+<a href=#272 id=272 data-nosnippet>272</a>                <span class="self">Self </span>{
+<a href=#273 id=273 data-nosnippet>273</a>                    inner: <span class="self">self</span>.inner.clone(),
+<a href=#274 id=274 data-nosnippet>274</a>                }
+<a href=#275 id=275 data-nosnippet>275</a>            }
+<a href=#276 id=276 data-nosnippet>276</a>        }
+<a href=#277 id=277 data-nosnippet>277</a>    };
+<a href=#278 id=278 data-nosnippet>278</a>}
+<a href=#279 id=279 data-nosnippet>279</a>
+<a href=#280 id=280 data-nosnippet>280</a><span class="macro">macro_rules!</span> create_interface_range {
+<a href=#281 id=281 data-nosnippet>281</a>    (<span class="macro-nonterminal">$name</span>: ident, <span class="macro-nonterminal">$indexType</span>: ident, $( <span class="macro-nonterminal">$n</span>: expr),* ) =&gt; {
+<a href=#282 id=282 data-nosnippet>282</a>        <span class="macro">paste!</span> {
+<a href=#283 id=283 data-nosnippet>283</a>        $(
+<a href=#284 id=284 data-nosnippet>284</a>            <span class="kw">type </span>[&lt;<span class="macro-nonterminal">$name$n</span>&gt;] = config::fx64hash::Byte8F64&lt;<span class="macro-nonterminal">$n</span>&gt;;
+<a href=#285 id=285 data-nosnippet>285</a>            <span class="comment">// type [&lt;$name$n&gt;] = config::indexmap::ByteFxHashF64&lt;$n&gt;;
+<a href=#286 id=286 data-nosnippet>286</a>            </span><span class="macro">create_interface!</span>([&lt;GeneralizedTableau<span class="macro-nonterminal">$n</span>&gt;], [&lt;<span class="macro-nonterminal">$name$n</span>&gt;], <span class="macro-nonterminal">$indexType</span>);
+<a href=#287 id=287 data-nosnippet>287</a>        )*
+<a href=#288 id=288 data-nosnippet>288</a>    }
+<a href=#289 id=289 data-nosnippet>289</a>    };
+<a href=#290 id=290 data-nosnippet>290</a>}
+<a href=#291 id=291 data-nosnippet>291</a>
+<a href=#292 id=292 data-nosnippet>292</a><span class="comment">// up to 64 qubits
+<a href=#293 id=293 data-nosnippet>293</a></span><span class="macro">create_interface_range!</span>(IndexMapFxHash, usize, <span class="number">1</span>);
+<a href=#294 id=294 data-nosnippet>294</a>
+<a href=#295 id=295 data-nosnippet>295</a><span class="comment">// 64 - 128 qubits
+<a href=#296 id=296 data-nosnippet>296</a></span><span class="macro">create_interface_range!</span>(IndexMapFxHash, u128, <span class="number">2</span>);
 <a href=#297 id=297 data-nosnippet>297</a>
-<a href=#298 id=298 data-nosnippet>298</a><span class="macro">create_interface_range!</span>(
-<a href=#299 id=299 data-nosnippet>299</a>    IndexMapFxHash,
-<a href=#300 id=300 data-nosnippet>300</a>    U2048,
-<a href=#301 id=301 data-nosnippet>301</a>    <span class="number">17</span>,
-<a href=#302 id=302 data-nosnippet>302</a>    <span class="number">18</span>,
-<a href=#303 id=303 data-nosnippet>303</a>    <span class="number">19</span>,
-<a href=#304 id=304 data-nosnippet>304</a>    <span class="number">20</span>,
-<a href=#305 id=305 data-nosnippet>305</a>    <span class="number">21</span>,
-<a href=#306 id=306 data-nosnippet>306</a>    <span class="number">22</span>,
-<a href=#307 id=307 data-nosnippet>307</a>    <span class="number">23</span>,
-<a href=#308 id=308 data-nosnippet>308</a>    <span class="number">24</span>,
-<a href=#309 id=309 data-nosnippet>309</a>    <span class="number">25</span>,
-<a href=#310 id=310 data-nosnippet>310</a>    <span class="number">26</span>,
-<a href=#311 id=311 data-nosnippet>311</a>    <span class="number">27</span>,
-<a href=#312 id=312 data-nosnippet>312</a>    <span class="number">28</span>,
-<a href=#313 id=313 data-nosnippet>313</a>    <span class="number">29</span>,
-<a href=#314 id=314 data-nosnippet>314</a>    <span class="number">30</span>,
-<a href=#315 id=315 data-nosnippet>315</a>    <span class="number">31</span>,
-<a href=#316 id=316 data-nosnippet>316</a>    <span class="number">32
-<a href=#317 id=317 data-nosnippet>317</a></span>);
+<a href=#298 id=298 data-nosnippet>298</a><span class="comment">// 128 - 256 qubits
+<a href=#299 id=299 data-nosnippet>299</a></span><span class="macro">create_interface_range!</span>(IndexMapFxHash, U256, <span class="number">3</span>, <span class="number">4</span>);
+<a href=#300 id=300 data-nosnippet>300</a>
+<a href=#301 id=301 data-nosnippet>301</a><span class="macro">create_interface_range!</span>(IndexMapFxHash, U512, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>);
+<a href=#302 id=302 data-nosnippet>302</a>
+<a href=#303 id=303 data-nosnippet>303</a><span class="macro">create_interface_range!</span>(IndexMapFxHash, U1024, <span class="number">9</span>, <span class="number">10</span>, <span class="number">11</span>, <span class="number">12</span>, <span class="number">13</span>, <span class="number">14</span>, <span class="number">15</span>, <span class="number">16</span>);
+<a href=#304 id=304 data-nosnippet>304</a>
+<a href=#305 id=305 data-nosnippet>305</a><span class="macro">create_interface_range!</span>(
+<a href=#306 id=306 data-nosnippet>306</a>    IndexMapFxHash,
+<a href=#307 id=307 data-nosnippet>307</a>    U2048,
+<a href=#308 id=308 data-nosnippet>308</a>    <span class="number">17</span>,
+<a href=#309 id=309 data-nosnippet>309</a>    <span class="number">18</span>,
+<a href=#310 id=310 data-nosnippet>310</a>    <span class="number">19</span>,
+<a href=#311 id=311 data-nosnippet>311</a>    <span class="number">20</span>,
+<a href=#312 id=312 data-nosnippet>312</a>    <span class="number">21</span>,
+<a href=#313 id=313 data-nosnippet>313</a>    <span class="number">22</span>,
+<a href=#314 id=314 data-nosnippet>314</a>    <span class="number">23</span>,
+<a href=#315 id=315 data-nosnippet>315</a>    <span class="number">24</span>,
+<a href=#316 id=316 data-nosnippet>316</a>    <span class="number">25</span>,
+<a href=#317 id=317 data-nosnippet>317</a>    <span class="number">26</span>,
+<a href=#318 id=318 data-nosnippet>318</a>    <span class="number">27</span>,
+<a href=#319 id=319 data-nosnippet>319</a>    <span class="number">28</span>,
+<a href=#320 id=320 data-nosnippet>320</a>    <span class="number">29</span>,
+<a href=#321 id=321 data-nosnippet>321</a>    <span class="number">30</span>,
+<a href=#322 id=322 data-nosnippet>322</a>    <span class="number">31</span>,
+<a href=#323 id=323 data-nosnippet>323</a>    <span class="number">32
+<a href=#324 id=324 data-nosnippet>324</a></span>);
 </code></pre></div></section></main></body></html>

@@ -18,18 +18,20 @@
 <a href=#18 id=18 data-nosnippet>18</a>    <span class="kw">let </span>n_qubits = <span class="number">2</span>;
 <a href=#19 id=19 data-nosnippet>19</a>
 <a href=#20 id=20 data-nosnippet>20</a>    <span class="kw">let </span>prog = parse_extended(stim_src)<span class="question-mark">?</span>;
-<a href=#21 id=21 data-nosnippet>21</a>    <span class="kw">let </span>shots = sample(<span class="kw-2">&amp;</span>prog, <span class="number">32</span>, || Tab::new(n_qubits, <span class="number">1e-10</span>))<span class="question-mark">?</span>;
-<a href=#22 id=22 data-nosnippet>22</a>
-<a href=#23 id=23 data-nosnippet>23</a>    <span class="comment">// GHZ: every shot has the two qubits in agreement.
-<a href=#24 id=24 data-nosnippet>24</a>    </span><span class="kw">for </span>(i, shot) <span class="kw">in </span>shots.iter().enumerate() {
-<a href=#25 id=25 data-nosnippet>25</a>        <span class="kw">let </span>pair: Vec&lt;<span class="kw">_</span>&gt; = shot.iter().collect();
-<a href=#26 id=26 data-nosnippet>26</a>        <span class="macro">assert_eq!</span>(pair.len(), <span class="number">2</span>, <span class="string">"shot {i} has {} outcomes"</span>, pair.len());
-<a href=#27 id=27 data-nosnippet>27</a>        <span class="kw">match </span>(pair[<span class="number">0</span>], pair[<span class="number">1</span>]) {
-<a href=#28 id=28 data-nosnippet>28</a>            (<span class="prelude-val">Some</span>(a), <span class="prelude-val">Some</span>(b)) =&gt; <span class="macro">assert_eq!</span>(a, b, <span class="string">"shot {i} uncorrelated: {a} vs {b}"</span>),
-<a href=#29 id=29 data-nosnippet>29</a>            other =&gt; <span class="macro">panic!</span>(<span class="string">"shot {i} had a loss outcome: {other:?}"</span>),
-<a href=#30 id=30 data-nosnippet>30</a>        }
-<a href=#31 id=31 data-nosnippet>31</a>    }
-<a href=#32 id=32 data-nosnippet>32</a>    <span class="macro">println!</span>(<span class="string">"shots={} correlated=true"</span>, shots.len());
-<a href=#33 id=33 data-nosnippet>33</a>    <span class="prelude-val">Ok</span>(())
-<a href=#34 id=34 data-nosnippet>34</a>}
+<a href=#21 id=21 data-nosnippet>21</a>    <span class="comment">// The factory receives the shot index; derive a per-shot seed from it
+<a href=#22 id=22 data-nosnippet>22</a>    // when you need deterministic, order-independent results.
+<a href=#23 id=23 data-nosnippet>23</a>    </span><span class="kw">let </span>shots = sample(<span class="kw-2">&amp;</span>prog, <span class="number">32</span>, |<span class="kw">_</span>| Tab::new(n_qubits, <span class="number">1e-10</span>))<span class="question-mark">?</span>;
+<a href=#24 id=24 data-nosnippet>24</a>
+<a href=#25 id=25 data-nosnippet>25</a>    <span class="comment">// GHZ: every shot has the two qubits in agreement.
+<a href=#26 id=26 data-nosnippet>26</a>    </span><span class="kw">for </span>(i, shot) <span class="kw">in </span>shots.iter().enumerate() {
+<a href=#27 id=27 data-nosnippet>27</a>        <span class="kw">let </span>pair: Vec&lt;<span class="kw">_</span>&gt; = shot.iter().collect();
+<a href=#28 id=28 data-nosnippet>28</a>        <span class="macro">assert_eq!</span>(pair.len(), <span class="number">2</span>, <span class="string">"shot {i} has {} outcomes"</span>, pair.len());
+<a href=#29 id=29 data-nosnippet>29</a>        <span class="kw">match </span>(pair[<span class="number">0</span>], pair[<span class="number">1</span>]) {
+<a href=#30 id=30 data-nosnippet>30</a>            (<span class="prelude-val">Some</span>(a), <span class="prelude-val">Some</span>(b)) =&gt; <span class="macro">assert_eq!</span>(a, b, <span class="string">"shot {i} uncorrelated: {a} vs {b}"</span>),
+<a href=#31 id=31 data-nosnippet>31</a>            other =&gt; <span class="macro">panic!</span>(<span class="string">"shot {i} had a loss outcome: {other:?}"</span>),
+<a href=#32 id=32 data-nosnippet>32</a>        }
+<a href=#33 id=33 data-nosnippet>33</a>    }
+<a href=#34 id=34 data-nosnippet>34</a>    <span class="macro">println!</span>(<span class="string">"shots={} correlated=true"</span>, shots.len());
+<a href=#35 id=35 data-nosnippet>35</a>    <span class="prelude-val">Ok</span>(())
+<a href=#36 id=36 data-nosnippet>36</a>}
 </code></pre></div></section></main></body></html>

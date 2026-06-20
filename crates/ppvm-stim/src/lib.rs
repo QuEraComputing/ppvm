@@ -75,6 +75,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     num::Complex<T::Coeff>: std::ops::Mul<Output = num::Complex<T::Coeff>>
@@ -107,6 +108,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     num::Complex<T::Coeff>: std::ops::Mul<Output = num::Complex<T::Coeff>>

@@ -34,6 +34,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -70,6 +71,7 @@ where
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
@@ -115,6 +117,7 @@ pub fn execute_prepared<T, I, C>(
         + std::fmt::Debug
         + std::ops::Mul<f64>
         + PartialOrd<f64>
+        + PartialOrd
         + Send
         + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>

@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 
 pub mod interface;
 pub mod interface_tableau;
+pub mod interface_tableau_sum;
 pub mod stim_program;
 
 #[pymodule]
@@ -144,6 +145,138 @@ pub mod ppvm_python_native {
     pub use crate::interface_tableau::GeneralizedTableau31;
     #[pymodule_export]
     pub use crate::interface_tableau::GeneralizedTableau32;
+
+    // Generalized Tableau Sum
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum1;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum2;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum3;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum4;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum5;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum6;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum7;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum8;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum9;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum10;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum11;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum12;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum13;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum14;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum15;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum16;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum17;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum18;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum19;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum20;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum21;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum22;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum23;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum24;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum25;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum26;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum27;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum28;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum29;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum30;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum31;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::GeneralizedTableauSum32;
+
+    // Tableau Sum Sampler
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler1;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler2;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler3;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler4;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler5;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler6;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler7;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler8;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler9;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler10;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler11;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler12;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler13;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler14;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler15;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler16;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler17;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler18;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler19;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler20;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler21;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler22;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler23;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler24;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler25;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler26;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler27;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler28;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler29;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler30;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler31;
+    #[pymodule_export]
+    pub use crate::interface_tableau_sum::TableauSumSampler32;
 
     // Stim
     #[pymodule_export]

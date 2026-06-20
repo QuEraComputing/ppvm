@@ -600,13 +600,13 @@ pub struct GeneralizedTableau<
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
 where
-    T::Coeff: One + Zero + Clone + Send + Sync + num::Num,
+    T::Coeff: One + Zero + Clone + num::Num,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
         + From<Complex64>
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Send + Sync,
+    I: TableauIndex,
 {
     /// Construct a generalized tableau in the `|0…0⟩` state.
     ///
@@ -722,7 +722,7 @@ where
     /// `destab_anticomm_bits[l] = 1` iff P_addr0 anticommutes with destabilizer d_l.
     /// Note that stab_anticomm_bits is equal to the shift of the index when branching
     /// (`beta` in Eq(4) of the SOFT paper).
-    pub(crate) fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I)
+    pub fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I)
     where
         <<T as Config>::Storage as BitView>::Store: PrimInt,
     {
@@ -820,7 +820,7 @@ where
     }
 
     /// Build a bitmask where bit i is set if destabilizer i has odd phase (phase % 2 != 0).
-    pub(crate) fn odd_phase_destabilizer_mask(&self) -> I {
+    pub fn odd_phase_destabilizer_mask(&self) -> I {
         let mut mask = I::zero();
         let one = I::one();
         for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
@@ -830,7 +830,18 @@ where
         }
         mask
     }
+}
 
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
+where
+    T::Coeff: One + Zero + Clone + Send + Sync + num::Num + PartialOrd,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + std::ops::AddAssign
+        + From<Complex64>
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Send + Sync,
+{
     pub(crate) fn branch_with_coefficients(
         &mut self,
         addr0: usize,
@@ -889,13 +900,9 @@ where
             branch_factor,
         );
 
-        let cutoff = Complex {
-            re: self.coefficient_threshold.clone(),
-            im: T::Coeff::zero(),
-        }
-        .abs();
+        let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
         for (idx, coeff) in new_coefficients {
-            if coeff.abs() > cutoff {
+            if coeff.norm_sqr() > cutoff_sq {
                 self.coefficients.unsafe_insert(idx, coeff);
             }
         }
@@ -950,14 +957,9 @@ where
             phase_decomp,
         );
 
-        let cutoff = Complex {
-            re: self.coefficient_threshold.clone(),
-            im: T::Coeff::zero(),
-        }
-        .abs();
-
+        let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
         for (idx, coeff) in new_coefficients {
-            if coeff.abs() > cutoff {
+            if coeff.norm_sqr() > cutoff_sq {
                 coefficients.unsafe_insert(idx, coeff);
             }
         }

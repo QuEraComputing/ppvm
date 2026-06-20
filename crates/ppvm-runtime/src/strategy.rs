@@ -78,6 +78,14 @@ impl Strategy for MaxPauliWeight {
         W: PauliWordTrait,
         M: ACMap<S, V, H, W>,
     {
+        // `usize::MAX` is the conventional "disabled" sentinel (matches
+        // `Default::default()`). Skip the retain pass entirely — saves a
+        // full bucket walk per `truncate()` call when callers (e.g. the
+        // Python binding) pass `MaxPauliWeight(usize::MAX)` to opt out
+        // of weight truncation without changing the strategy type.
+        if self.0 == usize::MAX {
+            return;
+        }
         map.retain(|k, _| k.weight() <= self.max_weight());
     }
 }
@@ -152,6 +160,11 @@ impl Strategy for MaxLossWeight {
         M: ACMap<S, V, H, W>,
         W: PauliWordTrait,
     {
+        // Skip the retain pass when callers pass `usize::MAX` to opt out
+        // of loss-weight truncation without changing the strategy type.
+        if self.0 == usize::MAX {
+            return;
+        }
         map.retain(|k, _| k.loss_weight() <= self.0);
     }
 }

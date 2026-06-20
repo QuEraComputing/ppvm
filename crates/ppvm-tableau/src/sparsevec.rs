@@ -33,6 +33,14 @@ pub trait SparseVector<T, I>: Clone + IntoIterator<Item = (T, I)> {
     fn retain(&mut self, f: impl FnMut(&(T, I)) -> bool);
     /// L2-normalize the vector in place. Panics on zero norm.
     fn normalize(&mut self);
+    /// Reserve capacity for at least `additional` more entries. Backings
+    /// that don't support pre-allocation can leave this as a no-op.
+    fn reserve(&mut self, _additional: usize) {}
+    /// Borrow the stored entries as an iterator without consuming the vector.
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a (T, I)>
+    where
+        T: 'a,
+        I: 'a;
 }
 
 impl<T, I> SparseVector<T, I> for Vec<(T, I)>
@@ -93,17 +101,40 @@ where
 
     fn trim(&mut self, cutoff: T) {
         // TODO: make cutoff real
-        self.retain(|(element, _)| element.abs() > cutoff.abs());
+        let c_re = cutoff.re();
+        let c_im = cutoff.im();
+        let cutoff_sq = c_re * c_re + c_im * c_im;
+        self.retain(|(element, _)| {
+            let e_re = element.re();
+            let e_im = element.im();
+            e_re * e_re + e_im * e_im > cutoff_sq
+        });
     }
 
     fn retain(&mut self, f: impl FnMut(&(T, I)) -> bool) {
         Vec::retain(self, f);
     }
 
+    fn reserve(&mut self, additional: usize) {
+        Vec::reserve(self, additional);
+    }
+
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a (T, I)>
+    where
+        T: 'a,
+        I: 'a,
+    {
+        <[(T, I)]>::iter(self)
+    }
+
     fn normalize(&mut self) {
-        let norm: T::Real = self
-            .iter()
-            .fold(T::Real::zero(), |acc, (v, _)| acc + v.abs() * v.abs());
+        // `re*re + im*im` directly; `abs() * abs()` would compute
+        // `hypot(re, im)` (a sqrt) only to immediately square it again.
+        let norm: T::Real = self.iter().fold(T::Real::zero(), |acc, (v, _)| {
+            let re = v.re();
+            let im = v.im();
+            acc + re * re + im * im
+        });
 
         if norm == T::Real::zero() {
             panic!("Zero norm encountered during normalization");

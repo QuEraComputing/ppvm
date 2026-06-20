@@ -6,7 +6,7 @@ use paste::paste;
 use ppvm_tableau::prelude::*;
 use pyo3::prelude::*;
 
-fn measurement_to_u8(m: Option<bool>) -> u8 {
+pub(crate) fn measurement_to_u8(m: Option<bool>) -> u8 {
     match m {
         Some(false) => 0,
         Some(true) => 1,

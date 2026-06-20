@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_stim::{ExecError, parse_extended, prepare};
+use ppvm_stim::{ExecError, parse_extended, validate};
 
 fn err_from_src(src: &str) -> ExecError {
     let prog = parse_extended(src).expect("parse_extended");
-    prepare(&prog).expect_err("must reject")
+    validate(&prog).expect_err("must reject")
 }
 
 #[test]
@@ -40,10 +40,10 @@ fn unsupported_swap_inside_repeat_rejected() {
 }
 
 #[test]
-fn supported_structural_instructions_are_not_rejected_by_prepare() {
+fn supported_structural_instructions_are_not_rejected_by_validate() {
     let prog =
         parse_extended("MPAD 0 1\nI_ERROR[correlated_loss](0.5) 0 1\n").expect("parse_extended");
-    assert_eq!(prepare(&prog), Ok(()));
+    assert_eq!(validate(&prog), Ok(()));
 }
 
 #[test]

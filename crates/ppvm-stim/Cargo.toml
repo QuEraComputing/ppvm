@@ -3,6 +3,11 @@ name = "ppvm-stim"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+# Parallelise multi-shot sampling across the global rayon thread pool.
+rayon = ["dep:rayon"]
+
 [dependencies]
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
@@ -11,6 +16,7 @@ itertools = "0.14"
 num = "0.4.3"
 thiserror = "2"
 stim-parser = { version = "0.1.0", path = "../stim-parser" }
+rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 # Used by benchmarks.

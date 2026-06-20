@@ -183,7 +183,7 @@ macro_rules! create_interface {
                 prog: &crate::stim_program::PyStimProgram,
             ) -> pyo3::PyResult<Vec<u8>> {
                 let mut results = Vec::with_capacity(prog.measurement_count());
-                ppvm_stim::execute_prepared(&prog.instructions, &mut self.inner, &mut results);
+                ppvm_stim::execute_validated(&prog.instructions, &mut self.inner, &mut results);
                 Ok(results
                     .into_iter()
                     .map(crate::interface_tableau::measurement_to_u8)
@@ -191,38 +191,45 @@ macro_rules! create_interface {
             }
 
             /// Multi-shot sampling: builds a fresh tableau per shot.
+            ///
+            /// Shots run in parallel on rayon's global thread pool (GIL
+            /// released), falling back to serial for small batches. Shot `i`
+            /// is seeded with `seed.wrapping_add(i)` when `seed` is given
+            /// (wrapping mod 2⁶⁴), so results are reproducible and
+            /// independent of the thread count; set the `RAYON_NUM_THREADS`
+            /// environment variable to control the pool size.
             #[staticmethod]
             #[pyo3(signature = (prog, n_qubits, min_abs_coeff = 1e-10, num_shots = 1, seed = None))]
             pub fn sample(
+                py: Python<'_>,
                 prog: &crate::stim_program::PyStimProgram,
                 n_qubits: usize,
                 min_abs_coeff: f64,
                 num_shots: usize,
                 seed: Option<u64>,
             ) -> pyo3::PyResult<Vec<Vec<u8>>> {
-                let mut next_seed = seed;
-                let count = prog.measurement_count();
-                Ok((0..num_shots)
-                    .map(|_| {
-                        let s = next_seed;
-                        if let Some(ref mut v) = next_seed {
-                            *v = v.wrapping_add(1);
-                        }
-                        let mut tab = match s {
+                // `prog` was already validated at `StimProgram.parse()` time;
+                // use the validated path to skip redundant re-validation.
+                let raw = py.detach(|| {
+                    ppvm_stim::sample_validated(
+                        &prog.0.instructions,
+                        prog.0.measurement_count(),
+                        num_shots,
+                        |i| match seed {
                             Some(s) => GeneralizedTableau::<$type, $indexType>::new_with_seed(
                                 n_qubits,
                                 min_abs_coeff,
-                                s,
+                                s.wrapping_add(i as u64),
                             ),
                             None => GeneralizedTableau::<$type, $indexType>::new(
                                 n_qubits,
                                 min_abs_coeff,
                             ),
-                        };
-                        let mut shot = Vec::with_capacity(count);
-                        ppvm_stim::execute_prepared(&prog.instructions, &mut tab, &mut shot);
-                        shot
-                    })
+                        },
+                    )
+                });
+                Ok(raw
+                    .into_iter()
                     .map(|shot| {
                         shot.into_iter()
                             .map(crate::interface_tableau::measurement_to_u8)

@@ -212,13 +212,15 @@ use ppvm_tableau::prelude::*;
 
 let prog = parse_extended(stim_src)?;
 
-// Multi-shot: pass a factory closure to `sample` — it reuses the parsed program.
-let shots = sample(&prog, 10_000, || {
+// Multi-shot: pass a factory closure to `sample` — it reuses the parsed
+// program. The closure receives the shot index `i`; derive a per-shot seed
+// from it (e.g. `new_with_seed(.., base.wrapping_add(i as u64))`) for reproducible runs.
+let shots = sample(&prog, 10_000, |_i| {
     GeneralizedTableau::<_, usize, _>::new(n_qubits, 1e-10)
 })?;
 ```
 
-For single-shot demos there are also `run_string` / `run_file`, but they re-parse on every call — never use them in a sampling loop.
+With the `rayon` feature, `sample` fans shots across the global thread pool (serial fallback for small batches); call `sample_serial` / `sample_parallel` to force one path. For single-shot demos there are also `run_string` / `run_file`, but they re-parse on every call — never use them in a sampling loop.
 
 ## Gate / noise / measurement vocabulary
 

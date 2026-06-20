@@ -14,7 +14,7 @@ use ppvm_tableau::prelude::*;
 use stim_parser::ast::{GateName, MeasureName, NoiseName};
 use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 
-use crate::prepare::{ExecError, prepare};
+use crate::validate::{ExecError, validate};
 
 /// Validate and execute a parsed extended Stim program against a tableau,
 /// returning the per-measurement results in circuit order.
@@ -46,18 +46,23 @@ where
         + Copy,
     I: TableauIndex + Debug + Send + Sync,
 {
-    prepare(program)?;
+    validate(program)?;
     let count = program.measurement_count();
     let mut results = Vec::with_capacity(count);
-    execute_prepared(&program.instructions, tab, &mut results);
+    execute_validated(&program.instructions, tab, &mut results);
     Ok(results)
 }
 
-/// Execute many shots, building a fresh tableau per shot via `make_tableau`.
-pub fn sample<T, I, C, F>(
+/// Execute many shots serially, building a fresh tableau for shot `i` via
+/// `make_tableau(i)`.
+///
+/// The shot index lets callers derive a deterministic per-shot seed (e.g.
+/// `seed + i`) so results are independent of evaluation order — the same
+/// factory then yields identical results from `sample_parallel` (when the `rayon` feature is enabled).
+pub fn sample_serial<T, I, C, F>(
     program: &ExtendedProgram,
     num_shots: usize,
-    mut make_tableau: F,
+    make_tableau: F,
 ) -> Result<Vec<Vec<Option<bool>>>, ExecError>
 where
     T: Config,
@@ -82,26 +87,333 @@ where
         + ComplexFloat
         + Copy,
     I: TableauIndex + Debug + Send + Sync,
-    F: FnMut() -> GeneralizedTableau<T, I, C>,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C>,
 {
-    prepare(program)?;
-    let count = program.measurement_count();
-    Ok((0..num_shots)
-        .map(|_| {
-            let mut tab = make_tableau();
-            let mut results = Vec::with_capacity(count);
-            execute_prepared(&program.instructions, &mut tab, &mut results);
+    validate(program)?;
+    Ok(sample_serial_validated(
+        &program.instructions,
+        program.measurement_count(),
+        num_shots,
+        make_tableau,
+    ))
+}
+
+/// Like [`sample_serial`] but skips validation — call only when the program
+/// has already been validated (e.g. via [`validate`](fn@validate)).
+pub fn sample_serial_validated<T, I, C, F>(
+    instructions: &[stim_parser::extended::ExtendedInstruction],
+    measurement_count: usize,
+    num_shots: usize,
+    make_tableau: F,
+) -> Vec<Vec<Option<bool>>>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C>,
+{
+    (0..num_shots)
+        .map(|i| {
+            let mut tab = make_tableau(i);
+            let mut results = Vec::with_capacity(measurement_count);
+            execute_validated(instructions, &mut tab, &mut results);
             results
         })
-        .collect())
+        .collect()
+}
+
+/// Execute many shots, building a fresh tableau for shot `i` via
+/// `make_tableau(i)`.
+///
+/// When the `rayon` feature is enabled this dispatches to `sample_parallel`
+/// for batches large enough to amortise thread-scheduling overhead, and to
+/// [`sample_serial`] otherwise. Without the feature it is always serial. Use
+/// [`sample_serial`] / `sample_parallel` directly to force one or the other.
+#[cfg(feature = "rayon")]
+pub fn sample<T, I, C, F>(
+    program: &ExtendedProgram,
+    num_shots: usize,
+    make_tableau: F,
+) -> Result<Vec<Vec<Option<bool>>>, ExecError>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C> + Sync,
+{
+    validate(program)?;
+    Ok(sample_validated(
+        &program.instructions,
+        program.measurement_count(),
+        num_shots,
+        make_tableau,
+    ))
+}
+
+/// Like [`sample`] but skips validation — call only when the program has
+/// already been validated (e.g. via [`validate`](fn@validate)).
+///
+/// When the `rayon` feature is enabled this dispatches to
+/// [`sample_parallel_validated`] for large batches, falling back to
+/// [`sample_serial_validated`] for small ones.
+#[cfg(feature = "rayon")]
+pub fn sample_validated<T, I, C, F>(
+    instructions: &[stim_parser::extended::ExtendedInstruction],
+    measurement_count: usize,
+    num_shots: usize,
+    make_tableau: F,
+) -> Vec<Vec<Option<bool>>>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C> + Sync,
+{
+    // Below ~4 shots per thread, rayon's scheduling overhead outweighs
+    // the gain, so stay serial; with a single thread there is no upside.
+    let n_threads = rayon::current_num_threads();
+    if n_threads <= 1 || num_shots < 4 * n_threads {
+        sample_serial_validated(instructions, measurement_count, num_shots, make_tableau)
+    } else {
+        sample_parallel_validated(instructions, measurement_count, num_shots, make_tableau)
+    }
+}
+
+/// Like [`sample`] but skips validation — call only when the program has
+/// already been validated (e.g. via [`validate`](fn@validate)). Without the `rayon`
+/// feature this always runs serially.
+#[cfg(not(feature = "rayon"))]
+pub fn sample_validated<T, I, C, F>(
+    instructions: &[stim_parser::extended::ExtendedInstruction],
+    measurement_count: usize,
+    num_shots: usize,
+    make_tableau: F,
+) -> Vec<Vec<Option<bool>>>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C>,
+{
+    sample_serial_validated(instructions, measurement_count, num_shots, make_tableau)
+}
+
+/// Execute many shots, building a fresh tableau for shot `i` via
+/// `make_tableau(i)`.
+///
+/// Without the `rayon` feature execution is always serial. Enable the
+/// `rayon` feature to get a version that can dispatch to parallel execution
+/// for large batches. Use [`sample_serial`] to force serial execution
+/// regardless of the feature.
+#[cfg(not(feature = "rayon"))]
+pub fn sample<T, I, C, F>(
+    program: &ExtendedProgram,
+    num_shots: usize,
+    make_tableau: F,
+) -> Result<Vec<Vec<Option<bool>>>, ExecError>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C>,
+{
+    sample_serial(program, num_shots, make_tableau)
+}
+
+/// Execute many shots in parallel across the global rayon thread pool,
+/// building a fresh tableau for shot `i` via `make_tableau(i)`.
+///
+/// Per-shot seeds derived from `i` make the result independent of how rayon
+/// schedules the work, so a seeded factory yields the same shots (in the same
+/// order) as [`sample_serial`]. Thread count follows rayon's global pool
+/// (set `RAYON_NUM_THREADS` to override).
+#[cfg(feature = "rayon")]
+pub fn sample_parallel<T, I, C, F>(
+    program: &ExtendedProgram,
+    num_shots: usize,
+    make_tableau: F,
+) -> Result<Vec<Vec<Option<bool>>>, ExecError>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C> + Sync,
+{
+    validate(program)?;
+    Ok(sample_parallel_validated(
+        &program.instructions,
+        program.measurement_count(),
+        num_shots,
+        make_tableau,
+    ))
+}
+
+/// Like [`sample_parallel`] but skips validation — call only when the program
+/// has already been validated (e.g. via [`validate`](fn@validate)).
+#[cfg(feature = "rayon")]
+pub fn sample_parallel_validated<T, I, C, F>(
+    instructions: &[stim_parser::extended::ExtendedInstruction],
+    measurement_count: usize,
+    num_shots: usize,
+    make_tableau: F,
+) -> Vec<Vec<Option<bool>>>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C> + Sync,
+{
+    use rayon::prelude::*;
+    (0..num_shots)
+        .into_par_iter()
+        .map(|i| {
+            let mut tab = make_tableau(i);
+            let mut results = Vec::with_capacity(measurement_count);
+            execute_validated(instructions, &mut tab, &mut results);
+            results
+        })
+        .collect()
 }
 
 /// Dispatch a slice of validated instructions onto a tableau, appending
-/// measurement bits to `results`. Skip-validates: the caller is responsible
-/// for having run [`prepare`] on the originating program. Used by
+/// measurement bits to `results`. Skips validation — the caller is responsible
+/// for having run [`validate`](fn@validate) on the originating program. Used by
 /// [`execute`] / [`sample`] internally and by the Python `tab.run()` path
-/// where `StimProgram` already cached the prepare step.
-pub fn execute_prepared<T, I, C>(
+/// where `StimProgram` already cached the validate step.
+pub fn execute_validated<T, I, C>(
     instructions: &[ExtendedInstruction],
     tab: &mut GeneralizedTableau<T, I, C>,
     results: &mut Vec<Option<bool>>,
@@ -173,7 +485,7 @@ pub fn execute_prepared<T, I, C>(
                 | GateName::CZYX
                 | GateName::HXY
                 | GateName::HYZ => {
-                    unreachable!("unsupported gate {name:?} should have been rejected by prepare")
+                    unreachable!("unsupported gate {name:?} should have been rejected by validate")
                 }
             },
             ExtendedInstruction::T { targets, .. } => targets.iter().for_each(|&q| tab.t(q)),
@@ -253,7 +565,7 @@ pub fn execute_prepared<T, I, C>(
                 | NoiseName::HeraldedPauliChannel1
                 | NoiseName::CorrelatedError
                 | NoiseName::ElseCorrelatedError => {
-                    unreachable!("unsupported noise {name:?} should have been rejected by prepare")
+                    unreachable!("unsupported noise {name:?} should have been rejected by validate")
                 }
             },
             ExtendedInstruction::Loss { p, targets, .. } => {
@@ -302,7 +614,7 @@ pub fn execute_prepared<T, I, C>(
                     | MeasureName::MZZ
                     | MeasureName::MPP => {
                         unreachable!(
-                            "unsupported measure {name:?} should have been rejected by prepare"
+                            "unsupported measure {name:?} should have been rejected by validate"
                         )
                     }
                 }
@@ -316,7 +628,7 @@ pub fn execute_prepared<T, I, C>(
             ExtendedInstruction::Raw(RawPassthrough::Annotation { .. }) => { /* no-op */ }
             ExtendedInstruction::Repeat { count, body, .. } => {
                 for _ in 0..*count {
-                    execute_prepared(body, tab, results);
+                    execute_validated(body, tab, results);
                 }
             }
         }

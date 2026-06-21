@@ -93,21 +93,27 @@ fn encode_fused(tab: &mut Tab, qubits: &[usize]) {
             qubits[0], qubits[1], qubits[2], qubits[3], qubits[4], qubits[5],
         ]);
 
-        tab.cz(qubits[1], qubits[2]);
-        tab.cz(qubits[3], qubits[4]);
-        tab.cz(qubits[5], qubits[6]);
+        tab.cz_batch(&[
+            (qubits[1], qubits[2]),
+            (qubits[3], qubits[4]),
+            (qubits[5], qubits[6]),
+        ]);
 
         tab.sqrt_y(qubits[6]);
 
-        tab.cz(qubits[0], qubits[3]);
-        tab.cz(qubits[2], qubits[5]);
-        tab.cz(qubits[4], qubits[6]);
+        tab.cz_batch(&[
+            (qubits[0], qubits[3]),
+            (qubits[2], qubits[5]),
+            (qubits[4], qubits[6]),
+        ]);
 
         tab.sqrt_y_batch(&[qubits[2], qubits[3], qubits[4], qubits[5], qubits[6]]);
 
-        tab.cz(qubits[0], qubits[1]);
-        tab.cz(qubits[2], qubits[3]);
-        tab.cz(qubits[4], qubits[5]);
+        tab.cz_batch(&[
+            (qubits[0], qubits[1]),
+            (qubits[2], qubits[3]),
+            (qubits[4], qubits[5]),
+        ]);
 
         tab.sqrt_y_batch(&[qubits[1], qubits[2], qubits[4]]);
 
@@ -121,38 +127,57 @@ fn encode_fused(tab: &mut Tab, qubits: &[usize]) {
         qubits[16],
     ]);
 
-    for [i, j] in [[1, 3], [7, 10], [12, 14], [13, 16]] {
-        tab.cz(qubits[i], qubits[j]);
-    }
+    tab.cz_batch(&[
+        (qubits[1], qubits[3]),
+        (qubits[7], qubits[10]),
+        (qubits[12], qubits[14]),
+        (qubits[13], qubits[16]),
+    ]);
 
     tab.sqrt_y_adj_batch(&[qubits[7], qubits[16]]);
 
-    for [i, j] in [[4, 7], [8, 10], [11, 14], [15, 16]] {
-        tab.cz(qubits[i], qubits[j]);
-    }
+    tab.cz_batch(&[
+        (qubits[4], qubits[7]),
+        (qubits[8], qubits[10]),
+        (qubits[11], qubits[14]),
+        (qubits[15], qubits[16]),
+    ]);
 
     tab.sqrt_y_adj_batch(&[qubits[4], qubits[10], qubits[14], qubits[16]]);
 
-    for [i, j] in [[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]] {
-        tab.cz(qubits[i], qubits[j]);
-    }
+    tab.cz_batch(&[
+        (qubits[2], qubits[4]),
+        (qubits[6], qubits[8]),
+        (qubits[7], qubits[9]),
+        (qubits[10], qubits[13]),
+        (qubits[14], qubits[16]),
+    ]);
 
     tab.sqrt_y_batch(&[
         qubits[3], qubits[6], qubits[9], qubits[10], qubits[12], qubits[13],
     ]);
 
-    for [i, j] in [[0, 2], [3, 6], [5, 8], [10, 12], [11, 13]] {
-        tab.cz(qubits[i], qubits[j]);
-    }
+    tab.cz_batch(&[
+        (qubits[0], qubits[2]),
+        (qubits[3], qubits[6]),
+        (qubits[5], qubits[8]),
+        (qubits[10], qubits[12]),
+        (qubits[11], qubits[13]),
+    ]);
 
     tab.sqrt_y_batch(&[
         qubits[1], qubits[2], qubits[3], qubits[4], qubits[6], qubits[7], qubits[8], qubits[9],
         qubits[11], qubits[12], qubits[14],
     ]);
 
-    for [i, j] in [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [12, 15]] {
-        tab.cz(qubits[i], qubits[j]);
-    }
+    tab.cz_batch(&[
+        (qubits[0], qubits[1]),
+        (qubits[2], qubits[3]),
+        (qubits[4], qubits[5]),
+        (qubits[6], qubits[7]),
+        (qubits[8], qubits[9]),
+        (qubits[12], qubits[15]),
+    ]);
 
     tab.sqrt_y_adj_batch(&[
         qubits[0], qubits[2], qubits[5], qubits[6], qubits[8], qubits[10], qubits[12],

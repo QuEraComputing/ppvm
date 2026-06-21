@@ -963,6 +963,7 @@ name = "ppvm-stim"
 version = "0.1.0"
 dependencies = [
  "bitvec",
+ "bnum",
  "criterion 0.7.0",
  "itertools 0.14.0",
  "num",
@@ -997,6 +998,7 @@ dependencies = [
  "ppvm-runtime",
  "rand 0.10.1",
  "rayon",
+ "smallvec",
 ]
 
 [[package]]

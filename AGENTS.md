@@ -68,6 +68,12 @@ If you are an AI agent picking up a task in this repository:
    runtime dispatch where a compile-time bound suffices.
 6. Pauli propagation runs **backwards** (Heisenberg picture). Reverse the
    gate order accordingly when writing tests.
+7. **Python docstring cross-references** use Markdown backtick spans, not
+   RST syntax. The docs pipeline (griffe → `marked`) renders docstrings as
+   Markdown, so `:meth:` / `:func:` / `:class:` are never parsed as links —
+   they appear as literal text. Use plain backticks instead:
+   - ✅ `` `fork` `` or `` `GeneralizedTableau.sample` ``
+   - ❌ `` :meth:`fork` `` or `` :func:`ppvm.sample_stim` ``
 
 ## Workspace at a glance
 

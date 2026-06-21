@@ -6,6 +6,11 @@ use bitvec::view::BitView;
 use bitvec::view::BitViewSized;
 use num::complex::Complex;
 use num::{One, PrimInt, Zero};
+use smallvec::{SmallVec, smallvec};
+
+/// Per-word bitmask buffer used by the batched Clifford gates.
+/// Stack-allocates for up to 8 storage words; spills to heap beyond.
+type MaskBuf<T> = SmallVec<[<<T as Config>::Storage as BitView>::Store; 8]>;
 
 macro_rules! impl_tableau_clifford {
     ($name:ident, $($index:ident),*) => {
@@ -168,33 +173,284 @@ where
     <T::Storage as BitView>::Store: PrimInt,
 {
     /// Build per-word bitmasks from a list of qubit indices.
-    /// Returns (masks, n_words) on a stack-allocated array (max 8 words = 512 qubits).
+    /// Returns `(masks, n_words)`. Stack-allocates for up to 8 storage words;
+    /// spills to the heap beyond that, so there is no hard qubit cap.
     #[inline]
-    fn build_masks(
-        &self,
-        indices: &[usize],
-    ) -> Option<([<T::Storage as BitView>::Store; 8], usize)> {
-        if self.data.is_empty() {
+    fn build_masks(&self, indices: &[usize]) -> Option<(MaskBuf<T>, usize)> {
+        if self.data.is_empty() || indices.is_empty() {
             return None;
         }
         let n_words = self.data[0].word.xbits.data.as_raw_slice().len();
-        debug_assert!(n_words <= 8, "Storage exceeds 8 words");
         let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
         let one = <T::Storage as BitView>::Store::one();
         let zero = <T::Storage as BitView>::Store::zero();
-        let mut masks = [zero; 8];
+        let mut masks: MaskBuf<T> = smallvec![zero; n_words];
         for &addr0 in indices {
             masks[addr0 / bits_per_word] =
                 masks[addr0 / bits_per_word] | (one << (addr0 % bits_per_word));
         }
         Some((masks, n_words))
     }
+}
+
+impl<T: Config> CliffordBatch for Tableau<T>
+where
+    <T::Storage as BitView>::Store: PrimInt,
+{
+    /// `X` is bit-preserving: phase flips for each masked qubit where z=1.
+    #[inline]
+    fn x_batch(&mut self, indices: &[usize]) {
+        let (masks, n_words) = match self.build_masks(indices) {
+            Some(m) => m,
+            None => return,
+        };
+        let zero = <T::Storage as BitView>::Store::zero();
+
+        self.data.iter_mut().for_each(|pw| {
+            let zp = pw.word.zbits.data.as_raw_slice();
+            let mut popcount = 0u32;
+            for wi in 0..n_words {
+                let mask = masks[wi];
+                if mask == zero {
+                    continue;
+                }
+                popcount += (zp[wi] & mask).count_ones();
+            }
+            pw.phase ^= ((popcount & 1) as u8) << 1;
+        });
+    }
+
+    /// `Y` is bit-preserving: phase flips for each masked qubit where x⊕z=1.
+    #[inline]
+    fn y_batch(&mut self, indices: &[usize]) {
+        let (masks, n_words) = match self.build_masks(indices) {
+            Some(m) => m,
+            None => return,
+        };
+        let zero = <T::Storage as BitView>::Store::zero();
+
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_slice();
+            let zp = pw.word.zbits.data.as_raw_slice();
+            let mut popcount = 0u32;
+            for wi in 0..n_words {
+                let mask = masks[wi];
+                if mask == zero {
+                    continue;
+                }
+                popcount += ((xp[wi] ^ zp[wi]) & mask).count_ones();
+            }
+            pw.phase ^= ((popcount & 1) as u8) << 1;
+        });
+    }
+
+    /// `Z` is bit-preserving: phase flips for each masked qubit where x=1.
+    #[inline]
+    fn z_batch(&mut self, indices: &[usize]) {
+        let (masks, n_words) = match self.build_masks(indices) {
+            Some(m) => m,
+            None => return,
+        };
+        let zero = <T::Storage as BitView>::Store::zero();
+
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_slice();
+            let mut popcount = 0u32;
+            for wi in 0..n_words {
+                let mask = masks[wi];
+                if mask == zero {
+                    continue;
+                }
+                popcount += (xp[wi] & mask).count_ones();
+            }
+            pw.phase ^= ((popcount & 1) as u8) << 1;
+        });
+    }
+
+    /// Forward `S`: phase flips where x&z=1, then z ^= x for masked qubits.
+    #[inline]
+    fn s_batch(&mut self, indices: &[usize]) {
+        let (masks, n_words) = match self.build_masks(indices) {
+            Some(m) => m,
+            None => return,
+        };
+        let zero = <T::Storage as BitView>::Store::zero();
+
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let mut popcount = 0u32;
+            for wi in 0..n_words {
+                let mask = masks[wi];
+                if mask == zero {
+                    continue;
+                }
+                let xw = xp[wi];
+                let zw = zp[wi];
+                popcount += ((xw & zw) & mask).count_ones();
+                zp[wi] = zw ^ (xw & mask);
+            }
+            pw.phase ^= ((popcount & 1) as u8) << 1;
+        });
+    }
+
+    /// Apply CNOT to many pairs, operating on raw storage words to avoid
+    /// per-bit `bitvec` addressing. Pairs are applied sequentially per row,
+    /// so semantics match the per-pair `cnot` loop exactly.
+    fn cnot_batch(&mut self, pairs: &[(usize, usize)]) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let mut phase_flips = zero;
+            for &(control, target) in pairs {
+                let (wc, sc) = (control / bits, control % bits);
+                let (wt, st) = (target / bits, target % bits);
+                let xa = (xp[wc] >> sc) & one;
+                let za = (zp[wc] >> sc) & one;
+                let xb = (xp[wt] >> st) & one;
+                let zb = (zp[wt] >> st) & one;
+                // +2 phase when x_a & z_b & !(x_b ^ z_a); 2+2 == 0 mod 4 so XOR-accumulate
+                phase_flips = phase_flips ^ ((xa & zb) & (xb ^ za ^ one));
+                // z_a ^= z_b ; x_b ^= x_a
+                zp[wc] = zp[wc] ^ (zb << sc);
+                xp[wt] = xp[wt] ^ (xa << st);
+            }
+            pw.phase ^= (((phase_flips & one) != zero) as u8) << 1;
+        });
+    }
+
+    /// Apply `H` to multiple qubits using combined bitmask operations.
+    /// H swaps x<->z bits (same as sqrt_y) but with different phase:
+    /// phase += 2 when x=1 & z=1 (Y goes to -Y).
+    #[inline]
+    fn h_batch(&mut self, indices: &[usize]) {
+        let (masks, n_words) = match self.build_masks(indices) {
+            Some(m) => m,
+            None => return,
+        };
+        let zero = <T::Storage as BitView>::Store::zero();
+
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            for wi in 0..n_words {
+                let mask = masks[wi];
+                if mask == zero {
+                    continue;
+                }
+                let not_mask = !mask;
+                let xw = xp[wi];
+                let zw = zp[wi];
+                let x_bits = xw & mask;
+                let z_bits = zw & mask;
+                xp[wi] = (xw & not_mask) | z_bits;
+                zp[wi] = (zw & not_mask) | x_bits;
+                let phase_bits = x_bits & z_bits;
+                pw.phase ^= ((phase_bits.count_ones() & 1) as u8) << 1;
+            }
+        });
+    }
+
+    /// Apply CZ to many pairs on raw storage words. CZ is symmetric and touches
+    /// only z-bits; pairs are applied sequentially per row, so semantics match
+    /// the per-pair `cz` loop exactly.
+    fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let mut phase_flips = zero;
+            for &(control, target) in pairs {
+                let (wc, sc) = (control / bits, control % bits);
+                let (wt, st) = (target / bits, target % bits);
+                let xa = (xp[wc] >> sc) & one;
+                let za = (zp[wc] >> sc) & one;
+                let xb = (xp[wt] >> st) & one;
+                let zb = (zp[wt] >> st) & one;
+                // +2 phase when x_a & x_b & (z_a ^ z_b)
+                phase_flips = phase_flips ^ ((xa & xb) & (za ^ zb));
+                // z_a ^= x_b ; z_b ^= x_a
+                zp[wc] = zp[wc] ^ (xb << sc);
+                zp[wt] = zp[wt] ^ (xa << st);
+            }
+            pw.phase ^= (((phase_flips & one) != zero) as u8) << 1;
+        });
+    }
+}
+
+impl<T: Config> CliffordExtensionsBatch for Tableau<T>
+where
+    <T::Storage as BitView>::Store: PrimInt,
+{
+    /// Backward `S` (i.e. `S†`): same bit mapping as `S`, phase rule differs.
+    /// Phase flips where x&!z=1, then z ^= x for masked qubits.
+    #[inline]
+    fn s_adj_batch(&mut self, indices: &[usize]) {
+        let (masks, n_words) = match self.build_masks(indices) {
+            Some(m) => m,
+            None => return,
+        };
+        let zero = <T::Storage as BitView>::Store::zero();
+
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let mut popcount = 0u32;
+            for wi in 0..n_words {
+                let mask = masks[wi];
+                if mask == zero {
+                    continue;
+                }
+                let xw = xp[wi];
+                let zw = zp[wi];
+                popcount += ((xw & !zw) & mask).count_ones();
+                zp[wi] = zw ^ (xw & mask);
+            }
+            pw.phase ^= ((popcount & 1) as u8) << 1;
+        });
+    }
+
+    /// Apply CY to many pairs on raw storage words. Pairs are applied
+    /// sequentially per row, so semantics match the per-pair `cy` loop exactly.
+    fn cy_batch(&mut self, pairs: &[(usize, usize)]) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let mut phase_flips = zero;
+            for &(control, target) in pairs {
+                let (wc, sc) = (control / bits, control % bits);
+                let (wt, st) = (target / bits, target % bits);
+                let xc = (xp[wc] >> sc) & one;
+                let zc = (zp[wc] >> sc) & one;
+                let xt = (xp[wt] >> st) & one;
+                let zt = (zp[wt] >> st) & one;
+                // +2 phase when x_c & (x_t ^ z_t) & !(z_c ^ z_t)
+                phase_flips = phase_flips ^ ((xc & (xt ^ zt)) & (zc ^ zt ^ one));
+                // z_c ^= x_t ^ z_t ; x_t ^= x_c ; z_t ^= x_c
+                zp[wc] = zp[wc] ^ ((xt ^ zt) << sc);
+                xp[wt] = xp[wt] ^ (xc << st);
+                zp[wt] = zp[wt] ^ (xc << st);
+            }
+            pw.phase ^= (((phase_flips & one) != zero) as u8) << 1;
+        });
+    }
 
     /// Apply `√Y` to multiple qubits using combined bitmask operations.
     /// All qubits targeting the same word are merged into a single mask,
     /// reducing N individual operations to O(n_words) per row.
     #[inline]
-    pub fn sqrt_y_batch(&mut self, indices: &[usize]) {
+    fn sqrt_y_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -222,9 +478,9 @@ where
         });
     }
 
-    /// Apply sqrt_y_adj to multiple qubits using combined bitmask operations.
+    /// Apply `(√Y)†` to multiple qubits using combined bitmask operations.
     #[inline]
-    pub fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
+    fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -252,9 +508,9 @@ where
         });
     }
 
-    /// Apply sqrt_x to multiple qubits using combined bitmask operations.
+    /// Apply `√X` to multiple qubits using combined bitmask operations.
     #[inline]
-    pub fn sqrt_x_batch(&mut self, indices: &[usize]) {
+    fn sqrt_x_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -278,9 +534,9 @@ where
         });
     }
 
-    /// Apply sqrt_x_adj to multiple qubits using combined bitmask operations.
+    /// Apply `(√X)†` to multiple qubits using combined bitmask operations.
     #[inline]
-    pub fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
+    fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -300,49 +556,6 @@ where
                 let phase_bits = (xw & zw) & mask;
                 pw.phase ^= ((phase_bits.count_ones() & 1) as u8) << 1;
                 xp[wi] = xw ^ (zw & mask);
-            }
-        });
-    }
-
-    /// Apply CZ to multiple pairs in a single pass.
-    /// CZ pairs have cross-qubit dependencies so we use per-pair delegation (proven faster).
-    #[inline]
-    pub fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
-        self.data.iter_mut().for_each(|pw| {
-            for &(control, target) in pairs {
-                pw.cz(control, target);
-            }
-        });
-    }
-
-    /// Apply H to multiple qubits using combined bitmask.
-    /// H swaps x<->z bits (same as sqrt_y) but with different phase:
-    /// phase += 2 when x=1 & z=1 (Y goes to -Y).
-    #[inline]
-    pub fn h_batch(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
-        let zero = <T::Storage as BitView>::Store::zero();
-
-        self.data.iter_mut().for_each(|pw| {
-            let xp = pw.word.xbits.data.as_raw_mut_slice();
-            let zp = pw.word.zbits.data.as_raw_mut_slice();
-            for wi in 0..n_words {
-                let mask = masks[wi];
-                if mask == zero {
-                    continue;
-                }
-                let not_mask = !mask;
-                let xw = xp[wi];
-                let zw = zp[wi];
-                let x_bits = xw & mask;
-                let z_bits = zw & mask;
-                xp[wi] = (xw & not_mask) | z_bits;
-                zp[wi] = (zw & not_mask) | x_bits;
-                let phase_bits = x_bits & z_bits;
-                pw.phase ^= ((phase_bits.count_ones() & 1) as u8) << 1;
             }
         });
     }
@@ -366,90 +579,69 @@ where
             .iter()
             .any(|&(c, t)| self.is_lost[c] || self.is_lost[t])
     }
+}
 
-    /// Batched `√Y`, skipping lost qubits.
-    pub fn sqrt_y_batch(&mut self, indices: &[usize]) {
-        if !self.any_lost_single(indices) {
-            self.tableau.sqrt_y_batch(indices);
-            return;
+macro_rules! impl_gen_tableau_batch_single {
+    ($name:ident) => {
+        fn $name(&mut self, indices: &[usize]) {
+            if !self.any_lost_single(indices) {
+                self.tableau.$name(indices);
+                return;
+            }
+            let filtered: Vec<usize> = indices
+                .iter()
+                .copied()
+                .filter(|&i| !self.is_lost[i])
+                .collect();
+            self.tableau.$name(&filtered);
         }
-        let filtered: Vec<usize> = indices
-            .iter()
-            .copied()
-            .filter(|&i| !self.is_lost[i])
-            .collect();
-        self.tableau.sqrt_y_batch(&filtered);
-    }
+    };
+}
 
-    /// Batched `(√Y)†`, skipping lost qubits.
-    pub fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
-        if !self.any_lost_single(indices) {
-            self.tableau.sqrt_y_adj_batch(indices);
-            return;
+macro_rules! impl_gen_tableau_batch_pair {
+    ($name:ident) => {
+        fn $name(&mut self, pairs: &[(usize, usize)]) {
+            if !self.any_lost_pair(pairs) {
+                self.tableau.$name(pairs);
+                return;
+            }
+            let filtered: Vec<(usize, usize)> = pairs
+                .iter()
+                .copied()
+                .filter(|&(c, t)| !self.is_lost[c] && !self.is_lost[t])
+                .collect();
+            self.tableau.$name(&filtered);
         }
-        let filtered: Vec<usize> = indices
-            .iter()
-            .copied()
-            .filter(|&i| !self.is_lost[i])
-            .collect();
-        self.tableau.sqrt_y_adj_batch(&filtered);
-    }
+    };
+}
 
-    /// Batched `√X`, skipping lost qubits.
-    pub fn sqrt_x_batch(&mut self, indices: &[usize]) {
-        if !self.any_lost_single(indices) {
-            self.tableau.sqrt_x_batch(indices);
-            return;
-        }
-        let filtered: Vec<usize> = indices
-            .iter()
-            .copied()
-            .filter(|&i| !self.is_lost[i])
-            .collect();
-        self.tableau.sqrt_x_batch(&filtered);
-    }
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> CliffordBatch
+    for GeneralizedTableau<T, I, C>
+where
+    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
+    <T::Storage as BitView>::Store: PrimInt,
+{
+    impl_gen_tableau_batch_single!(x_batch);
+    impl_gen_tableau_batch_single!(y_batch);
+    impl_gen_tableau_batch_single!(z_batch);
+    impl_gen_tableau_batch_single!(h_batch);
+    impl_gen_tableau_batch_single!(s_batch);
+    impl_gen_tableau_batch_pair!(cnot_batch);
+    impl_gen_tableau_batch_pair!(cz_batch);
+}
 
-    /// Batched `(√X)†`, skipping lost qubits.
-    pub fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
-        if !self.any_lost_single(indices) {
-            self.tableau.sqrt_x_adj_batch(indices);
-            return;
-        }
-        let filtered: Vec<usize> = indices
-            .iter()
-            .copied()
-            .filter(|&i| !self.is_lost[i])
-            .collect();
-        self.tableau.sqrt_x_adj_batch(&filtered);
-    }
-
-    /// Batched `CZ`, skipping pairs with a lost qubit.
-    pub fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
-        if !self.any_lost_pair(pairs) {
-            self.tableau.cz_batch(pairs);
-            return;
-        }
-        let filtered: Vec<(usize, usize)> = pairs
-            .iter()
-            .copied()
-            .filter(|&(c, t)| !self.is_lost[c] && !self.is_lost[t])
-            .collect();
-        self.tableau.cz_batch(&filtered);
-    }
-
-    /// Batched `H`, skipping lost qubits.
-    pub fn h_batch(&mut self, indices: &[usize]) {
-        if !self.any_lost_single(indices) {
-            self.tableau.h_batch(indices);
-            return;
-        }
-        let filtered: Vec<usize> = indices
-            .iter()
-            .copied()
-            .filter(|&i| !self.is_lost[i])
-            .collect();
-        self.tableau.h_batch(&filtered);
-    }
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> CliffordExtensionsBatch
+    for GeneralizedTableau<T, I, C>
+where
+    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
+    <T::Storage as BitView>::Store: PrimInt,
+{
+    impl_gen_tableau_batch_single!(s_adj_batch);
+    impl_gen_tableau_batch_single!(sqrt_x_batch);
+    impl_gen_tableau_batch_single!(sqrt_x_adj_batch);
+    impl_gen_tableau_batch_single!(sqrt_y_batch);
+    impl_gen_tableau_batch_single!(sqrt_y_adj_batch);
+    impl_gen_tableau_batch_pair!(cy_batch);
 }
 
 #[cfg(test)]
@@ -751,6 +943,29 @@ mod tests {
         }
 
         #[test]
+        fn test_cz_batch_cross_word() {
+            // Pairs straddle the two storage words (qubits 0..8 and 8..16).
+            let n = 16;
+            let pairs = vec![(1, 9), (8, 2), (7, 15), (10, 0)];
+            let setup = [0usize, 7, 8, 9, 15];
+            let mut tab_ind = TTab::new(n);
+            for &q in &setup {
+                tab_ind.h(q);
+            }
+            tab_ind.s(2);
+            for &(c, t) in &pairs {
+                tab_ind.cz(c, t);
+            }
+            let mut tab_batch = TTab::new(n);
+            for &q in &setup {
+                tab_batch.h(q);
+            }
+            tab_batch.s(2);
+            tab_batch.cz_batch(&pairs);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
         fn test_batch_empty_indices() {
             let n = 4;
             let initial = {
@@ -763,6 +978,16 @@ mod tests {
             tab.sqrt_x_batch(&[]);
             assert_eq!(snapshot(&tab), initial);
             tab.h_batch(&[]);
+            assert_eq!(snapshot(&tab), initial);
+            tab.x_batch(&[]);
+            assert_eq!(snapshot(&tab), initial);
+            tab.y_batch(&[]);
+            assert_eq!(snapshot(&tab), initial);
+            tab.z_batch(&[]);
+            assert_eq!(snapshot(&tab), initial);
+            tab.s_batch(&[]);
+            assert_eq!(snapshot(&tab), initial);
+            tab.s_adj_batch(&[]);
             assert_eq!(snapshot(&tab), initial);
         }
 
@@ -791,6 +1016,215 @@ mod tests {
             tab.sqrt_y_batch(&indices);
             tab.sqrt_y_adj_batch(&indices);
             assert_eq!(snapshot(&tab), initial);
+        }
+
+        #[test]
+        fn test_x_batch_matches_individual() {
+            let n = 8;
+            let indices = vec![0, 2, 5, 7];
+            let mut tab_ind = TTab::new(n);
+            tab_ind.h(0);
+            tab_ind.s(3);
+            for &i in &indices {
+                tab_ind.x(i);
+            }
+            let mut tab_batch = TTab::new(n);
+            tab_batch.h(0);
+            tab_batch.s(3);
+            tab_batch.x_batch(&indices);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_y_batch_matches_individual() {
+            let n = 8;
+            let indices = vec![1, 3, 4, 6];
+            let mut tab_ind = TTab::new(n);
+            tab_ind.h(0);
+            tab_ind.s(2);
+            for &i in &indices {
+                tab_ind.y(i);
+            }
+            let mut tab_batch = TTab::new(n);
+            tab_batch.h(0);
+            tab_batch.s(2);
+            tab_batch.y_batch(&indices);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_z_batch_matches_individual() {
+            let n = 8;
+            let indices = vec![0, 1, 4, 7];
+            let mut tab_ind = TTab::new(n);
+            tab_ind.h(2);
+            tab_ind.s(5);
+            for &i in &indices {
+                tab_ind.z(i);
+            }
+            let mut tab_batch = TTab::new(n);
+            tab_batch.h(2);
+            tab_batch.s(5);
+            tab_batch.z_batch(&indices);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_s_batch_matches_individual() {
+            let n = 8;
+            let indices = vec![0, 2, 5, 7];
+            let mut tab_ind = TTab::new(n);
+            tab_ind.h(1);
+            tab_ind.h(4);
+            for &i in &indices {
+                tab_ind.s(i);
+            }
+            let mut tab_batch = TTab::new(n);
+            tab_batch.h(1);
+            tab_batch.h(4);
+            tab_batch.s_batch(&indices);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_s_adj_batch_matches_individual() {
+            let n = 8;
+            let indices = vec![1, 3, 4, 6];
+            let mut tab_ind = TTab::new(n);
+            tab_ind.h(2);
+            tab_ind.h(5);
+            for &i in &indices {
+                tab_ind.s_adj(i);
+            }
+            let mut tab_batch = TTab::new(n);
+            tab_batch.h(2);
+            tab_batch.h(5);
+            tab_batch.s_adj_batch(&indices);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_cnot_batch_matches_individual() {
+            let n = 8;
+            let pairs = vec![(0, 1), (2, 3), (4, 5)];
+            let mut tab_ind = TTab::new(n);
+            tab_ind.h(0);
+            tab_ind.h(2);
+            tab_ind.h(4);
+            for &(c, t) in &pairs {
+                tab_ind.cnot(c, t);
+            }
+            let mut tab_batch = TTab::new(n);
+            tab_batch.h(0);
+            tab_batch.h(2);
+            tab_batch.h(4);
+            tab_batch.cnot_batch(&pairs);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_cnot_batch_cross_word() {
+            // Pairs straddle the two storage words (qubits 0..8 and 8..16).
+            let n = 16;
+            let pairs = vec![(1, 9), (8, 2), (7, 15), (10, 0)];
+            let setup = [0usize, 7, 8, 9, 15];
+            let mut tab_ind = TTab::new(n);
+            for &q in &setup {
+                tab_ind.h(q);
+            }
+            tab_ind.s(2);
+            for &(c, t) in &pairs {
+                tab_ind.cnot(c, t);
+            }
+            let mut tab_batch = TTab::new(n);
+            for &q in &setup {
+                tab_batch.h(q);
+            }
+            tab_batch.s(2);
+            tab_batch.cnot_batch(&pairs);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_cy_batch_matches_individual() {
+            let n = 8;
+            let pairs = vec![(0, 1), (2, 3), (4, 5)];
+            let mut tab_ind = TTab::new(n);
+            tab_ind.h(0);
+            tab_ind.h(2);
+            tab_ind.s(4);
+            for &(c, t) in &pairs {
+                tab_ind.cy(c, t);
+            }
+            let mut tab_batch = TTab::new(n);
+            tab_batch.h(0);
+            tab_batch.h(2);
+            tab_batch.s(4);
+            tab_batch.cy_batch(&pairs);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_cy_batch_cross_word() {
+            // Pairs straddle the two storage words (qubits 0..8 and 8..16).
+            let n = 16;
+            let pairs = vec![(1, 9), (8, 2), (7, 15), (10, 0)];
+            let setup = [0usize, 7, 8, 9, 15];
+            let mut tab_ind = TTab::new(n);
+            for &q in &setup {
+                tab_ind.h(q);
+            }
+            tab_ind.s(2);
+            for &(c, t) in &pairs {
+                tab_ind.cy(c, t);
+            }
+            let mut tab_batch = TTab::new(n);
+            for &q in &setup {
+                tab_batch.h(q);
+            }
+            tab_batch.s(2);
+            tab_batch.cy_batch(&pairs);
+            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
+        }
+
+        #[test]
+        fn test_batch_more_than_8_storage_words() {
+            // 16 storage words exceeds the previous fixed-array limit of 8;
+            // verifies the SmallVec heap-spill path in `build_masks`.
+            type BigConfig = ByteF64<16>;
+            type BigTab = Tableau<BigConfig>;
+
+            fn big_snapshot(tab: &BigTab) -> Vec<(Vec<u8>, Vec<u8>, u8)> {
+                tab.data
+                    .iter()
+                    .map(|pw| {
+                        (
+                            pw.word.xbits.data.as_raw_slice().to_vec(),
+                            pw.word.zbits.data.as_raw_slice().to_vec(),
+                            pw.phase,
+                        )
+                    })
+                    .collect()
+            }
+
+            let n = 128;
+            // Indices straddle word 0 (qubits 0..8), middle words, and the
+            // last word (qubits 120..128).
+            let indices: Vec<usize> = vec![0, 7, 8, 63, 64, 71, 72, 120, 127];
+
+            let mut tab_ind = BigTab::new(n);
+            tab_ind.h(3);
+            tab_ind.s(60);
+            for &i in &indices {
+                tab_ind.h(i);
+            }
+
+            let mut tab_batch = BigTab::new(n);
+            tab_batch.h(3);
+            tab_batch.s(60);
+            tab_batch.h_batch(&indices);
+
+            assert_eq!(big_snapshot(&tab_ind), big_snapshot(&tab_batch));
         }
 
         #[test]

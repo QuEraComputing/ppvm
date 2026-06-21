@@ -520,6 +520,15 @@ chore: restore lockfile consistency</code></pre>
       <li>Run <code>cargo clippy --workspace --all-targets</code>; fix or justify all warnings.</li>
       <li>Python is formatted with <code>ruff format</code> and linted with <code>ruff check</code>.</li>
       <li>Public Rust items should have doc comments; <code>cargo doc --no-deps</code> must build cleanly because the API site is built from rustdoc JSON.</li>
+      <li>
+        Python docstrings use <strong>Google style</strong> (griffe parses with <code>-d google</code>)
+        and are rendered as <strong>Markdown</strong> via <code>marked</code>. Use backtick spans for
+        cross-references — <em>not</em> Sphinx/RST syntax:
+        <ul>
+          <li>✅ <code>`fork`</code> or <code>`GeneralizedTableau.sample`</code></li>
+          <li>❌ <code>:meth:`fork`</code>, <code>:func:`ppvm.sample_stim`</code> — these are never parsed and appear as literal text.</li>
+        </ul>
+      </li>
     </ul>
 
     <h3>4.3 Tests</h3>

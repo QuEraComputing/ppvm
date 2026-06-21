@@ -11,6 +11,7 @@ const toc = [
   { label: "Stim circuit support",   href: "#stim" },
   { label: "Noise and loss",         href: "#noise" },
   { label: "Coefficient pruning",    href: "#pruning" },
+  { label: "Mixed states & sampling", href: "#sum" },
 ];
 
 // Snippets in the frontmatter so f-string `{...}` braces don't fight
@@ -53,6 +54,18 @@ tab.reset_loss_channel(0)
 print(tab.is_lost(0))    # False`;
 
 const pruning = `tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)`;
+
+const sumSampling = `from ppvm.generalized_tableau_sum import GeneralizedTableauSum
+
+tab = GeneralizedTableauSum(n_qubits=2, seed=0)
+tab.h(0)
+tab.cnot(0, 1)
+tab.depolarize(0, 0.05)            # branches the sum into a mixture
+
+sampler = tab.sampler()            # snapshot the current state
+shots = sampler.sample_shots(10_000)   # list[list[MeasurementResult]]`;
+
+const sumPruning = `tab = GeneralizedTableauSum(n_qubits=4, min_abs_coeff=1e-10, sum_cutoff=1e-8)`;
 ---
 <Base
   title="Python Quick Start — Generalized Tableau"
@@ -75,7 +88,7 @@ const pruning = `tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)`;
     <section id="overview">
       <h2>Overview</h2>
       <p>
-        <a href={`${base}/api#py-ppvm-generalized_tableau-GeneralizedTableau`}><code>GeneralizedTableau</code></a>
+        <a href={`${base}/api#py-ppvm-generalized-tableau-GeneralizedTableau`}><code>GeneralizedTableau</code></a>
         simulates quantum circuits in the <strong>Schrödinger picture</strong>
         using a generalized stabilizer decomposition.
       </p>
@@ -149,7 +162,7 @@ const pruning = `tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)`;
       </ul>
       <p>
         When a qubit is lost, a subsequent measurement returns
-        <a href={`${base}/api#py-ppvm-generalized_tableau-MeasurementResult`}><code>MeasurementResult.LOST</code></a>
+        <a href={`${base}/api#py-ppvm-generalized-tableau-MeasurementResult`}><code>MeasurementResult.LOST</code></a>
         instead of <code>ZERO</code> or <code>ONE</code>. You can check and
         reset loss state:
       </p>
@@ -170,6 +183,44 @@ const pruning = `tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)`;
         controls pruning of small coefficients:
       </p>
 <pre><code class="language-python">{pruning}</code></pre>
+    </section>
+
+    <section id="sum">
+      <h2>Mixed states and sampling</h2>
+      <p>
+        A single <code>GeneralizedTableau</code> follows one stochastic
+        <strong>trajectory</strong>: each noise channel and measurement samples
+        an outcome and collapses the state, so drawing many shots means
+        re-running the whole circuit once per shot.
+      </p>
+      <p>
+        <a href={`${base}/api#py-ppvm-generalized-tableau-sum-GeneralizedTableauSum`}><code>GeneralizedTableauSum</code></a>
+        instead represents the full <strong>mixed state</strong> — a classical,
+        probability-weighted mixture of pure stabilizer states, one branch per
+        error outcome. Noise and loss channels <em>branch</em> the sum rather
+        than sampling from it, so the circuit is built <strong>once</strong> and
+        any number of shots are then drawn from the resulting distribution by a
+        <a href={`${base}/api#py-ppvm-generalized-tableau-sum-TableauSumSampler`}><code>Sampler</code></a>.
+      </p>
+<pre><code class="language-python">{sumSampling}</code></pre>
+      <p>
+        The same Clifford, rotation, noise, and loss methods as
+        <code>GeneralizedTableau</code> are available.
+        <code>sampler()</code> snapshots the current state into an independent
+        sampler with its own RNG, so gates applied to the tableau afterwards
+        don't affect it. <code>sample()</code> and <code>sample_shots(n)</code>
+        return <code>MeasurementResult</code> outcomes, while
+        <code>raw_sample()</code> and <code>raw_shots(n)</code> return raw
+        integer codes (<code>0</code>/<code>1</code>/<code>2</code> for
+        <code>|0&gt;</code>/<code>|1&gt;</code>/lost), which is slightly faster.
+      </p>
+      <p>
+        Two thresholds bound the size of the mixture:
+        <code>min_abs_coeff</code> prunes small coefficients within each branch
+        (as above), while <code>sum_cutoff</code> drops whole branches whose
+        probability weight falls below it.
+      </p>
+<pre><code class="language-python">{sumPruning}</code></pre>
     </section>
   </article>
 </Base>

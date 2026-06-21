@@ -56,8 +56,12 @@ def encode(tab: GeneralizedTableau, qubits: list[int]) -> None:
         tab.sqrt_y_adj(qubits[i])
 
 
-def msd_circuit(tab: GeneralizedTableau) -> list[MeasurementResult]:
-    """Build and measure the full 85-qubit MSD circuit."""
+def build_msd(tab) -> None:
+    """Build the full 85-qubit MSD circuit (no measurement).
+
+    Works on any tableau exposing the standard gate methods — both
+    ``GeneralizedTableau`` and ``GeneralizedTableauSum``.
+    """
     n_qubits = QUBITS_PER_CODE_BLOCK * 5
     qubit_addrs = list(range(n_qubits))
 
@@ -106,7 +110,11 @@ def msd_circuit(tab: GeneralizedTableau) -> list[MeasurementResult]:
         for q in ql[i]:
             tab.sqrt_x_adj(q)
 
-    # Measure all qubits
+
+def msd_circuit(tab: GeneralizedTableau) -> list[MeasurementResult]:
+    """Build and measure the full 85-qubit MSD circuit."""
+    build_msd(tab)
+    n_qubits = QUBITS_PER_CODE_BLOCK * 5
     return [tab.measure(i) for i in range(n_qubits)]
 
 
@@ -153,4 +161,61 @@ counts = Counter(bitstrings)
 print(f"Distinct outcomes: {len(counts)} / {n_shots}")
 print("Most common 5 patterns:")
 for pattern, count in counts.most_common(5):
+    print(f"  {count:>4}×  {pattern}")
+
+# %% [markdown]
+# ## Sampling a noisy circuit with `GeneralizedTableauSum`
+#
+# The approach above re-runs the entire circuit for every shot. When the
+# circuit is *noisy*, `GeneralizedTableauSum` offers an alternative: it tracks
+# the full **mixed state** as a probability-weighted sum of stabilizer branches
+# (one per error outcome), so the circuit is built **once**. A `Sampler` then
+# draws as many shots as you like from the resulting distribution, in parallel
+# across cores.
+#
+# We reuse the exact same `build_msd` circuit — the summed tableau exposes the
+# same gate methods — and add a depolarizing channel on every qubit so the sum
+# branches into a genuine mixture. `sum_cutoff` drops branches whose probability
+# weight falls below the threshold, keeping the mixture tractable.
+
+# %%
+from ppvm.generalized_tableau_sum import GeneralizedTableauSum
+
+p_depolarize = 1e-4
+
+tab_sum = GeneralizedTableauSum(n_qubits, sum_cutoff=1e-7, seed=0)
+build_msd(tab_sum)  # same gates, on the summed tableau
+
+for q in range(n_qubits):
+    tab_sum.depolarize(q, p_depolarize)
+
+print(f"Mixed state holds {len(tab_sum)} branches")
+
+# %% [markdown]
+# Compiling a `Sampler` snapshots the current state; we can then draw all the
+# shots in a single call.
+
+# %%
+start = time.perf_counter()
+
+sampler = tab_sum.sampler()
+shots = sampler.sample_shots(n_shots)  # list[list[MeasurementResult]]
+
+elapsed = time.perf_counter() - start
+print(f"Drew {n_shots} shots from the mixture in {elapsed * 1e3:.1f} ms")
+
+# %% [markdown]
+# The shots come from the same distribution as the trajectory approach, but the
+# expensive circuit construction happened only once. Summarising the same way:
+
+# %%
+sum_bitstrings = [
+    "".join("1" if r == MeasurementResult.ONE else "0" for r in shot)
+    for shot in shots
+]
+sum_counts = Counter(sum_bitstrings)
+
+print(f"Distinct outcomes: {len(sum_counts)} / {n_shots}")
+print("Most common 5 patterns:")
+for pattern, count in sum_counts.most_common(5):
     print(f"  {count:>4}×  {pattern}")

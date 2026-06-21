@@ -67,6 +67,8 @@ impl<A: PauliStorage, S, const REHASH: bool> PartialEq for PauliWord<A, S, REHAS
     }
 }
 
+impl<A: PauliStorage, S: Clone, const REHASH: bool> Copy for PauliWord<A, S, REHASH> {}
+
 impl<A, S, const REHASH: bool> PauliIter for PauliWord<A, S, REHASH>
 where
     A: PauliStorage,

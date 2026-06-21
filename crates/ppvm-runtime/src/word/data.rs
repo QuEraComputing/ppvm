@@ -191,9 +191,12 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Paul
             // the `&[u8]` view safe — no padding, all bytes initialized.
             hasher.write(bytemuck::bytes_of(&self.xbits.data));
             hasher.write(bytemuck::bytes_of(&self.zbits.data));
-            // Fold high bits into the low ones — fxhash on short storages leaves the low bits correlated, which clusters hashbrown buckets at high fill.
-            let h = hasher.finish();
-            self.hash_cache = h ^ (h >> 32);
+            // Adapt the digest to the storage width. Narrow storages
+            // (`[u8; 8]` and smaller) leave fxhash's low bits correlated and
+            // need a fold to avoid clustering hashbrown's buckets at high
+            // fill; wider storages are already well distributed and are passed
+            // through unchanged. See `PauliStorage::finalize_hash`.
+            self.hash_cache = A::finalize_hash(hasher.finish());
         }
     }
 

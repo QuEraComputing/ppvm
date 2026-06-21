@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::char::Pauli;
-use crate::traits::{PauliIter, PauliStorage, PauliWordTrait};
+use crate::traits::{HashFinalize, PauliIter, PauliStorage, PauliWordTrait};
 use bitvec::array::BitArray;
 use core::panic;
 use std::hash::{BuildHasher, Hash};
@@ -72,7 +72,7 @@ impl<A: PauliStorage, S: Clone, const REHASH: bool> Copy for PauliWord<A, S, REH
 impl<A, S, const REHASH: bool> PauliIter for PauliWord<A, S, REHASH>
 where
     A: PauliStorage,
-    S: BuildHasher + Clone + Default,
+    S: BuildHasher + Clone + Default + HashFinalize,
 {
     fn iter(&self) -> impl Iterator<Item = Pauli> {
         PauliWordIter {
@@ -85,7 +85,7 @@ where
 impl<A, S, const REHASH: bool> PauliIter for &PauliWord<A, S, REHASH>
 where
     A: PauliStorage,
-    S: BuildHasher + Clone + Default,
+    S: BuildHasher + Clone + Default + HashFinalize,
 {
     fn iter(&self) -> impl Iterator<Item = Pauli> {
         PauliWordIter {
@@ -96,8 +96,8 @@ where
 }
 
 // implement PauliString where A can be converted to chunks of u8, e.g u64
-impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> PauliWordTrait
-    for PauliWord<A, S, REHASH>
+impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REHASH: bool>
+    PauliWordTrait for PauliWord<A, S, REHASH>
 {
     fn new(nqubits: usize) -> Self {
         Self {
@@ -191,12 +191,11 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Paul
             // the `&[u8]` view safe — no padding, all bytes initialized.
             hasher.write(bytemuck::bytes_of(&self.xbits.data));
             hasher.write(bytemuck::bytes_of(&self.zbits.data));
-            // Adapt the digest to the storage width. Narrow storages
-            // (`[u8; 8]` and smaller) leave fxhash's low bits correlated and
-            // need a fold to avoid clustering hashbrown's buckets at high
-            // fill; wider storages are already well distributed and are passed
-            // through unchanged. See `PauliStorage::finalize_hash`.
-            self.hash_cache = A::finalize_hash(hasher.finish());
+            // Let the hasher finalize its own digest, told how wide the key is.
+            // fxhash folds for narrow storage (its low bits correlate and
+            // cluster hashbrown's buckets at high fill); strong hashers like
+            // gxhash use the identity default. See `HashFinalize`.
+            self.hash_cache = S::finalize_hash(hasher.finish(), std::mem::size_of::<A>());
         }
     }
 
@@ -321,16 +320,16 @@ impl<A: PauliStorage, S, const REHASH: bool> PartialOrd for PauliWord<A, S, REHA
     }
 }
 
-impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> From<&str>
-    for PauliWord<A, S, REHASH>
+impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REHASH: bool>
+    From<&str> for PauliWord<A, S, REHASH>
 {
     fn from(value: &str) -> Self {
         PauliWord::from(value.to_string())
     }
 }
 
-impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> From<String>
-    for PauliWord<A, S, REHASH>
+impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REHASH: bool>
+    From<String> for PauliWord<A, S, REHASH>
 {
     fn from(value: String) -> Self {
         let n_qubits = value.chars().count();
@@ -414,8 +413,8 @@ pub struct PauliWordIter<'a, A: PauliStorage, S, const REHASH: bool = true> {
     curr: usize,
 }
 
-impl<'a, A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> Iterator
-    for PauliWordIter<'a, A, S, REHASH>
+impl<'a, A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REHASH: bool>
+    Iterator for PauliWordIter<'a, A, S, REHASH>
 {
     type Item = Pauli;
 
@@ -430,8 +429,8 @@ impl<'a, A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> 
     }
 }
 
-impl<A: PauliStorage, S: BuildHasher + Clone + Default, const REHASH: bool> std::fmt::Display
-    for PauliWord<A, S, REHASH>
+impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REHASH: bool>
+    std::fmt::Display for PauliWord<A, S, REHASH>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for i in 0..self.nqubits {

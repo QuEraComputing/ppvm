@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::char::Pauli;
-use crate::traits::{PauliIter, PauliStorage, PauliWordTrait};
+use crate::traits::{HashFinalize, PauliIter, PauliStorage, PauliWordTrait};
 use bitvec::prelude::BitArray;
 use std::hash::{BuildHasher, Hash};
 use std::ops::Index;
@@ -62,7 +62,7 @@ impl<A: PauliStorage, S> PartialEq for LossyPauliWord<A, S> {
 impl<A, S> PauliIter for LossyPauliWord<A, S>
 where
     A: PauliStorage,
-    S: BuildHasher + Clone + Default,
+    S: BuildHasher + Clone + Default + HashFinalize,
 {
     fn iter(&self) -> impl Iterator<Item = Pauli> {
         LossyPauliWordIter {
@@ -75,7 +75,7 @@ where
 impl<A, S> PauliIter for &LossyPauliWord<A, S>
 where
     A: PauliStorage,
-    S: BuildHasher + Clone + Default,
+    S: BuildHasher + Clone + Default + HashFinalize,
 {
     fn iter(&self) -> impl Iterator<Item = Pauli> {
         LossyPauliWordIter {
@@ -86,7 +86,9 @@ where
 }
 
 // implement PauliString where A can be converted to chunks of u8, e.g u64
-impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for LossyPauliWord<A, S> {
+impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> PauliWordTrait
+    for LossyPauliWord<A, S>
+{
     fn new(nqubits: usize) -> Self {
         Self {
             xbits: BitArray::ZERO,
@@ -205,7 +207,10 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default> PauliWordTrait for Lossy
         self.xbits.data.hash(&mut hasher);
         self.zbits.data.hash(&mut hasher);
         self.lbits.data.hash(&mut hasher);
-        self.hash_cache = hasher.finish();
+        // Defer to the hasher's finalizer (fxhash folds narrow keys, gxhash is
+        // the identity) so the lossy words share the one policy. See
+        // `HashFinalize`.
+        self.hash_cache = S::finalize_hash(hasher.finish(), std::mem::size_of::<A>());
     }
 
     #[inline(always)]
@@ -344,13 +349,17 @@ impl<A: PauliStorage, S> PartialOrd for LossyPauliWord<A, S> {
     }
 }
 
-impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<&str> for LossyPauliWord<A, S> {
+impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> From<&str>
+    for LossyPauliWord<A, S>
+{
     fn from(value: &str) -> Self {
         LossyPauliWord::from(value.to_string())
     }
 }
 
-impl<A: PauliStorage, S: BuildHasher + Clone + Default> From<String> for LossyPauliWord<A, S> {
+impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> From<String>
+    for LossyPauliWord<A, S>
+{
     fn from(value: String) -> Self {
         let n_qubits = value.chars().count();
         let chars = value.chars();
@@ -432,7 +441,7 @@ pub struct LossyPauliWordIter<'a, A: PauliStorage, S> {
     curr: usize,
 }
 
-impl<'a, A: PauliStorage, S: BuildHasher + Clone + Default> Iterator
+impl<'a, A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> Iterator
     for LossyPauliWordIter<'a, A, S>
 {
     type Item = Pauli;
@@ -448,7 +457,9 @@ impl<'a, A: PauliStorage, S: BuildHasher + Clone + Default> Iterator
     }
 }
 
-impl<A: PauliStorage, S: BuildHasher + Clone + Default> std::fmt::Display for LossyPauliWord<A, S> {
+impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> std::fmt::Display
+    for LossyPauliWord<A, S>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for i in 0..self.nqubits {
             let pauli = self.get(i);

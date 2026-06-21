@@ -4,12 +4,12 @@
 use std::hash::BuildHasher;
 
 use super::data::PauliWord;
-use crate::traits::{PauliStorage, PauliWordTrait, Trace};
+use crate::traits::{HashFinalize, PauliStorage, PauliWordTrait, Trace};
 
 impl<'a, A, H> Trace<'a, PauliWord<A, H>> for PauliWord<A, H>
 where
     A: PauliStorage + 'a,
-    H: Default + BuildHasher + Clone + 'a,
+    H: Default + BuildHasher + Clone + HashFinalize + 'a,
 {
     type Output = bool;
     fn trace(&'a self, value: &'a PauliWord<A, H>) -> Self::Output {

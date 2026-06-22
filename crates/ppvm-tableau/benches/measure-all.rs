@@ -181,6 +181,16 @@ pub fn benchmark_suite_msd(c: &mut Criterion, name: impl AsRef<str>) {
         );
     });
 
+    // measure_batch over every qubit must match measure_all (no regression).
+    let all_indices: Vec<usize> = (0..tab.n_qubits()).collect();
+    group.bench_function("measure-batch-all", |b| {
+        b.iter_batched_ref(
+            || tab.clone(),
+            |tab| tab.measure_batch(&all_indices),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+
     group.finish();
 }
 

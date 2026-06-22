@@ -30,6 +30,6 @@ where
     I: TableauIndex + Send + Sync,
     <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
-    impl_generalized_tableau_sum_gate!(t, index);
-    impl_generalized_tableau_sum_gate!(t_adj, index);
+    impl_generalized_tableau_sum_gate!(t);
+    impl_generalized_tableau_sum_gate!(t_dag);
 }

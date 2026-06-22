@@ -22,7 +22,7 @@ QUBITS_PER_CODE_BLOCK = 17
 def noise(tab: GeneralizedTableauSum, q: int, p_loss: float, p_depolarize: float) -> None:
     """Apply the per-gate noise: a loss channel then a depolarizing channel."""
     tab.loss_channel(q, p_loss)
-    tab.depolarize(q, p_depolarize)
+    tab.depolarize1(q, p=p_depolarize)
 
 
 def encode(
@@ -44,14 +44,14 @@ def encode(
         noise(tab, qubits[i], p_loss, p_depolarize)
         noise(tab, qubits[j], p_loss, p_depolarize)
     for i in [7, 16]:
-        tab.sqrt_y_adj(qubits[i])
+        tab.sqrt_y_dag(qubits[i])
         noise(tab, qubits[i], p_loss, p_depolarize)
     for i, j in [[4, 7], [8, 10], [11, 14], [15, 16]]:
         tab.cz(qubits[i], qubits[j])
         noise(tab, qubits[i], p_loss, p_depolarize)
         noise(tab, qubits[j], p_loss, p_depolarize)
     for i in [4, 10, 14, 16]:
-        tab.sqrt_y_adj(qubits[i])
+        tab.sqrt_y_dag(qubits[i])
         noise(tab, qubits[i], p_loss, p_depolarize)
     for i, j in [[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]]:
         tab.cz(qubits[i], qubits[j])
@@ -72,7 +72,7 @@ def encode(
         noise(tab, qubits[i], p_loss, p_depolarize)
         noise(tab, qubits[j], p_loss, p_depolarize)
     for i in [0, 2, 5, 6, 8, 10, 12]:
-        tab.sqrt_y_adj(qubits[i])
+        tab.sqrt_y_dag(qubits[i])
         noise(tab, qubits[i], p_loss, p_depolarize)
 
 
@@ -139,7 +139,7 @@ def main() -> None:
         noise(tab, control, p_loss, p_depolarize)
         noise(tab, target, p_loss, p_depolarize)
     for q in ql[0]:
-        tab.sqrt_x_adj(q)
+        tab.sqrt_x_dag(q)
         noise(tab, q, p_loss, p_depolarize)
     for control, target in zip(ql[0], ql[4]):
         tab.cz(control, target)
@@ -151,7 +151,7 @@ def main() -> None:
         noise(tab, target, p_loss, p_depolarize)
     for block in ql:
         for q in block:
-            tab.sqrt_x_adj(q)
+            tab.sqrt_x_dag(q)
             noise(tab, q, p_loss, p_depolarize)
 
     print(f"Branches: {len(tab)}")

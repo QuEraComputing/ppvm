@@ -6,8 +6,11 @@ use crate::config::Config;
 macro_rules! def_rotation {
     ($name:ident, $x_a:expr, $z_a:expr, $x_b:expr, $z_b:expr, $doc:literal) => {
         #[doc = $doc]
-        fn $name(&mut self, a: usize, b: usize, theta: impl Into<T::Coeff>) {
-            self.rotate_2([$x_a, $z_a], [$x_b, $z_b], a, b, theta.into())
+        fn $name(&mut self, targets: impl crate::traits::Targets, theta: impl Into<T::Coeff>) {
+            let theta = theta.into();
+            for (a, b) in targets.pairs() {
+                self.rotate_2([$x_a, $z_a], [$x_b, $z_b], a, b, theta.clone())
+            }
         }
     };
 }

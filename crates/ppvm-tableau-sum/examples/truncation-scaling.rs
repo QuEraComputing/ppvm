@@ -5,7 +5,7 @@
 //!
 //! Builds one seeded brickwork random circuit (single-qubit Cliffords + T,
 //! interleaved with CZ in a brickwork pattern), with `loss_channel(p)` and
-//! `depolarize(p)` after every gate. The circuit is small enough that the
+//! `depolarize1(p)` after every gate. The circuit is small enough that the
 //! `GeneralizedTableauSum` can be built essentially exactly (cutoff far
 //! below the smallest physically relevant branch), and large enough that
 //! several orders of `p` show up as distinct branch populations.
@@ -80,13 +80,13 @@ fn apply_layer<B>(
         match g {
             0 => tab.h(q),
             1 => tab.s(q),
-            2 => tab.s_adj(q),
+            2 => tab.s_dag(q),
             3 => tab.sqrt_x(q),
             4 => tab.sqrt_y(q),
             _ => tab.t(q),
         }
         tab.loss_channel(q, p_loss);
-        tab.depolarize(q, p_depolarize);
+        tab.depolarize1(q, p_depolarize);
     }
 
     let pairs: &[(usize, usize)] = if layer_idx % 2 == 0 {
@@ -96,11 +96,11 @@ fn apply_layer<B>(
     };
     for &(a, b) in pairs {
         if a < n_qubits && b < n_qubits {
-            tab.cz(a, b);
+            tab.cz([a, b]);
             tab.loss_channel(a, p_loss);
             tab.loss_channel(b, p_loss);
-            tab.depolarize(a, p_depolarize);
-            tab.depolarize(b, p_depolarize);
+            tab.depolarize1(a, p_depolarize);
+            tab.depolarize1(b, p_depolarize);
         }
     }
 }
@@ -362,7 +362,7 @@ fn main() {
     println!("Truncation-scaling study");
     println!("  n_qubits = {n_qubits}, depth = {depth}");
     println!("  random brickwork: single-qubit ∈ {{H,S,S†,√X,√Y,T}}, CZ on brickwork pairs");
-    println!("  noise after every gate: loss_channel(p) then depolarize(p)");
+    println!("  noise after every gate: loss_channel(p) then depolarize1(p)");
 
     // p = 0.01: main sweep — orders 1..~5 visible analytically, orders 1..2
     // resolvable by sampling at 1e6 shots.

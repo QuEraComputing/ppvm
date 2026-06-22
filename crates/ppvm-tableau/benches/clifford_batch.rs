@@ -134,7 +134,7 @@ macro_rules! bench_pair_loop {
                     || $tab.clone(),
                     |t| {
                         for &(c, x) in pairs.iter() {
-                            t.$method(c, x);
+                            t.$method([c, x]);
                         }
                     },
                     BatchSize::SmallInput,
@@ -200,24 +200,24 @@ fn bench_clifford_batch(c: &mut Criterion) {
         bench_pair_batch!(group, tab, n, "every_other", cz_batch, &pairs_half);
 
         // --- CliffordExtensions trait ---
-        bench_single_loop!(group, tab, n, "all", s_adj, &all);
-        bench_single_loop!(group, tab, n, "every_other", s_adj, &half);
+        bench_single_loop!(group, tab, n, "all", s_dag, &all);
+        bench_single_loop!(group, tab, n, "every_other", s_dag, &half);
         bench_single_batch!(group, tab, n, "all", s_adj_batch, &all);
         bench_single_batch!(group, tab, n, "every_other", s_adj_batch, &half);
         bench_single_loop!(group, tab, n, "all", sqrt_x, &all);
         bench_single_loop!(group, tab, n, "every_other", sqrt_x, &half);
         bench_single_batch!(group, tab, n, "all", sqrt_x_batch, &all);
         bench_single_batch!(group, tab, n, "every_other", sqrt_x_batch, &half);
-        bench_single_loop!(group, tab, n, "all", sqrt_x_adj, &all);
-        bench_single_loop!(group, tab, n, "every_other", sqrt_x_adj, &half);
+        bench_single_loop!(group, tab, n, "all", sqrt_x_dag, &all);
+        bench_single_loop!(group, tab, n, "every_other", sqrt_x_dag, &half);
         bench_single_batch!(group, tab, n, "all", sqrt_x_adj_batch, &all);
         bench_single_batch!(group, tab, n, "every_other", sqrt_x_adj_batch, &half);
         bench_single_loop!(group, tab, n, "all", sqrt_y, &all);
         bench_single_loop!(group, tab, n, "every_other", sqrt_y, &half);
         bench_single_batch!(group, tab, n, "all", sqrt_y_batch, &all);
         bench_single_batch!(group, tab, n, "every_other", sqrt_y_batch, &half);
-        bench_single_loop!(group, tab, n, "all", sqrt_y_adj, &all);
-        bench_single_loop!(group, tab, n, "every_other", sqrt_y_adj, &half);
+        bench_single_loop!(group, tab, n, "all", sqrt_y_dag, &all);
+        bench_single_loop!(group, tab, n, "every_other", sqrt_y_dag, &half);
         bench_single_batch!(group, tab, n, "all", sqrt_y_adj_batch, &all);
         bench_single_batch!(group, tab, n, "every_other", sqrt_y_adj_batch, &half);
 

@@ -115,7 +115,7 @@ class PauliSum(
         ps = PauliSum(n_qubits = 2, initial_terms=["ZZ", "XI"], coefficients=[0.5, 0.3])
         # For a circuit: RZ(0.5) on qubit 1, then H on qubit 0
         # Apply in reverse order:
-        ps.rz(1, 0.5)
+        ps.rz(1, theta=0.5)
         ps.h(0)
         # Compute overlap with |0...0> state
         result = ps.overlap_with_zero()

@@ -195,8 +195,8 @@ mod tests {
     fn test_clifford_gates_dont_add_branches() {
         let mut tab = make(3);
         tab.h(0);
-        tab.cnot(0, 1);
-        tab.cz(0, 2);
+        tab.cnot([0, 1]);
+        tab.cz([0, 2]);
         tab.s(1);
         tab.x(2);
         tab.y(0);
@@ -210,7 +210,7 @@ mod tests {
         let mut tab = make(2);
         tab.h(0);
         tab.t(0);
-        tab.t_adj(0);
+        tab.t_dag(0);
         assert_eq!(tab.len(), 1);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
     }
@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn test_depolarize_zero_probability_doesnt_branch() {
         let mut tab = make(2);
-        tab.depolarize(0, 0.0);
+        tab.depolarize1(0, 0.0);
         assert_eq!(tab.len(), 1);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
     }
@@ -402,7 +402,7 @@ mod tests {
         // branches stay above it. The total probability mass must still sum to 1.
         let mut tab: TestSum = GeneralizedTableauSum::new_with_seed(2, 1e-12, 0.05, 42);
         tab.loss_channel(0, 0.9); // entries: [(orig, 0.1), (lost_q0, 0.9)]
-        tab.depolarize(1, 0.3);
+        tab.depolarize1(1, 0.3);
         let sum = sum_of_probabilities(&tab);
         assert!(
             (sum - 1.0).abs() < 1e-6,
@@ -428,7 +428,7 @@ mod tests {
     fn test_sampler_bell_pair_correlated() {
         let mut tab = make(2);
         tab.h(0);
-        tab.cnot(0, 1);
+        tab.cnot([0, 1]);
         let mut sampler = tab.sampler();
         for _ in 0..50 {
             let m = sampler.sample();
@@ -446,7 +446,7 @@ mod tests {
         let build = || {
             let mut tab = make(2);
             tab.h(0);
-            tab.cnot(0, 1);
+            tab.cnot([0, 1]);
             tab.sampler().sample_shots(20)
         };
         assert_eq!(build(), build());
@@ -458,7 +458,7 @@ mod tests {
         // X|0⟩ and Z|0⟩ have distinct tableau data from the original and from each other,
         // so we expect >= 2 entries and total probability == 1.
         let mut tab = make(2);
-        tab.depolarize(0, 0.6);
+        tab.depolarize1(0, 0.6);
         assert!(
             tab.len() > 1,
             "depolarize should create branches, got len={}",
@@ -497,7 +497,7 @@ mod tests {
         // Depolarizing a lost qubit must not create branches.
         let mut tab = make(2);
         tab.loss_channel(0, 1.0);
-        tab.depolarize(0, 0.3);
+        tab.depolarize1(0, 0.3);
         assert_eq!(tab.len(), 1);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
     }
@@ -547,9 +547,9 @@ mod tests {
         use crate::storage::{fingerprint, phase_loss_hash, word_fingerprint};
         let mut tab = make(3);
         tab.h(0);
-        tab.cnot(0, 1);
+        tab.cnot([0, 1]);
         tab.loss_channel(0, 0.3);
-        tab.depolarize(1, 0.3);
+        tab.depolarize1(1, 0.3);
 
         assert!(!tab.entries.dirty);
         let n = tab.entries.entries.len();
@@ -579,7 +579,7 @@ mod tests {
     fn test_sample_shots_returns_correct_count() {
         let mut tab = make(2);
         tab.h(0);
-        tab.cnot(0, 1);
+        tab.cnot([0, 1]);
         let mut sampler = tab.sampler();
         let shots = sampler.sample_shots(37);
         assert_eq!(shots.len(), 37);

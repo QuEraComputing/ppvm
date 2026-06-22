@@ -34,7 +34,7 @@ fn test_ghz_forward() {
 
     // GHZ prep
     state.h(0);
-    state.cnot(0, 1);
+    state.cnot([0, 1]);
 
     // explicitly construct GHZ state
     let mut ghz_state: PauliSum<config::indexmap::ByteFxHashF64<4>> =
@@ -59,7 +59,7 @@ fn test_ghz_backward() {
     state += ("ZZ", 1.0);
 
     // propagate through the circuit in backwards order
-    state.cnot(0, 1);
+    state.cnot([0, 1]);
     state.h(0);
 
     // zero state

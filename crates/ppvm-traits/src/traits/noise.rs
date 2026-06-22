@@ -2,15 +2,33 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::config::Config;
+use num::Zero;
 
 // FIXME: most channels don't need to own probs, we can just reference them and clean up the code
 
 /// Single-qubit Pauli error channel — apply `X`, `Y`, or `Z` with the
 /// three given probabilities.
 pub trait PauliError<T: Config> {
-    /// Apply a Pauli-error channel to qubit `addr0` with the probability
-    /// triple `p = [p_x, p_y, p_z]`.
-    fn pauli_error(&mut self, addr0: usize, p: [T::Coeff; 3]);
+    /// Apply a Pauli-error channel `[p_x, p_y, p_z]` to each target.
+    fn pauli_error(&mut self, targets: impl crate::traits::Targets, p: [T::Coeff; 3]);
+
+    /// stim `X_ERROR(p)` — apply X with probability `p` to each target.
+    fn x_error(&mut self, targets: impl crate::traits::Targets, p: T::Coeff) {
+        let zero = T::Coeff::zero();
+        self.pauli_error(targets, [p, zero.clone(), zero])
+    }
+
+    /// stim `Y_ERROR(p)` — apply Y with probability `p` to each target.
+    fn y_error(&mut self, targets: impl crate::traits::Targets, p: T::Coeff) {
+        let zero = T::Coeff::zero();
+        self.pauli_error(targets, [zero.clone(), p, zero])
+    }
+
+    /// stim `Z_ERROR(p)` — apply Z with probability `p` to each target.
+    fn z_error(&mut self, targets: impl crate::traits::Targets, p: T::Coeff) {
+        let zero = T::Coeff::zero();
+        self.pauli_error(targets, [zero.clone(), zero, p])
+    }
 }
 
 /// Apply the same single-qubit Pauli error channel uniformly to every
@@ -23,22 +41,22 @@ pub trait PauliErrorAll<T: Config> {
 
 /// Two-qubit Pauli error channel.
 pub trait TwoQubitPauliError<T: Config> {
-    /// Apply a two-qubit Pauli-error channel to `(addr0, addr1)`.
-    /// Probabilities are given in the order:
+    /// Apply a two-qubit Pauli-error channel to each consecutive pair of
+    /// targets. Probabilities are given in the order:
     /// `{IX, IY, IZ, XI, XX, XY, XZ, YI, YX, YY, YZ, ZI, ZX, ZY, ZZ}`.
-    fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 15]);
+    fn two_qubit_pauli_error(&mut self, targets: impl crate::traits::Targets, p: [T::Coeff; 15]);
 }
 
 /// Single-qubit depolarizing channel.
 pub trait Depolarizing<T: Config> {
-    /// Depolarize qubit `addr0` with probability `p`.
-    fn depolarize(&mut self, addr0: usize, p: T::Coeff);
+    /// Depolarize each target with probability `p`.
+    fn depolarize1(&mut self, targets: impl crate::traits::Targets, p: T::Coeff);
 }
 
 /// Two-qubit depolarizing channel.
 pub trait Depolarizing2<T: Config> {
-    /// Depolarize the pair `(addr0, addr1)` with probability `p`.
-    fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff);
+    /// Depolarize each consecutive pair of targets with probability `p`.
+    fn depolarize2(&mut self, targets: impl crate::traits::Targets, p: T::Coeff);
 }
 
 /// Amplitude-damping channel (single qubit).

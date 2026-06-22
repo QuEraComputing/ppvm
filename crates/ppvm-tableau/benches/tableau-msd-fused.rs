@@ -66,7 +66,7 @@ fn msd_func_fused<const MEASURE: bool>() -> (String, Tab) {
     // (30,64)...(33,67): controls word 0 bits 30-33, targets word 1 bits 0-3
     tab.cz_block_pairs_cross_word(0, 30, 1, 0, 4);
 
-    // sqrt_x_adj on all blocks
+    // sqrt_x_dag on all blocks
     for block in ql.iter().take(5) {
         tab.sqrt_x_adj_batch(block);
     }

@@ -147,7 +147,7 @@ def test_zero_state_all_zeros():
 
 def test_rx_pi_flips_to_one():
     tab = GeneralizedTableauSum(1, seed=1)
-    tab.rx(0, math.pi)
+    tab.rx(0, theta=math.pi)
     shots = tab.sampler().sample_shots(200)
     assert all(s[0] == MeasurementResult.ONE for s in shots)
 
@@ -189,7 +189,7 @@ def test_ghz_state_correlated():
 
 def test_rx_half_pi_unbiased():
     def circuit(t):
-        t.rx(0, math.pi / 2)
+        t.rx(0, theta=math.pi / 2)
 
     _assert_distributions_match(1, circuit, 8000, 0.04, "rx_half_pi_unbiased")
 
@@ -203,7 +203,7 @@ def test_depolarize_on_ground_state():
     p = 0.6
 
     def circuit(t):
-        t.depolarize(0, p)
+        t.depolarize1(0, p=p)
 
     sum_shots = _sum_shots(1, circuit, 8000)
     ones = sum(1 for s in sum_shots if s[0] == MeasurementResult.ONE) / len(sum_shots)
@@ -234,7 +234,7 @@ def test_pauli_error_nonuniform():
     p = [0.15, 0.25, 0.35]
 
     def circuit(t):
-        t.pauli_error(0, p)
+        t.pauli_error(0, p=p)
 
     sum_shots = _sum_shots(1, circuit, 8000)
     ones = sum(1 for s in sum_shots if s[0] == MeasurementResult.ONE) / len(sum_shots)
@@ -249,7 +249,7 @@ def test_bell_pair_with_depolarize_breaks_correlation():
     def circuit(t):
         t.h(0)
         t.cnot(0, 1)
-        t.depolarize(0, p)
+        t.depolarize1(0, p=p)
 
     sum_shots = _sum_shots(2, circuit, 8000)
     same = sum(1 for s in sum_shots if s[0] == s[1]) / len(sum_shots)
@@ -264,7 +264,7 @@ def test_ghz_three_qubits_with_per_qubit_noise():
         t.cnot(0, 1)
         t.cnot(0, 2)
         for q in range(3):
-            t.depolarize(q, 0.1)
+            t.depolarize1(q, p=0.1)
             t.loss_channel(q, 0.05)
 
     _assert_distributions_match(3, circuit, 8000, 0.08, "ghz_per_qubit_noise")
@@ -288,10 +288,10 @@ def test_t_gate_distribution():
 
 def test_rotation_sequence_with_depolarize():
     def circuit(t):
-        t.ry(0, 0.41 * math.pi)
-        t.rz(0, 0.23 * math.pi)
-        t.ry(0, 0.17 * math.pi)
-        t.depolarize(0, 0.12)
+        t.ry(0, theta=0.41 * math.pi)
+        t.rz(0, theta=0.23 * math.pi)
+        t.ry(0, theta=0.17 * math.pi)
+        t.depolarize1(0, p=0.12)
 
     _assert_distributions_match(1, circuit, 8000, 0.04, "rotation_seq_depolarize")
 

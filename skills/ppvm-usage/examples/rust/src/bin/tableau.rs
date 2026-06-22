@@ -17,7 +17,7 @@ fn main() {
         GeneralizedTableau::new(2, 1e-10);
 
     tab.h(0);
-    tab.cnot(0, 1);
+    tab.cnot([0, 1]);
 
     let r0 = tab.measure(0);
     let r1 = tab.measure(1);

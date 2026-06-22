@@ -117,12 +117,12 @@ fn apply_circuit(tab: &mut VecBackedSum) {
     for q in 0..N_QUBITS {
         tab.sqrt_y(q);
         tab.loss_channel(q, P_LOSS);
-        tab.depolarize(q, P_DEPOL);
+        tab.depolarize1(q, P_DEPOL);
     }
     for q in [0, 7, 12] {
         tab.t(q);
         tab.loss_channel(q, P_LOSS);
-        tab.depolarize(q, P_DEPOL);
+        tab.depolarize1(q, P_DEPOL);
     }
     for [i, j] in [
         [1, 3],
@@ -134,14 +134,14 @@ fn apply_circuit(tab: &mut VecBackedSum) {
         [11, 14],
         [15, 16],
     ] {
-        tab.cz(i, j);
+        tab.cz([i, j]);
         tab.loss_channel(i, P_LOSS);
         tab.loss_channel(j, P_LOSS);
-        tab.depolarize(i, P_DEPOL);
-        tab.depolarize(j, P_DEPOL);
+        tab.depolarize1(i, P_DEPOL);
+        tab.depolarize1(j, P_DEPOL);
     }
     for q in [0, 2, 5, 6, 8, 10, 12] {
-        tab.sqrt_y_adj(q);
+        tab.sqrt_y_dag(q);
         tab.loss_channel(q, P_LOSS);
     }
 }
@@ -229,13 +229,13 @@ fn high_n_sum() -> VecBackedSum {
     'outer: for layer in 0..100 {
         for q in 0..HIGH_NQ {
             tab.sqrt_y(q);
-            tab.depolarize(q, HIGH_P);
+            tab.depolarize1(q, HIGH_P);
             if tab.len() >= TARGET_N {
                 break 'outer;
             }
         }
         for q in (0..HIGH_NQ - 1).step_by(2) {
-            tab.cz(q, q + 1);
+            tab.cz([q, q + 1]);
         }
         tab.t(layer % HIGH_NQ);
         tab.loss_channel(layer % HIGH_NQ, HIGH_P);

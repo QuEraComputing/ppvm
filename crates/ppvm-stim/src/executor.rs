@@ -494,7 +494,7 @@ pub fn execute_validated<T, I, C>(
             },
             ExtendedInstruction::T { targets, .. } => targets.iter().for_each(|&q| tab.t(q)),
             ExtendedInstruction::TDag { targets, .. } => {
-                targets.iter().for_each(|&q| tab.t_adj(q));
+                targets.iter().for_each(|&q| tab.t_dag(q));
             }
             ExtendedInstruction::Rotation {
                 axis,
@@ -525,14 +525,14 @@ pub fn execute_validated<T, I, C>(
                     debug_assert_eq!(args.len(), 1);
                     let p = args[0];
                     for &q in targets {
-                        tab.depolarize(q, p.into());
+                        tab.depolarize1(q, p.into());
                     }
                 }
                 NoiseName::Depolarize2 => {
                     debug_assert_eq!(args.len(), 1);
                     let p = args[0];
                     for (a, b) in targets.iter().copied().tuples() {
-                        tab.depolarize2(a, b, p.into());
+                        tab.depolarize2([a, b], p.into());
                     }
                 }
                 NoiseName::PauliChannel1 => {
@@ -547,7 +547,7 @@ pub fn execute_validated<T, I, C>(
                     let ps: [T::Coeff; 15] = std::array::from_fn(|i| args[i].into());
                     debug_assert!(targets.len().is_even());
                     for (a, b) in targets.iter().copied().tuples() {
-                        tab.two_qubit_pauli_error(a, b, ps.clone());
+                        tab.two_qubit_pauli_error([a, b], ps.clone());
                     }
                 }
                 NoiseName::XError | NoiseName::YError | NoiseName::ZError => {
@@ -606,6 +606,12 @@ pub fn execute_validated<T, I, C>(
                                 tab.x(q);
                             }
                             let recorded = true_outcome.map(|b| tab.flip_with_prob(b, noise));
+                            // `measure` recorded the true (pre-flip) outcome; overwrite it
+                            // with the reported value so the measurement record matches the
+                            // returned result, consistent with `measure_noisy`/`M`.
+                            if let Some(last) = tab.measurement_record.last_mut() {
+                                *last = recorded;
+                            }
                             results.push(recorded);
                         }
                     }

@@ -12,10 +12,12 @@ impl<T: Config> Reset for Tableau<T>
 where
     <<T as Config>::Storage as BitView>::Store: PrimInt,
 {
-    fn reset(&mut self, addr0: usize) {
-        let m = self.measure(addr0);
-        if m {
-            self.x(addr0);
+    fn reset(&mut self, targets: impl Targets) {
+        for addr0 in targets.each() {
+            let m = self.measure(addr0);
+            if m {
+                self.x(addr0);
+            }
         }
     }
 }
@@ -44,11 +46,18 @@ where
         + ComplexFloat
         + Copy,
 {
-    fn reset(&mut self, addr0: usize) {
-        let m = self.measure(addr0);
+    fn reset(&mut self, targets: impl Targets) {
+        for addr0 in targets.each() {
+            let m = self.measure(addr0);
 
-        if let Some(true) = m {
-            self.x(addr0);
+            // A reset is not a measurement in stim's model: drop the record
+            // entry that the internal `measure` just pushed so the reset is
+            // measurement-record-neutral.
+            self.measurement_record.pop();
+
+            if let Some(true) = m {
+                self.x(addr0);
+            }
         }
     }
 }

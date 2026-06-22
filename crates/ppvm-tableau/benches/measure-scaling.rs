@@ -16,7 +16,7 @@ fn build_circuit(n_qubits: usize, n_t_gates: usize) -> Tab {
         tab.t(i);
     }
     for i in 0..n_qubits - 1 {
-        tab.cz(i, i + 1);
+        tab.cz([i, i + 1]);
     }
     tab
 }

@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn test_rxx_pi_flips_both_to_one() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
-        tab.rxx(0, 1, PI);
+        tab.rxx([0, 1], PI);
         assert_eq!(tab.coefficients.len(), 1, "rxx(π) should not branch");
         assert!(tab.measure(0).unwrap());
         assert!(tab.measure(1).unwrap());
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn test_rxx_half_pi_branches() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
-        tab.rxx(0, 1, FRAC_PI_2);
+        tab.rxx([0, 1], FRAC_PI_2);
         assert_eq!(
             tab.coefficients.len(),
             2,
@@ -122,8 +122,8 @@ mod tests {
     #[test]
     fn test_rxx_half_pi_twice_flips_both() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
-        tab.rxx(0, 1, FRAC_PI_2);
-        tab.rxx(0, 1, FRAC_PI_2);
+        tab.rxx([0, 1], FRAC_PI_2);
+        tab.rxx([0, 1], FRAC_PI_2);
         assert!(tab.measure(0).unwrap());
         assert!(tab.measure(1).unwrap());
     }
@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn test_ryy_pi_flips_both_to_one() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
-        tab.ryy(0, 1, PI);
+        tab.ryy([0, 1], PI);
         assert_eq!(tab.coefficients.len(), 1, "ryy(π) should not branch");
         assert!(tab.measure(0).unwrap());
         assert!(tab.measure(1).unwrap());
@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn test_ryy_half_pi_branches() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
-        tab.ryy(0, 1, FRAC_PI_2);
+        tab.ryy([0, 1], FRAC_PI_2);
         assert_eq!(
             tab.coefficients.len(),
             2,
@@ -157,8 +157,8 @@ mod tests {
     #[test]
     fn test_ryy_half_pi_twice_flips_both() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
-        tab.ryy(0, 1, FRAC_PI_2);
-        tab.ryy(0, 1, FRAC_PI_2);
+        tab.ryy([0, 1], FRAC_PI_2);
+        tab.ryy([0, 1], FRAC_PI_2);
         assert!(tab.measure(0).unwrap());
         assert!(tab.measure(1).unwrap());
     }
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn test_rzz_pi_leaves_00() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
-        tab.rzz(0, 1, PI);
+        tab.rzz([0, 1], PI);
         assert_eq!(
             tab.coefficients.len(),
             1,
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn test_rzz_does_not_branch_on_comp_basis() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
-        tab.rzz(0, 1, FRAC_PI_2);
+        tab.rzz([0, 1], FRAC_PI_2);
         assert_eq!(
             tab.coefficients.len(),
             1,
@@ -197,7 +197,7 @@ mod tests {
     fn test_rzz_pi_on_10() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.x(0);
-        tab.rzz(0, 1, PI);
+        tab.rzz([0, 1], PI);
         assert_eq!(
             tab.coefficients.len(),
             1,
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn test_rxx_half_pi_correlated_measurements() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
-        tab.rxx(0, 1, FRAC_PI_2);
+        tab.rxx([0, 1], FRAC_PI_2);
         assert_eq!(
             tab.coefficients.len(),
             2,
@@ -234,7 +234,7 @@ mod tests {
     fn test_rxx_half_pi_on_10_anticorrelated_measurements() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.x(0);
-        tab.rxx(0, 1, FRAC_PI_2);
+        tab.rxx([0, 1], FRAC_PI_2);
         assert_eq!(
             tab.coefficients.len(),
             2,
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn test_ryy_half_pi_correlated_measurements() {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
-        tab.ryy(0, 1, FRAC_PI_2);
+        tab.ryy([0, 1], FRAC_PI_2);
         assert_eq!(
             tab.coefficients.len(),
             2,
@@ -275,7 +275,7 @@ mod tests {
         let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
         tab.h(0);
         tab.h(1);
-        tab.rzz(0, 1, FRAC_PI_2);
+        tab.rzz([0, 1], FRAC_PI_2);
         assert_eq!(
             tab.coefficients.len(),
             2,

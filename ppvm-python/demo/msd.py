@@ -15,7 +15,7 @@ def encode(tab: GeneralizedTableau, qubits: list[int]) -> None:
         for idx, q in enumerate(qubits):
             if idx == 6:
                 continue
-            tab.sqrt_y_adj(q)
+            tab.sqrt_y_dag(q)
 
         tab.cz(qubits[1], qubits[2])
         tab.cz(qubits[3], qubits[4])
@@ -48,11 +48,11 @@ def encode(tab: GeneralizedTableau, qubits: list[int]) -> None:
     for i, j in [[1, 3], [7, 10], [12, 14], [13, 16]]:
         tab.cz(qubits[i], qubits[j])
     for i in [7, 16]:
-        tab.sqrt_y_adj(qubits[i])
+        tab.sqrt_y_dag(qubits[i])
     for i, j in [[4, 7], [8, 10], [11, 14], [15, 16]]:
         tab.cz(qubits[i], qubits[j])
     for i in [4, 10, 14, 16]:
-        tab.sqrt_y_adj(qubits[i])
+        tab.sqrt_y_dag(qubits[i])
     for i, j in [[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]]:
         tab.cz(qubits[i], qubits[j])
     for i in [3, 6, 9, 10, 12, 13]:
@@ -64,7 +64,7 @@ def encode(tab: GeneralizedTableau, qubits: list[int]) -> None:
     for i, j in [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [12, 15]]:
         tab.cz(qubits[i], qubits[j])
     for i in [0, 2, 5, 6, 8, 10, 12]:
-        tab.sqrt_y_adj(qubits[i])
+        tab.sqrt_y_dag(qubits[i])
 
 
 def main():
@@ -112,7 +112,7 @@ def main():
         tab.cz(control, target)
 
     for q in ql[0]:
-        tab.sqrt_x_adj(q)
+        tab.sqrt_x_dag(q)
 
     for control, target in zip(ql[0], ql[4]):
         tab.cz(control, target)
@@ -122,7 +122,7 @@ def main():
 
     for i in range(5):
         for q in ql[i]:
-            tab.sqrt_x_adj(q)
+            tab.sqrt_x_dag(q)
 
     # print(f"# T gates: {t_gate_counter}")
     # print(f"2 ^ t: {2**t_gate_counter}")

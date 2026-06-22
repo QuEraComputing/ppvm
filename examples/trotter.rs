@@ -74,7 +74,7 @@ fn trotter(
             state.pauli_error(i, noise_params);
         }
         for i in 0..n - 1 {
-            state.rzz(i, i + 1, theta_zz);
+            state.rzz([i, i + 1], theta_zz);
             state.pauli_error(i, noise_params);
             state.pauli_error(i + 1, noise_params);
         }

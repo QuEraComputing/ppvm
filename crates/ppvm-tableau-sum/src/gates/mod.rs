@@ -9,10 +9,11 @@ mod tgate;
 mod u3;
 
 macro_rules! impl_generalized_tableau_sum_gate {
-    ($name:ident, $($index:ident),*) => {
-        fn $name(&mut self, $($index: usize),*) {
+    ($name:ident) => {
+        fn $name(&mut self, targets: impl ppvm_traits::traits::Targets) {
+            let targets: Vec<usize> = targets.each().collect();
             self.entries.for_each_mut(|tab, _p| {
-                tab.$name($($index), *);
+                tab.$name(targets.as_slice());
             });
             // The gate mutates every entry's tableau (or no-ops on a
             // lost qubit, in which case the cached fp is still valid).

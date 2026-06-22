@@ -82,21 +82,21 @@ class GeneralizedTableauSum(
         """Return the number of branches currently in the sum."""
         return len(self._interface)
 
-    def t(self, addr0: int) -> None:
-        """Apply a T gate (π/8 rotation) to the specified qubit.
+    def t(self, *targets: int) -> None:
+        """Apply a T gate (π/8 rotation) to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.t(addr0)
+        self._interface.t(list(targets))
 
-    def t_adj(self, addr0: int) -> None:
-        """Apply a T adjoint gate (negative π/8 rotation) to the specified qubit.
+    def t_dag(self, *targets: int) -> None:
+        """Apply a T adjoint gate (negative π/8 rotation) to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.t_adj(addr0)
+        self._interface.t_dag(list(targets))
 
     def measure(self, addr0: int) -> dict[MeasurementResult, float]:
         """Branch on a mid-circuit Z measurement and return outcome probabilities.
@@ -133,13 +133,13 @@ class GeneralizedTableauSum(
         """
         self._interface.u3(addr0, theta, phi, lam)
 
-    def reset(self, addr0: int) -> None:
-        """Reset the specified qubit to the |0> state.
+    def reset(self, *targets: int) -> None:
+        """Reset each target qubit to the |0> state.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.reset(addr0)
+        self._interface.reset(list(targets))
 
     def reset_loss_channel(self, addr0: int) -> None:
         """Reset a lost qubit to being active again.

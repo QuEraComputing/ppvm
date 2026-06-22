@@ -224,7 +224,7 @@ mod fingerprint_tests {
     fn make() -> Tab {
         let mut t: Tab = GeneralizedTableau::new_with_seed(4, 1e-12, 7);
         t.h(0);
-        t.cnot(0, 1);
+        t.cnot([0, 1]);
         t.h(2);
         t
     }

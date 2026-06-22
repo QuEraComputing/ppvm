@@ -29,7 +29,7 @@ fn time<R>(reps: u32, mut f: impl FnMut() -> R) -> f64 {
 fn light_workload() -> GTabSum {
     let mut tab: GTabSum = GeneralizedTableauSum::new_with_seed(2, 1e-12, 1e-10, 42);
     tab.h(0);
-    tab.cnot(0, 1);
+    tab.cnot([0, 1]);
     tab
 }
 
@@ -41,10 +41,10 @@ fn medium_workload() -> GTabSum {
     for q in [0, 7, 12] {
         tab.t(q);
         tab.loss_channel(q, 1e-3);
-        tab.depolarize(q, 1e-3);
+        tab.depolarize1(q, 1e-3);
     }
     for [i, j] in [[1, 3], [7, 10], [12, 14], [13, 16], [4, 7]] {
-        tab.cz(i, j);
+        tab.cz([i, j]);
     }
     tab
 }
@@ -56,7 +56,7 @@ fn heavy_workload() -> GTabSum {
     }
     for q in [0, 5, 10, 15, 20, 25] {
         tab.t(q);
-        tab.depolarize(q, 1e-3);
+        tab.depolarize1(q, 1e-3);
     }
     for [i, j] in [
         [1, 3],
@@ -67,7 +67,7 @@ fn heavy_workload() -> GTabSum {
         [20, 22],
         [24, 27],
     ] {
-        tab.cz(i, j);
+        tab.cz([i, j]);
     }
     for q in 0..30 {
         tab.loss_channel(q, 1e-4);

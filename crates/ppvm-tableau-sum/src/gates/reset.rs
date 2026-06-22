@@ -11,7 +11,7 @@ use num::traits::{One, PrimInt, ToPrimitive, Zero};
 use ppvm_tableau::sparsevec::SparseVector;
 use ppvm_tableau::tableau_index::TableauIndex;
 use ppvm_traits::config::Config;
-use ppvm_traits::traits::{Clifford, Reset};
+use ppvm_traits::traits::{Clifford, Reset, Targets};
 
 impl<T, I, C, S> Reset for GeneralizedTableauSum<T, I, C, S>
 where
@@ -39,16 +39,18 @@ where
         + Copy,
     S: EntryStore<T, I, C>,
 {
-    fn reset(&mut self, addr0: usize) {
-        self.for_each_z_branch(addr0, |tab, outcome, _p| {
-            // Flip back to |0⟩ on the outcome-1 branch; the helper takes
-            // care of fingerprint hygiene and the branch / merge plumbing.
-            if outcome == Some(true) {
-                tab.x(addr0);
-                true
-            } else {
-                false
-            }
-        });
+    fn reset(&mut self, targets: impl Targets) {
+        for addr0 in targets.each() {
+            self.for_each_z_branch(addr0, |tab, outcome, _p| {
+                // Flip back to |0⟩ on the outcome-1 branch; the helper takes
+                // care of fingerprint hygiene and the branch / merge plumbing.
+                if outcome == Some(true) {
+                    tab.x(addr0);
+                    true
+                } else {
+                    false
+                }
+            });
+        }
     }
 }

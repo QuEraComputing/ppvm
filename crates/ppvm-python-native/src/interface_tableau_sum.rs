@@ -21,11 +21,11 @@ macro_rules! create_sum_interface {
         impl $tab_name {
             #[new]
             #[pyo3(signature = (
-                n_qubits,
-                min_abs_coeff = 1e-10,
-                sum_cutoff = 1e-8,
-                seed = None,
-            ))]
+                                n_qubits,
+                                min_abs_coeff = 1e-10,
+                                sum_cutoff = 1e-8,
+                                seed = None,
+                            ))]
             pub fn new(
                 n_qubits: usize,
                 min_abs_coeff: f64,
@@ -33,12 +33,9 @@ macro_rules! create_sum_interface {
                 seed: Option<u64>,
             ) -> Self {
                 let inner: GeneralizedTableauSum<$type, $indexType> = match seed {
-                    Some(s) => GeneralizedTableauSum::new_with_seed(
-                        n_qubits,
-                        min_abs_coeff,
-                        sum_cutoff,
-                        s,
-                    ),
+                    Some(s) => {
+                        GeneralizedTableauSum::new_with_seed(n_qubits, min_abs_coeff, sum_cutoff, s)
+                    }
                     None => GeneralizedTableauSum::new(n_qubits, min_abs_coeff, sum_cutoff),
                 };
                 Self { inner }
@@ -65,77 +62,93 @@ macro_rules! create_sum_interface {
             }
 
             // Clifford
-            pub fn x(&mut self, addr0: usize) {
-                self.inner.x(addr0);
+            pub fn x(&mut self, targets: Vec<usize>) {
+                self.inner.x(targets.as_slice());
             }
 
-            pub fn y(&mut self, addr0: usize) {
-                self.inner.y(addr0);
+            pub fn y(&mut self, targets: Vec<usize>) {
+                self.inner.y(targets.as_slice());
             }
 
-            pub fn z(&mut self, addr0: usize) {
-                self.inner.z(addr0);
+            pub fn z(&mut self, targets: Vec<usize>) {
+                self.inner.z(targets.as_slice());
             }
 
-            pub fn h(&mut self, addr0: usize) {
-                self.inner.h(addr0);
+            pub fn h(&mut self, targets: Vec<usize>) {
+                self.inner.h(targets.as_slice());
             }
 
-            pub fn s(&mut self, addr0: usize) {
-                self.inner.s(addr0);
+            pub fn s(&mut self, targets: Vec<usize>) {
+                self.inner.s(targets.as_slice());
             }
 
-            pub fn s_adj(&mut self, addr0: usize) {
-                self.inner.s_adj(addr0);
+            pub fn s_dag(&mut self, targets: Vec<usize>) {
+                self.inner.s_dag(targets.as_slice());
             }
 
-            pub fn sqrt_x(&mut self, addr0: usize) {
-                self.inner.sqrt_x(addr0);
+            pub fn sqrt_x(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_x(targets.as_slice());
             }
 
-            pub fn sqrt_x_adj(&mut self, addr0: usize) {
-                self.inner.sqrt_x_adj(addr0);
+            pub fn sqrt_x_dag(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_x_dag(targets.as_slice());
             }
 
-            pub fn sqrt_y(&mut self, addr0: usize) {
-                self.inner.sqrt_y(addr0);
+            pub fn sqrt_y(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_y(targets.as_slice());
             }
 
-            pub fn sqrt_y_adj(&mut self, addr0: usize) {
-                self.inner.sqrt_y_adj(addr0);
+            pub fn sqrt_y_dag(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_y_dag(targets.as_slice());
             }
 
-            pub fn cnot(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cnot(addr0, addr1);
+            pub fn cnot(&mut self, targets: Vec<usize>) {
+                self.inner.cnot(targets.as_slice());
             }
 
-            pub fn cy(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cy(addr0, addr1);
+            pub fn cx(&mut self, targets: Vec<usize>) {
+                self.inner.cnot(targets.as_slice());
             }
 
-            pub fn cz(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cz(addr0, addr1);
+            pub fn zcx(&mut self, targets: Vec<usize>) {
+                self.inner.cnot(targets.as_slice());
             }
 
-            pub fn t(&mut self, addr0: usize) {
-                self.inner.t(addr0);
+            pub fn cy(&mut self, targets: Vec<usize>) {
+                self.inner.cy(targets.as_slice());
             }
 
-            pub fn t_adj(&mut self, addr0: usize) {
-                self.inner.t_adj(addr0);
+            pub fn zcy(&mut self, targets: Vec<usize>) {
+                self.inner.cy(targets.as_slice());
+            }
+
+            pub fn cz(&mut self, targets: Vec<usize>) {
+                self.inner.cz(targets.as_slice());
+            }
+
+            pub fn zcz(&mut self, targets: Vec<usize>) {
+                self.inner.cz(targets.as_slice());
+            }
+
+            pub fn t(&mut self, targets: Vec<usize>) {
+                self.inner.t(targets.as_slice());
+            }
+
+            pub fn t_dag(&mut self, targets: Vec<usize>) {
+                self.inner.t_dag(targets.as_slice());
             }
 
             // Single-qubit rotations
-            pub fn rx(&mut self, addr0: usize, theta: f64) {
-                self.inner.rx(addr0, theta);
+            pub fn rx(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.rx(targets.as_slice(), theta);
             }
 
-            pub fn ry(&mut self, addr0: usize, theta: f64) {
-                self.inner.ry(addr0, theta);
+            pub fn ry(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.ry(targets.as_slice(), theta);
             }
 
-            pub fn rz(&mut self, addr0: usize, theta: f64) {
-                self.inner.rz(addr0, theta);
+            pub fn rz(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.rz(targets.as_slice(), theta);
             }
 
             pub fn u3(&mut self, addr0: usize, theta: f64, phi: f64, lam: f64) {
@@ -143,33 +156,45 @@ macro_rules! create_sum_interface {
             }
 
             // Two-qubit rotations
-            pub fn rxx(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.rxx(addr0, addr1, theta);
+            pub fn rxx(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.rxx(targets.as_slice(), theta);
             }
 
-            pub fn ryy(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.ryy(addr0, addr1, theta);
+            pub fn ryy(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.ryy(targets.as_slice(), theta);
             }
 
-            pub fn rzz(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.rzz(addr0, addr1, theta);
+            pub fn rzz(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.rzz(targets.as_slice(), theta);
             }
 
             // Noise
-            pub fn pauli_error(&mut self, addr0: usize, p: [f64; 3]) {
-                self.inner.pauli_error(addr0, p);
+            pub fn x_error(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.x_error(targets.as_slice(), p);
             }
 
-            pub fn depolarize(&mut self, addr0: usize, p: f64) {
-                self.inner.depolarize(addr0, p);
+            pub fn y_error(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.y_error(targets.as_slice(), p);
             }
 
-            pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64) {
-                self.inner.depolarize2(addr0, addr1, p);
+            pub fn z_error(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.z_error(targets.as_slice(), p);
             }
 
-            pub fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [f64; 15]) {
-                self.inner.two_qubit_pauli_error(addr0, addr1, p);
+            pub fn pauli_error(&mut self, targets: Vec<usize>, p: [f64; 3]) {
+                self.inner.pauli_error(targets.as_slice(), p);
+            }
+
+            pub fn depolarize1(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.depolarize1(targets.as_slice(), p);
+            }
+
+            pub fn depolarize2(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.depolarize2(targets.as_slice(), p);
+            }
+
+            pub fn two_qubit_pauli_error(&mut self, targets: Vec<usize>, p: [f64; 15]) {
+                self.inner.two_qubit_pauli_error(targets.as_slice(), p);
             }
 
             pub fn loss_channel(&mut self, addr0: usize, p: f64) {
@@ -184,8 +209,8 @@ macro_rules! create_sum_interface {
                 self.inner.reset_loss_channel(addr0);
             }
 
-            pub fn reset(&mut self, addr0: usize) {
-                self.inner.reset(addr0);
+            pub fn reset(&mut self, targets: Vec<usize>) {
+                self.inner.reset(targets.as_slice());
             }
 
             /// Force a truncation pass.

@@ -81,7 +81,7 @@ fn test_measure_two_qubits_bell_state() {
 
     // Create Bell state: H on qubit 0, then CNOT(0,1)
     tableau.h(0);
-    tableau.cnot(0, 1);
+    tableau.cnot([0, 1]);
     println!("Bell state tableau:\n{}", tableau);
 
     // Measuring qubit 0 is random (50/50 for |0⟩ or |1⟩)
@@ -157,7 +157,7 @@ fn test_measure_generalized_tableau_bell() {
 
     // Create Bell state: H on qubit 0, then CNOT(0,1)
     tableau.h(0);
-    tableau.cnot(0, 1);
+    tableau.cnot([0, 1]);
 
     tableau.t(0);
     // tableau.t(1);
@@ -231,7 +231,7 @@ fn test_measure_generalized_tableau_statistics() {
 
         // Create Bell state: H on qubit 0, then CNOT(0,1)
         tableau.h(0);
-        tableau.cnot(0, 1);
+        tableau.cnot([0, 1]);
 
         tableau.t(0);
         tableau.t(1);
@@ -416,7 +416,7 @@ fn test_measure_generalized_ghz_correlation() {
         tableau.h(0);
         tableau.t(0);
         for i in 0..3 {
-            tableau.cnot(i, i + 1);
+            tableau.cnot([i, i + 1]);
         }
 
         let first = tableau.measure(0);
@@ -473,11 +473,11 @@ fn test_measure_generalized_entangled_chain() {
 
     tableau.h(0);
     tableau.t(0);
-    tableau.cnot(0, 1);
+    tableau.cnot([0, 1]);
     tableau.h(2);
     tableau.t(2);
-    tableau.cnot(2, 3);
-    tableau.cnot(1, 2);
+    tableau.cnot([2, 3]);
+    tableau.cnot([1, 2]);
 
     let branches_before = tableau.coefficients.len();
     assert!(branches_before > 1, "State should have multiple branches");
@@ -520,7 +520,7 @@ fn test_measure_generalized_agrees_with_inner_tableau() {
             GeneralizedTableau::new(2, 1e-12);
 
         tableau.h(0);
-        tableau.cnot(0, 1);
+        tableau.cnot([0, 1]);
         tableau.t(0);
 
         let outcome0 = tableau.measure(0);
@@ -660,11 +660,11 @@ fn test_measure_order_sqrt_vs_rot() {
         tab_sqrt.sqrt_x(i);
     }
 
-    tab_rot.cz(0, 1);
-    tab_sqrt.cz(0, 1);
+    tab_rot.cz([0, 1]);
+    tab_sqrt.cz([0, 1]);
 
     tab_rot.rx(0, -FRAC_PI_2);
-    tab_sqrt.sqrt_x_adj(0);
+    tab_sqrt.sqrt_x_dag(0);
 
     let n_shots = 20_000;
 
@@ -747,6 +747,58 @@ fn test_measure_order_sqrt_vs_rot() {
 }
 
 #[test]
+fn measurement_record_accumulates_in_order() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(2, 1e-12);
+    t.x(0);
+    let _ = t.measure(0);
+    let _ = t.measure(1);
+    let rec = t.current_measurement_record();
+    assert_eq!(rec.len(), 2);
+    assert_eq!(rec[0], Some(true));
+    assert_eq!(rec[1], Some(false));
+}
+
+#[test]
+fn fork_copies_measurement_record() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(1, 1e-12);
+    let _ = t.measure(0);
+    let f = t.fork(Some(7));
+    assert_eq!(f.current_measurement_record().len(), 1);
+}
+
+#[test]
+fn measure_many_returns_per_target() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(3, 1e-12);
+    t.x([0, 2]);
+    assert_eq!(
+        t.measure_many([0, 1, 2]),
+        vec![Some(true), Some(false), Some(true)]
+    );
+}
+
+#[test]
+fn reset_clears_to_zero() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(1, 1e-12);
+    t.x(0);
+    t.reset(0);
+    assert_eq!(t.measure(0), Some(false));
+}
+
+#[test]
+fn reset_x_then_measure_records_one() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(1, 1e-12);
+    t.x(0);
+    t.reset_x(0);
+    let _ = t.measure(0);
+    assert_eq!(t.current_measurement_record().len(), 1);
+}
+
+#[test]
 fn test_seed_reproducibility() {
     // Two tableaux initialized with the same seed must produce identical measurement
     // trajectories when subjected to the same gate sequence.
@@ -763,7 +815,7 @@ fn test_seed_reproducibility() {
     for tab in [&mut base_a, &mut base_b] {
         tab.h(0);
         tab.t(0);
-        tab.cnot(0, 1);
+        tab.cnot([0, 1]);
     }
 
     // Fork with matching seeds: each pair must produce the same outcomes

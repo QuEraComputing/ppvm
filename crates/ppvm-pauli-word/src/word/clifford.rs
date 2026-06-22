@@ -57,7 +57,7 @@ mod tests {
             ("YZ", "XY"),
         ] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
-            output.cnot(0, 1);
+            output.cnot([0, 1]);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -84,7 +84,7 @@ mod tests {
     fn test_s_adj() {
         for (input, target) in [("I", "I"), ("X", "Y"), ("Z", "Z"), ("Y", "X")] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
-            output.s_adj(0);
+            output.s_dag(0);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -102,7 +102,7 @@ mod tests {
     fn test_sqrt_x_adj() {
         for (input, target) in [("I", "I"), ("X", "X"), ("Y", "Z"), ("Z", "Y")] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
-            output.sqrt_x_adj(0);
+            output.sqrt_x_dag(0);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -120,7 +120,7 @@ mod tests {
     fn test_sqrt_y_adj() {
         for (input, target) in [("I", "I"), ("X", "Z"), ("Y", "Y"), ("Z", "X")] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
-            output.sqrt_y_adj(0);
+            output.sqrt_y_dag(0);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -146,7 +146,7 @@ mod tests {
             ("YZ", "XX"),
         ] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
-            output.cy(0, 1);
+            output.cy([0, 1]);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -172,7 +172,7 @@ mod tests {
             ("YZ", "YI"),
         ] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
-            output.cz(0, 1);
+            output.cz([0, 1]);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }

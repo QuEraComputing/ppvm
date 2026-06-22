@@ -6,8 +6,8 @@ use num::{
     Complex, One, PrimInt, Zero,
     complex::{Complex64, ComplexFloat},
 };
-use ppvm_runtime::{config::Config, traits::U3Gate};
 use ppvm_tableau::{sparsevec::SparseVector, tableau_index::TableauIndex};
+use ppvm_traits::{config::Config, traits::U3Gate};
 
 use crate::{data::GeneralizedTableauSum, storage::EntryStore};
 

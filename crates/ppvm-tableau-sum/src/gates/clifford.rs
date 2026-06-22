@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use num::Complex;
-use ppvm_runtime::{
-    config::Config,
-    traits::{Clifford, CliffordExtensions},
-};
 use ppvm_tableau::sparsevec::SparseVector;
+use ppvm_traits::config::Config;
+use ppvm_traits::traits::{Clifford, CliffordExtensions};
 
 use super::impl_generalized_tableau_sum_gate;
 use crate::data::GeneralizedTableauSum;

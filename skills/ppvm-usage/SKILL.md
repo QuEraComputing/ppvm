@@ -1,6 +1,6 @@
 ---
 name: ppvm-usage
-description: Authoritative usage guide for ppvm, a fast quantum-circuit simulator with a Rust core and Python bindings (`ppvm-runtime`, `ppvm-tableau`, `ppvm-sym`, `ppvm-stim`, `ppvm` Python package). Use this skill whenever a task touches ppvm — importing `ppvm` in Python, depending on any `ppvm-*` crate in Rust, writing or modifying Pauli-propagation code, building or running circuits against the generalized stabilizer tableau, executing Stim programs, modelling depolarizing or loss noise, or even just answering "how do I do X in ppvm". Use it even when the user only hints at ppvm (mentions Pauli strings + truncation, or `GeneralizedTableau`, or "Bloqade simulation backend"). Skipping this skill is a top source of broken examples — the API has several non-obvious conventions (Heisenberg gate order, `Config`-generic types, kwargs-not-classes truncation) that look reasonable but are wrong if guessed.
+description: Authoritative usage guide for ppvm, a fast quantum-circuit simulator with a Rust core and Python bindings (`ppvm-traits`, `ppvm-pauli-word`, `ppvm-pauli-sum`, `ppvm-tableau`, `ppvm-sym`, `ppvm-stim`, `ppvm` Python package). Use this skill whenever a task touches ppvm — importing `ppvm` in Python, depending on any `ppvm-*` crate in Rust, writing or modifying Pauli-propagation code, building or running circuits against the generalized stabilizer tableau, executing Stim programs, modelling depolarizing or loss noise, or even just answering "how do I do X in ppvm". Use it even when the user only hints at ppvm (mentions Pauli strings + truncation, or `GeneralizedTableau`, or "Bloqade simulation backend"). Skipping this skill is a top source of broken examples — the API has several non-obvious conventions (Heisenberg gate order, `Config`-generic types, kwargs-not-classes truncation) that look reasonable but are wrong if guessed.
 allowed-tools: Bash, Read, Write, Edit
 ---
 
@@ -32,7 +32,7 @@ ppvm propagation:    state.cnot(0, 1); state.h(0)
 
 In Rust, `PauliSum<T: Config>` fixes storage, coefficient type, hasher, and truncation strategy at compile time. You pick a pre-built config and pass it as a type parameter. Don't try to make this dynamic — the bound propagates through every gate method and resisting it just fights the compiler.
 
-Common picks from `ppvm_runtime::config`:
+Common picks from `ppvm_pauli_sum::config`:
 
 | Config                                  | When                              |
 |-----------------------------------------|-----------------------------------|
@@ -63,7 +63,7 @@ PauliSum.new(
 )
 ```
 
-**Rust — strategy types from `ppvm_runtime::strategy`:** `CoefficientThreshold(eps)`, `MaxPauliWeight(w)`, `MaxLossWeight(w)`, `CombinedStrategy(a, b)`. Pass via the builder's `.strategy(...)`. These are Rust-only types — they are *not* exposed to Python.
+**Rust — strategy types from `ppvm_pauli_sum::strategy`:** `CoefficientThreshold(eps)`, `MaxPauliWeight(w)`, `MaxLossWeight(w)`, `CombinedStrategy(a, b)`. Pass via the builder's `.strategy(...)`. These are Rust-only types — they are *not* exposed to Python.
 
 Without truncation, a 20-qubit Trotter circuit with `rx` rotations will exhaust memory in a few layers. Always set a threshold before scaling up.
 
@@ -157,7 +157,7 @@ In `Cargo.toml`:
 
 ```toml
 [dependencies]
-ppvm-runtime = { git = "https://github.com/QuEraComputing/ppvm" }   # always
+ppvm-pauli-sum = { git = "https://github.com/QuEraComputing/ppvm" } # always (Pauli-propagation engine)
 ppvm-tableau = { git = "https://github.com/QuEraComputing/ppvm" }   # for the tableau backend
 ppvm-stim    = { git = "https://github.com/QuEraComputing/ppvm" }   # for Stim execution
 ppvm-sym     = { git = "https://github.com/QuEraComputing/ppvm" }   # for symbolic propagation
@@ -168,7 +168,7 @@ On x86, set `RUSTFLAGS="-C target-feature=+aes,+sse2"` (gxhash needs AES). On ot
 ### Pauli propagation
 
 ```rust
-use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
+use ppvm_pauli_sum::{prelude::*, strategy::CoefficientThreshold};
 
 type State = PauliSum<config::indexmap::ByteFxHashF64<4, CoefficientThreshold>>;
 
@@ -191,7 +191,7 @@ println!("{}", state.trace(&zero_state));
 ### Generalized stabilizer tableau
 
 ```rust
-use ppvm_runtime::prelude::*;
+use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
 
 // GeneralizedTableau takes (n_qubits, coefficient_threshold).

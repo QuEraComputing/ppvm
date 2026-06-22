@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
 use ppvm_stim::{execute, parse_extended};
 use ppvm_tableau::prelude::*;
 

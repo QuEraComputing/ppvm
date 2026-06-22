@@ -13,7 +13,8 @@ fxhash = "0.2.1"
 bnum = { version = "0.13.0", features = ["numtraits"] }
 itertools = "0.14.0"
 num = "0.4.3"
-ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
+ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 rand = "0.10.1"
 smallvec = "1.15"
 rayon = { version = "1.10", optional = true }

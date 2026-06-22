@@ -3,7 +3,7 @@
 
 use bnum::types::{U256, U512, U1024, U2048};
 use paste::paste;
-use ppvm_runtime::prelude::*;
+use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau_sum::prelude::*;
 use ppvm_tableau_sum::sampler::Sampler;
 use pyo3::prelude::*;

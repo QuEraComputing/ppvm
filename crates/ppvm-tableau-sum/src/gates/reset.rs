@@ -8,10 +8,10 @@ use crate::storage::entry_store::EntryStore;
 use bitvec::view::BitView;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, PrimInt, ToPrimitive, Zero};
-use ppvm_runtime::config::Config;
-use ppvm_runtime::traits::{Clifford, Reset};
 use ppvm_tableau::sparsevec::SparseVector;
 use ppvm_tableau::tableau_index::TableauIndex;
+use ppvm_traits::config::Config;
+use ppvm_traits::traits::{Clifford, Reset};
 
 impl<T, I, C, S> Reset for GeneralizedTableauSum<T, I, C, S>
 where

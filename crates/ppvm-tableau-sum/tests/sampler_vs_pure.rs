@@ -17,14 +17,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-use ppvm_runtime::config::fxhash::ByteF64;
-use ppvm_runtime::traits::{
-    Clifford, CliffordExtensions, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel,
-    LossyMeasure, PauliError, Reset, RotationOne, RotationTwo, TGate, TwoQubitPauliError, U3Gate,
-};
+use ppvm_pauli_sum::config::fxhash::ByteF64;
 use ppvm_tableau::measure_all::LossyMeasureAll;
 use ppvm_tableau::prelude::*;
 use ppvm_tableau_sum::prelude::*;
+use ppvm_traits::traits::{
+    Clifford, CliffordExtensions, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel,
+    LossyMeasure, PauliError, Reset, RotationOne, RotationTwo, TGate, TwoQubitPauliError, U3Gate,
+};
 
 type Cfg = ByteF64<1>;
 type TabSum = GeneralizedTableauSum<Cfg, u128>;

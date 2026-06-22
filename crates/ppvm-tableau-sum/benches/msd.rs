@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
 use ppvm_tableau_sum::{data::GeneralizedTableauSum, sampler::Sampler};
 

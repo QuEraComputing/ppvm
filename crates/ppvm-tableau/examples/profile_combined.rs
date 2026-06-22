@@ -5,7 +5,7 @@
 
 use std::time::Instant;
 
-use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;

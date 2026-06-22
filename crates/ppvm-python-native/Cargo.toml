@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 bnum = "0.13.0"
 num = "0.4.3"
 paste = "1.0.15"
-ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 ppvm-stim = { version = "0.1.0", path = "../ppvm-stim", features = ["rayon"] }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
 ppvm-tableau-sum = { version = "0.1.0", path = "../ppvm-tableau-sum", features = ["rayon"] }

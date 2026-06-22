@@ -16,8 +16,8 @@ function slugFor(path: string): string {
 }
 
 // Resolve a symbol reference. Accepts:
-//   - a fully-qualified path like "ppvm_runtime::config::Config"
-//   - a "crate::short_name" pair like "ppvm-runtime:Config"
+//   - a fully-qualified path like "ppvm_traits::config::Config"
+//   - a "crate::short_name" pair like "ppvm-traits:Config"
 // Returns an absolute href into the API site, or null if unknown.
 function apiHref(ref: string): string | null {
   const colon = ref.indexOf(":");
@@ -38,24 +38,24 @@ function apiHref(ref: string): string | null {
 
 // Cross-reference shortcuts: short label -> "crate:Name" lookup.
 const xrefs: Record<string, string> = {
-  PauliSum: "ppvm-runtime:PauliSum",
-  Config: "ppvm-runtime:Config",
-  CoefficientThreshold: "ppvm-runtime:CoefficientThreshold",
-  MaxPauliWeight: "ppvm-runtime:MaxPauliWeight",
-  MaxLossWeight: "ppvm-runtime:MaxLossWeight",
-  CombinedStrategy: "ppvm-runtime:CombinedStrategy",
-  Clifford: "ppvm-runtime:Clifford",
-  CliffordExtensions: "ppvm-runtime:CliffordExtensions",
-  TGate: "ppvm-runtime:TGate",
-  RotationOne: "ppvm-runtime:RotationOne",
-  RotationTwo: "ppvm-runtime:RotationTwo",
-  U3Gate: "ppvm-runtime:U3Gate",
-  Measure: "ppvm-runtime:Measure",
-  LossyMeasure: "ppvm-runtime:LossyMeasure",
-  Depolarizing: "ppvm-runtime:Depolarizing",
-  PauliError: "ppvm-runtime:PauliError",
-  LossChannel: "ppvm-runtime:LossChannel",
-  CorrelatedLossChannel: "ppvm-runtime:CorrelatedLossChannel",
+  PauliSum: "ppvm-pauli-sum:PauliSum",
+  Config: "ppvm-traits:Config",
+  CoefficientThreshold: "ppvm-pauli-sum:CoefficientThreshold",
+  MaxPauliWeight: "ppvm-pauli-sum:MaxPauliWeight",
+  MaxLossWeight: "ppvm-pauli-sum:MaxLossWeight",
+  CombinedStrategy: "ppvm-pauli-sum:CombinedStrategy",
+  Clifford: "ppvm-traits:Clifford",
+  CliffordExtensions: "ppvm-traits:CliffordExtensions",
+  TGate: "ppvm-traits:TGate",
+  RotationOne: "ppvm-traits:RotationOne",
+  RotationTwo: "ppvm-traits:RotationTwo",
+  U3Gate: "ppvm-traits:U3Gate",
+  Measure: "ppvm-traits:Measure",
+  LossyMeasure: "ppvm-traits:LossyMeasure",
+  Depolarizing: "ppvm-traits:Depolarizing",
+  PauliError: "ppvm-traits:PauliError",
+  LossChannel: "ppvm-traits:LossChannel",
+  CorrelatedLossChannel: "ppvm-traits:CorrelatedLossChannel",
   Tableau: "ppvm-tableau:Tableau",
   GeneralizedTableau: "ppvm-tableau:GeneralizedTableau",
   SparseVector: "ppvm-tableau:SparseVector",
@@ -117,7 +117,9 @@ const toc = [
 
 <pre><code>ppvm/
 ├── crates/
-│   ├── ppvm-runtime         # Core: Pauli arithmetic, PauliSum, gate traits, Config trait
+│   ├── ppvm-traits          # Trait system, Config bundle, Pauli alphabet, map impls
+│   ├── ppvm-pauli-word      # Packed Pauli strings: PauliWord, phased, lossy, pattern
+│   ├── ppvm-pauli-sum       # PauliSum engine, truncation strategy, concrete configs
 │   ├── ppvm-tableau         # Stabilizer + generalized-tableau simulator
 │   ├── ppvm-sym             # Symbolic (parametric) Pauli propagation
 │   ├── ppvm-stim            # Stim program execution against the tableau
@@ -130,11 +132,13 @@ const toc = [
 </code></pre>
 
     <p>
-      <strong>Dependency graph.</strong> <code>ppvm-runtime</code> is the
-      foundation. <code>ppvm-tableau</code>, <code>ppvm-sym</code>, and
-      <code>ppvm-stim</code> depend on it. <code>ppvm-stim</code> additionally
-      depends on <code>ppvm-tableau</code> and <code>stim-parser</code>.
-      <code>ppvm-python-native</code> depends on <code>ppvm-runtime</code>
+      <strong>Dependency graph.</strong> <code>ppvm-traits</code> is the
+      foundation; <code>ppvm-pauli-word</code> builds on it, and
+      <code>ppvm-pauli-sum</code> builds on both. <code>ppvm-tableau</code>,
+      <code>ppvm-sym</code>, and <code>ppvm-stim</code> depend on the Pauli
+      crates. <code>ppvm-stim</code> additionally depends on
+      <code>ppvm-tableau</code> and <code>stim-parser</code>.
+      <code>ppvm-python-native</code> depends on <code>ppvm-pauli-sum</code>
       and <code>ppvm-tableau</code>.
     </p>
 
@@ -148,7 +152,7 @@ cargo test --workspace
 cargo test -p ppvm-tableau
 
 # A single test by name
-cargo test -p ppvm-runtime -- test_ghz
+cargo test -p ppvm-pauli-sum -- test_ghz
 
 # Benchmarks
 cargo bench -p ppvm-tableau --bench micro
@@ -396,10 +400,10 @@ npm run build          # extract everything, then `astro build` → dist/</code>
 
     <p>
       ppvm implements two complementary quantum simulation backends. They
-      share a common gate / noise trait hierarchy from <code>ppvm-runtime</code>.
+      share a common gate / noise trait hierarchy from <code>ppvm-traits</code>.
     </p>
 
-    <h3>3.1 Pauli propagation (<code>ppvm-runtime</code>)</h3>
+    <h3>3.1 Pauli propagation (<code>ppvm-pauli-sum</code>)</h3>
     <p>
       Tracks Pauli operator evolution through circuits in the
       <strong>Heisenberg picture</strong> (circuits run backwards). The
@@ -473,7 +477,7 @@ npm run build          # extract everything, then `astro build` → dist/</code>
       </li>
     </ul>
 
-    <h3>3.3 Trait hierarchy (<code>ppvm-runtime/src/traits/</code>)</h3>
+    <h3>3.3 Trait hierarchy (<code>ppvm-traits/src/traits/</code>)</h3>
     <p>Gate behaviour is defined via traits reused across both backends:</p>
     <ul>
       <li>
@@ -510,7 +514,7 @@ npm run build          # extract everything, then `astro build` → dist/</code>
       <code>&lt;type&gt;(&lt;scope&gt;): &lt;description&gt;</code>.
     </p>
 <pre><code>feat(tableau): add correlated loss channel
-fix(runtime): handle zero-norm in truncation
+fix(pauli-sum): handle zero-norm in truncation
 test(stim-parser): add fast fuzz/proptest suite
 chore: restore lockfile consistency</code></pre>
 
@@ -568,12 +572,12 @@ chore: restore lockfile consistency</code></pre>
         Decide which trait it belongs to
         (<a href={link.Clifford}><code>Clifford</code></a>,
         <a href={link.RotationOne}><code>RotationOne</code></a>, etc.) in
-        <code>ppvm-runtime/src/traits/</code>.
+        <code>ppvm-traits/src/traits/</code>.
       </li>
       <li>
         Implement it for
         <a href={link.PauliSum}><code>PauliSum&lt;T: Config&gt;</code></a> in
-        <code>ppvm-runtime/src/traits/&lt;trait&gt;.rs</code>.
+        <code>ppvm-pauli-sum/src/sum/</code>.
       </li>
       <li>
         Implement it for <a href={link.Tableau}><code>Tableau</code></a> /
@@ -589,15 +593,16 @@ chore: restore lockfile consistency</code></pre>
       Follow the pattern of
       <a href={link.LossChannel}><code>LossChannel</code></a> /
       <a href={link.CorrelatedLossChannel}><code>CorrelatedLossChannel</code></a>.
-      Implement the trait in <code>ppvm-runtime/src/traits/noise.rs</code>,
+      Implement the trait in <code>ppvm-traits/src/traits/noise.rs</code>,
       then mirror in <code>ppvm-tableau</code> if it is meaningful in the
       tableau picture.
     </p>
 
     <h3>Adding a new <code>Config</code></h3>
     <p>
-      Create a module under <code>ppvm-runtime/src/config/</code>, implement
-      the <a href={link.Config}><code>Config</code></a> trait, and re-export it from
+      Create a module under <code>ppvm-pauli-sum/src/config/</code>, implement
+      the <a href={link.Config}><code>Config</code></a> trait (defined in
+      <code>ppvm-traits</code>), and re-export it from
       <code>config/mod.rs</code>. If it should be exposed to Python, add a
       variant to the <code>create_interface!</code> macro call.
     </p>
@@ -606,16 +611,16 @@ chore: restore lockfile consistency</code></pre>
 
     <dl class="lookup">
       <dt>Pauli arithmetic, <a href={link.PauliSum}><code>PauliSum</code></a></dt>
-      <dd><code>crates/ppvm-runtime/src/sum/</code>, <code>word/</code>, <code>pattern/</code></dd>
+      <dd><code>crates/ppvm-pauli-sum/src/sum/</code>; word / phase / loss / pattern types in <code>crates/ppvm-pauli-word/src/</code></dd>
 
       <dt>Gate &amp; noise traits</dt>
-      <dd><code>crates/ppvm-runtime/src/traits/</code></dd>
+      <dd><code>crates/ppvm-traits/src/traits/</code></dd>
 
       <dt>Truncation strategies (<a href={link.CoefficientThreshold}><code>CoefficientThreshold</code></a>, <a href={link.MaxPauliWeight}><code>MaxPauliWeight</code></a>, &hellip;)</dt>
-      <dd><code>crates/ppvm-runtime/src/strategy.rs</code>, <code>traits/strategy.rs</code></dd>
+      <dd><code>crates/ppvm-pauli-sum/src/strategy.rs</code>, <code>crates/ppvm-traits/src/traits/strategy.rs</code></dd>
 
-      <dt><a href={link.Config}><code>Config</code></a> implementations</dt>
-      <dd><code>crates/ppvm-runtime/src/config/</code></dd>
+      <dt><a href={link.Config}><code>Config</code></a> trait &amp; implementations</dt>
+      <dd>trait in <code>crates/ppvm-traits/src/config.rs</code>; concrete bundles in <code>crates/ppvm-pauli-sum/src/config/</code></dd>
 
       <dt>Stabilizer tableau core (<a href={link.Tableau}><code>Tableau</code></a>, <a href={link.GeneralizedTableau}><code>GeneralizedTableau</code></a>)</dt>
       <dd><code>crates/ppvm-tableau/src/data.rs</code>, <code>tableau_like.rs</code></dd>

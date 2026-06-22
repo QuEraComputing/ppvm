@@ -29,8 +29,8 @@ type PhasedPauliWordNoHash<A, H> = PhasedPauliWord<A, H, PauliWord<A, H, false>>
 /// # Examples
 ///
 /// ```
-/// use ppvm_runtime::config::fxhash::ByteF64;
-/// use ppvm_runtime::traits::Clifford;
+/// use ppvm_pauli_sum::config::fxhash::ByteF64;
+/// use ppvm_traits::traits::Clifford;
 /// use ppvm_tableau::data::Tableau;
 ///
 /// let mut tab: Tableau<ByteF64<1>> = Tableau::new(2);
@@ -552,8 +552,8 @@ where
 /// measurements are perfectly correlated on every shot:
 ///
 /// ```
-/// use ppvm_runtime::config::fxhash::ByteF64;
-/// use ppvm_runtime::traits::{Clifford, LossyMeasure};
+/// use ppvm_pauli_sum::config::fxhash::ByteF64;
+/// use ppvm_traits::traits::{Clifford, LossyMeasure};
 /// use ppvm_tableau::data::GeneralizedTableau;
 ///
 /// let mut tab: GeneralizedTableau<ByteF64<1>> =
@@ -570,8 +570,8 @@ where
 /// followed by `T†` and the state is unchanged:
 ///
 /// ```
-/// use ppvm_runtime::config::fxhash::ByteF64;
-/// use ppvm_runtime::traits::{Clifford, TGate};
+/// use ppvm_pauli_sum::config::fxhash::ByteF64;
+/// use ppvm_traits::traits::{Clifford, TGate};
 /// use ppvm_tableau::data::GeneralizedTableau;
 ///
 /// let mut tab: GeneralizedTableau<ByteF64<1>> =
@@ -970,7 +970,7 @@ where
 mod tests {
     use super::*;
     use bnum::BUint;
-    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
 
     type TestConfig = ByteF64<1>;
     type TestTableau = GeneralizedTableau<TestConfig>;
@@ -1080,7 +1080,7 @@ mod tests {
     #[test]
     fn test_cz_block_pairs_offset_17() {
         // Simulate MSD-like CZ: (0,17), (1,18), ..., (16,33) — all in one u64 word
-        use ppvm_runtime::config::fx64hash::Byte8F64;
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
         type LargeTab = Tableau<Byte8F64<2>>;
         let n = 34;
         let mut tab1 = LargeTab::new(n);
@@ -1105,7 +1105,7 @@ mod tests {
     fn test_cz_block_pairs_nonzero_base() {
         // Test CZ pairs starting from a non-zero base: (10,27), (11,28), ..., (14,31)
         // All within one u64 word (bits 0-63)
-        use ppvm_runtime::config::fx64hash::Byte8F64;
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
         type LargeTab = Tableau<Byte8F64<2>>;
         let n = 32;
         let base = 10;
@@ -1160,7 +1160,7 @@ mod tests {
     #[test]
     fn test_generalized_tableau_cz_block_pairs() {
         // Test through GeneralizedTableau wrapper
-        use ppvm_runtime::config::fx64hash::Byte8F64;
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
         type GTab = GeneralizedTableau<Byte8F64<2>>;
         let n = 34;
         let mut tab1: GTab = GeneralizedTableau::new(n, 1e-12);

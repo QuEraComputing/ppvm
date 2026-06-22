@@ -6,7 +6,7 @@ use std::time::Duration;
 use bnum::types::U256;
 use criterion::{Criterion, criterion_group, criterion_main};
 use num::complex::Complex64;
-use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<Byte8F64<2>, usize>;

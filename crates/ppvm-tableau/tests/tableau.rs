@@ -4,7 +4,7 @@
 use bnum::types::U256;
 use itertools::Itertools;
 use num::complex::Complex;
-use ppvm_runtime::config::dashmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::dashmap::ByteFxHashF64;
 use ppvm_tableau::prelude::*;
 
 #[test]
@@ -546,7 +546,7 @@ fn test_t_gate_measurement_statistics() {
 /// This circuit is purely Clifford so the measurement is deterministic.
 #[test]
 fn test_sqrt_y_direction() {
-    use ppvm_runtime::traits::CliffordExtensions;
+    use ppvm_traits::traits::CliffordExtensions;
 
     // sqrt_y|0⟩ should be |+⟩
     let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(1, 1e-12);

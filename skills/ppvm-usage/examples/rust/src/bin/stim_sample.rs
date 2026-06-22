@@ -7,7 +7,7 @@
 use ppvm_stim::{parse_extended, sample};
 use ppvm_tableau::prelude::*;
 
-type Tab = GeneralizedTableau<ppvm_runtime::config::indexmap::ByteFxHashF64<1>, usize>;
+type Tab = GeneralizedTableau<ppvm_pauli_sum::config::indexmap::ByteFxHashF64<1>, usize>;
 
 fn main() -> Result<(), ppvm_stim::Error> {
     let stim_src = r#"

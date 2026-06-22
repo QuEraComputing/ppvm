@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use num::Complex;
-use ppvm_runtime::config::Config;
 use ppvm_tableau::{data::GeneralizedTableau, sparsevec::SparseVector};
+use ppvm_traits::config::Config;
 
 pub trait EntryStore<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>>: Clone {
     fn with_capacity(cap: usize) -> Self;

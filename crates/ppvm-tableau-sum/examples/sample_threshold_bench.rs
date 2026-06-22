@@ -8,9 +8,9 @@ use std::time::Instant;
 
 use num::complex::Complex64;
 
-use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_runtime::traits::{Clifford, CliffordExtensions, Depolarizing, LossChannel, TGate};
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau_sum::data::GeneralizedTableauSum;
+use ppvm_traits::traits::{Clifford, CliffordExtensions, Depolarizing, LossChannel, TGate};
 
 type Cfg = Byte8F64<2>;
 type Idx = u128;

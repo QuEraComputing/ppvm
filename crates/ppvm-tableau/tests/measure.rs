@@ -4,7 +4,7 @@
 use std::f64::consts::FRAC_PI_2;
 
 use num::complex::Complex64;
-use ppvm_runtime::config::dashmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::dashmap::ByteFxHashF64;
 use ppvm_tableau::prelude::*;
 
 #[test]

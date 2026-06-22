@@ -11,10 +11,10 @@
 //!
 //! Run: `cargo run -p ppvm-tableau --example profile_measure_all --release`
 
-use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_runtime::traits::LossyMeasure;
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::measure_all::LossyMeasureAll;
 use ppvm_tableau::prelude::*;
+use ppvm_traits::traits::LossyMeasure;
 use std::time::{Duration, Instant};
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;

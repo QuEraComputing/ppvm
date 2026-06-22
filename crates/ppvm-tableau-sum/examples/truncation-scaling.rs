@@ -45,12 +45,12 @@ use rayon::prelude::*;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
-use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_runtime::traits::{Clifford, CliffordExtensions, Depolarizing, LossChannel, TGate};
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::measure_all::LossyMeasureAll;
 use ppvm_tableau::prelude::*;
 use ppvm_tableau_sum::data::GeneralizedTableauSum;
 use ppvm_tableau_sum::storage::EntryStore;
+use ppvm_traits::traits::{Clifford, CliffordExtensions, Depolarizing, LossChannel, TGate};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -343,10 +343,7 @@ fn run_secondary_sweep(
         ref_time.as_millis()
     );
 
-    println!(
-        "\n  {:>10}  {:>5}  {:>13}",
-        "cutoff", "k", "dropped mass"
-    );
+    println!("\n  {:>10}  {:>5}  {:>13}", "cutoff", "k", "dropped mass");
     println!("  {}", "-".repeat(40));
     for &cutoff in cutoffs {
         let k = cutoff.ln() / p.ln();

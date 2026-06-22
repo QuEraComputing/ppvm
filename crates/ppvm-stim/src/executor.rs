@@ -10,6 +10,7 @@ use num::{Complex, One, ToPrimitive, Zero};
 use std::fmt::Debug;
 
 use ppvm_pauli_sum::prelude::*;
+use ppvm_tableau::measure_all::LossyMeasureAll;
 use ppvm_tableau::prelude::*;
 use stim_parser::ast::{GateName, MeasureName, NoiseName};
 use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
@@ -592,8 +593,17 @@ pub fn execute_validated<T, I, C>(
                 let noise = args.first().copied().unwrap_or(0.0);
                 match name {
                     MeasureName::M | MeasureName::MZ => {
-                        for &q in targets {
-                            results.push(tab.measure_noisy(q, noise));
+                        // Noiseless readout: batch the measurement so the shared
+                        // scratch is reused across targets, mirroring the batched
+                        // gate paths above. With readout noise, keep the per-qubit
+                        // loop so each measure/flip pair's RNG draws stay
+                        // interleaved exactly as before.
+                        if noise > 0.0 {
+                            for &q in targets {
+                                results.push(tab.measure_noisy(q, noise));
+                            }
+                        } else {
+                            results.extend(tab.measure_batch(targets));
                         }
                     }
                     // MR cannot delegate to `measure_noisy` because the reset must use

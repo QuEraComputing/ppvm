@@ -24,7 +24,9 @@ def test_zero_qubits_raises_clear_error():
 
 def test_sample_too_many_qubits_raises_clear_error():
     with pytest.raises(ValueError, match=f"between 1 and {MAX_N_QUBITS}"):
-        sample_stim(prog=None, n_qubits=MAX_N_QUBITS + 1)
+        # `prog=None` is deliberate: n_qubits is validated before `prog` is
+        # ever used, so the ValueError fires regardless of the program.
+        sample_stim(prog=None, n_qubits=MAX_N_QUBITS + 1)  # ty: ignore[invalid-argument-type]
 
 
 def test_measure_zero_state():

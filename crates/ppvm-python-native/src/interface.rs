@@ -77,7 +77,6 @@ macro_rules! create_interface {
         impl $name {
             #[new]
             #[pyo3(signature = (n_qubits, min_abs_coeff = 1e-10, max_pauli_weight = usize::MAX, max_loss_weight = usize::MAX, terms = Vec::<String>::new(), coefficients = Vec::<f64>::new(), preserve_strings = Vec::<String>::new()))]
-            #[allow(clippy::too_many_arguments)]
             pub fn new(
                 n_qubits: usize,
                 min_abs_coeff: f64,

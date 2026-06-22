@@ -59,13 +59,13 @@
 <a href=#59 id=59 data-nosnippet>59</a>        <span class="kw">let </span>pw_cache = PhasedPauliWordNoHash::&lt;T::Storage, T::BuildHasher&gt;::new(n_qubits);
 <a href=#60 id=60 data-nosnippet>60</a>        <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..n_qubits {
 <a href=#61 id=61 data-nosnippet>61</a>            <span class="comment">// destabilizer
-<a href=#62 id=62 data-nosnippet>62</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>pw = pw_cache.clone();
+<a href=#62 id=62 data-nosnippet>62</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>pw = pw_cache;
 <a href=#63 id=63 data-nosnippet>63</a>            pw.set(i, Pauli::X);
 <a href=#64 id=64 data-nosnippet>64</a>            data.push(pw);
 <a href=#65 id=65 data-nosnippet>65</a>        }
 <a href=#66 id=66 data-nosnippet>66</a>        <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..n_qubits {
 <a href=#67 id=67 data-nosnippet>67</a>            <span class="comment">// stabilizer
-<a href=#68 id=68 data-nosnippet>68</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>pw = pw_cache.clone();
+<a href=#68 id=68 data-nosnippet>68</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>pw = pw_cache;
 <a href=#69 id=69 data-nosnippet>69</a>            pw.set(i, Pauli::Z);
 <a href=#70 id=70 data-nosnippet>70</a>            data.push(pw);
 <a href=#71 id=71 data-nosnippet>71</a>        }
@@ -155,8 +155,8 @@
 <a href=#155 id=155 data-nosnippet>155</a>        <span class="kw">let </span>n = <span class="self">self</span>.n_qubits;
 <a href=#156 id=156 data-nosnippet>156</a>        <span class="kw">let </span>(destabilizers, stabilizers) = <span class="self">self</span>.data.split_at_mut(n);
 <a href=#157 id=157 data-nosnippet>157</a>
-<a href=#158 id=158 data-nosnippet>158</a>        <span class="comment">// Clone g_q once before the loop
-<a href=#159 id=159 data-nosnippet>159</a>        </span><span class="kw">let </span>g_q = stabilizers[q_idx].clone();
+<a href=#158 id=158 data-nosnippet>158</a>        <span class="comment">// Copy g_q once before the loop
+<a href=#159 id=159 data-nosnippet>159</a>        </span><span class="kw">let </span>g_q = stabilizers[q_idx];
 <a href=#160 id=160 data-nosnippet>160</a>
 <a href=#161 id=161 data-nosnippet>161</a>        <span class="comment">// Check if there are other stabilizers that anticommute with Z_addr0
 <a href=#162 id=162 data-nosnippet>162</a>        // If so, replace with g_j = g_j * g_q

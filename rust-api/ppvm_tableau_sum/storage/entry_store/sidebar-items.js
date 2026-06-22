@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["EntryStore"]};
+window.SIDEBAR_ITEMS = {"trait":["EntryStore"],"type":["Branch"]};

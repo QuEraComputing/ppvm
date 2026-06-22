@@ -6,7 +6,7 @@ use num::PrimInt;
 
 use crate::{
     phase::PhasedPauliWord,
-    traits::{PauliStorage, PauliWordTrait},
+    traits::{HashFinalize, PauliStorage, PauliWordTrait},
     word::PauliWord,
 };
 
@@ -15,7 +15,7 @@ impl<A, S, const REHASH: bool> std::ops::MulAssign
 where
     A: PauliStorage,
     <A as BitView>::Store: PrimInt,
-    S: std::hash::BuildHasher + Clone + Default,
+    S: std::hash::BuildHasher + Clone + Default + HashFinalize,
 {
     fn mul_assign(&mut self, rhs: Self) {
         *self *= &rhs;
@@ -27,7 +27,7 @@ impl<A, S, const REHASH: bool> std::ops::MulAssign<&Self>
 where
     A: PauliStorage,
     <A as BitView>::Store: PrimInt,
-    S: std::hash::BuildHasher + Clone + Default,
+    S: std::hash::BuildHasher + Clone + Default + HashFinalize,
 {
     fn mul_assign(&mut self, rhs: &Self) {
         let mut sign_count = 0u32;
@@ -58,7 +58,7 @@ impl<A, S, const REHASH: bool> std::ops::Mul for PhasedPauliWord<A, S, PauliWord
 where
     A: PauliStorage + Clone,
     <A as BitView>::Store: PrimInt,
-    S: std::hash::BuildHasher + Clone + Default,
+    S: std::hash::BuildHasher + Clone + Default + HashFinalize,
 {
     // xz xz phase
     // 00 00 00

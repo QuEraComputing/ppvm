@@ -5,12 +5,12 @@ use std::hash::BuildHasher;
 
 use super::data::PhasedPauliWord;
 use crate::traits::{Clifford, CliffordExtensions};
-use crate::traits::{PauliStorage, PauliWordTrait};
+use crate::traits::{HashFinalize, PauliStorage, PauliWordTrait};
 
 impl<S, H, W> Clifford for PhasedPauliWord<S, H, W>
 where
     S: PauliStorage,
-    H: BuildHasher + Clone + Default,
+    H: BuildHasher + Clone + Default + HashFinalize,
     W: PauliWordTrait + Clifford,
 {
     #[inline]
@@ -102,7 +102,7 @@ where
 impl<S, H, W> CliffordExtensions for PhasedPauliWord<S, H, W>
 where
     S: PauliStorage,
-    H: BuildHasher + Clone + Default,
+    H: BuildHasher + Clone + Default + HashFinalize,
     W: PauliWordTrait + Clifford + CliffordExtensions,
 {
     // |    Gate    |  X  |  Y  |  Z  |

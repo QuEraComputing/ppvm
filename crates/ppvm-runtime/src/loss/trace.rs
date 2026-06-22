@@ -4,12 +4,12 @@
 use std::hash::BuildHasher;
 
 use super::data::LossyPauliWord;
-use crate::traits::{PauliStorage, PauliWordTrait, Trace};
+use crate::traits::{HashFinalize, PauliStorage, PauliWordTrait, Trace};
 
 impl<'a, A, H> Trace<'a, LossyPauliWord<A, H>> for LossyPauliWord<A, H>
 where
     A: PauliStorage + 'a,
-    H: Default + BuildHasher + Clone + 'a,
+    H: Default + BuildHasher + Clone + HashFinalize + 'a,
 {
     type Output = bool;
     fn trace(&'a self, value: &'a LossyPauliWord<A, H>) -> Self::Output {

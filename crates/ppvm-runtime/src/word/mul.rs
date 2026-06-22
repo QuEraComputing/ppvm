@@ -3,12 +3,12 @@
 
 use std::hash::BuildHasher;
 
-use crate::{traits::PauliStorage, traits::PauliWordTrait, word::PauliWord};
+use crate::{traits::HashFinalize, traits::PauliStorage, traits::PauliWordTrait, word::PauliWord};
 
 impl<A, S> std::ops::Mul for PauliWord<A, S>
 where
     A: PauliStorage,
-    S: BuildHasher + Clone + Default,
+    S: BuildHasher + Clone + Default + HashFinalize,
 {
     type Output = PauliWord<A, S>;
     fn mul(self, rhs: Self) -> Self::Output {
@@ -21,7 +21,7 @@ where
 impl<A, S> std::ops::MulAssign for PauliWord<A, S>
 where
     A: PauliStorage,
-    S: BuildHasher + Clone + Default,
+    S: BuildHasher + Clone + Default + HashFinalize,
 {
     fn mul_assign(&mut self, rhs: Self) {
         for i in 0..self.n_qubits() {

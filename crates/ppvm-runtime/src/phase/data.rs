@@ -6,7 +6,7 @@ use std::hash::BuildHasher;
 use num::Integer;
 
 use crate::char::Pauli;
-use crate::traits::{PauliStorage, PauliWordTrait};
+use crate::traits::{HashFinalize, PauliStorage, PauliWordTrait};
 use crate::word::PauliWord;
 
 /// A [`PauliWord`] paired with one of the four fourth-roots of unity.
@@ -113,7 +113,7 @@ impl<A: PauliStorage, H: BuildHasher, W: PauliWordTrait> PhasedPauliWord<A, H, W
     }
 }
 
-impl<A: PauliStorage, H: BuildHasher + Default + Clone, W: PauliWordTrait> From<W>
+impl<A: PauliStorage, H: BuildHasher + Default + Clone + HashFinalize, W: PauliWordTrait> From<W>
     for PhasedPauliWord<A, H, W>
 {
     fn from(words: W) -> Self {
@@ -125,7 +125,7 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone, W: PauliWordTrait> From<
     }
 }
 
-impl<H: BuildHasher + Default + Clone, W: PauliWordTrait> From<String>
+impl<H: BuildHasher + Default + Clone + HashFinalize, W: PauliWordTrait> From<String>
     for PhasedPauliWord<u64, H, W>
 {
     fn from(s: String) -> Self {
@@ -148,7 +148,7 @@ impl<H: BuildHasher + Default + Clone, W: PauliWordTrait> From<String>
     }
 }
 
-impl<H: BuildHasher + Default + Clone, W: PauliWordTrait> From<&str>
+impl<H: BuildHasher + Default + Clone + HashFinalize, W: PauliWordTrait> From<&str>
     for PhasedPauliWord<u64, H, W>
 {
     fn from(s: &str) -> Self {
@@ -156,8 +156,8 @@ impl<H: BuildHasher + Default + Clone, W: PauliWordTrait> From<&str>
     }
 }
 
-impl<A: PauliStorage, H: BuildHasher + Default + Clone, const REHASH: bool> std::fmt::Display
-    for PhasedPauliWord<A, H, PauliWord<A, H, REHASH>>
+impl<A: PauliStorage, H: BuildHasher + Default + Clone + HashFinalize, const REHASH: bool>
+    std::fmt::Display for PhasedPauliWord<A, H, PauliWord<A, H, REHASH>>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.phase {

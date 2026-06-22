@@ -3,7 +3,7 @@
 
 use std::hash::BuildHasher;
 
-use crate::traits::{ACMap, Coefficient, PauliStorage, PauliWordTrait, Strategy};
+use crate::traits::{ACMap, Coefficient, HashFinalize, PauliStorage, PauliWordTrait, Strategy};
 
 /// Compile-time configuration bundle for a [`PauliSum`](crate::sum::PauliSum).
 ///
@@ -22,8 +22,10 @@ pub trait Config: Clone {
     /// Truncation strategy applied when
     /// [`PauliSum::truncate`](crate::sum::PauliSum::truncate) runs.
     type Strategy: Strategy;
-    /// Hasher used by the underlying map.
-    type BuildHasher: BuildHasher + Clone + Default;
+    /// Hasher used by the underlying map. It is also the hasher of the
+    /// [`PauliWordType`](Self::PauliWordType) keys, so it must declare its
+    /// cached-hash finalization via [`HashFinalize`].
+    type BuildHasher: BuildHasher + Clone + Default + HashFinalize;
     /// Concrete [`PauliWordTrait`] implementation used as map keys.
     type PauliWordType: PauliWordTrait;
     /// Concrete map type satisfying [`ACMap`] over the chosen

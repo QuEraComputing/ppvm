@@ -4,6 +4,7 @@
 mod branch;
 mod clifford;
 mod coefficient;
+mod hash;
 mod map;
 mod measure;
 mod noise;
@@ -17,6 +18,7 @@ mod word_trait;
 pub use branch::{CRx, Projection, RotationOne, RotationTwo, TGate, U3Gate};
 pub use clifford::{Clifford, CliffordBatch, CliffordExtensions, CliffordExtensionsBatch};
 pub use coefficient::{Coefficient, ComplexCoefficient};
+pub use hash::HashFinalize;
 pub use map::{
     ACMap, ACMapAddAssign, ACMapBase, ACMapConsume, ACMapContains, ACMapInsert, ACMapIter,
     ACMapMulAssign, ACMapRetain, ACMapScale,

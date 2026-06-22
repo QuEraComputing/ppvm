@@ -253,7 +253,7 @@ impl<T: Config> CorrelatedLossChannel<T> for PauliSum<T> {
 impl<S, H, T> ResetLossChannel<T> for PauliSum<T>
 where
     S: PauliStorage,
-    H: BuildHasher + Clone + Default,
+    H: BuildHasher + Clone + Default + HashFinalize,
     T: Config<PauliWordType = LossyPauliWord<S, H>>,
 {
     /// Apply the reset-loss channel to qubit at `addr0`.

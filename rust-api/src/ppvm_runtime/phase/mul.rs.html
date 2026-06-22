@@ -6,7 +6,7 @@
 <a href=#6 id=6 data-nosnippet>6</a>
 <a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>crate::{
 <a href=#8 id=8 data-nosnippet>8</a>    phase::PhasedPauliWord,
-<a href=#9 id=9 data-nosnippet>9</a>    traits::{PauliStorage, PauliWordTrait},
+<a href=#9 id=9 data-nosnippet>9</a>    traits::{HashFinalize, PauliStorage, PauliWordTrait},
 <a href=#10 id=10 data-nosnippet>10</a>    word::PauliWord,
 <a href=#11 id=11 data-nosnippet>11</a>};
 <a href=#12 id=12 data-nosnippet>12</a>
@@ -15,7 +15,7 @@
 <a href=#15 id=15 data-nosnippet>15</a><span class="kw">where
 <a href=#16 id=16 data-nosnippet>16</a>    </span>A: PauliStorage,
 <a href=#17 id=17 data-nosnippet>17</a>    &lt;A <span class="kw">as </span>BitView&gt;::Store: PrimInt,
-<a href=#18 id=18 data-nosnippet>18</a>    S: std::hash::BuildHasher + Clone + Default,
+<a href=#18 id=18 data-nosnippet>18</a>    S: std::hash::BuildHasher + Clone + Default + HashFinalize,
 <a href=#19 id=19 data-nosnippet>19</a>{
 <a href=#20 id=20 data-nosnippet>20</a>    <span class="kw">fn </span>mul_assign(<span class="kw-2">&amp;mut </span><span class="self">self</span>, rhs: <span class="self">Self</span>) {
 <a href=#21 id=21 data-nosnippet>21</a>        <span class="kw-2">*</span><span class="self">self </span><span class="kw-2">*</span>= <span class="kw-2">&amp;</span>rhs;
@@ -27,7 +27,7 @@
 <a href=#27 id=27 data-nosnippet>27</a><span class="kw">where
 <a href=#28 id=28 data-nosnippet>28</a>    </span>A: PauliStorage,
 <a href=#29 id=29 data-nosnippet>29</a>    &lt;A <span class="kw">as </span>BitView&gt;::Store: PrimInt,
-<a href=#30 id=30 data-nosnippet>30</a>    S: std::hash::BuildHasher + Clone + Default,
+<a href=#30 id=30 data-nosnippet>30</a>    S: std::hash::BuildHasher + Clone + Default + HashFinalize,
 <a href=#31 id=31 data-nosnippet>31</a>{
 <a href=#32 id=32 data-nosnippet>32</a>    <span class="kw">fn </span>mul_assign(<span class="kw-2">&amp;mut </span><span class="self">self</span>, rhs: <span class="kw-2">&amp;</span><span class="self">Self</span>) {
 <a href=#33 id=33 data-nosnippet>33</a>        <span class="kw">let </span><span class="kw-2">mut </span>sign_count = <span class="number">0u32</span>;
@@ -58,7 +58,7 @@
 <a href=#58 id=58 data-nosnippet>58</a><span class="kw">where
 <a href=#59 id=59 data-nosnippet>59</a>    </span>A: PauliStorage + Clone,
 <a href=#60 id=60 data-nosnippet>60</a>    &lt;A <span class="kw">as </span>BitView&gt;::Store: PrimInt,
-<a href=#61 id=61 data-nosnippet>61</a>    S: std::hash::BuildHasher + Clone + Default,
+<a href=#61 id=61 data-nosnippet>61</a>    S: std::hash::BuildHasher + Clone + Default + HashFinalize,
 <a href=#62 id=62 data-nosnippet>62</a>{
 <a href=#63 id=63 data-nosnippet>63</a>    <span class="comment">// xz xz phase
 <a href=#64 id=64 data-nosnippet>64</a>    // 00 00 00

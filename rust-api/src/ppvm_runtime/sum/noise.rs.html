@@ -253,7 +253,7 @@
 <a href=#253 id=253 data-nosnippet>253</a></span><span class="kw">impl</span>&lt;S, H, T&gt; ResetLossChannel&lt;T&gt; <span class="kw">for </span>PauliSum&lt;T&gt;
 <a href=#254 id=254 data-nosnippet>254</a><span class="kw">where
 <a href=#255 id=255 data-nosnippet>255</a>    </span>S: PauliStorage,
-<a href=#256 id=256 data-nosnippet>256</a>    H: BuildHasher + Clone + Default,
+<a href=#256 id=256 data-nosnippet>256</a>    H: BuildHasher + Clone + Default + HashFinalize,
 <a href=#257 id=257 data-nosnippet>257</a>    T: Config&lt;PauliWordType = LossyPauliWord&lt;S, H&gt;&gt;,
 <a href=#258 id=258 data-nosnippet>258</a>{
 <a href=#259 id=259 data-nosnippet>259</a>    <span class="doccomment">/// Apply the reset-loss channel to qubit at `addr0`.

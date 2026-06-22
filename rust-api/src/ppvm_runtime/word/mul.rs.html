@@ -3,12 +3,12 @@
 <a href=#3 id=3 data-nosnippet>3</a>
 <a href=#4 id=4 data-nosnippet>4</a></span><span class="kw">use </span>std::hash::BuildHasher;
 <a href=#5 id=5 data-nosnippet>5</a>
-<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>crate::{traits::PauliStorage, traits::PauliWordTrait, word::PauliWord};
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>crate::{traits::HashFinalize, traits::PauliStorage, traits::PauliWordTrait, word::PauliWord};
 <a href=#7 id=7 data-nosnippet>7</a>
 <a href=#8 id=8 data-nosnippet>8</a><span class="kw">impl</span>&lt;A, S&gt; std::ops::Mul <span class="kw">for </span>PauliWord&lt;A, S&gt;
 <a href=#9 id=9 data-nosnippet>9</a><span class="kw">where
 <a href=#10 id=10 data-nosnippet>10</a>    </span>A: PauliStorage,
-<a href=#11 id=11 data-nosnippet>11</a>    S: BuildHasher + Clone + Default,
+<a href=#11 id=11 data-nosnippet>11</a>    S: BuildHasher + Clone + Default + HashFinalize,
 <a href=#12 id=12 data-nosnippet>12</a>{
 <a href=#13 id=13 data-nosnippet>13</a>    <span class="kw">type </span>Output = PauliWord&lt;A, S&gt;;
 <a href=#14 id=14 data-nosnippet>14</a>    <span class="kw">fn </span>mul(<span class="self">self</span>, rhs: <span class="self">Self</span>) -&gt; <span class="self">Self</span>::Output {
@@ -21,7 +21,7 @@
 <a href=#21 id=21 data-nosnippet>21</a><span class="kw">impl</span>&lt;A, S&gt; std::ops::MulAssign <span class="kw">for </span>PauliWord&lt;A, S&gt;
 <a href=#22 id=22 data-nosnippet>22</a><span class="kw">where
 <a href=#23 id=23 data-nosnippet>23</a>    </span>A: PauliStorage,
-<a href=#24 id=24 data-nosnippet>24</a>    S: BuildHasher + Clone + Default,
+<a href=#24 id=24 data-nosnippet>24</a>    S: BuildHasher + Clone + Default + HashFinalize,
 <a href=#25 id=25 data-nosnippet>25</a>{
 <a href=#26 id=26 data-nosnippet>26</a>    <span class="kw">fn </span>mul_assign(<span class="kw-2">&amp;mut </span><span class="self">self</span>, rhs: <span class="self">Self</span>) {
 <a href=#27 id=27 data-nosnippet>27</a>        <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..<span class="self">self</span>.n_qubits() {

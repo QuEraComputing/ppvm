@@ -579,9 +579,7 @@ class TruncatingNoiseMixin(NoiseMixin):
     :class:`NoiseMixin`.
     """
 
-    def pauli_error(
-        self, addr0: int, p: Sequence[float], *, truncate: bool = True
-    ) -> None:
+    def pauli_error(self, addr0: int, p: Sequence[float], *, truncate: bool = True) -> None:
         """Apply a single-qubit Pauli error channel.
 
         Args:
@@ -623,9 +621,7 @@ class TruncatingNoiseMixin(NoiseMixin):
         """
         self._interface.depolarize(addr0, p, truncate=truncate)
 
-    def depolarize2(
-        self, addr0: int, addr1: int, p: float, *, truncate: bool = True
-    ) -> None:
+    def depolarize2(self, addr0: int, addr1: int, p: float, *, truncate: bool = True) -> None:
         """Apply a two-qubit depolarizing channel to the specified qubits.
 
         Args:

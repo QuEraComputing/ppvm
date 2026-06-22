@@ -789,7 +789,7 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn compute_phase(
         &self,
         destab_anticomm_bits: I,

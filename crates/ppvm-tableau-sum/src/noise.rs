@@ -277,9 +277,13 @@ where
             15 * self.entries.len(),
         );
 
-        // Non-identity two-qubit Pauli pairs on (addr0, addr1), in the same
-        // order as the probability array: IX, IY, IZ, XI, XX, XY, XZ, YI,
+        // The 15 non-identity two-qubit Paulis on (addr0, addr1), in the same
+        // order as the probability array `p`: IX, IY, IZ, XI, XX, XY, XZ, YI,
         // YX, YY, YZ, ZI, ZX, ZY, ZZ. Encoding: 0 = I, 1 = X, 2 = Y, 3 = Z.
+        //
+        // `rustfmt::skip` keeps the rows grouped by the first Pauli (a readable
+        // 4-wide grid); without it rustfmt repacks the tuples to fill the line
+        // width and the grouping is lost.
         #[rustfmt::skip]
         const PAULI_PAIRS: [(u8, u8); 15] = [
             (0, 1), (0, 2), (0, 3),

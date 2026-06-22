@@ -22,8 +22,8 @@ gates respect it automatically.</p>
 <p>Prepare a Bell pair and sample one shot. With a fixed seed the two
 measurements are perfectly correlated on every shot:</p>
 
-<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>ppvm_runtime::config::fxhash::ByteF64;
-<span class="kw">use </span>ppvm_runtime::traits::{Clifford, LossyMeasure};
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>ppvm_pauli_sum::config::fxhash::ByteF64;
+<span class="kw">use </span>ppvm_traits::traits::{Clifford, LossyMeasure};
 <span class="kw">use </span>ppvm_tableau::data::GeneralizedTableau;
 
 <span class="kw">let </span><span class="kw-2">mut </span>tab: GeneralizedTableau&lt;ByteF64&lt;<span class="number">1</span>&gt;&gt; =
@@ -37,8 +37,8 @@ tab.cnot(<span class="number">0</span>, <span class="number">1</span>);
 <p>Non-Clifford gates work through the same interface — apply a <code>T</code> gate
 followed by <code>T†</code> and the state is unchanged:</p>
 
-<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>ppvm_runtime::config::fxhash::ByteF64;
-<span class="kw">use </span>ppvm_runtime::traits::{Clifford, TGate};
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>ppvm_pauli_sum::config::fxhash::ByteF64;
+<span class="kw">use </span>ppvm_traits::traits::{Clifford, TGate};
 <span class="kw">use </span>ppvm_tableau::data::GeneralizedTableau;
 
 <span class="kw">let </span><span class="kw-2">mut </span>tab: GeneralizedTableau&lt;ByteF64&lt;<span class="number">1</span>&gt;&gt; =

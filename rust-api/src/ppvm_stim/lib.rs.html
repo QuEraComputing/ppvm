@@ -68,8 +68,8 @@
 <a href=#68 id=68 data-nosnippet>68</a>    tab: <span class="kw-2">&amp;mut </span>ppvm_tableau::prelude::GeneralizedTableau&lt;T, I, C&gt;,
 <a href=#69 id=69 data-nosnippet>69</a>) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;<span class="prelude-ty">Option</span>&lt;bool&gt;&gt;, Error&gt;
 <a href=#70 id=70 data-nosnippet>70</a><span class="kw">where
-<a href=#71 id=71 data-nosnippet>71</a>    </span>T: ppvm_runtime::prelude::Config,
-<a href=#72 id=72 data-nosnippet>72</a>    &lt;&lt;T <span class="kw">as </span>ppvm_runtime::prelude::Config&gt;::Storage <span class="kw">as </span>bitvec::view::BitView&gt;::Store: num::PrimInt,
+<a href=#71 id=71 data-nosnippet>71</a>    </span>T: ppvm_pauli_sum::prelude::Config,
+<a href=#72 id=72 data-nosnippet>72</a>    &lt;&lt;T <span class="kw">as </span>ppvm_pauli_sum::prelude::Config&gt;::Storage <span class="kw">as </span>bitvec::view::BitView&gt;::Store: num::PrimInt,
 <a href=#73 id=73 data-nosnippet>73</a>    C: ppvm_tableau::prelude::SparseVector&lt;num::Complex&lt;T::Coeff&gt;, I&gt; + std::fmt::Debug,
 <a href=#74 id=74 data-nosnippet>74</a>    T::Coeff: num::One
 <a href=#75 id=75 data-nosnippet>75</a>        + num::Zero
@@ -101,8 +101,8 @@
 <a href=#101 id=101 data-nosnippet>101</a>    tab: <span class="kw-2">&amp;mut </span>ppvm_tableau::prelude::GeneralizedTableau&lt;T, I, C&gt;,
 <a href=#102 id=102 data-nosnippet>102</a>) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;<span class="prelude-ty">Option</span>&lt;bool&gt;&gt;, Error&gt;
 <a href=#103 id=103 data-nosnippet>103</a><span class="kw">where
-<a href=#104 id=104 data-nosnippet>104</a>    </span>T: ppvm_runtime::prelude::Config,
-<a href=#105 id=105 data-nosnippet>105</a>    &lt;&lt;T <span class="kw">as </span>ppvm_runtime::prelude::Config&gt;::Storage <span class="kw">as </span>bitvec::view::BitView&gt;::Store: num::PrimInt,
+<a href=#104 id=104 data-nosnippet>104</a>    </span>T: ppvm_pauli_sum::prelude::Config,
+<a href=#105 id=105 data-nosnippet>105</a>    &lt;&lt;T <span class="kw">as </span>ppvm_pauli_sum::prelude::Config&gt;::Storage <span class="kw">as </span>bitvec::view::BitView&gt;::Store: num::PrimInt,
 <a href=#106 id=106 data-nosnippet>106</a>    C: ppvm_tableau::prelude::SparseVector&lt;num::Complex&lt;T::Coeff&gt;, I&gt; + std::fmt::Debug,
 <a href=#107 id=107 data-nosnippet>107</a>    T::Coeff: num::One
 <a href=#108 id=108 data-nosnippet>108</a>        + num::Zero

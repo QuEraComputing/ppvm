@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["ppvm_pauli_sum",[["impl <a class=\"trait\" href=\"ppvm_pauli_sum/prelude/trait.Strategy.html\" title=\"trait ppvm_pauli_sum::prelude::Strategy\">Strategy</a> for <a class=\"struct\" href=\"ppvm_pauli_sum/strategy/struct.CoefficientThreshold.html\" title=\"struct ppvm_pauli_sum::strategy::CoefficientThreshold\">CoefficientThreshold</a>",0],["impl <a class=\"trait\" href=\"ppvm_pauli_sum/prelude/trait.Strategy.html\" title=\"trait ppvm_pauli_sum::prelude::Strategy\">Strategy</a> for <a class=\"struct\" href=\"ppvm_pauli_sum/strategy/struct.MaxLossWeight.html\" title=\"struct ppvm_pauli_sum::strategy::MaxLossWeight\">MaxLossWeight</a>",0],["impl <a class=\"trait\" href=\"ppvm_pauli_sum/prelude/trait.Strategy.html\" title=\"trait ppvm_pauli_sum::prelude::Strategy\">Strategy</a> for <a class=\"struct\" href=\"ppvm_pauli_sum/strategy/struct.MaxPauliWeight.html\" title=\"struct ppvm_pauli_sum::strategy::MaxPauliWeight\">MaxPauliWeight</a>",0],["impl&lt;S1: <a class=\"trait\" href=\"ppvm_pauli_sum/prelude/trait.Strategy.html\" title=\"trait ppvm_pauli_sum::prelude::Strategy\">Strategy</a>, S2: <a class=\"trait\" href=\"ppvm_pauli_sum/prelude/trait.Strategy.html\" title=\"trait ppvm_pauli_sum::prelude::Strategy\">Strategy</a>&gt; <a class=\"trait\" href=\"ppvm_pauli_sum/prelude/trait.Strategy.html\" title=\"trait ppvm_pauli_sum::prelude::Strategy\">Strategy</a> for <a class=\"struct\" href=\"ppvm_pauli_sum/strategy/struct.CombinedStrategy.html\" title=\"struct ppvm_pauli_sum::strategy::CombinedStrategy\">CombinedStrategy</a>&lt;S1, S2&gt;",0]]],["ppvm_pauli_word",[]],["ppvm_tableau",[]],["ppvm_tableau_sum",[]],["ppvm_traits",[]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1563,23,20,24,19]}

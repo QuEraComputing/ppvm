@@ -7,11 +7,11 @@
 <a href=#7 id=7 data-nosnippet>7</a>//! angles to check that the API surface still matches what the skill
 <a href=#8 id=8 data-nosnippet>8</a>//! tells agents to write.
 <a href=#9 id=9 data-nosnippet>9</a>
-<a href=#10 id=10 data-nosnippet>10</a></span><span class="kw">use </span>ppvm_runtime::prelude::<span class="kw-2">*</span>;
+<a href=#10 id=10 data-nosnippet>10</a></span><span class="kw">use </span>ppvm_pauli_sum::prelude::<span class="kw-2">*</span>;
 <a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>ppvm_sym::Term;
 <a href=#12 id=12 data-nosnippet>12</a>
 <a href=#13 id=13 data-nosnippet>13</a><span class="kw">fn </span>main() {
-<a href=#14 id=14 data-nosnippet>14</a>    <span class="kw">let </span><span class="kw-2">mut </span>sum = PauliSum::&lt;ppvm_runtime::config::fxhash::Byte&lt;<span class="number">2</span>, Term&gt;&gt;::builder()
+<a href=#14 id=14 data-nosnippet>14</a>    <span class="kw">let </span><span class="kw-2">mut </span>sum = PauliSum::&lt;ppvm_pauli_sum::config::fxhash::Byte&lt;<span class="number">2</span>, Term&gt;&gt;::builder()
 <a href=#15 id=15 data-nosnippet>15</a>        .n_qubits(<span class="number">2</span>)
 <a href=#16 id=16 data-nosnippet>16</a>        .build();
 <a href=#17 id=17 data-nosnippet>17</a>    sum += (<span class="string">"ZZ"</span>, Term::from(<span class="number">1.0</span>));

@@ -2,40 +2,38 @@
 <a href=#2 id=2 data-nosnippet>2</a>// SPDX-License-Identifier: Apache-2.0
 <a href=#3 id=3 data-nosnippet>3</a>
 <a href=#4 id=4 data-nosnippet>4</a></span><span class="kw">use </span>num::Complex;
-<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>ppvm_runtime::{
-<a href=#6 id=6 data-nosnippet>6</a>    config::Config,
-<a href=#7 id=7 data-nosnippet>7</a>    traits::{Clifford, CliffordExtensions},
-<a href=#8 id=8 data-nosnippet>8</a>};
-<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span>ppvm_tableau::sparsevec::SparseVector;
-<a href=#10 id=10 data-nosnippet>10</a>
-<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><span class="kw">super</span>::impl_generalized_tableau_sum_gate;
-<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><span class="kw">crate</span>::data::GeneralizedTableauSum;
-<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><span class="kw">crate</span>::storage::EntryStore;
-<a href=#14 id=14 data-nosnippet>14</a>
-<a href=#15 id=15 data-nosnippet>15</a><span class="kw">impl</span>&lt;T: Config, I, C: SparseVector&lt;Complex&lt;T::Coeff&gt;, I&gt;, S: EntryStore&lt;T, I, C&gt;&gt; Clifford
-<a href=#16 id=16 data-nosnippet>16</a>    <span class="kw">for </span>GeneralizedTableauSum&lt;T, I, C, S&gt;
-<a href=#17 id=17 data-nosnippet>17</a><span class="kw">where
-<a href=#18 id=18 data-nosnippet>18</a>    </span>Complex&lt;&lt;T <span class="kw">as </span>Config&gt;::Coeff&gt;: From&lt;Complex&lt;f64&gt;&gt;,
-<a href=#19 id=19 data-nosnippet>19</a>{
-<a href=#20 id=20 data-nosnippet>20</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(x, index);
-<a href=#21 id=21 data-nosnippet>21</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(y, index);
-<a href=#22 id=22 data-nosnippet>22</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(z, index);
-<a href=#23 id=23 data-nosnippet>23</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(h, index);
-<a href=#24 id=24 data-nosnippet>24</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(s, index);
-<a href=#25 id=25 data-nosnippet>25</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(cnot, control, target);
-<a href=#26 id=26 data-nosnippet>26</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(cz, control, target);
-<a href=#27 id=27 data-nosnippet>27</a>}
-<a href=#28 id=28 data-nosnippet>28</a>
-<a href=#29 id=29 data-nosnippet>29</a><span class="kw">impl</span>&lt;T: Config, I, C: SparseVector&lt;Complex&lt;T::Coeff&gt;, I&gt;, S: EntryStore&lt;T, I, C&gt;&gt; CliffordExtensions
-<a href=#30 id=30 data-nosnippet>30</a>    <span class="kw">for </span>GeneralizedTableauSum&lt;T, I, C, S&gt;
-<a href=#31 id=31 data-nosnippet>31</a><span class="kw">where
-<a href=#32 id=32 data-nosnippet>32</a>    </span>Complex&lt;&lt;T <span class="kw">as </span>Config&gt;::Coeff&gt;: From&lt;Complex&lt;f64&gt;&gt;,
-<a href=#33 id=33 data-nosnippet>33</a>{
-<a href=#34 id=34 data-nosnippet>34</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(s_adj, addr0);
-<a href=#35 id=35 data-nosnippet>35</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(sqrt_x, addr0);
-<a href=#36 id=36 data-nosnippet>36</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(sqrt_x_adj, addr0);
-<a href=#37 id=37 data-nosnippet>37</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(sqrt_y, addr0);
-<a href=#38 id=38 data-nosnippet>38</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(sqrt_y_adj, addr0);
-<a href=#39 id=39 data-nosnippet>39</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(cy, addr0, addr1);
-<a href=#40 id=40 data-nosnippet>40</a>}
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>ppvm_tableau::sparsevec::SparseVector;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>ppvm_traits::config::Config;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>ppvm_traits::traits::{Clifford, CliffordExtensions};
+<a href=#8 id=8 data-nosnippet>8</a>
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><span class="kw">super</span>::impl_generalized_tableau_sum_gate;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><span class="kw">crate</span>::data::GeneralizedTableauSum;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><span class="kw">crate</span>::storage::EntryStore;
+<a href=#12 id=12 data-nosnippet>12</a>
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">impl</span>&lt;T: Config, I, C: SparseVector&lt;Complex&lt;T::Coeff&gt;, I&gt;, S: EntryStore&lt;T, I, C&gt;&gt; Clifford
+<a href=#14 id=14 data-nosnippet>14</a>    <span class="kw">for </span>GeneralizedTableauSum&lt;T, I, C, S&gt;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">where
+<a href=#16 id=16 data-nosnippet>16</a>    </span>Complex&lt;&lt;T <span class="kw">as </span>Config&gt;::Coeff&gt;: From&lt;Complex&lt;f64&gt;&gt;,
+<a href=#17 id=17 data-nosnippet>17</a>{
+<a href=#18 id=18 data-nosnippet>18</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(x, index);
+<a href=#19 id=19 data-nosnippet>19</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(y, index);
+<a href=#20 id=20 data-nosnippet>20</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(z, index);
+<a href=#21 id=21 data-nosnippet>21</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(h, index);
+<a href=#22 id=22 data-nosnippet>22</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(s, index);
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(cnot, control, target);
+<a href=#24 id=24 data-nosnippet>24</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(cz, control, target);
+<a href=#25 id=25 data-nosnippet>25</a>}
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">impl</span>&lt;T: Config, I, C: SparseVector&lt;Complex&lt;T::Coeff&gt;, I&gt;, S: EntryStore&lt;T, I, C&gt;&gt; CliffordExtensions
+<a href=#28 id=28 data-nosnippet>28</a>    <span class="kw">for </span>GeneralizedTableauSum&lt;T, I, C, S&gt;
+<a href=#29 id=29 data-nosnippet>29</a><span class="kw">where
+<a href=#30 id=30 data-nosnippet>30</a>    </span>Complex&lt;&lt;T <span class="kw">as </span>Config&gt;::Coeff&gt;: From&lt;Complex&lt;f64&gt;&gt;,
+<a href=#31 id=31 data-nosnippet>31</a>{
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(s_adj, addr0);
+<a href=#33 id=33 data-nosnippet>33</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(sqrt_x, addr0);
+<a href=#34 id=34 data-nosnippet>34</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(sqrt_x_adj, addr0);
+<a href=#35 id=35 data-nosnippet>35</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(sqrt_y, addr0);
+<a href=#36 id=36 data-nosnippet>36</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(sqrt_y_adj, addr0);
+<a href=#37 id=37 data-nosnippet>37</a>    <span class="macro">impl_generalized_tableau_sum_gate!</span>(cy, addr0, addr1);
+<a href=#38 id=38 data-nosnippet>38</a>}
 </code></pre></div></section></main></body></html>

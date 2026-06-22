@@ -8,8 +8,8 @@ stabilizers. Each row is a <a href="../prelude/struct.PhasedPauliWord.html" titl
 <code>X</code>/<code>Z</code> bits and a phase in <code>{±1, ±i}</code>. Implements every
 Clifford-only operation natively (Hadamard, phase, CNOT, CZ, etc.).</p>
 <h2 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h2>
-<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>ppvm_runtime::config::fxhash::ByteF64;
-<span class="kw">use </span>ppvm_runtime::traits::Clifford;
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>ppvm_pauli_sum::config::fxhash::ByteF64;
+<span class="kw">use </span>ppvm_traits::traits::Clifford;
 <span class="kw">use </span>ppvm_tableau::data::Tableau;
 
 <span class="kw">let </span><span class="kw-2">mut </span>tab: Tableau&lt;ByteF64&lt;<span class="number">1</span>&gt;&gt; = Tableau::new(<span class="number">2</span>);

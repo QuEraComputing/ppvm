@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["loss","pattern","phase","prelude","word"]};

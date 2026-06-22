@@ -20,18 +20,19 @@ use rand::{RngExt, rngs::SmallRng};
 
 use crate::{
     data::GeneralizedTableauSum,
-    storage::{EntryStore, loss_mask, pauli_branch_phase_loss},
+    storage::{Branch, EntryStore, loss_mask, pauli_branch_phase_loss},
 };
 
 fn single_qubit_loss_branch<T, I, C>(
     addr0: usize,
     p: &T::Coeff,
     rng: &mut SmallRng,
-    branches: &mut Vec<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>,
+    branches: &mut Vec<Branch<T, I, C>>,
     tab: &mut GeneralizedTableau<T, I, C>,
     p_sum: &mut T::Coeff,
-    word_fp: u64,
-    phase_loss: u64,
+    // The branch inherits its parent's cached fingerprint halves:
+    // `(word_fingerprint, phase_loss_hash)`.
+    (word_fp, phase_loss): (u64, u64),
 ) where
     T: Config,
     <<T as Config>::Storage as BitView>::Store: PrimInt,
@@ -117,8 +118,7 @@ where
                     &mut branches,
                     tab,
                     p_sum,
-                    word_fp,
-                    phase_loss,
+                    (word_fp, phase_loss),
                 );
             });
 
@@ -407,8 +407,7 @@ where
                         &mut branches,
                         tab,
                         p_sum,
-                        word_fp,
-                        phase_loss,
+                        (word_fp, phase_loss),
                     );
                     return;
                 } else if tab.is_lost[addr1] {
@@ -419,8 +418,7 @@ where
                         &mut branches,
                         tab,
                         p_sum,
-                        word_fp,
-                        phase_loss,
+                        (word_fp, phase_loss),
                     );
                     return;
                 }

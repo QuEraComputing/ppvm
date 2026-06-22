@@ -382,9 +382,7 @@ where
         // return.
         let outcome = self.measure(addr0)?;
         let noisy = self.flip_with_prob(outcome, flip_prob);
-        if let Some(last) = self.measurement_record.last_mut() {
-            *last = Some(noisy);
-        }
+        self.overwrite_last_measurement_record(Some(noisy));
         Some(noisy)
     }
 

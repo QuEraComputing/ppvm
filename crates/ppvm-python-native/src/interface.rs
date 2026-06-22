@@ -186,44 +186,47 @@ macro_rules! create_interface {
 
             // two-qubit clifford (+ stim aliases)
             #[pyo3(signature = (targets, truncate = true))]
-            pub fn cnot(&mut self, targets: Vec<usize>, truncate: bool) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn cnot(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.cnot_batch(&pairs);
                 if truncate { self.inner.truncate(); }
+                Ok(())
             }
 
             #[pyo3(signature = (targets, truncate = true))]
-            pub fn cx(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.cnot(targets, truncate);
+            pub fn cx(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
+                self.cnot(targets, truncate)
             }
 
             #[pyo3(signature = (targets, truncate = true))]
-            pub fn zcx(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.cnot(targets, truncate);
+            pub fn zcx(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
+                self.cnot(targets, truncate)
             }
 
             #[pyo3(signature = (targets, truncate = true))]
-            pub fn cz(&mut self, targets: Vec<usize>, truncate: bool) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn cz(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.cz_batch(&pairs);
                 if truncate { self.inner.truncate(); }
+                Ok(())
             }
 
             #[pyo3(signature = (targets, truncate = true))]
-            pub fn zcz(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.cz(targets, truncate);
+            pub fn zcz(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
+                self.cz(targets, truncate)
             }
 
             #[pyo3(signature = (targets, truncate = true))]
-            pub fn cy(&mut self, targets: Vec<usize>, truncate: bool) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn cy(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.cy_batch(&pairs);
                 if truncate { self.inner.truncate(); }
+                Ok(())
             }
 
             #[pyo3(signature = (targets, truncate = true))]
-            pub fn zcy(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.cy(targets, truncate);
+            pub fn zcy(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
+                self.cy(targets, truncate)
             }
 
             // clifford extensions
@@ -278,24 +281,27 @@ macro_rules! create_interface {
 
             // rot2
             #[pyo3(signature = (targets, theta, truncate = true))]
-            pub fn rxx(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn rxx(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.rxx_batch(&pairs, theta);
                 if truncate { self.inner.truncate(); }
+                Ok(())
             }
 
             #[pyo3(signature = (targets, theta, truncate = true))]
-            pub fn ryy(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn ryy(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.ryy_batch(&pairs, theta);
                 if truncate { self.inner.truncate(); }
+                Ok(())
             }
 
             #[pyo3(signature = (targets, theta, truncate = true))]
-            pub fn rzz(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn rzz(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.rzz_batch(&pairs, theta);
                 if truncate { self.inner.truncate(); }
+                Ok(())
             }
 
             // noise
@@ -329,10 +335,11 @@ macro_rules! create_interface {
                 targets: Vec<usize>,
                 p: [f64; 15],
                 truncate: bool,
-            ) {
-                let pairs = crate::flat_pairs(&targets);
+            ) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.two_qubit_pauli_error_batch(&pairs, p);
                 if truncate { self.inner.truncate(); }
+                Ok(())
             }
 
             #[pyo3(signature = (targets, p, truncate = true))]
@@ -342,10 +349,11 @@ macro_rules! create_interface {
             }
 
             #[pyo3(signature = (targets, p, truncate = true))]
-            pub fn depolarize2(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn depolarize2(&mut self, targets: Vec<usize>, p: f64, truncate: bool) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.depolarize2_batch(&pairs, p);
                 if truncate { self.inner.truncate(); }
+                Ok(())
             }
 
             #[pyo3(signature = (addr0, gamma, truncate = true))]

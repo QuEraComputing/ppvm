@@ -609,9 +609,7 @@ pub fn execute_validated<T, I, C>(
                             // `measure` recorded the true (pre-flip) outcome; overwrite it
                             // with the reported value so the measurement record matches the
                             // returned result, consistent with `measure_noisy`/`M`.
-                            if let Some(last) = tab.measurement_record.last_mut() {
-                                *last = recorded;
-                            }
+                            tab.overwrite_last_measurement_record(recorded);
                             results.push(recorded);
                         }
                     }
@@ -632,7 +630,9 @@ pub fn execute_validated<T, I, C>(
             ExtendedInstruction::MPad { bits, prob, .. } => {
                 let noise = prob.unwrap_or(0.0);
                 for &bit in bits {
-                    results.push(Some(tab.flip_with_prob(bit, noise)));
+                    let recorded = Some(tab.flip_with_prob(bit, noise));
+                    tab.append_measurement_record(recorded);
+                    results.push(recorded);
                 }
             }
             ExtendedInstruction::Raw(RawPassthrough::Annotation { .. }) => { /* no-op */ }

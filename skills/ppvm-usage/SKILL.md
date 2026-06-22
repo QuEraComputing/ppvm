@@ -271,7 +271,8 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 
 - `depolarize1` (not `depolarize` or `depolarizing`); the two-qubit form is `depolarize2`.
 - `_dag` (not `_adj` or `_dagger`).
-- Noise probabilities and rotation angles are keyword-only in Python: `p=...`, `theta=...`.
+- Prefer `p=...` and `theta=...` for readability in Python; trailing positional
+  probabilities and angles are also accepted for compatibility.
 - The Python `PauliSum` is intentionally a narrow workhorse focused on noisy-circuit observables. For `t`, `u3`, `cy`, mid-circuit `measure`, or `reset`, use `GeneralizedTableau` (Python) or drop to Rust.
 
 ## Common pitfalls (rank-ordered by how often agents hit them)

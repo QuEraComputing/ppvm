@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 pub mod interface;
@@ -8,12 +9,16 @@ pub mod interface_tableau;
 pub mod interface_tableau_sum;
 pub mod stim_program;
 
-pub(crate) fn flat_pairs(targets: &[usize]) -> Vec<(usize, usize)> {
-    assert!(targets.len() % 2 == 0, "expected an even number of targets");
-    targets
+pub(crate) fn flat_pairs(targets: &[usize]) -> PyResult<Vec<(usize, usize)>> {
+    if targets.len() % 2 != 0 {
+        return Err(PyValueError::new_err(
+            "two-qubit operations require an even number of targets",
+        ));
+    }
+    Ok(targets
         .chunks_exact(2)
         .map(|pair| (pair[0], pair[1]))
-        .collect()
+        .collect())
 }
 
 #[pymodule]

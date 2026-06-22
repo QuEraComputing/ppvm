@@ -112,35 +112,38 @@ macro_rules! create_interface {
             }
 
             // two-qubit clifford (+ stim aliases)
-            pub fn cnot(&mut self, targets: Vec<usize>) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn cnot(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.cnot_batch(&pairs);
+                Ok(())
             }
 
-            pub fn cx(&mut self, targets: Vec<usize>) {
-                self.cnot(targets);
+            pub fn cx(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cnot(targets)
             }
 
-            pub fn zcx(&mut self, targets: Vec<usize>) {
-                self.cnot(targets);
+            pub fn zcx(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cnot(targets)
             }
 
-            pub fn cy(&mut self, targets: Vec<usize>) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn cy(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.cy_batch(&pairs);
+                Ok(())
             }
 
-            pub fn zcy(&mut self, targets: Vec<usize>) {
-                self.cy(targets);
+            pub fn zcy(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cy(targets)
             }
 
-            pub fn cz(&mut self, targets: Vec<usize>) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn cz(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.cz_batch(&pairs);
+                Ok(())
             }
 
-            pub fn zcz(&mut self, targets: Vec<usize>) {
-                self.cz(targets);
+            pub fn zcz(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cz(targets)
             }
 
             // rot1
@@ -161,19 +164,22 @@ macro_rules! create_interface {
             }
 
             // rot2
-            pub fn rxx(&mut self, targets: Vec<usize>, theta: f64) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn rxx(&mut self, targets: Vec<usize>, theta: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.rxx_batch(&pairs, theta);
+                Ok(())
             }
 
-            pub fn ryy(&mut self, targets: Vec<usize>, theta: f64) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn ryy(&mut self, targets: Vec<usize>, theta: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.ryy_batch(&pairs, theta);
+                Ok(())
             }
 
-            pub fn rzz(&mut self, targets: Vec<usize>, theta: f64) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn rzz(&mut self, targets: Vec<usize>, theta: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.rzz_batch(&pairs, theta);
+                Ok(())
             }
 
             // noise
@@ -197,14 +203,20 @@ macro_rules! create_interface {
                 self.inner.depolarize1_batch(targets.as_slice(), p);
             }
 
-            pub fn depolarize2(&mut self, targets: Vec<usize>, p: f64) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn depolarize2(&mut self, targets: Vec<usize>, p: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.depolarize2_batch(&pairs, p);
+                Ok(())
             }
 
-            pub fn two_qubit_pauli_error(&mut self, targets: Vec<usize>, p: [f64; 15]) {
-                let pairs = crate::flat_pairs(&targets);
+            pub fn two_qubit_pauli_error(
+                &mut self,
+                targets: Vec<usize>,
+                p: [f64; 15],
+            ) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
                 self.inner.two_qubit_pauli_error_batch(&pairs, p);
+                Ok(())
             }
 
             pub fn loss_channel(&mut self, addr0: usize, p: f64) {

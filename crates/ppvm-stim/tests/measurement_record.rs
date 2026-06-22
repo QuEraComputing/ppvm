@@ -34,3 +34,13 @@ fn mr_record_matches_reported_value_under_readout_noise() {
     // And the reset actually happened: qubit is back in |0>.
     assert_eq!(t.measure(0), Some(false));
 }
+
+#[test]
+fn mpad_appends_to_measurement_record() {
+    let prog = parse_extended("MPAD 0 1\nMPAD(1.0) 0").unwrap();
+    let mut t: Tab = GeneralizedTableau::new(1, 1e-12);
+    let results = execute(&prog, &mut t).unwrap();
+
+    assert_eq!(results, vec![Some(false), Some(true), Some(true)]);
+    assert_eq!(t.current_measurement_record(), results.as_slice());
+}

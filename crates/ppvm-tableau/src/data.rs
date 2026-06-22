@@ -660,6 +660,24 @@ where
         &self.measurement_record
     }
 
+    /// Append an externally defined measurement result to the record.
+    ///
+    /// Used by Stim instructions such as `MPAD`, which append measurement
+    /// record bits without measuring a qubit.
+    pub fn append_measurement_record(&mut self, result: Option<bool>) {
+        self.measurement_record.push(result);
+    }
+
+    /// Replace the most recent measurement record entry.
+    ///
+    /// Used by noisy measurement paths where the quantum state follows the
+    /// true outcome but the public record should hold the reported bit.
+    pub fn overwrite_last_measurement_record(&mut self, result: Option<bool>) {
+        if let Some(last) = self.measurement_record.last_mut() {
+            *last = result;
+        }
+    }
+
     /// Apply CZ to N pairs with constant offset: (base+i, base+offset+i) for i in 0..count.
     /// Falls back to individual CZ calls if any qubit in the range is lost.
     pub fn cz_block_pairs(&mut self, base: usize, offset: usize, count: usize)

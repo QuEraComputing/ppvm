@@ -10,6 +10,10 @@ use pyo3::prelude::*;
 
 use crate::interface_tableau::measurement_to_u8;
 
+// rustfmt formats the `#[pyo3(signature = (...))]` attribute inside this macro
+// non-idempotently (it rewrites the indentation every pass), so `cargo fmt
+// --check` can never agree with `cargo fmt`. Skip formatting the macro body.
+#[rustfmt::skip]
 macro_rules! create_sum_interface {
     ($tab_name: ident, $sampler_name: ident, $type: ident, $indexType: ident) => {
         #[pyclass]
@@ -51,6 +55,10 @@ macro_rules! create_sum_interface {
 
             pub fn len(&self) -> usize {
                 self.inner.len()
+            }
+
+            pub fn is_empty(&self) -> bool {
+                self.inner.is_empty()
             }
 
             /// Mid-circuit measurement probabilities `(p_zero, p_one, p_lost)`.

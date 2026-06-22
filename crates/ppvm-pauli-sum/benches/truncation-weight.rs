@@ -69,11 +69,7 @@ where
     state
 }
 
-const PROFILES: &[(&str, usize)] = &[
-    ("w3", 3),
-    ("w50", 50),
-    ("w120", 120),
-];
+const PROFILES: &[(&str, usize)] = &[("w3", 3), ("w50", 50), ("w120", 120)];
 
 const CUTOFFS: &[(&str, usize)] = &[
     ("10", 10),

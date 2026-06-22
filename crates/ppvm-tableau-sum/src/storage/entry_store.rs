@@ -5,9 +5,18 @@ use num::Complex;
 use ppvm_tableau::{data::GeneralizedTableau, sparsevec::SparseVector};
 use ppvm_traits::config::Config;
 
+/// One branch produced by a noise channel: its tableau, coefficient, and the
+/// cached `(word_fingerprint, phase_loss_hash)` pair, so a merge can recompute
+/// the full fingerprint (`word_fp ^ phase_loss`) without re-hashing the tableau.
+pub type Branch<T, I, C> = (GeneralizedTableau<T, I, C>, <T as Config>::Coeff, u64, u64);
+
 pub trait EntryStore<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>>: Clone {
     fn with_capacity(cap: usize) -> Self;
     fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a GeneralizedTableau<T, I, C>, &'a T::Coeff)>
     where
@@ -43,11 +52,7 @@ pub trait EntryStore<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>>: Clone
     /// Each branch carries its parent's word-fingerprint and its own
     /// phase/loss hash (third and fourth tuple fields), so the full
     /// fingerprint is `word_fp ^ phase_loss` — no re-hashing of the tableau.
-    fn insert_or_merge_batch(
-        &mut self,
-        branches: Vec<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>,
-        cutoff: &T::Coeff,
-    ) -> bool;
+    fn insert_or_merge_batch(&mut self, branches: Vec<Branch<T, I, C>>, cutoff: &T::Coeff) -> bool;
 
     fn retain<F>(&mut self, f: F)
     where
@@ -59,7 +64,7 @@ pub trait EntryStore<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>>: Clone
     /// storage backends that don't cache `word_fp` and `phase_loss` separately
     /// (e.g. map-keyed buckets), the split is `(fp, 0)`; either component may
     /// be XORed against the change delta — the merge sees their XOR.
-    fn drain_where<F>(&mut self, pred: F) -> Vec<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>
+    fn drain_where<F>(&mut self, pred: F) -> Vec<Branch<T, I, C>>
     where
         F: FnMut(&GeneralizedTableau<T, I, C>) -> bool;
 }

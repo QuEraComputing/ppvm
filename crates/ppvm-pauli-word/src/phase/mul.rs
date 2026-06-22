@@ -80,7 +80,7 @@ where
     // 11 11 00
     type Output = PhasedPauliWord<A, S, PauliWord<A, S, REHASH>>;
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut output = self.clone();
+        let mut output = self;
         output *= rhs;
         output
     }

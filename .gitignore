@@ -3,6 +3,7 @@
 /debug
 .DS_Store
 .vscode/
+.uv/
 *__pycache__*
 profile.json.gz
 

@@ -7,6 +7,9 @@ edition = "2024"
 [lib]
 name = "ppvm_python_native"
 crate-type = ["cdylib"]
+# Python exercises this extension through pytest. Cargo's generated lib test
+# binary cannot link an extension-module crate without embedding libpython.
+test = false
 
 [dependencies]
 bnum = "0.13.0"
@@ -16,4 +19,4 @@ ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 ppvm-stim = { version = "0.1.0", path = "../ppvm-stim", features = ["rayon"] }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
 ppvm-tableau-sum = { version = "0.1.0", path = "../ppvm-tableau-sum", features = ["rayon"] }
-pyo3 = { version = "0.29.0", features = ["multiple-pymethods"] }
+pyo3 = { version = "0.29.0", features = ["extension-module", "multiple-pymethods"] }

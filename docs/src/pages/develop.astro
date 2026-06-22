@@ -160,8 +160,9 @@ cargo bench --bench micro -- "gates/single-qubit/h"</code></pre>
 
     <p>
       Rust edition 2024. On x86 the default hasher (gxhash) needs
-      <code>RUSTFLAGS="-C target-feature=+aes,+sse2"</code>; CI sets this
-      automatically. On non-x86 hosts, build with
+      AES/SSE2 target features; this repo sets them for x86_64 in
+      <code>.cargo/config.toml</code>, and CI does the same. On non-x86 hosts,
+      build with
       <code>--no-default-features --features=indexmap,ahash</code> or similar.
     </p>
 
@@ -180,7 +181,9 @@ uv run --project ppvm-python --group dev pytest ppvm-python/test/ -k test_ghz</c
     <p>
       If the native module has changed but the wrapper has not, force a
       rebuild with <code>uv sync --project ppvm-python --reinstall-package
-      ppvm-python-native</code>.
+      ppvm-python-native</code>. The Python project is configured to use
+      uv-managed Python installations, so a fresh <code>uv sync</code> avoids
+      linking PyO3 test builds against a system Python.
     </p>
 
     <h3>This docs site</h3>

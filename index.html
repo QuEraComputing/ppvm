@@ -66,10 +66,11 @@ We recommend <a href="https://docs.astral.sh/uv/">uv</a> for managing
           your Python environment. The native extension compiles automatically
           on install.
 </p> <pre><code class="language-bash">uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python</code></pre> <a class="install-pane-link" href="/quickstart/python">Continue to the Python Quick Start →</a> </section> <section class="install-pane" data-install-pane="rust" role="tabpanel" hidden> <p>
-Add the crates relevant to your workload. <code>ppvm-runtime</code>
-is required; the others layer on top.
+Add the crates relevant to your workload. <code>ppvm-pauli-sum</code>
+(the Pauli-propagation engine) is the usual entry point; the others
+          layer on top.
 </p> <pre><code class="language-toml">[dependencies]
-ppvm-runtime = { git = &quot;https://github.com/QuEraComputing/ppvm&quot; }
+ppvm-pauli-sum = { git = &quot;https://github.com/QuEraComputing/ppvm&quot; }
 ppvm-tableau = { git = &quot;https://github.com/QuEraComputing/ppvm&quot; }
 ppvm-stim    = { git = &quot;https://github.com/QuEraComputing/ppvm&quot; }
 ppvm-sym     = { git = &quot;https://github.com/QuEraComputing/ppvm&quot; }</code></pre> <p class="install-pane-note">

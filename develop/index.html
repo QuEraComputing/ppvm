@@ -23,7 +23,9 @@ ppvm is a Cargo workspace with a Python wrapper layered on top. The
       PyO3-based binding.
 </p> <pre><code>ppvm/
 ├── crates/
-│   ├── ppvm-runtime         # Core: Pauli arithmetic, PauliSum, gate traits, Config trait
+│   ├── ppvm-traits          # Trait system, Config bundle, Pauli alphabet, map impls
+│   ├── ppvm-pauli-word      # Packed Pauli strings: PauliWord, phased, lossy, pattern
+│   ├── ppvm-pauli-sum       # PauliSum engine, truncation strategy, concrete configs
 │   ├── ppvm-tableau         # Stabilizer + generalized-tableau simulator
 │   ├── ppvm-sym             # Symbolic (parametric) Pauli propagation
 │   ├── ppvm-stim            # Stim program execution against the tableau
@@ -33,11 +35,13 @@ ppvm is a Cargo workspace with a Python wrapper layered on top. The
 ├── docs/                    # This documentation site (Astro)
 ├── examples/                # Rust examples (symbolic.rs, trotter.rs)
 └── AGENTS.md                # Pointer to this guide
-</code></pre> <p> <strong>Dependency graph.</strong> <code>ppvm-runtime</code> is the
-      foundation. <code>ppvm-tableau</code>, <code>ppvm-sym</code>, and
-<code>ppvm-stim</code> depend on it. <code>ppvm-stim</code> additionally
-      depends on <code>ppvm-tableau</code> and <code>stim-parser</code>.
-<code>ppvm-python-native</code> depends on <code>ppvm-runtime</code>
+</code></pre> <p> <strong>Dependency graph.</strong> <code>ppvm-traits</code> is the
+      foundation; <code>ppvm-pauli-word</code> builds on it, and
+<code>ppvm-pauli-sum</code> builds on both. <code>ppvm-tableau</code>,
+<code>ppvm-sym</code>, and <code>ppvm-stim</code> depend on the Pauli
+      crates. <code>ppvm-stim</code> additionally depends on
+<code>ppvm-tableau</code> and <code>stim-parser</code>.
+<code>ppvm-python-native</code> depends on <code>ppvm-pauli-sum</code>
 and <code>ppvm-tableau</code>.
 </p> <h2 id="build"><span class="sec-num">§ 2</span>Build &amp; test</h2> <h3>Rust</h3> <pre><code class="language-bash"># All Rust tests
 cargo test --workspace
@@ -46,7 +50,7 @@ cargo test --workspace
 cargo test -p ppvm-tableau
 
 # A single test by name
-cargo test -p ppvm-runtime -- test_ghz
+cargo test -p ppvm-pauli-sum -- test_ghz
 
 # Benchmarks
 cargo bench -p ppvm-tableau --bench micro
@@ -200,27 +204,27 @@ Local prerequisites the scripts assume: <code>node ≥ 20</code>
 <code><a href="https://github.com/QuEraComputing/ppvm/blob/main/docs/README.md">docs/README.md</a></code>.
 </p> <h2 id="architecture"><span class="sec-num">§ 3</span>Architecture</h2> <p>
 ppvm implements two complementary quantum simulation backends. They
-      share a common gate / noise trait hierarchy from <code>ppvm-runtime</code>.
-</p> <h3>3.1 Pauli propagation (<code>ppvm-runtime</code>)</h3> <p>
+      share a common gate / noise trait hierarchy from <code>ppvm-traits</code>.
+</p> <h3>3.1 Pauli propagation (<code>ppvm-pauli-sum</code>)</h3> <p>
 Tracks Pauli operator evolution through circuits in the
 <strong>Heisenberg picture</strong> (circuits run backwards). The
-      central type is <a href="/api/#rs-ppvm-runtime-sum-data-PauliSum"><code>PauliSum&lt;T: Config&gt;</code></a>,
+      central type is <a href="/api/#rs-ppvm-pauli-sum-sum-data-PauliSum"><code>PauliSum&lt;T: Config&gt;</code></a>,
       a dictionary of Pauli strings to coefficients.
-</p> <p>Key design patterns &mdash; respect these when editing:</p> <ul> <li> <strong>Config-based generics.</strong> The <a href="/api/#rs-ppvm-runtime-config-Config"><code>Config</code></a> trait
+</p> <p>Key design patterns &mdash; respect these when editing:</p> <ul> <li> <strong>Config-based generics.</strong> The <a href="/api/#rs-ppvm-traits-config-Config"><code>Config</code></a> trait
         bundles Storage, Coefficient, Strategy, Map, and BuildHasher choices
         at compile time. Implementations live in <code>config/</code>
 (<code>fxhash</code>, <code>indexmap</code>, <code>dashmap</code>,
 <code>gxhash</code>). Do not introduce runtime dispatch where a
-<a href="/api/#rs-ppvm-runtime-config-Config"><code>Config</code></a> bound would do.
-</li> <li> <strong>Dual-map optimisation.</strong> <a href="/api/#rs-ppvm-runtime-sum-data-PauliSum"><code>PauliSum</code></a>
+<a href="/api/#rs-ppvm-traits-config-Config"><code>Config</code></a> bound would do.
+</li> <li> <strong>Dual-map optimisation.</strong> <a href="/api/#rs-ppvm-pauli-sum-sum-data-PauliSum"><code>PauliSum</code></a>
 maintains two internal maps (main + auxiliary) and swaps between
         them during gate propagation to avoid repeated allocations.
         Any new gate that writes to a fresh map must respect this swap.
 </li> <li> <strong>Strategy pattern.</strong> Truncation policies
-        (<a href="/api/#rs-ppvm-runtime-strategy-CoefficientThreshold"><code>CoefficientThreshold</code></a>,
-<a href="/api/#rs-ppvm-runtime-strategy-MaxPauliWeight"><code>MaxPauliWeight</code></a>,
-<a href="/api/#rs-ppvm-runtime-strategy-MaxLossWeight"><code>MaxLossWeight</code></a>,
-<a href="/api/#rs-ppvm-runtime-strategy-CombinedStrategy"><code>CombinedStrategy</code></a>) decide
+        (<a href="/api/#rs-ppvm-pauli-sum-strategy-CoefficientThreshold"><code>CoefficientThreshold</code></a>,
+<a href="/api/#rs-ppvm-pauli-sum-strategy-MaxPauliWeight"><code>MaxPauliWeight</code></a>,
+<a href="/api/#rs-ppvm-pauli-sum-strategy-MaxLossWeight"><code>MaxLossWeight</code></a>,
+<a href="/api/#rs-ppvm-pauli-sum-strategy-CombinedStrategy"><code>CombinedStrategy</code></a>) decide
         when small terms are dropped. Call <code>.truncate()</code> to apply.
 </li> <li> <strong>Backward propagation.</strong> Circuits run backwards. To
         simulate <code>H(0); CNOT(0,1)</code> in the Heisenberg picture, call
@@ -248,27 +252,27 @@ Full state simulation using stabilizer formalism, extended to handle
 <code>StimProgram.from_file</code>. Execute parsed programs with
 <code>tab.run(prog)</code> or sample many shots with
 <code>ppvm.sample_stim</code> / <code>GeneralizedTableau.sample</code>.
-</li> </ul> <h3>3.3 Trait hierarchy (<code>ppvm-runtime/src/traits/</code>)</h3> <p>Gate behaviour is defined via traits reused across both backends:</p> <ul> <li> <a href="/api/#rs-ppvm-runtime-traits-clifford-Clifford"><code>Clifford</code></a> /
-<a href="/api/#rs-ppvm-runtime-traits-clifford-CliffordExtensions"><code>CliffordExtensions</code></a> &mdash;
+</li> </ul> <h3>3.3 Trait hierarchy (<code>ppvm-traits/src/traits/</code>)</h3> <p>Gate behaviour is defined via traits reused across both backends:</p> <ul> <li> <a href="/api/#rs-ppvm-traits-traits-clifford-Clifford"><code>Clifford</code></a> /
+<a href="/api/#rs-ppvm-traits-traits-clifford-CliffordExtensions"><code>CliffordExtensions</code></a> &mdash;
         single- and two-qubit Clifford gates.
-</li> <li> <a href="/api/#rs-ppvm-runtime-traits-branch-tgate-TGate"><code>TGate</code></a>,
-<a href="/api/#rs-ppvm-runtime-traits-branch-rot1-RotationOne"><code>RotationOne</code></a>,
-<a href="/api/#rs-ppvm-runtime-traits-branch-rot2-RotationTwo"><code>RotationTwo</code></a>,
-<a href="/api/#rs-ppvm-runtime-traits-branch-u3-U3Gate"><code>U3Gate</code></a> &mdash;
+</li> <li> <a href="/api/#rs-ppvm-traits-traits-branch-tgate-TGate"><code>TGate</code></a>,
+<a href="/api/#rs-ppvm-traits-traits-branch-rot1-RotationOne"><code>RotationOne</code></a>,
+<a href="/api/#rs-ppvm-traits-traits-branch-rot2-RotationTwo"><code>RotationTwo</code></a>,
+<a href="/api/#rs-ppvm-traits-traits-branch-u3-U3Gate"><code>U3Gate</code></a> &mdash;
         non-Clifford gates (branching).
-</li> <li> <a href="/api/#rs-ppvm-runtime-traits-measure-Measure"><code>Measure</code></a> /
-<a href="/api/#rs-ppvm-runtime-traits-measure-LossyMeasure"><code>LossyMeasure</code></a> &mdash;
+</li> <li> <a href="/api/#rs-ppvm-traits-traits-measure-Measure"><code>Measure</code></a> /
+<a href="/api/#rs-ppvm-traits-traits-measure-LossyMeasure"><code>LossyMeasure</code></a> &mdash;
         Z-basis measurement.
-</li> <li> <a href="/api/#rs-ppvm-runtime-traits-noise-Depolarizing"><code>Depolarizing</code></a>,
-<a href="/api/#rs-ppvm-runtime-traits-noise-PauliError"><code>PauliError</code></a>,
-<a href="/api/#rs-ppvm-runtime-traits-noise-LossChannel"><code>LossChannel</code></a>,
-<a href="/api/#rs-ppvm-runtime-traits-noise-CorrelatedLossChannel"><code>CorrelatedLossChannel</code></a> &mdash;
+</li> <li> <a href="/api/#rs-ppvm-traits-traits-noise-Depolarizing"><code>Depolarizing</code></a>,
+<a href="/api/#rs-ppvm-traits-traits-noise-PauliError"><code>PauliError</code></a>,
+<a href="/api/#rs-ppvm-traits-traits-noise-LossChannel"><code>LossChannel</code></a>,
+<a href="/api/#rs-ppvm-traits-traits-noise-CorrelatedLossChannel"><code>CorrelatedLossChannel</code></a> &mdash;
         noise channels.
 </li> </ul> <h2 id="conventions"><span class="sec-num">§ 4</span>Conventions</h2> <h3>4.1 Commit messages</h3> <p>
 Use <a href="https://www.conventionalcommits.org/">Conventional Commits</a>:
 <code>&lt;type&gt;(&lt;scope&gt;): &lt;description&gt;</code>.
 </p> <pre><code>feat(tableau): add correlated loss channel
-fix(runtime): handle zero-norm in truncation
+fix(pauli-sum): handle zero-norm in truncation
 test(stim-parser): add fast fuzz/proptest suite
 chore: restore lockfile consistency</code></pre> <h3>4.2 Code style</h3> <ul> <li>Run <code>cargo fmt --all</code> before committing Rust.</li> <li>Run <code>cargo clippy --workspace --all-targets</code>; fix or justify all warnings.</li> <li>Python is formatted with <code>ruff format</code> and linted with <code>ruff check</code>.</li> <li>Public Rust items should have doc comments; <code>cargo doc --no-deps</code> must build cleanly because the API site is built from rustdoc JSON.</li> <li>
 Python docstrings use <strong>Google style</strong> (griffe parses with <code>-d google</code>)
@@ -290,30 +294,31 @@ When adding a new method to a Python-facing type, edit the macro
       picks it up; do not hand-write methods for one variant.
 </p> <h2 id="extending"><span class="sec-num">§ 6</span>Extending ppvm</h2> <h3>Adding a new gate</h3> <ol> <li>
 Decide which trait it belongs to
-        (<a href="/api/#rs-ppvm-runtime-traits-clifford-Clifford"><code>Clifford</code></a>,
-<a href="/api/#rs-ppvm-runtime-traits-branch-rot1-RotationOne"><code>RotationOne</code></a>, etc.) in
-<code>ppvm-runtime/src/traits/</code>.
+        (<a href="/api/#rs-ppvm-traits-traits-clifford-Clifford"><code>Clifford</code></a>,
+<a href="/api/#rs-ppvm-traits-traits-branch-rot1-RotationOne"><code>RotationOne</code></a>, etc.) in
+<code>ppvm-traits/src/traits/</code>.
 </li> <li>
 Implement it for
-<a href="/api/#rs-ppvm-runtime-sum-data-PauliSum"><code>PauliSum&lt;T: Config&gt;</code></a> in
-<code>ppvm-runtime/src/traits/&lt;trait&gt;.rs</code>.
+<a href="/api/#rs-ppvm-pauli-sum-sum-data-PauliSum"><code>PauliSum&lt;T: Config&gt;</code></a> in
+<code>ppvm-pauli-sum/src/sum/</code>.
 </li> <li>
 Implement it for <a href="/api/#rs-ppvm-tableau-data-Tableau"><code>Tableau</code></a> /
 <a href="/api/#rs-ppvm-tableau-data-GeneralizedTableau"><code>GeneralizedTableau</code></a> in
 <code>ppvm-tableau/src/gates/</code>.
 </li> <li>Expose it in <code>ppvm-python-native</code> through the relevant <code>create_interface!</code> macro, and wrap it in <code>ppvm-python/src/ppvm/&hellip;</code>.</li> <li>Add tests on both sides and a benchmark if it is on a hot path.</li> </ol> <h3>Adding a new noise channel</h3> <p>
 Follow the pattern of
-<a href="/api/#rs-ppvm-runtime-traits-noise-LossChannel"><code>LossChannel</code></a> /
-<a href="/api/#rs-ppvm-runtime-traits-noise-CorrelatedLossChannel"><code>CorrelatedLossChannel</code></a>.
-      Implement the trait in <code>ppvm-runtime/src/traits/noise.rs</code>,
+<a href="/api/#rs-ppvm-traits-traits-noise-LossChannel"><code>LossChannel</code></a> /
+<a href="/api/#rs-ppvm-traits-traits-noise-CorrelatedLossChannel"><code>CorrelatedLossChannel</code></a>.
+      Implement the trait in <code>ppvm-traits/src/traits/noise.rs</code>,
       then mirror in <code>ppvm-tableau</code> if it is meaningful in the
       tableau picture.
 </p> <h3>Adding a new <code>Config</code></h3> <p>
-Create a module under <code>ppvm-runtime/src/config/</code>, implement
-      the <a href="/api/#rs-ppvm-runtime-config-Config"><code>Config</code></a> trait, and re-export it from
+Create a module under <code>ppvm-pauli-sum/src/config/</code>, implement
+      the <a href="/api/#rs-ppvm-traits-config-Config"><code>Config</code></a> trait (defined in
+<code>ppvm-traits</code>), and re-export it from
 <code>config/mod.rs</code>. If it should be exposed to Python, add a
       variant to the <code>create_interface!</code> macro call.
-</p> <h2 id="where-to-look"><span class="sec-num">§ 7</span>Where to look for X</h2> <dl class="lookup"> <dt>Pauli arithmetic, <a href="/api/#rs-ppvm-runtime-sum-data-PauliSum"><code>PauliSum</code></a></dt> <dd><code>crates/ppvm-runtime/src/sum/</code>, <code>word/</code>, <code>pattern/</code></dd> <dt>Gate &amp; noise traits</dt> <dd><code>crates/ppvm-runtime/src/traits/</code></dd> <dt>Truncation strategies (<a href="/api/#rs-ppvm-runtime-strategy-CoefficientThreshold"><code>CoefficientThreshold</code></a>, <a href="/api/#rs-ppvm-runtime-strategy-MaxPauliWeight"><code>MaxPauliWeight</code></a>, &hellip;)</dt> <dd><code>crates/ppvm-runtime/src/strategy.rs</code>, <code>traits/strategy.rs</code></dd> <dt><a href="/api/#rs-ppvm-runtime-config-Config"><code>Config</code></a> implementations</dt> <dd><code>crates/ppvm-runtime/src/config/</code></dd> <dt>Stabilizer tableau core (<a href="/api/#rs-ppvm-tableau-data-Tableau"><code>Tableau</code></a>, <a href="/api/#rs-ppvm-tableau-data-GeneralizedTableau"><code>GeneralizedTableau</code></a>)</dt> <dd><code>crates/ppvm-tableau/src/data.rs</code>, <code>tableau_like.rs</code></dd> <dt>Tableau gates</dt> <dd><code>crates/ppvm-tableau/src/gates/</code></dd> <dt>Stim parsing</dt> <dd><code>crates/stim-parser/</code> (parser only) and <code>crates/ppvm-stim/</code> (execution)</dd> <dt>PyO3 bindings &amp; macros</dt> <dd><code>crates/ppvm-python-native/src/</code></dd> <dt>Python wrapper &amp; mixins</dt> <dd><code>ppvm-python/src/ppvm/</code></dd> <dt>Python tests</dt> <dd><code>ppvm-python/test/</code></dd> </dl> <hr class="ornament"> <p style="text-align: center; color: var(--ink-faint); font-style: italic;">
+</p> <h2 id="where-to-look"><span class="sec-num">§ 7</span>Where to look for X</h2> <dl class="lookup"> <dt>Pauli arithmetic, <a href="/api/#rs-ppvm-pauli-sum-sum-data-PauliSum"><code>PauliSum</code></a></dt> <dd><code>crates/ppvm-pauli-sum/src/sum/</code>; word / phase / loss / pattern types in <code>crates/ppvm-pauli-word/src/</code></dd> <dt>Gate &amp; noise traits</dt> <dd><code>crates/ppvm-traits/src/traits/</code></dd> <dt>Truncation strategies (<a href="/api/#rs-ppvm-pauli-sum-strategy-CoefficientThreshold"><code>CoefficientThreshold</code></a>, <a href="/api/#rs-ppvm-pauli-sum-strategy-MaxPauliWeight"><code>MaxPauliWeight</code></a>, &hellip;)</dt> <dd><code>crates/ppvm-pauli-sum/src/strategy.rs</code>, <code>crates/ppvm-traits/src/traits/strategy.rs</code></dd> <dt><a href="/api/#rs-ppvm-traits-config-Config"><code>Config</code></a> trait &amp; implementations</dt> <dd>trait in <code>crates/ppvm-traits/src/config.rs</code>; concrete bundles in <code>crates/ppvm-pauli-sum/src/config/</code></dd> <dt>Stabilizer tableau core (<a href="/api/#rs-ppvm-tableau-data-Tableau"><code>Tableau</code></a>, <a href="/api/#rs-ppvm-tableau-data-GeneralizedTableau"><code>GeneralizedTableau</code></a>)</dt> <dd><code>crates/ppvm-tableau/src/data.rs</code>, <code>tableau_like.rs</code></dd> <dt>Tableau gates</dt> <dd><code>crates/ppvm-tableau/src/gates/</code></dd> <dt>Stim parsing</dt> <dd><code>crates/stim-parser/</code> (parser only) and <code>crates/ppvm-stim/</code> (execution)</dd> <dt>PyO3 bindings &amp; macros</dt> <dd><code>crates/ppvm-python-native/src/</code></dd> <dt>Python wrapper &amp; mixins</dt> <dd><code>ppvm-python/src/ppvm/</code></dd> <dt>Python tests</dt> <dd><code>ppvm-python/test/</code></dd> </dl> <hr class="ornament"> <p style="text-align: center; color: var(--ink-faint); font-style: italic;">
 Found something out of date? Send a PR &mdash; this guide is the canonical
       source for both human and agent contributors.
 </p> </article>  </div> </div> </main> <script>

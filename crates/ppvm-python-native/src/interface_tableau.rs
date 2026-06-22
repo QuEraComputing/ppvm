@@ -166,6 +166,10 @@ macro_rules! create_interface {
                 self.inner.reset_loss_channel(addr0);
             }
 
+            pub fn asymmetric_loss_channel(&mut self, addr0: usize, p0: f64, p1: f64) {
+                self.inner.asymmetric_loss_channel(addr0, p0, p1);
+            }
+
             pub fn reset(&mut self, addr0: usize) {
                 self.inner.reset(addr0);
             }

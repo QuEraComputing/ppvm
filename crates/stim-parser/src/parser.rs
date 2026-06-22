@@ -54,9 +54,11 @@ pub(crate) struct RawTarget {
 #[cfg(not(target_arch = "wasm32"))]
 const PARSER_STACK_SIZE: usize = 16 * 1024 * 1024;
 
-/// Run `f` on a dedicated thread with [`PARSER_STACK_SIZE`] bytes of
-/// stack. Used by both [`parse`] and [`parse_extended`] (which also
-/// recurses into REPEAT bodies during the interpret pass).
+/// Run `f` with a large stack for the recursive chumsky grammar. On native
+/// targets this spawns a dedicated `PARSER_STACK_SIZE`-byte thread; on wasm32
+/// (no OS threads) `f` runs inline on the caller's stack. Used by both
+/// [`parse`] and [`parse_extended`] (which also recurses into REPEAT bodies
+/// during the interpret pass).
 pub(crate) fn run_on_parser_stack<R, F>(f: F) -> R
 where
     R: Send,

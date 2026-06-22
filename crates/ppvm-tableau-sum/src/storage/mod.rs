@@ -12,10 +12,10 @@ use num::{
     Complex, One, Zero,
     complex::{Complex64, ComplexFloat},
 };
-use ppvm_runtime::config::Config;
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
+use ppvm_traits::config::Config;
 use std::{
     hash::{Hash, Hasher},
     ops::AddAssign,
@@ -214,9 +214,9 @@ mod fingerprint_tests {
     use super::{
         fingerprint, loss_mask, pauli_branch_phase_loss, phase_loss_hash, word_fingerprint,
     };
-    use ppvm_runtime::config::fxhash::ByteF64;
-    use ppvm_runtime::traits::Clifford;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
     use ppvm_tableau::data::GeneralizedTableau;
+    use ppvm_traits::traits::Clifford;
 
     type Cfg = ByteF64<1>;
     type Tab = GeneralizedTableau<Cfg, u128>;

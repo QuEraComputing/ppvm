@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_runtime::traits::{Coefficient, ComplexCoefficient};
+use ppvm_traits::traits::{Coefficient, ComplexCoefficient};
 
 use crate::{Prod, Sum, Term, term::Inner};
 

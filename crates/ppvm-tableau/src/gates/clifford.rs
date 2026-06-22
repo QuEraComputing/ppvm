@@ -647,7 +647,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
 
     type TestConfig = ByteF64<1>;
     type TestTableau = GeneralizedTableau<TestConfig>;
@@ -804,7 +804,7 @@ mod tests {
 
     mod batch_tests {
         use super::*;
-        use ppvm_runtime::config::fxhash::ByteF64;
+        use ppvm_pauli_sum::config::fxhash::ByteF64;
 
         type TC = ByteF64<2>; // 2 u8 words = up to 16 qubits
         type TTab = Tableau<TC>;

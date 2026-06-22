@@ -11,9 +11,9 @@ use num::{
     Complex, One, PrimInt, ToPrimitive, Zero,
     complex::{Complex64, ComplexFloat},
 };
-use ppvm_runtime::config::Config;
 use ppvm_tableau::{data::GeneralizedTableau, measure::MeasureScratch};
 use ppvm_tableau::{sparsevec::SparseVector, tableau_index::TableauIndex};
+use ppvm_traits::config::Config;
 use rand::{RngExt, rngs::SmallRng};
 
 #[derive(Clone)]

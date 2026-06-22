@@ -12,7 +12,7 @@
 use num::Zero;
 use rand::{Rng, RngExt};
 
-use ppvm_runtime::traits::{Clifford, Coefficient};
+use ppvm_traits::traits::{Clifford, Coefficient};
 
 // `Zero` is used for `Self::Coeff::zero()` inside default method bodies; the
 // bound itself is redundant on `Self::Coeff` because `Coefficient: num::Zero`.

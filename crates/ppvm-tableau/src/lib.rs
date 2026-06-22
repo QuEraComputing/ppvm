@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Generalized stabilizer-tableau simulator built on top of `ppvm-runtime`.
+//! Generalized stabilizer-tableau simulator built on top of the ppvm core
+//! crates (`ppvm-traits` and `ppvm-pauli-word`).
 //!
 //! Provides a forward-evolving state representation using the stabilizer
 //! formalism, extended to non-Clifford gates by tracking a sparse vector
@@ -16,7 +17,7 @@
 //!
 //! ```
 //! use ppvm_tableau::prelude::*;
-//! use ppvm_runtime::config::fxhash::ByteF64;
+//! use ppvm_pauli_sum::config::fxhash::ByteF64;
 //!
 //! let mut tab: GeneralizedTableau<ByteF64<1>> =
 //!     GeneralizedTableau::new_with_seed(2, 1e-12, 0);
@@ -57,5 +58,5 @@ pub mod prelude {
     pub use crate::sparsevec::SparseVector;
     pub use crate::tableau_index::TableauIndex;
     pub use crate::tableau_like::TableauLike;
-    pub use ppvm_runtime::prelude::*;
+    pub use ppvm_pauli_sum::prelude::*;
 }

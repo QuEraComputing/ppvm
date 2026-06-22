@@ -232,7 +232,7 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> ResetLos
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
 
     type TestConfig = ByteF64<1>;
     type TestTab = GeneralizedTableau<TestConfig>;

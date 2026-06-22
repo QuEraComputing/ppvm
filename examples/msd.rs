@@ -1,4 +1,4 @@
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
 use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<ByteFxHashF64<11>, u128>;

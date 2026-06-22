@@ -1,5 +1,0 @@
----
-source: crates/ppvm-runtime/src/sum/data.rs
-expression: sum.to_string()
----
-1.000 * IIII

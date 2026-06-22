@@ -23,7 +23,7 @@ mkdir -p /tmp/tfim_sweep
 #    gxhash needs AES at compile time.
 RUSTFLAGS="-C target-feature=+aes" J=1.0 STEPS=20 \
   QUBITS="8,16,24,32,40,44,48,52,56,60,64,72,80,88,96,104,112,120,122" ITERS=2 \
-  cargo run --release -p ppvm-runtime --example trotter_qubit_sweep \
+  cargo run --release -p ppvm-pauli-sum --example trotter_qubit_sweep \
   > /tmp/tfim_sweep/ppvm.csv
 
 # 2. PauliPropagation.jl reference (single-threaded to match ppvm).
@@ -42,7 +42,7 @@ uv run --with matplotlib python benchmarks/plot_tfim_sweep.py \
 
 ## Files
 
-- `../crates/ppvm-runtime/examples/trotter_qubit_sweep.rs` — ppvm sweep,
+- `../crates/ppvm-pauli-sum/examples/trotter_qubit_sweep.rs` — ppvm sweep,
   replicating the Python storage-tier dispatch for `[u8; N]` storage.
 - `../julia-benchmarks/benches/trotter_sweep.jl` — PauliPropagation.jl sweep.
 - `plot_tfim_sweep.py` — renders the log-y comparison from the two CSVs.

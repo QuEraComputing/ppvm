@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
 use ppvm_stim::{ExecError, execute, parse_extended};
 use ppvm_tableau::prelude::*;
 

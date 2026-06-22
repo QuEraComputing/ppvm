@@ -27,7 +27,7 @@
 //! NOTE: the MSD setup is duplicated from `profile_measure_all.rs` — fine for
 //! examples, hoist into a shared module if we keep growing these.
 
-use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::measure_all::LossyMeasureAll;
 use ppvm_tableau::prelude::*;
 

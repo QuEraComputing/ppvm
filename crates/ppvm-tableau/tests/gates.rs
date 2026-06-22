@@ -15,7 +15,7 @@
 //! - Additional Stim parser instructions (MR, CY, CZ, S_DAG, SQRT_X_DAG, SQRT_Y_DAG)
 
 use num::complex::Complex64;
-use ppvm_runtime::config::fxhash::ByteF64;
+use ppvm_pauli_sum::config::fxhash::ByteF64;
 use ppvm_tableau::prelude::*;
 use std::f64::consts::{FRAC_PI_2, PI};
 

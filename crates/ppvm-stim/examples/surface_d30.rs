@@ -12,7 +12,7 @@
 use std::time::Instant;
 
 use bnum::types::U2048;
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
 use ppvm_stim::{parse_extended, sample};
 use ppvm_tableau::prelude::*;
 

@@ -88,7 +88,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
     use std::f64::consts::{FRAC_PI_2, PI};
 
     type TestConfig = ByteF64<1>;

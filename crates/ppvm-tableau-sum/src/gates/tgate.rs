@@ -8,8 +8,8 @@ use num::{
     Complex, One, PrimInt, Zero,
     complex::{Complex64, ComplexFloat},
 };
-use ppvm_runtime::{config::Config, traits::TGate};
 use ppvm_tableau::{sparsevec::SparseVector, tableau_index::TableauIndex};
+use ppvm_traits::{config::Config, traits::TGate};
 
 use super::impl_generalized_tableau_sum_gate;
 use crate::data::GeneralizedTableauSum;

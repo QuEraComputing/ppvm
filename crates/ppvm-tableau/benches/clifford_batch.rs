@@ -9,9 +9,9 @@
 use std::time::Duration;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_runtime::config::fxhash::ByteF64;
-use ppvm_runtime::prelude::*;
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
+use ppvm_pauli_sum::config::fxhash::ByteF64;
+use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
 
 // Two u64 words = up to 128 qubits, with the boundary at qubit 64.

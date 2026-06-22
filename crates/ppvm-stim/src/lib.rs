@@ -68,8 +68,8 @@ pub fn run_string<T, I, C>(
     tab: &mut ppvm_tableau::prelude::GeneralizedTableau<T, I, C>,
 ) -> Result<Vec<Option<bool>>, Error>
 where
-    T: ppvm_runtime::prelude::Config,
-    <<T as ppvm_runtime::prelude::Config>::Storage as bitvec::view::BitView>::Store: num::PrimInt,
+    T: ppvm_pauli_sum::prelude::Config,
+    <<T as ppvm_pauli_sum::prelude::Config>::Storage as bitvec::view::BitView>::Store: num::PrimInt,
     C: ppvm_tableau::prelude::SparseVector<num::Complex<T::Coeff>, I> + std::fmt::Debug,
     T::Coeff: num::One
         + num::Zero
@@ -101,8 +101,8 @@ pub fn run_file<T, I, C>(
     tab: &mut ppvm_tableau::prelude::GeneralizedTableau<T, I, C>,
 ) -> Result<Vec<Option<bool>>, Error>
 where
-    T: ppvm_runtime::prelude::Config,
-    <<T as ppvm_runtime::prelude::Config>::Storage as bitvec::view::BitView>::Store: num::PrimInt,
+    T: ppvm_pauli_sum::prelude::Config,
+    <<T as ppvm_pauli_sum::prelude::Config>::Storage as bitvec::view::BitView>::Store: num::PrimInt,
     C: ppvm_tableau::prelude::SparseVector<num::Complex<T::Coeff>, I> + std::fmt::Debug,
     T::Coeff: num::One
         + num::Zero

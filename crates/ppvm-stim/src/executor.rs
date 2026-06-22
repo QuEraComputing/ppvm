@@ -9,7 +9,7 @@ use num::complex::{Complex64, ComplexFloat};
 use num::{Complex, One, ToPrimitive, Zero};
 use std::fmt::Debug;
 
-use ppvm_runtime::prelude::*;
+use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
 use stim_parser::ast::{GateName, MeasureName, NoiseName};
 use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};

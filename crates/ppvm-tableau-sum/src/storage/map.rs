@@ -8,10 +8,10 @@ use num::{
     Complex, One, Zero,
     complex::{Complex64, ComplexFloat},
 };
-use ppvm_runtime::config::Config;
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
+use ppvm_traits::config::Config;
 use smallvec::SmallVec;
 
 use crate::storage::{

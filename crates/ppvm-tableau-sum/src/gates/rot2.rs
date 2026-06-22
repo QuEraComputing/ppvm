@@ -7,10 +7,10 @@ use num::{
     Complex, One, Zero,
     complex::{Complex64, ComplexFloat},
 };
-use ppvm_runtime::config::Config;
-use ppvm_runtime::traits::RotationTwo;
 use ppvm_tableau::sparsevec::SparseVector;
 use ppvm_tableau::tableau_index::TableauIndex;
+use ppvm_traits::config::Config;
+use ppvm_traits::traits::RotationTwo;
 
 use crate::data::GeneralizedTableauSum;
 use crate::storage::EntryStore;

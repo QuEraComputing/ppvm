@@ -24,13 +24,13 @@ use num::complex::Complex64;
 use rayon::prelude::*;
 use smallvec::SmallVec;
 
-use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_runtime::traits::{Clifford, CliffordExtensions, Depolarizing, LossChannel, TGate};
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::data::GeneralizedTableau;
 use ppvm_tableau_sum::{
     data::GeneralizedTableauSum,
     storage::{EntryStore, phase_loss_hash, vec::VecStorage, word_fingerprint},
 };
+use ppvm_traits::traits::{Clifford, CliffordExtensions, Depolarizing, LossChannel, TGate};
 
 type Cfg = Byte8F64<2>;
 type Idx = u128;

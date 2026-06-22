@@ -146,8 +146,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::config::fxhash::ByteF64;
-    use ppvm_runtime::traits::{
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
+    use ppvm_traits::traits::{
         Clifford, Depolarizing, LossChannel, LossyMeasure, PauliError, Reset, ResetLossChannel,
         TGate,
     };

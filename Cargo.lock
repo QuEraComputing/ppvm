@@ -906,9 +906,44 @@ version = "0.1.0"
 dependencies = [
  "fxhash",
  "num",
- "ppvm-runtime",
+ "ppvm-pauli-sum",
  "ppvm-sym",
  "ppvm-tableau",
+]
+
+[[package]]
+name = "ppvm-pauli-sum"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "bon",
+ "criterion 0.7.0",
+ "dashmap",
+ "fxhash",
+ "gxhash",
+ "indexmap",
+ "insta",
+ "itertools 0.14.0",
+ "num",
+ "ppvm-pauli-word",
+ "ppvm-traits",
+ "rayon",
+]
+
+[[package]]
+name = "ppvm-pauli-word"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bitvec",
+ "bytemuck",
+ "fxhash",
+ "gxhash",
+ "itertools 0.14.0",
+ "num",
+ "ppvm-traits",
+ "serde",
 ]
 
 [[package]]
@@ -918,7 +953,7 @@ dependencies = [
  "bnum",
  "num",
  "paste",
- "ppvm-runtime",
+ "ppvm-pauli-sum",
  "ppvm-stim",
  "ppvm-tableau",
  "ppvm-tableau-sum",
@@ -926,33 +961,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "ppvm-runtime"
-version = "0.1.0"
-dependencies = [
- "ahash",
- "anyhow",
- "approx",
- "bincode",
- "bitvec",
- "bon",
- "bytemuck",
- "criterion 0.7.0",
- "dashmap",
- "fxhash",
- "gxhash",
- "indexmap",
- "insta",
- "itertools 0.14.0",
- "num",
- "rayon",
- "serde",
-]
-
-[[package]]
 name = "ppvm-skill-examples"
 version = "0.0.0"
 dependencies = [
- "ppvm-runtime",
+ "ppvm-pauli-sum",
  "ppvm-stim",
  "ppvm-sym",
  "ppvm-tableau",
@@ -967,7 +979,7 @@ dependencies = [
  "criterion 0.7.0",
  "itertools 0.14.0",
  "num",
- "ppvm-runtime",
+ "ppvm-pauli-sum",
  "ppvm-tableau",
  "rayon",
  "stim-parser",
@@ -981,7 +993,8 @@ dependencies = [
  "anyhow",
  "fxhash",
  "num",
- "ppvm-runtime",
+ "ppvm-pauli-sum",
+ "ppvm-traits",
 ]
 
 [[package]]
@@ -995,7 +1008,8 @@ dependencies = [
  "insta",
  "itertools 0.14.0",
  "num",
- "ppvm-runtime",
+ "ppvm-pauli-sum",
+ "ppvm-traits",
  "rand 0.10.1",
  "rayon",
  "smallvec",
@@ -1011,11 +1025,29 @@ dependencies = [
  "gxhash",
  "mimalloc",
  "num",
- "ppvm-runtime",
+ "ppvm-pauli-sum",
+ "ppvm-pauli-word",
  "ppvm-tableau",
+ "ppvm-traits",
  "rand 0.10.1",
  "rayon",
  "smallvec",
+]
+
+[[package]]
+name = "ppvm-traits"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "bitvec",
+ "bytemuck",
+ "dashmap",
+ "fxhash",
+ "gxhash",
+ "indexmap",
+ "insta",
+ "num",
+ "rayon",
 ]
 
 [[package]]

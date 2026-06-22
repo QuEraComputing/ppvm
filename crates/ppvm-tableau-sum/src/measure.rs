@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_runtime::config::Config;
 use ppvm_tableau::data::GeneralizedTableau;
 use ppvm_tableau::measure::MeasureScratch;
 use ppvm_tableau::sparsevec::SparseVector;
 use ppvm_tableau::tableau_index::TableauIndex;
+use ppvm_traits::config::Config;
 
 use crate::prelude::*;
 use crate::storage::{EntryStore, phase_loss_hash, word_fingerprint};

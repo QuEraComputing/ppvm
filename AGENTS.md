@@ -64,7 +64,7 @@ If you are an AI agent picking up a task in this repository:
      `CACHE_SCHEMA_VERSION` for a global invalidation that survives
      in the cache. Full rationale lives under `§ 2.1 Notebook
      execution & caching` in the Developer Guide.
-5. Respect the `Config`-trait generics in `ppvm-runtime`; do not introduce
+5. Respect the `Config`-trait generics in `ppvm-traits`; do not introduce
    runtime dispatch where a compile-time bound suffices.
 6. Pauli propagation runs **backwards** (Heisenberg picture). Reverse the
    gate order accordingly when writing tests.
@@ -78,7 +78,9 @@ If you are an AI agent picking up a task in this repository:
 ## Workspace at a glance
 
 ```
-crates/ppvm-runtime         # Core: Pauli arithmetic, PauliSum, traits, Config
+crates/ppvm-traits          # Trait system, Config bundle, Pauli alphabet, map impls
+crates/ppvm-pauli-word      # Packed Pauli strings: PauliWord, phased, lossy, pattern
+crates/ppvm-pauli-sum       # PauliSum engine, truncation strategy, concrete configs
 crates/ppvm-tableau         # Stabilizer + generalized-tableau simulator
 crates/ppvm-sym             # Symbolic (parametric) Pauli propagation
 crates/ppvm-stim            # Stim program execution against the tableau

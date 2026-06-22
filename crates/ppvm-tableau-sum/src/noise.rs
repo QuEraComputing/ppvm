@@ -8,15 +8,13 @@ use num::{
     Complex, One, PrimInt, ToPrimitive, Zero,
     complex::{Complex64, ComplexFloat},
 };
-use ppvm_runtime::{
-    config::Config,
-    traits::{
-        Clifford, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel, PauliError,
-        ResetLossChannel, TwoQubitPauliError,
-    },
-};
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
+};
+use ppvm_traits::config::Config;
+use ppvm_traits::traits::{
+    Clifford, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel, PauliError,
+    ResetLossChannel, TwoQubitPauliError,
 };
 use rand::{RngExt, rngs::SmallRng};
 

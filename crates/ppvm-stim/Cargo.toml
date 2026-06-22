@@ -9,7 +9,7 @@ default = []
 rayon = ["dep:rayon"]
 
 [dependencies]
-ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
 bitvec = "1.0.1"
 itertools = "0.14"

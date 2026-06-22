@@ -4,6 +4,11 @@
 pub use ppvm_traits::config::Config;
 
 /// Pre-built configs using rustc-hash's `FxHasher` and `f64` coefficients.
+///
+/// Uses `[u64; N]` Pauli storage, which `bitvec` only supports on 64-bit
+/// targets; not available on 32-bit targets such as wasm32. Use the `[u8; N]`
+/// [`fxhash`] configs there instead.
+#[cfg(target_pointer_width = "64")]
 pub mod fx64hash;
 /// Pre-built configs using `FxHasher`.
 pub mod fxhash;

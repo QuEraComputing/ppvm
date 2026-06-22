@@ -3,6 +3,8 @@
 
 use std::hash::BuildHasher;
 
+// Only used by the 64-bit-gated `&str`/`String` constructors below.
+#[cfg(target_pointer_width = "64")]
 use num::Integer;
 
 use crate::word::PauliWord;
@@ -125,6 +127,9 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone + HashFinalize, W: PauliW
     }
 }
 
+// These constructors hardcode `u64` storage, which `bitvec` only supports on
+// 64-bit targets. Generic-`A` code paths are unaffected on every target.
+#[cfg(target_pointer_width = "64")]
 impl<H: BuildHasher + Default + Clone + HashFinalize> From<String>
     for PhasedPauliWord<u64, H, PauliWord<u64, H>>
 {
@@ -148,6 +153,7 @@ impl<H: BuildHasher + Default + Clone + HashFinalize> From<String>
     }
 }
 
+#[cfg(target_pointer_width = "64")]
 impl<H: BuildHasher + Default + Clone + HashFinalize> From<&str>
     for PhasedPauliWord<u64, H, PauliWord<u64, H>>
 {

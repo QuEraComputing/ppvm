@@ -51,6 +51,7 @@ pub(crate) struct RawTarget {
 /// 2–8 MiB), deeply nested programs overflow somewhere past ~24 levels
 /// in debug builds. Running on an oversized dedicated stack lets us
 /// support thousands of nested REPEATs without rewriting the grammar.
+#[cfg(not(target_arch = "wasm32"))]
 const PARSER_STACK_SIZE: usize = 16 * 1024 * 1024;
 
 /// Run `f` on a dedicated thread with [`PARSER_STACK_SIZE`] bytes of
@@ -61,17 +62,27 @@ where
     R: Send,
     F: FnOnce() -> R + Send,
 {
-    std::thread::scope(|s| {
-        let handle = std::thread::Builder::new()
-            .stack_size(PARSER_STACK_SIZE)
-            .name("stim-parser".to_string())
-            .spawn_scoped(s, f)
-            .expect("failed to spawn parser thread");
-        match handle.join() {
-            Ok(value) => value,
-            Err(payload) => std::panic::resume_unwind(payload),
-        }
-    })
+    // wasm32 has no OS threads, so run inline. Deeply nested REPEAT bodies then
+    // rely on the wasm stack (configurable via the linker `stack-size` arg)
+    // rather than a dedicated 16 MiB thread stack.
+    #[cfg(target_arch = "wasm32")]
+    {
+        f()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::thread::scope(|s| {
+            let handle = std::thread::Builder::new()
+                .stack_size(PARSER_STACK_SIZE)
+                .name("stim-parser".to_string())
+                .spawn_scoped(s, f)
+                .expect("failed to spawn parser thread");
+            match handle.join() {
+                Ok(value) => value,
+                Err(payload) => std::panic::resume_unwind(payload),
+            }
+        })
+    }
 }
 
 /// Parse Stim source into a [`Program`].

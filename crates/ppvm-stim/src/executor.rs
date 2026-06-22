@@ -532,7 +532,7 @@ pub fn execute_validated<T, I, C>(
                     debug_assert_eq!(args.len(), 1);
                     let p = args[0];
                     for (a, b) in targets.iter().copied().tuples() {
-                        tab.depolarize2([a, b], p.into());
+                        tab.depolarize2(a, b, p.into());
                     }
                 }
                 NoiseName::PauliChannel1 => {
@@ -547,7 +547,7 @@ pub fn execute_validated<T, I, C>(
                     let ps: [T::Coeff; 15] = std::array::from_fn(|i| args[i].into());
                     debug_assert!(targets.len().is_even());
                     for (a, b) in targets.iter().copied().tuples() {
-                        tab.two_qubit_pauli_error([a, b], ps.clone());
+                        tab.two_qubit_pauli_error(a, b, ps.clone());
                     }
                 }
                 NoiseName::XError | NoiseName::YError | NoiseName::ZError => {

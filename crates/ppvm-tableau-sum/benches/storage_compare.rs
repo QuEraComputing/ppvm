@@ -63,7 +63,7 @@ where
         [11, 14],
         [15, 16],
     ] {
-        tab.cz([i, j]);
+        tab.cz(i, j);
         tab.loss_channel(i, P_LOSS);
         tab.loss_channel(j, P_LOSS);
         tab.depolarize1(i, P_DEPOL);

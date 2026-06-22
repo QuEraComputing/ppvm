@@ -52,85 +52,79 @@ where
     }
 
     #[inline]
-    fn rx(&mut self, targets: impl Targets, theta: impl Into<T::Coeff>) {
+    fn rx(&mut self, addr0: usize, theta: impl Into<T::Coeff>) {
         // Axis = X (xbit=1, zbit=0). Commutes when zbit==false (I or X).
         // Anticommuting: Z(xbit=0)→new Y, eps=+1; Y(xbit=1)→new Z, eps=-1
         let (sin, cos) = theta.into().sin_cos();
-        for addr0 in targets.each() {
-            self.map_insert(|k, v| {
-                if k.get_lbit(addr0) {
-                    return None;
-                }
-                let zbit = k.get_zbit(addr0);
-                if !zbit {
-                    return None;
-                }
-                let xbit = k.get_xbit(addr0);
-                let mut coeff = v.clone();
-                *v *= cos.clone();
-                let mut new_word = k.clone();
-                new_word.set_xbit(addr0, !xbit);
-                new_word.rehash();
-                let eps: i8 = if xbit { -1 } else { 1 };
-                coeff *= sin.mul_sign(eps);
-                Some((new_word, coeff))
-            });
-        }
+        self.map_insert(|k, v| {
+            if k.get_lbit(addr0) {
+                return None;
+            }
+            let zbit = k.get_zbit(addr0);
+            if !zbit {
+                return None;
+            }
+            let xbit = k.get_xbit(addr0);
+            let mut coeff = v.clone();
+            *v *= cos.clone();
+            let mut new_word = k.clone();
+            new_word.set_xbit(addr0, !xbit);
+            new_word.rehash();
+            let eps: i8 = if xbit { -1 } else { 1 };
+            coeff *= sin.mul_sign(eps);
+            Some((new_word, coeff))
+        });
     }
 
     #[inline]
-    fn ry(&mut self, targets: impl Targets, theta: impl Into<T::Coeff>) {
+    fn ry(&mut self, addr0: usize, theta: impl Into<T::Coeff>) {
         // Axis = Y (xbit=1, zbit=1). Commutes when xbit==zbit (I or Y).
         // Anticommuting: X(zbit=0)→new Z, eps=+1; Z(zbit=1)→new X, eps=-1
         let (sin, cos) = theta.into().sin_cos();
-        for addr0 in targets.each() {
-            self.map_insert(|k, v| {
-                if k.get_lbit(addr0) {
-                    return None;
-                }
-                let xbit = k.get_xbit(addr0);
-                let zbit = k.get_zbit(addr0);
-                if xbit == zbit {
-                    return None;
-                }
-                let mut coeff = v.clone();
-                *v *= cos.clone();
-                let mut new_word = k.clone();
-                new_word.set_xbit(addr0, !xbit);
-                new_word.set_zbit(addr0, !zbit);
-                new_word.rehash();
-                let eps: i8 = if zbit { -1 } else { 1 };
-                coeff *= sin.mul_sign(eps);
-                Some((new_word, coeff))
-            });
-        }
+        self.map_insert(|k, v| {
+            if k.get_lbit(addr0) {
+                return None;
+            }
+            let xbit = k.get_xbit(addr0);
+            let zbit = k.get_zbit(addr0);
+            if xbit == zbit {
+                return None;
+            }
+            let mut coeff = v.clone();
+            *v *= cos.clone();
+            let mut new_word = k.clone();
+            new_word.set_xbit(addr0, !xbit);
+            new_word.set_zbit(addr0, !zbit);
+            new_word.rehash();
+            let eps: i8 = if zbit { -1 } else { 1 };
+            coeff *= sin.mul_sign(eps);
+            Some((new_word, coeff))
+        });
     }
 
     #[inline]
-    fn rz(&mut self, targets: impl Targets, theta: impl Into<T::Coeff>) {
+    fn rz(&mut self, addr0: usize, theta: impl Into<T::Coeff>) {
         // Axis = Z (xbit=0, zbit=1). Commutes when xbit==false (I or Z).
         // Anticommuting: X(zbit=0)→new Y, eps=-1; Y(zbit=1)→new X, eps=+1
         let (sin, cos) = theta.into().sin_cos();
-        for addr0 in targets.each() {
-            self.map_insert(|k, v| {
-                if k.get_lbit(addr0) {
-                    return None;
-                }
-                let xbit = k.get_xbit(addr0);
-                if !xbit {
-                    return None;
-                }
-                let zbit = k.get_zbit(addr0);
-                let mut coeff = v.clone();
-                *v *= cos.clone();
-                let mut new_word = k.clone();
-                new_word.set_zbit(addr0, !zbit);
-                new_word.rehash();
-                let eps: i8 = if zbit { 1 } else { -1 };
-                coeff *= sin.mul_sign(eps);
-                Some((new_word, coeff))
-            });
-        }
+        self.map_insert(|k, v| {
+            if k.get_lbit(addr0) {
+                return None;
+            }
+            let xbit = k.get_xbit(addr0);
+            if !xbit {
+                return None;
+            }
+            let zbit = k.get_zbit(addr0);
+            let mut coeff = v.clone();
+            *v *= cos.clone();
+            let mut new_word = k.clone();
+            new_word.set_zbit(addr0, !zbit);
+            new_word.rehash();
+            let eps: i8 = if zbit { 1 } else { -1 };
+            coeff *= sin.mul_sign(eps);
+            Some((new_word, coeff))
+        });
     }
 }
 

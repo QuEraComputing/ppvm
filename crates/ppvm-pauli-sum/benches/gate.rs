@@ -28,7 +28,7 @@ pub fn benchmark_suite<T: Config<Strategy = CoefficientThreshold>>(
             state.rz(i, 1.1);
         }
         for i in 0..n_qubits {
-            state.cnot([i, (i + 1) % n_qubits]);
+            state.cnot(i, (i + 1) % n_qubits);
         }
     }
     println!("Initial state has {} terms", state.len());
@@ -80,7 +80,7 @@ pub fn benchmark_suite<T: Config<Strategy = CoefficientThreshold>>(
         b.iter_batched_ref(
             || state.clone(),
             |state| {
-                state.cnot([0, 1]);
+                state.cnot(0, 1);
                 state.truncate();
             },
             criterion::BatchSize::SmallInput,
@@ -91,7 +91,7 @@ pub fn benchmark_suite<T: Config<Strategy = CoefficientThreshold>>(
         b.iter_batched_ref(
             || state.clone(),
             |state| {
-                state.cz([0, 1]);
+                state.cz(0, 1);
                 state.truncate();
             },
             criterion::BatchSize::SmallInput,
@@ -135,7 +135,7 @@ pub fn benchmark_suite<T: Config<Strategy = CoefficientThreshold>>(
         b.iter_batched_ref(
             || state.clone(),
             |state| {
-                state.rxx([1, 2], 0.5);
+                state.rxx(1, 2, 0.5);
                 state.truncate();
             },
             criterion::BatchSize::SmallInput,
@@ -146,7 +146,7 @@ pub fn benchmark_suite<T: Config<Strategy = CoefficientThreshold>>(
         b.iter_batched_ref(
             || state.clone(),
             |state| {
-                state.ryy([1, 2], 0.5);
+                state.ryy(1, 2, 0.5);
                 state.truncate();
             },
             criterion::BatchSize::SmallInput,
@@ -157,7 +157,7 @@ pub fn benchmark_suite<T: Config<Strategy = CoefficientThreshold>>(
         b.iter_batched_ref(
             || state.clone(),
             |state| {
-                state.rzz([1, 2], 0.5);
+                state.rzz(1, 2, 0.5);
                 state.truncate();
             },
             criterion::BatchSize::SmallInput,

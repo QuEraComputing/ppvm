@@ -53,7 +53,7 @@ where
             state.truncate();
         }
         for i in 0..n - 1 {
-            state.rzz([i, i + 1], theta_zz);
+            state.rzz(i, i + 1, theta_zz);
             state.truncate();
             state.pauli_error(i, NOISE);
             state.truncate();

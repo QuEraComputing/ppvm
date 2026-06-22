@@ -23,58 +23,58 @@ use crate::traits::PauliWordTrait;
 /// let mut state: PauliSum<config::indexmap::ByteFxHashF64<1>> =
 ///     PauliSum::builder().n_qubits(2).build();
 /// state += ("ZZ", 1.0);
-/// state.cnot([0, 1]);
+/// state.cnot(0, 1);
 /// state.h(0);
 /// assert_eq!(state.len(), 1);
 /// ```
 pub trait Clifford {
-    /// Apply Pauli `X` to each target.
-    fn x(&mut self, targets: impl crate::traits::Targets);
-    /// Apply Pauli `Y` to each target.
-    fn y(&mut self, targets: impl crate::traits::Targets);
-    /// Apply Pauli `Z` to each target.
-    fn z(&mut self, targets: impl crate::traits::Targets);
-    /// Apply Hadamard `H` to each target.
-    fn h(&mut self, targets: impl crate::traits::Targets);
-    /// Apply phase gate `S` to each target.
-    fn s(&mut self, targets: impl crate::traits::Targets);
-    /// Apply `CNOT` to each consecutive `(control, target)` pair.
-    fn cnot(&mut self, targets: impl crate::traits::Targets);
-    /// Apply `CZ` to each consecutive pair.
-    fn cz(&mut self, targets: impl crate::traits::Targets);
+    /// Apply Pauli `X` to one qubit.
+    fn x(&mut self, addr0: usize);
+    /// Apply Pauli `Y` to one qubit.
+    fn y(&mut self, addr0: usize);
+    /// Apply Pauli `Z` to one qubit.
+    fn z(&mut self, addr0: usize);
+    /// Apply Hadamard `H` to one qubit.
+    fn h(&mut self, addr0: usize);
+    /// Apply phase gate `S` to one qubit.
+    fn s(&mut self, addr0: usize);
+    /// Apply `CNOT` to one `(control, target)` pair.
+    fn cnot(&mut self, control: usize, target: usize);
+    /// Apply `CZ` to one qubit pair.
+    fn cz(&mut self, addr0: usize, addr1: usize);
 
     /// stim alias for [`cnot`](Clifford::cnot).
-    fn cx(&mut self, targets: impl crate::traits::Targets) {
-        self.cnot(targets)
+    fn cx(&mut self, control: usize, target: usize) {
+        self.cnot(control, target)
     }
     /// stim alias for [`cnot`](Clifford::cnot).
-    fn zcx(&mut self, targets: impl crate::traits::Targets) {
-        self.cnot(targets)
+    fn zcx(&mut self, control: usize, target: usize) {
+        self.cnot(control, target)
     }
     /// stim alias for [`cz`](Clifford::cz).
-    fn zcz(&mut self, targets: impl crate::traits::Targets) {
-        self.cz(targets)
+    fn zcz(&mut self, addr0: usize, addr1: usize) {
+        self.cz(addr0, addr1)
     }
 }
 
 /// Additional Clifford gates beyond the minimal set: `S†`, `√X`, `√X†`,
 /// `√Y`, `√Y†`, and `CY`.
 pub trait CliffordExtensions: Clifford {
-    /// Apply `S†` to each target.
-    fn s_dag(&mut self, targets: impl crate::traits::Targets);
-    /// Apply `√X` to each target.
-    fn sqrt_x(&mut self, targets: impl crate::traits::Targets);
-    /// Apply `(√X)†` to each target.
-    fn sqrt_x_dag(&mut self, targets: impl crate::traits::Targets);
-    /// Apply `√Y` to each target.
-    fn sqrt_y(&mut self, targets: impl crate::traits::Targets);
-    /// Apply `(√Y)†` to each target.
-    fn sqrt_y_dag(&mut self, targets: impl crate::traits::Targets);
-    /// Apply `CY` to each consecutive pair.
-    fn cy(&mut self, targets: impl crate::traits::Targets);
+    /// Apply `S†` to one qubit.
+    fn s_dag(&mut self, addr0: usize);
+    /// Apply `√X` to one qubit.
+    fn sqrt_x(&mut self, addr0: usize);
+    /// Apply `(√X)†` to one qubit.
+    fn sqrt_x_dag(&mut self, addr0: usize);
+    /// Apply `√Y` to one qubit.
+    fn sqrt_y(&mut self, addr0: usize);
+    /// Apply `(√Y)†` to one qubit.
+    fn sqrt_y_dag(&mut self, addr0: usize);
+    /// Apply `CY` to one `(control, target)` pair.
+    fn cy(&mut self, control: usize, target: usize);
     /// stim alias for [`cy`](CliffordExtensions::cy).
-    fn zcy(&mut self, targets: impl crate::traits::Targets) {
-        self.cy(targets)
+    fn zcy(&mut self, control: usize, target: usize) {
+        self.cy(control, target)
     }
 }
 
@@ -96,7 +96,7 @@ pub trait CliffordExtensions: Clifford {
 
 impl<T: PauliWordTrait> Clifford for T {
     #[inline]
-    fn x(&mut self, _targets: impl crate::traits::Targets) {
+    fn x(&mut self, _addr0: usize) {
         // X * I * X = I    00 -> 00, 0
         // X * X * X = X    10 -> 10, 0
         // X * Z * X = -Z   01 -> 01, 1
@@ -105,71 +105,63 @@ impl<T: PauliWordTrait> Clifford for T {
     }
 
     #[inline]
-    fn y(&mut self, _targets: impl crate::traits::Targets) {
+    fn y(&mut self, _addr0: usize) {
         // word-level no-op
     }
 
     #[inline]
-    fn z(&mut self, _targets: impl crate::traits::Targets) {
+    fn z(&mut self, _addr0: usize) {
         // word-level no-op
     }
 
     #[inline]
-    fn h(&mut self, targets: impl crate::traits::Targets) {
+    fn h(&mut self, index: usize) {
         // H * I * H = I, H * X * H = Z, H * Z * H = X, H * Y * H = -Y
-        for index in targets.each() {
-            if self.get_lbit(index) {
-                continue;
-            }
-            let ix = self.get_xbit(index);
-            let iz = self.get_zbit(index);
-            self.set_xbit(index, iz);
-            self.set_zbit(index, ix);
-            self.rehash();
+        if self.get_lbit(index) {
+            return;
         }
+        let ix = self.get_xbit(index);
+        let iz = self.get_zbit(index);
+        self.set_xbit(index, iz);
+        self.set_zbit(index, ix);
+        self.rehash();
     }
 
     #[inline]
-    fn s(&mut self, targets: impl crate::traits::Targets) {
+    fn s(&mut self, index: usize) {
         // S * I * S = I, S * X * S = Y, S * Z * S = Z, S * Y * S = -X
-        for index in targets.each() {
-            if self.get_lbit(index) {
-                continue;
-            }
-            let z = self.get_xbit(index) ^ self.get_zbit(index);
-            self.set_zbit(index, z);
-            self.rehash();
+        if self.get_lbit(index) {
+            return;
         }
+        let z = self.get_xbit(index) ^ self.get_zbit(index);
+        self.set_zbit(index, z);
+        self.rehash();
     }
 
     #[inline]
-    fn cnot(&mut self, targets: impl crate::traits::Targets) {
-        for (control, target) in targets.pairs() {
-            if self.get_lbit(control) || self.get_lbit(target) {
-                continue;
-            }
-            let control_z = self.get_zbit(target) ^ self.get_zbit(control);
-            let target_x = self.get_xbit(control) ^ self.get_xbit(target);
-            self.set_zbit(control, control_z);
-            self.set_xbit(target, target_x);
-            self.rehash();
+    fn cnot(&mut self, control: usize, target: usize) {
+        if self.get_lbit(control) || self.get_lbit(target) {
+            return;
         }
+        let control_z = self.get_zbit(target) ^ self.get_zbit(control);
+        let target_x = self.get_xbit(control) ^ self.get_xbit(target);
+        self.set_zbit(control, control_z);
+        self.set_xbit(target, target_x);
+        self.rehash();
     }
 
     #[inline]
-    fn cz(&mut self, targets: impl crate::traits::Targets) {
-        for (control, target) in targets.pairs() {
-            if self.get_lbit(control) || self.get_lbit(target) {
-                continue;
-            }
-            // flip the control z if target x is 1
-            let control_z = self.get_zbit(control) ^ self.get_xbit(target);
-            self.set_zbit(control, control_z);
-            // flip the target z if control x is 1
-            let target_z = self.get_zbit(target) ^ self.get_xbit(control);
-            self.set_zbit(target, target_z);
-            self.rehash();
+    fn cz(&mut self, control: usize, target: usize) {
+        if self.get_lbit(control) || self.get_lbit(target) {
+            return;
         }
+        // flip the control z if target x is 1
+        let control_z = self.get_zbit(control) ^ self.get_xbit(target);
+        self.set_zbit(control, control_z);
+        // flip the target z if control x is 1
+        let target_z = self.get_zbit(target) ^ self.get_xbit(control);
+        self.set_zbit(target, target_z);
+        self.rehash();
     }
 }
 
@@ -214,13 +206,13 @@ pub trait CliffordBatch: Clifford {
     /// Apply `CNOT` to every `(control, target)` pair.
     fn cnot_batch(&mut self, pairs: &[(usize, usize)]) {
         for &(c, t) in pairs {
-            self.cnot([c, t]);
+            self.cnot(c, t);
         }
     }
     /// Apply `CZ` to every `(control, target)` pair.
     fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
         for &(c, t) in pairs {
-            self.cz([c, t]);
+            self.cz(c, t);
         }
     }
 }
@@ -260,7 +252,7 @@ pub trait CliffordExtensionsBatch: CliffordExtensions + CliffordBatch {
     /// Apply `CY` to every `(control, target)` pair.
     fn cy_batch(&mut self, pairs: &[(usize, usize)]) {
         for &(c, t) in pairs {
-            self.cy([c, t]);
+            self.cy(c, t);
         }
     }
 }
@@ -276,65 +268,55 @@ impl<T: PauliWordTrait> CliffordExtensions for T {
     // | sqrt*y*adj | -Z  |  Y  |  X  |
 
     #[inline]
-    fn s_dag(&mut self, targets: impl crate::traits::Targets) {
+    fn s_dag(&mut self, addr0: usize) {
         // s_dag has the same bit mapping as s (only phases differ)
-        for addr0 in targets.each() {
-            self.s(addr0);
-        }
+        self.s(addr0);
     }
 
     #[inline]
-    fn sqrt_x(&mut self, targets: impl crate::traits::Targets) {
-        for addr0 in targets.each() {
-            if self.get_lbit(addr0) {
-                continue;
-            }
-            let x = self.get_xbit(addr0);
-            let z = self.get_zbit(addr0);
-            self.set_xbit(addr0, x ^ z);
-            self.rehash();
+    fn sqrt_x(&mut self, addr0: usize) {
+        if self.get_lbit(addr0) {
+            return;
         }
+        let x = self.get_xbit(addr0);
+        let z = self.get_zbit(addr0);
+        self.set_xbit(addr0, x ^ z);
+        self.rehash();
     }
 
     #[inline]
-    fn sqrt_x_dag(&mut self, targets: impl crate::traits::Targets) {
-        for addr0 in targets.each() {
-            if self.get_lbit(addr0) {
-                continue;
-            }
-            let x = self.get_xbit(addr0);
-            let z = self.get_zbit(addr0);
-            self.set_xbit(addr0, x ^ z);
-            self.rehash();
+    fn sqrt_x_dag(&mut self, addr0: usize) {
+        if self.get_lbit(addr0) {
+            return;
         }
+        let x = self.get_xbit(addr0);
+        let z = self.get_zbit(addr0);
+        self.set_xbit(addr0, x ^ z);
+        self.rehash();
     }
 
     #[inline]
-    fn sqrt_y(&mut self, targets: impl crate::traits::Targets) {
-        for addr0 in targets.each() {
-            if self.get_lbit(addr0) {
-                continue;
-            }
-            let x = self.get_xbit(addr0);
-            let z = self.get_zbit(addr0);
-            self.set_xbit(addr0, z);
-            self.set_zbit(addr0, x);
-            self.rehash();
+    fn sqrt_y(&mut self, addr0: usize) {
+        if self.get_lbit(addr0) {
+            return;
         }
+        let x = self.get_xbit(addr0);
+        let z = self.get_zbit(addr0);
+        self.set_xbit(addr0, z);
+        self.set_zbit(addr0, x);
+        self.rehash();
     }
 
     #[inline]
-    fn sqrt_y_dag(&mut self, targets: impl crate::traits::Targets) {
-        for addr0 in targets.each() {
-            if self.get_lbit(addr0) {
-                continue;
-            }
-            let x = self.get_xbit(addr0);
-            let z = self.get_zbit(addr0);
-            self.set_xbit(addr0, z);
-            self.set_zbit(addr0, x);
-            self.rehash();
+    fn sqrt_y_dag(&mut self, addr0: usize) {
+        if self.get_lbit(addr0) {
+            return;
         }
+        let x = self.get_xbit(addr0);
+        let z = self.get_zbit(addr0);
+        self.set_xbit(addr0, z);
+        self.set_zbit(addr0, x);
+        self.rehash();
     }
 
     // | CY  |  I  |  X  |  Y  |  Z  |
@@ -344,19 +326,17 @@ impl<T: PauliWordTrait> CliffordExtensions for T {
     // |  Y  | YY  | XZ  | YI  | -XX |
     // |  Z  | ZI  | IX  | ZY  | IZ  |
     #[inline]
-    fn cy(&mut self, targets: impl crate::traits::Targets) {
-        for (addr0, addr1) in targets.pairs() {
-            if self.get_lbit(addr0) || self.get_lbit(addr1) {
-                continue;
-            }
-            let xc = self.get_xbit(addr0);
-            let zc = self.get_zbit(addr0);
-            let xt = self.get_xbit(addr1);
-            let zt = self.get_zbit(addr1);
-            self.set_zbit(addr0, zc ^ xt ^ zt);
-            self.set_xbit(addr1, xt ^ xc);
-            self.set_zbit(addr1, zt ^ xc);
-            self.rehash();
+    fn cy(&mut self, addr0: usize, addr1: usize) {
+        if self.get_lbit(addr0) || self.get_lbit(addr1) {
+            return;
         }
+        let xc = self.get_xbit(addr0);
+        let zc = self.get_zbit(addr0);
+        let xt = self.get_xbit(addr1);
+        let zt = self.get_zbit(addr1);
+        self.set_zbit(addr0, zc ^ xt ^ zt);
+        self.set_xbit(addr1, xt ^ xc);
+        self.set_zbit(addr1, zt ^ xc);
+        self.rehash();
     }
 }

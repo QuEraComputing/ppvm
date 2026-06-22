@@ -68,7 +68,7 @@ mod tests {
             ("LL", "LL"),
         ] {
             let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
-            output.cnot([0, 1]);
+            output.cnot(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -166,7 +166,7 @@ mod tests {
             ("LL", "LL"),
         ] {
             let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
-            output.cz([0, 1]);
+            output.cz(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -201,7 +201,7 @@ mod tests {
             ("LL", "LL"),
         ] {
             let mut output: LossyPauliWord<u64> = LossyPauliWord::from(input);
-            output.cy([0, 1]);
+            output.cy(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }

@@ -62,40 +62,32 @@ macro_rules! impl_tableau_noise {
         impl<T: Config $($gen)*> Depolarizing<T> for $ty
         where $($bound)*
         {
-            fn depolarize1(&mut self, targets: impl Targets, p: T::Coeff) {
-                for addr0 in targets.each() {
-                    self.depolarize_impl(addr0, p.clone());
-                }
+            fn depolarize1(&mut self, addr0: usize, p: T::Coeff) {
+                self.depolarize_impl(addr0, p);
             }
         }
 
         impl<T: Config $($gen)*> PauliError<T> for $ty
         where $($bound)*
         {
-            fn pauli_error(&mut self, targets: impl Targets, p: [T::Coeff; 3]) {
-                for addr0 in targets.each() {
-                    self.pauli_error_impl(addr0, p.clone());
-                }
+            fn pauli_error(&mut self, addr0: usize, p: [T::Coeff; 3]) {
+                self.pauli_error_impl(addr0, p);
             }
         }
 
         impl<T: Config $($gen)*> TwoQubitPauliError<T> for $ty
         where $($bound)*
         {
-            fn two_qubit_pauli_error(&mut self, targets: impl Targets, p: [T::Coeff; 15]) {
-                for (addr0, addr1) in targets.pairs() {
-                    self.two_qubit_pauli_error_impl(addr0, addr1, p.clone());
-                }
+            fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 15]) {
+                self.two_qubit_pauli_error_impl(addr0, addr1, p);
             }
         }
 
         impl<T: Config $($gen)*> Depolarizing2<T> for $ty
         where $($bound)*
         {
-            fn depolarize2(&mut self, targets: impl Targets, p: T::Coeff) {
-                for (addr0, addr1) in targets.pairs() {
-                    self.depolarize2_impl(addr0, addr1, p.clone());
-                }
+            fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff) {
+                self.depolarize2_impl(addr0, addr1, p);
             }
         }
     };
@@ -314,7 +306,7 @@ mod tests {
     #[test]
     fn two_qubit_pauli_error_zero_prob_no_change() {
         let mut t = tab(2);
-        t.two_qubit_pauli_error([0, 1], [0.0; 15]);
+        t.two_qubit_pauli_error(0, 1, [0.0; 15]);
         assert!(!t.measure(0).unwrap());
         assert!(!t.measure(1).unwrap());
     }
@@ -325,7 +317,7 @@ mod tests {
         let mut t = tab(2);
         let mut p = [0.0f64; 15];
         p[0] = 1.0;
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
         assert!(!t.measure(0).unwrap());
         assert!(t.measure(1).unwrap());
     }
@@ -336,7 +328,7 @@ mod tests {
         let mut t = tab(2);
         let mut p = [0.0f64; 15];
         p[3] = 1.0;
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
         assert!(t.measure(0).unwrap());
         assert!(!t.measure(1).unwrap());
     }
@@ -347,7 +339,7 @@ mod tests {
         let mut t = tab(2);
         let mut p = [0.0f64; 15];
         p[4] = 1.0;
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
         assert!(t.measure(0).unwrap());
         assert!(t.measure(1).unwrap());
     }
@@ -358,7 +350,7 @@ mod tests {
         let mut t = tab(2);
         let mut p = [0.0f64; 15];
         p[14] = 1.0;
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
         assert!(!t.measure(0).unwrap());
         assert!(!t.measure(1).unwrap());
     }
@@ -370,7 +362,7 @@ mod tests {
         t.is_lost[1] = true;
         let mut p = [0.0f64; 15];
         p[4] = 1.0; // XX — skipped entirely
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
         assert!(t.is_lost[0]);
         assert!(t.is_lost[1]);
     }
@@ -382,7 +374,7 @@ mod tests {
         t.is_lost[0] = true;
         let mut p = [0.0f64; 15];
         p[0] = 1.0; // IX
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
         assert!(!t.measure(1).unwrap()); // nothing applied to addr1
     }
 
@@ -391,7 +383,7 @@ mod tests {
     #[test]
     fn depolarize2_p0_no_change() {
         let mut t = tab(2);
-        t.depolarize2([0, 1], 0.0);
+        t.depolarize2(0, 1, 0.0);
         assert!(!t.measure(0).unwrap());
         assert!(!t.measure(1).unwrap());
     }
@@ -401,7 +393,7 @@ mod tests {
         let mut t = tab(2);
         t.is_lost[0] = true;
         t.is_lost[1] = true;
-        t.depolarize2([0, 1], 1.0);
+        t.depolarize2(0, 1, 1.0);
         assert!(t.is_lost[0]);
         assert!(t.is_lost[1]);
     }
@@ -410,7 +402,7 @@ mod tests {
     fn depolarize2_first_lost_p0_second_unchanged() {
         let mut t = tab(2);
         t.is_lost[0] = true;
-        t.depolarize2([0, 1], 0.0); // effective p on addr1 = 4/5 * 0 = 0
+        t.depolarize2(0, 1, 0.0); // effective p on addr1 = 4/5 * 0 = 0
         assert!(!t.measure(1).unwrap());
     }
 
@@ -418,7 +410,7 @@ mod tests {
     fn depolarize2_second_lost_p0_first_unchanged() {
         let mut t = tab(2);
         t.is_lost[1] = true;
-        t.depolarize2([0, 1], 0.0); // effective p on addr0 = 4/5 * 0 = 0
+        t.depolarize2(0, 1, 0.0); // effective p on addr0 = 4/5 * 0 = 0
         assert!(!t.measure(0).unwrap());
     }
 
@@ -584,7 +576,7 @@ mod tests {
         let ones = (0..trials)
             .filter(|_| {
                 let mut t = tab(2);
-                t.depolarize2([0, 1], p);
+                t.depolarize2(0, 1, p);
                 t.measure(0).unwrap()
             })
             .count();
@@ -601,7 +593,7 @@ mod tests {
     fn test_cnot() {
         let mut t = tab(2);
         t.x(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.loss_channel(0, 1.0);
         assert!(t.measure(0).is_none());
         assert!(t.measure(1).unwrap());
@@ -609,7 +601,7 @@ mod tests {
         let mut t = tab(2);
         t.loss_channel(0, 1.0);
         t.x(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         assert!(!t.measure(1).unwrap());
         assert!(t.measure(0).is_none());
     }
@@ -618,7 +610,7 @@ mod tests {
     fn test_ghz_statistics() {
         let mut t = tab(2);
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
 
         let trials = 100u64;
         let mut z_avg = 0.0;

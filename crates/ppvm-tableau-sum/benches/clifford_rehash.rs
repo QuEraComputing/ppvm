@@ -23,8 +23,8 @@ type GTabSum = GeneralizedTableauSum<Byte8F64<2>, u128>;
 fn build_state(n_qubits: usize) -> GTabSum {
     let mut tab: GTabSum = GeneralizedTableauSum::new_with_seed(n_qubits, 1e-12, 1e-8, 42);
     tab.h(0);
-    tab.cnot([0, 1]);
-    tab.cnot([1, 2]);
+    tab.cnot(0, 1);
+    tab.cnot(1, 2);
     tab.depolarize1(0, 0.5);
     tab.depolarize1(1, 0.5);
     tab.depolarize1(2, 0.5);
@@ -36,20 +36,20 @@ fn build_state(n_qubits: usize) -> GTabSum {
 /// entry and invalidates its cached fingerprint under today's scheme.
 fn apply_clifford_burst(tab: &mut GTabSum) {
     tab.h(4);
-    tab.cnot([4, 5]);
+    tab.cnot(4, 5);
     tab.s(5);
-    tab.cz([0, 5]);
-    tab.cnot([2, 3]);
+    tab.cz(0, 5);
+    tab.cnot(2, 3);
     tab.sqrt_x(6);
-    tab.cnot([6, 7]);
+    tab.cnot(6, 7);
     tab.h(3);
-    tab.cz([1, 4]);
+    tab.cz(1, 4);
     tab.s_dag(2);
-    tab.cnot([7, 0]);
+    tab.cnot(7, 0);
     tab.sqrt_y(5);
     tab.x(3);
     tab.y(6);
-    tab.cnot([0, 4]);
+    tab.cnot(0, 4);
     tab.h(7);
 }
 

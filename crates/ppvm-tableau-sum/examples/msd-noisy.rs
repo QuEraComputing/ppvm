@@ -22,7 +22,7 @@ fn encode(tab: &mut GTabSum, qubits: &[usize], p_loss: f64, p_depolarize: f64) {
         println!("Branches: {}", tab.len());
 
         for [i, j] in [[1, 3], [7, 10], [12, 14], [13, 16]] {
-            tab.cz([qubits[i], qubits[j]]);
+            tab.cz(qubits[i], qubits[j]);
             tab.loss_channel(qubits[i], p_loss);
             tab.loss_channel(qubits[j], p_loss);
             tab.depolarize1(qubits[i], p_depolarize);
@@ -34,7 +34,7 @@ fn encode(tab: &mut GTabSum, qubits: &[usize], p_loss: f64, p_depolarize: f64) {
             tab.depolarize1(qubits[i], p_depolarize);
         }
         for [i, j] in [[4, 7], [8, 10], [11, 14], [15, 16]] {
-            tab.cz([qubits[i], qubits[j]]);
+            tab.cz(qubits[i], qubits[j]);
             tab.loss_channel(qubits[i], p_loss);
             tab.loss_channel(qubits[j], p_loss);
             tab.depolarize1(qubits[i], p_depolarize);
@@ -46,7 +46,7 @@ fn encode(tab: &mut GTabSum, qubits: &[usize], p_loss: f64, p_depolarize: f64) {
             tab.depolarize1(qubits[i], p_depolarize);
         }
         for [i, j] in [[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]] {
-            tab.cz([qubits[i], qubits[j]]);
+            tab.cz(qubits[i], qubits[j]);
             tab.loss_channel(qubits[i], p_loss);
             tab.loss_channel(qubits[j], p_loss);
             tab.depolarize1(qubits[i], p_depolarize);
@@ -58,7 +58,7 @@ fn encode(tab: &mut GTabSum, qubits: &[usize], p_loss: f64, p_depolarize: f64) {
             tab.depolarize1(qubits[i], p_depolarize);
         }
         for [i, j] in [[0, 2], [3, 6], [5, 8], [10, 12], [11, 13]] {
-            tab.cz([qubits[i], qubits[j]]);
+            tab.cz(qubits[i], qubits[j]);
             tab.loss_channel(qubits[i], p_loss);
             tab.loss_channel(qubits[j], p_loss);
             tab.depolarize1(qubits[i], p_depolarize);
@@ -70,7 +70,7 @@ fn encode(tab: &mut GTabSum, qubits: &[usize], p_loss: f64, p_depolarize: f64) {
             tab.depolarize1(qubits[i], p_depolarize);
         }
         for [i, j] in [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [12, 15]] {
-            tab.cz([qubits[i], qubits[j]]);
+            tab.cz(qubits[i], qubits[j]);
             tab.loss_channel(qubits[i], p_loss);
             tab.loss_channel(qubits[j], p_loss);
             tab.depolarize1(qubits[i], p_depolarize);
@@ -125,14 +125,14 @@ fn main() {
     println!("Branches: {}", tab.len());
 
     for (control, target) in ql[0].iter().zip(ql[1]) {
-        tab.cz([*control, *target]);
+        tab.cz(*control, *target);
         tab.loss_channel(*control, p_loss);
         tab.loss_channel(*target, p_loss);
         tab.depolarize1(*control, p_depolarize);
         tab.depolarize1(*target, p_depolarize);
     }
     for (control, target) in ql[2].iter().zip(ql[3]) {
-        tab.cz([*control, *target]);
+        tab.cz(*control, *target);
         tab.loss_channel(*control, p_loss);
         tab.loss_channel(*target, p_loss);
         tab.depolarize1(*control, p_depolarize);
@@ -149,14 +149,14 @@ fn main() {
         tab.depolarize1(*q, p_depolarize);
     }
     for (control, target) in ql[0].iter().zip(ql[2]) {
-        tab.cz([*control, *target]);
+        tab.cz(*control, *target);
         tab.loss_channel(*control, p_loss);
         tab.loss_channel(*target, p_loss);
         tab.depolarize1(*control, p_depolarize);
         tab.depolarize1(*target, p_depolarize);
     }
     for (control, target) in ql[3].iter().zip(ql[4]) {
-        tab.cz([*control, *target]);
+        tab.cz(*control, *target);
         tab.loss_channel(*control, p_loss);
         tab.loss_channel(*target, p_loss);
         tab.depolarize1(*control, p_depolarize);
@@ -168,14 +168,14 @@ fn main() {
         tab.depolarize1(*q, p_depolarize);
     }
     for (control, target) in ql[0].iter().zip(ql[4]) {
-        tab.cz([*control, *target]);
+        tab.cz(*control, *target);
         tab.loss_channel(*control, p_loss);
         tab.loss_channel(*target, p_loss);
         tab.depolarize1(*control, p_depolarize);
         tab.depolarize1(*target, p_depolarize);
     }
     for (control, target) in ql[1].iter().zip(ql[3]) {
-        tab.cz([*control, *target]);
+        tab.cz(*control, *target);
         tab.loss_channel(*control, p_loss);
         tab.loss_channel(*target, p_loss);
         tab.depolarize1(*control, p_depolarize);

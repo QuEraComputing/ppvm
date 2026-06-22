@@ -18,7 +18,7 @@ fn main() {
 
     sum.rz(0, Term::var(0));
     sum.ry(0, Term::var(1));
-    sum.cnot([0, 1]);
+    sum.cnot(0, 1);
     sum.rx(1, Term::var(1));
 
     let pat: PauliPattern = "Z?*".into();

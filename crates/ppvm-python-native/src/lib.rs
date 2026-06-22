@@ -8,6 +8,14 @@ pub mod interface_tableau;
 pub mod interface_tableau_sum;
 pub mod stim_program;
 
+pub(crate) fn flat_pairs(targets: &[usize]) -> Vec<(usize, usize)> {
+    assert!(targets.len() % 2 == 0, "expected an even number of targets");
+    targets
+        .chunks_exact(2)
+        .map(|pair| (pair[0], pair[1]))
+        .collect()
+}
+
 #[pymodule]
 pub mod ppvm_python_native {
     // NOTE: it's not possible to use #[pymodule_export] inside a macro_rules!

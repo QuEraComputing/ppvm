@@ -57,7 +57,7 @@ mod tests {
             ("YZ", "XY"),
         ] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
-            output.cnot([0, 1]);
+            output.cnot(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -146,7 +146,7 @@ mod tests {
             ("YZ", "XX"),
         ] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
-            output.cy([0, 1]);
+            output.cy(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -172,7 +172,7 @@ mod tests {
             ("YZ", "YI"),
         ] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
-            output.cz([0, 1]);
+            output.cz(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }

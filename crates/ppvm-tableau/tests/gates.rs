@@ -151,7 +151,7 @@ fn test_tableau_h_on_plus_state() {
 fn test_tableau_cnot_on_00() {
     // CNOT on |00⟩: ZI → ZI, IZ → ZZ, XI → XX, IX → IX
     let mut t: Tab = Tableau::new(2);
-    t.cnot([0, 1]);
+    t.cnot(0, 1);
     assert_eq!(stab2(&t), ("+ZI".to_string(), "+ZZ".to_string()));
     assert_eq!(destab2(&t), ("+XX".to_string(), "+IX".to_string()));
 }
@@ -161,7 +161,7 @@ fn test_tableau_cz_on_00() {
     // CZ on |00⟩: ZI → ZI, IZ → IZ (both Z stabilizers unchanged)
     // Destabilizers: XI → XZ, IX → ZX
     let mut t: Tab = Tableau::new(2);
-    t.cz([0, 1]);
+    t.cz(0, 1);
     assert_eq!(stab2(&t), ("+ZI".to_string(), "+IZ".to_string()));
     assert_eq!(destab2(&t), ("+XZ".to_string(), "+ZX".to_string()));
 }
@@ -177,8 +177,8 @@ fn test_tableau_cnot_self_inverse() {
         initial_destab = destab2(&t);
     }
     let mut t: Tab = Tableau::new(2);
-    t.cnot([0, 1]);
-    t.cnot([0, 1]);
+    t.cnot(0, 1);
+    t.cnot(0, 1);
     assert_eq!(stab2(&t), initial_stab);
     assert_eq!(destab2(&t), initial_destab);
 }
@@ -194,8 +194,8 @@ fn test_tableau_cz_self_inverse() {
         initial_destab = destab2(&t);
     }
     let mut t: Tab = Tableau::new(2);
-    t.cz([0, 1]);
-    t.cz([0, 1]);
+    t.cz(0, 1);
+    t.cz(0, 1);
     assert_eq!(stab2(&t), initial_stab);
     assert_eq!(destab2(&t), initial_destab);
 }
@@ -205,7 +205,7 @@ fn test_tableau_bell_state_via_h_cnot() {
     // H(0); CNOT(0,1) creates Bell pair: stabilizers XX, ZZ
     let mut t: Tab = Tableau::new(2);
     t.h(0);
-    t.cnot([0, 1]);
+    t.cnot(0, 1);
     assert_eq!(stab2(&t), ("+XX".to_string(), "+ZZ".to_string()));
 }
 
@@ -436,7 +436,7 @@ fn test_lost_control_cnot_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[0] = true;
-    g.cnot([0, 1]);
+    g.cnot(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
 
@@ -445,7 +445,7 @@ fn test_lost_target_cnot_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[1] = true;
-    g.cnot([0, 1]);
+    g.cnot(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
 
@@ -454,7 +454,7 @@ fn test_lost_control_cz_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[0] = true;
-    g.cz([0, 1]);
+    g.cz(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
 
@@ -463,7 +463,7 @@ fn test_lost_target_cz_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[1] = true;
-    g.cz([0, 1]);
+    g.cz(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
 
@@ -472,7 +472,7 @@ fn test_lost_control_cy_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[0] = true;
-    g.cy([0, 1]);
+    g.cy(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
 
@@ -481,7 +481,7 @@ fn test_lost_target_cy_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[1] = true;
-    g.cy([0, 1]);
+    g.cy(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
 
@@ -524,7 +524,7 @@ fn test_lost_qubit_t_adj_is_noop() {
 #[test]
 fn test_rxy_pi_flips_both() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.rxy([0, 1], PI);
+    g.rxy(0, 1, PI);
     assert_eq!(g.coefficients.len(), 1, "rxy(π) should not branch");
     assert!(g.measure(0).unwrap());
     assert!(g.measure(1).unwrap());
@@ -533,7 +533,7 @@ fn test_rxy_pi_flips_both() {
 #[test]
 fn test_rxy_half_pi_branches() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.rxy([0, 1], FRAC_PI_2);
+    g.rxy(0, 1, FRAC_PI_2);
     assert_eq!(g.coefficients.len(), 2, "rxy(π/2) should create 2 branches");
 }
 
@@ -542,7 +542,7 @@ fn test_rxy_half_pi_branches() {
 #[test]
 fn test_rxz_pi_flips_first() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.rxz([0, 1], PI);
+    g.rxz(0, 1, PI);
     assert_eq!(g.coefficients.len(), 1, "rxz(π) should not branch");
     assert!(g.measure(0).unwrap());
     assert!(!g.measure(1).unwrap());
@@ -551,7 +551,7 @@ fn test_rxz_pi_flips_first() {
 #[test]
 fn test_rxz_half_pi_branches() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.rxz([0, 1], FRAC_PI_2);
+    g.rxz(0, 1, FRAC_PI_2);
     assert_eq!(g.coefficients.len(), 2, "rxz(π/2) should create 2 branches");
 }
 
@@ -560,7 +560,7 @@ fn test_rxz_half_pi_branches() {
 #[test]
 fn test_ryx_pi_flips_both() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.ryx([0, 1], PI);
+    g.ryx(0, 1, PI);
     assert_eq!(g.coefficients.len(), 1, "ryx(π) should not branch");
     assert!(g.measure(0).unwrap());
     assert!(g.measure(1).unwrap());
@@ -569,7 +569,7 @@ fn test_ryx_pi_flips_both() {
 #[test]
 fn test_ryx_half_pi_branches() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.ryx([0, 1], FRAC_PI_2);
+    g.ryx(0, 1, FRAC_PI_2);
     assert_eq!(g.coefficients.len(), 2, "ryx(π/2) should create 2 branches");
 }
 
@@ -578,7 +578,7 @@ fn test_ryx_half_pi_branches() {
 #[test]
 fn test_ryz_pi_flips_first() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.ryz([0, 1], PI);
+    g.ryz(0, 1, PI);
     assert_eq!(g.coefficients.len(), 1, "ryz(π) should not branch");
     assert!(g.measure(0).unwrap());
     assert!(!g.measure(1).unwrap());
@@ -587,7 +587,7 @@ fn test_ryz_pi_flips_first() {
 #[test]
 fn test_ryz_half_pi_branches() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.ryz([0, 1], FRAC_PI_2);
+    g.ryz(0, 1, FRAC_PI_2);
     assert_eq!(g.coefficients.len(), 2, "ryz(π/2) should create 2 branches");
 }
 
@@ -596,7 +596,7 @@ fn test_ryz_half_pi_branches() {
 #[test]
 fn test_rzx_pi_flips_second() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.rzx([0, 1], PI);
+    g.rzx(0, 1, PI);
     assert_eq!(g.coefficients.len(), 1, "rzx(π) should not branch");
     assert!(!g.measure(0).unwrap());
     assert!(g.measure(1).unwrap());
@@ -605,7 +605,7 @@ fn test_rzx_pi_flips_second() {
 #[test]
 fn test_rzx_half_pi_branches() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.rzx([0, 1], FRAC_PI_2);
+    g.rzx(0, 1, FRAC_PI_2);
     assert_eq!(g.coefficients.len(), 2, "rzx(π/2) should create 2 branches");
 }
 
@@ -614,7 +614,7 @@ fn test_rzx_half_pi_branches() {
 #[test]
 fn test_rzy_pi_flips_second() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.rzy([0, 1], PI);
+    g.rzy(0, 1, PI);
     assert_eq!(g.coefficients.len(), 1, "rzy(π) should not branch");
     assert!(!g.measure(0).unwrap());
     assert!(g.measure(1).unwrap());
@@ -623,7 +623,7 @@ fn test_rzy_pi_flips_second() {
 #[test]
 fn test_rzy_half_pi_branches() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.rzy([0, 1], FRAC_PI_2);
+    g.rzy(0, 1, FRAC_PI_2);
     assert_eq!(g.coefficients.len(), 2, "rzy(π/2) should create 2 branches");
 }
 
@@ -639,7 +639,7 @@ fn test_rzz_never_branches_on_comp_basis() {
         if state.1 {
             g.x(1);
         }
-        g.rzz([0, 1], 0.7);
+        g.rzz(0, 1, 0.7);
         assert_eq!(
             g.coefficients.len(),
             1,
@@ -660,7 +660,7 @@ fn test_rot2_lost_qubit_a_falls_back_to_rot1_on_b() {
     // rx(π)|0⟩ = -i|1⟩
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[0] = true;
-    g.rxx([0, 1], PI);
+    g.rxx(0, 1, PI);
     // Qubit 1 should have been flipped by rx(π)
     assert!(g.measure(1).unwrap(), "rx fallback should flip qubit 1");
 }
@@ -670,7 +670,7 @@ fn test_rot2_lost_qubit_b_falls_back_to_rot1_on_a() {
     // If qubit b is lost, rxx(a,b,θ) should fall back to rx(a,θ)
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[1] = true;
-    g.rxx([0, 1], PI);
+    g.rxx(0, 1, PI);
     assert!(g.measure(0).unwrap(), "rx fallback should flip qubit 0");
 }
 
@@ -680,7 +680,7 @@ fn test_rot2_both_lost_is_noop() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[0] = true;
     g.is_lost[1] = true;
-    g.rxx([0, 1], PI);
+    g.rxx(0, 1, PI);
     // No branching, no state change
     assert_eq!(g.coefficients.len(), 1);
 }
@@ -691,7 +691,7 @@ fn test_rxy_lost_a_falls_back_to_ry_on_b() {
     // ry(π)|0⟩ = |1⟩
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[0] = true;
-    g.rxy([0, 1], PI);
+    g.rxy(0, 1, PI);
     assert!(g.measure(1).unwrap(), "ry fallback should flip qubit 1");
 }
 
@@ -700,7 +700,7 @@ fn test_rxz_lost_b_falls_back_to_rx_on_a() {
     // rxz with qubit b lost → rx(a, θ)
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[1] = true;
-    g.rxz([0, 1], PI);
+    g.rxz(0, 1, PI);
     assert!(g.measure(0).unwrap(), "rx fallback should flip qubit 0");
 }
 
@@ -710,7 +710,7 @@ fn test_rzz_lost_a_falls_back_to_rz_on_b() {
     // rz leaves |0⟩ invariant (just adds phase)
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
     g.is_lost[0] = true;
-    g.rzz([0, 1], PI);
+    g.rzz(0, 1, PI);
     assert!(!g.measure(1).unwrap(), "rz on |0⟩ should stay |0⟩");
     assert_eq!(g.coefficients.len(), 1, "rz on |0⟩ should not branch");
 }
@@ -797,7 +797,7 @@ fn test_coefficient_threshold_rot2_trimming() {
     let mut g: GTab = GeneralizedTableau::new(2, 0.1);
     g.h(0);
     g.h(1);
-    g.rxx([0, 1], 0.1);
+    g.rxx(0, 1, 0.1);
     assert_eq!(
         g.coefficients.len(),
         1,
@@ -834,7 +834,7 @@ fn test_display_does_not_panic() {
 fn test_tableau_display_does_not_panic() {
     let mut t: Tab = Tableau::new(2);
     t.h(0);
-    t.cnot([0, 1]);
+    t.cnot(0, 1);
     let s = format!("{}", t);
     assert!(!s.is_empty());
 }
@@ -941,11 +941,11 @@ fn test_hsh_equals_sdagger_on_plus_state() {
 fn test_cz_equals_h_cnot_h() {
     // CZ = (I⊗H) · CNOT · (I⊗H)
     let mut t1: Tab = Tableau::new(2);
-    t1.cz([0, 1]);
+    t1.cz(0, 1);
 
     let mut t2: Tab = Tableau::new(2);
     t2.h(1);
-    t2.cnot([0, 1]);
+    t2.cnot(0, 1);
     t2.h(1);
 
     for i in 0..4 {
@@ -1028,7 +1028,7 @@ fn test_rz_zero_is_identity() {
 #[test]
 fn test_rxx_zero_is_identity() {
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.rxx([0, 1], 0.0);
+    g.rxx(0, 1, 0.0);
     assert_eq!(g.coefficients.len(), 1);
     assert!(!g.measure(0).unwrap());
     assert!(!g.measure(1).unwrap());
@@ -1038,7 +1038,7 @@ fn test_rxx_zero_is_identity() {
 fn test_rot2_2pi_is_identity_measurement() {
     // exp(-i·π·XX) = -I (global phase). Measurement should be unchanged.
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.rxx([0, 1], 2.0 * PI);
+    g.rxx(0, 1, 2.0 * PI);
     assert!(!g.measure(0).unwrap());
     assert!(!g.measure(1).unwrap());
 }

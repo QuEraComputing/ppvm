@@ -63,94 +63,97 @@ macro_rules! create_interface {
 
             // clifford
             pub fn x(&mut self, targets: Vec<usize>) {
-                self.inner.x(targets.as_slice());
+                self.inner.x_batch(targets.as_slice());
             }
 
             pub fn y(&mut self, targets: Vec<usize>) {
-                self.inner.y(targets.as_slice());
+                self.inner.y_batch(targets.as_slice());
             }
 
             pub fn z(&mut self, targets: Vec<usize>) {
-                self.inner.z(targets.as_slice());
+                self.inner.z_batch(targets.as_slice());
             }
 
             pub fn h(&mut self, targets: Vec<usize>) {
-                self.inner.h(targets.as_slice());
+                self.inner.h_batch(targets.as_slice());
             }
 
             pub fn s(&mut self, targets: Vec<usize>) {
-                self.inner.s(targets.as_slice());
+                self.inner.s_batch(targets.as_slice());
             }
 
             pub fn s_dag(&mut self, targets: Vec<usize>) {
-                self.inner.s_dag(targets.as_slice());
+                self.inner.s_adj_batch(targets.as_slice());
             }
 
             // clifford extensions
             pub fn sqrt_x(&mut self, targets: Vec<usize>) {
-                self.inner.sqrt_x(targets.as_slice());
+                self.inner.sqrt_x_batch(targets.as_slice());
             }
 
             pub fn sqrt_x_dag(&mut self, targets: Vec<usize>) {
-                self.inner.sqrt_x_dag(targets.as_slice());
+                self.inner.sqrt_x_adj_batch(targets.as_slice());
             }
 
             pub fn sqrt_y(&mut self, targets: Vec<usize>) {
-                self.inner.sqrt_y(targets.as_slice());
+                self.inner.sqrt_y_batch(targets.as_slice());
             }
 
             pub fn sqrt_y_dag(&mut self, targets: Vec<usize>) {
-                self.inner.sqrt_y_dag(targets.as_slice());
+                self.inner.sqrt_y_adj_batch(targets.as_slice());
             }
 
             pub fn t(&mut self, targets: Vec<usize>) {
-                self.inner.t(targets.as_slice());
+                self.inner.t_batch(targets.as_slice());
             }
 
             pub fn t_dag(&mut self, targets: Vec<usize>) {
-                self.inner.t_dag(targets.as_slice());
+                self.inner.t_dag_batch(targets.as_slice());
             }
 
             // two-qubit clifford (+ stim aliases)
             pub fn cnot(&mut self, targets: Vec<usize>) {
-                self.inner.cnot(targets.as_slice());
+                let pairs = crate::flat_pairs(&targets);
+                self.inner.cnot_batch(&pairs);
             }
 
             pub fn cx(&mut self, targets: Vec<usize>) {
-                self.inner.cnot(targets.as_slice());
+                self.cnot(targets);
             }
 
             pub fn zcx(&mut self, targets: Vec<usize>) {
-                self.inner.cnot(targets.as_slice());
+                self.cnot(targets);
             }
 
             pub fn cy(&mut self, targets: Vec<usize>) {
-                self.inner.cy(targets.as_slice());
+                let pairs = crate::flat_pairs(&targets);
+                self.inner.cy_batch(&pairs);
             }
 
             pub fn zcy(&mut self, targets: Vec<usize>) {
-                self.inner.cy(targets.as_slice());
+                self.cy(targets);
             }
 
             pub fn cz(&mut self, targets: Vec<usize>) {
-                self.inner.cz(targets.as_slice());
+                let pairs = crate::flat_pairs(&targets);
+                self.inner.cz_batch(&pairs);
             }
 
             pub fn zcz(&mut self, targets: Vec<usize>) {
-                self.inner.cz(targets.as_slice());
+                self.cz(targets);
             }
 
             // rot1
             pub fn rx(&mut self, targets: Vec<usize>, theta: f64) {
-                self.inner.rx(targets.as_slice(), theta);
+                self.inner.rx_batch(targets.as_slice(), theta);
             }
 
             pub fn ry(&mut self, targets: Vec<usize>, theta: f64) {
-                self.inner.ry(targets.as_slice(), theta);
+                self.inner.ry_batch(targets.as_slice(), theta);
             }
 
             pub fn rz(&mut self, targets: Vec<usize>, theta: f64) {
-                self.inner.rz(targets.as_slice(), theta);
+                self.inner.rz_batch(targets.as_slice(), theta);
             }
 
             pub fn u3(&mut self, addr0: usize, theta: f64, phi: f64, lam: f64) {
@@ -159,44 +162,49 @@ macro_rules! create_interface {
 
             // rot2
             pub fn rxx(&mut self, targets: Vec<usize>, theta: f64) {
-                self.inner.rxx(targets.as_slice(), theta);
+                let pairs = crate::flat_pairs(&targets);
+                self.inner.rxx_batch(&pairs, theta);
             }
 
             pub fn ryy(&mut self, targets: Vec<usize>, theta: f64) {
-                self.inner.ryy(targets.as_slice(), theta);
+                let pairs = crate::flat_pairs(&targets);
+                self.inner.ryy_batch(&pairs, theta);
             }
 
             pub fn rzz(&mut self, targets: Vec<usize>, theta: f64) {
-                self.inner.rzz(targets.as_slice(), theta);
+                let pairs = crate::flat_pairs(&targets);
+                self.inner.rzz_batch(&pairs, theta);
             }
 
             // noise
             pub fn x_error(&mut self, targets: Vec<usize>, p: f64) {
-                self.inner.x_error(targets.as_slice(), p);
+                self.inner.x_error_batch(targets.as_slice(), p);
             }
 
             pub fn y_error(&mut self, targets: Vec<usize>, p: f64) {
-                self.inner.y_error(targets.as_slice(), p);
+                self.inner.y_error_batch(targets.as_slice(), p);
             }
 
             pub fn z_error(&mut self, targets: Vec<usize>, p: f64) {
-                self.inner.z_error(targets.as_slice(), p);
+                self.inner.z_error_batch(targets.as_slice(), p);
             }
 
             pub fn pauli_error(&mut self, targets: Vec<usize>, p: [f64; 3]) {
-                self.inner.pauli_error(targets.as_slice(), p);
+                self.inner.pauli_error_batch(targets.as_slice(), p);
             }
 
             pub fn depolarize1(&mut self, targets: Vec<usize>, p: f64) {
-                self.inner.depolarize1(targets.as_slice(), p);
+                self.inner.depolarize1_batch(targets.as_slice(), p);
             }
 
             pub fn depolarize2(&mut self, targets: Vec<usize>, p: f64) {
-                self.inner.depolarize2(targets.as_slice(), p);
+                let pairs = crate::flat_pairs(&targets);
+                self.inner.depolarize2_batch(&pairs, p);
             }
 
             pub fn two_qubit_pauli_error(&mut self, targets: Vec<usize>, p: [f64; 15]) {
-                self.inner.two_qubit_pauli_error(targets.as_slice(), p);
+                let pairs = crate::flat_pairs(&targets);
+                self.inner.two_qubit_pauli_error_batch(&pairs, p);
             }
 
             pub fn loss_channel(&mut self, addr0: usize, p: f64) {
@@ -212,19 +220,19 @@ macro_rules! create_interface {
             }
 
             pub fn reset(&mut self, targets: Vec<usize>) {
-                self.inner.reset(targets.as_slice());
+                self.inner.reset_batch(targets.as_slice());
             }
 
             pub fn reset_x(&mut self, targets: Vec<usize>) {
-                self.inner.reset_x(targets.as_slice());
+                self.inner.reset_x_batch(targets.as_slice());
             }
 
             pub fn reset_y(&mut self, targets: Vec<usize>) {
-                self.inner.reset_y(targets.as_slice());
+                self.inner.reset_y_batch(targets.as_slice());
             }
 
             pub fn reset_z(&mut self, targets: Vec<usize>) {
-                self.inner.reset_z(targets.as_slice());
+                self.inner.reset_z_batch(targets.as_slice());
             }
 
             pub fn is_lost(&self, addr0: usize) -> bool {

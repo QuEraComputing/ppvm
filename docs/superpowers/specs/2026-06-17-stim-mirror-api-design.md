@@ -12,11 +12,12 @@ Make ppvm's simulator API **muscle-memory compatible** with `stim.TableauSimulat
 that anyone familiar with stim can use ppvm without relearning method names or calling
 conventions.
 
-The goal is **drop-in familiarity**, not a literal runnable-stim-code clone. We adopt
+The goal is **drop-in familiarity**, not a literal runnable-stim-code clone. Python adopts
 stim's *naming* and *calling conventions* (broadcasting over targets, keyword-only noise
-probabilities, stim method names), but we deliberately keep ppvm's semantics where they
-genuinely differ (loss-aware measurement, fixed qubit count, no pure-stabilizer state
-inspection).
+probabilities, stim method names), while Rust adopts the names but keeps scalar method
+calls scalar and exposes broadcasting through explicit batch helpers. We deliberately keep
+ppvm's semantics where they genuinely differ (loss-aware measurement, fixed qubit count,
+no pure-stabilizer state inspection).
 
 ## 2. Decisions (locked during brainstorming)
 
@@ -24,21 +25,21 @@ inspection).
 |---|---|
 | Motivation | Drop-in familiarity |
 | Placement | **Replace** the existing API (migrate methods + all callers), not an additive facade |
-| Rust vs Python | **Rust mirrors too** — stim conventions go all the way down, not just the Python wrapper |
-| Trait scope | **Change the shared traits in `ppvm-runtime`** — both the tableau backend and the Pauli-propagation (`PauliSum`) backend move together |
+| Rust vs Python | **Python mirrors stim calling conventions**; Rust uses stim names plus explicit `*_batch` methods |
+| Trait scope | **Change the shared traits in `ppvm-traits`** — both the tableau backend and the Pauli-propagation (`PauliSum`) backend move together |
 | Method families in scope | Gates + broadcasting; Measurement + reset; Noise |
 | State inspection | **Out of scope** (`peek_*`, `current_inverse_tableau`, `canonical_stabilizers`, `state_vector`, `measure_kickback`, `set_state_from_*`, `postselect_*`) |
-| Rust target shape | **`Targets` trait** — `tab.h(0)` and `tab.h([0,1,2])` both work |
+| Rust target shape | **Scalar methods stay scalar** — batches use explicit `*_batch` helpers |
 | `current_measurement_record` | **Include it** — add measurement-record state |
 
 ## 3. Architecture context (why the blast radius is what it is)
 
-The gate traits are defined once in `crates/ppvm-runtime/src/traits/` and implemented by
+The gate traits are defined once in `crates/ppvm-traits/src/traits/` and implemented by
 **both** simulator backends:
 
-- **Pauli propagation:** `PauliSum<T>` — `crates/ppvm-runtime/src/sum/` (Heisenberg picture).
+- **Pauli propagation:** `PauliSum<T>` — `crates/ppvm-pauli-sum/src/sum/` (Heisenberg picture).
 - **Tableau:** `Tableau<T>` and `GeneralizedTableau<T, ...>` — `crates/ppvm-tableau/`
-  (Schrödinger picture). `ppvm-tableau` depends on `ppvm-runtime`, so the traits sit below
+  (Schrödinger picture). `ppvm-tableau` depends on `ppvm-traits`, so the traits sit below
   both.
 
 Because we are changing the **shared traits**, the changes ripple into both backends. The
@@ -46,43 +47,32 @@ families split by where they live:
 
 | Trait surface | Implementers | In this refactor |
 |---|---|---|
-| `Clifford`, `CliffordExtensions` | `PauliSum` + `Tableau` + `GeneralizedTableau` | renamed + broadcast |
-| `RotationOne` / `RotationTwo` | `PauliSum` + `GeneralizedTableau` | broadcast (names already stim-ish) |
-| Noise (`PauliError`, `Depolarizing`, `Depolarizing2`, `TwoQubitPauliError`, loss channels) | `PauliSum` + tableaux | renamed + broadcast |
+| `Clifford`, `CliffordExtensions` | `PauliSum` + `Tableau` + `GeneralizedTableau` | renamed + explicit batches |
+| `RotationOne` / `RotationTwo` | `PauliSum` + `GeneralizedTableau` | scalar names + explicit batches |
+| Noise (`PauliError`, `Depolarizing`, `Depolarizing2`, `TwoQubitPauliError`, loss channels) | `PauliSum` + tableaux | renamed + explicit batches |
 | `TGate` (`t`, `t_dag`) | `GeneralizedTableau` only | renamed (`t_adj`→`t_dag`) |
 | `Measure` / `LossyMeasure` / `Reset` | tableaux only | reshaped + record |
 
-## 4. Rust: the `Targets` trait
+## 4. Rust: scalar names plus explicit batches
 
-stim broadcasts over `*targets`; Rust has no varargs. We introduce a `Targets` trait in
-`ppvm-runtime` so single-qubit ergonomics survive while broadcasting becomes additive:
-
-```rust
-pub trait Targets {
-    fn each(&self) -> impl Iterator<Item = usize>;
-}
-impl Targets for usize { /* yields self */ }
-impl Targets for &[usize] { /* yields each */ }
-impl<const N: usize> Targets for [usize; N] { /* yields each */ }
-// + Vec<usize>, ranges as convenient
-```
-
-Gate trait methods take `impl Targets`:
+stim broadcasts over `*targets`, and the Python API mirrors that convention. Rust keeps
+the scalar method names scalar because `gate(q)` and `gate_many(qs)` are semantically
+different operations in Rust API design. Batched application uses explicit `*_batch`
+helpers:
 
 ```rust
-tab.h(0);              // single
-tab.h([0, 1, 2]);      // broadcast: H on 0, 1, 2
-tab.cnot([0, 1, 2, 3]); // broadcast pairs: CNOT(0,1), CNOT(2,3)
+tab.h(0);                         // single
+tab.h_batch(&[0, 1, 2]);          // explicit batch
+tab.cnot(0, 1);                   // single pair
+tab.cnot_batch(&[(0, 1), (2, 3)]); // explicit pair batch
 ```
 
-### Broadcasting semantics (matches stim)
+### Broadcasting semantics
 
-- **Single-qubit gates / single-qubit noise / reset:** apply to each target in order.
-- **Two-qubit gates / two-qubit noise:** consume **consecutive pairs** `(t0,t1), (t2,t3), …`.
-  An **odd** number of targets is an error.
-- The existing `*_batch` methods (`h_batch`, `cz_batch`, `sqrt_x_batch`, …) become the
-  **internal fast path** these broadcasts dispatch into. No perf regression; the batch
-  surface stops being public API.
+- **Python:** follows stim target-list broadcasting.
+- **Rust scalar methods:** accept one target or one pair.
+- **Rust `*_batch` methods:** apply targets or pairs in order and are the fast path for
+  Python's broadcast wrappers.
 
 ## 5. Naming map
 
@@ -114,7 +104,8 @@ single-axis probability. `reset_x`/`reset_y` are basis-change + `reset_z` (`rese
   in Python and `Option<bool>` in Rust — `LOST` is a real outcome ppvm must express and
   cannot collapse to `bool`.
 - `measure_many(targets) -> Vec<MeasurementResult>` / `list[MeasurementResult]` — broadcast.
-- `reset` / `reset_x` / `reset_y` / `reset_z` — broadcast over targets.
+- Python `reset` / `reset_x` / `reset_y` / `reset_z` broadcast over targets; Rust keeps
+  scalar reset methods plus explicit `*_batch` helpers.
 
 ### Measurement record (new state)
 
@@ -133,10 +124,11 @@ stim-shaped, **keyword-only `p`** in Python:
 - `x_error(*targets, p=...)`, `y_error`, `z_error`
 - `depolarize1(*targets, p=...)`, `depolarize2(*targets, p=...)` (pairs)
 
-Rust equivalents take `impl Targets` + `p`. These wrap the existing
-`pauli_error`/`depolarize` machinery (which is implemented via the `impl_tableau_noise!`
-macro delegating to `TableauLike` methods — so the per-type impl blocks need few edits;
-the trait definition and `TableauLike` impl carry the changes).
+Rust scalar equivalents take one target (or one target pair) plus `p`; broadcast behavior
+uses explicit `*_batch` methods. These wrap the existing `pauli_error`/`depolarize`
+machinery (which is implemented via the `impl_tableau_noise!` macro delegating to
+`TableauLike` methods — so the per-type impl blocks need few edits; the trait definition
+and `TableauLike` impl carry the changes).
 
 ppvm-specific channels with no stim equivalent are **retained** under their current names:
 `pauli_error`, `two_qubit_pauli_error`, `loss_channel`, `correlated_loss_channel`,
@@ -144,9 +136,9 @@ ppvm-specific channels with no stim equivalent are **retained** under their curr
 
 ## 8. Python layer
 
-- `*targets` varargs collected into a sequence and passed to the slice-accepting native
-  methods. Single-qubit, two-qubit-pair, and odd-count-error semantics enforced consistently
-  with Rust.
+- `*targets` varargs collected into a sequence and passed to native wrappers that dispatch
+  to Rust `*_batch` methods. Single-qubit, two-qubit-pair, and odd-count-error semantics
+  are enforced consistently.
 - Method renames mirror the Rust renames; aliases (`cx`, `zcx`, `zcz`, `zcy`, `reset_z`)
   added.
 - Noise methods expose keyword-only `p`.
@@ -171,9 +163,9 @@ ppvm-specific channels with no stim equivalent are **retained** under their curr
 
 Order of operations:
 
-1. **`ppvm-runtime/src/traits/`** — add `Targets`; rename trait methods; add broadcasting
-   default methods + aliases; reshape `Measure`/`Reset`/noise traits.
-2. **`ppvm-runtime/src/sum/`, `phase/`, `word/`** — update `PauliSum` and blanket
+1. **`ppvm-traits/src/traits/`** — rename trait methods; keep scalar signatures; add
+   explicit batch defaults + aliases; reshape `Measure`/`Reset`/noise traits.
+2. **`ppvm-pauli-sum/src/sum/`, `ppvm-pauli-word/src/{phase,word,loss}/`** — update `PauliSum` and blanket
    `PauliWordTrait` impls to the new trait surface.
 3. **`ppvm-tableau/`** — update `Tableau` and `GeneralizedTableau` impls
    (`gates/clifford.rs`, `tgate.rs`, `rot1.rs`, `rot2.rs`, `measure.rs`, `gates/reset.rs`,
@@ -185,7 +177,8 @@ Order of operations:
 6. **`ppvm-python/src/ppvm/`** — update mixins, `generalized_tableau.py`, `.pyi` stubs;
    add aliases; add `do`.
 7. **Tests / benches / examples** — ~40 Rust files reference the renamed methods
-   (`ppvm-runtime`, `ppvm-tableau`, `ppvm-stim` tests/benches/examples) plus Python tests.
+   (`ppvm-traits`, `ppvm-pauli-sum`, `ppvm-tableau`, `ppvm-stim` tests/benches/examples)
+   plus Python tests.
    Update all call sites.
 
 **No backward-compatibility shims** — this is a clean replace per the placement decision. A
@@ -196,8 +189,8 @@ stale call site.
 
 - Existing gate/measure/noise/loss tests updated to new names — they remain the correctness
   oracle (behavior must be unchanged; only the surface moves).
-- New tests for **broadcasting**: single vs multi-target equivalence (`h([0,1,2])` ≡ three
-  `h` calls), pair-broadcast for two-qubit gates, odd-count error.
+- New tests for **batching / Python broadcasting**: Rust `h_batch(&[0,1,2])` ≡ three
+  `h` calls, pair-batch for two-qubit gates, Python odd-count error.
 - New tests for the **measurement record**: ordering, `measure_many`, propagation through
   `fork`/copy, population by `run`.
 - Python parity tests asserting the wrapper broadcasts identically to the native layer.
@@ -209,5 +202,5 @@ stale call site.
 - Whether the measurement record stores `MeasurementResult` (keeps `LOST`) or `bool` (stim
   parity, but lossy). **Proposed:** keep `Option<bool>`/`MeasurementResult` to preserve
   loss information.
-- Whether `Targets` should also accept ranges (`0..4`). **Proposed:** yes, cheap and
-  ergonomic.
+- Whether Rust should grow higher-level builders for circuit-style bulk application in
+  addition to `*_batch`. **Proposed:** keep the PR scoped to explicit batch helpers.

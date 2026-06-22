@@ -176,12 +176,12 @@ fn bell_pair_with_loss_on_q0() {
     let shots = 8000;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.loss_channel(0, 0.3);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.loss_channel(0, 0.3);
     });
     // 4 possible outcomes: (None,0), (None,1), (0,0), (1,1). 5σ ≈ 0.03 per bin.
@@ -193,13 +193,13 @@ fn bell_pair_with_loss_on_both_qubits() {
     let shots = 8000;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.loss_channel(0, 0.2);
         t.loss_channel(1, 0.2);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.loss_channel(0, 0.2);
         t.loss_channel(1, 0.2);
     });
@@ -311,12 +311,12 @@ fn bell_pair_with_depolarize_on_q0() {
     let p = 0.3_f64;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.depolarize1(0, p);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.depolarize1(0, p);
     });
     let same_sum = sum.iter().filter(|s| s[0] == s[1]).count() as f64 / shots as f64;
@@ -339,12 +339,12 @@ fn bell_pair_with_pauli_error_on_q0_nonuniform() {
     let p = [0.1_f64, 0.2_f64, 0.3_f64];
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.pauli_error(0, p);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.pauli_error(0, p);
     });
 
@@ -376,16 +376,16 @@ fn loss_then_depolarize_three_qubits() {
     let shots = 8000;
     let sum = run_sum(3, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([1, 2]);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
         t.loss_channel(0, 0.2);
         t.depolarize1(1, 0.15);
         t.depolarize1(2, 0.15);
     });
     let pure = run_pure(3, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([1, 2]);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
         t.loss_channel(0, 0.2);
         t.depolarize1(1, 0.15);
         t.depolarize1(2, 0.15);
@@ -400,8 +400,8 @@ fn ghz_three_qubits_with_per_qubit_noise() {
     let shots = 8000;
     let sum = run_sum(3, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([0, 2]);
+        t.cnot(0, 1);
+        t.cnot(0, 2);
         for q in 0..3 {
             t.depolarize1(q, 0.1);
             t.loss_channel(q, 0.05);
@@ -409,8 +409,8 @@ fn ghz_three_qubits_with_per_qubit_noise() {
     });
     let pure = run_pure(3, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([0, 2]);
+        t.cnot(0, 1);
+        t.cnot(0, 2);
         for q in 0..3 {
             t.depolarize1(q, 0.1);
             t.loss_channel(q, 0.05);
@@ -427,7 +427,7 @@ fn repeated_depolarize_creates_many_branches() {
     let p = 0.1_f64;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         for _ in 0..5 {
             t.depolarize1(0, p);
             t.depolarize1(1, p);
@@ -435,7 +435,7 @@ fn repeated_depolarize_creates_many_branches() {
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         for _ in 0..5 {
             t.depolarize1(0, p);
             t.depolarize1(1, p);
@@ -459,12 +459,12 @@ fn clifford_layer_with_sqrt_gates_and_noise() {
         t.sqrt_y(1);
         t.sqrt_y(2);
         t.sqrt_y(3);
-        t.cz([0, 1]);
-        t.cz([2, 3]);
+        t.cz(0, 1);
+        t.cz(2, 3);
         for q in 0..4 {
             t.depolarize1(q, 0.08);
         }
-        t.cz([1, 2]);
+        t.cz(1, 2);
         t.sqrt_x_dag(0);
         t.sqrt_x_dag(3);
         for q in 0..4 {
@@ -476,12 +476,12 @@ fn clifford_layer_with_sqrt_gates_and_noise() {
         t.sqrt_y(1);
         t.sqrt_y(2);
         t.sqrt_y(3);
-        t.cz([0, 1]);
-        t.cz([2, 3]);
+        t.cz(0, 1);
+        t.cz(2, 3);
         for q in 0..4 {
             t.depolarize1(q, 0.08);
         }
-        t.cz([1, 2]);
+        t.cz(1, 2);
         t.sqrt_x_dag(0);
         t.sqrt_x_dag(3);
         for q in 0..4 {
@@ -526,12 +526,12 @@ fn reset_bell_pair_q0_decorrelates() {
     let shots = 8000;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.reset(0);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.reset(0);
     });
     assert!(sum.iter().all(|s| s[0] == Some(false)));
@@ -661,14 +661,14 @@ fn reset_ghz_q0_decorrelates_remaining_pair() {
     let shots = 8000;
     let sum = run_sum(3, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([0, 2]);
+        t.cnot(0, 1);
+        t.cnot(0, 2);
         t.reset(0);
     });
     let pure = run_pure(3, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([0, 2]);
+        t.cnot(0, 1);
+        t.cnot(0, 2);
         t.reset(0);
     });
     assert!(
@@ -695,14 +695,14 @@ fn reset_middle_qubit_of_three_qubit_chain() {
     let shots = 8000;
     let sum = run_sum(3, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([1, 2]);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
         t.reset(1);
     });
     let pure = run_pure(3, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([1, 2]);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
         t.reset(1);
     });
     assert!(
@@ -723,13 +723,13 @@ fn double_reset_is_idempotent() {
     let shots = 4000;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.reset(0);
         t.reset(0);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.reset(0);
         t.reset(0);
     });
@@ -869,12 +869,12 @@ fn rx_then_loss_two_qubits() {
     let shots = 8000;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.rx(0, std::f64::consts::FRAC_PI_2);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.loss_channel(0, 0.25);
     });
     let pure = run_pure(2, shots, |t| {
         t.rx(0, std::f64::consts::FRAC_PI_2);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.loss_channel(0, 0.25);
     });
     assert_distributions_match(&sum, &pure, 0.05, "rx_then_loss_two_qubits");
@@ -889,10 +889,10 @@ fn rxx_pi_flips_both_qubits() {
     // RXX(π)|00⟩ = -i|11⟩: deterministic flip.
     let shots = 1000;
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.rxx([0, 1], std::f64::consts::PI);
+        t.rxx(0, 1, std::f64::consts::PI);
     });
     let pure = run_pure(2, shots, |t| {
-        t.rxx([0, 1], std::f64::consts::PI);
+        t.rxx(0, 1, std::f64::consts::PI);
     });
     assert!(sum.iter().all(|s| s == &vec![Some(true), Some(true)]));
     assert!(pure.iter().all(|s| s == &vec![Some(true), Some(true)]));
@@ -903,10 +903,10 @@ fn rxx_half_pi_correlated_outcomes() {
     // RXX(π/2)|00⟩ = (|00⟩ - i|11⟩)/√2: q0 and q1 always agree.
     let shots = 8000;
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.rxx([0, 1], std::f64::consts::FRAC_PI_2);
+        t.rxx(0, 1, std::f64::consts::FRAC_PI_2);
     });
     let pure = run_pure(2, shots, |t| {
-        t.rxx([0, 1], std::f64::consts::FRAC_PI_2);
+        t.rxx(0, 1, std::f64::consts::FRAC_PI_2);
     });
     assert!(sum.iter().all(|s| s[0] == s[1]));
     assert!(pure.iter().all(|s| s[0] == s[1]));
@@ -918,10 +918,10 @@ fn ryy_half_pi_correlated_outcomes() {
     // RYY(π/2)|00⟩ = (|00⟩ + i|11⟩)/√2: q0 and q1 always agree.
     let shots = 8000;
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.ryy([0, 1], std::f64::consts::FRAC_PI_2);
+        t.ryy(0, 1, std::f64::consts::FRAC_PI_2);
     });
     let pure = run_pure(2, shots, |t| {
-        t.ryy([0, 1], std::f64::consts::FRAC_PI_2);
+        t.ryy(0, 1, std::f64::consts::FRAC_PI_2);
     });
     assert!(sum.iter().all(|s| s[0] == s[1]));
     assert!(pure.iter().all(|s| s[0] == s[1]));
@@ -933,10 +933,10 @@ fn rzz_diagonal_on_comp_basis() {
     // RZZ is diagonal in the Z basis: |00⟩ stays a pure Z eigenstate.
     let shots = 2000;
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.rzz([0, 1], 0.4 * std::f64::consts::PI);
+        t.rzz(0, 1, 0.4 * std::f64::consts::PI);
     });
     let pure = run_pure(2, shots, |t| {
-        t.rzz([0, 1], 0.4 * std::f64::consts::PI);
+        t.rzz(0, 1, 0.4 * std::f64::consts::PI);
     });
     assert!(sum.iter().all(|s| s == &vec![Some(false), Some(false)]));
     assert!(pure.iter().all(|s| s == &vec![Some(false), Some(false)]));
@@ -949,11 +949,11 @@ fn rxx_with_depolarize_breaks_correlation() {
     let shots = 8000;
     let p = 0.2_f64;
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.rxx([0, 1], std::f64::consts::FRAC_PI_2);
+        t.rxx(0, 1, std::f64::consts::FRAC_PI_2);
         t.depolarize1(0, p);
     });
     let pure = run_pure(2, shots, |t| {
-        t.rxx([0, 1], std::f64::consts::FRAC_PI_2);
+        t.rxx(0, 1, std::f64::consts::FRAC_PI_2);
         t.depolarize1(0, p);
     });
     let agree_sum = sum.iter().filter(|s| s[0] == s[1]).count() as f64 / shots as f64;
@@ -976,13 +976,13 @@ fn rxy_three_qubit_chain_with_loss() {
     // to ensure the generic rotate_2 path is consistent.
     let shots = 8000;
     let sum = run_sum(3, shots, 1e-12, |t| {
-        t.rxy([0, 1], 0.3 * std::f64::consts::PI);
-        t.ryz([1, 2], 0.25 * std::f64::consts::PI);
+        t.rxy(0, 1, 0.3 * std::f64::consts::PI);
+        t.ryz(1, 2, 0.25 * std::f64::consts::PI);
         t.loss_channel(2, 0.1);
     });
     let pure = run_pure(3, shots, |t| {
-        t.rxy([0, 1], 0.3 * std::f64::consts::PI);
-        t.ryz([1, 2], 0.25 * std::f64::consts::PI);
+        t.rxy(0, 1, 0.3 * std::f64::consts::PI);
+        t.ryz(1, 2, 0.25 * std::f64::consts::PI);
         t.loss_channel(2, 0.1);
     });
     assert_distributions_match(&sum, &pure, 0.08, "rxy_three_qubit_chain_with_loss");
@@ -999,10 +999,10 @@ fn rxy_three_qubit_chain_with_loss() {
 fn two_qubit_pauli_error_zero_prob_is_noop() {
     let shots = 1000;
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.two_qubit_pauli_error([0, 1], [0.0; 15]);
+        t.two_qubit_pauli_error(0, 1, [0.0; 15]);
     });
     let pure = run_pure(2, shots, |t| {
-        t.two_qubit_pauli_error([0, 1], [0.0; 15]);
+        t.two_qubit_pauli_error(0, 1, [0.0; 15]);
     });
     assert!(sum.iter().all(|s| s == &vec![Some(false), Some(false)]));
     assert!(pure.iter().all(|s| s == &vec![Some(false), Some(false)]));
@@ -1015,10 +1015,10 @@ fn two_qubit_pauli_error_xx_certain_flips_both() {
     let mut p = [0.0_f64; 15];
     p[4] = 1.0;
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     let pure = run_pure(2, shots, |t| {
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     assert!(sum.iter().all(|s| s == &vec![Some(true), Some(true)]));
     assert!(pure.iter().all(|s| s == &vec![Some(true), Some(true)]));
@@ -1031,10 +1031,10 @@ fn two_qubit_pauli_error_zz_invariant_in_z_basis() {
     let mut p = [0.0_f64; 15];
     p[14] = 1.0;
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     let pure = run_pure(2, shots, |t| {
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     assert!(sum.iter().all(|s| s == &vec![Some(false), Some(false)]));
     assert!(pure.iter().all(|s| s == &vec![Some(false), Some(false)]));
@@ -1047,10 +1047,10 @@ fn two_qubit_pauli_error_xi_flips_q0_only() {
     let mut p = [0.0_f64; 15];
     p[3] = 1.0;
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     let pure = run_pure(2, shots, |t| {
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     assert!(sum.iter().all(|s| s == &vec![Some(true), Some(false)]));
     assert!(pure.iter().all(|s| s == &vec![Some(true), Some(false)]));
@@ -1067,10 +1067,10 @@ fn two_qubit_pauli_error_uniform_on_ground_state() {
     let shots = 8000;
     let p = [1.0 / 15.0_f64; 15];
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     let pure = run_pure(2, shots, |t| {
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     assert_distributions_match(
         &sum,
@@ -1092,10 +1092,10 @@ fn two_qubit_pauli_error_nonuniform_on_ground_state() {
         0.01, 0.02, 0.03, 0.04, // ZI, ZX, ZY, ZZ
     ];
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     let pure = run_pure(2, shots, |t| {
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     assert_distributions_match(
         &sum,
@@ -1112,11 +1112,11 @@ fn two_qubit_pauli_error_on_lost_qubit_is_noop() {
     let p = [1.0 / 15.0_f64; 15];
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.loss_channel(0, 1.0);
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     let pure = run_pure(2, shots, |t| {
         t.loss_channel(0, 1.0);
-        t.two_qubit_pauli_error([0, 1], p);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     assert!(sum.iter().all(|s| s == &vec![None, Some(false)]));
     assert!(pure.iter().all(|s| s == &vec![None, Some(false)]));
@@ -1131,10 +1131,10 @@ fn depolarize2_on_ground_state() {
     let shots = 8000;
     let p = 0.6_f64;
     let sum = run_sum(2, shots, 1e-12, |t| {
-        t.depolarize2([0, 1], p);
+        t.depolarize2(0, 1, p);
     });
     let pure = run_pure(2, shots, |t| {
-        t.depolarize2([0, 1], p);
+        t.depolarize2(0, 1, p);
     });
     let flipped_sum = sum
         .iter()
@@ -1170,13 +1170,13 @@ fn bell_pair_with_two_qubit_pauli_error_nonuniform() {
     ];
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.two_qubit_pauli_error([0, 1], p);
+        t.cnot(0, 1);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.two_qubit_pauli_error([0, 1], p);
+        t.cnot(0, 1);
+        t.two_qubit_pauli_error(0, 1, p);
     });
     assert_distributions_match(
         &sum,
@@ -1378,12 +1378,12 @@ fn bell_pair_with_correlated_loss_channel() {
     let shots = 8000;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.correlated_loss_channel(0, 1, [0.10, 0.20, 0.15]);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.correlated_loss_channel(0, 1, [0.10, 0.20, 0.15]);
     });
     assert_distributions_match(&sum, &pure, 0.05, "bell_pair_with_correlated_loss_channel");
@@ -1438,7 +1438,7 @@ fn u3_two_qubit_circuit_with_loss() {
             0.2 * std::f64::consts::PI,
             0.1 * std::f64::consts::PI,
         );
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.loss_channel(1, 0.2);
     });
     let pure = run_pure(2, shots, |t| {
@@ -1448,7 +1448,7 @@ fn u3_two_qubit_circuit_with_loss() {
             0.2 * std::f64::consts::PI,
             0.1 * std::f64::consts::PI,
         );
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.loss_channel(1, 0.2);
     });
     assert_distributions_match(&sum, &pure, 0.06, "u3_two_qubit_circuit_with_loss");
@@ -1518,8 +1518,8 @@ fn mixed_rotations_reset_t_noise() {
             0.1 * std::f64::consts::PI,
             0.2 * std::f64::consts::PI,
         );
-        t.cnot([0, 1]);
-        t.rxx([1, 2], 0.25 * std::f64::consts::PI);
+        t.cnot(0, 1);
+        t.rxx(1, 2, 0.25 * std::f64::consts::PI);
         t.t(2);
         t.depolarize1(0, 0.08);
         t.reset(0);
@@ -1533,8 +1533,8 @@ fn mixed_rotations_reset_t_noise() {
             0.1 * std::f64::consts::PI,
             0.2 * std::f64::consts::PI,
         );
-        t.cnot([0, 1]);
-        t.rxx([1, 2], 0.25 * std::f64::consts::PI);
+        t.cnot(0, 1);
+        t.rxx(1, 2, 0.25 * std::f64::consts::PI);
         t.t(2);
         t.depolarize1(0, 0.08);
         t.reset(0);
@@ -1552,8 +1552,8 @@ fn truncation_does_not_break_statistics() {
     let sum_cutoff = 1e-4;
     let sum = run_sum(3, shots, sum_cutoff, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([1, 2]);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
         for q in 0..3 {
             t.depolarize1(q, 0.05);
             t.loss_channel(q, 0.05);
@@ -1561,8 +1561,8 @@ fn truncation_does_not_break_statistics() {
     });
     let pure = run_pure(3, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([1, 2]);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
         for q in 0..3 {
             t.depolarize1(q, 0.05);
             t.loss_channel(q, 0.05);
@@ -1663,12 +1663,12 @@ fn mid_circuit_measure_bell_pair_correlates_outcomes() {
     let shots = 8000;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.measure(0);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         let _ = t.measure(0);
     });
     assert!(
@@ -1695,13 +1695,13 @@ fn mid_circuit_measure_bell_pair_then_h_q1_decorrelates() {
     let shots = 8000;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.measure(0);
         t.h(1);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         let _ = t.measure(0);
         t.h(1);
     });
@@ -1797,13 +1797,13 @@ fn mid_circuit_measure_bell_pair_after_depolarize() {
     let p = 0.25_f64;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.depolarize1(0, p);
         t.measure(0);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
+        t.cnot(0, 1);
         t.depolarize1(0, p);
         let _ = t.measure(0);
     });
@@ -1898,8 +1898,8 @@ fn mid_circuit_measure_three_qubit_with_noise() {
     let shots = 8000;
     let sum = run_sum(3, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([1, 2]);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
         t.depolarize1(1, 0.1);
         t.measure(1);
         t.h(2);
@@ -1907,8 +1907,8 @@ fn mid_circuit_measure_three_qubit_with_noise() {
     });
     let pure = run_pure(3, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([1, 2]);
+        t.cnot(0, 1);
+        t.cnot(1, 2);
         t.depolarize1(1, 0.1);
         let _ = t.measure(1);
         t.h(2);
@@ -1945,8 +1945,8 @@ fn mid_circuit_measure_case_a_many_entries_with_other_outcome_retained() {
     let shots = 8000;
     let sum = run_sum(3, shots, 1e-12, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([0, 2]);
+        t.cnot(0, 1);
+        t.cnot(0, 2);
         for _ in 0..3 {
             t.depolarize1(1, 0.18);
             t.depolarize1(2, 0.18);
@@ -1957,8 +1957,8 @@ fn mid_circuit_measure_case_a_many_entries_with_other_outcome_retained() {
     });
     let pure = run_pure(3, shots, |t| {
         t.h(0);
-        t.cnot([0, 1]);
-        t.cnot([0, 2]);
+        t.cnot(0, 1);
+        t.cnot(0, 2);
         for _ in 0..3 {
             t.depolarize1(1, 0.18);
             t.depolarize1(2, 0.18);

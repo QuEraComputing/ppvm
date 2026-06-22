@@ -20,7 +20,7 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
                     tableau.h(0);
                     tableau.t(0);
                     for i in 0..n_qubits - 1 {
-                        tableau.cnot([i, i + 1]);
+                        tableau.cnot(i, i + 1);
                     }
 
                     // some more T gates
@@ -37,7 +37,7 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
         tab.h(0);
         tab.t(0);
         for i in 0..n_qubits - 1 {
-            tab.cnot([i, i + 1]);
+            tab.cnot(i, i + 1);
         }
 
         // some more T gates

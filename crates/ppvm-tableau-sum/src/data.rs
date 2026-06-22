@@ -195,8 +195,8 @@ mod tests {
     fn test_clifford_gates_dont_add_branches() {
         let mut tab = make(3);
         tab.h(0);
-        tab.cnot([0, 1]);
-        tab.cz([0, 2]);
+        tab.cnot(0, 1);
+        tab.cz(0, 2);
         tab.s(1);
         tab.x(2);
         tab.y(0);
@@ -428,7 +428,7 @@ mod tests {
     fn test_sampler_bell_pair_correlated() {
         let mut tab = make(2);
         tab.h(0);
-        tab.cnot([0, 1]);
+        tab.cnot(0, 1);
         let mut sampler = tab.sampler();
         for _ in 0..50 {
             let m = sampler.sample();
@@ -446,7 +446,7 @@ mod tests {
         let build = || {
             let mut tab = make(2);
             tab.h(0);
-            tab.cnot([0, 1]);
+            tab.cnot(0, 1);
             tab.sampler().sample_shots(20)
         };
         assert_eq!(build(), build());
@@ -547,7 +547,7 @@ mod tests {
         use crate::storage::{fingerprint, phase_loss_hash, word_fingerprint};
         let mut tab = make(3);
         tab.h(0);
-        tab.cnot([0, 1]);
+        tab.cnot(0, 1);
         tab.loss_channel(0, 0.3);
         tab.depolarize1(1, 0.3);
 
@@ -579,7 +579,7 @@ mod tests {
     fn test_sample_shots_returns_correct_count() {
         let mut tab = make(2);
         tab.h(0);
-        tab.cnot([0, 1]);
+        tab.cnot(0, 1);
         let mut sampler = tab.sampler();
         let shots = sampler.sample_shots(37);
         assert_eq!(shots.len(), 37);

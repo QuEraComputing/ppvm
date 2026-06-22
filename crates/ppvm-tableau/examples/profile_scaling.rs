@@ -20,7 +20,7 @@ fn main() {
             tab.h(0);
             let t0 = Instant::now();
             for i in 0..n_qubits - 1 {
-                tab.cnot([i, i + 1]);
+                tab.cnot(i, i + 1);
             }
             total_ns += t0.elapsed().as_nanos();
         }

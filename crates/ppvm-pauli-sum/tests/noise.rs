@@ -16,13 +16,13 @@ fn test_two_qubit_pauli_error() {
     let mut p = [0.0; 15];
     p[0] = 1.0;
 
-    state.two_qubit_pauli_error([0, 1], p);
+    state.two_qubit_pauli_error(0, 1, p);
     state2.x(1);
     assert_eq!(state, state2);
 
     p[0] = 0.0;
     p[1] = 1.0;
-    state.two_qubit_pauli_error([0, 1], p);
+    state.two_qubit_pauli_error(0, 1, p);
     state2.y(1);
     assert_eq!(state, state2);
 
@@ -35,7 +35,7 @@ fn test_two_qubit_pauli_error() {
 
     p[1] = 0.0;
     p[2] = 1.0;
-    state.two_qubit_pauli_error([0, 1], p);
+    state.two_qubit_pauli_error(0, 1, p);
     state2.z(1);
     assert_eq!(state, state2);
 
@@ -49,8 +49,8 @@ fn test_two_qubit_pauli_error() {
     let mut state2 = state.clone();
 
     p[4] = 1.0;
-    state.two_qubit_pauli_error([0, 1], p);
-    state2.rxx([0, 1], PI);
+    state.two_qubit_pauli_error(0, 1, p);
+    state2.rxx(0, 1, PI);
     state2.truncate();
 
     assert_eq!(state, state2);
@@ -62,7 +62,7 @@ fn test_two_qubit_pauli_error() {
     let state2 = state.clone();
 
     p[4] = 1.0; // XX
-    state.two_qubit_pauli_error([0, 1], p);
+    state.two_qubit_pauli_error(0, 1, p);
 
     assert_eq!(state, state2);
 
@@ -78,7 +78,7 @@ fn test_two_qubit_pauli_error() {
 
     p[9] = 0.0;
     p[14] = 1.0; // ZZ
-    state.two_qubit_pauli_error([0, 1], p);
+    state.two_qubit_pauli_error(0, 1, p);
 
     assert_eq!(state, state2);
 
@@ -90,7 +90,7 @@ fn test_two_qubit_pauli_error() {
     state2 *= -1.0;
 
     p[4] = 1.0; // XX
-    state.two_qubit_pauli_error([0, 1], p);
+    state.two_qubit_pauli_error(0, 1, p);
 
     assert_eq!(state, state2);
 }
@@ -125,7 +125,7 @@ fn test_depolarize2() {
     state += ("ZZ", 1.0);
 
     let p = 0.1_f64;
-    state.depolarize2([0, 1], p);
+    state.depolarize2(0, 1, p);
 
     let pattern: PauliPattern = "Z0Z1".into();
     let overlap = state.trace(&pattern);

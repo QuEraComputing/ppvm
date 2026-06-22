@@ -12,7 +12,7 @@ fn test_tableau() {
     let mut tableau: Tableau<ByteFxHashF64<1>> = Tableau::new(2);
 
     tableau.h(0);
-    tableau.cnot([0, 1]);
+    tableau.cnot(0, 1);
 
     assert_eq!(tableau.stabilizers()[0].to_string(), "+XX");
     assert_eq!(tableau.stabilizers()[1].to_string(), "+ZZ");
@@ -31,7 +31,7 @@ fn generalized_tableau() {
     let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(2, 1e-12);
 
     tableau.h(0);
-    tableau.cnot([0, 1]);
+    tableau.cnot(0, 1);
     tableau.t(0);
 
     assert_eq!(tableau.coefficients.len(), 2);
@@ -220,7 +220,7 @@ fn test_multiqubit_ghz_state() {
     tableau.t(0);
     // Let's generate a GHZ state
     for i in 0..n - 1 {
-        tableau.cnot([i, i + 1]);
+        tableau.cnot(i, i + 1);
     }
 
     assert_eq!(tableau.coefficients.len(), 2);
@@ -258,7 +258,7 @@ fn test_t_adj_cancels_t() {
 
     tableau.h(0);
     tableau.h(1);
-    tableau.cnot([0, 1]);
+    tableau.cnot(0, 1);
 
     let coefficients_before = tableau.coefficients.clone();
 
@@ -321,13 +321,13 @@ fn test_clifford_gates_do_not_branch() {
         2,
         "S should not change branch count"
     );
-    tableau.cnot([0, 1]);
+    tableau.cnot(0, 1);
     assert_eq!(
         tableau.coefficients.len(),
         2,
         "CNOT should not change branch count"
     );
-    tableau.cz([0, 1]);
+    tableau.cz(0, 1);
     assert_eq!(
         tableau.coefficients.len(),
         2,
@@ -345,9 +345,9 @@ fn test_normalization_preserved() {
     tableau.h(2);
     tableau.t(0);
     tableau.t(1);
-    tableau.cnot([0, 1]);
+    tableau.cnot(0, 1);
     tableau.t(2);
-    tableau.cz([1, 2]);
+    tableau.cz(1, 2);
 
     let norm_sq: f64 = tableau
         .coefficients
@@ -440,7 +440,7 @@ fn test_cz_gate_with_t() {
 
     tableau.h(0);
     tableau.h(1);
-    tableau.cz([0, 1]);
+    tableau.cz(0, 1);
 
     // The stabilizers after H H CZ should be +XZ and +ZX
     // Applying T on qubit 0: the stabilizer +XZ has X on qubit 0, so it should branch

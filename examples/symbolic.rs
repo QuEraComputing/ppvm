@@ -16,7 +16,7 @@ fn main() {
     sum.ry(1, Term::var(1));
     sum.rz(1, Term::var(0));
 
-    sum.cnot([0, 1]);
+    sum.cnot(0, 1);
 
     sum.rx(0, Term::var(1));
     sum.rx(1, Term::var(1));

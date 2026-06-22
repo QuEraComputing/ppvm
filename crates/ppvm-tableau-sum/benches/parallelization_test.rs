@@ -134,7 +134,7 @@ fn apply_circuit(tab: &mut VecBackedSum) {
         [11, 14],
         [15, 16],
     ] {
-        tab.cz([i, j]);
+        tab.cz(i, j);
         tab.loss_channel(i, P_LOSS);
         tab.loss_channel(j, P_LOSS);
         tab.depolarize1(i, P_DEPOL);
@@ -235,7 +235,7 @@ fn high_n_sum() -> VecBackedSum {
             }
         }
         for q in (0..HIGH_NQ - 1).step_by(2) {
-            tab.cz([q, q + 1]);
+            tab.cz(q, q + 1);
         }
         tab.t(layer % HIGH_NQ);
         tab.loss_channel(layer % HIGH_NQ, HIGH_P);

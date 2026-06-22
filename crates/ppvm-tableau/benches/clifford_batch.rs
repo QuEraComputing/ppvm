@@ -134,7 +134,7 @@ macro_rules! bench_pair_loop {
                     || $tab.clone(),
                     |t| {
                         for &(c, x) in pairs.iter() {
-                            t.$method([c, x]);
+                            t.$method(c, x);
                         }
                     },
                     BatchSize::SmallInput,

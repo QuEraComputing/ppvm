@@ -8,25 +8,38 @@ use crate::config::Config;
 pub trait RotationOne<T: Config> {
     /// Rotate about `axis` (one of `X`, `Y`, `Z`) by angle `theta`.
     fn rotate_1(&mut self, axis: Pauli, addr0: usize, theta: T::Coeff);
-    /// `RX(θ)` on each target qubit.
-    fn rx(&mut self, targets: impl crate::traits::Targets, theta: impl Into<T::Coeff>) {
+    /// `RX(θ)` on one qubit.
+    fn rx(&mut self, addr0: usize, theta: impl Into<T::Coeff>) {
+        self.rotate_1(Pauli::X, addr0, theta.into())
+    }
+    /// `RY(θ)` on one qubit.
+    fn ry(&mut self, addr0: usize, theta: impl Into<T::Coeff>) {
+        self.rotate_1(Pauli::Y, addr0, theta.into())
+    }
+    /// `RZ(θ)` on one qubit.
+    fn rz(&mut self, addr0: usize, theta: impl Into<T::Coeff>) {
+        self.rotate_1(Pauli::Z, addr0, theta.into())
+    }
+
+    /// Explicit batched `RX(θ)`.
+    fn rx_batch(&mut self, targets: &[usize], theta: impl Into<T::Coeff>) {
         let theta = theta.into();
-        for q in targets.each() {
-            self.rotate_1(Pauli::X, q, theta.clone())
+        for &q in targets {
+            self.rx(q, theta.clone())
         }
     }
-    /// `RY(θ)` on each target qubit.
-    fn ry(&mut self, targets: impl crate::traits::Targets, theta: impl Into<T::Coeff>) {
+    /// Explicit batched `RY(θ)`.
+    fn ry_batch(&mut self, targets: &[usize], theta: impl Into<T::Coeff>) {
         let theta = theta.into();
-        for q in targets.each() {
-            self.rotate_1(Pauli::Y, q, theta.clone())
+        for &q in targets {
+            self.ry(q, theta.clone())
         }
     }
-    /// `RZ(θ)` on each target qubit.
-    fn rz(&mut self, targets: impl crate::traits::Targets, theta: impl Into<T::Coeff>) {
+    /// Explicit batched `RZ(θ)`.
+    fn rz_batch(&mut self, targets: &[usize], theta: impl Into<T::Coeff>) {
         let theta = theta.into();
-        for q in targets.each() {
-            self.rotate_1(Pauli::Z, q, theta.clone())
+        for &q in targets {
+            self.rz(q, theta.clone())
         }
     }
 }

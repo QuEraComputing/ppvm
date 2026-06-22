@@ -4,7 +4,7 @@
 use std::hash::BuildHasher;
 
 use super::data::PhasedPauliWord;
-use ppvm_traits::traits::{Clifford, CliffordExtensions, Targets};
+use ppvm_traits::traits::{Clifford, CliffordExtensions};
 use ppvm_traits::traits::{HashFinalize, PauliStorage, PauliWordTrait};
 
 impl<S, H, W> Clifford for PhasedPauliWord<S, H, W>
@@ -14,103 +14,88 @@ where
     W: PauliWordTrait + Clifford,
 {
     #[inline]
-    fn x(&mut self, targets: impl Targets) {
-        for index in targets.each() {
-            if self.word.get_lbit(index) {
-                // check for loss
-                continue;
-            }
-            let phase = (self.word.get_zbit(index)) as u8;
-            self.word.x(index);
-            self.add_phase(phase << 1);
+    fn x(&mut self, index: usize) {
+        if self.word.get_lbit(index) {
+            // check for loss
+            return;
         }
+        let phase = (self.word.get_zbit(index)) as u8;
+        self.word.x(index);
+        self.add_phase(phase << 1);
     }
 
     #[inline]
-    fn y(&mut self, targets: impl Targets) {
-        for index in targets.each() {
-            if self.word.get_lbit(index) {
-                // check for loss
-                continue;
-            }
-            let phase = (self.word.get_xbit(index) ^ self.word.get_zbit(index)) as u8;
-            self.word.y(index);
-            self.add_phase(phase << 1);
+    fn y(&mut self, index: usize) {
+        if self.word.get_lbit(index) {
+            // check for loss
+            return;
         }
+        let phase = (self.word.get_xbit(index) ^ self.word.get_zbit(index)) as u8;
+        self.word.y(index);
+        self.add_phase(phase << 1);
     }
 
     #[inline]
-    fn z(&mut self, targets: impl Targets) {
-        for index in targets.each() {
-            if self.word.get_lbit(index) {
-                // check for loss
-                continue;
-            }
-            let phase = (self.word.get_xbit(index)) as u8;
-            self.word.z(index);
-            self.add_phase(phase << 1);
+    fn z(&mut self, index: usize) {
+        if self.word.get_lbit(index) {
+            // check for loss
+            return;
         }
+        let phase = (self.word.get_xbit(index)) as u8;
+        self.word.z(index);
+        self.add_phase(phase << 1);
     }
 
     #[inline]
-    fn h(&mut self, targets: impl Targets) {
-        for index in targets.each() {
-            if self.word.get_lbit(index) {
-                // check for loss
-                continue;
-            }
-            let phase = (self.word.get_xbit(index) & self.word.get_zbit(index)) as u8;
-            self.word.h(index);
-            self.add_phase(phase << 1);
+    fn h(&mut self, index: usize) {
+        if self.word.get_lbit(index) {
+            // check for loss
+            return;
         }
+        let phase = (self.word.get_xbit(index) & self.word.get_zbit(index)) as u8;
+        self.word.h(index);
+        self.add_phase(phase << 1);
     }
 
     #[inline]
-    fn s(&mut self, targets: impl Targets) {
-        for index in targets.each() {
-            if self.word.get_lbit(index) {
-                // check for loss
-                continue;
-            }
-            let phase = (self.word.get_xbit(index) & !self.word.get_zbit(index)) as u8;
-            self.word.s(index);
-            self.add_phase(phase << 1);
+    fn s(&mut self, index: usize) {
+        if self.word.get_lbit(index) {
+            // check for loss
+            return;
         }
+        let phase = (self.word.get_xbit(index) & !self.word.get_zbit(index)) as u8;
+        self.word.s(index);
+        self.add_phase(phase << 1);
     }
 
     #[inline]
-    fn cnot(&mut self, targets: impl Targets) {
+    fn cnot(&mut self, control: usize, target: usize) {
         // phase = 1x y1 where x xor y = 0
         // xx zz    xx zz
         // 11 11 -> 10 01, 2
         // 10 01 -> 11 11, 2
-        for (control, target) in targets.pairs() {
-            if self.word.get_lbit(control) || self.word.get_lbit(target) {
-                continue;
-            }
-            let phase = ((self.word.get_xbit(control) & self.word.get_zbit(target))
-                & (self.word.get_xbit(target) == self.word.get_zbit(control)))
-                as u8;
-            self.word.cnot([control, target]);
-            self.add_phase(phase << 1);
+        if self.word.get_lbit(control) || self.word.get_lbit(target) {
+            return;
         }
+        let phase = ((self.word.get_xbit(control) & self.word.get_zbit(target))
+            & (self.word.get_xbit(target) == self.word.get_zbit(control)))
+            as u8;
+        self.word.cnot(control, target);
+        self.add_phase(phase << 1);
     }
 
     #[inline]
-    fn cz(&mut self, targets: impl Targets) {
+    fn cz(&mut self, control: usize, target: usize) {
         // phase = 11 10, 11 01 = 11 ab where a ^ b = 1
         // 11 01 -> 11 10, 2
         // 11 10 -> 11 01, 2
-        for (control, target) in targets.pairs() {
-            if self.word.get_lbit(control) || self.word.get_lbit(target) {
-                continue;
-            }
-            let phase = ((self.word.get_xbit(control) & self.word.get_xbit(target))
-                & (self.word.get_zbit(control) ^ self.word.get_zbit(target)))
-                as u8;
-            self.word.cz([control, target]);
-            self.add_phase(phase << 1);
+        if self.word.get_lbit(control) || self.word.get_lbit(target) {
+            return;
         }
+        let phase = ((self.word.get_xbit(control) & self.word.get_xbit(target))
+            & (self.word.get_zbit(control) ^ self.word.get_zbit(target))) as u8;
+        self.word.cz(control, target);
+        self.add_phase(phase << 1);
     }
 }
 
@@ -129,59 +114,49 @@ where
     // |   sqrt_y   |  Z  |  Y  | -X  |
     // | sqrt*y*adj | -Z  |  Y  |  X  |
 
-    fn s_dag(&mut self, targets: impl Targets) {
-        for addr0 in targets.each() {
-            if self.word.get_lbit(addr0) {
-                continue;
-            }
-            let phase = (self.word.get_xbit(addr0) & self.word.get_zbit(addr0)) as u8;
-            self.word.s_dag(addr0);
-            self.add_phase(phase << 1);
+    fn s_dag(&mut self, addr0: usize) {
+        if self.word.get_lbit(addr0) {
+            return;
         }
+        let phase = (self.word.get_xbit(addr0) & self.word.get_zbit(addr0)) as u8;
+        self.word.s_dag(addr0);
+        self.add_phase(phase << 1);
     }
 
-    fn sqrt_x(&mut self, targets: impl Targets) {
-        for addr0 in targets.each() {
-            if self.word.get_lbit(addr0) {
-                continue;
-            }
-            let phase = (self.word.get_xbit(addr0) & self.word.get_zbit(addr0)) as u8;
-            self.word.sqrt_x(addr0);
-            self.add_phase(phase << 1);
+    fn sqrt_x(&mut self, addr0: usize) {
+        if self.word.get_lbit(addr0) {
+            return;
         }
+        let phase = (self.word.get_xbit(addr0) & self.word.get_zbit(addr0)) as u8;
+        self.word.sqrt_x(addr0);
+        self.add_phase(phase << 1);
     }
 
-    fn sqrt_y(&mut self, targets: impl Targets) {
-        for addr0 in targets.each() {
-            if self.word.get_lbit(addr0) {
-                continue;
-            }
-            let phase = (!self.word.get_xbit(addr0) & self.word.get_zbit(addr0)) as u8;
-            self.word.sqrt_y(addr0);
-            self.add_phase(phase << 1);
+    fn sqrt_y(&mut self, addr0: usize) {
+        if self.word.get_lbit(addr0) {
+            return;
         }
+        let phase = (!self.word.get_xbit(addr0) & self.word.get_zbit(addr0)) as u8;
+        self.word.sqrt_y(addr0);
+        self.add_phase(phase << 1);
     }
 
-    fn sqrt_x_dag(&mut self, targets: impl Targets) {
-        for addr0 in targets.each() {
-            if self.word.get_lbit(addr0) {
-                continue;
-            }
-            let phase = (!self.word.get_xbit(addr0) & self.word.get_zbit(addr0)) as u8;
-            self.word.sqrt_x_dag(addr0);
-            self.add_phase(phase << 1);
+    fn sqrt_x_dag(&mut self, addr0: usize) {
+        if self.word.get_lbit(addr0) {
+            return;
         }
+        let phase = (!self.word.get_xbit(addr0) & self.word.get_zbit(addr0)) as u8;
+        self.word.sqrt_x_dag(addr0);
+        self.add_phase(phase << 1);
     }
 
-    fn sqrt_y_dag(&mut self, targets: impl Targets) {
-        for addr0 in targets.each() {
-            if self.word.get_lbit(addr0) {
-                continue;
-            }
-            let phase = (self.word.get_xbit(addr0) & !self.word.get_zbit(addr0)) as u8;
-            self.word.sqrt_y_dag(addr0);
-            self.add_phase(phase << 1);
+    fn sqrt_y_dag(&mut self, addr0: usize) {
+        if self.word.get_lbit(addr0) {
+            return;
         }
+        let phase = (self.word.get_xbit(addr0) & !self.word.get_zbit(addr0)) as u8;
+        self.word.sqrt_y_dag(addr0);
+        self.add_phase(phase << 1);
     }
 
     // | CY  |  I  |  X  |  Y  |  Z  |
@@ -190,20 +165,18 @@ where
     // |  X  | XY  | -YZ | XI  | YX  |
     // |  Y  | YY  | XZ  | YI  | -XX |
     // |  Z  | ZI  | IX  | ZY  | IZ  |
-    fn cy(&mut self, targets: impl Targets) {
-        for (addr0, addr1) in targets.pairs() {
-            if self.word.get_lbit(addr0) || self.word.get_lbit(addr1) {
-                continue;
-            }
-            // phase = -1 for XX -> -YZ and YZ -> -XX
-            let xc = self.word.get_xbit(addr0);
-            let zc = self.word.get_zbit(addr0);
-            let xt = self.word.get_xbit(addr1);
-            let zt = self.word.get_zbit(addr1);
-            let phase = (xc & (xt ^ zt) & !(zc ^ zt)) as u8;
-            self.word.cy([addr0, addr1]);
-            self.add_phase(phase << 1);
+    fn cy(&mut self, addr0: usize, addr1: usize) {
+        if self.word.get_lbit(addr0) || self.word.get_lbit(addr1) {
+            return;
         }
+        // phase = -1 for XX -> -YZ and YZ -> -XX
+        let xc = self.word.get_xbit(addr0);
+        let zc = self.word.get_zbit(addr0);
+        let xt = self.word.get_xbit(addr1);
+        let zt = self.word.get_zbit(addr1);
+        let phase = (xc & (xt ^ zt) & !(zc ^ zt)) as u8;
+        self.word.cy(addr0, addr1);
+        self.add_phase(phase << 1);
     }
 }
 
@@ -252,7 +225,7 @@ mod tests {
             ("+YZ", "+XY"),
         ] {
             let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
-            output.cnot([0, 1]);
+            output.cnot(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -368,7 +341,7 @@ mod tests {
             ("+YZ", "+YI"),
         ] {
             let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
-            output.cz([0, 1]);
+            output.cz(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }
@@ -394,7 +367,7 @@ mod tests {
             ("+YZ", "-XX"),
         ] {
             let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
-            output.cy([0, 1]);
+            output.cy(0, 1);
             assert_eq!((input, output.to_string()), (input, target.to_string()));
         }
     }

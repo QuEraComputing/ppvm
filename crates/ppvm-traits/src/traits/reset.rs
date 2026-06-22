@@ -1,26 +1,49 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-/// Reset qubits to a computational/Pauli basis state, mirroring stim's
-/// `R`/`RZ`/`RX`/`RY` reset family with broadcasting.
+/// Reset one qubit to a computational/Pauli basis state.
 pub trait Reset: crate::traits::Clifford + crate::traits::CliffordExtensions {
-    /// Reset each target to `|0⟩` (stim `R`/`RZ`).
-    fn reset(&mut self, targets: impl crate::traits::Targets);
+    /// Reset one qubit to `|0⟩` (stim `R`/`RZ`).
+    fn reset(&mut self, addr0: usize);
     /// stim `RZ` alias — reset to `|0⟩`.
-    fn reset_z(&mut self, targets: impl crate::traits::Targets) {
-        self.reset(targets)
+    fn reset_z(&mut self, addr0: usize) {
+        self.reset(addr0)
     }
     /// stim `RX` — reset to `|+⟩`.
-    fn reset_x(&mut self, targets: impl crate::traits::Targets) {
-        let qs: Vec<usize> = targets.each().collect();
-        self.reset(qs.as_slice());
-        self.h(qs.as_slice());
+    fn reset_x(&mut self, addr0: usize) {
+        self.reset(addr0);
+        self.h(addr0);
     }
     /// stim `RY` — reset to `|i⟩`.
-    fn reset_y(&mut self, targets: impl crate::traits::Targets) {
-        let qs: Vec<usize> = targets.each().collect();
-        self.reset(qs.as_slice());
-        self.h(qs.as_slice());
-        self.s(qs.as_slice());
+    fn reset_y(&mut self, addr0: usize) {
+        self.reset(addr0);
+        self.h(addr0);
+        self.s(addr0);
+    }
+
+    /// Explicit batched reset to `|0⟩`.
+    fn reset_batch(&mut self, targets: &[usize]) {
+        for &q in targets {
+            self.reset(q);
+        }
+    }
+
+    /// Explicit batched `RZ` alias.
+    fn reset_z_batch(&mut self, targets: &[usize]) {
+        self.reset_batch(targets)
+    }
+
+    /// Explicit batched `RX`.
+    fn reset_x_batch(&mut self, targets: &[usize]) {
+        for &q in targets {
+            self.reset_x(q);
+        }
+    }
+
+    /// Explicit batched `RY`.
+    fn reset_y_batch(&mut self, targets: &[usize]) {
+        for &q in targets {
+            self.reset_y(q);
+        }
     }
 }

@@ -120,21 +120,21 @@ fn bench_two_qubit_gates(c: &mut Criterion) {
     group.bench_function("cnot", |b| {
         b.iter_batched_ref(
             || tab.fork(None),
-            |t| t.cnot([0, 1]),
+            |t| t.cnot(0, 1),
             criterion::BatchSize::SmallInput,
         );
     });
     group.bench_function("cz", |b| {
         b.iter_batched_ref(
             || tab.fork(None),
-            |t| t.cz([0, 1]),
+            |t| t.cz(0, 1),
             criterion::BatchSize::SmallInput,
         );
     });
     group.bench_function("cy", |b| {
         b.iter_batched_ref(
             || tab.fork(None),
-            |t| t.cy([0, 1]),
+            |t| t.cy(0, 1),
             criterion::BatchSize::SmallInput,
         );
     });
@@ -181,7 +181,7 @@ fn bench_non_clifford_gates(c: &mut Criterion) {
     group.bench_function("rxx", |b| {
         b.iter_batched_ref(
             || tab_zero_2q.fork(None),
-            |t| t.rxx([0, 1], pi_4),
+            |t| t.rxx(0, 1, pi_4),
             criterion::BatchSize::SmallInput,
         );
     });
@@ -256,14 +256,14 @@ fn bench_noise(c: &mut Criterion) {
     group.bench_function("two_qubit_pauli_error", |b| {
         b.iter_batched_ref(
             || tab.fork(None),
-            |t| t.two_qubit_pauli_error([0, 1], [1.0 / 15.0; 15]),
+            |t| t.two_qubit_pauli_error(0, 1, [1.0 / 15.0; 15]),
             criterion::BatchSize::SmallInput,
         );
     });
     group.bench_function("depolarize2", |b| {
         b.iter_batched_ref(
             || tab.fork(None),
-            |t| t.depolarize2([0, 1], 1.0),
+            |t| t.depolarize2(0, 1, 1.0),
             criterion::BatchSize::SmallInput,
         );
     });

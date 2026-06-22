@@ -181,7 +181,7 @@ let mut state: State = PauliSum::builder()
 state += ("ZZIIIIIIIIIIIIIIIIII", 1.0);
 
 // Textbook H(0); CNOT(0, 1) -> reversed for Heisenberg propagation.
-state.cnot([0, 1]);
+state.cnot(0, 1);
 state.h(0);
 
 let zero_state: PauliPattern = "Z?*".into();   // <0...0| state |0...0>
@@ -198,7 +198,7 @@ use ppvm_tableau::prelude::*;
 let mut tab: GeneralizedTableau<config::indexmap::ByteFxHashF64<2>, u128, _>
     = GeneralizedTableau::new(8, 1e-10);
 tab.h(0);
-tab.cnot([0, 1]);
+tab.cnot(0, 1);
 let outcome = tab.measure(0);
 ```
 

@@ -41,7 +41,7 @@ macro_rules! trotter_evolve {
                 $state.truncate();
             }
             for i in 0..N - 1 {
-                $state.rzz([i, i + 1], THETA_ZZ);
+                $state.rzz(i, i + 1, THETA_ZZ);
                 $state.truncate();
                 $state.pauli_error(i, NOISE);
                 $state.truncate();

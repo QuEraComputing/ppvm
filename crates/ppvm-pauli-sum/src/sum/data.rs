@@ -31,7 +31,7 @@ use ppvm_traits::traits::*;
 /// state += ("ZZ", 1.0);
 ///
 /// // Circuit: H(0); CNOT(0, 1) — apply in reverse for Heisenberg propagation.
-/// state.cnot([0, 1]);
+/// state.cnot(0, 1);
 /// state.h(0);
 ///
 /// // ZZ → IZ under the GHZ circuit, with coefficient 1.0.

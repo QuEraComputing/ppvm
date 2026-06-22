@@ -96,7 +96,7 @@ fn apply_layer<B>(
     };
     for &(a, b) in pairs {
         if a < n_qubits && b < n_qubits {
-            tab.cz([a, b]);
+            tab.cz(a, b);
             tab.loss_channel(a, p_loss);
             tab.loss_channel(b, p_loss);
             tab.depolarize1(a, p_depolarize);

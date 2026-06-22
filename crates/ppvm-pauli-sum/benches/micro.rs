@@ -132,21 +132,21 @@ fn bench_clifford_two(c: &mut Criterion) {
     group.bench_function("cnot", |b| {
         b.iter_batched_ref(
             || state.clone(),
-            |s| s.cnot([0, 1]),
+            |s| s.cnot(0, 1),
             criterion::BatchSize::SmallInput,
         );
     });
     group.bench_function("cz", |b| {
         b.iter_batched_ref(
             || state.clone(),
-            |s| s.cz([0, 1]),
+            |s| s.cz(0, 1),
             criterion::BatchSize::SmallInput,
         );
     });
     group.bench_function("cy", |b| {
         b.iter_batched_ref(
             || state.clone(),
-            |s| s.cy([0, 1]),
+            |s| s.cy(0, 1),
             criterion::BatchSize::SmallInput,
         );
     });
@@ -184,21 +184,21 @@ fn bench_rotations(c: &mut Criterion) {
     group.bench_function("rxx", |b| {
         b.iter_batched_ref(
             || state.clone(),
-            |s| s.rxx([0, 1], 0.5),
+            |s| s.rxx(0, 1, 0.5),
             criterion::BatchSize::SmallInput,
         );
     });
     group.bench_function("ryy", |b| {
         b.iter_batched_ref(
             || state.clone(),
-            |s| s.ryy([0, 1], 0.5),
+            |s| s.ryy(0, 1, 0.5),
             criterion::BatchSize::SmallInput,
         );
     });
     group.bench_function("rzz", |b| {
         b.iter_batched_ref(
             || state.clone(),
-            |s| s.rzz([0, 1], 0.5),
+            |s| s.rzz(0, 1, 0.5),
             criterion::BatchSize::SmallInput,
         );
     });
@@ -222,7 +222,7 @@ fn bench_noise(c: &mut Criterion) {
     group.bench_function("two_qubit_pauli_error", |b| {
         b.iter_batched_ref(
             || state.clone(),
-            |s| s.two_qubit_pauli_error([0, 1], [1.0 / 15.0; 15]),
+            |s| s.two_qubit_pauli_error(0, 1, [1.0 / 15.0; 15]),
             criterion::BatchSize::SmallInput,
         );
     });
@@ -236,7 +236,7 @@ fn bench_noise(c: &mut Criterion) {
     group.bench_function("depolarize2", |b| {
         b.iter_batched_ref(
             || state.clone(),
-            |s| s.depolarize2([0, 1], 0.1),
+            |s| s.depolarize2(0, 1, 0.1),
             criterion::BatchSize::SmallInput,
         );
     });
@@ -376,7 +376,7 @@ fn bench_scaling(c: &mut Criterion) {
         group.bench_function(format!("cnot/{n_terms}"), |b| {
             b.iter_batched_ref(
                 || state.clone(),
-                |s| s.cnot([0, 1]),
+                |s| s.cnot(0, 1),
                 criterion::BatchSize::SmallInput,
             );
         });

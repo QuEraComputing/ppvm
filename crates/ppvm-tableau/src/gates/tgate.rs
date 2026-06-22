@@ -31,27 +31,23 @@ where
     I: TableauIndex + Send + Sync,
     <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
-    fn t(&mut self, targets: impl Targets) {
-        for index in targets.each() {
-            if self.is_lost[index] {
-                continue;
-            }
-
-            let complex_cos: Complex<T::Coeff> = COS_PI_OVER_8_TIMES_EXPIPI8.into();
-            let complex_sin: Complex<T::Coeff> = ISIN_PI_OVER_8_TIMES_EXPIPI8.into();
-            self.branch_with_coefficients(index, Pauli::Z, complex_cos, complex_sin);
+    fn t(&mut self, index: usize) {
+        if self.is_lost[index] {
+            return;
         }
+
+        let complex_cos: Complex<T::Coeff> = COS_PI_OVER_8_TIMES_EXPIPI8.into();
+        let complex_sin: Complex<T::Coeff> = ISIN_PI_OVER_8_TIMES_EXPIPI8.into();
+        self.branch_with_coefficients(index, Pauli::Z, complex_cos, complex_sin);
     }
 
-    fn t_dag(&mut self, targets: impl Targets) {
-        for index in targets.each() {
-            if self.is_lost[index] {
-                continue;
-            }
-
-            let complex_cos: Complex<T::Coeff> = COS_PI_OVER_8_TIMES_EXPIPI8.conj().into();
-            let complex_sin: Complex<T::Coeff> = ISIN_PI_OVER_8_TIMES_EXPIPI8.conj().into();
-            self.branch_with_coefficients(index, Pauli::Z, complex_cos, complex_sin);
+    fn t_dag(&mut self, index: usize) {
+        if self.is_lost[index] {
+            return;
         }
+
+        let complex_cos: Complex<T::Coeff> = COS_PI_OVER_8_TIMES_EXPIPI8.conj().into();
+        let complex_sin: Complex<T::Coeff> = ISIN_PI_OVER_8_TIMES_EXPIPI8.conj().into();
+        self.branch_with_coefficients(index, Pauli::Z, complex_cos, complex_sin);
     }
 }

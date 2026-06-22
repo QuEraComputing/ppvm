@@ -501,7 +501,7 @@ so gates are applied in reverse). <code>PauliSum</code> lives in the downstream
 let mut state: PauliSum&lt;config::indexmap::ByteFxHashF64&lt;1&gt;&gt; =
     PauliSum::builder().n_qubits(2).build();
 state += (&quot;ZZ&quot;, 1.0);
-state.cnot([0, 1]);
+state.cnot(0, 1);
 state.h(0);
 assert_eq!(state.len(), 1);
 </code></pre>
@@ -559,8 +559,7 @@ strategies.</p>  </article><article class="api-item" id="rs-ppvm-traits-traits-m
 lost (<code>Pauli::L</code>).</p>  </article><article class="api-item" id="rs-ppvm-traits-traits-noise-PauliError" data-name="paulierror" data-path="ppvm_traits::traits::noise::paulierror" data-kind="trait"> <div class="row1"> <span class="kind kind-trait">trait</span> <span class="name"><a href="#rs-ppvm-traits-traits-noise-PauliError">PauliError</a></span> <span class="path">ppvm_traits::traits::noise::PauliError</span> </div> <div class="signature">trait PauliError&lt;T&gt;</div> <p class="summary">Single-qubit Pauli error channel — apply <code>X</code>, <code>Y</code>, or <code>Z</code> with the
 three given probabilities.</p>  </article><article class="api-item" id="rs-ppvm-traits-traits-noise-PauliErrorAll" data-name="paulierrorall" data-path="ppvm_traits::traits::noise::paulierrorall" data-kind="trait"> <div class="row1"> <span class="kind kind-trait">trait</span> <span class="name"><a href="#rs-ppvm-traits-traits-noise-PauliErrorAll">PauliErrorAll</a></span> <span class="path">ppvm_traits::traits::noise::PauliErrorAll</span> </div> <div class="signature">trait PauliErrorAll&lt;T&gt;</div> <p class="summary">Apply the same single-qubit Pauli error channel uniformly to every
 qubit in the system.</p>  </article><article class="api-item" id="rs-ppvm-traits-traits-noise-ResetLossChannel" data-name="resetlosschannel" data-path="ppvm_traits::traits::noise::resetlosschannel" data-kind="trait"> <div class="row1"> <span class="kind kind-trait">trait</span> <span class="name"><a href="#rs-ppvm-traits-traits-noise-ResetLossChannel">ResetLossChannel</a></span> <span class="path">ppvm_traits::traits::noise::ResetLossChannel</span> </div> <div class="signature">trait ResetLossChannel&lt;T&gt;</div> <p class="summary">Reset the loss bit on a qubit — used to model a re-cooling /
-re-loading event that brings a previously-lost atom back.</p>  </article><article class="api-item" id="rs-ppvm-traits-traits-noise-TwoQubitPauliError" data-name="twoqubitpaulierror" data-path="ppvm_traits::traits::noise::twoqubitpaulierror" data-kind="trait"> <div class="row1"> <span class="kind kind-trait">trait</span> <span class="name"><a href="#rs-ppvm-traits-traits-noise-TwoQubitPauliError">TwoQubitPauliError</a></span> <span class="path">ppvm_traits::traits::noise::TwoQubitPauliError</span> </div> <div class="signature">trait TwoQubitPauliError&lt;T&gt;</div> <p class="summary">Two-qubit Pauli error channel.</p>  </article><article class="api-item" id="rs-ppvm-traits-traits-reset-Reset" data-name="reset" data-path="ppvm_traits::traits::reset::reset" data-kind="trait"> <div class="row1"> <span class="kind kind-trait">trait</span> <span class="name"><a href="#rs-ppvm-traits-traits-reset-Reset">Reset</a></span> <span class="path">ppvm_traits::traits::reset::Reset</span> </div> <div class="signature">trait Reset</div> <p class="summary">Reset qubits to a computational/Pauli basis state, mirroring stim&#39;s
-<code>R</code>/<code>RZ</code>/<code>RX</code>/<code>RY</code> reset family with broadcasting.</p>  </article><article class="api-item" id="rs-ppvm-traits-traits-storage-PauliStorage" data-name="paulistorage" data-path="ppvm_traits::traits::storage::paulistorage" data-kind="trait"> <div class="row1"> <span class="kind kind-trait">trait</span> <span class="name"><a href="#rs-ppvm-traits-traits-storage-PauliStorage">PauliStorage</a></span> <span class="path">ppvm_traits::traits::storage::PauliStorage</span> </div> <div class="signature">trait PauliStorage</div> <p class="summary">Backing storage for a <code>PauliWord</code> — a
+re-loading event that brings a previously-lost atom back.</p>  </article><article class="api-item" id="rs-ppvm-traits-traits-noise-TwoQubitPauliError" data-name="twoqubitpaulierror" data-path="ppvm_traits::traits::noise::twoqubitpaulierror" data-kind="trait"> <div class="row1"> <span class="kind kind-trait">trait</span> <span class="name"><a href="#rs-ppvm-traits-traits-noise-TwoQubitPauliError">TwoQubitPauliError</a></span> <span class="path">ppvm_traits::traits::noise::TwoQubitPauliError</span> </div> <div class="signature">trait TwoQubitPauliError&lt;T&gt;</div> <p class="summary">Two-qubit Pauli error channel.</p>  </article><article class="api-item" id="rs-ppvm-traits-traits-reset-Reset" data-name="reset" data-path="ppvm_traits::traits::reset::reset" data-kind="trait"> <div class="row1"> <span class="kind kind-trait">trait</span> <span class="name"><a href="#rs-ppvm-traits-traits-reset-Reset">Reset</a></span> <span class="path">ppvm_traits::traits::reset::Reset</span> </div> <div class="signature">trait Reset</div> <p class="summary">Reset one qubit to a computational/Pauli basis state.</p>  </article><article class="api-item" id="rs-ppvm-traits-traits-storage-PauliStorage" data-name="paulistorage" data-path="ppvm_traits::traits::storage::paulistorage" data-kind="trait"> <div class="row1"> <span class="kind kind-trait">trait</span> <span class="name"><a href="#rs-ppvm-traits-traits-storage-PauliStorage">PauliStorage</a></span> <span class="path">ppvm_traits::traits::storage::PauliStorage</span> </div> <div class="signature">trait PauliStorage</div> <p class="summary">Backing storage for a <code>PauliWord</code> — a
 fixed-size, <code>Copy</code>-able block of bits (typically <code>[u8; N]</code> or
 <code>[u64; N]</code>).</p> <details> <summary>Full docstring</summary> <div class="docstring">   <div class="doc-prose"><p>Backing storage for a <code>PauliWord</code> — a
 fixed-size, <code>Copy</code>-able block of bits (typically <code>[u8; N]</code> or
@@ -769,7 +768,7 @@ let mut state: PauliSum&lt;config::indexmap::ByteFxHashF64&lt;1&gt;&gt; =
 state += (&quot;ZZ&quot;, 1.0);
 
 // Circuit: H(0); CNOT(0, 1) — apply in reverse for Heisenberg propagation.
-state.cnot([0, 1]);
+state.cnot(0, 1);
 state.h(0);
 
 // ZZ → IZ under the GHZ circuit, with coefficient 1.0.
@@ -799,7 +798,7 @@ use ppvm_pauli_sum::config::fxhash::ByteF64;
 let mut tab: GeneralizedTableau&lt;ByteF64&lt;1&gt;&gt; =
     GeneralizedTableau::new_with_seed(2, 1e-12, 0);
 tab.h(0);
-tab.cnot([0, 1]);
+tab.cnot(0, 1);
 
 let r0 = LossyMeasure::measure(&amp;mut tab, 0);
 let r1 = LossyMeasure::measure(&amp;mut tab, 1);
@@ -842,7 +841,7 @@ use ppvm_tableau::data::GeneralizedTableau;
 let mut tab: GeneralizedTableau&lt;ByteF64&lt;1&gt;&gt; =
     GeneralizedTableau::new_with_seed(2, 1e-12, 0);
 tab.h(0);
-tab.cnot([0, 1]);
+tab.cnot(0, 1);
 
 let r0 = LossyMeasure::measure(&amp;mut tab, 0);
 let r1 = LossyMeasure::measure(&amp;mut tab, 1);
@@ -873,7 +872,7 @@ use ppvm_tableau::data::Tableau;
 
 let mut tab: Tableau&lt;ByteF64&lt;1&gt;&gt; = Tableau::new(2);
 tab.h(0);
-tab.cnot([0, 1]);
+tab.cnot(0, 1);
 assert_eq!(tab.n_qubits, 2);
 assert_eq!(tab.stabilizers().len(), 2);
 </code></pre>

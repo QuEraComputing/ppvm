@@ -3,7 +3,7 @@
 
 import pytest
 
-from ppvm import GeneralizedTableau, MeasurementResult, PauliSum
+from ppvm import GeneralizedTableau, MeasurementResult, PauliSum, StimProgram
 
 
 def test_single_and_broadcast_gates():
@@ -168,3 +168,34 @@ def test_odd_two_qubit_sequence_raises_value_error():
     t = GeneralizedTableau(3)
     with pytest.raises(ValueError, match="even number"):
         t.cnot([0, 1, 2])
+
+
+# --- StimProgram pretty-printing / round-trip ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        "H 0\nCX 0 1\nM 0 1\n",
+        "REPEAT 3 {\n    X 0\n    M 0\n}\n",
+        "S[T] 0\nI[R_X(theta=0.25)] 1\nI_ERROR[loss](0.01) 2\n",
+        "MR 0\nCX rec[-1] 0\n",
+        "MPP X0*Y1\nM 2\n",
+    ],
+)
+def test_stim_program_print_is_a_fixpoint(src):
+    # parse -> print -> parse -> print reaches a byte-identical fixpoint, so a
+    # parsed program can be serialized and re-parsed losslessly (modulo the
+    # canonical normalization of comments/whitespace).
+    printed = StimProgram.parse(src).to_stim()
+    assert StimProgram.parse(printed).to_stim() == printed
+
+
+def test_stim_program_str_matches_to_stim():
+    prog = StimProgram.parse("H 0\nM 0\n")
+    assert str(prog) == prog.to_stim()
+
+
+def test_stim_program_print_normalizes_comments_and_whitespace():
+    prog = StimProgram.parse("H 0  # flip\nCX  0   1\n")
+    assert prog.to_stim() == "H 0\nCX 0 1\n"

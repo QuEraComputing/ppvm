@@ -5,7 +5,7 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::ops::Deref;
 
-use ppvm_stim::{ExtendedProgram, parse_extended, validate};
+use ppvm_stim::{ExtendedProgram, StimPrint, parse_extended, validate};
 
 /// Python-facing wrapper around a validated extended Stim program.
 #[pyclass(name = "StimProgram", module = "ppvm._core")]
@@ -27,6 +27,21 @@ impl PyStimProgram {
         let src = std::fs::read_to_string(path)
             .map_err(|e| PyIOError::new_err(format!("failed to read {path}: {e}")))?;
         Self::parse(&src)
+    }
+
+    /// Render the program back to canonical Stim text.
+    ///
+    /// Parsing is round-trippable: `StimProgram.parse(s).to_stim()` reparses
+    /// to the same string (a print/parse fixpoint). The output is normalized
+    /// canonical Stim — comments and original whitespace/number spelling are
+    /// not preserved.
+    fn to_stim(&self) -> String {
+        self.0.to_stim()
+    }
+
+    /// `str(program)` yields the canonical Stim text (same as `to_stim()`).
+    fn __str__(&self) -> String {
+        self.0.to_stim()
     }
 
     fn __repr__(&self) -> String {

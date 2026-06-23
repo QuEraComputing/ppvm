@@ -12,13 +12,13 @@ pub(crate) mod syntax;
 use std::sync::Arc;
 
 use crate::ast::{ExtendedProgram, Program};
-use crate::diagnostics::{Diagnostics, FailFast, LineMap};
+use crate::diagnostics::{Diagnostics, FailFast};
 use crate::pipeline::Pipeline;
 use crate::syntax::run_on_parser_stack;
 
 /// Build a [`Diagnostics`] from a fail-fast sink that aborted a parse stage.
 fn fail(sink: FailFast, src: &str) -> Diagnostics {
-    Diagnostics::new(sink.into_items(), Arc::new(LineMap::new(src)))
+    Diagnostics::new(sink.into_items(), Arc::from(src))
 }
 
 /// Parse Stim source into the vanilla [`Program`] AST. Uses a fail-fast

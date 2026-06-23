@@ -10,14 +10,13 @@ use fxhash::FxHashMap;
 use ppvm_traits::traits::Clifford;
 
 // Hasher for the structural `word_fingerprint`. gxhash (AES-based) is fastest on
-// native but needs hardware AES and does not build on wasm32, so fall back to
-// fxhash there. The fingerprint is a transient in-memory dedup key — collisions
-// are resolved by `structurally_equal`, and it is never persisted or compared
-// across builds — so the hasher may differ per target without affecting results.
+// native and exposes a `gxhash64` bulk free function, but it needs hardware AES
+// and does not build on wasm32, so fall back to fxhash there. The fingerprint is
+// a transient in-memory dedup key — collisions are resolved by
+// `structurally_equal`, and it is never persisted or compared across builds — so
+// the hasher may differ per target without affecting results.
 #[cfg(target_arch = "wasm32")]
 use fxhash::FxHasher as FingerprintHasher;
-#[cfg(not(target_arch = "wasm32"))]
-use gxhash::GxHasher as FingerprintHasher;
 use num::{
     Complex, One, Zero,
     complex::{Complex64, ComplexFloat},
@@ -26,10 +25,30 @@ use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
 use ppvm_traits::config::Config;
-use std::{
-    hash::{Hash, Hasher},
-    ops::AddAssign,
-};
+#[cfg(target_arch = "wasm32")]
+use std::hash::Hasher;
+use std::ops::AddAssign;
+
+// Reusable per-thread scratch buffer for `word_fingerprint`. Gathering every
+// row's word bytes into one contiguous slice lets us hash in a single bulk call
+// instead of two tiny `Hash::hash` writes per row (high per-call overhead).
+// Cleared (capacity retained) per call, so it adapts to any row count / qubit
+// width without re-allocating. Bytes (not the storage word type) because the
+// storage element width (`[u8; N]` vs `[u64; N]`) is generic at this call site.
+thread_local! {
+    static WORD_FP_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// View a `Copy` plain-old-data value's bytes. Sound because `A: PauliStorage`
+/// implies `bytemuck::Pod`: no padding, every bit pattern valid, so the bytes
+/// are fully initialized and `u8`-aligned.
+#[inline]
+fn pod_bytes<A: Copy>(value: &A) -> &[u8] {
+    // SAFETY: `A` is POD (PauliStorage: bytemuck::Pod); reading its
+    // `size_of::<A>()` initialized bytes as `[u8]` is sound, and the borrow is
+    // tied to `value`.
+    unsafe { std::slice::from_raw_parts(value as *const A as *const u8, std::mem::size_of::<A>()) }
+}
 
 /// Hash of the `word` (Pauli content) of every row, in order. This is the
 /// expensive component (each word is several machine words wide) and is
@@ -43,15 +62,29 @@ where
     I:,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
-    let mut hasher = FingerprintHasher::default();
-    for row in tab.tableau.data.iter() {
-        // Hash the Pauli bits directly: the `PauliWord` hash cache is disabled
-        // for tableau rows (`REHASH = false`), so `row.word.hash()` would feed
-        // a stale zero and make every tableau collide.
-        row.word.xbits.data.hash(&mut hasher);
-        row.word.zbits.data.hash(&mut hasher);
-    }
-    hasher.finish()
+    WORD_FP_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        // Clear retains capacity; refill with every row's bits as raw bytes.
+        buf.clear();
+        for row in tab.tableau.data.iter() {
+            // Gather the Pauli bits directly: the `PauliWord` hash cache is
+            // disabled for tableau rows (`REHASH = false`), so hashing
+            // `row.word` would feed a stale zero and make every tableau collide.
+            buf.extend_from_slice(pod_bytes(&row.word.xbits.data));
+            buf.extend_from_slice(pod_bytes(&row.word.zbits.data));
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            gxhash::gxhash64(&buf, 0)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut hasher = FingerprintHasher::default();
+            hasher.write(&buf);
+            hasher.finish()
+        }
+    })
 }
 
 /// Per-row mask (splitmix64 of `(index, salt)`); a stable pure function used

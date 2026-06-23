@@ -26,3 +26,10 @@
 "build_median_ms" = 552.0
 "per_shot_ns" = 22300.0
 "branches" = 2025.0
+[[metric]]
+"commit" = "d4916210"
+"status" = "discard"
+"description" = "direct single-pass scalar word_fingerprint (no gather/gxhash) \u2014 REGRESSED"
+"build_median_ms" = 921.0
+"per_shot_ns" = 22300.0
+"branches" = 2025.0

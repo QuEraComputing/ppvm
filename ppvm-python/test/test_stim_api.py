@@ -203,3 +203,12 @@ def test_stim_program_repr_html_is_highlighted():
     assert html.startswith("<pre")
     assert "<span" in html  # tokens are wrapped in coloured spans
     assert "</pre>" in html
+
+
+def test_parse_error_points_at_the_source():
+    with pytest.raises(ValueError) as exc:
+        StimProgram.parse("H 0\nCX 0 1\nM 0 X\n")
+    msg = str(exc.value)
+    assert "M 0 X" in msg  # the offending source line is shown
+    assert "invalid target" in msg  # ...with the diagnostic message
+    assert "3" in msg  # ...located at line 3

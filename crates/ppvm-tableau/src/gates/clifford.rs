@@ -169,22 +169,10 @@ where
     impl_generalized_tableau_clifford!(x);
     impl_generalized_tableau_clifford!(y);
     impl_generalized_tableau_clifford!(z);
+    impl_generalized_tableau_clifford!(h);
     impl_generalized_tableau_clifford!(s);
     impl_generalized_tableau_clifford_pair!(cnot);
-
-    fn h(&mut self, addr0: usize) {
-        if self.is_lost[addr0] {
-            return;
-        }
-        self.tableau.h(addr0);
-    }
-
-    fn cz(&mut self, addr0: usize, addr1: usize) {
-        if self.is_lost[addr0] || self.is_lost[addr1] {
-            return;
-        }
-        self.tableau.cz(addr0, addr1);
-    }
+    impl_generalized_tableau_clifford_pair!(cz);
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> CliffordExtensions
@@ -194,35 +182,11 @@ where
     <T::Storage as BitView>::Store: PrimInt,
 {
     impl_generalized_tableau_clifford!(s_dag);
+    impl_generalized_tableau_clifford!(sqrt_x);
+    impl_generalized_tableau_clifford!(sqrt_x_dag);
+    impl_generalized_tableau_clifford!(sqrt_y);
+    impl_generalized_tableau_clifford!(sqrt_y_dag);
     impl_generalized_tableau_clifford_pair!(cy);
-
-    fn sqrt_x(&mut self, addr0: usize) {
-        if self.is_lost[addr0] {
-            return;
-        }
-        self.tableau.sqrt_x(addr0);
-    }
-
-    fn sqrt_x_dag(&mut self, addr0: usize) {
-        if self.is_lost[addr0] {
-            return;
-        }
-        self.tableau.sqrt_x_dag(addr0);
-    }
-
-    fn sqrt_y(&mut self, addr0: usize) {
-        if self.is_lost[addr0] {
-            return;
-        }
-        self.tableau.sqrt_y(addr0);
-    }
-
-    fn sqrt_y_dag(&mut self, addr0: usize) {
-        if self.is_lost[addr0] {
-            return;
-        }
-        self.tableau.sqrt_y_dag(addr0);
-    }
 }
 
 impl<T: Config> Tableau<T>

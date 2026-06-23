@@ -206,6 +206,40 @@ Local prerequisites the scripts assume: <code>node ≥ 20</code>
       (<code>rustup toolchain install nightly</code>). The full layout
       and rationale live in
 <code><a href="https://github.com/QuEraComputing/ppvm/blob/main/docs/README.md">docs/README.md</a></code>.
+</p> <h3>Continuous integration</h3> <p>
+CI lives in <code>.github/workflows/ci.yml</code> and is staged so the
+      cheap, platform-independent checks gate the expensive cross-OS ones:
+</p> <ol> <li> <strong><code>pre-commit</code></strong> (Linux) runs the full
+<code>prek</code> hook suite — rustfmt, clippy, <code>cargo check
+        --workspace --all-targets</code>, ruff, ty, hawkeye, and the file
+        hygiene hooks. Every other job <code>needs:</code> it, so a lint or
+        type failure stops the run before any test minutes are spent.
+</li> <li> <strong><code>rust-tests</code></strong> and
+<strong><code>python-tests</code></strong> (Linux) run
+<code>cargo test --workspace</code> and the <code>pytest</code>
+suites. The pure-Rust crates are platform-agnostic, so Linux is the
+        only OS that runs the full test suites.
+</li> <li> <strong><code>extension-cross-platform</code></strong> (macOS +
+        Windows) is the only cross-OS job. It builds the PyO3 extension via
+        maturin and runs the extension's <code>pytest</code> suite. It
+<code>needs: [rust-tests, python-tests]</code>, so the macOS/Windows
+        runners only start once Linux is fully green.
+</li> </ol> <p> <strong>Why cross-OS is extension-only.</strong> The compiled PyO3
+      module is the only artifact whose build is OS-sensitive — macOS needs
+<code>-undefined dynamic_lookup</code> (added by
+<code>ppvm-python-native/build.rs</code>; maturin sets it too), Windows
+      links <code>python3.lib</code>, and Linux needs neither. Building that
+      extension with maturin also compiles <code>ppvm-python-native</code> and
+      its entire dependency tree on the target OS, so a cross-platform compile
+      regression in any crate still surfaces here — without separately running
+<code>cargo build</code> for the whole workspace three times.
+</p> <p> <strong>No global <code>RUSTFLAGS</code>.</strong> gxhash's
+<code>+aes,+sse2</code> target features are set <em>arch-scoped</em> in
+<code>.cargo/config.toml</code>
+(<code>cfg(target_arch = "x86_64")</code>), not as a workflow-wide
+<code>RUSTFLAGS</code> — those x86 features are invalid on the aarch64
+<code>macos-latest</code> runner and would fail to compile there. Linux
+      and Windows (x86_64) still pick them up from the config.
 </p> <h2 id="architecture"><span class="sec-num">§ 3</span>Architecture</h2> <p>
 ppvm implements two complementary quantum simulation backends. They
       share a common gate / noise trait hierarchy from <code>ppvm-traits</code>.

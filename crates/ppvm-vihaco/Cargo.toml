@@ -18,8 +18,8 @@ rayon = { version = "1.10", optional = true }
 ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau", features = ["rayon"] }
 smallvec = "1.15.1"
-vihaco = { version = "0.1.0", git = "https://github.com/QuEraComputing/vihaco" }
-vihaco-cpu = { version = "0.1.0", git = "https://github.com/QuEraComputing/vihaco" }
-vihaco-parser = { version = "0.1.0", git = "https://github.com/QuEraComputing/vihaco" }
-vihaco-parser-core = { version = "0.1.0", git = "https://github.com/QuEraComputing/vihaco" }
+vihaco = "0.1.1"
+vihaco-cpu = "0.1.1"
+vihaco-parser = "0.1.1"
+vihaco-parser-core = "0.1.1"
 vihaco-circuit-isa = { version = "0.1.0", path = "../vihaco-circuit-isa" }

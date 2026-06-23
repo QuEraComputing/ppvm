@@ -105,7 +105,7 @@ fn @main() {
 
     // execution pauses here
     breakpoint
-    
+
     const.u64 0
     circuit measure
     ret

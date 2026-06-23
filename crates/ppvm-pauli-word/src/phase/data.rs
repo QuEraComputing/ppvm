@@ -3,8 +3,6 @@
 
 use std::hash::BuildHasher;
 
-use num::Integer;
-
 use crate::word::PauliWord;
 use ppvm_traits::char::Pauli;
 use ppvm_traits::traits::{HashFinalize, PauliStorage, PauliWordTrait};
@@ -125,8 +123,8 @@ impl<A: PauliStorage, H: BuildHasher + Default + Clone + HashFinalize, W: PauliW
     }
 }
 
-impl<H: BuildHasher + Default + Clone + HashFinalize> From<String>
-    for PhasedPauliWord<u64, H, PauliWord<u64, H>>
+impl<A: PauliStorage, H: BuildHasher + Default + Clone + HashFinalize> From<String>
+    for PhasedPauliWord<A, H, PauliWord<A, H>>
 {
     fn from(s: String) -> Self {
         let mut chars = s.chars();
@@ -137,9 +135,10 @@ impl<H: BuildHasher + Default + Clone + HashFinalize> From<String>
             (Some('-'), _) => 2,         // -1
             _ => panic!("Invalid phase format"),
         };
-        // Remaining characters are the Pauli string
-        let s: String = s.chars().skip(if phase.is_odd() { 2 } else { 1 }).collect();
-        let words: PauliWord<u64, H> = s.into();
+        // Remaining characters are the Pauli string. Odd phases (`+i`/`-i`)
+        // carry a two-char prefix; even phases (`+`/`-`) carry one.
+        let s: String = s.chars().skip(if phase & 1 == 1 { 2 } else { 1 }).collect();
+        let words: PauliWord<A, H> = s.into();
         Self {
             word: words,
             phase,
@@ -148,8 +147,8 @@ impl<H: BuildHasher + Default + Clone + HashFinalize> From<String>
     }
 }
 
-impl<H: BuildHasher + Default + Clone + HashFinalize> From<&str>
-    for PhasedPauliWord<u64, H, PauliWord<u64, H>>
+impl<A: PauliStorage, H: BuildHasher + Default + Clone + HashFinalize> From<&str>
+    for PhasedPauliWord<A, H, PauliWord<A, H>>
 {
     fn from(s: &str) -> Self {
         s.to_string().into()

@@ -214,7 +214,7 @@
 <a href=#214 id=214 data-nosnippet>214</a>        <span class="kw">let </span><span class="kw-2">mut </span>tab = make(<span class="number">2</span>);
 <a href=#215 id=215 data-nosnippet>215</a>        tab.h(<span class="number">0</span>);
 <a href=#216 id=216 data-nosnippet>216</a>        tab.t(<span class="number">0</span>);
-<a href=#217 id=217 data-nosnippet>217</a>        tab.t_adj(<span class="number">0</span>);
+<a href=#217 id=217 data-nosnippet>217</a>        tab.t_dag(<span class="number">0</span>);
 <a href=#218 id=218 data-nosnippet>218</a>        <span class="macro">assert_eq!</span>(tab.len(), <span class="number">1</span>);
 <a href=#219 id=219 data-nosnippet>219</a>        <span class="macro">assert!</span>((tab.entries.entries[<span class="number">0</span>].<span class="number">1 </span>- <span class="number">1.0</span>).abs() &lt; <span class="number">1e-12</span>);
 <a href=#220 id=220 data-nosnippet>220</a>    }
@@ -364,7 +364,7 @@
 <a href=#364 id=364 data-nosnippet>364</a>    <span class="attr">#[test]
 <a href=#365 id=365 data-nosnippet>365</a>    </span><span class="kw">fn </span>test_depolarize_zero_probability_doesnt_branch() {
 <a href=#366 id=366 data-nosnippet>366</a>        <span class="kw">let </span><span class="kw-2">mut </span>tab = make(<span class="number">2</span>);
-<a href=#367 id=367 data-nosnippet>367</a>        tab.depolarize(<span class="number">0</span>, <span class="number">0.0</span>);
+<a href=#367 id=367 data-nosnippet>367</a>        tab.depolarize1(<span class="number">0</span>, <span class="number">0.0</span>);
 <a href=#368 id=368 data-nosnippet>368</a>        <span class="macro">assert_eq!</span>(tab.len(), <span class="number">1</span>);
 <a href=#369 id=369 data-nosnippet>369</a>        <span class="macro">assert!</span>((tab.entries.entries[<span class="number">0</span>].<span class="number">1 </span>- <span class="number">1.0</span>).abs() &lt; <span class="number">1e-12</span>);
 <a href=#370 id=370 data-nosnippet>370</a>    }
@@ -406,7 +406,7 @@
 <a href=#406 id=406 data-nosnippet>406</a>        // branches stay above it. The total probability mass must still sum to 1.
 <a href=#407 id=407 data-nosnippet>407</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>tab: TestSum = GeneralizedTableauSum::new_with_seed(<span class="number">2</span>, <span class="number">1e-12</span>, <span class="number">0.05</span>, <span class="number">42</span>);
 <a href=#408 id=408 data-nosnippet>408</a>        tab.loss_channel(<span class="number">0</span>, <span class="number">0.9</span>); <span class="comment">// entries: [(orig, 0.1), (lost_q0, 0.9)]
-<a href=#409 id=409 data-nosnippet>409</a>        </span>tab.depolarize(<span class="number">1</span>, <span class="number">0.3</span>);
+<a href=#409 id=409 data-nosnippet>409</a>        </span>tab.depolarize1(<span class="number">1</span>, <span class="number">0.3</span>);
 <a href=#410 id=410 data-nosnippet>410</a>        <span class="kw">let </span>sum = sum_of_probabilities(<span class="kw-2">&amp;</span>tab);
 <a href=#411 id=411 data-nosnippet>411</a>        <span class="macro">assert!</span>(
 <a href=#412 id=412 data-nosnippet>412</a>            (sum - <span class="number">1.0</span>).abs() &lt; <span class="number">1e-6</span>,
@@ -462,7 +462,7 @@
 <a href=#462 id=462 data-nosnippet>462</a>        // X|0⟩ and Z|0⟩ have distinct tableau data from the original and from each other,
 <a href=#463 id=463 data-nosnippet>463</a>        // so we expect &gt;= 2 entries and total probability == 1.
 <a href=#464 id=464 data-nosnippet>464</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>tab = make(<span class="number">2</span>);
-<a href=#465 id=465 data-nosnippet>465</a>        tab.depolarize(<span class="number">0</span>, <span class="number">0.6</span>);
+<a href=#465 id=465 data-nosnippet>465</a>        tab.depolarize1(<span class="number">0</span>, <span class="number">0.6</span>);
 <a href=#466 id=466 data-nosnippet>466</a>        <span class="macro">assert!</span>(
 <a href=#467 id=467 data-nosnippet>467</a>            tab.len() &gt; <span class="number">1</span>,
 <a href=#468 id=468 data-nosnippet>468</a>            <span class="string">"depolarize should create branches, got len={}"</span>,
@@ -501,7 +501,7 @@
 <a href=#501 id=501 data-nosnippet>501</a>        <span class="comment">// Depolarizing a lost qubit must not create branches.
 <a href=#502 id=502 data-nosnippet>502</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>tab = make(<span class="number">2</span>);
 <a href=#503 id=503 data-nosnippet>503</a>        tab.loss_channel(<span class="number">0</span>, <span class="number">1.0</span>);
-<a href=#504 id=504 data-nosnippet>504</a>        tab.depolarize(<span class="number">0</span>, <span class="number">0.3</span>);
+<a href=#504 id=504 data-nosnippet>504</a>        tab.depolarize1(<span class="number">0</span>, <span class="number">0.3</span>);
 <a href=#505 id=505 data-nosnippet>505</a>        <span class="macro">assert_eq!</span>(tab.len(), <span class="number">1</span>);
 <a href=#506 id=506 data-nosnippet>506</a>        <span class="macro">assert!</span>((tab.entries.entries[<span class="number">0</span>].<span class="number">1 </span>- <span class="number">1.0</span>).abs() &lt; <span class="number">1e-12</span>);
 <a href=#507 id=507 data-nosnippet>507</a>    }
@@ -553,7 +553,7 @@
 <a href=#553 id=553 data-nosnippet>553</a>        tab.h(<span class="number">0</span>);
 <a href=#554 id=554 data-nosnippet>554</a>        tab.cnot(<span class="number">0</span>, <span class="number">1</span>);
 <a href=#555 id=555 data-nosnippet>555</a>        tab.loss_channel(<span class="number">0</span>, <span class="number">0.3</span>);
-<a href=#556 id=556 data-nosnippet>556</a>        tab.depolarize(<span class="number">1</span>, <span class="number">0.3</span>);
+<a href=#556 id=556 data-nosnippet>556</a>        tab.depolarize1(<span class="number">1</span>, <span class="number">0.3</span>);
 <a href=#557 id=557 data-nosnippet>557</a>
 <a href=#558 id=558 data-nosnippet>558</a>        <span class="macro">assert!</span>(!tab.entries.dirty);
 <a href=#559 id=559 data-nosnippet>559</a>        <span class="kw">let </span>n = tab.entries.entries.len();

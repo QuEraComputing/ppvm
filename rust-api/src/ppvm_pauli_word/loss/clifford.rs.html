@@ -92,10 +92,10 @@
 <a href=#92 id=92 data-nosnippet>92</a>    }
 <a href=#93 id=93 data-nosnippet>93</a>
 <a href=#94 id=94 data-nosnippet>94</a>    <span class="attr">#[test]
-<a href=#95 id=95 data-nosnippet>95</a>    </span><span class="kw">fn </span>test_s_adj() {
+<a href=#95 id=95 data-nosnippet>95</a>    </span><span class="kw">fn </span>test_s_dag() {
 <a href=#96 id=96 data-nosnippet>96</a>        <span class="kw">for </span>(input, target) <span class="kw">in </span>[(<span class="string">"I"</span>, <span class="string">"I"</span>), (<span class="string">"X"</span>, <span class="string">"Y"</span>), (<span class="string">"Z"</span>, <span class="string">"Z"</span>), (<span class="string">"Y"</span>, <span class="string">"X"</span>), (<span class="string">"L"</span>, <span class="string">"L"</span>)] {
 <a href=#97 id=97 data-nosnippet>97</a>            <span class="kw">let </span><span class="kw-2">mut </span>output: LossyPauliWord&lt;u64&gt; = LossyPauliWord::from(input);
-<a href=#98 id=98 data-nosnippet>98</a>            output.s_adj(<span class="number">0</span>);
+<a href=#98 id=98 data-nosnippet>98</a>            output.s_dag(<span class="number">0</span>);
 <a href=#99 id=99 data-nosnippet>99</a>            <span class="macro">assert_eq!</span>((input, output.to_string()), (input, target.to_string()));
 <a href=#100 id=100 data-nosnippet>100</a>        }
 <a href=#101 id=101 data-nosnippet>101</a>    }
@@ -110,10 +110,10 @@
 <a href=#110 id=110 data-nosnippet>110</a>    }
 <a href=#111 id=111 data-nosnippet>111</a>
 <a href=#112 id=112 data-nosnippet>112</a>    <span class="attr">#[test]
-<a href=#113 id=113 data-nosnippet>113</a>    </span><span class="kw">fn </span>test_sqrt_x_adj() {
+<a href=#113 id=113 data-nosnippet>113</a>    </span><span class="kw">fn </span>test_sqrt_x_dag() {
 <a href=#114 id=114 data-nosnippet>114</a>        <span class="kw">for </span>(input, target) <span class="kw">in </span>[(<span class="string">"I"</span>, <span class="string">"I"</span>), (<span class="string">"X"</span>, <span class="string">"X"</span>), (<span class="string">"Y"</span>, <span class="string">"Z"</span>), (<span class="string">"Z"</span>, <span class="string">"Y"</span>), (<span class="string">"L"</span>, <span class="string">"L"</span>)] {
 <a href=#115 id=115 data-nosnippet>115</a>            <span class="kw">let </span><span class="kw-2">mut </span>output: LossyPauliWord&lt;u64&gt; = LossyPauliWord::from(input);
-<a href=#116 id=116 data-nosnippet>116</a>            output.sqrt_x_adj(<span class="number">0</span>);
+<a href=#116 id=116 data-nosnippet>116</a>            output.sqrt_x_dag(<span class="number">0</span>);
 <a href=#117 id=117 data-nosnippet>117</a>            <span class="macro">assert_eq!</span>((input, output.to_string()), (input, target.to_string()));
 <a href=#118 id=118 data-nosnippet>118</a>        }
 <a href=#119 id=119 data-nosnippet>119</a>    }
@@ -128,10 +128,10 @@
 <a href=#128 id=128 data-nosnippet>128</a>    }
 <a href=#129 id=129 data-nosnippet>129</a>
 <a href=#130 id=130 data-nosnippet>130</a>    <span class="attr">#[test]
-<a href=#131 id=131 data-nosnippet>131</a>    </span><span class="kw">fn </span>test_sqrt_y_adj() {
+<a href=#131 id=131 data-nosnippet>131</a>    </span><span class="kw">fn </span>test_sqrt_y_dag() {
 <a href=#132 id=132 data-nosnippet>132</a>        <span class="kw">for </span>(input, target) <span class="kw">in </span>[(<span class="string">"I"</span>, <span class="string">"I"</span>), (<span class="string">"X"</span>, <span class="string">"Z"</span>), (<span class="string">"Y"</span>, <span class="string">"Y"</span>), (<span class="string">"Z"</span>, <span class="string">"X"</span>), (<span class="string">"L"</span>, <span class="string">"L"</span>)] {
 <a href=#133 id=133 data-nosnippet>133</a>            <span class="kw">let </span><span class="kw-2">mut </span>output: LossyPauliWord&lt;u64&gt; = LossyPauliWord::from(input);
-<a href=#134 id=134 data-nosnippet>134</a>            output.sqrt_y_adj(<span class="number">0</span>);
+<a href=#134 id=134 data-nosnippet>134</a>            output.sqrt_y_dag(<span class="number">0</span>);
 <a href=#135 id=135 data-nosnippet>135</a>            <span class="macro">assert_eq!</span>((input, output.to_string()), (input, target.to_string()));
 <a href=#136 id=136 data-nosnippet>136</a>        }
 <a href=#137 id=137 data-nosnippet>137</a>    }

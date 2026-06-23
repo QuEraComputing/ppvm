@@ -13,5 +13,11 @@
 <a href=#13 id=13 data-nosnippet>13</a>    <span class="doccomment">/// Measure qubit `addr0`. Returns `Some(bit)` for an in-subspace
 <a href=#14 id=14 data-nosnippet>14</a>    /// outcome, or `None` if the qubit has been lost.
 <a href=#15 id=15 data-nosnippet>15</a>    </span><span class="kw">fn </span>measure(<span class="kw-2">&amp;mut </span><span class="self">self</span>, addr0: usize) -&gt; <span class="prelude-ty">Option</span>&lt;bool&gt;;
-<a href=#16 id=16 data-nosnippet>16</a>}
+<a href=#16 id=16 data-nosnippet>16</a>
+<a href=#17 id=17 data-nosnippet>17</a>    <span class="doccomment">/// Explicit batched measurement: measure each target in order,
+<a href=#18 id=18 data-nosnippet>18</a>    /// returning one result per target.
+<a href=#19 id=19 data-nosnippet>19</a>    </span><span class="kw">fn </span>measure_many(<span class="kw-2">&amp;mut </span><span class="self">self</span>, targets: <span class="kw-2">&amp;</span>[usize]) -&gt; Vec&lt;<span class="prelude-ty">Option</span>&lt;bool&gt;&gt; {
+<a href=#20 id=20 data-nosnippet>20</a>        targets.iter().map(|<span class="kw-2">&amp;</span>q| <span class="self">self</span>.measure(q)).collect()
+<a href=#21 id=21 data-nosnippet>21</a>    }
+<a href=#22 id=22 data-nosnippet>22</a>}
 </code></pre></div></section></main></body></html>

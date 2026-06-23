@@ -5,6 +5,7 @@ use bnum::types::{U256, U512, U1024, U2048};
 use paste::paste;
 use ppvm_tableau::prelude::*;
 use pyo3::prelude::*;
+use pyo3::types::{PyComplex, PyDict};
 
 pub(crate) fn measurement_to_u8(m: Option<bool>) -> u8 {
     match m {
@@ -59,6 +60,28 @@ macro_rules! create_interface {
                     .iter()
                     .map(|m| measurement_to_u8(*m) as i64)
                     .collect()
+            }
+
+            /// Snapshot of the sparse coefficient vector as `{index: amplitude}`.
+            ///
+            /// Keys are basis-state indices (Python ints, lossless at every
+            /// width); values are complex amplitudes. This is a copy — mutating
+            /// it does not touch the tableau's internal state.
+            pub fn coefficients<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+                let dict = PyDict::new(py);
+                // `int(str)` handles index widths beyond u128 (bnum types).
+                let int_ctor = py.import("builtins")?.getattr("int")?;
+                for (coeff, idx) in self.inner.coefficients.iter() {
+                    let key = int_ctor.call1((idx.to_string(),))?;
+                    let value = PyComplex::from_doubles(py, coeff.re, coeff.im);
+                    dict.set_item(key, value)?;
+                }
+                Ok(dict)
+            }
+
+            /// Number of branches stored in the coefficient vector.
+            pub fn num_coefficients(&self) -> usize {
+                self.inner.coefficients.len()
             }
 
             // clifford

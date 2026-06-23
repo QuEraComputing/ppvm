@@ -19,4 +19,10 @@ ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 ppvm-stim = { version = "0.1.0", path = "../ppvm-stim", features = ["rayon"] }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
 ppvm-tableau-sum = { version = "0.1.0", path = "../ppvm-tableau-sum", features = ["rayon"] }
-pyo3 = { version = "0.29.0", features = ["extension-module", "multiple-pymethods"] }
+# abi3-py310: build a single stable-ABI wheel that loads on CPython 3.10+,
+# instead of one wheel per Python version.
+pyo3 = { version = "0.29.0", features = [
+    "extension-module",
+    "multiple-pymethods",
+    "abi3-py310",
+] }

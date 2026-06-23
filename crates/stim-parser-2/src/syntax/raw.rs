@@ -11,10 +11,6 @@ use crate::ast::shared::Tag;
 
 pub(crate) type RawSyntaxTree = Vec<RawSyntaxNode>;
 
-#[expect(
-    dead_code,
-    reason = "fields consumed by validate transition in Task 12"
-)]
 #[derive(Debug, Clone)]
 pub(crate) enum RawSyntaxNode {
     Instruction {
@@ -31,10 +27,6 @@ pub(crate) enum RawSyntaxNode {
     },
 }
 
-#[expect(
-    dead_code,
-    reason = "fields consumed by validate transition in Task 12"
-)]
 #[derive(Debug, Clone)]
 pub(crate) struct RawTarget {
     pub text: String,

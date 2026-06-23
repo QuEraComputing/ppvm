@@ -23,10 +23,6 @@ pub struct Pipeline<S> {
 pub struct Source<'a> {
     src: &'a str,
 }
-#[expect(
-    dead_code,
-    reason = "fields consumed by validate transition in Task 12"
-)]
 pub struct Parsed {
     pub(crate) tree: RawSyntaxTree,
     pub(crate) line_map: Arc<LineMap>,
@@ -72,6 +68,18 @@ impl<'a> Pipeline<Source<'a>> {
     }
 }
 
+impl Pipeline<Parsed> {
+    /// Stage 2: table-driven validation. Builds a typed vanilla [`Program`],
+    /// forwarding every recoverable error to the sink.
+    pub fn validate(self, sink: &mut dyn DiagnosticSink) -> Result<Pipeline<Validated>, Aborted> {
+        let Parsed { tree, line_map } = self.state;
+        let program = validate::validate(tree, &line_map, sink)?;
+        Ok(Pipeline {
+            state: Validated { program },
+        })
+    }
+}
+
 impl Pipeline<Validated> {
     pub fn finish(self) -> Program {
         self.state.program
@@ -100,6 +108,36 @@ mod tests {
     fn parse_transition_emits_diagnostic_and_aborts_on_syntax_error() {
         let mut sink = FailFast::new();
         let res = Pipeline::new("REPEAT 2 {\nH 0\n").parse(&mut sink); // unclosed
+        assert!(res.is_err());
+        assert!(sink.saw_error());
+    }
+
+    #[test]
+    fn parse_then_validate_produces_program() {
+        use crate::ast::Instruction;
+        use crate::instructions::GateName;
+
+        let mut sink = FailFast::new();
+        let program = Pipeline::new("H 0\nCX 0 1\n")
+            .parse(&mut sink)
+            .expect("parse")
+            .validate(&mut sink)
+            .expect("validate")
+            .finish();
+        assert_eq!(program.instructions.len(), 2);
+        assert!(matches!(
+            &program.instructions[0],
+            Instruction::Gate(op) if op.name == GateName::H
+        ));
+    }
+
+    #[test]
+    fn validate_transition_emits_and_aborts_on_failfast() {
+        let mut sink = FailFast::new();
+        let parsed = Pipeline::new("FROBNICATE 0\n")
+            .parse(&mut sink)
+            .expect("parse");
+        let res = parsed.validate(&mut sink);
         assert!(res.is_err());
         assert!(sink.saw_error());
     }

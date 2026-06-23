@@ -5,11 +5,10 @@
 //! `run_on_parser_stack` runs the recursive grammar on an oversized stack.
 
 mod grammar;
-mod raw;
+pub(crate) mod raw;
 
 pub(crate) use grammar::program_parser;
 pub(crate) use raw::RawSyntaxTree;
-#[expect(unused_imports, reason = "consumed by validate transition in Task 12")]
 pub(crate) use raw::{RawSyntaxNode, RawTarget};
 
 /// Stack size for the dedicated parsing thread. The chumsky grammar is built

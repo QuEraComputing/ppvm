@@ -1459,6 +1459,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "stim-parser-2"
+version = "0.1.0"
+dependencies = [
+ "chumsky",
+ "proptest",
+ "stim-parser",
+ "thiserror",
+]
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

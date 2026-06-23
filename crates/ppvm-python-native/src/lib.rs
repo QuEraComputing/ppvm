@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 pub mod interface;
@@ -8,8 +9,22 @@ pub mod interface_tableau;
 pub mod interface_tableau_sum;
 pub mod stim_program;
 
+pub(crate) fn flat_pairs(targets: &[usize]) -> PyResult<Vec<(usize, usize)>> {
+    if !targets.len().is_multiple_of(2) {
+        return Err(PyValueError::new_err(
+            "two-qubit operations require an even number of targets",
+        ));
+    }
+    Ok(targets
+        .chunks_exact(2)
+        .map(|pair| (pair[0], pair[1]))
+        .collect())
+}
+
+// Imported by Python only as the private `ppvm._core` submodule; maturin's
+// `module-name = "ppvm._core"` maps this `PyInit__core` symbol into the wheel.
 #[pymodule]
-pub mod ppvm_python_native {
+pub mod _core {
     // NOTE: it's not possible to use #[pymodule_export] inside a macro_rules!
 
     // PauliSum

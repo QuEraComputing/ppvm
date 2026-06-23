@@ -10,7 +10,7 @@ function trotter_circuit(n, total_time, dt, interaction_strength, external_field
     theta_zz = dt * interaction_strength
     theta_x = dt * external_field
 
-    
+
     for _ in 1:steps
 
         for i in 1:n

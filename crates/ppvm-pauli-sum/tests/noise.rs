@@ -103,9 +103,9 @@ fn test_depolarizing_error() {
     state += ("ZZZ", 1.0);
 
     let ps = [0.1, 0.2, 0.3];
-    state.depolarize(0, ps[0]);
-    state.depolarize(1, ps[1]);
-    state.depolarize(2, ps[2]);
+    state.depolarize1(0, ps[0]);
+    state.depolarize1(1, ps[1]);
+    state.depolarize1(2, ps[2]);
 
     println!("State: {}", state);
     let zero_pattern: PauliPattern = "Z?*".into();

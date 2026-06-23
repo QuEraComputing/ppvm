@@ -108,6 +108,7 @@ where
 {
     fn measure(&mut self, addr0: usize) -> Option<bool> {
         if self.is_lost[addr0] {
+            self.measurement_record.push(None);
             return None;
         }
 
@@ -124,6 +125,17 @@ where
             stab_anticomm_bits,
             destab_anticomm_bits,
         )
+    }
+
+    /// Override the trait default (a per-target `measure` loop, which allocates
+    /// a fresh `MeasureScratch` on every call) with a single scratch reused
+    /// across the whole batch, amortizing the case-a HashMap / `b_entries`
+    /// allocations and the cached odd-phase-destabilizer mask. Outcomes, the
+    /// measurement record, and the RNG-draw order are identical to measuring
+    /// each target individually — only the internal allocation pattern changes.
+    fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
+        let mut scratch = MeasureScratch::new();
+        self.measure_many_with_scratch(targets, &mut scratch)
     }
 }
 
@@ -188,6 +200,7 @@ where
             self.project_case_b(&entries, outcome, phase_decomp, destab_anticomm_bits);
 
             // Case-b doesn't mutate destabilizers, so the cached mask remains valid.
+            self.measurement_record.push(Some(outcome));
             Some(outcome)
         } else {
             // Case a: Z is not a stabilizer — need HashMap for cross-index lookups.
@@ -228,6 +241,7 @@ where
                 destab_anticomm_bits,
                 addr0,
             );
+            self.measurement_record.push(Some(outcome));
             Some(outcome)
         }
     }
@@ -373,8 +387,14 @@ where
             (0.0..=1.0).contains(&flip_prob),
             "flip_prob must be in [0, 1], got {flip_prob}"
         );
+        // `measure` already pushed the (un-flipped) outcome onto the record.
+        // Overwrite that last entry with the post-noise value so exactly one
+        // push occurs per logical measurement and the record matches what we
+        // return.
         let outcome = self.measure(addr0)?;
-        Some(self.flip_with_prob(outcome, flip_prob))
+        let noisy = self.flip_with_prob(outcome, flip_prob);
+        self.overwrite_last_measurement_record(Some(noisy));
+        Some(noisy)
     }
 
     /// Sample a Bernoulli(`p`) outcome using the tableau's internal RNG.

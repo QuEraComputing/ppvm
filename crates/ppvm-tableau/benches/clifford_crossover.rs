@@ -69,9 +69,9 @@ macro_rules! crossover_group {
 
 fn bench_crossover(c: &mut Criterion) {
     let tab = setup();
-    crossover_group!(c, tab, "h", h, h_batch);
-    crossover_group!(c, tab, "x", x, x_batch);
-    crossover_group!(c, tab, "s", s, s_batch);
+    crossover_group!(c, tab, "h", h, h_many);
+    crossover_group!(c, tab, "x", x, x_many);
+    crossover_group!(c, tab, "s", s, s_many);
 }
 
 criterion_group! {

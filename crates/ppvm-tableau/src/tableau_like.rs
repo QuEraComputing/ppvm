@@ -17,6 +17,21 @@ use ppvm_traits::traits::{Clifford, Coefficient};
 // `Zero` is used for `Self::Coeff::zero()` inside default method bodies; the
 // bound itself is redundant on `Self::Coeff` because `Coefficient: num::Zero`.
 
+/// `true` iff `p` lies in the closed unit interval `[0, 1]`.
+///
+/// Spelled out with two explicit comparisons rather than
+/// `(0.0..=1.0).contains(p)` because the coefficient types here only implement
+/// `PartialOrd<f64>`, not the `PartialOrd<Self>` that `RangeInclusive::contains`
+/// requires. Keeping the two comparisons in separate statements also avoids the
+/// `clippy::manual_range_contains` rewrite, which would not compile here.
+#[inline]
+fn is_probability<C: PartialOrd<f64>>(p: &C) -> bool {
+    if *p < 0.0 {
+        return false;
+    }
+    *p <= 1.0
+}
+
 /// A stabilizer-tableau-like backend that supports Clifford gates and an RNG.
 ///
 /// Implementing this trait grants default implementations of the Pauli noise
@@ -46,12 +61,7 @@ pub trait TableauLike: Clifford {
     /// loss events.
     #[inline]
     fn depolarize_impl(&mut self, addr0: usize, p: Self::Coeff) {
-        #[allow(clippy::manual_range_contains)]
-        // Can't use RangeInclusive::contains: it requires PartialOrd<Self>,
-        // but Self::Coeff only provides PartialOrd<f64>.
-        {
-            debug_assert!(p >= 0.0 && p <= 1.0);
-        }
+        debug_assert!(is_probability(&p));
         let r = self.rng_mut().random::<f64>();
         if p <= r {
             return;
@@ -75,10 +85,7 @@ pub trait TableauLike: Clifford {
     /// loss events.
     #[inline]
     fn pauli_error_impl(&mut self, addr0: usize, p: [Self::Coeff; 3]) {
-        #[allow(clippy::manual_range_contains)]
-        {
-            debug_assert!(p.iter().all(|p_| *p_ >= 0.0 && *p_ <= 1.0));
-        }
+        debug_assert!(p.iter().all(is_probability));
         let r = self.rng_mut().random::<f64>();
         let mut cumulative = Self::Coeff::zero();
         for (i, p_) in p.iter().enumerate() {
@@ -100,10 +107,7 @@ pub trait TableauLike: Clifford {
         if self.is_qubit_lost(addr0) || self.is_qubit_lost(addr1) {
             return;
         }
-        #[allow(clippy::manual_range_contains)]
-        {
-            debug_assert!(p.iter().all(|p_| *p_ >= 0.0 && *p_ <= 1.0));
-        }
+        debug_assert!(p.iter().all(is_probability));
         let r = self.rng_mut().random::<f64>();
         let sum = Self::Coeff::zero();
         let idx = p
@@ -115,6 +119,13 @@ pub trait TableauLike: Clifford {
             .position(|cum_prob| cum_prob > r);
 
         if let Some(i) = idx {
+            // Two-qubit Pauli pairs indexed by `i + 1` (so II at index 0 is
+            // skipped). Encoding: 0 = I, 1 = X, 2 = Y, 3 = Z; the first entry
+            // acts on addr0, the second on addr1.
+            //
+            // `rustfmt::skip` keeps the rows grouped by the first Pauli (a
+            // readable 4-wide grid); without it rustfmt repacks the tuples to
+            // fill the line width and the grouping is lost.
             #[rustfmt::skip]
             const PAULI_PAIRS: [(u8, u8); 16] = [
                 (0,0),(0,1),(0,2),(0,3),
@@ -147,10 +158,7 @@ pub trait TableauLike: Clifford {
         if self.is_qubit_lost(addr0) || self.is_qubit_lost(addr1) {
             return;
         }
-        #[allow(clippy::manual_range_contains)]
-        {
-            debug_assert!(p >= 0.0 && p <= 1.0);
-        }
+        debug_assert!(is_probability(&p));
         let p_arr: [Self::Coeff; 15] = core::array::from_fn(|_| p.clone() * (1.0 / 15.0));
         self.two_qubit_pauli_error_impl(addr0, addr1, p_arr);
     }

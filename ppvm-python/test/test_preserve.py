@@ -26,6 +26,7 @@ def test_preserve_strings_round_trip():
         "Z1",
         preserve_strings=_single_z(3),
     )
+    assert ps.preserve_strings is not None
     assert list(ps.preserve_strings) == ["ZII", "IZI", "IIZ"]
 
 
@@ -56,7 +57,7 @@ def test_preserved_string_survives_coefficient_truncation():
         preserve_strings=_single_z(3),
     )
     # Trigger auto-truncate via a no-op gate.
-    ps.rx(0, 0.0)
+    ps.rx(0, theta=0.0)
     kept = {t for t, _ in ps.terms}
     assert "ZII" in kept, "preserved tiny Z0 must survive"
     assert "XII" in kept, "above-threshold XII must survive"
@@ -75,7 +76,7 @@ def test_preserved_string_survives_weight_truncation():
         max_pauli_weight=2,
         preserve_strings=["XXXI"],
     )
-    ps.rx(0, 0.0)  # no-op triggers truncate
+    ps.rx(0, theta=0.0)  # no-op triggers truncate
     kept = {t for t, _ in ps.terms}
     assert "ZIII" in kept, "weight-1 Z0 must survive"
     assert "XXXI" in kept, "weight-3 XXXI is in preserve set and must survive"
@@ -91,7 +92,7 @@ def test_preserved_string_survives_combined_truncation():
         max_pauli_weight=2,
         preserve_strings=["ZIII", "XXXI"],  # one tiny-coef, one high-weight
     )
-    ps.rx(0, 0.0)
+    ps.rx(0, theta=0.0)
     kept = {t for t, _ in ps.terms}
     assert "ZIII" in kept, "preserved tiny Z0 must survive coefficient cut"
     assert "XXXI" in kept, "preserved weight-3 XXXI must survive weight cut"
@@ -125,12 +126,12 @@ def test_total_z_conservation_with_preserve_vs_without():
         for _ in range(steps + 1):
             sums.append(sum(ps.overlap(zz) for zz in z_observables))
             for q in range(L):
-                ps.pauli_error(q, [0.0, 0.0, noise])
+                ps.pauli_error(q, p=[0.0, 0.0, noise])
             for a, b, th in reversed(edges):
-                ps.rxx(a, b, th)
-                ps.ryy(a, b, th)
+                ps.rxx(a, b, theta=th)
+                ps.ryy(a, b, theta=th)
             for q in range(L):
-                ps.pauli_error(q, [0.0, 0.0, noise])
+                ps.pauli_error(q, p=[0.0, 0.0, noise])
         return sums
 
     # Plain truncation.
@@ -169,7 +170,7 @@ def test_no_preserve_uses_existing_strategy():
     """Without preserve_strings, behaviour is identical to before this
     change. Below-threshold strings are dropped uniformly."""
     ps = PauliSum.new(2, [("ZI", 0.5), ("XI", 1e-8)], min_abs_coeff=1e-3)
-    ps.rx(1, 0.0)  # no-op gate triggers truncate
+    ps.rx(1, theta=0.0)  # no-op gate triggers truncate
     kept = {t for t, _ in ps.terms}
     assert "ZI" in kept
     assert "XI" not in kept

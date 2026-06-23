@@ -59,13 +59,13 @@ impl<T: Config> Tableau<T> {
         let pw_cache = PhasedPauliWordNoHash::<T::Storage, T::BuildHasher>::new(n_qubits);
         for i in 0..n_qubits {
             // destabilizer
-            let mut pw = pw_cache.clone();
+            let mut pw = pw_cache;
             pw.set(i, Pauli::X);
             data.push(pw);
         }
         for i in 0..n_qubits {
             // stabilizer
-            let mut pw = pw_cache.clone();
+            let mut pw = pw_cache;
             pw.set(i, Pauli::Z);
             data.push(pw);
         }
@@ -155,8 +155,8 @@ impl<T: Config> Tableau<T> {
         let n = self.n_qubits;
         let (destabilizers, stabilizers) = self.data.split_at_mut(n);
 
-        // Clone g_q once before the loop
-        let g_q = stabilizers[q_idx].clone();
+        // Copy g_q once before the loop
+        let g_q = stabilizers[q_idx];
 
         // Check if there are other stabilizers that anticommute with Z_addr0
         // If so, replace with g_j = g_j * g_q
@@ -578,7 +578,7 @@ where
 ///     GeneralizedTableau::new_with_seed(1, 1e-12, 0);
 /// tab.h(0);
 /// tab.t(0);
-/// tab.t_adj(0);
+/// tab.t_dag(0);
 /// // T followed by T† is the identity; the |+⟩ state is restored.
 /// ```
 #[derive(Clone)]
@@ -595,6 +595,8 @@ pub struct GeneralizedTableau<
     pub is_lost: Vec<bool>,
     /// Coefficient-magnitude threshold below which branches are dropped.
     pub coefficient_threshold: T::Coeff,
+    /// Ordered log of every measurement performed (mirrors stim's record).
+    pub measurement_record: Vec<Option<bool>>,
     _index_phantom: PhantomData<IndexType>,
 }
 
@@ -624,6 +626,7 @@ where
             coefficients,
             is_lost: vec![false; n_qubits],
             coefficient_threshold,
+            measurement_record: Vec::new(),
             _index_phantom: PhantomData,
         }
     }
@@ -650,6 +653,29 @@ where
     /// Number of qubits.
     pub fn n_qubits(&self) -> usize {
         self.tableau.n_qubits
+    }
+
+    /// All measurement outcomes recorded so far, in order.
+    pub fn current_measurement_record(&self) -> &[Option<bool>] {
+        &self.measurement_record
+    }
+
+    /// Append an externally defined measurement result to the record.
+    ///
+    /// Used by Stim instructions such as `MPAD`, which append measurement
+    /// record bits without measuring a qubit.
+    pub fn append_measurement_record(&mut self, result: Option<bool>) {
+        self.measurement_record.push(result);
+    }
+
+    /// Replace the most recent measurement record entry.
+    ///
+    /// Used by noisy measurement paths where the quantum state follows the
+    /// true outcome but the public record should hold the reported bit.
+    pub fn overwrite_last_measurement_record(&mut self, result: Option<bool>) {
+        if let Some(last) = self.measurement_record.last_mut() {
+            *last = result;
+        }
     }
 
     /// Apply CZ to N pairs with constant offset: (base+i, base+offset+i) for i in 0..count.
@@ -789,7 +815,7 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn compute_phase(
         &self,
         destab_anticomm_bits: I,

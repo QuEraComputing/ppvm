@@ -42,14 +42,14 @@ where
     for q in 0..N_QUBITS {
         tab.sqrt_y(q);
         tab.loss_channel(q, P_LOSS);
-        tab.depolarize(q, P_DEPOL);
+        tab.depolarize1(q, P_DEPOL);
     }
 
     // Non-Clifford (T) on a few qubits, two noise channels each.
     for q in [0, 7, 12] {
         tab.t(q);
         tab.loss_channel(q, P_LOSS);
-        tab.depolarize(q, P_DEPOL);
+        tab.depolarize1(q, P_DEPOL);
     }
 
     // Two-qubit Cliffords, four noise channels each (loss+depolarize on both).
@@ -66,13 +66,13 @@ where
         tab.cz(i, j);
         tab.loss_channel(i, P_LOSS);
         tab.loss_channel(j, P_LOSS);
-        tab.depolarize(i, P_DEPOL);
-        tab.depolarize(j, P_DEPOL);
+        tab.depolarize1(i, P_DEPOL);
+        tab.depolarize1(j, P_DEPOL);
     }
 
     // A trailing single-qubit Clifford layer with one noise channel each.
     for q in [0, 2, 5, 6, 8, 10, 12] {
-        tab.sqrt_y_adj(q);
+        tab.sqrt_y_dag(q);
         tab.loss_channel(q, P_LOSS);
     }
 }

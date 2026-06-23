@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 The PPVM Authors
 # SPDX-License-Identifier: Apache-2.0
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 # Gate vocabulary shared across backends comes in two flavours:
@@ -14,11 +14,94 @@ from typing import Any
 #   ``truncate: bool = True`` kwarg and are used by ``PauliSum``. When ``True``
 #   (the default), the configured truncation strategy fires immediately after
 #   the gate — historical behaviour. Pass ``truncate=False`` to defer the cut;
-#   the user is then responsible for calling :meth:`PauliSum.truncate`
+#   the user is then responsible for calling `PauliSum.truncate`
 #   explicitly when the next truncation point is reached. This is the supported
 #   way to chain commuting gates (e.g. ``rxx + ryy`` on the same edge for a
 #   U(1)-conserving exchange step) without losing a conserved-charge component
 #   to intermediate truncation.
+#
+# Gate methods broadcast over targets and accept them in two interchangeable
+# forms, mirroring stim's two surfaces:
+#
+# * Variadic indices, like stim's ``TableauSimulator`` — ``x(0, 1, 2)``,
+#   ``cnot(0, 1, 2, 3)``.
+# * A single sequence (list / tuple / range / numpy array), like stim's
+#   ``Circuit.append`` — ``x([0, 1, 2])``, ``cnot(np.array([0, 1, 2, 3]))``.
+#
+# Single-qubit gates apply to each index; two-qubit gates consume consecutive
+# pairs (the target count must be even). Trailing scalar parameters (``theta``
+# for rotations, ``p`` for noise) may be passed either as keywords or as the
+# final positional argument. (``measure`` stays scalar and never broadcasts —
+# use ``measure_many`` for multiple qubits — matching stim, which keeps
+# ``measure`` single to avoid the ``if sim.measure(q):`` returns-a-list trap.)
+
+
+def _is_sequence(obj: Any) -> bool:
+    """True for a target *collection* (list / tuple / range / ndarray, ...).
+
+    Any iterable counts except ``str``/``bytes`` (iterable but never targets).
+    A bare ``int`` — including a numpy integer scalar, which is not iterable —
+    is not a sequence, so it falls through to the variadic path.
+    """
+    return isinstance(obj, Iterable) and not isinstance(obj, (str, bytes))
+
+
+def _normalize_targets(args: tuple[Any, ...]) -> list[int]:
+    """Resolve gate targets passed either as variadic indices (``x(0, 1, 2)``)
+    or as a single sequence (``x([0, 1, 2])``, ``x(np.array([0, 1, 2]))``)."""
+    if len(args) == 1 and _is_sequence(args[0]):
+        return [int(t) for t in args[0]]
+    return [int(t) for t in args]
+
+
+def _split_targets_parameter(
+    args: tuple[Any, ...],
+    value: Any | None,
+    name: str,
+) -> tuple[list[int], Any]:
+    """Split ``(*targets, value)`` accepting ``value=...`` and a single leading
+    sequence of targets (``([0, 1, 2], theta)`` as well as ``(0, 1, 2, theta)``)."""
+    if args and _is_sequence(args[0]):
+        targets, rest = [int(t) for t in args[0]], args[1:]
+    elif value is None:
+        if not args:
+            raise TypeError(f"missing required argument: {name!r}")
+        targets, rest = [int(t) for t in args[:-1]], args[-1:]
+    else:
+        targets, rest = [int(t) for t in args], ()
+    if value is None:
+        if not rest:
+            raise TypeError(f"missing required argument: {name!r}")
+        value = rest[-1]
+    return targets, value
+
+
+def _split_targets_parameter_truncate(
+    args: tuple[Any, ...],
+    value: Any | None,
+    name: str,
+    truncate: bool,
+) -> tuple[list[int], Any, bool]:
+    """Split ``(*targets, value[, truncate])`` for PauliSum methods, also
+    accepting a single leading sequence of targets."""
+    if args and _is_sequence(args[0]):
+        targets = [int(t) for t in args[0]]
+        rest = list(args[1:])
+        if rest and isinstance(rest[-1], bool):
+            truncate = rest.pop()
+        if value is None:
+            if not rest:
+                raise TypeError(f"missing required argument: {name!r}")
+            value = rest[-1]
+        return targets, value, truncate
+    if value is None:
+        if not args:
+            raise TypeError(f"missing required argument: {name!r}")
+        args_list = list(args)
+        if len(args_list) >= 2 and isinstance(args_list[-1], bool):
+            truncate = args_list.pop()
+        return [int(t) for t in args_list[:-1]], args_list[-1], truncate
+    return [int(t) for t in args], value, truncate
 
 
 class CliffordMixin:
@@ -27,63 +110,67 @@ class CliffordMixin:
     _interface: Any
 
     # Clifford operations
-    def x(self, addr0: int) -> None:
-        """Apply a Pauli X gate to the specified qubit.
+    def x(self, *targets: int | Iterable[int]) -> None:
+        """Apply a Pauli X gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.x(addr0)
+        self._interface.x(_normalize_targets(targets))
 
-    def y(self, addr0: int) -> None:
-        """Apply a Pauli Y gate to the specified qubit.
+    def y(self, *targets: int | Iterable[int]) -> None:
+        """Apply a Pauli Y gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.y(addr0)
+        self._interface.y(_normalize_targets(targets))
 
-    def z(self, addr0: int) -> None:
-        """Apply a Pauli Z gate to the specified qubit.
+    def z(self, *targets: int | Iterable[int]) -> None:
+        """Apply a Pauli Z gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.z(addr0)
+        self._interface.z(_normalize_targets(targets))
 
-    def h(self, addr0: int) -> None:
-        """Apply a Hadamard gate to the specified qubit.
+    def h(self, *targets: int | Iterable[int]) -> None:
+        """Apply a Hadamard gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.h(addr0)
+        self._interface.h(_normalize_targets(targets))
 
-    def s(self, addr0: int) -> None:
-        """Apply an S gate (sqrt(Z)) to the specified qubit.
+    def s(self, *targets: int | Iterable[int]) -> None:
+        """Apply an S gate (sqrt(Z)) to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.s(addr0)
+        self._interface.s(_normalize_targets(targets))
 
-    def cnot(self, addr0: int, addr1: int) -> None:
-        """Apply a CNOT (controlled-X) gate.
+    def cnot(self, *targets: int | Iterable[int]) -> None:
+        """Apply CNOT (controlled-X) gates over consecutive control/target pairs.
 
         Args:
-            addr0: The index of the control qubit.
-            addr1: The index of the target qubit.
+            *targets: A flat list of qubit indices, broadcast as
+                ``(control, target)`` pairs.
         """
-        self._interface.cnot(addr0, addr1)
+        self._interface.cnot(_normalize_targets(targets))
 
-    def cz(self, addr0: int, addr1: int) -> None:
-        """Apply a CZ (controlled-Z) gate.
+    def cz(self, *targets: int | Iterable[int]) -> None:
+        """Apply CZ (controlled-Z) gates over consecutive qubit pairs.
 
         Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
+            *targets: A flat list of qubit indices, broadcast as pairs.
         """
-        self._interface.cz(addr0, addr1)
+        self._interface.cz(_normalize_targets(targets))
+
+    # stim aliases
+    cx = cnot
+    zcx = cnot
+    zcz = cz
 
 
 class RotationsMixin:
@@ -92,87 +179,90 @@ class RotationsMixin:
     _interface: Any
 
     # Rotations
-    def rx(self, addr0: int, theta: float) -> None:
-        """Apply an RX rotation gate to the specified qubit.
+    def rx(self, *args: Any, theta: float | None = None) -> None:
+        """Apply an RX rotation gate to each target qubit.
 
         ```math
         R_X(\\theta) = e^{-i \\frac{\\theta}{2} X} = \\cos\\frac{\\theta}{2} I - i \\sin\\frac{\\theta}{2} X
         ```
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
             theta: The rotation angle in radians.
         """
-        self._interface.rx(addr0, theta)
+        targets, theta = _split_targets_parameter(args, theta, "theta")
+        self._interface.rx(targets, theta)
 
-    def ry(self, addr0: int, theta: float) -> None:
-        """Apply an RY rotation gate to the specified qubit.
+    def ry(self, *args: Any, theta: float | None = None) -> None:
+        """Apply an RY rotation gate to each target qubit.
 
         ```math
         R_Y(\\theta) = e^{-i \\frac{\\theta}{2} Y} = \\cos\\frac{\\theta}{2} I - i \\sin\\frac{\\theta}{2} Y
         ```
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
             theta: The rotation angle in radians.
         """
-        self._interface.ry(addr0, theta)
+        targets, theta = _split_targets_parameter(args, theta, "theta")
+        self._interface.ry(targets, theta)
 
-    def rz(self, addr0: int, theta: float) -> None:
-        """Apply an RZ rotation gate to the specified qubit.
+    def rz(self, *args: Any, theta: float | None = None) -> None:
+        """Apply an RZ rotation gate to each target qubit.
 
         ```math
         R_Z(\\theta) = e^{-i \\frac{\\theta}{2} Z} = \\cos\\frac{\\theta}{2} I - i \\sin\\frac{\\theta}{2} Z
         ```
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
             theta: The rotation angle in radians.
         """
-        self._interface.rz(addr0, theta)
+        targets, theta = _split_targets_parameter(args, theta, "theta")
+        self._interface.rz(targets, theta)
 
     # Two qubit rotations
-    def rxx(self, addr0: int, addr1: int, theta: float) -> None:
-        """Apply an RXX (Ising XX) rotation gate to two qubits.
+    def rxx(self, *args: Any, theta: float | None = None) -> None:
+        """Apply RXX (Ising XX) rotation gates over consecutive qubit pairs.
 
         ```math
         R_{XX}(\\theta) = e^{-i \\frac{\\theta}{2} X \\otimes X}
         ```
 
         Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
+            *targets: A flat list of qubit indices, broadcast as pairs.
             theta: The rotation angle in radians.
         """
-        self._interface.rxx(addr0, addr1, theta)
+        targets, theta = _split_targets_parameter(args, theta, "theta")
+        self._interface.rxx(targets, theta)
 
-    def ryy(self, addr0: int, addr1: int, theta: float) -> None:
-        """Apply an RYY (Ising YY) rotation gate to two qubits.
+    def ryy(self, *args: Any, theta: float | None = None) -> None:
+        """Apply RYY (Ising YY) rotation gates over consecutive qubit pairs.
 
         ```math
         R_{YY}(\\theta) = e^{-i \\frac{\\theta}{2} Y \\otimes Y}
         ```
 
         Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
+            *targets: A flat list of qubit indices, broadcast as pairs.
             theta: The rotation angle in radians.
         """
-        self._interface.ryy(addr0, addr1, theta)
+        targets, theta = _split_targets_parameter(args, theta, "theta")
+        self._interface.ryy(targets, theta)
 
-    def rzz(self, addr0: int, addr1: int, theta: float) -> None:
-        """Apply an RZZ (Ising ZZ) rotation gate to two qubits.
+    def rzz(self, *args: Any, theta: float | None = None) -> None:
+        """Apply RZZ (Ising ZZ) rotation gates over consecutive qubit pairs.
 
         ```math
         R_{ZZ}(\\theta) = e^{-i \\frac{\\theta}{2} Z \\otimes Z}
         ```
 
         Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
+            *targets: A flat list of qubit indices, broadcast as pairs.
             theta: The rotation angle in radians.
         """
-        self._interface.rzz(addr0, addr1, theta)
+        targets, theta = _split_targets_parameter(args, theta, "theta")
+        self._interface.rzz(targets, theta)
 
 
 class CliffordExtensionMixin:
@@ -180,54 +270,57 @@ class CliffordExtensionMixin:
 
     _interface: Any
 
-    def s_adj(self, addr0: int) -> None:
-        """Apply an S adjoint gate (sqrt(Z) dagger) to the specified qubit.
+    def s_dag(self, *targets: int | Iterable[int]) -> None:
+        """Apply an S adjoint gate (sqrt(Z) dagger) to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.s_adj(addr0)
+        self._interface.s_dag(_normalize_targets(targets))
 
-    def sqrt_x(self, addr0: int) -> None:
-        """Apply a sqrt(X) gate to the specified qubit.
+    def sqrt_x(self, *targets: int | Iterable[int]) -> None:
+        """Apply a sqrt(X) gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.sqrt_x(addr0)
+        self._interface.sqrt_x(_normalize_targets(targets))
 
-    def sqrt_y(self, addr0: int) -> None:
-        """Apply a sqrt(Y) gate to the specified qubit.
+    def sqrt_y(self, *targets: int | Iterable[int]) -> None:
+        """Apply a sqrt(Y) gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.sqrt_y(addr0)
+        self._interface.sqrt_y(_normalize_targets(targets))
 
-    def sqrt_x_adj(self, addr0: int) -> None:
-        """Apply a sqrt(X) adjoint gate to the specified qubit.
+    def sqrt_x_dag(self, *targets: int | Iterable[int]) -> None:
+        """Apply a sqrt(X) adjoint gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.sqrt_x_adj(addr0)
+        self._interface.sqrt_x_dag(_normalize_targets(targets))
 
-    def sqrt_y_adj(self, addr0: int) -> None:
-        """Apply a sqrt(Y) adjoint gate to the specified qubit.
+    def sqrt_y_dag(self, *targets: int | Iterable[int]) -> None:
+        """Apply a sqrt(Y) adjoint gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.sqrt_y_adj(addr0)
+        self._interface.sqrt_y_dag(_normalize_targets(targets))
 
-    def cy(self, addr0: int, addr1: int) -> None:
-        """Apply a controlled-Y gate.
+    def cy(self, *targets: int | Iterable[int]) -> None:
+        """Apply controlled-Y gates over consecutive control/target pairs.
 
         Args:
-            addr0: The index of the control qubit.
-            addr1: The index of the target qubit.
+            *targets: A flat list of qubit indices, broadcast as
+                ``(control, target)`` pairs.
         """
-        self._interface.cy(addr0, addr1)
+        self._interface.cy(_normalize_targets(targets))
+
+    # stim alias
+    zcy = cy
 
 
 class NoiseMixin:
@@ -236,15 +329,16 @@ class NoiseMixin:
     _interface: Any
 
     # Noise operations
-    def pauli_error(self, addr0: int, p: Sequence[float]) -> None:
-        """Apply a single-qubit Pauli error channel.
+    def pauli_error(self, *args: Any, p: Sequence[float] | None = None) -> None:
+        """Apply a single-qubit Pauli error channel to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
             p: Error probabilities [p_x, p_y, p_z] for X, Y, Z errors.
                 The identity probability is implicitly 1 - sum(p).
         """
-        self._interface.pauli_error(addr0, p)
+        targets, p = _split_targets_parameter(args, p, "p")
+        self._interface.pauli_error(targets, p)
 
     @staticmethod
     def two_qubit_pauli_error_probabilities(
@@ -282,42 +376,68 @@ class NoiseMixin:
         )
         return [error_probabilities.get(key, 0.0) for key in keys]
 
-    def two_qubit_pauli_error(
-        self,
-        addr0: int,
-        addr1: int,
-        p: Sequence[float],
-    ) -> None:
-        """Apply a two-qubit Pauli error channel.
+    def two_qubit_pauli_error(self, *args: Any, p: Sequence[float] | None = None) -> None:
+        """Apply a two-qubit Pauli error channel over consecutive qubit pairs.
 
         Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
+            *targets: A flat list of qubit indices, broadcast as pairs.
             p: Error probabilities for the 15 non-identity two-qubit Pauli
                 operators. Use two_qubit_pauli_error_probabilities to convert
                 from a dictionary format.
         """
-        self._interface.two_qubit_pauli_error(addr0, addr1, p)
+        targets, p = _split_targets_parameter(args, p, "p")
+        self._interface.two_qubit_pauli_error(targets, p)
 
     # additional noise methods
-    def depolarize(self, addr0: int, p: float) -> None:
-        """Apply a depolarizing channel to the specified qubit.
+    def x_error(self, *args: Any, p: float | None = None) -> None:
+        """Apply an X error channel to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
-            p: The depolarizing probability.
+            *targets: The indices of the target qubits.
+            p: The probability of applying an X error.
         """
-        self._interface.depolarize(addr0, p)
+        targets, p = _split_targets_parameter(args, p, "p")
+        self._interface.x_error(targets, p)
 
-    def depolarize2(self, addr0: int, addr1: int, p: float) -> None:
-        """Apply a two-qubit depolarizing channel to the specified qubits.
+    def y_error(self, *args: Any, p: float | None = None) -> None:
+        """Apply a Y error channel to each target qubit.
 
         Args:
-            addr0: The index of the first target qubit.
-            addr1: The index of the second target qubit.
+            *targets: The indices of the target qubits.
+            p: The probability of applying a Y error.
+        """
+        targets, p = _split_targets_parameter(args, p, "p")
+        self._interface.y_error(targets, p)
+
+    def z_error(self, *args: Any, p: float | None = None) -> None:
+        """Apply a Z error channel to each target qubit.
+
+        Args:
+            *targets: The indices of the target qubits.
+            p: The probability of applying a Z error.
+        """
+        targets, p = _split_targets_parameter(args, p, "p")
+        self._interface.z_error(targets, p)
+
+    def depolarize1(self, *args: Any, p: float | None = None) -> None:
+        """Apply a single-qubit depolarizing channel to each target qubit.
+
+        Args:
+            *targets: The indices of the target qubits.
             p: The depolarizing probability.
         """
-        self._interface.depolarize2(addr0, addr1, p)
+        targets, p = _split_targets_parameter(args, p, "p")
+        self._interface.depolarize1(targets, p)
+
+    def depolarize2(self, *args: Any, p: float | None = None) -> None:
+        """Apply a two-qubit depolarizing channel over consecutive qubit pairs.
+
+        Args:
+            *targets: A flat list of qubit indices, broadcast as pairs.
+            p: The depolarizing probability.
+        """
+        targets, p = _split_targets_parameter(args, p, "p")
+        self._interface.depolarize2(targets, p)
 
 
 class LossMixin:
@@ -359,279 +479,328 @@ class LossMixin:
 
 # Truncating variants used by ``PauliSum``: same gates, plus a per-gate
 # ``truncate`` kwarg. Each subclasses its plain counterpart, so members that
-# have no truncation concept (``cy``, ``two_qubit_pauli_error_probabilities``)
-# are inherited unchanged and only the branching gates are overridden.
+# have no truncation concept (``two_qubit_pauli_error_probabilities``) are
+# inherited unchanged and only the branching gates are overridden. Aliases are
+# re-declared at class level because they must point at the overridden methods.
 
 
 class TruncatingCliffordMixin(CliffordMixin):
     """Clifford gates with a per-gate ``truncate`` kwarg (used by PauliSum)."""
 
-    def x(self, addr0: int, *, truncate: bool = True) -> None:
-        """Apply a Pauli X gate to the specified qubit.
+    def x(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply a Pauli X gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
             truncate: If ``True`` (default), run the configured truncation
                 strategy after the gate; if ``False``, leave the map
                 untruncated so the next gate sees the full unpruned state.
         """
-        self._interface.x(addr0, truncate=truncate)
+        self._interface.x(_normalize_targets(targets), truncate)
 
-    def y(self, addr0: int, *, truncate: bool = True) -> None:
-        """Apply a Pauli Y gate to the specified qubit.
-
-        Args:
-            addr0: The index of the target qubit.
-            truncate: See :meth:`x`.
-        """
-        self._interface.y(addr0, truncate=truncate)
-
-    def z(self, addr0: int, *, truncate: bool = True) -> None:
-        """Apply a Pauli Z gate to the specified qubit.
+    def y(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply a Pauli Y gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
-            truncate: See :meth:`x`.
+            *targets: The indices of the target qubits.
+            truncate: See `x`.
         """
-        self._interface.z(addr0, truncate=truncate)
+        self._interface.y(_normalize_targets(targets), truncate)
 
-    def h(self, addr0: int, *, truncate: bool = True) -> None:
-        """Apply a Hadamard gate to the specified qubit.
+    def z(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply a Pauli Z gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
-            truncate: See :meth:`x`.
+            *targets: The indices of the target qubits.
+            truncate: See `x`.
         """
-        self._interface.h(addr0, truncate=truncate)
+        self._interface.z(_normalize_targets(targets), truncate)
 
-    def s(self, addr0: int, *, truncate: bool = True) -> None:
-        """Apply an S gate (sqrt(Z)) to the specified qubit.
+    def h(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply a Hadamard gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
-            truncate: See :meth:`x`.
+            *targets: The indices of the target qubits.
+            truncate: See `x`.
         """
-        self._interface.s(addr0, truncate=truncate)
+        self._interface.h(_normalize_targets(targets), truncate)
 
-    def cnot(self, addr0: int, addr1: int, *, truncate: bool = True) -> None:
-        """Apply a CNOT (controlled-X) gate.
+    def s(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply an S gate (sqrt(Z)) to each target qubit.
 
         Args:
-            addr0: The index of the control qubit.
-            addr1: The index of the target qubit.
-            truncate: See :meth:`x`.
+            *targets: The indices of the target qubits.
+            truncate: See `x`.
         """
-        self._interface.cnot(addr0, addr1, truncate=truncate)
+        self._interface.s(_normalize_targets(targets), truncate)
 
-    def cz(self, addr0: int, addr1: int, *, truncate: bool = True) -> None:
-        """Apply a CZ (controlled-Z) gate.
+    def cnot(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply CNOT (controlled-X) gates over consecutive control/target pairs.
 
         Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
-            truncate: See :meth:`x`.
+            *targets: A flat list of qubit indices, broadcast as pairs.
+            truncate: See `x`.
         """
-        self._interface.cz(addr0, addr1, truncate=truncate)
+        self._interface.cnot(_normalize_targets(targets), truncate)
+
+    def cz(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply CZ (controlled-Z) gates over consecutive qubit pairs.
+
+        Args:
+            *targets: A flat list of qubit indices, broadcast as pairs.
+            truncate: See `x`.
+        """
+        self._interface.cz(_normalize_targets(targets), truncate)
+
+    # stim aliases
+    cx = cnot
+    zcx = cnot
+    zcz = cz
 
 
 class TruncatingRotationsMixin(RotationsMixin):
     """Rotation gates with a per-gate ``truncate`` kwarg (used by PauliSum)."""
 
-    def rx(self, addr0: int, theta: float, *, truncate: bool = True) -> None:
-        """Apply an RX rotation gate to the specified qubit.
+    def rx(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
+        """Apply an RX rotation gate to each target qubit.
 
-        See :meth:`RotationsMixin.rx` for the gate definition.
+        See `RotationsMixin.rx` for the gate definition.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
             theta: The rotation angle in radians.
             truncate: If ``True`` (default), run the configured truncation
                 strategy after the gate; if ``False``, defer it.
         """
-        self._interface.rx(addr0, theta, truncate=truncate)
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
+        self._interface.rx(targets, theta, truncate)
 
-    def ry(self, addr0: int, theta: float, *, truncate: bool = True) -> None:
-        """Apply an RY rotation gate to the specified qubit.
+    def ry(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
+        """Apply an RY rotation gate to each target qubit.
 
-        See :meth:`RotationsMixin.ry` for the gate definition.
+        See `RotationsMixin.ry` for the gate definition.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
             theta: The rotation angle in radians.
-            truncate: See :meth:`rx`.
+            truncate: See `rx`.
         """
-        self._interface.ry(addr0, theta, truncate=truncate)
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
+        self._interface.ry(targets, theta, truncate)
 
-    def rz(self, addr0: int, theta: float, *, truncate: bool = True) -> None:
-        """Apply an RZ rotation gate to the specified qubit.
+    def rz(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
+        """Apply an RZ rotation gate to each target qubit.
 
-        See :meth:`RotationsMixin.rz` for the gate definition.
+        See `RotationsMixin.rz` for the gate definition.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
             theta: The rotation angle in radians.
-            truncate: See :meth:`rx`.
+            truncate: See `rx`.
         """
-        self._interface.rz(addr0, theta, truncate=truncate)
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
+        self._interface.rz(targets, theta, truncate)
 
-    def rxx(self, addr0: int, addr1: int, theta: float, *, truncate: bool = True) -> None:
-        """Apply an RXX (Ising XX) rotation gate to two qubits.
+    def rxx(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
+        """Apply RXX (Ising XX) rotation gates over consecutive qubit pairs.
 
-        See :meth:`RotationsMixin.rxx` for the gate definition.
+        See `RotationsMixin.rxx` for the gate definition.
 
         Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
+            *targets: A flat list of qubit indices, broadcast as pairs.
             theta: The rotation angle in radians.
             truncate: If ``True`` (default), run the configured truncation
                 strategy after the gate. Set to ``False`` to compose a
                 U(1)-conserving step like ``rxx + ryy`` on the same edge
                 without dropping the conserved-charge component between
-                them — then call :meth:`PauliSum.truncate` once at the
+                them — then call `PauliSum.truncate` once at the
                 end of the composition.
         """
-        self._interface.rxx(addr0, addr1, theta, truncate=truncate)
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
+        self._interface.rxx(targets, theta, truncate)
 
-    def ryy(self, addr0: int, addr1: int, theta: float, *, truncate: bool = True) -> None:
-        """Apply an RYY (Ising YY) rotation gate to two qubits.
+    def ryy(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
+        """Apply RYY (Ising YY) rotation gates over consecutive qubit pairs.
 
-        See :meth:`RotationsMixin.ryy` for the gate definition.
-
-        Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
-            theta: The rotation angle in radians.
-            truncate: See :meth:`rxx`.
-        """
-        self._interface.ryy(addr0, addr1, theta, truncate=truncate)
-
-    def rzz(self, addr0: int, addr1: int, theta: float, *, truncate: bool = True) -> None:
-        """Apply an RZZ (Ising ZZ) rotation gate to two qubits.
-
-        See :meth:`RotationsMixin.rzz` for the gate definition.
+        See `RotationsMixin.ryy` for the gate definition.
 
         Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
+            *targets: A flat list of qubit indices, broadcast as pairs.
             theta: The rotation angle in radians.
-            truncate: See :meth:`rxx`.
+            truncate: See `rxx`.
         """
-        self._interface.rzz(addr0, addr1, theta, truncate=truncate)
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
+        self._interface.ryy(targets, theta, truncate)
+
+    def rzz(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
+        """Apply RZZ (Ising ZZ) rotation gates over consecutive qubit pairs.
+
+        See `RotationsMixin.rzz` for the gate definition.
+
+        Args:
+            *targets: A flat list of qubit indices, broadcast as pairs.
+            theta: The rotation angle in radians.
+            truncate: See `rxx`.
+        """
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
+        self._interface.rzz(targets, theta, truncate)
 
 
 class TruncatingCliffordExtensionMixin(CliffordExtensionMixin):
-    """Additional Clifford gates with a per-gate ``truncate`` kwarg.
+    """Additional Clifford gates with a per-gate ``truncate`` kwarg."""
 
-    ``cy`` is inherited unchanged from :class:`CliffordExtensionMixin` (it does
-    not branch the Pauli sum, so it takes no ``truncate`` kwarg).
-    """
-
-    def s_adj(self, addr0: int, *, truncate: bool = True) -> None:
-        """Apply an S adjoint gate (sqrt(Z) dagger) to the specified qubit.
+    def s_dag(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply an S adjoint gate (sqrt(Z) dagger) to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
-            truncate: See :meth:`TruncatingCliffordMixin.x`.
+            *targets: The indices of the target qubits.
+            truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.s_adj(addr0, truncate=truncate)
+        self._interface.s_dag(_normalize_targets(targets), truncate)
 
-    def sqrt_x(self, addr0: int, *, truncate: bool = True) -> None:
-        """Apply a sqrt(X) gate to the specified qubit.
+    def sqrt_x(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply a sqrt(X) gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
-            truncate: See :meth:`TruncatingCliffordMixin.x`.
+            *targets: The indices of the target qubits.
+            truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.sqrt_x(addr0, truncate=truncate)
+        self._interface.sqrt_x(_normalize_targets(targets), truncate)
 
-    def sqrt_y(self, addr0: int, *, truncate: bool = True) -> None:
-        """Apply a sqrt(Y) gate to the specified qubit.
+    def sqrt_y(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply a sqrt(Y) gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
-            truncate: See :meth:`TruncatingCliffordMixin.x`.
+            *targets: The indices of the target qubits.
+            truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.sqrt_y(addr0, truncate=truncate)
+        self._interface.sqrt_y(_normalize_targets(targets), truncate)
 
-    def sqrt_x_adj(self, addr0: int, *, truncate: bool = True) -> None:
-        """Apply a sqrt(X) adjoint gate to the specified qubit.
+    def sqrt_x_dag(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply a sqrt(X) adjoint gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
-            truncate: See :meth:`TruncatingCliffordMixin.x`.
+            *targets: The indices of the target qubits.
+            truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.sqrt_x_adj(addr0, truncate=truncate)
+        self._interface.sqrt_x_dag(_normalize_targets(targets), truncate)
 
-    def sqrt_y_adj(self, addr0: int, *, truncate: bool = True) -> None:
-        """Apply a sqrt(Y) adjoint gate to the specified qubit.
+    def sqrt_y_dag(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply a sqrt(Y) adjoint gate to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
-            truncate: See :meth:`TruncatingCliffordMixin.x`.
+            *targets: The indices of the target qubits.
+            truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.sqrt_y_adj(addr0, truncate=truncate)
+        self._interface.sqrt_y_dag(_normalize_targets(targets), truncate)
+
+    def cy(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply controlled-Y gates over consecutive control/target pairs.
+
+        Args:
+            *targets: A flat list of qubit indices, broadcast as pairs.
+            truncate: See `TruncatingCliffordMixin.x`.
+        """
+        self._interface.cy(_normalize_targets(targets), truncate)
+
+    # stim alias
+    zcy = cy
 
 
 class TruncatingNoiseMixin(NoiseMixin):
     """Noise channels with a per-gate ``truncate`` kwarg (used by PauliSum).
 
     ``two_qubit_pauli_error_probabilities`` is inherited unchanged from
-    :class:`NoiseMixin`.
+    `NoiseMixin`.
     """
 
     def pauli_error(
-        self, addr0: int, p: Sequence[float], *, truncate: bool = True
+        self,
+        *args: Any,
+        p: Sequence[float] | None = None,
+        truncate: bool = True,
     ) -> None:
-        """Apply a single-qubit Pauli error channel.
+        """Apply a single-qubit Pauli error channel to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
             p: Error probabilities [p_x, p_y, p_z] for X, Y, Z errors.
                 The identity probability is implicitly 1 - sum(p).
             truncate: If ``True`` (default), run the configured truncation
                 strategy after the channel; if ``False``, defer it.
         """
-        self._interface.pauli_error(addr0, p, truncate=truncate)
+        targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
+        self._interface.pauli_error(targets, p, truncate)
 
     def two_qubit_pauli_error(
         self,
-        addr0: int,
-        addr1: int,
-        p: Sequence[float],
-        *,
+        *args: Any,
+        p: Sequence[float] | None = None,
         truncate: bool = True,
     ) -> None:
-        """Apply a two-qubit Pauli error channel.
+        """Apply a two-qubit Pauli error channel over consecutive qubit pairs.
 
         Args:
-            addr0: The index of the first qubit.
-            addr1: The index of the second qubit.
+            *targets: A flat list of qubit indices, broadcast as pairs.
             p: Error probabilities for the 15 non-identity two-qubit Pauli
                 operators. Use two_qubit_pauli_error_probabilities to convert
                 from a dictionary format.
-            truncate: See :meth:`pauli_error`.
+            truncate: See `pauli_error`.
         """
-        self._interface.two_qubit_pauli_error(addr0, addr1, p, truncate=truncate)
+        targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
+        self._interface.two_qubit_pauli_error(targets, p, truncate)
 
-    def depolarize(self, addr0: int, p: float, *, truncate: bool = True) -> None:
-        """Apply a depolarizing channel to the specified qubit.
+    def x_error(self, *args: Any, p: float | None = None, truncate: bool = True) -> None:
+        """Apply an X error channel to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
-            p: The depolarizing probability.
-            truncate: See :meth:`pauli_error`.
+            *targets: The indices of the target qubits.
+            p: The probability of applying an X error.
+            truncate: See `pauli_error`.
         """
-        self._interface.depolarize(addr0, p, truncate=truncate)
+        targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
+        self._interface.x_error(targets, p, truncate)
 
-    def depolarize2(
-        self, addr0: int, addr1: int, p: float, *, truncate: bool = True
-    ) -> None:
-        """Apply a two-qubit depolarizing channel to the specified qubits.
+    def y_error(self, *args: Any, p: float | None = None, truncate: bool = True) -> None:
+        """Apply a Y error channel to each target qubit.
 
         Args:
-            addr0: The index of the first target qubit.
-            addr1: The index of the second target qubit.
-            p: The depolarizing probability.
-            truncate: See :meth:`pauli_error`.
+            *targets: The indices of the target qubits.
+            p: The probability of applying a Y error.
+            truncate: See `pauli_error`.
         """
-        self._interface.depolarize2(addr0, addr1, p, truncate=truncate)
+        targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
+        self._interface.y_error(targets, p, truncate)
+
+    def z_error(self, *args: Any, p: float | None = None, truncate: bool = True) -> None:
+        """Apply a Z error channel to each target qubit.
+
+        Args:
+            *targets: The indices of the target qubits.
+            p: The probability of applying a Z error.
+            truncate: See `pauli_error`.
+        """
+        targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
+        self._interface.z_error(targets, p, truncate)
+
+    def depolarize1(self, *args: Any, p: float | None = None, truncate: bool = True) -> None:
+        """Apply a single-qubit depolarizing channel to each target qubit.
+
+        Args:
+            *targets: The indices of the target qubits.
+            p: The depolarizing probability.
+            truncate: See `pauli_error`.
+        """
+        targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
+        self._interface.depolarize1(targets, p, truncate)
+
+    def depolarize2(self, *args: Any, p: float | None = None, truncate: bool = True) -> None:
+        """Apply a two-qubit depolarizing channel over consecutive qubit pairs.
+
+        Args:
+            *targets: A flat list of qubit indices, broadcast as pairs.
+            p: The depolarizing probability.
+            truncate: See `pauli_error`.
+        """
+        targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
+        self._interface.depolarize2(targets, p, truncate)

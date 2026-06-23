@@ -34,7 +34,7 @@ function benchmark_suite()
 
     # temporary state used in PP.jl
     tmp_state = similar(initial_state)
-    
+
     println("Using $(Threads.nthreads()) threads")
     println("Initial state has $(length(initial_state.terms)) terms")
 
@@ -45,7 +45,7 @@ function benchmark_suite()
     y = CliffordGate(:Y, [1])
     z = CliffordGate(:Z, [1])
     h = CliffordGate(:H, [1])
-    
+
     cnot = CliffordGate(:CNOT, [1, 2])
     cz = CliffordGate(:CZ, [1, 2])
 
@@ -62,7 +62,7 @@ function benchmark_suite()
     group["y"] = @benchmarkable propagate!($y, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
     group["z"] = @benchmarkable propagate!($z, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
     group["h"] = @benchmarkable propagate!($h, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
-    
+
     group["cnot"] = @benchmarkable propagate!($cnot, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
     group["cz"] = @benchmarkable propagate!($cz, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
 
@@ -85,4 +85,3 @@ function run_benchmark()
 end
 
 results = run_benchmark()
-

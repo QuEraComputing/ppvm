@@ -84,9 +84,9 @@ theta_zz = dt * j
 
 def trotter_step(state, n, theta_x, theta_zz):
     for i in range(n):
-        state.rx(i, theta_x)
+        state.rx(i, theta=theta_x)
     for i in range(n - 1):
-        state.rzz(i, i + 1, theta_zz)
+        state.rzz(i, i + 1, theta=theta_zz)
 
 
 # %% [markdown]
@@ -148,13 +148,13 @@ for i in range(n):
 
 def noisy_trotter_step(state, n, theta_x, theta_zz):
     for i in range(n):
-        state.rx(i, theta_x)
-        state.pauli_error(i, noise_1q)
+        state.rx(i, theta=theta_x)
+        state.pauli_error(i, p=noise_1q)
         state.loss_channel(i, p_loss)
 
     for i in range(n - 1):
-        state.rzz(i, i + 1, theta_zz)
-        state.two_qubit_pauli_error(i, i + 1, noise_2q)
+        state.rzz(i, i + 1, theta=theta_zz)
+        state.two_qubit_pauli_error(i, i + 1, p=noise_2q)
         state.loss_channel(i, p_loss)
         state.loss_channel(i + 1, p_loss)
 

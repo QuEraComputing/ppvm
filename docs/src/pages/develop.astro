@@ -124,8 +124,8 @@ const toc = [
 │   ├── ppvm-sym             # Symbolic (parametric) Pauli propagation
 │   ├── ppvm-stim            # Stim program execution against the tableau
 │   ├── stim-parser          # Standalone parser for the Stim circuit format
-│   └── ppvm-python-native   # PyO3 bindings (cdylib via maturin)
-├── ppvm-python/             # Pure-Python wrapper (uv_build backend)
+│   └── ppvm-python-native   # PyO3 bindings, compiled into `ppvm` as `ppvm._core`
+├── ppvm-python/             # Python package `ppvm` (maturin: wrapper + `ppvm._core`)
 ├── docs/                    # This documentation site (Astro)
 ├── examples/                # Rust examples (symbolic.rs, trotter.rs)
 └── AGENTS.md                # Pointer to this guide
@@ -160,8 +160,9 @@ cargo bench --bench micro -- "gates/single-qubit/h"</code></pre>
 
     <p>
       Rust edition 2024. On x86 the default hasher (gxhash) needs
-      <code>RUSTFLAGS="-C target-feature=+aes,+sse2"</code>; CI sets this
-      automatically. On non-x86 hosts, build with
+      AES/SSE2 target features; this repo sets them for x86_64 in
+      <code>.cargo/config.toml</code>, and CI does the same. On non-x86 hosts,
+      build with
       <code>--no-default-features --features=indexmap,ahash</code> or similar.
     </p>
 
@@ -178,9 +179,12 @@ uv run --project ppvm-python --group dev pytest ppvm-python/test/test_basics.py
 uv run --project ppvm-python --group dev pytest ppvm-python/test/ -k test_ghz</code></pre>
 
     <p>
-      If the native module has changed but the wrapper has not, force a
-      rebuild with <code>uv sync --project ppvm-python --reinstall-package
-      ppvm-python-native</code>.
+      The compiled <code>ppvm._core</code> is part of the <code>ppvm</code>
+      wheel, so after changing Rust force a rebuild with <code>uv sync
+      --project ppvm-python --reinstall-package ppvm</code> (or <code>maturin
+      develop -m crates/ppvm-python-native/Cargo.toml</code>). The Python
+      project is configured to use uv-managed Python installations, so a fresh
+      <code>uv sync</code> avoids linking PyO3 builds against a system Python.
     </p>
 
     <h3>This docs site</h3>
@@ -396,6 +400,56 @@ npm run build          # extract everything, then `astro build` → dist/</code>
       <code><a href="https://github.com/QuEraComputing/ppvm/blob/main/docs/README.md">docs/README.md</a></code>.
     </p>
 
+    <h3>Continuous integration</h3>
+
+    <p>
+      CI lives in <code>.github/workflows/ci.yml</code> and is staged so the
+      cheap, platform-independent checks gate the expensive cross-OS ones:
+    </p>
+    <ol>
+      <li>
+        <strong><code>pre-commit</code></strong> (Linux) runs the full
+        <code>prek</code> hook suite — rustfmt, clippy, <code>cargo check
+        --workspace --all-targets</code>, ruff, ty, hawkeye, and the file
+        hygiene hooks. Every other job <code>needs:</code> it, so a lint or
+        type failure stops the run before any test minutes are spent.
+      </li>
+      <li>
+        <strong><code>rust-tests</code></strong> and
+        <strong><code>python-tests</code></strong> (Linux) run
+        <code>cargo test --workspace</code> and the <code>pytest</code>
+        suites. The pure-Rust crates are platform-agnostic, so Linux is the
+        only OS that runs the full test suites.
+      </li>
+      <li>
+        <strong><code>extension-cross-platform</code></strong> (macOS +
+        Windows) is the only cross-OS job. It builds the PyO3 extension via
+        maturin and runs the extension's <code>pytest</code> suite. It
+        <code>needs: [rust-tests, python-tests]</code>, so the macOS/Windows
+        runners only start once Linux is fully green.
+      </li>
+    </ol>
+    <p>
+      <strong>Why cross-OS is extension-only.</strong> The compiled PyO3
+      module is the only artifact whose build is OS-sensitive — macOS needs
+      <code>-undefined dynamic_lookup</code> (added by
+      <code>ppvm-python-native/build.rs</code>; maturin sets it too), Windows
+      links <code>python3.lib</code>, and Linux needs neither. Building that
+      extension with maturin also compiles <code>ppvm-python-native</code> and
+      its entire dependency tree on the target OS, so a cross-platform compile
+      regression in any crate still surfaces here — without separately running
+      <code>cargo build</code> for the whole workspace three times.
+    </p>
+    <p>
+      <strong>No global <code>RUSTFLAGS</code>.</strong> gxhash's
+      <code>+aes,+sse2</code> target features are set <em>arch-scoped</em> in
+      <code>.cargo/config.toml</code>
+      (<code>cfg(target_arch = "x86_64")</code>), not as a workflow-wide
+      <code>RUSTFLAGS</code> — those x86 features are invalid on the aarch64
+      <code>macos-latest</code> runner and would fail to compile there. Linux
+      and Windows (x86_64) still pick them up from the config.
+    </p>
+
     <h2 id="architecture"><span class="sec-num">§ 3</span>Architecture</h2>
 
     <p>
@@ -546,16 +600,19 @@ chore: restore lockfile consistency</code></pre>
     <h2 id="python-bindings"><span class="sec-num">§ 5</span>Python bindings</h2>
 
     <p>
-      <strong>Two-layer build.</strong> <code>ppvm-python-native</code>
-      (Rust &rarr; cdylib via maturin + PyO3 0.27) is compiled automatically
-      when <code>ppvm-python</code> is installed. <code>ppvm-python</code>
-      is a pure-Python wrapper using <code>uv_build</code> as its build
-      backend.
+      <strong>Single mixed wheel.</strong> <code>ppvm-python</code> is one
+      maturin package: it bundles the pure-Python wrapper under
+      <code>src/ppvm/</code> together with the PyO3 crate
+      (<code>ppvm-python-native</code>, Rust &rarr; cdylib via PyO3 0.29),
+      which maturin compiles and drops in as the private
+      <code>ppvm._core</code> submodule. Users only ever <code>import
+      ppvm</code>.
     </p>
     <ul>
-      <li>Python &ge; 3.10 required (<code>.python-version</code> pins 3.12 for dev).</li>
-      <li><code>uv</code> manages the venv, deps, and triggers the maturin build.</li>
-      <li><code>ppvm-python/pyproject.toml</code> references <code>ppvm-python-native</code> via <code>[tool.uv.sources]</code> path dependency.</li>
+      <li>Python &ge; 3.10 required (<code>.python-version</code> pins 3.12 for dev). The wheel is built against PyO3's <code>abi3-py310</code> stable ABI, so one <code>cp310-abi3</code> wheel per platform loads on 3.10+.</li>
+      <li><code>uv</code> manages the venv and deps and triggers the maturin build on <code>uv sync</code>.</li>
+      <li><code>ppvm-python/pyproject.toml</code> sets <code>build-backend = "maturin"</code> with <code>[tool.maturin]</code> <code>manifest-path</code> &rarr; the crate, <code>python-source = "src"</code>, and <code>module-name = "ppvm._core"</code>.</li>
+      <li>Plain <code>cargo build</code> also links the cdylib (a <code>build.rs</code> in <code>ppvm-python-native</code> adds the macOS <code>-undefined dynamic_lookup</code> flag), so the Rust-only workflows work without maturin.</li>
       <li>The native module exports 16 <code>PauliSum</code> variants &times; 2 (with/without loss) + 32 <code>GeneralizedTableau</code> variants (1&ndash;32 qubits) via the <code>create_interface!</code> / <code>create_interface_range!</code> macros.</li>
     </ul>
     <p>

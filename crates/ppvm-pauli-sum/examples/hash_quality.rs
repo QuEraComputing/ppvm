@@ -99,7 +99,10 @@ where
     let mean_load = n as f64 / (1u64 << bucket_bits) as f64;
     let variance: f64 = {
         let m = mean_load;
-        let v: f64 = bucket_counts.values().map(|c| (*c as f64 - m).powi(2)).sum();
+        let v: f64 = bucket_counts
+            .values()
+            .map(|c| (*c as f64 - m).powi(2))
+            .sum();
         let unfilled = (1u64 << bucket_bits) as usize - bucket_counts.len();
         let zero_term = unfilled as f64 * m * m;
         (v + zero_term) / (1u64 << bucket_bits) as f64

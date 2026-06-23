@@ -41,83 +41,122 @@ macro_rules! create_interface {
                 self.inner.to_string()
             }
 
-            pub fn measure(&mut self, addr0: usize) -> Option<bool> {
-                self.inner.measure(addr0)
+            pub fn measure(&mut self, addr0: usize) -> i64 {
+                measurement_to_u8(self.inner.measure(addr0)) as i64
+            }
+
+            pub fn measure_many(&mut self, targets: Vec<usize>) -> Vec<i64> {
+                self.inner
+                    .measure_many(targets.as_slice())
+                    .into_iter()
+                    .map(|m| measurement_to_u8(m) as i64)
+                    .collect()
+            }
+
+            pub fn current_measurement_record(&self) -> Vec<i64> {
+                self.inner
+                    .current_measurement_record()
+                    .iter()
+                    .map(|m| measurement_to_u8(*m) as i64)
+                    .collect()
             }
 
             // clifford
-            pub fn x(&mut self, addr0: usize) {
-                self.inner.x(addr0);
+            pub fn x(&mut self, targets: Vec<usize>) {
+                self.inner.x_many(targets.as_slice());
             }
 
-            pub fn y(&mut self, addr0: usize) {
-                self.inner.y(addr0);
+            pub fn y(&mut self, targets: Vec<usize>) {
+                self.inner.y_many(targets.as_slice());
             }
 
-            pub fn z(&mut self, addr0: usize) {
-                self.inner.z(addr0);
+            pub fn z(&mut self, targets: Vec<usize>) {
+                self.inner.z_many(targets.as_slice());
             }
 
-            pub fn h(&mut self, addr0: usize) {
-                self.inner.h(addr0);
+            pub fn h(&mut self, targets: Vec<usize>) {
+                self.inner.h_many(targets.as_slice());
             }
 
-            pub fn s(&mut self, addr0: usize) {
-                self.inner.s(addr0);
+            pub fn s(&mut self, targets: Vec<usize>) {
+                self.inner.s_many(targets.as_slice());
             }
 
-            pub fn s_adj(&mut self, addr0: usize) {
-                self.inner.s_adj(addr0);
+            pub fn s_dag(&mut self, targets: Vec<usize>) {
+                self.inner.s_dag_many(targets.as_slice());
             }
 
             // clifford extensions
-            pub fn sqrt_x(&mut self, addr0: usize) {
-                self.inner.sqrt_x(addr0);
+            pub fn sqrt_x(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_x_many(targets.as_slice());
             }
 
-            pub fn sqrt_x_adj(&mut self, addr0: usize) {
-                self.inner.sqrt_x_adj(addr0);
+            pub fn sqrt_x_dag(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_x_dag_many(targets.as_slice());
             }
 
-            pub fn sqrt_y(&mut self, addr0: usize) {
-                self.inner.sqrt_y(addr0);
+            pub fn sqrt_y(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_y_many(targets.as_slice());
             }
 
-            pub fn sqrt_y_adj(&mut self, addr0: usize) {
-                self.inner.sqrt_y_adj(addr0);
+            pub fn sqrt_y_dag(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_y_dag_many(targets.as_slice());
             }
 
-            pub fn cnot(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cnot(addr0, addr1);
+            pub fn t(&mut self, targets: Vec<usize>) {
+                self.inner.t_many(targets.as_slice());
             }
 
-            pub fn cy(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cy(addr0, addr1);
+            pub fn t_dag(&mut self, targets: Vec<usize>) {
+                self.inner.t_dag_many(targets.as_slice());
             }
 
-            pub fn cz(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cz(addr0, addr1);
+            // two-qubit clifford (+ stim aliases)
+            pub fn cnot(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.cnot_many(&pairs);
+                Ok(())
             }
 
-            pub fn t(&mut self, addr0: usize) {
-                self.inner.t(addr0);
+            pub fn cx(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cnot(targets)
             }
 
-            pub fn t_adj(&mut self, addr0: usize) {
-                self.inner.t_adj(addr0);
+            pub fn zcx(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cnot(targets)
+            }
+
+            pub fn cy(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.cy_many(&pairs);
+                Ok(())
+            }
+
+            pub fn zcy(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cy(targets)
+            }
+
+            pub fn cz(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.cz_many(&pairs);
+                Ok(())
+            }
+
+            pub fn zcz(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cz(targets)
             }
 
             // rot1
-            pub fn rx(&mut self, addr0: usize, theta: f64) {
-                self.inner.rx(addr0, theta);
+            pub fn rx(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.rx_many(targets.as_slice(), theta);
             }
 
-            pub fn ry(&mut self, addr0: usize, theta: f64) {
-                self.inner.ry(addr0, theta);
+            pub fn ry(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.ry_many(targets.as_slice(), theta);
             }
 
-            pub fn rz(&mut self, addr0: usize, theta: f64) {
-                self.inner.rz(addr0, theta);
+            pub fn rz(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.rz_many(targets.as_slice(), theta);
             }
 
             pub fn u3(&mut self, addr0: usize, theta: f64, phi: f64, lam: f64) {
@@ -125,33 +164,59 @@ macro_rules! create_interface {
             }
 
             // rot2
-            pub fn rxx(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.rxx(addr0, addr1, theta);
+            pub fn rxx(&mut self, targets: Vec<usize>, theta: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.rxx_many(&pairs, theta);
+                Ok(())
             }
 
-            pub fn ryy(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.ryy(addr0, addr1, theta);
+            pub fn ryy(&mut self, targets: Vec<usize>, theta: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.ryy_many(&pairs, theta);
+                Ok(())
             }
 
-            pub fn rzz(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.rzz(addr0, addr1, theta);
+            pub fn rzz(&mut self, targets: Vec<usize>, theta: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.rzz_many(&pairs, theta);
+                Ok(())
             }
 
             // noise
-            pub fn pauli_error(&mut self, addr0: usize, p: [f64; 3]) {
-                self.inner.pauli_error(addr0, p);
+            pub fn x_error(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.x_error_many(targets.as_slice(), p);
             }
 
-            pub fn depolarize(&mut self, addr0: usize, p: f64) {
-                self.inner.depolarize(addr0, p);
+            pub fn y_error(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.y_error_many(targets.as_slice(), p);
             }
 
-            pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64) {
-                self.inner.depolarize2(addr0, addr1, p);
+            pub fn z_error(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.z_error_many(targets.as_slice(), p);
             }
 
-            pub fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [f64; 15]) {
-                self.inner.two_qubit_pauli_error(addr0, addr1, p);
+            pub fn pauli_error(&mut self, targets: Vec<usize>, p: [f64; 3]) {
+                self.inner.pauli_error_many(targets.as_slice(), p);
+            }
+
+            pub fn depolarize1(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.depolarize1_many(targets.as_slice(), p);
+            }
+
+            pub fn depolarize2(&mut self, targets: Vec<usize>, p: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.depolarize2_many(&pairs, p);
+                Ok(())
+            }
+
+            pub fn two_qubit_pauli_error(
+                &mut self,
+                targets: Vec<usize>,
+                p: [f64; 15],
+            ) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.two_qubit_pauli_error_many(&pairs, p);
+                Ok(())
             }
 
             pub fn loss_channel(&mut self, addr0: usize, p: f64) {
@@ -170,8 +235,20 @@ macro_rules! create_interface {
                 self.inner.asymmetric_loss_channel(addr0, p0, p1);
             }
 
-            pub fn reset(&mut self, addr0: usize) {
-                self.inner.reset(addr0);
+            pub fn reset(&mut self, targets: Vec<usize>) {
+                self.inner.reset_many(targets.as_slice());
+            }
+
+            pub fn reset_x(&mut self, targets: Vec<usize>) {
+                self.inner.reset_x_many(targets.as_slice());
+            }
+
+            pub fn reset_y(&mut self, targets: Vec<usize>) {
+                self.inner.reset_y_many(targets.as_slice());
+            }
+
+            pub fn reset_z(&mut self, targets: Vec<usize>) {
+                self.inner.reset_z_many(targets.as_slice());
             }
 
             pub fn is_lost(&self, addr0: usize) -> bool {

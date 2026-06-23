@@ -239,6 +239,27 @@ class GeneralizedTableau(
         """
         self._interface.reset_loss_channel(addr0)
 
+    def asymmetric_loss_channel(self, addr0: int, p0: float, p1: float) -> None:
+        """Apply a state-dependent ("asymmetric") loss channel to a qubit.
+
+        The qubit is lost from |0> with probability ``p0`` and from |1> with
+        probability ``p1``, so the total loss probability depends on the
+        current populations: ``p_tot = p0 * (1 + <Z>)/2 + p1 * (1 - <Z>)/2``.
+
+        .. note::
+            This is the trajectory *approximation* of the loss channel. It is
+            exact for the loss statistics and in the symmetric limit
+            ``p0 == p1`` (where it matches :meth:`loss_channel`), but it does
+            not apply the survival back-action, so for ``p0 != p1`` the
+            surviving qubit's state is left unchanged. See issue #39.
+
+        Args:
+            addr0: The index of the target qubit.
+            p0: The loss probability from the |0> state.
+            p1: The loss probability from the |1> state.
+        """
+        self._interface.asymmetric_loss_channel(addr0, p0, p1)
+
     def is_lost(self, addr0: int) -> bool:
         """Check whether a qubit has been lost.
 

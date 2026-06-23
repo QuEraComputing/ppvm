@@ -140,3 +140,14 @@ pub trait ResetLossChannel<T: Config> {
     /// Clear the loss bit at `addr0`.
     fn reset_loss_channel(&mut self, addr0: usize);
 }
+
+/// State-dependent ("asymmetric") single-qubit loss channel: a qubit is
+/// lost from `|0⟩` with probability `p0` and from `|1⟩` with probability
+/// `p1`. Unlike [`LossChannel`], the total loss probability depends on the
+/// qubit's populations, so the channel reads the current `⟨Z⟩`.
+pub trait AsymmetricLossChannel<T: Config> {
+    /// Apply asymmetric loss to qubit `addr0`, with `p0` / `p1` the loss
+    /// probabilities from `|0⟩` / `|1⟩`. See the backend impl for the
+    /// trajectory approximation used (the survival back-action is omitted).
+    fn asymmetric_loss_channel(&mut self, addr0: usize, p0: T::Coeff, p1: T::Coeff);
+}

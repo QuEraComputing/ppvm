@@ -439,6 +439,33 @@ where
         + Copy,
     I: TableauIndex + Debug,
 {
+    /// `⟨Z⟩` on qubit `addr0`, computed non-destructively (the state is not
+    /// collapsed). Reuses the measurement overlap machinery; cost scales with
+    /// the number of coefficients (and n²).
+    pub fn z_expectation(&self, addr0: usize) -> f64 {
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
+            self.compute_decomposition(addr0, Pauli::Z);
+
+        if stab_anticomm_bits == I::zero() {
+            // Case b: Z is a stabilizer — self-pairing overlap.
+            let entries: Vec<(Complex<T::Coeff>, I)> = self.coefficients.iter().copied().collect();
+            Self::compute_overlap_case_b(&entries, phase_decomp, destab_anticomm_bits)
+        } else {
+            // Case a: cross-index pairing — clone coefficients into a map (read-only,
+            // so unlike `measure` we don't drain `self.coefficients`).
+            let coeff_map: HashMap<I, Complex<T::Coeff>> =
+                self.coefficients.iter().map(|&(c, i)| (i, c)).collect();
+            let odd_phase_mask = self.odd_phase_destabilizer_mask();
+            Self::compute_overlap_case_a(
+                &coeff_map,
+                phase_decomp,
+                destab_anticomm_bits,
+                stab_anticomm_bits,
+                odd_phase_mask,
+            )
+        }
+    }
+
     /// Case_b overlap: self-pairing (branch_index = idx), so overlap = ±|c|^2.
     /// Only even phases contribute to the real part.
     pub fn compute_overlap_case_b(

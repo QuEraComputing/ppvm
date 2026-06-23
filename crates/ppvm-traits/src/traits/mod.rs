@@ -25,8 +25,8 @@ pub use map::{
 };
 pub use measure::{LossyMeasure, Measure};
 pub use noise::{
-    AmplitudeDamping, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel, PauliError,
-    PauliErrorAll, ResetLossChannel, TwoQubitPauliError,
+    AmplitudeDamping, AsymmetricLossChannel, CorrelatedLossChannel, Depolarizing, Depolarizing2,
+    LossChannel, PauliError, PauliErrorAll, ResetLossChannel, TwoQubitPauliError,
 };
 pub use reset::Reset;
 pub use storage::PauliStorage;

@@ -7,11 +7,11 @@
 //! angles to check that the API surface still matches what the skill
 //! tells agents to write.
 
-use ppvm_runtime::prelude::*;
+use ppvm_pauli_sum::prelude::*;
 use ppvm_sym::Term;
 
 fn main() {
-    let mut sum = PauliSum::<ppvm_runtime::config::fxhash::Byte<2, Term>>::builder()
+    let mut sum = PauliSum::<ppvm_pauli_sum::config::fxhash::Byte<2, Term>>::builder()
         .n_qubits(2)
         .build();
     sum += ("ZZ", Term::from(1.0));

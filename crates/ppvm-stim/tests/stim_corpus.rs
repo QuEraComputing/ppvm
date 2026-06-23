@@ -3,15 +3,15 @@
 
 use std::path::PathBuf;
 
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
 use ppvm_stim::{ExecError, execute, parse_extended};
 use ppvm_tableau::prelude::*;
 
 #[derive(Debug, Clone, Copy)]
 enum Expect {
-    /// File parses, prepares, executes.
+    /// File parses, validates, executes.
     Ok,
-    /// File parses, but prepare/execute must fail with `Unsupported(name)`.
+    /// File parses, but validate/execute must fail with `Unsupported(name)`.
     ExecUnsupported(&'static str),
     /// File should fail at parse time (e.g. uses `rec[-k]` targets).
     ParseFails,
@@ -28,7 +28,7 @@ const CASES: &[(&str, Expect)] = &[
     // The file uses `rec[-k]` targets on `DETECTOR` / `OBSERVABLE_INCLUDE`.
     // Phase-1 cannot represent measurement-record targets, but the parser
     // tolerates non-numeric tokens on annotations (which are no-ops in our
-    // pipeline) so the file parses, prepares, and executes cleanly.
+    // pipeline) so the file parses, validates, and executes cleanly.
     ("repetition_code_d3_r3.stim", Expect::Ok),
     // `CX rec[-1] 1` is classically-controlled feedback. Gates do not
     // tolerate non-numeric targets, so the parser rejects this file.

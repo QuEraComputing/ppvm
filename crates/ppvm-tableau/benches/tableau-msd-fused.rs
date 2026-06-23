@@ -4,12 +4,12 @@
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_tableau::prelude::*;
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
+use ppvm_tableau::{measure_all::LossyMeasureAll, prelude::*};
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
 
-fn msd_func_fused() -> String {
+fn msd_func_fused<const MEASURE: bool>() -> (String, Tab) {
     let qubits_per_code_block = 17;
     let n_qubits = qubits_per_code_block * 5;
     debug_assert!(
@@ -31,9 +31,9 @@ fn msd_func_fused() -> String {
     }
 
     // sqrt_x on blocks 0, 1, 4 — batched per block
-    tab.sqrt_x_batch(ql[0]);
-    tab.sqrt_x_batch(ql[1]);
-    tab.sqrt_x_batch(ql[4]);
+    tab.sqrt_x_many(ql[0]);
+    tab.sqrt_x_many(ql[1]);
+    tab.sqrt_x_many(ql[4]);
 
     // ql[0] x ql[1]: pairs (0,17)...(16,33) — all in word 0
     tab.cz_block_pairs(0, 17, 17);
@@ -44,8 +44,8 @@ fn msd_func_fused() -> String {
     tab.cz_block_pairs_cross_word(0, 47, 1, 0, 4);
 
     // sqrt_y on ql[0] and ql[3]
-    tab.sqrt_y_batch(ql[0]);
-    tab.sqrt_y_batch(ql[3]);
+    tab.sqrt_y_many(ql[0]);
+    tab.sqrt_y_many(ql[3]);
 
     // ql[0] x ql[2]: pairs (0,34)...(16,50) — all in word 0
     tab.cz_block_pairs(0, 34, 17);
@@ -55,7 +55,7 @@ fn msd_func_fused() -> String {
     tab.cz_block_pairs_cross_word(0, 51, 1, 4, 13);
     tab.cz_block_pairs(64, 17, 4); // (64,81)...(67,84) both in word 1
 
-    tab.sqrt_x_adj_batch(ql[0]);
+    tab.sqrt_x_dag_many(ql[0]);
 
     // ql[0] x ql[4]: (0,68)...(16,84)
     // controls word 0 bits 0-16, targets word 1 bits 4-20
@@ -66,17 +66,21 @@ fn msd_func_fused() -> String {
     // (30,64)...(33,67): controls word 0 bits 30-33, targets word 1 bits 0-3
     tab.cz_block_pairs_cross_word(0, 30, 1, 0, 4);
 
-    // sqrt_x_adj on all blocks
+    // sqrt_x_dag on all blocks
     for block in ql.iter().take(5) {
-        tab.sqrt_x_adj_batch(block);
+        tab.sqrt_x_dag_many(block);
     }
 
-    let bit_string: String = (0..n_qubits)
-        .map(|i| tab.measure(i))
-        .map(|outcome| if outcome.unwrap() { '1' } else { '0' })
-        .collect();
-
-    bit_string
+    if MEASURE {
+        let bit_string: String = tab
+            .measure_all()
+            .into_iter()
+            .map(|outcome| if outcome.unwrap() { '1' } else { '0' })
+            .collect();
+        (bit_string, tab)
+    } else {
+        ("".to_owned(), tab)
+    }
 }
 
 fn encode_fused(tab: &mut Tab, qubits: &[usize]) {
@@ -85,72 +89,97 @@ fn encode_fused(tab: &mut Tab, qubits: &[usize]) {
     }
 
     if qubits.len() == 7 {
-        tab.sqrt_y_adj_batch(&[
+        tab.sqrt_y_dag_many(&[
             qubits[0], qubits[1], qubits[2], qubits[3], qubits[4], qubits[5],
         ]);
 
-        tab.cz(qubits[1], qubits[2]);
-        tab.cz(qubits[3], qubits[4]);
-        tab.cz(qubits[5], qubits[6]);
+        tab.cz_many(&[
+            (qubits[1], qubits[2]),
+            (qubits[3], qubits[4]),
+            (qubits[5], qubits[6]),
+        ]);
 
         tab.sqrt_y(qubits[6]);
 
-        tab.cz(qubits[0], qubits[3]);
-        tab.cz(qubits[2], qubits[5]);
-        tab.cz(qubits[4], qubits[6]);
+        tab.cz_many(&[
+            (qubits[0], qubits[3]),
+            (qubits[2], qubits[5]),
+            (qubits[4], qubits[6]),
+        ]);
 
-        tab.sqrt_y_batch(&[qubits[2], qubits[3], qubits[4], qubits[5], qubits[6]]);
+        tab.sqrt_y_many(&[qubits[2], qubits[3], qubits[4], qubits[5], qubits[6]]);
 
-        tab.cz(qubits[0], qubits[1]);
-        tab.cz(qubits[2], qubits[3]);
-        tab.cz(qubits[4], qubits[5]);
+        tab.cz_many(&[
+            (qubits[0], qubits[1]),
+            (qubits[2], qubits[3]),
+            (qubits[4], qubits[5]),
+        ]);
 
-        tab.sqrt_y_batch(&[qubits[1], qubits[2], qubits[4]]);
+        tab.sqrt_y_many(&[qubits[1], qubits[2], qubits[4]]);
 
         return;
     }
 
     // NOTE: len == 17 here
-    tab.sqrt_y_batch(&[
+    tab.sqrt_y_many(&[
         qubits[0], qubits[1], qubits[2], qubits[3], qubits[4], qubits[5], qubits[6], qubits[8],
         qubits[9], qubits[10], qubits[11], qubits[12], qubits[13], qubits[14], qubits[15],
         qubits[16],
     ]);
 
-    for [i, j] in [[1, 3], [7, 10], [12, 14], [13, 16]] {
-        tab.cz(qubits[i], qubits[j]);
-    }
+    tab.cz_many(&[
+        (qubits[1], qubits[3]),
+        (qubits[7], qubits[10]),
+        (qubits[12], qubits[14]),
+        (qubits[13], qubits[16]),
+    ]);
 
-    tab.sqrt_y_adj_batch(&[qubits[7], qubits[16]]);
+    tab.sqrt_y_dag_many(&[qubits[7], qubits[16]]);
 
-    for [i, j] in [[4, 7], [8, 10], [11, 14], [15, 16]] {
-        tab.cz(qubits[i], qubits[j]);
-    }
+    tab.cz_many(&[
+        (qubits[4], qubits[7]),
+        (qubits[8], qubits[10]),
+        (qubits[11], qubits[14]),
+        (qubits[15], qubits[16]),
+    ]);
 
-    tab.sqrt_y_adj_batch(&[qubits[4], qubits[10], qubits[14], qubits[16]]);
+    tab.sqrt_y_dag_many(&[qubits[4], qubits[10], qubits[14], qubits[16]]);
 
-    for [i, j] in [[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]] {
-        tab.cz(qubits[i], qubits[j]);
-    }
+    tab.cz_many(&[
+        (qubits[2], qubits[4]),
+        (qubits[6], qubits[8]),
+        (qubits[7], qubits[9]),
+        (qubits[10], qubits[13]),
+        (qubits[14], qubits[16]),
+    ]);
 
-    tab.sqrt_y_batch(&[
+    tab.sqrt_y_many(&[
         qubits[3], qubits[6], qubits[9], qubits[10], qubits[12], qubits[13],
     ]);
 
-    for [i, j] in [[0, 2], [3, 6], [5, 8], [10, 12], [11, 13]] {
-        tab.cz(qubits[i], qubits[j]);
-    }
+    tab.cz_many(&[
+        (qubits[0], qubits[2]),
+        (qubits[3], qubits[6]),
+        (qubits[5], qubits[8]),
+        (qubits[10], qubits[12]),
+        (qubits[11], qubits[13]),
+    ]);
 
-    tab.sqrt_y_batch(&[
+    tab.sqrt_y_many(&[
         qubits[1], qubits[2], qubits[3], qubits[4], qubits[6], qubits[7], qubits[8], qubits[9],
         qubits[11], qubits[12], qubits[14],
     ]);
 
-    for [i, j] in [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [12, 15]] {
-        tab.cz(qubits[i], qubits[j]);
-    }
+    tab.cz_many(&[
+        (qubits[0], qubits[1]),
+        (qubits[2], qubits[3]),
+        (qubits[4], qubits[5]),
+        (qubits[6], qubits[7]),
+        (qubits[8], qubits[9]),
+        (qubits[12], qubits[15]),
+    ]);
 
-    tab.sqrt_y_adj_batch(&[
+    tab.sqrt_y_dag_many(&[
         qubits[0], qubits[2], qubits[5], qubits[6], qubits[8], qubits[10], qubits[12],
     ]);
 }
@@ -161,7 +190,24 @@ pub fn benchmark_suite_msd_fused(c: &mut Criterion, name: impl AsRef<str>) {
         b.iter_batched_ref(
             || {},
             |_| {
-                msd_func_fused();
+                msd_func_fused::<true>();
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+
+    // propagate up to measurements
+    let (_, tab) = msd_func_fused::<false>();
+    group.bench_function("msd-fused-sample", |b| {
+        b.iter_batched_ref(
+            || {},
+            |_| {
+                let mut tab_sample = tab.fork(None);
+                let bit_string: String = (0..85)
+                    .map(|i| tab_sample.measure(i))
+                    .map(|outcome| if outcome.unwrap() { '1' } else { '0' })
+                    .collect();
+                std::hint::black_box(bit_string);
             },
             criterion::BatchSize::SmallInput,
         );

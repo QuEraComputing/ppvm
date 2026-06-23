@@ -185,3 +185,83 @@ def test_correlated_loss_statistics_single():
     )
     fraction = one_lost / trials
     assert abs(fraction - p_single) < 0.08, f"Expected ~{p_single:.2f}, got {fraction:.3f}"
+
+
+# === AsymmetricLossChannel ===
+
+
+def test_asymmetric_loss_ground_state_uses_p0():
+    # |0⟩: pop0 = 1, so p_tot = p0.
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
+    tab.asymmetric_loss_channel(0, 1.0, 0.0)
+    assert tab.is_lost(0)
+
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
+    tab.asymmetric_loss_channel(0, 0.0, 1.0)  # p_tot = 0
+    assert not tab.is_lost(0)
+
+
+def test_asymmetric_loss_excited_state_uses_p1():
+    # |1⟩: pop1 = 1, so p_tot = p1.
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
+    tab.x(0)
+    tab.asymmetric_loss_channel(0, 0.0, 1.0)
+    assert tab.is_lost(0)
+
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
+    tab.x(0)
+    tab.asymmetric_loss_channel(0, 1.0, 0.0)  # p_tot = 0
+    assert not tab.is_lost(0)
+
+
+def test_asymmetric_loss_zero_prob_not_lost():
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
+    tab.asymmetric_loss_channel(0, 0.0, 0.0)
+    assert not tab.is_lost(0)
+
+
+def test_asymmetric_loss_resets_lost_qubit_to_zero():
+    # |1⟩ lost with p1=1; after reset_loss_channel it should read |0⟩.
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
+    tab.x(0)
+    tab.asymmetric_loss_channel(0, 0.0, 1.0)
+    assert tab.is_lost(0)
+    tab.reset_loss_channel(0)
+    assert tab.measure(0) == MeasurementResult.ZERO
+
+
+def test_asymmetric_loss_symmetric_matches_loss_channel():
+    # p0 == p1 == p reduces to loss_channel(p); on |+⟩, p_tot = p.
+    p = 0.3
+    trials = 1000
+    lost = sum(
+        1
+        for seed in range(trials)
+        if (
+            tab := GeneralizedTableau(n_qubits=1, seed=seed),
+            tab.h(0),
+            tab.asymmetric_loss_channel(0, p, p),
+            tab.is_lost(0),
+        )[-1]
+    )
+    fraction = lost / trials
+    assert abs(fraction - p) < 0.07, f"Expected ~{p:.2f}, got {fraction:.3f}"
+
+
+def test_asymmetric_loss_superposition_averages_probs():
+    # |+⟩: ⟨Z⟩ = 0 so p_tot = (p0 + p1) / 2.
+    p0, p1 = 0.2, 0.6
+    expected = 0.5 * (p0 + p1)
+    trials = 1000
+    lost = sum(
+        1
+        for seed in range(trials)
+        if (
+            tab := GeneralizedTableau(n_qubits=1, seed=seed),
+            tab.h(0),
+            tab.asymmetric_loss_channel(0, p0, p1),
+            tab.is_lost(0),
+        )[-1]
+    )
+    fraction = lost / trials
+    assert abs(fraction - expected) < 0.07, f"Expected ~{expected:.2f}, got {fraction:.3f}"

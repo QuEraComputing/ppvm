@@ -51,27 +51,39 @@ pub(crate) struct RawTarget {
 /// 2–8 MiB), deeply nested programs overflow somewhere past ~24 levels
 /// in debug builds. Running on an oversized dedicated stack lets us
 /// support thousands of nested REPEATs without rewriting the grammar.
+#[cfg(not(target_arch = "wasm32"))]
 const PARSER_STACK_SIZE: usize = 16 * 1024 * 1024;
 
-/// Run `f` on a dedicated thread with [`PARSER_STACK_SIZE`] bytes of
-/// stack. Used by both [`parse`] and [`parse_extended`] (which also
-/// recurses into REPEAT bodies during the interpret pass).
+/// Run `f` with a large stack for the recursive chumsky grammar. On targets
+/// with OS threads this spawns a dedicated [`PARSER_STACK_SIZE`]-byte thread;
+/// on `wasm32` (no `std::thread`) `f` runs inline on the caller's stack, so
+/// deeply nested REPEAT bodies rely on the wasm stack instead (configurable
+/// via the linker `stack-size` arg). Used by both [`parse`] and
+/// [`parse_extended`] (which also recurses into REPEAT bodies during the
+/// interpret pass).
 pub(crate) fn run_on_parser_stack<R, F>(f: F) -> R
 where
     R: Send,
     F: FnOnce() -> R + Send,
 {
-    std::thread::scope(|s| {
-        let handle = std::thread::Builder::new()
-            .stack_size(PARSER_STACK_SIZE)
-            .name("stim-parser".to_string())
-            .spawn_scoped(s, f)
-            .expect("failed to spawn parser thread");
-        match handle.join() {
-            Ok(value) => value,
-            Err(payload) => std::panic::resume_unwind(payload),
-        }
-    })
+    #[cfg(target_arch = "wasm32")]
+    {
+        f()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::thread::scope(|s| {
+            let handle = std::thread::Builder::new()
+                .stack_size(PARSER_STACK_SIZE)
+                .name("stim-parser".to_string())
+                .spawn_scoped(s, f)
+                .expect("failed to spawn parser thread");
+            match handle.join() {
+                Ok(value) => value,
+                Err(payload) => std::panic::resume_unwind(payload),
+            }
+        })
+    }
 }
 
 /// Parse Stim source into a [`Program`].

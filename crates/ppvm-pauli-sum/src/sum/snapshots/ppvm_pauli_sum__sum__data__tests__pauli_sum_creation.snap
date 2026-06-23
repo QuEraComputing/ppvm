@@ -1,0 +1,5 @@
+---
+source: crates/ppvm-pauli-sum/src/sum/data.rs
+expression: sum.to_string()
+---
+1.000 * IIII

@@ -20,7 +20,7 @@ def test_noise():
 
     error_probs = {"ZZ": 0.1, "XX": 0.2}
     error_probs_list = state.two_qubit_pauli_error_probabilities(error_probs)
-    state.two_qubit_pauli_error(0, 1, error_probs_list)
+    state.two_qubit_pauli_error(0, 1, p=error_probs_list)
 
 
 def test_large_state():
@@ -153,9 +153,9 @@ def test_gate_methods():
     s.s(0)
     assert t(s) == {"YI": -1.0}
 
-    # s_adj: Y → -X (inverse of S)
+    # s_dag: Y → -X (inverse of S)
     s = PauliSum(n_qubits=2, initial_terms=["YI"], coefficients=[1.0])
-    s.s_adj(0)
+    s.s_dag(0)
     assert t(s) == {"XI": -1.0}
 
     # cnot(ctrl=0, tgt=1): IZ → ZZ; IX → IX (X on target is invariant)
@@ -178,17 +178,17 @@ def test_gate_methods():
 
     # ry(−π/2): ZI → XI  [cos·Z − sin·X at θ=−π/2 → 0·Z − (−1)·X = X]
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.ry(0, -PI / 2)
+    s.ry(0, theta=-PI / 2)
     assert pytest.approx(t(s).get("XI", 0.0)) == 1.0
 
     # rx(π/2): ZI → YI  [cos·Z + sin·Y at θ=π/2 → Y]
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.rx(0, PI / 2)
+    s.rx(0, theta=PI / 2)
     assert pytest.approx(t(s).get("YI", 0.0)) == 1.0
 
     # rz(−π/2): XI → YI  [cos·X − sin·Y at θ=−π/2 → 0·X − (−1)·Y = Y]
     s = PauliSum(n_qubits=2, initial_terms=["XI"], coefficients=[1.0])
-    s.rz(0, -PI / 2)
+    s.rz(0, theta=-PI / 2)
     assert pytest.approx(t(s).get("YI", 0.0)) == 1.0
 
     # r(axis_angle=0, θ=π/2) = rx(π/2): ZI → YI
@@ -203,17 +203,17 @@ def test_gate_methods():
 
     # rxx(π/2): ZI → YX  [cos·ZI + sin·YX at θ=π/2 → YX]
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.rxx(0, 1, PI / 2)
+    s.rxx(0, 1, theta=PI / 2)
     assert pytest.approx(t(s).get("YX", 0.0)) == 1.0
 
     # ryy(−π/2): ZI → XY  [cos·ZI − sin·XY at θ=−π/2 → 0·ZI − (−1)·XY = XY]
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.ryy(0, 1, -PI / 2)
+    s.ryy(0, 1, theta=-PI / 2)
     assert pytest.approx(t(s).get("XY", 0.0)) == 1.0
 
     # rzz(−π/2): XI → YZ  [cos·XI − sin·YZ at θ=−π/2 → 0·XI − (−1)·YZ = YZ]
     s = PauliSum(n_qubits=2, initial_terms=["XI"], coefficients=[1.0])
-    s.rzz(0, 1, -PI / 2)
+    s.rzz(0, 1, theta=-PI / 2)
     assert pytest.approx(t(s).get("YZ", 0.0)) == 1.0
 
     # sqrt_x (= HSH): X → X, Y → -Z, Z → Y
@@ -229,17 +229,17 @@ def test_gate_methods():
     s.sqrt_x(0)
     assert pytest.approx(t(s).get("YI", 0.0)) == 1.0
 
-    # sqrt_x_adj (= HS†H): X → X, Y → Z, Z → -Y
+    # sqrt_x_dag (= HS†H): X → X, Y → Z, Z → -Y
     s = PauliSum(n_qubits=2, initial_terms=["XI"], coefficients=[1.0])
-    s.sqrt_x_adj(0)
+    s.sqrt_x_dag(0)
     assert t(s) == {"XI": 1.0}
 
     s = PauliSum(n_qubits=2, initial_terms=["YI"], coefficients=[1.0])
-    s.sqrt_x_adj(0)
+    s.sqrt_x_dag(0)
     assert pytest.approx(t(s).get("ZI", 0.0)) == 1.0
 
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.sqrt_x_adj(0)
+    s.sqrt_x_dag(0)
     assert pytest.approx(t(s).get("YI", 0.0)) == -1.0
 
     # sqrt_y (= S·sqrt_x·S†): X → Z, Y → Y, Z → -X
@@ -255,17 +255,17 @@ def test_gate_methods():
     s.sqrt_y(0)
     assert pytest.approx(t(s).get("XI", 0.0)) == -1.0
 
-    # sqrt_y_adj (= S·sqrt_x_adj·S†): X → -Z, Y → Y, Z → X
+    # sqrt_y_dag (= S·sqrt_x_dag·S†): X → -Z, Y → Y, Z → X
     s = PauliSum(n_qubits=2, initial_terms=["XI"], coefficients=[1.0])
-    s.sqrt_y_adj(0)
+    s.sqrt_y_dag(0)
     assert pytest.approx(t(s).get("ZI", 0.0)) == -1.0
 
     s = PauliSum(n_qubits=2, initial_terms=["YI"], coefficients=[1.0])
-    s.sqrt_y_adj(0)
+    s.sqrt_y_dag(0)
     assert t(s) == {"YI": 1.0}
 
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.sqrt_y_adj(0)
+    s.sqrt_y_dag(0)
     assert pytest.approx(t(s).get("XI", 0.0)) == 1.0
 
 
@@ -284,49 +284,49 @@ def test_noise_methods():
 
     # zero probabilities: no change
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.pauli_error(0, [0.0, 0.0, 0.0])
+    s.pauli_error(0, p=[0.0, 0.0, 0.0])
     assert t(s) == {"ZI": 1.0}
 
     # pz = 0.5: Z commutes with Z-error → unchanged; X anticommutes → zeroed
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.pauli_error(0, [0.0, 0.0, 0.5])
+    s.pauli_error(0, p=[0.0, 0.0, 0.5])
     assert t(s) == {"ZI": 1.0}  # Z → (1 − 2·0 − 2·0)·Z = Z
 
     s = PauliSum(n_qubits=2, initial_terms=["XI"], coefficients=[1.0])
-    s.pauli_error(0, [0.0, 0.0, 0.5])
+    s.pauli_error(0, p=[0.0, 0.0, 0.5])
     assert len(s) == 0  # X → (1 − 0 − 2·0.5)·X = 0
 
     # px = 0.5: X commutes with X-error → unchanged; Z anticommutes → zeroed
     s = PauliSum(n_qubits=2, initial_terms=["XI"], coefficients=[1.0])
-    s.pauli_error(0, [0.5, 0.0, 0.0])
+    s.pauli_error(0, p=[0.5, 0.0, 0.0])
     assert t(s) == {"XI": 1.0}  # X → (1 − 2·0 − 2·0)·X = X
 
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.pauli_error(0, [0.5, 0.0, 0.0])
+    s.pauli_error(0, p=[0.5, 0.0, 0.0])
     assert len(s) == 0  # Z → (1 − 2·0.5 − 0)·Z = 0
 
     # symmetric px=py=pz=1/4: all non-identity Pauli terms vanish
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.pauli_error(0, [0.25, 0.25, 0.25])
+    s.pauli_error(0, p=[0.25, 0.25, 0.25])
     assert len(s) == 0  # Z → (1 − 0.5 − 0.5)·Z = 0
 
     # pauli_error on qubit 1 does not affect a term with support only on qubit 0
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.pauli_error(1, [0.5, 0.0, 0.0])
+    s.pauli_error(1, p=[0.5, 0.0, 0.0])
     assert t(s) == {"ZI": 1.0}
 
     # --- two_qubit_pauli_error ---
 
     # zero probabilities: no change
     s = PauliSum(n_qubits=2, initial_terms=["IZ"], coefficients=[1.0])
-    s.two_qubit_pauli_error(0, 1, [0.0] * 15)
+    s.two_qubit_pauli_error(0, 1, p=[0.0] * 15)
     assert t(s) == {"IZ": 1.0}
 
     # p_IX = 1: IX anticommutes with IZ (X anticommutes with Z on qubit 1) → sign flip
     p = [0.0] * 15
     p[0] = 1.0  # IX
     s = PauliSum(n_qubits=2, initial_terms=["IZ"], coefficients=[1.0])
-    s.two_qubit_pauli_error(0, 1, p)
+    s.two_qubit_pauli_error(0, 1, p=p)
     assert pytest.approx(t(s).get("IZ", 0.0)) == -1.0
 
     # p_IX = p_"IY" = p_IZ = 0.25 (depolarize qubit 1): kills IZ, leaves ZI intact
@@ -334,48 +334,48 @@ def test_noise_methods():
     p[0] = p[1] = p[2] = 0.25  # IX, "IY", IZ
 
     s = PauliSum(n_qubits=2, initial_terms=["IZ"], coefficients=[1.0])
-    s.two_qubit_pauli_error(0, 1, p)
+    s.two_qubit_pauli_error(0, 1, p=p)
     assert len(s) == 0  # IZ → 0
 
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.two_qubit_pauli_error(0, 1, p)
+    s.two_qubit_pauli_error(0, 1, p=p)
     assert t(s) == {"ZI": 1.0}  # ZI commutes with all I⊗{X,Y,Z} → unchanged
 
     # --- depolarize ---
 
     # zero probability: no change
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.depolarize(0, 0.0)
+    s.depolarize1(0, p=0.0)
     assert t(s) == {"ZI": 1.0}
 
-    # depolarize(p) with px=py=pz=p/3: non-identity Paulis scale by 1 − 4p/3
+    # depolarize1(p) with px=py=pz=p/3: non-identity Paulis scale by 1 − 4p/3
     # (anticommutes with 2 axes, each with prob p/3 → scaling = 1 − 2·p/3 − 2·p/3)
     p = 0.1
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.depolarize(0, p)
+    s.depolarize1(0, p=p)
     assert pytest.approx(t(s).get("ZI", 0.0)) == 1.0 - 4 * p / 3
 
     # at p=3/4 the channel is completely depolarizing: all Paulis vanish
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.depolarize(0, 0.75)
+    s.depolarize1(0, p=0.75)
     assert len(s) == 0
 
     # depolarize on qubit 1 does not affect a term with support only on qubit 0
     s = PauliSum(n_qubits=2, initial_terms=["ZI"], coefficients=[1.0])
-    s.depolarize(1, 0.3)
+    s.depolarize1(1, p=0.3)
     assert t(s) == {"ZI": 1.0}
 
     # --- depolarize2 ---
 
     # zero probability: no change
     s = PauliSum(n_qubits=2, initial_terms=["ZZ"], coefficients=[1.0])
-    s.depolarize2(0, 1, 0.0)
+    s.depolarize2(0, 1, p=0.0)
     assert t(s) == {"ZZ": 1.0}
 
     # ZZ anticommutes with 8 of 15 non-identity two-qubit Paulis → scales by 1 − 16p/15
     p = 0.1
     s = PauliSum(n_qubits=2, initial_terms=["ZZ"], coefficients=[1.0])
-    s.depolarize2(0, 1, p)
+    s.depolarize2(0, 1, p=p)
     assert pytest.approx(t(s).get("ZZ", 0.0)) == 1.0 - 16 * p / 15
 
     # --- amplitude_damping ---

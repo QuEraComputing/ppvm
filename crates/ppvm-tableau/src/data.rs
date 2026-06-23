@@ -29,8 +29,8 @@ type PhasedPauliWordNoHash<A, H> = PhasedPauliWord<A, H, PauliWord<A, H, false>>
 /// # Examples
 ///
 /// ```
-/// use ppvm_runtime::config::fxhash::ByteF64;
-/// use ppvm_runtime::traits::Clifford;
+/// use ppvm_pauli_sum::config::fxhash::ByteF64;
+/// use ppvm_traits::traits::Clifford;
 /// use ppvm_tableau::data::Tableau;
 ///
 /// let mut tab: Tableau<ByteF64<1>> = Tableau::new(2);
@@ -58,13 +58,13 @@ impl<T: Config> Tableau<T> {
         let pw_cache = PhasedPauliWordNoHash::<T::Storage, T::BuildHasher>::new(n_qubits);
         for i in 0..n_qubits {
             // destabilizer
-            let mut pw = pw_cache.clone();
+            let mut pw = pw_cache;
             pw.set(i, Pauli::X);
             data.push(pw);
         }
         for i in 0..n_qubits {
             // stabilizer
-            let mut pw = pw_cache.clone();
+            let mut pw = pw_cache;
             pw.set(i, Pauli::Z);
             data.push(pw);
         }
@@ -163,8 +163,8 @@ impl<T: Config> Tableau<T> {
         let n = self.n_qubits;
         let (destabilizers, stabilizers) = self.data.split_at_mut(n);
 
-        // Clone g_q once before the loop
-        let g_q = stabilizers[q_idx].clone();
+        // Copy g_q once before the loop
+        let g_q = stabilizers[q_idx];
 
         // Check if there are other stabilizers that anticommute with Z_addr0
         // If so, replace with g_j = g_j * g_q
@@ -566,8 +566,8 @@ where
 /// measurements are perfectly correlated on every shot:
 ///
 /// ```
-/// use ppvm_runtime::config::fxhash::ByteF64;
-/// use ppvm_runtime::traits::{Clifford, LossyMeasure};
+/// use ppvm_pauli_sum::config::fxhash::ByteF64;
+/// use ppvm_traits::traits::{Clifford, LossyMeasure};
 /// use ppvm_tableau::data::GeneralizedTableau;
 ///
 /// let mut tab: GeneralizedTableau<ByteF64<1>> =
@@ -584,15 +584,15 @@ where
 /// followed by `T†` and the state is unchanged:
 ///
 /// ```
-/// use ppvm_runtime::config::fxhash::ByteF64;
-/// use ppvm_runtime::traits::{Clifford, TGate};
+/// use ppvm_pauli_sum::config::fxhash::ByteF64;
+/// use ppvm_traits::traits::{Clifford, TGate};
 /// use ppvm_tableau::data::GeneralizedTableau;
 ///
 /// let mut tab: GeneralizedTableau<ByteF64<1>> =
 ///     GeneralizedTableau::new_with_seed(1, 1e-12, 0);
 /// tab.h(0);
 /// tab.t(0);
-/// tab.t_adj(0);
+/// tab.t_dag(0);
 /// // T followed by T† is the identity; the |+⟩ state is restored.
 /// ```
 #[derive(Clone)]
@@ -609,18 +609,20 @@ pub struct GeneralizedTableau<
     pub is_lost: Vec<bool>,
     /// Coefficient-magnitude threshold below which branches are dropped.
     pub coefficient_threshold: T::Coeff,
+    /// Ordered log of every measurement performed (mirrors stim's record).
+    pub measurement_record: Vec<Option<bool>>,
     _index_phantom: PhantomData<IndexType>,
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
 where
-    T::Coeff: One + Zero + Clone + Send + Sync + num::Num,
+    T::Coeff: One + Zero + Clone + num::Num,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
         + From<Complex64>
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Send + Sync,
+    I: TableauIndex,
 {
     /// Construct a generalized tableau in the `|0…0⟩` state.
     ///
@@ -638,6 +640,7 @@ where
             coefficients,
             is_lost: vec![false; n_qubits],
             coefficient_threshold,
+            measurement_record: Vec::new(),
             _index_phantom: PhantomData,
         }
     }
@@ -679,6 +682,29 @@ where
     /// Number of qubits.
     pub fn n_qubits(&self) -> usize {
         self.tableau.n_qubits
+    }
+
+    /// All measurement outcomes recorded so far, in order.
+    pub fn current_measurement_record(&self) -> &[Option<bool>] {
+        &self.measurement_record
+    }
+
+    /// Append an externally defined measurement result to the record.
+    ///
+    /// Used by Stim instructions such as `MPAD`, which append measurement
+    /// record bits without measuring a qubit.
+    pub fn append_measurement_record(&mut self, result: Option<bool>) {
+        self.measurement_record.push(result);
+    }
+
+    /// Replace the most recent measurement record entry.
+    ///
+    /// Used by noisy measurement paths where the quantum state follows the
+    /// true outcome but the public record should hold the reported bit.
+    pub fn overwrite_last_measurement_record(&mut self, result: Option<bool>) {
+        if let Some(last) = self.measurement_record.last_mut() {
+            *last = result;
+        }
     }
 
     /// Apply CZ to N pairs with constant offset: (base+i, base+offset+i) for i in 0..count.
@@ -751,7 +777,7 @@ where
     /// `destab_anticomm_bits[l] = 1` iff P_addr0 anticommutes with destabilizer d_l.
     /// Note that stab_anticomm_bits is equal to the shift of the index when branching
     /// (`beta` in Eq(4) of the SOFT paper).
-    pub(crate) fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I)
+    pub fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I)
     where
         <<T as Config>::Storage as BitView>::Store: PrimInt,
     {
@@ -848,7 +874,7 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn compute_phase(
         &self,
         destab_anticomm_bits: I,
@@ -879,7 +905,7 @@ where
     }
 
     /// Build a bitmask where bit i is set if destabilizer i has odd phase (phase % 2 != 0).
-    pub(crate) fn odd_phase_destabilizer_mask(&self) -> I {
+    pub fn odd_phase_destabilizer_mask(&self) -> I {
         let mut mask = I::zero();
         let one = I::one();
         for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
@@ -889,7 +915,18 @@ where
         }
         mask
     }
+}
 
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
+where
+    T::Coeff: One + Zero + Clone + Send + Sync + num::Num + PartialOrd,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + std::ops::AddAssign
+        + From<Complex64>
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Send + Sync,
+{
     pub(crate) fn branch_with_coefficients(
         &mut self,
         addr0: usize,
@@ -948,13 +985,9 @@ where
             branch_factor,
         );
 
-        let cutoff = Complex {
-            re: self.coefficient_threshold.clone(),
-            im: T::Coeff::zero(),
-        }
-        .abs();
+        let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
         for (idx, coeff) in new_coefficients {
-            if coeff.abs() > cutoff {
+            if coeff.norm_sqr() > cutoff_sq {
                 self.coefficients.unsafe_insert(idx, coeff);
             }
         }
@@ -1009,14 +1042,9 @@ where
             phase_decomp,
         );
 
-        let cutoff = Complex {
-            re: self.coefficient_threshold.clone(),
-            im: T::Coeff::zero(),
-        }
-        .abs();
-
+        let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
         for (idx, coeff) in new_coefficients {
-            if coeff.abs() > cutoff {
+            if coeff.norm_sqr() > cutoff_sq {
                 coefficients.unsafe_insert(idx, coeff);
             }
         }
@@ -1027,7 +1055,7 @@ where
 mod tests {
     use super::*;
     use bnum::BUint;
-    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
 
     type TestConfig = ByteF64<1>;
     type TestTableau = GeneralizedTableau<TestConfig>;
@@ -1137,7 +1165,7 @@ mod tests {
     #[test]
     fn test_cz_block_pairs_offset_17() {
         // Simulate MSD-like CZ: (0,17), (1,18), ..., (16,33) — all in one u64 word
-        use ppvm_runtime::config::fx64hash::Byte8F64;
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
         type LargeTab = Tableau<Byte8F64<2>>;
         let n = 34;
         let mut tab1 = LargeTab::new(n);
@@ -1162,7 +1190,7 @@ mod tests {
     fn test_cz_block_pairs_nonzero_base() {
         // Test CZ pairs starting from a non-zero base: (10,27), (11,28), ..., (14,31)
         // All within one u64 word (bits 0-63)
-        use ppvm_runtime::config::fx64hash::Byte8F64;
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
         type LargeTab = Tableau<Byte8F64<2>>;
         let n = 32;
         let base = 10;
@@ -1217,7 +1245,7 @@ mod tests {
     #[test]
     fn test_generalized_tableau_cz_block_pairs() {
         // Test through GeneralizedTableau wrapper
-        use ppvm_runtime::config::fx64hash::Byte8F64;
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
         type GTab = GeneralizedTableau<Byte8F64<2>>;
         let n = 34;
         let mut tab1: GTab = GeneralizedTableau::new(n, 1e-12);

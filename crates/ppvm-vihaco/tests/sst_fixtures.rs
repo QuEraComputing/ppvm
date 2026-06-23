@@ -250,9 +250,9 @@ fn paulisum_trotter_matches_pure_rust_reference() {
 
     // Pure Rust reference: same N=8 / strategy / circuit order as the PauliSum
     // Bits64 bucket in `ppvm_vihaco::component`.
-    use ppvm_runtime::config::indexmap::ByteFxHashF64;
-    use ppvm_runtime::prelude::*;
-    use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
+    use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
+    use ppvm_pauli_sum::prelude::*;
+    use ppvm_pauli_sum::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
     type RefConfig = ByteFxHashF64<8, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
 
     let mut state: PauliSum<RefConfig> = PauliSum::builder()
@@ -289,9 +289,9 @@ fn lossy_paulisum_loss_trace_matches_pure_rust_reference() {
     let through_sst = machine.trace_record();
     assert_eq!(through_sst.len(), 1, "expected one trace emission");
 
-    use ppvm_runtime::config::indexmap::ByteFxHashF64;
-    use ppvm_runtime::prelude::*;
-    use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
+    use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
+    use ppvm_pauli_sum::prelude::*;
+    use ppvm_pauli_sum::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
     type RefConfig = ByteFxHashF64<
         8,
         CombinedStrategy<CoefficientThreshold, MaxPauliWeight>,

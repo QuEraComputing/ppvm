@@ -23,7 +23,7 @@ class NoiseMethods(interp.MethodTable):
         p = frame.get(stmt.p)
         qubits: ilist.IList[GeneralizedTableauQubit, Any] = frame.get(stmt.qubits)
         for qbit in qubits:
-            interp_.backend.depolarize(qbit.addr, p)
+            interp_.backend.depolarize1(qbit.addr, p=p)
 
     @interp.impl(noise.stmts.Depolarize2)
     def depolarize2(
@@ -36,7 +36,7 @@ class NoiseMethods(interp.MethodTable):
         controls: ilist.IList[GeneralizedTableauQubit, Any] = frame.get(stmt.controls)
         targets: ilist.IList[GeneralizedTableauQubit, Any] = frame.get(stmt.targets)
         for control, target in zip(controls, targets):
-            interp_.backend.depolarize2(control.addr, target.addr, p)
+            interp_.backend.depolarize2(control.addr, target.addr, p=p)
 
     @interp.impl(noise.stmts.SingleQubitPauliChannel)
     def single_qubit_pauli_channel(
@@ -52,7 +52,7 @@ class NoiseMethods(interp.MethodTable):
 
         ps = [px, py, pz]
         for qbit in qubits:
-            interp_.backend.pauli_error(qbit.addr, ps)
+            interp_.backend.pauli_error(qbit.addr, p=ps)
 
     @interp.impl(noise.stmts.TwoQubitPauliChannel)
     def two_qubit_pauli_channel(
@@ -66,7 +66,7 @@ class NoiseMethods(interp.MethodTable):
         targets: ilist.IList[GeneralizedTableauQubit, Any] = frame.get(stmt.targets)
 
         for control, target in zip(controls, targets):
-            interp_.backend.two_qubit_pauli_error(control.addr, target.addr, ps)
+            interp_.backend.two_qubit_pauli_error(control.addr, target.addr, p=ps)
 
     @interp.impl(noise.stmts.QubitLoss)
     def qubit_loss(

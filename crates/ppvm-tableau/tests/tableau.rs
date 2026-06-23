@@ -4,7 +4,7 @@
 use bnum::types::U256;
 use itertools::Itertools;
 use num::complex::Complex;
-use ppvm_runtime::config::dashmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::dashmap::ByteFxHashF64;
 use ppvm_tableau::prelude::*;
 
 #[test]
@@ -44,7 +44,7 @@ fn generalized_tableau() {
         .collect();
     assert_eq!(idx, vec![0, 1]);
 
-    tableau.t_adj(0);
+    tableau.t_dag(0);
 
     assert_eq!(tableau.coefficients.len(), 1);
 
@@ -253,7 +253,7 @@ fn test_t_on_computational_basis_no_branching() {
 
 /// Verify that T†T = I: applying T then T† should leave the state unchanged.
 #[test]
-fn test_t_adj_cancels_t() {
+fn test_t_dag_cancels_t() {
     let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(2, 1e-12);
 
     tableau.h(0);
@@ -268,7 +268,7 @@ fn test_t_adj_cancels_t() {
         2,
         "T should branch on |+⟩-like state"
     );
-    tableau.t_adj(0);
+    tableau.t_dag(0);
     assert_eq!(
         tableau.coefficients.len(),
         1,
@@ -541,12 +541,12 @@ fn test_t_gate_measurement_statistics() {
 }
 
 /// sqrt_y should implement Ry(+π/2): sqrt_y|0⟩ = |+⟩ (stabilized by +X).
-/// With the bug (s, sqrt_x, s_adj order), it gives Ry(-π/2)|0⟩ = |−⟩ (stabilized by −X).
+/// With the bug (s, sqrt_x, s_dag order), it gives Ry(-π/2)|0⟩ = |−⟩ (stabilized by −X).
 /// After H: |+⟩ → |0⟩ (measure 0), |−⟩ → |1⟩ (measure 1).
 /// This circuit is purely Clifford so the measurement is deterministic.
 #[test]
 fn test_sqrt_y_direction() {
-    use ppvm_runtime::traits::CliffordExtensions;
+    use ppvm_traits::traits::CliffordExtensions;
 
     // sqrt_y|0⟩ should be |+⟩
     let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(1, 1e-12);
@@ -557,13 +557,13 @@ fn test_sqrt_y_direction() {
         "sqrt_y|0⟩ should be |+⟩; after H measurement must be 0"
     );
 
-    // sqrt_y_adj|0⟩ should be |−⟩
+    // sqrt_y_dag|0⟩ should be |−⟩
     let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(1, 1e-12);
-    tableau.sqrt_y_adj(0);
+    tableau.sqrt_y_dag(0);
     tableau.h(0);
     assert!(
         tableau.measure(0).unwrap(),
-        "sqrt_y_adj|0⟩ should be |−⟩; after H measurement must be 1"
+        "sqrt_y_dag|0⟩ should be |−⟩; after H measurement must be 1"
     );
 }
 

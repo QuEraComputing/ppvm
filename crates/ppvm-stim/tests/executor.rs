@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
 use ppvm_stim::{execute, parse_extended};
 use ppvm_tableau::prelude::*;
 
@@ -12,6 +12,12 @@ fn run(src: &str, n_qubits: usize) -> (Vec<Option<bool>>, Tab) {
     let mut tab: Tab = GeneralizedTableau::new(n_qubits, 1e-10);
     let results = execute(&prog, &mut tab).expect("execute");
     (results, tab)
+}
+
+fn run_seeded(src: &str, n_qubits: usize, seed: u64) -> Vec<Option<bool>> {
+    let prog = parse_extended(src).expect("parse_extended");
+    let mut tab: Tab = GeneralizedTableau::new_with_seed(n_qubits, 1e-10, seed);
+    execute(&prog, &mut tab).expect("execute")
 }
 
 #[test]
@@ -98,6 +104,22 @@ fn comments_and_annotations_are_no_ops() {
 }
 
 #[test]
+fn grouped_measurement_matches_separate_measurements() {
+    // A single multi-target `M` must produce identical results to the same
+    // qubits measured by separate single-target `M` instructions, for every
+    // seed. Grouping only changes internal batching (shared measurement
+    // scratch); it must never change outcomes or the RNG-draw order.
+    let prelude = "H 0\nCX 0 1\nH 2\nCX 2 3\nS 1\nCZ 1 2\n";
+    let grouped = format!("{prelude}M 0 1 2 3");
+    let separate = format!("{prelude}M 0\nM 1\nM 2\nM 3");
+    for seed in 0..50 {
+        let g = run_seeded(&grouped, 4, seed);
+        let s = run_seeded(&separate, 4, seed);
+        assert_eq!(g, s, "grouped vs separate mismatch at seed={seed}");
+    }
+}
+
+#[test]
 fn measurement_buffer_is_pre_sized() {
     let prog = parse_extended("X 0\nM 0 1 2 3 4").unwrap();
     assert_eq!(prog.measurement_count(), 5);
@@ -110,7 +132,7 @@ fn measurement_buffer_is_pre_sized() {
 fn sample_runs_n_shots_each_with_fresh_tableau() {
     use ppvm_stim::sample;
     let prog = parse_extended("X 0\nM 0").unwrap();
-    let shots = sample::<_, _, _, _>(&prog, 5, || {
+    let shots = sample::<_, _, _, _>(&prog, 5, |_| {
         GeneralizedTableau::<ByteFxHashF64<1>, usize>::new(1, 1e-10)
     })
     .unwrap();
@@ -124,7 +146,7 @@ fn sample_runs_n_shots_each_with_fresh_tableau() {
 fn sample_zero_shots_returns_empty() {
     use ppvm_stim::sample;
     let prog = parse_extended("X 0\nM 0").unwrap();
-    let shots = sample::<_, _, _, _>(&prog, 0, || {
+    let shots = sample::<_, _, _, _>(&prog, 0, |_| {
         GeneralizedTableau::<ByteFxHashF64<1>, usize>::new(1, 1e-10)
     })
     .unwrap();
@@ -137,10 +159,8 @@ fn sample_random_h_distribution_within_3_sigma() {
     use ppvm_stim::sample;
     let prog = parse_extended("H 0\nM 0").unwrap();
     let n = 4096;
-    let mut seed_counter: u64 = 0;
-    let shots = sample::<_, _, _, _>(&prog, n, || {
-        seed_counter += 1;
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+    let shots = sample::<_, _, _, _>(&prog, n, |i| {
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1)
     })
     .unwrap();
     let ones = shots.iter().filter(|s| s[0] == Some(true)).count();
@@ -226,7 +246,7 @@ fn test_stim_s_dag() {
 }
 
 #[test]
-fn test_stim_s_dag_t_is_t_adj() {
+fn test_stim_s_dag_t_is_t_dag() {
     // S_DAG[T] should be T†. T†T = I on |+⟩ should leave 1 branch.
     let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
     run_str("H 0\nS[T] 0\nS_DAG[T] 0", &mut tab);
@@ -258,7 +278,7 @@ fn test_stim_sqrt_z_is_s() {
 }
 
 #[test]
-fn test_stim_sqrt_z_dag_is_s_adj() {
+fn test_stim_sqrt_z_dag_is_s_dag() {
     // SQRT_Z_DAG then SQRT_Z = I
     let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
     let results = run_str("SQRT_Z_DAG 0\nSQRT_Z 0\nM 0", &mut tab);
@@ -383,10 +403,8 @@ fn measure_noise_distribution_within_3_sigma() {
     // So recorded == 0 with probability 0.3 over many shots.
     let prog = parse_extended("X 0\nMZ(0.3) 0").unwrap();
     let n = 4096usize;
-    let mut seed_counter: u64 = 0;
-    let shots = sample::<_, _, _, _>(&prog, n, || {
-        seed_counter += 1;
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+    let shots = sample::<_, _, _, _>(&prog, n, |i| {
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1)
     })
     .unwrap();
     let zeros = shots.iter().filter(|s| s[0] == Some(false)).count();
@@ -437,10 +455,8 @@ fn mpad_noise_distribution_within_3_sigma() {
     // MPAD(0.3) 0 — pad value is 0; recorded bit flips to 1 with prob 0.3.
     let prog = parse_extended("MPAD(0.3) 0").unwrap();
     let n = 4096usize;
-    let mut seed_counter: u64 = 0;
-    let shots = sample::<_, _, _, _>(&prog, n, || {
-        seed_counter += 1;
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, seed_counter)
+    let shots = sample::<_, _, _, _>(&prog, n, |i| {
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1)
     })
     .unwrap();
     let ones = shots.iter().filter(|s| s[0] == Some(true)).count();
@@ -450,4 +466,22 @@ fn mpad_noise_distribution_within_3_sigma() {
         ((ones as f64) - mean).abs() < 3.0 * std,
         "got {ones} ones, expected mean {mean} +/- 3*{std}"
     );
+}
+
+#[cfg(feature = "rayon")]
+#[test]
+fn sample_parallel_matches_sample_serial_for_seeded_factory() {
+    use ppvm_stim::{sample_parallel, sample_serial};
+    // A randomising circuit (H then measure on two qubits, with a noisy
+    // readout) so each shot's outcome depends on its RNG draws. With a
+    // per-shot seed derived from the index, the parallel result must match
+    // the serial result shot-for-shot regardless of thread scheduling.
+    let prog = parse_extended("H 0\nH 1\nM 0\nMZ(0.2) 1").unwrap();
+    let n = 1024usize;
+    let factory = |i: usize| {
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(2, 1e-10, i as u64 + 1)
+    };
+    let serial = sample_serial::<_, _, _, _>(&prog, n, factory).unwrap();
+    let parallel = sample_parallel::<_, _, _, _>(&prog, n, factory).unwrap();
+    assert_eq!(serial, parallel);
 }

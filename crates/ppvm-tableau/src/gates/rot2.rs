@@ -18,7 +18,7 @@ impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> RotationTwo<T>
     for GeneralizedTableau<T, I, C>
 where
     <<T as Config>::Storage as BitView>::Store: PrimInt,
-    T::Coeff: Zero + One + Send + Sync + num::Num,
+    T::Coeff: Zero + One + Send + Sync + num::Num + PartialOrd,
     I: TableauIndex + Send + Sync,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
@@ -88,7 +88,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
     use std::f64::consts::{FRAC_PI_2, PI};
 
     type TestConfig = ByteF64<1>;

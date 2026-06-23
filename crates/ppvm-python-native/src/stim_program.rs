@@ -5,19 +5,19 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::ops::Deref;
 
-use ppvm_stim::{ExtendedProgram, parse_extended, prepare};
+use ppvm_stim::{ExtendedProgram, parse_extended, validate};
 
-/// Python-facing wrapper around a prepared extended Stim program.
-#[pyclass(name = "StimProgram", module = "ppvm_python_native")]
+/// Python-facing wrapper around a validated extended Stim program.
+#[pyclass(name = "StimProgram", module = "ppvm._core")]
 pub struct PyStimProgram(pub ExtendedProgram);
 
 #[pymethods]
 impl PyStimProgram {
-    /// Parse and prepare a Stim circuit string.
+    /// Parse and validate a Stim circuit string.
     #[staticmethod]
     pub fn parse(src: &str) -> PyResult<Self> {
         let program = parse_extended(src).map_err(stim_to_pyerr)?;
-        prepare(&program).map_err(stim_to_pyerr_exec)?;
+        validate(&program).map_err(stim_to_pyerr_exec)?;
         Ok(Self(program))
     }
 

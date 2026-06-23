@@ -34,7 +34,7 @@ function benchmark_suite()
 
     # temporary state used in PP.jl
     tmp_state = similar(initial_state)
-    
+
     println("Using $(Threads.nthreads()) threads")
     println("Initial state has $(length(initial_state.terms)) terms")
 
@@ -45,24 +45,24 @@ function benchmark_suite()
     y = CliffordGate(:Y, [1])
     z = CliffordGate(:Z, [1])
     h = CliffordGate(:H, [1])
-    
+
     cnot = CliffordGate(:CNOT, [1, 2])
     cz = CliffordGate(:CZ, [1, 2])
 
-    rx = PauliRotation([:X], [1], 0.5)
-    ry = PauliRotation([:Y], [1], 0.5)
-    rz = PauliRotation([:Z], [1], 0.5)
+    rx = PauliRotation([:X], [2], 0.5)
+    ry = PauliRotation([:Y], [2], 0.5)
+    rz = PauliRotation([:Z], [2], 0.5)
 
-    rxx = PauliRotation([:X, :X], [1, 2], 0.5)
-    ryy = PauliRotation([:Y, :Y], [1, 2], 0.5)
-    rzz = PauliRotation([:Z, :Z], [1, 2], 0.5)
+    rxx = PauliRotation([:X, :X], [2, 3], 0.5)
+    ryy = PauliRotation([:Y, :Y], [2, 3], 0.5)
+    rzz = PauliRotation([:Z, :Z], [2, 3], 0.5)
 
     # collect the gate applications into the benchmark group
     group["x"] = @benchmarkable propagate!($x, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
     group["y"] = @benchmarkable propagate!($y, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
     group["z"] = @benchmarkable propagate!($z, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
     group["h"] = @benchmarkable propagate!($h, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
-    
+
     group["cnot"] = @benchmarkable propagate!($cnot, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
     group["cz"] = @benchmarkable propagate!($cz, state; min_abs_coeff = 1e-10) setup = (state = copy($initial_state); cache_state = copy($tmp_state))
 
@@ -85,4 +85,3 @@ function run_benchmark()
 end
 
 results = run_benchmark()
-

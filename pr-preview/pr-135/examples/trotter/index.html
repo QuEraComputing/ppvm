@@ -7,7 +7,7 @@
         document.documentElement.setAttribute("data-theme-pref", stored);
       })();
     </script><link rel="stylesheet" href="/pr-preview/pr-135/_astro/Base.BN0a5DSp.css"></head> <body> <header class="masthead"> <div class="masthead-inner"> <a class="brand" href="/pr-preview/pr-135/"> <span class="brand-mark" aria-hidden="true"></span> <span class="brand-mono">ppvm</span> <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span> </a> <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation menu"> <span class="nav-toggle-bars" aria-hidden="true"></span> </button> <nav class="nav-links" id="primary-nav"> <a href="/pr-preview/pr-135/">Overview</a><a href="/pr-preview/pr-135/quickstart">Quick Start</a><a href="/pr-preview/pr-135/examples" aria-current="page">Examples</a><a href="/pr-preview/pr-135/develop">Develop</a><a href="/pr-preview/pr-135/api">Reference</a> <div class="theme-toggle" role="group" aria-label="Theme"> <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path> </svg> </button> <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path> </svg> </button> <button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <rect x="3" y="4" width="18" height="13" rx="2"></rect> <path d="M8 21h8M12 17v4"></path> </svg> </button> </div> </nav> </div> </header> <main> <div class="page-shell"> <details class="page-toc side-nav" aria-label="On this page"> <summary class="page-toc-label">On this page</summary> <ol> <li><a href="#Parameters" data-toc-link="#Parameters">Parameters</a></li><li><a href="#Noiseless-simulation" data-toc-link="#Noiseless-simulation">Noiseless simulation</a></li><li><a href="#Noiseless-time-evolution" data-toc-link="#Noiseless-time-evolution">Noiseless time evolution</a></li><li><a href="#Noisy-simulation-with-qubit-loss" data-toc-link="#Noisy-simulation-with-qubit-loss">Noisy simulation with qubit loss</a></li><li><a href="#Noisy-time-evolution" data-toc-link="#Noisy-time-evolution">Noisy time evolution</a></li><li><a href="#Results" data-toc-link="#Results">Results</a></li> </ol> </details> <div class="page-toc-content">  <article class="shell narrow notebook"> <div class="titleblock"> <div class="eyebrow"> <a href="/pr-preview/pr-135/examples">Examples</a> &middot; executed during build
-</div> <h1>Trotterized Time Evolution of the XZZ Ising Chain</h1> <p class="byline"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/fdb149207115e630c3b4dc01831d255df6496f6b/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a> </p> </div> <div class="notebook-body" data-language="python"><div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=c8e58abb">
+</div> <h1>Trotterized Time Evolution of the XZZ Ising Chain</h1> <p class="byline"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/8435b3b7a4662295c1a11ace61c7b2b637bfd996/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a> </p> </div> <div class="notebook-body" data-language="python"><div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=d04323d6">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -26,7 +26,7 @@ to truncation and therefore an approximate solution.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=79857062">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=80c90f58">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -42,7 +42,7 @@ to truncation and therefore an approximate solution.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=3e1ed457">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=cf97233b">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -51,7 +51,7 @@ to truncation and therefore an approximate solution.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=f70d5ceb">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=b510e407">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -69,7 +69,7 @@ to truncation and therefore an approximate solution.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=8258a02a">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=c53feaf6">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -92,7 +92,7 @@ There are currently two possible ways to truncate in a loss-less simulation:</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=2f09a01b">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=0d7aa822">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -112,16 +112,16 @@ There are currently two possible ways to truncate in a loss-less simulation:</p>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">trotter_step</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">theta_x</span><span class="p">,</span> <span class="n">theta_zz</span><span class="p">):</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-        <span class="n">state</span><span class="o">.</span><span class="n">rx</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">theta_x</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">rx</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="n">theta_x</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
-        <span class="n">state</span><span class="o">.</span><span class="n">rzz</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">theta_zz</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">rzz</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="n">theta_zz</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=5ae79266">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=29cd64d4">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -130,7 +130,7 @@ There are currently two possible ways to truncate in a loss-less simulation:</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=f4012081">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=a8ba0cb2">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -165,7 +165,7 @@ There are currently two possible ways to truncate in a loss-less simulation:</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=d66393c6">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=204afa71">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -185,7 +185,7 @@ little to the final average value.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=33340b6a">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=1caacdb7">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -219,13 +219,13 @@ little to the final average value.</p>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">noisy_trotter_step</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">theta_x</span><span class="p">,</span> <span class="n">theta_zz</span><span class="p">):</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-        <span class="n">state</span><span class="o">.</span><span class="n">rx</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">theta_x</span><span class="p">)</span>
-        <span class="n">state</span><span class="o">.</span><span class="n">pauli_error</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">noise_1q</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">rx</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="n">theta_x</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">pauli_error</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">noise_1q</span><span class="p">)</span>
         <span class="n">state</span><span class="o">.</span><span class="n">loss_channel</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">p_loss</span><span class="p">)</span>
 
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
-        <span class="n">state</span><span class="o">.</span><span class="n">rzz</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">theta_zz</span><span class="p">)</span>
-        <span class="n">state</span><span class="o">.</span><span class="n">two_qubit_pauli_error</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">noise_2q</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">rzz</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="n">theta_zz</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">two_qubit_pauli_error</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">noise_2q</span><span class="p">)</span>
         <span class="n">state</span><span class="o">.</span><span class="n">loss_channel</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">p_loss</span><span class="p">)</span>
         <span class="n">state</span><span class="o">.</span><span class="n">loss_channel</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">p_loss</span><span class="p">)</span>
 </pre></div>
@@ -234,7 +234,7 @@ little to the final average value.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=17b67dee">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=8659211a">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -243,7 +243,7 @@ little to the final average value.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=ea4afbff">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=913db963">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -276,7 +276,7 @@ little to the final average value.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=482337b5">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=527dab62">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -287,7 +287,7 @@ faster due to depolarisation and qubit loss.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=61481abb">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=77cf1d5e">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -507,7 +507,7 @@ faster due to depolarisation and qubit loss.</p>
         sync();
       })();
     </script> <footer class="foot"> <div class="foot-inner"> <span>PPVM · QuEra Computing · open source, Apache License 2.0</span> <span> <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
-          documentation generated <time>2026-06-22</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
+          documentation generated <time>2026-06-23</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
       document.addEventListener("DOMContentLoaded", () => {
         if (typeof renderMathInElement !== "function") return;
         renderMathInElement(document.body, {

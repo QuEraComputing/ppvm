@@ -4,10 +4,18 @@
 use crate::config::Config;
 
 macro_rules! def_rotation {
-    ($name:ident, $x_a:expr, $z_a:expr, $x_b:expr, $z_b:expr, $doc:literal) => {
+    ($name:ident, $batch:ident, $x_a:expr, $z_a:expr, $x_b:expr, $z_b:expr, $doc:literal) => {
         #[doc = $doc]
         fn $name(&mut self, a: usize, b: usize, theta: impl Into<T::Coeff>) {
             self.rotate_2([$x_a, $z_a], [$x_b, $z_b], a, b, theta.into())
+        }
+
+        #[doc = concat!("Explicit batched form of [`", stringify!($name), "`].")]
+        fn $batch(&mut self, pairs: &[(usize, usize)], theta: impl Into<T::Coeff>) {
+            let theta = theta.into();
+            for &(a, b) in pairs {
+                self.$name(a, b, theta.clone())
+            }
         }
     };
 }
@@ -25,15 +33,15 @@ pub trait RotationTwo<T: Config> {
     fn rotate_2(&mut self, axis_a: [u8; 2], axis_b: [u8; 2], a: usize, b: usize, theta: T::Coeff);
 
     //                 x, z, x, z
-    def_rotation!(rxx, 1, 0, 1, 0, "`exp(-i θ/2 · X_a X_b)`.");
-    def_rotation!(rxy, 1, 0, 1, 1, "`exp(-i θ/2 · X_a Y_b)`.");
-    def_rotation!(rxz, 1, 0, 0, 1, "`exp(-i θ/2 · X_a Z_b)`.");
+    def_rotation!(rxx, rxx_many, 1, 0, 1, 0, "`exp(-i θ/2 · X_a X_b)`.");
+    def_rotation!(rxy, rxy_many, 1, 0, 1, 1, "`exp(-i θ/2 · X_a Y_b)`.");
+    def_rotation!(rxz, rxz_many, 1, 0, 0, 1, "`exp(-i θ/2 · X_a Z_b)`.");
 
-    def_rotation!(ryx, 1, 1, 1, 0, "`exp(-i θ/2 · Y_a X_b)`.");
-    def_rotation!(ryy, 1, 1, 1, 1, "`exp(-i θ/2 · Y_a Y_b)`.");
-    def_rotation!(ryz, 1, 1, 0, 1, "`exp(-i θ/2 · Y_a Z_b)`.");
+    def_rotation!(ryx, ryx_many, 1, 1, 1, 0, "`exp(-i θ/2 · Y_a X_b)`.");
+    def_rotation!(ryy, ryy_many, 1, 1, 1, 1, "`exp(-i θ/2 · Y_a Y_b)`.");
+    def_rotation!(ryz, ryz_many, 1, 1, 0, 1, "`exp(-i θ/2 · Y_a Z_b)`.");
 
-    def_rotation!(rzx, 0, 1, 1, 0, "`exp(-i θ/2 · Z_a X_b)`.");
-    def_rotation!(rzy, 0, 1, 1, 1, "`exp(-i θ/2 · Z_a Y_b)`.");
-    def_rotation!(rzz, 0, 1, 0, 1, "`exp(-i θ/2 · Z_a Z_b)`.");
+    def_rotation!(rzx, rzx_many, 0, 1, 1, 0, "`exp(-i θ/2 · Z_a X_b)`.");
+    def_rotation!(rzy, rzy_many, 0, 1, 1, 1, "`exp(-i θ/2 · Z_a Y_b)`.");
+    def_rotation!(rzz, rzz_many, 0, 1, 0, 1, "`exp(-i θ/2 · Z_a Z_b)`.");
 }

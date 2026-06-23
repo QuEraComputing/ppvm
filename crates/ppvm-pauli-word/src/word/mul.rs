@@ -14,7 +14,7 @@ where
 {
     type Output = PauliWord<A, S>;
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut output = self.clone();
+        let mut output = self;
         output *= rhs;
         output
     }

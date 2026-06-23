@@ -41,7 +41,7 @@ where
         self.branch_with_coefficients(index, Pauli::Z, complex_cos, complex_sin);
     }
 
-    fn t_adj(&mut self, index: usize) {
+    fn t_dag(&mut self, index: usize) {
         if self.is_lost[index] {
             return;
         }

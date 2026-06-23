@@ -105,7 +105,7 @@ impl<T: Config> TwoQubitPauliError<T> for PauliSum<T> {
 }
 
 impl<T: Config> Depolarizing<T> for PauliSum<T> {
-    fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
+    fn depolarize1(&mut self, addr0: usize, p: T::Coeff) {
         let factor = T::Coeff::from(1.0) - p * (4.0 / 3.0);
         self.scale(move |k, v| {
             if !k.get_lbit(addr0) && pauli_code(k, addr0) != 0 {

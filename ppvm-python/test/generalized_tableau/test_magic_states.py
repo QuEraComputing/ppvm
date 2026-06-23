@@ -18,15 +18,15 @@ def test_simple_infidelity():
 
         # Prepare magic state SH
         tab.reset(0)
-        tab.rx(0, theta)
-        tab.t_adj(0)
+        tab.rx(0, theta=theta)
+        tab.t_dag(0)
 
         # Add noise
-        tab.depolarize(0, p)
+        tab.depolarize1(0, p=p)
 
         # Undo prep without noise
         tab.t(0)
-        tab.rx(0, -theta)
+        tab.rx(0, theta=-theta)
         return tab.measure(0)
 
     # NOTE: need a lot of shots to ensure convergence, otherwise test becomes flaky
@@ -55,12 +55,12 @@ def distillation_sqrt(tab: GeneralizedTableau, q: list[int], noise: bool):
         tab.reset(i)
 
     for qi in q:
-        tab.rx(qi, theta)
+        tab.rx(qi, theta=theta)
     for qi in q:
-        tab.t_adj(qi)
+        tab.t_dag(qi)
     if noise:
         for qi in q:
-            tab.depolarize(qi, p)
+            tab.depolarize1(qi, p=p)
 
     # distillation circuit
     for qi in [q[0], q[1], q[4]]:
@@ -71,15 +71,15 @@ def distillation_sqrt(tab: GeneralizedTableau, q: list[int], noise: bool):
         tab.sqrt_y(qi)
     for a, b in zip([q[0], q[3]], [q[2], q[4]]):
         tab.cz(a, b)
-    tab.sqrt_x_adj(q[0])
+    tab.sqrt_x_dag(q[0])
     for a, b in zip([q[0], q[1]], [q[4], q[3]]):
         tab.cz(a, b)
     for qi in q:
-        tab.sqrt_x_adj(qi)
+        tab.sqrt_x_dag(qi)
 
     # undo magic state preparation on first qubit to measure infidelity
     tab.t(q[0])
-    tab.rx(q[0], -theta)
+    tab.rx(q[0], theta=-theta)
 
     return [tab.measure(qi) for qi in q]
 
@@ -90,35 +90,35 @@ def distillation_rot(tab: GeneralizedTableau, q: list[int], noise: bool):
         tab.reset(i)
 
     for qi in q:
-        tab.rx(qi, theta)
+        tab.rx(qi, theta=theta)
     for qi in q:
-        tab.t_adj(qi)
+        tab.t_dag(qi)
     if noise:
         for qi in q:
-            tab.depolarize(qi, p)
+            tab.depolarize1(qi, p=p)
 
     # distillation circuit
     for qi in [q[0], q[1], q[4]]:
         # tab.sqrt_x(qi)
-        tab.rx(qi, np.pi / 2)
+        tab.rx(qi, theta=np.pi / 2)
     for a, b in zip([q[0], q[2]], [q[1], q[3]]):
         tab.cz(a, b)
     for qi in [q[0], q[3]]:
         # tab.sqrt_y(qi)
-        tab.ry(qi, np.pi / 2)
+        tab.ry(qi, theta=np.pi / 2)
     for a, b in zip([q[0], q[3]], [q[2], q[4]]):
         tab.cz(a, b)
-    # tab.sqrt_x_adj(q[0])
-    tab.rx(q[0], -np.pi / 2)
+    # tab.sqrt_x_dag(q[0])
+    tab.rx(q[0], theta=-np.pi / 2)
     for a, b in zip([q[0], q[1]], [q[4], q[3]]):
         tab.cz(a, b)
     for qi in q:
-        # tab.sqrt_x_adj(qi)
-        tab.rx(qi, -np.pi / 2)
+        # tab.sqrt_x_dag(qi)
+        tab.rx(qi, theta=-np.pi / 2)
 
     # undo magic state preparation on first qubit to measure infidelity
     tab.t(q[0])
-    tab.rx(q[0], -theta)
+    tab.rx(q[0], theta=-theta)
 
     return [tab.measure(qi) for qi in q]
 
@@ -248,22 +248,22 @@ def test_single_qubit_magic_state_noiseless():
             tab.reset(i)
 
         for qi in q:
-            tab.rx(qi, theta)
+            tab.rx(qi, theta=theta)
         for qi in q:
-            tab.t_adj(qi)
+            tab.t_dag(qi)
 
         # distillation circuit
         for qi in [q[0]]:
             tab.sqrt_x(qi)
         for qi in [q[0]]:
             tab.sqrt_y(qi)
-        tab.sqrt_x_adj(q[0])
+        tab.sqrt_x_dag(q[0])
         for qi in q:
-            tab.sqrt_x_adj(qi)
+            tab.sqrt_x_dag(qi)
 
         # undo magic state preparation on first qubit to measure infidelity
         tab.t(q[0])
-        tab.rx(q[0], -theta)
+        tab.rx(q[0], theta=-theta)
 
         return [tab.measure(qi) for qi in q]
 
@@ -273,22 +273,22 @@ def test_single_qubit_magic_state_noiseless():
             tab.reset(i)
 
         for qi in q:
-            tab.rx(qi, theta)
+            tab.rx(qi, theta=theta)
         for qi in q:
-            tab.t_adj(qi)
+            tab.t_dag(qi)
 
         # distillation circuit
         for qi in [q[0]]:
-            tab.rx(qi, np.pi / 2)
+            tab.rx(qi, theta=np.pi / 2)
         for qi in [q[0]]:
-            tab.ry(qi, np.pi / 2)
-        tab.rx(q[0], -np.pi / 2)
+            tab.ry(qi, theta=np.pi / 2)
+        tab.rx(q[0], theta=-np.pi / 2)
         for qi in q:
-            tab.rx(qi, -np.pi / 2)
+            tab.rx(qi, theta=-np.pi / 2)
 
         # undo magic state preparation on first qubit to measure infidelity
         tab.t(q[0])
-        tab.rx(q[0], -theta)
+        tab.rx(q[0], theta=-theta)
 
         return [tab.measure(qi) for qi in q]
 

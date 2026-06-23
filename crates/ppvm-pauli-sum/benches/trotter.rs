@@ -102,22 +102,40 @@ pub fn trotter_benchmarks(c: &mut Criterion) {
     println!("Using {} threads", current_num_threads());
     benchmark_suite_trotter::<
         config::gxhash::ByteF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
-    >(c, "ByteF64GxHashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    >(
+        c,
+        "ByteF64GxHashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>",
+    );
     benchmark_suite_trotter::<
         config::fxhash::ByteF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
-    >(c, "ByteF64FxHashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    >(
+        c,
+        "ByteF64FxHashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>",
+    );
     benchmark_suite_trotter::<
         config::dashmap::ByteFxHashF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
-    >(c, "ByteF64FxDashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    >(
+        c,
+        "ByteF64FxDashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>",
+    );
     benchmark_suite_trotter::<
         config::dashmap::ByteGxHashF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
-    >(c, "ByteF64GxDashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    >(
+        c,
+        "ByteF64GxDashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>",
+    );
     benchmark_suite_trotter::<
         config::indexmap::ByteFxHashF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
-    >(c, "ByteF64FxIndexMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    >(
+        c,
+        "ByteF64FxIndexMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>",
+    );
     benchmark_suite_trotter::<
         config::indexmap::ByteGxHashF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
-    >(c, "ByteF64GxIndexMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>");
+    >(
+        c,
+        "ByteF64GxIndexMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>",
+    );
 }
 
 criterion_group!(benches, trotter_benchmarks);

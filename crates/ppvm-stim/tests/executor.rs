@@ -246,7 +246,7 @@ fn test_stim_s_dag() {
 }
 
 #[test]
-fn test_stim_s_dag_t_is_t_adj() {
+fn test_stim_s_dag_t_is_t_dag() {
     // S_DAG[T] should be T†. T†T = I on |+⟩ should leave 1 branch.
     let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
     run_str("H 0\nS[T] 0\nS_DAG[T] 0", &mut tab);
@@ -278,7 +278,7 @@ fn test_stim_sqrt_z_is_s() {
 }
 
 #[test]
-fn test_stim_sqrt_z_dag_is_s_adj() {
+fn test_stim_sqrt_z_dag_is_s_dag() {
     // SQRT_Z_DAG then SQRT_Z = I
     let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
     let results = run_str("SQRT_Z_DAG 0\nSQRT_Z 0\nM 0", &mut tab);

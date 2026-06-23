@@ -52,10 +52,10 @@ where
         let mut storage = S::with_capacity(1);
         storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one(), wfp, plh)], &sum_cutoff);
         Self {
-            n_qubits: n_qubits,
+            n_qubits,
             entries: storage,
-            rng: rng,
-            sum_cutoff: sum_cutoff,
+            rng,
+            sum_cutoff,
             _phantom: PhantomData,
         }
     }
@@ -75,16 +75,20 @@ where
         let mut storage = S::with_capacity(1);
         storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one(), wfp, plh)], &sum_cutoff);
         Self {
-            n_qubits: n_qubits,
+            n_qubits,
             entries: storage,
-            rng: rng,
-            sum_cutoff: sum_cutoff,
+            rng,
+            sum_cutoff,
             _phantom: PhantomData,
         }
     }
 
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     pub fn truncate(&mut self) {
@@ -136,8 +140,8 @@ where
 
         Sampler {
             p_cumulative: p_cum,
-            entries: entries,
-            rng: rng,
+            entries,
+            rng,
             scratch: ppvm_tableau::measure::MeasureScratch::new(),
         }
     }
@@ -210,7 +214,7 @@ mod tests {
         let mut tab = make(2);
         tab.h(0);
         tab.t(0);
-        tab.t_adj(0);
+        tab.t_dag(0);
         assert_eq!(tab.len(), 1);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
     }
@@ -360,7 +364,7 @@ mod tests {
     #[test]
     fn test_depolarize_zero_probability_doesnt_branch() {
         let mut tab = make(2);
-        tab.depolarize(0, 0.0);
+        tab.depolarize1(0, 0.0);
         assert_eq!(tab.len(), 1);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
     }
@@ -402,7 +406,7 @@ mod tests {
         // branches stay above it. The total probability mass must still sum to 1.
         let mut tab: TestSum = GeneralizedTableauSum::new_with_seed(2, 1e-12, 0.05, 42);
         tab.loss_channel(0, 0.9); // entries: [(orig, 0.1), (lost_q0, 0.9)]
-        tab.depolarize(1, 0.3);
+        tab.depolarize1(1, 0.3);
         let sum = sum_of_probabilities(&tab);
         assert!(
             (sum - 1.0).abs() < 1e-6,
@@ -458,7 +462,7 @@ mod tests {
         // X|0⟩ and Z|0⟩ have distinct tableau data from the original and from each other,
         // so we expect >= 2 entries and total probability == 1.
         let mut tab = make(2);
-        tab.depolarize(0, 0.6);
+        tab.depolarize1(0, 0.6);
         assert!(
             tab.len() > 1,
             "depolarize should create branches, got len={}",
@@ -497,7 +501,7 @@ mod tests {
         // Depolarizing a lost qubit must not create branches.
         let mut tab = make(2);
         tab.loss_channel(0, 1.0);
-        tab.depolarize(0, 0.3);
+        tab.depolarize1(0, 0.3);
         assert_eq!(tab.len(), 1);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
     }
@@ -549,7 +553,7 @@ mod tests {
         tab.h(0);
         tab.cnot(0, 1);
         tab.loss_channel(0, 0.3);
-        tab.depolarize(1, 0.3);
+        tab.depolarize1(1, 0.3);
 
         assert!(!tab.entries.dirty);
         let n = tab.entries.entries.len();

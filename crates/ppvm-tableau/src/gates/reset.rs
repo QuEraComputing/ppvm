@@ -47,6 +47,11 @@ where
     fn reset(&mut self, addr0: usize) {
         let m = self.measure(addr0);
 
+        // A reset is not a measurement in stim's model: drop the record
+        // entry that the internal `measure` just pushed so the reset is
+        // measurement-record-neutral.
+        self.measurement_record.pop();
+
         if let Some(true) = m {
             self.x(addr0);
         }

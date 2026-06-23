@@ -53,7 +53,7 @@ class GateMethods(interp.MethodTable):
         method_name = _SQRT_MAP.get(method_name, method_name)
 
         if stmt.adjoint:
-            method_name += "_adj"
+            method_name += "_dag"
 
         method = getattr(interp_.backend, method_name)
         qubits: ilist.IList[GeneralizedTableauQubit, Any] = frame.get(stmt.qubits)
@@ -75,7 +75,7 @@ class GateMethods(interp.MethodTable):
         angle = _turns_to_radian(frame.get(stmt.angle))
 
         for qbit in qubits:
-            method(qbit.addr, angle)
+            method(qbit.addr, theta=angle)
 
     @interp.impl(gate.stmts.CX)
     @interp.impl(gate.stmts.CY)
@@ -130,6 +130,6 @@ class GateMethods(interp.MethodTable):
         angle_rz_post = (axis_phase_exponent + z_exponent) * math.pi * 2
 
         for qbit in qubits:
-            interp_.backend.rz(qbit.addr, angle_rz_pre)
-            interp_.backend.rx(qbit.addr, angle_rx)
-            interp_.backend.rz(qbit.addr, angle_rz_post)
+            interp_.backend.rz(qbit.addr, theta=angle_rz_pre)
+            interp_.backend.rx(qbit.addr, theta=angle_rx)
+            interp_.backend.rz(qbit.addr, theta=angle_rz_post)

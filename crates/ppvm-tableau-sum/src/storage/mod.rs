@@ -121,17 +121,25 @@ pub(crate) fn loss_mask(q: usize) -> u64 {
     row_mask(q, 0xC3C3_C3C3_C3C3_C3C3)
 }
 
-/// XOR contribution of a single row's phase.
-#[inline]
-fn phase_contrib(row: usize, phase: u8) -> u64 {
-    let mut h = 0;
-    if phase & 1 != 0 {
-        h ^= imag_mask(row);
+/// Precomputed per-row/per-qubit masks (sign, imag, loss). Built once per op and
+/// indexed instead of recomputing the splitmix `row_mask` per row per entry.
+pub(crate) struct RowMasks {
+    pub sign: Vec<u64>, // sign_mask(i) for i in 0..2*n_qubits
+    pub imag: Vec<u64>, // imag_mask(i) for i in 0..2*n_qubits
+    pub loss: Vec<u64>, // loss_mask(q) for q in 0..n_qubits
+}
+
+impl RowMasks {
+    /// Build the mask tables. The tableau has `2 * n_qubits` rows (`sign`/`imag`
+    /// indexed by row); `loss` is indexed by qubit `0..n_qubits`.
+    pub(crate) fn new(n_qubits: usize) -> Self {
+        let n_rows = 2 * n_qubits;
+        Self {
+            sign: (0..n_rows).map(sign_mask).collect(),
+            imag: (0..n_rows).map(imag_mask).collect(),
+            loss: (0..n_qubits).map(loss_mask).collect(),
+        }
     }
-    if phase & 2 != 0 {
-        h ^= sign_mask(row);
-    }
-    h
 }
 
 /// XOR-combinable hash of `is_lost` plus every row's `phase`, formed as the
@@ -143,13 +151,37 @@ where
     T: Config,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
+    // Single implementation: build a one-shot mask table and delegate so the
+    // table-indexed and from-scratch values are guaranteed identical.
+    // `is_lost.len() == n_qubits` and is available under these minimal bounds.
+    let masks = RowMasks::new(tab.is_lost.len());
+    phase_loss_hash_with(tab, &masks)
+}
+
+/// Like [`phase_loss_hash`], but indexes a precomputed [`RowMasks`] instead of
+/// recomputing the splitmix masks per row/qubit. Reproduces the same value:
+/// phase bit 0 (imag) XORs `masks.imag[row]`, phase bit 1 (sign) XORs
+/// `masks.sign[row]`, and a lost qubit `q` XORs `masks.loss[q]`.
+pub(crate) fn phase_loss_hash_with<T, I, C>(
+    tab: &GeneralizedTableau<T, I, C>,
+    masks: &RowMasks,
+) -> u64
+where
+    T: Config,
+    C: SparseVector<Complex<T::Coeff>, I>,
+{
     let mut h = 0u64;
     for (row, ppw) in tab.tableau.data.iter().enumerate() {
-        h ^= phase_contrib(row, ppw.phase);
+        if ppw.phase & 1 != 0 {
+            h ^= masks.imag[row];
+        }
+        if ppw.phase & 2 != 0 {
+            h ^= masks.sign[row];
+        }
     }
     for (q, lost) in tab.is_lost.iter().enumerate() {
         if *lost {
-            h ^= loss_mask(q);
+            h ^= masks.loss[q];
         }
     }
     h

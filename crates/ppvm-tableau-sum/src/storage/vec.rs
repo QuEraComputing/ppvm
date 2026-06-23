@@ -14,8 +14,8 @@ use ppvm_tableau::{
 use ppvm_traits::config::Config;
 
 use crate::storage::{
-    BranchMutation, EntryStore, apply_branch_mutation, phase_loss_hash, structurally_equal,
-    structurally_equal_mutated, word_fingerprint,
+    BranchMutation, EntryStore, RowMasks, apply_branch_mutation, phase_loss_hash_with,
+    structurally_equal, structurally_equal_mutated, word_fingerprint,
 };
 use bitvec::view::BitView;
 use num::PrimInt;
@@ -109,12 +109,17 @@ where
         self.fingerprints.clear();
         self.word_fingerprints.clear();
         self.phase_loss_hashes.clear();
-        for (t, _) in self.entries.iter() {
-            let wfp = word_fingerprint(t);
-            let plh = phase_loss_hash(t);
-            self.word_fingerprints.push(wfp);
-            self.phase_loss_hashes.push(plh);
-            self.fingerprints.push(wfp ^ plh);
+        // Build the per-row mask table once for all entries (every tableau in a
+        // sum shares the same qubit count). Skip when there are no entries.
+        if let Some((first, _)) = self.entries.first() {
+            let masks = RowMasks::new(first.is_lost.len());
+            for (t, _) in self.entries.iter() {
+                let wfp = word_fingerprint(t);
+                let plh = phase_loss_hash_with(t, &masks);
+                self.word_fingerprints.push(wfp);
+                self.phase_loss_hashes.push(plh);
+                self.fingerprints.push(wfp ^ plh);
+            }
         }
         self.dirty = false;
     }

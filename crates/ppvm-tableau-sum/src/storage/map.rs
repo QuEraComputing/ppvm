@@ -15,8 +15,8 @@ use ppvm_traits::config::Config;
 use smallvec::SmallVec;
 
 use crate::storage::{
-    Branch, BranchMutation, EntryStore, apply_branch_mutation, fingerprint, phase_loss_hash,
-    structurally_equal, word_fingerprint,
+    Branch, BranchMutation, EntryStore, RowMasks, apply_branch_mutation, fingerprint,
+    phase_loss_hash_with, structurally_equal, word_fingerprint,
 };
 use bitvec::view::BitView;
 use num::PrimInt;
@@ -128,11 +128,21 @@ where
         F: FnMut(&mut GeneralizedTableau<T, I, C>, &mut <T as Config>::Coeff, u64, u64),
     {
         self.rebuild_if_dirty();
-        for v in self.buckets.values_mut() {
-            for (tab, c) in v.iter_mut() {
-                let word_fp = word_fingerprint(tab);
-                let phase_loss = phase_loss_hash(tab);
-                f(tab, c, word_fp, phase_loss);
+        // Build the per-row mask table once; every tableau in the sum shares the
+        // same qubit count. Skip when there are no entries.
+        let masks = self
+            .buckets
+            .values()
+            .flat_map(|v| v.iter())
+            .next()
+            .map(|(t, _)| RowMasks::new(t.is_lost.len()));
+        if let Some(masks) = masks {
+            for v in self.buckets.values_mut() {
+                for (tab, c) in v.iter_mut() {
+                    let word_fp = word_fingerprint(tab);
+                    let phase_loss = phase_loss_hash_with(tab, &masks);
+                    f(tab, c, word_fp, phase_loss);
+                }
             }
         }
     }

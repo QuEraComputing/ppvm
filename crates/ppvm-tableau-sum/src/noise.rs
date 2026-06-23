@@ -20,7 +20,7 @@ use rand::{RngExt, rngs::SmallRng};
 
 use crate::{
     data::GeneralizedTableauSum,
-    storage::{Branch, BranchMutation, EntryStore, loss_mask, pauli_branch_phase_loss, sign_mask},
+    storage::{Branch, BranchMutation, EntryStore, RowMasks, loss_mask, pauli_branch_phase_loss},
 };
 
 fn single_qubit_loss_branch<T, I, C>(
@@ -212,6 +212,9 @@ where
         let mut branches = Vec::<(usize, BranchMutation, T::Coeff, u64, u64)>::with_capacity(
             3 * self.entries.len(),
         );
+        // Precompute the per-row sign masks once instead of recomputing the
+        // splitmix `sign_mask` per row per entry in the hot loop below.
+        let masks = RowMasks::new(self.n_qubits);
         let mut idx = 0usize;
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
@@ -225,7 +228,7 @@ where
                 for (row, pw) in tab.tableau.data.iter().enumerate() {
                     let x: bool = pw.word.xbits[addr0];
                     let z: bool = pw.word.zbits[addr0];
-                    let m = sign_mask(row);
+                    let m = masks.sign[row];
                     if z {
                         dx ^= m;
                     }

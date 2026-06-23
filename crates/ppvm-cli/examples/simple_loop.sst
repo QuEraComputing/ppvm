@@ -11,7 +11,7 @@ fn @main() {
 
     // stop here to investigate
     breakpoint
-    
+
     const.u32 1
     eq.u32
     cond_br @flip, @next

@@ -7,6 +7,8 @@
 mod grammar;
 mod raw;
 
+#[expect(unused_imports, reason = "called by pipeline in Task 11")]
+pub(crate) use grammar::program_parser;
 #[expect(unused_imports, reason = "used by grammar/pipeline in Tasks 10-11")]
 pub(crate) use raw::{RawSyntaxNode, RawSyntaxTree, RawTarget};
 

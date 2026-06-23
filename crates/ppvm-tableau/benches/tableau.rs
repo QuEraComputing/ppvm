@@ -166,8 +166,8 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
                     }
 
                     // More batched Cliffords after T gates
-                    tab.sqrt_x_adj_batch(&block1);
-                    tab.sqrt_y_adj_batch(&block2);
+                    tab.sqrt_x_dag_batch(&block1);
+                    tab.sqrt_y_dag_batch(&block2);
 
                     // Measure all
                     for i in 0..n_qubits {

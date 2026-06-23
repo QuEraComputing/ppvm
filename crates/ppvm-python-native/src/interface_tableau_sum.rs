@@ -91,7 +91,7 @@ macro_rules! create_sum_interface {
             }
 
             pub fn s_dag(&mut self, targets: Vec<usize>) {
-                self.inner.s_adj_batch(targets.as_slice());
+                self.inner.s_dag_batch(targets.as_slice());
             }
 
             pub fn sqrt_x(&mut self, targets: Vec<usize>) {
@@ -99,7 +99,7 @@ macro_rules! create_sum_interface {
             }
 
             pub fn sqrt_x_dag(&mut self, targets: Vec<usize>) {
-                self.inner.sqrt_x_adj_batch(targets.as_slice());
+                self.inner.sqrt_x_dag_batch(targets.as_slice());
             }
 
             pub fn sqrt_y(&mut self, targets: Vec<usize>) {
@@ -107,7 +107,7 @@ macro_rules! create_sum_interface {
             }
 
             pub fn sqrt_y_dag(&mut self, targets: Vec<usize>) {
-                self.inner.sqrt_y_adj_batch(targets.as_slice());
+                self.inner.sqrt_y_dag_batch(targets.as_slice());
             }
 
             pub fn cnot(&mut self, targets: Vec<usize>) -> PyResult<()> {

@@ -108,7 +108,7 @@ fn test_tableau_s_gate() {
 }
 
 #[test]
-fn test_tableau_s_adj_gate() {
+fn test_tableau_s_dag_gate() {
     // S† on |0⟩: stabilizer Z → Z (unchanged), destabilizer X → -Y
     let mut t: Tab = Tableau::new(1);
     t.s_dag(0);
@@ -117,7 +117,7 @@ fn test_tableau_s_adj_gate() {
 }
 
 #[test]
-fn test_tableau_s_s_adj_identity() {
+fn test_tableau_s_s_dag_identity() {
     // S then S† should be identity
     let mut t: Tab = Tableau::new(1);
     t.s(0);
@@ -250,8 +250,8 @@ fn test_tableau_hzh_is_x() {
 }
 
 #[test]
-fn test_tableau_hsh_is_s_adj() {
-    // H S H and S_adj should produce the same transformation
+fn test_tableau_hsh_is_s_dag() {
+    // H S H and S_dag should produce the same transformation
     let mut t1: Tab = Tableau::new(1);
     t1.h(0);
     t1.s(0);
@@ -261,7 +261,7 @@ fn test_tableau_hsh_is_s_adj() {
     t2.s_dag(0);
 
     // Actually HSH maps X→X, Z→-Y in Heisenberg picture
-    // But S_adj maps X→-Y, Z→Z
+    // But S_dag maps X→-Y, Z→Z
     // These are different gates, so let me check the actual output
     // (Correction: this isn't quite right for forward prop on tableau)
     // Just verify they are consistent with known values
@@ -423,7 +423,7 @@ fn test_lost_qubit_s_is_noop() {
 }
 
 #[test]
-fn test_lost_qubit_s_adj_is_noop() {
+fn test_lost_qubit_s_dag_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(1, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(1, 1e-12);
     g.is_lost[0] = true;
@@ -503,7 +503,7 @@ fn test_lost_qubit_t_is_noop() {
 }
 
 #[test]
-fn test_lost_qubit_t_adj_is_noop() {
+fn test_lost_qubit_t_dag_is_noop() {
     let mut g: GTab = GeneralizedTableau::new(1, 1e-12);
     g.is_lost[0] = true;
     g.t_dag(0);

@@ -55,7 +55,7 @@ fn msd_func_fused<const MEASURE: bool>() -> (String, Tab) {
     tab.cz_block_pairs_cross_word(0, 51, 1, 4, 13);
     tab.cz_block_pairs(64, 17, 4); // (64,81)...(67,84) both in word 1
 
-    tab.sqrt_x_adj_batch(ql[0]);
+    tab.sqrt_x_dag_batch(ql[0]);
 
     // ql[0] x ql[4]: (0,68)...(16,84)
     // controls word 0 bits 0-16, targets word 1 bits 4-20
@@ -68,7 +68,7 @@ fn msd_func_fused<const MEASURE: bool>() -> (String, Tab) {
 
     // sqrt_x_dag on all blocks
     for block in ql.iter().take(5) {
-        tab.sqrt_x_adj_batch(block);
+        tab.sqrt_x_dag_batch(block);
     }
 
     if MEASURE {
@@ -89,7 +89,7 @@ fn encode_fused(tab: &mut Tab, qubits: &[usize]) {
     }
 
     if qubits.len() == 7 {
-        tab.sqrt_y_adj_batch(&[
+        tab.sqrt_y_dag_batch(&[
             qubits[0], qubits[1], qubits[2], qubits[3], qubits[4], qubits[5],
         ]);
 
@@ -134,7 +134,7 @@ fn encode_fused(tab: &mut Tab, qubits: &[usize]) {
         (qubits[13], qubits[16]),
     ]);
 
-    tab.sqrt_y_adj_batch(&[qubits[7], qubits[16]]);
+    tab.sqrt_y_dag_batch(&[qubits[7], qubits[16]]);
 
     tab.cz_batch(&[
         (qubits[4], qubits[7]),
@@ -143,7 +143,7 @@ fn encode_fused(tab: &mut Tab, qubits: &[usize]) {
         (qubits[15], qubits[16]),
     ]);
 
-    tab.sqrt_y_adj_batch(&[qubits[4], qubits[10], qubits[14], qubits[16]]);
+    tab.sqrt_y_dag_batch(&[qubits[4], qubits[10], qubits[14], qubits[16]]);
 
     tab.cz_batch(&[
         (qubits[2], qubits[4]),
@@ -179,7 +179,7 @@ fn encode_fused(tab: &mut Tab, qubits: &[usize]) {
         (qubits[12], qubits[15]),
     ]);
 
-    tab.sqrt_y_adj_batch(&[
+    tab.sqrt_y_dag_batch(&[
         qubits[0], qubits[2], qubits[5], qubits[6], qubits[8], qubits[10], qubits[12],
     ]);
 }

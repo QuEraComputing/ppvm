@@ -86,11 +86,11 @@ impl<T: Config> CliffordExtensions for Tableau<T> {
     // |    Gate    |  X  |  Y  |  Z  |
     // |:----------:|:---:|:---:|:---:|
     // |     s      |  Y  | -X  |  Z  |
-    // |   s_adj    | -Y  |  X  |  Z  |
+    // |   s_dag    | -Y  |  X  |  Z  |
     // |   sqrt_x   |  X  |  Z  | -Y  |
-    // | sqrt_x_adj |  X  | -Z  |  Y  |
+    // | sqrt_x_dag |  X  | -Z  |  Y  |
     // |   sqrt_y   | -Z  |  Y  |  X  |
-    // | sqrt_y_adj |  Z  |  Y  | -X  |
+    // | sqrt_y_dag |  Z  |  Y  | -X  |
 
     fn s_dag(&mut self, addr0: usize) {
         // NOTE: the backwards prop version of S is just S_dag
@@ -413,7 +413,7 @@ where
     /// Backward `S` (i.e. `S†`): same bit mapping as `S`, phase rule differs.
     /// Phase flips where x&!z=1, then z ^= x for masked qubits.
     #[inline]
-    fn s_adj_batch(&mut self, indices: &[usize]) {
+    fn s_dag_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -501,7 +501,7 @@ where
 
     /// Apply `(√Y)†` to multiple qubits using combined bitmask operations.
     #[inline]
-    fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
+    fn sqrt_y_dag_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -557,7 +557,7 @@ where
 
     /// Apply `(√X)†` to multiple qubits using combined bitmask operations.
     #[inline]
-    fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
+    fn sqrt_x_dag_batch(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -657,11 +657,11 @@ where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
     <T::Storage as BitView>::Store: PrimInt,
 {
-    impl_gen_tableau_batch_single!(s_adj_batch);
+    impl_gen_tableau_batch_single!(s_dag_batch);
     impl_gen_tableau_batch_single!(sqrt_x_batch);
-    impl_gen_tableau_batch_single!(sqrt_x_adj_batch);
+    impl_gen_tableau_batch_single!(sqrt_x_dag_batch);
     impl_gen_tableau_batch_single!(sqrt_y_batch);
-    impl_gen_tableau_batch_single!(sqrt_y_adj_batch);
+    impl_gen_tableau_batch_single!(sqrt_y_dag_batch);
     impl_gen_tableau_batch_pair!(cy_batch);
 }
 
@@ -694,7 +694,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sqrt_x_adj_stabilizer() {
+    fn test_sqrt_x_dag_stabilizer() {
         // Z → +Y
         let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
         tab.sqrt_x_dag(0);
@@ -714,7 +714,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sqrt_y_adj_stabilizer() {
+    fn test_sqrt_y_dag_stabilizer() {
         // Z → -X, X → +Z
         let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
         tab.sqrt_y_dag(0);
@@ -877,7 +877,7 @@ mod tests {
         }
 
         #[test]
-        fn test_sqrt_y_adj_batch_matches_individual() {
+        fn test_sqrt_y_dag_batch_matches_individual() {
             let n = 8;
             let indices = vec![1, 3, 4, 6];
             let mut tab_ind = TTab::new(n);
@@ -889,7 +889,7 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(0);
             tab_batch.s(2);
-            tab_batch.sqrt_y_adj_batch(&indices);
+            tab_batch.sqrt_y_dag_batch(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
@@ -911,7 +911,7 @@ mod tests {
         }
 
         #[test]
-        fn test_sqrt_x_adj_batch_matches_individual() {
+        fn test_sqrt_x_dag_batch_matches_individual() {
             let n = 8;
             let indices = vec![2, 3, 5, 6];
             let mut tab_ind = TTab::new(n);
@@ -923,7 +923,7 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(1);
             tab_batch.s(4);
-            tab_batch.sqrt_x_adj_batch(&indices);
+            tab_batch.sqrt_x_dag_batch(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
@@ -1008,7 +1008,7 @@ mod tests {
             assert_eq!(snapshot(&tab), initial);
             tab.s_batch(&[]);
             assert_eq!(snapshot(&tab), initial);
-            tab.s_adj_batch(&[]);
+            tab.s_dag_batch(&[]);
             assert_eq!(snapshot(&tab), initial);
         }
 
@@ -1035,7 +1035,7 @@ mod tests {
             };
             let mut tab = TTab::new(n);
             tab.sqrt_y_batch(&indices);
-            tab.sqrt_y_adj_batch(&indices);
+            tab.sqrt_y_dag_batch(&indices);
             assert_eq!(snapshot(&tab), initial);
         }
 
@@ -1108,7 +1108,7 @@ mod tests {
         }
 
         #[test]
-        fn test_s_adj_batch_matches_individual() {
+        fn test_s_dag_batch_matches_individual() {
             let n = 8;
             let indices = vec![1, 3, 4, 6];
             let mut tab_ind = TTab::new(n);
@@ -1120,7 +1120,7 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(2);
             tab_batch.h(5);
-            tab_batch.s_adj_batch(&indices);
+            tab_batch.s_dag_batch(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 

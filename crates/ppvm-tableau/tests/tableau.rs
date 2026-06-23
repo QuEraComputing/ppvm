@@ -253,7 +253,7 @@ fn test_t_on_computational_basis_no_branching() {
 
 /// Verify that T†T = I: applying T then T† should leave the state unchanged.
 #[test]
-fn test_t_adj_cancels_t() {
+fn test_t_dag_cancels_t() {
     let mut tableau: GeneralizedTableau<ByteFxHashF64<1>, u128> = GeneralizedTableau::new(2, 1e-12);
 
     tableau.h(0);

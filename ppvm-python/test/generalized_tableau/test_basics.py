@@ -156,7 +156,7 @@ def test_ry_pi_equals_y():
 
 
 def test_clifford_extensions_sqrt_x():
-    # sqrt_x followed by sqrt_x_adj is identity
+    # sqrt_x followed by sqrt_x_dag is identity
     tab = GeneralizedTableau(2)
     tab.x(0)
     tab.sqrt_x(0)
@@ -165,7 +165,7 @@ def test_clifford_extensions_sqrt_x():
 
 
 def test_clifford_extensions_sqrt_y():
-    # sqrt_y followed by sqrt_y_adj is identity
+    # sqrt_y followed by sqrt_y_dag is identity
     tab = GeneralizedTableau(2)
     tab.x(0)
     tab.sqrt_y(0)
@@ -173,7 +173,7 @@ def test_clifford_extensions_sqrt_y():
     assert tab.measure(0)
 
 
-def test_s_adj():
+def test_s_dag():
     # S S† = identity
     tab = GeneralizedTableau(2)
     tab.x(0)
@@ -198,7 +198,7 @@ def test_t_gate_four_times_equals_z():
     assert tab.measure(0)
 
 
-def test_t_adj_inverse_of_t():
+def test_t_dag_inverse_of_t():
     # T T† = identity
     tab = GeneralizedTableau(2)
     tab.x(0)

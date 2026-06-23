@@ -81,7 +81,7 @@ mod tests {
     }
 
     #[test]
-    fn test_s_adj() {
+    fn test_s_dag() {
         for (input, target) in [("I", "I"), ("X", "Y"), ("Z", "Z"), ("Y", "X")] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
             output.s_dag(0);
@@ -99,7 +99,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sqrt_x_adj() {
+    fn test_sqrt_x_dag() {
         for (input, target) in [("I", "I"), ("X", "X"), ("Y", "Z"), ("Z", "Y")] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
             output.sqrt_x_dag(0);
@@ -117,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sqrt_y_adj() {
+    fn test_sqrt_y_dag() {
         for (input, target) in [("I", "I"), ("X", "Z"), ("Y", "Y"), ("Z", "X")] {
             let mut output: PauliWord<u64> = PauliWord::from(input);
             output.sqrt_y_dag(0);

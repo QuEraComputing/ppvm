@@ -63,7 +63,7 @@ type TabSum = GeneralizedTableauSum<Cfg, Idx>;
 /// One layer of single-qubit gates followed by a CZ sublayer in brickwork
 /// pattern. After every gate on a qubit we apply loss + depolarize on that
 /// qubit. Single-qubit gate identities are drawn from a fixed 6-element
-/// pool {H, S, S_adj, sqrt_x, sqrt_y, T}. CZ pair offsets alternate by
+/// pool {H, S, S_dag, sqrt_x, sqrt_y, T}. CZ pair offsets alternate by
 /// layer (even: (0,1),(2,3); odd: (1,2)) to give a standard brickwork.
 fn apply_layer<B>(
     tab: &mut B,

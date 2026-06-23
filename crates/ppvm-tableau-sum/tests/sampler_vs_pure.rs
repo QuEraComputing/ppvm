@@ -1477,7 +1477,7 @@ fn t_then_h_distribution() {
 }
 
 #[test]
-fn t_h_t_adj_with_depolarize() {
+fn t_h_t_dag_with_depolarize() {
     // Non-Clifford T/T† interleaved with H and depolarizing noise: verifies
     // TGate composes correctly inside the sum, end-to-end with noise.
     let shots = 8000;
@@ -1499,7 +1499,7 @@ fn t_h_t_adj_with_depolarize() {
         t.t_dag(0);
         t.h(0);
     });
-    assert_distributions_match(&sum, &pure, 0.04, "t_h_t_adj_with_depolarize");
+    assert_distributions_match(&sum, &pure, 0.04, "t_h_t_dag_with_depolarize");
 }
 
 // ---------------------------------------------------------------------------

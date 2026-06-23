@@ -60,7 +60,7 @@ fn main() {
         encode(&mut tab, q);
     }
 
-    // Phase 2: Middle gates (sqrt_x, cz, sqrt_y, sqrt_x_adj layers)
+    // Phase 2: Middle gates (sqrt_x, cz, sqrt_y, sqrt_x_dag layers)
     for i in [0, 1, 4] {
         for q in ql[i] {
             tab.sqrt_x(*q);

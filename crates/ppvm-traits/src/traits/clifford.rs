@@ -220,7 +220,7 @@ pub trait CliffordBatch: Clifford {
 /// Batched form of [`CliffordExtensions`].
 pub trait CliffordExtensionsBatch: CliffordExtensions + CliffordBatch {
     /// Apply `S†` to every qubit in `indices`.
-    fn s_adj_batch(&mut self, indices: &[usize]) {
+    fn s_dag_batch(&mut self, indices: &[usize]) {
         for &q in indices {
             self.s_dag(q);
         }
@@ -232,7 +232,7 @@ pub trait CliffordExtensionsBatch: CliffordExtensions + CliffordBatch {
         }
     }
     /// Apply `(√X)†` to every qubit in `indices`.
-    fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
+    fn sqrt_x_dag_batch(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_x_dag(q);
         }
@@ -244,7 +244,7 @@ pub trait CliffordExtensionsBatch: CliffordExtensions + CliffordBatch {
         }
     }
     /// Apply `(√Y)†` to every qubit in `indices`.
-    fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
+    fn sqrt_y_dag_batch(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_y_dag(q);
         }
@@ -261,11 +261,11 @@ impl<T: PauliWordTrait> CliffordExtensions for T {
     // |    Gate    |  X  |  Y  |  Z  |
     // |:----------:|:---:|:---:|:---:|
     // |     s      | -Y  |  X  |  Z  |
-    // |   s_adj    |  Y  | -X  |  Z  |
+    // |   s_dag    |  Y  | -X  |  Z  |
     // |   sqrt_x   |  X  | -Z  |  Y  |
-    // | sqrt*x*adj |  X  |  Z  | -Y  |
+    // | sqrt_x_dag |  X  |  Z  | -Y  |
     // |   sqrt_y   |  Z  |  Y  | -X  |
-    // | sqrt*y*adj | -Z  |  Y  |  X  |
+    // | sqrt_y_dag | -Z  |  Y  |  X  |
 
     #[inline]
     fn s_dag(&mut self, addr0: usize) {

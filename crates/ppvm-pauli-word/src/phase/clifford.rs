@@ -108,11 +108,11 @@ where
     // |    Gate    |  X  |  Y  |  Z  |
     // |:----------:|:---:|:---:|:---:|
     // |     s      | -Y  |  X  |  Z  |
-    // |   s_adj    |  Y  | -X  |  Z  |
+    // |   s_dag    |  Y  | -X  |  Z  |
     // |   sqrt_x   |  X  | -Z  |  Y  |
-    // | sqrt*x*adj |  X  |  Z  | -Y  |
+    // | sqrt_x_dag |  X  |  Z  | -Y  |
     // |   sqrt_y   |  Z  |  Y  | -X  |
-    // | sqrt*y*adj | -Z  |  Y  |  X  |
+    // | sqrt_y_dag | -Z  |  Y  |  X  |
 
     fn s_dag(&mut self, addr0: usize) {
         if self.word.get_lbit(addr0) {
@@ -276,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn test_s_adj() {
+    fn test_s_dag() {
         for (input, target) in [("+I", "+I"), ("+X", "+Y"), ("+Y", "-X"), ("+Z", "+Z")] {
             let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
             output.s_dag(0);
@@ -294,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sqrt_x_adj() {
+    fn test_sqrt_x_dag() {
         for (input, target) in [("+I", "+I"), ("+X", "+X"), ("+Y", "+Z"), ("+Z", "-Y")] {
             let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
             output.sqrt_x_dag(0);
@@ -312,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sqrt_y_adj() {
+    fn test_sqrt_y_dag() {
         for (input, target) in [("+I", "+I"), ("+X", "-Z"), ("+Y", "+Y"), ("+Z", "+X")] {
             let mut output: PhasedPauliWord<u64> = PhasedPauliWord::from(input);
             output.sqrt_y_dag(0);

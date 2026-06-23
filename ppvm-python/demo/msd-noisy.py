@@ -108,7 +108,7 @@ def main() -> None:
 
     print(f"Branches: {len(tab)}")
 
-    # Phase 2: middle gates (sqrt_x / cz / sqrt_y / sqrt_x_adj layers).
+    # Phase 2: middle gates (sqrt_x / cz / sqrt_y / sqrt_x_dag layers).
     for i in [0, 1, 4]:
         for q in ql[i]:
             tab.sqrt_x(q)

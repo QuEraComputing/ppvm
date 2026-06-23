@@ -231,7 +231,7 @@ macro_rules! create_interface {
             // clifford extensions
             #[pyo3(signature = (targets, truncate = true))]
             pub fn s_dag(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.s_adj_batch(targets.as_slice());
+                self.inner.s_dag_batch(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
@@ -249,13 +249,13 @@ macro_rules! create_interface {
 
             #[pyo3(signature = (targets, truncate = true))]
             pub fn sqrt_x_dag(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.sqrt_x_adj_batch(targets.as_slice());
+                self.inner.sqrt_x_dag_batch(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, truncate = true))]
             pub fn sqrt_y_dag(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.sqrt_y_adj_batch(targets.as_slice());
+                self.inner.sqrt_y_dag_batch(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 

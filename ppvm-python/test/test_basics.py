@@ -153,7 +153,7 @@ def test_gate_methods():
     s.s(0)
     assert t(s) == {"YI": -1.0}
 
-    # s_adj: Y → -X (inverse of S)
+    # s_dag: Y → -X (inverse of S)
     s = PauliSum(n_qubits=2, initial_terms=["YI"], coefficients=[1.0])
     s.s_dag(0)
     assert t(s) == {"XI": -1.0}

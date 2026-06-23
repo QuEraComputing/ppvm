@@ -53,11 +53,11 @@ fn encode_batch(tab: &mut Tab, q: &[usize]) {
     for [i, j] in [[1, 3], [7, 10], [12, 14], [13, 16]] {
         tab.cz(q[i], q[j]);
     }
-    tab.sqrt_y_adj_batch(&[q[7], q[16]]);
+    tab.sqrt_y_dag_batch(&[q[7], q[16]]);
     for [i, j] in [[4, 7], [8, 10], [11, 14], [15, 16]] {
         tab.cz(q[i], q[j]);
     }
-    tab.sqrt_y_adj_batch(&[q[4], q[10], q[14], q[16]]);
+    tab.sqrt_y_dag_batch(&[q[4], q[10], q[14], q[16]]);
     for [i, j] in [[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]] {
         tab.cz(q[i], q[j]);
     }
@@ -71,7 +71,7 @@ fn encode_batch(tab: &mut Tab, q: &[usize]) {
     for [i, j] in [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [12, 15]] {
         tab.cz(q[i], q[j]);
     }
-    tab.sqrt_y_adj_batch(&[q[0], q[2], q[5], q[6], q[8], q[10], q[12]]);
+    tab.sqrt_y_dag_batch(&[q[0], q[2], q[5], q[6], q[8], q[10], q[12]]);
 }
 
 fn run_msd_naive(seed: u64) -> String {
@@ -149,12 +149,12 @@ fn run_msd_batch(seed: u64) -> String {
     tab.cz_block_pairs(0, 34, 17);
     tab.cz_block_pairs_cross_word(0, 51, 1, 4, 13);
     tab.cz_block_pairs(64, 17, 4);
-    tab.sqrt_x_adj_batch(ql[0]);
+    tab.sqrt_x_dag_batch(ql[0]);
     tab.cz_block_pairs_cross_word(0, 0, 1, 4, 17);
     tab.cz_block_pairs(17, 34, 13);
     tab.cz_block_pairs_cross_word(0, 30, 1, 0, 4);
     for block in ql.iter().take(5) {
-        tab.sqrt_x_adj_batch(block);
+        tab.sqrt_x_dag_batch(block);
     }
     (0..n)
         .map(|i| if tab.measure(i).unwrap() { '1' } else { '0' })

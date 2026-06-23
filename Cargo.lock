@@ -1839,8 +1839,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vihaco"
-version = "0.1.0"
-source = "git+https://github.com/QuEraComputing/vihaco#171aab75054f08954fc7ccf3374c9525df1fa7ae"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "690c9db1827ed6e392340d3d9c65408213c7bb4c030b5e8991b03459e5c7bb17"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -1850,7 +1851,7 @@ dependencies = [
  "eyre",
  "log",
  "smallvec",
- "vihaco-macros",
+ "vihaco-derive",
  "vihaco-parser",
  "vihaco-parser-core",
 ]
@@ -1869,23 +1870,25 @@ dependencies = [
 
 [[package]]
 name = "vihaco-cpu"
-version = "0.1.0"
-source = "git+https://github.com/QuEraComputing/vihaco#171aab75054f08954fc7ccf3374c9525df1fa7ae"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be6cffffe3fca901bcddc389422dd9d2f7041038571a758a03c63e53ce1b6d5e"
 dependencies = [
  "chumsky 0.10.1",
  "codespan",
  "eyre",
  "log",
  "vihaco",
- "vihaco-macros",
+ "vihaco-derive",
  "vihaco-parser",
  "vihaco-parser-core",
 ]
 
 [[package]]
-name = "vihaco-macros"
-version = "0.1.0"
-source = "git+https://github.com/QuEraComputing/vihaco#171aab75054f08954fc7ccf3374c9525df1fa7ae"
+name = "vihaco-derive"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f11ac1123518d4bec265847a1a12e406c1b54f4ef2478db87f4e6986e26b918"
 dependencies = [
  "convert_case",
  "proc-macro2",
@@ -1895,8 +1898,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-parser"
-version = "0.1.0"
-source = "git+https://github.com/QuEraComputing/vihaco#171aab75054f08954fc7ccf3374c9525df1fa7ae"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6b0c3b54b4caeaaeeda2953fa273155887e89ebdb0ce80b65d23c435b1e70a5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1906,8 +1910,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-parser-core"
-version = "0.1.0"
-source = "git+https://github.com/QuEraComputing/vihaco#171aab75054f08954fc7ccf3374c9525df1fa7ae"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aea97e3bc67e4b5a97e21f2a4f64e4a87749038850968021ec903cc595353d20"
 dependencies = [
  "chumsky 0.10.1",
 ]

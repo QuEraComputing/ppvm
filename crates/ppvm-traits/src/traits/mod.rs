@@ -12,7 +12,6 @@ mod ptm;
 mod reset;
 mod storage;
 mod strategy;
-mod targets;
 mod trace;
 mod word_trait;
 
@@ -32,6 +31,5 @@ pub use noise::{
 pub use reset::Reset;
 pub use storage::PauliStorage;
 pub use strategy::{NoStrategy, Strategy};
-pub use targets::Targets;
 pub use trace::Trace;
 pub use word_trait::{PauliIter, PauliWordTrait};

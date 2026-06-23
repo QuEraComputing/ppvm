@@ -33,15 +33,15 @@ pub trait RotationTwo<T: Config> {
     fn rotate_2(&mut self, axis_a: [u8; 2], axis_b: [u8; 2], a: usize, b: usize, theta: T::Coeff);
 
     //                 x, z, x, z
-    def_rotation!(rxx, rxx_batch, 1, 0, 1, 0, "`exp(-i θ/2 · X_a X_b)`.");
-    def_rotation!(rxy, rxy_batch, 1, 0, 1, 1, "`exp(-i θ/2 · X_a Y_b)`.");
-    def_rotation!(rxz, rxz_batch, 1, 0, 0, 1, "`exp(-i θ/2 · X_a Z_b)`.");
+    def_rotation!(rxx, rxx_many, 1, 0, 1, 0, "`exp(-i θ/2 · X_a X_b)`.");
+    def_rotation!(rxy, rxy_many, 1, 0, 1, 1, "`exp(-i θ/2 · X_a Y_b)`.");
+    def_rotation!(rxz, rxz_many, 1, 0, 0, 1, "`exp(-i θ/2 · X_a Z_b)`.");
 
-    def_rotation!(ryx, ryx_batch, 1, 1, 1, 0, "`exp(-i θ/2 · Y_a X_b)`.");
-    def_rotation!(ryy, ryy_batch, 1, 1, 1, 1, "`exp(-i θ/2 · Y_a Y_b)`.");
-    def_rotation!(ryz, ryz_batch, 1, 1, 0, 1, "`exp(-i θ/2 · Y_a Z_b)`.");
+    def_rotation!(ryx, ryx_many, 1, 1, 1, 0, "`exp(-i θ/2 · Y_a X_b)`.");
+    def_rotation!(ryy, ryy_many, 1, 1, 1, 1, "`exp(-i θ/2 · Y_a Y_b)`.");
+    def_rotation!(ryz, ryz_many, 1, 1, 0, 1, "`exp(-i θ/2 · Y_a Z_b)`.");
 
-    def_rotation!(rzx, rzx_batch, 0, 1, 1, 0, "`exp(-i θ/2 · Z_a X_b)`.");
-    def_rotation!(rzy, rzy_batch, 0, 1, 1, 1, "`exp(-i θ/2 · Z_a Y_b)`.");
-    def_rotation!(rzz, rzz_batch, 0, 1, 0, 1, "`exp(-i θ/2 · Z_a Z_b)`.");
+    def_rotation!(rzx, rzx_many, 0, 1, 1, 0, "`exp(-i θ/2 · Z_a X_b)`.");
+    def_rotation!(rzy, rzy_many, 0, 1, 1, 1, "`exp(-i θ/2 · Z_a Y_b)`.");
+    def_rotation!(rzz, rzz_many, 0, 1, 0, 1, "`exp(-i θ/2 · Z_a Z_b)`.");
 }

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 The PPVM Authors
 # SPDX-License-Identifier: Apache-2.0
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 # Gate vocabulary shared across backends comes in two flavours:
@@ -20,11 +20,38 @@ from typing import Any
 #   U(1)-conserving exchange step) without losing a conserved-charge component
 #   to intermediate truncation.
 #
-# Following stim's ``TableauSimulator`` API, gate methods take ``*targets``
-# varargs of qubit indices and broadcast over them: single-qubit gates apply to
-# each index, two-qubit gates apply to each consecutive pair. Trailing scalar
-# parameters (``theta`` for rotations, ``p`` for noise) may be passed either as
-# keywords or as the final positional argument.
+# Gate methods broadcast over targets and accept them in two interchangeable
+# forms, mirroring stim's two surfaces:
+#
+# * Variadic indices, like stim's ``TableauSimulator`` — ``x(0, 1, 2)``,
+#   ``cnot(0, 1, 2, 3)``.
+# * A single sequence (list / tuple / range / numpy array), like stim's
+#   ``Circuit.append`` — ``x([0, 1, 2])``, ``cnot(np.array([0, 1, 2, 3]))``.
+#
+# Single-qubit gates apply to each index; two-qubit gates consume consecutive
+# pairs (the target count must be even). Trailing scalar parameters (``theta``
+# for rotations, ``p`` for noise) may be passed either as keywords or as the
+# final positional argument. (``measure`` stays scalar and never broadcasts —
+# use ``measure_many`` for multiple qubits — matching stim, which keeps
+# ``measure`` single to avoid the ``if sim.measure(q):`` returns-a-list trap.)
+
+
+def _is_sequence(obj: Any) -> bool:
+    """True for a target *collection* (list / tuple / range / ndarray, ...).
+
+    Any iterable counts except ``str``/``bytes`` (iterable but never targets).
+    A bare ``int`` — including a numpy integer scalar, which is not iterable —
+    is not a sequence, so it falls through to the variadic path.
+    """
+    return isinstance(obj, Iterable) and not isinstance(obj, (str, bytes))
+
+
+def _normalize_targets(args: tuple[Any, ...]) -> list[int]:
+    """Resolve gate targets passed either as variadic indices (``x(0, 1, 2)``)
+    or as a single sequence (``x([0, 1, 2])``, ``x(np.array([0, 1, 2]))``)."""
+    if len(args) == 1 and _is_sequence(args[0]):
+        return [int(t) for t in args[0]]
+    return [int(t) for t in args]
 
 
 def _split_targets_parameter(
@@ -32,12 +59,21 @@ def _split_targets_parameter(
     value: Any | None,
     name: str,
 ) -> tuple[list[int], Any]:
-    """Split ``(*targets, value)`` while also accepting ``value=...``."""
-    if value is None:
+    """Split ``(*targets, value)`` accepting ``value=...`` and a single leading
+    sequence of targets (``([0, 1, 2], theta)`` as well as ``(0, 1, 2, theta)``)."""
+    if args and _is_sequence(args[0]):
+        targets, rest = [int(t) for t in args[0]], args[1:]
+    elif value is None:
         if not args:
             raise TypeError(f"missing required argument: {name!r}")
-        return list(args[:-1]), args[-1]
-    return list(args), value
+        targets, rest = [int(t) for t in args[:-1]], args[-1:]
+    else:
+        targets, rest = [int(t) for t in args], ()
+    if value is None:
+        if not rest:
+            raise TypeError(f"missing required argument: {name!r}")
+        value = rest[-1]
+    return targets, value
 
 
 def _split_targets_parameter_truncate(
@@ -46,15 +82,26 @@ def _split_targets_parameter_truncate(
     name: str,
     truncate: bool,
 ) -> tuple[list[int], Any, bool]:
-    """Split ``(*targets, value[, truncate])`` for PauliSum methods."""
+    """Split ``(*targets, value[, truncate])`` for PauliSum methods, also
+    accepting a single leading sequence of targets."""
+    if args and _is_sequence(args[0]):
+        targets = [int(t) for t in args[0]]
+        rest = list(args[1:])
+        if rest and isinstance(rest[-1], bool):
+            truncate = rest.pop()
+        if value is None:
+            if not rest:
+                raise TypeError(f"missing required argument: {name!r}")
+            value = rest[-1]
+        return targets, value, truncate
     if value is None:
         if not args:
             raise TypeError(f"missing required argument: {name!r}")
         args_list = list(args)
         if len(args_list) >= 2 and isinstance(args_list[-1], bool):
             truncate = args_list.pop()
-        return args_list[:-1], args_list[-1], truncate
-    return list(args), value, truncate
+        return [int(t) for t in args_list[:-1]], args_list[-1], truncate
+    return [int(t) for t in args], value, truncate
 
 
 class CliffordMixin:
@@ -63,62 +110,62 @@ class CliffordMixin:
     _interface: Any
 
     # Clifford operations
-    def x(self, *targets: int) -> None:
+    def x(self, *targets: int | Iterable[int]) -> None:
         """Apply a Pauli X gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.x(list(targets))
+        self._interface.x(_normalize_targets(targets))
 
-    def y(self, *targets: int) -> None:
+    def y(self, *targets: int | Iterable[int]) -> None:
         """Apply a Pauli Y gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.y(list(targets))
+        self._interface.y(_normalize_targets(targets))
 
-    def z(self, *targets: int) -> None:
+    def z(self, *targets: int | Iterable[int]) -> None:
         """Apply a Pauli Z gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.z(list(targets))
+        self._interface.z(_normalize_targets(targets))
 
-    def h(self, *targets: int) -> None:
+    def h(self, *targets: int | Iterable[int]) -> None:
         """Apply a Hadamard gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.h(list(targets))
+        self._interface.h(_normalize_targets(targets))
 
-    def s(self, *targets: int) -> None:
+    def s(self, *targets: int | Iterable[int]) -> None:
         """Apply an S gate (sqrt(Z)) to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.s(list(targets))
+        self._interface.s(_normalize_targets(targets))
 
-    def cnot(self, *targets: int) -> None:
+    def cnot(self, *targets: int | Iterable[int]) -> None:
         """Apply CNOT (controlled-X) gates over consecutive control/target pairs.
 
         Args:
             *targets: A flat list of qubit indices, broadcast as
                 ``(control, target)`` pairs.
         """
-        self._interface.cnot(list(targets))
+        self._interface.cnot(_normalize_targets(targets))
 
-    def cz(self, *targets: int) -> None:
+    def cz(self, *targets: int | Iterable[int]) -> None:
         """Apply CZ (controlled-Z) gates over consecutive qubit pairs.
 
         Args:
             *targets: A flat list of qubit indices, broadcast as pairs.
         """
-        self._interface.cz(list(targets))
+        self._interface.cz(_normalize_targets(targets))
 
     # stim aliases
     cx = cnot
@@ -223,54 +270,54 @@ class CliffordExtensionMixin:
 
     _interface: Any
 
-    def s_dag(self, *targets: int) -> None:
+    def s_dag(self, *targets: int | Iterable[int]) -> None:
         """Apply an S adjoint gate (sqrt(Z) dagger) to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.s_dag(list(targets))
+        self._interface.s_dag(_normalize_targets(targets))
 
-    def sqrt_x(self, *targets: int) -> None:
+    def sqrt_x(self, *targets: int | Iterable[int]) -> None:
         """Apply a sqrt(X) gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.sqrt_x(list(targets))
+        self._interface.sqrt_x(_normalize_targets(targets))
 
-    def sqrt_y(self, *targets: int) -> None:
+    def sqrt_y(self, *targets: int | Iterable[int]) -> None:
         """Apply a sqrt(Y) gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.sqrt_y(list(targets))
+        self._interface.sqrt_y(_normalize_targets(targets))
 
-    def sqrt_x_dag(self, *targets: int) -> None:
+    def sqrt_x_dag(self, *targets: int | Iterable[int]) -> None:
         """Apply a sqrt(X) adjoint gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.sqrt_x_dag(list(targets))
+        self._interface.sqrt_x_dag(_normalize_targets(targets))
 
-    def sqrt_y_dag(self, *targets: int) -> None:
+    def sqrt_y_dag(self, *targets: int | Iterable[int]) -> None:
         """Apply a sqrt(Y) adjoint gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.sqrt_y_dag(list(targets))
+        self._interface.sqrt_y_dag(_normalize_targets(targets))
 
-    def cy(self, *targets: int) -> None:
+    def cy(self, *targets: int | Iterable[int]) -> None:
         """Apply controlled-Y gates over consecutive control/target pairs.
 
         Args:
             *targets: A flat list of qubit indices, broadcast as
                 ``(control, target)`` pairs.
         """
-        self._interface.cy(list(targets))
+        self._interface.cy(_normalize_targets(targets))
 
     # stim alias
     zcy = cy
@@ -440,7 +487,7 @@ class LossMixin:
 class TruncatingCliffordMixin(CliffordMixin):
     """Clifford gates with a per-gate ``truncate`` kwarg (used by PauliSum)."""
 
-    def x(self, *targets: int, truncate: bool = True) -> None:
+    def x(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply a Pauli X gate to each target qubit.
 
         Args:
@@ -449,61 +496,61 @@ class TruncatingCliffordMixin(CliffordMixin):
                 strategy after the gate; if ``False``, leave the map
                 untruncated so the next gate sees the full unpruned state.
         """
-        self._interface.x(list(targets), truncate)
+        self._interface.x(_normalize_targets(targets), truncate)
 
-    def y(self, *targets: int, truncate: bool = True) -> None:
+    def y(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply a Pauli Y gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
             truncate: See `x`.
         """
-        self._interface.y(list(targets), truncate)
+        self._interface.y(_normalize_targets(targets), truncate)
 
-    def z(self, *targets: int, truncate: bool = True) -> None:
+    def z(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply a Pauli Z gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
             truncate: See `x`.
         """
-        self._interface.z(list(targets), truncate)
+        self._interface.z(_normalize_targets(targets), truncate)
 
-    def h(self, *targets: int, truncate: bool = True) -> None:
+    def h(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply a Hadamard gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
             truncate: See `x`.
         """
-        self._interface.h(list(targets), truncate)
+        self._interface.h(_normalize_targets(targets), truncate)
 
-    def s(self, *targets: int, truncate: bool = True) -> None:
+    def s(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply an S gate (sqrt(Z)) to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
             truncate: See `x`.
         """
-        self._interface.s(list(targets), truncate)
+        self._interface.s(_normalize_targets(targets), truncate)
 
-    def cnot(self, *targets: int, truncate: bool = True) -> None:
+    def cnot(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply CNOT (controlled-X) gates over consecutive control/target pairs.
 
         Args:
             *targets: A flat list of qubit indices, broadcast as pairs.
             truncate: See `x`.
         """
-        self._interface.cnot(list(targets), truncate)
+        self._interface.cnot(_normalize_targets(targets), truncate)
 
-    def cz(self, *targets: int, truncate: bool = True) -> None:
+    def cz(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply CZ (controlled-Z) gates over consecutive qubit pairs.
 
         Args:
             *targets: A flat list of qubit indices, broadcast as pairs.
             truncate: See `x`.
         """
-        self._interface.cz(list(targets), truncate)
+        self._interface.cz(_normalize_targets(targets), truncate)
 
     # stim aliases
     cx = cnot
@@ -602,59 +649,59 @@ class TruncatingRotationsMixin(RotationsMixin):
 class TruncatingCliffordExtensionMixin(CliffordExtensionMixin):
     """Additional Clifford gates with a per-gate ``truncate`` kwarg."""
 
-    def s_dag(self, *targets: int, truncate: bool = True) -> None:
+    def s_dag(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply an S adjoint gate (sqrt(Z) dagger) to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
             truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.s_dag(list(targets), truncate)
+        self._interface.s_dag(_normalize_targets(targets), truncate)
 
-    def sqrt_x(self, *targets: int, truncate: bool = True) -> None:
+    def sqrt_x(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply a sqrt(X) gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
             truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.sqrt_x(list(targets), truncate)
+        self._interface.sqrt_x(_normalize_targets(targets), truncate)
 
-    def sqrt_y(self, *targets: int, truncate: bool = True) -> None:
+    def sqrt_y(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply a sqrt(Y) gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
             truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.sqrt_y(list(targets), truncate)
+        self._interface.sqrt_y(_normalize_targets(targets), truncate)
 
-    def sqrt_x_dag(self, *targets: int, truncate: bool = True) -> None:
+    def sqrt_x_dag(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply a sqrt(X) adjoint gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
             truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.sqrt_x_dag(list(targets), truncate)
+        self._interface.sqrt_x_dag(_normalize_targets(targets), truncate)
 
-    def sqrt_y_dag(self, *targets: int, truncate: bool = True) -> None:
+    def sqrt_y_dag(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply a sqrt(Y) adjoint gate to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
             truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.sqrt_y_dag(list(targets), truncate)
+        self._interface.sqrt_y_dag(_normalize_targets(targets), truncate)
 
-    def cy(self, *targets: int, truncate: bool = True) -> None:
+    def cy(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
         """Apply controlled-Y gates over consecutive control/target pairs.
 
         Args:
             *targets: A flat list of qubit indices, broadcast as pairs.
             truncate: See `TruncatingCliffordMixin.x`.
         """
-        self._interface.cy(list(targets), truncate)
+        self._interface.cy(_normalize_targets(targets), truncate)
 
     # stim alias
     zcy = cy

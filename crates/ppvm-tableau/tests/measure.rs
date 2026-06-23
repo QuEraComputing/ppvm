@@ -772,9 +772,9 @@ fn fork_copies_measurement_record() {
 fn measure_many_returns_per_target() {
     let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
         GeneralizedTableau::new(3, 1e-12);
-    t.x_batch(&[0, 2]);
+    t.x_many(&[0, 2]);
     assert_eq!(
-        t.measure_many([0, 1, 2]),
+        t.measure_many(&[0, 1, 2]),
         vec![Some(true), Some(false), Some(true)]
     );
 }

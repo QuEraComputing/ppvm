@@ -148,8 +148,8 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
         let mut setup = GeneralizedTableau::<Byte8F64<2>, u128>::new(n_qubits, 1e-10);
         let block1: Vec<usize> = (0..17).collect();
         let block2: Vec<usize> = (17..34).collect();
-        setup.sqrt_y_batch(&block1);
-        setup.sqrt_x_batch(&block2);
+        setup.sqrt_y_many(&block1);
+        setup.sqrt_x_many(&block2);
         setup.cz_block_pairs(0, 17, 17);
         // H on qubits that will get T gates — applied after Cliffords to guarantee branching
         for i in 0..n_tgates {
@@ -166,8 +166,8 @@ pub fn benchmark_suite_tableau(c: &mut Criterion, name: impl AsRef<str>) {
                     }
 
                     // More batched Cliffords after T gates
-                    tab.sqrt_x_dag_batch(&block1);
-                    tab.sqrt_y_dag_batch(&block2);
+                    tab.sqrt_x_dag_many(&block1);
+                    tab.sqrt_y_dag_many(&block2);
 
                     // Measure all
                     for i in 0..n_qubits {

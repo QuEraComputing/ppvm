@@ -174,43 +174,43 @@ impl<T: PauliWordTrait> Clifford for T {
 /// this trait with an empty `impl` to use the defaults.
 pub trait CliffordBatch: Clifford {
     /// Apply Pauli `X` to every qubit in `indices`.
-    fn x_batch(&mut self, indices: &[usize]) {
+    fn x_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.x(q);
         }
     }
     /// Apply Pauli `Y` to every qubit in `indices`.
-    fn y_batch(&mut self, indices: &[usize]) {
+    fn y_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.y(q);
         }
     }
     /// Apply Pauli `Z` to every qubit in `indices`.
-    fn z_batch(&mut self, indices: &[usize]) {
+    fn z_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.z(q);
         }
     }
     /// Apply Hadamard `H` to every qubit in `indices`.
-    fn h_batch(&mut self, indices: &[usize]) {
+    fn h_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.h(q);
         }
     }
     /// Apply phase gate `S` to every qubit in `indices`.
-    fn s_batch(&mut self, indices: &[usize]) {
+    fn s_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.s(q);
         }
     }
     /// Apply `CNOT` to every `(control, target)` pair.
-    fn cnot_batch(&mut self, pairs: &[(usize, usize)]) {
+    fn cnot_many(&mut self, pairs: &[(usize, usize)]) {
         for &(c, t) in pairs {
             self.cnot(c, t);
         }
     }
     /// Apply `CZ` to every `(control, target)` pair.
-    fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
+    fn cz_many(&mut self, pairs: &[(usize, usize)]) {
         for &(c, t) in pairs {
             self.cz(c, t);
         }
@@ -220,37 +220,37 @@ pub trait CliffordBatch: Clifford {
 /// Batched form of [`CliffordExtensions`].
 pub trait CliffordExtensionsBatch: CliffordExtensions + CliffordBatch {
     /// Apply `S†` to every qubit in `indices`.
-    fn s_dag_batch(&mut self, indices: &[usize]) {
+    fn s_dag_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.s_dag(q);
         }
     }
     /// Apply `√X` to every qubit in `indices`.
-    fn sqrt_x_batch(&mut self, indices: &[usize]) {
+    fn sqrt_x_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_x(q);
         }
     }
     /// Apply `(√X)†` to every qubit in `indices`.
-    fn sqrt_x_dag_batch(&mut self, indices: &[usize]) {
+    fn sqrt_x_dag_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_x_dag(q);
         }
     }
     /// Apply `√Y` to every qubit in `indices`.
-    fn sqrt_y_batch(&mut self, indices: &[usize]) {
+    fn sqrt_y_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_y(q);
         }
     }
     /// Apply `(√Y)†` to every qubit in `indices`.
-    fn sqrt_y_dag_batch(&mut self, indices: &[usize]) {
+    fn sqrt_y_dag_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_y_dag(q);
         }
     }
     /// Apply `CY` to every `(control, target)` pair.
-    fn cy_batch(&mut self, pairs: &[(usize, usize)]) {
+    fn cy_many(&mut self, pairs: &[(usize, usize)]) {
         for &(c, t) in pairs {
             self.cy(c, t);
         }

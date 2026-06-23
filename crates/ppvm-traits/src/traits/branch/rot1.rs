@@ -22,21 +22,21 @@ pub trait RotationOne<T: Config> {
     }
 
     /// Explicit batched `RX(θ)`.
-    fn rx_batch(&mut self, targets: &[usize], theta: impl Into<T::Coeff>) {
+    fn rx_many(&mut self, targets: &[usize], theta: impl Into<T::Coeff>) {
         let theta = theta.into();
         for &q in targets {
             self.rx(q, theta.clone())
         }
     }
     /// Explicit batched `RY(θ)`.
-    fn ry_batch(&mut self, targets: &[usize], theta: impl Into<T::Coeff>) {
+    fn ry_many(&mut self, targets: &[usize], theta: impl Into<T::Coeff>) {
         let theta = theta.into();
         for &q in targets {
             self.ry(q, theta.clone())
         }
     }
     /// Explicit batched `RZ(θ)`.
-    fn rz_batch(&mut self, targets: &[usize], theta: impl Into<T::Coeff>) {
+    fn rz_many(&mut self, targets: &[usize], theta: impl Into<T::Coeff>) {
         let theta = theta.into();
         for &q in targets {
             self.rz(q, theta.clone())

@@ -220,7 +220,7 @@ where
 {
     /// `X` is bit-preserving: phase flips for each masked qubit where z=1.
     #[inline]
-    fn x_batch(&mut self, indices: &[usize]) {
+    fn x_many(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -243,7 +243,7 @@ where
 
     /// `Y` is bit-preserving: phase flips for each masked qubit where x⊕z=1.
     #[inline]
-    fn y_batch(&mut self, indices: &[usize]) {
+    fn y_many(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -267,7 +267,7 @@ where
 
     /// `Z` is bit-preserving: phase flips for each masked qubit where x=1.
     #[inline]
-    fn z_batch(&mut self, indices: &[usize]) {
+    fn z_many(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -290,7 +290,7 @@ where
 
     /// Forward `S`: phase flips where x&z=1, then z ^= x for masked qubits.
     #[inline]
-    fn s_batch(&mut self, indices: &[usize]) {
+    fn s_many(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -318,7 +318,7 @@ where
     /// Apply CNOT to many pairs, operating on raw storage words to avoid
     /// per-bit `bitvec` addressing. Pairs are applied sequentially per row,
     /// so semantics match the per-pair `cnot` loop exactly.
-    fn cnot_batch(&mut self, pairs: &[(usize, usize)]) {
+    fn cnot_many(&mut self, pairs: &[(usize, usize)]) {
         let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
         let one = <T::Storage as BitView>::Store::one();
         let zero = <T::Storage as BitView>::Store::zero();
@@ -348,7 +348,7 @@ where
     /// H swaps x<->z bits (same as sqrt_y) but with different phase:
     /// phase += 2 when x=1 & z=1 (Y goes to -Y).
     #[inline]
-    fn h_batch(&mut self, indices: &[usize]) {
+    fn h_many(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -379,7 +379,7 @@ where
     /// Apply CZ to many pairs on raw storage words. CZ is symmetric and touches
     /// only z-bits; pairs are applied sequentially per row, so semantics match
     /// the per-pair `cz` loop exactly.
-    fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
+    fn cz_many(&mut self, pairs: &[(usize, usize)]) {
         let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
         let one = <T::Storage as BitView>::Store::one();
         let zero = <T::Storage as BitView>::Store::zero();
@@ -413,7 +413,7 @@ where
     /// Backward `S` (i.e. `S†`): same bit mapping as `S`, phase rule differs.
     /// Phase flips where x&!z=1, then z ^= x for masked qubits.
     #[inline]
-    fn s_dag_batch(&mut self, indices: &[usize]) {
+    fn s_dag_many(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -440,7 +440,7 @@ where
 
     /// Apply CY to many pairs on raw storage words. Pairs are applied
     /// sequentially per row, so semantics match the per-pair `cy` loop exactly.
-    fn cy_batch(&mut self, pairs: &[(usize, usize)]) {
+    fn cy_many(&mut self, pairs: &[(usize, usize)]) {
         let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
         let one = <T::Storage as BitView>::Store::one();
         let zero = <T::Storage as BitView>::Store::zero();
@@ -471,7 +471,7 @@ where
     /// All qubits targeting the same word are merged into a single mask,
     /// reducing N individual operations to O(n_words) per row.
     #[inline]
-    fn sqrt_y_batch(&mut self, indices: &[usize]) {
+    fn sqrt_y_many(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -501,7 +501,7 @@ where
 
     /// Apply `(√Y)†` to multiple qubits using combined bitmask operations.
     #[inline]
-    fn sqrt_y_dag_batch(&mut self, indices: &[usize]) {
+    fn sqrt_y_dag_many(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -531,7 +531,7 @@ where
 
     /// Apply `√X` to multiple qubits using combined bitmask operations.
     #[inline]
-    fn sqrt_x_batch(&mut self, indices: &[usize]) {
+    fn sqrt_x_many(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -557,7 +557,7 @@ where
 
     /// Apply `(√X)†` to multiple qubits using combined bitmask operations.
     #[inline]
-    fn sqrt_x_dag_batch(&mut self, indices: &[usize]) {
+    fn sqrt_x_dag_many(&mut self, indices: &[usize]) {
         let (masks, n_words) = match self.build_masks(indices) {
             Some(m) => m,
             None => return,
@@ -642,13 +642,13 @@ where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
     <T::Storage as BitView>::Store: PrimInt,
 {
-    impl_gen_tableau_batch_single!(x_batch);
-    impl_gen_tableau_batch_single!(y_batch);
-    impl_gen_tableau_batch_single!(z_batch);
-    impl_gen_tableau_batch_single!(h_batch);
-    impl_gen_tableau_batch_single!(s_batch);
-    impl_gen_tableau_batch_pair!(cnot_batch);
-    impl_gen_tableau_batch_pair!(cz_batch);
+    impl_gen_tableau_batch_single!(x_many);
+    impl_gen_tableau_batch_single!(y_many);
+    impl_gen_tableau_batch_single!(z_many);
+    impl_gen_tableau_batch_single!(h_many);
+    impl_gen_tableau_batch_single!(s_many);
+    impl_gen_tableau_batch_pair!(cnot_many);
+    impl_gen_tableau_batch_pair!(cz_many);
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> CliffordExtensionsBatch
@@ -657,12 +657,12 @@ where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
     <T::Storage as BitView>::Store: PrimInt,
 {
-    impl_gen_tableau_batch_single!(s_dag_batch);
-    impl_gen_tableau_batch_single!(sqrt_x_batch);
-    impl_gen_tableau_batch_single!(sqrt_x_dag_batch);
-    impl_gen_tableau_batch_single!(sqrt_y_batch);
-    impl_gen_tableau_batch_single!(sqrt_y_dag_batch);
-    impl_gen_tableau_batch_pair!(cy_batch);
+    impl_gen_tableau_batch_single!(s_dag_many);
+    impl_gen_tableau_batch_single!(sqrt_x_many);
+    impl_gen_tableau_batch_single!(sqrt_x_dag_many);
+    impl_gen_tableau_batch_single!(sqrt_y_many);
+    impl_gen_tableau_batch_single!(sqrt_y_dag_many);
+    impl_gen_tableau_batch_pair!(cy_many);
 }
 
 #[cfg(test)]
@@ -862,12 +862,12 @@ mod tests {
             tab.h(0);
             tab.h(3);
             tab.s(1);
-            tab.sqrt_y_batch(indices);
+            tab.sqrt_y_many(indices);
             snapshot(&tab)
         }
 
         #[test]
-        fn test_sqrt_y_batch_matches_individual() {
+        fn test_sqrt_y_many_matches_individual() {
             let n = 8;
             let indices = vec![0, 2, 5, 7];
             assert_eq!(
@@ -877,7 +877,7 @@ mod tests {
         }
 
         #[test]
-        fn test_sqrt_y_dag_batch_matches_individual() {
+        fn test_sqrt_y_dag_many_matches_individual() {
             let n = 8;
             let indices = vec![1, 3, 4, 6];
             let mut tab_ind = TTab::new(n);
@@ -889,12 +889,12 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(0);
             tab_batch.s(2);
-            tab_batch.sqrt_y_dag_batch(&indices);
+            tab_batch.sqrt_y_dag_many(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_sqrt_x_batch_matches_individual() {
+        fn test_sqrt_x_many_matches_individual() {
             let n = 8;
             let indices = vec![0, 1, 4, 7];
             let mut tab_ind = TTab::new(n);
@@ -906,12 +906,12 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(2);
             tab_batch.s(5);
-            tab_batch.sqrt_x_batch(&indices);
+            tab_batch.sqrt_x_many(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_sqrt_x_dag_batch_matches_individual() {
+        fn test_sqrt_x_dag_many_matches_individual() {
             let n = 8;
             let indices = vec![2, 3, 5, 6];
             let mut tab_ind = TTab::new(n);
@@ -923,12 +923,12 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(1);
             tab_batch.s(4);
-            tab_batch.sqrt_x_dag_batch(&indices);
+            tab_batch.sqrt_x_dag_many(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_h_batch_matches_individual() {
+        fn test_h_many_matches_individual() {
             let n = 8;
             let indices = vec![0, 3, 5, 7];
             let mut tab_ind = TTab::new(n);
@@ -940,12 +940,12 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.s(1);
             tab_batch.sqrt_y(2);
-            tab_batch.h_batch(&indices);
+            tab_batch.h_many(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_cz_batch_matches_individual() {
+        fn test_cz_many_matches_individual() {
             let n = 8;
             let pairs = vec![(0, 1), (2, 3), (4, 5)];
             let mut tab_ind = TTab::new(n);
@@ -959,12 +959,12 @@ mod tests {
             tab_batch.h(0);
             tab_batch.h(2);
             tab_batch.h(4);
-            tab_batch.cz_batch(&pairs);
+            tab_batch.cz_many(&pairs);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_cz_batch_cross_word() {
+        fn test_cz_many_cross_word() {
             // Pairs straddle the two storage words (qubits 0..8 and 8..16).
             let n = 16;
             let pairs = vec![(1, 9), (8, 2), (7, 15), (10, 0)];
@@ -982,7 +982,7 @@ mod tests {
                 tab_batch.h(q);
             }
             tab_batch.s(2);
-            tab_batch.cz_batch(&pairs);
+            tab_batch.cz_many(&pairs);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
@@ -994,21 +994,21 @@ mod tests {
                 snapshot(&tab)
             };
             let mut tab = TTab::new(n);
-            tab.sqrt_y_batch(&[]);
+            tab.sqrt_y_many(&[]);
             assert_eq!(snapshot(&tab), initial);
-            tab.sqrt_x_batch(&[]);
+            tab.sqrt_x_many(&[]);
             assert_eq!(snapshot(&tab), initial);
-            tab.h_batch(&[]);
+            tab.h_many(&[]);
             assert_eq!(snapshot(&tab), initial);
-            tab.x_batch(&[]);
+            tab.x_many(&[]);
             assert_eq!(snapshot(&tab), initial);
-            tab.y_batch(&[]);
+            tab.y_many(&[]);
             assert_eq!(snapshot(&tab), initial);
-            tab.z_batch(&[]);
+            tab.z_many(&[]);
             assert_eq!(snapshot(&tab), initial);
-            tab.s_batch(&[]);
+            tab.s_many(&[]);
             assert_eq!(snapshot(&tab), initial);
-            tab.s_dag_batch(&[]);
+            tab.s_dag_many(&[]);
             assert_eq!(snapshot(&tab), initial);
         }
 
@@ -1021,7 +1021,7 @@ mod tests {
                 tab_ind.sqrt_y(i);
             }
             let mut tab_batch = TTab::new(n);
-            tab_batch.sqrt_y_batch(&all);
+            tab_batch.sqrt_y_many(&all);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
@@ -1034,13 +1034,13 @@ mod tests {
                 snapshot(&tab)
             };
             let mut tab = TTab::new(n);
-            tab.sqrt_y_batch(&indices);
-            tab.sqrt_y_dag_batch(&indices);
+            tab.sqrt_y_many(&indices);
+            tab.sqrt_y_dag_many(&indices);
             assert_eq!(snapshot(&tab), initial);
         }
 
         #[test]
-        fn test_x_batch_matches_individual() {
+        fn test_x_many_matches_individual() {
             let n = 8;
             let indices = vec![0, 2, 5, 7];
             let mut tab_ind = TTab::new(n);
@@ -1052,12 +1052,12 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(0);
             tab_batch.s(3);
-            tab_batch.x_batch(&indices);
+            tab_batch.x_many(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_y_batch_matches_individual() {
+        fn test_y_many_matches_individual() {
             let n = 8;
             let indices = vec![1, 3, 4, 6];
             let mut tab_ind = TTab::new(n);
@@ -1069,12 +1069,12 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(0);
             tab_batch.s(2);
-            tab_batch.y_batch(&indices);
+            tab_batch.y_many(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_z_batch_matches_individual() {
+        fn test_z_many_matches_individual() {
             let n = 8;
             let indices = vec![0, 1, 4, 7];
             let mut tab_ind = TTab::new(n);
@@ -1086,12 +1086,12 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(2);
             tab_batch.s(5);
-            tab_batch.z_batch(&indices);
+            tab_batch.z_many(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_s_batch_matches_individual() {
+        fn test_s_many_matches_individual() {
             let n = 8;
             let indices = vec![0, 2, 5, 7];
             let mut tab_ind = TTab::new(n);
@@ -1103,12 +1103,12 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(1);
             tab_batch.h(4);
-            tab_batch.s_batch(&indices);
+            tab_batch.s_many(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_s_dag_batch_matches_individual() {
+        fn test_s_dag_many_matches_individual() {
             let n = 8;
             let indices = vec![1, 3, 4, 6];
             let mut tab_ind = TTab::new(n);
@@ -1120,12 +1120,12 @@ mod tests {
             let mut tab_batch = TTab::new(n);
             tab_batch.h(2);
             tab_batch.h(5);
-            tab_batch.s_dag_batch(&indices);
+            tab_batch.s_dag_many(&indices);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_cnot_batch_matches_individual() {
+        fn test_cnot_many_matches_individual() {
             let n = 8;
             let pairs = vec![(0, 1), (2, 3), (4, 5)];
             let mut tab_ind = TTab::new(n);
@@ -1139,12 +1139,12 @@ mod tests {
             tab_batch.h(0);
             tab_batch.h(2);
             tab_batch.h(4);
-            tab_batch.cnot_batch(&pairs);
+            tab_batch.cnot_many(&pairs);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_cnot_batch_cross_word() {
+        fn test_cnot_many_cross_word() {
             // Pairs straddle the two storage words (qubits 0..8 and 8..16).
             let n = 16;
             let pairs = vec![(1, 9), (8, 2), (7, 15), (10, 0)];
@@ -1162,12 +1162,12 @@ mod tests {
                 tab_batch.h(q);
             }
             tab_batch.s(2);
-            tab_batch.cnot_batch(&pairs);
+            tab_batch.cnot_many(&pairs);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_cy_batch_matches_individual() {
+        fn test_cy_many_matches_individual() {
             let n = 8;
             let pairs = vec![(0, 1), (2, 3), (4, 5)];
             let mut tab_ind = TTab::new(n);
@@ -1181,12 +1181,12 @@ mod tests {
             tab_batch.h(0);
             tab_batch.h(2);
             tab_batch.s(4);
-            tab_batch.cy_batch(&pairs);
+            tab_batch.cy_many(&pairs);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
-        fn test_cy_batch_cross_word() {
+        fn test_cy_many_cross_word() {
             // Pairs straddle the two storage words (qubits 0..8 and 8..16).
             let n = 16;
             let pairs = vec![(1, 9), (8, 2), (7, 15), (10, 0)];
@@ -1204,7 +1204,7 @@ mod tests {
                 tab_batch.h(q);
             }
             tab_batch.s(2);
-            tab_batch.cy_batch(&pairs);
+            tab_batch.cy_many(&pairs);
             assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
@@ -1243,7 +1243,7 @@ mod tests {
             let mut tab_batch = BigTab::new(n);
             tab_batch.h(3);
             tab_batch.s(60);
-            tab_batch.h_batch(&indices);
+            tab_batch.h_many(&indices);
 
             assert_eq!(big_snapshot(&tab_ind), big_snapshot(&tab_batch));
         }
@@ -1258,7 +1258,7 @@ mod tests {
             };
             let mut tab = TTab::new(n);
             for _ in 0..4 {
-                tab.sqrt_x_batch(&indices);
+                tab.sqrt_x_many(&indices);
             }
             assert_eq!(snapshot(&tab), initial);
         }

@@ -22,26 +22,26 @@ pub trait Reset: crate::traits::Clifford + crate::traits::CliffordExtensions {
     }
 
     /// Explicit batched reset to `|0⟩`.
-    fn reset_batch(&mut self, targets: &[usize]) {
+    fn reset_many(&mut self, targets: &[usize]) {
         for &q in targets {
             self.reset(q);
         }
     }
 
     /// Explicit batched `RZ` alias.
-    fn reset_z_batch(&mut self, targets: &[usize]) {
-        self.reset_batch(targets)
+    fn reset_z_many(&mut self, targets: &[usize]) {
+        self.reset_many(targets)
     }
 
     /// Explicit batched `RX`.
-    fn reset_x_batch(&mut self, targets: &[usize]) {
+    fn reset_x_many(&mut self, targets: &[usize]) {
         for &q in targets {
             self.reset_x(q);
         }
     }
 
     /// Explicit batched `RY`.
-    fn reset_y_batch(&mut self, targets: &[usize]) {
+    fn reset_y_many(&mut self, targets: &[usize]) {
         for &q in targets {
             self.reset_y(q);
         }

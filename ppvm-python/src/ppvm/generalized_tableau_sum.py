@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 The PPVM Authors
 # SPDX-License-Identifier: Apache-2.0
 
+from collections.abc import Iterable
 from dataclasses import InitVar, dataclass, field
 from typing import cast
 
@@ -13,6 +14,7 @@ from .mixins import (
     LossMixin,
     NoiseMixin,
     RotationsMixin,
+    _normalize_targets,
 )
 from .types import GeneralizedTableauSumInterface, TableauSumSamplerInterface
 
@@ -82,21 +84,21 @@ class GeneralizedTableauSum(
         """Return the number of branches currently in the sum."""
         return len(self._interface)
 
-    def t(self, *targets: int) -> None:
+    def t(self, *targets: int | Iterable[int]) -> None:
         """Apply a T gate (π/8 rotation) to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.t(list(targets))
+        self._interface.t(_normalize_targets(targets))
 
-    def t_dag(self, *targets: int) -> None:
+    def t_dag(self, *targets: int | Iterable[int]) -> None:
         """Apply a T adjoint gate (negative π/8 rotation) to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.t_dag(list(targets))
+        self._interface.t_dag(_normalize_targets(targets))
 
     def measure(self, addr0: int) -> dict[MeasurementResult, float]:
         """Branch on a mid-circuit Z measurement and return outcome probabilities.
@@ -133,13 +135,13 @@ class GeneralizedTableauSum(
         """
         self._interface.u3(addr0, theta, phi, lam)
 
-    def reset(self, *targets: int) -> None:
+    def reset(self, *targets: int | Iterable[int]) -> None:
         """Reset each target qubit to the |0> state.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.reset(list(targets))
+        self._interface.reset(_normalize_targets(targets))
 
     def reset_loss_channel(self, addr0: int) -> None:
         """Reset a lost qubit to being active again.

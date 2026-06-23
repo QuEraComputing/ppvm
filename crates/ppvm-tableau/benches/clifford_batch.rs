@@ -171,60 +171,60 @@ fn bench_clifford_batch(c: &mut Criterion) {
         // --- Clifford trait ---
         bench_single_loop!(group, tab, n, "all", x, &all);
         bench_single_loop!(group, tab, n, "every_other", x, &half);
-        bench_single_batch!(group, tab, n, "all", x_batch, &all);
-        bench_single_batch!(group, tab, n, "every_other", x_batch, &half);
+        bench_single_batch!(group, tab, n, "all", x_many, &all);
+        bench_single_batch!(group, tab, n, "every_other", x_many, &half);
         bench_single_loop!(group, tab, n, "all", y, &all);
         bench_single_loop!(group, tab, n, "every_other", y, &half);
-        bench_single_batch!(group, tab, n, "all", y_batch, &all);
-        bench_single_batch!(group, tab, n, "every_other", y_batch, &half);
+        bench_single_batch!(group, tab, n, "all", y_many, &all);
+        bench_single_batch!(group, tab, n, "every_other", y_many, &half);
         bench_single_loop!(group, tab, n, "all", z, &all);
         bench_single_loop!(group, tab, n, "every_other", z, &half);
-        bench_single_batch!(group, tab, n, "all", z_batch, &all);
-        bench_single_batch!(group, tab, n, "every_other", z_batch, &half);
+        bench_single_batch!(group, tab, n, "all", z_many, &all);
+        bench_single_batch!(group, tab, n, "every_other", z_many, &half);
         bench_single_loop!(group, tab, n, "all", h, &all);
         bench_single_loop!(group, tab, n, "every_other", h, &half);
-        bench_single_batch!(group, tab, n, "all", h_batch, &all);
-        bench_single_batch!(group, tab, n, "every_other", h_batch, &half);
+        bench_single_batch!(group, tab, n, "all", h_many, &all);
+        bench_single_batch!(group, tab, n, "every_other", h_many, &half);
         bench_single_loop!(group, tab, n, "all", s, &all);
         bench_single_loop!(group, tab, n, "every_other", s, &half);
-        bench_single_batch!(group, tab, n, "all", s_batch, &all);
-        bench_single_batch!(group, tab, n, "every_other", s_batch, &half);
+        bench_single_batch!(group, tab, n, "all", s_many, &all);
+        bench_single_batch!(group, tab, n, "every_other", s_many, &half);
 
         bench_pair_loop!(group, tab, n, "all", cnot, &pairs_full);
         bench_pair_loop!(group, tab, n, "every_other", cnot, &pairs_half);
-        bench_pair_batch!(group, tab, n, "all", cnot_batch, &pairs_full);
-        bench_pair_batch!(group, tab, n, "every_other", cnot_batch, &pairs_half);
+        bench_pair_batch!(group, tab, n, "all", cnot_many, &pairs_full);
+        bench_pair_batch!(group, tab, n, "every_other", cnot_many, &pairs_half);
         bench_pair_loop!(group, tab, n, "all", cz, &pairs_full);
         bench_pair_loop!(group, tab, n, "every_other", cz, &pairs_half);
-        bench_pair_batch!(group, tab, n, "all", cz_batch, &pairs_full);
-        bench_pair_batch!(group, tab, n, "every_other", cz_batch, &pairs_half);
+        bench_pair_batch!(group, tab, n, "all", cz_many, &pairs_full);
+        bench_pair_batch!(group, tab, n, "every_other", cz_many, &pairs_half);
 
         // --- CliffordExtensions trait ---
         bench_single_loop!(group, tab, n, "all", s_dag, &all);
         bench_single_loop!(group, tab, n, "every_other", s_dag, &half);
-        bench_single_batch!(group, tab, n, "all", s_dag_batch, &all);
-        bench_single_batch!(group, tab, n, "every_other", s_dag_batch, &half);
+        bench_single_batch!(group, tab, n, "all", s_dag_many, &all);
+        bench_single_batch!(group, tab, n, "every_other", s_dag_many, &half);
         bench_single_loop!(group, tab, n, "all", sqrt_x, &all);
         bench_single_loop!(group, tab, n, "every_other", sqrt_x, &half);
-        bench_single_batch!(group, tab, n, "all", sqrt_x_batch, &all);
-        bench_single_batch!(group, tab, n, "every_other", sqrt_x_batch, &half);
+        bench_single_batch!(group, tab, n, "all", sqrt_x_many, &all);
+        bench_single_batch!(group, tab, n, "every_other", sqrt_x_many, &half);
         bench_single_loop!(group, tab, n, "all", sqrt_x_dag, &all);
         bench_single_loop!(group, tab, n, "every_other", sqrt_x_dag, &half);
-        bench_single_batch!(group, tab, n, "all", sqrt_x_dag_batch, &all);
-        bench_single_batch!(group, tab, n, "every_other", sqrt_x_dag_batch, &half);
+        bench_single_batch!(group, tab, n, "all", sqrt_x_dag_many, &all);
+        bench_single_batch!(group, tab, n, "every_other", sqrt_x_dag_many, &half);
         bench_single_loop!(group, tab, n, "all", sqrt_y, &all);
         bench_single_loop!(group, tab, n, "every_other", sqrt_y, &half);
-        bench_single_batch!(group, tab, n, "all", sqrt_y_batch, &all);
-        bench_single_batch!(group, tab, n, "every_other", sqrt_y_batch, &half);
+        bench_single_batch!(group, tab, n, "all", sqrt_y_many, &all);
+        bench_single_batch!(group, tab, n, "every_other", sqrt_y_many, &half);
         bench_single_loop!(group, tab, n, "all", sqrt_y_dag, &all);
         bench_single_loop!(group, tab, n, "every_other", sqrt_y_dag, &half);
-        bench_single_batch!(group, tab, n, "all", sqrt_y_dag_batch, &all);
-        bench_single_batch!(group, tab, n, "every_other", sqrt_y_dag_batch, &half);
+        bench_single_batch!(group, tab, n, "all", sqrt_y_dag_many, &all);
+        bench_single_batch!(group, tab, n, "every_other", sqrt_y_dag_many, &half);
 
         bench_pair_loop!(group, tab, n, "all", cy, &pairs_full);
         bench_pair_loop!(group, tab, n, "every_other", cy, &pairs_half);
-        bench_pair_batch!(group, tab, n, "all", cy_batch, &pairs_full);
-        bench_pair_batch!(group, tab, n, "every_other", cy_batch, &pairs_half);
+        bench_pair_batch!(group, tab, n, "all", cy_many, &pairs_full);
+        bench_pair_batch!(group, tab, n, "every_other", cy_many, &pairs_half);
     }
     group.finish();
 }
@@ -240,17 +240,17 @@ fn bench_clifford_batch_wide(c: &mut Criterion) {
     let pairs_half = pairs_every_other(n);
 
     bench_pair_loop!(group, tab, n, "all", cnot, &pairs_full);
-    bench_pair_batch!(group, tab, n, "all", cnot_batch, &pairs_full);
+    bench_pair_batch!(group, tab, n, "all", cnot_many, &pairs_full);
 
     bench_pair_loop!(group, tab, n, "all", cz, &pairs_full);
     bench_pair_loop!(group, tab, n, "every_other", cz, &pairs_half);
-    bench_pair_batch!(group, tab, n, "all", cz_batch, &pairs_full);
-    bench_pair_batch!(group, tab, n, "every_other", cz_batch, &pairs_half);
+    bench_pair_batch!(group, tab, n, "all", cz_many, &pairs_full);
+    bench_pair_batch!(group, tab, n, "every_other", cz_many, &pairs_half);
 
     bench_pair_loop!(group, tab, n, "all", cy, &pairs_full);
     bench_pair_loop!(group, tab, n, "every_other", cy, &pairs_half);
-    bench_pair_batch!(group, tab, n, "all", cy_batch, &pairs_full);
-    bench_pair_batch!(group, tab, n, "every_other", cy_batch, &pairs_half);
+    bench_pair_batch!(group, tab, n, "all", cy_many, &pairs_full);
+    bench_pair_batch!(group, tab, n, "every_other", cy_many, &pairs_half);
 
     group.finish();
 }

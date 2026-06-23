@@ -445,31 +445,31 @@ pub fn execute_validated<T, I, C>(
         match instr {
             ExtendedInstruction::Raw(RawPassthrough::Gate { name, targets, .. }) => match name {
                 GateName::Reset | GateName::ResetZ => targets.iter().for_each(|&q| tab.reset(q)),
-                GateName::X => tab.x_batch(targets),
-                GateName::Y => tab.y_batch(targets),
-                GateName::Z => tab.z_batch(targets),
-                GateName::H | GateName::HXZ => tab.h_batch(targets),
-                GateName::S | GateName::SqrtZ => tab.s_batch(targets),
-                GateName::SDag | GateName::SqrtZDag => tab.s_dag_batch(targets),
-                GateName::SqrtX => tab.sqrt_x_batch(targets),
-                GateName::SqrtXDag => tab.sqrt_x_dag_batch(targets),
-                GateName::SqrtY => tab.sqrt_y_batch(targets),
-                GateName::SqrtYDag => tab.sqrt_y_dag_batch(targets),
+                GateName::X => tab.x_many(targets),
+                GateName::Y => tab.y_many(targets),
+                GateName::Z => tab.z_many(targets),
+                GateName::H | GateName::HXZ => tab.h_many(targets),
+                GateName::S | GateName::SqrtZ => tab.s_many(targets),
+                GateName::SDag | GateName::SqrtZDag => tab.s_dag_many(targets),
+                GateName::SqrtX => tab.sqrt_x_many(targets),
+                GateName::SqrtXDag => tab.sqrt_x_dag_many(targets),
+                GateName::SqrtY => tab.sqrt_y_many(targets),
+                GateName::SqrtYDag => tab.sqrt_y_dag_many(targets),
                 GateName::Identity => {}
                 GateName::CX | GateName::ZCX | GateName::CNot => {
                     let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(targets.len() / 2);
                     pairs.extend(targets.chunks_exact(2).map(|p| (p[0], p[1])));
-                    tab.cnot_batch(&pairs);
+                    tab.cnot_many(&pairs);
                 }
                 GateName::CY | GateName::ZCY => {
                     let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(targets.len() / 2);
                     pairs.extend(targets.chunks_exact(2).map(|p| (p[0], p[1])));
-                    tab.cy_batch(&pairs);
+                    tab.cy_many(&pairs);
                 }
                 GateName::CZ | GateName::ZCZ => {
                     let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(targets.len() / 2);
                     pairs.extend(targets.chunks_exact(2).map(|p| (p[0], p[1])));
-                    tab.cz_batch(&pairs);
+                    tab.cz_many(&pairs);
                 }
                 GateName::Swap
                 | GateName::ISwap

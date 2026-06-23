@@ -31,28 +31,28 @@ pub trait PauliError<T: Config> {
     }
 
     /// Explicit batched Pauli-error channel.
-    fn pauli_error_batch(&mut self, targets: &[usize], p: [T::Coeff; 3]) {
+    fn pauli_error_many(&mut self, targets: &[usize], p: [T::Coeff; 3]) {
         for &q in targets {
             self.pauli_error(q, p.clone());
         }
     }
 
     /// Explicit batched `X_ERROR(p)`.
-    fn x_error_batch(&mut self, targets: &[usize], p: T::Coeff) {
+    fn x_error_many(&mut self, targets: &[usize], p: T::Coeff) {
         for &q in targets {
             self.x_error(q, p.clone());
         }
     }
 
     /// Explicit batched `Y_ERROR(p)`.
-    fn y_error_batch(&mut self, targets: &[usize], p: T::Coeff) {
+    fn y_error_many(&mut self, targets: &[usize], p: T::Coeff) {
         for &q in targets {
             self.y_error(q, p.clone());
         }
     }
 
     /// Explicit batched `Z_ERROR(p)`.
-    fn z_error_batch(&mut self, targets: &[usize], p: T::Coeff) {
+    fn z_error_many(&mut self, targets: &[usize], p: T::Coeff) {
         for &q in targets {
             self.z_error(q, p.clone());
         }
@@ -74,7 +74,7 @@ pub trait TwoQubitPauliError<T: Config> {
     fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 15]);
 
     /// Explicit batched two-qubit Pauli-error channel.
-    fn two_qubit_pauli_error_batch(&mut self, pairs: &[(usize, usize)], p: [T::Coeff; 15]) {
+    fn two_qubit_pauli_error_many(&mut self, pairs: &[(usize, usize)], p: [T::Coeff; 15]) {
         for &(a, b) in pairs {
             self.two_qubit_pauli_error(a, b, p.clone());
         }
@@ -87,7 +87,7 @@ pub trait Depolarizing<T: Config> {
     fn depolarize1(&mut self, addr0: usize, p: T::Coeff);
 
     /// Explicit batched single-qubit depolarizing channel.
-    fn depolarize1_batch(&mut self, targets: &[usize], p: T::Coeff) {
+    fn depolarize1_many(&mut self, targets: &[usize], p: T::Coeff) {
         for &q in targets {
             self.depolarize1(q, p.clone());
         }
@@ -100,7 +100,7 @@ pub trait Depolarizing2<T: Config> {
     fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff);
 
     /// Explicit batched two-qubit depolarizing channel.
-    fn depolarize2_batch(&mut self, pairs: &[(usize, usize)], p: T::Coeff) {
+    fn depolarize2_many(&mut self, pairs: &[(usize, usize)], p: T::Coeff) {
         for &(a, b) in pairs {
             self.depolarize2(a, b, p.clone());
         }

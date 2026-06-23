@@ -155,31 +155,31 @@ macro_rules! create_interface {
             // clifford
             #[pyo3(signature = (targets, truncate = true))]
             pub fn x(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.x_batch(targets.as_slice());
+                self.inner.x_many(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, truncate = true))]
             pub fn y(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.y_batch(targets.as_slice());
+                self.inner.y_many(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, truncate = true))]
             pub fn z(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.z_batch(targets.as_slice());
+                self.inner.z_many(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, truncate = true))]
             pub fn h(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.h_batch(targets.as_slice());
+                self.inner.h_many(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, truncate = true))]
             pub fn s(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.s_batch(targets.as_slice());
+                self.inner.s_many(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
@@ -187,7 +187,7 @@ macro_rules! create_interface {
             #[pyo3(signature = (targets, truncate = true))]
             pub fn cnot(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
                 let pairs = crate::flat_pairs(&targets)?;
-                self.inner.cnot_batch(&pairs);
+                self.inner.cnot_many(&pairs);
                 if truncate { self.inner.truncate(); }
                 Ok(())
             }
@@ -205,7 +205,7 @@ macro_rules! create_interface {
             #[pyo3(signature = (targets, truncate = true))]
             pub fn cz(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
                 let pairs = crate::flat_pairs(&targets)?;
-                self.inner.cz_batch(&pairs);
+                self.inner.cz_many(&pairs);
                 if truncate { self.inner.truncate(); }
                 Ok(())
             }
@@ -218,7 +218,7 @@ macro_rules! create_interface {
             #[pyo3(signature = (targets, truncate = true))]
             pub fn cy(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
                 let pairs = crate::flat_pairs(&targets)?;
-                self.inner.cy_batch(&pairs);
+                self.inner.cy_many(&pairs);
                 if truncate { self.inner.truncate(); }
                 Ok(())
             }
@@ -231,50 +231,50 @@ macro_rules! create_interface {
             // clifford extensions
             #[pyo3(signature = (targets, truncate = true))]
             pub fn s_dag(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.s_dag_batch(targets.as_slice());
+                self.inner.s_dag_many(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, truncate = true))]
             pub fn sqrt_x(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.sqrt_x_batch(targets.as_slice());
+                self.inner.sqrt_x_many(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, truncate = true))]
             pub fn sqrt_y(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.sqrt_y_batch(targets.as_slice());
+                self.inner.sqrt_y_many(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, truncate = true))]
             pub fn sqrt_x_dag(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.sqrt_x_dag_batch(targets.as_slice());
+                self.inner.sqrt_x_dag_many(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, truncate = true))]
             pub fn sqrt_y_dag(&mut self, targets: Vec<usize>, truncate: bool) {
-                self.inner.sqrt_y_dag_batch(targets.as_slice());
+                self.inner.sqrt_y_dag_many(targets.as_slice());
                 if truncate { self.inner.truncate(); }
             }
 
             // rot1
             #[pyo3(signature = (targets, theta, truncate = true))]
             pub fn rx(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
-                self.inner.rx_batch(targets.as_slice(), theta);
+                self.inner.rx_many(targets.as_slice(), theta);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, theta, truncate = true))]
             pub fn ry(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
-                self.inner.ry_batch(targets.as_slice(), theta);
+                self.inner.ry_many(targets.as_slice(), theta);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, theta, truncate = true))]
             pub fn rz(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) {
-                self.inner.rz_batch(targets.as_slice(), theta);
+                self.inner.rz_many(targets.as_slice(), theta);
                 if truncate { self.inner.truncate(); }
             }
 
@@ -282,7 +282,7 @@ macro_rules! create_interface {
             #[pyo3(signature = (targets, theta, truncate = true))]
             pub fn rxx(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) -> PyResult<()> {
                 let pairs = crate::flat_pairs(&targets)?;
-                self.inner.rxx_batch(&pairs, theta);
+                self.inner.rxx_many(&pairs, theta);
                 if truncate { self.inner.truncate(); }
                 Ok(())
             }
@@ -290,7 +290,7 @@ macro_rules! create_interface {
             #[pyo3(signature = (targets, theta, truncate = true))]
             pub fn ryy(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) -> PyResult<()> {
                 let pairs = crate::flat_pairs(&targets)?;
-                self.inner.ryy_batch(&pairs, theta);
+                self.inner.ryy_many(&pairs, theta);
                 if truncate { self.inner.truncate(); }
                 Ok(())
             }
@@ -298,7 +298,7 @@ macro_rules! create_interface {
             #[pyo3(signature = (targets, theta, truncate = true))]
             pub fn rzz(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) -> PyResult<()> {
                 let pairs = crate::flat_pairs(&targets)?;
-                self.inner.rzz_batch(&pairs, theta);
+                self.inner.rzz_many(&pairs, theta);
                 if truncate { self.inner.truncate(); }
                 Ok(())
             }
@@ -306,25 +306,25 @@ macro_rules! create_interface {
             // noise
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn x_error(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
-                self.inner.x_error_batch(targets.as_slice(), p);
+                self.inner.x_error_many(targets.as_slice(), p);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn y_error(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
-                self.inner.y_error_batch(targets.as_slice(), p);
+                self.inner.y_error_many(targets.as_slice(), p);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn z_error(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
-                self.inner.z_error_batch(targets.as_slice(), p);
+                self.inner.z_error_many(targets.as_slice(), p);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn pauli_error(&mut self, targets: Vec<usize>, p: [f64; 3], truncate: bool) {
-                self.inner.pauli_error_batch(targets.as_slice(), p);
+                self.inner.pauli_error_many(targets.as_slice(), p);
                 if truncate { self.inner.truncate(); }
             }
 
@@ -336,21 +336,21 @@ macro_rules! create_interface {
                 truncate: bool,
             ) -> PyResult<()> {
                 let pairs = crate::flat_pairs(&targets)?;
-                self.inner.two_qubit_pauli_error_batch(&pairs, p);
+                self.inner.two_qubit_pauli_error_many(&pairs, p);
                 if truncate { self.inner.truncate(); }
                 Ok(())
             }
 
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn depolarize1(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
-                self.inner.depolarize1_batch(targets.as_slice(), p);
+                self.inner.depolarize1_many(targets.as_slice(), p);
                 if truncate { self.inner.truncate(); }
             }
 
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn depolarize2(&mut self, targets: Vec<usize>, p: f64, truncate: bool) -> PyResult<()> {
                 let pairs = crate::flat_pairs(&targets)?;
-                self.inner.depolarize2_batch(&pairs, p);
+                self.inner.depolarize2_many(&pairs, p);
                 if truncate { self.inner.truncate(); }
                 Ok(())
             }

@@ -14,14 +14,14 @@ pub trait TGate<T: Config> {
     fn t_dag(&mut self, addr0: usize);
 
     /// Explicit batched `T`.
-    fn t_batch(&mut self, targets: &[usize]) {
+    fn t_many(&mut self, targets: &[usize]) {
         for &q in targets {
             self.t(q);
         }
     }
 
     /// Explicit batched `T†`.
-    fn t_dag_batch(&mut self, targets: &[usize]) {
+    fn t_dag_many(&mut self, targets: &[usize]) {
         for &q in targets {
             self.t_dag(q);
         }

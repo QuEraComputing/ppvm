@@ -14,8 +14,9 @@ pub trait LossyMeasure {
     /// outcome, or `None` if the qubit has been lost.
     fn measure(&mut self, addr0: usize) -> Option<bool>;
 
-    /// Measure each target in order, returning one result per target.
-    fn measure_many(&mut self, targets: impl crate::traits::Targets) -> Vec<Option<bool>> {
-        targets.each().map(|q| self.measure(q)).collect()
+    /// Explicit batched measurement: measure each target in order,
+    /// returning one result per target.
+    fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
+        targets.iter().map(|&q| self.measure(q)).collect()
     }
 }

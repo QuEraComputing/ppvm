@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import enum
+from collections.abc import Iterable
 from dataclasses import InitVar, dataclass, field
 
 import ppvm_python_native
@@ -13,6 +14,7 @@ from .mixins import (
     LossMixin,
     NoiseMixin,
     RotationsMixin,
+    _normalize_targets,
 )
 from .types import GeneralizedTableauInterface
 
@@ -131,21 +133,21 @@ class GeneralizedTableau(
         """Return a human-readable representation of the tableau state."""
         return self._interface.__str__()
 
-    def t(self, *targets: int) -> None:
+    def t(self, *targets: int | Iterable[int]) -> None:
         """Apply a T gate (π/8 rotation) to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.t(list(targets))
+        self._interface.t(_normalize_targets(targets))
 
-    def t_dag(self, *targets: int) -> None:
+    def t_dag(self, *targets: int | Iterable[int]) -> None:
         """Apply a T adjoint gate (negative π/8 rotation) to each target qubit.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.t_dag(list(targets))
+        self._interface.t_dag(_normalize_targets(targets))
 
     def measure(self, addr0: int) -> MeasurementResult:
         """Measure the specified qubit in the Z basis.
@@ -159,7 +161,7 @@ class GeneralizedTableau(
         """
         return MeasurementResult(self._interface.measure(addr0))
 
-    def measure_many(self, *targets: int) -> list[MeasurementResult]:
+    def measure_many(self, *targets: int | Iterable[int]) -> list[MeasurementResult]:
         """Measure several qubits in the Z basis.
 
         Args:
@@ -168,7 +170,9 @@ class GeneralizedTableau(
         Returns:
             A list of ``MeasurementResult`` outcomes, one per target.
         """
-        return [MeasurementResult(v) for v in self._interface.measure_many(list(targets))]
+        return [
+            MeasurementResult(v) for v in self._interface.measure_many(_normalize_targets(targets))
+        ]
 
     def current_measurement_record(self) -> list[MeasurementResult]:
         """Return all measurement outcomes recorded so far.
@@ -196,37 +200,37 @@ class GeneralizedTableau(
         """
         self._interface.u3(addr0, theta, phi, lam)
 
-    def reset(self, *targets: int) -> None:
+    def reset(self, *targets: int | Iterable[int]) -> None:
         """Reset each target qubit to the |0> state.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.reset(list(targets))
+        self._interface.reset(_normalize_targets(targets))
 
-    def reset_x(self, *targets: int) -> None:
+    def reset_x(self, *targets: int | Iterable[int]) -> None:
         """Reset each target qubit to the |+> state.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.reset_x(list(targets))
+        self._interface.reset_x(_normalize_targets(targets))
 
-    def reset_y(self, *targets: int) -> None:
+    def reset_y(self, *targets: int | Iterable[int]) -> None:
         """Reset each target qubit to the |+i> state.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.reset_y(list(targets))
+        self._interface.reset_y(_normalize_targets(targets))
 
-    def reset_z(self, *targets: int) -> None:
+    def reset_z(self, *targets: int | Iterable[int]) -> None:
         """Reset each target qubit to the |0> state.
 
         Args:
             *targets: The indices of the target qubits.
         """
-        self._interface.reset_z(list(targets))
+        self._interface.reset_z(_normalize_targets(targets))
 
     def reset_loss_channel(self, addr0: int) -> None:
         """Reset a lost qubit to being active again.

@@ -37,26 +37,26 @@ macro_rules! impl_tableau_clifford_pair {
 }
 
 // Single-qubit gate on a `GeneralizedTableau`: skip lost qubits, delegate to
-// the inner tableau per target.
+// the inner tableau's word-level method.
 macro_rules! impl_generalized_tableau_clifford {
-    ($name:ident) => {
+    ($name:ident, $word:ident) => {
         fn $name(&mut self, index: usize) {
             if self.is_lost[index] {
                 return;
             }
-            self.tableau.$name(index);
+            self.tableau.$word(index);
         }
     };
 }
 
 // Two-qubit gate on a `GeneralizedTableau`: skip pairs with a lost qubit.
 macro_rules! impl_generalized_tableau_clifford_pair {
-    ($name:ident) => {
+    ($name:ident, $word:ident) => {
         fn $name(&mut self, control: usize, target: usize) {
             if self.is_lost[control] || self.is_lost[target] {
                 return;
             }
-            self.tableau.$name(control, target);
+            self.tableau.$word(control, target);
         }
     };
 }
@@ -166,13 +166,13 @@ where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
     <T::Storage as BitView>::Store: PrimInt,
 {
-    impl_generalized_tableau_clifford!(x);
-    impl_generalized_tableau_clifford!(y);
-    impl_generalized_tableau_clifford!(z);
-    impl_generalized_tableau_clifford!(h);
-    impl_generalized_tableau_clifford!(s);
-    impl_generalized_tableau_clifford_pair!(cnot);
-    impl_generalized_tableau_clifford_pair!(cz);
+    impl_generalized_tableau_clifford!(x, x_word);
+    impl_generalized_tableau_clifford!(y, y_word);
+    impl_generalized_tableau_clifford!(z, z_word);
+    impl_generalized_tableau_clifford!(h, h_word);
+    impl_generalized_tableau_clifford!(s, s_word);
+    impl_generalized_tableau_clifford_pair!(cnot, cnot_word);
+    impl_generalized_tableau_clifford_pair!(cz, cz_word);
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> CliffordExtensions
@@ -181,12 +181,12 @@ where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
     <T::Storage as BitView>::Store: PrimInt,
 {
-    impl_generalized_tableau_clifford!(s_dag);
-    impl_generalized_tableau_clifford!(sqrt_x);
-    impl_generalized_tableau_clifford!(sqrt_x_dag);
-    impl_generalized_tableau_clifford!(sqrt_y);
-    impl_generalized_tableau_clifford!(sqrt_y_dag);
-    impl_generalized_tableau_clifford_pair!(cy);
+    impl_generalized_tableau_clifford!(s_dag, s_dag_word);
+    impl_generalized_tableau_clifford!(sqrt_x, sqrt_x_word);
+    impl_generalized_tableau_clifford!(sqrt_x_dag, sqrt_x_dag_word);
+    impl_generalized_tableau_clifford!(sqrt_y, sqrt_y_word);
+    impl_generalized_tableau_clifford!(sqrt_y_dag, sqrt_y_dag_word);
+    impl_generalized_tableau_clifford_pair!(cy, cy_word);
 }
 
 impl<T: Config> Tableau<T>
@@ -211,6 +211,252 @@ where
                 masks[addr0 / bits_per_word] | (one << (addr0 % bits_per_word));
         }
         Some((masks, n_words))
+    }
+
+    #[inline]
+    fn x_word(&mut self, index: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let wi = index / bits;
+        let off = index % bits;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let mask = one << off;
+        self.data.iter_mut().for_each(|pw| {
+            let zp = pw.word.zbits.data.as_raw_slice();
+            let zw = zp[wi];
+            pw.phase ^= (((zw & mask) != zero) as u8) << 1;
+        });
+    }
+
+    #[inline]
+    fn y_word(&mut self, index: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let wi = index / bits;
+        let off = index % bits;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let mask = one << off;
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_slice();
+            let zp = pw.word.zbits.data.as_raw_slice();
+            let xw = xp[wi];
+            let zw = zp[wi];
+            pw.phase ^= ((((xw ^ zw) & mask) != zero) as u8) << 1;
+        });
+    }
+
+    #[inline]
+    fn z_word(&mut self, index: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let wi = index / bits;
+        let off = index % bits;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let mask = one << off;
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_slice();
+            let xw = xp[wi];
+            pw.phase ^= (((xw & mask) != zero) as u8) << 1;
+        });
+    }
+
+    #[inline]
+    fn h_word(&mut self, index: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let wi = index / bits;
+        let off = index % bits;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let mask = one << off;
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let xw = xp[wi];
+            let zw = zp[wi];
+            let xb = xw & mask;
+            let zb = zw & mask;
+            xp[wi] = (xw & !mask) | zb;
+            zp[wi] = (zw & !mask) | xb;
+            pw.phase ^= (((xb & zb) != zero) as u8) << 1;
+        });
+    }
+
+    #[inline]
+    fn s_word(&mut self, index: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let wi = index / bits;
+        let off = index % bits;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let mask = one << off;
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let xw = xp[wi];
+            let zw = zp[wi];
+            pw.phase ^= ((((xw & zw) & mask) != zero) as u8) << 1;
+            zp[wi] = zw ^ (xw & mask);
+        });
+    }
+
+    #[inline]
+    fn s_dag_word(&mut self, index: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let wi = index / bits;
+        let off = index % bits;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let mask = one << off;
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let xw = xp[wi];
+            let zw = zp[wi];
+            pw.phase ^= ((((xw & !zw) & mask) != zero) as u8) << 1;
+            zp[wi] = zw ^ (xw & mask);
+        });
+    }
+
+    #[inline]
+    fn sqrt_x_word(&mut self, index: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let wi = index / bits;
+        let off = index % bits;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let mask = one << off;
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_slice();
+            let xw = xp[wi];
+            let zw = zp[wi];
+            pw.phase ^= ((((zw & !xw) & mask) != zero) as u8) << 1;
+            xp[wi] = xw ^ (zw & mask);
+        });
+    }
+
+    #[inline]
+    fn sqrt_x_dag_word(&mut self, index: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let wi = index / bits;
+        let off = index % bits;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let mask = one << off;
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_slice();
+            let xw = xp[wi];
+            let zw = zp[wi];
+            pw.phase ^= ((((xw & zw) & mask) != zero) as u8) << 1;
+            xp[wi] = xw ^ (zw & mask);
+        });
+    }
+
+    #[inline]
+    fn sqrt_y_word(&mut self, index: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let wi = index / bits;
+        let off = index % bits;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let mask = one << off;
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let xw = xp[wi];
+            let zw = zp[wi];
+            let xb = xw & mask;
+            let zb = zw & mask;
+            xp[wi] = (xw & !mask) | zb;
+            zp[wi] = (zw & !mask) | xb;
+            pw.phase ^= ((((xw & !zw) & mask) != zero) as u8) << 1;
+        });
+    }
+
+    #[inline]
+    fn sqrt_y_dag_word(&mut self, index: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let wi = index / bits;
+        let off = index % bits;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let mask = one << off;
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let xw = xp[wi];
+            let zw = zp[wi];
+            let xb = xw & mask;
+            let zb = zw & mask;
+            xp[wi] = (xw & !mask) | zb;
+            zp[wi] = (zw & !mask) | xb;
+            pw.phase ^= ((((zw & !xw) & mask) != zero) as u8) << 1;
+        });
+    }
+
+    #[inline]
+    fn cnot_word(&mut self, control: usize, target: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let (wc, sc) = (control / bits, control % bits);
+        let (wt, st) = (target / bits, target % bits);
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let xa = (xp[wc] >> sc) & one;
+            let za = (zp[wc] >> sc) & one;
+            let xb = (xp[wt] >> st) & one;
+            let zb = (zp[wt] >> st) & one;
+            let phase_flip = (xa & zb) & (xb ^ za ^ one);
+            pw.phase ^= (((phase_flip & one) != zero) as u8) << 1;
+            zp[wc] = zp[wc] ^ (zb << sc);
+            xp[wt] = xp[wt] ^ (xa << st);
+        });
+    }
+
+    #[inline]
+    fn cz_word(&mut self, control: usize, target: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let (wc, sc) = (control / bits, control % bits);
+        let (wt, st) = (target / bits, target % bits);
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let xa = (xp[wc] >> sc) & one;
+            let za = (zp[wc] >> sc) & one;
+            let xb = (xp[wt] >> st) & one;
+            let zb = (zp[wt] >> st) & one;
+            let phase_flip = (xa & xb) & (za ^ zb);
+            pw.phase ^= (((phase_flip & one) != zero) as u8) << 1;
+            zp[wc] = zp[wc] ^ (xb << sc);
+            zp[wt] = zp[wt] ^ (xa << st);
+        });
+    }
+
+    #[inline]
+    fn cy_word(&mut self, control: usize, target: usize) {
+        let bits = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let one = <T::Storage as BitView>::Store::one();
+        let zero = <T::Storage as BitView>::Store::zero();
+        let (wc, sc) = (control / bits, control % bits);
+        let (wt, st) = (target / bits, target % bits);
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.word.xbits.data.as_raw_mut_slice();
+            let zp = pw.word.zbits.data.as_raw_mut_slice();
+            let xa = (xp[wc] >> sc) & one;
+            let za = (zp[wc] >> sc) & one;
+            let xb = (xp[wt] >> st) & one;
+            let zb = (zp[wt] >> st) & one;
+            let phase_flip = (xa & (xb ^ zb)) & (za ^ zb ^ one);
+            pw.phase ^= (((phase_flip & one) != zero) as u8) << 1;
+            zp[wc] = zp[wc] ^ ((xb ^ zb) << sc);
+            xp[wt] = xp[wt] ^ (xa << st);
+            zp[wt] = zp[wt] ^ (xa << st);
+        });
     }
 }
 

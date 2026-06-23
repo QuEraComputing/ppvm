@@ -67,7 +67,8 @@ impl Deref for PyStimProgram {
 }
 
 fn stim_to_pyerr(e: ppvm_stim::Diagnostics) -> PyErr {
-    PyValueError::new_err(format!("{e}"))
+    // Rich, source-pointing report (offending line + caret), plain text.
+    PyValueError::new_err(e.render())
 }
 
 fn stim_to_pyerr_exec(e: ppvm_stim::ExecError) -> PyErr {

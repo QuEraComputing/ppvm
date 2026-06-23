@@ -25,6 +25,7 @@ fn bench_measure_scaling(c: &mut Criterion) {
     let n_qubits = 85;
     let mut group = c.benchmark_group("measure-scaling");
 
+    let all: Vec<usize> = (0..n_qubits).collect();
     for n_t in [8, 10, 12, 14] {
         let tab = build_circuit(n_qubits, n_t);
         group.bench_function(format!("t{n_t}-{n_qubits}q"), |b| {
@@ -34,6 +35,16 @@ fn bench_measure_scaling(c: &mut Criterion) {
                     for q in 0..n_qubits {
                         let _ = t.measure(q);
                     }
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+        // Measuring every qubit at once should be no slower than the per-qubit loop.
+        group.bench_function(format!("many-t{n_t}-{n_qubits}q"), |b| {
+            b.iter_batched_ref(
+                || tab.fork(Some(42)),
+                |t| {
+                    let _ = t.measure_many(&all);
                 },
                 criterion::BatchSize::SmallInput,
             );

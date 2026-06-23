@@ -14,6 +14,12 @@ fn run(src: &str, n_qubits: usize) -> (Vec<Option<bool>>, Tab) {
     (results, tab)
 }
 
+fn run_seeded(src: &str, n_qubits: usize, seed: u64) -> Vec<Option<bool>> {
+    let prog = parse_extended(src).expect("parse_extended");
+    let mut tab: Tab = GeneralizedTableau::new_with_seed(n_qubits, 1e-10, seed);
+    execute(&prog, &mut tab).expect("execute")
+}
+
 #[test]
 fn x_then_measure_returns_one() {
     let (results, _) = run("X 0\nM 0", 1);
@@ -95,6 +101,22 @@ fn repeat_executes_body_n_times() {
 fn comments_and_annotations_are_no_ops() {
     let (results, _) = run("# c\nQUBIT_COORDS(0,0) 0\nX 0\nTICK\nM 0", 1);
     assert_eq!(results, vec![Some(true)]);
+}
+
+#[test]
+fn grouped_measurement_matches_separate_measurements() {
+    // A single multi-target `M` must produce identical results to the same
+    // qubits measured by separate single-target `M` instructions, for every
+    // seed. Grouping only changes internal batching (shared measurement
+    // scratch); it must never change outcomes or the RNG-draw order.
+    let prelude = "H 0\nCX 0 1\nH 2\nCX 2 3\nS 1\nCZ 1 2\n";
+    let grouped = format!("{prelude}M 0 1 2 3");
+    let separate = format!("{prelude}M 0\nM 1\nM 2\nM 3");
+    for seed in 0..50 {
+        let g = run_seeded(&grouped, 4, seed);
+        let s = run_seeded(&separate, 4, seed);
+        assert_eq!(g, s, "grouped vs separate mismatch at seed={seed}");
+    }
 }
 
 #[test]

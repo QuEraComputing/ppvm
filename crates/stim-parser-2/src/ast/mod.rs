@@ -3,3 +3,6 @@
 
 pub mod shared;
 pub use shared::*;
+
+pub mod vanilla;
+pub use vanilla::{Instruction, Program};

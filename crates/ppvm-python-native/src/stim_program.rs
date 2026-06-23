@@ -5,7 +5,9 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::ops::Deref;
 
-use ppvm_stim::{ExtendedProgram, StimPrint, parse_extended, validate};
+use ppvm_stim::{
+    ExtendedProgram, StimPrint, highlight_ansi, highlight_html, parse_extended, validate,
+};
 
 /// Python-facing wrapper around a validated extended Stim program.
 #[pyclass(name = "StimProgram", module = "ppvm._core")]
@@ -29,17 +31,9 @@ impl PyStimProgram {
         Self::parse(&src)
     }
 
-    /// Render the program back to canonical Stim text.
-    ///
-    /// Parsing is round-trippable: `StimProgram.parse(s).to_stim()` reparses
-    /// to the same string (a print/parse fixpoint). The output is normalized
-    /// canonical Stim — comments and original whitespace/number spelling are
-    /// not preserved.
-    fn to_stim(&self) -> String {
-        self.0.to_stim()
-    }
-
-    /// `str(program)` yields the canonical Stim text (same as `to_stim()`).
+    /// `str(program)` / `print(program)` yield canonical, round-trippable
+    /// Stim text: `StimProgram.parse(str(p))` reproduces `p`. Whitespace,
+    /// comments, and number spelling are normalized to the canonical form.
     fn __str__(&self) -> String {
         self.0.to_stim()
     }
@@ -50,6 +44,18 @@ impl PyStimProgram {
             self.0.instructions.len(),
             self.0.measurement_count()
         )
+    }
+
+    /// Jupyter rich display: syntax-highlighted Stim source. Only invoked in
+    /// IPython/Jupyter; plain `str()`/`print()` stay uncoloured elsewhere.
+    fn _repr_html_(&self) -> String {
+        highlight_html(&self.0.to_stim())
+    }
+
+    /// IPython terminal pretty-printer: writes ANSI-coloured Stim source.
+    fn _repr_pretty_(&self, printer: &Bound<'_, PyAny>, _cycle: bool) -> PyResult<()> {
+        printer.call_method1("text", (highlight_ansi(&self.0.to_stim()),))?;
+        Ok(())
     }
 }
 

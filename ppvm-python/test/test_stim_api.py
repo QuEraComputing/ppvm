@@ -184,18 +184,22 @@ def test_odd_two_qubit_sequence_raises_value_error():
     ],
 )
 def test_stim_program_print_is_a_fixpoint(src):
-    # parse -> print -> parse -> print reaches a byte-identical fixpoint, so a
-    # parsed program can be serialized and re-parsed losslessly (modulo the
-    # canonical normalization of comments/whitespace).
-    printed = StimProgram.parse(src).to_stim()
-    assert StimProgram.parse(printed).to_stim() == printed
-
-
-def test_stim_program_str_matches_to_stim():
-    prog = StimProgram.parse("H 0\nM 0\n")
-    assert str(prog) == prog.to_stim()
+    # str(prog) is canonical: parse -> print -> parse -> print reaches a
+    # byte-identical fixpoint, so a parsed program can be serialized via
+    # str()/print() and re-parsed losslessly (modulo canonical normalization
+    # of comments/whitespace).
+    printed = str(StimProgram.parse(src))
+    assert str(StimProgram.parse(printed)) == printed
 
 
 def test_stim_program_print_normalizes_comments_and_whitespace():
     prog = StimProgram.parse("H 0  # flip\nCX  0   1\n")
-    assert prog.to_stim() == "H 0\nCX 0 1\n"
+    assert str(prog) == "H 0\nCX 0 1\n"
+
+
+def test_stim_program_repr_html_is_highlighted():
+    prog = StimProgram.parse("H 0\nM 0\n")
+    html = prog._repr_html_()
+    assert html.startswith("<pre")
+    assert "<span" in html  # tokens are wrapped in coloured spans
+    assert "</pre>" in html

@@ -3,6 +3,7 @@
 
 pub mod ast;
 pub mod diagnostics;
+pub mod highlight;
 pub mod instructions;
 pub mod pipeline;
 pub mod print;
@@ -58,6 +59,7 @@ pub mod prelude {
     pub use crate::diagnostics::{
         Diagnostic, DiagnosticSink, Diagnostics, Flow, LineMap, Severity, Span,
     };
+    pub use crate::highlight::{highlight_ansi, highlight_html};
     pub use crate::instructions::{AnnotationKind, GateName, MeasureName, NoiseName};
     pub use crate::pipeline::Pipeline;
     pub use crate::print::{PrintOptions, StimPrint};

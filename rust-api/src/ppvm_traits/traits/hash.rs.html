@@ -65,7 +65,7 @@
 <a href=#65 id=65 data-nosnippet>65</a>// max bucket 6, essentially ideal, vs fxhash's 2257 at 64 qubits), so the
 <a href=#66 id=66 data-nosnippet>66</a>// identity default is exactly right — folding would only pay the tag/bucket
 <a href=#67 id=67 data-nosnippet>67</a>// coupling cost above with no distribution benefit.
-<a href=#68 id=68 data-nosnippet>68</a></span><span class="attr">#[cfg(feature = <span class="string">"gxhash"</span>)]
+<a href=#68 id=68 data-nosnippet>68</a></span><span class="attr">#[cfg(all(feature = <span class="string">"gxhash"</span>, not(target_arch = <span class="string">"wasm32"</span>)))]
 <a href=#69 id=69 data-nosnippet>69</a></span><span class="kw">impl </span>HashFinalize <span class="kw">for </span>gxhash::GxBuildHasher {}
 <a href=#70 id=70 data-nosnippet>70</a>
 <a href=#71 id=71 data-nosnippet>71</a><span class="attr">#[cfg(test)]
@@ -99,7 +99,7 @@
 <a href=#99 id=99 data-nosnippet>99</a>        }
 <a href=#100 id=100 data-nosnippet>100</a>    }
 <a href=#101 id=101 data-nosnippet>101</a>
-<a href=#102 id=102 data-nosnippet>102</a>    <span class="attr">#[cfg(feature = <span class="string">"gxhash"</span>)]
+<a href=#102 id=102 data-nosnippet>102</a>    <span class="attr">#[cfg(all(feature = <span class="string">"gxhash"</span>, not(target_arch = <span class="string">"wasm32"</span>)))]
 <a href=#103 id=103 data-nosnippet>103</a>    #[test]
 <a href=#104 id=104 data-nosnippet>104</a>    </span><span class="kw">fn </span>gxhash_never_folds() {
 <a href=#105 id=105 data-nosnippet>105</a>        <span class="comment">// gxhash already distributes its low bits, so it is the identity at

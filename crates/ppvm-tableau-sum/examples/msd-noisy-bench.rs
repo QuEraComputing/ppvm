@@ -12,6 +12,7 @@ use std::time::Instant;
 use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
 use ppvm_tableau_sum::data::GeneralizedTableauSum;
+use ppvm_tableau_sum::storage::EntryStore;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -202,6 +203,17 @@ fn main() {
     let median_ms = build_times_ms[build_times_ms.len() / 2];
     let min_ms = build_times_ms[0];
 
+    // Accuracy fingerprint: the optimizations under test must not change the
+    // math, so the multiset of branch probabilities must be invariant (up to
+    // float summation-order noise). Capture sum(p), sum(p^2) (participation
+    // ratio), and the top-5 probabilities from a fresh deterministic build.
+    let tab_acc = build(SEED);
+    let mut probs: Vec<f64> = tab_acc.entries.iter().map(|(_, p)| *p).collect();
+    probs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    let sum_p: f64 = probs.iter().sum();
+    let sum_p2: f64 = probs.iter().map(|p| p * p).sum();
+    let top5: Vec<f64> = probs.iter().take(5).copied().collect();
+
     // Sample timing on a fresh build.
     let mut tab = build(SEED);
     let mut sampler = tab.sampler();
@@ -213,6 +225,9 @@ fn main() {
     println!("build_min_ms   = {:.1}", min_ms);
     println!("build_median_ms= {:.1}", median_ms);
     println!("per_shot_ns    = {:.1}", per_shot_ns);
+    println!("sum_p          = {:.12}", sum_p);
+    println!("sum_p2         = {:.12}", sum_p2);
+    println!("top5_p         = {:?}", top5);
     println!("all_build_ms   = {:?}", build_times_ms);
 
     // Accuracy guard: the optimizations under test must not change the math,

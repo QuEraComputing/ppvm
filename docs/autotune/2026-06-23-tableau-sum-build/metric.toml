@@ -12,3 +12,10 @@
 "build_median_ms" = 958.0
 "per_shot_ns" = 22100.0
 "branches" = 2025.0
+[[metric]]
+"commit" = "ad0d0b24"
+"status" = "keep"
+"description" = "bulk-hash word_fingerprint (gather rows, single gxhash64)"
+"build_median_ms" = 573.0
+"per_shot_ns" = 22100.0
+"branches" = 2025.0

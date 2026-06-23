@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+pub mod backend;
 mod branch;
 mod clifford;
 mod coefficient;
@@ -15,6 +16,7 @@ mod strategy;
 mod trace;
 mod word_trait;
 
+pub use backend::{Clifford1q, Clifford2q, PackedWord, PauliBackend};
 pub use branch::{CRx, Projection, RotationOne, RotationTwo, TGate, U3Gate};
 pub use clifford::{Clifford, CliffordBatch, CliffordExtensions, CliffordExtensionsBatch};
 pub use coefficient::{Coefficient, ComplexCoefficient};

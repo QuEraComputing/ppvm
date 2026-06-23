@@ -90,15 +90,15 @@ fn validate_node(
             // MPP carries Pauli-product targets (`X0*Y1*Z2`), not qubit indices,
             // so it parses on a dedicated path rather than the qubit/record loop.
             if matches!(entry.kind, EntryKind::Measure(MeasureName::MPP)) {
-                let Some(products) = parse_mpp_products(&targets, line_map, sink)? else {
+                let Some(products) = parse_mpp_products(&targets, sink)? else {
                     return Ok(None);
                 };
-                if let Some(found) = check_arg_count(arg_rule, args.len()) {
+                if let Some(expected) = check_arg_count(arg_rule, args.len()) {
                     if emit(
                         sink,
                         span,
                         "arg-count",
-                        format!("'{canonical}' expected {found} args, got {}", args.len()),
+                        format!("'{canonical}' expected {expected} args, got {}", args.len()),
                     ) == Flow::Abort
                     {
                         return Err(Aborted);
@@ -158,12 +158,12 @@ fn validate_node(
                 return Ok(None);
             }
 
-            if let Some(found) = check_arg_count(arg_rule, args.len()) {
+            if let Some(expected) = check_arg_count(arg_rule, args.len()) {
                 if emit(
                     sink,
                     span,
                     "arg-count",
-                    format!("'{canonical}' expected {found} args, got {}", args.len()),
+                    format!("'{canonical}' expected {expected} args, got {}", args.len()),
                 ) == Flow::Abort
                 {
                     return Err(Aborted);
@@ -233,7 +233,6 @@ fn check_arg_count(arg_rule: ArgCount, found: usize) -> Option<usize> {
 /// - `Err(Aborted)` — the sink demanded the stage abort.
 fn parse_mpp_products(
     targets: &[RawTarget],
-    _line_map: &Arc<LineMap>,
     sink: &mut dyn DiagnosticSink,
 ) -> Result<Option<Vec<Vec<PauliFactor>>>, Aborted> {
     let mut products = Vec::with_capacity(targets.len());
@@ -426,12 +425,16 @@ mod tests {
     }
 
     /// Validate with a `Collect` sink (never aborts) and return the collected
-    /// diagnostics for inspection.
+    /// diagnostics for inspection. Callers must pass nodes that are ALL
+    /// expected to be invalid — every node is emitted-and-skipped, so the
+    /// resulting program is empty (asserted here as a guard).
     fn collect_errors(nodes: Vec<RawSyntaxNode>, line_map: &Arc<LineMap>) -> Vec<Diagnostic> {
         let mut sink = Collect::new();
         let program = validate(nodes, line_map, &mut sink).expect("Collect never aborts");
-        // The offending instruction is skipped, so the program is empty.
-        assert!(program.instructions.is_empty());
+        assert!(
+            program.instructions.is_empty(),
+            "collect_errors expects every input node to be invalid"
+        );
         sink.into_items()
     }
 

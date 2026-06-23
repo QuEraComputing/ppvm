@@ -201,7 +201,7 @@ class GeneralizedTableau(
         """Return the number of branches in the coefficient vector.
 
         This is the number of entries in the dict returned by
-        :meth:`coefficients`, computed without materializing it.
+        `coefficients`, computed without materializing it.
 
         Returns:
             The count of populated entries in the sparse coefficient vector.

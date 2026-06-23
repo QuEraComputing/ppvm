@@ -6,7 +6,7 @@
 //! Two-stage pipeline:
 //!
 //! 1. [`parse_extended`] — `&str` → [`ExtendedProgram`] (re-exported from
-//!    `stim_parser_2`).
+//!    `stim_parser`).
 //! 2. [`execute`] / [`sample`] — call [`validate`](fn@validate) to validate the
 //!    [`ExtendedProgram`], then apply it to a [`GeneralizedTableau`].
 //!
@@ -30,20 +30,20 @@
 //! [`run_string`] / [`run_file`] re-parse on every call and exist only for
 //! single-shot demos — never call them from a shot loop.
 //!
-//! [`ExtendedProgram`]: stim_parser_2::prelude::ExtendedProgram
+//! [`ExtendedProgram`]: stim_parser::prelude::ExtendedProgram
 //! [`GeneralizedTableau`]: ppvm_tableau::prelude::GeneralizedTableau
 
 pub mod executor;
 pub mod validate;
 
-pub use stim_parser_2::prelude::*;
+pub use stim_parser::prelude::*;
 
 /// The error type returned by [`parse_extended`] on a malformed program.
 ///
-/// `stim_parser_2` reports parse failures as a [`Diagnostics`] aggregate;
+/// `stim_parser` reports parse failures as a [`Diagnostics`] aggregate;
 /// this alias preserves the historical `ppvm_stim::ExtendedParseError` name
 /// used by downstream consumers.
-pub use stim_parser_2::prelude::Diagnostics as ExtendedParseError;
+pub use stim_parser::prelude::Diagnostics as ExtendedParseError;
 
 pub use executor::{
     execute, execute_validated, sample, sample_serial, sample_serial_validated, sample_validated,

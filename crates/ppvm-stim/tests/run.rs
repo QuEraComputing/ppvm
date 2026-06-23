@@ -33,7 +33,7 @@ fn run_file_round_trips_with_run_string() {
 fn run_string_propagates_parse_error() {
     let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
     let err = run_string("FROBNICATE 0", &mut tab).unwrap_err();
-    // `stim_parser_2` reports parse failures as an opaque `Diagnostics`
+    // `stim_parser` reports parse failures as an opaque `Diagnostics`
     // aggregate rather than a typed error enum, so assert on the variant and
     // the rendered message (which still names the unknown instruction).
     assert!(

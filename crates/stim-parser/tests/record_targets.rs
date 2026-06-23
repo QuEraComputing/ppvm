@@ -9,7 +9,7 @@ use stim_parser::prelude::*;
 fn first_gate(src: &str) -> (GateName, Vec<Target>) {
     let prog = parse(src).expect("must parse");
     match &prog.instructions[0] {
-        RawInstruction::Gate { name, targets, .. } => (*name, targets.clone()),
+        Instruction::Gate(GateOp { name, targets, .. }) => (*name, targets.clone()),
         other => panic!("expected Gate, got {other:?}"),
     }
 }

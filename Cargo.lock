@@ -985,7 +985,7 @@ dependencies = [
  "ppvm-tableau",
  "rayon",
  "smallvec",
- "stim-parser-2",
+ "stim-parser",
  "thiserror",
 ]
 
@@ -1455,16 +1455,6 @@ version = "0.1.0"
 dependencies = [
  "chumsky",
  "proptest",
- "thiserror",
-]
-
-[[package]]
-name = "stim-parser-2"
-version = "0.1.0"
-dependencies = [
- "chumsky",
- "proptest",
- "stim-parser",
  "thiserror",
 ]
 

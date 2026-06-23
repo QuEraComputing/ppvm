@@ -12,7 +12,7 @@ use std::fmt::Debug;
 use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
 use smallvec::SmallVec;
-use stim_parser_2::prelude::{
+use stim_parser::prelude::{
     Axis, ExtendedInstruction, ExtendedProgram, GateName, GateOp, MeasureName, MeasureOp, MppOp,
     NoiseName, NoiseOp, PauliAxis, Target,
 };

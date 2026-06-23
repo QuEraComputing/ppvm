@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use stim_parser_2::diagnostics::LineMap;
-use stim_parser_2::prelude::{
+use stim_parser::diagnostics::LineMap;
+use stim_parser::prelude::{
     ExtendedInstruction, ExtendedProgram, GateName, GateOp, MeasureName, MeasureOp, MppOp,
     NoiseName, NoiseOp, PauliFactor, Target,
 };

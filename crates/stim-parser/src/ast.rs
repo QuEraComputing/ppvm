@@ -17,13 +17,71 @@ pub struct Program {
     pub instructions: Vec<RawInstruction>,
 }
 
+/// A gate operand. Most operands are plain qubit indices, but the control
+/// of a classically-controlled gate — e.g. the `rec[-1]` in `CX rec[-1] 1` —
+/// is a measurement-record lookback rather than a qubit. Mirrors the qubit /
+/// record distinction Stim draws in its `GateTarget`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    /// A qubit index.
+    Qubit(usize),
+    /// A measurement-record lookback `rec[-k]`; stores `k >= 1` (the number
+    /// of measurements to count back from the most recent).
+    Rec(usize),
+}
+
+impl Target {
+    /// The qubit index, if this is a plain qubit target.
+    pub fn as_qubit(self) -> Option<usize> {
+        match self {
+            Target::Qubit(q) => Some(q),
+            Target::Rec(_) => None,
+        }
+    }
+}
+
+/// A qubit target compares equal to its bare index; a record target never
+/// does. Lets callers (and tests) match qubit targets against plain `usize`s.
+impl PartialEq<usize> for Target {
+    fn eq(&self, other: &usize) -> bool {
+        matches!(self, Target::Qubit(q) if q == other)
+    }
+}
+
+/// The Pauli basis of a single-qubit factor in an `MPP` product.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PauliAxis {
+    X,
+    Y,
+    Z,
+}
+
+impl PauliAxis {
+    /// The single-character Stim spelling (`X`/`Y`/`Z`).
+    pub fn as_char(self) -> char {
+        match self {
+            PauliAxis::X => 'X',
+            PauliAxis::Y => 'Y',
+            PauliAxis::Z => 'Z',
+        }
+    }
+}
+
+/// One single-qubit Pauli factor of an `MPP` product, e.g. the `Y3` in
+/// `MPP X0*Y3*Z7`: the measured `axis` on its support `qubit`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PauliFactor {
+    pub axis: PauliAxis,
+    pub qubit: usize,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RawInstruction {
     Gate {
         name: GateName,
         tags: Vec<Tag>,
         args: Vec<f64>,
-        targets: Vec<usize>,
+        targets: Vec<Target>,
         line: usize,
     },
     Noise {
@@ -52,6 +110,15 @@ pub enum RawInstruction {
         bits: Vec<usize>,
         line: usize,
     },
+    /// Multi-qubit Pauli-product measurement `MPP`. Each element of `products`
+    /// is one measured operator — a product of single-qubit Paulis, e.g.
+    /// `MPP X0*Y1 Z2*Z3` carries two products and yields two results.
+    Mpp {
+        tags: Vec<Tag>,
+        args: Vec<f64>,
+        products: Vec<Vec<PauliFactor>>,
+        line: usize,
+    },
     Repeat {
         count: u64,
         body: Vec<RawInstruction>,
@@ -78,6 +145,9 @@ pub enum GateName {
     // Reset (treated as a gate so it parses with no args)
     Reset,
     ResetZ,
+    // X/Y-basis resets (prepare |+> / |i>)
+    ResetX,
+    ResetY,
     // Single-qubit Cliffords
     X,
     Y,
@@ -92,6 +162,9 @@ pub enum GateName {
     SqrtXDag,
     SqrtY,
     SqrtYDag,
+    // Non-Clifford T / T-dagger (also expressible as S[T] / S_DAG[T])
+    T,
+    TDag,
     // Identity (carries dialect tags like S[T] is on S, but I[R_X(...)] is on Identity)
     Identity,
     // Two-qubit Cliffords
@@ -286,6 +359,8 @@ impl GateName {
         match self {
             GateName::Reset => "R",
             GateName::ResetZ => "RZ",
+            GateName::ResetX => "RX",
+            GateName::ResetY => "RY",
             GateName::X => "X",
             GateName::Y => "Y",
             GateName::Z => "Z",
@@ -295,6 +370,8 @@ impl GateName {
             GateName::SDag => "S_DAG",
             GateName::SqrtZ => "SQRT_Z",
             GateName::SqrtZDag => "SQRT_Z_DAG",
+            GateName::T => "T",
+            GateName::TDag => "T_DAG",
             GateName::SqrtX => "SQRT_X",
             GateName::SqrtXDag => "SQRT_X_DAG",
             GateName::SqrtY => "SQRT_Y",

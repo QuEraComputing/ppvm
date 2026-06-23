@@ -4,7 +4,9 @@
 //! Typed AST for Stim with PPVM tag-based extensions promoted to
 //! first-class instruction variants.
 
-use crate::ast::{AnnotationKind, GateName, MeasureName, NoiseName, RawInstruction, Tag};
+use crate::ast::{
+    AnnotationKind, GateName, MeasureName, NoiseName, PauliFactor, RawInstruction, Tag, Target,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtendedProgram {
@@ -22,7 +24,7 @@ pub enum RawPassthrough {
         name: GateName,
         tags: Vec<Tag>,
         args: Vec<f64>,
-        targets: Vec<usize>,
+        targets: Vec<Target>,
         line: usize,
     },
     Noise {
@@ -162,6 +164,13 @@ pub enum ExtendedInstruction {
         bits: Vec<bool>,
         line: usize,
     },
+    /// Multi-qubit Pauli-product measurement `MPP`; one result per product.
+    Mpp {
+        tags: Vec<Tag>,
+        args: Vec<f64>,
+        products: Vec<Vec<PauliFactor>>,
+        line: usize,
+    },
     Repeat {
         count: u64,
         body: Vec<ExtendedInstruction>,
@@ -194,6 +203,9 @@ fn count_in_slice(instructions: &[ExtendedInstruction], factor: u64) -> usize {
             }
             ExtendedInstruction::MPad { bits, .. } => {
                 total = total.saturating_add(bits.len().saturating_mul(factor_usize));
+            }
+            ExtendedInstruction::Mpp { products, .. } => {
+                total = total.saturating_add(products.len().saturating_mul(factor_usize));
             }
             ExtendedInstruction::Repeat { count, body, .. } => {
                 total = total.saturating_add(count_in_slice(body, factor.saturating_mul(*count)));

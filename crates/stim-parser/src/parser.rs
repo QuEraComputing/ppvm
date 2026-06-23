@@ -3,7 +3,10 @@
 
 use std::sync::Arc;
 
-use crate::ast::{ArgCount, ParseError, Program, RawInstruction, SyntaxError, Tag, TargetArity};
+use crate::ast::{
+    ArgCount, MeasureName, ParseError, PauliAxis, PauliFactor, Program, RawInstruction,
+    SyntaxError, Tag, Target, TargetArity,
+};
 use crate::grammar;
 use crate::line_map::LineMap;
 use crate::table::{EntryKind, TableEntry, lookup};
@@ -142,54 +145,57 @@ fn validate_node(
             let target_rule = entry.targets;
             let canonical = entry.canonical();
 
-            let is_annotation = matches!(entry.kind, EntryKind::Annotation(_));
-            let mut numeric_targets = Vec::with_capacity(targets.len());
-            for t in &targets {
-                match t.text.parse::<usize>() {
-                    Ok(n) => numeric_targets.push(n),
-                    Err(_) if is_annotation => {}
-                    Err(_) => {
-                        let (l, c) = line_map.line_col(t.span.start);
-                        return Err(syntax(
-                            l,
-                            c,
-                            format!("invalid target {:?}", t.text),
-                            line_map,
-                        ));
-                    }
+            // MPP carries Pauli-product targets (`X0*Y1*Z2`), not qubit indices,
+            // so it parses on a dedicated path rather than the qubit/record loop.
+            if matches!(entry.kind, EntryKind::Measure(MeasureName::MPP)) {
+                let products = parse_mpp_products(&targets, line_map)?;
+                check_arg_count(arg_rule, args.len(), canonical, line)?;
+                if products.is_empty() {
+                    return Err(ParseError::TargetCount {
+                        name: canonical.to_string(),
+                        divisor: 1,
+                        found: 0,
+                        line,
+                    });
                 }
+                return Ok(RawInstruction::Mpp {
+                    tags,
+                    args,
+                    products,
+                    line,
+                });
             }
 
-            let skip_arg_validation = matches!(arg_rule, ArgCount::Deferred | ArgCount::Any);
-            if !skip_arg_validation {
-                match arg_rule {
-                    ArgCount::None if !args.is_empty() => {
-                        return Err(ParseError::ArgCount {
-                            name: canonical.to_string(),
-                            expected: 0,
-                            found: args.len(),
-                            line,
-                        });
-                    }
-                    ArgCount::Exact(n) if args.len() != n => {
-                        return Err(ParseError::ArgCount {
-                            name: canonical.to_string(),
-                            expected: n,
-                            found: args.len(),
-                            line,
-                        });
-                    }
-                    ArgCount::Optional(n) if !args.is_empty() && args.len() != n => {
-                        return Err(ParseError::ArgCount {
-                            name: canonical.to_string(),
-                            expected: n,
-                            found: args.len(),
-                            line,
-                        });
-                    }
-                    _ => {}
+            let is_annotation = matches!(entry.kind, EntryKind::Annotation(_));
+            // Only gates accept measurement-record controls (`rec[-k]`), as in
+            // `CX rec[-1] 1`. For every other instruction a `rec[...]` target is
+            // either tolerated-and-dropped (annotations) or an error.
+            let is_gate = matches!(entry.kind, EntryKind::Gate(_));
+            let mut parsed_targets: Vec<Target> = Vec::with_capacity(targets.len());
+            for t in &targets {
+                if let Ok(n) = t.text.parse::<usize>() {
+                    parsed_targets.push(Target::Qubit(n));
+                    continue;
                 }
+                if is_gate && let Some(k) = parse_rec(&t.text) {
+                    parsed_targets.push(Target::Rec(k));
+                    continue;
+                }
+                if is_annotation {
+                    // Annotations (DETECTOR, OBSERVABLE_INCLUDE, …) tolerate
+                    // non-numeric targets like `rec[-1]` by dropping them.
+                    continue;
+                }
+                let (l, c) = line_map.line_col(t.span.start);
+                return Err(syntax(
+                    l,
+                    c,
+                    format!("invalid target {:?}", t.text),
+                    line_map,
+                ));
             }
+
+            check_arg_count(arg_rule, args.len(), canonical, line)?;
 
             let divisor = match target_rule {
                 TargetArity::Any => None,
@@ -198,7 +204,7 @@ fn validate_node(
                 TargetArity::Quadruples => Some(4),
             };
             if let Some(d) = divisor {
-                let n = numeric_targets.len();
+                let n = parsed_targets.len();
                 if n == 0 || !n.is_multiple_of(d) {
                     return Err(ParseError::TargetCount {
                         name: canonical.to_string(),
@@ -209,7 +215,7 @@ fn validate_node(
                 }
             }
 
-            Ok(build_instruction(entry, tags, args, numeric_targets, line))
+            Ok(build_instruction(entry, tags, args, parsed_targets, line))
         }
         RawSyntaxNode::Repeat { count, body, span } => {
             let line = line_map.line_of(span.start);
@@ -219,11 +225,92 @@ fn validate_node(
     }
 }
 
+/// Validate an instruction's argument count against its table rule.
+fn check_arg_count(
+    arg_rule: ArgCount,
+    found: usize,
+    canonical: &str,
+    line: usize,
+) -> Result<(), ParseError> {
+    let expected = match arg_rule {
+        ArgCount::Deferred | ArgCount::Any => return Ok(()),
+        ArgCount::None if found != 0 => 0,
+        ArgCount::Exact(n) if found != n => n,
+        ArgCount::Optional(n) if found != 0 && found != n => n,
+        _ => return Ok(()),
+    };
+    Err(ParseError::ArgCount {
+        name: canonical.to_string(),
+        expected,
+        found,
+        line,
+    })
+}
+
+/// Parse the space-separated Pauli-product targets of an `MPP` instruction,
+/// e.g. `X0*Y1*Z2 Z3*Z4` into two products. Each product is a `*`-joined run
+/// of single-qubit Pauli factors (`<X|Y|Z><qubit>`).
+fn parse_mpp_products(
+    targets: &[RawTarget],
+    line_map: &Arc<LineMap>,
+) -> Result<Vec<Vec<PauliFactor>>, ParseError> {
+    let mut products = Vec::with_capacity(targets.len());
+    for t in targets {
+        let mut factors = Vec::new();
+        for factor in t.text.split('*') {
+            let mut chars = factor.chars();
+            let axis = match chars.next() {
+                Some('X') => PauliAxis::X,
+                Some('Y') => PauliAxis::Y,
+                Some('Z') => PauliAxis::Z,
+                _ => return Err(invalid_mpp_target(t, line_map)),
+            };
+            let Ok(qubit) = chars.as_str().parse::<usize>() else {
+                return Err(invalid_mpp_target(t, line_map));
+            };
+            factors.push(PauliFactor { axis, qubit });
+        }
+        products.push(factors);
+    }
+    Ok(products)
+}
+
+fn invalid_mpp_target(t: &RawTarget, line_map: &Arc<LineMap>) -> ParseError {
+    let (l, c) = line_map.line_col(t.span.start);
+    syntax(l, c, format!("invalid MPP target {:?}", t.text), line_map)
+}
+
+/// Parse a measurement-record lookback target `rec[-k]` into its lookback
+/// distance `k >= 1`. Returns `None` for anything that isn't a well-formed,
+/// strictly-negative record reference (so `rec[0]`, `rec[1]`, `rec[]` and
+/// non-`rec` text all fall through to the caller's error handling).
+fn parse_rec(text: &str) -> Option<usize> {
+    let inner = text.strip_prefix("rec[")?.strip_suffix(']')?;
+    let magnitude = inner.strip_prefix('-')?;
+    match magnitude.parse::<usize>() {
+        Ok(k) if k >= 1 => Some(k),
+        _ => None,
+    }
+}
+
+/// Convert validated targets to bare qubit indices. Only gate targets may be
+/// `rec[...]`; every other instruction's targets were validated as qubits in
+/// [`validate_node`], so this never drops information for them.
+fn qubit_indices(targets: Vec<Target>) -> Vec<usize> {
+    targets
+        .into_iter()
+        .map(|t| {
+            t.as_qubit()
+                .expect("non-gate targets are validated as plain qubits")
+        })
+        .collect()
+}
+
 fn build_instruction(
     entry: TableEntry,
     tags: Vec<Tag>,
     args: Vec<f64>,
-    targets: Vec<usize>,
+    targets: Vec<Target>,
     line: usize,
 ) -> RawInstruction {
     match entry.kind {
@@ -238,26 +325,26 @@ fn build_instruction(
             name,
             tags,
             args,
-            targets,
+            targets: qubit_indices(targets),
             line,
         },
         EntryKind::Measure(name) => RawInstruction::Measure {
             name,
             tags,
             args,
-            targets,
+            targets: qubit_indices(targets),
             line,
         },
         EntryKind::Annotation(kind) => RawInstruction::Annotation {
             kind,
             args,
-            targets,
+            targets: qubit_indices(targets),
             line,
         },
         EntryKind::MPad => RawInstruction::MPad {
             tags,
             prob: args.into_iter().next(),
-            bits: targets,
+            bits: qubit_indices(targets),
             line,
         },
     }
@@ -266,7 +353,7 @@ fn build_instruction(
 #[cfg(test)]
 mod validate_tests {
     use super::*;
-    use crate::ast::{GateName, MeasureName, NoiseName, RawInstruction, TagParam};
+    use crate::ast::{GateName, MeasureName, NoiseName, RawInstruction, TagParam, Target};
     use chumsky::span::SimpleSpan;
     use std::sync::Arc;
 
@@ -448,7 +535,7 @@ mod validate_tests {
                         name: GateName::H,
                         targets,
                         ..
-                    } if targets == &vec![0]
+                    } if targets == &vec![Target::Qubit(0)]
                 ));
             }
             other => panic!("{other:?}"),

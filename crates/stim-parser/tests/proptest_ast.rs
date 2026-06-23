@@ -16,7 +16,9 @@
 //! numbers reflect the printed layout, not the generated one.
 
 use proptest::prelude::*;
-use stim_parser::ast::{AnnotationKind, GateName, MeasureName, NoiseName, Program, RawInstruction};
+use stim_parser::ast::{
+    AnnotationKind, GateName, MeasureName, NoiseName, Program, RawInstruction, Target,
+};
 use stim_parser::extended::parse_extended;
 use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 use stim_parser::prelude::parse;
@@ -102,7 +104,7 @@ fn gate_instr() -> impl Strategy<Value = RawInstruction> {
                 name,
                 tags: vec![],
                 args: vec![],
-                targets,
+                targets: targets.into_iter().map(Target::Qubit).collect(),
                 line: 0,
             }
         }),
@@ -111,7 +113,7 @@ fn gate_instr() -> impl Strategy<Value = RawInstruction> {
                 name,
                 tags: vec![],
                 args: vec![],
-                targets,
+                targets: targets.into_iter().map(Target::Qubit).collect(),
                 line: 0,
             }
         }),
@@ -253,7 +255,7 @@ fn ext_gate_instr() -> impl Strategy<Value = RawPassthrough> {
                 name,
                 tags: vec![],
                 args: vec![],
-                targets,
+                targets: targets.into_iter().map(Target::Qubit).collect(),
                 line: 0,
             }
         }),
@@ -262,7 +264,7 @@ fn ext_gate_instr() -> impl Strategy<Value = RawPassthrough> {
                 name,
                 tags: vec![],
                 args: vec![],
-                targets,
+                targets: targets.into_iter().map(Target::Qubit).collect(),
                 line: 0,
             }
         }),
@@ -443,7 +445,8 @@ fn zero_lines_raw(instrs: &mut [RawInstruction]) {
             | RawInstruction::Noise { line, .. }
             | RawInstruction::Measure { line, .. }
             | RawInstruction::Annotation { line, .. }
-            | RawInstruction::MPad { line, .. } => *line = 0,
+            | RawInstruction::MPad { line, .. }
+            | RawInstruction::Mpp { line, .. } => *line = 0,
             RawInstruction::Repeat { body, line, .. } => {
                 *line = 0;
                 zero_lines_raw(body);
@@ -471,7 +474,8 @@ fn zero_lines_ext(instrs: &mut [ExtendedInstruction]) {
             | ExtendedInstruction::U3 { line, .. }
             | ExtendedInstruction::Loss { line, .. }
             | ExtendedInstruction::CorrelatedLoss { line, .. }
-            | ExtendedInstruction::MPad { line, .. } => *line = 0,
+            | ExtendedInstruction::MPad { line, .. }
+            | ExtendedInstruction::Mpp { line, .. } => *line = 0,
             ExtendedInstruction::Repeat { body, line, .. } => {
                 *line = 0;
                 zero_lines_ext(body);

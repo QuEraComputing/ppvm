@@ -4,4 +4,5 @@
 pub mod ast;
 pub mod diagnostics;
 pub mod instructions;
+pub mod pipeline;
 pub(crate) mod syntax;

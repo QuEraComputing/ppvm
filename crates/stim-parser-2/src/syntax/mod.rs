@@ -7,10 +7,10 @@
 mod grammar;
 mod raw;
 
-#[expect(unused_imports, reason = "called by pipeline in Task 11")]
 pub(crate) use grammar::program_parser;
-#[expect(unused_imports, reason = "used by grammar/pipeline in Tasks 10-11")]
-pub(crate) use raw::{RawSyntaxNode, RawSyntaxTree, RawTarget};
+pub(crate) use raw::RawSyntaxTree;
+#[expect(unused_imports, reason = "consumed by validate transition in Task 12")]
+pub(crate) use raw::{RawSyntaxNode, RawTarget};
 
 /// Stack size for the dedicated parsing thread. The chumsky grammar is built
 /// around `recursive(...)`, which descends into REPEAT bodies via recursive

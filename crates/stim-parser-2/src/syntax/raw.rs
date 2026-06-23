@@ -9,10 +9,12 @@ use chumsky::span::SimpleSpan;
 
 use crate::ast::shared::Tag;
 
-#[expect(dead_code, reason = "used by grammar/pipeline in Tasks 10-11")]
 pub(crate) type RawSyntaxTree = Vec<RawSyntaxNode>;
 
-#[expect(dead_code, reason = "used by grammar/pipeline in Tasks 10-11")]
+#[expect(
+    dead_code,
+    reason = "fields consumed by validate transition in Task 12"
+)]
 #[derive(Debug, Clone)]
 pub(crate) enum RawSyntaxNode {
     Instruction {
@@ -29,7 +31,10 @@ pub(crate) enum RawSyntaxNode {
     },
 }
 
-#[expect(dead_code, reason = "used by grammar/pipeline in Tasks 10-11")]
+#[expect(
+    dead_code,
+    reason = "fields consumed by validate transition in Task 12"
+)]
 #[derive(Debug, Clone)]
 pub(crate) struct RawTarget {
     pub text: String,

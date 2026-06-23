@@ -7,12 +7,6 @@
 //! identifiers -> tags -> args -> targets -> instruction line -> REPEAT block ->
 //! program. Pure syntax; no table lookups.
 
-// All combinators are called by the pipeline wired in Task 11; until then
-// the library entry point does not reach them. The `#[cfg_attr(not(test), ...)]`
-// guard prevents a spurious "unfulfilled expectation" when the test harness
-// exercises these functions directly.
-#![cfg_attr(not(test), expect(dead_code, reason = "wired to pipeline in Task 11"))]
-
 use chumsky::error::Rich;
 use chumsky::extra;
 use chumsky::prelude::*;

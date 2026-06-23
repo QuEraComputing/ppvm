@@ -30,3 +30,7 @@ bnum = { version = "0.13", features = ["numtraits"] }
 [[bench]]
 name = "tableau-msd-stim"
 harness = false
+
+[[bench]]
+name = "stim-circuits"
+harness = false

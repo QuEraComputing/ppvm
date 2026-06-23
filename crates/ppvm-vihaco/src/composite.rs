@@ -84,7 +84,7 @@ pub struct PPVM {
 pub enum PPVMEffect {
     Step(StepOutcome),
     Stdout(StdoutEffect),
-    Circuit(CircuitEffect),
+    Circuit(Box<CircuitEffect>),
     Measurement(MeasurementEffect),
     Trace(TraceEffect),
 }

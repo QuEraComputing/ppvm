@@ -165,10 +165,13 @@ impl Resolve<PPVMInstruction, PPVMHeader> for PPVMResolver {
             patch.apply(&mut code, idx, &labels)?;
         }
 
-        let mut module = Module::default();
-        module.code = code;
-        module.strings = std::mem::take(&mut self.strings);
-        module.extra = info;
+        let strings = std::mem::take(&mut self.strings);
+        let module = Module {
+            code,
+            strings,
+            extra: info,
+            ..Default::default()
+        };
         Ok(module)
     }
 }

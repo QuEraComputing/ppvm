@@ -24,15 +24,20 @@ const CASES: &[(&str, Expect)] = &[
     ("repeat_block.stim", Expect::Ok),
     ("depolarize_smoke.stim", Expect::Ok),
     ("swap_unsupported.stim", Expect::ExecUnsupported("SWAP")),
-    ("mx_unsupported.stim", Expect::ExecUnsupported("MX")),
+    // X/Y-basis measurement runs via basis-change decomposition.
+    ("mx_basis.stim", Expect::Ok),
+    // Two-qubit Pauli-product measurement is still unsupported.
+    ("mzz_unsupported.stim", Expect::ExecUnsupported("MZZ")),
     // The file uses `rec[-k]` targets on `DETECTOR` / `OBSERVABLE_INCLUDE`.
-    // Phase-1 cannot represent measurement-record targets, but the parser
-    // tolerates non-numeric tokens on annotations (which are no-ops in our
-    // pipeline) so the file parses, validates, and executes cleanly.
+    // The parser tolerates non-numeric tokens on annotations (which are no-ops
+    // in our pipeline) so the file parses, validates, and executes cleanly.
     ("repetition_code_d3_r3.stim", Expect::Ok),
-    // `CX rec[-1] 1` is classically-controlled feedback. Gates do not
-    // tolerate non-numeric targets, so the parser rejects this file.
-    ("feedback_cx_unsupported.stim", Expect::ParseFails),
+    // `CX rec[-1] 1` is classically-controlled feedback: the control reads the
+    // measurement record, so the file now parses and executes.
+    ("feedback_cx.stim", Expect::Ok),
+    // Inverted measurement-result targets (`M !0`) are not yet supported, so
+    // the non-numeric target is rejected at parse time.
+    ("inverted_target_unsupported.stim", Expect::ParseFails),
 ];
 
 fn data_dir() -> PathBuf {

@@ -14,7 +14,7 @@ use line_map::LineMap;
 pub mod prelude {
     pub use crate::ast::{
         AnnotationKind, GateName, MeasureName, NoiseName, ParseError, Program, RawInstruction, Tag,
-        TagParam,
+        TagParam, Target,
     };
     pub use crate::extended::{
         Axis, ExtendedInstruction, ExtendedParseError, ExtendedProgram, RawPassthrough,

@@ -10,7 +10,7 @@
 
 use std::fmt;
 
-use crate::ast::{Program, RawInstruction, Tag, TagParam};
+use crate::ast::{Program, RawInstruction, Tag, TagParam, Target};
 use crate::extended::ast::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 
 const INDENT: &str = "    ";
@@ -69,7 +69,7 @@ fn fmt_raw(i: &RawInstruction, f: &mut fmt::Formatter<'_>, depth: usize) -> fmt:
             f.write_str(name.canonical_name())?;
             write_tags(f, tags)?;
             write_args(f, args)?;
-            write_usize_targets(f, targets)?;
+            write_targets(f, targets)?;
         }
         RawInstruction::Noise {
             name,
@@ -142,7 +142,7 @@ fn fmt_raw_passthrough(
             f.write_str(name.canonical_name())?;
             write_tags(f, tags)?;
             write_args(f, args)?;
-            write_usize_targets(f, targets)?;
+            write_targets(f, targets)?;
         }
         RawPassthrough::Noise {
             name,
@@ -314,6 +314,18 @@ fn write_args(f: &mut fmt::Formatter<'_>, args: &[f64]) -> fmt::Result {
 fn write_usize_targets(f: &mut fmt::Formatter<'_>, targets: &[usize]) -> fmt::Result {
     for t in targets {
         write!(f, " {t}")?;
+    }
+    Ok(())
+}
+
+/// Print gate targets, rendering measurement-record controls as `rec[-k]`
+/// so the output round-trips back through the parser.
+fn write_targets(f: &mut fmt::Formatter<'_>, targets: &[Target]) -> fmt::Result {
+    for t in targets {
+        match t {
+            Target::Qubit(q) => write!(f, " {q}")?,
+            Target::Rec(k) => write!(f, " rec[-{k}]")?,
+        }
     }
     Ok(())
 }

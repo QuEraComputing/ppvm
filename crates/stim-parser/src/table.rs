@@ -93,6 +93,8 @@ const TABLE: &[(&str, TableEntry)] = &[
     // --- Gates: reset ---
     ("R", gate(G::Reset, NoArgs, AtLeastOne)),
     ("RZ", gate(G::ResetZ, NoArgs, AtLeastOne)),
+    ("RX", gate(G::ResetX, NoArgs, AtLeastOne)),
+    ("RY", gate(G::ResetY, NoArgs, AtLeastOne)),
     // --- Gates: single-qubit Clifford / paulis ---
     ("X", gate(G::X, NoArgs, AtLeastOne)),
     ("Y", gate(G::Y, NoArgs, AtLeastOne)),

@@ -283,3 +283,57 @@ def test_sample_many_qubits():
     prog = StimProgram.parse(stim_str)
     result = sample_stim(prog, n_qubits=100, num_shots=1, seed=0)
     assert result == [[MeasurementResult.ONE] * 100]
+
+
+# --- X/Y-basis measurement & reset ---
+
+
+def test_run_stim_rx_then_mx_reads_zero():
+    # RX prepares |+>, the +1 eigenstate of X.
+    tab = GeneralizedTableau(1)
+    results = tab.run(StimProgram.parse("RX 0\nMX 0"))
+    assert results == [MeasurementResult.ZERO]
+
+
+def test_run_stim_z_flips_x_basis_outcome():
+    # Z|+> = |->, the -1 eigenstate of X.
+    tab = GeneralizedTableau(1)
+    results = tab.run(StimProgram.parse("RX 0\nZ 0\nMX 0"))
+    assert results == [MeasurementResult.ONE]
+
+
+def test_run_stim_ry_then_my_reads_zero():
+    # RY prepares |i>, the +1 eigenstate of Y.
+    tab = GeneralizedTableau(1)
+    results = tab.run(StimProgram.parse("RY 0\nMY 0"))
+    assert results == [MeasurementResult.ZERO]
+
+
+def test_run_stim_mrx_resets_to_plus():
+    # MRX records the outcome and resets to |+>, so the next MX reads ZERO.
+    tab = GeneralizedTableau(1)
+    results = tab.run(StimProgram.parse("RX 0\nZ 0\nMRX 0\nMX 0"))
+    assert results == [MeasurementResult.ONE, MeasurementResult.ZERO]
+
+
+# --- measurement-record controlled feed-forward ---
+
+
+def test_run_stim_cx_rec_applies_when_bit_set():
+    # q0 measured as 1 -> CX rec[-1] 1 applies X to q1.
+    tab = GeneralizedTableau(2)
+    results = tab.run(StimProgram.parse("X 0\nM 0\nCX rec[-1] 1\nM 1"))
+    assert results == [MeasurementResult.ONE, MeasurementResult.ONE]
+
+
+def test_run_stim_cx_rec_noop_when_bit_clear():
+    # q0 measured as 0 -> CX rec[-1] 1 does nothing.
+    tab = GeneralizedTableau(2)
+    results = tab.run(StimProgram.parse("M 0\nCX rec[-1] 1\nM 1"))
+    assert results == [MeasurementResult.ZERO, MeasurementResult.ZERO]
+
+
+def test_run_stim_record_target_rejected():
+    # The Pauli target may never be a measurement record.
+    with pytest.raises(ValueError):
+        StimProgram.parse("M 0\nCX 1 rec[-1]")

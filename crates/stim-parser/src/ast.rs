@@ -17,13 +17,44 @@ pub struct Program {
     pub instructions: Vec<RawInstruction>,
 }
 
+/// A gate operand. Most operands are plain qubit indices, but the control
+/// of a classically-controlled gate — e.g. the `rec[-1]` in `CX rec[-1] 1` —
+/// is a measurement-record lookback rather than a qubit. Mirrors the qubit /
+/// record distinction Stim draws in its `GateTarget`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    /// A qubit index.
+    Qubit(usize),
+    /// A measurement-record lookback `rec[-k]`; stores `k >= 1` (the number
+    /// of measurements to count back from the most recent).
+    Rec(usize),
+}
+
+impl Target {
+    /// The qubit index, if this is a plain qubit target.
+    pub fn as_qubit(self) -> Option<usize> {
+        match self {
+            Target::Qubit(q) => Some(q),
+            Target::Rec(_) => None,
+        }
+    }
+}
+
+/// A qubit target compares equal to its bare index; a record target never
+/// does. Lets callers (and tests) match qubit targets against plain `usize`s.
+impl PartialEq<usize> for Target {
+    fn eq(&self, other: &usize) -> bool {
+        matches!(self, Target::Qubit(q) if q == other)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RawInstruction {
     Gate {
         name: GateName,
         tags: Vec<Tag>,
         args: Vec<f64>,
-        targets: Vec<usize>,
+        targets: Vec<Target>,
         line: usize,
     },
     Noise {
@@ -78,6 +109,9 @@ pub enum GateName {
     // Reset (treated as a gate so it parses with no args)
     Reset,
     ResetZ,
+    // X/Y-basis resets (prepare |+> / |i>)
+    ResetX,
+    ResetY,
     // Single-qubit Cliffords
     X,
     Y,
@@ -286,6 +320,8 @@ impl GateName {
         match self {
             GateName::Reset => "R",
             GateName::ResetZ => "RZ",
+            GateName::ResetX => "RX",
+            GateName::ResetY => "RY",
             GateName::X => "X",
             GateName::Y => "Y",
             GateName::Z => "Z",

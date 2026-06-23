@@ -11,6 +11,7 @@ use std::fmt::Debug;
 
 use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
+use smallvec::SmallVec;
 use stim_parser::ast::{GateName, MeasureName, NoiseName, PauliAxis, Target};
 use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 
@@ -25,14 +26,21 @@ fn qubit(t: Target) -> usize {
         .expect("non-control gate targets are validated as qubits by validate")
 }
 
+// Inline capacity for the gate-target buffers below. Sized so typical narrow
+// and moderate-width gate instructions stay on the stack; wider broadcasts
+// spill to the heap (same as a plain `Vec`), so this is never worse.
+const TARGETS_INLINE: usize = 16;
+
 /// Collect plain qubit targets, for the batched single-qubit gate paths.
-fn qubits(targets: &[Target]) -> Vec<usize> {
+/// Stack-allocates (no per-instruction heap alloc) for up to [`TARGETS_INLINE`]
+/// targets, since `*_many` takes a `&[usize]` and the source is `&[Target]`.
+fn qubits(targets: &[Target]) -> SmallVec<[usize; TARGETS_INLINE]> {
     targets.iter().map(|&t| qubit(t)).collect()
 }
 
 /// Collect (control, target) qubit pairs, for the batched two-qubit gate paths.
 /// Only valid when no target is a measurement record (see [`has_record_control`]).
-fn qubit_pairs(targets: &[Target]) -> Vec<(usize, usize)> {
+fn qubit_pairs(targets: &[Target]) -> SmallVec<[(usize, usize); TARGETS_INLINE / 2]> {
     targets
         .chunks_exact(2)
         .map(|p| (qubit(p[0]), qubit(p[1])))

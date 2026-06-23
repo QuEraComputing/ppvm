@@ -11,10 +11,106 @@ use std::fmt::Debug;
 
 use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
-use stim_parser::ast::{GateName, MeasureName, NoiseName};
+use smallvec::SmallVec;
+use stim_parser::ast::{GateName, MeasureName, NoiseName, PauliAxis, Target};
 use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 
 use crate::validate::{ExecError, validate};
+
+/// Unwrap a plain qubit target. The `validate` pass guarantees that only the
+/// control slot of a controlled Pauli may be a `rec[...]`, so every target
+/// reached here through a non-control path is a qubit.
+#[inline]
+fn qubit(t: Target) -> usize {
+    t.as_qubit()
+        .expect("non-control gate targets are validated as qubits by validate")
+}
+
+// Inline capacity for the gate-target buffers below. Sized so typical narrow
+// and moderate-width gate instructions stay on the stack; wider broadcasts
+// spill to the heap (same as a plain `Vec`), so this is never worse.
+const TARGETS_INLINE: usize = 16;
+
+/// Collect plain qubit targets, for the batched single-qubit gate paths.
+/// Stack-allocates (no per-instruction heap alloc) for up to [`TARGETS_INLINE`]
+/// targets, since `*_many` takes a `&[usize]` and the source is `&[Target]`.
+fn qubits(targets: &[Target]) -> SmallVec<[usize; TARGETS_INLINE]> {
+    targets.iter().map(|&t| qubit(t)).collect()
+}
+
+/// Collect (control, target) qubit pairs, for the batched two-qubit gate paths.
+/// Only valid when no target is a measurement record (see [`has_record_control`]).
+fn qubit_pairs(targets: &[Target]) -> SmallVec<[(usize, usize); TARGETS_INLINE / 2]> {
+    targets
+        .chunks_exact(2)
+        .map(|p| (qubit(p[0]), qubit(p[1])))
+        .collect()
+}
+
+/// Whether any target is a measurement-record control `rec[-k]`. Such a gate
+/// takes the per-pair feed-forward path rather than the batched fast path.
+fn has_record_control(targets: &[Target]) -> bool {
+    targets.iter().any(|t| matches!(t, Target::Rec(_)))
+}
+
+/// Resolve a measurement-record lookback `rec[-k]` against the running record.
+/// `k == 1` is the most recent measurement. A lost-qubit measurement (`None`)
+/// resolves to `false` (no feed-forward applied). An out-of-range lookback also
+/// resolves to `false`, but `validate` rejects those up front, so on a validated
+/// program the only `false`-from-missing case is a lost-qubit measurement.
+#[inline]
+fn record_bit(record: &[Option<bool>], k: usize) -> bool {
+    record
+        .len()
+        .checked_sub(k)
+        .and_then(|i| record.get(i).copied().flatten())
+        .unwrap_or(false)
+}
+
+/// Measure qubit `q` in the Z basis, reset it to |0>, and return the reported
+/// (readout-noise-flipped) outcome — the building block for `MR`/`MRX`/`MRY`.
+///
+/// The reset must act on the *true* (pre-flip) outcome, so this cannot delegate
+/// to `measure_noisy`; instead it applies the same `flip_with_prob` draw and
+/// overwrites the record entry with the reported value, so the measurement
+/// record matches the returned result exactly (consistent with `M`).
+fn measure_reset_z<T, I, C>(
+    tab: &mut GeneralizedTableau<T, I, C>,
+    q: usize,
+    noise: f64,
+) -> Option<bool>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+{
+    let true_outcome = tab.measure(q);
+    if true_outcome == Some(true) {
+        tab.x(q);
+    }
+    let recorded = true_outcome.map(|b| tab.flip_with_prob(b, noise));
+    tab.overwrite_last_measurement_record(recorded);
+    recorded
+}
 
 /// Validate and execute a parsed extended Stim program against a tableau,
 /// returning the per-measurement results in circuit order.
@@ -444,32 +540,84 @@ pub fn execute_validated<T, I, C>(
     for instr in instructions {
         match instr {
             ExtendedInstruction::Raw(RawPassthrough::Gate { name, targets, .. }) => match name {
-                GateName::Reset | GateName::ResetZ => targets.iter().for_each(|&q| tab.reset(q)),
-                GateName::X => tab.x_many(targets),
-                GateName::Y => tab.y_many(targets),
-                GateName::Z => tab.z_many(targets),
-                GateName::H | GateName::HXZ => tab.h_many(targets),
-                GateName::S | GateName::SqrtZ => tab.s_many(targets),
-                GateName::SDag | GateName::SqrtZDag => tab.s_dag_many(targets),
-                GateName::SqrtX => tab.sqrt_x_many(targets),
-                GateName::SqrtXDag => tab.sqrt_x_dag_many(targets),
-                GateName::SqrtY => tab.sqrt_y_many(targets),
-                GateName::SqrtYDag => tab.sqrt_y_dag_many(targets),
+                GateName::Reset | GateName::ResetZ => {
+                    targets.iter().for_each(|&t| tab.reset(qubit(t)));
+                }
+                // RX: reset to |+> (Z-basis reset, then rotate into the X basis).
+                GateName::ResetX => targets.iter().for_each(|&t| {
+                    let q = qubit(t);
+                    tab.reset(q);
+                    tab.h(q);
+                }),
+                // RY: reset to |i> (|0> -> |+> -> S|+> = |i>).
+                GateName::ResetY => targets.iter().for_each(|&t| {
+                    let q = qubit(t);
+                    tab.reset(q);
+                    tab.h(q);
+                    tab.s(q);
+                }),
+                GateName::X => tab.x_many(&qubits(targets)),
+                GateName::Y => tab.y_many(&qubits(targets)),
+                GateName::Z => tab.z_many(&qubits(targets)),
+                GateName::H | GateName::HXZ => tab.h_many(&qubits(targets)),
+                GateName::S | GateName::SqrtZ => tab.s_many(&qubits(targets)),
+                GateName::SDag | GateName::SqrtZDag => tab.s_dag_many(&qubits(targets)),
+                GateName::SqrtX => tab.sqrt_x_many(&qubits(targets)),
+                GateName::SqrtXDag => tab.sqrt_x_dag_many(&qubits(targets)),
+                GateName::SqrtY => tab.sqrt_y_many(&qubits(targets)),
+                GateName::SqrtYDag => tab.sqrt_y_dag_many(&qubits(targets)),
                 GateName::Identity => {}
+                // Controlled Paulis. The control slot may be a measurement record
+                // `rec[-k]` (classical feed-forward): apply the target Pauli iff
+                // the recorded bit is 1, exactly as Stim's `single_cx`/`single_cy`.
+                // With no record control present, keep the batched fast path.
                 GateName::CX | GateName::ZCX | GateName::CNot => {
-                    let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(targets.len() / 2);
-                    pairs.extend(targets.chunks_exact(2).map(|p| (p[0], p[1])));
-                    tab.cnot_many(&pairs);
+                    if has_record_control(targets) {
+                        for p in targets.chunks_exact(2) {
+                            match p[0] {
+                                Target::Qubit(c) => tab.cnot(c, qubit(p[1])),
+                                Target::Rec(k) => {
+                                    if record_bit(&tab.measurement_record, k) {
+                                        tab.x(qubit(p[1]));
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        tab.cnot_many(&qubit_pairs(targets));
+                    }
                 }
                 GateName::CY | GateName::ZCY => {
-                    let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(targets.len() / 2);
-                    pairs.extend(targets.chunks_exact(2).map(|p| (p[0], p[1])));
-                    tab.cy_many(&pairs);
+                    if has_record_control(targets) {
+                        for p in targets.chunks_exact(2) {
+                            match p[0] {
+                                Target::Qubit(c) => tab.cy(c, qubit(p[1])),
+                                Target::Rec(k) => {
+                                    if record_bit(&tab.measurement_record, k) {
+                                        tab.y(qubit(p[1]));
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        tab.cy_many(&qubit_pairs(targets));
+                    }
                 }
                 GateName::CZ | GateName::ZCZ => {
-                    let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(targets.len() / 2);
-                    pairs.extend(targets.chunks_exact(2).map(|p| (p[0], p[1])));
-                    tab.cz_many(&pairs);
+                    if has_record_control(targets) {
+                        for p in targets.chunks_exact(2) {
+                            match p[0] {
+                                Target::Qubit(c) => tab.cz(c, qubit(p[1])),
+                                Target::Rec(k) => {
+                                    if record_bit(&tab.measurement_record, k) {
+                                        tab.z(qubit(p[1]));
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        tab.cz_many(&qubit_pairs(targets));
+                    }
                 }
                 GateName::Swap
                 | GateName::ISwap
@@ -490,6 +638,9 @@ pub fn execute_validated<T, I, C>(
                 | GateName::HXY
                 | GateName::HYZ => {
                     unreachable!("unsupported gate {name:?} should have been rejected by validate")
+                }
+                GateName::T | GateName::TDag => {
+                    unreachable!("T/T_DAG are lowered to ExtendedInstruction::T/TDag by interpret")
                 }
             },
             ExtendedInstruction::T { targets, .. } => targets.iter().for_each(|&q| tab.t(q)),
@@ -610,26 +761,51 @@ pub fn execute_validated<T, I, C>(
                     // `flip_with_prob`, so the RNG-draw shape matches MZ exactly.
                     MeasureName::MR => {
                         for &q in targets {
-                            let true_outcome = tab.measure(q);
-                            if true_outcome == Some(true) {
-                                tab.x(q);
-                            }
-                            let recorded = true_outcome.map(|b| tab.flip_with_prob(b, noise));
-                            // `measure` recorded the true (pre-flip) outcome; overwrite it
-                            // with the reported value so the measurement record matches the
-                            // returned result, consistent with `measure_noisy`/`M`.
-                            tab.overwrite_last_measurement_record(recorded);
-                            results.push(recorded);
+                            results.push(measure_reset_z(tab, q, noise));
                         }
                     }
-                    MeasureName::MX
-                    | MeasureName::MY
-                    | MeasureName::MRX
-                    | MeasureName::MRY
-                    | MeasureName::MXX
-                    | MeasureName::MYY
-                    | MeasureName::MZZ
-                    | MeasureName::MPP => {
+                    // X/Y-basis measurements via Stim's basis-change decomposition:
+                    // conjugate so the measured axis maps to Z (`MX = H M H`,
+                    // `MY = S_DAG H M H S`), do the Z-basis measurement, then
+                    // conjugate back. Reuses `measure_noisy` so the readout-flip /
+                    // RNG-draw shape matches `M` exactly.
+                    MeasureName::MX => {
+                        for &q in targets {
+                            tab.h(q);
+                            results.push(tab.measure_noisy(q, noise));
+                            tab.h(q);
+                        }
+                    }
+                    MeasureName::MY => {
+                        for &q in targets {
+                            tab.s_dag(q);
+                            tab.h(q);
+                            results.push(tab.measure_noisy(q, noise));
+                            tab.h(q);
+                            tab.s(q);
+                        }
+                    }
+                    // MRX/MRY add a reset to the measured eigenstate
+                    // (`MRX = H M R H`, `MRY = S_DAG H M R H S`). The reset must
+                    // use the *true* outcome, so it mirrors the MR arm rather than
+                    // delegating to `measure_noisy`.
+                    MeasureName::MRX => {
+                        for &q in targets {
+                            tab.h(q);
+                            results.push(measure_reset_z(tab, q, noise));
+                            tab.h(q);
+                        }
+                    }
+                    MeasureName::MRY => {
+                        for &q in targets {
+                            tab.s_dag(q);
+                            tab.h(q);
+                            results.push(measure_reset_z(tab, q, noise));
+                            tab.h(q);
+                            tab.s(q);
+                        }
+                    }
+                    MeasureName::MXX | MeasureName::MYY | MeasureName::MZZ | MeasureName::MPP => {
                         unreachable!(
                             "unsupported measure {name:?} should have been rejected by validate"
                         )
@@ -642,6 +818,45 @@ pub fn execute_validated<T, I, C>(
                     let recorded = Some(tab.flip_with_prob(bit, noise));
                     tab.append_measurement_record(recorded);
                     results.push(recorded);
+                }
+            }
+            // MPP: measure each Pauli product non-destructively via Stim's
+            // basis-change + CX-ladder gadget. Each factor's axis is rotated to
+            // Z (`X = H · Z · H`, `Y = (S H) · Z · (H S_DAG)`), a CX ladder onto
+            // the first qubit maps the product `Z_0 Z_1 ... Z_{m-1}` to a single
+            // `Z_0`, that qubit is measured, then the ladder and basis changes
+            // are undone so only the product operator is projected.
+            ExtendedInstruction::Mpp { products, args, .. } => {
+                let noise = args.first().copied().unwrap_or(0.0);
+                for product in products {
+                    for f in product {
+                        match f.axis {
+                            PauliAxis::X => tab.h(f.qubit),
+                            PauliAxis::Y => {
+                                tab.s_dag(f.qubit);
+                                tab.h(f.qubit);
+                            }
+                            PauliAxis::Z => {}
+                        }
+                    }
+                    let q0 = product[0].qubit;
+                    for f in &product[1..] {
+                        tab.cnot(f.qubit, q0);
+                    }
+                    results.push(tab.measure_noisy(q0, noise));
+                    for f in product[1..].iter().rev() {
+                        tab.cnot(f.qubit, q0);
+                    }
+                    for f in product {
+                        match f.axis {
+                            PauliAxis::X => tab.h(f.qubit),
+                            PauliAxis::Y => {
+                                tab.h(f.qubit);
+                                tab.s(f.qubit);
+                            }
+                            PauliAxis::Z => {}
+                        }
+                    }
                 }
             }
             ExtendedInstruction::Raw(RawPassthrough::Annotation { .. }) => { /* no-op */ }

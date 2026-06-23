@@ -3,7 +3,7 @@
 
 //! Post-pass interpretation from the vanilla Stim AST to the extended AST.
 
-use crate::ast::{GateName, NoiseName, Program, RawInstruction, Tag, TagParam};
+use crate::ast::{GateName, NoiseName, Program, RawInstruction, Tag, TagParam, Target};
 use crate::extended::ast::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 use crate::extended::parser::ExtendedParseError;
 
@@ -74,6 +74,17 @@ fn interpret_one(raw: RawInstruction) -> Result<ExtendedInstruction, ExtendedPar
             bits: convert_mpad_bits(&bits, line)?,
             line,
         }),
+        RawInstruction::Mpp {
+            tags,
+            args,
+            products,
+            line,
+        } => Ok(ExtendedInstruction::Mpp {
+            tags,
+            args,
+            products,
+            line,
+        }),
         RawInstruction::Repeat { count, body, line } => {
             let mut inner = Vec::with_capacity(body.len());
             interpret_slice(body, &mut inner)?;
@@ -90,12 +101,21 @@ fn interpret_gate(
     name: GateName,
     tags: Vec<Tag>,
     args: Vec<f64>,
-    targets: Vec<usize>,
+    targets: Vec<Target>,
     line: usize,
 ) -> Result<ExtendedInstruction, ExtendedParseError> {
     use GateName::*;
 
     match name {
+        // Native T / T_DAG mnemonics lower to the same sugar as `S[T]` / `S_DAG[T]`.
+        T => Ok(ExtendedInstruction::T {
+            targets: qubit_targets(targets, name.canonical_name(), line)?,
+            line,
+        }),
+        TDag => Ok(ExtendedInstruction::TDag {
+            targets: qubit_targets(targets, name.canonical_name(), line)?,
+            line,
+        }),
         S | SDag => match tags.as_slice() {
             [] => Ok(ExtendedInstruction::Raw(RawPassthrough::Gate {
                 name,
@@ -106,6 +126,7 @@ fn interpret_gate(
             })),
             [t] if t.name == "T" => {
                 require_no_params(t, name.canonical_name(), line)?;
+                let targets = qubit_targets(targets, name.canonical_name(), line)?;
                 Ok(if matches!(name, S) {
                     ExtendedInstruction::T { targets, line }
                 } else {
@@ -133,7 +154,7 @@ fn interpret_gate(
                 targets,
                 line,
             })),
-            [t] => interpret_identity_tag(t, targets, line),
+            [t] => interpret_identity_tag(t, qubit_targets(targets, "I", line)?, line),
             _ => Err(invalid_tag(
                 tags[0].name.clone(),
                 "I",
@@ -313,6 +334,28 @@ fn convert_mpad_bits(bits: &[usize], line: usize) -> Result<Vec<bool>, ExtendedP
         }
     }
     Ok(out)
+}
+
+/// Lower gate targets to bare qubit indices for the extended-dialect sugar
+/// variants (`T`, rotations, `U3`). Those gates only ever take qubit targets;
+/// only the controlled Clifford gates carry record controls. The grammar still
+/// accepts `rec[-k]` on any gate, so reject a record target here rather than
+/// panicking — `parse_extended("T rec[-1]")` must surface a parse error.
+fn qubit_targets(
+    targets: Vec<Target>,
+    instruction: &str,
+    line: usize,
+) -> Result<Vec<usize>, ExtendedParseError> {
+    targets
+        .into_iter()
+        .map(|t| {
+            t.as_qubit()
+                .ok_or_else(|| ExtendedParseError::RecordTargetNotAllowed {
+                    instruction: instruction.to_string(),
+                    line,
+                })
+        })
+        .collect()
 }
 
 fn pair_targets(targets: &[usize]) -> Vec<(usize, usize)> {

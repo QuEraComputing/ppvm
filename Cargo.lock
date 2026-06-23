@@ -984,6 +984,7 @@ dependencies = [
  "ppvm-pauli-sum",
  "ppvm-tableau",
  "rayon",
+ "smallvec",
  "stim-parser",
  "thiserror",
 ]

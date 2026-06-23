@@ -24,6 +24,11 @@ pub enum ExtendedParseError {
         index: usize,
         value: usize,
     },
+    #[error(
+        "'{instruction}' at line {line} does not accept a measurement-record target rec[-k]; \
+         only the control slot of CX/CNOT, CY and CZ may be a record"
+    )]
+    RecordTargetNotAllowed { instruction: String, line: usize },
 }
 
 pub fn parse_extended(src: &str) -> Result<ExtendedProgram, ExtendedParseError> {

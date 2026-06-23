@@ -85,16 +85,20 @@ jobs:
       - name: Run Python tests
         run: uv run --project ppvm-python --group dev pytest ppvm-python/test/ docs/examples/
 
-  # Verify the workspace and the PyO3 extension compile, link, and test on all
-  # three desktop OSes. The deep test suites above run on Linux only; this job
-  # is the cross-platform compilation/linking gate.
-  cross-platform:
-    name: Build (${{ matrix.os }})
-    needs: pre-commit
+  # The pure-Rust crates are platform-agnostic and fully verified on Linux by
+  # the jobs above. The PyO3 extension is the only OS-sensitive artifact (macOS
+  # `-undefined dynamic_lookup`, Windows `python3.lib`), so it is the only thing
+  # rebuilt on other OSes — and building it via maturin compiles the entire
+  # crate tree on that OS as a side effect, so a cross-OS compile regression
+  # still surfaces here. `needs:` the Linux test jobs so macOS/Windows runners
+  # only spin up once Linux is green (no point paying for them otherwise).
+  extension-cross-platform:
+    name: Extension (${{ matrix.os }})
+    needs: [rust-tests, python-tests]
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -103,25 +107,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # Compiles every crate and target (lib, tests, benches, examples) without
-      # linking — the portable "does it build" gate, identical on each OS.
-      - name: Check the workspace compiles
-        run: cargo check --workspace --all-targets
-
-      # Links the cdylib too, which exercises the macOS `-undefined
-      # dynamic_lookup` flag from ppvm-python-native's build.rs. Skipped on
-      # Windows, where linking the extension needs python3.lib — that path is
-      # covered by the maturin build below instead.
-      - name: Build the workspace
-        if: runner.os != 'Windows'
-        run: cargo build --workspace
-
       - uses: astral-sh/setup-uv@v5
 
-      # maturin links the abi3 extension the per-OS way (dynamic_lookup on
-      # macOS, python3.lib on Windows); pytest confirms it imports and runs.
-      - name: Build the extension via maturin
+      # Compiles ppvm-python-native and its whole dependency tree, then links
+      # the abi3 extension the per-OS way (maturin handles dynamic_lookup /
+      # python3.lib for us).
+      - name: Build the extension (maturin via uv)
         run: uv sync --project ppvm-python --group dev
 
-      - name: Run Python tests
+      - name: Run the extension's Python tests
         run: uv run --project ppvm-python --group dev pytest ppvm-python/test/

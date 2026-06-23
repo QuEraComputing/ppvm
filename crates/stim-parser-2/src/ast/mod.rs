@@ -6,3 +6,6 @@ pub use shared::*;
 
 pub mod vanilla;
 pub use vanilla::{Instruction, Program};
+
+pub mod extended;
+pub use extended::{ExtendedInstruction, ExtendedProgram};

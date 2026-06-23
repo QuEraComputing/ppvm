@@ -109,6 +109,8 @@ const TABLE: &[(&str, TableEntry)] = &[
     ("SQRT_X_DAG", gate(G::SqrtXDag, NoArgs, AtLeastOne)),
     ("SQRT_Y", gate(G::SqrtY, NoArgs, AtLeastOne)),
     ("SQRT_Y_DAG", gate(G::SqrtYDag, NoArgs, AtLeastOne)),
+    ("T", gate(G::T, NoArgs, AtLeastOne)),
+    ("T_DAG", gate(G::TDag, NoArgs, AtLeastOne)),
     ("I", gate(G::Identity, NoArgs, AtLeastOne)),
     // --- Gates: two-qubit Clifford ---
     ("CX", gate(G::CX, NoArgs, Pairs)),

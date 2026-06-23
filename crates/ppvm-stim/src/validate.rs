@@ -49,6 +49,11 @@ fn validate_slice(instructions: &[ExtendedInstruction]) -> Result<(), ExecError>
                     check_probability(p, name.canonical_name(), *line)?;
                 }
             }
+            ExtendedInstruction::Mpp { args, line, .. } => {
+                if let Some(&p) = args.first() {
+                    check_probability(p, "MPP", *line)?;
+                }
+            }
             ExtendedInstruction::Repeat { body, .. } => validate_slice(body)?,
             ExtendedInstruction::Raw(RawPassthrough::Annotation { .. })
             | ExtendedInstruction::T { .. }
@@ -71,8 +76,8 @@ fn check_gate_supported(name: GateName, line: usize) -> Result<(), ExecError> {
     use GateName::*;
     match name {
         Reset | ResetZ | ResetX | ResetY | X | Y | Z | H | HXZ | S | SqrtZ | SDag | SqrtZDag
-        | SqrtX | SqrtXDag | SqrtY | SqrtYDag | Identity | CX | ZCX | CNot | CY | ZCY | CZ
-        | ZCZ => Ok(()),
+        | SqrtX | SqrtXDag | SqrtY | SqrtYDag | T | TDag | Identity | CX | ZCX | CNot | CY
+        | ZCY | CZ | ZCZ => Ok(()),
         Swap | ISwap | ISwapDag | SqrtXX | SqrtYY | SqrtZZ | CXSwap | SwapCX | XCX | XCY | XCZ
         | YCX | YCY | YCZ | CXYZ | CZYX | HXY | HYZ => Err(ExecError::Unsupported {
             name: name.canonical_name().to_string(),

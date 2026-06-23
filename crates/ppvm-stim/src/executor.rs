@@ -11,7 +11,7 @@ use std::fmt::Debug;
 
 use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
-use stim_parser::ast::{GateName, MeasureName, NoiseName, Target};
+use stim_parser::ast::{GateName, MeasureName, NoiseName, PauliAxis, Target};
 use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 
 use crate::validate::{ExecError, validate};
@@ -629,6 +629,9 @@ pub fn execute_validated<T, I, C>(
                 | GateName::HYZ => {
                     unreachable!("unsupported gate {name:?} should have been rejected by validate")
                 }
+                GateName::T | GateName::TDag => {
+                    unreachable!("T/T_DAG are lowered to ExtendedInstruction::T/TDag by interpret")
+                }
             },
             ExtendedInstruction::T { targets, .. } => targets.iter().for_each(|&q| tab.t(q)),
             ExtendedInstruction::TDag { targets, .. } => {
@@ -805,6 +808,45 @@ pub fn execute_validated<T, I, C>(
                     let recorded = Some(tab.flip_with_prob(bit, noise));
                     tab.append_measurement_record(recorded);
                     results.push(recorded);
+                }
+            }
+            // MPP: measure each Pauli product non-destructively via Stim's
+            // basis-change + CX-ladder gadget. Each factor's axis is rotated to
+            // Z (`X = H · Z · H`, `Y = (S H) · Z · (H S_DAG)`), a CX ladder onto
+            // the first qubit maps the product `Z_0 Z_1 ... Z_{m-1}` to a single
+            // `Z_0`, that qubit is measured, then the ladder and basis changes
+            // are undone so only the product operator is projected.
+            ExtendedInstruction::Mpp { products, args, .. } => {
+                let noise = args.first().copied().unwrap_or(0.0);
+                for product in products {
+                    for f in product {
+                        match f.axis {
+                            PauliAxis::X => tab.h(f.qubit),
+                            PauliAxis::Y => {
+                                tab.s_dag(f.qubit);
+                                tab.h(f.qubit);
+                            }
+                            PauliAxis::Z => {}
+                        }
+                    }
+                    let q0 = product[0].qubit;
+                    for f in &product[1..] {
+                        tab.cnot(f.qubit, q0);
+                    }
+                    results.push(tab.measure_noisy(q0, noise));
+                    for f in product[1..].iter().rev() {
+                        tab.cnot(f.qubit, q0);
+                    }
+                    for f in product {
+                        match f.axis {
+                            PauliAxis::X => tab.h(f.qubit),
+                            PauliAxis::Y => {
+                                tab.h(f.qubit);
+                                tab.s(f.qubit);
+                            }
+                            PauliAxis::Z => {}
+                        }
+                    }
                 }
             }
             ExtendedInstruction::Raw(RawPassthrough::Annotation { .. }) => { /* no-op */ }

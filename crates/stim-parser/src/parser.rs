@@ -4,7 +4,8 @@
 use std::sync::Arc;
 
 use crate::ast::{
-    ArgCount, ParseError, Program, RawInstruction, SyntaxError, Tag, Target, TargetArity,
+    ArgCount, MeasureName, ParseError, PauliAxis, PauliFactor, Program, RawInstruction,
+    SyntaxError, Tag, Target, TargetArity,
 };
 use crate::grammar;
 use crate::line_map::LineMap;
@@ -144,6 +145,27 @@ fn validate_node(
             let target_rule = entry.targets;
             let canonical = entry.canonical();
 
+            // MPP carries Pauli-product targets (`X0*Y1*Z2`), not qubit indices,
+            // so it parses on a dedicated path rather than the qubit/record loop.
+            if matches!(entry.kind, EntryKind::Measure(MeasureName::MPP)) {
+                let products = parse_mpp_products(&targets, line_map)?;
+                check_arg_count(arg_rule, args.len(), canonical, line)?;
+                if products.is_empty() {
+                    return Err(ParseError::TargetCount {
+                        name: canonical.to_string(),
+                        divisor: 1,
+                        found: 0,
+                        line,
+                    });
+                }
+                return Ok(RawInstruction::Mpp {
+                    tags,
+                    args,
+                    products,
+                    line,
+                });
+            }
+
             let is_annotation = matches!(entry.kind, EntryKind::Annotation(_));
             // Only gates accept measurement-record controls (`rec[-k]`), as in
             // `CX rec[-1] 1`. For every other instruction a `rec[...]` target is
@@ -173,36 +195,7 @@ fn validate_node(
                 ));
             }
 
-            let skip_arg_validation = matches!(arg_rule, ArgCount::Deferred | ArgCount::Any);
-            if !skip_arg_validation {
-                match arg_rule {
-                    ArgCount::None if !args.is_empty() => {
-                        return Err(ParseError::ArgCount {
-                            name: canonical.to_string(),
-                            expected: 0,
-                            found: args.len(),
-                            line,
-                        });
-                    }
-                    ArgCount::Exact(n) if args.len() != n => {
-                        return Err(ParseError::ArgCount {
-                            name: canonical.to_string(),
-                            expected: n,
-                            found: args.len(),
-                            line,
-                        });
-                    }
-                    ArgCount::Optional(n) if !args.is_empty() && args.len() != n => {
-                        return Err(ParseError::ArgCount {
-                            name: canonical.to_string(),
-                            expected: n,
-                            found: args.len(),
-                            line,
-                        });
-                    }
-                    _ => {}
-                }
-            }
+            check_arg_count(arg_rule, args.len(), canonical, line)?;
 
             let divisor = match target_rule {
                 TargetArity::Any => None,
@@ -230,6 +223,61 @@ fn validate_node(
             Ok(RawInstruction::Repeat { count, body, line })
         }
     }
+}
+
+/// Validate an instruction's argument count against its table rule.
+fn check_arg_count(
+    arg_rule: ArgCount,
+    found: usize,
+    canonical: &str,
+    line: usize,
+) -> Result<(), ParseError> {
+    let expected = match arg_rule {
+        ArgCount::Deferred | ArgCount::Any => return Ok(()),
+        ArgCount::None if found != 0 => 0,
+        ArgCount::Exact(n) if found != n => n,
+        ArgCount::Optional(n) if found != 0 && found != n => n,
+        _ => return Ok(()),
+    };
+    Err(ParseError::ArgCount {
+        name: canonical.to_string(),
+        expected,
+        found,
+        line,
+    })
+}
+
+/// Parse the space-separated Pauli-product targets of an `MPP` instruction,
+/// e.g. `X0*Y1*Z2 Z3*Z4` into two products. Each product is a `*`-joined run
+/// of single-qubit Pauli factors (`<X|Y|Z><qubit>`).
+fn parse_mpp_products(
+    targets: &[RawTarget],
+    line_map: &Arc<LineMap>,
+) -> Result<Vec<Vec<PauliFactor>>, ParseError> {
+    let mut products = Vec::with_capacity(targets.len());
+    for t in targets {
+        let mut factors = Vec::new();
+        for factor in t.text.split('*') {
+            let mut chars = factor.chars();
+            let axis = match chars.next() {
+                Some('X') => PauliAxis::X,
+                Some('Y') => PauliAxis::Y,
+                Some('Z') => PauliAxis::Z,
+                _ => return Err(invalid_mpp_target(t, line_map)),
+            };
+            let Ok(qubit) = chars.as_str().parse::<usize>() else {
+                return Err(invalid_mpp_target(t, line_map));
+            };
+            factors.push(PauliFactor { axis, qubit });
+        }
+        products.push(factors);
+    }
+    Ok(products)
+}
+
+fn invalid_mpp_target(t: &RawTarget, line_map: &Arc<LineMap>) -> ParseError {
+    let (l, c) = line_map.line_col(t.span.start);
+    syntax(l, c, format!("invalid MPP target {:?}", t.text), line_map)
 }
 
 /// Parse a measurement-record lookback target `rec[-k]` into its lookback

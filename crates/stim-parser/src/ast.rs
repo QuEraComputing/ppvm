@@ -48,6 +48,33 @@ impl PartialEq<usize> for Target {
     }
 }
 
+/// The Pauli basis of a single-qubit factor in an `MPP` product.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PauliAxis {
+    X,
+    Y,
+    Z,
+}
+
+impl PauliAxis {
+    /// The single-character Stim spelling (`X`/`Y`/`Z`).
+    pub fn as_char(self) -> char {
+        match self {
+            PauliAxis::X => 'X',
+            PauliAxis::Y => 'Y',
+            PauliAxis::Z => 'Z',
+        }
+    }
+}
+
+/// One single-qubit Pauli factor of an `MPP` product, e.g. the `Y3` in
+/// `MPP X0*Y3*Z7`: the measured `axis` on its support `qubit`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PauliFactor {
+    pub axis: PauliAxis,
+    pub qubit: usize,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RawInstruction {
     Gate {
@@ -81,6 +108,15 @@ pub enum RawInstruction {
         tags: Vec<Tag>,
         prob: Option<f64>,
         bits: Vec<usize>,
+        line: usize,
+    },
+    /// Multi-qubit Pauli-product measurement `MPP`. Each element of `products`
+    /// is one measured operator — a product of single-qubit Paulis, e.g.
+    /// `MPP X0*Y1 Z2*Z3` carries two products and yields two results.
+    Mpp {
+        tags: Vec<Tag>,
+        args: Vec<f64>,
+        products: Vec<Vec<PauliFactor>>,
         line: usize,
     },
     Repeat {
@@ -126,6 +162,9 @@ pub enum GateName {
     SqrtXDag,
     SqrtY,
     SqrtYDag,
+    // Non-Clifford T / T-dagger (also expressible as S[T] / S_DAG[T])
+    T,
+    TDag,
     // Identity (carries dialect tags like S[T] is on S, but I[R_X(...)] is on Identity)
     Identity,
     // Two-qubit Cliffords
@@ -331,6 +370,8 @@ impl GateName {
             GateName::SDag => "S_DAG",
             GateName::SqrtZ => "SQRT_Z",
             GateName::SqrtZDag => "SQRT_Z_DAG",
+            GateName::T => "T",
+            GateName::TDag => "T_DAG",
             GateName::SqrtX => "SQRT_X",
             GateName::SqrtXDag => "SQRT_X_DAG",
             GateName::SqrtY => "SQRT_Y",

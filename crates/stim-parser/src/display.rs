@@ -10,7 +10,7 @@
 
 use std::fmt;
 
-use crate::ast::{Program, RawInstruction, Tag, TagParam, Target};
+use crate::ast::{PauliFactor, Program, RawInstruction, Tag, TagParam, Target};
 use crate::extended::ast::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
 
 const INDENT: &str = "    ";
@@ -114,6 +114,17 @@ fn fmt_raw(i: &RawInstruction, f: &mut fmt::Formatter<'_>, depth: usize) -> fmt:
                 write!(f, "({})", FloatLit(*p))?;
             }
             write_usize_targets(f, bits)?;
+        }
+        RawInstruction::Mpp {
+            tags,
+            args,
+            products,
+            ..
+        } => {
+            f.write_str("MPP")?;
+            write_tags(f, tags)?;
+            write_args(f, args)?;
+            write_mpp_products(f, products)?;
         }
         RawInstruction::Repeat { count, body, .. } => {
             writeln!(f, "REPEAT {count} {{")?;
@@ -264,6 +275,17 @@ fn fmt_ext(i: &ExtendedInstruction, f: &mut fmt::Formatter<'_>, depth: usize) ->
                 write!(f, " {}", u8::from(bit))?;
             }
         }
+        ExtendedInstruction::Mpp {
+            tags,
+            args,
+            products,
+            ..
+        } => {
+            f.write_str("MPP")?;
+            write_tags(f, tags)?;
+            write_args(f, args)?;
+            write_mpp_products(f, products)?;
+        }
     }
     writeln!(f)
 }
@@ -325,6 +347,21 @@ fn write_targets(f: &mut fmt::Formatter<'_>, targets: &[Target]) -> fmt::Result 
         match t {
             Target::Qubit(q) => write!(f, " {q}")?,
             Target::Rec(k) => write!(f, " rec[-{k}]")?,
+        }
+    }
+    Ok(())
+}
+
+/// Print `MPP` products as space-separated, `*`-joined Pauli factors
+/// (`X0*Y1*Z2`) so the output round-trips back through the parser.
+fn write_mpp_products(f: &mut fmt::Formatter<'_>, products: &[Vec<PauliFactor>]) -> fmt::Result {
+    for product in products {
+        f.write_str(" ")?;
+        for (i, factor) in product.iter().enumerate() {
+            if i > 0 {
+                f.write_str("*")?;
+            }
+            write!(f, "{}{}", factor.axis.as_char(), factor.qubit)?;
         }
     }
     Ok(())

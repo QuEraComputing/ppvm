@@ -74,6 +74,17 @@ fn interpret_one(raw: RawInstruction) -> Result<ExtendedInstruction, ExtendedPar
             bits: convert_mpad_bits(&bits, line)?,
             line,
         }),
+        RawInstruction::Mpp {
+            tags,
+            args,
+            products,
+            line,
+        } => Ok(ExtendedInstruction::Mpp {
+            tags,
+            args,
+            products,
+            line,
+        }),
         RawInstruction::Repeat { count, body, line } => {
             let mut inner = Vec::with_capacity(body.len());
             interpret_slice(body, &mut inner)?;
@@ -96,6 +107,15 @@ fn interpret_gate(
     use GateName::*;
 
     match name {
+        // Native T / T_DAG mnemonics lower to the same sugar as `S[T]` / `S_DAG[T]`.
+        T => Ok(ExtendedInstruction::T {
+            targets: qubit_targets(targets),
+            line,
+        }),
+        TDag => Ok(ExtendedInstruction::TDag {
+            targets: qubit_targets(targets),
+            line,
+        }),
         S | SDag => match tags.as_slice() {
             [] => Ok(ExtendedInstruction::Raw(RawPassthrough::Gate {
                 name,

@@ -337,3 +337,27 @@ def test_run_stim_record_target_rejected():
     # The Pauli target may never be a measurement record.
     with pytest.raises(ValueError):
         StimProgram.parse("M 0\nCX 1 rec[-1]")
+
+
+# --- MPP multi-qubit Pauli-product measurement ---
+
+
+def test_run_stim_mpp_zz_measures_parity():
+    # |01> has odd Z0*Z1 parity -> -1 -> ONE.
+    tab = GeneralizedTableau(2)
+    results = tab.run(StimProgram.parse("X 0\nMPP Z0*Z1"))
+    assert results == [MeasurementResult.ONE]
+
+
+def test_run_stim_mpp_xx_on_bell_state():
+    # Bell state is a +1 eigenstate of X0*X1 -> ZERO.
+    tab = GeneralizedTableau(2)
+    results = tab.run(StimProgram.parse("H 0\nCX 0 1\nMPP X0*X1"))
+    assert results == [MeasurementResult.ZERO]
+
+
+def test_run_stim_mpp_multiple_products():
+    # Two space-separated products -> two results.
+    tab = GeneralizedTableau(2)
+    results = tab.run(StimProgram.parse("X 0\nMPP Z0 Z1"))
+    assert results == [MeasurementResult.ONE, MeasurementResult.ZERO]

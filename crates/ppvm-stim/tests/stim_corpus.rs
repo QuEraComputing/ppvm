@@ -38,6 +38,9 @@ const CASES: &[(&str, Expect)] = &[
     // Inverted measurement-result targets (`M !0`) are not yet supported, so
     // the non-numeric target is rejected at parse time.
     ("inverted_target_unsupported.stim", Expect::ParseFails),
+    // Full magic-state cultivation circuit: RX/MX, native T/T_DAG, and MPP
+    // Pauli-product detectors all run end-to-end (see tests/cultivation.rs).
+    ("cultivation_d5.stim", Expect::Ok),
 ];
 
 fn data_dir() -> PathBuf {

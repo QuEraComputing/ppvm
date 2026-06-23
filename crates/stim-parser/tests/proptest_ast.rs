@@ -445,7 +445,8 @@ fn zero_lines_raw(instrs: &mut [RawInstruction]) {
             | RawInstruction::Noise { line, .. }
             | RawInstruction::Measure { line, .. }
             | RawInstruction::Annotation { line, .. }
-            | RawInstruction::MPad { line, .. } => *line = 0,
+            | RawInstruction::MPad { line, .. }
+            | RawInstruction::Mpp { line, .. } => *line = 0,
             RawInstruction::Repeat { body, line, .. } => {
                 *line = 0;
                 zero_lines_raw(body);
@@ -473,7 +474,8 @@ fn zero_lines_ext(instrs: &mut [ExtendedInstruction]) {
             | ExtendedInstruction::U3 { line, .. }
             | ExtendedInstruction::Loss { line, .. }
             | ExtendedInstruction::CorrelatedLoss { line, .. }
-            | ExtendedInstruction::MPad { line, .. } => *line = 0,
+            | ExtendedInstruction::MPad { line, .. }
+            | ExtendedInstruction::Mpp { line, .. } => *line = 0,
             ExtendedInstruction::Repeat { body, line, .. } => {
                 *line = 0;
                 zero_lines_ext(body);

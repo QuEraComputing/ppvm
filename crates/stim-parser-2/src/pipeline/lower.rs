@@ -14,7 +14,7 @@ use crate::ast::extended::{ExtendedInstruction, ExtendedProgram};
 use crate::ast::shared::{Axis, GateOp, NoiseOp, Tag, TagParam, Target};
 use crate::ast::vanilla::{Instruction, Program};
 use crate::diagnostics::{Aborted, Diagnostic, DiagnosticSink, Flow, Span};
-use crate::instructions::{EntryKind, GateName, NoiseName, canonical_name};
+use crate::instructions::{GateName, NoiseName};
 
 /// Emit a diagnostic to the sink and report the sink's continuation decision.
 fn emit(sink: &mut dyn DiagnosticSink, span: Span, code: &'static str, message: String) -> Flow {
@@ -23,7 +23,7 @@ fn emit(sink: &mut dyn DiagnosticSink, span: Span, code: &'static str, message: 
 
 /// The canonical spelling of a gate name, for diagnostic messages.
 fn gate_name(name: GateName) -> &'static str {
-    canonical_name(EntryKind::Gate(name))
+    name.canonical_name()
 }
 
 /// Lower a vanilla [`Program`] into an [`ExtendedProgram`], forwarding every

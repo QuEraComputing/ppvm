@@ -5,6 +5,7 @@ pub mod ast;
 pub mod diagnostics;
 pub mod instructions;
 pub mod pipeline;
+pub mod print;
 pub(crate) mod syntax;
 
 use std::sync::Arc;
@@ -58,6 +59,7 @@ pub mod prelude {
     pub use crate::diagnostics::{Diagnostic, DiagnosticSink, Diagnostics, Flow, Severity};
     pub use crate::instructions::{AnnotationKind, GateName, MeasureName, NoiseName};
     pub use crate::pipeline::Pipeline;
+    pub use crate::print::{PrintOptions, StimPrint};
     pub use crate::{parse, parse_extended};
 }
 

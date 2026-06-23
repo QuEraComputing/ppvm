@@ -382,6 +382,38 @@ const TABLE: &[(&str, TableEntry)] = &[
     ),
 ];
 
+use std::fmt;
+
+impl GateName {
+    pub fn canonical_name(self) -> &'static str {
+        canonical_name(EntryKind::Gate(self))
+    }
+}
+
+impl fmt::Display for GateName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.canonical_name())
+    }
+}
+
+impl NoiseName {
+    pub fn canonical_name(self) -> &'static str {
+        canonical_name(EntryKind::Noise(self))
+    }
+}
+
+impl MeasureName {
+    pub fn canonical_name(self) -> &'static str {
+        canonical_name(EntryKind::Measure(self))
+    }
+}
+
+impl AnnotationKind {
+    pub fn canonical_name(self) -> &'static str {
+        canonical_name(EntryKind::Annotation(self))
+    }
+}
+
 /// Look up a Stim instruction name. `None` means unknown.
 pub fn lookup(name: &str) -> Option<TableEntry> {
     TABLE.iter().find(|(n, _)| *n == name).map(|(_, e)| *e)

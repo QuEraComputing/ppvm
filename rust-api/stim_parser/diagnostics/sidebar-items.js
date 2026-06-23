@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Flow","Severity"],"struct":["Aborted","Collect","Diagnostic","Diagnostics","FailFast","LineMap","Span"],"trait":["DiagnosticSink"]};

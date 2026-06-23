@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["AnnotationKind","ArgCount","GateName","MeasureName","NoiseName","ParseError","PauliAxis","RawInstruction","TagParam","Target","TargetArity"],"struct":["PauliFactor","Program","SyntaxError","Tag"]};
+window.SIDEBAR_ITEMS = {"mod":["extended","shared","vanilla"]};

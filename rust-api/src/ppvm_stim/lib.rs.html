@@ -6,7 +6,7 @@
 <a href=#6 id=6 data-nosnippet>6</a>//! Two-stage pipeline:
 <a href=#7 id=7 data-nosnippet>7</a>//!
 <a href=#8 id=8 data-nosnippet>8</a>//! 1. [`parse_extended`] — `&amp;str` → [`ExtendedProgram`] (re-exported from
-<a href=#9 id=9 data-nosnippet>9</a>//!    [`stim_parser`]).
+<a href=#9 id=9 data-nosnippet>9</a>//!    `stim_parser`).
 <a href=#10 id=10 data-nosnippet>10</a>//! 2. [`execute`] / [`sample`] — call [`validate`](fn@validate) to validate the
 <a href=#11 id=11 data-nosnippet>11</a>//!    [`ExtendedProgram`], then apply it to a [`GeneralizedTableau`].
 <a href=#12 id=12 data-nosnippet>12</a>//!
@@ -30,7 +30,7 @@
 <a href=#30 id=30 data-nosnippet>30</a>//! [`run_string`] / [`run_file`] re-parse on every call and exist only for
 <a href=#31 id=31 data-nosnippet>31</a>//! single-shot demos — never call them from a shot loop.
 <a href=#32 id=32 data-nosnippet>32</a>//!
-<a href=#33 id=33 data-nosnippet>33</a>//! [`ExtendedProgram`]: stim_parser::extended::ExtendedProgram
+<a href=#33 id=33 data-nosnippet>33</a>//! [`ExtendedProgram`]: stim_parser::prelude::ExtendedProgram
 <a href=#34 id=34 data-nosnippet>34</a>//! [`GeneralizedTableau`]: ppvm_tableau::prelude::GeneralizedTableau
 <a href=#35 id=35 data-nosnippet>35</a>
 <a href=#36 id=36 data-nosnippet>36</a></span><span class="kw">pub mod </span>executor;
@@ -49,85 +49,87 @@
 <a href=#49 id=49 data-nosnippet>49</a>
 <a href=#50 id=50 data-nosnippet>50</a><span class="attr">#[derive(Debug, thiserror::Error)]
 <a href=#51 id=51 data-nosnippet>51</a></span><span class="kw">pub enum </span>Error {
-<a href=#52 id=52 data-nosnippet>52</a>    <span class="attr">#[error(transparent)]
-<a href=#53 id=53 data-nosnippet>53</a>    </span>Parse(<span class="attr">#[from] </span>ExtendedParseError),
-<a href=#54 id=54 data-nosnippet>54</a>    <span class="attr">#[error(transparent)]
-<a href=#55 id=55 data-nosnippet>55</a>    </span>Exec(<span class="attr">#[from] </span>ExecError),
-<a href=#56 id=56 data-nosnippet>56</a>    <span class="attr">#[error(<span class="string">"failed to read stim file {path}: {source}"</span>)]
-<a href=#57 id=57 data-nosnippet>57</a>    </span>Io {
-<a href=#58 id=58 data-nosnippet>58</a>        path: PathBuf,
-<a href=#59 id=59 data-nosnippet>59</a>        <span class="attr">#[source]
-<a href=#60 id=60 data-nosnippet>60</a>        </span>source: std::io::Error,
-<a href=#61 id=61 data-nosnippet>61</a>    },
-<a href=#62 id=62 data-nosnippet>62</a>}
-<a href=#63 id=63 data-nosnippet>63</a>
-<a href=#64 id=64 data-nosnippet>64</a><span class="doccomment">/// Parse → validate → execute in one shot. Re-parses each call; do **not**
-<a href=#65 id=65 data-nosnippet>65</a>/// use in shot loops — use [`parse_extended`] + [`sample`] instead.
-<a href=#66 id=66 data-nosnippet>66</a></span><span class="kw">pub fn </span>run_string&lt;T, I, C&gt;(
-<a href=#67 id=67 data-nosnippet>67</a>    src: <span class="kw-2">&amp;</span>str,
-<a href=#68 id=68 data-nosnippet>68</a>    tab: <span class="kw-2">&amp;mut </span>ppvm_tableau::prelude::GeneralizedTableau&lt;T, I, C&gt;,
-<a href=#69 id=69 data-nosnippet>69</a>) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;<span class="prelude-ty">Option</span>&lt;bool&gt;&gt;, Error&gt;
-<a href=#70 id=70 data-nosnippet>70</a><span class="kw">where
-<a href=#71 id=71 data-nosnippet>71</a>    </span>T: ppvm_pauli_sum::prelude::Config,
-<a href=#72 id=72 data-nosnippet>72</a>    &lt;&lt;T <span class="kw">as </span>ppvm_pauli_sum::prelude::Config&gt;::Storage <span class="kw">as </span>bitvec::view::BitView&gt;::Store: num::PrimInt,
-<a href=#73 id=73 data-nosnippet>73</a>    C: ppvm_tableau::prelude::SparseVector&lt;num::Complex&lt;T::Coeff&gt;, I&gt; + std::fmt::Debug,
-<a href=#74 id=74 data-nosnippet>74</a>    T::Coeff: num::One
-<a href=#75 id=75 data-nosnippet>75</a>        + num::Zero
-<a href=#76 id=76 data-nosnippet>76</a>        + Clone
-<a href=#77 id=77 data-nosnippet>77</a>        + num::Num
-<a href=#78 id=78 data-nosnippet>78</a>        + num::ToPrimitive
-<a href=#79 id=79 data-nosnippet>79</a>        + std::fmt::Debug
-<a href=#80 id=80 data-nosnippet>80</a>        + std::ops::Mul&lt;f64&gt;
-<a href=#81 id=81 data-nosnippet>81</a>        + PartialOrd&lt;f64&gt;
-<a href=#82 id=82 data-nosnippet>82</a>        + PartialOrd
-<a href=#83 id=83 data-nosnippet>83</a>        + Send
-<a href=#84 id=84 data-nosnippet>84</a>        + Sync,
-<a href=#85 id=85 data-nosnippet>85</a>    num::Complex&lt;T::Coeff&gt;: std::ops::Mul&lt;Output = num::Complex&lt;T::Coeff&gt;&gt;
-<a href=#86 id=86 data-nosnippet>86</a>        + From&lt;num::complex::Complex64&gt;
-<a href=#87 id=87 data-nosnippet>87</a>        + std::ops::MulAssign
-<a href=#88 id=88 data-nosnippet>88</a>        + std::ops::AddAssign
-<a href=#89 id=89 data-nosnippet>89</a>        + num::One
-<a href=#90 id=90 data-nosnippet>90</a>        + num::complex::ComplexFloat
-<a href=#91 id=91 data-nosnippet>91</a>        + Copy,
-<a href=#92 id=92 data-nosnippet>92</a>    I: ppvm_tableau::prelude::TableauIndex + std::fmt::Debug + Send + Sync,
-<a href=#93 id=93 data-nosnippet>93</a>{
-<a href=#94 id=94 data-nosnippet>94</a>    <span class="kw">let </span>prog = parse_extended(src)<span class="question-mark">?</span>;
-<a href=#95 id=95 data-nosnippet>95</a>    <span class="kw">let </span>results = execute(<span class="kw-2">&amp;</span>prog, tab)<span class="question-mark">?</span>;
-<a href=#96 id=96 data-nosnippet>96</a>    <span class="prelude-val">Ok</span>(results)
-<a href=#97 id=97 data-nosnippet>97</a>}
-<a href=#98 id=98 data-nosnippet>98</a>
-<a href=#99 id=99 data-nosnippet>99</a><span class="kw">pub fn </span>run_file&lt;T, I, C&gt;(
-<a href=#100 id=100 data-nosnippet>100</a>    path: <span class="kw-2">&amp;</span>Path,
-<a href=#101 id=101 data-nosnippet>101</a>    tab: <span class="kw-2">&amp;mut </span>ppvm_tableau::prelude::GeneralizedTableau&lt;T, I, C&gt;,
-<a href=#102 id=102 data-nosnippet>102</a>) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;<span class="prelude-ty">Option</span>&lt;bool&gt;&gt;, Error&gt;
-<a href=#103 id=103 data-nosnippet>103</a><span class="kw">where
-<a href=#104 id=104 data-nosnippet>104</a>    </span>T: ppvm_pauli_sum::prelude::Config,
-<a href=#105 id=105 data-nosnippet>105</a>    &lt;&lt;T <span class="kw">as </span>ppvm_pauli_sum::prelude::Config&gt;::Storage <span class="kw">as </span>bitvec::view::BitView&gt;::Store: num::PrimInt,
-<a href=#106 id=106 data-nosnippet>106</a>    C: ppvm_tableau::prelude::SparseVector&lt;num::Complex&lt;T::Coeff&gt;, I&gt; + std::fmt::Debug,
-<a href=#107 id=107 data-nosnippet>107</a>    T::Coeff: num::One
-<a href=#108 id=108 data-nosnippet>108</a>        + num::Zero
-<a href=#109 id=109 data-nosnippet>109</a>        + Clone
-<a href=#110 id=110 data-nosnippet>110</a>        + num::Num
-<a href=#111 id=111 data-nosnippet>111</a>        + num::ToPrimitive
-<a href=#112 id=112 data-nosnippet>112</a>        + std::fmt::Debug
-<a href=#113 id=113 data-nosnippet>113</a>        + std::ops::Mul&lt;f64&gt;
-<a href=#114 id=114 data-nosnippet>114</a>        + PartialOrd&lt;f64&gt;
-<a href=#115 id=115 data-nosnippet>115</a>        + PartialOrd
-<a href=#116 id=116 data-nosnippet>116</a>        + Send
-<a href=#117 id=117 data-nosnippet>117</a>        + Sync,
-<a href=#118 id=118 data-nosnippet>118</a>    num::Complex&lt;T::Coeff&gt;: std::ops::Mul&lt;Output = num::Complex&lt;T::Coeff&gt;&gt;
-<a href=#119 id=119 data-nosnippet>119</a>        + From&lt;num::complex::Complex64&gt;
-<a href=#120 id=120 data-nosnippet>120</a>        + std::ops::MulAssign
-<a href=#121 id=121 data-nosnippet>121</a>        + std::ops::AddAssign
-<a href=#122 id=122 data-nosnippet>122</a>        + num::One
-<a href=#123 id=123 data-nosnippet>123</a>        + num::complex::ComplexFloat
-<a href=#124 id=124 data-nosnippet>124</a>        + Copy,
-<a href=#125 id=125 data-nosnippet>125</a>    I: ppvm_tableau::prelude::TableauIndex + std::fmt::Debug + Send + Sync,
-<a href=#126 id=126 data-nosnippet>126</a>{
-<a href=#127 id=127 data-nosnippet>127</a>    <span class="kw">let </span>src = std::fs::read_to_string(path).map_err(|source| Error::Io {
-<a href=#128 id=128 data-nosnippet>128</a>        path: path.to_path_buf(),
-<a href=#129 id=129 data-nosnippet>129</a>        source,
-<a href=#130 id=130 data-nosnippet>130</a>    })<span class="question-mark">?</span>;
-<a href=#131 id=131 data-nosnippet>131</a>    run_string(<span class="kw-2">&amp;</span>src, tab)
-<a href=#132 id=132 data-nosnippet>132</a>}
+<a href=#52 id=52 data-nosnippet>52</a>    <span class="doccomment">/// A parse/validate/lower failure from `stim_parser`, reported as a
+<a href=#53 id=53 data-nosnippet>53</a>    /// [`Diagnostics`] aggregate.
+<a href=#54 id=54 data-nosnippet>54</a>    </span><span class="attr">#[error(transparent)]
+<a href=#55 id=55 data-nosnippet>55</a>    </span>Parse(<span class="attr">#[from] </span>Diagnostics),
+<a href=#56 id=56 data-nosnippet>56</a>    <span class="attr">#[error(transparent)]
+<a href=#57 id=57 data-nosnippet>57</a>    </span>Exec(<span class="attr">#[from] </span>ExecError),
+<a href=#58 id=58 data-nosnippet>58</a>    <span class="attr">#[error(<span class="string">"failed to read stim file {path}: {source}"</span>)]
+<a href=#59 id=59 data-nosnippet>59</a>    </span>Io {
+<a href=#60 id=60 data-nosnippet>60</a>        path: PathBuf,
+<a href=#61 id=61 data-nosnippet>61</a>        <span class="attr">#[source]
+<a href=#62 id=62 data-nosnippet>62</a>        </span>source: std::io::Error,
+<a href=#63 id=63 data-nosnippet>63</a>    },
+<a href=#64 id=64 data-nosnippet>64</a>}
+<a href=#65 id=65 data-nosnippet>65</a>
+<a href=#66 id=66 data-nosnippet>66</a><span class="doccomment">/// Parse → validate → execute in one shot. Re-parses each call; do **not**
+<a href=#67 id=67 data-nosnippet>67</a>/// use in shot loops — use [`parse_extended`] + [`sample`] instead.
+<a href=#68 id=68 data-nosnippet>68</a></span><span class="kw">pub fn </span>run_string&lt;T, I, C&gt;(
+<a href=#69 id=69 data-nosnippet>69</a>    src: <span class="kw-2">&amp;</span>str,
+<a href=#70 id=70 data-nosnippet>70</a>    tab: <span class="kw-2">&amp;mut </span>ppvm_tableau::prelude::GeneralizedTableau&lt;T, I, C&gt;,
+<a href=#71 id=71 data-nosnippet>71</a>) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;<span class="prelude-ty">Option</span>&lt;bool&gt;&gt;, Error&gt;
+<a href=#72 id=72 data-nosnippet>72</a><span class="kw">where
+<a href=#73 id=73 data-nosnippet>73</a>    </span>T: ppvm_pauli_sum::prelude::Config,
+<a href=#74 id=74 data-nosnippet>74</a>    &lt;&lt;T <span class="kw">as </span>ppvm_pauli_sum::prelude::Config&gt;::Storage <span class="kw">as </span>bitvec::view::BitView&gt;::Store: num::PrimInt,
+<a href=#75 id=75 data-nosnippet>75</a>    C: ppvm_tableau::prelude::SparseVector&lt;num::Complex&lt;T::Coeff&gt;, I&gt; + std::fmt::Debug,
+<a href=#76 id=76 data-nosnippet>76</a>    T::Coeff: num::One
+<a href=#77 id=77 data-nosnippet>77</a>        + num::Zero
+<a href=#78 id=78 data-nosnippet>78</a>        + Clone
+<a href=#79 id=79 data-nosnippet>79</a>        + num::Num
+<a href=#80 id=80 data-nosnippet>80</a>        + num::ToPrimitive
+<a href=#81 id=81 data-nosnippet>81</a>        + std::fmt::Debug
+<a href=#82 id=82 data-nosnippet>82</a>        + std::ops::Mul&lt;f64&gt;
+<a href=#83 id=83 data-nosnippet>83</a>        + PartialOrd&lt;f64&gt;
+<a href=#84 id=84 data-nosnippet>84</a>        + PartialOrd
+<a href=#85 id=85 data-nosnippet>85</a>        + Send
+<a href=#86 id=86 data-nosnippet>86</a>        + Sync,
+<a href=#87 id=87 data-nosnippet>87</a>    num::Complex&lt;T::Coeff&gt;: std::ops::Mul&lt;Output = num::Complex&lt;T::Coeff&gt;&gt;
+<a href=#88 id=88 data-nosnippet>88</a>        + From&lt;num::complex::Complex64&gt;
+<a href=#89 id=89 data-nosnippet>89</a>        + std::ops::MulAssign
+<a href=#90 id=90 data-nosnippet>90</a>        + std::ops::AddAssign
+<a href=#91 id=91 data-nosnippet>91</a>        + num::One
+<a href=#92 id=92 data-nosnippet>92</a>        + num::complex::ComplexFloat
+<a href=#93 id=93 data-nosnippet>93</a>        + Copy,
+<a href=#94 id=94 data-nosnippet>94</a>    I: ppvm_tableau::prelude::TableauIndex + std::fmt::Debug + Send + Sync,
+<a href=#95 id=95 data-nosnippet>95</a>{
+<a href=#96 id=96 data-nosnippet>96</a>    <span class="kw">let </span>prog = parse_extended(src)<span class="question-mark">?</span>;
+<a href=#97 id=97 data-nosnippet>97</a>    <span class="kw">let </span>results = execute(<span class="kw-2">&amp;</span>prog, tab)<span class="question-mark">?</span>;
+<a href=#98 id=98 data-nosnippet>98</a>    <span class="prelude-val">Ok</span>(results)
+<a href=#99 id=99 data-nosnippet>99</a>}
+<a href=#100 id=100 data-nosnippet>100</a>
+<a href=#101 id=101 data-nosnippet>101</a><span class="kw">pub fn </span>run_file&lt;T, I, C&gt;(
+<a href=#102 id=102 data-nosnippet>102</a>    path: <span class="kw-2">&amp;</span>Path,
+<a href=#103 id=103 data-nosnippet>103</a>    tab: <span class="kw-2">&amp;mut </span>ppvm_tableau::prelude::GeneralizedTableau&lt;T, I, C&gt;,
+<a href=#104 id=104 data-nosnippet>104</a>) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;<span class="prelude-ty">Option</span>&lt;bool&gt;&gt;, Error&gt;
+<a href=#105 id=105 data-nosnippet>105</a><span class="kw">where
+<a href=#106 id=106 data-nosnippet>106</a>    </span>T: ppvm_pauli_sum::prelude::Config,
+<a href=#107 id=107 data-nosnippet>107</a>    &lt;&lt;T <span class="kw">as </span>ppvm_pauli_sum::prelude::Config&gt;::Storage <span class="kw">as </span>bitvec::view::BitView&gt;::Store: num::PrimInt,
+<a href=#108 id=108 data-nosnippet>108</a>    C: ppvm_tableau::prelude::SparseVector&lt;num::Complex&lt;T::Coeff&gt;, I&gt; + std::fmt::Debug,
+<a href=#109 id=109 data-nosnippet>109</a>    T::Coeff: num::One
+<a href=#110 id=110 data-nosnippet>110</a>        + num::Zero
+<a href=#111 id=111 data-nosnippet>111</a>        + Clone
+<a href=#112 id=112 data-nosnippet>112</a>        + num::Num
+<a href=#113 id=113 data-nosnippet>113</a>        + num::ToPrimitive
+<a href=#114 id=114 data-nosnippet>114</a>        + std::fmt::Debug
+<a href=#115 id=115 data-nosnippet>115</a>        + std::ops::Mul&lt;f64&gt;
+<a href=#116 id=116 data-nosnippet>116</a>        + PartialOrd&lt;f64&gt;
+<a href=#117 id=117 data-nosnippet>117</a>        + PartialOrd
+<a href=#118 id=118 data-nosnippet>118</a>        + Send
+<a href=#119 id=119 data-nosnippet>119</a>        + Sync,
+<a href=#120 id=120 data-nosnippet>120</a>    num::Complex&lt;T::Coeff&gt;: std::ops::Mul&lt;Output = num::Complex&lt;T::Coeff&gt;&gt;
+<a href=#121 id=121 data-nosnippet>121</a>        + From&lt;num::complex::Complex64&gt;
+<a href=#122 id=122 data-nosnippet>122</a>        + std::ops::MulAssign
+<a href=#123 id=123 data-nosnippet>123</a>        + std::ops::AddAssign
+<a href=#124 id=124 data-nosnippet>124</a>        + num::One
+<a href=#125 id=125 data-nosnippet>125</a>        + num::complex::ComplexFloat
+<a href=#126 id=126 data-nosnippet>126</a>        + Copy,
+<a href=#127 id=127 data-nosnippet>127</a>    I: ppvm_tableau::prelude::TableauIndex + std::fmt::Debug + Send + Sync,
+<a href=#128 id=128 data-nosnippet>128</a>{
+<a href=#129 id=129 data-nosnippet>129</a>    <span class="kw">let </span>src = std::fs::read_to_string(path).map_err(|source| Error::Io {
+<a href=#130 id=130 data-nosnippet>130</a>        path: path.to_path_buf(),
+<a href=#131 id=131 data-nosnippet>131</a>        source,
+<a href=#132 id=132 data-nosnippet>132</a>    })<span class="question-mark">?</span>;
+<a href=#133 id=133 data-nosnippet>133</a>    run_string(<span class="kw-2">&amp;</span>src, tab)
+<a href=#134 id=134 data-nosnippet>134</a>}
 </code></pre></div></section></main></body></html>

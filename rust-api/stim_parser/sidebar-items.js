@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["ast","extended","prelude"]};
+window.SIDEBAR_ITEMS = {"fn":["parse","parse_extended"],"mod":["ast","diagnostics","highlight","instructions","pipeline","prelude","print"]};

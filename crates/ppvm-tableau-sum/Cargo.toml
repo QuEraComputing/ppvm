@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 bitvec = "1.0.1"
 fxhash = "0.2.1"
-gxhash = "3.5.0"
 num = "0.4.3"
 ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
 ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
@@ -14,6 +13,12 @@ ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
 rand = "0.10.1"
 smallvec = "1.15"
+
+# Native-only deps: gxhash (AES, used for the word_fingerprint hasher — see the
+# target-gated alias in src/storage/mod.rs) and rayon (OS threads). Pruned on
+# wasm32; fxhash backs the fingerprint there.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+gxhash = "3.5.0"
 rayon = { version = "1", optional = true }
 
 [dev-dependencies]

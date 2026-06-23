@@ -318,7 +318,7 @@ mod indexmap_impl {
     impl_acmap_retain!(indexmap::IndexMap);
 }
 
-#[cfg(feature = "ahash")]
+#[cfg(all(feature = "ahash", not(target_arch = "wasm32")))]
 mod ahash_impl {
     use super::*;
 

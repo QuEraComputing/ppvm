@@ -7,7 +7,16 @@ pub mod vec;
 
 pub use entry_store::{Branch, EntryStore};
 use fxhash::FxHashMap;
-use gxhash::GxHasher;
+
+// Hasher for the structural `word_fingerprint`. gxhash (AES-based) is fastest on
+// native but needs hardware AES and does not build on wasm32, so fall back to
+// fxhash there. The fingerprint is a transient in-memory dedup key — collisions
+// are resolved by `structurally_equal`, and it is never persisted or compared
+// across builds — so the hasher may differ per target without affecting results.
+#[cfg(target_arch = "wasm32")]
+use fxhash::FxHasher as FingerprintHasher;
+#[cfg(not(target_arch = "wasm32"))]
+use gxhash::GxHasher as FingerprintHasher;
 use num::{
     Complex, One, Zero,
     complex::{Complex64, ComplexFloat},
@@ -33,7 +42,7 @@ where
     I:,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
-    let mut hasher = GxHasher::default();
+    let mut hasher = FingerprintHasher::default();
     for row in tab.tableau.data.iter() {
         // Hash the Pauli bits directly: the `PauliWord` hash cache is disabled
         // for tableau rows (`REHASH = false`), so `row.word.hash()` would feed

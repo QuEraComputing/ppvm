@@ -28,6 +28,10 @@ impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait> Config
 }
 
 /// `IndexMap`-backed [`Config`] with `[u8; N]` storage and `gxhash`.
+///
+/// `gxhash` is AES-based and native-only, so this config is unavailable on
+/// `wasm32`; use [`ByteFxHash`] there.
+#[cfg(all(feature = "gxhash", not(target_arch = "wasm32")))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ByteGxHash<
     const N: usize,
@@ -36,6 +40,7 @@ pub struct ByteGxHash<
     W: PauliWordTrait = PauliWord<[u8; N], gxhash::GxBuildHasher>,
 >(PhantomData<(C, St, W)>);
 
+#[cfg(all(feature = "gxhash", not(target_arch = "wasm32")))]
 impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait> Config
     for ByteGxHash<N, C, St, W>
 {
@@ -54,6 +59,7 @@ pub type ByteFxHashF64<
     Wd = PauliWord<[u8; N], fxhash::FxBuildHasher>,
 > = ByteFxHash<N, f64, St, Wd>;
 /// [`ByteGxHash`] specialised to `f64` coefficients.
+#[cfg(all(feature = "gxhash", not(target_arch = "wasm32")))]
 pub type ByteGxHashF64<
     const N: usize,
     St = NoStrategy,

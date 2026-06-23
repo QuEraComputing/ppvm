@@ -69,6 +69,28 @@ jobs:
       - name: Run ppvm-stim tests with rayon feature
         run: cargo test -p ppvm-stim --features rayon
 
+  # Cross-compile the whole workspace for browser wasm so a wasm regression
+  # surfaces in CI. `ppvm-python-native` is a CPython extension (never a wasm
+  # target) and is excluded. Native-only acceleration deps (gxhash, dashmap →
+  # rayon, ahash) are pruned automatically by the `cfg(not(target_arch =
+  # "wasm32"))` dependency tables, and `rand`'s entropy uses the getrandom
+  # `wasm_js` backend wired in `.cargo/config.toml` — so no extra flags here.
+  wasm-build:
+    name: wasm32 build (browser)
+    needs: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build workspace for wasm32-unknown-unknown
+        run: cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-native
+
   python-tests:
     name: Python tests
     needs: pre-commit

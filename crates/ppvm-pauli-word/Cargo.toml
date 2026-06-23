@@ -11,9 +11,13 @@ fxhash = "0.2.1"
 num = "0.4.3"
 anyhow = "1.0.100"
 itertools = "0.14.0"
-gxhash = { version = "3.5.0", features = ["deterministic"], optional = true }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 bincode = { version = "2.0.1", optional = true }
+
+# gxhash needs AES intrinsics and does not build on wasm32; pruned there (the
+# `gxhash` feature goes inert). No non-test code in this crate names the crate.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+gxhash = { version = "3.5.0", features = ["deterministic"], optional = true }
 
 [features]
 default = ["gxhash"]

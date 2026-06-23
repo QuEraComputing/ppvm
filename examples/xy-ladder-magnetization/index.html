@@ -7,7 +7,7 @@
         document.documentElement.setAttribute("data-theme-pref", stored);
       })();
     </script><link rel="stylesheet" href="/_astro/Base.BN0a5DSp.css"></head> <body> <header class="masthead"> <div class="masthead-inner"> <a class="brand" href="/"> <span class="brand-mark" aria-hidden="true"></span> <span class="brand-mono">ppvm</span> <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span> </a> <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation menu"> <span class="nav-toggle-bars" aria-hidden="true"></span> </button> <nav class="nav-links" id="primary-nav"> <a href="/">Overview</a><a href="/quickstart">Quick Start</a><a href="/examples" aria-current="page">Examples</a><a href="/develop">Develop</a><a href="/api">Reference</a> <div class="theme-toggle" role="group" aria-label="Theme"> <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path> </svg> </button> <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path> </svg> </button> <button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <rect x="3" y="4" width="18" height="13" rx="2"></rect> <path d="M8 21h8M12 17v4"></path> </svg> </button> </div> </nav> </div> </header> <main>  <article class="shell narrow notebook"> <div class="titleblock"> <div class="eyebrow"> <a href="/examples">Examples</a> &middot; executed during build
-</div> <h1>Conserving Magnetization in the XY Ladder with Protected Strings</h1> <p class="byline"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/41834791c459f71ad0fab8401e119b3b97391d57/docs/notebooks/xy_ladder_magnetization.py">docs/notebooks/xy_ladder_magnetization.py</a> </p> </div> <div class="notebook-body" data-language="python"><div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=877dbb2e">
+</div> <h1>Conserving Magnetization in the XY Ladder with Protected Strings</h1> <p class="byline"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/e9edbc3184e33dc966a80899224277f5e371f55d/docs/notebooks/xy_ladder_magnetization.py">docs/notebooks/xy_ladder_magnetization.py</a> </p> </div> <div class="notebook-body" data-language="python"><div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=a0e9bb7d">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -27,7 +27,7 @@ protecting the $\{Z_i\}$ pins the magnetization exactly, at the cost of $n$ word
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=5b41b61e">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=e8a4e855">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -53,7 +53,7 @@ protecting the $\{Z_i\}$ pins the magnetization exactly, at the cost of $n$ word
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=c12a5ac9">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=071183d1">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -70,7 +70,7 @@ without protecting the $\{Z_i\}$.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=d18a7b22">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=ebc39bb0">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -87,8 +87,8 @@ without protecting the $\{Z_i\}$.</p>
     <span class="n">total_z</span> <span class="o">=</span> <span class="p">[</span><span class="n">o</span><span class="o">.</span><span class="n">overlap</span><span class="p">(</span><span class="n">M</span><span class="p">)]</span>
     <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
         <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">bonds</span><span class="p">):</span>             <span class="c1"># Heisenberg picture -&gt; reverse circuit order</span>
-            <span class="n">o</span><span class="o">.</span><span class="n">rxx</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">dt</span><span class="p">,</span> <span class="n">truncate</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># half-angle: 2*dt gives e^{-i dt X_iX_j}, no truncation</span>
-            <span class="n">o</span><span class="o">.</span><span class="n">ryy</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">dt</span><span class="p">)</span>                  <span class="c1"># ... truncate only once the bond gate is complete</span>
+            <span class="n">o</span><span class="o">.</span><span class="n">rxx</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="mi">2</span> <span class="o">*</span> <span class="n">dt</span><span class="p">,</span> <span class="n">truncate</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># half-angle: 2*dt gives e^{-i dt X_iX_j}, no truncation</span>
+            <span class="n">o</span><span class="o">.</span><span class="n">ryy</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="mi">2</span> <span class="o">*</span> <span class="n">dt</span><span class="p">)</span>                  <span class="c1"># ... truncate only once the bond gate is complete</span>
         <span class="n">total_z</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">o</span><span class="o">.</span><span class="n">overlap</span><span class="p">(</span><span class="n">M</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">total_z</span>
 
@@ -119,7 +119,7 @@ without protecting the $\{Z_i\}$.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=c4b42900">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=455b1022">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -129,7 +129,7 @@ protecting the $\{Z_i\}$ holds it at its initial value to machine precision.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=f652bd55">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=4a527f31">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>

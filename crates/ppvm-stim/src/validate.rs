@@ -1,8 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use stim_parser::ast::{GateName, MeasureName, NoiseName, PauliFactor, Target};
-use stim_parser::extended::{ExtendedInstruction, ExtendedProgram, RawPassthrough};
+use stim_parser::diagnostics::LineMap;
+use stim_parser::prelude::{
+    ExtendedInstruction, ExtendedProgram, GateName, GateOp, MeasureName, MeasureOp, MppOp,
+    NoiseName, NoiseOp, PauliFactor, Target,
+};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum ExecError {
@@ -26,54 +29,61 @@ pub enum ExecError {
 
 pub fn validate(program: &ExtendedProgram) -> Result<(), ExecError> {
     let mut measurements = 0usize;
-    validate_slice(&program.instructions, &mut measurements)
+    validate_slice(&program.instructions, &program.line_map, &mut measurements)
 }
 
 /// Validate a slice of instructions, threading `measurements` — the number of
 /// recorded bits produced so far — so `rec[-k]` controls can be range-checked
 /// against the live measurement record (see [`check_record_controls`]).
+///
+/// `line_map` resolves each node's `Span` to the 1-based source line used in
+/// [`ExecError`] messages.
 fn validate_slice(
     instructions: &[ExtendedInstruction],
+    line_map: &LineMap,
     measurements: &mut usize,
 ) -> Result<(), ExecError> {
     for instr in instructions {
         match instr {
-            ExtendedInstruction::Raw(RawPassthrough::Gate {
+            ExtendedInstruction::Gate(GateOp {
                 name,
                 targets,
-                line,
+                span,
                 ..
             }) => {
-                check_gate_supported(*name, *line)?;
-                check_record_controls(*name, targets, *measurements, *line)?;
+                let line = span.line(line_map);
+                check_gate_supported(*name, line)?;
+                check_record_controls(*name, targets, *measurements, line)?;
             }
-            ExtendedInstruction::Raw(RawPassthrough::Noise { name, line, .. }) => {
-                check_noise_supported(*name, *line)?;
+            ExtendedInstruction::Noise(NoiseOp { name, span, .. }) => {
+                check_noise_supported(*name, span.line(line_map))?;
             }
-            ExtendedInstruction::Raw(RawPassthrough::Measure {
+            ExtendedInstruction::Measure(MeasureOp {
                 name,
                 args,
                 targets,
-                line,
+                span,
                 ..
             }) => {
-                check_measure_supported(*name, *line)?;
+                let line = span.line(line_map);
+                check_measure_supported(*name, line)?;
                 if let Some(&p) = args.first() {
-                    check_probability(p, name.canonical_name(), *line)?;
+                    check_probability(p, name.canonical_name(), line)?;
                 }
                 *measurements = measurements.saturating_add(targets.len());
             }
-            ExtendedInstruction::Mpp {
+            ExtendedInstruction::Mpp(MppOp {
                 args,
                 products,
-                line,
+                span,
                 ..
-            } => {
+            }) => {
+                let line = span.line(line_map);
                 if let Some(&p) = args.first() {
-                    check_probability(p, "MPP", *line)?;
+                    check_probability(p, "MPP", line)?;
                 }
                 for product in products {
-                    check_mpp_distinct_qubits(product, *line)?;
+                    check_mpp_distinct_qubits(product, line)?;
                 }
                 *measurements = measurements.saturating_add(products.len());
             }
@@ -84,12 +94,12 @@ fn validate_slice(
                 // in range on every later iteration too. Then advance the count by
                 // all `count` iterations' worth of measurements.
                 let before = *measurements;
-                validate_slice(body, measurements)?;
+                validate_slice(body, line_map, measurements)?;
                 let per_iter = measurements.saturating_sub(before);
                 let count = usize::try_from(*count).unwrap_or(usize::MAX);
                 *measurements = before.saturating_add(per_iter.saturating_mul(count));
             }
-            ExtendedInstruction::Raw(RawPassthrough::Annotation { .. })
+            ExtendedInstruction::Annotation(_)
             | ExtendedInstruction::T { .. }
             | ExtendedInstruction::TDag { .. }
             | ExtendedInstruction::Rotation { .. }
@@ -97,10 +107,10 @@ fn validate_slice(
             | ExtendedInstruction::Loss { .. }
             | ExtendedInstruction::CorrelatedLoss { .. } => {}
             ExtendedInstruction::MPad {
-                prob, bits, line, ..
+                prob, bits, span, ..
             } => {
                 if let Some(p) = prob {
-                    check_probability(*p, "MPAD", *line)?;
+                    check_probability(*p, "MPAD", span.line(line_map))?;
                 }
                 *measurements = measurements.saturating_add(bits.len());
             }

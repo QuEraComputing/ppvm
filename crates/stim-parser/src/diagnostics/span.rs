@@ -1,6 +1,37 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+//! Byte spans and the line/column map shared by every diagnostic.
+
+/// Half-open byte range `[start, end)` into the source string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl Span {
+    pub fn new(start: usize, end: usize) -> Self {
+        Span { start, end }
+    }
+
+    /// 1-indexed `(line, col)` of the span start.
+    pub fn line_col(&self, line_map: &LineMap) -> (usize, usize) {
+        line_map.line_col(self.start)
+    }
+
+    /// 1-indexed line of the span start.
+    pub fn line(&self, line_map: &LineMap) -> usize {
+        line_map.line_of(self.start)
+    }
+}
+
+impl From<chumsky::span::SimpleSpan<usize>> for Span {
+    fn from(s: chumsky::span::SimpleSpan<usize>) -> Self {
+        Span::new(s.start, s.end)
+    }
+}
+
 /// Maps byte offsets in source to 1-indexed line/column positions.
 pub struct LineMap {
     /// `starts[i]` = byte offset of the start of line (i+1).
@@ -51,8 +82,8 @@ impl LineMap {
 }
 
 #[cfg(test)]
-mod line_map_tests {
-    use super::LineMap;
+mod tests {
+    use super::*;
 
     #[test]
     fn line_col_at_line_start() {
@@ -70,8 +101,10 @@ mod line_map_tests {
     }
 
     #[test]
-    fn line_col_at_eof() {
-        let m = LineMap::new("abc\ndef");
-        assert_eq!(m.line_col(7), (2, 4));
+    fn span_resolves_against_line_map() {
+        let m = LineMap::new("X 0\nH 0");
+        let span = Span::new(4, 5);
+        assert_eq!(span.line_col(&m), (2, 1));
+        assert_eq!(span.line(&m), 2);
     }
 }

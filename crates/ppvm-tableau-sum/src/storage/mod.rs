@@ -15,10 +15,11 @@ use ppvm_traits::traits::Clifford;
 // a transient in-memory dedup key — collisions are resolved by
 // `structurally_equal`, and it is never persisted or compared across builds — so
 // the hasher may differ per target without affecting results.
+use bitvec::view::{BitView, BitViewSized};
 #[cfg(target_arch = "wasm32")]
 use fxhash::FxHasher as FingerprintHasher;
 use num::{
-    Complex, One, Zero,
+    Complex, One, PrimInt, Zero,
     complex::{Complex64, ComplexFloat},
 };
 use ppvm_tableau::{
@@ -37,6 +38,14 @@ use std::ops::AddAssign;
 // storage element width (`[u8; N]` vs `[u64; N]`) is generic at this call site.
 thread_local! {
     static WORD_FP_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Read a single bit from a raw store-word slice (Lsb0 convention). Skips the
+/// per-call word/bit recomputation and bounds-check that `BitArray`'s `Index`
+/// does, for the hot per-row column reads in noise propagation.
+#[inline]
+pub(crate) fn bit_at<S: PrimInt>(words: &[S], word_idx: usize, bit: usize) -> bool {
+    (words[word_idx] >> bit) & S::one() != S::zero()
 }
 
 /// View a `Copy` plain-old-data value's bytes. Sound because `A: PauliStorage`
@@ -334,6 +343,7 @@ pub(crate) fn structurally_equal_mutated<T, I, C>(
 ) -> bool
 where
     T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
     T::Coeff: One + Zero + Clone + num::Num + PartialOrd,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + AddAssign
@@ -385,12 +395,17 @@ where
             }
         }
         BranchMutation::Pauli { op, addr0 } => {
+            let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+            let word_idx = addr0 / bits_per_word;
+            let bit = addr0 % bits_per_word;
             for (re, rp) in existing.tableau.data.iter().zip(parent.tableau.data.iter()) {
                 if re.word != rp.word {
                     return false;
                 }
-                let x: bool = rp.word.xbits[addr0];
-                let z: bool = rp.word.zbits[addr0];
+                let xw = rp.word.xbits.data.as_raw_slice();
+                let zw = rp.word.zbits.data.as_raw_slice();
+                let x: bool = bit_at(xw, word_idx, bit);
+                let z: bool = bit_at(zw, word_idx, bit);
                 let flip = match op {
                     1 => z,
                     2 => x ^ z,

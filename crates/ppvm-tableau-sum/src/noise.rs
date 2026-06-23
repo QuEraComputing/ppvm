@@ -3,7 +3,7 @@
 
 use std::fmt::Debug;
 
-use bitvec::view::BitView;
+use bitvec::view::{BitView, BitViewSized};
 use num::{
     Complex, One, PrimInt, ToPrimitive, Zero,
     complex::{Complex64, ComplexFloat},
@@ -20,7 +20,9 @@ use rand::{RngExt, rngs::SmallRng};
 
 use crate::{
     data::GeneralizedTableauSum,
-    storage::{Branch, BranchMutation, EntryStore, RowMasks, loss_mask, pauli_branch_phase_loss},
+    storage::{
+        Branch, BranchMutation, EntryStore, RowMasks, bit_at, loss_mask, pauli_branch_phase_loss,
+    },
 };
 
 fn single_qubit_loss_branch<T, I, C>(
@@ -215,6 +217,11 @@ where
         // Precompute the per-row sign masks once instead of recomputing the
         // splitmix `sign_mask` per row per entry in the hot loop below.
         let masks = RowMasks::new(self.n_qubits);
+        // The store-word index / bit position of column `addr0` are the same for
+        // every entry and row, so resolve them once (Lsb0 convention).
+        let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let word_idx = addr0 / bits_per_word;
+        let bit = addr0 % bits_per_word;
         let mut idx = 0usize;
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
@@ -226,8 +233,10 @@ where
 
                 let (mut dx, mut dy, mut dz) = (0u64, 0u64, 0u64);
                 for (row, pw) in tab.tableau.data.iter().enumerate() {
-                    let x: bool = pw.word.xbits[addr0];
-                    let z: bool = pw.word.zbits[addr0];
+                    let xw = pw.word.xbits.data.as_raw_slice();
+                    let zw = pw.word.zbits.data.as_raw_slice();
+                    let x: bool = bit_at(xw, word_idx, bit);
+                    let z: bool = bit_at(zw, word_idx, bit);
                     let m = masks.sign[row];
                     if z {
                         dx ^= m;

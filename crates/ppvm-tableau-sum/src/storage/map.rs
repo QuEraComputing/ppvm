@@ -15,8 +15,12 @@ use ppvm_traits::config::Config;
 use smallvec::SmallVec;
 
 use crate::storage::{
-    EntryStore, fingerprint, phase_loss_hash, structurally_equal, word_fingerprint,
+    Branch, BranchMutation, EntryStore, apply_branch_mutation, fingerprint, phase_loss_hash,
+    structurally_equal, word_fingerprint,
 };
+use bitvec::view::BitView;
+use num::PrimInt;
+use ppvm_traits::traits::Clifford;
 
 type Bucket<T, I, C> = SmallVec<[(GeneralizedTableau<T, I, C>, <T as Config>::Coeff); 1]>;
 
@@ -75,6 +79,8 @@ where
         + Copy,
     I: TableauIndex + Send + Sync,
     C: SparseVector<Complex<T::Coeff>, I>,
+    GeneralizedTableau<T, I, C>: Clifford,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
 {
     fn with_capacity(cap: usize) -> Self {
         Self {
@@ -175,6 +181,34 @@ where
         }
 
         needs_renormalize
+    }
+
+    fn insert_or_merge_mutated_branches(
+        &mut self,
+        branches: Vec<(usize, BranchMutation, <T as Config>::Coeff, u64, u64)>,
+        cutoff: &<T as Config>::Coeff,
+    ) -> bool {
+        self.rebuild_if_dirty();
+
+        // Materialize parents in the SAME order as for_each_mut_with_keys so
+        // parent_idx aligns. Correctness-only path: no clone savings here.
+        let parents: Vec<_> = self
+            .buckets
+            .values()
+            .flat_map(|v| v.iter())
+            .map(|(t, _)| t.clone())
+            .collect();
+
+        let real: Vec<Branch<T, I, C>> = branches
+            .into_iter()
+            .map(|(parent_idx, mutation, p, word_fp, phase_loss)| {
+                let mut tab = parents[parent_idx].clone();
+                apply_branch_mutation(&mut tab, mutation);
+                (tab, p, word_fp, phase_loss)
+            })
+            .collect();
+
+        self.insert_or_merge_batch(real, cutoff)
     }
 
     fn retain<F>(&mut self, mut f: F)

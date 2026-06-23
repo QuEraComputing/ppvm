@@ -7,6 +7,7 @@ pub mod vec;
 
 pub use entry_store::{Branch, EntryStore};
 use fxhash::FxHashMap;
+use ppvm_traits::traits::Clifford;
 
 // Hasher for the structural `word_fingerprint`. gxhash (AES-based) is fastest on
 // native but needs hardware AES and does not build on wasm32, so fall back to
@@ -209,6 +210,152 @@ where
         im: T::Coeff::zero(),
     };
     for (val0, idx0) in tab0.coefficients.iter() {
+        let val1 = scratch.get(idx0).copied().unwrap_or(zero);
+        if (*val0 - val1).norm_sqr() >= threshold_sq {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// A lazily-described branch: a mutation applied to a parent entry. Used so the
+/// merge can compute the branch fingerprint / structural identity without
+/// cloning, materializing the tableau only for surviving new entries.
+#[derive(Clone, Copy, Debug)]
+pub enum BranchMutation {
+    /// Apply Pauli `op` (1=X, 2=Y, 3=Z) at `addr0`: flips per-row sign bits only.
+    Pauli { op: u8, addr0: usize },
+    /// Mark qubit `q` lost (set is_lost[q] = true).
+    Loss { q: usize },
+}
+
+/// Materialize a lazily-described branch into a (cloned) tableau in place.
+pub(crate) fn apply_branch_mutation<T, I, C>(
+    tab: &mut GeneralizedTableau<T, I, C>,
+    m: BranchMutation,
+) where
+    T: Config,
+    I: TableauIndex,
+    C: SparseVector<Complex<T::Coeff>, I>,
+    GeneralizedTableau<T, I, C>: Clifford,
+{
+    match m {
+        BranchMutation::Pauli { op, addr0 } => match op {
+            1 => tab.x(addr0),
+            2 => tab.y(addr0),
+            3 => tab.z(addr0),
+            _ => {}
+        },
+        BranchMutation::Loss { q } => {
+            tab.is_lost[q] = true;
+        }
+    }
+}
+
+/// Like [`structurally_equal`], but compares `existing` against the *virtual*
+/// tableau `parent + m` without materializing it. Mirrors `structurally_equal`
+/// field-by-field, deriving each field of the virtual tableau from `parent`:
+/// - `is_lost`: for `Loss { q }`, equals `parent`'s with index `q` forced true;
+///   for `Pauli`, equals `parent`'s unchanged.
+/// - `coefficients`: unchanged by both mutations.
+/// - rows: for `Loss`, unchanged; for `Pauli`, each row's sign bit (phase bit 1)
+///   is flipped per the per-column rule (X: z; Y: x^z; Z: x).
+pub(crate) fn structurally_equal_mutated<T, I, C>(
+    existing: &GeneralizedTableau<T, I, C>,
+    parent: &GeneralizedTableau<T, I, C>,
+    m: BranchMutation,
+    scratch: &mut FxHashMap<I, Complex<T::Coeff>>,
+) -> bool
+where
+    T: Config,
+    T::Coeff: One + Zero + Clone + num::Num + PartialOrd,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + AddAssign
+        + From<Complex64>
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex,
+    C: SparseVector<Complex<T::Coeff>, I>,
+{
+    // NOTE: comparing is_lost and rows is only necessary to avoid hash collisions
+
+    match m {
+        BranchMutation::Loss { q } => {
+            // Virtual is_lost == parent's with index q forced true.
+            if existing.is_lost.len() != parent.is_lost.len() {
+                return false;
+            }
+            for (i, (&e, &p)) in existing
+                .is_lost
+                .iter()
+                .zip(parent.is_lost.iter())
+                .enumerate()
+            {
+                let virt = if i == q { true } else { p };
+                if e != virt {
+                    return false;
+                }
+            }
+        }
+        BranchMutation::Pauli { .. } => {
+            // Virtual is_lost == parent's, unchanged.
+            if existing.is_lost != parent.is_lost {
+                return false;
+            }
+        }
+    }
+
+    if existing.coefficients.len() != parent.coefficients.len() {
+        return false;
+    }
+
+    // Cheaper row comparison first; coefficient compare is O(K) below.
+    match m {
+        BranchMutation::Loss { .. } => {
+            for (re, rp) in existing.tableau.data.iter().zip(parent.tableau.data.iter()) {
+                if re.phase != rp.phase || re.word != rp.word {
+                    return false;
+                }
+            }
+        }
+        BranchMutation::Pauli { op, addr0 } => {
+            for (re, rp) in existing.tableau.data.iter().zip(parent.tableau.data.iter()) {
+                if re.word != rp.word {
+                    return false;
+                }
+                let x: bool = rp.word.xbits[addr0];
+                let z: bool = rp.word.zbits[addr0];
+                let flip = match op {
+                    1 => z,
+                    2 => x ^ z,
+                    3 => x,
+                    _ => false,
+                };
+                let virt_phase = rp.phase ^ ((flip as u8) << 1);
+                if re.phase != virt_phase {
+                    return false;
+                }
+            }
+        }
+    }
+
+    // Reuse the caller-owned scratch map instead of allocating per call.
+    // Clear retains capacity across invocations. Coefficients are unchanged
+    // by both mutations, so compare existing vs parent directly.
+    scratch.clear();
+    scratch.reserve(parent.coefficients.len());
+    for (val, idx) in parent.coefficients.iter() {
+        scratch.insert(*idx, *val);
+    }
+
+    let threshold_sq =
+        existing.coefficient_threshold.clone() * existing.coefficient_threshold.clone();
+    let zero = Complex {
+        re: T::Coeff::zero(),
+        im: T::Coeff::zero(),
+    };
+    for (val0, idx0) in existing.coefficients.iter() {
         let val1 = scratch.get(idx0).copied().unwrap_or(zero);
         if (*val0 - val1).norm_sqr() >= threshold_sq {
             return false;

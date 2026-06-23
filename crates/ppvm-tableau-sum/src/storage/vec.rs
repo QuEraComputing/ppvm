@@ -13,7 +13,13 @@ use ppvm_tableau::{
 };
 use ppvm_traits::config::Config;
 
-use crate::storage::{EntryStore, phase_loss_hash, structurally_equal, word_fingerprint};
+use crate::storage::{
+    BranchMutation, EntryStore, apply_branch_mutation, phase_loss_hash, structurally_equal,
+    structurally_equal_mutated, word_fingerprint,
+};
+use bitvec::view::BitView;
+use num::PrimInt;
+use ppvm_traits::traits::Clifford;
 
 #[derive(Clone)]
 pub struct VecStorage<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> {
@@ -125,6 +131,8 @@ where
         + Copy,
     I: TableauIndex + Send + Sync,
     C: SparseVector<Complex<T::Coeff>, I>,
+    GeneralizedTableau<T, I, C>: Clifford,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
 {
     fn with_capacity(cap: usize) -> Self {
         Self {
@@ -196,6 +204,72 @@ where
             let dropped_any =
                 self.insert_or_merge_entry(tab, p, word_fp, phase_loss, &mut fp_index, cutoff);
             needs_renormalize |= dropped_any;
+        }
+
+        needs_renormalize
+    }
+
+    fn insert_or_merge_mutated_branches(
+        &mut self,
+        branches: Vec<(usize, BranchMutation, <T as Config>::Coeff, u64, u64)>,
+        cutoff: &<T as Config>::Coeff,
+    ) -> bool {
+        // Defensive: should be a no-op since the caller's for_each_mut_with_keys
+        // already ran and the branch words were never mutated.
+        self.rebuild_fingerprints_if_dirty();
+
+        let mut fp_index: FxHashMap<u64, Vec<usize>> =
+            FxHashMap::with_capacity_and_hasher(self.entries.len(), Default::default());
+        for i in 0..self.entries.len() {
+            let fp = self.fingerprints[i];
+            fp_index.entry(fp).or_default().push(i);
+        }
+
+        let mut needs_renormalize = false;
+        for (parent_idx, mutation, p, word_fp, phase_loss) in branches {
+            let fp = word_fp ^ phase_loss;
+
+            // Find a structurally-equal existing entry among the fp candidates
+            // WITHOUT materializing the branch tableau. The disjoint-field borrow
+            // (`self.entries` immutable + `self.scratch` mutable) is allowed.
+            let mut found: Option<usize> = None;
+            if let Some(candidates) = fp_index.get(&fp) {
+                for &i in candidates {
+                    if structurally_equal_mutated(
+                        &self.entries[i].0,
+                        &self.entries[parent_idx].0,
+                        mutation,
+                        &mut self.scratch,
+                    ) {
+                        found = Some(i);
+                        break;
+                    }
+                }
+            }
+
+            match found {
+                Some(i) => {
+                    let p0 = &self.entries[i].1;
+                    self.entries[i].1 = p0.clone() + p;
+                }
+                None => {
+                    if &p > cutoff {
+                        // Surviving new entry: materialize now (clone parent +
+                        // apply mutation). Later branches' parent_idx still refer
+                        // to the original entries — push never moves them.
+                        let mut tab = self.entries[parent_idx].0.clone();
+                        apply_branch_mutation(&mut tab, mutation);
+                        let new_idx = self.entries.len();
+                        self.entries.push((tab, p));
+                        self.fingerprints.push(fp);
+                        self.word_fingerprints.push(word_fp);
+                        self.phase_loss_hashes.push(phase_loss);
+                        fp_index.entry(fp).or_default().push(new_idx);
+                    } else {
+                        needs_renormalize = true;
+                    }
+                }
+            }
         }
 
         needs_renormalize

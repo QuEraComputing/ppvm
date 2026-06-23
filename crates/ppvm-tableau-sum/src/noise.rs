@@ -20,7 +20,7 @@ use rand::{RngExt, rngs::SmallRng};
 
 use crate::{
     data::GeneralizedTableauSum,
-    storage::{Branch, EntryStore, loss_mask, pauli_branch_phase_loss},
+    storage::{Branch, BranchMutation, EntryStore, loss_mask, pauli_branch_phase_loss, sign_mask},
 };
 
 fn single_qubit_loss_branch<T, I, C>(
@@ -106,25 +106,34 @@ where
     I: Debug,
 {
     fn loss_channel(&mut self, addr0: usize, p: <T as Config>::Coeff) {
-        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::with_capacity(
-            self.entries.len(),
-        );
+        // Lazy branch materialization: describe each loss branch as a mutation
+        // of its parent entry. The merge clones the parent only when the branch
+        // survives as a NEW entry; merges/below-cutoff drops never clone.
+        let mut branches =
+            Vec::<(usize, BranchMutation, T::Coeff, u64, u64)>::with_capacity(self.entries.len());
+        let mut idx = 0usize;
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
-                single_qubit_loss_branch(
-                    addr0,
-                    &p,
-                    &mut self.rng,
-                    &mut branches,
-                    tab,
-                    p_sum,
-                    (word_fp, phase_loss),
-                );
+                // Increment for EVERY entry, before the lost check, so
+                // parent_idx aligns with for_each_mut_with_keys' order.
+                let parent_idx = idx;
+                idx += 1;
+                if tab.is_lost[addr0] {
+                    return;
+                }
+                branches.push((
+                    parent_idx,
+                    BranchMutation::Loss { q: addr0 },
+                    p_sum.clone() * p.clone(),
+                    word_fp,
+                    phase_loss ^ loss_mask(addr0),
+                ));
+                *p_sum *= T::Coeff::one() - p.clone();
             });
 
         let needs_renormalize = self
             .entries
-            .insert_or_merge_batch(branches, &self.sum_cutoff);
+            .insert_or_merge_mutated_branches(branches, &self.sum_cutoff);
         if needs_renormalize {
             self.normalize_probabilities();
         }
@@ -196,44 +205,66 @@ where
 {
     fn pauli_error(&mut self, addr0: usize, p: [<T as Config>::Coeff; 3]) {
         let p_total: T::Coeff = p[0].clone() + p[1].clone() + p[2].clone();
-        let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::with_capacity(
+        // Lazy branch materialization: describe each X/Y/Z branch as a Pauli
+        // mutation of its parent. The phase/loss delta is computed by walking the
+        // parent's column once (no clone) — X flips rows with z, Y with x^z, Z
+        // with x — matching what `pauli_branch_phase_loss` would produce.
+        let mut branches = Vec::<(usize, BranchMutation, T::Coeff, u64, u64)>::with_capacity(
             3 * self.entries.len(),
         );
-
+        let mut idx = 0usize;
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
+                let parent_idx = idx;
+                idx += 1;
                 if tab.is_lost[addr0] {
                     return;
                 }
 
-                let tab_seed_x = self.rng.random::<u64>();
-                let tab_seed_y = self.rng.random::<u64>();
-                let tab_seed_z = self.rng.random::<u64>();
+                let (mut dx, mut dy, mut dz) = (0u64, 0u64, 0u64);
+                for (row, pw) in tab.tableau.data.iter().enumerate() {
+                    let x: bool = pw.word.xbits[addr0];
+                    let z: bool = pw.word.zbits[addr0];
+                    let m = sign_mask(row);
+                    if z {
+                        dx ^= m;
+                    }
+                    if x ^ z {
+                        dy ^= m;
+                    }
+                    if x {
+                        dz ^= m;
+                    }
+                }
 
-                let mut tab_branch_x = tab.fork(Some(tab_seed_x));
-                let mut tab_branch_y = tab.fork(Some(tab_seed_y));
-                let mut tab_branch_z = tab.fork(Some(tab_seed_z));
-
-                tab_branch_x.x(addr0);
-                tab_branch_y.y(addr0);
-                tab_branch_z.z(addr0);
-
-                // X/Y/Z flip only phase bits, never the Pauli words, so all three
-                // branches reuse the parent's word-fingerprint and derive their
-                // phase/loss hash from the parent's by XORing the flipped rows.
-                let hx = pauli_branch_phase_loss(tab, &tab_branch_x, phase_loss);
-                let hy = pauli_branch_phase_loss(tab, &tab_branch_y, phase_loss);
-                let hz = pauli_branch_phase_loss(tab, &tab_branch_z, phase_loss);
-                branches.push((tab_branch_x, p_sum.clone() * p[0].clone(), word_fp, hx));
-                branches.push((tab_branch_y, p_sum.clone() * p[1].clone(), word_fp, hy));
-                branches.push((tab_branch_z, p_sum.clone() * p[2].clone(), word_fp, hz));
+                branches.push((
+                    parent_idx,
+                    BranchMutation::Pauli { op: 1, addr0 },
+                    p_sum.clone() * p[0].clone(),
+                    word_fp,
+                    phase_loss ^ dx,
+                ));
+                branches.push((
+                    parent_idx,
+                    BranchMutation::Pauli { op: 2, addr0 },
+                    p_sum.clone() * p[1].clone(),
+                    word_fp,
+                    phase_loss ^ dy,
+                ));
+                branches.push((
+                    parent_idx,
+                    BranchMutation::Pauli { op: 3, addr0 },
+                    p_sum.clone() * p[2].clone(),
+                    word_fp,
+                    phase_loss ^ dz,
+                ));
 
                 *p_sum *= T::Coeff::one() - p_total.clone();
             });
 
         let needs_normalize = self
             .entries
-            .insert_or_merge_batch(branches, &self.sum_cutoff);
+            .insert_or_merge_mutated_branches(branches, &self.sum_cutoff);
         if needs_normalize {
             self.normalize_probabilities();
         }

@@ -16,6 +16,30 @@ use crate::ast::{ExtendedProgram, Program};
 use crate::diagnostics::{Aborted, Diagnostic, DiagnosticSink, Flow, LineMap, Span};
 use crate::syntax::{RawSyntaxTree, program_parser};
 
+/// Emit a diagnostic to the sink and report the sink's continuation decision.
+pub(crate) fn emit(
+    sink: &mut dyn DiagnosticSink,
+    span: Span,
+    code: &'static str,
+    message: String,
+) -> Flow {
+    sink.emit(Diagnostic::error(span, code, message))
+}
+
+/// Emit a recoverable error, then either abort the stage or signal "skip this item".
+pub(crate) fn emit_skip<T>(
+    sink: &mut dyn DiagnosticSink,
+    span: Span,
+    code: &'static str,
+    message: String,
+) -> Result<Option<T>, Aborted> {
+    if emit(sink, span, code, message) == Flow::Abort {
+        Err(Aborted)
+    } else {
+        Ok(None)
+    }
+}
+
 pub struct Pipeline<S> {
     state: S,
 }

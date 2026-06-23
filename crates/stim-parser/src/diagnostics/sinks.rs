@@ -10,7 +10,6 @@ use crate::diagnostics::{Diagnostic, DiagnosticSink, Flow, Severity};
 #[derive(Debug, Default)]
 pub struct FailFast {
     items: Vec<Diagnostic>,
-    saw_error: bool,
 }
 
 impl FailFast {
@@ -19,7 +18,7 @@ impl FailFast {
     }
 
     pub fn saw_error(&self) -> bool {
-        self.saw_error
+        self.items.iter().any(|d| d.severity == Severity::Error)
     }
 
     pub fn into_items(self) -> Vec<Diagnostic> {
@@ -32,7 +31,6 @@ impl DiagnosticSink for FailFast {
         let is_error = diagnostic.severity == Severity::Error;
         self.items.push(diagnostic);
         if is_error {
-            self.saw_error = true;
             Flow::Abort
         } else {
             Flow::Continue

@@ -27,6 +27,16 @@ impl Default for PrintOptions {
 
 pub trait StimPrint {
     fn print(&self, out: &mut dyn fmt::Write, opts: &PrintOptions, depth: usize) -> fmt::Result;
+
+    fn to_stim(&self) -> String {
+        self.to_stim_with(&PrintOptions::default())
+    }
+
+    fn to_stim_with(&self, opts: &PrintOptions) -> String {
+        let mut s = String::new();
+        let _ = self.print(&mut s, opts, 0);
+        s
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +111,24 @@ fn write_targets(out: &mut dyn fmt::Write, targets: &[Target]) -> fmt::Result {
         }
     }
     Ok(())
+}
+
+/// Print a `REPEAT count { … }` block, recursively printing the body one
+/// indent level deeper and closing the brace at the block's own depth. The
+/// caller is responsible for the trailing newline after the closing brace.
+fn write_repeat_block<T: StimPrint>(
+    out: &mut dyn fmt::Write,
+    opts: &PrintOptions,
+    depth: usize,
+    count: u64,
+    body: &[T],
+) -> fmt::Result {
+    writeln!(out, "REPEAT {count} {{")?;
+    for instr in body {
+        instr.print(out, opts, depth + 1)?;
+    }
+    write_indent(out, opts, depth)?;
+    out.write_str("}")
 }
 
 /// Print `MPP` products as space-separated, `*`-joined Pauli factors
@@ -178,7 +206,7 @@ impl StimPrint for AnnotationOp {
 
 impl StimPrint for MppOp {
     fn print(&self, out: &mut dyn fmt::Write, _opts: &PrintOptions, _depth: usize) -> fmt::Result {
-        out.write_str("MPP")?;
+        out.write_str(crate::instructions::MeasureName::MPP.canonical_name())?;
         write_tags(out, &self.tags)?;
         write_args(out, &self.args)?;
         write_mpp_products(out, &self.products)
@@ -209,12 +237,7 @@ impl StimPrint for Instruction {
                 write_usize_targets(out, bits)?;
             }
             Instruction::Repeat { count, body, .. } => {
-                writeln!(out, "REPEAT {count} {{")?;
-                for instr in body {
-                    instr.print(out, opts, depth + 1)?;
-                }
-                write_indent(out, opts, depth)?;
-                out.write_str("}")?;
+                write_repeat_block(out, opts, depth, *count, body)?;
             }
         }
         writeln!(out)
@@ -227,18 +250,6 @@ impl StimPrint for Program {
             instr.print(out, opts, depth)?;
         }
         Ok(())
-    }
-}
-
-impl Program {
-    pub fn to_stim(&self) -> String {
-        self.to_stim_with(&PrintOptions::default())
-    }
-
-    pub fn to_stim_with(&self, opts: &PrintOptions) -> String {
-        let mut s = String::new();
-        let _ = self.print(&mut s, opts, 0);
-        s
     }
 }
 
@@ -328,12 +339,7 @@ impl StimPrint for ExtendedInstruction {
                 }
             }
             ExtendedInstruction::Repeat { count, body, .. } => {
-                writeln!(out, "REPEAT {count} {{")?;
-                for instr in body {
-                    instr.print(out, opts, depth + 1)?;
-                }
-                write_indent(out, opts, depth)?;
-                out.write_str("}")?;
+                write_repeat_block(out, opts, depth, *count, body)?;
             }
         }
         writeln!(out)
@@ -349,18 +355,6 @@ impl StimPrint for ExtendedProgram {
     }
 }
 
-impl ExtendedProgram {
-    pub fn to_stim(&self) -> String {
-        self.to_stim_with(&PrintOptions::default())
-    }
-
-    pub fn to_stim_with(&self, opts: &PrintOptions) -> String {
-        let mut s = String::new();
-        let _ = self.print(&mut s, opts, 0);
-        s
-    }
-}
-
 impl fmt::Display for ExtendedProgram {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.print(f, &PrintOptions::default(), 0)
@@ -373,6 +367,7 @@ impl fmt::Display for ExtendedProgram {
 
 #[cfg(test)]
 mod tests {
+    use crate::print::StimPrint;
     use crate::{parse, parse_extended};
 
     #[test]

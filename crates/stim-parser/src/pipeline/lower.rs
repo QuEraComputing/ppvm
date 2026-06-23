@@ -13,18 +13,10 @@ use std::sync::Arc;
 use crate::ast::extended::{ExtendedInstruction, ExtendedProgram};
 use crate::ast::shared::{Axis, GateOp, NoiseOp, Tag, TagParam, Target};
 use crate::ast::vanilla::{Instruction, Program};
-use crate::diagnostics::{Aborted, Diagnostic, DiagnosticSink, Flow, Span};
+use crate::diagnostics::{Aborted, DiagnosticSink, Span};
 use crate::instructions::{GateName, NoiseName};
 
-/// Emit a diagnostic to the sink and report the sink's continuation decision.
-fn emit(sink: &mut dyn DiagnosticSink, span: Span, code: &'static str, message: String) -> Flow {
-    sink.emit(Diagnostic::error(span, code, message))
-}
-
-/// The canonical spelling of a gate name, for diagnostic messages.
-fn gate_name(name: GateName) -> &'static str {
-    name.canonical_name()
-}
+use super::emit_skip;
 
 /// Lower a vanilla [`Program`] into an [`ExtendedProgram`], forwarding every
 /// recoverable error to the sink.
@@ -111,17 +103,15 @@ fn lower_gate(
 
     match name {
         // Native T / T_DAG mnemonics lower to the same sugar as `S[T]` / `S_DAG[T]`.
-        T => {
-            let Some(targets) = qubit_targets(targets, gate_name(name), span, sink)? else {
+        T | TDag => {
+            let Some(targets) = qubit_targets(targets, name.canonical_name(), span, sink)? else {
                 return Ok(None);
             };
-            Ok(Some(ExtendedInstruction::T { targets, span }))
-        }
-        TDag => {
-            let Some(targets) = qubit_targets(targets, gate_name(name), span, sink)? else {
-                return Ok(None);
-            };
-            Ok(Some(ExtendedInstruction::TDag { targets, span }))
+            Ok(Some(if matches!(name, GateName::T) {
+                ExtendedInstruction::T { targets, span }
+            } else {
+                ExtendedInstruction::TDag { targets, span }
+            }))
         }
         S | SDag => match tags.as_slice() {
             [] => Ok(Some(ExtendedInstruction::Gate(GateOp {
@@ -132,10 +122,11 @@ fn lower_gate(
                 span,
             }))),
             [t] if t.name == "T" => {
-                if require_no_params(t, gate_name(name), span, sink)?.is_none() {
+                if require_no_params(t, name.canonical_name(), span, sink)?.is_none() {
                     return Ok(None);
                 }
-                let Some(targets) = qubit_targets(targets, gate_name(name), span, sink)? else {
+                let Some(targets) = qubit_targets(targets, name.canonical_name(), span, sink)?
+                else {
                     return Ok(None);
                 };
                 Ok(Some(if matches!(name, S) {
@@ -144,10 +135,10 @@ fn lower_gate(
                     ExtendedInstruction::TDag { targets, span }
                 }))
             }
-            [t] => invalid_tag(t.name.clone(), gate_name(name), span, "expected [T]", sink),
+            [t] => invalid_tag(&t.name, name.canonical_name(), span, "expected [T]", sink),
             _ => invalid_tag(
-                tags[0].name.clone(),
-                gate_name(name),
+                &tags[0].name,
+                name.canonical_name(),
                 span,
                 "expected exactly one tag",
                 sink,
@@ -167,13 +158,7 @@ fn lower_gate(
                 };
                 interpret_identity_tag(t, targets, span, sink)
             }
-            _ => invalid_tag(
-                tags[0].name.clone(),
-                "I",
-                span,
-                "expected exactly one tag",
-                sink,
-            ),
+            _ => invalid_tag(&tags[0].name, "I", span, "expected exactly one tag", sink),
         },
         _ => Ok(Some(ExtendedInstruction::Gate(GateOp {
             name,
@@ -195,7 +180,7 @@ fn require_no_params(
 ) -> Result<Option<()>, Aborted> {
     if !tag.params.is_empty() {
         return invalid_tag::<()>(
-            tag.name.clone(),
+            &tag.name,
             instruction,
             span,
             "tag must have no parameters",
@@ -246,7 +231,7 @@ fn interpret_identity_tag(
     }
 
     invalid_tag(
-        tag.name.clone(),
+        &tag.name,
         "I",
         span,
         "unrecognized tag (expected R_X / R_Y / R_Z / U3)",
@@ -270,13 +255,13 @@ fn lower_noise(
 
     match (name, tags.as_slice()) {
         (IError, [t]) if t.name == "loss" => {
-            if require_no_params(t, "I_ERROR", span, sink)?.is_none() {
+            if require_no_params(t, name.canonical_name(), span, sink)?.is_none() {
                 return Ok(None);
             }
             if args.len() != 1 {
                 return invalid_tag(
                     "loss",
-                    "I_ERROR",
+                    name.canonical_name(),
                     span,
                     format!("[loss] expects 1 arg, got {}", args.len()),
                     sink,
@@ -289,13 +274,13 @@ fn lower_noise(
             }))
         }
         (IError, [t]) if t.name == "correlated_loss" => {
-            if require_no_params(t, "I_ERROR", span, sink)?.is_none() {
+            if require_no_params(t, name.canonical_name(), span, sink)?.is_none() {
                 return Ok(None);
             }
             if targets.is_empty() || !targets.len().is_multiple_of(2) {
                 return invalid_tag(
                     "correlated_loss",
-                    "I_ERROR",
+                    name.canonical_name(),
                     span,
                     format!(
                         "[correlated_loss] expects a nonzero even target count, got {}",
@@ -310,7 +295,7 @@ fn lower_noise(
                 n => {
                     return invalid_tag(
                         "correlated_loss",
-                        "I_ERROR",
+                        name.canonical_name(),
                         span,
                         format!("[correlated_loss] expects 1 or 3 args, got {n}"),
                         sink,
@@ -325,21 +310,21 @@ fn lower_noise(
         }
         (IError, []) => invalid_tag(
             "<missing>",
-            "I_ERROR",
+            name.canonical_name(),
             span,
             "I_ERROR requires a [loss] or [correlated_loss] tag",
             sink,
         ),
         (IError, [t]) => invalid_tag(
-            t.name.clone(),
-            "I_ERROR",
+            &t.name,
+            name.canonical_name(),
             span,
             "expected [loss] or [correlated_loss]",
             sink,
         ),
         (IError, _) => invalid_tag(
-            tags[0].name.clone(),
-            "I_ERROR",
+            &tags[0].name,
+            name.canonical_name(),
             span,
             "expected exactly one tag",
             sink,
@@ -357,24 +342,19 @@ fn lower_noise(
 /// Emit an `invalid-tag` diagnostic and translate the sink's decision into the
 /// skip/abort return shape.
 fn invalid_tag<T>(
-    tag_name: impl Into<String>,
+    tag_name: &str,
     instruction: &str,
     span: Span,
     message: impl Into<String>,
     sink: &mut dyn DiagnosticSink,
 ) -> Result<Option<T>, Aborted> {
-    let tag_name = tag_name.into();
     let message = message.into();
-    if emit(
+    emit_skip(
         sink,
         span,
         "invalid-tag",
         format!("invalid tag '{tag_name}' on {instruction}: {message}"),
-    ) == Flow::Abort
-    {
-        return Err(Aborted);
-    }
-    Ok(None)
+    )
 }
 
 /// Convert MPAD bit literals (`0`/`1`) to booleans. A bit outside `{0, 1}` is
@@ -390,16 +370,12 @@ fn convert_mpad_bits(
             0 => out.push(false),
             1 => out.push(true),
             _ => {
-                if emit(
+                return emit_skip(
                     sink,
                     span,
                     "invalid-mpad-bit",
                     format!("MPAD bit {index} must be 0 or 1, got {value}"),
-                ) == Flow::Abort
-                {
-                    return Err(Aborted);
-                }
-                return Ok(None);
+                );
             }
         }
     }
@@ -426,16 +402,12 @@ fn qubit_targets(
         match t.as_qubit() {
             Some(q) => out.push(q),
             None => {
-                if emit(
+                return emit_skip(
                     sink,
                     span,
                     "record-target-not-allowed",
                     format!("record target rec[-k] not allowed on {instruction}"),
-                ) == Flow::Abort
-                {
-                    return Err(Aborted);
-                }
-                return Ok(None);
+                );
             }
         }
     }
@@ -466,7 +438,7 @@ fn exact_named_params<const N: usize>(
         match param {
             TagParam::Positional(_) => {
                 return invalid_tag(
-                    tag.name.clone(),
+                    &tag.name,
                     instruction,
                     span,
                     "tag parameters must be named",
@@ -477,7 +449,7 @@ fn exact_named_params<const N: usize>(
                 let Some(index) = required.iter().position(|required_key| key == required_key)
                 else {
                     return invalid_tag(
-                        tag.name.clone(),
+                        &tag.name,
                         instruction,
                         span,
                         format!("unexpected named parameter '{key}'"),
@@ -486,7 +458,7 @@ fn exact_named_params<const N: usize>(
                 };
                 if seen[index] {
                     return invalid_tag(
-                        tag.name.clone(),
+                        &tag.name,
                         instruction,
                         span,
                         format!("duplicate named parameter '{key}'"),
@@ -502,7 +474,7 @@ fn exact_named_params<const N: usize>(
     for (index, key) in required.iter().enumerate() {
         if !seen[index] {
             return invalid_tag(
-                tag.name.clone(),
+                &tag.name,
                 instruction,
                 span,
                 format!("missing required named parameter '{key}'"),

@@ -15,6 +15,11 @@ use crate::diagnostics::{Diagnostics, FailFast, LineMap};
 use crate::pipeline::Pipeline;
 use crate::syntax::run_on_parser_stack;
 
+/// Build a [`Diagnostics`] from a fail-fast sink that aborted a parse stage.
+fn fail(sink: FailFast, src: &str) -> Diagnostics {
+    Diagnostics::new(sink.into_items(), Arc::new(LineMap::new(src)))
+}
+
 /// Parse Stim source into the vanilla [`Program`] AST. Uses a fail-fast
 /// policy; the returned [`Diagnostics`] holds the first error.
 pub fn parse(src: &str) -> Result<Program, Diagnostics> {
@@ -25,10 +30,7 @@ pub fn parse(src: &str) -> Result<Program, Diagnostics> {
             .and_then(|p| p.validate(&mut sink));
         match result {
             Ok(p) => Ok(p.finish()),
-            Err(_) => Err(Diagnostics::new(
-                sink.into_items(),
-                Arc::new(LineMap::new(src)),
-            )),
+            Err(_) => Err(fail(sink, src)),
         }
     })
 }
@@ -43,10 +45,7 @@ pub fn parse_extended(src: &str) -> Result<ExtendedProgram, Diagnostics> {
             .and_then(|p| p.lower(&mut sink));
         match result {
             Ok(p) => Ok(p.finish()),
-            Err(_) => Err(Diagnostics::new(
-                sink.into_items(),
-                Arc::new(LineMap::new(src)),
-            )),
+            Err(_) => Err(fail(sink, src)),
         }
     })
 }

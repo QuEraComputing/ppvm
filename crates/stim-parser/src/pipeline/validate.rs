@@ -13,14 +13,11 @@ use crate::ast::shared::{
     AnnotationOp, GateOp, MeasureOp, MppOp, NoiseOp, PauliAxis, PauliFactor, Tag, Target,
 };
 use crate::ast::vanilla::{Instruction, Program};
-use crate::diagnostics::{Aborted, Diagnostic, DiagnosticSink, Flow, LineMap, Span};
+use crate::diagnostics::{Aborted, DiagnosticSink, LineMap, Span};
 use crate::instructions::{ArgCount, EntryKind, MeasureName, TableEntry, TargetArity, lookup};
 use crate::syntax::{RawSyntaxNode, RawSyntaxTree, RawTarget};
 
-/// Emit a diagnostic to the sink and report the sink's continuation decision.
-fn emit(sink: &mut dyn DiagnosticSink, span: Span, code: &'static str, message: String) -> Flow {
-    sink.emit(Diagnostic::error(span, code, message))
-}
+use super::emit_skip;
 
 /// Walk the raw syntactic tree and build the validated [`Program`].
 pub(crate) fn validate(
@@ -72,16 +69,12 @@ fn validate_node(
         } => {
             let span: Span = span.into();
             let Some(entry) = lookup(&name) else {
-                if emit(
+                return emit_skip(
                     sink,
                     span,
                     "unknown-instruction",
                     format!("unknown instruction '{name}'"),
-                ) == Flow::Abort
-                {
-                    return Err(Aborted);
-                }
-                return Ok(None);
+                );
             };
             let arg_rule = entry.args;
             let target_rule = entry.targets;
@@ -94,28 +87,20 @@ fn validate_node(
                     return Ok(None);
                 };
                 if let Some(expected) = check_arg_count(arg_rule, args.len()) {
-                    if emit(
+                    return emit_skip(
                         sink,
                         span,
                         "arg-count",
                         format!("'{canonical}' expected {expected} args, got {}", args.len()),
-                    ) == Flow::Abort
-                    {
-                        return Err(Aborted);
-                    }
-                    return Ok(None);
+                    );
                 }
                 if products.is_empty() {
-                    if emit(
+                    return emit_skip(
                         sink,
                         span,
                         "target-count",
                         format!("'{canonical}' expected target count divisible by 1, got 0"),
-                    ) == Flow::Abort
-                    {
-                        return Err(Aborted);
-                    }
-                    return Ok(None);
+                    );
                 }
                 return Ok(Some(Instruction::Mpp(MppOp {
                     tags,
@@ -146,29 +131,21 @@ fn validate_node(
                     continue;
                 }
                 let target_span: Span = t.span.into();
-                if emit(
+                return emit_skip(
                     sink,
                     target_span,
                     "invalid-target",
                     format!("invalid target {:?}", t.text),
-                ) == Flow::Abort
-                {
-                    return Err(Aborted);
-                }
-                return Ok(None);
+                );
             }
 
             if let Some(expected) = check_arg_count(arg_rule, args.len()) {
-                if emit(
+                return emit_skip(
                     sink,
                     span,
                     "arg-count",
                     format!("'{canonical}' expected {expected} args, got {}", args.len()),
-                ) == Flow::Abort
-                {
-                    return Err(Aborted);
-                }
-                return Ok(None);
+                );
             }
 
             let divisor = match target_rule {
@@ -180,16 +157,12 @@ fn validate_node(
             if let Some(d) = divisor {
                 let n = parsed_targets.len();
                 if n == 0 || !n.is_multiple_of(d) {
-                    if emit(
+                    return emit_skip(
                         sink,
                         span,
                         "target-count",
                         format!("'{canonical}' expected target count divisible by {d}, got {n}"),
-                    ) == Flow::Abort
-                    {
-                        return Err(Aborted);
-                    }
-                    return Ok(None);
+                    );
                 }
             }
 
@@ -263,16 +236,12 @@ fn invalid_mpp_target(
     sink: &mut dyn DiagnosticSink,
 ) -> Result<Option<Vec<Vec<PauliFactor>>>, Aborted> {
     let span: Span = t.span.into();
-    if emit(
+    emit_skip(
         sink,
         span,
         "invalid-mpp-target",
         format!("invalid MPP target {:?}", t.text),
-    ) == Flow::Abort
-    {
-        return Err(Aborted);
-    }
-    Ok(None)
+    )
 }
 
 /// Parse a measurement-record lookback target `rec[-k]` into its lookback
@@ -350,7 +319,7 @@ mod tests {
     use super::*;
     use crate::ast::shared::{Tag, TagParam, Target};
     use crate::ast::vanilla::Instruction;
-    use crate::diagnostics::{Collect, FailFast, LineMap};
+    use crate::diagnostics::{Collect, Diagnostic, FailFast, LineMap};
     use crate::instructions::{GateName, MeasureName, NoiseName};
     use crate::syntax::raw::{RawSyntaxNode, RawTarget};
     use chumsky::span::SimpleSpan;

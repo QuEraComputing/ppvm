@@ -35,6 +35,7 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> TableauL
 where
     T::Coeff: PartialOrd<f64>,
     Complex<T::Coeff>: From<Complex<f64>>,
+    <T::Storage as BitView>::Store: PrimInt,
 {
     type Coeff = T::Coeff;
     type Rng = SmallRng;
@@ -61,7 +62,7 @@ macro_rules! impl_tableau_noise {
         impl<T: Config $($gen)*> Depolarizing<T> for $ty
         where $($bound)*
         {
-            fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
+            fn depolarize1(&mut self, addr0: usize, p: T::Coeff) {
                 self.depolarize_impl(addr0, p);
             }
         }
@@ -104,6 +105,7 @@ impl_tableau_noise! {
     where: [
         T::Coeff: PartialOrd<f64>,
         Complex<T::Coeff>: From<Complex<f64>>,
+        <T::Storage as BitView>::Store: PrimInt,
     ],
 }
 
@@ -139,6 +141,9 @@ where
 
         // NOTE: this is O(n^2) but also potentially removes coefficients, which is nice
         let outcome = self.measure(addr0);
+        // A loss event is not a logical measurement: keep the measurement
+        // record neutral by dropping the entry the internal `measure` pushed.
+        self.measurement_record.pop();
         if let Some(true) = outcome {
             // flip back to 0
             self.x(addr0);
@@ -246,7 +251,7 @@ mod tests {
     #[test]
     fn depolarize_p0_no_change() {
         let mut t = tab(1);
-        t.depolarize(0, 0.0);
+        t.depolarize1(0, 0.0);
         assert!(!t.measure(0).unwrap());
     }
 
@@ -254,7 +259,7 @@ mod tests {
     fn depolarize_p1_does_not_mark_lost() {
         // With p=1.0 an error is always applied; verify is_lost is unaffected
         let mut t = tab(1);
-        t.depolarize(0, 1.0);
+        t.depolarize1(0, 1.0);
         assert!(!t.is_lost[0]);
     }
 
@@ -436,6 +441,16 @@ mod tests {
     }
 
     #[test]
+    fn loss_channel_does_not_pollute_measurement_record() {
+        // A loss event is not a logical measurement and must leave the
+        // measurement record untouched.
+        let mut t = tab(1);
+        t.x(0);
+        t.loss_channel(0, 1.0);
+        assert!(t.current_measurement_record().is_empty());
+    }
+
+    #[test]
     fn loss_channel_p1_subsequent_gate_is_noop() {
         let mut t = tab(1);
         t.loss_channel(0, 1.0);
@@ -495,13 +510,13 @@ mod tests {
         let seed = 42u64;
         let mut t_active = tab(1);
         t_active.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
-        t_active.depolarize(0, 0.3);
+        t_active.depolarize1(0, 0.3);
         let next_active: f64 = t_active.tableau.rng.random();
 
         let mut t_lost = tab(1);
         t_lost.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
         t_lost.is_lost[0] = true;
-        t_lost.depolarize(0, 0.3);
+        t_lost.depolarize1(0, 0.3);
         let next_lost: f64 = t_lost.tableau.rng.random();
 
         assert_eq!(next_active, next_lost);
@@ -537,7 +552,7 @@ mod tests {
         let ones = (0..trials)
             .filter(|_| {
                 let mut t = tab(1);
-                t.depolarize(0, p);
+                t.depolarize1(0, p);
                 t.measure(0).unwrap()
             })
             .count();

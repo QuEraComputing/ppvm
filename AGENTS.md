@@ -85,8 +85,8 @@ crates/ppvm-tableau         # Stabilizer + generalized-tableau simulator
 crates/ppvm-sym             # Symbolic (parametric) Pauli propagation
 crates/ppvm-stim            # Stim program execution against the tableau
 crates/stim-parser          # Standalone Stim parser
-crates/ppvm-python-native   # PyO3 cdylib (maturin)
-ppvm-python/                # Pure-Python wrapper (uv_build)
+crates/ppvm-python-native   # PyO3 cdylib, compiled into the `ppvm` wheel as `ppvm._core`
+ppvm-python/                # Python package `ppvm` (maturin: Python wrapper + the compiled `ppvm._core`)
 docs/                       # Astro docs site — includes the Developer Guide
 ```
 

@@ -215,10 +215,10 @@ fn depolarize_on_ground_state() {
     let shots = 8000;
     let p = 0.6_f64;
     let sum = run_sum(1, shots, 1e-12, |t| {
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
     });
     let pure = run_pure(1, shots, |t| {
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
     });
     // P(1) should converge to 2p/3 on both sides.
     let ones_sum = sum.iter().filter(|s| s[0] == Some(true)).count() as f64 / shots as f64;
@@ -241,11 +241,11 @@ fn depolarize_on_plus_state() {
     let shots = 4000;
     let sum = run_sum(1, shots, 1e-12, |t| {
         t.h(0);
-        t.depolarize(0, 0.5);
+        t.depolarize1(0, 0.5);
     });
     let pure = run_pure(1, shots, |t| {
         t.h(0);
-        t.depolarize(0, 0.5);
+        t.depolarize1(0, 0.5);
     });
     // |+⟩ is invariant under depolarization in the Z basis: P(0)=P(1)=0.5.
     assert_distributions_match(&sum, &pure, 0.05, "depolarize_on_plus_state");
@@ -303,7 +303,7 @@ fn pauli_error_on_lost_qubit_is_noop() {
 
 #[test]
 fn bell_pair_with_depolarize_on_q0() {
-    // After depolarize(q0, p) on a Bell pair (|00⟩+|11⟩)/√2:
+    // After depolarize1(q0, p) on a Bell pair (|00⟩+|11⟩)/√2:
     //   I, Z keep correlation (|00⟩+|11⟩ or |00⟩-|11⟩) → measurements agree
     //   X, Y break correlation → measurements disagree
     // So P(same) = 1 - 2p/3 and P(diff) = 2p/3.
@@ -312,12 +312,12 @@ fn bell_pair_with_depolarize_on_q0() {
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
         t.cnot(0, 1);
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
         t.cnot(0, 1);
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
     });
     let same_sum = sum.iter().filter(|s| s[0] == s[1]).count() as f64 / shots as f64;
     let same_pure = pure.iter().filter(|s| s[0] == s[1]).count() as f64 / shots as f64;
@@ -379,16 +379,16 @@ fn loss_then_depolarize_three_qubits() {
         t.cnot(0, 1);
         t.cnot(1, 2);
         t.loss_channel(0, 0.2);
-        t.depolarize(1, 0.15);
-        t.depolarize(2, 0.15);
+        t.depolarize1(1, 0.15);
+        t.depolarize1(2, 0.15);
     });
     let pure = run_pure(3, shots, |t| {
         t.h(0);
         t.cnot(0, 1);
         t.cnot(1, 2);
         t.loss_channel(0, 0.2);
-        t.depolarize(1, 0.15);
-        t.depolarize(2, 0.15);
+        t.depolarize1(1, 0.15);
+        t.depolarize1(2, 0.15);
     });
     // Outcome space: 3 values per qubit ⇒ up to 27 bins; many will have
     // ~0 mass so per-bin error is dominated by the high-mass ones.
@@ -403,7 +403,7 @@ fn ghz_three_qubits_with_per_qubit_noise() {
         t.cnot(0, 1);
         t.cnot(0, 2);
         for q in 0..3 {
-            t.depolarize(q, 0.1);
+            t.depolarize1(q, 0.1);
             t.loss_channel(q, 0.05);
         }
     });
@@ -412,7 +412,7 @@ fn ghz_three_qubits_with_per_qubit_noise() {
         t.cnot(0, 1);
         t.cnot(0, 2);
         for q in 0..3 {
-            t.depolarize(q, 0.1);
+            t.depolarize1(q, 0.1);
             t.loss_channel(q, 0.05);
         }
     });
@@ -429,16 +429,16 @@ fn repeated_depolarize_creates_many_branches() {
         t.h(0);
         t.cnot(0, 1);
         for _ in 0..5 {
-            t.depolarize(0, p);
-            t.depolarize(1, p);
+            t.depolarize1(0, p);
+            t.depolarize1(1, p);
         }
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
         t.cnot(0, 1);
         for _ in 0..5 {
-            t.depolarize(0, p);
-            t.depolarize(1, p);
+            t.depolarize1(0, p);
+            t.depolarize1(1, p);
         }
     });
     assert_distributions_match(
@@ -462,11 +462,11 @@ fn clifford_layer_with_sqrt_gates_and_noise() {
         t.cz(0, 1);
         t.cz(2, 3);
         for q in 0..4 {
-            t.depolarize(q, 0.08);
+            t.depolarize1(q, 0.08);
         }
         t.cz(1, 2);
-        t.sqrt_x_adj(0);
-        t.sqrt_x_adj(3);
+        t.sqrt_x_dag(0);
+        t.sqrt_x_dag(3);
         for q in 0..4 {
             t.loss_channel(q, 0.05);
         }
@@ -479,11 +479,11 @@ fn clifford_layer_with_sqrt_gates_and_noise() {
         t.cz(0, 1);
         t.cz(2, 3);
         for q in 0..4 {
-            t.depolarize(q, 0.08);
+            t.depolarize1(q, 0.08);
         }
         t.cz(1, 2);
-        t.sqrt_x_adj(0);
-        t.sqrt_x_adj(3);
+        t.sqrt_x_dag(0);
+        t.sqrt_x_dag(3);
         for q in 0..4 {
             t.loss_channel(q, 0.05);
         }
@@ -545,11 +545,11 @@ fn reset_after_depolarize_still_zero() {
     // reset projects back to |0⟩ deterministically.
     let shots = 4000;
     let sum = run_sum(1, shots, 1e-12, |t| {
-        t.depolarize(0, 0.5);
+        t.depolarize1(0, 0.5);
         t.reset(0);
     });
     let pure = run_pure(1, shots, |t| {
-        t.depolarize(0, 0.5);
+        t.depolarize1(0, 0.5);
         t.reset(0);
     });
     assert!(sum.iter().all(|s| s[0] == Some(false)));
@@ -747,13 +747,13 @@ fn reset_then_depolarize_then_measure_all() {
     let sum = run_sum(1, shots, 1e-12, |t| {
         t.h(0);
         t.reset(0);
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
         t.h(0);
     });
     let pure = run_pure(1, shots, |t| {
         t.h(0);
         t.reset(0);
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
         t.h(0);
     });
     assert_distributions_match(&sum, &pure, 0.05, "reset_then_depolarize_then_measure_all");
@@ -851,13 +851,13 @@ fn ry_then_rz_then_ry_with_depolarize() {
         t.ry(0, 0.41 * std::f64::consts::PI);
         t.rz(0, 0.23 * std::f64::consts::PI);
         t.ry(0, 0.17 * std::f64::consts::PI);
-        t.depolarize(0, 0.12);
+        t.depolarize1(0, 0.12);
     });
     let pure = run_pure(1, shots, |t| {
         t.ry(0, 0.41 * std::f64::consts::PI);
         t.rz(0, 0.23 * std::f64::consts::PI);
         t.ry(0, 0.17 * std::f64::consts::PI);
-        t.depolarize(0, 0.12);
+        t.depolarize1(0, 0.12);
     });
     assert_distributions_match(&sum, &pure, 0.04, "ry_then_rz_then_ry_with_depolarize");
 }
@@ -950,11 +950,11 @@ fn rxx_with_depolarize_breaks_correlation() {
     let p = 0.2_f64;
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.rxx(0, 1, std::f64::consts::FRAC_PI_2);
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
     });
     let pure = run_pure(2, shots, |t| {
         t.rxx(0, 1, std::f64::consts::FRAC_PI_2);
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
     });
     let agree_sum = sum.iter().filter(|s| s[0] == s[1]).count() as f64 / shots as f64;
     let agree_pure = pure.iter().filter(|s| s[0] == s[1]).count() as f64 / shots as f64;
@@ -1418,11 +1418,11 @@ fn u3_random_angles_with_depolarize() {
     );
     let sum = run_sum(1, shots, 1e-12, |t| {
         t.u3(0, theta, phi, lambda);
-        t.depolarize(0, 0.15);
+        t.depolarize1(0, 0.15);
     });
     let pure = run_pure(1, shots, |t| {
         t.u3(0, theta, phi, lambda);
-        t.depolarize(0, 0.15);
+        t.depolarize1(0, 0.15);
     });
     assert_distributions_match(&sum, &pure, 0.04, "u3_random_angles_with_depolarize");
 }
@@ -1477,7 +1477,7 @@ fn t_then_h_distribution() {
 }
 
 #[test]
-fn t_h_t_adj_with_depolarize() {
+fn t_h_t_dag_with_depolarize() {
     // Non-Clifford T/T† interleaved with H and depolarizing noise: verifies
     // TGate composes correctly inside the sum, end-to-end with noise.
     let shots = 8000;
@@ -1485,21 +1485,21 @@ fn t_h_t_adj_with_depolarize() {
         t.h(0);
         t.t(0);
         t.h(0);
-        t.depolarize(0, 0.1);
+        t.depolarize1(0, 0.1);
         t.h(0);
-        t.t_adj(0);
+        t.t_dag(0);
         t.h(0);
     });
     let pure = run_pure(1, shots, |t| {
         t.h(0);
         t.t(0);
         t.h(0);
-        t.depolarize(0, 0.1);
+        t.depolarize1(0, 0.1);
         t.h(0);
-        t.t_adj(0);
+        t.t_dag(0);
         t.h(0);
     });
-    assert_distributions_match(&sum, &pure, 0.04, "t_h_t_adj_with_depolarize");
+    assert_distributions_match(&sum, &pure, 0.04, "t_h_t_dag_with_depolarize");
 }
 
 // ---------------------------------------------------------------------------
@@ -1521,7 +1521,7 @@ fn mixed_rotations_reset_t_noise() {
         t.cnot(0, 1);
         t.rxx(1, 2, 0.25 * std::f64::consts::PI);
         t.t(2);
-        t.depolarize(0, 0.08);
+        t.depolarize1(0, 0.08);
         t.reset(0);
         t.loss_channel(2, 0.1);
     });
@@ -1536,7 +1536,7 @@ fn mixed_rotations_reset_t_noise() {
         t.cnot(0, 1);
         t.rxx(1, 2, 0.25 * std::f64::consts::PI);
         t.t(2);
-        t.depolarize(0, 0.08);
+        t.depolarize1(0, 0.08);
         t.reset(0);
         t.loss_channel(2, 0.1);
     });
@@ -1555,7 +1555,7 @@ fn truncation_does_not_break_statistics() {
         t.cnot(0, 1);
         t.cnot(1, 2);
         for q in 0..3 {
-            t.depolarize(q, 0.05);
+            t.depolarize1(q, 0.05);
             t.loss_channel(q, 0.05);
         }
     });
@@ -1564,7 +1564,7 @@ fn truncation_does_not_break_statistics() {
         t.cnot(0, 1);
         t.cnot(1, 2);
         for q in 0..3 {
-            t.depolarize(q, 0.05);
+            t.depolarize1(q, 0.05);
             t.loss_channel(q, 0.05);
         }
     });
@@ -1770,12 +1770,12 @@ fn mid_circuit_measure_after_depolarize_on_plus_state() {
     let p = 0.3_f64;
     let sum = run_sum(1, shots, 1e-12, |t| {
         t.h(0);
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
         t.measure(0);
     });
     let pure = run_pure(1, shots, |t| {
         t.h(0);
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
         let _ = t.measure(0);
     });
     assert_distributions_match(
@@ -1798,13 +1798,13 @@ fn mid_circuit_measure_bell_pair_after_depolarize() {
     let sum = run_sum(2, shots, 1e-12, |t| {
         t.h(0);
         t.cnot(0, 1);
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
         t.measure(0);
     });
     let pure = run_pure(2, shots, |t| {
         t.h(0);
         t.cnot(0, 1);
-        t.depolarize(0, p);
+        t.depolarize1(0, p);
         let _ = t.measure(0);
     });
     // Sanity: P(q0 ≠ q1) should be ~2p/3 on both backends.
@@ -1872,13 +1872,13 @@ fn mid_circuit_measure_then_depolarize_then_measure() {
     let sum = run_sum(1, shots, 1e-12, |t| {
         t.h(0);
         t.measure(0);
-        t.depolarize(0, 0.2);
+        t.depolarize1(0, 0.2);
         t.measure(0);
     });
     let pure = run_pure(1, shots, |t| {
         t.h(0);
         let _ = t.measure(0);
-        t.depolarize(0, 0.2);
+        t.depolarize1(0, 0.2);
         let _ = t.measure(0);
     });
     assert_distributions_match(
@@ -1900,19 +1900,19 @@ fn mid_circuit_measure_three_qubit_with_noise() {
         t.h(0);
         t.cnot(0, 1);
         t.cnot(1, 2);
-        t.depolarize(1, 0.1);
+        t.depolarize1(1, 0.1);
         t.measure(1);
         t.h(2);
-        t.depolarize(0, 0.1);
+        t.depolarize1(0, 0.1);
     });
     let pure = run_pure(3, shots, |t| {
         t.h(0);
         t.cnot(0, 1);
         t.cnot(1, 2);
-        t.depolarize(1, 0.1);
+        t.depolarize1(1, 0.1);
         let _ = t.measure(1);
         t.h(2);
-        t.depolarize(0, 0.1);
+        t.depolarize1(0, 0.1);
     });
     assert_distributions_match(
         &sum,
@@ -1948,8 +1948,8 @@ fn mid_circuit_measure_case_a_many_entries_with_other_outcome_retained() {
         t.cnot(0, 1);
         t.cnot(0, 2);
         for _ in 0..3 {
-            t.depolarize(1, 0.18);
-            t.depolarize(2, 0.18);
+            t.depolarize1(1, 0.18);
+            t.depolarize1(2, 0.18);
         }
         t.measure(0);
         t.h(1);
@@ -1960,8 +1960,8 @@ fn mid_circuit_measure_case_a_many_entries_with_other_outcome_retained() {
         t.cnot(0, 1);
         t.cnot(0, 2);
         for _ in 0..3 {
-            t.depolarize(1, 0.18);
-            t.depolarize(2, 0.18);
+            t.depolarize1(1, 0.18);
+            t.depolarize1(2, 0.18);
         }
         let _ = t.measure(0);
         t.h(1);

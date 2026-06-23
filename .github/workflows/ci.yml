@@ -7,7 +7,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-C target-feature=+aes,+sse2"
+  # gxhash's AES/SSE2 target features are set arch-scoped in `.cargo/config.toml`
+  # (`cfg(target_arch = "x86_64")`), so we do NOT set a global RUSTFLAGS here:
+  # `-C target-feature=+aes,+sse2` is invalid on aarch64 (macos-latest) and
+  # would break that runner. The config applies the flags only on x86_64.
 
 # The `pre-commit` job runs the full prek hook suite (rustfmt, clippy,
 # cargo check, ruff, ty, hawkeye, and the file hygiene hooks). Every other
@@ -81,3 +84,44 @@ jobs:
 
       - name: Run Python tests
         run: uv run --project ppvm-python --group dev pytest ppvm-python/test/ docs/examples/
+
+  # Verify the workspace and the PyO3 extension compile, link, and test on all
+  # three desktop OSes. The deep test suites above run on Linux only; this job
+  # is the cross-platform compilation/linking gate.
+  cross-platform:
+    name: Build (${{ matrix.os }})
+    needs: pre-commit
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Compiles every crate and target (lib, tests, benches, examples) without
+      # linking — the portable "does it build" gate, identical on each OS.
+      - name: Check the workspace compiles
+        run: cargo check --workspace --all-targets
+
+      # Links the cdylib too, which exercises the macOS `-undefined
+      # dynamic_lookup` flag from ppvm-python-native's build.rs. Skipped on
+      # Windows, where linking the extension needs python3.lib — that path is
+      # covered by the maturin build below instead.
+      - name: Build the workspace
+        if: runner.os != 'Windows'
+        run: cargo build --workspace
+
+      - uses: astral-sh/setup-uv@v5
+
+      # maturin links the abi3 extension the per-OS way (dynamic_lookup on
+      # macOS, python3.lib on Windows); pytest confirms it imports and runs.
+      - name: Build the extension via maturin
+        run: uv sync --project ppvm-python --group dev
+
+      - name: Run Python tests
+        run: uv run --project ppvm-python --group dev pytest ppvm-python/test/

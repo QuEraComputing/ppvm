@@ -160,8 +160,8 @@ where
         + Copy,
     I: Debug,
 {
-    fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
-        let p_3 = p.clone() / 3.0.into();
+    fn depolarize1(&mut self, addr0: usize, p: T::Coeff) {
+        let p_3 = p / 3.0.into();
         self.pauli_error(addr0, [p_3.clone(), p_3.clone(), p_3]);
     }
 }

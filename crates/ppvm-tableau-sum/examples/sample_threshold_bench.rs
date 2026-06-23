@@ -41,7 +41,7 @@ fn medium_workload() -> GTabSum {
     for q in [0, 7, 12] {
         tab.t(q);
         tab.loss_channel(q, 1e-3);
-        tab.depolarize(q, 1e-3);
+        tab.depolarize1(q, 1e-3);
     }
     for [i, j] in [[1, 3], [7, 10], [12, 14], [13, 16], [4, 7]] {
         tab.cz(i, j);
@@ -56,7 +56,7 @@ fn heavy_workload() -> GTabSum {
     }
     for q in [0, 5, 10, 15, 20, 25] {
         tab.t(q);
-        tab.depolarize(q, 1e-3);
+        tab.depolarize1(q, 1e-3);
     }
     for [i, j] in [
         [1, 3],

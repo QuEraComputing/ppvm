@@ -4,14 +4,22 @@
 use crate::sum::PauliSum;
 use ppvm_pauli_word::phase::PhasedPauliWord;
 use ppvm_traits::config::Config;
-use ppvm_traits::traits::{Clifford, CliffordExtensions, PauliWordTrait};
+use ppvm_traits::traits::{
+    Clifford, CliffordBatch, CliffordExtensions, CliffordExtensionsBatch, PauliWordTrait,
+};
 
+// Two-qubit Clifford action on a `PauliSum`. The per-pair sign rules are
+// reused from the `PhasedPauliWord` impl.
 macro_rules! map_word {
-    ($name:ident, $($index:ident),*) => {
-        fn $name(&mut self, $($index: usize),*) {
+    ($name:ident) => {
+        fn $name(&mut self, a: usize, b: usize) {
             self.map_add(|k, v| {
-                let mut p: PhasedPauliWord<T::Storage, T::BuildHasher, <T as Config>::PauliWordType> = k.clone().into();
-                p.$name($($index),*);
+                let mut p: PhasedPauliWord<
+                    T::Storage,
+                    T::BuildHasher,
+                    <T as Config>::PauliWordType,
+                > = k.clone().into();
+                p.$name(a, b);
                 if p.is_positive() {
                     (p.word, v.clone())
                 } else {
@@ -98,13 +106,13 @@ impl<T: Config> Clifford for PauliSum<T> {
         })
     }
 
-    map_word!(cnot, a, b);
-    map_word!(cz, a, b);
+    map_word!(cnot);
+    map_word!(cz);
 }
 
 impl<T: Config> CliffordExtensions for PauliSum<T> {
     #[inline]
-    fn s_adj(&mut self, addr0: usize) {
+    fn s_dag(&mut self, addr0: usize) {
         // S†: same bit map as S; phase flip for Y (both bits set)
         self.map_add(|k, v| {
             if k.get_lbit(addr0) {
@@ -165,7 +173,7 @@ impl<T: Config> CliffordExtensions for PauliSum<T> {
     }
 
     #[inline]
-    fn sqrt_x_adj(&mut self, addr0: usize) {
+    fn sqrt_x_dag(&mut self, addr0: usize) {
         // √X†: xbit = xbit XOR zbit; phase flip for Z (zbit set, xbit clear)
         self.map_add(|k, v| {
             if k.get_lbit(addr0) {
@@ -185,7 +193,7 @@ impl<T: Config> CliffordExtensions for PauliSum<T> {
     }
 
     #[inline]
-    fn sqrt_y_adj(&mut self, addr0: usize) {
+    fn sqrt_y_dag(&mut self, addr0: usize) {
         // √Y†: swap x and z bits; phase flip for X (xbit set, zbit clear)
         self.map_add(|k, v| {
             if k.get_lbit(addr0) {
@@ -205,5 +213,9 @@ impl<T: Config> CliffordExtensions for PauliSum<T> {
         })
     }
 
-    map_word!(cy, a, b);
+    map_word!(cy);
 }
+
+impl<T: Config> CliffordBatch for PauliSum<T> {}
+
+impl<T: Config> CliffordExtensionsBatch for PauliSum<T> {}

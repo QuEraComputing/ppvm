@@ -1,8 +1,49 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-/// Reset a qubit to the `|0⟩` computational-basis state.
-pub trait Reset {
-    /// Reset qubit `addr0` to `|0⟩`.
+/// Reset one qubit to a computational/Pauli basis state.
+pub trait Reset: crate::traits::Clifford + crate::traits::CliffordExtensions {
+    /// Reset one qubit to `|0⟩` (stim `R`/`RZ`).
     fn reset(&mut self, addr0: usize);
+    /// stim `RZ` alias — reset to `|0⟩`.
+    fn reset_z(&mut self, addr0: usize) {
+        self.reset(addr0)
+    }
+    /// stim `RX` — reset to `|+⟩`.
+    fn reset_x(&mut self, addr0: usize) {
+        self.reset(addr0);
+        self.h(addr0);
+    }
+    /// stim `RY` — reset to `|i⟩`.
+    fn reset_y(&mut self, addr0: usize) {
+        self.reset(addr0);
+        self.h(addr0);
+        self.s(addr0);
+    }
+
+    /// Explicit batched reset to `|0⟩`.
+    fn reset_many(&mut self, targets: &[usize]) {
+        for &q in targets {
+            self.reset(q);
+        }
+    }
+
+    /// Explicit batched `RZ` alias.
+    fn reset_z_many(&mut self, targets: &[usize]) {
+        self.reset_many(targets)
+    }
+
+    /// Explicit batched `RX`.
+    fn reset_x_many(&mut self, targets: &[usize]) {
+        for &q in targets {
+            self.reset_x(q);
+        }
+    }
+
+    /// Explicit batched `RY`.
+    fn reset_y_many(&mut self, targets: &[usize]) {
+        for &q in targets {
+            self.reset_y(q);
+        }
+    }
 }

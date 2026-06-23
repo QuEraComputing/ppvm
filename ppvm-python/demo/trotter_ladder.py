@@ -53,9 +53,9 @@ def trotter_step():
     after that pair (never the bare intermediate) keeps the Z-hopping flux
     intact, so total Z stays conserved even under aggressive truncation."""
     for a, b in bonds:
-        o.rxx(a, b, dt, truncate=False); o.ryy(a, b, dt)
+        o.rxx(a, b, theta=dt, truncate=False); o.ryy(a, b, theta=dt)
     for a, b in reversed(bonds):
-        o.rxx(a, b, dt, truncate=False); o.ryy(a, b, dt)
+        o.rxx(a, b, theta=dt, truncate=False); o.ryy(a, b, theta=dt)
 
 
 def msd():

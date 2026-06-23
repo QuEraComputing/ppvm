@@ -137,48 +137,48 @@ def test_reset_on_zero_state():
 def test_rx_pi_equals_x():
     # rx(π) ≈ -iX, so |0> → |1>
     tab = GeneralizedTableau(2)
-    tab.rx(0, math.pi)
+    tab.rx(0, theta=math.pi)
     assert tab.measure(0)
 
 
 def test_rz_on_zero_state():
     # rz(θ)|0> = e^{-iθ/2}|0>, Z-measurement unchanged for any θ
     tab = GeneralizedTableau(2)
-    tab.rz(0, math.pi / 4)
+    tab.rz(0, theta=math.pi / 4)
     assert not tab.measure(0)
 
 
 def test_ry_pi_equals_y():
     # ry(π) ≈ -iY, so |0> → |1>
     tab = GeneralizedTableau(2)
-    tab.ry(0, math.pi)
+    tab.ry(0, theta=math.pi)
     assert tab.measure(0)
 
 
 def test_clifford_extensions_sqrt_x():
-    # sqrt_x followed by sqrt_x_adj is identity
+    # sqrt_x followed by sqrt_x_dag is identity
     tab = GeneralizedTableau(2)
     tab.x(0)
     tab.sqrt_x(0)
-    tab.sqrt_x_adj(0)
+    tab.sqrt_x_dag(0)
     assert tab.measure(0)
 
 
 def test_clifford_extensions_sqrt_y():
-    # sqrt_y followed by sqrt_y_adj is identity
+    # sqrt_y followed by sqrt_y_dag is identity
     tab = GeneralizedTableau(2)
     tab.x(0)
     tab.sqrt_y(0)
-    tab.sqrt_y_adj(0)
+    tab.sqrt_y_dag(0)
     assert tab.measure(0)
 
 
-def test_s_adj():
+def test_s_dag():
     # S S† = identity
     tab = GeneralizedTableau(2)
     tab.x(0)
     tab.s(0)
-    tab.s_adj(0)
+    tab.s_dag(0)
     assert tab.measure(0)
 
 
@@ -198,10 +198,10 @@ def test_t_gate_four_times_equals_z():
     assert tab.measure(0)
 
 
-def test_t_adj_inverse_of_t():
+def test_t_dag_inverse_of_t():
     # T T† = identity
     tab = GeneralizedTableau(2)
     tab.x(0)
     tab.t(0)
-    tab.t_adj(0)
+    tab.t_dag(0)
     assert tab.measure(0)

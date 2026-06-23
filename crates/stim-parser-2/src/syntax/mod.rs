@@ -22,7 +22,6 @@ const PARSER_STACK_SIZE: usize = 16 * 1024 * 1024;
 /// Run `f` with a large stack for the recursive chumsky grammar. On targets
 /// with OS threads this spawns a dedicated [`PARSER_STACK_SIZE`]-byte thread;
 /// on `wasm32` (no `std::thread`) `f` runs inline on the caller's stack.
-#[expect(dead_code, reason = "used by grammar/pipeline in Tasks 10-11")]
 pub(crate) fn run_on_parser_stack<R, F>(f: F) -> R
 where
     R: Send,

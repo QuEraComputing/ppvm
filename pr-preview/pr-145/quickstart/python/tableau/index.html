@@ -1,0 +1,355 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="ppvm — fast Pauli propagation and stabilizer-tableau quantum simulator."><title>Python Quick Start — Generalized Tableau — ppvm</title><script>
+      (() => {
+        const stored = localStorage.getItem("ppvm-theme") || "auto";
+        const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const resolved = stored === "auto" ? (sysDark ? "dark" : "light") : stored;
+        document.documentElement.setAttribute("data-theme", resolved);
+        document.documentElement.setAttribute("data-theme-pref", stored);
+      })();
+    </script><link rel="stylesheet" href="/pr-preview/pr-145/_astro/Base.BN0a5DSp.css"></head> <body> <header class="masthead"> <div class="masthead-inner"> <a class="brand" href="/pr-preview/pr-145/"> <span class="brand-mark" aria-hidden="true"></span> <span class="brand-mono">ppvm</span> <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span> </a> <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation menu"> <span class="nav-toggle-bars" aria-hidden="true"></span> </button> <nav class="nav-links" id="primary-nav"> <a href="/pr-preview/pr-145/">Overview</a><a href="/pr-preview/pr-145/quickstart" aria-current="page">Quick Start</a><a href="/pr-preview/pr-145/examples">Examples</a><a href="/pr-preview/pr-145/develop">Develop</a><a href="/pr-preview/pr-145/api">Reference</a> <div class="theme-toggle" role="group" aria-label="Theme"> <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path> </svg> </button> <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path> </svg> </button> <button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <rect x="3" y="4" width="18" height="13" rx="2"></rect> <path d="M8 21h8M12 17v4"></path> </svg> </button> </div> </nav> </div> </header> <main> <div class="page-shell page-shell--3col"> <details class="page-sections side-nav" aria-label="Sections"> <summary class="page-toc-label">Sections</summary> <ol> <li> <a href="/pr-preview/pr-145/quickstart/python">§ 1 Install</a> </li><li> <a href="/pr-preview/pr-145/quickstart/python/stim">§ 2 Stim circuits &amp; sampling</a> </li><li> <a href="/pr-preview/pr-145/quickstart/python/tableau" aria-current="page">§ 3 Generalized Tableau</a> </li><li> <a href="/pr-preview/pr-145/quickstart/python/pauli-propagation">§ 4 Pauli Propagation</a> </li><li> <a href="/pr-preview/pr-145/quickstart/python/loss-channel">§ 5 Loss channel details</a> </li><li> <a href="/pr-preview/pr-145/quickstart/python/next-steps">§ 6 Next steps</a> </li> </ol> </details> <div class="page-toc-content">  <article class="shell narrow qs-page qs-page--python"> <div class="titleblock"> <div class="eyebrow"><a href="/pr-preview/pr-145/quickstart/python">Python Quick Start</a></div> <h1>Generalized Stabilizer Tableau</h1> <p class="byline">
+Schrödinger-picture state simulation: a stabilizer tableau for the
+        Clifford fragment of the circuit and a sparse coefficient vector
+        for the non-Clifford part.
+</p> </div> <section id="overview"> <h2>Overview</h2> <p> <a href="/pr-preview/pr-145/api#py-ppvm-generalized-tableau-GeneralizedTableau"><code>GeneralizedTableau</code></a>
+simulates quantum circuits in the <strong>Schrödinger picture</strong>
+using a generalized stabilizer decomposition.
+</p> <p>
+Clifford operations are tracked efficiently in the stabilizer
+        tableau. Non-Clifford gates (T gates, arbitrary rotations) expand
+        the state into a superposition of stabilizer states, tracked via a
+        sparse coefficient vector. The cost scales exponentially only in
+        the number of non-Clifford gates, making this backend well-suited
+        for circuits with few T gates and many Clifford operations.
+</p> </section> <section id="basic-usage"> <h2>Drive it from Python</h2> <p>
+When you'd rather build the circuit gate-by-gate in Python — or
+        when you need non-Clifford gates the Stim grammar can't express —
+        drive a <code>GeneralizedTableau</code> directly:
+</p> <figure class="example"> <figcaption class="example-caption"> <span class="example-file"><code>docs/examples/tableau_ghz.py</code></span> <span class="example-tested" title="Executed by docs/examples/test_examples.py">tested</span> </figcaption> <pre><code class="language-python">from ppvm import GeneralizedTableau
+
+tab = GeneralizedTableau(n_qubits=2, seed=0)
+tab.h(0)
+tab.cnot(0, 1)
+
+r0 = tab.measure(0)
+r1 = tab.measure(1)
+
+print(f&quot;qubit 0: {r0}, qubit 1: {r1}&quot;)  # → qubit 0: 1, qubit 1: 1
+print(&quot;correlated:&quot;, r0 == r1)  # → correlated: True
+</code></pre> </figure> <p>
+The tableau exposes single- and two-qubit Clifford gates, T and
+        rotation gates for non-Clifford steps, projective Z-basis
+        measurements, and depolarizing / loss / Pauli-error noise channels.
+        See the <a href="/pr-preview/pr-145/api#python-section">Python API
+        reference</a> for the full list.
+</p> </section> <section id="forking"> <h2>Forking for multiple shots</h2> <p>
+Measurement mutates the tableau, so running multiple shots requires
+        creating independent copies. Use <code>fork()</code> to clone the
+        quantum state with a fresh RNG:
+</p> <pre><code class="language-python">tab = GeneralizedTableau(n_qubits=2, seed=42)
+tab.h(0)
+tab.cnot(0, 1)
+
+for shot in range(100):
+    t = tab.fork(seed=shot)
+    print(t.measure(0), t.measure(1))</code></pre> <p>
+To preserve the RNG state exactly (e.g. for checkpointing), use
+<code>copy.copy()</code> instead.
+</p> </section> <section id="stim"> <h2>Stim circuit support</h2> <p>
+Circuits in <a href="https://github.com/quantumlib/Stim">Stim</a>
+format are parsed and prepared once into a <code>StimProgram</code>,
+        then executed:
+</p> <pre><code class="language-python">from ppvm import GeneralizedTableau, StimProgram, sample_stim
+
+prog = StimProgram.parse(&quot;&quot;&quot;
+H 0
+CX 0 1
+M 0 1
+&quot;&quot;&quot;)
+
+# Single shot:
+tab = GeneralizedTableau(n_qubits=2)
+results = tab.run(prog)
+print(f&quot;Bell state measurement: {results}&quot;)
+
+# Many shots — fresh tableau per shot:
+shots = sample_stim(prog, n_qubits=2, num_shots=10_000, seed=0)
+
+# .stim file:
+prog = StimProgram.from_file(&quot;path/to/circuit.stim&quot;)
+shots = GeneralizedTableau.sample(prog, n_qubits=85, num_shots=100, seed=0)</code></pre> <p>
+For the sample-many-shots shortcut you saw in
+<a href="/pr-preview/pr-145/quickstart/python/stim">§ 2</a>, the
+<code>sample_stim</code> helper takes care of forking and
+        bookkeeping for you.
+</p> </section> <section id="noise"> <h2>Noise and loss</h2> <p> <code>GeneralizedTableau</code> supports the same noise channels as
+<code>PauliSum</code>:
+</p> <ul> <li><strong>Depolarizing:</strong> <code>depolarize1(addr, p=...)</code> and <code>depolarize2(addr0, addr1, p=...)</code>.</li> <li><strong>Pauli error:</strong> <code>pauli_error(addr, [p_x, p_y, p_z])</code>.</li> <li><strong>Loss:</strong> <code>loss_channel(addr, p)</code> and <code>correlated_loss_channel(addr0, addr1, p)</code>.</li> </ul> <p>
+When a qubit is lost, a subsequent measurement returns
+<a href="/pr-preview/pr-145/api#py-ppvm-generalized-tableau-MeasurementResult"><code>MeasurementResult.LOST</code></a>
+instead of <code>ZERO</code> or <code>ONE</code>. You can check and
+        reset loss state:
+</p> <pre><code class="language-python">tab = GeneralizedTableau(n_qubits=1, seed=0)
+tab.loss_channel(0, 1.0)  # deterministic loss
+
+print(tab.is_lost(0))    # True
+print(tab.measure(0))    # MeasurementResult.LOST
+
+tab.reset_loss_channel(0)
+print(tab.is_lost(0))    # False</code></pre> <p>
+The mathematical model behind the loss and reset channels is
+        documented in
+<a href="/pr-preview/pr-145/quickstart/python/loss-channel">§ 5 Loss channel
+        details</a>.
+</p> </section> <section id="pruning"> <h2>Coefficient pruning</h2> <p>
+Each non-Clifford gate doubles the number of terms in the internal
+        coefficient vector. The <code>min_abs_coeff</code> parameter
+        controls pruning of small coefficients:
+</p> <pre><code class="language-python">tab = GeneralizedTableau(n_qubits=4, min_abs_coeff=1e-8)</code></pre> </section> <section id="sum"> <h2>Mixed states and sampling</h2> <p>
+A single <code>GeneralizedTableau</code> follows one stochastic
+<strong>trajectory</strong>: each noise channel and measurement samples
+        an outcome and collapses the state, so drawing many shots means
+        re-running the whole circuit once per shot.
+</p> <p> <a href="/pr-preview/pr-145/api#py-ppvm-generalized-tableau-sum-GeneralizedTableauSum"><code>GeneralizedTableauSum</code></a>
+instead represents the full <strong>mixed state</strong> — a classical,
+        probability-weighted mixture of pure stabilizer states, one branch per
+        error outcome. Noise and loss channels <em>branch</em> the sum rather
+        than sampling from it, so the circuit is built <strong>once</strong> and
+        any number of shots are then drawn from the resulting distribution by a
+<a href="/pr-preview/pr-145/api#py-ppvm-generalized-tableau-sum-TableauSumSampler"><code>Sampler</code></a>.
+</p> <pre><code class="language-python">from ppvm.generalized_tableau_sum import GeneralizedTableauSum
+
+tab = GeneralizedTableauSum(n_qubits=2, seed=0)
+tab.h(0)
+tab.cnot(0, 1)
+tab.depolarize1(0, p=0.05)            # branches the sum into a mixture
+
+sampler = tab.sampler()            # snapshot the current state
+shots = sampler.sample_shots(10_000)   # list[list[MeasurementResult]]</code></pre> <p>
+The same Clifford, rotation, noise, and loss methods as
+<code>GeneralizedTableau</code> are available.
+<code>sampler()</code> snapshots the current state into an independent
+        sampler with its own RNG, so gates applied to the tableau afterwards
+        don't affect it. <code>sample()</code> and <code>sample_shots(n)</code>
+return <code>MeasurementResult</code> outcomes, while
+<code>raw_sample()</code> and <code>raw_shots(n)</code> return raw
+        integer codes (<code>0</code>/<code>1</code>/<code>2</code> for
+<code>|0&gt;</code>/<code>|1&gt;</code>/lost), which is slightly faster.
+</p> <p>
+Two thresholds bound the size of the mixture:
+<code>min_abs_coeff</code> prunes small coefficients within each branch
+        (as above), while <code>sum_cutoff</code> drops whole branches whose
+        probability weight falls below it.
+</p> <pre><code class="language-python">tab = GeneralizedTableauSum(n_qubits=4, min_abs_coeff=1e-10, sum_cutoff=1e-8)</code></pre> </section> </article>  <nav class="section-pager" aria-label="Section navigation"> <a class="section-pager-link section-pager-prev" href="/pr-preview/pr-145/quickstart/python/stim" rel="prev"> <span class="section-pager-dir">← Previous</span> <span class="section-pager-label">§ 2 Stim circuits &amp; sampling</span> </a> <a class="section-pager-link section-pager-next" href="/pr-preview/pr-145/quickstart/python/pauli-propagation" rel="next"> <span class="section-pager-dir">Next →</span> <span class="section-pager-label">§ 4 Pauli Propagation</span> </a> </nav> </div> <details class="page-toc page-toc--right side-nav" aria-label="On this page"> <summary class="page-toc-label">On this page</summary> <ol> <li><a href="#overview" data-toc-link="#overview">Overview</a></li><li><a href="#basic-usage" data-toc-link="#basic-usage">Drive it from Python</a></li><li><a href="#forking" data-toc-link="#forking">Forking for multi-shot</a></li><li><a href="#stim" data-toc-link="#stim">Stim circuit support</a></li><li><a href="#noise" data-toc-link="#noise">Noise and loss</a></li><li><a href="#pruning" data-toc-link="#pruning">Coefficient pruning</a></li><li><a href="#sum" data-toc-link="#sum">Mixed states &amp; sampling</a></li> </ol> </details> </div> </main> <script>
+        // Scroll-spy: mark the TOC link for the section currently in view.
+        // Strategy: track each section's distance from the top of the
+        // viewport and pick whichever sits closest to (but above) a small
+        // anchor line near the top, so the link flips just as a section's
+        // heading scrolls past.
+        (() => {
+          const links = Array.from(document.querySelectorAll(".page-toc [data-toc-link]"));
+          if (!links.length) return;
+
+          // Pair each link with its target heading.
+          const targets = links
+            .map((a) => {
+              const href = a.getAttribute("data-toc-link") || "";
+              const id = href.startsWith("#") ? href.slice(1) : null;
+              const el = id ? document.getElementById(id) : null;
+              return el ? { link: a, el } : null;
+            })
+            .filter(Boolean);
+          if (!targets.length) return;
+
+          const ANCHOR = 120; // px from top of viewport
+
+          function update() {
+            let activeIdx = 0;
+            for (let i = 0; i < targets.length; i++) {
+              const top = targets[i].el.getBoundingClientRect().top;
+              if (top - ANCHOR <= 0) activeIdx = i;
+              else break;
+            }
+            for (let i = 0; i < targets.length; i++) {
+              const isActive = i === activeIdx;
+              targets[i].link.setAttribute("aria-current", isActive ? "true" : "false");
+            }
+          }
+
+          update();
+          window.addEventListener("scroll", update, { passive: true });
+          window.addEventListener("resize", update);
+        })();
+      </script> <script>
+      // Mobile navigation drawer + responsive open-state for the
+      // sidebar TOCs. On wide viewports the TOCs are always open and
+      // the disclosure widget on .side-nav is visually neutralised by
+      // CSS; on narrow viewports they default to closed so the long
+      // navigation list doesn't push content below the fold.
+      (() => {
+        const mq = window.matchMedia("(min-width: 901px)");
+        const sideNavs = document.querySelectorAll("details.side-nav");
+        function syncSideNavs() {
+          for (const d of sideNavs) {
+            if (mq.matches) d.setAttribute("open", "");
+            else d.removeAttribute("open");
+          }
+        }
+        syncSideNavs();
+        mq.addEventListener("change", syncSideNavs);
+
+        const toggle = document.querySelector(".nav-toggle");
+        const nav = document.getElementById("primary-nav");
+        if (toggle && nav) {
+          function setOpen(open) {
+            toggle.setAttribute("aria-expanded", open ? "true" : "false");
+            toggle.setAttribute(
+              "aria-label",
+              open ? "Close navigation menu" : "Open navigation menu",
+            );
+            nav.toggleAttribute("data-open", open);
+          }
+          toggle.addEventListener("click", () => {
+            const open = toggle.getAttribute("aria-expanded") !== "true";
+            setOpen(open);
+          });
+          // Close after following an in-page link on mobile. Use
+          // closest("a") so this stays correct if a nav link ever
+          // wraps an icon or other inline element.
+          nav.addEventListener("click", (e) => {
+            if (e.target && e.target.closest && e.target.closest("a")) {
+              setOpen(false);
+            }
+          });
+          // Reset state when crossing the breakpoint.
+          const mqNav = window.matchMedia("(min-width: 721px)");
+          mqNav.addEventListener("change", () => setOpen(false));
+        }
+      })();
+    </script> <script>
+      // Inject a copy button into every <pre> block.
+      (() => {
+        const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+        const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+        for (const pre of document.querySelectorAll("pre")) {
+          if (pre.querySelector(".copy-btn")) continue;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "copy-btn";
+          btn.setAttribute("aria-label", "Copy code to clipboard");
+          btn.innerHTML = COPY_SVG + "<span>Copy</span>";
+          pre.appendChild(btn);
+
+          btn.addEventListener("click", async () => {
+            // nbconvert-rendered cells have no <code> inside <pre>, so we'd
+            // fall back to pre.innerText — which includes this button's
+            // "Copy" label. Strip copy buttons from a clone before reading.
+            const code = pre.querySelector("code");
+            let raw;
+            if (code) {
+              raw = code.innerText;
+            } else {
+              const clone = pre.cloneNode(true);
+              for (const el of clone.querySelectorAll(".copy-btn")) el.remove();
+              raw = clone.innerText;
+            }
+            const text = raw.replace(/\n$/, "");
+            try {
+              await navigator.clipboard.writeText(text);
+            } catch {
+              // Fallback for non-secure contexts.
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.style.position = "fixed";
+              ta.style.opacity = "0";
+              document.body.appendChild(ta);
+              ta.select();
+              try { document.execCommand("copy"); } catch {}
+              document.body.removeChild(ta);
+            }
+            btn.dataset.state = "copied";
+            btn.innerHTML = CHECK_SVG + "<span>Copied</span>";
+            setTimeout(() => {
+              btn.removeAttribute("data-state");
+              btn.innerHTML = COPY_SVG + "<span>Copy</span>";
+            }, 1500);
+          });
+        }
+      })();
+    </script> <script>
+      // Theme switcher: light / dark / auto, persisted in localStorage.
+      (() => {
+        const root = document.documentElement;
+        const mql = window.matchMedia("(prefers-color-scheme: dark)");
+        const buttons = document.querySelectorAll(".theme-toggle button[data-theme-set]");
+
+        function apply(pref) {
+          const resolved = pref === "auto" ? (mql.matches ? "dark" : "light") : pref;
+          root.setAttribute("data-theme", resolved);
+          root.setAttribute("data-theme-pref", pref);
+          localStorage.setItem("ppvm-theme", pref);
+          for (const b of buttons) {
+            b.setAttribute("aria-pressed", b.dataset.themeSet === pref ? "true" : "false");
+          }
+        }
+
+        const initial = localStorage.getItem("ppvm-theme") || "auto";
+        apply(initial);
+
+        for (const b of buttons) {
+          b.addEventListener("click", () => apply(b.dataset.themeSet));
+        }
+
+        mql.addEventListener("change", () => {
+          if ((localStorage.getItem("ppvm-theme") || "auto") === "auto") apply("auto");
+        });
+      })();
+    </script> <button type="button" class="back-to-top" aria-label="Back to top" hidden> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M12 19V5"></path> <path d="m5 12 7-7 7 7"></path> </svg> </button> <script>
+      // Show the back-to-top button after the reader has scrolled past
+      // ~1.2× the viewport — far enough that "scroll back up" is a real
+      // chore. Clicking smooth-scrolls to the top and (for keyboard
+      // users) returns focus to the masthead brand.
+      (() => {
+        const btn = document.querySelector(".back-to-top");
+        if (!btn) return;
+        const threshold = () => Math.max(window.innerHeight * 1.2, 600);
+        function sync() {
+          const show = window.scrollY > threshold();
+          btn.toggleAttribute("hidden", !show);
+        }
+        btn.addEventListener("click", () => {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          const brand = document.querySelector(".brand");
+          if (brand && brand.focus) brand.focus({ preventScroll: true });
+        });
+        window.addEventListener("scroll", sync, { passive: true });
+        window.addEventListener("resize", sync);
+        sync();
+      })();
+    </script> <footer class="foot"> <div class="foot-inner"> <span>PPVM · QuEra Computing · open source, Apache License 2.0</span> <span> <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
+          documentation generated <time>2026-06-23</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (typeof renderMathInElement !== "function") return;
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$",  right: "$",  display: false },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "\\[", right: "\\]", display: true },
+          ],
+          // Skip code spans and code blocks — `[7, 16]` and friends
+          // shouldn't accidentally trigger as math delimiters.
+          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+          throwOnError: false,
+        });
+      });
+    </script>  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js"></script> <script>
+      (() => {
+        if (typeof hljs === "undefined") return;
+        // Only highlight blocks that opt in via `class="language-…"`.
+        // Unhinted blocks (project trees, prompts, ASCII art) stay plain.
+        for (const el of document.querySelectorAll("pre code[class*='language-']")) {
+          hljs.highlightElement(el);
+        }
+      })();
+    </script> </body> </html>

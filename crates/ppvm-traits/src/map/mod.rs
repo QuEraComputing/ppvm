@@ -3,5 +3,5 @@
 
 mod hashmap;
 
-#[cfg(feature = "dashmap")]
+#[cfg(all(feature = "dashmap", not(target_arch = "wasm32")))]
 mod dashmap;

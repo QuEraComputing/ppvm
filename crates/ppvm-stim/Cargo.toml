@@ -16,6 +16,9 @@ itertools = "0.14"
 num = "0.4.3"
 thiserror = "2"
 stim-parser = { version = "0.1.0", path = "../stim-parser" }
+
+# rayon needs OS threads — native only.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = { version = "1", optional = true }
 
 [dev-dependencies]

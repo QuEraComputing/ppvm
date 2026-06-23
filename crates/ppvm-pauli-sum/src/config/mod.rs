@@ -9,7 +9,9 @@ pub mod fx64hash;
 pub mod fxhash;
 
 /// Pre-built configs backed by `dashmap::DashMap` for concurrent access.
-#[cfg(feature = "dashmap")]
+/// Native-only: `dashmap` pulls `rayon`, which needs OS threads, so this
+/// module is unavailable on `wasm32`.
+#[cfg(all(feature = "dashmap", not(target_arch = "wasm32")))]
 pub mod dashmap;
 
 /// Pre-built configs backed by `indexmap::IndexMap`, preserving

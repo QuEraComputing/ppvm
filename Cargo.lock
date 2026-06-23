@@ -985,7 +985,7 @@ dependencies = [
  "ppvm-tableau",
  "rayon",
  "smallvec",
- "stim-parser",
+ "stim-parser-2",
  "thiserror",
 ]
 

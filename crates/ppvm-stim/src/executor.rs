@@ -12,8 +12,10 @@ use std::fmt::Debug;
 use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
 use smallvec::SmallVec;
-use stim_parser::ast::{GateName, MeasureName, NoiseName, PauliAxis, Target};
-use stim_parser::extended::{Axis, ExtendedInstruction, ExtendedProgram, RawPassthrough};
+use stim_parser_2::prelude::{
+    Axis, ExtendedInstruction, ExtendedProgram, GateName, GateOp, MeasureName, MeasureOp, MppOp,
+    NoiseName, NoiseOp, PauliAxis, Target,
+};
 
 use crate::validate::{ExecError, validate};
 
@@ -197,7 +199,7 @@ where
 /// Like [`sample_serial`] but skips validation — call only when the program
 /// has already been validated (e.g. via [`validate`](fn@validate)).
 pub fn sample_serial_validated<T, I, C, F>(
-    instructions: &[stim_parser::extended::ExtendedInstruction],
+    instructions: &[ExtendedInstruction],
     measurement_count: usize,
     num_shots: usize,
     make_tableau: F,
@@ -292,7 +294,7 @@ where
 /// [`sample_serial_validated`] for small ones.
 #[cfg(feature = "rayon")]
 pub fn sample_validated<T, I, C, F>(
-    instructions: &[stim_parser::extended::ExtendedInstruction],
+    instructions: &[ExtendedInstruction],
     measurement_count: usize,
     num_shots: usize,
     make_tableau: F,
@@ -337,7 +339,7 @@ where
 /// feature this always runs serially.
 #[cfg(not(feature = "rayon"))]
 pub fn sample_validated<T, I, C, F>(
-    instructions: &[stim_parser::extended::ExtendedInstruction],
+    instructions: &[ExtendedInstruction],
     measurement_count: usize,
     num_shots: usize,
     make_tableau: F,
@@ -462,7 +464,7 @@ where
 /// has already been validated (e.g. via [`validate`](fn@validate)).
 #[cfg(feature = "rayon")]
 pub fn sample_parallel_validated<T, I, C, F>(
-    instructions: &[stim_parser::extended::ExtendedInstruction],
+    instructions: &[ExtendedInstruction],
     measurement_count: usize,
     num_shots: usize,
     make_tableau: F,
@@ -539,7 +541,7 @@ pub fn execute_validated<T, I, C>(
 {
     for instr in instructions {
         match instr {
-            ExtendedInstruction::Raw(RawPassthrough::Gate { name, targets, .. }) => match name {
+            ExtendedInstruction::Gate(GateOp { name, targets, .. }) => match name {
                 GateName::Reset | GateName::ResetZ => {
                     targets.iter().for_each(|&t| tab.reset(qubit(t)));
                 }
@@ -666,7 +668,7 @@ pub fn execute_validated<T, I, C>(
             } => targets
                 .iter()
                 .for_each(|&q| tab.u3(q, (*theta).into(), (*phi).into(), (*lambda).into())),
-            ExtendedInstruction::Raw(RawPassthrough::Noise {
+            ExtendedInstruction::Noise(NoiseOp {
                 name,
                 targets,
                 args,
@@ -734,7 +736,7 @@ pub fn execute_validated<T, I, C>(
                     tab.correlated_loss_channel(a, b, ps.clone());
                 }
             }
-            ExtendedInstruction::Raw(RawPassthrough::Measure {
+            ExtendedInstruction::Measure(MeasureOp {
                 name,
                 args,
                 targets,
@@ -826,7 +828,7 @@ pub fn execute_validated<T, I, C>(
             // the first qubit maps the product `Z_0 Z_1 ... Z_{m-1}` to a single
             // `Z_0`, that qubit is measured, then the ladder and basis changes
             // are undone so only the product operator is projected.
-            ExtendedInstruction::Mpp { products, args, .. } => {
+            ExtendedInstruction::Mpp(MppOp { products, args, .. }) => {
                 let noise = args.first().copied().unwrap_or(0.0);
                 for product in products {
                     for f in product {
@@ -859,7 +861,7 @@ pub fn execute_validated<T, I, C>(
                     }
                 }
             }
-            ExtendedInstruction::Raw(RawPassthrough::Annotation { .. }) => { /* no-op */ }
+            ExtendedInstruction::Annotation(_) => { /* no-op */ }
             ExtendedInstruction::Repeat { count, body, .. } => {
                 for _ in 0..*count {
                     execute_validated(body, tab, results);

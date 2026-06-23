@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
-use ppvm_stim::{Error, ExecError, ExtendedParseError, ParseError, run_file, run_string};
+use ppvm_stim::{Error, ExecError, run_file, run_string};
 use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
@@ -33,22 +33,31 @@ fn run_file_round_trips_with_run_string() {
 fn run_string_propagates_parse_error() {
     let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
     let err = run_string("FROBNICATE 0", &mut tab).unwrap_err();
-    assert!(matches!(
-        err,
-        Error::Parse(ExtendedParseError::Parse(
-            ParseError::UnknownInstruction { .. }
-        ))
-    ));
+    // `stim_parser_2` reports parse failures as an opaque `Diagnostics`
+    // aggregate rather than a typed error enum, so assert on the variant and
+    // the rendered message (which still names the unknown instruction).
+    assert!(
+        matches!(err, Error::Parse(_)),
+        "expected parse error, got {err:?}"
+    );
+    assert!(
+        err.to_string().contains("unknown instruction"),
+        "unexpected message: {err}"
+    );
 }
 
 #[test]
 fn run_string_propagates_extended_parse_error() {
     let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
     let err = run_string("I[FOO] 0\n", &mut tab).unwrap_err();
-    assert!(matches!(
-        err,
-        Error::Parse(ExtendedParseError::InvalidTag { .. })
-    ));
+    assert!(
+        matches!(err, Error::Parse(_)),
+        "expected parse error, got {err:?}"
+    );
+    assert!(
+        err.to_string().contains("invalid tag"),
+        "unexpected message: {err}"
+    );
 }
 
 #[test]

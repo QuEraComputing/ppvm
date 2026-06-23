@@ -5,3 +5,10 @@
 "build_median_ms" = 2620.0
 "per_shot_ns" = 22500.0
 "branches" = 2025.0
+[[metric]]
+"commit" = "59165235"
+"status" = "keep"
+"description" = "lazy branch materialization for loss_channel + pauli_error (single-qubit depolarize)"
+"build_median_ms" = 958.0
+"per_shot_ns" = 22100.0
+"branches" = 2025.0

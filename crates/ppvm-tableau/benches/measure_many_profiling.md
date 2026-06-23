@@ -3,31 +3,31 @@ SPDX-FileCopyrightText: 2026 The PPVM Authors
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# `measure_batch` profiling: where the time goes (2026-06-22)
+# `measure_many` profiling: where the time goes (2026-06-22)
 
 Question: beyond reusing a common `MeasureScratch`, is there an algorithmic win
-for `measure_batch`? This note records the profiling that answers it. **No
+for `measure_many`? This note records the profiling that answers it. **No
 optimization has been applied yet** — these are findings to act on later.
 
 ## Harness
 
-- `examples/profile_measure_batch.rs` — builds a full-width (85-qubit) entangled
+- `examples/profile_measure_many.rs` — builds a full-width (85-qubit) entangled
   Clifford state so every measurement takes the case-a (random) path, with `n_t`
   T-gates controlling the coefficient count. Three workloads bracket the regimes:
   `few` (~1 coefficient), `mid` (~128), `large` (~1024). `quick` mode prints
   timings + the achieved coefficient count; `flame` mode runs a sustained loop.
-- `scripts/profile_measure_batch.sh` — records all three with **samply** (no
+- `scripts/profile_measure_many.sh` — records all three with **samply** (no
   sudo on macOS, unlike dtrace/flamegraph) into `target/profiles/`, then prints
   a top-functions summary.
 - `scripts/samply_top.py` — turns a samply `profile.json.gz` (+ presymbolicated
   `.syms.json` sidecar) into a top-functions-by-self/inclusive-time table,
   headless (no browser UI needed).
 
-Reproduce: `./scripts/profile_measure_batch.sh`
+Reproduce: `./scripts/profile_measure_many.sh`
 
 ## Results (self time; per-shot from `quick` mode)
 
-Per-shot `measure_batch` cost: few 17.7 µs, mid 21 µs, large 48 µs (85 qubits).
+Per-shot `measure_many` cost: few 17.7 µs, mid 21 µs, large 48 µs (85 qubits).
 
 | function (self)                          | few (1) | mid (128) | large (1024) |
 |------------------------------------------|---------|-----------|--------------|

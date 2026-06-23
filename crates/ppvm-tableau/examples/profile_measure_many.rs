@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Profiling driver for `measure_batch` across coefficient-count regimes.
+//! Profiling driver for `measure_many` across coefficient-count regimes.
 //!
-//! `measure_batch` has two cost components per measured qubit:
+//! `measure_many` has two cost components per measured qubit:
 //!   - tableau work  — `compute_decomposition` (scans all stabilizers +
 //!     destabilizers) and, on case-a, `update_tableau_according_to_outcome`.
 //!     This is O(n_qubits) per qubit and *independent of the coefficient count*.
@@ -19,16 +19,15 @@
 //!
 //! Usage:
 //!   # quick timing + achieved coefficient count (use this to calibrate n_t)
-//!   cargo run -p ppvm-tableau --example profile_measure_batch --release -- mid
+//!   cargo run -p ppvm-tableau --example profile_measure_many --release -- mid
 //!
 //!   # sustained hot loop (~FLAME_SECS seconds, default 6) for a sampling
-//!   # profiler. scripts/profile_measure_batch.sh drives this with samply
+//!   # profiler. scripts/profile_measure_many.sh drives this with samply
 //!   # (no sudo on macOS) and summarizes via scripts/samply_top.py:
 //!   samply record --save-only --unstable-presymbolicate -o p.json.gz -- \
-//!     target/release/examples/profile_measure_batch mid flame
+//!     target/release/examples/profile_measure_many mid flame
 
 use ppvm_pauli_sum::config::fx64hash::Byte8F64;
-use ppvm_tableau::measure_all::LossyMeasureAll;
 use ppvm_tableau::prelude::*;
 use std::time::{Duration, Instant};
 
@@ -91,7 +90,7 @@ fn main() {
             for _ in 0..n_runs {
                 let start = Instant::now();
                 let mut t = base.fork(Some(42));
-                std::hint::black_box(t.measure_batch(&all));
+                std::hint::black_box(t.measure_many(&all));
                 shot.push(start.elapsed());
             }
             let mut forks = Vec::with_capacity(n_runs);
@@ -103,11 +102,11 @@ fn main() {
             }
             let shot_m = median(shot);
             let fork_m = median(forks);
-            eprintln!("per-shot (fork + measure_batch) median over {n_runs}: {shot_m:?}");
-            eprintln!("    fork only:     {fork_m:?}");
-            eprintln!("    measure_batch: {:?}", shot_m.saturating_sub(fork_m));
+            eprintln!("per-shot (fork + measure_many) median over {n_runs}: {shot_m:?}");
+            eprintln!("    fork only:    {fork_m:?}");
+            eprintln!("    measure_many: {:?}", shot_m.saturating_sub(fork_m));
             eprintln!(
-                "    per qubit:     {:?}",
+                "    per qubit:    {:?}",
                 shot_m.saturating_sub(fork_m) / n as u32
             );
         }
@@ -117,7 +116,7 @@ fn main() {
             for _ in 0..50 {
                 let start = Instant::now();
                 let mut t = base.fork(Some(42));
-                std::hint::black_box(t.measure_batch(&all));
+                std::hint::black_box(t.measure_many(&all));
                 probe.push(start.elapsed());
             }
             let per = median(probe).max(Duration::from_nanos(1));
@@ -127,11 +126,11 @@ fn main() {
                 .unwrap_or(6);
             let iters = (Duration::from_secs(secs).as_nanos() / per.as_nanos()).max(2_000) as u64;
             eprintln!("flame: ~{per:?}/shot -> {iters} iterations (~{secs}s)");
-            // fork feeds measure_batch and the result is black-boxed, so neither
+            // fork feeds measure_many and the result is black-boxed, so neither
             // call can be hoisted out of the loop.
             for _ in 0..iters {
                 let mut t = std::hint::black_box(base.fork(Some(42)));
-                std::hint::black_box(t.measure_batch(&all));
+                std::hint::black_box(t.measure_many(&all));
             }
         }
         other => panic!("unknown mode {other:?}; use quick|flame"),

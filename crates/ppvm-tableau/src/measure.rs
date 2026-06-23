@@ -126,6 +126,17 @@ where
             destab_anticomm_bits,
         )
     }
+
+    /// Override the trait default (a per-target `measure` loop, which allocates
+    /// a fresh `MeasureScratch` on every call) with a single scratch reused
+    /// across the whole batch, amortizing the case-a HashMap / `b_entries`
+    /// allocations and the cached odd-phase-destabilizer mask. Outcomes, the
+    /// measurement record, and the RNG-draw order are identical to measuring
+    /// each target individually — only the internal allocation pattern changes.
+    fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
+        let mut scratch = MeasureScratch::new();
+        self.measure_many_with_scratch(targets, &mut scratch)
+    }
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>

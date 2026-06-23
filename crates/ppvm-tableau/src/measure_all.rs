@@ -15,11 +15,6 @@ use crate::{data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::Ta
 
 pub trait LossyMeasureAll {
     fn measure_all(&mut self) -> Vec<Option<bool>>;
-
-    /// Measure the given qubit `indices` in order, returning one outcome per
-    /// index (positionally aligned to `indices`). A lost qubit yields `None`.
-    /// [`measure_all`](LossyMeasureAll::measure_all) is the `0..n_qubits` case.
-    fn measure_batch(&mut self, indices: &[usize]) -> Vec<Option<bool>>;
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> LossyMeasureAll
@@ -53,11 +48,6 @@ where
         // destabilizer phases).
         let mut scratch: MeasureScratch<I, T::Coeff> = MeasureScratch::new();
         self.measure_all_with_scratch(&mut scratch)
-    }
-
-    fn measure_batch(&mut self, indices: &[usize]) -> Vec<Option<bool>> {
-        let mut scratch: MeasureScratch<I, T::Coeff> = MeasureScratch::new();
-        self.measure_batch_with_scratch(indices, &mut scratch)
     }
 }
 
@@ -99,11 +89,14 @@ where
             .collect()
     }
 
-    /// Same as [`LossyMeasureAll::measure_batch`], but the caller supplies a
-    /// `MeasureScratch` reused across the per-index measurements (and, if the
-    /// caller chooses, across many invocations / shots) — the batch analogue
-    /// of [`measure_all_with_scratch`](Self::measure_all_with_scratch).
-    pub fn measure_batch_with_scratch(
+    /// Measure the given qubit `indices` in order, reusing a caller-supplied
+    /// `MeasureScratch` across the per-index measurements (and, if the caller
+    /// chooses, across many invocations / shots) — the explicit-index analogue
+    /// of [`measure_all_with_scratch`](Self::measure_all_with_scratch). This is
+    /// the scratch-reusing engine behind the tableau's `LossyMeasure::measure_many`
+    /// override (in `measure.rs`), which the Stim executor and the Python
+    /// `measure_many` binding both go through.
+    pub fn measure_many_with_scratch(
         &mut self,
         indices: &[usize],
         scratch: &mut MeasureScratch<I, T::Coeff>,
@@ -114,15 +107,18 @@ where
             .collect()
     }
 
-    /// Measure a single qubit `idx` in the Z basis, reusing `scratch`. Returns
-    /// `None` if the qubit is lost. Shared by `measure_all_with_scratch` and
-    /// `measure_batch_with_scratch` so both paths measure identically.
+    /// Measure a single qubit `idx` in the Z basis, reusing `scratch`. A lost
+    /// qubit pushes `None` onto the measurement record and returns `None`,
+    /// exactly as the standalone `measure` path does. Shared by
+    /// `measure_all_with_scratch` and `measure_many_with_scratch` so every
+    /// batched path measures — and records — identically to per-qubit `measure`.
     fn measure_one_with_scratch(
         &mut self,
         idx: usize,
         scratch: &mut MeasureScratch<I, T::Coeff>,
     ) -> Option<bool> {
         if self.is_lost[idx] {
+            self.measurement_record.push(None);
             return None;
         }
         let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =

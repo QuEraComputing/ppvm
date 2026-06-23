@@ -181,6 +181,33 @@ class GeneralizedTableau(
         """
         return [MeasurementResult(v) for v in self._interface.current_measurement_record()]
 
+    def coefficients(self) -> dict[int, complex]:
+        """Return a snapshot of the sparse coefficient vector.
+
+        The tableau represents the state as a sparse superposition over the
+        basis states of its stabilizer frame. This returns that vector as a
+        mapping from basis-state index to complex amplitude.
+
+        The returned dict is a copy: mutating it does not affect the tableau's
+        internal state.
+
+        Returns:
+            A dict mapping each populated basis-state index to its complex
+            amplitude.
+        """
+        return self._interface.coefficients()
+
+    def num_coefficients(self) -> int:
+        """Return the number of branches in the coefficient vector.
+
+        This is the number of entries in the dict returned by
+        :meth:`coefficients`, computed without materializing it.
+
+        Returns:
+            The count of populated entries in the sparse coefficient vector.
+        """
+        return self._interface.num_coefficients()
+
     def u3(self, addr0: int, theta: float, phi: float, lam: float):
         """Apply the U3 gate to the specified qubit.
 

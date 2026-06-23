@@ -70,10 +70,20 @@ fn mpp_multiple_products_yield_one_result_each() {
 }
 
 #[test]
-fn mpp_three_qubit_product_parity() {
-    // GHZ (|000>+|111>)/sqrt2: Z0*Z1*Z2 has even parity on both branches -> +1.
+fn mpp_three_qubit_z_parity_is_deterministic() {
+    // Computational-basis states are Z0*Z1*Z2 eigenstates: even # of 1s -> +1,
+    // odd -> -1. (A GHZ state would NOT be an eigenstate of this odd-weight
+    // product, so its outcome is random — not a usable deterministic check.)
+    assert_eq!(run("X 0\nX 1\nMPP Z0*Z1*Z2", 3), vec![Some(false)]); // |110>, even
+    assert_eq!(run("X 0\nMPP Z0*Z1*Z2", 3), vec![Some(true)]); // |100>, odd
+}
+
+#[test]
+fn mpp_three_qubit_x_product_on_ghz() {
+    // GHZ (|000>+|111>)/sqrt2 is stabilized by X0*X1*X2 (+1 eigenstate), which
+    // exercises the 3-factor ladder on an entangled state deterministically.
     assert_eq!(
-        run("H 0\nCX 0 1\nCX 0 2\nMPP Z0*Z1*Z2", 3),
+        run("H 0\nCX 0 1\nCX 0 2\nMPP X0*X1*X2", 3),
         vec![Some(false)]
     );
 }

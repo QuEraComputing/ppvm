@@ -33,3 +33,10 @@
 "build_median_ms" = 921.0
 "per_shot_ns" = 22300.0
 "branches" = 2025.0
+[[metric]]
+"commit" = "4b8fa6f4"
+"status" = "keep"
+"description" = "direct-word column reads in pauli_error dx/dy/dz + structurally_equal_mutated"
+"build_median_ms" = 520.0
+"per_shot_ns" = 22100.0
+"branches" = 2025.0

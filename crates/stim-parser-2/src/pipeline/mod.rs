@@ -81,6 +81,16 @@ impl Pipeline<Parsed> {
 }
 
 impl Pipeline<Validated> {
+    /// Stage 3: lowering. Promotes tag-based PPVM extensions to first-class
+    /// [`ExtendedInstruction`] variants, forwarding every recoverable error to
+    /// the sink.
+    pub fn lower(self, sink: &mut dyn DiagnosticSink) -> Result<Pipeline<Lowered>, Aborted> {
+        let program = lower::lower(self.state.program, sink)?;
+        Ok(Pipeline {
+            state: Lowered { program },
+        })
+    }
+
     pub fn finish(self) -> Program {
         self.state.program
     }

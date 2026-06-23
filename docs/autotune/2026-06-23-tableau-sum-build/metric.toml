@@ -1,0 +1,7 @@
+[[metric]]
+"commit" = "f152652e"
+"status" = "keep"
+"description" = "baseline (msd-noisy build, seeded harness, median of 5)"
+"build_median_ms" = 2620.0
+"per_shot_ns" = 22500.0
+"branches" = 2025.0

@@ -5,9 +5,8 @@ import enum
 from collections.abc import Iterable
 from dataclasses import InitVar, dataclass, field
 
-import ppvm_python_native
-from ppvm_python_native import StimProgram
-
+from . import _core
+from ._core import StimProgram
 from .mixins import (
     CliffordExtensionMixin,
     CliffordMixin,
@@ -35,7 +34,7 @@ def _native_tableau_cls(n_qubits: int):
             "to simulate more qubits, use the ppvm-tableau Rust crate directly."
         )
     N_interface = (n_qubits + 63) // 64
-    return getattr(ppvm_python_native, f"GeneralizedTableau{N_interface}")
+    return getattr(_core, f"GeneralizedTableau{N_interface}")
 
 
 class MeasurementResult(enum.IntEnum):

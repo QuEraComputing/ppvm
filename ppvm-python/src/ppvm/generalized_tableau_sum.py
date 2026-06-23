@@ -5,8 +5,7 @@ from collections.abc import Iterable
 from dataclasses import InitVar, dataclass, field
 from typing import cast
 
-import ppvm_python_native
-
+from . import _core
 from .generalized_tableau import MeasurementResult
 from .mixins import (
     CliffordExtensionMixin,
@@ -51,7 +50,7 @@ class GeneralizedTableauSum(
         object.__setattr__(
             self,
             "_interface",
-            getattr(ppvm_python_native, f"GeneralizedTableauSum{N_interface}")(
+            getattr(_core, f"GeneralizedTableauSum{N_interface}")(
                 self.n_qubits, self.min_abs_coeff, self.sum_cutoff, seed
             ),
         )

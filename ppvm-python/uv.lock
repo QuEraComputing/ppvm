@@ -3062,7 +3062,6 @@ source = { editable = "." }
 dependencies = [
     { name = "bloqade-circuit" },
     { name = "kirin" },
-    { name = "ppvm-python-native" },
 ]
 
 [package.dev-dependencies]
@@ -3087,7 +3086,6 @@ doc = [
 requires-dist = [
     { name = "bloqade-circuit", specifier = ">=0.14.1" },
     { name = "kirin", specifier = ">=0.0.15" },
-    { name = "ppvm-python-native", directory = "../crates/ppvm-python-native" },
 ]
 
 [package.metadata.requires-dev]
@@ -3107,15 +3105,6 @@ doc = [
     { name = "mkdocs-material", specifier = ">=9.5.44" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.27.0" },
 ]
-
-[[package]]
-name = "ppvm-python-native"
-source = { directory = "../crates/ppvm-python-native" }
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [{ name = "maturin", specifier = ">=1.12.6" }]
 
 [[package]]
 name = "prompt-toolkit"

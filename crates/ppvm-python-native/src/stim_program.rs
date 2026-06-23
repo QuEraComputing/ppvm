@@ -8,7 +8,7 @@ use std::ops::Deref;
 use ppvm_stim::{ExtendedProgram, parse_extended, validate};
 
 /// Python-facing wrapper around a validated extended Stim program.
-#[pyclass(name = "StimProgram", module = "ppvm_python_native")]
+#[pyclass(name = "StimProgram", module = "ppvm._core")]
 pub struct PyStimProgram(pub ExtendedProgram);
 
 #[pymethods]

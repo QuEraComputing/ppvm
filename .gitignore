@@ -12,6 +12,12 @@ ppvm-python/site/
 ppvm-python/.cache/
 ppvm-python/extended_tests/stim/stim-programs/
 
+# maturin editable installs drop the compiled `ppvm._core` extension next to
+# the Python sources; it is a build artifact, not source.
+ppvm-python/src/ppvm/*.so
+ppvm-python/src/ppvm/*.pyd
+ppvm-python/src/ppvm/*.dylib
+
 # Managed by ion
 CLAUDE.md
 .agents/skills/

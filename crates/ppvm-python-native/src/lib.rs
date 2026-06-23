@@ -21,8 +21,10 @@ pub(crate) fn flat_pairs(targets: &[usize]) -> PyResult<Vec<(usize, usize)>> {
         .collect())
 }
 
+// Imported by Python only as the private `ppvm._core` submodule; maturin's
+// `module-name = "ppvm._core"` maps this `PyInit__core` symbol into the wheel.
 #[pymodule]
-pub mod ppvm_python_native {
+pub mod _core {
     // NOTE: it's not possible to use #[pymodule_export] inside a macro_rules!
 
     // PauliSum

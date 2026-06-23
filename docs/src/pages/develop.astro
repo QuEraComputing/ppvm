@@ -124,8 +124,8 @@ const toc = [
 │   ├── ppvm-sym             # Symbolic (parametric) Pauli propagation
 │   ├── ppvm-stim            # Stim program execution against the tableau
 │   ├── stim-parser          # Standalone parser for the Stim circuit format
-│   └── ppvm-python-native   # PyO3 bindings (cdylib via maturin)
-├── ppvm-python/             # Pure-Python wrapper (uv_build backend)
+│   └── ppvm-python-native   # PyO3 bindings, compiled into `ppvm` as `ppvm._core`
+├── ppvm-python/             # Python package `ppvm` (maturin: wrapper + `ppvm._core`)
 ├── docs/                    # This documentation site (Astro)
 ├── examples/                # Rust examples (symbolic.rs, trotter.rs)
 └── AGENTS.md                # Pointer to this guide
@@ -179,11 +179,12 @@ uv run --project ppvm-python --group dev pytest ppvm-python/test/test_basics.py
 uv run --project ppvm-python --group dev pytest ppvm-python/test/ -k test_ghz</code></pre>
 
     <p>
-      If the native module has changed but the wrapper has not, force a
-      rebuild with <code>uv sync --project ppvm-python --reinstall-package
-      ppvm-python-native</code>. The Python project is configured to use
-      uv-managed Python installations, so a fresh <code>uv sync</code> avoids
-      linking PyO3 test builds against a system Python.
+      The compiled <code>ppvm._core</code> is part of the <code>ppvm</code>
+      wheel, so after changing Rust force a rebuild with <code>uv sync
+      --project ppvm-python --reinstall-package ppvm</code> (or <code>maturin
+      develop -m crates/ppvm-python-native/Cargo.toml</code>). The Python
+      project is configured to use uv-managed Python installations, so a fresh
+      <code>uv sync</code> avoids linking PyO3 builds against a system Python.
     </p>
 
     <h3>This docs site</h3>
@@ -549,16 +550,19 @@ chore: restore lockfile consistency</code></pre>
     <h2 id="python-bindings"><span class="sec-num">§ 5</span>Python bindings</h2>
 
     <p>
-      <strong>Two-layer build.</strong> <code>ppvm-python-native</code>
-      (Rust &rarr; cdylib via maturin + PyO3 0.27) is compiled automatically
-      when <code>ppvm-python</code> is installed. <code>ppvm-python</code>
-      is a pure-Python wrapper using <code>uv_build</code> as its build
-      backend.
+      <strong>Single mixed wheel.</strong> <code>ppvm-python</code> is one
+      maturin package: it bundles the pure-Python wrapper under
+      <code>src/ppvm/</code> together with the PyO3 crate
+      (<code>ppvm-python-native</code>, Rust &rarr; cdylib via PyO3 0.29),
+      which maturin compiles and drops in as the private
+      <code>ppvm._core</code> submodule. Users only ever <code>import
+      ppvm</code>.
     </p>
     <ul>
-      <li>Python &ge; 3.10 required (<code>.python-version</code> pins 3.12 for dev).</li>
-      <li><code>uv</code> manages the venv, deps, and triggers the maturin build.</li>
-      <li><code>ppvm-python/pyproject.toml</code> references <code>ppvm-python-native</code> via <code>[tool.uv.sources]</code> path dependency.</li>
+      <li>Python &ge; 3.10 required (<code>.python-version</code> pins 3.12 for dev). The wheel is built against PyO3's <code>abi3-py310</code> stable ABI, so one <code>cp310-abi3</code> wheel per platform loads on 3.10+.</li>
+      <li><code>uv</code> manages the venv and deps and triggers the maturin build on <code>uv sync</code>.</li>
+      <li><code>ppvm-python/pyproject.toml</code> sets <code>build-backend = "maturin"</code> with <code>[tool.maturin]</code> <code>manifest-path</code> &rarr; the crate, <code>python-source = "src"</code>, and <code>module-name = "ppvm._core"</code>.</li>
+      <li>Plain <code>cargo build</code> also links the cdylib (a <code>build.rs</code> in <code>ppvm-python-native</code> adds the macOS <code>-undefined dynamic_lookup</code> flag), so the Rust-only workflows work without maturin.</li>
       <li>The native module exports 16 <code>PauliSum</code> variants &times; 2 (with/without loss) + 32 <code>GeneralizedTableau</code> variants (1&ndash;32 qubits) via the <code>create_interface!</code> / <code>create_interface_range!</code> macros.</li>
     </ul>
     <p>

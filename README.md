@@ -19,7 +19,7 @@ uv add git+https://github.com/QuEraComputing/ppvm.git#subdirectory=ppvm-python
 
 ```toml
 [dependencies]
-ppvm-runtime = { git = "https://github.com/QuEraComputing/ppvm" }
+ppvm-pauli-sum = { git = "https://github.com/QuEraComputing/ppvm" }
 ```
 
 ## Examples

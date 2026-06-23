@@ -170,11 +170,12 @@ const tableauCode = stripDocstring(tableauGhz);
 
       <section class="install-pane" data-install-pane="rust" role="tabpanel" hidden>
         <p>
-          Add the crates relevant to your workload. <code>ppvm-runtime</code>
-          is required; the others layer on top.
+          Add the crates relevant to your workload. <code>ppvm-pauli-sum</code>
+          (the Pauli-propagation engine) is the usual entry point; the others
+          layer on top.
         </p>
 <pre><code class="language-toml">[dependencies]
-ppvm-runtime = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
+ppvm-pauli-sum = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
 ppvm-tableau = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
 ppvm-stim    = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
 ppvm-sym     = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}</code></pre>

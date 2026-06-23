@@ -7,7 +7,7 @@
 use ppvm_stim::{parse_extended, sample};
 use ppvm_tableau::prelude::*;
 
-type Tab = GeneralizedTableau<ppvm_runtime::config::indexmap::ByteFxHashF64<1>, usize>;
+type Tab = GeneralizedTableau<ppvm_pauli_sum::config::indexmap::ByteFxHashF64<1>, usize>;
 
 fn main() -> Result<(), ppvm_stim::Error> {
     let stim_src = r#"
@@ -18,7 +18,9 @@ fn main() -> Result<(), ppvm_stim::Error> {
     let n_qubits = 2;
 
     let prog = parse_extended(stim_src)?;
-    let shots = sample(&prog, 32, || Tab::new(n_qubits, 1e-10))?;
+    // The factory receives the shot index; derive a per-shot seed from it
+    // when you need deterministic, order-independent results.
+    let shots = sample(&prog, 32, |_| Tab::new(n_qubits, 1e-10))?;
 
     // GHZ: every shot has the two qubits in agreement.
     for (i, shot) in shots.iter().enumerate() {

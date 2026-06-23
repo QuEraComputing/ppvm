@@ -10,7 +10,7 @@ function trotter_circuit(n, total_time, dt, interaction_strength, external_field
     theta_zz = dt * interaction_strength
     theta_x = dt * external_field
 
-    
+
     for _ in 1:steps
 
         for i in 1:n
@@ -31,7 +31,9 @@ function trotter_circuit(n, total_time, dt, interaction_strength, external_field
 
     end
 
-    return circuit
+    # built in Schrödinger/forward order above; reverse so propagate!'s internal
+    # Heisenberg reverse() applies it forward, matching the Rust/Python benches.
+    return reverse(circuit)
 end
 
 function run_benchmark()

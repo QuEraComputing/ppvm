@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # gxhash's AES/SSE2 target features are set arch-scoped in `.cargo/config.toml`
+  # (`cfg(target_arch = "x86_64")`), so we do NOT set a global RUSTFLAGS here:
+  # `-C target-feature=+aes,+sse2` is invalid on aarch64 (macos-latest) and
+  # would break that runner. The config applies the flags only on x86_64.
+
+# The `pre-commit` job runs the full prek hook suite (rustfmt, clippy,
+# cargo check, ruff, ty, hawkeye, and the file hygiene hooks). Every other
+# job `needs:` it, so if the hooks fail nothing else runs — the lint/format
+# gate is a hard prerequisite, which keeps `main` in compliance and avoids
+# spending Actions minutes on tests when the cheap checks already fail.
+jobs:
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Toolchain for the cargo-fmt / cargo-check / cargo-clippy hooks.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # `uv` backs the `uvx ruff …` and `uvx ty …` hooks.
+      - uses: astral-sh/setup-uv@v5
+
+      # Installs the mise-managed tools from mise.toml: `prek` (the hook
+      # runner) and `hawkeye` (used by the license-header hook via
+      # `mise exec -- hawkeye check`).
+      - uses: jdx/mise-action@v2
+
+      # `ty` resolves third-party imports (numpy, bloqade, kirin, …) and the
+      # `ppvm_python_native` extension through the project venv, so it must
+      # exist before the hooks run. This also builds the native module.
+      - name: Sync Python environment
+        run: uv sync --project ppvm-python --group dev
+
+      - name: Run all pre-commit hooks
+        # `no-commit-to-branch` is a local-only guard that fails by design on
+        # `main`; skip it in CI (prek honours the pre-commit `SKIP` env var).
+        env:
+          SKIP: no-commit-to-branch
+        run: mise exec -- prek run --all-files
+
+  rust-tests:
+    name: Rust tests
+    needs: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run workspace tests
+        run: cargo test --workspace
+
+      - name: Run ppvm-stim tests with rayon feature
+        run: cargo test -p ppvm-stim --features rayon
+
+  # Cross-compile the whole workspace for browser wasm so a wasm regression
+  # surfaces in CI. `ppvm-python-native` is a CPython extension (never a wasm
+  # target) and is excluded. Native-only acceleration deps (gxhash, dashmap →
+  # rayon, ahash) are pruned automatically by the `cfg(not(target_arch =
+  # "wasm32"))` dependency tables, and `rand`'s entropy uses the getrandom
+  # `wasm_js` backend wired in `.cargo/config.toml` — so no extra flags here.
+  wasm-build:
+    name: wasm32 build (browser)
+    needs: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build workspace for wasm32-unknown-unknown
+        run: cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-native
+
+  python-tests:
+    name: Python tests
+    needs: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Run Python tests
+        run: uv run --project ppvm-python --group dev pytest ppvm-python/test/ docs/examples/
+
+  # The pure-Rust crates are platform-agnostic and fully verified on Linux by
+  # the jobs above. The PyO3 extension is the only OS-sensitive artifact (macOS
+  # `-undefined dynamic_lookup`, Windows `python3.lib`), so it is the only thing
+  # rebuilt on other OSes — and building it via maturin compiles the entire
+  # crate tree on that OS as a side effect, so a cross-OS compile regression
+  # still surfaces here. `needs:` the Linux test jobs so macOS/Windows runners
+  # only spin up once Linux is green (no point paying for them otherwise).
+  extension-cross-platform:
+    name: Extension (${{ matrix.os }})
+    needs: [rust-tests, python-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: astral-sh/setup-uv@v5
+
+      # Compiles ppvm-python-native and its whole dependency tree, then links
+      # the abi3 extension the per-OS way (maturin handles dynamic_lookup /
+      # python3.lib for us).
+      - name: Build the extension (maturin via uv)
+        run: uv sync --project ppvm-python --group dev
+
+      - name: Run the extension's Python tests
+        run: uv run --project ppvm-python --group dev pytest ppvm-python/test/

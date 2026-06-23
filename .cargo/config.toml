@@ -1,0 +1,11 @@
+# gxhash requires AES/SSE2 on x86_64; set this once so local cargo
+# build/test commands match CI without per-command RUSTFLAGS.
+[target.'cfg(target_arch = "x86_64")']
+rustflags = ["-C", "target-feature=+aes,+sse2"]
+
+# On wasm32 (browser) `getrandom` has no default entropy source. Select its JS
+# backend so `rand` (e.g. `rand::make_rng()` in the tableau simulators) reads
+# from the Web Crypto API. Pairs with the `getrandom`/`wasm_js` feature enabled
+# in ppvm-tableau's wasm-only dependency table. No per-command RUSTFLAGS needed.
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg", 'getrandom_backend="wasm_js"']

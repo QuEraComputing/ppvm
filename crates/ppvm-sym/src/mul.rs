@@ -3,7 +3,7 @@
 
 use core::panic;
 
-use ppvm_runtime::prelude::*;
+use ppvm_pauli_sum::prelude::*;
 
 use crate::{
     Term,

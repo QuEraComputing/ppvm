@@ -24,7 +24,7 @@ use fxhash::FxHashMap as HashMap;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
-use ppvm_runtime::pattern::PauliPattern;
+use ppvm_pauli_word::pattern::PauliPattern;
 use std::fmt::Debug;
 
 impl<T, I, C> GeneralizedTableau<T, I, C>
@@ -61,12 +61,12 @@ where
         let (phase, stab_anticomm, destab_anticomm) = self.compute_decomposition_word(word);
         let entries: Vec<(Complex<T::Coeff>, I)> = self.coefficients.clone().into_iter().collect();
         if stab_anticomm == I::zero() {
-            Self::overlap_case_b(&entries, phase, destab_anticomm)
+            Self::compute_overlap_case_b(&entries, phase, destab_anticomm)
         } else {
             let coeff_map: HashMap<I, Complex<T::Coeff>> =
                 entries.into_iter().map(|(v, i)| (i, v)).collect();
             let odd_phase_mask = self.odd_phase_destabilizer_mask();
-            Self::overlap_case_a(
+            Self::compute_overlap_case_a(
                 &coeff_map,
                 phase,
                 destab_anticomm,
@@ -94,7 +94,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
 
     type TestTableau = GeneralizedTableau<ByteF64<1>>;
 
@@ -277,7 +277,7 @@ mod tests {
     // gates in reverse time order. Depolarize is self-dual under Heisenberg.
     #[test]
     fn forward_shots_match_backward_pauli_sum_under_depolarizing_noise() {
-        use ppvm_runtime::config::indexmap::ByteFxHashF64;
+        use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
 
         let p = 0.05_f64;
         let n_shots: u64 = 4000;
@@ -287,20 +287,20 @@ mod tests {
         for shot in 0..n_shots {
             let mut tab: TestTableau = GeneralizedTableau::new_with_seed(n_qubits, 1e-12, shot);
             tab.h(0);
-            tab.depolarize(0, p);
+            tab.depolarize1(0, p);
             tab.cnot(0, 1);
-            tab.depolarize(0, p);
-            tab.depolarize(1, p);
+            tab.depolarize1(0, p);
+            tab.depolarize1(1, p);
             sum += tab.expectation(&word("ZZ"));
         }
         let avg = sum / (n_shots as f64);
 
         let mut ps: PauliSum<ByteFxHashF64<1>> = PauliSum::builder().n_qubits(n_qubits).build();
         ps += ("ZZ", 1.0);
-        ps.depolarize(1, p);
-        ps.depolarize(0, p);
+        ps.depolarize1(1, p);
+        ps.depolarize1(0, p);
         ps.cnot(0, 1);
-        ps.depolarize(0, p);
+        ps.depolarize1(0, p);
         ps.h(0);
         let z_or_i = PauliPattern::parse("Z?{2}").expect("parse Z?{2}");
         let exact = ps.trace(&z_or_i);

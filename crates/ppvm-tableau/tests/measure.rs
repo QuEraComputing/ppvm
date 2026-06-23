@@ -4,7 +4,7 @@
 use std::f64::consts::FRAC_PI_2;
 
 use num::complex::Complex64;
-use ppvm_runtime::config::dashmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::dashmap::ByteFxHashF64;
 use ppvm_tableau::prelude::*;
 
 #[test]
@@ -664,7 +664,7 @@ fn test_measure_order_sqrt_vs_rot() {
     tab_sqrt.cz(0, 1);
 
     tab_rot.rx(0, -FRAC_PI_2);
-    tab_sqrt.sqrt_x_adj(0);
+    tab_sqrt.sqrt_x_dag(0);
 
     let n_shots = 20_000;
 
@@ -744,6 +744,58 @@ fn test_measure_order_sqrt_vs_rot() {
     assert!((avg_sqrt.1 - avg_rot.1).abs() < 0.05);
     assert!((avg_rot_rev.1 - avg_rot.1).abs() < 0.05);
     assert!((avg_sqrt_rev.1 - avg_rot.1).abs() < 0.05);
+}
+
+#[test]
+fn measurement_record_accumulates_in_order() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(2, 1e-12);
+    t.x(0);
+    let _ = t.measure(0);
+    let _ = t.measure(1);
+    let rec = t.current_measurement_record();
+    assert_eq!(rec.len(), 2);
+    assert_eq!(rec[0], Some(true));
+    assert_eq!(rec[1], Some(false));
+}
+
+#[test]
+fn fork_copies_measurement_record() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(1, 1e-12);
+    let _ = t.measure(0);
+    let f = t.fork(Some(7));
+    assert_eq!(f.current_measurement_record().len(), 1);
+}
+
+#[test]
+fn measure_many_returns_per_target() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(3, 1e-12);
+    t.x_many(&[0, 2]);
+    assert_eq!(
+        t.measure_many(&[0, 1, 2]),
+        vec![Some(true), Some(false), Some(true)]
+    );
+}
+
+#[test]
+fn reset_clears_to_zero() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(1, 1e-12);
+    t.x(0);
+    t.reset(0);
+    assert_eq!(t.measure(0), Some(false));
+}
+
+#[test]
+fn reset_x_then_measure_records_one() {
+    let mut t: GeneralizedTableau<ByteFxHashF64<1>, u128, Vec<(Complex64, u128)>> =
+        GeneralizedTableau::new(1, 1e-12);
+    t.x(0);
+    t.reset_x(0);
+    let _ = t.measure(0);
+    assert_eq!(t.current_measurement_record().len(), 1);
 }
 
 #[test]

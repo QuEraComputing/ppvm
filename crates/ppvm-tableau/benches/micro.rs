@@ -6,7 +6,7 @@ use std::time::Duration;
 use bnum::types::U256;
 use criterion::{Criterion, criterion_group, criterion_main};
 use num::complex::Complex64;
-use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<Byte8F64<2>, usize>;
@@ -53,10 +53,10 @@ fn bench_single_qubit_gates(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    group.bench_function("s_adj", |b| {
+    group.bench_function("s_dag", |b| {
         b.iter_batched_ref(
             || tab.fork(None),
-            |t| t.s_adj(0),
+            |t| t.s_dag(0),
             criterion::BatchSize::SmallInput,
         );
     });
@@ -88,10 +88,10 @@ fn bench_single_qubit_gates(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    group.bench_function("sqrt_x_adj", |b| {
+    group.bench_function("sqrt_x_dag", |b| {
         b.iter_batched_ref(
             || tab.fork(None),
-            |t| t.sqrt_x_adj(0),
+            |t| t.sqrt_x_dag(0),
             criterion::BatchSize::SmallInput,
         );
     });
@@ -102,10 +102,10 @@ fn bench_single_qubit_gates(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    group.bench_function("sqrt_y_adj", |b| {
+    group.bench_function("sqrt_y_dag", |b| {
         b.iter_batched_ref(
             || tab.fork(None),
-            |t| t.sqrt_y_adj(0),
+            |t| t.sqrt_y_dag(0),
             criterion::BatchSize::SmallInput,
         );
     });
@@ -143,7 +143,7 @@ fn bench_two_qubit_gates(c: &mut Criterion) {
 }
 
 fn bench_non_clifford_gates(c: &mut Criterion) {
-    // |+> state: Z-axis rotations (t, t_adj, u3) anticommute with X stabilizer → branching
+    // |+> state: Z-axis rotations (t, t_dag, u3) anticommute with X stabilizer → branching
     let mut tab_plus = Tab::new(N_QUBITS, 1e-10);
     tab_plus.h(0);
 
@@ -164,10 +164,10 @@ fn bench_non_clifford_gates(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    group.bench_function("t_adj", |b| {
+    group.bench_function("t_dag", |b| {
         b.iter_batched_ref(
             || tab_plus.fork(None),
-            |t| t.t_adj(0),
+            |t| t.t_dag(0),
             criterion::BatchSize::SmallInput,
         );
     });
@@ -242,7 +242,7 @@ fn bench_noise(c: &mut Criterion) {
     group.bench_function("depolarize", |b| {
         b.iter_batched_ref(
             || tab.fork(None),
-            |t| t.depolarize(0, 1.0),
+            |t| t.depolarize1(0, 1.0),
             criterion::BatchSize::SmallInput,
         );
     });

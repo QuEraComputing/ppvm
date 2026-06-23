@@ -1,4 +1,4 @@
-use ppvm_runtime::prelude::*;
+use ppvm_pauli_sum::prelude::*;
 use ppvm_sym::*;
 
 fn main() {

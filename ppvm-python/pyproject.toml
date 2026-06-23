@@ -10,18 +10,25 @@ requires-python = ">=3.10"
 dependencies = [
     "bloqade-circuit>=0.14.1",
     "kirin>=0.0.15",
-    "ppvm-python-native",
 ]
 
 [project.scripts]
 ppvm = "ppvm:main"
 
 [build-system]
-requires = ["uv_build>=0.9.21,<0.10.0"]
-build-backend = "uv_build"
+requires = ["maturin>=1.10,<2.0"]
+build-backend = "maturin"
 
-[tool.uv.sources]
-ppvm-python-native = { path = "../crates/ppvm-python-native" }
+# Single mixed Rust/Python wheel: maturin compiles the PyO3 crate and drops it
+# in next to the pure-Python sources as the private `ppvm._core` submodule, so
+# users only ever `import ppvm`.
+[tool.maturin]
+manifest-path = "../crates/ppvm-python-native/Cargo.toml"
+python-source = "src"
+module-name = "ppvm._core"
+
+[tool.uv]
+python-preference = "only-managed"
 
 [tool.ruff]
 line-length = 100
@@ -39,24 +46,18 @@ ignore = [
 
 [tool.ty.environment]
 python-version = "3.12"
-extra-paths = ["../crates/ppvm-python-native"]
 
 [tool.ty.src]
 exclude = ["docs/"]
+
+[tool.pytest.ini_options]
+# Benchmarks (test/benchmarks/) only time when explicitly enabled via
+# --benchmark-enable; otherwise they run once as smoke tests.
+addopts = "--benchmark-disable"
 
 [dependency-groups]
 dev = [
     "numpy>=2.2.6",
     "pytest>=9.0.2",
-]
-doc = [
-    "griffe-inherited-docstrings>=1.1.1",
-    "matplotlib>=3.10.8",
-    "mike>=2.1.3",
-    "mkdocs>=1.6.1",
-    "mkdocs-gen-files>=0.5.0",
-    "mkdocs-jupyter>=0.25.1",
-    "mkdocs-literate-nav>=0.6.1",
-    "mkdocs-material>=9.5.44",
-    "mkdocstrings[python]>=0.27.0",
+    "pytest-benchmark>=5.2.3",
 ]

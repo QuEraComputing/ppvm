@@ -10,9 +10,9 @@ use bnum::types::{U256, U512, U1024, U2048};
 use eyre::{Result, eyre};
 use num::PrimInt;
 use num::complex::Complex64;
-use ppvm_runtime::config::fx64hash::Byte8F64;
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
-use ppvm_runtime::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
+use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
+use ppvm_pauli_sum::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
 use ppvm_tableau::prelude::*;
 use vihaco::{Effects, component, observe};
 use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
@@ -97,11 +97,11 @@ where
             (Z, &Qubit(addr)) => self.tab.z(addr),
             (H, &Qubit(addr)) => self.tab.h(addr),
             (S, &Qubit(addr)) => self.tab.s(addr),
-            (SAdj, &Qubit(addr)) => self.tab.s_adj(addr),
+            (SAdj, &Qubit(addr)) => self.tab.s_dag(addr),
             (SqrtX, &Qubit(addr)) => self.tab.sqrt_x(addr),
             (SqrtY, &Qubit(addr)) => self.tab.sqrt_y(addr),
-            (SqrtXAdj, &Qubit(addr)) => self.tab.sqrt_x_adj(addr),
-            (SqrtYAdj, &Qubit(addr)) => self.tab.sqrt_y_adj(addr),
+            (SqrtXAdj, &Qubit(addr)) => self.tab.sqrt_x_dag(addr),
+            (SqrtYAdj, &Qubit(addr)) => self.tab.sqrt_y_dag(addr),
 
             // Controlled gates
             (CNOT, &TwoQubit(addr0, addr1)) => self.tab.cnot(addr0, addr1),
@@ -109,7 +109,7 @@ where
 
             // T gate
             (T, &Qubit(addr)) => self.tab.t(addr),
-            (TAdj, &Qubit(addr)) => self.tab.t_adj(addr),
+            (TAdj, &Qubit(addr)) => self.tab.t_dag(addr),
 
             // Single-qubit rotations
             (RX, &QubitAndFloat(addr, angle)) => self.tab.rx(addr, angle),
@@ -139,7 +139,7 @@ where
             (Reset, &Qubit(addr)) => self.tab.reset(addr),
 
             // Noise
-            (Depolarize, &QubitAndFloat(addr, p)) => self.tab.depolarize(addr, p),
+            (Depolarize, &QubitAndFloat(addr, p)) => self.tab.depolarize1(addr, p),
             (Depolarize2, &TwoQubitAndFloat(addr0, addr1, p)) => {
                 self.tab.depolarize2(addr0, addr1, p)
             }
@@ -156,12 +156,12 @@ where
 
             /* BATCH OPERATIONS START HERE */
             // Batch: dedicated batch methods
-            (SqrtX, QubitBatch(addrs)) => self.tab.sqrt_x_batch(addrs),
-            (SqrtY, QubitBatch(addrs)) => self.tab.sqrt_y_batch(addrs),
-            (SqrtXAdj, QubitBatch(addrs)) => self.tab.sqrt_x_adj_batch(addrs),
-            (SqrtYAdj, QubitBatch(addrs)) => self.tab.sqrt_y_adj_batch(addrs),
-            (H, QubitBatch(addrs)) => self.tab.h_batch(addrs),
-            (CZ, TwoQubitBatch(pairs)) => self.tab.cz_batch(pairs),
+            (SqrtX, QubitBatch(addrs)) => self.tab.sqrt_x_many(addrs),
+            (SqrtY, QubitBatch(addrs)) => self.tab.sqrt_y_many(addrs),
+            (SqrtXAdj, QubitBatch(addrs)) => self.tab.sqrt_x_dag_many(addrs),
+            (SqrtYAdj, QubitBatch(addrs)) => self.tab.sqrt_y_dag_many(addrs),
+            (H, QubitBatch(addrs)) => self.tab.h_many(addrs),
+            (CZ, TwoQubitBatch(pairs)) => self.tab.cz_many(pairs),
 
             // TODO: replace things below by actual batched methods once they are available
             // Batch: single-qubit for loops
@@ -169,15 +169,15 @@ where
             (Y, QubitBatch(addrs)) => batch_for!(self.tab, y, addrs),
             (Z, QubitBatch(addrs)) => batch_for!(self.tab, z, addrs),
             (S, QubitBatch(addrs)) => batch_for!(self.tab, s, addrs),
-            (SAdj, QubitBatch(addrs)) => batch_for!(self.tab, s_adj, addrs),
+            (SAdj, QubitBatch(addrs)) => batch_for!(self.tab, s_dag, addrs),
             (T, QubitBatch(addrs)) => batch_for!(self.tab, t, addrs),
-            (TAdj, QubitBatch(addrs)) => batch_for!(self.tab, t_adj, addrs),
+            (TAdj, QubitBatch(addrs)) => batch_for!(self.tab, t_dag, addrs),
             (Reset, QubitBatch(addrs)) => batch_for!(self.tab, reset, addrs),
             (RX, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.tab, rx, addrs, *angle),
             (RY, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.tab, ry, addrs, *angle),
             (RZ, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.tab, rz, addrs, *angle),
             (Depolarize, QubitBatchAndFloat(addrs, p)) => {
-                batch_for!(self.tab, depolarize, addrs, *p)
+                batch_for!(self.tab, depolarize1, addrs, *p)
             }
             (Loss, QubitBatchAndFloat(addrs, p)) => batch_for!(self.tab, loss_channel, addrs, *p),
             (PauliError, QubitBatchAndFloatArr3(addrs, ps)) => {
@@ -298,11 +298,11 @@ macro_rules! dispatch_common_paulisum {
             (Z, &Qubit(addr)) => $self.state.z(addr),
             (H, &Qubit(addr)) => $self.state.h(addr),
             (S, &Qubit(addr)) => $self.state.s(addr),
-            (SAdj, &Qubit(addr)) => $self.state.s_adj(addr),
+            (SAdj, &Qubit(addr)) => $self.state.s_dag(addr),
             (SqrtX, &Qubit(addr)) => $self.state.sqrt_x(addr),
             (SqrtY, &Qubit(addr)) => $self.state.sqrt_y(addr),
-            (SqrtXAdj, &Qubit(addr)) => $self.state.sqrt_x_adj(addr),
-            (SqrtYAdj, &Qubit(addr)) => $self.state.sqrt_y_adj(addr),
+            (SqrtXAdj, &Qubit(addr)) => $self.state.sqrt_x_dag(addr),
+            (SqrtYAdj, &Qubit(addr)) => $self.state.sqrt_y_dag(addr),
 
             // Controlled gates
             (CNOT, &TwoQubit(addr0, addr1)) => $self.state.cnot(addr0, addr1),
@@ -330,7 +330,7 @@ macro_rules! dispatch_common_paulisum {
             }
 
             // Noise
-            (Depolarize, &QubitAndFloat(addr, p)) => $self.state.depolarize(addr, p),
+            (Depolarize, &QubitAndFloat(addr, p)) => $self.state.depolarize1(addr, p),
             (Depolarize2, &TwoQubitAndFloat(addr0, addr1, p)) => {
                 $self.state.depolarize2(addr0, addr1, p)
             }
@@ -351,11 +351,11 @@ macro_rules! dispatch_common_paulisum {
             (Z, QubitBatch(addrs)) => batch_for!($self.state, z, addrs),
             (H, QubitBatch(addrs)) => batch_for!($self.state, h, addrs),
             (S, QubitBatch(addrs)) => batch_for!($self.state, s, addrs),
-            (SAdj, QubitBatch(addrs)) => batch_for!($self.state, s_adj, addrs),
+            (SAdj, QubitBatch(addrs)) => batch_for!($self.state, s_dag, addrs),
             (SqrtX, QubitBatch(addrs)) => batch_for!($self.state, sqrt_x, addrs),
             (SqrtY, QubitBatch(addrs)) => batch_for!($self.state, sqrt_y, addrs),
-            (SqrtXAdj, QubitBatch(addrs)) => batch_for!($self.state, sqrt_x_adj, addrs),
-            (SqrtYAdj, QubitBatch(addrs)) => batch_for!($self.state, sqrt_y_adj, addrs),
+            (SqrtXAdj, QubitBatch(addrs)) => batch_for!($self.state, sqrt_x_dag, addrs),
+            (SqrtYAdj, QubitBatch(addrs)) => batch_for!($self.state, sqrt_y_dag, addrs),
             (RX, QubitBatchAndFloat(addrs, angle)) => {
                 batch_for!($self.state, rx, addrs, *angle)
             }
@@ -366,7 +366,7 @@ macro_rules! dispatch_common_paulisum {
                 batch_for!($self.state, rz, addrs, *angle)
             }
             (Depolarize, QubitBatchAndFloat(addrs, p)) => {
-                batch_for!($self.state, depolarize, addrs, *p)
+                batch_for!($self.state, depolarize1, addrs, *p)
             }
             (PauliError, QubitBatchAndFloatArr3(addrs, ps)) => {
                 batch_for!($self.state, pauli_error, addrs, *ps)
@@ -396,7 +396,7 @@ macro_rules! dispatch_common_paulisum {
                 return Err(eyre!("{} is not supported on the {} backend", $inst, $backend));
             }
 
-            // T / T_adj / U3 are listed as supported on PauliSum in the
+            // T / T_dag / U3 are listed as supported on PauliSum in the
             // plan's Gate Support Matrix, but ppvm-runtime does not yet
             // implement TGate or U3Gate for PauliSum<T> (only for
             // GeneralizedTableau).

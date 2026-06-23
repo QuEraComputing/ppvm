@@ -13,9 +13,23 @@ fxhash = "0.2.1"
 bnum = { version = "0.13.0", features = ["numtraits"] }
 itertools = "0.14.0"
 num = "0.4.3"
-ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
+ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 rand = "0.10.1"
+smallvec = "1.15"
+ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
+
+# rayon needs OS threads — native only.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = { version = "1.10", optional = true }
+
+# On wasm32, rand's entropy crate (getrandom) has no default source. Enable its
+# browser backend's `wasm_js` feature here (paired with the
+# `getrandom_backend="wasm_js"` rustflag in .cargo/config.toml); feature
+# unification then wires entropy for every crate that pulls rand transitively
+# (ppvm-tableau-sum, ppvm-stim, the top-level ppvm crate).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 criterion = "0.7.0"
@@ -39,4 +53,16 @@ harness = false
 
 [[bench]]
 name = "measure-scaling"
+harness = false
+
+[[bench]]
+name = "clifford_batch"
+harness = false
+
+[[bench]]
+name = "clifford_crossover"
+harness = false
+
+[[bench]]
+name = "measure-all"
 harness = false

@@ -24,7 +24,7 @@ jobs:
         run: cargo doc --workspace --no-deps
 
       - name: Add redirect index
-        run: echo '<meta http-equiv="refresh" content="0; url=ppvm_runtime">' > target/doc/index.html
+        run: echo '<meta http-equiv="refresh" content="0; url=ppvm_traits">' > target/doc/index.html
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

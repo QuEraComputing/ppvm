@@ -7,8 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Self, Union
 
-import ppvm_python_native
-
+from . import _core
 from .mixins import (
     TruncatingCliffordExtensionMixin,
     TruncatingCliffordMixin,
@@ -39,41 +38,41 @@ def _parse_term(term: "str | tuple[str, float]", n_qubits: int) -> "tuple[str, f
 
 
 PauliSumInterface = Union[
-    ppvm_python_native.PauliSumIndexMapFxHash0,
-    ppvm_python_native.PauliSumIndexMapFxHash1,
-    ppvm_python_native.PauliSumIndexMapFxHash2,
-    ppvm_python_native.PauliSumIndexMapFxHash3,
-    ppvm_python_native.PauliSumIndexMapFxHash4,
-    ppvm_python_native.PauliSumIndexMapFxHash5,
-    ppvm_python_native.PauliSumIndexMapFxHash6,
-    ppvm_python_native.PauliSumIndexMapFxHash7,
-    ppvm_python_native.PauliSumIndexMapFxHash8,
-    ppvm_python_native.PauliSumIndexMapFxHash9,
-    ppvm_python_native.PauliSumIndexMapFxHash10,
-    ppvm_python_native.PauliSumIndexMapFxHash11,
-    ppvm_python_native.PauliSumIndexMapFxHash12,
-    ppvm_python_native.PauliSumIndexMapFxHash13,
-    ppvm_python_native.PauliSumIndexMapFxHash14,
-    ppvm_python_native.PauliSumIndexMapFxHash15,
+    _core.PauliSumIndexMapFxHash0,
+    _core.PauliSumIndexMapFxHash1,
+    _core.PauliSumIndexMapFxHash2,
+    _core.PauliSumIndexMapFxHash3,
+    _core.PauliSumIndexMapFxHash4,
+    _core.PauliSumIndexMapFxHash5,
+    _core.PauliSumIndexMapFxHash6,
+    _core.PauliSumIndexMapFxHash7,
+    _core.PauliSumIndexMapFxHash8,
+    _core.PauliSumIndexMapFxHash9,
+    _core.PauliSumIndexMapFxHash10,
+    _core.PauliSumIndexMapFxHash11,
+    _core.PauliSumIndexMapFxHash12,
+    _core.PauliSumIndexMapFxHash13,
+    _core.PauliSumIndexMapFxHash14,
+    _core.PauliSumIndexMapFxHash15,
 ]
 
 LossyPauliSumInterface = Union[
-    ppvm_python_native.PauliSumLossIndexMapFxHash0,
-    ppvm_python_native.PauliSumLossIndexMapFxHash1,
-    ppvm_python_native.PauliSumLossIndexMapFxHash2,
-    ppvm_python_native.PauliSumLossIndexMapFxHash3,
-    ppvm_python_native.PauliSumLossIndexMapFxHash4,
-    ppvm_python_native.PauliSumLossIndexMapFxHash5,
-    ppvm_python_native.PauliSumLossIndexMapFxHash6,
-    ppvm_python_native.PauliSumLossIndexMapFxHash7,
-    ppvm_python_native.PauliSumLossIndexMapFxHash8,
-    ppvm_python_native.PauliSumLossIndexMapFxHash9,
-    ppvm_python_native.PauliSumLossIndexMapFxHash10,
-    ppvm_python_native.PauliSumLossIndexMapFxHash11,
-    ppvm_python_native.PauliSumLossIndexMapFxHash12,
-    ppvm_python_native.PauliSumLossIndexMapFxHash13,
-    ppvm_python_native.PauliSumLossIndexMapFxHash14,
-    ppvm_python_native.PauliSumLossIndexMapFxHash15,
+    _core.PauliSumLossIndexMapFxHash0,
+    _core.PauliSumLossIndexMapFxHash1,
+    _core.PauliSumLossIndexMapFxHash2,
+    _core.PauliSumLossIndexMapFxHash3,
+    _core.PauliSumLossIndexMapFxHash4,
+    _core.PauliSumLossIndexMapFxHash5,
+    _core.PauliSumLossIndexMapFxHash6,
+    _core.PauliSumLossIndexMapFxHash7,
+    _core.PauliSumLossIndexMapFxHash8,
+    _core.PauliSumLossIndexMapFxHash9,
+    _core.PauliSumLossIndexMapFxHash10,
+    _core.PauliSumLossIndexMapFxHash11,
+    _core.PauliSumLossIndexMapFxHash12,
+    _core.PauliSumLossIndexMapFxHash13,
+    _core.PauliSumLossIndexMapFxHash14,
+    _core.PauliSumLossIndexMapFxHash15,
 ]
 
 
@@ -115,7 +114,7 @@ class PauliSum(
         ps = PauliSum(n_qubits = 2, initial_terms=["ZZ", "XI"], coefficients=[0.5, 0.3])
         # For a circuit: RZ(0.5) on qubit 1, then H on qubit 0
         # Apply in reverse order:
-        ps.rz(1, 0.5)
+        ps.rz(1, theta=0.5)
         ps.h(0)
         # Compute overlap with |0...0> state
         result = ps.overlap_with_zero()
@@ -154,7 +153,7 @@ class PauliSum(
         )
 
     def _get_interface(self, n_interface: int):
-        return getattr(ppvm_python_native, f"PauliSumIndexMapFxHash{n_interface}")
+        return getattr(_core, f"PauliSumIndexMapFxHash{n_interface}")
 
     def _init_ppvm_interface(
         self,
@@ -396,7 +395,7 @@ class PauliSum(
                 whereas `Z` branches into `gamma * I + (1 - gamma) * Z`.
             truncate: If ``True`` (default), run the configured truncation
                 strategy after the channel; if ``False``, defer it (use
-                :meth:`truncate` to fire the cut later).
+                `truncate` to fire the cut later).
         """
 
         # TODO: move to mixins once also implemented for GeneralizedTableau
@@ -411,7 +410,7 @@ class PauliSum(
         composition of commuting operations (e.g. ``rxx + ryy`` on the
         same edge, an exchange-like step that conserves total ``Z``), so
         that intermediate truncation does not drop conserved-charge
-        components. Call :meth:`truncate` once at the end of the
+        components. Call `truncate` once at the end of the
         composition to apply the cut to the combined result.
         """
         self._interface.truncate()
@@ -437,7 +436,7 @@ class LossyPauliSum(PauliSum):
     _interface: LossyPauliSumInterface = field(init=False, repr=False)
 
     def _get_interface(self, n_interface: int):
-        return getattr(ppvm_python_native, f"PauliSumLossIndexMapFxHash{n_interface}")
+        return getattr(_core, f"PauliSumLossIndexMapFxHash{n_interface}")
 
     # NOTE: purposely not using mixin for better docstrings here
 

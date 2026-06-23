@@ -5,8 +5,9 @@ use bnum::types::{U256, U512, U1024, U2048};
 use paste::paste;
 use ppvm_tableau::prelude::*;
 use pyo3::prelude::*;
+use pyo3::types::{PyComplex, PyDict};
 
-fn measurement_to_u8(m: Option<bool>) -> u8 {
+pub(crate) fn measurement_to_u8(m: Option<bool>) -> u8 {
     match m {
         Some(false) => 0,
         Some(true) => 1,
@@ -41,83 +42,144 @@ macro_rules! create_interface {
                 self.inner.to_string()
             }
 
-            pub fn measure(&mut self, addr0: usize) -> Option<bool> {
-                self.inner.measure(addr0)
+            pub fn measure(&mut self, addr0: usize) -> i64 {
+                measurement_to_u8(self.inner.measure(addr0)) as i64
+            }
+
+            pub fn measure_many(&mut self, targets: Vec<usize>) -> Vec<i64> {
+                self.inner
+                    .measure_many(targets.as_slice())
+                    .into_iter()
+                    .map(|m| measurement_to_u8(m) as i64)
+                    .collect()
+            }
+
+            pub fn current_measurement_record(&self) -> Vec<i64> {
+                self.inner
+                    .current_measurement_record()
+                    .iter()
+                    .map(|m| measurement_to_u8(*m) as i64)
+                    .collect()
+            }
+
+            /// Snapshot of the sparse coefficient vector as `{index: amplitude}`.
+            ///
+            /// Keys are basis-state indices (Python ints, lossless at every
+            /// width); values are complex amplitudes. This is a copy — mutating
+            /// it does not touch the tableau's internal state.
+            pub fn coefficients<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+                let dict = PyDict::new(py);
+                // `int(str)` handles index widths beyond u128 (bnum types).
+                let int_ctor = py.import("builtins")?.getattr("int")?;
+                for (coeff, idx) in self.inner.coefficients.iter() {
+                    let key = int_ctor.call1((idx.to_string(),))?;
+                    let value = PyComplex::from_doubles(py, coeff.re, coeff.im);
+                    dict.set_item(key, value)?;
+                }
+                Ok(dict)
+            }
+
+            /// Number of branches stored in the coefficient vector.
+            pub fn num_coefficients(&self) -> usize {
+                self.inner.coefficients.len()
             }
 
             // clifford
-            pub fn x(&mut self, addr0: usize) {
-                self.inner.x(addr0);
+            pub fn x(&mut self, targets: Vec<usize>) {
+                self.inner.x_many(targets.as_slice());
             }
 
-            pub fn y(&mut self, addr0: usize) {
-                self.inner.y(addr0);
+            pub fn y(&mut self, targets: Vec<usize>) {
+                self.inner.y_many(targets.as_slice());
             }
 
-            pub fn z(&mut self, addr0: usize) {
-                self.inner.z(addr0);
+            pub fn z(&mut self, targets: Vec<usize>) {
+                self.inner.z_many(targets.as_slice());
             }
 
-            pub fn h(&mut self, addr0: usize) {
-                self.inner.h(addr0);
+            pub fn h(&mut self, targets: Vec<usize>) {
+                self.inner.h_many(targets.as_slice());
             }
 
-            pub fn s(&mut self, addr0: usize) {
-                self.inner.s(addr0);
+            pub fn s(&mut self, targets: Vec<usize>) {
+                self.inner.s_many(targets.as_slice());
             }
 
-            pub fn s_adj(&mut self, addr0: usize) {
-                self.inner.s_adj(addr0);
+            pub fn s_dag(&mut self, targets: Vec<usize>) {
+                self.inner.s_dag_many(targets.as_slice());
             }
 
             // clifford extensions
-            pub fn sqrt_x(&mut self, addr0: usize) {
-                self.inner.sqrt_x(addr0);
+            pub fn sqrt_x(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_x_many(targets.as_slice());
             }
 
-            pub fn sqrt_x_adj(&mut self, addr0: usize) {
-                self.inner.sqrt_x_adj(addr0);
+            pub fn sqrt_x_dag(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_x_dag_many(targets.as_slice());
             }
 
-            pub fn sqrt_y(&mut self, addr0: usize) {
-                self.inner.sqrt_y(addr0);
+            pub fn sqrt_y(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_y_many(targets.as_slice());
             }
 
-            pub fn sqrt_y_adj(&mut self, addr0: usize) {
-                self.inner.sqrt_y_adj(addr0);
+            pub fn sqrt_y_dag(&mut self, targets: Vec<usize>) {
+                self.inner.sqrt_y_dag_many(targets.as_slice());
             }
 
-            pub fn cnot(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cnot(addr0, addr1);
+            pub fn t(&mut self, targets: Vec<usize>) {
+                self.inner.t_many(targets.as_slice());
             }
 
-            pub fn cy(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cy(addr0, addr1);
+            pub fn t_dag(&mut self, targets: Vec<usize>) {
+                self.inner.t_dag_many(targets.as_slice());
             }
 
-            pub fn cz(&mut self, addr0: usize, addr1: usize) {
-                self.inner.cz(addr0, addr1);
+            // two-qubit clifford (+ stim aliases)
+            pub fn cnot(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.cnot_many(&pairs);
+                Ok(())
             }
 
-            pub fn t(&mut self, addr0: usize) {
-                self.inner.t(addr0);
+            pub fn cx(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cnot(targets)
             }
 
-            pub fn t_adj(&mut self, addr0: usize) {
-                self.inner.t_adj(addr0);
+            pub fn zcx(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cnot(targets)
+            }
+
+            pub fn cy(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.cy_many(&pairs);
+                Ok(())
+            }
+
+            pub fn zcy(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cy(targets)
+            }
+
+            pub fn cz(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.cz_many(&pairs);
+                Ok(())
+            }
+
+            pub fn zcz(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                self.cz(targets)
             }
 
             // rot1
-            pub fn rx(&mut self, addr0: usize, theta: f64) {
-                self.inner.rx(addr0, theta);
+            pub fn rx(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.rx_many(targets.as_slice(), theta);
             }
 
-            pub fn ry(&mut self, addr0: usize, theta: f64) {
-                self.inner.ry(addr0, theta);
+            pub fn ry(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.ry_many(targets.as_slice(), theta);
             }
 
-            pub fn rz(&mut self, addr0: usize, theta: f64) {
-                self.inner.rz(addr0, theta);
+            pub fn rz(&mut self, targets: Vec<usize>, theta: f64) {
+                self.inner.rz_many(targets.as_slice(), theta);
             }
 
             pub fn u3(&mut self, addr0: usize, theta: f64, phi: f64, lam: f64) {
@@ -129,33 +191,59 @@ macro_rules! create_interface {
             }
 
             // rot2
-            pub fn rxx(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.rxx(addr0, addr1, theta);
+            pub fn rxx(&mut self, targets: Vec<usize>, theta: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.rxx_many(&pairs, theta);
+                Ok(())
             }
 
-            pub fn ryy(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.ryy(addr0, addr1, theta);
+            pub fn ryy(&mut self, targets: Vec<usize>, theta: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.ryy_many(&pairs, theta);
+                Ok(())
             }
 
-            pub fn rzz(&mut self, addr0: usize, addr1: usize, theta: f64) {
-                self.inner.rzz(addr0, addr1, theta);
+            pub fn rzz(&mut self, targets: Vec<usize>, theta: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.rzz_many(&pairs, theta);
+                Ok(())
             }
 
             // noise
-            pub fn pauli_error(&mut self, addr0: usize, p: [f64; 3]) {
-                self.inner.pauli_error(addr0, p);
+            pub fn x_error(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.x_error_many(targets.as_slice(), p);
             }
 
-            pub fn depolarize(&mut self, addr0: usize, p: f64) {
-                self.inner.depolarize(addr0, p);
+            pub fn y_error(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.y_error_many(targets.as_slice(), p);
             }
 
-            pub fn depolarize2(&mut self, addr0: usize, addr1: usize, p: f64) {
-                self.inner.depolarize2(addr0, addr1, p);
+            pub fn z_error(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.z_error_many(targets.as_slice(), p);
             }
 
-            pub fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [f64; 15]) {
-                self.inner.two_qubit_pauli_error(addr0, addr1, p);
+            pub fn pauli_error(&mut self, targets: Vec<usize>, p: [f64; 3]) {
+                self.inner.pauli_error_many(targets.as_slice(), p);
+            }
+
+            pub fn depolarize1(&mut self, targets: Vec<usize>, p: f64) {
+                self.inner.depolarize1_many(targets.as_slice(), p);
+            }
+
+            pub fn depolarize2(&mut self, targets: Vec<usize>, p: f64) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.depolarize2_many(&pairs, p);
+                Ok(())
+            }
+
+            pub fn two_qubit_pauli_error(
+                &mut self,
+                targets: Vec<usize>,
+                p: [f64; 15],
+            ) -> PyResult<()> {
+                let pairs = crate::flat_pairs(&targets)?;
+                self.inner.two_qubit_pauli_error_many(&pairs, p);
+                Ok(())
             }
 
             pub fn loss_channel(&mut self, addr0: usize, p: f64) {
@@ -170,8 +258,24 @@ macro_rules! create_interface {
                 self.inner.reset_loss_channel(addr0);
             }
 
-            pub fn reset(&mut self, addr0: usize) {
-                self.inner.reset(addr0);
+            pub fn asymmetric_loss_channel(&mut self, addr0: usize, p0: f64, p1: f64) {
+                self.inner.asymmetric_loss_channel(addr0, p0, p1);
+            }
+
+            pub fn reset(&mut self, targets: Vec<usize>) {
+                self.inner.reset_many(targets.as_slice());
+            }
+
+            pub fn reset_x(&mut self, targets: Vec<usize>) {
+                self.inner.reset_x_many(targets.as_slice());
+            }
+
+            pub fn reset_y(&mut self, targets: Vec<usize>) {
+                self.inner.reset_y_many(targets.as_slice());
+            }
+
+            pub fn reset_z(&mut self, targets: Vec<usize>) {
+                self.inner.reset_z_many(targets.as_slice());
             }
 
             pub fn is_lost(&self, addr0: usize) -> bool {
@@ -187,7 +291,7 @@ macro_rules! create_interface {
                 prog: &crate::stim_program::PyStimProgram,
             ) -> pyo3::PyResult<Vec<u8>> {
                 let mut results = Vec::with_capacity(prog.measurement_count());
-                ppvm_stim::execute_prepared(&prog.instructions, &mut self.inner, &mut results);
+                ppvm_stim::execute_validated(&prog.instructions, &mut self.inner, &mut results);
                 Ok(results
                     .into_iter()
                     .map(crate::interface_tableau::measurement_to_u8)
@@ -195,38 +299,45 @@ macro_rules! create_interface {
             }
 
             /// Multi-shot sampling: builds a fresh tableau per shot.
+            ///
+            /// Shots run in parallel on rayon's global thread pool (GIL
+            /// released), falling back to serial for small batches. Shot `i`
+            /// is seeded with `seed.wrapping_add(i)` when `seed` is given
+            /// (wrapping mod 2⁶⁴), so results are reproducible and
+            /// independent of the thread count; set the `RAYON_NUM_THREADS`
+            /// environment variable to control the pool size.
             #[staticmethod]
             #[pyo3(signature = (prog, n_qubits, min_abs_coeff = 1e-10, num_shots = 1, seed = None))]
             pub fn sample(
+                py: Python<'_>,
                 prog: &crate::stim_program::PyStimProgram,
                 n_qubits: usize,
                 min_abs_coeff: f64,
                 num_shots: usize,
                 seed: Option<u64>,
             ) -> pyo3::PyResult<Vec<Vec<u8>>> {
-                let mut next_seed = seed;
-                let count = prog.measurement_count();
-                Ok((0..num_shots)
-                    .map(|_| {
-                        let s = next_seed;
-                        if let Some(ref mut v) = next_seed {
-                            *v = v.wrapping_add(1);
-                        }
-                        let mut tab = match s {
+                // `prog` was already validated at `StimProgram.parse()` time;
+                // use the validated path to skip redundant re-validation.
+                let raw = py.detach(|| {
+                    ppvm_stim::sample_validated(
+                        &prog.0.instructions,
+                        prog.0.measurement_count(),
+                        num_shots,
+                        |i| match seed {
                             Some(s) => GeneralizedTableau::<$type, $indexType>::new_with_seed(
                                 n_qubits,
                                 min_abs_coeff,
-                                s,
+                                s.wrapping_add(i as u64),
                             ),
                             None => GeneralizedTableau::<$type, $indexType>::new(
                                 n_qubits,
                                 min_abs_coeff,
                             ),
-                        };
-                        let mut shot = Vec::with_capacity(count);
-                        ppvm_stim::execute_prepared(&prog.instructions, &mut tab, &mut shot);
-                        shot
-                    })
+                        },
+                    )
+                });
+                Ok(raw
+                    .into_iter()
                     .map(|shot| {
                         shot.into_iter()
                             .map(crate::interface_tableau::measurement_to_u8)

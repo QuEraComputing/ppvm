@@ -7,6 +7,16 @@ pub mod vec;
 
 pub use entry_store::{Branch, EntryStore};
 use fxhash::FxHashMap;
+use ppvm_traits::traits::Clifford;
+
+// Hasher for the structural `word_fingerprint`. gxhash (AES-based) is fastest on
+// native and exposes a `gxhash64` bulk free function, but it needs hardware AES
+// and does not build on wasm32, so fall back to fxhash there. The fingerprint is
+// a transient in-memory dedup key — collisions are resolved by
+// `structurally_equal`, and it is never persisted or compared across builds — so
+// the hasher may differ per target without affecting results.
+#[cfg(target_arch = "wasm32")]
+use fxhash::FxHasher as FingerprintHasher;
 use num::{
     Complex, One, Zero,
     complex::{Complex64, ComplexFloat},
@@ -15,8 +25,19 @@ use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
 use ppvm_traits::config::Config;
-use ppvm_traits::traits::Clifford;
+#[cfg(target_arch = "wasm32")]
+use std::hash::Hasher;
 use std::ops::AddAssign;
+
+// Reusable per-thread scratch buffer for `word_fingerprint`. Gathering every
+// row's word bytes into one contiguous slice lets us hash in a single bulk call
+// instead of two tiny `Hash::hash` writes per row (high per-call overhead).
+// Cleared (capacity retained) per call, so it adapts to any row count / qubit
+// width without re-allocating. Bytes (not the storage word type) because the
+// storage element width (`[u8; N]` vs `[u64; N]`) is generic at this call site.
+thread_local! {
+    static WORD_FP_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
 
 /// View a `Copy` plain-old-data value's bytes. Sound because `A: PauliStorage`
 /// implies `bytemuck::Pod`: no padding, every bit pattern valid, so the bytes
@@ -38,43 +59,32 @@ fn pod_bytes<A: Copy>(value: &A) -> &[u8] {
 pub fn word_fingerprint<T, I, C>(tab: &GeneralizedTableau<T, I, C>) -> u64
 where
     T: Config,
+    I:,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
-    // fxhash-style multiplicative-rotate mix, fed the raw storage words of
-    // every row's x then z bits. No allocation, no thread_local, single pass.
-    const K: u64 = 0x51_7c_c1_b7_27_22_0a_95; // fxhash constant
-    let mut h: u64 = 0;
-    let mut mix = |w: u64| {
-        h = (h.rotate_left(5) ^ w).wrapping_mul(K);
-    };
-    for row in tab.tableau.data.iter() {
-        // The `PauliWord` hash cache is disabled for tableau rows
-        // (`REHASH = false`), so hashing `row.word` would feed a stale zero and
-        // make every tableau collide; read the bit storage directly. The
-        // storage word element type is generic (`[u8; N]` vs `[u64; N]`) with no
-        // numeric bound available here, so view it as POD bytes and fold 8 at a
-        // time into a `u64` lane — identical on native and wasm.
-        mix_pod_words(pod_bytes(&row.word.xbits.data), &mut mix);
-        mix_pod_words(pod_bytes(&row.word.zbits.data), &mut mix);
-    }
-    h
-}
+    WORD_FP_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        // Clear retains capacity; refill with every row's bits as raw bytes.
+        buf.clear();
+        for row in tab.tableau.data.iter() {
+            // Gather the Pauli bits directly: the `PauliWord` hash cache is
+            // disabled for tableau rows (`REHASH = false`), so hashing
+            // `row.word` would feed a stale zero and make every tableau collide.
+            buf.extend_from_slice(pod_bytes(&row.word.xbits.data));
+            buf.extend_from_slice(pod_bytes(&row.word.zbits.data));
+        }
 
-/// Fold a POD byte slice into the `mix` closure 8 bytes (one `u64` lane) at a
-/// time, little-endian, zero-padding a short trailing chunk. Keeps the hash
-/// independent of the generic storage word width.
-#[inline]
-fn mix_pod_words(bytes: &[u8], mix: &mut impl FnMut(u64)) {
-    let mut chunks = bytes.chunks_exact(8);
-    for c in &mut chunks {
-        mix(u64::from_le_bytes(c.try_into().unwrap()));
-    }
-    let rem = chunks.remainder();
-    if !rem.is_empty() {
-        let mut buf = [0u8; 8];
-        buf[..rem.len()].copy_from_slice(rem);
-        mix(u64::from_le_bytes(buf));
-    }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            gxhash::gxhash64(&buf, 0)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut hasher = FingerprintHasher::default();
+            hasher.write(&buf);
+            hasher.finish()
+        }
+    })
 }
 
 /// Per-row mask (splitmix64 of `(index, salt)`); a stable pure function used

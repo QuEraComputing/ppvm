@@ -31,7 +31,7 @@ current populations: <code>p_tot = p0 * (1 + &lt;Z&gt;)/2 + p1 * (1 - &lt;Z&gt;)
 <p>.. note::
     This is the trajectory <em>approximation</em> of the loss channel. It is
     exact for the loss statistics and in the symmetric limit
-    <code>p0 == p1</code> (where it matches :meth:<code>loss_channel</code>), but it does
+    <code>p0 == p1</code> (where it matches <code>loss_channel</code>), but it does
     not apply the survival back-action, so for <code>p0 != p1</code> the
     surviving qubit&#39;s state is left unchanged. See issue #39.</p>
 </div><section class="doc-section"> <h5>Parameters</h5> <dl class="param-list">  <dt> <code class="param-name">addr0</code> <code class="param-type">int</code>   </dt> <dd><p>The index of the target qubit.</p>
@@ -69,7 +69,7 @@ To preserve the RNG state exactly (e.g. for checkpointing), use
 </dd>  </dl> </section><section class="doc-section"> <h5>Returns</h5> <dl class="return-list">  <dt>   </dt> <dd><p>A list of <code>MeasurementResult</code> outcomes, one per target.</p>
 </dd>  </dl> </section>   </div> </details> </article><article class="api-item" id="py-ppvm-generalized-tableau-GeneralizedTableau-num-coefficients" data-name="num_coefficients" data-path="ppvm.generalized_tableau.generalizedtableau.num_coefficients" data-kind="method"> <div class="row1"> <span class="kind kind-method">method</span> <span class="name"><a href="#py-ppvm-generalized-tableau-GeneralizedTableau-num-coefficients">num_coefficients</a></span> <span class="path">ppvm.generalized_tableau.GeneralizedTableau.num_coefficients</span> </div> <div class="signature">num_coefficients() -&gt; int</div> <p class="summary">Return the number of branches in the coefficient vector.</p> <details> <summary>Full docstring</summary> <div class="docstring"> <div class="doc-prose"><p>Return the number of branches in the coefficient vector.</p>
 <p>This is the number of entries in the dict returned by
-:meth:<code>coefficients</code>, computed without materializing it.</p>
+<code>coefficients</code>, computed without materializing it.</p>
 </div><section class="doc-section"> <h5>Returns</h5> <dl class="return-list">  <dt>  <code class="param-type">int</code> </dt> <dd><p>The count of populated entries in the sparse coefficient vector.</p>
 </dd>  </dl> </section>   </div> </details> </article><article class="api-item" id="py-ppvm-generalized-tableau-GeneralizedTableau-reset" data-name="reset" data-path="ppvm.generalized_tableau.generalizedtableau.reset" data-kind="method"> <div class="row1"> <span class="kind kind-method">method</span> <span class="name"><a href="#py-ppvm-generalized-tableau-GeneralizedTableau-reset">reset</a></span> <span class="path">ppvm.generalized_tableau.GeneralizedTableau.reset</span> </div> <div class="signature">reset(targets = ()) -&gt; None</div> <p class="summary">Reset each target qubit to the |0&gt; state.</p> <details> <summary>Full docstring</summary> <div class="docstring"> <div class="doc-prose"><p>Reset each target qubit to the |0&gt; state.</p>
 </div><section class="doc-section"> <h5>Parameters</h5> <dl class="param-list">  <dt> <code class="param-name">*targets</code>    </dt> <dd><p>The indices of the target qubits.</p>
@@ -422,7 +422,7 @@ strategy after the channel; if <code>False</code>, defer it.</p>
 whereas <code>Z</code> branches into <code>gamma * I + (1 - gamma) * Z</code>.</p>
 </dd>  <dt> <code class="param-name">truncate</code> <code class="param-type">bool</code>   </dt> <dd><p>If <code>True</code> (default), run the configured truncation
 strategy after the channel; if <code>False</code>, defer it (use
-:meth:<code>truncate</code> to fire the cut later).</p>
+<code>truncate</code> to fire the cut later).</p>
 </dd>  </dl> </section>   </div> </details> </article><article class="api-item" id="py-ppvm-paulisum-PauliSum-copy" data-name="copy" data-path="ppvm.paulisum.paulisum.copy" data-kind="method"> <div class="row1"> <span class="kind kind-method">method</span> <span class="name"><a href="#py-ppvm-paulisum-PauliSum-copy">copy</a></span> <span class="path">ppvm.paulisum.PauliSum.copy</span> </div> <div class="signature">copy() -&gt; Self</div> <p class="summary">Create a copy of the PauliSum instance.</p> <details> <summary>Full docstring</summary> <div class="docstring"> <div class="doc-prose"><p>Create a copy of the PauliSum instance.</p>
 </div><section class="doc-section"> <h5>Returns</h5> <dl class="return-list">  <dt>  <code class="param-type">Self</code> </dt> <dd><p>A new PauliSum instance that is a copy of the current one.</p>
 </dd>  </dl> </section>   </div> </details> </article><article class="api-item" id="py-ppvm-paulisum-PauliSum-current-max-weight" data-name="current_max_weight" data-path="ppvm.paulisum.paulisum.current_max_weight" data-kind="method"> <div class="row1"> <span class="kind kind-method">method</span> <span class="name"><a href="#py-ppvm-paulisum-PauliSum-current-max-weight">current_max_weight</a></span> <span class="path">ppvm.paulisum.PauliSum.current_max_weight</span> </div> <div class="signature">current_max_weight() -&gt; int</div> <p class="summary">Get the current maximum weight of the Pauli sum.</p> <details> <summary>Full docstring</summary> <div class="docstring"> <div class="doc-prose"><p>Get the current maximum weight of the Pauli sum.</p>
@@ -471,7 +471,7 @@ and &#39;*&#39; to match zero or more characters.</p>
 composition of commuting operations (e.g. <code>rxx + ryy</code> on the
 same edge, an exchange-like step that conserves total <code>Z</code>), so
 that intermediate truncation does not drop conserved-charge
-components. Call :meth:<code>truncate</code> once at the end of the
+components. Call <code>truncate</code> once at the end of the
 composition to apply the cut to the combined result.</p>
 </div>   </div> </details> </article><article class="api-item" id="py-ppvm-paulisum-PauliSum-weights" data-name="weights" data-path="ppvm.paulisum.paulisum.weights" data-kind="method"> <div class="row1"> <span class="kind kind-method">method</span> <span class="name"><a href="#py-ppvm-paulisum-PauliSum-weights">weights</a></span> <span class="path">ppvm.paulisum.PauliSum.weights</span> </div> <div class="signature">weights()</div> <p class="summary">Get the weight of each Pauli term.</p> <details> <summary>Full docstring</summary> <div class="docstring"> <div class="doc-prose"><p>Get the weight of each Pauli term.</p>
 </div><section class="doc-section"> <h5>Returns</h5> <dl class="return-list">  <dt>   </dt> <dd><p>A list of tuples, each containing a Pauli string and its weight.</p>

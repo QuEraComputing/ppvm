@@ -276,7 +276,7 @@ class GeneralizedTableau(
         .. note::
             This is the trajectory *approximation* of the loss channel. It is
             exact for the loss statistics and in the symmetric limit
-            ``p0 == p1`` (where it matches :meth:`loss_channel`), but it does
+            ``p0 == p1`` (where it matches `loss_channel`), but it does
             not apply the survival back-action, so for ``p0 != p1`` the
             surviving qubit's state is left unchanged. See issue #39.
 

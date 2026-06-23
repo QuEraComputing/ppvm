@@ -395,7 +395,7 @@ class PauliSum(
                 whereas `Z` branches into `gamma * I + (1 - gamma) * Z`.
             truncate: If ``True`` (default), run the configured truncation
                 strategy after the channel; if ``False``, defer it (use
-                :meth:`truncate` to fire the cut later).
+                `truncate` to fire the cut later).
         """
 
         # TODO: move to mixins once also implemented for GeneralizedTableau
@@ -410,7 +410,7 @@ class PauliSum(
         composition of commuting operations (e.g. ``rxx + ryy`` on the
         same edge, an exchange-like step that conserves total ``Z``), so
         that intermediate truncation does not drop conserved-charge
-        components. Call :meth:`truncate` once at the end of the
+        components. Call `truncate` once at the end of the
         composition to apply the cut to the combined result.
         """
         self._interface.truncate()

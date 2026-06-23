@@ -60,6 +60,36 @@ Rust edition 2024. On x86 the default hasher (gxhash) needs
 <code>.cargo/config.toml</code>, and CI does the same. On non-x86 hosts,
       build with
 <code>--no-default-features --features=indexmap,ahash</code> or similar.
+</p> <h3>WebAssembly (wasm32)</h3> <p>
+The whole workspace except <code>ppvm-python-native</code> (a CPython
+      extension, never a wasm target) cross-compiles to browser wasm with no
+      extra flags:
+</p> <pre><code class="language-bash">rustup target add wasm32-unknown-unknown
+
+# The simulators, Pauli engine, Stim parser, and top-level `ppvm` crate.
+cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-native</code></pre> <p>
+The build is wasm-clean automatically. Native-only acceleration
+      dependencies — <code>gxhash</code> (AES intrinsics), <code>dashmap</code> →
+<code>rayon</code> (OS threads), and <code>ahash</code> — live in
+<code>[target.'cfg(not(target_arch = "wasm32"))'.dependencies]</code>
+tables, so on wasm they are pruned and the matching features go inert
+      (the code that names those crates is gated with the same
+<code>not(target_arch = "wasm32")</code>). The <code>fx64hash</code> configs
+      use native-word <code>[usize; N]</code> storage (<code>u64</code> on
+      64-bit, <code>u32</code> on wasm) since <code>bitvec</code> only implements
+<code>BitStore</code> for <code>u64</code> on 64-bit pointer widths.
+<code>ppvm-tableau-sum</code>'s structural fingerprint falls back from
+<code>gxhash</code> to <code>fxhash</code> on wasm.
+</p> <p> <code>rand</code>'s entropy (<code>rand::make_rng()</code>) has no default
+      source on <code>wasm32-unknown-unknown</code>, so the getrandom
+<code>wasm_js</code> backend (Web Crypto API) is selected via a
+<code>--cfg getrandom_backend="wasm_js"</code> rustflag in
+<code>.cargo/config.toml</code> plus the <code>wasm_js</code> feature in
+<code>ppvm-tableau</code>'s wasm-only dependency table — so the JS runtime
+      supplies randomness. There are no OS threads on wasm: the <code>rayon</code>
+feature is unavailable, and the Stim parser runs its recursive grammar
+      inline instead of on a dedicated stack thread. The <code>wasm32 build</code>
+CI job compiles the workspace for this target on every PR.
 </p> <h3>Python</h3> <pre><code class="language-bash"># Requires uv (https://docs.astral.sh/uv/)
 # The native module compiles automatically via maturin on first run.
 

@@ -85,13 +85,10 @@ where
 
         sample_inds_and_seeds
             .par_iter()
-            .map_init(
-                MeasureScratch::<I, T::Coeff>::new,
-                |mut scratch, &(i, seed)| {
-                    let mut tab = self.entries[i].0.fork(Some(seed));
-                    tab.measure_all_with_scratch(&mut scratch)
-                },
-            )
+            .map_init(MeasureScratch::<I, T::Coeff>::new, |scratch, &(i, seed)| {
+                let mut tab = self.entries[i].0.fork(Some(seed));
+                tab.measure_all_with_scratch(scratch)
+            })
             .collect()
     }
 

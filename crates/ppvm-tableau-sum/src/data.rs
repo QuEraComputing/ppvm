@@ -52,10 +52,10 @@ where
         let mut storage = S::with_capacity(1);
         storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one(), wfp, plh)], &sum_cutoff);
         Self {
-            n_qubits: n_qubits,
+            n_qubits,
             entries: storage,
-            rng: rng,
-            sum_cutoff: sum_cutoff,
+            rng,
+            sum_cutoff,
             _phantom: PhantomData,
         }
     }
@@ -75,16 +75,20 @@ where
         let mut storage = S::with_capacity(1);
         storage.insert_or_merge_batch(vec![(g_tab, T::Coeff::one(), wfp, plh)], &sum_cutoff);
         Self {
-            n_qubits: n_qubits,
+            n_qubits,
             entries: storage,
-            rng: rng,
-            sum_cutoff: sum_cutoff,
+            rng,
+            sum_cutoff,
             _phantom: PhantomData,
         }
     }
 
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     pub fn truncate(&mut self) {
@@ -136,8 +140,8 @@ where
 
         Sampler {
             p_cumulative: p_cum,
-            entries: entries,
-            rng: rng,
+            entries,
+            rng,
             scratch: ppvm_tableau::measure::MeasureScratch::new(),
         }
     }

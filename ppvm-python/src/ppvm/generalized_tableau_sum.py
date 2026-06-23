@@ -148,7 +148,7 @@ class GeneralizedTableauSum(
             addr0: The index of the target qubit.
         """
         self._interface.reset_loss_channel(addr0)
-    
+
     def sampler(self) -> "TableauSumSampler":
         """Compile a sampler over a snapshot of the current state.
 
@@ -159,10 +159,7 @@ class GeneralizedTableauSum(
             A sampler drawing shots from the current state.
         """
         base_sampler = self._interface.sampler()
-        return TableauSumSampler(
-            cast(TableauSumSamplerInterface, base_sampler)
-        )
-
+        return TableauSumSampler(cast(TableauSumSamplerInterface, base_sampler))
 
 
 @dataclass(frozen=True)

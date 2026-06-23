@@ -329,9 +329,7 @@ class NoiseMixin:
         )
         return [error_probabilities.get(key, 0.0) for key in keys]
 
-    def two_qubit_pauli_error(
-        self, *args: Any, p: Sequence[float] | None = None
-    ) -> None:
+    def two_qubit_pauli_error(self, *args: Any, p: Sequence[float] | None = None) -> None:
         """Apply a two-qubit Pauli error channel over consecutive qubit pairs.
 
         Args:
@@ -516,9 +514,7 @@ class TruncatingCliffordMixin(CliffordMixin):
 class TruncatingRotationsMixin(RotationsMixin):
     """Rotation gates with a per-gate ``truncate`` kwarg (used by PauliSum)."""
 
-    def rx(
-        self, *args: Any, theta: float | None = None, truncate: bool = True
-    ) -> None:
+    def rx(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
         """Apply an RX rotation gate to each target qubit.
 
         See `RotationsMixin.rx` for the gate definition.
@@ -529,14 +525,10 @@ class TruncatingRotationsMixin(RotationsMixin):
             truncate: If ``True`` (default), run the configured truncation
                 strategy after the gate; if ``False``, defer it.
         """
-        targets, theta, truncate = _split_targets_parameter_truncate(
-            args, theta, "theta", truncate
-        )
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
         self._interface.rx(targets, theta, truncate)
 
-    def ry(
-        self, *args: Any, theta: float | None = None, truncate: bool = True
-    ) -> None:
+    def ry(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
         """Apply an RY rotation gate to each target qubit.
 
         See `RotationsMixin.ry` for the gate definition.
@@ -546,14 +538,10 @@ class TruncatingRotationsMixin(RotationsMixin):
             theta: The rotation angle in radians.
             truncate: See `rx`.
         """
-        targets, theta, truncate = _split_targets_parameter_truncate(
-            args, theta, "theta", truncate
-        )
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
         self._interface.ry(targets, theta, truncate)
 
-    def rz(
-        self, *args: Any, theta: float | None = None, truncate: bool = True
-    ) -> None:
+    def rz(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
         """Apply an RZ rotation gate to each target qubit.
 
         See `RotationsMixin.rz` for the gate definition.
@@ -563,14 +551,10 @@ class TruncatingRotationsMixin(RotationsMixin):
             theta: The rotation angle in radians.
             truncate: See `rx`.
         """
-        targets, theta, truncate = _split_targets_parameter_truncate(
-            args, theta, "theta", truncate
-        )
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
         self._interface.rz(targets, theta, truncate)
 
-    def rxx(
-        self, *args: Any, theta: float | None = None, truncate: bool = True
-    ) -> None:
+    def rxx(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
         """Apply RXX (Ising XX) rotation gates over consecutive qubit pairs.
 
         See `RotationsMixin.rxx` for the gate definition.
@@ -585,14 +569,10 @@ class TruncatingRotationsMixin(RotationsMixin):
                 them — then call `PauliSum.truncate` once at the
                 end of the composition.
         """
-        targets, theta, truncate = _split_targets_parameter_truncate(
-            args, theta, "theta", truncate
-        )
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
         self._interface.rxx(targets, theta, truncate)
 
-    def ryy(
-        self, *args: Any, theta: float | None = None, truncate: bool = True
-    ) -> None:
+    def ryy(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
         """Apply RYY (Ising YY) rotation gates over consecutive qubit pairs.
 
         See `RotationsMixin.ryy` for the gate definition.
@@ -602,14 +582,10 @@ class TruncatingRotationsMixin(RotationsMixin):
             theta: The rotation angle in radians.
             truncate: See `rxx`.
         """
-        targets, theta, truncate = _split_targets_parameter_truncate(
-            args, theta, "theta", truncate
-        )
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
         self._interface.ryy(targets, theta, truncate)
 
-    def rzz(
-        self, *args: Any, theta: float | None = None, truncate: bool = True
-    ) -> None:
+    def rzz(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
         """Apply RZZ (Ising ZZ) rotation gates over consecutive qubit pairs.
 
         See `RotationsMixin.rzz` for the gate definition.
@@ -619,9 +595,7 @@ class TruncatingRotationsMixin(RotationsMixin):
             theta: The rotation angle in radians.
             truncate: See `rxx`.
         """
-        targets, theta, truncate = _split_targets_parameter_truncate(
-            args, theta, "theta", truncate
-        )
+        targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
         self._interface.rzz(targets, theta, truncate)
 
 
@@ -729,9 +703,7 @@ class TruncatingNoiseMixin(NoiseMixin):
         targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
         self._interface.two_qubit_pauli_error(targets, p, truncate)
 
-    def x_error(
-        self, *args: Any, p: float | None = None, truncate: bool = True
-    ) -> None:
+    def x_error(self, *args: Any, p: float | None = None, truncate: bool = True) -> None:
         """Apply an X error channel to each target qubit.
 
         Args:
@@ -742,9 +714,7 @@ class TruncatingNoiseMixin(NoiseMixin):
         targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
         self._interface.x_error(targets, p, truncate)
 
-    def y_error(
-        self, *args: Any, p: float | None = None, truncate: bool = True
-    ) -> None:
+    def y_error(self, *args: Any, p: float | None = None, truncate: bool = True) -> None:
         """Apply a Y error channel to each target qubit.
 
         Args:
@@ -755,9 +725,7 @@ class TruncatingNoiseMixin(NoiseMixin):
         targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
         self._interface.y_error(targets, p, truncate)
 
-    def z_error(
-        self, *args: Any, p: float | None = None, truncate: bool = True
-    ) -> None:
+    def z_error(self, *args: Any, p: float | None = None, truncate: bool = True) -> None:
         """Apply a Z error channel to each target qubit.
 
         Args:
@@ -768,9 +736,7 @@ class TruncatingNoiseMixin(NoiseMixin):
         targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
         self._interface.z_error(targets, p, truncate)
 
-    def depolarize1(
-        self, *args: Any, p: float | None = None, truncate: bool = True
-    ) -> None:
+    def depolarize1(self, *args: Any, p: float | None = None, truncate: bool = True) -> None:
         """Apply a single-qubit depolarizing channel to each target qubit.
 
         Args:
@@ -781,9 +747,7 @@ class TruncatingNoiseMixin(NoiseMixin):
         targets, p, truncate = _split_targets_parameter_truncate(args, p, "p", truncate)
         self._interface.depolarize1(targets, p, truncate)
 
-    def depolarize2(
-        self, *args: Any, p: float | None = None, truncate: bool = True
-    ) -> None:
+    def depolarize2(self, *args: Any, p: float | None = None, truncate: bool = True) -> None:
         """Apply a two-qubit depolarizing channel over consecutive qubit pairs.
 
         Args:

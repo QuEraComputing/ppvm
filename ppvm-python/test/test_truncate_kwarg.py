@@ -205,12 +205,15 @@ def test_generalized_tableau_gates_reject_truncate_kwarg():
     kwarg cannot be mistaken for having an effect on the tableau.
     """
     tab = GeneralizedTableau(n_qubits=2)
+    # Each call deliberately passes the PauliSum-only `truncate` kwarg to a
+    # tableau gate that does not accept it; the test asserts the resulting
+    # runtime TypeError, so the static type error is expected and ignored.
     for call in (
-        lambda: tab.x(0, truncate=False),
-        lambda: tab.cnot(0, 1, truncate=True),
-        lambda: tab.rx(0, theta=0.3, truncate=False),
-        lambda: tab.rxx(0, 1, theta=0.2, truncate=False),
-        lambda: tab.depolarize1(0, p=1e-3, truncate=False),
+        lambda: tab.x(0, truncate=False),  # ty: ignore[unknown-argument]
+        lambda: tab.cnot(0, 1, truncate=True),  # ty: ignore[unknown-argument]
+        lambda: tab.rx(0, theta=0.3, truncate=False),  # ty: ignore[unknown-argument]
+        lambda: tab.rxx(0, 1, theta=0.2, truncate=False),  # ty: ignore[unknown-argument]
+        lambda: tab.depolarize1(0, p=1e-3, truncate=False),  # ty: ignore[unknown-argument]
     ):
         with pytest.raises(TypeError):
             call()

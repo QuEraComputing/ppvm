@@ -10,7 +10,7 @@ pub mod interface_tableau_sum;
 pub mod stim_program;
 
 pub(crate) fn flat_pairs(targets: &[usize]) -> PyResult<Vec<(usize, usize)>> {
-    if targets.len() % 2 != 0 {
+    if !targets.len().is_multiple_of(2) {
         return Err(PyValueError::new_err(
             "two-qubit operations require an even number of targets",
         ));

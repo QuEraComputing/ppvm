@@ -26,6 +26,7 @@ def test_preserve_strings_round_trip():
         "Z1",
         preserve_strings=_single_z(3),
     )
+    assert ps.preserve_strings is not None
     assert list(ps.preserve_strings) == ["ZII", "IZI", "IIZ"]
 
 

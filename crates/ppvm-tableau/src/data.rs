@@ -59,13 +59,13 @@ impl<T: Config> Tableau<T> {
         let pw_cache = PhasedPauliWordNoHash::<T::Storage, T::BuildHasher>::new(n_qubits);
         for i in 0..n_qubits {
             // destabilizer
-            let mut pw = pw_cache.clone();
+            let mut pw = pw_cache;
             pw.set(i, Pauli::X);
             data.push(pw);
         }
         for i in 0..n_qubits {
             // stabilizer
-            let mut pw = pw_cache.clone();
+            let mut pw = pw_cache;
             pw.set(i, Pauli::Z);
             data.push(pw);
         }
@@ -155,8 +155,8 @@ impl<T: Config> Tableau<T> {
         let n = self.n_qubits;
         let (destabilizers, stabilizers) = self.data.split_at_mut(n);
 
-        // Clone g_q once before the loop
-        let g_q = stabilizers[q_idx].clone();
+        // Copy g_q once before the loop
+        let g_q = stabilizers[q_idx];
 
         // Check if there are other stabilizers that anticommute with Z_addr0
         // If so, replace with g_j = g_j * g_q
@@ -815,7 +815,7 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn compute_phase(
         &self,
         destab_anticomm_bits: I,

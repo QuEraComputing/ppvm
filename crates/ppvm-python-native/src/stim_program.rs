@@ -45,7 +45,7 @@ impl Deref for PyStimProgram {
     }
 }
 
-fn stim_to_pyerr(e: ppvm_stim::ExtendedParseError) -> PyErr {
+fn stim_to_pyerr(e: ppvm_stim::Diagnostics) -> PyErr {
     PyValueError::new_err(format!("{e}"))
 }
 

@@ -38,18 +38,6 @@ pub mod validate;
 
 pub use stim_parser::prelude::*;
 
-/// The error type returned by [`parse_extended`] on a malformed program.
-///
-/// `stim_parser` reports parse failures as a [`Diagnostics`] aggregate;
-/// this alias preserves the historical `ppvm_stim::ExtendedParseError` name
-/// used by downstream consumers.
-///
-// TODO: transitional alias. `Diagnostics` is a general multi-diagnostic
-// aggregate, not an extended-specific single error — the name is a holdover.
-// Rename the one downstream user (`ppvm-python-native`'s `stim_to_pyerr`) to
-// `Diagnostics` and drop this alias.
-pub use stim_parser::prelude::Diagnostics as ExtendedParseError;
-
 pub use executor::{
     execute, execute_validated, sample, sample_serial, sample_serial_validated, sample_validated,
 };
@@ -61,8 +49,10 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// A parse/validate/lower failure from `stim_parser`, reported as a
+    /// [`Diagnostics`] aggregate.
     #[error(transparent)]
-    Parse(#[from] ExtendedParseError),
+    Parse(#[from] Diagnostics),
     #[error(transparent)]
     Exec(#[from] ExecError),
     #[error("failed to read stim file {path}: {source}")]

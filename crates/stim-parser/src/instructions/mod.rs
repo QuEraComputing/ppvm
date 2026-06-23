@@ -73,10 +73,10 @@ pub enum NoiseName {
     YError,
     ZError,
     /// `I_ERROR` — accepted at the raw-parse layer regardless of tag (its
-    /// arg count is [`ArgCount::Deferred`]). The extended-dialect interpreter
-    /// then promotes `I_ERROR[loss]` / `I_ERROR[correlated_loss]` to typed
-    /// loss instructions and rejects every other tag combination (including
-    /// untagged) as [`ExtendedParseError::InvalidTag`].
+    /// arg count is [`ArgCount::Deferred`]). The lowering pass then promotes
+    /// `I_ERROR[loss]` / `I_ERROR[correlated_loss]` to typed loss instructions
+    /// and rejects every other tag combination (including untagged) by emitting
+    /// an `"invalid-tag"` diagnostic.
     IError,
     // Unsupported
     HeraldedErase,
@@ -136,7 +136,8 @@ pub enum TargetArity {
     Any,
     /// Targets must come in pairs (i.e. `len % 2 == 0`).
     Pairs,
-    /// Targets must come in groups of four.
+    /// Targets must come in groups of four. Reserved — no instruction in the
+    /// current `TABLE` uses it, but the validator handles it for completeness.
     Quadruples,
     /// At least one target required.
     AtLeastOne,

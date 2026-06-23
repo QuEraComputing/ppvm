@@ -30,8 +30,8 @@ pub trait StimPrint {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers (ported verbatim from stim-parser/src/display.rs, adapted to
-// write to &mut dyn fmt::Write)
+// Low-level writers shared by every `StimPrint` impl. They produce canonical
+// Stim byte-for-byte and write to any `&mut dyn fmt::Write`.
 // ---------------------------------------------------------------------------
 
 fn write_indent(out: &mut dyn fmt::Write, opts: &PrintOptions, depth: usize) -> fmt::Result {

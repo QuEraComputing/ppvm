@@ -43,6 +43,11 @@ pub use stim_parser::prelude::*;
 /// `stim_parser` reports parse failures as a [`Diagnostics`] aggregate;
 /// this alias preserves the historical `ppvm_stim::ExtendedParseError` name
 /// used by downstream consumers.
+///
+// TODO: transitional alias. `Diagnostics` is a general multi-diagnostic
+// aggregate, not an extended-specific single error — the name is a holdover.
+// Rename the one downstream user (`ppvm-python-native`'s `stim_to_pyerr`) to
+// `Diagnostics` and drop this alias.
 pub use stim_parser::prelude::Diagnostics as ExtendedParseError;
 
 pub use executor::{

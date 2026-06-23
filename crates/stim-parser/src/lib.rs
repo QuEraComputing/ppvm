@@ -56,7 +56,9 @@ pub mod prelude {
         AnnotationOp, Axis, ExtendedInstruction, ExtendedProgram, GateOp, Instruction, MeasureOp,
         MppOp, NoiseOp, PauliAxis, PauliFactor, Program, Tag, TagParam, Target,
     };
-    pub use crate::diagnostics::{Diagnostic, DiagnosticSink, Diagnostics, Flow, Severity};
+    pub use crate::diagnostics::{
+        Diagnostic, DiagnosticSink, Diagnostics, Flow, LineMap, Severity, Span,
+    };
     pub use crate::instructions::{AnnotationKind, GateName, MeasureName, NoiseName};
     pub use crate::pipeline::Pipeline;
     pub use crate::print::{PrintOptions, StimPrint};

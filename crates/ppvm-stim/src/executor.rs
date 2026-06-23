@@ -55,7 +55,9 @@ fn has_record_control(targets: &[Target]) -> bool {
 
 /// Resolve a measurement-record lookback `rec[-k]` against the running record.
 /// `k == 1` is the most recent measurement. A lost-qubit measurement (`None`)
-/// or an out-of-range lookback resolves to `false` (no feed-forward applied).
+/// resolves to `false` (no feed-forward applied). An out-of-range lookback also
+/// resolves to `false`, but `validate` rejects those up front, so on a validated
+/// program the only `false`-from-missing case is a lost-qubit measurement.
 #[inline]
 fn record_bit(record: &[Option<bool>], k: usize) -> bool {
     record

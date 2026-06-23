@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use stim_parser::ast::{GateName, MeasureName, NoiseName, Target};
+use stim_parser::ast::{GateName, MeasureName, NoiseName, PauliFactor, Target};
 use stim_parser::extended::{ExtendedInstruction, ExtendedProgram, RawPassthrough};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -20,13 +20,22 @@ pub enum ExecError {
         line: usize,
         message: String,
     },
+    #[error("invalid 'MPP' Pauli product at line {line}: {message}")]
+    InvalidPauliProduct { line: usize, message: String },
 }
 
 pub fn validate(program: &ExtendedProgram) -> Result<(), ExecError> {
-    validate_slice(&program.instructions)
+    let mut measurements = 0usize;
+    validate_slice(&program.instructions, &mut measurements)
 }
 
-fn validate_slice(instructions: &[ExtendedInstruction]) -> Result<(), ExecError> {
+/// Validate a slice of instructions, threading `measurements` — the number of
+/// recorded bits produced so far — so `rec[-k]` controls can be range-checked
+/// against the live measurement record (see [`check_record_controls`]).
+fn validate_slice(
+    instructions: &[ExtendedInstruction],
+    measurements: &mut usize,
+) -> Result<(), ExecError> {
     for instr in instructions {
         match instr {
             ExtendedInstruction::Raw(RawPassthrough::Gate {
@@ -36,25 +45,50 @@ fn validate_slice(instructions: &[ExtendedInstruction]) -> Result<(), ExecError>
                 ..
             }) => {
                 check_gate_supported(*name, *line)?;
-                check_record_controls(*name, targets, *line)?;
+                check_record_controls(*name, targets, *measurements, *line)?;
             }
             ExtendedInstruction::Raw(RawPassthrough::Noise { name, line, .. }) => {
                 check_noise_supported(*name, *line)?;
             }
             ExtendedInstruction::Raw(RawPassthrough::Measure {
-                name, args, line, ..
+                name,
+                args,
+                targets,
+                line,
+                ..
             }) => {
                 check_measure_supported(*name, *line)?;
                 if let Some(&p) = args.first() {
                     check_probability(p, name.canonical_name(), *line)?;
                 }
+                *measurements = measurements.saturating_add(targets.len());
             }
-            ExtendedInstruction::Mpp { args, line, .. } => {
+            ExtendedInstruction::Mpp {
+                args,
+                products,
+                line,
+                ..
+            } => {
                 if let Some(&p) = args.first() {
                     check_probability(p, "MPP", *line)?;
                 }
+                for product in products {
+                    check_mpp_distinct_qubits(product, *line)?;
+                }
+                *measurements = measurements.saturating_add(products.len());
             }
-            ExtendedInstruction::Repeat { body, .. } => validate_slice(body)?,
+            ExtendedInstruction::Repeat { count, body, .. } => {
+                // Validate one iteration starting from the current record length.
+                // That is the *first* iteration — the shortest record any body
+                // instruction ever sees — so a `rec[-k]` that is in range here is
+                // in range on every later iteration too. Then advance the count by
+                // all `count` iterations' worth of measurements.
+                let before = *measurements;
+                validate_slice(body, measurements)?;
+                let per_iter = measurements.saturating_sub(before);
+                let count = usize::try_from(*count).unwrap_or(usize::MAX);
+                *measurements = before.saturating_add(per_iter.saturating_mul(count));
+            }
             ExtendedInstruction::Raw(RawPassthrough::Annotation { .. })
             | ExtendedInstruction::T { .. }
             | ExtendedInstruction::TDag { .. }
@@ -62,10 +96,13 @@ fn validate_slice(instructions: &[ExtendedInstruction]) -> Result<(), ExecError>
             | ExtendedInstruction::U3 { .. }
             | ExtendedInstruction::Loss { .. }
             | ExtendedInstruction::CorrelatedLoss { .. } => {}
-            ExtendedInstruction::MPad { prob, line, .. } => {
+            ExtendedInstruction::MPad {
+                prob, bits, line, ..
+            } => {
                 if let Some(p) = prob {
                     check_probability(*p, "MPAD", *line)?;
                 }
+                *measurements = measurements.saturating_add(bits.len());
             }
         }
     }
@@ -90,7 +127,17 @@ fn check_gate_supported(name: GateName, line: usize) -> Result<(), ExecError> {
 /// of a controlled Pauli — `CX`/`CNOT`, `CY`, `CZ`. Reject it anywhere else, and
 /// reject it in the *target* slot (Stim: "measurement record editing is not
 /// supported"). Mirrors `TableauSimulator::single_cx`'s target check.
-fn check_record_controls(name: GateName, targets: &[Target], line: usize) -> Result<(), ExecError> {
+///
+/// `measurements` is the number of recorded bits produced before this gate; a
+/// `rec[-k]` with `k > measurements` looks back before the start of the record,
+/// which Stim raises as an `IndexError`. Rejecting it here keeps such circuits
+/// from silently no-op'ing in the executor.
+fn check_record_controls(
+    name: GateName,
+    targets: &[Target],
+    measurements: usize,
+    line: usize,
+) -> Result<(), ExecError> {
     use GateName::*;
     if !targets.iter().any(|t| matches!(t, Target::Rec(_))) {
         return Ok(());
@@ -104,13 +151,50 @@ fn check_record_controls(name: GateName, targets: &[Target], line: usize) -> Res
                 .to_string(),
         });
     }
-    // Targets come in (control, target) pairs; the target may never be a record.
+    // Targets come in (control, target) pairs; the target may never be a record,
+    // and a control may never look back past the start of the record.
     for pair in targets.chunks_exact(2) {
         if matches!(pair[1], Target::Rec(_)) {
             return Err(ExecError::InvalidRecordControl {
                 name: name.canonical_name().to_string(),
                 line,
                 message: "measurement record cannot be a gate target".to_string(),
+            });
+        }
+        if let Target::Rec(k) = pair[0]
+            && k > measurements
+        {
+            return Err(ExecError::InvalidRecordControl {
+                name: name.canonical_name().to_string(),
+                line,
+                message: format!(
+                    "rec[-{k}] looks back before the start of the measurement record \
+                     ({measurements} measurement(s) recorded so far)"
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Reject an `MPP` product that names the same qubit more than once, e.g.
+/// `MPP X0*X0` or the anti-Hermitian `MPP Z0*X0`. Stim folds repeated factors
+/// via Pauli multiplication — collapsing `X0*X0` to identity (always 0) and
+/// rejecting `Z0*X0` (`= iY0`) as anti-Hermitian — but the non-destructive
+/// CX-ladder gadget in the executor assumes one factor per qubit, so a repeat
+/// would silently misbehave. We reject all repeats with a single clear error
+/// rather than emulate the folding.
+fn check_mpp_distinct_qubits(product: &[PauliFactor], line: usize) -> Result<(), ExecError> {
+    for (i, factor) in product.iter().enumerate() {
+        if product[..i].iter().any(|prev| prev.qubit == factor.qubit) {
+            return Err(ExecError::InvalidPauliProduct {
+                line,
+                message: format!(
+                    "qubit {} appears more than once; MPP products must act on distinct qubits. \
+                     If you have a use case for repeated Paulis in a product, please open an \
+                     issue at https://github.com/QuEraComputing/ppvm/issues",
+                    factor.qubit
+                ),
             });
         }
     }

@@ -572,3 +572,50 @@ fn measurement_count_nested_repeats_multiply_measure_and_mpad() {
     let p = parse_ok("REPEAT 2 {\n    M 0\n    REPEAT 3 {\n        MPAD 0 1\n    }\n}");
     assert_eq!(p.measurement_count(), 14);
 }
+
+// ----------------------------------------------------------------
+// rec[-k] on non-control gates: parse error, not panic
+//
+// The grammar accepts `rec[-k]` on any gate, but only the control slot of a
+// controlled Pauli may carry one. The sugar gates (`T`, `T_DAG`, `S[T]`, tagged
+// `I[...]`) lower their targets to bare qubit indices, so a record target there
+// must surface as a parse error rather than panicking the lowering pass.
+// ----------------------------------------------------------------
+
+#[test]
+fn rec_target_on_native_t_is_rejected_not_panic() {
+    match parse_err("M 0\nT rec[-1]\n") {
+        ExtendedParseError::RecordTargetNotAllowed { instruction, line } => {
+            assert_eq!(instruction, "T");
+            assert_eq!(line, 2);
+        }
+        other => panic!("expected RecordTargetNotAllowed, got {other:?}"),
+    }
+}
+
+#[test]
+fn rec_target_on_native_t_dag_is_rejected() {
+    assert!(matches!(
+        parse_err("M 0\nT_DAG rec[-1]\n"),
+        ExtendedParseError::RecordTargetNotAllowed { .. }
+    ));
+}
+
+#[test]
+fn rec_target_on_s_t_sugar_is_rejected() {
+    match parse_err("M 0\nS[T] rec[-1]\n") {
+        ExtendedParseError::RecordTargetNotAllowed { instruction, .. } => {
+            assert_eq!(instruction, "S");
+        }
+        other => panic!("expected RecordTargetNotAllowed, got {other:?}"),
+    }
+}
+
+#[test]
+fn rec_target_on_tagged_identity_rotation_is_rejected() {
+    // I[R_Z(theta=...)] also lowers its targets through qubit_targets.
+    assert!(matches!(
+        parse_err("M 0\nI[R_Z(theta=1.5)] rec[-1]\n"),
+        ExtendedParseError::RecordTargetNotAllowed { .. }
+    ));
+}

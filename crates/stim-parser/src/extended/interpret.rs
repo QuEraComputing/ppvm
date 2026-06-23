@@ -109,11 +109,11 @@ fn interpret_gate(
     match name {
         // Native T / T_DAG mnemonics lower to the same sugar as `S[T]` / `S_DAG[T]`.
         T => Ok(ExtendedInstruction::T {
-            targets: qubit_targets(targets),
+            targets: qubit_targets(targets, name.canonical_name(), line)?,
             line,
         }),
         TDag => Ok(ExtendedInstruction::TDag {
-            targets: qubit_targets(targets),
+            targets: qubit_targets(targets, name.canonical_name(), line)?,
             line,
         }),
         S | SDag => match tags.as_slice() {
@@ -126,7 +126,7 @@ fn interpret_gate(
             })),
             [t] if t.name == "T" => {
                 require_no_params(t, name.canonical_name(), line)?;
-                let targets = qubit_targets(targets);
+                let targets = qubit_targets(targets, name.canonical_name(), line)?;
                 Ok(if matches!(name, S) {
                     ExtendedInstruction::T { targets, line }
                 } else {
@@ -154,7 +154,7 @@ fn interpret_gate(
                 targets,
                 line,
             })),
-            [t] => interpret_identity_tag(t, qubit_targets(targets), line),
+            [t] => interpret_identity_tag(t, qubit_targets(targets, "I", line)?, line),
             _ => Err(invalid_tag(
                 tags[0].name.clone(),
                 "I",
@@ -337,15 +337,23 @@ fn convert_mpad_bits(bits: &[usize], line: usize) -> Result<Vec<bool>, ExtendedP
 }
 
 /// Lower gate targets to bare qubit indices for the extended-dialect sugar
-/// variants (`T`, rotations, `U3`). Those gates only ever take qubit targets,
-/// so a `rec[...]` here is a parser-level impossibility — only the controlled
-/// Clifford gates carry record controls.
-fn qubit_targets(targets: Vec<Target>) -> Vec<usize> {
+/// variants (`T`, rotations, `U3`). Those gates only ever take qubit targets;
+/// only the controlled Clifford gates carry record controls. The grammar still
+/// accepts `rec[-k]` on any gate, so reject a record target here rather than
+/// panicking — `parse_extended("T rec[-1]")` must surface a parse error.
+fn qubit_targets(
+    targets: Vec<Target>,
+    instruction: &str,
+    line: usize,
+) -> Result<Vec<usize>, ExtendedParseError> {
     targets
         .into_iter()
         .map(|t| {
             t.as_qubit()
-                .expect("extended-dialect sugar gates only take qubit targets")
+                .ok_or_else(|| ExtendedParseError::RecordTargetNotAllowed {
+                    instruction: instruction.to_string(),
+                    line,
+                })
         })
         .collect()
 }

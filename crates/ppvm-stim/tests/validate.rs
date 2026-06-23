@@ -57,6 +57,95 @@ fn record_in_target_slot_rejected() {
 }
 
 #[test]
+fn record_control_with_no_prior_measurement_rejected() {
+    // Stim raises IndexError for `CX rec[-1] 0` with an empty measurement record;
+    // we reject it rather than silently applying no correction.
+    let ExecError::InvalidRecordControl { name, line, .. } = err_from_src("CX rec[-1] 0") else {
+        panic!("expected ExecError::InvalidRecordControl");
+    };
+    assert_eq!(name, "CX");
+    assert_eq!(line, 1);
+}
+
+#[test]
+fn record_control_looking_back_past_record_start_rejected() {
+    // One measurement recorded; `rec[-2]` looks back before the record start.
+    let ExecError::InvalidRecordControl { name, .. } = err_from_src("M 0\nCX rec[-2] 1") else {
+        panic!("expected ExecError::InvalidRecordControl");
+    };
+    assert_eq!(name, "CX");
+}
+
+#[test]
+fn in_range_record_control_accepted() {
+    // The boundary case `rec[-1]` with exactly one prior measurement is valid.
+    let prog = parse_extended("M 0\nCX rec[-1] 1\n").expect("parse_extended");
+    assert_eq!(validate(&prog), Ok(()));
+}
+
+#[test]
+fn record_control_out_of_range_on_first_repeat_iteration_rejected() {
+    // Inside a REPEAT the first iteration sees the shortest record. `rec[-2]`
+    // needs two prior measurements but the first iteration has only produced
+    // one when the CX runs, so Stim would error on iteration 1 — reject it.
+    let ExecError::InvalidRecordControl { .. } =
+        err_from_src("REPEAT 3 {\n    M 0\n    CX rec[-2] 1\n}\n")
+    else {
+        panic!("expected ExecError::InvalidRecordControl");
+    };
+}
+
+#[test]
+fn record_control_referencing_prior_iteration_accepted() {
+    // `rec[-2]` after two measurements per iteration is in range from the first
+    // iteration on, so the loop validates.
+    let prog = parse_extended("REPEAT 3 {\n    M 0\n    M 1\n    CX rec[-2] 2\n}\n")
+        .expect("parse_extended");
+    assert_eq!(validate(&prog), Ok(()));
+}
+
+#[test]
+fn mpp_repeated_qubit_rejected() {
+    // `MPP X0*X0` repeats qubit 0; Stim folds it to identity, but our CX-ladder
+    // gadget assumes distinct qubits, so we reject it with a clear error.
+    let ExecError::InvalidPauliProduct { line, message } = err_from_src("MPP X0*X0") else {
+        panic!("expected ExecError::InvalidPauliProduct");
+    };
+    assert_eq!(line, 1);
+    assert!(message.contains("distinct qubits"), "message: {message}");
+    assert!(
+        message.contains("issue"),
+        "message should point to the issue tracker: {message}"
+    );
+}
+
+#[test]
+fn mpp_anti_hermitian_product_rejected() {
+    // `MPP Z0*X0` = iY0 is anti-Hermitian (Stim raises ValueError); it also
+    // repeats qubit 0, so the distinct-qubit check rejects it.
+    assert!(matches!(
+        err_from_src("MPP Z0*X0"),
+        ExecError::InvalidPauliProduct { .. }
+    ));
+}
+
+#[test]
+fn mpp_repeated_qubit_in_later_product_rejected() {
+    // The check runs per product; a clean first product does not mask a repeat
+    // in a later one.
+    assert!(matches!(
+        err_from_src("MPP Z0*Z1 X2*X2"),
+        ExecError::InvalidPauliProduct { .. }
+    ));
+}
+
+#[test]
+fn mpp_distinct_qubit_products_accepted() {
+    let prog = parse_extended("MPP X0*Y1*Z2 Z3*Z4\n").expect("parse_extended");
+    assert_eq!(validate(&prog), Ok(()));
+}
+
+#[test]
 fn unsupported_heralded_erase_rejected() {
     let e = err_from_src("HERALDED_ERASE(0.1) 0");
     assert!(matches!(e, ExecError::Unsupported { .. }));

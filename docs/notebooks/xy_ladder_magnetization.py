@@ -70,8 +70,8 @@ def run(preserve):
     total_z = [o.overlap(M)]
     for _ in range(steps):
         for a, b in reversed(bonds):             # Heisenberg picture -> reverse circuit order
-            o.rxx(a, b, 2 * dt, truncate=False)  # half-angle: 2*dt gives e^{-i dt X_iX_j}, no truncation
-            o.ryy(a, b, 2 * dt)                  # ... truncate only once the bond gate is complete
+            o.rxx(a, b, theta=2 * dt, truncate=False)  # half-angle: 2*dt gives e^{-i dt X_iX_j}, no truncation
+            o.ryy(a, b, theta=2 * dt)                  # ... truncate only once the bond gate is complete
         total_z.append(o.overlap(M))
     return total_z
 

@@ -19,13 +19,13 @@ fn encode(tab: &mut GTabSum, qubits: &[usize]) {
             tab.cz(qubits[i], qubits[j]);
         }
         for i in [7, 16] {
-            tab.sqrt_y_adj(qubits[i]);
+            tab.sqrt_y_dag(qubits[i]);
         }
         for [i, j] in [[4, 7], [8, 10], [11, 14], [15, 16]] {
             tab.cz(qubits[i], qubits[j]);
         }
         for i in [4, 10, 14, 16] {
-            tab.sqrt_y_adj(qubits[i]);
+            tab.sqrt_y_dag(qubits[i]);
         }
         for [i, j] in [[2, 4], [6, 8], [7, 9], [10, 13], [14, 16]] {
             tab.cz(qubits[i], qubits[j]);
@@ -43,7 +43,7 @@ fn encode(tab: &mut GTabSum, qubits: &[usize]) {
             tab.cz(qubits[i], qubits[j]);
         }
         for i in [0, 2, 5, 6, 8, 10, 12] {
-            tab.sqrt_y_adj(qubits[i]);
+            tab.sqrt_y_dag(qubits[i]);
         }
     }
 }
@@ -63,7 +63,7 @@ fn msd() -> Sampler<Byte8F64<2>, u128> {
         encode(&mut tab, q);
     }
 
-    // Phase 2: Middle gates (sqrt_x, cz, sqrt_y, sqrt_x_adj layers)
+    // Phase 2: Middle gates (sqrt_x, cz, sqrt_y, sqrt_x_dag layers)
     for i in [0, 1, 4] {
         for q in ql[i] {
             tab.sqrt_x(*q);
@@ -88,7 +88,7 @@ fn msd() -> Sampler<Byte8F64<2>, u128> {
         tab.cz(*control, *target);
     }
     for q in ql[0] {
-        tab.sqrt_x_adj(*q);
+        tab.sqrt_x_dag(*q);
     }
     for (control, target) in ql[0].iter().zip(ql[4]) {
         tab.cz(*control, *target);
@@ -98,7 +98,7 @@ fn msd() -> Sampler<Byte8F64<2>, u128> {
     }
     for block in ql.iter().take(5) {
         for q in *block {
-            tab.sqrt_x_adj(*q);
+            tab.sqrt_x_dag(*q);
         }
     }
 

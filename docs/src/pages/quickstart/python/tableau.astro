@@ -60,7 +60,7 @@ const sumSampling = `from ppvm.generalized_tableau_sum import GeneralizedTableau
 tab = GeneralizedTableauSum(n_qubits=2, seed=0)
 tab.h(0)
 tab.cnot(0, 1)
-tab.depolarize(0, 0.05)            # branches the sum into a mixture
+tab.depolarize1(0, p=0.05)            # branches the sum into a mixture
 
 sampler = tab.sampler()            # snapshot the current state
 shots = sampler.sample_shots(10_000)   # list[list[MeasurementResult]]`;
@@ -156,7 +156,7 @@ const sumPruning = `tab = GeneralizedTableauSum(n_qubits=4, min_abs_coeff=1e-10,
         <code>PauliSum</code>:
       </p>
       <ul>
-        <li><strong>Depolarizing:</strong> <code>depolarize(addr, p)</code> and <code>depolarize2(addr0, addr1, p)</code>.</li>
+        <li><strong>Depolarizing:</strong> <code>depolarize1(addr, p=...)</code> and <code>depolarize2(addr0, addr1, p=...)</code>.</li>
         <li><strong>Pauli error:</strong> <code>pauli_error(addr, [p_x, p_y, p_z])</code>.</li>
         <li><strong>Loss:</strong> <code>loss_channel(addr, p)</code> and <code>correlated_loss_channel(addr0, addr1, p)</code>.</li>
       </ul>

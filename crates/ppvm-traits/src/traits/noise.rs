@@ -2,15 +2,61 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::config::Config;
+use num::Zero;
 
 // FIXME: most channels don't need to own probs, we can just reference them and clean up the code
 
 /// Single-qubit Pauli error channel — apply `X`, `Y`, or `Z` with the
 /// three given probabilities.
 pub trait PauliError<T: Config> {
-    /// Apply a Pauli-error channel to qubit `addr0` with the probability
-    /// triple `p = [p_x, p_y, p_z]`.
+    /// Apply a Pauli-error channel `[p_x, p_y, p_z]` to one qubit.
     fn pauli_error(&mut self, addr0: usize, p: [T::Coeff; 3]);
+
+    /// stim `X_ERROR(p)` — apply X with probability `p` to one qubit.
+    fn x_error(&mut self, addr0: usize, p: T::Coeff) {
+        let zero = T::Coeff::zero();
+        self.pauli_error(addr0, [p, zero.clone(), zero])
+    }
+
+    /// stim `Y_ERROR(p)` — apply Y with probability `p` to one qubit.
+    fn y_error(&mut self, addr0: usize, p: T::Coeff) {
+        let zero = T::Coeff::zero();
+        self.pauli_error(addr0, [zero.clone(), p, zero])
+    }
+
+    /// stim `Z_ERROR(p)` — apply Z with probability `p` to one qubit.
+    fn z_error(&mut self, addr0: usize, p: T::Coeff) {
+        let zero = T::Coeff::zero();
+        self.pauli_error(addr0, [zero.clone(), zero, p])
+    }
+
+    /// Explicit batched Pauli-error channel.
+    fn pauli_error_many(&mut self, targets: &[usize], p: [T::Coeff; 3]) {
+        for &q in targets {
+            self.pauli_error(q, p.clone());
+        }
+    }
+
+    /// Explicit batched `X_ERROR(p)`.
+    fn x_error_many(&mut self, targets: &[usize], p: T::Coeff) {
+        for &q in targets {
+            self.x_error(q, p.clone());
+        }
+    }
+
+    /// Explicit batched `Y_ERROR(p)`.
+    fn y_error_many(&mut self, targets: &[usize], p: T::Coeff) {
+        for &q in targets {
+            self.y_error(q, p.clone());
+        }
+    }
+
+    /// Explicit batched `Z_ERROR(p)`.
+    fn z_error_many(&mut self, targets: &[usize], p: T::Coeff) {
+        for &q in targets {
+            self.z_error(q, p.clone());
+        }
+    }
 }
 
 /// Apply the same single-qubit Pauli error channel uniformly to every
@@ -23,22 +69,42 @@ pub trait PauliErrorAll<T: Config> {
 
 /// Two-qubit Pauli error channel.
 pub trait TwoQubitPauliError<T: Config> {
-    /// Apply a two-qubit Pauli-error channel to `(addr0, addr1)`.
-    /// Probabilities are given in the order:
+    /// Apply a two-qubit Pauli-error channel to one pair. Probabilities are given in the order:
     /// `{IX, IY, IZ, XI, XX, XY, XZ, YI, YX, YY, YZ, ZI, ZX, ZY, ZZ}`.
     fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 15]);
+
+    /// Explicit batched two-qubit Pauli-error channel.
+    fn two_qubit_pauli_error_many(&mut self, pairs: &[(usize, usize)], p: [T::Coeff; 15]) {
+        for &(a, b) in pairs {
+            self.two_qubit_pauli_error(a, b, p.clone());
+        }
+    }
 }
 
 /// Single-qubit depolarizing channel.
 pub trait Depolarizing<T: Config> {
-    /// Depolarize qubit `addr0` with probability `p`.
-    fn depolarize(&mut self, addr0: usize, p: T::Coeff);
+    /// Depolarize one qubit with probability `p`.
+    fn depolarize1(&mut self, addr0: usize, p: T::Coeff);
+
+    /// Explicit batched single-qubit depolarizing channel.
+    fn depolarize1_many(&mut self, targets: &[usize], p: T::Coeff) {
+        for &q in targets {
+            self.depolarize1(q, p.clone());
+        }
+    }
 }
 
 /// Two-qubit depolarizing channel.
 pub trait Depolarizing2<T: Config> {
-    /// Depolarize the pair `(addr0, addr1)` with probability `p`.
+    /// Depolarize one qubit pair with probability `p`.
     fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff);
+
+    /// Explicit batched two-qubit depolarizing channel.
+    fn depolarize2_many(&mut self, pairs: &[(usize, usize)], p: T::Coeff) {
+        for &(a, b) in pairs {
+            self.depolarize2(a, b, p.clone());
+        }
+    }
 }
 
 /// Amplitude-damping channel (single qubit).

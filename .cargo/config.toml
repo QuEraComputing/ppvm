@@ -1,0 +1,4 @@
+# gxhash requires AES/SSE2 on x86_64; set this once so local cargo
+# build/test commands match CI without per-command RUSTFLAGS.
+[target.'cfg(target_arch = "x86_64")']
+rustflags = ["-C", "target-feature=+aes,+sse2"]

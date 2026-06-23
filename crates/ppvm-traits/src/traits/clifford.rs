@@ -28,38 +28,54 @@ use crate::traits::PauliWordTrait;
 /// assert_eq!(state.len(), 1);
 /// ```
 pub trait Clifford {
-    /// Apply Pauli `X` to qubit `index`.
-    fn x(&mut self, index: usize);
-    /// Apply Pauli `Y` to qubit `index`.
-    fn y(&mut self, index: usize);
-    /// Apply Pauli `Z` to qubit `index`.
-    fn z(&mut self, index: usize);
-    /// Apply Hadamard `H` to qubit `index`.
-    fn h(&mut self, index: usize);
-    /// Apply phase gate `S` to qubit `index`.
-    fn s(&mut self, index: usize);
-    /// Apply `CNOT(control, target)`.
+    /// Apply Pauli `X` to one qubit.
+    fn x(&mut self, addr0: usize);
+    /// Apply Pauli `Y` to one qubit.
+    fn y(&mut self, addr0: usize);
+    /// Apply Pauli `Z` to one qubit.
+    fn z(&mut self, addr0: usize);
+    /// Apply Hadamard `H` to one qubit.
+    fn h(&mut self, addr0: usize);
+    /// Apply phase gate `S` to one qubit.
+    fn s(&mut self, addr0: usize);
+    /// Apply `CNOT` to one `(control, target)` pair.
     fn cnot(&mut self, control: usize, target: usize);
-    /// Apply `CZ(control, target)`.
-    fn cz(&mut self, control: usize, target: usize);
+    /// Apply `CZ` to one qubit pair.
+    fn cz(&mut self, addr0: usize, addr1: usize);
+
+    /// stim alias for [`cnot`](Clifford::cnot).
+    fn cx(&mut self, control: usize, target: usize) {
+        self.cnot(control, target)
+    }
+    /// stim alias for [`cnot`](Clifford::cnot).
+    fn zcx(&mut self, control: usize, target: usize) {
+        self.cnot(control, target)
+    }
+    /// stim alias for [`cz`](Clifford::cz).
+    fn zcz(&mut self, addr0: usize, addr1: usize) {
+        self.cz(addr0, addr1)
+    }
 }
 
 /// Additional Clifford gates beyond the minimal set: `S†`, `√X`, `√X†`,
 /// `√Y`, `√Y†`, and `CY`.
 pub trait CliffordExtensions: Clifford {
-    /// Apply `S†` (the adjoint of `S`) to qubit `addr0`.
-    fn s_adj(&mut self, addr0: usize);
-    /// Apply `√X` to qubit `addr0`.
+    /// Apply `S†` to one qubit.
+    fn s_dag(&mut self, addr0: usize);
+    /// Apply `√X` to one qubit.
     fn sqrt_x(&mut self, addr0: usize);
-    /// Apply `(√X)†` to qubit `addr0`.
-    fn sqrt_x_adj(&mut self, addr0: usize);
-    /// Apply `√Y` to qubit `addr0`.
+    /// Apply `(√X)†` to one qubit.
+    fn sqrt_x_dag(&mut self, addr0: usize);
+    /// Apply `√Y` to one qubit.
     fn sqrt_y(&mut self, addr0: usize);
-    /// Apply `(√Y)†` to qubit `addr0`.
-    fn sqrt_y_adj(&mut self, addr0: usize);
-
-    /// Apply `CY(addr0, addr1)`.
-    fn cy(&mut self, addr0: usize, addr1: usize);
+    /// Apply `(√Y)†` to one qubit.
+    fn sqrt_y_dag(&mut self, addr0: usize);
+    /// Apply `CY` to one `(control, target)` pair.
+    fn cy(&mut self, control: usize, target: usize);
+    /// stim alias for [`cy`](CliffordExtensions::cy).
+    fn zcy(&mut self, control: usize, target: usize) {
+        self.cy(control, target)
+    }
 }
 
 // === Blanket Clifford impl for PauliWordTrait ===
@@ -80,7 +96,7 @@ pub trait CliffordExtensions: Clifford {
 
 impl<T: PauliWordTrait> Clifford for T {
     #[inline]
-    fn x(&mut self, _index: usize) {
+    fn x(&mut self, _addr0: usize) {
         // X * I * X = I    00 -> 00, 0
         // X * X * X = X    10 -> 10, 0
         // X * Z * X = -Z   01 -> 01, 1
@@ -89,12 +105,12 @@ impl<T: PauliWordTrait> Clifford for T {
     }
 
     #[inline]
-    fn y(&mut self, _index: usize) {
+    fn y(&mut self, _addr0: usize) {
         // word-level no-op
     }
 
     #[inline]
-    fn z(&mut self, _index: usize) {
+    fn z(&mut self, _addr0: usize) {
         // word-level no-op
     }
 
@@ -158,43 +174,43 @@ impl<T: PauliWordTrait> Clifford for T {
 /// this trait with an empty `impl` to use the defaults.
 pub trait CliffordBatch: Clifford {
     /// Apply Pauli `X` to every qubit in `indices`.
-    fn x_batch(&mut self, indices: &[usize]) {
+    fn x_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.x(q);
         }
     }
     /// Apply Pauli `Y` to every qubit in `indices`.
-    fn y_batch(&mut self, indices: &[usize]) {
+    fn y_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.y(q);
         }
     }
     /// Apply Pauli `Z` to every qubit in `indices`.
-    fn z_batch(&mut self, indices: &[usize]) {
+    fn z_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.z(q);
         }
     }
     /// Apply Hadamard `H` to every qubit in `indices`.
-    fn h_batch(&mut self, indices: &[usize]) {
+    fn h_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.h(q);
         }
     }
     /// Apply phase gate `S` to every qubit in `indices`.
-    fn s_batch(&mut self, indices: &[usize]) {
+    fn s_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.s(q);
         }
     }
     /// Apply `CNOT` to every `(control, target)` pair.
-    fn cnot_batch(&mut self, pairs: &[(usize, usize)]) {
+    fn cnot_many(&mut self, pairs: &[(usize, usize)]) {
         for &(c, t) in pairs {
             self.cnot(c, t);
         }
     }
     /// Apply `CZ` to every `(control, target)` pair.
-    fn cz_batch(&mut self, pairs: &[(usize, usize)]) {
+    fn cz_many(&mut self, pairs: &[(usize, usize)]) {
         for &(c, t) in pairs {
             self.cz(c, t);
         }
@@ -204,37 +220,37 @@ pub trait CliffordBatch: Clifford {
 /// Batched form of [`CliffordExtensions`].
 pub trait CliffordExtensionsBatch: CliffordExtensions + CliffordBatch {
     /// Apply `S†` to every qubit in `indices`.
-    fn s_adj_batch(&mut self, indices: &[usize]) {
+    fn s_dag_many(&mut self, indices: &[usize]) {
         for &q in indices {
-            self.s_adj(q);
+            self.s_dag(q);
         }
     }
     /// Apply `√X` to every qubit in `indices`.
-    fn sqrt_x_batch(&mut self, indices: &[usize]) {
+    fn sqrt_x_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_x(q);
         }
     }
     /// Apply `(√X)†` to every qubit in `indices`.
-    fn sqrt_x_adj_batch(&mut self, indices: &[usize]) {
+    fn sqrt_x_dag_many(&mut self, indices: &[usize]) {
         for &q in indices {
-            self.sqrt_x_adj(q);
+            self.sqrt_x_dag(q);
         }
     }
     /// Apply `√Y` to every qubit in `indices`.
-    fn sqrt_y_batch(&mut self, indices: &[usize]) {
+    fn sqrt_y_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_y(q);
         }
     }
     /// Apply `(√Y)†` to every qubit in `indices`.
-    fn sqrt_y_adj_batch(&mut self, indices: &[usize]) {
+    fn sqrt_y_dag_many(&mut self, indices: &[usize]) {
         for &q in indices {
-            self.sqrt_y_adj(q);
+            self.sqrt_y_dag(q);
         }
     }
     /// Apply `CY` to every `(control, target)` pair.
-    fn cy_batch(&mut self, pairs: &[(usize, usize)]) {
+    fn cy_many(&mut self, pairs: &[(usize, usize)]) {
         for &(c, t) in pairs {
             self.cy(c, t);
         }
@@ -245,15 +261,15 @@ impl<T: PauliWordTrait> CliffordExtensions for T {
     // |    Gate    |  X  |  Y  |  Z  |
     // |:----------:|:---:|:---:|:---:|
     // |     s      | -Y  |  X  |  Z  |
-    // |   s_adj    |  Y  | -X  |  Z  |
+    // |   s_dag    |  Y  | -X  |  Z  |
     // |   sqrt_x   |  X  | -Z  |  Y  |
-    // | sqrt*x*adj |  X  |  Z  | -Y  |
+    // | sqrt_x_dag |  X  |  Z  | -Y  |
     // |   sqrt_y   |  Z  |  Y  | -X  |
-    // | sqrt*y*adj | -Z  |  Y  |  X  |
+    // | sqrt_y_dag | -Z  |  Y  |  X  |
 
     #[inline]
-    fn s_adj(&mut self, addr0: usize) {
-        // s_adj has the same bit mapping as s (only phases differ)
+    fn s_dag(&mut self, addr0: usize) {
+        // s_dag has the same bit mapping as s (only phases differ)
         self.s(addr0);
     }
 
@@ -269,7 +285,7 @@ impl<T: PauliWordTrait> CliffordExtensions for T {
     }
 
     #[inline]
-    fn sqrt_x_adj(&mut self, addr0: usize) {
+    fn sqrt_x_dag(&mut self, addr0: usize) {
         if self.get_lbit(addr0) {
             return;
         }
@@ -292,7 +308,7 @@ impl<T: PauliWordTrait> CliffordExtensions for T {
     }
 
     #[inline]
-    fn sqrt_y_adj(&mut self, addr0: usize) {
+    fn sqrt_y_dag(&mut self, addr0: usize) {
         if self.get_lbit(addr0) {
             return;
         }

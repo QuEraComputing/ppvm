@@ -93,7 +93,7 @@ fn pauli_sum_parser<'src>(
     // Term: coefficient [*] word | bare word.
     let term_with_coeff = coefficient
         .then_ignore(just('*').padded().or_not())
-        .then(pauli_word.clone())
+        .then(pauli_word)
         .map(|(c, w)| (w, c));
     let term_bare = pauli_word.map(|w| (w, 1.0));
     let term = choice((term_with_coeff, term_bare));
@@ -103,10 +103,9 @@ fn pauli_sum_parser<'src>(
 
     // First term: optional leading sign.
     let first = sign
-        .clone()
         .padded()
         .or_not()
-        .then(term.clone())
+        .then(term)
         .map(|(s, (w, c))| (w, s.unwrap_or(1.0) * c));
 
     // Subsequent terms: required + or - before the term.

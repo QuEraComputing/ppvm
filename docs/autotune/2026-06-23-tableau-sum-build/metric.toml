@@ -19,3 +19,10 @@
 "build_median_ms" = 573.0
 "per_shot_ns" = 22100.0
 "branches" = 2025.0
+[[metric]]
+"commit" = "4fea5841"
+"status" = "keep"
+"description" = "precompute per-row masks (RowMasks) for phase_loss + pauli dx/dy/dz"
+"build_median_ms" = 552.0
+"per_shot_ns" = 22300.0
+"branches" = 2025.0

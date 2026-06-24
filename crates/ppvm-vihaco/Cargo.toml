@@ -16,7 +16,7 @@ log = "0.4.29"
 num = "0.4.3"
 rayon = { version = "1.10", optional = true }
 ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
-ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau", features = ["rayon"] }
+ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
 smallvec = "1.15.1"
 vihaco = "0.1.1"
 vihaco-cpu = "0.1.1"
@@ -24,3 +24,7 @@ vihaco-parser = "0.1.1"
 vihaco-parser-core = "0.1.1"
 vihaco-circuit-isa = { version = "0.1.0", path = "../vihaco-circuit-isa" }
 ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
+
+# enable rayon if not on wasm
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau", features = ["rayon"] }

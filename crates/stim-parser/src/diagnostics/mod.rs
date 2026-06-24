@@ -104,24 +104,29 @@ impl Diagnostics {
 
     /// Render a rich, source-pointing report (à la `rustc` / `ariadne`): each
     /// diagnostic shows the offending source line with a caret under its span.
-    /// Plain text — no ANSI colour — so it reads cleanly in tracebacks, logs,
-    /// and notebooks. Falls back to the terse [`Display`](fmt::Display) form if
-    /// rendering ever fails.
+    ///
+    /// The offending span is highlighted with a fixed, high-contrast ANSI
+    /// colour — red for errors, yellow for warnings — so it stands out in a
+    /// terminal traceback (and in Jupyter, which interprets ANSI). We pin an
+    /// explicit colour rather than letting `ariadne`'s default generator pick
+    /// one: its auto palette is pastel and reads as washed-out / too light.
+    /// Falls back to the terse [`Display`](fmt::Display) form if rendering ever
+    /// fails.
     pub fn render(&self) -> String {
-        use ariadne::{Config, Label, Report, ReportKind, Source};
+        use ariadne::{Color, Config, Label, Report, ReportKind, Source};
 
         const ID: &str = "<stim>";
         let mut buf = Vec::new();
         for d in &self.items {
-            let kind = match d.severity {
-                Severity::Error => ReportKind::Error,
-                Severity::Warning => ReportKind::Warning,
+            let (kind, color) = match d.severity {
+                Severity::Error => (ReportKind::Error, Color::Red),
+                Severity::Warning => (ReportKind::Warning, Color::Yellow),
             };
             let span = (ID, d.span.start..d.span.end);
             let report = Report::build(kind, span.clone())
-                .with_config(Config::default().with_color(false))
+                .with_config(Config::default().with_color(true))
                 .with_message(&d.message)
-                .with_label(Label::new(span).with_message(&d.message))
+                .with_label(Label::new(span).with_message(&d.message).with_color(color))
                 .finish();
             if report
                 .write((ID, Source::from(self.source.as_ref())), &mut buf)
@@ -177,6 +182,25 @@ mod tests {
         assert!(Diagnostics::new(vec![], Arc::from("")).is_empty());
     }
 
+    /// Drop ANSI SGR sequences (`ESC [ … <letter>`) so text assertions can run
+    /// against the colourised report without depending on a regex crate.
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for c2 in chars.by_ref() {
+                    if c2.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
     #[test]
     fn render_points_at_the_source_span() {
         // `X` (byte 8) is the offending target in "H 0\nM 0 X\n".
@@ -184,12 +208,17 @@ mod tests {
         let diags = Diagnostics::new(vec![diag], Arc::from("H 0\nM 0 X\n"));
         let report = diags.render();
         assert!(
-            report.contains("M 0 X"),
-            "report should show the offending source line:\n{report}"
+            report.contains('\u{1b}'),
+            "the offending span should be highlighted with ANSI colour:\n{report:?}"
+        );
+        let plain = strip_ansi(&report);
+        assert!(
+            plain.contains("M 0 X"),
+            "report should show the offending source line:\n{plain}"
         );
         assert!(
-            report.contains("invalid target"),
-            "report should include the message:\n{report}"
+            plain.contains("invalid target"),
+            "report should include the message:\n{plain}"
         );
     }
 }

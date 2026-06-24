@@ -3,8 +3,7 @@
 A fast quantum circuit simulator written in Rust, with Python bindings.
 
 [![Docs](https://img.shields.io/badge/docs-6437FF)](https://queracomputing.github.io/ppvm/)
-[![CI - rust](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml)
-[![CI - python](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml)
+[![CI](https://github.com/QuEraComputing/ppvm/actions/workflows/ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 ## Install

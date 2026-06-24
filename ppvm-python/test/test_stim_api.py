@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: 2026 The PPVM Authors
 # SPDX-License-Identifier: Apache-2.0
 
+import re
+
 import pytest
 
 from ppvm import GeneralizedTableau, MeasurementResult, PauliSum, StimProgram
@@ -209,6 +211,8 @@ def test_parse_error_points_at_the_source():
     with pytest.raises(ValueError) as exc:
         StimProgram.parse("H 0\nCX 0 1\nM 0 X\n")
     msg = str(exc.value)
-    assert "M 0 X" in msg  # the offending source line is shown
-    assert "invalid target" in msg  # ...with the diagnostic message
-    assert "3" in msg  # ...located at line 3
+    assert "\x1b[" in msg  # the offending span is highlighted with ANSI colour
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", msg)  # strip colour for text assertions
+    assert "M 0 X" in plain  # the offending source line is shown
+    assert "invalid target" in plain  # ...with the diagnostic message
+    assert "3" in plain  # ...located at line 3

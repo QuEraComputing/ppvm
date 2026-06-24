@@ -6,7 +6,7 @@
 //! Two-stage pipeline:
 //!
 //! 1. [`parse_extended`] — `&str` → [`ExtendedProgram`] (re-exported from
-//!    [`stim_parser`]).
+//!    `stim_parser`).
 //! 2. [`execute`] / [`sample`] — call [`validate`](fn@validate) to validate the
 //!    [`ExtendedProgram`], then apply it to a [`GeneralizedTableau`].
 //!
@@ -30,7 +30,7 @@
 //! [`run_string`] / [`run_file`] re-parse on every call and exist only for
 //! single-shot demos — never call them from a shot loop.
 //!
-//! [`ExtendedProgram`]: stim_parser::extended::ExtendedProgram
+//! [`ExtendedProgram`]: stim_parser::prelude::ExtendedProgram
 //! [`GeneralizedTableau`]: ppvm_tableau::prelude::GeneralizedTableau
 
 pub mod executor;
@@ -49,8 +49,10 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// A parse/validate/lower failure from `stim_parser`, reported as a
+    /// [`Diagnostics`] aggregate.
     #[error(transparent)]
-    Parse(#[from] ExtendedParseError),
+    Parse(#[from] Diagnostics),
     #[error(transparent)]
     Exec(#[from] ExecError),
     #[error("failed to read stim file {path}: {source}")]

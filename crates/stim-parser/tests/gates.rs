@@ -3,7 +3,7 @@
 
 use stim_parser::prelude::*;
 
-fn instructions(p: &Program) -> &[RawInstruction] {
+fn instructions(p: &Program) -> &[Instruction] {
     &p.instructions
 }
 
@@ -12,18 +12,18 @@ fn parse_single_h_one_target() {
     let p = parse("H 0").expect("must parse");
     assert_eq!(p.instructions.len(), 1);
     match &instructions(&p)[0] {
-        RawInstruction::Gate {
+        Instruction::Gate(GateOp {
             name,
             tags,
             args,
             targets,
-            line,
-        } => {
+            span,
+        }) => {
             assert_eq!(*name, GateName::H);
             assert!(tags.is_empty());
             assert!(args.is_empty());
-            assert_eq!(targets, &[0]);
-            assert_eq!(*line, 1);
+            assert_eq!(targets, &[Target::Qubit(0)]);
+            assert_eq!(span.line(&p.line_map), 1);
         }
         other => panic!("expected Gate, got {other:?}"),
     }
@@ -33,7 +33,7 @@ fn parse_single_h_one_target() {
 fn parse_h_with_multiple_targets() {
     let p = parse("H 0 1 2 3").expect("must parse");
     match &instructions(&p)[0] {
-        RawInstruction::Gate { name, targets, .. } => {
+        Instruction::Gate(GateOp { name, targets, .. }) => {
             assert_eq!(*name, GateName::H);
             assert_eq!(targets, &[0, 1, 2, 3]);
         }
@@ -45,7 +45,7 @@ fn parse_h_with_multiple_targets() {
 fn parse_cx_pairs() {
     let p = parse("CX 0 1 2 3").expect("must parse");
     match &instructions(&p)[0] {
-        RawInstruction::Gate { name, targets, .. } => {
+        Instruction::Gate(GateOp { name, targets, .. }) => {
             assert_eq!(*name, GateName::CX);
             assert_eq!(targets, &[0, 1, 2, 3]);
         }
@@ -75,7 +75,7 @@ fn parse_each_basic_clifford() {
     ] {
         let p = parse(src).unwrap_or_else(|e| panic!("failed on {src:?}: {e}"));
         match &p.instructions[0] {
-            RawInstruction::Gate { name, .. } => {
+            Instruction::Gate(GateOp { name, .. }) => {
                 assert_eq!(*name, expected, "src = {src:?}");
             }
             other => panic!("src {src:?} produced {other:?}"),

@@ -3,13 +3,12 @@
 
 //! Parsing of multi-qubit Pauli-product measurement targets (`MPP`).
 
-use stim_parser::ast::{PauliAxis, PauliFactor};
-use stim_parser::prelude::*;
+use stim_parser::prelude::{Instruction, MppOp, PauliAxis, PauliFactor, parse};
 
 fn products(src: &str) -> Vec<Vec<PauliFactor>> {
     let prog = parse(src).expect("must parse");
     match &prog.instructions[0] {
-        RawInstruction::Mpp { products, .. } => products.clone(),
+        Instruction::Mpp(MppOp { products, .. }) => products.clone(),
         other => panic!("expected Mpp, got {other:?}"),
     }
 }

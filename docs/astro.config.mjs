@@ -4,7 +4,7 @@ import { defineConfig } from "astro/config";
 // three deploy targets:
 //   · local dev:           PPVM_SITE=http://localhost:4321              PPVM_BASE=/
 //   · main → gh-pages:     PPVM_SITE=https://queracomputing.github.io   PPVM_BASE=/ppvm/
-//   · PR preview deploy:   PPVM_SITE=https://queracomputing.github.io   PPVM_BASE=/ppvm/pr-preview/pr-<N>
+//   · PR preview deploy:   PPVM_SITE=https://queracomputing.github.io   PPVM_BASE=/ppvm/pr-preview/pr-<N>/
 //
 // The site is a GitHub Pages *project* page served from the `/ppvm/`
 // subpath, so the deployed base must be `/ppvm/`. The default base stays

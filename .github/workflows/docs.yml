@@ -106,7 +106,7 @@ jobs:
         id: compute-base
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "base=/ppvm/pr-preview/pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "base=/ppvm/pr-preview/pr-${{ github.event.pull_request.number }}/" >> "$GITHUB_OUTPUT"
           else
             echo "base=/ppvm/" >> "$GITHUB_OUTPUT"
           fi

@@ -33,6 +33,12 @@ pub enum GateName {
     TDag,
     // Identity (carries dialect tags like S[T] is on S, but I[R_X(...)] is on Identity)
     Identity,
+    // Parameterized single-qubit rotations / U3 (continuous angle in half-turns,
+    // clifft/tsim dialect; also expressible as I[R_X(theta=..*pi)] / I[U3(...)])
+    RotX,
+    RotY,
+    RotZ,
+    U3,
     // Two-qubit Cliffords
     CX,
     ZCX,
@@ -258,6 +264,11 @@ const TABLE: &[(&str, TableEntry)] = &[
     ("T", gate(G::T, NoArgs, AtLeastOne, "T")),
     ("T_DAG", gate(G::TDag, NoArgs, AtLeastOne, "T_DAG")),
     ("I", gate(G::Identity, NoArgs, AtLeastOne, "I")),
+    // --- Gates: parameterized rotations (angle in half-turns) ---
+    ("R_X", gate(G::RotX, Exact(1), AtLeastOne, "R_X")),
+    ("R_Y", gate(G::RotY, Exact(1), AtLeastOne, "R_Y")),
+    ("R_Z", gate(G::RotZ, Exact(1), AtLeastOne, "R_Z")),
+    ("U3", gate(G::U3, Exact(3), AtLeastOne, "U3")),
     // --- Gates: two-qubit Clifford ---
     ("CX", gate(G::CX, NoArgs, Pairs, "CX")),
     ("ZCX", gate(G::ZCX, NoArgs, Pairs, "ZCX")),

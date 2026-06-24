@@ -123,8 +123,8 @@ fn check_gate_supported(name: GateName, line: usize) -> Result<(), ExecError> {
     use GateName::*;
     match name {
         Reset | ResetZ | ResetX | ResetY | X | Y | Z | H | HXZ | S | SqrtZ | SDag | SqrtZDag
-        | SqrtX | SqrtXDag | SqrtY | SqrtYDag | T | TDag | Identity | CX | ZCX | CNot | CY
-        | ZCY | CZ | ZCZ => Ok(()),
+        | SqrtX | SqrtXDag | SqrtY | SqrtYDag | T | TDag | Identity | RotX | RotY | RotZ | U3
+        | CX | ZCX | CNot | CY | ZCY | CZ | ZCZ => Ok(()),
         Swap | ISwap | ISwapDag | SqrtXX | SqrtYY | SqrtZZ | CXSwap | SwapCX | XCX | XCY | XCZ
         | YCX | YCY | YCZ | CXYZ | CZYX | HXY | HYZ => Err(ExecError::Unsupported {
             name: name.canonical_name().to_string(),

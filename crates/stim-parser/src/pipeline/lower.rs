@@ -160,6 +160,44 @@ fn lower_gate(
             }
             _ => invalid_tag(&tags[0].name, "I", span, "expected exactly one tag", sink),
         },
+        // Bare parameterized rotations. The argument is in half-turns (clifft /
+        // tsim convention), so `* pi` yields the radians `theta` the `Rotation`
+        // variant carries — making `R_Z(a)` identical to `I[R_Z(theta=a*pi)]`.
+        RotX | RotY | RotZ => {
+            let Some(targets) = qubit_targets(targets, name.canonical_name(), span, sink)? else {
+                return Ok(None);
+            };
+            let axis = match name {
+                RotX => Axis::X,
+                RotY => Axis::Y,
+                _ => Axis::Z,
+            };
+            let &[half_turns] = args.as_slice() else {
+                unreachable!("R_X/R_Y/R_Z arg count is fixed at 1 by the instruction table")
+            };
+            Ok(Some(ExtendedInstruction::Rotation {
+                axis,
+                theta: half_turns * std::f64::consts::PI,
+                targets,
+                span,
+            }))
+        }
+        GateName::U3 => {
+            let Some(targets) = qubit_targets(targets, "U3", span, sink)? else {
+                return Ok(None);
+            };
+            let &[theta, phi, lambda] = args.as_slice() else {
+                unreachable!("U3 arg count is fixed at 3 by the instruction table")
+            };
+            let pi = std::f64::consts::PI;
+            Ok(Some(ExtendedInstruction::U3 {
+                theta: theta * pi,
+                phi: phi * pi,
+                lambda: lambda * pi,
+                targets,
+                span,
+            }))
+        }
         _ => Ok(Some(ExtendedInstruction::Gate(GateOp {
             name,
             tags,
@@ -583,6 +621,99 @@ mod tests {
                 assert_eq!(*phi, 1.0);
                 assert_eq!(*lambda, 1.5);
                 assert_eq!(targets, &vec![0]);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn bare_r_z_lowers_to_rotation_in_half_turns() {
+        // Bare R_Z(alpha) takes alpha in half-turns (clifft convention), so it
+        // lowers to the same radians theta as I[R_Z(theta=alpha*pi)].
+        let prog = lower_extended("R_Z(0.5) 0").expect("lower");
+        match &prog.instructions[0] {
+            ExtendedInstruction::Rotation {
+                axis,
+                theta,
+                targets,
+                ..
+            } => {
+                assert_eq!(*axis, Axis::Z);
+                assert!((*theta - 0.5 * std::f64::consts::PI).abs() < 1e-12);
+                assert_eq!(targets, &vec![0]);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn bare_r_x_and_r_y_lower_to_rotation() {
+        let px = lower_extended("R_X(0.25) 0").expect("lower");
+        assert!(matches!(
+            &px.instructions[0],
+            ExtendedInstruction::Rotation { axis: Axis::X, theta, .. }
+                if (*theta - 0.25 * std::f64::consts::PI).abs() < 1e-12
+        ));
+        let py = lower_extended("R_Y(-0.5) 0").expect("lower");
+        assert!(matches!(
+            &py.instructions[0],
+            ExtendedInstruction::Rotation { axis: Axis::Y, theta, .. }
+                if (*theta + 0.5 * std::f64::consts::PI).abs() < 1e-12
+        ));
+    }
+
+    #[test]
+    fn bare_u3_lowers_in_half_turns() {
+        let prog = lower_extended("U3(0.5, 1.0, 1.5) 0").expect("lower");
+        let pi = std::f64::consts::PI;
+        match &prog.instructions[0] {
+            ExtendedInstruction::U3 {
+                theta,
+                phi,
+                lambda,
+                targets,
+                ..
+            } => {
+                assert!((*theta - 0.5 * pi).abs() < 1e-12);
+                assert!((*phi - 1.0 * pi).abs() < 1e-12);
+                assert!((*lambda - 1.5 * pi).abs() < 1e-12);
+                assert_eq!(targets, &vec![0]);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn bare_r_z_matches_tagged_pi_form() {
+        // R_Z(0.3) must produce exactly what I[R_Z(theta=0.3*pi)] does.
+        let bare = lower_extended("R_Z(0.3) 0").expect("lower");
+        let tagged = lower_extended("I[R_Z(theta=0.3*pi)] 0").expect("lower");
+        match (&bare.instructions[0], &tagged.instructions[0]) {
+            (
+                ExtendedInstruction::Rotation {
+                    axis: a1,
+                    theta: t1,
+                    ..
+                },
+                ExtendedInstruction::Rotation {
+                    axis: a2,
+                    theta: t2,
+                    ..
+                },
+            ) => {
+                assert_eq!(a1, a2);
+                assert!((t1 - t2).abs() < 1e-12);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn bare_rotation_applies_to_all_targets() {
+        let prog = lower_extended("R_Z(0.5) 0 1 2").expect("lower");
+        match &prog.instructions[0] {
+            ExtendedInstruction::Rotation { targets, .. } => {
+                assert_eq!(targets, &vec![0, 1, 2]);
             }
             other => panic!("{other:?}"),
         }

@@ -644,6 +644,11 @@ pub fn execute_validated<T, I, C>(
                 GateName::T | GateName::TDag => {
                     unreachable!("T/T_DAG are lowered to ExtendedInstruction::T/TDag by interpret")
                 }
+                GateName::RotX | GateName::RotY | GateName::RotZ | GateName::U3 => {
+                    unreachable!(
+                        "R_X/R_Y/R_Z/U3 are lowered to ExtendedInstruction::Rotation/U3 by the parser"
+                    )
+                }
             },
             ExtendedInstruction::T { targets, .. } => targets.iter().for_each(|&q| tab.t(q)),
             ExtendedInstruction::TDag { targets, .. } => {

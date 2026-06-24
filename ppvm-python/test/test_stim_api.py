@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: 2026 The PPVM Authors
 # SPDX-License-Identifier: Apache-2.0
 
+import re
+
 import pytest
 
-from ppvm import GeneralizedTableau, MeasurementResult, PauliSum
+from ppvm import GeneralizedTableau, MeasurementResult, PauliSum, StimProgram
 
 
 def test_single_and_broadcast_gates():
@@ -168,3 +170,49 @@ def test_odd_two_qubit_sequence_raises_value_error():
     t = GeneralizedTableau(3)
     with pytest.raises(ValueError, match="even number"):
         t.cnot([0, 1, 2])
+
+
+# --- StimProgram pretty-printing / round-trip ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        "H 0\nCX 0 1\nM 0 1\n",
+        "REPEAT 3 {\n    X 0\n    M 0\n}\n",
+        "S[T] 0\nI[R_X(theta=0.25)] 1\nI_ERROR[loss](0.01) 2\n",
+        "MR 0\nCX rec[-1] 0\n",
+        "MPP X0*Y1\nM 2\n",
+    ],
+)
+def test_stim_program_print_is_a_fixpoint(src):
+    # str(prog) is canonical: parse -> print -> parse -> print reaches a
+    # byte-identical fixpoint, so a parsed program can be serialized via
+    # str()/print() and re-parsed losslessly (modulo canonical normalization
+    # of comments/whitespace).
+    printed = str(StimProgram.parse(src))
+    assert str(StimProgram.parse(printed)) == printed
+
+
+def test_stim_program_print_normalizes_comments_and_whitespace():
+    prog = StimProgram.parse("H 0  # flip\nCX  0   1\n")
+    assert str(prog) == "H 0\nCX 0 1\n"
+
+
+def test_stim_program_repr_html_is_highlighted():
+    prog = StimProgram.parse("H 0\nM 0\n")
+    html = prog._repr_html_()
+    assert html.startswith("<pre")
+    assert "<span" in html  # tokens are wrapped in coloured spans
+    assert "</pre>" in html
+
+
+def test_parse_error_points_at_the_source():
+    with pytest.raises(ValueError) as exc:
+        StimProgram.parse("H 0\nCX 0 1\nM 0 X\n")
+    msg = str(exc.value)
+    assert "\x1b[" in msg  # the offending span is highlighted with ANSI colour
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", msg)  # strip colour for text assertions
+    assert "M 0 X" in plain  # the offending source line is shown
+    assert "invalid target" in plain  # ...with the diagnostic message
+    assert "3" in plain  # ...located at line 3

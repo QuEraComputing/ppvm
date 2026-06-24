@@ -407,6 +407,99 @@ fn test_two_t_gates_coefficients() {
     assert!((norm_sq - 1.0).abs() < 1e-10);
 }
 
+/// Fixed H+T branching schedule, run on the given qubit positions. Macro rather
+/// than a generic fn so each call monomorphises against one concrete index type
+/// without re-stating `branch_with_coefficients`' heavy where-clauses. Returns
+/// the resulting coefficients keyed by a *canonical* index (physical qubit
+/// `qubits[b]` remapped to bit `b`), sorted by that index. Lets us compare the
+/// coalesced output of different code paths in `branch_with_coefficients` — the
+/// packable u64 fast path, the generic `(I, u32)` fallback, and the bnum decode
+/// path — for behavioural equivalence.
+macro_rules! t_circuit_canonical_coeffs {
+    ($cfg:ty, $idx:ty, $n_qubits:expr, $qubits:expr) => {{
+        let qubits: &[usize] = $qubits;
+        let mut tab: GeneralizedTableau<$cfg, $idx> = GeneralizedTableau::new($n_qubits, 1e-12);
+        for &q in qubits {
+            tab.h(q);
+        }
+        // Non-trivial T schedule that produces cross-index coalescing, so the
+        // merge's Equal branch (summing a non-branch and a branch contribution at
+        // the same index) is actually exercised.
+        for &q in qubits {
+            tab.t(q);
+            tab.t(q);
+        }
+        tab.cnot(qubits[0], qubits[1]);
+        tab.t(qubits[1]);
+        tab.t(qubits[0]);
+
+        let one = <$idx as num::One>::one();
+        let mut out: Vec<(u128, (f64, f64))> = tab
+            .coefficients
+            .iter()
+            .map(|&(c, idx)| {
+                let mut canon: u128 = 0;
+                for (b, &q) in qubits.iter().enumerate() {
+                    if (idx >> q) & one == one {
+                        canon |= 1u128 << b;
+                    }
+                }
+                (canon, (c.re, c.im))
+            })
+            .collect();
+        out.sort_by_key(|e| e.0);
+        out
+    }};
+}
+
+fn assert_coeffs_match(a: &[(u128, (f64, f64))], b: &[(u128, (f64, f64))], ctx: &str) {
+    assert_eq!(a.len(), b.len(), "branch count mismatch ({ctx})");
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert_eq!(x.0, y.0, "index mismatch ({ctx})");
+        assert!(
+            (x.1.0 - y.1.0).abs() < 1e-12 && (x.1.1 - y.1.1).abs() < 1e-12,
+            "coeff mismatch at {} ({ctx}): {:?} vs {:?}",
+            x.0,
+            x.1,
+            y.1
+        );
+    }
+}
+
+/// The packable u64 fast path and the generic `(I, u32)` fallback must produce
+/// bit-identical coalesced coefficients. The fallback is forced by placing the
+/// active qubits at bit positions ≥ 48, so every branch key exceeds the 2^47
+/// packing limit and `branch_with_coefficients` takes the fallback merge.
+#[test]
+fn t_branch_coalesce_fallback_matches_packable_fast_path() {
+    use bnum::types::U256;
+
+    // Fast path: low qubits on a 64-bit usize index (keys < 2^47, n small → packable).
+    let fast = t_circuit_canonical_coeffs!(ByteFxHashF64<1>, usize, 8, &[0, 1, 2]);
+
+    // Fallback path: same logical circuit on qubits 48,49,50 of a wide index, so
+    // branch keys are ≥ 2^48 and `packable` is false (the u64 packing is skipped).
+    // Storage is [u8; 8] = 64 qubits, comfortably covering bit 50.
+    let fallback = t_circuit_canonical_coeffs!(ByteFxHashF64<8>, U256, 56, &[48, 49, 50]);
+
+    assert!(!fast.is_empty(), "circuit should branch");
+    assert_coeffs_match(&fast, &fallback, "packable vs fallback");
+}
+
+/// The packable fast path decodes its branch key from a packed `u64` via
+/// byte-by-byte `I::from(u8)` reconstruction. Exercise that decode for a `bnum`
+/// index type (which does not implement `num::NumCast`) and confirm it matches
+/// the `usize` fast path bit-for-bit.
+#[test]
+fn t_branch_coalesce_bnum_decode_matches_usize() {
+    use bnum::BUint;
+
+    let usize_path = t_circuit_canonical_coeffs!(ByteFxHashF64<1>, usize, 8, &[0, 1, 2]);
+    let bnum_path = t_circuit_canonical_coeffs!(ByteFxHashF64<1>, BUint<1>, 8, &[0, 1, 2]);
+
+    assert_coeffs_match(&usize_path, &bnum_path, "usize vs bnum decode");
+}
+
 /// 8 T gates on a superposition state should be equivalent to identity (T⁸ = I).
 #[test]
 fn test_eight_t_gates_is_identity() {

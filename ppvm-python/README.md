@@ -1,4 +1,4 @@
-[![CI - python](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml)
+[![CI](https://github.com/QuEraComputing/ppvm/actions/workflows/ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/ci.yml)
 
 # ppvm (Python)
 

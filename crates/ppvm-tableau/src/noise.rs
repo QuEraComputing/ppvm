@@ -20,6 +20,11 @@ use rand::rngs::SmallRng;
 impl<T: Config> TableauLike for Tableau<T>
 where
     T::Coeff: PartialOrd<f64>,
+    // The canonical word-level `Clifford for Tableau<T>` impl (required by the
+    // `TableauLike: Clifford` supertrait) operates on raw storage words, so it
+    // carries `Store: PrimInt` — the same bound the `GeneralizedTableau` side
+    // already requires.
+    <T::Storage as BitView>::Store: PrimInt,
 {
     type Coeff = T::Coeff;
     type Rng = SmallRng;
@@ -96,7 +101,10 @@ macro_rules! impl_tableau_noise {
 impl_tableau_noise! {
     generics: [],
     ty: Tableau<T>,
-    where: [T::Coeff: PartialOrd<f64>],
+    where: [
+        T::Coeff: PartialOrd<f64>,
+        <T::Storage as BitView>::Store: PrimInt,
+    ],
 }
 
 impl_tableau_noise! {

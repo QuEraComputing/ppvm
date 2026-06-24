@@ -11,8 +11,8 @@
 //! See `tests/roundtrip.rs` for the prose explanation of the property.
 
 use proptest::prelude::*;
-use stim_parser::extended::parse_extended;
 use stim_parser::prelude::parse;
+use stim_parser::prelude::parse_extended;
 
 /// Strategy: build a string out of plausible Stim fragments. Most of
 /// these are syntactically valid; some are slightly off so we exercise

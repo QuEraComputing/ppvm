@@ -341,15 +341,35 @@ pub(crate) fn compute_phase_with_mask_static<I: TableauIndex>(
 #[cfg(feature = "rayon")]
 pub(crate) const RAYON_COEFF_THRESHOLD: usize = 16384;
 
+/// Parameters describing how a Pauli branch splits each coefficient.
+///
+/// Bundles the four anticommutation/phase-mask fields produced by
+/// [`compute_decomposition`](GeneralizedTableau::compute_decomposition) with the
+/// two scaling factors applied to the branch and non-branch contributions. They
+/// always travel together, so passing them as one value keeps the coefficient
+/// accumulation helpers under clippy's argument-count limit without an
+/// `#[allow]`.
+///
+/// Only the rayon coefficient helpers consume this; the default-feature build
+/// uses the inlined sort-merge path in
+/// [`branch_with_coefficients`](GeneralizedTableau::branch_with_coefficients).
+#[cfg(feature = "rayon")]
+#[derive(Clone, Copy)]
+pub(crate) struct BranchParams<I, CoeffType> {
+    pub stab_anticomm_bits: I,
+    pub destab_anticomm_bits: I,
+    pub odd_phase_mask: I,
+    pub phase_decomp: u8,
+    pub coefficient_factor: Complex<CoeffType>,
+    pub branch_factor: Complex<CoeffType>,
+}
+
 /// Sequential accumulation of branch coefficients.
+#[cfg(feature = "rayon")]
 fn branch_coefficients_seq<I, CoeffType>(
     items: impl IntoIterator<Item = (Complex<CoeffType>, I)>,
-    stab_anticomm_bits: I,
-    destab_anticomm_bits: I,
-    odd_phase_mask: I,
-    phase_decomp: u8,
-    coefficient_factor: Complex<CoeffType>,
-    branch_factor: Complex<CoeffType>,
+    capacity: usize,
+    params: BranchParams<I, CoeffType>,
 ) -> HashMap<I, Complex<CoeffType>>
 where
     I: TableauIndex,
@@ -357,7 +377,16 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    let mut map: HashMap<I, Complex<CoeffType>> = HashMap::default();
+    let BranchParams {
+        stab_anticomm_bits,
+        destab_anticomm_bits,
+        odd_phase_mask,
+        phase_decomp,
+        coefficient_factor,
+        branch_factor,
+    } = params;
+    let mut map: HashMap<I, Complex<CoeffType>> =
+        HashMap::with_capacity_and_hasher(capacity, Default::default());
     for (coeff, idx) in items {
         debug_assert!(
             !(coeff.re == CoeffType::zero() && coeff.im == CoeffType::zero()),
@@ -387,12 +416,7 @@ where
 #[cfg(feature = "rayon")]
 fn branch_coefficients_parallel<I, CoeffType>(
     items: &[(Complex<CoeffType>, I)],
-    stab_anticomm_bits: I,
-    destab_anticomm_bits: I,
-    odd_phase_mask: I,
-    phase_decomp: u8,
-    coefficient_factor: Complex<CoeffType>,
-    branch_factor: Complex<CoeffType>,
+    params: BranchParams<I, CoeffType>,
 ) -> HashMap<I, Complex<CoeffType>>
 where
     I: TableauIndex + Send + Sync,
@@ -400,11 +424,15 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    // Skip intra-shot parallelism when we are already running inside a rayon
-    // worker (i.e. shot-level parallelism is driving this call): nesting would
-    // just oversubscribe the pool. Single-shot runs are on the main thread
-    // (`current_thread_index() == None`) and still parallelize as before.
-    if items.len() >= RAYON_COEFF_THRESHOLD && rayon::current_thread_index().is_none() {
+    let BranchParams {
+        stab_anticomm_bits,
+        destab_anticomm_bits,
+        odd_phase_mask,
+        phase_decomp,
+        coefficient_factor,
+        branch_factor,
+    } = params;
+    if items.len() >= RAYON_COEFF_THRESHOLD {
         use rayon::prelude::*;
 
         // Parallel phase: compute all (branch_idx, branch_coeff, idx, nonbranch_coeff) tuples.
@@ -442,20 +470,13 @@ where
         return map;
     }
 
-    branch_coefficients_seq(
-        items.iter().copied(),
-        stab_anticomm_bits,
-        destab_anticomm_bits,
-        odd_phase_mask,
-        phase_decomp,
-        coefficient_factor,
-        branch_factor,
-    )
+    branch_coefficients_seq(items.iter().copied(), 2 * items.len(), params)
 }
 
 /// Sequential accumulation of apply coefficients.
 fn apply_coefficients_seq<I, CoeffType>(
     items: impl IntoIterator<Item = (Complex<CoeffType>, I)>,
+    capacity: usize,
     stab_anticomm_bits: I,
     destab_anticomm_bits: I,
     odd_phase_mask: I,
@@ -467,7 +488,8 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    let mut map: HashMap<I, Complex<CoeffType>> = HashMap::default();
+    let mut map: HashMap<I, Complex<CoeffType>> =
+        HashMap::with_capacity_and_hasher(capacity, Default::default());
     for (coeff, idx) in items {
         debug_assert!(
             !(coeff.re == CoeffType::zero() && coeff.im == CoeffType::zero()),
@@ -538,6 +560,7 @@ where
 
     apply_coefficients_seq(
         items.iter().copied(),
+        items.len(),
         stab_anticomm_bits,
         destab_anticomm_bits,
         odd_phase_mask,
@@ -945,51 +968,189 @@ where
 
         let odd_phase_mask = self.odd_phase_destabilizer_mask();
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-        #[cfg(feature = "rayon")]
         let n_coefficients = old_coefficients.len();
 
-        // When rayon is enabled and above the threshold, collect to Vec for parallel map;
-        // otherwise iterate directly with the sequential path.
-        #[cfg(feature = "rayon")]
-        let new_coefficients = if n_coefficients >= RAYON_COEFF_THRESHOLD {
-            let items: Vec<_> = old_coefficients.into_iter().collect();
-            branch_coefficients_parallel(
-                &items,
-                stab_anticomm_bits,
-                destab_anticomm_bits,
-                odd_phase_mask,
-                phase_decomp,
-                coefficient_factor,
-                branch_factor,
-            )
-        } else {
-            branch_coefficients_seq(
-                old_coefficients,
-                stab_anticomm_bits,
-                destab_anticomm_bits,
-                odd_phase_mask,
-                phase_decomp,
-                coefficient_factor,
-                branch_factor,
-            )
-        };
-
-        #[cfg(not(feature = "rayon"))]
-        let new_coefficients = branch_coefficients_seq(
-            old_coefficients,
-            stab_anticomm_bits,
-            destab_anticomm_bits,
-            odd_phase_mask,
-            phase_decomp,
-            coefficient_factor,
-            branch_factor,
-        );
-
         let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
-        for (idx, coeff) in new_coefficients {
-            if coeff.norm_sqr() > cutoff_sq {
-                self.coefficients.unsafe_insert(idx, coeff);
+
+        // When rayon is enabled and above the threshold, use parallel map then apply cutoff
+        // directly. Early-return so old_coefficients stays valid for the sequential path below.
+        #[cfg(feature = "rayon")]
+        if n_coefficients >= RAYON_COEFF_THRESHOLD {
+            let items: Vec<_> = old_coefficients.into_iter().collect();
+            let map = branch_coefficients_parallel(
+                &items,
+                BranchParams {
+                    stab_anticomm_bits,
+                    destab_anticomm_bits,
+                    odd_phase_mask,
+                    phase_decomp,
+                    coefficient_factor,
+                    branch_factor,
+                },
+            );
+            self.coefficients.reserve(map.len());
+            for (idx, coeff) in map {
+                if coeff.norm_sqr() > cutoff_sq {
+                    self.coefficients.unsafe_insert(idx, coeff);
+                }
             }
+            return;
+        }
+
+        // Sequential sort-merge path: build nonbranch (nb), branch-values (brv), and a
+        // packed branch-key stream, sort if needed, then 2-way merge directly into
+        // self.coefficients with inline cutoff — no intermediate output Vec.
+        //
+        // Fast path: pack each (branch_key, build_pos) as a single u64
+        // `(key << 16) | pos` and sort the u64 array. Half the data movement vs the
+        // generic (I, u32) elements, and the most-optimised sort_unstable path.
+        // Preconditions for packable: n_coefficients ≤ 0xFFFF (pos fits 16 bits) and
+        // every branch key fits in 47 bits. Both hold for cultivation_d5 (≤13 active
+        // bits, small coefficient counts). The fallback reproduces the prior behaviour
+        // exactly for wide index types or large keys.
+        let mut nb: Vec<(I, Complex<T::Coeff>)> = Vec::with_capacity(n_coefficients);
+        let mut brv: Vec<Complex<T::Coeff>> = Vec::with_capacity(n_coefficients);
+        let mut packed: Vec<u64> = Vec::with_capacity(n_coefficients);
+        let mut packable = n_coefficients <= 0xFFFF;
+        let mut nb_sorted = true;
+        let mut prev: Option<I> = None;
+        for (pos, (coeff, idx)) in (0_u32..).zip(old_coefficients) {
+            let branch_index = idx ^ stab_anticomm_bits;
+            let bpc = compute_phase_with_mask_static(
+                destab_anticomm_bits,
+                idx,
+                stab_anticomm_bits,
+                odd_phase_mask,
+            );
+            let branch_phase = (bpc + phase_decomp) % 4;
+            let pf: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
+            brv.push(pf * coeff * branch_factor);
+            match <u64 as num::NumCast>::from(branch_index) {
+                Some(k) if k < (1u64 << 47) => packed.push((k << 16) | (pos as u64)),
+                _ => {
+                    packable = false;
+                    packed.push(pos as u64);
+                }
+            }
+            nb.push((idx, coeff * coefficient_factor));
+            if let Some(p) = prev
+                && idx < p
+            {
+                nb_sorted = false;
+            }
+            prev = Some(idx);
+        }
+
+        self.coefficients.reserve(nb.len() + brv.len());
+        let mut i = 0;
+        if packable {
+            if !nb_sorted {
+                nb.sort_unstable_by_key(|a| a.0);
+            }
+            packed.sort_unstable();
+            // Decode the 47-bit key from the high bits of a packed entry using byte-by-byte
+            // construction from I::from(u8) — avoids num::NumCast which panics for bnum types.
+            let decode_key = |w: u64| -> I {
+                let k = w >> 16; // k < 2^47; 6 bytes suffice
+                let mut v = I::zero();
+                for b in 0..6usize {
+                    let byte = ((k >> (b * 8)) & 0xFF) as u8;
+                    v |= <I as From<u8>>::from(byte) << (b * 8);
+                }
+                v
+            };
+            let mut j = 0;
+            while i < nb.len() && j < packed.len() {
+                let bp = (packed[j] & 0xFFFF) as usize;
+                let bk = decode_key(packed[j]);
+                match nb[i].0.cmp(&bk) {
+                    std::cmp::Ordering::Less => {
+                        if nb[i].1.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(nb[i].0, nb[i].1);
+                        }
+                        i += 1;
+                    }
+                    std::cmp::Ordering::Greater => {
+                        let v = brv[bp];
+                        if v.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(bk, v);
+                        }
+                        j += 1;
+                    }
+                    std::cmp::Ordering::Equal => {
+                        let mut sv = nb[i].1;
+                        sv += brv[bp];
+                        if sv.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(nb[i].0, sv);
+                        }
+                        i += 1;
+                        j += 1;
+                    }
+                }
+            }
+            while j < packed.len() {
+                let bp = (packed[j] & 0xFFFF) as usize;
+                let bk = decode_key(packed[j]);
+                let v = brv[bp];
+                if v.norm_sqr() > cutoff_sq {
+                    self.coefficients.unsafe_insert(bk, v);
+                }
+                j += 1;
+            }
+        } else {
+            // Fallback for wide index types, large keys (≥ 2^47), or many coefficients
+            // (> 65535). nb is still in build order here; reconstruct brk from it before
+            // sorting nb, so build-position p correctly indexes brv[p].
+            let mut brk: Vec<(I, u32)> = (0_u32..)
+                .zip(nb.iter())
+                .map(|(p, &(idx, _))| (idx ^ stab_anticomm_bits, p))
+                .collect();
+            if !nb_sorted {
+                nb.sort_unstable_by_key(|a| a.0);
+            }
+            brk.sort_unstable_by_key(|a| a.0);
+            let mut j = 0;
+            while i < nb.len() && j < brk.len() {
+                let (bk, bp) = brk[j];
+                match nb[i].0.cmp(&bk) {
+                    std::cmp::Ordering::Less => {
+                        if nb[i].1.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(nb[i].0, nb[i].1);
+                        }
+                        i += 1;
+                    }
+                    std::cmp::Ordering::Greater => {
+                        let v = brv[bp as usize];
+                        if v.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(bk, v);
+                        }
+                        j += 1;
+                    }
+                    std::cmp::Ordering::Equal => {
+                        let mut sv = nb[i].1;
+                        sv += brv[bp as usize];
+                        if sv.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(nb[i].0, sv);
+                        }
+                        i += 1;
+                        j += 1;
+                    }
+                }
+            }
+            while j < brk.len() {
+                let (bk, bp) = brk[j];
+                let v = brv[bp as usize];
+                if v.norm_sqr() > cutoff_sq {
+                    self.coefficients.unsafe_insert(bk, v);
+                }
+                j += 1;
+            }
+        }
+        while i < nb.len() {
+            if nb[i].1.norm_sqr() > cutoff_sq {
+                self.coefficients.unsafe_insert(nb[i].0, nb[i].1);
+            }
+            i += 1;
         }
     }
 
@@ -1009,7 +1170,6 @@ where
             self.compute_decomposition(addr0, pauli);
 
         let odd_phase_mask = self.odd_phase_destabilizer_mask();
-        #[cfg(feature = "rayon")]
         let n_coefficients = coefficients.len();
         let old_coefficients = std::mem::replace(coefficients, C::new());
 
@@ -1026,6 +1186,7 @@ where
         } else {
             apply_coefficients_seq(
                 old_coefficients,
+                n_coefficients,
                 stab_anticomm_bits,
                 destab_anticomm_bits,
                 odd_phase_mask,
@@ -1036,6 +1197,7 @@ where
         #[cfg(not(feature = "rayon"))]
         let new_coefficients = apply_coefficients_seq(
             old_coefficients,
+            n_coefficients,
             stab_anticomm_bits,
             destab_anticomm_bits,
             odd_phase_mask,
@@ -1043,6 +1205,7 @@ where
         );
 
         let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
+        coefficients.reserve(new_coefficients.len());
         for (idx, coeff) in new_coefficients {
             if coeff.norm_sqr() > cutoff_sq {
                 coefficients.unsafe_insert(idx, coeff);

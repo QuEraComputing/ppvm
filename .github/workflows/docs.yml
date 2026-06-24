@@ -106,9 +106,9 @@ jobs:
         id: compute-base
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "base=/pr-preview/pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "base=/ppvm/pr-preview/pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
           else
-            echo "base=/" >> "$GITHUB_OUTPUT"
+            echo "base=/ppvm/" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Compute git ref for source links
@@ -132,7 +132,7 @@ jobs:
         # hatches a developer would use locally.
         working-directory: docs
         env:
-          PPVM_SITE: https://congenial-bassoon-l436wp3.pages.github.io
+          PPVM_SITE: https://queracomputing.github.io
           PPVM_BASE: ${{ steps.compute-base.outputs.base }}
           PPVM_GIT_REF: ${{ steps.compute-ref.outputs.ref }}
           RUSTFLAGS: "-C target-feature=+aes,+sse2"

@@ -2,7 +2,7 @@
 
 A fast quantum circuit simulator written in Rust, with Python bindings.
 
-[![Docs](https://img.shields.io/badge/docs-6437FF)](https://congenial-bassoon-l436wp3.pages.github.io/)
+[![Docs](https://img.shields.io/badge/docs-6437FF)](https://queracomputing.github.io/ppvm/)
 [![CI - rust](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/rust-ci.yml)
 [![CI - python](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml/badge.svg)](https://github.com/QuEraComputing/ppvm/actions/workflows/python-ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -52,7 +52,7 @@ r0, r1 = tab.measure(0), tab.measure(1)
 print(f"Qubit 0: {r0}, Qubit 1: {r1}")  # always correlated
 ```
 
-See the [documentation](https://congenial-bassoon-l436wp3.pages.github.io/) for the Rust API, Stim integration, and symbolic propagation.
+See the [documentation](https://queracomputing.github.io/ppvm/) for the Rust API, Stim integration, and symbolic propagation.
 
 ## License & contributing
 

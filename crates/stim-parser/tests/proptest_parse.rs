@@ -13,8 +13,8 @@
 //! exercising the grammar against random and Stim-flavoured inputs.
 
 use proptest::prelude::*;
-use stim_parser::extended::parse_extended;
 use stim_parser::prelude::parse;
+use stim_parser::prelude::parse_extended;
 
 /// Vocabulary the grammar recognises. Biases the mutator toward
 /// almost-valid inputs that exercise more of the parse tree than

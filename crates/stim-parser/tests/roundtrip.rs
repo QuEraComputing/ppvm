@@ -21,8 +21,8 @@
 //! source-derived and shift when leading comments / blank lines get
 //! normalized away.
 
-use stim_parser::extended::parse_extended;
 use stim_parser::prelude::parse;
+use stim_parser::prelude::parse_extended;
 
 const VANILLA_CORPUS: &[(&str, &str)] = &[
     ("bell_pair", "H 0\nCX 0 1\nM 0 1\n"),

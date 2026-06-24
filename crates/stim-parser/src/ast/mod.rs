@@ -1,0 +1,11 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
+pub mod shared;
+pub use shared::*;
+
+pub mod vanilla;
+pub use vanilla::{Instruction, Program};
+
+pub mod extended;
+pub use extended::{ExtendedInstruction, ExtendedProgram};

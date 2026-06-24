@@ -97,7 +97,7 @@ pub(crate) fn pi_expr<'src>() -> impl Parser<'src, &'src str, f64, Extra<'src>> 
     choice((pi_kw, num_then_pi))
 }
 
-use crate::ast::{Tag, TagParam};
+use crate::ast::shared::{Tag, TagParam};
 
 /// `<ident>=<pi_expr>` (Named) or `<pi_expr>` (Positional).
 pub(crate) fn tag_param<'src>() -> impl Parser<'src, &'src str, TagParam, Extra<'src>> + Clone {
@@ -142,7 +142,7 @@ pub(crate) fn args_block<'src>() -> impl Parser<'src, &'src str, Vec<f64>, Extra
         .delimited_by(just('(').then(inline_pad()), inline_pad().then(just(')')))
 }
 
-use crate::parser::{RawSyntaxNode, RawTarget};
+use crate::syntax::raw::{RawSyntaxNode, RawTarget};
 use chumsky::span::SimpleSpan;
 
 /// One non-whitespace, non-`#`, non-`{`/`}` lexeme. Captures the span
@@ -260,8 +260,8 @@ pub(crate) fn program_parser<'src>() -> impl Parser<'src, &'src str, Vec<RawSynt
 #[cfg(test)]
 mod tests {
     use crate::ast::TagParam;
-    use crate::grammar::*;
-    use crate::parser::RawSyntaxNode;
+    use crate::syntax::grammar::*;
+    use crate::syntax::raw::RawSyntaxNode;
 
     fn run<'src, T>(p: impl Parser<'src, &'src str, T, Extra<'src>>, src: &'src str) -> T {
         p.parse(src).into_result().expect("parse failed")

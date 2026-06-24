@@ -7,7 +7,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_stim::{execute, parse_extended};
 use ppvm_tableau::prelude::*;
-use stim_parser::extended::ExtendedProgram;
+use stim_parser::prelude::ExtendedProgram;
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
 

@@ -2,10 +2,14 @@ name: Docs
 
 # Deploy the Astro docs site at `docs/` to GitHub Pages.
 #
+# The repo is public, so Pages serves from the project page
+# `https://queracomputing.github.io/ppvm/` — every build is based under
+# `/ppvm/` (gh-pages branch root maps to the `/ppvm/` URL prefix).
+#
 # Behaviour:
-# - Push to `main`            → build with PPVM_BASE=/        and publish
+# - Push to `main`            → build with PPVM_BASE=/ppvm/   and publish
 #                               to the gh-pages branch root.
-# - Pull request (opened /    → build with PPVM_BASE=/pr-preview/pr-<N>
+# - Pull request (opened /    → build with PPVM_BASE=/ppvm/pr-preview/pr-<N>
 #   synchronize / reopened)     and let rossjrw/pr-preview-action publish
 #                               the build to gh-pages under
 #                               `pr-preview/pr-<N>/`. Triggered only when
@@ -106,9 +110,9 @@ jobs:
         id: compute-base
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "base=/pr-preview/pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "base=/ppvm/pr-preview/pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
           else
-            echo "base=/" >> "$GITHUB_OUTPUT"
+            echo "base=/ppvm/" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Compute git ref for source links
@@ -132,7 +136,7 @@ jobs:
         # hatches a developer would use locally.
         working-directory: docs
         env:
-          PPVM_SITE: https://congenial-bassoon-l436wp3.pages.github.io
+          PPVM_SITE: https://queracomputing.github.io
           PPVM_BASE: ${{ steps.compute-base.outputs.base }}
           PPVM_GIT_REF: ${{ steps.compute-ref.outputs.ref }}
           RUSTFLAGS: "-C target-feature=+aes,+sse2"

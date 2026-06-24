@@ -164,6 +164,15 @@ fn lower_gate(
         // tsim convention), so `* pi` yields the radians `theta` the `Rotation`
         // variant carries — making `R_Z(a)` identical to `I[R_Z(theta=a*pi)]`.
         RotX | RotY | RotZ => {
+            if let Some(tag) = tags.first() {
+                return invalid_tag(
+                    &tag.name,
+                    name.canonical_name(),
+                    span,
+                    "bare rotation gates take no tags; pass the angle as an argument (e.g. R_Z(0.5))",
+                    sink,
+                );
+            }
             let Some(targets) = qubit_targets(targets, name.canonical_name(), span, sink)? else {
                 return Ok(None);
             };
@@ -183,6 +192,15 @@ fn lower_gate(
             }))
         }
         GateName::U3 => {
+            if let Some(tag) = tags.first() {
+                return invalid_tag(
+                    &tag.name,
+                    "U3",
+                    span,
+                    "bare U3 takes no tags; pass the angles as arguments (e.g. U3(0.5, 1.0, 1.5))",
+                    sink,
+                );
+            }
             let Some(targets) = qubit_targets(targets, "U3", span, sink)? else {
                 return Ok(None);
             };
@@ -730,6 +748,20 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn bare_rotation_with_tag_is_rejected() {
+        // A tag on a bare rotation mnemonic has no meaning; reject it rather
+        // than silently dropping it on parse -> lower -> print.
+        let err = lower_extended("R_Z[T](0.5) 0").unwrap_err();
+        assert_eq!(err.last().unwrap().code, Some("invalid-tag"));
+    }
+
+    #[test]
+    fn bare_u3_with_tag_is_rejected() {
+        let err = lower_extended("U3[foo](0.5, 1.0, 1.5) 0").unwrap_err();
+        assert_eq!(err.last().unwrap().code, Some("invalid-tag"));
     }
 
     #[test]

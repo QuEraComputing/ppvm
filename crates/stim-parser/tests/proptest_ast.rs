@@ -398,8 +398,8 @@ fn ext_flat() -> impl Strategy<Value = ExtendedInstruction> {
         )
             .prop_map(|(axis, theta, targets)| ExtendedInstruction::Rotation {
                 axis,
-                // Rotation angles are stored in radians but always originate from
-                // a `<n>*pi` tag, so only half-turn multiples are parser-producible.
+                // Rotation angles are stored in radians and originate from half-turn inputs:
+                // either a `<n>*pi` tag (e.g. `I[R_Z(theta=0.5*pi)]`) or a bare `R_Z(0.5)` gate.
                 theta: theta * std::f64::consts::PI,
                 targets,
                 span: span0(),

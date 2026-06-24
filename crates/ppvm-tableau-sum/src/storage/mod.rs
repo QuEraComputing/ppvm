@@ -48,17 +48,6 @@ pub(crate) fn bit_at<S: PrimInt>(words: &[S], word_idx: usize, bit: usize) -> bo
     (words[word_idx] >> bit) & S::one() != S::zero()
 }
 
-/// View a `Copy` plain-old-data value's bytes. Sound because `A: PauliStorage`
-/// implies `bytemuck::Pod`: no padding, every bit pattern valid, so the bytes
-/// are fully initialized and `u8`-aligned.
-#[inline]
-fn pod_bytes<A: Copy>(value: &A) -> &[u8] {
-    // SAFETY: `A` is POD (PauliStorage: bytemuck::Pod); reading its
-    // `size_of::<A>()` initialized bytes as `[u8]` is sound, and the borrow is
-    // tied to `value`.
-    unsafe { std::slice::from_raw_parts(value as *const A as *const u8, std::mem::size_of::<A>()) }
-}
-
 /// Hash of the `word` (Pauli content) of every row, in order. This is the
 /// expensive component (each word is several machine words wide) and is
 /// *invariant* under X/Y/Z and `is_lost` flips, so a branch inherits it from
@@ -79,8 +68,10 @@ where
             // Gather the Pauli bits directly: the `PauliWord` hash cache is
             // disabled for tableau rows (`REHASH = false`), so hashing
             // `row.word` would feed a stale zero and make every tableau collide.
-            buf.extend_from_slice(pod_bytes(&row.word.xbits.data));
-            buf.extend_from_slice(pod_bytes(&row.word.zbits.data));
+            // `xbits.data`/`zbits.data` are the `PauliStorage` backing array,
+            // which is `bytemuck::Pod`, so this byte view is safe and zero-copy.
+            buf.extend_from_slice(bytemuck::bytes_of(&row.word.xbits.data));
+            buf.extend_from_slice(bytemuck::bytes_of(&row.word.zbits.data));
         }
 
         #[cfg(not(target_arch = "wasm32"))]

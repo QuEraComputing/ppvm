@@ -170,24 +170,24 @@ where
         destab_anticomm_bits: I,
     ) -> Option<bool> {
         if stab_anticomm_bits == I::zero() {
-            // Case b (fast path): Z is already a stabilizer.
-            // branch_index = idx ^ 0 = idx, so the overlap is self-pairing:
-            //   z_overlap = sum_alpha phase_factor(alpha).conj() * |c_alpha|^2
-            // No HashMap needed — work directly on the Vec.
+            // Case b (fast path): Z is already a stabilizer. Overlap + filter in place.
 
-            // Collect into a Vec so we can iterate twice: once for overlap,
-            // once for filtering. The collect from Vec IntoIter→Vec is a no-op.
-            let entries: Vec<(Complex<T::Coeff>, I)> =
-                std::mem::replace(&mut self.coefficients, C::new())
-                    .into_iter()
-                    .collect();
-
-            // Pass 1: compute overlap (read-only, real-only accumulation)
-            // Since conj(c)*c = |c|^2 (always real), the phase factor contribution
-            // to z_overlap.re is: phase 0 → +|c|^2, phase 2 → −|c|^2,
-            // phase 1,3 → 0 (imaginary × real = imaginary, doesn't contribute to .re)
-            let z_overlap_re =
-                Self::compute_overlap_case_b(&entries, phase_decomp, destab_anticomm_bits);
+            // Compute overlap directly on self.coefficients without draining.
+            let mut z_overlap_re = 0.0f64;
+            for &(coeff, idx) in self.coefficients.iter() {
+                let phase = (phase_decomp
+                    + (2 * symplectic_inner(destab_anticomm_bits, idx) as u8) % 4)
+                    % 4;
+                if !phase.is_multiple_of(2) {
+                    continue;
+                }
+                let norm_sq = coeff.norm_sqr().to_f64().unwrap_or(0.0);
+                if phase == 0 {
+                    z_overlap_re += norm_sq;
+                } else {
+                    z_overlap_re -= norm_sq;
+                }
+            }
 
             let prob_1 = 0.5 - 0.5 * z_overlap_re;
             let outcome = self.tableau.rng.random::<f64>() < prob_1;
@@ -197,50 +197,178 @@ where
                 "Measurement result cannot be imaginary!"
             );
 
-            self.project_case_b(&entries, outcome, phase_decomp, destab_anticomm_bits);
+            let old_len = self.coefficients.len();
+            let z_sign = phase_decomp == 2;
+            self.coefficients.retain(|(_, alpha)| {
+                let parity = symplectic_inner(*alpha, destab_anticomm_bits) % 2 != 0;
+                (parity ^ outcome) == z_sign
+            });
+            if self.coefficients.len() < old_len {
+                self.coefficients.normalize();
+            }
 
             // Case-b doesn't mutate destabilizers, so the cached mask remains valid.
             self.measurement_record.push(Some(outcome));
             Some(outcome)
         } else {
-            // Case a: Z is not a stabilizer — need HashMap for cross-index lookups.
-            // Drain self.coefficients into scratch.coeff_map via `retain` so the
-            // Vec's capacity survives and we can refill it at the end without a
-            // fresh allocation.
-            scratch.coeff_map.clear();
-            scratch.coeff_map.reserve(self.coefficients.len());
+            // Case a: Z is not a stabilizer — sort-merge instead of HashMap.
+            let mut by_idx: Vec<(I, Complex<T::Coeff>)> =
+                std::mem::replace(&mut self.coefficients, C::new())
+                    .into_iter()
+                    .map(|(c, i)| (i, c))
+                    .collect();
             {
-                let coeff_map = &mut scratch.coeff_map;
-                self.coefficients.retain(|(v, i)| {
-                    coeff_map.insert(*i, *v);
-                    false // drain — keeps allocation
-                });
+                let mut sorted = true;
+                let mut prev_k: Option<I> = None;
+                for &(k, _) in &by_idx {
+                    if let Some(p) = prev_k
+                        && k < p
+                    {
+                        sorted = false;
+                        break;
+                    }
+                    prev_k = Some(k);
+                }
+                if !sorted {
+                    by_idx.sort_unstable_by_key(|a| a.0);
+                }
             }
 
-            // Compute z_overlap.re directly (the imaginary part is always ~0).
-            // The mask is a pure function of destabilizer phases — cache it across
-            // measurements until `update_tableau_according_to_outcome` invalidates it.
             let odd_phase_mask = *scratch
                 .odd_phase_mask
                 .get_or_insert_with(|| self.odd_phase_destabilizer_mask());
-            let z_overlap_re = Self::compute_overlap_case_a(
-                &scratch.coeff_map,
-                phase_decomp,
-                destab_anticomm_bits,
-                stab_anticomm_bits,
-                odd_phase_mask,
-            );
+
+            // OVERLAP: 2-way merge of by_idx and shifted (each entry XOR'd by stab_anticomm_bits).
+            // At equal key k: by_idx has (k, a_k) and shifted has (k, a_{k^s}), matching
+            // the HashMap overlap's coeff / coeff_branch pair — counted once per key from
+            // each side, exactly as the HashMap iterates every (idx, branch_index) pair.
+            let mut shifted: Vec<(I, Complex<T::Coeff>)> = by_idx
+                .iter()
+                .map(|&(i, c)| (i ^ stab_anticomm_bits, c))
+                .collect();
+            shifted.sort_unstable_by_key(|a| a.0);
+
+            let mut z_overlap_re = 0.0f64;
+            {
+                let mut ii = 0usize;
+                let mut jj = 0usize;
+                while ii < by_idx.len() && jj < shifted.len() {
+                    match by_idx[ii].0.cmp(&shifted[jj].0) {
+                        std::cmp::Ordering::Less => {
+                            ii += 1;
+                        }
+                        std::cmp::Ordering::Greater => {
+                            jj += 1;
+                        }
+                        std::cmp::Ordering::Equal => {
+                            let (idx, a) = by_idx[ii];
+                            let (_, b) = shifted[jj];
+                            let phase = (phase_decomp
+                                + compute_phase_with_mask_static(
+                                    destab_anticomm_bits,
+                                    idx,
+                                    stab_anticomm_bits,
+                                    odd_phase_mask,
+                                ))
+                                % 4;
+                            let a_re = a.re.to_f64().unwrap_or(0.0);
+                            let a_im = a.im.to_f64().unwrap_or(0.0);
+                            let b_re = b.re.to_f64().unwrap_or(0.0);
+                            let b_im = b.im.to_f64().unwrap_or(0.0);
+                            let re_w = a_re * b_re + a_im * b_im;
+                            let im_w = a_re * b_im - a_im * b_re;
+                            match phase {
+                                0 => z_overlap_re += re_w,
+                                1 => z_overlap_re += im_w,
+                                2 => z_overlap_re -= re_w,
+                                3 => z_overlap_re -= im_w,
+                                _ => unreachable!(),
+                            }
+                            ii += 1;
+                            jj += 1;
+                        }
+                    }
+                }
+            }
 
             let prob_1 = 0.5 - 0.5 * z_overlap_re;
             let outcome = self.tableau.rng.random::<f64>() < prob_1;
-            self.project_case_a(
-                outcome,
-                scratch,
-                phase_decomp,
-                stab_anticomm_bits,
-                destab_anticomm_bits,
-                addr0,
-            );
+
+            // PROJECTION: partition A (k-bit=0) and B (k-bit=1), transform B, merge.
+            let q_idx = stab_anticomm_bits.trailing_zeros() as usize;
+            let k = I::one() << q_idx;
+            let alpha = if outcome {
+                (phase_decomp + 2) % 4
+            } else {
+                phase_decomp
+            };
+
+            let mut a: Vec<(I, Complex<T::Coeff>)> = Vec::new();
+            let mut bt: Vec<(I, Complex<T::Coeff>)> = Vec::new();
+            for (idx, coeff) in by_idx {
+                if (idx & k) == I::zero() {
+                    a.push((idx, coeff));
+                } else {
+                    let symp = symplectic_inner(idx, destab_anticomm_bits);
+                    let phase_idx =
+                        ((alpha as i32 + if symp % 2 == 1 { 2 } else { 0 }) % 4) as usize;
+                    let q: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[phase_idx].into();
+                    bt.push((idx ^ stab_anticomm_bits, q * coeff));
+                }
+            }
+            // `a` is already sorted (subset of sorted by_idx); bt needs sorting.
+            bt.sort_unstable_by_key(|e| e.0);
+
+            // 2-way merge summing equal keys → sorted merged output.
+            let mut merged: Vec<(I, Complex<T::Coeff>)> = Vec::with_capacity(a.len() + bt.len());
+            {
+                let mut i = 0usize;
+                let mut j = 0usize;
+                while i < a.len() && j < bt.len() {
+                    match a[i].0.cmp(&bt[j].0) {
+                        std::cmp::Ordering::Less => {
+                            merged.push(a[i]);
+                            i += 1;
+                        }
+                        std::cmp::Ordering::Greater => {
+                            merged.push(bt[j]);
+                            j += 1;
+                        }
+                        std::cmp::Ordering::Equal => {
+                            let mut sv = a[i].1;
+                            sv += bt[j].1;
+                            merged.push((a[i].0, sv));
+                            i += 1;
+                            j += 1;
+                        }
+                    }
+                }
+                while i < a.len() {
+                    merged.push(a[i]);
+                    i += 1;
+                }
+                while j < bt.len() {
+                    merged.push(bt[j]);
+                    j += 1;
+                }
+            }
+
+            let norm_sqr = merged
+                .iter()
+                .fold(T::Coeff::zero(), |acc, (_, c)| acc + c.norm_sqr());
+            let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
+            let threshold = cutoff_sq.to_f64().unwrap_or(0.0) * norm_sqr.to_f64().unwrap_or(0.0);
+            self.coefficients.reserve(merged.len());
+            for (idx, coeff) in merged {
+                if coeff.norm_sqr() > threshold {
+                    self.coefficients.unsafe_insert(idx, coeff);
+                }
+            }
+
+            self.coefficients.normalize();
+            self.tableau
+                .update_tableau_according_to_outcome(addr0, q_idx, outcome);
+            scratch.odd_phase_mask = None;
             self.measurement_record.push(Some(outcome));
             Some(outcome)
         }

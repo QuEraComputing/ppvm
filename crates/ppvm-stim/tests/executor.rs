@@ -46,7 +46,7 @@ fn rx_pi_flips_qubit() {
 
 #[test]
 fn u3_pi_flip_via_y_axis() {
-    let (results, _) = run("I[U3(theta=1.0*pi, phi=0.0, lambda=0.0)] 0\nM 0", 1);
+    let (results, _) = run("I[U3(theta=1.0*pi, phi=0.0*pi, lambda=0.0*pi)] 0\nM 0", 1);
     assert_eq!(results, vec![Some(true)]);
 }
 

@@ -77,9 +77,9 @@ const EXTENDED_CORPUS: &[(&str, &str)] = &[
     ("t_sugar", "S[T] 0 1\nS_DAG[T] 2\n"),
     (
         "rotations",
-        "I[R_X(theta=0.5)] 0\nI[R_Y(theta=1.25)] 1\nI[R_Z(theta=-0.5)] 2\n",
+        "I[R_X(theta=0.5*pi)] 0\nI[R_Y(theta=1.25*pi)] 1\nI[R_Z(theta=-0.5*pi)] 2\n",
     ),
-    ("u3", "I[U3(theta=0.5, phi=1.0, lambda=1.5)] 0\n"),
+    ("u3", "I[U3(theta=0.5*pi, phi=1.0*pi, lambda=1.5*pi)] 0\n"),
     ("loss", "I_ERROR[loss](0.01) 0 1\n"),
     (
         "correlated_loss",
@@ -88,7 +88,7 @@ const EXTENDED_CORPUS: &[(&str, &str)] = &[
     ("mpad_bits", "MPAD 0 1 0\nMPAD(0.01) 1 1 0 0\n"),
     (
         "extended_in_repeat",
-        "REPEAT 3 {\n    S[T] 0\n    I[R_Z(theta=0.25)] 0\n    M 0\n}\n",
+        "REPEAT 3 {\n    S[T] 0\n    I[R_Z(theta=0.25*pi)] 0\n    M 0\n}\n",
     ),
     (
         "mixed_extended_and_vanilla",
@@ -160,12 +160,12 @@ REPEAT 2 {
 
 #[test]
 fn extended_printed_form_lowers_sugar_into_canonical_stim() {
-    let src = "S[T] 0\nI[R_X(theta=0.25)] 1\nI_ERROR[loss](0.01) 2\n";
+    let src = "S[T] 0\nI[R_X(theta=0.25*pi)] 1\nI_ERROR[loss](0.01) 2\n";
     let ast = parse_extended(src).unwrap();
     let printed = format!("{ast}");
     let expected = "\
 S[T] 0
-I[R_X(theta=0.25)] 1
+I[R_X(theta=0.25*pi)] 1
 I_ERROR[loss](0.01) 2
 ";
     assert_eq!(printed, expected);

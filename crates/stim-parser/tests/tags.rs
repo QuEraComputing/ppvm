@@ -30,9 +30,10 @@ fn parse_tag_named_param_pi_expr() {
             assert_eq!(tags.len(), 1);
             assert_eq!(tags[0].name, "R_X");
             match &tags[0].params[..] {
-                [TagParam::Named { key, value }] => {
+                [TagParam::Named { key, value, had_pi }] => {
                     assert_eq!(key, "theta");
                     approx_eq(*value, 0.5 * std::f64::consts::PI);
+                    assert!(had_pi);
                 }
                 other => panic!("{other:?}"),
             }

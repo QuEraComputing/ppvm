@@ -14,7 +14,9 @@ use crate::ast::shared::{
 };
 use crate::ast::vanilla::{Instruction, Program};
 use crate::diagnostics::{Aborted, DiagnosticSink, LineMap, Span};
-use crate::instructions::{ArgCount, EntryKind, MeasureName, TableEntry, TargetArity, lookup};
+use crate::instructions::{
+    ArgCount, EntryKind, GateName, MeasureName, TableEntry, TargetArity, lookup,
+};
 use crate::syntax::{RawSyntaxNode, RawSyntaxTree, RawTarget};
 
 use super::emit_skip;
@@ -64,6 +66,7 @@ fn validate_node(
             name,
             tags,
             args,
+            args_had_pi,
             targets,
             span,
         } => {
@@ -145,6 +148,31 @@ fn validate_node(
                     span,
                     "arg-count",
                     format!("'{canonical}' expected {expected} args, got {}", args.len()),
+                );
+            }
+
+            // Bare rotation/U3 mnemonics take their angle in half-turns and
+            // multiply by pi when lowering, so a `*pi` argument would be scaled
+            // by pi twice. The `*pi` form is a tag convention
+            // (`I[R_Z(theta=0.5*pi)]`); reject it on the bare gate with a clear
+            // message rather than silently double-scaling.
+            if args_had_pi
+                && matches!(
+                    entry.kind,
+                    EntryKind::Gate(
+                        GateName::RotX | GateName::RotY | GateName::RotZ | GateName::U3
+                    )
+                )
+            {
+                return emit_skip(
+                    sink,
+                    span,
+                    "half-turn-arg",
+                    format!(
+                        "'{canonical}' takes angle arguments in half-turns; remove the '*pi' \
+                         suffix (the '*pi' form is only valid in tags, e.g. \
+                         I[R_Z(theta=0.5*pi)])"
+                    ),
                 );
             }
 
@@ -339,6 +367,7 @@ mod tests {
             name: name.to_string(),
             tags: vec![],
             args,
+            args_had_pi: false,
             targets: targets
                 .into_iter()
                 .map(|t| RawTarget {
@@ -360,6 +389,7 @@ mod tests {
             name: name.to_string(),
             tags: vec![],
             args,
+            args_had_pi: false,
             targets: targets
                 .into_iter()
                 .map(|(text, span)| RawTarget {
@@ -376,6 +406,7 @@ mod tests {
             name: name.to_string(),
             tags,
             args: vec![],
+            args_had_pi: false,
             targets: vec![RawTarget {
                 text: "0".to_string(),
                 span: SimpleSpan::from(2..3),
@@ -452,6 +483,45 @@ mod tests {
             &lm(),
         );
         assert_eq!(items[0].code, Some("arg-count"));
+    }
+
+    #[test]
+    fn rotation_gate_with_pi_arg_is_half_turn_arg_error() {
+        // A bare rotation/U3 mnemonic whose arg used the `*pi` form is
+        // rejected: the half-turn arg already gets multiplied by pi when
+        // lowering, so accepting `*pi` would double-scale.
+        let node = RawSyntaxNode::Instruction {
+            name: "R_Z".to_string(),
+            tags: vec![],
+            args: vec![std::f64::consts::PI],
+            args_had_pi: true,
+            targets: vec![RawTarget {
+                text: "0".to_string(),
+                span: SimpleSpan::from(0..1),
+            }],
+            span: SimpleSpan::from(0..3),
+        };
+        let items = collect_errors(vec![node], &lm());
+        assert_eq!(items[0].code, Some("half-turn-arg"));
+    }
+
+    #[test]
+    fn non_rotation_gate_keeps_pi_arg() {
+        // Only the bare rotation/U3 mnemonics reject `*pi` args; for everything
+        // else the pi-expression stays valid (stim.rs compatibility).
+        let node = RawSyntaxNode::Instruction {
+            name: "X_ERROR".to_string(),
+            tags: vec![],
+            args: vec![0.5 * std::f64::consts::PI],
+            args_had_pi: true,
+            targets: vec![RawTarget {
+                text: "0".to_string(),
+                span: SimpleSpan::from(0..1),
+            }],
+            span: SimpleSpan::from(0..7),
+        };
+        let prog = ok_program(vec![node], &lm());
+        assert!(matches!(&prog.instructions[0], Instruction::Noise(_)));
     }
 
     #[test]

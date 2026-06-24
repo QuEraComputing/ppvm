@@ -141,9 +141,14 @@ pub(crate) fn tags_block<'src>() -> impl Parser<'src, &'src str, Vec<Tag>, Extra
         .delimited_by(just('[').then(inline_pad()), inline_pad().then(just(']')))
 }
 
-/// `(pi_expr, pi_expr, ...)`.
-pub(crate) fn args_block<'src>() -> impl Parser<'src, &'src str, Vec<f64>, Extra<'src>> + Clone {
-    pi_expr()
+/// `(pi_expr, pi_expr, ...)`. Each argument is paired with whether it was
+/// written with the `*pi` (half-turn) form. Most callers ignore the flag,
+/// but the bare rotation mnemonics (`R_X`/`R_Y`/`R_Z`/`U3`) take their angle
+/// in half-turns and multiply by pi when lowering, so they reject a `*pi`
+/// argument — which would otherwise be multiplied by pi twice.
+pub(crate) fn args_block<'src>()
+-> impl Parser<'src, &'src str, Vec<(f64, bool)>, Extra<'src>> + Clone {
+    pi_expr_flagged()
         .separated_by(inline_pad().then(just(',')).then(inline_pad()))
         .allow_trailing()
         .collect::<Vec<_>>()
@@ -168,22 +173,21 @@ pub(crate) fn target_lexeme<'src>() -> impl Parser<'src, &'src str, RawTarget, E
         })
 }
 
-/// `<ident> [<tags>]? (<args>)?`. Returns name, tags, args, and the
-/// span of the identifier (used for line-number reporting).
+/// `<ident> [<tags>]? (<args>)?`. Returns name, tags, args, whether any
+/// argument used the `*pi` (half-turn) form, and the span of the identifier
+/// (used for line-number reporting).
 pub(crate) fn instruction_head<'src>()
--> impl Parser<'src, &'src str, (String, Vec<Tag>, Vec<f64>, SimpleSpan<usize>), Extra<'src>> + Clone
-{
+-> impl Parser<'src, &'src str, (String, Vec<Tag>, Vec<f64>, bool, SimpleSpan<usize>), Extra<'src>>
++ Clone {
     ident()
         .map_with(|name, e| (name, e.span()))
         .then(tags_block().or_not())
         .then(args_block().or_not())
         .map(|(((name, span), tags), args)| {
-            (
-                name,
-                tags.unwrap_or_default(),
-                args.unwrap_or_default(),
-                span,
-            )
+            let args = args.unwrap_or_default();
+            let args_had_pi = args.iter().any(|&(_, had_pi)| had_pi);
+            let values = args.into_iter().map(|(value, _)| value).collect();
+            (name, tags.unwrap_or_default(), values, args_had_pi, span)
         })
 }
 
@@ -212,10 +216,11 @@ pub(crate) fn instruction_line<'src>()
                 .collect::<Vec<RawTarget>>(),
         )
         .map(
-            |((name, tags, args, span), targets)| RawSyntaxNode::Instruction {
+            |((name, tags, args, args_had_pi, span), targets)| RawSyntaxNode::Instruction {
                 name,
                 tags,
                 args,
+                args_had_pi,
                 targets,
                 span,
             },
@@ -371,14 +376,21 @@ mod tests {
     #[test]
     fn args_block_parses_csv_floats() {
         let a = run(args_block(), "(0.1, 0.2, 0.3)");
-        assert_eq!(a, vec![0.1, 0.2, 0.3]);
+        // Each arg is paired with whether it used the `*pi` form (none here).
+        assert_eq!(a, vec![(0.1, false), (0.2, false), (0.3, false)]);
     }
 
     #[test]
     fn args_block_with_pi_exprs() {
-        let a = run(args_block(), "(pi, 0.5*pi)");
-        assert!((a[0] - std::f64::consts::PI).abs() < 1e-12);
-        assert!((a[1] - 0.5 * std::f64::consts::PI).abs() < 1e-12);
+        // Args still accept pi-expressions (for stim.rs compatibility); the
+        // `had_pi` flag records that they did so callers can reject it where
+        // the half-turn convention applies.
+        let a = run(args_block(), "(pi, 0.5*pi, 2.0)");
+        assert!((a[0].0 - std::f64::consts::PI).abs() < 1e-12);
+        assert!(a[0].1);
+        assert!((a[1].0 - 0.5 * std::f64::consts::PI).abs() < 1e-12);
+        assert!(a[1].1);
+        assert_eq!(a[2], (2.0, false));
     }
 
     #[test]
@@ -399,7 +411,7 @@ mod tests {
 
     #[test]
     fn instruction_head_with_tags_and_args() {
-        let (name, tags, args, _span) = run(instruction_head(), "S[T](0.5)");
+        let (name, tags, args, _had_pi, _span) = run(instruction_head(), "S[T](0.5)");
         assert_eq!(name, "S");
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].name, "T");
@@ -408,7 +420,7 @@ mod tests {
 
     #[test]
     fn instruction_head_no_tags_no_args() {
-        let (name, tags, args, _span) = run(instruction_head(), "H");
+        let (name, tags, args, _had_pi, _span) = run(instruction_head(), "H");
         assert_eq!(name, "H");
         assert!(tags.is_empty());
         assert!(args.is_empty());

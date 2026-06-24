@@ -17,6 +17,10 @@ pub(crate) enum RawSyntaxNode {
         name: String,
         tags: Vec<Tag>,
         args: Vec<f64>,
+        /// Whether any argument was written with the `*pi` (half-turn) form.
+        /// The bare rotation mnemonics (`R_X`/`R_Y`/`R_Z`/`U3`) reject it,
+        /// since they already scale their half-turn argument by pi.
+        args_had_pi: bool,
         targets: Vec<RawTarget>,
         span: SimpleSpan<usize>,
     },

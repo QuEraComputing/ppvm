@@ -768,6 +768,42 @@ mod tests {
     }
 
     #[test]
+    fn bare_rotation_with_pi_arg_is_rejected() {
+        // The bare arg is in half-turns and gets multiplied by pi when
+        // lowering, so `R_Z(0.5*pi)` would scale by pi twice. The `*pi` form
+        // is only valid in the tag (I[R_Z(theta=0.5*pi)]); reject it here.
+        for src in ["R_X(0.5*pi) 0", "R_Y(1*pi) 0", "R_Z(0.5*pi) 0", "R_Z(pi) 0"] {
+            let err = lower_extended(src).unwrap_err();
+            assert_eq!(err.last().unwrap().code, Some("half-turn-arg"), "src={src}");
+        }
+    }
+
+    #[test]
+    fn bare_u3_with_pi_arg_is_rejected() {
+        // Every U3 angle is in half-turns; a `*pi` (or bare `pi`) in any slot
+        // would double-scale.
+        for src in [
+            "U3(0.5*pi, 0.0, 0.0) 0",
+            "U3(0.0, 0.5*pi, 0.0) 0",
+            "U3(0.0, 0.0, pi) 0",
+        ] {
+            let err = lower_extended(src).unwrap_err();
+            assert_eq!(err.last().unwrap().code, Some("half-turn-arg"), "src={src}");
+        }
+    }
+
+    #[test]
+    fn bare_rotation_plain_arg_is_accepted() {
+        // The half-turn plain form is the canonical bare spelling and lowers
+        // to the same radians as the tagged `*pi` form.
+        let prog = lower_extended("R_Z(0.5) 0").expect("lower");
+        assert!(matches!(
+            &prog.instructions[0],
+            ExtendedInstruction::Rotation { axis: Axis::Z, .. }
+        ));
+    }
+
+    #[test]
     fn bare_u3_with_tag_is_rejected() {
         let err = lower_extended("U3[foo](0.5, 1.0, 1.5) 0").unwrap_err();
         assert_eq!(err.last().unwrap().code, Some("invalid-tag"));

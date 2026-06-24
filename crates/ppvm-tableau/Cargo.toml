@@ -65,3 +65,11 @@ harness = false
 [[bench]]
 name = "measure-all"
 harness = false
+
+[[bench]]
+name = "branch-coalesce-scaling"
+harness = false
+
+[[bench]]
+name = "rot2-apply"
+harness = false

@@ -206,7 +206,7 @@ def test_reversed_pauli_sum_matches_density_matrix():
 def test_gate_then_noise_in_pauli_sum_is_wrong():
     """Gate-then-noise in PauliSum code simulates the wrong circuit.
 
-    Physical circuit: rx(theta) on |0>, then a pure-dephasing channel.
+    Physical circuit: rx(theta) on |0>, then amplitude damping.
     Correct Heisenberg code calls noise *before* the gate; the buggy version
     calls gate *before* noise. Only the correct one matches the DM result, and
     the buggy one differs by a non-trivial amount (so this is a real trap, not
@@ -214,7 +214,8 @@ def test_gate_then_noise_in_pauli_sum_is_wrong():
     """
     n = 1
     theta = 0.9
-    forward = [("rx", (0, theta)), ("pauli_error", (0, [0.0, 0.0, 0.3]))]
+    gamma = 0.3
+    forward = [("rx", (0, theta)), ("amplitude_damping", (0, gamma))]
     expected = _dm_sum_z(n, forward)
 
     correct = _ppvm_sum_z(n, forward)  # reversed -> noise then gate
@@ -222,22 +223,30 @@ def test_gate_then_noise_in_pauli_sum_is_wrong():
 
     buggy = PauliSum.new(n, ["Z0"])
     buggy.rx(0, theta)  # gate first ...
-    buggy.pauli_error(0, [0.0, 0.0, 0.3])  # ... then noise (WRONG)
+    buggy.amplitude_damping(0, gamma)  # ... then noise (WRONG)
     assert abs(buggy.overlap_with_zero() - expected) > 1e-3
 
 
 def test_rotation_angles_keep_their_sign_when_reversed():
     """Backward propagation reverses gate order but does NOT negate angles."""
     n = 1
-    theta = 1.3
-    forward = [("rx", (0, theta))]
+    theta_x = 1.3
+    theta_z = 0.6
+    theta_y = 0.8
+    forward = [
+        ("rx", (0, theta_x)),
+        ("rz", (0, theta_z)),
+        ("ry", (0, theta_y)),
+    ]
     expected = _dm_sum_z(n, forward)
 
-    # Same sign, reversed order (here a single gate) -> correct.
+    # Same sign, reversed order -> correct.
     same_sign = _ppvm_sum_z(n, forward)
     assert same_sign == pytest.approx(expected, abs=1e-9)
 
     # Negating the angle is the classic mistake -> wrong (gives the inverse).
     negated = PauliSum.new(n, ["Z0"])
-    negated.rx(0, -theta)
+    negated.ry(0, -theta_y)
+    negated.rz(0, -theta_z)
+    negated.rx(0, -theta_x)
     assert abs(negated.overlap_with_zero() - expected) > 1e-3

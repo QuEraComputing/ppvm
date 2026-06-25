@@ -51,6 +51,24 @@ fn u3_pi_flip_via_y_axis() {
 }
 
 #[test]
+fn u3_all_angles_nonzero_exercises_phi_lambda() {
+    // U3(theta=pi, phi=pi/2, lambda=pi/2) == Y (clifft Rz(phi)Ry(theta)Rz(lambda)),
+    // so H·U3·H == H·Y·H == -Y and |0> -> |1> deterministically. The H frame makes
+    // the outcome sensitive to phi *and* lambda (drop or mis-scale either and P(1)
+    // collapses to ~0.5). Half-turn args 1.0/0.5/0.5 each get *pi at lowering.
+    let tag = run(
+        "H 0\nI[U3(theta=1.0*pi, phi=0.5*pi, lambda=0.5*pi)] 0\nH 0\nM 0",
+        1,
+    );
+    assert_eq!(tag.0, vec![Some(true)]);
+
+    // Bare half-turn form must agree; this also pins the `* pi` scaling (an
+    // unscaled bare U3 would read 1.0/0.5/0.5 as radians and P(1) drops to ~0.4).
+    let bare = run("H 0\nU3(1.0, 0.5, 0.5) 0\nH 0\nM 0", 1);
+    assert_eq!(bare.0, vec![Some(true)]);
+}
+
+#[test]
 fn t_gate_via_s_t_tag_no_op_on_zero() {
     let (results, _) = run("S[T] 0\nM 0", 1);
     assert_eq!(results, vec![Some(false)]);

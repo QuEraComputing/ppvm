@@ -348,8 +348,13 @@ class GeneralizedTableau(
         ``RAYON_NUM_THREADS`` environment variable before the first call to
         control the pool size (it defaults to the number of logical cores).
         """
+        required_qubits = max(1, prog.num_qubits)
         if n_qubits is None:
-            n_qubits = max(1, prog.num_qubits)
+            n_qubits = required_qubits
+        elif n_qubits < required_qubits:
+            raise ValueError(
+                f"n_qubits must be >= {required_qubits} for this program (got {n_qubits})."
+            )
         native_cls = _native_tableau_cls(n_qubits)
         raw = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
         return [[MeasurementResult(x) for x in shot] for shot in raw]

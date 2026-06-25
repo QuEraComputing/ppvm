@@ -1034,6 +1034,7 @@ name = "ppvm-tableau-sum"
 version = "0.1.0"
 dependencies = [
  "bitvec",
+ "bytemuck",
  "criterion 0.8.2",
  "fxhash",
  "gxhash",

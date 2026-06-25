@@ -206,8 +206,14 @@ impl LindbladSpec {
     /// Rust via Al-Mohy & Higham scaling-and-squaring; no scipy required.
     ///
     /// Returns `(new_basis, new_coeffs)`.
+    ///
+    /// `max_basis` is a hard rank cap on the live basis: enrichment adds at
+    /// most `max_basis − basis.len()` of the largest leakage strings and the
+    /// post-step basis is trimmed to the top-`max_basis` by `|coeff|`
+    /// (protected words always kept). Pass a large value for the near-exact
+    /// case. `drop_tol` additionally prunes by magnitude.
     #[pyo3(signature = (
-        basis, coeffs, dt, tau_add,
+        basis, coeffs, dt, max_basis,
         drop_tol = 0.0,
         protected = None,
         num_threads = None,
@@ -219,7 +225,7 @@ impl LindbladSpec {
         basis: PyReadonlyArray2<'py, u8>,
         coeffs: PyReadonlyArray1<'py, f64>,
         dt: f64,
-        tau_add: f64,
+        max_basis: usize,
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
         num_threads: Option<usize>,
@@ -246,7 +252,7 @@ impl LindbladSpec {
                 &mut basis_words,
                 &mut coeffs_vec,
                 dt,
-                tau_add,
+                max_basis,
                 drop_tol,
                 &protected_words,
                 num_threads,
@@ -261,7 +267,7 @@ impl LindbladSpec {
     /// Same as [`Self::pc_step`] but also returns a dict mapping phase
     /// name → microseconds spent in that phase, for profiling.
     #[pyo3(signature = (
-        basis, coeffs, dt, tau_add,
+        basis, coeffs, dt, max_basis,
         drop_tol = 0.0,
         protected = None,
         num_threads = None,
@@ -273,7 +279,7 @@ impl LindbladSpec {
         basis: PyReadonlyArray2<'py, u8>,
         coeffs: PyReadonlyArray1<'py, f64>,
         dt: f64,
-        tau_add: f64,
+        max_basis: usize,
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
         num_threads: Option<usize>,
@@ -301,7 +307,7 @@ impl LindbladSpec {
                 &mut basis_words,
                 &mut coeffs_vec,
                 dt,
-                tau_add,
+                max_basis,
                 drop_tol,
                 &protected_words,
                 num_threads,

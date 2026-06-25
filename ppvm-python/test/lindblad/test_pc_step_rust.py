@@ -23,7 +23,7 @@ from ._helpers import (
 )
 
 
-def _adaptive_z_correlator_pc_rust(L_op, L, site0, dt, n_steps, tau_add):
+def _adaptive_z_correlator_pc_rust(L_op, L, site0, dt, n_steps, max_basis):
     """Same as :func:`_helpers.adaptive_z_correlator_pc` but the per-step PC
     work (leakage expansion, predictor expm, second-hop expansion, corrector
     expm) all runs in Rust through :meth:`Lindbladian.pc_step`."""
@@ -36,7 +36,9 @@ def _adaptive_z_correlator_pc_rust(L_op, L, site0, dt, n_steps, tau_add):
     corr[0, site0] = 1.0
 
     for step in range(n_steps):
-        basis, coeffs = L_op.pc_step(basis, coeffs, dt, tau_add, protected=protected)
+        basis, coeffs = L_op.pc_step(
+            basis, coeffs, dt, max_basis, drop_tol=0.0, protected=protected
+        )
         index = {s: i for i, s in enumerate(basis)}
         for j in range(L):
             if z_strings[j] in index:
@@ -58,11 +60,14 @@ def test_pc_step_rust_matches_python_pc():
     dt = 0.01
     n_steps = 5
     tau_add = 1e-12
+    # Large max_basis so the rust rank cap never binds: full enrichment,
+    # matching the python reference's effectively-all-leakage tau_add.
+    max_basis = 10_000_000
 
     h_terms, jump_terms = nn_xy_z_dephasing_obc(L, J, gamma)
     L_op = Lindbladian(L, h_terms, jump_terms)
 
-    rust = _adaptive_z_correlator_pc_rust(L_op, L, site0, dt, n_steps, tau_add)
+    rust = _adaptive_z_correlator_pc_rust(L_op, L, site0, dt, n_steps, max_basis)
     py_ref = adaptive_z_correlator_pc(L_op, L, site0, dt, n_steps, tau_add)
 
     diff = float(np.max(np.abs(rust - py_ref)))
@@ -78,7 +83,7 @@ def test_pc_step_rust_dt_scaling_is_cubic():
     gamma = 1.0
     site0 = L // 2
     T = 0.05
-    tau_add = 1e-12
+    max_basis = 10_000_000  # large: rank cap never binds (full enrichment)
 
     h_terms, jump_terms = nn_xy_z_dephasing_obc(L, J, gamma)
     L_op = Lindbladian(L, h_terms, jump_terms)
@@ -88,7 +93,7 @@ def test_pc_step_rust_dt_scaling_is_cubic():
         n_steps = round(T / dt)
         times = np.arange(n_steps + 1) * dt
         exact = bilinear_nn_xy_z_dephasing_obc(L, J, gamma, times, site0)
-        rust = _adaptive_z_correlator_pc_rust(L_op, L, site0, dt, n_steps, tau_add)
+        rust = _adaptive_z_correlator_pc_rust(L_op, L, site0, dt, n_steps, max_basis)
         err.append(float(np.max(np.abs(rust[-1] - exact[-1]))))
 
     # Halving dt should drop the error by ≥5× (cubic gives 8×).

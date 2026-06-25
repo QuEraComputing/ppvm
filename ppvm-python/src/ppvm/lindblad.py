@@ -229,9 +229,8 @@ class Lindbladian:
         basis_arr: np.ndarray,
         coeffs: np.ndarray,
         dt: float,
-        tau_add: float | None = None,
-        drop_tol: float = 0.0,
-        K: float = 5.0,
+        max_basis: int,
+        drop_tol: float = 1e-12,
         protected_arr: np.ndarray | None = None,
         num_threads: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -242,28 +241,21 @@ class Lindbladian:
         The matrix-exponential action is computed matrix-free via the external
         ``quspin-expm`` crate (Al-Mohy & Higham scaling-and-squaring).
 
-        Tolerances. ``drop_tol`` prunes basis entries whose absolute
-        coefficient is below this threshold after the corrector (unless
-        the word is ``protected``). ``tau_add`` is the leakage-rate
-        threshold for adding new strings. The default policy ties them via
-        ``tau_add = K * drop_tol / dt`` (with ``K = 5``): the LR-XY
-        γ=1, L=51 Pareto study showed K≈5 lies on the front, with
-        ``drop_tol`` the natural accuracy knob. Pass ``tau_add`` explicitly
-        to override.
+        Truncation. ``max_basis`` is a hard rank cap on the live basis:
+        enrichment adds at most ``max_basis - len(basis)`` of the largest
+        leakage strings, and the post-step basis is trimmed to the
+        top-``max_basis`` entries by ``|coeff|`` (``protected`` words always
+        kept). Pass a large value (e.g. ``10_000_000``) for the near-exact,
+        uncapped case. ``drop_tol`` additionally prunes basis entries whose
+        absolute coefficient is below the threshold after the corrector
+        (unless the word is ``protected``).
 
         ``num_threads``, when set, pins this call to a freshly-built rayon
         pool of that size — useful for benchmarking parallel scaling.
 
         Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown
-        (or shrunk, if ``drop_tol`` pruned entries).
+        (or shrunk, if ``max_basis`` / ``drop_tol`` pruned entries).
         """
-        if tau_add is None:
-            if drop_tol <= 0.0:
-                raise ValueError(
-                    "must provide tau_add explicitly, or drop_tol > 0 "
-                    "(tau_add defaults to K * drop_tol / dt)"
-                )
-            tau_add = K * drop_tol / dt
         n = self.n_qubits
         if protected_arr is None:
             protected_arr = np.zeros((0, n), dtype=np.uint8)
@@ -271,7 +263,7 @@ class Lindbladian:
             np.ascontiguousarray(basis_arr, dtype=np.uint8),
             np.ascontiguousarray(coeffs, dtype=np.float64),
             float(dt),
-            float(tau_add),
+            int(max_basis),
             float(drop_tol),
             np.ascontiguousarray(protected_arr, dtype=np.uint8),
             None if num_threads is None else int(num_threads),
@@ -408,9 +400,8 @@ class Lindbladian:
         basis: Sequence[str],
         coeffs: np.ndarray,
         dt: float,
-        tau_add: float | None = None,
-        drop_tol: float = 0.0,
-        K: float = 5.0,
+        max_basis: int,
+        drop_tol: float = 1e-12,
         protected: Sequence[str] | None = None,
         num_threads: int | None = None,
     ) -> tuple[list[str], np.ndarray]:
@@ -424,9 +415,8 @@ class Lindbladian:
             basis_arr,
             coeffs,
             dt,
-            tau_add,
+            max_basis,
             drop_tol,
-            K,
             protected_arr,
             num_threads,
         )

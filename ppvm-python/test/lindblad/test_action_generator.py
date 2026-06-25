@@ -92,7 +92,7 @@ def test_generator_rejects_duplicate_basis():
         L_op.generator(basis)
     # pc_step also builds the row index and must reject duplicates.
     with pytest.raises(ValueError, match=r"duplicate Pauli word"):
-        L_op.pc_step(basis, np.ones(len(basis)), 0.01, 1e-10)
+        L_op.pc_step(basis, np.ones(len(basis)), 0.01, 10_000_000)
 
 
 def test_protected_strings_suppressed():

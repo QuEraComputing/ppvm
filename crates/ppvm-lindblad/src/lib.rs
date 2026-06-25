@@ -505,10 +505,8 @@ impl LindbladSpec {
 
     /// Conservative upper bound on `max_{p, w} |⟨w| L*(p) |p⟩|`, the
     /// largest coefficient any single input Pauli can produce in any
-    /// single output Pauli through one action of `L*`. Used by
-    /// [`Self::leakage`] to safely prune candidates whose accumulated
-    /// partial sum + remaining-contribution budget cannot reach the
-    /// `tau_add` keep threshold (Cauchy-Schwarz style streaming bound).
+    /// single output Pauli through one action of `L*`. Useful for
+    /// Cauchy-Schwarz style streaming bounds on accumulated leakage.
     ///
     /// The bound is `2 · max |h_i|` (commutator factor) plus a per-jump
     /// term. For the common case of Hermitian-Pauli H and Hermitian-Pauli
@@ -559,28 +557,25 @@ impl LindbladSpec {
         coeffs: &[f64],
         protected: &[Word],
     ) -> Result<Vec<(Word, f64)>, Error> {
-        self.leakage_with_prune(basis, coeffs, protected, None)
+        self.leakage_with_prune(basis, coeffs, protected, usize::MAX)
     }
 
-    /// Like [`Self::leakage`], but when `tau_add` is `Some(τ)` runs the
-    /// streaming Cauchy-Schwarz prune: after each chunk the remaining
-    /// possible contribution to any not-yet-final candidate is bounded
-    /// by `max_action_coef × Σ_{i not yet processed} |c_i|`. Entries
-    /// whose `|partial_sum| + remaining_bound < τ` are dropped. The
-    /// final keep filter `|sum| ≥ τ` is still applied by the caller.
+    /// Like [`Self::leakage`], but caps the live off-basis leakage map to
+    /// the *available room* `room = max_basis − basis.len()` — only the
+    /// strings we could actually add to the basis are worth keeping. The
+    /// cap is applied during accumulation (after each chunk), keeping the
+    /// `room` largest-magnitude entries.
     ///
-    /// Processing the largest-`|c|` basis indices first shrinks the
-    /// remaining budget fastest, so the prune kicks in earlier.
-    /// Memory savings depend on how skewed the `coeffs` distribution
-    /// is — power-law distributions win the most. Worst case (uniform
-    /// `|c|`): the bound stays above `τ` until late in the basis,
-    /// pruning kicks in only near the end, savings approach zero.
+    /// Basis indices are processed in descending-`|c|` order so the
+    /// running cap keeps the entries that are most likely to be the true
+    /// largest contributors. When `max_basis` is large enough that
+    /// `room ≥ all candidates`, nothing is dropped — the near-exact case.
     pub fn leakage_with_prune(
         &self,
         basis: &[Word],
         coeffs: &[f64],
         protected: &[Word],
-        tau_add: Option<f64>,
+        max_basis: usize,
     ) -> Result<Vec<(Word, f64)>, Error> {
         if basis.len() != coeffs.len() {
             return Err(Error::LengthMismatch {
@@ -597,28 +592,22 @@ impl LindbladSpec {
         let protected_set: FxHashMap<u64, ()> =
             protected.iter().map(|w| (word_hash(w), ())).collect();
 
-        // Streaming-prune setup. If `tau_add` is None, fall through to the
-        // un-pruned path (process basis in original order, no prune).
-        let (order, mut remaining_budget): (Vec<usize>, f64) = if tau_add.is_some() {
-            let mut idx: Vec<usize> = (0..basis.len()).collect();
-            // Descending sort by |c|: process largest-magnitude contributors
-            // first so the Cauchy-Schwarz remaining bound shrinks fast.
-            idx.sort_by(|&a, &b| {
-                coeffs[b]
-                    .abs()
-                    .partial_cmp(&coeffs[a].abs())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let max_coef = self.max_action_coef();
-            let total: f64 = coeffs.iter().map(|c| c.abs()).sum();
-            (idx, max_coef * total)
-        } else {
-            ((0..basis.len()).collect(), f64::INFINITY)
-        };
-        let max_coef = self.max_action_coef();
-        let tau = tau_add.unwrap_or(0.0);
+        // Descending sort by |c|: process largest-magnitude contributors
+        // first so the running room-cap keeps the right entries.
+        let mut order: Vec<usize> = (0..basis.len()).collect();
+        order.sort_by(|&a, &b| {
+            coeffs[b]
+                .abs()
+                .partial_cmp(&coeffs[a].abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         const CHUNK_SIZE: usize = 4096;
+        // Cap the live leakage map to the *available room* `max_basis −
+        // basis.len()` — only the strings we could actually add are worth
+        // keeping. When `room ≥ all candidates`, nothing is dropped (the
+        // near-exact case). `usize::MAX` room ⇒ no cap.
+        let room = max_basis.saturating_sub(basis.len());
         let mut merged: FxHashMap<Word, f64> = FxHashMap::default();
         for chunk_indices in order.chunks(CHUNK_SIZE) {
             let local: Vec<Vec<(Word, f64)>> = chunk_indices
@@ -655,16 +644,18 @@ impl LindbladSpec {
                 }
             }
 
-            if tau_add.is_some() {
-                // Decrement the remaining-contribution budget by what this
-                // chunk has now processed. Once `remaining_budget < τ`,
-                // every entry has `|true_sum| ≤ |partial_sum| + remaining`,
-                // so we can drop entries with `|partial_sum| < τ − remaining`.
-                let chunk_abs_sum: f64 = chunk_indices.iter().map(|&i| coeffs[i].abs()).sum();
-                remaining_budget = (remaining_budget - max_coef * chunk_abs_sum).max(0.0);
-                if remaining_budget < tau {
-                    let threshold = tau - remaining_budget;
-                    merged.retain(|_, &mut v| v.abs() >= threshold);
+            // Room-cap: keep only the `room` largest-magnitude entries.
+            if merged.len() > room {
+                if room == 0 {
+                    merged.clear();
+                } else {
+                    let mut mags: Vec<f64> = merged.values().map(|v| v.abs()).collect();
+                    let k = room.min(mags.len() - 1);
+                    mags.select_nth_unstable_by(k, |a, b| {
+                        b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    let cutoff = mags[k];
+                    merged.retain(|_, &mut v| v.abs() >= cutoff);
                 }
             }
         }
@@ -1251,8 +1242,8 @@ impl LindbladSpec {
     /// state at time `t + dt`. The step is:
     ///
     /// 1. **First-hop expansion**: compute leakage from the current state
-    ///    and append any leakage Pauli with `|coeff| > tau_add` to the
-    ///    basis (with starting coefficient 0).
+    ///    and append the largest leakage Paulis to the basis (with starting
+    ///    coefficient 0), up to `room = max_basis − basis.len()` new strings.
     /// 2. **Predictor**: apply `exp(dt · M)` to `coeffs` on the enlarged
     ///    basis, yielding a predicted state.
     /// 3. **Second-hop expansion**: compute leakage from the *predicted*
@@ -1267,6 +1258,13 @@ impl LindbladSpec {
     /// leakage targets — typically the observable's support, which the
     /// caller wants tracked exactly.
     ///
+    /// `max_basis` is a hard rank cap on the live basis: enrichment adds at
+    /// most `max_basis − basis.len()` of the largest leakage strings, the
+    /// leakage map is capped to the same room, and the post-step basis is
+    /// trimmed to the top-`max_basis` by `|coeff|` (protected words always
+    /// kept). Pass a large value (e.g. `usize::MAX`) for the near-exact,
+    /// uncapped case. `drop_tol` additionally prunes by magnitude.
+    ///
     /// `num_threads`, when set, runs the entire step inside a freshly built
     /// rayon thread pool of that size — useful for benchmarking parallel
     /// scaling. When `None`, the global rayon pool is used.
@@ -1277,7 +1275,7 @@ impl LindbladSpec {
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        tau_add: f64,
+        max_basis: usize,
         drop_tol: f64,
         protected: &[Word],
         num_threads: Option<usize>,
@@ -1288,10 +1286,10 @@ impl LindbladSpec {
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
             pool.install(|| {
-                self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected)
+                self.pc_step_inner(basis, coeffs, dt, max_basis, drop_tol, protected)
             })
         } else {
-            self.pc_step_inner(basis, coeffs, dt, tau_add, drop_tol, protected)
+            self.pc_step_inner(basis, coeffs, dt, max_basis, drop_tol, protected)
         }
     }
 
@@ -1305,7 +1303,7 @@ impl LindbladSpec {
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        tau_add: f64,
+        max_basis: usize,
         drop_tol: f64,
         protected: &[Word],
         num_threads: Option<usize>,
@@ -1317,12 +1315,12 @@ impl LindbladSpec {
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
             pool.install(|| {
                 self.pc_step_inner_timed(
-                    basis, coeffs, dt, tau_add, drop_tol, protected,
+                    basis, coeffs, dt, max_basis, drop_tol, protected,
                 )
             })
         } else {
             self.pc_step_inner_timed(
-                basis, coeffs, dt, tau_add, drop_tol, protected,
+                basis, coeffs, dt, max_basis, drop_tol, protected,
             )
         }
     }
@@ -1332,23 +1330,18 @@ impl LindbladSpec {
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        tau_add: f64,
+        max_basis: usize,
         drop_tol: f64,
         protected: &[Word],
     ) -> Result<PcStepTimings, Error> {
         let mut t = PcStepTimings::default();
 
         let t0 = Instant::now();
-        let leak = self.leakage_with_prune(basis, coeffs, protected, Some(tau_add))?;
+        let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis)?;
         t.leakage1_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
-        for (w, v) in leak {
-            if v.abs() > tau_add {
-                basis.push(w);
-                coeffs.push(0.0);
-            }
-        }
+        add_leakage_capped(basis, coeffs, leak, max_basis);
         t.expand1_us = t0.elapsed().as_micros() as u64;
 
         // Predictor: gencsr1 (or one_norm build for mf) + expm1.
@@ -1360,17 +1353,12 @@ impl LindbladSpec {
         t.expm1_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
-        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, Some(tau_add))?;
+        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, max_basis)?;
         t.leakage2_us = t0.elapsed().as_micros() as u64;
         drop(coeffs_predict);
 
         let t0 = Instant::now();
-        for (w, v) in leak2 {
-            if v.abs() > tau_add {
-                basis.push(w);
-                coeffs.push(0.0);
-            }
-        }
+        add_leakage_capped(basis, coeffs, leak2, max_basis);
         t.expand2_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
@@ -1378,6 +1366,7 @@ impl LindbladSpec {
         t.expm2_us = t0.elapsed().as_micros() as u64;
 
         prune_basis(basis, coeffs, drop_tol, protected);
+        cap_basis(basis, coeffs, max_basis, protected);
 
         Ok(t)
     }
@@ -1387,7 +1376,7 @@ impl LindbladSpec {
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        tau_add: f64,
+        max_basis: usize,
         drop_tol: f64,
         protected: &[Word],
     ) -> Result<(), Error> {
@@ -1395,13 +1384,8 @@ impl LindbladSpec {
         // coefficients followed by zeros for the newly-added leakage strings.
         // We rely on `coeffs` itself as the pre-step buffer for the corrector
         // — no `.clone()` is needed because `expm_step` only borrows it.
-        let leak = self.leakage_with_prune(basis, coeffs, protected, Some(tau_add))?;
-        for (w, v) in leak {
-            if v.abs() > tau_add {
-                basis.push(w);
-                coeffs.push(0.0);
-            }
-        }
+        let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis)?;
+        add_leakage_capped(basis, coeffs, leak, max_basis);
         // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
         // new owned vector with the predicted state.
         let coeffs_predict = self.expm_step(basis, dt, coeffs);
@@ -1409,18 +1393,14 @@ impl LindbladSpec {
         // we no longer need `coeffs_predict`. Extend `coeffs` with zeros for
         // any newly-added second-hop strings so it remains a valid input
         // (pre-step state) for the corrector.
-        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, Some(tau_add))?;
+        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, max_basis)?;
         drop(coeffs_predict);
-        for (w, v) in leak2 {
-            if v.abs() > tau_add {
-                basis.push(w);
-                coeffs.push(0.0);
-            }
-        }
+        add_leakage_capped(basis, coeffs, leak2, max_basis);
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.
         *coeffs = self.expm_step(basis, dt, coeffs);
         // 5. Prune basis entries below `drop_tol` (protected words never dropped).
         prune_basis(basis, coeffs, drop_tol, protected);
+        cap_basis(basis, coeffs, max_basis, protected);
         Ok(())
     }
 
@@ -1600,6 +1580,72 @@ fn prune_basis(basis: &mut Vec<Word>, coeffs: &mut Vec<f64>, drop_tol: f64, prot
     }
     basis.truncate(write);
     coeffs.truncate(write);
+}
+
+/// Global max-basis cap (PauliStrings.jl-style top-M trim): keep only the
+/// `max_basis` largest-|coeff| terms (protected strings always kept),
+/// dropping the rest. Rank-based total-basis bound; dual of `drop_tol`.
+/// A `max_basis` large enough to cover the whole basis is a no-op.
+fn cap_basis(basis: &mut Vec<Word>, coeffs: &mut Vec<f64>, max_basis: usize, protected: &[Word]) {
+    if basis.len() <= max_basis {
+        return;
+    }
+    let protected_set: FxHashSet<&Word> = protected.iter().collect();
+    let n_prot = basis.iter().filter(|w| protected_set.contains(w)).count();
+    let slots = max_basis.saturating_sub(n_prot);
+    let mut mags: Vec<f64> = basis
+        .iter()
+        .zip(coeffs.iter())
+        .filter(|(w, _)| !protected_set.contains(w))
+        .map(|(_, c)| c.abs())
+        .collect();
+    let cutoff = if slots == 0 {
+        f64::INFINITY
+    } else if slots >= mags.len() {
+        return;
+    } else {
+        let k = slots - 1;
+        mags.select_nth_unstable_by(k, |a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        mags[k]
+    };
+    let mut write = 0;
+    for read in 0..basis.len() {
+        if protected_set.contains(&basis[read]) || coeffs[read].abs() >= cutoff {
+            if write != read {
+                basis.swap(write, read);
+                coeffs.swap(write, read);
+            }
+            write += 1;
+        }
+    }
+    basis.truncate(write);
+    coeffs.truncate(write);
+}
+
+/// Add the largest leakage strings to the basis, up to the available room
+/// `room = max_basis − basis.len()` — so the in-step basis (hence the
+/// expm/leakage peak memory) never exceeds `max_basis`. New strings get
+/// coefficient 0; the surrounding expm fills them. No magnitude filter: the
+/// top-`room` by `|leakage|` are added (a large `max_basis` adds them all).
+fn add_leakage_capped(
+    basis: &mut Vec<Word>,
+    coeffs: &mut Vec<f64>,
+    mut leak: Vec<(Word, f64)>,
+    max_basis: usize,
+) {
+    let room = max_basis.saturating_sub(basis.len());
+    if leak.len() > room {
+        if room > 0 {
+            leak.select_nth_unstable_by(room - 1, |a, b| {
+                b.1.abs().partial_cmp(&a.1.abs()).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        leak.truncate(room);
+    }
+    for (w, _) in leak {
+        basis.push(w);
+        coeffs.push(0.0);
+    }
 }
 
 /// Build a `word → row` map for a basis assumed to contain unique Pauli
@@ -1948,12 +1994,16 @@ mod tests {
 
         let protected: Vec<Word> = Vec::new();
         for _ in 0..n_steps {
-            let tau_add = 1.0; // very loose — no leakage adds
+            // Large max_basis: rank cap never binds, so the real path
+            // enriches fully (adds every leakage string). Match the
+            // complex path by setting its tau_add=0.0 (also full
+            // enrichment) so the two stay in lock-step at k=0.
+            let tau_add = 0.0;
             spec.pc_step(
                 &mut basis_r,
                 &mut coeffs_r,
                 dt,
-                tau_add,
+                10_000_000,
                 0.0,
                 &protected,
                 None,
@@ -2052,29 +2102,29 @@ mod tests {
 
         let protected: Vec<Word> = Vec::new();
         for _ in 0..n_steps {
-            // tau_add chosen large enough that pc_step doesn't add any
-            // new strings beyond what the Krylov-expm naturally reaches
-            // through the basis already present — i.e. we want NO
-            // leakage enrichment, only the expm step (closest analog of
-            // standard PP). Set tau_add = +infinity → leakage threshold
-            // never met → expand step is a no-op.
-            let tau_add = f64::INFINITY;
+            // Set max_basis == current basis size so room = 0: NO leakage
+            // enrichment, only the expm step (closest analog of standard
+            // PP — the regime where merging commutes with evolution).
+            // drop_tol = 0 → no truncation. This reproduces the old
+            // tau_add = +∞ no-add behaviour under the rank-cap API.
+            let max_basis_u = basis_u.len();
             spec.pc_step(
                 &mut basis_u,
                 &mut coeffs_u,
                 dt,
-                tau_add,
+                max_basis_u,
                 0.0, // drop_tol = 0 → no truncation
                 &protected,
                 None,
             )
             .unwrap();
 
+            let max_basis_m = basis_m.len();
             spec.pc_step(
                 &mut basis_m,
                 &mut coeffs_m,
                 dt,
-                tau_add,
+                max_basis_m,
                 0.0,
                 &protected,
                 None,

@@ -49,7 +49,7 @@ gamma = 1.0
 alpha = 1.0
 dt = 0.05
 n_steps = 20
-tau_add = 1e-8
+max_basis = 10_000_000  # large: rank cap never binds (full enrichment)
 max_cores = 4
 warmup_steps = 4
 model = "long-range"  # "nn" or "long-range"
@@ -110,7 +110,7 @@ L_op = Lindbladian(L, h_terms, jump_terms)
 # that size, isolating thread-count effects from JIT cache state.
 
 # %%
-def run_pc_steps(L_op, L, site0, dt, n_steps, tau_add, num_threads):
+def run_pc_steps(L_op, L, site0, dt, n_steps, max_basis, num_threads):
     z_strings = ["I" * j + "Z" + "I" * (L - j - 1) for j in range(L)]
     basis = [z_strings[site0]]
     coeffs = np.array([1.0])
@@ -122,7 +122,7 @@ def run_pc_steps(L_op, L, site0, dt, n_steps, tau_add, num_threads):
             basis,
             coeffs,
             dt,
-            tau_add,
+            max_basis,
             protected=protected,
             num_threads=num_threads,
         )
@@ -139,7 +139,7 @@ def run_pc_steps(L_op, L, site0, dt, n_steps, tau_add, num_threads):
 # %%
 site0 = L // 2
 for n in range(1, max_cores + 1):
-    run_pc_steps(L_op, L, site0, dt, warmup_steps, tau_add, n)
+    run_pc_steps(L_op, L, site0, dt, warmup_steps, max_basis, n)
 
 
 # %% [markdown]
@@ -148,7 +148,7 @@ for n in range(1, max_cores + 1):
 # %%
 results = []
 for n in range(1, max_cores + 1):
-    times, basis_size = run_pc_steps(L_op, L, site0, dt, n_steps, tau_add, n)
+    times, basis_size = run_pc_steps(L_op, L, site0, dt, n_steps, max_basis, n)
     first = times[0] * 1000.0
     steady = median(times[1:]) * 1000.0
     results.append({"threads": n, "first_ms": first, "steady_ms": steady,

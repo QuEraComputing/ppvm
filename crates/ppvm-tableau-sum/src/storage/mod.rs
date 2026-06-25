@@ -22,6 +22,7 @@ use num::{
     Complex, One, PrimInt, Zero,
     complex::{Complex64, ComplexFloat},
 };
+use ppvm_pauli_word::pattern::NotIdentity;
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
@@ -289,8 +290,8 @@ where
 /// cloning, materializing the tableau only for surviving new entries.
 #[derive(Clone, Copy, Debug)]
 pub enum BranchMutation {
-    /// Apply Pauli `op` (1=X, 2=Y, 3=Z) at `addr0`: flips per-row sign bits only.
-    Pauli { op: u8, addr0: usize },
+    /// Apply a non-identity Pauli at `addr0`: flips per-row sign bits only.
+    Pauli { op: NotIdentity, addr0: usize },
     /// Mark qubit `q` lost (set is_lost[q] = true).
     Loss { q: usize },
 }
@@ -307,10 +308,9 @@ pub(crate) fn apply_branch_mutation<T, I, C>(
 {
     match m {
         BranchMutation::Pauli { op, addr0 } => match op {
-            1 => tab.x(addr0),
-            2 => tab.y(addr0),
-            3 => tab.z(addr0),
-            _ => {}
+            NotIdentity::X => tab.x(addr0),
+            NotIdentity::Y => tab.y(addr0),
+            NotIdentity::Z => tab.z(addr0),
         },
         BranchMutation::Loss { q } => {
             tab.is_lost[q] = true;
@@ -398,10 +398,9 @@ where
                 let x: bool = bit_at(xw, word_idx, bit);
                 let z: bool = bit_at(zw, word_idx, bit);
                 let flip = match op {
-                    1 => z,
-                    2 => x ^ z,
-                    3 => x,
-                    _ => false,
+                    NotIdentity::X => z,
+                    NotIdentity::Y => x ^ z,
+                    NotIdentity::Z => x,
                 };
                 let virt_phase = rp.phase ^ ((flip as u8) << 1);
                 if re.phase != virt_phase {

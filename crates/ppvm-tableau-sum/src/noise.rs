@@ -8,6 +8,7 @@ use num::{
     Complex, One, PrimInt, ToPrimitive, Zero,
     complex::{Complex64, ComplexFloat},
 };
+use ppvm_pauli_word::pattern::NotIdentity;
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
@@ -251,21 +252,30 @@ where
 
                 branches.push((
                     parent_idx,
-                    BranchMutation::Pauli { op: 1, addr0 },
+                    BranchMutation::Pauli {
+                        op: NotIdentity::X,
+                        addr0,
+                    },
                     p_sum.clone() * p[0].clone(),
                     word_fp,
                     phase_loss ^ dx,
                 ));
                 branches.push((
                     parent_idx,
-                    BranchMutation::Pauli { op: 2, addr0 },
+                    BranchMutation::Pauli {
+                        op: NotIdentity::Y,
+                        addr0,
+                    },
                     p_sum.clone() * p[1].clone(),
                     word_fp,
                     phase_loss ^ dy,
                 ));
                 branches.push((
                     parent_idx,
-                    BranchMutation::Pauli { op: 3, addr0 },
+                    BranchMutation::Pauli {
+                        op: NotIdentity::Z,
+                        addr0,
+                    },
                     p_sum.clone() * p[2].clone(),
                     word_fp,
                     phase_loss ^ dz,

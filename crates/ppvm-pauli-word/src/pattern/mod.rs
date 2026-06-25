@@ -10,4 +10,4 @@ mod parse;
 mod trace;
 
 pub use contains::Contains;
-pub use data::PauliPattern;
+pub use data::{NotIdentity, PauliPattern};

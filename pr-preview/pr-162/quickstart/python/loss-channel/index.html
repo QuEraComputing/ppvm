@@ -1,0 +1,329 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="ppvm — fast Pauli propagation and stabilizer-tableau quantum simulator."><title>Python Quick Start — Loss Channel — ppvm</title><script>
+      (() => {
+        const stored = localStorage.getItem("ppvm-theme") || "auto";
+        const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const resolved = stored === "auto" ? (sysDark ? "dark" : "light") : stored;
+        document.documentElement.setAttribute("data-theme", resolved);
+        document.documentElement.setAttribute("data-theme-pref", stored);
+      })();
+    </script><link rel="stylesheet" href="/ppvm/pr-preview/pr-162/_astro/Base.BN0a5DSp.css"></head> <body> <header class="masthead"> <div class="masthead-inner"> <a class="brand" href="/ppvm/pr-preview/pr-162/"> <span class="brand-mark" aria-hidden="true"></span> <span class="brand-mono">ppvm</span> <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span> </a> <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation menu"> <span class="nav-toggle-bars" aria-hidden="true"></span> </button> <nav class="nav-links" id="primary-nav"> <a href="/ppvm/pr-preview/pr-162/">Overview</a><a href="/ppvm/pr-preview/pr-162/quickstart" aria-current="page">Quick Start</a><a href="/ppvm/pr-preview/pr-162/examples">Examples</a><a href="/ppvm/pr-preview/pr-162/develop">Develop</a><a href="/ppvm/pr-preview/pr-162/api">Reference</a> <div class="theme-toggle" role="group" aria-label="Theme"> <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path> </svg> </button> <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path> </svg> </button> <button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <rect x="3" y="4" width="18" height="13" rx="2"></rect> <path d="M8 21h8M12 17v4"></path> </svg> </button> </div> </nav> </div> </header> <main> <div class="page-shell page-shell--3col"> <details class="page-sections side-nav" aria-label="Sections"> <summary class="page-toc-label">Sections</summary> <ol> <li> <a href="/ppvm/pr-preview/pr-162/quickstart/python">§ 1 Install</a> </li><li> <a href="/ppvm/pr-preview/pr-162/quickstart/python/stim">§ 2 Stim circuits &amp; sampling</a> </li><li> <a href="/ppvm/pr-preview/pr-162/quickstart/python/tableau">§ 3 Generalized Tableau</a> </li><li> <a href="/ppvm/pr-preview/pr-162/quickstart/python/pauli-propagation">§ 4 Pauli Propagation</a> </li><li> <a href="/ppvm/pr-preview/pr-162/quickstart/python/loss-channel" aria-current="page">§ 5 Loss channel details</a> </li><li> <a href="/ppvm/pr-preview/pr-162/quickstart/python/next-steps">§ 6 Next steps</a> </li> </ol> </details> <div class="page-toc-content">  <article class="shell narrow qs-page qs-page--python tutorial"> <div class="titleblock"> <div class="eyebrow"><a href="/ppvm/pr-preview/pr-162/quickstart/python">Python Quick Start</a></div> <h1>Loss Channel Details</h1> <p class="byline">
+Mathematical background for simulating qubit loss with
+<a href="/ppvm/pr-preview/pr-162/api#py-ppvm-paulisum-LossyPauliSum"><code>LossyPauliSum</code></a>.
+        For day-to-day usage, see
+<a href="/ppvm/pr-preview/pr-162/quickstart/python/pauli-propagation#loss">§ 4 →
+        Simulating loss</a>.
+</p> </div> <section id="basis"> <h2>Updated Pauli basis</h2> <p>
+We can include loss in qubit simulation by adding a third state,
+        which we will call the leakage state $|L\rangle$. In order to
+        include this in Pauli Propagation, we extend the set of Pauli basis
+        operators by an additional operator $L = |L\rangle\langle L|$,
+        which is the projector on the leakage state.
+</p> <p>The complete set of Pauli operators we use to describe any Pauli String is then</p> <p>$$\{I, X, Y, Z, L\}.$$</p> <p>
+Neglecting coherences between the qubit subspace and the leakage
+        state, this basis fully describes the three-level system.
+</p> <p>For clarity, the corresponding matrix definitions are</p> <p>$$I = \begin{pmatrix} 1 &amp; 0 &amp; 0 \\ 0 &amp; 1 &amp; 0 \\ 0 &amp; 0 &amp; 0 \end{pmatrix}, ~~ X = \begin{pmatrix} 0 &amp; 1 &amp; 0 \\ 1 &amp; 0 &amp; 0 \\ 0 &amp; 0 &amp; 0 \end{pmatrix}, ~~ Y = \begin{pmatrix} 0 &amp; -i &amp; 0 \\ i &amp; 0 &amp; 0 \\ 0 &amp; 0 &amp; 0 \end{pmatrix},$$</p> <p>$$Z = \begin{pmatrix} 1 &amp; 0 &amp; 0 \\ 0 &amp; -1 &amp; 0 \\ 0 &amp; 0 &amp; 0 \end{pmatrix}, ~~ L = \begin{pmatrix} 0 &amp; 0 &amp; 0 \\ 0 &amp; 0 &amp; 0 \\ 0 &amp; 0 &amp; 1 \end{pmatrix}.$$</p> <aside class="callout">
+In the basis above, gates <strong>no longer correspond to the
+        matrix</strong> definitions. The reason for this is simple:
+        applying e.g. an $X$ gate to a qubit in $|L\rangle$ will leave the
+        qubit invariant. However, it is obvious that multiplying any Pauli
+        $P \neq L$ from the basis with $L$ will give 0. This would
+        correspond to a zero-amplitude state. The implementation takes
+        that into account accordingly.
+</aside> </section> <section id="loss-channel"> <h2>Loss channel</h2> <p>
+The action of an independent loss channel is to map part of the
+        population from the qubit subspace into the $|L\rangle$ state. This
+        corresponds to reducing the trace of the density operator.
+</p> <p>The Kraus operators for a loss channel are</p> <p>$$K_0 = \sqrt{1 - p_L}\, I + |L\rangle\langle L|, ~~ K_1 = \sqrt{p_L}\, |L\rangle\langle 0|, ~~ K_2 = \sqrt{p_L}\, |L\rangle\langle 1|,$$</p> <p>where $p_L$ is the probability of losing a qubit.</p> <p>The action of the channel on the Pauli basis is</p> <p>$$\mathcal{E}(P) = (1 - p_L)\, P, ~~ P \in \{I, X, Y, Z\},$$</p> <p>$$\mathcal{E}(L) = L + p_L\, I.$$</p> <p>
+Note that this channel is not symmetric under forward and backward
+        propagation. The above action on Paulis corresponds to the
+<strong>adjoint</strong> channel: $\langle A \rangle = \operatorname{tr}(A\, \mathcal{E}[\rho]) = \operatorname{tr}(\sum_i K_i^\dagger A K_i\, \rho)$.
+</p> <p>
+The action of the channel is clear from a physical perspective:
+        whenever a qubit undergoes a loss channel, we lose population out
+        of the qubit subspace.
+</p> <p>
+However, if there is no loss present in the initial state, we will
+        never map any part of a Pauli string to $L$. This might seem
+        surprising, but is accurate. Under the loss channel described
+        here, we simply lose population out of the qubit subspace. Any
+        expectation value of a qubit-subspace operator will tend towards
+        $0$ with increasing loss.
+</p> <p>
+An intuitive picture is also to consider a pure state which
+        describes a single probabilistic trajectory through the circuit.
+        Before loss, a state vector in the qubit subspace is just
+</p> <p>$$|\psi\rangle = \begin{pmatrix} c_0 \\ c_1 \\ 0 \end{pmatrix}.$$</p> <p>Should the qubit be lost, the resulting state vector is</p> <p>$$|\psi\rangle = |L\rangle.$$</p> <p>
+Since under the described dynamics there is no way to recover a
+        qubit once it has been lost, any trajectory where the qubit has
+        been lost will contribute a 0 overlap for any qubit-subspace
+        operator $Q$,
+</p> <p>$$\langle \psi| Q |\psi\rangle = 0.$$</p> <p>
+While this is conceptually accurate, the resulting loss does not
+        capture what happens on hardware. If there is no loss detection,
+        then a qubit that has been lost will be falsely counted as being in
+        the $|0\rangle$ state when measured. If there is loss detection, we
+        could either reject the trajectory via post-selection (equivalent
+        to having no loss in the system), or reset the qubit to $|0\rangle$
+        during the circuit.
+</p> </section> <section id="reset-channel"> <h2>Reset channel</h2> <p>
+To accurately model the hardware behaviour, we extend the above
+        description by a reset channel that incoherently resets a lost
+        qubit into the $|0\rangle$ state.
+</p> <p>
+The underlying dynamics of this channel are equivalent to having
+        amplitude damping from $|L\rangle$ to the $|0\rangle$ state. The
+        Kraus operators are
+</p> <p>$$K_0 = I, ~~~ K_1 = |0\rangle\langle L|.$$</p> <p>The corresponding mappings of the Pauli basis are</p> <p>$$\mathcal{E}(P) = P, ~ P \in \{X, Y\},$$</p> <p>$$\mathcal{E}(P) = P + L, ~ P \in \{I, Z\},$$</p> <p>$$\mathcal{E}(L) = 0.$$</p> <p>Intuitively, these mappings can be understood as:</p> <ul> <li>Coherences remain unchanged.</li> <li>
+Lost qubits are reset: lost population is removed ($L$ is set to
+          0) and added to the $|0\rangle$ state, which is equivalent to a
+          positive contribution to both $Z$ and $I$.
+</li> </ul> <p>
+This reset channel is sufficient to model either actually resetting
+        a lost qubit, or the error that arises when falsely counting a lost
+        qubit as 0. For the latter, we simply apply the loss channel to all
+        qubits at the end of the circuit. This ensures lost qubits don't
+        partake in the dynamics of the circuit, but are then counted as 0
+        in a measurement.
+</p> <p>
+Note that since we are doing Pauli Propagation, we always have to
+        apply the adjoint circuit. Thus, resetting lost qubits at the end
+        of the circuit means we apply the reset channel at the very
+        beginning when propagating a Pauli string.
+</p> </section> <section id="scaling"> <h2>Comment on branching and scaling</h2> <p>
+Both channels above branch, which without truncation would lead to
+        exponential scaling.
+</p> <p>
+For the loss channel, it is easy to see that coefficient truncation
+        can deal with branching, since it only branches on $L \to p_L I +
+        L$. Branches therefore scale with $p_L$, which is usually $\ll 1$.
+</p> <p>
+The reset channel, on the other hand, branches on both $I$ and $Z$
+        into $L$ without any leading coefficient. The probability of having
+        lost the $i$-th qubit at the end of the circuit is just given by
+        $\langle L_i \rangle$. Since there are no coherences between $L$
+        and the qubit subspace, expectation values factorize — for any
+        Pauli string with $P_i \neq L_i$:
+</p> <p>$$\langle P_1 L_2 P_3 P_4 L_5 P_6 \ldots \rangle = \langle L_2 \rangle \langle L_5 \rangle \langle P_1 P_3 P_4 P_6 \ldots \rangle.$$</p> <p>
+In a slight abuse of notation, we note that $\langle L_i \rangle
+        \propto p_L$; the contribution of Pauli strings that have an $L$ on
+        many positions is very small. Therefore, we can truncate these to
+        suppress exponential branching.
+</p> <p>
+In practice, this works similarly to large-weight truncation and is
+        achieved by a designated truncation strategy, configured through
+<code>max_loss_weight</code> on
+<a href="/ppvm/pr-preview/pr-162/api#py-ppvm-paulisum-LossyPauliSum"><code>LossyPauliSum</code></a>.
+</p> </section> </article>  <nav class="section-pager" aria-label="Section navigation"> <a class="section-pager-link section-pager-prev" href="/ppvm/pr-preview/pr-162/quickstart/python/pauli-propagation" rel="prev"> <span class="section-pager-dir">← Previous</span> <span class="section-pager-label">§ 4 Pauli Propagation</span> </a> <a class="section-pager-link section-pager-next" href="/ppvm/pr-preview/pr-162/quickstart/python/next-steps" rel="next"> <span class="section-pager-dir">Next →</span> <span class="section-pager-label">§ 6 Next steps</span> </a> </nav> </div> <details class="page-toc page-toc--right side-nav" aria-label="On this page"> <summary class="page-toc-label">On this page</summary> <ol> <li><a href="#basis" data-toc-link="#basis">Updated Pauli basis</a></li><li><a href="#loss-channel" data-toc-link="#loss-channel">Loss channel</a></li><li><a href="#reset-channel" data-toc-link="#reset-channel">Reset channel</a></li><li><a href="#scaling" data-toc-link="#scaling">Branching and scaling</a></li> </ol> </details> </div> </main> <script>
+        // Scroll-spy: mark the TOC link for the section currently in view.
+        // Strategy: track each section's distance from the top of the
+        // viewport and pick whichever sits closest to (but above) a small
+        // anchor line near the top, so the link flips just as a section's
+        // heading scrolls past.
+        (() => {
+          const links = Array.from(document.querySelectorAll(".page-toc [data-toc-link]"));
+          if (!links.length) return;
+
+          // Pair each link with its target heading.
+          const targets = links
+            .map((a) => {
+              const href = a.getAttribute("data-toc-link") || "";
+              const id = href.startsWith("#") ? href.slice(1) : null;
+              const el = id ? document.getElementById(id) : null;
+              return el ? { link: a, el } : null;
+            })
+            .filter(Boolean);
+          if (!targets.length) return;
+
+          const ANCHOR = 120; // px from top of viewport
+
+          function update() {
+            let activeIdx = 0;
+            for (let i = 0; i < targets.length; i++) {
+              const top = targets[i].el.getBoundingClientRect().top;
+              if (top - ANCHOR <= 0) activeIdx = i;
+              else break;
+            }
+            for (let i = 0; i < targets.length; i++) {
+              const isActive = i === activeIdx;
+              targets[i].link.setAttribute("aria-current", isActive ? "true" : "false");
+            }
+          }
+
+          update();
+          window.addEventListener("scroll", update, { passive: true });
+          window.addEventListener("resize", update);
+        })();
+      </script> <script>
+      // Mobile navigation drawer + responsive open-state for the
+      // sidebar TOCs. On wide viewports the TOCs are always open and
+      // the disclosure widget on .side-nav is visually neutralised by
+      // CSS; on narrow viewports they default to closed so the long
+      // navigation list doesn't push content below the fold.
+      (() => {
+        const mq = window.matchMedia("(min-width: 901px)");
+        const sideNavs = document.querySelectorAll("details.side-nav");
+        function syncSideNavs() {
+          for (const d of sideNavs) {
+            if (mq.matches) d.setAttribute("open", "");
+            else d.removeAttribute("open");
+          }
+        }
+        syncSideNavs();
+        mq.addEventListener("change", syncSideNavs);
+
+        const toggle = document.querySelector(".nav-toggle");
+        const nav = document.getElementById("primary-nav");
+        if (toggle && nav) {
+          function setOpen(open) {
+            toggle.setAttribute("aria-expanded", open ? "true" : "false");
+            toggle.setAttribute(
+              "aria-label",
+              open ? "Close navigation menu" : "Open navigation menu",
+            );
+            nav.toggleAttribute("data-open", open);
+          }
+          toggle.addEventListener("click", () => {
+            const open = toggle.getAttribute("aria-expanded") !== "true";
+            setOpen(open);
+          });
+          // Close after following an in-page link on mobile. Use
+          // closest("a") so this stays correct if a nav link ever
+          // wraps an icon or other inline element.
+          nav.addEventListener("click", (e) => {
+            if (e.target && e.target.closest && e.target.closest("a")) {
+              setOpen(false);
+            }
+          });
+          // Reset state when crossing the breakpoint.
+          const mqNav = window.matchMedia("(min-width: 721px)");
+          mqNav.addEventListener("change", () => setOpen(false));
+        }
+      })();
+    </script> <script>
+      // Inject a copy button into every <pre> block.
+      (() => {
+        const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+        const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+        for (const pre of document.querySelectorAll("pre")) {
+          if (pre.querySelector(".copy-btn")) continue;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "copy-btn";
+          btn.setAttribute("aria-label", "Copy code to clipboard");
+          btn.innerHTML = COPY_SVG + "<span>Copy</span>";
+          pre.appendChild(btn);
+
+          btn.addEventListener("click", async () => {
+            // nbconvert-rendered cells have no <code> inside <pre>, so we'd
+            // fall back to pre.innerText — which includes this button's
+            // "Copy" label. Strip copy buttons from a clone before reading.
+            const code = pre.querySelector("code");
+            let raw;
+            if (code) {
+              raw = code.innerText;
+            } else {
+              const clone = pre.cloneNode(true);
+              for (const el of clone.querySelectorAll(".copy-btn")) el.remove();
+              raw = clone.innerText;
+            }
+            const text = raw.replace(/\n$/, "");
+            try {
+              await navigator.clipboard.writeText(text);
+            } catch {
+              // Fallback for non-secure contexts.
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.style.position = "fixed";
+              ta.style.opacity = "0";
+              document.body.appendChild(ta);
+              ta.select();
+              try { document.execCommand("copy"); } catch {}
+              document.body.removeChild(ta);
+            }
+            btn.dataset.state = "copied";
+            btn.innerHTML = CHECK_SVG + "<span>Copied</span>";
+            setTimeout(() => {
+              btn.removeAttribute("data-state");
+              btn.innerHTML = COPY_SVG + "<span>Copy</span>";
+            }, 1500);
+          });
+        }
+      })();
+    </script> <script>
+      // Theme switcher: light / dark / auto, persisted in localStorage.
+      (() => {
+        const root = document.documentElement;
+        const mql = window.matchMedia("(prefers-color-scheme: dark)");
+        const buttons = document.querySelectorAll(".theme-toggle button[data-theme-set]");
+
+        function apply(pref) {
+          const resolved = pref === "auto" ? (mql.matches ? "dark" : "light") : pref;
+          root.setAttribute("data-theme", resolved);
+          root.setAttribute("data-theme-pref", pref);
+          localStorage.setItem("ppvm-theme", pref);
+          for (const b of buttons) {
+            b.setAttribute("aria-pressed", b.dataset.themeSet === pref ? "true" : "false");
+          }
+        }
+
+        const initial = localStorage.getItem("ppvm-theme") || "auto";
+        apply(initial);
+
+        for (const b of buttons) {
+          b.addEventListener("click", () => apply(b.dataset.themeSet));
+        }
+
+        mql.addEventListener("change", () => {
+          if ((localStorage.getItem("ppvm-theme") || "auto") === "auto") apply("auto");
+        });
+      })();
+    </script> <button type="button" class="back-to-top" aria-label="Back to top" hidden> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M12 19V5"></path> <path d="m5 12 7-7 7 7"></path> </svg> </button> <script>
+      // Show the back-to-top button after the reader has scrolled past
+      // ~1.2× the viewport — far enough that "scroll back up" is a real
+      // chore. Clicking smooth-scrolls to the top and (for keyboard
+      // users) returns focus to the masthead brand.
+      (() => {
+        const btn = document.querySelector(".back-to-top");
+        if (!btn) return;
+        const threshold = () => Math.max(window.innerHeight * 1.2, 600);
+        function sync() {
+          const show = window.scrollY > threshold();
+          btn.toggleAttribute("hidden", !show);
+        }
+        btn.addEventListener("click", () => {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          const brand = document.querySelector(".brand");
+          if (brand && brand.focus) brand.focus({ preventScroll: true });
+        });
+        window.addEventListener("scroll", sync, { passive: true });
+        window.addEventListener("resize", sync);
+        sync();
+      })();
+    </script> <footer class="foot"> <div class="foot-inner"> <span>PPVM · QuEra Computing · open source, Apache License 2.0</span> <span> <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
+          documentation generated <time>2026-06-25</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (typeof renderMathInElement !== "function") return;
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$",  right: "$",  display: false },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "\\[", right: "\\]", display: true },
+          ],
+          // Skip code spans and code blocks — `[7, 16]` and friends
+          // shouldn't accidentally trigger as math delimiters.
+          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+          throwOnError: false,
+        });
+      });
+    </script>  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js"></script> <script>
+      (() => {
+        if (typeof hljs === "undefined") return;
+        // Only highlight blocks that opt in via `class="language-…"`.
+        // Unhinted blocks (project trees, prompts, ASCII art) stay plain.
+        for (const el of document.querySelectorAll("pre code[class*='language-']")) {
+          hljs.highlightElement(el);
+        }
+      })();
+    </script> </body> </html>

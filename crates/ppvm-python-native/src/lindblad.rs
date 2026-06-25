@@ -441,8 +441,14 @@ impl LindbladSpec {
     /// Pass `canonicalize_first=True` to enforce this on entry (rewrites
     /// each basis row to its canonical rep; coefficients unchanged).
     /// Default `False` — the caller is trusted.
+    ///
+    /// `max_basis` is a hard rank cap on the live orbit-rep basis:
+    /// enrichment adds at most `max_basis − basis.len()` of the largest
+    /// leakage reps and the post-step basis is trimmed to the top-`max_basis`
+    /// by `|c|` (protected reps always kept). Pass a large value for the
+    /// near-exact case. `drop_tol` additionally prunes by magnitude.
     #[pyo3(signature = (
-        basis, coeffs, dt, tau_add,
+        basis, coeffs, dt, max_basis,
         group, momentum,
         drop_tol = 0.0,
         protected = None,
@@ -455,7 +461,7 @@ impl LindbladSpec {
         basis: PyReadonlyArray2<'py, u8>,
         coeffs: PyReadonlyArray1<'py, Complex64>,
         dt: f64,
-        tau_add: f64,
+        max_basis: usize,
         group: &crate::symmetry::TranslationGroup,
         momentum: PyReadonlyArray1<'py, i32>,
         drop_tol: f64,
@@ -501,7 +507,7 @@ impl LindbladSpec {
             &mut basis_words,
             &mut coeffs_vec,
             dt,
-            tau_add,
+            max_basis,
             drop_tol,
             &protected_words,
             group.core(),

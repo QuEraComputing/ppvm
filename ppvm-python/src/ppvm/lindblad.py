@@ -321,10 +321,10 @@ class Lindbladian:
         basis_arr: np.ndarray,
         coeffs: np.ndarray,
         dt: float,
-        tau_add: float,
+        max_basis: int,
         group,
         momentum: np.ndarray,
-        drop_tol: float = 0.0,
+        drop_tol: float = 1e-12,
         protected_arr: np.ndarray | None = None,
         canonicalize_first: bool = False,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -335,6 +335,14 @@ class Lindbladian:
         ``coeffs`` are complex. Phase-aware action + complex CSR. Basis
         is ~``|group|×`` smaller than the equivalent full-basis complex
         evolution, and the reduction persists across every step.
+
+        Truncation. ``max_basis`` is a hard rank cap on the live orbit-rep
+        basis: enrichment adds at most ``max_basis - len(basis)`` of the
+        largest leakage reps, and the post-step basis is trimmed to the
+        top-``max_basis`` reps by ``|c|`` (``protected`` reps always kept).
+        Pass a large value (e.g. ``10_000_000``) for the near-exact,
+        uncapped case. ``drop_tol`` additionally prunes reps whose absolute
+        coefficient is below the threshold after the corrector.
 
         ``basis_arr`` is assumed to contain canonical reps only. Pass
         ``canonicalize_first=True`` to rewrite each row to its canonical
@@ -347,7 +355,7 @@ class Lindbladian:
             np.ascontiguousarray(basis_arr, dtype=np.uint8),
             np.ascontiguousarray(coeffs, dtype=np.complex128),
             float(dt),
-            float(tau_add),
+            int(max_basis),
             group,
             np.ascontiguousarray(momentum, dtype=np.int32),
             float(drop_tol),

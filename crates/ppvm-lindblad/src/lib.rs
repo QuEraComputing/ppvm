@@ -1783,8 +1783,13 @@ mod tests {
         let mut cf = coeffs_full.clone();
         let protected: Vec<Word> = Vec::new();
         for _ in 0..n_steps {
+            // Full enrichment (tau_add = 0.0 adds every leakage string):
+            // for a momentum eigenstate the leakage is pure-sector, so the
+            // full-basis and orbit-rep paths build corresponding bases and
+            // the projection theorem gives an exact match. The orbit-rep
+            // side uses a large max_basis so its rank cap never binds.
             spec.pc_step_complex(
-                &mut bf, &mut cf, dt, 1.0, 0.0, &protected, None, None, None,
+                &mut bf, &mut cf, dt, 0.0, 0.0, &protected, None, None, None,
             )
             .unwrap();
         }
@@ -1796,10 +1801,10 @@ mod tests {
         let mut br = basis_full.clone();
         let mut cr = coeffs_full.clone();
         canonicalize_pauli_sum_complex(&mut br, &mut cr, &group, &k);
-        // Evolve in orbit-rep form.
+        // Evolve in orbit-rep form (max_basis large ⇒ full enrichment).
         for _ in 0..n_steps {
             orbit_rep::pc_step_orbit_rep(
-                &spec, &mut br, &mut cr, dt, 1.0, 0.0, &protected, &group, &k,
+                &spec, &mut br, &mut cr, dt, 10_000_000, 0.0, &protected, &group, &k,
             )
             .unwrap();
         }

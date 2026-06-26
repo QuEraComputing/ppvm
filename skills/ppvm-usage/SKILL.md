@@ -106,8 +106,8 @@ With noise and truncation:
 ps = PauliSum.new(20, "Z" * 20, min_abs_coeff=1e-6, max_pauli_weight=8)
 for _ in range(50):
     for q in range(20):
-        ps.rx(q, theta=0.1)
         ps.depolarize1(q, p=1e-3)
+        ps.rx(q, theta=0.1)
     for q in range(19):
         ps.rzz(q, q + 1, theta=0.05)
 # Truncation has been applied throughout; no manual call needed.

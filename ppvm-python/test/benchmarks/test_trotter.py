@@ -46,12 +46,12 @@ def trotter(state):
     # application, to stay consistent with the Rust benchmark / PP.jl.
     for _ in range(steps):
         for i in range(N_QUBITS):
+            state.pauli_error(i, p=NOISE)
             state.rx(i, theta=theta_x)
-            state.pauli_error(i, p=NOISE)
         for i in range(N_QUBITS - 1):
-            state.rzz(i, i + 1, theta=theta_zz)
-            state.pauli_error(i, p=NOISE)
             state.pauli_error(i + 1, p=NOISE)
+            state.pauli_error(i, p=NOISE)
+            state.rzz(i, i + 1, theta=theta_zz)
 
 
 @pytest.mark.benchmark(group="trotter")

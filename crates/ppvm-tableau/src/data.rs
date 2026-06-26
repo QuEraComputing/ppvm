@@ -3,6 +3,9 @@
 
 use std::{fmt::Debug, marker::PhantomData};
 
+// Only the rayon branch-coefficient helpers coalesce into a map now; the apply
+// path and the default-feature branch path both use flat-Vec sort-merge/relabel.
+#[cfg(feature = "rayon")]
 use fxhash::FxHashMap as HashMap;
 
 use bitvec::array::BitArray;
@@ -473,7 +476,18 @@ where
     branch_coefficients_seq(items.iter().copied(), 2 * items.len(), params)
 }
 
-/// Sequential accumulation of apply coefficients.
+/// Sequential relabel of apply coefficients.
+///
+/// Pauli application sends every branch to `branch_index = idx ^ stab_anticomm_bits`.
+/// XOR by a fixed constant is a bijection, so distinct input indices always map
+/// to distinct branch indices: unlike the T-gate branch split (which emits two
+/// streams that genuinely collide), the apply path produces no index collisions
+/// at all. A per-index coalesce can therefore never merge two entries — the
+/// `entry()`-keyed map was pure overhead (hash every key + table allocation) for
+/// what is a straight relabel. We instead build a flat `Vec` in one sequential,
+/// prefetch-friendly pass and let the caller apply the magnitude cutoff. (The
+/// returned keys are unique by the bijection above; the `Vec` backing relies on
+/// that, exactly as the old map did implicitly.)
 fn apply_coefficients_seq<I, CoeffType>(
     items: impl IntoIterator<Item = (Complex<CoeffType>, I)>,
     capacity: usize,
@@ -481,15 +495,14 @@ fn apply_coefficients_seq<I, CoeffType>(
     destab_anticomm_bits: I,
     odd_phase_mask: I,
     phase_decomp: u8,
-) -> HashMap<I, Complex<CoeffType>>
+) -> Vec<(I, Complex<CoeffType>)>
 where
     I: TableauIndex,
     CoeffType: One + Zero + Clone + num::Num,
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    let mut map: HashMap<I, Complex<CoeffType>> =
-        HashMap::with_capacity_and_hasher(capacity, Default::default());
+    let mut out: Vec<(I, Complex<CoeffType>)> = Vec::with_capacity(capacity);
     for (coeff, idx) in items {
         debug_assert!(
             !(coeff.re == CoeffType::zero() && coeff.im == CoeffType::zero()),
@@ -505,15 +518,19 @@ where
         let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
         let phase_factor: Complex<CoeffType> =
             COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
-        let branch_coefficient = phase_factor * coeff;
-        *map.entry(branch_index).or_insert(Complex::zero()) += branch_coefficient;
+        out.push((branch_index, phase_factor * coeff));
     }
-    map
+    out
 }
 
-/// Accumulate coefficients for pauli application. When the coefficient count
-/// exceeds `RAYON_COEFF_THRESHOLD`, uses parallel map/collect followed by
-/// sequential accumulation. Below the threshold, falls back to sequential.
+/// Relabel coefficients for pauli application. When the coefficient count
+/// exceeds `RAYON_COEFF_THRESHOLD`, the per-element relabel runs as a parallel
+/// map; below the threshold it falls back to the sequential relabel.
+///
+/// Because the relabel `idx ^ stab_anticomm_bits` is a bijection (see
+/// [`apply_coefficients_seq`]), the parallel map's output already has unique
+/// keys — there is nothing to coalesce, so the result is collected straight into
+/// a flat `Vec` with no sequential fold afterwards.
 #[cfg(feature = "rayon")]
 fn apply_coefficients_parallel<I, CoeffType>(
     items: &[(Complex<CoeffType>, I)],
@@ -521,7 +538,7 @@ fn apply_coefficients_parallel<I, CoeffType>(
     destab_anticomm_bits: I,
     odd_phase_mask: I,
     phase_decomp: u8,
-) -> HashMap<I, Complex<CoeffType>>
+) -> Vec<(I, Complex<CoeffType>)>
 where
     I: TableauIndex + Send + Sync,
     CoeffType: One + Zero + Clone + Send + Sync + num::Num,
@@ -533,7 +550,7 @@ where
     if items.len() >= RAYON_COEFF_THRESHOLD && rayon::current_thread_index().is_none() {
         use rayon::prelude::*;
 
-        let pairs: Vec<(I, Complex<CoeffType>)> = items
+        return items
             .par_iter()
             .map(|&(coeff, idx)| {
                 let branch_index = idx ^ stab_anticomm_bits;
@@ -549,13 +566,6 @@ where
                 (branch_index, phase_factor * coeff)
             })
             .collect();
-
-        let mut map: HashMap<I, Complex<CoeffType>> =
-            HashMap::with_capacity_and_hasher(pairs.len(), Default::default());
-        for (branch_idx, branch_coeff) in pairs {
-            *map.entry(branch_idx).or_insert(Complex::zero()) += branch_coeff;
-        }
-        return map;
     }
 
     apply_coefficients_seq(

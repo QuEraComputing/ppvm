@@ -40,10 +40,10 @@ fn instruction_fragment() -> impl Strategy<Value = String> {
         // Tagged sugar
         Just("S[T] 0\n".to_string()),
         Just("S_DAG[T] 1\n".to_string()),
-        Just("I[R_X(theta=0.5)] 0\n".to_string()),
-        Just("I[R_Y(theta=1.25)] 1\n".to_string()),
-        Just("I[R_Z(theta=-0.5)] 2\n".to_string()),
-        Just("I[U3(theta=0.5, phi=1.0, lambda=1.5)] 0\n".to_string()),
+        Just("I[R_X(theta=0.5*pi)] 0\n".to_string()),
+        Just("I[R_Y(theta=1.25*pi)] 1\n".to_string()),
+        Just("I[R_Z(theta=-0.5*pi)] 2\n".to_string()),
+        Just("I[U3(theta=0.5*pi, phi=1.0*pi, lambda=1.5*pi)] 0\n".to_string()),
         // Noise
         Just("DEPOLARIZE1(0.05) 0\n".to_string()),
         Just("DEPOLARIZE2(0.05) 0 1\n".to_string()),

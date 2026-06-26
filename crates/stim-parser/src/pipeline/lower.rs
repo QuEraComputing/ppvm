@@ -445,7 +445,7 @@ fn exact_named_params<const N: usize>(
                     sink,
                 );
             }
-            TagParam::Named { key, value } => {
+            TagParam::Named { key, value, had_pi } => {
                 let Some(index) = required.iter().position(|required_key| key == required_key)
                 else {
                     return invalid_tag(
@@ -462,6 +462,17 @@ fn exact_named_params<const N: usize>(
                         instruction,
                         span,
                         format!("duplicate named parameter '{key}'"),
+                        sink,
+                    );
+                }
+                // Rotation/U3 angles are in half-turns: require the `<n>*pi` form,
+                // mirroring tsim, so a bare number can't be mistaken for radians.
+                if !had_pi {
+                    return invalid_tag(
+                        &tag.name,
+                        instruction,
+                        span,
+                        format!("parameter '{key}' must be written as <n>*pi (half-turns)"),
                         sink,
                     );
                 }
@@ -552,7 +563,7 @@ mod tests {
 
     #[test]
     fn identity_rotation_x_lowers() {
-        let prog = lower_extended("I[R_X(theta=0.5)] 0").expect("lower");
+        let prog = lower_extended("I[R_X(theta=0.5*pi)] 0").expect("lower");
         match &prog.instructions[0] {
             ExtendedInstruction::Rotation {
                 axis,
@@ -561,7 +572,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(*axis, Axis::X);
-                assert_eq!(*theta, 0.5);
+                assert!((*theta - 0.5 * std::f64::consts::PI).abs() < 1e-12);
                 assert_eq!(targets, &vec![0]);
             }
             other => panic!("{other:?}"),
@@ -570,7 +581,8 @@ mod tests {
 
     #[test]
     fn identity_u3_lowers() {
-        let prog = lower_extended("I[U3(theta=0.5, phi=1.0, lambda=1.5)] 0").expect("lower");
+        let prog =
+            lower_extended("I[U3(theta=0.5*pi, phi=1.0*pi, lambda=1.5*pi)] 0").expect("lower");
         match &prog.instructions[0] {
             ExtendedInstruction::U3 {
                 theta,
@@ -579,10 +591,36 @@ mod tests {
                 targets,
                 ..
             } => {
-                assert_eq!(*theta, 0.5);
-                assert_eq!(*phi, 1.0);
-                assert_eq!(*lambda, 1.5);
+                let pi = std::f64::consts::PI;
+                assert!((*theta - 0.5 * pi).abs() < 1e-12);
+                assert!((*phi - 1.0 * pi).abs() < 1e-12);
+                assert!((*lambda - 1.5 * pi).abs() < 1e-12);
                 assert_eq!(targets, &vec![0]);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn rotation_tag_without_pi_is_rejected() {
+        // Mirror tsim: rotation tag angles must be written as <n>*pi (half-turns).
+        let err = lower_extended("I[R_Z(theta=0.5)] 0").unwrap_err();
+        assert_eq!(err.last().unwrap().code, Some("invalid-tag"));
+    }
+
+    #[test]
+    fn u3_tag_without_pi_is_rejected() {
+        let err = lower_extended("I[U3(theta=0.5, phi=1.0, lambda=1.5)] 0").unwrap_err();
+        assert_eq!(err.last().unwrap().code, Some("invalid-tag"));
+    }
+
+    #[test]
+    fn rotation_tag_with_pi_is_accepted() {
+        let prog = lower_extended("I[R_Z(theta=0.5*pi)] 0").expect("lower");
+        match &prog.instructions[0] {
+            ExtendedInstruction::Rotation { axis, theta, .. } => {
+                assert_eq!(*axis, Axis::Z);
+                assert!((*theta - 0.5 * std::f64::consts::PI).abs() < 1e-12);
             }
             other => panic!("{other:?}"),
         }

@@ -69,8 +69,12 @@ fn write_tags(out: &mut dyn fmt::Write, tags: &[Tag]) -> fmt::Result {
                 }
                 match p {
                     TagParam::Positional(v) => write!(out, "{}", FloatLit(*v))?,
-                    TagParam::Named { key, value } => {
-                        write!(out, "{key}={}", FloatLit(*value))?;
+                    TagParam::Named { key, value, had_pi } => {
+                        if *had_pi {
+                            write!(out, "{key}={}*pi", FloatLit(*value / std::f64::consts::PI))?;
+                        } else {
+                            write!(out, "{key}={}", FloatLit(*value))?;
+                        }
                     }
                 }
             }
@@ -291,7 +295,10 @@ impl StimPrint for ExtendedInstruction {
                     Axis::Y => "R_Y",
                     Axis::Z => "R_Z",
                 };
-                write!(out, "I[{}(theta={})]", axis_tag, FloatLit(*theta))?;
+                // theta is radians; re-emit the half-turn `<n>*pi` form the
+                // rotation tags require (see exact_named_params).
+                let pi = std::f64::consts::PI;
+                write!(out, "I[{}(theta={}*pi)]", axis_tag, FloatLit(*theta / pi))?;
                 write_usize_targets(out, targets)?;
             }
             ExtendedInstruction::U3 {
@@ -301,12 +308,13 @@ impl StimPrint for ExtendedInstruction {
                 targets,
                 ..
             } => {
+                let pi = std::f64::consts::PI;
                 write!(
                     out,
-                    "I[U3(theta={}, phi={}, lambda={})]",
-                    FloatLit(*theta),
-                    FloatLit(*phi),
-                    FloatLit(*lambda),
+                    "I[U3(theta={}*pi, phi={}*pi, lambda={}*pi)]",
+                    FloatLit(*theta / pi),
+                    FloatLit(*phi / pi),
+                    FloatLit(*lambda / pi),
                 )?;
                 write_usize_targets(out, targets)?;
             }
@@ -381,9 +389,9 @@ mod tests {
 
     #[test]
     fn extended_printed_form_lowers_sugar_into_canonical_stim() {
-        let src = "S[T] 0\nI[R_X(theta=0.25)] 1\nI_ERROR[loss](0.01) 2\n";
+        let src = "S[T] 0\nI[R_X(theta=0.25*pi)] 1\nI_ERROR[loss](0.01) 2\n";
         let ast = parse_extended(src).unwrap();
-        let expected = "S[T] 0\nI[R_X(theta=0.25)] 1\nI_ERROR[loss](0.01) 2\n";
+        let expected = "S[T] 0\nI[R_X(theta=0.25*pi)] 1\nI_ERROR[loss](0.01) 2\n";
         assert_eq!(ast.to_stim(), expected);
     }
 

@@ -122,7 +122,7 @@ fn repeat_recurses_into_body() {
 
 #[test]
 fn repeat_promotes_extended_rotation_in_body() {
-    let p = parse_ok("REPEAT 2 { I[R_X(theta=0.25)] 0 }\n");
+    let p = parse_ok("REPEAT 2 { I[R_X(theta=0.25*pi)] 0 }\n");
     match &p.instructions[0] {
         ExtendedInstruction::Repeat { count, body, .. } => {
             assert_eq!(*count, 2);
@@ -135,7 +135,7 @@ fn repeat_promotes_extended_rotation_in_body() {
                     ..
                 } => {
                     assert!(matches!(axis, Axis::X));
-                    approx_eq(*theta, 0.25);
+                    approx_eq(*theta, 0.25 * std::f64::consts::PI);
                     assert_eq!(targets, &vec![0]);
                 }
                 other => panic!("{other:?}"),
@@ -277,11 +277,11 @@ fn i_r_x_promotes_to_rotation_x() {
 
 #[test]
 fn i_r_y_promotes_to_rotation_y() {
-    let p = parse_ok("I[R_Y(theta=0.25)] 0\n");
+    let p = parse_ok("I[R_Y(theta=0.25*pi)] 0\n");
     match &p.instructions[0] {
         ExtendedInstruction::Rotation { axis, theta, .. } => {
             assert!(matches!(axis, Axis::Y));
-            approx_eq(*theta, 0.25);
+            approx_eq(*theta, 0.25 * std::f64::consts::PI);
         }
         other => panic!("{other:?}"),
     }
@@ -289,11 +289,11 @@ fn i_r_y_promotes_to_rotation_y() {
 
 #[test]
 fn i_r_z_promotes_to_rotation_z() {
-    let p = parse_ok("I[R_Z(theta=0.1)] 0\n");
+    let p = parse_ok("I[R_Z(theta=0.1*pi)] 0\n");
     match &p.instructions[0] {
         ExtendedInstruction::Rotation { axis, theta, .. } => {
             assert!(matches!(axis, Axis::Z));
-            approx_eq(*theta, 0.1);
+            approx_eq(*theta, 0.1 * std::f64::consts::PI);
         }
         other => panic!("{other:?}"),
     }
@@ -301,7 +301,7 @@ fn i_r_z_promotes_to_rotation_z() {
 
 #[test]
 fn i_u3_promotes_to_u3() {
-    let p = parse_ok("I[U3(theta=0.1, phi=0.2, lambda=0.3)] 0\n");
+    let p = parse_ok("I[U3(theta=0.1*pi, phi=0.2*pi, lambda=0.3*pi)] 0\n");
     match &p.instructions[0] {
         ExtendedInstruction::U3 {
             theta,
@@ -310,9 +310,10 @@ fn i_u3_promotes_to_u3() {
             targets,
             span,
         } => {
-            approx_eq(*theta, 0.1);
-            approx_eq(*phi, 0.2);
-            approx_eq(*lambda, 0.3);
+            let pi = std::f64::consts::PI;
+            approx_eq(*theta, 0.1 * pi);
+            approx_eq(*phi, 0.2 * pi);
+            approx_eq(*lambda, 0.3 * pi);
             assert_eq!(targets, &vec![0]);
             assert_eq!(span.line(&p.line_map), 1);
         }

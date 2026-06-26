@@ -96,6 +96,16 @@ fn check_extended_fixpoint(src: &str) {
     assert_eq!(s1, s2, "extended printer is not a fixpoint");
 }
 
+/// A decimal with 0–4 fractional digits in `[-4, 4]`, rendered as a string.
+/// Mirrors the angles a user actually writes; many are not binary-friendly,
+/// so `theta/PI` would print a rounding tail without the printer's recovery.
+fn decimal_coeff() -> impl Strategy<Value = String> {
+    (-40_000i32..=40_000, 0u32..=4).prop_map(|(n, scale)| {
+        let v = f64::from(n) / 10f64.powi(scale as i32);
+        format!("{v}")
+    })
+}
+
 proptest! {
     #[test]
     fn raw_printer_is_fixpoint_on_fragments(src in program_source()) {
@@ -105,5 +115,37 @@ proptest! {
     #[test]
     fn extended_printer_is_fixpoint_on_fragments(src in program_source()) {
         check_extended_fixpoint(&src);
+    }
+
+    /// Rotation/U3 angles are stored in radians as `c*PI` and re-emitted in
+    /// the `<c>*pi` form. For any decimal coefficient a user might write, the
+    /// printer must (a) round-trip losslessly — `parse → print → parse` must
+    /// recover the exact stored radians — and (b) stay a byte-for-byte
+    /// fixpoint, never degrading into a `0.7599999999999999*pi` tail.
+    #[test]
+    fn rotation_pi_coeff_round_trips(c in decimal_coeff()) {
+        let src = format!("I[R_Z(theta={c}*pi)] 0\n");
+        let ast1 = parse_extended(&src).expect("parse");
+        let theta1 = rotation_theta(&ast1);
+
+        let s1 = format!("{ast1}");
+        prop_assert!(
+            !s1.contains("999999") && !s1.contains("000000"),
+            "printed a rounding tail for theta={c}*pi: {s1}"
+        );
+
+        let ast2 = parse_extended(&s1).expect("reparse");
+        prop_assert_eq!(theta1.to_bits(), rotation_theta(&ast2).to_bits(),
+            "theta not recovered exactly for theta={}*pi", c);
+        prop_assert_eq!(format!("{ast2}"), s1, "printer not a fixpoint");
+    }
+}
+
+/// Extract the single rotation's `theta` from a one-instruction program.
+fn rotation_theta(ast: &stim_parser::prelude::ExtendedProgram) -> f64 {
+    use stim_parser::prelude::ExtendedInstruction::Rotation;
+    match &ast.instructions[0] {
+        Rotation { theta, .. } => *theta,
+        other => panic!("expected a rotation, got {other:?}"),
     }
 }

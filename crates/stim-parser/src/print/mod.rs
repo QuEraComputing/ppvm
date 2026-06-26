@@ -71,7 +71,7 @@ fn write_tags(out: &mut dyn fmt::Write, tags: &[Tag]) -> fmt::Result {
                     TagParam::Positional(v) => write!(out, "{}", FloatLit(*v))?,
                     TagParam::Named { key, value, had_pi } => {
                         if *had_pi {
-                            write!(out, "{key}={}*pi", FloatLit(*value / std::f64::consts::PI))?;
+                            write!(out, "{key}={}*pi", FloatLit(pi_coeff(*value)))?;
                         } else {
                             write!(out, "{key}={}", FloatLit(*value))?;
                         }
@@ -167,6 +167,37 @@ impl fmt::Display for FloatLit {
             write!(f, "{s}.0")
         }
     }
+}
+
+/// The coefficient `c` to print for a `<c>*pi` literal carrying the radians
+/// `value`. The naive `value / PI` is correct but, because the division
+/// rounds, often prints a long tail (`0.76*pi` → `0.7599999999999999*pi`).
+///
+/// Parser-produced angles always originate from a decimal coefficient — a
+/// `<n>*pi` rotation/U3 tag — so a short decimal `c` with
+/// `c * PI == value` (bit-for-bit) exists. We return the shortest such `c`,
+/// which prints cleanly *and* re-parses back to exactly `value`. Requiring
+/// exact equality is what keeps `parse → print` lossless and the printer a
+/// fixpoint; for any `value` with no exact short form we fall back to the
+/// naive `value / PI` (same output as before).
+fn pi_coeff(value: f64) -> f64 {
+    let pi = std::f64::consts::PI;
+    let q = value / pi;
+    if !q.is_finite() {
+        return q;
+    }
+    // `{:.*e}` with `prec` digits after the mantissa point is `prec + 1`
+    // significant digits; 17 sig-digits round-trips any f64, so by `prec = 16`
+    // `candidate == q` and the loop has tried every shorter rounding first.
+    for prec in 0..=16 {
+        let candidate: f64 = format!("{q:.prec$e}")
+            .parse()
+            .expect("a formatted float always re-parses");
+        if candidate * pi == value {
+            return candidate;
+        }
+    }
+    q
 }
 
 // ---------------------------------------------------------------------------
@@ -297,8 +328,12 @@ impl StimPrint for ExtendedInstruction {
                 };
                 // theta is radians; re-emit the half-turn `<n>*pi` form the
                 // rotation tags require (see exact_named_params).
-                let pi = std::f64::consts::PI;
-                write!(out, "I[{}(theta={}*pi)]", axis_tag, FloatLit(*theta / pi))?;
+                write!(
+                    out,
+                    "I[{}(theta={}*pi)]",
+                    axis_tag,
+                    FloatLit(pi_coeff(*theta))
+                )?;
                 write_usize_targets(out, targets)?;
             }
             ExtendedInstruction::U3 {
@@ -308,13 +343,12 @@ impl StimPrint for ExtendedInstruction {
                 targets,
                 ..
             } => {
-                let pi = std::f64::consts::PI;
                 write!(
                     out,
                     "I[U3(theta={}*pi, phi={}*pi, lambda={}*pi)]",
-                    FloatLit(*theta / pi),
-                    FloatLit(*phi / pi),
-                    FloatLit(*lambda / pi),
+                    FloatLit(pi_coeff(*theta)),
+                    FloatLit(pi_coeff(*phi)),
+                    FloatLit(pi_coeff(*lambda)),
                 )?;
                 write_usize_targets(out, targets)?;
             }
@@ -400,5 +434,33 @@ mod tests {
         // rec[-k] feed-forward control and MPP Pauli products print canonically.
         let ast = parse("CX rec[-1] 0\nMPP X0*Y1*Z2\n").unwrap();
         assert_eq!(ast.to_stim(), "CX rec[-1] 0\nMPP X0*Y1*Z2\n");
+    }
+
+    #[test]
+    fn rotation_pi_coeff_prints_clean_and_round_trips() {
+        // theta is stored in radians as `c*PI`; printing `c = theta/PI` naively
+        // would emit a rounding tail like `0.7599999999999999*pi`. The printer
+        // recovers the short coefficient instead — for rotation and U3 tags —
+        // and `print → parse → print` stays a fixpoint.
+        for (src, expected) in [
+            // Non-binary-friendly decimals that `theta/PI` mangles.
+            ("I[R_Z(theta=0.34*pi)] 0\n", "I[R_Z(theta=0.34*pi)] 0\n"),
+            ("I[R_Y(theta=0.76*pi)] 1\n", "I[R_Y(theta=0.76*pi)] 1\n"),
+            ("I[R_X(theta=-2.78*pi)] 2\n", "I[R_X(theta=-2.78*pi)] 2\n"),
+            (
+                "I[U3(theta=0.34*pi, phi=0.91*pi, lambda=0.07*pi)] 0\n",
+                "I[U3(theta=0.34*pi, phi=0.91*pi, lambda=0.07*pi)] 0\n",
+            ),
+        ] {
+            let printed = parse_extended(src).unwrap().to_stim();
+            assert_eq!(printed, expected, "first print of {src:?}");
+            assert!(
+                !printed.contains("999999") && !printed.contains("000000"),
+                "coefficient printed with a rounding tail: {printed:?}"
+            );
+            // Fixpoint: re-parsing and re-printing reproduces it byte-for-byte.
+            let reprinted = parse_extended(&printed).unwrap().to_stim();
+            assert_eq!(reprinted, printed, "printer is not a fixpoint for {src:?}");
+        }
     }
 }

@@ -24,22 +24,22 @@ fn trotter_func<
     for _ in 0..steps {
         // perform trotter step
 
-        // truncate after each gate application to be consistent with PP.jl
+        // truncate after each operation to be consistent with PP.jl
         for i in 0..n {
-            state.rx(i, theta_x);
+            state.pauli_error(i, noise_params);
             state.truncate();
 
-            state.pauli_error(i, noise_params);
+            state.rx(i, theta_x);
             state.truncate();
         }
         for i in 0..n - 1 {
-            state.rzz(i, i + 1, theta_zz);
+            state.pauli_error(i + 1, noise_params);
             state.truncate();
 
             state.pauli_error(i, noise_params);
             state.truncate();
 
-            state.pauli_error(i + 1, noise_params);
+            state.rzz(i, i + 1, theta_zz);
             state.truncate();
         }
     }

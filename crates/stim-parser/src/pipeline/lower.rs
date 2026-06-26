@@ -104,6 +104,15 @@ fn lower_gate(
     match name {
         // Native T / T_DAG mnemonics lower to the same sugar as `S[T]` / `S_DAG[T]`.
         T | TDag => {
+            if let Some(tag) = tags.first() {
+                return invalid_tag(
+                    &tag.name,
+                    name.canonical_name(),
+                    span,
+                    "bare T/T_DAG take no tags; use S[T] / S_DAG[T] for the tagged form",
+                    sink,
+                );
+            }
             let Some(targets) = qubit_targets(targets, name.canonical_name(), span, sink)? else {
                 return Ok(None);
             };
@@ -599,6 +608,20 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn bare_t_with_tag_is_rejected() {
+        // A tag on bare T/T_DAG is meaningless (the tagged form is S[T]); reject
+        // it rather than silently dropping it.
+        let err = lower_extended("T[foo] 0").unwrap_err();
+        assert_eq!(err.last().unwrap().code, Some("invalid-tag"));
+    }
+
+    #[test]
+    fn bare_t_dag_with_tag_is_rejected() {
+        let err = lower_extended("T_DAG[foo] 0").unwrap_err();
+        assert_eq!(err.last().unwrap().code, Some("invalid-tag"));
     }
 
     #[test]

@@ -28,8 +28,8 @@ ps = PauliSum.new(
 )
 for _ in range(LAYERS):
     for q in range(N):
-        ps.rx(q, theta=0.1)
         ps.depolarize1(q, p=1e-3)
+        ps.rx(q, theta=0.1)
     for q in range(N - 1):
         ps.rzz(q, q + 1, theta=0.05)
 

@@ -6,8 +6,9 @@
 //!
 //! The benchmark itself only times `trotter_func` — it never reads the
 //! propagated observable back, so nothing there guards the *result*. These
-//! tests run the same gate sequence (`rx` + `rzz` + `pauli_error`, truncating
-//! after every gate as the bench does) on a small chain and check:
+//! tests run the same noisy gate sequence as the bench (physical gate then
+//! noise, propagated as noise then gate in Heisenberg order, truncating after
+//! every operation) on a small chain and check:
 //!
 //! 1. **Math regression** — the exact (untruncated, `NoStrategy`) expectation
 //!    value matches a frozen golden constant.
@@ -35,17 +36,17 @@ macro_rules! trotter_evolve {
     ($state:expr) => {{
         for _ in 0..STEPS {
             for i in 0..N {
-                $state.rx(i, THETA_X);
-                $state.truncate();
                 $state.pauli_error(i, NOISE);
+                $state.truncate();
+                $state.rx(i, THETA_X);
                 $state.truncate();
             }
             for i in 0..N - 1 {
-                $state.rzz(i, i + 1, THETA_ZZ);
+                $state.pauli_error(i + 1, NOISE);
                 $state.truncate();
                 $state.pauli_error(i, NOISE);
                 $state.truncate();
-                $state.pauli_error(i + 1, NOISE);
+                $state.rzz(i, i + 1, THETA_ZZ);
                 $state.truncate();
             }
         }
@@ -97,10 +98,10 @@ fn trotter_result_is_stable_and_truncation_is_faithful() {
     let approx_val = expect_on_zero!(approx);
 
     // (1) Math-regression guard: frozen golden for the exact circuit. Any
-    // change to the gate math (a wrong sign, bit-flip, or addressing bug in
-    // rx/rzz/pauli_error) moves this by O(1e-3) or more; the bound is far
+    // change to the gate math (a wrong sign, bit-flip, addressing bug, or
+    // gate/noise ordering mistake) moves this by O(1e-3) or more; the bound is far
     // tighter than that yet far looser than cross-platform trig last-bit noise.
-    const GOLDEN: f64 = 2.161056303575631;
+    const GOLDEN: f64 = 2.1610566562692544;
     assert!(
         (exact_val - GOLDEN).abs() < 1e-9,
         "exact Trotter expectation {exact_val} drifted from golden {GOLDEN}"

@@ -13,9 +13,9 @@ fn @main() {
 @loop:
     // Flip a fair coin: H then measure q0 (pushes outcome 0/1 as u32).
     const.u64 0
-    circuit h
+    circuit.h
     const.u64 0
-    circuit measure
+    circuit.measure
 
     // Feed-forward: if the outcome was 1, apply X to q1.
     const.u32 1
@@ -24,7 +24,7 @@ fn @main() {
 
 @flip:
     const.u64 1
-    circuit x
+    circuit.x
     br @next
 
 @next:
@@ -39,6 +39,6 @@ fn @main() {
 @done:
     // Final readout of q1.
     const.u64 1
-    circuit measure
+    circuit.measure
     ret
 }

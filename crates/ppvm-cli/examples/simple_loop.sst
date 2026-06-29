@@ -5,9 +5,9 @@ fn @main() {
 
 @loop:
     const.u64 0
-    circuit h
+    circuit.h
     const.u64 0
-    circuit measure
+    circuit.measure
 
     // stop here to investigate
     breakpoint
@@ -18,7 +18,7 @@ fn @main() {
 
 @flip:
     const.u64 0
-    circuit x
+    circuit.x
 
 @next:
     const.u64 1

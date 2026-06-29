@@ -6,6 +6,6 @@ fn @main() {
     // No gates — the multi-term observable seeds the state directly.
     // Pattern `[XZ]?*` matches both ZZ (coef 1.0) and XX (coef 0.5).
     const.str "[XZ]?*"
-    circuit trace
+    circuit.trace
     ret
 }

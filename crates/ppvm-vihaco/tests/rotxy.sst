@@ -2,14 +2,14 @@ device circuit.n_qubits 1;
 
 fn @main() {
     // R(axis_angle = π/2, θ = π) == RY(π), so |0> is sent to |1>.
-    // Stack order for `circuit r`: qubit, then axis_angle, then theta.
+    // Stack order for `circuit.r`: qubit, then axis_angle, then theta.
     const.u64 0
     const.f64 1.5707963267948966
     const.f64 3.141592653589793
-    circuit r
+    circuit.r
 
     const.u64 0
-    circuit measure
+    circuit.measure
 
     ret
 }

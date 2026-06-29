@@ -401,10 +401,10 @@ mod tests {
         let src = "device circuit.n_qubits 2;\n\
                    fn @main() {\n\
                        const.u64 0\n\
-                       circuit h\n\
+                       circuit.h\n\
                        const.u64 0\n\
                        const.u64 1\n\
-                       circuit cnot\n\
+                       circuit.cnot\n\
                        ret\n\
                    }\n";
 
@@ -419,10 +419,10 @@ mod tests {
     fn loaded_bytecode_executes_like_text() {
         let src = "device circuit.n_qubits 2;\n\
                    fn @main() {\n\
-                       const.u64 0\n circuit h\n\
-                       const.u64 0\n const.u64 1\n circuit cnot\n\
-                       const.u64 0\n circuit measure\n\
-                       const.u64 1\n circuit measure\n\
+                       const.u64 0\n circuit.h\n\
+                       const.u64 0\n const.u64 1\n circuit.cnot\n\
+                       const.u64 0\n circuit.measure\n\
+                       const.u64 1\n circuit.measure\n\
                        ret\n }\n";
         let bytes = compile_to_bytes(src).unwrap();
 
@@ -436,7 +436,7 @@ mod tests {
     #[test]
     fn load_bytecode_file_reads_from_disk() {
         let src = "device circuit.n_qubits 1;\n\
-                   fn @main() { const.u64 0\n circuit measure\n ret }\n";
+                   fn @main() { const.u64 0\n circuit.measure\n ret }\n";
         let bytes = compile_to_bytes(src).unwrap();
         let path = std::env::temp_dir().join("ppvm_load_bytecode_file_test.ssb");
         std::fs::write(&path, &bytes).unwrap();

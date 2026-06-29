@@ -7,25 +7,25 @@ fn @main() {
     const.f64 0.25
     const.f64 0.0
     const.f64 0.0
-    circuit paulierror
+    circuit.paulierror
 
     const.u64 0
     const.u64 3
-    circuit cnot
+    circuit.cnot
     const.u64 1
     const.u64 3
-    circuit cnot
+    circuit.cnot
     const.u64 3
-    circuit measure
+    circuit.measure
 
     const.u64 1
     const.u64 4
-    circuit cnot
+    circuit.cnot
     const.u64 2
     const.u64 4
-    circuit cnot
+    circuit.cnot
     const.u64 4
-    circuit measure
+    circuit.measure
 
     const.u32 1
     eq.u32
@@ -43,24 +43,24 @@ fn @main() {
 
 @correct_q0:
     const.u64 0
-    circuit x
+    circuit.x
     br @readout
 
 @correct_q1:
     const.u64 1
-    circuit x
+    circuit.x
     br @readout
 
 @correct_q2:
     const.u64 2
-    circuit x
+    circuit.x
 
 @readout:
     const.u64 0
-    circuit measure
+    circuit.measure
     const.u64 1
-    circuit measure
+    circuit.measure
     const.u64 2
-    circuit measure
+    circuit.measure
     ret
 }

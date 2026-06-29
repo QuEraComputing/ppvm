@@ -4,24 +4,24 @@ device circuit.n_qubits 3;
 // The three outcomes are perfectly correlated, so each shot reads 0 0 0 or 1 1 1.
 fn @main() {
     const.u64 0
-    circuit h
+    circuit.h
 
     const.u64 0
     const.u64 1
-    circuit cnot
+    circuit.cnot
 
     const.u64 1
     const.u64 2
-    circuit cnot
+    circuit.cnot
 
     const.u64 0
-    circuit measure
+    circuit.measure
 
     const.u64 1
-    circuit measure
+    circuit.measure
 
     const.u64 2
-    circuit measure
+    circuit.measure
 
     ret
 }

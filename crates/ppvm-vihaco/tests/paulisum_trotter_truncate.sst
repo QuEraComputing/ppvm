@@ -10,28 +10,28 @@ fn @main() {
     const.u64 0
     const.u64 1
     const.f64 0.1
-    circuit rxx
+    circuit.rxx
 
     const.u64 0
     const.u64 1
     const.f64 0.05
-    circuit rzz
+    circuit.rzz
 
-    circuit truncate
+    circuit.truncate
 
     const.u64 0
     const.u64 1
     const.f64 0.1
-    circuit rxx
+    circuit.rxx
 
     const.u64 0
     const.u64 1
     const.f64 0.05
-    circuit rzz
+    circuit.rzz
 
-    circuit truncate
+    circuit.truncate
 
     const.str "Z?*"
-    circuit trace
+    circuit.trace
     ret
 }

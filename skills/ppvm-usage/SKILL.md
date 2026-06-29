@@ -391,14 +391,14 @@ The runtime applies `circuit ...` instructions in code order on every backend.
 Whoever emits the `.sst` is responsible for emitting gates in the right
 direction for the chosen picture: **forward** for Tableau (Schrödinger),
 **reversed** for PauliSum/Lossy (Heisenberg). Textbook `H(0); CNOT(0,1)` on
-a PauliSum target compiles to `circuit cnot; circuit h`, not the other way around.
+a PauliSum target compiles to `circuit.cnot; circuit.h`, not the other way around.
 
-### `circuit trace` and `circuit truncate`
+### `circuit.trace` and `circuit.truncate`
 
 ```sst
 const.str "Z?*"
-circuit trace        // PauliSum/Lossy: pushes state.trace(&pattern) as f64
-circuit truncate     // PauliSum/Lossy: state.truncate(); Tableau: silent no-op
+circuit.trace        // PauliSum/Lossy: pushes state.trace(&pattern) as f64
+circuit.truncate     // PauliSum/Lossy: state.truncate(); Tableau: silent no-op
 ```
 
 `trace` pops a `Value::String` (Pauli-pattern source — same grammar as
@@ -421,7 +421,7 @@ agreement on a shared input.
 `truncate` takes no operand and applies the configured strategy
 (`CoefficientThreshold` + `MaxPauliWeight`) to the current state. On
 Tableau it's a silent no-op — gate methods already prune via
-`coefficient_threshold`. **Without explicit `circuit truncate` calls in the
+`coefficient_threshold`. **Without explicit `circuit.truncate` calls in the
 .sst, PauliSum runs do not truncate** — the compiler that emits the .sst
 decides where to place them.
 

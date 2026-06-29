@@ -2,10 +2,10 @@ device circuit.n_qubits 2;
 
 fn @main() {
     const.u64 0
-    circuit h
+    circuit.h
 
     const.u64 0
-    circuit measure
+    circuit.measure
 
     // Stack: [outcome]. No loss gate, so outcome is 0 or 1. Compare to 1
     // to derive a bool for cond_br.
@@ -16,7 +16,7 @@ fn @main() {
 
     @one:
         const.u64 1
-        circuit x
+        circuit.x
         br @measure_q1
 
     @zero:
@@ -24,6 +24,6 @@ fn @main() {
 
     @measure_q1:
         const.u64 1
-        circuit measure
+        circuit.measure
         ret
 }

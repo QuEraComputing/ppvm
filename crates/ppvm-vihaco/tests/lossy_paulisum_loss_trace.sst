@@ -14,15 +14,15 @@ device circuit.observable ZZ;
 fn @main() {
     const.u64 0
     const.u64 1
-    circuit cnot
+    circuit.cnot
 
     const.u64 0
     const.f64 0.3
-    circuit loss
+    circuit.loss
 
-    circuit truncate
+    circuit.truncate
 
     const.str "Z?*"
-    circuit trace
+    circuit.trace
     ret
 }

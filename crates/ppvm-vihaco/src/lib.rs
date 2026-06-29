@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn dump_program_writes_loadable_bytecode() {
         let src = "device circuit.n_qubits 1;\n\
-                   fn @main() { const.u64 0\n circuit measure\n ret }\n";
+                   fn @main() { const.u64 0\n circuit.measure\n ret }\n";
         let path = std::env::temp_dir().join("ppvm_dump_program_test.ssb");
         dump_program(src, path.to_str().unwrap()).unwrap();
 

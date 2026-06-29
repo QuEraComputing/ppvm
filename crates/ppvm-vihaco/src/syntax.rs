@@ -185,14 +185,14 @@ impl<'src> Parse<'src> for PPVMInstruction {
         let cpu = <vihaco_cpu::Instruction as Parse>::parser().map(PPVMInstruction::Cpu);
 
         // Reuse the derived parser for all CircuitInstruction variants,
-        // gated behind the `circuit ` keyword (covers gates, noise channels,
+        // gated behind the `circuit.` prefix (covers gates, noise channels,
         // measure/reset, trace, and truncate — i.e. everything circuit-side).
         let circuit = just("circuit")
-            .then(text::whitespace().at_least(1))
+            .then(just('.'))
             .ignore_then(<CircuitInstruction as Parse>::parser())
             .map(PPVMInstruction::Circuit);
 
-        // Try `circuit ...` first so CPU doesn't see "circuit" as an identifier.
+        // Try `circuit.` first so CPU doesn't see "circuit" as an identifier.
         choice((circuit, cpu))
     }
 }
@@ -497,7 +497,7 @@ mod tests {
     #[test]
     fn ppvm_instruction_parses_gate_h() {
         let got = <PPVMInstruction as Parse>::parser()
-            .parse("circuit h")
+            .parse("circuit.h")
             .into_result()
             .unwrap();
         assert!(matches!(
@@ -509,7 +509,7 @@ mod tests {
     #[test]
     fn ppvm_instruction_parses_gate_cnot() {
         let got = <PPVMInstruction as Parse>::parser()
-            .parse("circuit cnot")
+            .parse("circuit.cnot")
             .into_result()
             .unwrap();
         assert!(matches!(
@@ -521,7 +521,7 @@ mod tests {
     #[test]
     fn ppvm_instruction_parses_gate_measure() {
         let got = <PPVMInstruction as Parse>::parser()
-            .parse("circuit measure")
+            .parse("circuit.measure")
             .into_result()
             .unwrap();
         assert!(matches!(
@@ -533,7 +533,7 @@ mod tests {
     #[test]
     fn ppvm_instruction_parses_gate_rx() {
         let got = <PPVMInstruction as Parse>::parser()
-            .parse("circuit rx")
+            .parse("circuit.rx")
             .into_result()
             .unwrap();
         assert!(matches!(
@@ -544,7 +544,7 @@ mod tests {
 
     #[test]
     fn ppvm_instruction_rejects_bare_circuit_token_without_circuit_prefix() {
-        // `h` on its own must not parse as Circuit(H) — only `circuit h` does.
+        // `h` on its own must not parse as Circuit(H) — only `circuit.h` does.
         // Without `circuit `, the CPU parser is tried, which should reject
         // `h` (not a CPU mnemonic).
         let result = <PPVMInstruction as Parse>::parser()
@@ -633,15 +633,15 @@ mod tests {
             "device circuit.n_qubits 2;\n\
              fn @main() {\n\
                  const.u64 0\n\
-                 circuit h\n\
+                 circuit.h\n\
                  const.u64 0\n\
                  const.u64 1\n\
-                 circuit cnot\n\
+                 circuit.cnot\n\
                  ret\n\
              }\n",
         );
         let m = PPVMResolver::new().resolve_module(parsed).unwrap();
-        // const.u64 0 / circuit h / const.u64 0 / const.u64 1 / circuit cnot / ret
+        // const.u64 0 / circuit.h / const.u64 0 / const.u64 1 / circuit.cnot / ret
         assert_eq!(m.code.len(), 6);
         assert!(matches!(
             m.code[1],

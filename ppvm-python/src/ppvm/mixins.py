@@ -620,14 +620,14 @@ class TruncatingRotationsMixin(RotationsMixin):
     def r(self, addr0: int, axis_angle: float, theta: float, *, truncate: bool = True) -> None:
         """Apply a rotation about an axis in the X-Y plane to the specified qubit.
 
-        See :meth:`RotationsMixin.r` for the gate definition.
+        See `RotationsMixin.r` for the gate definition.
 
         Args:
             addr0: The index of the target qubit.
             axis_angle: The angle ``φ`` (in radians) of the rotation axis
                 within the X-Y plane, measured from the X-axis.
             theta: The rotation angle in radians.
-            truncate: See :meth:`rx`.
+            truncate: See `rx`.
         """
         self._interface.r(addr0, axis_angle, theta, truncate=truncate)
 

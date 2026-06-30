@@ -16,7 +16,7 @@ use numpy::{
     PyReadonlyArray2,
 };
 use ppvm_lindblad::{Word, codes_from_word, word_from_codes};
-use ppvm_runtime::symmetry as core_sym;
+use ppvm_pauli_sum::symmetry as core_sym;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
@@ -57,7 +57,7 @@ pub struct TranslationGroup {
 }
 
 impl TranslationGroup {
-    /// Accessor for the underlying [`ppvm_runtime::symmetry::TranslationGroup`].
+    /// Accessor for the underlying [`ppvm_pauli_sum::symmetry::TranslationGroup`].
     /// Used by other crate-internal modules (e.g. the PauliSum interface
     /// macro) to call into the core merging API.
     pub fn core(&self) -> &core_sym::TranslationGroup {

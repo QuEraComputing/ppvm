@@ -5,7 +5,7 @@ const toc = [
   { label: "§ 1 Workspace at a glance", href: "#workspace" },
   { label: "§ 2 Pick crates by use case", href: "#pick" },
   { label: "§ 3 Setup", href: "#setup" },
-  { label: "§ 4 ppvm-runtime", href: "#runtime" },
+  { label: "§ 4 ppvm-pauli-sum", href: "#runtime" },
   { label: "§ 5 ppvm-tableau", href: "#tableau" },
   { label: "§ 6 ppvm-stim", href: "#stim" },
   { label: "§ 7 ppvm-sym", href: "#sym" },
@@ -33,19 +33,36 @@ const toc = [
     <h2 id="workspace"><span class="sec-num">§ 1</span>Workspace at a glance</h2>
 
     <p>
-      ppvm is a Cargo workspace of five focused crates. <code>ppvm-runtime</code> is
-      the foundation; everything else builds on it. Depend on what your
-      workload actually needs — there is no umbrella crate.
+      ppvm is a Cargo workspace of focused crates. A foundation trio —
+      <code>ppvm-traits</code>, <code>ppvm-pauli-word</code>, and
+      <code>ppvm-pauli-sum</code> — provides Pauli propagation; everything else
+      builds on it. Depend on what your workload actually needs — there is no
+      umbrella crate.
     </p>
 
     <dl class="crate-list">
-      <dt><code>ppvm-runtime</code> <span class="crate-tag">foundation</span></dt>
+      <dt><code>ppvm-traits</code> <span class="crate-tag">foundation</span></dt>
       <dd>
-        Core Pauli arithmetic, the <code>PauliSum&lt;Config&gt;</code> type, the
-        <code>Config</code> trait that bundles storage / coefficient type /
-        hasher / truncation strategy, and the gate &amp; noise trait hierarchy
-        (Clifford, <code>TGate</code>, rotations, depolarizing, loss, …).
-        Required by every other ppvm crate.
+        The trait system: the <code>Config</code> trait that bundles storage /
+        coefficient type / hasher / truncation strategy, the single-qubit
+        <code>Pauli</code> alphabet, the gate &amp; noise trait hierarchy
+        (Clifford, <code>TGate</code>, rotations, depolarizing, loss, …), and
+        the shared <code>ACMap</code> / <code>Trace</code> map impls. Required
+        by every other ppvm crate.
+      </dd>
+      <dt><code>ppvm-pauli-word</code> <span class="crate-tag">foundation</span></dt>
+      <dd>
+        Packed Pauli strings: <code>PauliWord</code>, <code>PhasedPauliWord</code>,
+        <code>LossyPauliWord</code>, and <code>PauliPattern</code>. Built on
+        <code>ppvm-traits</code>.
+      </dd>
+      <dt><code>ppvm-pauli-sum</code> <span class="crate-tag">backend</span></dt>
+      <dd>
+        The Pauli-propagation engine: the <code>PauliSum&lt;Config&gt;</code>
+        (and <code>LossyPauliSum</code>) type, the truncation
+        <code>strategy</code> types, and the concrete <code>Config</code>
+        bundles (<code>fxhash</code>, <code>indexmap</code>, <code>dashmap</code>,
+        <code>gxhash</code>). The usual entry point for native Pauli propagation.
       </dd>
       <dt><code>ppvm-tableau</code> <span class="crate-tag">backend</span></dt>
       <dd>
@@ -61,9 +78,8 @@ const toc = [
         Parse and execute Stim programs against
         <code>ppvm-tableau</code>. Re-exports the parser, provides
         <code>parse_extended</code>, <code>execute</code>, and a
-        <code>sample</code> helper for multi-shot loops. Depends on
-        <code>ppvm-runtime</code>, <code>ppvm-tableau</code>, and
-        <code>stim-parser</code>.
+        <code>sample</code> helper for multi-shot loops. Depends on the Pauli
+        crates, <code>ppvm-tableau</code>, and <code>stim-parser</code>.
       </dd>
       <dt><code>ppvm-sym</code> <span class="crate-tag">backend</span></dt>
       <dd>
@@ -85,21 +101,21 @@ const toc = [
     <ul class="crate-pick">
       <li>
         <strong>Pauli propagation only</strong> (Heisenberg-picture observables,
-        noisy circuits at scale): <code>ppvm-runtime</code>.
+        noisy circuits at scale): <code>ppvm-pauli-sum</code>.
       </li>
       <li>
         <strong>Stabilizer / generalized-tableau simulation</strong>
         (Schrödinger picture, mid-circuit measurement, loss):
-        <code>ppvm-runtime</code> + <code>ppvm-tableau</code>.
+        <code>ppvm-pauli-sum</code> + <code>ppvm-tableau</code>.
       </li>
       <li>
         <strong>Run Stim programs</strong> against the tableau:
-        <code>ppvm-runtime</code> + <code>ppvm-tableau</code> +
+        <code>ppvm-pauli-sum</code> + <code>ppvm-tableau</code> +
         <code>ppvm-stim</code>.
       </li>
       <li>
         <strong>Symbolic / parametric circuits</strong>:
-        <code>ppvm-runtime</code> + <code>ppvm-sym</code>.
+        <code>ppvm-pauli-sum</code> + <code>ppvm-sym</code>.
       </li>
       <li>
         <strong>Just parse Stim</strong>, no simulator: <code>stim-parser</code>.
@@ -114,10 +130,10 @@ const toc = [
     </p>
 
 <pre><code class="language-toml">[dependencies]
-ppvm-runtime = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
-ppvm-tableau = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
-ppvm-stim    = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
-ppvm-sym     = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}</code></pre>
+ppvm-pauli-sum = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
+ppvm-tableau   = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
+ppvm-stim      = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
+ppvm-sym       = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}</code></pre>
 
     <p>
       On x86_64, set <code>RUSTFLAGS="-C target-feature=+aes,+sse2"</code> —
@@ -127,12 +143,12 @@ ppvm-sym     = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}</code></pr
       gxhash.
     </p>
 
-    <h2 id="runtime"><span class="sec-num">§ 4</span><code>ppvm-runtime</code> — Pauli propagation</h2>
+    <h2 id="runtime"><span class="sec-num">§ 4</span><code>ppvm-pauli-sum</code> — Pauli propagation</h2>
 
     <p>
       <code>PauliSum&lt;T: Config&gt;</code> is generic over a configuration
       bundle (storage, coefficient type, hasher, truncation strategy). Pick a
-      pre-built config from <code>ppvm_runtime::config</code>:
+      pre-built config from <code>ppvm_pauli_sum::config</code>:
     </p>
 
     <ul>
@@ -146,7 +162,7 @@ ppvm-sym     = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}</code></pr
       Twelve qubits → <code>N = 2</code>.
     </p>
 
-<pre><code class="language-rust">use ppvm_runtime::prelude::*;
+<pre><code class="language-rust">use ppvm_pauli_sum::prelude::*;
 
 fn main() {`{`}
     let mut state: PauliSum&lt;config::indexmap::ByteFxHashF64&lt;1&gt;&gt; =
@@ -187,7 +203,7 @@ fn main() {`{`}
       next-larger type if in doubt.
     </p>
 
-<pre><code class="language-rust">use ppvm_runtime::prelude::*;
+<pre><code class="language-rust">use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
 
 fn main() {`{`}
@@ -206,7 +222,7 @@ fn main() {`{`}
     <p>
       Gates run in <em>forward</em> order here — the tableau is in the
       Schrödinger picture, not the Heisenberg picture that
-      <code>ppvm-runtime</code> uses. The same trait methods
+      <code>ppvm-pauli-sum</code> uses. The same trait methods
       (<code>h</code>, <code>cnot</code>, <code>rx</code>, <code>t</code>, …)
       apply to both backends; only the picture changes.
     </p>
@@ -228,7 +244,7 @@ fn main() {`{`}
 
 <pre><code class="language-rust">use ppvm_stim::{`{parse_extended, sample}`};
 use ppvm_tableau::prelude::*;
-use ppvm_runtime::prelude::*;
+use ppvm_pauli_sum::prelude::*;
 
 fn run_shots(src: &str, n_qubits: usize) -&gt; Result&lt;Vec&lt;Vec&lt;Option&lt;bool&gt;&gt;&gt;, ppvm_stim::Error&gt; {`{`}
     let prog = parse_extended(src)?;
@@ -254,7 +270,7 @@ fn run_shots(src: &str, n_qubits: usize) -&gt; Result&lt;Vec&lt;Vec&lt;Option&lt
       Paulis through parametric circuits without committing to angle values:
     </p>
 
-<pre><code class="language-rust">use ppvm_runtime::prelude::*;
+<pre><code class="language-rust">use ppvm_pauli_sum::prelude::*;
 use ppvm_sym::Term;
 
 fn main() {`{`}
@@ -304,7 +320,7 @@ for inst in prog.instructions() {`{`}
 
     <p>
       Gate behaviour is exposed through small, composable traits defined once
-      in <code>ppvm_runtime::traits</code> and implemented by every backend.
+      in <code>ppvm_traits::traits</code> and implemented by every backend.
       Generic code that takes a <code>T: Clifford + RotationOne</code> bound
       works against <code>PauliSum</code> and <code>GeneralizedTableau</code>
       alike:
@@ -330,13 +346,13 @@ for inst in prog.instructions() {`{`}
     <p>
       <code>PauliSum</code> takes a truncation policy as part of its
       <code>Config</code>. Pre-built strategies in
-      <code>ppvm_runtime::strategy</code> cover the common cases —
+      <code>ppvm_pauli_sum::strategy</code> cover the common cases —
       <code>CoefficientThreshold(eps)</code>, <code>MaxPauliWeight(w)</code>,
       <code>MaxLossWeight(w)</code>, <code>CombinedStrategy(a, b)</code>.
       Pass one through the builder:
     </p>
 
-<pre><code class="language-rust">use ppvm_runtime::{`{prelude::*, strategy::CoefficientThreshold}`};
+<pre><code class="language-rust">use ppvm_pauli_sum::{`{prelude::*, strategy::CoefficientThreshold}`};
 
 type State = PauliSum&lt;config::indexmap::ByteFxHashF64&lt;2, CoefficientThreshold&gt;&gt;;
 
@@ -353,7 +369,7 @@ let mut state: State = PauliSum::builder()
       your policy:
     </p>
 
-<pre><code class="language-rust">use ppvm_runtime::traits::strategy::Strategy;
+<pre><code class="language-rust">use ppvm_traits::traits::strategy::Strategy;
 
 #[derive(Debug, Clone, Copy, Default)]
 struct DropTinyHighWeight;
@@ -365,7 +381,7 @@ impl Strategy for DropTinyHighWeight {`{`}
 
     fn truncate&lt;S, V, H, M, W&gt;(&self, map: &mut M)
     where
-        // bounds elided — see ppvm_runtime::traits::strategy
+        // bounds elided — see ppvm_traits::traits::strategy
     {`{`}
         map.retain(|word, coeff| {`{`}
             coeff.abs() &gt; 1e-8 || word.weight() &lt;= 8

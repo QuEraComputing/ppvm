@@ -120,11 +120,11 @@ bond_layers = [
 
 def trotter_step(obs):
     for q in range(L):
-        obs.pauli_error(q, [0.0, 0.0, p_z])
+        obs.pauli_error(q, p=[0.0, 0.0, p_z])
     for layer in reversed(bond_layers):
         for a, b in reversed(layer):
-            obs.ryy(a, b, theta)
-            obs.rxx(a, b, theta)
+            obs.ryy(a, b, theta=theta)
+            obs.rxx(a, b, theta=theta)
 
 
 # %%
@@ -348,11 +348,11 @@ def ppvm_autocorrelator(gamma_value, dt_value):
         if n == steps_value:
             break
         for q in range(L):
-            obs.pauli_error(q, [0.0, 0.0, p_z_value])
+            obs.pauli_error(q, p=[0.0, 0.0, p_z_value])
         for layer in reversed(bond_layers):
             for a, b in reversed(layer):
-                obs.ryy(a, b, theta_value)
-                obs.rxx(a, b, theta_value)
+                obs.ryy(a, b, theta=theta_value)
+                obs.rxx(a, b, theta=theta_value)
     return times_value, ppvm_auto
 
 

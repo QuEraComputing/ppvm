@@ -20,6 +20,11 @@ use rand::rngs::SmallRng;
 impl<T: Config> TableauLike for Tableau<T>
 where
     T::Coeff: PartialOrd<f64>,
+    // The canonical word-level `Clifford for Tableau<T>` impl (required by the
+    // `TableauLike: Clifford` supertrait) operates on raw storage words, so it
+    // carries `Store: PrimInt` — the same bound the `GeneralizedTableau` side
+    // already requires.
+    <T::Storage as BitView>::Store: PrimInt,
 {
     type Coeff = T::Coeff;
     type Rng = SmallRng;
@@ -35,6 +40,7 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> TableauL
 where
     T::Coeff: PartialOrd<f64>,
     Complex<T::Coeff>: From<Complex<f64>>,
+    <T::Storage as BitView>::Store: PrimInt,
 {
     type Coeff = T::Coeff;
     type Rng = SmallRng;
@@ -61,7 +67,7 @@ macro_rules! impl_tableau_noise {
         impl<T: Config $($gen)*> Depolarizing<T> for $ty
         where $($bound)*
         {
-            fn depolarize(&mut self, addr0: usize, p: T::Coeff) {
+            fn depolarize1(&mut self, addr0: usize, p: T::Coeff) {
                 self.depolarize_impl(addr0, p);
             }
         }
@@ -95,7 +101,10 @@ macro_rules! impl_tableau_noise {
 impl_tableau_noise! {
     generics: [],
     ty: Tableau<T>,
-    where: [T::Coeff: PartialOrd<f64>],
+    where: [
+        T::Coeff: PartialOrd<f64>,
+        <T::Storage as BitView>::Store: PrimInt,
+    ],
 }
 
 impl_tableau_noise! {
@@ -104,6 +113,7 @@ impl_tableau_noise! {
     where: [
         T::Coeff: PartialOrd<f64>,
         Complex<T::Coeff>: From<Complex<f64>>,
+        <T::Storage as BitView>::Store: PrimInt,
     ],
 }
 
@@ -139,8 +149,80 @@ where
 
         // NOTE: this is O(n^2) but also potentially removes coefficients, which is nice
         let outcome = self.measure(addr0);
+        // A loss event is not a logical measurement: keep the measurement
+        // record neutral by dropping the entry the internal `measure` pushed.
+        self.measurement_record.pop();
         if let Some(true) = outcome {
             // flip back to 0
+            self.x(addr0);
+        }
+        self.is_lost[addr0] = true;
+    }
+}
+
+impl<T: Config, I: TableauIndex + Send + Sync, C: SparseVector<Complex<T::Coeff>, I>>
+    AsymmetricLossChannel<T> for GeneralizedTableau<T, I, C>
+where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: std::fmt::Debug,
+    T::Coeff: PartialOrd<f64>
+        + One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: Debug,
+{
+    /// State-dependent single-qubit loss ("asymmetric loss").
+    ///
+    /// Models a three-level atom whose `|0⟩` and `|1⟩` levels leak into a loss
+    /// state `|L⟩` at different rates: the qubit is lost from `|0⟩` with
+    /// probability `p0` and from `|1⟩` with `p1`. The total loss probability is
+    /// state-dependent,
+    ///
+    /// ```text
+    ///     p_tot = p0 * (1 + ⟨Z⟩)/2 + p1 * (1 - ⟨Z⟩)/2,
+    /// ```
+    ///
+    /// with `⟨Z⟩` the current Z-expectation of `addr0`. With probability `p_tot`
+    /// the qubit is collapsed, reset to `|0⟩`, and marked lost (as in
+    /// [`LossChannel::loss_channel`]); otherwise it is left unchanged.
+    ///
+    /// # Approximation
+    ///
+    /// This is the trajectory *approximation* of the true loss channel. It
+    /// reproduces the loss statistics (which qubits are flagged lost, and how
+    /// often) and is exact in the symmetric limit `p0 == p1`, where it reduces
+    /// to [`LossChannel::loss_channel`]. It does NOT apply the survival
+    /// back-action `K0 = sqrt(1-p0)|0⟩⟨0| + sqrt(1-p1)|1⟩⟨1|`: for `p0 != p1`
+    /// the faithful channel reshapes the *surviving* qubit (population tilts
+    /// toward the less-leaky level, coherences are damped), and this
+    /// implementation skips that reshaping. The back-action is non-Clifford (it
+    /// branches the coefficient vector like an `rz`), so it is omitted to keep
+    /// the channel cheap enough to apply after every gate. See issue #39.
+    fn asymmetric_loss_channel(&mut self, addr0: usize, p0: T::Coeff, p1: T::Coeff) {
+        if self.is_lost[addr0] {
+            return;
+        }
+        // State-dependent loss probability from the populations pop0/pop1.
+        let z = self.z_expectation(addr0);
+        let p_tot = p0.to_f64().unwrap() * 0.5 * (1.0 + z) + p1.to_f64().unwrap() * 0.5 * (1.0 - z);
+
+        if p_tot < self.tableau.rng.random::<f64>() {
+            return;
+        }
+        // Lost: collapse + reset to |0⟩, mirroring loss_channel.
+        if let Some(true) = self.measure(addr0) {
             self.x(addr0);
         }
         self.is_lost[addr0] = true;
@@ -232,7 +314,7 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> ResetLos
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
 
     type TestConfig = ByteF64<1>;
     type TestTab = GeneralizedTableau<TestConfig>;
@@ -246,7 +328,7 @@ mod tests {
     #[test]
     fn depolarize_p0_no_change() {
         let mut t = tab(1);
-        t.depolarize(0, 0.0);
+        t.depolarize1(0, 0.0);
         assert!(!t.measure(0).unwrap());
     }
 
@@ -254,7 +336,7 @@ mod tests {
     fn depolarize_p1_does_not_mark_lost() {
         // With p=1.0 an error is always applied; verify is_lost is unaffected
         let mut t = tab(1);
-        t.depolarize(0, 1.0);
+        t.depolarize1(0, 1.0);
         assert!(!t.is_lost[0]);
     }
 
@@ -436,6 +518,16 @@ mod tests {
     }
 
     #[test]
+    fn loss_channel_does_not_pollute_measurement_record() {
+        // A loss event is not a logical measurement and must leave the
+        // measurement record untouched.
+        let mut t = tab(1);
+        t.x(0);
+        t.loss_channel(0, 1.0);
+        assert!(t.current_measurement_record().is_empty());
+    }
+
+    #[test]
     fn loss_channel_p1_subsequent_gate_is_noop() {
         let mut t = tab(1);
         t.loss_channel(0, 1.0);
@@ -495,13 +587,13 @@ mod tests {
         let seed = 42u64;
         let mut t_active = tab(1);
         t_active.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
-        t_active.depolarize(0, 0.3);
+        t_active.depolarize1(0, 0.3);
         let next_active: f64 = t_active.tableau.rng.random();
 
         let mut t_lost = tab(1);
         t_lost.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
         t_lost.is_lost[0] = true;
-        t_lost.depolarize(0, 0.3);
+        t_lost.depolarize1(0, 0.3);
         let next_lost: f64 = t_lost.tableau.rng.random();
 
         assert_eq!(next_active, next_lost);
@@ -537,7 +629,7 @@ mod tests {
         let ones = (0..trials)
             .filter(|_| {
                 let mut t = tab(1);
-                t.depolarize(0, p);
+                t.depolarize1(0, p);
                 t.measure(0).unwrap()
             })
             .count();
@@ -778,6 +870,124 @@ mod tests {
         assert!(
             (fraction - p_single).abs() < 0.08,
             "Expected ~{p_single:.2}, got {fraction:.3}"
+        );
+    }
+
+    // === z_expectation ===
+
+    #[test]
+    fn z_expectation_ground_state_is_plus_one() {
+        let t = tab(1);
+        assert!((t.z_expectation(0) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn z_expectation_excited_state_is_minus_one() {
+        let mut t = tab(1);
+        t.x(0);
+        assert!((t.z_expectation(0) + 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn z_expectation_superposition_is_zero() {
+        let mut t = tab(1);
+        t.h(0);
+        assert!(t.z_expectation(0).abs() < 1e-12);
+    }
+
+    // === AsymmetricLossChannel ===
+
+    #[test]
+    fn asymmetric_loss_ground_state_uses_p0() {
+        // |0⟩: pop0 = 1, so p_tot = p0.
+        let mut t = tab(1);
+        t.asymmetric_loss_channel(0, 1.0, 0.0);
+        assert!(t.is_lost[0]);
+
+        let mut t = tab(1);
+        t.asymmetric_loss_channel(0, 0.0, 1.0); // p_tot = 0
+        assert!(!t.is_lost[0]);
+    }
+
+    #[test]
+    fn asymmetric_loss_excited_state_uses_p1() {
+        // |1⟩: pop1 = 1, so p_tot = p1.
+        let mut t = tab(1);
+        t.x(0);
+        t.asymmetric_loss_channel(0, 0.0, 1.0);
+        assert!(t.is_lost[0]);
+
+        let mut t = tab(1);
+        t.x(0);
+        t.asymmetric_loss_channel(0, 1.0, 0.0); // p_tot = 0
+        assert!(!t.is_lost[0]);
+    }
+
+    #[test]
+    fn asymmetric_loss_zero_prob_not_lost() {
+        let mut t = tab(1);
+        t.asymmetric_loss_channel(0, 0.0, 0.0);
+        assert!(!t.is_lost[0]);
+    }
+
+    #[test]
+    fn asymmetric_loss_already_lost_is_noop() {
+        let mut t = tab(1);
+        t.is_lost[0] = true;
+        t.asymmetric_loss_channel(0, 1.0, 1.0);
+        assert!(t.is_lost[0]);
+    }
+
+    #[test]
+    fn asymmetric_loss_resets_lost_qubit_to_zero() {
+        // |1⟩ lost with p1 = 1; after un-marking it should read |0⟩.
+        let mut t = tab(1);
+        t.x(0);
+        t.asymmetric_loss_channel(0, 0.0, 1.0);
+        assert!(t.is_lost[0]);
+        t.is_lost[0] = false;
+        assert!(!t.measure(0).unwrap());
+    }
+
+    #[test]
+    fn asymmetric_loss_symmetric_matches_loss_channel() {
+        // p0 == p1 == p reduces to loss_channel(p); on |+⟩, p_tot = p.
+        let p = 0.3;
+        let trials = 1000u64;
+        let mut lost = 0u64;
+        for seed in 0..trials {
+            let mut t = tab(1);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.h(0);
+            t.asymmetric_loss_channel(0, p, p);
+            if t.is_lost[0] {
+                lost += 1;
+            }
+        }
+        let frac = lost as f64 / trials as f64;
+        assert!((frac - p).abs() < 0.07, "expected ~{p}, got {frac:.3}");
+    }
+
+    #[test]
+    fn asymmetric_loss_superposition_averages_probs() {
+        // |+⟩: ⟨Z⟩ = 0 so p_tot = (p0 + p1) / 2.
+        let (p0, p1) = (0.2, 0.6);
+        let expected = 0.5 * (p0 + p1); // 0.4
+        let trials = 1000u64;
+        let mut lost = 0u64;
+        for seed in 0..trials {
+            let mut t = tab(1);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.h(0);
+            t.asymmetric_loss_channel(0, p0, p1);
+            if t.is_lost[0] {
+                lost += 1;
+            }
+        }
+        let frac = lost as f64 / trials as f64;
+        assert!(
+            (frac - expected).abs() < 0.07,
+            "expected ~{expected}, got {frac:.3}"
         );
     }
 }

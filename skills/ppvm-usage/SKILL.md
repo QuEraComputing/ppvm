@@ -1,6 +1,6 @@
 ---
 name: ppvm-usage
-description: Authoritative usage guide for ppvm, a fast quantum-circuit simulator with a Rust core and Python bindings (`ppvm-runtime`, `ppvm-tableau`, `ppvm-sym`, `ppvm-stim`, `ppvm` Python package). Use this skill whenever a task touches ppvm — importing `ppvm` in Python, depending on any `ppvm-*` crate in Rust, writing or modifying Pauli-propagation code, building or running circuits against the generalized stabilizer tableau, executing Stim programs, modelling depolarizing or loss noise, or even just answering "how do I do X in ppvm". Use it even when the user only hints at ppvm (mentions Pauli strings + truncation, or `GeneralizedTableau`, or "Bloqade simulation backend"). Skipping this skill is a top source of broken examples — the API has several non-obvious conventions (Heisenberg gate order, `Config`-generic types, kwargs-not-classes truncation) that look reasonable but are wrong if guessed.
+description: Authoritative usage guide for ppvm, a fast quantum-circuit simulator with a Rust core and Python bindings (`ppvm-traits`, `ppvm-pauli-word`, `ppvm-pauli-sum`, `ppvm-tableau`, `ppvm-sym`, `ppvm-stim`, `ppvm` Python package). Use this skill whenever a task touches ppvm — importing `ppvm` in Python, depending on any `ppvm-*` crate in Rust, writing or modifying Pauli-propagation code, building or running circuits against the generalized stabilizer tableau, executing Stim programs, modelling depolarizing or loss noise, or even just answering "how do I do X in ppvm". Use it even when the user only hints at ppvm (mentions Pauli strings + truncation, or `GeneralizedTableau`, or "Bloqade simulation backend"). Skipping this skill is a top source of broken examples — the API has several non-obvious conventions (Heisenberg gate order, `Config`-generic types, kwargs-not-classes truncation) that look reasonable but are wrong if guessed.
 allowed-tools: Bash, Read, Write, Edit
 ---
 
@@ -32,7 +32,7 @@ ppvm propagation:    state.cnot(0, 1); state.h(0)
 
 In Rust, `PauliSum<T: Config>` fixes storage, coefficient type, hasher, and truncation strategy at compile time. You pick a pre-built config and pass it as a type parameter. Don't try to make this dynamic — the bound propagates through every gate method and resisting it just fights the compiler.
 
-Common picks from `ppvm_runtime::config`:
+Common picks from `ppvm_pauli_sum::config`:
 
 | Config                                  | When                              |
 |-----------------------------------------|-----------------------------------|
@@ -63,7 +63,7 @@ PauliSum.new(
 )
 ```
 
-**Rust — strategy types from `ppvm_runtime::strategy`:** `CoefficientThreshold(eps)`, `MaxPauliWeight(w)`, `MaxLossWeight(w)`, `CombinedStrategy(a, b)`. Pass via the builder's `.strategy(...)`. These are Rust-only types — they are *not* exposed to Python.
+**Rust — strategy types from `ppvm_pauli_sum::strategy`:** `CoefficientThreshold(eps)`, `MaxPauliWeight(w)`, `MaxLossWeight(w)`, `CombinedStrategy(a, b)`. Pass via the builder's `.strategy(...)`. These are Rust-only types — they are *not* exposed to Python.
 
 Without truncation, a 20-qubit Trotter circuit with `rx` rotations will exhaust memory in a few layers. Always set a threshold before scaling up.
 
@@ -102,10 +102,10 @@ With noise and truncation:
 ps = PauliSum.new(20, "Z" * 20, min_abs_coeff=1e-6, max_pauli_weight=8)
 for _ in range(50):
     for q in range(20):
-        ps.rx(q, 0.1)
-        ps.depolarize(q, 1e-3)
+        ps.depolarize1(q, p=1e-3)
+        ps.rx(q, theta=0.1)
     for q in range(19):
-        ps.rzz(q, q + 1, 0.05)
+        ps.rzz(q, q + 1, theta=0.05)
 # Truncation has been applied throughout; no manual call needed.
 print(ps.overlap_with_zero())
 ```
@@ -132,7 +132,7 @@ Non-Clifford gates and Stim programs:
 from ppvm import GeneralizedTableau, StimProgram, sample_stim
 
 tab = GeneralizedTableau(n_qubits=5)
-tab.h(0); tab.t(0); tab.rx(1, 0.3)
+tab.h(0); tab.t(0); tab.rx(1, theta=0.3)
 
 prog = StimProgram.parse(stim_source_string)   # or StimProgram.from_file(path)
 results = tab.run(prog)                        # list[MeasurementResult]
@@ -157,7 +157,7 @@ In `Cargo.toml`:
 
 ```toml
 [dependencies]
-ppvm-runtime = { git = "https://github.com/QuEraComputing/ppvm" }   # always
+ppvm-pauli-sum = { git = "https://github.com/QuEraComputing/ppvm" } # always (Pauli-propagation engine)
 ppvm-tableau = { git = "https://github.com/QuEraComputing/ppvm" }   # for the tableau backend
 ppvm-stim    = { git = "https://github.com/QuEraComputing/ppvm" }   # for Stim execution
 ppvm-sym     = { git = "https://github.com/QuEraComputing/ppvm" }   # for symbolic propagation
@@ -168,7 +168,7 @@ On x86, set `RUSTFLAGS="-C target-feature=+aes,+sse2"` (gxhash needs AES). On ot
 ### Pauli propagation
 
 ```rust
-use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
+use ppvm_pauli_sum::{prelude::*, strategy::CoefficientThreshold};
 
 type State = PauliSum<config::indexmap::ByteFxHashF64<4, CoefficientThreshold>>;
 
@@ -191,7 +191,7 @@ println!("{}", state.trace(&zero_state));
 ### Generalized stabilizer tableau
 
 ```rust
-use ppvm_runtime::prelude::*;
+use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
 
 // GeneralizedTableau takes (n_qubits, coefficient_threshold).
@@ -212,17 +212,19 @@ use ppvm_tableau::prelude::*;
 
 let prog = parse_extended(stim_src)?;
 
-// Multi-shot: pass a factory closure to `sample` — it reuses the parsed program.
-let shots = sample(&prog, 10_000, || {
+// Multi-shot: pass a factory closure to `sample` — it reuses the parsed
+// program. The closure receives the shot index `i`; derive a per-shot seed
+// from it (e.g. `new_with_seed(.., base.wrapping_add(i as u64))`) for reproducible runs.
+let shots = sample(&prog, 10_000, |_i| {
     GeneralizedTableau::<_, usize, _>::new(n_qubits, 1e-10)
 })?;
 ```
 
-For single-shot demos there are also `run_string` / `run_file`, but they re-parse on every call — never use them in a sampling loop.
+With the `rayon` feature, `sample` fans shots across the global thread pool (serial fallback for small batches); call `sample_serial` / `sample_parallel` to force one path. For single-shot demos there are also `run_string` / `run_file`, but they re-parse on every call — never use them in a sampling loop.
 
 ## Gate / noise / measurement vocabulary
 
-Availability varies by backend and language binding. Don't trust intuition: the Python `PauliSum` exposes a deliberately narrower surface than the Rust `PauliSum` or the `GeneralizedTableau`. Names: Python is `snake_case`; Rust uses `_adj` for daggers (there is no `_dag`).
+Availability varies by backend and language binding. Don't trust intuition: the Python `PauliSum` exposes a deliberately narrower surface than the Rust `PauliSum` or the `GeneralizedTableau`. Names: everything is `snake_case`; daggers are `_dag` (e.g. `s_dag`, `sqrt_x_dag`, `t_dag`) on both Rust and Python.
 
 In the tables below: **R** = Rust on both backends, **P-S** = Python `PauliSum` / `LossyPauliSum`, **P-T** = Python `GeneralizedTableau`. A check means the method is exposed there.
 
@@ -230,8 +232,8 @@ In the tables below: **R** = Rust on both backends, **P-S** = Python `PauliSum` 
 
 | Method                                   | R | P-S | P-T |
 |------------------------------------------|---|-----|-----|
-| `x`, `y`, `z`, `h`, `s`, `s_adj`         | ✓ | ✓   | ✓   |
-| `sqrt_x`, `sqrt_x_adj`, `sqrt_y`, `sqrt_y_adj` | ✓ | ✓ | ✓ |
+| `x`, `y`, `z`, `h`, `s`, `s_dag`         | ✓ | ✓   | ✓   |
+| `sqrt_x`, `sqrt_x_dag`, `sqrt_y`, `sqrt_y_dag` | ✓ | ✓ | ✓ |
 | `cnot`, `cz`                             | ✓ | ✓   | ✓   |
 | `cy`                                     | ✓ |  —  | ✓   |
 
@@ -242,7 +244,7 @@ In the tables below: **R** = Rust on both backends, **P-S** = Python `PauliSum` 
 | `rx`, `ry`, `rz`             | ✓ | ✓   | ✓   |
 | `rxx`, `ryy`, `rzz`          | ✓ | ✓   | ✓   |
 | `rxy`, `rxz`, `ryx`, `ryz`, `rzx`, `rzy` | ✓ | — | — |
-| `t`, `t_adj`                 | ✓ |  —  | ✓   |
+| `t`, `t_dag`                 | ✓ |  —  | ✓   |
 | `u3(q, theta, phi, lam)`     | ✓ |  —  | ✓   |
 | `crx(c, t, theta)`           | trait only (no impl) | — | — |
 
@@ -254,8 +256,8 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 |-----------------------------------------------------------------------------|---|-----|-----|
 | `measure(q)` → `MeasurementResult` (`ZERO`/`ONE`/`LOST` on tableau)         | ✓ | —   | ✓   |
 | `reset(q)`                                                                  | ✓ | —   | ✓   |
-| `depolarize(q, p)`                                                          | ✓ | ✓   | ✓   |
-| `depolarize2(q0, q1, p)`                                                    | ✓ | —   | —   |
+| `depolarize1(q, p=...)`                                                     | ✓ | ✓   | ✓   |
+| `depolarize2(q0, q1, p=...)`                                                | ✓ | —   | —   |
 | `pauli_error(q, [px,py,pz])`                                                | ✓ | ✓   | ✓   |
 | `two_qubit_pauli_error(q0, q1, p[15])`                                      | ✓ | ✓   | ✓   |
 | `amplitude_damping(q, gamma)`                                               | ✓ | ✓   | —   |
@@ -267,14 +269,16 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 
 ### Naming traps
 
-- `depolarize` (not `depolarizing`).
-- `_adj` (not `_dag`).
+- `depolarize1` (not `depolarize` or `depolarizing`); the two-qubit form is `depolarize2`.
+- `_dag` (not `_adj` or `_dagger`).
+- Prefer `p=...` and `theta=...` for readability in Python; trailing positional
+  probabilities and angles are also accepted for compatibility.
 - The Python `PauliSum` is intentionally a narrow workhorse focused on noisy-circuit observables. For `t`, `u3`, `cy`, mid-circuit `measure`, or `reset`, use `GeneralizedTableau` (Python) or drop to Rust.
 
 ## Common pitfalls (rank-ordered by how often agents hit them)
 
 1. **Forgot to reverse the gate order in Pauli propagation.** Symptom: expectation values look like the inverse circuit. Re-read §1.
-2. **Used `depolarizing` or `_dag` from intuition.** Symptom: `AttributeError` / `no method named …`. Correct names are `depolarize` and `_adj`.
+2. **Used `depolarizing`/`depolarize` or `_adj` from intuition.** Symptom: `AttributeError` / `no method named …`. Correct names are `depolarize1` and `_dag`.
 3. **Tried to import `CoefficientThreshold` / `MaxPauliWeight` from Python.** Those are Rust-only. Use kwargs on `PauliSum.new`.
 4. **`.truncate()` on the wrong side.** In Python, calling `.truncate()` raises `AttributeError` — the binding already truncates after every gate. In Rust, *not* calling `state.truncate()` means your configured policy never runs and the sum grows unboundedly. See §3 above.
 5. **`GeneralizedTableau::new(n)` in Rust.** It takes two args: `(n_qubits, coefficient_threshold)`.

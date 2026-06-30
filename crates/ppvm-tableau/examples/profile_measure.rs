@@ -3,7 +3,7 @@
 
 /// Ad-hoc profiling binary to measure measurement time scaling.
 /// Run: cargo run -p ppvm-tableau --example profile_measure --release
-use ppvm_runtime::config::fx64hash::Byte8F64;
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
 use std::time::Instant;
 

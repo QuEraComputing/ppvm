@@ -22,7 +22,7 @@ where
     T: Config,
     <<T as Config>::Storage as BitView>::Store: PrimInt,
     C: SparseVector<Complex<T::Coeff>, I>,
-    T::Coeff: One + Zero + Clone + Send + Sync + num::Num,
+    T::Coeff: One + Zero + Clone + Send + Sync + num::Num + PartialOrd,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
         + From<Complex64>
@@ -41,7 +41,7 @@ where
         self.branch_with_coefficients(index, Pauli::Z, complex_cos, complex_sin);
     }
 
-    fn t_adj(&mut self, index: usize) {
+    fn t_dag(&mut self, index: usize) {
         if self.is_lost[index] {
             return;
         }

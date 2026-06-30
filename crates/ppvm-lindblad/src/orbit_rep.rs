@@ -36,7 +36,7 @@
 use crate::{Error, LindbladSpec};
 use fxhash::{FxBuildHasher, FxHashMap};
 use num::Complex;
-use ppvm_runtime::symmetry::TranslationGroup;
+use ppvm_pauli_sum::symmetry::TranslationGroup;
 use quspin_expm::ExpmOp;
 use quspin_types::{ExpmComputation, LinearOperator, QuSpinError};
 use rayon::prelude::*;

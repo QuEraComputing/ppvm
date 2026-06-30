@@ -28,10 +28,10 @@ ps = PauliSum.new(
 )
 for _ in range(LAYERS):
     for q in range(N):
-        ps.rx(q, 0.1)
-        ps.depolarize(q, 1e-3)
+        ps.depolarize1(q, p=1e-3)
+        ps.rx(q, theta=0.1)
     for q in range(N - 1):
-        ps.rzz(q, q + 1, 0.05)
+        ps.rzz(q, q + 1, theta=0.05)
 
 # Truncation has been applied throughout; ps.current_max_weight() is the
 # largest non-identity-count among the terms still kept.

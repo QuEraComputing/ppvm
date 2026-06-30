@@ -3,6 +3,9 @@
 
 use std::{fmt::Debug, marker::PhantomData};
 
+// Only the rayon branch-coefficient helpers coalesce into a map now; the apply
+// path and the default-feature branch path both use flat-Vec sort-merge/relabel.
+#[cfg(feature = "rayon")]
 use fxhash::FxHashMap as HashMap;
 
 use bitvec::array::BitArray;
@@ -29,8 +32,8 @@ type PhasedPauliWordNoHash<A, H> = PhasedPauliWord<A, H, PauliWord<A, H, false>>
 /// # Examples
 ///
 /// ```
-/// use ppvm_runtime::config::fxhash::ByteF64;
-/// use ppvm_runtime::traits::Clifford;
+/// use ppvm_pauli_sum::config::fxhash::ByteF64;
+/// use ppvm_traits::traits::Clifford;
 /// use ppvm_tableau::data::Tableau;
 ///
 /// let mut tab: Tableau<ByteF64<1>> = Tableau::new(2);
@@ -59,13 +62,13 @@ impl<T: Config> Tableau<T> {
         let pw_cache = PhasedPauliWordNoHash::<T::Storage, T::BuildHasher>::new(n_qubits);
         for i in 0..n_qubits {
             // destabilizer
-            let mut pw = pw_cache.clone();
+            let mut pw = pw_cache;
             pw.set(i, Pauli::X);
             data.push(pw);
         }
         for i in 0..n_qubits {
             // stabilizer
-            let mut pw = pw_cache.clone();
+            let mut pw = pw_cache;
             pw.set(i, Pauli::Z);
             data.push(pw);
         }
@@ -155,8 +158,8 @@ impl<T: Config> Tableau<T> {
         let n = self.n_qubits;
         let (destabilizers, stabilizers) = self.data.split_at_mut(n);
 
-        // Clone g_q once before the loop
-        let g_q = stabilizers[q_idx].clone();
+        // Copy g_q once before the loop
+        let g_q = stabilizers[q_idx];
 
         // Check if there are other stabilizers that anticommute with Z_addr0
         // If so, replace with g_j = g_j * g_q
@@ -333,15 +336,35 @@ pub(crate) fn compute_phase_with_mask_static<I: TableauIndex>(
 #[cfg(feature = "rayon")]
 pub(crate) const RAYON_COEFF_THRESHOLD: usize = 16384;
 
+/// Parameters describing how a Pauli branch splits each coefficient.
+///
+/// Bundles the four anticommutation/phase-mask fields produced by
+/// [`compute_decomposition`](GeneralizedTableau::compute_decomposition) with the
+/// two scaling factors applied to the branch and non-branch contributions. They
+/// always travel together, so passing them as one value keeps the coefficient
+/// accumulation helpers under clippy's argument-count limit without an
+/// `#[allow]`.
+///
+/// Only the rayon coefficient helpers consume this; the default-feature build
+/// uses the inlined sort-merge path in
+/// [`branch_with_coefficients`](GeneralizedTableau::branch_with_coefficients).
+#[cfg(feature = "rayon")]
+#[derive(Clone, Copy)]
+pub(crate) struct BranchParams<I, CoeffType> {
+    pub stab_anticomm_bits: I,
+    pub destab_anticomm_bits: I,
+    pub odd_phase_mask: I,
+    pub phase_decomp: u8,
+    pub coefficient_factor: Complex<CoeffType>,
+    pub branch_factor: Complex<CoeffType>,
+}
+
 /// Sequential accumulation of branch coefficients.
+#[cfg(feature = "rayon")]
 fn branch_coefficients_seq<I, CoeffType>(
     items: impl IntoIterator<Item = (Complex<CoeffType>, I)>,
-    stab_anticomm_bits: I,
-    destab_anticomm_bits: I,
-    odd_phase_mask: I,
-    phase_decomp: u8,
-    coefficient_factor: Complex<CoeffType>,
-    branch_factor: Complex<CoeffType>,
+    capacity: usize,
+    params: BranchParams<I, CoeffType>,
 ) -> HashMap<I, Complex<CoeffType>>
 where
     I: TableauIndex,
@@ -349,7 +372,16 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    let mut map: HashMap<I, Complex<CoeffType>> = HashMap::default();
+    let BranchParams {
+        stab_anticomm_bits,
+        destab_anticomm_bits,
+        odd_phase_mask,
+        phase_decomp,
+        coefficient_factor,
+        branch_factor,
+    } = params;
+    let mut map: HashMap<I, Complex<CoeffType>> =
+        HashMap::with_capacity_and_hasher(capacity, Default::default());
     for (coeff, idx) in items {
         debug_assert!(
             !(coeff.re == CoeffType::zero() && coeff.im == CoeffType::zero()),
@@ -379,12 +411,7 @@ where
 #[cfg(feature = "rayon")]
 fn branch_coefficients_parallel<I, CoeffType>(
     items: &[(Complex<CoeffType>, I)],
-    stab_anticomm_bits: I,
-    destab_anticomm_bits: I,
-    odd_phase_mask: I,
-    phase_decomp: u8,
-    coefficient_factor: Complex<CoeffType>,
-    branch_factor: Complex<CoeffType>,
+    params: BranchParams<I, CoeffType>,
 ) -> HashMap<I, Complex<CoeffType>>
 where
     I: TableauIndex + Send + Sync,
@@ -392,6 +419,14 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
+    let BranchParams {
+        stab_anticomm_bits,
+        destab_anticomm_bits,
+        odd_phase_mask,
+        phase_decomp,
+        coefficient_factor,
+        branch_factor,
+    } = params;
     if items.len() >= RAYON_COEFF_THRESHOLD {
         use rayon::prelude::*;
 
@@ -430,32 +465,36 @@ where
         return map;
     }
 
-    branch_coefficients_seq(
-        items.iter().copied(),
-        stab_anticomm_bits,
-        destab_anticomm_bits,
-        odd_phase_mask,
-        phase_decomp,
-        coefficient_factor,
-        branch_factor,
-    )
+    branch_coefficients_seq(items.iter().copied(), 2 * items.len(), params)
 }
 
-/// Sequential accumulation of apply coefficients.
+/// Sequential relabel of apply coefficients.
+///
+/// Pauli application sends every branch to `branch_index = idx ^ stab_anticomm_bits`.
+/// XOR by a fixed constant is a bijection, so distinct input indices always map
+/// to distinct branch indices: unlike the T-gate branch split (which emits two
+/// streams that genuinely collide), the apply path produces no index collisions
+/// at all. A per-index coalesce can therefore never merge two entries — the
+/// `entry()`-keyed map was pure overhead (hash every key + table allocation) for
+/// what is a straight relabel. We instead build a flat `Vec` in one sequential,
+/// prefetch-friendly pass and let the caller apply the magnitude cutoff. (The
+/// returned keys are unique by the bijection above; the `Vec` backing relies on
+/// that, exactly as the old map did implicitly.)
 fn apply_coefficients_seq<I, CoeffType>(
     items: impl IntoIterator<Item = (Complex<CoeffType>, I)>,
+    capacity: usize,
     stab_anticomm_bits: I,
     destab_anticomm_bits: I,
     odd_phase_mask: I,
     phase_decomp: u8,
-) -> HashMap<I, Complex<CoeffType>>
+) -> Vec<(I, Complex<CoeffType>)>
 where
     I: TableauIndex,
     CoeffType: One + Zero + Clone + num::Num,
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    let mut map: HashMap<I, Complex<CoeffType>> = HashMap::default();
+    let mut out: Vec<(I, Complex<CoeffType>)> = Vec::with_capacity(capacity);
     for (coeff, idx) in items {
         debug_assert!(
             !(coeff.re == CoeffType::zero() && coeff.im == CoeffType::zero()),
@@ -471,15 +510,19 @@ where
         let branch_phase = (branch_phase_contribution + phase_decomp) % 4;
         let phase_factor: Complex<CoeffType> =
             COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
-        let branch_coefficient = phase_factor * coeff;
-        *map.entry(branch_index).or_insert(Complex::zero()) += branch_coefficient;
+        out.push((branch_index, phase_factor * coeff));
     }
-    map
+    out
 }
 
-/// Accumulate coefficients for pauli application. When the coefficient count
-/// exceeds `RAYON_COEFF_THRESHOLD`, uses parallel map/collect followed by
-/// sequential accumulation. Below the threshold, falls back to sequential.
+/// Relabel coefficients for pauli application. When the coefficient count
+/// exceeds `RAYON_COEFF_THRESHOLD`, the per-element relabel runs as a parallel
+/// map; below the threshold it falls back to the sequential relabel.
+///
+/// Because the relabel `idx ^ stab_anticomm_bits` is a bijection (see
+/// [`apply_coefficients_seq`]), the parallel map's output already has unique
+/// keys — there is nothing to coalesce, so the result is collected straight into
+/// a flat `Vec` with no sequential fold afterwards.
 #[cfg(feature = "rayon")]
 fn apply_coefficients_parallel<I, CoeffType>(
     items: &[(Complex<CoeffType>, I)],
@@ -487,7 +530,7 @@ fn apply_coefficients_parallel<I, CoeffType>(
     destab_anticomm_bits: I,
     odd_phase_mask: I,
     phase_decomp: u8,
-) -> HashMap<I, Complex<CoeffType>>
+) -> Vec<(I, Complex<CoeffType>)>
 where
     I: TableauIndex + Send + Sync,
     CoeffType: One + Zero + Clone + Send + Sync + num::Num,
@@ -497,7 +540,7 @@ where
     if items.len() >= RAYON_COEFF_THRESHOLD {
         use rayon::prelude::*;
 
-        let pairs: Vec<(I, Complex<CoeffType>)> = items
+        return items
             .par_iter()
             .map(|&(coeff, idx)| {
                 let branch_index = idx ^ stab_anticomm_bits;
@@ -513,17 +556,11 @@ where
                 (branch_index, phase_factor * coeff)
             })
             .collect();
-
-        let mut map: HashMap<I, Complex<CoeffType>> =
-            HashMap::with_capacity_and_hasher(pairs.len(), Default::default());
-        for (branch_idx, branch_coeff) in pairs {
-            *map.entry(branch_idx).or_insert(Complex::zero()) += branch_coeff;
-        }
-        return map;
     }
 
     apply_coefficients_seq(
         items.iter().copied(),
+        items.len(),
         stab_anticomm_bits,
         destab_anticomm_bits,
         odd_phase_mask,
@@ -552,8 +589,8 @@ where
 /// measurements are perfectly correlated on every shot:
 ///
 /// ```
-/// use ppvm_runtime::config::fxhash::ByteF64;
-/// use ppvm_runtime::traits::{Clifford, LossyMeasure};
+/// use ppvm_pauli_sum::config::fxhash::ByteF64;
+/// use ppvm_traits::traits::{Clifford, LossyMeasure};
 /// use ppvm_tableau::data::GeneralizedTableau;
 ///
 /// let mut tab: GeneralizedTableau<ByteF64<1>> =
@@ -570,15 +607,15 @@ where
 /// followed by `T†` and the state is unchanged:
 ///
 /// ```
-/// use ppvm_runtime::config::fxhash::ByteF64;
-/// use ppvm_runtime::traits::{Clifford, TGate};
+/// use ppvm_pauli_sum::config::fxhash::ByteF64;
+/// use ppvm_traits::traits::{Clifford, TGate};
 /// use ppvm_tableau::data::GeneralizedTableau;
 ///
 /// let mut tab: GeneralizedTableau<ByteF64<1>> =
 ///     GeneralizedTableau::new_with_seed(1, 1e-12, 0);
 /// tab.h(0);
 /// tab.t(0);
-/// tab.t_adj(0);
+/// tab.t_dag(0);
 /// // T followed by T† is the identity; the |+⟩ state is restored.
 /// ```
 #[derive(Clone)]
@@ -595,18 +632,20 @@ pub struct GeneralizedTableau<
     pub is_lost: Vec<bool>,
     /// Coefficient-magnitude threshold below which branches are dropped.
     pub coefficient_threshold: T::Coeff,
+    /// Ordered log of every measurement performed (mirrors stim's record).
+    pub measurement_record: Vec<Option<bool>>,
     _index_phantom: PhantomData<IndexType>,
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
 where
-    T::Coeff: One + Zero + Clone + Send + Sync + num::Num,
+    T::Coeff: One + Zero + Clone + num::Num,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + std::ops::AddAssign
         + From<Complex64>
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Send + Sync,
+    I: TableauIndex,
 {
     /// Construct a generalized tableau in the `|0…0⟩` state.
     ///
@@ -624,6 +663,7 @@ where
             coefficients,
             is_lost: vec![false; n_qubits],
             coefficient_threshold,
+            measurement_record: Vec::new(),
             _index_phantom: PhantomData,
         }
     }
@@ -650,6 +690,29 @@ where
     /// Number of qubits.
     pub fn n_qubits(&self) -> usize {
         self.tableau.n_qubits
+    }
+
+    /// All measurement outcomes recorded so far, in order.
+    pub fn current_measurement_record(&self) -> &[Option<bool>] {
+        &self.measurement_record
+    }
+
+    /// Append an externally defined measurement result to the record.
+    ///
+    /// Used by Stim instructions such as `MPAD`, which append measurement
+    /// record bits without measuring a qubit.
+    pub fn append_measurement_record(&mut self, result: Option<bool>) {
+        self.measurement_record.push(result);
+    }
+
+    /// Replace the most recent measurement record entry.
+    ///
+    /// Used by noisy measurement paths where the quantum state follows the
+    /// true outcome but the public record should hold the reported bit.
+    pub fn overwrite_last_measurement_record(&mut self, result: Option<bool>) {
+        if let Some(last) = self.measurement_record.last_mut() {
+            *last = result;
+        }
     }
 
     /// Apply CZ to N pairs with constant offset: (base+i, base+offset+i) for i in 0..count.
@@ -722,7 +785,7 @@ where
     /// `destab_anticomm_bits[l] = 1` iff P_addr0 anticommutes with destabilizer d_l.
     /// Note that stab_anticomm_bits is equal to the shift of the index when branching
     /// (`beta` in Eq(4) of the SOFT paper).
-    pub(crate) fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I)
+    pub fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I)
     where
         <<T as Config>::Storage as BitView>::Store: PrimInt,
     {
@@ -789,7 +852,7 @@ where
     /// the phase when applying a Pauli is the product of all destabilizer phases
     /// and the phase contributions from the commutation relations
     /// we need to check every destabilizer where the basis index has a 1 bit.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn compute_phase(
         &self,
         destab_anticomm_bits: I,
@@ -820,7 +883,7 @@ where
     }
 
     /// Build a bitmask where bit i is set if destabilizer i has odd phase (phase % 2 != 0).
-    pub(crate) fn odd_phase_destabilizer_mask(&self) -> I {
+    pub fn odd_phase_destabilizer_mask(&self) -> I {
         let mut mask = I::zero();
         let one = I::one();
         for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
@@ -830,7 +893,18 @@ where
         }
         mask
     }
+}
 
+impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
+where
+    T::Coeff: One + Zero + Clone + Send + Sync + num::Num + PartialOrd,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + std::ops::AddAssign
+        + From<Complex64>
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Send + Sync,
+{
     pub(crate) fn branch_with_coefficients(
         &mut self,
         addr0: usize,
@@ -849,55 +923,189 @@ where
 
         let odd_phase_mask = self.odd_phase_destabilizer_mask();
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-        #[cfg(feature = "rayon")]
         let n_coefficients = old_coefficients.len();
 
-        // When rayon is enabled and above the threshold, collect to Vec for parallel map;
-        // otherwise iterate directly with the sequential path.
+        let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
+
+        // When rayon is enabled and above the threshold, use parallel map then apply cutoff
+        // directly. Early-return so old_coefficients stays valid for the sequential path below.
         #[cfg(feature = "rayon")]
-        let new_coefficients = if n_coefficients >= RAYON_COEFF_THRESHOLD {
+        if n_coefficients >= RAYON_COEFF_THRESHOLD {
             let items: Vec<_> = old_coefficients.into_iter().collect();
-            branch_coefficients_parallel(
+            let map = branch_coefficients_parallel(
                 &items,
-                stab_anticomm_bits,
-                destab_anticomm_bits,
-                odd_phase_mask,
-                phase_decomp,
-                coefficient_factor,
-                branch_factor,
-            )
-        } else {
-            branch_coefficients_seq(
-                old_coefficients,
-                stab_anticomm_bits,
-                destab_anticomm_bits,
-                odd_phase_mask,
-                phase_decomp,
-                coefficient_factor,
-                branch_factor,
-            )
-        };
-
-        #[cfg(not(feature = "rayon"))]
-        let new_coefficients = branch_coefficients_seq(
-            old_coefficients,
-            stab_anticomm_bits,
-            destab_anticomm_bits,
-            odd_phase_mask,
-            phase_decomp,
-            coefficient_factor,
-            branch_factor,
-        );
-
-        let cutoff = Complex {
-            re: self.coefficient_threshold.clone(),
-            im: T::Coeff::zero(),
-        }
-        .abs();
-        for (idx, coeff) in new_coefficients {
-            if coeff.abs() > cutoff {
-                self.coefficients.unsafe_insert(idx, coeff);
+                BranchParams {
+                    stab_anticomm_bits,
+                    destab_anticomm_bits,
+                    odd_phase_mask,
+                    phase_decomp,
+                    coefficient_factor,
+                    branch_factor,
+                },
+            );
+            self.coefficients.reserve(map.len());
+            for (idx, coeff) in map {
+                if coeff.norm_sqr() > cutoff_sq {
+                    self.coefficients.unsafe_insert(idx, coeff);
+                }
             }
+            return;
+        }
+
+        // Sequential sort-merge path: build nonbranch (nb), branch-values (brv), and a
+        // packed branch-key stream, sort if needed, then 2-way merge directly into
+        // self.coefficients with inline cutoff — no intermediate output Vec.
+        //
+        // Fast path: pack each (branch_key, build_pos) as a single u64
+        // `(key << 16) | pos` and sort the u64 array. Half the data movement vs the
+        // generic (I, u32) elements, and the most-optimised sort_unstable path.
+        // Preconditions for packable: n_coefficients ≤ 0xFFFF (pos fits 16 bits) and
+        // every branch key fits in 47 bits. Both hold for cultivation_d5 (≤13 active
+        // bits, small coefficient counts). The fallback reproduces the prior behaviour
+        // exactly for wide index types or large keys.
+        let mut nb: Vec<(I, Complex<T::Coeff>)> = Vec::with_capacity(n_coefficients);
+        let mut brv: Vec<Complex<T::Coeff>> = Vec::with_capacity(n_coefficients);
+        let mut packed: Vec<u64> = Vec::with_capacity(n_coefficients);
+        let mut packable = n_coefficients <= 0xFFFF;
+        let mut nb_sorted = true;
+        let mut prev: Option<I> = None;
+        for (pos, (coeff, idx)) in (0_u32..).zip(old_coefficients) {
+            let branch_index = idx ^ stab_anticomm_bits;
+            let bpc = compute_phase_with_mask_static(
+                destab_anticomm_bits,
+                idx,
+                stab_anticomm_bits,
+                odd_phase_mask,
+            );
+            let branch_phase = (bpc + phase_decomp) % 4;
+            let pf: Complex<T::Coeff> = COMPLEX_PHASE_CONVERSION[branch_phase as usize].into();
+            brv.push(pf * coeff * branch_factor);
+            match <u64 as num::NumCast>::from(branch_index) {
+                Some(k) if k < (1u64 << 47) => packed.push((k << 16) | (pos as u64)),
+                _ => {
+                    packable = false;
+                    packed.push(pos as u64);
+                }
+            }
+            nb.push((idx, coeff * coefficient_factor));
+            if let Some(p) = prev
+                && idx < p
+            {
+                nb_sorted = false;
+            }
+            prev = Some(idx);
+        }
+
+        self.coefficients.reserve(nb.len() + brv.len());
+        let mut i = 0;
+        if packable {
+            if !nb_sorted {
+                nb.sort_unstable_by_key(|a| a.0);
+            }
+            packed.sort_unstable();
+            // Decode the 47-bit key from the high bits of a packed entry using byte-by-byte
+            // construction from I::from(u8) — avoids num::NumCast which panics for bnum types.
+            let decode_key = |w: u64| -> I {
+                let k = w >> 16; // k < 2^47; 6 bytes suffice
+                let mut v = I::zero();
+                for b in 0..6usize {
+                    let byte = ((k >> (b * 8)) & 0xFF) as u8;
+                    v |= <I as From<u8>>::from(byte) << (b * 8);
+                }
+                v
+            };
+            let mut j = 0;
+            while i < nb.len() && j < packed.len() {
+                let bp = (packed[j] & 0xFFFF) as usize;
+                let bk = decode_key(packed[j]);
+                match nb[i].0.cmp(&bk) {
+                    std::cmp::Ordering::Less => {
+                        if nb[i].1.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(nb[i].0, nb[i].1);
+                        }
+                        i += 1;
+                    }
+                    std::cmp::Ordering::Greater => {
+                        let v = brv[bp];
+                        if v.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(bk, v);
+                        }
+                        j += 1;
+                    }
+                    std::cmp::Ordering::Equal => {
+                        let mut sv = nb[i].1;
+                        sv += brv[bp];
+                        if sv.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(nb[i].0, sv);
+                        }
+                        i += 1;
+                        j += 1;
+                    }
+                }
+            }
+            while j < packed.len() {
+                let bp = (packed[j] & 0xFFFF) as usize;
+                let bk = decode_key(packed[j]);
+                let v = brv[bp];
+                if v.norm_sqr() > cutoff_sq {
+                    self.coefficients.unsafe_insert(bk, v);
+                }
+                j += 1;
+            }
+        } else {
+            // Fallback for wide index types, large keys (≥ 2^47), or many coefficients
+            // (> 65535). nb is still in build order here; reconstruct brk from it before
+            // sorting nb, so build-position p correctly indexes brv[p].
+            let mut brk: Vec<(I, u32)> = (0_u32..)
+                .zip(nb.iter())
+                .map(|(p, &(idx, _))| (idx ^ stab_anticomm_bits, p))
+                .collect();
+            if !nb_sorted {
+                nb.sort_unstable_by_key(|a| a.0);
+            }
+            brk.sort_unstable_by_key(|a| a.0);
+            let mut j = 0;
+            while i < nb.len() && j < brk.len() {
+                let (bk, bp) = brk[j];
+                match nb[i].0.cmp(&bk) {
+                    std::cmp::Ordering::Less => {
+                        if nb[i].1.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(nb[i].0, nb[i].1);
+                        }
+                        i += 1;
+                    }
+                    std::cmp::Ordering::Greater => {
+                        let v = brv[bp as usize];
+                        if v.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(bk, v);
+                        }
+                        j += 1;
+                    }
+                    std::cmp::Ordering::Equal => {
+                        let mut sv = nb[i].1;
+                        sv += brv[bp as usize];
+                        if sv.norm_sqr() > cutoff_sq {
+                            self.coefficients.unsafe_insert(nb[i].0, sv);
+                        }
+                        i += 1;
+                        j += 1;
+                    }
+                }
+            }
+            while j < brk.len() {
+                let (bk, bp) = brk[j];
+                let v = brv[bp as usize];
+                if v.norm_sqr() > cutoff_sq {
+                    self.coefficients.unsafe_insert(bk, v);
+                }
+                j += 1;
+            }
+        }
+        while i < nb.len() {
+            if nb[i].1.norm_sqr() > cutoff_sq {
+                self.coefficients.unsafe_insert(nb[i].0, nb[i].1);
+            }
+            i += 1;
         }
     }
 
@@ -917,7 +1125,6 @@ where
             self.compute_decomposition(addr0, pauli);
 
         let odd_phase_mask = self.odd_phase_destabilizer_mask();
-        #[cfg(feature = "rayon")]
         let n_coefficients = coefficients.len();
         let old_coefficients = std::mem::replace(coefficients, C::new());
 
@@ -934,6 +1141,7 @@ where
         } else {
             apply_coefficients_seq(
                 old_coefficients,
+                n_coefficients,
                 stab_anticomm_bits,
                 destab_anticomm_bits,
                 odd_phase_mask,
@@ -944,20 +1152,17 @@ where
         #[cfg(not(feature = "rayon"))]
         let new_coefficients = apply_coefficients_seq(
             old_coefficients,
+            n_coefficients,
             stab_anticomm_bits,
             destab_anticomm_bits,
             odd_phase_mask,
             phase_decomp,
         );
 
-        let cutoff = Complex {
-            re: self.coefficient_threshold.clone(),
-            im: T::Coeff::zero(),
-        }
-        .abs();
-
+        let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
+        coefficients.reserve(new_coefficients.len());
         for (idx, coeff) in new_coefficients {
-            if coeff.abs() > cutoff {
+            if coeff.norm_sqr() > cutoff_sq {
                 coefficients.unsafe_insert(idx, coeff);
             }
         }
@@ -968,7 +1173,7 @@ where
 mod tests {
     use super::*;
     use bnum::BUint;
-    use ppvm_runtime::config::fxhash::ByteF64;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
 
     type TestConfig = ByteF64<1>;
     type TestTableau = GeneralizedTableau<TestConfig>;
@@ -1078,7 +1283,7 @@ mod tests {
     #[test]
     fn test_cz_block_pairs_offset_17() {
         // Simulate MSD-like CZ: (0,17), (1,18), ..., (16,33) — all in one u64 word
-        use ppvm_runtime::config::fx64hash::Byte8F64;
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
         type LargeTab = Tableau<Byte8F64<2>>;
         let n = 34;
         let mut tab1 = LargeTab::new(n);
@@ -1103,7 +1308,7 @@ mod tests {
     fn test_cz_block_pairs_nonzero_base() {
         // Test CZ pairs starting from a non-zero base: (10,27), (11,28), ..., (14,31)
         // All within one u64 word (bits 0-63)
-        use ppvm_runtime::config::fx64hash::Byte8F64;
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
         type LargeTab = Tableau<Byte8F64<2>>;
         let n = 32;
         let base = 10;
@@ -1158,7 +1363,7 @@ mod tests {
     #[test]
     fn test_generalized_tableau_cz_block_pairs() {
         // Test through GeneralizedTableau wrapper
-        use ppvm_runtime::config::fx64hash::Byte8F64;
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
         type GTab = GeneralizedTableau<Byte8F64<2>>;
         let n = 34;
         let mut tab1: GTab = GeneralizedTableau::new(n, 1e-12);

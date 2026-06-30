@@ -27,16 +27,16 @@
 //!   to `f64` at the boundary (with a debug-only check that `|Im|` is at
 //!   FP noise).
 //!
-//! Pauli strings are stored as [`ppvm_runtime::word::PauliWord`] backed by
+//! Pauli strings are stored as [`ppvm_pauli_word::word::PauliWord`] backed by
 //! `[u64; 2]` (≤128 qubits) with cached hashes for fast HashMap lookup. The
 //! hot-path commutator/product loops bypass the higher-level word API and
 //! operate directly on raw `u64` chunks for speed.
 
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use num::Complex;
-use ppvm_runtime::symmetry::TranslationGroup;
-use ppvm_runtime::traits::PauliWordTrait;
-use ppvm_runtime::word::PauliWord;
+use ppvm_pauli_sum::symmetry::TranslationGroup;
+use ppvm_traits::PauliWordTrait;
+use ppvm_pauli_word::word::PauliWord;
 use rayon::prelude::*;
 use std::fmt;
 use std::time::Instant;
@@ -965,7 +965,7 @@ impl LindbladSpec {
     ///
     /// When `sym_group` and `momentum` are both `Some`, the input
     /// `(basis, coeffs)` is checked against the momentum sector using
-    /// [`ppvm_runtime::symmetry::check_momentum_sector`] before any
+    /// [`ppvm_pauli_sum::symmetry::check_momentum_sector`] before any
     /// evolution. If the input is not in sector `momentum`, an error
     /// is returned and no evolution is performed. This is purely
     /// validation — pc_step itself evolves in the standard full-basis
@@ -975,7 +975,7 @@ impl LindbladSpec {
     /// **For memory reduction**: this function does NOT merge into
     /// orbit-rep form during evolution. The correct workflow is to
     /// evolve as many steps as desired in full-basis form, then
-    /// call [`ppvm_runtime::symmetry::canonicalize_pauli_sum_complex`]
+    /// call [`ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex`]
     /// at observable-readout / snapshot points. Per-step orbit-rep
     /// evolution would require phase-aware action / CSR (complex matrix
     /// elements, not just complex vectors) — a separate code path to
@@ -1024,7 +1024,7 @@ impl LindbladSpec {
     ) -> Result<(), Error> {
         // 0. Optional sector check on the input state.
         if let (Some(g), Some(k)) = (sym_group, momentum) {
-            ppvm_runtime::symmetry::check_momentum_sector(basis, coeffs, g, k, 1e-8)
+            ppvm_pauli_sum::symmetry::check_momentum_sector(basis, coeffs, g, k, 1e-8)
                 .map_err(|e| Error::Internal(format!(
                     "pc_step_complex: input is not in momentum sector {:?}: {}",
                     k, e
@@ -1746,7 +1746,7 @@ mod tests {
     #[test]
     fn pc_step_orbit_rep_matches_full_basis_projection() {
         use std::f64::consts::PI;
-        use ppvm_runtime::symmetry::canonicalize_pauli_sum_complex;
+        use ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex;
         let n = 4usize;
         let dt = 0.01f64;
         let n_steps = 3usize;
@@ -1761,7 +1761,7 @@ mod tests {
             }
         }
         let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
-        let group = ppvm_runtime::symmetry::TranslationGroup::chain_1d(n);
+        let group = ppvm_pauli_sum::symmetry::TranslationGroup::chain_1d(n);
         let k_mode: i32 = 1;
         let k = vec![k_mode];
 
@@ -1855,7 +1855,7 @@ mod tests {
             }
         }
         let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
-        let group = ppvm_runtime::symmetry::TranslationGroup::chain_1d(n);
+        let group = ppvm_pauli_sum::symmetry::TranslationGroup::chain_1d(n);
         let k_mode: i32 = 1;
         let k = vec![k_mode];
 
@@ -1904,14 +1904,14 @@ mod tests {
             .unwrap();
         }
         // After evolution, the state should STILL be in sector k.
-        ppvm_runtime::symmetry::check_momentum_sector(&basis, &coeffs, &group, &k, 1e-8)
+        ppvm_pauli_sum::symmetry::check_momentum_sector(&basis, &coeffs, &group, &k, 1e-8)
             .expect("evolved state should remain in k-sector by translation-symmetry of L*");
 
         // Projecting to orbit-rep form should give a non-empty basis
         // with finite coefficients.
         let mut basis_proj = basis.clone();
         let mut coeffs_proj = coeffs.clone();
-        ppvm_runtime::symmetry::canonicalize_pauli_sum_complex(
+        ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex(
             &mut basis_proj,
             &mut coeffs_proj,
             &group,
@@ -1930,7 +1930,7 @@ mod tests {
     fn pc_step_complex_rejects_wrong_sector() {
         let n = 4usize;
         let spec = LindbladSpec::new(n, &[("XIII".to_string(), 1.0)], &[]).unwrap();
-        let group = ppvm_runtime::symmetry::TranslationGroup::chain_1d(n);
+        let group = ppvm_pauli_sum::symmetry::TranslationGroup::chain_1d(n);
 
         // A k=1 eigenstate (Z-sum with twist).
         let mut basis: Vec<Word> = (0..n)
@@ -2068,7 +2068,7 @@ mod tests {
     /// bit-identical up to FP noise.
     #[test]
     fn pc_step_matches_symmetry_merged_on_small_chain() {
-        use ppvm_runtime::symmetry::{TranslationGroup, canonicalize_pauli_sum};
+        use ppvm_pauli_sum::symmetry::{TranslationGroup, canonicalize_pauli_sum};
 
         let n = 4usize;
         let dt = 0.05f64;

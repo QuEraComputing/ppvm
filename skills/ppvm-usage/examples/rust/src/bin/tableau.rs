@@ -6,14 +6,14 @@
 //! trait surface will break the build instead of silently leaving the
 //! skill stale.
 
-use ppvm_runtime::prelude::*;
+use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
 
 fn main() {
     // GeneralizedTableau::new takes (n_qubits, coefficient_threshold).
     // The third generic parameter (sparse-vector backing) defaults to
     // Vec<(Complex64, IndexType)>, so we leave it implicit.
-    let mut tab: GeneralizedTableau<ppvm_runtime::config::indexmap::ByteFxHashF64<1>, usize> =
+    let mut tab: GeneralizedTableau<ppvm_pauli_sum::config::indexmap::ByteFxHashF64<1>, usize> =
         GeneralizedTableau::new(2, 1e-10);
 
     tab.h(0);

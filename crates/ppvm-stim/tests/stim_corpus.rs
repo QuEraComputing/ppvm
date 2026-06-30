@@ -3,15 +3,15 @@
 
 use std::path::PathBuf;
 
-use ppvm_runtime::config::indexmap::ByteFxHashF64;
+use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
 use ppvm_stim::{ExecError, execute, parse_extended};
 use ppvm_tableau::prelude::*;
 
 #[derive(Debug, Clone, Copy)]
 enum Expect {
-    /// File parses, prepares, executes.
+    /// File parses, validates, executes.
     Ok,
-    /// File parses, but prepare/execute must fail with `Unsupported(name)`.
+    /// File parses, but validate/execute must fail with `Unsupported(name)`.
     ExecUnsupported(&'static str),
     /// File should fail at parse time (e.g. uses `rec[-k]` targets).
     ParseFails,
@@ -24,15 +24,23 @@ const CASES: &[(&str, Expect)] = &[
     ("repeat_block.stim", Expect::Ok),
     ("depolarize_smoke.stim", Expect::Ok),
     ("swap_unsupported.stim", Expect::ExecUnsupported("SWAP")),
-    ("mx_unsupported.stim", Expect::ExecUnsupported("MX")),
+    // X/Y-basis measurement runs via basis-change decomposition.
+    ("mx_basis.stim", Expect::Ok),
+    // Two-qubit Pauli-product measurement is still unsupported.
+    ("mzz_unsupported.stim", Expect::ExecUnsupported("MZZ")),
     // The file uses `rec[-k]` targets on `DETECTOR` / `OBSERVABLE_INCLUDE`.
-    // Phase-1 cannot represent measurement-record targets, but the parser
-    // tolerates non-numeric tokens on annotations (which are no-ops in our
-    // pipeline) so the file parses, prepares, and executes cleanly.
+    // The parser tolerates non-numeric tokens on annotations (which are no-ops
+    // in our pipeline) so the file parses, validates, and executes cleanly.
     ("repetition_code_d3_r3.stim", Expect::Ok),
-    // `CX rec[-1] 1` is classically-controlled feedback. Gates do not
-    // tolerate non-numeric targets, so the parser rejects this file.
-    ("feedback_cx_unsupported.stim", Expect::ParseFails),
+    // `CX rec[-1] 1` is classically-controlled feedback: the control reads the
+    // measurement record, so the file now parses and executes.
+    ("feedback_cx.stim", Expect::Ok),
+    // Inverted measurement-result targets (`M !0`) are not yet supported, so
+    // the non-numeric target is rejected at parse time.
+    ("inverted_target_unsupported.stim", Expect::ParseFails),
+    // Full magic-state cultivation circuit: RX/MX, native T/T_DAG, and MPP
+    // Pauli-product detectors all run end-to-end (see tests/cultivation.rs).
+    ("cultivation_d5.stim", Expect::Ok),
 ];
 
 fn data_dir() -> PathBuf {

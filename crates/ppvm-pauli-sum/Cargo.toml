@@ -1,0 +1,57 @@
+[package]
+name = "ppvm-pauli-sum"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
+ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
+fxhash = "0.2.1"
+num = "0.4.3"
+itertools = "0.14.0"
+bon = "3.7.2"
+approx = { version = "0.5.1", optional = true }
+indexmap = { version = "2.11.4", optional = true }
+
+# Native-only optional deps: dashmap pulls rayon (OS threads) and gxhash needs
+# AES intrinsics — neither builds on wasm32. Pruned there; the matching features
+# go inert (see the `not(target_arch = "wasm32")` gates on the config modules).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dashmap = { version = "6.1.0", features = ["rayon"], optional = true }
+gxhash = { version = "3.5.0", features = ["deterministic"], optional = true }
+
+[dev-dependencies]
+criterion = "0.7.0"
+insta = { version = "1.43.2", features = ["yaml"] }
+rayon = "1.11.0"
+
+[features]
+default = ["dashmap", "gxhash", "indexmap", "approx"]
+approx = ["dep:approx"]
+dashmap = ["dep:dashmap", "ppvm-traits/dashmap"]
+gxhash = ["dep:gxhash", "ppvm-traits/gxhash", "ppvm-pauli-word/gxhash"]
+indexmap = ["dep:indexmap", "ppvm-traits/indexmap"]
+
+[[bench]]
+name = "gate"
+harness = false
+
+[[bench]]
+name = "random-circuit"
+harness = false
+
+[[bench]]
+name = "trotter"
+harness = false
+
+[[bench]]
+name = "trotter-scaling"
+harness = false
+
+[[bench]]
+name = "micro"
+harness = false
+
+[[bench]]
+name = "truncation-weight"
+harness = false

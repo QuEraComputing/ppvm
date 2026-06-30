@@ -8,7 +8,9 @@ description = "Direct Heisenberg-picture Lindbladian evolution on an adaptive Pa
 fxhash = "0.2.1"
 ndarray = "0.17"
 num = "0.4.3"
-ppvm-runtime = { version = "0.1.0", path = "../ppvm-runtime" }
+ppvm-traits     = { version = "0.1.0", path = "../ppvm-traits" }
+ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
+ppvm-pauli-sum  = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 rayon = "1.11"
 sprs = { version = "0.11", default-features = false, features = ["multi_thread"] }
 # Matrix-exponential action (Al-Mohy & Higham). NOTE: QuSpin-rust currently has

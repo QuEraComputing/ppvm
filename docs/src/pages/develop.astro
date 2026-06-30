@@ -16,8 +16,8 @@ function slugFor(path: string): string {
 }
 
 // Resolve a symbol reference. Accepts:
-//   - a fully-qualified path like "ppvm_runtime::config::Config"
-//   - a "crate::short_name" pair like "ppvm-runtime:Config"
+//   - a fully-qualified path like "ppvm_traits::config::Config"
+//   - a "crate::short_name" pair like "ppvm-traits:Config"
 // Returns an absolute href into the API site, or null if unknown.
 function apiHref(ref: string): string | null {
   const colon = ref.indexOf(":");
@@ -38,24 +38,24 @@ function apiHref(ref: string): string | null {
 
 // Cross-reference shortcuts: short label -> "crate:Name" lookup.
 const xrefs: Record<string, string> = {
-  PauliSum: "ppvm-runtime:PauliSum",
-  Config: "ppvm-runtime:Config",
-  CoefficientThreshold: "ppvm-runtime:CoefficientThreshold",
-  MaxPauliWeight: "ppvm-runtime:MaxPauliWeight",
-  MaxLossWeight: "ppvm-runtime:MaxLossWeight",
-  CombinedStrategy: "ppvm-runtime:CombinedStrategy",
-  Clifford: "ppvm-runtime:Clifford",
-  CliffordExtensions: "ppvm-runtime:CliffordExtensions",
-  TGate: "ppvm-runtime:TGate",
-  RotationOne: "ppvm-runtime:RotationOne",
-  RotationTwo: "ppvm-runtime:RotationTwo",
-  U3Gate: "ppvm-runtime:U3Gate",
-  Measure: "ppvm-runtime:Measure",
-  LossyMeasure: "ppvm-runtime:LossyMeasure",
-  Depolarizing: "ppvm-runtime:Depolarizing",
-  PauliError: "ppvm-runtime:PauliError",
-  LossChannel: "ppvm-runtime:LossChannel",
-  CorrelatedLossChannel: "ppvm-runtime:CorrelatedLossChannel",
+  PauliSum: "ppvm-pauli-sum:PauliSum",
+  Config: "ppvm-traits:Config",
+  CoefficientThreshold: "ppvm-pauli-sum:CoefficientThreshold",
+  MaxPauliWeight: "ppvm-pauli-sum:MaxPauliWeight",
+  MaxLossWeight: "ppvm-pauli-sum:MaxLossWeight",
+  CombinedStrategy: "ppvm-pauli-sum:CombinedStrategy",
+  Clifford: "ppvm-traits:Clifford",
+  CliffordExtensions: "ppvm-traits:CliffordExtensions",
+  TGate: "ppvm-traits:TGate",
+  RotationOne: "ppvm-traits:RotationOne",
+  RotationTwo: "ppvm-traits:RotationTwo",
+  U3Gate: "ppvm-traits:U3Gate",
+  Measure: "ppvm-traits:Measure",
+  LossyMeasure: "ppvm-traits:LossyMeasure",
+  Depolarizing: "ppvm-traits:Depolarizing",
+  PauliError: "ppvm-traits:PauliError",
+  LossChannel: "ppvm-traits:LossChannel",
+  CorrelatedLossChannel: "ppvm-traits:CorrelatedLossChannel",
   Tableau: "ppvm-tableau:Tableau",
   GeneralizedTableau: "ppvm-tableau:GeneralizedTableau",
   SparseVector: "ppvm-tableau:SparseVector",
@@ -117,24 +117,28 @@ const toc = [
 
 <pre><code>ppvm/
 ├── crates/
-│   ├── ppvm-runtime         # Core: Pauli arithmetic, PauliSum, gate traits, Config trait
+│   ├── ppvm-traits          # Trait system, Config bundle, Pauli alphabet, map impls
+│   ├── ppvm-pauli-word      # Packed Pauli strings: PauliWord, phased, lossy, pattern
+│   ├── ppvm-pauli-sum       # PauliSum engine, truncation strategy, concrete configs
 │   ├── ppvm-tableau         # Stabilizer + generalized-tableau simulator
 │   ├── ppvm-sym             # Symbolic (parametric) Pauli propagation
 │   ├── ppvm-stim            # Stim program execution against the tableau
 │   ├── stim-parser          # Standalone parser for the Stim circuit format
-│   └── ppvm-python-native   # PyO3 bindings (cdylib via maturin)
-├── ppvm-python/             # Pure-Python wrapper (uv_build backend)
+│   └── ppvm-python-native   # PyO3 bindings, compiled into `ppvm` as `ppvm._core`
+├── ppvm-python/             # Python package `ppvm` (maturin: wrapper + `ppvm._core`)
 ├── docs/                    # This documentation site (Astro)
 ├── examples/                # Rust examples (symbolic.rs, trotter.rs)
 └── AGENTS.md                # Pointer to this guide
 </code></pre>
 
     <p>
-      <strong>Dependency graph.</strong> <code>ppvm-runtime</code> is the
-      foundation. <code>ppvm-tableau</code>, <code>ppvm-sym</code>, and
-      <code>ppvm-stim</code> depend on it. <code>ppvm-stim</code> additionally
-      depends on <code>ppvm-tableau</code> and <code>stim-parser</code>.
-      <code>ppvm-python-native</code> depends on <code>ppvm-runtime</code>
+      <strong>Dependency graph.</strong> <code>ppvm-traits</code> is the
+      foundation; <code>ppvm-pauli-word</code> builds on it, and
+      <code>ppvm-pauli-sum</code> builds on both. <code>ppvm-tableau</code>,
+      <code>ppvm-sym</code>, and <code>ppvm-stim</code> depend on the Pauli
+      crates. <code>ppvm-stim</code> additionally depends on
+      <code>ppvm-tableau</code> and <code>stim-parser</code>.
+      <code>ppvm-python-native</code> depends on <code>ppvm-pauli-sum</code>
       and <code>ppvm-tableau</code>.
     </p>
 
@@ -148,7 +152,7 @@ cargo test --workspace
 cargo test -p ppvm-tableau
 
 # A single test by name
-cargo test -p ppvm-runtime -- test_ghz
+cargo test -p ppvm-pauli-sum -- test_ghz
 
 # Benchmarks
 cargo bench -p ppvm-tableau --bench micro
@@ -156,9 +160,50 @@ cargo bench --bench micro -- "gates/single-qubit/h"</code></pre>
 
     <p>
       Rust edition 2024. On x86 the default hasher (gxhash) needs
-      <code>RUSTFLAGS="-C target-feature=+aes,+sse2"</code>; CI sets this
-      automatically. On non-x86 hosts, build with
+      AES/SSE2 target features; this repo sets them for x86_64 in
+      <code>.cargo/config.toml</code>, and CI does the same. On non-x86 hosts,
+      build with
       <code>--no-default-features --features=indexmap,ahash</code> or similar.
+    </p>
+
+    <h3>WebAssembly (wasm32)</h3>
+
+    <p>
+      The whole workspace except <code>ppvm-python-native</code> (a CPython
+      extension, never a wasm target) cross-compiles to browser wasm with no
+      extra flags:
+    </p>
+<pre><code class="language-bash">rustup target add wasm32-unknown-unknown
+
+# The simulators, Pauli engine, Stim parser, and top-level `ppvm` crate.
+cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-native</code></pre>
+
+    <p>
+      The build is wasm-clean automatically. Native-only acceleration
+      dependencies — <code>gxhash</code> (AES intrinsics), <code>dashmap</code> →
+      <code>rayon</code> (OS threads), and <code>ahash</code> — live in
+      <code>[target.'cfg(not(target_arch = "wasm32"))'.dependencies]</code>
+      tables, so on wasm they are pruned and the matching features go inert
+      (the code that names those crates is gated with the same
+      <code>not(target_arch = "wasm32")</code>). The <code>fx64hash</code> configs
+      use native-word <code>[usize; N]</code> storage (<code>u64</code> on
+      64-bit, <code>u32</code> on wasm) since <code>bitvec</code> only implements
+      <code>BitStore</code> for <code>u64</code> on 64-bit pointer widths.
+      <code>ppvm-tableau-sum</code>'s structural fingerprint falls back from
+      <code>gxhash</code> to <code>fxhash</code> on wasm.
+    </p>
+
+    <p>
+      <code>rand</code>'s entropy (<code>rand::make_rng()</code>) has no default
+      source on <code>wasm32-unknown-unknown</code>, so the getrandom
+      <code>wasm_js</code> backend (Web Crypto API) is selected via a
+      <code>--cfg getrandom_backend="wasm_js"</code> rustflag in
+      <code>.cargo/config.toml</code> plus the <code>wasm_js</code> feature in
+      <code>ppvm-tableau</code>'s wasm-only dependency table — so the JS runtime
+      supplies randomness. There are no OS threads on wasm: the <code>rayon</code>
+      feature is unavailable, and the Stim parser runs its recursive grammar
+      inline instead of on a dedicated stack thread. The <code>wasm32 build</code>
+      CI job compiles the workspace for this target on every PR.
     </p>
 
     <h3>Python</h3>
@@ -174,9 +219,12 @@ uv run --project ppvm-python --group dev pytest ppvm-python/test/test_basics.py
 uv run --project ppvm-python --group dev pytest ppvm-python/test/ -k test_ghz</code></pre>
 
     <p>
-      If the native module has changed but the wrapper has not, force a
-      rebuild with <code>uv sync --project ppvm-python --reinstall-package
-      ppvm-python-native</code>.
+      The compiled <code>ppvm._core</code> is part of the <code>ppvm</code>
+      wheel, so after changing Rust force a rebuild with <code>uv sync
+      --project ppvm-python --reinstall-package ppvm</code> (or <code>maturin
+      develop -m crates/ppvm-python-native/Cargo.toml</code>). The Python
+      project is configured to use uv-managed Python installations, so a fresh
+      <code>uv sync</code> avoids linking PyO3 builds against a system Python.
     </p>
 
     <h3>This docs site</h3>
@@ -392,14 +440,64 @@ npm run build          # extract everything, then `astro build` → dist/</code>
       <code><a href="https://github.com/QuEraComputing/ppvm/blob/main/docs/README.md">docs/README.md</a></code>.
     </p>
 
+    <h3>Continuous integration</h3>
+
+    <p>
+      CI lives in <code>.github/workflows/ci.yml</code> and is staged so the
+      cheap, platform-independent checks gate the expensive cross-OS ones:
+    </p>
+    <ol>
+      <li>
+        <strong><code>pre-commit</code></strong> (Linux) runs the full
+        <code>prek</code> hook suite — rustfmt, clippy, <code>cargo check
+        --workspace --all-targets</code>, ruff, ty, hawkeye, and the file
+        hygiene hooks. Every other job <code>needs:</code> it, so a lint or
+        type failure stops the run before any test minutes are spent.
+      </li>
+      <li>
+        <strong><code>rust-tests</code></strong> and
+        <strong><code>python-tests</code></strong> (Linux) run
+        <code>cargo test --workspace</code> and the <code>pytest</code>
+        suites. The pure-Rust crates are platform-agnostic, so Linux is the
+        only OS that runs the full test suites.
+      </li>
+      <li>
+        <strong><code>extension-cross-platform</code></strong> (macOS +
+        Windows) is the only cross-OS job. It builds the PyO3 extension via
+        maturin and runs the extension's <code>pytest</code> suite. It
+        <code>needs: [rust-tests, python-tests]</code>, so the macOS/Windows
+        runners only start once Linux is fully green.
+      </li>
+    </ol>
+    <p>
+      <strong>Why cross-OS is extension-only.</strong> The compiled PyO3
+      module is the only artifact whose build is OS-sensitive — macOS needs
+      <code>-undefined dynamic_lookup</code> (added by
+      <code>ppvm-python-native/build.rs</code>; maturin sets it too), Windows
+      links <code>python3.lib</code>, and Linux needs neither. Building that
+      extension with maturin also compiles <code>ppvm-python-native</code> and
+      its entire dependency tree on the target OS, so a cross-platform compile
+      regression in any crate still surfaces here — without separately running
+      <code>cargo build</code> for the whole workspace three times.
+    </p>
+    <p>
+      <strong>No global <code>RUSTFLAGS</code>.</strong> gxhash's
+      <code>+aes,+sse2</code> target features are set <em>arch-scoped</em> in
+      <code>.cargo/config.toml</code>
+      (<code>cfg(target_arch = "x86_64")</code>), not as a workflow-wide
+      <code>RUSTFLAGS</code> — those x86 features are invalid on the aarch64
+      <code>macos-latest</code> runner and would fail to compile there. Linux
+      and Windows (x86_64) still pick them up from the config.
+    </p>
+
     <h2 id="architecture"><span class="sec-num">§ 3</span>Architecture</h2>
 
     <p>
       ppvm implements two complementary quantum simulation backends. They
-      share a common gate / noise trait hierarchy from <code>ppvm-runtime</code>.
+      share a common gate / noise trait hierarchy from <code>ppvm-traits</code>.
     </p>
 
-    <h3>3.1 Pauli propagation (<code>ppvm-runtime</code>)</h3>
+    <h3>3.1 Pauli propagation (<code>ppvm-pauli-sum</code>)</h3>
     <p>
       Tracks Pauli operator evolution through circuits in the
       <strong>Heisenberg picture</strong> (circuits run backwards). The
@@ -473,7 +571,7 @@ npm run build          # extract everything, then `astro build` → dist/</code>
       </li>
     </ul>
 
-    <h3>3.3 Trait hierarchy (<code>ppvm-runtime/src/traits/</code>)</h3>
+    <h3>3.3 Trait hierarchy (<code>ppvm-traits/src/traits/</code>)</h3>
     <p>Gate behaviour is defined via traits reused across both backends:</p>
     <ul>
       <li>
@@ -510,7 +608,7 @@ npm run build          # extract everything, then `astro build` → dist/</code>
       <code>&lt;type&gt;(&lt;scope&gt;): &lt;description&gt;</code>.
     </p>
 <pre><code>feat(tableau): add correlated loss channel
-fix(runtime): handle zero-norm in truncation
+fix(pauli-sum): handle zero-norm in truncation
 test(stim-parser): add fast fuzz/proptest suite
 chore: restore lockfile consistency</code></pre>
 
@@ -520,6 +618,15 @@ chore: restore lockfile consistency</code></pre>
       <li>Run <code>cargo clippy --workspace --all-targets</code>; fix or justify all warnings.</li>
       <li>Python is formatted with <code>ruff format</code> and linted with <code>ruff check</code>.</li>
       <li>Public Rust items should have doc comments; <code>cargo doc --no-deps</code> must build cleanly because the API site is built from rustdoc JSON.</li>
+      <li>
+        Python docstrings use <strong>Google style</strong> (griffe parses with <code>-d google</code>)
+        and are rendered as <strong>Markdown</strong> via <code>marked</code>. Use backtick spans for
+        cross-references — <em>not</em> Sphinx/RST syntax:
+        <ul>
+          <li>✅ <code>`fork`</code> or <code>`GeneralizedTableau.sample`</code></li>
+          <li>❌ <code>:meth:`fork`</code>, <code>:func:`ppvm.sample_stim`</code> — these are never parsed and appear as literal text.</li>
+        </ul>
+      </li>
     </ul>
 
     <h3>4.3 Tests</h3>
@@ -533,16 +640,19 @@ chore: restore lockfile consistency</code></pre>
     <h2 id="python-bindings"><span class="sec-num">§ 5</span>Python bindings</h2>
 
     <p>
-      <strong>Two-layer build.</strong> <code>ppvm-python-native</code>
-      (Rust &rarr; cdylib via maturin + PyO3 0.27) is compiled automatically
-      when <code>ppvm-python</code> is installed. <code>ppvm-python</code>
-      is a pure-Python wrapper using <code>uv_build</code> as its build
-      backend.
+      <strong>Single mixed wheel.</strong> <code>ppvm-python</code> is one
+      maturin package: it bundles the pure-Python wrapper under
+      <code>src/ppvm/</code> together with the PyO3 crate
+      (<code>ppvm-python-native</code>, Rust &rarr; cdylib via PyO3 0.29),
+      which maturin compiles and drops in as the private
+      <code>ppvm._core</code> submodule. Users only ever <code>import
+      ppvm</code>.
     </p>
     <ul>
-      <li>Python &ge; 3.10 required (<code>.python-version</code> pins 3.12 for dev).</li>
-      <li><code>uv</code> manages the venv, deps, and triggers the maturin build.</li>
-      <li><code>ppvm-python/pyproject.toml</code> references <code>ppvm-python-native</code> via <code>[tool.uv.sources]</code> path dependency.</li>
+      <li>Python &ge; 3.10 required (<code>.python-version</code> pins 3.12 for dev). The wheel is built against PyO3's <code>abi3-py310</code> stable ABI, so one <code>cp310-abi3</code> wheel per platform loads on 3.10+.</li>
+      <li><code>uv</code> manages the venv and deps and triggers the maturin build on <code>uv sync</code>.</li>
+      <li><code>ppvm-python/pyproject.toml</code> sets <code>build-backend = "maturin"</code> with <code>[tool.maturin]</code> <code>manifest-path</code> &rarr; the crate, <code>python-source = "src"</code>, and <code>module-name = "ppvm._core"</code>.</li>
+      <li>Plain <code>cargo build</code> also links the cdylib (a <code>build.rs</code> in <code>ppvm-python-native</code> adds the macOS <code>-undefined dynamic_lookup</code> flag), so the Rust-only workflows work without maturin.</li>
       <li>The native module exports 16 <code>PauliSum</code> variants &times; 2 (with/without loss) + 32 <code>GeneralizedTableau</code> variants (1&ndash;32 qubits) via the <code>create_interface!</code> / <code>create_interface_range!</code> macros.</li>
     </ul>
     <p>
@@ -559,12 +669,12 @@ chore: restore lockfile consistency</code></pre>
         Decide which trait it belongs to
         (<a href={link.Clifford}><code>Clifford</code></a>,
         <a href={link.RotationOne}><code>RotationOne</code></a>, etc.) in
-        <code>ppvm-runtime/src/traits/</code>.
+        <code>ppvm-traits/src/traits/</code>.
       </li>
       <li>
         Implement it for
         <a href={link.PauliSum}><code>PauliSum&lt;T: Config&gt;</code></a> in
-        <code>ppvm-runtime/src/traits/&lt;trait&gt;.rs</code>.
+        <code>ppvm-pauli-sum/src/sum/</code>.
       </li>
       <li>
         Implement it for <a href={link.Tableau}><code>Tableau</code></a> /
@@ -580,15 +690,16 @@ chore: restore lockfile consistency</code></pre>
       Follow the pattern of
       <a href={link.LossChannel}><code>LossChannel</code></a> /
       <a href={link.CorrelatedLossChannel}><code>CorrelatedLossChannel</code></a>.
-      Implement the trait in <code>ppvm-runtime/src/traits/noise.rs</code>,
+      Implement the trait in <code>ppvm-traits/src/traits/noise.rs</code>,
       then mirror in <code>ppvm-tableau</code> if it is meaningful in the
       tableau picture.
     </p>
 
     <h3>Adding a new <code>Config</code></h3>
     <p>
-      Create a module under <code>ppvm-runtime/src/config/</code>, implement
-      the <a href={link.Config}><code>Config</code></a> trait, and re-export it from
+      Create a module under <code>ppvm-pauli-sum/src/config/</code>, implement
+      the <a href={link.Config}><code>Config</code></a> trait (defined in
+      <code>ppvm-traits</code>), and re-export it from
       <code>config/mod.rs</code>. If it should be exposed to Python, add a
       variant to the <code>create_interface!</code> macro call.
     </p>
@@ -597,16 +708,16 @@ chore: restore lockfile consistency</code></pre>
 
     <dl class="lookup">
       <dt>Pauli arithmetic, <a href={link.PauliSum}><code>PauliSum</code></a></dt>
-      <dd><code>crates/ppvm-runtime/src/sum/</code>, <code>word/</code>, <code>pattern/</code></dd>
+      <dd><code>crates/ppvm-pauli-sum/src/sum/</code>; word / phase / loss / pattern types in <code>crates/ppvm-pauli-word/src/</code></dd>
 
       <dt>Gate &amp; noise traits</dt>
-      <dd><code>crates/ppvm-runtime/src/traits/</code></dd>
+      <dd><code>crates/ppvm-traits/src/traits/</code></dd>
 
       <dt>Truncation strategies (<a href={link.CoefficientThreshold}><code>CoefficientThreshold</code></a>, <a href={link.MaxPauliWeight}><code>MaxPauliWeight</code></a>, &hellip;)</dt>
-      <dd><code>crates/ppvm-runtime/src/strategy.rs</code>, <code>traits/strategy.rs</code></dd>
+      <dd><code>crates/ppvm-pauli-sum/src/strategy.rs</code>, <code>crates/ppvm-traits/src/traits/strategy.rs</code></dd>
 
-      <dt><a href={link.Config}><code>Config</code></a> implementations</dt>
-      <dd><code>crates/ppvm-runtime/src/config/</code></dd>
+      <dt><a href={link.Config}><code>Config</code></a> trait &amp; implementations</dt>
+      <dd>trait in <code>crates/ppvm-traits/src/config.rs</code>; concrete bundles in <code>crates/ppvm-pauli-sum/src/config/</code></dd>
 
       <dt>Stabilizer tableau core (<a href={link.Tableau}><code>Tableau</code></a>, <a href={link.GeneralizedTableau}><code>GeneralizedTableau</code></a>)</dt>
       <dd><code>crates/ppvm-tableau/src/data.rs</code>, <code>tableau_like.rs</code></dd>

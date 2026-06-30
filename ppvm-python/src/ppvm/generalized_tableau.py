@@ -2,17 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import enum
+from collections.abc import Iterable
 from dataclasses import InitVar, dataclass, field
 
-import ppvm_python_native
-from ppvm_python_native import StimProgram
-
+from . import _core
+from ._core import StimProgram
 from .mixins import (
     CliffordExtensionMixin,
     CliffordMixin,
     LossMixin,
     NoiseMixin,
     RotationsMixin,
+    _normalize_targets,
 )
 from .types import GeneralizedTableauInterface
 
@@ -26,16 +27,14 @@ limit, use the Rust crate directly.
 
 def _native_tableau_cls(n_qubits: int):
     if n_qubits < 1:
-        raise ValueError(
-            f"n_qubits must be between 1 and {MAX_N_QUBITS} (got {n_qubits})."
-        )
+        raise ValueError(f"n_qubits must be between 1 and {MAX_N_QUBITS} (got {n_qubits}).")
     if n_qubits > MAX_N_QUBITS:
         raise ValueError(
             f"n_qubits must be between 1 and {MAX_N_QUBITS} (got {n_qubits}); "
             "to simulate more qubits, use the ppvm-tableau Rust crate directly."
         )
     N_interface = (n_qubits + 63) // 64
-    return getattr(ppvm_python_native, f"GeneralizedTableau{N_interface}")
+    return getattr(_core, f"GeneralizedTableau{N_interface}")
 
 
 class MeasurementResult(enum.IntEnum):
@@ -112,7 +111,7 @@ class GeneralizedTableau(
 
         Both the original and the copy will produce identical random sequences
         from this point forward. To get an independent copy with a fresh RNG,
-        use :meth:`fork` instead.
+        use `fork` instead.
         """
         copied = GeneralizedTableau(self.n_qubits, self.min_abs_coeff)
         object.__setattr__(copied, "_interface", self._interface.__copy__())
@@ -123,7 +122,7 @@ class GeneralizedTableau(
 
         Both the original and the copy will produce identical random sequences
         from this point forward. To get an independent copy with a fresh RNG,
-        use :meth:`fork` instead.
+        use `fork` instead.
         """
         copied = GeneralizedTableau(self.n_qubits, self.min_abs_coeff)
         object.__setattr__(copied, "_interface", self._interface.__deepcopy__(memo))
@@ -133,21 +132,21 @@ class GeneralizedTableau(
         """Return a human-readable representation of the tableau state."""
         return self._interface.__str__()
 
-    def t(self, addr0: int) -> None:
-        """Apply a T gate (π/8 rotation) to the specified qubit.
+    def t(self, *targets: int | Iterable[int]) -> None:
+        """Apply a T gate (π/8 rotation) to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.t(addr0)
+        self._interface.t(_normalize_targets(targets))
 
-    def t_adj(self, addr0: int) -> None:
-        """Apply a T adjoint gate (negative π/8 rotation) to the specified qubit.
+    def t_dag(self, *targets: int | Iterable[int]) -> None:
+        """Apply a T adjoint gate (negative π/8 rotation) to each target qubit.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.t_adj(addr0)
+        self._interface.t_dag(_normalize_targets(targets))
 
     def measure(self, addr0: int) -> MeasurementResult:
         """Measure the specified qubit in the Z basis.
@@ -159,10 +158,55 @@ class GeneralizedTableau(
             The measurement outcome as a ``MeasurementResult``, which is
             ``LOST`` if the qubit has been lost, ``ZERO`` or ``ONE`` otherwise.
         """
-        m = self._interface.measure(addr0)
-        if m is None:
-            return MeasurementResult.LOST
-        return MeasurementResult.ONE if m else MeasurementResult.ZERO
+        return MeasurementResult(self._interface.measure(addr0))
+
+    def measure_many(self, *targets: int | Iterable[int]) -> list[MeasurementResult]:
+        """Measure several qubits in the Z basis.
+
+        Args:
+            *targets: The indices of the target qubits.
+
+        Returns:
+            A list of ``MeasurementResult`` outcomes, one per target.
+        """
+        return [
+            MeasurementResult(v) for v in self._interface.measure_many(_normalize_targets(targets))
+        ]
+
+    def current_measurement_record(self) -> list[MeasurementResult]:
+        """Return all measurement outcomes recorded so far.
+
+        Returns:
+            A list of ``MeasurementResult`` outcomes in measurement order.
+        """
+        return [MeasurementResult(v) for v in self._interface.current_measurement_record()]
+
+    def coefficients(self) -> dict[int, complex]:
+        """Return a snapshot of the sparse coefficient vector.
+
+        The tableau represents the state as a sparse superposition over the
+        basis states of its stabilizer frame. This returns that vector as a
+        mapping from basis-state index to complex amplitude.
+
+        The returned dict is a copy: mutating it does not affect the tableau's
+        internal state.
+
+        Returns:
+            A dict mapping each populated basis-state index to its complex
+            amplitude.
+        """
+        return self._interface.coefficients()
+
+    def num_coefficients(self) -> int:
+        """Return the number of branches in the coefficient vector.
+
+        This is the number of entries in the dict returned by
+        `coefficients`, computed without materializing it.
+
+        Returns:
+            The count of populated entries in the sparse coefficient vector.
+        """
+        return self._interface.num_coefficients()
 
     def u3(self, addr0: int, theta: float, phi: float, lam: float):
         """Apply the U3 gate to the specified qubit.
@@ -182,13 +226,37 @@ class GeneralizedTableau(
         """
         self._interface.u3(addr0, theta, phi, lam)
 
-    def reset(self, addr0: int) -> None:
-        """Reset the specified qubit to the |0> state.
+    def reset(self, *targets: int | Iterable[int]) -> None:
+        """Reset each target qubit to the |0> state.
 
         Args:
-            addr0: The index of the target qubit.
+            *targets: The indices of the target qubits.
         """
-        self._interface.reset(addr0)
+        self._interface.reset(_normalize_targets(targets))
+
+    def reset_x(self, *targets: int | Iterable[int]) -> None:
+        """Reset each target qubit to the |+> state.
+
+        Args:
+            *targets: The indices of the target qubits.
+        """
+        self._interface.reset_x(_normalize_targets(targets))
+
+    def reset_y(self, *targets: int | Iterable[int]) -> None:
+        """Reset each target qubit to the |+i> state.
+
+        Args:
+            *targets: The indices of the target qubits.
+        """
+        self._interface.reset_y(_normalize_targets(targets))
+
+    def reset_z(self, *targets: int | Iterable[int]) -> None:
+        """Reset each target qubit to the |0> state.
+
+        Args:
+            *targets: The indices of the target qubits.
+        """
+        self._interface.reset_z(_normalize_targets(targets))
 
     def reset_loss_channel(self, addr0: int) -> None:
         """Reset a lost qubit to being active again.
@@ -197,6 +265,27 @@ class GeneralizedTableau(
             addr0: The index of the target qubit.
         """
         self._interface.reset_loss_channel(addr0)
+
+    def asymmetric_loss_channel(self, addr0: int, p0: float, p1: float) -> None:
+        """Apply a state-dependent ("asymmetric") loss channel to a qubit.
+
+        The qubit is lost from |0> with probability ``p0`` and from |1> with
+        probability ``p1``, so the total loss probability depends on the
+        current populations: ``p_tot = p0 * (1 + <Z>)/2 + p1 * (1 - <Z>)/2``.
+
+        .. note::
+            This is the trajectory *approximation* of the loss channel. It is
+            exact for the loss statistics and in the symmetric limit
+            ``p0 == p1`` (where it matches `loss_channel`), but it does
+            not apply the survival back-action, so for ``p0 != p1`` the
+            surviving qubit's state is left unchanged. See issue #39.
+
+        Args:
+            addr0: The index of the target qubit.
+            p0: The loss probability from the |0> state.
+            p1: The loss probability from the |1> state.
+        """
+        self._interface.asymmetric_loss_channel(addr0, p0, p1)
 
     def is_lost(self, addr0: int) -> bool:
         """Check whether a qubit has been lost.
@@ -223,11 +312,14 @@ class GeneralizedTableau(
 
         .. note::
             This **mutates** the tableau in place. For independent shots use
-            :meth:`fork` or the :func:`ppvm.sample_stim` / :meth:`sample`
-            helpers (which build a fresh tableau per shot).
+            `fork` or `ppvm.sample_stim` / `sample` helpers (which build a
+            fresh tableau per shot).
         """
         raw = self._interface.run(prog)
         return [MeasurementResult(x) for x in raw]
+
+    # stim familiarity alias
+    do = run
 
     @classmethod
     def sample(
@@ -242,6 +334,14 @@ class GeneralizedTableau(
 
         Each shot starts from a fresh tableau, so this is the right entry
         point for multi-shot sampling.
+
+        Shots run in parallel across CPU cores (the GIL is released during
+        sampling), with a serial fallback for small batches. When ``seed`` is
+        given (it must fit in an unsigned 64-bit integer), shot ``i`` uses
+        ``(seed + i) % 2**64`` (wrapping ``u64`` arithmetic), so results are
+        reproducible and independent of the number of threads. Set the
+        ``RAYON_NUM_THREADS`` environment variable before the first call to
+        control the pool size (it defaults to the number of logical cores).
         """
         native_cls = _native_tableau_cls(n_qubits)
         raw = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
@@ -255,7 +355,11 @@ def sample_stim(
     num_shots: int = 1,
     seed: int | None = None,
 ) -> list[list[MeasurementResult]]:
-    """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``."""
+    """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``.
+
+    Shots are sampled in parallel across CPU cores with the GIL released; see
+    `GeneralizedTableau.sample` for seeding and ``RAYON_NUM_THREADS``.
+    """
     return GeneralizedTableau.sample(
         prog, n_qubits, min_abs_coeff=min_abs_coeff, num_shots=num_shots, seed=seed
     )

@@ -1,14 +1,14 @@
 //! Skill code block: Pauli propagation with truncation.
 //!
-//! Mirrors the §4 "ppvm-runtime — Pauli propagation" / "Pauli propagation"
-//! example in `skills/ppvm-usage/SKILL.md`. Compiled by
+//! Mirrors the "Pauli propagation" / `PauliSum` example in
+//! `skills/ppvm-usage/SKILL.md`. Compiled by
 //! `cargo build --examples` in CI, so a method-rename or strategy-API
 //! change here will break the build instead of silently leaving the
 //! skill stale.
 
-use ppvm_runtime::{prelude::*, strategy::CoefficientThreshold};
+use ppvm_pauli_sum::{prelude::*, strategy::CoefficientThreshold};
 
-type State = PauliSum<ppvm_runtime::config::indexmap::ByteFxHashF64<4, CoefficientThreshold>>;
+type State = PauliSum<ppvm_pauli_sum::config::indexmap::ByteFxHashF64<4, CoefficientThreshold>>;
 
 fn main() {
     let mut state: State = PauliSum::builder()

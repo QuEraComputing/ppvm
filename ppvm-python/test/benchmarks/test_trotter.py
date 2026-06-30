@@ -7,8 +7,7 @@ IndexMap + FxHash storage variant, so this corresponds to exactly the
 
 Run the timed benchmark with:
 
-    uv run pytest test/benchmarks/test_trotter.py --benchmark-enable
-
+    uv run --project ppvm-python --group dev pytest ppvm-python/test/benchmarks/test_trotter.py --benchmark-enable
 Without ``--benchmark-enable`` it runs once as a smoke test (see ``addopts`` in
 pyproject.toml).
 """
@@ -47,12 +46,12 @@ def trotter(state):
     # application, to stay consistent with the Rust benchmark / PP.jl.
     for _ in range(steps):
         for i in range(N_QUBITS):
-            state.rx(i, theta_x)
-            state.pauli_error(i, NOISE)
+            state.pauli_error(i, p=NOISE)
+            state.rx(i, theta=theta_x)
         for i in range(N_QUBITS - 1):
-            state.rzz(i, i + 1, theta_zz)
-            state.pauli_error(i, NOISE)
-            state.pauli_error(i + 1, NOISE)
+            state.pauli_error(i + 1, p=NOISE)
+            state.pauli_error(i, p=NOISE)
+            state.rzz(i, i + 1, theta=theta_zz)
 
 
 @pytest.mark.benchmark(group="trotter")

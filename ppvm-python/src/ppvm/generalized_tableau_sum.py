@@ -6,7 +6,7 @@ from dataclasses import InitVar, dataclass, field
 from typing import cast
 
 from . import _core
-from .generalized_tableau import MeasurementResult
+from .generalized_tableau import _BY_VALUE, MeasurementResult
 from .mixins import (
     CliffordExtensionMixin,
     CliffordMixin,
@@ -16,12 +16,6 @@ from .mixins import (
     _normalize_targets,
 )
 from .types import GeneralizedTableauSumInterface, TableauSumSamplerInterface
-
-# Indexed by integer outcome value (0/1/2) to reuse the singleton enum members.
-# This is much faster than calling ``MeasurementResult(i)`` per element: the
-# IntEnum constructor dominates large shot batches, while a tuple index just
-# bumps a refcount.
-_BY_VALUE = (MeasurementResult.ZERO, MeasurementResult.ONE, MeasurementResult.LOST)
 
 
 @dataclass(frozen=True)

@@ -35,36 +35,32 @@ fn msd_func_fused<const MEASURE: bool>() -> (String, Tab) {
     tab.sqrt_x_many(ql[1]);
     tab.sqrt_x_many(ql[4]);
 
-    // ql[0] x ql[1]: pairs (0,17)...(16,33) — all in word 0
-    tab.cz_block_pairs(0, 17, 17);
+    // Cross-block CZ layers entangle two contiguous registers with a constant
+    // offset. `cz_block` takes plain qubit indices (control_base, target_base,
+    // count) and splits each run at u64-word boundaries internally, so it emits
+    // the same within-word / cross-word kernels the hand-written calls did.
+    let block_len = qubits_per_code_block;
 
-    // ql[2] x ql[3]: pairs (34,51)...(50,67)
-    tab.cz_block_pairs(34, 17, 13); // (34,51)...(46,63) in word 0
-    // (47,64)...(50,67): controls word 0 bits 47-50, targets word 1 bits 0-3
-    tab.cz_block_pairs_cross_word(0, 47, 1, 0, 4);
+    // ql[0] x ql[1]
+    tab.cz_block(ql[0][0], ql[1][0], block_len);
+    // ql[2] x ql[3]
+    tab.cz_block(ql[2][0], ql[3][0], block_len);
 
     // sqrt_y on ql[0] and ql[3]
     tab.sqrt_y_many(ql[0]);
     tab.sqrt_y_many(ql[3]);
 
-    // ql[0] x ql[2]: pairs (0,34)...(16,50) — all in word 0
-    tab.cz_block_pairs(0, 34, 17);
-
-    // ql[3] x ql[4]: (51,68)...(67,84)
-    // (51,68)...(63,80): controls word 0 bits 51-63, targets word 1 bits 4-16
-    tab.cz_block_pairs_cross_word(0, 51, 1, 4, 13);
-    tab.cz_block_pairs(64, 17, 4); // (64,81)...(67,84) both in word 1
+    // ql[0] x ql[2]
+    tab.cz_block(ql[0][0], ql[2][0], block_len);
+    // ql[3] x ql[4]
+    tab.cz_block(ql[3][0], ql[4][0], block_len);
 
     tab.sqrt_x_dag_many(ql[0]);
 
-    // ql[0] x ql[4]: (0,68)...(16,84)
-    // controls word 0 bits 0-16, targets word 1 bits 4-20
-    tab.cz_block_pairs_cross_word(0, 0, 1, 4, 17);
-
-    // ql[1] x ql[3]: (17,51)...(33,67)
-    tab.cz_block_pairs(17, 34, 13); // (17,51)...(29,63) in word 0
-    // (30,64)...(33,67): controls word 0 bits 30-33, targets word 1 bits 0-3
-    tab.cz_block_pairs_cross_word(0, 30, 1, 0, 4);
+    // ql[0] x ql[4]
+    tab.cz_block(ql[0][0], ql[4][0], block_len);
+    // ql[1] x ql[3]
+    tab.cz_block(ql[1][0], ql[3][0], block_len);
 
     // sqrt_x_dag on all blocks
     for block in ql.iter().take(5) {

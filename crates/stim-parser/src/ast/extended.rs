@@ -81,6 +81,43 @@ impl ExtendedProgram {
     pub fn measurement_count(&self) -> usize {
         count_in_slice(&self.instructions, 1)
     }
+
+    /// Number of qubits the program operates on: one past the highest qubit
+    /// index referenced by any executable instruction, or `0` if it touches no
+    /// qubits. Annotations (`DETECTOR`, `QUBIT_COORDS`, …) are ignored — their
+    /// operands are measurement-record lookbacks or coordinates, not executable
+    /// qubits. Pure AST property; backend-agnostic, mirrors [`measurement_count`].
+    pub fn num_qubits(&self) -> usize {
+        max_qubit_in_slice(&self.instructions).map_or(0, |m| m + 1)
+    }
+}
+
+/// Highest qubit index referenced by any executable instruction in `slice`,
+/// recursing into `REPEAT` bodies. `None` if nothing touches a qubit.
+fn max_qubit_in_slice(instructions: &[ExtendedInstruction]) -> Option<usize> {
+    let mut max: Option<usize> = None;
+    for instr in instructions {
+        // `Option<usize>` orders `None` below every `Some`, so `max.max(local)`
+        // tracks the running maximum and treats "no qubit" as absent.
+        let local = match instr {
+            ExtendedInstruction::Gate(op) => op.targets.iter().filter_map(|t| t.as_qubit()).max(),
+            ExtendedInstruction::Noise(op) => op.targets.iter().copied().max(),
+            ExtendedInstruction::Measure(op) => op.targets.iter().copied().max(),
+            ExtendedInstruction::Mpp(op) => op.products.iter().flatten().map(|f| f.qubit).max(),
+            ExtendedInstruction::T { targets, .. }
+            | ExtendedInstruction::TDag { targets, .. }
+            | ExtendedInstruction::Rotation { targets, .. }
+            | ExtendedInstruction::U3 { targets, .. }
+            | ExtendedInstruction::Loss { targets, .. } => targets.iter().copied().max(),
+            ExtendedInstruction::CorrelatedLoss { targets, .. } => {
+                targets.iter().flat_map(|&(a, b)| [a, b]).max()
+            }
+            ExtendedInstruction::Repeat { body, .. } => max_qubit_in_slice(body),
+            ExtendedInstruction::Annotation(_) | ExtendedInstruction::MPad { .. } => None,
+        };
+        max = max.max(local);
+    }
+    max
 }
 
 fn count_in_slice(instructions: &[ExtendedInstruction], factor: u64) -> usize {
@@ -117,7 +154,7 @@ fn count_in_slice(instructions: &[ExtendedInstruction], factor: u64) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::shared::{GateOp, MeasureOp};
+    use crate::ast::shared::{GateOp, MeasureOp, Target};
     use crate::diagnostics::{LineMap, Span};
     use crate::instructions::{GateName, MeasureName};
     use std::sync::Arc;
@@ -144,6 +181,60 @@ mod tests {
             line_map: Arc::new(LineMap::new("")),
         };
         assert_eq!(prog.measurement_count(), 6);
+    }
+
+    #[test]
+    fn num_qubits_is_one_past_highest_index() {
+        // Gate on qubits {0, 4}, measure {2} -> 5 qubits (indices 0..=4).
+        let prog = ExtendedProgram {
+            instructions: vec![
+                ExtendedInstruction::Gate(GateOp {
+                    name: GateName::H,
+                    tags: vec![],
+                    args: vec![],
+                    targets: vec![Target::Qubit(0), Target::Qubit(4)],
+                    span: span(),
+                }),
+                ExtendedInstruction::Measure(MeasureOp {
+                    name: MeasureName::M,
+                    tags: vec![],
+                    args: vec![],
+                    targets: vec![2],
+                    span: span(),
+                }),
+            ],
+            line_map: Arc::new(LineMap::new("")),
+        };
+        assert_eq!(prog.num_qubits(), 5);
+    }
+
+    #[test]
+    fn num_qubits_recurses_into_repeat() {
+        let prog = ExtendedProgram {
+            instructions: vec![ExtendedInstruction::Repeat {
+                count: 3,
+                body: vec![ExtendedInstruction::Measure(MeasureOp {
+                    name: MeasureName::M,
+                    tags: vec![],
+                    args: vec![],
+                    targets: vec![7],
+                    span: span(),
+                })],
+                span: span(),
+            }],
+            line_map: Arc::new(LineMap::new("")),
+        };
+        assert_eq!(prog.num_qubits(), 8);
+    }
+
+    #[test]
+    fn num_qubits_is_zero_for_no_qubit_program() {
+        // Empty program, and an annotation-only program, both touch no qubits.
+        let empty = ExtendedProgram {
+            instructions: vec![],
+            line_map: Arc::new(LineMap::new("")),
+        };
+        assert_eq!(empty.num_qubits(), 0);
     }
 
     #[test]

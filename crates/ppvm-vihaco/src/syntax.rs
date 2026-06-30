@@ -23,8 +23,7 @@ pub enum PPVMHeader {
 
     #[token = "circuit.coefficient_threshold"]
     #[delimiters(open = "", close = "", separator = "")]
-    CoefficientThrehsold(f64),
-
+    CoefficientThreshold(f64),
     #[token = "circuit.backend"]
     #[delimiters(open = "", close = "", separator = "")]
     Backend(BackendKind),
@@ -53,7 +52,7 @@ impl PPVMResolver {
             PPVMHeader::NumQubits(n) => {
                 info.n_qubits = n;
             }
-            PPVMHeader::CoefficientThrehsold(t) => {
+            PPVMHeader::CoefficientThreshold(t) => {
                 info.coefficient_threshold = t;
             }
             PPVMHeader::Backend(b) => {
@@ -364,7 +363,7 @@ mod tests {
             .parse("device circuit.coefficient_threshold 1e-10")
             .into_result()
             .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
-        assert_eq!(got, PPVMHeader::CoefficientThrehsold(1e-10));
+        assert_eq!(got, PPVMHeader::CoefficientThreshold(1e-10));
     }
 
     #[test]
@@ -447,7 +446,7 @@ mod tests {
     #[test]
     fn apply_header_sets_coefficient_threshold() {
         let mut info = PPVMDeviceInfo::default();
-        PPVMResolver::apply_header(&mut info, PPVMHeader::CoefficientThrehsold(5e-6)).unwrap();
+        PPVMResolver::apply_header(&mut info, PPVMHeader::CoefficientThreshold(5e-6)).unwrap();
         assert_eq!(info.coefficient_threshold, 5e-6);
     }
 

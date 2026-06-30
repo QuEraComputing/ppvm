@@ -1171,8 +1171,6 @@ dependencies = [
 name = "ppvm"
 version = "0.1.0"
 dependencies = [
- "fxhash",
- "num",
  "ppvm-pauli-sum",
  "ppvm-sym",
  "ppvm-tableau",
@@ -1227,7 +1225,6 @@ name = "ppvm-python-native"
 version = "0.1.0"
 dependencies = [
  "bnum",
- "num",
  "paste",
  "ppvm-pauli-sum",
  "ppvm-stim",
@@ -1305,7 +1302,6 @@ dependencies = [
  "mimalloc",
  "num",
  "ppvm-pauli-sum",
- "ppvm-pauli-word",
  "ppvm-tableau",
  "ppvm-traits",
  "rand 0.10.1",
@@ -1341,7 +1337,6 @@ dependencies = [
  "num",
  "ppvm-pauli-sum",
  "ppvm-tableau",
- "ppvm-traits",
  "rayon",
  "smallvec",
  "vihaco",

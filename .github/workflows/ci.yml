@@ -52,21 +52,6 @@ jobs:
           SKIP: no-commit-to-branch
         run: mise exec -- prek run --all-files
 
-  # Detect unused dependencies across the whole workspace. cargo-machete is a
-  # purely syntactic check (it parses each crate's Cargo.toml and source, no
-  # compilation), so it needs neither a Rust toolchain nor the pre-commit gate
-  # and runs in parallel for fast feedback. Run from the repo root, it recurses
-  # into every workspace member, so all crates are covered. False positives
-  # (e.g. a dep used only behind cfg) can be silenced per-crate with
-  # `[package.metadata.cargo-machete] ignored = [...]`.
-  cargo-machete:
-    name: Unused dependencies (cargo-machete)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: bnjbvr/cargo-machete@v0.9.2
-
   rust-tests:
     name: Rust tests
     needs: pre-commit

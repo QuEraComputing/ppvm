@@ -47,6 +47,21 @@ entry = "cargo clippy --workspace -- -D warnings"
 pass_filenames = false
 types = ["rust"]
 
+# Rust: unused-dependency check across the whole workspace.
+# cargo-machete is installed via mise (see mise.toml); `mise exec --` is used so
+# the hook works even outside a mise-activated shell. This is the sole machete
+# check: it runs locally on commit and in CI via the `pre-commit` job (which
+# runs the full hook suite) — there is no separate cargo-machete CI job.
+[[repos]]
+repo = "local"
+[[repos.hooks]]
+id = "cargo-machete"
+name = "cargo machete (unused deps)"
+language = "system"
+entry = "mise exec -- cargo-machete"
+pass_filenames = false
+types = ["rust"]
+
 # Python: ruff format check
 [[repos]]
 repo = "local"

@@ -4,7 +4,7 @@ Skill noise + truncation block.
 A small-support observable propagated backwards through a noisy
 Trotter-style circuit. ``min_abs_coeff`` and ``max_pauli_weight`` are
 passed at construction; in Python the binding calls ``truncate()`` after
-every gate, so we don't manage it manually.
+each gate method call by default, so we don't manage it manually.
 
 The point of this example is the *workflow* — combining gates, noise,
 and bounded truncation — not a specific numeric outcome. We assert that

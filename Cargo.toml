@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-fxhash = "0.2.1"
-num = "0.4.3"
 ppvm-pauli-sum = { version = "0.1.0", path = "crates/ppvm-pauli-sum" }
 ppvm-tableau = { version = "0.1.0", path = "crates/ppvm-tableau" }
 ppvm-sym = { version = "0.1.0", path = "crates/ppvm-sym" }

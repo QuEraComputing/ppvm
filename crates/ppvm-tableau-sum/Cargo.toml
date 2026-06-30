@@ -8,7 +8,6 @@ bitvec = "1.0.1"
 fxhash = "0.2.1"
 num = "0.4.3"
 ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
-ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
 ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
 rand = "0.10.1"

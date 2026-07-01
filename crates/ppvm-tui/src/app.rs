@@ -11,9 +11,12 @@ use eyre::{Result, eyre};
 use ppvm_vihaco::composite::{PPVM, StepOutcome};
 use ppvm_vihaco::measurements::MeasurementResult;
 use ppvm_vihaco::{CircuitInstruction, PPVMModule, compile_program, load_module_file};
+use ratatui::Frame;
+use ratatui::layout::{Constraint, Layout};
 
 use crate::codeview::CodeView;
 use crate::command::{Command, parse_command};
+use crate::widgets::{CommandLine, ProgramView, RecordView, StateView};
 
 /// Terminal-agnostic state for the ppvm TUI.
 pub struct AppState {
@@ -364,6 +367,26 @@ impl AppState {
         } else {
             ":load <file>  or  device N  to begin   :q=quit"
         }
+    }
+
+    /// Convenience full-screen composer for the standalone `ppvm` TUI. A host
+    /// app (e.g. stellarscope) ignores this and lays out the individual
+    /// `…View` widgets itself.
+    pub fn render(&self, frame: &mut Frame) {
+        let root = Layout::vertical([
+            Constraint::Min(6),    // Program | State
+            Constraint::Length(3), // measurement record
+            Constraint::Length(2), // command line
+        ])
+        .split(frame.area());
+
+        let top = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(root[0]);
+
+        frame.render_widget(ProgramView(self), top[0]);
+        frame.render_widget(StateView(self), top[1]);
+        frame.render_widget(RecordView(self), root[1]);
+        frame.render_widget(CommandLine(self), root[2]);
     }
 }
 

@@ -401,23 +401,13 @@ impl PPVM {
         }
         instrs.push(PPVMInstruction::Circuit(inst));
 
-        // Apply the op without disturbing a loaded program or its program
-        // counter: run the appended block, then truncate it and restore the pc.
-        // The tableau/measurement effects persist; the code + pc are left
-        // byte-for-byte unchanged, so a paused debugger resumes exactly where it
-        // was. (Also keeps a long REPL session's code vector from growing.)
-        //
-        // The operand stack is rolled back too. `circuit.measure`/`trace` push a
-        // result onto it for bytecode to consume, and a partially-applied gate
-        // may leave its consts behind on error; either way there is no consumer
-        // here, so a stray operand would desync a resumed program's stack and
-        // grow a REPL session's stack without bound.
+        // Run the appended block, then roll back pc, code, and operand stack (on
+        // every path, including error) so the injected op is transparent to a
+        // paused program — only its tableau/measurement effects persist.
         let saved_pc = self.loader.pc();
         let saved_len = self.loader.module.code.len();
         let saved_stack = self.cpu.stack_len();
         let result = self.execute_single_instruction(&instrs);
-        // Restore the debugger's position on every path (including error): the
-        // appended ops are transient, and the pc/code/stack must be unchanged.
         self.loader.module.code.truncate(saved_len);
         *self.loader.pc_mut() = saved_pc;
         self.cpu.stack_mut().truncate(saved_stack);

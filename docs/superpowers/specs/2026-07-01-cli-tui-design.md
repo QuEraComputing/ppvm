@@ -39,6 +39,7 @@ The engine already exposes everything the TUI needs as public API on
 | TUI deps | `ratatui = "0.29.0"`, `crossterm = "0.29.0"` — pinned to match stellarscope so panels can dock together. |
 | Program panel | A **local** `CodeView<T: Display>`-alike, mirroring stellarscope's shape/`Widget` signature. **Not** a dependency on `stellarscope-inspect` (see §9). |
 | Tableau display | Rendered via the already-public `PPVM::state_string()`. `GeneralizedTableau`'s `Display` is left as-is for v1. |
+| Breakpoint injection | **Supported.** Ad-hoc gate ops at a breakpoint update the state and let stepping resume where it paused, via a new pc/code-preserving `PPVM` method (the one engine change — see §6). |
 | PauliSum backend | **Deferred.** REPL `device N` creates a Tableau-backed machine only. Loaded programs that declare other backends still run and render. |
 
 ## 3. Architecture overview
@@ -125,15 +126,17 @@ The command line is always live for text entry, so single-letter hotkeys would
 collide with gate names (`s` = the S gate, etc.). The grammar is therefore
 **prefix-disambiguated** and conflict-free:
 
-- **Bare tokens = REPL gate ops.** Ported from the removed REPL's `gate_spec`
+- **Bare tokens = gate ops.** Ported from the removed REPL's `gate_spec`
   map (name → `CircuitInstruction` + qubit/float arity):
   `device N`; `x y z h s sadj sqrtx sqrty sqrtxadj sqrtyadj t tadj reset measure <q>`;
   `cnot <c> <t>`; `cz <a> <b>`; `rx ry rz <q> <θ>`; `r <q> <axis> <θ>`;
   `rxx ryy rzz <a> <b> <θ>`; `u3 <q> <θ> <φ> <λ>`; `depolarize loss <q> <p>`;
   `depolarize2 <a> <b> <p>`; `paulierror <q> <px> <py> <pz>`;
   `correlatedloss <a> <b> <p0> <p1> <p2>`. Applied via
-  `PPVM::apply_circuit_instruction` (already bounds-checks qubit indices).
-  New measurement outcomes echo inline as `=> <bits>`.
+  `PPVM::apply_circuit_instruction` (already bounds-checks qubit indices) in a
+  REPL session; **at a breakpoint** they route through the pc/code-preserving
+  injection method (§6) so the loaded program and pc stay intact and stepping
+  resumes cleanly. New measurement outcomes echo inline as `=> <bits>`.
 - **`:`-prefixed = meta / debug commands.** `:load <path>`, `:continue` / `:c`,
   `:step` / `:s`, `:reset`, `:quit` / `:q`.
 - **Empty line + Enter = step** when paused. Matches the removed `debug` loop's
@@ -156,7 +159,7 @@ so the UI can repaint).
 
 ## 6. Engine integration
 
-All public on `PPVM` today — **no engine changes for v1**:
+Already public on `PPVM` today — no change needed:
 
 - REPL device: `PPVM::with_qubits(n)` (Tableau-backed) for `device N`.
 - Apply gate: `apply_circuit_instruction(inst, &qubits, &params)`.
@@ -166,6 +169,30 @@ All public on `PPVM` today — **no engine changes for v1**:
 - Records: `measurement_record() -> Vec<MeasurementResult>`,
   `trace_record() -> Vec<f64>`.
 - State text: `state_string() -> String`.
+
+**The one engine change (in `ppvm-vihaco`)**: a pc/code-preserving injection
+method so ad-hoc gates can be applied at a breakpoint without losing the
+debugger's place. Today `execute_single_instruction` appends the op to
+`module.code`, sets the pc to it, and leaves the pc at the new end — clobbering
+the debugger position. The new method wraps that with save/restore:
+
+```rust
+// PPVM, ppvm-vihaco — e.g. apply_circuit_instruction_preserving_pc(...)
+let saved_pc  = self.current_pc();
+let saved_len = self.loader.module.code.len();
+self.execute_single_instruction(&instrs)?;    // effect applied to the tableau
+self.loader.module.code.truncate(saved_len);   // drop the appended op
+*self.loader.pc_mut() = saved_pc;               // resume exactly where paused
+```
+
+This is possible only engine-side: `loader` (holding the pc + code) is a
+**private** field of `PPVM`, and `apply_circuit_instruction` /
+`execute_single_instruction` are used **only** within `composite.rs`, so no
+other caller depends on their current pc behavior. The method leaves the loaded
+program byte-for-byte unchanged and the pc restored; as a bonus it keeps the
+REPL's code vector from growing unboundedly across a long session. The REPL path
+may call the same method (its pc is irrelevant when no program is loaded), so
+there is a single injection entry point.
 
 **Program loading** builds the code listing without any private accessor: load
 the module via the public `ppvm_vihaco::load_module_file(path)`, format its
@@ -197,6 +224,11 @@ Mirror stellarscope's input tests and the old `repl_loop` / `debug_loop` tests �
   loading `BREAKPOINT_PROGRAM` and stepping pauses at the breakpoint;
   out-of-range qubit surfaces an error and keeps looping; `:quit` sets
   `should_exit`.
+- **Breakpoint injection** (`ppvm-vihaco` + `app.rs`): the engine test asserts
+  that after the preserving-injection method, `current_pc()` is unchanged and
+  `module.code.len()` is back to its pre-injection value while the tableau
+  reflects the op; the app test asserts that pausing at a breakpoint, injecting
+  `x 0`, then continuing resumes the loaded program and finishes.
 - **Rendering** (optional, light): a smoke test with ratatui's `TestBackend`
   that a panelled frame renders without panic and contains expected substrings
   (e.g. the `▶` pc marker, a measurement bit).
@@ -238,10 +270,6 @@ Deferred by explicit request or to keep v1 tight:
 - **PauliSum / LossyPauliSum in the REPL** — no `observable` / `trace` setup;
   `device N` is Tableau-only. (Loaded `.sst` programs may still declare any
   backend; `state_string()` renders them.)
-- **Mid-program ad-hoc gate injection** — applying a REPL gate while stepping a
-  loaded program is not specially designed (the pc/appended-code interaction of
-  `execute_single_instruction` is a footgun). Gate ops are intended for REPL
-  sessions in v1.
 - **Richer structured tableau rendering** and any `GeneralizedTableau::Display`
   overhaul — use `state_string()` for now.
 - **The actual stellarscope integration** — we ship only the embeddable surface
@@ -258,6 +286,9 @@ Deferred by explicit request or to keep v1 tight:
 - Debug: `ppvm prog.sst` opens paused at pc 0; Enter steps (Program panel `▶`
   advances, records update); `:c` runs to the next breakpoint / end; an authored
   `breakpoint` pauses.
+- Debug + inject: paused at a breakpoint, `x 0` updates the State panel and the
+  measurement record; `:c` then resumes the loaded program from where it paused
+  and finishes (pc + program unchanged by the injection).
 - `:load other.sst` swaps the program without relaunching.
 - Existing `run`/`debug`/`parse`/`dump` behavior and tests are unchanged.
 - `cargo test --workspace` passes; `ppvm-tui` has no dependency on a terminal in

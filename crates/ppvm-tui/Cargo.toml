@@ -10,6 +10,5 @@ crossterm = "0.29.0"
 ppvm-vihaco = { version = "0.1.0", path = "../ppvm-vihaco" }
 
 [package.metadata.cargo-machete]
-# These deps are declared for later tasks (TUI app shell, event loop, engine
-# integration) and are not yet imported in the current scaffold.
-ignored = ["crossterm", "ratatui"]
+# ratatui is declared for Task 6 (widget rendering) and not yet imported.
+ignored = ["ratatui"]

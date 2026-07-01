@@ -402,7 +402,18 @@ impl PPVM {
             )));
         }
         instrs.push(PPVMInstruction::Circuit(inst));
-        self.execute_single_instruction(&instrs)
+
+        // Apply the op without disturbing a loaded program or its program
+        // counter: run the appended block, then truncate it and restore the pc.
+        // The tableau/measurement effects persist; the code + pc are left
+        // byte-for-byte unchanged, so a paused debugger resumes exactly where it
+        // was. (Also keeps a long REPL session's code vector from growing.)
+        let saved_pc = self.loader.pc();
+        let saved_len = self.loader.module.code.len();
+        self.execute_single_instruction(&instrs)?;
+        self.loader.module.code.truncate(saved_len);
+        *self.loader.pc_mut() = saved_pc;
+        Ok(())
     }
 
     fn execute_effects(&mut self, inst: Instruction) -> eyre::Result<Effects<PPVMEffect>> {
@@ -1227,6 +1238,45 @@ mod tests {
         // No observer effects emitted by Truncate.
         assert!(machine.measurement_record().is_empty());
         assert!(machine.trace_record().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn apply_circuit_instruction_preserves_pc_and_code_len() -> eyre::Result<()> {
+        use crate::measurements::MeasurementOutcome;
+
+        // breakpoint; then measure q0. Step to the breakpoint, inject X, resume.
+        let src = "device circuit.n_qubits 1;\n\
+                   fn @main() { breakpoint\n const.u64 0\n circuit.measure\n ret }\n";
+        let mut m = PPVM::default();
+        m.load_program(src)?;
+        m.init()?;
+
+        // Run until the breakpoint pauses us.
+        loop {
+            if m.step_once()? == StepOutcome::Breakpoint {
+                break;
+            }
+        }
+        let pc = m.current_pc();
+        let len = m.loader.module.code.len();
+
+        // Inject X on q0 while "paused".
+        m.apply_circuit_instruction(CircuitInstruction::X, &[0], &[])?;
+
+        // The debugger's position must be untouched.
+        assert_eq!(m.current_pc(), pc, "pc must be preserved");
+        assert_eq!(
+            m.loader.module.code.len(),
+            len,
+            "appended op must be truncated back"
+        );
+
+        // And the X took effect: resuming the program measures |1>.
+        while !matches!(m.step_once()?, StepOutcome::Return | StepOutcome::Halt) {}
+        let rec = m.measurement_record();
+        assert_eq!(rec.len(), 1);
+        assert_eq!(rec[0].as_slice(), [MeasurementOutcome::One]);
         Ok(())
     }
 

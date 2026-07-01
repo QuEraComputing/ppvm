@@ -8,7 +8,3 @@ eyre = "0.6.12"
 ratatui = "0.29.0"
 crossterm = "0.29.0"
 ppvm-vihaco = { version = "0.1.0", path = "../ppvm-vihaco" }
-
-[package.metadata.cargo-machete]
-# ratatui is declared for Task 6 (widget rendering) and not yet imported.
-ignored = ["ratatui"]

@@ -8,5 +8,6 @@
 pub mod app;
 pub mod codeview;
 pub mod command;
+pub mod widgets;
 
 pub use app::AppState;

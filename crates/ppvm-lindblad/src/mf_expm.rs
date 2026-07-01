@@ -115,7 +115,12 @@ impl LinearOperator<f64> for CachedCscOp<'_> {
         let chunk_size = n.div_ceil(num_threads);
 
         // Parallelise over column chunks; each thread accumulates into a dense
-        // local `y` of length `dim`, reading the cached action.
+        // local `y` of length `dim`, reading the cached action. (Atomic scatter
+        // into a single shared output was tried to cut the threads×dim
+        // transient, but profiling showed that transient is only ~5% of RSS
+        // while the CAS-per-nnz cost was ~12% slower — not worth it. The real
+        // memory lever is `max_basis`, which bounds `dim` and thus every
+        // dim-scaling structure including the action cache.)
         let partial_ys: Vec<Vec<f64>> = self
             .cols
             .par_chunks(chunk_size)

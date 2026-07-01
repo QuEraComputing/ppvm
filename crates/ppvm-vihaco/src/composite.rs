@@ -410,10 +410,12 @@ impl PPVM {
         // was. (Also keeps a long REPL session's code vector from growing.)
         let saved_pc = self.loader.pc();
         let saved_len = self.loader.module.code.len();
-        self.execute_single_instruction(&instrs)?;
+        let result = self.execute_single_instruction(&instrs);
+        // Restore the debugger's position on every path (including error): the
+        // appended ops are transient, and the pc/code must be left unchanged.
         self.loader.module.code.truncate(saved_len);
         *self.loader.pc_mut() = saved_pc;
-        Ok(())
+        result
     }
 
     fn execute_effects(&mut self, inst: Instruction) -> eyre::Result<Effects<PPVMEffect>> {
@@ -1277,6 +1279,38 @@ mod tests {
         let rec = m.measurement_record();
         assert_eq!(rec.len(), 1);
         assert_eq!(rec[0].as_slice(), [MeasurementOutcome::One]);
+        Ok(())
+    }
+
+    #[test]
+    fn apply_circuit_instruction_preserves_pc_and_code_on_error() -> eyre::Result<()> {
+        // A program stepped to a known pc; an injected gate that errors mid-block
+        // must NOT corrupt the code vector or the program counter.
+        let src = "device circuit.n_qubits 1;\n\
+                   fn @main() { breakpoint\n const.u64 0\n circuit.measure\n ret }\n";
+        let mut m = PPVM::default();
+        m.load_program(src)?;
+        m.init()?;
+        loop {
+            if m.step_once()? == StepOutcome::Breakpoint {
+                break;
+            }
+        }
+        let pc = m.current_pc();
+        let len = m.loader.module.code.len();
+
+        // RX with no float param errors during execution: resolve_circuit pops
+        // the f64 first and finds the qubit value (U64) instead, returning Err.
+        let err = m.apply_circuit_instruction(CircuitInstruction::RX, &[0], &[]);
+        assert!(err.is_err(), "expected the injected gate to error");
+
+        // The failed injection must leave the debugger untouched.
+        assert_eq!(m.current_pc(), pc, "pc must be preserved on error");
+        assert_eq!(
+            m.loader.module.code.len(),
+            len,
+            "code must be truncated back on error"
+        );
         Ok(())
     }
 

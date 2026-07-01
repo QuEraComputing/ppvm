@@ -91,33 +91,6 @@ enum Commands {
     },
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use clap::Parser;
-
-    #[test]
-    fn bare_invocation_has_no_command_or_file() {
-        let cli = Cli::try_parse_from(["ppvm"]).unwrap();
-        assert!(cli.command.is_none());
-        assert!(cli.file.is_none());
-    }
-
-    #[test]
-    fn file_positional_is_captured_for_the_tui() {
-        let cli = Cli::try_parse_from(["ppvm", "prog.sst"]).unwrap();
-        assert!(cli.command.is_none());
-        assert_eq!(cli.file.as_deref(), Some("prog.sst"));
-    }
-
-    #[test]
-    fn subcommands_still_parse() {
-        let cli = Cli::try_parse_from(["ppvm", "run", "prog.sst"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Run { .. })));
-        assert!(cli.file.is_none());
-    }
-}
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -156,4 +129,31 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn bare_invocation_has_no_command_or_file() {
+        let cli = Cli::try_parse_from(["ppvm"]).unwrap();
+        assert!(cli.command.is_none());
+        assert!(cli.file.is_none());
+    }
+
+    #[test]
+    fn file_positional_is_captured_for_the_tui() {
+        let cli = Cli::try_parse_from(["ppvm", "prog.sst"]).unwrap();
+        assert!(cli.command.is_none());
+        assert_eq!(cli.file.as_deref(), Some("prog.sst"));
+    }
+
+    #[test]
+    fn subcommands_still_parse() {
+        let cli = Cli::try_parse_from(["ppvm", "run", "prog.sst"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Run { .. })));
+        assert!(cli.file.is_none());
+    }
 }

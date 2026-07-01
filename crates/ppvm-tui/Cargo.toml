@@ -1,0 +1,15 @@
+[package]
+name = "ppvm-tui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eyre = "0.6.12"
+ratatui = "0.29.0"
+crossterm = "0.29.0"
+ppvm-vihaco = { version = "0.1.0", path = "../ppvm-vihaco" }
+
+[package.metadata.cargo-machete]
+# These deps are declared for later tasks (TUI app shell, event loop, engine
+# integration) and are not yet imported in the current scaffold.
+ignored = ["crossterm", "eyre", "ppvm-vihaco", "ratatui"]

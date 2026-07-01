@@ -78,6 +78,8 @@ pub enum Command {
     Reset,
     /// Load a `.sst`/`.ssb` file.
     Load(String),
+    /// Toggle the help overlay.
+    Help,
     /// Leave the TUI.
     Quit,
 }
@@ -98,6 +100,7 @@ pub fn parse_command(line: &str) -> Result<Command> {
             "c" | "continue" => Ok(Command::Continue),
             "s" | "step" => Ok(Command::Step),
             "reset" => Ok(Command::Reset),
+            "help" | "h" | "?" => Ok(Command::Help),
             "load" => {
                 let path = it.next().ok_or_else(|| eyre!(":load needs a file path"))?;
                 Ok(Command::Load(path.to_string()))
@@ -209,6 +212,8 @@ mod tests {
         assert_eq!(parse_command(":continue").unwrap(), Command::Continue);
         assert_eq!(parse_command(":s").unwrap(), Command::Step);
         assert_eq!(parse_command(":reset").unwrap(), Command::Reset);
+        assert_eq!(parse_command(":help").unwrap(), Command::Help);
+        assert_eq!(parse_command(":h").unwrap(), Command::Help);
         assert_eq!(
             parse_command(":load foo.sst").unwrap(),
             Command::Load("foo.sst".to_string())

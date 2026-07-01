@@ -22,6 +22,28 @@ put CLI arguments after `--`:
 cargo run -p ppvm-cli -- run examples/ghz.sst
 ```
 
+## Interactive TUI
+
+Running `ppvm` with no subcommand launches an interactive terminal UI:
+
+- `ppvm` — start an empty session; type `device N` then gate ops
+  (`h 0`, `cnot 0 1`, `measure 0`, `rx 0 0.5`, …).
+- `ppvm program.sst` — open the program paused at the first instruction.
+
+Inside the TUI:
+
+- **Gate ops** (bare tokens) apply to the live tableau; measurement outcomes
+  echo as `=> bits`.
+- **`:load <file>`** (re)loads a program; **`:reset`** restarts it.
+- **Enter on an empty line** steps one instruction; **`:c`** continues to the
+  next breakpoint or the end; authored `breakpoint` instructions pause.
+- At a breakpoint you can inject gate ops — they update the state and stepping
+  resumes exactly where it paused.
+- **`:q`**, **Esc**, or **Ctrl-C** (on an empty line) exits.
+
+The state panel shows the tableau; the bottom band shows the measurement
+record.
+
 ## Run
 
 `run` executes a program for one or more shots and prints the measurement

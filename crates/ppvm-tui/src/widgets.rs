@@ -74,6 +74,18 @@ impl Widget for CommandLine<'_> {
     }
 }
 
+/// A floating help overlay listing the command grammar. Drawn over the panels
+/// while `:help` is toggled on; the host clears the area behind it first.
+pub struct HelpOverlay<'a>(pub &'a AppState);
+
+impl Widget for HelpOverlay<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        Paragraph::new(self.0.help_text())
+            .block(Block::bordered().title("Help  (:help to close)"))
+            .render(area, buf);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::AppState;

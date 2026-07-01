@@ -12,11 +12,12 @@ use ppvm_vihaco::composite::{PPVM, StepOutcome};
 use ppvm_vihaco::measurements::MeasurementResult;
 use ppvm_vihaco::{CircuitInstruction, PPVMModule, compile_program, load_module_file};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::widgets::Clear;
 
 use crate::codeview::CodeView;
 use crate::command::{Command, parse_command};
-use crate::widgets::{CommandLine, ProgramView, RecordView, StateView};
+use crate::widgets::{CommandLine, HelpOverlay, ProgramView, RecordView, StateView};
 
 /// Terminal-agnostic state for the ppvm TUI.
 pub struct AppState {
@@ -48,6 +49,8 @@ pub struct AppState {
     draft: String,
     /// The status/error line.
     status: String,
+    /// Whether the help overlay is currently shown.
+    show_help: bool,
     /// Set to leave the event loop.
     pub should_exit: bool,
 }
@@ -75,6 +78,7 @@ impl AppState {
             history_pos: None,
             draft: String::new(),
             status: String::new(),
+            show_help: false,
             should_exit: false,
         }
     }
@@ -113,6 +117,10 @@ impl AppState {
             Command::Continue => self.cont(),
             Command::Reset => self.reset(),
             Command::Load(path) => self.load_file(&path),
+            Command::Help => {
+                self.show_help = !self.show_help;
+                Ok(())
+            }
         }
     }
 
@@ -506,12 +514,22 @@ impl AppState {
     /// A contextual footer hint.
     pub fn hint(&self) -> &'static str {
         if self.has_program && self.paused {
-            "Enter=step  :c=continue  :reset  :q=quit"
+            "Enter=step  :c=continue  :reset  :help  :q=quit"
         } else if self.machine.is_some() {
-            "type a gate, or :load <file>   :q=quit"
+            "type a gate, or :load <file>   :help  :q=quit"
         } else {
-            ":load <file>  or  device N  to begin   :q=quit"
+            ":load <file>  ·  device N  ·  :help  ·  :q=quit"
         }
+    }
+
+    /// Whether the help overlay should be drawn.
+    pub fn show_help(&self) -> bool {
+        self.show_help
+    }
+
+    /// The command reference shown in the help overlay.
+    pub fn help_text(&self) -> &'static str {
+        HELP_TEXT
     }
 
     /// Convenience full-screen composer for the standalone `ppvm` TUI. A host
@@ -539,8 +557,46 @@ impl AppState {
         let col = cmd.x + CommandLine::PROMPT.len() as u16 + self.cursor as u16;
         let x = col.min(cmd.x + cmd.width.saturating_sub(1));
         frame.set_cursor_position((x, cmd.y));
+
+        // The help overlay floats above everything else when toggled on.
+        if self.show_help {
+            let full = frame.area();
+            let w = 76.min(full.width.saturating_sub(2));
+            let h = 20.min(full.height.saturating_sub(2));
+            let popup = Rect {
+                x: full.x + full.width.saturating_sub(w) / 2,
+                y: full.y + full.height.saturating_sub(h) / 2,
+                width: w,
+                height: h,
+            };
+            frame.render_widget(Clear, popup);
+            frame.render_widget(HelpOverlay(self), popup);
+        }
     }
 }
+
+/// The command reference shown by `:help`. Mirrors the command grammar in
+/// [`crate::command`]: bare tokens are gate ops, `:`-prefixed are meta/debug.
+const HELP_TEXT: &str = "\
+Meta / debug
+  device N              create a fresh N-qubit tableau device
+  :load <file>          load a .sst / .ssb program (paused at start)
+  Enter (empty)  :s     step one instruction
+  :continue  :c         run to the next breakpoint or the end
+  :reset                restart the loaded program / device
+  :help  :h             toggle this help
+  :quit  :q  (Ctrl-C)   leave
+
+Gates  (q = qubit index; angles / probabilities are floats)
+  x y z h s sadj sqrtx sqrty sqrtxadj sqrtyadj t tadj reset measure <q>
+  cnot <c> <t>     cz <a> <b>
+  rx ry rz <q> <angle>     r <q> <axis> <angle>
+  u3 <q> <theta> <phi> <lam>
+  rxx ryy rzz <a> <b> <angle>
+  depolarize loss <q> <p>     depolarize2 <a> <b> <p>
+  paulierror <q> <px> <py> <pz>     correlatedloss <a> <b> <p0> <p1> <p2>
+
+Line editing: ←/→ move · Home/End · Backspace/Del · ↑/↓ history";
 
 /// Render a measurement record as flat bits: `Zero`→`0`, `One`→`1`, `Lost`→`2`
 /// (the outcome's own enum value), events joined by spaces.
@@ -872,5 +928,39 @@ mod tests {
         // Command area starts at x=0, so the cursor sits at prompt width + 2.
         let pos = terminal.get_cursor_position().unwrap();
         assert_eq!(pos.x, (CommandLine::PROMPT.len() + 2) as u16);
+    }
+
+    #[test]
+    fn help_command_toggles_the_overlay() {
+        let mut app = AppState::new();
+        assert!(!app.show_help());
+        app.dispatch(":help");
+        assert!(app.show_help(), ":help should open the overlay");
+        app.dispatch(":help");
+        assert!(!app.show_help(), ":help again should close it");
+    }
+
+    #[test]
+    fn help_overlay_renders_the_command_reference() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut app = AppState::new();
+        app.dispatch(":help");
+        let mut terminal = Terminal::new(TestBackend::new(90, 30)).unwrap();
+        terminal.draw(|f| app.render(f)).unwrap();
+
+        let content: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(content.contains("Help"), "overlay title missing");
+        assert!(
+            content.contains("cnot"),
+            "gate reference missing from overlay"
+        );
     }
 }

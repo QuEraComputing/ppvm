@@ -5,18 +5,24 @@ use clap::{Parser, Subcommand};
 use eyre::Result;
 
 mod commands;
+mod tui;
 
 #[derive(Parser)]
 #[command(name = "ppvm")]
 #[command(about = "Pauli propagation virtual machine", long_about = None)]
+#[command(args_conflicts_with_subcommands = true)]
 pub struct Cli {
     /// Number of threads for all parallel work (1 = fully serial & deterministic)
     #[arg(short, long, default_value = "1")]
     threads: usize,
 
-    /// Subcommand to run.
+    /// A .sst/.ssb file to open in the TUI (when no subcommand is given).
+    #[arg(value_name = "FILE")]
+    file: Option<String>,
+
+    /// Subcommand to run; with none, launches the interactive TUI.
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -85,6 +91,33 @@ enum Commands {
     },
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn bare_invocation_has_no_command_or_file() {
+        let cli = Cli::try_parse_from(["ppvm"]).unwrap();
+        assert!(cli.command.is_none());
+        assert!(cli.file.is_none());
+    }
+
+    #[test]
+    fn file_positional_is_captured_for_the_tui() {
+        let cli = Cli::try_parse_from(["ppvm", "prog.sst"]).unwrap();
+        assert!(cli.command.is_none());
+        assert_eq!(cli.file.as_deref(), Some("prog.sst"));
+    }
+
+    #[test]
+    fn subcommands_still_parse() {
+        let cli = Cli::try_parse_from(["ppvm", "run", "prog.sst"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Run { .. })));
+        assert!(cli.file.is_none());
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -93,30 +126,31 @@ fn main() -> Result<()> {
     ppvm_vihaco::shots::set_global_threads(cli.threads)?;
 
     match cli.command {
-        Commands::Parse { file, format } => {
+        None => tui::run(cli.file.as_deref())?,
+        Some(Commands::Parse { file, format }) => {
             commands::parse(&file, format)?;
         }
-        Commands::Dump {
+        Some(Commands::Dump {
             file,
             output,
             force,
-        } => {
+        }) => {
             commands::dump(&file, output.as_deref(), force)?;
         }
-        Commands::Run {
+        Some(Commands::Run {
             file,
             shots,
             seed,
             output,
             quiet,
             format,
-        } => {
+        }) => {
             commands::run(&file, shots, seed, output.as_deref(), quiet, format)?;
         }
-        Commands::Debug {
+        Some(Commands::Debug {
             file,
             break_at_start,
-        } => {
+        }) => {
             commands::debug(&file, break_at_start)?;
         }
     }

@@ -1925,6 +1925,7 @@ name = "vihaco-circuit-isa"
 version = "0.1.0"
 dependencies = [
  "chumsky 0.10.1",
+ "eyre",
  "smallvec",
  "vihaco",
  "vihaco-parser",

@@ -6,3 +6,4 @@
 //! `Widget` components and `AppState` can be embedded in another ratatui app.
 
 pub mod codeview;
+pub mod command;

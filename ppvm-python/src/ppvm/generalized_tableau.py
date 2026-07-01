@@ -45,6 +45,13 @@ class MeasurementResult(enum.IntEnum):
     LOST = 2
 
 
+# Indexed by integer outcome value (0/1/2) to reuse the singleton enum members.
+# This is much faster than calling ``MeasurementResult(i)`` per element: the
+# IntEnum constructor dominates large readouts, while a tuple index just bumps a
+# refcount. Shared with ``GeneralizedTableauSum``.
+_BY_VALUE = (MeasurementResult.ZERO, MeasurementResult.ONE, MeasurementResult.LOST)
+
+
 @dataclass(frozen=True)
 class GeneralizedTableau(
     CliffordMixin,
@@ -148,6 +155,26 @@ class GeneralizedTableau(
         """
         self._interface.t_dag(_normalize_targets(targets))
 
+    def cz_block(self, control_base: int, target_base: int, count: int) -> None:
+        """Apply a fused block of CZ gates over constant-offset qubit pairs.
+
+        Applies CZ to ``(control_base + i, target_base + i)`` for ``i`` in
+        ``range(count)`` -- i.e. the gates ``zip(range(control_base, ...),
+        range(target_base, ...))`` would produce. This uses a word-level kernel
+        that is much faster than the equivalent `cz` call when the pairs form a
+        contiguous, constant-offset block (e.g. entangling two adjacent qubit
+        registers). For scattered pairs, use `cz`.
+
+        CZ is symmetric, so ``control_base`` and ``target_base`` may be given in
+        either order.
+
+        Args:
+            control_base: First qubit of the control run.
+            target_base: First qubit of the target run.
+            count: Number of CZ pairs.
+        """
+        self._interface.cz_block(control_base, target_base, count)
+
     def measure(self, addr0: int) -> MeasurementResult:
         """Measure the specified qubit in the Z basis.
 
@@ -158,7 +185,7 @@ class GeneralizedTableau(
             The measurement outcome as a ``MeasurementResult``, which is
             ``LOST`` if the qubit has been lost, ``ZERO`` or ``ONE`` otherwise.
         """
-        return MeasurementResult(self._interface.measure(addr0))
+        return _BY_VALUE[self._interface.measure(addr0)]
 
     def measure_many(self, *targets: int | Iterable[int]) -> list[MeasurementResult]:
         """Measure several qubits in the Z basis.
@@ -169,9 +196,7 @@ class GeneralizedTableau(
         Returns:
             A list of ``MeasurementResult`` outcomes, one per target.
         """
-        return [
-            MeasurementResult(v) for v in self._interface.measure_many(_normalize_targets(targets))
-        ]
+        return [_BY_VALUE[v] for v in self._interface.measure_many(_normalize_targets(targets))]
 
     def current_measurement_record(self) -> list[MeasurementResult]:
         """Return all measurement outcomes recorded so far.
@@ -179,7 +204,7 @@ class GeneralizedTableau(
         Returns:
             A list of ``MeasurementResult`` outcomes in measurement order.
         """
-        return [MeasurementResult(v) for v in self._interface.current_measurement_record()]
+        return [_BY_VALUE[v] for v in self._interface.current_measurement_record()]
 
     def coefficients(self) -> dict[int, complex]:
         """Return a snapshot of the sparse coefficient vector.
@@ -316,7 +341,7 @@ class GeneralizedTableau(
             fresh tableau per shot).
         """
         raw = self._interface.run(prog)
-        return [MeasurementResult(x) for x in raw]
+        return [_BY_VALUE[x] for x in raw]
 
     # stim familiarity alias
     do = run
@@ -345,7 +370,7 @@ class GeneralizedTableau(
         """
         native_cls = _native_tableau_cls(n_qubits)
         raw = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
-        return [[MeasurementResult(x) for x in shot] for shot in raw]
+        return [[_BY_VALUE[x] for x in shot] for shot in raw]
 
 
 def sample_stim(

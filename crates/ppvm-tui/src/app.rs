@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `AppState` — the terminal-agnostic state of the ppvm TUI. Owns an optional
-//! [`PPVM`] plus the command buffer, status line, program listing, and REPL
-//! log. `dispatch` runs one command string; `handle_key` edits the buffer and
-//! submits on Enter. Nothing here touches a terminal or runs a loop.
+//! [`PPVM`] plus a [`LineEditor`], status line, program listing, and REPL log.
+//! `dispatch` runs one command string; `handle_key` routes app-level keys
+//! (submit, quit) and delegates editing to the [`LineEditor`]. Nothing here
+//! touches a terminal or runs a loop.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use eyre::{Result, eyre};
@@ -17,6 +18,7 @@ use ratatui::widgets::Clear;
 
 use crate::codeview::CodeView;
 use crate::command::{Command, parse_command};
+use crate::editor::LineEditor;
 use crate::widgets::{CommandLine, HelpOverlay, ProgramView, RecordView, StateView};
 
 /// Terminal-agnostic state for the ppvm TUI.
@@ -37,16 +39,8 @@ pub struct AppState {
     paused: bool,
     /// True once the loaded program has run to Return/Halt.
     finished: bool,
-    /// The command-line buffer.
-    input: String,
-    /// Char index of the edit cursor within `input` (0..=input char count).
-    cursor: usize,
-    /// Submitted command lines, oldest first (for Up/Down recall).
-    history: Vec<String>,
-    /// Position within `history` while recalling; `None` = editing the live line.
-    history_pos: Option<usize>,
-    /// The live line stashed when entering history, restored on the way back.
-    draft: String,
+    /// The command line: buffer, edit cursor, and history.
+    editor: LineEditor,
     /// The status/error line.
     status: String,
     /// Whether the help overlay is currently shown.
@@ -72,11 +66,7 @@ impl AppState {
             has_program: false,
             paused: false,
             finished: false,
-            input: String::new(),
-            cursor: 0,
-            history: Vec::new(),
-            history_pos: None,
-            draft: String::new(),
+            editor: LineEditor::new(),
             status: String::new(),
             show_help: false,
             should_exit: false,
@@ -299,7 +289,8 @@ impl AppState {
 
     // ─── key handling ────────────────────────────────────────────────────
 
-    /// Apply one key event. Returns whether it was consumed.
+    /// Apply one key event. Returns whether it was consumed. App-level keys
+    /// (submit, quit) are handled here; the rest go to the line editor.
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         if key.kind != KeyEventKind::Press {
             return false;
@@ -309,173 +300,45 @@ impl AppState {
                 self.submit();
                 true
             }
-            // Ctrl-C: clear a non-empty buffer, else quit (shell-like).
+            // Ctrl-C / Esc: clear a non-empty buffer, else quit (shell-like).
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if self.input.is_empty() {
-                    self.should_exit = true;
-                } else {
-                    self.clear_input();
-                }
-                true
-            }
-            KeyCode::Char(c) => {
-                self.insert_char(c);
-                true
-            }
-            KeyCode::Backspace => {
-                self.backspace();
-                true
-            }
-            KeyCode::Delete => {
-                self.delete();
-                true
-            }
-            KeyCode::Left => {
-                self.cursor = self.cursor.saturating_sub(1);
-                true
-            }
-            KeyCode::Right => {
-                self.cursor = (self.cursor + 1).min(self.input_len());
-                true
-            }
-            KeyCode::Home => {
-                self.cursor = 0;
-                true
-            }
-            KeyCode::End => {
-                self.cursor = self.input_len();
-                true
-            }
-            KeyCode::Up => {
-                self.history_prev();
-                true
-            }
-            KeyCode::Down => {
-                self.history_next();
+                self.clear_or_quit();
                 true
             }
             KeyCode::Esc => {
-                if self.input.is_empty() {
-                    self.should_exit = true;
-                } else {
-                    self.clear_input();
-                }
+                self.clear_or_quit();
                 true
             }
-            _ => false,
+            _ => self.editor.handle_key(key),
         }
     }
 
-    // ─── line editing & command history ──────────────────────────────────
-
-    /// Char count of the current input line.
-    fn input_len(&self) -> usize {
-        self.input.chars().count()
-    }
-
-    /// Byte offset of char index `i` within `input` (or the end of the string).
-    fn byte_index(&self, i: usize) -> usize {
-        self.input
-            .char_indices()
-            .nth(i)
-            .map(|(b, _)| b)
-            .unwrap_or(self.input.len())
-    }
-
-    /// Insert `c` at the cursor and step past it.
-    fn insert_char(&mut self, c: char) {
-        let b = self.byte_index(self.cursor);
-        self.input.insert(b, c);
-        self.cursor += 1;
-    }
-
-    /// Delete the char before the cursor (Backspace).
-    fn backspace(&mut self) {
-        if self.cursor > 0 {
-            let b = self.byte_index(self.cursor - 1);
-            self.input.remove(b);
-            self.cursor -= 1;
+    /// Clear a non-empty command line, or quit when it is already empty.
+    fn clear_or_quit(&mut self) {
+        if self.editor.is_empty() {
+            self.should_exit = true;
+        } else {
+            self.editor.clear();
         }
     }
 
-    /// Delete the char at the cursor (Delete).
-    fn delete(&mut self) {
-        if self.cursor < self.input_len() {
-            let b = self.byte_index(self.cursor);
-            self.input.remove(b);
-        }
-    }
-
-    /// Clear the input line and reset the cursor.
-    fn clear_input(&mut self) {
-        self.input.clear();
-        self.cursor = 0;
-    }
-
-    /// Replace the input line, moving the cursor to its end.
-    fn set_input(&mut self, line: String) {
-        self.cursor = line.chars().count();
-        self.input = line;
-    }
-
-    /// Submit the current line: record it in history, then dispatch it.
+    /// Submit the current line: record it in history (via the editor), then
+    /// dispatch it.
     fn submit(&mut self) {
-        let line = std::mem::take(&mut self.input);
-        self.cursor = 0;
-        self.history_pos = None;
-        self.draft.clear();
-        let trimmed = line.trim();
-        // Skip blanks and consecutive duplicates, matching a shell's history.
-        if !trimmed.is_empty() && self.history.last().map(String::as_str) != Some(trimmed) {
-            self.history.push(trimmed.to_string());
-        }
+        let line = self.editor.submit();
         self.dispatch(&line);
-    }
-
-    /// Recall an older history entry (Up), stashing the live line on first entry.
-    fn history_prev(&mut self) {
-        if self.history.is_empty() {
-            return;
-        }
-        let i = match self.history_pos {
-            None => {
-                self.draft = std::mem::take(&mut self.input);
-                self.history.len() - 1
-            }
-            Some(0) => return, // already at the oldest
-            Some(i) => i - 1,
-        };
-        self.history_pos = Some(i);
-        self.set_input(self.history[i].clone());
-    }
-
-    /// Move toward newer entries (Down); past the newest, restore the stashed
-    /// live line.
-    fn history_next(&mut self) {
-        match self.history_pos {
-            None => {}
-            Some(i) if i + 1 < self.history.len() => {
-                self.history_pos = Some(i + 1);
-                self.set_input(self.history[i + 1].clone());
-            }
-            Some(_) => {
-                self.history_pos = None;
-                let draft = std::mem::take(&mut self.draft);
-                self.set_input(draft);
-            }
-        }
     }
 
     // ─── read-only accessors (used by the widgets in Task 6) ──────────────
 
     pub fn input(&self) -> &str {
-        &self.input
+        self.editor.input()
     }
 
     /// Char index of the edit cursor within the input line. Used to place the
     /// terminal cursor; a host embedding `CommandLine` uses this to position it.
     pub fn cursor(&self) -> usize {
-        self.cursor
+        self.editor.cursor()
     }
 
     pub fn status(&self) -> &str {
@@ -557,7 +420,7 @@ impl AppState {
         // Place the terminal cursor in the input line, just after the prompt,
         // clamped to the command area so a long line can't run off-panel.
         let cmd = root[2];
-        let col = cmd.x + CommandLine::PROMPT.len() as u16 + self.cursor as u16;
+        let col = cmd.x + CommandLine::PROMPT.len() as u16 + self.editor.cursor() as u16;
         let x = col.min(cmd.x + cmd.width.saturating_sub(1));
         frame.set_cursor_position((x, cmd.y));
 
@@ -687,15 +550,6 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         assert!(app.status().contains("1-qubit device"));
         assert!(app.input().is_empty(), "buffer should clear on submit");
-    }
-
-    #[test]
-    fn backspace_edits_the_buffer() {
-        let mut app = AppState::new();
-        app.handle_key(key(KeyCode::Char('h')));
-        app.handle_key(key(KeyCode::Char('i')));
-        app.handle_key(key(KeyCode::Backspace));
-        assert_eq!(app.input(), "h");
     }
 
     #[test]
@@ -830,105 +684,6 @@ mod tests {
             !app.has_program(),
             "reset must reset the device, not reload the old program"
         );
-    }
-
-    // ─── line editing & history ──────────────────────────────────────────
-
-    /// Type each char, then press Enter (submitting to history + dispatch).
-    fn type_line(app: &mut AppState, line: &str) {
-        for c in line.chars() {
-            app.handle_key(key(KeyCode::Char(c)));
-        }
-        app.handle_key(key(KeyCode::Enter));
-    }
-
-    #[test]
-    fn typing_inserts_and_advances_the_cursor() {
-        let mut app = AppState::new();
-        for c in "hz".chars() {
-            app.handle_key(key(KeyCode::Char(c)));
-        }
-        assert_eq!(app.input(), "hz");
-        assert_eq!(app.cursor(), 2);
-    }
-
-    #[test]
-    fn left_right_home_end_move_the_cursor() {
-        let mut app = AppState::new();
-        for c in "abc".chars() {
-            app.handle_key(key(KeyCode::Char(c)));
-        }
-        assert_eq!(app.cursor(), 3);
-        app.handle_key(key(KeyCode::Left));
-        assert_eq!(app.cursor(), 2);
-        app.handle_key(key(KeyCode::Home));
-        assert_eq!(app.cursor(), 0);
-        app.handle_key(key(KeyCode::Left)); // saturates at 0
-        assert_eq!(app.cursor(), 0);
-        app.handle_key(key(KeyCode::End));
-        assert_eq!(app.cursor(), 3);
-        app.handle_key(key(KeyCode::Right)); // saturates at len
-        assert_eq!(app.cursor(), 3);
-    }
-
-    #[test]
-    fn insert_and_delete_at_the_cursor() {
-        let mut app = AppState::new();
-        for c in "ac".chars() {
-            app.handle_key(key(KeyCode::Char(c)));
-        }
-        app.handle_key(key(KeyCode::Left)); // cursor between 'a' and 'c'
-        app.handle_key(key(KeyCode::Char('b')));
-        assert_eq!(app.input(), "abc");
-        assert_eq!(app.cursor(), 2);
-        app.handle_key(key(KeyCode::Backspace)); // removes 'b' before cursor
-        assert_eq!(app.input(), "ac");
-        assert_eq!(app.cursor(), 1);
-        app.handle_key(key(KeyCode::Delete)); // removes 'c' at cursor
-        assert_eq!(app.input(), "a");
-        assert_eq!(app.cursor(), 1);
-    }
-
-    #[test]
-    fn up_arrow_recalls_previous_commands() {
-        let mut app = AppState::new();
-        type_line(&mut app, "device 1");
-        type_line(&mut app, "x 0");
-        app.handle_key(key(KeyCode::Up)); // newest first
-        assert_eq!(app.input(), "x 0");
-        assert_eq!(app.cursor(), 3, "cursor lands at end of the recalled line");
-        app.handle_key(key(KeyCode::Up));
-        assert_eq!(app.input(), "device 1");
-        app.handle_key(key(KeyCode::Up)); // already oldest, stays put
-        assert_eq!(app.input(), "device 1");
-    }
-
-    #[test]
-    fn down_arrow_returns_toward_the_live_line() {
-        let mut app = AppState::new();
-        type_line(&mut app, "device 1");
-        type_line(&mut app, "x 0");
-        for c in "meas".chars() {
-            app.handle_key(key(KeyCode::Char(c)));
-        }
-        app.handle_key(key(KeyCode::Up)); // stash "meas", show "x 0"
-        app.handle_key(key(KeyCode::Up)); // "device 1"
-        app.handle_key(key(KeyCode::Down)); // "x 0"
-        assert_eq!(app.input(), "x 0");
-        app.handle_key(key(KeyCode::Down)); // past newest -> restore draft
-        assert_eq!(app.input(), "meas");
-        assert_eq!(app.cursor(), 4);
-    }
-
-    #[test]
-    fn history_skips_consecutive_duplicates() {
-        let mut app = AppState::new();
-        type_line(&mut app, "device 1");
-        type_line(&mut app, "device 1"); // same command twice -> one entry
-        app.handle_key(key(KeyCode::Up));
-        assert_eq!(app.input(), "device 1");
-        app.handle_key(key(KeyCode::Up)); // only one entry -> stays
-        assert_eq!(app.input(), "device 1");
     }
 
     #[test]

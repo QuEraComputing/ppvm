@@ -59,10 +59,15 @@ impl Widget for RecordView<'_> {
 /// The footer: prompt + input, then the hint and status line.
 pub struct CommandLine<'a>(pub &'a AppState);
 
+impl CommandLine<'_> {
+    /// The command prompt. Also used to offset the terminal cursor past it.
+    pub const PROMPT: &'static str = "ppvm> ";
+}
+
 impl Widget for CommandLine<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let text = Text::from(vec![
-            Line::from(format!("ppvm> {}", self.0.input())),
+            Line::from(format!("{}{}", Self::PROMPT, self.0.input())),
             Line::from(format!("{}    {}", self.0.hint(), self.0.status())),
         ]);
         Paragraph::new(text).render(area, buf);

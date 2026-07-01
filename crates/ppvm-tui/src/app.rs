@@ -126,6 +126,9 @@ impl AppState {
 
     fn new_device(&mut self, n: usize) -> Result<()> {
         self.machine = Some(PPVM::with_qubits(n)?);
+        // Forget any previously loaded program so `:reset` resets this device
+        // rather than resurrecting the old program.
+        self.module = None;
         self.n_qubits = n;
         self.has_program = false;
         self.paused = false;
@@ -811,6 +814,22 @@ mod tests {
         assert!(app.paused());
         assert_eq!(app.active_listing().1.cursor(), Some(0));
         assert_eq!(app.measurement_bits(), "(none)");
+    }
+
+    #[test]
+    fn device_after_a_program_then_reset_resets_the_device() {
+        // Switching to a REPL device must forget the previously loaded program,
+        // so `:reset` resets the device rather than resurrecting the program.
+        let mut app = AppState::new();
+        app.load_source(BP_PROGRAM).unwrap();
+        assert!(app.has_program());
+        app.dispatch("device 2");
+        assert!(!app.has_program(), "device should switch to a REPL session");
+        app.dispatch(":reset");
+        assert!(
+            !app.has_program(),
+            "reset must reset the device, not reload the old program"
+        );
     }
 
     // ─── line editing & history ──────────────────────────────────────────

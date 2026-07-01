@@ -14,3 +14,11 @@
 "rss_mb" = 264.0
 "peak_basis" = 15414.0
 
+[[metric]]
+"commit" = "8eab9190"
+"status" = "keep"
+"description" = "cache generator action (CSC) once/call + tol-matched (1e-6) expm table; correct build"
+"wall_s" = 0.665
+"rss_mb" = 310.0
+"peak_basis" = 15398.0
+

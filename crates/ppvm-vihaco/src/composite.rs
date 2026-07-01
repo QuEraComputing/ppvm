@@ -1293,4 +1293,91 @@ mod tests {
             trace[0]
         );
     }
+
+    #[test]
+    fn paulisum_reset_restores_seeded_observable() -> eyre::Result<()> {
+        use vihaco::Reset;
+
+        // Seed the observable `Z` (PauliSum backend), then apply H(0), which
+        // conjugates Z -> X in the Heisenberg picture and changes the state.
+        // reset() must rebuild the state from the seeded observable.
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 1;
+        module.extra.backend = BackendKind::PauliSum;
+        module.extra.observable = Some("Z".to_string());
+
+        module
+            .code
+            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                Value::U64(0),
+            )));
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::H));
+
+        let mut machine = PPVM::default();
+        machine.load(&module)?;
+        machine.init()?;
+
+        let seeded = machine.state_string();
+        for _ in 0..module.code.len() {
+            machine.step_once()?;
+        }
+        assert_ne!(
+            machine.state_string(),
+            seeded,
+            "H(0) should have changed the propagated observable"
+        );
+
+        machine.reset();
+        assert_eq!(
+            machine.state_string(),
+            seeded,
+            "reset must rebuild the state from the seeded observable"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn lossy_paulisum_reset_restores_seeded_observable() -> eyre::Result<()> {
+        use vihaco::Reset;
+
+        // Same as `paulisum_reset_restores_seeded_observable`, but through the
+        // LossyPauliSum dispatch path.
+        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        module.extra.n_qubits = 1;
+        module.extra.backend = BackendKind::LossyPauliSum;
+        module.extra.observable = Some("Z".to_string());
+
+        module
+            .code
+            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                Value::U64(0),
+            )));
+        module
+            .code
+            .push(PPVMInstruction::Circuit(CircuitInstruction::H));
+
+        let mut machine = PPVM::default();
+        machine.load(&module)?;
+        machine.init()?;
+
+        let seeded = machine.state_string();
+        for _ in 0..module.code.len() {
+            machine.step_once()?;
+        }
+        assert_ne!(
+            machine.state_string(),
+            seeded,
+            "H(0) should have changed the propagated observable"
+        );
+
+        machine.reset();
+        assert_eq!(
+            machine.state_string(),
+            seeded,
+            "reset must rebuild the state from the seeded observable"
+        );
+        Ok(())
+    }
 }

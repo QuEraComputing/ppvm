@@ -439,6 +439,8 @@ macro_rules! dispatch_common_paulisum {
 /// but without measurement / reset / loss support.
 pub struct PauliSumExecutor<T: Config<Coeff = f64>> {
     pub state: PauliSum<T>,
+    /// Snapshot of the seeded observable, restored by `reset`.
+    initial: PauliSum<T>,
 }
 
 #[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
@@ -475,9 +477,10 @@ where
 impl<T> vihaco::Reset for PauliSumExecutor<T>
 where
     T: Config<Coeff = f64>,
+    PauliSum<T>: Clone,
 {
     fn reset(&mut self) {
-        // TODO(Task 5/6): rebuild self.state from the seeded observable.
+        self.state = self.initial.clone();
     }
 }
 
@@ -487,6 +490,8 @@ where
 /// `PauliWordType` is `LossyPauliWord` (see `LossyPauliSumConfig`).
 pub struct LossyPauliSumExecutor<T: Config<Coeff = f64>> {
     pub state: PauliSum<T>,
+    /// Snapshot of the seeded observable, restored by `reset`.
+    initial: PauliSum<T>,
 }
 
 #[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
@@ -541,9 +546,10 @@ where
 impl<T> vihaco::Reset for LossyPauliSumExecutor<T>
 where
     T: Config<Coeff = f64>,
+    PauliSum<T>: Clone,
 {
     fn reset(&mut self) {
-        // TODO(Task 5/6): rebuild self.state from the seeded observable.
+        self.state = self.initial.clone();
     }
 }
 
@@ -677,7 +683,8 @@ impl PauliSumCircuit {
                 for (word, coef) in terms {
                     state += (word.as_str(), *coef);
                 }
-                Self::$variant(PauliSumExecutor { state })
+                let initial = state.clone();
+                Self::$variant(PauliSumExecutor { state, initial })
             }};
         }
         if info.n_qubits <= 64 {
@@ -762,7 +769,8 @@ impl LossyPauliSumCircuit {
                 for (word, coef) in terms {
                     state += (word.as_str(), *coef);
                 }
-                Self::$variant(LossyPauliSumExecutor { state })
+                let initial = state.clone();
+                Self::$variant(LossyPauliSumExecutor { state, initial })
             }};
         }
         if info.n_qubits <= 64 {

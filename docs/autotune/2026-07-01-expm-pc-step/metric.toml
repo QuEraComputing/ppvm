@@ -6,3 +6,11 @@
 "rss_mb" = 250.0
 "peak_basis" = 15414.0
 
+[[metric]]
+"commit" = "f93a230e"
+"status" = "discard"
+"description" = "cache-action CSC (port of orbit-rep): no wall win at dt=0.05 (few matvecs; scatter dominates, not action-recompute)"
+"wall_s" = 3.343
+"rss_mb" = 264.0
+"peak_basis" = 15414.0
+

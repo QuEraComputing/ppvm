@@ -98,3 +98,41 @@ Its genuine advantages: no Trotter splitting error (systematic, dt-controlled;
 prefers dt~0.1) and a compact final basis at low accuracy. Measurement variance
 on single runs at N>=12 is large — trust min-of-N microbenchmarks, not one-shot
 walls.
+
+## Wide (dt x drop_tol x max_basis) scan -> optimal expm params (N=10, min of 2)
+
+Reran on a QUIET machine (the first pass was load-inflated). rel_err is
+deterministic (bit-identical across both runs); only walls changed — these are
+the clean walls.
+
+dt x drop_tol grid (max_basis=inf) reveals a dt-ERROR FLOOR (the PC does only
+2 leakage hops/step, so too-large dt can't spread the operator far enough):
+- dt=0.05: as accurate as 0.1 but ~1.8x slower (more steps -> more truncation
+  events). drop=3e-5 -> rel 3.2e-4 @ 10.4s.
+- dt=0.10: OPTIMAL. best accuracy floor AND fastest to reach it:
+  drop 3e-3->rel 3.3e-2/0.4s, 1e-3->1.25e-2/2.5s, 3e-4->4.0e-3/4.3s,
+  1e-4->7.4e-4/4.7s, 3e-5->1.0e-3/6.9s.
+- dt=0.15 -> accuracy floors at ~1.9e-2 (finer drop no longer helps);
+  dt=0.20 -> ~2.2e-2; dt>=0.25 -> ~0.15. Above dt~0.1 you cannot reach small
+  rel_err at ANY drop_tol. Only exceed dt~0.1 if low accuracy suffices (then
+  dt=0.2-0.3 gives rel~3e-2 in ~0.3s).
+
+Optimal (dt,drop) per accuracy target, max_basis=inf, MIN WALL (clean):
+  rel~3e-2:  dt=0.2  drop=3e-3  -> 0.3s  (~8k terms)   [very cheap regime]
+  rel~1e-2:  dt=0.1  drop=3e-4  -> 4.3s  (206k, rel 4.0e-3)
+  rel~3e-3:  dt=0.1  drop=1e-4  -> 4.7s  (244k, rel 7.4e-4)
+  rel<=1e-3: dt=0.1  drop=1e-4  -> 4.7s  (rel 7.4e-4)
+
+max_basis interaction (base dt=0.1): capping BELOW the drop-tol-natural basis
+size trades accuracy for RAM/wall. At the rel~1e-2 target, max_basis=200k
+(vs inf) still meets it at 4.3s/310MB vs 5.3s/387MB — a mild win by trimming the
+unneeded tail. For high accuracy the operator genuinely fills ~250k terms, so
+max_basis must be >= that. => drop_tol is the primary knob; max_basis is a
+memory safety cap that gives marginal savings at moderate accuracy.
+
+RECOMMENDED expm defaults (this ladder/observable): **dt=0.1**, drop_tol chosen
+for the accuracy target (1e-3 moderate / 1e-4 tight), max_basis unbounded (or
+~1.2x the expected saturated basis as a memory safety cap). dt=0.1 alone is
+~1.8x faster than the dt=0.05 used in the earlier comparison. The dt~0.1 optimum
+is set by the leakage-hop count vs the light-cone spread, so it should be only
+weakly N-dependent (worth a spot-check at the target N).

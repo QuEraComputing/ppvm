@@ -348,6 +348,22 @@ mod tests {
     }
 
     #[test]
+    fn esc_on_empty_buffer_exits() {
+        let mut app = AppState::new();
+        app.handle_key(key(KeyCode::Esc));
+        assert!(app.should_exit);
+    }
+
+    #[test]
+    fn esc_on_nonempty_buffer_clears_it() {
+        let mut app = AppState::new();
+        app.handle_key(key(KeyCode::Char('x')));
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.should_exit);
+        assert!(app.input().is_empty());
+    }
+
+    #[test]
     fn quit_command_sets_should_exit() {
         let mut app = AppState::new();
         app.dispatch(":q");

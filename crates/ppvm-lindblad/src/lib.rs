@@ -1040,7 +1040,7 @@ impl LindbladSpec {
             }
         }
         // 2. Predictor.
-        let coeffs_predict = self.expm_step_complex(basis, dt, coeffs);
+        let coeffs_predict = self.expm_step_complex(basis, dt, coeffs, drop_tol);
         // 3. Second-hop expansion from the predicted state.
         let leak2 = self.leakage_complex(basis, &coeffs_predict, protected)?;
         drop(coeffs_predict);
@@ -1051,7 +1051,7 @@ impl LindbladSpec {
             }
         }
         // 4. Corrector.
-        *coeffs = self.expm_step_complex(basis, dt, coeffs);
+        *coeffs = self.expm_step_complex(basis, dt, coeffs, drop_tol);
         // 5. Prune below drop_tol (complex magnitude).
         prune_basis_complex(basis, coeffs, drop_tol, protected);
         // NOTE: NO automatic symmetry-merge here. The orbit-rep
@@ -1073,12 +1073,13 @@ impl LindbladSpec {
         basis: &[Word],
         dt: f64,
         b: &[Complex<f64>],
+        drop_tol: f64,
     ) -> Vec<Complex<f64>> {
         // The generator is the REAL in-basis-restricted matrix; only the
         // vector `b` is complex. By linearity,
         // `exp(dt·M)·(re + i·im) = exp(dt·M)·re + i·exp(dt·M)·im`, so this is
         // two real matrix-free applies recombined. Fully matrix-free; no CSR.
-        mf_expm::expm_apply_mf_cxvec(self, basis, dt, b)
+        mf_expm::expm_apply_mf_cxvec(self, basis, dt, b, drop_tol)
     }
 
     /// One classical RK4 step on `O ← O + dt · L*(O)`, expanding the basis
@@ -1349,7 +1350,7 @@ impl LindbladSpec {
         // `coeffs` is read-only here, so we don't clone it — it serves as
         // the pre-step input for the corrector below as well.
         let t0 = Instant::now();
-        let coeffs_predict = self.expm_step(basis, dt, coeffs);
+        let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol);
         t.expm1_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
@@ -1362,7 +1363,7 @@ impl LindbladSpec {
         t.expand2_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
-        *coeffs = self.expm_step(basis, dt, coeffs);
+        *coeffs = self.expm_step(basis, dt, coeffs, drop_tol);
         t.expm2_us = t0.elapsed().as_micros() as u64;
 
         prune_basis(basis, coeffs, drop_tol, protected);
@@ -1388,7 +1389,7 @@ impl LindbladSpec {
         add_leakage_capped(basis, coeffs, leak, max_basis);
         // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
         // new owned vector with the predicted state.
-        let coeffs_predict = self.expm_step(basis, dt, coeffs);
+        let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol);
         // 3. Second-hop expansion from the predicted state. After leakage2
         // we no longer need `coeffs_predict`. Extend `coeffs` with zeros for
         // any newly-added second-hop strings so it remains a valid input
@@ -1397,7 +1398,7 @@ impl LindbladSpec {
         drop(coeffs_predict);
         add_leakage_capped(basis, coeffs, leak2, max_basis);
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.
-        *coeffs = self.expm_step(basis, dt, coeffs);
+        *coeffs = self.expm_step(basis, dt, coeffs, drop_tol);
         // 5. Prune basis entries below `drop_tol` (protected words never dropped).
         prune_basis(basis, coeffs, drop_tol, protected);
         cap_basis(basis, coeffs, max_basis, protected);
@@ -1411,8 +1412,9 @@ impl LindbladSpec {
         basis: &[Word],
         dt: f64,
         b: &[f64],
+        drop_tol: f64,
     ) -> Vec<f64> {
-        mf_expm::expm_apply_mf(self, basis, dt, b)
+        mf_expm::expm_apply_mf(self, basis, dt, b, drop_tol)
     }
 
     /// Compute the unscaled list of `(output, coefficient)` pairs that

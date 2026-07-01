@@ -43,3 +43,13 @@ pub trait RotationOne<T: Config> {
         }
     }
 }
+
+/// Rotation about an axis in the x/y plane:
+/// `R(axis_angle, θ) = exp(-i θ/2 · (cos(axis_angle)·X + sin(axis_angle)·Y))`.
+///
+/// The in-plane axis is `X` rotated about `Z` by `axis_angle`, so
+/// `R(axis_angle, θ) = RZ(axis_angle)·RX(θ)·RZ(−axis_angle)`.
+pub trait RotXY<T: Config> {
+    /// `R(axis_angle, θ)` on qubit `addr0`.
+    fn r(&mut self, addr0: usize, axis_angle: T::Coeff, theta: T::Coeff);
+}

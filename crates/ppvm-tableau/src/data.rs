@@ -54,8 +54,7 @@ pub struct Tableau<T: Config> {
 }
 
 impl<T: Config> Tableau<T> {
-    /// Construct a fresh tableau initialised to `|0…0⟩`.
-    pub fn new(n_qubits: usize) -> Self {
+    fn new_data(n_qubits: usize) -> Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>> {
         // Initialize tableau for 0 state
         let mut data: Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>> =
             Vec::with_capacity(2 * n_qubits);
@@ -72,7 +71,11 @@ impl<T: Config> Tableau<T> {
             pw.set(i, Pauli::Z);
             data.push(pw);
         }
+        data
+    }
 
+    pub fn new(n_qubits: usize) -> Self {
+        let data = Tableau::<T>::new_data(n_qubits);
         Self {
             n_qubits,
             data,
@@ -85,6 +88,11 @@ impl<T: Config> Tableau<T> {
         let mut t = Self::new(n_qubits);
         t.rng = SmallRng::seed_from_u64(seed);
         t
+    }
+
+    pub fn reset_all(&mut self) {
+        let data = Tableau::<T>::new_data(self.n_qubits);
+        self.data = data;
     }
 
     /// View of the stabilizer rows (the upper half of the tableau).
@@ -537,7 +545,9 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    if items.len() >= RAYON_COEFF_THRESHOLD {
+    // See `branch_coefficients_parallel`: avoid nesting rayon inside shot-level
+    // parallelism; the main-thread (single-shot) path is unaffected.
+    if items.len() >= RAYON_COEFF_THRESHOLD && rayon::current_thread_index().is_none() {
         use rayon::prelude::*;
 
         return items
@@ -673,6 +683,21 @@ where
         let mut s = Self::new(n_qubits, coefficient_threshold);
         s.tableau.rng = SmallRng::seed_from_u64(seed);
         s
+    }
+
+    pub fn reset_all(&mut self) {
+        self.tableau.reset_all();
+
+        let mut coefficients = C::new();
+        let complex_one = Complex {
+            re: T::Coeff::one(),
+            im: T::Coeff::zero(),
+        };
+        coefficients.unsafe_insert(I::zero(), complex_one);
+        self.coefficients = coefficients;
+        for l in self.is_lost.iter_mut() {
+            *l &= false;
+        }
     }
 
     /// Clone the quantum state but reinitialize the RNG, producing an independent simulation
@@ -846,6 +871,36 @@ where
         }
 
         (p_word.phase, stab_anticomm_bits, destab_anticomm_bits)
+    }
+
+    /// Multi-qubit generalization of [`compute_decomposition`]: conjugate an
+    /// arbitrary `PauliWord` through the tableau and return the same triple
+    /// `(phase, stab_anticomm_bits, destab_anticomm_bits)`.
+    ///
+    /// Algorithm: call [`compute_decomposition`] for each non-identity qubit
+    /// in the input, then multiply the resulting single-qubit conjugates in
+    /// canonical-basis form `i^φ X^x Z^z`. Pauli multiplication picks up a
+    /// `(-1)^{popcount(z_running & x_new)}` cross-phase from
+    /// `Z^z_a X^x_b = (-1)^{z_a · x_b} X^x_b Z^z_a`.
+    pub(crate) fn compute_decomposition_word<W: PauliWordTrait>(&self, word: &W) -> (u8, I, I)
+    where
+        <<T as Config>::Storage as BitView>::Store: PrimInt,
+    {
+        let mut phase = 0u8;
+        let mut stab_anticomm = I::zero();
+        let mut destab_anticomm = I::zero();
+        for q in 0..self.n_qubits() {
+            let p_q = word.get(q);
+            if p_q == Pauli::I {
+                continue;
+            }
+            let (q_phase, q_stab, q_destab) = self.compute_decomposition(q, p_q);
+            let cross = 2 * (symplectic_inner(destab_anticomm, q_stab) as u8 % 2);
+            phase = (phase + q_phase + cross) % 4;
+            stab_anticomm = stab_anticomm ^ q_stab;
+            destab_anticomm = destab_anticomm ^ q_destab;
+        }
+        (phase, stab_anticomm, destab_anticomm)
     }
 
     /// every basis index is a bit string alpha defining the basis state

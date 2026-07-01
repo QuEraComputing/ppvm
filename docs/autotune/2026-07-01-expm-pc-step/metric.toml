@@ -1,0 +1,8 @@
+[[metric]]
+"commit" = "d0928c21"
+"status" = "keep"
+"description" = "baseline: real-space XY ladder N=10, 15 pc_step, drop=1e-3"
+"wall_s" = 3.275
+"rss_mb" = 250.0
+"peak_basis" = 15414.0
+

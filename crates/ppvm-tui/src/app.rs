@@ -8,9 +8,9 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use eyre::{Result, eyre};
-use ppvm_vihaco::CircuitInstruction;
-use ppvm_vihaco::composite::PPVM;
+use ppvm_vihaco::composite::{PPVM, StepOutcome};
 use ppvm_vihaco::measurements::MeasurementResult;
+use ppvm_vihaco::{CircuitInstruction, PPVMModule, compile_program, load_module_file};
 
 use crate::codeview::CodeView;
 use crate::command::{Command, parse_command};
@@ -19,6 +19,8 @@ use crate::command::{Command, parse_command};
 pub struct AppState {
     /// The live machine. `None` until `device N` or a program is loaded.
     machine: Option<PPVM>,
+    /// The loaded module (kept for `:reset`).
+    module: Option<PPVMModule>,
     /// Program instruction listing (populated when a program is loaded).
     program: CodeView<String>,
     /// REPL scrollback: entered commands and inline results.
@@ -49,6 +51,7 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             machine: None,
+            module: None,
             program: CodeView::new(),
             log: CodeView::new(),
             n_qubits: 0,
@@ -91,11 +94,10 @@ impl AppState {
                 qubits,
                 params,
             } => self.apply_gate(inst, &qubits, &params),
-            // Step/Continue/Reset/Load are implemented in Task 5.
-            Command::Step | Command::Continue | Command::Reset | Command::Load(_) => {
-                self.set_status("not a REPL command (load a program first)");
-                Ok(())
-            }
+            Command::Step => self.step(),
+            Command::Continue => self.cont(),
+            Command::Reset => self.reset(),
+            Command::Load(path) => self.load_file(&path),
         }
     }
 
@@ -108,6 +110,137 @@ impl AppState {
         self.program.clear();
         self.set_status(format!("fresh {n}-qubit device"));
         Ok(())
+    }
+
+    // ─── program loading ─────────────────────────────────────────────────
+
+    /// Build an `AppState` with `path` loaded and paused at pc 0.
+    pub fn from_file(path: &str) -> Result<Self> {
+        let mut app = Self::new();
+        app.load_file(path)?;
+        Ok(app)
+    }
+
+    /// Compile `.sst` source and load it, paused at pc 0. (Test/embedding entry
+    /// that avoids touching the filesystem.)
+    pub fn load_source(&mut self, src: &str) -> Result<()> {
+        let module = compile_program(src)?;
+        self.load_module(module);
+        self.set_status("loaded program");
+        Ok(())
+    }
+
+    fn load_file(&mut self, path: &str) -> Result<()> {
+        let module = load_module_file(path).map_err(|e| eyre!("failed to load {path}: {e}"))?;
+        self.load_module(module);
+        self.set_status(format!("loaded {path}"));
+        Ok(())
+    }
+
+    /// Core loader: rebuild the machine from `module` and pause at pc 0.
+    fn load_module(&mut self, module: PPVMModule) {
+        let mut m = PPVM::default();
+        // A fresh machine + load + init gives clean tableau/record state; these
+        // only fail on malformed modules, which `compile_program` already
+        // rejects, so surface as a status rather than unwinding the UI.
+        if let Err(e) = m.load(&module).and_then(|()| m.init()) {
+            self.set_status(format!("error: {e}"));
+            return;
+        }
+        self.program.clear();
+        for (i, inst) in module.code.iter().enumerate() {
+            self.program.push(format!("{i:04}: {inst}"));
+        }
+        self.machine = Some(m);
+        self.module = Some(module);
+        self.has_program = true;
+        self.paused = true;
+        self.finished = false;
+        self.refresh_cursor();
+    }
+
+    fn refresh_cursor(&mut self) {
+        let pc = self.machine.as_ref().map(|m| m.current_pc() as usize);
+        if let Some(pc) = pc {
+            self.program.set_cursor(Some(pc));
+        }
+    }
+
+    // ─── stepping ────────────────────────────────────────────────────────
+
+    fn step(&mut self) -> Result<()> {
+        if !self.has_program {
+            self.set_status("nothing to step — load a program with :load");
+            return Ok(());
+        }
+        if self.finished {
+            self.set_status("program finished — :reset to run again");
+            return Ok(());
+        }
+        let outcome = self.machine.as_mut().unwrap().step_once()?;
+        self.apply_outcome(outcome);
+        self.refresh_cursor();
+        Ok(())
+    }
+
+    fn cont(&mut self) -> Result<()> {
+        if !self.has_program {
+            self.set_status("nothing to continue — load a program with :load");
+            return Ok(());
+        }
+        while !self.finished {
+            let outcome = self.machine.as_mut().unwrap().step_once()?;
+            match outcome {
+                StepOutcome::Continue => {}
+                StepOutcome::Breakpoint => {
+                    self.apply_outcome(outcome);
+                    self.refresh_cursor();
+                    return Ok(());
+                }
+                StepOutcome::Return | StepOutcome::Halt => {
+                    self.apply_outcome(outcome);
+                    break;
+                }
+            }
+        }
+        self.refresh_cursor();
+        Ok(())
+    }
+
+    /// Fold a single step outcome into the app's paused/finished/status state.
+    fn apply_outcome(&mut self, outcome: StepOutcome) {
+        match outcome {
+            StepOutcome::Continue => self.set_status(""),
+            StepOutcome::Breakpoint => {
+                self.paused = true;
+                self.set_status("-- breakpoint hit --");
+            }
+            StepOutcome::Return | StepOutcome::Halt => {
+                self.finished = true;
+                self.set_status("program finished");
+            }
+        }
+    }
+
+    fn reset(&mut self) -> Result<()> {
+        if let Some(module) = self.module.clone() {
+            self.load_module(module);
+            self.set_status("reset");
+        } else if self.n_qubits > 0 {
+            self.machine = Some(PPVM::with_qubits(self.n_qubits)?);
+            self.set_status("reset device");
+        } else {
+            self.set_status("nothing to reset");
+        }
+        Ok(())
+    }
+
+    pub fn has_program(&self) -> bool {
+        self.has_program
+    }
+
+    pub fn paused(&self) -> bool {
+        self.paused
     }
 
     fn apply_gate(
@@ -368,5 +501,84 @@ mod tests {
         let mut app = AppState::new();
         app.dispatch(":q");
         assert!(app.should_exit);
+    }
+
+    /// A 1-qubit program with a breakpoint before measuring q0 (|0> -> 0).
+    const BP_PROGRAM: &str = "device circuit.n_qubits 1;\n\
+                              fn @main() { breakpoint\n const.u64 0\n circuit.measure\n ret }\n";
+
+    #[test]
+    fn load_source_starts_paused_with_a_listing() {
+        let mut app = AppState::new();
+        app.load_source(BP_PROGRAM).unwrap();
+        assert!(app.has_program());
+        assert!(app.paused());
+        let (title, view) = app.active_listing();
+        assert_eq!(title, "Program");
+        assert!(!view.lines().is_empty());
+        assert_eq!(view.cursor(), Some(0), "cursor starts at pc 0");
+    }
+
+    #[test]
+    fn continue_pauses_at_breakpoint_then_finishes() {
+        let mut app = AppState::new();
+        app.load_source(BP_PROGRAM).unwrap();
+        app.dispatch(":c");
+        assert!(
+            app.status().contains("breakpoint"),
+            "status: {}",
+            app.status()
+        );
+        app.dispatch(":c");
+        assert!(
+            app.status().contains("finished"),
+            "status: {}",
+            app.status()
+        );
+        // |0> measured is 0.
+        assert_eq!(app.measurement_bits(), "0");
+    }
+
+    #[test]
+    fn empty_line_steps_and_advances_cursor() {
+        let mut app = AppState::new();
+        app.load_source(BP_PROGRAM).unwrap();
+        let start = app.active_listing().1.cursor();
+        app.dispatch(""); // empty line == step
+        let after = app.active_listing().1.cursor();
+        assert_ne!(start, after, "stepping should move the cursor");
+    }
+
+    #[test]
+    fn inject_gate_at_breakpoint_then_resume() {
+        // At the breakpoint, inject X on q0; resuming, the program measures |1>.
+        let mut app = AppState::new();
+        app.load_source(BP_PROGRAM).unwrap();
+        app.dispatch(":c"); // run to the breakpoint
+        assert!(app.status().contains("breakpoint"));
+        app.dispatch("x 0"); // inject while paused
+        app.dispatch(":c"); // resume; program measures q0
+        assert!(
+            app.status().contains("finished"),
+            "status: {}",
+            app.status()
+        );
+        assert_eq!(
+            app.measurement_bits(),
+            "1",
+            "injected X should flip the result"
+        );
+    }
+
+    #[test]
+    fn reset_returns_a_program_to_the_start() {
+        let mut app = AppState::new();
+        app.load_source(BP_PROGRAM).unwrap();
+        app.dispatch(":c");
+        app.dispatch(":c"); // finished
+        app.dispatch(":reset");
+        assert!(app.paused());
+        assert_eq!(app.active_listing().1.cursor(), Some(0));
+        assert_eq!(app.measurement_bits(), "(none)");
     }
 }

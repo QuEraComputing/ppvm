@@ -440,13 +440,21 @@ impl PPVM {
         // The tableau/measurement effects persist; the code + pc are left
         // byte-for-byte unchanged, so a paused debugger resumes exactly where it
         // was. (Also keeps a long REPL session's code vector from growing.)
+        //
+        // The operand stack is rolled back too. `circuit.measure`/`trace` push a
+        // result onto it for bytecode to consume, and a partially-applied gate
+        // may leave its consts behind on error; either way there is no consumer
+        // here, so a stray operand would desync a resumed program's stack and
+        // grow a REPL session's stack without bound.
         let saved_pc = self.loader.pc();
         let saved_len = self.loader.module.code.len();
+        let saved_stack = self.cpu.stack_len();
         let result = self.execute_single_instruction(&instrs);
         // Restore the debugger's position on every path (including error): the
-        // appended ops are transient, and the pc/code must be left unchanged.
+        // appended ops are transient, and the pc/code/stack must be unchanged.
         self.loader.module.code.truncate(saved_len);
         *self.loader.pc_mut() = saved_pc;
+        self.cpu.stack_mut().truncate(saved_stack);
         result
     }
 
@@ -1294,6 +1302,7 @@ mod tests {
         }
         let pc = m.current_pc();
         let len = m.loader.module.code.len();
+        let depth = m.cpu.stack().len();
 
         // Inject X on q0 while "paused".
         m.apply_circuit_instruction(CircuitInstruction::X, &[0], &[])?;
@@ -1304,6 +1313,11 @@ mod tests {
             m.loader.module.code.len(),
             len,
             "appended op must be truncated back"
+        );
+        assert_eq!(
+            m.cpu.stack().len(),
+            depth,
+            "operand stack must be left unchanged"
         );
 
         // And the X took effect: resuming the program measures |1>.
@@ -1330,6 +1344,7 @@ mod tests {
         }
         let pc = m.current_pc();
         let len = m.loader.module.code.len();
+        let depth = m.cpu.stack().len();
 
         // RX with no float param errors during execution: resolve_circuit pops
         // the f64 first and finds the qubit value (U64) instead, returning Err.
@@ -1343,6 +1358,30 @@ mod tests {
             len,
             "code must be truncated back on error"
         );
+        assert_eq!(
+            m.cpu.stack().len(),
+            depth,
+            "operand stack must be left unchanged on error"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn apply_circuit_instruction_measurement_does_not_grow_the_stack() -> eyre::Result<()> {
+        // `circuit.measure` pushes its outcome onto the CPU operand stack for
+        // bytecode to consume. An injected measurement has no such consumer, so
+        // that push must be rolled back: otherwise a paused program resumes with
+        // a stray operand, and a REPL session's stack grows without bound.
+        let mut m = PPVM::with_qubits(1)?;
+        let depth = m.cpu.stack().len();
+        m.apply_circuit_instruction(CircuitInstruction::Measure, &[0], &[])?;
+        assert_eq!(
+            m.cpu.stack().len(),
+            depth,
+            "injected measurement must not leave its outcome on the stack"
+        );
+        // The outcome still lands in the measurement record.
+        assert_eq!(m.measurement_record().len(), 1);
         Ok(())
     }
 

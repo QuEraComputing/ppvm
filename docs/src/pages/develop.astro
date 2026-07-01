@@ -470,6 +470,18 @@ npm run build          # extract everything, then `astro build` → dist/</code>
       </li>
     </ol>
     <p>
+      <strong>Unused dependencies.</strong> A <code>cargo-machete</code>
+      <code>prek</code> hook flags unused crate dependencies across the whole
+      workspace (run from the repo root, <a href="https://github.com/bnjbvr/cargo-machete">cargo-machete</a>
+      recurses into every member). It is part of the hook suite, so it runs both
+      locally on commit and in CI via the <code>pre-commit</code> job — there is
+      no separate machete CI job. The binary is provisioned by <code>mise</code>
+      (<code>cargo:cargo-machete</code> in <code>mise.toml</code>), so the
+      mise-action step that sets up the other hooks installs it too. Silence a
+      false positive per-crate with
+      <code>[package.metadata.cargo-machete] ignored = [&hellip;]</code>.
+    </p>
+    <p>
       <strong>Why cross-OS is extension-only.</strong> The compiled PyO3
       module is the only artifact whose build is OS-sensitive — macOS needs
       <code>-undefined dynamic_lookup</code> (added by
@@ -616,6 +628,7 @@ chore: restore lockfile consistency</code></pre>
     <ul>
       <li>Run <code>cargo fmt --all</code> before committing Rust.</li>
       <li>Run <code>cargo clippy --workspace --all-targets</code>; fix or justify all warnings.</li>
+      <li>Run <code>cargo machete</code> to catch unused dependencies; it's also a <code>prek</code> hook, run on commit and in CI.</li>
       <li>Python is formatted with <code>ruff format</code> and linted with <code>ruff check</code>.</li>
       <li>Public Rust items should have doc comments; <code>cargo doc --no-deps</code> must build cleanly because the API site is built from rustdoc JSON.</li>
       <li>

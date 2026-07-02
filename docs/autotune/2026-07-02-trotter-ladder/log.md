@@ -69,3 +69,11 @@ RAM. DISCARD (reverted to sequential).
 PROCESS LESSON (critical): NEVER decide keep/discard from single-run walls under
 uncontrolled load. Require: quiet machine, both variants freshly built, min-of-N,
 ideally back-to-back. Two flip-flops here came from ignoring this.
+
+## CONCLUSION
+No net change kept. Trotter gate application (98%) is memory-bandwidth-bound and
+invoked ~120x/step; naive rayon parallelization gives only ~1.1x for +50% RAM
+(discarded). The only real remaining lever is architectural — columnar Pauli
+bit-plane storage to make the per-gate pass cache-friendly + SIMD-able before
+parallelizing — deferred (major rewrite, uncertain payoff). Trotter is near its
+practical optimum for the current HashMap-of-Paulis representation.

@@ -40,3 +40,10 @@ DECISION: DISCARD. Memory is expm's established weak point (see
 [[../2026-07-01-expm-memory]]); ~2.3x RAM for a small, unmeasurable wall gain is
 a net loss. If revisited: only build oob for the predictor, and store row-indices
 into a preliminary B2 index instead of full Words to bound the memory.
+
+## CONCLUSION
+No net change kept. Post the prior ~10.7x (2026-07-01-expm-pc-step), the profile
+is 82% scaling-squaring matvecs (already cached + parallel + tolerance-matched)
+and 17% leakage. The one structural idea (share the action pass into leakage2)
+is correct but costs ~2.3x RAM (discarded). expm is near its practical optimum;
+the earlier 10.7x per-step speedup stands as the real win.

@@ -25,13 +25,8 @@ rayon = { version = "1.11.0", optional = true }
 insta = { version = "1.43.2", features = ["yaml"] }
 
 [features]
-default = ["dashmap", "gxhash", "ahash", "indexmap", "rayon"]
-dashmap = ["dep:dashmap", "rayon"]
+default = ["dashmap", "gxhash", "ahash", "indexmap"]
+dashmap = ["dep:dashmap", "dep:rayon"]
 gxhash = ["dep:gxhash"]
 ahash = ["dep:ahash"]
 indexmap = ["dep:indexmap"]
-# Parallelize the hot map_insert / map_insert_vec gate-application path with
-# rayon. Native-only (rayon is pruned on wasm32); the parallel code is also
-# `cfg(not(target_arch = "wasm32"))`-gated so a wasm build falls back to the
-# sequential loop.
-rayon = ["dep:rayon"]

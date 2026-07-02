@@ -30,24 +30,33 @@ use num::Complex;
 use quspin_types::{ExpmComputation, LinearOperator, QuSpinError};
 use rayon::prelude::*;
 
-/// Per-column in-basis action of the real generator `M`, plus the data the
-/// `(m, s)`/`μ` selection needs — all from ONE action pass over the basis.
+/// Per-column action of the real generator `M`, split into in-basis and
+/// out-of-basis parts, plus the data the `(m, s)`/`μ` selection needs — all
+/// from ONE action pass over the basis.
 ///
-/// Returns `(cols, per_col)` where `cols[c]` holds `(row, coeff)` for every
-/// action output of `L*(basis[c])` that lands back in `basis` (CSC column
-/// `c`), and `per_col[c] = (raw, diag)` with `raw = Σ|coeff|` over ALL action
-/// outputs (in- and out-of-basis, matching the historical 1-norm) and `diag`
-/// the coefficient of the term whose output Word equals the input Word. The
-/// action is computed once here and reused by [`CachedCscOp`] across every
-/// Krylov/Taylor matvec, so it is never recomputed per matvec (the dominant
-/// cost of the old matrix-free op). Same reusable scratch pattern as
-/// [`crate::orbit_rep::build_orbit_rep_cols`]; numerics identical.
+/// Returns `(cols, oob, per_col)`:
+/// - `cols[c]` holds `(row, coeff)` for every action output of `L*(basis[c])`
+///   that lands back in `basis` (CSC column `c`), used by [`CachedCscOp`];
+/// - `oob[c]` holds `(word, coeff)` for every action output whose Word is NOT
+///   in `basis` (`index.get(w) == None`) — i.e. the *leakage* candidates for
+///   this exact basis, WITHOUT the input coefficient and WITHOUT the
+///   `protected` filter. This is the cache reused by
+///   [`LindbladSpec::leakage_from_action_cache`] so the second-hop leakage
+///   pass over this same basis need not recompute the Pauli action;
+/// - `per_col[c] = (raw, diag)` with `raw = Σ|coeff|` over ALL action outputs
+///   (in- and out-of-basis, matching the historical 1-norm) and `diag` the
+///   coefficient of the term whose output Word equals the input Word.
+///
+/// The action is computed once here and reused by both consumers, so it is
+/// never recomputed per matvec nor in the second-hop leakage. Same reusable
+/// scratch pattern as [`crate::orbit_rep::build_orbit_rep_cols`]; numerics
+/// identical.
 fn build_mf_cols(
     spec: &LindbladSpec,
     basis: &[Word],
     index: &FxHashMap<Word, u32>,
-) -> (Vec<Vec<(u32, f64)>>, Vec<(f64, f64)>) {
-    basis
+) -> (Vec<Vec<(u32, f64)>>, Vec<Vec<(Word, f64)>>, Vec<(f64, f64)>) {
+    let per: Vec<(Vec<(u32, f64)>, Vec<(Word, f64)>, (f64, f64))> = basis
         .par_iter()
         .map_init(
             || {
@@ -63,6 +72,7 @@ fn build_mf_cols(
             |(s1, s2, lm), p| {
                 let terms = spec.compute_action_terms(p, s1, s2, lm);
                 let mut out = Vec::with_capacity(terms.len());
+                let mut oob = Vec::with_capacity(terms.len());
                 let mut raw = 0.0;
                 let mut diag = 0.0;
                 for (w, c) in terms.iter() {
@@ -72,12 +82,30 @@ fn build_mf_cols(
                     }
                     if let Some(&row) = index.get(w) {
                         out.push((row, *c));
+                    } else {
+                        // Out-of-basis output: a leakage candidate for this
+                        // exact basis. Retained (this step only) so the
+                        // second-hop leakage pass reuses this action.
+                        oob.push((w.clone(), *c));
                     }
                 }
-                (out, (raw, diag))
+                (out, oob, (raw, diag))
             },
         )
-        .unzip()
+        .collect();
+
+    // Split the per-column triples into three column-indexed vectors. The
+    // parallel work above wrote each column independently; this is a cheap
+    // sequential regroup that preserves column (= basis) order.
+    let mut cols = Vec::with_capacity(per.len());
+    let mut oob = Vec::with_capacity(per.len());
+    let mut per_col = Vec::with_capacity(per.len());
+    for (c, o, pc) in per {
+        cols.push(c);
+        oob.push(o);
+        per_col.push(pc);
+    }
+    (cols, oob, per_col)
 }
 
 /// Borrowed CSC-style view of the in-basis-restricted real generator `M`,
@@ -209,8 +237,12 @@ impl LinearOperator<f64> for CachedCscOp<'_> {
 }
 
 /// Compute `exp(dt · M) · coeffs` for the in-basis-restricted generator
-/// `M`, matrix-free, via `quspin-expm`. Returns a fresh `Vec<f64>` of length
-/// `basis.len()`.
+/// `M`, matrix-free, via `quspin-expm`. Returns `(v, oob)` where `v` is a
+/// fresh `Vec<f64>` of length `basis.len()` and `oob[c]` is the out-of-basis
+/// action of `L*(basis[c])` (see [`build_mf_cols`]) — the leakage cache for
+/// this exact basis, reusable by [`LindbladSpec::leakage_from_action_cache`]
+/// so the following second-hop leakage need not recompute the Pauli action.
+/// Callers that do not need the cache (e.g. the corrector) can drop it.
 ///
 /// One matrix-free pass extracts the diagonal shift `μ = tr(M)/n` and the
 /// exact column 1-norm of `M − μ·I`; from `‖dt·(M−μI)‖₁` we pick the Taylor
@@ -222,19 +254,19 @@ pub(crate) fn expm_apply_mf(
     dt: f64,
     coeffs: &[f64],
     drop_tol: f64,
-) -> Vec<f64> {
+) -> (Vec<f64>, Vec<Vec<(Word, f64)>>) {
     let n = basis.len();
     if n == 0 {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
 
-    // ONE action pass: build the CSC cache `cols` (reused across every matvec)
-    // and, in the same pass, `per_col = (raw, diag)` for the `μ`/1-norm
-    // selection. `raw = Σ|coeff|` (all outputs), `diag` = coeff of the
-    // output == input term. From these: `trace = Σ diag`, `μ = trace/n`, and
-    // the column 1-norm of `M − μ·I` is `raw − |diag| + |diag − μ|`.
+    // ONE action pass: build the CSC cache `cols` (reused across every matvec),
+    // the out-of-basis leakage cache `oob`, and `per_col = (raw, diag)` for the
+    // `μ`/1-norm selection. `raw = Σ|coeff|` (all outputs), `diag` = coeff of
+    // the output == input term. From these: `trace = Σ diag`, `μ = trace/n`,
+    // and the column 1-norm of `M − μ·I` is `raw − |diag| + |diag − μ|`.
     let index = build_basis_index(basis);
-    let (cols, per_col) = build_mf_cols(spec, basis, &index);
+    let (cols, oob, per_col) = build_mf_cols(spec, basis, &index);
 
     let trace: f64 = per_col.iter().map(|(_, d)| *d).sum();
     let mu = trace / n as f64;
@@ -265,7 +297,7 @@ pub(crate) fn expm_apply_mf(
     let mut v = coeffs.to_vec();
     expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
         .expect("expm apply");
-    v
+    (v, oob)
 }
 
 /// `exp(dt · M) · b` where `M` is the REAL in-basis-restricted generator but
@@ -286,8 +318,9 @@ pub(crate) fn expm_apply_mf_cxvec(
     }
     let re: Vec<f64> = b.iter().map(|z| z.re).collect();
     let im: Vec<f64> = b.iter().map(|z| z.im).collect();
-    let re_out = expm_apply_mf(spec, basis, dt, &re, drop_tol);
-    let im_out = expm_apply_mf(spec, basis, dt, &im, drop_tol);
+    // The complex path does not reuse the leakage cache; discard the `oob`.
+    let (re_out, _) = expm_apply_mf(spec, basis, dt, &re, drop_tol);
+    let (im_out, _) = expm_apply_mf(spec, basis, dt, &im, drop_tol);
     re_out
         .into_iter()
         .zip(im_out)

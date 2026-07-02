@@ -434,7 +434,18 @@ impl PPVM {
             )));
         }
         instrs.push(PPVMInstruction::Circuit(inst));
-        self.execute_single_instruction(&instrs)
+
+        // Run the appended block, then roll back pc, code, and operand stack (on
+        // every path, including error) so the injected op is transparent to a
+        // paused program — only its tableau/measurement effects persist.
+        let saved_pc = self.loader.pc();
+        let saved_len = self.loader.module.code.len();
+        let saved_stack = self.cpu.stack_len();
+        let result = self.execute_single_instruction(&instrs);
+        self.loader.module.code.truncate(saved_len);
+        *self.loader.pc_mut() = saved_pc;
+        self.cpu.stack_mut().truncate(saved_stack);
+        result
     }
 
     fn execute_effects(&mut self, inst: Instruction) -> eyre::Result<Effects<PPVMEffect>> {
@@ -1259,6 +1270,108 @@ mod tests {
         // No observer effects emitted by Truncate.
         assert!(machine.measurement_record().is_empty());
         assert!(machine.trace_record().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn apply_circuit_instruction_preserves_pc_and_code_len() -> eyre::Result<()> {
+        use crate::measurements::MeasurementOutcome;
+
+        // breakpoint; then measure q0. Step to the breakpoint, inject X, resume.
+        let src = "device circuit.n_qubits 1;\n\
+                   fn @main() { breakpoint\n const.u64 0\n circuit.measure\n ret }\n";
+        let mut m = PPVM::default();
+        m.load_program(src)?;
+        m.init()?;
+
+        // Run until the breakpoint pauses us.
+        loop {
+            if m.step_once()? == StepOutcome::Breakpoint {
+                break;
+            }
+        }
+        let pc = m.current_pc();
+        let len = m.loader.module.code.len();
+        let depth = m.cpu.stack().len();
+
+        // Inject X on q0 while "paused".
+        m.apply_circuit_instruction(CircuitInstruction::X, &[0], &[])?;
+
+        // The debugger's position must be untouched.
+        assert_eq!(m.current_pc(), pc, "pc must be preserved");
+        assert_eq!(
+            m.loader.module.code.len(),
+            len,
+            "appended op must be truncated back"
+        );
+        assert_eq!(
+            m.cpu.stack().len(),
+            depth,
+            "operand stack must be left unchanged"
+        );
+
+        // And the X took effect: resuming the program measures |1>.
+        while !matches!(m.step_once()?, StepOutcome::Return | StepOutcome::Halt) {}
+        let rec = m.measurement_record();
+        assert_eq!(rec.len(), 1);
+        assert_eq!(rec[0].as_slice(), [MeasurementOutcome::One]);
+        Ok(())
+    }
+
+    #[test]
+    fn apply_circuit_instruction_preserves_pc_and_code_on_error() -> eyre::Result<()> {
+        // A program stepped to a known pc; an injected gate that errors mid-block
+        // must NOT corrupt the code vector or the program counter.
+        let src = "device circuit.n_qubits 1;\n\
+                   fn @main() { breakpoint\n const.u64 0\n circuit.measure\n ret }\n";
+        let mut m = PPVM::default();
+        m.load_program(src)?;
+        m.init()?;
+        loop {
+            if m.step_once()? == StepOutcome::Breakpoint {
+                break;
+            }
+        }
+        let pc = m.current_pc();
+        let len = m.loader.module.code.len();
+        let depth = m.cpu.stack().len();
+
+        // RX with no float param errors during execution: resolve_circuit pops
+        // the f64 first and finds the qubit value (U64) instead, returning Err.
+        let err = m.apply_circuit_instruction(CircuitInstruction::RX, &[0], &[]);
+        assert!(err.is_err(), "expected the injected gate to error");
+
+        // The failed injection must leave the debugger untouched.
+        assert_eq!(m.current_pc(), pc, "pc must be preserved on error");
+        assert_eq!(
+            m.loader.module.code.len(),
+            len,
+            "code must be truncated back on error"
+        );
+        assert_eq!(
+            m.cpu.stack().len(),
+            depth,
+            "operand stack must be left unchanged on error"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn apply_circuit_instruction_measurement_does_not_grow_the_stack() -> eyre::Result<()> {
+        // `circuit.measure` pushes its outcome onto the CPU operand stack for
+        // bytecode to consume. An injected measurement has no such consumer, so
+        // that push must be rolled back: otherwise a paused program resumes with
+        // a stray operand, and a REPL session's stack grows without bound.
+        let mut m = PPVM::with_qubits(1)?;
+        let depth = m.cpu.stack().len();
+        m.apply_circuit_instruction(CircuitInstruction::Measure, &[0], &[])?;
+        assert_eq!(
+            m.cpu.stack().len(),
+            depth,
+            "injected measurement must not leave its outcome on the stack"
+        );
+        // The outcome still lands in the measurement record.
+        assert_eq!(m.measurement_record().len(), 1);
         Ok(())
     }
 

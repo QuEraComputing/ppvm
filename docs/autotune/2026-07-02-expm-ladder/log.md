@@ -21,3 +21,22 @@ the 2026-07-01-expm-pc-step optimization (cache-action + tol-matched table,
    the cache through pc_step_inner. Structural, medium risk; deferred pending
    the Trotter iteration.
 2. Parallelism of leakage vs expm build (check if leakage is already parallel).
+
+## Iteration 1: reuse predictor action-cache in leakage2 — DISCARD (memory)
+Implemented (cherry-pick 191e92aa->2411240f): build_mf_cols also retains
+out-of-basis action outputs (oob: Vec<Vec<(Word,f64)>>), expm_step returns it,
+and a new leakage_from_action_cache consumes it for leak2 instead of recomputing
+compute_action_terms on B1. Correct: checksum/sum_a = 1.0, 9/9 crate tests pass
+(incl. tight pc_step agreement tests).
+Measured N=12 (under Zoom load, so walls unreliable): RSS 1208-1210MB vs baseline
+522-527MB -- ~2.3x. RSS is stable run-to-run (load-independent), so this verdict
+is robust despite the noisy walls. Wall looked neutral-to-slower but that is load.
+Root cause of the memory blow-up: build_mf_cols now ALWAYS builds the oob Word
+cache, including for the CORRECTOR expm2 on the doubly-enriched basis B2 (largest
+basis of the step), whose cache is then discarded -- pure waste. Even fixing that
+(flag to skip oob on the corrector), the predictor's oob cache on B1 still adds
+memory for a wall gain bounded by leakage=17% (realistically <=10%).
+DECISION: DISCARD. Memory is expm's established weak point (see
+[[../2026-07-01-expm-memory]]); ~2.3x RAM for a small, unmeasurable wall gain is
+a net loss. If revisited: only build oob for the predictor, and store row-indices
+into a preliminary B2 index instead of full Words to bound the memory.

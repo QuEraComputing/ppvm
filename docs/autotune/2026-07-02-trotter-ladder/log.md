@@ -39,3 +39,18 @@ qubit-support index so a gate on bond (a,b) visits only terms touching a/b
 instead of all 34k (algorithmic, cuts the O(gates x basis) work); (b) if
 parallelizing, do it at a coarser grain with no per-gate collect (hashbrown
 native par_iter_mut), only for very large maps.
+
+## Iteration 1 REVISITED (per user: "regression an artifact of too-small a problem?") — KEEP
+Re-tested parallel vs sequential at larger N, clean/quiet, min of 3:
+- N=10 (L=5, 8 steps, peak 34k): seq 0.777s vs par 0.702-0.77s -> NEUTRAL.
+  (The earlier "1.0s / +30%" was measured under machine load — seq was also
+  inflated to 1.17s then; on a quiet machine parallel N=10 matches sequential.)
+- N=12 (L=6, 6 steps): seq 18.4s (min) vs par 7.5s (min) -> ~2.5x FASTER.
+The user was right: the regression was a small-problem + load artifact. At
+N=12 each gate operates on a large intra-step map (gates deferred with
+truncate=False grow the map before the single per-step truncate), so the
+per-term parallel work amortizes the rayon dispatch overhead. Correct (M=1.0).
+Cost: RSS +60% at N=12 (627 vs 396MB — per-thread accumulation buffers).
+DECISION: KEEP (helps where Trotter is slow; neutral where it's fast).
+Lesson: benchmark the autotune metric at a size representative of the SLOW
+regime, not the fast one — a small metric hid a real 2.5x structural win.

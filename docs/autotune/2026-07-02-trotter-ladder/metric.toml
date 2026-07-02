@@ -14,3 +14,11 @@
 "peak_basis" = 34030.0
 "rss_mb" = 230.0
 
+[[metric]]
+"commit" = "fb5d5881"
+"status" = "keep"
+"description" = "parallelize map_insert (rayon) \u2014 KEEP after larger-N retest (per user): N=12 18.4s->7.5s (~2.5x), N=10 neutral (0.70-0.77 vs 0.78). Earlier discard was small-problem + machine-load artifact. RSS +60% at N=12 (per-thread buffers)."
+"wall_s_N12" = 7.49
+"wall_s_N10" = 0.702
+"rss_mb_N12" = 627.0
+

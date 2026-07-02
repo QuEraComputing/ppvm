@@ -662,98 +662,6 @@ impl LindbladSpec {
         Ok(merged.into_iter().filter(|(_, c)| *c != 0.0).collect())
     }
 
-    /// Second-hop leakage that REUSES a precomputed per-column action cache
-    /// instead of recomputing `L*(basis[i])`. Produces the identical result to
-    /// [`Self::leakage_with_prune`] on the SAME `basis`/`coeffs`, provided
-    /// `oob` is the out-of-basis action from [`mf_expm::expm_apply_mf`] on that
-    /// exact basis (i.e. `oob[i]` = the `(word, action_coeff)` outputs of
-    /// `L*(basis[i])` whose Word is not in `basis`).
-    ///
-    /// `oob` already encodes the "out-of-basis for this basis" filter (via the
-    /// same basis index the exponential used), so only the `protected` filter
-    /// is applied here — matching `leakage_with_prune`, which filters by both
-    /// `in_basis` and `protected`. The descending-`|c|` order, chunked merge,
-    /// and room-cap are byte-for-byte identical to `leakage_with_prune`.
-    pub(crate) fn leakage_from_action_cache(
-        &self,
-        basis: &[Word],
-        coeffs: &[f64],
-        protected: &[Word],
-        max_basis: usize,
-        oob: &[Vec<(Word, f64)>],
-    ) -> Result<Vec<(Word, f64)>, Error> {
-        if basis.len() != coeffs.len() {
-            return Err(Error::LengthMismatch {
-                what: "basis and coeffs",
-                a: basis.len(),
-                b: coeffs.len(),
-            });
-        }
-        if oob.len() != basis.len() {
-            return Err(Error::LengthMismatch {
-                what: "basis and action cache",
-                a: basis.len(),
-                b: oob.len(),
-            });
-        }
-        // Only the `protected` filter is applied: `oob` already excludes
-        // in-basis outputs (built from the same basis index the exponential
-        // used), matching the `in_basis` filter in `leakage_with_prune`.
-        let protected_set: FxHashMap<u64, ()> =
-            protected.iter().map(|w| (word_hash(w), ())).collect();
-
-        // Descending sort by |c|: identical to `leakage_with_prune`.
-        let mut order: Vec<usize> = (0..basis.len()).collect();
-        order.sort_by(|&a, &b| {
-            coeffs[b]
-                .abs()
-                .partial_cmp(&coeffs[a].abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        const CHUNK_SIZE: usize = 4096;
-        let room = max_basis.saturating_sub(basis.len());
-        let mut merged: FxHashMap<Word, f64> = FxHashMap::default();
-        for chunk_indices in order.chunks(CHUNK_SIZE) {
-            let local: Vec<Vec<(Word, f64)>> = chunk_indices
-                .par_iter()
-                .map(|&i| {
-                    let c = coeffs[i];
-                    let mut out = Vec::with_capacity(oob[i].len());
-                    for (w, v) in oob[i].iter() {
-                        let h = word_hash(w);
-                        if !protected_set.contains_key(&h) {
-                            out.push((w.clone(), c * *v));
-                        }
-                    }
-                    out
-                })
-                .collect();
-            for v in local {
-                for (k, val) in v {
-                    *merged.entry(k).or_insert(0.0) += val;
-                }
-            }
-
-            // Room-cap: keep only the `room` largest-magnitude entries.
-            // Identical logic to `leakage_with_prune`.
-            if merged.len() > room {
-                if room == 0 {
-                    merged.clear();
-                } else {
-                    let mut mags: Vec<f64> = merged.values().map(|v| v.abs()).collect();
-                    let k = room.min(mags.len() - 1);
-                    mags.select_nth_unstable_by(k, |a, b| {
-                        b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
-                    });
-                    let cutoff = mags[k];
-                    merged.retain(|_, &mut v| v.abs() >= cutoff);
-                }
-            }
-        }
-        Ok(merged.into_iter().filter(|(_, c)| *c != 0.0).collect())
-    }
-
     /// Sparse generator matrix in COO form: returns `(row, col, val)`
     /// triplets. Row = output Pauli's position in `basis`; col = input
     /// Pauli's position. Output Paulis not in `basis` are silently dropped.
@@ -1442,24 +1350,20 @@ impl LindbladSpec {
         // `coeffs` is read-only here, so we don't clone it — it serves as
         // the pre-step input for the corrector below as well.
         let t0 = Instant::now();
-        let (coeffs_predict, oob) = self.expm_step(basis, dt, coeffs, drop_tol);
+        let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol);
         t.expm1_us = t0.elapsed().as_micros() as u64;
 
-        // leak2 reuses the predictor's out-of-basis action cache instead of
-        // recomputing `L*` over the same basis.
         let t0 = Instant::now();
-        let leak2 =
-            self.leakage_from_action_cache(basis, &coeffs_predict, protected, max_basis, &oob)?;
+        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, max_basis)?;
         t.leakage2_us = t0.elapsed().as_micros() as u64;
         drop(coeffs_predict);
-        drop(oob);
 
         let t0 = Instant::now();
         add_leakage_capped(basis, coeffs, leak2, max_basis);
         t.expand2_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
-        *coeffs = self.expm_step(basis, dt, coeffs, drop_tol).0;
+        *coeffs = self.expm_step(basis, dt, coeffs, drop_tol);
         t.expm2_us = t0.elapsed().as_micros() as u64;
 
         prune_basis(basis, coeffs, drop_tol, protected);
@@ -1484,24 +1388,17 @@ impl LindbladSpec {
         let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis)?;
         add_leakage_capped(basis, coeffs, leak, max_basis);
         // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
-        // new owned vector with the predicted state, plus the per-column
-        // out-of-basis action cache for THIS basis (computed in the same
-        // single action pass the exponential already did).
-        let (coeffs_predict, oob) = self.expm_step(basis, dt, coeffs, drop_tol);
-        // 3. Second-hop expansion from the predicted state, reusing the
-        // predictor's action cache instead of recomputing `L*` over the same
-        // basis (the "leak2" hot spot). After leakage2 we no longer need
-        // `coeffs_predict` or the cache. Extend `coeffs` with zeros for any
-        // newly-added second-hop strings so it remains a valid input
+        // new owned vector with the predicted state.
+        let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol);
+        // 3. Second-hop expansion from the predicted state. After leakage2
+        // we no longer need `coeffs_predict`. Extend `coeffs` with zeros for
+        // any newly-added second-hop strings so it remains a valid input
         // (pre-step state) for the corrector.
-        let leak2 =
-            self.leakage_from_action_cache(basis, &coeffs_predict, protected, max_basis, &oob)?;
+        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, max_basis)?;
         drop(coeffs_predict);
-        drop(oob);
         add_leakage_capped(basis, coeffs, leak2, max_basis);
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.
-        // Its action cache is not reused, so discard it.
-        *coeffs = self.expm_step(basis, dt, coeffs, drop_tol).0;
+        *coeffs = self.expm_step(basis, dt, coeffs, drop_tol);
         // 5. Prune basis entries below `drop_tol` (protected words never dropped).
         prune_basis(basis, coeffs, drop_tol, protected);
         cap_basis(basis, coeffs, max_basis, protected);
@@ -1510,18 +1407,13 @@ impl LindbladSpec {
 
     /// Compute `exp(dt · M) · b` for the in-basis-restricted generator
     /// `M`, matrix-free, via `quspin-expm` (see [`mf_expm`]).
-    ///
-    /// Returns `(v, oob)` where `oob[c]` is the out-of-basis action of
-    /// `L*(basis[c])` computed in the same single action pass, reusable by
-    /// [`Self::leakage_from_action_cache`] for the second-hop leakage over
-    /// this same basis. Callers that don't need it (the corrector) drop it.
     fn expm_step(
         &self,
         basis: &[Word],
         dt: f64,
         b: &[f64],
         drop_tol: f64,
-    ) -> (Vec<f64>, Vec<Vec<(Word, f64)>>) {
+    ) -> Vec<f64> {
         mf_expm::expm_apply_mf(self, basis, dt, b, drop_tol)
     }
 

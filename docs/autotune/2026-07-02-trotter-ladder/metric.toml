@@ -6,3 +6,11 @@
 "peak_basis" = 34030.0
 "rss_mb" = 173.0
 
+[[metric]]
+"commit" = "15f96554"
+"status" = "discard"
+"description" = "parallelize map_insert (rayon): ~30% SLOWER (1.0s vs 0.777s), +60MB. map_insert called ~120x/step over full map; per-call Vec-collect+rayon dispatch overhead swamps gain on memory-bound cheap-per-term loop"
+"wall_s" = 1.003
+"peak_basis" = 34030.0
+"rss_mb" = 230.0
+

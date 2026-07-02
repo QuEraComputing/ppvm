@@ -22,3 +22,20 @@ parallelises the analogous action pass (mf_expm::build_mf_cols) with rayon.
 Hypothesis: rayon-parallelise the per-entry closure (independent `*v *= cos`
 mutation + collected branch terms), merge branch terms into dest. Expected
 ~cores x on the gate phase (98% of step). Small-map sequential fallback.
+
+## Iteration 1: parallelize map_insert — DISCARD (~30% slower)
+Cherry-picked 3d5f0409 (subagent parallelized map_insert_vec/map_insert via
+collect-mut-refs + par_iter + par_extend, threshold 1024). Result: wall 1.0s
+(min) vs 0.777s baseline, RSS 230 vs 173MB. Correct (M=1.0), but SLOWER.
+Root cause: a Trotter step applies ~120 gates (rxx+ryy over ~60 bonds x2
+directions), and EACH gate calls map_insert over the full ~34k-term map. The
+per-call `iter_mut().collect::<Vec<(&W,&mut C)>>()` (~0.5MB alloc) + rayon
+dispatch is paid 120x/step; the per-term work (a few-ns commutation check) is
+memory-bandwidth-bound, so parallel gain is small and the per-call overhead
+dominates. Opposite of the expm path (ONE big par pass per call over the basis).
+Anti-pattern: don't rayon-parallelize a cheap loop that's invoked many times per
+step. Better directions (next): (a) skip non-overlapping terms via a
+qubit-support index so a gate on bond (a,b) visits only terms touching a/b
+instead of all 34k (algorithmic, cuts the O(gates x basis) work); (b) if
+parallelizing, do it at a coarser grain with no per-gate collect (hashbrown
+native par_iter_mut), only for very large maps.

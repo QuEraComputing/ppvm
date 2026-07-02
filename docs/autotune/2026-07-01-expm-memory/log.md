@@ -130,9 +130,36 @@ unneeded tail. For high accuracy the operator genuinely fills ~250k terms, so
 max_basis must be >= that. => drop_tol is the primary knob; max_basis is a
 memory safety cap that gives marginal savings at moderate accuracy.
 
-RECOMMENDED expm defaults (this ladder/observable): **dt=0.1**, drop_tol chosen
-for the accuracy target (1e-3 moderate / 1e-4 tight), max_basis unbounded (or
-~1.2x the expected saturated basis as a memory safety cap). dt=0.1 alone is
-~1.8x faster than the dt=0.05 used in the earlier comparison. The dt~0.1 optimum
-is set by the leakage-hop count vs the light-cone spread, so it should be only
-weakly N-dependent (worth a spot-check at the target N).
+RECOMMENDED expm defaults (this ladder/observable): drop_tol chosen for the
+accuracy target, and dt chosen so the O(dt^3) per-step floor is below it:
+- rel ~1e-2 : dt=0.1,   drop=1e-3   (~2.5s)
+- rel ~1e-3 : dt=0.1,   drop=1e-4   (~4.7s)
+- rel ~1e-4 : dt=0.05,  drop=3e-6   (~11s)
+- rel ~1e-5 : dt=0.025, drop=1e-7   (~30s)
+max_basis unbounded (or ~1.2x the saturated basis as a memory guard). Note the
+optimal dt DECREASES with the accuracy target: the PC per-step error is ~O(dt^3)
+(dt=0.1 floors ~1.1e-3, dt=0.05 ~1e-4, dt=0.025 <1e-5), so tighter targets need
+smaller dt AND finer drop (the basis saturates ~261k at N=10, so fine drop is
+nearly free once saturated — it only reduces per-step pruning loss).
+
+## Tight-accuracy expm-vs-Trotter (N=10, exact-ED ref, clean, min-wall to reach)
+
+Trotter error = O(dt^2) Strang splitting + truncation(min_abs_coeff); expm error
+= O(dt^3) PC + truncation(drop_tol). Both basis-saturate ~261k terms, so it is
+STEP COUNT that differs.
+
+  target   expm (dt,drop)          wall   RSS     | Trotter (dt,mac)       wall   RSS
+  1e-4     dt0.05 drop3e-6  9.9e-5  11.4s  393MB   | dt0.0125 mac1e-7 3.9e-5 37.2s 173MB
+  1e-5     dt0.025 drop1e-7 9.7e-6  30.3s  422MB   | mac1e-7 FLOORS 3.9e-5  (>1e-8 needed)
+
+=> At TIGHT accuracy the ranking INVERTS vs the moderate regime:
+   - rel 1e-4: expm ~3.3x FASTER (Trotter's O(dt^2) forces dt=0.0125 = 4x more
+     steps than expm's dt=0.05); Trotter still ~2.3x less RAM.
+   - rel 1e-5: expm reaches it in 30s; Trotter's mac=1e-7 truncation floors at
+     ~4e-5, needs mac<=1e-8 (basis -> near-full, cost >> expm).
+Combined with the moderate-accuracy result (Trotter competitive/better on wall,
+~2x less RAM for rel >= ~1e-3), the honest verdict:
+   * moderate accuracy (rel >~ 1e-3): Trotter wins (wall ~tie, memory ~2x).
+   * tight accuracy (rel <~ 1e-4):    expm wins WALL (higher-order in dt), and is
+     the practical choice for rel ~1e-5+; Trotter keeps the ~2x memory edge.
+This is the regime where the matrix-exponential method earns its keep.

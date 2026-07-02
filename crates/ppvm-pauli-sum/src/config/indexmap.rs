@@ -16,7 +16,7 @@ pub struct ByteFxHash<
     W: PauliWordTrait = PauliWord<[u8; N], fxhash::FxBuildHasher>,
 >(PhantomData<(C, St, W)>);
 
-impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait> Config
+impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait + Send + Sync> Config
     for ByteFxHash<N, C, St, W>
 {
     type Storage = [u8; N];
@@ -41,7 +41,7 @@ pub struct ByteGxHash<
 >(PhantomData<(C, St, W)>);
 
 #[cfg(all(feature = "gxhash", not(target_arch = "wasm32")))]
-impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait> Config
+impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait + Send + Sync> Config
     for ByteGxHash<N, C, St, W>
 {
     type Storage = [u8; N];

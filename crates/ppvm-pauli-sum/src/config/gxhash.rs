@@ -17,7 +17,9 @@ pub struct Byte<
     W: PauliWordTrait = PauliWord<[u8; N], gxhash::GxBuildHasher>,
 >(PhantomData<(C, St, W)>);
 
-impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait> Config for Byte<N, C, St, W> {
+impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait + Send + Sync> Config
+    for Byte<N, C, St, W>
+{
     type Storage = [u8; N];
     type Coeff = C;
     type BuildHasher = gxhash::GxBuildHasher;

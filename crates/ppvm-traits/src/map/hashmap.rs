@@ -5,6 +5,12 @@ use std::{collections::HashMap, hash::BuildHasher};
 
 use crate::traits::*;
 
+/// Below this many source entries the rayon fan-out costs more than it saves,
+/// so `map_insert` / `map_insert_vec` stay on the sequential loop. Only used
+/// when the `rayon` acceleration path is compiled in.
+#[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
+const PARALLEL_MAP_INSERT_THRESHOLD: usize = 1024;
+
 macro_rules! impl_acmap_base {
     ($($seg:ident)::+) => {
         impl<'a, V, Hasher, W> crate::traits::ACMapBase for $($seg)::+<W, V, Hasher>
@@ -152,12 +158,38 @@ macro_rules! impl_acmap_insert {
             S: PauliStorage + 'a,
             C: Coefficient + 'a,
             Hasher: Default + Clone + BuildHasher + 'a,
-            W: PauliWordTrait + 'a,
+            // `Sync + Send` on the word lets the rayon path below shuttle
+            // `(&W, &mut C)` entry handles across worker threads. `C` is
+            // already `Sync + Send` via `Coefficient`.
+            W: PauliWordTrait + Sync + Send + 'a,
         {
             fn map_insert<F>(&mut self, dest: &mut Self, f: F)
             where
                 F: Fn(&W, &mut C) -> Option<(W, C)> + Sync + Send,
             {
+                // Parallel path: scale surviving values in place and collect
+                // anti-commuting branch terms concurrently, then merge those
+                // terms into `dest` in one sequential pass (collision keys
+                // must sum). The merge is cheap relative to the closure work
+                // and needs the map's `entry` API, so it stays sequential.
+                #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
+                if self.len() >= PARALLEL_MAP_INSERT_THRESHOLD {
+                    use rayon::prelude::*;
+                    // Collect the disjoint `&mut` value handles once so rayon
+                    // can split them; each entry's `*v *= cos` mutation is
+                    // independent, so this is data-race free.
+                    let entries: Vec<(&W, &mut C)> = self.iter_mut().collect();
+                    let produced: Vec<(W, C)> = entries
+                        .into_par_iter()
+                        .filter_map(|(k, v)| f(k, v))
+                        .collect();
+                    for (new_k, new_v) in produced {
+                        dest.entry(new_k)
+                            .and_modify(|val| *val += new_v.clone())
+                            .or_insert(new_v);
+                    }
+                    return;
+                }
                 for (k, v) in self.iter_mut() {
                     if let Some((new_k, new_v)) = f(k, v) {
                         dest.entry(new_k)
@@ -171,6 +203,17 @@ macro_rules! impl_acmap_insert {
             where
                 F: Fn(&W, &mut C) -> Option<(W, C)> + Sync + Send,
             {
+                // Hot rot2 path (via `PauliSum::map_insert`). Same structure as
+                // `map_insert`, but produced terms go into a plain `Vec` that
+                // the caller later folds into its map. rayon's `par_extend`
+                // accumulates into per-thread buffers and concatenates them.
+                #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
+                if self.len() >= PARALLEL_MAP_INSERT_THRESHOLD {
+                    use rayon::prelude::*;
+                    let entries: Vec<(&W, &mut C)> = self.iter_mut().collect();
+                    dest.par_extend(entries.into_par_iter().filter_map(|(k, v)| f(k, v)));
+                    return;
+                }
                 for (k, v) in self.iter_mut() {
                     if let Some(entry) = f(k, v) {
                         dest.push(entry);

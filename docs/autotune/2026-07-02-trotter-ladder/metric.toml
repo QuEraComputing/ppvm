@@ -22,3 +22,11 @@
 "wall_s_N10" = 0.702
 "rss_mb_N12" = 627.0
 
+[[metric]]
+"commit" = "9ee8b3ba"
+"status" = "discard"
+"description" = "CORRECTION (clean quiet machine): parallelize map_insert is only ~1.1x (seq 8.06s vs par 7.25s N=12) for +50% RAM (396->600MB). The earlier '2.5x KEEP' was a load artifact (seq measured at 18.4s under load). ~120 short par sections/step + memory-bandwidth-bound work => limited parallel gain; per-gate Vec-collect overhead ~cancels it. Net loss given memory. Now reverted (sequential)."
+"wall_s_N12_seq" = 8.06
+"wall_s_N12_par" = 7.25
+"rss_mb_N12_par" = 600.0
+

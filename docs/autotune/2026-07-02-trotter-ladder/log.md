@@ -54,3 +54,18 @@ Cost: RSS +60% at N=12 (627 vs 396MB — per-thread accumulation buffers).
 DECISION: KEEP (helps where Trotter is slow; neutral where it's fast).
 Lesson: benchmark the autotune metric at a size representative of the SLOW
 regime, not the fast one — a small metric hid a real 2.5x structural win.
+
+## Iteration 1 FINAL VERDICT (clean quiet machine) — DISCARD
+The "KEEP 2.5x" above was ALSO a measurement artifact. Re-measured parallel vs
+sequential BOTH freshly-built on a quiet machine (min of 3-5):
+  N=12  sequential 8.06s / 396MB   vs   parallel 7.25s / ~600MB
+=> only ~1.1x faster for +50% RAM. The earlier 18.4s "sequential" was
+load-inflated (~2.3x); the earlier 30%-slower "parallel" was also load. Both
+prior verdicts were corrupted by single-run walls under variable machine load.
+Clean physics: the gate loop calls map_insert ~120x/step (short parallel
+sections) on memory-bandwidth-bound work, so parallel speedup is small and the
+per-gate collect overhead nearly cancels it; the per-thread buffers cost +50%
+RAM. DISCARD (reverted to sequential).
+PROCESS LESSON (critical): NEVER decide keep/discard from single-run walls under
+uncontrolled load. Require: quiet machine, both variants freshly built, min-of-N,
+ideally back-to-back. Two flip-flops here came from ignoring this.

@@ -26,7 +26,7 @@ pub struct Byte8<
     W: PauliWordTrait = PauliWord<[usize; N], fxhash::FxBuildHasher>,
 >(PhantomData<(C, St, W)>);
 
-impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait + Send + Sync> Config
+impl<const N: usize, C: Coefficient, St: Strategy, W: PauliWordTrait> Config
     for Byte8<N, C, St, W>
 {
     type Storage = [usize; N];

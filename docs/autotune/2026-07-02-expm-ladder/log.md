@@ -47,3 +47,40 @@ is 82% scaling-squaring matvecs (already cached + parallel + tolerance-matched)
 and 17% leakage. The one structural idea (share the action pass into leakage2)
 is correct but costs ~2.3x RAM (discarded). expm is near its practical optimum;
 the earlier 10.7x per-step speedup stands as the real win.
+
+## tau_add / K admission study (both models, K-scan, high + low precision)
+
+Motivation: the doubly-enriched PC transient is ~11-16x the pruned basis, ~94%
+pruned (load-independent). Q: does a rate-based admission filter (tau_add =
+K*drop_tol/dt, PPVM_K_LEAKAGE) beat admit-all / a max_basis cap? Judged at
+MATCHED accuracy vs exact ED. (One K on one model can't decide it.)
+
+Ladder N=10 (dt=0.05, T=2), min-of-2, K-scan:
+- loose (rel~1e-2): K=1 ~2x faster than admit-all (2.3s vs 4.7s), better rel.
+- high  (rel~1e-3): K=1..3 ~1.2-1.4x faster (15s vs ~18-21s); never worse.
+- K=5 OVER-filters (rel 6e-2 at drop=3e-4 vs admit-all 6.8e-2 only by using a
+  tiny basis) -> bad at matched accuracy. K=3 borderline; K=1 best.
+- max_basis cap: ~3.6x at LOOSE accuracy (rel~1.3e-2, 0.9s) BUT cannot reach
+  high precision (the cap clips the basis below what rel<=1e-3 needs). It is a
+  memory-bound tool, not an accuracy knob.
+
+Long-range XY chain N=10 (alpha=1, gamma=0), min-of-2:
+- same pattern: K=1 ~1.1-1.34x faster than admit-all at matched accuracy
+  (rel~1.2e-2: 26s vs 35s; rel~2.8e-4: 46s vs 52s). K=3/K=5 over-filter.
+
+Conclusions:
+1. Removing the admission filter (running admit-all) was a modest-to-moderate
+   LOSS: a small K (~1) recovers ~1.1-2x at matched accuracy on BOTH models,
+   MORE at loose accuracy, and never hurts. K auto-scales (tau_add∝drop_tol), so
+   at tight drop it filters little and degrades gracefully to admit-all.
+2. K is regime-dependent. K=1 is the sweet spot for these UNITARY (gamma=0)
+   cases; K>=3 over-filters. The notes' K≈5 was calibrated on a DISSIPATIVE
+   (gamma=1) long-range case -- dissipation damps high-weight operators and
+   changes the leakage structure, so its optimal K is higher. Judging tau_add
+   from K=5 on a unitary ladder (as first done) was unfair.
+3. max_basis is a hard memory bound (useful, and good at loose accuracy) but NOT
+   a substitute for K at high precision (it clips accuracy). K works at all
+   precisions.
+Recommended: expose K (done, PPVM_K_LEAKAGE, default 0=off). A default of K≈1
+would be a Pareto improvement for unitary runs; dissipative runs may want higher.
+Default left at 0 pending a decision (K is regime-dependent).

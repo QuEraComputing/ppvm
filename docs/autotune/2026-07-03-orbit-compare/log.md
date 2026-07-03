@@ -31,3 +31,31 @@ Harnesses: orbit_verify.py (expm), trotter_orbit_verify.py (Trotter).
    enough T. No exact ED at that scale -> converged reference (tightest drop/dt).
 3. Scan dt x drop_tol for BOTH methods; match rel~1e-3; compare wall + PEAK RSS.
    For expm: stream vs cache (leakage), both with a max_basis cut.
+
+## L=5 (N=10) orbit k-resolved: Trotter vs expm, exact-ED referenced
+
+Ladder L=5, k=2, T=2, momentum-k Z autocorrelation C_k(t). 2nd-order Strang
+Trotter (palindrome, matches the verified real-space scheme) vs expm orbit-rep
+(pc_step_orbit_rep). drop/mac=1e-4 (fine -> dt-floor-limited); dt scanned.
+
+dt-convergence (drop=1e-4):
+  expm:    dt0.1->2.0e-2  dt0.05->1.9e-3  dt0.025->7.8e-4   (~O(dt^3))
+  trotter: dt0.1->1.15e-2 dt0.05->2.9e-3  dt0.025->1.26e-3  (O(dt^2), confirms 2nd order)
+
+Matched rel~1e-3 (interp):
+  expm:    ~47s, peak_basis 52k,  RSS ~262 MB
+  trotter: ~44s, peak_basis 256k, RSS ~270 MB
+=> WALL ~TIED (~1.05x, Trotter marginally faster). RSS ~TIED. But expm keeps
+   ~5x FEWER terms (52k vs 256k) -- the k-resolved orbit reduction is real and
+   large. It does NOT convert to a net wall/RAM win here because expm's per-term
+   cost is ~higher (complex CSC action cache + doubly-enriched transient +
+   complex coeffs), which cancels the 5x term-count advantage.
+Caveat: at L=5 the RSS (~250-270MB) is baseline-dominated (python/numpy ~200MB),
+which masks the per-term memory difference; at larger basis the expm-heavier-
+per-term effect would be more visible in RSS.
+
+Stream vs cache with a max_basis=15k CUT (from the first pass, dt0.1 drop1e-4):
+  cache:  5.6s, 217 MB ; stream: 73.4s (~13x), 198 MB (~9% less), identical rel.
+=> streaming is a LARGE-basis RAM tool; at 15k it costs ~13x wall for ~9% RAM
+   (the cache is a small fraction of the ~200MB baseline there). Not worth it
+   at this size.

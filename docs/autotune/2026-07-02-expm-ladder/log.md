@@ -114,3 +114,31 @@ Conclusion:
 - The only way to cut peak RAM at FIXED accuracy is a code change to the peak
   itself: reduce per-term footprint or stream the corrector's action instead of
   caching all of B2 (trades back toward the recompute cost the cache removed).
+
+## CORRECTION: tau_add and max_basis limit RAM by DIFFERENT mechanisms
+
+(User's point.) The earlier "admission control is not a RAM lever" was measured
+with tau_add(K) only, both at max_basis=inf -- which missed a real mechanistic
+difference:
+- max_basis room-cap is applied PER CHUNK inside leakage_with_prune
+  (merged.retain(top-room)) AND caps B2 via add_leakage_capped -> it bounds the
+  LIVE transient (leakage map + doubly-enriched B2) during accumulation.
+- tau_add (as implemented) filters only at the END -> the merged map still
+  accumulates ALL candidates first, so it shrinks the RESULT but NOT the peak
+  transient memory.
+
+N=12 ladder, drop=1e-4, MATCHED accuracy (rel~7e-3), peak RSS:
+    admit-all (mb=inf)      : 1795 MB
+    tau_add K=1 (end-filter): 1715 MB  (-4%)
+    max_basis = 1.8M cap    : 1611 MB  (-10%, rel 6.7e-3, cap just above retained
+                                        ~1.6M so accuracy preserved; peak_basis
+                                        1.52M shows the cap clipping the transient)
+    (mb = 2.0M/2.5M ~ 1759/1838 MB: cap above the overshoot -> no effect)
+
+=> max_basis is the better RAM knob: it clips the transient overshoot (B2 >
+retained) during accumulation. The edge is ~10% at N=12 high precision (small
+overshoot there) and LARGER at looser accuracy (N=10 rel~1e-2: 233 vs 306MB,
+~1.3x) where B2 overshoots the retained basis much more (up to ~16x). tau_add
+COULD match this if it filtered PER CHUNK (bounding the live map) rather than at
+the end -- a code refinement. For peak RAM, set max_basis ~1.1-1.3x the expected
+retained basis: preserves accuracy, clips the transient, hard-bounds RAM.

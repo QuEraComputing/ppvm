@@ -142,3 +142,23 @@ overshoot there) and LARGER at looser accuracy (N=10 rel~1e-2: 233 vs 306MB,
 COULD match this if it filtered PER CHUNK (bounding the live map) rather than at
 the end -- a code refinement. For peak RAM, set max_basis ~1.1-1.3x the expected
 retained basis: preserves accuracy, clips the transient, hard-bounds RAM.
+
+## (b) IMPLEMENTED: opt-in streaming (matrix-free) expm — a RAM<->wall dial
+
+PPVM_EXPM_STREAM=1 makes expm_apply_mf skip build_mf_cols (the CSC cache) and
+recompute the action per matvec via MfOp/spmv_matrix_free. Removes the
+dominant peak-RAM term (cache = nnz*16B built on the doubly-enriched corrector
+basis B2). Default unset = cached CachedCscOp (fast); drop_tol=0 tests unchanged.
+
+N=12 ladder, drop=3e-4, MATCHED accuracy (rel 2.96e-2 IDENTICAL — matrix-free is
+the same math, just uncached):
+    cached  : 168s, 1614 MB   (peak_basis pruned 254k; RSS reflects the ~4M B2
+                               transient the cache is built on)
+    stream  : 568s,  896 MB   (~1.8x less peak RAM, ~3.4x wall)
+The 718 MB saved ~ the action cache. Streaming's residual 896 MB is the basis /
+index / transient words / expm work vectors, which remain.
+=> Legitimate memory-budget mode for RAM-limited runs. The wall hit (3.4x here)
+is the recompute cost the cache had removed; it's a dial, not a default.
+Note this is biggest at MODERATE accuracy (drop~3e-4) where B2 overshoots the
+retained basis most; at very tight drop the transient is smaller so the cache
+(hence the saving) shrinks.

@@ -84,3 +84,33 @@ Conclusions:
 Recommended: expose K (done, PPVM_K_LEAKAGE, default 0=off). A default of K≈1
 would be a Pareto improvement for unitary runs; dissipative runs may want higher.
 Default left at 0 pending a decision (K is regime-dependent).
+
+## RAM (peak RSS) is the real metric — admission control is NOT a RAM lever
+
+Re-judged the K/admit-all comparison on PEAK RSS (max throughout runtime) at
+MATCHED accuracy (RSS is load-independent, so robust).
+
+N=10 high precision (rel~1e-3): peak RSS ~FLAT across K (~390MB ladder, ~510MB
+lrxy) — N=10 saturates (~260k of 4^10 reachable), so no transient to filter.
+N=12 (non-saturated), drop=1e-4:
+    K=0 : rel 7.0e-3, RSS 1772MB   (peak_basis 1.60M)
+    K=1 : rel 5.2e-3, RSS 1715MB   (peak_basis 1.65M)   <- matched accuracy, ~same RAM (3%)
+    K=3 : rel 2.0e-2, RSS  997MB   (peak_basis 0.87M)   <- 1.8x less RAM but 3x WORSE rel
+
+Conclusion:
+- At MATCHED accuracy, the admission filter does NOT reduce peak RAM (K=0 vs K=1:
+  1772 vs 1715MB). K is a WALL optimization (~1.3-2x) only. Higher K (K=3) cuts
+  RAM ONLY by cutting accuracy — moving DOWN the RAM<->accuracy Pareto, not
+  beating it.
+- Peak RAM is fundamentally set by the retained basis the accuracy target
+  requires (+ its action cache + the doubly-enriched corrector transient B2,
+  which at high precision is close to the retained basis and barely filterable).
+- The direct knob for a RAM BUDGET is max_basis (hard bound), at a known
+  accuracy cost (capping below what the accuracy needs degrades rel steeply).
+- => For RAM specifically, removing tau_add and keeping max_basis was FINE:
+  max_basis IS the RAM knob; tau_add/K would not lower peak RAM at matched
+  accuracy. (This tempers the earlier "removing tau_add was a loss" — that was a
+  WALL statement; for RAM it is not a loss.)
+- The only way to cut peak RAM at FIXED accuracy is a code change to the peak
+  itself: reduce per-term footprint or stream the corrector's action instead of
+  caching all of B2 (trades back toward the recompute cost the cache removed).

@@ -233,6 +233,173 @@ impl LinearOperator<Complex<f64>> for OrbitRepCscOp<'_> {
     }
 }
 
+/// Matrix-free (streaming) orbit-rep operator: recomputes the phase-aware
+/// action per matvec instead of caching it (the `Complex` mirror of
+/// [`crate::mf_expm`]'s streaming path). Holds NO `nnz`-sized cache — used for
+/// the opt-in low-RAM mode (`PPVM_EXPM_STREAM`), at the cost of recomputing the
+/// `compute_action_terms` + canonicalize + character work on every matvec.
+pub(crate) struct StreamOrbitOp<'a> {
+    spec: &'a LindbladSpec,
+    basis: &'a [Word],
+    index: &'a FxHashMap<Word, u32>,
+    group: &'a TranslationGroup,
+    k_modes: &'a [i32],
+    dim: usize,
+}
+
+impl LinearOperator<Complex<f64>> for StreamOrbitOp<'_> {
+    fn dim(&self) -> usize {
+        self.dim
+    }
+    fn parallel_hint(&self) -> bool {
+        false
+    }
+    fn dot(
+        &self,
+        overwrite: bool,
+        input: &[Complex<f64>],
+        output: &mut [Complex<f64>],
+    ) -> Result<(), QuSpinError> {
+        let n = self.dim;
+        let zero = Complex::new(0.0, 0.0);
+        if n == 0 {
+            return Ok(());
+        }
+        let num_threads = rayon::current_num_threads().max(1);
+        let chunk_size = n.div_ceil(num_threads);
+        let partial_ys: Vec<Vec<Complex<f64>>> = self
+            .basis
+            .par_chunks(chunk_size)
+            .enumerate()
+            .map(|(chunk_idx, chunk)| {
+                let c_offset = chunk_idx * chunk_size;
+                let mut y_local = vec![zero; n];
+                let mut s1 = Vec::<u32>::with_capacity(self.spec.n_qubits());
+                let mut s2 = Vec::<u32>::with_capacity(128);
+                let mut lm = FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                    128,
+                    FxBuildHasher::default(),
+                );
+                for (c_local, r) in chunk.iter().enumerate() {
+                    let xc = input[c_offset + c_local];
+                    if xc == zero {
+                        continue;
+                    }
+                    let terms = self.spec.compute_action_terms(r, &mut s1, &mut s2, &mut lm);
+                    for (q, v) in terms.iter() {
+                        let (r_q, cnt_q) = self.group.canonicalize_with_shift(q);
+                        if let Some(&row) = self.index.get(&r_q) {
+                            let phase = self.group.character(self.k_modes, &cnt_q);
+                            y_local[row as usize] += phase * (*v as f64) * xc;
+                        }
+                    }
+                }
+                y_local
+            })
+            .collect();
+        if overwrite {
+            output.fill(zero);
+        }
+        for partial in &partial_ys {
+            for (oi, &pi) in output.iter_mut().zip(partial.iter()) {
+                *oi += pi;
+            }
+        }
+        Ok(())
+    }
+    fn trace(&self) -> Complex<f64> {
+        unreachable!("StreamOrbitOp::trace not used on the from_parts apply path")
+    }
+    fn onenorm(&self, _shift: Complex<f64>) -> f64 {
+        unreachable!("StreamOrbitOp::onenorm not used on the from_parts apply path")
+    }
+    fn dot_transpose(
+        &self,
+        _overwrite: bool,
+        _input: &[Complex<f64>],
+        _output: &mut [Complex<f64>],
+    ) -> Result<(), QuSpinError> {
+        Err(QuSpinError::RuntimeError(
+            "StreamOrbitOp: dot_transpose not used on the from_parts apply path".into(),
+        ))
+    }
+    fn dot_many(
+        &self,
+        _overwrite: bool,
+        _input: ndarray::ArrayView2<'_, Complex<f64>>,
+        _output: ndarray::ArrayViewMut2<'_, Complex<f64>>,
+    ) -> Result<(), QuSpinError> {
+        Err(QuSpinError::RuntimeError(
+            "StreamOrbitOp: dot_many not used on the from_parts apply path".into(),
+        ))
+    }
+    fn dot_chunk(
+        &self,
+        _overwrite: bool,
+        _input: &[Complex<f64>],
+        _output_chunk: &mut [Complex<f64>],
+        _row_start: usize,
+    ) -> Result<(), QuSpinError> {
+        Err(QuSpinError::RuntimeError(
+            "StreamOrbitOp: dot_chunk not used on the from_parts apply path".into(),
+        ))
+    }
+    fn dot_transpose_chunk(
+        &self,
+        _input: &[Complex<f64>],
+        _output: &[<Complex<f64> as ExpmComputation>::Atomic],
+        _rows: std::ops::Range<usize>,
+    ) -> Result<(), QuSpinError> {
+        Err(QuSpinError::RuntimeError(
+            "StreamOrbitOp: dot_transpose_chunk not used on the from_parts apply path".into(),
+        ))
+    }
+}
+
+/// Light phase-aware pass computing ONLY `per_col[c] = (raw, diag)` for the
+/// `μ`/1-norm selection, without materialising the cached columns. Used by the
+/// streaming path so the norm pass costs no `nnz`-sized memory.
+fn per_col_orbit_stream(
+    spec: &LindbladSpec,
+    basis: &[Word],
+    index: &FxHashMap<Word, u32>,
+    group: &TranslationGroup,
+    k_modes: &[i32],
+) -> Vec<(f64, Complex<f64>)> {
+    basis
+        .par_iter()
+        .enumerate()
+        .map_init(
+            || {
+                (
+                    Vec::<u32>::with_capacity(spec.n_qubits()),
+                    Vec::<u32>::with_capacity(128),
+                    FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                        128,
+                        FxBuildHasher::default(),
+                    ),
+                )
+            },
+            |(s1, s2, lm), (c, r)| {
+                let terms = spec.compute_action_terms(r, s1, s2, lm);
+                let mut raw = 0.0_f64;
+                let mut diag = Complex::new(0.0, 0.0);
+                for (q, v) in terms.iter() {
+                    let (r_q, cnt_q) = group.canonicalize_with_shift(q);
+                    if let Some(&row) = index.get(&r_q) {
+                        let val = group.character(k_modes, &cnt_q) * (*v as f64);
+                        raw += val.norm();
+                        if row as usize == c {
+                            diag += val;
+                        }
+                    }
+                }
+                (raw, diag)
+            },
+        )
+        .collect()
+}
+
 /// Compute `exp(dt · M) · coeffs` for the in-basis-restricted orbit-rep
 /// generator `M` at momentum sector `k_modes`, via `quspin-expm`. Returns
 /// a fresh `Vec<Complex<f64>>` of length `basis.len()`. No CSR is
@@ -260,30 +427,40 @@ pub(crate) fn expm_apply_orbit_rep_cached(
     }
 
     let index = crate::build_basis_index(basis);
-    // Phase-aware action: computed ONCE, reused across every matvec below.
-    let cols = build_orbit_rep_cols(spec, basis, &index, group, k_modes);
+    // Opt-in streaming (low-RAM) path: skip the phase-aware column cache and
+    // recompute the action per matvec (StreamOrbitOp). Removes the dominant
+    // peak-memory term (the nnz-sized complex cache on the doubly-enriched
+    // corrector basis) at the cost of wall. Default (unset) = cached
+    // OrbitRepCscOp (fast).
+    let stream = std::env::var_os("PPVM_EXPM_STREAM").is_some();
+    let cols_opt = if stream {
+        None
+    } else {
+        Some(build_orbit_rep_cols(spec, basis, &index, group, k_modes))
+    };
 
-    // One pass over the cached columns: per column `c` (rep `basis[c]`)
-    // gather `raw = Σ|val|` (an upper bound on the absolute column sum) and
-    // the exact diagonal entry `diag = M[c,c] = Σ_{row==c} val` (summing
-    // duplicates). From these: `trace = Σ diag`, `μ = trace/n`, and an
-    // upper bound on the column 1-norm of `M − μ·I`:
-    // `raw − |diag| + |diag − μ|`.
-    let per_col: Vec<(f64, Complex<f64>)> = cols
-        .par_iter()
-        .enumerate()
-        .map(|(c, col)| {
-            let mut raw = 0.0_f64;
-            let mut diag = Complex::new(0.0, 0.0);
-            for &(row, val) in col.iter() {
-                raw += val.norm();
-                if row as usize == c {
-                    diag += val;
+    // One pass for the per-column `(raw, diag)` used by the `μ`/1-norm
+    // selection: `raw = Σ|val|` (upper bound on the absolute column sum),
+    // `diag = M[c,c]`. From these: `trace = Σ diag`, `μ = trace/n`, and an
+    // upper bound on the column 1-norm of `M − μ·I`: `raw − |diag| + |diag − μ|`.
+    let per_col: Vec<(f64, Complex<f64>)> = match &cols_opt {
+        Some(cols) => cols
+            .par_iter()
+            .enumerate()
+            .map(|(c, col)| {
+                let mut raw = 0.0_f64;
+                let mut diag = Complex::new(0.0, 0.0);
+                for &(row, val) in col.iter() {
+                    raw += val.norm();
+                    if row as usize == c {
+                        diag += val;
+                    }
                 }
-            }
-            (raw, diag)
-        })
-        .collect();
+                (raw, diag)
+            })
+            .collect(),
+        None => per_col_orbit_stream(spec, basis, &index, group, k_modes),
+    };
 
     let trace: Complex<f64> = per_col.iter().map(|(_, d)| *d).sum();
     let mu = trace / n as f64;
@@ -294,22 +471,42 @@ pub(crate) fn expm_apply_orbit_rep_cached(
 
     let (m_star, s) = crate::expm::select_ms(dt.abs() * onenorm, None);
 
-    let op = OrbitRepCscOp {
-        cols: &cols,
-        dim: n,
-    };
-    let e = ExpmOp::from_parts(
-        op,
-        Complex::new(dt, 0.0),
-        mu,
-        s as usize,
-        m_star as usize,
-        1e-12_f64,
-    );
-
     let mut v = coeffs.to_vec();
-    e.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
-        .expect("expm apply (orbit-rep cached)");
+    match &cols_opt {
+        Some(cols) => {
+            let op = OrbitRepCscOp { cols, dim: n };
+            let e = ExpmOp::from_parts(
+                op,
+                Complex::new(dt, 0.0),
+                mu,
+                s as usize,
+                m_star as usize,
+                1e-12_f64,
+            );
+            e.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
+                .expect("expm apply (orbit-rep cached)");
+        }
+        None => {
+            let op = StreamOrbitOp {
+                spec,
+                basis,
+                index: &index,
+                group,
+                k_modes,
+                dim: n,
+            };
+            let e = ExpmOp::from_parts(
+                op,
+                Complex::new(dt, 0.0),
+                mu,
+                s as usize,
+                m_star as usize,
+                1e-12_f64,
+            );
+            e.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
+                .expect("expm apply (orbit-rep stream)");
+        }
+    }
     v
 }
 

@@ -53,6 +53,30 @@ pub mod orbit_rep;
 /// Words pack up to 128 qubits.
 const W_U64: usize = 2;
 
+/// Predictor-corrector leakage-admission shape factor `K` (dimensionless).
+///
+/// A leakage string is admitted only if its rate `|ell_q|` exceeds
+/// `tau_add = K * drop_tol / dt`, i.e. if its acquired coefficient
+/// `|ell_q|*dt` would exceed `K * drop_tol` — comfortably above the post-step
+/// prune threshold. This stops the doubly-enriched transient from admitting the
+/// (~90%+) strings that would be pruned anyway.
+///
+/// Read once from `PPVM_K_LEAKAGE` (default `0.0`). `K = 0` ⇒ `tau_add = 0` ⇒
+/// admit every leakage string (the historical behaviour, and the behaviour at
+/// `drop_tol = 0`), so the default changes nothing and exact-reference tests are
+/// unaffected. Set `PPVM_K_LEAKAGE` to sweep `K` without rebuilding.
+fn k_leakage() -> f64 {
+    use std::sync::OnceLock;
+    static K: OnceLock<f64> = OnceLock::new();
+    *K.get_or_init(|| {
+        std::env::var("PPVM_K_LEAKAGE")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .filter(|k| k.is_finite() && *k >= 0.0)
+            .unwrap_or(0.0)
+    })
+}
+
 /// Maximum number of qubits supported by [`Word`] (= `8 · W_U64 · sizeof(u64)`).
 pub const MAX_QUBITS: usize = 64 * W_U64;
 
@@ -557,7 +581,7 @@ impl LindbladSpec {
         coeffs: &[f64],
         protected: &[Word],
     ) -> Result<Vec<(Word, f64)>, Error> {
-        self.leakage_with_prune(basis, coeffs, protected, usize::MAX)
+        self.leakage_with_prune(basis, coeffs, protected, usize::MAX, 0.0)
     }
 
     /// Like [`Self::leakage`], but caps the live off-basis leakage map to
@@ -576,6 +600,7 @@ impl LindbladSpec {
         coeffs: &[f64],
         protected: &[Word],
         max_basis: usize,
+        tau_add: f64,
     ) -> Result<Vec<(Word, f64)>, Error> {
         if basis.len() != coeffs.len() {
             return Err(Error::LengthMismatch {
@@ -659,7 +684,13 @@ impl LindbladSpec {
                 }
             }
         }
-        Ok(merged.into_iter().filter(|(_, c)| *c != 0.0).collect())
+        // Rate-based admission: keep only candidates whose leakage rate
+        // exceeds `tau_add` (= K*drop_tol/dt). `tau_add = 0` admits everything
+        // except exact zeros, matching the prior behaviour.
+        Ok(merged
+            .into_iter()
+            .filter(|(_, c)| c.abs() > tau_add)
+            .collect())
     }
 
     /// Sparse generator matrix in COO form: returns `(row, col, val)`
@@ -1336,9 +1367,10 @@ impl LindbladSpec {
         protected: &[Word],
     ) -> Result<PcStepTimings, Error> {
         let mut t = PcStepTimings::default();
+        let tau_add = if dt > 0.0 { k_leakage() * drop_tol / dt } else { 0.0 };
 
         let t0 = Instant::now();
-        let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis)?;
+        let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis, tau_add)?;
         t.leakage1_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
@@ -1354,7 +1386,7 @@ impl LindbladSpec {
         t.expm1_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
-        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, max_basis)?;
+        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, max_basis, tau_add)?;
         t.leakage2_us = t0.elapsed().as_micros() as u64;
         drop(coeffs_predict);
 
@@ -1381,11 +1413,12 @@ impl LindbladSpec {
         drop_tol: f64,
         protected: &[Word],
     ) -> Result<(), Error> {
+        let tau_add = if dt > 0.0 { k_leakage() * drop_tol / dt } else { 0.0 };
         // 1. First-hop expansion. After this, `coeffs` contains the pre-step
         // coefficients followed by zeros for the newly-added leakage strings.
         // We rely on `coeffs` itself as the pre-step buffer for the corrector
         // — no `.clone()` is needed because `expm_step` only borrows it.
-        let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis)?;
+        let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis, tau_add)?;
         add_leakage_capped(basis, coeffs, leak, max_basis);
         // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
         // new owned vector with the predicted state.
@@ -1394,7 +1427,7 @@ impl LindbladSpec {
         // we no longer need `coeffs_predict`. Extend `coeffs` with zeros for
         // any newly-added second-hop strings so it remains a valid input
         // (pre-step state) for the corrector.
-        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, max_basis)?;
+        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, max_basis, tau_add)?;
         drop(coeffs_predict);
         add_leakage_capped(basis, coeffs, leak2, max_basis);
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.

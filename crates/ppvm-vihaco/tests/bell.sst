@@ -11,7 +11,7 @@ fn @main() {
     const.u64 0
     circuit.measure
 
-    const.u64 0
+    const.u64 1
     circuit.measure
 
     ret

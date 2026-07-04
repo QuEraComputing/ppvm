@@ -209,3 +209,75 @@ ceiling). CTPP's momentum-space value is exclusively the extended precision
 range (5x lower error at k=1: 5.5e-4 vs 2.7e-3 ceiling, at 46min/9.3GB) plus
 what gate methods cannot do at all (Lindbladians, exact-in-dt). The paper
 must state the trade this way and not claim a term-count win as a memory win.
+
+## Harness migration to xy-experiments + dt x drop x K mid-precision scan (2026-07-04)
+
+User preference: use the clean xy-experiments harnesses (k_pec_run.py /
+k_trotter_run.py + main_k_{pec,xy}_ladder.py) instead of orbit_bench_L7.py.
+Differences that matter:
+- TROTTER: k_trotter_run evolves the momentum-MERGED pair (momentum_merge
+  every step). orbit_bench evolved the full real-space pair (merge only at
+  readout). Merging redistributes weight onto reps (coefficient = sum over L
+  translates), so the SAME min_abs_coeff is effectively ~L x looser: better
+  rel per knob, but far bigger live basis. Neither variant dominates -- see
+  below. Both validated vs exact ED at L=5 (pec 1.86e-3 == ledger; trot
+  3.20e-3 vs 2.9e-3 unmerged).
+- PEC: identical pc_step_orbit_rep kernel (k_pec_run passes no protected_arr;
+  negligible). Records C_k every step; supports dephasing jumps.
+- Fixed stale `from ppvm_python_native import ...` (module no longer
+  installed; symbols live in ppvm._core) -- committed in xy-experiments
+  (a044a27). Peak RSS measured externally via /usr/bin/time -l (the h5
+  peak_rss_mb attr is psutil END-rss, not peak).
+Driver: scan_xy_mid.py (this folder). L=7, k=1, T=2, exact-ED referenced.
+
+Scan (K = PPVM_K_LEAKAGE, tau_add = K*drop/dt; K=0 no end-filter):
+method     dt     drop   K   rel_err  wall_s  peakRSS  peak_reps
+trot(m)   0.1    1e-3    -   8.12e-3    70      910MB    906k
+trot(m)   0.1    3e-4    -   7.42e-3   718     7.0GB    6.90M   <- dt-floor, wasted
+trot(m)   0.05   3e-3    -   1.49e-2     7      171MB     61k
+trot(m)   0.05   1e-3    -   7.60e-3    65      586MB    522k
+trot(m)   0.05   3e-4    -   2.55e-3   728     3.6GB    4.75M   <- below unmerged ceiling!
+trot(m)   0.025  3e-3    -   3.09e-2     4      133MB     22k   <- coupling
+trot(m)   0.025  1e-3    -   7.51e-3    38      247MB    189k
+trot(m)   0.0125 1e-3    -   1.86e-2    21      168MB     62k   <- coupling
+pec       0.1    3e-3    0   5.10e-3    32      647MB     19k
+pec       0.1    3e-3    1   7.26e-3     8      316MB     40k
+pec       0.1    3e-3    5   2.36e-2     1      167MB      4.5k <- over-filtered
+pec       0.05   3e-3    1   9.45e-3     7      249MB     21k
+pec       0.05   3e-3    5   7.88e-3     1      136MB      1.3k <- absurdly cheap ~8e-3
+pec       0.1    1e-3    0   3.40e-3   341     3.8GB     159k
+pec       0.1    1e-3    1   3.17e-3    93     1.5GB     354k
+pec       0.1    1e-3    5   1.01e-2     8      273MB     43k
+pec       0.05   1e-3    1   1.30e-3    82      808MB    211k   <- STAR CELL
+pec       0.05   1e-3    5   7.26e-3     4      219MB     11k
+pec       0.025  1e-3    1   5.59e-3    45      329MB     70k
+(NOTE trot(m) 0.1/1e-4 was killed pre-emptively: extrapolated ~30M reps /
+ ~30GB. merged 0.025/3e-4 not run -- gap, likely dominated anyway.)
+
+FINDINGS:
+1. K=1 IS A STRICT PARETO WIN for pec at drop=1e-3: vs K=0 at dt=0.05
+   (old-harness K0: 1.81e-3/432s/2.8GB) K=1 gives 1.30e-3 / 82s / 808MB --
+   better rel, 5.3x wall, 3.5x RAM. Same at dt=0.1 (3.17e-3/93s/1.5GB vs
+   3.40e-3/341s/3.8GB). K=5 over-filters at drop<=1e-3 but is a bargain
+   dial at loose drop (7.9e-3 at 1s/136MB!). K=1 default recommended for
+   momentum runs; the old K-leakage guidance ("K~1 helps 1.1-2x") strongly
+   UNDERSTATED the k=1 benefit.
+2. Merged vs unmerged Trotter: NEITHER dominates. Merged reaches 2.55e-3
+   (unmerged saturated at 2.7e-3) but at 728s/3.6GB/4.75M reps; unmerged
+   0.025/3e-4 hit 2.80e-3 at 19.5s/274MB. Effective-knob loosening from the
+   merge is the cause. "Trotter" below = best variant per point.
+3. dt<->knob coupling is now confirmed in BOTH methods and BOTH trotter
+   variants (trot(m) 0.025->0.0125 at 1e-3: 7.5e-3 -> 1.9e-2).
+
+MID-ACCURACY (~5e-3) OPTIMAL POINTS -- the head-to-head requested:
+  trotter (unmerged, dt=.025, mac=3e-4): rel 2.80e-3, 19.5s, 274 MB
+  pec (dt=.1, drop=3e-3, K=0):           rel 5.10e-3, 32 s,  647 MB
+  pec (dt=.025, drop=1e-3, K=1):         rel 5.59e-3, 45 s,  329 MB
+  -> AT the mid class Trotter's best point is still the cheapest (1.6-2.3x
+     wall, 1.2-2.4x RAM) and overshoots accuracy.
+  BUT one small step up in budget flips it: pec .05/1e-3/K1 = 1.30e-3 at
+  82s/808MB -- 2.1x better rel than Trotter's best-ever (2.55e-3 at
+  728s/3.6GB), at 8.9x less wall and 4.5x less RAM than that cell.
+REVISED CLASS BOUNDARY (k=1): Trotter owns rel >~ 2.7e-3 (cheap, saturating);
+pec+K1 owns rel <~ 2.5e-3 outright (wall AND RAM). The pec frontier costs
+from the earlier k=1 section (K=0) are superseded by ~5x cheaper K=1 cells.

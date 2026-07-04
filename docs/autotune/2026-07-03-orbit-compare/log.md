@@ -853,3 +853,21 @@ THE SPLIT VERDICT DISSOLVES: with max_basis as the knob, pec dominates
 Trotter in real space on wall at every precision (37-46x) and reaches RAM
 parity-or-better; Trotter's former RAM edge was an artifact of comparing
 against threshold-tuned pec (whose transient the thresholds never bounded).
+
+## CORRECTION: "pure cap" cells were drop=1e-5, and that matters (2026-07-04, user)
+
+True drop=0 cells (K=0), vs the mislabeled "pure cap" (drop=1e-5) cells:
+  dt=0.025 M100k: drop0 5.90e-3 10.3s | 1e-5: 9.79e-4 22.0s   (6x worse)
+  dt=0.025 M300k: drop0 1.50e-3 34.5s | 1e-5: 5.53e-4 74.4s   (2.7x)
+  dt=0.05  M100k: drop0 2.64e-3  5.3s | 1e-5: 1.50e-3  5.6s   (1.8x)
+  dt=0.05  M300k: drop0 1.35e-3 17.6s | 1e-5: 8.58e-4 18.7s   (1.6x)
+Consistent across 4 cells -> real effect, not cancellation noise. With
+drop=0 the peak sits exactly at B (no clearing); with 1e-5 slightly under.
+Hypothesized mechanism: a tiny prune clears stagnant near-zero weight from
+the retained set, freeing rank slots for freshly proposed strings; with
+drop=0 a zombie tail occupies the bottom of the top-B. drop=0 is somewhat
+faster (up to 2x at dt=0.025) but strictly Pareto-dominated on accuracy.
+REVISED RECOMMENDATION: cap + a pruning threshold FAR BELOW the working
+coefficient scale (e.g. 1e-5 here) - "near zero", not exactly zero.
+Cap-primary comparison table (previous section) used the 1e-5 cells and is
+unaffected; only the "pure cap" label was wrong.

@@ -709,3 +709,32 @@ ALL CLAIMS CONFIRMED AT dt=0.025:
 Bonus: 1e-4/K1.25 = 8.79e-4 is the deepest real-space cell so far;
 2e-4/K0.625 (2.27e-3, 34s, 881MB) Pareto-improves the old deep cell
 (1.87e-3, 33.5s, 2.9GB) on RAM by 3.3x at comparable rel/wall.
+
+## max_basis as the primary knob (2026-07-04, user hypothesis - CONFIRMED)
+
+1. COLLAPSE: below the cliff, rel ~ peak_basis^(-0.2..-0.5) with only
+   x1.1-1.35 residual scatter at fixed dt, across ALL (drop, tau_add)
+   compositions. Basis size is the first-order accuracy predictor and the
+   ~exact cost predictor (RSS and wall track peak). Second order: at equal
+   peak, low-tau_add compositions are slightly better.
+2. RANK CAP BEATS THRESHOLDS AT MATCHED SIZE (dt=0.025, drop=1e-4, K=1.25):
+     M600k:  9.21e-4  127.9s   658MB   peak 547k
+     M300k:  5.73e-4   58.3s   455MB   peak 289k  <- vs threshold cells at
+                                          ~300k: 2.3-3.3e-3 (4-5x better!)
+     M100k:  7.22e-4   18.6s   265MB   peak 98.6k <- NEW FRONTIER
+     M30k:   9.90e-3    6.0s   218MB   peak 29.9k <- cap below natural
+                                          weight distribution: back on the
+                                          size-rel curve
+     uncapped (1.3M):  8.79e-4  151.6s  3.0GB
+   M100k beats the uncapped run on EVERY axis (8x wall, 11x RAM, better
+   rel). keep-top-N is the optimal size-B selection; thresholds are not.
+   The cap also bounds the leakage transient => much lower RSS per kept term.
+   (M600k > M300k rel: non-monotone, cancellation noise ~1.5x - don't
+   over-read small rel differences.)
+3. ONCE THE CAP BINDS, THRESHOLDS ARE SECONDARY: drop 1e-5 vs 1e-4 at M100k:
+   1.10e-3 vs 7.22e-4, same wall/RSS. Keep mild thresholds only to cheapen
+   the pre-cap transient.
+REVISED RECIPE (real space): set max_basis to the RAM/wall budget (the ONE
+primary knob), keep tau_add ~ 0.005-0.02 and drop ~ 1e-4 as mild transient
+hygiene. New best cells: 7.2e-4 @ 18.6s/265MB (M100k), 5.7e-4 @ 58s/455MB
+(M300k) - both far beyond the old threshold-only frontier.

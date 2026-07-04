@@ -361,3 +361,49 @@ the only method below ~2.5e-3, and K-tuning cut its cost there by ~5-12x vs
 K=0. Untested knobs if the ~20s target is pursued later: interior K (3-7) at
 0.05/3e-4, drop between 3e-4 and 1e-3 with K rescaled to keep K*drop/dt ~
 0.01-0.03, dt ~ 0.03-0.04.
+
+## METRIC CHANGE: median pointwise relative error (2026-07-04, user directive)
+
+New standard metric: median over the 11 sample times of |C(t)-REF(t)|/|REF(t)|
+(pointwise rel first, then aggregate; NOT norm-ratio, NOT avg-abs/avg-ref).
+Rationale: L2 norm-ratio is dominated by early times where |REF| is O(1);
+the mean of pointwise rel is dominated by the zero crossing at t=1.8
+(REF=-0.0026); the median measures typical relative accuracy across the
+decay. Adopted after user review.
+
+All cells with stored curves, recomputed (k=1; wall/RSS from original runs;
+old-harness cells re-run ONLY if wall < 30s per user rule):
+
+  method          K   drop    dt    median_rel   wall    RSS
+  pec             1   1e-3   0.05    1.02e-3      81s   808MB  <- best overall
+  pec             5   1e-4   0.05    1.36e-3     499s   2.1GB
+  pec             5   1e-4   0.025   2.29e-3     224s   923MB
+  pec             1   3e-3   0.05    5.39e-3     6.1s   249MB  <- mid winner
+  pec             5   1e-3   0.05    7.21e-3     3.5s   219MB  <- loose winner
+  pec             5   3e-4   0.0125  6.94e-3     8.8s   196MB
+  pec             5   3e-4   0.05    2.23e-2      34s   524MB  <- ex-"star cell"!
+  pec             0   3e-3   0.1     1.65e-2      32s   647MB
+  trot(merged)    -   5e-4   0.025   5.42e-3     165s   620MB  <- trot best
+  trot(merged)    -   1e-3   0.05    5.68e-3      64s   586MB
+  trot(merged)    -   3e-4   0.05    5.86e-3     728s   3.6GB
+  trot(unmerged)  -   3e-4   0.025   1.16e-2      21s   274MB
+  trot(unmerged)  -   1e-3   0.1     5.37e-2      7s    261MB
+  (trot(unmerged) 0.025/1e-4 and pec K0 0.05/3e-4 NOT re-measured: >30s rule.)
+
+FINDINGS UNDER THE MEDIAN METRIC:
+1. THE STORY FLIPS: pec wins EVERY precision class, by large margins.
+   ~7e-3: pec 3.5s/219MB vs trot 21s/274MB (unmerged, 1.16e-2).
+   ~5.5e-3: pec 6.1s/249MB vs trot(merged) 64s/586MB -- 10x wall, 2.4x RAM.
+   ~1e-3: pec 81s/808MB; NO measured Trotter cell below 5.4e-3.
+   Trotter saturates at median ~5.4e-3 among measured cells: its tight-knob
+   cells improve early-time (L2) accuracy but not late-time relative accuracy.
+2. METRIC SENSITIVITY IS LARGE. The L2 "star cell" (pec 3e-4/0.05/K5:
+   L2 2.78e-3) has median 2.23e-2 -- excellent early, mediocre late.
+   Conversely pec K1 1e-3/0.05 is uniform (L2 1.30e-3, median 1.02e-3).
+   Same for trot(unmerged) 0.025/3e-4: L2 2.80e-3 but median 1.16e-2.
+   The L2-based conclusion "Trotter cheaper at rel >~2.5e-3" was an artifact
+   of early-time weighting; for k-resolved DECAY-RATE physics (late-time
+   relative accuracy), the median verdict is the physically relevant one.
+3. Best-known settings under median: pec dt=0.05 with (drop=3e-3,K=1) for
+   fast/mid, (drop=1e-3,K=1) for precision. dt=0.05 is consistently the pec
+   sweet spot at T=2.

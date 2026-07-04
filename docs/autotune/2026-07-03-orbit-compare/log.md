@@ -483,3 +483,55 @@ this size; the per-gate/per-bond truncation that causes the coherent-noise
 floor is also what keeps the transient bounded. (pec avoids the dilemma
 structurally: its generator action never unfolds the orbit basis, so there
 is no intra-step transient to prune.)
+
+## REAL-SPACE MSD comparison, L=7, gamma=0, T=2 (2026-07-04)
+
+Observable: MSD(t) from the localized center-rung seed (Z_{j0,0}+Z_{j0,1})/2,
+via main_realspace_ladder.py (--mode trotter|adaptive) + msd.py. Metric:
+median pointwise rel of MSD(t) over t=0.2..2.0 (t=0 excluded, MSD=0) vs the
+sector-reduced exact reference (exact_msd_L7.py: magnetization-block eigh +
+|U_m|^2 bilinear -- 18 s total, ~80x faster than the naive full-space |U|^2;
+validated at L=5 to machine precision). K = PPVM_K_LEAKAGE reaches pc_step_arr
+directly. Driver: scan_realspace_msd.py.
+
+mode      dt     knob    K  median_rel  wall_s  peakRSS  peak_terms
+trotter   0.1    1e-3    -   2.23e-2     0.3     112MB     10.1k
+trotter   0.05   1e-3    -   3.22e-2     0.2     111MB      3.7k
+trotter   0.05   3e-4    -   1.34e-2     2.4     120MB     39.2k
+trotter   0.025  3e-4    -   1.34e-2     1.5     113MB     12.9k
+trotter   0.05   1e-4    -   5.88e-3    25.8     190MB      337k
+trotter   0.025  1e-4    -   7.91e-3    13.7     134MB      111k
+trotter   0.025  3e-5    -   2.07e-3   209.4     415MB     1.20M
+adaptive  0.1    1e-3    0   5.56e-3     8.9    1135MB     40.2k
+adaptive  0.1    1e-3    1   5.19e-3     2.2     324MB     77.8k
+adaptive  0.05   1e-3    1   8.87e-3     1.9     314MB     42.0k
+adaptive  0.05   1e-3    5   2.70e-2     0.1     154MB      2.8k
+adaptive  0.05   3e-3    1   2.89e-2     0.2     171MB      4.7k
+adaptive  0.05   3e-3    5   1.72e-1     0.0     116MB       314
+adaptive  0.05   3e-4    1   3.97e-3    43.3    1472MB      491k
+adaptive  0.05   3e-4    5   8.90e-3     1.6     313MB     34.3k
+adaptive  0.025  1e-3    1   1.57e-2     1.9     226MB     16.8k
+adaptive  0.1    3e-4    1   2.32e-3    50.5    2977MB      838k
+adaptive  0.1    1e-3    5   2.95e-2     0.3     191MB     10.4k
+
+FIXED-PRECISION VERDICT (1% median target):
+  pec/adaptive (0.1/1e-3/K1):  5.19e-3   2.2s   324MB
+  trotter      (0.025/1e-4):   7.91e-3  13.7s   134MB
+  -> pec ~6x FASTER; trotter ~2.4x LIGHTER. Split verdict, unlike momentum
+     space (where pec won both axes).
+Deeper class (~2e-3):
+  pec (0.1/3e-4/K1):    2.32e-3   50.5s  3.0GB
+  trotter (0.025/3e-5): 2.07e-3  209.4s  415MB
+  -> same split, sharper: pec 4x wall advantage, trotter 7x RAM advantage.
+FINDINGS:
+1. Real space reverses the RAM story: without the orbit compression, pec's
+   per-term footprint (CSC cache + transient) makes it RAM-heavy while
+   per-bond Trotter stays lean. Matches the standing handoff note ("expm's
+   real-space weakness is memory"). Wall: pec wins every class (4-6x).
+2. K=1 again a strict Pareto win over K=0 (0.1/1e-3: 4x wall, 3.5x RAM,
+   better rel). K=5 over-filters below drop 3e-4 at these dt.
+3. pec's dt optimum here is dt=0.1 (coupling: at fixed drop/K, dt 0.05 and
+   0.025 are WORSE - tau_add and per-step pruning tighten with 1/dt).
+4. Both methods are dramatically cheaper in real space than momentum space
+   at L=7 (seconds, not minutes): the local seed spreads only ~half the ring
+   by T=2, whereas the k-mode is delocalized from t=0.

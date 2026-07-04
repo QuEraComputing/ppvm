@@ -889,3 +889,26 @@ REVISION of the previous section's claim:
 - Recommendation unchanged in practice (small nonzero prune ~1e-6..1e-5),
   but the strength of the effect is cap-size- and cell-dependent; the
   zombie-clearing mechanism is supported at B=100k and unproven at B=300k.
+
+## MECHANISM RESOLVED: the cap acts at ADMISSION; drop=0 freezes the basis (2026-07-04)
+
+Code (lib.rs): add_leakage_capped admits new strings only into
+room = max_basis - len(basis), top leakage magnitudes first; retained
+strings are NEVER displaced (cap_basis is a no-op in the normal flow since
+admission never overfills). Therefore:
+- drop ~ 0 (incl. 1e-10): basis fills to exactly B early, room -> 0,
+  NO admission ever again -> FROZEN static basis for the rest of the run.
+  Explains: peak == B exactly, lower wall (enrichment idle), and the ~9x
+  accuracy loss (5.9e-3 vs 6.7e-4 at B=100k) - static-Galerkin error.
+- drop in [1e-6, 1e-5]: the prune clears the low-weight tail each step,
+  opening room; admission refills with the best candidates -> membership
+  churns at fixed size. This is the actual algorithm behind all good cap
+  cells. The prune is the CHURN VALVE, not "hygiene".
+- drop=1e-4: valve too wide, deletes strings still carrying weight.
+This supersedes the "zombie-clearing" hypothesis and explains the entire
+drop-sweep table, including the wall differences. Notes sec:rank-cap
+corrected (the previous "top-B of union / displacement" description was
+factually wrong about the implementation).
+POSSIBLE CODE IMPROVEMENT (future): true top-B-of-union displacement
+(rank competition between retained and proposed) would remove the need for
+the pruning threshold entirely - worth implementing and testing.

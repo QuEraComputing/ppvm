@@ -468,3 +468,18 @@ BEST-OF-VARIANT AT median <= 1e-2 (k=1):
    disadvantage) but does not decide the 1% comparison.
 pec context at 1%: 18x faster and 2.7x lighter than the best Trotter variant.
 BENCHMARK TARGET going forward: median pointwise rel ~1e-2 (user directive).
+
+## Per-STEP truncation for merged Trotter: NEGATIVE result (2026-07-04)
+
+Test of "would truncating only once per step (post-merge, canonical reps) fix
+merged Trotter's coherent-noise floor?" — k_trotter_run gained a
+per_gate_trunc kwarg (main_k_xy_ladder: --gate_trunc 0). Cell: L=7, k=1,
+dt=0.05, drop=1e-3, T=2.
+RESULT: the run DIED without completing (~1.5h+, peak RSS 16.8 GB, no h5
+written) — the unpruned 84-gate intra-step transient explodes, the same
+end-of-step-truncation blowup seen unmerged at N=14, only ~L x smaller and
+still fatal. Per-step truncation is NOT a viable fix for merged Trotter at
+this size; the per-gate/per-bond truncation that causes the coherent-noise
+floor is also what keeps the transient bounded. (pec avoids the dilemma
+structurally: its generator action never unfolds the orbit basis, so there
+is no intra-step transient to prune.)

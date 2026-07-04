@@ -598,3 +598,28 @@ tau_add 3.5e-2 and 4e-2 (K=7 -> 8). Practical rule: increase K until just
 before the cliff (tau_add <~ 3.5e-2 here); accuracy is insensitive across
 the plateau, so K is nearly a free 10-20x wall / 3-4x RAM dial. Refines the
 earlier "K*drop/dt ~ 0.01-0.03" guidance: plateau extends to ~0.035.
+
+## 2D scan: K (1..10) x drop_tol at dt=0.1, real-space MSD (2026-07-04)
+
+median_rel (rows=drop, cols=K1..K10; dt=0.1, so tau_add = K*drop*10):
+  2e-3: 1.8e-2 2.5e-2 2.3e-2 2.5e-2 3.5e-2 4.2e-2 4.2e-2 7.0e-2 7.2e-2 1.3e-1
+  1e-3: 5.2e-3 5.0e-3 5.2e-3 |1.8e-2 2.9e-2 2.9e-2 2.0e-2 2.5e-2 4.1e-2 3.0e-2
+  5e-4: 3.2e-3 4.6e-3 4.7e-3 5.1e-3 4.1e-3 5.0e-3 6.1e-3 |2.0e-2 2.0e-2 3.0e-2
+  2e-4:   killed 3.0e-3 3.8e-3 4.0e-3 4.7e-3 4.6e-3 5.0e-3 5.8e-3 4.8e-3 5.1e-3
+  (| marks the cliff; 2e-4 has no cliff through K=10; 2e-4/K1 aborted -- cell
+   >200s, user: abort 1e-4-class cells. 1e-4 row: only K5 = 1.9e-3 measured.)
+wall_s ranges: 2e-3 row 0.0-0.5s; 1e-3 row 0.1-2.0s; 5e-4 row 0.2-9.6s;
+2e-4 row 1.6-201s (K2). RSS: 120MB (2e-3/K10) to 4.1GB (2e-4/K1-2).
+
+FINDINGS:
+1. THE CLIFF IS A PURE tau_add THRESHOLD: 1e-3 cliffs at K=4, 5e-4 at K=8 --
+   both tau_add = K*drop/dt = 4e-2; 2e-4 through K=10 only reaches 2e-2 and
+   shows no cliff. K and drop enter the end-filter ONLY through tau_add;
+   the safe zone is tau_add <~ 3.5e-2 regardless of how it is composed.
+2. PLATEAU ACCURACY IS SET BY drop ALONE (the per-step prune): ~5e-3 at
+   1e-3, ~3-6e-3 at 5e-4, ~3-5e-3 at 2e-4 -- improving only weakly below
+   5e-4 (deepest: 1e-4/K5 = 1.9e-3).
+3. RECIPE: pick drop for the target accuracy, then set K ~ 0.03*dt/drop.
+   Multiple (drop,K) combos on the same tau_add diagonal give near-identical
+   cost -- a degeneracy ridge (e.g. ~5e-3 at ~0.5s/230-270MB via 1e-3/K3,
+   7e-4/K5, or 5e-4/K7).

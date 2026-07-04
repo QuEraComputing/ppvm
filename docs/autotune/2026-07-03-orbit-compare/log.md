@@ -560,3 +560,20 @@ Updated 1% verdict: pec 0.1/3e-4/K5 = 4.58e-3 @ 2.7s/396MB vs trotter
 0.025/1e-4 = 7.91e-3 @ 13.7s/134MB -> pec ~5x faster, trotter ~3x lighter.
 Deep ~2e-3: pec 1.87e-3 @ 33.5s/2.9GB vs trotter 2.07e-3 @ 209s/415MB ->
 pec ~6x faster, trotter ~7x lighter. The split verdict stands, sharpened.
+
+## Real-space 1% cell refinement: dt=0.1, drop 4e-4..7e-4 (2026-07-04, user suggestion)
+
+adaptive  0.1  4e-4  K5   5.10e-3    1.4s   324MB   68.7k
+adaptive  0.1  5e-4  K5   4.06e-3    0.9s   296MB   43.8k
+adaptive  0.1  7e-4  K5   6.00e-3    0.5s   221MB   23.3k   <- RSS-minimal <=7.9e-3
+adaptive  0.1  4e-4  K1   3.43e-3   16.1s  1499MB    472k
+adaptive  0.1  5e-4  K1   3.20e-3   10.0s   883MB    303k
+
+UPDATED 1% VERDICT (real space): pec 0.1/7e-4/K5 = 6.00e-3 @ 0.5s/221MB vs
+trotter 0.025/1e-4 = 7.91e-3 @ 13.7s/134MB -> pec 27x FASTER at 1.65x RSS
+(and ~110-150MB of both is python baseline, so basis-attributable RSS is
+pec ~80MB vs trotter ~10MB). The interior-drop sweep turned the "split
+verdict" into "pec wins wall massively, RAM near-parity" at the 1% target.
+The deep-precision split (pec 6x wall / trotter 7x RAM at ~2e-3) stands.
+Also: rel is non-monotonic in drop within the 4-6e-3 band (coherent
+cancellations) - pick cells by measured rel, not knob interpolation.

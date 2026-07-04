@@ -438,3 +438,33 @@ Trotter dt error.
 Both variants remain dominated by pec under the median metric: pec K1
 3e-3/0.05 = 5.39e-3 @ 6.1s/249MB matches merged Trotter's best at ~27x less
 wall and ~2.5x less RAM.
+
+## CORRECTION: merged vs unmerged at FIXED PRECISION, 1% median target (2026-07-04)
+
+User (correctly) rejected the calibrated-knob verdict: compare at fixed
+precision, then wall+RAM. Target: median rel ~1e-2 ("good to go"). Filled the
+two missing unmerged cells (curves re-measured, canonical uncontended
+wall/RSS from the original runs):
+  unmerged 0.05/3e-4:  median 1.75e-2   44s   706MB
+  unmerged 0.025/1e-4: median 8.06e-3  280s  1310MB
+
+BEST-OF-VARIANT AT median <= 1e-2 (k=1):
+  pec (1e-3/0.05/K5):        7.21e-3     3.5s   219MB   <- overall winner
+  trot MERGED (1e-3/0.05):   5.68e-3    63.9s   586MB
+  trot UNMERGED (1e-4/0.025):8.06e-3   279.7s  1310MB
+-> AT THE 1% TARGET MERGED BEATS UNMERGED: 4.4x wall, 2.2x RAM. The
+   calibrated-knob analysis (unmerged 2-3x better rel at same effective tau)
+   measured truncation efficiency per threshold -- NOT the practical
+   criterion. On the Pareto frontier the picture is:
+     >= 1.5e-2: unmerged cheapest (0.05/1e-3: 1.44e-2 at 3.0s/179MB)
+     ~1e-2 and below: merged wins among Trotter variants (crossover ~1.2e-2)
+   Both variants saturate, but merged saturates LOWER (~5.4e-3) and reaches
+   its level far cheaper than unmerged approaches its (~8e-3: x13 wall for
+   -30% from 1.16e-2 -> 8.06e-3).
+-> So the Lx compression of merged evolution IS the practically better
+   scheme at the paper's working precision -- the user's original
+   re-representation intuition holds at fixed precision. The coherent-drop
+   effect is real (it sets merged's ~5.4e-3 floor and its loose-regime
+   disadvantage) but does not decide the 1% comparison.
+pec context at 1%: 18x faster and 2.7x lighter than the best Trotter variant.
+BENCHMARK TARGET going forward: median pointwise rel ~1e-2 (user directive).

@@ -683,3 +683,29 @@ the filter silently and (b) the hard cliff is absolute in tau_add (~0.04),
 so K_cliff = 0.04*dt/drop moves 16x across our grid. The dimensionless knob
 that is actually dt-invariant is K' = tau_add/drop (= K/dt); the cliff and
 the efficient path are both naturally expressed in (tau_add, drop).
+
+## dt=0.025 verification of the tau_add / K' picture (2026-07-04)
+
+drop   K      tau_add  K'=tau/drop  median_rel  wall_s  RSS
+2e-4   0.625  0.005    25           2.27e-3      34.0   881MB
+2e-4   1.25   0.01     50           3.34e-3      23.5   882MB
+2e-4   2.5    0.02     100          8.84e-3       5.5   327MB
+2e-4   7.5    0.06     300          3.13e-2       0.7   177MB  <- cliffed (>0.04) OK
+1e-4   1.25   0.005    50           8.79e-4     151.6   3.0GB  <- first sub-1e-3 real-space cell
+1e-4   2.5    0.01     100          2.87e-3      36.6   837MB
+1e-4   5      0.02     200          8.84e-3       8.4   357MB
+
+ALL CLAIMS CONFIRMED AT dt=0.025:
+1. Cliff at fixed tau_add: 2e-4 row cliffs by tau=0.06, same as everywhere.
+2. tau_add dominates at moderate tau: at tau=0.02, drop 2e-4 and 1e-4 give
+   IDENTICAL rel (8.84e-3 both); drop re-emerges at low tau (tau=0.005:
+   2.27e-3 vs 8.79e-4 - f-dominated).
+3. Efficient window is dt-INVARIANT in K' = tau_add/drop: Pareto cells at
+   K' 25-50, same as dt=0.1's ~10-50. In raw K the window shifted 4x down
+   (K 0.6-1.25 vs 1-5), exactly the dt ratio.
+4. Cleanest single-pair demonstration of the K failure mode: SAME (K=5,
+   drop=1e-4) gives 1.9e-3 at dt=0.1 but 8.8e-3 at dt=0.025 - the fixed-K
+   filter silently quadrupled tau_add.
+Bonus: 1e-4/K1.25 = 8.79e-4 is the deepest real-space cell so far;
+2e-4/K0.625 (2.27e-3, 34s, 881MB) Pareto-improves the old deep cell
+(1.87e-3, 33.5s, 2.9GB) on RAM by 3.3x at comparable rel/wall.

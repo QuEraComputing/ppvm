@@ -764,3 +764,14 @@ VERDICT AT MATCHED SIZE:
    thresholds MINIMAL (tiny drop, mild tau_add for wall only).
 FINAL KNOB HIERARCHY: max_basis = the accuracy/cost dial; tau_add = wall
 hygiene (~2x); drop = keep tiny once the cap binds.
+
+## Framing note: fixed SIZE, not fixed SET (2026-07-04)
+
+The cap-primary mode is "adaptive basis of constant rank": leakage still
+proposes candidates every step (the expansion machinery is the engine), and
+the rank cap selects the top-B of old+new on equal footing - membership
+churns while size stays fixed. A truly frozen basis (static Galerkin, no
+expansion) would fail once the operator front leaves the initial support.
+Paper framing: max_basis is the Pauli-basis analog of the MPS bond dimension
+chi - fixed-chi TDVP practice, with drop_tol as the (inferior) singular-
+value-cutoff analog. Convergence protocol: rerun at 2B, compare.

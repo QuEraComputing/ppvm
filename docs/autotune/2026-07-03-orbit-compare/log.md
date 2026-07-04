@@ -824,3 +824,32 @@ churning membership. The right analogy is two-site TDVP/TEBD with a MAXIMUM
 bond dimension and negligible singular-value cutoff (B = chi_max), not
 fixed-chi single-site TDVP (a fixed manifold, no growth). Notes updated
 (sec:rank-cap).
+
+## Real-space MSD: Trotter vs CAP-PRIMARY pec (2026-07-04, final comparison)
+
+pec grid, pure cap (drop=1e-5, K=0), dt x B:
+  dt     B      median_rel  wall_s  RSS
+  0.1    10k    7.65e-3      0.3    163MB
+  0.1    30k    2.49e-2      0.8    218MB   <- cancellation outlier
+  0.1    100k   5.23e-3      3.1    250MB
+  0.1    300k   2.66e-3     10.5    428MB
+  0.05   10k    4.68e-2      0.6    179MB
+  0.05   30k    1.22e-2      1.7    223MB
+  0.05   100k   1.50e-3      5.6    283MB   <- sweet spot
+  0.05   300k   8.58e-4     18.7    428MB
+  0.025  10k    1.37e-2      1.0    170MB
+  0.025  30k    1.02e-2      3.1    233MB
+  0.025  100k   9.79e-4     22.0    266MB
+  0.025  300k   5.53e-4     74.4    430MB
+Cap mode moves pec's dt optimum from 0.1 (threshold mode) to 0.05.
+
+FIXED-PRECISION HEAD-TO-HEAD vs Trotter (best measured per class):
+  ~1e-2:   pec 0.1/M10k    7.7e-3   0.3s  163MB | trot 0.025/1e-4  7.9e-3  13.7s 134MB
+           -> pec 46x faster at ~RAM parity (both near python baseline)
+  ~2e-3:   pec 0.05/M100k  1.50e-3  5.6s  283MB | trot 0.025/3e-5  2.07e-3 209s  415MB
+           -> pec 37x faster AND 1.5x lighter, better rel
+  <1e-3:   pec only: 8.6e-4 @ 18.7s/428MB; 5.5e-4 @ 74s/430MB
+THE SPLIT VERDICT DISSOLVES: with max_basis as the knob, pec dominates
+Trotter in real space on wall at every precision (37-46x) and reaches RAM
+parity-or-better; Trotter's former RAM edge was an artifact of comparing
+against threshold-tuned pec (whose transient the thresholds never bounded).

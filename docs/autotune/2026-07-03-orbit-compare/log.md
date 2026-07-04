@@ -407,3 +407,34 @@ FINDINGS UNDER THE MEDIAN METRIC:
 3. Best-known settings under median: pec dt=0.05 with (drop=3e-3,K=1) for
    fast/mid, (drop=1e-3,K=1) for precision. dt=0.05 is consistently the pec
    sweet spot at T=2.
+
+## Merged vs unmerged Trotter, revisited under the MEDIAN metric (2026-07-04)
+
+Calibrated pairs (tau' = L*tau = 7*tau), dt=0.025, median pointwise rel:
+  merged 7e-3:  1.35e-1  0.7s   4.0k reps | unmerged 1e-3: 5.94e-2  1.8s  18.6k
+  merged 2e-3:  3.33e-2  8.0s  43.8k reps | unmerged 3e-4: 1.16e-2 21.2s   190k
+-> UNMERGED is ~2.3-2.9x BETTER rel at BOTH calibrated pairs. The earlier L2
+   result "merged wins the loose pair" was an early-time-weighting artifact;
+   under the median (late-time-sensitive) metric the coherent-drop penalty of
+   merged evolution shows at every knob setting. Unmerged costs ~2.6x wall and
+   ~4.3x stored terms at the tight pair (its per-translate storage), roughly
+   ~1.5x RSS.
+
+Frontier (best measured, any knob):
+  merged:   5.42e-3 @ 165s/620MB (0.025/5e-4);  5.68e-3 @ 64s/586MB (0.05/1e-3)
+  unmerged: 1.16e-2 @ 21s/274MB (0.025/3e-4)   [tighter cells >30s: unmeasured]
+-> merged reaches ~2x lower median than unmerged's best MEASURED point, but
+   only because it was run at tighter effective knobs (tau'=5e-4 = unmerged
+   mac 7e-5, whose unmerged run would be a multi-M-term/,>400s cell). At
+   matched effective truncation unmerged wins rel; at matched rel ~1.2-1.5e-2
+   they cost about the same (unmerged 1.16e-2@21s/274MB vs merged
+   1.46e-2@38s/247MB).
+
+Merged saturation: mac 1e-3 -> 3e-4 at dt=0.05 gives 5.68e-3 -> 5.86e-3 (11x
+wall for nothing), and dt=0.025/5e-4 gives 5.42e-3 -- a dt-INDEPENDENT floor
+~5.4e-3, consistent with coherent whole-orbit truncation noise rather than
+Trotter dt error.
+
+Both variants remain dominated by pec under the median metric: pec K1
+3e-3/0.05 = 5.39e-3 @ 6.1s/249MB matches merged Trotter's best at ~27x less
+wall and ~2.5x less RAM.

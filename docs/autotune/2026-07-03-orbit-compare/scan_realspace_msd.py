@@ -22,17 +22,21 @@ L, T = 7, 2.0
 npz = np.load(os.path.join(HERE, "exact_msd_L7_T2.npz"))
 tR, MSDR = npz["ts"], npz["msd"]          # t = 0, .2, ..., 2.0
 
-def run_cell(mode, dt, knob, kleak=None):
+def run_cell(mode, dt, knob, kleak=None, stream=False):
     steps = round(T / dt)
-    out = f"data/msd_{mode}_dt{dt}_knob{knob:g}" + (f"_K{kleak:g}" if kleak is not None else "") + ".h5"
+    out = (f"data/msd_{mode}_dt{dt}_knob{knob:g}" + (f"_K{kleak:g}" if kleak is not None else "")
+           + ("_stream" if stream else "") + ".h5")
     cmd = ["/usr/bin/time", "-l", "./run", "run", "python", "main_realspace_ladder.py",
            "--mode", mode, "--L", str(L), "--gamma", "0.0", "--dt", str(dt),
            "--steps", str(steps), "--pbc", "1", "--preserve", "1", "--out", out]
     cmd += ["--min_abs_coeff", str(knob)] if mode == "trotter" else ["--drop_tol", str(knob)]
     env = {**os.environ}
     env.pop("PPVM_K_LEAKAGE", None)
+    env.pop("PPVM_EXPM_STREAM", None)
     if kleak is not None:
         env["PPVM_K_LEAKAGE"] = str(kleak)
+    if stream:
+        env["PPVM_EXPM_STREAM"] = "1"
     r = subprocess.run(cmd, cwd=XY, capture_output=True, text=True, env=env)
     m = re.search(r"(\d+)\s+maximum resident set size", r.stderr)
     rss_mb = int(m.group(1)) / (1024 * 1024) if m else float("nan")
@@ -54,8 +58,9 @@ for row in sys.argv[1:]:
     f = row.split(":")
     mode, dt, knob = f[0], float(f[1]), float(f[2])
     kleak = next((float(t[1:]) for t in f[3:] if t.startswith("K")), None)
-    d = run_cell(mode, dt, knob, kleak)
-    ktag = "-" if kleak is None else f"{kleak:g}"
+    stream = "stream" in f[3:]
+    d = run_cell(mode, dt, knob, kleak, stream)
+    ktag = ("-" if kleak is None else f"{kleak:g}") + ("s" if stream else "")
     if "fail" in d:
         print(f"{mode:9} {dt:>6} {knob:>7.0e} {ktag:>4} FAILED {d['fail'][:120]}", flush=True)
         continue

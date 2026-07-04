@@ -535,3 +535,28 @@ FINDINGS:
 4. Both methods are dramatically cheaper in real space than momentum space
    at L=7 (seconds, not minutes): the local seed spreads only ~half the ring
    by T=2, whereas the k-mode is delocalized from t=0.
+
+## Real-space MSD: K=5 completion + streaming test (2026-07-04)
+
+adaptive  0.1    3e-4    5   4.58e-3     2.7s    396MB    124k  <- new 1%-class best
+adaptive  0.1    1e-4    5   1.87e-3    33.5s   2917MB   1.25M  <- new deep frontier
+adaptive  0.05   1e-4    5   6.47e-3    12.2s    839MB    325k
+adaptive  0.025  3e-4    5   3.43e-2     0.7s    168MB    9.6k  <- over-filtered
+adaptive  0.1    1e-3   K1+stream  5.19e-3   8.5s   344MB  <- identical rel, 3.9x wall, NO RAM gain
+adaptive  0.1    3e-4   K1+stream  2.32e-3 245.4s  2574MB  <- identical rel, 4.9x wall, -13% RAM
+
+1. K=5 at dt=0.1 is the real-space sweet spot (tau_add = 5*drop/0.1 lands in
+   the ~5e-3..1.5e-2 zone): 0.1/1e-4/K5 dominates the previous deep cell
+   (1.87e-3 vs 2.32e-3, 33.5s vs 50.5s, same RAM class).
+2. STREAMING DOES NOT RESCUE THE RAM AXIS here: -0..13% RSS for 4-5x wall.
+   At these basis shapes RSS is dominated by the leakage transient (basis
+   arrays/maps), not the CSC action cache. The earlier "1.8x less RAM"
+   characterization applied to larger cache-dominated shapes; for the paper,
+   pec's real-space RAM cost is structural at this scale, not a mode choice.
+   (All scan cells use the DEFAULT cached-CSC path = the in-basis generator
+   built once per step as a sparse matrix and reused across expm matvecs;
+   PPVM_EXPM_STREAM=1 recomputes the action per matvec instead.)
+Updated 1% verdict: pec 0.1/3e-4/K5 = 4.58e-3 @ 2.7s/396MB vs trotter
+0.025/1e-4 = 7.91e-3 @ 13.7s/134MB -> pec ~5x faster, trotter ~3x lighter.
+Deep ~2e-3: pec 1.87e-3 @ 33.5s/2.9GB vs trotter 2.07e-3 @ 209s/415MB ->
+pec ~6x faster, trotter ~7x lighter. The split verdict stands, sharpened.

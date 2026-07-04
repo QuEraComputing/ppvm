@@ -171,3 +171,41 @@ k=1 findings (sharper than k=3, same structure):
 5. Paper row: k=1, exact-ED referenced, N=14 -- "CTPP reaches 5e-4 where
    2nd-order Strang saturates at 3e-3; at Strang's own best precision CTPP
    holds 20x fewer terms at equal wall."
+
+## RAM comparison, best-of-each-method at matched precision (2026-07-04)
+
+(All RSS from ru_maxrss in the worker; ~150-200 MB of it is python/numpy
+baseline, which matters only for the small-basis cells.)
+
+k=1, picking each method's CHEAPEST cell at a given rel:
+  rel ~1.3-1.9e-2 (loose):   trotter .1/1e-3    13 e-3   4.5s   261 MB
+                             expm    .05/3e-3   16 e-3    32s   418 MB
+                             -> trotter ~7x wall, ~1.6x RAM cheaper
+  rel ~5e-3 (mid):           trotter .05/3e-4  5.8e-3     44s   706 MB
+                             expm    .1/3e-3   4.6e-3     30s   681 MB
+                             -> genuinely TIED on both wall and RAM
+                                (but dominated: see next row)
+  rel ~2.8e-3 (trotter's     trotter .025/3e-4 2.8e-3     20s   274 MB
+  ceiling):                  expm    .05/1e-3  1.8e-3    432s  2828 MB
+                             -> trotter ~22x wall, ~10x RAM cheaper
+  rel <= 1e-3:               expm    .05/3e-4  5.5e-4   46min  9274 MB
+                             trotter: unreachable at any budget tried
+                                (1e-4: 2.73e-3 at 280s/1310 MB, saturated)
+
+k=3, same exercise: trotter's cheapest at its ~4e-3 class is .05/3e-4
+(4.1e-3, 103s, 722 MB); expm needs .05/3e-4 (2.1e-3, 90min, 9240 MB) to beat
+it on rel -- again trotter is cheaper in wall AND RAM everywhere it can reach.
+
+CORRECTION to k=1 finding 3 above: "20x fewer terms at comparable wall" compared
+expm against trotter's SATURATED 1e-4 cell (280s/1310 MB). Trotter's efficient
+cell at the same rel (.025/3e-4: 20s/274 MB) is ~22x faster and ~10x lighter
+than expm's 1.81e-3 cell. Fewer terms (85k vs 190k) does NOT convert to less
+RAM: expm's per-term footprint (complex coeffs + CSC cache + enriched
+transient) eats the entire term advantage.
+
+HONEST HEADLINE (both k): within the precision range Trotter can reach at all,
+gate-based propagation is cheaper in BOTH wall and RAM (up to ~20x/~10x at its
+ceiling). CTPP's momentum-space value is exclusively the extended precision
+range (5x lower error at k=1: 5.5e-4 vs 2.7e-3 ceiling, at 46min/9.3GB) plus
+what gate methods cannot do at all (Lindbladians, exact-in-dt). The paper
+must state the trade this way and not claim a term-count win as a memory win.

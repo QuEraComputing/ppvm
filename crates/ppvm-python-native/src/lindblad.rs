@@ -217,6 +217,7 @@ impl LindbladSpec {
         drop_tol = 0.0,
         protected = None,
         num_threads = None,
+        admit_basis = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step<'py>(
@@ -229,6 +230,7 @@ impl LindbladSpec {
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
         num_threads: Option<usize>,
+        admit_basis: Option<usize>,
     ) -> PyResult<PyPauliMap<'py>> {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
@@ -256,6 +258,7 @@ impl LindbladSpec {
                 drop_tol,
                 &protected_words,
                 num_threads,
+                admit_basis,
             )
             .map_err(map_err)?;
 

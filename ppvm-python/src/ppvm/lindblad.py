@@ -233,6 +233,7 @@ class Lindbladian:
         drop_tol: float = 1e-12,
         protected_arr: np.ndarray | None = None,
         num_threads: int | None = None,
+        admit_basis: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """One predictor-corrector adaptive step.
 
@@ -253,6 +254,16 @@ class Lindbladian:
         ``num_threads``, when set, pins this call to a freshly-built rayon
         pool of that size — useful for benchmarking parallel scaling.
 
+        ``admit_basis``, when set (must be >= ``max_basis``), bounds the
+        enriched working set during the step instead of ``max_basis``: the
+        step may hold up to ``admit_basis`` strings transiently, and the
+        final truncation keeps the top-``max_basis`` by evolved ``|coeff|``
+        over the whole union (retained + newly admitted) — genuine rank
+        displacement, so no ``drop_tol`` is needed to sustain membership
+        turnover. Default ``None`` reproduces the historical behaviour
+        (admission bounded by ``max_basis``; turnover requires
+        ``drop_tol > 0``).
+
         Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown
         (or shrunk, if ``max_basis`` / ``drop_tol`` pruned entries).
         """
@@ -267,6 +278,7 @@ class Lindbladian:
             float(drop_tol),
             np.ascontiguousarray(protected_arr, dtype=np.uint8),
             None if num_threads is None else int(num_threads),
+            None if admit_basis is None else int(admit_basis),
         )
 
     def pc_step_complex(

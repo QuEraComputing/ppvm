@@ -912,3 +912,29 @@ factually wrong about the implementation).
 POSSIBLE CODE IMPROVEMENT (future): true top-B-of-union displacement
 (rank competition between retained and proposed) would remove the need for
 the pruning threshold entirely - worth implementing and testing.
+
+## Top-B-of-union displacement scheme: implemented, NEGATIVE result (2026-07-04)
+
+Implemented admit_basis (A) on pc_step/pc_step_arr: enrichment may grow the
+working set to A >= B; the final cap_basis (now live) keeps the top-B by
+evolved |coeff| over the whole union - genuine rank displacement, drop_tol
+no longer needed for turnover. Backward compatible (admit_basis=None = old
+behaviour; regression cell M100k/1e-5 reproduces 9.79e-4 exactly). Tests pass.
+
+Results (dt=0.025, drop=0):
+  B=100k: A=1.25B: 3.74e-3 31s | A=2B: 2.96e-3 46s | A=4B: 1.38e-3 89s
+          vs valve (cap + drop 1e-5): 9.79e-4 23s/288MB  <- VALVE WINS
+  B=300k: A=2B: 5.51e-4 157s/583MB vs valve 5.53e-4 74s/430MB  <- tie, 2x wall
+  dt=0.05 B=100k: A=2B: 1.99e-3 21s vs valve 1.50e-3 5.6s
+Monotone improvement with A (converging toward the valve result from above).
+
+MECHANISM HYPOTHESIS (boundary-layer cycling): the union scheme deletes
+A-B strings EVERY step, most of them front-layer strings that get
+re-admitted next step, re-accumulate a small coefficient, and are deleted
+again - each cycle discards accumulated weight (repeated coherent error
+injection) and wastes work. The valve scheme's turnover (~1e2/step at these
+knobs) makes near-permanent swaps instead. Lesson: LOW-churn evolution
+accumulates less truncation error than aggressive per-step re-selection;
+the 2TDVP analogy breaks because Pauli-dictionary "Schmidt vectors" can't
+rotate - discrete swap-in/out has a per-swap error cost that SVD rotation
+does not. The valve (cap + small drop) stays the recommended scheme.

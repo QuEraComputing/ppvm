@@ -1311,6 +1311,7 @@ impl LindbladSpec {
         drop_tol: f64,
         protected: &[Word],
         num_threads: Option<usize>,
+        admit_basis: Option<usize>,
     ) -> Result<(), Error> {
         if let Some(n) = num_threads {
             let pool = rayon::ThreadPoolBuilder::new()
@@ -1318,10 +1319,10 @@ impl LindbladSpec {
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
             pool.install(|| {
-                self.pc_step_inner(basis, coeffs, dt, max_basis, drop_tol, protected)
+                self.pc_step_inner(basis, coeffs, dt, max_basis, drop_tol, protected, admit_basis)
             })
         } else {
-            self.pc_step_inner(basis, coeffs, dt, max_basis, drop_tol, protected)
+            self.pc_step_inner(basis, coeffs, dt, max_basis, drop_tol, protected, admit_basis)
         }
     }
 
@@ -1392,6 +1393,7 @@ impl LindbladSpec {
 
         let t0 = Instant::now();
         add_leakage_capped(basis, coeffs, leak2, max_basis);
+        // (timed variant keeps the historical admission == max_basis path)
         t.expand2_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
@@ -1412,14 +1414,23 @@ impl LindbladSpec {
         max_basis: usize,
         drop_tol: f64,
         protected: &[Word],
+        admit_basis: Option<usize>,
     ) -> Result<(), Error> {
+        // Working-set (admission) bound: enrichment may grow the live basis
+        // to `admit` >= `max_basis`; the final `cap_basis` then keeps the
+        // top-`max_basis` strings by evolved |coeff| over the whole union
+        // (retained + admitted), i.e. genuine rank displacement. With
+        // `admit_basis = None` (the default) admission is bounded by
+        // `max_basis` itself and `cap_basis` is a no-op — the historical
+        // behaviour, where headroom must be created by `drop_tol` pruning.
+        let admit = admit_basis.unwrap_or(max_basis).max(max_basis);
         let tau_add = if dt > 0.0 { k_leakage() * drop_tol / dt } else { 0.0 };
         // 1. First-hop expansion. After this, `coeffs` contains the pre-step
         // coefficients followed by zeros for the newly-added leakage strings.
         // We rely on `coeffs` itself as the pre-step buffer for the corrector
         // — no `.clone()` is needed because `expm_step` only borrows it.
-        let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis, tau_add)?;
-        add_leakage_capped(basis, coeffs, leak, max_basis);
+        let leak = self.leakage_with_prune(basis, coeffs, protected, admit, tau_add)?;
+        add_leakage_capped(basis, coeffs, leak, admit);
         // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
         // new owned vector with the predicted state.
         let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol);
@@ -1427,9 +1438,9 @@ impl LindbladSpec {
         // we no longer need `coeffs_predict`. Extend `coeffs` with zeros for
         // any newly-added second-hop strings so it remains a valid input
         // (pre-step state) for the corrector.
-        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, max_basis, tau_add)?;
+        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, admit, tau_add)?;
         drop(coeffs_predict);
-        add_leakage_capped(basis, coeffs, leak2, max_basis);
+        add_leakage_capped(basis, coeffs, leak2, admit);
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.
         *coeffs = self.expm_step(basis, dt, coeffs, drop_tol);
         // 5. Prune basis entries below `drop_tol` (protected words never dropped).
@@ -2047,6 +2058,7 @@ mod tests {
                 0.0,
                 &protected,
                 None,
+                None,
             )
             .unwrap();
             spec.pc_step_complex(
@@ -2156,6 +2168,7 @@ mod tests {
                 0.0, // drop_tol = 0 → no truncation
                 &protected,
                 None,
+                None,
             )
             .unwrap();
 
@@ -2167,6 +2180,7 @@ mod tests {
                 max_basis_m,
                 0.0,
                 &protected,
+                None,
                 None,
             )
             .unwrap();

@@ -871,3 +871,21 @@ REVISED RECOMMENDATION: cap + a pruning threshold FAR BELOW the working
 coefficient scale (e.g. 1e-5 here) - "near zero", not exactly zero.
 Cap-primary comparison table (previous section) used the 1e-5 cells and is
 unaffected; only the "pure cap" label was wrong.
+
+## drop sweep at fixed cap: 0 / 1e-10 / 1e-6 / 1e-5 / 1e-4 (2026-07-04)
+
+dt=0.025 M100k: 0: 5.90e-3 | 1e-10: 5.22e-3 | 1e-6: 6.72e-4 | 1e-5: 9.79e-4 | 1e-4: 2.65e-3
+dt=0.025 M300k: 0: 1.50e-3 | 1e-10: 1.85e-3 | 1e-6: 2.57e-3 | 1e-5: 5.53e-4 | 1e-4: 1.40e-3
+dt=0.05  M100k: 0: 2.64e-3 | 1e-10: 4.53e-3 | 1e-6: 2.48e-3 | 1e-5: 1.50e-3
+REVISION of the previous section's claim:
+- ROBUST: 1e-10 == 0 in every respect (peak pinned at B; similar rel): the
+  beneficial prune must act at a scale comparable to the bottom-of-cap
+  coefficients, not at numerical dust. drop in [1e-6,1e-5] is never worse
+  than 0 beyond noise and sometimes much better.
+- CLEAN at M100k/dt=0.025: {0,1e-10} ~5-6e-3 vs {1e-6,1e-5} ~0.7-1e-3
+  (5-8x, beyond noise). MUDDY at M300k: non-monotonic (1e-6 worse than 0,
+  1e-5 best), spread ~4.7x ~ noise x2 - the "consistent 1.6-6x" claim was
+  overconfident there.
+- Recommendation unchanged in practice (small nonzero prune ~1e-6..1e-5),
+  but the strength of the effect is cap-size- and cell-dependent; the
+  zombie-clearing mechanism is supported at B=100k and unproven at B=300k.

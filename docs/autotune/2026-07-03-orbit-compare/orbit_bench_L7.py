@@ -79,8 +79,8 @@ if len(sys.argv)>1 and sys.argv[1]!="driver":
 # ---- driver: exact-ED-referenced from npz ----
 import subprocess
 W=os.path.abspath(__file__); PY=sys.executable; D=os.path.dirname(W)
-L,k,T=7,3,2.0
-npz=np.load(os.path.join(D,"exact_ref_L7_k3_T2.npz"))
+L,k,T=7,int(os.environ.get("PPVM_BENCH_K","3")),2.0
+npz=np.load(os.path.join(D,f"exact_ref_L7_k{k}_T2.npz"))
 REF=npz["ref"]
 def call(method,dt,knob,mb,stream=False):
     env={**os.environ}

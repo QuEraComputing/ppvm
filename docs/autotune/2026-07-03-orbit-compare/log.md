@@ -137,3 +137,37 @@ floor) + per-step truncation beats 2nd-order Strang whose per-gate truncation
 error accumulation makes rel <~ 3e-3 unreachable at N=14 regardless of budget;
 at loose precision gate-based propagation is the faster tool. Both statements
 are exact-ED-referenced at N=14 with bases to 5.5M terms.
+
+## k=1 (hydrodynamic mode) -- THE CANONICAL ROW (2026-07-04, user: "k=1 is enough")
+
+Same L=7/T=2 setup, exact ED ref exact_ref_L7_k1_T2.npz (17 min uncontended;
+C_k1 decays slowly through zero at t~1: 1, .886, .611, .307, .077, -.049, ...).
+Driver takes PPVM_BENCH_K to select the reference.
+
+method       dt    knob   rel_err  wall_s  RSS_mb    peak
+expm-cache  0.1   3e-3   4.63e-3     30     681     19.0k
+expm-cache  0.05  3e-3   1.62e-2     32     418      9.7k  <- coupling: worse than dt=.1
+expm-cache  0.05  1e-3   1.81e-3    432    2828     84.8k  <- beats trotter's ceiling, 20x fewer terms
+expm-cache  0.05  3e-4   5.46e-4   2752    9274     1.01M  <- SUB-1e-3, frontier
+expm-cache  0.025 1e-3   6.02e-3    357    1224     35.9k
+trotter-pb  0.1   3e-3   1.75e-2      1     162     17.5k
+trotter-pb  0.1   1e-3   1.29e-2      5     261      142k
+trotter-pb  0.05  1e-3   1.89e-2      3     179     55.5k
+trotter-pb  0.05  3e-4   5.82e-3     44     706      567k
+trotter-pb  0.025 3e-4   2.80e-3     20     274      190k
+trotter-pb  0.025 1e-4   2.73e-3    280    1310     1.65M  <- ceiling: x8.7 terms for -2.5%
+
+k=1 findings (sharper than k=3, same structure):
+1. Trotter ceiling ~2.7e-3: mac 3e-4 -> 1e-4 bought 2.80 -> 2.73e-3 (x8.7 terms,
+   x14 wall). Same saturation as k=3, now at a lower level (slow mode = smaller
+   effective Trotter error), still a dead end.
+2. expm goes SUB-1e-3: 5.46e-4 at 1.01M terms / 46 min / 9.3GB -- 5x more
+   accurate than trotter's ceiling at ~0.6x the terms.
+3. At trotter's ceiling precision (~2.7e-3): expm dt.05/drop1e-3 gives 1.81e-3
+   at 432s vs trotter 280s -- wall comparable, terms 85k vs 1.65M (20x fewer),
+   so at matched precision the orbit advantage DOES convert at k=1.
+4. dt<->knob coupling confirmed on the expm side too: drop 3e-3, dt .1 -> .05
+   WORSENS rel 4.6e-3 -> 1.6e-2 (tau_add = K*drop/dt stiffens the end-filter).
+5. Paper row: k=1, exact-ED referenced, N=14 -- "CTPP reaches 5e-4 where
+   2nd-order Strang saturates at 3e-3; at Strang's own best precision CTPP
+   holds 20x fewer terms at equal wall."

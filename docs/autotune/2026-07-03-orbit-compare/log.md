@@ -738,3 +738,29 @@ REVISED RECIPE (real space): set max_basis to the RAM/wall budget (the ONE
 primary knob), keep tau_add ~ 0.005-0.02 and drop ~ 1e-4 as mild transient
 hygiene. New best cells: 7.2e-4 @ 18.6s/265MB (M100k), 5.7e-4 @ 58s/455MB
 (M300k) - both far beyond the old threshold-only frontier.
+
+## Head-to-head: tau_add vs max_basis as the size-setter, matched peak (2026-07-04)
+
+dt=0.025, drop=1e-4 unless noted; peak ~100k and ~300k classes:
+
+  ~100k:  tau-only (K5, no cap):        8.84e-3    8.4s   357MB   82k
+          cap-only (M100k, K0):         2.65e-3   18.8s   281MB   99k
+          cap-only, drop 1e-5 (pure):   9.79e-4   22.0s   266MB  100k
+          cap + tau (M100k, K1.25):     7.22e-4   18.6s   265MB   99k
+  ~300k:  tau-only (K2.5, no cap):      2.87e-3   36.6s   837MB  325k
+          cap-only (M300k, K0):         1.40e-3   63.7s   459MB  289k
+          cap + tau (M300k, K1.25):     5.73e-4   58.3s   455MB  289k
+
+VERDICT AT MATCHED SIZE:
+1. ACCURACY: cap > tau_add (2-3.3x better rel as the size-setter), and cap
+   composition + weak thresholds is best (7.2e-4 / 5.7e-4).
+2. WALL: tau_add-only is ~2x cheaper than cap-only at the same size (K=0
+   admits the full transient before the cap acts) - tau_add's remaining
+   value is transient hygiene, not selection.
+3. RSS: cap wins (bounds the transient): 459 vs 837MB at 300k.
+4. SUBTLE: with the cap binding, drop=1e-4 HURTS accuracy vs drop=1e-5
+   (2.65e-3 vs 9.79e-4 at K0/M100k): the per-step prune pre-deletes strings
+   the rank cap would have ranked into the top-N. With a binding cap, keep
+   thresholds MINIMAL (tiny drop, mild tau_add for wall only).
+FINAL KNOB HIERARCHY: max_basis = the accuracy/cost dial; tau_add = wall
+hygiene (~2x); drop = keep tiny once the cap binds.

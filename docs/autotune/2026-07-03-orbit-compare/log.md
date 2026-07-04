@@ -791,3 +791,27 @@ Completed 2x2 at M300k (dt=0.025):
    with a binding cap UNLESS paired with tau_add (the bad cell is
    specifically K0 + drop=1e-4: prune deletes candidates the cap would keep,
    and nothing pre-filters the transient either).
+
+## CONCLUDING SUMMARY: truncation schemes (2026-07-04, user-approved framing)
+
+How the threshold scheme works: two rules at different pipeline points.
+The admission filter (add_tol = tau_add = K*drop_tol/dt, PPVM_K_LEAKAGE)
+gates the LEAKAGE stage - newly proposed strings enter only if their
+coefficient rate exceeds tau_add, keeping the doubly-enriched transient
+lean. The pruning filter (drop_tol) deletes retained strings whose
+coefficients fall below it after each step. The knobs decouple: error rises
+slowly (~tau_add^0.24) up to a sharp cliff at tau_add ~ 0.04 that is
+INDEPENDENT of dt and drop_tol (tau_add, not K, is the natural parameter);
+drop_tol controls the retained tail and hence basis size. Both are indirect
+ways of setting one quantity - error and cost collapse (~30%) onto a single
+function of peak basis size.
+
+Why max_basis supersedes it: at MATCHED basis size the rank cap (keep-top-B
+over retained+proposed, membership still churning every step - the fixed-
+bond-dimension TDVP analog) yields 2-5x lower error than any threshold
+combination, and bounds the transient RAM thresholds never touch. Best cap
+cells beat best threshold cells on every axis simultaneously. Thresholds on
+top of the cap trim wall by only ~10-25%, their accuracy effect is within
+the cancellation-noise band, and mid-range drop_tol with a binding cap can
+actively hurt. RECOMMENDATION: run with max_basis alone (thresholds ~0);
+B is the single convergence dial, verified by re-running at 2B.

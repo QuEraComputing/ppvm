@@ -671,3 +671,15 @@ MSD; pairs differ in exactly one knob):
    4. Practical recipe (revised): lower tau_add and drop TOGETHER so
       f ~ g (balanced); tau_add is the primary accuracy knob in the
       commonly-sampled regime, drop the secondary.
+
+## Addendum: the efficient locus is ~fixed K at fixed dt (2026-07-04, user)
+
+Balance f(drop)~drop^0.3 against g(tau_add)~tau_add^0.24 => the efficient
+descent path is tau_add ~ drop^1.25, i.e. K = tau_add*dt/drop ~ drop^0.25*dt:
+at FIXED dt this is nearly constant K (data: good cells at K in [1,5] across
+drop 1e-3..1e-4 at dt=0.1). So fixed-K tuning accidentally tracks the
+efficient path within one dt; its failure modes are (a) dt changes rescale
+the filter silently and (b) the hard cliff is absolute in tau_add (~0.04),
+so K_cliff = 0.04*dt/drop moves 16x across our grid. The dimensionless knob
+that is actually dt-invariant is K' = tau_add/drop (= K/dt); the cliff and
+the efficient path are both naturally expressed in (tau_add, drop).

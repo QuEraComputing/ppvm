@@ -350,3 +350,14 @@ FINDINGS:
 REVISED HEADLINE: with the K end-filter tuned (K*drop/dt ~ 0.01-0.03), CTPP
 matches gate-based propagation within <2x across Trotter's entire reachable
 range and is the only method below ~2.5e-3.
+
+## CORRECTION (2026-07-04, user): "within 2x" is NOT competitive
+
+The bar for "competitive" at Trotter's frontier point (2.80e-3 at 19.5s/274MB)
+is ~20s wall. pec's best there (0.05/3e-4/K5: 2.78e-3, 35s, 524MB) MISSES it
+(1.8x wall, 1.9x RAM). Retract the "tracks within <2x = competitive" framing.
+Standing summary: at rel >~ 2.5e-3 Trotter remains the cheaper method; pec is
+the only method below ~2.5e-3, and K-tuning cut its cost there by ~5-12x vs
+K=0. Untested knobs if the ~20s target is pursued later: interior K (3-7) at
+0.05/3e-4, drop between 3e-4 and 1e-3 with K rescaled to keep K*drop/dt ~
+0.01-0.03, dt ~ 0.03-0.04.

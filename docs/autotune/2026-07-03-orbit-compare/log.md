@@ -577,3 +577,24 @@ verdict" into "pec wins wall massively, RAM near-parity" at the 1% target.
 The deep-precision split (pec 6x wall / trotter 7x RAM at ~2e-3) stands.
 Also: rel is non-monotonic in drop within the 4-6e-3 band (coherent
 cancellations) - pick cells by measured rel, not knob interpolation.
+
+## K sweep 1..10 at the real-space sweet spot (dt=0.1, drop=5e-4) (2026-07-04)
+
+K   tau_add  median_rel  wall_s  RSS     peak
+1   5e-3     3.20e-3      9.6    881MB   303k
+2   1e-2     4.64e-3      5.2    569MB   202k
+3   1.5e-2   4.71e-3      2.4    358MB   105k
+4   2e-2     5.09e-3      1.4    325MB    64k
+5   2.5e-2   4.06e-3      0.9    317MB    44k
+6   3e-2     5.00e-3      0.6    268MB    33k
+7   3.5e-2   6.07e-3      0.5    237MB    24k
+8   4e-2     1.97e-2      0.3    193MB    18k   <- CLIFF
+9   4.5e-2   2.03e-2      0.3    208MB    16k
+10  5e-2     2.99e-2      0.2    182MB    12k
+
+Shape: a long PLATEAU (rel 3.2-6.1e-3, non-monotonic wiggles) from K=1..7
+while wall drops 19x and RSS 3.7x, then a sharp accuracy CLIFF between
+tau_add 3.5e-2 and 4e-2 (K=7 -> 8). Practical rule: increase K until just
+before the cliff (tau_add <~ 3.5e-2 here); accuracy is insensitive across
+the plateau, so K is nearly a free 10-20x wall / 3-4x RAM dial. Refines the
+earlier "K*drop/dt ~ 0.01-0.03" guidance: plateau extends to ~0.035.

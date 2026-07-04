@@ -775,3 +775,19 @@ expansion) would fail once the operator front leaves the initial support.
 Paper framing: max_basis is the Pauli-basis analog of the MPS bond dimension
 chi - fixed-chi TDVP practice, with drop_tol as the (inferior) singular-
 value-cutoff analog. Convergence protocol: rerun at 2B, compare.
+
+## Follow-up: "cap + tau wins at 300k" was the drop confound (2026-07-04)
+
+Completed 2x2 at M300k (dt=0.025):
+                    drop=1e-4              drop=1e-5
+  K=0 (no tau):     1.40e-3  63.7s 459MB   5.53e-4  74.4s 430MB  <- pure cap
+  K=1.25:           5.73e-4  58.3s 455MB   9.73e-4  69.5s 429MB
+(and M100k: K0/1e-5: 9.79e-4 22s; K1.25/1e-5: 1.10e-3 23s; K1.25/1e-4: 7.22e-4 19s)
+-> With the drop=1e-4 confound removed, PURE CAP ties the best cap+tau cell
+   (5.53e-4 vs 5.73e-4). All sane-threshold compositions at matched cap land
+   in the same ~5-11e-4 band (the ~2x cancellation-noise band); tau_add's
+   rel effect is noise-level, its wall effect ~10-25%. Hierarchy unchanged:
+   cap primary; tau_add = modest wall trim; avoid mid-range drop (1e-4-ish)
+   with a binding cap UNLESS paired with tau_add (the bad cell is
+   specifically K0 + drop=1e-4: prune deletes candidates the cap would keep,
+   and nothing pre-filters the transient either).

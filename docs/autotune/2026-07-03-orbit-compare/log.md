@@ -317,3 +317,36 @@ once per step on the invariant |c_orbit|), so it gets the Lx compression
 without the per-gate coherent-drop pathology. Paper angle: symmetry-compressed
 truncation is natural in the CTPP orbit basis; grafting it onto gate-based
 propagation via per-step fold/unfold injects coherent truncation error.
+
+## Extended K=5 grid (2026-07-04, user: "K=5 got very close to Trotter")
+
+pec, k=1, all dt x drop with K=5 (tau_add = 5*drop/dt):
+  dt     drop   rel_err  wall_s  peakRSS  peak_reps
+  0.025  3e-3   1.04e-1    0.8    121MB      384    <- over-filtered (drop/dt big)
+  0.025  1e-3   5.92e-2    1.9    156MB     3.0k    <- over-filtered
+  0.0125 1e-3   3.82e-2    1.4    131MB     0.8k    <- over-filtered
+  0.1    3e-4   2.86e-3   69.0    1.4GB     537k
+  0.05   3e-4   2.78e-3   35.2    524MB     134k   <- AT Trotter's best rel
+  0.025  3e-4   4.82e-3   17.6    277MB      34k   <- mid class, Trotter-like cost
+  0.0125 3e-4   6.18e-3    9.5    196MB     8.4k
+  0.1    1e-4   3.89e-3    869    5.9GB    4.75M   <- dominated (dt floor + huge basis)
+  0.05   1e-4   1.04e-3    500    2.1GB    1.30M
+  0.025  1e-4   1.22e-3    225    923MB     325k
+
+FINDINGS:
+1. USER HUNCH CONFIRMED: pec 0.05/3e-4/K5 = 2.78e-3 at 35s/524MB sits at
+   Trotter's best-ever rel (2.80e-3 at 19.5s/274MB) within 1.8x wall / 1.9x
+   RAM. With K=0 the same rel class cost 432s/2.8GB -- the end-filter buys
+   ~12x wall / ~5x RAM at Trotter-ceiling precision.
+2. K=5 over-filters iff drop/dt is large (tau_add >~ 0.1); rule of thumb:
+   pick K*drop/dt ~ 0.01-0.03.
+3. Combined pec Pareto frontier (k=1) now TRACKS Trotter down to its ceiling
+   and extends beyond:
+     7.9e-3: 1s/136MB (3e-3,K5)   | 4.8e-3: 18s/277MB (0.025/3e-4,K5)
+     2.8e-3: 35s/524MB (0.05/3e-4,K5) | 1.3e-3: 82s/808MB (0.05/1e-3,K1)
+     1.0e-3: 500s/2.1GB (0.05/1e-4,K5) | 5.5e-4: 46min/9.3GB (0.05/3e-4,K0)
+   Trotter's remaining edge at its own best point is <2x wall/RAM; below
+   ~2.5e-3 pec owns everything.
+REVISED HEADLINE: with the K end-filter tuned (K*drop/dt ~ 0.01-0.03), CTPP
+matches gate-based propagation within <2x across Trotter's entire reachable
+range and is the only method below ~2.5e-3.

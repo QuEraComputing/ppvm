@@ -623,3 +623,27 @@ FINDINGS:
    Multiple (drop,K) combos on the same tau_add diagonal give near-identical
    cost -- a degeneracy ridge (e.g. ~5e-3 at ~0.5s/230-270MB via 1e-3/K3,
    7e-4/K5, or 5e-4/K7).
+
+## tau_add scaling study: cliff position vs dt and drop (2026-07-04)
+
+36 cells, real-space MSD, dt in {0.2, 0.05, 0.025} x drop in {1e-3, 5e-4},
+fractional K chosen so tau_add = K*drop/dt sweeps {.01,.02,.03,.04,.06,.09}
+identically in every row (plus the dt=0.1 rows from the 2D scan).
+
+RESULT: the admission cliff sits at tau_add ~ 0.035-0.04 for EVERY
+(dt, drop) combination with dt <= 0.1 -- rows at dt=0.05 and 0.025, both
+drops, all depart between tau*=0.03 and 0.06, exactly where dt=0.1 cliffed.
+At dt=0.2 the O(dt) plateau (~1.5e-2) masks the cliff (noisy row, bump at
+.04 still visible). tau_add is an ABSOLUTE RATE THRESHOLD, independent of
+both dt and drop_tol.
+
+=> K is the wrong parameterization: the correct invariant is tau_add itself,
+   and K should be DERIVED as K = tau_add * dt / drop_tol. Recommended
+   default tau_add ~ 0.02-0.03 (one octave below the cliff). Caveat: the
+   cliff value is observable/scale-dependent (momentum k=1 tolerated up to
+   ~0.1; here J=1, seed normalized to 1) -- expect tau_add* to scale with
+   the Hamiltonian coupling / seed norm, so expose it as a direct parameter
+   rather than hardcoding.
+Secondary: plateau rel at fixed drop WORSENS as dt shrinks (dt=0.05: 8.8e-3
+-> dt=0.025: 1.1e-2 at drop 1e-3; dt=0.1: 5.2e-3) -- the per-step prune
+frequency effect; dt~0.1 remains the real-space sweet spot at T=2.

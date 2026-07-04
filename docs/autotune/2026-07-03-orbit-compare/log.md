@@ -815,3 +815,12 @@ top of the cap trim wall by only ~10-25%, their accuracy effect is within
 the cancellation-noise band, and mid-range drop_tol with a binding cap can
 actively hurt. RECOMMENDATION: run with max_basis alone (thresholds ~0);
 B is the single convergence dial, verified by re-running at 2B.
+
+## Correction to the MPS analogy (2026-07-04, user)
+
+"Fixed-chi TDVP" was imprecise: the cap-primary scheme grows the basis
+freely from the seed until it reaches B, then saturates (peak == cap) with
+churning membership. The right analogy is two-site TDVP/TEBD with a MAXIMUM
+bond dimension and negligible singular-value cutoff (B = chi_max), not
+fixed-chi single-site TDVP (a fixed manifold, no growth). Notes updated
+(sec:rank-cap).

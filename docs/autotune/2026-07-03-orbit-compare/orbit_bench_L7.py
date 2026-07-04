@@ -82,10 +82,12 @@ W=os.path.abspath(__file__); PY=sys.executable; D=os.path.dirname(W)
 L,k,T=7,int(os.environ.get("PPVM_BENCH_K","3")),2.0
 npz=np.load(os.path.join(D,f"exact_ref_L7_k{k}_T2.npz"))
 REF=npz["ref"]
-def call(method,dt,knob,mb,stream=False):
+def call(method,dt,knob,mb,stream=False,kleak=None):
     env={**os.environ}
     if stream: env["PPVM_EXPM_STREAM"]="1"
     else: env.pop("PPVM_EXPM_STREAM",None)
+    if kleak is not None: env["PPVM_K_LEAKAGE"]=str(kleak)
+    else: env.pop("PPVM_K_LEAKAGE",None)
     r=subprocess.run([PY,W,method,str(L),str(k),str(T),str(dt),str(knob),str(mb)],capture_output=True,text=True,env=env)
     try: d=json.loads(r.stdout.strip().splitlines()[-1])
     except Exception: return None
@@ -93,18 +95,22 @@ def call(method,dt,knob,mb,stream=False):
 def rel(c):
     n=min(len(c),len(REF)); return float(np.linalg.norm(c[:n]-REF[:n])/np.linalg.norm(REF[:n]))
 print(f"ORBIT k-RESOLVED BENCH AT SCALE: ladder L={L}(N={2*L}) k={k} T={T}  (exact-ED reference)",flush=True)
-print(f"{'method':14} {'dt':>6} {'knob':>7} {'max_basis':>9} {'rel_err':>9} {'wall_s':>7} {'RSS_mb':>7} {'peak':>8}",flush=True)
+print(f"{'method':14} {'dt':>6} {'knob':>7} {'K':>4} {'max_basis':>9} {'rel_err':>9} {'wall_s':>7} {'RSS_mb':>7} {'peak':>8}",flush=True)
 if len(sys.argv)>2:
     PLAN=[]
     for row in sys.argv[2:]:
-        f=row.split(":"); PLAN.append((f[0],float(f[1]),float(f[2]),int(f[3]),1 if (len(f)>4 and f[4]=="stream") else 0))
+        f=row.split(":")
+        stream=1 if "stream" in f[4:] else 0
+        kleak=next((tok[1:] for tok in f[4:] if tok.startswith("K")),None)
+        PLAN.append((f[0],float(f[1]),float(f[2]),int(f[3]),stream,kleak))
 else:
     PLAN=[
-     ("expm-cache",0.1,1e-3,10**7,0),("trotter",0.1,1e-3,10**7,0),
-     ("expm-cache",0.05,1e-3,10**7,0),("trotter",0.05,1e-3,10**7,0),
+     ("expm-cache",0.1,1e-3,10**7,0,None),("trotter",0.1,1e-3,10**7,0,None),
+     ("expm-cache",0.05,1e-3,10**7,0,None),("trotter",0.05,1e-3,10**7,0,None),
     ]
-for name,dt,knob,mb,stream in PLAN:
+for name,dt,knob,mb,stream,kleak in PLAN:
     method=name if name.startswith("trotter") else "expm"
-    d=call(method,dt,knob,mb,bool(stream))
-    if d is None: print(f"{name:14} {dt:>6} {knob:>7.0e} {mb:>9} FAILED",flush=True); continue
-    print(f"{name:14} {dt:>6} {knob:>7.0e} {mb:>9} {rel(d['curve']):>9.2e} {d['wall']:>7.1f} {d['rss']:>7.0f} {d['peak']:>8}",flush=True)
+    d=call(method,dt,knob,mb,bool(stream),kleak)
+    ktag=kleak if kleak is not None else "-"
+    if d is None: print(f"{name:14} {dt:>6} {knob:>7.0e} {ktag:>4} {mb:>9} FAILED",flush=True); continue
+    print(f"{name:14} {dt:>6} {knob:>7.0e} {ktag:>4} {mb:>9} {rel(d['curve']):>9.2e} {d['wall']:>7.1f} {d['rss']:>7.0f} {d['peak']:>8}",flush=True)

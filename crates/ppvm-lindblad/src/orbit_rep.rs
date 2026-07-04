@@ -648,16 +648,27 @@ pub fn pc_step_orbit_rep(
     group: &TranslationGroup,
     k_modes: &[i32],
 ) -> Result<(), Error> {
+    // Rate-based admission filter, same semantics as the real-space path:
+    // a leakage rep is admitted only if its rate exceeds
+    // `tau_add = K * drop_tol / dt` (K from PPVM_K_LEAKAGE, default 0 =>
+    // admit everything, the historical behaviour).
+    let tau_add = if dt > 0.0 { crate::k_leakage() * drop_tol / dt } else { 0.0 };
     // 1. First-hop phase-aware leakage.
-    let leak = leakage_orbit_rep(spec, basis, coeffs, protected, group, k_modes, max_basis)?;
+    let mut leak = leakage_orbit_rep(spec, basis, coeffs, protected, group, k_modes, max_basis)?;
+    if tau_add > 0.0 {
+        leak.retain(|(_, c)| c.norm() > tau_add);
+    }
     add_leakage_capped_complex(basis, coeffs, leak, max_basis);
     // 2. Predictor: cache-the-action expm (no CSR materialised; the
     //    phase-aware action is built once via `build_orbit_rep_cols`).
     let coeffs_predict = expm_apply_orbit_rep_cached(spec, basis, group, k_modes, dt, coeffs);
     // 3. Second-hop leakage from predicted state.
-    let leak2 =
+    let mut leak2 =
         leakage_orbit_rep(spec, basis, &coeffs_predict, protected, group, k_modes, max_basis)?;
     drop(coeffs_predict);
+    if tau_add > 0.0 {
+        leak2.retain(|(_, c)| c.norm() > tau_add);
+    }
     add_leakage_capped_complex(basis, coeffs, leak2, max_basis);
     // 4. Corrector: cache-the-action expm from pre-step state (basis grew).
     *coeffs = expm_apply_orbit_rep_cached(spec, basis, group, k_modes, dt, coeffs);

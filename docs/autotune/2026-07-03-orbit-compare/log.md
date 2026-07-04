@@ -281,3 +281,39 @@ MID-ACCURACY (~5e-3) OPTIMAL POINTS -- the head-to-head requested:
 REVISED CLASS BOUNDARY (k=1): Trotter owns rel >~ 2.7e-3 (cheap, saturating);
 pec+K1 owns rel <~ 2.5e-3 outright (wall AND RAM). The pec frontier costs
 from the earlier k=1 section (K=0) are superseded by ~5x cheaper K=1 cells.
+
+## Merged vs unmerged Trotter: knob-calibrated dissection (2026-07-04, user challenge)
+
+User objection: merging is just a re-representation, the Lx storage win should
+be unconditional. Test: merged cells at tau' = L*tau (folded coefficients are
+~Lx larger, so same tau ==> ~Lx weaker truncation). dt=0.025, k=1:
+
+  merged  7e-3 (=unmerged 1e-3):  2.23e-2   1.4s  113MB    4.0k reps
+  unmerged 1e-3:                  3.27e-2   1.8s  161MB   18.6k terms
+  -> LOOSE REGIME: user is right. Merged wins on rel AND storage (~L x
+     compression) AND RAM at calibrated knobs.
+
+  merged  2.1e-3 (=unmerged 3e-4): 2.75e-2   8.7s  145MB   43.8k reps
+  merged  1e-3:                    7.51e-3    38s  247MB    189k reps
+  merged  5e-4:                    3.49e-3   166s  620MB    717k reps
+  unmerged 3e-4:                   2.80e-3  19.5s  274MB    190k terms
+  -> TIGHT REGIME: merged converges but needs ~3.8x more STORED reps (each
+     rep = 7 translates, so ~26x more represented weight) for slightly worse
+     rel; unmerged wins ~8x wall / ~2.3x RAM at the ~3e-3 class. Merged rel
+     is NON-MONOTONIC in drop (2.2e-2 -> 2.75e-2 -> 7.5e-3 -> 3.5e-3), a
+     coherent-error signature.
+
+Interpretation (mechanism hypothesis, not fully dissected): in merged form
+every per-gate truncation decision on the mid-layer transient drops ALL L
+translates coherently (error amplitude ~L per decision); in unmerged form
+drops are translate-level with quasi-random phases (partial cancellation),
+and the readout sector-projection filters out-of-sector truncation noise for
+free. Loose truncation: few decisions -> storage win dominates. Tight: the
+coherent amplification dominates.
+
+NOTE the pec orbit-rep path is the *proper* re-representation the objection
+assumes: it never unfolds (whole evolution in canonical rep space, truncation
+once per step on the invariant |c_orbit|), so it gets the Lx compression
+without the per-gate coherent-drop pathology. Paper angle: symmetry-compressed
+truncation is natural in the CTPP orbit basis; grafting it onto gate-based
+propagation via per-step fold/unfold injects coherent truncation error.

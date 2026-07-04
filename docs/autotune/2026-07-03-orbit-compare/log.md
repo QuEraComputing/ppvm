@@ -647,3 +647,27 @@ both dt and drop_tol.
 Secondary: plateau rel at fixed drop WORSENS as dt shrinks (dt=0.05: 8.8e-3
 -> dt=0.025: 1.1e-2 at drop 1e-3; dt=0.1: 5.2e-3) -- the per-step prune
 frequency effect; dt~0.1 remains the real-space sweet spot at T=2.
+
+## CORRECTION: "plateau" was wrong; measured sensitivities (2026-07-04)
+
+Local log-log slopes over all measured adaptive pairs (dt<=0.1, real-space
+MSD; pairs differ in exactly one knob):
+  d(ln rel)/d(ln tau_add), tau_add<0.035:  median +0.24  IQR [+0.05,+0.37]  n=68
+  d(ln rel)/d(ln tau_add), tau_add>0.035:  median +0.94  IQR [+0.55,+1.54]  n=152
+  d(ln rel)/d(ln drop) at fixed tau_add, below: median +0.03 IQR [-0.01,+0.25] n=32
+  d(ln rel)/d(ln drop) at fixed tau_add, above: median -0.02                 n=17
+=> 1. There is NO true plateau: rel rises ~ tau_add^0.24 below the cliff,
+      steepening to ~ tau_add^1 (with a sharp step) above ~0.04. "Slow rise
+      then steepening" is the correct description.
+   2. USER OBSERVATION CONFIRMED: in the sampled regime the error depends
+      FAR more strongly on tau_add than on drop_tol -- at fixed tau_add,
+      drop has near-zero effect (median slope +0.03) except at the very
+      lowest tau_add where it re-emerges (~+0.3, e.g. 1e-4/tau=.005:
+      1.9e-3 vs 5e-4/tau=.005: 3.2e-3).
+   3. Model: rel ~ f(drop) + g(tau_add), f ~ drop^~0.3, g ~ tau_add^~0.24
+      below / ^~1 above 0.04; whichever dominates sets the sensitivity. My
+      earlier "drop sets the plateau accuracy" conflated the two knobs
+      (drop was varied at fixed K, dragging tau_add along).
+   4. Practical recipe (revised): lower tau_add and drop TOGETHER so
+      f ~ g (balanced); tau_add is the primary accuracy knob in the
+      commonly-sampled regime, drop the secondary.

@@ -938,3 +938,30 @@ accumulates less truncation error than aggressive per-step re-selection;
 the 2TDVP analogy breaks because Pauli-dictionary "Schmidt vectors" can't
 rotate - discrete swap-in/out has a per-swap error cost that SVD rotation
 does not. The valve (cap + small drop) stays the recommended scheme.
+
+## Late-time / max-rel analysis: valve vs displacement (2026-07-04, user suspicion CONFIRMED)
+
+max pointwise rel over t=0.2..2.0 (same cells as previous section):
+  0.025 100k valve 1e-5:   median 9.8e-4  MAX 3.80e-2 @t=2.0  (profile: 1e-5-ish early, then 9e-3,2e-2,3e-2,4e-2)
+  0.025 100k disp A=1.25B: median 3.7e-3  MAX 1.13e-2 @t=2.0
+  0.025 100k disp A=2B:    median 3.0e-3  MAX 8.1e-3  @t=1.6
+  0.025 100k disp A=4B:    median 1.4e-3  MAX 6.3e-3  @t=1.4  (rel(T)=1.0e-3)
+  0.025 100k frozen:       median 5.9e-3  MAX 5.3e-1  @t=2.0  (catastrophic)
+  0.025 300k valve:        median 5.5e-4  MAX 1.05e-2 @t=2.0
+  0.025 300k disp A=2B:    median 5.5e-4  MAX 1.30e-2 @t=2.0  (tie)
+  0.05  100k valve:        median 1.5e-3  MAX 3.04e-2 @t=1.8
+  0.05  100k disp A=2B:    median 2.0e-3  MAX 1.20e-2 @t=1.8  (2.5x better)
+
+READING: the valve's low churn (~1e2 swaps/step) is TOO SLOW to track the
+operator front at late times - it is quasi-frozen on the front's timescale,
+and its error diverges toward t=T (mini version of the frozen catastrophe;
+bigger B delays it - B=300k valve stays ok). The displacement scheme
+refreshes the basis every step and holds a flat late-time error (max 3-6x
+better than the valve at B=100k), at the cost of a small early/mid plateau
+(~2e-3, the cycling injection) and ~2x wall.
+VERDICT IS METRIC-DEPENDENT:
+  median rel (whole-curve typical) -> valve wins;
+  max rel / late-time (what matters for transport-coefficient extraction
+  from late-time MSD slopes) -> displacement wins at B=100k, ties at 300k.
+Neither scheme dominates. For D(gamma) production runs (late-time slopes),
+prefer displacement (admit_basis ~ 2-4x B, drop=0) or valve with generous B.

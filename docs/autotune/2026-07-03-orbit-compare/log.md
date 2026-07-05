@@ -965,3 +965,31 @@ VERDICT IS METRIC-DEPENDENT:
   from late-time MSD slopes) -> displacement wins at B=100k, ties at 300k.
 Neither scheme dominates. For D(gamma) production runs (late-time slopes),
 prefer displacement (admit_basis ~ 2-4x B, drop=0) or valve with generous B.
+
+## T=10 comparison, every-step reference (2026-07-05)
+
+Dense exact reference: exact_msd_L7_T10.npz (M=400, every dt=0.025 step,
+12 min sector-reduced ED). Driver now takes SCAN_T env + max_rel column.
+dt=0.025, metrics over ALL 400 points (t=0.025..10):
+
+  scheme                med_rel   max_rel   wall    RSS
+  frozen  B=100k        3.17e-1   5.98e-1    53s   238MB   <- permanent ~0.3-0.5 plateau
+  valve   B=100k        8.67e-3   4.09e-2    66s   279MB
+  disp A=2B B=100k      3.88e-3   1.44e-2   177s   341MB   <- best B=100k
+  disp A=4B B=100k      4.67e-3   1.55e-2   340s   442MB
+  valve   B=300k        5.95e-3   1.53e-2   302s   460MB
+  disp A=2B B=300k      5.71e-3   1.44e-2   669s   625MB
+
+Time-resolved picture (rel_vs_time_T10.png): the valve B=100k error PEAKS
+~4e-2 at t~2 (the quasi-freeze episode seen in the T=2 study) and then
+RECOVERS to the common ~5e-3-1e-2 saturation band - once the operator
+equilibrates the slow churn suffices again; it does not keep diverging.
+All adaptive schemes converge to that band; disp A=2B/B=100k has the lowest
+long-time curve (~2-6e-3). Frozen never recovers.
+T=10 VERDICT (B=100k): displacement wins BOTH median (2.2x) and max (2.8x)
+at 2.7x wall; disp A=2B/B=100k even beats valve/B=300k on both error metrics
+at 0.6x wall and 0.74x RSS. At B=300k valve==disp within noise, valve 2.2x
+faster. A=4B adds nothing over A=2B at T=10.
+Practical: for long-horizon runs at tight memory, displacement A=2B is the
+best configuration measured; the valve's weakness is specifically the
+transient regime around the equilibration time.

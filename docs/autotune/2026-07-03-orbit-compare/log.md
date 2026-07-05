@@ -993,3 +993,18 @@ faster. A=4B adds nothing over A=2B at T=10.
 Practical: for long-horizon runs at tight memory, displacement A=2B is the
 best configuration measured; the valve's weakness is specifically the
 transient regime around the equilibration time.
+
+## Frozen-basis B scan at T=10 (2026-07-05)
+
+  frozen B=100k: median 3.17e-1  max 5.98e-1   53s  238MB
+  frozen B=200k: median 2.10e-1  max 3.30e-1  111s  296MB
+  frozen B=300k: median 3.87e-2  max 4.69e-1  180s  397MB
+Raw curves (msd_raw_T10.png): B=100k undershoots the plateau (~2.4-2.9),
+B=200k lands ~3.0-3.3, B=300k OVERSHOOTS through the wrap transient (peak
+5.6 at t~2.3!) then wanders around ~3.7-4.1 with persistent oscillations
+(max rel still 0.47; long-time median 3.9e-2 = 5-10x above any adaptive
+scheme at a THIRD of the basis budget of valve/300k... equal budget).
+Frozen error is NOT monotone-decreasing in B in the transient (300k's max
+~ 100k's), and no frozen size equilibrates to the correct plateau cleanly.
+Adaptivity - even the valve's ~1e2 swaps/step - is qualitatively load-
+bearing; basis size cannot substitute for it.

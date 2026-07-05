@@ -1020,3 +1020,21 @@ The zoom panel (msd_combined_T10.png, 3.7-4.1) shows valve 1e-6 drifting
 3.71-3.95 around the plateau out to t=10 while disp A=2B and valve 1e-5
 track the exact curve's fine wiggles at the ~1e-2 level.
 Combined 3-panel figure (raw / plateau zoom / rel err): msd_combined_T10.png.
+
+## Threshold-only runs added to the T=10 comparison (2026-07-05)
+
+  thresholds tau=0.02 (1e-4/K5):   median 2.48e-2  max 4.19e-2   69s   519MB  peak 142k
+  thresholds tau=0.01 (1e-4/K2.5): median 2.15e-2  max 3.29e-2  376s  1014MB  peak 475k
+(T=2 peaks were 82k/325k: uncapped bases DRIFT 1.5-1.7x by T=10.)
+vs cap schemes at SMALLER bases: valve 1e-5/100k 8.7e-3/4.1e-2 @66s/279MB;
+disp A=2B/100k 3.9e-3/1.4e-2 @177s/341MB -> thresholds are 3-6x worse on
+median at 2-3x the RSS.
+Time-resolved (msd_combined_T10.png): thresholds fail at BOTH ends -
+(a) EARLY: rel ~1e-2 already at t<0.5 (the absolute-rate admission filter
+bites hardest during the initial fast spread, where cap schemes are at
+1e-5); (b) LATE: both threshold curves FLATLINE at a wrong plateau
+(4.07/4.09 vs exact ~3.96-3.98) from t~4.5 on - the truncated dynamics
+reaches a stagnant fixed point ~2-3% high, error frozen at 2-3e-2.
+FIGURE msd_combined_T10.png is now the complete truncation-scheme taxonomy:
+frozen (catastrophic), thresholds (uncontrolled size + early/late bias),
+valve (transient episode, drop-sensitive), displacement (uniform tracking).

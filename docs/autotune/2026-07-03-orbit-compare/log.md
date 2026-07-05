@@ -1008,3 +1008,15 @@ Frozen error is NOT monotone-decreasing in B in the transient (300k's max
 ~ 100k's), and no frozen size equilibrates to the correct plateau cleanly.
 Adaptivity - even the valve's ~1e2 swaps/step - is qualitatively load-
 bearing; basis size cannot substitute for it.
+
+## Valve drop=1e-6 at T=10 + combined figure (2026-07-05)
+
+  valve 1e-6 B=100k: median 1.39e-2  max 6.96e-2   59s  271MB
+  valve 1e-6 B=300k: median 7.67e-3  max 3.24e-2  207s  432MB
+Both WORSE than valve 1e-5 at T=10 (8.67e-3/4.09e-2 and 5.95e-3/1.53e-2):
+smaller drop = fewer swaps/step = deeper quasi-freeze through the wrap
+transient. (At T=2 1e-6 had looked better - horizon-dependent ranking.)
+The zoom panel (msd_combined_T10.png, 3.7-4.1) shows valve 1e-6 drifting
+3.71-3.95 around the plateau out to t=10 while disp A=2B and valve 1e-5
+track the exact curve's fine wiggles at the ~1e-2 level.
+Combined 3-panel figure (raw / plateau zoom / rel err): msd_combined_T10.png.

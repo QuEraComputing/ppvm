@@ -1073,3 +1073,24 @@ boundary/basis ratio, so bigger B damps it. Displacement dt-optimum shifts
 to LARGER dt at larger B (best 300k cell: dt=0.05, 4.70e-3 at 280s).
 B-scaling remains weak in all schemes at T=10 (transient scar dominates).
 Figure rel_vs_time_dtscan_T10.png updated with B=300k (dashed).
+
+## Late-time floor DECOMPOSED: revivals + scar (2026-07-06, user question)
+
+Exact plateau t>=4: mean 3.9738, range [3.9405, 4.0021]. A CONSTANT
+prediction has median rel 1.84e-3, max 8.5e-3 - the size of the coherent
+finite-size revival signal itself.
+Scheme late-time errors: 4.0-5.6e-3 vs exact; 3.0-6.0e-3 vs the SMOOTHED
+exact; correlation with the exact wiggles: -0.27..+0.28 ~ ZERO.
+=> The late-time floor = (a) the revival component (~2e-3 median / ~8e-3
+max): coherent recurrences living in high-weight scrambled strings that NO
+truncated basis retains at any feasible budget - knob-independent by
+nature; + (b) a residual plateau bias ~3e-3 (the transient scar proper),
+improvable only by surviving the wrap transient better.
+CONSEQUENCES: (i) the apparent "non-convergence" at late times is mostly a
+metric artifact - we were grading truncated methods on reproducing
+revivals; (ii) for transport physics (slopes/plateaus, thermodynamic
+limit) the relevant late-time accuracy is ~3e-3 and the revival component
+should be excluded (smoothed reference) or pushed out by larger L;
+(iii) this cleanly documents the method's fundamental scope: hydrodynamic
+/ dissipative components YES, coherent recurrences NO - worth a sentence
+in the paper's discussion.

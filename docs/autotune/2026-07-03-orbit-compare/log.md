@@ -1183,3 +1183,28 @@ FINDINGS:
    (valve 1e-6, B=100k: 3.5e-5 at 59s/271MB full-run cost) wins outright.
 For production D extraction at large L (window entirely pre-wrap), this
 is the regime that matters.
+
+## L=21 (N=42) MSD to the plateau: rough -> converged (2026-07-06)
+
+No exact reference; convergence by B/dt-doubling + cross-method agreement.
+Driver: SCAN_L env. Physics: NO overshoot peak at L=21 - the MSD rises
+monotonically to the uniform plateau 36.67 (reaches 36.47 by t=15; the
+L=7-style coherent overshoot is a small-L effect). The 'peak' window is
+the full rise t in [0, ~15].
+ROUGH PASS pitfalls (documented): B<=300k valve cells scatter WILDLY at
+L=21 (non-monotone in B; pec100k collapsed to MSD~20 at t=6); loose
+trotter (mac 1e-3, 10k strings) underestimates MSD by 40% - the ballistic
+front carries the dj^2 weight and is exactly what truncation cuts.
+CONVERGED (displacement A=2B, dt=0.1): B=150k vs 300k median 1.7e-3
+(max 7e-3) over the FULL window; dt 0.1 vs 0.05 median 1.3e-3. Trotter
+ladder approaches the same curve from below (mac 3e-4 -> 1e-4: 28.4 ->
+30.9 at t=6 vs disp 31.6).
+FINAL TABLE (rel vs disp300k over [0.2,15]; wall/RSS for T=15 dt=0.1):
+  disp A=2B B=300k  (reference)             482s   666MB
+  disp A=2B B=150k   1.7e-3 / 7.3e-3        145s   420MB  <- converged, cheap
+  valve 1e-6 B=300k  3.5e-3 / 1.2e-1(!)     156s   443MB  <- erratic late excursions
+  Trotter mac=1e-4   2.5e-2 / 3.8e-2         75s   344MB  <- 2.5% LOW (front loss),
+     saturates at 35.09 vs 36.47; mac-convergence is x8 basis / x10 wall per
+     x2 error - reaching 2e-3 would need ~1e-5..3e-6 mac = 10-100M strings,
+     INFEASIBLE. At N=42 CTPP(displacement) converges where Trotter cannot.
+Figure: msd_L21_T15.png.

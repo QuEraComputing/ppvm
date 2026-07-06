@@ -18,15 +18,19 @@ XY = "/Users/alexschuckert/dev/26_ppvm/xy-experiments"
 sys.path.insert(0, XY)
 from msd import msd_from_profile
 
-L = 7
+L = int(os.environ.get("SCAN_L", "7"))
 T = float(os.environ.get("SCAN_T", "2.0"))
-npz = np.load(os.path.join(HERE, f"exact_msd_L7_T{T:g}.npz"))
-tR, MSDR = npz["ts"], npz["msd"]          # t = 0 .. T
-REF_DT = float(tR[1] - tR[0])
+try:
+    npz = np.load(os.path.join(HERE, f"exact_msd_L{L}_T{T:g}.npz"))
+    tR, MSDR = npz["ts"], npz["msd"]      # t = 0 .. T
+    REF_DT = float(tR[1] - tR[0])
+except FileNotFoundError:
+    tR = MSDR = None                       # no exact reference (large L)
+    REF_DT = None
 
 def run_cell(mode, dt, knob, kleak=None, stream=False, mb=None, ab=None):
     steps = round(T / dt)
-    out = (f"data/msd{'' if T==2.0 else f'_T{T:g}'}_{mode}_dt{dt}_knob{knob:g}" + (f"_K{kleak:g}" if kleak is not None else "")
+    out = (f"data/msd{'' if L==7 else f'_L{L}'}{'' if T==2.0 else f'_T{T:g}'}_{mode}_dt{dt}_knob{knob:g}" + (f"_K{kleak:g}" if kleak is not None else "")
            + (f"_M{mb:g}" if mb is not None else "") + (f"_A{ab:g}" if ab is not None else "")
            + ("_stream" if stream else "") + ".h5")
     cmd = ["/usr/bin/time", "-l", "./run", "run", "python", "main_realspace_ladder.py",
@@ -52,9 +56,17 @@ def run_cell(mode, dt, knob, kleak=None, stream=False, mb=None, ab=None):
         with h5py.File(os.path.join(XY, out)) as h:
             wall = float(h["wall_s"][-1])
             peak = int(h["n_basis"][:].max())
-        stride = max(1, round(REF_DT / dt))
-        msd_s = msd[::stride][:len(MSDR)]     # align to the reference grid
-        rel = np.abs(msd_s[1:] - MSDR[1:len(msd_s)]) / np.abs(MSDR[1:len(msd_s)])
+        if MSDR is None:
+            return dict(med=float("nan"), mx=float("nan"), wall=wall, rss=rss_mb, peak=peak)
+        if dt <= REF_DT:                      # run finer than ref: subsample run
+            stride = max(1, round(REF_DT / dt))
+            msd_s = msd[::stride][:len(MSDR)]
+            ref = MSDR[:len(msd_s)]
+        else:                                  # run coarser than ref: subsample ref
+            rstride = max(1, round(dt / REF_DT))
+            ref = MSDR[::rstride][:len(msd)]
+            msd_s = msd[:len(ref)]
+        rel = np.abs(msd_s[1:] - ref[1:]) / np.abs(ref[1:])
         return dict(med=float(np.median(rel)), mx=float(rel.max()), wall=wall, rss=rss_mb, peak=peak)
     except Exception as e:
         return dict(fail=f"{e} / {r.stdout[-150:]}{r.stderr[-150:]}")

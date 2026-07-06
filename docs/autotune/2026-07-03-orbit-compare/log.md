@@ -1149,3 +1149,37 @@ low-weight coherent component on top of the erased scrambled part; the
 dephasing strength ranks with discarded weight per event (disp most
 aggressive: amp 0.25; valve intermediate; loose Trotter least, but noisy).
 Figure: msd_trotter_overlay_T10.png.
+
+## Comparison restricted to t <= MSD maximum (t=1.225) (2026-07-06, user)
+
+Exact peak MSD 4.5080 at t=1.225. Median/max rel over t in [0.2, 1.225]
+(walls/RSS are full-T=10 costs; the up-to-peak portion is ~12% of steps):
+  valve 1e-6 B=100k    3.5e-5 / 1.6e-3    59s   271MB   <- best & cheapest pec
+  disp A=2B B=100k     3.6e-5 / 4.7e-3   177s   341MB
+  disp A=4B B=100k     4.5e-5 / 5.0e-3   340s   442MB
+  valve 1e-6 B=300k    6.4e-5 / 5.1e-3   207s   432MB
+  disp A=2B B=300k     6.7e-5 / 1.3e-3   669s   625MB
+  frozen B=300k        8.2e-5 / 2.1e-3   180s   397MB
+  frozen B=200k        9.6e-5 / 7.6e-3   111s   296MB
+  valve 1e-5 B=300k    1.1e-4 / 2.4e-3   302s   460MB
+  frozen B=100k        1.5e-4 / 8.1e-3    53s   238MB
+  valve 1e-5 B=100k    1.9e-4 / 1.7e-3    66s   279MB
+  thresholds tau=.01   1.1e-3 / 4.1e-3   376s  1014MB
+  Trotter mac=3e-5     1.4e-3 / 3.5e-3   623s   415MB
+  thresholds tau=.02   2.0e-3 / 1.2e-2    69s   519MB
+  Trotter mac=1e-4     2.7e-3 / 1.0e-2    37s   134MB
+FINDINGS:
+1. In the ballistic/transport window ALL cap-based pec variants (valve,
+   displacement, even frozen!) collapse to median 3.5e-5..1.9e-4 - the
+   scheme distinctions that consumed the T=10 analysis are IRRELEVANT
+   before the wrap; even freezing only starts to bite at the window edge.
+2. pec is 10-80x more accurate than Trotter/thresholds here: Trotter is
+   floored by O(dt^2) splitting error during the fast ballistic dynamics
+   (1.4e-3 even at 1.2M strings); thresholds by early-time tau_add bias.
+3. USER'S RED-HERRING CALL VALIDATED: the late-time scheme distinctions
+   were driven by finite-size recurrence physics outside the method's
+   scope. In the physically extractable window the story is simple:
+   cap-based CTPP at modest B dominates everything, and the cheapest cell
+   (valve 1e-6, B=100k: 3.5e-5 at 59s/271MB full-run cost) wins outright.
+For production D extraction at large L (window entirely pre-wrap), this
+is the regime that matters.

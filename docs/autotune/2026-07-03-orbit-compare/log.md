@@ -1038,3 +1038,28 @@ reaches a stagnant fixed point ~2-3% high, error frozen at 2-3e-2.
 FIGURE msd_combined_T10.png is now the complete truncation-scheme taxonomy:
 frozen (catastrophic), thresholds (uncontrolled size + early/late bias),
 valve (transient episode, drop-sensitive), displacement (uniform tracking).
+
+## Is the T=10 saturation a dt artefact? (2026-07-05, user question)
+
+dt scan at fixed configs (T=10, B=100k):
+  disp A=2B: dt=0.05: 6.20e-3/1.54e-2 | 0.025: 3.88e-3/1.44e-2 | 0.0125: 1.86e-2/3.06e-2
+  valve 1e-5: 0.025: 8.67e-3/4.09e-2 | 0.0125: 4.09e-3/2.76e-2
+  valve 1e-5 B=300k, dt=0.0125: 5.38e-3/1.54e-2 (435s/459MB)
+ANSWER: partially, and scheme-dependently.
+1. VALVE was dt-limited at 0.025: halving dt halves its median (8.7->4.1e-3)
+   and shrinks its transient peak. Its churn/time also doubles (confounded
+   with dt error - drop is per-step).
+2. DISPLACEMENT is ANTI-dt-limited: its injection is per-STEP (A-B strings
+   cycled each step), so error/time ~ 1/dt; interior optimum dt ~ 0.025.
+   The universal band at dt=0.025 was the two mechanisms crossing.
+3. Once dt-unblocked, B still does NOT improve the valve median
+   (100k: 4.09e-3 vs 300k: 5.38e-3 at dt=0.0125) though max improves 1.8x.
+   A persistent post-transient offset ~4-6e-3 dominates the T=10 median:
+   damage done during the wrap transient persists in the equilibrated state,
+   and none of (B, A, drop, dt) measured so far pushes the median below
+   ~4e-3. OPEN: dt=0.00625 valve run would test whether the residual is
+   still dt-limited (confounded with churn/time doubling); alternatively
+   the transient-episode error itself must be attacked (displacement
+   at its optimal dt already does: max 1.44e-2).
+Best T=10 cells so far: valve 1e-5/100k/dt=0.0125 (4.09e-3 med, 131s/276MB)
+and disp A=2B/100k/dt=0.025 (3.88e-3 med, max 1.44e-2, 177s/341MB).

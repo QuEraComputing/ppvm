@@ -1271,3 +1271,25 @@ Pauli-propagation 2^-18 curve at the ~0.5% level across the full window,
 and the deviation vs their looser 2^-17 curve has the right sign/shape.
 Strong independent cross-validation. reference_digitized_L41.py holds the
 data; figure msd_L41_vs_reference.png.
+
+## Reference identified + their resources (2026-07-06)
+
+The external reference = Begusic & Chan, PRX Quantum 6, 020302 (2025)
+"Real-Time Operator Evolution in 2D and 3D via Sparse Pauli Dynamics",
+Fig. 2(c): XX-ladder [their Eq. (17), H = (1/4)*ours -> t_theirs = 4*t_ours,
+confirming our conversion], L=41, n=82, q_j=(Z_j1+Z_j2)/2 - IDENTICAL setup.
+Their D ~ 0.94 (their units) from regression t in [10,20] (= ours [2.5,5]).
+THEIR COST for the 2^-18 curve (p.4): "the two points in Fig. 2(d) at fixed
+delta/dt = 2^-18/0.02 take around 84 h (dt=0.01) and 43 h (dt=0.02) to
+simulate on six cores" (Xeon Platinum 8352Y 2.2GHz). RAM for Fig 2 not
+stated; their stated memory elsewhere: 2D delta=2^-23: 8.5e9 Pauli ops,
+">1 TB", 36h/16 cores; 3D: "memory budget of about 1.5 TB" at <1e9 ops
+(~125 B/op storage). Their ladder 2^-18 run's N is not given (bound
+N <= c0/delta^2 ~ 3.4e10; plausibly 1e8-1e9 ops -> tens of GB, estimate).
+OURS at matched accuracy (0.5% median agreement): disp A=2B B=300k,
+dt=0.1 (our units; 20x coarser step than theirs - exact-in-dt makes this
+possible), 209 s / 650 MB on a laptop.
+=> wall ratio ~740x (43h vs 209s); core-hours ~445x (258 vs 0.58);
+RAM: 650 MB vs (unstated, plausibly 10s of GB). Their delta/dt coupling
+(their Sec II: error is a function of delta/dt) forces small dt AND large
+N; CTPP's dt-freedom is the structural advantage on display.

@@ -1063,3 +1063,13 @@ ANSWER: partially, and scheme-dependently.
    at its optimal dt already does: max 1.44e-2).
 Best T=10 cells so far: valve 1e-5/100k/dt=0.0125 (4.09e-3 med, 131s/276MB)
 and disp A=2B/100k/dt=0.025 (3.88e-3 med, max 1.44e-2, 177s/341MB).
+
+## Displacement B=300k dt scan (2026-07-06)
+
+  disp A=2B B=300k: dt=0.05: 4.70e-3/1.38e-2 280s | 0.025: 5.71e-3/1.44e-2 669s | 0.0125: 8.61e-3/1.78e-2 1048s
+Anti-dt trend confirmed at 300k but much WEAKER than at 100k (x1.8 over the
+dt range vs x5): the per-step cycling injection scales with the
+boundary/basis ratio, so bigger B damps it. Displacement dt-optimum shifts
+to LARGER dt at larger B (best 300k cell: dt=0.05, 4.70e-3 at 280s).
+B-scaling remains weak in all schemes at T=10 (transient scar dominates).
+Figure rel_vs_time_dtscan_T10.png updated with B=300k (dashed).

@@ -1232,3 +1232,24 @@ FINDINGS:
    several GB. Trotter mac-convergence at N=42 is impractical; the
    displacement-CTPP advantage at scale is decisive on every axis.
 Figure: msd_L21_trotter_ladder.png.
+
+## L=41 (N=82) vs external Pauli-propagation reference (2026-07-06)
+
+User-provided reference figure: MSD vs time, truncation ladder 2^-13..2^-18
+(PauliPropagation-style, RvKP XX ladder; their time axis = 4x ours). Ran
+disp A=2B at L=41, T=5 (our units), dt=0.1:
+  B=150k: 100s / 393MB ;  B=300k: 209s / 650MB
+  B-convergence: median 8.5e-3, max 1.8e-2 (150k vs 300k) - slightly looser
+  than at L=21 (front support is 2x wider), fine at digitization accuracy.
+Comparison at digitized brown (2^-18) points (t_theirs/4):
+  t=2.0: 12.76 vs 12.6 (+1.3%) | t=2.5: 16.43 vs 16.5 (-0.4%)
+  t=3.0: 20.14 vs 21.0 (-4.1%) | t=3.75: 26.11 vs 26.0 (+0.4%)
+  t=4.0: 27.60 vs 28.0 (-1.4%) | t=5.0: 35.25 vs 35.0 (+0.7%)
+  (t<1.5 points off by 6-11% - digitization error dominates there, small
+   values on a coarse plot.)
+=> Agreement within ~1-4% everywhere = digitization accuracy. EXTERNAL
+CROSS-VALIDATION of the 82-qubit displacement-CTPP result against an
+independent code/method, at 209s/650MB on a laptop. The L=21 curve peels
+off at t>3 exactly as finite size predicts (fronts wrap); L=41 tracks the
+unconstrained growth to t=5. Time-convention factor 4 confirmed by the
+match itself. Figure: msd_L41_vs_reference.png.

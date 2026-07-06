@@ -1122,3 +1122,30 @@ exactly-uniform, losing the coherent depression of the exact plateau).
 Paper angle: implicit truncation-dephasing is the flip side of DAOE's
 explicit artificial dissipation; hydrodynamics is immune (carried by few
 large-coefficient strings re-selected every step), recurrences are not.
+
+## Trotter + truncation at T=10: same dephasing, plus its own wiggles (2026-07-06)
+
+  trotter mac=1e-4 (peak 111k, STATIONARY == its T=2 peak): med 8.60e-3 max 3.08e-2 37s/134MB
+  trotter mac=3e-5 (peak 1.20M): med 3.88e-3 max 1.68e-2 623s/415MB
+Late-window (t>=4) wiggle analysis vs exact (exact wiggle std 0.0141):
+  scheme                    late mean   corr    amp ratio
+  Trotter 1e-4 (111k)        4.0042    +0.60      1.92   <- OVERSHOOT: own coherent wiggles
+  Trotter 3e-5 (1.2M)        3.9932    -0.22      0.59
+  valve B=100k               4.0058    +0.46      0.67
+  disp A=2B B=100k           3.9889    +0.21      0.81
+  valve B=300k               4.0067    +0.30      0.65
+  disp A=2B B=300k           3.9984    +0.24      0.25
+(exact late mean 3.9738 - ALL schemes sit 0.4-0.8% high.)
+ANSWER: yes - Trotter+truncation shows the same effective dephasing of the
+true recurrences (no scheme tracks the exact dip structure, e.g. the t=5.7
+excursion to 3.945; at tight mac Trotter flattens exactly like the pec
+schemes). TWIST: at loose mac Trotter additionally GENERATES its own
+coherent oscillations (amplitude 1.9x the exact wiggles, partially phase-
+aligned corr 0.6) - spurious revival-like artifacts from the Trotter+
+per-gate-truncation dynamics, absent in the exact-in-dt pec schemes.
+REFINEMENT of the earlier corr~0 claim: correlations across schemes span
+-0.2..+0.6 - the N=14 late-time signal contains a partially retrievable
+low-weight coherent component on top of the erased scrambled part; the
+dephasing strength ranks with discarded weight per event (disp most
+aggressive: amp 0.25; valve intermediate; loose Trotter least, but noisy).
+Figure: msd_trotter_overlay_T10.png.

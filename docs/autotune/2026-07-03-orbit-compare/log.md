@@ -1253,3 +1253,21 @@ independent code/method, at 209s/650MB on a laptop. The L=21 curve peels
 off at t>3 exactly as finite size predicts (fronts wrap); L=41 tracks the
 unconstrained growth to t=5. Time-convention factor 4 confirmed by the
 match itself. Figure: msd_L41_vs_reference.png.
+
+## L=41 external comparison FINALIZED with accurately digitized data (2026-07-06)
+
+History: my eyeballed digitization was wrong; the user's accurate data
+first appeared mismatched (ours ~25% low) - a free one-parameter time-
+rescale fit found lambda=1.252, and the user then identified the cause:
+their exported x-axis needed *5/4 (fit matched the correction exactly,
+a good pipeline sanity check). Corrected comparison (62 ref points):
+  disp B=300k vs 2^-18: median 5.5e-3  max 1.7e-2 ; endpoint (t=4.95):
+    34.86 vs 34.63 (+0.7%)
+  disp B=150k vs 2^-18: median 1.5e-2 (slightly low at late t)
+  disp B=300k vs 2^-17: median 1.1e-2, growing to 3-7e-2 at t>4 - the
+    reference's own truncation ladder bending down, as expected.
+=> 82-qubit displacement-CTPP (209s/650MB laptop) agrees with the external
+Pauli-propagation 2^-18 curve at the ~0.5% level across the full window,
+and the deviation vs their looser 2^-17 curve has the right sign/shape.
+Strong independent cross-validation. reference_digitized_L41.py holds the
+data; figure msd_L41_vs_reference.png.

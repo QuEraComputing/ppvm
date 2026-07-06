@@ -1293,3 +1293,15 @@ possible), 209 s / 650 MB on a laptop.
 RAM: 650 MB vs (unstated, plausibly 10s of GB). Their delta/dt coupling
 (their Sec II: error is a function of delta/dt) forces small dt AND large
 N; CTPP's dt-freedom is the structural advantage on display.
+
+## L=21 Trotter deep rungs completed (2026-07-06, background cells landed)
+
+  trot 0.025/3e-5: median 1.51e-2 max 2.7e-2  MSD(6)=31.18  1385s  350MB   1.25M strings
+  trot 0.025/1e-5: median 2.86e-3 max 8.9e-3  MSD(6)=31.35  14845s 2.0GB  11.08M strings
+The 1e-5 rung FINALLY matches disp B=150k accuracy (2.8e-3): the
+extrapolated cost was right. MATCHED-ACCURACY HEADLINE AT L=21 (t<=6):
+  CTPP-displacement: 78 s, 150k strings, ~0.4 GB
+  Trotter (2nd-order): 4.1 h, 11.1M strings, 2.0 GB
+  -> 190x wall, 74x strings, ~5x RAM at equal accuracy.
+Also note trot 0.025/3e-5 (1.5e-2) is WORSE than 0.05/3e-5 (7.4e-3):
+the dt-mac coupling again - halving dt at fixed mac degrades.

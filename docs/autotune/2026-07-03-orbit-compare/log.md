@@ -1094,3 +1094,31 @@ should be excluded (smoothed reference) or pushed out by larger L;
 (iii) this cleanly documents the method's fundamental scope: hydrodynamic
 / dissipative components YES, coherent recurrences NO - worth a sentence
 in the paper's discussion.
+
+## Revival-carrier hypothesis TESTED with exact numerics at N=10 (2026-07-06)
+
+Setup (revival_test_N10.py): L=5 ladder, O(0)=center-rung Z pair, exact
+evolution; full 4^10 Pauli decomposition (per-qubit transform, round-trip
+verified to 3e-16, Parseval exact).
+Coefficient structure at t0=2 (CONFIRMS the dust picture):
+  260,830 strings nonzero; top-100 hold 21% of the norm; 90% needs
+  B=100k (=10% of all strings); kept mean Pauli weight 4.2-7.4 vs dust 7.5.
+SINGLE cut at t0=2, then exact evolution (REFUTES the strong one-shot form):
+  B=1k:   future wiggle corr +0.43, amplitude 20%
+  B=10k:  corr +0.85, amplitude 43%
+  B=100k: corr +0.99, amplitude 94%   <- one cut at 10%-budget keeps revivals
+REPEATED cut every dt=0.1 (100 cuts), exact evolution between cuts
+(IDENTIFIES the real mechanism):
+  B=10k:  corr -0.14, amplitude 5%
+  B=100k: corr -0.09, amplitude 22% (uncorrelated -> noise, not signal)
+  and the late-time mean shifts to the exactly-uniform value (2.000/1.993
+  vs exact 1.9386) - the flat, slightly-off plateau seen in production.
+CONCLUSION: truncation acts as WEAK CONTINUOUS DEPHASING on the coherent
+recurrence channel. Per-cut amplitude retention is high (~0.94-0.99 at
+these budgets) but compounds over hundreds of steps to ~zero; the same
+budget that survives one cut erases revivals under repetition. This also
+explains part of the plateau bias (truncation pushes the profile toward
+exactly-uniform, losing the coherent depression of the exact plateau).
+Paper angle: implicit truncation-dephasing is the flip side of DAOE's
+explicit artificial dissipation; hydrodynamics is immune (carried by few
+large-coefficient strings re-selected every step), recurrences are not.

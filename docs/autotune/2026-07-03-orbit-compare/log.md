@@ -1208,3 +1208,27 @@ FINAL TABLE (rel vs disp300k over [0.2,15]; wall/RSS for T=15 dt=0.1):
      x2 error - reaching 2e-3 would need ~1e-5..3e-6 mac = 10-100M strings,
      INFEASIBLE. At N=42 CTPP(displacement) converges where Trotter cannot.
 Figure: msd_L21_T15.png.
+
+## L=21 Trotter dt x mac ladder, t<=6, vs converged displacement (2026-07-06)
+
+  run                     med_rel   max_rel  MSD(6)  wall    rss~   peak
+  trot 0.1/3e-4           5.3e-2    1.0e-1   28.37    11s   143MB   102k
+  trot 0.1/1e-4           1.4e-2    2.3e-2   30.91   151s   344MB   854k
+  trot 0.05/3e-4          6.4e-2    1.5e-1   30.67     8s   120MB    40k
+  trot 0.05/1e-4          3.8e-2    7.4e-2   30.16    67s   187MB   343k
+  trot 0.05/3e-5          7.4e-3    1.4e-2   31.36  1175s   1.1GB  3.67M  <- best trotter
+  trot 0.025/1e-4         7.9e-2    1.4e-1   28.45    62s   140MB   115k
+  disp B=150k (check)     2.8e-3    7.3e-3   31.56    78s   375MB   150k
+  (reference: disp B=300k; 0.025/3e-5 + 0.025/1e-5 cells pending/partial)
+FINDINGS:
+1. At fixed mac, SMALLER dt is WORSE for Trotter (0.025/1e-4 = 7.9e-2 vs
+   0.1/1e-4 = 1.4e-2; basis shrinks 854k->115k from per-gate culling) -
+   the joint dt<->mac coupling at L=21 scale. Only mac-tightening converges.
+2. Best Trotter rung (0.05/3e-5, 3.67M strings, 20 min, 1.1GB) is still
+   2.6x LESS accurate than the CHEAP displacement run (150k strings, 78s,
+   375MB) - a 15x wall / 3x RAM / 24x string handicap AND worse error.
+3. Extrapolating the ladder (x10 wall per ~x2 error): matching disp-150k's
+   2.8e-3 needs mac ~1e-5..3e-6 at dt~0.05 = 10-40M strings / hours /
+   several GB. Trotter mac-convergence at N=42 is impractical; the
+   displacement-CTPP advantage at scale is decisive on every axis.
+Figure: msd_L21_trotter_ladder.png.

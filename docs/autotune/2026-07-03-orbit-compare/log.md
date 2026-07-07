@@ -1320,3 +1320,19 @@ truncation limited). RSS ~ linear in A; wall non-monotone (K=3 cheaper than
 K=2). RECIPE UPDATE for large L: A=3B preferred (10x tighter than 2B at ~no
 wall cost, +25% RAM); A=2B when RAM-bound; A=B is the frozen limit - never.
 Figure: msd_L41_Kscan.png.
+
+## A = K*B scan at L=41, B=150k (2026-07-07)
+
+  K=1:   13s 292MB  med 3.3e-1 vs K=4  MSD(5)= 9.48  <- frozen, collapses even
+         earlier than at 300k (fills sooner)
+  K=1.25 22s 324MB  3.5e-2  33.50
+  K=1.5  27s 327MB  2.3e-2  33.48
+  K=2   100s 393MB  7.3e-3  34.62   (2026-07-06 wall; possibly inflated)
+  K=3    52s 487MB  1.3e-3  35.38   <- converged in K
+  K=4    66s 580MB  anchor  35.55
+Residual B-bias (150k/K=4 vs 300k/K=4): median 2.3e-3, max 5.3e-3 - the
+irreducible B=150k error once A is converged; the K and B errors are
+roughly additive. Same structure as B=300k: frozen at K=1, converged at
+K=3, wall non-monotone (K=3 cheaper than K=2). BEST CHEAP CELL at L=41:
+B=150k/A=3B = 52s / 487MB / med ~2-3e-3 total.
+Figure: msd_L41_Kscan_B150k.png.

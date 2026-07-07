@@ -1366,3 +1366,15 @@ reproduces 8.67e-3/4.09e-2 bit-identically.
 VERDICT: K=3 is simultaneously the convergence onset and the cost optimum;
 beyond it cost grows linearly in A for noise-level changes. Improve via B,
 not A. Figure msd_L41_Kscan_full.png.
+
+## pc_step_complex removed (2026-07-07, user request)
+
+Production fn + inner + expm_step_complex + PyO3 binding + python wrapper
+deleted. Its remaining role (the full-space complex reference bridge in the
+orbit-rep equivalence tests) is preserved by a test-local helper
+`pc_step_complex_full` (untruncated two-hop enrichment + exact in-basis
+complex exponential via expm_apply_mf_cxvec). The two sector-check feature
+tests were removed with the feature; the k=0 real/complex equivalence test
+and the orbit-vs-full projection test both pass. Building blocks kept:
+leakage_complex, compute_action_sum_complex, expm_apply_mf_cxvec.
+L=5 momentum exact-ED sanity still 1.86e-3 bit-identical.

@@ -1430,3 +1430,15 @@ FINDINGS:
    at all three B.
 3. vs Begusic-Chan 2^-18: anchor median 6.3e-3 - unchanged within
    digitization scatter; that comparison is digitization-limited ~5-6e-3.
+
+## Fixed-A (fixed RAM) K/B split test, A=1.2M, L=41 (2026-07-07)
+
+  B=300k K=4: 1041MB  median 4.75e-4
+  B=400k K=3: 1164MB  median (see run)   <- same A, K at the knee
+  B=600k K=2: 1162MB  median 1.57e-3     <- same A, K BELOW the knee
+Resolution of the "K=4 beats lower-K" confusion: at FIXED A (fixed RAM),
+what matters is only that K >= ~3 (the admission-convergence knee). K=2
+starves the basis (1.6e-3); K=3 and K=4 are equivalent (both ~5e-4). So
+"K=4 on smaller B beat K=2 on bigger B" is really "converged admission beat
+starved admission", NOT "high K good". RAM-optimal recipe unchanged: hold
+K=3 (just clear the knee), put all remaining RAM into B.

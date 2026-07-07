@@ -1378,3 +1378,13 @@ tests were removed with the feature; the k=0 real/complex equivalence test
 and the orbit-vs-full projection test both pass. Building blocks kept:
 leakage_complex, compute_action_sum_complex, expm_apply_mf_cxvec.
 L=5 momentum exact-ED sanity still 1.86e-3 bit-identical.
+
+## rk4_step removed (2026-07-07)
+
+Fully removed (was only doc-deprecated): rk4_step + rk4_step_inner,
+PyO3 binding, rk4_step_arr wrapper, and the --mode rk4 harness branch in
+xy-experiments/main_realspace_ladder.py. compute_action_sum (the L*-apply
+primitive it used) is retained. Tests 7/7; harness smoke reproduces the
+recorded dt=0.05/M100k cell bit-identically. The crate now exposes exactly
+two step functions: pc_step (real) and pc_step_orbit_rep (momentum), with
+the unified (max_basis, admit_basis, drop_tol) truncation API.

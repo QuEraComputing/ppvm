@@ -438,57 +438,6 @@ impl LindbladSpec {
         Ok((basis_arr, out_coeffs.into_pyarray(py)))
     }
 
-    /// One classical RK4 step on the adjoint Lindbladian. Matrix-free: no
-    /// CSR, no Krylov, no predictor-corrector enrichment. Four action
-    /// evaluations per step, basis grows naturally, magnitude-prune at end.
-    #[pyo3(signature = (
-        basis, coeffs, dt,
-        drop_tol = 0.0,
-        protected = None,
-        num_threads = None,
-    ))]
-    #[allow(clippy::too_many_arguments)]
-    fn rk4_step<'py>(
-        &self,
-        py: Python<'py>,
-        basis: PyReadonlyArray2<'py, u8>,
-        coeffs: PyReadonlyArray1<'py, f64>,
-        dt: f64,
-        drop_tol: f64,
-        protected: Option<PyReadonlyArray2<'py, u8>>,
-        num_threads: Option<usize>,
-    ) -> PyResult<PyPauliMap<'py>> {
-        let n_q = self.inner.n_qubits();
-        let basis_view = basis.as_array();
-        let mut basis_words = decode_basis(&basis_view, n_q)?;
-        assert_basis_unique(&basis_words)?;
-        let mut coeffs_vec = coeffs.as_slice()?.to_vec();
-        if coeffs_vec.len() != basis_words.len() {
-            return Err(PyValueError::new_err(format!(
-                "coeffs has length {} but basis has {} rows",
-                coeffs_vec.len(),
-                basis_words.len()
-            )));
-        }
-        let protected_words: Vec<Word> = if let Some(ref p) = protected {
-            decode_basis(&p.as_array(), n_q)?
-        } else {
-            Vec::new()
-        };
-        self.inner
-            .rk4_step(
-                &mut basis_words,
-                &mut coeffs_vec,
-                dt,
-                drop_tol,
-                &protected_words,
-                num_threads,
-            )
-            .map_err(map_err)?;
-        let pairs: Vec<(Word, f64)> = basis_words.into_iter().zip(coeffs_vec).collect();
-        pack_pauli_map(py, pairs, n_q)
-    }
-
     /// Sparse generator matrix in COO form: `(rows, cols, vals)`.
     fn generator<'py>(
         &self,

@@ -336,50 +336,6 @@ class Lindbladian:
             None if admit_basis is None else int(admit_basis),
         )
 
-    def rk4_step_arr(
-        self,
-        basis_arr: np.ndarray,
-        coeffs: np.ndarray,
-        dt: float,
-        drop_tol: float = 0.0,
-        protected_arr: np.ndarray | None = None,
-        num_threads: int | None = None,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """One classical fourth-order Runge-Kutta step on ``L*``.
-
-        .. deprecated:: superseded by `pc_step_arr` - RK4 supports only
-           `drop_tol` truncation (no cap / displacement) and was strictly
-           dominated in the 2026-07 benchmarks. Kept for harness mode rk4.
-
-        Matrix-free: no CSR build, no Krylov subspace, no predictor-
-        corrector basis enrichment. Four action evaluations per step;
-        the basis grows naturally as new strings emerge from each
-        commutator. After the step, drops any string with
-        ``|coeff| < drop_tol`` unless it appears in ``protected_arr``.
-
-        Per-step local truncation error is ``O(dt^5)``.
-        **Stability** requires ``dt ≤ 2.78 / ‖L*‖``. Violating the bound
-        is silent — the trajectory still norm-conserves, but individual
-        Pauli coefficients diverge to oscillating ±large values; local
-        observables (e.g. MSD) blow up. Verify against a stable reference
-        before trusting tight-``drop_tol`` results at large ``dt``.
-
-        For stiff problems where that bound is restrictive, prefer
-        :meth:`pc_step_arr`, which integrates ``exp(dt·L*)`` via Krylov
-        and is unconditionally stable.
-        """
-        n = self.n_qubits
-        if protected_arr is None:
-            protected_arr = np.zeros((0, n), dtype=np.uint8)
-        return self._spec.rk4_step(
-            np.ascontiguousarray(basis_arr, dtype=np.uint8),
-            np.ascontiguousarray(coeffs, dtype=np.float64),
-            float(dt),
-            float(drop_tol),
-            np.ascontiguousarray(protected_arr, dtype=np.uint8),
-            None if num_threads is None else int(num_threads),
-        )
-
     def pc_step(
         self,
         basis: Sequence[str],

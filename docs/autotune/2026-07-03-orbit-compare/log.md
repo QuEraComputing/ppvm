@@ -1305,3 +1305,18 @@ extrapolated cost was right. MATCHED-ACCURACY HEADLINE AT L=21 (t<=6):
   -> 190x wall, 74x strings, ~5x RAM at equal accuracy.
 Also note trot 0.025/3e-5 (1.5e-2) is WORSE than 0.05/3e-5 (7.4e-3):
 the dt-mac coupling again - halving dt at fixed mac degrades.
+
+## A = K*B scan at L=41, B=300k, T=5 (2026-07-07)
+
+  K=1:   29s  480MB  med 5.9e-2 vs K=4  MSD(5)=20.50  <- FROZEN (no headroom
+         with drop=0: admission stops at fill; curve bends over at t~2.5)
+  K=1.25 50s  519MB  1.8e-2   33.51
+  K=1.5  67s  548MB  9.4e-3   34.78
+  K=2   209s  650MB  3.5e-3   35.25   (yesterday's run; wall possibly inflated)
+  K=3   128s  806MB  4.4e-4   35.42   <- converged (vs K=4)
+  K=4   168s 1041MB  anchor   35.46
+Agreement vs Begusic-Chan 2^-18 saturates ~5e-3 for K>=2 (digitization/their
+truncation limited). RSS ~ linear in A; wall non-monotone (K=3 cheaper than
+K=2). RECIPE UPDATE for large L: A=3B preferred (10x tighter than 2B at ~no
+wall cost, +25% RAM); A=2B when RAM-bound; A=B is the frozen limit - never.
+Figure: msd_L41_Kscan.png.

@@ -1434,11 +1434,23 @@ FINDINGS:
 ## Fixed-A (fixed RAM) K/B split test, A=1.2M, L=41 (2026-07-07)
 
   B=300k K=4: 1041MB  median 4.75e-4
-  B=400k K=3: 1164MB  median (see run)   <- same A, K at the knee
-  B=600k K=2: 1162MB  median 1.57e-3     <- same A, K BELOW the knee
-Resolution of the "K=4 beats lower-K" confusion: at FIXED A (fixed RAM),
-what matters is only that K >= ~3 (the admission-convergence knee). K=2
-starves the basis (1.6e-3); K=3 and K=4 are equivalent (both ~5e-4). So
-"K=4 on smaller B beat K=2 on bigger B" is really "converged admission beat
-starved admission", NOT "high K good". RAM-optimal recipe unchanged: hold
-K=3 (just clear the knee), put all remaining RAM into B.
+  B=400k K=3: 1164MB  median 2.69e-3     <- OUTLIER (should be best, isn't)
+  B=600k K=2: 1162MB  median 1.57e-3
+HONEST RESULT: NON-MONOTONE in both B and K -> we are in the cancellation-
+NOISE FLOOR at this accuracy (~5e-4..3e-3, vs an anchor with ~3e-4 residual).
+Single-cell median-rel differences below ~3x are NOT meaningful here. So the
+fixed-A test does NOT resolve the (B,K) split, and my earlier "increase B at
+K=3 traces the Pareto frontier / K=4 on the frontier" claims OVER-READ this
+noise. What IS robust across all data:
+  - K<3 measurably worse (under-admission): K=1 frozen, K=1.25-1.5 ~1-4e-2,
+    K=2 ~3e-3-1.6e-2 (B-dependent). Need K>=3.
+  - B-ladder AT K=3: 150k 1.1e-3 -> 300k 5.9e-4 -> 600k anchor: monotone,
+    ~first-order, the one clean accuracy trend.
+  - K>=3 at fixed B, or (B,K) split at fixed A: within noise, unresolved.
+RAM ARGUMENT (theory, not from noisy cells): RAM ~ A = K*B. Beyond the K~3
+knee, extra admission is provably neutral in the large-A limit (admitted-
+then-truncated strings can't change the kept set), while B keeps improving.
+So spend RAM on B, keep K just at the knee (~3). The cells can't PROVE the
+fixed-RAM optimum at this accuracy, but the K-neutrality argument + the clean
+B-ladder both point the same way. To resolve empirically would need seed/
+observable averaging to beat down the ~2-3x cancellation noise.

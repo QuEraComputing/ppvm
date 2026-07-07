@@ -131,17 +131,17 @@ where
         let t0 = Instant::now();
         for _ in 0..p.steps {
             for i in 0..n {
-                state.rx(i, p.theta_x);
-                state.truncate();
                 state.pauli_error(i, NOISE);
+                state.truncate();
+                state.rx(i, p.theta_x);
                 state.truncate();
             }
             for i in 0..n - 1 {
-                state.rzz(i, i + 1, p.theta_zz);
+                state.pauli_error(i + 1, NOISE);
                 state.truncate();
                 state.pauli_error(i, NOISE);
                 state.truncate();
-                state.pauli_error(i + 1, NOISE);
+                state.rzz(i, i + 1, p.theta_zz);
                 state.truncate();
             }
         }

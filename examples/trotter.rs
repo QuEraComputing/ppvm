@@ -70,13 +70,13 @@ fn trotter(
 
         // perform trotter step
         for i in 0..n {
-            state.rx(i, theta_x);
             state.pauli_error(i, noise_params);
+            state.rx(i, theta_x);
         }
         for i in 0..n - 1 {
-            state.rzz(i, i + 1, theta_zz);
-            state.pauli_error(i, noise_params);
             state.pauli_error(i + 1, noise_params);
+            state.pauli_error(i, noise_params);
+            state.rzz(i, i + 1, theta_zz);
         }
 
         // truncate state in each iteration

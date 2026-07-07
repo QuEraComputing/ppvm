@@ -1388,3 +1388,11 @@ primitive it used) is retained. Tests 7/7; harness smoke reproduces the
 recorded dt=0.05/M100k cell bit-identically. The crate now exposes exactly
 two step functions: pc_step (real) and pc_step_orbit_rep (momentum), with
 the unified (max_basis, admit_basis, drop_tol) truncation API.
+
+## K=2 walls re-measured on idle machine (2026-07-07)
+
+  B=150k/K=2: 37.8s/390MB (was 100s - contended on 07-06)
+  B=300k/K=2: 131.2s/650MB (was 209s - contended)
+Wall is now monotone-ish linear in A across both families; the earlier
+"K=3 faster than K=2" was contention. Cost statement: K=3 ~ same wall as
+K=2, converged -> default A=3B unchanged. All other same-day walls stand.

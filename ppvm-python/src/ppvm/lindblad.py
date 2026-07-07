@@ -339,6 +339,7 @@ class Lindbladian:
         drop_tol: float = 1e-12,
         protected_arr: np.ndarray | None = None,
         canonicalize_first: bool = False,
+        admit_basis: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Per-step orbit-representative pc evolution.
 
@@ -355,6 +356,12 @@ class Lindbladian:
         Pass a large value (e.g. ``10_000_000``) for the near-exact,
         uncapped case. ``drop_tol`` additionally prunes reps whose absolute
         coefficient is below the threshold after the corrector.
+
+        ``admit_basis``, when set (>= ``max_basis``), bounds the enriched
+        working set instead of ``max_basis``: the step may hold up to
+        ``admit_basis`` reps transiently and the final truncation keeps the
+        top-``max_basis`` by evolved ``|c|`` over the whole union — the
+        displacement scheme, matching the real-space ``pc_step_arr``.
 
         ``basis_arr`` is assumed to contain canonical reps only. Pass
         ``canonicalize_first=True`` to rewrite each row to its canonical
@@ -373,6 +380,7 @@ class Lindbladian:
             float(drop_tol),
             np.ascontiguousarray(protected_arr, dtype=np.uint8),
             bool(canonicalize_first),
+            None if admit_basis is None else int(admit_basis),
         )
 
     def rk4_step_arr(
@@ -385,6 +393,10 @@ class Lindbladian:
         num_threads: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """One classical fourth-order Runge-Kutta step on ``L*``.
+
+        .. deprecated:: superseded by `pc_step_arr` - RK4 supports only
+           `drop_tol` truncation (no cap / displacement) and was strictly
+           dominated in the 2026-07 benchmarks. Kept for harness mode rk4.
 
         Matrix-free: no CSR build, no Krylov subspace, no predictor-
         corrector basis enrichment. Four action evaluations per step;

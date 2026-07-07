@@ -1139,6 +1139,12 @@ impl LindbladSpec {
     ///
     /// `num_threads`, when set, runs the entire step inside a freshly built
     /// rayon thread pool of that size.
+    ///
+    /// DEPRECATED: superseded by [`Self::pc_step`]. The RK4 step supports
+    /// only `drop_tol` truncation (no `max_basis` cap, no `admit_basis`
+    /// displacement) — the scheme the 2026-07 benchmarking campaign found
+    /// weakest (docs/autotune/2026-07-03-orbit-compare/log.md). Kept for
+    /// the `--mode rk4` harness path; do not use in new code.
     pub fn rk4_step(
         &self,
         basis: &mut Vec<Word>,
@@ -1850,7 +1856,7 @@ mod tests {
         // Evolve in orbit-rep form (max_basis large ⇒ full enrichment).
         for _ in 0..n_steps {
             orbit_rep::pc_step_orbit_rep(
-                &spec, &mut br, &mut cr, dt, 10_000_000, 0.0, &protected, &group, &k,
+                &spec, &mut br, &mut cr, dt, 10_000_000, 0.0, &protected, &group, &k, None,
             )
             .unwrap();
         }

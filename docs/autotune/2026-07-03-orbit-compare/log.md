@@ -1336,3 +1336,20 @@ roughly additive. Same structure as B=300k: frozen at K=1, converged at
 K=3, wall non-monotone (K=3 cheaper than K=2). BEST CHEAP CELL at L=41:
 B=150k/A=3B = 52s / 487MB / med ~2-3e-3 total.
 Figure: msd_L41_Kscan_B150k.png.
+
+## Repo cleanup (2026-07-07)
+
+1. admit_basis (displacement) added to pc_step_orbit_rep + binding + python
+   wrapper - the winning scheme is now available in momentum space (the k=1
+   comparison should be re-run cap-primary). Verified: L=5 momentum sanity
+   reproduces 1.86e-3 exactly; displacement smoke holds cap under admit=2B.
+2. PPVM_EXPM_STREAM streaming paths REMOVED (MfOp, per_col_norms,
+   StreamOrbitOp, per_col_orbit_stream; ~200 lines): measured useless in
+   both spaces (real: 0-13% RAM for 4-5x wall; momentum: -5% for 24x).
+3. rk4_step / rk4_step_arr marked deprecated (drop-only truncation, weakest
+   scheme; kept for --mode rk4).
+4. xy-experiments: README rewritten to the current script set (7 stale
+   entries removed), trotter_ladder.py tracked, lockfile committed.
+pc_step_complex intentionally KEPT (not deprecated) - see handoff.
+Real-space regression after streaming removal: M100k/1e-5 T=10 cell
+reproduces 8.67e-3/4.09e-2 bit-identically.

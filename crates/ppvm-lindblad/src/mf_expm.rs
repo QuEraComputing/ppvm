@@ -208,124 +208,6 @@ impl LinearOperator<f64> for CachedCscOp<'_> {
     }
 }
 
-/// Matrix-free view of the in-basis generator `M`: recomputes the per-column
-/// action via [`LindbladSpec::spmv_matrix_free`] on EVERY matvec, holding no
-/// `nnz`-sized cache. This is the opt-in low-RAM "streaming" path
-/// (`PPVM_EXPM_STREAM`): it removes the CSC cache (the dominant peak-memory
-/// term at large basis — `nnz·16 B` built on the doubly-enriched corrector
-/// basis B2) at the cost of recomputing the Pauli-commutator action ~m*·s
-/// times per expm call. Default (unset) keeps the fast [`CachedCscOp`].
-struct MfOp<'a> {
-    spec: &'a LindbladSpec,
-    basis: &'a [Word],
-    index: &'a FxHashMap<Word, u32>,
-}
-
-impl LinearOperator<f64> for MfOp<'_> {
-    fn dim(&self) -> usize {
-        self.basis.len()
-    }
-
-    fn parallel_hint(&self) -> bool {
-        false
-    }
-
-    fn dot(&self, overwrite: bool, input: &[f64], output: &mut [f64]) -> Result<(), QuSpinError> {
-        if overwrite {
-            self.spec
-                .spmv_matrix_free(self.basis, self.index, input, output);
-        } else {
-            let mut tmp = vec![0.0; output.len()];
-            self.spec
-                .spmv_matrix_free(self.basis, self.index, input, &mut tmp);
-            for (o, t) in output.iter_mut().zip(tmp.iter()) {
-                *o += *t;
-            }
-        }
-        Ok(())
-    }
-
-    fn trace(&self) -> f64 {
-        unreachable!("MfOp::trace not used on the from_parts apply path")
-    }
-    fn onenorm(&self, _shift: f64) -> f64 {
-        unreachable!("MfOp::onenorm not used on the from_parts apply path")
-    }
-    fn dot_transpose(
-        &self,
-        _overwrite: bool,
-        _input: &[f64],
-        _output: &mut [f64],
-    ) -> Result<(), QuSpinError> {
-        Err(QuSpinError::RuntimeError(
-            "MfOp: dot_transpose not used on the from_parts apply path".into(),
-        ))
-    }
-    fn dot_many(
-        &self,
-        _overwrite: bool,
-        _input: ndarray::ArrayView2<'_, f64>,
-        _output: ndarray::ArrayViewMut2<'_, f64>,
-    ) -> Result<(), QuSpinError> {
-        Err(QuSpinError::RuntimeError(
-            "MfOp: dot_many not used on the from_parts apply path".into(),
-        ))
-    }
-    fn dot_chunk(
-        &self,
-        _overwrite: bool,
-        _input: &[f64],
-        _output_chunk: &mut [f64],
-        _row_start: usize,
-    ) -> Result<(), QuSpinError> {
-        Err(QuSpinError::RuntimeError(
-            "MfOp: dot_chunk not used on the from_parts apply path".into(),
-        ))
-    }
-    fn dot_transpose_chunk(
-        &self,
-        _input: &[f64],
-        _output: &[<f64 as ExpmComputation>::Atomic],
-        _rows: std::ops::Range<usize>,
-    ) -> Result<(), QuSpinError> {
-        Err(QuSpinError::RuntimeError(
-            "MfOp: dot_transpose_chunk not used on the from_parts apply path".into(),
-        ))
-    }
-}
-
-/// Light action pass computing ONLY `per_col[c] = (raw, diag)` for the
-/// `μ`/1-norm selection, without materialising the CSC cache. Used by the
-/// streaming path so the norm pass costs no extra memory.
-fn per_col_norms(spec: &LindbladSpec, basis: &[Word]) -> Vec<(f64, f64)> {
-    basis
-        .par_iter()
-        .map_init(
-            || {
-                (
-                    Vec::<u32>::with_capacity(spec.n_qubits()),
-                    Vec::<u32>::with_capacity(128),
-                    FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
-                        128,
-                        FxBuildHasher::default(),
-                    ),
-                )
-            },
-            |(s1, s2, lm), p| {
-                let terms = spec.compute_action_terms(p, s1, s2, lm);
-                let mut raw = 0.0;
-                let mut diag = 0.0;
-                for (w, c) in terms.iter() {
-                    raw += c.abs();
-                    if w == p {
-                        diag = *c;
-                    }
-                }
-                (raw, diag)
-            },
-        )
-        .collect()
-}
 
 /// Compute `exp(dt · M) · coeffs` for the in-basis-restricted generator
 /// `M`, matrix-free, via `quspin-expm`. Returns a fresh `Vec<f64>` of length
@@ -353,17 +235,7 @@ pub(crate) fn expm_apply_mf(
     // output == input term. From these: `trace = Σ diag`, `μ = trace/n`, and
     // the column 1-norm of `M − μ·I` is `raw − |diag| + |diag − μ|`.
     let index = build_basis_index(basis);
-    // Opt-in streaming (low-RAM) path: skip the CSC cache and recompute the
-    // action per matvec (MfOp). Removes the dominant peak-memory term (the
-    // nnz-sized cache on the doubly-enriched corrector basis) at the cost of
-    // wall. Default (unset) = cached CachedCscOp (fast); tests use the default.
-    let stream = std::env::var_os("PPVM_EXPM_STREAM").is_some();
-    let (cols_opt, per_col) = if stream {
-        (None, per_col_norms(spec, basis))
-    } else {
-        let (cols, per_col) = build_mf_cols(spec, basis, &index);
-        (Some(cols), per_col)
-    };
+    let (cols, per_col) = build_mf_cols(spec, basis, &index);
 
     let trace: f64 = per_col.iter().map(|(_, d)| *d).sum();
     let mu = trace / n as f64;
@@ -389,26 +261,10 @@ pub(crate) fn expm_apply_mf(
     };
 
     let mut v = coeffs.to_vec();
-    match &cols_opt {
-        Some(cols) => {
-            let op = CachedCscOp { cols, dim: n };
-            let expm =
-                quspin_expm::ExpmOp::from_parts(op, dt, mu, s as usize, m_star as usize, expm_tol);
-            expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
-                .expect("expm apply");
-        }
-        None => {
-            let op = MfOp {
-                spec,
-                basis,
-                index: &index,
-            };
-            let expm =
-                quspin_expm::ExpmOp::from_parts(op, dt, mu, s as usize, m_star as usize, expm_tol);
-            expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
-                .expect("expm apply");
-        }
-    }
+    let op = CachedCscOp { cols: &cols, dim: n };
+    let expm = quspin_expm::ExpmOp::from_parts(op, dt, mu, s as usize, m_star as usize, expm_tol);
+    expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
+        .expect("expm apply");
     v
 }
 

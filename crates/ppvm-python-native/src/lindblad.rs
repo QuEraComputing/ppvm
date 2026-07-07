@@ -456,6 +456,7 @@ impl LindbladSpec {
         drop_tol = 0.0,
         protected = None,
         canonicalize_first = false,
+        admit_basis = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step_orbit_rep<'py>(
@@ -470,6 +471,7 @@ impl LindbladSpec {
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
         canonicalize_first: bool,
+        admit_basis: Option<usize>,
     ) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>)> {
         use num::Complex;
         use ppvm_lindblad::orbit_rep;
@@ -515,6 +517,7 @@ impl LindbladSpec {
             &protected_words,
             group.core(),
             k_slice,
+            admit_basis,
         )
         .map_err(map_err)?;
 

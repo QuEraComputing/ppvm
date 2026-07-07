@@ -65,17 +65,6 @@ const W_U64: usize = 2;
 /// admit every leakage string (the historical behaviour, and the behaviour at
 /// `drop_tol = 0`), so the default changes nothing and exact-reference tests are
 /// unaffected. Set `PPVM_K_LEAKAGE` to sweep `K` without rebuilding.
-fn k_leakage() -> f64 {
-    use std::sync::OnceLock;
-    static K: OnceLock<f64> = OnceLock::new();
-    *K.get_or_init(|| {
-        std::env::var("PPVM_K_LEAKAGE")
-            .ok()
-            .and_then(|s| s.parse::<f64>().ok())
-            .filter(|k| k.is_finite() && *k >= 0.0)
-            .unwrap_or(0.0)
-    })
-}
 
 /// Maximum number of qubits supported by [`Word`] (= `8 · W_U64 · sizeof(u64)`).
 pub const MAX_QUBITS: usize = 64 * W_U64;
@@ -1098,6 +1087,7 @@ impl LindbladSpec {
         protected: &[Word],
         num_threads: Option<usize>,
         admit_basis: Option<usize>,
+        tau_add: Option<f64>,
     ) -> Result<(), Error> {
         if let Some(n) = num_threads {
             let pool = rayon::ThreadPoolBuilder::new()
@@ -1105,10 +1095,14 @@ impl LindbladSpec {
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
             pool.install(|| {
-                self.pc_step_inner(basis, coeffs, dt, max_basis, drop_tol, protected, admit_basis)
+                self.pc_step_inner(
+                    basis, coeffs, dt, max_basis, drop_tol, protected, admit_basis, tau_add,
+                )
             })
         } else {
-            self.pc_step_inner(basis, coeffs, dt, max_basis, drop_tol, protected, admit_basis)
+            self.pc_step_inner(
+                basis, coeffs, dt, max_basis, drop_tol, protected, admit_basis, tau_add,
+            )
         }
     }
 
@@ -1154,7 +1148,8 @@ impl LindbladSpec {
         protected: &[Word],
     ) -> Result<PcStepTimings, Error> {
         let mut t = PcStepTimings::default();
-        let tau_add = if dt > 0.0 { k_leakage() * drop_tol / dt } else { 0.0 };
+        // timed variant runs without the leakage admission filter
+        let tau_add = 0.0_f64;
 
         let t0 = Instant::now();
         let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis, tau_add)?;
@@ -1201,6 +1196,7 @@ impl LindbladSpec {
         drop_tol: f64,
         protected: &[Word],
         admit_basis: Option<usize>,
+        tau_add: Option<f64>,
     ) -> Result<(), Error> {
         // Working-set (admission) bound: enrichment may grow the live basis
         // to `admit` >= `max_basis`; the final `cap_basis` then keeps the
@@ -1210,7 +1206,11 @@ impl LindbladSpec {
         // `max_basis` itself and `cap_basis` is a no-op — the historical
         // behaviour, where headroom must be created by `drop_tol` pruning.
         let admit = admit_basis.unwrap_or(max_basis).max(max_basis);
-        let tau_add = if dt > 0.0 { k_leakage() * drop_tol / dt } else { 0.0 };
+        // Optional absolute rate threshold on leakage admission — the natural
+        // (dt/drop-independent) parameterization; the admission accuracy cliff
+        // sits at fixed tau_add (docs/autotune/2026-07-03-orbit-compare).
+        // `None` = no filter (the recommended default with cap truncation).
+        let tau_add = tau_add.unwrap_or(0.0);
         // 1. First-hop expansion. After this, `coeffs` contains the pre-step
         // coefficients followed by zeros for the newly-added leakage strings.
         // We rely on `coeffs` itself as the pre-step buffer for the corrector
@@ -1663,7 +1663,7 @@ mod tests {
         // Evolve in orbit-rep form (max_basis large ⇒ full enrichment).
         for _ in 0..n_steps {
             orbit_rep::pc_step_orbit_rep(
-                &spec, &mut br, &mut cr, dt, 10_000_000, 0.0, &protected, &group, &k, None,
+                &spec, &mut br, &mut cr, dt, 10_000_000, 0.0, &protected, &group, &k, None, None,
             )
             .unwrap();
         }
@@ -1739,6 +1739,7 @@ mod tests {
                 10_000_000,
                 0.0,
                 &protected,
+                None,
                 None,
                 None,
             )
@@ -1840,6 +1841,7 @@ mod tests {
                 &protected,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -1851,6 +1853,7 @@ mod tests {
                 max_basis_m,
                 0.0,
                 &protected,
+                None,
                 None,
                 None,
             )

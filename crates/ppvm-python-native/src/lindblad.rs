@@ -218,6 +218,7 @@ impl LindbladSpec {
         protected = None,
         num_threads = None,
         admit_basis = None,
+        tau_add = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step<'py>(
@@ -231,6 +232,7 @@ impl LindbladSpec {
         protected: Option<PyReadonlyArray2<'py, u8>>,
         num_threads: Option<usize>,
         admit_basis: Option<usize>,
+        tau_add: Option<f64>,
     ) -> PyResult<PyPauliMap<'py>> {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
@@ -259,6 +261,7 @@ impl LindbladSpec {
                 &protected_words,
                 num_threads,
                 admit_basis,
+                tau_add,
             )
             .map_err(map_err)?;
 
@@ -358,6 +361,7 @@ impl LindbladSpec {
         protected = None,
         canonicalize_first = false,
         admit_basis = None,
+        tau_add = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step_orbit_rep<'py>(
@@ -373,6 +377,7 @@ impl LindbladSpec {
         protected: Option<PyReadonlyArray2<'py, u8>>,
         canonicalize_first: bool,
         admit_basis: Option<usize>,
+        tau_add: Option<f64>,
     ) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>)> {
         use num::Complex;
         use ppvm_lindblad::orbit_rep;
@@ -419,6 +424,7 @@ impl LindbladSpec {
             group.core(),
             k_slice,
             admit_basis,
+            tau_add,
         )
         .map_err(map_err)?;
 

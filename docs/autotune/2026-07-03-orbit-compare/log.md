@@ -1396,3 +1396,19 @@ the unified (max_basis, admit_basis, drop_tol) truncation API.
 Wall is now monotone-ish linear in A across both families; the earlier
 "K=3 faster than K=2" was contention. Cost statement: K=3 ~ same wall as
 K=2, converged -> default A=3B unchanged. All other same-day walls stand.
+
+## tau_add promoted to a first-class argument; PPVM_K_LEAKAGE removed (2026-07-07)
+
+Both step functions now take `tau_add: Option<f64>` directly (the natural,
+dt/drop-independent parameterization established by the cliff study);
+k_leakage() and the env var are gone. Binding + python wrappers updated;
+harnesses (main_realspace_ladder --tau_add, k_pec_run/main_k_pec_*
+tau_add + admit_basis args); scan_realspace_msd converts K tokens to
+--tau_add = K*drop/dt at launch, preserving old cell semantics exactly.
+pc_step_timed runs without the filter (documented). REGRESSION: the
+historical K=1 cell (0.1/1e-3, L=7 T=2) reproduces median 5.19e-3 /
+peak 77,820 bit-identically through the new path; L=5 momentum sanity
+1.86e-3 unchanged; tests 7/7.
+Final public truncation API, both spaces:
+  (max_basis, admit_basis=None, drop_tol, tau_add=None) + protected.
+Zero env-var numerics knobs remain.

@@ -234,6 +234,7 @@ class Lindbladian:
         protected_arr: np.ndarray | None = None,
         num_threads: int | None = None,
         admit_basis: int | None = None,
+        tau_add: float | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """One predictor-corrector adaptive step.
 
@@ -253,6 +254,12 @@ class Lindbladian:
 
         ``num_threads``, when set, pins this call to a freshly-built rayon
         pool of that size — useful for benchmarking parallel scaling.
+
+        ``tau_add``, when set, filters leakage admission by an absolute
+        coefficient-rate threshold (the dt- and drop_tol-independent
+        parameterization; formerly the ``PPVM_K_LEAKAGE`` env knob with
+        ``tau_add = K*drop_tol/dt``). Off by default — with cap-based
+        truncation it is at most a modest wall optimization.
 
         ``admit_basis``, when set (must be >= ``max_basis``), bounds the
         enriched working set during the step instead of ``max_basis``: the
@@ -279,6 +286,7 @@ class Lindbladian:
             np.ascontiguousarray(protected_arr, dtype=np.uint8),
             None if num_threads is None else int(num_threads),
             None if admit_basis is None else int(admit_basis),
+            None if tau_add is None else float(tau_add),
         )
 
     def pc_step_orbit_rep(
@@ -293,6 +301,7 @@ class Lindbladian:
         protected_arr: np.ndarray | None = None,
         canonicalize_first: bool = False,
         admit_basis: int | None = None,
+        tau_add: float | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Per-step orbit-representative pc evolution.
 
@@ -334,6 +343,7 @@ class Lindbladian:
             np.ascontiguousarray(protected_arr, dtype=np.uint8),
             bool(canonicalize_first),
             None if admit_basis is None else int(admit_basis),
+            None if tau_add is None else float(tau_add),
         )
 
     def pc_step(

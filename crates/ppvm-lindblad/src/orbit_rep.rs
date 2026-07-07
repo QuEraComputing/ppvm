@@ -445,6 +445,7 @@ pub fn pc_step_orbit_rep(
     group: &TranslationGroup,
     k_modes: &[i32],
     admit_basis: Option<usize>,
+    tau_add: Option<f64>,
 ) -> Result<(), Error> {
     // Working-set (admission) bound, mirroring the real-space `pc_step`:
     // enrichment may grow the live basis to `admit` >= `max_basis`; the
@@ -453,11 +454,10 @@ pub fn pc_step_orbit_rep(
     // `admit_basis = None` admission is bounded by `max_basis` itself —
     // the historical behaviour, where turnover requires `drop_tol > 0`.
     let admit = admit_basis.unwrap_or(max_basis).max(max_basis);
-    // Rate-based admission filter, same semantics as the real-space path:
-    // a leakage rep is admitted only if its rate exceeds
-    // `tau_add = K * drop_tol / dt` (K from PPVM_K_LEAKAGE, default 0 =>
-    // admit everything, the historical behaviour).
-    let tau_add = if dt > 0.0 { crate::k_leakage() * drop_tol / dt } else { 0.0 };
+    // Optional absolute rate threshold on leakage admission (same semantics
+    // as the real-space path). `None` = no filter — the recommended default
+    // with cap truncation.
+    let tau_add = tau_add.unwrap_or(0.0);
     // 1. First-hop phase-aware leakage.
     let mut leak = leakage_orbit_rep(spec, basis, coeffs, protected, group, k_modes, admit)?;
     if tau_add > 0.0 {

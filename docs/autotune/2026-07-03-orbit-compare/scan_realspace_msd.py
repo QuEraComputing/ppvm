@@ -41,14 +41,9 @@ def run_cell(mode, dt, knob, kleak=None, stream=False, mb=None, ab=None):
         cmd += ["--max_basis", str(int(mb))]
     if ab is not None:
         cmd += ["--admit_basis", str(int(ab))]
-    env = {**os.environ}
-    env.pop("PPVM_K_LEAKAGE", None)
-    env.pop("PPVM_EXPM_STREAM", None)
-    if kleak is not None:
-        env["PPVM_K_LEAKAGE"] = str(kleak)
-    if stream:
-        env["PPVM_EXPM_STREAM"] = "1"
-    r = subprocess.run(cmd, cwd=XY, capture_output=True, text=True, env=env)
+    if kleak is not None and mode != "trotter":
+        cmd += ["--tau_add", str(kleak * knob / dt)]   # K token -> explicit tau_add
+    r = subprocess.run(cmd, cwd=XY, capture_output=True, text=True)
     m = re.search(r"(\d+)\s+maximum resident set size", r.stderr)
     rss_mb = int(m.group(1)) / (1024 * 1024) if m else float("nan")
     try:

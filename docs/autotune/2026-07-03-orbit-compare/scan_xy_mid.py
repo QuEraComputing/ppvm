@@ -28,12 +28,12 @@ def run_cell(kind, dt, drop, kleak=None):
     cmd = ["/usr/bin/time", "-l", "./run", "run", "python", script,
            "--L", str(L), "--dt", str(dt), "--steps", str(steps),
            "--drop_tol", str(drop), "--ks", str(K_MODE), "--out", out]
-    env = {**os.environ}
-    env.pop("PPVM_K_LEAKAGE", None)
-    if kleak is not None:
-        env["PPVM_K_LEAKAGE"] = str(kleak)
+    # PPVM_K_LEAKAGE was removed from ppvm (2026-07-07): K tokens now convert
+    # to the explicit --tau_add flag (pec cells only).
+    if kleak is not None and kind == "pec":
+        cmd += ["--tau_add", str(kleak * drop / dt)]
     t0 = time.time()
-    r = subprocess.run(cmd, cwd=XY, capture_output=True, text=True, env=env)
+    r = subprocess.run(cmd, cwd=XY, capture_output=True, text=True)
     wall = time.time() - t0
     m = re.search(r"(\d+)\s+maximum resident set size", r.stderr)
     rss_mb = int(m.group(1)) / (1024 * 1024) if m else float("nan")

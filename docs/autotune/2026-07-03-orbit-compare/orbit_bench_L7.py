@@ -4,6 +4,10 @@ Reference: exact ED curve from exact_ref_L7.py (npz next to this file).
 worker: orbit_bench_L7.py <expm|trotter> L k T dt knob max_basis   (PPVM_EXPM_STREAM=1 for stream)
 driver: orbit_bench_L7.py driver [row ...]   rows like expm:0.1:1e-3:10000000[:stream]
         (no rows -> default plan)
+
+NOTE (2026-07-07): PPVM_K_LEAKAGE / PPVM_EXPM_STREAM were removed from
+ppvm; the K / stream row tokens in this legacy driver are now inert. Use
+scan_xy_mid.py / scan_realspace_msd.py (explicit --tau_add) instead.
 """
 import sys, os, json, time, resource
 import numpy as np

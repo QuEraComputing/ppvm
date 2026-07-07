@@ -1353,3 +1353,16 @@ Figure: msd_L41_Kscan_B150k.png.
 pc_step_complex intentionally KEPT (not deprecated) - see handoff.
 Real-space regression after streaming removal: M100k/1e-5 T=10 cell
 reproduces 8.67e-3/4.09e-2 bit-identically.
+
+## Full K scan to K=10, both B (2026-07-07)
+
+  B=150k: K=1.25..10: 3.9e-2, 2.7e-2, 1.2e-2, 1.7e-3, 4.0e-3, 4.7e-3,
+          1.7e-3, 4.0e-3 (vs 300k/K10 anchor); plateaus at the B-bias floor
+          (~2.3e-3) from K=3 on, fluctuating within the ~2x noise band.
+          Walls 22->203s, RSS 324MB->1.24GB (linear in A).
+  B=300k: 1.8e-2, 9.4e-3, 2.9e-3, 1.3e-3, 5.9e-4, 1.7e-3, 2.8e-4, anchor;
+          post-K=3 values are sub-noise scatter (note K=5 bump in BOTH
+          families - cancellation noise). Walls 50->705s, RSS 519MB->2.4GB.
+VERDICT: K=3 is simultaneously the convergence onset and the cost optimum;
+beyond it cost grows linearly in A for noise-level changes. Improve via B,
+not A. Figure msd_L41_Kscan_full.png.

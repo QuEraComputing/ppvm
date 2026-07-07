@@ -1412,3 +1412,21 @@ peak 77,820 bit-identically through the new path; L=5 momentum sanity
 Final public truncation API, both spaces:
   (max_basis, admit_basis=None, drop_tol, tau_add=None) + protected.
 Zero env-var numerics knobs remain.
+
+## B=600k baseline at L=41 (2026-07-07)
+
+  600k/K=2: 245s/1.16GB  med 1.57e-3 vs 600k/K3  MSD(5)=35.230
+  600k/K=3: 462s/1.55GB  (new anchor)            MSD(5)=35.445
+Rebased ladder (vs 600k/K3, t in [0.2,5]):
+  150k/K3: 1.13e-3 (52s/487MB)   MSD(5)=35.380
+  300k/K3: 5.88e-4 (128s/806MB)  MSD(5)=35.420
+  300k/K7: 1.13e-3 (494s/1.9GB)  - within its B-bias band, K>3 buys nothing
+FINDINGS:
+1. B-convergence is cleanly first-order: bias halves per B-doubling
+   (1.13e-3 -> 5.9e-4, ratio 1.9). Extrapolated residual of the 600k anchor
+   ~3e-4; Richardson limit MSD(5) ~ 35.47(2).
+2. 600k/K=2 (1.57e-3) is WORSE than 300k/K=3 (5.9e-4) at 2x the cost:
+   under-admission (K=2) costs more than B-doubling gains. A=3B confirmed
+   at all three B.
+3. vs Begusic-Chan 2^-18: anchor median 6.3e-3 - unchanged within
+   digitization scatter; that comparison is digitization-limited ~5-6e-3.

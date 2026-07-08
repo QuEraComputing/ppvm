@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CircuitOutcomeEffect","MeasurementOutcome"],"struct":["MeasurementEffect","MeasurementObserver","TraceEffect","TraceObserver"],"type":["MeasurementResult"]};

@@ -1,0 +1,33 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Parse the `device circuit.observable` header value into Pauli-sum terms."><title>ppvm_vihaco::observable - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-17e0aaed.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="ppvm_vihaco" data-themes="" data-resource-suffix="" data-rustdoc-version="1.96.1 (31fca3adb 2026-06-26)" data-channel="1.96.1" data-search-js="search-b5634cc7.js" data-stringdex-js="stringdex-2da4960a.js" data-settings-js="settings-170eb4bf.js" ><script src="../../static.files/storage-41dd4d93.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../static.files/main-5013f961.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-f7c3ffd8.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module observable</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../ppvm_vihaco/index.html">ppvm_<wbr>vihaco</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module observable</a></h2><h3><a href="#functions">Module Items</a></h3><ul class="block"><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"><h2 class="in-crate"><a href="../index.html">In crate ppvm_<wbr>vihaco</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">ppvm_vihaco</a></div><h1>Module <span>observable</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/ppvm_vihaco/observable.rs.html#4-349">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Parse the <code>device circuit.observable</code> header value into Pauli-sum terms.</p>
+<p>Lives in <code>ppvm-vihaco</code> rather than <code>ppvm-runtime</code> because it only parses
+header syntax that <code>ppvm-vihaco</code> consumes; <code>ppvm-runtime</code> has no notion of
+a textual observable. The unrelated <code>PauliPattern::parse</code> in
+<code>ppvm-runtime</code> is a <em>matcher</em> grammar (alternation, star, positional
+anchors) and shares only the <code>I/X/Y/Z</code> alphabet with this one.</p>
+<p>Grammar (informal):</p>
+<div class="example-wrap"><pre class="language-text"><code>sum     = WS* term (WS* sign WS* term)* WS*
+term    = coefficient (WS* &#39;*&#39;)? WS* pauli_word
+        | pauli_word
+sign    = &#39;+&#39; | &#39;-&#39;
+coefficient
+        = digits (&#39;.&#39; digits?)? ([eE] [+-]? digits)?
+        | &#39;.&#39; digits ([eE] [+-]? digits)?
+pauli_word
+        = [IXYZ]{n_qubits}</code></pre></div>
+<ul>
+<li>The first term may have a leading <code>+</code> or <code>-</code> (no sign means <code>+</code>).</li>
+<li>Absent coefficient defaults to <code>1.0</code>.</li>
+<li>The <code>*</code> is only legal <em>after</em> a coefficient — bare <code>*ZZ</code> is rejected.</li>
+<li>The word must be exactly <code>n_qubits</code> characters from <code>I/X/Y/Z</code>.</li>
+</ul>
+<p>Rejected at parse time:</p>
+<ul>
+<li>Empty or whitespace-only input.</li>
+<li>Bare coefficients with no Pauli word.</li>
+<li>Words shorter or longer than <code>n_qubits</code>.</li>
+<li>Invalid Pauli characters.</li>
+<li>Missing <code>+</code>/<code>-</code> between terms.</li>
+</ul>
+</div></details><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.parse_pauli_sum_terms.html" title="fn ppvm_vihaco::observable::parse_pauli_sum_terms">parse_<wbr>pauli_<wbr>sum_<wbr>terms</a></dt><dd>Parse a Pauli-sum string like <code>"1.0*ZZ + 0.5*XX - 0.3*YY"</code> into a list of
+<code>(word_source, coefficient)</code> pairs. Callers convert the word source to
+their preferred Pauli-word type via <code>PauliWord::from</code> / <code>LossyPauliWord::from</code>.</dd></dl></section></div></main></body></html>

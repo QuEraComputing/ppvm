@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PPVM_BYTECODE_VERSION"],"fn":["compile_to_bytes","is_bytecode","module_from_bytes","module_to_bytes","read_module","write_module"]};

@@ -1472,3 +1472,25 @@ Both branch refs deleted; content preserved in campaign history + ledgers.
 Remaining branch state: autotune/ladder-tuning = the campaign superset
 (contains expm-pc-step, expm-memory, symmetry-merging); local main is 50
 behind origin/main -> upstream sync is the outstanding git task before PR.
+
+## Branch triage part 2: perf/mimalloc-allocator + lindblad-shim (2026-07-07)
+
+perf/mimalloc-allocator (June 17, 1 commit): PR #129 CLOSED unmerged; the
+campaign independently carries the measured version (53f7ff29: mimalloc +
+chunked leakage -> ~50% peak RSS cut) and current code has mimalloc in
+Cargo.toml. Superseded -> local ref DELETED (remote cleanup optional).
+
+lindblad-shim (June 17, 5 unique commits vs campaign): PR #98 ("Adaptive
+Pauli-Lindbladian shim + adaptive-evolution demo") is still OPEN; the
+campaign branched off mid-review and is now 162 commits ahead - the de
+facto successor. Its unique commits: (a) b07f75de MAINTAINER-REQUESTED API
+changes: PcStepConfig struct bundling the step knobs (replacing the long
+positional list + clippy allow) and an error.rs extraction - the campaign
+never adopted this and has since grown MORE positional args (max_basis,
+admit_basis, drop_tol, tau_add, num_threads). The same review feedback
+will return on the campaign PR; (b) f14edafc drops mimalloc - CONFLICTS
+with the campaign's measured keep (campaign wins, it has data);
+(c) expm-engine removals done differently/superseded by mf_expm evolution.
+DISPOSITION: keep the branch while PR #98 is open. TODO before the campaign
+PR: port the PcStepConfig + error.rs pattern onto the current API (even
+more justified now with 5 knobs), then close #98 as superseded.

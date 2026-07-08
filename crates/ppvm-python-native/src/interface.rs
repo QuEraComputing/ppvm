@@ -278,6 +278,12 @@ macro_rules! create_interface {
                 if truncate { self.inner.truncate(); }
             }
 
+            #[pyo3(signature = (addr0, axis_angle, theta, truncate = true))]
+            pub fn r(&mut self, addr0: usize, axis_angle: f64, theta: f64, truncate: bool) {
+                self.inner.r(addr0, axis_angle, theta);
+                if truncate { self.inner.truncate(); }
+            }
+
             // rot2
             #[pyo3(signature = (targets, theta, truncate = true))]
             pub fn rxx(&mut self, targets: Vec<usize>, theta: f64, truncate: bool) -> PyResult<()> {

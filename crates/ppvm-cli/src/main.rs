@@ -13,7 +13,7 @@ mod tui;
 #[command(args_conflicts_with_subcommands = true)]
 pub struct Cli {
     /// Number of threads for all parallel work (1 = fully serial & deterministic)
-    #[arg(short, long, default_value_t = 1, value_parser = clap::value_parser!(usize).range(1..))]
+    #[arg(short, long, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
     threads: usize,
 
     /// A .sst/.ssb file to open in the TUI (when no subcommand is given).

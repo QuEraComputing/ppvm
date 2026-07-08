@@ -482,7 +482,7 @@ impl PPVM {
             }
             PPVMEffect::Measurement(effect) => {
                 let follow_ups = Observe::<MeasurementEffect>::observe(self, &effect)?;
-                // NOTE: push measurements to stack; two booleans: outcome, is_lost
+                // NOTE: push measurement outcomes onto the stack as u32 (0/1/2, where 2 = Lost).
                 for outcome in effect.measurement_results {
                     let m = Value::U32(outcome as u32);
                     self.cpu.stack_push(m);

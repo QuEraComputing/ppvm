@@ -1532,3 +1532,26 @@ make it ~O(N). Filed for a future optimization session.
 CONSEQUENCE FOR THE MOMENTUM MSD COMPARISON: not pursued to completion -
 full-MSD-in-momentum is the wrong benchmark. The right momentum benchmark
 is single-k D(k) vs Trotter, where the compression pays off.
+
+## D extraction protocol + dt=0.2 B-convergence (2026-07-08)
+
+Begusic-Chan D extraction (from their process.ipynb, confirmed):
+  D = linregress(t[-51:], MSD[-51:]).slope/2, i.e. a single linear fit over
+  t_theirs in [10,20] = t_ours [2.5,5], slope/2; then delta/dt->0 extrapolation
+  across thresholds (Fig 2d). IDENTICAL to our scalar-D protocol; our recomputed
+  per-threshold D match theirs exactly (2^-17/-18/-19 -> 3.287/3.515/3.661 ours).
+  Our windowed D(t) (fig06) is the LOCAL-slope version of the same estimator.
+
+dt=0.2 B-convergence (L=41, A=3B unless noted; [2.5,5] regression D):
+  dt=0.1 K=3: D flat ~3.79 across B=50k-600k (converged). MSD(5)=35.25.
+  dt=0.2 K=3: D = 3.43/3.74/3.58/3.75 (B=50/100/150/300k) - SCATTERED, LOW,
+              not converged. MSD(5)~34.2.
+  dt=0.2 K=5: D = 3.81 (B=150k), 3.82 (B=300k) - RECOVERS to ~3.79-3.81.
+  dt=0.2 K=10 B=150k: 3.79.
+FINDING: the admission knee K scales with dt. At larger dt each exp(dt L*)
+step spreads the operator more, so A=3B headroom is insufficient (admission-
+limited) - need K>=5 at dt=0.2 vs K=3 at dt=0.1. Once K is large enough,
+dt=0.2 converges to the same D=3.79-3.81. NB dt=0.1 remains the sweet spot
+for MSD(5) absolute value (35.25 vs 34.6 at dt=0.2/K5); the SLOPE (D) converges
+at both once K is adequate. Recipe refinement: K_knee grows with dt; use
+K~3 at dt<=0.1, K~5 at dt=0.2.

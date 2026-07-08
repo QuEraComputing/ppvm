@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from ._core import StimProgram as StimProgram
+from .generalized_tableau import ExpectationResult as ExpectationResult
 from .generalized_tableau import GeneralizedTableau as GeneralizedTableau
 from .generalized_tableau import MeasurementResult as MeasurementResult
 from .generalized_tableau import sample_stim as sample_stim

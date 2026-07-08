@@ -54,6 +54,19 @@ macro_rules! create_interface {
                     .collect()
             }
 
+            /// Non-destructive expectation value of a Pauli observable.
+            ///
+            /// `observable` is a Stim-style sparse product ("X0*X3*Z5*Y7",
+            /// optional leading +/-) or a dense "IXYZ…" string of length
+            /// n_qubits. Returns the expectation in [-1, 1], or `None` if the
+            /// observable's support touches a lost qubit. Raises `ValueError`
+            /// for a malformed / out-of-range / repeated-qubit observable.
+            pub fn peek_observable_expectation(&self, observable: &str) -> PyResult<Option<f64>> {
+                self.inner
+                    .peek_observable_expectation(observable)
+                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+            }
+
             pub fn current_measurement_record(&self) -> Vec<i64> {
                 self.inner
                     .current_measurement_record()

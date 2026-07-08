@@ -20,7 +20,7 @@ use num::{
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 
-type PhasedPauliWordNoHash<A, H> = PhasedPauliWord<A, H, PauliWord<A, H, false>>;
+pub(crate) type PhasedPauliWordNoHash<A, H> = PhasedPauliWord<A, H, PauliWord<A, H, false>>;
 
 /// A `2n`-row stabilizer / destabilizer tableau.
 ///

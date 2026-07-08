@@ -4,6 +4,7 @@
 import enum
 from collections.abc import Iterable
 from dataclasses import InitVar, dataclass, field
+from typing import ClassVar
 
 from . import _core
 from ._core import StimProgram
@@ -50,6 +51,36 @@ class MeasurementResult(enum.IntEnum):
 # IntEnum constructor dominates large readouts, while a tuple index just bumps a
 # refcount. Shared with ``GeneralizedTableauSum``.
 _BY_VALUE = (MeasurementResult.ZERO, MeasurementResult.ONE, MeasurementResult.LOST)
+
+
+@dataclass(frozen=True)
+class ExpectationResult:
+    """The outcome of a non-destructive observable-expectation peek.
+
+    The float analog of `MeasurementResult`: it carries the expectation value
+    ``⟨O⟩ ∈ [-1, 1]`` of a Pauli observable, or signals that the observable's
+    support touched a lost qubit. When lost, ``value`` is ``None`` and the
+    result compares equal to the ``ExpectationResult.LOST`` sentinel.
+
+    Attributes:
+        value: The expectation value in ``[-1, 1]``, or ``None`` if lost.
+    """
+
+    value: float | None
+    LOST: ClassVar["ExpectationResult"]
+
+    @property
+    def is_lost(self) -> bool:
+        """Whether the observable's support touched a lost qubit."""
+        return self.value is None
+
+    def __float__(self) -> float:
+        if self.value is None:
+            raise ValueError("observable expectation is LOST (a support qubit is lost)")
+        return self.value
+
+
+ExpectationResult.LOST = ExpectationResult(None)
 
 
 @dataclass(frozen=True)
@@ -197,6 +228,48 @@ class GeneralizedTableau(
             A list of ``MeasurementResult`` outcomes, one per target.
         """
         return [_BY_VALUE[v] for v in self._interface.measure_many(_normalize_targets(targets))]
+
+    def peek_observable_expectation(self, observable: str) -> ExpectationResult:
+        """Expected value ``⟨O⟩`` of a Pauli observable, without disturbing the state.
+
+        This is a non-physical operation: it reports the expectation value of
+        the observable on the current state without collapsing or otherwise
+        mutating it. Unlike a pure stabilizer simulator (where the value is
+        always ``-1``, ``0``, or ``+1``), ``GeneralizedTableau`` represents
+        arbitrary states, so the result is generally a continuous float in
+        ``[-1, 1]``.
+
+        Args:
+            observable: The Pauli observable, as a string. Two notations are
+                accepted, each with an optional leading ``+``/``-`` sign:
+
+                - **Sparse product** (Stim ``MPP`` syntax): factors joined by
+                  ``*``, e.g. ``"X0*X3*Z5*Y7"``, ``"-Z0*Y1"``, ``"Z0"``.
+                - **Dense**: a string of ``I``/``X``/``Y``/``Z`` of length
+                  ``n_qubits``, e.g. ``"IXIZ"``.
+
+                The empty string (optionally just a sign) is the identity.
+
+        Returns:
+            An `ExpectationResult` carrying the float ``⟨O⟩``, or
+            `ExpectationResult.LOST` if a qubit in the observable's support has
+            been lost.
+
+        Raises:
+            ValueError: If the observable is malformed, names an out-of-range
+                qubit, or repeats a qubit.
+
+        Example:
+            ```python
+            tab = GeneralizedTableau(2)
+            tab.h(0)
+            tab.cnot(0, 1)  # Bell state
+            float(tab.peek_observable_expectation("Z0*Z1"))  # 1.0
+            float(tab.peek_observable_expectation("-Z0*Z1"))  # -1.0
+            ```
+        """
+        value = self._interface.peek_observable_expectation(observable)
+        return ExpectationResult.LOST if value is None else ExpectationResult(value)
 
     def current_measurement_record(self) -> list[MeasurementResult]:
         """Return all measurement outcomes recorded so far.

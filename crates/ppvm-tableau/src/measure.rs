@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use super::data::{compute_phase_with_mask_static, symplectic_inner};
+use super::data::{PhasedPauliWordNoHash, compute_phase_with_mask_static, symplectic_inner};
 use crate::prelude::*;
 use bitvec::view::BitView;
 use fxhash::FxHashMap as HashMap;
@@ -573,7 +573,6 @@ where
     pub fn z_expectation(&self, addr0: usize) -> f64 {
         let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
             self.compute_decomposition(addr0, Pauli::Z);
-
         if stab_anticomm_bits == I::zero() {
             // Case b: Z is a stabilizer — self-pairing overlap.
             let entries: Vec<(Complex<T::Coeff>, I)> = self.coefficients.iter().copied().collect();
@@ -592,6 +591,62 @@ where
                 odd_phase_mask,
             )
         }
+    }
+
+    /// Non-destructive expectation value `⟨O⟩` of a multi-qubit Pauli
+    /// observable, given as `(qubit, pauli)` factors plus an overall sign.
+    ///
+    /// Returns the expectation in `[-1, 1]`, or `None` if any qubit in the
+    /// observable's support has been lost. For a pure stabilizer state the
+    /// value is `≈ ±1` or `≈ 0`; with non-Clifford gates or noise trajectories
+    /// it is generally continuous.
+    ///
+    /// Each qubit index must be `< n_qubits` and appear at most once; identity
+    /// factors are ignored. The quantum state is not disturbed.
+    pub fn pauli_expectation(&self, factors: &[(usize, Pauli)], negate: bool) -> Option<f64> {
+        for &(qubit, pauli) in factors {
+            if pauli != Pauli::I && self.is_lost[qubit] {
+                return None;
+            }
+        }
+        let mut word = PhasedPauliWordNoHash::<T::Storage, T::BuildHasher>::new(self.n_qubits());
+        for &(qubit, pauli) in factors {
+            word.set(qubit, pauli);
+        }
+        let value = self.expectation(&word.word);
+        Some(if negate { -value } else { value })
+    }
+
+    /// Non-destructive expectation value `⟨O⟩` of a Pauli observable given as a
+    /// string.
+    ///
+    /// `observable` accepts a Stim-style sparse product (`"X0*X3*Z5*Y7"`, with
+    /// an optional leading `+`/`-`) or a dense `"IXYZ…"` string of length
+    /// `n_qubits`. See [`crate::observable`] for the full grammar.
+    ///
+    /// Returns `Ok(Some(v))` with the expectation in `[-1, 1]`, `Ok(None)` when
+    /// the observable's support touches a lost qubit, or `Err` for a malformed,
+    /// out-of-range, or repeated-qubit observable. The state is not disturbed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ppvm_tableau::prelude::*;
+    /// use ppvm_pauli_sum::config::fxhash::ByteF64;
+    ///
+    /// let mut tab: GeneralizedTableau<ByteF64<1>> =
+    ///     GeneralizedTableau::new_with_seed(2, 1e-12, 0);
+    /// tab.h(0);
+    /// tab.cnot(0, 1);
+    /// assert!((tab.peek_observable_expectation("Z0*Z1").unwrap().unwrap() - 1.0).abs() < 1e-12);
+    /// assert!((tab.peek_observable_expectation("-Z0*Z1").unwrap().unwrap() + 1.0).abs() < 1e-12);
+    /// ```
+    pub fn peek_observable_expectation(
+        &self,
+        observable: &str,
+    ) -> Result<Option<f64>, crate::observable::ObservableParseError> {
+        let (negate, factors) = crate::observable::parse_observable(observable, self.n_qubits())?;
+        Ok(self.pauli_expectation(&factors, negate))
     }
 
     /// Case_b overlap: self-pairing (branch_index = idx), so overlap = ±|c|^2.
@@ -675,5 +730,144 @@ where
                 .entry(idx ^ stab_anticomm_bits)
                 .or_insert(Complex::zero()) += q * coeff;
         }
+    }
+}
+
+#[cfg(test)]
+mod expectation_tests {
+    use crate::observable::ObservableParseError;
+    use crate::prelude::*;
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
+    use ppvm_traits::char::Pauli;
+
+    type TestConfig = ByteF64<1>;
+    type TestTab = GeneralizedTableau<TestConfig>;
+
+    fn tab(n: usize) -> TestTab {
+        GeneralizedTableau::new_with_seed(n, 1e-12, 0)
+    }
+
+    /// Mirror of the `stim.TableauSimulator.peek_observable_expectation`
+    /// docstring example: a Bell pair `H 0; CNOT 0 1` (Schrödinger picture,
+    /// gates forward).
+    fn bell() -> TestTab {
+        let mut t = tab(3);
+        t.h(0);
+        t.cnot(0, 1);
+        t
+    }
+
+    fn peek(t: &TestTab, obs: &str) -> f64 {
+        t.peek_observable_expectation(obs)
+            .expect("valid observable")
+            .expect("not lost")
+    }
+
+    #[test]
+    fn bell_pair_matches_stim_docstring() {
+        let t = bell();
+        assert!((peek(&t, "X0*X1") - 1.0).abs() < 1e-12, "XX");
+        assert!((peek(&t, "Y0*Y1") + 1.0).abs() < 1e-12, "YY");
+        assert!((peek(&t, "Z0*Z1") - 1.0).abs() < 1e-12, "ZZ");
+        assert!((peek(&t, "-Z0*Z1") + 1.0).abs() < 1e-12, "-ZZ");
+        assert!(peek(&t, "Z0").abs() < 1e-12, "ZI is random -> 0");
+        assert!((peek(&t, "Z2") - 1.0).abs() < 1e-12, "IIZ -> +1");
+    }
+
+    #[test]
+    fn identity_observable_is_plus_one() {
+        let t = bell();
+        // Empty product / all-identity observables.
+        assert!((peek(&t, "") - 1.0).abs() < 1e-12);
+        assert!((peek(&t, "III") - 1.0).abs() < 1e-12);
+        assert!((peek(&t, "-III") + 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn single_qubit_z_agrees_with_z_expectation() {
+        let mut t = tab(2);
+        t.h(0);
+        t.t(1); // non-Clifford on qubit 1, leaves ⟨Z1⟩ = 1
+        assert!((peek(&t, "Z0") - t.z_expectation(0)).abs() < 1e-12);
+        assert!((peek(&t, "Z1") - t.z_expectation(1)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn dense_and_sparse_forms_agree() {
+        let t = bell();
+        assert!((peek(&t, "ZZI") - peek(&t, "Z0*Z1")).abs() < 1e-12);
+        assert!((peek(&t, "XXI") - peek(&t, "X0*X1")).abs() < 1e-12);
+    }
+
+    #[test]
+    fn stim_underscore_dense_form_matches_i_dense_form() {
+        // The Bloch probe feeds stim-style dense PauliStrings using `_` for
+        // identity (e.g. "+ZZ_", "+X__"); they agree with the `I` form.
+        let t = bell();
+        assert!(
+            (peek(&t, "ZZ_") - peek(&t, "ZZI")).abs() < 1e-12,
+            "ZZ_ == ZZI"
+        );
+        assert!((peek(&t, "ZZ_") - 1.0).abs() < 1e-12, "Z0*Z1 -> +1");
+        assert!(peek(&t, "X__").abs() < 1e-12, "X0 alone is random -> 0");
+    }
+
+    #[test]
+    fn typed_pauli_expectation_matches_string() {
+        let t = bell();
+        let v = t
+            .pauli_expectation(&[(0, Pauli::Z), (1, Pauli::Z)], false)
+            .unwrap();
+        assert!((v - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn lost_support_qubit_returns_none() {
+        let mut t = tab(2);
+        t.h(0);
+        t.cnot(0, 1);
+        t.loss_channel(1, 1.0);
+        assert!(t.is_lost[1]);
+        // Observable touches the lost qubit -> None.
+        assert_eq!(t.peek_observable_expectation("Z0*Z1").unwrap(), None);
+        // Observable avoids the lost qubit -> a value.
+        assert!(t.peek_observable_expectation("Z0").unwrap().is_some());
+    }
+
+    #[test]
+    fn parser_rejects_malformed_observables() {
+        let t = tab(3);
+        assert_eq!(
+            t.peek_observable_expectation("Z5"),
+            Err(ObservableParseError::QubitOutOfRange {
+                qubit: 5,
+                n_qubits: 3
+            })
+        );
+        assert_eq!(
+            t.peek_observable_expectation("Z0*Z0"),
+            Err(ObservableParseError::RepeatedQubit(0))
+        );
+        assert!(matches!(
+            t.peek_observable_expectation("Q0"),
+            Err(ObservableParseError::BadToken(_))
+        ));
+        assert_eq!(
+            t.peek_observable_expectation("ZZ"),
+            Err(ObservableParseError::DenseLengthMismatch {
+                got: 2,
+                n_qubits: 3
+            })
+        );
+    }
+
+    #[test]
+    fn non_clifford_state_gives_continuous_value() {
+        // |+⟩ rotated by Rx(θ) about X stays an eigenstate of X; instead use a
+        // small Ry to get a continuous ⟨Z⟩.
+        let mut t = tab(1);
+        t.ry(0, 0.7);
+        let expected = (0.7f64).cos(); // ⟨Z⟩ for Ry(θ)|0⟩
+        assert!((peek(&t, "Z0") - expected).abs() < 1e-9);
     }
 }

@@ -45,6 +45,8 @@ pub mod measure_all;
 
 /// Noise channels: depolarizing, Pauli error, loss.
 pub mod noise;
+/// Parsing of Pauli-observable strings for `peek_observable_expectation`.
+pub mod observable;
 /// [`SparseVector`](sparsevec::SparseVector) trait and implementations.
 pub mod sparsevec;
 /// [`TableauIndex`](tableau_index::TableauIndex) — abstraction over
@@ -57,6 +59,7 @@ pub mod tableau_like;
 /// Convenience re-exports for downstream code.
 pub mod prelude {
     pub use crate::data::{GeneralizedTableau, Tableau};
+    pub use crate::observable::ObservableParseError;
     pub use crate::sparsevec::SparseVector;
     pub use crate::tableau_index::TableauIndex;
     pub use crate::tableau_like::TableauLike;

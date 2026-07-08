@@ -1587,3 +1587,17 @@ vs B=600k:  dt=0.1 3.796;  dt=0.05 3.787.
 plateau is confirmed (flat within the ~+-0.03 extraction/cancellation-noise
 floor). The converged D at dt<=0.1 is 3.76-3.79, matching Begusic-Chan 3.76.
 Extraction noise (not B) is now the limiting uncertainty at large B.
+
+## The B=100k D-outlier explained (2026-07-08)
+
+The B=100k/dt=0.1/K=3 point gives D=3.91 (vs ~3.79 neighbors). CAUSE: its
+MSD OVERSHOOTS the converged curve across [2.5,5] by a growing margin
+(+0.25 at t=2.5 -> +0.84 at t=5; MSD(5)=36.2 vs 35.4 converged). Growing
+offset => steeper slope => inflated D. NOT under-resolution (that gives LOW
+D, cf. 50k/75k). This is DETERMINISTIC non-monotone truncation bias in B
+(the method has no randomness; the top-B kept set changes discontinuously
+with B and the coherent retained weight can over/undershoot) - the same
+non-monotonicity Begusic-Chan report for SPD vs delta. CORRECTION: earlier
+"cancellation-noise floor" mislabels this as statistical; it is deterministic
+non-monotone convergence. Implication unchanged: use the median/band and the
+D(t) collapse, never a single D(B) point (B=100k would mislead by ~3%).

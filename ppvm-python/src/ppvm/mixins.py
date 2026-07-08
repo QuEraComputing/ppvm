@@ -221,6 +221,22 @@ class RotationsMixin:
         targets, theta = _split_targets_parameter(args, theta, "theta")
         self._interface.rz(targets, theta)
 
+    def r(self, addr0: int, axis_angle: float, theta: float) -> None:
+        """Apply a rotation about an axis in the X-Y plane to the specified qubit.
+
+        ```math
+        R(\\phi, \\theta) = e^{-i \\frac{\\theta}{2} (\\cos\\phi\\, X + \\sin\\phi\\, Y)}
+            = R_Z(\\phi) R_X(\\theta) R_Z(-\\phi)
+        ```
+
+        Args:
+            addr0: The index of the target qubit.
+            axis_angle: The angle ``φ`` (in radians) of the rotation axis
+                within the X-Y plane, measured from the X-axis.
+            theta: The rotation angle in radians.
+        """
+        self._interface.r(addr0, axis_angle, theta)
+
     # Two qubit rotations
     def rxx(self, *args: Any, theta: float | None = None) -> None:
         """Apply RXX (Ising XX) rotation gates over consecutive qubit pairs.
@@ -601,8 +617,23 @@ class TruncatingRotationsMixin(RotationsMixin):
         targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
         self._interface.rz(targets, theta, truncate)
 
+    def r(self, addr0: int, axis_angle: float, theta: float, *, truncate: bool = True) -> None:
+        """Apply a rotation about an axis in the X-Y plane to the specified qubit.
+
+        See `RotationsMixin.r` for the gate definition.
+
+        Args:
+            addr0: The index of the target qubit.
+            axis_angle: The angle ``φ`` (in radians) of the rotation axis
+                within the X-Y plane, measured from the X-axis.
+            theta: The rotation angle in radians.
+            truncate: See `rx`.
+        """
+        self._interface.r(addr0, axis_angle, theta, truncate=truncate)
+
+    # Two qubit rotations
     def rxx(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
-        """Apply RXX (Ising XX) rotation gates over consecutive qubit pairs.
+        """Apply an RXX (Ising XX) rotation gate to two qubits.
 
         See `RotationsMixin.rxx` for the gate definition.
 

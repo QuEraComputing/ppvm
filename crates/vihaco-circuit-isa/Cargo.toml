@@ -1,0 +1,15 @@
+[package]
+name = "vihaco-circuit-isa"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chumsky = "0.10"
+eyre = "0.6.12"
+smallvec = "1.15.1"
+vihaco = "0.1.1"
+vihaco-parser = "0.1.1"
+vihaco-parser-core = "0.1.1"
+
+[package.metadata.cargo-machete]
+ignored = ["eyre"]  # transitive dependency in vihaco, somehow not handled correctly by machete

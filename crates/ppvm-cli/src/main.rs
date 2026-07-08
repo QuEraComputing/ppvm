@@ -11,7 +11,7 @@ mod commands;
 #[command(about = "Pauli propagation virtual machine", long_about = None)]
 pub struct Cli {
     /// Number of threads for all parallel work (1 = fully serial & deterministic)
-    #[arg(short, long, default_value_t = 1, value_parser = clap::value_parser!(usize).range(1..))]
+    #[arg(short, long, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
     threads: usize,
 
     /// Subcommand to run.
@@ -122,4 +122,22 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_zero_threads() {
+        // `--threads 0` must be rejected (0 would break pool sizing). The
+        // subcommand is valid, so a zero thread count is the only parse error.
+        assert!(Cli::try_parse_from(["ppvm", "--threads", "0", "parse", "f.sst"]).is_err());
+    }
+
+    #[test]
+    fn accepts_positive_and_default_threads() {
+        assert!(Cli::try_parse_from(["ppvm", "--threads", "1", "parse", "f.sst"]).is_ok());
+        assert!(Cli::try_parse_from(["ppvm", "parse", "f.sst"]).is_ok());
+    }
 }

@@ -103,6 +103,9 @@ pub fn parse_command(line: &str) -> Result<Command> {
             "help" | "h" | "?" => Ok(Command::Help),
             "load" => {
                 let path = it.next().ok_or_else(|| eyre!(":load needs a file path"))?;
+                if it.next().is_some() {
+                    bail!(":load takes a single file path");
+                }
                 Ok(Command::Load(path.to_string()))
             }
             other => bail!("unknown command :{other}"),
@@ -115,11 +118,10 @@ pub fn parse_command(line: &str) -> Result<Command> {
     let args: Vec<&str> = it.collect();
 
     if head == "device" {
-        let n = args
-            .first()
-            .ok_or_else(|| eyre!("device needs a qubit count"))?
-            .parse::<usize>()
-            .wrap_err("invalid qubit count")?;
+        if args.len() != 1 {
+            bail!("device takes a single qubit count, got {}", args.len());
+        }
+        let n = args[0].parse::<usize>().wrap_err("invalid qubit count")?;
         return Ok(Command::Device(n));
     }
 
@@ -229,5 +231,17 @@ mod tests {
     fn wrong_arity_errors() {
         assert!(parse_command("x").is_err());
         assert!(parse_command("cnot 0").is_err());
+    }
+
+    #[test]
+    fn load_rejects_trailing_tokens() {
+        assert!(parse_command(":load a.sst").is_ok());
+        assert!(parse_command(":load a.sst junk").is_err());
+    }
+
+    #[test]
+    fn device_rejects_trailing_tokens() {
+        assert!(parse_command("device 2").is_ok());
+        assert!(parse_command("device 2 extra").is_err());
     }
 }

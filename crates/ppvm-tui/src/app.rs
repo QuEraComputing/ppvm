@@ -226,12 +226,16 @@ impl AppState {
     /// Fold a single step outcome into the app's paused/finished/status state.
     fn apply_outcome(&mut self, outcome: StepOutcome) {
         match outcome {
-            StepOutcome::Continue => self.set_status(""),
+            StepOutcome::Continue => {
+                self.paused = false;
+                self.set_status("");
+            }
             StepOutcome::Breakpoint => {
                 self.paused = true;
                 self.set_status("-- breakpoint hit --");
             }
             StepOutcome::Return | StepOutcome::Halt => {
+                self.paused = false;
                 self.finished = true;
                 self.set_status("program finished");
             }
@@ -379,7 +383,9 @@ impl AppState {
 
     /// A contextual footer hint.
     pub fn hint(&self) -> &'static str {
-        if self.has_program && self.paused {
+        if self.has_program && self.finished {
+            ":reset=run again  ·  :load <file>  ·  :help  ·  :q=quit"
+        } else if self.has_program && self.paused {
             "Enter=step  :c=continue  :reset  :help  :q=quit"
         } else if self.machine.is_some() {
             "type a gate, or :load <file>   :help  :q=quit"
@@ -625,6 +631,29 @@ mod tests {
         );
         // |0> measured is 0.
         assert_eq!(app.measurement_bits(), "0");
+    }
+
+    #[test]
+    fn finishing_clears_paused() {
+        let mut app = AppState::new();
+        app.load_source(BP_PROGRAM).unwrap();
+        app.dispatch(":c"); // pause at breakpoint
+        assert!(app.paused());
+        app.dispatch(":c"); // run to Return
+        assert!(!app.paused(), "paused must clear once the program finishes");
+    }
+
+    #[test]
+    fn finished_hint_does_not_suggest_stepping() {
+        let mut app = AppState::new();
+        app.load_source(BP_PROGRAM).unwrap();
+        app.dispatch(":c"); // pause at breakpoint
+        app.dispatch(":c"); // run to Return
+        assert!(
+            !app.hint().contains("step") && !app.hint().contains("continue"),
+            "finished-program hint should not suggest stepping, got: {}",
+            app.hint()
+        );
     }
 
     #[test]

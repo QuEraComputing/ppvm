@@ -11,7 +11,7 @@ mod commands;
 #[command(about = "Pauli propagation virtual machine", long_about = None)]
 pub struct Cli {
     /// Number of threads for all parallel work (1 = fully serial & deterministic)
-    #[arg(short, long, default_value = "1")]
+    #[arg(short, long, default_value_t = 1, value_parser = clap::value_parser!(usize).range(1..))]
     threads: usize,
 
     /// Subcommand to run.

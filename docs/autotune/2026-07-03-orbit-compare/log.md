@@ -1555,3 +1555,16 @@ dt=0.2 converges to the same D=3.79-3.81. NB dt=0.1 remains the sweet spot
 for MSD(5) absolute value (35.25 vs 34.6 at dt=0.2/K5); the SLOPE (D) converges
 at both once K is adequate. Recipe refinement: K_knee grows with dt; use
 K~3 at dt<=0.1, K~5 at dt=0.2.
+
+## D vs B for different dt (L=41, A=3B unless noted) (2026-07-08)
+
+  dt=0.05 K3: D = 3.63/3.65/3.73/3.78 (B=50/100/150/300k) - climbs to 3.79,
+              needs larger B (more truncation events at small dt).
+  dt=0.1  K3: D ~ 3.79 flat for all B (sweet spot; B=100k=3.91 is noise).
+  dt=0.2  K3: 3.43/3.74/3.58/3.75 - admission-limited, scattered.
+  dt=0.2  K5: 3.81/3.82 - recovers.
+COMPLETE PICTURE: D converges to ~3.79 for all dt once the ADEQUATE knob is
+used, but the binding knob differs: small dt is B-limited (truncation-event
+accumulation -> need larger B), large dt is A/K-limited (per-step spreading
+-> need larger K). dt=0.1/K=3 is the joint sweet spot (converged at the
+smallest B and K). Figure: /tmp/D_vs_B_dt.png (diagnostic; not yet a repo fig).

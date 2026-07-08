@@ -1,0 +1,23 @@
+[package]
+name = "ppvm-vihaco"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitvec = "1.0.1"
+bnum = { version = "0.13.0", features = ["num-traits"] }
+chumsky = "0.10.0"
+eyre = "0.6.12"
+num = "0.4.3"
+smallvec = "1.15.1"
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
+ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+vihaco = "0.1.1"
+vihaco-parser = "0.1.1"
+vihaco-parser-core = "0.1.1"
+vihaco-circuit-isa = { version = "0.1.0", path = "../vihaco-circuit-isa" }
+
+# chumsky and vihaco-parser-core are pulled in by the vihaco_parser::Parse
+# derive on BackendKind; machete can't see macro-expanded usage.
+[package.metadata.cargo-machete]
+ignored = ["chumsky", "vihaco-parser-core"]

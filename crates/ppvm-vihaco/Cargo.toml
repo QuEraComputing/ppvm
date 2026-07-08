@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-# Enables shot-level parallelism in `run_shots_parallel`/`run_shots`.
-rayon = ["dep:rayon"]
+# Parallelism via rayon: shot-level (`run_shots`) and tableau-internal. Off by
+# default; enable with `features = ["rayon"]` (native only — wasm has no thread
+# support, so keeping it off by default keeps the default build wasm-safe).
+rayon = ["dep:rayon", "ppvm-tableau/rayon"]
 
 [dependencies]
 bitvec = "1.0.1"
@@ -23,7 +25,3 @@ vihaco-parser = "0.1.1"
 vihaco-parser-core = "0.1.1"
 vihaco-circuit-isa = { version = "0.1.0", path = "../vihaco-circuit-isa" }
 ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
-
-# enable rayon if not on wasm
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau", features = ["rayon"] }

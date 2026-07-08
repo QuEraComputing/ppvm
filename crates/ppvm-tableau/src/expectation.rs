@@ -59,12 +59,12 @@ where
     /// returns a real number (Hermitian operator on a normalized state).
     pub fn expectation<W: PauliWordTrait>(&self, word: &W) -> f64 {
         let (phase, stab_anticomm, destab_anticomm) = self.compute_decomposition_word(word);
-        let entries: Vec<(Complex<T::Coeff>, I)> = self.coefficients.clone().into_iter().collect();
         if stab_anticomm == I::zero() {
+            let entries: Vec<(Complex<T::Coeff>, I)> = self.coefficients.iter().copied().collect();
             Self::compute_overlap_case_b(&entries, phase, destab_anticomm)
         } else {
             let coeff_map: HashMap<I, Complex<T::Coeff>> =
-                entries.into_iter().map(|(v, i)| (i, v)).collect();
+                self.coefficients.iter().map(|&(c, i)| (i, c)).collect();
             let odd_phase_mask = self.odd_phase_destabilizer_mask();
             Self::compute_overlap_case_a(
                 &coeff_map,

@@ -74,6 +74,7 @@ impl<T: Config> Tableau<T> {
         data
     }
 
+    /// Construct a fresh tableau initialised to `|0…0⟩`.
     pub fn new(n_qubits: usize) -> Self {
         let data = Tableau::<T>::new_data(n_qubits);
         Self {
@@ -698,6 +699,7 @@ where
         for l in self.is_lost.iter_mut() {
             *l &= false;
         }
+        self.measurement_record.clear();
     }
 
     /// Clone the quantum state but reinitialize the RNG, producing an independent simulation

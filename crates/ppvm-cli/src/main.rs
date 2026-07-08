@@ -13,7 +13,7 @@ mod tui;
 #[command(args_conflicts_with_subcommands = true)]
 pub struct Cli {
     /// Number of threads for all parallel work (1 = fully serial & deterministic)
-    #[arg(short, long, default_value = "1")]
+    #[arg(short, long, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
     threads: usize,
 
     /// A .sst/.ssb file to open in the TUI (when no subcommand is given).
@@ -155,5 +155,18 @@ mod tests {
         let cli = Cli::try_parse_from(["ppvm", "run", "prog.sst"]).unwrap();
         assert!(matches!(cli.command, Some(Commands::Run { .. })));
         assert!(cli.file.is_none());
+    }
+
+    #[test]
+    fn rejects_zero_threads() {
+        // `--threads 0` must be rejected (0 would break pool sizing). Tested
+        // without a subcommand since `args_conflicts_with_subcommands` forbids
+        // combining the two, so a zero thread count is the only parse error.
+        assert!(Cli::try_parse_from(["ppvm", "--threads", "0"]).is_err());
+    }
+
+    #[test]
+    fn accepts_positive_threads() {
+        assert!(Cli::try_parse_from(["ppvm", "--threads", "1"]).is_ok());
     }
 }

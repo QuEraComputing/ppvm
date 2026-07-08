@@ -1031,12 +1031,14 @@ name = "ppvm-tableau-sum"
 version = "0.1.0"
 dependencies = [
  "bitvec",
+ "bytemuck",
  "criterion 0.8.2",
  "fxhash",
  "gxhash",
  "mimalloc",
  "num",
  "ppvm-pauli-sum",
+ "ppvm-pauli-word",
  "ppvm-tableau",
  "ppvm-traits",
  "rand 0.10.1",

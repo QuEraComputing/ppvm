@@ -1020,6 +1020,7 @@ dependencies = [
  "itertools 0.14.0",
  "num",
  "ppvm-pauli-sum",
+ "ppvm-pauli-word",
  "ppvm-traits",
  "rand 0.10.1",
  "rayon",

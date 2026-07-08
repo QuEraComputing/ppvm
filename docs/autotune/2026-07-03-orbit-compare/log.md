@@ -1494,3 +1494,41 @@ with the campaign's measured keep (campaign wins, it has data);
 DISPOSITION: keep the branch while PR #98 is open. TODO before the campaign
 PR: port the PcStepConfig + error.rs pattern onto the current API (even
 more justified now with 5 knobs), then close #98 as superseded.
+
+## Why momentum is SLOW: orbit-rep per-term canonicalization tax (2026-07-07)
+
+User asked why momentum-space MSD is so slow when the orbit basis is |G|x
+SMALLER than real space. Microbenchmark (matched basis B=20-30k, one pc_step):
+  real-space L=11:        5.6 us/term  (flat in L)
+  momentum L=6  |G|=12:  30.2 us/term
+  momentum L=11 |G|=22:  66.4 us/term  (13.5x real space)
+  momentum L=16 |G|=32: 142.5 us/term
+Per-term cost grows ~|G|*N: the culprit is group.canonicalize_with_shift(q)
+in build_orbit_rep_cols (orbit_rep.rs:95) and leakage_orbit_rep (:381) -
+called for EVERY action term of EVERY rep, every build (2x/step), scanning
+all |G|=2L translations (each an O(N) word compare) to map each generated
+term back to its canonical rep. Real space has no canonicalization.
+
+IMPLICATION (the real answer): for a FULL MSD you need all |G| momentum
+modes. Converging one k-mode needs ~B_real/|G| terms (the compression), so
+  total momentum work = |G| modes x (B_real/|G|) terms x c_orbit
+                      = B_real x c_orbit  ~=  13.5x  x (real-space work).
+=> reconstructing a real-space quantity (MSD) via all momentum modes is
+NET SLOWER than doing it in real space, by the per-term tax (13.5x at L=11,
+growing with L). Momentum space is the WRONG tool for full MSD.
+Momentum WINS for: (a) MEMORY - |G|x fewer terms/mode, modes done serially;
+(b) SINGLE k-resolved quantities (one transport channel, one RP resonance,
+D(k) at one k) - there you evolve B_real/|G| terms at 13.5x/term = net
+~1.6x FASTER than a full real-space run AND |G|x less RAM. That is the
+method's actual niche, not real-space-observable reconstruction.
+
+OPTIMIZATION OPPORTUNITY: the canonicalization map (rep->canonical-rep,shift)
+is FIXED across steps and across the 2 expm calls for the stable part of the
+basis; it is recomputed every build. Caching it (keyed by rep Word) would
+drop the orbit per-term cost toward the real-space ~6 us, reviving the
+compression as a genuine WALL advantage for single-mode runs. Also
+canonicalize_with_shift itself is O(|G|*N); minimal-rotation tricks could
+make it ~O(N). Filed for a future optimization session.
+CONSEQUENCE FOR THE MOMENTUM MSD COMPARISON: not pursued to completion -
+full-MSD-in-momentum is the wrong benchmark. The right momentum benchmark
+is single-k D(k) vs Trotter, where the compression pays off.

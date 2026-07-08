@@ -227,6 +227,10 @@ mod tests {
         assert_eq!(parse("u3"), U3);
         assert_eq!(parse("measure"), Measure);
         assert_eq!(parse("reset"), Reset);
+        assert_eq!(parse("r"), R);
+        assert_eq!(parse("rx"), RX);
+        assert_eq!(parse("ry"), RY);
+        assert_eq!(parse("rz"), RZ);
         assert_eq!(parse("rxx"), RXX);
         assert_eq!(parse("depolarize2"), Depolarize2);
         assert_eq!(parse("depolarize"), Depolarize);

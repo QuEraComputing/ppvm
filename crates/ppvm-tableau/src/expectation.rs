@@ -39,9 +39,7 @@ where
         + ToPrimitive
         + Debug
         + std::ops::Mul<f64>
-        + PartialOrd<f64>
-        + Send
-        + Sync,
+        + PartialOrd<f64>,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign
@@ -49,7 +47,7 @@ where
         + One
         + ComplexFloat
         + Copy,
-    I: TableauIndex + Debug + Send + Sync,
+    I: TableauIndex + Debug,
 {
     /// `⟨ψ|word|ψ⟩` for the multi-qubit Pauli `word`.
     ///

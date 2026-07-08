@@ -6,6 +6,11 @@ use vihaco::Instruction;
 use vihaco::Message;
 use vihaco_parser::Parse;
 
+/// The parse trait wired up by `#[derive(Parse)]`, re-exported so downstream
+/// crates can call [`CircuitInstruction::parser`] without depending on
+/// `vihaco-parser-core` directly to bring the trait into scope.
+pub use vihaco_parser_core::Parse as ParseInstruction;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Instruction, Parse)]
 pub enum CircuitInstruction {
     // NOTE: longer tokens need to go first
@@ -167,7 +172,8 @@ mod tests {
 
     use chumsky::Parser as _;
     use vihaco::instruction::{FromBytes, OpCode, WriteBytes};
-    use vihaco_parser_core::Parse as _;
+    // `parser()` comes from the crate's re-exported `ParseInstruction` trait,
+    // pulled in by the `use super::*` glob above — no direct parser-core dep.
 
     /// Every variant, in declaration order. Anything iterating over the full
     /// instruction set (round-trips, opcode uniqueness) goes through this so a

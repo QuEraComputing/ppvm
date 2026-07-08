@@ -287,15 +287,15 @@ impl PPVM {
             return Err(eyre::eyre!("device circuit.n_qubits must be declared"));
         }
         self.circuit = match (info.backend, seed) {
-            (BackendKind::Tableau, None) => Circuit::tableau(info),
-            (BackendKind::Tableau, Some(seed)) => Circuit::tableau_with_seed(info, seed),
+            (BackendKind::Tableau, None) => Circuit::tableau(info)?,
+            (BackendKind::Tableau, Some(seed)) => Circuit::tableau_with_seed(info, seed)?,
             (BackendKind::PauliSum, _) => {
                 let terms = parse_observable_terms(info)?;
-                Circuit::paulisum(info, &terms)
+                Circuit::paulisum(info, &terms)?
             }
             (BackendKind::LossyPauliSum, _) => {
                 let terms = parse_observable_terms(info)?;
-                Circuit::lossy_paulisum(info, &terms)
+                Circuit::lossy_paulisum(info, &terms)?
             }
         };
 

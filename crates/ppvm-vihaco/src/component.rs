@@ -17,6 +17,11 @@ use ppvm_tableau::prelude::*;
 use vihaco::{Effects, component, observe};
 use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
 
+/// Largest qubit count any backend can simulate. The widest size bucket is
+/// backed by 2048-bit integers (`U2048` / `[u8; 256]`), so every constructor
+/// rejects `n_qubits > MAX_QUBITS` rather than panicking.
+pub const MAX_QUBITS: usize = 2048;
+
 /// Truncation strategy used by every `PauliSum` / `LossyPauliSum` size bucket.
 /// Coefficient-threshold pruning is always on; the Pauli-weight cap is set per
 /// run from the header (defaults to `usize::MAX` = no cap).
@@ -565,37 +570,39 @@ pub enum TableauCircuit {
 }
 
 impl TableauCircuit {
-    pub fn new(n_qubits: usize, coefficient_threshold: f64) -> Self {
+    pub fn new(n_qubits: usize, coefficient_threshold: f64) -> Result<Self> {
         if n_qubits <= 64 {
             let tab = GeneralizedTableau::new(n_qubits, coefficient_threshold);
-            Self::Bits64(CircuitExecutor { tab })
+            Ok(Self::Bits64(CircuitExecutor { tab }))
         } else if n_qubits <= 128 {
             let tab = GeneralizedTableau::new(n_qubits, coefficient_threshold);
-            Self::Bits128(CircuitExecutor { tab })
+            Ok(Self::Bits128(CircuitExecutor { tab }))
         } else if n_qubits <= 256 {
             let tab = GeneralizedTableau::new(n_qubits, coefficient_threshold);
-            Self::Bits256(CircuitExecutor { tab })
+            Ok(Self::Bits256(CircuitExecutor { tab }))
         } else if n_qubits <= 512 {
             let tab = GeneralizedTableau::new(n_qubits, coefficient_threshold);
-            Self::Bits512(CircuitExecutor { tab })
+            Ok(Self::Bits512(CircuitExecutor { tab }))
         } else if n_qubits <= 1024 {
             let tab = GeneralizedTableau::new(n_qubits, coefficient_threshold);
-            Self::Bits1024(CircuitExecutor { tab })
-        } else if n_qubits <= 2048 {
+            Ok(Self::Bits1024(CircuitExecutor { tab }))
+        } else if n_qubits <= MAX_QUBITS {
             let tab = GeneralizedTableau::new(n_qubits, coefficient_threshold);
-            Self::Bits2048(CircuitExecutor { tab })
+            Ok(Self::Bits2048(CircuitExecutor { tab }))
         } else {
-            panic!("No matching executor for {} qubits", n_qubits);
+            Err(eyre!(
+                "cannot simulate {n_qubits} qubits: maximum is {MAX_QUBITS}"
+            ))
         }
     }
 
     /// Same as [`TableauCircuit::new`], but seed the RNG deterministically so a
     /// shot is reproducible.
-    pub fn new_with_seed(n_qubits: usize, coefficient_threshold: f64, seed: u64) -> Self {
+    pub fn new_with_seed(n_qubits: usize, coefficient_threshold: f64, seed: u64) -> Result<Self> {
         macro_rules! seeded {
             ($variant:ident) => {{
                 let tab = GeneralizedTableau::new_with_seed(n_qubits, coefficient_threshold, seed);
-                Self::$variant(CircuitExecutor { tab })
+                Ok(Self::$variant(CircuitExecutor { tab }))
             }};
         }
         if n_qubits <= 64 {
@@ -608,10 +615,12 @@ impl TableauCircuit {
             seeded!(Bits512)
         } else if n_qubits <= 1024 {
             seeded!(Bits1024)
-        } else if n_qubits <= 2048 {
+        } else if n_qubits <= MAX_QUBITS {
             seeded!(Bits2048)
         } else {
-            panic!("No matching executor for {} qubits", n_qubits);
+            Err(eyre!(
+                "cannot simulate {n_qubits} qubits: maximum is {MAX_QUBITS}"
+            ))
         }
     }
 
@@ -673,7 +682,7 @@ impl PauliSumCircuit {
     /// Build a PauliSum-backed circuit, seeding the state with every term:
     /// `for (word, coef) in terms { state += (word, coef); }`. Words must
     /// already be validated against `info.n_qubits` by the caller.
-    pub fn new(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Self {
+    pub fn new(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Result<Self> {
         macro_rules! build {
             ($variant:ident, $N:literal) => {{
                 let mut state = PauliSum::<PauliSumConfig<$N>>::builder()
@@ -684,7 +693,7 @@ impl PauliSumCircuit {
                     state += (word.as_str(), *coef);
                 }
                 let initial = state.clone();
-                Self::$variant(PauliSumExecutor { state, initial })
+                Ok(Self::$variant(PauliSumExecutor { state, initial }))
             }};
         }
         if info.n_qubits <= 64 {
@@ -697,10 +706,13 @@ impl PauliSumCircuit {
             build!(Bits512, 64)
         } else if info.n_qubits <= 1024 {
             build!(Bits1024, 128)
-        } else if info.n_qubits <= 2048 {
+        } else if info.n_qubits <= MAX_QUBITS {
             build!(Bits2048, 256)
         } else {
-            panic!("No matching PauliSum executor for {} qubits", info.n_qubits);
+            Err(eyre!(
+                "cannot simulate {} qubits: maximum is {MAX_QUBITS}",
+                info.n_qubits
+            ))
         }
     }
 
@@ -759,7 +771,7 @@ impl LossyPauliSumCircuit {
     /// Build a LossyPauliSum-backed circuit, seeding every term via
     /// `state += (word, coef)`. Words must already be validated against
     /// `info.n_qubits` by the caller.
-    pub fn new(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Self {
+    pub fn new(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Result<Self> {
         macro_rules! build {
             ($variant:ident, $N:literal) => {{
                 let mut state = PauliSum::<LossyPauliSumConfig<$N>>::builder()
@@ -770,7 +782,7 @@ impl LossyPauliSumCircuit {
                     state += (word.as_str(), *coef);
                 }
                 let initial = state.clone();
-                Self::$variant(LossyPauliSumExecutor { state, initial })
+                Ok(Self::$variant(LossyPauliSumExecutor { state, initial }))
             }};
         }
         if info.n_qubits <= 64 {
@@ -783,13 +795,13 @@ impl LossyPauliSumCircuit {
             build!(Bits512, 64)
         } else if info.n_qubits <= 1024 {
             build!(Bits1024, 128)
-        } else if info.n_qubits <= 2048 {
+        } else if info.n_qubits <= MAX_QUBITS {
             build!(Bits2048, 256)
         } else {
-            panic!(
-                "No matching LossyPauliSum executor for {} qubits",
+            Err(eyre!(
+                "cannot simulate {} qubits: maximum is {MAX_QUBITS}",
                 info.n_qubits
-            );
+            ))
         }
     }
 
@@ -846,35 +858,35 @@ pub enum Circuit {
 impl Circuit {
     /// Build a Tableau-backed circuit. Tableau init only needs `n_qubits` and
     /// `coefficient_threshold` from `info`; no observable required.
-    pub fn tableau(info: &PPVMDeviceInfo) -> Self {
-        Self::Tableau(TableauCircuit::new(
+    pub fn tableau(info: &PPVMDeviceInfo) -> Result<Self> {
+        Ok(Self::Tableau(TableauCircuit::new(
             info.n_qubits,
             info.coefficient_threshold,
-        ))
+        )?))
     }
 
     /// Same as [`Circuit::tableau`], but seed the tableau RNG deterministically
     /// so a shot is reproducible.
-    pub fn tableau_with_seed(info: &PPVMDeviceInfo, seed: u64) -> Self {
-        Self::Tableau(TableauCircuit::new_with_seed(
+    pub fn tableau_with_seed(info: &PPVMDeviceInfo, seed: u64) -> Result<Self> {
+        Ok(Self::Tableau(TableauCircuit::new_with_seed(
             info.n_qubits,
             info.coefficient_threshold,
             seed,
-        ))
+        )?))
     }
 
     /// Build a PauliSum-backed circuit, seeding the state with every term in
     /// `terms`. Each `(word, coef)` is added via `state += (word, coef)`; the
     /// caller is responsible for having parsed/validated the words against
     /// `info.n_qubits` (see `parse_observable_terms` in `composite.rs`).
-    pub fn paulisum(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Self {
-        Self::PauliSum(PauliSumCircuit::new(info, terms))
+    pub fn paulisum(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Result<Self> {
+        Ok(Self::PauliSum(PauliSumCircuit::new(info, terms)?))
     }
 
     /// Build a LossyPauliSum-backed circuit. Same contract as
     /// [`Circuit::paulisum`].
-    pub fn lossy_paulisum(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Self {
-        Self::LossyPauliSum(LossyPauliSumCircuit::new(info, terms))
+    pub fn lossy_paulisum(info: &PPVMDeviceInfo, terms: &[(String, f64)]) -> Result<Self> {
+        Ok(Self::LossyPauliSum(LossyPauliSumCircuit::new(info, terms)?))
     }
 
     fn execute(
@@ -929,8 +941,9 @@ impl vihaco::Reset for Circuit {
 
 impl Default for Circuit {
     fn default() -> Self {
-        // Default backend is Tableau, which doesn't require an observable.
-        Self::tableau(&PPVMDeviceInfo::default())
+        // Default backend is Tableau with 0 qubits, which always fits the
+        // smallest bucket, so construction here is infallible.
+        Self::tableau(&PPVMDeviceInfo::default()).expect("0-qubit tableau is always constructible")
     }
 }
 
@@ -961,7 +974,7 @@ mod tests {
     /// flips the qubit.
     #[test]
     fn tableau_backend_x_flips_qubit() {
-        let mut circuit = Circuit::tableau(&info(1));
+        let mut circuit = Circuit::tableau(&info(1)).unwrap();
         circuit
             .execute_instruction(&CircuitInstruction::X, &CircuitMessage::Qubit(0))
             .unwrap();
@@ -972,7 +985,7 @@ mod tests {
     /// leaves both qubits in |1⟩.
     #[test]
     fn tableau_backend_cnot_propagates_flip() {
-        let mut circuit = Circuit::tableau(&info(2));
+        let mut circuit = Circuit::tableau(&info(2)).unwrap();
         circuit
             .execute_instruction(&CircuitInstruction::X, &CircuitMessage::Qubit(0))
             .unwrap();
@@ -981,5 +994,37 @@ mod tests {
             .unwrap();
         assert_eq!(measure(&mut circuit, 0), MeasurementOutcome::One);
         assert_eq!(measure(&mut circuit, 1), MeasurementOutcome::One);
+    }
+
+    // ─── Construction rejects more qubits than the backend ceiling ────────
+    //
+    // The widest executor bucket is 2048 qubits (U2048 / `[u8; 256]`); beyond
+    // that there is no backing width, so the constructors return an error
+    // rather than panicking — a panic would tear down the TUI that drives this.
+
+    #[test]
+    fn tableau_rejects_more_than_2048_qubits() {
+        assert!(Circuit::tableau(&info(MAX_QUBITS + 1)).is_err());
+    }
+
+    #[test]
+    fn tableau_with_seed_rejects_more_than_2048_qubits() {
+        assert!(Circuit::tableau_with_seed(&info(MAX_QUBITS + 1), 0).is_err());
+    }
+
+    #[test]
+    fn paulisum_rejects_more_than_2048_qubits() {
+        assert!(Circuit::paulisum(&info(MAX_QUBITS + 1), &[]).is_err());
+    }
+
+    #[test]
+    fn lossy_paulisum_rejects_more_than_2048_qubits() {
+        assert!(Circuit::lossy_paulisum(&info(MAX_QUBITS + 1), &[]).is_err());
+    }
+
+    #[test]
+    fn constructs_at_the_2048_qubit_boundary() {
+        // 2048 is the last valid bucket; it must still succeed.
+        assert!(Circuit::tableau(&info(MAX_QUBITS)).is_ok());
     }
 }

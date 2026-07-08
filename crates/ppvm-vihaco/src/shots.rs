@@ -4,8 +4,8 @@
 //! Running a compiled program for many shots, optionally across threads.
 //!
 //! Each shot runs on a fresh [`PPVM`] so shots are fully independent; the
-//! module is compiled once and shared. With the `rayon` feature, [`run_shots`]
-//! parallelizes across shots when the global pool (sized once by
+//! module is compiled once and cloned into each shot's machine. With the `rayon` feature,
+//! [`run_shots`] parallelizes across shots when the global pool (sized once by
 //! [`set_global_threads`]) has more than one thread and there are enough shots
 //! to amortize the overhead.
 

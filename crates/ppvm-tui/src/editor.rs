@@ -6,7 +6,7 @@
 //! debugger. The host handles submit (Enter) and quit keys, then delegates the
 //! remaining editing keys here via [`LineEditor::handle_key`].
 
-use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 /// The command line's editable buffer plus its command history.
 #[derive(Debug, Default)]
@@ -198,7 +198,7 @@ impl LineEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyCode, KeyModifiers};
+    use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)

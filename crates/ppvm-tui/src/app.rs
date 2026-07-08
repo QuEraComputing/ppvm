@@ -7,12 +7,12 @@
 //! (submit, quit) and delegates editing to the [`LineEditor`]. Nothing here
 //! touches a terminal or runs a loop.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use eyre::{Result, eyre};
 use ppvm_vihaco::composite::{PPVM, StepOutcome};
 use ppvm_vihaco::measurements::MeasurementResult;
 use ppvm_vihaco::{CircuitInstruction, PPVMModule, compile_program, load_module_file};
 use ratatui::Frame;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::widgets::Clear;
 

@@ -7,15 +7,15 @@
 
 use std::io;
 
-use crossterm::event::{self, Event};
-use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
 use eyre::Result;
 use ppvm_tui::AppState;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{self, Event};
+use ratatui::crossterm::execute;
+use ratatui::crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 
 /// Restores the terminal on drop — including when the app panics mid-loop.
 struct TerminalGuard;

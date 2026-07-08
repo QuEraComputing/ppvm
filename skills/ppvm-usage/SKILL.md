@@ -1,6 +1,6 @@
 ---
 name: ppvm-usage
-description: Authoritative usage guide for ppvm, a fast quantum-circuit simulator with a Rust core and Python bindings (`ppvm-traits`, `ppvm-pauli-word`, `ppvm-pauli-sum`, `ppvm-tableau`, `ppvm-sym`, `ppvm-stim`, `ppvm-vihaco`, `ppvm` Python package). Use this skill whenever a task touches ppvm — importing `ppvm` in Python, depending on any `ppvm-*` crate in Rust, writing or running `.sst` programs through `ppvm-cli`, writing or modifying Pauli-propagation code, building or running circuits against the generalized stabilizer tableau, executing Stim programs, modelling depolarizing or loss noise, or even just answering "how do I do X in ppvm". Use it even when the user only hints at ppvm (mentions Pauli strings + truncation, or `GeneralizedTableau`, or "Bloqade simulation backend"). Skipping this skill is a top source of broken examples — the API has several non-obvious conventions (Heisenberg gate order, `Config`-generic types, kwargs-not-classes truncation) that look reasonable but are wrong if guessed.
+description: Authoritative usage guide for ppvm, a fast quantum-circuit simulator with a Rust core and Python bindings (`ppvm-traits`, `ppvm-pauli-word`, `ppvm-pauli-sum`, `ppvm-tableau`, `ppvm-sym`, `ppvm-stim`, `ppvm` Python package). Use this skill whenever a task touches ppvm — importing `ppvm` in Python, depending on any `ppvm-*` crate in Rust, writing or modifying Pauli-propagation code, building or running circuits against the generalized stabilizer tableau, executing Stim programs, modelling depolarizing or loss noise, or even just answering "how do I do X in ppvm". Use it even when the user only hints at ppvm (mentions Pauli strings + truncation, or `GeneralizedTableau`, or "Bloqade simulation backend"). Skipping this skill is a top source of broken examples — the API has several non-obvious conventions (Heisenberg gate order, `Config`-generic types, kwargs-not-classes truncation) that look reasonable but are wrong if guessed.
 allowed-tools: Bash, Read, Write, Edit
 ---
 
@@ -355,91 +355,11 @@ What *not* to do:
 - Don't add a `# TODO: upstream this to ppvm` and move on.
 - Don't reimplement a ppvm primitive in the user's project just because the upstream version is awkward — fix the upstream awkwardness with an issue.
 
-## Running programs from `.sst` source (`ppvm-vihaco` / `ppvm-cli`)
-
-`.sst` is the textual program format that `ppvm-cli` runs. A module has a
-`device` header block selecting the backend and any initial state, then one
-or more `fn @<name>()` bodies. Each `circuit <name>` instruction pops typed
-operands from the CPU stack and dispatches to the runtime.
-
-### Backend selection
-
-```sst
-device circuit.n_qubits 2;
-device circuit.backend paulisum;          // tableau | paulisum | lossy_paulisum
-device circuit.observable 1.0*ZZ+0.5*XX;  // initial PauliSum state (PauliSum/Lossy only)
-device circuit.coefficient_threshold 1e-6;
-device circuit.max_pauli_weight 8;        // PauliSum/Lossy only; defaults to no cap
-```
-
-- **`tableau`** (default): `GeneralizedTableau`, Schrödinger picture, measurements.
-- **`paulisum`** / **`lossy_paulisum`**: `PauliSum`/`LossyPauliSum`, Heisenberg
-  picture. Require `circuit.observable`. `Measure`/`Reset` error at runtime.
-
-### Multi-term observable syntax
-
-`circuit.observable` accepts a Pauli-sum string: terms separated by `+`/`-`,
-each term an optional coefficient (decimal or scientific) followed by an
-`I/X/Y/Z` word of length exactly `n_qubits`. The `*` between coefficient and
-word is optional. **No internal whitespace is allowed in the header value**
-— the header parser stops at the first space — so write
-`1.0*ZZ+0.5*XX-0.3*YY` rather than `1.0*ZZ + 0.5*XX - 0.3*YY`.
-
-### Gate-order convention
-
-The runtime applies `circuit ...` instructions in code order on every backend.
-Whoever emits the `.sst` is responsible for emitting gates in the right
-direction for the chosen picture: **forward** for Tableau (Schrödinger),
-**reversed** for PauliSum/Lossy (Heisenberg). Textbook `H(0); CNOT(0,1)` on
-a PauliSum target compiles to `circuit.cnot; circuit.h`, not the other way around.
-
-### `circuit.trace` and `circuit.truncate`
-
-```sst
-const.str "Z?*"
-circuit.trace        // PauliSum/Lossy: pushes state.trace(&pattern) as f64
-circuit.truncate     // PauliSum/Lossy: state.truncate(); Tableau: silent no-op
-```
-
-`trace` pops a `Value::String` (Pauli-pattern source — same grammar as
-`PauliPattern::parse`), evaluates the backend-specific trace, and appends to
-the machine's `trace_record` *and* pushes the value back as `Value::F64`.
-
-**Asymmetric semantics by backend:**
-- **PauliSum / LossyPauliSum:** `state.trace(&pat)` is a filter coefficient
-  sum — sum of `c_P` over terms whose word matches `pat`. Use `"Z?*"` to
-  compute `⟨0…0|state|0…0⟩`.
-- **Tableau:** `trace` returns `Σ_{P matches pat} ⟨ψ|P|ψ⟩` — the sum of
-  Pauli expectation values over every word the pattern enumerates. Bounded
-  patterns only (`Z?{n}`, positional anchors, character classes); star
-  quantifiers panic because they enumerate an infinite set.
-
-These are honest natural primitives for each backend; the same operand
-will not give the same number across backends. Users shouldn't expect
-agreement on a shared input.
-
-`truncate` takes no operand and applies the configured strategy
-(`CoefficientThreshold` + `MaxPauliWeight`) to the current state. On
-Tableau it's a silent no-op — gate methods already prune via
-`coefficient_threshold`. **Without explicit `circuit.truncate` calls in the
-.sst, PauliSum runs do not truncate** — the compiler that emits the .sst
-decides where to place them.
-
-### Running
-
-```bash
-ppvm run program.sst --shots 100 --seed 42
-```
-
-For PauliSum runs the trace values appear in the per-shot output (`run`
-shows `bits | trace0,trace1,...` when both records are non-empty, just
-the floats when only traces, just the bits when only measurements).
-
 ## Where to go next
 
 - **`docs/src/pages/develop.astro`** (rendered at `/develop/`) — canonical developer guide: architecture, build/test, extending ppvm, "where to look for X" table. Read this if your task is to *modify* ppvm rather than *use* it.
 - **`docs/src/pages/api.astro`** (rendered at `/api/`) — full Rust + Python API reference, generated from rustdoc and griffe.
-- **Examples:** `examples/trotter.rs`, `examples/symbolic.rs`, `examples/msd.rs` (Rust); `ppvm-python/docs/examples/trotter.py`, `msd.py` (Python); `crates/ppvm-cli/examples/*.sst` and `crates/ppvm-vihaco/tests/*.sst` (`.sst` source).
+- **Examples:** `examples/trotter.rs`, `examples/symbolic.rs`, `examples/msd.rs` (Rust); `ppvm-python/docs/examples/trotter.py`, `msd.py` (Python).
 - **`AGENTS.md`** at repo root — pointer file with the agent-specific TL;DR.
 
 The repo's `Config`-trait generics are load-bearing. If you're tempted to introduce runtime dispatch on the Rust side to "simplify", that's a strong signal you should refactor the type alias and stay inside the bound instead.

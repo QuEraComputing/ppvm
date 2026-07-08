@@ -1,9 +1,0 @@
-device circuit.n_qubits 1;
-device circuit.backend paulisum;
-device circuit.observable Z;
-
-fn @main() {
-    const.u64 0
-    circuit.measure
-    ret
-}

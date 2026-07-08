@@ -1,8 +1,5 @@
 device circuit.n_qubits 2;
 
-// TODO: aspirational — depends on `ret <n>` restoring the caller's PC and
-// leaving the top `n` values on the caller's stack. The runtime doesn't do
-// this today (Frame has no return_pc), so this fixture currently fails.
 
 fn @main() {
     // Put q0 into |+>.

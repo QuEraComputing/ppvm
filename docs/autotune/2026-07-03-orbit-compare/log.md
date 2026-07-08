@@ -1601,3 +1601,22 @@ non-monotonicity Begusic-Chan report for SPD vs delta. CORRECTION: earlier
 "cancellation-noise floor" mislabels this as statistical; it is deterministic
 non-monotone convergence. Implication unchanged: use the median/band and the
 D(t) collapse, never a single D(B) point (B=100k would mislead by ~3%).
+
+## B=3M, K=3 (overnight, 2026-07-08) - all dt converge to D~3.79
+
+  dt=0.2 : D[2.5,5]=3.791  MSD(5)=34.63  (58 min, 8.1 GB, 3.0M strings)
+  dt=0.1 : D[2.5,5]=3.774  MSD(5)=35.34  (71 min, 9.0 GB)
+  dt=0.05: D[2.5,5]=3.794  MSD(5)=35.43  (137 min, 8.8 GB)
+All three land at D=3.77-3.79 = converged, matching Begusic-Chan 3.76 (~1%).
+
+REVISION of the earlier dt=0.2 conclusion: I claimed "dt=0.2 is K/admission-
+limited; larger B does NOT fix it, needs K=5." The B=3M/K=3 point (3.79)
+shows larger B DOES converge dt=0.2 at K=3 - just slowly/noisily (the
+B<=600k/K=3 series scattered 3.43-3.75; it was converging in B all along,
+not stuck). Correct statement: dt=0.2/K=3 converges in B but needs MUCH
+larger B (~3M) than dt=0.1 (~300k); K=5 is the cheaper route (converged by
+B=150k). So "small dt B-limited / large dt K-limited" is too binary: large
+dt is BOTH slower-in-B AND helped by K; either knob reaches 3.79.
+dt=0.05: B=1M gave 3.752, B=3M gives 3.794 - confirms it was mildly
+B-limited and is now converged (climbed up as expected). Plateau confirmed
+at 3x the previous largest basis.

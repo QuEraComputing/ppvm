@@ -1454,3 +1454,21 @@ So spend RAM on B, keep K just at the knee (~3). The cells can't PROVE the
 fixed-RAM optimum at this accuracy, but the K-neutrality argument + the clean
 B-ladder both point the same way. To resolve empirically would need seed/
 observable averaging to beat down the ~2-3x cancellation noise.
+
+## Branch triage (2026-07-07)
+
+The two dangling worktree-agent branches were inspected before deletion —
+both turned out to be FULLY TRIAGED already, with proper merge-then-revert
+bookkeeping in the campaign and load-robust verdicts in their ledgers:
+- parallel map_insert (3d5f0409): cherry-picked as 15f96554, final verdict
+  DISCARD (1.1x wall for +50% RAM on a quiet machine; see
+  2026-07-02-trotter-ladder for the triple-measurement saga + process
+  lesson), reverted as 9ee8b3ba.
+- leakage2 action-cache reuse (191e92aa): cherry-picked as 2411240f, verdict
+  DISCARD (2.3x RSS - load-independent - for a wall gain bounded by the 17%
+  leakage share; see 2026-07-02-expm-ladder), reverted as 42a5fa9c. Holds
+  a fortiori under displacement (A=2-3B working sets).
+Both branch refs deleted; content preserved in campaign history + ledgers.
+Remaining branch state: autotune/ladder-tuning = the campaign superset
+(contains expm-pc-step, expm-memory, symmetry-merging); local main is 50
+behind origin/main -> upstream sync is the outstanding git task before PR.

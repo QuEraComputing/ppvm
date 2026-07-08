@@ -1578,3 +1578,12 @@ At B=600k, K=3:  dt=0.05 D=3.787, dt=0.1 D=3.796, dt=0.2 D=3.684.
    B-limited. dt=0.2 needs K=5 (->3.81), independent of B.
 Clean rule: small dt is B-limited (push B); large dt is K-limited (push K).
 dt<=0.1 with K=3 + adequate B is the efficient converged regime.
+
+## B=1M points added (2026-07-08)
+
+B=1M, K=3:  dt=0.1 D=3.783 (MSD5 35.37);  dt=0.05 D=3.752 (MSD5 35.18).
+vs B=600k:  dt=0.1 3.796;  dt=0.05 3.787.
+=> No systematic climb from 600k->1M; both sit in 3.75-3.80, i.e. the
+plateau is confirmed (flat within the ~+-0.03 extraction/cancellation-noise
+floor). The converged D at dt<=0.1 is 3.76-3.79, matching Begusic-Chan 3.76.
+Extraction noise (not B) is now the limiting uncertainty at large B.

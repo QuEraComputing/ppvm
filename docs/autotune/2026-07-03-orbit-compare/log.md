@@ -1568,3 +1568,13 @@ used, but the binding knob differs: small dt is B-limited (truncation-event
 accumulation -> need larger B), large dt is A/K-limited (per-step spreading
 -> need larger K). dt=0.1/K=3 is the joint sweet spot (converged at the
 smallest B and K). Figure: /tmp/D_vs_B_dt.png (diagnostic; not yet a repo fig).
+
+## "Just push to larger B?" - answered at B=600k (2026-07-08)
+
+At B=600k, K=3:  dt=0.05 D=3.787, dt=0.1 D=3.796, dt=0.2 D=3.684.
+=> Larger B CONVERGES dt=0.05 and dt=0.1 to ~3.79 (dt=0.05 was B-limited,
+   climbs 3.63->3.79 over B=50k->600k). But dt=0.2 STAYS at 3.68 even at
+   B=600k - larger B does NOT fix it because it is ADMISSION/K-limited, not
+   B-limited. dt=0.2 needs K=5 (->3.81), independent of B.
+Clean rule: small dt is B-limited (push B); large dt is K-limited (push K).
+dt<=0.1 with K=3 + adequate B is the efficient converged regime.

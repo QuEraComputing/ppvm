@@ -90,9 +90,10 @@ fn pauli_sum_parser<'src>(
         .exactly(n_qubits)
         .collect::<String>();
 
-    // Term: coefficient [*] word | bare word.
+    // Term: coefficient (WS* '*')? WS* word | bare word.
     let term_with_coeff = coefficient
         .then_ignore(just('*').padded().or_not())
+        .then_ignore(text::whitespace())
         .then(pauli_word)
         .map(|(c, w)| (w, c));
     let term_bare = pauli_word.map(|w| (w, 1.0));
@@ -142,6 +143,13 @@ mod tests {
     #[test]
     fn single_term_without_star() {
         let got = parse_pauli_sum_terms("0.5ZZ", 2).unwrap();
+        assert_eq!(got, vec![("ZZ".to_string(), 0.5)]);
+    }
+
+    #[test]
+    fn single_term_space_between_coefficient_and_word() {
+        // Grammar allows `coefficient WS* pauli_word` (whitespace, no `*`).
+        let got = parse_pauli_sum_terms("0.5 ZZ", 2).unwrap();
         assert_eq!(got, vec![("ZZ".to_string(), 0.5)]);
     }
 

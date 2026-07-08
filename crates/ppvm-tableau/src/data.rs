@@ -1472,4 +1472,75 @@ mod tests {
             snapshot_tableau(&tab2.tableau)
         );
     }
+
+    // ─── reset_all ────────────────────────────────────────────────────
+
+    /// `GeneralizedTableau::reset_all` restores the full state to a fresh
+    /// `|0…0⟩` tableau: identical stabilizer/destabilizer rows and a single
+    /// identity coefficient, even after non-Clifford branching.
+    #[test]
+    fn reset_all_restores_fresh_state() {
+        let mut tab: TestTableau = GeneralizedTableau::new(3, 1e-12);
+        let fresh: TestTableau = GeneralizedTableau::new(3, 1e-12);
+
+        tab.h(0);
+        tab.cnot(0, 1);
+        tab.ry(2, 0.7); // non-Clifford: branches the coefficient vector
+        assert!(
+            tab.coefficients.iter().count() > 1,
+            "rotation should branch the coefficient vector"
+        );
+
+        tab.reset_all();
+
+        assert_eq!(
+            snapshot_tableau(&tab.tableau),
+            snapshot_tableau(&fresh.tableau)
+        );
+        let coeffs: Vec<_> = tab.coefficients.iter().copied().collect();
+        let fresh_coeffs: Vec<_> = fresh.coefficients.iter().copied().collect();
+        assert_eq!(coeffs, fresh_coeffs);
+    }
+
+    /// A full reset clears the measurement record. Regression guard: an earlier
+    /// version left it intact, so `current_measurement_record` returned stale
+    /// outcomes after a reset.
+    #[test]
+    fn reset_all_clears_measurement_record() {
+        let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
+        tab.append_measurement_record(Some(true));
+        tab.append_measurement_record(None);
+        assert_eq!(tab.current_measurement_record().len(), 2);
+
+        tab.reset_all();
+
+        assert!(tab.current_measurement_record().is_empty());
+    }
+
+    /// A full reset clears per-qubit loss flags.
+    #[test]
+    fn reset_all_clears_loss_flags() {
+        let mut tab: TestTableau = GeneralizedTableau::new(3, 1e-12);
+        tab.is_lost[0] = true;
+        tab.is_lost[2] = true;
+
+        tab.reset_all();
+
+        assert!(tab.is_lost.iter().all(|&lost| !lost));
+    }
+
+    /// `Tableau::reset_all` restores the fresh identity tableau rows.
+    #[test]
+    fn tableau_reset_all_restores_fresh_rows() {
+        let mut tab: Tableau<TestConfig> = Tableau::new(4);
+        let fresh: Tableau<TestConfig> = Tableau::new(4);
+
+        tab.h(0);
+        tab.s(1);
+        tab.h(3);
+
+        tab.reset_all();
+
+        assert_eq!(snapshot_tableau(&tab), snapshot_tableau(&fresh));
+    }
 }

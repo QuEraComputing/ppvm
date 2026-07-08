@@ -1,0 +1,44 @@
+device circuit.n_qubits 2;
+
+// Loop + feed-forward demo.
+// Repeat a body 3 times (a counted loop); in each round flip a fair coin on
+// q0 and, based on the measured outcome, conditionally toggle q1 (the
+// feed-forward). q1 is flipped once per coin that came up 1, so the final q1
+// measurement equals the parity (XOR) of the three coin flips. Each shot
+// prints 4 bits: q0_round1 q0_round2 q0_round3 q1.
+fn @main() {
+    // Loop counter starts at 0 and lives on the bottom of the stack.
+    const.u64 0
+
+@loop:
+    // Flip a fair coin: H then measure q0 (pushes outcome 0/1 as u32).
+    const.u64 0
+    circuit.h
+    const.u64 0
+    circuit.measure
+
+    // Feed-forward: if the outcome was 1, apply X to q1.
+    const.u32 1
+    eq.u32
+    cond_br @flip, @next
+
+@flip:
+    const.u64 1
+    circuit.x
+    br @next
+
+@next:
+    // counter += 1, then loop while counter < 3.
+    const.u64 1
+    add.u64
+    dup
+    const.u64 3
+    lt.u64
+    cond_br @loop, @done
+
+@done:
+    // Final readout of q1.
+    const.u64 1
+    circuit.measure
+    ret
+}

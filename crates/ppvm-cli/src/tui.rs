@@ -35,9 +35,11 @@ pub fn run(file: Option<&str>) -> Result<()> {
         None => AppState::new(),
     };
 
+    // Guard immediately after raw mode is on, so any later setup error
+    // (EnterAlternateScreen, Terminal::new) still restores the terminal.
     enable_raw_mode()?;
-    execute!(io::stdout(), EnterAlternateScreen)?;
     let _guard = TerminalGuard;
+    execute!(io::stdout(), EnterAlternateScreen)?;
 
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     terminal.clear()?;

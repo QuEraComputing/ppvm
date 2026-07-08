@@ -155,20 +155,6 @@ def test_ry_pi_equals_y():
     assert tab.measure(0)
 
 
-def test_r_axis_zero_equals_rx():
-    # r(axis_angle=0, θ=π) = rx(π), so |0> → |1>
-    tab = GeneralizedTableau(2)
-    tab.r(0, 0.0, math.pi)
-    assert tab.measure(0)
-
-
-def test_r_axis_half_pi_equals_ry():
-    # r(axis_angle=π/2, θ=π) = ry(π), so |0> → |1>
-    tab = GeneralizedTableau(2)
-    tab.r(0, math.pi / 2, math.pi)
-    assert tab.measure(0)
-
-
 def test_clifford_extensions_sqrt_x():
     # sqrt_x followed by sqrt_x_dag is identity
     tab = GeneralizedTableau(2)

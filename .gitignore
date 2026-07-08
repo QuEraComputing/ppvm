@@ -6,7 +6,6 @@
 .uv/
 *__pycache__*
 profile.json.gz
-debug/
 
 # mkdocs build output and cache
 ppvm-python/site/

@@ -24,10 +24,9 @@ ion add QuEraComputing/ppvm/skills/ppvm-usage
 
 The skill (`skills/ppvm-usage/SKILL.md` in this repo) covers the Heisenberg /
 Schrödinger gate-order trap, `Config`-generic `PauliSum` usage, truncation
-strategies, Python / Rust call sites for both backends, and the `.sst`
-textual program format run by `ppvm-cli` (backend selection, multi-term
-observables, `gate trace` / `gate truncate`). Read it before the Developer
-Guide if your task is *using* ppvm rather than modifying its internals.
+strategies, and Python / Rust call sites for both backends. Read it before
+the Developer Guide if your task is *using* ppvm rather than modifying its
+internals.
 
 ## TL;DR for agents
 

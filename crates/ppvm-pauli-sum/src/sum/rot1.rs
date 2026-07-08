@@ -128,20 +128,6 @@ where
     }
 }
 
-impl<T: Config> RotXY<T> for PauliSum<T>
-where
-    PauliSum<T>: RotationOne<T>,
-{
-    fn r(&mut self, addr0: usize, axis_angle: <T as Config>::Coeff, theta: <T as Config>::Coeff) {
-        // R(axis_angle, θ) = RZ(axis_angle)·RX(θ)·RZ(−axis_angle). PauliSum runs
-        // in the Heisenberg picture (observables propagate backward), so the
-        // sub-rotations are emitted in reverse of the tableau's forward order.
-        self.rz(addr0, axis_angle.clone());
-        self.rx(addr0, theta);
-        self.rz(addr0, -axis_angle);
-    }
-}
-
 /// 2-bit Pauli code: 00 I, 01 X, 10 Z, 11 Y
 /// Returns \(ε, k\) so that  –i \[P_i, P_j\]/2 = ε · P_k.
 /// For every commuting pair it yields (0, 0).
@@ -248,32 +234,6 @@ mod tests {
         let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("I", 1.0);
         assert_eq!(answer, expect);
-    }
-
-    #[test]
-    fn test_r() {
-        use std::f64::consts::FRAC_PI_2;
-        let theta = 2.1;
-
-        // r(axis_angle=0, θ) == rx(θ).
-        let mut via_r: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
-        via_r += ("Z", 1.0);
-        via_r.r(0, 0.0, theta);
-        let mut via_rx: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
-        via_rx += ("Z", 1.0);
-        via_rx.rx(0, theta);
-        assert!((via_r.overlap(&via_rx) - 1.0).abs() < 1e-9);
-
-        // r(axis_angle=π/2, θ) must equal ry(θ) — NOT ry(−θ). This is the case
-        // that distinguishes the Heisenberg (backward) order from the
-        // Schrödinger one: a forward-ordered impl would yield ry(−θ) here.
-        let mut via_r: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
-        via_r += ("Z", 1.0);
-        via_r.r(0, FRAC_PI_2, theta);
-        let mut via_ry: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
-        via_ry += ("Z", 1.0);
-        via_ry.ry(0, theta);
-        assert!((via_r.overlap(&via_ry) - 1.0).abs() < 1e-9);
     }
 
     #[test]

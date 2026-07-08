@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["phase_loss_hash","word_fingerprint"],"mod":["entry_store","map","vec"]};
+window.SIDEBAR_ITEMS = {"enum":["BranchMutation"],"fn":["phase_loss_hash","word_fingerprint"],"mod":["entry_store","map","vec"]};

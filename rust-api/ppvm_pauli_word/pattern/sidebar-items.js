@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["PauliPattern"],"trait":["Contains"]};
+window.SIDEBAR_ITEMS = {"enum":["NotIdentity"],"struct":["PauliPattern"],"trait":["Contains"]};

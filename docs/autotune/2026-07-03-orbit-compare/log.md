@@ -1620,3 +1620,13 @@ dt is BOTH slower-in-B AND helped by K; either knob reaches 3.79.
 dt=0.05: B=1M gave 3.752, B=3M gives 3.794 - confirms it was mildly
 B-limited and is now converged (climbed up as expected). Plateau confirmed
 at 3x the previous largest basis.
+
+## B=6M, K=3 (overnight, 2026-07-09) - plateau confirmed at 6x
+
+  dt=0.1 : D[2.5,5]=3.765  MSD(5)=35.32  (171 min, 15.6 GB, 6M strings)
+  dt=0.05: D[2.5,5]=3.762  MSD(5)=35.19  (306 min, 15.6 GB)
+B-ladder (D[2.5,5]): dt=0.1: 1M 3.783 / 3M 3.774 / 6M 3.765; dt=0.05: 1M
+3.752 / 3M 3.794 / 6M 3.762. All within +-0.03 noise, centered ~3.76 =
+Begusic-Chan value exactly. Plateau confirmed at 6x the earlier largest B
+(2x the B=3M overnight run). Converged D = 3.76-3.77. Peak RSS 15.6 GB
+(A=18M working set); this is near the practical single-node ceiling on 34 GB.

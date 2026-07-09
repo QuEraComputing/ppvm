@@ -208,6 +208,34 @@ class GeneralizedTableau(
         """
         return self._interface.num_coefficients()
 
+    def expectation(self, word: str) -> float:
+        """Compute ``⟨ψ|word|ψ⟩`` for a single multi-qubit Pauli string.
+
+        Args:
+            word: A Pauli string such as ``"ZZ"`` or ``"X0Y1"`` (underscores
+                are ignored).
+
+        Returns:
+            The real expectation value of ``word`` in the current state.
+        """
+        return self._interface.expectation(word)
+
+    def trace(self, pattern: str) -> float:
+        """Sum Pauli expectations over every word matching ``pattern``.
+
+        Enumerates each ``PauliWord`` accepted by ``pattern`` and returns
+        the sum of their expectations. Star quantifiers (``X*``) are not
+        supported — use counted repetition (``Z?{n}``) or positional
+        anchors instead.
+
+        Args:
+            pattern: A Pauli pattern string (e.g. ``"Z?{2}"`` or ``"Z0Z1"``).
+
+        Returns:
+            The summed expectation value.
+        """
+        return self._interface.trace(pattern)
+
     def u3(self, addr0: int, theta: float, phi: float, lam: float):
         """Apply the U3 gate to the specified qubit.
 

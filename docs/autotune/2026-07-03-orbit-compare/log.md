@@ -1630,3 +1630,14 @@ B-ladder (D[2.5,5]): dt=0.1: 1M 3.783 / 3M 3.774 / 6M 3.765; dt=0.05: 1M
 Begusic-Chan value exactly. Plateau confirmed at 6x the earlier largest B
 (2x the B=3M overnight run). Converged D = 3.76-3.77. Peak RSS 15.6 GB
 (A=18M working set); this is near the practical single-node ceiling on 34 GB.
+
+## dt=0.05 B-spread > dt=0.1 (2026-07-09, user obs)
+
+D(t=3.5, W=2) across B=1M/3M/6M: dt=0.1 spread 0.012 (3.771/3.769/3.759),
+dt=0.05 spread 0.043 (3.748/3.791/3.755). dt=0.05 curves visibly further
+apart than dt=0.1. CAUSE: dt=0.05 takes 100 truncation steps to T=5 vs 50
+for dt=0.1 - 2x the truncation events, so ~2x more accumulated (deterministic,
+non-monotone) truncation bias at fixed B => ~3-4x larger B-to-B scatter.
+Same anti-dt mechanism: smaller dt is LESS converged at fixed B (needs larger
+B). Both centered on 3.76; dt=0.1 is better-converged per unit B (fewer
+events), which is why dt=0.1/K=3 is the practical sweet spot.

@@ -212,8 +212,10 @@ class GeneralizedTableau(
         """Compute ``⟨ψ|word|ψ⟩`` for a single multi-qubit Pauli string.
 
         Args:
-            word: A Pauli string such as ``"ZZ"`` or ``"X0Y1"`` (underscores
-                are ignored).
+            word: A dense Pauli string with one character per qubit, each
+                drawn from ``I``, ``X``, ``Y``, ``Z`` (e.g. ``"ZZ"`` for a
+                two-qubit state). Its length must equal the tableau's qubit
+                count.
 
         Returns:
             The real expectation value of ``word`` in the current state.

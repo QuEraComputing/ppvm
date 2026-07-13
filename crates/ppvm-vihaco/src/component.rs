@@ -170,17 +170,17 @@ where
 
             // TODO: replace things below by actual batched methods once they are available
             // Batch: single-qubit for loops
-            (X, QubitBatch(addrs)) => batch_for!(self.tab, x, addrs),
-            (Y, QubitBatch(addrs)) => batch_for!(self.tab, y, addrs),
-            (Z, QubitBatch(addrs)) => batch_for!(self.tab, z, addrs),
-            (S, QubitBatch(addrs)) => batch_for!(self.tab, s, addrs),
-            (SAdj, QubitBatch(addrs)) => batch_for!(self.tab, s_dag, addrs),
-            (T, QubitBatch(addrs)) => batch_for!(self.tab, t, addrs),
-            (TAdj, QubitBatch(addrs)) => batch_for!(self.tab, t_dag, addrs),
-            (Reset, QubitBatch(addrs)) => batch_for!(self.tab, reset, addrs),
-            (RX, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.tab, rx, addrs, *angle),
-            (RY, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.tab, ry, addrs, *angle),
-            (RZ, QubitBatchAndFloat(addrs, angle)) => batch_for!(self.tab, rz, addrs, *angle),
+            (X, QubitBatch(addrs)) => self.tab.x_many(addrs),
+            (Y, QubitBatch(addrs)) => self.tab.y_many(addrs),
+            (Z, QubitBatch(addrs)) => self.tab.z_many(addrs),
+            (S, QubitBatch(addrs)) => self.tab.s_many(addrs),
+            (SAdj, QubitBatch(addrs)) => self.tab.s_dag_many(addrs),
+            (T, QubitBatch(addrs)) => self.tab.t_many(addrs),
+            (TAdj, QubitBatch(addrs)) => self.tab.t_dag_many(addrs),
+            (Reset, QubitBatch(addrs)) => self.tab.reset_many(addrs),
+            (RX, QubitBatchAndFloat(addrs, angle)) => self.tab.rx_many(addrs, *angle),
+            (RY, QubitBatchAndFloat(addrs, angle)) => self.tab.ry_many(addrs, *angle),
+            (RZ, QubitBatchAndFloat(addrs, angle)) => self.tab.rz_many(addrs, *angle),
             (Depolarize, QubitBatchAndFloat(addrs, p)) => {
                 batch_for!(self.tab, depolarize1, addrs, *p)
             }
@@ -194,24 +194,16 @@ where
 
             // Batch: two-qubit for loops
             (CNOT, TwoQubitBatch(pairs)) => {
-                for &(a, b) in pairs {
-                    self.tab.cnot(a, b);
-                }
+                self.tab.cnot_many(pairs);
             }
             (RXX, TwoQubitBatchAndFloat(pairs, angle)) => {
-                for &(a, b) in pairs {
-                    self.tab.rxx(a, b, *angle);
-                }
+                self.tab.rxx_many(pairs, *angle);
             }
             (RYY, TwoQubitBatchAndFloat(pairs, angle)) => {
-                for &(a, b) in pairs {
-                    self.tab.ryy(a, b, *angle);
-                }
+                self.tab.ryy_many(pairs, *angle);
             }
             (RZZ, TwoQubitBatchAndFloat(pairs, angle)) => {
-                for &(a, b) in pairs {
-                    self.tab.rzz(a, b, *angle);
-                }
+                self.tab.rzz_many(pairs, *angle);
             }
             (Depolarize2, TwoQubitBatchAndFloat(pairs, p)) => {
                 for &(a, b) in pairs {
@@ -231,10 +223,10 @@ where
 
             // Batch: measure (emits per qubit)
             (Measure, QubitBatch(addrs)) => {
-                let outcomes = addrs.iter().map(|&addr| self.tab.measure(addr).into());
+                let outcomes = self.tab.measure_many(addrs);
                 return Ok(Effects::one(CircuitOutcomeEffect::Measurement(
                     MeasurementEffect {
-                        measurement_results: outcomes.collect(),
+                        measurement_results: outcomes.iter().map(|&o| o.into()).collect(),
                     },
                 )));
             }
@@ -351,24 +343,24 @@ macro_rules! dispatch_common_paulisum {
 
             // Batched arms: simple for-loop dispatch (no dedicated batch
             // methods on PauliSum<T>, unlike GeneralizedTableau).
-            (X, QubitBatch(addrs)) => batch_for!($self.state, x, addrs),
-            (Y, QubitBatch(addrs)) => batch_for!($self.state, y, addrs),
-            (Z, QubitBatch(addrs)) => batch_for!($self.state, z, addrs),
-            (H, QubitBatch(addrs)) => batch_for!($self.state, h, addrs),
-            (S, QubitBatch(addrs)) => batch_for!($self.state, s, addrs),
-            (SAdj, QubitBatch(addrs)) => batch_for!($self.state, s_dag, addrs),
-            (SqrtX, QubitBatch(addrs)) => batch_for!($self.state, sqrt_x, addrs),
-            (SqrtY, QubitBatch(addrs)) => batch_for!($self.state, sqrt_y, addrs),
-            (SqrtXAdj, QubitBatch(addrs)) => batch_for!($self.state, sqrt_x_dag, addrs),
-            (SqrtYAdj, QubitBatch(addrs)) => batch_for!($self.state, sqrt_y_dag, addrs),
+            (X, QubitBatch(addrs)) => $self.state.x_many(addrs),
+            (Y, QubitBatch(addrs)) => $self.state.y_many(addrs),
+            (Z, QubitBatch(addrs)) => $self.state.z_many(addrs),
+            (H, QubitBatch(addrs)) => $self.state.h_many(addrs),
+            (S, QubitBatch(addrs)) => $self.state.s_many(addrs),
+            (SAdj, QubitBatch(addrs)) => $self.state.s_dag_many(addrs),
+            (SqrtX, QubitBatch(addrs)) => $self.state.sqrt_x_many(addrs),
+            (SqrtY, QubitBatch(addrs)) => $self.state.sqrt_y_many(addrs),
+            (SqrtXAdj, QubitBatch(addrs)) => $self.state.sqrt_x_dag_many(addrs),
+            (SqrtYAdj, QubitBatch(addrs)) => $self.state.sqrt_y_dag_many(addrs),
             (RX, QubitBatchAndFloat(addrs, angle)) => {
-                batch_for!($self.state, rx, addrs, *angle)
+                $self.state.rx_many(addrs, *angle)
             }
             (RY, QubitBatchAndFloat(addrs, angle)) => {
-                batch_for!($self.state, ry, addrs, *angle)
+                $self.state.ry_many(addrs, *angle)
             }
             (RZ, QubitBatchAndFloat(addrs, angle)) => {
-                batch_for!($self.state, rz, addrs, *angle)
+                $self.state.rz_many(addrs, *angle)
             }
             (Depolarize, QubitBatchAndFloat(addrs, p)) => {
                 batch_for!($self.state, depolarize1, addrs, *p)
@@ -376,16 +368,16 @@ macro_rules! dispatch_common_paulisum {
             (PauliError, QubitBatchAndFloatArr3(addrs, ps)) => {
                 batch_for!($self.state, pauli_error, addrs, *ps)
             }
-            (CNOT, TwoQubitBatch(pairs)) => batch_pairs_for!($self.state, cnot, pairs),
-            (CZ, TwoQubitBatch(pairs)) => batch_pairs_for!($self.state, cz, pairs),
+            (CNOT, TwoQubitBatch(pairs)) => $self.state.cnot_many(pairs),
+            (CZ, TwoQubitBatch(pairs)) => $self.state.cz_many(pairs),
             (RXX, TwoQubitBatchAndFloat(pairs, angle)) => {
-                batch_pairs_for!($self.state, rxx, pairs, *angle)
+                $self.state.rxx_many(pairs, *angle)
             }
             (RYY, TwoQubitBatchAndFloat(pairs, angle)) => {
-                batch_pairs_for!($self.state, ryy, pairs, *angle)
+                $self.state.ryy_many(pairs, *angle)
             }
             (RZZ, TwoQubitBatchAndFloat(pairs, angle)) => {
-                batch_pairs_for!($self.state, rzz, pairs, *angle)
+                $self.state.rzz_many(pairs, *angle)
             }
             (Depolarize2, TwoQubitBatchAndFloat(pairs, p)) => {
                 batch_pairs_for!($self.state, depolarize2, pairs, *p)

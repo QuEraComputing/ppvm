@@ -1289,6 +1289,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-vihaco"
+version = "0.1.0"
+dependencies = [
+ "bitvec",
+ "bnum",
+ "chumsky 0.10.1",
+ "eyre",
+ "num",
+ "ppvm-pauli-sum",
+ "ppvm-tableau",
+ "smallvec",
+ "vihaco",
+ "vihaco-circuit-isa",
+ "vihaco-parser",
+ "vihaco-parser-core",
+]
+
+[[package]]
 name = "prettyplease"
 version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"

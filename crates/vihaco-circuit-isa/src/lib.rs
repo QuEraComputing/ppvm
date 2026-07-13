@@ -172,9 +172,6 @@ mod tests {
 
     use chumsky::Parser as _;
     use vihaco::instruction::{FromBytes, OpCode, WriteBytes};
-    // `parser()` comes from the crate's re-exported `ParseInstruction` trait,
-    // pulled in by the `use super::*` glob above — no direct parser-core dep.
-
     /// Every variant, in declaration order. Anything iterating over the full
     /// instruction set (round-trips, opcode uniqueness) goes through this so a
     /// newly added variant is automatically covered.

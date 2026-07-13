@@ -393,16 +393,25 @@ macro_rules! dispatch_common_paulisum {
                 return Err(eyre!("{} is not supported on the {} backend", $inst, $backend));
             }
 
-            // T / T_dag / U3 are listed as supported on PauliSum in the
-            // plan's Gate Support Matrix, but ppvm-runtime does not yet
-            // implement TGate or U3Gate for PauliSum<T> (only for
-            // GeneralizedTableau).
-            (T | TAdj | U3, _) => {
-                return Err(eyre!(
-                    "{} on {} requires upstream ppvm-runtime support that is not yet implemented",
-                    $inst,
-                    $backend
-                ));
+            (T, Qubit(addr)) => $self.state.rz(*addr, std::f64::consts::PI / 8.0),
+            (T, QubitBatch(addrs)) => $self.state.rz_many(addrs, std::f64::consts::PI / 8.0),
+            (TAdj, Qubit(addr)) => $self.state.rz(*addr, -std::f64::consts::PI / 8.0),
+            (TAdj, QubitBatch(addrs)) => $self.state.rz_many(addrs, -std::f64::consts::PI / 8.0),
+
+            // U3(θ, φ, λ) = RZ(φ)·RY(θ)·RZ(λ), matching the tableau / Python
+            // `u3` (which applies rz(λ); ry(θ); rz(φ)). PauliSum is the
+            // Heisenberg picture, so the sub-rotations run in reversed order
+            // with the same angles: rz(φ); ry(θ); rz(λ).
+            (U3, &QubitU3(addr, theta, phi, lam)) => {
+                $self.state.rz(addr, phi);
+                $self.state.ry(addr, theta);
+                $self.state.rz(addr, lam);
+            }
+
+            (U3, QubitBatchU3(addrs, theta, phi, lam)) => {
+                $self.state.rz_many(addrs, *phi);
+                $self.state.ry_many(addrs, *theta);
+                $self.state.rz_many(addrs, *lam);
             }
 
             // Trace: parse the resolved pattern string and compute the

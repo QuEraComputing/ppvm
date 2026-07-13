@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Circuit","LossyPauliSumCircuit","PauliSumCircuit","TableauCircuit"],"struct":["CircuitExecutor","LossyPauliSumExecutor","PauliSumExecutor"]};
+window.SIDEBAR_ITEMS = {"constant":["MAX_QUBITS"],"enum":["Circuit","LossyPauliSumCircuit","PauliSumCircuit","TableauCircuit"],"struct":["CircuitExecutor","LossyPauliSumExecutor","PauliSumExecutor"]};

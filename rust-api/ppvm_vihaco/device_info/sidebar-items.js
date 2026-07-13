@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PPVM_MAGIC"],"enum":["BackendKind"],"struct":["PPVMDeviceInfo"]};

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"macro":["impl_op_mul_assign_coefficient"],"mod":["config","prelude","strategy","sum"]};
+window.SIDEBAR_ITEMS = {"macro":[["impl_op_mul_assign_coefficient",1]],"mod":["config","prelude","strategy","sum"]};

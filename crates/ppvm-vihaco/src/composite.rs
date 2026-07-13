@@ -179,36 +179,36 @@ impl PPVM {
         match inst {
             X | Y | Z | H | S | SAdj | SqrtX | SqrtY | SqrtXAdj | SqrtYAdj | T | TAdj | Measure
             | Reset => {
-                let q = self.pop_qubit()?;
+                let q = self.pop_u64()?;
                 Ok(CircuitMessage::Qubit(q))
             }
             CNOT | CZ => {
-                let q1 = self.pop_qubit()?;
-                let q0 = self.pop_qubit()?;
+                let q1 = self.pop_u64()?;
+                let q0 = self.pop_u64()?;
                 Ok(CircuitMessage::TwoQubit(q0, q1))
             }
             RX | RY | RZ | Depolarize | Loss => {
                 let theta = self.pop_f64()?;
-                let q = self.pop_qubit()?;
+                let q = self.pop_u64()?;
                 Ok(CircuitMessage::QubitAndFloat(q, theta))
             }
             RXX | RYY | RZZ | Depolarize2 => {
                 let theta = self.pop_f64()?;
-                let q1 = self.pop_qubit()?;
-                let q0 = self.pop_qubit()?;
+                let q1 = self.pop_u64()?;
+                let q0 = self.pop_u64()?;
                 Ok(CircuitMessage::TwoQubitAndFloat(q0, q1, theta))
             }
             R => {
                 let theta = self.pop_f64()?;
                 let axis_angle = self.pop_f64()?;
-                let q = self.pop_qubit()?;
+                let q = self.pop_u64()?;
                 Ok(CircuitMessage::QubitAndTwoFloats(q, axis_angle, theta))
             }
             U3 => {
                 let lam = self.pop_f64()?;
                 let phi = self.pop_f64()?;
                 let theta = self.pop_f64()?;
-                let q = self.pop_qubit()?;
+                let q = self.pop_u64()?;
                 Ok(CircuitMessage::QubitU3(q, theta, phi, lam))
             }
 
@@ -217,15 +217,15 @@ impl PPVM {
                 let pz = self.pop_f64()?;
                 let py = self.pop_f64()?;
                 let px = self.pop_f64()?;
-                let q = self.pop_qubit()?;
+                let q = self.pop_u64()?;
                 Ok(CircuitMessage::QubitAndFloatArr3(q, [px, py, pz]))
             }
             CorrelatedLoss => {
                 let p2 = self.pop_f64()?;
                 let p1 = self.pop_f64()?;
                 let p0 = self.pop_f64()?;
-                let q1 = self.pop_qubit()?;
-                let q0 = self.pop_qubit()?;
+                let q1 = self.pop_u64()?;
+                let q0 = self.pop_u64()?;
                 Ok(CircuitMessage::TwoQubitAndFloatArr3(q0, q1, [p0, p1, p2]))
             }
             TwoQubitPauliError => {
@@ -233,8 +233,8 @@ impl PPVM {
                 for p in ps.iter_mut().rev() {
                     *p = self.pop_f64()?;
                 }
-                let q1 = self.pop_qubit()?;
-                let q0 = self.pop_qubit()?;
+                let q1 = self.pop_u64()?;
+                let q0 = self.pop_u64()?;
                 Ok(CircuitMessage::TwoQubitAndFloatArr15(q0, q1, ps))
             }
             Trace => {
@@ -245,12 +245,10 @@ impl PPVM {
         }
     }
 
-    fn pop_qubit(&mut self) -> eyre::Result<usize> {
+    fn pop_u64(&mut self) -> eyre::Result<usize> {
         match self.cpu.stack_pop()? {
-            vihaco::Value::U32(v) => Ok(v as usize),
             vihaco::Value::U64(v) => usize::try_from(v).map_err(Into::into),
-            vihaco::Value::I64(v) => usize::try_from(v).map_err(Into::into),
-            v => Err(eyre::eyre!("Expected qubit address, got {:?}", v)),
+            v => Err(eyre::eyre!("Expected u64, got {:?}", v)),
         }
     }
 
@@ -834,7 +832,7 @@ mod tests {
         machine.load(&module)?;
         machine.init()?;
 
-        // `circuit.h` with nothing on the stack: `pop_qubit` fails.
+        // `circuit.h` with nothing on the stack: `pop_u64` fails.
         let missing_operand = [PPVMInstruction::Circuit(CircuitInstruction::H)];
         assert!(
             machine
@@ -874,16 +872,16 @@ mod tests {
         machine.init()?;
 
         // CNOT: push q0=2, q1=5.
-        machine.cpu.stack_push(Value::U32(2));
-        machine.cpu.stack_push(Value::U32(5));
+        machine.cpu.stack_push(Value::U64(2));
+        machine.cpu.stack_push(Value::U64(5));
         assert_eq!(
             machine.resolve_circuit(&CircuitInstruction::CNOT)?,
             CircuitMessage::TwoQubit(2, 5)
         );
 
         // RXX: push q0=2, q1=5, theta — same qubit order as CNOT.
-        machine.cpu.stack_push(Value::U32(2));
-        machine.cpu.stack_push(Value::U32(5));
+        machine.cpu.stack_push(Value::U64(2));
+        machine.cpu.stack_push(Value::U64(5));
         machine.cpu.stack_push(Value::F64(0.3));
         assert_eq!(
             machine.resolve_circuit(&CircuitInstruction::RXX)?,
@@ -891,8 +889,8 @@ mod tests {
         );
 
         // CorrelatedLoss: push q0=2, q1=5, p0, p1, p2.
-        machine.cpu.stack_push(Value::U32(2));
-        machine.cpu.stack_push(Value::U32(5));
+        machine.cpu.stack_push(Value::U64(2));
+        machine.cpu.stack_push(Value::U64(5));
         machine.cpu.stack_push(Value::F64(0.1));
         machine.cpu.stack_push(Value::F64(0.2));
         machine.cpu.stack_push(Value::F64(0.3));

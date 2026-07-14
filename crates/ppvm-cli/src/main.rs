@@ -10,10 +10,9 @@ mod tui;
 #[derive(Parser)]
 #[command(name = "ppvm")]
 #[command(about = "Pauli propagation virtual machine", long_about = None)]
-#[command(args_conflicts_with_subcommands = true)]
 pub struct Cli {
     /// Number of threads for all parallel work (1 = fully serial & deterministic)
-    #[arg(short, long, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
+    #[arg(short, long, global = true, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
     threads: usize,
 
     /// A .sst/.ssb file to open in the TUI (when no subcommand is given).
@@ -93,6 +92,7 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    validate_cli(&cli)?;
 
     // Size the process-wide thread pool once; governs all parallelism (across
     // shots and within a single machine). `--threads 1` is fully serial.
@@ -128,6 +128,14 @@ fn main() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// TUI file-open mode and subcommands are mutually exclusive.
+fn validate_cli(cli: &Cli) -> Result<()> {
+    if cli.file.is_some() && cli.command.is_some() {
+        eyre::bail!("cannot specify a FILE with a subcommand");
+    }
     Ok(())
 }
 
@@ -169,5 +177,11 @@ mod tests {
         let cli = Cli::try_parse_from(["ppvm", "run", "prog.sst"]).unwrap();
         assert!(matches!(cli.command, Some(Commands::Run { .. })));
         assert!(cli.file.is_none());
+    }
+
+    #[test]
+    fn file_and_subcommand_are_mutually_exclusive() {
+        let cli = Cli::try_parse_from(["ppvm", "prog.sst", "parse", "f.sst"]).unwrap();
+        assert!(validate_cli(&cli).is_err());
     }
 }

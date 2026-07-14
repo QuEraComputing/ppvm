@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["PARALLEL_SHOT_THRESHOLD"],"fn":["run_shots","run_shots_serial","set_global_threads"],"struct":["ShotRecord"]};
+window.SIDEBAR_ITEMS = {"constant":["PARALLEL_SHOT_THRESHOLD"],"fn":["run_shots","run_shots_parallel","run_shots_serial","set_global_threads"],"struct":["ShotRecord"]};

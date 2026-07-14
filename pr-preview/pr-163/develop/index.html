@@ -254,7 +254,16 @@ suites. The pure-Rust crates are platform-agnostic, so Linux is the
         maturin and runs the extension's <code>pytest</code> suite. It
 <code>needs: [rust-tests, python-tests]</code>, so the macOS/Windows
         runners only start once Linux is fully green.
-</li> </ol> <p> <strong>Why cross-OS is extension-only.</strong> The compiled PyO3
+</li> </ol> <p> <strong>Unused dependencies.</strong> A <code>cargo-machete</code> <code>prek</code> hook flags unused crate dependencies across the whole
+      workspace (run from the repo root, <a href="https://github.com/bnjbvr/cargo-machete">cargo-machete</a>
+recurses into every member). It is part of the hook suite, so it runs both
+      locally on commit and in CI via the <code>pre-commit</code> job — there is
+      no separate machete CI job. The binary is provisioned by <code>mise</code>
+(<code>cargo:cargo-machete</code> in <code>mise.toml</code>), so the
+      mise-action step that sets up the other hooks installs it too. Silence a
+      false positive per-crate with
+<code>[package.metadata.cargo-machete] ignored = [&hellip;]</code>.
+</p> <p> <strong>Why cross-OS is extension-only.</strong> The compiled PyO3
       module is the only artifact whose build is OS-sensitive — macOS needs
 <code>-undefined dynamic_lookup</code> (added by
 <code>ppvm-python-native/build.rs</code>; maturin sets it too), Windows
@@ -342,7 +351,7 @@ Use <a href="https://www.conventionalcommits.org/">Conventional Commits</a>:
 </p> <pre><code>feat(tableau): add correlated loss channel
 fix(pauli-sum): handle zero-norm in truncation
 test(stim-parser): add fast fuzz/proptest suite
-chore: restore lockfile consistency</code></pre> <h3>4.2 Code style</h3> <ul> <li>Run <code>cargo fmt --all</code> before committing Rust.</li> <li>Run <code>cargo clippy --workspace --all-targets</code>; fix or justify all warnings.</li> <li>Python is formatted with <code>ruff format</code> and linted with <code>ruff check</code>.</li> <li>Public Rust items should have doc comments; <code>cargo doc --no-deps</code> must build cleanly because the API site is built from rustdoc JSON.</li> <li>
+chore: restore lockfile consistency</code></pre> <h3>4.2 Code style</h3> <ul> <li>Run <code>cargo fmt --all</code> before committing Rust.</li> <li>Run <code>cargo clippy --workspace --all-targets</code>; fix or justify all warnings.</li> <li>Run <code>cargo machete</code> to catch unused dependencies; it's also a <code>prek</code> hook, run on commit and in CI.</li> <li>Python is formatted with <code>ruff format</code> and linted with <code>ruff check</code>.</li> <li>Public Rust items should have doc comments; <code>cargo doc --no-deps</code> must build cleanly because the API site is built from rustdoc JSON.</li> <li>
 Python docstrings use <strong>Google style</strong> (griffe parses with <code>-d google</code>)
         and are rendered as <strong>Markdown</strong> via <code>marked</code>. Use backtick spans for
         cross-references — <em>not</em> Sphinx/RST syntax:
@@ -579,7 +588,7 @@ Found something out of date? Send a PR &mdash; this guide is the canonical
         sync();
       })();
     </script> <footer class="foot"> <div class="foot-inner"> <span>PPVM · QuEra Computing · open source, Apache License 2.0</span> <span> <a href="https://github.com/QuEraComputing/ppvm">source</a> ·
-          documentation generated <time>2026-06-26</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
+          documentation generated <time>2026-07-14</time> </span> </div> </footer>  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script> <script>
       document.addEventListener("DOMContentLoaded", () => {
         if (typeof renderMathInElement !== "function") return;
         renderMathInElement(document.body, {

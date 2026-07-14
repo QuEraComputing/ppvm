@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["PPVM_MAGIC"],"enum":["BackendKind","PPVMEffect","PPVMInstruction","StepOutcome"],"struct":["PPVM","PPVMDeviceInfo"],"type":["Instruction"]};
+window.SIDEBAR_ITEMS = {"enum":["PPVMEffect","PPVMInstruction","StepOutcome"],"struct":["PPVM"],"type":["Instruction"]};

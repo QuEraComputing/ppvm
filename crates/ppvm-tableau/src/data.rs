@@ -1550,6 +1550,7 @@ mod tests {
             snapshot_tableau(&tab1.tableau),
             snapshot_tableau(&tab3.tableau)
         );
+    }
     // ─── reset_all ────────────────────────────────────────────────────
 
     /// `GeneralizedTableau::reset_all` restores the full state to a fresh

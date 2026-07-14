@@ -8,11 +8,14 @@ use bincode::{Decode, Encode};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+/// A single-qubit Pauli that is not the identity: `X`, `Y`, or `Z`. Encoded so
+/// the low two bits match [`Pauli`](crate::Pauli) (`X = 1`, `Z = 2`, `Y = 3`),
+/// which lets `From<NotIdentity> for Pauli` be a no-op transmute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[repr(u8)]
-pub(crate) enum NotIdentity {
+pub enum NotIdentity {
     X = 1,
     Z = 2,
     Y = 3,

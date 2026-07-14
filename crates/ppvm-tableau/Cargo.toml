@@ -17,6 +17,7 @@ ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
 ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 rand = "0.10.1"
 smallvec = "1.15"
+ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
 
 # rayon needs OS threads — native only.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

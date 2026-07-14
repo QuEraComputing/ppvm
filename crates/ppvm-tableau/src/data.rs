@@ -54,8 +54,7 @@ pub struct Tableau<T: Config> {
 }
 
 impl<T: Config> Tableau<T> {
-    /// Construct a fresh tableau initialised to `|0…0⟩`.
-    pub fn new(n_qubits: usize) -> Self {
+    fn new_data(n_qubits: usize) -> Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>> {
         // Initialize tableau for 0 state
         let mut data: Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>> =
             Vec::with_capacity(2 * n_qubits);
@@ -72,7 +71,12 @@ impl<T: Config> Tableau<T> {
             pw.set(i, Pauli::Z);
             data.push(pw);
         }
+        data
+    }
 
+    /// Construct a fresh tableau initialised to `|0…0⟩`.
+    pub fn new(n_qubits: usize) -> Self {
+        let data = Tableau::<T>::new_data(n_qubits);
         Self {
             n_qubits,
             data,
@@ -85,6 +89,11 @@ impl<T: Config> Tableau<T> {
         let mut t = Self::new(n_qubits);
         t.rng = SmallRng::seed_from_u64(seed);
         t
+    }
+
+    pub fn reset_all(&mut self) {
+        let data = Tableau::<T>::new_data(self.n_qubits);
+        self.data = data;
     }
 
     /// View of the stabilizer rows (the upper half of the tableau).
@@ -537,7 +546,9 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    if items.len() >= RAYON_COEFF_THRESHOLD {
+    // See `branch_coefficients_parallel`: avoid nesting rayon inside shot-level
+    // parallelism; the main-thread (single-shot) path is unaffected.
+    if items.len() >= RAYON_COEFF_THRESHOLD && rayon::current_thread_index().is_none() {
         use rayon::prelude::*;
 
         return items
@@ -673,6 +684,22 @@ where
         let mut s = Self::new(n_qubits, coefficient_threshold);
         s.tableau.rng = SmallRng::seed_from_u64(seed);
         s
+    }
+
+    pub fn reset_all(&mut self) {
+        self.tableau.reset_all();
+
+        let mut coefficients = C::new();
+        let complex_one = Complex {
+            re: T::Coeff::one(),
+            im: T::Coeff::zero(),
+        };
+        coefficients.unsafe_insert(I::zero(), complex_one);
+        self.coefficients = coefficients;
+        for l in self.is_lost.iter_mut() {
+            *l &= false;
+        }
+        self.measurement_record.clear();
     }
 
     /// Clone the quantum state but reinitialize the RNG, producing an independent simulation
@@ -846,6 +873,36 @@ where
         }
 
         (p_word.phase, stab_anticomm_bits, destab_anticomm_bits)
+    }
+
+    /// Multi-qubit generalization of [`compute_decomposition`]: conjugate an
+    /// arbitrary `PauliWord` through the tableau and return the same triple
+    /// `(phase, stab_anticomm_bits, destab_anticomm_bits)`.
+    ///
+    /// Algorithm: call [`compute_decomposition`] for each non-identity qubit
+    /// in the input, then multiply the resulting single-qubit conjugates in
+    /// canonical-basis form `i^φ X^x Z^z`. Pauli multiplication picks up a
+    /// `(-1)^{popcount(z_running & x_new)}` cross-phase from
+    /// `Z^z_a X^x_b = (-1)^{z_a · x_b} X^x_b Z^z_a`.
+    pub(crate) fn compute_decomposition_word<W: PauliWordTrait>(&self, word: &W) -> (u8, I, I)
+    where
+        <<T as Config>::Storage as BitView>::Store: PrimInt,
+    {
+        let mut phase = 0u8;
+        let mut stab_anticomm = I::zero();
+        let mut destab_anticomm = I::zero();
+        for q in 0..self.n_qubits() {
+            let p_q = word.get(q);
+            if p_q == Pauli::I {
+                continue;
+            }
+            let (q_phase, q_stab, q_destab) = self.compute_decomposition(q, p_q);
+            let cross = 2 * (symplectic_inner(destab_anticomm, q_stab) as u8 % 2);
+            phase = (phase + q_phase + cross) % 4;
+            stab_anticomm = stab_anticomm ^ q_stab;
+            destab_anticomm = destab_anticomm ^ q_destab;
+        }
+        (phase, stab_anticomm, destab_anticomm)
     }
 
     /// every basis index is a bit string alpha defining the basis state
@@ -1414,5 +1471,76 @@ mod tests {
             snapshot_tableau(&tab1.tableau),
             snapshot_tableau(&tab2.tableau)
         );
+    }
+
+    // ─── reset_all ────────────────────────────────────────────────────
+
+    /// `GeneralizedTableau::reset_all` restores the full state to a fresh
+    /// `|0…0⟩` tableau: identical stabilizer/destabilizer rows and a single
+    /// identity coefficient, even after non-Clifford branching.
+    #[test]
+    fn reset_all_restores_fresh_state() {
+        let mut tab: TestTableau = GeneralizedTableau::new(3, 1e-12);
+        let fresh: TestTableau = GeneralizedTableau::new(3, 1e-12);
+
+        tab.h(0);
+        tab.cnot(0, 1);
+        tab.ry(2, 0.7); // non-Clifford: branches the coefficient vector
+        assert!(
+            tab.coefficients.iter().count() > 1,
+            "rotation should branch the coefficient vector"
+        );
+
+        tab.reset_all();
+
+        assert_eq!(
+            snapshot_tableau(&tab.tableau),
+            snapshot_tableau(&fresh.tableau)
+        );
+        let coeffs: Vec<_> = tab.coefficients.iter().copied().collect();
+        let fresh_coeffs: Vec<_> = fresh.coefficients.iter().copied().collect();
+        assert_eq!(coeffs, fresh_coeffs);
+    }
+
+    /// A full reset clears the measurement record. Regression guard: an earlier
+    /// version left it intact, so `current_measurement_record` returned stale
+    /// outcomes after a reset.
+    #[test]
+    fn reset_all_clears_measurement_record() {
+        let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
+        tab.append_measurement_record(Some(true));
+        tab.append_measurement_record(None);
+        assert_eq!(tab.current_measurement_record().len(), 2);
+
+        tab.reset_all();
+
+        assert!(tab.current_measurement_record().is_empty());
+    }
+
+    /// A full reset clears per-qubit loss flags.
+    #[test]
+    fn reset_all_clears_loss_flags() {
+        let mut tab: TestTableau = GeneralizedTableau::new(3, 1e-12);
+        tab.is_lost[0] = true;
+        tab.is_lost[2] = true;
+
+        tab.reset_all();
+
+        assert!(tab.is_lost.iter().all(|&lost| !lost));
+    }
+
+    /// `Tableau::reset_all` restores the fresh identity tableau rows.
+    #[test]
+    fn tableau_reset_all_restores_fresh_rows() {
+        let mut tab: Tableau<TestConfig> = Tableau::new(4);
+        let fresh: Tableau<TestConfig> = Tableau::new(4);
+
+        tab.h(0);
+        tab.s(1);
+        tab.h(3);
+
+        tab.reset_all();
+
+        assert_eq!(snapshot_tableau(&tab), snapshot_tableau(&fresh));
     }
 }

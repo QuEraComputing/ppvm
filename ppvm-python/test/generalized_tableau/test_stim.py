@@ -275,6 +275,30 @@ def test_run_propagates_parse_error_as_value_error():
         StimProgram.parse("FROBNICATE 0")
 
 
+def test_stim_program_num_qubits_property():
+    # One past the highest qubit index any instruction references.
+    assert StimProgram.parse("H 0\nCX 0 4\nM 2").num_qubits == 5
+    assert StimProgram.parse("M 0").num_qubits == 1
+    # Annotations (QUBIT_COORDS / DETECTOR) carry no executable qubit operands.
+    assert StimProgram.parse("QUBIT_COORDS(0, 0) 0\nX 0\nM 0\nDETECTOR rec[-1]").num_qubits == 1
+
+
+def test_sample_stim_infers_n_qubits_when_omitted():
+    # Two qubits flipped; omitting n_qubits must infer 3 (indices 0..=2).
+    prog = StimProgram.parse("X 0 2\nM 0 1 2")
+    inferred = sample_stim(prog, num_shots=1, seed=0)
+    explicit = sample_stim(prog, n_qubits=3, num_shots=1, seed=0)
+    assert inferred == explicit
+    assert inferred == [[MeasurementResult.ONE, MeasurementResult.ZERO, MeasurementResult.ONE]]
+
+
+def test_sample_classmethod_infers_n_qubits_when_omitted():
+    prog = StimProgram.parse("H 0\nCX 0 1\nM 0 1")
+    inferred = GeneralizedTableau.sample(prog, num_shots=5, seed=0)
+    explicit = GeneralizedTableau.sample(prog, 2, num_shots=5, seed=0)
+    assert inferred == explicit
+
+
 def test_sample_many_qubits():
     stim_str = textwrap.dedent("""
         X 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99

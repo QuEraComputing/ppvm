@@ -2,3 +2,5 @@
 prek = "latest"
 # License header checker/formatter (used by prek hawkeye hook)
 "github:korandoru/hawkeye" = "latest"
+# Unused-dependency checker
+"cargo:cargo-machete" = "0.9.2"

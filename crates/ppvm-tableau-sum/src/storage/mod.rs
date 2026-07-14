@@ -7,28 +7,47 @@ pub mod vec;
 
 pub use entry_store::{Branch, EntryStore};
 use fxhash::FxHashMap;
+use ppvm_traits::traits::Clifford;
 
 // Hasher for the structural `word_fingerprint`. gxhash (AES-based) is fastest on
-// native but needs hardware AES and does not build on wasm32, so fall back to
-// fxhash there. The fingerprint is a transient in-memory dedup key — collisions
-// are resolved by `structurally_equal`, and it is never persisted or compared
-// across builds — so the hasher may differ per target without affecting results.
+// native and exposes a `gxhash64` bulk free function, but it needs hardware AES
+// and does not build on wasm32, so fall back to fxhash there. The fingerprint is
+// a transient in-memory dedup key — collisions are resolved by
+// `structurally_equal`, and it is never persisted or compared across builds — so
+// the hasher may differ per target without affecting results.
+use bitvec::view::{BitView, BitViewSized};
 #[cfg(target_arch = "wasm32")]
 use fxhash::FxHasher as FingerprintHasher;
-#[cfg(not(target_arch = "wasm32"))]
-use gxhash::GxHasher as FingerprintHasher;
 use num::{
-    Complex, One, Zero,
+    Complex, One, PrimInt, Zero,
     complex::{Complex64, ComplexFloat},
 };
+use ppvm_pauli_word::pattern::NotIdentity;
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
 use ppvm_traits::config::Config;
-use std::{
-    hash::{Hash, Hasher},
-    ops::AddAssign,
-};
+#[cfg(target_arch = "wasm32")]
+use std::hash::Hasher;
+use std::ops::AddAssign;
+
+// Reusable per-thread scratch buffer for `word_fingerprint`. Gathering every
+// row's word bytes into one contiguous slice lets us hash in a single bulk call
+// instead of two tiny `Hash::hash` writes per row (high per-call overhead).
+// Cleared (capacity retained) per call, so it adapts to any row count / qubit
+// width without re-allocating. Bytes (not the storage word type) because the
+// storage element width (`[u8; N]` vs `[u64; N]`) is generic at this call site.
+thread_local! {
+    static WORD_FP_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Read a single bit from a raw store-word slice (Lsb0 convention). Skips the
+/// per-call word/bit recomputation and bounds-check that `BitArray`'s `Index`
+/// does, for the hot per-row column reads in noise propagation.
+#[inline]
+pub(crate) fn bit_at<S: PrimInt>(words: &[S], word_idx: usize, bit: usize) -> bool {
+    (words[word_idx] >> bit) & S::one() != S::zero()
+}
 
 /// Hash of the `word` (Pauli content) of every row, in order. This is the
 /// expensive component (each word is several machine words wide) and is
@@ -42,15 +61,31 @@ where
     I:,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
-    let mut hasher = FingerprintHasher::default();
-    for row in tab.tableau.data.iter() {
-        // Hash the Pauli bits directly: the `PauliWord` hash cache is disabled
-        // for tableau rows (`REHASH = false`), so `row.word.hash()` would feed
-        // a stale zero and make every tableau collide.
-        row.word.xbits.data.hash(&mut hasher);
-        row.word.zbits.data.hash(&mut hasher);
-    }
-    hasher.finish()
+    WORD_FP_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        // Clear retains capacity; refill with every row's bits as raw bytes.
+        buf.clear();
+        for row in tab.tableau.data.iter() {
+            // Gather the Pauli bits directly: the `PauliWord` hash cache is
+            // disabled for tableau rows (`REHASH = false`), so hashing
+            // `row.word` would feed a stale zero and make every tableau collide.
+            // `xbits.data`/`zbits.data` are the `PauliStorage` backing array,
+            // which is `bytemuck::Pod`, so this byte view is safe and zero-copy.
+            buf.extend_from_slice(bytemuck::bytes_of(&row.word.xbits.data));
+            buf.extend_from_slice(bytemuck::bytes_of(&row.word.zbits.data));
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            gxhash::gxhash64(&buf, 0)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut hasher = FingerprintHasher::default();
+            hasher.write(&buf);
+            hasher.finish()
+        }
+    })
 }
 
 /// Per-row mask (splitmix64 of `(index, salt)`); a stable pure function used
@@ -87,17 +122,25 @@ pub(crate) fn loss_mask(q: usize) -> u64 {
     row_mask(q, 0xC3C3_C3C3_C3C3_C3C3)
 }
 
-/// XOR contribution of a single row's phase.
-#[inline]
-fn phase_contrib(row: usize, phase: u8) -> u64 {
-    let mut h = 0;
-    if phase & 1 != 0 {
-        h ^= imag_mask(row);
+/// Precomputed per-row/per-qubit masks (sign, imag, loss). Built once per op and
+/// indexed instead of recomputing the splitmix `row_mask` per row per entry.
+pub(crate) struct RowMasks {
+    pub sign: Vec<u64>, // sign_mask(i) for i in 0..2*n_qubits
+    pub imag: Vec<u64>, // imag_mask(i) for i in 0..2*n_qubits
+    pub loss: Vec<u64>, // loss_mask(q) for q in 0..n_qubits
+}
+
+impl RowMasks {
+    /// Build the mask tables. The tableau has `2 * n_qubits` rows (`sign`/`imag`
+    /// indexed by row); `loss` is indexed by qubit `0..n_qubits`.
+    pub(crate) fn new(n_qubits: usize) -> Self {
+        let n_rows = 2 * n_qubits;
+        Self {
+            sign: (0..n_rows).map(sign_mask).collect(),
+            imag: (0..n_rows).map(imag_mask).collect(),
+            loss: (0..n_qubits).map(loss_mask).collect(),
+        }
     }
-    if phase & 2 != 0 {
-        h ^= sign_mask(row);
-    }
-    h
 }
 
 /// XOR-combinable hash of `is_lost` plus every row's `phase`, formed as the
@@ -109,13 +152,37 @@ where
     T: Config,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
+    // Single implementation: build a one-shot mask table and delegate so the
+    // table-indexed and from-scratch values are guaranteed identical.
+    // `is_lost.len() == n_qubits` and is available under these minimal bounds.
+    let masks = RowMasks::new(tab.is_lost.len());
+    phase_loss_hash_with(tab, &masks)
+}
+
+/// Like [`phase_loss_hash`], but indexes a precomputed [`RowMasks`] instead of
+/// recomputing the splitmix masks per row/qubit. Reproduces the same value:
+/// phase bit 0 (imag) XORs `masks.imag[row]`, phase bit 1 (sign) XORs
+/// `masks.sign[row]`, and a lost qubit `q` XORs `masks.loss[q]`.
+pub(crate) fn phase_loss_hash_with<T, I, C>(
+    tab: &GeneralizedTableau<T, I, C>,
+    masks: &RowMasks,
+) -> u64
+where
+    T: Config,
+    C: SparseVector<Complex<T::Coeff>, I>,
+{
     let mut h = 0u64;
     for (row, ppw) in tab.tableau.data.iter().enumerate() {
-        h ^= phase_contrib(row, ppw.phase);
+        if ppw.phase & 1 != 0 {
+            h ^= masks.imag[row];
+        }
+        if ppw.phase & 2 != 0 {
+            h ^= masks.sign[row];
+        }
     }
     for (q, lost) in tab.is_lost.iter().enumerate() {
         if *lost {
-            h ^= loss_mask(q);
+            h ^= masks.loss[q];
         }
     }
     h
@@ -209,6 +276,156 @@ where
         im: T::Coeff::zero(),
     };
     for (val0, idx0) in tab0.coefficients.iter() {
+        let val1 = scratch.get(idx0).copied().unwrap_or(zero);
+        if (*val0 - val1).norm_sqr() >= threshold_sq {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// A lazily-described branch: a mutation applied to a parent entry. Used so the
+/// merge can compute the branch fingerprint / structural identity without
+/// cloning, materializing the tableau only for surviving new entries.
+#[derive(Clone, Copy, Debug)]
+pub enum BranchMutation {
+    /// Apply a non-identity Pauli at `addr0`: flips per-row sign bits only.
+    Pauli { op: NotIdentity, addr0: usize },
+    /// Mark qubit `q` lost (set is_lost[q] = true).
+    Loss { q: usize },
+}
+
+/// Materialize a lazily-described branch into a (cloned) tableau in place.
+pub(crate) fn apply_branch_mutation<T, I, C>(
+    tab: &mut GeneralizedTableau<T, I, C>,
+    m: BranchMutation,
+) where
+    T: Config,
+    I: TableauIndex,
+    C: SparseVector<Complex<T::Coeff>, I>,
+    GeneralizedTableau<T, I, C>: Clifford,
+{
+    match m {
+        BranchMutation::Pauli { op, addr0 } => match op {
+            NotIdentity::X => tab.x(addr0),
+            NotIdentity::Y => tab.y(addr0),
+            NotIdentity::Z => tab.z(addr0),
+        },
+        BranchMutation::Loss { q } => {
+            tab.is_lost[q] = true;
+        }
+    }
+}
+
+/// Like [`structurally_equal`], but compares `existing` against the *virtual*
+/// tableau `parent + m` without materializing it. Mirrors `structurally_equal`
+/// field-by-field, deriving each field of the virtual tableau from `parent`:
+/// - `is_lost`: for `Loss { q }`, equals `parent`'s with index `q` forced true;
+///   for `Pauli`, equals `parent`'s unchanged.
+/// - `coefficients`: unchanged by both mutations.
+/// - rows: for `Loss`, unchanged; for `Pauli`, each row's sign bit (phase bit 1)
+///   is flipped per the per-column rule (X: z; Y: x^z; Z: x).
+pub(crate) fn structurally_equal_mutated<T, I, C>(
+    existing: &GeneralizedTableau<T, I, C>,
+    parent: &GeneralizedTableau<T, I, C>,
+    m: BranchMutation,
+    scratch: &mut FxHashMap<I, Complex<T::Coeff>>,
+) -> bool
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    T::Coeff: One + Zero + Clone + num::Num + PartialOrd,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + AddAssign
+        + From<Complex64>
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex,
+    C: SparseVector<Complex<T::Coeff>, I>,
+{
+    // NOTE: comparing is_lost and rows is only necessary to avoid hash collisions
+
+    match m {
+        BranchMutation::Loss { q } => {
+            // Virtual is_lost == parent's with index q forced true.
+            if existing.is_lost.len() != parent.is_lost.len() {
+                return false;
+            }
+            for (i, (&e, &p)) in existing
+                .is_lost
+                .iter()
+                .zip(parent.is_lost.iter())
+                .enumerate()
+            {
+                let virt = if i == q { true } else { p };
+                if e != virt {
+                    return false;
+                }
+            }
+        }
+        BranchMutation::Pauli { .. } => {
+            // Virtual is_lost == parent's, unchanged.
+            if existing.is_lost != parent.is_lost {
+                return false;
+            }
+        }
+    }
+
+    if existing.coefficients.len() != parent.coefficients.len() {
+        return false;
+    }
+
+    // Cheaper row comparison first; coefficient compare is O(K) below.
+    match m {
+        BranchMutation::Loss { .. } => {
+            for (re, rp) in existing.tableau.data.iter().zip(parent.tableau.data.iter()) {
+                if re.phase != rp.phase || re.word != rp.word {
+                    return false;
+                }
+            }
+        }
+        BranchMutation::Pauli { op, addr0 } => {
+            let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+            let word_idx = addr0 / bits_per_word;
+            let bit = addr0 % bits_per_word;
+            for (re, rp) in existing.tableau.data.iter().zip(parent.tableau.data.iter()) {
+                if re.word != rp.word {
+                    return false;
+                }
+                let xw = rp.word.xbits.data.as_raw_slice();
+                let zw = rp.word.zbits.data.as_raw_slice();
+                let x: bool = bit_at(xw, word_idx, bit);
+                let z: bool = bit_at(zw, word_idx, bit);
+                let flip = match op {
+                    NotIdentity::X => z,
+                    NotIdentity::Y => x ^ z,
+                    NotIdentity::Z => x,
+                };
+                let virt_phase = rp.phase ^ ((flip as u8) << 1);
+                if re.phase != virt_phase {
+                    return false;
+                }
+            }
+        }
+    }
+
+    // Reuse the caller-owned scratch map instead of allocating per call.
+    // Clear retains capacity across invocations. Coefficients are unchanged
+    // by both mutations, so compare existing vs parent directly.
+    scratch.clear();
+    scratch.reserve(parent.coefficients.len());
+    for (val, idx) in parent.coefficients.iter() {
+        scratch.insert(*idx, *val);
+    }
+
+    let threshold_sq =
+        existing.coefficient_threshold.clone() * existing.coefficient_threshold.clone();
+    let zero = Complex {
+        re: T::Coeff::zero(),
+        im: T::Coeff::zero(),
+    };
+    for (val0, idx0) in existing.coefficients.iter() {
         let val1 = scratch.get(idx0).copied().unwrap_or(zero);
         if (*val0 - val1).norm_sqr() >= threshold_sq {
             return false;

@@ -1,0 +1,17 @@
+device circuit.n_qubits 1;
+device circuit.backend paulisum;
+device circuit.observable Z;
+
+fn @main() {
+    // PauliSum already runs in the Heisenberg picture: `circuit.ry` performs
+    // RY(θ)† Z RY(θ) = cos(θ)·Z + sin(θ)·X. A single gate means no
+    // reversal is needed beyond that. Trace against Z/I-only Paulis picks
+    // up the cos(θ) coefficient on Z; the sin(θ)·X term contributes 0.
+    const.u64 0
+    const.f64 0.7
+    circuit.ry
+
+    const.str "Z?*"
+    circuit.trace
+    ret
+}

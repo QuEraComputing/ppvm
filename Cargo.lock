@@ -1296,12 +1296,15 @@ dependencies = [
  "bnum",
  "chumsky 0.10.1",
  "eyre",
+ "log",
  "num",
  "ppvm-pauli-sum",
  "ppvm-tableau",
+ "rayon",
  "smallvec",
  "vihaco",
  "vihaco-circuit-isa",
+ "vihaco-cpu",
  "vihaco-parser",
  "vihaco-parser-core",
 ]
@@ -1866,6 +1869,22 @@ dependencies = [
  "eyre",
  "smallvec",
  "vihaco",
+ "vihaco-parser",
+ "vihaco-parser-core",
+]
+
+[[package]]
+name = "vihaco-cpu"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be6cffffe3fca901bcddc389422dd9d2f7041038571a758a03c63e53ce1b6d5e"
+dependencies = [
+ "chumsky 0.10.1",
+ "codespan",
+ "eyre",
+ "log",
+ "vihaco",
+ "vihaco-derive",
  "vihaco-parser",
  "vihaco-parser-core",
 ]

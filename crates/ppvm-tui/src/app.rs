@@ -35,7 +35,8 @@ pub struct AppState {
     n_qubits: usize,
     /// True while a program is loaded (Program panel) vs a REPL session (Log).
     has_program: bool,
-    /// True while the debugger is paused (at start or a breakpoint).
+    /// True while the debugger is stopped and waiting for input (at start, after
+    /// a step, or at a breakpoint).
     paused: bool,
     /// True once the loaded program has run to Return/Halt.
     finished: bool,
@@ -141,27 +142,30 @@ impl AppState {
     /// that avoids touching the filesystem.)
     pub fn load_source(&mut self, src: &str) -> Result<()> {
         let module = compile_program(src)?;
-        self.load_module(module);
-        self.set_status("loaded program");
+        if self.load_module(module) {
+            self.set_status("loaded program");
+        }
         Ok(())
     }
 
     fn load_file(&mut self, path: &str) -> Result<()> {
         let module = load_module_file(path).map_err(|e| eyre!("failed to load {path}: {e}"))?;
-        self.load_module(module);
-        self.set_status(format!("loaded {path}"));
+        if self.load_module(module) {
+            self.set_status(format!("loaded {path}"));
+        }
         Ok(())
     }
 
     /// Core loader: rebuild the machine from `module` and pause at pc 0.
-    fn load_module(&mut self, module: PPVMModule) {
+    /// Returns `false` if load/init fails (error is written to the status line).
+    fn load_module(&mut self, module: PPVMModule) -> bool {
         let mut m = PPVM::default();
         // A fresh machine + load + init gives clean tableau/record state; these
         // only fail on malformed modules, which `compile_program` already
         // rejects, so surface as a status rather than unwinding the UI.
         if let Err(e) = m.load(&module).and_then(|()| m.init()) {
             self.set_status(format!("error: {e}"));
-            return;
+            return false;
         }
         self.program.clear();
         for (i, inst) in module.code.iter().enumerate() {
@@ -173,6 +177,7 @@ impl AppState {
         self.paused = true;
         self.finished = false;
         self.refresh_cursor();
+        true
     }
 
     fn refresh_cursor(&mut self) {
@@ -227,7 +232,6 @@ impl AppState {
     fn apply_outcome(&mut self, outcome: StepOutcome) {
         match outcome {
             StepOutcome::Continue => {
-                self.paused = false;
                 self.set_status("");
             }
             StepOutcome::Breakpoint => {
@@ -244,8 +248,9 @@ impl AppState {
 
     fn reset(&mut self) -> Result<()> {
         if let Some(module) = self.module.clone() {
-            self.load_module(module);
-            self.set_status("reset");
+            if self.load_module(module) {
+                self.set_status("reset");
+            }
         } else if self.n_qubits > 0 {
             self.machine = Some(PPVM::with_qubits(self.n_qubits)?);
             self.set_status("reset device");
@@ -664,6 +669,19 @@ mod tests {
         app.dispatch(""); // empty line == step
         let after = app.active_listing().1.cursor();
         assert_ne!(start, after, "stepping should move the cursor");
+    }
+
+    #[test]
+    fn step_keeps_paused_and_stepping_hint() {
+        let mut app = AppState::new();
+        app.load_source(BP_PROGRAM).unwrap();
+        app.dispatch(""); // empty line == step
+        assert!(app.paused(), "manual step should leave the debugger paused");
+        assert!(
+            app.hint().contains("step"),
+            "hint should still advertise stepping, got: {}",
+            app.hint()
+        );
     }
 
     #[test]

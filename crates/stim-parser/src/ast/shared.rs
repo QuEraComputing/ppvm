@@ -75,7 +75,7 @@ pub struct Tag {
 pub enum TagParam {
     Positional(f64),
     /// A `key=value` tag parameter. `had_pi` records whether the value was
-    /// written as a `<n>*pi` (or bare `pi`) expression — rotation/U3 tags
+    /// written as a `<n>[*]pi` (or bare `pi`) expression — rotation/U3 tags
     /// require it (half-turn convention), and the printer re-emits `*pi`.
     Named {
         key: String,

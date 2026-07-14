@@ -650,6 +650,25 @@ mod tests {
     }
 
     #[test]
+    fn rotation_tag_accepts_alternate_pi_syntax() {
+        let half_pi = 0.5 * std::f64::consts::PI;
+        for src in [
+            "I[R_Z(theta=0.5*pi)] 0",
+            "I[R_Z(theta=0.5 * pi)] 0",
+            "I[R_Z(theta=0.5pi)] 0",
+        ] {
+            let prog = lower_extended(src).unwrap_or_else(|e| panic!("{src}: {e:?}"));
+            match &prog.instructions[0] {
+                ExtendedInstruction::Rotation { axis, theta, .. } => {
+                    assert_eq!(*axis, Axis::Z);
+                    assert!((*theta - half_pi).abs() < 1e-12, "{src}");
+                }
+                other => panic!("{src}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn i_error_loss_lowers() {
         let prog = lower_extended("I_ERROR[loss](0.01) 0").expect("lower");
         match &prog.instructions[0] {

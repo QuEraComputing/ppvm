@@ -23,22 +23,29 @@ fn parse_tag_bare_ident() {
 
 #[test]
 fn parse_tag_named_param_pi_expr() {
-    let p = parse("I[R_X(theta=0.5*pi)] 0").unwrap();
-    match &p.instructions[0] {
-        Instruction::Gate(GateOp { name, tags, .. }) => {
-            assert_eq!(*name, GateName::Identity);
-            assert_eq!(tags.len(), 1);
-            assert_eq!(tags[0].name, "R_X");
-            match &tags[0].params[..] {
-                [TagParam::Named { key, value, had_pi }] => {
-                    assert_eq!(key, "theta");
-                    approx_eq(*value, 0.5 * std::f64::consts::PI);
-                    assert!(had_pi);
+    let half_pi = 0.5 * std::f64::consts::PI;
+    for src in [
+        "I[R_X(theta=0.5*pi)] 0",
+        "I[R_X(theta=0.5 * pi)] 0",
+        "I[R_X(theta=0.5pi)] 0",
+    ] {
+        let p = parse(src).unwrap_or_else(|e| panic!("{src}: {e:?}"));
+        match &p.instructions[0] {
+            Instruction::Gate(GateOp { name, tags, .. }) => {
+                assert_eq!(*name, GateName::Identity);
+                assert_eq!(tags.len(), 1);
+                assert_eq!(tags[0].name, "R_X");
+                match &tags[0].params[..] {
+                    [TagParam::Named { key, value, had_pi }] => {
+                        assert_eq!(key, "theta");
+                        approx_eq(*value, half_pi);
+                        assert!(*had_pi);
+                    }
+                    other => panic!("{src}: {other:?}"),
                 }
-                other => panic!("{other:?}"),
             }
+            other => panic!("{src}: {other:?}"),
         }
-        other => panic!("{other:?}"),
     }
 }
 

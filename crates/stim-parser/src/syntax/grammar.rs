@@ -83,20 +83,22 @@ pub(crate) fn signed_float<'src>() -> impl Parser<'src, &'src str, f64, Extra<'s
 }
 
 /// Pi-expression, paired with whether `pi` actually appeared in the source:
-/// `pi` -> `(PI, true)`, `<num>*pi` -> `(num*PI, true)`, `<num>` -> `(num, false)`.
+/// `pi` -> `(PI, true)`, `<num>[*]pi` -> `(num*PI, true)`, `<num>` -> `(num, false)`.
+/// The optional `*` may be omitted (`0.5pi`) or spaced (`0.5 * pi`).
 /// The flag lets rotation/U3 tags enforce the half-turn `<n>*pi` convention.
 pub(crate) fn pi_expr_flagged<'src>()
 -> impl Parser<'src, &'src str, (f64, bool), Extra<'src>> + Clone {
     let pi_kw = just("pi").to((std::f64::consts::PI, true));
-    let num_then_pi = signed_float()
-        .then(inline_pad().ignore_then(just("*pi")).or_not())
-        .map(|(n, suffix)| {
-            if suffix.is_some() {
-                (n * std::f64::consts::PI, true)
-            } else {
-                (n, false)
-            }
-        });
+    let pi_suffix = inline_pad()
+        .ignore_then(just('*').then(inline_pad()).or_not())
+        .then(just("pi"));
+    let num_then_pi = signed_float().then(pi_suffix.or_not()).map(|(n, suffix)| {
+        if suffix.is_some() {
+            (n * std::f64::consts::PI, true)
+        } else {
+            (n, false)
+        }
+    });
     choice((pi_kw, num_then_pi))
 }
 
@@ -296,9 +298,12 @@ mod tests {
 
     #[test]
     fn pi_expr_parses_pi_keyword_coeff_and_plain_number() {
+        let half_pi = 0.5 * std::f64::consts::PI;
         assert_eq!(run(pi_expr(), "pi"), std::f64::consts::PI);
-        assert_eq!(run(pi_expr(), "0.5*pi"), 0.5 * std::f64::consts::PI);
-        assert_eq!(run(pi_expr(), "0.5 *pi"), 0.5 * std::f64::consts::PI);
+        assert_eq!(run(pi_expr(), "0.5*pi"), half_pi);
+        assert_eq!(run(pi_expr(), "0.5 *pi"), half_pi);
+        assert_eq!(run(pi_expr(), "0.5 * pi"), half_pi);
+        assert_eq!(run(pi_expr(), "0.5pi"), half_pi);
         assert_eq!(run(pi_expr(), "-2*pi"), -2.0 * std::f64::consts::PI);
         assert_eq!(run(pi_expr(), "0.5"), 0.5);
     }

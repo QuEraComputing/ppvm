@@ -1,2 +1,2 @@
-window.ALL_CRATES = ["paulisum","ppvm","ppvm_pauli_sum","ppvm_pauli_word","ppvm_python_native","ppvm_stim","ppvm_sym","ppvm_tableau","ppvm_tableau_sum","ppvm_traits","ppvm_vihaco","stim_parser","stim_sample","sym","tableau","vihaco_circuit_isa"];
-//{"start":21,"fragment_lengths":[10,7,17,18,21,12,11,15,19,14,14,14,14,6,10,21]}
+window.ALL_CRATES = ["paulisum","ppvm","ppvm_pauli_sum","ppvm_pauli_word","ppvm_python_native","ppvm_stim","ppvm_sym","ppvm_tableau","ppvm_tableau_sum","ppvm_traits","ppvm_tui","ppvm_vihaco","stim_parser","stim_sample","sym","tableau","vihaco_circuit_isa"];
+//{"start":21,"fragment_lengths":[10,7,17,18,21,12,11,15,19,14,11,14,14,14,6,10,21]}

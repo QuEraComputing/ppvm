@@ -7,7 +7,7 @@
         document.documentElement.setAttribute("data-theme-pref", stored);
       })();
     </script><link rel="stylesheet" href="/ppvm/_astro/Base.BN0a5DSp.css"></head> <body> <header class="masthead"> <div class="masthead-inner"> <a class="brand" href="/ppvm/"> <span class="brand-mark" aria-hidden="true"></span> <span class="brand-mono">ppvm</span> <span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span> </a> <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation menu"> <span class="nav-toggle-bars" aria-hidden="true"></span> </button> <nav class="nav-links" id="primary-nav"> <a href="/ppvm/">Overview</a><a href="/ppvm/quickstart">Quick Start</a><a href="/ppvm/examples" aria-current="page">Examples</a><a href="/ppvm/develop">Develop</a><a href="/ppvm/api">Reference</a> <div class="theme-toggle" role="group" aria-label="Theme"> <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path> </svg> </button> <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path> </svg> </button> <button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <rect x="3" y="4" width="18" height="13" rx="2"></rect> <path d="M8 21h8M12 17v4"></path> </svg> </button> </div> </nav> </div> </header> <main> <div class="page-shell"> <details class="page-toc side-nav" aria-label="On this page"> <summary class="page-toc-label">On this page</summary> <ol> <li><a href="#Parameters" data-toc-link="#Parameters">Parameters</a></li><li><a href="#Trotterized-ppvm-simulation" data-toc-link="#Trotterized-ppvm-simulation">Trotterized ppvm simulation</a></li><li><a href="#Exact-bilinear-benchmark" data-toc-link="#Exact-bilinear-benchmark">Exact bilinear benchmark</a></li><li><a href="#Results" data-toc-link="#Results">Results</a></li><li><a href="#Fourier-space-decay" data-toc-link="#Fourier-space-decay">Fourier-space decay</a></li><li><a href="#Diffusive-rate-fit" data-toc-link="#Diffusive-rate-fit">Diffusive rate fit</a></li><li><a href="#Appendix-Errors-in-ppvm-simulation" data-toc-link="#Appendix-Errors-in-ppvm-simulation">Appendix: Errors in ppvm simulation</a></li> </ol> </details> <div class="page-toc-content">  <article class="shell narrow notebook"> <div class="titleblock"> <div class="eyebrow"> <a href="/ppvm/examples">Examples</a> &middot; executed during build
-</div> <h1>Dephased Nearest-Neighbour XY Chain</h1> <p class="byline"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/a24a69ffc1a7c61bb722e86c2a471aa5c193be77/docs/notebooks/nearest_neighbor_dephasing.py">docs/notebooks/nearest_neighbor_dephasing.py</a> </p> </div> <div class="notebook-body" data-language="python"><div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=a825b776">
+</div> <h1>Dephased Nearest-Neighbour XY Chain</h1> <p class="byline"> <span class="examples-lang">python</span> <span class="examples-source-label">Source</span> <a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/e7a796faec8a05ad62b8ee3279560fb013c3aebc/docs/notebooks/nearest_neighbor_dephasing.py">docs/notebooks/nearest_neighbor_dephasing.py</a> </p> </div> <div class="notebook-body" data-language="python"><div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=8c7b1264">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -43,7 +43,7 @@ dephased free-fermion problem.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=b06e9527">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=4c0108eb">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -61,7 +61,7 @@ dephased free-fermion problem.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=b824134d">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=24be9962">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -70,7 +70,7 @@ dephased free-fermion problem.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=de9f13fe">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=4a955409">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -94,7 +94,7 @@ dephased free-fermion problem.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=4e63388f">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=ee344147">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -113,7 +113,7 @@ the corresponding Pauli-error probability per Trotter step is</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=0baa55d5">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=1d335b26">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -148,7 +148,7 @@ the corresponding Pauli-error probability per Trotter step is</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=b8cdc7f4">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=55ac69e8">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -180,17 +180,17 @@ the corresponding Pauli-error probability per Trotter step is</p>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre> 43%|████▎     | 171/401 [00:00&lt;00:00, 1708.76it/s]</pre>
+<pre> 43%|████▎     | 171/401 [00:00&lt;00:00, 1699.64it/s]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre> 85%|████████▌ | 342/401 [00:00&lt;00:00, 1091.13it/s]</pre>
+<pre> 85%|████████▌ | 341/401 [00:00&lt;00:00, 1105.78it/s]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>100%|█████████▉| 400/401 [00:00&lt;00:00, 1079.41it/s]</pre>
+<pre>100%|█████████▉| 400/401 [00:00&lt;00:00, 1102.53it/s]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
@@ -207,7 +207,7 @@ the corresponding Pauli-error probability per Trotter step is</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=acef2bff">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=f1e827f8">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -231,7 +231,7 @@ $$</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=c2c84e77">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=827a35a3">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -277,7 +277,7 @@ $$</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=94283f07">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=643060e5">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -289,7 +289,7 @@ the periodic chain.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=ae939107">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=bce2d1c9">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -321,7 +321,7 @@ the periodic chain.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=f5c2ad6a">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=a8cb6ddb">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -355,7 +355,7 @@ the periodic chain.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=440810ec">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=86757c14">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -391,7 +391,7 @@ the periodic chain.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=66b2f5f3">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=3ed076b7">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -403,7 +403,7 @@ $\lambda(k)\propto k^2$.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=d976f877">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=83c3de94">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -443,7 +443,7 @@ $\lambda(k)\propto k^2$.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=3aa7b956">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=74fec6f6">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -457,7 +457,7 @@ nearest-neighbour solution, that constant is</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=b557af60">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=d3779d2f">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -511,7 +511,7 @@ nearest-neighbour solution, that constant is</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=9e1f6814">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=e06e8923">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -523,7 +523,7 @@ original Trotter step and with a ten times smaller step size.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=c17b9652">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=636333d3">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -594,32 +594,32 @@ original Trotter step and with a ten times smaller step size.</p>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.01:  20%|██        | 1/5 [00:22&lt;01:30, 22.67s/it]</pre>
+<pre>dt=0.01:  20%|██        | 1/5 [00:23&lt;01:34, 23.55s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.01:  40%|████      | 2/5 [00:45&lt;01:08, 22.76s/it]</pre>
+<pre>dt=0.01:  40%|████      | 2/5 [00:47&lt;01:10, 23.57s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.01:  60%|██████    | 3/5 [01:08&lt;00:45, 22.98s/it]</pre>
+<pre>dt=0.01:  60%|██████    | 3/5 [01:10&lt;00:47, 23.59s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.01:  80%|████████  | 4/5 [01:32&lt;00:23, 23.16s/it]</pre>
+<pre>dt=0.01:  80%|████████  | 4/5 [01:35&lt;00:24, 24.11s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.01: 100%|██████████| 5/5 [01:57&lt;00:00, 23.76s/it]</pre>
+<pre>dt=0.01: 100%|██████████| 5/5 [02:01&lt;00:00, 24.77s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.01: 100%|██████████| 5/5 [01:57&lt;00:00, 23.40s/it]</pre>
+<pre>dt=0.01: 100%|██████████| 5/5 [02:01&lt;00:00, 24.32s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
@@ -634,32 +634,32 @@ original Trotter step and with a ten times smaller step size.</p>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.001:  20%|██        | 1/5 [00:37&lt;02:29, 37.47s/it]</pre>
+<pre>dt=0.001:  20%|██        | 1/5 [00:39&lt;02:38, 39.54s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.001:  40%|████      | 2/5 [01:14&lt;01:51, 37.06s/it]</pre>
+<pre>dt=0.001:  40%|████      | 2/5 [01:18&lt;01:57, 39.25s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.001:  60%|██████    | 3/5 [01:50&lt;01:13, 36.81s/it]</pre>
+<pre>dt=0.001:  60%|██████    | 3/5 [01:56&lt;01:17, 38.70s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.001:  80%|████████  | 4/5 [02:27&lt;00:36, 36.87s/it]</pre>
+<pre>dt=0.001:  80%|████████  | 4/5 [02:35&lt;00:38, 38.78s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.001: 100%|██████████| 5/5 [03:03&lt;00:00, 36.35s/it]</pre>
+<pre>dt=0.001: 100%|██████████| 5/5 [03:13&lt;00:00, 38.37s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>dt=0.001: 100%|██████████| 5/5 [03:03&lt;00:00, 36.63s/it]</pre>
+<pre>dt=0.001: 100%|██████████| 5/5 [03:13&lt;00:00, 38.63s/it]</pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
@@ -675,7 +675,7 @@ original Trotter step and with a ten times smaller step size.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=ed48e3b5">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=57e60731">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>

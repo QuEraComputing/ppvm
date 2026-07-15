@@ -355,7 +355,7 @@ class GeneralizedTableau(
     def sample(
         cls,
         prog: StimProgram,
-        n_qubits: int,
+        n_qubits: int | None = None,
         min_abs_coeff: float = 1e-10,
         num_shots: int = 1,
         seed: int | None = None,
@@ -365,6 +365,11 @@ class GeneralizedTableau(
         Each shot starts from a fresh tableau, so this is the right entry
         point for multi-shot sampling.
 
+        When ``n_qubits`` is ``None`` (the default) the qubit count is inferred
+        from the program via ``prog.num_qubits`` (one past the highest qubit
+        index it references), falling back to 1 for a program that touches no
+        qubits. Pass an explicit ``n_qubits`` to size the tableau larger.
+
         Shots run in parallel across CPU cores (the GIL is released during
         sampling), with a serial fallback for small batches. When ``seed`` is
         given (it must fit in an unsigned 64-bit integer), shot ``i`` uses
@@ -373,6 +378,8 @@ class GeneralizedTableau(
         ``RAYON_NUM_THREADS`` environment variable before the first call to
         control the pool size (it defaults to the number of logical cores).
         """
+        if n_qubits is None:
+            n_qubits = max(1, prog.num_qubits)
         native_cls = _native_tableau_cls(n_qubits)
         raw = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
         return [[MeasurementResult(x) for x in shot] for shot in raw]
@@ -380,15 +387,17 @@ class GeneralizedTableau(
 
 def sample_stim(
     prog: StimProgram,
-    n_qubits: int,
+    n_qubits: int | None = None,
     min_abs_coeff: float = 1e-10,
     num_shots: int = 1,
     seed: int | None = None,
 ) -> list[list[MeasurementResult]]:
     """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``.
 
-    Shots are sampled in parallel across CPU cores with the GIL released; see
-    `GeneralizedTableau.sample` for seeding and ``RAYON_NUM_THREADS``.
+    When ``n_qubits`` is ``None`` (the default) the qubit count is inferred from
+    the program; see `GeneralizedTableau.sample`. Shots are sampled in parallel
+    across CPU cores with the GIL released; see `GeneralizedTableau.sample` for
+    seeding and ``RAYON_NUM_THREADS``.
     """
     return GeneralizedTableau.sample(
         prog, n_qubits, min_abs_coeff=min_abs_coeff, num_shots=num_shots, seed=seed

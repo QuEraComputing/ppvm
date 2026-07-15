@@ -46,6 +46,14 @@ impl PyStimProgram {
         )
     }
 
+    /// Number of qubits the program operates on: one past the highest qubit
+    /// index any instruction references (`0` if it touches no qubits). Lets
+    /// callers size a tableau when no explicit qubit count is given.
+    #[getter]
+    fn num_qubits(&self) -> usize {
+        self.0.num_qubits()
+    }
+
     /// Jupyter rich display: syntax-highlighted Stim source. Only invoked in
     /// IPython/Jupyter; plain `str()`/`print()` stay uncoloured elsewhere.
     fn _repr_html_(&self) -> String {

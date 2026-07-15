@@ -233,6 +233,36 @@ class GeneralizedTableau(
         """
         return self._interface.num_coefficients()
 
+    def expectation(self, word: str) -> float:
+        """Compute ``⟨ψ|word|ψ⟩`` for a single multi-qubit Pauli string.
+
+        Args:
+            word: A dense Pauli string with one character per qubit, each
+                drawn from ``I``, ``X``, ``Y``, ``Z`` (e.g. ``"ZZ"`` for a
+                two-qubit state). Its length must equal the tableau's qubit
+                count.
+
+        Returns:
+            The real expectation value of ``word`` in the current state.
+        """
+        return self._interface.expectation(word)
+
+    def trace(self, pattern: str) -> float:
+        """Sum Pauli expectations over every word matching ``pattern``.
+
+        Enumerates each ``PauliWord`` accepted by ``pattern`` and returns
+        the sum of their expectations. Star quantifiers (``X*``) are not
+        supported — use counted repetition (``Z?{n}``) or positional
+        anchors instead.
+
+        Args:
+            pattern: A Pauli pattern string (e.g. ``"Z?{2}"`` or ``"Z0Z1"``).
+
+        Returns:
+            The summed expectation value.
+        """
+        return self._interface.trace(pattern)
+
     def u3(self, addr0: int, theta: float, phi: float, lam: float):
         """Apply the U3 gate to the specified qubit.
 
@@ -350,7 +380,7 @@ class GeneralizedTableau(
     def sample(
         cls,
         prog: StimProgram,
-        n_qubits: int,
+        n_qubits: int | None = None,
         min_abs_coeff: float = 1e-10,
         num_shots: int = 1,
         seed: int | None = None,
@@ -360,6 +390,11 @@ class GeneralizedTableau(
         Each shot starts from a fresh tableau, so this is the right entry
         point for multi-shot sampling.
 
+        When ``n_qubits`` is ``None`` (the default) the qubit count is inferred
+        from the program via ``prog.num_qubits`` (one past the highest qubit
+        index it references), falling back to 1 for a program that touches no
+        qubits. Pass an explicit ``n_qubits`` to size the tableau larger.
+
         Shots run in parallel across CPU cores (the GIL is released during
         sampling), with a serial fallback for small batches. When ``seed`` is
         given (it must fit in an unsigned 64-bit integer), shot ``i`` uses
@@ -368,6 +403,8 @@ class GeneralizedTableau(
         ``RAYON_NUM_THREADS`` environment variable before the first call to
         control the pool size (it defaults to the number of logical cores).
         """
+        if n_qubits is None:
+            n_qubits = max(1, prog.num_qubits)
         native_cls = _native_tableau_cls(n_qubits)
         raw = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
         return [[_BY_VALUE[x] for x in shot] for shot in raw]
@@ -375,15 +412,17 @@ class GeneralizedTableau(
 
 def sample_stim(
     prog: StimProgram,
-    n_qubits: int,
+    n_qubits: int | None = None,
     min_abs_coeff: float = 1e-10,
     num_shots: int = 1,
     seed: int | None = None,
 ) -> list[list[MeasurementResult]]:
     """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``.
 
-    Shots are sampled in parallel across CPU cores with the GIL released; see
-    `GeneralizedTableau.sample` for seeding and ``RAYON_NUM_THREADS``.
+    When ``n_qubits`` is ``None`` (the default) the qubit count is inferred from
+    the program; see `GeneralizedTableau.sample`. Shots are sampled in parallel
+    across CPU cores with the GIL released; see `GeneralizedTableau.sample` for
+    seeding and ``RAYON_NUM_THREADS``.
     """
     return GeneralizedTableau.sample(
         prog, n_qubits, min_abs_coeff=min_abs_coeff, num_shots=num_shots, seed=seed

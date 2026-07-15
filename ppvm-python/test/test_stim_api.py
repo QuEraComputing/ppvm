@@ -180,7 +180,7 @@ def test_odd_two_qubit_sequence_raises_value_error():
     [
         "H 0\nCX 0 1\nM 0 1\n",
         "REPEAT 3 {\n    X 0\n    M 0\n}\n",
-        "S[T] 0\nI[R_X(theta=0.25)] 1\nI_ERROR[loss](0.01) 2\n",
+        "S[T] 0\nI[R_X(theta=0.25*pi)] 1\nI_ERROR[loss](0.01) 2\n",
         "MR 0\nCX rec[-1] 0\n",
         "MPP X0*Y1\nM 2\n",
     ],

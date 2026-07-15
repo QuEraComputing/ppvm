@@ -1,0 +1,12 @@
+[package]
+name = "ppvm-tui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eyre = "0.6.12"
+# crossterm comes through ratatui's re-export (`ratatui::crossterm`), so we
+# don't declare it directly — that keeps a single crossterm version in the tree
+# and unifies event types with any host ratatui app.
+ratatui = "0.29.0"
+ppvm-vihaco = { version = "0.1.0", path = "../ppvm-vihaco" }

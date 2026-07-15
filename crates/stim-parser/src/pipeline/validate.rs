@@ -548,6 +548,7 @@ mod tests {
                     TagParam::Named {
                         key: "theta".to_string(),
                         value: 0.25,
+                        had_pi: false,
                     },
                 ],
             }],
@@ -559,7 +560,7 @@ mod tests {
                 assert!(matches!(tags[0].params[0], TagParam::Positional(0.5)));
                 assert!(matches!(
                     &tags[0].params[1],
-                    TagParam::Named { key, value } if key == "theta" && *value == 0.25
+                    TagParam::Named { key, value, .. } if key == "theta" && *value == 0.25
                 ));
             }
             other => panic!("{other:?}"),

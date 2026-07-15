@@ -84,6 +84,18 @@ macro_rules! create_interface {
                 self.inner.coefficients.len()
             }
 
+            /// `⟨ψ|word|ψ⟩` for the multi-qubit Pauli string `word`.
+            pub fn expectation(&self, word: String) -> f64 {
+                let w: PauliWord<<$type as Config>::Storage> = word.into();
+                self.inner.expectation(&w)
+            }
+
+            /// `Σ_{P matches pattern} ⟨ψ|P|ψ⟩`.
+            pub fn trace(&self, pattern: String) -> f64 {
+                let pat: PauliPattern = pattern.into();
+                self.inner.trace(&pat)
+            }
+
             // clifford
             pub fn x(&mut self, targets: Vec<usize>) {
                 self.inner.x_many(targets.as_slice());

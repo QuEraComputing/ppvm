@@ -74,7 +74,14 @@ pub struct Tag {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TagParam {
     Positional(f64),
-    Named { key: String, value: f64 },
+    /// A `key=value` tag parameter. `had_pi` records whether the value was
+    /// written as a `<n>[*]pi` (or bare `pi`) expression — rotation/U3 tags
+    /// require it (half-turn convention), and the printer re-emits `*pi`.
+    Named {
+        key: String,
+        value: f64,
+        had_pi: bool,
+    },
 }
 
 /// The rotation axis for an extended-dialect `R_X` / `R_Y` / `R_Z` rotation.

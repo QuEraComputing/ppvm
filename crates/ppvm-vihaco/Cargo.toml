@@ -3,21 +3,25 @@ name = "ppvm-vihaco"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# Parallelism via rayon: shot-level (`run_shots`) and tableau-internal. Off by
+# default; enable with `features = ["rayon"]` (native only — wasm has no thread
+# support, so keeping it off by default keeps the default build wasm-safe).
+rayon = ["dep:rayon", "ppvm-tableau/rayon"]
+
 [dependencies]
 bitvec = "1.0.1"
 bnum = { version = "0.13.0", features = ["num-traits"] }
 chumsky = "0.10.0"
 eyre = "0.6.12"
+log = "0.4.29"
 num = "0.4.3"
-smallvec = "1.15.1"
-ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
+rayon = { version = "1.10", optional = true }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+smallvec = "1.15.1"
 vihaco = "0.1.1"
+vihaco-cpu = "0.1.1"
 vihaco-parser = "0.1.1"
 vihaco-parser-core = "0.1.1"
 vihaco-circuit-isa = { version = "0.1.0", path = "../vihaco-circuit-isa" }
-
-# chumsky and vihaco-parser-core are pulled in by the vihaco_parser::Parse
-# derive on BackendKind; machete can't see macro-expanded usage.
-[package.metadata.cargo-machete]
-ignored = ["chumsky", "vihaco-parser-core"]
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }

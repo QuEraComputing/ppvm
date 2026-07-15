@@ -12,9 +12,6 @@ dependencies = [
     "kirin>=0.0.15",
 ]
 
-[project.scripts]
-ppvm = "ppvm:main"
-
 [build-system]
 requires = ["maturin>=1.10,<2.0"]
 build-backend = "maturin"

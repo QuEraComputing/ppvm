@@ -181,6 +181,10 @@ macro_rules! create_interface {
                 self.cz(targets)
             }
 
+            pub fn cz_block(&mut self, control_base: usize, target_base: usize, count: usize) {
+                self.inner.cz_block(control_base, target_base, count);
+            }
+
             // rot1
             pub fn rx(&mut self, targets: Vec<usize>, theta: f64) {
                 self.inner.rx_many(targets.as_slice(), theta);

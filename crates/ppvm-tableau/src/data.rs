@@ -798,6 +798,47 @@ where
         }
     }
 
+    /// Apply CZ to `count` pairs with a constant offset, given in qubit-index
+    /// terms: `(control_base + i, target_base + i)` for `i in 0..count`.
+    ///
+    /// This is the high-level entry point for a fused block of CZs: it splits
+    /// the run at storage-word boundaries internally and dispatches each
+    /// segment to [`Self::cz_block_pairs`] (control and target in the same
+    /// word) or [`Self::cz_block_pairs_cross_word`] (straddling two words), so
+    /// callers never need to reason about the `u64` packing. CZ is symmetric,
+    /// so the two bases may be passed in either order.
+    pub fn cz_block(&mut self, control_base: usize, target_base: usize, count: usize)
+    where
+        <<T::Storage as BitView>::Store as TryFrom<usize>>::Error: Debug,
+        <T::Storage as BitView>::Store: PrimInt + TryFrom<usize>,
+    {
+        if count == 0 {
+            return;
+        }
+        // cz_block_pairs needs a non-negative offset; CZ is symmetric, so order
+        // the two bases.
+        let (lo, hi) = if control_base <= target_base {
+            (control_base, target_base)
+        } else {
+            (target_base, control_base)
+        };
+        let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let mut i = 0;
+        while i < count {
+            let (c, t) = (lo + i, hi + i);
+            let (wc, bc) = (c / bits_per_word, c % bits_per_word);
+            let (wt, bt) = (t / bits_per_word, t % bits_per_word);
+            // Longest run before either index crosses into the next word.
+            let run = (bits_per_word - bc).min(bits_per_word - bt).min(count - i);
+            if wc == wt {
+                self.cz_block_pairs(c, t - c, run);
+            } else {
+                self.cz_block_pairs_cross_word(wc, bc, wt, bt, run);
+            }
+            i += run;
+        }
+    }
+
     // helper functions
 
     /// Compute the decomposition of a pauli into stabilizer destabilizer products
@@ -1473,6 +1514,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_cz_block_matches_individual_across_word_boundary() {
+        // cz_block must split a run that straddles the u64 boundary into the
+        // right within-word + cross-word segments. control_base=34,
+        // target_base=51, count=17 reproduces the MSD ql[2]xql[3] sweep:
+        // (34,51)..(46,63) in word 0, then (47,64)..(50,67) cross-word.
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
+        type GTab = GeneralizedTableau<Byte8F64<2>>;
+        let n = 85;
+        let mut tab1: GTab = GeneralizedTableau::new(n, 1e-12);
+        for i in 0..n {
+            Clifford::h(&mut tab1.tableau, i);
+        }
+        let mut tab2 = tab1.clone();
+
+        let (control_base, target_base, count) = (34, 51, 17);
+        for i in 0..count {
+            Clifford::cz(&mut tab1, control_base + i, target_base + i);
+        }
+        tab2.cz_block(control_base, target_base, count);
+
+        assert_eq!(
+            snapshot_tableau(&tab1.tableau),
+            snapshot_tableau(&tab2.tableau)
+        );
+
+        // Reversed bases (CZ is symmetric) must give the same result.
+        let mut tab3 = GeneralizedTableau::<Byte8F64<2>>::new(n, 1e-12);
+        for i in 0..n {
+            Clifford::h(&mut tab3.tableau, i);
+        }
+        tab3.cz_block(target_base, control_base, count);
+        assert_eq!(
+            snapshot_tableau(&tab1.tableau),
+            snapshot_tableau(&tab3.tableau)
+        );
+    }
     // ─── reset_all ────────────────────────────────────────────────────
 
     /// `GeneralizedTableau::reset_all` restores the full state to a fresh

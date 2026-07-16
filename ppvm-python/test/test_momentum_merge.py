@@ -11,6 +11,7 @@ These checks compare against *exact* references — the projector definition,
 idempotency, and exact diagonalization of the dynamics — NOT against any
 other propagation scheme.
 """
+
 import cmath
 import math
 
@@ -49,10 +50,12 @@ def _seed_pair(n, k):
     re = np.cos(2 * np.pi * k * a / n)
     im = -np.sin(2 * np.pi * k * a / n)  # e^{-2πi k a/n} = cos - i sin
     Z = [zstr(n, q) for q in range(n)]
-    PA = PauliSum.new(n, [(Z[q], float(re[q])) for q in range(n)],
-                      min_abs_coeff=0.0, max_pauli_weight=n)
-    PB = PauliSum.new(n, [(Z[q], float(im[q])) for q in range(n)],
-                      min_abs_coeff=0.0, max_pauli_weight=n)
+    PA = PauliSum.new(
+        n, [(Z[q], float(re[q])) for q in range(n)], min_abs_coeff=0.0, max_pauli_weight=n
+    )
+    PB = PauliSum.new(
+        n, [(Z[q], float(im[q])) for q in range(n)], min_abs_coeff=0.0, max_pauli_weight=n
+    )
     return PA, PB
 
 
@@ -79,10 +82,10 @@ def _ovl(sA, sB, oA, oB):
 def test_momentum_merge_idempotent(k):
     n = 4
     g = TranslationGroup.chain_1d(n)
-    PA, PB = _seed_pair(n, k)          # S^z_k is exactly in sector k
+    PA, PB = _seed_pair(n, k)  # S^z_k is exactly in sector k
     PA.momentum_merge(PB, g, [k])
     once = _to_complex_dict(PA, PB)
-    PA.momentum_merge(PB, g, [k])      # merging again must be a no-op
+    PA.momentum_merge(PB, g, [k])  # merging again must be a no-op
     twice = _to_complex_dict(PA, PB)
     keys = set(once) | set(twice)
     assert max(abs(once.get(x, 0j) - twice.get(x, 0j)) for x in keys) < 1e-12
@@ -92,8 +95,8 @@ def test_momentum_merge_projects_out_other_sectors():
     """Merging a pure sector-k operator in sector k' != k gives ~zero."""
     n = 4
     g = TranslationGroup.chain_1d(n)
-    PA, PB = _seed_pair(n, 1)          # operator lives in k=1
-    PA.momentum_merge(PB, g, [2])      # project onto k=2
+    PA, PB = _seed_pair(n, 1)  # operator lives in k=1
+    PA.momentum_merge(PB, g, [2])  # project onto k=2
     d = _to_complex_dict(PA, PB)
     assert all(abs(v) < 1e-12 for v in d.values()), d
 
@@ -104,14 +107,14 @@ def test_momentum_merge_projects_out_other_sectors():
 # =============================================================================
 def _ed_autocorr(n, bonds, k, ts):
     """C_k(t) = Tr[O0^dagger O(t)] / Tr[O0^dagger O0], O0 = S^z_k, exact."""
-    H = np.zeros((2 ** n, 2 ** n), dtype=complex)
-    for (i, j, J) in bonds:
+    H = np.zeros((2**n, 2**n), dtype=complex)
+    for i, j, J in bonds:
         for q in "XY":
             s = ["I"] * n
             s[i] = q
             s[j] = q
             H += J * dense("".join(s))
-    O0 = np.zeros((2 ** n, 2 ** n), dtype=complex)
+    O0 = np.zeros((2**n, 2**n), dtype=complex)
     for a in range(n):
         O0 += cmath.exp(-2j * math.pi * k * a / n) * dense(zstr(n, a))
     E, V = np.linalg.eigh(H)
@@ -133,12 +136,16 @@ def _ctrotter_autocorr(n, bonds, k, dt, steps):
     C0 = _ovl(refA, refB, PA, PB)
     out = [1.0 + 0j]
     for _ in range(steps):
-        for (i, j, J) in bonds:                       # Strang: forward then reversed
-            PA.rxx(i, j, J * dt, truncate=False); PA.ryy(i, j, J * dt, truncate=False)
-            PB.rxx(i, j, J * dt, truncate=False); PB.ryy(i, j, J * dt, truncate=False)
-        for (i, j, J) in reversed(bonds):
-            PA.rxx(i, j, J * dt, truncate=False); PA.ryy(i, j, J * dt, truncate=False)
-            PB.rxx(i, j, J * dt, truncate=False); PB.ryy(i, j, J * dt, truncate=False)
+        for i, j, J in bonds:  # Strang: forward then reversed
+            PA.rxx(i, j, J * dt, truncate=False)
+            PA.ryy(i, j, J * dt, truncate=False)
+            PB.rxx(i, j, J * dt, truncate=False)
+            PB.ryy(i, j, J * dt, truncate=False)
+        for i, j, J in reversed(bonds):
+            PA.rxx(i, j, J * dt, truncate=False)
+            PA.ryy(i, j, J * dt, truncate=False)
+            PB.rxx(i, j, J * dt, truncate=False)
+            PB.ryy(i, j, J * dt, truncate=False)
         PA.momentum_merge(PB, g, [k])
         out.append(_ovl(refA, refB, PA, PB) / C0)
     return np.array(out)
@@ -162,8 +169,8 @@ def test_k_resolved_trotter_converges_to_exact(k):
         # total Z is conserved -> exact in every sector-0 step
         assert err[0.02] < 1e-10
     else:
-        assert err[0.02] < 5e-3                       # close to exact at dt=0.02
-        assert err[0.02] < err[0.04]                  # converges toward exact as dt->0
+        assert err[0.02] < 5e-3  # close to exact at dt=0.02
+        assert err[0.02] < err[0.04]  # converges toward exact as dt->0
 
 
 def test_compressed_matches_uncompressed_evolution():
@@ -181,16 +188,20 @@ def test_compressed_matches_uncompressed_evolution():
     comp = _ctrotter_autocorr(n, bonds, k, dt, steps)
     unc = []
     for _ in range(steps):
-        for (i, j, J) in bonds:
-            PA.rxx(i, j, J * dt, truncate=False); PA.ryy(i, j, J * dt, truncate=False)
-            PB.rxx(i, j, J * dt, truncate=False); PB.ryy(i, j, J * dt, truncate=False)
-        for (i, j, J) in reversed(bonds):
-            PA.rxx(i, j, J * dt, truncate=False); PA.ryy(i, j, J * dt, truncate=False)
-            PB.rxx(i, j, J * dt, truncate=False); PB.ryy(i, j, J * dt, truncate=False)
+        for i, j, J in bonds:
+            PA.rxx(i, j, J * dt, truncate=False)
+            PA.ryy(i, j, J * dt, truncate=False)
+            PB.rxx(i, j, J * dt, truncate=False)
+            PB.ryy(i, j, J * dt, truncate=False)
+        for i, j, J in reversed(bonds):
+            PA.rxx(i, j, J * dt, truncate=False)
+            PA.ryy(i, j, J * dt, truncate=False)
+            PB.rxx(i, j, J * dt, truncate=False)
+            PB.ryy(i, j, J * dt, truncate=False)
         mA, mB = _merged_copy(PA, PB, g, k)
         unc.append(_ovl(rA, rB, mA, mB) / C0)
     unc = np.array([1.0 + 0j] + unc)
-    assert np.max(np.abs(comp - unc)) < 5e-3          # only O(dt^2) equivariance
+    assert np.max(np.abs(comp - unc)) < 5e-3  # only O(dt^2) equivariance
 
 
 def _merged_copy(PA, PB, g, k):

@@ -27,7 +27,7 @@ from ._helpers import (
 
 
 def test_adaptive_converges_to_nn_xy_z_dephasing_bilinear():
-    """Halving dt drives the adaptive shim toward the closed bilinear solution.
+    """Halving dt drives the adaptive stepper toward the closed bilinear solution.
 
     Single-hop has local truncation O(dt²) per step → global error O(T·dt).
     """

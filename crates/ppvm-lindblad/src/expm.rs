@@ -1,16 +1,10 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Support pieces for the `quspin-expm`-backed `exp(t·A)·b` engine.
-//!
-//! The hand-rolled scaling-and-squaring engine that once lived here has been
-//! retired in favour of the external `quspin-expm` crate (driven from
-//! [`crate::mf_expm`]). What remains is the shared scaffolding the new path
-//! still relies on:
-//!
-//! - the `(m, s)` selection table [`THETA`] / [`select_ms`] from Al-Mohy &
-//!   Higham (2011), used to pick the Taylor partition handed to
-//!   `quspin-expm`'s `from_parts`.
+//! Taylor-partition selection for the `quspin-expm`-backed `exp(t·A)·b`
+//! engine (driven from [`crate::mf_expm`]): the `(m, s)` selection tables
+//! [`THETA`] / [`THETA_LOOSE`] from Al-Mohy & Higham (2011), used to pick
+//! the partition handed to `quspin-expm`'s `from_parts`.
 
 /// `θ_m` table from Al-Mohy & Higham (2011), Table A.3, for double
 /// precision (unit roundoff `u = 2^{-53}`).
@@ -97,9 +91,8 @@ pub(crate) const THETA_LOOSE: &[(u32, f64)] = &[
 
 /// Pick `(m, s)` minimising `s·m` subject to `s ≥ ⌈t_norm / θ_m⌉, s ≥ 1`,
 /// using the `θ_m` table `theta`. Restricted to the table's `m` range; for
-/// larger norms `s` simply grows linearly. When `max_m` is set, only entries
-/// with `m ≤ max_m` are considered.
-fn select_ms_with(t_norm: f64, max_m: Option<u32>, theta: &[(u32, f64)]) -> (u32, u32) {
+/// larger norms `s` simply grows linearly.
+fn select_ms_with(t_norm: f64, theta: &[(u32, f64)]) -> (u32, u32) {
     if t_norm <= 0.0 {
         return (1, 1);
     }
@@ -107,11 +100,6 @@ fn select_ms_with(t_norm: f64, max_m: Option<u32>, theta: &[(u32, f64)]) -> (u32
     let mut best_s = 1u32;
     let mut best_cost = u64::MAX;
     for &(m, th) in theta {
-        if let Some(cap) = max_m {
-            if m > cap {
-                continue;
-            }
-        }
         let s_f = (t_norm / th).ceil();
         let s = if s_f >= 1.0 { s_f as u32 } else { 1 };
         let cost = (m as u64) * (s as u64);
@@ -125,14 +113,14 @@ fn select_ms_with(t_norm: f64, max_m: Option<u32>, theta: &[(u32, f64)]) -> (u32
 }
 
 /// `(m, s)` selection at double-precision backward error ([`THETA`]).
-pub(crate) fn select_ms(t_norm: f64, max_m: Option<u32>) -> (u32, u32) {
-    select_ms_with(t_norm, max_m, THETA)
+pub(crate) fn select_ms(t_norm: f64) -> (u32, u32) {
+    select_ms_with(t_norm, THETA)
 }
 
 /// `(m, s)` selection at the relaxed `tol = 1e-6` backward error
 /// ([`THETA_LOOSE`]) — fewer SpMVs, used on the truncated PC expm path.
-pub(crate) fn select_ms_loose(t_norm: f64, max_m: Option<u32>) -> (u32, u32) {
-    select_ms_with(t_norm, max_m, THETA_LOOSE)
+pub(crate) fn select_ms_loose(t_norm: f64) -> (u32, u32) {
+    select_ms_with(t_norm, THETA_LOOSE)
 }
 
 #[cfg(test)]
@@ -142,16 +130,16 @@ mod tests {
     #[test]
     fn ms_selection_sane() {
         // tiny norm → small m, s = 1
-        let (m, s) = select_ms(1e-9, None);
+        let (m, s) = select_ms(1e-9);
         assert!(m <= 5, "expected small m for tiny norm, got m={m}");
         assert_eq!(s, 1);
 
         // moderate norm → m·s should be ~10-50
-        let (m, s) = select_ms(1.0, None);
+        let (m, s) = select_ms(1.0);
         assert!((m * s) <= 50, "moderate norm cost too high: m={m} s={s}");
 
         // large norm → s grows
-        let (_m, s) = select_ms(100.0, None);
+        let (_m, s) = select_ms(100.0);
         assert!(s >= 20, "large norm should require many steps, got s={s}");
     }
 }

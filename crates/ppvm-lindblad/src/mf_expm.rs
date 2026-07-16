@@ -7,16 +7,14 @@
 //! Instead of materialising the in-basis-restricted generator as a CSR, the
 //! per-column generator action is computed ONCE per expm call (via
 //! [`build_mf_cols`]) and reused, CSC-style, across every Krylov/Taylor matvec
-//! by [`CachedCscOp`] (a [`quspin_types::LinearOperator`]) fed to
-//! [`quspin_expm::ExpmOp::from_parts`]. Caching the action is the dominant
-//! win: the old fully-matrix-free op recomputed the Pauli-commutator action on
-//! every column on every matvec (~15 matvecs/call), which was ~90% of the
-//! per-step cost; building it once collapses each matvec to a cheap CSC
-//! scatter. Using `from_parts` (rather than `ExpmOp::new`) supplies the
-//! diagonal shift `μ`, the partition count `s`, and the truncation order `m*`
-//! directly, which BYPASSES quspin's adaptive parameter selection — so the
-//! 1-norm *estimator* and `dot_transpose` are never invoked on the
-//! single-vector `apply` path; only [`LinearOperator::dot`] runs.
+//! by [`CscOp`] (a [`quspin_types::LinearOperator`]) fed to
+//! [`quspin_expm::ExpmOp::from_parts`]. Each matvec is then a cheap CSC
+//! scatter; the Pauli-commutator action is never recomputed per matvec.
+//! `from_parts` (rather than `ExpmOp::new`) supplies the diagonal shift `μ`,
+//! the partition count `s`, and the truncation order `m*` directly, bypassing
+//! quspin's adaptive parameter selection — so the 1-norm *estimator* and
+//! `dot_transpose` are never invoked on the single-vector `apply` path; only
+//! [`LinearOperator::dot`] runs.
 //!
 //! `μ`, the trace, and the exact column 1-norm of `A − μ·I` are computed in
 //! the same single action pass as the cache. The `(m, s)` Taylor partition is
@@ -36,17 +34,20 @@ use rayon::prelude::*;
 /// Returns `(cols, per_col)` where `cols[c]` holds `(row, coeff)` for every
 /// action output of `L*(basis[c])` that lands back in `basis` (CSC column
 /// `c`), and `per_col[c] = (raw, diag)` with `raw = Σ|coeff|` over ALL action
-/// outputs (in- and out-of-basis, matching the historical 1-norm) and `diag`
-/// the coefficient of the term whose output Word equals the input Word. The
-/// action is computed once here and reused by [`CachedCscOp`] across every
-/// Krylov/Taylor matvec, so it is never recomputed per matvec (the dominant
-/// cost of the old matrix-free op). Same reusable scratch pattern as
-/// [`crate::orbit_rep::build_orbit_rep_cols`]; numerics identical.
+/// outputs (in- and out-of-basis, an upper bound on the column 1-norm) and
+/// `diag` the coefficient of the output Word equal to the input Word. The
+/// cache is reused by [`CscOp`] across every Krylov/Taylor matvec. Same
+/// scratch pattern as [`crate::orbit_rep::build_orbit_rep_cols`].
+/// CSC columns of the cached in-basis action: `cols[c]` = `(row, coeff)`.
+type MfCols = Vec<Vec<(u32, f64)>>;
+/// Per-column `(raw, diag)` for the `μ`/1-norm selection.
+type MfPerCol = Vec<(f64, f64)>;
+
 fn build_mf_cols(
     spec: &LindbladSpec,
     basis: &[Word],
     index: &FxHashMap<Word, u32>,
-) -> (Vec<Vec<(u32, f64)>>, Vec<(f64, f64)>) {
+) -> (MfCols, MfPerCol) {
     basis
         .par_iter()
         .map_init(
@@ -80,21 +81,33 @@ fn build_mf_cols(
         .unzip()
 }
 
-/// Borrowed CSC-style view of the in-basis-restricted real generator `M`,
-/// backed by the cached per-column action [`build_mf_cols`] (computed once
-/// per expm call). `dot` does a CSC matvec `y = M·x` against the cache with
-/// no per-matvec action recompute and no CSR materialisation. Mirrors
-/// [`crate::orbit_rep::OrbitRepCscOp`] for the real `f64` path.
+/// Borrowed CSC-style view of an in-basis-restricted generator `M`, backed
+/// by a cached per-column action computed once per expm call
+/// ([`build_mf_cols`] for the real path,
+/// [`crate::orbit_rep::build_orbit_rep_cols`] for the complex orbit-rep
+/// path). `dot` performs the CSC matvec `y = M·x` against the cache; the
+/// remaining `LinearOperator` entry points are unused on the `from_parts` +
+/// single-vector `apply` path.
 ///
 /// Borrowed, not owned: `quspin-types` provides a blanket `LinearOperator`
-/// impl for `&T`, so `ExpmOp::from_parts(op, …)` accepts a `CachedCscOp` by
+/// impl for `&T`, so `ExpmOp::from_parts(op, ...)` accepts a `CscOp` by
 /// value while it keeps borrowing `cols`.
-struct CachedCscOp<'a> {
-    cols: &'a [Vec<(u32, f64)>],
-    dim: usize,
+pub(crate) struct CscOp<'a, T> {
+    pub(crate) cols: &'a [Vec<(u32, T)>],
+    pub(crate) dim: usize,
 }
 
-impl LinearOperator<f64> for CachedCscOp<'_> {
+impl<T> LinearOperator<T> for CscOp<'_, T>
+where
+    T: ExpmComputation
+        + Copy
+        + PartialEq
+        + num::Zero
+        + std::ops::AddAssign
+        + std::ops::Mul<Output = T>
+        + Send
+        + Sync,
+{
     fn dim(&self) -> usize {
         self.dim
     }
@@ -106,7 +119,7 @@ impl LinearOperator<f64> for CachedCscOp<'_> {
         false
     }
 
-    fn dot(&self, overwrite: bool, input: &[f64], output: &mut [f64]) -> Result<(), QuSpinError> {
+    fn dot(&self, overwrite: bool, input: &[T], output: &mut [T]) -> Result<(), QuSpinError> {
         let n = self.dim;
         if n == 0 {
             return Ok(());
@@ -115,22 +128,18 @@ impl LinearOperator<f64> for CachedCscOp<'_> {
         let chunk_size = n.div_ceil(num_threads);
 
         // Parallelise over column chunks; each thread accumulates into a dense
-        // local `y` of length `dim`, reading the cached action. (Atomic scatter
-        // into a single shared output was tried to cut the threads×dim
-        // transient, but profiling showed that transient is only ~5% of RSS
-        // while the CAS-per-nnz cost was ~12% slower — not worth it. The real
-        // memory lever is `max_basis`, which bounds `dim` and thus every
-        // dim-scaling structure including the action cache.)
-        let partial_ys: Vec<Vec<f64>> = self
+        // local `y` of length `dim`, reading the cached action; the partials
+        // are reduced into `output` sequentially at the end.
+        let partial_ys: Vec<Vec<T>> = self
             .cols
             .par_chunks(chunk_size)
             .enumerate()
             .map(|(chunk_idx, chunk)| {
                 let c_offset = chunk_idx * chunk_size;
-                let mut y_local = vec![0.0; n];
+                let mut y_local = vec![T::zero(); n];
                 for (c_local, col) in chunk.iter().enumerate() {
                     let xc = input[c_offset + c_local];
-                    if xc == 0.0 {
+                    if xc == T::zero() {
                         continue;
                     }
                     for &(row, val) in col.iter() {
@@ -142,7 +151,7 @@ impl LinearOperator<f64> for CachedCscOp<'_> {
             .collect();
 
         if overwrite {
-            output.fill(0.0);
+            output.fill(T::zero());
         }
         for partial in &partial_ys {
             for (oi, &pi) in output.iter_mut().zip(partial.iter()) {
@@ -152,58 +161,58 @@ impl LinearOperator<f64> for CachedCscOp<'_> {
         Ok(())
     }
 
-    fn trace(&self) -> f64 {
-        // Computed eagerly in `expm_apply_mf`; never reached on the
+    fn trace(&self) -> T {
+        // Computed eagerly by the callers; never reached on the
         // `from_parts` + single-vector `apply` path.
-        unreachable!("CachedCscOp::trace not used on the from_parts apply path")
+        unreachable!("CscOp::trace not used on the from_parts apply path")
     }
 
-    fn onenorm(&self, _shift: f64) -> f64 {
-        unreachable!("CachedCscOp::onenorm not used on the from_parts apply path")
+    fn onenorm(&self, _shift: T) -> <T as ExpmComputation>::Real {
+        unreachable!("CscOp::onenorm not used on the from_parts apply path")
     }
 
     fn dot_transpose(
         &self,
         _overwrite: bool,
-        _input: &[f64],
-        _output: &mut [f64],
+        _input: &[T],
+        _output: &mut [T],
     ) -> Result<(), QuSpinError> {
         Err(QuSpinError::RuntimeError(
-            "CachedCscOp: dot_transpose not used on the from_parts apply path".into(),
+            "CscOp: dot_transpose not used on the from_parts apply path".into(),
         ))
     }
 
     fn dot_many(
         &self,
         _overwrite: bool,
-        _input: ndarray::ArrayView2<'_, f64>,
-        _output: ndarray::ArrayViewMut2<'_, f64>,
+        _input: ndarray::ArrayView2<'_, T>,
+        _output: ndarray::ArrayViewMut2<'_, T>,
     ) -> Result<(), QuSpinError> {
         Err(QuSpinError::RuntimeError(
-            "CachedCscOp: dot_many not used on the from_parts apply path".into(),
+            "CscOp: dot_many not used on the from_parts apply path".into(),
         ))
     }
 
     fn dot_chunk(
         &self,
         _overwrite: bool,
-        _input: &[f64],
-        _output_chunk: &mut [f64],
+        _input: &[T],
+        _output_chunk: &mut [T],
         _row_start: usize,
     ) -> Result<(), QuSpinError> {
         Err(QuSpinError::RuntimeError(
-            "CachedCscOp: dot_chunk not used on the from_parts apply path".into(),
+            "CscOp: dot_chunk not used on the from_parts apply path".into(),
         ))
     }
 
     fn dot_transpose_chunk(
         &self,
-        _input: &[f64],
-        _output: &[<f64 as ExpmComputation>::Atomic],
+        _input: &[T],
+        _output: &[<T as ExpmComputation>::Atomic],
         _rows: std::ops::Range<usize>,
     ) -> Result<(), QuSpinError> {
         Err(QuSpinError::RuntimeError(
-            "CachedCscOp: dot_transpose_chunk not used on the from_parts apply path".into(),
+            "CscOp: dot_transpose_chunk not used on the from_parts apply path".into(),
         ))
     }
 }
@@ -253,15 +262,15 @@ pub(crate) fn expm_apply_mf(
     // the exact-reference paths (orbit-rep / merged) still agree bit-for-bit.
     let t_norm = dt.abs() * onenorm;
     let (m_star, s, expm_tol) = if drop_tol >= 1e-4 {
-        let (m, s) = expm::select_ms_loose(t_norm, None);
+        let (m, s) = expm::select_ms_loose(t_norm);
         (m, s, 1e-6_f64)
     } else {
-        let (m, s) = expm::select_ms(t_norm, None);
+        let (m, s) = expm::select_ms(t_norm);
         (m, s, 1e-12_f64)
     };
 
     let mut v = coeffs.to_vec();
-    let op = CachedCscOp { cols: &cols, dim: n };
+    let op = CscOp { cols: &cols, dim: n };
     let expm = quspin_expm::ExpmOp::from_parts(op, dt, mu, s as usize, m_star as usize, expm_tol);
     expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
         .expect("expm apply");
@@ -272,7 +281,9 @@ pub(crate) fn expm_apply_mf(
 /// the input vector `b` is complex. Because `M` is real,
 /// `exp(dt·M)·(re + i·im) = exp(dt·M)·re + i·exp(dt·M)·im`, so we split the
 /// complex vector into its real and imaginary parts, run two real
-/// matrix-free applies, and recombine. Fully matrix-free; no CSR.
+/// matrix-free applies, and recombine. Used by the test-only full-space
+/// complex reference step.
+#[cfg(test)]
 pub(crate) fn expm_apply_mf_cxvec(
     spec: &LindbladSpec,
     basis: &[Word],

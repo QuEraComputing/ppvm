@@ -21,11 +21,11 @@
 #
 # End-to-end wall-time scaling of the pure-Rust predictor-corrector step
 # (`ppvm.Lindbladian.pc_step`) with rayon thread count. The entire `pc_step`
-# body — both leakage calls, the generator build, and both matrix
+# body — both leakage calls, the action-cache build, and both matrix
 # exponentials — runs inside a rayon pool of the requested size:
 #
-# * leakage and generator parallelise over basis elements;
-# * the matrix exponential parallelises over SpMV rows.
+# * leakage and the action cache parallelise over basis elements;
+# * the matrix exponential parallelises over SpMV columns.
 #
 # So the speedup numbers reflect overall PC throughput, not just SpMV.
 

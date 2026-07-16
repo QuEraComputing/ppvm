@@ -34,39 +34,24 @@
 
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use num::Complex;
-use ppvm_pauli_sum::symmetry::TranslationGroup;
 use ppvm_traits::PauliWordTrait;
 use ppvm_pauli_word::word::PauliWord;
 use rayon::prelude::*;
-use std::fmt;
 use std::time::Instant;
 
 pub mod config;
 pub mod error;
-pub mod expm;
+pub(crate) mod expm;
 
 /// Matrix-free / quspin-expm-backed `exp(dt·L*)·b` engine. See module docs.
 pub(crate) mod mf_expm;
 
-/// Per-step orbit-rep evolution under translation symmetry — phase-aware
-/// action + complex CSR throughout. See module docs.
+/// Per-step orbit-rep evolution under translation symmetry, with a
+/// phase-aware complex action. See module docs.
 pub mod orbit_rep;
 
 /// Words pack up to 128 qubits.
 const W_U64: usize = 2;
-
-/// Predictor-corrector leakage-admission shape factor `K` (dimensionless).
-///
-/// A leakage string is admitted only if its rate `|ell_q|` exceeds
-/// `tau_add = K * drop_tol / dt`, i.e. if its acquired coefficient
-/// `|ell_q|*dt` would exceed `K * drop_tol` — comfortably above the post-step
-/// prune threshold. This stops the doubly-enriched transient from admitting the
-/// (~90%+) strings that would be pruned anyway.
-///
-/// Read once from `PPVM_K_LEAKAGE` (default `0.0`). `K = 0` ⇒ `tau_add = 0` ⇒
-/// admit every leakage string (the historical behaviour, and the behaviour at
-/// `drop_tol = 0`), so the default changes nothing and exact-reference tests are
-/// unaffected. Set `PPVM_K_LEAKAGE` to sweep `K` without rebuilding.
 
 /// Maximum number of qubits supported by [`Word`] (= `8 · W_U64 · sizeof(u64)`).
 pub const MAX_QUBITS: usize = 64 * W_U64;
@@ -81,18 +66,15 @@ pub type Word = PauliWord<[u64; W_U64], FxBuildHasher, true>;
 pub use config::PcStepConfig;
 pub use error::Error;
 
-
 /// Per-phase timing breakdown (microseconds) returned by
 /// [`LindbladSpec::pc_step_timed`].
 #[derive(Default, Clone, Copy, Debug)]
 pub struct PcStepTimings {
     pub leakage1_us: u64,
     pub expand1_us: u64,
-    pub gencsr1_us: u64,
     pub expm1_us: u64,
     pub leakage2_us: u64,
     pub expand2_us: u64,
-    pub gencsr2_us: u64,
     pub expm2_us: u64,
 }
 
@@ -100,11 +82,9 @@ impl PcStepTimings {
     pub fn total_us(&self) -> u64 {
         self.leakage1_us
             + self.expand1_us
-            + self.gencsr1_us
             + self.expm1_us
             + self.leakage2_us
             + self.expand2_us
-            + self.gencsr2_us
             + self.expm2_us
     }
 }
@@ -223,30 +203,14 @@ fn anti_commutes(a: &Word, b: &Word) -> bool {
     bits & 1 == 1
 }
 
-/// Fused product `h · p`: returns `(out, eps)` where `out = h ⊕ p` and
+/// Commutator product `h · p`: returns `(out, eps)` where `out = h ⊕ p` and
 ///
 /// - `eps =  0` if `h` and `p` commute (caller should skip — `[h,p] = 0`),
 /// - `eps = -2.0` if `h·p` has phase `+i` (so `i·[h,p] = -2·out`),
 /// - `eps = +2.0` if `h·p` has phase `-i` (so `i·[h,p] = +2·out`).
 #[inline(always)]
 fn comm_product(h: &Word, p: &Word) -> (Word, f64) {
-    let mut out = Word::new(h.n_qubits());
-    let mut sign_count: u32 = 0;
-    let mut imag_count: u32 = 0;
-    for i in 0..W_U64 {
-        let a = h.xbits.data[i];
-        let b = h.zbits.data[i];
-        let c = p.xbits.data[i];
-        let d = p.zbits.data[i];
-        let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
-        let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
-        sign_count += sign.count_ones();
-        imag_count += imag.count_ones();
-        out.xbits.data[i] = a ^ c;
-        out.zbits.data[i] = b ^ d;
-    }
-    out.rehash();
-    let phase = (2 * sign_count + imag_count) & 3;
+    let (out, phase) = pauli_mul(h, p);
     let eps = match phase {
         1 => -2.0,
         3 => 2.0,
@@ -332,11 +296,10 @@ fn precompute_ldagger_l(terms: &[PauliTerm]) -> Vec<PauliTerm> {
 
 /// Precompiled Lindbladian. Constructed once from string-form Hamiltonian
 /// terms + jump operators; reused across many calls to [`Self::action`],
-/// [`Self::leakage`], [`Self::generator`]. `L*(p)` is recomputed fresh on
-/// every call — empirical benchmarks showed that the previous global
-/// `action_cache` hurt wall time for sparse-local Hamiltonians (hash-map
-/// lookup ≳ recompute) and consumed several KB per cached Pauli word, which
-/// blocked us from reaching the basis sizes needed for L=41 sweeps.
+/// [`Self::leakage`], [`Self::generator`]. `L*(p)` is recomputed on every
+/// call rather than cached: for sparse-local Hamiltonians a per-word cache
+/// costs more than the recompute (hash lookup ≳ recompute) and its several
+/// KB per cached word dominate memory at large basis sizes.
 pub struct LindbladSpec {
     n_qubits: usize,
     h_terms: Vec<HTerm>,
@@ -453,42 +416,6 @@ impl LindbladSpec {
         self.j_kinds.len()
     }
 
-    /// Conservative upper bound on `max_{p, w} |⟨w| L*(p) |p⟩|`, the
-    /// largest coefficient any single input Pauli can produce in any
-    /// single output Pauli through one action of `L*`. Useful for
-    /// Cauchy-Schwarz style streaming bounds on accumulated leakage.
-    ///
-    /// The bound is `2 · max |h_i|` (commutator factor) plus a per-jump
-    /// term. For the common case of Hermitian-Pauli H and Hermitian-Pauli
-    /// jumps this collapses to `2 · max(|h_i|, γ_k)`.
-    pub fn max_action_coef(&self) -> f64 {
-        let mut m = 0.0_f64;
-        for h in &self.h_terms {
-            // `i [H_i, p]` has coefficient `±2 i · h_i · eps`; magnitude ≤ 2|h_i|.
-            m = m.max(2.0 * h.coeff.abs());
-        }
-        for jk in &self.j_kinds {
-            match jk {
-                JumpKind::HermitianPauli { rate, .. } => {
-                    // sandwich + anticommutator → max |2γ| on anticommuting p
-                    m = m.max(2.0 * rate.abs());
-                }
-                JumpKind::General {
-                    terms,
-                    rate,
-                    dagger_dagger,
-                } => {
-                    let lam_sum: f64 = terms.iter().map(|t| t.coeff.norm()).sum();
-                    let dd_sum: f64 = dagger_dagger.iter().map(|t| t.coeff.norm()).sum();
-                    // Sandwich `γ Σ_{a,b} λ_a* λ_b P_a p P_b`: per-output ≤ γ · (Σ|λ|)²
-                    // L†L anticommutator: per-output ≤ γ · Σ|c_dd|
-                    m = m.max(rate * (lam_sum * lam_sum + dd_sum));
-                }
-            }
-        }
-        m
-    }
-
     /// Apply `L*` to a single Pauli string `p`. Returns the output Pauli
     /// strings and their real coefficients (zero entries omitted).
     pub fn action(&self, p: &Word) -> Vec<(Word, f64)> {
@@ -554,10 +481,6 @@ impl LindbladSpec {
         });
 
         const CHUNK_SIZE: usize = 4096;
-        // Cap the live leakage map to the *available room* `max_basis −
-        // basis.len()` — only the strings we could actually add are worth
-        // keeping. When `room ≥ all candidates`, nothing is dropped (the
-        // near-exact case). `usize::MAX` room ⇒ no cap.
         let room = max_basis.saturating_sub(basis.len());
         let mut merged: FxHashMap<Word, f64> = FxHashMap::default();
         for chunk_indices in order.chunks(CHUNK_SIZE) {
@@ -582,7 +505,7 @@ impl LindbladSpec {
                         for (w, v) in terms.iter() {
                             let h = word_hash(w);
                             if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
-                                out.push((w.clone(), c * *v));
+                                out.push((*w, c * *v));
                             }
                         }
                         out
@@ -611,8 +534,8 @@ impl LindbladSpec {
             }
         }
         // Rate-based admission: keep only candidates whose leakage rate
-        // exceeds `tau_add` (= K*drop_tol/dt). `tau_add = 0` admits everything
-        // except exact zeros, matching the prior behaviour.
+        // exceeds `tau_add`. `tau_add = 0` admits everything except exact
+        // zeros.
         Ok(merged
             .into_iter()
             .filter(|(_, c)| c.abs() > tau_add)
@@ -628,9 +551,8 @@ impl LindbladSpec {
     pub fn generator(&self, basis: &[Word]) -> Vec<(usize, usize, f64)> {
         let index = build_basis_index(basis);
 
-        // The cached `L*(p)` is already a deduplicated `Vec<(Word, f64)>`,
-        // so we can iterate it directly without going through a per-task
-        // `FxHashMap` accumulator (which was the previous hot spot).
+        // `compute_action_terms` returns a deduplicated `Vec<(Word, f64)>`,
+        // so it can be scattered directly into COO triplets.
         let local: Vec<Vec<(usize, usize, f64)>> = basis
             .par_iter()
             .enumerate()
@@ -667,184 +589,6 @@ impl LindbladSpec {
         flat
     }
 
-
-    /// Matrix-free SpMV: `y ← M · x` where `M` is the in-basis-restricted
-    /// generator, never materialised. For each basis column `j` with `x[j] != 0`,
-    /// compute `L*(basis[j])`, look up each output Pauli in `basis_index`,
-    /// and accumulate `v · x[j]` into `y` at the matching row.
-    ///
-    /// `basis_index` must be the `Word → row` map for `basis` (use
-    /// [`build_basis_index`]). It is the caller's responsibility to build
-    /// it once and reuse across all SpMVs within an expm call.
-    ///
-    /// Threading uses `rayon::current_num_threads()` per-task dense
-    /// accumulators, reduced into `y` at the end. Peak transient memory is
-    /// roughly `T × n × 8 B` where `T` = thread count, `n` = basis size.
-    pub fn spmv_matrix_free(
-        &self,
-        basis: &[Word],
-        basis_index: &FxHashMap<Word, u32>,
-        x: &[f64],
-        y: &mut [f64],
-    ) {
-        debug_assert_eq!(basis.len(), x.len());
-        debug_assert_eq!(basis.len(), y.len());
-        let n = basis.len();
-        if n == 0 {
-            return;
-        }
-        let num_threads = rayon::current_num_threads().max(1);
-        let chunk_size = n.div_ceil(num_threads);
-
-        let partial_ys: Vec<Vec<f64>> = basis
-            .par_chunks(chunk_size)
-            .enumerate()
-            .map(|(chunk_idx, chunk)| {
-                let c_offset = chunk_idx * chunk_size;
-                let mut y_local = vec![0.0; n];
-                let mut s1 = Vec::<u32>::with_capacity(self.n_qubits);
-                let mut s2 = Vec::<u32>::with_capacity(128);
-                let mut lm = FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
-                    128,
-                    FxBuildHasher::default(),
-                );
-                for (c_local, p) in chunk.iter().enumerate() {
-                    let c = c_offset + c_local;
-                    let xc = x[c];
-                    if xc == 0.0 {
-                        continue;
-                    }
-                    let terms = self.compute_action_terms(p, &mut s1, &mut s2, &mut lm);
-                    for (w, v) in terms.iter() {
-                        if let Some(&row) = basis_index.get(w) {
-                            y_local[row as usize] += *v * xc;
-                        }
-                    }
-                }
-                y_local
-            })
-            .collect();
-
-        // Sequential reduce. T × n adds; at T=8, n=10⁶ this is ~8M adds
-        // (~10 ms), trivial vs the action evaluations above.
-        y.fill(0.0);
-        for partial in &partial_ys {
-            for (yi, &pi) in y.iter_mut().zip(partial.iter()) {
-                *yi += pi;
-            }
-        }
-    }
-
-
-    /// Apply `L*` to the Pauli sum `Σ_j coeffs[j] · basis[j]` and return
-    /// the result as a (Word → real coefficient) map. The basis of the
-    /// returned operator is determined by the action — entries appear
-    /// for every Pauli that `L*` reaches with nonzero coefficient.
-    ///
-    /// Same parallel structure and chunked merge as [`Self::leakage`],
-    /// without the in-basis / protected filter: this returns the full
-    /// `L*(O)`, not just its off-basis component.
-    pub fn compute_action_sum(
-        &self,
-        basis: &[Word],
-        coeffs: &[f64],
-    ) -> Result<FxHashMap<Word, f64>, Error> {
-        if basis.len() != coeffs.len() {
-            return Err(Error::LengthMismatch {
-                what: "basis and coeffs",
-                a: basis.len(),
-                b: coeffs.len(),
-            });
-        }
-        const CHUNK_SIZE: usize = 4096;
-        let mut merged: FxHashMap<Word, f64> = FxHashMap::default();
-        for chunk_start in (0..basis.len()).step_by(CHUNK_SIZE) {
-            let chunk_end = (chunk_start + CHUNK_SIZE).min(basis.len());
-            let chunk_basis = &basis[chunk_start..chunk_end];
-            let chunk_coeffs = &coeffs[chunk_start..chunk_end];
-            let local: Vec<Vec<(Word, f64)>> = chunk_basis
-                .par_iter()
-                .zip(chunk_coeffs.par_iter())
-                .map_init(
-                    || {
-                        (
-                            Vec::<u32>::with_capacity(self.n_qubits),
-                            Vec::<u32>::with_capacity(128),
-                            FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
-                                128,
-                                FxBuildHasher::default(),
-                            ),
-                        )
-                    },
-                    |(s1, s2, lm), (p, &c)| {
-                        let terms = self.compute_action_terms(p, s1, s2, lm);
-                        terms.into_iter().map(|(w, v)| (w, c * v)).collect()
-                    },
-                )
-                .collect();
-            for v in local {
-                for (k, val) in v {
-                    *merged.entry(k).or_insert(0.0) += val;
-                }
-            }
-        }
-        Ok(merged)
-    }
-
-    /// Complex-coefficient variant of [`Self::compute_action_sum`]:
-    /// `L*( Σ_j coeffs[j] · basis[j] )` with complex coefficients.
-    /// Matrix elements of `L*` are real (Hermiticity-preserving), so
-    /// each complex coefficient just multiplies into the real action
-    /// outputs.
-    pub fn compute_action_sum_complex(
-        &self,
-        basis: &[Word],
-        coeffs: &[Complex<f64>],
-    ) -> Result<FxHashMap<Word, Complex<f64>>, Error> {
-        if basis.len() != coeffs.len() {
-            return Err(Error::LengthMismatch {
-                what: "basis and coeffs",
-                a: basis.len(),
-                b: coeffs.len(),
-            });
-        }
-        const CHUNK_SIZE: usize = 4096;
-        let mut merged: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
-        for chunk_start in (0..basis.len()).step_by(CHUNK_SIZE) {
-            let chunk_end = (chunk_start + CHUNK_SIZE).min(basis.len());
-            let chunk_basis = &basis[chunk_start..chunk_end];
-            let chunk_coeffs = &coeffs[chunk_start..chunk_end];
-            let local: Vec<Vec<(Word, Complex<f64>)>> = chunk_basis
-                .par_iter()
-                .zip(chunk_coeffs.par_iter())
-                .map_init(
-                    || {
-                        (
-                            Vec::<u32>::with_capacity(self.n_qubits),
-                            Vec::<u32>::with_capacity(128),
-                            FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
-                                128,
-                                FxBuildHasher::default(),
-                            ),
-                        )
-                    },
-                    |(s1, s2, lm), (p, &c)| {
-                        let terms = self.compute_action_terms(p, s1, s2, lm);
-                        terms
-                            .into_iter()
-                            .map(|(w, v)| (w, c * v))
-                            .collect()
-                    },
-                )
-                .collect();
-            for v in local {
-                for (k, val) in v {
-                    *merged.entry(k).or_insert(Complex::new(0.0, 0.0)) += val;
-                }
-            }
-        }
-        Ok(merged)
-    }
 
     /// Complex-coefficient variant of [`Self::leakage`]: off-basis
     /// component of `L*( Σ_j coeffs[j] · basis[j] )` with complex `coeffs`.
@@ -892,7 +636,7 @@ impl LindbladSpec {
                         for (w, v) in terms.iter() {
                             let h = word_hash(w);
                             if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
-                                out.push((w.clone(), c * *v));
+                                out.push((*w, c * *v));
                             }
                         }
                         out
@@ -937,8 +681,7 @@ impl LindbladSpec {
 
     /// Same as [`Self::pc_step`] but also returns a per-phase timing
     /// breakdown (microseconds), for profiling parallel scaling and hot
-    /// spots. Output: `(leakage1, expand1, gencsr1, expm1, leakage2,
-    /// expand2, gencsr2, expm2)`.
+    /// spots.
     pub fn pc_step_timed(
         &self,
         basis: &mut Vec<Word>,
@@ -966,34 +709,32 @@ impl LindbladSpec {
         protected: &[Word],
         cfg: &PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
-        let PcStepConfig { max_basis, drop_tol, tau_add, .. } = *cfg;
+        let PcStepConfig { max_basis, admit_basis, drop_tol, tau_add, .. } = *cfg;
+        let admit = admit_basis.unwrap_or(max_basis).max(max_basis);
         let tau_add = tau_add.unwrap_or(0.0);
         let mut t = PcStepTimings::default();
 
         let t0 = Instant::now();
-        let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis, tau_add)?;
+        let leak = self.leakage_with_prune(basis, coeffs, protected, admit, tau_add)?;
         t.leakage1_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
-        add_leakage_capped(basis, coeffs, leak, max_basis);
+        add_leakage_capped(basis, coeffs, leak, admit);
         t.expand1_us = t0.elapsed().as_micros() as u64;
 
-        // Predictor: gencsr1 (or one_norm build for mf) + expm1.
-        // For matrix-free, the "gencsr" timer captures the one-norm pass.
-        // `coeffs` is read-only here, so we don't clone it — it serves as
-        // the pre-step input for the corrector below as well.
+        // `coeffs` is read-only in the predictor, so it also serves as the
+        // pre-step input for the corrector below — no clone needed.
         let t0 = Instant::now();
         let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol);
         t.expm1_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
-        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, max_basis, tau_add)?;
+        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, admit, tau_add)?;
         t.leakage2_us = t0.elapsed().as_micros() as u64;
         drop(coeffs_predict);
 
         let t0 = Instant::now();
-        add_leakage_capped(basis, coeffs, leak2, max_basis);
-        // (timed variant keeps the historical admission == max_basis path)
+        add_leakage_capped(basis, coeffs, leak2, admit);
         t.expand2_us = t0.elapsed().as_micros() as u64;
 
         let t0 = Instant::now();
@@ -1015,18 +756,13 @@ impl LindbladSpec {
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
         let PcStepConfig { max_basis, admit_basis, drop_tol, tau_add, .. } = *cfg;
-        // Working-set (admission) bound: enrichment may grow the live basis
-        // to `admit` >= `max_basis`; the final `cap_basis` then keeps the
-        // top-`max_basis` strings by evolved |coeff| over the whole union
-        // (retained + admitted), i.e. genuine rank displacement. With
-        // `admit_basis = None` (the default) admission is bounded by
-        // `max_basis` itself and `cap_basis` is a no-op — the historical
-        // behaviour, where headroom must be created by `drop_tol` pruning.
+        // Admission bound: enrichment may grow the live basis to `admit`
+        // >= `max_basis`; the final `cap_basis` then keeps the top-
+        // `max_basis` strings by evolved |coeff| over the whole union
+        // (retained + admitted) — rank displacement. With `admit_basis =
+        // None` admission is bounded by `max_basis` itself, `cap_basis` is
+        // a no-op, and membership turnover requires `drop_tol > 0`.
         let admit = admit_basis.unwrap_or(max_basis).max(max_basis);
-        // Optional absolute rate threshold on leakage admission — the natural
-        // (dt/drop-independent) parameterization; the admission accuracy cliff
-        // sits at fixed tau_add (docs/autotune/2026-07-03-orbit-compare).
-        // `None` = no filter (the recommended default with cap truncation).
         let tau_add = tau_add.unwrap_or(0.0);
         // 1. First-hop expansion. After this, `coeffs` contains the pre-step
         // coefficients followed by zeros for the newly-added leakage strings.
@@ -1094,7 +830,7 @@ impl LindbladSpec {
             match &self.j_kinds[k as usize] {
                 JumpKind::HermitianPauli { word, rate } => {
                     if anti_commutes(word, p) {
-                        *local.entry(p.clone()).or_insert(zero) += Complex::new(-2.0 * *rate, 0.0);
+                        *local.entry(*p).or_insert(zero) += Complex::new(-2.0 * *rate, 0.0);
                     }
                 }
                 JumpKind::General {
@@ -1156,56 +892,22 @@ impl LindbladSpec {
         let terms =
             self.compute_action_terms(p, scratch_support, scratch_cands, &mut scratch_local);
         for (w, c) in terms.iter() {
-            *out.entry(w.clone()).or_insert(0.0) += scale * c;
+            *out.entry(*w).or_insert(0.0) += scale * c;
         }
     }
 }
 
 /// Compact 64-bit hash of a [`Word`], used as the key in cache-friendly
-/// membership tables.
-///
-/// `PauliWord::hash` writes its cached `u64` into the supplied `Hasher`;
-/// running it through `FxHasher` once mixes the bits enough that the
-/// resulting `u64` is well-distributed when stored as a key in a downstream
-/// `FxHashMap` (whose outer hash function then needs only a cheap multiply
-/// on a `u64` key). The whole call is ~2-5 ns and never touches `Word`'s
-/// 32-byte payload, which is the entire point: an `FxHashMap<u64, ()>`
-/// over the basis has a working set ~6× smaller than `FxHashMap<Word, ()>`
-/// and stays in L2/L3 well past basis 10⁶.
+/// membership tables: an `FxHashMap<u64, ()>` over the basis has a working
+/// set ~6× smaller than `FxHashMap<Word, ()>`. The hash mixes the word's
+/// cached hash once through `FxHasher` and never touches the 32-byte
+/// payload.
 #[inline(always)]
 fn word_hash(w: &Word) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = fxhash::FxHasher::default();
     w.hash(&mut h);
     h.finish()
-}
-
-/// Complex-coefficient counterpart of [`prune_basis`]: drops entries
-/// whose `|c|` (complex magnitude) is below `drop_tol`, never dropping
-/// `protected` words.
-fn prune_basis_complex(
-    basis: &mut Vec<Word>,
-    coeffs: &mut Vec<Complex<f64>>,
-    drop_tol: f64,
-    protected: &[Word],
-) {
-    if drop_tol <= 0.0 {
-        return;
-    }
-    debug_assert_eq!(basis.len(), coeffs.len());
-    let protected_set: FxHashSet<&Word> = protected.iter().collect();
-    let mut write = 0;
-    for read in 0..basis.len() {
-        if coeffs[read].norm() >= drop_tol || protected_set.contains(&basis[read]) {
-            if write != read {
-                basis.swap(write, read);
-                coeffs.swap(write, read);
-            }
-            write += 1;
-        }
-    }
-    basis.truncate(write);
-    coeffs.truncate(write);
 }
 
 /// Compact `basis` / `coeffs` in place: drop entries whose absolute
@@ -1302,7 +1004,7 @@ fn add_leakage_capped(
 pub fn build_basis_index(basis: &[Word]) -> FxHashMap<Word, u32> {
     let mut index: FxHashMap<Word, u32> = FxHashMap::default();
     for (i, w) in basis.iter().enumerate() {
-        let prev = index.insert(w.clone(), i as u32);
+        let prev = index.insert(*w, i as u32);
         debug_assert!(
             prev.is_none(),
             "basis contains duplicate Pauli word at positions {} and {}",
@@ -1329,9 +1031,9 @@ mod tests {
     use super::*;
 
     /// Test-only full-space complex predictor-corrector step, UNTRUNCATED:
-    /// the reference bridge formerly provided by `pc_step_complex`. Adds
-    /// every nonzero leakage string (two hops) and applies the exact
-    /// in-basis exponential to the complex coefficient vector.
+    /// adds every nonzero leakage string (two hops) and applies the exact
+    /// in-basis exponential to the complex coefficient vector. Reference
+    /// bridge between the real `pc_step` and the orbit-rep path.
     fn pc_step_complex_full(
         spec: &LindbladSpec,
         basis: &mut Vec<Word>,
@@ -1419,9 +1121,8 @@ mod tests {
 
     /// Per-step orbit-rep evolution gives the SAME final orbit-rep
     /// state as full-basis complex evolution followed by a single
-    /// projection at the end. Validates that the phase-aware action
-    /// + complex CSR machinery is consistent with the full-basis
-    /// reference.
+    /// projection at the end. Validates that the phase-aware complex
+    /// action machinery is consistent with the full-basis reference.
     #[test]
     fn pc_step_orbit_rep_matches_full_basis_projection() {
         use std::f64::consts::PI;
@@ -1646,11 +1347,9 @@ mod tests {
 
         let protected: Vec<Word> = Vec::new();
         for _ in 0..n_steps {
-            // Set max_basis == current basis size so room = 0: NO leakage
-            // enrichment, only the expm step (closest analog of standard
-            // PP — the regime where merging commutes with evolution).
-            // drop_tol = 0 → no truncation. This reproduces the old
-            // tau_add = +∞ no-add behaviour under the rank-cap API.
+            // max_basis == current basis size → room = 0: no leakage
+            // enrichment, only the expm step (the regime where merging
+            // commutes with evolution). drop_tol = 0 → no truncation.
             let cfg_u = PcStepConfig { max_basis: basis_u.len(), ..Default::default() };
             spec.pc_step(&mut basis_u, &mut coeffs_u, dt, &protected, &cfg_u)
                 .unwrap();

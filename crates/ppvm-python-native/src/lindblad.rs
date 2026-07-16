@@ -3,12 +3,12 @@
 
 //! PyO3 wrapper around [`ppvm_lindblad::LindbladSpec`].
 //!
-//! All algorithmic work — Pauli arithmetic, active-site iteration, cache
-//! management, and the dissipator branches (Hermitian Pauli fast path vs
-//! general complex Pauli sum) — lives in the [`ppvm_lindblad`] crate. This
-//! module is responsible only for the Python boundary: decoding the
-//! `(N, n_qubits)` numpy uint8 arrays into [`ppvm_lindblad::Word`] vectors,
-//! and re-encoding outputs back into numpy.
+//! All algorithmic work — Pauli arithmetic, active-site iteration, and the
+//! dissipator branches (Hermitian Pauli fast path vs general complex Pauli
+//! sum) — lives in the [`ppvm_lindblad`] crate. This module is responsible
+//! only for the Python boundary: decoding the `(N, n_qubits)` numpy uint8
+//! arrays into [`ppvm_lindblad::Word`] vectors, and re-encoding outputs
+//! back into numpy.
 
 use std::collections::HashMap;
 
@@ -49,7 +49,7 @@ fn assert_basis_unique(basis: &[Word]) -> PyResult<()> {
 }
 
 /// Decode a `(N, n_qubits)` uint8 ndarray view into `N` packed [`Word`]s.
-fn decode_basis(view: &numpy::ndarray::ArrayView2<u8>, n_qubits: usize) -> PyResult<Vec<Word>> {
+pub(crate) fn decode_basis(view: &numpy::ndarray::ArrayView2<u8>, n_qubits: usize) -> PyResult<Vec<Word>> {
     let n_basis = view.shape()[0];
     let n_cols = view.shape()[1];
     if n_cols != n_qubits {
@@ -89,7 +89,7 @@ fn pack_pauli_map<'py>(
     Ok((basis_arr, coeffs.into_pyarray(py)))
 }
 
-/// PyO3 facade exposing the Lindbladian shim to Python.
+/// PyO3 facade exposing [`ppvm_lindblad::LindbladSpec`] to Python.
 #[pyclass]
 pub struct LindbladSpec {
     inner: CoreSpec,
@@ -203,15 +203,16 @@ impl LindbladSpec {
     /// (`exp(dt·M)`), expand again with second-hop leakage from the
     /// predicted state, then redo the step from the pre-step coefficients
     /// on the doubly-enlarged basis. The matrix exponential is computed in
-    /// Rust via Al-Mohy & Higham scaling-and-squaring; no scipy required.
+    /// Rust via `quspin-expm`; no scipy required.
     ///
     /// Returns `(new_basis, new_coeffs)`.
     ///
-    /// `max_basis` is a hard rank cap on the live basis: enrichment adds at
-    /// most `max_basis − basis.len()` of the largest leakage strings and the
-    /// post-step basis is trimmed to the top-`max_basis` by `|coeff|`
-    /// (protected words always kept). Pass a large value for the near-exact
-    /// case. `drop_tol` additionally prunes by magnitude.
+    /// `max_basis` is a hard rank cap on the retained basis; `admit_basis`
+    /// (when `> max_basis`) bounds in-step enrichment instead, so the final
+    /// cap selects the top-`max_basis` strings over the whole union
+    /// (displacement truncation). `drop_tol` prunes by magnitude after the
+    /// step; `tau_add` filters leakage admission by inflow rate. Protected
+    /// words are never dropped.
     #[pyo3(signature = (
         basis, coeffs, dt, max_basis,
         drop_tol = 0.0,
@@ -279,6 +280,8 @@ impl LindbladSpec {
         drop_tol = 0.0,
         protected = None,
         num_threads = None,
+        admit_basis = None,
+        tau_add = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step_timed<'py>(
@@ -291,6 +294,8 @@ impl LindbladSpec {
         drop_tol: f64,
         protected: Option<PyReadonlyArray2<'py, u8>>,
         num_threads: Option<usize>,
+        admit_basis: Option<usize>,
+        tau_add: Option<f64>,
     ) -> PyResult<(PyPauliMap<'py>, Bound<'py, pyo3::types::PyDict>)> {
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
@@ -318,9 +323,9 @@ impl LindbladSpec {
                 &protected_words,
                 &ppvm_lindblad::PcStepConfig {
                     max_basis,
-                    admit_basis: None,
+                    admit_basis,
                     drop_tol,
-                    tau_add: None,
+                    tau_add,
                     num_threads,
                 },
             )
@@ -331,19 +336,18 @@ impl LindbladSpec {
         let d = pyo3::types::PyDict::new(py);
         d.set_item("leakage1_us", timings.leakage1_us)?;
         d.set_item("expand1_us", timings.expand1_us)?;
-        d.set_item("gencsr1_us", timings.gencsr1_us)?;
         d.set_item("expm1_us", timings.expm1_us)?;
         d.set_item("leakage2_us", timings.leakage2_us)?;
         d.set_item("expand2_us", timings.expand2_us)?;
-        d.set_item("gencsr2_us", timings.gencsr2_us)?;
         d.set_item("expm2_us", timings.expm2_us)?;
         Ok((map, d))
     }
+
     /// Per-step orbit-rep predictor-corrector evolution under
     /// translation symmetry. State lives entirely in **orbit-rep form**:
     /// basis contains only canonical orbit representatives, coefficients
-    /// are complex. Action is phase-aware (output Paulis canonicalize
-    /// with momentum-character weight), CSR is complex throughout.
+    /// are complex. The action is phase-aware: output Paulis canonicalize
+    /// to their orbit rep with momentum-character weight.
     ///
     /// Per-step memory benefit: basis is ~|group|× smaller than the
     /// full-basis representation, and the reduction persists through

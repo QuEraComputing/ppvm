@@ -49,7 +49,7 @@
 //! coefficients equal to the sum of the input coefficients over each
 //! orbit's members. For dynamics that commute with `G` and initial
 //! states that are also `G`-invariant, this preserves the expectation
-//! value of any `G`-invariant observable (paper's Theorem 1).
+//! value of any `G`-invariant observable (Theorem 1 of arXiv:2512.12094).
 //!
 //! See the dedicated tests for correctness against full-basis evolution
 //! on small systems with no truncation.
@@ -248,14 +248,14 @@ impl TranslationGroup {
     {
         let perm = &self.perms[g];
         let mut out: PauliWord<A, S, R> = PauliWord::new(self.n_qubits);
-        for q in 0..self.n_qubits {
+        for (q, &pq) in perm.iter().enumerate().take(self.n_qubits) {
             let xb = w.get_xbit(q);
             let zb = w.get_zbit(q);
             if xb {
-                out.set_xbit(perm[q] as usize, true);
+                out.set_xbit(pq as usize, true);
             }
             if zb {
-                out.set_zbit(perm[q] as usize, true);
+                out.set_zbit(pq as usize, true);
             }
         }
         out.rehash();
@@ -281,7 +281,7 @@ impl TranslationGroup {
             "word and group must agree on n_qubits"
         );
         if self.perms.is_empty() {
-            return w.clone();
+            return *w;
         }
         // Mixed-radix counter `(c[0], c[1], …)` ranges over
         // `0..orders[0] × 0..orders[1] × …`. We track the "current"
@@ -294,7 +294,7 @@ impl TranslationGroup {
         // The simplest correct implementation just enumerates: for each
         // group element index, build the corresponding word from scratch
         // by applying the right number of each generator.
-        let mut best = w.clone();
+        let mut best = *w;
         let order = self.order();
         let mut idx = 0usize;
         while idx < order {
@@ -308,7 +308,7 @@ impl TranslationGroup {
             // Construct the group element's permutation by composing
             // `generator g` applied `c[g]` times, for each g.
             // We do this lazily by iterating over qubits.
-            let mut cur = w.clone();
+            let mut cur = *w;
             for (g, &c) in counters.iter().enumerate() {
                 for _ in 0..c {
                     cur = self.apply_generator(&cur, g);
@@ -342,9 +342,9 @@ impl TranslationGroup {
     {
         debug_assert_eq!(w.n_qubits(), self.n_qubits);
         if self.perms.is_empty() {
-            return (w.clone(), Vec::new());
+            return (*w, Vec::new());
         }
-        let mut best = w.clone();
+        let mut best = *w;
         let mut best_counter: Vec<u32> = vec![0; self.perms.len()];
         let order = self.order();
         for idx in 0..order {
@@ -357,7 +357,7 @@ impl TranslationGroup {
             }
             // Build the candidate by applying generator `g` exactly
             // `counter[g]` times.
-            let mut cur = w.clone();
+            let mut cur = *w;
             for (g, &c) in counter.iter().enumerate() {
                 for _ in 0..c {
                     cur = self.apply_generator(&cur, g);
@@ -410,7 +410,7 @@ impl TranslationGroup {
         let order = self.order();
         (0..order).map(move |idx| {
             let mut rem = idx;
-            let mut cur = w.clone();
+            let mut cur = *w;
             for (g, &o) in self.orders.iter().enumerate() {
                 let c = (rem as u32) % o;
                 rem /= o as usize;
@@ -552,10 +552,10 @@ where
         if let Some((rep_coeff, _ref_cnt)) = reference.get(&rep) {
             if (implied_rep_coeff - rep_coeff).norm() > tol * rep_coeff.norm().max(1.0) {
                 return Err(SectorCheckError {
-                    rep: rep.clone(),
+                    rep,
                     expected: *rep_coeff,
                     got_implied: implied_rep_coeff,
-                    offending_pauli: p.clone(),
+                    offending_pauli: *p,
                     offending_coeff: c,
                     shift: cnt.clone(),
                 });
@@ -787,7 +787,7 @@ mod tests {
         // real-valued orbit-rep coefficients equal to the plain
         // canonicalize_pauli_sum result.
         let g = TranslationGroup::chain_1d(4);
-        let mut basis: Vec<W> = vec![word("XIII"), word("IXII"), word("IIXI"), word("IIIX")];
+        let basis: Vec<W> = vec![word("XIII"), word("IXII"), word("IIXI"), word("IIIX")];
         let real_coeffs = vec![1.0, 2.0, 3.0, 4.0];
 
         let mut basis_real = basis.clone();
@@ -922,8 +922,8 @@ mod tests {
         symmetry_merge_pauli_sum(&mut o_u, &group);
 
         // Compare as (word → coeff) maps, FP tolerance.
-        let u: FxHashMap<_, f64> = o_u.iter().map(|(w, c)| (w.clone(), *c)).collect();
-        let m: FxHashMap<_, f64> = o_m.iter().map(|(w, c)| (w.clone(), *c)).collect();
+        let u: FxHashMap<_, f64> = o_u.iter().map(|(w, c)| (*w, *c)).collect();
+        let m: FxHashMap<_, f64> = o_m.iter().map(|(w, c)| (*w, *c)).collect();
         assert_eq!(
             u.len(),
             m.len(),

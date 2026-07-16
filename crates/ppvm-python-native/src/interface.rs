@@ -66,8 +66,7 @@ macro_rules! create_interface_symmetry_methods {
             /// (`chain_1d`, `torus_2d`, `torus_3d`, `ladder`).
             ///
             /// Plain real-coefficient merge (the `k=0` symmetry sector).
-            /// Phase-aware merging for non-trivial momentum sectors is
-            /// not yet implemented.
+            /// For non-trivial momentum sectors use `momentum_merge`.
             pub fn symmetry_merge(
                 &mut self,
                 group: &crate::symmetry::TranslationGroup,
@@ -124,7 +123,7 @@ macro_rules! create_interface_symmetry_methods {
                     basis.push(w);
                     coeffs.push(c);
                 }
-                // Character-weighted fold onto orbit reps (tested routine).
+                // Character-weighted fold onto orbit reps.
                 // `canonicalize_pauli_sum_complex` carries a 1/|G| prefactor;
                 // we rescale by |G| so the merge is the *summing* projector
                 // (like `symmetry_merge`): idempotent on already-merged input,

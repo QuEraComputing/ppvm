@@ -6,34 +6,21 @@
 //! Exposes:
 //! - [`TranslationGroup`] PyO3 class with constructors for 1D, 2D, 3D
 //!   tori and multi-leg ladders, plus a generic generator-list path.
-//! - [`canonicalize_basis_arr`] free function that takes the numpy
-//!   `(basis_arr, coeffs)` representation used by `Lindbladian.pc_step_arr`
-//!   /  `rk4_step_arr` and merges in place.
+//! - [`canonicalize_basis_arr`] / [`canonicalize_basis_arr_complex`] free
+//!   functions that merge the numpy `(basis_arr, coeffs)` representation
+//!   used by `Lindbladian.pc_step_arr`.
 
 use num::Complex;
 use numpy::{
     Complex64, IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1,
     PyReadonlyArray2,
 };
-use ppvm_lindblad::{Word, codes_from_word, word_from_codes};
+use ppvm_lindblad::{codes_from_word, word_from_codes};
 use ppvm_pauli_sum::symmetry as core_sym;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
 type PyPauliMapComplex<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>);
-
-fn decode_basis_words(view: &numpy::ndarray::ArrayView2<u8>, n_q: usize) -> PyResult<Vec<Word>> {
-    let n = view.shape()[0];
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        let row = view.row(i);
-        let row_slice = row.as_slice().ok_or_else(|| {
-            PyValueError::new_err("basis rows are not contiguous; pass a C-order array")
-        })?;
-        out.push(word_from_codes(row_slice).map_err(|e| PyValueError::new_err(e.to_string()))?);
-    }
-    Ok(out)
-}
 
 /// A finite abelian symmetry group acting on qubit positions by
 /// permutations. Use this to merge translation-equivalent Pauli strings
@@ -224,7 +211,7 @@ pub fn canonicalize_basis_arr_complex<'py>(
             group.inner.n_generators()
         )));
     }
-    let mut basis_words = decode_basis_words(&basis_view, n_q)?;
+    let mut basis_words = crate::lindblad::decode_basis(&basis_view, n_q)?;
     let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
         .iter()
         .map(|c| Complex::new(c.re, c.im))
@@ -276,7 +263,7 @@ pub fn check_momentum_sector_arr<'py>(
     }
     let coeffs_slice = coeffs.as_slice()?;
     let k_slice = momentum.as_slice()?;
-    let basis_words = decode_basis_words(&basis_view, n_q)?;
+    let basis_words = crate::lindblad::decode_basis(&basis_view, n_q)?;
     let coeffs_vec: Vec<Complex<f64>> = coeffs_slice
         .iter()
         .map(|c| Complex::new(c.re, c.im))
@@ -286,8 +273,8 @@ pub fn check_momentum_sector_arr<'py>(
 }
 
 /// Merge a `(basis_arr, coeffs)` Pauli sum (the representation used by
-/// `Lindbladian.pc_step_arr` / `rk4_step_arr`) into orbit-representative
-/// form. Each row of `basis_arr` is replaced by its canonical
+/// `Lindbladian.pc_step_arr`) into orbit-representative form.
+/// Each row of `basis_arr` is replaced by its canonical
 /// representative; coefficients of rows collapsing to the same rep are
 /// summed.
 ///
@@ -322,15 +309,7 @@ pub fn canonicalize_basis_arr<'py>(
         )));
     }
 
-    // Decode into Vec<Word>, run the merge, re-encode.
-    let mut basis_words: Vec<Word> = Vec::with_capacity(n);
-    for i in 0..n {
-        let row = basis_view.row(i);
-        let row_slice = row.as_slice().ok_or_else(|| {
-            PyValueError::new_err("basis array rows are not contiguous; pass a C-order array")
-        })?;
-        basis_words.push(word_from_codes(row_slice).map_err(|e| PyValueError::new_err(e.to_string()))?);
-    }
+    let mut basis_words = crate::lindblad::decode_basis(&basis_view, n_q)?;
     let mut coeffs_vec = coeffs_slice.to_vec();
 
     core_sym::canonicalize_pauli_sum(&mut basis_words, &mut coeffs_vec, &group.inner);

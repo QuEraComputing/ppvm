@@ -306,7 +306,7 @@ pub mod _core {
     #[pymodule_export]
     pub use crate::stim_program::PyStimProgram;
 
-    // Lindbladian time evolution shim
+    // Lindbladian time evolution
     #[pymodule_export]
     pub use crate::lindblad::LindbladSpec;
 

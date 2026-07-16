@@ -6,11 +6,8 @@
 ///
 /// These are the per-run *tuning knobs*, kept separate from the per-call data
 /// (`basis`, `coeffs`, `dt`, `protected`, and — on the orbit path — the
-/// translation group and momentum) so the step functions don't grow an
-/// unwieldy positional-argument list.
+/// translation group and momentum).
 ///
-/// Knob roles, as established by the 2026-07 benchmarking campaign
-/// (docs/autotune/2026-07-03-orbit-compare):
 /// `max_basis` is the primary accuracy/cost dial; `admit_basis` selects the
 /// displacement scheme; `drop_tol` is the churn valve of the admission-bound
 /// scheme; `tau_add` is a wall optimization at most.

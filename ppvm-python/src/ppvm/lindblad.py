@@ -5,9 +5,12 @@
 
 Given a Hermitian Pauli Hamiltonian H = Σ c_i P_i and jump operators
 L_k = Σ_a λ_{k,a} P_{k,a} (each a complex linear combination of Pauli
-strings) with rates γ_k ≥ 0, this module exposes three primitives needed
-for adaptive Heisenberg-picture evolution:
+strings) with rates γ_k ≥ 0, this module exposes the primitives for
+adaptive Heisenberg-picture evolution:
 
+- ``pc_step(...)`` / ``pc_step_arr(...)``: one adaptive predictor-corrector
+  step ``O ← exp(dt·L*) O``; ``pc_step_orbit_rep(...)`` is the
+  translation-symmetric (momentum-sector) variant
 - ``action(p)`` / ``action_arr(p)``: L*(p) for one Pauli string p
 - ``leakage(basis, coeffs)`` / ``leakage_arr(...)``: off-basis component of
   L*(Σ c_j p_j), driving basis expansion
@@ -28,9 +31,9 @@ Each jump term can be either:
 - a complex Pauli sum (`([("XIII", 0.5+0j), ("YIII", 0+0.5j)], γ)`) to
   describe e.g. amplitude-damping (`σ⁻`) and excitation (`σ⁺`) operators.
 
-For the general case the shim evaluates
-``γ ( L† p L − ½ {L†L, p} )`` directly; the L†L Pauli expansion is
-precomputed once at construction.
+For the general case the dissipator
+``γ ( L† p L − ½ {L†L, p} )`` is evaluated directly; the L†L Pauli
+expansion is precomputed once at construction.
 """
 
 from __future__ import annotations
@@ -240,8 +243,8 @@ class Lindbladian:
 
         All work — leakage expansion, matrix-exponential step, second-hop
         re-expansion, corrector — runs in Rust; SciPy is not required.
-        The matrix-exponential action is computed matrix-free via the external
-        ``quspin-expm`` crate (Al-Mohy & Higham scaling-and-squaring).
+        The matrix-exponential action is computed matrix-free via the
+        external ``quspin-expm`` crate.
 
         Truncation. ``max_basis`` is a hard rank cap on the live basis:
         enrichment adds at most ``max_basis - len(basis)`` of the largest
@@ -256,20 +259,18 @@ class Lindbladian:
         pool of that size — useful for benchmarking parallel scaling.
 
         ``tau_add``, when set, filters leakage admission by an absolute
-        coefficient-rate threshold (the dt- and drop_tol-independent
-        parameterization; formerly the ``PPVM_K_LEAKAGE`` env knob with
-        ``tau_add = K*drop_tol/dt``). Off by default — with cap-based
-        truncation it is at most a modest wall optimization.
+        coefficient-rate threshold (a dt- and drop_tol-independent
+        parameterization). Off by default — with cap-based truncation it
+        is at most a modest wall optimization.
 
         ``admit_basis``, when set (must be >= ``max_basis``), bounds the
         enriched working set during the step instead of ``max_basis``: the
         step may hold up to ``admit_basis`` strings transiently, and the
         final truncation keeps the top-``max_basis`` by evolved ``|coeff|``
-        over the whole union (retained + newly admitted) — genuine rank
+        over the whole union (retained + newly admitted) — rank
         displacement, so no ``drop_tol`` is needed to sustain membership
-        turnover. Default ``None`` reproduces the historical behaviour
-        (admission bounded by ``max_basis``; turnover requires
-        ``drop_tol > 0``).
+        turnover. With the default ``None``, admission is bounded by
+        ``max_basis`` and turnover requires ``drop_tol > 0``.
 
         Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown
         (or shrunk, if ``max_basis`` / ``drop_tol`` pruned entries).
@@ -307,7 +308,7 @@ class Lindbladian:
 
         State lives entirely in orbit-rep form throughout: ``basis_arr``
         contains only canonical translation-orbit representatives,
-        ``coeffs`` are complex. Phase-aware action + complex CSR. Basis
+        ``coeffs`` are complex, and the action is phase-aware. The basis
         is ~``|group|×`` smaller than the equivalent full-basis complex
         evolution, and the reduction persists across every step.
 

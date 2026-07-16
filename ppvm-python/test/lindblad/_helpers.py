@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 The PPVM Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Shared helpers for the Lindbladian shim tests.
+"""Shared helpers for the Lindbladian tests.
 
 Two reference kernels live here:
 

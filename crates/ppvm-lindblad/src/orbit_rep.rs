@@ -1,0 +1,463 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
+//! Per-step orbit-representative evolution under translation symmetry.
+//!
+//! The state lives entirely in **orbit-rep form** throughout: `basis`
+//! contains only canonical translation-orbit representatives, and
+//! `coeffs` are complex (one per rep). The dynamics `L*` is computed
+//! with **phase-aware action** — for each output Pauli `q`, we
+//! canonicalize `q` to its orbit rep `r_q` with shift counter `cnt_q`,
+//! and accumulate `χ_k(g_{cnt_q}) · v · c_r` (where `v` is the matrix
+//! element of `L*` between input rep `r` and output `q`).
+//!
+//! The orbit-rep basis is ~|G|× smaller than the full-basis
+//! representation, throughout the entire evolution.
+//!
+//! The phase-aware action is genuinely **complex** (because of the
+//! `χ_k(g)` phase factors). Rather than materialise a sparse matrix, the
+//! per-column action — for each input rep, the list of `(row, χ_k·v)`
+//! pairs for the in-basis outputs — is computed **once per expm call**
+//! (via [`build_orbit_rep_cols`]) and then reused, CSC-style, across
+//! every Krylov–Taylor matvec driving the external `quspin-expm` engine.
+//!
+//! ## Limitations
+//!
+//! - Caller is responsible for ensuring the input basis is in orbit-rep
+//!   form (i.e. each entry is the canonical representative of its
+//!   translation orbit). Use [`canonicalize_basis_to_rep`] if needed.
+//! - The momentum sector `k_modes` is fixed for the duration of one
+//!   pc_step call. To compute a full site-resolved profile, call
+//!   `pc_step_orbit_rep` once per momentum mode and inverse-Fourier
+//!   the results.
+
+use crate::mf_expm::CscOp;
+use crate::{Error, LindbladSpec};
+use fxhash::{FxBuildHasher, FxHashMap};
+use num::Complex;
+use ppvm_pauli_sum::symmetry::TranslationGroup;
+use quspin_expm::ExpmOp;
+use rayon::prelude::*;
+
+// Word type re-exported from lib.rs.
+use crate::Word;
+
+/// Replace each entry of `basis` with its canonical orbit
+/// representative under `group`. Pure rewrite; coefficients are
+/// untouched. Useful to enforce the orbit-rep invariant before calling
+/// [`pc_step_orbit_rep`].
+///
+/// Does NOT deduplicate — if multiple input entries collapse to the
+/// same rep, both are kept (caller should run a merge afterwards).
+pub fn canonicalize_basis_to_rep(basis: &mut [Word], group: &TranslationGroup) {
+    for w in basis.iter_mut() {
+        *w = group.canonicalize(w);
+    }
+}
+
+/// Build the per-column phase-aware action of the in-basis-restricted
+/// orbit-rep generator `M` at momentum sector `k_modes`.
+///
+/// Returns, for each input rep `basis[c]` (column `c`), the list of
+/// `(row, χ_k(g_{cnt_q}) · v_q)` pairs for every action output Pauli `q`
+/// of `L*(basis[c])` whose orbit rep `r_q` is in `basis` at index `row`.
+/// Outputs not in `basis` are dropped. This is the expensive part of the
+/// orbit-rep dynamics (`compute_action_terms`, `canonicalize_with_shift`,
+/// `character`); it is computed once and reused by the CSC-style matvec
+/// in [`CscOp`].
+pub(crate) fn build_orbit_rep_cols(
+    spec: &LindbladSpec,
+    basis: &[Word],
+    index: &FxHashMap<Word, u32>,
+    group: &TranslationGroup,
+    k_modes: &[i32],
+) -> Vec<Vec<(u32, Complex<f64>)>> {
+    basis
+        .par_iter()
+        .map_init(
+            || {
+                (
+                    Vec::<u32>::with_capacity(spec.n_qubits()),
+                    Vec::<u32>::with_capacity(128),
+                    FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                        128,
+                        FxBuildHasher::default(),
+                    ),
+                )
+            },
+            |(s1, s2, lm), r| {
+                let terms = spec.compute_action_terms(r, s1, s2, lm);
+                let mut out = Vec::with_capacity(terms.len());
+                for (q, v) in terms.iter() {
+                    let (r_q, cnt_q) = group.canonicalize_with_shift(q);
+                    if let Some(&row) = index.get(&r_q) {
+                        let phase = group.character(k_modes, &cnt_q);
+                        out.push((row, phase * *v));
+                    }
+                }
+                out
+            },
+        )
+        .collect()
+}
+
+/// Compute `exp(dt · M) · coeffs` for the in-basis-restricted orbit-rep
+/// generator `M` at momentum sector `k_modes`, via `quspin-expm`. Returns
+/// a fresh `Vec<Complex<f64>>` of length `basis.len()`.
+///
+/// The expensive phase-aware action is computed ONCE here (via
+/// [`build_orbit_rep_cols`]) and reused, CSC-style, across every Krylov–
+/// Taylor matvec (see [`CscOp`]). One pass over the cached columns
+/// extracts the diagonal shift `μ = tr(M)/n` and a valid upper bound on
+/// the column 1-norm of `M − μ·I`; from `‖dt·(M−μI)‖₁` we pick the Taylor
+/// partition `(m*, s)` and hand everything to
+/// [`quspin_expm::ExpmOp::from_parts`] (mirroring
+/// [`crate::mf_expm::expm_apply_mf`]).
+pub(crate) fn expm_apply_orbit_rep_cached(
+    spec: &LindbladSpec,
+    basis: &[Word],
+    group: &TranslationGroup,
+    k_modes: &[i32],
+    dt: f64,
+    coeffs: &[Complex<f64>],
+) -> Vec<Complex<f64>> {
+    let n = basis.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let index = crate::build_basis_index(basis);
+    let cols = build_orbit_rep_cols(spec, basis, &index, group, k_modes);
+
+    // One pass for the per-column `(raw, diag)` used by the `μ`/1-norm
+    // selection: `raw = Σ|val|` (upper bound on the absolute column sum),
+    // `diag = M[c,c]`. From these: `trace = Σ diag`, `μ = trace/n`, and an
+    // upper bound on the column 1-norm of `M − μ·I`: `raw − |diag| + |diag − μ|`.
+    let per_col: Vec<(f64, Complex<f64>)> = cols
+        .par_iter()
+        .enumerate()
+        .map(|(c, col)| {
+            let mut raw = 0.0_f64;
+            let mut diag = Complex::new(0.0, 0.0);
+            for &(row, val) in col.iter() {
+                raw += val.norm();
+                if row as usize == c {
+                    diag += val;
+                }
+            }
+            (raw, diag)
+        })
+        .collect();
+
+    let trace: Complex<f64> = per_col.iter().map(|(_, d)| *d).sum();
+    let mu = trace / n as f64;
+    let onenorm = per_col
+        .iter()
+        .map(|(raw, diag)| raw - diag.norm() + (diag - mu).norm())
+        .fold(0.0_f64, f64::max);
+
+    let (m_star, s) = crate::expm::select_ms(dt.abs() * onenorm);
+
+    let mut v = coeffs.to_vec();
+    let op = CscOp {
+        cols: &cols,
+        dim: n,
+    };
+    let e = ExpmOp::from_parts(
+        op,
+        Complex::new(dt, 0.0),
+        mu,
+        s as usize,
+        m_star as usize,
+        1e-12_f64,
+    );
+    e.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
+        .expect("expm apply (orbit-rep cached)");
+    v
+}
+
+/// Phase-aware leakage: out-of-basis component of `L*(O_k)` where `O_k`
+/// is the operator represented by `basis` (orbit reps) and `coeffs`
+/// (complex coefficients in momentum sector `k_modes`).
+///
+/// For each input rep `r` with coefficient `c_r`, and each output `q`
+/// of `L*(r) = Σ_q v_q · q`:
+/// 1. Canonicalize `q` → `(r_q, cnt_q)`.
+/// 2. If `r_q` NOT in `basis` and NOT in `protected`:
+///    `merged[r_q] += χ_k(g_{cnt_q}) · v_q · c_r`.
+///
+/// Returns `(r_q, sum)` pairs for all candidates with nonzero sum.
+///
+/// The live candidate map is capped to the *available room*
+/// `room = max_basis − basis.len()` (the reps we could actually add),
+/// applied during accumulation: input reps are processed in descending
+/// `|c|` order and after each chunk only the `room` largest-`|sum|`
+/// candidates are kept. A large `max_basis` (room ≥ all candidates)
+/// disables the cap — the near-exact case.
+#[allow(clippy::too_many_arguments)]
+pub fn leakage_orbit_rep(
+    spec: &LindbladSpec,
+    basis: &[Word],
+    coeffs: &[Complex<f64>],
+    protected: &[Word],
+    group: &TranslationGroup,
+    k_modes: &[i32],
+    max_basis: usize,
+) -> Result<Vec<(Word, Complex<f64>)>, Error> {
+    if basis.len() != coeffs.len() {
+        return Err(Error::LengthMismatch {
+            what: "basis and coeffs",
+            a: basis.len(),
+            b: coeffs.len(),
+        });
+    }
+    let in_basis: FxHashMap<&Word, ()> = basis.iter().map(|w| (w, ())).collect();
+    let protected_set: FxHashMap<&Word, ()> = protected.iter().map(|w| (w, ())).collect();
+
+    // Descending sort by |c|: process largest-magnitude contributors first
+    // so the running room-cap keeps the right entries.
+    let mut order: Vec<usize> = (0..basis.len()).collect();
+    order.sort_by(|&a, &b| {
+        coeffs[b]
+            .norm()
+            .partial_cmp(&coeffs[a].norm())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    const CHUNK_SIZE: usize = 4096;
+    let room = max_basis.saturating_sub(basis.len());
+    let mut merged: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
+    for chunk_indices in order.chunks(CHUNK_SIZE) {
+        let local: Vec<Vec<(Word, Complex<f64>)>> = chunk_indices
+            .par_iter()
+            .map_init(
+                || {
+                    (
+                        Vec::<u32>::with_capacity(spec.n_qubits()),
+                        Vec::<u32>::with_capacity(128),
+                        FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                            128,
+                            FxBuildHasher::default(),
+                        ),
+                    )
+                },
+                |(s1, s2, lm), &i| {
+                    let r = &basis[i];
+                    let c_r = coeffs[i];
+                    let terms = spec.compute_action_terms(r, s1, s2, lm);
+                    let mut out = Vec::with_capacity(terms.len());
+                    for (q, v) in terms.iter() {
+                        let (r_q, cnt_q) = group.canonicalize_with_shift(q);
+                        if !in_basis.contains_key(&r_q) && !protected_set.contains_key(&r_q) {
+                            let phase = group.character(k_modes, &cnt_q);
+                            out.push((r_q, phase * *v * c_r));
+                        }
+                    }
+                    out
+                },
+            )
+            .collect();
+        for v in local {
+            for (k, val) in v {
+                *merged.entry(k).or_insert(Complex::new(0.0, 0.0)) += val;
+            }
+        }
+
+        // Room-cap: keep only the `room` largest-magnitude entries.
+        if merged.len() > room {
+            if room == 0 {
+                merged.clear();
+            } else {
+                let mut mags: Vec<f64> = merged.values().map(|v| v.norm()).collect();
+                let k = room.min(mags.len() - 1);
+                mags.select_nth_unstable_by(k, |a, b| {
+                    b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                let cutoff = mags[k];
+                merged.retain(|_, &mut v| v.norm() >= cutoff);
+            }
+        }
+    }
+    Ok(merged.into_iter().filter(|(_, c)| c.norm() > 0.0).collect())
+}
+
+/// Per-step orbit-rep predictor-corrector evolution.
+///
+/// All state lives in orbit-rep form throughout. Each pc step does:
+/// 1. Phase-aware leakage from `(basis, coeffs)`; append the largest
+///    leakage reps, up to the admission room.
+/// 2. Predictor: cached-action expm ([`expm_apply_orbit_rep_cached`]).
+/// 3. Phase-aware leakage from the predicted state; append further reps.
+/// 4. Corrector: cached-action expm from the pre-step coefficients on
+///    the doubly-enlarged basis.
+/// 5. Prune `|c| < drop_tol`, then trim to the top-`max_basis` reps by
+///    `|c|`; protected reps never dropped.
+///
+/// `max_basis` is a hard rank cap on the live orbit-rep basis: enrichment
+/// adds at most `max_basis − basis.len()` of the largest leakage reps, the
+/// leakage map is capped to the same room, and the post-step basis is
+/// trimmed to the top-`max_basis` by `|c|`. Pass a large value (e.g.
+/// `usize::MAX`) for the near-exact, uncapped case. `drop_tol` additionally
+/// prunes by magnitude.
+///
+/// `basis` is assumed to contain only canonical orbit representatives.
+/// If not, [`canonicalize_basis_to_rep`] should be called first.
+#[allow(clippy::too_many_arguments)]
+pub fn pc_step_orbit_rep(
+    spec: &LindbladSpec,
+    basis: &mut Vec<Word>,
+    coeffs: &mut Vec<Complex<f64>>,
+    dt: f64,
+    protected: &[Word],
+    group: &TranslationGroup,
+    k_modes: &[i32],
+    cfg: &crate::PcStepConfig,
+) -> Result<(), Error> {
+    let crate::PcStepConfig {
+        max_basis,
+        admit_basis,
+        drop_tol,
+        tau_add,
+        ..
+    } = *cfg;
+    // Admission bound, mirroring the real-space `pc_step`: enrichment may
+    // grow the live basis to `admit` >= `max_basis`; the final
+    // `cap_basis_complex` keeps the top-`max_basis` reps by evolved |coeff|
+    // over the whole union (rank displacement). With `admit_basis = None`
+    // admission is bounded by `max_basis` itself and membership turnover
+    // requires `drop_tol > 0`.
+    let admit = admit_basis.unwrap_or(max_basis).max(max_basis);
+    let tau_add = tau_add.unwrap_or(0.0);
+    // 1. First-hop phase-aware leakage.
+    let mut leak = leakage_orbit_rep(spec, basis, coeffs, protected, group, k_modes, admit)?;
+    if tau_add > 0.0 {
+        leak.retain(|(_, c)| c.norm() > tau_add);
+    }
+    add_leakage_capped_complex(basis, coeffs, leak, admit);
+    // 2. Predictor: cached-action expm (the phase-aware action is built
+    //    once via `build_orbit_rep_cols`).
+    let coeffs_predict = expm_apply_orbit_rep_cached(spec, basis, group, k_modes, dt, coeffs);
+    // 3. Second-hop leakage from predicted state.
+    let mut leak2 = leakage_orbit_rep(
+        spec,
+        basis,
+        &coeffs_predict,
+        protected,
+        group,
+        k_modes,
+        admit,
+    )?;
+    drop(coeffs_predict);
+    if tau_add > 0.0 {
+        leak2.retain(|(_, c)| c.norm() > tau_add);
+    }
+    add_leakage_capped_complex(basis, coeffs, leak2, admit);
+    // 4. Corrector: cache-the-action expm from pre-step state (basis grew).
+    *coeffs = expm_apply_orbit_rep_cached(spec, basis, group, k_modes, dt, coeffs);
+    // 5. Prune by magnitude, then rank-cap to max_basis.
+    if drop_tol > 0.0 {
+        prune_basis_complex_local(basis, coeffs, drop_tol, protected);
+    }
+    cap_basis_complex(basis, coeffs, max_basis, protected);
+    Ok(())
+}
+
+/// Complex analogue of `crate::add_leakage_capped`: add the largest leakage
+/// reps to the basis, up to the available room `room = max_basis −
+/// basis.len()`, so the in-step orbit-rep basis never exceeds `max_basis`.
+/// New reps get coefficient 0; the surrounding expm fills them. No
+/// magnitude filter — the top-`room` by `|leakage|` are added.
+fn add_leakage_capped_complex(
+    basis: &mut Vec<Word>,
+    coeffs: &mut Vec<Complex<f64>>,
+    mut leak: Vec<(Word, Complex<f64>)>,
+    max_basis: usize,
+) {
+    let room = max_basis.saturating_sub(basis.len());
+    if leak.len() > room {
+        if room > 0 {
+            leak.select_nth_unstable_by(room - 1, |a, b| {
+                b.1.norm()
+                    .partial_cmp(&a.1.norm())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        leak.truncate(room);
+    }
+    for (w, _) in leak {
+        basis.push(w);
+        coeffs.push(Complex::new(0.0, 0.0));
+    }
+}
+
+/// Complex analogue of `crate::cap_basis`: keep only the `max_basis`
+/// largest-`|c|` reps (protected reps always kept), dropping the rest.
+/// A `max_basis` large enough to cover the whole basis is a no-op.
+fn cap_basis_complex(
+    basis: &mut Vec<Word>,
+    coeffs: &mut Vec<Complex<f64>>,
+    max_basis: usize,
+    protected: &[Word],
+) {
+    if basis.len() <= max_basis {
+        return;
+    }
+    let protected_set: fxhash::FxHashSet<&Word> = protected.iter().collect();
+    let n_prot = basis.iter().filter(|w| protected_set.contains(w)).count();
+    let slots = max_basis.saturating_sub(n_prot);
+    let mut mags: Vec<f64> = basis
+        .iter()
+        .zip(coeffs.iter())
+        .filter(|(w, _)| !protected_set.contains(w))
+        .map(|(_, c)| c.norm())
+        .collect();
+    let cutoff = if slots == 0 {
+        f64::INFINITY
+    } else if slots >= mags.len() {
+        return;
+    } else {
+        let k = slots - 1;
+        mags.select_nth_unstable_by(k, |a, b| {
+            b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        mags[k]
+    };
+    let mut write = 0;
+    for read in 0..basis.len() {
+        if protected_set.contains(&basis[read]) || coeffs[read].norm() >= cutoff {
+            if write != read {
+                basis.swap(write, read);
+                coeffs.swap(write, read);
+            }
+            write += 1;
+        }
+    }
+    basis.truncate(write);
+    coeffs.truncate(write);
+}
+
+/// Complex analogue of `crate::prune_basis`: drop reps with `|c| <
+/// drop_tol`, never dropping `protected` reps. No-op when `drop_tol <= 0`.
+fn prune_basis_complex_local(
+    basis: &mut Vec<Word>,
+    coeffs: &mut Vec<Complex<f64>>,
+    drop_tol: f64,
+    protected: &[Word],
+) {
+    if drop_tol <= 0.0 {
+        return;
+    }
+    let protected_set: fxhash::FxHashSet<&Word> = protected.iter().collect();
+    let mut write = 0;
+    for read in 0..basis.len() {
+        if coeffs[read].norm() >= drop_tol || protected_set.contains(&basis[read]) {
+            if write != read {
+                basis.swap(write, read);
+                coeffs.swap(write, read);
+            }
+            write += 1;
+        }
+    }
+    basis.truncate(write);
+    coeffs.truncate(write);
+}

@@ -16,6 +16,7 @@ pub mod interface_tableau;
 pub mod interface_tableau_sum;
 pub mod lindblad;
 pub mod stim_program;
+pub mod symmetry;
 
 pub(crate) fn flat_pairs(targets: &[usize]) -> PyResult<Vec<(usize, usize)>> {
     if !targets.len().is_multiple_of(2) {
@@ -308,4 +309,14 @@ pub mod _core {
     // Lindbladian time evolution
     #[pymodule_export]
     pub use crate::lindblad::LindbladSpec;
+
+    // Symmetry merging
+    #[pymodule_export]
+    pub use crate::symmetry::TranslationGroup;
+    #[pymodule_export]
+    pub use crate::symmetry::canonicalize_basis_arr;
+    #[pymodule_export]
+    pub use crate::symmetry::canonicalize_basis_arr_complex;
+    #[pymodule_export]
+    pub use crate::symmetry::check_momentum_sector_arr;
 }

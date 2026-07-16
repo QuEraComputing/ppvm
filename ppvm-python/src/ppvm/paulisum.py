@@ -386,6 +386,50 @@ class PauliSum(
         """
         return self._interface.trace(pattern)
 
+    def symmetry_merge(self, group) -> None:
+        """Merge entries into orbit-representative form under a translation group.
+
+        Each Pauli word in the sum is replaced by its canonical (lex-min)
+        representative under the action of ``group``; coefficients of words
+        that collapse to the same representative are summed. Entry count
+        reduces by up to ``|group|×`` for translation-invariant operators.
+
+        For a translation-invariant dynamics that you apply between
+        merging steps, this preserves all ``group``-invariant expectation
+        values (Theorem 1 of Teng et al., arXiv:2512.12094). Plain
+        real-coefficient merge — handles the trivial (``k=0``) momentum
+        sector only.
+
+        Args:
+            group: A `ppvm._core.TranslationGroup`
+                (use ``TranslationGroup.chain_1d(n)``, ``.torus_2d``,
+                ``.torus_3d``, ``.ladder``, or ``.from_generators``).
+        """
+        self._interface.symmetry_merge(group)
+
+    def momentum_merge(self, other: "PauliSum", group, momentum) -> None:
+        """Phase-aware (momentum-sector) merge for a complex operator stored
+        as a *real pair*: ``self`` is the real part and ``other`` the
+        imaginary part of ``O = self + i·other``. Both are overwritten in
+        place with the orbit-representative form projected onto momentum
+        sector ``momentum``.
+
+        Generalizes `symmetry_merge` to non-trivial momentum sectors
+        (``k != 0``) while keeping real coefficients on both PauliSums — the
+        only complex arithmetic is the internal character-weighted fold.
+        ``self`` and ``other`` must be distinct objects with the same qubit
+        count. Exact after a translation-covariant gate layer; under a
+        generic Trotter step it carries the same ``O(dt^{p+1})`` equivariance
+        error as the ``k=0`` merge.
+
+        Args:
+            other: the PauliSum holding the imaginary component (modified in place).
+            group: a `ppvm._core.TranslationGroup`.
+            momentum: sequence of integer modes, one per group generator
+                (e.g. ``[k]`` for a 1D chain; ``[0, ...]`` is the trivial sector).
+        """
+        self._interface.momentum_merge(other._interface, group, list(momentum))
+
     def amplitude_damping(self, addr0: int, gamma: float, *, truncate: bool = True):
         """Apply an amplitude-damping channel.
 

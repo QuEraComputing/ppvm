@@ -5,6 +5,8 @@ use num::Complex;
 use ppvm_tableau::{data::GeneralizedTableau, sparsevec::SparseVector};
 use ppvm_traits::config::Config;
 
+use crate::storage::BranchMutation;
+
 /// One branch produced by a noise channel: its tableau, coefficient, and the
 /// cached `(word_fingerprint, phase_loss_hash)` pair, so a merge can recompute
 /// the full fingerprint (`word_fp ^ phase_loss`) without re-hashing the tableau.
@@ -53,6 +55,21 @@ pub trait EntryStore<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>>: Clone
     /// phase/loss hash (third and fourth tuple fields), so the full
     /// fingerprint is `word_fp ^ phase_loss` — no re-hashing of the tableau.
     fn insert_or_merge_batch(&mut self, branches: Vec<Branch<T, I, C>>, cutoff: &T::Coeff) -> bool;
+
+    /// Like [`insert_or_merge_batch`](Self::insert_or_merge_batch), but each
+    /// branch is described lazily as a [`BranchMutation`] of a parent entry
+    /// referenced by `parent_idx` — its ordinal in the order yielded by the
+    /// immediately-preceding [`for_each_mut_with_keys`](Self::for_each_mut_with_keys)
+    /// call (entry index for `VecStorage`; flat bucket order for `MapStorage`).
+    /// The branch tableau is materialized ONLY when it survives as a new entry;
+    /// merges and below-cutoff drops never clone. `word_fp`/`phase_loss` are the
+    /// branch's already-computed fingerprint halves; full fp = `word_fp ^ phase_loss`.
+    /// Returns true if any branch was dropped (caller renormalizes).
+    fn insert_or_merge_mutated_branches(
+        &mut self,
+        branches: Vec<(usize, BranchMutation, T::Coeff, u64, u64)>,
+        cutoff: &T::Coeff,
+    ) -> bool;
 
     fn retain<F>(&mut self, f: F)
     where

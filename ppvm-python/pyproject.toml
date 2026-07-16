@@ -13,9 +13,6 @@ dependencies = [
     "numpy>=1.26",
 ]
 
-[project.scripts]
-ppvm = "ppvm:main"
-
 [build-system]
 requires = ["maturin>=1.10,<2.0"]
 build-backend = "maturin"

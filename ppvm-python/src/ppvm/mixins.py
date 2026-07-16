@@ -43,32 +43,49 @@ def _is_sequence(obj: Any) -> bool:
     A bare ``int`` — including a numpy integer scalar, which is not iterable —
     is not a sequence, so it falls through to the variadic path.
     """
-    return isinstance(obj, Iterable) and not isinstance(obj, (str, bytes))
+    # Concrete-type fast paths first: ``list``/``tuple`` (the overwhelmingly
+    # common splatted form) and bare ``int`` short-circuit before the slow ABC
+    # ``isinstance(obj, Iterable)`` dispatch, which is run only for the rare
+    # range / ndarray / generator cases. ``str``/``bytes`` are iterable but are
+    # never targets, so they report False.
+    if isinstance(obj, (list, tuple)):
+        return True
+    if isinstance(obj, (int, str, bytes)):
+        return False
+    return isinstance(obj, Iterable)
 
 
-def _normalize_targets(args: tuple[Any, ...]) -> list[int]:
+def _normalize_targets(args: tuple[Any, ...]) -> Sequence[int]:
     """Resolve gate targets passed either as variadic indices (``x(0, 1, 2)``)
-    or as a single sequence (``x([0, 1, 2])``, ``x(np.array([0, 1, 2]))``)."""
+    or as a single sequence (``x([0, 1, 2])``, ``x(np.array([0, 1, 2]))``).
+
+    Returns the targets as-is — the single sequence, or the variadic ``args``
+    tuple. The native layer extracts a ``Vec<usize>`` directly (PyO3 handles
+    Python ints, numpy integer scalars, ranges and ndarrays), so there is no
+    need to rebuild the list with a per-element ``int()`` on the hot path."""
     if len(args) == 1 and _is_sequence(args[0]):
-        return [int(t) for t in args[0]]
-    return [int(t) for t in args]
+        return args[0]
+    return args
 
 
 def _split_targets_parameter(
     args: tuple[Any, ...],
     value: Any | None,
     name: str,
-) -> tuple[list[int], Any]:
+) -> tuple[Sequence[int], Any]:
     """Split ``(*targets, value)`` accepting ``value=...`` and a single leading
-    sequence of targets (``([0, 1, 2], theta)`` as well as ``(0, 1, 2, theta)``)."""
+    sequence of targets (``([0, 1, 2], theta)`` as well as ``(0, 1, 2, theta)``).
+
+    Targets are returned as-is (sequence or tuple slice); the native layer does
+    the ``Vec<usize>`` extraction, so no per-element ``int()`` rebuild is needed."""
     if args and _is_sequence(args[0]):
-        targets, rest = [int(t) for t in args[0]], args[1:]
+        targets, rest = args[0], args[1:]
     elif value is None:
         if not args:
             raise TypeError(f"missing required argument: {name!r}")
-        targets, rest = [int(t) for t in args[:-1]], args[-1:]
+        targets, rest = args[:-1], args[-1:]
     else:
-        targets, rest = [int(t) for t in args], ()
+        targets, rest = args, ()
     if value is None:
         if not rest:
             raise TypeError(f"missing required argument: {name!r}")
@@ -81,11 +98,14 @@ def _split_targets_parameter_truncate(
     value: Any | None,
     name: str,
     truncate: bool,
-) -> tuple[list[int], Any, bool]:
+) -> tuple[Sequence[int], Any, bool]:
     """Split ``(*targets, value[, truncate])`` for PauliSum methods, also
-    accepting a single leading sequence of targets."""
+    accepting a single leading sequence of targets.
+
+    Targets are returned as-is (sequence or tuple/list slice); the native layer
+    does the ``Vec<usize>`` extraction, so no per-element ``int()`` is needed."""
     if args and _is_sequence(args[0]):
-        targets = [int(t) for t in args[0]]
+        targets = args[0]
         rest = list(args[1:])
         if rest and isinstance(rest[-1], bool):
             truncate = rest.pop()
@@ -100,8 +120,8 @@ def _split_targets_parameter_truncate(
         args_list = list(args)
         if len(args_list) >= 2 and isinstance(args_list[-1], bool):
             truncate = args_list.pop()
-        return [int(t) for t in args_list[:-1]], args_list[-1], truncate
-    return [int(t) for t in args], value, truncate
+        return args_list[:-1], args_list[-1], truncate
+    return args, value, truncate
 
 
 class CliffordMixin:
@@ -220,6 +240,22 @@ class RotationsMixin:
         """
         targets, theta = _split_targets_parameter(args, theta, "theta")
         self._interface.rz(targets, theta)
+
+    def r(self, addr0: int, axis_angle: float, theta: float) -> None:
+        """Apply a rotation about an axis in the X-Y plane to the specified qubit.
+
+        ```math
+        R(\\phi, \\theta) = e^{-i \\frac{\\theta}{2} (\\cos\\phi\\, X + \\sin\\phi\\, Y)}
+            = R_Z(\\phi) R_X(\\theta) R_Z(-\\phi)
+        ```
+
+        Args:
+            addr0: The index of the target qubit.
+            axis_angle: The angle ``φ`` (in radians) of the rotation axis
+                within the X-Y plane, measured from the X-axis.
+            theta: The rotation angle in radians.
+        """
+        self._interface.r(addr0, axis_angle, theta)
 
     # Two qubit rotations
     def rxx(self, *args: Any, theta: float | None = None) -> None:
@@ -601,6 +637,21 @@ class TruncatingRotationsMixin(RotationsMixin):
         targets, theta, truncate = _split_targets_parameter_truncate(args, theta, "theta", truncate)
         self._interface.rz(targets, theta, truncate)
 
+    def r(self, addr0: int, axis_angle: float, theta: float, *, truncate: bool = True) -> None:
+        """Apply a rotation about an axis in the X-Y plane to the specified qubit.
+
+        See `RotationsMixin.r` for the gate definition.
+
+        Args:
+            addr0: The index of the target qubit.
+            axis_angle: The angle ``φ`` (in radians) of the rotation axis
+                within the X-Y plane, measured from the X-axis.
+            theta: The rotation angle in radians.
+            truncate: See `rx`.
+        """
+        self._interface.r(addr0, axis_angle, theta, truncate=truncate)
+
+    # Two qubit rotations
     def rxx(self, *args: Any, theta: float | None = None, truncate: bool = True) -> None:
         """Apply RXX (Ising XX) rotation gates over consecutive qubit pairs.
 

@@ -48,7 +48,7 @@ Python hides all of this; the binding picks the variant automatically from `n_qu
 
 Non-Clifford gates *branch*: one Pauli term becomes a small linear combination. Without truncation, the sum grows unboundedly. Configure truncation at construction time, then apply it. **The when-to-apply rule differs by language:**
 
-- **Python**: the binding calls `truncate()` for you after every gate, so once you've passed the thresholds at construction time you don't touch `.truncate()` yourself. There is no `.truncate()` method on the Python `PauliSum` either.
+- **Python**: the binding calls `truncate()` for you after every gate method call by default, so once you've passed the thresholds at construction time you usually don't call `.truncate()` yourself. To compose several operations before pruning, pass `truncate=False` to those gate/noise calls, then call `ps.truncate()` once at the intended cut point.
 - **Rust**: `state.truncate()` is the user-driven trigger — gate methods do not call it for you. Call it at the points in your circuit where pruning makes sense (typically after each gate layer, or once per Trotter step). Without this call the policy you configured in the `Config` does nothing.
 
 **Python — kwargs on `PauliSum.new`:**
@@ -126,6 +126,8 @@ r0 = tab.measure(0)   # MeasurementResult.ZERO / .ONE / .LOST
 r1 = tab.measure(1)   # correlated with r0 (Bell state)
 ```
 
+For throughput on tableau circuits, batch same-gate layers in one Python call. Single-qubit gates accept variadic targets or a sequence: `tab.h(0, 2, 4)` and `tab.h([0, 2, 4])` are equivalent. Two-qubit gates consume a flat target list as consecutive pairs: `tab.cnot([0, 1, 2, 3])` applies `(0, 1)` and `(2, 3)`. Rotations and Pauli/depolarizing noise use the same convention with `theta=...` or `p=...`. This avoids one Python→Rust call per target and forwards to fused Rust tableau kernels internally. `measure` stays scalar; use `tab.measure_many([0, 1, 2])` for readout layers.
+
 Non-Clifford gates and Stim programs:
 
 ```python
@@ -202,6 +204,8 @@ tab.cnot(0, 1);
 let outcome = tab.measure(0);
 ```
 
+For layer-style tableau circuits in Rust, prefer explicit batch methods instead of per-target loops: `tab.h_many(&[0, 2, 4])`, `tab.cnot_many(&[(0, 1), (2, 3)])`, `tab.rx_many(&targets, theta)`, `tab.rzz_many(&pairs, theta)`, `tab.depolarize1_many(&targets, p)`, `tab.measure_many(&targets)`, `tab.reset_many(&targets)`, and the analogous `*_many` forms. `GeneralizedTableau` specializes these into fused bit operations. Other backends may expose trait-default `*_many` methods too, but the fused speedup is tableau-specific.
+
 Pick `IndexType` by qubit count: `usize` up to ~64, `u128` up to 128, `bnum::types::U256` / `U512` / `U1024` beyond. **Using `usize` past 64 qubits silently overflows** — this is the second-most-common bug after Heisenberg-order mistakes.
 
 ### Running Stim programs (Rust)
@@ -273,6 +277,7 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 - `_dag` (not `_adj` or `_dagger`).
 - Prefer `p=...` and `theta=...` for readability in Python; trailing positional
   probabilities and angles are also accepted for compatibility.
+- Python tableau gate names do not grow a `_many` suffix. Pass multiple targets to the normal `GeneralizedTableau` gate (`tab.h([0, 1])`, `tab.rzz([0, 1, 2, 3], theta=...)`); use `_many` only in Rust and for Python `measure_many`.
 - The Python `PauliSum` is intentionally a narrow workhorse focused on noisy-circuit observables. For `t`, `u3`, `cy`, mid-circuit `measure`, or `reset`, use `GeneralizedTableau` (Python) or drop to Rust.
 
 ## Common pitfalls (rank-ordered by how often agents hit them)
@@ -280,10 +285,11 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 1. **Forgot to reverse the gate order in Pauli propagation.** Symptom: expectation values look like the inverse circuit. Re-read §1.
 2. **Used `depolarizing`/`depolarize` or `_adj` from intuition.** Symptom: `AttributeError` / `no method named …`. Correct names are `depolarize1` and `_dag`.
 3. **Tried to import `CoefficientThreshold` / `MaxPauliWeight` from Python.** Those are Rust-only. Use kwargs on `PauliSum.new`.
-4. **`.truncate()` on the wrong side.** In Python, calling `.truncate()` raises `AttributeError` — the binding already truncates after every gate. In Rust, *not* calling `state.truncate()` means your configured policy never runs and the sum grows unboundedly. See §3 above.
-5. **`GeneralizedTableau::new(n)` in Rust.** It takes two args: `(n_qubits, coefficient_threshold)`.
-6. **`IndexType = usize` for >64 qubits.** Silently overflows. Use `u128` or a `bnum` type.
-7. **`pip install` in docs.** Project policy is `uv` everywhere — `uv add`, `uv run`, `uv sync`. Fix any pip references you find.
+4. **`.truncate()` on the wrong side.** In Python, truncation runs after each gate call by default; use `truncate=False` plus one later `ps.truncate()` only when you intentionally want to defer pruning. In Rust, *not* calling `state.truncate()` means your configured policy never runs and the sum grows unboundedly. See §3 above.
+5. **Looped over Python `GeneralizedTableau` targets one call at a time.** Batch tableau layers with normal Python gates (`tab.h([0, 1, 2])`, `tab.cz([0, 4, 1, 5])`) or `tab.measure_many(...)`; in Rust tableau code, use the matching `*_many` methods. Not for Python `PauliSum`.
+6. **`GeneralizedTableau::new(n)` in Rust.** It takes two args: `(n_qubits, coefficient_threshold)`.
+7. **`IndexType = usize` for >64 qubits.** Silently overflows. Use `u128` or a `bnum` type.
+8. **`pip install` in docs.** Project policy is `uv` everywhere — `uv add`, `uv run`, `uv sync`. Fix any pip references you find.
 
 ## Verifying you got the API right
 

@@ -82,19 +82,29 @@ pub(crate) fn signed_float<'src>() -> impl Parser<'src, &'src str, f64, Extra<'s
         .map(|s: &str| s.parse::<f64>().expect("validated by combinator shape"))
 }
 
+/// Pi-expression, paired with whether `pi` actually appeared in the source:
+/// `pi` -> `(PI, true)`, `<num>[*]pi` -> `(num*PI, true)`, `<num>` -> `(num, false)`.
+/// The optional `*` may be omitted (`0.5pi`) or spaced (`0.5 * pi`).
+/// The flag lets rotation/U3 tags enforce the half-turn `<n>*pi` convention.
+pub(crate) fn pi_expr_flagged<'src>()
+-> impl Parser<'src, &'src str, (f64, bool), Extra<'src>> + Clone {
+    let pi_kw = just("pi").to((std::f64::consts::PI, true));
+    let pi_suffix = inline_pad()
+        .ignore_then(just('*').then(inline_pad()).or_not())
+        .then(just("pi"));
+    let num_then_pi = signed_float().then(pi_suffix.or_not()).map(|(n, suffix)| {
+        if suffix.is_some() {
+            (n * std::f64::consts::PI, true)
+        } else {
+            (n, false)
+        }
+    });
+    choice((pi_kw, num_then_pi))
+}
+
 /// Pi-expression: `pi`, `<num>*pi`, or plain number. Evaluates to f64.
 pub(crate) fn pi_expr<'src>() -> impl Parser<'src, &'src str, f64, Extra<'src>> + Clone {
-    let pi_kw = just("pi").to(std::f64::consts::PI);
-    let num_then_pi = signed_float()
-        .then(inline_pad().ignore_then(just("*pi")).or_not())
-        .map(|(n, suffix)| {
-            if suffix.is_some() {
-                n * std::f64::consts::PI
-            } else {
-                n
-            }
-        });
-    choice((pi_kw, num_then_pi))
+    pi_expr_flagged().map(|(value, _)| value)
 }
 
 use crate::ast::shared::{Tag, TagParam};
@@ -105,8 +115,8 @@ pub(crate) fn tag_param<'src>() -> impl Parser<'src, &'src str, TagParam, Extra<
         .then_ignore(inline_pad())
         .then_ignore(just('='))
         .then_ignore(inline_pad())
-        .then(pi_expr())
-        .map(|(key, value)| TagParam::Named { key, value });
+        .then(pi_expr_flagged())
+        .map(|(key, (value, had_pi))| TagParam::Named { key, value, had_pi });
     let positional = pi_expr().map(TagParam::Positional);
     choice((named, positional))
 }
@@ -288,9 +298,12 @@ mod tests {
 
     #[test]
     fn pi_expr_parses_pi_keyword_coeff_and_plain_number() {
+        let half_pi = 0.5 * std::f64::consts::PI;
         assert_eq!(run(pi_expr(), "pi"), std::f64::consts::PI);
-        assert_eq!(run(pi_expr(), "0.5*pi"), 0.5 * std::f64::consts::PI);
-        assert_eq!(run(pi_expr(), "0.5 *pi"), 0.5 * std::f64::consts::PI);
+        assert_eq!(run(pi_expr(), "0.5*pi"), half_pi);
+        assert_eq!(run(pi_expr(), "0.5 *pi"), half_pi);
+        assert_eq!(run(pi_expr(), "0.5 * pi"), half_pi);
+        assert_eq!(run(pi_expr(), "0.5pi"), half_pi);
         assert_eq!(run(pi_expr(), "-2*pi"), -2.0 * std::f64::consts::PI);
         assert_eq!(run(pi_expr(), "0.5"), 0.5);
     }
@@ -343,9 +356,10 @@ mod tests {
         assert_eq!(t.name, "R_X");
         assert_eq!(t.params.len(), 1);
         match &t.params[0] {
-            TagParam::Named { key, value } => {
+            TagParam::Named { key, value, had_pi } => {
                 assert_eq!(key, "theta");
                 assert!((value - 0.5 * std::f64::consts::PI).abs() < 1e-12);
+                assert!(had_pi);
             }
             other => panic!("{other:?}"),
         }

@@ -54,8 +54,7 @@ pub struct Tableau<T: Config> {
 }
 
 impl<T: Config> Tableau<T> {
-    /// Construct a fresh tableau initialised to `|0…0⟩`.
-    pub fn new(n_qubits: usize) -> Self {
+    fn new_data(n_qubits: usize) -> Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>> {
         // Initialize tableau for 0 state
         let mut data: Vec<PhasedPauliWordNoHash<T::Storage, T::BuildHasher>> =
             Vec::with_capacity(2 * n_qubits);
@@ -72,7 +71,12 @@ impl<T: Config> Tableau<T> {
             pw.set(i, Pauli::Z);
             data.push(pw);
         }
+        data
+    }
 
+    /// Construct a fresh tableau initialised to `|0…0⟩`.
+    pub fn new(n_qubits: usize) -> Self {
+        let data = Tableau::<T>::new_data(n_qubits);
         Self {
             n_qubits,
             data,
@@ -85,6 +89,11 @@ impl<T: Config> Tableau<T> {
         let mut t = Self::new(n_qubits);
         t.rng = SmallRng::seed_from_u64(seed);
         t
+    }
+
+    pub fn reset_all(&mut self) {
+        let data = Tableau::<T>::new_data(self.n_qubits);
+        self.data = data;
     }
 
     /// View of the stabilizer rows (the upper half of the tableau).
@@ -537,7 +546,9 @@ where
     Complex<CoeffType>:
         std::ops::Mul<Output = Complex<CoeffType>> + std::ops::AddAssign + From<Complex64> + Copy,
 {
-    if items.len() >= RAYON_COEFF_THRESHOLD {
+    // See `branch_coefficients_parallel`: avoid nesting rayon inside shot-level
+    // parallelism; the main-thread (single-shot) path is unaffected.
+    if items.len() >= RAYON_COEFF_THRESHOLD && rayon::current_thread_index().is_none() {
         use rayon::prelude::*;
 
         return items
@@ -675,6 +686,22 @@ where
         s
     }
 
+    pub fn reset_all(&mut self) {
+        self.tableau.reset_all();
+
+        let mut coefficients = C::new();
+        let complex_one = Complex {
+            re: T::Coeff::one(),
+            im: T::Coeff::zero(),
+        };
+        coefficients.unsafe_insert(I::zero(), complex_one);
+        self.coefficients = coefficients;
+        for l in self.is_lost.iter_mut() {
+            *l &= false;
+        }
+        self.measurement_record.clear();
+    }
+
     /// Clone the quantum state but reinitialize the RNG, producing an independent simulation
     /// branch. If `seed` is `Some`, the new RNG is seeded deterministically; if `None`, it is
     /// seeded from OS entropy.
@@ -771,6 +798,47 @@ where
         }
     }
 
+    /// Apply CZ to `count` pairs with a constant offset, given in qubit-index
+    /// terms: `(control_base + i, target_base + i)` for `i in 0..count`.
+    ///
+    /// This is the high-level entry point for a fused block of CZs: it splits
+    /// the run at storage-word boundaries internally and dispatches each
+    /// segment to [`Self::cz_block_pairs`] (control and target in the same
+    /// word) or [`Self::cz_block_pairs_cross_word`] (straddling two words), so
+    /// callers never need to reason about the `u64` packing. CZ is symmetric,
+    /// so the two bases may be passed in either order.
+    pub fn cz_block(&mut self, control_base: usize, target_base: usize, count: usize)
+    where
+        <<T::Storage as BitView>::Store as TryFrom<usize>>::Error: Debug,
+        <T::Storage as BitView>::Store: PrimInt + TryFrom<usize>,
+    {
+        if count == 0 {
+            return;
+        }
+        // cz_block_pairs needs a non-negative offset; CZ is symmetric, so order
+        // the two bases.
+        let (lo, hi) = if control_base <= target_base {
+            (control_base, target_base)
+        } else {
+            (target_base, control_base)
+        };
+        let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
+        let mut i = 0;
+        while i < count {
+            let (c, t) = (lo + i, hi + i);
+            let (wc, bc) = (c / bits_per_word, c % bits_per_word);
+            let (wt, bt) = (t / bits_per_word, t % bits_per_word);
+            // Longest run before either index crosses into the next word.
+            let run = (bits_per_word - bc).min(bits_per_word - bt).min(count - i);
+            if wc == wt {
+                self.cz_block_pairs(c, t - c, run);
+            } else {
+                self.cz_block_pairs_cross_word(wc, bc, wt, bt, run);
+            }
+            i += run;
+        }
+    }
+
     // helper functions
 
     /// Compute the decomposition of a pauli into stabilizer destabilizer products
@@ -846,6 +914,36 @@ where
         }
 
         (p_word.phase, stab_anticomm_bits, destab_anticomm_bits)
+    }
+
+    /// Multi-qubit generalization of [`compute_decomposition`]: conjugate an
+    /// arbitrary `PauliWord` through the tableau and return the same triple
+    /// `(phase, stab_anticomm_bits, destab_anticomm_bits)`.
+    ///
+    /// Algorithm: call [`compute_decomposition`] for each non-identity qubit
+    /// in the input, then multiply the resulting single-qubit conjugates in
+    /// canonical-basis form `i^φ X^x Z^z`. Pauli multiplication picks up a
+    /// `(-1)^{popcount(z_running & x_new)}` cross-phase from
+    /// `Z^z_a X^x_b = (-1)^{z_a · x_b} X^x_b Z^z_a`.
+    pub(crate) fn compute_decomposition_word<W: PauliWordTrait>(&self, word: &W) -> (u8, I, I)
+    where
+        <<T as Config>::Storage as BitView>::Store: PrimInt,
+    {
+        let mut phase = 0u8;
+        let mut stab_anticomm = I::zero();
+        let mut destab_anticomm = I::zero();
+        for q in 0..self.n_qubits() {
+            let p_q = word.get(q);
+            if p_q == Pauli::I {
+                continue;
+            }
+            let (q_phase, q_stab, q_destab) = self.compute_decomposition(q, p_q);
+            let cross = 2 * (symplectic_inner(destab_anticomm, q_stab) as u8 % 2);
+            phase = (phase + q_phase + cross) % 4;
+            stab_anticomm = stab_anticomm ^ q_stab;
+            destab_anticomm = destab_anticomm ^ q_destab;
+        }
+        (phase, stab_anticomm, destab_anticomm)
     }
 
     /// every basis index is a bit string alpha defining the basis state
@@ -1414,5 +1512,113 @@ mod tests {
             snapshot_tableau(&tab1.tableau),
             snapshot_tableau(&tab2.tableau)
         );
+    }
+
+    #[test]
+    fn test_cz_block_matches_individual_across_word_boundary() {
+        // cz_block must split a run that straddles the u64 boundary into the
+        // right within-word + cross-word segments. control_base=34,
+        // target_base=51, count=17 reproduces the MSD ql[2]xql[3] sweep:
+        // (34,51)..(46,63) in word 0, then (47,64)..(50,67) cross-word.
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
+        type GTab = GeneralizedTableau<Byte8F64<2>>;
+        let n = 85;
+        let mut tab1: GTab = GeneralizedTableau::new(n, 1e-12);
+        for i in 0..n {
+            Clifford::h(&mut tab1.tableau, i);
+        }
+        let mut tab2 = tab1.clone();
+
+        let (control_base, target_base, count) = (34, 51, 17);
+        for i in 0..count {
+            Clifford::cz(&mut tab1, control_base + i, target_base + i);
+        }
+        tab2.cz_block(control_base, target_base, count);
+
+        assert_eq!(
+            snapshot_tableau(&tab1.tableau),
+            snapshot_tableau(&tab2.tableau)
+        );
+
+        // Reversed bases (CZ is symmetric) must give the same result.
+        let mut tab3 = GeneralizedTableau::<Byte8F64<2>>::new(n, 1e-12);
+        for i in 0..n {
+            Clifford::h(&mut tab3.tableau, i);
+        }
+        tab3.cz_block(target_base, control_base, count);
+        assert_eq!(
+            snapshot_tableau(&tab1.tableau),
+            snapshot_tableau(&tab3.tableau)
+        );
+    }
+    // ─── reset_all ────────────────────────────────────────────────────
+
+    /// `GeneralizedTableau::reset_all` restores the full state to a fresh
+    /// `|0…0⟩` tableau: identical stabilizer/destabilizer rows and a single
+    /// identity coefficient, even after non-Clifford branching.
+    #[test]
+    fn reset_all_restores_fresh_state() {
+        let mut tab: TestTableau = GeneralizedTableau::new(3, 1e-12);
+        let fresh: TestTableau = GeneralizedTableau::new(3, 1e-12);
+
+        tab.h(0);
+        tab.cnot(0, 1);
+        tab.ry(2, 0.7); // non-Clifford: branches the coefficient vector
+        assert!(
+            tab.coefficients.iter().count() > 1,
+            "rotation should branch the coefficient vector"
+        );
+
+        tab.reset_all();
+
+        assert_eq!(
+            snapshot_tableau(&tab.tableau),
+            snapshot_tableau(&fresh.tableau)
+        );
+        let coeffs: Vec<_> = tab.coefficients.iter().copied().collect();
+        let fresh_coeffs: Vec<_> = fresh.coefficients.iter().copied().collect();
+        assert_eq!(coeffs, fresh_coeffs);
+    }
+
+    /// A full reset clears the measurement record. Regression guard: an earlier
+    /// version left it intact, so `current_measurement_record` returned stale
+    /// outcomes after a reset.
+    #[test]
+    fn reset_all_clears_measurement_record() {
+        let mut tab: TestTableau = GeneralizedTableau::new(2, 1e-12);
+        tab.append_measurement_record(Some(true));
+        tab.append_measurement_record(None);
+        assert_eq!(tab.current_measurement_record().len(), 2);
+
+        tab.reset_all();
+
+        assert!(tab.current_measurement_record().is_empty());
+    }
+
+    /// A full reset clears per-qubit loss flags.
+    #[test]
+    fn reset_all_clears_loss_flags() {
+        let mut tab: TestTableau = GeneralizedTableau::new(3, 1e-12);
+        tab.is_lost[0] = true;
+        tab.is_lost[2] = true;
+
+        tab.reset_all();
+
+        assert!(tab.is_lost.iter().all(|&lost| !lost));
+    }
+
+    /// `Tableau::reset_all` restores the fresh identity tableau rows.
+    #[test]
+    fn tableau_reset_all_restores_fresh_rows() {
+        let mut tab: Tableau<TestConfig> = Tableau::new(4);
+        let fresh: Tableau<TestConfig> = Tableau::new(4);
+
+        tab.h(0);
+        tab.s(1);
+        tab.h(3);
+
+        tab.reset_all();
+
+        assert_eq!(snapshot_tableau(&tab), snapshot_tableau(&fresh));
     }
 }

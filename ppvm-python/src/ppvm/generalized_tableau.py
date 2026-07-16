@@ -45,6 +45,13 @@ class MeasurementResult(enum.IntEnum):
     LOST = 2
 
 
+# Indexed by integer outcome value (0/1/2) to reuse the singleton enum members.
+# This is much faster than calling ``MeasurementResult(i)`` per element: the
+# IntEnum constructor dominates large readouts, while a tuple index just bumps a
+# refcount. Shared with ``GeneralizedTableauSum``.
+_BY_VALUE = (MeasurementResult.ZERO, MeasurementResult.ONE, MeasurementResult.LOST)
+
+
 @dataclass(frozen=True)
 class GeneralizedTableau(
     CliffordMixin,
@@ -148,6 +155,26 @@ class GeneralizedTableau(
         """
         self._interface.t_dag(_normalize_targets(targets))
 
+    def cz_block(self, control_base: int, target_base: int, count: int) -> None:
+        """Apply a fused block of CZ gates over constant-offset qubit pairs.
+
+        Applies CZ to ``(control_base + i, target_base + i)`` for ``i`` in
+        ``range(count)`` -- i.e. the gates ``zip(range(control_base, ...),
+        range(target_base, ...))`` would produce. This uses a word-level kernel
+        that is much faster than the equivalent `cz` call when the pairs form a
+        contiguous, constant-offset block (e.g. entangling two adjacent qubit
+        registers). For scattered pairs, use `cz`.
+
+        CZ is symmetric, so ``control_base`` and ``target_base`` may be given in
+        either order.
+
+        Args:
+            control_base: First qubit of the control run.
+            target_base: First qubit of the target run.
+            count: Number of CZ pairs.
+        """
+        self._interface.cz_block(control_base, target_base, count)
+
     def measure(self, addr0: int) -> MeasurementResult:
         """Measure the specified qubit in the Z basis.
 
@@ -158,7 +185,7 @@ class GeneralizedTableau(
             The measurement outcome as a ``MeasurementResult``, which is
             ``LOST`` if the qubit has been lost, ``ZERO`` or ``ONE`` otherwise.
         """
-        return MeasurementResult(self._interface.measure(addr0))
+        return _BY_VALUE[self._interface.measure(addr0)]
 
     def measure_many(self, *targets: int | Iterable[int]) -> list[MeasurementResult]:
         """Measure several qubits in the Z basis.
@@ -169,9 +196,7 @@ class GeneralizedTableau(
         Returns:
             A list of ``MeasurementResult`` outcomes, one per target.
         """
-        return [
-            MeasurementResult(v) for v in self._interface.measure_many(_normalize_targets(targets))
-        ]
+        return [_BY_VALUE[v] for v in self._interface.measure_many(_normalize_targets(targets))]
 
     def current_measurement_record(self) -> list[MeasurementResult]:
         """Return all measurement outcomes recorded so far.
@@ -179,7 +204,7 @@ class GeneralizedTableau(
         Returns:
             A list of ``MeasurementResult`` outcomes in measurement order.
         """
-        return [MeasurementResult(v) for v in self._interface.current_measurement_record()]
+        return [_BY_VALUE[v] for v in self._interface.current_measurement_record()]
 
     def coefficients(self) -> dict[int, complex]:
         """Return a snapshot of the sparse coefficient vector.
@@ -207,6 +232,36 @@ class GeneralizedTableau(
             The count of populated entries in the sparse coefficient vector.
         """
         return self._interface.num_coefficients()
+
+    def expectation(self, word: str) -> float:
+        """Compute ``⟨ψ|word|ψ⟩`` for a single multi-qubit Pauli string.
+
+        Args:
+            word: A dense Pauli string with one character per qubit, each
+                drawn from ``I``, ``X``, ``Y``, ``Z`` (e.g. ``"ZZ"`` for a
+                two-qubit state). Its length must equal the tableau's qubit
+                count.
+
+        Returns:
+            The real expectation value of ``word`` in the current state.
+        """
+        return self._interface.expectation(word)
+
+    def trace(self, pattern: str) -> float:
+        """Sum Pauli expectations over every word matching ``pattern``.
+
+        Enumerates each ``PauliWord`` accepted by ``pattern`` and returns
+        the sum of their expectations. Star quantifiers (``X*``) are not
+        supported — use counted repetition (``Z?{n}``) or positional
+        anchors instead.
+
+        Args:
+            pattern: A Pauli pattern string (e.g. ``"Z?{2}"`` or ``"Z0Z1"``).
+
+        Returns:
+            The summed expectation value.
+        """
+        return self._interface.trace(pattern)
 
     def u3(self, addr0: int, theta: float, phi: float, lam: float):
         """Apply the U3 gate to the specified qubit.
@@ -316,7 +371,7 @@ class GeneralizedTableau(
             fresh tableau per shot).
         """
         raw = self._interface.run(prog)
-        return [MeasurementResult(x) for x in raw]
+        return [_BY_VALUE[x] for x in raw]
 
     # stim familiarity alias
     do = run
@@ -325,7 +380,7 @@ class GeneralizedTableau(
     def sample(
         cls,
         prog: StimProgram,
-        n_qubits: int,
+        n_qubits: int | None = None,
         min_abs_coeff: float = 1e-10,
         num_shots: int = 1,
         seed: int | None = None,
@@ -335,6 +390,11 @@ class GeneralizedTableau(
         Each shot starts from a fresh tableau, so this is the right entry
         point for multi-shot sampling.
 
+        When ``n_qubits`` is ``None`` (the default) the qubit count is inferred
+        from the program via ``prog.num_qubits`` (one past the highest qubit
+        index it references), falling back to 1 for a program that touches no
+        qubits. Pass an explicit ``n_qubits`` to size the tableau larger.
+
         Shots run in parallel across CPU cores (the GIL is released during
         sampling), with a serial fallback for small batches. When ``seed`` is
         given (it must fit in an unsigned 64-bit integer), shot ``i`` uses
@@ -343,22 +403,26 @@ class GeneralizedTableau(
         ``RAYON_NUM_THREADS`` environment variable before the first call to
         control the pool size (it defaults to the number of logical cores).
         """
+        if n_qubits is None:
+            n_qubits = max(1, prog.num_qubits)
         native_cls = _native_tableau_cls(n_qubits)
         raw = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
-        return [[MeasurementResult(x) for x in shot] for shot in raw]
+        return [[_BY_VALUE[x] for x in shot] for shot in raw]
 
 
 def sample_stim(
     prog: StimProgram,
-    n_qubits: int,
+    n_qubits: int | None = None,
     min_abs_coeff: float = 1e-10,
     num_shots: int = 1,
     seed: int | None = None,
 ) -> list[list[MeasurementResult]]:
     """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``.
 
-    Shots are sampled in parallel across CPU cores with the GIL released; see
-    `GeneralizedTableau.sample` for seeding and ``RAYON_NUM_THREADS``.
+    When ``n_qubits`` is ``None`` (the default) the qubit count is inferred from
+    the program; see `GeneralizedTableau.sample`. Shots are sampled in parallel
+    across CPU cores with the GIL released; see `GeneralizedTableau.sample` for
+    seeding and ``RAYON_NUM_THREADS``.
     """
     return GeneralizedTableau.sample(
         prog, n_qubits, min_abs_coeff=min_abs_coeff, num_shots=num_shots, seed=seed

@@ -195,12 +195,8 @@ class Lindbladian:
         self,
         n_qubits: int,
         h_terms: Iterable[tuple[str, float]],
-<<<<<<< HEAD
-        jump_terms: Iterable[tuple[object, float]] = (),
-        kossakowski: tuple[Sequence[object], object] | None = None,
-=======
         jump_terms: Iterable[tuple[str | PauliLincomb, float]] = (),
->>>>>>> split/3-symmetric-evolution
+        kossakowski: tuple[Sequence[str | PauliLincomb], object] | None = None,
     ):
         self.n_qubits = int(n_qubits)
         h_strs: list[str] = []

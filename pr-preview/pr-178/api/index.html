@@ -615,7 +615,7 @@ as a <em>real pair</em>: <code>self</code> is the real part and <code>other</cod
 imaginary part of <code>O = self + i·other</code>. Both are overwritten in
 place with the orbit-representative form projected onto momentum
 sector <code>momentum</code>.</p>
-<p>Generalizes :meth:<code>symmetry_merge</code> to non-trivial momentum sectors
+<p>Generalizes <code>symmetry_merge</code> to non-trivial momentum sectors
 (<code>k != 0</code>) while keeping real coefficients on both PauliSums — the
 only complex arithmetic is the internal character-weighted fold.
 <code>self</code> and <code>other</code> must be distinct objects with the same qubit
@@ -623,7 +623,7 @@ count. Exact after a translation-covariant gate layer; under a
 generic Trotter step it carries the same <code>O(dt^{p+1})</code> equivariance
 error as the <code>k=0</code> merge.</p>
 </div><section class="doc-section"> <h5>Parameters</h5> <dl class="param-list">  <dt> <code class="param-name">other</code> <code class="param-type">PauliSum</code>   </dt> <dd><p>the PauliSum holding the imaginary component (modified in place).</p>
-</dd>  <dt> <code class="param-name">group</code>    </dt> <dd><p>a :class:<code>ppvm._core.TranslationGroup</code>.</p>
+</dd>  <dt> <code class="param-name">group</code>    </dt> <dd><p>a <code>ppvm._core.TranslationGroup</code>.</p>
 </dd>  <dt> <code class="param-name">momentum</code>    </dt> <dd><p>sequence of integer modes, one per group generator
 (e.g. <code>[k]</code> for a 1D chain; <code>[0, ...]</code> is the trivial sector).</p>
 </dd>  </dl> </section>   </div> </details> </article><article class="api-item" id="py-ppvm-paulisum-PauliSum-new" data-name="new" data-path="ppvm.paulisum.paulisum.new" data-kind="method"> <div class="row1"> <span class="kind kind-method">method</span> <span class="name"><a href="#py-ppvm-paulisum-PauliSum-new">new</a></span> <span class="path">ppvm.paulisum.PauliSum.new</span> </div> <div class="signature">new(cls, n_qubits: int, terms, min_abs_coeff: float = 1e-10, max_pauli_weight = None, max_loss_weight = None, preserve_strings = None) -&gt; Self</div> <p class="summary">Create a PauliSum from one or more terms with flexible input formats.</p> <details> <summary>Full docstring</summary> <div class="docstring"> <div class="doc-prose"><p>Create a PauliSum from one or more terms with flexible input formats.</p>
@@ -669,7 +669,7 @@ merging steps, this preserves all <code>group</code>-invariant expectation
 values (Theorem 1 of Teng et al., arXiv:2512.12094). Plain
 real-coefficient merge — handles the trivial (<code>k=0</code>) momentum
 sector only.</p>
-</div><section class="doc-section"> <h5>Parameters</h5> <dl class="param-list">  <dt> <code class="param-name">group</code>    </dt> <dd><p>A :class:<code>ppvm._core.TranslationGroup</code>
+</div><section class="doc-section"> <h5>Parameters</h5> <dl class="param-list">  <dt> <code class="param-name">group</code>    </dt> <dd><p>A <code>ppvm._core.TranslationGroup</code>
 (use <code>TranslationGroup.chain_1d(n)</code>, <code>.torus_2d</code>,
 <code>.torus_3d</code>, <code>.ladder</code>, or <code>.from_generators</code>).</p>
 </dd>  </dl> </section>   </div> </details> </article><article class="api-item" id="py-ppvm-paulisum-PauliSum-trace" data-name="trace" data-path="ppvm.paulisum.paulisum.trace" data-kind="method"> <div class="row1"> <span class="kind kind-method">method</span> <span class="name"><a href="#py-ppvm-paulisum-PauliSum-trace">trace</a></span> <span class="path">ppvm.paulisum.PauliSum.trace</span> </div> <div class="signature">trace(pattern: str) -&gt; float</div> <p class="summary">Compute the trace using a pattern string.</p> <details> <summary>Full docstring</summary> <div class="docstring"> <div class="doc-prose"><p>Compute the trace using a pattern string.</p>

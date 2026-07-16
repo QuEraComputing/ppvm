@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Configuration objects for the predictor-corrector stepper.
 
 /// Truncation and execution policy for a single predictor-corrector step

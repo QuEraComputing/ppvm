@@ -1,5 +1,7 @@
 from collections.abc import Sequence
 
+import numpy as np
+
 class _PauliSumBase:
     def __init__(
         self,
@@ -60,6 +62,14 @@ class _PauliSumBase:
     def terms(self) -> list[tuple[str, float]]: ...
     def weights(self) -> list[tuple[str, int]]: ...
     def current_max_weight(self) -> int: ...
+    # Only on non-loss variants (see create_interface_symmetry_methods).
+    def symmetry_merge(self, group: TranslationGroup) -> None: ...
+    def momentum_merge(
+        self,
+        other: _PauliSumBase,
+        group: TranslationGroup,
+        momentum: list[int],
+    ) -> None: ...
 
 class _PauliSumLossBase(_PauliSumBase):
     def loss_channel(self, addr0: int, p: float, truncate: bool = True) -> None: ...
@@ -343,3 +353,103 @@ class TableauSumSampler29(_TableauSumSamplerBase): ...
 class TableauSumSampler30(_TableauSumSamplerBase): ...
 class TableauSumSampler31(_TableauSumSamplerBase): ...
 class TableauSumSampler32(_TableauSumSamplerBase): ...
+
+class LindbladSpec:
+    def __init__(
+        self,
+        n_qubits: int,
+        h_terms: list[str],
+        h_coeffs: list[float],
+        jump_lincombs: list[list[tuple[str, float, float]]],
+        jump_rates: list[float],
+    ) -> None: ...
+    @property
+    def n_qubits(self) -> int: ...
+    @property
+    def num_h_terms(self) -> int: ...
+    @property
+    def num_jump_terms(self) -> int: ...
+    def action(self, p: np.ndarray) -> tuple[np.ndarray, np.ndarray]: ...
+    def leakage(
+        self,
+        basis: np.ndarray,
+        coeffs: np.ndarray,
+        protected: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]: ...
+    def pc_step(
+        self,
+        basis: np.ndarray,
+        coeffs: np.ndarray,
+        dt: float,
+        max_basis: int,
+        drop_tol: float = 0.0,
+        protected: np.ndarray | None = None,
+        num_threads: int | None = None,
+        admit_basis: int | None = None,
+        tau_add: float | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]: ...
+    def pc_step_timed(
+        self,
+        basis: np.ndarray,
+        coeffs: np.ndarray,
+        dt: float,
+        max_basis: int,
+        drop_tol: float = 0.0,
+        protected: np.ndarray | None = None,
+        num_threads: int | None = None,
+        admit_basis: int | None = None,
+        tau_add: float | None = None,
+    ) -> tuple[tuple[np.ndarray, np.ndarray], dict[str, int]]: ...
+    def pc_step_orbit_rep(
+        self,
+        basis: np.ndarray,
+        coeffs: np.ndarray,
+        dt: float,
+        max_basis: int,
+        group: TranslationGroup,
+        momentum: np.ndarray,
+        drop_tol: float = 0.0,
+        protected: np.ndarray | None = None,
+        canonicalize_first: bool = False,
+        admit_basis: int | None = None,
+        tau_add: float | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]: ...
+    def generator(self, basis: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]: ...
+
+class TranslationGroup:
+    @staticmethod
+    def chain_1d(n: int) -> TranslationGroup: ...
+    @staticmethod
+    def torus_2d(lx: int, ly: int) -> TranslationGroup: ...
+    @staticmethod
+    def torus_3d(lx: int, ly: int, lz: int) -> TranslationGroup: ...
+    @staticmethod
+    def ladder(l: int, n_legs: int) -> TranslationGroup: ...
+    @staticmethod
+    def from_generators(
+        n_qubits: int, perms: list[list[int]], orders: list[int]
+    ) -> TranslationGroup: ...
+    @property
+    def n_qubits(self) -> int: ...
+    @property
+    def n_generators(self) -> int: ...
+    @property
+    def order(self) -> int: ...
+    def canonicalize(self, pauli: np.ndarray) -> np.ndarray: ...
+
+def canonicalize_basis_arr(
+    basis: np.ndarray, coeffs: np.ndarray, group: TranslationGroup
+) -> tuple[np.ndarray, np.ndarray]: ...
+def canonicalize_basis_arr_complex(
+    basis: np.ndarray,
+    coeffs: np.ndarray,
+    group: TranslationGroup,
+    momentum: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]: ...
+def check_momentum_sector_arr(
+    basis: np.ndarray,
+    coeffs: np.ndarray,
+    group: TranslationGroup,
+    momentum: np.ndarray,
+    tol: float = 1e-8,
+) -> None: ...

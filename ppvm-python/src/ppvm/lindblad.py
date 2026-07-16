@@ -116,7 +116,7 @@ def sigma_minus(site: int, n_qubits: int) -> list[tuple[str, complex]]:
     return [(x_str, 0.5 + 0.0j), (y_str, 0.0 - 0.5j)]
 
 
-def _normalize_jump(jump_op: object) -> list[tuple[str, float, float]]:
+def _normalize_jump(jump_op: str | PauliLincomb) -> list[tuple[str, float, float]]:
     """Convert a user-supplied jump operator to ``[(pauli_str, re, im), ...]``.
 
     Accepts either a single Pauli string (treated as a Hermitian-Pauli jump
@@ -171,7 +171,7 @@ class Lindbladian:
         self,
         n_qubits: int,
         h_terms: Iterable[tuple[str, float]],
-        jump_terms: Iterable[tuple[object, float]] = (),
+        jump_terms: Iterable[tuple[str | PauliLincomb, float]] = (),
     ):
         self.n_qubits = int(n_qubits)
         h_strs: list[str] = []

@@ -42,6 +42,7 @@ from collections.abc import Iterable, Sequence
 from typing import Union
 
 import numpy as np
+
 from ._core import LindbladSpec as _LindbladSpec
 
 _PAULI_CODE = {"I": 0, "X": 1, "Z": 2, "Y": 3}

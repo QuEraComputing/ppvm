@@ -1,0 +1,7 @@
+[[metric]]
+"commit" = "20d8b2bb"
+"status" = "keep"
+"description" = "baseline: KossakowskiPair arm as merged (per-string complex coeff products)"
+"kossakowski_n30_ms" = 250.1
+"eigenmode_n30_ms" = 4349.0
+

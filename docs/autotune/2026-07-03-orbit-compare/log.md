@@ -1687,3 +1687,23 @@ Post-merge gates, all green:
 Branch is now mergeable into main; PR can be opened. origin/lindblad-shim
 moved upstream (f14edafc -> 7c458d6a) while we worked -- check what landed
 there before closing #98 as superseded.
+
+## Pre-PR comment + simplification pass (2026-07-16)
+
+One pass over all 28 files the branch adds vs origin/main. Comments made
+short/factual (no ledger, campaign, PR, or removed-feature references).
+Dead code deleted (all zero-caller, verified by grep across crates +
+bindings): max_action_coef, spmv_matrix_free, compute_action_sum{,_complex},
+lib.rs prune_basis_complex, select_ms max_m param, gencsr timing fields,
+orphaned PPVM_K_LEAKAGE doc block. Duplication collapsed: comm_product =
+pauli_mul + eps map; CachedCscOp/OrbitRepCscOp -> generic CscOp<T> in
+mf_expm (~120 lines); one decode_basis for both binding modules.
+Consistency: pc_step_timed now honors admit_basis/tau_add (binding kwargs
+added; dict lost the always-zero gencsr keys). Zero clippy warnings in
+ppvm-lindblad + ppvm-pauli-sum.
+
+Gates after the refactor, all green: tests 7/7 + 36 + 23 (python);
+L=5 momentum BIT-IDENTICAL to sanity_pec_L5_v5.h5 (max|dC| = 0);
+adaptive:0.1:1e-3:K1 -> 5.19e-3 / 77,820 exact;
+adaptive:0.05:0:M100k:A200k -> 1.99e-3 / 1.20e-2 exact.
+Commit: refactor comment pass (parent of this ledger commit).

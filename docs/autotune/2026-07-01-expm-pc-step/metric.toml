@@ -1,0 +1,23 @@
+[[metric]]
+"commit" = "d0928c21"
+"status" = "keep"
+"description" = "baseline: real-space XY ladder N=10, 15 pc_step, drop=1e-3"
+"wall_s" = 3.275
+"rss_mb" = 250.0
+"peak_basis" = 15414.0
+
+[[metric]]
+"commit" = "f93a230e"
+"status" = "discard"
+"description" = "cache-action CSC (port of orbit-rep): no wall win at dt=0.05 (few matvecs; scatter dominates, not action-recompute)"
+"wall_s" = 3.343
+"rss_mb" = 264.0
+"peak_basis" = 15414.0
+
+[[metric]]
+"commit" = "8eab9190"
+"status" = "keep"
+"description" = "cache generator action (CSC) once/call + tol-matched (1e-6) expm table; correct build"
+"wall_s" = 0.665
+"rss_mb" = 310.0
+"peak_basis" = 15398.0

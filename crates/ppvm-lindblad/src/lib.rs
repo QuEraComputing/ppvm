@@ -28,9 +28,10 @@
 //!   FP noise).
 //!
 //! Pauli strings are stored as [`ppvm_pauli_word::word::PauliWord`] backed by
-//! `[u64; 2]` (≤128 qubits) with cached hashes for fast HashMap lookup. The
-//! hot-path commutator/product loops bypass the higher-level word API and
-//! operate directly on raw `u64` chunks for speed.
+//! two 64-bit chunks (≤128 qubits; four 32-bit chunks on 32-bit targets)
+//! with cached hashes for fast HashMap lookup. The hot-path commutator/
+//! product loops bypass the higher-level word API and operate directly on
+//! the raw chunks for speed.
 
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use num::Complex;
@@ -46,18 +47,29 @@ pub(crate) mod expm;
 /// Matrix-free / quspin-expm-backed `exp(dt·L*)·b` engine. See module docs.
 pub(crate) mod mf_expm;
 
-/// Words pack up to 128 qubits.
-const W_U64: usize = 2;
+/// Pauli-word storage chunk: `u64` on 64-bit targets, `u32` elsewhere
+/// (`bitvec` implements `BitStore` for `u64` only on 64-bit targets, so
+/// e.g. wasm32 builds use four 32-bit chunks instead of two 64-bit ones).
+#[cfg(target_pointer_width = "64")]
+type Chunk = u64;
+#[cfg(not(target_pointer_width = "64"))]
+type Chunk = u32;
 
-/// Maximum number of qubits supported by [`Word`] (= `8 · W_U64 · sizeof(u64)`).
-pub const MAX_QUBITS: usize = 64 * W_U64;
+/// Chunks per word; words pack up to 128 qubits on every target.
+#[cfg(target_pointer_width = "64")]
+const W_CHUNKS: usize = 2;
+#[cfg(not(target_pointer_width = "64"))]
+const W_CHUNKS: usize = 4;
+
+/// Maximum number of qubits supported by [`Word`].
+pub const MAX_QUBITS: usize = 128;
 
 /// The Pauli-word storage type used throughout this crate.
 ///
-/// `[u64; 2]` covers up to 128 qubits; the `FxBuildHasher` matches the
-/// hash used by the `FxHashMap` keys we wrap with; `REHASH=true` means
-/// `set()` keeps the cached hash in sync.
-pub type Word = PauliWord<[u64; W_U64], FxBuildHasher, true>;
+/// `[Chunk; W_CHUNKS]` covers up to 128 qubits; the `FxBuildHasher`
+/// matches the hash used by the `FxHashMap` keys we wrap with;
+/// `REHASH=true` means `set()` keeps the cached hash in sync.
+pub type Word = PauliWord<[Chunk; W_CHUNKS], FxBuildHasher, true>;
 
 pub use config::PcStepConfig;
 pub use error::Error;
@@ -192,7 +204,7 @@ fn phase_factor(phase: u8) -> Complex<f64> {
 #[inline(always)]
 fn anti_commutes(a: &Word, b: &Word) -> bool {
     let mut bits: u32 = 0;
-    for i in 0..W_U64 {
+    for i in 0..W_CHUNKS {
         bits += (a.xbits.data[i] & b.zbits.data[i]).count_ones();
         bits += (a.zbits.data[i] & b.xbits.data[i]).count_ones();
     }
@@ -222,7 +234,7 @@ fn pauli_mul(p: &Word, q: &Word) -> (Word, u8) {
     let mut out = Word::new(p.n_qubits());
     let mut sign_count: u32 = 0;
     let mut imag_count: u32 = 0;
-    for i in 0..W_U64 {
+    for i in 0..W_CHUNKS {
         let a = p.xbits.data[i];
         let b = p.zbits.data[i];
         let c = q.xbits.data[i];

@@ -11,3 +11,10 @@
 "description" = "it1: flat (P_a,P_b,\u03bb*\u03bcK) sandwich table + fold \u2212K into dd at compile time; removes per-string complex products"
 "kossakowski_n30_ms" = 225.6
 
+[[metric]]
+"commit" = "5be5efc9"
+"status" = "discard"
+"description" = "it2: reuse left product P_a\u00b7p per equal-P_a run in sand table \u2014 same-load A/B 288.3 (it1) vs 290.4 ms (it2), within noise; simpler code wins. NOTE: absolute numbers shifted ~+28% vs baseline session (load); decisions from same-session A/B only"
+"kossakowski_n30_ms_sameload_it1" = 288.3
+"kossakowski_n30_ms_sameload_it2" = 290.4
+

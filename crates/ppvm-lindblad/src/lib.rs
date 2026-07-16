@@ -297,8 +297,8 @@ enum JumpKind {
         dd: Vec<PauliTerm>,
         /// Support bit masks (`xbits | zbits` union) of `A_n` and `A_m`,
         /// for the one-sided fast path in the action.
-        left_mask: [u64; W_U64],
-        right_mask: [u64; W_U64],
+        left_mask: [Chunk; W_CHUNKS],
+        right_mask: [Chunk; W_CHUNKS],
     },
 }
 
@@ -536,7 +536,7 @@ impl LindbladSpec {
                     }
                 }
                 let support_mask = |terms: &[PauliTerm]| {
-                    let mut mask = [0u64; W_U64];
+                    let mut mask = [0 as Chunk; W_CHUNKS];
                     for t in terms {
                         for (i, slot) in mask.iter_mut().enumerate() {
                             *slot |= t.word.xbits.data[i] | t.word.zbits.data[i];
@@ -1040,11 +1040,12 @@ impl LindbladSpec {
                     // then merges with the anticommutator). With
                     // `[P_c, p] = −i·eps·out` from `comm_product`, the term
                     // coefficient is `∓ t_c · (i/2) · eps`.
-                    let mut p_bits = [0u64; W_U64];
+                    let mut p_bits = [0 as Chunk; W_CHUNKS];
                     for (i, slot) in p_bits.iter_mut().enumerate() {
                         *slot = p.xbits.data[i] | p.zbits.data[i];
                     }
-                    let hits = |mask: &[u64; W_U64]| (0..W_U64).any(|i| mask[i] & p_bits[i] != 0);
+                    let hits =
+                        |mask: &[Chunk; W_CHUNKS]| (0..W_CHUNKS).any(|i| mask[i] & p_bits[i] != 0);
                     let (hit_l, hit_r) = (hits(left_mask), hits(right_mask));
                     if !(hit_l && hit_r) {
                         // exactly one side hit (pair is a candidate, so at

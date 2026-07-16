@@ -20,6 +20,7 @@ use ppvm_lindblad::{JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, 
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
+type PyPauliMapComplex<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>);
 type PyCoo<'py> = (
     Bound<'py, PyArray1<u64>>,
     Bound<'py, PyArray1<u64>>,
@@ -388,7 +389,7 @@ impl LindbladSpec {
         canonicalize_first: bool,
         admit_basis: Option<usize>,
         tau_add: Option<f64>,
-    ) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>)> {
+    ) -> PyResult<PyPauliMapComplex<'py>> {
         use num::Complex;
         use ppvm_lindblad::orbit_rep;
 

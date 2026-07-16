@@ -439,14 +439,12 @@ pub fn pc_step_orbit_rep(
     basis: &mut Vec<Word>,
     coeffs: &mut Vec<Complex<f64>>,
     dt: f64,
-    max_basis: usize,
-    drop_tol: f64,
     protected: &[Word],
     group: &TranslationGroup,
     k_modes: &[i32],
-    admit_basis: Option<usize>,
-    tau_add: Option<f64>,
+    cfg: &crate::PcStepConfig,
 ) -> Result<(), Error> {
+    let crate::PcStepConfig { max_basis, admit_basis, drop_tol, tau_add, .. } = *cfg;
     // Working-set (admission) bound, mirroring the real-space `pc_step`:
     // enrichment may grow the live basis to `admit` >= `max_basis`; the
     // final `cap_basis_complex` keeps the top-`max_basis` reps by evolved

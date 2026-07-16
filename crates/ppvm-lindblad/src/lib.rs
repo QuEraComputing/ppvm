@@ -41,6 +41,8 @@ use rayon::prelude::*;
 use std::fmt;
 use std::time::Instant;
 
+pub mod config;
+pub mod error;
 pub mod expm;
 
 /// Matrix-free / quspin-expm-backed `exp(dt·L*)·b` engine. See module docs.
@@ -76,74 +78,9 @@ pub const MAX_QUBITS: usize = 64 * W_U64;
 /// `set()` keeps the cached hash in sync.
 pub type Word = PauliWord<[u64; W_U64], FxBuildHasher, true>;
 
-/// Errors raised when constructing a [`LindbladSpec`].
-#[derive(Debug, Clone)]
-pub enum Error {
-    TooManyQubits {
-        got: usize,
-    },
-    LengthMismatch {
-        what: &'static str,
-        a: usize,
-        b: usize,
-    },
-    InvalidPauliCode {
-        code: u8,
-    },
-    InvalidPauliChar {
-        c: char,
-    },
-    WrongLength {
-        expected: usize,
-        got: usize,
-    },
-    NegativeRate {
-        index: usize,
-        rate: f64,
-    },
-    EmptyLincomb {
-        index: usize,
-    },
-    Internal(String),
-}
+pub use config::PcStepConfig;
+pub use error::Error;
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::TooManyQubits { got } => {
-                write!(
-                    f,
-                    "LindbladSpec supports n_qubits ≤ {MAX_QUBITS}; got {got}"
-                )
-            }
-            Error::LengthMismatch { what, a, b } => {
-                write!(f, "{what}: expected matching lengths, got {a} and {b}")
-            }
-            Error::InvalidPauliCode { code } => write!(
-                f,
-                "Pauli code must be 0 (I), 1 (X), 2 (Z), or 3 (Y); got {code}"
-            ),
-            Error::InvalidPauliChar { c } => {
-                write!(f, "invalid Pauli character '{c}'; expected I, X, Y, or Z")
-            }
-            Error::WrongLength { expected, got } => {
-                write!(f, "Pauli string has length {got} but n_qubits = {expected}")
-            }
-            Error::NegativeRate { index, rate } => {
-                write!(f, "jump rate must be non-negative; got γ_{index} = {rate}")
-            }
-            Error::EmptyLincomb { index } => {
-                write!(
-                    f,
-                    "jump {index}: lincomb must contain at least one Pauli term"
-                )
-            }
-            Error::Internal(msg) => write!(f, "internal error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 /// Per-phase timing breakdown (microseconds) returned by
 /// [`LindbladSpec::pc_step_timed`].
@@ -971,138 +908,30 @@ impl LindbladSpec {
         Ok(merged.into_iter().filter(|(_, c)| c.norm() > 0.0).collect())
     }
 
-    /// Complex-coefficient predictor-corrector step.
+    /// One predictor-corrector step `O ← exp(dt·L*) O` in the adaptive
+    /// real-coefficient Pauli basis: first-hop leakage admission, predictor
+    /// exponential, second-hop admission from the predicted state, corrector
+    /// exponential from the saved pre-step state, then truncation (prune +
+    /// rank cap) per [`PcStepConfig`]. Exact in `dt` within the working
+    /// basis — the only error is basis truncation.
     ///
-    /// Same algorithm as [`Self::pc_step`]: first-hop leakage expansion,
-    /// predictor `exp(dt·M)`, second-hop expansion from predicted state,
-    /// corrector `exp(dt·M)` from saved pre-step state, then `drop_tol`
-    /// prune. Coefficients are complex throughout; `L*` matrix elements
-    /// are real, so the real matrix-free engine is applied to the real and
-    /// imaginary parts separately (see [`Self::expm_step_complex`]).
-    ///
-    /// `drop_tol` is compared against `|c|` (complex magnitude). The
-    /// `protected` set is honoured exactly as in the real path.
-    ///
-    /// When `sym_group` and `momentum` are both `Some`, the input
-    /// `(basis, coeffs)` is checked against the momentum sector using
-    /// [`ppvm_pauli_sum::symmetry::check_momentum_sector`] before any
-    /// evolution. If the input is not in sector `momentum`, an error
-    /// is returned and no evolution is performed. This is purely
-    /// validation — pc_step itself evolves in the standard full-basis
-    /// representation, and translation symmetry of `L*` keeps the
-    /// state inside the input's momentum sector throughout.
-    ///
-    /// **For memory reduction**: this function does NOT merge into
-    /// orbit-rep form during evolution. The correct workflow is to
-    /// evolve as many steps as desired in full-basis form, then
-    /// call [`ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex`]
-    /// at observable-readout / snapshot points. Per-step orbit-rep
-    /// evolution would require phase-aware action / CSR (complex matrix
-    /// elements, not just complex vectors) — a separate code path to
-    /// be added later.
-    #[allow(clippy::too_many_arguments)]
-
-    #[allow(clippy::too_many_arguments)]
-
-    /// Complex-vector variant of [`Self::expm_step`]. The generator is the
-    /// real in-basis matrix; only the vector is complex. Matrix-free.
-
-    /// One classical RK4 step on `O ← O + dt · L*(O)`, expanding the basis
-    /// naturally as the action explores new strings. After the step, drops
-    /// any string whose absolute coefficient is below `drop_tol` (protected
-    /// words always kept). No predictor-corrector enrichment, no Krylov
-    /// machinery, no CSR build — just four matrix-free action evaluations
-    /// followed by a magnitude prune.
-    ///
-    /// Per-step local truncation error is `O(dt^5)` from the integrator.
-    /// **Stability** requires `dt ≤ 2.78 / ‖L*‖` (RK4 absolute-stability
-    /// boundary). For an n-qubit lattice Hamiltonian with bounded local
-    /// terms this typically means `dt ≲ O(1) / n`; the dissipator further
-    /// shrinks the bound at large `γ`. Violating the bound is **not
-    /// signalled** — the trajectory will norm-conserve but individual Pauli
-    /// coefficients diverge to oscillating ±large values that cancel; the
-    /// observable looks fine, the basis still grows, but local quantities
-    /// like MSD blow up. Always verify against a small in-band
-    /// truncation case (e.g. against ED, or against [`Self::pc_step`]
-    /// which is unconditionally stable) before trusting tight-`drop_tol`
-    /// results at large `dt`.
-    ///
-    /// For stiff problems where the stability bound is restrictive, prefer
-    /// [`Self::pc_step`], which integrates `exp(dt·L*)` via Krylov scaling-
-    /// and-squaring and is unconditionally stable in `dt`.
-    ///
-    /// `num_threads`, when set, runs the entire step inside a freshly built
-    /// rayon thread pool of that size.
-    ///
-    /// DEPRECATED: superseded by [`Self::pc_step`]. The RK4 step supports
-    /// only `drop_tol` truncation (no `max_basis` cap, no `admit_basis`
-    /// displacement) — the scheme the 2026-07 benchmarking campaign found
-    /// weakest (docs/autotune/2026-07-03-orbit-compare/log.md). Kept for
-    /// the `--mode rk4` harness path; do not use in new code.
-
-
-
-
-    /// Predictor-corrector adaptive step.
-    ///
-    /// Mutates `basis` (may grow) and `coeffs` in place to reflect the
-    /// state at time `t + dt`. The step is:
-    ///
-    /// 1. **First-hop expansion**: compute leakage from the current state
-    ///    and append the largest leakage Paulis to the basis (with starting
-    ///    coefficient 0), up to `room = max_basis − basis.len()` new strings.
-    /// 2. **Predictor**: apply `exp(dt · M)` to `coeffs` on the enlarged
-    ///    basis, yielding a predicted state.
-    /// 3. **Second-hop expansion**: compute leakage from the *predicted*
-    ///    state and append any further leakage strings — these are the
-    ///    second-hop Paulis the predictor flowed into but did not yet have
-    ///    in basis.
-    /// 4. **Corrector**: redo `exp(dt · M)` on the doubly-enlarged basis
-    ///    starting from the saved pre-step coefficients.
-    ///
-    /// Lifts the per-step truncation error from `O(dt²)` (single-hop) to
-    /// `O(dt³)`. Strings in `protected` are never added to the basis as
-    /// leakage targets — typically the observable's support, which the
-    /// caller wants tracked exactly.
-    ///
-    /// `max_basis` is a hard rank cap on the live basis: enrichment adds at
-    /// most `max_basis − basis.len()` of the largest leakage strings, the
-    /// leakage map is capped to the same room, and the post-step basis is
-    /// trimmed to the top-`max_basis` by `|coeff|` (protected words always
-    /// kept). Pass a large value (e.g. `usize::MAX`) for the near-exact,
-    /// uncapped case. `drop_tol` additionally prunes by magnitude.
-    ///
-    /// `num_threads`, when set, runs the entire step inside a freshly built
-    /// rayon thread pool of that size — useful for benchmarking parallel
-    /// scaling. When `None`, the global rayon pool is used.
-    ///
-    #[allow(clippy::too_many_arguments)]
+    /// `protected` words are never dropped. All tuning knobs live in `cfg`.
     pub fn pc_step(
         &self,
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        max_basis: usize,
-        drop_tol: f64,
         protected: &[Word],
-        num_threads: Option<usize>,
-        admit_basis: Option<usize>,
-        tau_add: Option<f64>,
+        cfg: &PcStepConfig,
     ) -> Result<(), Error> {
-        if let Some(n) = num_threads {
+        if let Some(n) = cfg.num_threads {
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(n)
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
-            pool.install(|| {
-                self.pc_step_inner(
-                    basis, coeffs, dt, max_basis, drop_tol, protected, admit_basis, tau_add,
-                )
-            })
+            pool.install(|| self.pc_step_inner(basis, coeffs, dt, protected, cfg))
         } else {
-            self.pc_step_inner(
-                basis, coeffs, dt, max_basis, drop_tol, protected, admit_basis, tau_add,
-            )
+            self.pc_step_inner(basis, coeffs, dt, protected, cfg)
         }
     }
 
@@ -1110,31 +939,22 @@ impl LindbladSpec {
     /// breakdown (microseconds), for profiling parallel scaling and hot
     /// spots. Output: `(leakage1, expand1, gencsr1, expm1, leakage2,
     /// expand2, gencsr2, expm2)`.
-    #[allow(clippy::too_many_arguments)]
     pub fn pc_step_timed(
         &self,
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        max_basis: usize,
-        drop_tol: f64,
         protected: &[Word],
-        num_threads: Option<usize>,
+        cfg: &PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
-        if let Some(n) = num_threads {
+        if let Some(n) = cfg.num_threads {
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(n)
                 .build()
                 .map_err(|e| Error::Internal(format!("rayon pool build: {e}")))?;
-            pool.install(|| {
-                self.pc_step_inner_timed(
-                    basis, coeffs, dt, max_basis, drop_tol, protected,
-                )
-            })
+            pool.install(|| self.pc_step_inner_timed(basis, coeffs, dt, protected, cfg))
         } else {
-            self.pc_step_inner_timed(
-                basis, coeffs, dt, max_basis, drop_tol, protected,
-            )
+            self.pc_step_inner_timed(basis, coeffs, dt, protected, cfg)
         }
     }
 
@@ -1143,13 +963,12 @@ impl LindbladSpec {
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        max_basis: usize,
-        drop_tol: f64,
         protected: &[Word],
+        cfg: &PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
+        let PcStepConfig { max_basis, drop_tol, tau_add, .. } = *cfg;
+        let tau_add = tau_add.unwrap_or(0.0);
         let mut t = PcStepTimings::default();
-        // timed variant runs without the leakage admission filter
-        let tau_add = 0.0_f64;
 
         let t0 = Instant::now();
         let leak = self.leakage_with_prune(basis, coeffs, protected, max_basis, tau_add)?;
@@ -1192,12 +1011,10 @@ impl LindbladSpec {
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        max_basis: usize,
-        drop_tol: f64,
         protected: &[Word],
-        admit_basis: Option<usize>,
-        tau_add: Option<f64>,
+        cfg: &PcStepConfig,
     ) -> Result<(), Error> {
+        let PcStepConfig { max_basis, admit_basis, drop_tol, tau_add, .. } = *cfg;
         // Working-set (admission) bound: enrichment may grow the live basis
         // to `admit` >= `max_basis`; the final `cap_basis` then keeps the
         // top-`max_basis` strings by evolved |coeff| over the whole union
@@ -1663,7 +1480,14 @@ mod tests {
         // Evolve in orbit-rep form (max_basis large ⇒ full enrichment).
         for _ in 0..n_steps {
             orbit_rep::pc_step_orbit_rep(
-                &spec, &mut br, &mut cr, dt, 10_000_000, 0.0, &protected, &group, &k, None, None,
+                &spec,
+                &mut br,
+                &mut cr,
+                dt,
+                &protected,
+                &group,
+                &k,
+                &PcStepConfig { max_basis: 10_000_000, ..Default::default() },
             )
             .unwrap();
         }
@@ -1736,12 +1560,8 @@ mod tests {
                 &mut basis_r,
                 &mut coeffs_r,
                 dt,
-                10_000_000,
-                0.0,
                 &protected,
-                None,
-                None,
-                None,
+                &PcStepConfig { max_basis: 10_000_000, ..Default::default() },
             )
             .unwrap();
             pc_step_complex_full(&spec, &mut basis_c, &mut coeffs_c, dt);
@@ -1831,33 +1651,13 @@ mod tests {
             // PP — the regime where merging commutes with evolution).
             // drop_tol = 0 → no truncation. This reproduces the old
             // tau_add = +∞ no-add behaviour under the rank-cap API.
-            let max_basis_u = basis_u.len();
-            spec.pc_step(
-                &mut basis_u,
-                &mut coeffs_u,
-                dt,
-                max_basis_u,
-                0.0, // drop_tol = 0 → no truncation
-                &protected,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
+            let cfg_u = PcStepConfig { max_basis: basis_u.len(), ..Default::default() };
+            spec.pc_step(&mut basis_u, &mut coeffs_u, dt, &protected, &cfg_u)
+                .unwrap();
 
-            let max_basis_m = basis_m.len();
-            spec.pc_step(
-                &mut basis_m,
-                &mut coeffs_m,
-                dt,
-                max_basis_m,
-                0.0,
-                &protected,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
+            let cfg_m = PcStepConfig { max_basis: basis_m.len(), ..Default::default() };
+            spec.pc_step(&mut basis_m, &mut coeffs_m, dt, &protected, &cfg_m)
+                .unwrap();
             // Apply symmetry merging on the "with merging" run only.
             canonicalize_pauli_sum(&mut basis_m, &mut coeffs_m, &group);
         }

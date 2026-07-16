@@ -1641,3 +1641,22 @@ non-monotone) truncation bias at fixed B => ~3-4x larger B-to-B scatter.
 Same anti-dt mechanism: smaller dt is LESS converged at fixed B (needs larger
 B). Both centered on 3.76; dt=0.1 is better-converged per unit B (fewer
 events), which is why dt=0.1/K=3 is the practical sweet spot.
+
+## PcStepConfig ported (2026-07-07): PR #98 review debt cleared
+
+The maintainer-requested pattern from lindblad-shim b07f75de, re-applied to
+the current five-knob API: new config.rs with
+  PcStepConfig { max_basis, admit_basis, drop_tol, tau_add, num_threads }
+(each field documented with its measured role from this ledger; Default =
+uncapped near-exact reference config), and error.rs extracted from lib.rs.
+Signatures are now
+  pc_step(basis, coeffs, dt, protected, &cfg)
+  pc_step_timed(...same...)
+  pc_step_orbit_rep(spec, basis, coeffs, dt, protected, group, k, &cfg)
+Python kwargs UNCHANGED (binding builds the config internally, as in the
+original review response). Zero clippy::too_many_arguments allows remain in
+ppvm-lindblad. Orphaned doc-comment debris from the earlier removals (rk4 /
+pc_step_complex fragments attached to pc_step) cleaned. Regressions: tests
+7/7; L=5 momentum sanity 1.86e-3 and the tau_add cell (5.19e-3 / 77,820)
+bit-identical; displacement cell runs correctly through the full stack.
+PR #98 can now be closed as superseded when the campaign PR opens.

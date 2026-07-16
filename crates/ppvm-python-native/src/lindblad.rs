@@ -256,12 +256,14 @@ impl LindbladSpec {
                 &mut basis_words,
                 &mut coeffs_vec,
                 dt,
-                max_basis,
-                drop_tol,
                 &protected_words,
-                num_threads,
-                admit_basis,
-                tau_add,
+                &ppvm_lindblad::PcStepConfig {
+                    max_basis,
+                    admit_basis,
+                    drop_tol,
+                    tau_add,
+                    num_threads,
+                },
             )
             .map_err(map_err)?;
 
@@ -313,10 +315,14 @@ impl LindbladSpec {
                 &mut basis_words,
                 &mut coeffs_vec,
                 dt,
-                max_basis,
-                drop_tol,
                 &protected_words,
-                num_threads,
+                &ppvm_lindblad::PcStepConfig {
+                    max_basis,
+                    admit_basis: None,
+                    drop_tol,
+                    tau_add: None,
+                    num_threads,
+                },
             )
             .map_err(map_err)?;
 
@@ -418,13 +424,16 @@ impl LindbladSpec {
             &mut basis_words,
             &mut coeffs_vec,
             dt,
-            max_basis,
-            drop_tol,
             &protected_words,
             group.core(),
             k_slice,
-            admit_basis,
-            tau_add,
+            &ppvm_lindblad::PcStepConfig {
+                max_basis,
+                admit_basis,
+                drop_tol,
+                tau_add,
+                num_threads: None,
+            },
         )
         .map_err(map_err)?;
 

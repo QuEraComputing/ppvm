@@ -143,7 +143,7 @@ impl TranslationGroup {
 
     /// Return the canonical (lex-min) orbit representative of `pauli`.
     /// `pauli` is a length-`n_qubits` uint8 array with the encoding
-    /// `I=0, X=1, Y=2, Z=3`. Result is the same shape.
+    /// `0=I, 1=X, 2=Z, 3=Y`. Result is the same shape.
     pub fn canonicalize<'py>(
         &self,
         py: Python<'py>,

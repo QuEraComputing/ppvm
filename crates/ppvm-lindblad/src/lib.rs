@@ -45,6 +45,10 @@ mod word;
 /// Matrix-free / quspin-expm-backed `exp(dt·L*)·b` engine. See module docs.
 pub(crate) mod mf_expm;
 
+/// Per-step orbit-rep evolution under translation symmetry, with a
+/// phase-aware complex action. See module docs.
+pub mod orbit_rep;
+
 pub use basis::build_basis_index;
 pub use config::PcStepConfig;
 pub use error::Error;
@@ -54,3 +58,4 @@ pub use word::{MAX_QUBITS, Word, codes_from_word, parse_pauli_string, word_from_
 
 #[cfg(test)]
 mod tests;
+

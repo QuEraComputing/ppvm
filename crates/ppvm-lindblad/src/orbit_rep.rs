@@ -159,7 +159,10 @@ pub(crate) fn expm_apply_orbit_rep_cached(
     let (m_star, s) = crate::expm::select_ms(dt.abs() * onenorm);
 
     let mut v = coeffs.to_vec();
-    let op = CscOp { cols: &cols, dim: n };
+    let op = CscOp {
+        cols: &cols,
+        dim: n,
+    };
     let e = ExpmOp::from_parts(
         op,
         Complex::new(dt, 0.0),
@@ -310,7 +313,13 @@ pub fn pc_step_orbit_rep(
     k_modes: &[i32],
     cfg: &crate::PcStepConfig,
 ) -> Result<(), Error> {
-    let crate::PcStepConfig { max_basis, admit_basis, drop_tol, tau_add, .. } = *cfg;
+    let crate::PcStepConfig {
+        max_basis,
+        admit_basis,
+        drop_tol,
+        tau_add,
+        ..
+    } = *cfg;
     // Admission bound, mirroring the real-space `pc_step`: enrichment may
     // grow the live basis to `admit` >= `max_basis`; the final
     // `cap_basis_complex` keeps the top-`max_basis` reps by evolved |coeff|
@@ -329,8 +338,15 @@ pub fn pc_step_orbit_rep(
     //    once via `build_orbit_rep_cols`).
     let coeffs_predict = expm_apply_orbit_rep_cached(spec, basis, group, k_modes, dt, coeffs);
     // 3. Second-hop leakage from predicted state.
-    let mut leak2 =
-        leakage_orbit_rep(spec, basis, &coeffs_predict, protected, group, k_modes, admit)?;
+    let mut leak2 = leakage_orbit_rep(
+        spec,
+        basis,
+        &coeffs_predict,
+        protected,
+        group,
+        k_modes,
+        admit,
+    )?;
     drop(coeffs_predict);
     if tau_add > 0.0 {
         leak2.retain(|(_, c)| c.norm() > tau_add);
@@ -401,7 +417,9 @@ fn cap_basis_complex(
         return;
     } else {
         let k = slots - 1;
-        mags.select_nth_unstable_by(k, |a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        mags.select_nth_unstable_by(k, |a, b| {
+            b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+        });
         mags[k]
     };
     let mut write = 0;

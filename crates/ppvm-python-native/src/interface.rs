@@ -78,10 +78,7 @@ macro_rules! create_interface_symmetry_methods {
                         group.core().n_qubits(),
                     )));
                 }
-                ppvm_pauli_sum::symmetry::symmetry_merge_pauli_sum(
-                    &mut self.inner,
-                    group.core(),
-                );
+                ppvm_pauli_sum::symmetry::symmetry_merge_pauli_sum(&mut self.inner, group.core());
                 Ok(())
             }
 

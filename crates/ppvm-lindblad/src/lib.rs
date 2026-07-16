@@ -273,15 +273,14 @@ enum JumpKind {
         rate: f64,
     },
     /// One `(n, m)` pair of a Kossakowski-form dissipator
-    /// `D*(O) = Σ_{n,m} K_nm (A_n† O A_m − ½ {A_n† A_m, O})`.
-    /// `n`/`m` index into [`LindbladSpec::k_ops`]; `dd` is the precompiled
-    /// Pauli linear combination `A_n† A_m` (complex coefficients — not
-    /// Hermitian for `n ≠ m`; Hermiticity of the total action is restored
-    /// by the conjugate `(m, n)` pair).
+    /// `D*(O) = Σ_{n,m} K_nm (A_n† O A_m − ½ {A_n† A_m, O})`, fully
+    /// precompiled: `sand` holds one `(P_a, P_b, λ_a*·μ_b·K_nm)` entry per
+    /// sandwich term pair, and `dd` the lincomb `−K_nm · A_n†A_m` (the ½
+    /// cancels the anticommutator's 2). Coefficients are complex — not
+    /// Hermitian per pair; Hermiticity of the total action is restored by
+    /// the conjugate `(m, n)` pair.
     KossakowskiPair {
-        n: u32,
-        m: u32,
-        k: Complex<f64>,
+        sand: Vec<(Word, Word, Complex<f64>)>,
         dd: Vec<PauliTerm>,
     },
 }
@@ -506,14 +505,21 @@ impl LindbladSpec {
                 if k[n][m].norm() <= pair_tol {
                     continue;
                 }
-                let dd = precompute_adag_b(&self.k_ops[base + n], &self.k_ops[base + m]);
+                let dd = precompute_adag_b(&self.k_ops[base + n], &self.k_ops[base + m])
+                    .into_iter()
+                    .map(|t| PauliTerm {
+                        word: t.word,
+                        coeff: -k[n][m] * t.coeff,
+                    })
+                    .collect();
+                let mut sand = Vec::new();
+                for a in &self.k_ops[base + n] {
+                    for b in &self.k_ops[base + m] {
+                        sand.push((a.word, b.word, a.coeff.conj() * b.coeff * k[n][m]));
+                    }
+                }
                 let idx = self.j_kinds.len() as u32;
-                self.j_kinds.push(JumpKind::KossakowskiPair {
-                    n: (base + n) as u32,
-                    m: (base + m) as u32,
-                    k: k[n][m],
-                    dd,
-                });
+                self.j_kinds.push(JumpKind::KossakowskiPair { sand, dd });
                 let mut union: std::collections::BTreeSet<u32> =
                     op_support[n].iter().copied().collect();
                 union.extend(op_support[m].iter().copied());
@@ -982,25 +988,21 @@ impl LindbladSpec {
                         }
                     }
                 }
-                JumpKind::KossakowskiPair { n, m, k, dd } => {
-                    // Sandwich: K_nm Σ_{a ∈ A_n, b ∈ A_m} λ_a* μ_b P_a p P_b.
-                    for a in &self.k_ops[*n as usize] {
-                        let (r_ap, phi1) = pauli_mul(&a.word, p);
-                        for b in &self.k_ops[*m as usize] {
-                            let (s, phi2) = pauli_mul(&r_ap, &b.word);
-                            let coeff =
-                                a.coeff.conj() * b.coeff * phase_factor(phi1 + phi2) * k;
-                            *local.entry(s).or_insert(zero) += coeff;
-                        }
+                JumpKind::KossakowskiPair { sand, dd } => {
+                    // Sandwich: precompiled (P_a, P_b, λ_a*·μ_b·K_nm) table.
+                    for (wa, wb, c0) in sand {
+                        let (r_ap, phi1) = pauli_mul(wa, p);
+                        let (s, phi2) = pauli_mul(&r_ap, wb);
+                        *local.entry(s).or_insert(zero) += c0 * phase_factor(phi1 + phi2);
                     }
-                    // -1/2 K_nm {A_n†A_m, p}: same commuting-Pauli rule as
-                    // the jump anticommutator; `dd` coefficients are complex.
+                    // Anticommutator: `dd` coefficients carry −K_nm already;
+                    // same commuting-Pauli rule as the jump anticommutator.
                     for c_term in dd {
                         let (r, phase) = pauli_mul(&c_term.word, p);
                         if phase & 1 == 0 {
                             let sign = if phase == 0 { 1.0 } else { -1.0 };
                             *local.entry(r).or_insert(zero) +=
-                                -c_term.coeff * k * Complex::new(sign, 0.0);
+                                c_term.coeff * Complex::new(sign, 0.0);
                         }
                     }
                 }

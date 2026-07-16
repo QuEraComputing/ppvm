@@ -23,3 +23,9 @@ quspin-types = { git = "https://github.com/QuSpin/QuSpin-rust", rev = "a0ad6c9fe
 
 [dev-dependencies]
 approx = "0.5.1"
+criterion = "0.7.0"
+nalgebra = "0.34"
+
+[[bench]]
+name = "kossakowski"
+harness = false

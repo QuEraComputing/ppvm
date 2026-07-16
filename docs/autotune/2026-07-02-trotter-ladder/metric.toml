@@ -1,0 +1,32 @@
+[[metric]]
+"commit" = "0e316372"
+"status" = "keep"
+"description" = "baseline: N=10 XY ladder, dt=0.1, 8 steps, mac=1e-3; gate-apply 98%, trunc 2%"
+"wall_s" = 0.777
+"peak_basis" = 34030.0
+"rss_mb" = 173.0
+
+[[metric]]
+"commit" = "15f96554"
+"status" = "discard"
+"description" = "parallelize map_insert (rayon): ~30% SLOWER (1.0s vs 0.777s), +60MB. map_insert called ~120x/step over full map; per-call Vec-collect+rayon dispatch overhead swamps gain on memory-bound cheap-per-term loop"
+"wall_s" = 1.003
+"peak_basis" = 34030.0
+"rss_mb" = 230.0
+
+[[metric]]
+"commit" = "fb5d5881"
+"status" = "keep"
+"description" = "parallelize map_insert (rayon) \u2014 KEEP after larger-N retest (per user): N=12 18.4s->7.5s (~2.5x), N=10 neutral (0.70-0.77 vs 0.78). Earlier discard was small-problem + machine-load artifact. RSS +60% at N=12 (per-thread buffers)."
+"wall_s_N12" = 7.49
+"wall_s_N10" = 0.702
+"rss_mb_N12" = 627.0
+
+[[metric]]
+"commit" = "9ee8b3ba"
+"status" = "discard"
+"description" = "CORRECTION (clean quiet machine): parallelize map_insert is only ~1.1x (seq 8.06s vs par 7.25s N=12) for +50% RAM (396->600MB). The earlier '2.5x KEEP' was a load artifact (seq measured at 18.4s under load). ~120 short par sections/step + memory-bandwidth-bound work => limited parallel gain; per-gate Vec-collect overhead ~cancels it. Net loss given memory. Now reverted (sequential)."
+"wall_s_N12_seq" = 8.06
+"wall_s_N12_par" = 7.25
+"rss_mb_N12_par" = 600.0
+

@@ -472,9 +472,9 @@ impl LindbladSpec {
         // not a valid GKSL pair matrix and would produce a non-Hermiticity-
         // preserving action.
         let herm_tol = 1e-10 * max_abs.max(1.0);
-        for n in 0..m_ops {
-            for m in n..m_ops {
-                if (k[n][m] - k[m][n].conj()).norm() > herm_tol {
+        for (n, row_n) in k.iter().enumerate() {
+            for (m, k_nm) in row_n.iter().enumerate().skip(n) {
+                if (k_nm - k[m][n].conj()).norm() > herm_tol {
                     return Err(Error::KMatrixNotHermitian { n, m });
                 }
             }
@@ -526,8 +526,8 @@ impl LindbladSpec {
                 let support_mask = |terms: &[PauliTerm]| {
                     let mut mask = [0u64; W_U64];
                     for t in terms {
-                        for i in 0..W_U64 {
-                            mask[i] |= t.word.xbits.data[i] | t.word.zbits.data[i];
+                        for (i, slot) in mask.iter_mut().enumerate() {
+                            *slot |= t.word.xbits.data[i] | t.word.zbits.data[i];
                         }
                     }
                     mask
@@ -1025,8 +1025,8 @@ impl LindbladSpec {
                     // `[P_c, p] = −i·eps·out` from `comm_product`, the term
                     // coefficient is `∓ t_c · (i/2) · eps`.
                     let mut p_bits = [0u64; W_U64];
-                    for i in 0..W_U64 {
-                        p_bits[i] = p.xbits.data[i] | p.zbits.data[i];
+                    for (i, slot) in p_bits.iter_mut().enumerate() {
+                        *slot = p.xbits.data[i] | p.zbits.data[i];
                     }
                     let hits = |mask: &[u64; W_U64]| {
                         (0..W_U64).any(|i| mask[i] & p_bits[i] != 0)

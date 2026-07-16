@@ -31,6 +31,7 @@ fn chain_couplings(n: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
     let k0 = 2.0 * PI;
     let mut j = vec![vec![0.0; n]; n];
     let mut gam = vec![vec![0.0; n]; n];
+    #[allow(clippy::needless_range_loop)]
     for a in 0..n {
         for b in 0..n {
             if a == b {
@@ -61,6 +62,7 @@ fn pstr(n: usize, sites: &[(usize, char)]) -> String {
     s.into_iter().collect()
 }
 
+#[allow(clippy::needless_range_loop)]
 fn hamiltonian_terms(n: usize, j: &[Vec<f64>]) -> Vec<(String, f64)> {
     let mut h = Vec::new();
     for a in 0..n {
@@ -106,6 +108,7 @@ fn eigenmode_jumps(n: usize, gam: &[Vec<f64>]) -> Vec<JumpInput> {
 }
 
 /// `O = Σ_nm Γ_nm σ⁺_n σ⁻_m` as a real Pauli sum.
+#[allow(clippy::needless_range_loop)]
 fn observable(n: usize, gam: &[Vec<f64>]) -> (Vec<Word>, Vec<f64>) {
     let mut basis = Vec::new();
     let mut coeffs = Vec::new();

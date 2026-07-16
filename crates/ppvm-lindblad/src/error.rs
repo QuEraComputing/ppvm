@@ -31,6 +31,10 @@ pub enum Error {
     EmptyLincomb {
         index: usize,
     },
+    KMatrixNotHermitian {
+        n: usize,
+        m: usize,
+    },
     Internal(String),
 }
 
@@ -65,6 +69,10 @@ impl fmt::Display for Error {
                     "jump {index}: lincomb must contain at least one Pauli term"
                 )
             }
+            Error::KMatrixNotHermitian { n, m } => write!(
+                f,
+                "Kossakowski matrix is not Hermitian: K[{n}][{m}] != conj(K[{m}][{n}])"
+            ),
             Error::Internal(msg) => write!(f, "internal error: {msg}"),
         }
     }

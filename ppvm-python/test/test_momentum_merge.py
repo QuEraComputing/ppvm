@@ -200,7 +200,7 @@ def test_compressed_matches_uncompressed_evolution():
             PB.ryy(i, j, J * dt, truncate=False)
         mA, mB = _merged_copy(PA, PB, g, k)
         unc.append(_ovl(rA, rB, mA, mB) / C0)
-    unc = np.array([1.0 + 0j] + unc)
+    unc = np.array([1.0 + 0j, *unc])
     assert np.max(np.abs(comp - unc)) < 5e-3  # only O(dt^2) equivariance
 
 

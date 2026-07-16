@@ -62,7 +62,7 @@ macro_rules! create_interface_symmetry_methods {
             /// entry count by up to `|group|×` for translation-invariant
             /// operators.
             ///
-            /// See `ppvm.symmetry.TranslationGroup` for constructors
+            /// See `ppvm._core.TranslationGroup` for constructors
             /// (`chain_1d`, `torus_2d`, `torus_3d`, `ladder`).
             ///
             /// Plain real-coefficient merge (the `k=0` symmetry sector).
@@ -70,11 +70,19 @@ macro_rules! create_interface_symmetry_methods {
             pub fn symmetry_merge(
                 &mut self,
                 group: &crate::symmetry::TranslationGroup,
-            ) {
+            ) -> pyo3::PyResult<()> {
+                if self.inner.n_qubits() != group.core().n_qubits() {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "PauliSum has {} qubits but the TranslationGroup acts on {}",
+                        self.inner.n_qubits(),
+                        group.core().n_qubits(),
+                    )));
+                }
                 ppvm_pauli_sum::symmetry::symmetry_merge_pauli_sum(
                     &mut self.inner,
                     group.core(),
                 );
+                Ok(())
             }
 
             /// Phase-aware (momentum-sector) merge for a complex operator
@@ -99,7 +107,26 @@ macro_rules! create_interface_symmetry_methods {
                 mut other: pyo3::PyRefMut<'_, Self>,
                 group: &crate::symmetry::TranslationGroup,
                 momentum: Vec<i32>,
-            ) {
+            ) -> pyo3::PyResult<()> {
+                let n_g = group.core().n_qubits();
+                for (label, n) in [
+                    ("self", self.inner.n_qubits()),
+                    ("other", other.inner.n_qubits()),
+                ] {
+                    if n != n_g {
+                        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                            "{label} PauliSum has {n} qubits but the \
+                             TranslationGroup acts on {n_g}",
+                        )));
+                    }
+                }
+                if momentum.len() != group.core().n_generators() {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "momentum has {} entries but the group has {} generators",
+                        momentum.len(),
+                        group.core().n_generators(),
+                    )));
+                }
                 // Gather both real components into word -> (re + i·im).
                 let mut combined: std::collections::HashMap<
                     <$type as Config>::PauliWordType,
@@ -148,6 +175,7 @@ macro_rules! create_interface_symmetry_methods {
                         other.inner += (w, im);
                     }
                 }
+                Ok(())
             }
         }
     };

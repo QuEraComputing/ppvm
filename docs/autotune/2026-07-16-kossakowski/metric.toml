@@ -5,3 +5,9 @@
 "kossakowski_n30_ms" = 250.1
 "eigenmode_n30_ms" = 4349.0
 
+[[metric]]
+"commit" = "23bfeee5"
+"status" = "keep"
+"description" = "it1: flat (P_a,P_b,\u03bb*\u03bcK) sandwich table + fold \u2212K into dd at compile time; removes per-string complex products"
+"kossakowski_n30_ms" = 225.6
+

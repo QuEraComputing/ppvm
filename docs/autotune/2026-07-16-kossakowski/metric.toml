@@ -18,3 +18,10 @@
 "kossakowski_n30_ms_sameload_it1" = 288.3
 "kossakowski_n30_ms_sameload_it2" = 290.4
 
+[[metric]]
+"commit" = "6bcc7a75"
+"status" = "keep"
+"description" = "it3: one-sided pairs collapse to \u00b1\u00bd[D,p] commutator (4 products vs 12); same-session A/B 253 vs 372 ms = -32%. Sign convention pinned by kossakowski_pair_matches_eigenmode_jumps (caught an inverted case mapping during development)"
+"kossakowski_n30_ms_sameload_it3" = 253.0
+"kossakowski_n30_ms_sameload_it1" = 372.0
+

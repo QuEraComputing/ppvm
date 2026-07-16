@@ -906,9 +906,14 @@ source = { editable = "." }
 dependencies = [
     { name = "bloqade-circuit" },
     { name = "kirin-toolchain" },
+    { name = "numpy" },
 ]
 
 [package.dev-dependencies]
+demo = [
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
 dev = [
     { name = "numpy" },
     { name = "pytest" },
@@ -919,9 +924,11 @@ dev = [
 requires-dist = [
     { name = "bloqade-circuit", specifier = ">=0.14.1" },
     { name = "kirin-toolchain", specifier = "~=0.22.2" },
+    { name = "numpy", specifier = ">=1.26" },
 ]
 
 [package.metadata.requires-dev]
+demo = [{ name = "scipy", specifier = ">=1.13" }]
 dev = [
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "pytest", specifier = ">=9.0.2" },

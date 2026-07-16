@@ -39,7 +39,8 @@ pub mod validate;
 pub use stim_parser::prelude::*;
 
 pub use executor::{
-    execute, execute_validated, sample, sample_serial, sample_serial_validated, sample_validated,
+    execute, execute_validated, sample, sample_cached, sample_cached_validated, sample_serial,
+    sample_serial_validated, sample_validated,
 };
 #[cfg(feature = "rayon")]
 pub use executor::{sample_parallel, sample_parallel_validated};

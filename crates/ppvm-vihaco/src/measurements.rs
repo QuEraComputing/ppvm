@@ -12,7 +12,7 @@ use vihaco::{Effects, observe};
 /// In bytecode, this is represented as a u32 integer, which is simpler than
 /// e.g. two boolean values and matches semantics elsewhere
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum MeasurementOutcome {
     Zero = 0,
     One = 1,
@@ -36,7 +36,7 @@ impl From<Option<bool>> for MeasurementOutcome {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct MeasurementObserver {
     pub record: Vec<MeasurementResult>,
 }
@@ -57,7 +57,7 @@ pub struct TraceEffect {
     pub value: f64,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TraceObserver {
     pub record: Vec<f64>,
 }

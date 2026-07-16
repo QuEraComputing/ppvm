@@ -498,3 +498,86 @@ fn sample_parallel_matches_sample_serial_for_seeded_factory() {
     let parallel = sample_parallel::<_, _, _, _>(&prog, n, factory).unwrap();
     assert_eq!(serial, parallel);
 }
+
+#[test]
+fn sample_cached_reuses_stim_measurement_paths() {
+    use ppvm_stim::sample_cached;
+    use ppvm_trajectory_cache::CacheConfig;
+
+    let prog = ppvm_stim::parse_extended("H 0\nM 0\nCX rec[-1] 1\nM 1").unwrap();
+    let report = sample_cached::<_, _, _, _>(
+        &prog,
+        64,
+        |i| GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(2, 1e-10, i as u64 + 1),
+        CacheConfig::bounded(16),
+    )
+    .unwrap();
+
+    assert_eq!(report.output.len(), 64);
+    assert!(
+        report.cache_stats.hits > 0,
+        "expected cache hits, got {:?}",
+        report.cache_stats
+    );
+    assert!(report.cache_stats.nodes <= 16);
+}
+
+#[test]
+fn sample_cached_supports_depolarize_noise_boundaries() {
+    use ppvm_stim::sample_cached;
+    use ppvm_trajectory_cache::CacheConfig;
+
+    let prog = ppvm_stim::parse_extended("X_ERROR(0.25) 0\nM 0").unwrap();
+    let report = sample_cached::<_, _, _, _>(
+        &prog,
+        256,
+        |i| GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1),
+        CacheConfig::bounded(16),
+    )
+    .unwrap();
+
+    assert_eq!(report.output.len(), 256);
+    assert!(
+        report.cache_stats.hits > 0,
+        "expected cache hits, got {:?}",
+        report.cache_stats
+    );
+    assert!(
+        report.output.iter().any(|shot| shot == &vec![Some(false)]),
+        "expected some no-error shots"
+    );
+    assert!(
+        report.output.iter().any(|shot| shot == &vec![Some(true)]),
+        "expected some X-error shots"
+    );
+}
+
+#[test]
+fn sample_cached_supports_loss_noise_boundaries() {
+    use ppvm_stim::sample_cached;
+    use ppvm_trajectory_cache::CacheConfig;
+
+    let prog = ppvm_stim::parse_extended("I_ERROR[loss](0.5) 0\nM 0").unwrap();
+    let report = sample_cached::<_, _, _, _>(
+        &prog,
+        256,
+        |i| GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1),
+        CacheConfig::bounded(16),
+    )
+    .unwrap();
+
+    assert_eq!(report.output.len(), 256);
+    assert!(
+        report.cache_stats.hits > 0,
+        "expected cache hits, got {:?}",
+        report.cache_stats
+    );
+    assert!(
+        report.output.iter().any(|shot| shot == &vec![Some(false)]),
+        "expected some surviving shots"
+    );
+    assert!(
+        report.output.iter().any(|shot| shot == &vec![None]),
+        "expected some lost shots"
+    );
+}

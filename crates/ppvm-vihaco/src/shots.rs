@@ -10,8 +10,13 @@
 //! to amortize the overhead.
 
 use crate::PPVMModule;
-use crate::composite::PPVM;
+use crate::composite::{BackendKind, PPVM, PPVMInstruction, PPVMSnapshot, StepOutcome};
 use crate::measurements::MeasurementResult;
+use ppvm_trajectory_cache::{
+    CacheConfig, CacheStats, CachedRun, TrajectoryEvent, TrajectoryProgram, random_base_seed,
+    run_cached_shots,
+};
+use vihaco_circuit_isa::CircuitInstruction;
 
 /// One shot's full output: the measurement record and the trace-instruction
 /// record. Either may be empty depending on what the program emits.
@@ -19,6 +24,18 @@ use crate::measurements::MeasurementResult;
 pub struct ShotRecord {
     pub measurements: Vec<MeasurementResult>,
     pub traces: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShotOptions {
+    pub seed: Option<u64>,
+    pub cache: CacheConfig,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShotBatch {
+    pub records: Vec<ShotRecord>,
+    pub cache_stats: Option<CacheStats>,
 }
 
 /// Below this many shots, parallelism's overhead outweighs its benefit and we
@@ -99,6 +116,144 @@ pub fn run_shots(
     run_shots_serial(module, shots, seed)
 }
 
+pub fn run_shots_with_options(
+    module: &PPVMModule,
+    shots: usize,
+    options: ShotOptions,
+) -> eyre::Result<ShotBatch> {
+    if !options.cache.enabled {
+        return Ok(ShotBatch {
+            records: run_shots(module, shots, options.seed)?,
+            cache_stats: None,
+        });
+    }
+
+    if module.extra.backend != BackendKind::Tableau {
+        eyre::bail!("trajectory cache currently supports only the tableau backend");
+    }
+    reject_deferred_side_effects(module)?;
+
+    let base_seed = options.seed.unwrap_or_else(random_base_seed);
+    let mut program = VihacoTrajectoryProgram::new(module, base_seed);
+    let CachedRun {
+        output,
+        cache_stats,
+    } = run_cached_shots(&mut program, shots, options.cache, base_seed)?;
+    Ok(ShotBatch {
+        records: output,
+        cache_stats: Some(cache_stats),
+    })
+}
+
+fn reject_deferred_side_effects(module: &PPVMModule) -> eyre::Result<()> {
+    for inst in &module.code {
+        if matches!(inst, PPVMInstruction::Cpu(vihaco_cpu::Instruction::Print)) {
+            eyre::bail!("trajectory cache does not yet support print side effects");
+        }
+    }
+    Ok(())
+}
+
+struct VihacoTrajectoryProgram<'a> {
+    module: &'a PPVMModule,
+    machine: PPVM,
+    base_seed: u64,
+}
+
+impl<'a> VihacoTrajectoryProgram<'a> {
+    fn new(module: &'a PPVMModule, base_seed: u64) -> Self {
+        Self {
+            module,
+            machine: PPVM::default(),
+            base_seed,
+        }
+    }
+
+    fn shot_seed(&self, shot: usize) -> u64 {
+        self.base_seed.wrapping_add(shot as u64)
+    }
+
+    fn shot_record(&self) -> ShotRecord {
+        ShotRecord {
+            measurements: self.machine.measurement_record(),
+            traces: self.machine.trace_record(),
+        }
+    }
+}
+
+impl TrajectoryProgram for VihacoTrajectoryProgram<'_> {
+    type Snapshot = PPVMSnapshot;
+    type Choice = Vec<u8>;
+    type Output = ShotRecord;
+    type Error = eyre::Report;
+
+    fn reset_for_shot(&mut self, shot: usize) -> eyre::Result<()> {
+        self.machine = PPVM::default();
+        self.machine.load(self.module)?;
+        self.machine.init_with_seed(self.shot_seed(shot))?;
+        Ok(())
+    }
+
+    fn snapshot(&self) -> Self::Snapshot {
+        self.machine.cache_snapshot()
+    }
+
+    fn restore(&mut self, snapshot: &Self::Snapshot) -> eyre::Result<()> {
+        self.machine.restore_cache_snapshot(snapshot);
+        Ok(())
+    }
+
+    fn reseed(&mut self, seed: u64) -> eyre::Result<()> {
+        self.machine.reseed_cache_rng(seed)
+    }
+
+    fn run_until_boundary(&mut self) -> eyre::Result<TrajectoryEvent<Self::Output>> {
+        loop {
+            let Some(inst) = self.machine.current_instruction() else {
+                return Ok(TrajectoryEvent::Terminal(self.shot_record()));
+            };
+            if is_supported_boundary(&inst) {
+                return Ok(TrajectoryEvent::Boundary);
+            }
+            reject_unsupported_stochastic(&inst)?;
+            match self.machine.step_once()? {
+                StepOutcome::Continue | StepOutcome::Breakpoint => {}
+                StepOutcome::Return | StepOutcome::Halt => {
+                    return Ok(TrajectoryEvent::Terminal(self.shot_record()));
+                }
+            }
+        }
+    }
+
+    fn execute_boundary(&mut self) -> eyre::Result<Self::Choice> {
+        self.machine.step_cache_boundary()
+    }
+}
+
+fn is_supported_boundary(inst: &PPVMInstruction) -> bool {
+    matches!(
+        inst,
+        PPVMInstruction::Circuit(
+            CircuitInstruction::Measure
+                | CircuitInstruction::Depolarize
+                | CircuitInstruction::Depolarize2
+                | CircuitInstruction::PauliError
+                | CircuitInstruction::TwoQubitPauliError
+                | CircuitInstruction::Loss
+                | CircuitInstruction::CorrelatedLoss
+        )
+    )
+}
+
+fn reject_unsupported_stochastic(inst: &PPVMInstruction) -> eyre::Result<()> {
+    match inst {
+        PPVMInstruction::Circuit(op @ CircuitInstruction::Reset) => {
+            eyre::bail!("trajectory cache does not yet support hidden stochastic instruction {op}");
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Configure the process-wide rayon thread pool. Call once, before any parallel
 /// work runs. A count of `1` forces fully serial, deterministic execution — both
 /// across shots and within a single machine's coefficient propagation.
@@ -132,6 +287,28 @@ mod tests {
 
     /// Prepares |+> with H, then measures q0: each shot is a random 0/1.
     const RANDOM: &str = "device circuit.n_qubits 1;\nfn @main() { const.u64 0\n circuit.h\n const.u64 0\n circuit.measure\n ret }\n";
+
+    const NOISY: &str = "device circuit.n_qubits 1;\n\
+        fn @main() {\n\
+            const.u64 0\n\
+            const.f64 0.25\n\
+            const.f64 0.0\n\
+            const.f64 0.0\n\
+            circuit.paulierror\n\
+            const.u64 0\n\
+            circuit.measure\n\
+            ret\n\
+        }\n";
+
+    const LOSSY: &str = "device circuit.n_qubits 1;\n\
+        fn @main() {\n\
+            const.u64 0\n\
+            const.f64 0.5\n\
+            circuit.loss\n\
+            const.u64 0\n\
+            circuit.measure\n\
+            ret\n\
+        }\n";
 
     fn module(src: &str) -> PPVMModule {
         compile_program(src).unwrap()
@@ -176,6 +353,89 @@ mod tests {
         assert!(
             records.iter().any(|r| r != first),
             "expected varied outcomes across shots, got {records:?}"
+        );
+    }
+
+    #[test]
+    fn cached_runner_reuses_measurement_paths() {
+        let m = module(RANDOM);
+        let batch = run_shots_with_options(
+            &m,
+            64,
+            ShotOptions {
+                seed: Some(42),
+                cache: ppvm_trajectory_cache::CacheConfig::bounded(16),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(batch.records.len(), 64);
+        let stats = batch.cache_stats.expect("cache enabled");
+        assert!(stats.hits > 0, "expected cache hits, got {stats:?}");
+        assert!(stats.nodes <= 16, "bounded cache exceeded limit: {stats:?}");
+    }
+
+    #[test]
+    fn cached_runner_supports_noise_boundaries() {
+        let m = module(NOISY);
+        let batch = run_shots_with_options(
+            &m,
+            256,
+            ShotOptions {
+                seed: Some(42),
+                cache: ppvm_trajectory_cache::CacheConfig::bounded(16),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(batch.records.len(), 256);
+        let stats = batch.cache_stats.expect("cache enabled");
+        assert!(stats.hits > 0, "expected cache hits, got {stats:?}");
+        assert!(
+            batch
+                .records
+                .iter()
+                .any(|r| r.measurements[0].as_slice() == [MeasurementOutcome::Zero]),
+            "expected some no-error shots"
+        );
+        assert!(
+            batch
+                .records
+                .iter()
+                .any(|r| r.measurements[0].as_slice() == [MeasurementOutcome::One]),
+            "expected some Pauli-error shots"
+        );
+    }
+
+    #[test]
+    fn cached_runner_supports_loss_boundaries() {
+        let m = module(LOSSY);
+        let batch = run_shots_with_options(
+            &m,
+            256,
+            ShotOptions {
+                seed: Some(42),
+                cache: ppvm_trajectory_cache::CacheConfig::bounded(16),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(batch.records.len(), 256);
+        let stats = batch.cache_stats.expect("cache enabled");
+        assert!(stats.hits > 0, "expected cache hits, got {stats:?}");
+        assert!(
+            batch
+                .records
+                .iter()
+                .any(|r| r.measurements[0].as_slice() == [MeasurementOutcome::Zero]),
+            "expected some surviving shots"
+        );
+        assert!(
+            batch
+                .records
+                .iter()
+                .any(|r| r.measurements[0].as_slice() == [MeasurementOutcome::Lost]),
+            "expected some lost shots"
         );
     }
 

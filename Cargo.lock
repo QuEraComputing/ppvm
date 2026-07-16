@@ -1314,6 +1314,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "eyre",
+ "ppvm-trajectory-cache",
  "ppvm-tui",
  "ppvm-vihaco",
  "ratatui",
@@ -1388,6 +1389,7 @@ dependencies = [
  "num",
  "ppvm-pauli-sum",
  "ppvm-tableau",
+ "ppvm-trajectory-cache",
  "rayon",
  "smallvec",
  "stim-parser",
@@ -1462,6 +1464,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-trajectory-cache"
+version = "0.1.0"
+
+[[package]]
 name = "ppvm-tui"
 version = "0.1.0"
 dependencies = [
@@ -1482,6 +1488,7 @@ dependencies = [
  "num",
  "ppvm-pauli-sum",
  "ppvm-tableau",
+ "ppvm-trajectory-cache",
  "rayon",
  "smallvec",
  "vihaco",

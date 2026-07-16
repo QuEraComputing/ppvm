@@ -24,7 +24,7 @@ pub struct Cli {
     command: Option<Commands>,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 enum Commands {
     /// Parse a .sst file and output the AST
     Parse {
@@ -76,6 +76,18 @@ enum Commands {
         /// Measurement output format
         #[arg(short, long, value_enum, default_value = "bits")]
         format: commands::MeasurementFormat,
+
+        /// Enable trajectory/path caching for tableau-backed programs
+        #[arg(long)]
+        cache: bool,
+
+        /// Maximum cached trajectory states
+        #[arg(long = "cache-max-states", requires = "cache", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
+        cache_max_states: Option<usize>,
+
+        /// Print trajectory cache stats to stderr
+        #[arg(long = "cache-stats", requires = "cache")]
+        cache_stats: bool,
     },
 
     /// Step through a program interactively, pausing at `breakpoint` instructions
@@ -117,8 +129,21 @@ fn main() -> Result<()> {
             output,
             quiet,
             format,
+            cache,
+            cache_max_states,
+            cache_stats,
         }) => {
-            commands::run(&file, shots, seed, output.as_deref(), quiet, format)?;
+            commands::run(commands::RunOptions {
+                file: &file,
+                shots,
+                seed,
+                output: output.as_deref(),
+                quiet,
+                format,
+                cache,
+                cache_max_states,
+                cache_stats,
+            })?;
         }
         Some(Commands::Debug {
             file,
@@ -177,6 +202,35 @@ mod tests {
         let cli = Cli::try_parse_from(["ppvm", "run", "prog.sst"]).unwrap();
         assert!(matches!(cli.command, Some(Commands::Run { .. })));
         assert!(cli.file.is_none());
+    }
+
+    #[test]
+    fn run_accepts_cache_flags() {
+        let cli = Cli::try_parse_from([
+            "ppvm",
+            "run",
+            "prog.ssb",
+            "--shots",
+            "100",
+            "--cache",
+            "--cache-max-states",
+            "64",
+            "--cache-stats",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Run {
+                cache,
+                cache_max_states,
+                cache_stats,
+                ..
+            }) => {
+                assert!(cache);
+                assert_eq!(cache_max_states, Some(64));
+                assert!(cache_stats);
+            }
+            other => panic!("expected run command, got {other:?}"),
+        }
     }
 
     #[test]

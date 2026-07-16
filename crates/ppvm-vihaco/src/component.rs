@@ -67,6 +67,7 @@ macro_rules! batch_pairs_for {
     };
 }
 
+#[derive(Clone)]
 pub struct CircuitExecutor<T: Config<Coeff = f64>, I: TableauIndex, C: SparseVector<Complex64, I>> {
     pub tab: GeneralizedTableau<T, I, C>,
 }
@@ -261,6 +262,87 @@ where
 
         Ok(Effects::None)
     }
+
+    pub fn execute_cache_boundary(
+        &mut self,
+        inst: &CircuitInstruction,
+        msg: &CircuitMessage,
+    ) -> Result<Vec<u8>> {
+        use CircuitInstruction::*;
+        use CircuitMessage::*;
+
+        let mut choice = Vec::new();
+        match (inst, msg) {
+            (Depolarize, &QubitAndFloat(addr, p)) => {
+                choice.push(self.tab.sample_apply_depolarize1_choice(addr, p));
+            }
+            (Depolarize2, &TwoQubitAndFloat(addr0, addr1, p)) => {
+                choice.push(self.tab.sample_apply_depolarize2_choice(addr0, addr1, p));
+            }
+            (PauliError, QubitAndFloatArr3(addr, ps)) => {
+                choice.push(self.tab.sample_apply_pauli_error_choice(*addr, *ps));
+            }
+            (TwoQubitPauliError, TwoQubitAndFloatArr15(addr0, addr1, ps)) => {
+                choice.push(
+                    self.tab
+                        .sample_apply_two_qubit_pauli_error_choice(*addr0, *addr1, *ps),
+                );
+            }
+            (Loss, &QubitAndFloat(addr, p)) => {
+                choice.extend(self.tab.sample_apply_loss_choice(addr, p));
+            }
+            (CorrelatedLoss, TwoQubitAndFloatArr3(addr0, addr1, ps)) => {
+                choice.extend(
+                    self.tab
+                        .sample_apply_correlated_loss_choice(*addr0, *addr1, *ps),
+                );
+            }
+            (Depolarize, QubitBatchAndFloat(addrs, p)) => {
+                choice.extend(
+                    addrs
+                        .iter()
+                        .map(|&q| self.tab.sample_apply_depolarize1_choice(q, *p)),
+                );
+            }
+            (Depolarize2, TwoQubitBatchAndFloat(pairs, p)) => {
+                choice.extend(
+                    pairs
+                        .iter()
+                        .map(|&(a, b)| self.tab.sample_apply_depolarize2_choice(a, b, *p)),
+                );
+            }
+            (PauliError, QubitBatchAndFloatArr3(addrs, ps)) => {
+                choice.extend(
+                    addrs
+                        .iter()
+                        .map(|&q| self.tab.sample_apply_pauli_error_choice(q, *ps)),
+                );
+            }
+            (TwoQubitPauliError, TwoQubitBatchAndFloatArr15(pairs, ps)) => {
+                choice.extend(pairs.iter().map(|&(a, b)| {
+                    self.tab
+                        .sample_apply_two_qubit_pauli_error_choice(a, b, *ps)
+                }));
+            }
+            (Loss, QubitBatchAndFloat(addrs, p)) => {
+                for &q in addrs {
+                    choice.extend(self.tab.sample_apply_loss_choice(q, *p));
+                }
+            }
+            (CorrelatedLoss, TwoQubitBatchAndFloatArr3(pairs, ps)) => {
+                for &(a, b) in pairs {
+                    choice.extend(self.tab.sample_apply_correlated_loss_choice(a, b, *ps));
+                }
+            }
+            (inst, msg) => {
+                return Err(eyre!(
+                    "instruction {inst:?} with arguments {msg:?} is not a cacheable stochastic boundary"
+                ));
+            }
+        }
+
+        Ok(choice)
+    }
 }
 
 impl<T, I, C> vihaco::Reset for CircuitExecutor<T, I, C>
@@ -443,6 +525,7 @@ macro_rules! dispatch_common_paulisum {
 /// PauliSum-backed executor (Heisenberg picture). Holds a `PauliSum<T>` and
 /// answers the same `CircuitInstruction` vocabulary as `CircuitExecutor`,
 /// but without measurement / reset / loss support.
+#[derive(Clone)]
 pub struct PauliSumExecutor<T: Config<Coeff = f64>> {
     pub state: PauliSum<T>,
     /// Snapshot of the seeded observable, restored by `reset`.
@@ -494,6 +577,7 @@ where
 /// `Loss` / `CorrelatedLoss` channels. The concrete `T` used by the
 /// enclosing `Circuit::LossyPauliSum` variant is a `Config` whose
 /// `PauliWordType` is `LossyPauliWord` (see `LossyPauliSumConfig`).
+#[derive(Clone)]
 pub struct LossyPauliSumExecutor<T: Config<Coeff = f64>> {
     pub state: PauliSum<T>,
     /// Snapshot of the seeded observable, restored by `reset`.
@@ -561,6 +645,7 @@ where
 
 /// Tableau-backed inner enum (Schrödinger picture). Carries the six
 /// size-bucketed `CircuitExecutor` variants; bucket is picked from `n_qubits`.
+#[derive(Clone)]
 pub enum TableauCircuit {
     Bits64(CircuitExecutor<Byte8F64<1>, usize, Vec<(Complex64, usize)>>),
     Bits128(CircuitExecutor<Byte8F64<2>, u128, Vec<(Complex64, u128)>>),
@@ -594,6 +679,21 @@ impl TableauCircuit {
             Err(eyre!(
                 "cannot simulate {n_qubits} qubits: maximum is {MAX_QUBITS}"
             ))
+        }
+    }
+
+    fn execute_cache_boundary(
+        &mut self,
+        inst: &CircuitInstruction,
+        msg: &CircuitMessage,
+    ) -> Result<Vec<u8>> {
+        match self {
+            Self::Bits64(ex) => ex.execute_cache_boundary(inst, msg),
+            Self::Bits128(ex) => ex.execute_cache_boundary(inst, msg),
+            Self::Bits256(ex) => ex.execute_cache_boundary(inst, msg),
+            Self::Bits512(ex) => ex.execute_cache_boundary(inst, msg),
+            Self::Bits1024(ex) => ex.execute_cache_boundary(inst, msg),
+            Self::Bits2048(ex) => ex.execute_cache_boundary(inst, msg),
         }
     }
 
@@ -650,6 +750,40 @@ impl TableauCircuit {
             Self::Bits2048(ex) => ex.tab.to_string(),
         }
     }
+
+    pub fn fork_with_seed(&self, seed: u64) -> Self {
+        match self {
+            Self::Bits64(ex) => Self::Bits64(CircuitExecutor {
+                tab: ex.tab.fork(Some(seed)),
+            }),
+            Self::Bits128(ex) => Self::Bits128(CircuitExecutor {
+                tab: ex.tab.fork(Some(seed)),
+            }),
+            Self::Bits256(ex) => Self::Bits256(CircuitExecutor {
+                tab: ex.tab.fork(Some(seed)),
+            }),
+            Self::Bits512(ex) => Self::Bits512(CircuitExecutor {
+                tab: ex.tab.fork(Some(seed)),
+            }),
+            Self::Bits1024(ex) => Self::Bits1024(CircuitExecutor {
+                tab: ex.tab.fork(Some(seed)),
+            }),
+            Self::Bits2048(ex) => Self::Bits2048(CircuitExecutor {
+                tab: ex.tab.fork(Some(seed)),
+            }),
+        }
+    }
+
+    pub fn reseed(&mut self, seed: u64) {
+        match self {
+            Self::Bits64(ex) => ex.tab.reseed(Some(seed)),
+            Self::Bits128(ex) => ex.tab.reseed(Some(seed)),
+            Self::Bits256(ex) => ex.tab.reseed(Some(seed)),
+            Self::Bits512(ex) => ex.tab.reseed(Some(seed)),
+            Self::Bits1024(ex) => ex.tab.reseed(Some(seed)),
+            Self::Bits2048(ex) => ex.tab.reseed(Some(seed)),
+        }
+    }
 }
 
 impl vihaco::Reset for TableauCircuit {
@@ -670,6 +804,7 @@ impl vihaco::Reset for TableauCircuit {
 /// …, 256) rather than the tableau's `[u64; N]` configs; bucket labels match
 /// the semantic qubit count (`Bits64` = 64 qubits) so the outer enum's dispatch
 /// is uniform across backends.
+#[derive(Clone)]
 pub enum PauliSumCircuit {
     Bits64(PauliSumExecutor<PauliSumConfig<8>>),
     Bits128(PauliSumExecutor<PauliSumConfig<16>>),
@@ -759,6 +894,7 @@ impl vihaco::Reset for PauliSumCircuit {
 
 /// LossyPauliSum-backed inner enum. Identical shape to [`PauliSumCircuit`]
 /// but with `LossyPauliWord`-keyed configs so loss-channel methods dispatch.
+#[derive(Clone)]
 pub enum LossyPauliSumCircuit {
     Bits64(LossyPauliSumExecutor<LossyPauliSumConfig<8>>),
     Bits128(LossyPauliSumExecutor<LossyPauliSumConfig<16>>),
@@ -849,6 +985,7 @@ impl vihaco::Reset for LossyPauliSumCircuit {
 /// Outer `Circuit` enum: backend selector. Picks one of the three inner enums
 /// based on `info.backend` at construction time; from there, every per-step
 /// call routes outer → inner → executor.
+#[derive(Clone)]
 pub enum Circuit {
     Tableau(TableauCircuit),
     PauliSum(PauliSumCircuit),
@@ -910,12 +1047,46 @@ impl Circuit {
         }
     }
 
+    pub fn execute_cache_boundary(
+        &mut self,
+        inst: &CircuitInstruction,
+        msg: &CircuitMessage,
+    ) -> Result<Vec<u8>> {
+        match self {
+            Self::Tableau(c) => c.execute_cache_boundary(inst, msg),
+            Self::PauliSum(_) | Self::LossyPauliSum(_) => Err(eyre!(
+                "trajectory cache currently supports only the tableau backend"
+            )),
+        }
+    }
+
     /// Render the current state. Used by the REPL's `show` command.
     pub fn state_string(&self) -> String {
         match self {
             Self::Tableau(c) => c.state_string(),
             Self::PauliSum(c) => c.state_string(),
             Self::LossyPauliSum(c) => c.state_string(),
+        }
+    }
+
+    pub fn fork_with_seed(&self, seed: u64) -> Result<Self> {
+        match self {
+            Self::Tableau(circuit) => Ok(Self::Tableau(circuit.fork_with_seed(seed))),
+            Self::PauliSum(_) | Self::LossyPauliSum(_) => Err(eyre!(
+                "trajectory cache currently supports only the tableau backend"
+            )),
+        }
+    }
+
+    pub fn reseed(&mut self, seed: u64) -> Result<()> {
+        match self {
+            Self::Tableau(circuit) => {
+                circuit.reseed(seed);
+                Ok(())
+            }
+            Self::PauliSum(_) | Self::LossyPauliSum(_) => Err(eyre!(
+                "trajectory cache currently supports only the tableau backend"
+            )),
         }
     }
 }

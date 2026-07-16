@@ -11,6 +11,7 @@ rayon = ["dep:rayon"]
 [dependencies]
 ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+ppvm-trajectory-cache = { version = "0.1.0", path = "../ppvm-trajectory-cache" }
 bitvec = "1.0.1"
 itertools = "0.14"
 num = "0.4.3"

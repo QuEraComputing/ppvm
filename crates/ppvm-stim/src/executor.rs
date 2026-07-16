@@ -11,6 +11,9 @@ use std::fmt::Debug;
 
 use ppvm_pauli_sum::prelude::*;
 use ppvm_tableau::prelude::*;
+use ppvm_trajectory_cache::{
+    CacheConfig, CachedRun, TrajectoryEvent, TrajectoryProgram, run_cached_shots,
+};
 use smallvec::SmallVec;
 use stim_parser::prelude::{
     Axis, ExtendedInstruction, ExtendedProgram, GateName, GateOp, MeasureName, MeasureOp, MppOp,
@@ -237,6 +240,100 @@ where
             results
         })
         .collect()
+}
+
+pub fn sample_cached<T, I, C, F>(
+    program: &ExtendedProgram,
+    num_shots: usize,
+    make_tableau: F,
+    cache: CacheConfig,
+) -> Result<CachedRun<Vec<Vec<Option<bool>>>>, ExecError>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C>,
+{
+    validate(program)?;
+    sample_cached_validated(
+        &program.instructions,
+        program.measurement_count(),
+        num_shots,
+        make_tableau,
+        cache,
+    )
+}
+
+pub fn sample_cached_validated<T, I, C, F>(
+    instructions: &[ExtendedInstruction],
+    measurement_count: usize,
+    num_shots: usize,
+    make_tableau: F,
+    cache: CacheConfig,
+) -> Result<CachedRun<Vec<Vec<Option<bool>>>>, ExecError>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C>,
+{
+    if num_shots == 0 {
+        return Ok(CachedRun {
+            output: Vec::new(),
+            cache_stats: Default::default(),
+        });
+    }
+
+    let expanded = expand_repeats(instructions);
+    let initial = make_tableau(0);
+    let base_seed = 0;
+    let mut program = StimTrajectoryProgram {
+        instructions: expanded,
+        measurement_count,
+        make_tableau,
+        pc: 0,
+        tab: initial,
+        results: Vec::with_capacity(measurement_count),
+    };
+    run_cached_shots(&mut program, num_shots, cache, base_seed)
 }
 
 /// Execute many shots, building a fresh tableau for shot `i` via
@@ -867,6 +964,391 @@ pub fn execute_validated<T, I, C>(
                     execute_validated(body, tab, results);
                 }
             }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct StimSnapshot<T, I, C>
+where
+    T: Config,
+    C: SparseVector<Complex<T::Coeff>, I>,
+{
+    pc: usize,
+    tab: GeneralizedTableau<T, I, C>,
+    results: Vec<Option<bool>>,
+}
+
+struct StimTrajectoryProgram<T, I, C, F>
+where
+    T: Config,
+    C: SparseVector<Complex<T::Coeff>, I>,
+{
+    instructions: Vec<ExtendedInstruction>,
+    measurement_count: usize,
+    make_tableau: F,
+    pc: usize,
+    tab: GeneralizedTableau<T, I, C>,
+    results: Vec<Option<bool>>,
+}
+
+impl<T, I, C, F> StimTrajectoryProgram<T, I, C, F>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+{
+    fn execute_one(&mut self) {
+        let instr = self.instructions[self.pc].clone();
+        execute_validated(
+            std::slice::from_ref(&instr),
+            &mut self.tab,
+            &mut self.results,
+        );
+        self.pc += 1;
+    }
+}
+
+impl<T, I, C, F> TrajectoryProgram for StimTrajectoryProgram<T, I, C, F>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+    F: Fn(usize) -> GeneralizedTableau<T, I, C>,
+{
+    type Snapshot = StimSnapshot<T, I, C>;
+    type Choice = Vec<u8>;
+    type Output = Vec<Option<bool>>;
+    type Error = ExecError;
+
+    fn reset_for_shot(&mut self, shot: usize) -> Result<(), Self::Error> {
+        self.pc = 0;
+        self.tab = (self.make_tableau)(shot);
+        self.results.clear();
+        self.results.reserve(self.measurement_count);
+        Ok(())
+    }
+
+    fn snapshot(&self) -> Self::Snapshot {
+        StimSnapshot {
+            pc: self.pc,
+            tab: self.tab.clone(),
+            results: self.results.clone(),
+        }
+    }
+
+    fn restore(&mut self, snapshot: &Self::Snapshot) -> Result<(), Self::Error> {
+        self.pc = snapshot.pc;
+        self.tab.clone_from(&snapshot.tab);
+        self.results.clone_from(&snapshot.results);
+        Ok(())
+    }
+
+    fn reseed(&mut self, seed: u64) -> Result<(), Self::Error> {
+        self.tab.reseed(Some(seed));
+        Ok(())
+    }
+
+    fn run_until_boundary(&mut self) -> Result<TrajectoryEvent<Self::Output>, Self::Error> {
+        while self.pc < self.instructions.len() {
+            match classify_cache_instruction(&self.instructions[self.pc])? {
+                CacheInstruction::Deterministic => self.execute_one(),
+                CacheInstruction::Boundary => return Ok(TrajectoryEvent::Boundary),
+            }
+        }
+        Ok(TrajectoryEvent::Terminal(self.results.clone()))
+    }
+
+    fn execute_boundary(&mut self) -> Result<Self::Choice, Self::Error> {
+        let mut choice = Vec::new();
+        while self.pc < self.instructions.len() {
+            match classify_cache_instruction(&self.instructions[self.pc])? {
+                CacheInstruction::Boundary => {
+                    choice.extend(self.execute_one_boundary()?);
+                }
+                CacheInstruction::Deterministic => break,
+            }
+        }
+        if choice.is_empty() {
+            return Err(ExecError::Unsupported {
+                name: "empty cached boundary group".to_string(),
+                line: 0,
+            });
+        }
+        Ok(choice)
+    }
+}
+
+impl<T, I, C, F> StimTrajectoryProgram<T, I, C, F>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+{
+    fn execute_one_boundary(&mut self) -> Result<Vec<u8>, ExecError> {
+        let instr = self.instructions[self.pc].clone();
+        match instr {
+            ExtendedInstruction::Noise(op) => {
+                self.pc += 1;
+                self.execute_noise_boundary(&op)
+            }
+            ExtendedInstruction::Loss { p, targets, .. } => {
+                self.pc += 1;
+                let mut choice = Vec::new();
+                for q in targets {
+                    choice.extend(self.tab.sample_apply_loss_choice(q, p));
+                }
+                Ok(choice)
+            }
+            ExtendedInstruction::CorrelatedLoss { ps, targets, .. } => {
+                self.pc += 1;
+                let mut choice = Vec::new();
+                for (a, b) in targets {
+                    choice.extend(self.tab.sample_apply_correlated_loss_choice(a, b, ps));
+                }
+                Ok(choice)
+            }
+            _ => {
+                let before = self.results.len();
+                self.execute_one();
+                let choice = self.results[before..]
+                    .iter()
+                    .copied()
+                    .map(measurement_choice_code)
+                    .collect::<Vec<_>>();
+                if choice.is_empty() {
+                    return Err(ExecError::Unsupported {
+                        name: "empty cached measurement boundary".to_string(),
+                        line: 0,
+                    });
+                }
+                Ok(choice)
+            }
+        }
+    }
+}
+
+impl<T, I, C, F> StimTrajectoryProgram<T, I, C, F>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: SparseVector<Complex<T::Coeff>, I> + std::fmt::Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: TableauIndex + Debug + Send + Sync,
+{
+    fn execute_noise_boundary(&mut self, op: &NoiseOp) -> Result<Vec<u8>, ExecError> {
+        let mut choice = Vec::new();
+        match op.name {
+            NoiseName::Depolarize1 => {
+                let p = op.args[0];
+                for &q in &op.targets {
+                    choice.push(self.tab.sample_apply_depolarize1_choice(q, p));
+                }
+            }
+            NoiseName::Depolarize2 => {
+                let p = op.args[0];
+                for (a, b) in op.targets.iter().copied().tuples() {
+                    choice.push(self.tab.sample_apply_depolarize2_choice(a, b, p));
+                }
+            }
+            NoiseName::PauliChannel1 => {
+                let ps = [op.args[0], op.args[1], op.args[2]];
+                for &q in &op.targets {
+                    choice.push(self.tab.sample_apply_pauli_error_choice(q, ps));
+                }
+            }
+            NoiseName::PauliChannel2 => {
+                let ps = std::array::from_fn(|i| op.args[i]);
+                for (a, b) in op.targets.iter().copied().tuples() {
+                    choice.push(self.tab.sample_apply_two_qubit_pauli_error_choice(a, b, ps));
+                }
+            }
+            NoiseName::XError | NoiseName::YError | NoiseName::ZError => {
+                let p = op.args[0];
+                let ps = match op.name {
+                    NoiseName::XError => [p, 0.0, 0.0],
+                    NoiseName::YError => [0.0, p, 0.0],
+                    NoiseName::ZError => [0.0, 0.0, p],
+                    _ => unreachable!(),
+                };
+                for &q in &op.targets {
+                    choice.push(self.tab.sample_apply_pauli_error_choice(q, ps));
+                }
+            }
+            NoiseName::IError
+            | NoiseName::HeraldedErase
+            | NoiseName::HeraldedPauliChannel1
+            | NoiseName::CorrelatedError
+            | NoiseName::ElseCorrelatedError => {
+                return Err(cache_unsupported(format!(
+                    "unsupported noise {:?}",
+                    op.name
+                )));
+            }
+        }
+        if choice.is_empty() {
+            return Err(ExecError::Unsupported {
+                name: "empty cached noise boundary".to_string(),
+                line: 0,
+            });
+        }
+        Ok(choice)
+    }
+}
+
+fn measurement_choice_code(outcome: Option<bool>) -> u8 {
+    match outcome {
+        Some(false) => 0,
+        Some(true) => 1,
+        None => 2,
+    }
+}
+
+enum CacheInstruction {
+    Deterministic,
+    Boundary,
+}
+
+fn classify_cache_instruction(instr: &ExtendedInstruction) -> Result<CacheInstruction, ExecError> {
+    match instr {
+        ExtendedInstruction::Measure(MeasureOp { name, args, .. }) => {
+            if args.first().copied().unwrap_or(0.0) > 0.0 {
+                return Err(cache_unsupported(format!(
+                    "{} with readout noise",
+                    name.canonical_name()
+                )));
+            }
+            Ok(CacheInstruction::Boundary)
+        }
+        ExtendedInstruction::Mpp(MppOp { args, .. }) => {
+            if args.first().copied().unwrap_or(0.0) > 0.0 {
+                return Err(cache_unsupported("MPP with readout noise"));
+            }
+            Ok(CacheInstruction::Boundary)
+        }
+        ExtendedInstruction::MPad { prob, .. } => {
+            if prob.unwrap_or(0.0) > 0.0 {
+                Ok(CacheInstruction::Boundary)
+            } else {
+                Ok(CacheInstruction::Deterministic)
+            }
+        }
+        ExtendedInstruction::Gate(GateOp { name, .. })
+            if matches!(
+                name,
+                GateName::Reset | GateName::ResetZ | GateName::ResetX | GateName::ResetY
+            ) =>
+        {
+            Err(cache_unsupported(format!(
+                "hidden stochastic reset {}",
+                name.canonical_name()
+            )))
+        }
+        ExtendedInstruction::Noise(_) => Ok(CacheInstruction::Boundary),
+        ExtendedInstruction::Loss { .. } | ExtendedInstruction::CorrelatedLoss { .. } => {
+            Ok(CacheInstruction::Boundary)
+        }
+        ExtendedInstruction::Repeat { .. } => Err(cache_unsupported("unexpanded REPEAT")),
+        _ => Ok(CacheInstruction::Deterministic),
+    }
+}
+
+fn cache_unsupported(name: impl Into<String>) -> ExecError {
+    ExecError::Unsupported {
+        name: format!("trajectory cache: {}", name.into()),
+        line: 0,
+    }
+}
+
+fn expand_repeats(instructions: &[ExtendedInstruction]) -> Vec<ExtendedInstruction> {
+    let mut out = Vec::new();
+    expand_repeats_into(instructions, &mut out);
+    out
+}
+
+fn expand_repeats_into(instructions: &[ExtendedInstruction], out: &mut Vec<ExtendedInstruction>) {
+    for instr in instructions {
+        match instr {
+            ExtendedInstruction::Repeat { count, body, .. } => {
+                for _ in 0..*count {
+                    expand_repeats_into(body, out);
+                }
+            }
+            instr => out.push(instr.clone()),
         }
     }
 }

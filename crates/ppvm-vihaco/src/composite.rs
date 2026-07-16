@@ -48,6 +48,15 @@ pub struct PPVM {
     trace_record: TraceObserver,
 }
 
+#[derive(Clone)]
+pub struct PPVMSnapshot {
+    loader: ProgramLoader<PPVMInstruction, PPVMDeviceInfo>,
+    cpu: CPU,
+    circuit: Circuit,
+    measurement_record: MeasurementObserver,
+    trace_record: TraceObserver,
+}
+
 #[derive(Debug, Clone)]
 pub enum PPVMEffect {
     Step(StepOutcome),
@@ -322,6 +331,44 @@ impl PPVM {
         self.continue_effects(effects)
     }
 
+    /// Execute the current instruction as a trajectory-cache boundary and
+    /// return the sampled branch key.
+    ///
+    /// Measurement boundaries use the normal effect path so the CPU stack and
+    /// measurement observer stay in sync. Noise/loss boundaries expose their
+    /// sampled branch explicitly and otherwise behave like silent circuit
+    /// instructions.
+    pub fn step_cache_boundary(&mut self) -> eyre::Result<Vec<u8>> {
+        let inst = self.peek_instruction()?.clone();
+        match inst {
+            PPVMInstruction::Circuit(CircuitInstruction::Measure) => {
+                let before = self.measurement_record().len();
+                let outcome = self.step_once()?;
+                if !matches!(outcome, StepOutcome::Continue | StepOutcome::Breakpoint) {
+                    eyre::bail!("stochastic boundary unexpectedly terminated program");
+                }
+                let record = self.measurement_record();
+                let new = record
+                    .get(before..)
+                    .ok_or_else(|| eyre::eyre!("measurement record shrank at boundary"))?;
+                if new.is_empty() {
+                    eyre::bail!("measurement boundary did not emit an outcome");
+                }
+                Ok(new
+                    .iter()
+                    .flat_map(|event| event.iter().map(|outcome| *outcome as u8))
+                    .collect())
+            }
+            PPVMInstruction::Circuit(inst) if is_cache_noise_boundary(inst) => {
+                let msg = self.resolve_circuit(&inst)?;
+                let choice = self.circuit.execute_cache_boundary(&inst, &msg)?;
+                *self.loader.pc_mut() += 1;
+                Ok(choice)
+            }
+            other => eyre::bail!("instruction {other} is not a cacheable stochastic boundary"),
+        }
+    }
+
     /// Program counter: the index of the next instruction to execute.
     pub fn current_pc(&self) -> u32 {
         self.loader.pc()
@@ -557,6 +604,33 @@ impl PPVM {
         self.trace_record.record.clone()
     }
 
+    /// Snapshot all state needed to resume cached shot execution. Stdout is
+    /// deliberately omitted in this draft; cached execution rejects programs
+    /// with `print` instructions.
+    pub fn cache_snapshot(&self) -> PPVMSnapshot {
+        PPVMSnapshot {
+            loader: self.loader.clone(),
+            cpu: self.cpu.clone(),
+            circuit: self.circuit.clone(),
+            measurement_record: self.measurement_record.clone(),
+            trace_record: self.trace_record.clone(),
+        }
+    }
+
+    pub fn restore_cache_snapshot(&mut self, snapshot: &PPVMSnapshot) {
+        self.loader = snapshot.loader.clone();
+        self.cpu = snapshot.cpu.clone();
+        self.circuit = snapshot.circuit.clone();
+        self.stdout = StdoutObserver::default();
+        self.measurement_record = snapshot.measurement_record.clone();
+        self.trace_record = snapshot.trace_record.clone();
+    }
+
+    pub fn reseed_cache_rng(&mut self, seed: u64) -> eyre::Result<()> {
+        self.circuit.reseed(seed)?;
+        Ok(())
+    }
+
     pub fn load_program(&mut self, program: &str) -> eyre::Result<()> {
         let module = crate::compile_program(program)?;
         self.load(&module)?;
@@ -599,6 +673,18 @@ impl PPVM {
         self.run()?;
         Ok(())
     }
+}
+
+fn is_cache_noise_boundary(inst: CircuitInstruction) -> bool {
+    matches!(
+        inst,
+        CircuitInstruction::Depolarize
+            | CircuitInstruction::Depolarize2
+            | CircuitInstruction::PauliError
+            | CircuitInstruction::TwoQubitPauliError
+            | CircuitInstruction::Loss
+            | CircuitInstruction::CorrelatedLoss
+    )
 }
 
 impl vihaco::Reset for PPVM {

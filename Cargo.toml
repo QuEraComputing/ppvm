@@ -18,6 +18,7 @@ members = [
     "crates/ppvm-tableau",
     "crates/ppvm-stim", "crates/stim-parser",
     "crates/ppvm-tableau-sum",
+    "crates/ppvm-trajectory-cache",
     "crates/vihaco-circuit-isa",
     "crates/ppvm-vihaco",
     "crates/ppvm-cli",

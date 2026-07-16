@@ -4,7 +4,7 @@
 use eyre::{Result, WrapErr};
 use ppvm_vihaco::composite::{PPVM, StepOutcome};
 use ppvm_vihaco::measurements::MeasurementResult;
-use ppvm_vihaco::shots::ShotRecord;
+use ppvm_vihaco::shots::{ShotOptions, ShotRecord};
 use std::io::{BufRead, Write};
 use std::path::Path;
 
@@ -25,30 +25,59 @@ pub enum MeasurementFormat {
     Debug,
 }
 
-pub fn run(
-    file: &str,
-    shots: usize,
-    seed: Option<u64>,
-    output: Option<&str>,
-    quiet: bool,
-    format: MeasurementFormat,
-) -> Result<()> {
+pub struct RunOptions<'a> {
+    pub file: &'a str,
+    pub shots: usize,
+    pub seed: Option<u64>,
+    pub output: Option<&'a str>,
+    pub quiet: bool,
+    pub format: MeasurementFormat,
+    pub cache: bool,
+    pub cache_max_states: Option<usize>,
+    pub cache_stats: bool,
+}
+
+pub fn run(options: RunOptions<'_>) -> Result<()> {
     // Compile once, then run every shot against the shared module. The thread
     // pool is sized once in `main` via the top-level `--threads` flag.
-    let module =
-        ppvm_vihaco::load_module_file(file).wrap_err_with(|| format!("failed to load {file}"))?;
-    let records = ppvm_vihaco::shots::run_shots(&module, shots, seed)
-        .wrap_err_with(|| format!("failed to run {file}"))?;
-    if quiet {
+    let module = ppvm_vihaco::load_module_file(options.file)
+        .wrap_err_with(|| format!("failed to load {}", options.file))?;
+    let cache = if options.cache {
+        match options.cache_max_states {
+            Some(max) => ppvm_trajectory_cache::CacheConfig::bounded(max),
+            None => ppvm_trajectory_cache::CacheConfig::unbounded(),
+        }
+    } else {
+        ppvm_trajectory_cache::CacheConfig::disabled()
+    };
+    let batch = ppvm_vihaco::shots::run_shots_with_options(
+        &module,
+        options.shots,
+        ShotOptions {
+            seed: options.seed,
+            cache,
+        },
+    )
+    .wrap_err_with(|| format!("failed to run {}", options.file))?;
+    if options.cache_stats
+        && let Some(stats) = batch.cache_stats
+    {
+        eprintln!(
+            "cache: states={} hits={} misses={} evictions={} terminal_hits={}",
+            stats.nodes, stats.hits, stats.misses, stats.evictions, stats.terminal_hits
+        );
+    }
+    let records = batch.records;
+    if options.quiet {
         return Ok(());
     }
 
-    let text = match format {
+    let text = match options.format {
         MeasurementFormat::Bits => format_shot_records(&records),
         MeasurementFormat::Debug => format!("{records:?}"),
     };
 
-    match output {
+    match options.output {
         Some(path) => {
             std::fs::write(path, format!("{text}\n"))
                 .wrap_err_with(|| format!("failed to write {path}"))?;
@@ -384,7 +413,17 @@ mod tests {
     #[test]
     fn run_succeeds_on_valid_file() {
         let src = temp_file("ppvm_cli_run_ok.sst", PROGRAM);
-        let res = run(&src, 3, None, None, true, MeasurementFormat::Bits);
+        let res = run(RunOptions {
+            file: &src,
+            shots: 3,
+            seed: None,
+            output: None,
+            quiet: true,
+            format: MeasurementFormat::Bits,
+            cache: false,
+            cache_max_states: None,
+            cache_stats: false,
+        });
         let _ = fs::remove_file(&src);
         assert!(res.is_ok(), "got: {res:?}");
     }
@@ -395,7 +434,18 @@ mod tests {
         let out = std::env::temp_dir().join("ppvm_cli_run_output.txt");
         let _ = fs::remove_file(&out);
 
-        run(&src, 4, None, out.to_str(), false, MeasurementFormat::Bits).unwrap();
+        run(RunOptions {
+            file: &src,
+            shots: 4,
+            seed: None,
+            output: out.to_str(),
+            quiet: false,
+            format: MeasurementFormat::Bits,
+            cache: false,
+            cache_max_states: None,
+            cache_stats: false,
+        })
+        .unwrap();
         let contents = fs::read_to_string(&out).unwrap();
         // Four deterministic shots of |0>, one per line.
         assert_eq!(contents, "0\n0\n0\n0\n");
@@ -416,7 +466,18 @@ mod tests {
         let out = std::env::temp_dir().join("ppvm_cli_run_trace.txt");
         let _ = fs::remove_file(&out);
 
-        run(&src, 1, None, out.to_str(), false, MeasurementFormat::Bits).unwrap();
+        run(RunOptions {
+            file: &src,
+            shots: 1,
+            seed: None,
+            output: out.to_str(),
+            quiet: false,
+            format: MeasurementFormat::Bits,
+            cache: false,
+            cache_max_states: None,
+            cache_stats: false,
+        })
+        .unwrap();
         let contents = fs::read_to_string(&out).unwrap();
         assert_eq!(contents, "1\n", "expected trace value 1.0 in output");
 
@@ -426,14 +487,17 @@ mod tests {
 
     #[test]
     fn run_errors_with_context_on_missing_file() {
-        let err = run(
-            "/no/such/file.sst",
-            1,
-            None,
-            None,
-            false,
-            MeasurementFormat::Bits,
-        )
+        let err = run(RunOptions {
+            file: "/no/such/file.sst",
+            shots: 1,
+            seed: None,
+            output: None,
+            quiet: false,
+            format: MeasurementFormat::Bits,
+            cache: false,
+            cache_max_states: None,
+            cache_stats: false,
+        })
         .unwrap_err();
         assert!(err.to_string().contains("failed to load"), "got: {err}");
     }

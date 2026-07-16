@@ -714,6 +714,14 @@ where
         cloned
     }
 
+    /// Reinitialize the RNG in place without cloning the quantum state.
+    pub fn reseed(&mut self, seed: Option<u64>) {
+        self.tableau.rng = match seed {
+            Some(s) => SmallRng::seed_from_u64(s),
+            None => rand::make_rng(),
+        };
+    }
+
     /// Number of qubits.
     pub fn n_qubits(&self) -> usize {
         self.tableau.n_qubits

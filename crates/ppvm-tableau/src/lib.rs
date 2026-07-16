@@ -53,6 +53,8 @@ pub mod tableau_index;
 /// [`TableauLike`](tableau_like::TableauLike) — shared trait for
 /// stabilizer-tableau backends.
 pub mod tableau_like;
+/// Explicit stochastic-boundary helpers for trajectory caching.
+pub mod trajectory;
 
 /// Convenience re-exports for downstream code.
 pub mod prelude {

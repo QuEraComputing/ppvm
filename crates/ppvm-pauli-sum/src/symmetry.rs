@@ -55,11 +55,11 @@
 //! on small systems with no truncation.
 
 use crate::sum::PauliSum;
+use fxhash::FxHashMap;
+use num::Complex;
 use ppvm_pauli_word::word::PauliWord;
 use ppvm_traits::Config;
 use ppvm_traits::{HashFinalize, PauliStorage, PauliWordTrait};
-use fxhash::FxHashMap;
-use num::Complex;
 use std::f64::consts::PI;
 use std::hash::BuildHasher;
 
@@ -96,11 +96,7 @@ impl TranslationGroup {
     ///
     /// Each `perm` must be a permutation of `0..n_qubits`. Each `order`
     /// must satisfy `perm^order == identity`.
-    pub fn from_generators(
-        n_qubits: usize,
-        perms: Vec<Vec<u32>>,
-        orders: Vec<u32>,
-    ) -> Self {
+    pub fn from_generators(n_qubits: usize, perms: Vec<Vec<u32>>, orders: Vec<u32>) -> Self {
         assert_eq!(perms.len(), orders.len(), "perms and orders must match");
         for (g, perm) in perms.iter().enumerate() {
             assert_eq!(
@@ -267,10 +263,7 @@ impl TranslationGroup {
     /// keeping the smallest word seen.
     ///
     /// Total cost: `O(|G| × n_qubits)` per call.
-    pub fn canonicalize<A, S, const R: bool>(
-        &self,
-        w: &PauliWord<A, S, R>,
-    ) -> PauliWord<A, S, R>
+    pub fn canonicalize<A, S, const R: bool>(&self, w: &PauliWord<A, S, R>) -> PauliWord<A, S, R>
     where
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
@@ -442,7 +435,11 @@ pub fn canonicalize_pauli_sum<A, S, const R: bool>(
     A: PauliStorage,
     S: BuildHasher + Clone + Default + HashFinalize,
 {
-    assert_eq!(basis.len(), coeffs.len(), "basis and coeffs length mismatch");
+    assert_eq!(
+        basis.len(),
+        coeffs.len(),
+        "basis and coeffs length mismatch"
+    );
     let mut merged: FxHashMap<PauliWord<A, S, R>, f64> =
         FxHashMap::with_capacity_and_hasher(basis.len(), Default::default());
     for (w, &c) in basis.iter().zip(coeffs.iter()) {
@@ -484,7 +481,11 @@ pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
     A: PauliStorage,
     S: BuildHasher + Clone + Default + HashFinalize,
 {
-    assert_eq!(basis.len(), coeffs.len(), "basis and coeffs length mismatch");
+    assert_eq!(
+        basis.len(),
+        coeffs.len(),
+        "basis and coeffs length mismatch"
+    );
     assert_eq!(
         k_modes.len(),
         group.n_generators(),
@@ -647,9 +648,15 @@ mod tests {
         let g = TranslationGroup::chain_1d(4);
         // All cyclic shifts of "IIXY" should canonicalize to the same rep.
         let candidates = ["IIXY", "IXYI", "XYII", "YIIX"];
-        let canon: Vec<W> = candidates.iter().map(|s| g.canonicalize(&word(s))).collect();
+        let canon: Vec<W> = candidates
+            .iter()
+            .map(|s| g.canonicalize(&word(s)))
+            .collect();
         for c in &canon[1..] {
-            assert_eq!(*c, canon[0], "all cyclic shifts must canonicalize to same rep");
+            assert_eq!(
+                *c, canon[0],
+                "all cyclic shifts must canonicalize to same rep"
+            );
         }
     }
 
@@ -707,8 +714,10 @@ mod tests {
         let unique: std::collections::HashSet<W> = orbit.into_iter().collect();
         assert_eq!(unique.len(), 3);
         // The orbit should be {qubit 0=X, qubit 1=X, qubit 2=X} — all leg 0.
-        let expected: std::collections::HashSet<W> =
-            ["XIIIII", "IXIIII", "IIXIII"].iter().map(|s| word(s)).collect();
+        let expected: std::collections::HashSet<W> = ["XIIIII", "IXIIII", "IIXIII"]
+            .iter()
+            .map(|s| word(s))
+            .collect();
         assert_eq!(unique, expected);
     }
 
@@ -822,7 +831,10 @@ mod tests {
             .map(|a| Complex::from_polar(1.0, -2.0 * PI * (k_mode as f64) * (a as f64) / 4.0))
             .collect();
         let res = check_momentum_sector(&basis, &coeffs, &g, &[k_mode], 1e-10);
-        assert!(res.is_ok(), "valid k-eigenstate failed sector check: {res:?}");
+        assert!(
+            res.is_ok(),
+            "valid k-eigenstate failed sector check: {res:?}"
+        );
     }
 
     #[test]
@@ -835,10 +847,7 @@ mod tests {
             .collect();
         // Check against k=0 (constant) — should fail.
         let res = check_momentum_sector(&basis, &coeffs, &g, &[0], 1e-10);
-        assert!(
-            res.is_err(),
-            "k=1 eigenstate wrongly passed as k=0 sector"
-        );
+        assert!(res.is_err(), "k=1 eigenstate wrongly passed as k=0 sector");
     }
 
     #[test]

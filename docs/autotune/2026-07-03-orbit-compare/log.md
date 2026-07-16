@@ -1660,3 +1660,30 @@ pc_step_complex fragments attached to pc_step) cleaned. Regressions: tests
 7/7; L=5 momentum sanity 1.86e-3 and the tau_add cell (5.19e-3 / 77,820)
 bit-identical; displacement cell runs correctly through the full stack.
 PR #98 can now be closed as superseded when the campaign PR opens.
+
+## origin/main sync (2026-07-16)
+
+Merged origin/main (65 commits: ppvm-vihaco/ppvm-cli crates, tableau
+expectation/trace + word-fused cz_block, native type stubs #171, stim-parser
+breaking *pi angles #163, RotXY gate #170) into autotune/ladder-tuning
+(merge commit c4ca0941; merge, not rebase, to preserve campaign history).
+Conflicts: Cargo.lock (regenerated from upstream via cargo check) and
+ppvm-python-native/Cargo.toml (kept our lindblad deps: mimalloc/num/numpy/
+crate paths; upstream side had only removed unrelated lines). Upstream
+touches to dependency crates (pauli-word pattern tables, traits branch
+tables for RotXY) are additive gate definitions -- not on the pc_step path.
+
+Post-merge gates, all green:
+- cargo test -p ppvm-lindblad --release --lib: 7/7.
+- L=5 momentum (dt .05, 40 steps, drop 1e-4, ks 2): C(t) and n_basis(t)
+  BIT-IDENTICAL to the pre-merge artifact sanity_pec_L5_v5.h5 (== the
+  1.86e-3-vs-ED run). Strongest form of the gate.
+- tau_add cell adaptive:0.1:1e-3:K1 -> median 5.19e-3, peak 77,820 (exact).
+- displacement cell adaptive:0.05:0:M100k:A200k -> 1.99e-3 / 1.20e-2 (exact).
+  (Note: first tried dt=0.1/A=3B out of habit -> 2.31e-3/9.50e-3, run-to-run
+  deterministic; that cell was never a recorded gate. The recorded gate is
+  the dt=0.05/A=2B cell above.)
+
+Branch is now mergeable into main; PR can be opened. origin/lindblad-shim
+moved upstream (f14edafc -> 7c458d6a) while we worked -- check what landed
+there before closing #98 as superseded.

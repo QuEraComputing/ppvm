@@ -1,0 +1,27 @@
+[[metric]]
+"commit" = "20d8b2bb"
+"status" = "keep"
+"description" = "baseline: KossakowskiPair arm as merged (per-string complex coeff products)"
+"kossakowski_n30_ms" = 250.1
+"eigenmode_n30_ms" = 4349.0
+
+[[metric]]
+"commit" = "23bfeee5"
+"status" = "keep"
+"description" = "it1: flat (P_a,P_b,\u03bb*\u03bcK) sandwich table + fold \u2212K into dd at compile time; removes per-string complex products"
+"kossakowski_n30_ms" = 225.6
+
+[[metric]]
+"commit" = "5be5efc9"
+"status" = "discard"
+"description" = "it2: reuse left product P_a\u00b7p per equal-P_a run in sand table \u2014 same-load A/B 288.3 (it1) vs 290.4 ms (it2), within noise; simpler code wins. NOTE: absolute numbers shifted ~+28% vs baseline session (load); decisions from same-session A/B only"
+"kossakowski_n30_ms_sameload_it1" = 288.3
+"kossakowski_n30_ms_sameload_it2" = 290.4
+
+[[metric]]
+"commit" = "6bcc7a75"
+"status" = "keep"
+"description" = "it3: one-sided pairs collapse to \u00b1\u00bd[D,p] commutator (4 products vs 12); same-session A/B 253 vs 372 ms = -32%. Sign convention pinned by kossakowski_pair_matches_eigenmode_jumps (caught an inverted case mapping during development)"
+"kossakowski_n30_ms_sameload_it3" = 253.0
+"kossakowski_n30_ms_sameload_it1" = 372.0
+

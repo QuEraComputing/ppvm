@@ -53,6 +53,8 @@ def test_adaptive_converges_to_nn_xy_z_dephasing_bilinear():
         if dt == 0.0025:
             final_corr = (shim[-1], exact[-1])
 
+    assert final_corr is not None
+
     # Halving dt should roughly halve the error; allow 2× slack.
     assert errors[1] < 0.8 * errors[0], f"dt-halving did not help: {errors}"
     assert errors[2] < 0.8 * errors[1], f"dt-halving did not help: {errors}"

@@ -14,7 +14,6 @@ from ppvm import Lindbladian
 from ppvm.lindblad import _basis_to_codes, _codes_to_basis, sigma_minus
 
 from ._dissipative_refs import (
-    G0,
     chain_positions,
     couplings,
     eigenmode_jumps,

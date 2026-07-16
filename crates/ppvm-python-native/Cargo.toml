@@ -21,8 +21,6 @@ num = "0.4.3"
 numpy = "0.29"
 paste = "1.0.15"
 ppvm-lindblad = { version = "0.1.0", path = "../ppvm-lindblad" }
-ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
-ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
 ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 ppvm-stim = { version = "0.1.0", path = "../ppvm-stim", features = ["rayon"] }
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }

@@ -12,4 +12,3 @@
 "description" = "reuse predictor action-cache in leakage2: CORRECT (checksum 1.0) but ~2.3x RSS (525->1209MB N=12, load-independent) for <=10% unmeasurable wall gain (leakage=17%). oob Word-cache built even for the discarded corrector. Memory is expm's key weakness -> net loss."
 "rss_mb_N12" = 1209.0
 "wall_s_N12_loadnoisy" = 3.65
-

@@ -4,6 +4,7 @@
 representation, physics regression against the exact excitation-cascade
 reference, and leakage coverage.
 """
+
 import pathlib
 
 import numpy as np

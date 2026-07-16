@@ -21,6 +21,7 @@ over {I,Z} reps.
 Model: ring of N emitters (positions on a circle → circulant J and Γ,
 exact C_N symmetry), collective σ⁻ decay, momentum sector k = 0.
 """
+
 import numpy as np
 import pytest
 
@@ -49,9 +50,7 @@ def ring_model(n, d_over_lam=0.1):
 
 
 def to_rep(basis, coeff, group, mom):
-    b, c = canonicalize_basis_arr_complex(
-        basis, np.asarray(coeff, dtype=np.complex128), group, mom
-    )
+    b, c = canonicalize_basis_arr_complex(basis, np.asarray(coeff, dtype=np.complex128), group, mom)
     return dict(zip(_codes_to_basis(b), c))
 
 
@@ -78,9 +77,7 @@ def test_orbit_matches_full_basis(representation):
         b, c = lind.pc_step_arr(b, c, dt, max_basis=BIG, drop_tol=0.0)
     full = to_rep(b, c, group, mom)
 
-    br, cr = canonicalize_basis_arr_complex(
-        basis0, coeff0.astype(np.complex128), group, mom
-    )
+    br, cr = canonicalize_basis_arr_complex(basis0, coeff0.astype(np.complex128), group, mom)
     for _ in range(steps):
         br, cr = lind.pc_step_orbit_rep(
             br, cr, dt, max_basis=BIG, group=group, momentum=mom, drop_tol=0.0
@@ -97,9 +94,7 @@ def orbit_rate_trace(lind, obs, n, dt, steps, group, mom, max_basis=BIG, admit=N
     strings = list(obs)
     basis0 = _basis_to_codes(strings, n)
     coeff0 = np.array([obs[s] for s in strings])
-    br, cr = canonicalize_basis_arr_complex(
-        basis0, coeff0.astype(np.complex128), group, mom
-    )
+    br, cr = canonicalize_basis_arr_complex(basis0, coeff0.astype(np.complex128), group, mom)
     R = np.zeros(steps + 1)
     peak = 0
     for k in range(steps + 1):
@@ -109,8 +104,14 @@ def orbit_rate_trace(lind, obs, n, dt, steps, group, mom, max_basis=BIG, admit=N
         if k == steps:
             break
         br, cr = lind.pc_step_orbit_rep(
-            br, cr, dt, max_basis=max_basis, group=group, momentum=mom,
-            drop_tol=0.0, admit_basis=admit,
+            br,
+            cr,
+            dt,
+            max_basis=max_basis,
+            group=group,
+            momentum=mom,
+            drop_tol=0.0,
+            admit_basis=admit,
         )
     return R, peak
 
@@ -157,8 +158,15 @@ def test_orbit_truncated_sanity():
     errs = {}
     for b_reps in (512, 2048):
         R, peak = orbit_rate_trace(
-            lind, obs, n, dt, steps, group, mom,
-            max_basis=b_reps, admit=3 * b_reps,
+            lind,
+            obs,
+            n,
+            dt,
+            steps,
+            group,
+            mom,
+            max_basis=b_reps,
+            admit=3 * b_reps,
         )
         assert np.all(np.isfinite(R)), f"non-finite R(t) at B_reps={b_reps}"
         assert np.abs(R).max() < 5 * n, f"R(t) blowup at B_reps={b_reps}"
@@ -166,8 +174,7 @@ def test_orbit_truncated_sanity():
         errs[b_reps] = np.abs(R - R_full).max()
 
     assert errs[2048] <= errs[512], (
-        f"no improvement with rep budget: err(2048)={errs[2048]:.3e} "
-        f"> err(512)={errs[512]:.3e}"
+        f"no improvement with rep budget: err(2048)={errs[2048]:.3e} > err(512)={errs[512]:.3e}"
     )
     # At matched capacity the two representations should agree closely.
     assert errs[2048] < 0.05 * np.abs(R_full).max(), (
@@ -195,8 +202,14 @@ def test_identity_bookkeeping_closed_form():
     cr = np.array([1.0 + 0.0j])
     for _ in range(steps):
         br, cr = lind.pc_step_orbit_rep(
-            br, cr, dt, max_basis=BIG, group=group, momentum=mom,
-            drop_tol=0.0, canonicalize_first=True,
+            br,
+            cr,
+            dt,
+            max_basis=BIG,
+            group=group,
+            momentum=mom,
+            drop_tol=0.0,
+            canonicalize_first=True,
         )
     out = dict(zip(_codes_to_basis(br), cr))
 

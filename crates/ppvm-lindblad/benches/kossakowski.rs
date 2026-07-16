@@ -45,8 +45,7 @@ fn chain_couplings(n: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
             // p†·G·p with p = (1, i, 0)/√2 and r̂ = x̂:
             // p†·(kr²+ikr−1)·1·p = (kr²+ikr−1); p†·r̂r̂·p = 1/2.
             let g = pref
-                * (Complex::new(kr * kr - 1.0, kr)
-                    - Complex::new(kr * kr - 3.0, 3.0 * kr) * 0.5);
+                * (Complex::new(kr * kr - 1.0, kr) - Complex::new(kr * kr - 3.0, 3.0 * kr) * 0.5);
             j[a][b] = -3.0 * PI * G0 / k0 * g.re;
             gam[a][b] = 6.0 * PI * G0 / k0 * g.im;
         }
@@ -102,7 +101,10 @@ fn eigenmode_jumps(n: usize, gam: &[Vec<f64>]) -> Vec<JumpInput> {
                 }
             }
         }
-        jumps.push(JumpInput { lincomb: lin, rate: g });
+        jumps.push(JumpInput {
+            lincomb: lin,
+            rate: g,
+        });
     }
     jumps
 }

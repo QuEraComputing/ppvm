@@ -153,7 +153,11 @@ impl LindbladSpec {
                 .collect();
             let k: Vec<Vec<Complex<f64>>> = kossakowski_k
                 .into_iter()
-                .map(|row| row.into_iter().map(|(re, im)| Complex::new(re, im)).collect())
+                .map(|row| {
+                    row.into_iter()
+                        .map(|(re, im)| Complex::new(re, im))
+                        .collect()
+                })
                 .collect();
             inner.add_kossakowski(&ops, &k).map_err(map_err)?;
         }

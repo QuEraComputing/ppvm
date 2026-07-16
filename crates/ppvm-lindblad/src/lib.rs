@@ -1032,9 +1032,7 @@ impl LindbladSpec {
                     for (i, slot) in p_bits.iter_mut().enumerate() {
                         *slot = p.xbits.data[i] | p.zbits.data[i];
                     }
-                    let hits = |mask: &[u64; W_U64]| {
-                        (0..W_U64).any(|i| mask[i] & p_bits[i] != 0)
-                    };
+                    let hits = |mask: &[u64; W_U64]| (0..W_U64).any(|i| mask[i] & p_bits[i] != 0);
                     let (hit_l, hit_r) = (hits(left_mask), hits(right_mask));
                     if !(hit_l && hit_r) {
                         // exactly one side hit (pair is a candidate, so at
@@ -1049,8 +1047,7 @@ impl LindbladSpec {
                         for c_term in dd {
                             let (out, eps) = comm_product(&c_term.word, p);
                             if eps != 0.0 {
-                                *local.entry(out).or_insert(zero) +=
-                                    c_term.coeff * half_i * eps;
+                                *local.entry(out).or_insert(zero) += c_term.coeff * half_i * eps;
                             }
                         }
                         continue;
@@ -1292,7 +1289,10 @@ mod tests {
     fn assert_actions_match(a: &FxHashMap<Word, f64>, b: &FxHashMap<Word, f64>, tol: f64) {
         for (w, va) in a {
             let vb = b.get(w).copied().unwrap_or(0.0);
-            assert!((va - vb).abs() < tol, "coeff mismatch at {w:?}: {va} vs {vb}");
+            assert!(
+                (va - vb).abs() < tol,
+                "coeff mismatch at {w:?}: {va} vs {vb}"
+            );
         }
         for (w, vb) in b {
             assert!(
@@ -1351,10 +1351,7 @@ mod tests {
             vec![Complex::new(0.6, 0.0), Complex::new(1.0, 0.0)],
         ];
         spec_k
-            .add_kossakowski(
-                &[sigma_minus_lincomb(0, n), sigma_minus_lincomb(1, n)],
-                &k,
-            )
+            .add_kossakowski(&[sigma_minus_lincomb(0, n), sigma_minus_lincomb(1, n)], &k)
             .unwrap();
         for s in ["ZI", "IZ", "XX", "YY", "XY", "ZZ", "XI"] {
             let (p, _) = parse_pauli_string(s, n).unwrap();
@@ -1371,10 +1368,7 @@ mod tests {
             vec![Complex::new(1.0, 0.0), Complex::new(0.6, 0.1)],
             vec![Complex::new(0.6, 0.1), Complex::new(1.0, 0.0)], // should be conj
         ];
-        let err = spec.add_kossakowski(
-            &[sigma_minus_lincomb(0, n), sigma_minus_lincomb(1, n)],
-            &k,
-        );
+        let err = spec.add_kossakowski(&[sigma_minus_lincomb(0, n), sigma_minus_lincomb(1, n)], &k);
         assert!(matches!(err, Err(Error::KMatrixNotHermitian { .. })));
     }
 

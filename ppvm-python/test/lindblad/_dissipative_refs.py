@@ -14,6 +14,7 @@ H = sum_{n<m} J_nm (s+_n s-_m + h.c.);
 D[rho] = sum_{nm} Gamma_nm (s-_m rho s+_n - 1/2 {s+_n s-_m, rho});
 observable R(t) = sum_nm Gamma_nm <s+_n s-_m>(t), the photon emission rate.
 """
+
 import itertools
 
 import numpy as np
@@ -61,8 +62,7 @@ def ring_positions(n, d):
     """
     radius = d / (2 * np.sin(np.pi / n))
     return [
-        np.array([radius * np.cos(2 * np.pi * j / n),
-                  radius * np.sin(2 * np.pi * j / n), 0.0])
+        np.array([radius * np.cos(2 * np.pi * j / n), radius * np.sin(2 * np.pi * j / n), 0.0])
         for j in range(n)
     ]
 
@@ -188,7 +188,8 @@ def exact_rate_sector(n, J, Gam, T_run, dt_out, dt_inner=2e-3):
             k2 = rhs([r + h / 2 * d for r, d in zip(blocks, k1)])
             k3 = rhs([r + h / 2 * d for r, d in zip(blocks, k2)])
             k4 = rhs([r + h * d for r, d in zip(blocks, k3)])
-            blocks = [r + h / 6 * (a + 2 * b + 2 * c + e)
-                      for r, a, b, c, e in zip(blocks, k1, k2, k3, k4)]
+            blocks = [
+                r + h / 6 * (a + 2 * b + 2 * c + e) for r, a, b, c, e in zip(blocks, k1, k2, k3, k4)
+            ]
         R[k + 1] = sum(np.trace(r @ a).real for r, a in zip(blocks, A))
     return np.arange(n_out + 1) * dt_out, R

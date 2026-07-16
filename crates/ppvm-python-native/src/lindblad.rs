@@ -13,12 +13,8 @@
 use std::collections::HashMap;
 
 use num::Complex;
-use numpy::{
-    IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
-};
-use ppvm_lindblad::{
-    JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes,
-};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
+use ppvm_lindblad::{JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
@@ -48,7 +44,10 @@ fn assert_basis_unique(basis: &[Word]) -> PyResult<()> {
 }
 
 /// Decode a `(N, n_qubits)` uint8 ndarray view into `N` packed [`Word`]s.
-pub(crate) fn decode_basis(view: &numpy::ndarray::ArrayView2<u8>, n_qubits: usize) -> PyResult<Vec<Word>> {
+pub(crate) fn decode_basis(
+    view: &numpy::ndarray::ArrayView2<u8>,
+    n_qubits: usize,
+) -> PyResult<Vec<Word>> {
     let n_basis = view.shape()[0];
     let n_cols = view.shape()[1];
     if n_cols != n_qubits {

@@ -316,9 +316,7 @@ class Lindbladian:
         )
         return _codes_to_basis(new_basis_arr), new_coeffs
 
-    def generator_arr(
-        self, basis_arr: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def generator_arr(self, basis_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Generator matrix as COO triples ``(rows, cols, vals)``.
 
         Basis given as uint8 codes. To get a SciPy sparse matrix:
@@ -360,9 +358,7 @@ class Lindbladian:
         keys = _codes_to_basis(out_basis)
         return {k: float(v) for k, v in zip(keys, out_coeffs) if v != 0.0}
 
-    def generator(
-        self, basis: Sequence[str]
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def generator(self, basis: Sequence[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Generator matrix as COO triples ``(rows, cols, vals)``,
         basis given as strings. See :meth:`generator_arr` for the conversion
         to a SciPy sparse matrix."""

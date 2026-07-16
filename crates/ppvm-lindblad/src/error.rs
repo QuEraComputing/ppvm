@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 //! Error type for [`crate::LindbladSpec`] construction and stepping.
 
 use crate::MAX_QUBITS;

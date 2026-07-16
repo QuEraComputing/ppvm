@@ -34,8 +34,8 @@
 
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use num::Complex;
-use ppvm_traits::PauliWordTrait;
 use ppvm_pauli_word::word::PauliWord;
+use ppvm_traits::PauliWordTrait;
 use rayon::prelude::*;
 use std::time::Instant;
 
@@ -585,7 +585,6 @@ impl LindbladSpec {
         flat
     }
 
-
     /// Complex-coefficient variant of [`Self::leakage`]: off-basis
     /// component of `L*( Σ_j coeffs[j] · basis[j] )` with complex `coeffs`.
     pub fn leakage_complex(
@@ -601,8 +600,7 @@ impl LindbladSpec {
                 b: coeffs.len(),
             });
         }
-        let in_basis: FxHashMap<u64, ()> =
-            basis.iter().map(|w| (word_hash(w), ())).collect();
+        let in_basis: FxHashMap<u64, ()> = basis.iter().map(|w| (word_hash(w), ())).collect();
         let protected_set: FxHashMap<u64, ()> =
             protected.iter().map(|w| (word_hash(w), ())).collect();
 
@@ -705,7 +703,13 @@ impl LindbladSpec {
         protected: &[Word],
         cfg: &PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
-        let PcStepConfig { max_basis, admit_basis, drop_tol, tau_add, .. } = *cfg;
+        let PcStepConfig {
+            max_basis,
+            admit_basis,
+            drop_tol,
+            tau_add,
+            ..
+        } = *cfg;
         let admit = admit_basis.unwrap_or(max_basis).max(max_basis);
         let tau_add = tau_add.unwrap_or(0.0);
         let mut t = PcStepTimings::default();
@@ -751,7 +755,13 @@ impl LindbladSpec {
         protected: &[Word],
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
-        let PcStepConfig { max_basis, admit_basis, drop_tol, tau_add, .. } = *cfg;
+        let PcStepConfig {
+            max_basis,
+            admit_basis,
+            drop_tol,
+            tau_add,
+            ..
+        } = *cfg;
         // Admission bound: enrichment may grow the live basis to `admit`
         // >= `max_basis`; the final `cap_basis` then keeps the top-
         // `max_basis` strings by evolved |coeff| over the whole union
@@ -786,13 +796,7 @@ impl LindbladSpec {
 
     /// Compute `exp(dt · M) · b` for the in-basis-restricted generator
     /// `M`, matrix-free, via `quspin-expm` (see [`mf_expm`]).
-    fn expm_step(
-        &self,
-        basis: &[Word],
-        dt: f64,
-        b: &[f64],
-        drop_tol: f64,
-    ) -> Vec<f64> {
+    fn expm_step(&self, basis: &[Word], dt: f64, b: &[f64], drop_tol: f64) -> Vec<f64> {
         mf_expm::expm_apply_mf(self, basis, dt, b, drop_tol)
     }
 
@@ -952,7 +956,9 @@ fn cap_basis(basis: &mut Vec<Word>, coeffs: &mut Vec<f64>, max_basis: usize, pro
         return;
     } else {
         let k = slots - 1;
-        mags.select_nth_unstable_by(k, |a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        mags.select_nth_unstable_by(k, |a, b| {
+            b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+        });
         mags[k]
     };
     let mut write = 0;
@@ -984,7 +990,9 @@ fn add_leakage_capped(
     if leak.len() > room {
         if room > 0 {
             leak.select_nth_unstable_by(room - 1, |a, b| {
-                b.1.abs().partial_cmp(&a.1.abs()).unwrap_or(std::cmp::Ordering::Equal)
+                b.1.abs()
+                    .partial_cmp(&a.1.abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
         }
         leak.truncate(room);
@@ -1160,16 +1168,17 @@ mod tests {
                 &mut coeffs_r,
                 dt,
                 &protected,
-                &PcStepConfig { max_basis: 10_000_000, ..Default::default() },
+                &PcStepConfig {
+                    max_basis: 10_000_000,
+                    ..Default::default()
+                },
             )
             .unwrap();
             pc_step_complex_full(&spec, &mut basis_c, &mut coeffs_c, dt);
         }
         // Match as (word → coeff) maps.
-        let map_r: FxHashMap<Word, f64> =
-            basis_r.into_iter().zip(coeffs_r).collect();
-        let map_c: FxHashMap<Word, Complex<f64>> =
-            basis_c.into_iter().zip(coeffs_c).collect();
+        let map_r: FxHashMap<Word, f64> = basis_r.into_iter().zip(coeffs_r).collect();
+        let map_c: FxHashMap<Word, Complex<f64>> = basis_c.into_iter().zip(coeffs_c).collect();
         assert_eq!(
             map_r.len(),
             map_c.len(),
@@ -1248,11 +1257,17 @@ mod tests {
             // max_basis == current basis size → room = 0: no leakage
             // enrichment, only the expm step (the regime where merging
             // commutes with evolution). drop_tol = 0 → no truncation.
-            let cfg_u = PcStepConfig { max_basis: basis_u.len(), ..Default::default() };
+            let cfg_u = PcStepConfig {
+                max_basis: basis_u.len(),
+                ..Default::default()
+            };
             spec.pc_step(&mut basis_u, &mut coeffs_u, dt, &protected, &cfg_u)
                 .unwrap();
 
-            let cfg_m = PcStepConfig { max_basis: basis_m.len(), ..Default::default() };
+            let cfg_m = PcStepConfig {
+                max_basis: basis_m.len(),
+                ..Default::default()
+            };
             spec.pc_step(&mut basis_m, &mut coeffs_m, dt, &protected, &cfg_m)
                 .unwrap();
             // Apply symmetry merging on the "with merging" run only.

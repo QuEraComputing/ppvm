@@ -401,7 +401,7 @@ class PauliSum(
         sector only.
 
         Args:
-            group: A :class:`ppvm._core.TranslationGroup`
+            group: A `ppvm._core.TranslationGroup`
                 (use ``TranslationGroup.chain_1d(n)``, ``.torus_2d``,
                 ``.torus_3d``, ``.ladder``, or ``.from_generators``).
         """
@@ -414,7 +414,7 @@ class PauliSum(
         place with the orbit-representative form projected onto momentum
         sector ``momentum``.
 
-        Generalizes :meth:`symmetry_merge` to non-trivial momentum sectors
+        Generalizes `symmetry_merge` to non-trivial momentum sectors
         (``k != 0``) while keeping real coefficients on both PauliSums — the
         only complex arithmetic is the internal character-weighted fold.
         ``self`` and ``other`` must be distinct objects with the same qubit
@@ -424,7 +424,7 @@ class PauliSum(
 
         Args:
             other: the PauliSum holding the imaginary component (modified in place).
-            group: a :class:`ppvm._core.TranslationGroup`.
+            group: a `ppvm._core.TranslationGroup`.
             momentum: sequence of integer modes, one per group generator
                 (e.g. ``[k]`` for a 1D chain; ``[0, ...]`` is the trivial sector).
         """

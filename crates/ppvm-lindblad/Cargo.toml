@@ -12,7 +12,6 @@ ppvm-traits     = { version = "0.1.0", path = "../ppvm-traits" }
 ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
 ppvm-pauli-sum  = { version = "0.1.0", path = "../ppvm-pauli-sum" }
 rayon = "1.11"
-sprs = { version = "0.11", default-features = false, features = ["multi_thread"] }
 # Matrix-exponential action (Al-Mohy & Higham). QuSpin-rust is MIT-licensed;
 # the pinned rev is the commit that added the LICENSE file.
 quspin-expm = { git = "https://github.com/QuSpin/QuSpin-rust", rev = "a0ad6c9fe2e8063208f9ba1c6677150c993bb554" }

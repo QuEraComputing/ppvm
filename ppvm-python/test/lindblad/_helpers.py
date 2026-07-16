@@ -23,10 +23,22 @@ import numpy as np
 # --- Pauli multiplication table for the Hermitian-Pauli reference -----------
 I, X, Y, Z = range(4)  # noqa: E741  (I is standard Pauli notation here)
 MUL = {
-    (I, I): (1, I), (I, X): (1, X), (I, Y): (1, Y), (I, Z): (1, Z),
-    (X, I): (1, X), (X, X): (1, I), (X, Y): (1j, Z), (X, Z): (-1j, Y),
-    (Y, I): (1, Y), (Y, X): (-1j, Z), (Y, Y): (1, I), (Y, Z): (1j, X),
-    (Z, I): (1, Z), (Z, X): (1j, Y), (Z, Y): (-1j, X), (Z, Z): (1, I),
+    (I, I): (1, I),
+    (I, X): (1, X),
+    (I, Y): (1, Y),
+    (I, Z): (1, Z),
+    (X, I): (1, X),
+    (X, X): (1, I),
+    (X, Y): (1j, Z),
+    (X, Z): (-1j, Y),
+    (Y, I): (1, Y),
+    (Y, X): (-1j, Z),
+    (Y, Y): (1, I),
+    (Y, Z): (1j, X),
+    (Z, I): (1, Z),
+    (Z, X): (1j, Y),
+    (Z, Y): (-1j, X),
+    (Z, Z): (1, I),
 }
 CODE = {I: "I", X: "X", Y: "Y", Z: "Z"}
 ICODE = {"I": I, "X": X, "Y": Y, "Z": Z}
@@ -181,9 +193,7 @@ def dense_action(H, jumps, p_str, L):
         out_mat = 1j * (H @ p_mat - p_mat @ H)
         for Lop, gamma in jumps:
             Ld = Lop.conj().T
-            out_mat += gamma * (
-                Ld @ p_mat @ Lop - 0.5 * (Ld @ Lop @ p_mat + p_mat @ Ld @ Lop)
-            )
+            out_mat += gamma * (Ld @ p_mat @ Lop - 0.5 * (Ld @ Lop @ p_mat + p_mat @ Ld @ Lop))
     d = 2**L
     out = {}
     for q_str in all_strings(L):

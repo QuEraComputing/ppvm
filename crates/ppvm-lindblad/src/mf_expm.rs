@@ -217,7 +217,6 @@ where
     }
 }
 
-
 /// Compute `exp(dt · M) · coeffs` for the in-basis-restricted generator
 /// `M`, matrix-free, via `quspin-expm`. Returns a fresh `Vec<f64>` of length
 /// `basis.len()`.
@@ -270,7 +269,10 @@ pub(crate) fn expm_apply_mf(
     };
 
     let mut v = coeffs.to_vec();
-    let op = CscOp { cols: &cols, dim: n };
+    let op = CscOp {
+        cols: &cols,
+        dim: n,
+    };
     let expm = quspin_expm::ExpmOp::from_parts(op, dt, mu, s as usize, m_star as usize, expm_tol);
     expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
         .expect("expm apply");
@@ -305,5 +307,3 @@ pub(crate) fn expm_apply_mf_cxvec(
         .map(|(r, i)| Complex::new(r, i))
         .collect()
 }
-
-

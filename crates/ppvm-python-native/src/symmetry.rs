@@ -12,8 +12,7 @@
 
 use num::Complex;
 use numpy::{
-    Complex64, IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1,
-    PyReadonlyArray2,
+    Complex64, IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
 };
 use ppvm_lindblad::{codes_from_word, word_from_codes};
 use ppvm_pauli_sum::symmetry as core_sym;
@@ -229,8 +228,10 @@ pub fn canonicalize_basis_arr_complex<'py>(
     for (i, w) in basis_words.iter().enumerate() {
         codes_from_word(w, &mut out_basis[i * n_q..(i + 1) * n_q]);
     }
-    let out_coeffs: Vec<Complex64> =
-        coeffs_vec.iter().map(|c| Complex64::new(c.re, c.im)).collect();
+    let out_coeffs: Vec<Complex64> = coeffs_vec
+        .iter()
+        .map(|c| Complex64::new(c.re, c.im))
+        .collect();
     let basis_arr = out_basis
         .into_pyarray(py)
         .reshape([m, n_q])

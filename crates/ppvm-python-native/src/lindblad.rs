@@ -14,8 +14,7 @@ use std::collections::HashMap;
 
 use num::Complex;
 use numpy::{
-    Complex64, IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1,
-    PyReadonlyArray2,
+    Complex64, IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
 };
 use ppvm_lindblad::{JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes};
 use pyo3::{exceptions::PyValueError, prelude::*};

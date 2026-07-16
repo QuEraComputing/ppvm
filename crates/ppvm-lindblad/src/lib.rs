@@ -1133,8 +1133,8 @@ mod tests {
     /// action machinery is consistent with the full-basis reference.
     #[test]
     fn pc_step_orbit_rep_matches_full_basis_projection() {
-        use std::f64::consts::PI;
         use ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex;
+        use std::f64::consts::PI;
         let n = 4usize;
         let dt = 0.01f64;
         let n_steps = 3usize;
@@ -1163,7 +1163,9 @@ mod tests {
             })
             .collect();
         let coeffs_full: Vec<Complex<f64>> = (0..n as i32)
-            .map(|a| Complex::from_polar(1.0, -2.0 * PI * (k_mode as f64) * (a as f64) / (n as f64)))
+            .map(|a| {
+                Complex::from_polar(1.0, -2.0 * PI * (k_mode as f64) * (a as f64) / (n as f64))
+            })
             .collect();
 
         // ----- Full-basis path -----
@@ -1196,7 +1198,10 @@ mod tests {
                 &protected,
                 &group,
                 &k,
-                &PcStepConfig { max_basis: 10_000_000, ..Default::default() },
+                &PcStepConfig {
+                    max_basis: 10_000_000,
+                    ..Default::default()
+                },
             )
             .unwrap();
         }

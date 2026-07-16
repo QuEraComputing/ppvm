@@ -272,17 +272,29 @@ enum JumpKind {
         dagger_dagger: Vec<PauliTerm>, // L†L = Σ_c μ_c P_c  (μ_c ∈ ℝ)
         rate: f64,
     },
+    /// One `(n, m)` pair of a Kossakowski-form dissipator
+    /// `D*(O) = Σ_{n,m} K_nm (A_n† O A_m − ½ {A_n† A_m, O})`.
+    /// `n`/`m` index into [`LindbladSpec::k_ops`]; `dd` is the precompiled
+    /// Pauli linear combination `A_n† A_m` (complex coefficients — not
+    /// Hermitian for `n ≠ m`; Hermiticity of the total action is restored
+    /// by the conjugate `(m, n)` pair).
+    KossakowskiPair {
+        n: u32,
+        m: u32,
+        k: Complex<f64>,
+        dd: Vec<PauliTerm>,
+    },
 }
 
-/// Expand `L†L = (Σ_a λ_a P_a)† (Σ_b λ_b P_b) = Σ_{a,b} λ_a* λ_b P_a P_b`
-/// as a Pauli linear combination, dropping FP-noise zeros. Coefficients are
-/// real because `L†L` is Hermitian; we keep them complex for arithmetic
-/// uniformity.
-fn precompute_ldagger_l(terms: &[PauliTerm]) -> Vec<PauliTerm> {
+/// Expand `A†B = (Σ_a λ_a P_a)† (Σ_b μ_b P_b) = Σ_{a,b} λ_a* μ_b P_a P_b`
+/// as a Pauli linear combination, dropping FP-noise zeros. For `A = B`
+/// (the jump-operator `L†L`) the coefficients are real; in general they
+/// are complex.
+fn precompute_adag_b(a_terms: &[PauliTerm], b_terms: &[PauliTerm]) -> Vec<PauliTerm> {
     let zero = Complex::new(0.0, 0.0);
     let mut acc: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
-    for a in terms {
-        for b in terms {
+    for a in a_terms {
+        for b in b_terms {
             let (word, phase) = pauli_mul(&a.word, &b.word);
             let coeff = a.coeff.conj() * b.coeff * phase_factor(phase);
             *acc.entry(word).or_insert(zero) += coeff;
@@ -306,8 +318,13 @@ pub struct LindbladSpec {
     j_kinds: Vec<JumpKind>,
     /// `h_support[q]` = indices of Hamiltonian terms acting on qubit `q`.
     h_support: Vec<Vec<u32>>,
-    /// `j_support[q]` = indices of jumps whose support contains qubit `q`.
+    /// `j_support[q]` = indices of `j_kinds` entries whose support
+    /// contains qubit `q` (jump operators and Kossakowski pairs alike).
     j_support: Vec<Vec<u32>>,
+    /// Kossakowski operator table: `k_ops[i]` holds the Pauli linear
+    /// combination of operator `A_i`, shared by every pair that
+    /// references it.
+    k_ops: Vec<Vec<PauliTerm>>,
 }
 
 /// User-facing description of one jump operator: a complex Pauli linear
@@ -387,7 +404,7 @@ impl LindbladSpec {
             for q in union_support {
                 j_support_idx[q as usize].push(k as u32);
             }
-            let dagger_dagger = precompute_ldagger_l(&terms);
+            let dagger_dagger = precompute_adag_b(&terms, &terms);
             j_kinds.push(JumpKind::General {
                 terms,
                 dagger_dagger,
@@ -401,7 +418,111 @@ impl LindbladSpec {
             j_kinds,
             h_support: h_support_idx,
             j_support: j_support_idx,
+            k_ops: Vec::new(),
         })
+    }
+
+    /// Add a Kossakowski-form dissipator
+    /// `D*(O) = Σ_{n,m} K_nm ( A_n† O A_m − ½ {A_n† A_m, O} )`
+    /// specified by an operator list and a Hermitian pair matrix.
+    ///
+    /// `ops[i]` is the Pauli linear combination of `A_i` (e.g. `σ⁻_i`);
+    /// `k` is the `M × M` pair matrix, row-major (`k[n][m] = K_nm`).
+    /// Mathematically identical to eigendecomposing `K = V diag(γ) V†`
+    /// and adding the jumps `L_ν = √γ_ν Σ_j V*_jν A_j`, but the action
+    /// costs one term-pair product per nonzero `K_nm` instead of one per
+    /// `(jump, term-pair)` — an `M`-fold saving for dense `K`.
+    ///
+    /// Validates Hermiticity of `k` (positive semi-definiteness is the
+    /// caller's responsibility — checked in the Python layer, where an
+    /// eigensolver is available). Entries with
+    /// `|K_nm| ≤ 1e-14 · max|K|` are dropped at compile time.
+    pub fn add_kossakowski(
+        &mut self,
+        ops: &[Vec<(String, Complex<f64>)>],
+        k: &[Vec<Complex<f64>>],
+    ) -> Result<(), Error> {
+        let m_ops = ops.len();
+        if k.len() != m_ops {
+            return Err(Error::LengthMismatch {
+                what: "kossakowski ops and K rows",
+                a: m_ops,
+                b: k.len(),
+            });
+        }
+        for (i, row) in k.iter().enumerate() {
+            if row.len() != m_ops {
+                return Err(Error::LengthMismatch {
+                    what: "kossakowski K row and ops",
+                    a: row.len(),
+                    b: m_ops,
+                });
+            }
+            let _ = i;
+        }
+        let max_abs = k
+            .iter()
+            .flat_map(|row| row.iter().map(|c| c.norm()))
+            .fold(0.0_f64, f64::max);
+        // Hermiticity: K_nm must equal conj(K_mn); a non-Hermitian K is
+        // not a valid GKSL pair matrix and would produce a non-Hermiticity-
+        // preserving action.
+        let herm_tol = 1e-10 * max_abs.max(1.0);
+        for n in 0..m_ops {
+            for m in n..m_ops {
+                if (k[n][m] - k[m][n].conj()).norm() > herm_tol {
+                    return Err(Error::KMatrixNotHermitian { n, m });
+                }
+            }
+        }
+
+        // Parse the operator table once; record per-op support.
+        let base = self.k_ops.len();
+        let mut op_support: Vec<Vec<u32>> = Vec::with_capacity(m_ops);
+        for (i, op) in ops.iter().enumerate() {
+            if op.is_empty() {
+                return Err(Error::EmptyLincomb { index: i });
+            }
+            let mut terms: Vec<PauliTerm> = Vec::with_capacity(op.len());
+            let mut union_support: std::collections::BTreeSet<u32> =
+                std::collections::BTreeSet::new();
+            for (s, c) in op {
+                let (word, support) = parse_pauli_string(s, self.n_qubits)?;
+                for q in &support {
+                    union_support.insert(*q);
+                }
+                terms.push(PauliTerm { word, coeff: *c });
+            }
+            op_support.push(union_support.into_iter().collect());
+            self.k_ops.push(terms);
+        }
+
+        // One JumpKind entry per non-negligible pair, indexed by the union
+        // support of A_n and A_m so the per-string candidate lookup only
+        // visits pairs that can act nontrivially.
+        let pair_tol = 1e-14 * max_abs;
+        for n in 0..m_ops {
+            for m in 0..m_ops {
+                if k[n][m].norm() <= pair_tol {
+                    continue;
+                }
+                let dd = precompute_adag_b(&self.k_ops[base + n], &self.k_ops[base + m]);
+                let idx = self.j_kinds.len() as u32;
+                self.j_kinds.push(JumpKind::KossakowskiPair {
+                    n: (base + n) as u32,
+                    m: (base + m) as u32,
+                    k: k[n][m],
+                    dd,
+                });
+                let mut union: std::collections::BTreeSet<u32> =
+                    op_support[n].iter().copied().collect();
+                union.extend(op_support[m].iter().copied());
+                for q in union {
+                    self.j_support[q as usize].push(idx);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn n_qubits(&self) -> usize {
@@ -849,7 +970,7 @@ impl LindbladSpec {
                             *local.entry(s).or_insert(zero) += coeff;
                         }
                     }
-                    // -1/2 γ {L†L, p}. For Hermitian Pauli P_c and Pauli p,
+                    // -1/2 γ {L†L, p}. For Pauli words P_c and p,
                     // {P_c, p} = 2·sign·R if they commute (P_c·p = sign·R),
                     //         = 0          if they anti-commute.
                     for c_term in dagger_dagger {
@@ -858,6 +979,28 @@ impl LindbladSpec {
                             let sign = if phase == 0 { 1.0 } else { -1.0 };
                             let coeff = -c_term.coeff * rate_c * Complex::new(sign, 0.0);
                             *local.entry(r).or_insert(zero) += coeff;
+                        }
+                    }
+                }
+                JumpKind::KossakowskiPair { n, m, k, dd } => {
+                    // Sandwich: K_nm Σ_{a ∈ A_n, b ∈ A_m} λ_a* μ_b P_a p P_b.
+                    for a in &self.k_ops[*n as usize] {
+                        let (r_ap, phi1) = pauli_mul(&a.word, p);
+                        for b in &self.k_ops[*m as usize] {
+                            let (s, phi2) = pauli_mul(&r_ap, &b.word);
+                            let coeff =
+                                a.coeff.conj() * b.coeff * phase_factor(phi1 + phi2) * k;
+                            *local.entry(s).or_insert(zero) += coeff;
+                        }
+                    }
+                    // -1/2 K_nm {A_n†A_m, p}: same commuting-Pauli rule as
+                    // the jump anticommutator; `dd` coefficients are complex.
+                    for c_term in dd {
+                        let (r, phase) = pauli_mul(&c_term.word, p);
+                        if phase & 1 == 0 {
+                            let sign = if phase == 0 { 1.0 } else { -1.0 };
+                            *local.entry(r).or_insert(zero) +=
+                                -c_term.coeff * k * Complex::new(sign, 0.0);
                         }
                     }
                 }
@@ -1058,6 +1201,111 @@ mod tests {
             }
         }
         *coeffs = mf_expm::expm_apply_mf_cxvec(spec, basis, dt, coeffs, 0.0);
+    }
+
+    fn sigma_minus_lincomb(site: usize, n: usize) -> Vec<(String, Complex<f64>)> {
+        let mut x = vec!['I'; n];
+        x[site] = 'X';
+        let mut y = vec!['I'; n];
+        y[site] = 'Y';
+        vec![
+            (x.into_iter().collect(), Complex::new(0.5, 0.0)),
+            (y.into_iter().collect(), Complex::new(0.0, -0.5)),
+        ]
+    }
+
+    /// Collect `spec.action` into a map for comparison.
+    fn action_map(spec: &LindbladSpec, p: &Word) -> FxHashMap<Word, f64> {
+        spec.action(p).into_iter().collect()
+    }
+
+    fn assert_actions_match(a: &FxHashMap<Word, f64>, b: &FxHashMap<Word, f64>, tol: f64) {
+        for (w, va) in a {
+            let vb = b.get(w).copied().unwrap_or(0.0);
+            assert!((va - vb).abs() < tol, "coeff mismatch at {w:?}: {va} vs {vb}");
+        }
+        for (w, vb) in b {
+            assert!(
+                a.contains_key(w) || vb.abs() < tol,
+                "extra word {w:?} with coeff {vb}"
+            );
+        }
+    }
+
+    /// A single-operator Kossakowski block `K = [[γ]]`, `A = σ⁻`, equals
+    /// the ordinary jump `L = σ⁻` with rate `γ`.
+    #[test]
+    fn kossakowski_single_op_matches_jump() {
+        let n = 2;
+        let gamma = 0.7;
+        let jump = JumpInput {
+            lincomb: sigma_minus_lincomb(0, n),
+            rate: gamma,
+        };
+        let spec_jump = LindbladSpec::new(n, &[], &[jump]).unwrap();
+        let mut spec_k = LindbladSpec::new(n, &[], &[]).unwrap();
+        spec_k
+            .add_kossakowski(
+                &[sigma_minus_lincomb(0, n)],
+                &[vec![Complex::new(gamma, 0.0)]],
+            )
+            .unwrap();
+        for s in ["ZI", "XI", "YI", "ZZ", "XY"] {
+            let (p, _) = parse_pauli_string(s, n).unwrap();
+            assert_actions_match(&action_map(&spec_jump, &p), &action_map(&spec_k, &p), 1e-12);
+        }
+    }
+
+    /// Two-site collective decay: the Kossakowski form with
+    /// `K = [[1.0, 0.6], [0.6, 1.0]]` equals the eigenmode jumps
+    /// `L_± = √γ_± (σ⁻_0 ± σ⁻_1)/√2` with `γ_± = 1 ± 0.6`.
+    #[test]
+    fn kossakowski_pair_matches_eigenmode_jumps() {
+        let n = 2;
+        let (g_plus, g_minus) = (1.6, 0.4);
+        let inv_sqrt2 = std::f64::consts::FRAC_1_SQRT_2;
+        let mk_jump = |sign: f64, rate: f64| {
+            let mut lin = Vec::new();
+            for (site, s) in [(0usize, 1.0), (1usize, sign)] {
+                for (p, c) in sigma_minus_lincomb(site, n) {
+                    lin.push((p, c * Complex::new(s * inv_sqrt2, 0.0)));
+                }
+            }
+            JumpInput { lincomb: lin, rate }
+        };
+        let spec_jump =
+            LindbladSpec::new(n, &[], &[mk_jump(1.0, g_plus), mk_jump(-1.0, g_minus)]).unwrap();
+        let mut spec_k = LindbladSpec::new(n, &[], &[]).unwrap();
+        let k = vec![
+            vec![Complex::new(1.0, 0.0), Complex::new(0.6, 0.0)],
+            vec![Complex::new(0.6, 0.0), Complex::new(1.0, 0.0)],
+        ];
+        spec_k
+            .add_kossakowski(
+                &[sigma_minus_lincomb(0, n), sigma_minus_lincomb(1, n)],
+                &k,
+            )
+            .unwrap();
+        for s in ["ZI", "IZ", "XX", "YY", "XY", "ZZ", "XI"] {
+            let (p, _) = parse_pauli_string(s, n).unwrap();
+            assert_actions_match(&action_map(&spec_jump, &p), &action_map(&spec_k, &p), 1e-12);
+        }
+    }
+
+    /// Non-Hermitian K is rejected.
+    #[test]
+    fn kossakowski_rejects_non_hermitian_k() {
+        let n = 2;
+        let mut spec = LindbladSpec::new(n, &[], &[]).unwrap();
+        let k = vec![
+            vec![Complex::new(1.0, 0.0), Complex::new(0.6, 0.1)],
+            vec![Complex::new(0.6, 0.1), Complex::new(1.0, 0.0)], // should be conj
+        ];
+        let err = spec.add_kossakowski(
+            &[sigma_minus_lincomb(0, n), sigma_minus_lincomb(1, n)],
+            &k,
+        );
+        assert!(matches!(err, Err(Error::KMatrixNotHermitian { .. })));
     }
 
     fn jump_hpauli(s: &str, rate: f64) -> JumpInput {

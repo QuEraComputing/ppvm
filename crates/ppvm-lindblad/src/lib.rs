@@ -281,7 +281,12 @@ enum JumpKind {
     /// the conjugate `(m, n)` pair.
     KossakowskiPair {
         sand: Vec<(Word, Word, Complex<f64>)>,
+        /// `K_nm · A_n†A_m` as a Pauli lincomb.
         dd: Vec<PauliTerm>,
+        /// Support bit masks (`xbits | zbits` union) of `A_n` and `A_m`,
+        /// for the one-sided fast path in the action.
+        left_mask: [u64; W_U64],
+        right_mask: [u64; W_U64],
     },
 }
 
@@ -509,7 +514,7 @@ impl LindbladSpec {
                     .into_iter()
                     .map(|t| PauliTerm {
                         word: t.word,
-                        coeff: -k[n][m] * t.coeff,
+                        coeff: k[n][m] * t.coeff,
                     })
                     .collect();
                 let mut sand = Vec::new();
@@ -518,8 +523,24 @@ impl LindbladSpec {
                         sand.push((a.word, b.word, a.coeff.conj() * b.coeff * k[n][m]));
                     }
                 }
+                let support_mask = |terms: &[PauliTerm]| {
+                    let mut mask = [0u64; W_U64];
+                    for t in terms {
+                        for i in 0..W_U64 {
+                            mask[i] |= t.word.xbits.data[i] | t.word.zbits.data[i];
+                        }
+                    }
+                    mask
+                };
+                let left_mask = support_mask(&self.k_ops[base + n]);
+                let right_mask = support_mask(&self.k_ops[base + m]);
                 let idx = self.j_kinds.len() as u32;
-                self.j_kinds.push(JumpKind::KossakowskiPair { sand, dd });
+                self.j_kinds.push(JumpKind::KossakowskiPair {
+                    sand,
+                    dd,
+                    left_mask,
+                    right_mask,
+                });
                 let mut union: std::collections::BTreeSet<u32> =
                     op_support[n].iter().copied().collect();
                 union.extend(op_support[m].iter().copied());
@@ -988,20 +1009,59 @@ impl LindbladSpec {
                         }
                     }
                 }
-                JumpKind::KossakowskiPair { sand, dd } => {
-                    // Sandwich: precompiled (P_a, P_b, λ_a*·μ_b·K_nm) table.
+                JumpKind::KossakowskiPair {
+                    sand,
+                    dd,
+                    left_mask,
+                    right_mask,
+                } => {
+                    // One-sided fast path: when `p` is disjoint from one of
+                    // the two operators, the pair contribution collapses to
+                    // a commutator of the precompiled `D = K·A_n†A_m`:
+                    //   p disjoint from A_n (left):  C = −½ [D, p]
+                    //   p disjoint from A_m (right): C = +½ [D, p]
+                    // (commute `p` through the disjoint side; the sandwich
+                    // then merges with the anticommutator). With
+                    // `[P_c, p] = −i·eps·out` from `comm_product`, the term
+                    // coefficient is `∓ t_c · (i/2) · eps`.
+                    let mut p_bits = [0u64; W_U64];
+                    for i in 0..W_U64 {
+                        p_bits[i] = p.xbits.data[i] | p.zbits.data[i];
+                    }
+                    let hits = |mask: &[u64; W_U64]| {
+                        (0..W_U64).any(|i| mask[i] & p_bits[i] != 0)
+                    };
+                    let (hit_l, hit_r) = (hits(left_mask), hits(right_mask));
+                    if !(hit_l && hit_r) {
+                        // exactly one side hit (pair is a candidate, so at
+                        // least one side overlaps)
+                        // hit_r (left disjoint):  C = −½[D,p]
+                        // hit_l (right disjoint): C = +½[D,p]
+                        let half_i = if hit_r {
+                            Complex::new(0.0, 0.5)
+                        } else {
+                            Complex::new(0.0, -0.5)
+                        };
+                        for c_term in dd {
+                            let (out, eps) = comm_product(&c_term.word, p);
+                            if eps != 0.0 {
+                                *local.entry(out).or_insert(zero) +=
+                                    c_term.coeff * half_i * eps;
+                            }
+                        }
+                        continue;
+                    }
+                    // Both sides hit: full sandwich + anticommutator.
                     for (wa, wb, c0) in sand {
                         let (r_ap, phi1) = pauli_mul(wa, p);
                         let (s, phi2) = pauli_mul(&r_ap, wb);
                         *local.entry(s).or_insert(zero) += c0 * phase_factor(phi1 + phi2);
                     }
-                    // Anticommutator: `dd` coefficients carry −K_nm already;
-                    // same commuting-Pauli rule as the jump anticommutator.
                     for c_term in dd {
                         let (r, phase) = pauli_mul(&c_term.word, p);
                         if phase & 1 == 0 {
                             let sign = if phase == 0 { 1.0 } else { -1.0 };
-                            *local.entry(r).or_insert(zero) +=
+                            *local.entry(r).or_insert(zero) -=
                                 c_term.coeff * Complex::new(sign, 0.0);
                         }
                     }

@@ -48,6 +48,139 @@ macro_rules! create_interface_loss_methods {
     };
 }
 
+macro_rules! create_interface_symmetry_methods {
+    // Skip loss variants: LossyPauliWord canonicalization would need
+    // simultaneous permutation of the loss bitmap, which we don't
+    // implement here.
+    ($name: ident, $type: ident, true) => {};
+    ($name: ident, $type: ident, false) => {
+        #[pymethods]
+        impl $name {
+            /// Symmetry-merge this PauliSum in place: replace every
+            /// Pauli word by its canonical orbit representative under
+            /// `group`, accumulating coefficients on collision. Reduces
+            /// entry count by up to `|group|×` for translation-invariant
+            /// operators.
+            ///
+            /// See `ppvm._core.TranslationGroup` for constructors
+            /// (`chain_1d`, `torus_2d`, `torus_3d`, `ladder`).
+            ///
+            /// Plain real-coefficient merge (the `k=0` symmetry sector).
+            /// For non-trivial momentum sectors use `momentum_merge`.
+            pub fn symmetry_merge(
+                &mut self,
+                group: &crate::symmetry::TranslationGroup,
+            ) -> pyo3::PyResult<()> {
+                if self.inner.n_qubits() != group.core().n_qubits() {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "PauliSum has {} qubits but the TranslationGroup acts on {}",
+                        self.inner.n_qubits(),
+                        group.core().n_qubits(),
+                    )));
+                }
+                ppvm_pauli_sum::symmetry::symmetry_merge_pauli_sum(
+                    &mut self.inner,
+                    group.core(),
+                );
+                Ok(())
+            }
+
+            /// Phase-aware (momentum-sector) merge for a complex operator
+            /// carried as a *real pair*: `self` is the real part, `other`
+            /// the imaginary part of `O = self + i·other`.  Both are
+            /// overwritten in place with the orbit-representative form
+            /// projected onto momentum sector `momentum` (one integer mode
+            /// per group generator; `[0,…]` is the trivial sector and
+            /// reduces to `symmetry_merge`).  This generalizes
+            /// `symmetry_merge` to k != 0 while keeping real coefficients on
+            /// the Python side — the only place complex arithmetic appears
+            /// is the internal character-weighted fold, reusing the tested
+            /// `canonicalize_pauli_sum_complex`.
+            ///
+            /// `self` and `other` must be distinct objects with identical
+            /// qubit count.  After a translation-covariant gate layer this
+            /// is exact; under a generic Trotter step it carries the same
+            /// O(dt^{p+1}) equivariance error as the k=0 merge.
+            #[pyo3(signature = (other, group, momentum))]
+            pub fn momentum_merge(
+                &mut self,
+                mut other: pyo3::PyRefMut<'_, Self>,
+                group: &crate::symmetry::TranslationGroup,
+                momentum: Vec<i32>,
+            ) -> pyo3::PyResult<()> {
+                let n_g = group.core().n_qubits();
+                for (label, n) in [
+                    ("self", self.inner.n_qubits()),
+                    ("other", other.inner.n_qubits()),
+                ] {
+                    if n != n_g {
+                        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                            "{label} PauliSum has {n} qubits but the \
+                             TranslationGroup acts on {n_g}",
+                        )));
+                    }
+                }
+                if momentum.len() != group.core().n_generators() {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "momentum has {} entries but the group has {} generators",
+                        momentum.len(),
+                        group.core().n_generators(),
+                    )));
+                }
+                // Gather both real components into word -> (re + i·im).
+                let mut combined: std::collections::HashMap<
+                    <$type as Config>::PauliWordType,
+                    num::Complex<f64>,
+                > = std::collections::HashMap::new();
+                for (w, v) in self.inner.data().iter() {
+                    combined
+                        .entry(w.clone())
+                        .or_insert(num::Complex::new(0.0, 0.0))
+                        .re += *v;
+                }
+                for (w, v) in other.inner.data().iter() {
+                    combined
+                        .entry(w.clone())
+                        .or_insert(num::Complex::new(0.0, 0.0))
+                        .im += *v;
+                }
+                let mut basis = Vec::with_capacity(combined.len());
+                let mut coeffs = Vec::with_capacity(combined.len());
+                for (w, c) in combined {
+                    basis.push(w);
+                    coeffs.push(c);
+                }
+                // Character-weighted fold onto orbit reps.
+                // `canonicalize_pauli_sum_complex` carries a 1/|G| prefactor;
+                // we rescale by |G| so the merge is the *summing* projector
+                // (like `symmetry_merge`): idempotent on already-merged input,
+                // hence stable under merging after every Trotter step.
+                ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex(
+                    &mut basis,
+                    &mut coeffs,
+                    group.core(),
+                    &momentum,
+                );
+                let scale = group.core().order() as f64;
+                // Write the real/imag parts back into the two sums.
+                self.inner.data_mut().clear();
+                other.inner.data_mut().clear();
+                for (w, c) in basis.into_iter().zip(coeffs.into_iter()) {
+                    let re = c.re * scale;
+                    let im = c.im * scale;
+                    if re != 0.0 {
+                        self.inner += (w.clone(), re);
+                    }
+                    if im != 0.0 {
+                        other.inner += (w, im);
+                    }
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
 macro_rules! create_strategy {
     (false, $min_abs_coeff:ident, $max_pauli_weight:ident, $_max_loss_weight:ident) => {
         CombinedStrategy(
@@ -402,6 +535,12 @@ macro_rules! create_interface {
                 self.inner.data().iter().map(|(k, _v)| k.weight()).max().unwrap_or(0)
             }
         }
+
+        // `symmetry_merge` only makes sense on non-loss variants — the
+        // canonicalization permutes qubit positions and the loss
+        // bitmap would need a parallel permutation that we don't
+        // attempt here.
+        create_interface_symmetry_methods!($name, $type, $loss);
 
         create_interface_loss_methods!($name, $type, $loss);
     };

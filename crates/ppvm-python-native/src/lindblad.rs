@@ -14,7 +14,8 @@ use std::collections::HashMap;
 
 use num::Complex;
 use numpy::{
-    IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
+    Complex64, IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1,
+    PyReadonlyArray2,
 };
 use ppvm_lindblad::{
     JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes,
@@ -340,6 +341,120 @@ impl LindbladSpec {
         d.set_item("expand2_us", timings.expand2_us)?;
         d.set_item("expm2_us", timings.expm2_us)?;
         Ok((map, d))
+    }
+
+    /// Per-step orbit-rep predictor-corrector evolution under
+    /// translation symmetry. State lives entirely in **orbit-rep form**:
+    /// basis contains only canonical orbit representatives, coefficients
+    /// are complex. The action is phase-aware: output Paulis canonicalize
+    /// to their orbit rep with momentum-character weight.
+    ///
+    /// Per-step memory benefit: basis is ~|group|× smaller than the
+    /// full-basis representation, and the reduction persists through
+    /// every step.
+    ///
+    /// **Pre-condition**: every row of `basis` must be the canonical
+    /// orbit representative of its translation orbit under `group`.
+    /// Pass `canonicalize_first=True` to enforce this on entry (rewrites
+    /// each basis row to its canonical rep; coefficients unchanged).
+    /// Default `False` — the caller is trusted.
+    ///
+    /// `max_basis` is a hard rank cap on the live orbit-rep basis:
+    /// enrichment adds at most `max_basis − basis.len()` of the largest
+    /// leakage reps and the post-step basis is trimmed to the top-`max_basis`
+    /// by `|c|` (protected reps always kept). Pass a large value for the
+    /// near-exact case. `drop_tol` additionally prunes by magnitude.
+    #[pyo3(signature = (
+        basis, coeffs, dt, max_basis,
+        group, momentum,
+        drop_tol = 0.0,
+        protected = None,
+        canonicalize_first = false,
+        admit_basis = None,
+        tau_add = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn pc_step_orbit_rep<'py>(
+        &self,
+        py: Python<'py>,
+        basis: PyReadonlyArray2<'py, u8>,
+        coeffs: PyReadonlyArray1<'py, Complex64>,
+        dt: f64,
+        max_basis: usize,
+        group: &crate::symmetry::TranslationGroup,
+        momentum: PyReadonlyArray1<'py, i32>,
+        drop_tol: f64,
+        protected: Option<PyReadonlyArray2<'py, u8>>,
+        canonicalize_first: bool,
+        admit_basis: Option<usize>,
+        tau_add: Option<f64>,
+    ) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>)> {
+        use num::Complex;
+        use ppvm_lindblad::orbit_rep;
+
+        let n_q = self.inner.n_qubits();
+        let basis_view = basis.as_array();
+        let mut basis_words = decode_basis(&basis_view, n_q)?;
+        let coeffs_slice = coeffs.as_slice()?;
+        if coeffs_slice.len() != basis_words.len() {
+            return Err(PyValueError::new_err(format!(
+                "coeffs has length {} but basis has {} rows",
+                coeffs_slice.len(),
+                basis_words.len()
+            )));
+        }
+        let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
+            .iter()
+            .map(|c| Complex::new(c.re, c.im))
+            .collect();
+        let protected_words: Vec<Word> = if let Some(ref p) = protected {
+            decode_basis(&p.as_array(), n_q)?
+        } else {
+            Vec::new()
+        };
+        let k_slice = momentum.as_slice()?;
+        if k_slice.len() != group.core().n_generators() {
+            return Err(PyValueError::new_err(format!(
+                "momentum has {} entries but group has {} generators",
+                k_slice.len(),
+                group.core().n_generators()
+            )));
+        }
+        if canonicalize_first {
+            orbit_rep::canonicalize_basis_to_rep(&mut basis_words, group.core());
+        }
+        orbit_rep::pc_step_orbit_rep(
+            &self.inner,
+            &mut basis_words,
+            &mut coeffs_vec,
+            dt,
+            &protected_words,
+            group.core(),
+            k_slice,
+            &ppvm_lindblad::PcStepConfig {
+                max_basis,
+                admit_basis,
+                drop_tol,
+                tau_add,
+                num_threads: None,
+            },
+        )
+        .map_err(map_err)?;
+
+        let m = basis_words.len();
+        let mut out_basis = vec![0u8; m * n_q];
+        for (i, w) in basis_words.iter().enumerate() {
+            codes_from_word(w, &mut out_basis[i * n_q..(i + 1) * n_q]);
+        }
+        let out_coeffs: Vec<Complex64> = coeffs_vec
+            .iter()
+            .map(|c| Complex64::new(c.re, c.im))
+            .collect();
+        let basis_arr = out_basis
+            .into_pyarray(py)
+            .reshape([m, n_q])
+            .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
+        Ok((basis_arr, out_coeffs.into_pyarray(py)))
     }
 
     /// Sparse generator matrix in COO form: `(rows, cols, vals)`.

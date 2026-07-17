@@ -65,25 +65,6 @@ pub struct PauliFactor {
     pub qubit: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Tag {
-    pub name: String,
-    pub params: Vec<TagParam>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum TagParam {
-    Positional(f64),
-    /// A `key=value` tag parameter. `had_pi` records whether the value was
-    /// written as a `<n>[*]pi` (or bare `pi`) expression — rotation/U3 tags
-    /// require it (half-turn convention), and the printer re-emits `*pi`.
-    Named {
-        key: String,
-        value: f64,
-        had_pi: bool,
-    },
-}
-
 /// The rotation axis for an extended-dialect `R_X` / `R_Y` / `R_Z` rotation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {
@@ -99,7 +80,7 @@ pub enum Axis {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GateOp {
     pub name: GateName,
-    pub tags: Vec<Tag>,
+    pub tag: String,
     pub args: Vec<f64>,
     pub targets: Vec<Target>,
     pub span: Span,
@@ -108,7 +89,7 @@ pub struct GateOp {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoiseOp {
     pub name: NoiseName,
-    pub tags: Vec<Tag>,
+    pub tag: String,
     pub args: Vec<f64>,
     pub targets: Vec<usize>,
     pub span: Span,
@@ -117,7 +98,7 @@ pub struct NoiseOp {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeasureOp {
     pub name: MeasureName,
-    pub tags: Vec<Tag>,
+    pub tag: String,
     pub args: Vec<f64>,
     pub targets: Vec<usize>,
     pub span: Span,
@@ -126,6 +107,7 @@ pub struct MeasureOp {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnnotationOp {
     pub kind: AnnotationKind,
+    pub tag: String,
     pub args: Vec<f64>,
     pub targets: Vec<usize>,
     pub span: Span,
@@ -133,7 +115,7 @@ pub struct AnnotationOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MppOp {
-    pub tags: Vec<Tag>,
+    pub tag: String,
     pub args: Vec<f64>,
     pub products: Vec<Vec<PauliFactor>>,
     pub span: Span,

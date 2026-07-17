@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! First-class canonical printer for both AST layers. Output is canonical
-//! Stim — 4-space REPEAT indentation, `[tags](args) targets` ordering — and
+//! Stim — 4-space REPEAT indentation, `[tag](args) targets` ordering — and
 //! round-trips: parse → print → parse is a fixpoint.
 
 use std::borrow::Cow;
 use std::fmt;
 
 use crate::ast::shared::{
-    AnnotationOp, Axis, GateOp, MeasureOp, MppOp, NoiseOp, PauliFactor, Tag, TagParam, Target,
+    AnnotationOp, Axis, GateOp, MeasureOp, MppOp, NoiseOp, PauliFactor, Target,
 };
 use crate::ast::{ExtendedInstruction, ExtendedProgram, Instruction, Program};
 
@@ -51,34 +51,18 @@ fn write_indent(out: &mut dyn fmt::Write, opts: &PrintOptions, depth: usize) -> 
     Ok(())
 }
 
-fn write_tags(out: &mut dyn fmt::Write, tags: &[Tag]) -> fmt::Result {
-    if tags.is_empty() {
+fn write_tag(out: &mut dyn fmt::Write, tag: &str) -> fmt::Result {
+    if tag.is_empty() {
         return Ok(());
     }
     out.write_str("[")?;
-    for (i, tag) in tags.iter().enumerate() {
-        if i > 0 {
-            out.write_str(", ")?;
-        }
-        out.write_str(&tag.name)?;
-        if !tag.params.is_empty() {
-            out.write_str("(")?;
-            for (j, p) in tag.params.iter().enumerate() {
-                if j > 0 {
-                    out.write_str(", ")?;
-                }
-                match p {
-                    TagParam::Positional(v) => write!(out, "{}", FloatLit(*v))?,
-                    TagParam::Named { key, value, had_pi } => {
-                        if *had_pi {
-                            write!(out, "{key}={}*pi", FloatLit(pi_coeff(*value)))?;
-                        } else {
-                            write!(out, "{key}={}", FloatLit(*value))?;
-                        }
-                    }
-                }
-            }
-            out.write_str(")")?;
+    for c in tag.chars() {
+        match c {
+            '\n' => out.write_str("\\n")?,
+            '\r' => out.write_str("\\r")?,
+            '\\' => out.write_str("\\B")?,
+            ']' => out.write_str("\\C")?,
+            _ => out.write_char(c)?,
         }
     }
     out.write_str("]")
@@ -124,10 +108,13 @@ fn write_repeat_block<T: StimPrint>(
     out: &mut dyn fmt::Write,
     opts: &PrintOptions,
     depth: usize,
+    tag: &str,
     count: u64,
     body: &[T],
 ) -> fmt::Result {
-    writeln!(out, "REPEAT {count} {{")?;
+    out.write_str("REPEAT")?;
+    write_tag(out, tag)?;
+    writeln!(out, " {count} {{")?;
     for instr in body {
         instr.print(out, opts, depth + 1)?;
     }
@@ -207,7 +194,7 @@ fn pi_coeff(value: f64) -> f64 {
 impl StimPrint for GateOp {
     fn print(&self, out: &mut dyn fmt::Write, _opts: &PrintOptions, _depth: usize) -> fmt::Result {
         out.write_str(self.name.canonical_name())?;
-        write_tags(out, &self.tags)?;
+        write_tag(out, &self.tag)?;
         write_args(out, &self.args)?;
         write_targets(out, &self.targets)
     }
@@ -216,7 +203,7 @@ impl StimPrint for GateOp {
 impl StimPrint for NoiseOp {
     fn print(&self, out: &mut dyn fmt::Write, _opts: &PrintOptions, _depth: usize) -> fmt::Result {
         out.write_str(self.name.canonical_name())?;
-        write_tags(out, &self.tags)?;
+        write_tag(out, &self.tag)?;
         write_args(out, &self.args)?;
         write_usize_targets(out, &self.targets)
     }
@@ -225,7 +212,7 @@ impl StimPrint for NoiseOp {
 impl StimPrint for MeasureOp {
     fn print(&self, out: &mut dyn fmt::Write, _opts: &PrintOptions, _depth: usize) -> fmt::Result {
         out.write_str(self.name.canonical_name())?;
-        write_tags(out, &self.tags)?;
+        write_tag(out, &self.tag)?;
         write_args(out, &self.args)?;
         write_usize_targets(out, &self.targets)
     }
@@ -234,6 +221,7 @@ impl StimPrint for MeasureOp {
 impl StimPrint for AnnotationOp {
     fn print(&self, out: &mut dyn fmt::Write, _opts: &PrintOptions, _depth: usize) -> fmt::Result {
         out.write_str(self.kind.canonical_name())?;
+        write_tag(out, &self.tag)?;
         write_args(out, &self.args)?;
         write_usize_targets(out, &self.targets)
     }
@@ -242,7 +230,7 @@ impl StimPrint for AnnotationOp {
 impl StimPrint for MppOp {
     fn print(&self, out: &mut dyn fmt::Write, _opts: &PrintOptions, _depth: usize) -> fmt::Result {
         out.write_str(crate::instructions::MeasureName::MPP.canonical_name())?;
-        write_tags(out, &self.tags)?;
+        write_tag(out, &self.tag)?;
         write_args(out, &self.args)?;
         write_mpp_products(out, &self.products)
     }
@@ -262,17 +250,19 @@ impl StimPrint for Instruction {
             Instruction::Annotation(op) => op.print(out, opts, depth)?,
             Instruction::Mpp(op) => op.print(out, opts, depth)?,
             Instruction::MPad {
-                tags, prob, bits, ..
+                tag, prob, bits, ..
             } => {
                 out.write_str("MPAD")?;
-                write_tags(out, tags)?;
+                write_tag(out, tag)?;
                 if let Some(p) = prob {
                     write!(out, "({})", FloatLit(*p))?;
                 }
                 write_usize_targets(out, bits)?;
             }
-            Instruction::Repeat { count, body, .. } => {
-                write_repeat_block(out, opts, depth, *count, body)?;
+            Instruction::Repeat {
+                tag, count, body, ..
+            } => {
+                write_repeat_block(out, opts, depth, tag, *count, body)?;
             }
         }
         writeln!(out)
@@ -369,10 +359,10 @@ impl StimPrint for ExtendedInstruction {
                 }
             }
             ExtendedInstruction::MPad {
-                tags, prob, bits, ..
+                tag, prob, bits, ..
             } => {
                 out.write_str("MPAD")?;
-                write_tags(out, tags)?;
+                write_tag(out, tag)?;
                 if let Some(p) = prob {
                     write!(out, "({})", FloatLit(*p))?;
                 }
@@ -380,8 +370,10 @@ impl StimPrint for ExtendedInstruction {
                     write!(out, " {}", u8::from(bit))?;
                 }
             }
-            ExtendedInstruction::Repeat { count, body, .. } => {
-                write_repeat_block(out, opts, depth, *count, body)?;
+            ExtendedInstruction::Repeat {
+                tag, count, body, ..
+            } => {
+                write_repeat_block(out, opts, depth, tag, *count, body)?;
             }
         }
         writeln!(out)

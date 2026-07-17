@@ -4,7 +4,7 @@
 //! Chumsky 0.12 grammar for Stim source.
 //!
 //! Reads top-to-bottom: whitespace/comments -> numbers -> pi-expressions ->
-//! identifiers -> tags -> args -> targets -> instruction line -> REPEAT block ->
+//! identifiers -> tag -> args -> targets -> instruction line -> REPEAT block ->
 //! program. Pure syntax; no table lookups.
 
 use chumsky::error::Rich;
@@ -107,40 +107,19 @@ pub(crate) fn pi_expr<'src>() -> impl Parser<'src, &'src str, f64, Extra<'src>> 
     pi_expr_flagged().map(|(value, _)| value)
 }
 
-use crate::ast::shared::{Tag, TagParam};
-
-/// `<ident>=<pi_expr>` (Named) or `<pi_expr>` (Positional).
-pub(crate) fn tag_param<'src>() -> impl Parser<'src, &'src str, TagParam, Extra<'src>> + Clone {
-    let named = ident()
-        .then_ignore(inline_pad())
-        .then_ignore(just('='))
-        .then_ignore(inline_pad())
-        .then(pi_expr_flagged())
-        .map(|(key, (value, had_pi))| TagParam::Named { key, value, had_pi });
-    let positional = pi_expr().map(TagParam::Positional);
-    choice((named, positional))
-}
-
-/// Tag: `<ident>` or `<ident>(<tag_param>, ...)`.
-pub(crate) fn tag<'src>() -> impl Parser<'src, &'src str, Tag, Extra<'src>> + Clone {
-    let params = tag_param()
-        .separated_by(inline_pad().then(just(',')).then(inline_pad()))
-        .allow_trailing()
-        .collect::<Vec<_>>()
-        .delimited_by(just('(').then(inline_pad()), inline_pad().then(just(')')));
-    ident().then(params.or_not()).map(|(name, params)| Tag {
-        name,
-        params: params.unwrap_or_default(),
-    })
-}
-
-/// `[tag, tag, ...]`.
-pub(crate) fn tags_block<'src>() -> impl Parser<'src, &'src str, Vec<Tag>, Extra<'src>> + Clone {
-    tag()
-        .separated_by(inline_pad().then(just(',')).then(inline_pad()))
-        .allow_trailing()
-        .collect::<Vec<_>>()
-        .delimited_by(just('[').then(inline_pad()), inline_pad().then(just(']')))
+/// One decoded Stim tag. The contents are opaque to the syntax layer.
+pub(crate) fn tag<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {
+    let escaped = just('\\').ignore_then(choice((
+        just('n').to('\n'),
+        just('r').to('\r'),
+        just('B').to('\\'),
+        just('C').to(']'),
+    )));
+    let literal = any().filter(|c: &char| !matches!(*c, '\\' | ']' | '\r' | '\n'));
+    choice((escaped, literal))
+        .repeated()
+        .collect::<String>()
+        .delimited_by(just('['), just(']'))
 }
 
 /// `(pi_expr, pi_expr, ...)`.
@@ -170,19 +149,19 @@ pub(crate) fn target_lexeme<'src>() -> impl Parser<'src, &'src str, RawTarget, E
         })
 }
 
-/// `<ident> [<tags>]? (<args>)?`. Returns name, tags, args, and the
+/// `<ident> [<tag>]? (<args>)?`. Returns name, tag, args, and the
 /// span of the identifier (used for line-number reporting).
 pub(crate) fn instruction_head<'src>()
--> impl Parser<'src, &'src str, (String, Vec<Tag>, Vec<f64>, SimpleSpan<usize>), Extra<'src>> + Clone
+-> impl Parser<'src, &'src str, (String, String, Vec<f64>, SimpleSpan<usize>), Extra<'src>> + Clone
 {
     ident()
         .map_with(|name, e| (name, e.span()))
-        .then(tags_block().or_not())
+        .then(tag().or_not())
         .then(args_block().or_not())
-        .map(|(((name, span), tags), args)| {
+        .map(|(((name, span), tag), args)| {
             (
                 name,
-                tags.unwrap_or_default(),
+                tag.unwrap_or_default(),
                 args.unwrap_or_default(),
                 span,
             )
@@ -214,9 +193,9 @@ pub(crate) fn instruction_line<'src>()
                 .collect::<Vec<RawTarget>>(),
         )
         .map(
-            |((name, tags, args, span), targets)| RawSyntaxNode::Instruction {
+            |((name, tag, args, span), targets)| RawSyntaxNode::Instruction {
                 name,
-                tags,
+                tag,
                 args,
                 targets,
                 span,
@@ -241,6 +220,7 @@ fn repeat_block<'src>(
         });
     just("REPEAT")
         .map_with(|_, e| e.span())
+        .then(tag().or_not())
         .then_ignore(inline_ws1())
         .then(digits)
         .then_ignore(inline_pad())
@@ -249,7 +229,12 @@ fn repeat_block<'src>(
         .then(body)
         .then_ignore(pad())
         .then_ignore(just('}'))
-        .map(|((span, count), body)| RawSyntaxNode::Repeat { count, body, span })
+        .map(|(((span, tag), count), body)| RawSyntaxNode::Repeat {
+            tag: tag.unwrap_or_default(),
+            count,
+            body,
+            span,
+        })
 }
 
 /// Top-level program parser. Recursively defines the body shared by
@@ -269,7 +254,6 @@ pub(crate) fn program_parser<'src>() -> impl Parser<'src, &'src str, Vec<RawSynt
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::TagParam;
     use crate::syntax::grammar::*;
     use crate::syntax::raw::RawSyntaxNode;
 
@@ -336,41 +320,9 @@ mod tests {
     }
 
     #[test]
-    fn tag_with_no_params() {
-        let t = run(tag(), "T");
-        assert_eq!(t.name, "T");
-        assert!(t.params.is_empty());
-    }
-
-    #[test]
-    fn tag_with_positional_params() {
-        let t = run(tag(), "R(0.5, 1.0)");
-        assert_eq!(t.name, "R");
-        assert_eq!(t.params.len(), 2);
-        assert!(matches!(&t.params[0], TagParam::Positional(v) if (v - 0.5).abs() < 1e-12));
-    }
-
-    #[test]
-    fn tag_with_named_param() {
-        let t = run(tag(), "R_X(theta=0.5*pi)");
-        assert_eq!(t.name, "R_X");
-        assert_eq!(t.params.len(), 1);
-        match &t.params[0] {
-            TagParam::Named { key, value, had_pi } => {
-                assert_eq!(key, "theta");
-                assert!((value - 0.5 * std::f64::consts::PI).abs() < 1e-12);
-                assert!(had_pi);
-            }
-            other => panic!("{other:?}"),
-        }
-    }
-
-    #[test]
-    fn tags_block_parses_multiple_tags() {
-        let ts = run(tags_block(), "[T, R(0.5)]");
-        assert_eq!(ts.len(), 2);
-        assert_eq!(ts[0].name, "T");
-        assert_eq!(ts[1].name, "R");
+    fn tag_is_one_opaque_decoded_string() {
+        assert_eq!(run(tag(), "[T, R(0.5)]"), "T, R(0.5)");
+        assert_eq!(run(tag(), "[a\\n\\r\\B\\Cz]"), "a\n\r\\]z");
     }
 
     #[test]
@@ -404,18 +356,17 @@ mod tests {
 
     #[test]
     fn instruction_head_with_tags_and_args() {
-        let (name, tags, args, _span) = run(instruction_head(), "S[T](0.5)");
+        let (name, tag, args, _span) = run(instruction_head(), "S[T](0.5)");
         assert_eq!(name, "S");
-        assert_eq!(tags.len(), 1);
-        assert_eq!(tags[0].name, "T");
+        assert_eq!(tag, "T");
         assert_eq!(args, vec![0.5]);
     }
 
     #[test]
     fn instruction_head_no_tags_no_args() {
-        let (name, tags, args, _span) = run(instruction_head(), "H");
+        let (name, tag, args, _span) = run(instruction_head(), "H");
         assert_eq!(name, "H");
-        assert!(tags.is_empty());
+        assert!(tag.is_empty());
         assert!(args.is_empty());
     }
 

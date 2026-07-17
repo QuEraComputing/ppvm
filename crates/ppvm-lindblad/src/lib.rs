@@ -296,8 +296,21 @@ enum JumpKind {
     /// is restored by the conjugate `(m, n)` pair.
     KossakowskiPair {
         sand: Vec<(Word, Vec<(Word, Complex<f64>)>)>,
-        /// `K_nm · A_n†A_m` as a Pauli lincomb.
+        /// Diagonal pair (`n == m`): `K_nn · A_n†A_n`.
+        /// Off-diagonal pair (`n < m`, folds in the conjugate `(m,n)`):
+        /// the Hermitian sum `2·Re(K_nm·A_n†A_m)` (real coefficients), for
+        /// the both-sided anticommutator.
         dd: Vec<PauliTerm>,
+        /// Off-diagonal only: the anti-Hermitian difference
+        /// `−2i·Im(K_nm·A_n†A_m)` (pure-imaginary coefficients), for the
+        /// one-sided commutator of the folded conjugate pair. Empty on the
+        /// diagonal.
+        dd_anti: Vec<PauliTerm>,
+        /// `true` for a folded off-diagonal pair (`n < m`): the both-sided
+        /// sandwich doubles and takes the real part, and the one-sided path
+        /// uses `dd_anti`. `false` on the diagonal (original single-pair
+        /// handling).
+        off_diag: bool,
         /// Support bit masks (`xbits | zbits` union) of `A_n` and `A_m`,
         /// for the one-sided fast path in the action.
         left_mask: [Chunk; W_CHUNKS],
@@ -519,19 +532,42 @@ impl LindbladSpec {
         // One JumpKind entry per non-negligible pair, indexed by the union
         // support of A_n and A_m so the per-string candidate lookup only
         // visits pairs that can act nontrivially.
+        // Fold each Hermitian-conjugate pair `(n,m)`+`(m,n)` into one
+        // upper-triangle entry (`n ≤ m`). Both sandwiches produce the same
+        // output words with conjugate phase, and the final action keeps only
+        // the real part, so `(n,m)` alone suffices if it doubles-and-takes-Re
+        // — halving the pair count. The diagonal `(n,n)` is a single pair.
         let pair_tol = 1e-14 * max_abs;
         for n in 0..m_ops {
-            for m in 0..m_ops {
+            for m in n..m_ops {
                 if k[n][m].norm() <= pair_tol {
                     continue;
                 }
-                let dd = precompute_adag_b(&self.k_ops[base + n], &self.k_ops[base + m])
-                    .into_iter()
-                    .map(|t| PauliTerm {
-                        word: t.word,
-                        coeff: k[n][m] * t.coeff,
-                    })
-                    .collect();
+                let off_diag = n != m;
+                // A_n†A_m as `Σ γ_w W`, scaled by `K_nm`.
+                let adag_b = precompute_adag_b(&self.k_ops[base + n], &self.k_ops[base + m]);
+                let (dd, dd_anti): (Vec<PauliTerm>, Vec<PauliTerm>) = if off_diag {
+                    // dd = 2·Re(K_nm γ_w) (Hermitian sum, both-sided anticomm);
+                    // dd_anti = −2i·Im(K_nm γ_w) (anti-Herm diff, one-sided).
+                    let mut dd = Vec::with_capacity(adag_b.len());
+                    let mut da = Vec::with_capacity(adag_b.len());
+                    for t in &adag_b {
+                        let c = k[n][m] * t.coeff;
+                        if c.re.abs() > 1e-14 {
+                            dd.push(PauliTerm { word: t.word, coeff: Complex::new(2.0 * c.re, 0.0) });
+                        }
+                        if c.im.abs() > 1e-14 {
+                            da.push(PauliTerm { word: t.word, coeff: Complex::new(0.0, -2.0 * c.im) });
+                        }
+                    }
+                    (dd, da)
+                } else {
+                    let dd = adag_b
+                        .iter()
+                        .map(|t| PauliTerm { word: t.word, coeff: k[n][m] * t.coeff })
+                        .collect();
+                    (dd, Vec::new())
+                };
                 let mut sand = Vec::with_capacity(self.k_ops[base + n].len());
                 for a in &self.k_ops[base + n] {
                     let rights = self.k_ops[base + m]
@@ -555,6 +591,8 @@ impl LindbladSpec {
                 self.j_kinds.push(JumpKind::KossakowskiPair {
                     sand,
                     dd,
+                    dd_anti,
+                    off_diag,
                     left_mask,
                     right_mask,
                 });
@@ -1033,18 +1071,24 @@ impl LindbladSpec {
                 JumpKind::KossakowskiPair {
                     sand,
                     dd,
+                    dd_anti,
+                    off_diag,
                     left_mask,
                     right_mask,
                 } => {
                     // One-sided fast path: when `p` is disjoint from one of
-                    // the two operators, the pair contribution collapses to
-                    // a commutator of the precompiled `D = K·A_n†A_m`:
+                    // the two operators, the pair contribution collapses to a
+                    // commutator. For a diagonal pair with `D = K·A_n†A_m`:
                     //   p disjoint from A_n (left):  C = −½ [D, p]
                     //   p disjoint from A_m (right): C = +½ [D, p]
-                    // (commute `p` through the disjoint side; the sandwich
-                    // then merges with the anticommutator). With
-                    // `[P_c, p] = −i·eps·out` from `comm_product`, the term
-                    // coefficient is `∓ t_c · (i/2) · eps`.
+                    // For a folded off-diagonal pair the two conjugate
+                    // one-sided contributions combine into `±½ [F, p]` with
+                    // the anti-Hermitian `F = dd_anti = −2i·Im(K_nm A_n†A_m)`
+                    // and the opposite sign:
+                    //   p hits A_m only (right): C = +½ [F, p]
+                    //   p hits A_n only (left):  C = −½ [F, p]
+                    // With `[P_c, p] = −i·eps·out` from `comm_product`, the
+                    // term coefficient is `∓ t_c · (i/2) · eps`.
                     let mut p_bits = [0 as Chunk; W_CHUNKS];
                     for (i, slot) in p_bits.iter_mut().enumerate() {
                         *slot = p.xbits.data[i] | p.zbits.data[i];
@@ -1054,15 +1098,24 @@ impl LindbladSpec {
                     let (hit_l, hit_r) = (hits(left_mask), hits(right_mask));
                     if !(hit_l && hit_r) {
                         // exactly one side hit (pair is a candidate, so at
-                        // least one side overlaps)
-                        // hit_r (left disjoint):  C = −½[D,p]
-                        // hit_l (right disjoint): C = +½[D,p]
-                        let half_i = if hit_r {
-                            Complex::new(0.0, 0.5)
+                        // least one side overlaps). `off_diag` flips the sign
+                        // and uses `dd_anti` instead of `dd`.
+                        let (comm, half_i) = if *off_diag {
+                            let hi = if hit_r {
+                                Complex::new(0.0, -0.5)
+                            } else {
+                                Complex::new(0.0, 0.5)
+                            };
+                            (dd_anti, hi)
                         } else {
-                            Complex::new(0.0, -0.5)
+                            let hi = if hit_r {
+                                Complex::new(0.0, 0.5)
+                            } else {
+                                Complex::new(0.0, -0.5)
+                            };
+                            (dd, hi)
                         };
-                        for c_term in dd {
+                        for c_term in comm {
                             let (out, eps) = comm_product(&c_term.word, p);
                             if eps != 0.0 {
                                 *local.entry(out).or_insert(zero) += c_term.coeff * half_i * eps;
@@ -1073,11 +1126,21 @@ impl LindbladSpec {
                     // Both sides hit: full sandwich + anticommutator. Group
                     // by the left word so `P_a · p` is computed once per
                     // distinct `P_a` and reused across all its `P_b` partners.
+                    // For a folded off-diagonal pair the sandwich is doubled
+                    // and its real part taken (the conjugate `(m,n)` pair
+                    // supplies the other half); the anticommutator uses the
+                    // Hermitian `dd = 2·Re(K_nm A_n†A_m)`.
                     for (wa, rights) in sand {
                         let (r_ap, phi1) = pauli_mul(wa, p);
                         for (wb, c0) in rights {
                             let (s, phi2) = pauli_mul(&r_ap, wb);
-                            *local.entry(s).or_insert(zero) += c0 * phase_factor(phi1 + phi2);
+                            let v = c0 * phase_factor(phi1 + phi2);
+                            let contrib = if *off_diag {
+                                Complex::new(2.0 * v.re, 0.0)
+                            } else {
+                                v
+                            };
+                            *local.entry(s).or_insert(zero) += contrib;
                         }
                     }
                     for c_term in dd {

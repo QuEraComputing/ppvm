@@ -8,6 +8,7 @@
 //! touches a terminal or runs a loop.
 
 use eyre::{Result, eyre};
+use ppvm_vihaco::component::{ComplexityMetric, ComplexityMetricKind};
 use ppvm_vihaco::composite::{PPVM, StepOutcome};
 use ppvm_vihaco::measurements::MeasurementResult;
 use ppvm_vihaco::{CircuitInstruction, PPVMModule, compile_program, load_module_file};
@@ -19,7 +20,108 @@ use ratatui::widgets::Clear;
 use crate::codeview::CodeView;
 use crate::command::{Command, parse_command};
 use crate::editor::LineEditor;
-use crate::widgets::{CommandLine, HelpOverlay, ProgramView, RecordView, StateView};
+use crate::widgets::{
+    CommandLine, ComplexityTreeView, HelpOverlay, ProgramView, RecordView, StackView, StateView,
+};
+
+const STATE_DETAIL_QUBIT_LIMIT: usize = 16;
+const STATE_DETAIL_COMPLEXITY_LIMIT: usize = 128;
+const TREE_LAYER_STRIDE: usize = 6;
+const DEFAULT_TREE_HEIGHT: u16 = 8;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ComplexityLayer {
+    kind: ComplexityMetricKind,
+    count: usize,
+}
+
+impl From<ComplexityMetric> for ComplexityLayer {
+    fn from(metric: ComplexityMetric) -> Self {
+        Self {
+            kind: metric.kind,
+            count: metric.count,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ComplexityHistory {
+    layers: Vec<ComplexityLayer>,
+}
+
+impl ComplexityHistory {
+    fn clear(&mut self) {
+        self.layers.clear();
+    }
+
+    fn push_if_changed(&mut self, metric: ComplexityMetric) {
+        let layer = ComplexityLayer::from(metric);
+        if self.layers.last() != Some(&layer) {
+            self.layers.push(layer);
+        }
+    }
+
+    fn counts(&self) -> Vec<usize> {
+        self.layers.iter().map(|layer| layer.count).collect()
+    }
+
+    fn visible_layer_count(&self, width: usize) -> usize {
+        (width.div_ceil(TREE_LAYER_STRIDE))
+            .max(1)
+            .min(self.layers.len())
+    }
+
+    fn render(&self, width: u16, height: u16) -> String {
+        let Some(current) = self.layers.last() else {
+            return "(no device)".to_string();
+        };
+
+        let width = usize::from(width).max(1);
+        let graph_height = usize::from(height.saturating_sub(1)).max(1);
+        let visible_layers = self.visible_layer_count(width);
+        let start = self.layers.len() - visible_layers;
+        let end = self.layers.len() - 1;
+        let layers = &self.layers[start..];
+
+        let mut canvas = vec![vec![' '; width]; graph_height];
+        let layer_rows: Vec<Vec<usize>> = layers
+            .iter()
+            .map(|layer| spread_positions(layer.count, graph_height))
+            .collect();
+        let layer_x: Vec<usize> = (0..layers.len())
+            .map(|idx| idx * TREE_LAYER_STRIDE)
+            .filter(|&x| x < width)
+            .collect();
+
+        for idx in 0..layer_x.len().saturating_sub(1) {
+            draw_transposed_connector(
+                &mut canvas,
+                layer_x[idx],
+                layer_x[idx + 1],
+                &layer_rows[idx],
+                &layer_rows[idx + 1],
+            );
+        }
+
+        for (&x, rows) in layer_x.iter().zip(layer_rows.iter()) {
+            for &row in rows {
+                canvas[row][x] = '●';
+            }
+        }
+
+        let mut lines = vec![format!(
+            "layers {start:03}..{end:03} | current: {} {}",
+            current.count,
+            current.kind.noun(current.count)
+        )];
+        lines.extend(
+            canvas
+                .into_iter()
+                .map(|row| row.into_iter().collect::<String>()),
+        );
+        lines.join("\n")
+    }
+}
 
 /// Terminal-agnostic state for the ppvm TUI.
 pub struct AppState {
@@ -42,6 +144,10 @@ pub struct AppState {
     finished: bool,
     /// The command line: buffer, edit cursor, and history.
     editor: LineEditor,
+    /// Whether the State panel should render full state details when safe.
+    show_state_details: bool,
+    /// Branching-complexity history shown in the tree panel.
+    complexity: ComplexityHistory,
     /// The status/error line.
     status: String,
     /// Whether the help overlay is currently shown.
@@ -68,6 +174,8 @@ impl AppState {
             paused: false,
             finished: false,
             editor: LineEditor::new(),
+            show_state_details: true,
+            complexity: ComplexityHistory::default(),
             status: String::new(),
             show_help: false,
             should_exit: false,
@@ -112,6 +220,16 @@ impl AppState {
                 self.show_help = !self.show_help;
                 Ok(())
             }
+            Command::ToggleState => {
+                self.show_state_details = !self.show_state_details;
+                let mode = if self.show_state_details {
+                    "enabled"
+                } else {
+                    "hidden"
+                };
+                self.set_status(format!("state details {mode}"));
+                Ok(())
+            }
         }
     }
 
@@ -125,6 +243,7 @@ impl AppState {
         self.paused = false;
         self.finished = false;
         self.program.clear();
+        self.reset_complexity_history();
         self.set_status(format!("fresh {n}-qubit device"));
         Ok(())
     }
@@ -176,6 +295,7 @@ impl AppState {
         self.has_program = true;
         self.paused = true;
         self.finished = false;
+        self.reset_complexity_history();
         self.refresh_cursor();
         true
     }
@@ -199,6 +319,7 @@ impl AppState {
             return Ok(());
         }
         let outcome = self.machine.as_mut().unwrap().step_once()?;
+        self.record_complexity();
         self.apply_outcome(outcome);
         self.refresh_cursor();
         Ok(())
@@ -211,6 +332,7 @@ impl AppState {
         }
         while !self.finished {
             let outcome = self.machine.as_mut().unwrap().step_once()?;
+            self.record_complexity();
             match outcome {
                 StepOutcome::Continue => {}
                 StepOutcome::Breakpoint => {
@@ -253,6 +375,7 @@ impl AppState {
             }
         } else if self.n_qubits > 0 {
             self.machine = Some(PPVM::with_qubits(self.n_qubits)?);
+            self.reset_complexity_history();
             self.set_status("reset device");
         } else {
             self.set_status("nothing to reset");
@@ -289,11 +412,23 @@ impl AppState {
             self.log.push(format!("  => {bits}"));
             self.set_status(format!("=> {bits}"));
         }
+        self.record_complexity();
         Ok(())
     }
 
     fn set_status(&mut self, s: impl Into<String>) {
         self.status = s.into();
+    }
+
+    fn reset_complexity_history(&mut self) {
+        self.complexity.clear();
+        self.record_complexity();
+    }
+
+    fn record_complexity(&mut self) {
+        if let Some(machine) = &self.machine {
+            self.complexity.push_if_changed(machine.complexity_metric());
+        }
     }
 
     // ─── key handling ────────────────────────────────────────────────────
@@ -366,9 +501,59 @@ impl AppState {
     /// The tableau rendering for the State panel.
     pub fn state_text(&self) -> String {
         match &self.machine {
-            Some(m) => m.state_string(),
+            Some(m) => {
+                let summary = state_summary(m);
+                let metric = m.complexity_metric();
+                if !self.show_state_details {
+                    return format!("state details hidden (:state to show)\n{summary}");
+                }
+                if m.n_qubits() > STATE_DETAIL_QUBIT_LIMIT
+                    || metric.count > STATE_DETAIL_COMPLEXITY_LIMIT
+                {
+                    return format!(
+                        "state details suppressed (limit: {STATE_DETAIL_QUBIT_LIMIT} qubits, {STATE_DETAIL_COMPLEXITY_LIMIT} {})\n{summary}",
+                        metric.kind.noun(STATE_DETAIL_COMPLEXITY_LIMIT),
+                    );
+                }
+                format!("{summary}\n{}", m.compact_state_string())
+            }
             None => "(no device — type `device N` or :load <file>)".to_string(),
         }
+    }
+
+    /// Current CPU operand stack, top entry first.
+    pub fn stack_text(&self) -> String {
+        let Some(machine) = &self.machine else {
+            return "(no device)".to_string();
+        };
+        let stack = machine.stack_snapshot();
+        if stack.is_empty() {
+            return "(empty)".to_string();
+        }
+        stack
+            .iter()
+            .enumerate()
+            .rev()
+            .map(|(idx, value)| {
+                let marker = if idx + 1 == stack.len() { "top" } else { "   " };
+                format!("{idx:04} {marker} {value}")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Exact complexity counts recorded in the tree, exposed for tests and
+    /// embedders that want to render the history themselves.
+    pub fn complexity_counts(&self) -> Vec<usize> {
+        self.complexity.counts()
+    }
+
+    pub fn complexity_graph_text(&self, width: u16) -> String {
+        self.complexity.render(width, DEFAULT_TREE_HEIGHT)
+    }
+
+    pub fn complexity_graph_text_for_area(&self, width: u16, height: u16) -> String {
+        self.complexity.render(width, height)
     }
 
     /// The measurement record as flat bits, events separated by spaces.
@@ -414,23 +599,28 @@ impl AppState {
     /// `…View` widgets itself.
     pub fn render(&self, frame: &mut Frame) {
         let root = Layout::vertical([
-            Constraint::Min(6),    // Program | State
-            Constraint::Length(3), // measurement record
-            Constraint::Length(2), // command line
+            Constraint::Ratio(3, 5), // Program | complexity tree
+            Constraint::Ratio(2, 5), // Stack | State
+            Constraint::Length(3),   // measurement record
+            Constraint::Length(2),   // command line
         ])
         .split(frame.area());
 
-        let top = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+        let top = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)])
             .split(root[0]);
+        let middle = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)])
+            .split(root[1]);
 
         frame.render_widget(ProgramView(self), top[0]);
-        frame.render_widget(StateView(self), top[1]);
-        frame.render_widget(RecordView(self), root[1]);
-        frame.render_widget(CommandLine(self), root[2]);
+        frame.render_widget(ComplexityTreeView(self), top[1]);
+        frame.render_widget(StackView(self), middle[0]);
+        frame.render_widget(StateView(self), middle[1]);
+        frame.render_widget(RecordView(self), root[2]);
+        frame.render_widget(CommandLine(self), root[3]);
 
         // Place the terminal cursor in the input line, just after the prompt,
         // clamped to the command area so a long line can't run off-panel.
-        let cmd = root[2];
+        let cmd = root[3];
         let col = cmd.x + CommandLine::PROMPT.len() as u16 + self.editor.cursor() as u16;
         let x = col.min(cmd.x + cmd.width.saturating_sub(1));
         frame.set_cursor_position((x, cmd.y));
@@ -461,6 +651,7 @@ Meta / debug
   Enter (empty)  :s     step one instruction
   :continue  :c         run to the next breakpoint or the end
   :reset                restart the loaded program / device
+  :state                toggle detailed state rendering
   :help  :h             toggle this help
   :quit  :q  (Ctrl-C)   leave
 
@@ -490,6 +681,144 @@ fn format_record(record: &[MeasurementResult]) -> String {
         .join(" ")
 }
 
+fn state_summary(machine: &PPVM) -> String {
+    let metric = machine.complexity_metric();
+    format!(
+        "{} backend | {} {} | {} {}",
+        machine.backend_name(),
+        machine.n_qubits(),
+        plural(machine.n_qubits(), "qubit", "qubits"),
+        metric.count,
+        metric.kind.noun(metric.count)
+    )
+}
+
+fn plural(count: usize, one: &'static str, many: &'static str) -> &'static str {
+    if count == 1 { one } else { many }
+}
+
+fn spread_positions(count: usize, height: usize) -> Vec<usize> {
+    if count == 0 {
+        return Vec::new();
+    }
+    let visible = count.min(height.max(1));
+    if visible == 1 {
+        return vec![height.saturating_sub(1) / 2];
+    }
+
+    let full_span = height.saturating_sub(1);
+    let inner_span = height.saturating_sub(3);
+    let inner_capacity = height.saturating_sub(2);
+    let desired_span = if visible <= inner_capacity && inner_span > 0 {
+        if visible == 2 {
+            2.min(inner_span)
+        } else {
+            (visible - 1).min(inner_span)
+        }
+    } else {
+        full_span
+    };
+    let top = full_span.saturating_sub(desired_span) / 2;
+    let mut out = Vec::with_capacity(visible);
+    for idx in 0..visible {
+        let pos = top + idx * desired_span / (visible - 1);
+        if out.last() != Some(&pos) {
+            out.push(pos);
+        }
+    }
+    out
+}
+
+fn draw_transposed_connector(
+    canvas: &mut [Vec<char>],
+    from_x: usize,
+    to_x: usize,
+    from_rows: &[usize],
+    to_rows: &[usize],
+) {
+    if from_rows.is_empty() || to_rows.is_empty() || from_x >= to_x {
+        return;
+    }
+    let bus_x = (from_x + to_x) / 2;
+    let min_row = from_rows
+        .iter()
+        .chain(to_rows.iter())
+        .min()
+        .copied()
+        .unwrap_or(0);
+    let max_row = from_rows
+        .iter()
+        .chain(to_rows.iter())
+        .max()
+        .copied()
+        .unwrap_or(min_row);
+
+    for &row in from_rows {
+        draw_canvas_horizontal(canvas, row, from_x + 1, bus_x);
+    }
+    for &row in to_rows {
+        draw_canvas_horizontal(canvas, row, bus_x, to_x.saturating_sub(1));
+    }
+    for row in min_row..=max_row {
+        let glyph = if row == min_row {
+            '╭'
+        } else if row == max_row {
+            '╰'
+        } else {
+            '│'
+        };
+        put_canvas_connector(canvas, row, bus_x, glyph);
+    }
+    for &row in from_rows {
+        put_canvas_connector(canvas, row, bus_x, '┤');
+    }
+    for &row in to_rows {
+        put_canvas_connector(canvas, row, bus_x, '├');
+    }
+}
+
+fn draw_canvas_horizontal(canvas: &mut [Vec<char>], row: usize, start: usize, end: usize) {
+    if start > end {
+        return;
+    }
+    for idx in start..=end {
+        put_canvas_connector(canvas, row, idx, '─');
+    }
+}
+
+fn put_canvas_connector(canvas: &mut [Vec<char>], row: usize, col: usize, glyph: char) {
+    let Some(line) = canvas.get_mut(row) else {
+        return;
+    };
+    let Some(slot) = line.get_mut(col) else {
+        return;
+    };
+    *slot = merge_connector(*slot, glyph);
+}
+
+fn merge_connector(existing: char, incoming: char) -> char {
+    match (existing, incoming) {
+        (' ', glyph) => glyph,
+        ('─', glyph) | (glyph, '─') => glyph,
+        (same, glyph) if same == glyph => same,
+        ('╭', '├') | ('├', '╭') => '┌',
+        ('╰', '├') | ('├', '╰') => '└',
+        ('╭', '┤') | ('┤', '╭') => '┐',
+        ('╰', '┤') | ('┤', '╰') => '┘',
+        ('│', '├') | ('├', '│') => '├',
+        ('│', '┤') | ('┤', '│') => '┤',
+        ('├', '┤') | ('┤', '├') => '┼',
+        ('│', '┴') | ('┴', '│') => '┴',
+        ('│', '┬') | ('┬', '│') => '┬',
+        ('│', _) | (_, '│') => '┼',
+        ('╭' | '╮' | '╰' | '╯', '┴' | '┬' | '┼')
+        | ('┴' | '┬' | '┼', '╭' | '╮' | '╰' | '╯')
+        | ('┴', '┬')
+        | ('┬', '┴') => '┼',
+        (_, glyph) => glyph,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,6 +835,315 @@ mod tests {
         app.dispatch("measure 0");
         assert_eq!(app.measurement_bits(), "1");
         assert!(app.status().contains("=> 1"), "status: {}", app.status());
+    }
+
+    #[test]
+    fn state_command_toggles_state_details() {
+        let mut app = AppState::new();
+        app.dispatch("device 1");
+        assert!(app.state_text().contains("Tableau"));
+
+        app.dispatch(":state");
+        assert!(
+            app.state_text().contains("state details hidden"),
+            "state text: {}",
+            app.state_text()
+        );
+
+        app.dispatch(":state");
+        assert!(
+            !app.state_text().contains("state details hidden"),
+            "state text: {}",
+            app.state_text()
+        );
+    }
+
+    #[test]
+    fn large_device_state_is_summarized_without_detail_formatting() {
+        let mut app = AppState::new();
+        app.dispatch("device 17");
+        let state = app.state_text();
+        assert!(
+            state.contains("state details suppressed"),
+            "state text: {state}"
+        );
+        assert!(state.contains("17 qubits"), "state text: {state}");
+        assert!(state.contains("coefficient"), "state text: {state}");
+    }
+
+    #[test]
+    fn ten_qubit_state_uses_compact_side_by_side_tableau_format() {
+        let mut app = AppState::new();
+        app.dispatch("device 10");
+
+        let state = app.state_text();
+        assert!(
+            state.lines().count() <= 12,
+            "state text should be compact enough for a 10-qubit tableau:\n{state}"
+        );
+        assert!(
+            state.lines().any(|line| {
+                line.contains("q00")
+                    && line.contains(" D ")
+                    && line.contains(" S ")
+                    && line.contains("Index 0:")
+            }),
+            "coefficient column should share a row with paired tableau rows:\n{state}"
+        );
+        assert!(
+            !state
+                .lines()
+                .any(|line| line.trim_start().starts_with("Index 0:")),
+            "coefficients should not be stacked below the tableau:\n{state}"
+        );
+    }
+
+    #[test]
+    fn stack_text_tracks_current_cpu_stack() {
+        const STACK_PROGRAM: &str = "device circuit.n_qubits 1;\n\
+                                    fn @main() { const.u64 7\n breakpoint\n ret }\n";
+        let mut app = AppState::new();
+        app.load_source(STACK_PROGRAM).unwrap();
+
+        assert_eq!(app.stack_text(), "(empty)");
+        app.dispatch(""); // const.u64 7
+
+        let stack = app.stack_text();
+        assert!(stack.contains("top"), "stack text: {stack}");
+        assert!(stack.contains("7"), "stack text: {stack}");
+    }
+
+    #[test]
+    fn complexity_history_records_only_count_changes() {
+        let mut app = AppState::new();
+        app.dispatch("device 1");
+        assert_eq!(app.complexity_counts(), vec![1]);
+
+        app.dispatch("h 0");
+        assert_eq!(
+            app.complexity_counts(),
+            vec![1],
+            "Clifford H should not add a layer when coefficient count is unchanged"
+        );
+
+        app.dispatch("t 0");
+        assert_eq!(app.complexity_counts(), vec![1, 2]);
+
+        app.dispatch("measure 0");
+        assert_eq!(
+            app.complexity_counts(),
+            vec![1, 2, 1],
+            "measurement should record the shrink back to one coefficient"
+        );
+    }
+
+    #[test]
+    fn complexity_tree_uses_unicode_connectors() {
+        let mut app = AppState::new();
+        app.dispatch("device 2");
+        app.dispatch("h 0");
+        app.dispatch("h 1");
+        app.dispatch("t 0");
+        app.dispatch("t 1");
+        assert_eq!(app.complexity_counts(), vec![1, 2, 4]);
+
+        let graph = app.complexity_graph_text(72);
+        assert!(graph.contains('●'), "graph text: {graph}");
+        assert!(graph.contains('┌'), "graph text: {graph}");
+        assert!(graph.contains('└'), "graph text: {graph}");
+        assert!(graph.contains('├'), "graph text: {graph}");
+        assert!(
+            graph.contains('┤') || graph.contains('┼'),
+            "graph text: {graph}"
+        );
+        assert!(
+            !graph.lines().skip(1).any(|line| line.contains('o')),
+            "graph text: {graph}"
+        );
+        assert!(!graph.contains('/'), "graph text: {graph}");
+        assert!(!graph.contains('\\'), "graph text: {graph}");
+    }
+
+    #[test]
+    fn complexity_tree_is_transposed_and_autoscrolls_to_latest_layers() {
+        let mut app = AppState::new();
+        app.complexity.clear();
+        for count in [1, 2, 4, 2, 5, 3, 6, 1] {
+            app.complexity.push_if_changed(ComplexityMetric {
+                kind: ComplexityMetricKind::Coefficients,
+                count,
+            });
+        }
+
+        let graph = app.complexity_graph_text(24);
+        assert!(graph.contains("layers 004..007"), "graph text: {graph}");
+        assert!(!graph.contains("000"), "graph text: {graph}");
+        assert!(!graph.contains("001"), "graph text: {graph}");
+        assert!(
+            !graph.lines().any(|line| line.starts_with("000      1")),
+            "graph text: {graph}"
+        );
+        assert!(graph.contains("004"), "graph text: {graph}");
+        assert!(graph.contains("007"), "graph text: {graph}");
+    }
+
+    #[test]
+    fn complexity_tree_small_branching_stays_near_center() {
+        let mut app = AppState::new();
+        app.complexity.clear();
+        for count in [1, 2] {
+            app.complexity.push_if_changed(ComplexityMetric {
+                kind: ComplexityMetricKind::Coefficients,
+                count,
+            });
+        }
+
+        let graph_height = 7;
+        let graph = app.complexity_graph_text_for_area(24, graph_height + 2);
+        let node_rows: Vec<usize> = graph
+            .lines()
+            .skip(1)
+            .take(graph_height as usize)
+            .enumerate()
+            .filter_map(|(row, line)| line.contains('●').then_some(row))
+            .collect();
+
+        assert!(
+            node_rows.contains(&(graph_height as usize / 2)),
+            "initial node should stay centered:\n{graph}"
+        );
+        assert!(
+            !node_rows.contains(&0) && !node_rows.contains(&(graph_height as usize - 1)),
+            "two-way branching should not jump straight to the borders:\n{graph}"
+        );
+    }
+
+    #[test]
+    fn complexity_tree_centers_initial_node_in_short_even_viewport() {
+        let mut app = AppState::new();
+        app.dispatch("device 1");
+
+        let graph_height = 5;
+        let graph = app.complexity_graph_text_for_area(24, graph_height + 1);
+        let node_row = graph
+            .lines()
+            .skip(1)
+            .take(graph_height as usize)
+            .position(|line| line.contains('●'))
+            .expect("initial node should be visible");
+
+        assert!(
+            node_row <= (graph_height as usize - 1) / 2,
+            "initial node should use the upper center row in a short even viewport:\n{graph}"
+        );
+    }
+
+    #[test]
+    fn complexity_tree_initial_view_does_not_start_with_bottom_label() {
+        let mut app = AppState::new();
+        app.dispatch("device 1");
+
+        let graph = app.complexity_graph_text_for_area(24, 8);
+        assert!(
+            !graph.lines().last().unwrap_or("").contains("000:1"),
+            "initial tree should not draw its layer label at bottom-left:\n{graph}"
+        );
+    }
+
+    #[test]
+    fn rendered_complexity_tree_initial_node_is_vertically_centered() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut app = AppState::new();
+        app.dispatch("device 1");
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 18)).unwrap();
+        terminal.draw(|f| app.render(f)).unwrap();
+        let lines = buffer_lines(terminal.backend().buffer(), 100);
+
+        let tree_top = row_containing(&lines, "Complexity tree").unwrap();
+        let tree_bottom = lines
+            .iter()
+            .enumerate()
+            .skip(tree_top + 1)
+            .find_map(|(row, line)| line.contains('┘').then_some(row))
+            .unwrap();
+        let node_row = lines
+            .iter()
+            .enumerate()
+            .skip(tree_top + 1)
+            .take(tree_bottom - tree_top)
+            .find_map(|(row, line)| line.contains('●').then_some(row))
+            .unwrap();
+
+        let panel_mid = tree_top + (tree_bottom - tree_top) / 2;
+        let lower_slack = (tree_bottom - tree_top) / 4;
+        assert!(
+            node_row <= panel_mid + lower_slack,
+            "initial node should not render near the bottom of the tree panel\n{}",
+            lines.join("\n")
+        );
+    }
+
+    #[test]
+    fn standalone_layout_puts_tree_above_state_on_the_right() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut app = AppState::new();
+        app.dispatch("device 2");
+        app.dispatch("h 0");
+        app.dispatch("t 0");
+
+        let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+        terminal.draw(|f| app.render(f)).unwrap();
+        let lines = buffer_lines(terminal.backend().buffer(), 120);
+
+        let tree_row = row_containing(&lines, "Complexity tree").unwrap();
+        let state_row = row_containing(&lines, "State").unwrap();
+        assert!(
+            tree_row < state_row,
+            "tree should be above state\n{}",
+            lines.join("\n")
+        );
+        assert!(
+            lines[tree_row].find("Complexity tree").unwrap() > 50,
+            "tree should be in the right pane\n{}",
+            lines.join("\n")
+        );
+        assert!(
+            lines[state_row].find("State").unwrap() > 50,
+            "state should remain in the right pane\n{}",
+            lines.join("\n")
+        );
+    }
+
+    #[test]
+    fn complexity_history_uses_paulisum_term_counts() {
+        const PAULISUM_PROGRAM: &str = "device circuit.n_qubits 1;\n\
+                                       device circuit.backend paulisum;\n\
+                                       device circuit.observable Z;\n\
+                                       fn @main() {\n\
+                                         const.u64 0\n\
+                                         const.f64 0.7\n\
+                                         circuit.ry\n\
+                                         ret\n\
+                                       }\n";
+        let mut app = AppState::new();
+        app.load_source(PAULISUM_PROGRAM).unwrap();
+        assert_eq!(app.complexity_counts(), vec![1]);
+
+        app.dispatch(""); // const.u64 0
+        app.dispatch(""); // const.f64 0.7
+        app.dispatch(""); // circuit.ry: Z -> cos(theta) Z + sin(theta) X
+
+        assert_eq!(app.complexity_counts(), vec![1, 2]);
+        assert!(
+            app.state_text().contains("2 terms"),
+            "state text: {}",
+            app.state_text()
+        );
     }
 
     #[test]
@@ -783,5 +1421,17 @@ mod tests {
             content.contains("cnot"),
             "gate reference missing from overlay"
         );
+    }
+
+    fn buffer_lines(buffer: &ratatui::buffer::Buffer, width: u16) -> Vec<String> {
+        buffer
+            .content
+            .chunks(width as usize)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect()
+    }
+
+    fn row_containing(lines: &[String], needle: &str) -> Option<usize> {
+        lines.iter().position(|line| line.contains(needle))
     }
 }

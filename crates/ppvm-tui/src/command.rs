@@ -80,6 +80,8 @@ pub enum Command {
     Load(String),
     /// Toggle the help overlay.
     Help,
+    /// Toggle detailed state rendering in the State panel.
+    ToggleState,
     /// Leave the TUI.
     Quit,
 }
@@ -101,6 +103,7 @@ pub fn parse_command(line: &str) -> Result<Command> {
             "s" | "step" => Ok(Command::Step),
             "reset" => Ok(Command::Reset),
             "help" | "h" | "?" => Ok(Command::Help),
+            "state" => Ok(Command::ToggleState),
             "load" => {
                 let path = it.next().ok_or_else(|| eyre!(":load needs a file path"))?;
                 if it.next().is_some() {
@@ -216,6 +219,7 @@ mod tests {
         assert_eq!(parse_command(":reset").unwrap(), Command::Reset);
         assert_eq!(parse_command(":help").unwrap(), Command::Help);
         assert_eq!(parse_command(":h").unwrap(), Command::Help);
+        assert_eq!(parse_command(":state").unwrap(), Command::ToggleState);
         assert_eq!(
             parse_command(":load foo.sst").unwrap(),
             Command::Load("foo.sst".to_string())
@@ -237,6 +241,11 @@ mod tests {
     fn load_rejects_trailing_tokens() {
         assert!(parse_command(":load a.sst").is_ok());
         assert!(parse_command(":load a.sst junk").is_err());
+    }
+
+    #[test]
+    fn tree_scroll_command_is_not_supported() {
+        assert!(parse_command(":tree older").is_err());
     }
 
     #[test]

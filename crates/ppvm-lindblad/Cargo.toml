@@ -28,3 +28,7 @@ nalgebra = "0.34"
 [[bench]]
 name = "kossakowski"
 harness = false
+
+[[bench]]
+name = "drug_dipolar"
+harness = false

@@ -271,6 +271,11 @@ struct PauliTerm {
     coeff: Complex<f64>,
 }
 
+/// Sandwich table of a Kossakowski pair, grouped by the left word: one
+/// `(P_a, [(P_b, coeff), …])` group per distinct `P_a`, so `P_a · p` is
+/// computed once per group and reused across its `P_b` partners.
+type SandwichGroups = Vec<(Word, Vec<(Word, Complex<f64>)>)>;
+
 /// One jump operator `L_k` with rate `γ_k`. The `HermitianPauli` variant
 /// is a fast path; `General` handles arbitrary complex Pauli sums.
 #[derive(Clone)]
@@ -295,7 +300,7 @@ enum JumpKind {
     /// are complex — not Hermitian per pair; Hermiticity of the total action
     /// is restored by the conjugate `(m, n)` pair.
     KossakowskiPair {
-        sand: Vec<(Word, Vec<(Word, Complex<f64>)>)>,
+        sand: SandwichGroups,
         /// Diagonal pair (`n == m`): `K_nn · A_n†A_n`.
         /// Off-diagonal pair (`n < m`, folds in the conjugate `(m,n)`):
         /// the Hermitian sum `2·Re(K_nm·A_n†A_m)` (real coefficients), for

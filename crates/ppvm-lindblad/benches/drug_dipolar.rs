@@ -45,6 +45,7 @@ fn hashf(mut x: u64) -> f64 {
 
 /// Dipolar coupling `b` and unit vector for every pair, from placing spins on
 /// a jittered chain (real molecules: `b ∝ 1/r³`, generic directions).
+#[allow(clippy::type_complexity)]
 fn geometry(n: usize) -> (Vec<(usize, usize)>, Vec<f64>, Vec<[f64; 3]>) {
     let pos: Vec<[f64; 3]> = (0..n)
         .map(|i| {

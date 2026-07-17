@@ -33,6 +33,7 @@ fn hashf(mut x: u64) -> f64 {
     (x >> 11) as f64 / (1u64 << 53) as f64
 }
 
+#[allow(clippy::type_complexity)]
 fn geometry(n: usize) -> (Vec<(usize, usize)>, Vec<f64>, Vec<[f64; 3]>) {
     let pos: Vec<[f64; 3]> = (0..n)
         .map(|i| {

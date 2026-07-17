@@ -1,0 +1,31 @@
+# drug_profile 10 1500 5 (N=10, B=1500, median total ms/step). Same-session
+# A/B; absolute walls are machine/load dependent, ratios are the decision.
+
+[[metric]]
+"commit" = "4992d1e5"
+"status" = "keep"
+"description" = "baseline: KossakowskiPair arm as of 2026-07-16-kossakowski (grouped-by-nothing sandwich, per-ordered-pair entries)"
+"drug_profile_n10_ms" = 7038.9
+
+[[metric]]
+"commit" = "2a24cd2e"
+"status" = "keep"
+"description" = "it1: group sandwich by left word, reuse P_a.p across P_b partners (32->20 pauli_mul for 4-term ops). 07-16 it2 idea, real here because ops are multi-term"
+"drug_profile_n10_ms" = 5765.3
+
+[[metric]]
+"commit" = "5a254d09"
+"status" = "keep"
+"description" = "it2: fold conjugate pairs (n,m)+(m,n) into one upper-triangle entry; both-sided doubles+Re, one-sided uses anti-Hermitian F=-2i*Im(K A_n#A_m). Halves pairs P^2->P(P+1)/2; general for Hermitian PSD K"
+"drug_profile_n10_ms" = 2281.4
+
+# Representation win (real gemcitabine N=10, B=2000, mean s/step, peak RSS),
+# dense jumps vs Kossakowski it2:
+[[representation]]
+"molecule" = "gemcitabine-10spin"
+"dense_jumps_s_per_step" = 24.6
+"dense_jumps_rss_mb" = 2239
+"kossakowski_s_per_step" = 4.1
+"kossakowski_rss_mb" = 1720
+"speedup" = 6.0
+"rss_ratio" = 1.30

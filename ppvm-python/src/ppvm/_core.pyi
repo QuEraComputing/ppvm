@@ -362,6 +362,8 @@ class LindbladSpec:
         h_coeffs: list[float],
         jump_lincombs: list[list[tuple[str, float, float]]],
         jump_rates: list[float],
+        kossakowski_ops: list[list[tuple[str, float, float]]] = ...,
+        kossakowski_k: list[list[tuple[float, float]]] = ...,
     ) -> None: ...
     @property
     def n_qubits(self) -> int: ...

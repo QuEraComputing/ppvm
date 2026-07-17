@@ -63,7 +63,13 @@ fn geometry(n: usize) -> (Vec<(usize, usize)>, Vec<f64>, Vec<[f64; 3]>) {
 
 fn y2(u: &[f64; 3]) -> [f64; N_M] {
     let (x, y, z) = (u[0], u[1], u[2]);
-    [x * y, y * z, (3.0 * z * z - 1.0) / 2.0, x * z, (x * x - y * y) / 2.0]
+    [
+        x * y,
+        y * z,
+        (3.0 * z * z - 1.0) / 2.0,
+        x * z,
+        (x * x - y * y) / 2.0,
+    ]
 }
 
 fn tensor_op(n: usize, a: usize, b: usize, mt: usize) -> Vec<(String, Complex<f64>)> {
@@ -96,7 +102,13 @@ fn tensor_op(n: usize, a: usize, b: usize, mt: usize) -> Vec<(String, Complex<f6
 }
 
 #[allow(clippy::type_complexity)]
-fn model(n: usize) -> (Vec<(String, f64)>, Vec<Vec<(String, Complex<f64>)>>, Vec<Vec<Complex<f64>>>) {
+fn model(
+    n: usize,
+) -> (
+    Vec<(String, f64)>,
+    Vec<Vec<(String, Complex<f64>)>>,
+    Vec<Vec<Complex<f64>>>,
+) {
     let (pairs, bmag, dir) = geometry(n);
     let p = pairs.len();
     let mut h = Vec::new();
@@ -154,11 +166,16 @@ fn main() {
     spec.add_kossakowski(&ops, &k).unwrap();
     let build_ms = t0.elapsed().as_secs_f64() * 1e3;
 
-    let cfg = PcStepConfig { max_basis: b, admit_basis: Some(3 * b), ..Default::default() };
+    let cfg = PcStepConfig {
+        max_basis: b,
+        admit_basis: Some(3 * b),
+        ..Default::default()
+    };
     let (mut basis, mut coeffs) = observable(n);
     // Grow into a realistic capped basis (not timed).
     for _ in 0..3 {
-        spec.pc_step(&mut basis, &mut coeffs, dt, &[], &cfg).unwrap();
+        spec.pc_step(&mut basis, &mut coeffs, dt, &[], &cfg)
+            .unwrap();
     }
 
     let mut totals = Vec::new();

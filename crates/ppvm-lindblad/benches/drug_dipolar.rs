@@ -138,9 +138,7 @@ fn hamiltonian_terms(n: usize, pairs: &[(usize, usize)], bmag: &[f64]) -> Vec<(S
 /// `c_μ^{m'} = b_μ Y_2^{m'}(r̂_μ)` — a rank-5 Gram block, exactly as the drug
 /// pickles decompose.
 #[allow(clippy::type_complexity)]
-fn kossakowski_model(
-    n: usize,
-) -> (Vec<Vec<(String, Complex<f64>)>>, Vec<Vec<Complex<f64>>>) {
+fn kossakowski_model(n: usize) -> (Vec<Vec<(String, Complex<f64>)>>, Vec<Vec<Complex<f64>>>) {
     let (pairs, bmag, dir) = geometry(n);
     let p = pairs.len();
     let c: Vec<[f64; N_M]> = (0..p)
@@ -171,10 +169,7 @@ fn kossakowski_model(
 
 /// Eigenmode jumps of the block-diagonal `K` (the dense representation the
 /// Kossakowski path replaces): per block, `L_ν = √γ_ν Σ_μ V_μν T_μ`.
-fn eigenmode_jumps(
-    ops: &[Vec<(String, Complex<f64>)>],
-    k: &[Vec<Complex<f64>>],
-) -> Vec<JumpInput> {
+fn eigenmode_jumps(ops: &[Vec<(String, Complex<f64>)>], k: &[Vec<Complex<f64>>]) -> Vec<JumpInput> {
     let m_ops = ops.len();
     let p = m_ops / N_M;
     let mut jumps = Vec::new();
@@ -196,7 +191,10 @@ fn eigenmode_jumps(
                     }
                 }
             }
-            jumps.push(JumpInput { lincomb: lin, rate: g });
+            jumps.push(JumpInput {
+                lincomb: lin,
+                rate: g,
+            });
         }
     }
     jumps

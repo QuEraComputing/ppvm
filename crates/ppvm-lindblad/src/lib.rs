@@ -559,17 +559,26 @@ impl LindbladSpec {
                     for t in &adag_b {
                         let c = k[n][m] * t.coeff;
                         if c.re.abs() > 1e-14 {
-                            dd.push(PauliTerm { word: t.word, coeff: Complex::new(2.0 * c.re, 0.0) });
+                            dd.push(PauliTerm {
+                                word: t.word,
+                                coeff: Complex::new(2.0 * c.re, 0.0),
+                            });
                         }
                         if c.im.abs() > 1e-14 {
-                            da.push(PauliTerm { word: t.word, coeff: Complex::new(0.0, -2.0 * c.im) });
+                            da.push(PauliTerm {
+                                word: t.word,
+                                coeff: Complex::new(0.0, -2.0 * c.im),
+                            });
                         }
                     }
                     (dd, da)
                 } else {
                     let dd = adag_b
                         .iter()
-                        .map(|t| PauliTerm { word: t.word, coeff: k[n][m] * t.coeff })
+                        .map(|t| PauliTerm {
+                            word: t.word,
+                            coeff: k[n][m] * t.coeff,
+                        })
                         .collect();
                     (dd, Vec::new())
                 };

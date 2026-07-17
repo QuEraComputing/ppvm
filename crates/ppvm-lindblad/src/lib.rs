@@ -286,13 +286,16 @@ enum JumpKind {
     },
     /// One `(n, m)` pair of a Kossakowski-form dissipator
     /// `D*(O) = Σ_{n,m} K_nm (A_n† O A_m − ½ {A_n† A_m, O})`, fully
-    /// precompiled: `sand` holds one `(P_a, P_b, λ_a*·μ_b·K_nm)` entry per
-    /// sandwich term pair, and `dd` the lincomb `−K_nm · A_n†A_m` (the ½
-    /// cancels the anticommutator's 2). Coefficients are complex — not
-    /// Hermitian per pair; Hermiticity of the total action is restored by
-    /// the conjugate `(m, n)` pair.
+    /// precompiled: `sand` groups the sandwich terms by the left word `P_a`
+    /// — one `(P_a, [(P_b, λ_a*·μ_b·K_nm), …])` group per distinct `P_a` —
+    /// so `P_a · p` is computed once per group instead of once per
+    /// `(P_a, P_b)` pair (a win when `A_n` has several Pauli terms, e.g. the
+    /// 2-local rank-2 tensors of dipolar relaxation). `dd` is the lincomb
+    /// `−K_nm · A_n†A_m` (the ½ cancels the anticommutator's 2). Coefficients
+    /// are complex — not Hermitian per pair; Hermiticity of the total action
+    /// is restored by the conjugate `(m, n)` pair.
     KossakowskiPair {
-        sand: Vec<(Word, Word, Complex<f64>)>,
+        sand: Vec<(Word, Vec<(Word, Complex<f64>)>)>,
         /// `K_nm · A_n†A_m` as a Pauli lincomb.
         dd: Vec<PauliTerm>,
         /// Support bit masks (`xbits | zbits` union) of `A_n` and `A_m`,
@@ -529,11 +532,13 @@ impl LindbladSpec {
                         coeff: k[n][m] * t.coeff,
                     })
                     .collect();
-                let mut sand = Vec::new();
+                let mut sand = Vec::with_capacity(self.k_ops[base + n].len());
                 for a in &self.k_ops[base + n] {
-                    for b in &self.k_ops[base + m] {
-                        sand.push((a.word, b.word, a.coeff.conj() * b.coeff * k[n][m]));
-                    }
+                    let rights = self.k_ops[base + m]
+                        .iter()
+                        .map(|b| (b.word, a.coeff.conj() * b.coeff * k[n][m]))
+                        .collect();
+                    sand.push((a.word, rights));
                 }
                 let support_mask = |terms: &[PauliTerm]| {
                     let mut mask = [0 as Chunk; W_CHUNKS];
@@ -1065,11 +1070,15 @@ impl LindbladSpec {
                         }
                         continue;
                     }
-                    // Both sides hit: full sandwich + anticommutator.
-                    for (wa, wb, c0) in sand {
+                    // Both sides hit: full sandwich + anticommutator. Group
+                    // by the left word so `P_a · p` is computed once per
+                    // distinct `P_a` and reused across all its `P_b` partners.
+                    for (wa, rights) in sand {
                         let (r_ap, phi1) = pauli_mul(wa, p);
-                        let (s, phi2) = pauli_mul(&r_ap, wb);
-                        *local.entry(s).or_insert(zero) += c0 * phase_factor(phi1 + phi2);
+                        for (wb, c0) in rights {
+                            let (s, phi2) = pauli_mul(&r_ap, wb);
+                            *local.entry(s).or_insert(zero) += c0 * phase_factor(phi1 + phi2);
+                        }
                     }
                     for c_term in dd {
                         let (r, phase) = pauli_mul(&c_term.word, p);

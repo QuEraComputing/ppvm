@@ -128,8 +128,9 @@ pub fn parse_command(line: &str) -> Result<Command> {
         return Ok(Command::Device(n));
     }
 
-    let spec =
-        gate_spec(head).ok_or_else(|| eyre!("unknown command {head:?}; try :load or device N"))?;
+    let gate_name = head.to_ascii_lowercase();
+    let spec = gate_spec(&gate_name)
+        .ok_or_else(|| eyre!("unknown command {head:?}; try :load or device N"))?;
     let expected = spec.qubits + spec.floats;
     if args.len() != expected {
         bail!(
@@ -183,6 +184,34 @@ mod tests {
                 inst: CircuitInstruction::H,
                 qubits: vec![0],
                 params: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn gate_names_are_case_insensitive() {
+        assert_eq!(
+            parse_command("H 0").unwrap(),
+            Command::Gate {
+                inst: CircuitInstruction::H,
+                qubits: vec![0],
+                params: vec![],
+            }
+        );
+        assert_eq!(
+            parse_command("CNOT 0 1").unwrap(),
+            Command::Gate {
+                inst: CircuitInstruction::CNOT,
+                qubits: vec![0, 1],
+                params: vec![],
+            }
+        );
+        assert_eq!(
+            parse_command("Rx 0 0.5").unwrap(),
+            Command::Gate {
+                inst: CircuitInstruction::RX,
+                qubits: vec![0],
+                params: vec![0.5],
             }
         );
     }

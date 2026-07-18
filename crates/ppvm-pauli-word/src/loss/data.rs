@@ -231,58 +231,6 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> PauliWord
     }
 
     #[inline(always)]
-    fn get_multiple<const Q: usize>(&self, indices: [usize; Q]) -> Self {
-        let mut result = Self::new(Q);
-        for (i, &idx) in indices.iter().enumerate() {
-            result.set(i, self.get(idx));
-        }
-        result
-    }
-
-    #[inline(always)]
-    fn set_multiple<const Q: usize, B: PauliStorage>(
-        &mut self,
-        indices: [usize; Q],
-        values: &Self,
-    ) {
-        if values.nqubits != Q {
-            panic!("Values must have the same number of qubits as indices");
-        }
-        for (i, &idx) in indices.iter().enumerate() {
-            self.xbits.set(idx, values.xbits[i]);
-            self.zbits.set(idx, values.zbits[i]);
-            self.lbits.set(idx, values.lbits[i]);
-        }
-        self.rehash();
-    }
-
-    #[inline(always)]
-    fn get_slice(&self, slice: std::ops::Range<usize>) -> Self {
-        if slice.end > self.nqubits {
-            panic!("Slice out of bounds");
-        }
-        let n_qubits = slice.len();
-        let mut xbits = BitArray::ZERO;
-        let mut zbits = BitArray::ZERO;
-        let mut lbits = BitArray::ZERO;
-        for (i, idx) in slice.into_iter().enumerate() {
-            xbits.set(i, self.xbits[idx]);
-            zbits.set(i, self.zbits[idx]);
-            lbits.set(i, self.lbits[idx]);
-        }
-        let mut ret = Self {
-            xbits,
-            zbits,
-            lbits,
-            nqubits: n_qubits,
-            hash_cache: 0,
-            _phantom: std::marker::PhantomData,
-        };
-        ret.rehash();
-        ret
-    }
-
-    #[inline(always)]
     fn is(&self, index: usize, pauli: Pauli) -> bool {
         if index >= self.nqubits {
             panic!("Index out of bounds");

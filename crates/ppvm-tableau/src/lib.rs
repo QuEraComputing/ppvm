@@ -28,6 +28,38 @@
 //! let r1 = LossyMeasure::measure(&mut tab, 1);
 //! assert_eq!(r0, r1);
 //! ```
+//!
+//! ## Data-parallel / GPU-offloadable surface
+//!
+//! A handful of primitives in this crate operate on whole contiguous arrays
+//! at once, with no per-element host closures — the shape a thread pool or a
+//! CUDA kernel would want:
+//!
+//! - Every tableau row ([`PhasedPauliWord`](ppvm_pauli_word::phase::PhasedPauliWord))
+//!   stores its Pauli word as fixed-size `bytemuck::Pod` integer bit-planes
+//!   (`xbits`/`zbits`, backed by `[u8; N]` or `[u64; N]`), reachable as
+//!   contiguous raw integer slices via `as_raw_slice`/`as_raw_mut_slice` —
+//!   plain-old-data, not a bit-addressed abstraction.
+//! - The Clifford single-/two-qubit gates
+//!   (`crates/ppvm-tableau/src/gates/clifford.rs`) all run through one shared
+//!   implementation per gate that loops over rows operating directly on
+//!   those raw integer slices with a hoisted word-index/bit/mask, bypassing
+//!   `bitvec`'s per-bit bounds checks inside the loop. Every caller —
+//!   [`data::Tableau`], [`data::GeneralizedTableau`] (via the
+//!   `impl_generalized_tableau_clifford*` macros), and the fused batch path
+//!   below — funnels through that one implementation.
+//! - [`CliffordBatch`](ppvm_traits::traits::CliffordBatch) methods (`x_many`,
+//!   `cz_many`, …) and [`data::GeneralizedTableau::cz_block`] /
+//!   `cz_block_pairs` / `cz_block_pairs_cross_word` apply a gate to a whole
+//!   contiguous block of qubits as bulk masked slice operations — the entry
+//!   points a thread pool or CUDA kernel would implement over the row
+//!   planes.
+//! - `GeneralizedTableau::branch_with_coefficients` (crate-private) transforms
+//!   the whole coefficient array in one pass. Its `#[cfg(feature = "rayon")]`
+//!   path (`branch_coefficients_parallel`, gated by `RAYON_COEFF_THRESHOLD`)
+//!   computes the per-entry branch/non-branch coefficient math in parallel,
+//!   with no shared mutable state — the accumulation of those results into
+//!   the coefficient map afterwards remains sequential.
 
 /// Core [`Tableau`](data::Tableau) and
 /// [`GeneralizedTableau`](data::GeneralizedTableau) types.

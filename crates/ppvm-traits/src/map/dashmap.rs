@@ -78,21 +78,6 @@ where
     }
 }
 
-// impl<'a, S, V, State> ACMapIterMut<'a, S, V> for DashMap<PauliWord<S>, V, State>
-// where
-//     S: PauliStorage + 'a,
-//     V: Coefficient + 'a,
-//     State: Clone + BuildHasher + 'a,
-// {
-//     type Item = dashmap::mapref::multiple::RefMutMulti<'a, PauliWord<S>, V>;
-//     type IterMut =
-//         dashmap::iter::IterMut<'a, PauliWord<S>, V, State, DashMap<PauliWord<S>, V, State>>;
-
-//     fn iter_mut(&'a mut self) -> Self::IterMut {
-//         DashMap::iter_mut(self)
-//     }
-// }
-
 impl<'a, P, C, Hasher, W> Trace<'a, P> for DashMap<W, C, Hasher>
 where
     P: Sync + 'a,
@@ -123,11 +108,6 @@ where
                 .or_insert_with(|| entry.value().clone());
         });
 
-        // // FIXME: clone is not very efficient when T::Coeff is an expression
-        // self.par_extend(
-        //     dest.par_iter()
-        //         .map(|entry| (entry.key().clone(), entry.value().clone())),
-        // );
         dest.clear();
     }
 }
@@ -139,20 +119,6 @@ where
     H: Default + Clone + BuildHasher + Send + Sync,
     W: PauliWordTrait + Send + Sync,
 {
-    fn map_insert<F>(&mut self, dest: &mut Self, f: F)
-    where
-        F: Fn(&W, &mut C) -> Option<(W, C)> + Sync + Send,
-    {
-        self.par_iter_mut().for_each(|mut entry| {
-            let (k, v) = entry.pair_mut();
-            if let Some((new_k, new_v)) = f(k, v) {
-                dest.entry(new_k)
-                    .and_modify(|v| *v += new_v.clone())
-                    .or_insert(new_v);
-            }
-        })
-    }
-
     fn map_insert_vec<F>(&mut self, dest: &mut Vec<(W, C)>, f: F)
     where
         F: Fn(&W, &mut C) -> Option<(W, C)> + Sync + Send,

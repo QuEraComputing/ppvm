@@ -8,7 +8,6 @@ mod hash;
 mod map;
 mod measure;
 mod noise;
-mod ptm;
 mod reset;
 mod storage;
 mod strategy;
@@ -26,7 +25,7 @@ pub use map::{
 pub use measure::{LossyMeasure, Measure};
 pub use noise::{
     AmplitudeDamping, AsymmetricLossChannel, CorrelatedLossChannel, Depolarizing, Depolarizing2,
-    LossChannel, PauliError, PauliErrorAll, ResetLossChannel, TwoQubitPauliError,
+    LossChannel, PauliError, ResetLossChannel, TwoQubitPauliError,
 };
 pub use reset::Reset;
 pub use storage::PauliStorage;

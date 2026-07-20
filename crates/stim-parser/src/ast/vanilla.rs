@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Vanilla Stim AST. Tags are preserved verbatim; the parser does not
-//! resolve the Stim dialect — that is the consumer's responsibility.
+//! Vanilla Stim AST. Tags are preserved as decoded opaque strings; the parser
+//! does not resolve the Stim dialect.
 
 use std::sync::Arc;
 
-use crate::ast::shared::{AnnotationOp, GateOp, MeasureOp, MppOp, NoiseOp, Tag};
+use crate::ast::shared::{AnnotationOp, GateOp, MeasureOp, MppOp, NoiseOp};
 use crate::diagnostics::{LineMap, Span};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,12 +17,13 @@ pub enum Instruction {
     Annotation(AnnotationOp),
     Mpp(MppOp),
     MPad {
-        tags: Vec<Tag>,
+        tag: String,
         prob: Option<f64>,
         bits: Vec<usize>,
         span: Span,
     },
     Repeat {
+        tag: String,
         count: u64,
         body: Vec<Instruction>,
         span: Span,
@@ -57,7 +58,7 @@ mod tests {
         let p = Program {
             instructions: vec![Instruction::Gate(GateOp {
                 name: GateName::H,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![],
                 targets: vec![],
                 span: Span::new(0, 1),
@@ -72,7 +73,7 @@ mod tests {
         let g = || {
             Instruction::Gate(GateOp {
                 name: GateName::H,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![],
                 targets: vec![],
                 span: Span::new(0, 1),

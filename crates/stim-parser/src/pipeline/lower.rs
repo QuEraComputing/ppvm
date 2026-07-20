@@ -10,13 +10,68 @@
 
 use std::sync::Arc;
 
+use chumsky::error::Rich;
+use chumsky::extra;
+use chumsky::prelude::*;
+
 use crate::ast::extended::{ExtendedInstruction, ExtendedProgram};
-use crate::ast::shared::{Axis, GateOp, NoiseOp, Tag, TagParam, Target};
+use crate::ast::shared::{Axis, GateOp, NoiseOp, Target};
 use crate::ast::vanilla::{Instruction, Program};
 use crate::diagnostics::{Aborted, DiagnosticSink, Span};
 use crate::instructions::{GateName, NoiseName};
 
 use super::emit_skip;
+
+type TagExtra<'src> = extra::Err<Rich<'src, char>>;
+
+#[derive(Debug, Clone, PartialEq)]
+struct StructuredTag {
+    name: String,
+    params: Vec<StructuredTagParam>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum StructuredTagParam {
+    Positional(f64),
+    Named {
+        key: String,
+        value: f64,
+        had_pi: bool,
+    },
+}
+
+fn structured_tag<'src>() -> impl Parser<'src, &'src str, StructuredTag, TagExtra<'src>> + Clone {
+    use crate::syntax::{ident, inline_pad, pi_expr, pi_expr_flagged};
+
+    let named = ident()
+        .then_ignore(inline_pad())
+        .then_ignore(just('='))
+        .then_ignore(inline_pad())
+        .then(pi_expr_flagged())
+        .map(|(key, (value, had_pi))| StructuredTagParam::Named { key, value, had_pi });
+    let positional = pi_expr().map(StructuredTagParam::Positional);
+    let params = choice((named, positional))
+        .separated_by(inline_pad().then(just(',')).then(inline_pad()))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just('(').then(inline_pad()), inline_pad().then(just(')')));
+
+    inline_pad()
+        .ignore_then(ident().then(params.or_not()))
+        .then_ignore(inline_pad())
+        .map(|(name, params)| StructuredTag {
+            name,
+            params: params.unwrap_or_default(),
+        })
+}
+
+fn parse_structured_tag(src: &str) -> Option<StructuredTag> {
+    structured_tag()
+        .then_ignore(end())
+        .parse(src)
+        .into_result()
+        .ok()
+}
 
 /// Lower a vanilla [`Program`] into an [`ExtendedProgram`], forwarding every
 /// recoverable error to the sink.
@@ -65,7 +120,7 @@ fn lower_one(
         Instruction::Annotation(op) => Ok(Some(ExtendedInstruction::Annotation(op))),
         Instruction::Mpp(op) => Ok(Some(ExtendedInstruction::Mpp(op))),
         Instruction::MPad {
-            tags,
+            tag,
             prob,
             bits,
             span,
@@ -74,15 +129,25 @@ fn lower_one(
                 return Ok(None);
             };
             Ok(Some(ExtendedInstruction::MPad {
-                tags,
+                tag,
                 prob,
                 bits,
                 span,
             }))
         }
-        Instruction::Repeat { count, body, span } => {
+        Instruction::Repeat {
+            tag,
+            count,
+            body,
+            span,
+        } => {
             let body = lower_slice(body, sink)?;
-            Ok(Some(ExtendedInstruction::Repeat { count, body, span }))
+            Ok(Some(ExtendedInstruction::Repeat {
+                tag,
+                count,
+                body,
+                span,
+            }))
         }
     }
 }
@@ -95,24 +160,15 @@ fn lower_gate(
 
     let GateOp {
         name,
-        tags,
+        tag,
         args,
         targets,
         span,
     } = op;
 
     match name {
-        // Native T / T_DAG mnemonics lower to the same sugar as `S[T]` / `S_DAG[T]`.
+        // Tags on native T/T_DAG do not affect simulation.
         T | TDag => {
-            if let Some(tag) = tags.first() {
-                return invalid_tag(
-                    &tag.name,
-                    name.canonical_name(),
-                    span,
-                    "bare T/T_DAG take no tags; use S[T] / S_DAG[T] for the tagged form",
-                    sink,
-                );
-            }
             let Some(targets) = qubit_targets(targets, name.canonical_name(), span, sink)? else {
                 return Ok(None);
             };
@@ -122,56 +178,42 @@ fn lower_gate(
                 ExtendedInstruction::TDag { targets, span }
             }))
         }
-        S | SDag => match tags.as_slice() {
-            [] => Ok(Some(ExtendedInstruction::Gate(GateOp {
-                name,
-                tags,
-                args,
-                targets,
-                span,
-            }))),
-            [t] if t.name == "T" => {
-                if require_no_params(t, name.canonical_name(), span, sink)?.is_none() {
-                    return Ok(None);
-                }
+        S | SDag => {
+            if tag == "T" {
                 let Some(targets) = qubit_targets(targets, name.canonical_name(), span, sink)?
                 else {
                     return Ok(None);
                 };
-                Ok(Some(if matches!(name, S) {
+                return Ok(Some(if matches!(name, S) {
                     ExtendedInstruction::T { targets, span }
                 } else {
                     ExtendedInstruction::TDag { targets, span }
-                }))
+                }));
             }
-            [t] => invalid_tag(&t.name, name.canonical_name(), span, "expected [T]", sink),
-            _ => invalid_tag(
-                &tags[0].name,
-                name.canonical_name(),
-                span,
-                "expected exactly one tag",
-                sink,
-            ),
-        },
-        Identity => match tags.as_slice() {
-            [] => Ok(Some(ExtendedInstruction::Gate(GateOp {
+            Ok(Some(ExtendedInstruction::Gate(GateOp {
                 name,
-                tags,
+                tag,
                 args,
                 targets,
                 span,
-            }))),
-            [t] => {
-                let Some(targets) = qubit_targets(targets, "I", span, sink)? else {
-                    return Ok(None);
-                };
-                interpret_identity_tag(t, targets, span, sink)
-            }
-            _ => invalid_tag(&tags[0].name, "I", span, "expected exactly one tag", sink),
-        },
+            })))
+        }
+        Identity if tag.is_empty() => Ok(Some(ExtendedInstruction::Gate(GateOp {
+            name,
+            tag,
+            args,
+            targets,
+            span,
+        }))),
+        Identity => {
+            let Some(targets) = qubit_targets(targets, "I", span, sink)? else {
+                return Ok(None);
+            };
+            interpret_identity_tag(&tag, targets, span, sink)
+        }
         _ => Ok(Some(ExtendedInstruction::Gate(GateOp {
             name,
-            tags,
+            tag,
             args,
             targets,
             span,
@@ -179,32 +221,15 @@ fn lower_gate(
     }
 }
 
-/// `Ok(Some(()))` — the tag carried no parameters. `Ok(None)` — a violation was
-/// emitted and the sink chose to continue. `Err(Aborted)` — abort the stage.
-fn require_no_params(
-    tag: &Tag,
-    instruction: &str,
-    span: Span,
-    sink: &mut dyn DiagnosticSink,
-) -> Result<Option<()>, Aborted> {
-    if !tag.params.is_empty() {
-        return invalid_tag::<()>(
-            &tag.name,
-            instruction,
-            span,
-            "tag must have no parameters",
-            sink,
-        );
-    }
-    Ok(Some(()))
-}
-
 fn interpret_identity_tag(
-    tag: &Tag,
+    tag_text: &str,
     targets: Vec<usize>,
     span: Span,
     sink: &mut dyn DiagnosticSink,
 ) -> Result<Option<ExtendedInstruction>, Aborted> {
+    let Some(tag) = parse_structured_tag(tag_text) else {
+        return invalid_tag(tag_text, "I", span, "expected a PPVM modifier", sink);
+    };
     let axis = match tag.name.as_str() {
         "R_X" => Some(Axis::X),
         "R_Y" => Some(Axis::Y),
@@ -213,7 +238,7 @@ fn interpret_identity_tag(
     };
 
     if let Some(axis) = axis {
-        let Some([theta]) = exact_named_params(tag, ["theta"], "I", span, sink)? else {
+        let Some([theta]) = exact_named_params(&tag, ["theta"], "I", span, sink)? else {
             return Ok(None);
         };
         return Ok(Some(ExtendedInstruction::Rotation {
@@ -226,7 +251,7 @@ fn interpret_identity_tag(
 
     if tag.name == "U3" {
         let Some([theta, phi, lambda]) =
-            exact_named_params(tag, ["theta", "phi", "lambda"], "I", span, sink)?
+            exact_named_params(&tag, ["theta", "phi", "lambda"], "I", span, sink)?
         else {
             return Ok(None);
         };
@@ -256,17 +281,14 @@ fn lower_noise(
 
     let NoiseOp {
         name,
-        tags,
+        tag,
         args,
         targets,
         span,
     } = op;
 
-    match (name, tags.as_slice()) {
-        (IError, [t]) if t.name == "loss" => {
-            if require_no_params(t, name.canonical_name(), span, sink)?.is_none() {
-                return Ok(None);
-            }
+    match (name, tag.as_str()) {
+        (IError, "loss") => {
             if args.len() != 1 {
                 return invalid_tag(
                     "loss",
@@ -282,10 +304,7 @@ fn lower_noise(
                 span,
             }))
         }
-        (IError, [t]) if t.name == "correlated_loss" => {
-            if require_no_params(t, name.canonical_name(), span, sink)?.is_none() {
-                return Ok(None);
-            }
+        (IError, "correlated_loss") => {
             if targets.is_empty() || !targets.len().is_multiple_of(2) {
                 return invalid_tag(
                     "correlated_loss",
@@ -317,30 +336,23 @@ fn lower_noise(
                 span,
             }))
         }
-        (IError, []) => invalid_tag(
+        (IError, "") => invalid_tag(
             "<missing>",
             name.canonical_name(),
             span,
             "I_ERROR requires a [loss] or [correlated_loss] tag",
             sink,
         ),
-        (IError, [t]) => invalid_tag(
-            &t.name,
+        (IError, other) => invalid_tag(
+            other,
             name.canonical_name(),
             span,
             "expected [loss] or [correlated_loss]",
             sink,
         ),
-        (IError, _) => invalid_tag(
-            &tags[0].name,
-            name.canonical_name(),
-            span,
-            "expected exactly one tag",
-            sink,
-        ),
         _ => Ok(Some(ExtendedInstruction::Noise(NoiseOp {
             name,
-            tags,
+            tag,
             args,
             targets,
             span,
@@ -362,7 +374,7 @@ fn invalid_tag<T>(
         sink,
         span,
         "invalid-tag",
-        format!("invalid tag '{tag_name}' on {instruction}: {message}"),
+        format!("invalid tag {tag_name:?} on {instruction}: {message}"),
     )
 }
 
@@ -434,7 +446,7 @@ fn pair_targets(targets: &[usize]) -> Vec<(usize, usize)> {
 /// positional params, no unexpected/duplicate/missing keys — and return their
 /// values in `required` order. Any violation is reported as `invalid-tag`.
 fn exact_named_params<const N: usize>(
-    tag: &Tag,
+    tag: &StructuredTag,
     required: [&str; N],
     instruction: &str,
     span: Span,
@@ -445,7 +457,7 @@ fn exact_named_params<const N: usize>(
 
     for param in &tag.params {
         match param {
-            TagParam::Positional(_) => {
+            StructuredTagParam::Positional(_) => {
                 return invalid_tag(
                     &tag.name,
                     instruction,
@@ -454,7 +466,7 @@ fn exact_named_params<const N: usize>(
                     sink,
                 );
             }
-            TagParam::Named { key, value, had_pi } => {
+            StructuredTagParam::Named { key, value, had_pi } => {
                 let Some(index) = required.iter().position(|required_key| key == required_key)
                 else {
                     return invalid_tag(
@@ -611,17 +623,21 @@ mod tests {
     }
 
     #[test]
-    fn bare_t_with_tag_is_rejected() {
-        // A tag on bare T/T_DAG is meaningless (the tagged form is S[T]); reject
-        // it rather than silently dropping it.
-        let err = lower_extended("T[foo] 0").unwrap_err();
-        assert_eq!(err.last().unwrap().code, Some("invalid-tag"));
+    fn bare_t_ignores_tag() {
+        let prog = lower_extended("T[foo] 0").expect("lower");
+        assert!(matches!(
+            &prog.instructions[0],
+            ExtendedInstruction::T { targets, .. } if targets == &vec![0]
+        ));
     }
 
     #[test]
-    fn bare_t_dag_with_tag_is_rejected() {
-        let err = lower_extended("T_DAG[foo] 0").unwrap_err();
-        assert_eq!(err.last().unwrap().code, Some("invalid-tag"));
+    fn bare_t_dag_ignores_tag() {
+        let prog = lower_extended("T_DAG[foo] 0").expect("lower");
+        assert!(matches!(
+            &prog.instructions[0],
+            ExtendedInstruction::TDag { targets, .. } if targets == &vec![0]
+        ));
     }
 
     #[test]
@@ -763,14 +779,20 @@ mod tests {
     }
 
     #[test]
-    fn s_with_unknown_tag_is_invalid_tag() {
-        let err = lower_extended("S[BOGUS] 0").unwrap_err();
-        assert_eq!(err.last().unwrap().code, Some("invalid-tag"));
+    fn s_with_unknown_tag_passes_through() {
+        let prog = lower_extended("S[BOGUS] 0").expect("lower");
+        assert!(matches!(
+            &prog.instructions[0],
+            ExtendedInstruction::Gate(op) if op.name == GateName::S && op.tag == "BOGUS"
+        ));
     }
 
     #[test]
-    fn s_t_tag_with_params_is_invalid_tag() {
-        let err = lower_extended("S[T(theta=0.5)] 0").unwrap_err();
-        assert_eq!(err.last().unwrap().code, Some("invalid-tag"));
+    fn s_non_exact_t_tag_passes_through() {
+        let prog = lower_extended("S[T(theta=0.5)] 0").expect("lower");
+        assert!(matches!(
+            &prog.instructions[0],
+            ExtendedInstruction::Gate(op) if op.name == GateName::S && op.tag == "T(theta=0.5)"
+        ));
     }
 }

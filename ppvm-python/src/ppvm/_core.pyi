@@ -1,5 +1,7 @@
 from collections.abc import Sequence
 
+import numpy as np
+
 class _PauliSumBase:
     def __init__(
         self,
@@ -343,3 +345,51 @@ class TableauSumSampler29(_TableauSumSamplerBase): ...
 class TableauSumSampler30(_TableauSumSamplerBase): ...
 class TableauSumSampler31(_TableauSumSamplerBase): ...
 class TableauSumSampler32(_TableauSumSamplerBase): ...
+
+class LindbladSpec:
+    def __init__(
+        self,
+        n_qubits: int,
+        h_terms: list[str],
+        h_coeffs: list[float],
+        jump_lincombs: list[list[tuple[str, float, float]]],
+        jump_rates: list[float],
+    ) -> None: ...
+    @property
+    def n_qubits(self) -> int: ...
+    @property
+    def num_h_terms(self) -> int: ...
+    @property
+    def num_jump_terms(self) -> int: ...
+    def action(self, p: np.ndarray) -> tuple[np.ndarray, np.ndarray]: ...
+    def leakage(
+        self,
+        basis: np.ndarray,
+        coeffs: np.ndarray,
+        protected: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]: ...
+    def pc_step(
+        self,
+        basis: np.ndarray,
+        coeffs: np.ndarray,
+        dt: float,
+        max_basis: int,
+        drop_tol: float = 0.0,
+        protected: np.ndarray | None = None,
+        num_threads: int | None = None,
+        admit_basis: int | None = None,
+        tau_add: float | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]: ...
+    def pc_step_timed(
+        self,
+        basis: np.ndarray,
+        coeffs: np.ndarray,
+        dt: float,
+        max_basis: int,
+        drop_tol: float = 0.0,
+        protected: np.ndarray | None = None,
+        num_threads: int | None = None,
+        admit_basis: int | None = None,
+        tau_add: float | None = None,
+    ) -> tuple[tuple[np.ndarray, np.ndarray], dict[str, int]]: ...
+    def generator(self, basis: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]: ...

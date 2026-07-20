@@ -1,0 +1,24 @@
+[package]
+name = "ppvm-lindblad"
+version = "0.1.0"
+edition = "2024"
+description = "Direct Heisenberg-picture Lindbladian evolution on an adaptive Pauli-string basis."
+
+[dependencies]
+fxhash = "0.2.1"
+ndarray = "0.17"
+num = "0.4.3"
+ppvm-traits     = { version = "0.1.0", path = "../ppvm-traits" }
+ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
+ppvm-pauli-sum  = { version = "0.1.0", path = "../ppvm-pauli-sum" }
+rayon = "1.11"
+# Matrix-exponential action (Al-Mohy & Higham). QuSpin-rust is MIT-licensed;
+# the pinned rev is the commit that added the LICENSE file.
+quspin-expm = { git = "https://github.com/QuSpin/QuSpin-rust", rev = "a0ad6c9fe2e8063208f9ba1c6677150c993bb554" }
+# `QuSpinError` (the error type returned by the `LinearOperator` trait methods
+# we implement in `mf_expm.rs`) is not re-exported from `quspin-expm`'s root,
+# so we depend on `quspin-types` directly. Same git rev as `quspin-expm`.
+quspin-types = { git = "https://github.com/QuSpin/QuSpin-rust", rev = "a0ad6c9fe2e8063208f9ba1c6677150c993bb554" }
+
+[dev-dependencies]
+approx = "0.5.1"

@@ -7,7 +7,7 @@
 mod grammar;
 pub(crate) mod raw;
 
-pub(crate) use grammar::program_parser;
+pub(crate) use grammar::{ident, inline_pad, pi_expr, pi_expr_flagged, program_parser};
 pub(crate) use raw::RawSyntaxTree;
 pub(crate) use raw::{RawSyntaxNode, RawTarget};
 

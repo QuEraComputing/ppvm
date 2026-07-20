@@ -170,7 +170,12 @@ def test_run_stim_string_tick_and_annotations_are_noops():
     # Note: rec[-1] targets on annotations are silently dropped during
     # parsing; the annotation itself is preserved as a no-op.
     circuit = (
-        "QUBIT_COORDS(0, 0) 0\nX 0\nTICK\nM 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]\n"
+        "QUBIT_COORDS[x^0*y^0,horizontal,block=1](5.5, 0) 0\n"
+        "X 0\n"
+        "TICK[SE reset]\n"
+        "M 0\n"
+        "DETECTOR rec[-1]\n"
+        "OBSERVABLE_INCLUDE(0) rec[-1]\n"
     )
     tab = GeneralizedTableau(1)
     results = tab.run(StimProgram.parse(circuit))

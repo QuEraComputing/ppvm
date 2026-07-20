@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Axis","PauliAxis","TagParam","Target"],"struct":["AnnotationOp","GateOp","MeasureOp","MppOp","NoiseOp","PauliFactor","Tag"]};
+window.SIDEBAR_ITEMS = {"enum":["Axis","PauliAxis","Target"],"struct":["AnnotationOp","GateOp","MeasureOp","MppOp","NoiseOp","PauliFactor"]};

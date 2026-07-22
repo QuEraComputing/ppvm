@@ -56,8 +56,8 @@ impl TranslationGroup {
 /// Replace `(basis, complex_coeffs)` in-place with the orbit-rep form
 /// **projected onto momentum sector `k_modes`**.
 ///
-/// For each represented orbit, coefficients on orbit members are averaged
-/// with the momentum character weight:
+/// For each represented orbit, coefficients on its **distinct** orbit
+/// members are averaged with the momentum character weight:
 /// `(1/|orbit|) · Σ_{p ∈ orbit} χ_k(g_p) · c_p` where `g_p` is the group
 /// element such that `g_p · rep = p`.
 ///
@@ -72,9 +72,9 @@ impl TranslationGroup {
 /// use [`check_momentum_sector`] beforehand to validate.
 ///
 /// For the `k_modes = [0, 0, …]` (trivial) sector all characters are `1`,
-/// so projection reduces to averaging orbit members onto each rep (not
-/// plain [`canonicalize_pauli_sum`], which sums without the orbit-size
-/// normalization).
+/// so projection averages the distinct orbit members onto each rep. This
+/// differs from plain [`canonicalize_pauli_sum`], whose real-coefficient
+/// merging sums collisions without orbit-size normalization.
 pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
     basis: &mut Vec<PauliWord<A, S, R>>,
     coeffs: &mut Vec<Complex<f64>>,
@@ -149,7 +149,12 @@ pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
 ///
 /// Concretely: for every orbit represented in the basis, all members
 /// must satisfy `c_{g·r} = χ_k(g)⁻¹ · c_r` for some choice of orbit-rep
-/// coefficient `c_r`.
+/// coefficient `c_r`. Orbit members absent from `basis` are treated as
+/// having coefficient zero, rather than being ignored.
+///
+/// An orbit with a stabilizer incompatible with `k_modes` cannot carry
+/// that sector and fails with [`SectorCheckError::IncompatibleStabilizer`];
+/// the corresponding momentum projection would be zero.
 ///
 /// Returns `Ok(())` on pass; `Err(SectorCheckError)` on fail with the
 /// offending orbit-rep, expected coefficient, and actual coefficient.

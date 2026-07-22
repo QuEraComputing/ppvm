@@ -64,10 +64,11 @@ pub(super) fn checked_group_order(orders: &[u32]) -> usize {
 ///
 /// `perms[g]` is the permutation that **generator `g`** applies to qubit
 /// indices: a qubit at position `q` moves to position `perms[g][q]`
-/// under one application of generator `g`. `orders[g]` is the cyclic
-/// order of generator `g` (i.e. applying it `orders[g]` times returns
-/// the identity). The full group is the direct product of the cyclic
-/// subgroups, with size `Π orders[g]`.
+/// under one application of generator `g`. `orders[g]` is the exact
+/// cyclic order of generator `g`. The abstract group is the direct
+/// product of these cyclic groups, with order `Π orders[g]`. Its combined
+/// permutation action may have a kernel, so distinct group elements can
+/// act identically.
 ///
 /// Only the **generators** are stored; the algorithm in
 /// [`Self::canonicalize`] walks the group via mixed-radix increments.
@@ -88,7 +89,9 @@ impl TranslationGroup {
     /// Construct from explicit generator permutations and orders.
     ///
     /// Each `perm` must be a permutation of `0..n_qubits`. Each `order`
-    /// must satisfy `perm^order == identity`.
+    /// must be the permutation's exact cyclic order, not merely a
+    /// multiple for which `perm^order == identity`. Generators must
+    /// commute, but their combined action may still have a kernel.
     pub fn from_generators(n_qubits: usize, perms: Vec<Vec<u32>>, orders: Vec<u32>) -> Self {
         assert_eq!(perms.len(), orders.len(), "perms and orders must match");
         for (g, perm) in perms.iter().enumerate() {
@@ -267,7 +270,10 @@ impl TranslationGroup {
         self.perms.len()
     }
 
-    /// Total group order: `Π orders[g]`.
+    /// Abstract product-group order: `Π orders[g]`.
+    ///
+    /// This can exceed the number of distinct permutations in the action
+    /// when the combined action has a kernel.
     pub fn order(&self) -> usize {
         self.order
     }
@@ -370,7 +376,10 @@ impl TranslationGroup {
     ///
     /// In other words: if `r = self.canonicalize(w)`, this returns
     /// `(r, c)` where applying generator `i` exactly `c[i]` times in
-    /// sequence to `r` produces `w`. The counter is used to compute
+    /// sequence to `r` produces `w`. It returns the first valid counter
+    /// selected by the deterministic mixed-radix traversal. Counters are
+    /// not unique when `r` has a non-trivial stabilizer (or when the
+    /// combined action has a kernel). The counter is used to compute
     /// momentum phases by the phase-aware merge routines.
     ///
     /// Same `O(|G| × n_qubits)` cost as `canonicalize`.
@@ -403,8 +412,12 @@ impl TranslationGroup {
         (best, counter_to_word)
     }
 
-    /// Iterate over all group elements applied to `w`. Yields `|G|`
-    /// Pauli words (including `w` itself for the identity element).
+    /// Iterate over all abstract group elements applied to `w`. Yields
+    /// [`Self::order`] Pauli words (including `w` itself for the identity
+    /// element).
+    ///
+    /// Words may repeat when `w` has a stabilizer or the combined action
+    /// has a kernel; this is not an iterator over distinct orbit members.
     pub fn orbit<'a, A, S, const R: bool>(
         &'a self,
         w: &'a PauliWord<A, S, R>,

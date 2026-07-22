@@ -28,9 +28,13 @@
 //! ## Data model
 //!
 //! A `TranslationGroup` is specified by a list of generator permutations
-//! and their cyclic orders. The group order is the product of the orders.
-//! For instance, a 2D `L × L` torus has two generators (translation in
-//! x and y) each of order `L`.
+//! and their exact cyclic orders. [`TranslationGroup::order`] is the
+//! abstract product of those orders. The combined permutation action need
+//! not be faithful: different mixed-radix counters can induce the same
+//! permutation, so the action may have a kernel and
+//! [`TranslationGroup::orbit`] may repeat words. For instance, a 2D
+//! `L × L` torus has two generators (translation in x and y) each of
+//! order `L`.
 //!
 //! ## Canonicalization
 //!
@@ -50,6 +54,10 @@
 //! orbit's members. For dynamics that commute with `G` and initial
 //! states that are also `G`-invariant, this preserves the expectation
 //! value of any `G`-invariant observable (Theorem 1 of arXiv:2512.12094).
+//! This real-coefficient merge sums collisions. By contrast, complex
+//! projection into the trivial (`k=0`) momentum sector averages over the
+//! distinct members of each orbit. Non-trivial sectors incompatible with
+//! an orbit stabilizer project that orbit to zero.
 //!
 //! See the dedicated tests for correctness against full-basis evolution
 //! on small systems with no truncation.

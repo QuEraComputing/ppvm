@@ -73,7 +73,7 @@ impl TranslationGroup {
 ///
 /// For the `k_modes = [0, 0, …]` (trivial) sector all characters are `1`,
 /// so projection averages the distinct orbit members onto each rep. This
-/// differs from plain [`canonicalize_pauli_sum`], whose real-coefficient
+/// differs from plain [`super::canonicalize_pauli_sum`], whose real-coefficient
 /// merging sums collisions without orbit-size normalization.
 pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
     basis: &mut Vec<PauliWord<A, S, R>>,

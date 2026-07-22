@@ -184,10 +184,55 @@ fn character_checks_slice_lengths_in_release_builds() {
 }
 
 #[test]
-fn momentum_zero_complex_merge_matches_real_merge() {
-    // k=0 sector: complex merge with all-real input should give
-    // real-valued orbit-rep coefficients equal to the plain
-    // canonicalize_pauli_sum result.
+fn period_two_k_zero_round_trip_preserves_rep_coefficient() {
+    let group = TranslationGroup::chain_1d(4);
+    let mut basis = vec![word("XIXI"), word("IXIX")];
+    let mut coeffs = vec![Complex::new(1.0, 0.0); 2];
+    canonicalize_pauli_sum_complex(&mut basis, &mut coeffs, &group, &[0]);
+    assert_eq!(basis.len(), 1);
+    assert!((coeffs[0] - Complex::new(1.0, 0.0)).norm() < 1e-12);
+}
+
+#[test]
+fn period_two_compatible_k_two_round_trip_preserves_rep_coefficient() {
+    let group = TranslationGroup::chain_1d(4);
+    let rep = group.canonicalize(&word("XIXI"));
+    let mut members: FxHashMap<W, Complex<f64>> = FxHashMap::default();
+    for (member, counter) in group.orbit_with_counters(&rep) {
+        members
+            .entry(member)
+            .or_insert_with(|| group.character(&[2], &counter).conj());
+    }
+    let (mut basis, mut coeffs): (Vec<W>, Vec<Complex<f64>>) = members.into_iter().unzip();
+    canonicalize_pauli_sum_complex(&mut basis, &mut coeffs, &group, &[2]);
+    assert_eq!(basis, vec![rep]);
+    assert!((coeffs[0] - Complex::new(1.0, 0.0)).norm() < 1e-12);
+}
+
+#[test]
+fn incompatible_stabilizer_projects_orbit_to_zero() {
+    let group = TranslationGroup::chain_1d(4);
+    let mut basis = vec![word("XXXX")];
+    let mut coeffs = vec![Complex::new(1.0, 0.0)];
+    canonicalize_pauli_sum_complex(&mut basis, &mut coeffs, &group, &[1]);
+    assert!(basis.is_empty());
+    assert!(coeffs.is_empty());
+}
+
+#[test]
+fn partial_period_two_orbit_is_averaged_with_missing_member_zero() {
+    let group = TranslationGroup::chain_1d(4);
+    let mut basis = vec![word("XIXI")];
+    let mut coeffs = vec![Complex::new(1.0, 0.0)];
+    canonicalize_pauli_sum_complex(&mut basis, &mut coeffs, &group, &[0]);
+    assert_eq!(basis.len(), 1);
+    assert!((coeffs[0] - Complex::new(0.5, 0.0)).norm() < 1e-12);
+}
+
+#[test]
+fn momentum_zero_complex_projection_is_orbit_average() {
+    // k=0 sector: complex projection averages orbit members onto the rep;
+    // plain canonicalize_pauli_sum sums all coefficients onto the rep.
     let g = TranslationGroup::chain_1d(4);
     let basis: Vec<W> = vec![word("XIII"), word("IXII"), word("IIXI"), word("IIIX")];
     let real_coeffs = vec![1.0, 2.0, 3.0, 4.0];
@@ -202,8 +247,8 @@ fn momentum_zero_complex_merge_matches_real_merge() {
     canonicalize_pauli_sum_complex(&mut basis_c, &mut coeffs_c, &g, &[0]);
 
     // Plain merge sums all coefficients onto the single orbit-rep:
-    // 1+2+3+4 = 10. Complex merge does the same with a 1/|G|
-    // prefactor, so we expect 10/4 = 2.5 on the rep.
+    // 1+2+3+4 = 10. Complex k=0 projection averages over the orbit
+    // (size 4), so we expect 10/4 = 2.5 on the rep.
     assert_eq!(basis_real.len(), 1);
     assert_eq!(basis_c.len(), 1);
     assert!((coeffs_real[0] - 10.0).abs() < 1e-12);

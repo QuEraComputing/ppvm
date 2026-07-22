@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use num::Complex;
 use ppvm_pauli_word::word::PauliWord;
 use ppvm_traits::{HashFinalize, PauliStorage};
@@ -56,19 +56,25 @@ impl TranslationGroup {
 /// Replace `(basis, complex_coeffs)` in-place with the orbit-rep form
 /// **projected onto momentum sector `k_modes`**.
 ///
-/// Each Pauli `p` is replaced by its canonical rep `r`; the contribution
-/// is `(1/|G|) · χ_k(g) · c_p` where `g` is the group element such that
-/// `g · r = p` and `χ_k(g) = exp(2πi · Σ_g k_modes[g] · counter[g] / orders[g])`.
+/// For each represented orbit, coefficients on orbit members are averaged
+/// with the momentum character weight:
+/// `(1/|orbit|) · Σ_{p ∈ orbit} χ_k(g_p) · c_p` where `g_p` is the group
+/// element such that `g_p · rep = p`.
+///
+/// Orbits whose stabilizer is incompatible with `k_modes` (distinct orbit
+/// members carry different character numerators) project to zero and are
+/// omitted from the output.
 ///
 /// If the input was already a momentum-`k_modes` eigenstate (i.e. the
 /// coefficients satisfy `c_{g·p} = χ_k(g)⁻¹ · c_p` for every orbit),
 /// the output is the orbit-rep coefficients of that state unchanged.
-/// Otherwise the merge discards the components in other sectors —
+/// Otherwise the projection discards the components in other sectors —
 /// use [`check_momentum_sector`] beforehand to validate.
 ///
-/// For the `k_modes = [0, 0, …]` (trivial) sector this reduces to plain
-/// [`canonicalize_pauli_sum`] (real coefficients work, but on complex
-/// input the result is complex with vanishing imaginary part).
+/// For the `k_modes = [0, 0, …]` (trivial) sector all characters are `1`,
+/// so projection reduces to averaging orbit members onto each rep (not
+/// plain [`canonicalize_pauli_sum`], which sums without the orbit-size
+/// normalization).
 pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
     basis: &mut Vec<PauliWord<A, S, R>>,
     coeffs: &mut Vec<Complex<f64>>,
@@ -90,20 +96,49 @@ pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
         k_modes.len(),
         group.n_generators()
     );
-    let inv_g: f64 = 1.0 / (group.order() as f64);
-    let mut merged: FxHashMap<PauliWord<A, S, R>, Complex<f64>> =
-        FxHashMap::with_capacity_and_hasher(basis.len(), Default::default());
-    for (w, &c) in basis.iter().zip(coeffs.iter()) {
-        let (rep, cnt) = group.canonicalize_with_shift(w);
-        let chi = group.character(k_modes, &cnt);
-        let contrib = inv_g * chi * c;
-        *merged.entry(rep).or_insert(Complex::new(0.0, 0.0)) += contrib;
+    let mut input: FxHashMap<PauliWord<A, S, R>, Complex<f64>> = FxHashMap::default();
+    for (word, &coeff) in basis.iter().zip(coeffs.iter()) {
+        *input.entry(*word).or_insert(Complex::new(0.0, 0.0)) += coeff;
+    }
+    let reps: FxHashSet<_> = input.keys().map(|word| group.canonicalize(word)).collect();
+    let mut projected = FxHashMap::default();
+
+    for rep in reps {
+        let mut members: FxHashMap<_, (Vec<u32>, usize)> = FxHashMap::default();
+        let mut compatible = true;
+        for (member, counter) in group.orbit_with_counters(&rep) {
+            let numerator = group.character_numerator(k_modes, &counter);
+            match members.entry(member) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert((counter, numerator));
+                }
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    if entry.get().1 != numerator {
+                        compatible = false;
+                        break;
+                    }
+                }
+            }
+        }
+        if !compatible {
+            continue;
+        }
+        let orbit_size = members.len() as f64;
+        let mut rep_coeff = Complex::new(0.0, 0.0);
+        for (member, (counter, _)) in members {
+            let coeff = input
+                .get(&member)
+                .copied()
+                .unwrap_or(Complex::new(0.0, 0.0));
+            rep_coeff += group.character(k_modes, &counter) * coeff / orbit_size;
+        }
+        projected.insert(rep, rep_coeff);
     }
     basis.clear();
     coeffs.clear();
-    basis.reserve(merged.len());
-    coeffs.reserve(merged.len());
-    for (w, c) in merged {
+    basis.reserve(projected.len());
+    coeffs.reserve(projected.len());
+    for (w, c) in projected {
         basis.push(w);
         coeffs.push(c);
     }

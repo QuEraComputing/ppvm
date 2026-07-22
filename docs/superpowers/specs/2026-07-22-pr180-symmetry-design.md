@@ -54,10 +54,12 @@ in `momentum.rs` and may be implemented as an additional inherent
 
 `TranslationGroup` represents an abstract product
 `G = C_orders[0] × ... × C_orders[r-1]` together with a commuting permutation
-action on qubits. The action may have a kernel: different elements of `G` may
-produce the same qubit permutation or fix a particular Pauli word. Consequently,
-`order()` returns the order of the abstract parameter group, while a word's
-distinct orbit can be smaller.
+action on qubits. Every declared `orders[g]` is the exact order of its generator
+permutation, preserving the existing `generator_order()` contract. Relations
+between different generators may still give the combined action a kernel:
+different elements of `G` may produce the same qubit permutation or fix a
+particular Pauli word. Consequently, `order()` returns the order of the abstract
+parameter group, while a word's distinct orbit can be smaller.
 
 This definition is preferred over requiring a faithful action. Proving
 faithfulness by enumerating every composed permutation costs
@@ -65,9 +67,9 @@ faithfulness by enumerating every composed permutation costs
 that the stabilizer-aware projection can handle correctly. Two alternatives
 were considered and rejected:
 
-1. Require all generated permutations to be unique. This makes `order()` equal
-   the image-group order but introduces potentially prohibitive construction
-   work.
+1. Require all composed generator products to be unique. This makes `order()`
+   equal the image-group order but introduces potentially prohibitive
+   construction work.
 2. Support only the built-in lattice constructors. This avoids arbitrary-group
    validation but removes an intentional public extension point.
 
@@ -76,10 +78,16 @@ were considered and rejected:
 - equal numbers of permutations and orders;
 - nonzero orders;
 - permutation length, range, and uniqueness;
-- `perm^order == identity` for every generator;
+- the exact permutation order equals the declared order for every generator;
 - pairwise commutativity of the generator permutations; and
 - checked multiplication of generator orders into a cached `usize` group
   order.
+
+Exact permutation orders are computed in `O(n_qubits)` per generator from the
+permutation's cycle lengths. The cycle-length least common multiple is checked
+and compared with the declared `u32` order; validation must not apply a
+generator `order` times. This rejects both an order that is too small and an
+inflated multiple of the actual order.
 
 The built-in constructors additionally reject zero dimensions, use checked
 dimension products, and reject values that cannot be represented by their
@@ -90,6 +98,20 @@ from invalid input.
 All public operations perform release-mode shape validation. In particular,
 word width must match `n_qubits`, and `character` requires one momentum mode
 and one counter per generator.
+
+The group also caches `phase_modulus = lcm(orders)`, using `1` for the trivial
+group with no generators. It fits in `usize` because it divides the already
+checked product of the orders. Momentum code represents a character phase
+exactly by the numerator
+
+```text
+Σ_g ((k[g] rem_euclid orders[g]) * counter[g] mod orders[g])
+    * (phase_modulus / orders[g]) mod phase_modulus.
+```
+
+Terms are evaluated with `u128` intermediates. A character is trivial exactly
+when this numerator is zero; conversion to `Complex<f64>` happens only when a
+numeric phase is required for a coefficient.
 
 ## Group traversal
 
@@ -130,11 +152,14 @@ represented orbit it enumerates the abstract group action and determines:
 2. whether the requested character is trivial on the representative's
    stabilizer.
 
-If the character is nontrivial on the stabilizer, the group projector vanishes
-on that orbit and the orbit is omitted from the result. Otherwise the projected
-representative coefficient is the average of the phase-adjusted coefficients
-over the **distinct orbit**, with absent input members contributing zero and
-normalization by the orbit size rather than by `|G|`.
+Stabilizer compatibility is decided with the exact character numerator, never
+by comparing `Complex<f64>` values. If the character is nontrivial on the
+stabilizer, the group projector vanishes on that orbit and the orbit is omitted
+from the result. Otherwise every distinct orbit member has a well-defined phase,
+and the projected representative coefficient is the average of the
+phase-adjusted coefficients over the **distinct orbit**, with absent input
+members contributing zero and normalization by the orbit size rather than by
+`|G|`.
 This is equivalent to the full `1/|G|` group projector because every distinct
 orbit member occurs once per stabilizer element.
 
@@ -146,41 +171,51 @@ merge. Documentation and test names must state that distinction explicitly.
 `check_momentum_sector` validates the represented operator, not merely pairs of
 entries that happen to be present. It therefore:
 
-1. coalesces duplicate Pauli entries;
-2. chooses each unvisited orbit representative and infers its coefficient from
+1. rejects a non-finite or negative tolerance and any coefficient with a
+   non-finite real or imaginary component;
+2. coalesces duplicate Pauli entries;
+3. chooses each unvisited orbit representative and infers its coefficient from
    the first present nonzero member;
-3. enumerates all group elements acting on that representative;
-4. verifies that repeated occurrences of the same word have compatible
-   character phases, thereby checking stabilizer compatibility; and
-5. compares every distinct orbit member's expected coefficient with its actual
+4. enumerates all group elements acting on that representative;
+5. verifies with exact character numerators that repeated occurrences of the
+   same word have compatible phases, thereby checking stabilizer compatibility;
+   and
+6. compares every distinct orbit member's expected coefficient with its actual
    coefficient, treating a missing entry as zero.
 
 Relative comparison continues to use `tol * max(|reference|, 1)`. Exact-zero
 orbits produced by coalescing are ignored.
 
-`SectorCheckError` gains a public `kind: SectorCheckErrorKind` field, where the
-kind is either `CoefficientMismatch` or `IncompatibleStabilizer`. The error
-retains the representative, offending or missing word, expected coefficient,
-actual coefficient, and shift. Its `Debug` and `Display` implementations print
-the relevant Pauli words; the necessary hasher bounds are placed on those
-formatting implementations.
+`SectorCheckError` becomes a public enum with four variants:
+
+- `InvalidTolerance { tol }`;
+- `NonFiniteCoefficient { pauli, coeff }`;
+- `CoefficientMismatch { rep, offending_pauli, expected, actual, shift }`; and
+- `IncompatibleStabilizer { rep, shift }`.
+
+Its `Debug` and `Display` implementations print the relevant Pauli words; the
+necessary hasher bounds are placed on those formatting implementations. The
+type name and function signature remain stable, and current stacked consumers
+only format the error rather than constructing or matching it.
 
 ## Tests
 
 The split must preserve all existing tests and add focused regressions for:
 
 - zero generator orders and zero lattice dimensions;
-- incorrect generator periods and noncommuting generators;
+- incorrect, inflated, and noncommuting generator orders;
 - checked group-order and lattice-dimension multiplication;
 - public word-width, momentum-length, and counter-length checks;
-- mixed-radix decoding without pre-modulo `u32` truncation;
-- agreement of the shared traversal with brute-force composition on small 1D,
-  2D, 3D, and ladder groups;
+- exact character numerators for negative modes and compatible/incompatible
+  stabilizers;
+- odometer counter rollover and agreement of the shared traversal with
+  brute-force composition on small 1D, 2D, 3D, and ladder groups;
 - a period-two word on a four-site chain round-tripping in `k=0`;
 - the same orbit round-tripping in a compatible nonzero momentum sector;
 - an incompatible momentum character vanishing on projection;
 - rejection of a basis with missing orbit members;
 - rejection of a nonzero coefficient with an incompatible stabilizer;
+- rejection of negative/NaN tolerances and non-finite coefficients;
 - acceptance of existing complete momentum eigenstates; and
 - the documented normalization difference between real merge and complex
   projection.

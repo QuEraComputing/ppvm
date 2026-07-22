@@ -171,72 +171,154 @@ where
     assert_eq!(basis.len(), coeffs.len());
     assert_eq!(k_modes.len(), group.n_generators());
 
-    // Group entries by orbit rep, picking the first-seen member as
-    // reference and checking later members against it.
-    let mut reference: FxHashMap<PauliWord<A, S, R>, (Complex<f64>, Vec<u32>)> =
-        FxHashMap::default();
-    for (p, &c) in basis.iter().zip(coeffs.iter()) {
-        let (rep, cnt) = group.canonicalize_with_shift(p);
-        let chi = group.character(k_modes, &cnt);
-        // expected c_p given the rep coefficient c_r:
-        //   c_p = χ_k(g)⁻¹ · c_r,  where p = g·r
-        // equivalently, c_r = χ_k(g) · c_p (a rearrangement).
-        let implied_rep_coeff = chi * c;
-        if let Some((rep_coeff, _ref_cnt)) = reference.get(&rep) {
-            if (implied_rep_coeff - rep_coeff).norm() > tol * rep_coeff.norm().max(1.0) {
-                return Err(SectorCheckError {
+    if !tol.is_finite() || tol < 0.0 {
+        return Err(SectorCheckError::InvalidTolerance { tol });
+    }
+    let mut input: FxHashMap<PauliWord<A, S, R>, Complex<f64>> = FxHashMap::default();
+    for (pauli, &coeff) in basis.iter().zip(coeffs.iter()) {
+        if !coeff.re.is_finite() || !coeff.im.is_finite() {
+            return Err(SectorCheckError::NonFiniteCoefficient {
+                pauli: *pauli,
+                coeff,
+            });
+        }
+        *input.entry(*pauli).or_insert(Complex::new(0.0, 0.0)) += coeff;
+    }
+    input.retain(|_, coeff| *coeff != Complex::new(0.0, 0.0));
+    let reps: FxHashSet<_> = input
+        .keys()
+        .map(|pauli| group.canonicalize(pauli))
+        .collect();
+
+    for rep in reps {
+        let mut members: FxHashMap<_, (Vec<u32>, usize)> = FxHashMap::default();
+        for (member, counter) in group.orbit_with_counters(&rep) {
+            let numerator = group.character_numerator(k_modes, &counter);
+            match members.entry(member) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert((counter, numerator));
+                }
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    if entry.get().1 != numerator {
+                        return Err(SectorCheckError::IncompatibleStabilizer {
+                            rep,
+                            shift: counter,
+                        });
+                    }
+                }
+            }
+        }
+
+        let (reference_word, (reference_counter, _)) = members
+            .iter()
+            .find(|(member, _)| input.contains_key(*member))
+            .expect("represented orbit has a nonzero member");
+        let rep_coeff = group.character(k_modes, reference_counter) * input[reference_word];
+
+        for (member, (counter, _)) in members {
+            let expected = group.character(k_modes, &counter).conj() * rep_coeff;
+            let actual = input
+                .get(&member)
+                .copied()
+                .unwrap_or(Complex::new(0.0, 0.0));
+            if (actual - expected).norm() > tol * rep_coeff.norm().max(1.0) {
+                return Err(SectorCheckError::CoefficientMismatch {
                     rep,
-                    expected: *rep_coeff,
-                    got_implied: implied_rep_coeff,
-                    offending_pauli: *p,
-                    offending_coeff: c,
-                    shift: cnt.clone(),
+                    offending_pauli: member,
+                    expected,
+                    actual,
+                    shift: counter,
                 });
             }
-        } else {
-            reference.insert(rep, (implied_rep_coeff, cnt));
         }
     }
     Ok(())
 }
 
 /// Detail report for a failed [`check_momentum_sector`].
-pub struct SectorCheckError<A: PauliStorage, S, const R: bool> {
-    /// Canonical orbit representative for which the check failed.
-    pub rep: PauliWord<A, S, R>,
-    /// Coefficient that the *first* basis entry implied for `rep`.
-    pub expected: Complex<f64>,
-    /// Coefficient that `offending_pauli` implies for `rep` under the
-    /// purported momentum sector.
-    pub got_implied: Complex<f64>,
-    /// The basis entry whose coefficient is inconsistent with the
-    /// expected `rep` value.
-    pub offending_pauli: PauliWord<A, S, R>,
-    /// Original coefficient of `offending_pauli` in the input basis.
-    pub offending_coeff: Complex<f64>,
-    /// Counter encoding the group element `g` such that
-    /// `g · rep == offending_pauli`.
-    pub shift: Vec<u32>,
+pub enum SectorCheckError<A: PauliStorage, S, const R: bool> {
+    InvalidTolerance {
+        tol: f64,
+    },
+    NonFiniteCoefficient {
+        pauli: PauliWord<A, S, R>,
+        coeff: Complex<f64>,
+    },
+    CoefficientMismatch {
+        rep: PauliWord<A, S, R>,
+        offending_pauli: PauliWord<A, S, R>,
+        expected: Complex<f64>,
+        actual: Complex<f64>,
+        shift: Vec<u32>,
+    },
+    IncompatibleStabilizer {
+        rep: PauliWord<A, S, R>,
+        shift: Vec<u32>,
+    },
 }
 
-impl<A: PauliStorage, S, const R: bool> std::fmt::Debug for SectorCheckError<A, S, R> {
+impl<A: PauliStorage, S, const R: bool> std::fmt::Debug for SectorCheckError<A, S, R>
+where
+    S: BuildHasher + Clone + Default + HashFinalize,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "SectorCheckError {{ rep: <Word>, expected: {:?}, got_implied: {:?}, \
-             offending: <Word>, offending_coeff: {:?}, shift: {:?} }}",
-            self.expected, self.got_implied, self.offending_coeff, self.shift,
-        )
+        match self {
+            Self::InvalidTolerance { tol } => {
+                write!(f, "SectorCheckError::InvalidTolerance {{ tol: {tol:?} }}")
+            }
+            Self::NonFiniteCoefficient { pauli, coeff } => write!(
+                f,
+                "SectorCheckError::NonFiniteCoefficient {{ pauli: {pauli}, coeff: {coeff:?} }}"
+            ),
+            Self::CoefficientMismatch {
+                rep,
+                offending_pauli,
+                expected,
+                actual,
+                shift,
+            } => write!(
+                f,
+                "SectorCheckError::CoefficientMismatch {{ rep: {rep}, offending_pauli: \
+                 {offending_pauli}, expected: {expected:?}, actual: {actual:?}, shift: \
+                 {shift:?} }}"
+            ),
+            Self::IncompatibleStabilizer { rep, shift } => write!(
+                f,
+                "SectorCheckError::IncompatibleStabilizer {{ rep: {rep}, shift: {shift:?} }}"
+            ),
+        }
     }
 }
 
-impl<A: PauliStorage, S, const R: bool> std::fmt::Display for SectorCheckError<A, S, R> {
+impl<A: PauliStorage, S, const R: bool> std::fmt::Display for SectorCheckError<A, S, R>
+where
+    S: BuildHasher + Clone + Default + HashFinalize,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "input not in target momentum sector: orbit rep expected c={:?}, but \
-             orbit member (shift {:?}, coeff {:?}) implies c={:?}",
-            self.expected, self.shift, self.offending_coeff, self.got_implied,
-        )
+        match self {
+            Self::InvalidTolerance { tol } => write!(
+                f,
+                "invalid tolerance {tol:?}: must be finite and non-negative"
+            ),
+            Self::NonFiniteCoefficient { pauli, coeff } => {
+                write!(f, "non-finite coefficient {coeff:?} on Pauli word {pauli}")
+            }
+            Self::CoefficientMismatch {
+                rep,
+                offending_pauli,
+                expected,
+                actual,
+                shift,
+            } => write!(
+                f,
+                "input not in target momentum sector: orbit rep {rep} expected c={expected:?}, \
+                 but orbit member {offending_pauli} (shift {shift:?}) has c={actual:?}"
+            ),
+            Self::IncompatibleStabilizer { rep, shift } => write!(
+                f,
+                "stabilizer incompatible with momentum sector: orbit rep {rep} has conflicting \
+                 character numerators (shift {shift:?})"
+            ),
+        }
     }
 }

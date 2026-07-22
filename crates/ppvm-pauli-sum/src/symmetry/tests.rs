@@ -257,6 +257,53 @@ fn momentum_zero_complex_projection_is_orbit_average() {
 }
 
 #[test]
+fn sector_check_rejects_missing_orbit_members() {
+    let group = TranslationGroup::chain_1d(4);
+    let basis = vec![word("ZIII")];
+    let coeffs = vec![Complex::new(1.0, 0.0)];
+    assert!(matches!(
+        check_momentum_sector(&basis, &coeffs, &group, &[0], 1e-12),
+        Err(SectorCheckError::CoefficientMismatch { .. })
+    ));
+}
+
+#[test]
+fn sector_check_rejects_incompatible_stabilizer() {
+    let group = TranslationGroup::chain_1d(4);
+    let basis = vec![word("XXXX")];
+    let coeffs = vec![Complex::new(1.0, 0.0)];
+    assert!(matches!(
+        check_momentum_sector(&basis, &coeffs, &group, &[1], 1e-12),
+        Err(SectorCheckError::IncompatibleStabilizer { .. })
+    ));
+}
+
+#[test]
+fn sector_check_rejects_invalid_numeric_inputs() {
+    let group = TranslationGroup::chain_1d(2);
+    let basis = vec![word("ZI")];
+    assert!(matches!(
+        check_momentum_sector(&basis, &[Complex::new(1.0, 0.0)], &group, &[0], f64::NAN),
+        Err(SectorCheckError::InvalidTolerance { .. })
+    ));
+    assert!(matches!(
+        check_momentum_sector(&basis, &[Complex::new(f64::NAN, 0.0)], &group, &[0], 1e-12),
+        Err(SectorCheckError::NonFiniteCoefficient { .. })
+    ));
+}
+
+#[test]
+fn sector_error_display_names_the_words() {
+    let group = TranslationGroup::chain_1d(2);
+    let basis = vec![word("ZI")];
+    let coeffs = vec![Complex::new(1.0, 0.0)];
+    let message = check_momentum_sector(&basis, &coeffs, &group, &[0], 1e-12)
+        .unwrap_err()
+        .to_string();
+    assert!(message.contains("ZI") || message.contains("IZ"));
+}
+
+#[test]
 fn momentum_eigenstate_check_passes() {
     // O = Σ_j e^{ikj} Z_j for k = 2π/4 (mode 1) is a momentum-k
     // eigenstate. check_momentum_sector should accept.

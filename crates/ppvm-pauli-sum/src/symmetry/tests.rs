@@ -325,3 +325,47 @@ fn pauli_sum_symmetry_merge_matches_plain_trotter() {
         "Trotter with-merging diverged from without-merging: max |Δc| = {max_diff:e}"
     );
 }
+
+#[test]
+#[should_panic(expected = "generator 0 order must be nonzero")]
+fn rejects_zero_generator_order() {
+    TranslationGroup::from_generators(2, vec![vec![1, 0]], vec![0]);
+}
+
+#[test]
+#[should_panic(expected = "declared order 4 != exact permutation order 2")]
+fn rejects_inflated_generator_order() {
+    TranslationGroup::from_generators(2, vec![vec![1, 0]], vec![4]);
+}
+
+#[test]
+#[should_panic(expected = "generators 0 and 1 do not commute")]
+fn rejects_noncommuting_generators() {
+    let swap_01 = vec![1, 0, 2];
+    let swap_12 = vec![0, 2, 1];
+    TranslationGroup::from_generators(3, vec![swap_01, swap_12], vec![2, 2]);
+}
+
+#[test]
+fn rejects_zero_lattice_dimensions() {
+    assert!(std::panic::catch_unwind(|| TranslationGroup::chain_1d(0)).is_err());
+    assert!(std::panic::catch_unwind(|| TranslationGroup::torus_2d(0, 2)).is_err());
+    assert!(std::panic::catch_unwind(|| TranslationGroup::torus_3d(2, 0, 2)).is_err());
+    assert!(std::panic::catch_unwind(|| TranslationGroup::ladder(2, 0)).is_err());
+}
+
+#[test]
+fn rejects_dimension_product_overflow_before_allocation() {
+    assert!(std::panic::catch_unwind(|| TranslationGroup::torus_2d(usize::MAX, 2)).is_err());
+    assert!(std::panic::catch_unwind(|| TranslationGroup::ladder(usize::MAX, 2)).is_err());
+}
+
+#[test]
+fn rejects_group_order_overflow() {
+    let orders = if usize::BITS == 64 {
+        vec![u32::MAX, u32::MAX, u32::MAX]
+    } else {
+        vec![u32::MAX, u32::MAX]
+    };
+    assert!(std::panic::catch_unwind(|| { super::group::checked_group_order(&orders) }).is_err());
+}

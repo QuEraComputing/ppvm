@@ -5,6 +5,55 @@ use ppvm_pauli_word::word::PauliWord;
 use ppvm_traits::{HashFinalize, PauliStorage, PauliWordTrait};
 use std::hash::BuildHasher;
 
+fn gcd(mut a: usize, mut b: usize) -> usize {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
+fn checked_lcm(a: usize, b: usize, context: &str) -> usize {
+    a.checked_div(gcd(a, b))
+        .and_then(|q| q.checked_mul(b))
+        .unwrap_or_else(|| panic!("{context} overflow"))
+}
+
+fn permutation_order(perm: &[u32], generator: usize) -> u32 {
+    let mut seen = vec![false; perm.len()];
+    let mut order = 1usize;
+    for start in 0..perm.len() {
+        if seen[start] {
+            continue;
+        }
+        let mut length = 0usize;
+        let mut q = start;
+        loop {
+            assert!(!seen[q], "generator {generator} contains a malformed cycle");
+            seen[q] = true;
+            length += 1;
+            q = perm[q] as usize;
+            if q == start {
+                break;
+            }
+        }
+        order = checked_lcm(order, length, "permutation order");
+    }
+    u32::try_from(order).unwrap_or_else(|_| {
+        panic!("generator {generator} exact permutation order does not fit in u32")
+    })
+}
+
+fn permutations_commute(left: &[u32], right: &[u32]) -> bool {
+    (0..left.len()).all(|q| left[right[q] as usize] == right[left[q] as usize])
+}
+
+pub(super) fn checked_group_order(orders: &[u32]) -> usize {
+    orders.iter().enumerate().fold(1usize, |acc, (g, &value)| {
+        acc.checked_mul(value as usize)
+            .unwrap_or_else(|| panic!("group order overflows usize at generator {g}"))
+    })
+}
+
 /// A finite abelian symmetry group acting on qubit positions by
 /// permutations.
 ///
@@ -31,6 +80,9 @@ pub struct TranslationGroup {
     pub(super) perms: Vec<Vec<u32>>,
     /// Cyclic order of each generator.
     pub(super) orders: Vec<u32>,
+    order: usize,
+    #[allow(dead_code)] // consumed by momentum character code in Task 3
+    phase_modulus: usize,
 }
 
 impl TranslationGroup {
@@ -60,49 +112,101 @@ impl TranslationGroup {
                 seen[p as usize] = true;
             }
         }
+        for (g, &declared) in orders.iter().enumerate() {
+            assert!(declared != 0, "generator {g} order must be nonzero");
+            let exact = permutation_order(&perms[g], g);
+            assert_eq!(
+                declared, exact,
+                "generator {g} declared order {declared} != exact permutation order {exact}",
+            );
+        }
+        for left in 0..perms.len() {
+            for right in left + 1..perms.len() {
+                assert!(
+                    permutations_commute(&perms[left], &perms[right]),
+                    "generators {left} and {right} do not commute",
+                );
+            }
+        }
+        let order = checked_group_order(&orders);
+        let phase_modulus = orders.iter().fold(1usize, |acc, &value| {
+            checked_lcm(acc, value as usize, "character phase modulus")
+        });
         Self {
             n_qubits,
             perms,
             orders,
+            order,
+            phase_modulus,
         }
     }
 
     /// 1D chain of `n` sites with periodic boundary conditions.
     /// Single generator: cyclic shift by one site.
     pub fn chain_1d(n: usize) -> Self {
-        let perm: Vec<u32> = (0..n).map(|q| ((q + 1) % n) as u32).collect();
-        Self::from_generators(n, vec![perm], vec![n as u32])
+        assert!(n > 0, "chain_1d: n must be positive");
+        let order =
+            u32::try_from(n).unwrap_or_else(|_| panic!("chain_1d: n={n} does not fit in u32"));
+        let perm: Vec<u32> = (0..n)
+            .map(|q| {
+                u32::try_from((q + 1) % n).expect("chain_1d: target index does not fit in u32")
+            })
+            .collect();
+        Self::from_generators(n, vec![perm], vec![order])
     }
 
     /// 2D `lx × ly` torus, qubit at `(i, j)` indexed as `j*lx + i`.
     /// Two generators: x-shift (i → i+1 mod lx) and y-shift (j → j+1 mod ly).
     pub fn torus_2d(lx: usize, ly: usize) -> Self {
-        let n = lx * ly;
+        assert!(lx > 0, "torus_2d: lx must be positive");
+        assert!(ly > 0, "torus_2d: ly must be positive");
+        let n = lx
+            .checked_mul(ly)
+            .unwrap_or_else(|| panic!("torus_2d: lx * ly overflow"));
+        let lx_u32 =
+            u32::try_from(lx).unwrap_or_else(|_| panic!("torus_2d: lx={lx} does not fit in u32"));
+        let ly_u32 =
+            u32::try_from(ly).unwrap_or_else(|_| panic!("torus_2d: ly={ly} does not fit in u32"));
         let perm_x: Vec<u32> = (0..n)
             .map(|q| {
                 let (i, j) = (q % lx, q / lx);
-                (j * lx + (i + 1) % lx) as u32
+                u32::try_from(j * lx + (i + 1) % lx)
+                    .expect("torus_2d: x-shift target index does not fit in u32")
             })
             .collect();
         let perm_y: Vec<u32> = (0..n)
             .map(|q| {
                 let (i, j) = (q % lx, q / lx);
-                (((j + 1) % ly) * lx + i) as u32
+                u32::try_from(((j + 1) % ly) * lx + i)
+                    .expect("torus_2d: y-shift target index does not fit in u32")
             })
             .collect();
-        Self::from_generators(n, vec![perm_x, perm_y], vec![lx as u32, ly as u32])
+        Self::from_generators(n, vec![perm_x, perm_y], vec![lx_u32, ly_u32])
     }
 
     /// 3D `lx × ly × lz` torus, qubit at `(i, j, k)` indexed as
     /// `k*lx*ly + j*lx + i`.
     pub fn torus_3d(lx: usize, ly: usize, lz: usize) -> Self {
-        let n = lx * ly * lz;
+        assert!(lx > 0, "torus_3d: lx must be positive");
+        assert!(ly > 0, "torus_3d: ly must be positive");
+        assert!(lz > 0, "torus_3d: lz must be positive");
+        let n = lx
+            .checked_mul(ly)
+            .and_then(|v| v.checked_mul(lz))
+            .unwrap_or_else(|| panic!("torus_3d: lx * ly * lz overflow"));
+        let lx_u32 =
+            u32::try_from(lx).unwrap_or_else(|_| panic!("torus_3d: lx={lx} does not fit in u32"));
+        let ly_u32 =
+            u32::try_from(ly).unwrap_or_else(|_| panic!("torus_3d: ly={ly} does not fit in u32"));
+        let lz_u32 =
+            u32::try_from(lz).unwrap_or_else(|_| panic!("torus_3d: lz={lz} does not fit in u32"));
         let perm_x: Vec<u32> = (0..n)
             .map(|q| {
                 let i = q % lx;
                 let j = (q / lx) % ly;
                 let k = q / (lx * ly);
-                (k * lx * ly + j * lx + (i + 1) % lx) as u32
+                u32::try_from(k * lx * ly + j * lx + (i + 1) % lx)
+                    .expect("torus_3d: x-shift target index does not fit in u32")
             })
             .collect();
         let perm_y: Vec<u32> = (0..n)
@@ -110,7 +214,8 @@ impl TranslationGroup {
                 let i = q % lx;
                 let j = (q / lx) % ly;
                 let k = q / (lx * ly);
-                (k * lx * ly + ((j + 1) % ly) * lx + i) as u32
+                u32::try_from(k * lx * ly + ((j + 1) % ly) * lx + i)
+                    .expect("torus_3d: y-shift target index does not fit in u32")
             })
             .collect();
         let perm_z: Vec<u32> = (0..n)
@@ -118,13 +223,14 @@ impl TranslationGroup {
                 let i = q % lx;
                 let j = (q / lx) % ly;
                 let k = q / (lx * ly);
-                (((k + 1) % lz) * lx * ly + j * lx + i) as u32
+                u32::try_from(((k + 1) % lz) * lx * ly + j * lx + i)
+                    .expect("torus_3d: z-shift target index does not fit in u32")
             })
             .collect();
         Self::from_generators(
             n,
             vec![perm_x, perm_y, perm_z],
-            vec![lx as u32, ly as u32, lz as u32],
+            vec![lx_u32, ly_u32, lz_u32],
         )
     }
 
@@ -134,15 +240,22 @@ impl TranslationGroup {
     /// `leg * l + j`. No translation along the leg axis (legs are
     /// distinguished).
     pub fn ladder(l: usize, n_legs: usize) -> Self {
-        let n = l * n_legs;
+        assert!(l > 0, "ladder: l must be positive");
+        assert!(n_legs > 0, "ladder: n_legs must be positive");
+        let n = l
+            .checked_mul(n_legs)
+            .unwrap_or_else(|| panic!("ladder: l * n_legs overflow"));
+        let l_u32 =
+            u32::try_from(l).unwrap_or_else(|_| panic!("ladder: l={l} does not fit in u32"));
         let perm: Vec<u32> = (0..n)
             .map(|q| {
                 let leg = q / l;
                 let j = q % l;
-                (leg * l + (j + 1) % l) as u32
+                u32::try_from(leg * l + (j + 1) % l)
+                    .expect("ladder: shift target index does not fit in u32")
             })
             .collect();
-        Self::from_generators(n, vec![perm], vec![l as u32])
+        Self::from_generators(n, vec![perm], vec![l_u32])
     }
 
     /// Number of qubits the group acts on.
@@ -157,7 +270,7 @@ impl TranslationGroup {
 
     /// Total group order: `Π orders[g]`.
     pub fn order(&self) -> usize {
-        self.orders.iter().map(|&o| o as usize).product()
+        self.order
     }
 
     /// Permutation associated with the `g`-th generator (one application).

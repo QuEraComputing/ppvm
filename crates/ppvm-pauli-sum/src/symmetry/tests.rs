@@ -361,6 +361,50 @@ fn rejects_dimension_product_overflow_before_allocation() {
 }
 
 #[test]
+fn odometer_yields_expected_counter_order() {
+    let group = TranslationGroup::torus_2d(2, 3);
+    let counters: Vec<Vec<u32>> = group
+        .orbit_with_counters(&word("XIIIII"))
+        .map(|(_, counter)| counter)
+        .collect();
+    assert_eq!(
+        counters,
+        vec![
+            vec![0, 0],
+            vec![1, 0],
+            vec![0, 1],
+            vec![1, 1],
+            vec![0, 2],
+            vec![1, 2],
+        ],
+    );
+}
+
+#[test]
+fn traversal_matches_brute_force_composition() {
+    let group = TranslationGroup::torus_2d(2, 3);
+    let source = word("XYZIII");
+    for (candidate, counter) in group.orbit_with_counters(&source) {
+        let mut brute = source;
+        for (g, &count) in counter.iter().enumerate() {
+            for _ in 0..count {
+                brute = group.apply_generator(&brute, g);
+            }
+        }
+        assert_eq!(candidate, brute);
+    }
+}
+
+#[test]
+fn public_word_width_checks_are_not_debug_only() {
+    let group = TranslationGroup::chain_1d(4);
+    let short = word("XI");
+    assert!(std::panic::catch_unwind(|| group.canonicalize(&short)).is_err());
+    assert!(std::panic::catch_unwind(|| group.canonicalize_with_shift(&short)).is_err());
+    assert!(std::panic::catch_unwind(|| group.orbit(&short)).is_err());
+}
+
+#[test]
 fn rejects_group_order_overflow() {
     let orders = if usize::BITS == 64 {
         vec![u32::MAX, u32::MAX, u32::MAX]

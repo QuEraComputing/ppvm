@@ -313,6 +313,27 @@ impl TranslationGroup {
         out
     }
 
+    pub(super) fn orbit_with_counters<'a, A, S, const R: bool>(
+        &'a self,
+        word: &'a PauliWord<A, S, R>,
+    ) -> GroupOrbit<'a, A, S, R>
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+    {
+        assert_eq!(
+            word.n_qubits(),
+            self.n_qubits,
+            "word and group must agree on n_qubits"
+        );
+        GroupOrbit {
+            group: self,
+            current: *word,
+            counter: vec![0; self.orders.len()],
+            remaining: self.order,
+        }
+    }
+
     /// Lex-min canonical representative of `w`'s translation orbit
     /// under this group. Walks the full group via mixed-radix counters,
     /// keeping the smallest word seen.
@@ -323,49 +344,17 @@ impl TranslationGroup {
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
     {
-        debug_assert_eq!(
-            w.n_qubits(),
-            self.n_qubits,
-            "word and group must agree on n_qubits"
-        );
         if self.perms.is_empty() {
             return *w;
         }
-        // Mixed-radix counter `(c[0], c[1], …)` ranges over
-        // `0..orders[0] × 0..orders[1] × …`. We track the "current"
-        // word obtained by applying generator `g` once each time
-        // `c[g]` increments; rolling over `c[g]` means we apply
-        // generator `g` exactly `orders[g]` times (= identity), so
-        // `cur` returns to the orbit member that had `c[g..]` as its
-        // tail and `0` in slots 0..g.
-        //
-        // The simplest correct implementation just enumerates: for each
-        // group element index, build the corresponding word from scratch
-        // by applying the right number of each generator.
-        let mut best = *w;
-        let order = self.order();
-        let mut idx = 0usize;
-        while idx < order {
-            // Decode `idx` to mixed-radix counter `c`
-            let mut rem = idx;
-            let mut counters: Vec<u32> = Vec::with_capacity(self.perms.len());
-            for &o in &self.orders {
-                counters.push((rem as u32) % o);
-                rem /= o as usize;
+        let mut traversal = self.orbit_with_counters(w);
+        let (mut best, _) = traversal
+            .next()
+            .expect("a finite group contains the identity");
+        for (candidate, _) in traversal {
+            if candidate < best {
+                best = candidate;
             }
-            // Construct the group element's permutation by composing
-            // `generator g` applied `c[g]` times, for each g.
-            // We do this lazily by iterating over qubits.
-            let mut cur = *w;
-            for (g, &c) in counters.iter().enumerate() {
-                for _ in 0..c {
-                    cur = self.apply_generator(&cur, g);
-                }
-            }
-            if cur < best {
-                best = cur;
-            }
-            idx += 1;
         }
         best
     }
@@ -388,43 +377,25 @@ impl TranslationGroup {
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
     {
-        debug_assert_eq!(w.n_qubits(), self.n_qubits);
         if self.perms.is_empty() {
             return (*w, Vec::new());
         }
-        let mut best = *w;
-        let mut best_counter: Vec<u32> = vec![0; self.perms.len()];
-        let order = self.order();
-        for idx in 0..order {
-            // Decode `idx` to mixed-radix counter.
-            let mut rem = idx;
-            let mut counter: Vec<u32> = Vec::with_capacity(self.perms.len());
-            for &o in &self.orders {
-                counter.push((rem as u32) % o);
-                rem /= o as usize;
-            }
-            // Build the candidate by applying generator `g` exactly
-            // `counter[g]` times.
-            let mut cur = *w;
-            for (g, &c) in counter.iter().enumerate() {
-                for _ in 0..c {
-                    cur = self.apply_generator(&cur, g);
-                }
-            }
-            if cur < best {
-                best = cur;
-                // We need the counter such that g·best = w. The loop
-                // above computed cur = g·w with counter, so w = g^{-1}·cur.
-                // For abelian cyclic groups, g^{-1} = g^{order-1}, i.e.
-                // the counter `(orders[g] - counter[g]) mod orders[g]`.
-                best_counter = counter
-                    .iter()
-                    .zip(self.orders.iter())
-                    .map(|(&c, &o)| (o - c) % o)
-                    .collect();
+        let mut traversal = self.orbit_with_counters(w);
+        let (mut best, mut counter_from_word) = traversal
+            .next()
+            .expect("a finite group contains the identity");
+        for (candidate, counter) in traversal {
+            if candidate < best {
+                best = candidate;
+                counter_from_word = counter;
             }
         }
-        (best, best_counter)
+        let counter_to_word = counter_from_word
+            .iter()
+            .zip(self.orders.iter())
+            .map(|(&counter, &order)| (order - counter) % order)
+            .collect();
+        (best, counter_to_word)
     }
 
     /// Iterate over all group elements applied to `w`. Yields `|G|`
@@ -437,18 +408,47 @@ impl TranslationGroup {
         A: PauliStorage + 'a,
         S: BuildHasher + Clone + Default + HashFinalize + 'a,
     {
-        let order = self.order();
-        (0..order).map(move |idx| {
-            let mut rem = idx;
-            let mut cur = *w;
-            for (g, &o) in self.orders.iter().enumerate() {
-                let c = (rem as u32) % o;
-                rem /= o as usize;
-                for _ in 0..c {
-                    cur = self.apply_generator(&cur, g);
-                }
+        self.orbit_with_counters(w).map(|(candidate, _)| candidate)
+    }
+}
+
+pub(super) struct GroupOrbit<'a, A, S, const R: bool>
+where
+    A: PauliStorage,
+{
+    group: &'a TranslationGroup,
+    current: PauliWord<A, S, R>,
+    counter: Vec<u32>,
+    remaining: usize,
+}
+
+impl<A, S, const R: bool> Iterator for GroupOrbit<'_, A, S, R>
+where
+    A: PauliStorage,
+    S: BuildHasher + Clone + Default + HashFinalize,
+{
+    type Item = (PauliWord<A, S, R>, Vec<u32>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+        let item = (self.current, self.counter.clone());
+        self.remaining -= 1;
+        if self.remaining == 0 {
+            return Some(item);
+        }
+        for g in 0..self.group.orders.len() {
+            if self.group.orders[g] == 1 {
+                continue;
             }
-            cur
-        })
+            self.current = self.group.apply_generator(&self.current, g);
+            self.counter[g] += 1;
+            if self.counter[g] < self.group.orders[g] {
+                break;
+            }
+            self.counter[g] = 0;
+        }
+        Some(item)
     }
 }

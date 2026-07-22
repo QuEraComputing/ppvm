@@ -81,7 +81,6 @@ pub struct TranslationGroup {
     /// Cyclic order of each generator.
     pub(super) orders: Vec<u32>,
     order: usize,
-    #[allow(dead_code)] // consumed by momentum character code in Task 3
     phase_modulus: usize,
 }
 
@@ -281,6 +280,12 @@ impl TranslationGroup {
     /// Cyclic order of the `g`-th generator.
     pub fn generator_order(&self, g: usize) -> u32 {
         self.orders[g]
+    }
+
+    /// Least common multiple of generator orders; denominator for exact
+    /// character phase arithmetic.
+    pub(super) fn phase_modulus(&self) -> usize {
+        self.phase_modulus
     }
 
     /// Apply a single generator's permutation to a Pauli word, returning

@@ -161,6 +161,29 @@ fn character_obeys_unit_modulus() {
 }
 
 #[test]
+fn character_numerator_normalizes_negative_modes() {
+    let group = TranslationGroup::chain_1d(4);
+    assert_eq!(group.character_numerator(&[-1], &[1]), 3);
+    assert_eq!(group.character_numerator(&[3], &[1]), 3);
+    assert!((group.character(&[-1], &[1]) - Complex::new(0.0, -1.0)).norm() < 1e-12);
+}
+
+#[test]
+fn exact_character_detects_cross_generator_kernel() {
+    let swap = vec![1, 0];
+    let group = TranslationGroup::from_generators(2, vec![swap.clone(), swap], vec![2, 2]);
+    assert_ne!(group.character_numerator(&[1, 0], &[1, 1]), 0);
+    assert_eq!(group.character_numerator(&[1, 1], &[1, 1]), 0);
+}
+
+#[test]
+fn character_checks_slice_lengths_in_release_builds() {
+    let group = TranslationGroup::chain_1d(4);
+    assert!(std::panic::catch_unwind(|| group.character(&[], &[0])).is_err());
+    assert!(std::panic::catch_unwind(|| group.character(&[0], &[])).is_err());
+}
+
+#[test]
 fn momentum_zero_complex_merge_matches_real_merge() {
     // k=0 sector: complex merge with all-real input should give
     // real-valued orbit-rep coefficients equal to the plain

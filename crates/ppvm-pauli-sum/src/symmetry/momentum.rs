@@ -11,6 +11,33 @@ use std::hash::BuildHasher;
 use super::group::TranslationGroup;
 
 impl TranslationGroup {
+    /// Integer numerator of the character phase before division by
+    /// [`Self::phase_modulus`]: `Σ_g (k[g] · counter[g] / orders[g]) mod 1`
+    /// expressed as an integer in `[0, phase_modulus)`.
+    pub(super) fn character_numerator(&self, k_modes: &[i32], counter: &[u32]) -> usize {
+        assert_eq!(
+            k_modes.len(),
+            self.n_generators(),
+            "k_modes length mismatch"
+        );
+        assert_eq!(
+            counter.len(),
+            self.n_generators(),
+            "counter length mismatch"
+        );
+        let modulus = self.phase_modulus() as u128;
+        let mut numerator = 0u128;
+        for g in 0..self.n_generators() {
+            let order = self.generator_order(g);
+            let k = (k_modes[g] as i64).rem_euclid(order as i64) as u128;
+            let count = (counter[g] % order) as u128;
+            let reduced = (k * count) % order as u128;
+            let factor = self.phase_modulus() as u128 / order as u128;
+            numerator = (numerator + reduced * factor) % modulus;
+        }
+        numerator as usize
+    }
+
     /// Momentum-sector character `χ_k(g) = exp(i Σ_g 2π · k[g] · counter[g] / orders[g])`
     /// where `k[g] ∈ ℤ` is the integer momentum mode along generator `g`
     /// (the corresponding wavenumber is `2π · k[g] / orders[g]`).
@@ -20,12 +47,8 @@ impl TranslationGroup {
     /// (`k = [0, …]`) sector all characters are `1` — phase-aware merging
     /// reduces to plain merging.
     pub fn character(&self, k_modes: &[i32], counter: &[u32]) -> Complex<f64> {
-        debug_assert_eq!(k_modes.len(), self.perms.len());
-        debug_assert_eq!(counter.len(), self.perms.len());
-        let mut phase = 0.0_f64;
-        for ((&k, &c), &o) in k_modes.iter().zip(counter.iter()).zip(self.orders.iter()) {
-            phase += 2.0 * PI * (k as f64) * (c as f64) / (o as f64);
-        }
+        let numerator = self.character_numerator(k_modes, counter);
+        let phase = 2.0 * PI * numerator as f64 / self.phase_modulus() as f64;
         Complex::from_polar(1.0, phase)
     }
 }

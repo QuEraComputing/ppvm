@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::char::Pauli;
-use crate::traits::PauliStorage;
 use std::fmt::Display;
 use std::hash::Hash;
 
@@ -65,21 +64,6 @@ pub trait PauliWordTrait: Clone + Hash + Eq + PauliIter + From<String> + Display
     /// [`Pauli`] symbol at `index`.
     fn get(&self, index: usize) -> Pauli;
 
-    /// Build a new word containing only the slots at `indices`.
-    fn get_multiple<const Q: usize>(&self, indices: [usize; Q]) -> Self {
-        let mut result = Self::new(Q);
-        for (i, &idx) in indices.iter().enumerate() {
-            result.set(i, self.get(idx));
-        }
-        result
-    }
-
-    /// Overwrite the slots at `indices` with the slots from `values`.
-    fn set_multiple<const Q: usize, B: PauliStorage>(&mut self, indices: [usize; Q], values: &Self);
-
-    /// Build a new word from the contiguous slice `slice` of this one.
-    fn get_slice(&self, slice: std::ops::Range<usize>) -> Self;
-
     /// Quick check: is the slot at `index` equal to `pauli`?
     fn is(&self, index: usize, pauli: Pauli) -> bool;
 
@@ -95,15 +79,6 @@ pub trait PauliWordTrait: Clone + Hash + Eq + PauliIter + From<String> + Display
         }
         let mut new = self.clone();
         new.set(index, pauli);
-        new
-    }
-
-    /// Return a clone with two slots overwritten.
-    #[inline(always)]
-    fn set_new_2(&self, index_0: usize, pauli_0: Pauli, index_1: usize, pauli_1: Pauli) -> Self {
-        let mut new = self.clone();
-        new.set(index_0, pauli_0);
-        new.set(index_1, pauli_1);
         new
     }
 

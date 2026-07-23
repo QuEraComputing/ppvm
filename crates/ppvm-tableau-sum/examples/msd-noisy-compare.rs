@@ -253,6 +253,7 @@ fn l1_distance_stats(a: &[[f64; 3]], b: &[[f64; 3]]) -> (f64, f64) {
 /// Run one sweep at fixed noise rate `p`. Builds the pure baseline and an
 /// alt-seed pure run (for the shot-noise floor), then sweeps `cutoffs` on
 /// the sum backend. Prints a comparison table.
+#[allow(clippy::too_many_arguments)]
 fn run_sweep(
     label: &str,
     n_qubits: usize,

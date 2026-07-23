@@ -28,9 +28,9 @@ Generic propagation and collection code uses behavioral traits and never names
 the backing memory.
 
 `Word` does not extend `Indexable`. A word used as an `ACMap` key implements
-both traits, while a mutable intermediate such as `Phased<_, NoHash>` can still
-implement `Word` without pretending to be a valid map key. This separation
-replaces the current `REHASH = false` use case with an explicit non-key mode.
+both traits, while a mutable intermediate such as `Phased<W>` can implement
+`Word` without pretending to be a valid map key. This separation replaces the
+current `REHASH = false` use case with an explicitly non-indexable type.
 
 This document initially focuses on:
 
@@ -81,7 +81,7 @@ pub enum LossySite<S> {
 }
 ```
 
-An ordinary word implements `Word<Site = Pauli>`. `WithLoss` implements
+An ordinary word implements `Word<Site = Pauli>`. `LossyPauliWord` implements
 `Word<Site = LossySite<Pauli>>` and returns `Lost` for marked sites. This keeps
 the word interface independent of the chosen operator alphabet.
 
@@ -90,18 +90,19 @@ the word interface independent of the chosen operator alphabet.
 The initial packed implementation stores parallel fixed-size X and Z arrays:
 
 ```rust
-pub struct PauliWord<A, S, M = LazyHashU64> {
+pub struct PauliWord<A, H> {
     xbits: BitArray<A>,
     zbits: BitArray<A>,
     nqubits: usize,
-    hash_cache: M,
-    _phantom: PhantomData<S>,
+    hash_cache: OnceLock<u64>,
+    _hasher: PhantomData<fn() -> H>,
 }
 ```
 
-`A` is an implementation parameter such as `[u8; N]` or `[usize; N]`. It is
-not exposed through `Word`. The implementation validates that `nqubits` fits
-the arrays and ignores or canonicalizes unused high bits.
+`A` is an implementation parameter such as `[u8; N]` or `[usize; N]`, and `H`
+is the build hasher associated through `Indexable`. Neither is exposed through
+`Word`. The implementation validates that `nqubits` fits the arrays and
+ignores or canonicalizes unused high bits.
 
 The structural identity is:
 
@@ -117,41 +118,36 @@ invariants and invalidate the hash when a logical Pauli site changes.
 
 ## Lossy Pauli word
 
-Loss is best modeled as an orthogonal wrapper around a Pauli word:
+The first prototype keeps the established lossy Pauli word as a flattened
+packed representation:
 
 ```rust
-pub struct WithLoss<W, A, M = CompositeHash>
-where
-    W: Word<Site = Pauli>,
-{
-    word: W,
+pub struct LossyPauliWord<A, H> {
+    xbits: BitArray<A>,
+    zbits: BitArray<A>,
     lbits: BitArray<A>,
-    loss_hash: M,
+    nqubits: usize,
+    xz_hash_cache: OnceLock<u64>,
+    loss_hash_cache: OnceLock<u64>,
+    _hasher: PhantomData<fn() -> H>,
 }
 ```
 
-`A` is the packed bit-array backing selected by the concrete type. The public
-alias retains the current `LossyPauliWord` name:
-
-```rust
-pub type LossyPauliWord<A, H> = WithLoss<PauliWord<A, H>, A>;
-```
-
-`WithLoss` is a justified new implementation name because the proposal changes
-the current standalone lossy representation into a generic wrapper. The
-established domain-facing alias does not need to change.
-
-Neither `A` nor the underlying word's array type appears in `Word`.
+Inlining all three planes avoids wrapper nesting and keeps the lossy hot path
+and component hashes direct. A generic loss wrapper is not introduced until a
+second real word representation demonstrates that it needs the same
+composition. `A` and `H` remain private implementation parameters from the
+perspective of `Word`.
 
 ### Canonical loss invariant
 
-A lost site must contain identity in the underlying Pauli word:
+A lost site must contain identity in its X/Z planes:
 
 ```text
-lost[q] = 1  =>  word[q] = I
+lost[q] = 1  =>  xbits[q] = 0 and zbits[q] = 0
 ```
 
-`set_lost(q)` first sets the underlying word to `I`, then sets the loss bit.
+`set_lost(q)` first clears the X/Z bits, then sets the loss bit.
 `set(q, LossySite::Present(p))` clears the loss bit and then writes `p`. This
 prevents multiple physical encodings from representing the same logical lossy
 word.
@@ -159,7 +155,7 @@ word.
 The structural identity is:
 
 ```text
-(underlying Pauli word, logical loss bits)
+(nqubits, logical X bits, logical Z bits, logical loss bits)
 ```
 
 `weight()` counts `X`, `Y`, `Z`, and `Lost`; `loss_weight()` counts only lost
@@ -169,13 +165,10 @@ sites.
 
 Generic lossy Pauli propagation sees `LossySite::Lost` through `Word` and
 preserves or skips the site according to the operation's semantics. Operations
-that create, clear, or count loss use inherent `WithLoss` methods:
+that create, clear, or count loss use inherent `LossyPauliWord` methods:
 
 ```rust
-impl<W, A, M> WithLoss<W, A, M>
-where
-    W: Word<Site = Pauli>,
-{
+impl<A, H> LossyPauliWord<A, H> {
     pub fn is_lost(&self, qubit: usize) -> bool;
     pub fn set_lost(&mut self, qubit: usize);
     pub fn clear_loss(&mut self, qubit: usize);
@@ -184,13 +177,11 @@ where
 ```
 
 Loss channels and maximum-loss-weight truncation specialize directly on the
-generic wrapper family:
+concrete lossy word:
 
 ```rust
-impl<C, W, A, M, S, P> LossChannel<C>
-    for OperatorSum<C, WithLoss<W, A, M>, S, P>
-where
-    W: Word<Site = Pauli>,
+impl<C, A, H, S, P> LossChannel<C>
+    for OperatorSum<C, LossyPauliWord<A, H>, S, P>
 {
     // ...
 }
@@ -199,21 +190,19 @@ where
 There are no traits named `PauliWord`, `LossyPauliWord`, or `FermionWord`.
 `PauliWord` and `LossyPauliWord` remain concrete domain type names. Algorithms
 select the algebra through `Word::Site`; loss-only operations remain inherent
-to `WithLoss`.
+to `LossyPauliWord`.
 
 ## Phased words
 
 Phase is another orthogonal wrapper:
 
 ```rust
-pub struct Phased<W, M = CompositeHash>
+pub struct Phased<W>
 where
     W: Word,
-    M: HashMode<W>,
 {
     word: W,
     phase: Phase,
-    hash_state: M::State,
 }
 ```
 
@@ -221,43 +210,34 @@ where
 the established name through an alias:
 
 ```rust
-pub type PhasedPauliWord<W, M = CompositeHash> = Phased<W, M>;
+pub type PhasedPauliWord<W> = Phased<W>;
 ```
 
 For Pauli use, `Phase` represents `+1`, `+i`, `-1`, and `-i`. The wrapper may
-also be useful for other word algebras, but algebra-specific multiplication is
-implemented only under the appropriate specialized word bound.
+wrap both ordinary and lossy Pauli words. It may also be useful for other word
+algebras, but algebra-specific multiplication is implemented only under the
+appropriate specialized word bound.
 
 Loss and phase compose without a new combined representation:
 
 ```rust
-PhasedPauliWord<WithLoss<PauliWord<A, H>, A>, Mode>
+PhasedPauliWord<LossyPauliWord<A, H>>
 ```
 
-The wrapper fields are private so phase mutation cannot bypass component-cache
-invalidation.
+No phased word is a production map key in the first prototype, so `Phased<W>`
+does not implement `Hash` or `Indexable` and stores no hash mode or cache.
 
 ## Hash ownership
 
-Every hash-enabled word implements `Indexable` and selects:
+Every hash-enabled word implements `Indexable`, associates its build hasher,
+and privately owns the fields and algorithm used to cache its structural
+hash. Cache representation and invalidation are not exposed through
+`Indexable`.
 
-- a build hasher;
-- an `Indexable::HashCache` associated type;
-- concrete cache fields; and
-- the algorithm that hashes its private structural data.
-
-The associated cache type does not require every implementation to use the
-same representation. Examples include:
-
-- a plain unsigned integer with a separate validity flag for eager or explicit
-  recomputation;
-- `Cell<u64>` plus `Cell<bool>` for lazy single-threaded hashing;
-- atomics for a `Sync` key; and
-- `()` for a mode that deliberately provides no cache.
-
-Because `Hash::hash` receives `&self`, a cache populated lazily from that method
-requires interior mutability. Such a representation will generally prevent
-the containing word from being `Copy`.
+The shipped indexable words use component `OnceLock<u64>` caches. `Hash::hash`
+can populate them through `&self`; structural mutators clear affected cells
+through `&mut self`. This preserves `Send + Sync` without imposing either
+bound on the `Indexable` trait.
 
 ## Component hashes
 
@@ -266,59 +246,27 @@ Hash composition follows the logical wrappers:
 ```text
 packed Pauli hash = hash(nqubits, X bits, Z bits)
 lossy hash        = combine(Pauli hash, loss hash)
-phased hash       = combine(inner-word hash, phase hash)
-phased lossy hash = combine(Pauli hash, loss hash, phase hash)
 ```
 
 `combine` must be ordered and domain-separated. It must not be an
 unqualified XOR of arbitrary component digests.
 
-The phase has only four values, so `CompositeHash` can normally compute its
-contribution from a small table or mixer without another cache. `CachedHash`
-is justified only if profiling identifies a caller that benefits from caching
-the combined phased value.
-
-Loss masks may be large, so `WithLoss` can cache the loss component separately
-from the Pauli component. A loss-only mutation then avoids rehashing X/Z.
+Loss masks may be large, so `LossyPauliWord` caches the loss component
+separately from the X/Z component. A loss-only mutation then avoids rehashing
+X/Z. `Phased<W>` is absent from this composition because it is not indexable.
 
 ## Invalidation rules
 
-| Mutation | Pauli component | Loss component | Phase component |
-| --- | --- | --- | --- |
-| Change ordinary Pauli site | invalidate | preserve | preserve |
-| Mark identity site lost | preserve | invalidate | preserve |
-| Mark nonidentity site lost | invalidate | invalidate | preserve |
-| Clear loss to identity | preserve | invalidate | preserve |
-| Replace loss with Pauli | invalidate if nonidentity | invalidate | preserve |
-| Change phase | preserve | preserve | recompute or invalidate |
+| Mutation | X/Z component | Loss component |
+| --- | --- | --- |
+| Change ordinary Pauli site | invalidate | preserve |
+| Mark identity site lost | preserve | invalidate |
+| Mark nonidentity site lost | invalidate | invalidate |
+| Clear loss to identity | preserve | invalidate |
+| Replace loss with Pauli | invalidate if nonidentity | invalidate |
 
-Constructors compute caches eagerly or mark them invalid according to the
-selected cache mode. Cloning copies a valid cache because the clone initially
-has identical structural contents.
-
-## Hash modes
-
-Wrappers that are sometimes used only as mutable intermediate values should be
-generic over hash behavior:
-
-```rust
-pub trait HashMode<T> {
-    type State: Clone;
-}
-
-pub struct NoHash;
-pub struct CompositeHash;
-pub struct CachedHash<C>(PhantomData<C>);
-```
-
-- `NoHash` stores no wrapper cache and does not implement `Hash` or
-  `Indexable` for the wrapper.
-- `CompositeHash` implements `Hash` by combining cached inner components on
-  demand, with no combined cache.
-- `CachedHash` stores a lazily or eagerly maintained combined cache.
-
-The concrete policy protocol should be finalized while implementing the first
-two modes. It should not expose cache state to propagation algorithms.
+Constructors leave caches empty. Cloning may copy a valid cached value because
+the clone initially has identical structural contents.
 
 ## Ordering and serialization
 
@@ -328,7 +276,8 @@ identity:
 - Pauli sites compare in a documented order.
 - Loss participates after the underlying Pauli content or through an explicit
   `LossySite<Pauli>` ordering.
-- Phase participates only when the phased wrapper's identity includes it.
+- Phase participates in equality and serialization for `Phased<W>`, but not in
+  map-key hashing because the wrapper is not indexable.
 - Unused bits and cache state never participate.
 
 Serialization uses logical symbols and lengths, not raw native-word memory, so
@@ -340,18 +289,16 @@ The prototype should include:
 
 - round-trip parsing tests for ordinary and lossy symbols;
 - property tests comparing packed operations with a simple symbol vector;
-- tests enforcing `lost => underlying I` after every mutator;
-- equality/hash agreement tests for all wrappers and modes;
-- tests showing loss-only changes preserve the Pauli hash component;
-- tests showing phase-only changes preserve Pauli and loss components;
+- tests enforcing `lost => X/Z identity` after every mutator;
+- equality/hash agreement tests for ordinary and lossy indexable words;
+- tests showing loss-only changes preserve the X/Z hash component;
+- equality and serialization tests for ordinary and lossy `Phased<W>` values;
 - tests proving unused high bits do not affect identity;
-- `Send`/`Sync` assertions for cache modes intended for concurrent maps; and
-- benchmarks comparing eager, lazy, composite, and uncached hashing.
+- `Send`/`Sync` assertions for shipped indexable words; and
+- benchmarks comparing uncached structural hashing with the private lazy
+  component caches.
 
 ## Open questions
 
-1. Should `WithLoss` permit a loss-mask storage width different from its inner
-   word's packed width?
-2. Does any real phased-word caller benefit from a combined `CachedHash` mode?
-3. Does `Indexable::HashCache` have a generic consumer, or should the cache
-   type also remain entirely private like word storage?
+1. Should the loss plane use the same packed array width as the X/Z planes, or
+   a separately selected private width?

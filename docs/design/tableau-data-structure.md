@@ -24,7 +24,7 @@ orientation.
 - Store the X/Z tableau bits in contiguous, aligned, bit-packed memory.
 - Make one- and two-qubit column operations efficient.
 - Permit temporary transposition for row-oriented elimination and collapse.
-- Keep phases and optional loss state independently addressable and hashable.
+- Keep phases and per-qubit loss state independently addressable and hashable.
 - Hash the logical tableau independently of its current physical orientation.
 - Avoid parameterizing the trait system by a row type or Pauli-word storage.
 - Leave room for SIMD-width and padding changes without changing public
@@ -61,8 +61,7 @@ The logical state consists of:
 - an X matrix of shape `(2n, n)`;
 - a Z matrix of shape `(2n, n)`;
 - a phase plane of length `2n`; and
-- for lossy variants, a loss plane of length `n` or another explicitly defined
-  logical shape.
+- a per-qubit loss plane of length `n`.
 
 This model does not imply a physical row object.
 
@@ -77,7 +76,7 @@ pub struct TableauData<Block> {
     x_offset: usize,
     z_offset: usize,
     phase_offset: usize,
-    loss_offset: Option<usize>,
+    loss_offset: usize,
     major_stride: usize,
     n_qubits: usize,
     orientation: Orientation,
@@ -97,6 +96,47 @@ Z, that change remains internal to `TableauData`.
 Padding must either be kept zero or excluded from equality and hashing. Zeroed
 padding is preferable because it permits bulk comparison and hashing of
 canonical ranges.
+
+## Loss ownership
+
+The existing concrete `Tableau` always owns the per-qubit loss plane. This is a
+capability of the same tableau type, not a `LossyTableau` variant or a
+`Tableau<LossMode>` parameter:
+
+```rust
+pub struct Tableau {
+    data: TableauData,
+    lost_count: usize,
+    // hash caches and RNG
+}
+
+pub struct GeneralizedTableau<C, I, S> {
+    tableau: Tableau,
+    coefficients: S,
+    // threshold and measurement record
+}
+```
+
+`GeneralizedTableau` therefore has no separate `is_lost: Vec<bool>`. Its gate,
+noise, and measurement algorithms query and mutate the loss plane owned by the
+inner tableau.
+
+`lost_count` is derived metadata used to preserve a fast
+`lost_count == 0` path. It is excluded from equality and hashing; debug builds
+should verify that it equals the population count of the logical loss plane.
+When no qubit is lost, gate kernels enter their existing lossless bulk path.
+When loss is present, a one-qubit gate skips a lost target and a two-qubit gate
+skips the operation if either target is lost, matching the current generalized
+tableau semantics. Batch kernels should mask or skip lost targets without
+allocating filtered target vectors.
+
+This ownership enables a pure Clifford-plus-loss simulation with the same
+`Tableau`. Loss events use the pure Clifford collapse procedure before marking
+the affected qubit lost. Generalized loss events still use the
+coefficient-aware generalized measurement procedure before marking the loss;
+moving the bit does not move that algorithm. The pure path covers loss models
+whose conditional trajectory remains a stabilizer state; faithful
+non-Clifford survival back-action remains generalized.
 
 ## Column-major orientation
 
@@ -183,11 +223,12 @@ impl Tableau {
 
     pub fn h(&mut self, qubit: usize);
     pub fn cnot(&mut self, control: usize, target: usize);
-    pub fn measure_z(&mut self, qubit: usize) -> bool;
+    pub fn measure_z(&mut self, qubit: usize) -> Option<bool>;
 
     pub fn x_bit(&self, generator: usize, qubit: usize) -> bool;
     pub fn z_bit(&self, generator: usize, qubit: usize) -> bool;
     pub fn phase(&self, generator: usize) -> Phase;
+    pub fn is_lost(&self, qubit: usize) -> bool;
 }
 ```
 
@@ -199,6 +240,44 @@ without exposing the in-memory layout.
 There should be no `stabilizers_mut() -> &mut [Row]` or equivalent escape hatch
 that bypasses hash invalidation and orientation invariants. Specialized
 internal row operations operate through `TableauData` or a transposition guard.
+
+## Measurement algorithms
+
+The Rust behavioral boundary is one loss-aware trait:
+
+```rust
+pub trait Measure {
+    fn measure(&mut self, qubit: usize) -> Option<bool>;
+
+    fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
+        targets.iter().map(|&q| self.measure(q)).collect()
+    }
+}
+```
+
+`Some(false)` and `Some(true)` represent computational-basis outcomes; `None`
+represents a lost qubit. This is the existing core representation used by
+`GeneralizedTableau`. The Python binding may continue mapping it to
+`MeasurementResult::{ZERO, ONE, LOST}`. The old public split between
+`Measure -> bool` and `LossyMeasure -> Option<bool>` is removed. The bare
+boolean Clifford measurement routine becomes a private helper called only
+after the public implementation has established that the target is present.
+
+The common trait and result type do not imply a common measurement algorithm:
+
+- `Tableau::measure` checks the loss plane and then uses the pure Clifford
+  stabilizer measurement procedure. It does not decompose against a sparse
+  generalized-state coefficient basis.
+- `GeneralizedTableau::measure` checks the inner tableau's loss plane, then
+  decomposes the measured Pauli into stabilizers and destabilizers and updates
+  the sparse coefficients. This path is fundamentally \(O(n^2)\).
+
+The physical tableau must make both stabilizer and destabilizer generators
+available to the generalized decomposition, but that requirement must not be
+promoted into the `Measure` trait or force the generalized algorithm onto the
+pure Clifford implementation. Pure and generalized measurement performance
+must be benchmarked separately; Stim's inverse-tableau measurement
+optimizations are not complexity promises for the generalized algorithm.
 
 ## Gate access patterns
 
@@ -227,30 +306,31 @@ hasher and cache representations; neither is inherited from `PauliWord`.
 The structural hash is composed from independent logical components:
 
 ```text
-tableau hash = combine(xz hash, phase hash[, loss hash])
+tableau hash = combine(xz hash, phase hash, loss hash)
 ```
 
 The X and Z planes share an `xz_hash` cache because most Clifford mutations
 update them together. The phase plane has a separate cache so Pauli
-conjugations and sign changes do not force a matrix rehash. Loss should use a
-third cache if it is independently mutable and part of key identity.
+conjugations and sign changes do not force a matrix rehash. The independently
+mutable loss plane uses a third cache.
 
 ```rust
 pub struct Tableau {
     data: TableauData,
-    xz_hash: XzHashCache,
-    phase_hash: PhaseHashCache,
-    loss_hash: Option<LossHashCache>,
+    lost_count: usize,
+    xz_hash: OnceLock<u64>,
+    phase_hash: OnceLock<u64>,
+    loss_hash: OnceLock<u64>,
     rng: SmallRng,
 }
 ```
 
-The cache types above are concrete choices made by the tableau author. The
-shared `Indexable::HashCache` associated type may name a small aggregate or
-another representation chosen by the implementation.
+The cache fields are private representation choices made by the tableau
+author. `Indexable` exposes only the associated build hasher; it does not name
+cache types or expose invalidation.
 
 Equality and hashing include logical qubit count, generator order, all logical
-X/Z bits, phases, and loss state when present. They exclude:
+X/Z bits, phases, and loss state. They exclude:
 
 - RNG state;
 - allocation capacity;
@@ -266,14 +346,13 @@ The component invalidation rules are:
 | Direct phase change | preserve | invalidate | preserve |
 | `H`, `S`, `CNOT`, `CZ` | invalidate | invalidate if changed | preserve |
 | Row multiplication | invalidate | invalidate if changed | preserve |
-| Mark or clear loss | preserve | preserve | invalidate |
+| Toggle a loss bit | preserve | preserve | invalidate |
 | Physical transpose | preserve | preserve | preserve |
 | RNG update | preserve | preserve | preserve |
 
 The current `ppvm-tableau-sum` split between `word_fingerprint` and
 `phase_loss_hash` is evidence that component hashing matters. The new tableau
-owns these components directly and separates loss as well when the logical
-model permits it.
+owns X/Z, phase, and loss components directly.
 
 ## Cloning and mixture use
 
@@ -307,12 +386,18 @@ not belong in the PPVM trait system.
 The prototype should include:
 
 - property tests comparing gates and measurements with the existing tableau;
+- differential tests for the pure Clifford and generalized measurement
+  algorithms, including lost targets;
+- tests that gates skip lost targets and retain the `lost_count == 0` fast
+  path;
 - round-trip tests for column-major -> row-major -> column-major transpose;
 - equality and hash tests across physical orientations;
 - tests proving phase-only changes preserve the X/Z hash cache;
 - tests proving padding never affects equality or hashing;
 - benchmarks for one- and two-qubit Clifford gates;
-- benchmarks for deterministic and random measurement paths;
+- separate benchmarks for pure Clifford and generalized deterministic and
+  random measurement paths;
+- benchmarks for lossless gates, sparse loss, and Clifford-plus-loss sampling;
 - benchmarks for clone-and-mutate mixture branching; and
 - benchmarks comparing permanent row-major, permanent column-major, and
   temporary-transpose variants on representative circuits.
@@ -321,9 +406,8 @@ The prototype should include:
 
 1. What block width and alignment should the first implementation use?
 2. Should phases occupy one or two bits per generator in the tableau model?
-3. Should loss be stored per qubit, per generator, or outside the core tableau?
-4. Which operations should receive a transposition guard versus performing
+3. Which operations should receive a transposition guard versus performing
    column-strided work directly?
-5. Does a dual-orientation representation outperform temporary transposition
+4. Does a dual-orientation representation outperform temporary transposition
    for PPVM's measurement-heavy workloads?
-6. Should PPVM ultimately store a forward or inverse tableau?
+5. Should PPVM ultimately store a forward or inverse tableau?

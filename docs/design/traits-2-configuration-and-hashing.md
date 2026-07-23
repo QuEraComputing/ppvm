@@ -98,20 +98,23 @@ pub struct FermionSite {
 }
 ```
 
-Thus an ordinary packed Pauli word implements `Word<Site = Pauli>`, a lossy
-wrapper implements `Word<Site = LossySite<Pauli>>`, and a future ordered
-fermionic product can implement `Word<Site = FermionSite>`. A fermionic word's
-index denotes factor order; `FermionSite` carries the physical mode. For a
-dense Pauli word, the index is the qubit and `n_sites()` is its width.
+Thus an ordinary packed Pauli word implements `Word<Site = Pauli>`, a
+concrete packed lossy word implements `Word<Site = LossySite<Pauli>>`, and a
+future ordered fermionic product can implement `Word<Site = FermionSite>`. A
+fermionic word's index denotes factor order; `FermionSite` carries the physical
+mode. For a dense Pauli word, the index is the qubit and `n_sites()` is its
+width.
 `weight()` is the number of non-identity factors according to the concrete site
 alphabet; an ordered representation that stores no explicit identities may
 therefore have `weight() == n_sites()`. Implementations of `set()` preserve
 their representation invariants and invalidate the affected hash components.
 
-The concrete `WithLoss<W, A, M>` family provides loss mutation and
-`loss_weight()` as inherent methods. Loss channels and loss-specific
-truncation specialize directly on `WithLoss`; there is no one-implementation
-`LossyPauliWord` capability trait.
+The concrete `LossyPauliWord` stores packed X, Z, and loss planes directly and
+provides loss mutation and `loss_weight()` as inherent methods. Loss channels
+and loss-specific truncation specialize directly on that concrete type; there
+is no one-implementation `LossyPauliWord` capability trait. A generic loss
+wrapper should be reconsidered only after a second real word representation
+needs the same composition.
 
 Concrete packed Pauli, lossy, phased, and hash-cache layouts are described in
 [`word-data-structures.md`](word-data-structures.md). None of those layouts is
@@ -144,12 +147,31 @@ pub trait RotationOne<C: Coefficient> {
 pub trait PauliError<C: Coefficient> {
     fn pauli_error(&mut self, qubit: usize, probabilities: [C; 3]);
 }
+
+pub trait Measure {
+    fn measure(&mut self, qubit: usize) -> Option<bool>;
+
+    fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
+        targets.iter().map(|&q| self.measure(q)).collect()
+    }
+}
 ```
 
 The same concrete tableau may implement a numeric trait for every supported
 coefficient type without storing that coefficient type. Measurement and reset
 traits likewise expose behavior and result types without exposing tableau
-rows, packed matrix blocks, or matrix orientation.
+rows, packed matrix blocks, or matrix orientation. `Measure` is loss-aware for
+both `Tableau` and `GeneralizedTableau`: `Some(false)` and `Some(true)` denote
+computational-basis outcomes and `None` denotes a lost qubit. The former
+`Measure -> bool` and `LossyMeasure -> Option<bool>` split is removed.
+Python may continue translating this Rust representation to its
+`MeasurementResult` enum.
+
+Sharing the result type does not share the measurement algorithm. `Tableau`
+uses the pure Clifford measurement procedure. `GeneralizedTableau` performs
+its coefficient-aware stabilizer/destabilizer decomposition and update, which
+is always \(O(n^2)\). The shared behavioral trait must not force the latter
+algorithm or its scratch state into the concrete tableau.
 
 There is no shared `TableauStorage` trait in the first design. If multiple
 tableau implementations are later useful, each concrete type can implement
@@ -259,6 +281,20 @@ implementation detail for the prototype. The important boundary is that the
 trait preserves the current semantic operation names without exposing physical
 auxiliary maps or scratch buffers.
 
+`SumStorage` owns the semantic whole-map operations and its reusable workspace.
+It delegates to the lower-level `ACMap` batch kernels without restoring the
+removed map-to-map `ACMapInsert::map_insert` method:
+
+```text
+SumStorage::map_insert           -> ACMapInsert::map_insert_vec
+SumStorage::map_insert_multiple  -> ACMapInsert::map_insert_multiple
+SumStorage::map_add              -> ACMapAddAssign::map_add_assign
+```
+
+This boundary is compatible with
+`refactor/shrink-internal-trait-surface`: the higher-level sparse-sum operation
+remains, while the dead low-level primitive stays removed.
+
 The generalized engine may be named `OperatorSum`, but the Pauli specialization
 retains the existing domain-facing `PauliSum` name. This is a new internal
 generalization, not a requirement to rename Pauli call sites.
@@ -300,9 +336,9 @@ changed according to whether their underlying responsibility changes:
 | `PauliWordTrait` | `Word` plus `Indexable` where used as a key | Word operations are generalized through `Word::Site`; hashing becomes a separate capability. |
 | `n_qubits`, `get`, `set`, `weight` | `n_sites`, `get`, `set`, `weight` | Only the Pauli-specific extent name changes; the other operation names stay. |
 | concrete `PauliWord` | `PauliWord` | The packed X/Z word is the same domain concept. |
-| concrete `LossyPauliWord` | `LossyPauliWord` alias over `WithLoss` | The public concept stays; only the implementation becomes a generic wrapper. |
-| `PhasedPauliWord` | `PhasedPauliWord` alias over `Phased` | The public Pauli name stays; the implementation becomes a word-generic wrapper. |
-| `rehash` | `invalidate_hash` for lazy modes | Recalculation changes from eager mutation-time work to lazy demand-time work. |
+| concrete `LossyPauliWord` | `LossyPauliWord` | The packed X/Z/loss representation remains concrete and flattened. |
+| `PhasedPauliWord` | `PhasedPauliWord` alias over non-indexable `Phased` | The wrapper is generic over ordinary and lossy words but is not a production map key. |
+| `rehash` | private cache invalidation | Recalculation changes from eager mutation-time work to lazy demand-time work without exposing cache mechanics through `Indexable`. |
 | `Strategy` | `Policy` | Intentional terminology change requested for this redesign. |
 | `ACMap` | `ACMap` | The associative coefficient map has the same role. |
 | `PauliSum::data`, `map_insert`, `map_add` | same method names on `SumStorage` | These semantic operations already match the proposed boundary. |
@@ -310,11 +346,12 @@ changed according to whether their underlying responsibility changes:
 | `PauliSum` | `PauliSum` over generalized `OperatorSum` machinery | Pauli-facing code keeps its established name; `OperatorSum` names the new cross-algebra engine. |
 | `GeneralizedTableauSum` | `GeneralizedTableauSum` | The classical mixture algorithm remains the same concept. |
 | `EntryStore`, `VecStorage`, `MapStorage` | unchanged | The proposal uses the existing storage boundary and implementations. |
-| `BuildHasher`, `HashFinalize` | unchanged | The hasher concepts remain, but ownership moves from `Config` to each indexable key type. |
+| `BuildHasher` | associated with `Indexable` | Hasher ownership moves from `Config` to each indexable key type. |
+| `HashFinalize` | removed from the shared contract | Concrete keys may finalize or compose hashes privately. |
 | `PauliStorage` | removed | Packed backing storage becomes private to the concrete word representation. |
 
-Names such as `Word`, `Indexable`, `SumStorage`, `WithLoss`, and
-`OperatorSum` are therefore new because they denote abstractions that do not
+Names such as `Word`, `Indexable`, `SumStorage`, and `OperatorSum` are
+therefore new because they denote abstractions that do not
 exist in the current implementation, not because the existing API is being
 renamed wholesale.
 
@@ -339,7 +376,7 @@ This rule keeps:
 It rejects the removed global `Config`, `PauliSumAlgorithm`,
 `TableauMixtureAlgorithm`, and `TableauStorage` traits, as well as word
 subtraits named `PauliWord`, `FermionWord`, or `LossyPauliWord`. Their
-distinctions are expressed by `Word::Site` or by concrete wrapper types instead
+distinctions are expressed by `Word::Site` or by concrete types instead
 of one-alphabet subtraits; the concrete `PauliWord` and `LossyPauliWord` type
 names remain available.
 
@@ -386,14 +423,11 @@ a benchmark decision, not a type-system requirement.
 Hash-enabled `Word` values and `Tableau` can both be expensive, mostly-stable
 map keys. Their hashing contract should be expressed independently of any map.
 
-The tentative common capability is:
+The common capability is intentionally minimal:
 
 ```rust
 pub trait Indexable: Clone + Eq + Hash {
-    type BuildHasher: std::hash::BuildHasher + Clone + Default + HashFinalize;
-    type HashCache;
-
-    fn invalidate_hash(&mut self);
+    type BuildHasher: std::hash::BuildHasher + Clone + Default;
 }
 ```
 
@@ -403,34 +437,24 @@ The important points are:
   `Config` to the key type;
 - the build hasher is associated with the key type, not with a configuration
   bundle;
-- the hash cache is an associated type, not a framework-provided concrete
-  `HashCache` structure;
-- the author of the concrete data type owns the cache layout and invalidation
-  implementation; and
+- cache layout and invalidation are private representation invariants of the
+  concrete type; and
 - equality and hashing cover only structural key identity, never cache fields
   or incidental runtime state.
 
-For example, a word implementation may choose `u64`, `Option<u64>`, an atomic
-representation, or another type. `ppvm-traits-2` does not prescribe the
-fields that store it.
+No generic consumer needs to name a cache type or request invalidation.
+Structural mutation already occurs through `&mut self`, so each mutator can
+clear the affected private cache as part of maintaining its concrete
+invariants.
 
 ### Lazy hashing and interior mutability
 
-Rust's `Hash::hash` receives `&self`. A cache that is first populated from
-inside `Hash::hash` therefore requires interior mutability. Possible concrete
-representations include:
-
-- `Cell<u64>` plus `Cell<bool>` for single-threaded keys;
-- atomics for keys that must remain `Sync`; or
-- a plain `u64` plus `bool` when cache preparation is eager or explicitly
-  performed through `&mut self` before hashing.
-
-This is deliberately a representation-level decision. A cache using interior
-mutability will generally prevent the containing value from being `Copy`.
-
-Multiple concurrent readers may compute the same invalid hash more than once;
-that is acceptable as long as they publish the same structural hash safely.
-Structural mutation still requires `&mut self`.
+Rust's `Hash::hash` receives `&self`, so shipped indexable words and tableaus
+use private component `OnceLock<u64>` caches. `Hash::hash` may populate a cache
+through shared access, while structural mutators clear affected cells through
+their exclusive `&mut self` access. This preserves `Send + Sync` for the
+shipped representations. `Indexable` itself does not require either
+concurrency bound.
 
 ### Key mutation invariant
 
@@ -444,8 +468,8 @@ through mutation guards that invalidate on completion.
 
 ## Concrete word hashing
 
-Every concrete `Word` owns its `BuildHasher`, cache representation, structural
-hash algorithm, and invalidation logic through `Indexable`. Pauli words hash
+Every concrete `Word` owns its `BuildHasher`, private cache representation,
+structural hash algorithm, and invalidation logic. Pauli words hash
 their X/Z content, lossy words compose Pauli and loss components, and future
 fermion words hash their ordered factors. Factor order is part of fermionic
 identity.
@@ -463,7 +487,7 @@ hasher and cache representation. This does not imply that a tableau is a
 `Word`; they only share the `Indexable` key capability.
 
 The tableau's structural hash is composed from its logical X/Z matrix, phase
-plane, and optional loss plane. It excludes RNG, padding, cache state, and
+plane, and per-qubit loss plane. It excludes RNG, padding, cache state, and
 physical matrix orientation. Separate component caches allow phase-only
 changes to avoid rehashing the X/Z matrix. Physical transposition is a layout
 change, not a logical mutation, and does not invalidate the structural hash.
@@ -493,16 +517,11 @@ Domain-specific aliases or wrappers can preserve `PauliSum` and introduce
 - Defining one collection interface shared by all algorithms.
 - Requiring every sparse-sum storage backend to physically contain both an
   auxiliary map and a scratch buffer.
-- Selecting a single cache representation for every key type.
+- Exposing cache representation or invalidation through `Indexable`.
 - Preserving `Copy` at the expense of correct lazy caching.
 - Adding runtime dispatch for storage, hashing, or algorithm policies.
 
 ## Open design questions
 
-1. What is the minimal method surface of `Indexable` beyond the associated
-   `BuildHasher` and `HashCache` types? Cache mechanics should remain owned by
-   the concrete type, but algorithms may need a common invalidation operation.
-2. Which cache representations must support `Send` and `Sync` in the first
-   prototype?
-3. Do benchmarks justify retaining both the auxiliary-map and vector-staging
+1. Do benchmarks justify retaining both the auxiliary-map and vector-staging
    fast paths in the default sparse-sum storage backend?

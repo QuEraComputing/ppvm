@@ -293,6 +293,17 @@ fn sector_check_rejects_invalid_numeric_inputs() {
 }
 
 #[test]
+fn sector_check_rejects_nonfinite_coalesced_coefficient() {
+    let group = TranslationGroup::chain_1d(1);
+    let basis = vec![word("X"), word("X")];
+    let coeffs = vec![Complex::new(f64::MAX, 0.0); 2];
+    assert!(matches!(
+        check_momentum_sector(&basis, &coeffs, &group, &[0], 1e-12),
+        Err(SectorCheckError::NonFiniteCoefficient { .. })
+    ));
+}
+
+#[test]
 fn sector_error_display_names_the_words() {
     let group = TranslationGroup::chain_1d(2);
     let basis = vec![word("ZI")];
@@ -476,6 +487,13 @@ fn rejects_dimension_product_overflow_before_allocation() {
 }
 
 #[test]
+#[cfg(target_pointer_width = "64")]
+#[should_panic(expected = "site count")]
+fn rejects_site_count_outside_u32_addressable_range() {
+    super::group::validate_site_count(u32::MAX as usize + 2, "test");
+}
+
+#[test]
 fn odometer_yields_expected_counter_order() {
     let group = TranslationGroup::torus_2d(2, 3);
     let counters: Vec<Vec<u32>> = group
@@ -517,6 +535,14 @@ fn public_word_width_checks_are_not_debug_only() {
     assert!(std::panic::catch_unwind(|| group.canonicalize(&short)).is_err());
     assert!(std::panic::catch_unwind(|| group.canonicalize_with_shift(&short)).is_err());
     assert!(std::panic::catch_unwind(|| group.orbit(&short)).is_err());
+}
+
+#[test]
+fn trivial_group_checks_word_width() {
+    let group = TranslationGroup::from_generators(4, vec![], vec![]);
+    let short = word("XI");
+    assert!(std::panic::catch_unwind(|| group.canonicalize(&short)).is_err());
+    assert!(std::panic::catch_unwind(|| group.canonicalize_with_shift(&short)).is_err());
 }
 
 #[test]

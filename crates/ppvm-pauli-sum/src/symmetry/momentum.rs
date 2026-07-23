@@ -44,8 +44,7 @@ impl TranslationGroup {
     ///
     /// `k.len()` must equal `self.n_generators()`. The character of the
     /// identity element (`counter = [0, …]`) is `1`. For the trivial
-    /// (`k = [0, …]`) sector all characters are `1` — phase-aware merging
-    /// reduces to plain merging.
+    /// (`k = [0, …]`) sector all characters are `1`.
     pub fn character(&self, k_modes: &[i32], counter: &[u32]) -> Complex<f64> {
         let numerator = self.character_numerator(k_modes, counter);
         let phase = 2.0 * PI * numerator as f64 / self.phase_modulus() as f64;
@@ -61,9 +60,9 @@ impl TranslationGroup {
 /// `(1/|orbit|) · Σ_{p ∈ orbit} χ_k(g_p) · c_p` where `g_p` is the group
 /// element such that `g_p · rep = p`.
 ///
-/// Orbits whose stabilizer is incompatible with `k_modes` (distinct orbit
-/// members carry different character numerators) project to zero and are
-/// omitted from the output.
+/// Orbits whose stabilizer is incompatible with `k_modes` (the same orbit
+/// member is reached with different character numerators) project to zero
+/// and are omitted from the output.
 ///
 /// If the input was already a momentum-`k_modes` eigenstate (i.e. the
 /// coefficients satisfy `c_{g·p} = χ_k(g)⁻¹ · c_p` for every orbit),
@@ -188,6 +187,11 @@ where
             });
         }
         *input.entry(*pauli).or_insert(Complex::new(0.0, 0.0)) += coeff;
+    }
+    for (&pauli, &coeff) in &input {
+        if !coeff.re.is_finite() || !coeff.im.is_finite() {
+            return Err(SectorCheckError::NonFiniteCoefficient { pauli, coeff });
+        }
     }
     input.retain(|_, coeff| *coeff != Complex::new(0.0, 0.0));
     let reps: FxHashSet<_> = input

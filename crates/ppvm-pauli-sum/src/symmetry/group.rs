@@ -54,6 +54,14 @@ pub(super) fn checked_group_order(orders: &[u32]) -> usize {
     })
 }
 
+pub(super) fn validate_site_count(n: usize, context: &str) {
+    let max_index = n
+        .checked_sub(1)
+        .unwrap_or_else(|| panic!("{context}: site count must be positive"));
+    u32::try_from(max_index)
+        .unwrap_or_else(|_| panic!("{context}: site count {n} exceeds the u32-addressable range"));
+}
+
 /// A finite abelian symmetry group acting on qubit positions by
 /// permutations.
 ///
@@ -165,6 +173,7 @@ impl TranslationGroup {
         let n = lx
             .checked_mul(ly)
             .unwrap_or_else(|| panic!("torus_2d: lx * ly overflow"));
+        validate_site_count(n, "torus_2d");
         let lx_u32 =
             u32::try_from(lx).unwrap_or_else(|_| panic!("torus_2d: lx={lx} does not fit in u32"));
         let ly_u32 =
@@ -196,6 +205,7 @@ impl TranslationGroup {
             .checked_mul(ly)
             .and_then(|v| v.checked_mul(lz))
             .unwrap_or_else(|| panic!("torus_3d: lx * ly * lz overflow"));
+        validate_site_count(n, "torus_3d");
         let lx_u32 =
             u32::try_from(lx).unwrap_or_else(|_| panic!("torus_3d: lx={lx} does not fit in u32"));
         let ly_u32 =
@@ -247,6 +257,7 @@ impl TranslationGroup {
         let n = l
             .checked_mul(n_legs)
             .unwrap_or_else(|| panic!("ladder: l * n_legs overflow"));
+        validate_site_count(n, "ladder");
         let l_u32 =
             u32::try_from(l).unwrap_or_else(|_| panic!("ladder: l={l} does not fit in u32"));
         let perm: Vec<u32> = (0..n)
@@ -355,9 +366,6 @@ impl TranslationGroup {
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
     {
-        if self.perms.is_empty() {
-            return *w;
-        }
         let mut traversal = self.orbit_with_counters(w);
         let (mut best, _) = traversal
             .next()
@@ -391,9 +399,6 @@ impl TranslationGroup {
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
     {
-        if self.perms.is_empty() {
-            return (*w, Vec::new());
-        }
         let mut traversal = self.orbit_with_counters(w);
         let (mut best, mut counter_from_word) = traversal
             .next()

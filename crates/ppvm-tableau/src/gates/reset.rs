@@ -45,6 +45,13 @@ where
         + Copy,
 {
     fn reset(&mut self, addr0: usize) {
+        // Skip qubits outside the computational subspace. Currently a no-op for
+        // loss (the `x` below is already skipped and `measure` returns `None`),
+        // but leaked qubits must not be re-zeroed, and this short-cuts both.
+        if self.is_lost_or_leaked(addr0) {
+            return;
+        }
+
         let m = self.measure(addr0);
 
         // A reset is not a measurement in stim's model: drop the record

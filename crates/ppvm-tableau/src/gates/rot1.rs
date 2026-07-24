@@ -23,7 +23,7 @@ where
         + Copy,
 {
     fn rotate_1(&mut self, axis: Pauli, addr0: usize, theta: <T as Config>::Coeff) {
-        if self.is_lost[addr0] {
+        if self.is_lost_or_leaked(addr0) {
             return;
         }
         let (sin, cos) = (theta * 0.5.into()).sin_cos();

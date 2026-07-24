@@ -103,6 +103,34 @@ fn loss_channel_with_p1_marks_qubit_lost() {
 }
 
 #[test]
+fn leakage_channel_leaks_qubit_to_one() {
+    // p1 = 1.0 pins the qubit to |1⟩ and flags it leaked (not lost).
+    let prog = parse_extended("I_ERROR[leakage](0.0, 1.0) 0").unwrap();
+    let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
+    execute(&prog, &mut tab).unwrap();
+    assert!(tab.is_leaked[0]);
+    assert!(!tab.is_lost[0]);
+    assert_eq!(tab.measure(0), Some(true));
+}
+
+#[test]
+fn leakage_channel_zero_prob_no_leak() {
+    let prog = parse_extended("I_ERROR[leakage](0.0, 0.0) 0").unwrap();
+    let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
+    execute(&prog, &mut tab).unwrap();
+    assert!(!tab.is_leaked[0]);
+    assert!(!tab.is_lost[0]);
+}
+
+#[test]
+fn leakage_channel_applies_to_all_targets() {
+    let prog = parse_extended("I_ERROR[leakage](0.0, 1.0) 0 1 2").unwrap();
+    let mut tab: Tab = GeneralizedTableau::new(3, 1e-10);
+    execute(&prog, &mut tab).unwrap();
+    assert!(tab.is_leaked[0] && tab.is_leaked[1] && tab.is_leaked[2]);
+}
+
+#[test]
 fn repeat_executes_body_n_times() {
     let (results, _) = run("REPEAT 2 { X 0 }\nM 0", 1);
     assert_eq!(results, vec![Some(false)]);

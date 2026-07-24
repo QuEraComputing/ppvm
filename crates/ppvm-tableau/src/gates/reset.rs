@@ -24,7 +24,7 @@ impl<T, I, C> Reset for GeneralizedTableau<T, I, C>
 where
     T: Config,
     <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Debug + Send + Sync,
+    I: TableauIndex + Debug,
     C: SparseVector<Complex<T::Coeff>, I> + Debug,
     T::Coeff: One
         + Zero
@@ -33,9 +33,7 @@ where
         + ToPrimitive
         + std::fmt::Debug
         + std::ops::Mul<f64>
-        + PartialOrd<f64>
-        + Send
-        + Sync,
+        + PartialOrd<f64>,
     Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
         + From<Complex64>
         + std::ops::MulAssign

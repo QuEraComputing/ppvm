@@ -376,6 +376,43 @@ where
     }
 }
 
+impl<T, I, C> ResetLeakageChannel<T> for GeneralizedTableau<T, I, C>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    I: TableauIndex + Debug,
+    C: SparseVector<Complex<T::Coeff>, I> + Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+{
+    fn reset_leakage_channel(&mut self, addr0: usize) {
+        if self.is_lost[addr0] {
+            // cannot recover a lost qubit
+            return;
+        }
+
+        if !self.is_leaked[addr0] {
+            return;
+        }
+
+        self.is_leaked[addr0] = false;
+        self.reset(addr0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1177,5 +1214,49 @@ mod tests {
         t.reset(0);
         assert!(t.is_leaked[0]);
         assert_eq!(t.measure(0), Some(true));
+    }
+
+    // === ResetLeakageChannel ===
+
+    #[test]
+    fn reset_leakage_channel_recovers_qubit_to_zero() {
+        // A qubit leaked to |1⟩ is un-leaked and re-initialized to |0⟩.
+        let mut t = tab(1);
+        t.leakage_channel(0, 0.0, 1.0); // leaked, pinned |1⟩
+        t.reset_leakage_channel(0);
+        assert!(!t.is_leaked[0]);
+        assert!(!t.is_lost[0]);
+        assert!(t.current_measurement_record().is_empty()); // record-neutral
+        assert_eq!(t.measure(0), Some(false)); // back in |0⟩
+    }
+
+    #[test]
+    fn reset_leakage_channel_gates_work_again() {
+        // After recovery the qubit is live: gates are no longer skipped.
+        let mut t = tab(1);
+        t.leakage_channel(0, 0.0, 1.0);
+        t.reset_leakage_channel(0);
+        t.x(0);
+        assert_eq!(t.measure(0), Some(true));
+    }
+
+    #[test]
+    fn reset_leakage_channel_does_not_recover_lost() {
+        // A lost qubit cannot be brought back by leakage reduction.
+        let mut t = tab(1);
+        t.is_lost[0] = true;
+        t.reset_leakage_channel(0);
+        assert!(t.is_lost[0]);
+        assert!(t.measure(0).is_none());
+    }
+
+    #[test]
+    fn reset_leakage_channel_noop_on_live_qubit() {
+        // A live (never-leaked) qubit is left untouched — not re-zeroed.
+        let mut t = tab(1);
+        t.x(0); // |1⟩
+        t.reset_leakage_channel(0);
+        assert!(!t.is_leaked[0]);
+        assert_eq!(t.measure(0), Some(true)); // unchanged, still |1⟩
     }
 }

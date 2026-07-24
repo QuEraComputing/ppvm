@@ -155,3 +155,7 @@ pub trait AsymmetricLossChannel<T: Config> {
 pub trait LeakageChannel<T: Config> {
     fn leakage_channel(&mut self, addr0: usize, p0: T::Coeff, p1: T::Coeff);
 }
+
+pub trait ResetLeakageChannel<T: Config> {
+    fn reset_leakage_channel(&mut self, addr0: usize);
+}

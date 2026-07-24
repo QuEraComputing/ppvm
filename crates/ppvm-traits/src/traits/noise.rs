@@ -151,3 +151,7 @@ pub trait AsymmetricLossChannel<T: Config> {
     /// trajectory approximation used (the survival back-action is omitted).
     fn asymmetric_loss_channel(&mut self, addr0: usize, p0: T::Coeff, p1: T::Coeff);
 }
+
+pub trait LeakageChannel<T: Config> {
+    fn leakage_channel(&mut self, addr0: usize, p0: T::Coeff, p1: T::Coeff);
+}

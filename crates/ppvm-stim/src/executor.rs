@@ -736,6 +736,13 @@ pub fn execute_validated<T, I, C>(
                     tab.correlated_loss_channel(a, b, ps.clone());
                 }
             }
+            ExtendedInstruction::Leakage {
+                p0, p1, targets, ..
+            } => {
+                for &q in targets {
+                    tab.leakage_channel(q, (*p0).into(), (*p1).into());
+                }
+            }
             ExtendedInstruction::Measure(MeasureOp {
                 name,
                 args,

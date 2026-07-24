@@ -32,7 +32,7 @@ where
     <I as BitAnd<<I as Shl<usize>>::Output>>::Output: PartialEq<I>,
 {
     fn t(&mut self, index: usize) {
-        if self.is_lost[index] {
+        if self.is_lost_or_leaked(index) {
             return;
         }
 
@@ -42,7 +42,7 @@ where
     }
 
     fn t_dag(&mut self, index: usize) {
-        if self.is_lost[index] {
+        if self.is_lost_or_leaked(index) {
             return;
         }
 

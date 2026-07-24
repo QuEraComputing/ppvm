@@ -48,6 +48,7 @@ fn stim_token() -> impl Strategy<Value = &'static str> {
         Just("[T]"),
         Just("[loss]"),
         Just("[correlated_loss]"),
+        Just("[leakage]"),
         Just("[R_X(theta=0.5)]"),
         Just("[U3(theta=0.5,phi=1,lambda=0.25)]"),
         Just("(0.1)"),

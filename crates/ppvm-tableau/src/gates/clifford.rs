@@ -12,12 +12,12 @@ use smallvec::{SmallVec, smallvec};
 /// Stack-allocates for up to 8 storage words; spills to heap beyond.
 type MaskBuf<T> = SmallVec<[<<T as Config>::Storage as BitView>::Store; 8]>;
 
-// Single-qubit gate on a `GeneralizedTableau`: skip lost qubits, delegate to
-// the inner tableau's canonical (word-level) method.
+// Single-qubit gate on a `GeneralizedTableau`: skip lost/leaked qubits, delegate
+// to the inner tableau's canonical (word-level) method.
 macro_rules! impl_generalized_tableau_clifford {
     ($name:ident) => {
         fn $name(&mut self, index: usize) {
-            if self.is_lost[index] {
+            if self.is_lost_or_leaked(index) {
                 return;
             }
             self.tableau.$name(index);
@@ -25,11 +25,11 @@ macro_rules! impl_generalized_tableau_clifford {
     };
 }
 
-// Two-qubit gate on a `GeneralizedTableau`: skip pairs with a lost qubit.
+// Two-qubit gate on a `GeneralizedTableau`: skip pairs with a lost/leaked qubit.
 macro_rules! impl_generalized_tableau_clifford_pair {
     ($name:ident) => {
         fn $name(&mut self, control: usize, target: usize) {
-            if self.is_lost[control] || self.is_lost[target] {
+            if self.is_lost_or_leaked(control) || self.is_lost_or_leaked(target) {
                 return;
             }
             self.tableau.$name(control, target);
@@ -752,18 +752,18 @@ where
     Complex<<T as Config>::Coeff>: From<Complex<f64>>,
     <T::Storage as BitView>::Store: PrimInt,
 {
-    /// Fast path: check if any qubit in the slice is lost
+    /// Fast path: check if any qubit in the slice is lost or leaked
     #[inline]
     fn any_lost_single(&self, indices: &[usize]) -> bool {
-        indices.iter().any(|&i| self.is_lost[i])
+        indices.iter().any(|&i| self.is_lost_or_leaked(i))
     }
 
-    /// Fast path: check if any qubit pair has a lost qubit
+    /// Fast path: check if any qubit pair has a lost or leaked qubit
     #[inline]
     fn any_lost_pair(&self, pairs: &[(usize, usize)]) -> bool {
         pairs
             .iter()
-            .any(|&(c, t)| self.is_lost[c] || self.is_lost[t])
+            .any(|&(c, t)| self.is_lost_or_leaked(c) || self.is_lost_or_leaked(t))
     }
 }
 
@@ -777,7 +777,7 @@ macro_rules! impl_gen_tableau_batch_single {
             let filtered: Vec<usize> = indices
                 .iter()
                 .copied()
-                .filter(|&i| !self.is_lost[i])
+                .filter(|&i| !self.is_lost_or_leaked(i))
                 .collect();
             self.tableau.$name(&filtered);
         }
@@ -794,7 +794,7 @@ macro_rules! impl_gen_tableau_batch_pair {
             let filtered: Vec<(usize, usize)> = pairs
                 .iter()
                 .copied()
-                .filter(|&(c, t)| !self.is_lost[c] && !self.is_lost[t])
+                .filter(|&(c, t)| !self.is_lost_or_leaked(c) && !self.is_lost_or_leaked(t))
                 .collect();
             self.tableau.$name(&filtered);
         }

@@ -495,6 +495,34 @@ fn i_error_correlated_loss_two_args_errors() {
 }
 
 #[test]
+fn i_error_leakage_promotes_to_leakage() {
+    let p = parse_ok("I_ERROR[leakage](0.1, 0.2) 0\n");
+    match &p.instructions[0] {
+        ExtendedInstruction::Leakage {
+            p0,
+            p1,
+            targets,
+            span,
+        } => {
+            approx_eq(*p0, 0.1);
+            approx_eq(*p1, 0.2);
+            assert_eq!(targets, &vec![0]);
+            assert_eq!(span.line(&p.line_map), 1);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn i_error_leakage_wrong_arg_count_errors() {
+    assert_eq!(err_code("I_ERROR[leakage](0.1) 0\n"), Some("invalid-tag"));
+    assert_eq!(
+        err_code("I_ERROR[leakage](0.1, 0.2, 0.3) 0\n"),
+        Some("invalid-tag")
+    );
+}
+
+#[test]
 fn i_error_with_no_tag_errors() {
     let err = parse_err("I_ERROR(0.1) 0\n");
     let d = err.iter().next().unwrap();

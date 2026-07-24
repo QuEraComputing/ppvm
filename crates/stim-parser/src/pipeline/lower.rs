@@ -336,18 +336,35 @@ fn lower_noise(
                 span,
             }))
         }
+        (IError, "leakage") => {
+            if args.len() != 2 {
+                return invalid_tag(
+                    "leakage",
+                    name.canonical_name(),
+                    span,
+                    format!("[leakage] expects 2 args, got {}", args.len()),
+                    sink,
+                );
+            }
+            Ok(Some(ExtendedInstruction::Leakage {
+                p0: args[0],
+                p1: args[1],
+                targets,
+                span,
+            }))
+        }
         (IError, "") => invalid_tag(
             "<missing>",
             name.canonical_name(),
             span,
-            "I_ERROR requires a [loss] or [correlated_loss] tag",
+            "I_ERROR requires a [loss], [correlated_loss], or [leakage] tag",
             sink,
         ),
         (IError, other) => invalid_tag(
             other,
             name.canonical_name(),
             span,
-            "expected [loss] or [correlated_loss]",
+            "expected [loss], [correlated_loss], or [leakage]",
             sink,
         ),
         _ => Ok(Some(ExtendedInstruction::Noise(NoiseOp {
@@ -714,6 +731,21 @@ mod tests {
         match &prog.instructions[0] {
             ExtendedInstruction::CorrelatedLoss { ps, .. } => {
                 assert_eq!(*ps, [0.1, 0.0, 0.0]);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn i_error_leakage_lowers() {
+        let prog = lower_extended("I_ERROR[leakage](0.1, 0.2) 0").expect("lower");
+        match &prog.instructions[0] {
+            ExtendedInstruction::Leakage {
+                p0, p1, targets, ..
+            } => {
+                assert_eq!(*p0, 0.1);
+                assert_eq!(*p1, 0.2);
+                assert_eq!(targets, &vec![0]);
             }
             other => panic!("{other:?}"),
         }

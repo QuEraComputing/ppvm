@@ -239,6 +239,12 @@ can populate them through `&self`; structural mutators clear affected cells
 through `&mut self`. This preserves `Send + Sync` without imposing either
 bound on the `Indexable` trait.
 
+The same component caches back the bulk `hash_into` on a word's key column (see
+[Key columns](#key-columns-structure-of-arrays-batches)): filling a batch's hash
+column mostly gathers already-cached values, so the group-prefetch loop in the
+[batch contract](traits-2-configuration-and-hashing.md#batch-execution-and-the-hash-join-contract)
+pays no hashing on its critical path.
+
 ## Component hashes
 
 Hash composition follows the logical wrappers:
@@ -267,6 +273,55 @@ X/Z. `Phased<W>` is absent from this composition because it is not indexable.
 
 Constructors leave caches empty. Cloning may copy a valid cached value because
 the clone initially has identical structural contents.
+
+## Key columns (structure-of-arrays batches)
+
+The bulk map contract in
+[`traits-2-configuration-and-hashing.md`](traits-2-configuration-and-hashing.md#batch-execution-and-the-hash-join-contract)
+consumes a structure-of-arrays column of keys through the `Columnar` trait's
+associated `Column`. Each concrete word owns the planar layout of its column;
+generic code sees only the `KeyColumn` capability, never the planes. `Columnar`
+is separate from `Indexable`, so this adds no surface to the minimal hashing
+contract.
+
+For the packed Pauli word the column is two plane blocks and a shared width,
+with the hash column stored parallel to it:
+
+```text
+x_plane:  [ word 0 X-bits | word 1 X-bits | ... | word M-1 X-bits ]
+z_plane:  [ word 0 Z-bits | word 1 Z-bits | ... | word M-1 Z-bits ]
+nqubits:  shared width
+hashes:   [ h(0) | h(1) | ... | h(M-1) ]   (in the owning KeyBatch)
+```
+
+The flattened `LossyPauliWord` extends its column with a parallel loss-bit
+plane, matching its X/Z/loss structural identity. `Phased<W>` has no column: it
+is not indexable, so it is never a batch key.
+
+The layout is chosen for the three access patterns the trait contract must
+serve:
+
+- **Vertical SIMD.** A contiguous plane lets a backend hash or compare the same
+  machine-word lane across many keys in one vector instruction, instead of
+  gathering scattered `[u8; N]` words.
+- **Coalesced device access.** A contiguous plane maps to a coalesced load for a
+  GPU warp; an array of packed words would not.
+- **Bandwidth-minimal probe.** The probe streams the X/Z planes and the hash
+  column and never loads coefficients, which live in the caller's `TermBatch`.
+
+Two representation choices are therefore fixed here rather than in the trait
+layer:
+
+- planes are stored as flat plane blocks, not `Vec<[u8; N]>`, and each key's
+  plane slot is padded to the alignment the backend's widest SIMD lane (or a
+  device's coalescing width) requires; and
+- `hash_into` computes the whole hash column from the planes and from the
+  private `OnceLock<u64>` component caches, so the plane-parallel hash and the
+  scalar `Hash` in [Component hashes](#component-hashes) must agree bit for bit.
+
+`gather` selects or permutes columns by index for radix partitioning, truncation
+compaction, and device staging; it copies plane by plane and never materializes
+scalar words.
 
 ## Ordering and serialization
 
@@ -302,3 +357,8 @@ The prototype should include:
 
 1. Should the loss plane use the same packed array width as the X/Z planes, or
    a separately selected private width?
+2. What plane alignment and padding does the key column use, and must it vary by
+   target (for example AVX-512 vs NEON vs a GPU coalescing width)? A per-target
+   column would need the plane block parameterized by alignment.
+3. Does the `LossyPauliWord` column store its loss plane inline beside X/Z (one
+   allocation, one `gather`), matching the flattened scalar representation?

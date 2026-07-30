@@ -298,6 +298,28 @@ This table describes logical mutations. A gate may determine that no phase bit
 changed and preserve the phase cache in that special case, but conservative
 component invalidation is correct for the first implementation.
 
+### Shared algebra traits
+
+The gate rows above are exactly the Pauli algebra primitives defined in
+[`traits-2-configuration-and-hashing.md`](traits-2-configuration-and-hashing.md#pauli-algebra-traits-symplectic-structure-and-phase),
+realized at tableau width. The tableau implements:
+
+- `SymplecticColumns` — `swap_xz`, `xor_x_col`, `xor_z_col` as SIMD-block
+  operations over the `2n` generator rows (the "column pair" access above);
+- `PhaseTrack` — the \(\mathbb{Z}_2\) sign plane plus the Aaronson–Gottesman `g`
+  rule for row products; and
+- `StabilizerFrame` — the role-exclusive operations (measurement, pivot search,
+  `row_multiply`, canonicalization) that read the rows as a stabilizer/
+  destabilizer basis.
+
+Implementing the first two yields the blanket `Clifford` impl for free, so the
+tableau shares one audited copy of the symplectic sign logic with
+`PhasedPauliWord`; only the phase algebra and the frame operations are
+tableau-specific. `swap_xz` at tableau width is a block swap and `xor_x_col` is a
+whole-column `⊕`, which is why the column-major layout matters: the shared gate
+*sequence* is width-agnostic, but the tableau's implementation of each primitive
+is the SIMD path the word never needs.
+
 ## Structural hashing
 
 A tableau used in a classical mixture is an `Indexable` key. It owns its own

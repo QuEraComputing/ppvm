@@ -8,8 +8,10 @@ This document describes concrete data structures for standalone algebraic
 words. The shared trait design is specified in
 [`traits-2-configuration-and-hashing.md`](traits-2-configuration-and-hashing.md).
 
-The trait-level `Word` is representation-free but defines the common indexed
-product operations:
+The trait-level `Word` is representation-free and **read-only**: it defines the
+common indexed *inspection* operations, not mutation. Structural mutation lives
+on algebra-specific traits (`PauliBits`, `SymplecticColumns`, `PhaseTrack`; see
+[`traits-2-configuration-and-hashing.md`](traits-2-configuration-and-hashing.md#pauli-algebra-traits-symplectic-structure-and-phase)):
 
 ```rust
 pub trait Word {
@@ -17,8 +19,8 @@ pub trait Word {
 
     fn n_sites(&self) -> usize;
     fn get(&self, index: usize) -> Self::Site;
-    fn set(&mut self, index: usize, site: Self::Site);
     fn weight(&self) -> usize;
+    fn iter(&self) -> impl Iterator<Item = Self::Site>;
 }
 ```
 
@@ -46,8 +48,12 @@ the physical mode and creation or annihilation action.
 
 `weight()` counts non-identity factors according to the selected site type.
 For a representation that stores only non-identity factors, it may equal
-`n_sites()`. `set()` is the shared structural mutation boundary and must
-preserve concrete invariants and invalidate the affected hash components.
+`n_sites()`. The structural mutation boundary is `PauliBits::set_x_bit` /
+`set_z_bit` (and the `SymplecticColumns` / `PhaseTrack` column primitives), each
+of which preserves concrete invariants and lazily invalidates the affected hash
+components. `PauliWord` and `LossyPauliWord` implement `PauliBits`;
+`PhasedPauliWord` additionally implements `SymplecticColumns + PhaseTrack`, so it
+picks up the blanket `Clifford` impl.
 
 ## Logical Pauli model
 

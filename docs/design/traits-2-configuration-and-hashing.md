@@ -112,9 +112,18 @@ does not appear as an associated type. A concrete value encapsulates its own
 fields; generic algorithms use behavioral methods instead of naming or
 inspecting the backing memory.
 
-`Word` is the common concept for an indexed algebraic monomial. The old
-Pauli-word operations are not Pauli-specific: every supported word has a site
-alphabet, an indexed extent, site access and mutation, and a weight:
+`Word` is the common **read-only** concept for an indexed algebraic monomial. It
+is an *inspection* interface — extent, per-site read, weight, and iteration —
+consumed by display, serialization, tests, and the sparse-sum plumbing. It is
+deliberately **not** the propagation interface: the real gate kernels operate at
+*sub-site* (individual X/Z bit) granularity and are algebra-specific, so they
+live on the Pauli-specific traits in
+[Pauli algebra traits](#pauli-algebra-traits-symplectic-structure-and-phase),
+not on `Word`. Keeping `Word` free of mutation also lets an ordered algebra (a
+normal-ordered fermionic product) implement it honestly: an in-place
+`set(index, site)` at a factor position would violate that algebra's canonical
+form, so mutation is relocated to each algebra's own traits rather than asserted
+universally here.
 
 ```rust
 pub trait Word {
@@ -122,8 +131,8 @@ pub trait Word {
 
     fn n_sites(&self) -> usize;
     fn get(&self, index: usize) -> Self::Site;
-    fn set(&mut self, index: usize, site: Self::Site);
     fn weight(&self) -> usize;
+    fn iter(&self) -> impl Iterator<Item = Self::Site>;
 }
 ```
 
@@ -154,11 +163,14 @@ concrete packed lossy word implements `Word<Site = LossySite<Pauli>>`, and a
 future ordered fermionic product can implement `Word<Site = FermionSite>`. A
 fermionic word's index denotes factor order; `FermionSite` carries the physical
 mode. For a dense Pauli word, the index is the qubit and `n_sites()` is its
-width.
+width. Because `Word` is read-only, these differing index meanings (qubit vs
+factor order) never have to agree on a shared `set` contract.
 `weight()` is the number of non-identity factors according to the concrete site
 alphabet; an ordered representation that stores no explicit identities may
-therefore have `weight() == n_sites()`. Implementations of `set()` preserve
-their representation invariants and invalidate the affected hash components.
+therefore have `weight() == n_sites()`. It remains a Pauli-motivated read (the
+`MaxPauliWeight` policy needs it) that other algebras may define as is natural.
+Structural mutation, and the hash-component invalidation it triggers, belong to
+the algebra-specific mutation traits below, not to `Word`.
 
 The concrete `LossyPauliWord` stores packed X, Z, and loss planes directly and
 provides loss mutation and `loss_weight()` as inherent methods. Loss channels
@@ -229,7 +241,112 @@ tableau implementations are later useful, each concrete type can implement
 the same behavioral traits. A storage abstraction should only be introduced
 after two implementations demonstrate a common interface.
 
-### Algorithm and storage parameters
+`Clifford` is not implemented by hand on each type. It is a *derived* behavioral
+trait, blanket-implemented once over the Pauli algebra primitives described
+next; `RotationOne` is implemented on `PauliSum` in terms of `PauliBits`, also
+below.
+
+### Pauli algebra traits: symplectic structure and phase
+
+`Word` is read-only, so the mutation that gate propagation performs lives on
+Pauli-specific traits. Their shape is dictated by the algebra rather than
+invented: a Pauli operator modulo phase is a vector in the symplectic space
+\(\mathrm{GF}(2)^{2n}\) (the X and Z bit planes), Pauli multiplication is
+vector addition (`⊕`), commutation is the symplectic form
+\(\omega(P,Q) = x_P\cdot z_Q \oplus z_P\cdot x_Q\), and the Clifford group is the
+central extension \(\mathrm{Sp}(2n,2) \ltimes \text{phases}\). That factorization
+sorts every gate operation into two buckets, and the traits follow the buckets.
+
+**Role-independent (the \(\mathrm{Sp}\) part).** Conjugating a Pauli by a
+Clifford gate does the same bit-plane algebra whether the operator is a lone
+word (one row) or one of a tableau's \(2n\) stabilizer/destabilizer generators.
+`H` swaps the X and Z columns; `S` does `z ⊕= x`; `CNOT` does
+`x_t ⊕= x_c, z_c ⊕= z_t`. This logic is written **once**.
+
+**Role-dependent (the phase extension).** A standalone phased Pauli lives in
+\(\mathbb{Z}_4\) (`Y = iXZ` needs the `i`); a stabilizer tableau stores a
+\(\mathbb{Z}_2\) sign and recovers the `i`'s through the Aaronson–Gottesman `g`
+rule during row multiplication. Same gate, different phase algebra — so phase
+bookkeeping is written **per type**.
+
+Two primitive traits capture the two buckets, kept separate so they mirror
+\(\mathrm{Sp}\) and its extension (and so a future phase-free classical register
+can implement only the first):
+
+```rust
+/// Sp-part: bit-plane column algebra. `PhasedPauliWord` uses 1-bit columns;
+/// `Tableau` uses SIMD blocks over its 2n rows. Same meaning, different width.
+pub trait SymplecticColumns {
+    fn n_qubits(&self) -> usize;
+    fn swap_xz(&mut self, q: usize);
+    fn xor_x_col(&mut self, ctrl: usize, tgt: usize);
+    fn xor_z_col(&mut self, tgt: usize, ctrl: usize);
+}
+
+/// Extension-part: the phase algebra. Z4 for a phased word, Z2 + g for a tableau.
+pub trait PhaseTrack {
+    fn flip_phase_where_xz(&mut self, q: usize);
+    fn cnot_phase(&mut self, ctrl: usize, tgt: usize);
+    // ...one phase delta per gate; the tableau's g-rule lives behind these
+}
+```
+
+`Clifford` is then the role-independent structure, blanket-implemented once. The
+*sequence* of primitives per gate is identical across roles even though the
+phase primitive it calls is not — the single audited copy of the symplectic sign
+logic that would otherwise be duplicated and drift:
+
+```rust
+impl<T: SymplecticColumns + PhaseTrack> Clifford for T {
+    fn h(&mut self, q: usize) { self.flip_phase_where_xz(q); self.swap_xz(q); }
+    fn cnot(&mut self, c: usize, t: usize) {
+        self.cnot_phase(c, t);
+        self.xor_x_col(c, t);
+        self.xor_z_col(c, t);
+    }
+    // ...
+}
+```
+
+The role-*exclusive* operations — those that interpret the rows as a symplectic
+basis rather than as independent operators — do not belong in the shared tower.
+They are a tableau-only trait a word never implements:
+
+```rust
+pub trait StabilizerFrame {
+    fn measure(&mut self, qubit: usize) -> Option<bool>;
+    fn row_multiply(&mut self, src: usize, dst: usize); // uses the g-rule
+    // pivot search, canonicalization, transposition guard, ...
+}
+```
+
+The implementers are `PhasedPauliWord` (`SymplecticColumns + PhaseTrack`, one
+row) and `Tableau` (all three). Note that `PauliSum` is deliberately *not* an
+implementer: a Clifford gate on a sum re-keys every term (each Pauli maps to a
+different Pauli, so the map is rebuilt, not updated in place), so the sum applies
+the one-row action pointwise and drains each term's phase delta to its
+coefficient. Non-Clifford rotations, which branch one term into several, stay on
+a separate mutation primitive:
+
+```rust
+/// Mutable single-vector X/Z access — a point of GF(2)^{2n}. Hosts the
+/// rotation/branching kernels, which flip individual bits and ship the sign to
+/// the coefficient. Implemented by `PauliWord` and `LossyPauliWord`.
+pub trait PauliBits: Word<Site = Pauli> {
+    fn x_bit(&self, i: usize) -> bool;
+    fn z_bit(&self, i: usize) -> bool;
+    fn set_x_bit(&mut self, i: usize, v: bool); // invalidates the hash lazily
+    fn set_z_bit(&mut self, i: usize, v: bool);
+    fn is_lost(&self, i: usize) -> bool { false } // LossyPauliWord overrides
+}
+```
+
+`PauliBits` is the narrow bit-level slice of the retired `PauliWordTrait`,
+separated from key identity (`Indexable`), inspection (`Word`), and phase — and
+it passes the trait admission rule because generic rotation kernels consume it
+across two implementers. Loss *reads* are a defaulted predicate; loss *writes*
+and the binary Pauli product (`Mul`) stay inherent on the concrete words, since
+each has a single implementer.
 
 An algorithm should take its independent choices as direct type parameters.
 An associated-type bundle is not useful merely because it replaces two type
@@ -462,8 +579,11 @@ changed according to whether their underlying responsibility changes:
 | Current implementation | Proposal | Rationale |
 | --- | --- | --- |
 | `Config` | removed | The bundle itself is removed; this is not a rename. |
-| `PauliWordTrait` | `Word` plus `Indexable` where used as a key | Word operations are generalized through `Word::Site`; hashing becomes a separate capability. |
-| `n_qubits`, `get`, `set`, `weight` | `n_sites`, `get`, `set`, `weight` | Only the Pauli-specific extent name changes; the other operation names stay. |
+| `PauliWordTrait` | split into `Word` (read-only inspection), `Indexable` (key), `PauliBits` (mutation) | The old bundle is decomposed by concern; bit-level mutation is a narrow Pauli-specific trait, hashing is separate, inspection is algebra-agnostic. |
+| `n_qubits`, `get`, `set`, `weight` | `n_sites`, `get`, `weight` on `Word`; `set` removed | `Word` is read-only; positional mutation (`set`) moves to `PauliBits`, since it is ill-defined for ordered algebras. |
+| bit accessors `get_xbit`/`set_xbit`/… | `PauliBits::x_bit`/`set_x_bit`/… | The rotation hot path is sub-site; it keeps a dedicated Pauli trait rather than the generic `Word`. |
+| word-level Clifford (blanket over `PauliWordTrait`) | `Clifford` blanket over `SymplecticColumns` + `PhaseTrack` | The symplectic sign logic is written once and shared by `PhasedPauliWord` and `Tableau`. |
+| (new) | `SymplecticColumns`, `PhaseTrack`, `StabilizerFrame` | The `Sp ⋉ phase` decomposition: role-independent column algebra, role-dependent phase, role-exclusive frame ops. |
 | concrete `PauliWord` | `PauliWord` | The packed X/Z word is the same domain concept. |
 | concrete `LossyPauliWord` | `LossyPauliWord` | The packed X/Z/loss representation remains concrete and flattened. |
 | `PhasedPauliWord` | `PhasedPauliWord` alias over non-indexable `Phased` | The wrapper is generic over ordinary and lossy words but is not a production map key. |
@@ -498,7 +618,13 @@ This rule keeps:
 
 - `Indexable`, consumed by keyed stores and implemented by hash-enabled words
   and tableaus;
-- `Word`, consumed by the shared sparse-sum engine and propagation algorithms;
+- `Word`, consumed by display, serialization, tests, and the sparse-sum
+  plumbing as a read-only inspection interface (not the propagation interface);
+- `PauliBits`, consumed by the rotation kernels and implemented by `PauliWord`
+  and `LossyPauliWord`;
+- `SymplecticColumns` and `PhaseTrack`, consumed by the blanket `Clifford` and
+  implemented by `PhasedPauliWord` and `Tableau`;
+- `StabilizerFrame`, the role-exclusive tableau operations;
 - gate and noise traits, implemented across propagation and tableau backends;
 - `SumStorage` and `ACMap`, implemented by genuinely different storage engines
   and collections;
@@ -508,9 +634,11 @@ This rule keeps:
 It rejects the removed global `Config`, `PauliSumAlgorithm`,
 `TableauMixtureAlgorithm`, and `TableauStorage` traits, as well as word
 subtraits named `PauliWord`, `FermionWord`, or `LossyPauliWord`. Their
-distinctions are expressed by `Word::Site` or by concrete types instead
+alphabet distinctions are expressed by `Word::Site` or by concrete types instead
 of one-alphabet subtraits; the concrete `PauliWord` and `LossyPauliWord` type
-names remain available.
+names remain available. Note the contrast with `PauliBits`: it is admitted not
+as an alphabet subtrait but as a narrow *bit-mutation* capability that genuinely
+has multiple implementers and generic consumers.
 
 ### Sparse-sum branch staging
 
@@ -738,8 +866,9 @@ independent of the merge strategy (the systems concern).
   a batch. A packed Pauli word's column is its X and Z plane blocks and the
   flattened `LossyPauliWord` adds a loss plane; `Phased<W>` is not indexable, so
   it is not `Columnar` and never appears in a batch.
-- `Word`: unaffected — `set` and friends still mutate one value; columns are
-  built by appending produced keys, not by mutating in place.
+- `Word`: unaffected — it is read-only inspection either way. Per-value mutation
+  happens through `PauliBits` on a single word; columns are built by appending
+  produced keys, not by mutating in place.
 - `Policy`: truncation already operates on the whole map and is naturally bulk;
   it should be expressible as a batch retain (via `KeyColumn::gather`) so it
   composes with a partitioned or offloaded table.

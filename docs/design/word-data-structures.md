@@ -180,12 +180,18 @@ Loss channels and maximum-loss-weight truncation specialize directly on the
 concrete lossy word:
 
 ```rust
-impl<C, A, H, S, P> LossChannel<C>
-    for OperatorSum<C, LossyPauliWord<A, H>, S, P>
+impl<S, P, A, H> LossChannel for Sum<S, P>
+where
+    S: SumStorage<Word = LossyPauliWord<A, H>>,
+    P: Policy<S::Word, S::Coeff>,
 {
     // ...
 }
 ```
+
+The specialization is expressed through the storage's associated `Word` type
+rather than a free word parameter: a `Sum` is a `LossChannel` exactly when its
+`SumStorage` keys on a `LossyPauliWord`.
 
 There are no traits named `PauliWord`, `LossyPauliWord`, or `FermionWord`.
 `PauliWord` and `LossyPauliWord` remain concrete domain type names. Algorithms

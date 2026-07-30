@@ -38,7 +38,7 @@ responsibility changes.
 
 ## Type-composition layers
 
-### Coefficient type
+### Coefficient, angle, and truncation
 
 There is no algorithm-agnostic `Config` trait. Algorithms use the coefficient
 type directly:
@@ -53,6 +53,57 @@ A trait containing only `type Coeff` adds indirection without providing useful
 composition. Maps, policies, Pauli-word storage, Pauli-word
 implementations, and hashers are also selected independently rather than being
 collected into a replacement global configuration trait.
+
+The decomposition must not stop at `Config`; the current `Coefficient` trait is
+itself a bundle. Its own documentation states that it "bundles every arithmetic
+operation," and it carries two responsibilities that are not value-domain
+arithmetic: `sin_cos` (a rotation concern) and `cutoff` (a truncation concern —
+the very policy this redesign extracts). `Coefficient` is therefore split into a
+value domain, a separate angle domain, and a policy predicate.
+
+The value domain keeps only arithmetic and a magnitude, replacing `cutoff` with
+a property that a policy can threshold:
+
+```rust
+/// Value-domain arithmetic only — no rotation, no truncation.
+pub trait Coefficient:
+    PartialEq + Clone + num::Zero
+    + Neg<Output = Self>
+    + Add<Self, Output = Self> + Sub<Self, Output = Self>
+    + Mul<Self, Output = Self> + Mul<f64, Output = Self>
+    + AddAssign<Self> + MulAssign<Self>
+    + std::iter::Sum + Send + Sync
+{
+    fn mul_sign(&self, sign: i8) -> Self;
+    fn half(&self) -> Self;
+
+    /// Nonnegative magnitude. Exposes a property of the value for a `Policy` to
+    /// threshold; it does not itself decide any cutoff. Replaces `cutoff`.
+    fn magnitude(&self) -> f64;
+}
+```
+
+The rotation angle becomes a separate domain, so it is no longer welded to the
+coefficient. The angle type defaults to the coefficient, recovering today's
+`rx(theta: C)` for the common case while permitting an `f64`-coefficient sum
+driven by a symbolic or parametric angle:
+
+```rust
+/// A rotation angle that yields `(sin, cos)` in coefficient domain `C`.
+pub trait Angle<C: Coefficient> {
+    fn sin_cos(&self) -> (C, C);
+}
+
+impl Angle<f64> for f64 {
+    fn sin_cos(&self) -> (f64, f64) { num::traits::Float::sin_cos(*self) }
+}
+```
+
+The rotation traits (see [Behavioral traits](#behavioral-traits)) take the angle
+domain as a defaulted parameter. Whether the "concrete coefficient, symbolic
+angle" combination is supported or deliberately forbidden (via a `where A = C`
+bound) is an explicit decision recorded in the open questions, not a silent
+property of one fused trait.
 
 ### Representation types
 
@@ -139,8 +190,8 @@ pub trait Clifford {
     // ...
 }
 
-pub trait RotationOne<C: Coefficient> {
-    fn rx(&mut self, qubit: usize, theta: C);
+pub trait RotationOne<C: Coefficient, A: Angle<C> = C> {
+    fn rx(&mut self, qubit: usize, theta: A);
     // ...
 }
 
@@ -186,27 +237,75 @@ parameters with one. In particular, there is no `PauliSumAlgorithm` trait that
 bundles a term map with a policy: storage layout and policy are orthogonal
 choices.
 
-The reusable sparse-sum shape is:
+The choices that are *intrinsic to a storage instance* — which word it keys on
+and which coefficient it accumulates — are associated types of that storage
+rather than free parameters, the same way `HashMap<K, V>` fixes `K` and `V` per
+concrete map. `SumStorage` (defined below) therefore exposes `type Word` and
+`type Coeff`, and the reusable sparse-sum shape needs only its storage and its
+policy:
 
 ```rust
-pub struct OperatorSum<C, W, S, P = NoPolicy>
+pub struct Sum<S, P = NoPolicy>
 where
-    C: Coefficient,
-    W: Word + Indexable,
-    S: SumStorage<W, C>,
-    P: Policy<W, C>,
+    S: SumStorage,
+    P: Policy<S::Word, S::Coeff>,
 {
     storage: S,
     policy: P,
+    /// Invariant: every key `k` in `storage` satisfies `k.n_sites() ==
+    /// n_sites`. An empty sum has no word to derive the width from, so the
+    /// field is carried explicitly and checked by a `debug_assert!` on every
+    /// insertion path.
     n_sites: usize,
 }
 ```
 
-Here `C`, `W`, `S`, and `P` respectively mean coefficient domain, algebraic
-word, concrete sparse-sum storage engine, and algorithm policy. Each
-parameter has an independent meaning. Propagation methods select their algebra
-through the site type, for example `W: Word<Site = Pauli>` or
-`W: Word<Site = FermionSite>`.
+`Word` is no longer a free parameter with no home; it is `S::Word`, so there is
+no phantom axis and no way to pair a storage type with the wrong word. This also
+resolves the tension with the earlier note that associated types are not
+justified merely to shrink a parameter count: `Word` and `Coeff` are genuinely
+intrinsic to a storage instance, so making them associated types is proper
+encapsulation, not a false bundle. Propagation methods still select their
+algebra through the site type by bounding `S::Word: Word<Site = Pauli>` or
+`Word<Site = FermionSite>`.
+
+#### The convenience bundle
+
+Collapsing to `Sum<S, P>` restores ergonomics through a type-alias family, not a
+foundational trait. Each alias fixes a domain's axes and defaults the common
+knobs, so a one-token `PauliSum` name returns:
+
+```rust
+pub type PauliSum<C = f64, P = NoPolicy>      = Sum<HashStore<PauliWord, C>, P>;
+pub type LossyPauliSum<C = f64, P = NoPolicy> = Sum<HashStore<LossyPauliWord, C>, P>;
+pub type FermionSum<C = f64, P = NoPolicy>    = Sum<HashStore<FermionWord, C>, P>;
+```
+
+A user who wants to pin a reusable configuration writes one `type` line instead
+of an `impl Config`:
+
+```rust
+type MyPauliSum = Sum<DashStore<PauliWord, Complex<f64>>, MaxPauliWeight>;
+```
+
+This is deliberately a bundle, and it is safe to be one because it commits
+neither of `Config`'s two sins:
+
+- **It is not load-bearing at the trait level.** The shared behavioral traits
+  (`Clifford`, `RotationOne`, `PauliError`, `Measure`) are implemented on `Sum`
+  and take `S::Coeff` directly. No gate or noise trait is generic over the
+  alias, so an algorithm that needs only a coefficient never names storage or
+  policy.
+- **Its axes stay independently overridable.** Because it is a plain alias over
+  defaulted parameters, changing one axis is `Sum<OtherStore, _>`, not a new
+  trait impl. `Config`'s failure was fusing orthogonal axes into one impl you
+  had to rewrite wholesale to vary a single choice; a defaulted alias has the
+  opposite property.
+
+The name `Sum` shares a bare spelling with the `std::iter::Sum` *trait* that
+`Coefficient` bounds on. They coexist because one is a type and one is a trait,
+and the bound is written fully qualified; `PauliSum` and `FermionSum` remain the
+public domain-facing names in any case.
 
 `Policy` is the proposed name for the current `Strategy` concept. It retains
 the current responsibilities: predicting initial capacity and truncating the
@@ -216,7 +315,7 @@ their meaning; `NoStrategy` and `CombinedStrategy` become `NoPolicy` and
 established names:
 
 ```rust
-pub trait Policy<W, C>: Default + Clone + Copy
+pub trait Policy<W, C>: Default + Clone
 where
     W: Word + Indexable,
     C: Coefficient,
@@ -226,6 +325,32 @@ where
     fn truncate<M>(&self, map: &mut M)
     where
         M: ACMap<W, C>;
+}
+```
+
+`Policy` does not require `Copy`. The bound bought nothing — policies are used
+through `&self` — and would forbid a stateful policy such as a per-region
+threshold vector or an adaptive budget; requiring it would also contradict this
+proposal's own non-goal of preserving `Copy` at the expense of correctness.
+
+Truncation policy also reclaims the cutoff decision from `Coefficient`. The
+value type now exposes only `magnitude()`, a property of the value; the policy
+owns the comparison:
+
+```rust
+#[derive(Default, Clone)]
+pub struct CoefficientThreshold {
+    pub threshold: f64,
+}
+
+impl<W: Word + Indexable, C: Coefficient> Policy<W, C> for CoefficientThreshold {
+    fn capacity(&self, _n_sites: usize) -> usize {
+        0
+    }
+
+    fn truncate<M: ACMap<W, C>>(&self, map: &mut M) {
+        map.retain(|_word, coeff| coeff.magnitude() >= self.threshold);
+    }
 }
 ```
 
@@ -250,27 +375,25 @@ directly by `PauliSum`: its maps and reusable workspace. It is an actual value,
 not a marker configuration:
 
 ```rust
-pub trait SumStorage<W, C>: Clone
-where
-    W: Word + Indexable,
-    C: Coefficient,
-{
-    type Map: ACMap<W, C>;
+pub trait SumStorage: Clone {
+    type Word: Word + Indexable;
+    type Coeff: Coefficient;
+    type Map: ACMap<Self::Word, Self::Coeff>;
 
     fn data(&self) -> &Self::Map;
     fn data_mut(&mut self) -> &mut Self::Map;
 
     fn map_insert<F>(&mut self, f: F)
     where
-        F: Fn(&W, &mut C) -> Option<(W, C)>;
+        F: Fn(&Self::Word, &mut Self::Coeff) -> Option<(Self::Word, Self::Coeff)>;
 
     fn map_insert_multiple<F>(&mut self, f: F)
     where
-        F: Fn(&W, &mut C) -> Option<Vec<(W, C)>>;
+        F: Fn(&Self::Word, &mut Self::Coeff) -> Option<Vec<(Self::Word, Self::Coeff)>>;
 
     fn map_add<F>(&mut self, f: F)
     where
-        F: Fn(&W, &C) -> (W, C);
+        F: Fn(&Self::Word, &Self::Coeff) -> (Self::Word, Self::Coeff);
 
     fn consume(&mut self);
 }
@@ -301,9 +424,9 @@ that admits prefetched, SIMD, threaded, and offloaded backends — is specified 
 [Batch execution and the hash-join contract](#batch-execution-and-the-hash-join-contract)
 below.
 
-The generalized engine may be named `OperatorSum`, but the Pauli specialization
-retains the existing domain-facing `PauliSum` name. This is a new internal
-generalization, not a requirement to rename Pauli call sites.
+The generalized engine is named `Sum`, but the Pauli specialization retains the
+existing domain-facing `PauliSum` name (a defaulted type alias over `Sum`). This
+is a new internal generalization, not a requirement to rename Pauli call sites.
 
 A classical tableau mixture follows the same principle and takes its
 `EntryStore` directly rather than introducing a one-associated-type
@@ -322,7 +445,7 @@ where
 
 `GeneralizedTableauSum` and `EntryStore` retain their current names because the
 proposal does not change their underlying roles. `GeneralizedTableauSum` and
-`OperatorSum` are both sparse linear combinations of indexable keys, so they
+`Sum` are both sparse linear combinations of indexable keys, so they
 may eventually share an implementation. This iteration deliberately keeps them
 separate: their mutation, branching, normalization, and storage requirements
 have not yet been reduced to a proven common interface. The next design
@@ -345,11 +468,13 @@ changed according to whether their underlying responsibility changes:
 | concrete `LossyPauliWord` | `LossyPauliWord` | The packed X/Z/loss representation remains concrete and flattened. |
 | `PhasedPauliWord` | `PhasedPauliWord` alias over non-indexable `Phased` | The wrapper is generic over ordinary and lossy words but is not a production map key. |
 | `rehash` | private cache invalidation | Recalculation changes from eager mutation-time work to lazy demand-time work without exposing cache mechanics through `Indexable`. |
-| `Strategy` | `Policy` | Intentional terminology change requested for this redesign. |
+| `Strategy` | `Policy` | Intentional terminology change requested for this redesign; the `Copy` bound is dropped. |
+| `Coefficient::cutoff` | removed | The truncation predicate moves to `Policy`; `Coefficient::magnitude` exposes only the value property the policy thresholds. |
+| `Coefficient::sin_cos` | `Angle<C>` | The rotation angle becomes a separate domain, defaulting to the coefficient type. |
 | `ACMap` | `ACMap` | The associative coefficient map has the same role. |
 | `PauliSum::data`, `map_insert`, `map_add` | same method names on `SumStorage` | These semantic operations already match the proposed boundary. |
 | `PauliSum` map pair and `scratch` fields | `SumStorage` | A new abstraction is extracted from currently unnamed storage state. |
-| `PauliSum` | `PauliSum` over generalized `OperatorSum` machinery | Pauli-facing code keeps its established name; `OperatorSum` names the new cross-algebra engine. |
+| `PauliSum` | `PauliSum` over generalized `Sum` machinery | Pauli-facing code keeps its established name; `Sum` names the new cross-algebra engine. |
 | `GeneralizedTableauSum` | `GeneralizedTableauSum` | The classical mixture algorithm remains the same concept. |
 | `EntryStore`, `VecStorage`, `MapStorage` | unchanged | The proposal uses the existing storage boundary and implementations. |
 | `BuildHasher` | associated with `Indexable` | Hasher ownership moves from `Config` to each indexable key type. |
@@ -357,7 +482,7 @@ changed according to whether their underlying responsibility changes:
 | `PauliStorage` | removed | Packed backing storage becomes private to the concrete word representation. |
 | (new) | `Columnar`, `KeyColumn`, `KeyBatch`, `TermBatch`, `ACMapBatch` | Structure-of-arrays batch/hash-join contract, kept as a separate trait so `Indexable` stays minimal; see [Batch execution and the hash-join contract](#batch-execution-and-the-hash-join-contract). |
 
-Names such as `Word`, `Indexable`, `SumStorage`, and `OperatorSum` are
+Names such as `Word`, `Indexable`, `SumStorage`, and `Sum` are
 therefore new because they denote abstractions that do not
 exist in the current implementation, not because the existing API is being
 renamed wholesale.
@@ -720,7 +845,7 @@ do not leak into the shared trait-system design.
 The intended composition is explicit:
 
 ```rust
-OperatorSum<Coeff, Word, Storage, Policy>
+Sum<Storage, Policy>   // e.g. PauliSum<f64> = Sum<HashStore<PauliWord, f64>>
 Tableau
 GeneralizedTableauSum<Coeff, TableauType, EntryStorage>
 ```
@@ -731,7 +856,7 @@ Domain-specific aliases or wrappers can preserve `PauliSum` and introduce
 ## Non-goals for the first prototype
 
 - Migrating the existing crates to `ppvm-traits-2` immediately.
-- Merging `GeneralizedTableauSum` and `OperatorSum` in this iteration; only a
+- Merging `GeneralizedTableauSum` and `Sum` in this iteration; only a
   smaller proven common factor should be considered in the next iteration.
 - Defining one collection interface shared by all algorithms.
 - Requiring every sparse-sum storage backend to physically contain both an

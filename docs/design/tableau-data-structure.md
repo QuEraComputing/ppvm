@@ -348,8 +348,10 @@ pub struct Tableau {
 ```
 
 The cache fields are private representation choices made by the tableau
-author. `Indexable` exposes only the associated build hasher; it does not name
-cache types or expose invalidation.
+author. `Indexable` exposes only the finalized digest via `key_hash()` — which
+here composes the component caches (`combine(xz_hash, phase_hash, loss_hash)`)
+and applies the tableau's own finalization fold; it does not name cache types or
+expose invalidation.
 
 Equality and hashing include logical qubit count, generator order, all logical
 X/Z bits, phases, and loss state. They exclude:

@@ -106,9 +106,12 @@ pub struct PauliWord<A, H> {
 ```
 
 `A` is an implementation parameter such as `[u8; N]` or `[usize; N]`, and `H`
-is the build hasher associated through `Indexable`. Neither is exposed through
-`Word`. The implementation validates that `nqubits` fits the arrays and
-ignores or canonicalizes unused high bits.
+is the private internal digest algorithm (`fxhash`, `gxhash`, …) used to compute
+`key_hash()`. `H` is no longer a `BuildHasher` associated on `Indexable` — the
+direct-digest model gives the map no hasher to pick — but a representation
+parameter of the concrete word, on the same footing as `A`. Neither is exposed
+through `Word` or `Indexable`. The implementation validates that `nqubits` fits
+the arrays and ignores or canonicalizes unused high bits.
 
 The structural identity is:
 
@@ -241,15 +244,23 @@ does not implement `Hash` or `Indexable` and stores no hash mode or cache.
 
 ## Hash ownership
 
-Every hash-enabled word implements `Indexable`, associates its build hasher,
-and privately owns the fields and algorithm used to cache its structural
-hash. Cache representation and invalidation are not exposed through
-`Indexable`.
+Every hash-enabled word implements `Indexable` and privately owns its internal
+digest algorithm, the fields used to cache its structural hash, and the
+finalization fold that makes `key_hash()` avalanche-quality. Cache
+representation, the algorithm choice, and invalidation are not exposed through
+`Indexable`, which surfaces only the finalized digest value via `key_hash()`.
 
-The shipped indexable words use component `OnceLock<u64>` caches. `Hash::hash`
-can populate them through `&self`; structural mutators clear affected cells
-through `&mut self`. This preserves `Send + Sync` without imposing either
-bound on the `Indexable` trait.
+The shipped indexable words use component `OnceLock<u64>` caches. `key_hash()`
+(and the `Hash` impl, which is just `state.write_u64(self.key_hash())`) can
+populate them through `&self`; structural mutators clear affected cells through
+`&mut self`. This preserves `Send + Sync` without imposing either bound on the
+`Indexable` trait.
+
+The finalization fold is applied per-algorithm and per-width by the private
+`HashFinalize` helper: narrow storage under a weak hasher (`[u8; 8]` +
+`fxhash`) folds `raw ^ (raw >> 32)` so the low bits — hashbrown's bucket —
+decorrelate, while a strong hasher (`gxhash`) folds nothing. This helper lives
+in `ppvm-pauli-word`, not in the algebra-agnostic trait crate.
 
 The same component caches back the bulk `hash_into` on a word's key column (see
 [Key columns](#key-columns-structure-of-arrays-batches)): filling a batch's hash

@@ -541,6 +541,31 @@ that admits prefetched, SIMD, threaded, and offloaded backends — is specified 
 [Batch execution and the hash-join contract](#batch-execution-and-the-hash-join-contract)
 below.
 
+#### The pass-through storage contract
+
+Because a key's [`key_hash()`](#indexable-values) is already the finalized,
+avalanche-quality digest, the provided `SumStorage` backends **guarantee** that
+their inner map consumes it directly, through an identity pass-through hasher:
+
+```rust
+#[derive(Default, Clone)]
+pub struct IdentityHasher(u64);
+impl std::hash::Hasher for IdentityHasher {
+    fn write_u64(&mut self, n: u64) { self.0 = n; }     // store the digest
+    fn write(&mut self, _: &[u8]) { unreachable!() }     // keys only write a u64
+    fn finish(&self) -> u64 { self.0 }                   // hand it back verbatim
+}
+```
+
+The shipped `HashStore` / `DashStore` therefore instantiate their `HashMap` /
+`DashMap` with `IdentityBuildHasher`, so `finish() == key.key_hash()` and the
+digest reaches hashbrown untouched. This is part of the storage contract, not a
+user responsibility: the user selects the key's *internal* digest algorithm (the
+`H` in `PauliWord<A, H>`), which governs distribution quality, and never selects
+a map hasher — the direct-digest model leaves none to choose. Re-hashing the
+digest with a general hasher would be wasted work and could re-correlate the
+low bits the key's finalization fold just decorrelated.
+
 The generalized engine is named `Sum`, but the Pauli specialization retains the
 existing domain-facing `PauliSum` name (a defaulted type alias over `Sum`). This
 is a new internal generalization, not a requirement to rename Pauli call sites.
@@ -569,7 +594,9 @@ have not yet been reduced to a proven common interface. The next design
 iteration should look for the smallest useful common factor and merge only that
 factor, rather than assuming that the two complete algorithms are identical.
 
-Every keyed store must use the build hasher associated with its key type.
+Every keyed store must consume its key's `key_hash()` digest directly, through
+the identity pass-through described in
+[The pass-through storage contract](#the-pass-through-storage-contract).
 
 ### Compatibility with current names
 
@@ -597,8 +624,9 @@ changed according to whether their underlying responsibility changes:
 | `PauliSum` | `PauliSum` over generalized `Sum` machinery | Pauli-facing code keeps its established name; `Sum` names the new cross-algebra engine. |
 | `GeneralizedTableauSum` | `GeneralizedTableauSum` | The classical mixture algorithm remains the same concept. |
 | `EntryStore`, `VecStorage`, `MapStorage` | unchanged | The proposal uses the existing storage boundary and implementations. |
-| `BuildHasher` | associated with `Indexable` | Hasher ownership moves from `Config` to each indexable key type. |
-| `HashFinalize` | removed from the shared contract | Concrete keys may finalize or compose hashes privately. |
+| `Config::BuildHasher` | removed; `Indexable::key_hash() -> u64` | The direct-digest model leaves the map no hasher to choose; the key's internal algorithm is a private representation parameter, and the finalized digest is exposed as a value. |
+| `HashFinalize` | retained, but private to `ppvm-pauli-word` | The per-algorithm/per-width finalization fold still runs inside `key_hash()`; it leaves the algebra-agnostic contract. |
+| (new) | `IdentityBuildHasher` + pass-through `SumStorage` contract | The provided storage consumes `key_hash()` directly instead of re-hashing it. |
 | `PauliStorage` | removed | Packed backing storage becomes private to the concrete word representation. |
 | (new) | `Columnar`, `KeyColumn`, `KeyBatch`, `TermBatch`, `ACMapBatch` | Structure-of-arrays batch/hash-join contract, kept as a separate trait so `Indexable` stays minimal; see [Batch execution and the hash-join contract](#batch-execution-and-the-hash-join-contract). |
 
@@ -785,7 +813,8 @@ pub trait KeyColumn: Default + Clone {
 
     /// Bulk structural hash of the whole column into a parallel hash column.
     /// Where per-plane SIMD hashing lives, and what feeds the group-prefetch
-    /// loop; it must agree bit for bit with the scalar `Hash` of each key.
+    /// loop. Its obligation is now an equation, not a phrase: `out[i]` must
+    /// equal the `i`-th key's `Indexable::key_hash()`.
     fn hash_into(&self, out: &mut [u64]);
 
     /// Join confirm: compare element `i` against a build-side key after a hash
@@ -896,20 +925,38 @@ interchangeable rather than separate code paths.
 Hash-enabled `Word` values and `Tableau` can both be expensive, mostly-stable
 map keys. Their hashing contract should be expressed independently of any map.
 
-The common capability is intentionally minimal:
+The common capability is intentionally minimal, and it makes the one
+load-bearing value — the finalized structural digest — first class:
 
 ```rust
 pub trait Indexable: Clone + Eq + Hash {
-    type BuildHasher: std::hash::BuildHasher + Clone + Default;
+    /// The finalized structural digest of this key: avalanche-quality in both
+    /// the low bits (the hashbrown bucket) and the top 7 (the control tag),
+    /// so it can be consumed *directly* as the map hash. Contracts:
+    ///
+    ///   * `Hash for Self` is exactly `state.write_u64(self.key_hash())`;
+    ///   * structurally equal keys return equal digests; and
+    ///   * `KeyColumn::hash_into` reproduces this value bit for bit.
+    ///
+    /// This exposes the digest *value*, not the cache mechanics — there is no
+    /// cache type or invalidation hook in the contract.
+    fn key_hash(&self) -> u64;
 }
 ```
 
 The important points are:
 
-- `BuildHasher` retains the current associated-type name and moves from
-  `Config` to the key type;
-- the build hasher is associated with the key type, not with a configuration
-  bundle;
+- the digest is used **directly** as the map hash — the map does not re-hash it
+  (see [the pass-through storage contract](#the-pass-through-storage-contract)),
+  so the value `key_hash()` returns must already be well distributed;
+- the *choice of internal hash algorithm* (`fxhash`, `gxhash`, …) is a private
+  representation parameter of the concrete key (the `H` in `PauliWord<A, H>`),
+  not an associated type on `Indexable`. There is no per-key `BuildHasher` on
+  the contract, because the direct-digest model leaves the map no hasher to
+  pick;
+- avalanche quality is the key's responsibility: a weak-but-fast algorithm on a
+  short key must apply a finalization fold inside `key_hash()` (see
+  [Concrete word hashing](#concrete-word-hashing));
 - cache layout and invalidation are private representation invariants of the
   concrete type; and
 - equality and hashing cover only structural key identity, never cache fields
@@ -935,29 +982,47 @@ An indexable value must not be structurally mutated while it is stored as a map
 key. Cache invalidation makes a value correct for its next insertion or lookup;
 it cannot make in-place mutation of an existing map key valid.
 
-Structural fields should therefore be private in the new representations.
-Mutation must go through operations that invalidate the affected cache, or
-through mutation guards that invalidate on completion.
+This invariant is not left entirely to discipline: the sparse-sum engine
+enforces its structural half through the closure signatures. `SumStorage`'s
+`map_insert` and `map_add` hand the closure `&Word` — a *shared* borrow of the
+live key — and expect a new `(Word, Coeff)` back, so the propagation kernels
+physically cannot mutate a key in place; they clone, mutate the clone through
+`PauliBits`, and the engine re-inserts under the updated digest. The `&Word`
+(not `&mut Word`) in those signatures is a deliberate safety choice, not an
+incidental one.
+
+Structural fields should nonetheless be private in the new representations, and
+any remaining mutation must go through operations that invalidate the affected
+cache, or through mutation guards that invalidate on completion.
 
 ## Concrete word hashing
 
-Every concrete `Word` owns its `BuildHasher`, private cache representation,
-structural hash algorithm, and invalidation logic. Pauli words hash
-their X/Z content, lossy words compose Pauli and loss components, and future
-fermion words hash their ordered factors. Factor order is part of fermionic
-identity.
+Every concrete `Word` owns its internal hash algorithm, private cache
+representation, and invalidation logic, and produces the finalized digest that
+`Indexable::key_hash` returns. Pauli words hash their X/Z content, lossy words
+compose Pauli and loss components, and future fermion words hash their ordered
+factors. Factor order is part of fermionic identity.
 
 The trait layer does not expose packed storage to support hashing. Concrete
-implementations hash their private fields and may apply hasher-specific
-finalization internally. Detailed layouts and component invalidation rules are
-in [`word-data-structures.md`](word-data-structures.md).
+implementations hash their private fields and apply a **finalization fold**
+internally before caching, so `key_hash()` is avalanche-quality even for a short
+key consumed directly as the hashbrown bucket-and-tag. That fold is per-algorithm
+and per-width — a couple of `fxhash` rounds on an `[u8; 8]` word leave the low
+bits correlated and need `raw ^ (raw >> 32)`, whereas AES-based `gxhash`
+avalanches an 8-byte key already and folds nothing. The retained `HashFinalize`
+helper that encodes those rules is a **private utility inside `ppvm-pauli-word`**,
+not part of the algebra-agnostic `Indexable` contract; the public contract is
+only "`key_hash()` is well distributed," checked by a distribution property test
+rather than the type system. Detailed layouts and component invalidation rules
+are in [`word-data-structures.md`](word-data-structures.md).
 
 ## Tableau indexability
 
 A tableau may itself be used as a key by a classical-mixture algorithm, so the
-concrete tableau implements `Indexable` directly and owns a tableau-specific
-hasher and cache representation. This does not imply that a tableau is a
-`Word`; they only share the `Indexable` key capability.
+concrete tableau implements `Indexable` directly, owning its internal hash
+algorithm and cache representation and returning its own finalized
+`key_hash()`. This does not imply that a tableau is a `Word`; they only share
+the `Indexable` key capability.
 
 The tableau's structural hash is composed from its logical X/Z matrix, phase
 plane, and per-qubit loss plane. It excludes RNG, padding, cache state, and

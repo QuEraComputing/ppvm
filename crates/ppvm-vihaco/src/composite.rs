@@ -13,9 +13,9 @@ use vihaco_cpu::{CPU, CPUMessage};
 /// without depending on `vihaco-cpu` directly.
 pub use vihaco_cpu::StepOutcome;
 
-use crate::component::Circuit;
 #[cfg(test)]
 use crate::component::TableauCircuit;
+use crate::component::{Circuit, ComplexityMetric};
 use crate::measurements::{
     CircuitOutcomeEffect, MeasurementEffect, MeasurementObserver, MeasurementResult, TraceEffect,
     TraceObserver,
@@ -351,6 +351,48 @@ impl PPVM {
     /// `show` command. Delegates to the circuit's size-specific tableau.
     pub fn state_string(&self) -> String {
         self.circuit.state_string()
+    }
+
+    /// Compact state view for debugger panels. Tableau-backed devices place
+    /// coefficient metadata beside the tableau rows instead of below them.
+    pub fn compact_state_string(&self) -> String {
+        self.circuit.compact_state_string()
+    }
+
+    /// Human-readable active backend name.
+    pub fn backend_name(&self) -> &'static str {
+        self.circuit.backend_name()
+    }
+
+    /// Number of qubits configured for the loaded machine.
+    pub fn n_qubits(&self) -> usize {
+        self.loader.module.extra.n_qubits
+    }
+
+    /// Active-backend branching complexity: PauliSum terms or tableau
+    /// coefficients, depending on the current backend.
+    pub fn complexity_metric(&self) -> ComplexityMetric {
+        self.circuit.complexity_metric()
+    }
+
+    /// Current CPU operand stack, formatted bottom-to-top. String values are
+    /// resolved through the loaded module's string table when possible.
+    pub fn stack_snapshot(&self) -> Vec<String> {
+        self.cpu
+            .stack()
+            .iter()
+            .map(|value| self.format_stack_value(value))
+            .collect()
+    }
+
+    fn format_stack_value(&self, value: &Value) -> String {
+        match value {
+            Value::String(addr) => match self.loader.get_string(*addr as usize) {
+                Ok(s) => format!("str[{addr}] {s:?}"),
+                Err(_) => format!("str[{addr}] <missing>"),
+            },
+            _ => value.to_string(),
+        }
     }
 
     /// Build a fresh, initialized `n_qubits`-qubit device with no code. The

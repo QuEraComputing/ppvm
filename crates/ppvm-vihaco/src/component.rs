@@ -38,6 +38,33 @@ type PauliSumConfig<const N: usize> = ByteFxHashF64<N, PauliSumStrategy>;
 type LossyPauliSumConfig<const N: usize> =
     ByteFxHashF64<N, PauliSumStrategy, LossyPauliWord<[u8; N]>>;
 
+/// What the TUI should count for the active backend's branching complexity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComplexityMetricKind {
+    /// Number of Pauli terms in a `PauliSum` / `LossyPauliSum`.
+    Terms,
+    /// Number of sparse coefficients in a `GeneralizedTableau`.
+    Coefficients,
+}
+
+impl ComplexityMetricKind {
+    pub fn noun(self, count: usize) -> &'static str {
+        match (self, count) {
+            (Self::Terms, 1) => "term",
+            (Self::Terms, _) => "terms",
+            (Self::Coefficients, 1) => "coefficient",
+            (Self::Coefficients, _) => "coefficients",
+        }
+    }
+}
+
+/// Exact active-backend complexity count for debugger visualisation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComplexityMetric {
+    pub kind: ComplexityMetricKind,
+    pub count: usize,
+}
+
 /// Build a `PauliSumStrategy` value from a `PPVMDeviceInfo`. Pulled out so the
 /// six size-bucket constructors don't each repeat the strategy spelling.
 fn paulisum_strategy(info: &PPVMDeviceInfo) -> PauliSumStrategy {
@@ -69,6 +96,27 @@ macro_rules! batch_pairs_for {
 
 pub struct CircuitExecutor<T: Config<Coeff = f64>, I: TableauIndex, C: SparseVector<Complex64, I>> {
     pub tab: GeneralizedTableau<T, I, C>,
+}
+
+impl<T, I, C> CircuitExecutor<T, I, C>
+where
+    T: Config<Coeff = f64>,
+    I: TableauIndex,
+    C: SparseVector<Complex64, I>,
+{
+    fn complexity_metric(&self) -> ComplexityMetric {
+        ComplexityMetric {
+            kind: ComplexityMetricKind::Coefficients,
+            count: self.tab.coefficients.len(),
+        }
+    }
+
+    fn compact_state_string(&self) -> String
+    where
+        I: std::fmt::Display,
+    {
+        compact_generalized_tableau(&self.tab)
+    }
 }
 
 #[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
@@ -449,6 +497,18 @@ pub struct PauliSumExecutor<T: Config<Coeff = f64>> {
     initial: PauliSum<T>,
 }
 
+impl<T> PauliSumExecutor<T>
+where
+    T: Config<Coeff = f64>,
+{
+    fn complexity_metric(&self) -> ComplexityMetric {
+        ComplexityMetric {
+            kind: ComplexityMetricKind::Terms,
+            count: self.state.len(),
+        }
+    }
+}
+
 #[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
 impl<T> PauliSumExecutor<T>
 where
@@ -498,6 +558,18 @@ pub struct LossyPauliSumExecutor<T: Config<Coeff = f64>> {
     pub state: PauliSum<T>,
     /// Snapshot of the seeded observable, restored by `reset`.
     initial: PauliSum<T>,
+}
+
+impl<T> LossyPauliSumExecutor<T>
+where
+    T: Config<Coeff = f64>,
+{
+    fn complexity_metric(&self) -> ComplexityMetric {
+        ComplexityMetric {
+            kind: ComplexityMetricKind::Terms,
+            count: self.state.len(),
+        }
+    }
 }
 
 #[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
@@ -650,6 +722,28 @@ impl TableauCircuit {
             Self::Bits2048(ex) => ex.tab.to_string(),
         }
     }
+
+    pub fn compact_state_string(&self) -> String {
+        match self {
+            Self::Bits64(ex) => ex.compact_state_string(),
+            Self::Bits128(ex) => ex.compact_state_string(),
+            Self::Bits256(ex) => ex.compact_state_string(),
+            Self::Bits512(ex) => ex.compact_state_string(),
+            Self::Bits1024(ex) => ex.compact_state_string(),
+            Self::Bits2048(ex) => ex.compact_state_string(),
+        }
+    }
+
+    pub fn complexity_metric(&self) -> ComplexityMetric {
+        match self {
+            Self::Bits64(ex) => ex.complexity_metric(),
+            Self::Bits128(ex) => ex.complexity_metric(),
+            Self::Bits256(ex) => ex.complexity_metric(),
+            Self::Bits512(ex) => ex.complexity_metric(),
+            Self::Bits1024(ex) => ex.complexity_metric(),
+            Self::Bits2048(ex) => ex.complexity_metric(),
+        }
+    }
 }
 
 impl vihaco::Reset for TableauCircuit {
@@ -742,6 +836,17 @@ impl PauliSumCircuit {
             Self::Bits2048(ex) => ex.state.to_string(),
         }
     }
+
+    pub fn complexity_metric(&self) -> ComplexityMetric {
+        match self {
+            Self::Bits64(ex) => ex.complexity_metric(),
+            Self::Bits128(ex) => ex.complexity_metric(),
+            Self::Bits256(ex) => ex.complexity_metric(),
+            Self::Bits512(ex) => ex.complexity_metric(),
+            Self::Bits1024(ex) => ex.complexity_metric(),
+            Self::Bits2048(ex) => ex.complexity_metric(),
+        }
+    }
 }
 
 impl vihaco::Reset for PauliSumCircuit {
@@ -831,6 +936,17 @@ impl LossyPauliSumCircuit {
             Self::Bits2048(ex) => ex.state.to_string(),
         }
     }
+
+    pub fn complexity_metric(&self) -> ComplexityMetric {
+        match self {
+            Self::Bits64(ex) => ex.complexity_metric(),
+            Self::Bits128(ex) => ex.complexity_metric(),
+            Self::Bits256(ex) => ex.complexity_metric(),
+            Self::Bits512(ex) => ex.complexity_metric(),
+            Self::Bits1024(ex) => ex.complexity_metric(),
+            Self::Bits2048(ex) => ex.complexity_metric(),
+        }
+    }
 }
 
 impl vihaco::Reset for LossyPauliSumCircuit {
@@ -918,6 +1034,89 @@ impl Circuit {
             Self::LossyPauliSum(c) => c.state_string(),
         }
     }
+
+    pub fn compact_state_string(&self) -> String {
+        match self {
+            Self::Tableau(c) => c.compact_state_string(),
+            Self::PauliSum(c) => c.state_string(),
+            Self::LossyPauliSum(c) => c.state_string(),
+        }
+    }
+
+    pub fn backend_name(&self) -> &'static str {
+        match self {
+            Self::Tableau(_) => "Tableau",
+            Self::PauliSum(_) => "PauliSum",
+            Self::LossyPauliSum(_) => "LossyPauliSum",
+        }
+    }
+
+    pub fn complexity_metric(&self) -> ComplexityMetric {
+        match self {
+            Self::Tableau(c) => c.complexity_metric(),
+            Self::PauliSum(c) => c.complexity_metric(),
+            Self::LossyPauliSum(c) => c.complexity_metric(),
+        }
+    }
+}
+
+fn compact_generalized_tableau<T, I, C>(tab: &GeneralizedTableau<T, I, C>) -> String
+where
+    T: Config<Coeff = f64>,
+    I: TableauIndex + std::fmt::Display,
+    C: SparseVector<Complex64, I>,
+{
+    let mut left = Vec::with_capacity(1 + tab.tableau.n_qubits);
+    left.push(format!("Tableau rows ({} qubits)", tab.tableau.n_qubits));
+    left.extend(
+        tab.tableau
+            .destabilizers()
+            .iter()
+            .zip(tab.tableau.stabilizers())
+            .enumerate()
+            .map(|(idx, (destabilizer, stabilizer))| {
+                format!("q{idx:02} D {destabilizer}  S {stabilizer}")
+            }),
+    );
+
+    let mut right = Vec::new();
+    right.push("Coefficients".to_string());
+    right.extend(
+        tab.coefficients
+            .iter()
+            .map(|(coeff, idx)| format!("Index {idx}: {coeff}")),
+    );
+    if tab.is_lost.iter().all(|&lost| !lost) {
+        right.push("Lost: none".to_string());
+    } else {
+        right.push("Lost qubits".to_string());
+        right.extend(
+            tab.is_lost
+                .iter()
+                .enumerate()
+                .filter(|&(_, &lost)| lost)
+                .map(|(idx, _)| format!("q{idx}: true")),
+        );
+    }
+
+    merge_text_columns(&left, &right)
+}
+
+fn merge_text_columns(left: &[String], right: &[String]) -> String {
+    let left_width = left.iter().map(|line| line.len()).max().unwrap_or(0);
+    let rows = left.len().max(right.len());
+    let mut out = Vec::with_capacity(rows);
+    for idx in 0..rows {
+        match (left.get(idx), right.get(idx)) {
+            (Some(left), Some(right)) => {
+                out.push(format!("{left:<left_width$}    {right}"));
+            }
+            (Some(left), None) => out.push(left.clone()),
+            (None, Some(right)) => out.push(format!("{:left_width$}    {right}", "")),
+            (None, None) => {}
+        }
+    }
+    out.join("\n")
 }
 
 #[observe(CircuitEffect, effect=CircuitOutcomeEffect)]

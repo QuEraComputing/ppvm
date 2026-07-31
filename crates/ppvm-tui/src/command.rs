@@ -80,6 +80,8 @@ pub enum Command {
     Load(String),
     /// Toggle the help overlay.
     Help,
+    /// Toggle detailed state rendering in the State panel.
+    ToggleState,
     /// Leave the TUI.
     Quit,
 }
@@ -101,6 +103,7 @@ pub fn parse_command(line: &str) -> Result<Command> {
             "s" | "step" => Ok(Command::Step),
             "reset" => Ok(Command::Reset),
             "help" | "h" | "?" => Ok(Command::Help),
+            "state" => Ok(Command::ToggleState),
             "load" => {
                 let path = it.next().ok_or_else(|| eyre!(":load needs a file path"))?;
                 if it.next().is_some() {
@@ -125,8 +128,9 @@ pub fn parse_command(line: &str) -> Result<Command> {
         return Ok(Command::Device(n));
     }
 
-    let spec =
-        gate_spec(head).ok_or_else(|| eyre!("unknown command {head:?}; try :load or device N"))?;
+    let gate_name = head.to_ascii_lowercase();
+    let spec = gate_spec(&gate_name)
+        .ok_or_else(|| eyre!("unknown command {head:?}; try :load or device N"))?;
     let expected = spec.qubits + spec.floats;
     if args.len() != expected {
         bail!(
@@ -185,6 +189,34 @@ mod tests {
     }
 
     #[test]
+    fn gate_names_are_case_insensitive() {
+        assert_eq!(
+            parse_command("H 0").unwrap(),
+            Command::Gate {
+                inst: CircuitInstruction::H,
+                qubits: vec![0],
+                params: vec![],
+            }
+        );
+        assert_eq!(
+            parse_command("CNOT 0 1").unwrap(),
+            Command::Gate {
+                inst: CircuitInstruction::CNOT,
+                qubits: vec![0, 1],
+                params: vec![],
+            }
+        );
+        assert_eq!(
+            parse_command("Rx 0 0.5").unwrap(),
+            Command::Gate {
+                inst: CircuitInstruction::RX,
+                qubits: vec![0],
+                params: vec![0.5],
+            }
+        );
+    }
+
+    #[test]
     fn two_qubit_gate_keeps_operand_order() {
         assert_eq!(
             parse_command("cnot 0 1").unwrap(),
@@ -216,6 +248,7 @@ mod tests {
         assert_eq!(parse_command(":reset").unwrap(), Command::Reset);
         assert_eq!(parse_command(":help").unwrap(), Command::Help);
         assert_eq!(parse_command(":h").unwrap(), Command::Help);
+        assert_eq!(parse_command(":state").unwrap(), Command::ToggleState);
         assert_eq!(
             parse_command(":load foo.sst").unwrap(),
             Command::Load("foo.sst".to_string())
@@ -237,6 +270,11 @@ mod tests {
     fn load_rejects_trailing_tokens() {
         assert!(parse_command(":load a.sst").is_ok());
         assert!(parse_command(":load a.sst junk").is_err());
+    }
+
+    #[test]
+    fn tree_scroll_command_is_not_supported() {
+        assert!(parse_command(":tree older").is_err());
     }
 
     #[test]

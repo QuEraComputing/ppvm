@@ -33,7 +33,8 @@ impl Widget for ProgramView<'_> {
     }
 }
 
-/// The right panel: the tableau state (`PPVM::state_string`).
+/// The right panel: backend summary plus state details when they are safe to
+/// render.
 pub struct StateView<'a>(pub &'a AppState);
 
 impl Widget for StateView<'_> {
@@ -42,6 +43,35 @@ impl Widget for StateView<'_> {
             .block(Block::bordered().title("State"))
             .wrap(Wrap { trim: false })
             .render(area, buf);
+    }
+}
+
+/// CPU operand-stack panel. The app supplies top-first text so the newest value
+/// remains visible when the terminal clips the panel.
+pub struct StackView<'a>(pub &'a AppState);
+
+impl Widget for StackView<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        Paragraph::new(self.0.stack_text())
+            .block(Block::bordered().title("CPU stack"))
+            .wrap(Wrap { trim: false })
+            .render(area, buf);
+    }
+}
+
+/// Branching-complexity history: PauliSum term count or tableau coefficient
+/// count, depending on the active backend.
+pub struct ComplexityTreeView<'a>(pub &'a AppState);
+
+impl Widget for ComplexityTreeView<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        Paragraph::new(self.0.complexity_graph_text_for_area(
+            area.width.saturating_sub(2),
+            area.height.saturating_sub(2),
+        ))
+        .block(Block::bordered().title("Complexity tree"))
+        .wrap(Wrap { trim: false })
+        .render(area, buf);
     }
 }
 
@@ -113,6 +143,11 @@ mod tests {
             .collect();
         assert!(content.contains("Program"), "missing Program panel");
         assert!(content.contains("State"), "missing State panel");
+        assert!(content.contains("CPU stack"), "missing CPU stack panel");
+        assert!(
+            content.contains("Complexity tree"),
+            "missing complexity tree panel"
+        );
         assert!(
             content.contains("Measurement record"),
             "missing record panel"

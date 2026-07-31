@@ -308,10 +308,17 @@ conjugation by a Clifford realizes \(\mathrm{Sp}(2n,2)\) acting on the quotient,
 is machine-checked **at \(n = 1\)**: `lean/PPVM/Pauli/Phase.lean` builds
 \(\mathcal{P}_1\) as a `Group` with the quotient homomorphism
 `PhasedPauli.toSymplectic` and the non-split witness `not_commutative`. For
-general \(n\), only the two facts that make the *packed* multi-qubit product
+general \(n\), the two facts that make the *packed* multi-qubit product
 well defined are lifted — the phase 2-cocycle `phaseExpN_cocycle` (associativity)
-and the commutation law `phaseExpN_sub_comm` (`lean/PPVM/Pauli/Word.lean`); the
-n-qubit `Group`/quotient/non-split objects are not reconstructed, as the
+and the commutation law `phaseExpN_sub_comm` (`lean/PPVM/Pauli/Word.lean`) — and
+the packed \(n\)-qubit phase exponent `phaseExpN` (the summed
+`(2*sign_count + imag_count) mod 4` that `key_mul` accumulates) is grounded
+against genuine \(n\)-fold tensor-product matrices: `tensorPauli_mul`
+(`lean/PPVM/Pauli/Matrix.lean`) proves it is the base-\(i\) exponent of the real
+\(2^n\times 2^n\) operator product \(g(p)\cdot g(q)\), lifting the single-qubit
+`pauliMat_mul` through the tensor-product phase-multiplicativity
+\(\prod_i i^{k_i} = i^{\sum_i k_i}\) (`prod_iuPow`). The n-qubit
+`Group`/quotient/non-split objects are not reconstructed, as the
 single-qubit case already exhibits the extension's structure. The
 \(\mathrm{Sp}\) action is checked in one direction — each Clifford generator is
 an \(\mathrm{Sp}\)-isometry, so conjugation *lands in* \(\mathrm{Sp}(2n,2)\)

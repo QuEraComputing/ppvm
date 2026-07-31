@@ -28,9 +28,12 @@ which is exactly what makes the packed multi-qubit `MulAssign` well defined.
 The product bits are pointwise (`x = a^c`, `z = b^d` per qubit).
 
 Scope note: the single-qubit `phaseExp` is grounded against genuine `ℤ[i]`
-matrices in `PPVM.PauliMatrix`. The n-qubit phase here is validated as the *sum*
-of those single-qubit exponents (which is exactly what the Rust kernel computes),
-not re-checked against `n`-fold tensor-product matrices.
+matrices in `PPVM.PauliMatrix`. The n-qubit phase `phaseExpN` here is defined as
+the *sum* of those single-qubit exponents (which is exactly what the Rust kernel
+computes); it is *also* tied back to genuine `n`-fold tensor-product matrices in
+`PPVM.PauliMatrix.tensorPauli_mul`, which proves `phaseExpN` is the base-`i`
+exponent of the real `2ⁿ×2ⁿ` operator product `g(p)·g(q)` (via the
+phase-multiplicativity `prod_iuPow`, `∏ᵢ iᵏⁱ = i^{Σ kᵢ}`).
 -/
 
 namespace PPVM.PauliWord

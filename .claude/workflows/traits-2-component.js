@@ -1,36 +1,32 @@
 export const meta = {
   name: 'traits-2-component',
   description:
-    'Implement + review + test + (prove) one ppvm-*-2 component; loop until zero gaps + green gates. Returns structured findings; the caller writes docs/log.md and commits.',
+    'Implement + review + test + (prove) one ppvm-*-2 component; loop until zero gaps + green gates. Behavioral components also differential-test vs the old crate and gate on perf. Component spec comes from `args` (Phase-1 traits default). Returns structured findings; the caller writes docs/log.md and commits.',
   phases: [
     { title: 'Implement', detail: 'port from design+lean+old crate; build/clippy/fmt until green' },
-    { title: 'Verify', detail: 'review (design↔lean↔rust consistency) ∥ test (reference-impl/property tests)' },
+    { title: 'Verify', detail: 'review (design↔lean↔rust) ∥ test (Lean-oracle; +differential+bench if an old twin exists)' },
     { title: 'Prove', detail: 'add Lean for newly-nominated algebraic invariants; lake build; update doc citations' },
   ],
 }
 
 const REPO = '/Users/roger/Code/rust/ppvm/.worktrees/traits-2-impl'
+const CONF = 'ppvm-conformance-2'
 const MAX_ITERS = 3
 
-// ── Component under work this run (Phase 1). Generalize via `args` later. ──────
-const C = {
+// ── Phase-1 default component (used when no `args` spec is passed). ────────────
+const DEFAULT = {
   crate: 'ppvm-traits-2',
   crateDir: `${REPO}/crates/ppvm-traits-2`,
-  // Trait-definition modules to produce, with their design content (plan §Phase 1).
-  modules: [
-    'coefficient.rs — `Coefficient` (ring + mul_sign/half/magnitude, NO Mul<f64>), `Angle<C>` (+ impl Angle<f64> for f64); impl Coefficient for f64 and num::Complex<f64>',
-    'algebra.rs — `KeyProduct` (key_mul -> (Self, Phase)), `ImaginaryUnit` (imaginary_unit(); law i*i == -one()), `Conjugate` (conj); `Phase` enum (Z/4 ~ {1,i,-1,-i}); impls for Complex<f64> and f64',
-    'word.rs — `Word` (Site, n_sites, get, weight, iter); leaf types `Pauli`, `LossySite<S>`, `FermionSite`, `FermionAction`; `PauliBits: Word<Site = Pauli>`',
-    'pauli.rs — `SymplecticColumns`, `PhaseTrack`, `StabilizerFrame`; blanket `impl<T: SymplecticColumns + PhaseTrack> Clifford for T`',
-    'gates.rs — `Clifford`, `RotationOne<C, A = C>`, `PauliError<C>`, `Measure`',
-    'graded.rs — `Support`, `Accumulate`, `Scale`, `Pair` (overlap AND hermitian_overlap where Coeff: Conjugate), `Multiply`, `Retain`',
-    'batch.rs — `Columnar`, `KeyColumn`, `KeyBatch`, `TermBatch`, `TermSink`, `TermProducer`',
-    'hash.rs — `Indexable` (key_hash), `IdentityHasher`, `IdentityBuildHasher`',
-  ],
-  // No old *behavioral* twin for pure trait defs, so tests are Lean-oracle style
-  // on the concrete leaf types, plus compile checks.
+  title: 'trait definitions',
   hasOldTwin: false,
+  implGoal:
+    'create the trait-definition modules (coefficient/algebra/word/pauli/gates/graded/batch/hash) porting the design signatures verbatim where they compile; trait defs + leaf types only, no concrete PauliWord/Tableau; provide the blanket `impl<T: SymplecticColumns + PhaseTrack> Clifford for T`.',
+  leanOracles:
+    'ImaginaryUnit i·i==−one; Conjugate involution + conj(i)=−i; Phase as ℤ/4; Angle<f64>; IdentityHasher pass-through; the Clifford blanket over a stub SymplecticColumns+PhaseTrack.',
 }
+
+// Component under work THIS run: `args` if provided, else the Phase-1 default.
+const C = args && args.crate ? args : DEFAULT
 
 const IMPL_SCHEMA = {
   type: 'object',
@@ -44,7 +40,6 @@ const IMPL_SCHEMA = {
     fmtClean: { type: 'boolean' },
     frictions: {
       type: 'array',
-      description: 'Design signatures that could not be implemented verbatim, and how they were resolved.',
       items: {
         type: 'object',
         additionalProperties: false,
@@ -81,7 +76,6 @@ const REVIEW_SCHEMA = {
     },
     missingProofInvariants: {
       type: 'array',
-      description: 'Algebraic/semantic invariants a trait encodes that lack a Lean theorem and deserve one.',
       items: {
         type: 'object',
         additionalProperties: false,
@@ -104,6 +98,21 @@ const TEST_SCHEMA = {
   properties: {
     testsAdded: { type: 'array', items: { type: 'string' } },
     testsPass: { type: 'boolean' },
+    differentialPass: { type: 'boolean', description: 'new matches old on the diff surface (behavioral components)' },
+    perfRatios: {
+      type: 'array',
+      description: 'new/old wall-clock ratio per benchmarked target (behavioral components)',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['target', 'ratio'],
+        properties: {
+          target: { type: 'string' },
+          ratio: { type: 'number' },
+          note: { type: 'string' },
+        },
+      },
+    },
     gaps: {
       type: 'array',
       items: {
@@ -149,131 +158,137 @@ const PROVE_SCHEMA = {
 const COMMON = `
 Repo root: ${REPO}
 Run cargo from the repo root; run \`lake build PPVM\` from ${REPO}/lean.
-Design doc: ${REPO}/docs/design/traits-2-configuration-and-hashing.md (the authoritative trait signatures).
-Implementation plan: ${REPO}/docs/design/traits-2-implementation-plan.md (§Phase 1 lists the modules).
-Lean spec (machine-checked semantics): ${REPO}/lean/PPVM/**.
-Old reference crate (algorithm/detail): ${REPO}/crates/ppvm-traits.
-Every .rs file MUST start with the two SPDX header lines used across the repo
-(see any file under crates/ppvm-pauli-word/src). Do NOT edit docs/log.md — return
-your findings as structured output; the orchestrator records them.`
+Design (authoritative signatures): ${REPO}/docs/design/traits-2-configuration-and-hashing.md
+Concrete layouts: ${REPO}/docs/design/word-data-structures.md
+Plan: ${REPO}/docs/design/traits-2-implementation-plan.md
+Lean spec (machine-checked semantics): ${REPO}/lean/PPVM/**
+Trait foundation (already built): ${REPO}/crates/ppvm-traits-2
+${C.oldRef ? `Old reference crate (port its ALGORITHM to minimize perf drift): ${REPO}/${C.oldRef}` : `Old reference crate (algorithm/detail): ${REPO}/crates/ppvm-traits`}
+Every .rs file MUST start with the two SPDX header lines used across the repo.
+Do NOT edit docs/log.md — return findings as structured output; the orchestrator records them.`
 
-const IMPL_PROMPT = `You are the IMPLEMENTATION agent for the ppvm-*-2 refactor, Phase 1: the
-${C.crate} trait DEFINITIONS.
+const IMPL_PROMPT = `You are the IMPLEMENTATION agent for the ppvm-*-2 refactor. Component: ${C.crate}
+(${C.title}).
 ${COMMON}
 
-Task: create these modules under ${C.crateDir}/src (and wire them in lib.rs),
-porting the trait signatures VERBATIM from the design doc where they compile, and
-matching the Lean-validated semantics:
-${C.modules.map((m, i) => `  ${i + 1}. ${m}`).join('\n')}
+Task: ${C.implGoal}
+${C.modules ? `Modules:\n${C.modules.map((m, i) => `  ${i + 1}. ${m}`).join('\n')}` : ''}
 
 Rules:
-- This crate is trait DEFINITIONS + small leaf types ONLY. Do NOT implement the
-  concrete PauliWord/Tableau (those are Phase 2/4). Provide the blanket
-  \`impl<T: SymplecticColumns + PhaseTrack> Clifford for T\`.
-- Add needed deps to Cargo.toml (e.g. \`num\`). Keep it minimal; no unused deps
-  (\`cargo machete\` runs in the pre-commit gate).
-- On each trait/method that encodes a machine-checked invariant, add a doc
-  comment citing BOTH the design section AND the relevant Lean theorem
-  (e.g. ImaginaryUnit law -> Matrix.lean \`iU_sq\`; KeyProduct twist -> Twisted.lean
-  \`tmul_assoc\`; Conjugate -> Matrix.lean \`star_iU\`).
-- Where a design signature CANNOT be implemented verbatim (e.g. the graded
-  \`Accumulate::accumulate_batch\` takes \`TermBatch<Self::Key, Self::Coeff>\` but the
-  batch types are bounded on \`Columnar\` while L0 \`Support::Key\` is only
-  \`Eq + Clone\`): make the MINIMAL adjustment that compiles AND preserves the
-  design intent, and record it in \`frictions\` (description + your resolution +
-  severity). Do not silently diverge.
-- Preserve the design's allocation shape (e.g. \`Word::iter\` returns
-  \`impl Iterator\`; batch I/O is columnar; no \`&mut (K,C)\`/\`&mut [C]\` slot access).
+${
+  C.hasOldTwin
+    ? `- Base the algorithm on the OLD crate (${C.oldRef}) to MINIMIZE performance drift; keep its packed layout and hot-path structure. Follow word-data-structures.md for the concrete layout. Backing fields (packed planes, hash cache) are PRIVATE; expose behavior only through the ppvm-traits-2 traits it implements.
+- Use a LAZY structural hash (OnceLock<u64>) per the design (Copy is intentionally dropped); the digest value returned by Indexable::key_hash() must be the finalized, avalanche-quality digest.
+- Add exactly the deps you use to Cargo.toml (add ppvm-traits-2; \`cargo machete\` gates unused deps).`
+    : `- Trait definitions + small leaf types only; no heavy logic.`
+}
+- Cite the design section AND the relevant Lean theorem in the doc comment of any item that encodes a machine-checked invariant.
+- Where a design signature can't be implemented verbatim, make the MINIMAL adjustment that compiles AND preserves intent, and record it in \`frictions\` (never silently diverge).
 
-Gates you MUST pass before returning (run them; iterate until green):
+Gates you MUST pass before returning (iterate until green):
   cargo build -p ${C.crate} --all-targets
   cargo clippy -p ${C.crate} --all-targets -- -D warnings
   cargo fmt -p ${C.crate} -- --check   (run \`cargo fmt -p ${C.crate}\` to fix)
-Return the schema. buildPassed/clippyClean/fmtClean must reflect the ACTUAL final
-command exit status.`
+Return the schema; the boolean flags must reflect the ACTUAL final exit status.`
 
-const fixPrompt = (codeGaps) => `You are the IMPLEMENTATION agent continuing Phase 1 on ${C.crate}. A prior
-review/test pass found gaps that route to code. Fix ONLY these; do not rewrite
-working modules.
+const fixPrompt = (codeGaps) => `You are the IMPLEMENTATION agent continuing on ${C.crate}. A prior review/test
+pass found gaps routed to code. Fix ONLY these; do not rewrite working code.
 ${COMMON}
 
 Gaps to resolve (JSON):
 ${JSON.stringify(codeGaps, null, 2)}
 
 Re-run and pass the same gates (build --all-targets, clippy -D warnings,
-fmt --check). Record any new frictions. Return the schema.`
+fmt --check). If a gap is a perf regression, optimize toward parity with the old
+crate; if you believe it is an unavoidable design-accepted trade-off, say so
+precisely in \`frictions\` (the human owns the perf allowlist). Return the schema.`
 
-const REVIEW_PROMPT = `You are the REVIEW agent for Phase 1 of the ppvm-*-2 refactor. READ-ONLY: do not
-edit files; return findings.
+const REVIEW_PROMPT = `You are the REVIEW agent (READ-ONLY: do not edit files; return findings) for
+component ${C.crate}.
 ${COMMON}
 
-Evaluate the freshly-written ${C.crate}/src against the design doc and the Lean
-spec, on three axes:
-1. Consistency — does every trait/method match the design's signature and the
-   Lean-validated semantics? Is anything from the design's Phase-1 trait list
-   MISSING or renamed? Did the impl agent's friction resolutions drift from the
-   design intent (if so, route to 'design' or 'impl')?
-2. Correctness (abstract algebra) — are the encoded contracts faithful (e.g.
-   ImaginaryUnit law i·i=−1; Conjugate involution + conj(i)=−i; KeyProduct emits
-   Phase; Pair split bilinear vs sesquilinear; graded layers L0–L4 bounds; the
-   Clifford blanket over SymplecticColumns+PhaseTrack)?
-3. Missing proofs — nominate any algebraic/semantic invariant this crate now
-   encodes that is NOT yet covered by a Lean theorem and genuinely deserves one
-   (algebra only — NOT systems mechanics like hashing mechanism or allocation).
-   For Phase 1 most algebra is already covered; nominate sparingly and justify.
+Evaluate the freshly-written ${C.crate} against the design and the Lean spec:
+1. Consistency — every trait impl matches the design contract and Lean-validated
+   semantics; nothing from the design is missing; friction resolutions do not
+   drift (route drift to 'design' or 'impl').
+2. Correctness (abstract algebra) — the encoded contracts are faithful${
+  C.hasOldTwin
+    ? ' (Pauli phase product = phaseExp/pauliMat_mul; Clifford conjugation bit+phase rules incl. CNOT/CZ; symplectic-form preservation; hashing contract)'
+    : ''
+}.
+3. Missing proofs — nominate ONLY genuinely-uncovered algebraic/semantic
+   invariants that deserve a Lean theorem (not systems mechanics like hashing
+   mechanism, allocation, or SIMD layout). Nominate sparingly and justify.
 
-Cite exact file:line or trait/theorem names. Route each consistency gap
-(impl/design/test/human). Return the schema.`
+Cite exact file:line / trait / theorem names. Route each consistency gap. Return
+the schema.`
 
-const TEST_PROMPT = `You are the TEST agent for Phase 1 of the ppvm-*-2 refactor.
+const TEST_PROMPT = C.hasOldTwin
+  ? `You are the TEST agent for component ${C.crate}. You have TWO jobs: differential
+correctness vs the old crate, and a performance gate.
 ${COMMON}
 
-${C.crate} is pure trait defs + leaf types, so there is NO old behavioral twin to
-diff. Instead add Lean-oracle-style unit tests (in ${C.crateDir}, e.g. a
-\`#[cfg(test)]\` module or tests/) that pin the concrete leaf types and provided
-impls:
-- \`ImaginaryUnit for Complex<f64>\`: imaginary_unit()*imaginary_unit() == -one().
-- \`Conjugate\`: conj(conj(x)) == x for Complex<f64>; conj is identity for f64;
-  conj(i) == -i.
-- \`Phase\` arithmetic behaves as ℤ/4 (compose/one/inverse) and matches the
-  {1,i,-1,-i} interpretation.
-- \`Angle<f64> for f64\`: sin_cos matches f64::sin_cos.
-- \`IdentityHasher\`/\`IdentityBuildHasher\`: write_u64(n) then finish() == n
-  (pass-through).
-- A trivial reference \`Coefficient\` impl (e.g. over f64) compiles and satisfies
-  the ring ops (smoke).
-Also add a compile-only test that a stub type implementing SymplecticColumns +
-PhaseTrack automatically gets \`Clifford\` (the blanket impl).
+Reuse the seeded generators in ${CONF} (\`seeded_rng\`, \`random_pauli_string\`,
+\`random_circuit\`, \`GateOp\`). Add ${C.crate} as a dependency of ${CONF} (edit its
+Cargo.toml) so tests/benches can see both crates.
 
-You ADD test files, so you MUST leave the crate green on ALL targets — run, in
-order, and only set testsPass=true if every one passes:
-  cargo fmt -p ${C.crate}                       (format YOUR new files)
-  cargo fmt -p ${C.crate} -- --check            (must be clean)
+1. DIFFERENTIAL correctness — in ${CONF}/tests/, for seeded random inputs, assert
+   the NEW ${C.crate} matches the OLD (${C.oldRef}) on: ${C.diffSurface}.
+   Compare OBSERVABLE algebra, NOT raw hash digests (the finalization fold differs
+   by design). For hashing, test the CONTRACT instead: Hash writes exactly
+   key_hash(); structurally-equal keys => equal digest; and an
+   avalanche/low-collision distribution property test. Set differentialPass.
+2. LEAN-ORACLE property tests — reproduce ${C.leanOracles} as Rust tests
+   (exhaustive for finite single-qubit cases; randomized for n-qubit).
+3. PERFORMANCE GATE — add Criterion benches in ${CONF}/benches/ comparing NEW vs
+   OLD on: ${C.benchTargets}. Run them briefly (e.g. --measurement-time 1
+   --sample-size 20) and report the new/old ratio per target in \`perfRatios\` +
+   \`perfNote\`. If NEW is materially slower (ratio > 1.15) on any hot target,
+   raise a 'perf-drift' gap (with the ratio and suspected cause), and say whether
+   it is a design-accepted trade-off (e.g. lazy OnceLock hash costing Copy) — the
+   HUMAN owns the allowlist, so do not silently accept it.
+
+Leave BOTH crates green (run, and set testsPass only if all pass):
+  cargo fmt -p ${C.crate} -p ${CONF}   then   cargo fmt -p ${C.crate} -p ${CONF} -- --check
+  cargo clippy -p ${C.crate} -p ${CONF} --all-targets -- -D warnings
+  cargo test -p ${C.crate} -p ${CONF}
+Return the schema.`
+  : `You are the TEST agent for component ${C.crate} (pure trait defs — no old
+behavioral twin to diff).
+${COMMON}
+
+Add Lean-oracle unit tests pinning the concrete leaf types / provided impls:
+${C.leanOracles}
+Leave the crate green (run, set testsPass only if all pass):
+  cargo fmt -p ${C.crate}   then   cargo fmt -p ${C.crate} -- --check
   cargo clippy -p ${C.crate} --all-targets -- -D warnings
   cargo test -p ${C.crate}
-(The fmt step matters: a prior run left an unformatted test file because only the
-impl agent formatted.) Pure trait defs have no hot path, so do NOT add benchmarks
-this phase — set perfNote to say so. Report tests added, pass/fail, and any gaps
-(e.g. an invariant you could not test, or a correctness surprise). Return the
-schema.`
+No hot path here, so add NO benchmarks — set perfNote to say so. Report tests
+added, pass/fail, and any gaps. Return the schema.`
 
-const provePrompt = (noms) => `You are the PROOF agent for the ppvm-*-2 refactor. The review agent nominated
-algebraic invariants the new ${C.crate} code encodes that may lack a Lean theorem.
+const provePrompt = (noms) => `You are the PROOF agent. The review nominated algebraic invariants the new
+${C.crate} code encodes that may lack a Lean theorem.
 ${COMMON}
 
 Nominated invariants (JSON):
 ${JSON.stringify(noms, null, 2)}
 
-For each: check whether an existing theorem in ${REPO}/lean/PPVM already covers it
-(many do). If genuinely uncovered AND it is a real algebraic/semantic invariant
-(not systems mechanics), add a minimal Lean theorem in the appropriate file, and
-update the design-doc citation so design↔lean↔rust stay a triangle. Skip
-(with a note) anything already covered or not proof-worthy.
-
-You MUST run \`lake build PPVM\` from ${REPO}/lean and it must pass. Return the
-schema; lakeBuildPassed must reflect the actual exit status.`
+For each: check whether an existing theorem in ${REPO}/lean/PPVM already covers it.
+If genuinely uncovered AND a real algebraic/semantic invariant (not systems
+mechanics), add a minimal Lean theorem in the right file and update the
+design-doc citation (keep design↔lean↔rust a triangle). Skip (with a note)
+anything already covered or not proof-worthy. You MUST run \`lake build PPVM\` from
+${REPO}/lean and it must pass. Return the schema.`
 
 // ── Convergence loop ──────────────────────────────────────────────────────────
+// Only high/medium correctness, impl-friction, or perf-drift blocks. Low-sev
+// ergonomics notes and anything routed to design/human/test or explicitly
+// deferred to a later phase are recorded but do NOT spin the loop.
+const blocks = (g) =>
+  (g.type === 'correctness' || g.type === 'impl-friction' || g.type === 'perf-drift') &&
+  (g.severity === 'high' || g.severity === 'medium') &&
+  !/defer|phase\s*\d/i.test(g.description || '')
+
 const history = []
 let converged = false
 let pendingCodeGaps = null
@@ -298,24 +313,12 @@ while (iter < MAX_ITERS && !converged) {
     () => agent(TEST_PROMPT, { label: `test#${iter}`, phase: 'Verify', schema: TEST_SCHEMA }),
   ])
 
-  // Only high/medium correctness or impl-friction blocks convergence. Low-sev
-  // ergonomics notes, and anything the reviewer routes to 'design'/'human'/'test'
-  // or explicitly defers to a later phase, do NOT block (they are recorded, then
-  // acted on by the orchestrator/human). This avoids the Phase-1 artifact where a
-  // low-sev ergonomics note looped the crate to MAX_ITERS.
-  const blocks = (g) =>
-    (g.type === 'correctness' || g.type === 'impl-friction') &&
-    (g.severity === 'high' || g.severity === 'medium') &&
-    !/defer|phase\s*\d/i.test(g.description || '')
   const codeGaps = [
     ...((review && review.consistencyGaps) || []).filter((g) => g.routedTo === 'impl' && blocks(g)),
     ...((test && test.gaps) || []).filter(blocks),
   ]
   const proofNoms = (review && review.missingProofInvariants) || []
 
-  // Discharge nominated proofs. Once the prove agent adds them and `lake build`
-  // is green, they are RESOLVED for convergence — a later review must not
-  // re-nominate the same invariant to keep the loop from spinning.
   let prove = null
   if (proofNoms.length) {
     phase('Prove')
@@ -325,11 +328,9 @@ while (iter < MAX_ITERS && !converged) {
   history.push({ iter, impl, review, test, prove })
 
   const testsOk = !test || test.testsPass !== false
-  // Proof step is satisfied when there were no nominations, or the prover
-  // discharged them with a green `lake build` (its own raised gaps are folded
-  // into the next iteration's code fix only if they block).
+  const diffOk = !C.hasOldTwin || !test || test.differentialPass !== false
   const proofOk = !proofNoms.length || (prove && prove.lakeBuildPassed)
-  converged = codeGaps.length === 0 && testsOk && proofOk
+  converged = codeGaps.length === 0 && testsOk && diffOk && proofOk
   pendingCodeGaps = codeGaps
 }
 

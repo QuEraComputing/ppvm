@@ -5,7 +5,9 @@ Authors: The PPVM Authors
 -/
 import Mathlib.NumberTheory.Zsqrtd.GaussianInt
 import Mathlib.LinearAlgebra.Matrix.Notation
+import Mathlib.Algebra.BigOperators.Ring.Finset
 import PPVM.Pauli.Phase
+import PPVM.Pauli.Word
 import PPVM.Algebra.Twisted
 
 /-!
@@ -82,5 +84,78 @@ example : StarRing GaussianInt := inferInstance
 conjugation is realized by an exact ring, matching the design's `Conjugate`
 requirement `conj(i) == −i` under `ImaginaryUnit`. -/
 theorem star_iU : star iU = -iU := by decide
+
+/-! ### The `n`-qubit phase, grounded against genuine tensor-product matrices
+
+`PPVM.PauliWord.phaseExpN` is the packed multi-qubit phase exponent — the
+`(2*sign_count + imag_count) mod 4` that `KeyProduct::key_mul` accumulates — and
+it is *defined* as the **sum** over qubits of the single-qubit `phaseExp`. On its
+own that leaves a gap: the object `key_mul` actually computes is an `n`-fold
+tensor-product Pauli operator, and the equality between "sum of per-qubit
+exponents" and "base-`i` exponent of the real `2ⁿ×2ⁿ` matrix product" was
+*assumed* (the phase-multiplicativity step `∏ᵢ iᵏⁱ = i^{Σ kᵢ}`). This section
+closes it: it builds the genuine `n`-fold tensor product of the single-qubit
+`ℤ[i]` matrices and proves `phaseExpN` is exactly the base-`i` exponent of the
+real matrix product, end-to-end. -/
+
+open PPVM.PauliWord
+
+variable {n : ℕ}
+
+/-- The genuine `n`-fold tensor (Kronecker) product of the single-qubit Pauli
+matrices `g(p i)`, as a `2ⁿ×2ⁿ` matrix over `ℤ[i]` indexed by multi-indices
+`Fin n → Fin 2`: the `(r, c)` entry is the product of the per-qubit entries. -/
+def tensorPauli (p : Word n) : Matrix (Fin n → Fin 2) (Fin n → Fin 2) GaussianInt :=
+  fun r c => ∏ i, pauliMat (p i).1 (p i).2 (r i) (c i)
+
+/-- The phase-multiplicativity of the tensor product, `∏ᵢ iᵏⁱ = i^{Σ kᵢ}`, made
+precise as the monoid hom `(ℤ/4ℤ, +) → (ℤ[i], ·)` sending `k ↦ iᵏ`. Well defined
+because `iU` is a fourth root of unity (`iU_pow_four`); the two homomorphism laws
+close by `decide` over the four residues. -/
+def iuPow : Multiplicative (ZMod 4) →* GaussianInt where
+  toFun k := iU ^ (Multiplicative.toAdd k).val
+  map_one' := by decide
+  map_mul' x y := by
+    suffices h : ∀ a b : ZMod 4, iU ^ (a + b).val = iU ^ a.val * iU ^ b.val from
+      h (Multiplicative.toAdd x) (Multiplicative.toAdd y)
+    decide
+
+/-- **Phase-multiplicativity.** The product of the per-qubit phases `iᵏⁱ` equals
+`i` raised to the packed sum `phaseExpN` — the step the `Word.lean` scope note
+had left assumed. This is `iuPow`'s `map_prod` combined with the definition of
+`phaseExpN` as a sum. -/
+theorem prod_iuPow (p q : Word n) :
+    (∏ i, iU ^ (phaseExp (p i).1 (p i).2 (q i).1 (q i).2).val)
+      = iU ^ (phaseExpN p q).val := by
+  have h : ∀ i, iU ^ (phaseExp (p i).1 (p i).2 (q i).1 (q i).2).val
+      = iuPow (Multiplicative.ofAdd (phaseExp (p i).1 (p i).2 (q i).1 (q i).2)) :=
+    fun _ => rfl
+  simp only [h]
+  rw [← map_prod, ← ofAdd_sum]
+  rfl
+
+/-- **`phaseExpN` is the exponent of the real tensor-product matrix product.**
+For all `n`-qubit words `p q`, the genuine `2ⁿ×2ⁿ` product
+`g(p)·g(q) = i^{phaseExpN p q} · g(p·q)` as honest `ℤ[i]` matrices. This ties the
+packed multi-qubit phase `KeyProduct::key_mul` computes back to real multi-qubit
+Pauli operators, using the single-qubit grounding `pauliMat_mul` and the
+tensor-product phase-multiplicativity `prod_iuPow`. -/
+theorem tensorPauli_mul (p q : Word n) :
+    tensorPauli p * tensorPauli q
+      = iU ^ (phaseExpN p q).val • tensorPauli (mulWord p q) := by
+  refine Matrix.ext fun r c => ?_
+  -- Reduce the LHS entry to the product of per-qubit `2×2` matrix products
+  -- (the tensor mixed-product property).
+  have hL : (tensorPauli p * tensorPauli q) r c
+      = ∏ i, (pauliMat (p i).1 (p i).2 * pauliMat (q i).1 (q i).2) (r i) (c i) := by
+    simp only [tensorPauli, Matrix.mul_apply]
+    rw [Fintype.prod_sum]
+    simp only [Finset.prod_mul_distrib]
+  rw [hL]
+  -- Substitute the single-qubit grounding, pull out the scalar per qubit, then
+  -- collapse the product of phases via `prod_iuPow`.
+  simp only [pauliMat_mul, Matrix.smul_apply, smul_eq_mul]
+  rw [Finset.prod_mul_distrib, prod_iuPow]
+  simp only [tensorPauli, mulWord, mulBits]
 
 end PPVM.PauliMatrix

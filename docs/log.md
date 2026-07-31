@@ -81,7 +81,43 @@ resolved. Lesson logged for the workflow, deliverable accepted.
 
 ## Phase 2 — ppvm-pauli-word-2
 
-_(no entries yet)_
+### Component: `PauliWord` — status **complete** (workflow `wf_98ec8b83-228`, converged iter 1)
+
+Deliverables: `PauliWord` (data/product/clifford/hash/storage/column) implementing
+`Word<Site=Pauli>`, `PauliBits`, `SymplecticColumns`+`PhaseTrack` (⇒ blanket
+`Clifford`), `KeyProduct`, `Indexable`, `Columnar`; packed X/Z planes + lazy
+`OnceLock<u64>` hash; phase-mul + Clifford kernels ported from the old crate. 27
+in-crate tests. Conformance: `pauli_word_diff.rs` (8 differential vs old),
+`pauli_word_lean.rs` (10 Lean-oracle), `pauli_word_bench.rs` (new-vs-old).
+
+Gates verified by orchestrator: `build`/`clippy`/`fmt`/`test` (pauli-word-2 +
+conformance-2), `machete`, `lake build PPVM` — all green.
+
+**Perf gate: PASS** (no regression). new/old ratios: product `key_mul` **0.77×**
+(new ~23% faster) · cnot conjugation **0.91×** (parity) · weight **1.00×**
+(verbatim) · `key_hash` reported cold/warm **6.94ns→0.60ns** (lazy OnceLock; the
+old crate hashes eagerly at construction, so no new/old ratio applies). The test
+agent caught+removed a clone-vs-`Copy` bench artifact (new word drops `Copy` for
+the cache). No target exceeds the 1.15 gate → no perf-drift, no allowlist entry.
+
+Lean added (prove agent, `lake` green): `Matrix.lean` `tensorPauli`/`iuPow`/
+`prod_iuPow`/`tensorPauli_mul` — grounds the packed n-qubit `phaseExpN` against a
+genuine 2ⁿ×2ⁿ tensor-product ℤ[i] matrix product, closing the end-to-end gap
+`Word.lean`'s scope note had left open (n-qubit phase previously validated only as
+the *sum* of per-qubit exponents). Orchestrator-reviewed: real, non-vacuous.
+
+| id | type | sev | routed | status | note |
+| --- | --- | --- | --- | --- | --- |
+| pw2.design.1 | impl-friction | low | design | closed | `word-data-structures.md` was stale (assigned `SymplecticColumns`/`PhaseTrack` only to `PhasedPauliWord`). Authoritative config doc + plan require the bare word to implement them with a phase-discarding `PhaseTrack`. Doc fixed; `clifford.rs` note reframed from "friction" to authoritative. |
+| pw2.proof.1 | missing-proof | med | proof | closed | n-qubit product grounded per-qubit only (Word.lean scope note). Added `tensorPauli_mul`; ties `key_mul` to real multi-qubit operators. |
+| pw2.test.1 | missing-test | med | test | closed | Review (run in parallel) saw no matrix-oracle/randomized/differential coverage in-crate; the test agent independently added it in conformance-2 (matrix-exponent oracle exhaustive + randomized n-qubit; differential vs old for construction/get/weight/iter/bits/product/Clifford; hash-contract + avalanche). 18 pass. |
+| pw2.impl.1 | impl-friction | low | accepted | noted | Bare word drops the Clifford *phase* delta by design (no-op `PhaseTrack`); the differential Clifford test compares bits only, phase validated via the Lean ℤ[i] oracle. Recovered by the phased wrapper (Phase 3). |
+
+**Phase-3 watch item.** Dropping `Copy` (lazy `OnceLock` hash) is op-vs-op
+parity here, but in `PauliSum` propagation words are cloned per stored term; watch
+the *aggregate* clone cost in Phase 3 (may warrant a perf-allowlist entry then).
+
+### Components: `LossyPauliWord`, `Phased` — pending (next Phase-2 runs).
 
 ## Phase 3 — ppvm-pauli-sum-2
 

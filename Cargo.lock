@@ -1324,7 +1324,11 @@ name = "ppvm-conformance-2"
 version = "0.1.0"
 dependencies = [
  "criterion 0.7.0",
+ "num",
  "ppvm-pauli-word",
+ "ppvm-pauli-word-2",
+ "ppvm-traits",
+ "ppvm-traits-2",
  "rand 0.10.1",
 ]
 
@@ -1361,6 +1365,17 @@ dependencies = [
  "num",
  "ppvm-traits",
  "serde",
+]
+
+[[package]]
+name = "ppvm-pauli-word-2"
+version = "0.1.0"
+dependencies = [
+ "bitvec",
+ "bytemuck",
+ "fxhash",
+ "num",
+ "ppvm-traits-2",
 ]
 
 [[package]]

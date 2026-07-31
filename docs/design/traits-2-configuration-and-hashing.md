@@ -252,10 +252,23 @@ below.
 Pauli-specific traits. Their shape is dictated by the algebra rather than
 invented: a Pauli operator modulo phase is a vector in the symplectic space
 \(\mathrm{GF}(2)^{2n}\) (the X and Z bit planes), Pauli multiplication is
-vector addition (`⊕`), commutation is the symplectic form
-\(\omega(P,Q) = x_P\cdot z_Q \oplus z_P\cdot x_Q\), and the Clifford group is the
-central extension \(\mathrm{Sp}(2n,2) \ltimes \text{phases}\). That factorization
-sorts every gate operation into two buckets, and the traits follow the buckets.
+vector addition (`⊕`) *up to phase* (the phase is the \(\mathbb{Z}_4\) cocycle of
+the extension below), commutation is the symplectic form
+\(\omega(P,Q) = x_P\cdot z_Q \oplus z_P\cdot x_Q\), and conjugation by a Clifford
+factors into a symplectic map on the bits together with a phase. Concretely, the
+Pauli group is a **non-split central extension**
+\(1 \to \mathbb{Z}_4 \to \mathcal{P}_n \to \mathrm{GF}(2)^{2n} \to 1\): the
+phases are central, and the extension does *not* split — \(\mathcal{P}_n\) is
+nonabelian, so it is a genuine central extension and **not** a semidirect
+product \(\ltimes\) (an earlier draft wrote \(\mathrm{Sp}(2n,2)\ltimes\text{phases}\),
+which is inaccurate on both counts). The symplectic group enters one level up:
+conjugation by a Clifford realizes \(\mathrm{Sp}(2n,2)\) acting on the quotient,
+\(\mathcal{C}_n/\mathcal{P}_n \cong \mathrm{Sp}(2n,2)\). Both facts are
+machine-checked in the Lean development (`lean/PPVM/Pauli/Phase.lean` builds
+\(\mathcal{P}_1\) as a `Group` with the non-split extension
+`PhasedPauli.toSymplectic`; `lean/PPVM/Pauli/Symplectic.lean` proves the gates
+are \(\mathrm{Sp}\)-isometries). That factorization sorts every gate operation
+into two buckets, and the traits follow the buckets.
 
 **Role-independent (the \(\mathrm{Sp}\) part).** Conjugating a Pauli by a
 Clifford gate does the same bit-plane algebra whether the operator is a lone
@@ -512,7 +525,7 @@ property *and* a distinct consumer:
 | L1 | abelian-monoid formation + canonical support | `Accumulate` (`accumulate_batch` + `reduce`) | forming any linear combination |
 | L2 | the `C`-module action | `Scale` | normalization, global factors |
 | L3 | the bilinear form | `Pair` (`probe_batch`, `overlap`) | overlap / expectation read-out |
-| L4 | the ring (group-algebra) product | `Multiply` (needs a key product) | operator composition, squaring an observable |
+| L4 | the ring product (a *twisted* group algebra for Paulis: the key product emits a phase) | `Multiply` (needs a key product) | operator composition, squaring an observable |
 
 The **minimum** is L0 + L1: a finitely-supported `K ⇀ C` you can accumulate
 into and reduce. That *is* the algebraic essence of a sparse sum. Truncation is
@@ -563,9 +576,17 @@ pub trait Pair: Support {
     fn overlap(&self, other: &Self) -> Self::Coeff;
 }
 
-/// A key whose set carries a product — the group/monoid structure that lifts
-/// `C[K]` from a module to an algebra. `PauliWord` implements it (the phased
-/// Pauli product `v·w = ±i^k (v⊕w)`); a bare `Tableau` mixture key does not.
+/// A key whose set carries a product — the (projective) group structure that
+/// lifts `C[K]` from a module to an algebra. `PauliWord` implements it: the
+/// phased Pauli product is `v·w = i^k (v⊕w)` with `k = phaseExp(v,w) ∈ ℤ/4ℤ`
+/// (no separate `±`: `i^k` already spans `{1, i, −1, −i}`). Note the keys form a
+/// group only *up to phase* — the product is **not closed on keys**, it emits an
+/// `i^k` — which is exactly why `key_mul` returns `(Self, Phase)` rather than
+/// `Self`, and why `C[PauliWord]` is a **2-cocycle-twisted** group algebra, not
+/// the plain group algebra of `(𝔽₂^{2n}, ⊕)`. That `phaseExp` is a genuine
+/// 2-cocycle (hence the twisted product is associative) is machine-checked in
+/// `lean/PPVM/Pauli/Phase.lean` and `lean/PPVM/Algebra/Twisted.lean`. A bare
+/// `Tableau` mixture key carries no such product.
 pub trait KeyProduct: Eq + Clone {
     /// Product of two keys, with the phase it produces (folded onto the coeff).
     fn key_mul(&self, other: &Self) -> (Self, Phase);
@@ -573,8 +594,12 @@ pub trait KeyProduct: Eq + Clone {
 
 /// L4 — the ring product. The only layer that needs the *key* to carry a
 /// product; it stays optional and is not implemented for a key type that has
-/// none. For Paulis the product injects powers of `i`, so the coefficient must
-/// absorb phase: bounded on `ComplexCoefficient`.
+/// none. The Pauli product injects powers of `i`, so the coefficient must absorb
+/// phase. The *minimal* algebraic requirement — what makes the twisted product
+/// associative and faithful — is a distinguished **primitive fourth root of
+/// unity** (the Lean proof `Twisted.tmul_assoc` needs only `i⁴ = 1`), so an exact
+/// ring such as `ℤ[i]` or a cyclotomic ring qualifies; `ComplexCoefficient` is a
+/// convenient superset of that, not a necessity.
 pub trait Multiply: Accumulate
 where
     Self::Key: KeyProduct,
@@ -889,7 +914,7 @@ changed according to whether their underlying responsibility changes:
 | `n_qubits`, `get`, `set`, `weight` | `n_sites`, `get`, `weight` on `Word`; `set` removed | `Word` is read-only; positional mutation (`set`) moves to `PauliBits`, since it is ill-defined for ordered algebras. |
 | bit accessors `get_xbit`/`set_xbit`/… | `PauliBits::x_bit`/`set_x_bit`/… | The rotation hot path is sub-site; it keeps a dedicated Pauli trait rather than the generic `Word`. |
 | word-level Clifford (blanket over `PauliWordTrait`) | `Clifford` blanket over `SymplecticColumns` + `PhaseTrack` | The symplectic sign logic is written once and shared by `PhasedPauliWord` and `Tableau`. |
-| (new) | `SymplecticColumns`, `PhaseTrack`, `StabilizerFrame` | The `Sp ⋉ phase` decomposition: role-independent column algebra, role-dependent phase, role-exclusive frame ops. |
+| (new) | `SymplecticColumns`, `PhaseTrack`, `StabilizerFrame` | The symplectic-bits + phase-extension decomposition: role-independent column algebra, role-dependent phase, role-exclusive frame ops. |
 | concrete `PauliWord` | `PauliWord` | The packed X/Z word is the same domain concept. |
 | concrete `LossyPauliWord` | `LossyPauliWord` | The packed X/Z/loss representation remains concrete and flattened. |
 | `PhasedPauliWord` | `PhasedPauliWord` alias over non-indexable `Phased` | The wrapper is generic over ordinary and lossy words but is not a production map key. |

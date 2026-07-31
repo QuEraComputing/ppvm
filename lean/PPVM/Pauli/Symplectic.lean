@@ -17,17 +17,23 @@ The traits-2 design
 > a Pauli operator modulo phase is a vector in the symplectic space
 > `GF(2)^{2n}` (the X and Z bit planes), Pauli multiplication is vector addition
 > (`⊕`), commutation is the symplectic form `ω(P,Q) = x_P·z_Q ⊕ z_P·x_Q`, and
-> the Clifford group is the central extension `Sp(2n,2) ⋉ phases`.
+> conjugation by a Clifford factors into a symplectic map on the bits together
+> with a phase. Concretely, the Pauli group is a **non-split central extension**
+> `1 → ℤ₄ → 𝒫ₙ → GF(2)^{2n} → 1`; the symplectic group `Sp(2n,2)` enters one level
+> up, acting on the quotient (`𝒞ₙ/𝒫ₙ ≅ Sp(2n,2)`).
 
-This file makes each clause literal with Mathlib's linear algebra:
+This file makes the clauses about the quotient literal with Mathlib's linear
+algebra (the phase extension itself is `PPVM.PauliPhase`):
 
 * the mod-phase Pauli space `Sp n` is the `ℤ/2`-module `(ℤ/2)² ^ n` (`inferInstance`);
 * Pauli multiplication is the module addition (`pauliMul = (· + ·)`, `rfl`);
 * `ω` is a genuine `LinearMap.BilinForm (ℤ/2) (Sp n)` that is **alternating**
   (`IsAlt`) — i.e. `(Sp n, ω)` is a symplectic space in Mathlib's sense; and
-* the Clifford generators `H`, `S`, `CNOT` are **`ω`-isometries** — the `Sp`-part
-  of the design's `Sp ⋉ phases` (the `phases` part is the central extension
-  `PPVM.PauliPhase.PhasedPauli.toSymplectic`).
+* the Clifford generators `H`, `S`, `CNOT` are **`ω`-isometries**, i.e. Clifford
+  conjugation *lands in* `Sp(2n,2)` acting on the quotient (the `phases` part of
+  the extension is `PPVM.PauliPhase.PhasedPauli.toSymplectic`). This proves the
+  containment `Clifford conjugation ⊆ Sp`; the surjectivity that would give the
+  full isomorphism `𝒞ₙ/𝒫ₙ ≅ Sp(2n,2)` is not formalized here.
 -/
 
 namespace PPVM.Symplectic

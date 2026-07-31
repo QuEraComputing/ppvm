@@ -67,4 +67,20 @@ example (a b c : Twisted.Mono GaussianInt) :
     Twisted.tmul iU (Twisted.tmul iU a b) c = Twisted.tmul iU a (Twisted.tmul iU b c) :=
   Twisted.tmul_assoc iU iU_pow_four a b c
 
+/-! ### `ℤ[i]` also realizes the L3 `Conjugate` capability
+
+The sesquilinear `Pair::hermitian_overlap` (`PPVM.GradedMap.hermitianOverlap`)
+needs the design's `Conjugate` (`*`-ring) capability on the coefficient ring.
+`ℤ[i]` supplies it: `StarRing GaussianInt` is genuine complex conjugation, an
+involutive ring involution whose action on the imaginary unit is `conj(i) = −i` —
+the design's `Conjugate` law, again on an exact ring (no floats). -/
+
+/-- `ℤ[i]` is a `*`-ring: the `Conjugate` capability is `StarRing.star`. -/
+example : StarRing GaussianInt := inferInstance
+
+/-- **The `Conjugate` law `conj(i) = −i` on `ℤ[i]`.** So `hermitian_overlap`'s
+conjugation is realized by an exact ring, matching the design's `Conjugate`
+requirement `conj(i) == −i` under `ImaginaryUnit`. -/
+theorem star_iU : star iU = -iU := by decide
+
 end PPVM.PauliMatrix

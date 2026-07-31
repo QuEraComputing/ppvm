@@ -224,7 +224,17 @@ pub trait RotationOne<C: Coefficient, A: Angle<C> = C> {
 pub trait PauliError<C: Coefficient> {
     fn pauli_error(&mut self, qubit: usize, probabilities: [C; 3]);
 }
+```
 
+A unital Pauli channel acts diagonally in the Pauli basis, `P ↦ λ_P·P`, and its
+transfer eigenvalue collapses (using `Σ_Q p_Q = 1`) to
+`λ_P = 1 − 2·Σ_{Q anticommutes with P} p_Q`, where anticommutation is the
+symplectic form `ω(P,Q) = 1`. That algebraic form is machine-checked in
+`lean/PPVM/Algebra/Noise.lean` (`pauli_channel_eigenvalue`, and
+`pauli_channel_eigenvalue_omega` tying `anti` to `PPVM.Symplectic.omega`); the
+zero-state read-out `⟨0ⁿ|ρ|0ⁿ⟩ = Σ_{P X-free} c_P` is `overlap_with_zero_xfree`.
+
+```rust
 pub trait Measure {
     fn measure(&mut self, qubit: usize) -> Option<bool>;
 
@@ -277,12 +287,24 @@ nonabelian, so it is a genuine central extension and **not** a semidirect
 product \(\ltimes\) (an earlier draft wrote \(\mathrm{Sp}(2n,2)\ltimes\text{phases}\),
 which is inaccurate on both counts). The symplectic group enters one level up:
 conjugation by a Clifford realizes \(\mathrm{Sp}(2n,2)\) acting on the quotient,
-\(\mathcal{C}_n/\mathcal{P}_n \cong \mathrm{Sp}(2n,2)\). Both facts are
-machine-checked in the Lean development (`lean/PPVM/Pauli/Phase.lean` builds
-\(\mathcal{P}_1\) as a `Group` with the non-split extension
-`PhasedPauli.toSymplectic`; `lean/PPVM/Pauli/Symplectic.lean` proves the gates
-are \(\mathrm{Sp}\)-isometries). That factorization sorts every gate operation
-into two buckets, and the traits follow the buckets.
+\(\mathcal{C}_n/\mathcal{P}_n \cong \mathrm{Sp}(2n,2)\). The non-split extension
+is machine-checked **at \(n = 1\)**: `lean/PPVM/Pauli/Phase.lean` builds
+\(\mathcal{P}_1\) as a `Group` with the quotient homomorphism
+`PhasedPauli.toSymplectic` and the non-split witness `not_commutative`. For
+general \(n\), only the two facts that make the *packed* multi-qubit product
+well defined are lifted — the phase 2-cocycle `phaseExpN_cocycle` (associativity)
+and the commutation law `phaseExpN_sub_comm` (`lean/PPVM/Pauli/Word.lean`); the
+n-qubit `Group`/quotient/non-split objects are not reconstructed, as the
+single-qubit case already exhibits the extension's structure. The
+\(\mathrm{Sp}\) action is checked in one direction — each Clifford generator is
+an \(\mathrm{Sp}\)-isometry, so conjugation *lands in* \(\mathrm{Sp}(2n,2)\)
+(`lean/PPVM/Pauli/Symplectic.lean`); this per-generator conjugation is also
+exhibited at \(n = 1\) as a signed symplectic automorphism of \(\mathcal{P}_1\)
+(`conjHHom`/`conjSHom` in `lean/PPVM/Pauli/Conjugation.lean`, e.g. `conjH_Y` gives
+\(HYH = -Y\)). The surjectivity that upgrades this containment to the full
+isomorphism \(\mathcal{C}_n/\mathcal{P}_n \cong \mathrm{Sp}(2n,2)\) is stated here
+but not formalized. That factorization sorts every gate operation into two
+buckets, and the traits follow the buckets.
 
 **Role-independent (the \(\mathrm{Sp}\) part).** Conjugating a Pauli by a
 Clifford gate does the same bit-plane algebra whether the operator is a lone
@@ -352,6 +374,16 @@ pub trait StabilizerFrame {
     fn canonicalize(&mut self);
 }
 ```
+
+The frame these primitives operate on is a genuine symplectic basis, and this is
+machine-checked in `lean/PPVM/Tableau/Frame.lean`: the `2n` generators satisfy
+the symplectic-basis relations `ω(dᵢ,sⱼ) = δᵢⱼ` (`IsSymplecticFrame`), are
+linearly independent (`frame_linearIndependent`), start as one
+(`isSymplecticFrame_identity`), and stay one under every Clifford generator
+(`isSymplecticFrame_hAct`/`sAct`/`cnotAct`/`czAct` via `IsSymplecticFrame.map`).
+The `anticommuting_pivot` search rests on the measurement dichotomy
+(`measurement_dichotomy`): the outcome is deterministic exactly when the measured
+Pauli commutes with every stabilizer (`measure_deterministic_iff_xfree`).
 
 The implementers are `PhasedPauliWord` (`SymplecticColumns + PhaseTrack`, one
 row) and `Tableau` (all three). Note that `PauliSum` is deliberately *not* an
@@ -514,6 +546,17 @@ impl<W: Word + Indexable, C: Coefficient> Policy<W, C> for CoefficientThreshold 
 }
 ```
 
+The keep-rule is `magnitude() >= threshold`, so a term whose magnitude is
+*exactly* the threshold is **kept**. The stabilizer-tableau path instead keeps on
+a strict `magnitude() > threshold`, so the two backends disagree at
+`|c| == threshold` (kept by `CoefficientThreshold`, dropped by the tableau). This
+boundary mismatch — at every threshold — is machine-checked in
+`lean/PPVM/Algebra/Truncation.lean` (`cutoff_mismatch`). The error a truncation
+incurs is bounded in the same file: an `ℓ¹` bound `|error| ≤ Σ_{dropped} |c_P|`
+for the `PauliSum` path (`l1_bound`, under `|⟨P⟩| ≤ 1`) and, for the tableau path,
+the *unconditional* Cauchy–Schwarz `ℓ²` bound `l2_bound`, sharpened to
+`error² ≤ (Σ_{dropped} c_P²)·|D|` under `|⟨P⟩| ≤ 1` in `l2_bound_normalized`.
+
 `Policy` and its concrete implementations belong to the sparse-sum crate. This
 removes the current split where the `Strategy` trait lives in `ppvm-traits` but
 its concrete strategies live in `ppvm-pauli-sum`; the policy is not an
@@ -538,7 +581,7 @@ property *and* a distinct consumer:
 | L0 | finite partial function `K ⇀ C` | `Support` | everything; read-out / export |
 | L1 | abelian-monoid formation + canonical support | `Accumulate` (`accumulate_batch` + `reduce`) | forming any linear combination |
 | L2 | the `C`-module action | `Scale` | normalization, global factors |
-| L3 | the bilinear form | `Pair` (`probe_batch`, `overlap`) | overlap / expectation read-out |
+| L3 | the trace pairing (symmetric bilinear `overlap`; sesquilinear `hermitian_overlap`) | `Pair` (`probe_batch`, `overlap`, `hermitian_overlap`) | expectation read-out; complex state overlap |
 | L4 | the ring product (a *twisted* group algebra for Paulis: the key product emits a phase) | `Multiply` (needs a key product) | operator composition, squaring an observable |
 
 The **minimum** is L0 + L1: a finitely-supported `K ⇀ C` you can accumulate
@@ -584,10 +627,56 @@ pub trait Scale: Support {
     fn scale(&mut self, s: &Self::Coeff);   // ∀ k. c_k *= s
 }
 
-/// L3 — the bilinear form: the read side of the hash join.
+/// L3 — the read side of the hash join. Two pairings live here, differing only in
+/// whether the first operand is conjugated.
+///
+/// `overlap` is the **symmetric bilinear** Hilbert–Schmidt trace pairing
+/// `⟨A, B⟩ = ∑_k a_k b_k = Tr(A B)/2ⁿ` on the Hermitian Pauli basis — bilinear,
+/// *not* conjugated. Correct for expectation values of Hermitian observables (the
+/// coefficients carry the physical structure). Its biadditivity
+/// (`overlap_add_left`/`overlap_add_right`) and symmetry over a commutative
+/// coefficient ring (`overlap_comm`) are machine-checked in
+/// `lean/PPVM/Algebra/GradedMap.lean`; and orthonormality of the basis monomials
+/// under this abstract pairing (`PPVM.Noise.overlap_single_single`) is checked in
+/// `lean/PPVM/Algebra/Noise.lean` — the model pairing `∑_k a_k b_k` stands in for
+/// the normalized trace `Tr(A B)/2ⁿ` (which is *not* itself constructed in Lean),
+/// so `overlap_single_single` is the model form of `Tr(P Q)/2ⁿ = δ`, not that
+/// matrix identity verbatim.
+///
+/// `hermitian_overlap` is the **sesquilinear** inner product
+/// `⟨φ | ψ⟩ = ∑_k conj(a_k)·b_k`, conjugate-linear in the first argument. This is
+/// the physical state/amplitude overlap — `GeneralizedTableau`'s `C[Bitstring]`
+/// amplitude vector needs it to compute `⟨φ|ψ⟩` correctly over a complex ring. It
+/// requires the coefficient ring to carry a conjugation, so it is bounded on
+/// `Conjugate`. Over a real ring `conj` is the identity and the two pairings
+/// coincide; the machine-checked properties (conjugate symmetry, sesquilinearity,
+/// `⟨f,f⟩ ≥ 0`) are in `lean/PPVM/Algebra/GradedMap.lean`.
 pub trait Pair: Support {
     fn probe_batch(&self, keys: &KeyBatch<Self::Key>, out: &mut [Option<Self::Coeff>]);
+
     fn overlap(&self, other: &Self) -> Self::Coeff;
+
+    fn hermitian_overlap(&self, other: &Self) -> Self::Coeff
+    where
+        Self::Coeff: Conjugate;
+}
+
+/// A coefficient ring carrying a ring involution (a commutative `*`-ring):
+/// complex conjugation on `Complex<f64>` / `GaussianInt` (`ℤ[i]`) / cyclotomic
+/// integers, and the identity on real rings. It supplies exactly the conjugation
+/// the sesquilinear `Pair::hermitian_overlap` needs; nothing in propagation
+/// requires it, so — like `ImaginaryUnit` for L4 — it is a separate capability,
+/// not a `Coefficient` bound (keeping the base trait minimal and exact-ring
+/// friendly).
+///
+/// Laws (commutative `*`-ring): `conj(conj(a)) == a`, `conj(a + b) ==
+/// conj(a) + conj(b)`, `conj(a · b) == conj(a) · conj(b)`; and, when the ring is
+/// also `ImaginaryUnit`, `conj(i) == −i`. The exact ring `GaussianInt` (`ℤ[i]`)
+/// realizes this capability with its genuine `StarRing` conjugation, and the
+/// `conj(i) == −i` law on it is machine-checked in `lean/PPVM/Pauli/Matrix.lean`
+/// (`star_iU`).
+pub trait Conjugate: Coefficient {
+    fn conj(&self) -> Self;
 }
 
 /// A key whose set carries a product — the (projective) group structure that
@@ -606,16 +695,21 @@ pub trait KeyProduct: Eq + Clone {
     fn key_mul(&self, other: &Self) -> (Self, Phase);
 }
 
-/// The phase capability L4 needs, and *all* it needs: a coefficient ring with a
+/// The phase capability L4 needs, over a **commutative** coefficient ring: a
 /// distinguished **primitive fourth root of unity** `i` (`i·i == −one()`, hence
-/// `i⁴ = 1`). `key_mul` folds `i^k` (`k ∈ ℤ/4`) onto the coefficient, and the
-/// twisted product is associative for any such ring — machine-checked in
-/// `lean/PPVM/Algebra/Twisted.lean` (`tmul_assoc`), whose sole hypothesis is
-/// `i⁴ = 1`, with the exact ring `GaussianInt` given as a worked instance in
-/// `lean/PPVM/Pauli/Matrix.lean`. This is strictly weaker than the earlier
-/// `ComplexCoefficient` (`Complex<f64>`) bound: `GaussianInt` (`ℤ[i]`),
-/// `Complex<Rational>`, and cyclotomic integers all satisfy it, so L4 does **not**
-/// foreclose exact or symbolic Pauli multiplication.
+/// `i⁴ = 1`). `key_mul` folds `i^k` (`k ∈ ℤ/4`) onto the coefficient, and over any
+/// commutative coefficient ring the twisted product is associative —
+/// machine-checked in `lean/PPVM/Algebra/Twisted.lean` (`tmul_assoc`, under
+/// `[CommRing C]` and `i⁴ = 1`), with the exact ring `GaussianInt` given as a
+/// worked instance in `lean/PPVM/Pauli/Matrix.lean`. Commutativity is
+/// load-bearing, not incidental: the associativity proof commutes the scalar
+/// `i^k` factors past coefficients. It holds for every ring L4 targets — `ℂ`,
+/// `ℤ[i]`, `Complex<Rational>`, cyclotomic integers are all commutative — so L4
+/// assumes commutative coefficient multiplication (the general `Coefficient`
+/// trait does not itself require it). The `i⁴ = 1` requirement is strictly weaker
+/// than the earlier `ComplexCoefficient` (`Complex<f64>`) bound: `GaussianInt`
+/// (`ℤ[i]`), `Complex<Rational>`, and cyclotomic integers all satisfy it, so L4
+/// does **not** foreclose exact or symbolic Pauli multiplication.
 pub trait ImaginaryUnit: Coefficient + num::One {
     /// The imaginary unit `i`; impls must satisfy
     /// `Self::imaginary_unit() * Self::imaginary_unit() == -Self::one()`.
@@ -821,6 +915,17 @@ Its gate semantics fall out of the same machinery:
   the current code spilling the merge into a temporary map.
 - **`coefficient_threshold`** is `CoefficientThreshold` `Policy`.
 
+Both gate semantics are validated in
+`lean/PPVM/Instantiations/Bitstring.lean`, at two different strengths. The
+non-Clifford branch's key relabel `b ↦ b ⊕ s` is *derived* to be a bijection
+(`xorRelabel_bijective`) that lifts to a linear isomorphism of the amplitude
+module (`relabelAmp_bijective`) — an emergent theorem, so branching only *moves*
+amplitude weight, never loses a term. The "Clifford touches the frame only" split
+(`cliffordStep_amplitudes`, the `G·U|c⟩ = (GU)|c⟩` factorization) is instead a
+*modeling* statement: it holds `rfl`-by-construction of the state as a
+frame×amplitude pair, pinning down that the two factors are independent, not
+proving an emergent fact.
+
 The `Vec` backend is the right one here: the support is T-count-bounded (small),
 so linear-scan `accumulate` beats hashing — the concrete motivation for the `Vec`
 container. As with the mixture, the frame↔amplitude coupling and the `O(n^2)`
@@ -962,6 +1067,7 @@ changed according to whether their underlying responsibility changes:
 | `HashFinalize` | retained, but private to `ppvm-pauli-word` | The per-algorithm/per-width finalization fold still runs inside `key_hash()`; it leaves the algebra-agnostic contract. |
 | (new) | `IdentityBuildHasher` + pass-through storage aliases | The provided `HashMapStore` alias consumes `key_hash()` directly instead of re-hashing it. |
 | `PauliStorage` | removed | Packed backing storage becomes private to the concrete word representation. |
+| (new) | `Conjugate` + `Pair::hermitian_overlap` | The sesquilinear state/amplitude inner product `∑ conj(a_k) b_k` (needed by `GeneralizedTableau`'s complex `C[Bitstring]`), split from the symmetric bilinear `overlap`; the conjugation is a separate `*`-ring capability, not a `Coefficient` bound. Machine-checked in `lean/PPVM/Algebra/GradedMap.lean`. |
 | (new) | `Columnar`, `KeyColumn`, `KeyBatch`, `TermBatch`, `TermSink`/`TermProducer` | Structure-of-arrays term types; the columnar spelling of `Accumulate`/`Pair`. See [Batch execution and the hash-join contract](#batch-execution-and-the-hash-join-contract). |
 | (new) | `ColumnStore` (SoA) backend | The one storage that must be a new struct (SoA planes); `Vec`/`HashMap` need none. Expressible from day one because no signature leaks AoS. |
 
@@ -993,6 +1099,10 @@ This rule keeps:
   each admitted by a distinct algebraic property *and* a distinct consumer, and
   `impl`'d directly on `Vec<(K,C)>` (small support), `HashMap` (large), and
   `ColumnStore` (SIMD/GPU);
+- `Conjugate`, the `*`-ring involution consumed by the sesquilinear
+  `Pair::hermitian_overlap` and implemented by every complex/exact coefficient
+  ring (`Complex<f64>`, `GaussianInt`, cyclotomic integers) — a separate
+  capability like `ImaginaryUnit`, not a `Coefficient` bound;
 - `Policy`, implemented by independent capacity and truncation behaviors, and
   consuming the non-algebraic `Retain` capability rather than the map algebra.
 
@@ -1013,6 +1123,14 @@ Pauli rotation may produce:
 ```text
 c P -> c cos(theta) P + c sin(theta) P'
 ```
+
+This branch is validated in `lean/PPVM/Instantiations/Rotation.lean`: when `G`
+and `P` anticommute the new key `P' = iGP` has symplectic bits `G ⊕ P` and is
+genuinely distinct from both operands (`anticommute_new_key`), so exactly one
+fresh term is produced; and the `(c_P, c_{P'})` coefficient update is a 2-D
+rotation that is norm-preserving (`rot_norm_sq`), reversible (`rot_neg_rot`), and
+angle-additive (`rot_rot`) — the last being the identity a rotation-merging
+Trotter optimization relies on.
 
 A `TermProducer` *reads* the live map through `&` and *writes* the produced
 terms into a `TermSink` — a separate buffer, never the map itself — so there is

@@ -17,9 +17,10 @@ makes `C[PauliWord]` a **twisted** group algebra: the product of two monomials
 For this to be an associative algebra the phase cochain must be a 2-cocycle —
 which `PPVM.PauliPhase.phaseExp_cocycle` proves. Here we close the loop: over any
 commutative ring `C` with a designated fourth root of unity `i` (the design's
-`ComplexCoefficient` bound — `i⁴ = 1` is all that is needed), the twisted product
-is associative. This is `key_mul` realized directly on the mod-phase key, without
-the phase living in a redundant group element.
+`ImaginaryUnit` bound, weakened from the earlier `ComplexCoefficient` — `i⁴ = 1`
+is all that associativity needs), the twisted product is associative. This is
+`key_mul` realized directly on the mod-phase key, without the phase living in a
+redundant group element.
 -/
 
 namespace PPVM.Twisted

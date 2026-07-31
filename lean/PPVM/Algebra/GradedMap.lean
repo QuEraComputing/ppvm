@@ -4,6 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: The PPVM Authors
 -/
 import Mathlib.Algebra.MonoidAlgebra.Basic
+import Mathlib.Algebra.Star.BigOperators
+import Mathlib.Algebra.Order.Star.Basic
 
 /-!
 # The coefficient map is the free module `C[K]`
@@ -36,7 +38,7 @@ the algebra:
 | L0 finite partial function `K ⇀ C` | `Support` | `Finsupp` (`K →₀ C`) |
 | L1 abelian-monoid + canonical support | `Accumulate` | `+` and the `Finsupp` support invariant |
 | L2 `C`-module action | `Scale` | `Module C (K →₀ C)` (`•`) |
-| L3 bilinear form | `Pair` | the `Finsupp` pairing |
+| L3 symmetric bilinear trace pairing | `Pair` | the `Finsupp` pairing |
 | L4 group-algebra product | `Multiply` | `AddMonoidAlgebra`/`MonoidAlgebra` |
 -/
 
@@ -143,7 +145,13 @@ end Scale
 expectation values. We prove it is **additive in each argument** (biadditive) —
 the property the batched probe relies on to split work across produced terms.
 (Full `C`-bilinearity additionally needs homogeneity; over a general semiring `C`
-biadditivity is the load-bearing part.) -/
+biadditivity is the load-bearing part.)
+
+Note this is the **symmetric bilinear** trace pairing `∑ₖ fₖ gₖ = Tr(f g)/2ⁿ`,
+with *no* complex conjugation — correct for expectation values of Hermitian
+observables (`PPVM.Noise.overlap_single_single` gives the Pauli orthonormality
+`Tr(P Q)/2ⁿ = δ`). A complex state overlap `⟨φ|ψ⟩ = ∑ₖ conj(fₖ) gₖ` is
+*sesquilinear* and is a separate operation, not this one. -/
 
 section Pair
 variable [Semiring C]
@@ -165,6 +173,91 @@ theorem overlap_add_right (f g₁ g₂ : CMap K C) :
   exact Finsupp.sum_add
 
 end Pair
+
+section PairComm
+variable [CommSemiring C]
+
+/-- `overlap` rewritten as a plain sum over the union of supports (terms outside
+`f`'s support vanish). The symmetric form used to prove commutativity. -/
+theorem overlap_eq_union_sum [DecidableEq K] (f g : CMap K C) :
+    overlap f g = ∑ k ∈ f.support ∪ g.support, f k * g k :=
+  Finsupp.sum_of_support_subset f Finset.subset_union_left _ (fun _ _ => zero_mul _)
+
+/-- **`overlap` is symmetric** — `⟪f, g⟫ = ⟪g, f⟫` over a commutative coefficient
+ring. Combined with `overlap_add_left`/`overlap_add_right`, this makes the
+design's "**symmetric** bilinear trace pairing" label exact (symmetry is the
+commutative half; biadditivity holds over any semiring). -/
+theorem overlap_comm (f g : CMap K C) : overlap f g = overlap g f := by
+  classical
+  rw [overlap_eq_union_sum, overlap_eq_union_sum g f, Finset.union_comm g.support f.support]
+  exact Finset.sum_congr rfl fun k _ => mul_comm _ _
+
+end PairComm
+
+/-! ### L3 (sesquilinear) `hermitian_overlap` — the complex state inner product
+
+`overlap` above is the *symmetric bilinear* trace pairing `∑ₖ fₖ gₖ`, correct for
+expectation values of Hermitian observables. The physical state/amplitude overlap
+`⟨φ|ψ⟩` that a complex `C[Bitstring]` (`GeneralizedTableau`'s amplitudes) needs is
+instead **sesquilinear**: `∑ₖ conj(fₖ) gₖ`, conjugate-linear in the first slot. It
+requires the coefficient ring to carry a conjugation — the design's `Conjugate`
+capability, i.e. a commutative `*`-ring (`StarRing`). Here we model the design's
+`Pair::hermitian_overlap` and prove its defining properties: conjugate symmetry,
+sesquilinearity (additive, with conjugate- and linear-homogeneity in the two slots), and
+(over a `StarOrderedRing`, e.g. `ℂ`) positive semidefiniteness `⟨f,f⟩ ≥ 0`. Over a
+real ring `star` is the identity and it collapses back to `overlap`. -/
+
+section HermitianOverlap
+variable [Fintype K] [CommRing C] [StarRing C]
+
+/-- `Pair::hermitian_overlap` — the sesquilinear inner product
+`⟨f, g⟩ = ∑ₖ conj(fₖ) gₖ`. The `conj` is the `Conjugate` capability (`StarRing`
+`star`); over a real ring it is the identity and this collapses to `overlap`. -/
+def hermitianOverlap (f g : K → C) : C := ∑ k, star (f k) * g k
+
+/-- **Conjugate symmetry** — `conj ⟨f, g⟩ = ⟨g, f⟩`. -/
+theorem hermitianOverlap_conj_symm (f g : K → C) :
+    star (hermitianOverlap f g) = hermitianOverlap g f := by
+  simp only [hermitianOverlap, star_sum, star_mul', star_star]
+  exact Finset.sum_congr rfl fun k _ => mul_comm _ _
+
+/-- **Additive in the second argument.** -/
+theorem hermitianOverlap_add_right (f g₁ g₂ : K → C) :
+    hermitianOverlap f (g₁ + g₂) = hermitianOverlap f g₁ + hermitianOverlap f g₂ := by
+  simp only [hermitianOverlap, Pi.add_apply, mul_add]
+  exact Finset.sum_add_distrib
+
+/-- **Additive in the first argument** (with `hermitianOverlap_smul_left` below,
+conjugate-linear). -/
+theorem hermitianOverlap_add_left (f₁ f₂ g : K → C) :
+    hermitianOverlap (f₁ + f₂) g = hermitianOverlap f₁ g + hermitianOverlap f₂ g := by
+  simp only [hermitianOverlap, Pi.add_apply, star_add, add_mul]
+  exact Finset.sum_add_distrib
+
+/-- **Linear (homogeneous) in the second argument.** -/
+theorem hermitianOverlap_smul_right (c : C) (f g : K → C) :
+    hermitianOverlap f (c • g) = c * hermitianOverlap f g := by
+  simp only [hermitianOverlap, Pi.smul_apply, smul_eq_mul, Finset.mul_sum]
+  exact Finset.sum_congr rfl fun k _ => by ring
+
+/-- **Conjugate-homogeneous in the first argument** — the "sesqui": scaling the
+first operand pulls out `conj c`, not `c`. -/
+theorem hermitianOverlap_smul_left (c : C) (f g : K → C) :
+    hermitianOverlap (c • f) g = star c * hermitianOverlap f g := by
+  simp only [hermitianOverlap, Pi.smul_apply, smul_eq_mul, star_mul', Finset.mul_sum]
+  exact Finset.sum_congr rfl fun k _ => by ring
+
+end HermitianOverlap
+
+/-- **Positive semidefinite** — over a `StarOrderedRing` (e.g. `ℂ`),
+`⟨f, f⟩ = ∑ₖ conj(fₖ) fₖ ≥ 0`, because each term `star (fₖ) * fₖ` is nonnegative.
+This is the inner-product positivity a genuine state overlap needs, and it is
+exactly why `hermitian_overlap` (not the bilinear `overlap`) is the right pairing
+for a complex amplitude vector. -/
+theorem hermitianOverlap_self_nonneg {K : Type*} [Fintype K] {C : Type*}
+    [CommRing C] [PartialOrder C] [StarRing C] [StarOrderedRing C] (f : K → C) :
+    0 ≤ hermitianOverlap f f :=
+  Finset.sum_nonneg fun k _ => star_mul_self_nonneg (f k)
 
 /-! ### L4 `Multiply` — the group-algebra product
 

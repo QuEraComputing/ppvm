@@ -18,7 +18,9 @@ This development is being written **before** the `ppvm-traits-2` crate, to
 examine the unifying algebra the redesign is built on. The design docs are
 
 - [`docs/design/traits-2-configuration-and-hashing.md`](../docs/design/traits-2-configuration-and-hashing.md)
-  — the graded algebra `C[K]` and the `Sp ⋉ phase` Pauli factorization;
+  — the graded algebra `C[K]` and the symplectic-bits + phase-extension Pauli
+  factorization (a non-split central extension `1 → ℤ₄ → 𝒫ₙ → GF(2)^{2n} → 1`,
+  with `Sp(2n,2)` acting one level up on the quotient);
 - [`docs/design/word-data-structures.md`](../docs/design/word-data-structures.md);
   and
 - [`docs/design/tableau-data-structure.md`](../docs/design/tableau-data-structure.md).
@@ -151,7 +153,8 @@ Formalizing forced substantive fixes to
 **Non-Clifford `multiply` / `key_mul` (`Twisted.lean`).** The design's L4
 `key_mul` on mod-phase keys — `(c,v)·(d,w) = (c·d·i^{phaseExp(v,w)}, v⊕w)` — is
 proven **associative** over any coefficient ring with a fourth root of unity
-`i⁴=1` (the `ComplexCoefficient` bound), directly from the phase 2-cocycle
+`i⁴=1` (the loosened `ImaginaryUnit` bound, weaker than the old
+`ComplexCoefficient`), directly from the phase 2-cocycle
 transported through `iᵏ`. So `C[PauliWord]` with `key_mul` is an associative
 algebra on the mod-phase key itself (with unit `1·I`).
 

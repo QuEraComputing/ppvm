@@ -160,8 +160,12 @@ multiplication folds the cocycle onto the phase — exactly what `Sum` does when
 `KeyProduct` "ships the phase to the coefficient." Rather than state loose laws,
 we install a genuine Mathlib `Group` instance (axioms by `decide` over the
 16-element type), so `𝒫₁` is a first-class group and all of Mathlib's group
-theory applies. This is the design's "central extension `Sp ⋉ phases`" made
-literal: `toSymplectic` below is the quotient onto the symplectic bits. -/
+theory applies. This is the design's **non-split central extension**
+`1 → ℤ₄ → 𝒫₁ → 𝔽₂² → 1` made literal: `toSymplectic` below is the quotient onto
+the symplectic bits, and `not_commutative` witnesses that it does not split (so
+it is a genuine central extension, **not** a semidirect product `⋉`). The
+symplectic *group* `Sp(2n,2)` acts one level up, on this quotient — see
+`PPVM.Symplectic`. -/
 
 /-- A single-qubit Pauli with explicit phase: `⟨phase, x, z⟩` denotes
 `i^{phase} · g(x, z)`. -/

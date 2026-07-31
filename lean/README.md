@@ -58,7 +58,7 @@ The exact Lean/Mathlib version is pinned by `lean/lean-toolchain` and
 | `PPVM/Basic.lean` | Namespace + Mathlib-resolution smoke test. | — |
 | `PPVM/Pauli.lean` | Phase-free single-qubit symplectic group law + symplectic form (`decide`). | ✅ |
 | `PPVM/Pauli/Phase.lean` | The **`ℤ/4ℤ` phase cocycle**: `phaseExp` from the Rust `sign`/`imag` booleans, analytic reference `phaseRef`, `phaseExp = phaseRef`, the 2-cocycle (associativity) law, the single-qubit **Pauli `Group`** (a real Mathlib `Group` instance) with the **non-split central extension** `toSymplectic : 𝒫₁ →* (ℤ/2)²`, and commutation ↔ symplectic form. | ✅ |
-| `PPVM/Pauli/Matrix.lean` | Genuine **`ℤ[i]` 2×2 Pauli matrices**; `pauliMat_mul` checks `phaseExp` against the *real* matrix product `g(a,b)·g(c,d) = iᵏ g(a⊕c,b⊕d)` — grounds `phaseRef` in an actual model. | ✅ |
+| `PPVM/Pauli/Matrix.lean` | Genuine **`ℤ[i]` 2×2 Pauli matrices**; `pauliMat_mul` checks `phaseExp` against the *real* matrix product `g(a,b)·g(c,d) = iᵏ g(a⊕c,b⊕d)` — grounds `phaseRef` in an actual model. Also: the twisted `key_mul` product is associative over the **exact** ring `ℤ[i]` (backing the loosened L4 bound). | ✅ |
 | `PPVM/Pauli/Word.lean` | Lifts the cocycle and commutation law to the **n-qubit** `PauliWord` (per-qubit phase summed mod 4, per `phase/mul.rs`). | ✅ |
 | `PPVM/Pauli/Symplectic.lean` | The **symplectic space `GF(2)^{2n}`**: Pauli mult = module `+`; `ω` as a Mathlib `LinearMap.BilinForm (ℤ/2)` proven **alternating** (`IsAlt`); `H`/`S`/`CNOT`/`CZ` proven to be `Sp(2n,2)` **isometries**. | ✅ |
 | `PPVM/Pauli/Conjugation.lean` | **Clifford conjugation as signed symplectic automorphisms**: `conjH`/`conjS` are group homs of `𝒫₁` (the `Sp` bit-map + sign `β`), with `HXH=Z`, `SXS†=Y`, `H²=I`. | ✅ |
@@ -127,17 +127,26 @@ both operands. (As keys, `PauliWord`, `Frame`, and `Bitstring` are all just
 
 ## Corrections made to the design doc (from deriving the theorems)
 
-Formalizing forced one substantive fix to
+Formalizing forced substantive fixes to
 `docs/design/traits-2-configuration-and-hashing.md`:
 
-* The doc described the gate structure as *"the Clifford group is the central
-  extension `Sp(2n,2) ⋉ phases`."* Deriving the `Group` instance shows this is
-  inaccurate twice over: (1) `𝒫₁` is nonabelian (`not_commutative`) while its
-  kernel `ℤ₄` and quotient `(ℤ/2)²` are abelian, so the phase extension is
-  **non-split** — a central extension, *not* a semidirect product `⋉`; and
-  (2) `Sp(2n,2)` is not a factor of the Pauli group at all — it acts one level
-  up, as `Clifford / Pauli`. The doc now states the two exact sequences
-  correctly and cites the Lean witnesses.
+* **The gate structure is a non-split central extension, not `Sp(2n,2) ⋉ phases`.**
+  Deriving the `Group` instance shows the doc's phrasing was inaccurate twice
+  over: (1) `𝒫₁` is nonabelian (`not_commutative`) while its kernel `ℤ₄` and
+  quotient `(ℤ/2)²` are abelian, so the phase extension is **non-split** — a
+  central extension, *not* a semidirect product `⋉`; and (2) `Sp(2n,2)` is not a
+  factor of the Pauli group at all — it acts one level up, as `Clifford / Pauli`.
+  The doc now states the two exact sequences correctly.
+* **L4's coefficient bound was over-constrained — loosened to admit exact rings.**
+  `Twisted.tmul_assoc` proves the twisted `key_mul` product is associative using
+  only a primitive fourth root of unity (`i⁴ = 1`), *not* the full complex field.
+  So the design's `Multiply` bound `ComplexCoefficient` needlessly excluded exact
+  coefficient rings — a real limitation, since `ppvm-sym` targets exact/symbolic
+  coefficients. The doc now bounds L4 on a new minimal `ImaginaryUnit` capability,
+  and correspondingly drops the vestigial `Mul<f64>` from the base `Coefficient`
+  (the sole bound that had foreclosed `GaussianInt` / cyclotomic coefficients).
+  `Matrix.lean` gives `ℤ[i]` as a worked instance: the twisted product is proven
+  associative over that exact ring.
 
 **Non-Clifford `multiply` / `key_mul` (`Twisted.lean`).** The design's L4
 `key_mul` on mod-phase keys — `(c,v)·(d,w) = (c·d·i^{phaseExp(v,w)}, v⊕w)` — is

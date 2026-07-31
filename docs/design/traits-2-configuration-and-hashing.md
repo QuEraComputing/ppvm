@@ -61,16 +61,30 @@ arithmetic: `sin_cos` (a rotation concern) and `cutoff` (a truncation concern �
 the very policy this redesign extracts). `Coefficient` is therefore split into a
 value domain, a separate angle domain, and a policy predicate.
 
-The value domain keeps only arithmetic and a magnitude, replacing `cutoff` with
-a property that a policy can threshold:
+One more bound comes out for the same reason. The old `Coefficient` also required
+`Mul<f64, Output = Self>` (scale a coefficient by a real). Once `sin_cos` moves to
+`Angle<C>` — whose `sin_cos(&self) -> (C, C)` returns the rotation amplitudes
+*already in the coefficient domain* — nothing in the trait set scales a
+coefficient by a bare `f64` anymore, so `Mul<f64>` is vestigial. It is also the
+**one bound that forecloses exact coefficient rings**: `Complex<f64>` satisfies
+`Mul<f64>`, but `GaussianInt` (`ℤ[i]`), `Complex<Rational>`, and cyclotomic
+integers cannot (`0.5·(1+i)` leaves the ring). Dropping it lets those exact rings
+be `Coefficient`s — which matters because `ppvm-sym` exists precisely for
+exact/symbolic coefficients, and formalizing L4 (below) showed the operator
+product needs no floats at all. `magnitude() -> f64` stays: an exact ring can
+still report a real norm for a `Policy` to threshold.
+
+The value domain keeps only ring arithmetic and a magnitude, replacing `cutoff`
+with a property that a policy can threshold:
 
 ```rust
-/// Value-domain arithmetic only — no rotation, no truncation.
+/// Value-domain ring arithmetic only — no rotation, no truncation, no bare-`f64`
+/// scaling (so exact rings like `GaussianInt` qualify; see above).
 pub trait Coefficient:
     PartialEq + Clone + num::Zero
     + Neg<Output = Self>
     + Add<Self, Output = Self> + Sub<Self, Output = Self>
-    + Mul<Self, Output = Self> + Mul<f64, Output = Self>
+    + Mul<Self, Output = Self>
     + AddAssign<Self> + MulAssign<Self>
     + std::iter::Sum + Send + Sync
 {
@@ -592,18 +606,31 @@ pub trait KeyProduct: Eq + Clone {
     fn key_mul(&self, other: &Self) -> (Self, Phase);
 }
 
+/// The phase capability L4 needs, and *all* it needs: a coefficient ring with a
+/// distinguished **primitive fourth root of unity** `i` (`i·i == −one()`, hence
+/// `i⁴ = 1`). `key_mul` folds `i^k` (`k ∈ ℤ/4`) onto the coefficient, and the
+/// twisted product is associative for any such ring — machine-checked in
+/// `lean/PPVM/Algebra/Twisted.lean` (`tmul_assoc`), whose sole hypothesis is
+/// `i⁴ = 1`, with the exact ring `GaussianInt` given as a worked instance in
+/// `lean/PPVM/Pauli/Matrix.lean`. This is strictly weaker than the earlier
+/// `ComplexCoefficient` (`Complex<f64>`) bound: `GaussianInt` (`ℤ[i]`),
+/// `Complex<Rational>`, and cyclotomic integers all satisfy it, so L4 does **not**
+/// foreclose exact or symbolic Pauli multiplication.
+pub trait ImaginaryUnit: Coefficient + num::One {
+    /// The imaginary unit `i`; impls must satisfy
+    /// `Self::imaginary_unit() * Self::imaginary_unit() == -Self::one()`.
+    fn imaginary_unit() -> Self;
+}
+
 /// L4 — the ring product. The only layer that needs the *key* to carry a
 /// product; it stays optional and is not implemented for a key type that has
 /// none. The Pauli product injects powers of `i`, so the coefficient must absorb
-/// phase. The *minimal* algebraic requirement — what makes the twisted product
-/// associative and faithful — is a distinguished **primitive fourth root of
-/// unity** (the Lean proof `Twisted.tmul_assoc` needs only `i⁴ = 1`), so an exact
-/// ring such as `ℤ[i]` or a cyclotomic ring qualifies; `ComplexCoefficient` is a
-/// convenient superset of that, not a necessity.
+/// phase — bounded on `ImaginaryUnit`, the minimal requirement (a primitive
+/// fourth root of unity), **not** the stronger `ComplexCoefficient`.
 pub trait Multiply: Accumulate
 where
     Self::Key: KeyProduct,
-    Self::Coeff: ComplexCoefficient,
+    Self::Coeff: ImaginaryUnit,
 {
     fn multiply_into(&self, other: &Self, acc: &mut Self);
 }
@@ -922,6 +949,8 @@ changed according to whether their underlying responsibility changes:
 | `Strategy` | `Policy` | Intentional terminology change requested for this redesign; the `Copy` bound is dropped. |
 | `Coefficient::cutoff` | removed | The truncation predicate moves to `Policy`; `Coefficient::magnitude` exposes only the value property the policy thresholds. |
 | `Coefficient::sin_cos` | `Angle<C>` | The rotation angle becomes a separate domain, defaulting to the coefficient type. |
+| `Coefficient: Mul<f64>` | removed | Vestigial once `sin_cos` returns coefficient-domain amplitudes; it was the sole bound excluding exact rings, so dropping it lets `GaussianInt` / cyclotomic coefficients be `Coefficient`s. |
+| L4 `Multiply` bound `ComplexCoefficient` | `ImaginaryUnit` (primitive fourth root of unity) | The Lean proof shows the twisted product needs only `i⁴ = 1`, so the bound is loosened from `Complex<f64>` to admit exact rings (`lean/PPVM/Algebra/Twisted.lean`, `lean/PPVM/Pauli/Matrix.lean`). |
 | `ACMap` (`ACMapBase`/`Iter`/`AddAssign`/`Insert`/`Retain`/`Consume`) *and* `SparseVector` | graded `Support` / `Accumulate` / `Scale` / `Pair` / `Multiply`, `impl`'d directly on `Vec`/`HashMap` | Two hand-rolled copies of the same abstraction collapse into one over `C[K]`; `Retain` (truncation) leaves the algebra for `Policy`. |
 | `PauliSum::map_insert`, `map_add` | one `Sum::apply(producer)` → `accumulate_batch` + `reduce` | They differed only in their producer, not the map op; the `Vec<(W,C)>` staging leak is removed. |
 | `PauliSum` aux-map + `scratch` fields | removed | The aux map was an artifact of mutate-while-iterate; the producer/`TermBatch` model needs no owned workspace, so `Sum` owns none. |

@@ -6,6 +6,7 @@ Authors: The PPVM Authors
 import Mathlib.NumberTheory.Zsqrtd.GaussianInt
 import Mathlib.LinearAlgebra.Matrix.Notation
 import PPVM.Pauli.Phase
+import PPVM.Algebra.Twisted
 
 /-!
 # The Pauli phase, validated against actual `ℤ[i]` matrices
@@ -48,5 +49,22 @@ theorem pauliMat_mul : ∀ a b c d : Bool,
     pauliMat a b * pauliMat c d
       = iU ^ (phaseExp a b c d).val • pauliMat (xor a c) (xor b d) := by
   decide
+
+/-! ### The loosened L4 coefficient bound is realizable over an exact ring
+
+Formalizing L4's twisted product (`PPVM.Twisted.tmul_assoc`) showed it is
+associative over *any* commutative ring with a fourth root of unity — the design
+therefore loosens its `Multiply` bound from `ComplexCoefficient` to a primitive
+fourth root of unity. Here is the point made concrete: `ℤ[i]` is an **exact**
+ring (no floats), `iU` is its fourth root, and the twisted Pauli product is
+associative over it. So exact / symbolic Pauli multiplication is admissible. -/
+
+/-- `iU` is a genuine fourth root of unity in `ℤ[i]`. -/
+theorem iU_pow_four : iU ^ 4 = 1 := by decide
+
+/-- The twisted `key_mul` product is associative over the exact ring `ℤ[i]`. -/
+example (a b c : Twisted.Mono GaussianInt) :
+    Twisted.tmul iU (Twisted.tmul iU a b) c = Twisted.tmul iU a (Twisted.tmul iU b c) :=
+  Twisted.tmul_assoc iU iU_pow_four a b c
 
 end PPVM.PauliMatrix

@@ -310,13 +310,19 @@ impl<T: SymplecticColumns + PhaseTrack> Clifford for T {
 
 The role-*exclusive* operations — those that interpret the rows as a symplectic
 basis rather than as independent operators — do not belong in the shared tower.
-They are a tableau-only trait a word never implements:
+They are a tableau-only trait a word never implements. `StabilizerFrame` holds
+the frame **primitives**, not `measure` itself: `measure` is the public
+`Measure` trait, and its two algorithms (`Tableau` pure-Clifford,
+`GeneralizedTableau` coefficient-aware `O(n^2)`) are built *on* these primitives:
 
 ```rust
 pub trait StabilizerFrame {
-    fn measure(&mut self, qubit: usize) -> Option<bool>;
-    fn row_multiply(&mut self, src: usize, dst: usize); // uses the g-rule
-    // pivot search, canonicalization, transposition guard, ...
+    /// Find a generator that anticommutes with the measured Pauli (the pivot).
+    fn anticommuting_pivot(&self, qubit: usize) -> Option<usize>;
+    /// Multiply generator `src` into `dst` (uses the Aaronson–Gottesman g-rule).
+    fn row_multiply(&mut self, src: usize, dst: usize);
+    /// Restore canonical form after elimination.
+    fn canonicalize(&mut self);
 }
 ```
 
@@ -354,12 +360,11 @@ parameters with one. In particular, there is no `PauliSumAlgorithm` trait that
 bundles a term map with a policy: storage layout and policy are orthogonal
 choices.
 
-The choices that are *intrinsic to a storage instance* — which word it keys on
-and which coefficient it accumulates — are associated types of that storage
-rather than free parameters, the same way `HashMap<K, V>` fixes `K` and `V` per
-concrete map. `SumStorage` (defined below) therefore exposes `type Word` and
-`type Coeff`, and the reusable sparse-sum shape needs only its storage and its
-policy:
+The choices that are *intrinsic to a storage instance* — which key it maps and
+which coefficient it accumulates — are associated types of that storage rather
+than free parameters, the same way `HashMap<K, V>` fixes `K` and `V` per concrete
+map. `SumStorage` (defined below) therefore exposes `type Key` and `type Coeff`,
+and the reusable sparse-sum shape needs only its storage and its policy:
 
 ```rust
 pub struct Sum<S, P = NoPolicy>
@@ -482,51 +487,60 @@ removes the current split where the `Strategy` trait lives in `ppvm-traits` but
 its concrete strategies live in `ppvm-pauli-sum`; the policy is not an
 algorithm-agnostic `ppvm-traits-2` concern.
 
-#### The map is a graded algebra over `C[W]`
+#### The map is a graded algebra over `C[K]`
 
 The associative coefficient map — implemented today by `HashMap`, `IndexMap`,
-and `DashMap` — is, algebraically, the **free `C`-module on the set of words**:
-a finitely-supported function `W ⇀ C`, an element of `C[W]`. Every operation it
-must support is a module (or, at the top, ring) operation, so its capabilities
-are **graded by algebraic strength** rather than named ad hoc. This replaces the
-flat `ACMapBase` / `ACMapIter` / `ACMapAddAssign` / `ACMapInsert` /
-`ACMapRetain` / `ACMapConsume` split — which the design's own admission rule
-would reject as six grandfathered names — with layers, each justified by a
-distinct algebraic property *and* a distinct consumer:
+and `DashMap` — is, algebraically, the **free `C`-module on a set of keys `K`**:
+a finitely-supported function `K ⇀ C`, an element of `C[K]`. The keys are
+whatever is `Indexable` — `PauliWord` for `PauliSum`, `Tableau` for a stabilizer
+mixture — so the *same* algebra serves both. Every operation it must support is a
+module (or, at the top, ring) operation, so its capabilities are **graded by
+algebraic strength** rather than named ad hoc. This replaces the flat
+`ACMapBase` / `ACMapIter` / `ACMapAddAssign` / `ACMapInsert` / `ACMapRetain` /
+`ACMapConsume` split — which the design's own admission rule would reject as six
+grandfathered names — with layers, each justified by a distinct algebraic
+property *and* a distinct consumer:
 
 | Layer | Algebra | Trait | Justifying consumer |
 | --- | --- | --- | --- |
-| L0 | finite partial function `W ⇀ C` | `Support` | everything; read-out / export |
+| L0 | finite partial function `K ⇀ C` | `Support` | everything; read-out / export |
 | L1 | abelian-monoid formation + canonical support | `Accumulate` (`accumulate_batch` + `reduce`) | forming any linear combination |
 | L2 | the `C`-module action | `Scale` | normalization, global factors |
 | L3 | the bilinear form | `Pair` (`probe_batch`, `overlap`) | overlap / expectation read-out |
-| L4 | the ring (group-algebra) product | `Multiply` | operator composition, squaring an observable |
+| L4 | the ring (group-algebra) product | `Multiply` (needs a key product) | operator composition, squaring an observable |
 
-The **minimum** is L0 + L1: a finitely-supported `W ⇀ C` you can accumulate
+The **minimum** is L0 + L1: a finitely-supported `K ⇀ C` you can accumulate
 into and reduce. That *is* the algebraic essence of a sparse sum. Truncation is
 deliberately **absent** from this table: dropping terms that are still in the
 support is an approximation that breaks module exactness, so it is not an
 algebraic operation — it belongs to `Policy` (a `Retain` capability), sitting
 outside the algebra. That is why truncation was always awkward to place.
 
+The key type is **`Indexable`, not `Word`**: `C[K]` is the free module over any
+index set, so the algebra needs only a valid map key. Requiring `Word` here would
+leak Pauli-specificity into the general algebra and block the tableau mixture,
+whose key is a `Tableau` (an `Indexable` that is not a `Word`). Pauli-specific
+propagation re-adds the `Word` / `PauliBits` bound on *its* methods, not on the
+algebra.
+
 ```rust
-/// L0 — the container. Note: no `&mut (W, C)` and no `&mut [C]` slot access is
+/// L0 — the container. Note: no `&mut (K, C)` and no `&mut [C]` slot access is
 /// exposed, so a columnar (structure-of-arrays) backend is expressible. `iter`
 /// is read-only export; a SoA backend synthesizes the pairs from its columns.
 pub trait Support {
-    type Word: Word + Indexable;
+    type Key: Indexable;            // PauliWord, LossyPauliWord, or Tableau
     type Coeff: Coefficient;
     fn len(&self) -> usize;
-    fn get(&self, key: &Self::Word) -> Option<Self::Coeff>;
-    fn iter(&self) -> impl Iterator<Item = (Self::Word, Self::Coeff)>;
+    fn get(&self, key: &Self::Key) -> Option<Self::Coeff>;
+    fn iter(&self) -> impl Iterator<Item = (Self::Key, Self::Coeff)>;
 }
 
 /// L1 — the module core: form linear combinations, then canonicalize.
 pub trait Accumulate: Support {
     /// Build side of the hash join: merge a produced batch, accumulating onto an
     /// existing key or inserting a new one. Columnar in; the scalar
-    /// `accumulate(w, c)` is provided sugar over a batch of one.
-    fn accumulate_batch(&mut self, terms: &TermBatch<Self::Word, Self::Coeff>);
+    /// `accumulate(k, c)` is provided sugar over a batch of one.
+    fn accumulate_batch(&mut self, terms: &TermBatch<Self::Key, Self::Coeff>);
 
     /// Canonicalize to reduced finite-support form: drop every key whose
     /// coefficient `is_zero()`. First-class and run **only here** — see below.
@@ -535,19 +549,30 @@ pub trait Accumulate: Support {
 
 /// L2 — the C-module action: a pure elementwise map over the coefficients.
 pub trait Scale: Support {
-    fn scale(&mut self, s: &Self::Coeff);   // ∀ w. c_w *= s
+    fn scale(&mut self, s: &Self::Coeff);   // ∀ k. c_k *= s
 }
 
 /// L3 — the bilinear form: the read side of the hash join.
 pub trait Pair: Support {
-    fn probe_batch(&self, keys: &KeyBatch<Self::Word>, out: &mut [Option<Self::Coeff>]);
+    fn probe_batch(&self, keys: &KeyBatch<Self::Key>, out: &mut [Option<Self::Coeff>]);
     fn overlap(&self, other: &Self) -> Self::Coeff;
 }
 
-/// L4 — the ring product. The Pauli product injects powers of `i`, so the
-/// coefficient must absorb phase: `Multiply` is bounded on `ComplexCoefficient`.
+/// A key whose set carries a product — the group/monoid structure that lifts
+/// `C[K]` from a module to an algebra. `PauliWord` implements it (the phased
+/// Pauli product `v·w = ±i^k (v⊕w)`); a bare `Tableau` mixture key does not.
+pub trait KeyProduct: Indexable {
+    /// Product of two keys, with the phase it produces (folded onto the coeff).
+    fn key_mul(&self, other: &Self) -> (Self, Phase);
+}
+
+/// L4 — the ring product. The only layer that needs the *key* to carry a
+/// product; it stays optional and is not implemented for a key type that has
+/// none. For Paulis the product injects powers of `i`, so the coefficient must
+/// absorb phase: bounded on `ComplexCoefficient`.
 pub trait Multiply: Accumulate
 where
+    Self::Key: KeyProduct,
     Self::Coeff: ComplexCoefficient,
 {
     fn multiply_into(&self, other: &Self, acc: &mut Self);
@@ -628,15 +653,82 @@ The producer difference lives entirely on the **term-production side** — the
 only ever accumulates produced batches. That is what dissolves the old
 `map_add` / `map_insert` split and its `Vec<(W, C)>` staging leak.
 
+A producer is a **monomorphized, inlinable** type, never `dyn` — this is a hot
+loop, so the abstraction must compile to nothing:
+
+```rust
+pub trait TermProducer<K, C> {
+    /// Push the produced terms for one existing (key, coeff) into the sink.
+    fn produce<S: TermSink<K, C>>(&self, key: &K, coeff: &C, sink: &mut S);
+}
+
+/// Bijective re-key (Clifford): one produced term per input.
+pub struct RekeyProducer<F> { f: F }         // ZST when the closure captures by copy
+
+impl<K, C, F: Fn(&K, &C) -> (K, C)> TermProducer<K, C> for RekeyProducer<F> {
+    #[inline(always)]
+    fn produce<S: TermSink<K, C>>(&self, key: &K, coeff: &C, sink: &mut S) {
+        let (k, c) = (self.f)(key, coeff);
+        sink.push(k, c);
+    }
+}
+```
+
+Because `apply<P>` and `produce<S>` are generic, each gate call site
+monomorphizes and the `#[inline]` body folds into the accumulate loop; the sink's
+column is pre-sized from `Policy::capacity`, so there is no per-term allocation.
+The only inherent cost is the `key.clone()` inside the closure — a stack copy for
+`PauliWord`, a memcpy for `Tableau` — which a hand-written loop pays too.
+
+#### One engine, two key types: Pauli propagation and the tableau mixture
+
+Because the algebra is over `Key: Indexable` and a gate is a `TermProducer` that
+transforms each key, **Pauli propagation and the classical stabilizer mixture are
+the same `Sum` engine** — they differ only in the key type and the key's own
+conjugation:
+
+```rust
+pub type PauliSum<C = f64, P = NoPolicy>       = Sum<HashStore<PauliWord, C>, P>;
+pub type TableauMixture<C = f64, P = NoPolicy> = Sum<HashStore<Tableau,   C>, P>;
+// TableauMixture replaces the former GeneralizedTableauSum<C, T, S: EntryStore>.
+
+// A Clifford gate on ANY sum: re-key each key via its own `Clifford` impl.
+impl<S, P> Clifford for Sum<S, P>
+where
+    S: SumStorage,
+    S::Key: Clifford + Clone,      // PauliWord's is symplectic bits; Tableau's is the inverse-tableau update
+    P: Policy<S::Key, S::Coeff>,
+{
+    fn h(&mut self, q: usize) {
+        self.apply(RekeyProducer::new(|k: &S::Key, c: &S::Coeff| {
+            let mut next = k.clone();
+            next.h(q);             // dispatched to the key type's Clifford impl
+            (next, c.clone())      // (+ any phase the conjugation puts on the coeff)
+        }));
+    }
+    // s, cnot, cz likewise
+}
+```
+
+For `S::Key = PauliWord`, `next.h(q)` is the Step-3 `PauliBits` / `SymplecticColumns`
+bit op; for `S::Key = Tableau`, it is the tableau's own `Clifford` impl over its
+inverse-tableau storage. Same engine, same producer, same `accumulate` / `reduce`
+— only the key's `Clifford` implementation varies. This is the "smallest useful
+common factor" the earlier iteration deferred: it is the key-agnostic graded
+algebra, which Step 5 already built and this section unlocks by relaxing the key
+bound from `Word` to `Indexable`. The mixture's coefficient-aware `O(n^2)`
+measurement remains a `Tableau`-specific algorithm (via `StabilizerFrame`), layered
+on top rather than merged into the engine.
+
 A `SumStorage` is a new abstraction extracted from the fields currently owned
 directly by `PauliSum`: its maps and reusable workspace. It is an actual value,
 not a marker configuration:
 
 ```rust
 pub trait SumStorage: Clone {
-    type Word: Word + Indexable;
+    type Key: Indexable;            // PauliWord for PauliSum, Tableau for a mixture
     type Coeff: Coefficient;
-    type Map: Accumulate<Word = Self::Word, Coeff = Self::Coeff>;
+    type Map: Accumulate<Key = Self::Key, Coeff = Self::Coeff>;
 
     fn data(&self) -> &Self::Map;
     fn data_mut(&mut self) -> &mut Self::Map;
@@ -647,7 +739,12 @@ pub trait SumStorage: Clone {
     /// batch to `Accumulate::accumulate_batch`, then `reduce`s. This one method
     /// subsumes the former `map_add` / `map_insert` / `map_insert_multiple`:
     /// they differed only in their producer, not in the map operation.
-    fn apply<P: TermProducer<Self::Word, Self::Coeff>>(&mut self, producer: P);
+    ///
+    /// `P` is a type parameter, never `dyn`, so `apply` monomorphizes and the
+    /// producer's `produce` (marked `#[inline]`) folds into the accumulate loop:
+    /// after compilation this is a tight loop with the gate body inlined and no
+    /// per-term allocation, identical to a hand-written loop.
+    fn apply<P: TermProducer<Self::Key, Self::Coeff>>(&mut self, producer: P);
 
     fn reduce(&mut self);
 }
@@ -752,7 +849,7 @@ changed according to whether their underlying responsibility changes:
 | `PauliSum::map_insert`, `map_add` | one `SumStorage::apply(producer)` → `Accumulate::accumulate_batch` + `reduce` | They differed only in their producer, not the map op; the `Vec<(W,C)>` staging leak is removed. |
 | `PauliSum` map pair and `scratch` fields | `SumStorage` | A new abstraction is extracted from currently unnamed storage state. |
 | `PauliSum` | `PauliSum` over generalized `Sum` machinery | Pauli-facing code keeps its established name; `Sum` names the new cross-algebra engine. |
-| `GeneralizedTableauSum` | `GeneralizedTableauSum` | The classical mixture algorithm remains the same concept. |
+| `GeneralizedTableauSum<C, T, S: EntryStore>` | `TableauMixture = Sum<HashStore<Tableau, C>, P>` | The mixture is `C[Tableau]` — the same graded algebra as `PauliSum`, keyed on `Tableau`; storage unifies while the `O(n^2)` measurement stays tableau-specific. |
 | `EntryStore`, `VecStorage`, `MapStorage` | unchanged | The proposal uses the existing storage boundary and implementations. |
 | `Config::BuildHasher` | removed; `Indexable::key_hash() -> u64` | The direct-digest model leaves the map no hasher to choose; the key's internal algorithm is a private representation parameter, and the finalized digest is exposed as a value. |
 | `HashFinalize` | retained, but private to `ppvm-pauli-word` | The per-algorithm/per-width finalization fold still runs inside `key_hash()`; it leaves the algebra-agnostic contract. |

@@ -37,8 +37,11 @@ orientation.
 - Standardizing a general-purpose matrix trait in `ppvm-traits-2`.
 - Maintaining both row-major and column-major copies before benchmarks show
   that the memory and synchronization cost is worthwhile.
-- Deciding in this document whether PPVM should store a forward or inverse
-  tableau. Orientation and inversion are independent design choices.
+
+Orientation (column- vs row-major) and inversion (forward vs inverse) are
+independent choices; this document now fixes both — column-major storage of the
+**inverse** tableau (see [Inverse tableau](#inverse-tableau)) — because that
+pairing is what lets gates and measurement share one orientation.
 
 ## Logical model
 
@@ -105,9 +108,9 @@ capability of the same tableau type, not a `LossyTableau` variant or a
 
 ```rust
 pub struct Tableau {
-    data: TableauData,
+    data: TableauData,   // the *inverse* tableau (see below), column-major
     lost_count: usize,
-    // hash caches and RNG
+    // hash caches only — NO rng field; see "Randomness is injected"
 }
 
 pub struct GeneralizedTableau<C, I, S> {
@@ -175,9 +178,15 @@ assuming the same total performance from layout alone.
 
 ## Temporary transposition
 
-Row multiplication and elimination need long generator rows and therefore
-prefer the opposite orientation. The initial design should transpose the X/Z
-quadrants temporarily instead of storing two permanent copies:
+With the inverse tableau, ordinary measurement is a row read in the canonical
+column-major orientation, so it does **not** transpose — the per-measurement
+thrash that motivated a permanent second copy is gone. What still prefers the
+opposite orientation is *bulk* row multiplication and elimination (canonical
+form, batched frame work). Those receive a temporary transpose of the X/Z
+quadrants rather than a permanently stored second copy. Because a non-square
+`2n × n` bit-matrix transpose is not a swap, the guard is expected to work over
+square, padded blocks (as Stim does) and may use a scratch buffer; that padding
+and scratch are budgeted here rather than assumed away:
 
 ```rust
 pub enum Orientation {
@@ -247,10 +256,10 @@ The Rust behavioral boundary is one loss-aware trait:
 
 ```rust
 pub trait Measure {
-    fn measure(&mut self, qubit: usize) -> Option<bool>;
+    fn measure<R: Rng>(&mut self, qubit: usize, rng: &mut R) -> Option<bool>;
 
-    fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
-        targets.iter().map(|&q| self.measure(q)).collect()
+    fn measure_many<R: Rng>(&mut self, targets: &[usize], rng: &mut R) -> Vec<Option<bool>> {
+        targets.iter().map(|&q| self.measure(q, rng)).collect()
     }
 }
 ```
@@ -262,6 +271,31 @@ represents a lost qubit. This is the existing core representation used by
 `Measure -> bool` and `LossyMeasure -> Option<bool>` is removed. The bare
 boolean Clifford measurement routine becomes a private helper called only
 after the public implementation has established that the target is present.
+
+### Randomness is injected, not stored
+
+`measure` takes `rng: &mut R`; the tableau owns **no** RNG field. Storing the
+RNG inside the tableau is a correctness hazard: classical-mixture branching
+clones a tableau into two branches, and a cloned RNG would make both branches
+draw the *same* random outcomes — a silent sampling bias. With randomness
+injected, `clone` is a pure data copy (no stream to duplicate) and the caller
+derives an independent stream per branch (`SmallRng::from_rng(&mut *rng)`). It
+also makes `Tableau` trivially `Send + Sync` and removes RNG from the
+structural-hash exclusion list — there is nothing to exclude.
+
+### Inverse tableau
+
+`Tableau` stores the **inverse** tableau. In a forward tableau, measurement must
+scan a column to find an anticommuting generator and then eliminate — row work
+in the opposite orientation from the column-major gate path, forcing a transpose
+per measurement. The inverse tableau makes the anticommutation structure a
+**row read in the same column-major orientation gates already use**, so gates
+and measurement no longer fight over layout and the per-measurement transpose
+disappears. The inverse is a *private representation choice* of `Tableau`: the
+`SymplecticColumns` / `PhaseTrack` impls encode the inverse update rule and
+`StabilizerFrame` reads the inverse, but the behavioral traits above them
+(`Clifford`, `Measure`) are unchanged. Reference-frame sampling composes on top
+for the sampling workload.
 
 The common trait and result type do not imply a common measurement algorithm:
 
@@ -343,7 +377,7 @@ pub struct Tableau {
     xz_hash: OnceLock<u64>,
     phase_hash: OnceLock<u64>,
     loss_hash: OnceLock<u64>,
-    rng: SmallRng,
+    // no rng — randomness is injected at `measure` (see above)
 }
 ```
 
@@ -353,14 +387,21 @@ here composes the component caches (`combine(xz_hash, phase_hash, loss_hash)`)
 and applies the tableau's own finalization fold; it does not name cache types or
 expose invalidation.
 
+Because equality and hashing compare *canonical ranges* in bulk (zeroed
+padding), they require the tableau to be in its **canonical column-major
+orientation**. This is not left to discipline: the transposition guard holds
+`&mut self` for its whole lifetime, so the borrow checker forbids any shared
+`&self` hash or comparison while the tableau is transposed. Hashing therefore
+only ever observes the canonical orientation.
+
 Equality and hashing include logical qubit count, generator order, all logical
 X/Z bits, phases, and loss state. They exclude:
 
-- RNG state;
 - allocation capacity;
 - alignment padding;
 - cache values and validity flags; and
 - current physical orientation.
+  (There is no RNG state to exclude — it is not stored.)
 
 The component invalidation rules are:
 
@@ -372,7 +413,6 @@ The component invalidation rules are:
 | Row multiplication | invalidate | invalidate if changed | preserve |
 | Toggle a loss bit | preserve | preserve | invalidate |
 | Physical transpose | preserve | preserve | preserve |
-| RNG update | preserve | preserve | preserve |
 
 The current `ppvm-tableau-sum` split between `word_fingerprint` and
 `phase_loss_hash` is evidence that component hashing matters. The new tableau
@@ -381,7 +421,10 @@ owns X/Z, phase, and loss components directly.
 ## Cloning and mixture use
 
 Classical-mixture branching can clone tableaus frequently. Contiguous backing
-storage makes cloning a bulk memory copy. A clone may copy valid hash caches
+storage makes cloning a bulk memory copy. Because the RNG is not stored (it is
+injected at `measure`), the clone is *pure data*: there is no random stream to
+duplicate, so branches cannot end up statistically correlated — the caller
+derives an independent stream per branch. A clone may copy valid hash caches
 because it initially has identical logical contents. Subsequent mutation of
 the branch invalidates only the affected components.
 
@@ -401,9 +444,10 @@ measurement. Temporary transposition makes elimination and row products
 contiguous when required.
 
 This layout should be evaluated separately from higher-level sampling
-algorithms. Stim also uses an inverse tableau and reference-frame sampling;
-those algorithmic choices are not consequences of column-major storage and do
-not belong in the PPVM trait system.
+algorithms. PPVM follows Stim in storing the inverse tableau (see
+[Inverse tableau](#inverse-tableau)), and reference-frame sampling composes on
+top; both are internal choices of the concrete `Tableau` and do not surface in
+the PPVM trait system.
 
 ## Prototype validation
 
@@ -432,6 +476,12 @@ The prototype should include:
 2. Should phases occupy one or two bits per generator in the tableau model?
 3. Which operations should receive a transposition guard versus performing
    column-strided work directly?
-4. Does a dual-orientation representation outperform temporary transposition
-   for PPVM's measurement-heavy workloads?
-5. Should PPVM ultimately store a forward or inverse tableau?
+4. Does a dual-orientation representation still add anything now that the inverse
+   tableau keeps measurement in the gate orientation, or is temporary
+   transposition needed only for rare bulk elimination?
+
+**Resolved:** PPVM stores the **inverse** tableau (see
+[Inverse tableau](#inverse-tableau)). This keeps measurement a row read in the
+same column-major orientation gates use, so the per-measurement transpose is
+gone and the guard is reserved for rare bulk row work. Reference-frame sampling
+composes on top for measurement-dominated sampling workloads.

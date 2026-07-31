@@ -363,33 +363,36 @@ choices.
 The choices that are *intrinsic to a storage instance* — which key it maps and
 which coefficient it accumulates — are associated types of that storage rather
 than free parameters, the same way `HashMap<K, V>` fixes `K` and `V` per concrete
-map. `SumStorage` (defined below) therefore exposes `type Key` and `type Coeff`,
-and the reusable sparse-sum shape needs only its storage and its policy:
+map. `Accumulate` (the graded map trait, below) therefore exposes `type Key` and
+`type Coeff`, and the reusable sparse-sum shape needs only its storage container
+and its policy:
+
+The storage parameter is simply an `Accumulate` container (the graded algebra of
+[The map is a graded algebra over `C[K]`](#the-map-is-a-graded-algebra-over-ck))
+— there is no separate `SumStorage` trait and, crucially, **no owned workspace**:
 
 ```rust
 pub struct Sum<S, P = NoPolicy>
 where
-    S: SumStorage,
-    P: Policy<S::Word, S::Coeff>,
+    S: Accumulate,
+    P: Policy<S::Key, S::Coeff>,
 {
-    storage: S,
+    storage: S,     // Vec<(K, C)>, HashMap<K, C, IdentityBuildHasher>, or ColumnStore
     policy: P,
     /// Invariant: every key `k` in `storage` satisfies `k.n_sites() ==
-    /// n_sites`. An empty sum has no word to derive the width from, so the
+    /// n_sites`. An empty sum has no key to derive the width from, so the
     /// field is carried explicitly and checked by a `debug_assert!` on every
     /// insertion path.
     n_sites: usize,
 }
 ```
 
-`Word` is no longer a free parameter with no home; it is `S::Word`, so there is
-no phantom axis and no way to pair a storage type with the wrong word. This also
-resolves the tension with the earlier note that associated types are not
-justified merely to shrink a parameter count: `Word` and `Coeff` are genuinely
-intrinsic to a storage instance, so making them associated types is proper
-encapsulation, not a false bundle. Propagation methods still select their
-algebra through the site type by bounding `S::Word: Word<Site = Pauli>` or
-`Word<Site = FermionSite>`.
+`Sum` owns **only** its storage, policy, and width — no auxiliary map, no scratch
+buffer. Clone is therefore pure data, which matters because a stabilizer mixture
+clones frequently. The key and coefficient are `S::Key` / `S::Coeff` (associated
+types of `Accumulate`), so there is no phantom axis and no way to pair a storage
+type with the wrong key. Pauli propagation re-adds the `Word` / `PauliBits` bound
+on *its* methods (`S::Key: Word<Site = Pauli>`), not on the engine.
 
 #### The convenience bundle
 
@@ -398,16 +401,18 @@ foundational trait. Each alias fixes a domain's axes and defaults the common
 knobs, so a one-token `PauliSum` name returns:
 
 ```rust
-pub type PauliSum<C = f64, P = NoPolicy>      = Sum<HashStore<PauliWord, C>, P>;
-pub type LossyPauliSum<C = f64, P = NoPolicy> = Sum<HashStore<LossyPauliWord, C>, P>;
-pub type FermionSum<C = f64, P = NoPolicy>    = Sum<HashStore<FermionWord, C>, P>;
+// HashMapStore<K, C> = HashMap<K, C, IdentityBuildHasher>; the storage is the
+// bare container, the alias only names it and bakes in the pass-through hasher.
+pub type PauliSum<C = f64, P = NoPolicy>      = Sum<HashMapStore<PauliWord, C>, P>;
+pub type LossyPauliSum<C = f64, P = NoPolicy> = Sum<HashMapStore<LossyPauliWord, C>, P>;
+pub type FermionSum<C = f64, P = NoPolicy>    = Sum<HashMapStore<FermionWord, C>, P>;
 ```
 
 A user who wants to pin a reusable configuration writes one `type` line instead
 of an `impl Config`:
 
 ```rust
-type MyPauliSum = Sum<DashStore<PauliWord, Complex<f64>>, MaxPauliWeight>;
+type MyPauliSum = Sum<DashMap<PauliWord, Complex<f64>, IdentityBuildHasher>, MaxPauliWeight>;
 ```
 
 This is deliberately a bundle, and it is safe to be one because it commits
@@ -592,38 +597,40 @@ operation guarantees that by construction, and it earns its place three ways:
 
 - **Correctness** — there is no inline drop to get wrong (the caution above).
 - **It is a bulk primitive with a backend-specific implementation** — a scalar
-  `retain(|_, c| !c.is_zero())` on `HashStore`, but a prefix-sum **stream
-  compaction** kernel on a GPU column store. Folded into `consume`/swap it could
+  `retain(|_, c| !c.is_zero())` on a `HashMap`, but a prefix-sum **stream
+  compaction** kernel on a `ColumnStore`. Folded into `consume`/swap it could
   not have a bulk form.
 - **It amortizes** — several `accumulate_batch` calls (or a `multiply_into`
   outer product) can precede a single `reduce`, instead of canonicalizing after
   every step.
 
-#### Columnar from day one: two backends, no AoS leak
+#### Backends are containers; columnar is expressible from day one
 
-The whole point of this refactor is to unblock SIMD / GPU execution, so the
-layers are designed to admit a **structure-of-arrays** accumulator from the
-start — not as a later retrofit. Two backends must both be expressible against
-the same traits:
+The graded traits are `impl`'d **directly on the container** — no wrapper types.
+The lookup strategy is a *collection* choice by support size, and the memory
+layout is a separate *layout* choice by execution target:
 
-- **`HashStore`** (array-of-structs, `hashbrown`): implements every layer with
-  scalar kernels. `accumulate_batch` scatters the batch through scalar inserts;
-  `reduce` is a `retain`; `scale` is a scalar loop. Correct and fast for the CPU
-  scalar path, but a dead end for the GPU.
-- **`ColumnStore`** (structure-of-arrays, for SIMD / GPU): coefficients in one
-  contiguous column, keys in plane blocks. `accumulate_batch` is a
-  radix-partitioned, group-prefetched hash-join build; `scale` is one vectorized
-  `*=` over the coefficient column; `reduce` is a prefix-sum compaction;
-  `probe_batch` is a prefetched probe with coalesced gathers.
+- **`Vec<(K, C)>`** — an unsorted coordinate list, linear-scan `accumulate`. Best
+  for small support (the `GeneralizedTableau` amplitude vector); this is today's
+  `SparseVector`.
+- **`HashMap<K, C, IdentityBuildHasher>`** — hash-join `accumulate`. Best for
+  large support (`PauliSum`); this is today's `ACMap` path. (AoS, scalar CPU.)
+- **`ColumnStore`** — the one backend that *must* be a new struct, because it is
+  structure-of-arrays: coefficients in one contiguous column, keys in plane
+  blocks. Same hash-join build as the `HashMap`, but `scale` is one vectorized
+  `*=`, `reduce` is a prefix-sum compaction, and `probe_batch` uses coalesced
+  gathers. It is `HashMap`'s data re-laid for SIMD / GPU, not a third collection.
 
-Both are expressible **only because no trait signature leaks the array-of-structs
-layout**. The rules the whole storage contract holds to:
+The whole point of the refactor is to unblock SIMD / GPU, so the traits are
+designed so `ColumnStore` is expressible from day one — **only because no trait
+signature leaks the array-of-structs layout**. The rules the whole storage
+contract holds to:
 
 1. coefficients are a contiguous column and keys are plane blocks (SoA) — so L2
    Scale, L1 Reduce, and L3 Pair vectorize and GPU loads coalesce;
 2. term I/O is a columnar `TermBatch` / `KeyBatch` (see
    [The batch contract](#the-batch-contract)), never a scalar per-element
-   callback — so `HashStore` accepts a batch and processes it scalar internally
+   callback — so the `HashMap` accepts a batch and processes it scalar internally
    while `ColumnStore` vectorizes it, from the *same* call;
 3. the mutating operations are whole-map (`scale`, `reduce`) or batch
    (`accumulate_batch`), never per-slot; and
@@ -688,14 +695,18 @@ the same `Sum` engine** — they differ only in the key type and the key's own
 conjugation:
 
 ```rust
-pub type PauliSum<C = f64, P = NoPolicy>       = Sum<HashStore<PauliWord, C>, P>;
-pub type TableauMixture<C = f64, P = NoPolicy> = Sum<HashStore<Tableau,   C>, P>;
+// The storage is a bare container with the algebra traits impl'd on it; the
+// alias just fixes the container and bakes in the pass-through hasher.
+pub type HashMapStore<K, C> = HashMap<K, C, IdentityBuildHasher>;
+
+pub type PauliSum<C = f64, P = NoPolicy>       = Sum<HashMapStore<PauliWord, C>, P>;
+pub type TableauMixture<C = f64, P = NoPolicy> = Sum<HashMapStore<Tableau,  C>, P>;
 // TableauMixture replaces the former GeneralizedTableauSum<C, T, S: EntryStore>.
 
 // A Clifford gate on ANY sum: re-key each key via its own `Clifford` impl.
 impl<S, P> Clifford for Sum<S, P>
 where
-    S: SumStorage,
+    S: Accumulate,
     S::Key: Clifford + Clone,      // PauliWord's is symplectic bits; Tableau's is the inverse-tableau update
     P: Policy<S::Key, S::Coeff>,
 {
@@ -720,46 +731,81 @@ bound from `Word` to `Indexable`. The mixture's coefficient-aware `O(n^2)`
 measurement remains a `Tableau`-specific algorithm (via `StabilizerFrame`), layered
 on top rather than merged into the engine.
 
-A `SumStorage` is a new abstraction extracted from the fields currently owned
-directly by `PauliSum`: its maps and reusable workspace. It is an actual value,
-not a marker configuration:
+#### A third instantiation: the generalized tableau
+
+The graded algebra also captures the *single* coefficient-aware tableau, and
+finding that it does is strong validation: the current `GeneralizedTableau`
+already carries a **second hand-rolled copy of the algebra** in its
+`SparseVector` trait, whose `add_or_insert` / `retain` / `iter` are exactly
+`Accumulate` / `Retain` / `Support`.
+
+A `GeneralizedTableau` represents `U|c⟩`: a Clifford **frame** `U` (a `Tableau`)
+times a sparse superposition `|c⟩ = ∑_b c_b |b⟩` over bitstrings. That amplitude
+vector is `C[Bitstring]` — the same graded algebra, a third key type:
 
 ```rust
-pub trait SumStorage: Clone {
-    type Key: Indexable;            // PauliWord for PauliSum, Tableau for a mixture
-    type Coeff: Coefficient;
-    type Map: Accumulate<Key = Self::Key, Coeff = Self::Coeff>;
-
-    fn data(&self) -> &Self::Map;
-    fn data_mut(&mut self) -> &mut Self::Map;
-
-    /// Apply a term producer — a gate — into the map. The producer emits its
-    /// terms into a `TermSink`; the storage owns whether that sink is a scratch
-    /// `Vec`, a columnar `TermBatch`, or per-thread buffers, hands the staged
-    /// batch to `Accumulate::accumulate_batch`, then `reduce`s. This one method
-    /// subsumes the former `map_add` / `map_insert` / `map_insert_multiple`:
-    /// they differed only in their producer, not in the map operation.
-    ///
-    /// `P` is a type parameter, never `dyn`, so `apply` monomorphizes and the
-    /// producer's `produce` (marked `#[inline]`) folds into the accumulate loop:
-    /// after compilation this is a tight loop with the gate body inlined and no
-    /// per-term allocation, identical to a hand-written loop.
-    fn apply<P: TermProducer<Self::Key, Self::Coeff>>(&mut self, producer: P);
-
-    fn reduce(&mut self);
+pub struct GeneralizedTableau<C = f64, P = CoefficientThreshold> {
+    frame: Tableau,                                      // owns loss (Step 7)
+    amplitudes: Sum<Vec<(Bitstring, Complex<C>)>, P>,    // C[bitstring], Vec backend
+    measurement_record: Vec<Option<bool>>,
 }
 ```
 
-`SumStorage` owns the reusable workspace and the sink. It no longer exposes a
-family of closure methods returning `Option<Vec<(W, C)>>` — that return type
-leaked the scratch-`Vec` staging mechanism into the contract. Instead a gate is
-a `TermProducer` that pushes into a `TermSink`, so the staging representation
-(auxiliary map, scratch vector, columnar batch, per-thread buffers) is entirely
-the storage's private choice, and the same gate kernel drives the scalar
-`HashStore` and the columnar `ColumnStore` unchanged. `apply` desugars to
-`accumulate_batch` + `reduce` on the underlying `Accumulate` map; the
-whole-map rewrite (Clifford) and the branching expansion (rotation) are two
-`TermProducer`s, per the producer table above.
+Its gate semantics fall out of the same machinery:
+
+- **Clifford gate → the frame only.** `G·U|c⟩ = (GU)|c⟩`, so `self.frame.h(q)`
+  updates the tableau and the amplitude vector is untouched — free on
+  `C[Bitstring]`.
+- **Non-Clifford gate → branch the amplitude `Sum`.** Read the rotation axis from
+  the frame (the `O(n^2)` decomposition), then `self.amplitudes.apply(producer)`
+  branches `c → cos·c + i·sin·c'` and accumulates — the identical branch-producer
+  → `accumulate` → drop-below-threshold pattern `PauliSum` rotations use, down to
+  the current code spilling the merge into a temporary map.
+- **`coefficient_threshold`** is `CoefficientThreshold` `Policy`.
+
+The `Vec` backend is the right one here: the support is T-count-bounded (small),
+so linear-scan `accumulate` beats hashing — the concrete motivation for the `Vec`
+container. As with the mixture, the frame↔amplitude coupling and the `O(n^2)`
+measurement stay `GeneralizedTableau`-specific; only the *storage and accumulate*
+unify — exactly the level at which `PauliSum` fits.
+
+There is **no `SumStorage` trait, and no owned workspace.** An earlier draft had
+a `SumStorage` value bundling the map with a reusable *auxiliary map* and scratch
+buffer — but that aux map was an artifact of the *old* mutation model, where a
+gate iterated the live map and inserted new keys, and so needed a second map to
+stage into and swap. The producer / `TermBatch` model removes that aliasing: a
+`TermProducer` *reads* the map through `&` and *writes* produced terms into a
+`TermSink` (the batch), then `accumulate_batch` iterates the **batch** — a
+separate buffer — and merges into the map. Nothing is mutated while it is
+iterated, so there is no aux map to keep. Bundling one into the storage would
+double every sum's allocation and clone it on every mixture branch, for a
+workspace the design no longer needs.
+
+`apply` is therefore a thin method on `Sum` itself, over any `Accumulate`
+container:
+
+```rust
+impl<S: Accumulate, P: Policy<S::Key, S::Coeff>> Sum<S, P> {
+    /// Produce terms into a batch, merge, canonicalize, truncate. `TP` is a
+    /// type parameter, never `dyn`, so this monomorphizes and the producer's
+    /// `#[inline]` `produce` folds into the loop — no per-term allocation.
+    fn apply<TP: TermProducer<S::Key, S::Coeff>>(&mut self, producer: TP) {
+        let mut batch = /* transient, or a driver-owned reusable buffer */;
+        for (k, c) in self.storage.iter() { producer.produce(&k, &c, &mut batch); }
+        self.storage.accumulate_batch(&batch);
+        self.storage.reduce();
+        self.policy.truncate(&mut self.storage);
+    }
+}
+```
+
+The only staging that remains is the `TermBatch` the producer fills. It is
+**transient by default** (allocated per `apply`), which is exactly right for a
+frequently-cloned, small `GeneralizedTableau`. A long-lived driver that applies
+millions of gates — `PauliSum` — may instead own **one** reusable batch (and, for
+a whole-map Clifford rewrite, a second map to swap into) to amortize allocation.
+That reuse is an **opt-in optimization of the driver**, never a field of `Sum`
+and never imposed on the tableau side.
 
 Because the batch a producer stages is exactly the structure-of-arrays layout
 prefetched, SIMD, threaded, and offloaded backends consume, the execution
@@ -771,8 +817,8 @@ below.
 #### The pass-through storage contract
 
 Because a key's [`key_hash()`](#indexable-values) is already the finalized,
-avalanche-quality digest, the provided `SumStorage` backends **guarantee** that
-their inner map consumes it directly, through an identity pass-through hasher:
+avalanche-quality digest, the provided storage aliases **bake in** an identity
+pass-through hasher so the map consumes the digest directly:
 
 ```rust
 #[derive(Default, Clone)]
@@ -784,8 +830,8 @@ impl std::hash::Hasher for IdentityHasher {
 }
 ```
 
-The shipped `HashStore` / `DashStore` therefore instantiate their `HashMap` /
-`DashMap` with `IdentityBuildHasher`, so `finish() == key.key_hash()` and the
+The `HashMapStore` / `DashMapStore` aliases therefore fix their `HashMap` /
+`DashMap` to `IdentityBuildHasher`, so `finish() == key.key_hash()` and the
 digest reaches hashbrown untouched. This is part of the storage contract, not a
 user responsibility: the user selects the key's *internal* digest algorithm (the
 `H` in `PauliWord<A, H>`), which governs distribution quality, and never selects
@@ -845,20 +891,21 @@ changed according to whether their underlying responsibility changes:
 | `Strategy` | `Policy` | Intentional terminology change requested for this redesign; the `Copy` bound is dropped. |
 | `Coefficient::cutoff` | removed | The truncation predicate moves to `Policy`; `Coefficient::magnitude` exposes only the value property the policy thresholds. |
 | `Coefficient::sin_cos` | `Angle<C>` | The rotation angle becomes a separate domain, defaulting to the coefficient type. |
-| `ACMap` (`ACMapBase`/`Iter`/`AddAssign`/`Insert`/`Retain`/`Consume`) | graded `Support` / `Accumulate` / `Scale` / `Pair` / `Multiply` | The six flat names are replaced by algebra layers over `C[W]`; `Retain` (truncation) leaves the algebra for `Policy`. |
-| `PauliSum::map_insert`, `map_add` | one `SumStorage::apply(producer)` → `Accumulate::accumulate_batch` + `reduce` | They differed only in their producer, not the map op; the `Vec<(W,C)>` staging leak is removed. |
-| `PauliSum` map pair and `scratch` fields | `SumStorage` | A new abstraction is extracted from currently unnamed storage state. |
+| `ACMap` (`ACMapBase`/`Iter`/`AddAssign`/`Insert`/`Retain`/`Consume`) *and* `SparseVector` | graded `Support` / `Accumulate` / `Scale` / `Pair` / `Multiply`, `impl`'d directly on `Vec`/`HashMap` | Two hand-rolled copies of the same abstraction collapse into one over `C[K]`; `Retain` (truncation) leaves the algebra for `Policy`. |
+| `PauliSum::map_insert`, `map_add` | one `Sum::apply(producer)` → `accumulate_batch` + `reduce` | They differed only in their producer, not the map op; the `Vec<(W,C)>` staging leak is removed. |
+| `PauliSum` aux-map + `scratch` fields | removed | The aux map was an artifact of mutate-while-iterate; the producer/`TermBatch` model needs no owned workspace, so `Sum` owns none. |
 | `PauliSum` | `PauliSum` over generalized `Sum` machinery | Pauli-facing code keeps its established name; `Sum` names the new cross-algebra engine. |
-| `GeneralizedTableauSum<C, T, S: EntryStore>` | `TableauMixture = Sum<HashStore<Tableau, C>, P>` | The mixture is `C[Tableau]` — the same graded algebra as `PauliSum`, keyed on `Tableau`; storage unifies while the `O(n^2)` measurement stays tableau-specific. |
-| `EntryStore`, `VecStorage`, `MapStorage` | unchanged | The proposal uses the existing storage boundary and implementations. |
+| `GeneralizedTableauSum<C, T, S: EntryStore>` | `TableauMixture = Sum<HashMapStore<Tableau, C>, P>` | The mixture is `C[Tableau]` — the same graded algebra as `PauliSum`, keyed on `Tableau`; storage unifies while the `O(n^2)` measurement stays tableau-specific. |
+| `GeneralizedTableau.coefficients: SparseVector` | `Sum<Vec<(Bitstring, Complex<C>)>, CoefficientThreshold>` | The amplitude vector is `C[Bitstring]` — the same algebra, `Vec` backend; see [A third instantiation](#a-third-instantiation-the-generalized-tableau). |
+| `EntryStore`, `VecStorage`, `MapStorage`, `SparseVector` backings | the container itself (`Vec`, `HashMap`, `ColumnStore`) | No storage-wrapper trait; the algebra traits are `impl`'d on the collection directly. |
 | `Config::BuildHasher` | removed; `Indexable::key_hash() -> u64` | The direct-digest model leaves the map no hasher to choose; the key's internal algorithm is a private representation parameter, and the finalized digest is exposed as a value. |
 | `HashFinalize` | retained, but private to `ppvm-pauli-word` | The per-algorithm/per-width finalization fold still runs inside `key_hash()`; it leaves the algebra-agnostic contract. |
-| (new) | `IdentityBuildHasher` + pass-through `SumStorage` contract | The provided storage consumes `key_hash()` directly instead of re-hashing it. |
+| (new) | `IdentityBuildHasher` + pass-through storage aliases | The provided `HashMapStore` alias consumes `key_hash()` directly instead of re-hashing it. |
 | `PauliStorage` | removed | Packed backing storage becomes private to the concrete word representation. |
 | (new) | `Columnar`, `KeyColumn`, `KeyBatch`, `TermBatch`, `TermSink`/`TermProducer` | Structure-of-arrays term types; the columnar spelling of `Accumulate`/`Pair`. See [Batch execution and the hash-join contract](#batch-execution-and-the-hash-join-contract). |
-| (new) | `HashStore` (AoS) and `ColumnStore` (SoA) backends | Two `SumStorage` backends over the same graded traits — the SoA one is expressible from day one because no signature leaks AoS. |
+| (new) | `ColumnStore` (SoA) backend | The one storage that must be a new struct (SoA planes); `Vec`/`HashMap` need none. Expressible from day one because no signature leaks AoS. |
 
-Names such as `Word`, `Indexable`, `SumStorage`, and `Sum` are
+Names such as `Word`, `Indexable`, `Accumulate`, and `Sum` are
 therefore new because they denote abstractions that do not
 exist in the current implementation, not because the existing API is being
 renamed wholesale.
@@ -882,11 +929,10 @@ This rule keeps:
   implemented by `PhasedPauliWord` and `Tableau`;
 - `StabilizerFrame`, the role-exclusive tableau operations;
 - gate and noise traits, implemented across propagation and tableau backends;
-- `SumStorage`, and the graded map layers `Support` / `Accumulate` / `Scale` /
-  `Pair` / `Multiply`, each admitted by a distinct algebraic property *and* a
-  distinct consumer, and implemented by the scalar `HashStore` and the columnar
-  `ColumnStore`;
-- `EntryStore`, already implemented by `VecStorage` and `MapStorage`; and
+- the graded map layers `Support` / `Accumulate` / `Scale` / `Pair` / `Multiply`,
+  each admitted by a distinct algebraic property *and* a distinct consumer, and
+  `impl`'d directly on `Vec<(K,C)>` (small support), `HashMap` (large), and
+  `ColumnStore` (SIMD/GPU);
 - `Policy`, implemented by independent capacity and truncation behaviors, and
   consuming the non-algebraic `Retain` capability rather than the map algebra.
 
@@ -908,35 +954,27 @@ Pauli rotation may produce:
 c P -> c cos(theta) P + c sin(theta) P'
 ```
 
-The existing entry can be updated while the active map is traversed, but a new
-key cannot generally be inserted into that same map during mutable iteration.
-New terms must therefore be staged and merged after the traversal. New keys
-may collide with each other or with existing keys, so the merge accumulates
-their coefficients.
+A `TermProducer` *reads* the live map through `&` and *writes* the produced
+terms into a `TermSink` — a separate buffer, never the map itself — so there is
+no mutate-while-iterate hazard and **no auxiliary map is needed.** After the
+producer finishes, `accumulate_batch` merges that buffer into the map, combining
+colliding coefficients. This is a deliberate simplification over the old model,
+which iterated the live map and inserted into it, and so needed a second map to
+stage into and swap.
 
-Only one staging mechanism is required for correctness. The current engine
-uses two because they serve different performance paths:
-
-- an auxiliary map supports whole-map rewrites, combines output collisions as
-  they are produced, and retains its allocation across operations; and
-- a reusable `Vec<(W, C)>` scratch buffer stages additional terms when existing
-  entries remain in place, avoiding an auxiliary-map insertion followed by a
-  second map probe during the merge.
-
-Conceptually:
+The only staging that remains is the single `TermSink` buffer:
 
 ```text
-whole-map rewrite:       active map -> auxiliary map -> swap
-in-place branching:      active map + scratch buffer -> merge into active map
+old model:  iterate active map, insert new keys -> needs aux map + swap
+new model:  read map -> produce into TermSink buffer -> accumulate_batch into map
 ```
 
-Neither physical mechanism is part of the public storage contract. Both are the
-`TermSink` a `TermProducer` pushes into: a default `SumStorage` may privately
-hold both an auxiliary map and the reusable vector, matching the current
-`PauliSum` layout; a simpler backend may sink everything through one auxiliary
-map; a columnar backend sinks into a `TermBatch`; another may use per-thread
-buffers. Whether retaining both mechanisms is worthwhile is a benchmark
-decision, not a type-system requirement.
+The buffer is **transient by default**, allocated per operation — right for a
+small, frequently-cloned `GeneralizedTableau`. A long-lived driver (`PauliSum`)
+may own **one** reusable buffer (and, for a whole-map Clifford rewrite, a second
+map to swap into) purely to amortize allocation across millions of gates. That
+reuse is an opt-in optimization of the driver, not a field of `Sum` and not part
+of the storage contract. Whether it is worthwhile is a benchmark decision.
 
 ## Batch execution and the hash-join contract
 
@@ -964,7 +1002,7 @@ does not fit in cache, so each probe is a random access that misses to main
 memory, and the probe phase is bound by memory latency rather than by
 arithmetic.
 
-`SumStorage::apply` and the `Accumulate`/`Pair` layers describe *what* the merge
+`Sum::apply` and the `Accumulate`/`Pair` layers describe *what* the merge
 computes. But a producer that emitted one `(key, coeff)` at a time would expose
 no batch to prefetch, no homogeneous run to vectorize, no partition to distribute
 across threads, and no bulk kernel to hand to a device. That is why a
@@ -1129,10 +1167,10 @@ independent of the merge strategy (the systems concern).
 - `Policy`: truncation already operates on the whole map and is naturally bulk;
   it should be expressible as a batch retain (via `KeyColumn::gather`) so it
   composes with a partitioned or offloaded table.
-- `SumStorage`: its staging fields become the join's probe-side buffer (the
-  `TermSink`) and its `apply` desugars to `accumulate_batch` + `reduce`. Whether
-  it keeps both an auxiliary map and a scratch buffer stays a backend decision,
-  unchanged from above.
+- `Sum::apply`: the producer's `TermSink` *is* the join's probe-side buffer, and
+  `apply` desugars to `accumulate_batch` + `reduce`. The buffer is transient by
+  default; a driver may reuse one to amortize — a benchmark decision, unchanged
+  from above.
 
 ### Parallel and offloaded backends
 
@@ -1268,13 +1306,16 @@ do not leak into the shared trait-system design.
 The intended composition is explicit:
 
 ```rust
-Sum<Storage, Policy>   // e.g. PauliSum<f64> = Sum<HashStore<PauliWord, f64>>
+Sum<Container, Policy>
+// PauliSum<f64>          = Sum<HashMapStore<PauliWord, f64>, P>        // C[PauliWord]
+// TableauMixture<f64>    = Sum<HashMapStore<Tableau,   f64>, P>        // C[Tableau]
+// GeneralizedTableau amps = Sum<Vec<(Bitstring, Complex<f64>)>, CoefficientThreshold>  // C[Bitstring]
 Tableau
-GeneralizedTableauSum<Coeff, TableauType, EntryStorage>
 ```
 
-Domain-specific aliases or wrappers can preserve `PauliSum` and introduce
-`FermionSum` without rebuilding a monolithic configuration trait.
+All three are `Sum` over the same graded algebra, differing only in the key type
+and the container backend. Domain aliases preserve `PauliSum` and introduce
+`FermionSum` without a monolithic configuration trait.
 
 ## Non-goals for the first prototype
 

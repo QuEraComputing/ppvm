@@ -113,16 +113,19 @@ pub struct Tableau {
     // hash caches only — NO rng field; see "Randomness is injected"
 }
 
-pub struct GeneralizedTableau<C, I, S> {
-    tableau: Tableau,
-    coefficients: S,
-    // threshold and measurement record
+pub struct GeneralizedTableau<C = f64, P = CoefficientThreshold> {
+    frame: Tableau,                                    // the Clifford frame U; owns loss
+    amplitudes: Sum<Vec<(Bitstring, Complex<C>)>, P>,  // C[bitstring] — the graded algebra
+    // measurement record
 }
 ```
 
 `GeneralizedTableau` therefore has no separate `is_lost: Vec<bool>`. Its gate,
 noise, and measurement algorithms query and mutate the loss plane owned by the
-inner tableau.
+inner `frame` tableau. Its `amplitudes` field is the graded-algebra `Sum` over
+bitstring keys (see
+[A third instantiation](traits-2-configuration-and-hashing.md#a-third-instantiation-the-generalized-tableau)):
+Clifford gates update `frame` only, and non-Clifford gates branch `amplitudes`.
 
 `lost_count` is derived metadata used to preserve a fast
 `lost_count == 0` path. It is excluded from equality and hashing; debug builds

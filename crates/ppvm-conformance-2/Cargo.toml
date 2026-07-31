@@ -12,6 +12,7 @@ rand = "0.10.1"
 ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
 ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
 ppvm-lossy-pauli-word-2 = { version = "0.1.0", path = "../ppvm-lossy-pauli-word-2" }
+ppvm-phased-pauli-word-2 = { version = "0.1.0", path = "../ppvm-phased-pauli-word-2" }
 ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
 ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
 
@@ -29,4 +30,8 @@ harness = false
 
 [[bench]]
 name = "lossy_pauli_word_bench"
+harness = false
+
+[[bench]]
+name = "phased_pauli_word_bench"
 harness = false

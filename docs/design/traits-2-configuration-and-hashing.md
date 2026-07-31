@@ -282,10 +282,12 @@ tableau implementations are later useful, each concrete type can implement
 the same behavioral traits. A storage abstraction should only be introduced
 after two implementations demonstrate a common interface.
 
-`Clifford` is not implemented by hand on each type. It is a *derived* behavioral
-trait, blanket-implemented once over the Pauli algebra primitives described
-next; `RotationOne` is implemented on `PauliSum` in terms of `PauliBits`, also
-below.
+`Clifford` is not implemented by hand on each standard type. It is a *derived*
+behavioral trait, blanket-implemented once over the Pauli algebra primitives
+described next for the types that opt in via the `BlanketClifford` marker (the
+phaseless words and `Tableau`); the sole hand-written exception is
+`PhasedPauliWord`'s read-once fused `impl Clifford` (see the marker note below).
+`RotationOne` is implemented on `PauliSum` in terms of `PauliBits`, also below.
 
 ### Pauli algebra traits: symplectic structure and phase
 
@@ -325,12 +327,19 @@ an \(\mathrm{Sp}\)-isometry, so conjugation *lands in* \(\mathrm{Sp}(2n,2)\)
 (`lean/PPVM/Pauli/Symplectic.lean`); this per-generator conjugation is also
 exhibited as a signed symplectic automorphism, phase included — at \(n = 1\) for
 the single-qubit generators (`conjHHom`/`conjSHom` in
-`lean/PPVM/Pauli/Conjugation.lean`, e.g. `conjH_Y` gives \(HYH = -Y\)), and at
+`lean/PPVM/Pauli/Conjugation.lean`, e.g. `conjH_Y` gives \(HYH = -Y\)). `S` is the
+sole generator whose conjugation sign is convention-sensitive, so the **backward**
+direction the phased-word simulator actually runs (\(S^\dagger P S\)) is pinned
+separately as `conjSdag_sign` (sign \(x\wedge\lnot z\), i.e. \(S^\dagger X S = -Y\)),
+matching the fused `Clifford::s` sign
+(`crates/ppvm-phased-pauli-word-2/src/clifford.rs`); `conjS_conjSdag` fixes it as
+the genuine inverse of the forward `conjS`. And at
 \(n = 2\) for the independent two-qubit generators `CNOT`/`CZ` (`conjCNOTHom`/
 `conjCZHom` on the group \(\mathcal{P}_2\) in the same file). The latter pin the
 \(\mathbb{Z}_4\) conjugation-*phase* delta that `Symplectic.lean`'s bit-only
 `cnotAct_isometry`/`czAct_isometry` do not cover: `conjCNOT_sign`/`conjCZ_sign`
-match `cnot_phase`/`cz_phase` (the blanket `impl Clifford`,
+match the fused `Clifford::cnot`/`Clifford::cz` signs
+(`crates/ppvm-phased-pauli-word-2/src/clifford.rs`, ported verbatim from the old
 `crates/ppvm-pauli-word/src/phase/clifford.rs`), and `conjCNOT_Xc`…/`conjCZ_Xc`…
 check the maps against the standard tableau tables so the phase is forced, not
 chosen. The surjectivity that upgrades this containment to the full
@@ -396,13 +405,18 @@ pub trait PhaseTrack {
 }
 ```
 
-`Clifford` is then the role-independent structure, blanket-implemented once. The
-*sequence* of primitives per gate is identical across roles even though the
-phase primitive it calls is not — the single audited copy of the symplectic sign
-logic that would otherwise be duplicated and drift:
+`Clifford` is then the role-independent structure, blanket-implemented once for
+every type that **opts in** via the empty marker `BlanketClifford`. The *sequence*
+of primitives per gate is identical across roles even though the phase primitive
+it calls is not — the single audited copy of the symplectic sign logic that would
+otherwise be duplicated and drift:
 
 ```rust
-impl<T: SymplecticColumns + PhaseTrack> Clifford for T {
+/// Opt-in marker selecting the shared blanket Clifford (below). A phaseless word
+/// implements it; `Phased<W>` deliberately does not (see the fused-impl note).
+pub trait BlanketClifford {}
+
+impl<T: SymplecticColumns + PhaseTrack + BlanketClifford> Clifford for T {
     fn h(&mut self, q: usize) { self.flip_phase_where_xz(q); self.swap_xz(q); }
     fn cnot(&mut self, c: usize, t: usize) {
         self.cnot_phase(c, t);
@@ -412,6 +426,26 @@ impl<T: SymplecticColumns + PhaseTrack> Clifford for T {
     // ...
 }
 ```
+
+**The `BlanketClifford` marker and the fused phased override.** The blanket runs
+the phase primitive and the column primitives as *separate* steps, so it reads
+each symplectic bit twice on a type whose bits and phase live apart — once in
+`cnot_phase`/`cz_phase` to compute the sign, again in `xor_x_col`/`xor_z_col` to
+apply the bit map. For the phaseless words (`PauliWord`, `LossyPauliWord`) and the
+future `Tableau` that is free (the phase primitive is a no-op or SIMD-wide), so
+they opt in and share the audited copy. But for `Phased<W>` the double read
+benchmarked ~1.6–1.8× slower than the old *fused* `PhasedPauliWord::cnot`, which
+reads each bit once. On stable Rust a hand-written `impl Clifford for Phased<W>`
+may not coexist with an *unconditional* blanket the type would also satisfy
+(E0119), so the blanket is gated on `BlanketClifford`: `Phased<W>` stays out of
+the marker and instead provides its own **fused** `impl Clifford` in
+`crates/ppvm-phased-pauli-word-2/src/clifford.rs`, which reads each inner X/Z bit
+once via `PauliBits`, computes the `ℤ₄` sign from those reads, applies the bit
+update reusing them, and folds the sign into the stored phase. The signs are
+byte-for-byte the old kernel (`crates/ppvm-pauli-word/src/phase/clifford.rs`), so
+correctness is unchanged; only the redundant reads are gone (phased `cnot` back at
+parity, new/old ≈ 0.86×). The marker keeps the blanket the single audited copy for
+the standard types while letting `Phased` win the read-once fusion.
 
 The role-*exclusive* operations — those that interpret the rows as a symplectic
 basis rather than as independent operators — do not belong in the shared tower.
@@ -441,8 +475,12 @@ The `anticommuting_pivot` search rests on the measurement dichotomy
 (`measurement_dichotomy`): the outcome is deterministic exactly when the measured
 Pauli commutes with every stabilizer (`measure_deterministic_iff_xfree`).
 
-The implementers are `PhasedPauliWord` (`SymplecticColumns + PhaseTrack`, one
-row) and `Tableau` (all three). Note that `PauliSum` is deliberately *not* an
+The blanket's implementers (the `BlanketClifford` opt-ins) are the phaseless
+words `PauliWord` and `LossyPauliWord` (one row) and `Tableau` (all three).
+`PhasedPauliWord` (`Phased<PauliWord>`) is **not** a blanket implementer: it
+supplies its own read-once fused `impl Clifford` (see the marker note above), so
+it needs neither `SymplecticColumns` nor `PhaseTrack`. Note that `PauliSum` is
+deliberately *not* an
 implementer: a Clifford gate on a sum re-keys every term (each Pauli maps to a
 different Pauli, so the map is rebuilt, not updated in place), so the sum applies
 the one-row action pointwise and drains each term's phase delta to its
@@ -1110,8 +1148,8 @@ changed according to whether their underlying responsibility changes:
 | `PauliWordTrait` | split into `Word` (read-only inspection), `Indexable` (key), `PauliBits` (mutation) | The old bundle is decomposed by concern; bit-level mutation is a narrow Pauli-specific trait, hashing is separate, inspection is algebra-agnostic. |
 | `n_qubits`, `get`, `set`, `weight` | `n_sites`, `get`, `weight` on `Word`; `set` removed | `Word` is read-only; positional mutation (`set`) moves to `PauliBits`, since it is ill-defined for ordered algebras. |
 | bit accessors `get_xbit`/`set_xbit`/… | `PauliBits::x_bit`/`set_x_bit`/… | The rotation hot path is sub-site; it keeps a dedicated Pauli trait rather than the generic `Word`. |
-| word-level Clifford (blanket over `PauliWordTrait`) | `Clifford` blanket over `SymplecticColumns` + `PhaseTrack` | The symplectic sign logic is written once and shared by `PhasedPauliWord` and `Tableau`. |
-| (new) | `SymplecticColumns`, `PhaseTrack`, `StabilizerFrame` | The symplectic-bits + phase-extension decomposition: role-independent column algebra, role-dependent phase, role-exclusive frame ops. |
+| word-level Clifford (blanket over `PauliWordTrait`) | `Clifford` blanket over `SymplecticColumns` + `PhaseTrack` + `BlanketClifford` (opt-in marker) | The symplectic sign logic is written once and shared by the phaseless words and `Tableau`; `PhasedPauliWord` opts *out* and supplies a read-once fused `impl Clifford` instead (avoids the blanket's double bit read). |
+| (new) | `SymplecticColumns`, `PhaseTrack`, `BlanketClifford`, `StabilizerFrame` | The symplectic-bits + phase-extension decomposition (role-independent column algebra, role-dependent phase, role-exclusive frame ops), plus the empty `BlanketClifford` marker that selects the shared blanket so a fused override stays coherence-legal. |
 | concrete `PauliWord` | `PauliWord` | The packed X/Z word is the same domain concept. |
 | concrete `LossyPauliWord` | `LossyPauliWord` | The packed X/Z/loss representation remains concrete and flattened. |
 | `PhasedPauliWord` | `PhasedPauliWord` alias over non-indexable `Phased` | The wrapper is generic over ordinary and lossy words but is not a production map key. |
@@ -1158,7 +1196,9 @@ This rule keeps:
 - `PauliBits`, consumed by the rotation kernels and implemented by `PauliWord`
   and `LossyPauliWord`;
 - `SymplecticColumns` and `PhaseTrack`, consumed by the blanket `Clifford` and
-  implemented by `PhasedPauliWord` and `Tableau`;
+  implemented by the phaseless words (`PauliWord`/`LossyPauliWord`) and `Tableau`,
+  which opt into the blanket via the `BlanketClifford` marker; `PhasedPauliWord`
+  instead carries its own read-once fused `impl Clifford`;
 - `StabilizerFrame`, the role-exclusive tableau operations;
 - gate and noise traits, implemented across propagation and tableau backends;
 - the graded map layers `Support` / `Accumulate` / `Scale` / `Pair` / `Multiply`,

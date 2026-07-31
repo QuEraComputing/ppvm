@@ -35,8 +35,9 @@ test oracles.
 | Old crate | New crate | Core content |
 | --- | --- | --- |
 | `ppvm-traits` (`Config`, `Coefficient`, `Word`/`PauliWordTrait`, `ACMap*`, `Strategy`, gate traits) | **`ppvm-traits-2`** | Trait *definitions* only: split `Coefficient`, `Angle`; `Word`/`Indexable`/`PauliBits`; `SymplecticColumns`/`PhaseTrack`/`StabilizerFrame`; gate/noise traits (`Clifford`, `RotationOne`, `PauliError`, `Measure`); graded map layers `Support`/`Accumulate`/`Scale`/`Pair`/`Multiply`; algebra capabilities `KeyProduct`/`ImaginaryUnit`/`Conjugate`; batch contract `Columnar`/`KeyColumn`/`KeyBatch`/`TermBatch`/`TermSink`/`TermProducer`; `IdentityHasher`; small concrete leaf types (`Pauli`, `Phase`, `LossySite`). |
-| `ppvm-pauli-word` (word/ + phase/) | **`ppvm-pauli-word-2`** | Concrete `PauliWord` and the generic `Phased<W>`/`PhasedPauliWord` wrapper; private packed X/Z planes + lazy `OnceLock<u64>` hash cache + `HashFinalize`/`PauliStorage`/`PauliKeyColumn` (re-exported for the lossy crate to reuse). Impls of `Word`/`Indexable`/`PauliBits`/`SymplecticColumns`/`PhaseTrack`/`KeyProduct`/`Columnar`. |
-| `ppvm-pauli-word` (loss/) | **`ppvm-lossy-pauli-word-2`** | `LossyPauliWord` — a *distinct* concrete Pauli-word impl in its own crate (adds a packed loss plane). Reuses `ppvm-pauli-word-2`'s packed-storage/hash infra. `Word<Site = LossySite<Pauli>>` + `PauliBits` (`is_lost`) + phase-discarding `SymplecticColumns`/`PhaseTrack` + `Indexable`; loss writes and `loss_weight()` inherent. |
+| `ppvm-pauli-word` (word/) | **`ppvm-pauli-word-2`** | Concrete `PauliWord`; private packed X/Z planes + lazy `OnceLock<u64>` hash cache + `HashFinalize`/`PauliStorage`/`PauliKeyColumn` (re-exported for the lossy/phased crates to reuse). Impls of `Word`/`Indexable`/`PauliBits`/`SymplecticColumns`/`PhaseTrack`/`BlanketClifford`/`KeyProduct`/`Columnar`. |
+| `ppvm-pauli-word` (phase/) | **`ppvm-phased-pauli-word-2`** | The generic `Phased<W>` wrapper + `PhasedPauliWord = Phased<PauliWord>`; carries an explicit ℤ₄ phase and a hand-written **fused** `impl Clifford` (reads each inner X/Z bit once via `W: PauliBits`, computes the ℤ₄ sign, applies the bit update, folds in the sign) — *not* the blanket, so it does **not** implement `BlanketClifford`. Delegates `Word` to `W`, phased product via `W`'s `KeyProduct`. **Non-indexable.** |
+| `ppvm-pauli-word` (loss/) | **`ppvm-lossy-pauli-word-2`** | `LossyPauliWord` — a *distinct* concrete Pauli-word impl in its own crate (adds a packed loss plane). Reuses `ppvm-pauli-word-2`'s packed-storage/hash infra. `Word<Site = LossySite<Pauli>>` + `PauliBits` (`is_lost`) + phase-discarding `SymplecticColumns`/`PhaseTrack` + `BlanketClifford` + `Indexable`; loss writes and `loss_weight()` inherent. |
 | `ppvm-pauli-sum` | **`ppvm-pauli-sum-2`** | `Sum<S, P>`; graded traits `impl`'d on `Vec<(K,C)>` and `HashMap<K,C,IdentityBuildHasher>`; `Policy` + `NoPolicy`/`MaxPauliWeight`/`CoefficientThreshold`/`CombinedPolicy` + `Retain`; `TermProducer` impls (`RekeyProducer`, rotation/noise producers); gate/rotation/noise trait impls; `PauliSum`/`LossyPauliSum`/`FermionSum` aliases; `IdentityBuildHasher` + `HashMapStore` aliases. |
 | `ppvm-tableau` | **`ppvm-tableau-2`** | `Tableau` (`Indexable` + `SymplecticColumns` + `PhaseTrack` + `StabilizerFrame` + `Clifford` + `Measure`); `GeneralizedTableau` (`frame: Tableau` + `amplitudes: Sum<Vec<(Bitstring, Complex<C>)>, CoefficientThreshold>`). |
 | `ppvm-tableau-sum` | folds into **`ppvm-pauli-sum-2`** as `TableauMixture = Sum<HashMapStore<Tableau, C>, P>` | The mixture is `C[Tableau]` — the same graded engine keyed on `Tableau`. No separate storage crate; `O(n²)` measurement stays a `Tableau`-specific algorithm. |
@@ -50,6 +51,7 @@ test oracles.
 ppvm-traits-2  ──►  (nothing ppvm)
 ppvm-pauli-word-2  ──►  ppvm-traits-2
 ppvm-lossy-pauli-word-2  ──►  ppvm-traits-2, ppvm-pauli-word-2 (reuses packed-storage/hash infra)
+ppvm-phased-pauli-word-2 ──►  ppvm-traits-2, ppvm-pauli-word-2 (wraps PauliWord; PhasedPauliWord alias)
 ppvm-pauli-sum-2   ──►  ppvm-traits-2, ppvm-pauli-word-2
 ppvm-tableau-2     ──►  ppvm-traits-2, ppvm-pauli-word-2, ppvm-pauli-sum-2
 ppvm-sym-2         ──►  ppvm-traits-2, ppvm-pauli-sum-2
@@ -102,8 +104,11 @@ Modules:
   `Pauli`, `LossySite<S>`, `FermionSite`. `PauliBits: Word` (supertrait relaxed
   from `Word<Site = Pauli>` so `LossyPauliWord`, whose `Site` is
   `LossySite<Pauli>`, can implement it; propagation re-adds `Site = Pauli`).
-- `pauli.rs` — `SymplecticColumns`, `PhaseTrack`, `StabilizerFrame`; the blanket
-  `impl<T: SymplecticColumns + PhaseTrack> Clifford for T`.
+- `pauli.rs` — `SymplecticColumns`, `PhaseTrack`, `StabilizerFrame`, the opt-in
+  marker `BlanketClifford`; the blanket
+  `impl<T: SymplecticColumns + PhaseTrack + BlanketClifford> Clifford for T`
+  (the marker keeps the blanket coherence-legal alongside `Phased<W>`'s fused
+  override).
 - `gates.rs` — `Clifford`, `RotationOne<C, A = C>`, `PauliError<C>`, `Measure`.
 - `graded.rs` — `Support`, `Accumulate`, `Scale`, `Pair` (with both `overlap` and
   `hermitian_overlap where Coeff: Conjugate`), `Multiply`, `Retain`.
@@ -116,7 +121,8 @@ and check the stated laws (`i·i == −one()`, `conj∘conj == id`, `conj(i) == 
 against `ppvm-sym-2`'s exact ring in Phase 5 — for now, check `f64`/`Complex<f64>`.
 
 Done when: crate compiles; trait method signatures match the design verbatim; the
-`Clifford` blanket impl type-checks against a stub `SymplecticColumns + PhaseTrack`.
+`Clifford` blanket impl type-checks against a stub `SymplecticColumns + PhaseTrack`
+that opts into `BlanketClifford`.
 
 ## Phase 2 — `ppvm-pauli-word-2` (the fundamental data structure)
 
@@ -127,11 +133,14 @@ Order:
 1. **`PauliWord`** — private packed X/Z planes (const-generic width internally;
    `PauliStorage` is *not* re-exposed) + lazy `OnceLock<u64>` hash cache.
    Impl `Word<Site = Pauli>`, `PauliBits`, `SymplecticColumns`, `PhaseTrack`,
+   `BlanketClifford` (opt into the shared blanket `Clifford`),
    `KeyProduct` (the twisted product `v·w = iᵏ(v⊕w)`), `Indexable` (`key_hash`
    with the private `HashFinalize` fold), `Columnar`.
 2. **`LossyPauliWord`** — adds the loss plane; `is_lost` override, `loss_weight`,
    inherent loss mutation; `Word<Site = LossySite<Pauli>>`.
-3. **`Phased<W>` / `PhasedPauliWord`** — non-indexable phased wrapper.
+3. **`Phased<W>` / `PhasedPauliWord`** — non-indexable phased wrapper with a
+   hand-written *fused* `impl Clifford` (read-once bits + ℤ₄ sign; opts out of
+   `BlanketClifford`).
 
 Lean-oracle tests (these are the crate's backbone):
 - **Phase product** — port `phaseExp`'s boolean `sign`/`imag` formulas exactly

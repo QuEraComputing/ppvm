@@ -289,7 +289,12 @@ ${REPO}/lean and it must pass. Return the schema.`
 // NOT spin the loop.
 const blocks = (g) =>
   g.type === 'perf-drift'
-    ? !/design-accepted|allowlist|accepted trade|deferred/i.test(g.description || '')
+    ? // ALWAYS block: any perf regression the test agent raises as a gap needs
+      // human sign-off (allowlist or fix). Do NOT try to self-clear from the
+      // description — a negated mention ("NOT the design-accepted trade-off")
+      // must not match. Genuinely design-accepted trade-offs (e.g. the lazy-hash
+      // cold path) are explained in perfNote, never raised as a gap.
+      true
     : (g.type === 'correctness' || g.type === 'impl-friction') &&
       (g.severity === 'high' || g.severity === 'medium') &&
       !/defer|phase\s*\d/i.test(g.description || '')

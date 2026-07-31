@@ -166,7 +166,55 @@ Workflow refinement (this run): perf-drift is now a **hard gate** in the loop �
 any over-threshold regression escalates to the human regardless of the agent's
 severity label (was: only high/med blocked).
 
-### Component: `Phased` / `PhasedPauliWord` — pending (final Phase-2 run).
+### Component: `Phased` / `PhasedPauliWord` — status **complete** (workflow `wf_548f135a-90a`, converged iter 1; + a maintainer-chosen perf fix)
+
+**Its own crate `ppvm-phased-pauli-word-2`** (maintainer decision). Generic
+`Phased<W>` = base word + explicit ℤ₄ phase; `PhasedPauliWord = Phased<PauliWord>`.
+Real ℤ₄ phase tracking (recovers the conjugation sign the bare/lossy words drop),
+`Word` delegated to `W`, phased product reuses `W`'s `KeyProduct` (no phaseExp
+duplication), **non-indexable**. 14 in-crate tests; conformance
+`phased_pauli_word_diff.rs` (6, diffs the *phase* too) + `phased_pauli_word_lean.rs`
+(11) + bench. Gates verified by orchestrator (build/clippy/fmt/test = 149 across
+5 crates, machete, `lake`) — all green.
+
+**Perf: product 1.00×, phased cnot 0.85× (now *faster* than old).** Initially the
+blanket `Clifford` (separate `PhaseTrack` + `SymplecticColumns` steps) read the
+inner bits twice → phased cnot **1.84×**. Investigated (confirmed real, not a
+nanobench artifact: the old kernel is fused, reads bits once). **Maintainer chose
+to fix** (over allowlist): added an opt-in marker `BlanketClifford` in
+`ppvm-traits-2` gating the blanket; the phaseless words + `Tableau` opt in
+(keeping the single audited blanket), while `Phased<W>` provides a hand-written
+**fused** `impl Clifford` (read each bit once, compute sign, apply bit op, fold
+phase) — recovering parity-and-better. Signs verified byte-identical to the old
+kernel and to the Lean oracles.
+
+Lean added (prove agent, `lake` green): `Conjugation.lean` `conjSdag` — the
+**backward `S†PS`** direction the phase-tracking simulator actually runs
+(`conjSdag_sign`, sign `x∧¬z`, `S†XS=−Y`), proven a group hom (`conjSdagHom`) with
+generator tables and `conjS_conjSdag` (inverse of the forward `conjS`). S is the
+sole convention-sensitive generator; this pins the exact ℤ₄ delta the code emits.
+
+| id | type | sev | routed | status | note |
+| --- | --- | --- | --- | --- | --- |
+| ppw2.sconv.1 | correctness/validation | med | proof+design | closed | Simulator runs backward `S†PS` (sign `x∧¬z`, matches old); Lean only had forward `conjS` (`x∧z`). Added `conjSdag_sign` (machine-checks the delta the code applies) + design note; the impl's inaccurate "Lean notes the S/S† convention" claim corrected. No code change (behavior was already correct/at-parity). |
+| ppw2.perf.1 | perf-drift | med | human→fix | closed | Phased cnot 1.84× (blanket bits/phase split → redundant bit reads). Maintainer chose fix: `BlanketClifford` opt-in marker + hand-written fused `Clifford for Phased<W>` → 0.85×. Real design change recorded in design docs. |
+| ppw2.cite.1 | correctness | low | impl | closed | Crate cited private `conj*_phase_delta` cocycle lemmas + inaccurate S-note; fixed to public `conjCNOT_sign`/`conjCZ_sign`/`conjSdag_sign`. |
+| ppw2.alias.1 | impl-friction | low | design | noted | Ships concrete `PhasedPauliWord = Phased<PauliWord>` vs the design's generic renaming; generic `Phased` kept public. |
+| ppw2.lossy.1 | impl-friction | low | accepted | deferred | `Phased<LossyPauliWord>` deferred (needs a lossy dep; lossy has no `KeyProduct` ⇒ no phased product). Conjugation path is generic and would work once a dep is added. |
+
+**Architecture change:** the `Clifford` blanket is now **opt-in** via
+`BlanketClifford` (`ppvm-traits-2`); `PauliWord`/`LossyPauliWord`(/future
+`Tableau`) implement the marker; `Phased<W>` opts out with a fused impl. Recorded
+in `traits-2-configuration-and-hashing.md`, the plan, and `word-data-structures.md`.
+
+**Workflow bug fixed (found in verification):** this run first converged *despite*
+the 1.84× because the perf-drift gate regex matched the *negated* phrase "NOT the
+design-accepted trade-off." Perf-drift now **always** blocks (escalates to human);
+the orchestrator caught the regression manually regardless.
+
+---
+
+## Phase 2 — **complete**: `PauliWord` ✓ · `LossyPauliWord` ✓ (own crate) · `Phased` ✓ (own crate). All at parity-or-better. Next: Phase 3 (`ppvm-pauli-sum-2`).
 
 ## Phase 3 — ppvm-pauli-sum-2
 

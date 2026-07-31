@@ -44,9 +44,14 @@
 //! skip" is a theorem, not just prose.
 
 use ppvm_pauli_word_2::PauliStorage;
-use ppvm_traits_2::{PhaseTrack, SymplecticColumns};
+use ppvm_traits_2::{BlanketClifford, PhaseTrack, SymplecticColumns};
 
 use crate::data::LossyPauliWord;
+
+/// Opt into the single audited blanket `Clifford` (`ppvm-traits-2`): the
+/// loss-guarded [`SymplecticColumns`] bit map composed with the phase-discarding
+/// [`PhaseTrack`] below.
+impl<A: PauliStorage, H> BlanketClifford for LossyPauliWord<A, H> {}
 
 impl<A: PauliStorage, H> SymplecticColumns for LossyPauliWord<A, H> {
     #[inline]

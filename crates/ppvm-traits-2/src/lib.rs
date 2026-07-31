@@ -31,7 +31,7 @@ pub use coefficient::{Angle, Coefficient, Halvable};
 pub use gates::{Clifford, Measure, PauliError, RotationOne};
 pub use graded::{Accumulate, Multiply, Pair, Retain, Scale, Support};
 pub use hash::{IdentityBuildHasher, IdentityHasher, Indexable};
-pub use pauli::{PhaseTrack, StabilizerFrame, SymplecticColumns};
+pub use pauli::{BlanketClifford, PhaseTrack, StabilizerFrame, SymplecticColumns};
 pub use word::{FermionAction, FermionSite, LossySite, Pauli, PauliBits, Word};
 
 /// Convenient re-export of the whole trait surface.
@@ -42,6 +42,6 @@ pub mod prelude {
     pub use crate::gates::{Clifford, Measure, PauliError, RotationOne};
     pub use crate::graded::{Accumulate, Multiply, Pair, Retain, Scale, Support};
     pub use crate::hash::{IdentityBuildHasher, IdentityHasher, Indexable};
-    pub use crate::pauli::{PhaseTrack, StabilizerFrame, SymplecticColumns};
+    pub use crate::pauli::{BlanketClifford, PhaseTrack, StabilizerFrame, SymplecticColumns};
     pub use crate::word::{FermionAction, FermionSite, LossySite, Pauli, PauliBits, Word};
 }

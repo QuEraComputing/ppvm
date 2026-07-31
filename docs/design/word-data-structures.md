@@ -52,12 +52,16 @@ For a representation that stores only non-identity factors, it may equal
 `set_z_bit` (and the `SymplecticColumns` / `PhaseTrack` column primitives), each
 of which preserves concrete invariants and lazily invalidates the affected hash
 components. `PauliWord` and `LossyPauliWord` implement `PauliBits`, and also
-`SymplecticColumns + PhaseTrack`, so they pick up the blanket `Clifford` impl. A
-bare word carries no phase field, so its `PhaseTrack` is a phase-discarding no-op
-and its `Clifford` is the pure `Sp(2n, 2)` bit map (matching the old bare-word
-bit-only Clifford). `PhasedPauliWord` supplies a real `ℤ₄` `PhaseTrack` on top of
-the same `SymplecticColumns` bit algebra, so it additionally tracks the
-conjugation sign (`Y ↦ −Y`, …). This matches the authoritative trait assignment
+`SymplecticColumns + PhaseTrack` plus the opt-in marker `BlanketClifford`, so they
+pick up the shared blanket `Clifford` impl. A bare word carries no phase field, so
+its `PhaseTrack` is a phase-discarding no-op and its `Clifford` is the pure
+`Sp(2n, 2)` bit map (matching the old bare-word bit-only Clifford).
+`PhasedPauliWord` instead carries a hand-written **fused** `impl Clifford`: it
+reads each inner X/Z bit once via `PauliBits`, computes the `ℤ₄` conjugation sign
+(`Y ↦ −Y`, …), applies the bit update reusing those reads, and folds the sign into
+the stored phase — so it does **not** implement `BlanketClifford` (the marker that
+gates the blanket), avoiding the blanket's redundant double bit read while keeping
+the exact old-kernel signs. This matches the authoritative trait assignment
 in [`traits-2-configuration-and-hashing.md`](traits-2-configuration-and-hashing.md#pauli-algebra-traits-symplectic-structure-and-phase),
 where a Clifford gate on a sum applies the one-row `SymplecticColumns` action
 pointwise and drains each term's phase delta to its coefficient.

@@ -25,6 +25,11 @@ homomorphism of `𝒫₁`, and we exhibit it for the single-qubit generators:
 * `conjS` — `S`-conjugation: the transvection `(x,z) ↦ (x, x⊕z)` with the same
   sign (so `SXS†=Y`, `SZS†=Z`, `SYS†=−X`); an automorphism of order 4.
 
+The phase-tracking simulator runs the **backward** direction `S†·P·S` (its `s`
+gate), whose sign is the sole convention-sensitive Clifford sign; `conjSdag`
+(sign `x∧¬z`, so `S†XS=−Y`) pins the exact `ℤ/4ℤ` delta `PhaseTrack::s_phase`
+emits, and `conjS_conjSdag` shows it is the inverse of `conjS`.
+
 Each is a `MonoidHom` (`map_mul` by `decide`) and injective, hence an
 automorphism — the design's "signed symplectic automorphism," machine-checked.
 
@@ -110,6 +115,59 @@ theorem conjS_iterate_four : conjS^[4] = id := by
   funext p; revert p; decide
 
 theorem conjS_iterate_two_ne_id : conjS^[2] ≠ id := by decide
+
+/-! ### `S†`-conjugation: the backward (Heisenberg) direction the simulator runs
+
+`conjS` above is the **forward** `S·P·S†`. The phase-tracking simulator conjugates
+in the **backward** direction `S†·P·S` (its `s` gate advances an operator by `S†`
+in the Heisenberg picture). On the bits this is the *same* transvection
+`(x,z) ↦ (x, x⊕z)` (an involution), but the sign fires on `x∧¬z` instead of `x∧z`.
+`S` is the sole Clifford generator whose conjugation sign is convention-sensitive
+(the self-adjoint `H`/`X`/`Y`/`Z`/`CNOT`/`CZ` signs coincide forward and backward),
+so the backward sign the phased word emits needs its own witness. This is exactly
+what `PhaseTrack::s_phase` commits to
+(`crates/ppvm-phased-pauli-word-2/src/clifford.rs:104`). -/
+
+/-- `S†`-conjugation on `𝒫₁`: `(x,z) ↦ (x, x⊕z)` with sign `2·(x∧¬z)`, i.e.
+`S†XS = −Y`, `S†YS = X`, `S†ZS = Z`. -/
+def conjSdag (p : PhasedPauli) : PhasedPauli :=
+  ⟨p.phase + (if p.x && !p.z then 2 else 0), p.x, xor p.x p.z⟩
+
+private theorem conjSdag_mul_raw :
+    ∀ p q, conjSdag (mul p q) = mul (conjSdag p) (conjSdag q) := by decide
+
+/-- **`S†`-conjugation is a group homomorphism of `𝒫₁`.** -/
+def conjSdagHom : PhasedPauli →* PhasedPauli where
+  toFun := conjSdag
+  map_one' := by decide
+  map_mul' := conjSdag_mul_raw
+
+/-- `conjSdag` acts on the bits by the same transvection `φ_S` as `conjS`. -/
+theorem conjSdag_bits (p : PhasedPauli) :
+    (conjSdag p).x = p.x ∧ (conjSdag p).z = xor p.x p.z := ⟨rfl, rfl⟩
+
+/-- **The `S†`-conjugation sign** `β(S†,P) = x∧¬z` — the exact `ℤ/4ℤ` delta
+`PhaseTrack::s_phase` applies (`crates/ppvm-phased-pauli-word-2/src/clifford.rs:104`).
+It differs from the forward `conjS_sign` (`x∧z`) precisely on `X` and `Y`, the
+convention-sensitive cases. -/
+theorem conjSdag_sign (p : PhasedPauli) :
+    (conjSdag p).phase = p.phase + (if p.x && !p.z then 2 else 0) := rfl
+
+/-- `S†XS = −Y`, `S†YS = X`, `S†ZS = Z` (phase-explicit) — the simulator's `s`
+table (`clifford.rs` `single_qubit_gates_track_sign`: `+X ↦ −Y`, `+Y ↦ +X`,
+`+Z ↦ +Z`). -/
+theorem conjSdag_X : conjSdag ⟨0, true, false⟩ = ⟨2, true, true⟩ := by decide
+theorem conjSdag_Y : conjSdag ⟨0, true, true⟩ = ⟨0, true, false⟩ := by decide
+theorem conjSdag_Z : conjSdag ⟨0, false, true⟩ = ⟨0, false, true⟩ := by decide
+
+/-- `conjSdag` is the two-sided **inverse** of `conjS` (conjugating by `S` then by
+`S†`, i.e. by `S†·S = I`, is the identity). This pins `conjSdag` to genuine
+`S†`-conjugation rather than an arbitrary sign choice, and shows the two signs
+`x∧z` and `x∧¬z` are the forward/backward pair. -/
+theorem conjS_conjSdag : Function.LeftInverse conjS conjSdag := by
+  intro p; revert p; decide
+theorem conjSdag_conjS : Function.LeftInverse conjSdag conjS := by
+  intro p; revert p; decide
 
 end PPVM.PauliPhase.PhasedPauli
 

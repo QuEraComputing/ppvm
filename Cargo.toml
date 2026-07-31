@@ -23,6 +23,7 @@ members = [
     "crates/ppvm-traits-2",
     "crates/ppvm-pauli-word-2",
     "crates/ppvm-lossy-pauli-word-2",
+    "crates/ppvm-phased-pauli-word-2",
     "crates/ppvm-conformance-2",
     "crates/vihaco-circuit-isa",
     "crates/ppvm-vihaco",

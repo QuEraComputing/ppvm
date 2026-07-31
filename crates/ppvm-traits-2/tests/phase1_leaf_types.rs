@@ -16,7 +16,7 @@ use ppvm_traits_2::algebra::{Conjugate, ImaginaryUnit, Phase};
 use ppvm_traits_2::coefficient::{Angle, Coefficient, Halvable};
 use ppvm_traits_2::gates::Clifford;
 use ppvm_traits_2::hash::{IdentityBuildHasher, IdentityHasher};
-use ppvm_traits_2::pauli::{PhaseTrack, SymplecticColumns};
+use ppvm_traits_2::pauli::{BlanketClifford, PhaseTrack, SymplecticColumns};
 
 type C = Complex<f64>;
 
@@ -264,9 +264,10 @@ fn coefficient_ring_ops_on_complex() {
 }
 
 // ---------------------------------------------------------------------------
-// Compile-only: a stub SymplecticColumns + PhaseTrack automatically gets
-// Clifford via the blanket impl in pauli.rs. Recording each primitive call
-// lets us also assert the blanket impl fires the documented sequence.
+// Compile-only: a stub SymplecticColumns + PhaseTrack that opts into
+// BlanketClifford automatically gets Clifford via the blanket impl in pauli.rs.
+// Recording each primitive call lets us also assert the blanket impl fires the
+// documented sequence.
 // ---------------------------------------------------------------------------
 
 #[derive(Default)]
@@ -318,6 +319,9 @@ impl PhaseTrack for StubPauli {
         self.log.push(format!("z_phase({q})"));
     }
 }
+
+// Opt into the shared blanket Clifford.
+impl BlanketClifford for StubPauli {}
 
 /// Free function usable only if `StubPauli: Clifford` — the compile-only guard.
 fn requires_clifford<T: Clifford>(_t: &T) {}

@@ -115,14 +115,36 @@ pub trait StabilizerFrame {
     fn canonicalize(&mut self);
 }
 
-/// The derived [`Clifford`] behavior, blanket-implemented once. The *sequence*
-/// of primitives per gate is identical across roles even though the phase
-/// primitive it calls is not — the single audited copy of the symplectic sign
-/// logic that would otherwise be duplicated and drift.
+/// Opt-in marker selecting the blanket [`Clifford`] impl below. A type that
+/// implements [`SymplecticColumns`] + [`PhaseTrack`] receives the shared,
+/// single-audited blanket `Clifford` **only** if it also implements this marker.
 ///
-/// Design: §"Pauli algebra traits" (the `impl<T: SymplecticColumns + PhaseTrack>
-/// Clifford for T` block).
-impl<T: SymplecticColumns + PhaseTrack> Clifford for T {
+/// # Why an opt-in marker (coherence)
+///
+/// On stable Rust two `impl Clifford for _` blocks may not overlap (E0119). A
+/// type that wants a *fused* `Clifford` — one that reads each symplectic bit once
+/// and folds in the phase in the same pass, rather than running the column and
+/// phase primitives as separate steps — must provide its own `impl Clifford`.
+/// That is illegal while an *unconditional* blanket `impl<T: SymplecticColumns +
+/// PhaseTrack> Clifford for T` exists and the fused type satisfies those bounds.
+/// Gating the blanket on this empty marker resolves the overlap without giving up
+/// the shared audited copy: the standard word types (`PauliWord`,
+/// `LossyPauliWord`, the future `Tableau`) opt in and get the blanket, while
+/// `Phased<W>` stays out and supplies its own fused impl (see
+/// `ppvm-phased-pauli-word-2`).
+///
+/// Design: §"Pauli algebra traits".
+pub trait BlanketClifford {}
+
+/// The derived [`Clifford`] behavior, blanket-implemented once for every type
+/// that opts in via [`BlanketClifford`]. The *sequence* of primitives per gate is
+/// identical across roles even though the phase primitive it calls is not — the
+/// single audited copy of the symplectic sign logic that would otherwise be
+/// duplicated and drift.
+///
+/// Design: §"Pauli algebra traits" (the `impl<T: SymplecticColumns + PhaseTrack +
+/// BlanketClifford> Clifford for T` block).
+impl<T: SymplecticColumns + PhaseTrack + BlanketClifford> Clifford for T {
     #[inline]
     fn x(&mut self, q: usize) {
         self.x_phase(q);

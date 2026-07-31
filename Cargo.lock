@@ -1328,6 +1328,7 @@ dependencies = [
  "ppvm-lossy-pauli-word-2",
  "ppvm-pauli-word",
  "ppvm-pauli-word-2",
+ "ppvm-phased-pauli-word-2",
  "ppvm-traits",
  "ppvm-traits-2",
  "rand 0.10.1",
@@ -1387,6 +1388,14 @@ dependencies = [
  "bytemuck",
  "fxhash",
  "num",
+ "ppvm-traits-2",
+]
+
+[[package]]
+name = "ppvm-phased-pauli-word-2"
+version = "0.1.0"
+dependencies = [
+ "ppvm-pauli-word-2",
  "ppvm-traits-2",
 ]
 

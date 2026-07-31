@@ -533,7 +533,7 @@ algebra.
 /// exposed, so a columnar (structure-of-arrays) backend is expressible. `iter`
 /// is read-only export; a SoA backend synthesizes the pairs from its columns.
 pub trait Support {
-    type Key: Indexable;            // PauliWord, LossyPauliWord, or Tableau
+    type Key: Eq + Clone;           // minimal; hash backends add `Indexable`
     type Coeff: Coefficient;
     fn len(&self) -> usize;
     fn get(&self, key: &Self::Key) -> Option<Self::Coeff>;
@@ -566,7 +566,7 @@ pub trait Pair: Support {
 /// A key whose set carries a product — the group/monoid structure that lifts
 /// `C[K]` from a module to an algebra. `PauliWord` implements it (the phased
 /// Pauli product `v·w = ±i^k (v⊕w)`); a bare `Tableau` mixture key does not.
-pub trait KeyProduct: Indexable {
+pub trait KeyProduct: Eq + Clone {
     /// Product of two keys, with the phase it produces (folded onto the coeff).
     fn key_mul(&self, other: &Self) -> (Self, Phase);
 }
@@ -612,14 +612,20 @@ layout is a separate *layout* choice by execution target:
 
 - **`Vec<(K, C)>`** — an unsorted coordinate list, linear-scan `accumulate`. Best
   for small support (the `GeneralizedTableau` amplitude vector); this is today's
-  `SparseVector`.
+  `SparseVector`. Requires only `K: Eq + Clone` — it never hashes.
 - **`HashMap<K, C, IdentityBuildHasher>`** — hash-join `accumulate`. Best for
   large support (`PauliSum`); this is today's `ACMap` path. (AoS, scalar CPU.)
+  Requires `K: Indexable` (the direct digest).
 - **`ColumnStore`** — the one backend that *must* be a new struct, because it is
   structure-of-arrays: coefficients in one contiguous column, keys in plane
   blocks. Same hash-join build as the `HashMap`, but `scale` is one vectorized
   `*=`, `reduce` is a prefix-sum compaction, and `probe_batch` uses coalesced
   gathers. It is `HashMap`'s data re-laid for SIMD / GPU, not a third collection.
+  Requires `K: Indexable + Columnar`.
+
+So `Indexable` is a *per-backend* requirement, not a universal key bound: the
+`Vec` path needs only `Eq + Clone`, and only the hash-indexed backends demand the
+digest.
 
 The whole point of the refactor is to unblock SIMD / GPU, so the traits are
 designed so `ColumnStore` is expressible from day one — **only because no trait
@@ -1192,8 +1198,19 @@ interchangeable rather than separate code paths.
 Hash-enabled `Word` values and `Tableau` can both be expensive, mostly-stable
 map keys. Their hashing contract should be expressed independently of any map.
 
-The common capability is intentionally minimal, and it makes the one
-load-bearing value — the finalized structural digest — first class:
+`Indexable` is **not** the universal key bound, though. The universal
+requirement — what the graded algebra's `type Key` bounds on, and all any
+container needs to *find* and *store* a key — is just `Eq + Clone`: a linear-scan
+`Vec` backend compares by equality and never hashes. Hashing, and therefore the
+digest, is a property only a *hash* backend needs. So `Indexable` is required
+solely on the `HashMap` / `ColumnStore` `Accumulate` impls (and on `Columnar`),
+never on `type Key` itself. A `Bitstring` used only in a `Vec`-backed
+`GeneralizedTableau` is `Eq + Clone` and provides no `key_hash()` it would never
+use; `PauliWord` / `LossyPauliWord` / `Tableau`, used in hash backends, are
+`Indexable`.
+
+With that scoping, `Indexable` makes the one load-bearing value — the finalized
+structural digest — first class:
 
 ```rust
 pub trait Indexable: Clone + Eq + Hash {

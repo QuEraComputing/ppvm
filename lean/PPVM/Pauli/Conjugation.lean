@@ -97,4 +97,11 @@ theorem conjS_X : conjS ⟨0, true, false⟩ = ⟨0, true, true⟩ := by decide
 theorem conjS_Z : conjS ⟨0, false, true⟩ = ⟨0, false, true⟩ := by decide
 theorem conjS_Y : conjS ⟨0, true, true⟩ = ⟨2, true, false⟩ := by decide
 
+/-- **`S`-conjugation has order 4** (`S⁴` is a global phase, so conjugation by it
+is trivial): `conjS⁴ = id` while `conjS² ≠ id` (conjugation by `S² = Z`). -/
+theorem conjS_iterate_four : conjS^[4] = id := by
+  funext p; revert p; decide
+
+theorem conjS_iterate_two_ne_id : conjS^[2] ≠ id := by decide
+
 end PPVM.PauliPhase.PhasedPauli

@@ -26,6 +26,11 @@ So the n-qubit phase exponent is the **sum over qubits** of the single-qubit
 which is exactly what makes the packed multi-qubit `MulAssign` well defined.
 
 The product bits are pointwise (`x = a^c`, `z = b^d` per qubit).
+
+Scope note: the single-qubit `phaseExp` is grounded against genuine `ℤ[i]`
+matrices in `PPVM.PauliMatrix`. The n-qubit phase here is validated as the *sum*
+of those single-qubit exponents (which is exactly what the Rust kernel computes),
+not re-checked against `n`-fold tensor-product matrices.
 -/
 
 namespace PPVM.PauliWord

@@ -62,7 +62,8 @@ group law of `Pₙ / phases ≅ (𝔽₂², ⊕)` and mirrors the `MulAssign` in
 def mul (p q : Pauli) : Pauli := (p.1 + q.1, p.2 + q.2)
 
 /-- The symplectic form on Paulis. `omega p q = 1` exactly when `p` and `q`
-anticommute (`P·Q = (-1)^{omega p q} · Q·P`). Mirrors `anticommutes_at`
+anticommute; the phase law `P·Q = (-1)^{omega p q} · Q·P` is proved (with the
+phase tracked) as `PPVM.PauliPhase.phaseExp_sub_comm`. Mirrors `anticommutes_at`
 (`crates/ppvm-traits/src/traits/word_trait.rs:113`). -/
 def omega (p q : Pauli) : ZMod 2 := p.1 * q.2 + p.2 * q.1
 
@@ -100,9 +101,12 @@ theorem omega_comm : ∀ p q : Pauli, omega p q = omega q p := by decide
 /-- `X` and `Z` anticommute. -/
 theorem omega_X_Z : omega X Z = 1 := by decide
 
-/-- Distinct nonidentity Paulis on the same qubit anticommute; equal ones (and
-`I`) commute. -/
-theorem omega_eq_zero_of_eq : ∀ p : Pauli, omega p p = 0 := by decide
+/-- **Distinct nonidentity Paulis on the same qubit anticommute.** (The
+complementary cases all commute: `p = q` is `omega_self`; a factor of `I`
+commutes by direct computation.) This is the substantive half: `omega p q = 1`
+whenever `p ≠ q` and neither is `I`. -/
+theorem omega_of_ne : ∀ p q : Pauli, p ≠ q → p ≠ I → q ≠ I → omega p q = 1 := by
+  decide
 
 end Pauli
 

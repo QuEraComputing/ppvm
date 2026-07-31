@@ -6,6 +6,7 @@ Authors: The PPVM Authors
 import PPVM.Basic
 import PPVM.Pauli
 import PPVM.Pauli.Phase
+import PPVM.Pauli.Matrix
 import PPVM.Pauli.Word
 import PPVM.Pauli.Symplectic
 import PPVM.Pauli.Conjugation

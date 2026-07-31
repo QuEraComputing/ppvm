@@ -121,12 +121,45 @@ theorem isSymplecticFrame_identity : IsSymplecticFrame (identityFrame n) := by
     simp only [mul_zero, zero_mul, add_zero, ite_mul, one_mul, zero_mul,
       Finset.sum_ite_eq', Finset.mem_univ, if_true]
 
+/-- **The `2n` generators of a symplectic frame are linearly independent** — the
+crux of being a symplectic basis of the `2n`-dimensional space `Sp n` (spanning
+then follows by a dimension count, which we do not formalize here). If a linear
+combination of destabilizers and stabilizers vanishes, every coefficient is `0`:
+pairing with `ω(·, sⱼ)` extracts the destabilizer coefficient `aⱼ` (everything
+else is `ω`-orthogonal), and pairing with `ω(·, dⱼ)` extracts `bⱼ`. -/
+theorem frame_linearIndependent (T : Frame n) (hT : IsSymplecticFrame T)
+    (a b : Fin n → ZMod 2)
+    (h : ∑ i, a i • T.destab i + ∑ i, b i • T.stab i = 0) :
+    (∀ j, a j = 0) ∧ (∀ j, b j = 0) := by
+  obtain ⟨hdd, hss, hds⟩ := hT
+  have hsd : ∀ i j, omega (T.stab i) (T.destab j) = if j = i then 1 else 0 := by
+    intro i j; rw [omega_comm]; exact hds j i
+  have expand : ∀ w : Sp n,
+      omega (∑ i, a i • T.destab i + ∑ i, b i • T.stab i) w
+        = (∑ i, a i • omega (T.destab i) w) + ∑ i, b i • omega (T.stab i) w := by
+    intro w
+    simp only [map_add, LinearMap.add_apply, map_sum, LinearMap.sum_apply,
+      map_smul, LinearMap.smul_apply]
+  refine ⟨fun j => ?_, fun j => ?_⟩
+  · have hj := expand (T.stab j)
+    rw [h, map_zero, LinearMap.zero_apply] at hj
+    simp only [hds, hss, smul_eq_mul, mul_ite, mul_one, mul_zero,
+      Finset.sum_const_zero, add_zero, Finset.sum_ite_eq', Finset.mem_univ, if_true] at hj
+    exact hj.symm
+  · have hj := expand (T.destab j)
+    rw [h, map_zero, LinearMap.zero_apply] at hj
+    simp only [hdd, hsd, smul_eq_mul, mul_ite, mul_one, mul_zero,
+      Finset.sum_const_zero, zero_add, Finset.sum_ite_eq, Finset.mem_univ, if_true] at hj
+    exact hj.symm
+
 /-! ### Measurement: reading coordinates via `ω`, and the outcome dichotomy
 
 Aaronson–Gottesman measurement of a Pauli `M` inspects how `M` (anti)commutes
-with the generators. On a symplectic frame those `ω`-values are `M`'s
-coordinates, and whether any stabilizer anticommutes with `M` decides the
-deterministic-vs-random branch of the `measure` case split. -/
+with the generators. On the **initial** frame those `ω`-values are literally
+`M`'s bits (the coordinate read-outs below); on a general symplectic frame they
+are `M`'s coordinates *in the frame basis*, which is a genuine basis by
+`frame_linearIndependent`. Whether any stabilizer anticommutes with `M` decides
+the deterministic-vs-random branch of the `measure` case split. -/
 
 /-- On the initial frame, `ω(M, Zᵢ)` reads off `M`'s X-bit at qubit `i`. -/
 theorem omega_stab_identity (M : Sp n) (i : Fin n) :
@@ -142,19 +175,31 @@ theorem omega_destab_identity (M : Sp n) (i : Fin n) :
   rw [Finset.sum_ite_eq' Finset.univ i fun k => (M k).2]
   simp
 
-/-- **The measurement dichotomy.** Either `M` commutes with every stabilizer
-(deterministic outcome — the pivot search fails) or some stabilizer anticommutes
-with it (random outcome, that generator being the pivot). -/
+/-- The pivot-search dichotomy (the shape of the `measure` case split): either
+`M` commutes with every stabilizer — the pivot search fails and the outcome is
+deterministic — or some stabilizer anticommutes with it, giving the pivot for the
+random branch. (Structurally this is just the dichotomy "a `𝔽₂`-valued function
+is either identically `0` or hits `1` somewhere"; the *content* of each branch is
+in the two theorems below.) -/
 theorem measurement_dichotomy (T : Frame n) (M : Sp n) :
     (∀ i, omega M (T.stab i) = 0) ∨ ∃ i, omega M (T.stab i) = 1 := by
   by_cases h : ∀ i, omega M (T.stab i) = 0
   · exact Or.inl h
-  · push_neg at h
+  · rw [not_forall] at h
     obtain ⟨i, hi⟩ := h
     refine Or.inr ⟨i, ?_⟩
     rcases (by decide : ∀ x : ZMod 2, x = 0 ∨ x = 1) (omega M (T.stab i)) with h0 | h1
     · exact absurd h0 hi
     · exact h1
+
+/-- **Deterministic ⇔ `X`-free.** On the initial frame, `M` commutes with every
+stabilizer (the measurement is deterministic) *iff* `M` has no `X` component —
+i.e. `M` is a `Z`-type (diagonal) Pauli, exactly the operators measured with
+certainty on `|0…0⟩`. This gives the deterministic branch real content, via the
+coordinate read-out. -/
+theorem measure_deterministic_iff_xfree (M : Sp n) :
+    (∀ i, omega M ((identityFrame n).stab i) = 0) ↔ ∀ i, (M i).1 = 0 := by
+  simp only [omega_stab_identity]
 
 /-- Measuring `Zq` on the initial state is **deterministic**: it commutes with
 every stabilizer, so the pivot search fails. -/

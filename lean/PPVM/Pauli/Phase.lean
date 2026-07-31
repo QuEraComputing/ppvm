@@ -91,14 +91,20 @@ normalization `g(x,z) = iˣᶻ Xˣ Zᶻ`, one computes
   `g(a,b) · g(c,d) = i^{ab + cd + 2bc} X^{a⊕c} Z^{b⊕d}
                    = i^{ab + cd + 2bc − (a⊕c)(b⊕d)} · g(a⊕c, b⊕d)`,
 
-so the reference exponent is `ab + cd + 2bc − (a⊕c)(b⊕d) (mod 4)`. -/
+so the reference exponent is `ab + cd + 2bc − (a⊕c)(b⊕d) (mod 4)`. This
+`phaseRef` is an *analytic* formula (not itself a matrix); it is grounded in an
+actual `ℤ[i]` matrix model in `PPVM.PauliMatrix` (`pauliMat_mul`), which proves
+`phaseExp` is the exponent of the genuine 2×2 matrix product. So the chain is
+`phase/mul.rs booleans = phaseExp = phaseRef = real matrix exponent`. -/
 
-/-- Matrix-model reference exponent, independent of the packed-bit tricks. -/
+/-- Analytic reference exponent (an algebraic formula; `PPVM.PauliMatrix.pauliMat_mul`
+grounds it in a genuine `ℤ[i]` matrix product). -/
 def phaseRef (a b c d : Bool) : ZMod 4 :=
   b4 a * b4 b + b4 c * b4 d + 2 * (b4 b * b4 c) - b4 (xor a c) * b4 (xor b d)
 
 /-- **Refinement of `phase/mul.rs`.** The packed boolean `2·sign + imag`
-computes exactly the matrix-model phase exponent, for all 16 bit patterns. -/
+computes exactly the analytic reference exponent, for all 16 bit patterns; and
+`PPVM.PauliMatrix.pauliMat_mul` checks that reference against real matrices. -/
 theorem phaseExp_eq_ref : ∀ a b c d, phaseExp a b c d = phaseRef a b c d := by
   decide
 

@@ -140,8 +140,10 @@ end Scale
 /-! ### L3 `Pair` — the bilinear form (observable read-out)
 
 `Pair::overlap` is the `∑ₖ fₖ · gₖ` read side of the hash join, used for
-expectation values. It is bilinear; we prove additivity in the first argument
-(the "probe" side), the property the batched probe relies on to split work. -/
+expectation values. We prove it is **additive in each argument** (biadditive) —
+the property the batched probe relies on to split work across produced terms.
+(Full `C`-bilinearity additionally needs homogeneity; over a general semiring `C`
+biadditivity is the load-bearing part.) -/
 
 section Pair
 variable [Semiring C]
@@ -150,12 +152,17 @@ variable [Semiring C]
 support, since terms with `fₖ = 0` contribute nothing. -/
 def overlap (f g : CMap K C) : C := f.sum fun k a => a * g k
 
-/-- **The pairing is left-additive** — `⟪f₁ + f₂, g⟫ = ⟪f₁, g⟫ + ⟪f₂, g⟫`. This
-bilinearity in the probe argument is what lets the batched probe phase of the
-hash join partition the produced terms; scaling is analogous. -/
+/-- **Left-additive** — `⟪f₁ + f₂, g⟫ = ⟪f₁, g⟫ + ⟪f₂, g⟫`. -/
 theorem overlap_add_left (f₁ f₂ g : CMap K C) :
     overlap (f₁ + f₂) g = overlap f₁ g + overlap f₂ g :=
   Finsupp.sum_add_index' (fun a => zero_mul (g a)) (fun a b₁ b₂ => add_mul b₁ b₂ (g a))
+
+/-- **Right-additive** — `⟪f, g₁ + g₂⟫ = ⟪f, g₁⟫ + ⟪f, g₂⟫`. Together with
+`overlap_add_left` this is biadditivity of the pairing. -/
+theorem overlap_add_right (f g₁ g₂ : CMap K C) :
+    overlap f (g₁ + g₂) = overlap f g₁ + overlap f g₂ := by
+  simp only [overlap, Finsupp.add_apply, mul_add]
+  exact Finsupp.sum_add
 
 end Pair
 

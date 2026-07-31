@@ -2,10 +2,15 @@
 
 Machine-checked proofs of the mathematics behind the `ppvm` simulator. The Rust
 workspace under `crates/` is the source of truth; this Lean development states
-the **mathematical spec** and proves that ppvm's bit-level implementation is a
-faithful refinement of it. That "spec ⇄ implementation" framing is where the
-value is — it turns the packed-bit tricks in `ppvm-pauli-word` / `ppvm-tableau`
-into checked theorems and surfaces where code and intended math diverge.
+the **mathematical spec** and proves the bit-level Pauli kernel — the packed
+phase arithmetic, the symplectic gate algebra, the tableau invariant — is a
+faithful refinement of it (validated against both the Rust booleans and genuine
+`ℤ[i]` matrices). The higher-level measurement / noise / observable results are
+formalized as **models** at the coefficient-vector level; each module's docstring
+states exactly what is *derived* versus *modeled*. That "spec ⇄ implementation"
+framing is where the value is — it turns the packed-bit tricks in
+`ppvm-pauli-word` / `ppvm-tableau` into checked theorems and surfaces where code
+and intended math diverge.
 
 ## Why this exists right now: validating the `ppvm-traits-2` algebra
 
@@ -52,17 +57,18 @@ The exact Lean/Mathlib version is pinned by `lean/lean-toolchain` and
 | `PPVM.lean` | Library root; imports every module. | — |
 | `PPVM/Basic.lean` | Namespace + Mathlib-resolution smoke test. | — |
 | `PPVM/Pauli.lean` | Phase-free single-qubit symplectic group law + symplectic form (`decide`). | ✅ |
-| `PPVM/Pauli/Phase.lean` | The **`ℤ/4ℤ` phase cocycle**: `phaseExp` from the Rust `sign`/`imag` booleans, matrix-model reference `phaseRef`, `phaseExp = phaseRef`, the 2-cocycle (associativity) law, the single-qubit **Pauli `Group`** (a real Mathlib `Group` instance) with the **non-split central extension** `toSymplectic : 𝒫₁ →* (ℤ/2)²`, and commutation ↔ symplectic form. | ✅ |
+| `PPVM/Pauli/Phase.lean` | The **`ℤ/4ℤ` phase cocycle**: `phaseExp` from the Rust `sign`/`imag` booleans, analytic reference `phaseRef`, `phaseExp = phaseRef`, the 2-cocycle (associativity) law, the single-qubit **Pauli `Group`** (a real Mathlib `Group` instance) with the **non-split central extension** `toSymplectic : 𝒫₁ →* (ℤ/2)²`, and commutation ↔ symplectic form. | ✅ |
+| `PPVM/Pauli/Matrix.lean` | Genuine **`ℤ[i]` 2×2 Pauli matrices**; `pauliMat_mul` checks `phaseExp` against the *real* matrix product `g(a,b)·g(c,d) = iᵏ g(a⊕c,b⊕d)` — grounds `phaseRef` in an actual model. | ✅ |
 | `PPVM/Pauli/Word.lean` | Lifts the cocycle and commutation law to the **n-qubit** `PauliWord` (per-qubit phase summed mod 4, per `phase/mul.rs`). | ✅ |
 | `PPVM/Pauli/Symplectic.lean` | The **symplectic space `GF(2)^{2n}`**: Pauli mult = module `+`; `ω` as a Mathlib `LinearMap.BilinForm (ℤ/2)` proven **alternating** (`IsAlt`); `H`/`S`/`CNOT`/`CZ` proven to be `Sp(2n,2)` **isometries**. | ✅ |
 | `PPVM/Pauli/Conjugation.lean` | **Clifford conjugation as signed symplectic automorphisms**: `conjH`/`conjS` are group homs of `𝒫₁` (the `Sp` bit-map + sign `β`), with `HXH=Z`, `SXS†=Y`, `H²=I`. | ✅ |
-| `PPVM/Tableau/Frame.lean` | The **stabilizer tableau** (key type #2): the `2n` generators as a **symplectic basis** (`IsSymplecticFrame`); the initial `X`/`Z` frame is one; **every Clifford (`H`/`S`/`CNOT`/`CZ`) preserves it**; measurement coordinate-readout + the deterministic/random **dichotomy**. | ✅ |
+| `PPVM/Tableau/Frame.lean` | The **stabilizer tableau** (key type #2): the `2n` generators satisfy the `ω`-orthonormality relations *and* are **linearly independent** (`frame_linearIndependent`) — a genuine symplectic basis; the initial `X`/`Z` frame is one; **every Clifford (`H`/`S`/`CNOT`/`CZ`) preserves it**; measurement coordinate read-out, the pivot dichotomy, and deterministic ⇔ `X`-free. | ✅ |
 | `PPVM/Algebra/GradedMap.lean` | The **abstract graded map** `C[K]`: identifies L0–L4 (`Support`/`Accumulate`/`Scale`/`Pair`/`Multiply`) with `Finsupp` + `AddMonoidAlgebra`; proves `reduce` is structural and `truncate` is not additive. | ✅ |
 | `PPVM/Algebra/Twisted.lean` | **`key_mul` is associative**: the twisted convolution `(c,v)·(d,w) = (cd·i^{phaseExp}, v⊕w)` is associative over any ring with `i⁴=1`, from the 2-cocycle. | ✅ |
 | `PPVM/Algebra/Truncation.lean` | **Truncation error bounds**: L1 `|error| ≤ Σ|dropped|` (triangle), L2 Cauchy–Schwarz, and the `<` vs `≥` backend cutoff-mismatch witness. | ✅ |
-| `PPVM/Algebra/Noise.lean` | **Noise & observables**: unital Pauli-channel eigenvalue `λ_P = 1 − 2Σ_{anti}p_Q`; Pauli-basis orthonormality (`overlap` = δ); zero-state read-out = diagonal-sector sum. | ✅ |
-| `PPVM/Instantiations/Bitstring.lean` | The generalized-tableau **`C[Bitstring]`** amplitude algebra: XOR relabel is a bijection; Clifford gates leave amplitudes fixed. | ✅ |
-| `PPVM/Instantiations/Rotation.lean` | The non-Clifford **rotation branch**: `iGP` is a distinct Pauli with bits `G ⊕ P`; the `(P,P')` update is a norm-preserving 2-D rotation (`sin²+cos²=1`). | ✅ |
+| `PPVM/Algebra/Noise.lean` | **Noise & observables**: unital Pauli-channel eigenvalue `λ_P = 1 − 2Σ_{anti}p_Q`, plus a corollary tying `anti` to the actual `ω`; Pauli-basis orthonormality under the `overlap` pairing (the model of `Tr(PQ)/2ⁿ`); zero-state read-out over the concrete `X`-free sector. | ✅ |
+| `PPVM/Instantiations/Bitstring.lean` | The generalized-tableau **`C[Bitstring]`** amplitude algebra: XOR relabel is a bijection; in the `frame × amplitudes` model a Clifford acts on the frame factor only (amplitudes fixed by construction). | ✅ |
+| `PPVM/Instantiations/Rotation.lean` | The non-Clifford **rotation branch**: `iGP` is a Pauli with bits `G ⊕ P`, distinct from both operands; the `(P,P')` coefficient update is *modeled* by a norm-preserving 2-D rotation (`sin²+cos²=1`). | ✅ |
 
 Everything is proved against the pinned Mathlib; `mise run lean-build` is green.
 
@@ -81,12 +87,15 @@ algebra. For the *phased* Pauli key, L4 is realized directly: because
 (`monoidAlgebra_single_mul`) — Mathlib's group algebra, gotten for free from the
 group instance.
 
-**The Pauli phase extension (`Phase.lean`, `Word.lean`).** The headline Tier-1
-target. The packed `2·sign + imag` boolean formula in
-`crates/ppvm-pauli-word/src/phase/mul.rs` computes exactly the matrix-model
-phase exponent, it is a genuine 2-cocycle (so the packed multiplication is
-associative — a single-qubit *and* n-qubit theorem), and the phase asymmetry is
-`2·ω`, i.e. `P·Q = (−1)^{ω(P,Q)} Q·P`. The single-qubit Pauli group is a genuine
+**The Pauli phase extension (`Phase.lean`, `Matrix.lean`, `Word.lean`).** The
+headline Tier-1 target. The packed `2·sign + imag` boolean formula in
+`crates/ppvm-pauli-word/src/phase/mul.rs` equals the analytic reference exponent
+(`phaseExp = phaseRef`), and `Matrix.lean` independently checks that exponent
+against **genuine 2×2 `ℤ[i]` Pauli matrices** (`pauliMat_mul`), so the chain
+`booleans = phaseExp = phaseRef = real matrix exponent` is closed end to end. It
+is a genuine 2-cocycle (so the packed multiplication is associative — a
+single-qubit *and* n-qubit theorem), and the phase asymmetry is `2·ω`, i.e.
+`P·Q = (−1)^{ω(P,Q)} Q·P`. The single-qubit Pauli group is a genuine
 Mathlib `Group`, with the forget-phase map a group homomorphism onto the
 symplectic bits — the **non-split** central extension `1 → ℤ₄ → 𝒫₁ → 𝔽₂² → 1`.
 
@@ -104,13 +113,16 @@ bit-map and `β` the explicit sign.
 **The other key types (`Tableau/Frame.lean`, `Bitstring.lean`).** The design
 unifies three key types under one `Sum` engine; all three are now covered. The
 stabilizer **tableau** is proven to satisfy its Aaronson–Gottesman invariant —
-the `2n` generators form a **symplectic basis** of `(Sp n, ω)`, the initial
-`X`/`Z` frame is one, and every `ω`-isometry (hence every Clifford, via the
-`H`/`S` isometries above) preserves it. The generalized tableau's
-**`C[Bitstring]`** amplitudes reuse the graded algebra: the XOR branch relabel is
-a bijection, and Clifford gates leave the amplitudes fixed. The **rotation**
-producer is a reversible, norm-preserving 2-D rotation on the `(P, iGP)`
-coefficient plane. (As keys, `PauliWord`, `Frame`, and `Bitstring` are all just
+the `2n` generators are `ω`-orthonormal *and* **linearly independent**
+(`frame_linearIndependent`), i.e. a genuine symplectic basis of `(Sp n, ω)`; the
+initial `X`/`Z` frame is one, and every Clifford (`H`/`S`/`CNOT`/`CZ`) preserves
+it. The generalized tableau's **`C[Bitstring]`** amplitudes reuse the graded
+algebra: the XOR branch relabel is a bijection, and — modeling the state as
+`frame × amplitudes` — a Clifford updates the frame factor and leaves the
+amplitude factor untouched. The **rotation** branch's `(P, iGP)` coefficient
+update is *modeled* by a norm-preserving, reversible 2-D rotation (the operator
+conjugation is not derived); its new key `iGP` is proven a Pauli distinct from
+both operands. (As keys, `PauliWord`, `Frame`, and `Bitstring` are all just
 `K` in the same `K →₀ C` — the design's "one engine, N key types.")
 
 ## Corrections made to the design doc (from deriving the theorems)
@@ -135,15 +147,17 @@ transported through `iᵏ`. So `C[PauliWord]` with `key_mul` is an associative
 algebra on the mod-phase key itself (with unit `1·I`).
 
 **Measurement, truncation, noise, observables.** The stabilizer measurement case
-split is captured by the **coordinate read-out** (`ω(M, ·)` recovers `M`'s bits
-in a symplectic frame) and the **deterministic/random dichotomy** (some
-stabilizer anticommutes ⇔ the pivot search fires); measuring `Zq` is
-deterministic and `Xq` random on `|0⟩`. Truncation carries an **L1** bound
-`|error| ≤ Σ|dropped|` and an **L2** Cauchy–Schwarz bound, and the `<`-vs-`≥`
-backend cutoff mismatch has an explicit disagreeing witness. Unital Pauli
-channels have eigenvalue `λ_P = 1 − 2·Σ_{Q anticommutes} p_Q`; the Pauli basis is
-orthonormal under the `overlap` pairing; and the zero-state read-out is the
-diagonal (`X`-free) coefficient sum.
+split is captured by the **coordinate read-out** (on the initial frame, `ω(M, ·)`
+recovers `M`'s bits) and the pivot **dichotomy** (some stabilizer anticommutes ⇔
+the pivot search fires), sharpened to **deterministic ⇔ `M` is `X`-free** — so
+measuring `Zq` is deterministic and `Xq` random on `|0⟩`. Truncation carries an
+**L1** bound `|error| ≤ Σ|dropped|`, an **L2** Cauchy–Schwarz bound (and a
+count-normalized variant under `|⟨P⟩|≤1`), and an explicit cutoff-mismatch
+witness at *every* threshold. Unital Pauli channels have eigenvalue
+`λ_P = 1 − 2·Σ_{Q anticommutes} p_Q` (a corollary states this with `anti` the
+actual `ω`); the Pauli basis is orthonormal under the `overlap` pairing (the
+model of `Tr(PQ)/2ⁿ`, not the matrix trace itself); and the zero-state read-out
+is the `X`-free coefficient sum.
 
 ## Divergences (found while scoping, now **fixed**)
 

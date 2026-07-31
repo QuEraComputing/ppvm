@@ -105,16 +105,32 @@ theorem relabelAmp_bijective [Zero C] (s : Bitstring n) :
 
 /-! ### A Clifford gate touches the frame only
 
-At the amplitude level, `G · U|c⟩ = (GU)|c⟩`: the amplitudes are unchanged. We
-model "apply a Clifford to the generalized tableau" as its action on the
-amplitude vector, and it is the identity. -/
+A `GeneralizedTableau` state is `U|c⟩` — a Clifford frame `U` paired with the
+amplitude vector `|c⟩`. We model that as a pair `GenState = F × Amplitudes` (with
+`F` the frame, kept abstract), and a Clifford gate as the map that updates the
+frame factor and leaves the amplitude factor alone — the design's
+`G · U|c⟩ = (GU)|c⟩`. The two projections below make that factorization explicit:
+the gate is `frameUpdate` on the first component and `id` on the second. This is
+a *modeling* statement (it holds by how the state factorizes), not an emergent
+theorem — its value is pinning down that amplitudes and frame are independent
+factors and the Clifford acts only on the frame. -/
 
-/-- The action of a Clifford gate on the amplitude vector: nothing. -/
-def cliffordOnAmplitudes [Zero C] (c : Amplitudes n C) : Amplitudes n C := c
+/-- A generalized-tableau state: a Clifford frame (any type `F`) and the amplitude
+vector. -/
+abbrev GenState (F : Type*) (n : ℕ) (C : Type*) [Zero C] := F × Amplitudes n C
 
-/-- **Clifford gates leave the amplitude `Sum` untouched** — the work is entirely
-in the frame tableau. -/
-theorem cliffordOnAmplitudes_eq [Zero C] (c : Amplitudes n C) :
-    cliffordOnAmplitudes c = c := rfl
+/-- A Clifford gate acts on the frame factor via `frameUpdate`, leaving amplitudes
+untouched. -/
+def cliffordStep {F : Type*} [Zero C] (frameUpdate : F → F) (s : GenState F n C) :
+    GenState F n C := (frameUpdate s.1, s.2)
+
+/-- **A Clifford gate leaves the amplitude vector fixed** (`G·U|c⟩ = (GU)|c⟩`):
+its action projects to the identity on the amplitude factor. -/
+theorem cliffordStep_amplitudes {F : Type*} [Zero C] (frameUpdate : F → F)
+    (s : GenState F n C) : (cliffordStep frameUpdate s).2 = s.2 := rfl
+
+/-- …and it updates the frame factor by exactly the given frame map. -/
+theorem cliffordStep_frame {F : Type*} [Zero C] (frameUpdate : F → F)
+    (s : GenState F n C) : (cliffordStep frameUpdate s).1 = frameUpdate s.1 := rfl
 
 end PPVM.GenTableau

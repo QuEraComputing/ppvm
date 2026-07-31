@@ -1,0 +1,19 @@
+[package]
+name = "ppvm-conformance-2"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Test-only harness for the ppvm-*-2 refactor. Depends on both the old and new
+# crates so differential tests can replay identical, seeded workloads on each and
+# compare. Not shipped. See docs/design/traits-2-implementation-plan.md.
+[dependencies]
+rand = "0.10.1"
+ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
+
+[dev-dependencies]
+criterion = "0.7.0"
+
+[[bench]]
+name = "harness_smoke"
+harness = false

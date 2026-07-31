@@ -1320,6 +1320,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-conformance-2"
+version = "0.1.0"
+dependencies = [
+ "criterion 0.7.0",
+ "ppvm-pauli-word",
+ "rand 0.10.1",
+]
+
+[[package]]
 name = "ppvm-pauli-sum"
 version = "0.1.0"
 dependencies = [
@@ -1460,6 +1469,10 @@ dependencies = [
  "num",
  "rayon",
 ]
+
+[[package]]
+name = "ppvm-traits-2"
+version = "0.1.0"
 
 [[package]]
 name = "ppvm-tui"

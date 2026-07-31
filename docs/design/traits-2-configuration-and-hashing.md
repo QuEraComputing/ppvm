@@ -441,9 +441,15 @@ where
 
     fn truncate<M>(&self, map: &mut M)
     where
-        M: ACMap<W, C>;
+        M: Retain<W, C>;
 }
 ```
+
+`truncate` bounds on `Retain`, not the map algebra: dropping terms still in the
+support breaks module exactness, so it is the one non-algebraic map operation
+and lives on its own capability that `Policy` — not the algebra — consumes.
+`Retain` is `fn retain(&mut self, keep: impl Fn(&W, &C) -> bool)`, implemented by
+both storage backends.
 
 `Policy` does not require `Copy`. The bound bought nothing — policies are used
 through `&self` — and would forbid a stateful policy such as a per-region
@@ -465,7 +471,7 @@ impl<W: Word + Indexable, C: Coefficient> Policy<W, C> for CoefficientThreshold 
         0
     }
 
-    fn truncate<M: ACMap<W, C>>(&self, map: &mut M) {
+    fn truncate<M: Retain<W, C>>(&self, map: &mut M) {
         map.retain(|_word, coeff| coeff.magnitude() >= self.threshold);
     }
 }
@@ -476,16 +482,151 @@ removes the current split where the `Strategy` trait lives in `ppvm-traits` but
 its concrete strategies live in `ppvm-pauli-sum`; the policy is not an
 algorithm-agnostic `ppvm-traits-2` concern.
 
-`ACMap` remains the name of the associative coefficient-map capability already
-implemented by `HashMap`, `IndexMap`, and `DashMap`. Its generic signature can
-be simplified after `PauliStorage` and the separately supplied build hasher are
-removed, but coefficient accumulation, iteration, insertion, retention, and
-consumption are the same concept. `ACMap` moves with the sparse-sum engine (the
-existing `ppvm-pauli-sum` initially) rather than being renamed or kept in the
-algorithm-agnostic trait crate. Its existing capability names—such as
-`ACMapBase`, `ACMapIter`, `ACMapAddAssign`, `ACMapInsert`, `ACMapRetain`, and
-`ACMapConsume`—should also remain unless implementation work shows that two
-capabilities should actually be merged or split.
+#### The map is a graded algebra over `C[W]`
+
+The associative coefficient map — implemented today by `HashMap`, `IndexMap`,
+and `DashMap` — is, algebraically, the **free `C`-module on the set of words**:
+a finitely-supported function `W ⇀ C`, an element of `C[W]`. Every operation it
+must support is a module (or, at the top, ring) operation, so its capabilities
+are **graded by algebraic strength** rather than named ad hoc. This replaces the
+flat `ACMapBase` / `ACMapIter` / `ACMapAddAssign` / `ACMapInsert` /
+`ACMapRetain` / `ACMapConsume` split — which the design's own admission rule
+would reject as six grandfathered names — with layers, each justified by a
+distinct algebraic property *and* a distinct consumer:
+
+| Layer | Algebra | Trait | Justifying consumer |
+| --- | --- | --- | --- |
+| L0 | finite partial function `W ⇀ C` | `Support` | everything; read-out / export |
+| L1 | abelian-monoid formation + canonical support | `Accumulate` (`accumulate_batch` + `reduce`) | forming any linear combination |
+| L2 | the `C`-module action | `Scale` | normalization, global factors |
+| L3 | the bilinear form | `Pair` (`probe_batch`, `overlap`) | overlap / expectation read-out |
+| L4 | the ring (group-algebra) product | `Multiply` | operator composition, squaring an observable |
+
+The **minimum** is L0 + L1: a finitely-supported `W ⇀ C` you can accumulate
+into and reduce. That *is* the algebraic essence of a sparse sum. Truncation is
+deliberately **absent** from this table: dropping terms that are still in the
+support is an approximation that breaks module exactness, so it is not an
+algebraic operation — it belongs to `Policy` (a `Retain` capability), sitting
+outside the algebra. That is why truncation was always awkward to place.
+
+```rust
+/// L0 — the container. Note: no `&mut (W, C)` and no `&mut [C]` slot access is
+/// exposed, so a columnar (structure-of-arrays) backend is expressible. `iter`
+/// is read-only export; a SoA backend synthesizes the pairs from its columns.
+pub trait Support {
+    type Word: Word + Indexable;
+    type Coeff: Coefficient;
+    fn len(&self) -> usize;
+    fn get(&self, key: &Self::Word) -> Option<Self::Coeff>;
+    fn iter(&self) -> impl Iterator<Item = (Self::Word, Self::Coeff)>;
+}
+
+/// L1 — the module core: form linear combinations, then canonicalize.
+pub trait Accumulate: Support {
+    /// Build side of the hash join: merge a produced batch, accumulating onto an
+    /// existing key or inserting a new one. Columnar in; the scalar
+    /// `accumulate(w, c)` is provided sugar over a batch of one.
+    fn accumulate_batch(&mut self, terms: &TermBatch<Self::Word, Self::Coeff>);
+
+    /// Canonicalize to reduced finite-support form: drop every key whose
+    /// coefficient `is_zero()`. First-class and run **only here** — see below.
+    fn reduce(&mut self);
+}
+
+/// L2 — the C-module action: a pure elementwise map over the coefficients.
+pub trait Scale: Support {
+    fn scale(&mut self, s: &Self::Coeff);   // ∀ w. c_w *= s
+}
+
+/// L3 — the bilinear form: the read side of the hash join.
+pub trait Pair: Support {
+    fn probe_batch(&self, keys: &KeyBatch<Self::Word>, out: &mut [Option<Self::Coeff>]);
+    fn overlap(&self, other: &Self) -> Self::Coeff;
+}
+
+/// L4 — the ring product. The Pauli product injects powers of `i`, so the
+/// coefficient must absorb phase: `Multiply` is bounded on `ComplexCoefficient`.
+pub trait Multiply: Accumulate
+where
+    Self::Coeff: ComplexCoefficient,
+{
+    fn multiply_into(&self, other: &Self, acc: &mut Self);
+}
+```
+
+#### `reduce()` is first-class, and runs only at finalize
+
+Reduce (drop zero coefficients) is **not** an inline check during accumulation.
+A coefficient `c1 + c2 + c3` is one value; the fact that a partial sum `c1 + c2`
+transiently hits zero during a merge is not the element reaching zero. Pruning
+mid-accumulation would delete a key that a later contribution re-creates — churn
+at best, and unsafe if it mutates the map during the traversal that is still
+producing those contributions. So canonicalization runs **once, after all
+coefficients for every word are accumulated**. Making `reduce` a named
+operation guarantees that by construction, and it earns its place three ways:
+
+- **Correctness** — there is no inline drop to get wrong (the caution above).
+- **It is a bulk primitive with a backend-specific implementation** — a scalar
+  `retain(|_, c| !c.is_zero())` on `HashStore`, but a prefix-sum **stream
+  compaction** kernel on a GPU column store. Folded into `consume`/swap it could
+  not have a bulk form.
+- **It amortizes** — several `accumulate_batch` calls (or a `multiply_into`
+  outer product) can precede a single `reduce`, instead of canonicalizing after
+  every step.
+
+#### Columnar from day one: two backends, no AoS leak
+
+The whole point of this refactor is to unblock SIMD / GPU execution, so the
+layers are designed to admit a **structure-of-arrays** accumulator from the
+start — not as a later retrofit. Two backends must both be expressible against
+the same traits:
+
+- **`HashStore`** (array-of-structs, `hashbrown`): implements every layer with
+  scalar kernels. `accumulate_batch` scatters the batch through scalar inserts;
+  `reduce` is a `retain`; `scale` is a scalar loop. Correct and fast for the CPU
+  scalar path, but a dead end for the GPU.
+- **`ColumnStore`** (structure-of-arrays, for SIMD / GPU): coefficients in one
+  contiguous column, keys in plane blocks. `accumulate_batch` is a
+  radix-partitioned, group-prefetched hash-join build; `scale` is one vectorized
+  `*=` over the coefficient column; `reduce` is a prefix-sum compaction;
+  `probe_batch` is a prefetched probe with coalesced gathers.
+
+Both are expressible **only because no trait signature leaks the array-of-structs
+layout**. The rules the whole storage contract holds to:
+
+1. coefficients are a contiguous column and keys are plane blocks (SoA) — so L2
+   Scale, L1 Reduce, and L3 Pair vectorize and GPU loads coalesce;
+2. term I/O is a columnar `TermBatch` / `KeyBatch` (see
+   [The batch contract](#the-batch-contract)), never a scalar per-element
+   callback — so `HashStore` accepts a batch and processes it scalar internally
+   while `ColumnStore` vectorizes it, from the *same* call;
+3. the mutating operations are whole-map (`scale`, `reduce`) or batch
+   (`accumulate_batch`), never per-slot; and
+4. **no signature exposes `&mut (W, C)` or `&mut [C]`** — the one rule that keeps
+   the AoS layout from becoming load-bearing and foreclosing `ColumnStore`.
+
+The columnar term types (`TermBatch`, `KeyBatch`, `KeyColumn`) that these layers
+consume are the same ones specified in
+[Batch execution and the hash-join contract](#batch-execution-and-the-hash-join-contract);
+that section is the columnar spelling of L1 and L3, and the graded layers here
+are where it plugs into the algebra.
+
+#### Every gate is a producer feeding `accumulate`
+
+`map_add` and `map_insert` are not two different map operations; they are one
+(`accumulate`) fed by two different **producers**. Clifford, rotation, and
+multiply all reduce to "produce `(w, c)` terms, `accumulate_batch`, `reduce`":
+
+| Algebra op | Producer | Term shape |
+| --- | --- | --- |
+| Clifford (H/S/CNOT) | pushforward along a Pauli bijection `w ↦ φ(w)` | one term per input (injective, no collision) |
+| Rotation / noise | extend-by-linearity `w ↦ cos·w + sin·w'` | a small fan-out per input (branch) |
+| Multiply (L4) | outer product over two operands' support | one term per `(v, w)` pair |
+
+The producer difference lives entirely on the **term-production side** — the
+`TermSink` of [The batch contract](#the-batch-contract) — not in the map, which
+only ever accumulates produced batches. That is what dissolves the old
+`map_add` / `map_insert` split and its `Vec<(W, C)>` staging leak.
 
 A `SumStorage` is a new abstraction extracted from the fields currently owned
 directly by `PauliSum`: its maps and reusable workspace. It is an actual value,
@@ -495,49 +636,38 @@ not a marker configuration:
 pub trait SumStorage: Clone {
     type Word: Word + Indexable;
     type Coeff: Coefficient;
-    type Map: ACMap<Self::Word, Self::Coeff>;
+    type Map: Accumulate<Word = Self::Word, Coeff = Self::Coeff>;
 
     fn data(&self) -> &Self::Map;
     fn data_mut(&mut self) -> &mut Self::Map;
 
-    fn map_insert<F>(&mut self, f: F)
-    where
-        F: Fn(&Self::Word, &mut Self::Coeff) -> Option<(Self::Word, Self::Coeff)>;
+    /// Apply a term producer — a gate — into the map. The producer emits its
+    /// terms into a `TermSink`; the storage owns whether that sink is a scratch
+    /// `Vec`, a columnar `TermBatch`, or per-thread buffers, hands the staged
+    /// batch to `Accumulate::accumulate_batch`, then `reduce`s. This one method
+    /// subsumes the former `map_add` / `map_insert` / `map_insert_multiple`:
+    /// they differed only in their producer, not in the map operation.
+    fn apply<P: TermProducer<Self::Word, Self::Coeff>>(&mut self, producer: P);
 
-    fn map_insert_multiple<F>(&mut self, f: F)
-    where
-        F: Fn(&Self::Word, &mut Self::Coeff) -> Option<Vec<(Self::Word, Self::Coeff)>>;
-
-    fn map_add<F>(&mut self, f: F)
-    where
-        F: Fn(&Self::Word, &Self::Coeff) -> (Self::Word, Self::Coeff);
-
-    fn consume(&mut self);
+    fn reduce(&mut self);
 }
 ```
 
-The exact closure bounds and support for multiple produced terms remain an
-implementation detail for the prototype. The important boundary is that the
-trait preserves the current semantic operation names without exposing physical
-auxiliary maps or scratch buffers.
+`SumStorage` owns the reusable workspace and the sink. It no longer exposes a
+family of closure methods returning `Option<Vec<(W, C)>>` — that return type
+leaked the scratch-`Vec` staging mechanism into the contract. Instead a gate is
+a `TermProducer` that pushes into a `TermSink`, so the staging representation
+(auxiliary map, scratch vector, columnar batch, per-thread buffers) is entirely
+the storage's private choice, and the same gate kernel drives the scalar
+`HashStore` and the columnar `ColumnStore` unchanged. `apply` desugars to
+`accumulate_batch` + `reduce` on the underlying `Accumulate` map; the
+whole-map rewrite (Clifford) and the branching expansion (rotation) are two
+`TermProducer`s, per the producer table above.
 
-`SumStorage` owns the semantic whole-map operations and its reusable workspace.
-It delegates to the lower-level `ACMap` batch kernels without restoring the
-removed map-to-map `ACMapInsert::map_insert` method:
-
-```text
-SumStorage::map_insert           -> ACMapInsert::map_insert_vec
-SumStorage::map_insert_multiple  -> ACMapInsert::map_insert_multiple
-SumStorage::map_add              -> ACMapAddAssign::map_add_assign
-```
-
-This boundary is compatible with
-`refactor/shrink-internal-trait-surface`: the higher-level sparse-sum operation
-remains, while the dead low-level primitive stays removed.
-
-Those `ACMap` kernels are the scalar spelling of a bulk operation. The
-batch-first, structure-of-arrays layout the kernels consume on hot paths — and
-that admits prefetched, SIMD, threaded, and offloaded backends — is specified in
+Because the batch a producer stages is exactly the structure-of-arrays layout
+prefetched, SIMD, threaded, and offloaded backends consume, the execution
+schedule for that batch — group prefetching, radix partitioning, device
+offload — is specified in
 [Batch execution and the hash-join contract](#batch-execution-and-the-hash-join-contract)
 below.
 
@@ -618,8 +748,8 @@ changed according to whether their underlying responsibility changes:
 | `Strategy` | `Policy` | Intentional terminology change requested for this redesign; the `Copy` bound is dropped. |
 | `Coefficient::cutoff` | removed | The truncation predicate moves to `Policy`; `Coefficient::magnitude` exposes only the value property the policy thresholds. |
 | `Coefficient::sin_cos` | `Angle<C>` | The rotation angle becomes a separate domain, defaulting to the coefficient type. |
-| `ACMap` | `ACMap` | The associative coefficient map has the same role. |
-| `PauliSum::data`, `map_insert`, `map_add` | same method names on `SumStorage` | These semantic operations already match the proposed boundary. |
+| `ACMap` (`ACMapBase`/`Iter`/`AddAssign`/`Insert`/`Retain`/`Consume`) | graded `Support` / `Accumulate` / `Scale` / `Pair` / `Multiply` | The six flat names are replaced by algebra layers over `C[W]`; `Retain` (truncation) leaves the algebra for `Policy`. |
+| `PauliSum::map_insert`, `map_add` | one `SumStorage::apply(producer)` → `Accumulate::accumulate_batch` + `reduce` | They differed only in their producer, not the map op; the `Vec<(W,C)>` staging leak is removed. |
 | `PauliSum` map pair and `scratch` fields | `SumStorage` | A new abstraction is extracted from currently unnamed storage state. |
 | `PauliSum` | `PauliSum` over generalized `Sum` machinery | Pauli-facing code keeps its established name; `Sum` names the new cross-algebra engine. |
 | `GeneralizedTableauSum` | `GeneralizedTableauSum` | The classical mixture algorithm remains the same concept. |
@@ -628,7 +758,8 @@ changed according to whether their underlying responsibility changes:
 | `HashFinalize` | retained, but private to `ppvm-pauli-word` | The per-algorithm/per-width finalization fold still runs inside `key_hash()`; it leaves the algebra-agnostic contract. |
 | (new) | `IdentityBuildHasher` + pass-through `SumStorage` contract | The provided storage consumes `key_hash()` directly instead of re-hashing it. |
 | `PauliStorage` | removed | Packed backing storage becomes private to the concrete word representation. |
-| (new) | `Columnar`, `KeyColumn`, `KeyBatch`, `TermBatch`, `ACMapBatch` | Structure-of-arrays batch/hash-join contract, kept as a separate trait so `Indexable` stays minimal; see [Batch execution and the hash-join contract](#batch-execution-and-the-hash-join-contract). |
+| (new) | `Columnar`, `KeyColumn`, `KeyBatch`, `TermBatch`, `TermSink`/`TermProducer` | Structure-of-arrays term types; the columnar spelling of `Accumulate`/`Pair`. See [Batch execution and the hash-join contract](#batch-execution-and-the-hash-join-contract). |
+| (new) | `HashStore` (AoS) and `ColumnStore` (SoA) backends | Two `SumStorage` backends over the same graded traits — the SoA one is expressible from day one because no signature leaks AoS. |
 
 Names such as `Word`, `Indexable`, `SumStorage`, and `Sum` are
 therefore new because they denote abstractions that do not
@@ -654,10 +785,13 @@ This rule keeps:
   implemented by `PhasedPauliWord` and `Tableau`;
 - `StabilizerFrame`, the role-exclusive tableau operations;
 - gate and noise traits, implemented across propagation and tableau backends;
-- `SumStorage` and `ACMap`, implemented by genuinely different storage engines
-  and collections;
+- `SumStorage`, and the graded map layers `Support` / `Accumulate` / `Scale` /
+  `Pair` / `Multiply`, each admitted by a distinct algebraic property *and* a
+  distinct consumer, and implemented by the scalar `HashStore` and the columnar
+  `ColumnStore`;
 - `EntryStore`, already implemented by `VecStorage` and `MapStorage`; and
-- `Policy`, implemented by independent capacity and truncation behaviors.
+- `Policy`, implemented by independent capacity and truncation behaviors, and
+  consuming the non-algebraic `Retain` capability rather than the map algebra.
 
 It rejects the removed global `Config`, `PauliSumAlgorithm`,
 `TableauMixtureAlgorithm`, and `TableauStorage` traits, as well as word
@@ -699,12 +833,13 @@ whole-map rewrite:       active map -> auxiliary map -> swap
 in-place branching:      active map + scratch buffer -> merge into active map
 ```
 
-Neither physical mechanism is part of the public storage contract. A default
-`SumStorage` implementation may privately contain both maps and the reusable
-vector, matching the current `PauliSum` layout. A simpler backend may implement
-both `map_insert` and `map_add` using only an auxiliary map; another backend
-may use per-thread buffers. Whether retaining both mechanisms is worthwhile is
-a benchmark decision, not a type-system requirement.
+Neither physical mechanism is part of the public storage contract. Both are the
+`TermSink` a `TermProducer` pushes into: a default `SumStorage` may privately
+hold both an auxiliary map and the reusable vector, matching the current
+`PauliSum` layout; a simpler backend may sink everything through one auxiliary
+map; a columnar backend sinks into a `TermBatch`; another may use per-thread
+buffers. Whether retaining both mechanisms is worthwhile is a benchmark
+decision, not a type-system requirement.
 
 ## Batch execution and the hash-join contract
 
@@ -732,12 +867,13 @@ does not fit in cache, so each probe is a random access that misses to main
 memory, and the probe phase is bound by memory latency rather than by
 arithmetic.
 
-The `SumStorage` closures (`map_insert`, `map_add`) and the `ACMap` kernels they
-delegate to still describe *what* the merge computes. But a closure applied to
-one `(key, coeff)` at a time exposes no batch to prefetch, no homogeneous run to
-vectorize, no partition to distribute across threads, and no bulk kernel to hand
-to a device. Whatever the eventual implementation, the *layout* the kernels
-consume must be a batch, or those backends cannot be written against it.
+`SumStorage::apply` and the `Accumulate`/`Pair` layers describe *what* the merge
+computes. But a producer that emitted one `(key, coeff)` at a time would expose
+no batch to prefetch, no homogeneous run to vectorize, no partition to distribute
+across threads, and no bulk kernel to hand to a device. That is why a
+`TermProducer` stages into a `TermSink` and the map consumes an
+`accumulate_batch`: the *layout* the merge consumes is a batch, so those backends
+can be written against it.
 
 ### Prefetching the probe phase
 
@@ -832,28 +968,23 @@ pub trait KeyColumn: Default + Clone {
 }
 ```
 
-The bulk map operations then consume columns. They are the batch spelling of the
-existing `ACMap` kernels, added alongside them rather than replacing the
-semantic `SumStorage` methods:
+The bulk map operations that consume these columns are not a new trait: they are
+exactly the columnar methods of the graded algebra layers —
+[`Accumulate::accumulate_batch`](#the-map-is-a-graded-algebra-over-cw) is the
+build side and [`Pair::probe_batch`](#the-map-is-a-graded-algebra-over-cw) is the
+read side. Restated here at the column level for reference:
 
 ```rust
-pub trait ACMapBatch<W, C>
-where
-    W: Word + Columnar,
-    C: Coefficient,
-{
-    /// Merge a batch into the sum: for each term, accumulate onto an existing
-    /// key or insert a new one. The build/probe-with-group-by of a hash join.
-    /// The implementation owns whether it runs scalar, group- or
-    /// pipeline-prefetched, SIMD-vectorized, hash-partitioned across threads,
-    /// or offloaded; the contract fixes only the result and the layout.
-    fn upsert_batch(&mut self, batch: &TermBatch<W, C>);
+// Accumulate::accumulate_batch — the build/probe-with-group-by of a hash join.
+// The implementation owns whether it runs scalar, group- or pipeline-prefetched,
+// SIMD-vectorized, hash-partitioned across threads, or offloaded; the contract
+// fixes only the result and the columnar layout.
+fn accumulate_batch(&mut self, batch: &TermBatch<W, C>);
 
-    /// Read-only probe of a key column, for the overlap and expectation paths.
-    /// Takes a `KeyBatch` so the precomputed hash column drives the prefetch
-    /// with no coefficient column in the working set.
-    fn probe_batch(&self, keys: &KeyBatch<W>, out: &mut [Option<C>]);
-}
+// Pair::probe_batch — read-only probe of a key column, for the overlap and
+// expectation paths. Takes a `KeyBatch` so the precomputed hash column drives
+// the prefetch with no coefficient column in the working set.
+fn probe_batch(&self, keys: &KeyBatch<W>, out: &mut [Option<C>]);
 ```
 
 Three points make this layout the performant one rather than a cosmetic
@@ -873,17 +1004,17 @@ reshuffle:
   padding live in [`word-data-structures.md`](word-data-structures.md); they are
   never visible through `KeyColumn`.
 
-`upsert_batch` is where the branch-staging merge lands: the reusable scratch
+`accumulate_batch` is where the branch-staging merge lands: the reusable scratch
 buffer of the previous section becomes a `TermBatch` — the probe side of the
-join — and the `SumStorage` merge desugars to it. The scalar `SumStorage`
-closures remain the semantic surface for a naive backend, but generic hot paths
-build a `TermBatch` and hand it to the batch kernel.
+join. A naive backend may still have its `TermSink` collect into a scalar `Vec`
+and loop, but generic hot paths build a columnar `TermBatch` and hand it to
+`accumulate_batch`.
 
 Gate and rotation traits change accordingly, and this is the interface change
 users feel first: term *production* is separated from term *insertion*. A
-rotation appends produced terms into a `TermBatch` — filling the key column and
-the coefficient column as it goes — instead of mutating the map through a
-callback. That decoupling, plus the columnar layout, is what lets the produced
+`TermProducer` (a rotation, a Clifford re-key, a multiply operand) appends
+produced terms into a `TermSink` — filling the key column and the coefficient
+column as it goes — instead of mutating the map through a callback. That decoupling, plus the columnar layout, is what lets the produced
 batch be prefetched, vectorized, partitioned, or shipped to a device before it
 ever touches the table, and it keeps the propagation rule (the physics)
 independent of the merge strategy (the systems concern).
@@ -901,9 +1032,10 @@ independent of the merge strategy (the systems concern).
 - `Policy`: truncation already operates on the whole map and is naturally bulk;
   it should be expressible as a batch retain (via `KeyColumn::gather`) so it
   composes with a partitioned or offloaded table.
-- `SumStorage`: its staging fields become the join's probe-side buffer and its
-  merge desugars to `upsert_batch`. Whether it keeps both an auxiliary map and a
-  scratch buffer stays a backend decision, unchanged from above.
+- `SumStorage`: its staging fields become the join's probe-side buffer (the
+  `TermSink`) and its `apply` desugars to `accumulate_batch` + `reduce`. Whether
+  it keeps both an auxiliary map and a scratch buffer stays a backend decision,
+  unchanged from above.
 
 ### Parallel and offloaded backends
 
@@ -912,7 +1044,7 @@ without further interface changes. A partitioned hash join radix-partitions both
 sides by the high bits of the key hash so each partition is a disjoint
 sub-table; partitions then merge independently — one per thread, or one per GPU
 block — with no cross-partition synchronization. The batch contract is precisely
-what a partitioner consumes: `upsert_batch` may internally `gather` a
+what a partitioner consumes: `accumulate_batch` may internally `gather` a
 `TermBatch` into per-partition batches and run them concurrently, and a device
 backend may copy a `TermBatch` across the host/device boundary and run the probe
 as a kernel. None of this is visible in the contract; all of it is precluded by
@@ -983,13 +1115,13 @@ key. Cache invalidation makes a value correct for its next insertion or lookup;
 it cannot make in-place mutation of an existing map key valid.
 
 This invariant is not left entirely to discipline: the sparse-sum engine
-enforces its structural half through the closure signatures. `SumStorage`'s
-`map_insert` and `map_add` hand the closure `&Word` — a *shared* borrow of the
-live key — and expect a new `(Word, Coeff)` back, so the propagation kernels
-physically cannot mutate a key in place; they clone, mutate the clone through
-`PauliBits`, and the engine re-inserts under the updated digest. The `&Word`
-(not `&mut Word`) in those signatures is a deliberate safety choice, not an
-incidental one.
+enforces its structural half through the producer interface. A `TermProducer`
+reads live keys through a *shared* `&Word` borrow and *emits* new `(Word, Coeff)`
+terms into the `TermSink`; it is never handed `&mut Word` for a stored key. So
+the propagation kernels physically cannot mutate a key in place — they clone,
+mutate the clone through `PauliBits`, and the engine accumulates it under the
+updated digest. That the producer only ever *reads* keys and *produces* terms is
+a deliberate safety choice, not an incidental one.
 
 Structural fields should nonetheless be private in the new representations, and
 any remaining mutation must go through operations that invalidate the affected

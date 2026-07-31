@@ -162,6 +162,15 @@ fn bench_weight(c: &mut Criterion) {
     g.finish();
 }
 
+// NOTE (perf investigation, docs/log.md): at this single-`u64` width the new/old
+// `loss_weight` ratio (~1.27×) is a nanobenchmark artifact, NOT a regression. The
+// body is a verbatim port over identical `BitArray<u64>` storage, so the sub-ns
+// delta is fixed per-call overhead (code alignment), not computation — evidenced
+// by new `loss_weight` (1 plane) measuring *slower* than new `weight` (3 planes),
+// which is impossible for the work itself. Widening the storage to `[u64; 8]` (8×
+// the popcount) makes new/old converge to 1.00× (~0.915 ns each), and `weight`
+// likewise (1.00×). Left at `u64` as the representative width; read the ratio
+// with this caveat.
 fn bench_loss_weight(c: &mut Criterion) {
     let mut g = c.benchmark_group("lossy_pauli_word/loss_weight");
 

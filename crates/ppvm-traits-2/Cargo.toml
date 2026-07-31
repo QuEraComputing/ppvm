@@ -3,8 +3,9 @@ name = "ppvm-traits-2"
 version = "0.1.0"
 edition = "2024"
 
-# The trait foundation for the second trait-system experiment. Intentionally a
-# stub at Phase 0 scaffolding; trait modules land in Phase 1. See
+# The trait foundation for the second trait-system experiment. Trait
+# definitions and small leaf types only (Phase 1). See
 # docs/design/traits-2-configuration-and-hashing.md and
 # docs/design/traits-2-implementation-plan.md.
 [dependencies]
+num = "0.4"

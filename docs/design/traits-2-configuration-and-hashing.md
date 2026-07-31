@@ -89,11 +89,28 @@ pub trait Coefficient:
     + std::iter::Sum + Send + Sync
 {
     fn mul_sign(&self, sign: i8) -> Self;
-    fn half(&self) -> Self;
 
     /// Nonnegative magnitude. Exposes a property of the value for a `Policy` to
     /// threshold; it does not itself decide any cutoff. Replaces `cutoff`.
     fn magnitude(&self) -> f64;
+}
+```
+
+Halving (`0.5·x`) is deliberately **not** on `Coefficient` for the same reason
+`Mul<f64>` was dropped: `0.5·(1+i)` leaves `ℤ[i]`, so an exact ring could satisfy
+a `half()` bound only with a lossy integer `/2` for which `half(x)+half(x) != x`
+— re-foreclosing the exact rings this redesign exists to admit. Halving is only
+needed by the projective computational-basis measurement kernel (the `(I ± Z)/2`
+projectors), which runs over `f64`/`Complex<f64>`, so it becomes a separate
+capability, exactly like `sin_cos`→`Angle` and `i`→`ImaginaryUnit`:
+
+```rust
+/// Total, exact halving — the capability the `(I ± Z)/2` measurement projector
+/// needs. Split from `Coefficient` so exact rings (`GaussianInt`, …) that cannot
+/// halve still qualify as `Coefficient`s. Impls must satisfy
+/// `x.half() + x.half() == x`.
+pub trait Halvable: Coefficient {
+    fn half(&self) -> Self;
 }
 ```
 
@@ -299,9 +316,17 @@ single-qubit case already exhibits the extension's structure. The
 \(\mathrm{Sp}\) action is checked in one direction — each Clifford generator is
 an \(\mathrm{Sp}\)-isometry, so conjugation *lands in* \(\mathrm{Sp}(2n,2)\)
 (`lean/PPVM/Pauli/Symplectic.lean`); this per-generator conjugation is also
-exhibited at \(n = 1\) as a signed symplectic automorphism of \(\mathcal{P}_1\)
-(`conjHHom`/`conjSHom` in `lean/PPVM/Pauli/Conjugation.lean`, e.g. `conjH_Y` gives
-\(HYH = -Y\)). The surjectivity that upgrades this containment to the full
+exhibited as a signed symplectic automorphism, phase included — at \(n = 1\) for
+the single-qubit generators (`conjHHom`/`conjSHom` in
+`lean/PPVM/Pauli/Conjugation.lean`, e.g. `conjH_Y` gives \(HYH = -Y\)), and at
+\(n = 2\) for the independent two-qubit generators `CNOT`/`CZ` (`conjCNOTHom`/
+`conjCZHom` on the group \(\mathcal{P}_2\) in the same file). The latter pin the
+\(\mathbb{Z}_4\) conjugation-*phase* delta that `Symplectic.lean`'s bit-only
+`cnotAct_isometry`/`czAct_isometry` do not cover: `conjCNOT_sign`/`conjCZ_sign`
+match `cnot_phase`/`cz_phase` (the blanket `impl Clifford`,
+`crates/ppvm-pauli-word/src/phase/clifford.rs`), and `conjCNOT_Xc`…/`conjCZ_Xc`…
+check the maps against the standard tableau tables so the phase is forced, not
+chosen. The surjectivity that upgrades this containment to the full
 isomorphism \(\mathcal{C}_n/\mathcal{P}_n \cong \mathrm{Sp}(2n,2)\) is stated here
 but not formalized. That factorization sorts every gate operation into two
 buckets, and the traits follow the buckets.
@@ -328,15 +353,19 @@ can implement only the first):
 pub trait SymplecticColumns {
     fn n_qubits(&self) -> usize;
     fn swap_xz(&mut self, q: usize);
-    fn xor_x_col(&mut self, ctrl: usize, tgt: usize);
-    fn xor_z_col(&mut self, tgt: usize, ctrl: usize);
+    fn xor_x_col(&mut self, ctrl: usize, tgt: usize); // x_tgt ⊕= x_ctrl
+    fn xor_z_col(&mut self, tgt: usize, ctrl: usize); // z_ctrl ⊕= z_tgt
+    // Completed in ppvm-traits-2 (the `// ...` below is not exhaustive):
+    // `xor_z_from_x(q)` for S (z_q ⊕= x_q) and `cz_bits(a, b)` for CZ.
 }
 
 /// Extension-part: the phase algebra. Z4 for a phased word, Z2 + g for a tableau.
 pub trait PhaseTrack {
     fn flip_phase_where_xz(&mut self, q: usize);
     fn cnot_phase(&mut self, ctrl: usize, tgt: usize);
-    // ...one phase delta per gate; the tableau's g-rule lives behind these
+    // ...one phase delta per gate; the tableau's g-rule lives behind these.
+    // Completed in ppvm-traits-2: `s_phase`, `cz_phase`, and the pure-sign
+    // `x_phase`/`y_phase`/`z_phase` (X/Y/Z are phase-only, no bit change).
 }
 ```
 
@@ -350,8 +379,8 @@ impl<T: SymplecticColumns + PhaseTrack> Clifford for T {
     fn h(&mut self, q: usize) { self.flip_phase_where_xz(q); self.swap_xz(q); }
     fn cnot(&mut self, c: usize, t: usize) {
         self.cnot_phase(c, t);
-        self.xor_x_col(c, t);
-        self.xor_z_col(c, t);
+        self.xor_x_col(c, t);  // x_t ⊕= x_c
+        self.xor_z_col(t, c);  // z_c ⊕= z_t  (arg order: xor_z_col(tgt, ctrl))
     }
     // ...
 }
@@ -633,9 +662,10 @@ pub trait Scale: Support {
 /// `overlap` is the **symmetric bilinear** Hilbert–Schmidt trace pairing
 /// `⟨A, B⟩ = ∑_k a_k b_k = Tr(A B)/2ⁿ` on the Hermitian Pauli basis — bilinear,
 /// *not* conjugated. Correct for expectation values of Hermitian observables (the
-/// coefficients carry the physical structure). Its biadditivity
-/// (`overlap_add_left`/`overlap_add_right`) and symmetry over a commutative
-/// coefficient ring (`overlap_comm`) are machine-checked in
+/// coefficients carry the physical structure). Its full `C`-bilinearity —
+/// biadditivity (`overlap_add_left`/`overlap_add_right`), homogeneity in each slot
+/// (`overlap_smul_left`/`overlap_smul_right`), and symmetry over a commutative
+/// coefficient ring (`overlap_comm`) — is machine-checked in
 /// `lean/PPVM/Algebra/GradedMap.lean`; and orthonormality of the basis monomials
 /// under this abstract pairing (`PPVM.Noise.overlap_single_single`) is checked in
 /// `lean/PPVM/Algebra/Noise.lean` — the model pairing `∑_k a_k b_k` stands in for
@@ -1055,6 +1085,7 @@ changed according to whether their underlying responsibility changes:
 | `Coefficient::cutoff` | removed | The truncation predicate moves to `Policy`; `Coefficient::magnitude` exposes only the value property the policy thresholds. |
 | `Coefficient::sin_cos` | `Angle<C>` | The rotation angle becomes a separate domain, defaulting to the coefficient type. |
 | `Coefficient: Mul<f64>` | removed | Vestigial once `sin_cos` returns coefficient-domain amplitudes; it was the sole bound excluding exact rings, so dropping it lets `GaussianInt` / cyclotomic coefficients be `Coefficient`s. |
+| `Coefficient::half` | `Halvable<C>` capability | `0.5·x` is partial on exact rings (`0.5·(1+i)` leaves `ℤ[i]`) — the same escape `Mul<f64>` had — and is needed only by the `(I ± Z)/2` measurement projector, so it splits into a capability rather than re-foreclosing exact `Coefficient`s. |
 | L4 `Multiply` bound `ComplexCoefficient` | `ImaginaryUnit` (primitive fourth root of unity) | The Lean proof shows the twisted product needs only `i⁴ = 1`, so the bound is loosened from `Complex<f64>` to admit exact rings (`lean/PPVM/Algebra/Twisted.lean`, `lean/PPVM/Pauli/Matrix.lean`). |
 | `ACMap` (`ACMapBase`/`Iter`/`AddAssign`/`Insert`/`Retain`/`Consume`) *and* `SparseVector` | graded `Support` / `Accumulate` / `Scale` / `Pair` / `Multiply`, `impl`'d directly on `Vec`/`HashMap` | Two hand-rolled copies of the same abstraction collapse into one over `C[K]`; `Retain` (truncation) leaves the algebra for `Policy`. |
 | `PauliSum::map_insert`, `map_add` | one `Sum::apply(producer)` → `accumulate_batch` + `reduce` | They differed only in their producer, not the map op; the `Vec<(W,C)>` staging leak is removed. |

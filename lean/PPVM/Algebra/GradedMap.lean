@@ -143,9 +143,11 @@ end Scale
 
 `Pair::overlap` is the `∑ₖ fₖ · gₖ` read side of the hash join, used for
 expectation values. We prove it is **additive in each argument** (biadditive) —
-the property the batched probe relies on to split work across produced terms.
-(Full `C`-bilinearity additionally needs homogeneity; over a general semiring `C`
-biadditivity is the load-bearing part.)
+the property the batched probe relies on to split work across produced terms —
+*and* **`C`-homogeneous in each argument** (`overlap_smul_left`/`_right`), which
+together upgrade biadditivity to full `C`-bilinearity. Left-homogeneity holds
+over any semiring; right-homogeneity needs commutativity (it moves the scalar
+past a coefficient), matching the L2 `Scale` action being over a `CommRing`.
 
 Note this is the **symmetric bilinear** trace pairing `∑ₖ fₖ gₖ = Tr(f g)/2ⁿ`,
 with *no* complex conjugation — correct for expectation values of Hermitian
@@ -172,6 +174,17 @@ theorem overlap_add_right (f g₁ g₂ : CMap K C) :
   simp only [overlap, Finsupp.add_apply, mul_add]
   exact Finsupp.sum_add
 
+/-- **Left-homogeneous** — `⟪s · f, g⟫ = s · ⟪f, g⟫`. The scalar factors out of
+the first slot; with `overlap_add_left` this is `C`-linearity in the first
+argument. Holds over any semiring (no commutativity needed: `s` never has to
+move past a coefficient). This is the homogeneity half of the design's
+"**bilinear** trace pairing" label, pairing `Scale` (L2) with `Pair` (L3). -/
+theorem overlap_smul_left (s : C) (f g : CMap K C) :
+    overlap (scale s f) g = s * overlap f g := by
+  simp only [overlap, scale]
+  rw [Finsupp.sum_smul_index' (fun k => zero_mul (g k)), Finsupp.mul_sum]
+  exact Finsupp.sum_congr fun k _ => by rw [smul_eq_mul, mul_assoc]
+
 end Pair
 
 section PairComm
@@ -191,6 +204,18 @@ theorem overlap_comm (f g : CMap K C) : overlap f g = overlap g f := by
   classical
   rw [overlap_eq_union_sum, overlap_eq_union_sum g f, Finset.union_comm g.support f.support]
   exact Finset.sum_congr rfl fun k _ => mul_comm _ _
+
+/-- **Right-homogeneous** — `⟪f, s · g⟫ = s · ⟪f, g⟫`. Unlike the left slot this
+needs commutativity, since factoring `s` out moves it past a coefficient `fₖ`.
+Together with `overlap_smul_left`, `overlap_add_left`, and `overlap_add_right`
+this is the **full `C`-bilinearity** the design attributes to the pairing (the
+homogeneity half that `hermitianOverlap_smul_left`/`_right` already supply for
+the sesquilinear twin). -/
+theorem overlap_smul_right (s : C) (f g : CMap K C) :
+    overlap f (scale s g) = s * overlap f g := by
+  simp only [overlap]
+  rw [Finsupp.mul_sum]
+  exact Finsupp.sum_congr fun k _ => by rw [scale_apply]; ring
 
 end PairComm
 

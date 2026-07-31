@@ -1473,6 +1473,9 @@ dependencies = [
 [[package]]
 name = "ppvm-traits-2"
 version = "0.1.0"
+dependencies = [
+ "num",
+]
 
 [[package]]
 name = "ppvm-tui"

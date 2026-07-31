@@ -87,8 +87,10 @@ Port the design's trait surface, one module per design section. No heavy logic;
 the only concrete code is leaf types and a couple of blanket impls.
 
 Modules:
-- `coefficient.rs` — `Coefficient` (ring + `mul_sign`/`half`/`magnitude`, **no**
-  `Mul<f64>`), `Angle<C>` (+ `impl Angle<f64> for f64`). Impl `Coefficient` for
+- `coefficient.rs` — `Coefficient` (ring + `mul_sign`/`magnitude`, **no**
+  `Mul<f64>`, **no** `half`), `Halvable: Coefficient` (`half`; the partial `0.5·x`
+  the measurement projector needs, kept off `Coefficient` so exact rings qualify),
+  `Angle<C>` (+ `impl Angle<f64> for f64`). Impl `Coefficient` + `Halvable` for
   `f64` and `Complex<f64>`.
 - `algebra.rs` — `KeyProduct` (`key_mul -> (Self, Phase)`), `ImaginaryUnit`
   (`imaginary_unit()`, law `i·i == −one()`), `Conjugate` (`conj`). Impl

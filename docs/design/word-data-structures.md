@@ -177,6 +177,21 @@ The structural identity is:
 `weight()` counts `X`, `Y`, `Z`, and `Lost`; `loss_weight()` counts only lost
 sites.
 
+A Clifford gate must leave lost qubits untouched (a lost qubit carries no operator
+to conjugate). Because the blanket `Clifford` composes `SymplecticColumns`
+primitives directly (there is no gate-level hook), the guard lives in each
+primitive: `LossyPauliWord`'s `SymplecticColumns` ops (`swap_xz`,
+`xor_z_from_x`, `xor_x_col`, `xor_z_col`, `cz_bits`) are **no-ops when any
+involved qubit is lost**, reproducing the old crate's whole-gate skip and
+preserving the canonical `lost ⇒ (x, z) = (0, 0)` invariant. So the lossy word's
+`SymplecticColumns` is a *loss-guarded* `Sp(2n, 2)` map, not the literal pure map
+the bare word uses. This is machine-checked in `lean/PPVM/Pauli/Symplectic.lean`:
+each guarded primitive preserves the loss invariant (`xorXColL_preserves_loss`,
+`xorZColL_preserves_loss`), the two guarded primitives compose to the atomic
+whole-gate skip (`xorZColL_xorXColL_eq_cnotActL`), and on present qubits the
+guarded gate is still the proven `Sp` isometry (`cnotActL_present_isometry`,
+`czActL_present_isometry`).
+
 ### Loss-specific behavior
 
 Generic lossy Pauli propagation sees `LossySite::Lost` through `Word` and
@@ -367,6 +382,13 @@ identity:
 
 Serialization uses logical symbols and lengths, not raw native-word memory, so
 it remains stable across storage widths and platforms.
+
+**First-prototype scope.** The shipped `-2` words implement `Eq`, `Hash`,
+`Display`, and parsing (the surface `Indexable`/`KeyColumn` require —
+`Clone + Eq + Hash`), but **not** `Ord` or (de)serialization yet: no in-scope
+consumer needs them for the prototype. When added, they must satisfy the
+agreement above (a documented site order; loss and phase participating as
+described). Deferred deliberately, tracked here rather than silently dropped.
 
 ## Prototype validation
 

@@ -103,7 +103,19 @@ pub struct FermionSite {
 /// Design: §"Pauli algebra traits" (`PauliBits`). The branch these kernels
 /// stage — `c·P → cos·c·P + sin·c·(iGP)` — has a genuinely new key
 /// (`lean/PPVM/Instantiations/Rotation.lean` `anticommute_new_key`).
-pub trait PauliBits: Word<Site = Pauli> {
+///
+/// # Friction: supertrait is `Word`, not `Word<Site = Pauli>`
+///
+/// The design sketches `PauliBits: Word<Site = Pauli>`, but `LossyPauliWord`
+/// implements `PauliBits` while its `Word::Site` is `LossySite<Pauli>` (a lost
+/// site is not a bare `Pauli`), so it cannot satisfy a `Word<Site = Pauli>`
+/// supertrait. The bound is relaxed to `Word` — this trait's own methods are
+/// alphabet-agnostic (they read/write raw X/Z bits and a loss flag), and any
+/// code that genuinely needs `Pauli` propagation re-adds `Word<Site = Pauli>`
+/// on *its* own methods (the pattern already noted for the propagation layer in
+/// `graded.rs`). `PauliWord` still implements `Word<Site = Pauli>`, so nothing
+/// on the ordinary path changes.
+pub trait PauliBits: Word {
     /// Read the X bit at index `i`.
     fn x_bit(&self, i: usize) -> bool;
     /// Read the Z bit at index `i`.

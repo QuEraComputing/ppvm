@@ -117,7 +117,50 @@ the *sum* of per-qubit exponents). Orchestrator-reviewed: real, non-vacuous.
 parity here, but in `PauliSum` propagation words are cloned per stored term; watch
 the *aggregate* clone cost in Phase 3 (may warrant a perf-allowlist entry then).
 
-### Components: `LossyPauliWord`, `Phased` — pending (next Phase-2 runs).
+### Component: `LossyPauliWord` — status **complete** (workflow `wf_77a58611-48f`, converged iter 2)
+
+**Moved to its own crate `ppvm-lossy-pauli-word-2`** (maintainer decision: a lossy
+word is a distinct concrete Pauli-word impl, not a submodule of `PauliWord`). It
+depends on `ppvm-pauli-word-2` and reuses its `PauliStorage`/`HashFinalize`. The
+first (mis-targeted) run into `ppvm-pauli-word-2` was stopped and reverted.
+
+Deliverables: `LossyPauliWord` (data/clifford/hash/column) — packed X/Z/loss
+planes, two component `OnceLock<u64>` caches (loss-only mutation skips X/Z
+rehash); `Word<Site=LossySite<Pauli>>`, `PauliBits`(`is_lost`),
+`SymplecticColumns`+`PhaseTrack` (loss-guarded, phase-discarding), `Indexable`,
+`Columnar`; inherent `set_lost`/`clear_loss`/`loss_weight`. 27 in-crate tests.
+Conformance: `lossy_pauli_word_diff.rs` (9), `lossy_pauli_word_lean.rs` (9),
+lossy bench. Gates verified by orchestrator (build/clippy/fmt/test across all four
+`-2` crates, machete, `lake build PPVM`) — all green; the `PauliBits` relaxation
+did not regress `ppvm-pauli-word-2` (27 tests still pass).
+
+**Perf gate: 5/6 pass, 1 allowlisted.** product **0.79×**, cnot **0.78×**,
+key_hash-warm **1.02×**, weight **1.02×** (all ≤ parity); key_hash-cold 15.6ns is
+the design-accepted lazy-OnceLock trade-off. **`loss_weight` 1.28× exceeds the
+1.15 gate** — allowlisted below (cold, sub-ns, non-per-gate op). The agent
+correctly flagged rather than self-accepted it.
+
+Lean added (prove agent, `lake` green): `Symplectic.lean` loss-guarded Clifford
+model — `cnotActL`/`czActL`, `LossInv`, per-primitive `xorXColL`/`xorZColL` with
+`*_preserves_loss`, and `xorZColL_xorXColL_eq_cnotActL` (per-primitive guarding
+composes to the atomic whole-gate skip — the exact property the crate's
+`clifford.rs` guard relies on). Orchestrator-reviewed: real, non-vacuous.
+
+| id | type | sev | routed | status | note |
+| --- | --- | --- | --- | --- | --- |
+| lpw2.traits.1 | impl-friction | high | design | closed | `PauliBits: Word<Site=Pauli>` unsatisfiable by `LossyPauliWord` (Site=`LossySite<Pauli>`). Relaxed supertrait to `PauliBits: Word` in ppvm-traits-2; design doc + plan updated; `PauliWord`/conformance still build. |
+| lpw2.clifford.1 | impl-friction | med | design | closed | Lossy `SymplecticColumns` must guard on loss (lost qubit = Clifford no-op), so it is a loss-*guarded* Sp map, not the literal pure map. Guard put in each primitive; design (`word-data-structures.md`) note added; machine-checked (`Symplectic.lean`). |
+| lpw2.proof.1 | missing-proof | med | proof | closed | Loss-guarded Clifford had no Lean counterpart. Added the loss model + invariant-preservation + primitive-composition proofs. |
+| lpw2.perf.1 | perf-drift | — | human | **allowlisted** | `loss_weight` 1.28×; see allowlist. |
+| lpw2.keyproduct.1 | impl-friction | low | accepted | noted | No `KeyProduct` for `LossyPauliWord` (loss breaks the twisted-product group; `iᵏ(v⊕w)` undefined once a factor is Lost). Left inherent-only, matching the old crate. Lossy word is `Indexable`/`Columnar` but not an L4 key-product participant. |
+| lpw2.test.1 | missing-test | low | test | closed-by-conformance | In-crate Clifford tests cover a subset; the conformance differential replay (random circuits) + Lean-oracle generator tables + the new `Symplectic.lean` composition proof give full coverage. |
+| lpw2.design.1 | correctness | low | design | closed | `Ord`/serde absent on `-2` words (as on the sibling `PauliWord`); added a first-prototype scope note in `word-data-structures.md`. |
+
+Workflow refinement (this run): perf-drift is now a **hard gate** in the loop —
+any over-threshold regression escalates to the human regardless of the agent's
+severity label (was: only high/med blocked).
+
+### Component: `Phased` / `PhasedPauliWord` — pending (final Phase-2 run).
 
 ## Phase 3 — ppvm-pauli-sum-2
 
@@ -148,4 +191,4 @@ a crate. Anything not listed is a hard gate.
 
 | id | component | metric | accepted ratio | justification | approved-by |
 | --- | --- | --- | --- | --- | --- |
-| _(none yet)_ | | | | | |
+| lpw2.perf.1 | ppvm-lossy-pauli-word-2 | `loss_weight()` popcount | 1.28× (0.82ns vs 0.64ns) | Cold, sub-nanosecond, non-per-gate read (loss-truncation only). Absolute delta ~0.18ns is immaterial vs the propagation hot path. Revisit if a loss policy makes it hot in a later phase. | maintainer (via orchestrator review) |

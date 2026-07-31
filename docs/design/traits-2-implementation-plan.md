@@ -35,7 +35,8 @@ test oracles.
 | Old crate | New crate | Core content |
 | --- | --- | --- |
 | `ppvm-traits` (`Config`, `Coefficient`, `Word`/`PauliWordTrait`, `ACMap*`, `Strategy`, gate traits) | **`ppvm-traits-2`** | Trait *definitions* only: split `Coefficient`, `Angle`; `Word`/`Indexable`/`PauliBits`; `SymplecticColumns`/`PhaseTrack`/`StabilizerFrame`; gate/noise traits (`Clifford`, `RotationOne`, `PauliError`, `Measure`); graded map layers `Support`/`Accumulate`/`Scale`/`Pair`/`Multiply`; algebra capabilities `KeyProduct`/`ImaginaryUnit`/`Conjugate`; batch contract `Columnar`/`KeyColumn`/`KeyBatch`/`TermBatch`/`TermSink`/`TermProducer`; `IdentityHasher`; small concrete leaf types (`Pauli`, `Phase`, `LossySite`). |
-| `ppvm-pauli-word` | **`ppvm-pauli-word-2`** | Concrete `PauliWord`, `LossyPauliWord`, `Phased<W>`/`PhasedPauliWord`; private packed X/Z(/loss) planes + lazy `OnceLock<u64>` hash cache + private `HashFinalize`. Impls of `Word`/`Indexable`/`PauliBits`/`SymplecticColumns`/`PhaseTrack`/`KeyProduct`/`Columnar`. |
+| `ppvm-pauli-word` (word/ + phase/) | **`ppvm-pauli-word-2`** | Concrete `PauliWord` and the generic `Phased<W>`/`PhasedPauliWord` wrapper; private packed X/Z planes + lazy `OnceLock<u64>` hash cache + `HashFinalize`/`PauliStorage`/`PauliKeyColumn` (re-exported for the lossy crate to reuse). Impls of `Word`/`Indexable`/`PauliBits`/`SymplecticColumns`/`PhaseTrack`/`KeyProduct`/`Columnar`. |
+| `ppvm-pauli-word` (loss/) | **`ppvm-lossy-pauli-word-2`** | `LossyPauliWord` — a *distinct* concrete Pauli-word impl in its own crate (adds a packed loss plane). Reuses `ppvm-pauli-word-2`'s packed-storage/hash infra. `Word<Site = LossySite<Pauli>>` + `PauliBits` (`is_lost`) + phase-discarding `SymplecticColumns`/`PhaseTrack` + `Indexable`; loss writes and `loss_weight()` inherent. |
 | `ppvm-pauli-sum` | **`ppvm-pauli-sum-2`** | `Sum<S, P>`; graded traits `impl`'d on `Vec<(K,C)>` and `HashMap<K,C,IdentityBuildHasher>`; `Policy` + `NoPolicy`/`MaxPauliWeight`/`CoefficientThreshold`/`CombinedPolicy` + `Retain`; `TermProducer` impls (`RekeyProducer`, rotation/noise producers); gate/rotation/noise trait impls; `PauliSum`/`LossyPauliSum`/`FermionSum` aliases; `IdentityBuildHasher` + `HashMapStore` aliases. |
 | `ppvm-tableau` | **`ppvm-tableau-2`** | `Tableau` (`Indexable` + `SymplecticColumns` + `PhaseTrack` + `StabilizerFrame` + `Clifford` + `Measure`); `GeneralizedTableau` (`frame: Tableau` + `amplitudes: Sum<Vec<(Bitstring, Complex<C>)>, CoefficientThreshold>`). |
 | `ppvm-tableau-sum` | folds into **`ppvm-pauli-sum-2`** as `TableauMixture = Sum<HashMapStore<Tableau, C>, P>` | The mixture is `C[Tableau]` — the same graded engine keyed on `Tableau`. No separate storage crate; `O(n²)` measurement stays a `Tableau`-specific algorithm. |
@@ -48,6 +49,7 @@ test oracles.
 ```
 ppvm-traits-2  ──►  (nothing ppvm)
 ppvm-pauli-word-2  ──►  ppvm-traits-2
+ppvm-lossy-pauli-word-2  ──►  ppvm-traits-2, ppvm-pauli-word-2 (reuses packed-storage/hash infra)
 ppvm-pauli-sum-2   ──►  ppvm-traits-2, ppvm-pauli-word-2
 ppvm-tableau-2     ──►  ppvm-traits-2, ppvm-pauli-word-2, ppvm-pauli-sum-2
 ppvm-sym-2         ──►  ppvm-traits-2, ppvm-pauli-sum-2
@@ -97,7 +99,9 @@ Modules:
   `ImaginaryUnit`/`Conjugate` for `Complex<f64>`; `Conjugate` (identity) for `f64`.
   `Phase` enum (`{1, i, −1, −i}` ≅ ℤ/4).
 - `word.rs` — `Word` (`Site`, `n_sites`, `get`, `weight`, `iter`), leaf types
-  `Pauli`, `LossySite<S>`, `FermionSite`. `PauliBits: Word<Site = Pauli>`.
+  `Pauli`, `LossySite<S>`, `FermionSite`. `PauliBits: Word` (supertrait relaxed
+  from `Word<Site = Pauli>` so `LossyPauliWord`, whose `Site` is
+  `LossySite<Pauli>`, can implement it; propagation re-adds `Site = Pauli`).
 - `pauli.rs` — `SymplecticColumns`, `PhaseTrack`, `StabilizerFrame`; the blanket
   `impl<T: SymplecticColumns + PhaseTrack> Clifford for T`.
 - `gates.rs` — `Clifford`, `RotationOne<C, A = C>`, `PauliError<C>`, `Measure`.

@@ -335,8 +335,28 @@ match `cnot_phase`/`cz_phase` (the blanket `impl Clifford`,
 check the maps against the standard tableau tables so the phase is forced, not
 chosen. The surjectivity that upgrades this containment to the full
 isomorphism \(\mathcal{C}_n/\mathcal{P}_n \cong \mathrm{Sp}(2n,2)\) is stated here
-but not formalized. That factorization sorts every gate operation into two
-buckets, and the traits follow the buckets.
+but not formalized. The **loss-guarded** variant of this action — each generator
+is a no-op when any operand qubit is lost, as in
+`crates/ppvm-lossy-pauli-word-2/src/clifford.rs` — is machine-checked separately
+in the same file (`lean/PPVM/Pauli/Symplectic.lean`, the `…ActL` definitions):
+the guard preserves the canonical loss invariant `lost[q] ⇒ x[q]=0 ∧ z[q]=0`
+(`hActL_preserves_loss`/`sActL_preserves_loss`/`cnotActL_preserves_loss`/
+`czActL_preserves_loss`, with the critical present-control/lost-target `CNOT`
+case as `cnotActL_lost_target_stays_identity`), and on the present-qubit
+sub-block it coincides with the `Sp(2n,2)` isometry above
+(`hActL_present_isometry`/`sActL_present_isometry`/`cnotActL_present_isometry`/
+`czActL_present_isometry`). Because the blanket `Clifford` does not skip a
+`CNOT` atomically but composes two independently guarded column primitives
+(`xor_x_col(c,t)` then `xor_z_col(t,c)`, both testing `lost c ∨ lost t`), the
+per-primitive form of the guard is checked too: each guarded column preserves the
+loss invariant on its own (`xorXColL_preserves_loss`/`xorZColL_preserves_loss`)
+and their composition equals the atomic whole-gate skip
+(`xorZColL_xorXColL_eq_cnotActL`) — the machine-checked form of the crate's
+"reproduces the old whole-gate skip" claim, and the link that would break if
+either guard were weakened in isolation. (`CZ` emits a single primitive
+`cz_bits`, which is exactly `czAct`, so `czActL` already models it.) That
+factorization sorts every gate operation into two buckets, and the traits follow
+the buckets.
 
 **Role-independent (the \(\mathrm{Sp}\) part).** Conjugating a Pauli by a
 Clifford gate does the same bit-plane algebra whether the operator is a lone
@@ -433,7 +453,15 @@ a separate mutation primitive:
 /// Mutable single-vector X/Z access — a point of GF(2)^{2n}. Hosts the
 /// rotation/branching kernels, which flip individual bits and ship the sign to
 /// the coefficient. Implemented by `PauliWord` and `LossyPauliWord`.
-pub trait PauliBits: Word<Site = Pauli> {
+///
+/// The supertrait is `Word`, **not** `Word<Site = Pauli>`: `LossyPauliWord` also
+/// implements `PauliBits` but its `Word::Site` is `LossySite<Pauli>` (a lost site
+/// is not a bare `Pauli`), so a `Site = Pauli` bound would exclude it. These
+/// methods are alphabet-agnostic (raw X/Z bits + a loss flag); code that needs
+/// Pauli *propagation* re-adds `Word<Site = Pauli>` on its own methods, the same
+/// pattern the graded algebra uses (bound on `Indexable`, propagation re-adds
+/// `Word`/`PauliBits`). `PauliWord` still implements `Word<Site = Pauli>`.
+pub trait PauliBits: Word {
     fn x_bit(&self, i: usize) -> bool;
     fn z_bit(&self, i: usize) -> bool;
     fn set_x_bit(&mut self, i: usize, v: bool); // invalidates the hash lazily

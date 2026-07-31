@@ -1,0 +1,18 @@
+[package]
+name = "ppvm-lossy-pauli-word-2"
+version = "0.1.0"
+edition = "2024"
+
+# The concrete lossy Pauli word representation for the second trait-system
+# experiment (implementation-plan Phase 2) — a distinct concrete impl of the
+# Pauli-word concept, in its own crate. Reuses the packed-storage/hash
+# infrastructure (`PauliStorage`, `HashFinalize`) exported by
+# `ppvm-pauli-word-2`. The lossy layout, weight/loss-weight popcounts, and the
+# Clifford loss-guard are ported from `ppvm-pauli-word`'s `loss/` module to keep
+# the hot paths at parity.
+[dependencies]
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
+bitvec = "1.0.1"
+bytemuck = { version = "1", features = ["min_const_generics"] }
+fxhash = "0.2.1"

@@ -35,6 +35,23 @@ pub fn random_pauli_string(rng: &mut StdRng, n: usize) -> String {
         .collect()
 }
 
+/// The five lossy Pauli letters (`I`/`X`/`Y`/`Z` and the loss symbol `L`), in the
+/// symbol order both the old `LossyPauliWord` and the new `-2` one parse.
+pub const LOSSY_LETTERS: [char; 5] = ['I', 'X', 'Y', 'Z', 'L'];
+
+/// A random **lossy** Pauli word of `n` qubits as a string like `"XILZL"`: each
+/// site is independently one of `I`/`X`/`Y`/`Z`/`L` (so ≈1/5 of sites are `Lost`),
+/// giving a spread that includes fully-present, mixed, and fully-lost words.
+///
+/// Reusable to build the old `ppvm-pauli-word::LossyPauliWord` and the new
+/// `ppvm-lossy-pauli-word-2::LossyPauliWord` from the *same* string so the two can
+/// be diffed site-for-site, including their loss planes.
+pub fn random_lossy_pauli_string(rng: &mut StdRng, n: usize) -> String {
+    (0..n)
+        .map(|_| LOSSY_LETTERS[rng.random_range(0..5usize)])
+        .collect()
+}
+
 /// A replayable gate operation: emitted once as data, then applied to any
 /// backend (old or new) so both see the same circuit.
 #[derive(Clone, Copy, Debug, PartialEq)]

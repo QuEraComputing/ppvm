@@ -281,13 +281,18 @@ anything already covered or not proof-worthy. You MUST run \`lake build PPVM\` f
 ${REPO}/lean and it must pass. Return the schema.`
 
 // ── Convergence loop ──────────────────────────────────────────────────────────
-// Only high/medium correctness, impl-friction, or perf-drift blocks. Low-sev
-// ergonomics notes and anything routed to design/human/test or explicitly
-// deferred to a later phase are recorded but do NOT spin the loop.
+// Perf-drift is a HARD gate: any regression over the bench threshold must reach
+// the human (who owns the allowlist), so it blocks regardless of the agent's
+// severity label — unless the agent marks it an already-accepted trade-off.
+// Correctness/impl-friction block at high/medium; low-sev ergonomics and things
+// routed to design/human/test or deferred to a later phase are recorded but do
+// NOT spin the loop.
 const blocks = (g) =>
-  (g.type === 'correctness' || g.type === 'impl-friction' || g.type === 'perf-drift') &&
-  (g.severity === 'high' || g.severity === 'medium') &&
-  !/defer|phase\s*\d/i.test(g.description || '')
+  g.type === 'perf-drift'
+    ? !/design-accepted|allowlist|accepted trade|deferred/i.test(g.description || '')
+    : (g.type === 'correctness' || g.type === 'impl-friction') &&
+      (g.severity === 'high' || g.severity === 'medium') &&
+      !/defer|phase\s*\d/i.test(g.description || '')
 
 const history = []
 let converged = false

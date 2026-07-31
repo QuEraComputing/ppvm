@@ -211,4 +211,192 @@ theorem czAct_isometry (h : c ≠ t) (v w : Sp n) :
   simp only [czAct_c h, czAct_t h]
   linear_combination ((v c).1 * (w t).1 + (v t).1 * (w c).1) * two_zmod2
 
+/-! ### The loss-guarded action preserves the canonical loss invariant
+
+The lossy word (`crates/ppvm-lossy-pauli-word-2/src/clifford.rs`) differs from
+the bare `Sp(2n,2)` action in exactly one way: **a gate touching a lost qubit is
+a no-op**. Physically a lost qubit no longer participates; canonically it is held
+at X/Z identity (`word-data-structures.md` §"Canonical loss invariant":
+`lost[q] ⇒ x[q] = 0 ∧ z[q] = 0`). We model loss by a decidable predicate on
+qubits, guard each generator with it, and prove the two properties the crate
+relies on but that the phaseless `Sp` action above cannot express:
+
+* **(a)** the guarded action preserves the loss invariant — in particular the
+  critical `CNOT` case *present control, lost target* leaves the target at
+  `(0,0)` (`clifford.rs` `cnot_present_control_lost_target_preserves_invariant`);
+* **(b)** on the present-qubit sub-block (no operand lost) it coincides with the
+  already-proven `Sp(2n,2)` isometry, so no symplectic structure is lost where it
+  applies.
+
+This is the crate's sole behavioral difference from the bare `PauliWord`, so it
+is the one semantic property of the loss guard with a machine-checked counterpart. -/
+
+variable (lost : Fin n → Prop) [DecidablePred lost]
+
+/-- The **canonical loss invariant**: every lost qubit is X/Z identity `(0,0)`. -/
+def LossInv (v : Sp n) : Prop := ∀ q, lost q → v q = 0
+
+/-- Loss-guarded `H`: a no-op on a lost qubit, else the bare `hAct`. -/
+def hActL (q : Fin n) (v : Sp n) : Sp n := if lost q then v else hAct q v
+
+/-- Loss-guarded `S`: a no-op on a lost qubit, else the bare `sAct`. -/
+def sActL (q : Fin n) (v : Sp n) : Sp n := if lost q then v else sAct q v
+
+/-- Loss-guarded `CNOT`: a no-op if **either** operand is lost, else `cnotAct`.
+This is the whole-gate skip of `clifford.rs` (`is_lost(ctrl) || is_lost(tgt)`). -/
+def cnotActL (c t : Fin n) (v : Sp n) : Sp n :=
+  if lost c ∨ lost t then v else cnotAct c t v
+
+/-- Loss-guarded `CZ`: a no-op if either operand is lost, else `czAct`. -/
+def czActL (c t : Fin n) (v : Sp n) : Sp n :=
+  if lost c ∨ lost t then v else czAct c t v
+
+/-- **(a) `H` preserves the loss invariant.** -/
+theorem hActL_preserves_loss (q : Fin n) {v : Sp n} (hv : LossInv lost v) :
+    LossInv lost (hActL lost q v) := by
+  intro p hp
+  by_cases hq : lost q
+  · simpa [hActL, hq] using hv p hp
+  · have hpq : p ≠ q := fun h => hq (h ▸ hp)
+    simpa [hActL, hq, hAct, Function.update_of_ne hpq] using hv p hp
+
+/-- **(a) `S` preserves the loss invariant.** -/
+theorem sActL_preserves_loss (q : Fin n) {v : Sp n} (hv : LossInv lost v) :
+    LossInv lost (sActL lost q v) := by
+  intro p hp
+  by_cases hq : lost q
+  · simpa [sActL, hq] using hv p hp
+  · have hpq : p ≠ q := fun h => hq (h ▸ hp)
+    simpa [sActL, hq, sAct, Function.update_of_ne hpq] using hv p hp
+
+/-- **(a) `CNOT` preserves the loss invariant.** The guard skips the whole gate
+whenever an operand is lost, so a lost qubit's `(x, z)` never changes. -/
+theorem cnotActL_preserves_loss (c t : Fin n) {v : Sp n} (hv : LossInv lost v) :
+    LossInv lost (cnotActL lost c t v) := by
+  intro p hp
+  by_cases hg : lost c ∨ lost t
+  · simpa [cnotActL, hg] using hv p hp
+  · have hg' := not_or.mp hg
+    have hpc : p ≠ c := fun h => hg'.1 (h ▸ hp)
+    have hpt : p ≠ t := fun h => hg'.2 (h ▸ hp)
+    simpa [cnotActL, hg, cnotAct_other v hpc hpt] using hv p hp
+
+/-- **(a) `CZ` preserves the loss invariant.** -/
+theorem czActL_preserves_loss (c t : Fin n) {v : Sp n} (hv : LossInv lost v) :
+    LossInv lost (czActL lost c t v) := by
+  intro p hp
+  by_cases hg : lost c ∨ lost t
+  · simpa [czActL, hg] using hv p hp
+  · have hg' := not_or.mp hg
+    have hpc : p ≠ c := fun h => hg'.1 (h ▸ hp)
+    have hpt : p ≠ t := fun h => hg'.2 (h ▸ hp)
+    simpa [czActL, hg, czAct_other v hpc hpt] using hv p hp
+
+/-- **The critical `CNOT` case: present control, lost target.** With the target
+lost, the guarded gate leaves the target's `(x, z)` at `(0,0)` regardless of the
+control — the invariant that a present control must not write onto a lost target
+(`clifford.rs` `cnot_present_control_lost_target_preserves_invariant`). -/
+theorem cnotActL_lost_target_stays_identity {c t : Fin n} {v : Sp n}
+    (hv : LossInv lost v) (ht : lost t) : cnotActL lost c t v t = 0 := by
+  simp only [cnotActL, if_pos (Or.inr ht)]
+  exact hv t ht
+
+/-- **(b) On present qubits, guarded `H` is the `Sp(2n,2)` isometry.** -/
+theorem hActL_present_isometry (q : Fin n) (hq : ¬ lost q) (v w : Sp n) :
+    omega (hActL lost q v) (hActL lost q w) = omega v w := by
+  simp only [hActL, if_neg hq]; exact hAct_isometry q v w
+
+/-- **(b) On present qubits, guarded `S` is the `Sp(2n,2)` isometry.** -/
+theorem sActL_present_isometry (q : Fin n) (hq : ¬ lost q) (v w : Sp n) :
+    omega (sActL lost q v) (sActL lost q w) = omega v w := by
+  simp only [sActL, if_neg hq]; exact sAct_isometry q v w
+
+/-- **(b) With both operands present, guarded `CNOT` is the `Sp(2n,2)`
+isometry.** -/
+theorem cnotActL_present_isometry (h : c ≠ t) (hc : ¬ lost c) (ht : ¬ lost t)
+    (v w : Sp n) :
+    omega (cnotActL lost c t v) (cnotActL lost c t w) = omega v w := by
+  simp only [cnotActL, if_neg (not_or.mpr ⟨hc, ht⟩)]; exact cnotAct_isometry h v w
+
+/-- **(b) With both operands present, guarded `CZ` is the `Sp(2n,2)`
+isometry.** -/
+theorem czActL_present_isometry (h : c ≠ t) (hc : ¬ lost c) (ht : ¬ lost t)
+    (v w : Sp n) :
+    omega (czActL lost c t v) (czActL lost c t w) = omega v w := by
+  simp only [czActL, if_neg (not_or.mpr ⟨hc, ht⟩)]; exact czAct_isometry h v w
+
+/-! ### `CNOT` as two independently loss-guarded column primitives
+
+The blanket `Clifford` in `ppvm-traits-2` does not skip a whole `CNOT` atomically;
+it composes two `SymplecticColumns` primitives, each guarded on the *same*
+predicate `lost c ∨ lost t` (`crates/ppvm-lossy-pauli-word-2/src/clifford.rs`,
+`ppvm-traits-2/src/pauli.rs` `cnot = xor_x_col(c,t); xor_z_col(t,c)`):
+
+* `xor_x_col(c, t)` writes `x_t ⊕= x_c` (`xorXCol`), and
+* `xor_z_col(t, c)` writes `z_c ⊕= z_t` (`xorZCol`).
+
+The crate's module doc claims this per-primitive guarding "reproduces the old
+whole-gate skip". We machine-check that claim at primitive granularity:
+**(i)** each guarded primitive preserves `LossInv` on its own, and **(ii)** their
+composition equals the atomic `cnotActL`. Because both primitives test the
+identical predicate and neither reads or writes the loss plane, weakening either
+guard in isolation would break (ii) — the link the atomic `cnotActL_*` theorems
+cannot see. (`CZ` needs no such lemma: the crate emits the single primitive
+`cz_bits(a,b)`, which *is* `czAct`, so `czActL` already models the guarded
+primitive directly.) -/
+
+/-- `CNOT` column primitive one (`xor_x_col`): `x_t ⊕= x_c`. -/
+def xorXCol (c t : Fin n) (v : Sp n) : Sp n :=
+  Function.update v t ((v c).1 + (v t).1, (v t).2)
+
+/-- `CNOT` column primitive two (`xor_z_col`): `z_c ⊕= z_t`. -/
+def xorZCol (c t : Fin n) (v : Sp n) : Sp n :=
+  Function.update v c ((v c).1, (v c).2 + (v t).2)
+
+/-- Loss-guarded `xor_x_col`: no-op if either operand is lost. -/
+def xorXColL (c t : Fin n) (v : Sp n) : Sp n :=
+  if lost c ∨ lost t then v else xorXCol c t v
+
+/-- Loss-guarded `xor_z_col`: no-op if either operand is lost (same guard). -/
+def xorZColL (c t : Fin n) (v : Sp n) : Sp n :=
+  if lost c ∨ lost t then v else xorZCol c t v
+
+/-- **(i) `xor_x_col` preserves the loss invariant.** It touches only qubit `t`,
+and the guard skips whenever `t` (or `c`) is lost, so a lost qubit is untouched. -/
+theorem xorXColL_preserves_loss (c t : Fin n) {v : Sp n} (hv : LossInv lost v) :
+    LossInv lost (xorXColL lost c t v) := by
+  intro p hp
+  by_cases hg : lost c ∨ lost t
+  · simpa [xorXColL, hg] using hv p hp
+  · have hpt : p ≠ t := fun h => (not_or.mp hg).2 (h ▸ hp)
+    simpa [xorXColL, hg, xorXCol, Function.update_of_ne hpt] using hv p hp
+
+/-- **(i) `xor_z_col` preserves the loss invariant.** It touches only qubit `c`,
+guarded on the same predicate. -/
+theorem xorZColL_preserves_loss (c t : Fin n) {v : Sp n} (hv : LossInv lost v) :
+    LossInv lost (xorZColL lost c t v) := by
+  intro p hp
+  by_cases hg : lost c ∨ lost t
+  · simpa [xorZColL, hg] using hv p hp
+  · have hpc : p ≠ c := fun h => (not_or.mp hg).1 (h ▸ hp)
+    simpa [xorZColL, hg, xorZCol, Function.update_of_ne hpc] using hv p hp
+
+/-- The unguarded columns compose to the atomic `CNOT` bit map (`c ≠ t`): first
+`x_t ⊕= x_c`, then `z_c ⊕= z_t` reading the (unchanged) `z_t`. -/
+theorem xorZCol_xorXCol_eq_cnotAct (h : c ≠ t) (v : Sp n) :
+    xorZCol c t (xorXCol c t v) = cnotAct c t v := by
+  simp only [xorZCol, xorXCol, cnotAct, Function.update_of_ne h, Function.update_self]
+
+/-- **(ii) The two guarded columns compose to the atomic whole-gate skip.** When
+`c ≠ t`, `xor_z_col ∘ xor_x_col` under the shared guard equals `cnotActL`; a lost
+operand short-circuits both primitives to the identity, a present pair runs both.
+This is the machine-checked form of the crate's "reproduces the old whole-gate
+skip" claim. -/
+theorem xorZColL_xorXColL_eq_cnotActL (h : c ≠ t) (v : Sp n) :
+    xorZColL lost c t (xorXColL lost c t v) = cnotActL lost c t v := by
+  by_cases hg : lost c ∨ lost t
+  · simp [xorZColL, xorXColL, cnotActL, hg]
+  · simp only [xorZColL, xorXColL, cnotActL, if_neg hg]
+    exact xorZCol_xorXCol_eq_cnotAct h v
+
 end PPVM.Symplectic

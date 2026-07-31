@@ -22,6 +22,7 @@ members = [
     # the production path until cutover. See docs/design/traits-2-*.md.
     "crates/ppvm-traits-2",
     "crates/ppvm-pauli-word-2",
+    "crates/ppvm-lossy-pauli-word-2",
     "crates/ppvm-conformance-2",
     "crates/vihaco-circuit-isa",
     "crates/ppvm-vihaco",

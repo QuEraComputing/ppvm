@@ -241,18 +241,31 @@ impl<A: PauliStorage, H> PauliBits for PauliWord<A, H> {
     /// §"Representation types" — the structural mutation boundary that clears the
     /// affected hash component). Only in-range slots are touched, preserving the
     /// canonical-unused-bits invariant.
+    ///
+    /// Writing a bit its **current** value is a no-op, so the cached digest —
+    /// a pure function of `(nqubits, X, Z)` — is still valid and is deliberately
+    /// *kept*. This is not a micro-optimization on a cold path: the Clifford
+    /// kernels write both target bits unconditionally (`CNOT` does
+    /// `x_tgt ⊕= x_ctrl` even when `x_ctrl = 0`), and in a real circuit most
+    /// terms are `I` at the gate's qubits, so an unconditional invalidation
+    /// forced a full structural re-hash of nearly the whole support on every
+    /// gate — recomputing a digest guaranteed to be bit-identical.
     #[inline]
     fn set_x_bit(&mut self, i: usize, v: bool) {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");
-        self.xbits.set(i, v);
-        self.invalidate_hash();
+        if self.xbits[i] != v {
+            self.xbits.set(i, v);
+            self.invalidate_hash();
+        }
     }
 
     #[inline]
     fn set_z_bit(&mut self, i: usize, v: bool) {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");
-        self.zbits.set(i, v);
-        self.invalidate_hash();
+        if self.zbits[i] != v {
+            self.zbits.set(i, v);
+            self.invalidate_hash();
+        }
     }
 }
 

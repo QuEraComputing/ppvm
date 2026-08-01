@@ -179,6 +179,128 @@ fn trotter_new(
     }
 }
 
+/// The Trotter circuit parameters shared by every benchmark in this file
+/// (the old `trotter` bench's): `n = 12`, `h = 1`, `dt = 0.1`, `time = 1.0`
+/// (→ 10 steps), `J = 1/8`.
+struct Params {
+    n: usize,
+    steps: usize,
+    theta_x: f64,
+    theta_zz: f64,
+    noise: [f64; 3],
+}
+
+fn params() -> Params {
+    let h = 1.0_f64;
+    let dt = 0.1 / h;
+    let time = 1.0 / h;
+    let j = 1.0 / 8.0 * h;
+    Params {
+        n: 12,
+        steps: (time / dt) as usize,
+        theta_x: dt * h,
+        theta_zz: dt * j,
+        noise: [1e-4 / 4.0; 3],
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 2. Per-op benchmarks on a REALISTIC support (`cnot` re-key and `truncate`).
+// ---------------------------------------------------------------------------
+//
+// These are the two coverage holes the end-to-end regression exposed: `cnot`
+// (the `RekeyBijective` path) and `truncate` (the policy's retain scans, run
+// after every gate in the Trotter loop) had **no** benchmark at all, so a
+// regression in either was invisible.
+//
+// They are *not* the usual tight one-gate microbench. The two problems with
+// that shape are (a) the support is a toy, so per-term costs (hashing, probe
+// locality) are unrepresentative, and (b) the allocator recycles one warm page.
+// Here the state is a support grown by actually propagating the Trotter circuit,
+// and each timed iteration does a full sweep over it.
+//
+// Neither benchmark clones per iteration — both timed bodies are **state
+// preserving**, so `b.iter` can hammer one realistic support directly and the
+// measurement is the operation, not a `HashMap` clone:
+//   * `cnot(a, b)` is an involution: applying it twice restores the support,
+//     so a forward+backward pair per bond leaves the state exactly as it was.
+//   * `truncate()` is idempotent: after the first call nothing more is
+//     droppable, which is precisely the Trotter loop's steady state (truncate
+//     runs after every gate and usually removes little).
+
+/// Grow a realistic support by propagating `steps` Trotter steps.
+fn grown_new(p: &Params, steps: usize) -> NewSum {
+    let mut s = build_new(p.n);
+    trotter_new(&mut s, p.n, steps, p.theta_x, p.theta_zz, p.noise);
+    s
+}
+
+fn grown_old(p: &Params, steps: usize) -> OldSum {
+    let mut s = build_old(p.n);
+    trotter_old(&mut s, p.n, steps, p.theta_x, p.theta_zz, p.noise);
+    s
+}
+
+fn bench_rekey_and_truncate(c: &mut Criterion) {
+    let p = params();
+    // Grow with the FULL circuit, so the benchmarked support is the one the deep
+    // circuit actually ends up propagating rather than an early-and-small one.
+    let mut new_state = grown_new(&p, p.steps);
+    let mut old_state = grown_old(&p, p.steps);
+    assert_eq!(
+        new_state.len(),
+        old_state.data().len(),
+        "the two engines must be benchmarked on the same-size support"
+    );
+    // Printed so the reported per-op times can be read per term, and so a future
+    // change to the growth circuit that silently shrinks the support is visible.
+    println!(
+        "[pauli_sum/rekey_cnot + truncate] benchmarked support: {} terms",
+        new_state.len()
+    );
+
+    // --- `cnot` re-key: one forward+backward sweep over every bond. ----------
+    let mut g = c.benchmark_group("pauli_sum/rekey_cnot");
+    let before = new_state.len();
+    g.bench_function("new/cnot_sweep", |b| {
+        b.iter(|| {
+            for i in 0..p.n - 1 {
+                new_state.cnot(i, i + 1);
+                new_state.cnot(i, i + 1);
+            }
+        })
+    });
+    assert_eq!(
+        new_state.len(),
+        before,
+        "cnot sweep must be state-preserving (cnot is an involution)"
+    );
+
+    let before = old_state.data().len();
+    g.bench_function("old/cnot_sweep", |b| {
+        b.iter(|| {
+            for i in 0..p.n - 1 {
+                old_state.cnot(i, i + 1);
+                old_state.cnot(i, i + 1);
+            }
+        })
+    });
+    assert_eq!(
+        old_state.data().len(),
+        before,
+        "cnot sweep must be state-preserving (cnot is an involution)"
+    );
+    g.finish();
+
+    // --- `truncate`: the idempotent steady-state retain scan. ----------------
+    let mut g = c.benchmark_group("pauli_sum/truncate");
+    new_state.truncate();
+    old_state.truncate();
+    g.bench_function("new/truncate", |b| b.iter(|| new_state.truncate()));
+    g.bench_function("old/truncate", |b| b.iter(|| old_state.truncate()));
+    g.finish();
+}
+
 fn bench_trotter(c: &mut Criterion) {
     let mut g = c.benchmark_group("pauli_sum/integration_trotter");
 
@@ -217,5 +339,5 @@ fn bench_trotter(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(benches, bench_trotter);
+criterion_group!(benches, bench_trotter, bench_rekey_and_truncate);
 criterion_main!(benches);

@@ -115,7 +115,7 @@ const TEST_SCHEMA = {
           },
           stable: {
             type: 'boolean',
-            description: 'true only if the ratio held across ≥2 runs AND neither side has a wide CI. If a baseline is noisy (wide CI), set false and do NOT read a regression off it — rerun or widen measurement time first.',
+            description: 'true only if this is a SAME-BUILD new/old ratio (both benched in one binary — cross-build absolutes are unreliable from layout/Mytkowicz bias) that held across ≥2 runs with neither side on a wide CI. If a baseline is noisy or the ratio comes from comparing separate builds, set false and do NOT read a regression off it — rerun / widen measurement time / use an interleaved same-build harness first.',
           },
           attribution: {
             type: 'string',
@@ -275,6 +275,17 @@ Cargo.toml) so tests/benches can see both crates.
        it — rerun or widen \`--measurement-time\` until it settles. Never quote a
        ratio (in EITHER direction — a flattering "parity" is as wrong as a scary
        "regression") from a single run whose baseline swings.
+       SAME-BUILD RATIOS ONLY. The gate metric is the new/old ratio measured
+       *within a single binary* (both benched under one code layout + thermal
+       state). Treat ABSOLUTE cross-build numbers as unreliable: relinking for a
+       code change relayouts the whole bench binary, so even an UNTOUCHED baseline
+       swings from function alignment / i-cache effects (the Mytkowicz "producing
+       wrong data" layout bias — here old/rx moved 4.5↔5.9µs+ with zero code
+       change). So NEVER conclude from "old/rx was 4.8µs last build, 5.9µs this
+       build → regression"; only same-build new-vs-old (where the layout bias
+       cancels in the ratio) is sound. To A/B a fix, prefer an interleaved
+       harness that measures both variants in ONE process (min-of-N), not two
+       separate criterion builds.
 
    (c) VERIFIED ATTRIBUTION (no hand-waving). Only raise a 'perf-drift' gap for a
        ratio that is fair (a) AND stable (b). When you do, the cause in

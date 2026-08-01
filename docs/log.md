@@ -77,6 +77,38 @@ control that passes either way. The whole pre-existing suite passed both before
 and after — every existing test truncates right after each gate, the single
 schedule where the two semantics agree. That was the coverage hole.
 
+### ⚑ NEW behaviour-parity gaps found by the Baseline agent (verified by hand)
+Three divergences from old, all **verified directly against the old sources**,
+none yet fixed. Under the PRIME DIRECTIVE each is a gap.
+
+1. **`ps2.zero.behaviour` (high).** The old crate has **no `reduce`** and no
+   drop-zero logic *anywhere* — a zero-coefficient entry stays in the support
+   forever, and old's `PartialEq` compares maps exactly, so
+   `ppvm-pauli-sum/tests/loss.rs::test_reset_channel` depends on `*= 0.0`
+   keeping every key. The new `reduce()` (`ppvm-traits-2/src/containers.rs`)
+   **and** `ScaleByKey` both drop exact zeros, so `len()`/`contains` diverge —
+   e.g. after `pauli_error(q, [0.0, 0.25, 0.25])` (λ_X = 0).
+   **Note this indicts an earlier decision in this very log:** the `ps2.noise.1`
+   row records the orchestrator *adding* zero-dropping to `ScaleByKey` to uphold
+   a "reduced-canonical-form invariant". That invariant is the new design's
+   invention, not old's behaviour — so that fix introduced a divergence rather
+   than removing one. Re-decide deliberately: either restore old's retain-zeros
+   semantics, or get the Lean oracle to say old is wrong and document it.
+2. **`ps2.default.threshold` (medium).** `CoefficientThreshold::default()` is
+   `1e-12` in old (`ppvm-pauli-sum/src/strategy.rs:113`) but `0.0` in new
+   (`ppvm-pauli-sum-2/src/policy.rs`, a derived `Default` on the `f64` field) —
+   a silently changed user-facing default.
+3. **`ps2.preserve.missing` (medium).** `preserve_strings` (builder option +
+   the snapshot/restore post-filter inside old `PauliSum::truncate`, pinned by
+   `ppvm-pauli-sum/tests/preserve.rs`) has no counterpart in the new crate.
+
+Plus a **suspected old bug** for the L4 `Multiply` component to adjudicate:
+`impl MulAssign<PauliSum<T>> for PauliSum<T>` (`ppvm-pauli-sum/src/sum/ops.rs:70`)
+loops the rhs terms calling `self.map_add(..)`, and `map_add` *replaces* the
+support with its image — so `A *= (b0·P0 + b1·P1)` computes the product chain
+`A·b0P0·b1P1` instead of `A·b0P0 + A·b1P1`. Untested in old. The new `Multiply`
+must accumulate into a fresh accumulator (`twistedConv`, `Twisted.lean`).
+
 ### 2 — DO NEXT: `ps2.cnot.rekey.perf` — still OPEN, partly reduced
 End-to-end Trotter is **~1.37–1.42×** (was ~1.47× at session start; criterion,
 same build, `[u8;8]`). Numerics match. The gap is now concentrated almost
@@ -99,21 +131,62 @@ entirely in `cnot` / `RekeyBijective`.
 - Old `PauliWord` is `Copy`; the new one is not (`AtomicU64` cache) — the
   Phase-2 watch item `pw2` flagged. Not yet measured as a cause.
 
-**Current standing:** `cnot` sweep (22 cnots over 372 terms) new **77 µs** vs old
-**53 µs** = **1.45×** in the good mode, **2.53×** in the bad one.
-Reproduce: `cargo bench -p ppvm-conformance-2 --bench pauli_sum_integration -- rekey_cnot`
+**ROOT-CAUSED AND LARGELY FIXED (`23860055`).** The cause was
+`entry(k).and_modify(..).or_insert(..)` in `RekeyBijective for HashMapStore`.
+It aggregated a collision that **cannot occur** (`f` is injective by contract;
+for a Clifford that is the symplectic bijection already proven `*_bijective` in
+`Symplectic.lean`), and on this crate's monomorphization the `entry` chain
+compiled **out of line** — a profile put 41% of the sweep's samples in a
+standalone `hashbrown::rustc_entry` frame, where old's identical source
+construct inlines fully into `map_add_assign`. Every other per-term cost was
+being paid *through* that out-of-line call. Replaced with a plain `insert` +
+a `debug_assert!` that nothing is displaced.
+
+Measured over **8 interleaved process pairs** (prebuilt binaries, alternating,
+spread <1.5% within each variant):
+
+| target | before | after | vs old |
+| --- | --- | --- | --- |
+| `rekey_cnot` | 76.5–77.3 µs | **58.9–59.4 µs** | 1.45× → **1.11×** |
+| `integration_trotter` | ~1.47× | **~1.28×** (902–915 vs 701–720 µs) | open |
+| `truncate` | 0.99× | 0.99× | parity |
+
+Residual ~1.11× on the re-key is unattributed. Reproduce:
+`cargo bench -p ppvm-conformance-2 --bench pauli_sum_integration -- rekey_cnot`
 (≥4 runs — see the measurement warning).
 
-### 3 — NEW, and possibly the bigger story: `ps2.rekey.bimodal`
-The new engine's re-key is **bimodal across processes** — ~77 µs or ~134 µs for
-the identical binary and input (1.74×). Evidence that it is process-level state
-fixed at startup, not drift or noise: measuring the new engine **twice in the
-same process** (before and after the old) gives identical numbers to 0.5%
-(132.10/132.61, 71.16/70.98, 131.95/132.04), while separate processes select a
-mode. The **old engine does not show it** (stable ~53 µs across every run). Heap
-layout / ASLR is the prime suspect (two ping-ponging `HashMapStore` tables,
-~20 KB each). Not root-caused. This matters twice over: it is a real
-user-visible ~1.7× swing, and it invalidates single-run perf claims.
+### 3 — STILL OPEN: `ps2.rekey.bimodal`
+The re-key is **bimodal across processes** — for the identical binary and input.
+The `insert` fix improved **both** modes (fast 77→59 µs, slow 134→128 µs) but did
+**not** remove the bimodality: 3 of 6 `cargo bench` launches still land slow.
+
+Evidence it is process-level state fixed at startup, not drift or noise:
+measuring the new engine **twice in the same process** gives identical numbers to
+0.5% (132.10/132.61, 71.16/70.98, 131.95/132.04), while separate processes select
+a mode. The **old engine never shows it** (stable ~53 µs in every run).
+
+**New evidence — the trigger is the launch environment.** 16 consecutive
+*direct-binary* launches were all fast (58.9–59.4 µs); `cargo bench` launches of
+*the same binary* are bimodal (3/6 slow). Mechanism deliberately left
+**unattributed** — do not assert one without demonstrating it.
+
+Ruled out with evidence by the workflow run (wf_e473a67e-42a): heap layout of the
+two ~21 KB tables (an allocator-hook probe found the table addresses identical
+mod 16 KB, delta `0x6000`, in all 22 observed processes); process env and cwd;
+CPU core type / scheduling (interleaving old/new *inside* a slow process kept old
+fast and new slow throughout); code-ASLR slide (no correlation with the binary
+base mod 64K/128K/256K/1M over 16 runs); and a different hot path in the slow
+mode (the two profiles are the same instruction mix, uniformly dilated).
+
+**REFUTED — the `Copy`/atomic hypothesis.** Swapping the word's `AtomicU64` hash
+cache for `Cell<u64>` changed nothing at all (76.2 fast / 114.0 slow, bimodality
+intact). The Phase-2 `pw2` watch item is **not** a cause of either gap. Also,
+`#[cold] #[inline(never)]` on the hash-miss path made it much worse
+(76→116 fast, 114→176 slow) — that path is hot, not cold.
+
+⚠ That workflow also claimed "`insert()` → 0 of 34 processes slow". It **did not
+replicate** (3/6 slow here) and is recorded as unconfirmed; its measurements were
+taken on a 65-file tree that had also edited the old reference crates.
 
 ### 2 — THEN: Phase 3 component 3 — L4 `Multiply` (operator product), not started
 Needs `Complex`/`ImaginaryUnit`; Lean oracle `lean/PPVM/**` `Twisted.lean` (`tmul_assoc`). Run it through the workflow (below).
@@ -133,7 +206,7 @@ Needs `Complex`/`ImaginaryUnit`; Lean oracle `lean/PPVM/**` `Twisted.lean` (`tmu
 - Old reference: `crates/ppvm-pauli-sum/src/**` (real workloads: `benches/trotter.rs`, `benches/random-circuit.rs`, `tests/trotter.rs`, `tests/ghz.rs`).
 - Conformance harness: `crates/ppvm-conformance-2/{src/lib.rs, tests/*, benches/*}` — integration diff+bench are `pauli_sum_integration*`; microbenches `pauli_sum_bench.rs`; per-op attribution tool `examples/trotter_attrib.rs`.
 - Lean: `lean/PPVM/**` (`lake build PPVM` from `lean/`).
-- Open/closed gaps: ledger rows in the Phase 3.2 section — OPEN: `ps2.cnot.rekey.perf` (1.45× good mode), `ps2.rekey.bimodal` (1.74× process-dependent swing), `ps2.attrib.instrument` (unsound instrument). Closed: `ps2.integration.1`, `ps2.store.aux`, `ps2.rot.perf`, `ps2.trotter.perf`, `ps2.truncate.behaviour`.
+- Open/closed gaps: ledger rows in the Phase 3.2 section — OPEN: `ps2.rekey.bimodal` (process-dependent swing, narrowed), `ps2.zero.behaviour` (**high**, behaviour), `ps2.default.threshold`, `ps2.preserve.missing`, `ps2.oldbug.mulassign` (suspected old bug), `ps2.attrib.instrument`. Closed: `ps2.integration.1`, `ps2.store.aux`, `ps2.rot.perf`, `ps2.trotter.perf`, `ps2.truncate.behaviour`, `ps2.cnot.rekey.perf`.
 
 ---
 
@@ -559,8 +632,12 @@ microbench** at all. To be root-caused next (same discipline: same-build A/B).
 | ps2.integration.1 | missing-test | high | test (orch) | **closed — added** | The `-2` conformance suite had only single-op microbenches; the old crate's real-workload benches/tests (Trotter, random-circuit) were never ported, so nothing exercised cumulative allocation/truncation. Added end-to-end diff-test + bench (see above). This is the coverage that would have caught the aux-map miss (and did, in retro). |
 | ps2.trotter.perf | perf-drift | high | — | **root-caused → split** | New ~1.45× slower than old on the end-to-end Trotter workload (new ~1.14ms / old ~0.76ms, same-build `[u8;8]`), invisible to single-gate microbenches. Attribution done (`examples/trotter_attrib.rs` + A/B): two independent causes → split into `ps2.truncate.behaviour` and `ps2.cnot.rekey.perf` below. Numerics match. |
 | ps2.truncate.behaviour | correctness | high | impl | **closed — fixed (`d4aa7875`)** | New `Sum` gate drivers auto-truncated internally (`apply`/`rekey_bijective`/`rotate_in_place` each called `self.policy.truncate`); **old gates never auto-truncate** (caller-driven, pinned by old's `tests/truncation_semantics.rs`). Under the PRIME DIRECTIVE that changed user-facing behaviour. Fixed: truncation is explicit-only via `Sum::truncate()`; `reduce()` kept (canonicalisation, not policy). Guard added: `tests/pauli_sum_truncation_behaviour_diff.rs`, 2 of its 3 tests verified to fail against the pre-fix engine. |
-| ps2.cnot.rekey.perf | perf-drift | high | impl | **OPEN — reduced, not closed** | `cnot`/`RekeyBijective` is **1.45×** old in the good memory mode (77 µs vs 53 µs, 22 cnots over 372 terms), 2.53× in the bad one; end-to-end Trotter ~1.37–1.42×. Reduced from 1.71×/4.04× by `b68b7e8e` (content-conditional hash invalidation). Ruled out with evidence: `aux.reserve`, `drain` vs `iter`+clone (~3%), hash-warm/extra-pass, and — separately — `truncate` (measured at parity, 0.99×). Remaining suspect: old's word is `Copy`, the new one is not (`AtomicU64` cache) — unmeasured. |
-| ps2.rekey.bimodal | perf-drift | high | impl | **OPEN — new** | The new engine's re-key is **bimodal across processes**: ~77 µs or ~134 µs (1.74×) for the identical binary and input. Process-level state fixed at startup, not drift — two measurements of the new engine *within one process* agree to 0.5% while separate processes select a mode. The old engine is stable (~53 µs) across every run. Suspect heap/ASLR layout of the two ~20 KB ping-ponging `HashMapStore` tables. Not root-caused. Invalidates any single-run perf claim on this crate. |
+| ps2.cnot.rekey.perf | perf-drift | high | impl | **closed — root-caused + fixed (`23860055`)** | `entry(k).and_modify(..).or_insert(..)` in `RekeyBijective` aggregated a collision that cannot occur (`f` injective by contract; `Symplectic.*_bijective`) and compiled **out of line** (41% of sweep samples in a standalone `hashbrown::rustc_entry` frame vs fully inlined for old). Replaced by `insert` + `debug_assert!`. `rekey_cnot` **1.45× → 1.11×**, end-to-end Trotter **~1.47× → ~1.28×**, over 8 interleaved process pairs. Residual 1.11× unattributed. Earlier steps: `b68b7e8e` (content-conditional hash invalidation) took it from 1.71×. Ruled out with evidence along the way: `aux.reserve`, `drain` vs `iter`+clone (~2.4–3%), hash-warm/extra-pass, `truncate` (parity 0.99×). |
+| ps2.rekey.bimodal | perf-drift | high | impl | **OPEN — narrowed, not closed** | Re-key is **bimodal across processes** for the identical binary and input. `insert` improved both modes (fast 77→59 µs, slow 134→128 µs) but did not remove it: 3/6 `cargo bench` launches still land slow. Startup-fixed state, not drift (two in-process measurements agree to 0.5%); old is stable ~53 µs always. **New:** 16 direct-binary launches were all fast while `cargo bench` launches of the same binary are bimodal ⇒ the trigger is the launch environment; mechanism **unattributed**. Ruled out with evidence: heap layout (tables identical mod 16 KB across 22 processes), env/cwd, CPU core type, code-ASLR slide, differing hot path. **Refuted:** `AtomicU64`→`Cell<u64>` changed nothing — the `pw2` Copy/atomic watch item is not a cause. |
+| ps2.zero.behaviour | correctness | high | design | **OPEN — new** | Old has **no `reduce`** and no drop-zero logic anywhere; a zero-coefficient term stays in the support and old's exact-map `PartialEq` depends on it (`ppvm-pauli-sum/tests/loss.rs::test_reset_channel`). New `reduce()` and `ScaleByKey` both drop exact zeros ⇒ `len()`/`contains` diverge (e.g. `pauli_error(q,[0.0,0.25,0.25])`, λ_X=0). Verified by hand against the old sources. **Indicts `ps2.noise.1`**: that row's "fix" *added* zero-dropping to satisfy a reduced-canonical-form invariant which is the new design's invention, not old's behaviour — so it introduced this divergence. Re-decide: restore old semantics, or have Lean adjudicate old as wrong and document it. |
+| ps2.default.threshold | correctness | med | impl | **OPEN — new** | `CoefficientThreshold::default()` is `1e-12` in old (`ppvm-pauli-sum/src/strategy.rs:113`) but `0.0` in new (derived `Default` on the `f64` field, `policy.rs`) — a silently changed user-facing default. Verified by hand. |
+| ps2.preserve.missing | impl-friction | med | design | **OPEN — new** | `preserve_strings` (builder option + snapshot/restore post-filter inside old `PauliSum::truncate`, pinned by `ppvm-pauli-sum/tests/preserve.rs`) has no counterpart in the new crate. |
+| ps2.oldbug.mulassign | correctness | med | proof | **OPEN — suspected OLD bug** | Old `impl MulAssign<PauliSum<T>> for PauliSum<T>` (`sum/ops.rs:70`) calls `self.map_add(..)` per rhs term, and `map_add` *replaces* the support with its image ⇒ `A *= (b0·P0 + b1·P1)` computes the product chain `A·b0P0·b1P1`, not `A·b0P0 + A·b1P1`. Untested in old. For the L4 `Multiply` component: accumulate into a fresh accumulator per `twistedConv` (`Twisted.lean`); if Lean confirms old is wrong, this is an allowed documented divergence. |
 | ps2.attrib.instrument | missing-proof | med | test | **OPEN — instrument unsound** | `examples/trotter_attrib.rs` understates the gap: its per-op `Instant::now()` pairs act as optimization barriers that penalize the *old* engine more, reporting `1.08×` where criterion reports `1.35×` on the same tree. Its per-op ratios are diluted toward 1.0. Earlier conclusions in this log that leaned on it should be re-derived from `benches/pauli_sum_integration.rs`. Either fix (sample-based attribution) or demote to ordering-only. |
 
 **Deferred to component 3:** the L4 `Multiply` operator product (needs `Complex`

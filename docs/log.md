@@ -37,21 +37,66 @@ iterations, then escalate to human.
 Everything committed and green (`cargo test -p ppvm-pauli-sum-2 -p ppvm-conformance-2` = 108 + 92; clippy/fmt clean). Recent commits (newest first):
 `8a1dc79b` integration coverage + workflow Baseline phase · `4385ef3c` storage aux double-buffer recovered · `33f48fe5` Mytkowicz same-build perf rule · `53ebc66e` rotation_rx hash-warm → parity · `da88f309` same-storage bench + perf-gate hardening.
 
-### 1 — DO NEXT: `ps2.trotter.perf` (OPEN, high) — a real ~1.4–1.5× regression
-The end-to-end Trotter workload shows **new ~1.14 ms vs old ~0.76 ms** (same-build `[u8;8]`), while every single-gate microbench reads ~0.94–1.05×. Numerics match (golden master green). This is the highest-value open item — it's exactly what the new integration coverage exists to catch.
-- **Reproduce:** `cargo bench -p ppvm-conformance-2 --bench pauli_sum_integration` (targets `pauli_sum/integration_trotter/{new,old}/trotter`).
-- **Root-cause it (evidence, not guessing).** Prime suspect: **`truncate()`** — called after *every* gate in the Trotter loop, and the new side's `CombinedPolicy` runs it as **two full `retain` scans** (`crates/ppvm-pauli-sum-2/src/policy.rs`, `CombinedPolicy::truncate` → `self.0.truncate(map); self.1.truncate(map);`); it has **no microbench**. Old `truncate` is `crates/ppvm-pauli-sum/src/sum/data.rs:275`.
-- **Approach:** decompose the ~0.38 ms gap by operation (instrument the loop, or per-op microbenches at the real support sizes); A/B with truncate removed from both sides (ratio collapses → truncate is it); single-policy vs CombinedPolicy; prototype a **single-pass fused `CombinedPolicy` retain** (apply both predicates in one scan) and measure. Add a permanent **truncate microbench** (new vs old) — the missing coverage under this hole.
-- (A background root-cause subagent was in flight when this was written; its findings may or may not have landed — redo/complete from the above if not.)
+### ★ PRIME DIRECTIVE (do not violate) — behaviour-preserving refactor
+This refactor **only cleans up and aligns the abstraction with the math**. It must
+**NOT change any user-facing behaviour** vs the old crate. *Any* observable
+behavioural difference — not just numeric outputs, but **when side effects happen**
+(e.g. when truncation runs), API contracts, defaults, error/edge semantics — is a
+**GAP** to be fixed (restore old behaviour), not accepted. The workflow must
+surface these (see the workflow's new behaviour-parity check). When old itself is
+provably wrong, the Lean oracle governs and the divergence is documented — that is
+the *only* allowed behaviour change.
+
+### 1 — DO NEXT: `ps2.trotter.perf` — ROOT-CAUSED (attribution done); two causes
+The end-to-end Trotter workload is **new ~1.14 ms vs old ~0.76 ms** (~1.45×,
+same-build `[u8;8]`) while every single-gate microbench reads ~0.94–1.05×. Numerics
+match. A per-op attribution (tool: `cargo run --release -p ppvm-conformance-2
+--example trotter_attrib`, kept) + an A/B decomposed the gap into **two independent
+causes**:
+
+**(a) `ps2.truncate.behaviour` — a USER-FACING BEHAVIOUR GAP (fix first).** The new
+`Sum` gate drivers auto-truncate **internally**: `apply` (`sum.rs:240`),
+`rekey_bijective` (`sum.rs:279`), and `rotate_in_place` (`sum.rs:378`) each call
+`self.policy.truncate(&mut self.storage)`. The **old crate's gates never
+auto-truncate** — truncation is caller-driven/explicit (verified: no `truncate` in
+old `sum/clifford.rs`/`rot1.rs`/`rot2.rs`; the old Trotter loop calls `truncate()`
+itself). So the new engine changed *when* truncation happens = a behaviour gap under
+the PRIME DIRECTIVE. It is also a big chunk of the perf gap: an A/B removing those
+internal `policy.truncate` calls collapsed **rx and rz to parity** (their entire
+excess was the redundant internal truncate, since the caller *also* truncates).
+**FIX:** remove the internal `self.policy.truncate(...)` from those three drivers so
+truncation is **explicit-only** via `Sum::truncate()` — matching old. (Note
+`scale_by_key`/`sign_flip_by_key` drivers already do NOT truncate — the current
+behaviour is even *inconsistent* across gates.) Then run the FULL suite
+(`cargo test -p ppvm-pauli-sum-2 -p ppvm-conformance-2`): any test that applied a
+gate and checked support **without** calling `truncate()` was relying on the
+auto-truncate — update it to call `truncate()` explicitly (that is the correct,
+old-matching usage), or confirm it still holds. Keep `reduce()` (structural
+drop-exact-zeros) where it is — that is canonicalisation, not policy truncation.
+
+**(b) `cnot` / `rekey_bijective` slower than old `map_add` (~1.32×) — a real perf
+gap, SEPARATE.** Even with internal truncate removed, `cnot` still carried
+**+0.11 ms** (the two `cnot`s per bond dominate the residual). The new
+`RekeyBijective for HashMapStore` (drain primary → aux → swap; `store.rs`) is slower
+than old `map_add` (`crates/ppvm-pauli-sum/src/sum/data.rs` `map_add`/`map_add_assign`).
+Root-cause with the same discipline (same-build A/B, evidence) — compare the two
+re-key inner loops (hashing, `entry` vs old's insert, capacity/resize). Add a
+permanent **truncate microbench** and a **cnot/rekey microbench** (the coverage
+holes). `CombinedPolicy` still does two retain scans (`policy.rs`) — a single-pass
+fused retain may help the *explicit* truncate cost too; measure.
+
+Reproduce end-to-end: `cargo bench -p ppvm-conformance-2 --bench pauli_sum_integration`.
+Attribution tool: `examples/trotter_attrib.rs` (committed).
 
 ### 2 — THEN: Phase 3 component 3 — L4 `Multiply` (operator product), not started
 Needs `Complex`/`ImaginaryUnit`; Lean oracle `lean/PPVM/**` `Twisted.lean` (`tmul_assoc`). Run it through the workflow (below).
 
 ### Workflow — use it for behavioral components
-`.claude/workflows/traits-2-component.js` now runs: **Baseline** (mine old-crate real workloads → integration acceptance bar + perf-critical architecture-feature list) → Implement (preserve those features) → Verify (Review incl. **architecture-parity** ∥ Test with **integration-first** perf gate) → Prove (incl. Lean adjudication of suspected old-impl bugs).
+`.claude/workflows/traits-2-component.js` carries a **★ PRIME DIRECTIVE** (in `COMMON`, seen by every agent): behaviour-preserving refactor only — any user-facing behaviour change (incl. *when* side effects fire) is a gap. Phases: **Baseline** (mine old-crate real workloads → integration acceptance bar + perf-critical architecture features + **user-facing behavioural contracts**) → Implement (preserve features + behaviour) → Verify (Review incl. **architecture-parity** + **behaviour-parity** ∥ Test with **integration-first** perf gate + **behaviour-parity diff tests**) → Prove (Lean adjudicates suspected old-impl bugs). The behaviour-parity dimension is what would have caught the internal auto-truncate.
 
 ### Non-negotiable discipline (hard-won this session — don't relearn it)
-- **Perf: same-build new/old ratios ONLY.** Cross-build absolutes swing from code-alignment/i-cache (Mytkowicz layout bias — e.g. an untouched `old/rx` moved 4.5↔5.9µs). Use an interleaved one-process harness for A/B. Fair config (identical storage/coeff/hasher — build a bench-local `[u8;8]` new type). Attribute any drift by controlled A/B or profile; if you can't isolate it, say "unattributed" — never assert a mechanism (I mis-called the rotation perf 3× before profiling settled it).
+- **Behaviour preservation is the prime directive** (see banner above). The refactor changes *structure*, never *observable behaviour*. Before/after any component, ask: does the new engine behave identically to old for a user — same outputs, same *timing of side effects* (truncation, reduction), same defaults/contracts? A divergence is a gap. (The internal auto-truncate `ps2.truncate.behaviour` is the live example.)
+- **Perf: same-build new/old ratios ONLY.** Cross-build absolutes swing from code-alignment/i-cache (Mytkowicz layout bias — e.g. an untouched `old/rx` moved 4.5↔5.9µs). Use an interleaved one-process harness for A/B (see `examples/trotter_attrib.rs`). Fair config (identical storage/coeff/hasher — build a bench-local `[u8;8]` new type). Attribute any drift by controlled A/B or profile; if you can't isolate it, say "unattributed" — never assert a mechanism (I mis-called the rotation perf 3× before profiling settled it).
 - **Integration-first.** Single-gate microbenches structurally miss cumulative per-gate costs (allocation/truncation) because a tight one-gate loop recycles one warm allocator page. Always gate on the end-to-end deep-circuit workload vs old.
 - **Architecture parity.** When generalizing, preserve the old impl's perf-critical structural features — they may *relocate* (the aux double-buffer moved into the `HashMapStore` storage backend so `Sum` stays generic) but must not *vanish*. Check for this in review.
 - **Numerics:** golden-master targets old-parity unless the Lean oracle says old is wrong.
@@ -59,9 +104,9 @@ Needs `Complex`/`ImaginaryUnit`; Lean oracle `lean/PPVM/**` `Twisted.lean` (`tmu
 ### Key files
 - New engine: `crates/ppvm-pauli-sum-2/src/{sum,store,clifford,rotation,noise,policy}.rs`. Storage = `HashMapStore` newtype `{primary, aux, scratch}` in `store.rs` (graded/pure-diagonal traits delegate to `primary`; buffered `RekeyBijective`/`RotateInPlace` use aux/scratch).
 - Old reference: `crates/ppvm-pauli-sum/src/**` (real workloads: `benches/trotter.rs`, `benches/random-circuit.rs`, `tests/trotter.rs`, `tests/ghz.rs`).
-- Conformance harness: `crates/ppvm-conformance-2/{src/lib.rs, tests/*, benches/*}` — integration diff+bench are `pauli_sum_integration*`; microbenches `pauli_sum_bench.rs`.
+- Conformance harness: `crates/ppvm-conformance-2/{src/lib.rs, tests/*, benches/*}` — integration diff+bench are `pauli_sum_integration*`; microbenches `pauli_sum_bench.rs`; per-op attribution tool `examples/trotter_attrib.rs`.
 - Lean: `lean/PPVM/**` (`lake build PPVM` from `lean/`).
-- Open/closed gaps: see the ledger rows in the Phase 3.2 section (`ps2.trotter.perf` OPEN, `ps2.integration.1`, `ps2.store.aux`, `ps2.rot.perf`).
+- Open/closed gaps: ledger rows in the Phase 3.2 section — OPEN: `ps2.truncate.behaviour` (behaviour gap, fix first), `ps2.cnot.rekey.perf` (~1.32×). Closed: `ps2.integration.1`, `ps2.store.aux`, `ps2.rot.perf`, `ps2.trotter.perf` (root-caused → split into the two OPEN rows).
 
 ---
 
@@ -485,7 +530,9 @@ microbench** at all. To be root-caused next (same discipline: same-build A/B).
 | id | type | sev | routed | status | note |
 | --- | --- | --- | --- | --- | --- |
 | ps2.integration.1 | missing-test | high | test (orch) | **closed — added** | The `-2` conformance suite had only single-op microbenches; the old crate's real-workload benches/tests (Trotter, random-circuit) were never ported, so nothing exercised cumulative allocation/truncation. Added end-to-end diff-test + bench (see above). This is the coverage that would have caught the aux-map miss (and did, in retro). |
-| ps2.trotter.perf | perf-drift | high | human | **OPEN — real regression** | New engine **~1.4–1.5×** slower than old on the end-to-end Trotter workload (new ~1.14ms / old ~0.76ms, same-build `[u8;8]`), invisible to the single-gate microbenches (~0.94–1.05×). Fair + stable; attribution pending (suspect: per-gate `truncate()` × `CombinedPolicy` double retain-scan, un-microbenched). Numerics match (golden master green). To root-cause. |
+| ps2.trotter.perf | perf-drift | high | — | **root-caused → split** | New ~1.45× slower than old on the end-to-end Trotter workload (new ~1.14ms / old ~0.76ms, same-build `[u8;8]`), invisible to single-gate microbenches. Attribution done (`examples/trotter_attrib.rs` + A/B): two independent causes → split into `ps2.truncate.behaviour` and `ps2.cnot.rekey.perf` below. Numerics match. |
+| ps2.truncate.behaviour | correctness | high | impl | **OPEN — behaviour gap** | New `Sum` gate drivers auto-truncate internally (`sum.rs` `apply`:240, `rekey_bijective`:279, `rotate_in_place`:378 each call `self.policy.truncate`); **old gates never auto-truncate** (caller-driven). Under the PRIME DIRECTIVE this changed user-facing behaviour = gap. Also perf: removing it collapses rx/rz to parity (A/B). FIX: make truncation explicit-only (remove those 3 internal calls); then fix any test that relied on auto-truncate to call `truncate()`. Keep `reduce()`. |
+| ps2.cnot.rekey.perf | perf-drift | med | impl | **OPEN — real perf gap** | Even with internal truncate removed, `cnot` carries +0.11ms (~1.32×): new `RekeyBijective for HashMapStore` (drain→aux→swap, `store.rs`) slower than old `map_add`. Root-cause with same-build A/B; add cnot/rekey + truncate microbenches (the coverage holes); consider a single-pass fused `CombinedPolicy` retain. |
 
 **Deferred to component 3:** the L4 `Multiply` operator product (needs `Complex`
 + `ImaginaryUnit`); columnar `ColumnStore` stays Phase 6.

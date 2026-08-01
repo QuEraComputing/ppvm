@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Implement + review + test + (prove) one ppvm-*-2 component; loop until zero gaps + green gates. Behavioral components also differential-test vs the old crate and gate on perf. Component spec comes from `args` (Phase-1 traits default). Returns structured findings; the caller writes docs/log.md and commits.',
   phases: [
-    { title: 'Baseline', detail: 'mine the old crate’s real workloads for integration tests + perf-critical architecture features (the acceptance bar) — behavioral components only' },
+    { title: 'Baseline', detail: 'mine the old crate’s real workloads for integration tests + perf-critical architecture features + user-facing behavioural contracts (the acceptance bar) — behavioral components only' },
     { title: 'Implement', detail: 'port from design+lean+old crate; preserve the baseline’s architecture features; build/clippy/fmt until green' },
     { title: 'Verify', detail: 'review (design↔lean↔rust + architecture parity) ∥ test (Lean-oracle + differential + END-TO-END integration bench/diff vs old)' },
     { title: 'Prove', detail: 'add Lean for newly-nominated algebraic invariants; adjudicate suspected old-impl bugs; lake build; update doc citations' },
@@ -58,7 +58,7 @@ const IMPL_SCHEMA = {
 const BASELINE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['integrationWorkloads', 'architectureFeatures', 'oldSuspectedBugs', 'summary'],
+  required: ['integrationWorkloads', 'architectureFeatures', 'behaviouralContracts', 'oldSuspectedBugs', 'summary'],
   properties: {
     summary: { type: 'string' },
     integrationWorkloads: {
@@ -90,6 +90,21 @@ const BASELINE_SCHEMA = {
           feature: { type: 'string' },
           perfRationale: { type: 'string', description: 'the real-workload cost it avoids (e.g. per-gate allocation over a deep circuit)' },
           preserveHow: { type: 'string', description: 'how the new (generic) design should carry it — e.g. put the aux buffer IN the storage backend so the engine stays generic' },
+        },
+      },
+    },
+    behaviouralContracts: {
+      type: 'array',
+      description:
+        'The old impl’s USER-FACING behavioural contracts the new impl must reproduce EXACTLY (PRIME DIRECTIVE) — beyond numeric outputs: WHEN side effects fire (does a gate truncate/reduce on its own, or only on an explicit call?), method defaults, mutation vs return semantics, edge/error behaviour, ordering guarantees. Each becomes a differential behaviour test and a review parity check; a divergence is a GAP. (Live example: old gates do NOT auto-truncate — truncation is caller-driven; a new engine that truncates inside gates has changed behaviour.)',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['contract', 'oldBehaviour', 'howToTest'],
+        properties: {
+          contract: { type: 'string', description: 'the user-facing behaviour, e.g. "truncation timing"' },
+          oldBehaviour: { type: 'string', description: 'exactly what old does (e.g. "gates never truncate; only truncate() does")' },
+          howToTest: { type: 'string', description: 'a differential test that would catch a divergence (e.g. "apply a gate, do NOT call truncate, assert new support == old support")' },
         },
       },
     },
@@ -225,6 +240,15 @@ const PROVE_SCHEMA = {
 }
 
 const COMMON = `
+★ PRIME DIRECTIVE — BEHAVIOUR-PRESERVING REFACTOR. This refactor ONLY cleans up
+and aligns the abstraction with the math. It must NOT change any user-facing
+behaviour vs the old crate. "Behaviour" is not just numeric outputs: it includes
+WHEN side effects happen (e.g. whether a gate truncates/reduces on its own or only
+when the caller asks), API contracts, defaults, and edge/error semantics. ANY
+observable divergence from old is a GAP (type 'correctness', route to impl), even
+if the new behaviour seems "nicer" — restore old behaviour. The ONLY allowed
+behaviour change is one where old is provably wrong by the Lean oracle (documented).
+
 Repo root: ${REPO}
 Run cargo from the repo root; run \`lake build PPVM\` from ${REPO}/lean.
 Design (authoritative signatures): ${REPO}/docs/design/traits-2-configuration-and-hashing.md
@@ -247,7 +271,7 @@ just its unit tests: its \`benches/\`, \`examples/\`, and integration \`tests/\`
 (e.g. Trotter evolution, random-circuit propagation, GHZ, truncation sweeps,
 expectation-value estimation). Also skim its core data types for HOW it goes fast.
 
-Produce three things (return the schema):
+Produce four things (return the schema):
 
 1. INTEGRATION WORKLOADS — the key END-TO-END use cases that characterize real
    performance and numerics (a deep, heterogeneous gate sequence on an evolving,
@@ -265,7 +289,17 @@ Produce three things (return the schema):
    silently-dropped feature is the exact class of gap microbenches miss (the
    dropped aux-map double-buffer was one).
 
-3. SUSPECTED OLD-IMPL BUGS — anywhere old looks numerically/semantically off, so
+3. BEHAVIOURAL CONTRACTS — the old impl's USER-FACING behaviour the new impl must
+   reproduce EXACTLY (the PRIME DIRECTIVE), beyond numeric outputs: WHEN side
+   effects fire (does a gate truncate/reduce on its own, or only on an explicit
+   \`truncate()\`?), method defaults, mutation-vs-return, edge/error semantics,
+   ordering guarantees. For each: exactly what old does, and a differential test
+   that would catch a divergence. Read the old gate/method bodies to see when they
+   truncate/reduce/allocate. (Live example: old gates never auto-truncate —
+   truncation is caller-driven — so a new engine that truncates inside a gate has
+   silently changed behaviour and must be flagged.)
+
+4. SUSPECTED OLD-IMPL BUGS — anywhere old looks numerically/semantically off, so
    the new impl does not blind-copy it. The Lean spec is the oracle; the prove
    agent adjudicates. Flag sparingly.
 
@@ -287,6 +321,10 @@ ${(b.integrationWorkloads || []).map((w, i) => `  ${i + 1}. ${w.name}: ${w.what}
 Performance-critical architecture features the new impl MUST preserve (dropping one
 is a latent perf gap microbenches won't catch — e.g. the aux-map double-buffer):
 ${(b.architectureFeatures || []).map((f, i) => `  ${i + 1}. ${f.feature}\n     why: ${f.perfRationale} | preserve by: ${f.preserveHow}`).join('\n') || '  (none identified)'}
+
+User-facing BEHAVIOURAL CONTRACTS the new impl must reproduce EXACTLY (PRIME
+DIRECTIVE — any divergence, incl. WHEN side effects like truncation fire, is a GAP):
+${(b.behaviouralContracts || []).map((c, i) => `  ${i + 1}. ${c.contract} — old: ${c.oldBehaviour}\n     test: ${c.howToTest}`).join('\n') || '  (none identified)'}
 
 Suspected OLD-impl bugs (do NOT blind-copy; Lean is the oracle — if Lean confirms
 old is wrong, the new impl corrects it and the golden-master targets the Lean value):
@@ -357,7 +395,16 @@ ${
    and the buffer vanished with no test to catch it). Raise any missing/weakened
    feature as an 'impl-friction' consistency gap, severity HIGH, routedTo 'impl',
    naming the feature and the integration workload it slows. Do NOT hand-wave —
-   point at where in the new code the feature should live and does not.`
+   point at where in the new code the feature should live and does not.
+5. BEHAVIOUR PARITY (the PRIME DIRECTIVE) — for EACH behavioural contract the
+   INTEGRATION BASELINE lists below, verify the new impl reproduces old's
+   USER-FACING behaviour EXACTLY, focusing on WHEN side effects fire, not just
+   final numbers. Read the new gate/method bodies: does anything truncate, reduce,
+   allocate, normalize, or mutate at a different time than old (e.g. a gate that
+   auto-truncates when old only truncates on an explicit call)? Compare against
+   old's actual bodies. Any divergence is a 'correctness' consistency gap, severity
+   HIGH, routedTo 'impl' — cite the new file:line and the old file:line it differs
+   from. This is the check that would have caught the internal auto-truncate.`
     : ''
 }
 
@@ -386,6 +433,11 @@ Cargo.toml) so tests/benches can see both crates.
    real-use numeric gate and is part of differentialPass. If new and old diverge
    AND a flagged suspected-old-bug + Lean oracle say old is wrong, target the
    Lean-correct value and record the divergence (do not silently match a bug).
+   ALSO add a BEHAVIOUR-PARITY test for each behavioural contract in the baseline
+   (the PRIME DIRECTIVE): assert the new engine's user-facing behaviour matches old
+   including WHEN side effects fire — e.g. apply a gate and, WITHOUT calling
+   truncate(), assert new support == old support (catches a gate that auto-truncates
+   when old does not). Any mismatch is a 'correctness' gap. Part of differentialPass.
 2. LEAN-ORACLE property tests — reproduce ${C.leanOracles} as Rust tests
    (exhaustive for finite single-qubit cases; randomized for n-qubit).
 3. PERFORMANCE GATE — INTEGRATION-FIRST. The HEADLINE perf gate is the END-TO-END

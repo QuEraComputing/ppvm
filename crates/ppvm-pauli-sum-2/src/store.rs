@@ -323,6 +323,18 @@ where
         let mut branches: Vec<(K, C)> = Vec::with_capacity(self.len());
         for (k, c) in self.iter_mut() {
             if let Some(term) = f(k, c) {
+                // Pre-warm the fresh branch key's structural digest HERE, in pass 1,
+                // before it is buffered. `with_bits_toggled` builds the key with an
+                // empty (`HASH_UNCACHED`) cache, so without this the 3-round finalize
+                // fold would fire lazily inside pass-2's `entry()` — *on the bucket-
+                // index critical path*, where the mul-chain latency stalls the
+                // dependent bucket load with nothing to hide it. Computing the (same)
+                // digest here instead lets it overlap with the walk's other work
+                // (the next term's diagonal scale + branch build), so pass-2 probes a
+                // cache hit. Semantic no-op (identical digest); measured ~8% off `rx`
+                // on a ~1000-term sum, closing the same-storage gap to the old crate's
+                // eager-hash `map_insert` (which likewise hashes in its first pass).
+                let _ = term.0.key_hash();
                 branches.push(term);
             }
         }

@@ -297,21 +297,35 @@ Fair same-storage ratios (new/old, two runs, tight CIs):
 | `clifford_h` | 1.06× | small residual |
 | `rotation_rx` | **~1.15×** | small residual, **at gate boundary** |
 
-**Honest attribution.** The residual is confined to exactly the paths that
-**hash freshly-created keys** — the Clifford re-key and the rotation branch build —
-and is *absent* from the in-place paths (`scale`/`clifford_x`, ~parity/win). That
-pattern points at the new word's **lazy `AtomicU64` hash cache** (load the
-`HASH_UNCACHED` sentinel, branch, finalize-and-store on miss) costing a few percent
-per fresh key over the old `Copy` word's eager hash — the deliberate price of the
-lazy-hash / trait-generic design, which is exactly what buys the large
-`overlap`/`build_batch`/`clifford_x` wins. This is a **consistent, mechanism-level
-hypothesis** (sign + which-paths verified), not a fully symbolicated attribution;
-the exact split (cache tax vs generic-`Sum<S,P>` monomorphization vs
-`BitArray` codegen) was not isolated further because it is small and not worth more
-profiling. `rotation_rx` at ~1.15× sits **at the gate boundary**; it is a
-documented, accepted design trade, **not allowlisted as over-gate** (it is at/under
-1.15 on repeated measurement) — recorded here so a future 1.16–1.20× reading is
-attributed, not re-investigated from scratch.
+**Root-caused and FIXED (rotation_rx now at parity).** A focused investigation
+subagent isolated the cause by single-variable A/B + disassembly (not a guess):
+the residual was **not** the atomic (arm64 `Relaxed` load/store emit no barrier —
+verified in the disasm), **not** the hasher (new `IdentityBuildHasher` and old
+`FxBuildHasher` do an *equal* number of FxHash rounds), **not** resize (both maps
+grow 1000→1472 without re-bucketing), alloc, or monomorphization (all ruled out
+with evidence). The real cause: `with_bits_toggled` builds each branch key with an
+**empty** hash cache, so the 3-round structural finalize fired **lazily inside
+pass-2's `entry()`** — *on the bucket-index critical path*, where the mul-chain
+latency stalls the dependent bucket load. The old crate hashes **eagerly in its
+first pass** (`rehash` inside `map_insert`), so its pass-2 probe hits a cached `u64`
+and the hashing overlaps with other terms' work.
+
+**Fix** (`store.rs`, `RotateInPlace for HashMap`, one line in pass 1): warm the
+fresh branch key's digest — `let _ = term.0.key_hash();` — *before* buffering it,
+so pass-2 probes a cache hit and the hashing overlaps with the in-place walk
+instead of stalling the probe. It computes the **same** digest → a pure semantic
+no-op (all 108 tests green, every rotation differential test passes), touches only
+the rotate path (`overlap`/`build_batch`/`clifford_x` are different code paths,
+unaffected), and leaves the shared avalanche hash untouched. Placed as a single
+site inside the *existing* pass-1 loop (no second traversal, cache-hot). Measured:
+`new/rx` a stable **~5.5µs → ~4.9µs (~10%)** across 4 runs; the subagent's
+interleaved same-build harness (the sound instrument — plain criterion cross-build
+numbers are unreliable here, an untouched `old/rx` swings 4.5↔5.9µs+ from code-
+alignment/Mytkowicz relayout) put the ratio at **1.07 → ~0.99**, i.e. parity.
+
+The Clifford re-key (`clifford_h`/`cnot`, ~1.05–1.07×) shares the same
+fresh-key-hash mechanism but on the `apply`/rekey path; it is small, under the gate,
+and left as-is (the same warm technique would apply if it ever matters).
 
 **Cautionary record (this is *why* the workflow was hardened — see the workflow
 section).** I mis-called this perf result **three times** before landing it:
@@ -335,7 +349,7 @@ fast-path signs).
 | id | type | sev | routed | status | note |
 | --- | --- | --- | --- | --- | --- |
 | ps2.noise.1 | correctness | med | impl (orch) | closed | `pauli_error` with a zero transfer eigenvalue (reachable, `[0,0.25,0.25]`→λ_X=0) left a **phantom zero-coefficient key** in the support, violating the reduced-canonical-form invariant. Orchestrator fixed `ScaleByKey` (both backends) to drop any term scaled to exactly zero; added a `pauli_error_zero_eigenvalue_drops_the_term` test. |
-| ps2.rot.perf | perf-drift | low | human | **accepted — documented residual** | Fair same-storage measurement (both `[u8; 8]`, two runs, tight CIs): `rotation_rx` **~1.15×** (at gate boundary), Clifford re-key/`pauli_error` ~1.05×; large wins elsewhere (`build_batch` 0.30×, `overlap` ~0.001×, `clifford_x` 0.70×). Residual is confined to the fresh-key-hashing paths → attributed to the lazy `AtomicU64` hash-cache tax (the deliberate design trade that buys the wins). **Corrects my earlier "same-storage parity ~1.01×"**, which was a cherry-picked noisy old run (old/rx 5.41µs vs the true ~4.7–4.8µs). Fixed the benchmark to compare same-storage (bench-local `BenchSum`); kept the fused `RotateInPlace` and `with_bits_toggled`. At/under gate → not allowlisted. |
+| ps2.rot.perf | perf-drift | med | impl→fix | **closed — fixed (parity)** | Fair same-storage bench first exposed a real ~1.15× on `rotation_rx` (correcting an earlier cherry-picked "parity ~1.01×" from a noisy old baseline). Root-caused by subagent (single-var A/B + disasm): the fresh branch key's 3-round hash fired lazily inside pass-2's `entry()` on the bucket-probe critical path, vs the old crate's eager first-pass hash. **Fix:** warm `term.0.key_hash()` in `RotateInPlace`'s pass 1 (same digest → no-op; 108 tests green). `new/rx` ~5.5µs→~4.9µs (~10%, stable ×4); interleaved-harness ratio 1.07→~0.99. Ruled out (with evidence): atomic (no barrier), hasher (equal rounds), resize, alloc, monomorphization. |
 | ps2.nsites.1 | impl-friction | low | impl | deferred | The `n_sites` `debug_assert!` is on `from_terms` but not on the `apply`/`rekey_bijective` produced-key paths. No live bug (every producer preserves width); low, deferred. |
 | ps2.xyz-dup.1 | impl-friction | low | accepted | noted | X/Y/Z sign logic (`(−1)^z`, etc.) is written a third time in the in-place fast path (besides `PhaseTrack` and `Phased`). Now has a Lean witness (`conjX/Y/Z`) and differential tests guard it; accepted — the in-place path exists precisely to avoid the `Phased` wrapper's cost. |
 
@@ -390,5 +404,5 @@ a crate. Anything not listed is a hard gate.
 
 | id | component | metric | accepted ratio | justification | approved-by |
 | --- | --- | --- | --- | --- | --- |
-| ps2.rot.perf | ppvm-pauli-sum-2 | `rotation_rx` | **ACCEPTED (documented, at gate boundary — not allowlisted)** | Fair same-storage ratio ~1.15× (both `[u8; 8]`, two runs, tight CIs); confined to fresh-key-hashing paths → lazy `AtomicU64` hash-cache tax, the design trade that buys `overlap` ~0.001× / `build_batch` 0.30× / `clifford_x` 0.70×. Benchmark fixed to same-storage. Corrects an earlier cherry-picked "parity ~1.01×" call. |
+| ps2.rot.perf | ppvm-pauli-sum-2 | `rotation_rx` | **FIXED — not allowlisted (now parity)** | Was a real ~1.15× (fair same-storage); root-caused (lazy branch-key hash firing on pass-2's probe critical path) and fixed by warming the digest in `RotateInPlace` pass 1 (semantic no-op, 108 tests green). `new/rx` ~5.5→~4.9µs; interleaved ratio ~0.99. Nothing to allowlist. |
 | _(prior)_ | | | | `lpw2.perf.1` was a nanobench artifact (converges to 1.00× at wide width), not allowlisted. | |

@@ -328,9 +328,9 @@ where
     P: Policy<S::Key, S::Coeff>,
     S::Key: Word + Indexable,
 {
-    /// Multiply every term's coefficient in place by the per-key ring factor
-    /// `f(&k)`, keyed on that term's own key — **no** map rebuild, no key
-    /// movement, no reallocation. A `None` result leaves the term untouched.
+    /// Mutate every term's coefficient in place via `f(&k, &mut c)`, keyed on
+    /// that term's own key — **no** map rebuild, no key movement, no
+    /// reallocation. A term `f` does not touch is left exactly as it was.
     ///
     /// This is the fast path for a *diagonal* unital Pauli channel
     /// ([`PauliError`](ppvm_traits_2::PauliError)), whose Pauli words are fixed so
@@ -338,11 +338,12 @@ where
     /// [`flip_sign_by_key`](Self::flip_sign_by_key) it skips the move-based
     /// [`rekey_bijective`](Self::rekey_bijective) entirely — there is nothing to
     /// re-key — restoring the old crate's in-place `scale`. The channel is
-    /// contractive (`|λ_P| ≤ 1`), so it can never grow a key's Pauli weight; a
+    /// contractive (`|λ_P| ≤ 1`), so it can never grow a key's Pauli weight. A
     /// term the channel scales to *exactly* zero (a zero eigenvalue, e.g.
-    /// `pauli_error(q, [0.0, 0.25, 0.25])` → `λ_X = 0`) is dropped inside
-    /// [`ScaleByKey`](crate::store::ScaleByKey) so the reduced-canonical-form
-    /// invariant holds, but no separate whole-map `reduce`/truncation pass runs.
+    /// `pauli_error(q, [0.0, 0.25, 0.25])` → `λ_X = 0`) **stays in the support**
+    /// with coefficient zero — the old crate has no `reduce` and never removes a
+    /// zero term, and its exact-map equality depends on that. No whole-map
+    /// `reduce`/truncation pass runs here.
     ///
     /// Design: §"Behavioral traits" (`PauliError`); the eigenvalue is
     /// machine-checked in `lean/PPVM/Algebra/Noise.lean`
@@ -350,7 +351,7 @@ where
     #[inline]
     pub(crate) fn scale_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&S::Key) -> Option<S::Coeff>,
+        F: Fn(&S::Key, &mut S::Coeff),
     {
         self.storage.scale_by_key(f);
     }

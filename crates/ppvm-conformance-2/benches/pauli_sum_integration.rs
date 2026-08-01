@@ -299,6 +299,68 @@ fn bench_rekey_and_truncate(c: &mut Criterion) {
     g.bench_function("new/truncate", |b| b.iter(|| new_state.truncate()));
     g.bench_function("old/truncate", |b| b.iter(|| old_state.truncate()));
     g.finish();
+
+    // --- The remaining per-op classes: `pauli_error` (diagonal channel) and
+    //     `rx` (branching rotation), each a full sweep over all n qubits.
+    //
+    // Unlike `cnot`/`truncate` these are NOT state-preserving — the channel
+    // contracts every coefficient and the rotation mixes them — so a plain
+    // `b.iter` would drive the support toward denormals over millions of
+    // iterations and silently corrupt the measurement. `iter_batched_ref`
+    // restores a clean clone per iteration, and criterion does NOT time the
+    // setup closure, so the clone does not enter the reported number.
+    let noise = p.noise;
+    let theta = p.theta_x;
+
+    let mut g = c.benchmark_group("pauli_sum/pauli_error");
+    g.bench_function("new/pauli_error_sweep", |b| {
+        b.iter_batched_ref(
+            || new_state.clone(),
+            |s| {
+                for i in 0..p.n {
+                    s.pauli_error(i, noise);
+                }
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    g.bench_function("old/pauli_error_sweep", |b| {
+        b.iter_batched_ref(
+            || old_state.clone(),
+            |s| {
+                for i in 0..p.n {
+                    s.pauli_error(i, noise);
+                }
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    g.finish();
+
+    let mut g = c.benchmark_group("pauli_sum/rx");
+    g.bench_function("new/rx_sweep", |b| {
+        b.iter_batched_ref(
+            || new_state.clone(),
+            |s| {
+                for i in 0..p.n {
+                    s.rx(i, theta);
+                }
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    g.bench_function("old/rx_sweep", |b| {
+        b.iter_batched_ref(
+            || old_state.clone(),
+            |s| {
+                for i in 0..p.n {
+                    s.rx(i, theta);
+                }
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    g.finish();
 }
 
 fn bench_trotter(c: &mut Criterion) {

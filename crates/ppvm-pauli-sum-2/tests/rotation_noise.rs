@@ -141,19 +141,29 @@ fn pauli_error_scales_each_pauli_by_its_eigenvalue() {
 }
 
 #[test]
-fn pauli_error_zero_eigenvalue_drops_the_term() {
+fn pauli_error_zero_eigenvalue_keeps_the_term_matching_old() {
     // λ_X = 1 − 2(pY + pZ) = 1 − 2(0.25 + 0.25) = 0 exactly, so the X-term is
-    // scaled to 0 and must be DROPPED (reduced-canonical-form invariant: no
-    // zero coefficient lingers in the support), not left as a phantom key.
+    // scaled to 0 — and must STAY in the support with coefficient 0.
+    //
+    // This pins behaviour parity with the old crate, which has no `reduce` and
+    // no drop-zero path anywhere: `PauliSum::scale` can only mutate, never
+    // remove, and old's exact-map `PartialEq` depends on zero terms surviving
+    // (`ppvm-pauli-sum/tests/loss.rs::test_reset_channel` asserts equality with
+    // a clone after a channel multiplies coefficients by 0).
+    //
+    // An earlier revision of this crate dropped the term here, justified by a
+    // "reduced-canonical-form invariant" that is this design's own invention
+    // rather than old's behaviour — a divergence under the behaviour-preserving
+    // prime directive (gap `ps2.zero.behaviour`). Restored to match old.
     let p = [0.0_f64, 0.25, 0.25];
     let mut sum: PauliSum = PauliSum::from_terms(1, [(pw("X"), 1.0), (pw("Z"), 1.0)]);
     sum.pauli_error(0, p);
     assert_eq!(
         sum.get(&pw("X")),
-        None,
-        "zeroed X-term must be dropped from the support"
+        Some(0.0),
+        "zeroed X-term must REMAIN in the support (old never removes it)"
     );
-    assert_eq!(sum.len(), 1, "only the surviving Z-term remains");
+    assert_eq!(sum.len(), 2, "both terms remain; nothing is removed");
     // λ_Z = 1 − 2(pX + pY) = 1 − 2(0.25) = 0.5 for the Z-term.
     approx(&sum, "Z", 0.5);
 }

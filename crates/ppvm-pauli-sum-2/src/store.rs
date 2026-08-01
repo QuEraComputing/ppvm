@@ -198,9 +198,19 @@ pub trait SignFlipByKey<K, C> {
 /// `ppvm-pauli-sum::PauliSum::pauli_error`'s in-place `scale`). [`SignFlipByKey`]
 /// is the `{−1, +1}` special case of exactly this walk, but a noise factor is a
 /// general `C`, so it cannot go through `mul_sign(i8)`; this trait generalizes the
-/// per-key walk to multiply by an arbitrary `f(&k) ∈ C`. Returning `None` leaves a
-/// term untouched (the identity-at-qubit and lost-qubit cases), so the walk never
-/// fabricates a `C::one()` for a no-op slot.
+/// per-key walk to a caller-supplied in-place mutation.
+///
+/// The callback mutates `&mut C` directly rather than returning a factor. That is
+/// deliberately the old crate's `PauliSum::scale` shape (`Fn(&W, &mut C)`), and it
+/// matters for two reasons. **Behaviour:** a walk that can only *mutate* cannot
+/// remove, so a term scaled to exactly zero stays in the support — which is what
+/// old does (old has no `reduce` at all, and its exact-map `PartialEq` depends on
+/// zero terms surviving; see `ppvm-pauli-sum/tests/loss.rs::test_reset_channel`).
+/// An earlier `Option<C>`-returning shape had to run `retain` to drop zeros, which
+/// diverged from old. **Performance:** `retain` drags in hashbrown's erase
+/// machinery for every slot; the plain `iter_mut` walk is ~2× faster on the noise
+/// sweep and matches old. A no-op slot (identity at the qubit, or a lost qubit) is
+/// expressed by the callback simply not touching `c`.
 ///
 /// Like its siblings it is deliberately a **whole-map** capability rather than a
 /// per-slot `&mut (K, C)` callback so a columnar backend stays expressible, and it
@@ -212,12 +222,13 @@ pub trait SignFlipByKey<K, C> {
 /// machine-checked in `lean/PPVM/Algebra/Noise.lean` (`pauli_channel_eigenvalue`,
 /// `pauli_channel_eigenvalue_omega`).
 pub trait ScaleByKey<K, C> {
-    /// Multiply every term's coefficient in place by `f(&k)`, keyed on that term's
-    /// own key — no key movement, no reallocation. A `None` result leaves the
-    /// term unchanged (an exact no-op, not a multiply by one).
+    /// Apply `f(&k, &mut c)` to every term in place, keyed on that term's own
+    /// key — no key movement, no reallocation, and **no removal**: a coefficient
+    /// driven to exactly zero stays in the support, as in old. A no-op slot is
+    /// expressed by leaving `c` untouched.
     fn scale_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K) -> Option<C>;
+        F: Fn(&K, &mut C);
 }
 
 /// An in-place, **fused branching** re-key — the fast path a single-qubit
@@ -281,19 +292,13 @@ where
     #[inline]
     fn scale_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K) -> Option<C>,
+        F: Fn(&K, &mut C),
     {
-        // Drop any term whose scaled coefficient becomes exactly zero (e.g. a
-        // zero channel eigenvalue, `pauli_error(q, [0.0, 0.25, 0.25])` → λ_X = 0),
-        // preserving the reduced-canonical-form invariant (`Accumulate::reduce`:
-        // no zero coefficient stays in the support).
-        self.retain_mut(|(k, c)| match f(k) {
-            None => true,
-            Some(factor) => {
-                *c *= factor;
-                !c.is_zero()
-            }
-        });
+        // A pure in-place walk — the old crate's `scale`. Nothing is removed, so a
+        // term scaled to exactly zero survives (old keeps it).
+        for (k, c) in self.iter_mut() {
+            f(k, c);
+        }
     }
 }
 
@@ -304,20 +309,16 @@ where
     #[inline]
     fn scale_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K) -> Option<C>,
+        F: Fn(&K, &mut C),
     {
-        // Walk the existing buckets in place: read each key, multiply its
-        // coefficient by the per-key factor. No bucket is moved and the backing
-        // allocation is untouched — the old crate's in-place `scale`, restored.
-        // A term scaled to exactly zero (a zero channel eigenvalue) is dropped,
-        // preserving the reduced-canonical-form invariant (`Accumulate::reduce`).
-        self.retain(|k, c| match f(k) {
-            None => true,
-            Some(factor) => {
-                *c *= factor;
-                !c.is_zero()
-            }
-        });
+        // Walk the existing buckets in place: read each key, let `f` mutate its
+        // coefficient. No bucket is moved and the backing allocation is untouched
+        // — the old crate's in-place `scale`, restored. Using `iter_mut` rather
+        // than `retain` keeps hashbrown's erase machinery out of the hot walk AND
+        // preserves old's semantics that a zero coefficient is never removed.
+        for (k, c) in self.iter_mut() {
+            f(k, c);
+        }
     }
 }
 
@@ -547,7 +548,7 @@ where
     #[inline]
     fn scale_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K) -> Option<C>,
+        F: Fn(&K, &mut C),
     {
         ScaleByKey::scale_by_key(&mut self.primary, f);
     }

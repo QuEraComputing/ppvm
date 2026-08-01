@@ -64,7 +64,12 @@ where
 {
     /// Scale each term in place by `λ_P` for its Pauli at `qubit`. The three
     /// non-trivial eigenvalues are computed once; the identity term (and any lost
-    /// qubit) returns `None`, leaving that coefficient exactly untouched.
+    /// qubit) is left exactly untouched.
+    ///
+    /// Mirrors the old `ppvm-pauli-sum::sum::noise`'s `self.scale(|k, v| ...)`
+    /// verbatim in shape as well as arithmetic: an in-place mutation that cannot
+    /// remove, so a zero eigenvalue leaves a zero-coefficient term in the support
+    /// exactly as old does.
     #[inline]
     fn pauli_error(&mut self, qubit: usize, probabilities: [C; 3]) {
         let [px, py, pz] = probabilities;
@@ -72,16 +77,16 @@ where
         let x_factor = eigenvalue(&py, &pz);
         let z_factor = eigenvalue(&px, &py);
         let y_factor = eigenvalue(&px, &pz);
-        self.scale_by_key(move |k: &PauliWord<A, H>| {
+        self.scale_by_key(move |k: &PauliWord<A, H>, c: &mut C| {
             if k.is_lost(qubit) {
-                return None;
+                return;
             }
             // 2-bit Pauli code (x, z): (0,0) I, (1,0) X, (0,1) Z, (1,1) Y.
             match (k.x_bit(qubit), k.z_bit(qubit)) {
-                (false, false) => None, // I: λ_I = 1, an exact no-op.
-                (true, false) => Some(x_factor.clone()),
-                (false, true) => Some(z_factor.clone()),
-                (true, true) => Some(y_factor.clone()),
+                (false, false) => {} // I: λ_I = 1, an exact no-op.
+                (true, false) => *c *= x_factor.clone(),
+                (false, true) => *c *= z_factor.clone(),
+                (true, true) => *c *= y_factor.clone(),
             }
         });
     }

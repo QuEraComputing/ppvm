@@ -473,3 +473,55 @@ fn rotation_batch_forms_match_old() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// (d) BEHAVIOUR PARITY — a zero channel eigenvalue must not remove the term.
+// ---------------------------------------------------------------------------
+
+/// `pauli_error(q, [0.0, 0.25, 0.25])` gives `λ_X = 1 − 2(0.25 + 0.25) = 0`
+/// exactly, so every `X`-at-`q` term is scaled to a hard zero.
+///
+/// The old crate keeps it. It has no `reduce` and no drop-zero path anywhere:
+/// `PauliSum::scale` takes `Fn(&W, &mut C)` and can only mutate, never remove —
+/// and old's exact-map `PartialEq` depends on that (`ppvm-pauli-sum`'s
+/// `tests/loss.rs::test_reset_channel` asserts a state equals its clone after a
+/// channel multiplies coefficients by zero).
+///
+/// The new crate briefly dropped such terms, justified by a
+/// "reduced-canonical-form invariant" that is the new design's own invention
+/// rather than old's behaviour — a user-visible divergence in `len()`/`get()`
+/// under the behaviour-preserving prime directive (gap `ps2.zero.behaviour`).
+///
+/// This compares the **exact** supports, deliberately bypassing
+/// `assert_rot_supports_match`'s `FLOOR` filter: that filter treats
+/// below-`1e-9` residue as absent on both sides, which is precisely what would
+/// mask this divergence.
+#[test]
+fn zero_channel_eigenvalue_keeps_the_term_exactly_as_old_does() {
+    let terms = vec![
+        ("XI".to_string(), 1.0),
+        ("ZI".to_string(), 1.0),
+        ("IX".to_string(), 1.0),
+    ];
+    let p = [0.0_f64, 0.25, 0.25];
+
+    let mut old = build_old_sum(2, &terms);
+    let mut new = build_new_sum(2, &terms);
+    old.pauli_error(0, p);
+    new.pauli_error(0, p);
+
+    let os = old_support(&old);
+    let ns = new_support(&new);
+
+    // Setup sanity: old really does retain a hard-zero X term, so this guards a
+    // real retained-vs-dropped divergence rather than a coefficient nudge.
+    assert!(
+        os.iter().any(|(k, c)| k == "XI" && *c == 0.0),
+        "test setup broken: old should retain XI at exactly 0.0, got {os:?}"
+    );
+
+    assert_eq!(
+        os, ns,
+        "exact support diverged after a zero channel eigenvalue\nold={os:?}\nnew={ns:?}"
+    );
+}

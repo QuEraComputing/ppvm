@@ -275,11 +275,19 @@ branch terms — restoring the old crate's `map_insert`, not the batch round-tri
 noise vs old) + `pauli_sum_rotation_noise_lean.rs`; crate `rotation_noise.rs`.
 Gates verified by orchestrator (build/clippy/fmt, tests, machete, `lake`) — green.
 
-**Perf** (orchestrator's stable re-bench): `rotation_rx` **1.14×** (at parity — the
-`RotateInPlace` fused path; a Trotter-style single pass), `pauli_error` **0.89×**
-(faster). Note: the failed run's test agent reported `rotation_rx` at 2.42× — a
-**stale/noisy measurement of the batch path** (short run, sample-size 20); the
-real number under default Criterion is 1.14×, confirmed twice. No perf-drift.
+**Perf — CORRECTED (an earlier version of this entry was wrong).** `pauli_error`
+**0.89×** (faster). `rotation_rx` is a **real ~1.15–1.17× residual regression**
+(new stable ~5.84µs vs old ~5.0µs), **over the 1.15× gate** — NOT "at parity" as
+first written. The failed run's test-agent 2.42× was **not noise**: it was a real
+measurement of the *batch/`apply`* path (see `store.rs` `RotateInPlace` friction
+note, "the batch path benchmarked ~2.4× slower"), which the impl replaced with the
+fused single-pass `RotateInPlace` → the ~1.15× residual. Attribution verified: the
+`iter_batched_ref` per-iteration `clone` is symmetric (new-sum clone 1.36µs ≈
+old-sum clone 1.41µs), so it is genuine rx cost — the branch path (per
+anticommuting term: key `clone` + `set_bit` + cold `key_hash` + hashmap merge), a
+modest partial materialization of the lazy-hash/`Copy`-drop word cost on the
+branch-key-creating path. **Status: open perf-drift, pending maintainer decision
+(optimize vs allowlist).**
 
 Lean added (prove agent, `lake` green, orchestrator-verified non-vacuous):
 `Rotation.lean` `branchExp`/`branchExp_isRealPhase` + `rx/ry/rz_eps_from_product`
@@ -291,7 +299,7 @@ fast-path signs).
 | id | type | sev | routed | status | note |
 | --- | --- | --- | --- | --- | --- |
 | ps2.noise.1 | correctness | med | impl (orch) | closed | `pauli_error` with a zero transfer eigenvalue (reachable, `[0,0.25,0.25]`→λ_X=0) left a **phantom zero-coefficient key** in the support, violating the reduced-canonical-form invariant. Orchestrator fixed `ScaleByKey` (both backends) to drop any term scaled to exactly zero; added a `pauli_error_zero_eigenvalue_drops_the_term` test. |
-| ps2.rot.perf | perf-drift | — | resolved | closed | Test agent's 2.42× was a noisy batch-path measurement; the on-disk code uses the fused `RotateInPlace` path → 1.14× (orchestrator stable bench). At parity; not a real regression. |
+| ps2.rot.perf | perf-drift | med | human | **open** | `rotation_rx` ~1.15–1.17× (over the gate). The 2.42× was the batch path (real, fixed by `RotateInPlace` fusion); the residual is genuine branch-path cost (verified not a clone/bench artifact). Awaiting maintainer decision: optimize the branch-key path, or allowlist as the lazy-hash/`Copy`-drop trade-off. |
 | ps2.nsites.1 | impl-friction | low | impl | deferred | The `n_sites` `debug_assert!` is on `from_terms` but not on the `apply`/`rekey_bijective` produced-key paths. No live bug (every producer preserves width); low, deferred. |
 | ps2.xyz-dup.1 | impl-friction | low | accepted | noted | X/Y/Z sign logic (`(−1)^z`, etc.) is written a third time in the in-place fast path (besides `PhaseTrack` and `Phased`). Now has a Lean witness (`conjX/Y/Z`) and differential tests guard it; accepted — the in-place path exists precisely to avoid the `Phased` wrapper's cost. |
 

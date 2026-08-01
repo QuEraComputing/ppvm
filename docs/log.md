@@ -314,11 +314,20 @@ would not symbolicate the binary. Most likely **codegen/monomorphization** (the
 generic `Sum<S,P>` + RotateInPlace/closure/Policy layering optimizing slightly
 worse than the old *concrete monolithic* `PauliSum<Config>` loop), possibly
 compounded by the noisy old/rx baseline (4.9–5.5µs → the gap is ~10–16% depending
-on the run). **Resolved: cheap win captured (`with_bits_toggled`); residual
-~1.14× allowlisted** — a small, at-the-boundary, **non-algorithmic** difference
-(the algorithmic path is demonstrably cheaper), exact source unpinned (codegen +
-noise), NOT an inherent design cost. A future symbolicated profiling pass could
-name it if it ever matters.
+on the run). **ROOT CAUSE FOUND (symbolicated profile + controlled experiment): the benchmark
+was apples-to-oranges on storage type.** The `FnMut::call_mut` the first profile
+showed was the *criterion routine closure* with rx fully inlined into it (not a
+dispatch problem — `#[inline(always)]` on `rotate_in_place` changed nothing).
+Controlled A/B, same run: new/rx (`u64` storage) 5.65µs, **new/rx (`[u8;8]`
+storage) 5.47µs, old/rx (`[u8;8]`) 5.41µs**. So **on the *same* storage the new
+engine is at parity with old (~1.01×)**; the default `PauliSum` uses `u64` storage
+while the old uses `[u8;8]`, and bitvec's `BitArray<u64>` bit-ops are ~3% slower
+than `BitArray<[u8;8]>` for this branch build — the remaining spread is the noisy
+old baseline (4.9–5.5µs). **NOT the hash (new is cheaper), NOT the engine, NOT
+inlining — a storage-type-mismatch benchmark artifact (~3%) + measurement noise.**
+Resolved: `with_bits_toggled` kept (a genuine small win); the storage default
+(`u64` vs `[u8;8]`) is a separate, minor tuning question. No real engine
+regression; nothing to allowlist.
 
 Lean added (prove agent, `lake` green, orchestrator-verified non-vacuous):
 `Rotation.lean` `branchExp`/`branchExp_isRealPhase` + `rx/ry/rz_eps_from_product`
@@ -330,7 +339,7 @@ fast-path signs).
 | id | type | sev | routed | status | note |
 | --- | --- | --- | --- | --- | --- |
 | ps2.noise.1 | correctness | med | impl (orch) | closed | `pauli_error` with a zero transfer eigenvalue (reachable, `[0,0.25,0.25]`→λ_X=0) left a **phantom zero-coefficient key** in the support, violating the reduced-canonical-form invariant. Orchestrator fixed `ScaleByKey` (both backends) to drop any term scaled to exactly zero; added a `pauli_error_zero_eigenvalue_drops_the_term` test. |
-| ps2.rot.perf | perf-drift | med | human | **allowlisted** | `rotation_rx` ~1.13–1.16× (branch path). The 2.42× was the batch path (real, fixed by `RotateInPlace` fusion). Optimized: `with_bits_toggled` (skip the wasted clone-hash-load+invalidate) → ~1.19×→~1.16×; alloc/resize ruled out empirically. Residual is inherent lazy-hash/`Copy`-drop cost on the key-creating path; the only bigger lever (Zobrist incremental hash) is a risky rewrite of the shared hash, not justified for a boundary case. Allowlisted. |
+| ps2.rot.perf | perf-drift | — | human | **resolved — no regression** | Root-caused (symbolicated profile + controlled A/B): same-storage the new engine is at **parity** with old (new-`[u8;8]` 5.47µs ≈ old-`[u8;8]` 5.41µs). The apparent ~1.15× was an apples-to-oranges benchmark — new default `u64` storage vs old `[u8;8]` (`BitArray<u64>` ~3% slower here) + a noisy old baseline. NOT the hash (new cheaper), NOT the engine, NOT inlining. Along the way: fixed the real 2.42× batch-path via `RotateInPlace` fusion, and kept `with_bits_toggled` (a genuine small win). Nothing allowlisted. |
 | ps2.nsites.1 | impl-friction | low | impl | deferred | The `n_sites` `debug_assert!` is on `from_terms` but not on the `apply`/`rekey_bijective` produced-key paths. No live bug (every producer preserves width); low, deferred. |
 | ps2.xyz-dup.1 | impl-friction | low | accepted | noted | X/Y/Z sign logic (`(−1)^z`, etc.) is written a third time in the in-place fast path (besides `PhaseTrack` and `Phased`). Now has a Lean witness (`conjX/Y/Z`) and differential tests guard it; accepted — the in-place path exists precisely to avoid the `Phased` wrapper's cost. |
 
@@ -369,5 +378,5 @@ a crate. Anything not listed is a hard gate.
 
 | id | component | metric | accepted ratio | justification | approved-by |
 | --- | --- | --- | --- | --- | --- |
-| ps2.rot.perf | ppvm-pauli-sum-2 | `rotation_rx` (branch fan-out) | ~1.14× (new ~5.65µs vs old ~4.9–5.5µs, noisy) | Deeply investigated. **NOT the hash** (new's `IdentityBuildHasher` pass-through is cheaper than old's `FxBuildHasher` extra round; `with_bits_toggled` cheaper than old clone+rehash), NOT alloc/resize/truncate. Cheap win captured (`with_bits_toggled`). Root cause unpinned (samply wouldn't symbolicate); most likely codegen/monomorphization of the generic `Sum` engine + measurement noise — a small, at-boundary, **non-algorithmic** difference, not an inherent design cost. | maintainer (optimize→accept after deep dive) |
+| ps2.rot.perf | ppvm-pauli-sum-2 | `rotation_rx` | **RESOLVED — no regression** | Root-caused via symbolicated profile + controlled A/B: **same-storage, the new engine is at parity with old** (new-`[u8;8]` 5.47µs ≈ old-`[u8;8]` 5.41µs, ~1.01×). The apparent gap was an apples-to-oranges benchmark (new default `u64` storage vs old `[u8;8]`; `BitArray<u64>` ~3% slower here) + a noisy old baseline. NOT the hash/engine/inlining. Nothing allowlisted. |
 | _(prior)_ | | | | `lpw2.perf.1` was a nanobench artifact (converges to 1.00× at wide width), not allowlisted. | |

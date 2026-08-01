@@ -34,8 +34,27 @@ iterations, then escalate to human.
 
 ## ▶ Continue here — handoff (2026-08-01)
 
-Everything committed and green (`cargo test -p ppvm-pauli-sum-2 -p ppvm-conformance-2` = 108 + 92; clippy/fmt clean). Recent commits (newest first):
-`8a1dc79b` integration coverage + workflow Baseline phase · `4385ef3c` storage aux double-buffer recovered · `33f48fe5` Mytkowicz same-build perf rule · `53ebc66e` rotation_rx hash-warm → parity · `da88f309` same-storage bench + perf-gate hardening.
+Everything committed and green (whole workspace tests, clippy/fmt clean, `lake build PPVM` ok). Recent commits (newest first):
+`b68b7e8e` content-conditional hash invalidation + cnot/truncate microbenches · `d4aa7875` truncation is explicit-only (behaviour gap closed) · `8a1dc79b` integration coverage + workflow Baseline phase · `4385ef3c` storage aux double-buffer recovered · `33f48fe5` Mytkowicz same-build perf rule.
+
+### ⚠ MEASUREMENT WARNING — read before touching any perf number here
+Two instruments previously trusted in this log are now known to be unsound:
+
+1. **`examples/trotter_attrib.rs` systematically understates the gap.** Its
+   per-op `Instant::now()` pairs are optimization barriers, and they penalize
+   the *old* engine more (its ops are cheaper and more inlinable). Measured on
+   the same tree: attrib reported total `1.08×` while criterion reported
+   `1.35×` for the identical code. Its per-op *ratios* are diluted toward 1.0.
+   Use it for coarse *ordering* of op classes only — never for a ratio, and
+   never to declare parity.
+2. **The new engine is bimodal across processes** (see `ps2.rekey.bimodal`).
+   A single criterion run can land in either mode. **Any perf claim here needs
+   ≥4 separate process runs with the modes reported**, not a mean and a CI —
+   criterion's own CI is tight *within* a mode and will look convincing while
+   being off by ~1.7×.
+
+The sound instrument today is `benches/pauli_sum_integration.rs`
+(`rekey_cnot` / `truncate` / `integration_trotter`), run ≥4 times.
 
 ### ★ PRIME DIRECTIVE (do not violate) — behaviour-preserving refactor
 This refactor **only cleans up and aligns the abstraction with the math**. It must
@@ -47,46 +66,54 @@ surface these (see the workflow's new behaviour-parity check). When old itself i
 provably wrong, the Lean oracle governs and the divergence is documented — that is
 the *only* allowed behaviour change.
 
-### 1 — DO NEXT: `ps2.trotter.perf` — ROOT-CAUSED (attribution done); two causes
-The end-to-end Trotter workload is **new ~1.14 ms vs old ~0.76 ms** (~1.45×,
-same-build `[u8;8]`) while every single-gate microbench reads ~0.94–1.05×. Numerics
-match. A per-op attribution (tool: `cargo run --release -p ppvm-conformance-2
---example trotter_attrib`, kept) + an A/B decomposed the gap into **two independent
-causes**:
+### 1 — `ps2.truncate.behaviour` — ✅ CLOSED (`d4aa7875`)
+The behaviour gap is fixed: the three internal `self.policy.truncate(...)` calls
+are gone from `apply`/`rekey_bijective`/`rotate_in_place`, so truncation is
+**explicit-only** via `Sum::truncate()`, matching old's deferred semantics. New
+regression guard `tests/pauli_sum_truncation_behaviour_diff.rs` (3 differential
+tests). **Discriminating power verified**: 2 of the 3 fail against the pre-fix
+engine with exactly the predicted divergence; the third is the eager-truncation
+control that passes either way. The whole pre-existing suite passed both before
+and after — every existing test truncates right after each gate, the single
+schedule where the two semantics agree. That was the coverage hole.
 
-**(a) `ps2.truncate.behaviour` — a USER-FACING BEHAVIOUR GAP (fix first).** The new
-`Sum` gate drivers auto-truncate **internally**: `apply` (`sum.rs:240`),
-`rekey_bijective` (`sum.rs:279`), and `rotate_in_place` (`sum.rs:378`) each call
-`self.policy.truncate(&mut self.storage)`. The **old crate's gates never
-auto-truncate** — truncation is caller-driven/explicit (verified: no `truncate` in
-old `sum/clifford.rs`/`rot1.rs`/`rot2.rs`; the old Trotter loop calls `truncate()`
-itself). So the new engine changed *when* truncation happens = a behaviour gap under
-the PRIME DIRECTIVE. It is also a big chunk of the perf gap: an A/B removing those
-internal `policy.truncate` calls collapsed **rx and rz to parity** (their entire
-excess was the redundant internal truncate, since the caller *also* truncates).
-**FIX:** remove the internal `self.policy.truncate(...)` from those three drivers so
-truncation is **explicit-only** via `Sum::truncate()` — matching old. (Note
-`scale_by_key`/`sign_flip_by_key` drivers already do NOT truncate — the current
-behaviour is even *inconsistent* across gates.) Then run the FULL suite
-(`cargo test -p ppvm-pauli-sum-2 -p ppvm-conformance-2`): any test that applied a
-gate and checked support **without** calling `truncate()` was relying on the
-auto-truncate — update it to call `truncate()` explicitly (that is the correct,
-old-matching usage), or confirm it still holds. Keep `reduce()` (structural
-drop-exact-zeros) where it is — that is canonicalisation, not policy truncation.
+### 2 — DO NEXT: `ps2.cnot.rekey.perf` — still OPEN, partly reduced
+End-to-end Trotter is **~1.37–1.42×** (was ~1.47× at session start; criterion,
+same build, `[u8;8]`). Numerics match. The gap is now concentrated almost
+entirely in `cnot` / `RekeyBijective`.
 
-**(b) `cnot` / `rekey_bijective` slower than old `map_add` (~1.32×) — a real perf
-gap, SEPARATE.** Even with internal truncate removed, `cnot` still carried
-**+0.11 ms** (the two `cnot`s per bond dominate the residual). The new
-`RekeyBijective for HashMapStore` (drain primary → aux → swap; `store.rs`) is slower
-than old `map_add` (`crates/ppvm-pauli-sum/src/sum/data.rs` `map_add`/`map_add_assign`).
-Root-cause with the same discipline (same-build A/B, evidence) — compare the two
-re-key inner loops (hashing, `entry` vs old's insert, capacity/resize). Add a
-permanent **truncate microbench** and a **cnot/rekey microbench** (the coverage
-holes). `CombinedPolicy` still does two retain scans (`policy.rs`) — a single-pass
-fused retain may help the *explicit* truncate cost too; measure.
+**What was established this session (with the new sound instrument):**
+- **`truncate` is at parity** — 237 ns new vs 240 ns old (`0.99×`) on a 372-term
+  support. This *disproves* the standing suspicion that `CombinedPolicy`'s two
+  retain scans were a contributor. Do not re-open it without new evidence.
+- **A real win landed** (`b68b7e8e`): `set_x_bit`/`set_z_bit` invalidated the
+  hash cache unconditionally, so every gate re-hashed nearly the whole support
+  to recompute a bit-identical digest (the Clifford kernels write both target
+  bits unconditionally, and most terms are `I` at the gate's qubits). Now
+  content-conditional. `cnot` sweep 90.5→77 µs (good mode), 214→134 µs (bad
+  mode).
+- **Ruled out with evidence:** `aux.reserve` (no effect); `drain()` vs old's
+  `iter()`+clone (~3% — not worth abandoning the move semantics); the extra
+  hash pass / warm trick (helps only while the needless re-hash exists, then
+  becomes a no-op).
+- Old `PauliWord` is `Copy`; the new one is not (`AtomicU64` cache) — the
+  Phase-2 watch item `pw2` flagged. Not yet measured as a cause.
 
-Reproduce end-to-end: `cargo bench -p ppvm-conformance-2 --bench pauli_sum_integration`.
-Attribution tool: `examples/trotter_attrib.rs` (committed).
+**Current standing:** `cnot` sweep (22 cnots over 372 terms) new **77 µs** vs old
+**53 µs** = **1.45×** in the good mode, **2.53×** in the bad one.
+Reproduce: `cargo bench -p ppvm-conformance-2 --bench pauli_sum_integration -- rekey_cnot`
+(≥4 runs — see the measurement warning).
+
+### 3 — NEW, and possibly the bigger story: `ps2.rekey.bimodal`
+The new engine's re-key is **bimodal across processes** — ~77 µs or ~134 µs for
+the identical binary and input (1.74×). Evidence that it is process-level state
+fixed at startup, not drift or noise: measuring the new engine **twice in the
+same process** (before and after the old) gives identical numbers to 0.5%
+(132.10/132.61, 71.16/70.98, 131.95/132.04), while separate processes select a
+mode. The **old engine does not show it** (stable ~53 µs across every run). Heap
+layout / ASLR is the prime suspect (two ping-ponging `HashMapStore` tables,
+~20 KB each). Not root-caused. This matters twice over: it is a real
+user-visible ~1.7× swing, and it invalidates single-run perf claims.
 
 ### 2 — THEN: Phase 3 component 3 — L4 `Multiply` (operator product), not started
 Needs `Complex`/`ImaginaryUnit`; Lean oracle `lean/PPVM/**` `Twisted.lean` (`tmul_assoc`). Run it through the workflow (below).
@@ -531,8 +558,10 @@ microbench** at all. To be root-caused next (same discipline: same-build A/B).
 | --- | --- | --- | --- | --- | --- |
 | ps2.integration.1 | missing-test | high | test (orch) | **closed — added** | The `-2` conformance suite had only single-op microbenches; the old crate's real-workload benches/tests (Trotter, random-circuit) were never ported, so nothing exercised cumulative allocation/truncation. Added end-to-end diff-test + bench (see above). This is the coverage that would have caught the aux-map miss (and did, in retro). |
 | ps2.trotter.perf | perf-drift | high | — | **root-caused → split** | New ~1.45× slower than old on the end-to-end Trotter workload (new ~1.14ms / old ~0.76ms, same-build `[u8;8]`), invisible to single-gate microbenches. Attribution done (`examples/trotter_attrib.rs` + A/B): two independent causes → split into `ps2.truncate.behaviour` and `ps2.cnot.rekey.perf` below. Numerics match. |
-| ps2.truncate.behaviour | correctness | high | impl | **OPEN — behaviour gap** | New `Sum` gate drivers auto-truncate internally (`sum.rs` `apply`:240, `rekey_bijective`:279, `rotate_in_place`:378 each call `self.policy.truncate`); **old gates never auto-truncate** (caller-driven). Under the PRIME DIRECTIVE this changed user-facing behaviour = gap. Also perf: removing it collapses rx/rz to parity (A/B). FIX: make truncation explicit-only (remove those 3 internal calls); then fix any test that relied on auto-truncate to call `truncate()`. Keep `reduce()`. |
-| ps2.cnot.rekey.perf | perf-drift | med | impl | **OPEN — real perf gap** | Even with internal truncate removed, `cnot` carries +0.11ms (~1.32×): new `RekeyBijective for HashMapStore` (drain→aux→swap, `store.rs`) slower than old `map_add`. Root-cause with same-build A/B; add cnot/rekey + truncate microbenches (the coverage holes); consider a single-pass fused `CombinedPolicy` retain. |
+| ps2.truncate.behaviour | correctness | high | impl | **closed — fixed (`d4aa7875`)** | New `Sum` gate drivers auto-truncated internally (`apply`/`rekey_bijective`/`rotate_in_place` each called `self.policy.truncate`); **old gates never auto-truncate** (caller-driven, pinned by old's `tests/truncation_semantics.rs`). Under the PRIME DIRECTIVE that changed user-facing behaviour. Fixed: truncation is explicit-only via `Sum::truncate()`; `reduce()` kept (canonicalisation, not policy). Guard added: `tests/pauli_sum_truncation_behaviour_diff.rs`, 2 of its 3 tests verified to fail against the pre-fix engine. |
+| ps2.cnot.rekey.perf | perf-drift | high | impl | **OPEN — reduced, not closed** | `cnot`/`RekeyBijective` is **1.45×** old in the good memory mode (77 µs vs 53 µs, 22 cnots over 372 terms), 2.53× in the bad one; end-to-end Trotter ~1.37–1.42×. Reduced from 1.71×/4.04× by `b68b7e8e` (content-conditional hash invalidation). Ruled out with evidence: `aux.reserve`, `drain` vs `iter`+clone (~3%), hash-warm/extra-pass, and — separately — `truncate` (measured at parity, 0.99×). Remaining suspect: old's word is `Copy`, the new one is not (`AtomicU64` cache) — unmeasured. |
+| ps2.rekey.bimodal | perf-drift | high | impl | **OPEN — new** | The new engine's re-key is **bimodal across processes**: ~77 µs or ~134 µs (1.74×) for the identical binary and input. Process-level state fixed at startup, not drift — two measurements of the new engine *within one process* agree to 0.5% while separate processes select a mode. The old engine is stable (~53 µs) across every run. Suspect heap/ASLR layout of the two ~20 KB ping-ponging `HashMapStore` tables. Not root-caused. Invalidates any single-run perf claim on this crate. |
+| ps2.attrib.instrument | missing-proof | med | test | **OPEN — instrument unsound** | `examples/trotter_attrib.rs` understates the gap: its per-op `Instant::now()` pairs act as optimization barriers that penalize the *old* engine more, reporting `1.08×` where criterion reports `1.35×` on the same tree. Its per-op ratios are diluted toward 1.0. Earlier conclusions in this log that leaned on it should be re-derived from `benches/pauli_sum_integration.rs`. Either fix (sample-based attribution) or demote to ordering-only. |
 
 **Deferred to component 3:** the L4 `Multiply` operator product (needs `Complex`
 + `ImaginaryUnit`); columnar `ColumnStore` stays Phase 6.

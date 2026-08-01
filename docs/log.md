@@ -374,6 +374,32 @@ orchestrator's convergence-loop guard now rejects a perf-drift gap that is unfai
 noisy, or unattributed (bounce back to re-measure) instead of escalating a
 benchmark artifact to the human.
 
+**Storage: auxiliary double-buffer recovered (in the storage, not on `Sum`).**
+Maintainer flagged that the old crate's `PauliSum` held a persistent **double-
+buffer** (`map: (primary, aux)` swapped via an `aux` flag) + a reusable `scratch`
+Vec, so Clifford re-key and rotation never allocated per gate — and that the `-2`
+refactor had *dropped* it: `HashMapStore` was a bare `type = HashMap<…>`, so
+`rekey_bijective` allocated a fresh map + `mem::replace` every gate and
+`rotate_in_place` a fresh branch `Vec` every gate. The generalization ("`Sum` owns
+only its storage" so it composes into the generalized tableau) was intentional and
+stays; losing the aux was not. **Fix:** `HashMapStore` is now a **newtype backend**
+owning `{ primary, aux, scratch }` — the double-buffer relocated *into the storage*,
+so `Sum` stays a pure generic engine. `RekeyBijective` = the old `map_add`
+(clear aux → drain-move primary through the re-key into aux → swap; the two
+allocations ping-pong, never freed); `RotateInPlace` uses the persistent `scratch`.
+Graded traits + `ScaleByKey`/`SignFlipByKey` delegate to `primary` (zero-cost,
+inlined); the three superseded raw-`HashMap` capability impls were removed. 108
+tests green; delegated bench paths unchanged. Same-build ratios **improved**:
+`clifford_h` ~1.08→**1.04×**, `clifford_cnot` ~1.05→**1.04×** (the per-gate
+fresh-map alloc is gone), `rotation_rx` **0.94×** (scratch reuse + the pass-1 warm).
+Note this partly supersedes the subagent's earlier "leave Clifford as-is": its
+*drain-reuse-of-self* experiment regressed, but the **double-buffer swap** (a
+different mechanism — no extra traversal) it hadn't tried does help.
+
+| id | type | sev | routed | status | note |
+| --- | --- | --- | --- | --- | --- |
+| ps2.store.aux | impl-friction | med | design→fix | **closed — recovered** | Old persistent `(primary, aux)` double-buffer + `scratch` was dropped when `HashMapStore` became a bare `HashMap` alias (per-gate alloc). Recovered by making `HashMapStore` a newtype owning `{primary, aux, scratch}` — aux lives *in the storage* so `Sum` stays generic for the tableau. `clifford_h/cnot` ~1.05–1.08×→~1.04×, `rotation_rx`→0.94×; 108 tests green. |
+
 **Deferred to component 3:** the L4 `Multiply` operator product (needs `Complex`
 + `ImaginaryUnit`); columnar `ColumnStore` stays Phase 6.
 

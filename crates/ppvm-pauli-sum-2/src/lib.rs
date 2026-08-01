@@ -30,8 +30,6 @@
 //!   `Pair`/`Retain` on `Vec`/`HashMap`) live in `ppvm-traits-2` (orphan rule);
 //!   see `ppvm_traits_2::containers`.
 
-use std::collections::HashMap;
-
 mod clifford;
 mod noise;
 mod policy;
@@ -42,18 +40,13 @@ mod sum;
 
 pub use policy::{CoefficientThreshold, CombinedPolicy, MaxPauliWeight, NoPolicy, Policy};
 pub use producer::RekeyProducer;
-pub use store::StoreAlloc;
+pub use store::{HashMapStore, StoreAlloc};
 pub use sum::Sum;
 
 // Re-exports so downstream can name the storage contract without depending on
 // `ppvm-traits-2` directly.
 pub use ppvm_pauli_word_2::PauliWord;
 pub use ppvm_traits_2::IdentityBuildHasher;
-
-/// The provided hash-map storage: a `HashMap` whose hasher is the pass-through
-/// [`IdentityBuildHasher`], so a key's finalized `key_hash()` digest reaches
-/// hashbrown untouched (Design: §"The pass-through storage contract").
-pub type HashMapStore<K, C> = HashMap<K, C, IdentityBuildHasher>;
 
 /// The Pauli-propagation sum: `C[PauliWord]` over the pass-through hash-map
 /// storage. `C` defaults to `f64` and the policy to [`NoPolicy`].

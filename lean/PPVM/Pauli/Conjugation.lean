@@ -169,6 +169,33 @@ theorem conjS_conjSdag : Function.LeftInverse conjS conjSdag := by
 theorem conjSdag_conjS : Function.LeftInverse conjSdag conjS := by
   intro p; revert p; decide
 
+/-! ### A Clifford conjugation never emits `±i`: the phase stays real
+
+`ppvm-pauli-sum-2/src/clifford.rs` conjugates each Pauli on a `Phased<PauliWord>`
+started at phase `+1`, then drains the resulting phase to a coefficient `±1`
+(`clifford_sign`), treating a `±i` result as a bug. That drain is total precisely
+because each single-qubit generator's conjugation *delta* is the real
+`if … then 2 else 0` (`conjH_sign`/`conjS_sign`/`conjSdag_sign`), so a real input
+phase stays real (`IsRealPhase` is closed under adding such a delta). Starting
+from `+1` (`isRealPhase_zero`), the phase is therefore `Pos1`/`Neg1` at every
+step — the `PosI`/`NegI` branch of `clifford_sign` is unreachable. -/
+
+/-- **`H`-conjugation keeps the phase real** (`±1`, never `±i`). -/
+theorem conjH_isRealPhase {p : PhasedPauli} (hp : IsRealPhase p.phase) :
+    IsRealPhase (conjH p).phase := by
+  rw [conjH_sign]; exact hp.add (isRealPhase_ite_two _)
+
+/-- **`S`-conjugation keeps the phase real.** -/
+theorem conjS_isRealPhase {p : PhasedPauli} (hp : IsRealPhase p.phase) :
+    IsRealPhase (conjS p).phase := by
+  rw [conjS_sign]; exact hp.add (isRealPhase_ite_two _)
+
+/-- **`S†`-conjugation (the backward direction the simulator runs) keeps the phase
+real.** -/
+theorem conjSdag_isRealPhase {p : PhasedPauli} (hp : IsRealPhase p.phase) :
+    IsRealPhase (conjSdag p).phase := by
+  rw [conjSdag_sign]; exact hp.add (isRealPhase_ite_two _)
+
 end PPVM.PauliPhase.PhasedPauli
 
 /-! ## Two-qubit conjugation: the `CNOT`/`CZ` phase rule
@@ -427,6 +454,23 @@ theorem conjCZ_Zt :
 fires (`z_c ≠ z_t`), advancing the phase by `2`. -/
 theorem conjCZ_YcXt :
     conjCZ ⟨0, true, true, true, false⟩ = ⟨2, true, false, true, true⟩ := by decide
+
+/-! ### The two-qubit conjugations never emit `±i` either
+
+Same reachability invariant as the single-qubit generators: the `CNOT`/`CZ`
+conjugation deltas are the real `if … then 2 else 0` (`conjCNOT_sign`/
+`conjCZ_sign`), so a real input phase stays real. This is what makes
+`ppvm-pauli-sum-2`'s `clifford_sign` drain total on the two-qubit gates too. -/
+
+/-- **`CNOT`-conjugation keeps the phase real** (`±1`, never `±i`). -/
+theorem conjCNOT_isRealPhase {p : TwoPauli} (hp : IsRealPhase p.phase) :
+    IsRealPhase (conjCNOT p).phase := by
+  rw [conjCNOT_sign]; exact hp.add (isRealPhase_ite_two _)
+
+/-- **`CZ`-conjugation keeps the phase real.** -/
+theorem conjCZ_isRealPhase {p : TwoPauli} (hp : IsRealPhase p.phase) :
+    IsRealPhase (conjCZ p).phase := by
+  rw [conjCZ_sign]; exact hp.add (isRealPhase_ite_two _)
 
 end TwoPauli
 

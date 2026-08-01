@@ -15,6 +15,12 @@ ppvm-lossy-pauli-word-2 = { version = "0.1.0", path = "../ppvm-lossy-pauli-word-
 ppvm-phased-pauli-word-2 = { version = "0.1.0", path = "../ppvm-phased-pauli-word-2" }
 ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
 ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+# The old and new Pauli-sum engines, diffed against each other by the Phase-3
+# `Sum` differential suite. The old crate is pulled with default features off so
+# the test harness does not drag in dashmap/gxhash/indexmap/approx — the
+# differential tests only need its `fxhash` config.
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum", default-features = false }
+ppvm-pauli-sum-2 = { version = "0.1.0", path = "../ppvm-pauli-sum-2" }
 
 [dev-dependencies]
 criterion = "0.7.0"
@@ -34,4 +40,8 @@ harness = false
 
 [[bench]]
 name = "phased_pauli_word_bench"
+harness = false
+
+[[bench]]
+name = "pauli_sum_bench"
 harness = false

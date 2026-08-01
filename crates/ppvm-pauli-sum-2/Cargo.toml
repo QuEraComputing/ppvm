@@ -1,0 +1,15 @@
+[package]
+name = "ppvm-pauli-sum-2"
+version = "0.1.0"
+edition = "2024"
+
+# The graded sparse-sum engine for the second trait-system experiment
+# (implementation-plan Phase 3): `Sum<S, P>` over the graded algebra `C[K]`, with
+# the graded traits impl'd on `Vec`/`HashMap`, policies, term producers, and the
+# gate/rotation/noise trait impls. `PauliSum` is the domain alias. Deps are added
+# by the implementation as used; empty at scaffold time keeps `cargo machete`
+# green.
+[dependencies]
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
+ppvm-phased-pauli-word-2 = { version = "0.1.0", path = "../ppvm-phased-pauli-word-2" }

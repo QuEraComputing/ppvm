@@ -83,6 +83,35 @@ design's `v·w = ± iᵏ (v⊕w)`. -/
 def phaseExp (a b c d : Bool) : ZMod 4 :=
   2 * b4 (signBit a b c d) + b4 (imagBit a b c d)
 
+/-! ### Real (`±1`) phases: the `ℤ/4ℤ` values a Clifford conjugation may emit
+
+The `Phase` enum of `ppvm-traits-2` numbers `Pos1 = 0, PosI = 1, Neg1 = 2,
+NegI = 3`, so a phase is a **real** `±1` (never `±i`) iff its `ℤ/4ℤ` exponent is
+even, `∈ {0, 2}`. `ppvm-pauli-sum-2/src/clifford.rs` (`clifford_sign`) drains a
+Clifford conjugation's accumulated phase to a coefficient `±1` and treats a `PosI`
+/`NegI` result as a bug (a bare `debug_assert!`, so a stray `±i` would silently
+return `+1` in release). `IsRealPhase` names that reachability invariant so the
+conjugation lemmas can prove the `±i` branch is unreachable. -/
+
+/-- A `ℤ/4ℤ` phase is **real** (`±1`, i.e. `Pos1`/`Neg1`) — never `±i` — iff it is
+even, `∈ {0, 2}`. -/
+def IsRealPhase (φ : ZMod 4) : Prop := φ = 0 ∨ φ = 2
+
+/-- `+1` (the phase a `PauliSum` re-key starts each term at) is real. -/
+theorem isRealPhase_zero : IsRealPhase 0 := Or.inl rfl
+
+/-- The set of real phases `{0, 2}` is closed under addition (it is the order-2
+subgroup `2·ℤ/4ℤ`), so accumulating real deltas keeps the phase real. -/
+theorem IsRealPhase.add {φ ψ : ZMod 4} (hφ : IsRealPhase φ) (hψ : IsRealPhase ψ) :
+    IsRealPhase (φ + ψ) := by
+  rcases hφ with h | h <;> rcases hψ with h' | h' <;> subst h <;> subst h' <;>
+    simp only [IsRealPhase] <;> decide
+
+/-- Every Clifford-generator conjugation delta has the shape `if b then 2 else 0`,
+which is real (`∈ {0, 2}`) — this is why a Clifford never emits `±i`. -/
+theorem isRealPhase_ite_two (b : Bool) : IsRealPhase (if b then 2 else 0) := by
+  cases b <;> simp only [IsRealPhase] <;> decide
+
 /-! ### The matrix-model reference
 
 Using `X^a Z^b · X^c Z^d = (−1)^{bc} X^{a+c} Z^{b+d}` and the `iˣᶻ`

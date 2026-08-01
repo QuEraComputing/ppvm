@@ -219,6 +219,70 @@ theorem overlap_smul_right (s : C) (f g : CMap K C) :
 
 end PairComm
 
+/-! ### Clifford conjugation preserves the trace pairing
+
+`ppvm-pauli-sum-2/src/clifford.rs` propagates a Clifford gate `G` over a
+`PauliSum` in the Heisenberg picture: it re-keys every term `P ↦ φ_G(P)` by the
+phase-stripped symplectic bijection `φ_G` (`Symplectic.hAct_bijective`… ) and
+**drains** the conjugation sign `s_P ∈ {+1,−1}` (`Conjugation.conjH_isRealPhase`…)
+into the coefficient. Physical correctness of the user-facing `Sum::overlap`
+read-out requires this evolution to preserve the Hilbert–Schmidt trace pairing
+`⟪A,B⟫ = ∑ₖ aₖ bₖ`.
+
+The two ingredients live in this repo separately — `φ_G` is an `Sp(2n,2)`
+bijection (`Symplectic.lean`, `*_bijective`) and every drained sign is a real
+`±1` (`Conjugation.lean`, `*_isRealPhase`) — but nothing composed them into the
+invariance of the *abstract pairing* under the sign-carrying re-key. That is the
+one uncovered link between `Sum::overlap` and the `Sum::{h,s,cnot,cz}` Clifford
+path, and it is pure algebra: over a finite key type the Finsupp `overlap` is the
+plain sum `∑ₖ aₖ bₖ` (`overlap_eq_fintype_sum`), and the re-key preserves it
+because `(s aₖ)(s bₖ) = s² aₖ bₖ = aₖ bₖ` (the sign squares out, `s_P² = 1`) while
+the bijection only permutes the summands. -/
+
+section RekeyInvariance
+variable [Fintype K] [CommRing C]
+
+/-- Over a finite key type, the Finsupp bilinear `overlap` is the plain sum
+`∑ₖ fₖ gₖ` over **all** keys (off-support terms vanish). This identifies the
+named `Pair::overlap` with the fintype sum the re-key invariance below is stated
+on. -/
+theorem overlap_eq_fintype_sum (f g : CMap K C) :
+    overlap f g = ∑ k, f k * g k := by
+  simp only [overlap, Finsupp.sum]
+  refine Finset.sum_subset (Finset.subset_univ _) ?_
+  intro k _ hk
+  rw [Finsupp.notMem_support_iff.mp hk, zero_mul]
+
+/-- The Clifford Heisenberg re-key on the coefficient function: reindex the keys
+by the symplectic bijection `φ` (`= φ_G`) and multiply each coordinate by the
+conjugation sign `sgn` (`= s_P`), so `(cliffordRekey φ sgn f) (φ k) = sgn k · fₖ`.
+This is exactly the `RekeyProducer` action `k ↦ φ(k)`, `c ↦ c · s_P` of
+`clifford.rs`. -/
+def cliffordRekey (φ : K ≃ K) (sgn : K → C) (f : K → C) : K → C :=
+  fun k => sgn (φ.symm k) * f (φ.symm k)
+
+/-- **Clifford conjugation preserves the trace pairing.** For any key bijection
+`φ` and any per-key sign `sgn` with `sgn k · sgn k = 1`, the re-keyed maps have
+the same overlap: `⟪conj A, conj B⟫ = ⟪A, B⟫` (both sides written as the fintype
+sum of `overlap_eq_fintype_sum`).
+
+This composes the `Sp(2n,2)` **bijectivity** of the bit map
+(`Symplectic.lean`, `*_bijective`) with the **reality** `s_P² = 1` of the drained
+conjugation sign (`Conjugation.lean`, `*_isRealPhase`) into the semantic
+guarantee that ties `Sum::overlap` to the `Sum::{h,s,cnot,cz}` Clifford path in
+`ppvm-pauli-sum-2/src/clifford.rs`: Heisenberg evolution is Hilbert–Schmidt
+inner-product-preserving. -/
+theorem clifford_conjugation_preserves_overlap
+    (φ : K ≃ K) (sgn : K → C) (hsgn : ∀ k, sgn k * sgn k = 1) (f g : K → C) :
+    (∑ k, cliffordRekey φ sgn f k * cliffordRekey φ sgn g k) = ∑ k, f k * g k := by
+  have hterm : ∀ k, cliffordRekey φ sgn f k * cliffordRekey φ sgn g k
+      = (sgn (φ.symm k) * sgn (φ.symm k)) * (f (φ.symm k) * g (φ.symm k)) := by
+    intro k; simp only [cliffordRekey]; ring
+  simp_rw [hterm, hsgn, one_mul]
+  exact Equiv.sum_comp φ.symm (fun k => f k * g k)
+
+end RekeyInvariance
+
 /-! ### L3 (sesquilinear) `hermitian_overlap` — the complex state inner product
 
 `overlap` above is the *symmetric bilinear* trace pairing `∑ₖ fₖ gₖ`, correct for

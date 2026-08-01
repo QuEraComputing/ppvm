@@ -211,6 +211,86 @@ theorem czAct_isometry (h : c ≠ t) (v w : Sp n) :
   simp only [czAct_c h, czAct_t h]
   linear_combination ((v c).1 * (w t).1 + (v t).1 * (w c).1) * two_zmod2
 
+/-! ### The phase-stripped bit maps are bijections (the no-collision invariant)
+
+`ppvm-pauli-sum-2` re-keys every term of a `PauliSum` by the phase-stripped
+symplectic bit map and asserts — in `src/producer.rs` and `src/clifford.rs` —
+that "A Clifford re-key is a bijection, so colliding re-keyed terms never occur;
+`reduce` is a no-op on the support size." That no-collision guarantee is exactly
+**injectivity of the word-level bit map** `φ_G : 𝔽₂^{2n} → 𝔽₂^{2n}`: two distinct
+keys never land on one, so no coefficient combination/cancellation happens and
+the post-`reduce` support size is preserved.
+
+The `*_isometry` theorems above give only `ω`-preservation, which does not by
+itself name a bijection; and `conjH_injective`/`conjCNOT_injective`
+(`Conjugation.lean`) are injectivity on the *phased* groups `𝒫₁`/`𝒫₂`, not on the
+phase-stripped `Sp n` word space the re-key actually keys on. Here we prove each
+generator's `Sp n` bit map is an **involution** (`G² = I` on the bits) — note `S`
+too: the phase makes `conjS` order 4, but the phase-stripped transvection
+`z ⊕= x` squares to the identity over `𝔽₂` — hence a bijection. -/
+
+/-- **`H`'s bit map is an involution**, hence a bijection: swapping `(x,z)` twice
+is the identity. -/
+theorem hAct_involutive (q : Fin n) : Function.Involutive (hAct q) := by
+  intro v; funext i
+  by_cases h : i = q
+  · subst h; simp [hAct, Function.update_self]
+  · simp [hAct, Function.update_of_ne h]
+
+theorem hAct_bijective (q : Fin n) : Function.Bijective (hAct q) :=
+  (hAct_involutive q).bijective
+
+/-- **`S`'s bit map is an involution**, hence a bijection: the transvection
+`z ⊕= x` applied twice shifts `z` by `2x = 0` over `𝔽₂`. (The *phase* makes
+`conjS` order 4; the phase-stripped bit map has order 2.) -/
+theorem sAct_involutive (q : Fin n) : Function.Involutive (sAct q) := by
+  intro v; funext i
+  by_cases h : i = q
+  · rw [h]
+    refine Prod.ext_iff.mpr ⟨by simp [sAct, Function.update_self], ?_⟩
+    simp only [sAct, Function.update_self]
+    linear_combination (v q).1 * two_zmod2
+  · simp [sAct, Function.update_of_ne h]
+
+theorem sAct_bijective (q : Fin n) : Function.Bijective (sAct q) :=
+  (sAct_involutive q).bijective
+
+/-- **`CNOT`'s bit map is an involution** (`c ≠ t`), hence a bijection. -/
+theorem cnotAct_involutive (h : c ≠ t) : Function.Involutive (cnotAct c t) := by
+  intro v; funext i
+  by_cases hic : i = c
+  · rw [hic]
+    refine Prod.ext_iff.mpr ⟨by simp [cnotAct_c h, cnotAct_t h], ?_⟩
+    simp only [cnotAct_c h, cnotAct_t h]
+    linear_combination (v t).2 * two_zmod2
+  · by_cases hit : i = t
+    · rw [hit]
+      refine Prod.ext_iff.mpr ⟨?_, by simp [cnotAct_t h, cnotAct_c h]⟩
+      simp only [cnotAct_t h, cnotAct_c h]
+      linear_combination (v c).1 * two_zmod2
+    · simp [cnotAct_other _ hic hit]
+
+theorem cnotAct_bijective (h : c ≠ t) : Function.Bijective (cnotAct c t) :=
+  (cnotAct_involutive h).bijective
+
+/-- **`CZ`'s bit map is an involution** (`c ≠ t`), hence a bijection. -/
+theorem czAct_involutive (h : c ≠ t) : Function.Involutive (czAct c t) := by
+  intro v; funext i
+  by_cases hic : i = c
+  · rw [hic]
+    refine Prod.ext_iff.mpr ⟨by simp [czAct_c h, czAct_t h], ?_⟩
+    simp only [czAct_c h, czAct_t h]
+    linear_combination (v t).1 * two_zmod2
+  · by_cases hit : i = t
+    · rw [hit]
+      refine Prod.ext_iff.mpr ⟨by simp [czAct_t h, czAct_c h], ?_⟩
+      simp only [czAct_t h, czAct_c h]
+      linear_combination (v c).1 * two_zmod2
+    · simp [czAct_other _ hic hit]
+
+theorem czAct_bijective (h : c ≠ t) : Function.Bijective (czAct c t) :=
+  (czAct_involutive h).bijective
+
 /-! ### The loss-guarded action preserves the canonical loss invariant
 
 The lossy word (`crates/ppvm-lossy-pauli-word-2/src/clifford.rs`) differs from

@@ -6,7 +6,7 @@
 //!
 //! This crate hosts the concrete types the trait foundation in `ppvm-traits-2`
 //! abstracts over. This component ships the ordinary [`PauliWord`] (packed X/Z
-//! planes with a lazy `OnceLock<u64>` structural hash); `LossyPauliWord` (adds a
+//! planes with a lazy `AtomicU64` structural hash); `LossyPauliWord` (adds a
 //! loss plane) and the `Phased` wrapper are later components.
 //!
 //! `PauliWord` implements the trait surface the design assigns it:

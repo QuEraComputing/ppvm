@@ -113,3 +113,113 @@ pub fn assert_close(a: f64, b: f64, tol: f64) {
         "coefficients differ: {a} vs {b} (tol {tol})"
     );
 }
+
+// ===========================================================================
+// Phase-3 `Sum` differential harness — build matched OLD and NEW `PauliSum<f64>`
+// from the *same* `(pauli_string, coeff)` term list and compare observables.
+// ===========================================================================
+
+use ppvm_pauli_sum::config::fxhash::ByteF64;
+use ppvm_pauli_sum::strategy::CoefficientThreshold;
+use ppvm_pauli_sum::sum::PauliSum as OldPauliSum;
+use ppvm_pauli_sum_2::{PauliSum as NewPauliSum, PauliWord as NewPauliWord};
+
+/// The OLD reference `PauliSum<f64>`: `[u8; 8]` (64-qubit-capacity) storage,
+/// `FxHash`, and a [`CoefficientThreshold`] strategy so its `truncate()` realizes
+/// the NEW crate's structural `reduce` (drop zero-coefficient keys). The default
+/// threshold is `1e-12`; exact cancellations (`1.0 + (-1.0) = 0.0`) fall under it,
+/// so the two crates drop the same keys.
+pub type OldSum = OldPauliSum<ByteF64<8, CoefficientThreshold>>;
+
+/// The NEW `PauliSum<f64, NoPolicy>` under test — `Sum<HashMapStore<PauliWord, f64>>`.
+pub type NewSum = NewPauliSum;
+
+/// The NEW crate's key type (`PauliWord<u64>`, 64-qubit-capacity), re-exported so
+/// tests can name keys for `contains`/`get`.
+pub type NewKey = NewPauliWord;
+
+/// Build the OLD reference sum on `n_qubits` from `(string, coeff)` terms.
+///
+/// Colliding keys are combined by the old `+=` (`add_assign`); zero-coefficient
+/// keys are **not** dropped here (call [`reduce_old`] to realize `reduce`).
+pub fn build_old_sum(n_qubits: usize, terms: &[(String, f64)]) -> OldSum {
+    let mut s: OldSum = OldPauliSum::builder().n_qubits(n_qubits).build();
+    for (w, c) in terms {
+        s += (w.as_str(), *c);
+    }
+    s
+}
+
+/// Build the NEW sum on `n_qubits` from the *same* `(string, coeff)` terms.
+///
+/// `from_terms` runs `accumulate_batch` + `reduce`, so colliding keys are combined
+/// and zero-coefficient keys are dropped — the NEW crate reduces at construction.
+pub fn build_new_sum(n_qubits: usize, terms: &[(String, f64)]) -> NewSum {
+    NewSum::from_terms(
+        n_qubits,
+        terms
+            .iter()
+            .map(|(w, c)| (NewPauliWord::from(w.as_str()), *c)),
+    )
+}
+
+/// Realize the NEW crate's structural `reduce` on the OLD sum by running its
+/// coefficient-threshold `truncate()` (drops the exact-zero keys a cancellation
+/// leaves behind).
+pub fn reduce_old(s: &mut OldSum) {
+    s.truncate();
+}
+
+/// The OLD sum's support as a sorted `(canonical_pauli_string, coeff)` vector.
+pub fn old_support(s: &OldSum) -> Vec<(String, f64)> {
+    let mut v: Vec<(String, f64)> = s.data().iter().map(|(k, c)| (k.to_string(), *c)).collect();
+    v.sort_by(|a, b| a.0.cmp(&b.0));
+    v
+}
+
+/// The NEW sum's support as a sorted `(canonical_pauli_string, coeff)` vector.
+pub fn new_support(s: &NewSum) -> Vec<(String, f64)> {
+    let mut v: Vec<(String, f64)> = s.iter().map(|(k, c)| (k.to_string(), c)).collect();
+    v.sort_by(|a, b| a.0.cmp(&b.0));
+    v
+}
+
+/// Assert the OLD and NEW supports agree as sorted `(string, coeff)` sets within
+/// `tol`: same keys in the same canonical order, coefficients close.
+#[track_caller]
+pub fn assert_supports_match(old: &OldSum, new: &NewSum, tol: f64) {
+    let os = old_support(old);
+    let ns = new_support(new);
+    assert_eq!(
+        os.len(),
+        ns.len(),
+        "support size differs: old {} vs new {}\nold={os:?}\nnew={ns:?}",
+        os.len(),
+        ns.len()
+    );
+    for (o, n) in os.iter().zip(ns.iter()) {
+        assert_eq!(o.0, n.0, "support key differs: old {} vs new {}", o.0, n.0);
+        assert_close(o.1, n.1, tol);
+    }
+}
+
+/// A random distinct-key term list of `count` `(pauli_string, coeff)` pairs on
+/// `n` qubits, coefficients in `[-2, 2)`. Keys may repeat (both crates merge them
+/// identically); coefficients avoid the near-zero band so no term accidentally
+/// falls under the OLD threshold.
+pub fn random_terms(rng: &mut StdRng, n: usize, count: usize) -> Vec<(String, f64)> {
+    (0..count)
+        .map(|_| {
+            let w = random_pauli_string(rng, n);
+            // Coefficient in [-2, -0.25] ∪ [0.25, 2): O(1), never near the 1e-12
+            // reduce threshold.
+            let mag = rng.random_range(0.25..2.0);
+            let c = if rng.random_range(0..2usize) == 0 {
+                mag
+            } else {
+                -mag
+            };
+            (w, c)
+        })
+        .collect()
+}

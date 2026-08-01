@@ -12,12 +12,21 @@
 
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use bitvec::array::BitArray;
 use ppvm_traits_2::{Pauli, PauliBits, Word};
 
 use crate::storage::PauliStorage;
+
+/// The [`hash_cache`](PauliWord::hash_cache) sentinel meaning "not yet computed".
+///
+/// A word whose finalized structural digest happens to equal this value is
+/// simply recomputed on every `key_hash()` — the result is still the true
+/// digest, only the caching is skipped, so this is a `1`-in-`2⁶⁴` perf non-event
+/// with **no** correctness consequence (`key_hash()` and
+/// `KeyColumn::hash_into` stay bit-for-bit identical either way).
+pub(crate) const HASH_UNCACHED: u64 = 0;
 
 /// A fixed-width Pauli word stored as parallel packed `x` and `z` bit planes.
 ///
@@ -38,9 +47,14 @@ use crate::storage::PauliStorage;
 /// comparing the full backing blob is equivalent to comparing only the logical
 /// bits.
 ///
-/// The `hash_cache` is a lazy `OnceLock<u64>` (Design: §"Lazy hashing and
-/// interior mutability"): `key_hash()` may populate it through `&self`, and each
-/// structural mutator clears it through `&mut self`. `Copy` is intentionally
+/// The `hash_cache` is a lazy `AtomicU64` (Design: §"Lazy hashing and interior
+/// mutability" — the design sketches this with an `OnceLock<u64>`; a sentinel
+/// `AtomicU64` realizes the *same* contract — lazy, interior-mutable, `Send +
+/// Sync` — in half the width and with a plain relaxed load/store instead of
+/// `Once`'s CAS init path, which measurably dominated the Clifford re-key hot
+/// loop where every freshly built key hit the cold init once): `key_hash()` may
+/// populate it through `&self` with a relaxed store, and each structural mutator
+/// resets it to [`HASH_UNCACHED`] through `&mut self`. `Copy` is intentionally
 /// dropped for correct lazy caching.
 ///
 /// # Examples
@@ -68,8 +82,9 @@ pub struct PauliWord<A: PauliStorage = u64, H = fxhash::FxBuildHasher> {
     /// Number of qubits (logical width).
     pub(crate) nqubits: usize,
     /// Lazy structural-hash cache (Design: §"Lazy hashing and interior
-    /// mutability"). Empty until `key_hash()` first populates it.
-    pub(crate) hash_cache: OnceLock<u64>,
+    /// mutability"). Holds [`HASH_UNCACHED`] until `key_hash()` first populates
+    /// it with the finalized digest.
+    pub(crate) hash_cache: AtomicU64,
     /// The private internal digest algorithm; never a runtime value.
     /// `fn() -> H` keeps `PauliWord` `Send + Sync` for any `H`.
     pub(crate) _hasher: PhantomData<fn() -> H>,
@@ -91,7 +106,7 @@ impl<A: PauliStorage, H> PauliWord<A, H> {
             xbits: BitArray::ZERO,
             zbits: BitArray::ZERO,
             nqubits,
-            hash_cache: OnceLock::new(),
+            hash_cache: AtomicU64::new(HASH_UNCACHED),
             _hasher: PhantomData,
         }
     }
@@ -106,7 +121,7 @@ impl<A: PauliStorage, H> PauliWord<A, H> {
             xbits,
             zbits,
             nqubits,
-            hash_cache: OnceLock::new(),
+            hash_cache: AtomicU64::new(HASH_UNCACHED),
             _hasher: PhantomData,
         }
     }
@@ -116,8 +131,9 @@ impl<A: PauliStorage, H> PauliWord<A, H> {
     /// through `&mut self`).
     #[inline]
     pub(crate) fn invalidate_hash(&mut self) {
-        // A fresh `OnceLock` is empty; the next `key_hash()` recomputes.
-        self.hash_cache = OnceLock::new();
+        // Exclusive `&mut self` access — reset without an atomic RMW; the next
+        // `key_hash()` recomputes.
+        *self.hash_cache.get_mut() = HASH_UNCACHED;
     }
 }
 
@@ -225,7 +241,9 @@ impl<A: PauliStorage, H> Clone for PauliWord<A, H> {
             xbits: self.xbits,
             zbits: self.zbits,
             nqubits: self.nqubits,
-            hash_cache: self.hash_cache.clone(),
+            // Copy the (possibly still-uncached) digest verbatim; the clone has
+            // identical structural contents.
+            hash_cache: AtomicU64::new(self.hash_cache.load(Ordering::Relaxed)),
             _hasher: PhantomData,
         }
     }

@@ -9,13 +9,15 @@
 //! `key_hash()` value contract) and §"Concrete word hashing" (the private,
 //! per-algorithm/per-width finalization fold); `word-data-structures.md`
 //! §"Component hashes" (`packed Pauli hash = hash(nqubits, X bits, Z bits)`) and
-//! §"Lazy hashing and interior mutability" (`OnceLock<u64>`).
+//! §"Lazy hashing and interior mutability" (a lazy `AtomicU64` sentinel cache
+//! realizing the design's interior-mutable lazy-cache contract).
 
 use std::hash::{BuildHasher, Hash, Hasher};
+use std::sync::atomic::Ordering;
 
 use ppvm_traits_2::Indexable;
 
-use crate::data::PauliWord;
+use crate::data::{HASH_UNCACHED, PauliWord};
 use crate::storage::{HashFinalize, PauliStorage};
 
 /// The finalized structural digest of the planes `(nqubits, x, z)`.
@@ -70,9 +72,16 @@ where
 {
     #[inline]
     fn key_hash(&self) -> u64 {
-        *self.hash_cache.get_or_init(|| {
-            structural_hash::<A, H>(&self.xbits.data, &self.zbits.data, self.nqubits)
-        })
+        // Relaxed is sufficient: the cache is a pure function of the immutable
+        // structural fields, so any thread that observes a non-sentinel value
+        // observes *the* digest. A racing miss just recomputes the same value.
+        let cached = self.hash_cache.load(Ordering::Relaxed);
+        if cached != HASH_UNCACHED {
+            return cached;
+        }
+        let digest = structural_hash::<A, H>(&self.xbits.data, &self.zbits.data, self.nqubits);
+        self.hash_cache.store(digest, Ordering::Relaxed);
+        digest
     }
 }
 
@@ -110,7 +119,7 @@ mod tests {
         assert_ne!(m.key_hash(), h0, "mutation invalidates and recomputes");
     }
 
-    // The `OnceLock` hash cache is interior-mutable, but it is excluded from
+    // The `AtomicU64` hash cache is interior-mutable, but it is excluded from
     // `Eq`/`Hash` (only `(nqubits, X, Z)` participate), so the digest a stored
     // key hashes under is stable — precisely the lazy-cache pattern the design
     // sanctions (§"Lazy hashing and interior mutability"). Clippy's

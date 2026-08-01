@@ -324,7 +324,14 @@ against genuine \(n\)-fold tensor-product matrices: `tensorPauli_mul`
 single-qubit case already exhibits the extension's structure. The
 \(\mathrm{Sp}\) action is checked in one direction — each Clifford generator is
 an \(\mathrm{Sp}\)-isometry, so conjugation *lands in* \(\mathrm{Sp}(2n,2)\)
-(`lean/PPVM/Pauli/Symplectic.lean`); this per-generator conjugation is also
+(`lean/PPVM/Pauli/Symplectic.lean`). Each generator's phase-stripped bit map is
+moreover an **involution**, hence a **bijection** of the `Sp n` word space
+(`hAct_involutive`/`sAct_involutive`/`cnotAct_involutive`/`czAct_involutive` and
+their `*_bijective` corollaries — note `S`'s bit map has order 2 even though the
+phased `conjS` has order 4): this is the no-collision guarantee the `PauliSum`
+Clifford re-key relies on (`crates/ppvm-pauli-sum-2/src/{producer,clifford}.rs`,
+"A Clifford re-key is a bijection, so colliding re-keyed terms never occur").
+This per-generator conjugation is also
 exhibited as a signed symplectic automorphism, phase included — at \(n = 1\) for
 the single-qubit generators (`conjHHom`/`conjSHom` in
 `lean/PPVM/Pauli/Conjugation.lean`, e.g. `conjH_Y` gives \(HYH = -Y\)). `S` is the
@@ -342,7 +349,14 @@ match the fused `Clifford::cnot`/`Clifford::cz` signs
 (`crates/ppvm-phased-pauli-word-2/src/clifford.rs`, ported verbatim from the old
 `crates/ppvm-pauli-word/src/phase/clifford.rs`), and `conjCNOT_Xc`…/`conjCZ_Xc`…
 check the maps against the standard tableau tables so the phase is forced, not
-chosen. The surjectivity that upgrades this containment to the full
+chosen. Every one of these conjugation deltas is an even \(\mathbb{Z}_4\) value
+(\(\in\{0,2\}\), a real \(\pm1\), never \(\pm i\)), so a phase that starts real
+stays real: `conjH_isRealPhase`/`conjS_isRealPhase`/`conjSdag_isRealPhase` and
+`conjCNOT_isRealPhase`/`conjCZ_isRealPhase` (over `IsRealPhase` +
+`isRealPhase_zero`) prove exactly the reachability invariant that keeps
+`crates/ppvm-pauli-sum-2/src/clifford.rs`'s `clifford_sign` \(\pm1\) drain total —
+its `PosI`/`NegI` "bug" branch is unreachable, not merely `debug_assert!`ed away.
+The surjectivity that upgrades this containment to the full
 isomorphism \(\mathcal{C}_n/\mathcal{P}_n \cong \mathrm{Sp}(2n,2)\) is stated here
 but not formalized. The **loss-guarded** variant of this action — each generator
 is a no-op when any operand qubit is lost, as in
@@ -744,7 +758,14 @@ pub trait Scale: Support {
 /// `lean/PPVM/Algebra/Noise.lean` — the model pairing `∑_k a_k b_k` stands in for
 /// the normalized trace `Tr(A B)/2ⁿ` (which is *not* itself constructed in Lean),
 /// so `overlap_single_single` is the model form of `Tr(P Q)/2ⁿ = δ`, not that
-/// matrix identity verbatim.
+/// matrix identity verbatim. Finally, the semantic link to the Clifford path is
+/// closed: a Heisenberg re-key `P ↦ φ_G(P)` by the `Sp(2n,2)` bijection with the
+/// drained `±1` sign folded into the coefficient **preserves this pairing**
+/// (`overlap(conj_G A, conj_G B) = overlap(A, B)`), machine-checked as
+/// `clifford_conjugation_preserves_overlap` in `lean/PPVM/Algebra/GradedMap.lean`
+/// (over `overlap_eq_fintype_sum`, composing `Symplectic.*_bijective` with the
+/// sign reality `s_P² = 1` of `Conjugation.*_isRealPhase`) — the guarantee tying
+/// `Sum::overlap` to `Sum::{h,s,cnot,cz}` (`ppvm-pauli-sum-2/src/clifford.rs`).
 ///
 /// `hermitian_overlap` is the **sesquilinear** inner product
 /// `⟨φ | ψ⟩ = ∑_k conj(a_k)·b_k`, conjugate-linear in the first argument. This is
@@ -976,15 +997,29 @@ where
 }
 ```
 
-For `S::Key = PauliWord`, `next.h(q)` is the Step-3 `PauliBits` / `SymplecticColumns`
-bit op; for `S::Key = Tableau`, it is the tableau's own `Clifford` impl over its
-inverse-tableau storage. Same engine, same producer, same `accumulate` / `reduce`
-— only the key's `Clifford` implementation varies. This is the "smallest useful
-common factor" the earlier iteration deferred: it is the key-agnostic graded
-algebra, which Step 5 already built and this section unlocks by relaxing the key
-bound from `Word` to `Indexable`. The mixture's coefficient-aware `O(n^2)`
-measurement remains a `Tableau`-specific algorithm (via `StabilizerFrame`), layered
-on top rather than merged into the engine.
+**Correction (the sign drain the sketch glosses).** The snippet above is correct
+only for a key type whose *own* `Clifford` is **phase-complete** — e.g. `Tableau`,
+which tracks its `ℤ₂` sign internally, so `next.h(q)` produces the right key. For
+`S::Key = PauliWord` it is **unsound as written**: the bare word's `Clifford` is
+the *bit-only* blanket (its `PhaseTrack` is a no-op), so `next.h(q)` computes the
+conjugated Pauli's bits but **drops the `±1` sign** — `HYH` would come back `+Y`.
+So `ppvm-pauli-sum-2`'s `Clifford for Sum` does **not** dispatch to the bare key's
+`Clifford`; for each key it wraps the word in a `Phased<PauliWord>` at `+1`,
+conjugates via the *audited fused* phased `Clifford` (which tracks the sign),
+extracts the resulting `±1` (a Clifford never emits `i` — machine-checked, the
+`*_isRealPhase` lemmas), and multiplies the coefficient by that sign. The `±1`
+drain is total and the re-key is a bijection (`Symplectic.*_bijective`), so no two
+terms collide. Pure-sign gates `X`/`Y`/`Z` (word unchanged) take an in-place
+`SignFlipByKey` pass, not a map rebuild.
+
+For `S::Key = Tableau`, `next.h(q)` is the tableau's own phase-complete `Clifford`.
+Same engine, same producer, same `accumulate` / `reduce` — only the key's
+conjugation (and, for `PauliWord`, the sign-drain wrapper) varies. This is the
+"smallest useful common factor" the earlier iteration deferred: the key-agnostic
+graded algebra unlocked by relaxing the key bound from `Word` to `Indexable`. The
+mixture's coefficient-aware `O(n^2)` measurement remains a `Tableau`-specific
+algorithm (via `StabilizerFrame`), layered on top rather than merged into the
+engine.
 
 #### A third instantiation: the generalized tableau
 
@@ -1532,11 +1567,22 @@ invariants.
 ### Lazy hashing and interior mutability
 
 Rust's `Hash::hash` receives `&self`, so shipped indexable words and tableaus
-use private component `OnceLock<u64>` caches. `Hash::hash` may populate a cache
+cache their digest through interior mutability. `Hash::hash` may populate a cache
 through shared access, while structural mutators clear affected cells through
-their exclusive `&mut self` access. This preserves `Send + Sync` for the
-shipped representations. `Indexable` itself does not require either
-concurrency bound.
+their exclusive `&mut self` access. This preserves `Send + Sync` for the shipped
+representations. `Indexable` itself does not require either concurrency bound.
+
+The *mechanism* is a private representation choice. `PauliWord` realizes it with a
+sentinel `AtomicU64` (a distinguished `HASH_UNCACHED` value = "not yet computed";
+`key_hash()` does a relaxed load, computes-and-relaxed-stores on a miss, and
+mutators reset it) rather than the `OnceLock<u64>` this section originally
+sketched: the digest is a pure function of the immutable content, so a racing
+miss just recomputes *the same* value — a relaxed atomic is correct and avoids
+`Once`'s CAS init path, which measurably dominated the `PauliSum` Clifford re-key
+hot loop (every freshly built key hits the cold init once). A key whose true
+digest equals the sentinel is simply recomputed each time — a `1`-in-`2⁶⁴`
+perf non-event with no correctness effect. Both realizations satisfy the same
+contract; the choice is invisible through `Indexable`.
 
 ### Key mutation invariant
 

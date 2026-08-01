@@ -19,6 +19,9 @@
 pub mod algebra;
 pub mod batch;
 pub mod coefficient;
+/// Graded-algebra trait impls on the `Vec`/`HashMap` containers (no items to
+/// re-export; the impls apply crate-wide and downstream).
+mod containers;
 pub mod gates;
 pub mod graded;
 pub mod hash;

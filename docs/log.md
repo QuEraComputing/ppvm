@@ -218,7 +218,54 @@ the orchestrator caught the regression manually regardless.
 
 ## Phase 3 — ppvm-pauli-sum-2
 
-_(no entries yet)_
+### Component 1: `Sum` core + graded traits + Clifford — status **complete** (workflow `wf_6325abce-2ed`, escalated iter 3 on a real perf gap; resolved by orchestrator + a focused fix)
+
+Deliverables: graded traits `Support`/`Accumulate`/`Scale`/`Pair`/`Retain` impl'd
+on `Vec<(K,C)>` and `HashMap<K,C,IdentityBuildHasher>` (in `ppvm-traits-2`'s new
+`containers.rs` — orphan rule: both trait and container are foreign to the sum
+crate); `Sum<S,P>` + `apply<TermProducer>`; `RekeyProducer`; policies
+(`NoPolicy`/`MaxPauliWeight`/`CoefficientThreshold`/`CombinedPolicy` + `Retain`);
+`Clifford for Sum`; `PauliSum<C=f64,P=NoPolicy>` alias. Conformance:
+`pauli_sum_diff.rs` (differential vs old, incl. per-gate Clifford replay + X/Y/Z),
+`pauli_sum_hash.rs`, `pauli_sum_lean.rs`, bench. Gates verified by orchestrator
+(build/clippy/fmt, **186 tests**, machete, `lake`) — all green.
+
+**Perf: faster than old across the board** (the Phase-2 Copy-drop watch item did
+**not** regress — move-based re-key + the hash opt below): `clifford_h` **0.86×**,
+`clifford_cnot` **0.80×**, `build_batch` **0.29×** (3.5× faster), `scale` 0.99×,
+`overlap` ~**700× faster** (old was superlinear), `clifford_x` **0.77×** (after
+the fix).
+
+**Cross-cutting optimization (accepted):** `PauliWord`'s hash cache
+`OnceLock<u64>` → sentinel `AtomicU64` (relaxed load/store). The `Once` CAS init
+path dominated the re-key hot loop (every freshly built key hits cold-init once);
+a relaxed atomic is correct here — the digest is a pure function of immutable
+content, so a racing miss recomputes *the same* value. Design doc's "Lazy hashing"
+section updated. This is *why* the Clifford paths beat the old crate.
+
+Lean added (prove agent, `lake` green; all orchestrator-verified non-vacuous):
+`Phase.lean` `IsRealPhase` (real ±1 = even ℤ₄, closed under +); `Symplectic.lean`
+`*Act_involutive`/`*_bijective` (the Clifford re-key is a bijection ⇒ no term
+collisions — the engine's load-bearing no-collision invariant); `Conjugation.lean`
+`conj*_isRealPhase` (Clifford never emits `i` ⇒ the `±1` drain is total, the
+`PosI`/`NegI` branch unreachable); `GradedMap.lean` `overlap_eq_fintype_sum` +
+`clifford_conjugation_preserves_overlap` (Heisenberg re-key preserves the
+Hilbert–Schmidt pairing, via bijection + `s²=1`).
+
+| id | type | sev | routed | status | note |
+| --- | --- | --- | --- | --- | --- |
+| ps2.clifford.1 | correctness | med | design | closed | The design's generic `Clifford for Sum` snippet dispatches to the key's own `Clifford`, which for `PauliWord` is bit-only and **drops the ±1 sign** (unsound for `PauliSum`). The impl correctly deviates: wrap each key in `Phased<PauliWord>`, conjugate via the fused sign-tracking Clifford, drain the ±1 to the coefficient. Design snippet corrected. |
+| ps2.perf.1 | perf-drift | med | impl→fix | closed | X/Y/Z (pure-sign, word unchanged) rebuilt the whole HashMap instead of an in-place sign flip. **This is what escalated the run** — the hardened perf gate correctly blocked; the loop didn't finish the fix in 3 iters, so the orchestrator drove a focused fix: new `SignFlipByKey` store capability (whole-map, columnar-friendly) → `clifford_x` 0.77×. |
+| ps2.containers.1 | impl-friction | low | design | noted | Graded container impls live in `ppvm-traits-2` (orphan rule), so it is no longer "definitions only". Plan crate-map updated. |
+| ps2.cite.1 | correctness | low | impl | closed | `producer.rs` mis-cited `xorRelabel_bijective` (the non-Clifford amplitude relabel) for the Clifford re-key; fixed to `Symplectic.*_bijective` / `Conjugation.conj*_injective`. |
+| ps2.capacity.1 | impl-friction | low | design | noted | `CoefficientThreshold::capacity` returns `n*10` (ported from old) vs the design sketch's `0`; the ported value is the perf-sensible one — design sketch is a stale example, left as-is. |
+| ps2.test.1 | missing-test | low | test | closed | Sum-level X/Y sign drain was untested; added differential X/Y/Z tests (pass), which also guard the new in-place fast path. |
+
+**Deferred to later Phase-3 components** (per the component spec): rotations/noise
+producers (`RotationOne`/`PauliError`), the L4 `Multiply` operator product, and
+the columnar `ColumnStore` (SoA) backend (Phase 6).
+
+### Components 2+ — rotations/noise, then L4 `Multiply` — pending.
 
 ## Phase 4 — ppvm-tableau-2
 

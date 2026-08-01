@@ -1326,6 +1326,8 @@ dependencies = [
  "criterion 0.7.0",
  "num",
  "ppvm-lossy-pauli-word-2",
+ "ppvm-pauli-sum",
+ "ppvm-pauli-sum-2",
  "ppvm-pauli-word",
  "ppvm-pauli-word-2",
  "ppvm-phased-pauli-word-2",
@@ -1362,6 +1364,15 @@ dependencies = [
  "ppvm-pauli-word",
  "ppvm-traits",
  "rayon",
+]
+
+[[package]]
+name = "ppvm-pauli-sum-2"
+version = "0.1.0"
+dependencies = [
+ "ppvm-pauli-word-2",
+ "ppvm-phased-pauli-word-2",
+ "ppvm-traits-2",
 ]
 
 [[package]]

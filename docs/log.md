@@ -35,7 +35,7 @@ iterations, then escalate to human.
 ## ▶ Continue here — handoff (2026-08-01)
 
 Everything committed and green (whole workspace tests, clippy/fmt clean, `lake build PPVM` ok). Recent commits (newest first):
-`23860055` re-key uses `insert` not `entry()` (rekey 1.45×→1.11×, Trotter →~1.28×) · `1e597396` Phase-1 gate surface + complex-angle parity fix · `b68b7e8e` content-conditional hash invalidation + cnot/truncate microbenches · `d4aa7875` truncation is explicit-only (behaviour gap closed) · `8a1dc79b` integration coverage.
+`e3e1f9cc` ScaleByKey in-place (pauli_error 2.03×→1.06×, **Trotter →~1.09×**) · `23860055` re-key `insert` not `entry()` (rekey 1.45×→1.11×) · `1e597396` Phase-1 gate surface + complex-angle parity fix · `b68b7e8e` content-conditional hash invalidation + cnot/truncate microbenches · `d4aa7875` truncation is explicit-only (behaviour gap closed) · `8a1dc79b` integration coverage.
 
 ### ⚠ MEASUREMENT WARNING — read before touching any perf number here
 Two instruments previously trusted in this log are now known to be unsound:
@@ -77,23 +77,48 @@ control that passes either way. The whole pre-existing suite passed both before
 and after — every existing test truncates right after each gate, the single
 schedule where the two semantics agree. That was the coverage hole.
 
-### ⚑ NEW behaviour-parity gaps found by the Baseline agent (verified by hand)
-Three divergences from old, all **verified directly against the old sources**,
-none yet fixed. Under the PRIME DIRECTIVE each is a gap.
+### ✅ PERF: end-to-end now **~1.09×**, inside the 1.15× gate
+Same-build ratios, 4 separate process runs, no bimodality observed in any:
 
-1. **`ps2.zero.behaviour` (high).** The old crate has **no `reduce`** and no
+| target | ratio | was |
+| --- | --- | --- |
+| `rx` sweep | **0.98×** (new faster) | — |
+| `truncate` | **0.99×** | 0.99× |
+| `pauli_error` sweep | **1.06×** | **2.03×** |
+| `rekey_cnot` sweep | **1.11×** | 1.71× |
+| **`integration_trotter`** | **~1.09×** | **~1.47×** |
+
+Two fixes got there, and **both were behaviour fixes that happened to be the
+perf fixes** — the divergence and the slowdown had the same root each time:
+`23860055` (re-key `entry()`→`insert`) and `e3e1f9cc` (`ScaleByKey` mutates in
+place instead of `retain`-ing). Note old's *absolute* numbers drift between
+builds (701–788 µs for untouched code) — only same-build ratios mean anything.
+
+### ⚑ NEW behaviour-parity gaps found by the Baseline agent (verified by hand)
+Three divergences from old, all **verified directly against the old sources**.
+Under the PRIME DIRECTIVE each is a gap.
+
+1. **`ps2.zero.behaviour` (high) — PARTLY FIXED (`e3e1f9cc`).** The old crate has **no `reduce`** and no
    drop-zero logic *anywhere* — a zero-coefficient entry stays in the support
    forever, and old's `PartialEq` compares maps exactly, so
    `ppvm-pauli-sum/tests/loss.rs::test_reset_channel` depends on `*= 0.0`
    keeping every key. The new `reduce()` (`ppvm-traits-2/src/containers.rs`)
    **and** `ScaleByKey` both drop exact zeros, so `len()`/`contains` diverge —
    e.g. after `pauli_error(q, [0.0, 0.25, 0.25])` (λ_X = 0).
-   **Note this indicts an earlier decision in this very log:** the `ps2.noise.1`
-   row records the orchestrator *adding* zero-dropping to `ScaleByKey` to uphold
-   a "reduced-canonical-form invariant". That invariant is the new design's
-   invention, not old's behaviour — so that fix introduced a divergence rather
-   than removing one. Re-decide deliberately: either restore old's retain-zeros
-   semantics, or get the Lean oracle to say old is wrong and document it.
+   **This indicted an earlier decision in this very log:** the `ps2.noise.1` row
+   records the orchestrator *adding* zero-dropping to `ScaleByKey` to uphold a
+   "reduced-canonical-form invariant" that is the new design's invention, not
+   old's behaviour — so that fix introduced a divergence rather than removing
+   one. **Now reverted** (`e3e1f9cc`): `ScaleByKey` takes old's `Fn(&K, &mut C)`
+   shape and walks with `iter_mut`, so it *cannot* remove — correct by
+   construction rather than by a zero-check. That also took `pauli_error` from
+   2.03× to 1.06×, since `retain` had been dragging hashbrown's erase machinery
+   through the hot walk. Guarded by
+   `zero_channel_eigenvalue_keeps_the_term_exactly_as_old_does`, which compares
+   EXACT supports (the existing suite's `FLOOR` filter masked this) and is
+   verified to fail against the pre-fix engine.
+   **STILL OPEN:** `reduce()` also drops exact zeros on the `apply`/`from_terms`
+   paths, so the gap is not fully closed.
 2. **`ps2.default.threshold` (medium).** `CoefficientThreshold::default()` is
    `1e-12` in old (`ppvm-pauli-sum/src/strategy.rs:113`) but `0.0` in new
    (`ppvm-pauli-sum-2/src/policy.rs`, a derived `Default` on the `f64` field) —
@@ -633,7 +658,7 @@ microbench** at all. To be root-caused next (same discipline: same-build A/B).
 | ps2.truncate.behaviour | correctness | high | impl | **closed — fixed (`d4aa7875`)** | New `Sum` gate drivers auto-truncated internally (`apply`/`rekey_bijective`/`rotate_in_place` each called `self.policy.truncate`); **old gates never auto-truncate** (caller-driven, pinned by old's `tests/truncation_semantics.rs`). Under the PRIME DIRECTIVE that changed user-facing behaviour. Fixed: truncation is explicit-only via `Sum::truncate()`; `reduce()` kept (canonicalisation, not policy). Guard added: `tests/pauli_sum_truncation_behaviour_diff.rs`, 2 of its 3 tests verified to fail against the pre-fix engine. |
 | ps2.cnot.rekey.perf | perf-drift | high | impl | **closed — root-caused + fixed (`23860055`)** | `entry(k).and_modify(..).or_insert(..)` in `RekeyBijective` aggregated a collision that cannot occur (`f` injective by contract; `Symplectic.*_bijective`) and compiled **out of line** (41% of sweep samples in a standalone `hashbrown::rustc_entry` frame vs fully inlined for old). Replaced by `insert` + `debug_assert!`. `rekey_cnot` **1.45× → 1.11×**, end-to-end Trotter **~1.47× → ~1.28×**, over 8 interleaved process pairs. Residual 1.11× unattributed. Earlier steps: `b68b7e8e` (content-conditional hash invalidation) took it from 1.71×. Ruled out with evidence along the way: `aux.reserve`, `drain` vs `iter`+clone (~2.4–3%), hash-warm/extra-pass, `truncate` (parity 0.99×). |
 | ps2.rekey.bimodal | perf-drift | high | impl | **OPEN — narrowed, not closed** | Re-key is **bimodal across processes** for the identical binary and input. `insert` improved both modes (fast 77→59 µs, slow 134→128 µs) but did not remove it: 3/6 `cargo bench` launches still land slow. Startup-fixed state, not drift (two in-process measurements agree to 0.5%); old is stable ~53 µs always. **New:** 16 direct-binary launches were all fast while `cargo bench` launches of the same binary are bimodal ⇒ the trigger is the launch environment; mechanism **unattributed**. Ruled out with evidence: heap layout (tables identical mod 16 KB across 22 processes), env/cwd, CPU core type, code-ASLR slide, differing hot path. **Refuted:** `AtomicU64`→`Cell<u64>` changed nothing — the `pw2` Copy/atomic watch item is not a cause. |
-| ps2.zero.behaviour | correctness | high | design | **OPEN — new** | Old has **no `reduce`** and no drop-zero logic anywhere; a zero-coefficient term stays in the support and old's exact-map `PartialEq` depends on it (`ppvm-pauli-sum/tests/loss.rs::test_reset_channel`). New `reduce()` and `ScaleByKey` both drop exact zeros ⇒ `len()`/`contains` diverge (e.g. `pauli_error(q,[0.0,0.25,0.25])`, λ_X=0). Verified by hand against the old sources. **Indicts `ps2.noise.1`**: that row's "fix" *added* zero-dropping to satisfy a reduced-canonical-form invariant which is the new design's invention, not old's behaviour — so it introduced this divergence. Re-decide: restore old semantics, or have Lean adjudicate old as wrong and document it. |
+| ps2.zero.behaviour | correctness | high | design | **partly fixed (`e3e1f9cc`) — `reduce` still OPEN** | Old has **no `reduce`** and no drop-zero logic anywhere; a zero-coefficient term stays in the support and old's exact-map `PartialEq` depends on it (`ppvm-pauli-sum/tests/loss.rs::test_reset_channel`). New `reduce()` and `ScaleByKey` both drop exact zeros ⇒ `len()`/`contains` diverge (e.g. `pauli_error(q,[0.0,0.25,0.25])`, λ_X=0). Verified by hand against the old sources. **Indicts `ps2.noise.1`**: that row's "fix" *added* zero-dropping to satisfy a reduced-canonical-form invariant which is the new design's invention, not old's behaviour — so it introduced this divergence. **`ScaleByKey` fixed** (`e3e1f9cc`): now old's `Fn(&K,&mut C)` + `iter_mut`, which cannot remove — and that took `pauli_error` 2.03×→1.06×. Guarded by `zero_channel_eigenvalue_keeps_the_term_exactly_as_old_does` (exact-support diff; verified to fail pre-fix). **Still open:** `reduce()` drops zeros on `apply`/`from_terms`. |
 | ps2.default.threshold | correctness | med | impl | **OPEN — new** | `CoefficientThreshold::default()` is `1e-12` in old (`ppvm-pauli-sum/src/strategy.rs:113`) but `0.0` in new (derived `Default` on the `f64` field, `policy.rs`) — a silently changed user-facing default. Verified by hand. |
 | ps2.preserve.missing | impl-friction | med | design | **OPEN — new** | `preserve_strings` (builder option + snapshot/restore post-filter inside old `PauliSum::truncate`, pinned by `ppvm-pauli-sum/tests/preserve.rs`) has no counterpart in the new crate. |
 | ps2.oldbug.mulassign | correctness | med | proof | **OPEN — suspected OLD bug** | Old `impl MulAssign<PauliSum<T>> for PauliSum<T>` (`sum/ops.rs:70`) calls `self.map_add(..)` per rhs term, and `map_add` *replaces* the support with its image ⇒ `A *= (b0·P0 + b1·P1)` computes the product chain `A·b0P0·b1P1`, not `A·b0P0 + A·b1P1`. Untested in old. For the L4 `Multiply` component: accumulate into a fresh accumulator per `twistedConv` (`Twisted.lean`); if Lean confirms old is wrong, this is an allowed documented divergence. |

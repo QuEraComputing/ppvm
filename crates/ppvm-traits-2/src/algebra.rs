@@ -90,13 +90,24 @@ impl Phase {
     /// This is the `iPow` fold of `lean/PPVM/Algebra/Twisted.lean` — the phase a
     /// [`KeyProduct::key_mul`] emits is absorbed by the coefficient here. Needs a
     /// primitive fourth root of unity, hence the [`ImaginaryUnit`] bound.
+    ///
+    /// # Behaviour parity
+    ///
+    /// The `±i` arms go through [`ImaginaryUnit::mul_i`], **not** through a bare
+    /// `c * imaginary_unit()`. On `Complex<f64>` the two are *not* the same
+    /// function: the ring multiply computes `(re·0 − im·1, re·1 + im·0)`, and
+    /// `inf·0`/`NaN·0` are `NaN`, so `(inf + 0i)·i` is `NaN + inf·i` while the
+    /// old `ppvm_traits::ComplexCoefficient::mul_phase` — which swapped the
+    /// components by hand — gave `−0 + inf·i`. `mul_i` restores the old
+    /// component swap (and with it the sign of zero, visible through `Display`
+    /// and serialization). See `phase_apply_matches_old_mul_phase_encoding`.
     #[inline]
     pub fn apply<C: ImaginaryUnit>(self, c: &C) -> C {
         match self {
             Phase::Pos1 => c.clone(),
-            Phase::PosI => c.clone() * C::imaginary_unit(),
+            Phase::PosI => c.mul_i(),
             Phase::Neg1 => -(c.clone()),
-            Phase::NegI => -(c.clone() * C::imaginary_unit()),
+            Phase::NegI => -(c.mul_i()),
         }
     }
 }
@@ -124,10 +135,26 @@ impl core::ops::MulAssign for Phase {
 ///
 /// The keys form a group only *up to phase*: the product is **not closed on
 /// keys**, it emits an `iᵏ`, which is why `key_mul` returns `(Self, Phase)` and
-/// why `C[PauliWord]` is a **2-cocycle-twisted** group algebra. That the phase
-/// exponent is a genuine 2-cocycle (hence the twisted product is associative) is
-/// machine-checked in `lean/PPVM/Pauli/Phase.lean` (`phaseExp_cocycle`) and
-/// `lean/PPVM/Algebra/Twisted.lean` (`tmul_assoc`).
+/// why `C[PauliWord]` is a **2-cocycle-twisted** group algebra.
+///
+/// # Laws
+///
+/// Write `key_mul(u, v) = (u · v, i^{β(u,v)})`. Every impl must satisfy:
+///
+/// * the key product is associative: `(u · v) · w == u · (v · w)`;
+/// * the phase exponent is a **2-cocycle**:
+///   `β(u,v) + β(u·v, w) == β(v,w) + β(u, v·w)` in `ℤ/4`.
+///
+/// Under exactly those two hypotheses the twisted product on `C × K` is
+/// associative for any commutative coefficient ring `C` with `i⁴ = 1` — proved
+/// key-agnostically in `lean/PPVM/Algebra/Twisted.lean` (`gtmul_assoc`, over an
+/// abstract `kmul` and `IsCocycle`), so the obligation is stated once and every
+/// key discharges it. `PauliWord` does so via `Bool.xor_assoc` and
+/// `lean/PPVM/Pauli/Phase.lean` (`phaseExp_cocycle`), recovered as the instance
+/// in `phaseExp_isCocycle` / `tmul_assoc_of_gtmul` (with `tmul_assoc` the
+/// concrete Pauli statement). A future ordered fermionic-word key must discharge
+/// the same two hypotheses; it does **not** inherit associativity from the Pauli
+/// proof.
 ///
 /// Design: §"The map is a graded algebra over `C[K]`" (`KeyProduct`).
 pub trait KeyProduct: Eq + Clone {
@@ -151,6 +178,24 @@ pub trait ImaginaryUnit: Coefficient + num::One {
     /// The imaginary unit `i`; impls must satisfy
     /// `Self::imaginary_unit() * Self::imaginary_unit() == -Self::one()`.
     fn imaginary_unit() -> Self;
+
+    /// Multiply by `i`. Semantically `self * imaginary_unit()`, which is the
+    /// default body — but it is an **override point**, because on a
+    /// floating-point ring the generic product is not extensionally equal to the
+    /// rotation it denotes.
+    ///
+    /// On `Complex<f64>`, `c * i` expands to
+    /// `(re·0 − im·1, re·1 + im·0)`; `inf·0` and `NaN·0` are `NaN`, so a
+    /// non-finite component contaminates *both* output components, and `re·0`
+    /// also loses the sign of zero. Multiplication by `i` is really the
+    /// component swap `(re, im) ↦ (−im, re)`, which is total and exact — this is
+    /// what the old `ppvm_traits::ComplexCoefficient::mul_phase` did, and the
+    /// `Complex<f64>` impl below restores it verbatim. It is also cheaper (two
+    /// negations instead of four multiplies and two adds).
+    #[inline]
+    fn mul_i(&self) -> Self {
+        self.clone() * Self::imaginary_unit()
+    }
 }
 
 /// A coefficient ring carrying a ring involution (a commutative `*`-ring):
@@ -178,6 +223,14 @@ impl ImaginaryUnit for num::Complex<f64> {
     #[inline]
     fn imaginary_unit() -> Self {
         num::Complex::new(0.0, 1.0)
+    }
+
+    /// The old `ComplexCoefficient::mul_phase(1)` component swap, verbatim
+    /// (`crates/ppvm-traits/src/traits/coefficient.rs`): total on non-finite
+    /// components and sign-of-zero exact, unlike the generic `self * i`.
+    #[inline]
+    fn mul_i(&self) -> Self {
+        num::Complex::new(-self.im, self.re)
     }
 }
 

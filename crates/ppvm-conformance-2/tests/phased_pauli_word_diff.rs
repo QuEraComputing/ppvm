@@ -271,3 +271,68 @@ fn single_qubit_gates_match_old_exhaustive() {
         }
     }
 }
+
+/// The extended Clifford set (`S†`, `√X`, `√X†`, `√Y`, `√Y†`) exhaustively vs the
+/// old phased word, over every starting phase — the sign half of the extension
+/// gates the bare-word diff cannot see.
+#[test]
+fn extension_gates_match_old_exhaustive_bits_and_phase() {
+    use ppvm_traits::traits::CliffordExtensions as OldCliffordExtensions;
+    use ppvm_traits_2::CliffordExtensions as NewCliffordExtensions;
+
+    let gates: [GatePair; 5] = [
+        ("S†", |w| w.s_dag(0), |w| w.s_dag(0)),
+        ("√X", |w| w.sqrt_x(0), |w| w.sqrt_x(0)),
+        ("√X†", |w| w.sqrt_x_dag(0), |w| w.sqrt_x_dag(0)),
+        ("√Y", |w| w.sqrt_y(0), |w| w.sqrt_y(0)),
+        ("√Y†", |w| w.sqrt_y_dag(0), |w| w.sqrt_y_dag(0)),
+    ];
+    for (name, gnew, gold) in gates {
+        for prefix in PREFIXES {
+            for p in ["I", "X", "Y", "Z"] {
+                let signed = format!("{prefix}{p}");
+                let (mut new, mut old) = pair(&signed);
+                gnew(&mut new);
+                gold(&mut old);
+                assert_eq!(
+                    (new.word().to_string(), new_phase_u8(&new)),
+                    (old.word.to_string(), old.phase),
+                    "{name} {signed}"
+                );
+            }
+        }
+    }
+}
+
+/// `CY` over the full two-qubit table × every starting phase: bits **and** the
+/// `ℤ₄` phase, against the old fused `CY` kernel.
+#[test]
+fn cy_matches_old_exhaustive_bits_and_phase() {
+    use ppvm_traits::traits::CliffordExtensions as OldCliffordExtensions;
+    use ppvm_traits_2::CliffordExtensions as NewCliffordExtensions;
+
+    for prefix in PREFIXES {
+        for a in ["I", "X", "Y", "Z"] {
+            for b in ["I", "X", "Y", "Z"] {
+                let signed = format!("{prefix}{a}{b}");
+                let (mut new, mut old) = pair(&signed);
+                new.cy(0, 1);
+                old.cy(0, 1);
+                assert_eq!(
+                    (new.word().to_string(), new_phase_u8(&new)),
+                    (old.word.to_string(), old.phase),
+                    "CY {signed}"
+                );
+
+                // The stim alias must be the same gate.
+                let (mut alias, _) = pair(&signed);
+                alias.zcy(0, 1);
+                assert_eq!(
+                    (alias.word().to_string(), new_phase_u8(&alias)),
+                    (old.word.to_string(), old.phase),
+                    "ZCY {signed}"
+                );
+            }
+        }
+    }
+}

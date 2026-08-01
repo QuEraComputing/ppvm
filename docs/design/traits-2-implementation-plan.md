@@ -34,7 +34,7 @@ test oracles.
 
 | Old crate | New crate | Core content |
 | --- | --- | --- |
-| `ppvm-traits` (`Config`, `Coefficient`, `Word`/`PauliWordTrait`, `ACMap*`, `Strategy`, gate traits) | **`ppvm-traits-2`** | Trait *definitions* (+ the `BlanketClifford` blanket and, forced by the orphan rule, the graded-trait container impls in `containers.rs`): split `Coefficient`, `Angle`; `Word`/`Indexable`/`PauliBits`; `SymplecticColumns`/`PhaseTrack`/`StabilizerFrame`; gate/noise traits (`Clifford`, `RotationOne`, `PauliError`, `Measure`); graded map layers `Support`/`Accumulate`/`Scale`/`Pair`/`Multiply` (impl'd on `Vec`/`HashMap` here, since both trait and container are foreign to the sum crate); algebra capabilities `KeyProduct`/`ImaginaryUnit`/`Conjugate`; batch contract `Columnar`/`KeyColumn`/`KeyBatch`/`TermBatch`/`TermSink`/`TermProducer`; `IdentityHasher`; small concrete leaf types (`Pauli`, `Phase`, `LossySite`). |
+| `ppvm-traits` (`Config`, `Coefficient`, `Word`/`PauliWordTrait`, `ACMap*`, `Strategy`, gate traits) | **`ppvm-traits-2`** | Trait *definitions* (+ the `BlanketClifford` blanket and, forced by the orphan rule, the graded-trait container impls in `containers.rs`): split `Coefficient`, `Angle`; `Word`/`Indexable`/`PauliBits`; `SymplecticColumns`/`PhaseTrack`/`StabilizerFrame`; gate/noise traits (`Clifford`/`CliffordExtensions` + the batched forms, `RotationOne`, `Reset`, `Measure`, `PauliError` and the channel family); graded map layers `Support`/`Accumulate`/`Scale`/`Pair`/`Multiply` (impl'd on `Vec`/`HashMap` here, since both trait and container are foreign to the sum crate); algebra capabilities `KeyProduct`/`ImaginaryUnit`/`Conjugate`; batch contract `Columnar`/`KeyColumn`/`KeyBatch`/`TermBatch`/`TermSink`/`TermProducer`; `IdentityHasher`; small concrete leaf types (`Pauli`, `Phase`, `LossySite`). |
 | `ppvm-pauli-word` (word/) | **`ppvm-pauli-word-2`** | Concrete `PauliWord`; private packed X/Z planes + lazy `OnceLock<u64>` hash cache + `HashFinalize`/`PauliStorage`/`PauliKeyColumn` (re-exported for the lossy/phased crates to reuse). Impls of `Word`/`Indexable`/`PauliBits`/`SymplecticColumns`/`PhaseTrack`/`BlanketClifford`/`KeyProduct`/`Columnar`. |
 | `ppvm-pauli-word` (phase/) | **`ppvm-phased-pauli-word-2`** | The generic `Phased<W>` wrapper + `PhasedPauliWord = Phased<PauliWord>`; carries an explicit ℤ₄ phase and a hand-written **fused** `impl Clifford` (reads each inner X/Z bit once via `W: PauliBits`, computes the ℤ₄ sign, applies the bit update, folds in the sign) — *not* the blanket, so it does **not** implement `BlanketClifford`. Delegates `Word` to `W`, phased product via `W`'s `KeyProduct`. **Non-indexable.** |
 | `ppvm-pauli-word` (loss/) | **`ppvm-lossy-pauli-word-2`** | `LossyPauliWord` — a *distinct* concrete Pauli-word impl in its own crate (adds a packed loss plane). Reuses `ppvm-pauli-word-2`'s packed-storage/hash infra. `Word<Site = LossySite<Pauli>>` + `PauliBits` (`is_lost`) + phase-discarding `SymplecticColumns`/`PhaseTrack` + `BlanketClifford` + `Indexable`; loss writes and `loss_weight()` inherent. |
@@ -105,11 +105,22 @@ Modules:
   from `Word<Site = Pauli>` so `LossyPauliWord`, whose `Site` is
   `LossySite<Pauli>`, can implement it; propagation re-adds `Site = Pauli`).
 - `pauli.rs` — `SymplecticColumns`, `PhaseTrack`, `StabilizerFrame`, the opt-in
-  marker `BlanketClifford`; the blanket
-  `impl<T: SymplecticColumns + PhaseTrack + BlanketClifford> Clifford for T`
-  (the marker keeps the blanket coherence-legal alongside `Phased<W>`'s fused
-  override).
-- `gates.rs` — `Clifford`, `RotationOne<C, A = C>`, `PauliError<C>`, `Measure`.
+  marker `BlanketClifford`; the blankets
+  `impl<T: SymplecticColumns + PhaseTrack + BlanketClifford> Clifford for T` and
+  the matching `CliffordExtensions` blanket (each extension gate derived as a
+  product of audited generators, so no new phase primitives are needed)
+  (the marker keeps the blankets coherence-legal alongside `Phased<W>`'s fused
+  overrides).
+- `gates.rs` — `Clifford`, `CliffordExtensions`, `CliffordBatch`,
+  `CliffordExtensionsBatch`, `RotationOne<C, A = C>` (required `rotate_1`,
+  defaulted `rx`/`ry`/`rz` + `*_many`), `RotationTwo<C, A = C>`,
+  `RotXY<C, A = C>`, `CRx<C, A = C>`, `U3Gate<C, A = C>`, `TGate`,
+  `Projection`, `Measure`, `Reset`,
+  `PauliError<C>` (with the stim `x_error`/`y_error`/`z_error` + `*_many`
+  defaults), and the channel family `PauliErrorAll`, `TwoQubitPauliError`,
+  `Depolarizing`, `Depolarizing2`, `AmplitudeDamping`, `LossChannel`,
+  `CorrelatedLossChannel`, `ResetLossChannel`, `AsymmetricLossChannel` — the old
+  crate's behavioral surface, `<T: Config>` → `<C: Coefficient>`.
 - `graded.rs` — `Support`, `Accumulate`, `Scale`, `Pair` (with both `overlap` and
   `hermitian_overlap where Coeff: Conjugate`), `Multiply`, `Retain`.
 - `batch.rs` — `Columnar`, `KeyColumn`, `KeyBatch`, `TermBatch`, `TermSink`,

@@ -23,6 +23,12 @@
 //!   word dropped, now recovered by `Phased`'s real `PhaseTrack`, grounded in
 //!   genuine `G·P·G†` matrices over `ℤ[i]` (single/two-qubit exhaustive; n-qubit
 //!   randomized with random targets).
+//! * the **extended** Clifford set (`S†`, `√X`, `√X†`, `√Y`, `√Y†`, `CY`) — no
+//!   Lean `conj*` function exists for these, so they are grounded directly in
+//!   `U† P U` over `ℤ[i]` with the square roots taken as the standard
+//!   `exp(−i·π·P/4)` (scaled by `√2` to stay integral). This is the oracle both
+//!   the `ppvm-traits-2` blanket (generator products) and `Phased`'s fused kernel
+//!   are checked against.
 
 use ppvm_conformance_2::{random_pauli_string, seeded_rng};
 use ppvm_phased_pauli_word_2::PhasedPauliWord as Phased;
@@ -341,6 +347,36 @@ fn cz_gate() -> Mat {
     ]
 }
 
+/// Conjugate transpose over `ℤ[i]` — needed because, unlike `H`/`CNOT`/`CZ`, the
+/// extended Clifford generators are not Hermitian.
+fn dagger(a: &Mat) -> Mat {
+    let n = a.len();
+    (0..n)
+        .map(|i| (0..n).map(|j| a[j][i].conj()).collect())
+        .collect()
+}
+
+// The extended Clifford gates over ℤ[i]. The square roots are defined as the
+// standard `exp(-i·π·P/4)` (stim's `SQRT_X`/`SQRT_Y` up to global phase) and
+// scaled by `√2` to stay integral, so `G† P G = 2·(U† P U)`.
+fn sqrt2_sqrt_x() -> Mat {
+    // √2·exp(−iπX/4) = I − iX.
+    vec![vec![z(1, 0), z(0, -1)], vec![z(0, -1), z(1, 0)]]
+}
+fn sqrt2_sqrt_y() -> Mat {
+    // √2·exp(−iπY/4) = I − iY.
+    vec![vec![z(1, 0), z(-1, 0)], vec![z(1, 0), z(1, 0)]]
+}
+fn cy_gate() -> Mat {
+    // |0⟩⟨0|⊗I + |1⟩⟨1|⊗Y, control = qubit 0.
+    vec![
+        vec![z(1, 0), z(0, 0), z(0, 0), z(0, 0)],
+        vec![z(0, 0), z(1, 0), z(0, 0), z(0, 0)],
+        vec![z(0, 0), z(0, 0), z(0, 0), z(0, -1)],
+        vec![z(0, 0), z(0, 0), z(0, 1), z(0, 0)],
+    ]
+}
+
 /// The single-qubit Pauli string for bit pair `(x, z)`.
 fn letter(x: bool, zbit: bool) -> &'static str {
     match (x, zbit) {
@@ -396,6 +432,63 @@ fn two_qubit_conjugation_signs_grounded_in_zi_matrices() {
         w.cz(0, 1);
         let lhs = matmul(&matmul(&cz_gate(), &mp), &cz_gate());
         assert_eq!(lhs, phased_mat(&w), "CZ sign {s}");
+    }
+}
+
+/// The **extended** Clifford set (`S†`, `√X`, `√X†`, `√Y`, `√Y†`, `CY`) grounded
+/// in genuine `ℤ[i]` matrix conjugation `U† P U`, the same way the generators
+/// above are.
+///
+/// This is the oracle for the derivation in `ppvm-traits-2/src/pauli.rs`: the
+/// blanket writes each extension gate as a *product* of audited generators
+/// (`√X ≃ H·S·H`, …) and `Phased` supplies the fused equivalent, so the claim
+/// that both realize the named gate is checked here against the gate's own
+/// matrix — not against either implementation.
+#[test]
+fn extension_conjugation_signs_grounded_in_zi_matrices() {
+    use ppvm_traits_2::CliffordExtensions;
+
+    for x in [false, true] {
+        for zbit in [false, true] {
+            let s = format!("+{}", letter(x, zbit));
+            let mp = pauli_mat(x, zbit);
+
+            // S†: integral and unitary, so no scaling.
+            let mut w = Phased::from(s.as_str());
+            w.s_dag(0);
+            let lhs = matmul(&matmul(&dagger(&s_dag()), &mp), &s_dag());
+            assert_eq!(lhs, phased_mat(&w), "S† sign {s}");
+
+            // The four square roots: G = √2·U, so G† P G = 2·(U† P U).
+            for (name, g) in [
+                ("√X", sqrt2_sqrt_x()),
+                ("√X†", dagger(&sqrt2_sqrt_x())),
+                ("√Y", sqrt2_sqrt_y()),
+                ("√Y†", dagger(&sqrt2_sqrt_y())),
+            ] {
+                let mut w = Phased::from(s.as_str());
+                match name {
+                    "√X" => w.sqrt_x(0),
+                    "√X†" => w.sqrt_x_dag(0),
+                    "√Y" => w.sqrt_y(0),
+                    _ => w.sqrt_y_dag(0),
+                }
+                let lhs = matmul(&matmul(&dagger(&g), &mp), &g);
+                assert_eq!(lhs, scalar_mul(z(2, 0), &phased_mat(&w)), "{name} sign {s}");
+            }
+        }
+    }
+
+    // CY over the full two-qubit alphabet (integral and unitary → no scaling).
+    for b in 0..16u8 {
+        let (xc, zc, xt, zt) = (b & 1 != 0, b & 2 != 0, b & 4 != 0, b & 8 != 0);
+        let s = format!("+{}{}", letter(xc, zc), letter(xt, zt));
+        let mp = kron(&pauli_mat(xc, zc), &pauli_mat(xt, zt));
+
+        let mut w = Phased::from(s.as_str());
+        w.cy(0, 1);
+        let lhs = matmul(&matmul(&dagger(&cy_gate()), &mp), &cy_gate());
+        assert_eq!(lhs, phased_mat(&w), "CY sign {s}");
     }
 }
 

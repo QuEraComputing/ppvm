@@ -41,7 +41,12 @@
 //! the invariant alone (`xorXColL_preserves_loss`/`xorZColL_preserves_loss`) and
 //! their composition equals the whole-gate skip
 //! (`xorZColL_xorXColL_eq_cnotActL`), so this "reproduces the old whole-gate
-//! skip" is a theorem, not just prose.
+//! skip" is a theorem, not just prose. `CY` — which the blanket
+//! `CliffordExtensions` decomposes into `s(t); cnot(c,t); s_dag(t)`, three
+//! primitives whose guards differ, so a lost control with a present target must
+//! *cancel* rather than skip — gets the same treatment:
+//! `sActL_cnotActL_sActL_eq_cyActL`, plus `cyActL_preserves_loss` and
+//! `cyActL_present_isometry`.
 
 use ppvm_pauli_word_2::PauliStorage;
 use ppvm_traits_2::{BlanketClifford, PhaseTrack, SymplecticColumns};

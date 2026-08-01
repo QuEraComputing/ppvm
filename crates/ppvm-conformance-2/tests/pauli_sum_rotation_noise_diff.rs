@@ -378,3 +378,98 @@ fn rotation_branch_collision_merges_correctly() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// (e) THE RESTORED SURFACE — the axis-generic `rotate_1` entry point and the
+// `rx_many`/`ry_many`/`rz_many` batch forms, both of which the old
+// `ppvm_traits::RotationOne` provided (and the Python bindings call). The new
+// trait defaults `rx`/`ry`/`rz` onto `rotate_1` and the batch forms onto those,
+// so this pins that the dispatch reaches the same kernel the per-axis fast paths
+// use — including the `Pauli::I` axis, which commutes with everything and which
+// the old `levi_civita(p, I) = (0, _)` made a no-op.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn rotate_1_matches_old_on_every_axis() {
+    use ppvm_traits::char::Pauli as OldPauli;
+    use ppvm_traits_2::Pauli as NewPauli;
+
+    let axes = [
+        (OldPauli::I, NewPauli::I),
+        (OldPauli::X, NewPauli::X),
+        (OldPauli::Y, NewPauli::Y),
+        (OldPauli::Z, NewPauli::Z),
+    ];
+    for &seed in &SEEDS {
+        let mut rng = seeded_rng(seed);
+        for &n in &WIDTHS {
+            let terms = random_terms(&mut rng, n, 8);
+            for (old_axis, new_axis) in axes {
+                let mut old = build_old_sum(n, &terms);
+                let mut new = build_new_sum(n, &terms);
+                for q in 0..n {
+                    let theta = rng.random_range(-std::f64::consts::PI..std::f64::consts::PI);
+                    old.rotate_1(old_axis, q, theta);
+                    new.rotate_1(new_axis, q, theta);
+                    assert_rot_supports_match(&old, &new, TOL);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn rotate_1_identity_axis_is_a_no_op() {
+    use ppvm_traits_2::Pauli as NewPauli;
+
+    let mut rng = seeded_rng(4242);
+    let terms = random_terms(&mut rng, 4, 6);
+    let mut new = build_new_sum(4, &terms);
+    let before = new_support(&new);
+    for q in 0..4 {
+        new.rotate_1(NewPauli::I, q, 0.7);
+    }
+    assert_eq!(new_support(&new), before);
+}
+
+#[test]
+fn rotation_batch_forms_match_old() {
+    // Three rotations *per qubit* fan out 1→2 terms each, so the support grows
+    // toward the full `4ⁿ` basis; the widths here keep the per-gate compare
+    // bounded while still driving every branch and merge path.
+    for &seed in &SEEDS[..3] {
+        let mut rng = seeded_rng(seed);
+        for &n in WIDTHS.iter().filter(|&&n| n <= 5) {
+            let terms = random_terms(&mut rng, n, 8);
+            let targets: Vec<usize> = (0..n).rev().collect();
+            let theta = rng.random_range(-std::f64::consts::PI..std::f64::consts::PI);
+
+            let mut old = build_old_sum(n, &terms);
+            let mut new = build_new_sum(n, &terms);
+            old.rx_many(&targets, theta);
+            new.rx_many(&targets, theta);
+            assert_rot_supports_match(&old, &new, TOL);
+
+            old.ry_many(&targets, theta);
+            new.ry_many(&targets, theta);
+            assert_rot_supports_match(&old, &new, TOL);
+
+            old.rz_many(&targets, theta);
+            new.rz_many(&targets, theta);
+            assert_rot_supports_match(&old, &new, TOL);
+
+            // The batch form is exactly the per-target loop, in order.
+            let mut loops = build_new_sum(n, &terms);
+            for &q in &targets {
+                loops.rx(q, theta);
+            }
+            for &q in &targets {
+                loops.ry(q, theta);
+            }
+            for &q in &targets {
+                loops.rz(q, theta);
+            }
+            assert_eq!(new_support(&loops), new_support(&new));
+        }
+    }
+}

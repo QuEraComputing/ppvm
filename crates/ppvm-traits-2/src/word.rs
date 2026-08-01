@@ -129,4 +129,18 @@ pub trait PauliBits: Word {
         let _ = i;
         false
     }
+
+    /// Whether this word anticommutes with the single-qubit Pauli
+    /// `pauli = (x_bit, z_bit)` at index `i`, i.e. whether the symplectic form
+    /// `ω(P, Q) = x_P·z_Q ⊕ z_P·x_Q` is `1` there.
+    ///
+    /// The old `PauliWordTrait::anticommutes_at`
+    /// (`ppvm-traits/src/traits/word_trait.rs`), reproduced verbatim as a
+    /// provided method — it is the pivot test the tableau measurement search
+    /// runs (`ppvm-tableau/src/data.rs`), and it is derivable from the two bit
+    /// reads, so it needs no new required method.
+    #[inline]
+    fn anticommutes_at(&self, i: usize, pauli: (bool, bool)) -> bool {
+        (self.x_bit(i) & pauli.1) ^ (self.z_bit(i) & pauli.0)
+    }
 }

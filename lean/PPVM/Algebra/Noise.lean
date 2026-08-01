@@ -22,7 +22,10 @@ the Pauli-basis coefficient vector.
 * **Pauli-basis orthonormality.** In the `C[K]` model the L3 `overlap` pairing
   plays the role of the normalized trace `Tr(PQ)/2ⁿ`; the Pauli basis vectors
   `single P 1` are orthonormal under it. (The `2ⁿ`-normalized matrix trace itself
-  is not constructed here — `overlap` is the abstract stand-in.)
+  is not constructed *here*; it is now built in `PPVM.PauliMatrix`, where
+  `trace_tensorPauli_mul` proves the genuine matrix identity
+  `Tr(g(p) g(q)) = 2ⁿ δ` and `overlap_eq_trace_div` proves `overlap` *is*
+  `Tr(Â B̂)/2ⁿ`. This file's statement is the abstract-key model form.)
 * **Zero-state read-out.** `⟨0ⁿ|ρ|0ⁿ⟩ = Σ_{P ∈ {I,Z}ⁿ} c_P`: only the diagonal
   (`X`-free) Paulis contribute; the corollary uses the concrete `X`-free predicate.
 -/
@@ -60,8 +63,10 @@ theorem pauli_channel_eigenvalue_omega {m : ℕ} (p : Symplectic.Sp m → ℝ)
 
 /-- **Pauli-basis orthonormality** in the `C[K]` model: the basis vectors
 `single P 1` are orthonormal under the L3 `overlap` pairing, `⟪P, Q⟫ = δ_{PQ}`.
-This is the model-level form of `Tr(PQ)/2ⁿ = δ_{PQ}`, with `overlap` standing in
-for the normalized trace (which is not itself built here). -/
+This is the model-level form of `Tr(PQ)/2ⁿ = δ_{PQ}` over an *abstract* key set,
+with `overlap` standing in for the normalized trace. On the concrete Pauli key
+the matrix identity itself is now proved: `PPVM.PauliMatrix.trace_tensorPauli_mul`
+(and `overlap_eq_trace_div`, `Tr(Â B̂) = 2ⁿ ⟪A,B⟫`). -/
 theorem overlap_single_single {K : Type*} [DecidableEq K] (P Q : K) :
     GradedMap.overlap (Finsupp.single P (1 : ℝ)) (Finsupp.single Q 1)
       = if P = Q then 1 else 0 := by

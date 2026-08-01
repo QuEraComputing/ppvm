@@ -59,6 +59,13 @@ pub trait Support {
 pub trait Accumulate: Support {
     /// Build side of the hash join: merge a produced batch, accumulating onto an
     /// existing key or inserting a new one. Columnar in.
+    ///
+    /// The batch is algebraically a **multiset** of terms — folding it in is a
+    /// homomorphism from the free commutative monoid — so an impl is free to
+    /// reorder it and to split it across partitions/threads: order-invariance
+    /// (`accumulateTerms_perm`) and partition-invariance
+    /// (`accumulateTerms_add`, `accumulateTerms B m` for `B = B1 + B2`) are
+    /// machine-checked in `lean/PPVM/Algebra/GradedMap.lean`.
     fn accumulate_batch(&mut self, terms: &TermBatch<Self::Key, Self::Coeff>);
 
     /// Canonicalize to reduced finite-support form: drop every key whose
@@ -69,7 +76,9 @@ pub trait Accumulate: Support {
     /// Scalar sugar over a batch of one — accumulate a single `(key, coeff)`.
     ///
     /// Design: §"The map is a graded algebra over `C[K]`" ("the scalar
-    /// `accumulate(k, c)` is provided sugar over a batch of one").
+    /// `accumulate(k, c)` is provided sugar over a batch of one"); that the
+    /// singleton batch is the same operation is `accumulateTerms_singleton` in
+    /// `lean/PPVM/Algebra/GradedMap.lean`.
     fn accumulate(&mut self, key: Self::Key, coeff: Self::Coeff) {
         let mut batch = TermBatch::with_capacity(1);
         batch.push(key, coeff);
@@ -96,7 +105,12 @@ pub trait Scale: Support {
 /// ring) is machine-checked in `lean/PPVM/Algebra/GradedMap.lean`
 /// (`overlap_add_left`/`overlap_add_right`, `overlap_smul_left`/`overlap_smul_right`,
 /// `overlap_comm`); Pauli-basis orthonormality is `overlap_single_single` in
-/// `lean/PPVM/Algebra/Noise.lean`.
+/// `lean/PPVM/Algebra/Noise.lean`. The `= Tr(A B)/2ⁿ` reading is proved, not
+/// asserted: `overlap_eq_trace_div` in `lean/PPVM/Pauli/Matrix.lean` gives
+/// `Tr(Â B̂) = 2ⁿ · ⟨A, B⟩` for the genuine `2ⁿ×2ⁿ` operators over `ℤ[i]`
+/// (via `trace_tensorPauli_mul`), and `twistedConv_apply_id` in
+/// `lean/PPVM/Algebra/Twisted.lean` states the same fact inside `C[K]`:
+/// `⟨A, B⟩` is the identity coefficient of the L4 product.
 ///
 /// `hermitian_overlap` is the **sesquilinear** inner product
 /// `⟨φ | ψ⟩ = ∑_k conj(a_k)·b_k`, conjugate-linear in the first argument, so it
@@ -120,6 +134,25 @@ pub trait Pair: Support {
         Self::Coeff: Conjugate;
 }
 
+/// `tr(self · value)` against a *different* right-hand type.
+///
+/// The old `ppvm_traits::Trace` (`ppvm-traits/src/traits/trace.rs`), ported
+/// unchanged. It is **not** subsumed by [`Pair::overlap`]: `overlap` pairs a map
+/// with another map of the *same* type, while `Trace` is the heterogeneous form
+/// the old crate used to trace a word or a whole sum against a `PauliPattern`
+/// (`ppvm-pauli-word/src/pattern/trace.rs`, `ppvm-pauli-sum/src/sum/trace.rs`),
+/// which is why the right-hand type and the numeric `Output` are both free.
+///
+/// Design: §"Compatibility with current names" (`Trace`). Its `-2` implementers
+/// land with the pattern port; the same-type Pauli-sum case is `Pair::overlap`,
+/// whose bilinearity is machine-checked in `lean/PPVM/Algebra/GradedMap.lean`.
+pub trait Trace<'a, RHS: 'a> {
+    /// Numeric output of the trace.
+    type Output;
+    /// Compute `tr(self · value)`.
+    fn trace(&'a self, value: &'a RHS) -> Self::Output;
+}
+
 /// L4 — the ring product. The only layer that needs the *key* to carry a
 /// product; it stays optional and is not implemented for a key type that has
 /// none. The Pauli product injects powers of `i`, so the coefficient must absorb
@@ -129,7 +162,9 @@ pub trait Pair: Support {
 /// Associativity of the twisted product holds over any commutative ring with
 /// `i⁴ = 1`, machine-checked in `lean/PPVM/Algebra/Twisted.lean` (`tmul_assoc`);
 /// the basis-monomial product is `multiply_single` in
-/// `lean/PPVM/Algebra/GradedMap.lean`.
+/// `lean/PPVM/Algebra/GradedMap.lean`. The whole-map product is `twistedConv`
+/// (`lean/PPVM/Algebra/Twisted.lean`), whose identity-key coefficient is exactly
+/// [`Pair::overlap`] (`twistedConv_apply_id`) — the spec tying L4 to L3.
 pub trait Multiply: Accumulate
 where
     Self::Key: KeyProduct,
@@ -145,7 +180,10 @@ where
 ///
 /// Design: §"The map is a graded algebra over `C[K]`" and §"Truncation"
 /// (`Policy::truncate` bounds on `Retain`). The truncation error incurred is
-/// bounded in `lean/PPVM/Algebra/Truncation.lean` (`l1_bound`).
+/// bounded in `lean/PPVM/Algebra/Truncation.lean` (`l1_bound` over `ℝ`,
+/// `l1_bound_abv` over any coefficient ring whose
+/// [`Coefficient::magnitude`] is an
+/// absolute value — the law that bound consumes).
 pub trait Retain<W, C> {
     /// Retain exactly the terms for which `keep(&word, &coeff)` is `true`.
     fn retain(&mut self, keep: impl Fn(&W, &C) -> bool);

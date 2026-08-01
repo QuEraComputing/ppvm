@@ -81,6 +81,24 @@ theorem mulWord_self (p : Word n) : mulWord p p = fun _ => (false, false) := by
   funext i
   simp only [mulWord, mulBits, Bool.xor_self]
 
+/-- **The product bits are the identity word exactly on the diagonal.**
+`mulWord p q = I ↔ q = p` — the converse of `mulWord_self`. Each qubit's
+`(x, z)` pair is `⊕`-cancelling, and `⊕` is injective, so the only word whose
+product with `p` has trivial bits is `p` itself. This is what collapses the L4
+outer product to its diagonal when one reads off the identity coefficient (see
+`PPVM.Twisted.twistedConv_apply_id`). -/
+theorem mulWord_eq_id_iff (p q : Word n) :
+    mulWord p q = (fun _ => (false, false)) ↔ q = p := by
+  have xor_cancel : ∀ a b : Bool, xor a b = false → b = a := by decide
+  constructor
+  · intro h
+    funext i
+    have hi := congrFun h i
+    simp only [mulWord, mulBits, Prod.mk.injEq] at hi
+    exact Prod.ext (xor_cancel _ _ hi.1) (xor_cancel _ _ hi.2)
+  · rintro rfl
+    exact mulWord_self _
+
 /-- `P · P` is phase-free: the summed self-phase is `0`. Combined with
 `mulWord_self`, `P² = +I`. -/
 theorem phaseExpN_self (p : Word n) : phaseExpN p p = 0 := by

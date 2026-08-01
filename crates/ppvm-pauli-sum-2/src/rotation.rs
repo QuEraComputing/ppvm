@@ -36,7 +36,7 @@
 use std::hash::BuildHasher;
 
 use ppvm_pauli_word_2::{HashFinalize, PauliStorage, PauliWord};
-use ppvm_traits_2::{Accumulate, Angle, Coefficient, PauliBits, Retain, RotationOne};
+use ppvm_traits_2::{Accumulate, Angle, Coefficient, Pauli, PauliBits, Retain, RotationOne};
 
 use crate::store::RotateInPlace;
 use crate::sum::Sum;
@@ -63,6 +63,27 @@ where
     Ang: Angle<C>,
     P: crate::policy::Policy<PauliWord<A, H>, C>,
 {
+    /// Rotate about `axis` on `qubit` by `theta`, dispatching to the per-axis
+    /// fast paths below.
+    ///
+    /// This is the old crate's axis-generic entry point
+    /// (`ppvm-pauli-sum::sum::rot1::rotate_1`), which drove a `levi_civita`
+    /// table lookup per term; dispatching once on the axis instead is the same
+    /// function — old `rx`/`ry`/`rz` were themselves specialized overrides of
+    /// `rotate_1` and are diffed against it. `Pauli::I` commutes with every
+    /// term, so `levi_civita(p, I) = (0, _)` made the old pass return `None`
+    /// everywhere and mutate nothing (`map_insert` does not truncate); the
+    /// no-op below is that same behaviour.
+    #[inline]
+    fn rotate_1(&mut self, axis: Pauli, qubit: usize, theta: Ang) {
+        match axis {
+            Pauli::X => self.rx(qubit, theta),
+            Pauli::Y => self.ry(qubit, theta),
+            Pauli::Z => self.rz(qubit, theta),
+            Pauli::I => {}
+        }
+    }
+
     /// Rotate about `X` on `qubit` by `theta`. A term commutes iff its `z` bit at
     /// `qubit` is clear (`I`/`X`); an anticommuting `Z`/`Y` (flip `x`) branches to
     /// `Y`/`Z` with `ε = −1` if `x` else `+1`.

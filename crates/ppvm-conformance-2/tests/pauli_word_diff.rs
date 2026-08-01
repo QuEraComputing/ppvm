@@ -224,6 +224,61 @@ fn clifford_replay_matches_old() {
     }
 }
 
+/// The extended Clifford set (`S†`, `√X`, `√X†`, `√Y`, `√Y†`, `CY`) — the new
+/// blanket `CliffordExtensions` of `ppvm-traits-2/src/pauli.rs` against the old
+/// blanket `impl<T: PauliWordTrait> CliffordExtensions for T`.
+///
+/// The new blanket derives each gate from audited generators (`√X ≃ H·S·H`, …)
+/// rather than from a hand-written bit rule per gate, so the `Sp(2n,2)` map it
+/// produces is exactly what must be diffed here; the accompanying signs (dropped
+/// by a phaseless word) are diffed in `phased_pauli_word_diff.rs`.
+#[test]
+fn clifford_extension_bit_maps_match_old_exhaustive() {
+    use ppvm_traits::traits::CliffordExtensions as OldCliffordExtensions;
+    use ppvm_traits_2::CliffordExtensions as NewCliffordExtensions;
+
+    for a in ["I", "X", "Y", "Z"] {
+        let mut new_s: New = a.into();
+        let mut old_s: OldBare = OldBare::from(a);
+        new_s.s_dag(0);
+        old_s.s_dag(0);
+        assert_eq!(new_s.to_string(), old_s.to_string(), "S† {a}");
+
+        let mut new_sx: New = a.into();
+        let mut old_sx: OldBare = OldBare::from(a);
+        new_sx.sqrt_x(0);
+        old_sx.sqrt_x(0);
+        assert_eq!(new_sx.to_string(), old_sx.to_string(), "√X {a}");
+
+        let mut new_sxd: New = a.into();
+        let mut old_sxd: OldBare = OldBare::from(a);
+        new_sxd.sqrt_x_dag(0);
+        old_sxd.sqrt_x_dag(0);
+        assert_eq!(new_sxd.to_string(), old_sxd.to_string(), "√X† {a}");
+
+        let mut new_sy: New = a.into();
+        let mut old_sy: OldBare = OldBare::from(a);
+        new_sy.sqrt_y(0);
+        old_sy.sqrt_y(0);
+        assert_eq!(new_sy.to_string(), old_sy.to_string(), "√Y {a}");
+
+        let mut new_syd: New = a.into();
+        let mut old_syd: OldBare = OldBare::from(a);
+        new_syd.sqrt_y_dag(0);
+        old_syd.sqrt_y_dag(0);
+        assert_eq!(new_syd.to_string(), old_syd.to_string(), "√Y† {a}");
+
+        for b in ["I", "X", "Y", "Z"] {
+            let s = format!("{a}{b}");
+            let mut new: New = s.as_str().into();
+            let mut old: OldBare = OldBare::from(s.as_str());
+            new.cy(0, 1);
+            old.cy(0, 1);
+            assert_eq!(new.to_string(), old.to_string(), "CY {s}");
+        }
+    }
+}
+
 /// CZ is not emitted by `random_circuit`, so cover the full two-qubit table
 /// directly, comparing the new bit map against the old bare word's.
 #[test]

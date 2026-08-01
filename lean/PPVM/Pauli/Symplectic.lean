@@ -479,4 +479,113 @@ theorem xorZColL_xorXColL_eq_cnotActL (h : c ≠ t) (v : Sp n) :
   · simp only [xorZColL, xorXColL, cnotActL, if_neg hg]
     exact xorZCol_xorXCol_eq_cnotAct h v
 
+/-! ### `CY` as a decomposition into per-primitive-guarded gates
+
+`CY` is the strictly harder analogue of the `CNOT` case above. The blanket
+`CliffordExtensions` of `crates/ppvm-traits-2/src/pauli.rs` does not carry a `CY`
+primitive at all: it emits `s(t) ; cnot(c,t) ; s_dag(t)` (and `s_dag(t)` is
+`s(t) ; z(t)`), so on a lossy word the *whole-gate* skip the old crate performed
+(`crates/ppvm-traits/src/traits/clifford.rs`, `fn cy`: `if lost(c) || lost(t) {
+return }`) has to be reproduced by three independently guarded primitives whose
+guards do **not** all agree:
+
+* `sActL t` is guarded on `lost t` alone, and
+* `cnotActL c t` on `lost c ∨ lost t`.
+
+So with a **lost control and a present target** the atomic gate is skipped while
+two of the three primitives still run — correctness rests on an exact
+*cancellation* (`sAct_involutive`) rather than on a uniform skip, which is
+precisely what `xorZColL_xorXColL_eq_cnotActL` does not cover. (`z(t)` is a
+bit-level no-op: `Z`-conjugation fixes the word — `Conjugation.lean` `conjZ` —
+and the lossy word carries no phase. The phase half of the same cancellation, for
+a phase-carrying opt-in, is `Conjugation.lean` `conjSdag_conjS`/`conjS_conjSdag`:
+`S` then `S†` is the identity on `𝒫₁`, sign included.) -/
+
+/-- The crate's `z` gate on the bit planes: the identity (phase-only gate). -/
+def zActL (_q : Fin n) (v : Sp n) : Sp n := v
+
+/-- The atomic `CY` bit map (`c ≠ t`): `z_c ⊕= x_t ⊕ z_t`, `x_t ⊕= x_c`,
+`z_t ⊕= x_c` — the old crate's hand-written `fn cy` rule. -/
+def cyAct (c t : Fin n) (v : Sp n) : Sp n :=
+  Function.update (Function.update v t ((v t).1 + (v c).1, (v t).2 + (v c).1))
+    c ((v c).1, (v c).2 + ((v t).1 + (v t).2))
+
+/-- Loss-guarded `CY`: the old crate's atomic whole-gate skip. -/
+def cyActL (c t : Fin n) (v : Sp n) : Sp n :=
+  if lost c ∨ lost t then v else cyAct c t v
+
+@[simp] theorem sAct_self (q : Fin n) (v : Sp n) :
+    sAct q v q = ((v q).1, (v q).1 + (v q).2) := by
+  simp [sAct]
+
+theorem sAct_other (v : Sp n) {i q : Fin n} (h : i ≠ q) : sAct q v i = v i := by
+  simp [sAct, Function.update_of_ne h]
+
+@[simp] theorem cyAct_c (_h : c ≠ t) (v : Sp n) :
+    cyAct c t v c = ((v c).1, (v c).2 + ((v t).1 + (v t).2)) := by
+  simp [cyAct, Function.update_self]
+
+@[simp] theorem cyAct_t (h : c ≠ t) (v : Sp n) :
+    cyAct c t v t = ((v t).1 + (v c).1, (v t).2 + (v c).1) := by
+  simp [cyAct, Function.update_of_ne (Ne.symm h), Function.update_self]
+
+theorem cyAct_other (v : Sp n) {i} (hc : i ≠ c) (ht : i ≠ t) : cyAct c t v i = v i := by
+  simp [cyAct, Function.update_of_ne hc, Function.update_of_ne ht]
+
+/-- The unguarded decomposition equals the atomic `CY` bit map (`c ≠ t`):
+`S(t)`, then `CNOT(c,t)`, then `S(t)` again. -/
+theorem sAct_cnotAct_sAct_eq_cyAct (h : c ≠ t) (v : Sp n) :
+    sAct t (cnotAct c t (sAct t v)) = cyAct c t v := by
+  funext i
+  by_cases hic : i = c
+  · rw [hic]
+    simp [sAct_other _ h, cnotAct_c h, cyAct_c h]
+  · by_cases hit : i = t
+    · rw [hit]
+      refine Prod.ext_iff.mpr ⟨?_, ?_⟩
+      · simp [cnotAct_t h, sAct_other _ h, cyAct_t h, add_comm]
+      · simp only [sAct_self, cnotAct_t h, sAct_other _ h, cyAct_t h]
+        linear_combination (v t).1 * two_zmod2
+    · simp [sAct_other _ hit, cnotAct_other _ hic hit, cyAct_other _ hic hit]
+
+/-- **The three guarded primitives compose to the atomic whole-gate skip.** With
+a lost target every primitive short-circuits; with a **lost control and a present
+target** the `CNOT` is skipped but the two `S(t)` conjugations still run and
+cancel exactly (`sAct_involutive`); with both present the composite is `cyAct`.
+This is the `CY` counterpart of `xorZColL_xorXColL_eq_cnotActL`, and the reason
+the blanket decomposition may replace the old crate's atomic `cy` skip. -/
+theorem sActL_cnotActL_sActL_eq_cyActL (h : c ≠ t) (v : Sp n) :
+    zActL t (sActL lost t (cnotActL lost c t (sActL lost t v))) = cyActL lost c t v := by
+  simp only [zActL]
+  by_cases ht : lost t
+  · simp only [sActL, if_pos ht, cnotActL, cyActL, if_pos (Or.inr ht)]
+  · by_cases hc : lost c
+    · simp only [sActL, if_neg ht, cnotActL, cyActL, if_pos (Or.inl hc)]
+      exact sAct_involutive t v
+    · simp only [sActL, if_neg ht, cnotActL, cyActL, if_neg (not_or.mpr ⟨hc, ht⟩)]
+      exact sAct_cnotAct_sAct_eq_cyAct h v
+
+/-- **The guarded `CY` preserves the canonical loss invariant.** -/
+theorem cyActL_preserves_loss (c t : Fin n) {v : Sp n} (hv : LossInv lost v) :
+    LossInv lost (cyActL lost c t v) := by
+  intro p hp
+  by_cases hg : lost c ∨ lost t
+  · simpa [cyActL, hg] using hv p hp
+  · have hg' := not_or.mp hg
+    have hpc : p ≠ c := fun h => hg'.1 (h ▸ hp)
+    have hpt : p ≠ t := fun h => hg'.2 (h ▸ hp)
+    simpa [cyActL, hg, cyAct_other v hpc hpt] using hv p hp
+
+/-- **`CY` is a symplectic isometry**, inherited from the decomposition. -/
+theorem cyAct_isometry (h : c ≠ t) (v w : Sp n) :
+    omega (cyAct c t v) (cyAct c t w) = omega v w := by
+  rw [← sAct_cnotAct_sAct_eq_cyAct h v, ← sAct_cnotAct_sAct_eq_cyAct h w,
+    sAct_isometry, cnotAct_isometry h, sAct_isometry]
+
+/-- **(b) With both operands present, guarded `CY` is the `Sp(2n,2)` isometry.** -/
+theorem cyActL_present_isometry (h : c ≠ t) (hc : ¬ lost c) (ht : ¬ lost t)
+    (v w : Sp n) :
+    omega (cyActL lost c t v) (cyActL lost c t w) = omega v w := by
+  simp only [cyActL, if_neg (not_or.mpr ⟨hc, ht⟩)]; exact cyAct_isometry h v w
+
 end PPVM.Symplectic

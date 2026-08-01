@@ -92,9 +92,25 @@ pub trait Coefficient:
 
     /// Nonnegative magnitude. Exposes a property of the value for a `Policy` to
     /// threshold; it does not itself decide any cutoff. Replaces `cutoff`.
+    ///
+    /// Law — `magnitude` must be an **absolute value** on the coefficient ring:
+    /// `N x ≥ 0`, `N x == 0 ⟺ x == 0`, `N (x + y) ≤ N x + N y`, and
+    /// `N (x · y) == N x · N y`. This is not decoration: it is exactly what the
+    /// `ℓ¹` truncation bound consumes.
     fn magnitude(&self) -> f64;
 }
 ```
+
+`magnitude` carries a **law**, and it is the one law the whole truncation
+guarantee rests on: it must be an absolute value on the coefficient ring
+(nonnegative, zero only at `0`, subadditive, multiplicative). Nonnegativity alone
+is not enough — `N x = x²` is nonnegative, zero only at `0`, and even
+multiplicative, yet the `ℓ¹` bound fails for it
+(`lean/PPVM/Algebra/Truncation.lean`, `l1_bound_needs_subadditive`). The bound
+itself is proved for an arbitrary coefficient ring carrying such an `N`
+(`l1_bound_abv`), with the shipped `Complex<f64>`/`magnitude() = norm()`
+configuration covered by the normed-field instance (`l1_bound_norm`,
+`l1_bound_complex`).
 
 Halving (`0.5·x`) is deliberately **not** on `Coefficient` for the same reason
 `Mul<f64>` was dropped: `0.5·(1+i)` leaves `ℤ[i]`, so an exact ring could satisfy
@@ -234,14 +250,36 @@ pub trait Clifford {
 }
 
 pub trait RotationOne<C: Coefficient, A: Angle<C> = C> {
-    fn rx(&mut self, qubit: usize, theta: A);
-    // ...
+    fn rotate_1(&mut self, axis: Pauli, qubit: usize, theta: A);
+
+    fn rx(&mut self, qubit: usize, theta: A) {
+        self.rotate_1(Pauli::X, qubit, theta)
+    }
+    // ry/rz likewise; rx_many/ry_many/rz_many loop over them (`where A: Clone`)
 }
 
 pub trait PauliError<C: Coefficient> {
     fn pauli_error(&mut self, qubit: usize, probabilities: [C; 3]);
 }
 ```
+
+The sketch above names only the traits whose *shape* changes. The rest of the
+current behavioral surface crosses over unchanged and is listed in
+[Compatibility with current names](#compatibility-with-current-names):
+`CliffordExtensions` and the batched `CliffordBatch` /
+`CliffordExtensionsBatch`; `Reset` with its `reset_x` = `reset` + `h` /
+`reset_y` = `reset` + `h` + `s` defaults; the rest of `RotationOne` (the required
+axis-generic `rotate_1` the `rx`/`ry`/`rz` defaults and the `*_many` batch loops
+sit on top of) together with the other gate traits `RotationTwo`, `RotXY`,
+`CRx`, `U3Gate`, `TGate`, and `Projection`; `Trace`; the stim
+`x_error`/`y_error`/`z_error` aliases and the `*_many` forms on `PauliError`;
+and the channel family
+(`PauliErrorAll`, `TwoQubitPauliError`, `Depolarizing`, `Depolarizing2`,
+`AmplitudeDamping`, `LossChannel`, `CorrelatedLossChannel`, `ResetLossChannel`,
+`AsymmetricLossChannel`). Their only edit is the global one this document
+already applies everywhere — the `Config` bundle parameter becomes the
+coefficient type itself, and an operation with no numeric parameter (like
+`ResetLossChannel`) carries none.
 
 A unital Pauli channel acts diagonally in the Pauli basis, `P ↦ λ_P·P`, and its
 transfer eigenvalue collapses (using `Σ_Q p_Q = 1`) to
@@ -365,7 +403,43 @@ product in `lean/PPVM/Pauli/Conjugation.lean`: `conjX`/`conjY`/`conjZ` prove
 \(XPX = (-1)^{z}P\), \(YPY = (-1)^{x\oplus z}P\), \(ZPZ = (-1)^{x}P\) as
 `G·P·G⁻¹` in \(\mathcal{P}_1\). The surjectivity that upgrades this containment
 to the full isomorphism \(\mathcal{C}_n/\mathcal{P}_n \cong \mathrm{Sp}(2n,2)\) is
-stated here but not formalized. The **loss-guarded** variant of this action — each generator
+stated here but not formalized.
+
+The six **derived extension gates** (`CliffordExtensions`) are implemented once,
+for every `BlanketClifford` opt-in, as *products of these audited generators*
+rather than as fresh hand-written bit-and-sign rules
+(`crates/ppvm-traits-2/src/pauli.rs`) — which is only sound if the products
+really do reproduce the standard conjugation table, phase included, for a
+phase-*carrying* opt-in as well. That composition is discharged in
+`lean/PPVM/Pauli/Conjugation.lean`. Because the crate conjugates **backward**
+(\(P \mapsto U^\dagger P U\)), its `s` gate is `conjSdag` and its self-adjoint
+`h`/`z` gates are `conjH`/`conjPauliZ` (the latter tied to the group product by
+`conjPauliZ_eq_conj`); the five single-qubit rows are then the composites
+`extSdag` (= `s;z`), `extSqrtX` (= `h;s;h`), `extSqrtXdag`, `extSqrtY` (= `h;z`),
+`extSqrtYdag`. Each is a `MonoidHom` **by construction** (`extSdagHom`,
+`extSqrtXHom`, … are literally `MonoidHom.comp`s of the audited generator homs,
+`*_apply` by `rfl`), and its table is checked against the old crate's:
+`extSdag_eq_conjS` (the crate's `s_dag` *is* the forward \(S\)-conjugation),
+`extSqrtX_X`/`_Y`/`_Z` (\(X\mapsto X\), \(Y\mapsto -Z\), \(Z\mapsto Y\)) and the
+`extSqrtXdag_*`/`extSqrtY_*`/`extSqrtYdag_*` rows, with the dagger pairs proven
+mutually inverse (`extSqrtXdag_extSqrtX`, `extSqrtYdag_extSqrtY`,
+`extSdag_conjSdag`) and `extSqrtX_sq`/`extSqrtY_sq` recovering
+\(\sqrt X^2 = X\), \(\sqrt Y^2 = Y\). Two-qubit `CY` is the same story one level
+up: `conjCY` is *defined* as the crate's call sequence
+\((I\otimes S)\cdot\mathrm{CNOT}\cdot(I\otimes S^\dagger)\) on \(\mathcal{P}_2\)
+(`conjSdagT` / `conjCNOT` / `conjST`, with `conjCY_calls` showing the literal
+four-primitive sequence `s(t); cnot; s(t); z(t)` collapses to it and
+`conjZT_conjSdagT_eq_conjST` the inlined `s_dag`), it is a `MonoidHom` for free
+(`conjCYHom`), and `conjCY_bits` + `conjCY_sign` together *are* the old crate's
+16-entry table — the bit rule \(z_c \mathbin{\oplus}= x_t\oplus z_t\),
+\(x_t \mathbin{\oplus}= x_c\), \(z_t \mathbin{\oplus}= x_c\) and a \(-1\) on
+exactly \(X\!\otimes\!X\) and \(Y\!\otimes\!Z\) (`conjCY_Xc`…, `conjCY_XcXt`,
+`conjCY_YcZt` name the generator and signed entries). Corollary, and the reason
+the \(\pm1\) drain stays total on the extension gates too: every composite delta
+is still real — `extSdag_isRealPhase`/`extSqrtX_isRealPhase`/…/
+`conjCY_isRealPhase`.
+
+The **loss-guarded** variant of this action — each generator
 is a no-op when any operand qubit is lost, as in
 `crates/ppvm-lossy-pauli-word-2/src/clifford.rs` — is machine-checked separately
 in the same file (`lean/PPVM/Pauli/Symplectic.lean`, the `…ActL` definitions):
@@ -384,7 +458,22 @@ and their composition equals the atomic whole-gate skip
 (`xorZColL_xorXColL_eq_cnotActL`) — the machine-checked form of the crate's
 "reproduces the old whole-gate skip" claim, and the link that would break if
 either guard were weakened in isolation. (`CZ` emits a single primitive
-`cz_bits`, which is exactly `czAct`, so `czActL` already models it.) That
+`cz_bits`, which is exactly `czAct`, so `czActL` already models it.) **`CY` is
+the strictly harder case of the same claim** and gets its own theorem: the
+blanket has no `CY` primitive at all, it emits `s(t); cnot(c,t); s_dag(t)`, and
+those guards do *not* agree — `sActL` tests `lost t` alone while `cnotActL` tests
+`lost c ∨ lost t`. So with a **lost control and a present target** the atomic gate
+is skipped yet two of the three primitives still run, and correctness rests on an
+exact cancellation rather than a uniform skip.
+`sActL_cnotActL_sActL_eq_cyActL` (`lean/PPVM/Pauli/Symplectic.lean`) proves the
+guarded composite equals the old crate's atomic whole-gate skip `cyActL` on every
+loss configuration (`sAct_cnotAct_sAct_eq_cyAct` is the unguarded half, `cyAct`
+being the old `fn cy` bit rule verbatim; `zActL` records that the crate's `z` is a
+bit-level no-op), with `cyActL_preserves_loss` and `cyActL_present_isometry`/
+`cyAct_isometry` the loss-invariant and `Sp` halves. The *phase* half of that
+cancellation — a phase-carrying opt-in, where the two guarded `S` conjugations
+must cancel sign-and-all — is `conjS_conjSdag`/`conjSdag_conjS` in
+`Conjugation.lean`. That
 factorization sorts every gate operation into two buckets, and the traits follow
 the buckets.
 
@@ -676,7 +765,11 @@ a strict `magnitude() > threshold`, so the two backends disagree at
 boundary mismatch — at every threshold — is machine-checked in
 `lean/PPVM/Algebra/Truncation.lean` (`cutoff_mismatch`). The error a truncation
 incurs is bounded in the same file: an `ℓ¹` bound `|error| ≤ Σ_{dropped} |c_P|`
-for the `PauliSum` path (`l1_bound`, under `|⟨P⟩| ≤ 1`) and, for the tableau path,
+for the `PauliSum` path (`l1_bound`, under `|⟨P⟩| ≤ 1`; and `l1_bound_abv` /
+`l1_bound_norm` / `l1_bound_complex` for a general coefficient ring whose
+`magnitude` is an absolute value, which is what makes this keep-rule meaningful
+for `PauliSum<Complex<f64>>` and not only for real coefficients) and, for the
+tableau path,
 the *unconditional* Cauchy–Schwarz `ℓ²` bound `l2_bound`, sharpened to
 `error² ≤ (Σ_{dropped} c_P²)·|D|` under `|⟨P⟩| ≤ 1` in `l2_bound_normalized`.
 
@@ -738,6 +831,16 @@ pub trait Accumulate: Support {
     /// Build side of the hash join: merge a produced batch, accumulating onto an
     /// existing key or inserting a new one. Columnar in; the scalar
     /// `accumulate(k, c)` is provided sugar over a batch of one.
+    ///
+    /// The batch is algebraically a **multiset** of terms: folding it in is a
+    /// homomorphism from the free commutative monoid, so the result is
+    /// independent of term order (`accumulateTerms_perm`) and of how the batch
+    /// is split across partitions/threads (`accumulateTerms_add`), and the
+    /// scalar sugar is definitionally a batch of one
+    /// (`accumulateTerms_singleton`) — machine-checked in
+    /// `lean/PPVM/Algebra/GradedMap.lean`. That is the licence for a backend to
+    /// `gather` a batch into per-partition sub-batches and run them
+    /// concurrently.
     fn accumulate_batch(&mut self, terms: &TermBatch<Self::Key, Self::Coeff>);
 
     /// Canonicalize to reduced finite-support form: drop every key whose
@@ -762,10 +865,17 @@ pub trait Scale: Support {
 /// coefficient ring (`overlap_comm`) — is machine-checked in
 /// `lean/PPVM/Algebra/GradedMap.lean`; and orthonormality of the basis monomials
 /// under this abstract pairing (`PPVM.Noise.overlap_single_single`) is checked in
-/// `lean/PPVM/Algebra/Noise.lean` — the model pairing `∑_k a_k b_k` stands in for
-/// the normalized trace `Tr(A B)/2ⁿ` (which is *not* itself constructed in Lean),
-/// so `overlap_single_single` is the model form of `Tr(P Q)/2ⁿ = δ`, not that
-/// matrix identity verbatim. Finally, the semantic link to the Clifford path is
+/// `lean/PPVM/Algebra/Noise.lean`. The `= Tr(A B)/2ⁿ` half of the label is no
+/// longer an assertion: `overlap_eq_trace_div` in `lean/PPVM/Pauli/Matrix.lean`
+/// proves `Tr(Â B̂) = 2ⁿ · ⟨A, B⟩` for the *genuine* `2ⁿ×2ⁿ` operators
+/// `Â = ∑_p a_p g(p)` over the exact ring `ℤ[i]` (via `trace_tensorPauli_mul`,
+/// the real-matrix Pauli orthonormality `Tr(g(p) g(q)) = 2ⁿ δ_pq` that
+/// `overlap_single_single` was only the model form of). One level up, inside
+/// `C[K]` itself, the same fact reads: the pairing **is** the identity
+/// coefficient of the L4 twisted product, `⟨A, B⟩ = (A · B)_I`
+/// (`twistedConv_apply_id` in `lean/PPVM/Algebra/Twisted.lean`) — which is what
+/// ties L3 to `Multiply` instead of leaving them unrelated layers. Finally, the
+/// semantic link to the Clifford path is
 /// closed: a Heisenberg re-key `P ↦ φ_G(P)` by the `Sp(2n,2)` bijection with the
 /// drained `±1` sign folded into the coefficient **preserves this pairing**
 /// (`overlap(conj_G A, conj_G B) = overlap(A, B)`), machine-checked as
@@ -821,6 +931,18 @@ pub trait Conjugate: Coefficient {
 /// 2-cocycle (hence the twisted product is associative) is machine-checked in
 /// `lean/PPVM/Pauli/Phase.lean` and `lean/PPVM/Algebra/Twisted.lean`. A bare
 /// `Tableau` mixture key carries no such product.
+///
+/// Law (the obligation *every* impl owes, not just `PauliWord`): writing
+/// `key_mul(u, v) = (u·v, i^{β(u,v)})`, the key product `·` must be associative
+/// and `β : K × K → ℤ/4` must be a 2-cocycle,
+/// `β(u,v) + β(u·v, w) == β(v,w) + β(u, v·w)`. Under exactly those two
+/// hypotheses the twisted product on `C × K` is associative for any commutative
+/// `C` with `i⁴ = 1` — machine-checked key-agnostically in
+/// `lean/PPVM/Algebra/Twisted.lean` (`gtmul_assoc`, over an abstract `kmul` and
+/// `IsCocycle`), with `PauliWord` recovered as the instance
+/// (`phaseExp_isCocycle`, `tmul_assoc_of_gtmul`). A future ordered fermionic-word
+/// key must discharge the same two hypotheses; it does not inherit associativity
+/// from the Pauli proof.
 pub trait KeyProduct: Eq + Clone {
     /// Product of two keys, with the phase it produces (folded onto the coeff).
     fn key_mul(&self, other: &Self) -> (Self, Phase);
@@ -852,6 +974,15 @@ pub trait ImaginaryUnit: Coefficient + num::One {
 /// none. The Pauli product injects powers of `i`, so the coefficient must absorb
 /// phase — bounded on `ImaginaryUnit`, the minimal requirement (a primitive
 /// fourth root of unity), **not** the stronger `ComplexCoefficient`.
+///
+/// L4 and L3 are the same structure read two ways: the twisted convolution on
+/// `C[PauliWord]` (`twistedConv`, the outer product `multiply_into` computes)
+/// has, as its **identity-key coefficient**, exactly `Pair::overlap` —
+/// `(A · B)_I = ⟨A, B⟩`, machine-checked as `twistedConv_apply_id` in
+/// `lean/PPVM/Algebra/Twisted.lean` (the outer product collapses to the diagonal
+/// by `mulWord_eq_id_iff`, where the `i^k` twist vanishes by `phaseExpN_self`).
+/// That is the correctness spec a container `Multiply` impl is checked against,
+/// and it is why `overlap` deserves the name Hilbert–Schmidt pairing.
 pub trait Multiply: Accumulate
 where
     Self::Key: KeyProduct,
@@ -1191,6 +1322,18 @@ changed according to whether their underlying responsibility changes:
 | `n_qubits`, `get`, `set`, `weight` | `n_sites`, `get`, `weight` on `Word`; `set` removed | `Word` is read-only; positional mutation (`set`) moves to `PauliBits`, since it is ill-defined for ordered algebras. |
 | bit accessors `get_xbit`/`set_xbit`/… | `PauliBits::x_bit`/`set_x_bit`/… | The rotation hot path is sub-site; it keeps a dedicated Pauli trait rather than the generic `Word`. |
 | word-level Clifford (blanket over `PauliWordTrait`) | `Clifford` blanket over `SymplecticColumns` + `PhaseTrack` + `BlanketClifford` (opt-in marker) | The symplectic sign logic is written once and shared by the phaseless words and `Tableau`; `PhasedPauliWord` opts *out* and supplies a read-once fused `impl Clifford` instead (avoids the blanket's double bit read). |
+| `CliffordExtensions` (`s_dag`, `sqrt_x`, `sqrt_x_dag`, `sqrt_y`, `sqrt_y_dag`, `cy`, `zcy`) | `CliffordExtensions`, unchanged shape; blanket-implemented over the same `BlanketClifford` opt-ins | Same user-facing gate set and the same required/defaulted split. Only the blanket's *derivation* changes: each gate is a product of audited `Clifford` generators (`S† = S·Z`, `√X ≃ H·S·H`, `√Y ≃ H·Z`, `CY = (I⊗S)·CNOT·(I⊗S†)`) rather than a fresh hand-written bit rule, so the blanket is correct for phase-carrying opt-ins (`Tableau`) without six new unproved `PhaseTrack` deltas. Diffed against the old tables in `ppvm-conformance-2`; `PhasedPauliWord` keeps a read-once fused override, as for `Clifford`. |
+| `CliffordBatch`, `CliffordExtensionsBatch` | retained verbatim | Loop defaults over the single-qubit methods, overridable by the tableau's fused sweeps; the "empty `impl` opts in to the defaults" convention is preserved. |
+| `Reset` (`reset`, `reset_z`, `reset_x`, `reset_y`, `*_many`) | retained verbatim | The basis variants are *behaviour*, not sugar (`reset_x` = `reset` then `h`, `reset_y` = `reset` then `h` then `s`), so the default bodies and the `Clifford + CliffordExtensions` supertrait bound are reproduced call-for-call. |
+| `RotationOne<T: Config>` (`rotate_1`, `rx`/`ry`/`rz`, `rx_many`/`ry_many`/`rz_many`) | `RotationOne<C, A = C>`, same required/defaulted split | The whole surface crosses over: `rotate_1(axis, qubit, theta)` stays the *required* axis-generic entry point (it is what `rotate_2` and the tableau backends compose with), `rx`/`ry`/`rz` stay one-line defaults over it (a backend with per-axis fast paths overrides them, as `PauliSum` does), and the three `*_many` batch loops stay (the Python bindings call them). Two edits follow from the shape change: the `Pauli::L` axis panic is unrepresentable because `L` is not a `Pauli` any more (loss is a `LossySite`), and `theta` is the angle domain `A` rather than `impl Into<T::Coeff>` — with `A` a free trait parameter an `Into` conversion would be uninferable at the call site, so the one instantiation callers used (`sum.rx(0, 0.1)` on a complex sum) is preserved by `impl Angle<Complex<f64>> for f64` instead. The batch defaults clone the angle, so they carry an explicit `where A: Clone` (the old crate got it free from `Coefficient: Clone`). |
+| `RotationTwo` (`rotate_2` + the `rxx`…`rzz` family and their `*_many`) | `RotationTwo<C, A = C>`, unchanged shape | User-facing gate surface implemented today by `ppvm-pauli-sum` and `ppvm-tableau-sum`; the `[x, z]` axis encoding, the nine named gates and the batch loops are ported verbatim. Only the angle domain and the `where A: Clone` on the batch defaults change. |
+| `TGate` (`t`, `t_dag`, `*_many`), `Projection` (`p0`, `p1`) | retained; both unparameterized | Neither takes a numeric argument — old `TGate<T: Config>` never used its parameter — so the rule that leaves `Clifford` and `ResetLossChannel` unparameterized applies. Default bodies verbatim. |
+| `U3Gate` (`u3`), `RotXY` (`r`), `CRx` (`crx`) | `U3Gate<C, A = C>`, `RotXY<C, A = C>`, `CRx<C, A = C>` | Angle-carrying single/two-qubit gates; retained with the angle-domain edit only. `RotXY::r` keeps its documented `RZ(φ)·RX(θ)·RZ(−φ)` decomposition as *behaviour* of the implementing backend. |
+| `Trace<'a, RHS>` | retained (in `graded.rs`, next to `Pair`) | **Not** subsumed by `Pair::overlap`: `overlap` pairs a map with another map of the same type, while `Trace` is the heterogeneous `tr(self·value)` the old crate used against a `PauliPattern`. Kept with its free right-hand type and `Output`; implementers land with the pattern port. |
+| `PauliWordTrait::anticommutes_at` | provided method on `PauliBits` | Derivable from the two bit reads (`ω(P,Q) = x_P·z_Q ⊕ z_P·x_Q`), and consumed by the tableau's measurement pivot search, so it stays — as a default body, adding no required method. |
+| `PauliWordTrait::get_multiple`/`get_slice`/`set_multiple`/`set_new`/`set_new_2` | removed from the trait; inherent on the concrete word | Every one of them *constructs* a word (`Self::new(Q)`, clone-and-edit), and construction is deliberately concrete in this design — `Word` is read-only inspection and has no constructor, `PauliBits` is bit mutation. They remain available as inherent methods on `PauliWord`/`LossyPauliWord`, where the width and backing storage are known; no generic consumer needs them. |
+| `PauliError<T: Config>` stim aliases (`x_error`/`y_error`/`z_error`, `*_many`) | retained on `PauliError<C: Coefficient>` | One-hot defaults over `pauli_error`; only the `Config` parameter becomes the coefficient type itself. |
+| noise channels: `PauliErrorAll`, `TwoQubitPauliError`, `Depolarizing`, `Depolarizing2`, `AmplitudeDamping`, `LossChannel`, `CorrelatedLossChannel`, `ResetLossChannel`, `AsymmetricLossChannel` | retained, each `<T: Config>` → `<C: Coefficient>` | The channel family is user-facing behaviour, so it moves across unchanged (defaults and probability orderings included). `ResetLossChannel` consumes no coefficient, so it drops the parameter entirely — the same rule that leaves `Clifford` unparameterized. |
 | (new) | `SymplecticColumns`, `PhaseTrack`, `BlanketClifford`, `StabilizerFrame` | The symplectic-bits + phase-extension decomposition (role-independent column algebra, role-dependent phase, role-exclusive frame ops), plus the empty `BlanketClifford` marker that selects the shared blanket so a fused override stays coherence-legal. |
 | concrete `PauliWord` | `PauliWord` | The packed X/Z word is the same domain concept. |
 | concrete `LossyPauliWord` | `LossyPauliWord` | The packed X/Z/loss representation remains concrete and flattened. |

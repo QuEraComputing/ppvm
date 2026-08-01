@@ -38,7 +38,7 @@
 //! `conjCNOT_sign` / `conjCZ_sign`; the underlying bit maps are the `Sp(2n, 2)`
 //! isometries of `lean/PPVM/Pauli/Symplectic.lean`.
 
-use ppvm_traits_2::{Clifford, PauliBits, Phase};
+use ppvm_traits_2::{Clifford, CliffordExtensions, PauliBits, Phase};
 
 use crate::data::Phased;
 
@@ -153,6 +153,112 @@ impl<W: PauliBits> Clifford for Phased<W> {
     }
 }
 
+/// The extended Clifford set, fused the same way.
+///
+/// `Phased<W>` opts out of [`BlanketClifford`](ppvm_traits_2::BlanketClifford),
+/// so it gets neither the blanket [`Clifford`] nor the blanket
+/// [`CliffordExtensions`] and must supply both. Each body is the old
+/// `ppvm-pauli-word/src/phase/clifford.rs` kernel, byte-for-byte: the same loss
+/// guard, the same sign predicate computed from the *pre-mutation* bits, and the
+/// same bit update the old bare word performed underneath.
+///
+/// The conjugation tables (`ppvm-traits/src/traits/clifford.rs`) this reproduces:
+///
+/// | Gate | `X` | `Y` | `Z` |
+/// |:---:|:---:|:---:|:---:|
+/// | `s` | `-Y` | `X` | `Z` |
+/// | `s_dag` | `Y` | `-X` | `Z` |
+/// | `sqrt_x` | `X` | `-Z` | `Y` |
+/// | `sqrt_x_dag` | `X` | `Z` | `-Y` |
+/// | `sqrt_y` | `Z` | `Y` | `-X` |
+/// | `sqrt_y_dag` | `-Z` | `Y` | `X` |
+///
+/// The blanket in `ppvm-traits-2` reaches the *same* table by composing audited
+/// generators (`√X ≃ H·S·H`, …); the fused bodies here are the read-once
+/// specialization, exactly as `Clifford` above is for the blanket `Clifford`.
+impl<W: PauliBits> CliffordExtensions for Phased<W> {
+    /// `S†` on `q`: the `S` bit map (`z ⊕= x`) with the conjugate sign — flip iff
+    /// `x ∧ z`. (`S†XS†† = +Y`, the inverse of `s`'s `−Y`.)
+    #[inline]
+    fn s_dag(&mut self, q: usize) {
+        if self.word.is_lost(q) {
+            return;
+        }
+        let x = self.word.x_bit(q);
+        let z = self.word.z_bit(q);
+        self.word.set_z_bit(q, z ^ x);
+        self.flip_sign_if(x && z);
+    }
+
+    /// `√X` on `q`: `x ⊕= z`, sign iff `x ∧ z`.
+    #[inline]
+    fn sqrt_x(&mut self, q: usize) {
+        if self.word.is_lost(q) {
+            return;
+        }
+        let x = self.word.x_bit(q);
+        let z = self.word.z_bit(q);
+        self.word.set_x_bit(q, x ^ z);
+        self.flip_sign_if(x && z);
+    }
+
+    /// `(√X)†` on `q`: the same `x ⊕= z` bit map, sign iff `¬x ∧ z`.
+    #[inline]
+    fn sqrt_x_dag(&mut self, q: usize) {
+        if self.word.is_lost(q) {
+            return;
+        }
+        let x = self.word.x_bit(q);
+        let z = self.word.z_bit(q);
+        self.word.set_x_bit(q, x ^ z);
+        self.flip_sign_if(!x && z);
+    }
+
+    /// `√Y` on `q`: swap the X/Z bits, sign iff `¬x ∧ z`.
+    #[inline]
+    fn sqrt_y(&mut self, q: usize) {
+        if self.word.is_lost(q) {
+            return;
+        }
+        let x = self.word.x_bit(q);
+        let z = self.word.z_bit(q);
+        self.word.set_x_bit(q, z);
+        self.word.set_z_bit(q, x);
+        self.flip_sign_if(!x && z);
+    }
+
+    /// `(√Y)†` on `q`: the same swap, sign iff `x ∧ ¬z`.
+    #[inline]
+    fn sqrt_y_dag(&mut self, q: usize) {
+        if self.word.is_lost(q) {
+            return;
+        }
+        let x = self.word.x_bit(q);
+        let z = self.word.z_bit(q);
+        self.word.set_x_bit(q, z);
+        self.word.set_z_bit(q, x);
+        self.flip_sign_if(x && !z);
+    }
+
+    /// `CY` on `(control, target)`: `z_c ⊕= x_t ⊕ z_t`, `x_t ⊕= x_c`,
+    /// `z_t ⊕= x_c`; sign iff `x_c ∧ (x_t ⊕ z_t) ∧ ¬(z_c ⊕ z_t)` — the `−1` of
+    /// `XX → −YZ` and `YZ → −XX`.
+    #[inline]
+    fn cy(&mut self, control: usize, target: usize) {
+        if self.word.is_lost(control) || self.word.is_lost(target) {
+            return;
+        }
+        let xc = self.word.x_bit(control);
+        let zc = self.word.z_bit(control);
+        let xt = self.word.x_bit(target);
+        let zt = self.word.z_bit(target);
+        self.word.set_z_bit(control, zc ^ xt ^ zt);
+        self.word.set_x_bit(target, xt ^ xc);
+        self.word.set_z_bit(target, zt ^ xc);
+        self.flip_sign_if(xc && (xt ^ zt) && !(zc ^ zt));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::PhasedPauliWord;
@@ -242,5 +348,60 @@ mod tests {
         // A pre-existing +i factor is preserved under a signed conjugation:
         // H (−iY) = −i·(−Y) = +iY.
         assert_eq!(conj("-iY", |w| w.h(0)), "+iY");
+    }
+
+    #[test]
+    fn extension_gates_track_sign() {
+        use ppvm_traits_2::CliffordExtensions;
+
+        // The single-qubit table of `ppvm-traits/src/traits/clifford.rs`.
+        let s_dag = [("+I", "+I"), ("+X", "+Y"), ("+Y", "-X"), ("+Z", "+Z")];
+        let sqrt_x = [("+I", "+I"), ("+X", "+X"), ("+Y", "-Z"), ("+Z", "+Y")];
+        let sqrt_x_dag = [("+I", "+I"), ("+X", "+X"), ("+Y", "+Z"), ("+Z", "-Y")];
+        let sqrt_y = [("+I", "+I"), ("+X", "+Z"), ("+Y", "+Y"), ("+Z", "-X")];
+        let sqrt_y_dag = [("+I", "+I"), ("+X", "-Z"), ("+Y", "+Y"), ("+Z", "+X")];
+        for (i, t) in s_dag {
+            assert_eq!(conj(i, |w| w.s_dag(0)), t, "S† {i}");
+        }
+        for (i, t) in sqrt_x {
+            assert_eq!(conj(i, |w| w.sqrt_x(0)), t, "√X {i}");
+        }
+        for (i, t) in sqrt_x_dag {
+            assert_eq!(conj(i, |w| w.sqrt_x_dag(0)), t, "√X† {i}");
+        }
+        for (i, t) in sqrt_y {
+            assert_eq!(conj(i, |w| w.sqrt_y(0)), t, "√Y {i}");
+        }
+        for (i, t) in sqrt_y_dag {
+            assert_eq!(conj(i, |w| w.sqrt_y_dag(0)), t, "√Y† {i}");
+        }
+    }
+
+    #[test]
+    fn cy_tracks_sign() {
+        use ppvm_traits_2::CliffordExtensions;
+
+        // The 16-entry CY table of `ppvm-traits/src/traits/clifford.rs`.
+        for (i, t) in [
+            ("+II", "+II"),
+            ("+IX", "+ZX"),
+            ("+IY", "+IY"),
+            ("+IZ", "+ZZ"),
+            ("+XI", "+XY"),
+            ("+XX", "-YZ"),
+            ("+XY", "+XI"),
+            ("+XZ", "+YX"),
+            ("+YI", "+YY"),
+            ("+YX", "+XZ"),
+            ("+YY", "+YI"),
+            ("+YZ", "-XX"),
+            ("+ZI", "+ZI"),
+            ("+ZX", "+IX"),
+            ("+ZY", "+ZY"),
+            ("+ZZ", "+IZ"),
+        ] {
+            assert_eq!(conj(i, |w| w.cy(0, 1)), t, "CY {i}");
+            assert_eq!(conj(i, |w| w.zcy(0, 1)), t, "ZCY {i}");
+        }
     }
 }

@@ -44,10 +44,29 @@ pub trait Coefficient:
     /// threshold; it does not itself decide any cutoff. Replaces the old
     /// `Coefficient::cutoff`.
     ///
+    /// # Law
+    ///
+    /// `magnitude` must be an **absolute value** `N` on the coefficient ring:
+    ///
+    /// * `N(x) >= 0`,
+    /// * `N(x) == 0` iff `x == 0`,
+    /// * `N(x + y) <= N(x) + N(y)` (subadditive),
+    /// * `N(x * y) == N(x) * N(y)` (multiplicative).
+    ///
+    /// This is the assumption the entire truncation guarantee rests on, so it is
+    /// an impl obligation rather than a hint. Nonnegativity alone does **not**
+    /// suffice: `N(x) = x²` is nonnegative, vanishes only at `0`, and is even
+    /// multiplicative, yet the `ℓ¹` bound fails for it — machine-checked in
+    /// `lean/PPVM/Algebra/Truncation.lean` (`l1_bound_needs_subadditive`).
+    ///
     /// Design: §"Coefficient, angle, and truncation". The threshold comparison
     /// that consumes this lives in `Policy` (`ppvm-pauli-sum-2`), whose keep-rule
     /// boundary against the tableau path is machine-checked in
-    /// `lean/PPVM/Algebra/Truncation.lean` (`cutoff_mismatch`).
+    /// `lean/PPVM/Algebra/Truncation.lean` (`cutoff_mismatch`); the `ℓ¹`
+    /// truncation-error bound this law buys is `l1_bound_abv` there (any
+    /// coefficient ring with such an `N`), specialized to the shipped
+    /// `Complex<f64>`/`norm()` configuration by `l1_bound_norm` /
+    /// `l1_bound_complex`.
     fn magnitude(&self) -> f64;
 }
 
@@ -89,6 +108,50 @@ impl Angle<f64> for f64 {
     #[inline]
     fn sin_cos(&self) -> (f64, f64) {
         num::traits::Float::sin_cos(*self)
+    }
+}
+
+/// The complex-coefficient angle domain, i.e. the defaulted `A = C` case of
+/// [`crate::gates::RotationOne`] at `C = Complex<f64>`.
+///
+/// # Behaviour parity
+///
+/// The old `ppvm_traits::Coefficient` carried `sin_cos` as a *method on the
+/// coefficient*, and it was implemented for `Complex<f64>` as
+/// `(Complex::new(sin(re), 0), Complex::new(cos(re), 0))`
+/// (`crates/ppvm-traits/src/traits/coefficient.rs`): the real part is taken as
+/// the angle and the amplitudes come back purely real. Splitting `sin_cos` out
+/// into [`Angle`] must not silently drop that instantiation — without this impl
+/// a `Sum` over `Complex<f64>` coefficients could not be rotated at all
+/// (`RotationOne<Complex<f64>>` would have no angle type), a capability the old
+/// crate had. Ported verbatim, imaginary part of `theta` discarded exactly as
+/// before.
+impl Angle<num::Complex<f64>> for num::Complex<f64> {
+    #[inline]
+    fn sin_cos(&self) -> (num::Complex<f64>, num::Complex<f64>) {
+        let (s, c) = num::traits::Float::sin_cos(self.re);
+        (num::Complex::new(s, 0.0), num::Complex::new(c, 0.0))
+    }
+}
+
+/// A **real** angle driving a complex-coefficient sum.
+///
+/// # Behaviour parity
+///
+/// The old rotation methods took `theta: impl Into<T::Coeff>` and
+/// `Coefficient: From<f64>`, so `sum.rx(0, 0.1)` compiled on a `Complex<f64>`
+/// sum: the `f64` was widened to `Complex::new(0.1, 0.0)` and then `sin_cos`
+/// dropped the (zero) imaginary part again. The redesigned
+/// [`crate::gates::RotationOne`] cannot take `impl Into<A>` — `A` is a free trait
+/// parameter, so the conversion would leave it uninferable at the call site — so
+/// that caller-visible spelling is preserved *here* instead, by making `f64`
+/// itself an angle domain over complex coefficients. The amplitudes it returns
+/// are exactly what the old widening produced.
+impl Angle<num::Complex<f64>> for f64 {
+    #[inline]
+    fn sin_cos(&self) -> (num::Complex<f64>, num::Complex<f64>) {
+        let (s, c) = num::traits::Float::sin_cos(*self);
+        (num::Complex::new(s, 0.0), num::Complex::new(c, 0.0))
     }
 }
 

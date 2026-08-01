@@ -96,6 +96,75 @@ theorem accumulate_assoc (f g h : CMap K C) :
     accumulate (accumulate f g) h = accumulate f (accumulate g h) :=
   add_assoc f g h
 
+/-! #### The *batch* is a multiset: order- and partition-invariance
+
+`accumulate_comm`/`accumulate_assoc` are about whole maps, but the operation the
+contract exposes is `Accumulate::accumulate_batch(&TermBatch<K, C>)` — a batch of
+`(key, coeff)` **terms**. The design deliberately licenses a backend to `gather`
+that batch into per-partition sub-batches and run them concurrently (radix
+hash-partitioning, `ColumnStore`), i.e. to reorder and cut the batch up. Below is
+the spec every such backend must meet, and it is exactly the free-commutative-
+monoid structure of accumulation: folding terms in is a monoid hom from
+`Multiset (K × C)`, hence (i) order-invariant and (ii) additive under any split
+of the batch. The scalar `accumulate(k, c)` sugar is the singleton case. -/
+
+/-- Merge one produced term `(k, c)` into the map — one `accumulate_batch` step
+(and the whole of the scalar `accumulate(k, c)` sugar). -/
+noncomputable def accumulateTerm (t : K × C) (m : CMap K C) : CMap K C :=
+  accumulate m (Finsupp.single t.1 t.2)
+
+/-- Merging terms is **left-commutative**, which is what makes folding a batch
+well defined on a `Multiset` (an *unordered* batch) at all. -/
+instance : LeftCommutative (accumulateTerm (K := K) (C := C)) where
+  left_comm t₁ t₂ m := by
+    simp only [accumulateTerm, accumulate]
+    exact add_right_comm m _ _
+
+/-- `Accumulate::accumulate_batch` — fold a whole `TermBatch` into the map. The
+batch is modelled as a `Multiset`, so the *type* already records that the call
+may not depend on the order terms arrive in; the instance above is the proof
+obligation that discharges it. -/
+noncomputable def accumulateTerms (B : Multiset (K × C)) (m : CMap K C) : CMap K C :=
+  Multiset.foldr accumulateTerm m B
+
+/-- The batch viewed as a map in its own right: `∑ (k,c) ∈ B, c·|k⟩`. -/
+noncomputable def batchMap (B : Multiset (K × C)) : CMap K C :=
+  (B.map fun t => Finsupp.single t.1 t.2).sum
+
+/-- **Folding a batch in is adding the batch's map** — `accumulate_batch` is the
+L1 `+` against `batchMap B`, so everything already proved about `accumulate`
+(commutativity, associativity) applies at the batch level. -/
+theorem accumulateTerms_eq (B : Multiset (K × C)) (m : CMap K C) :
+    accumulateTerms B m = accumulate m (batchMap B) := by
+  induction B using Multiset.induction with
+  | empty => simp [accumulateTerms, batchMap, accumulate]
+  | cons a s ih =>
+    simp only [accumulateTerms, Multiset.foldr_cons] at *
+    simp only [accumulateTerm, accumulate, batchMap, Multiset.map_cons, Multiset.sum_cons, ih]
+    exact (add_assoc m _ _).trans (congrArg (m + ·) (add_comm _ _))
+
+/-- **(i) Order-invariance.** Any two orderings of the same batch — e.g. the
+`Vec`/slice a backend actually walks, before and after a `gather` — accumulate to
+the same map. -/
+theorem accumulateTerms_perm {l₁ l₂ : List (K × C)} (h : l₁.Perm l₂) (m : CMap K C) :
+    l₁.foldr accumulateTerm m = l₂.foldr accumulateTerm m := by
+  have hcoe : (l₁ : Multiset (K × C)) = (l₂ : Multiset (K × C)) := Quot.sound h
+  simpa [accumulateTerms, Multiset.coe_foldr] using congrArg (accumulateTerms · m) hcoe
+
+/-- **(ii) Partition-invariance.** Splitting the batch `B = B₁ + B₂` and running
+the halves in sequence (or, since `accumulate` is commutative, concurrently into
+disjoint partitions and merged) gives the same map as one call on `B`. This is
+the algebraic precondition for the design's hash-partitioned / columnar
+`accumulate_batch` backends. -/
+theorem accumulateTerms_add (B₁ B₂ : Multiset (K × C)) (m : CMap K C) :
+    accumulateTerms (B₁ + B₂) m = accumulateTerms B₂ (accumulateTerms B₁ m) := by
+  simp only [accumulateTerms_eq, batchMap, accumulate, Multiset.map_add, Multiset.sum_add]
+  exact (add_assoc m _ _).symm
+
+/-- **The scalar `accumulate(k, c)` really is a batch of one.** -/
+theorem accumulateTerms_singleton (t : K × C) (m : CMap K C) :
+    accumulateTerms {t} m = accumulate m (Finsupp.single t.1 t.2) := rfl
+
 /-- **`reduce()` is structural.** A key is in the canonical support *iff* its
 coefficient is nonzero: the ideal `C[K]` model carries no zero coordinates to
 drop, so canonicalization is meaningful only for a backend (`HashMap`) that
@@ -152,7 +221,11 @@ past a coefficient), matching the L2 `Scale` action being over a `CommRing`.
 Note this is the **symmetric bilinear** trace pairing `∑ₖ fₖ gₖ = Tr(f g)/2ⁿ`,
 with *no* complex conjugation — correct for expectation values of Hermitian
 observables (`PPVM.Noise.overlap_single_single` gives the Pauli orthonormality
-`Tr(P Q)/2ⁿ = δ`). A complex state overlap `⟨φ|ψ⟩ = ∑ₖ conj(fₖ) gₖ` is
+`Tr(P Q)/2ⁿ = δ`). The `= Tr(f g)/2ⁿ` half of that label is *not* an assumption:
+on the Pauli key it is proved against genuine `2ⁿ×2ⁿ` matrices over `ℤ[i]` by
+`PPVM.PauliMatrix.overlap_eq_trace_div`, and inside `C[K]` itself `overlap` is
+the identity coefficient of the L4 twisted product
+(`PPVM.Twisted.twistedConv_apply_id`). A complex state overlap `⟨φ|ψ⟩ = ∑ₖ conj(fₖ) gₖ` is
 *sesquilinear* and is a separate operation, not this one. -/
 
 section Pair

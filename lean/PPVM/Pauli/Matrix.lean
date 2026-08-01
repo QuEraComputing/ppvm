@@ -5,6 +5,7 @@ Authors: The PPVM Authors
 -/
 import Mathlib.NumberTheory.Zsqrtd.GaussianInt
 import Mathlib.LinearAlgebra.Matrix.Notation
+import Mathlib.LinearAlgebra.Matrix.Trace
 import Mathlib.Algebra.BigOperators.Ring.Finset
 import PPVM.Pauli.Phase
 import PPVM.Pauli.Word
@@ -157,5 +158,94 @@ theorem tensorPauli_mul (p q : Word n) :
   simp only [pauliMat_mul, Matrix.smul_apply, smul_eq_mul]
   rw [Finset.prod_mul_distrib, prod_iuPow]
   simp only [tensorPauli, mulWord, mulBits]
+
+/-! ### `Pair::overlap` really is the normalized trace `Tr(A B)/2ⁿ`
+
+`PPVM.GradedMap.overlap` is the formal bilinear form `∑ₖ aₖ bₖ`, and the design
+(and `graded.rs`) call it "the symmetric bilinear Hilbert–Schmidt trace pairing
+`⟨A,B⟩ = Tr(A B)/2ⁿ`" — but that identification was, until here, *asserted*: the
+`GradedMap` docstring conceded that the trace "is not itself constructed in
+Lean", so `Noise.overlap_single_single` was only the *model* form of
+`Tr(P Q)/2ⁿ = δ`. With the genuine `2ⁿ×2ⁿ` tensor-product matrices above, the
+trace is now constructible, and this section closes the claim end-to-end:
+`Tr(Â B̂) = 2ⁿ · ⟪A, B⟫` for the honest operators `Â, B̂` the coefficient maps
+denote. That is what licenses `Sum::overlap` being read as a physical
+expectation value. (`PPVM.Twisted.twistedConv_apply_id` is the same statement one
+level up in the abstraction, purely inside `C[K]`: `⟪A,B⟫` is the identity
+coefficient of the L4 twisted product.) -/
+
+/-- **The trace of a tensor-product Pauli is `2ⁿ` on the identity and `0`
+otherwise.** Each qubit contributes `tr(g(x,z)) = 2·δ`, and the tensor trace is
+the product of the per-qubit traces — so a single non-identity qubit kills it.
+This is the tracelessness of `X`, `Y`, `Z` lifted to `n` qubits. -/
+theorem trace_tensorPauli (p : Word n) :
+    Matrix.trace (tensorPauli p)
+      = if p = (fun _ => (false, false)) then (2 : GaussianInt) ^ n else 0 := by
+  classical
+  have tr1 : ∀ x z : Bool, (∑ j, pauliMat x z j j)
+      = if (x, z) = ((false, false) : Bool × Bool) then (2 : GaussianInt) else 0 := by
+    intro x z
+    rw [Fin.sum_univ_two]
+    cases x <;> cases z <;> decide
+  have hprod : Matrix.trace (tensorPauli p)
+      = ∏ i, (if p i = ((false, false) : Bool × Bool) then (2 : GaussianInt) else 0) := by
+    simp only [Matrix.trace, Matrix.diag, tensorPauli]
+    rw [← Fintype.prod_sum fun (i : Fin n) (j : Fin 2) => pauliMat (p i).1 (p i).2 j j]
+    exact Finset.prod_congr rfl fun i _ => by rw [tr1]
+  rw [hprod]
+  by_cases hp : p = fun _ => (false, false)
+  · subst hp
+    simp
+  · obtain ⟨i, hi⟩ := Function.ne_iff.mp hp
+    rw [if_neg hp, Finset.prod_eq_zero (Finset.mem_univ i) (if_neg hi)]
+
+/-- **Pauli-basis Hilbert–Schmidt orthonormality, on genuine matrices.**
+`Tr(g(p) · g(q)) = 2ⁿ · δ_{p,q}` — the real-matrix statement that
+`PPVM.Noise.overlap_single_single` was only the model form of. Off the diagonal
+`mulWord p q ≠ I` (`mulWord_eq_id_iff`) makes the product traceless; on it the
+phase twist vanishes (`phaseExpN_self`), leaving `Tr(I) = 2ⁿ`. -/
+theorem trace_tensorPauli_mul (p q : Word n) :
+    Matrix.trace (tensorPauli p * tensorPauli q)
+      = if q = p then (2 : GaussianInt) ^ n else 0 := by
+  classical
+  rw [tensorPauli_mul, Matrix.trace_smul, trace_tensorPauli]
+  by_cases h : q = p
+  · subst h
+    rw [if_pos (mulWord_self q), if_pos rfl, phaseExpN_self]
+    simp
+  · rw [if_neg h, if_neg fun hc => h ((mulWord_eq_id_iff p q).mp hc), smul_zero]
+
+/-- The genuine `2ⁿ×2ⁿ` operator a coefficient map denotes: `Â = ∑ₚ aₚ g(p)`.
+This is the semantic function `C[PauliWord] → operators` that the whole `Sum`
+abstraction refines. -/
+def toOperator (A : Word n → GaussianInt) :
+    Matrix (Fin n → Fin 2) (Fin n → Fin 2) GaussianInt :=
+  ∑ p, A p • tensorPauli p
+
+/-- **`overlap` is the normalized Hilbert–Schmidt trace pairing.**
+`Tr(Â B̂) = 2ⁿ · ∑ₚ aₚ bₚ`, i.e. `∑ₚ aₚ bₚ = Tr(Â B̂)/2ⁿ` on honest `2ⁿ×2ⁿ`
+matrices over the exact ring `ℤ[i]`. This removes the design's caveat that the
+trace "is not constructed in Lean". -/
+theorem trace_toOperator_mul (A B : Word n → GaussianInt) :
+    Matrix.trace (toOperator A * toOperator B) = 2 ^ n * ∑ p, A p * B p := by
+  classical
+  have hterm : ∀ p q : Word n,
+      Matrix.trace ((A p • tensorPauli p) * (B q • tensorPauli q))
+        = if q = p then A p * B q * 2 ^ n else 0 := by
+    intro p q
+    rw [Matrix.smul_mul, Matrix.mul_smul, Matrix.trace_smul, Matrix.trace_smul,
+      trace_tensorPauli_mul]
+    by_cases h : q = p <;> simp [h, mul_assoc]
+  simp only [toOperator, Matrix.sum_mul, Matrix.mul_sum, Matrix.trace_sum, hterm]
+  rw [Finset.mul_sum]
+  refine Finset.sum_congr rfl fun p _ => ?_
+  rw [Finset.sum_ite_eq Finset.univ p fun q => A q * B p * 2 ^ n, if_pos (Finset.mem_univ p)]
+  ring
+
+/-- The same statement against the L3 `Pair::overlap` of `PPVM.GradedMap`:
+`⟪A, B⟫ = Tr(Â B̂)/2ⁿ` exactly as `graded.rs` documents it. -/
+theorem overlap_eq_trace_div (A B : GradedMap.CMap (Word n) GaussianInt) :
+    Matrix.trace (toOperator A * toOperator B) = 2 ^ n * GradedMap.overlap A B := by
+  rw [trace_toOperator_mul, GradedMap.overlap_eq_fintype_sum]
 
 end PPVM.PauliMatrix

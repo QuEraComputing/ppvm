@@ -13,8 +13,9 @@
 //! The concrete `PauliWord`/`Tableau` representations are deliberately *not*
 //! here; they land in the `ppvm-pauli-word-2` / `ppvm-tableau-2` crates
 //! (implementation-plan Phases 2 and 4). The only executable code in this crate
-//! is a handful of leaf types and the blanket
-//! `impl<T: SymplecticColumns + PhaseTrack> Clifford for T`.
+//! is a handful of leaf types, the trait default bodies, and the blanket
+//! `impl<T: SymplecticColumns + PhaseTrack + BlanketClifford>` of `Clifford` and
+//! `CliffordExtensions`.
 
 pub mod algebra;
 pub mod batch;
@@ -31,8 +32,13 @@ pub mod word;
 pub use algebra::{Conjugate, ImaginaryUnit, KeyProduct, Phase};
 pub use batch::{Columnar, KeyBatch, KeyColumn, TermBatch, TermProducer, TermSink};
 pub use coefficient::{Angle, Coefficient, Halvable};
-pub use gates::{Clifford, Measure, PauliError, RotationOne};
-pub use graded::{Accumulate, Multiply, Pair, Retain, Scale, Support};
+pub use gates::{
+    AmplitudeDamping, AsymmetricLossChannel, CRx, Clifford, CliffordBatch, CliffordExtensions,
+    CliffordExtensionsBatch, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel,
+    Measure, PauliError, PauliErrorAll, Projection, Reset, ResetLossChannel, RotXY, RotationOne,
+    RotationTwo, TGate, TwoQubitPauliError, U3Gate,
+};
+pub use graded::{Accumulate, Multiply, Pair, Retain, Scale, Support, Trace};
 pub use hash::{IdentityBuildHasher, IdentityHasher, Indexable};
 pub use pauli::{BlanketClifford, PhaseTrack, StabilizerFrame, SymplecticColumns};
 pub use word::{FermionAction, FermionSite, LossySite, Pauli, PauliBits, Word};
@@ -42,8 +48,13 @@ pub mod prelude {
     pub use crate::algebra::{Conjugate, ImaginaryUnit, KeyProduct, Phase};
     pub use crate::batch::{Columnar, KeyBatch, KeyColumn, TermBatch, TermProducer, TermSink};
     pub use crate::coefficient::{Angle, Coefficient, Halvable};
-    pub use crate::gates::{Clifford, Measure, PauliError, RotationOne};
-    pub use crate::graded::{Accumulate, Multiply, Pair, Retain, Scale, Support};
+    pub use crate::gates::{
+        AmplitudeDamping, AsymmetricLossChannel, CRx, Clifford, CliffordBatch, CliffordExtensions,
+        CliffordExtensionsBatch, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel,
+        Measure, PauliError, PauliErrorAll, Projection, Reset, ResetLossChannel, RotXY,
+        RotationOne, RotationTwo, TGate, TwoQubitPauliError, U3Gate,
+    };
+    pub use crate::graded::{Accumulate, Multiply, Pair, Retain, Scale, Support, Trace};
     pub use crate::hash::{IdentityBuildHasher, IdentityHasher, Indexable};
     pub use crate::pauli::{BlanketClifford, PhaseTrack, StabilizerFrame, SymplecticColumns};
     pub use crate::word::{FermionAction, FermionSite, LossySite, Pauli, PauliBits, Word};

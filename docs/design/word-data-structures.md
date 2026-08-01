@@ -194,7 +194,15 @@ each guarded primitive preserves the loss invariant (`xorXColL_preserves_loss`,
 `xorZColL_preserves_loss`), the two guarded primitives compose to the atomic
 whole-gate skip (`xorZColL_xorXColL_eq_cnotActL`), and on present qubits the
 guarded gate is still the proven `Sp` isometry (`cnotActL_present_isometry`,
-`czActL_present_isometry`).
+`czActL_present_isometry`). The same holds for `CY`, which the blanket
+`CliffordExtensions` decomposes into `s(t); cnot(c,t); s_dag(t)` — three
+primitives whose guards deliberately differ (`sActL` tests `lost t` alone,
+`cnotActL` tests `lost c ∨ lost t`), so a **lost control with a present target**
+skips the atomic gate while still running two `S(t)` conjugations that must
+cancel exactly: `sActL_cnotActL_sActL_eq_cyActL` proves the guarded composite
+equals the old crate's atomic `cy` skip (`cyActL`) on every loss configuration,
+with `cyActL_preserves_loss` and `cyActL_present_isometry` the invariant and
+isometry halves.
 
 ### Loss-specific behavior
 

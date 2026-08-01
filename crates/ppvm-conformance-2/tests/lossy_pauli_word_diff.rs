@@ -281,6 +281,62 @@ fn two_qubit_gates_match_old_exhaustive() {
     }
 }
 
+/// The extended Clifford set (`S†`, `√X`, `√X†`, `√Y`, `√Y†`, `CY`) exhaustively
+/// over the lossy alphabet.
+///
+/// The new blanket `CliffordExtensions` (`ppvm-traits-2/src/pauli.rs`) expresses
+/// each gate as a *product* of audited generators, while the old blanket wrote
+/// one fused bit rule per gate. That makes the loss guard the sharpest case:
+/// `cy` decomposes into `s(t)`, `cnot(c,t)`, `s_dag(t)`, so with a **lost control
+/// and a present target** the two `S`-family steps still run where the old
+/// whole-gate skip ran nothing. They must cancel (`S` and `S†` share the `z ⊕= x`
+/// bit map), leaving the word untouched — that is what the `L`-containing rows
+/// below pin against the old reference.
+#[test]
+fn clifford_extension_gates_match_old_exhaustive() {
+    use ppvm_traits::traits::CliffordExtensions as OldCliffordExtensions;
+    use ppvm_traits_2::CliffordExtensions as NewCliffordExtensions;
+
+    const A: [char; 5] = ['I', 'X', 'Y', 'Z', 'L'];
+
+    for c in A {
+        let s = c.to_string();
+        for (name, new_gate, old_gate) in [
+            (
+                "S†",
+                &(|w: &mut NewLossy| w.s_dag(0)) as &dyn Fn(&mut NewLossy),
+                &(|w: &mut OldLossy| w.s_dag(0)) as &dyn Fn(&mut OldLossy),
+            ),
+            ("√X", &|w| w.sqrt_x(0), &|w| w.sqrt_x(0)),
+            ("√X†", &|w| w.sqrt_x_dag(0), &|w| w.sqrt_x_dag(0)),
+            ("√Y", &|w| w.sqrt_y(0), &|w| w.sqrt_y(0)),
+            ("√Y†", &|w| w.sqrt_y_dag(0), &|w| w.sqrt_y_dag(0)),
+        ] {
+            let mut new: NewLossy = s.as_str().into();
+            let mut old: OldLossy = OldLossy::from(s.as_str());
+            new_gate(&mut new);
+            old_gate(&mut old);
+            assert_eq!(new.to_string(), old.to_string(), "{name} {s}");
+        }
+    }
+
+    for a in A {
+        for b in A {
+            let s: String = [a, b].iter().collect();
+            let mut new: NewLossy = s.as_str().into();
+            let mut old: OldLossy = OldLossy::from(s.as_str());
+            new.cy(0, 1);
+            old.cy(0, 1);
+            assert_eq!(new.to_string(), old.to_string(), "CY {s}");
+
+            // The stim alias must be the same gate.
+            let mut new_alias: NewLossy = s.as_str().into();
+            new_alias.zcy(0, 1);
+            assert_eq!(new_alias.to_string(), old.to_string(), "ZCY {s}");
+        }
+    }
+}
+
 /// H and S exhaustively over the single-qubit lossy alphabet.
 #[test]
 fn single_qubit_gates_match_old_exhaustive() {

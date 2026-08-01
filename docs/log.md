@@ -32,6 +32,39 @@ iterations, then escalate to human.
 
 ---
 
+## ▶ Continue here — handoff (2026-08-01)
+
+Everything committed and green (`cargo test -p ppvm-pauli-sum-2 -p ppvm-conformance-2` = 108 + 92; clippy/fmt clean). Recent commits (newest first):
+`8a1dc79b` integration coverage + workflow Baseline phase · `4385ef3c` storage aux double-buffer recovered · `33f48fe5` Mytkowicz same-build perf rule · `53ebc66e` rotation_rx hash-warm → parity · `da88f309` same-storage bench + perf-gate hardening.
+
+### 1 — DO NEXT: `ps2.trotter.perf` (OPEN, high) — a real ~1.4–1.5× regression
+The end-to-end Trotter workload shows **new ~1.14 ms vs old ~0.76 ms** (same-build `[u8;8]`), while every single-gate microbench reads ~0.94–1.05×. Numerics match (golden master green). This is the highest-value open item — it's exactly what the new integration coverage exists to catch.
+- **Reproduce:** `cargo bench -p ppvm-conformance-2 --bench pauli_sum_integration` (targets `pauli_sum/integration_trotter/{new,old}/trotter`).
+- **Root-cause it (evidence, not guessing).** Prime suspect: **`truncate()`** — called after *every* gate in the Trotter loop, and the new side's `CombinedPolicy` runs it as **two full `retain` scans** (`crates/ppvm-pauli-sum-2/src/policy.rs`, `CombinedPolicy::truncate` → `self.0.truncate(map); self.1.truncate(map);`); it has **no microbench**. Old `truncate` is `crates/ppvm-pauli-sum/src/sum/data.rs:275`.
+- **Approach:** decompose the ~0.38 ms gap by operation (instrument the loop, or per-op microbenches at the real support sizes); A/B with truncate removed from both sides (ratio collapses → truncate is it); single-policy vs CombinedPolicy; prototype a **single-pass fused `CombinedPolicy` retain** (apply both predicates in one scan) and measure. Add a permanent **truncate microbench** (new vs old) — the missing coverage under this hole.
+- (A background root-cause subagent was in flight when this was written; its findings may or may not have landed — redo/complete from the above if not.)
+
+### 2 — THEN: Phase 3 component 3 — L4 `Multiply` (operator product), not started
+Needs `Complex`/`ImaginaryUnit`; Lean oracle `lean/PPVM/**` `Twisted.lean` (`tmul_assoc`). Run it through the workflow (below).
+
+### Workflow — use it for behavioral components
+`.claude/workflows/traits-2-component.js` now runs: **Baseline** (mine old-crate real workloads → integration acceptance bar + perf-critical architecture-feature list) → Implement (preserve those features) → Verify (Review incl. **architecture-parity** ∥ Test with **integration-first** perf gate) → Prove (incl. Lean adjudication of suspected old-impl bugs).
+
+### Non-negotiable discipline (hard-won this session — don't relearn it)
+- **Perf: same-build new/old ratios ONLY.** Cross-build absolutes swing from code-alignment/i-cache (Mytkowicz layout bias — e.g. an untouched `old/rx` moved 4.5↔5.9µs). Use an interleaved one-process harness for A/B. Fair config (identical storage/coeff/hasher — build a bench-local `[u8;8]` new type). Attribute any drift by controlled A/B or profile; if you can't isolate it, say "unattributed" — never assert a mechanism (I mis-called the rotation perf 3× before profiling settled it).
+- **Integration-first.** Single-gate microbenches structurally miss cumulative per-gate costs (allocation/truncation) because a tight one-gate loop recycles one warm allocator page. Always gate on the end-to-end deep-circuit workload vs old.
+- **Architecture parity.** When generalizing, preserve the old impl's perf-critical structural features — they may *relocate* (the aux double-buffer moved into the `HashMapStore` storage backend so `Sum` stays generic) but must not *vanish*. Check for this in review.
+- **Numerics:** golden-master targets old-parity unless the Lean oracle says old is wrong.
+
+### Key files
+- New engine: `crates/ppvm-pauli-sum-2/src/{sum,store,clifford,rotation,noise,policy}.rs`. Storage = `HashMapStore` newtype `{primary, aux, scratch}` in `store.rs` (graded/pure-diagonal traits delegate to `primary`; buffered `RekeyBijective`/`RotateInPlace` use aux/scratch).
+- Old reference: `crates/ppvm-pauli-sum/src/**` (real workloads: `benches/trotter.rs`, `benches/random-circuit.rs`, `tests/trotter.rs`, `tests/ghz.rs`).
+- Conformance harness: `crates/ppvm-conformance-2/{src/lib.rs, tests/*, benches/*}` — integration diff+bench are `pauli_sum_integration*`; microbenches `pauli_sum_bench.rs`.
+- Lean: `lean/PPVM/**` (`lake build PPVM` from `lean/`).
+- Open/closed gaps: see the ledger rows in the Phase 3.2 section (`ps2.trotter.perf` OPEN, `ps2.integration.1`, `ps2.store.aux`, `ps2.rot.perf`).
+
+---
+
 ## Phase 0 — scaffolding
 
 Status: **complete.** Deliverables:

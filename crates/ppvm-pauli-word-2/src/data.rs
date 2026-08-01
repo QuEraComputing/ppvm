@@ -135,6 +135,31 @@ impl<A: PauliStorage, H> PauliWord<A, H> {
         // `key_hash()` recomputes.
         *self.hash_cache.get_mut() = HASH_UNCACHED;
     }
+
+    /// A copy with the X and/or Z bit at `i` toggled and a fresh **uncached**
+    /// hash (recomputed on the next `key_hash()`).
+    ///
+    /// This is the rotation-branch key builder (`iGP` from a diagonal `P`). The
+    /// branch always toggles a bit, so `clone()` — which copies the source's
+    /// *cached* digest — followed by `set_x_bit`/`set_z_bit` — which immediately
+    /// invalidates it — does a wasted atomic load + store per branch key. Building
+    /// the toggled key directly (copy the plane words, flip the bit, leave the
+    /// cache empty) skips both.
+    #[inline]
+    pub fn with_bits_toggled(&self, i: usize, toggle_x: bool, toggle_z: bool) -> Self {
+        debug_assert!(i < self.nqubits, "qubit {i} out of bounds");
+        let mut xbits = self.xbits;
+        let mut zbits = self.zbits;
+        if toggle_x {
+            let b = xbits[i];
+            xbits.set(i, !b);
+        }
+        if toggle_z {
+            let b = zbits[i];
+            zbits.set(i, !b);
+        }
+        Self::from_planes(xbits, zbits, self.nqubits)
+    }
 }
 
 impl<A: PauliStorage, H> Word for PauliWord<A, H> {

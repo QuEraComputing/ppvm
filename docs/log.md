@@ -286,8 +286,22 @@ fused single-pass `RotateInPlace` → the ~1.15× residual. Attribution verified
 old-sum clone 1.41µs), so it is genuine rx cost — the branch path (per
 anticommuting term: key `clone` + `set_bit` + cold `key_hash` + hashmap merge), a
 modest partial materialization of the lazy-hash/`Copy`-drop word cost on the
-branch-key-creating path. **Status: open perf-drift, pending maintainer decision
-(optimize vs allowlist).**
+branch-key-creating path.
+
+**Optimized (maintainer chose "optimize").** Attribution (instrumented phase
+timing, release): the obvious suspect — the per-call `branches` Vec allocation —
+is **negligible** (67ns); cost splits ~evenly between pass-1 (branch-key build)
+and pass-2 (hashmap hash+merge). The one cheap lever: the branch build did
+`clone()` (which *loads* the source's cached digest) then `set_x_bit` (which
+*stores* `HASH_UNCACHED`) — a wasted atomic load+store per branch key. Added
+`PauliWord::with_bits_toggled` (copy planes, flip the bit, uncached hash) →
+new/rx ~5.84µs → **~5.65µs**, ratio **~1.19× → ~1.16×**. The residual sits **at
+the 1.15× gate boundary** and is inherent: the dominant remaining cost is the
+cold `key_hash` finalization fold on each freshly-created branch key (pass-2),
+which the old crate's `Copy`/eager-hash word pays a bit more cheaply — not
+removable without changing the shared avalanche-tested hash. **Status: cheap win
+captured; residual ~1.16× at the boundary, pending maintainer call on whether to
+invest in deeper hash-path work.**
 
 Lean added (prove agent, `lake` green, orchestrator-verified non-vacuous):
 `Rotation.lean` `branchExp`/`branchExp_isRealPhase` + `rx/ry/rz_eps_from_product`

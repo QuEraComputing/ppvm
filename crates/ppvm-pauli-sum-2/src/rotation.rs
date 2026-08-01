@@ -77,9 +77,8 @@ where
             let x = k.x_bit(qubit);
             let branch = c.clone() * sin.mul_sign(if x { -1 } else { 1 });
             *c *= cos.clone();
-            let mut new_key = k.clone();
-            new_key.set_x_bit(qubit, !x);
-            Some((new_key, branch))
+            // rx anticommuting branch flips the X bit (Z/Y ↦ Y/Z).
+            Some((k.with_bits_toggled(qubit, true, false), branch))
         });
     }
 
@@ -100,10 +99,8 @@ where
             }
             let branch = c.clone() * sin.mul_sign(if z { -1 } else { 1 });
             *c *= cos.clone();
-            let mut new_key = k.clone();
-            new_key.set_x_bit(qubit, !x);
-            new_key.set_z_bit(qubit, !z);
-            Some((new_key, branch))
+            // ry anticommuting branch flips both X and Z (X/Z ↦ Z/X).
+            Some((k.with_bits_toggled(qubit, true, true), branch))
         });
     }
 
@@ -120,9 +117,8 @@ where
             let z = k.z_bit(qubit);
             let branch = c.clone() * sin.mul_sign(if z { 1 } else { -1 });
             *c *= cos.clone();
-            let mut new_key = k.clone();
-            new_key.set_z_bit(qubit, !z);
-            Some((new_key, branch))
+            // rz anticommuting branch flips the Z bit (X/Y ↦ Y/X).
+            Some((k.with_bits_toggled(qubit, false, true), branch))
         });
     }
 }

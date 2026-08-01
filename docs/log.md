@@ -301,20 +301,24 @@ cold `key_hash` finalization fold on each freshly-created branch key (pass-2),
 which the old crate's `Copy`/eager-hash word pays a bit more cheaply — not
 removable without changing the shared avalanche-tested hash.
 
-**Pushed deeper (maintainer chose "push deeper"), then allowlisted.** Ruled out,
-empirically: per-call Vec alloc (67ns, negligible); a mid-merge hashbrown resize
-(pre-reserving the branch inserts gave no change — the map already had headroom).
-Read `key_hash`: the compute is already tight (3 `fxhash` rounds + fold, *shared*
-with the old crate); the only new-specific overhead is the lazy `AtomicU64`
-load/store, which is small and not removable without bypassing the `Hash` impl.
-The one genuine remaining lever is an **incremental/Zobrist hash** (the branch key
-differs from the diagonal by 1–2 bits, so an XOR-decomposable hash could update in
-O(1)) — but that is a large, risky rewrite of the **shared** avalanche-tested hash
-(used by every `-2` crate) for a boundary-case ~1.16× on one gate type, so it is
-**not** justified. **Resolved: cheap win captured (`with_bits_toggled`); residual
-~1.13–1.16× (branch path) allowlisted** as the lazy-hash/`Copy`-drop cost — a cost
-the same design pays back many-fold on every other sum path (Clifford 0.80×, build
-0.29×, overlap ~700×, noise 0.89×).
+**Pushed deeper (maintainer asked twice); the hash theory was DISPROVEN.** Ruled
+out with evidence: per-call Vec alloc (67ns); a mid-merge resize (pre-reserve gave
+no change); **and — critically — the hash is NOT the cause.** Head-to-head: the
+new map uses `IdentityBuildHasher` (`key_hash()` passes straight through), while
+the OLD map uses `FxBuildHasher` (an *extra* fxhash round on the cached `u64` per
+lookup); and new's `with_bits_toggled` branch build is cheaper than old's
+`clone()`+2×`set_bit`+eager `rehash()`. So new's hash+build path is **cheaper**,
+not more expensive — my earlier "inherent lazy-hash cost" justification was wrong.
+Also ruled out: truncate (`NoPolicy` no-op). **Root cause NOT pinned:** samply
+would not symbolicate the binary. Most likely **codegen/monomorphization** (the
+generic `Sum<S,P>` + RotateInPlace/closure/Policy layering optimizing slightly
+worse than the old *concrete monolithic* `PauliSum<Config>` loop), possibly
+compounded by the noisy old/rx baseline (4.9–5.5µs → the gap is ~10–16% depending
+on the run). **Resolved: cheap win captured (`with_bits_toggled`); residual
+~1.14× allowlisted** — a small, at-the-boundary, **non-algorithmic** difference
+(the algorithmic path is demonstrably cheaper), exact source unpinned (codegen +
+noise), NOT an inherent design cost. A future symbolicated profiling pass could
+name it if it ever matters.
 
 Lean added (prove agent, `lake` green, orchestrator-verified non-vacuous):
 `Rotation.lean` `branchExp`/`branchExp_isRealPhase` + `rx/ry/rz_eps_from_product`
@@ -365,5 +369,5 @@ a crate. Anything not listed is a hard gate.
 
 | id | component | metric | accepted ratio | justification | approved-by |
 | --- | --- | --- | --- | --- | --- |
-| ps2.rot.perf | ppvm-pauli-sum-2 | `rotation_rx` (branch fan-out) | ~1.13–1.16× (new ~5.65µs vs old ~4.9µs) | Deeply investigated: cheap win captured (`with_bits_toggled`); alloc/resize ruled out; residual is the inherent lazy-hash/`Copy`-drop cost of hashing freshly-created branch keys. The only bigger lever (Zobrist incremental hash) is a risky rewrite of the shared avalanche-tested hash, not justified for one gate type at the gate boundary — the same design wins big on every other sum path (Clifford 0.80×, build 0.29×, overlap ~700×). | maintainer (chose optimize→then accept after deep dive) |
+| ps2.rot.perf | ppvm-pauli-sum-2 | `rotation_rx` (branch fan-out) | ~1.14× (new ~5.65µs vs old ~4.9–5.5µs, noisy) | Deeply investigated. **NOT the hash** (new's `IdentityBuildHasher` pass-through is cheaper than old's `FxBuildHasher` extra round; `with_bits_toggled` cheaper than old clone+rehash), NOT alloc/resize/truncate. Cheap win captured (`with_bits_toggled`). Root cause unpinned (samply wouldn't symbolicate); most likely codegen/monomorphization of the generic `Sum` engine + measurement noise — a small, at-boundary, **non-algorithmic** difference, not an inherent design cost. | maintainer (optimize→accept after deep dive) |
 | _(prior)_ | | | | `lpw2.perf.1` was a nanobench artifact (converges to 1.00× at wide width), not allowlisted. | |

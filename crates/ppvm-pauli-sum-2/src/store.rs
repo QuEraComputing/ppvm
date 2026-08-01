@@ -130,10 +130,16 @@ pub trait RekeyBijective<K, C> {
     /// reusing the backing allocation. `f` maps `(k, c) ↦ (φ(k), c')`.
     ///
     /// The caller guarantees `f` is **injective on keys** (a Clifford
-    /// conjugation is a Pauli bijection), so re-keyed terms never collide. The
-    /// merge still aggregates defensively — matching the old `map_add`'s
-    /// `and_modify`/`or_insert` — so a caller-side bug degrades a lost term into
-    /// a summed one rather than silently dropping coefficient mass.
+    /// conjugation is a Pauli bijection, machine-checked as `*_bijective` in
+    /// `lean/PPVM/Pauli/Symplectic.lean`), so re-keyed terms never collide.
+    ///
+    /// Implementations may therefore insert without aggregating. That is a real
+    /// precondition, not a hint: violating it **drops** a term rather than summing
+    /// it. The `HashMapStore` impl `debug_assert!`s that no insert displaces an
+    /// existing entry, so a caller-side bug trips loudly in debug builds. The
+    /// defensive `and_modify`/`or_insert` this replaced cost ~1.3× on the whole
+    /// re-key path (it compiled out of line), which is too much to pay for
+    /// guarding a case the type-level contract already excludes.
     fn rekey_bijective<F>(&mut self, f: F)
     where
         F: FnMut(K, C) -> (K, C);
@@ -573,20 +579,36 @@ where
     {
         // The old crate's `map_add`, with the aux living in the store: clear the
         // persistent aux, **move** every term through the re-key into it
-        // (`drain` yields owned keys — zero key clones), then swap. A Clifford is
-        // a bijection (distinct keys → distinct keys), so no aggregation is needed;
-        // the `entry` guards the impossible collision cheaply and keeps parity with
-        // the old fold. `drain` empties the primary but keeps its allocation, and
-        // the swap hands it to `aux` — so the two allocations ping-pong across
-        // gates and are never freed (the double-buffer, recovered).
+        // (`drain` yields owned keys — zero key clones), then swap. `drain` empties
+        // the primary but keeps its allocation, and the swap hands it to `aux` — so
+        // the two allocations ping-pong across gates and are never freed (the
+        // double-buffer, recovered).
+        //
+        // The merge is a plain `insert`, not `entry(..).and_modify(..).or_insert(..)`.
+        // `f` is required to be **injective on keys** (this trait's contract; for a
+        // Clifford conjugation it is the symplectic bijection machine-checked as
+        // `*_bijective` in `lean/PPVM/Pauli/Symplectic.lean`), so two terms can never
+        // land on the same re-keyed slot and there is nothing to accumulate — the
+        // `entry` form was guarding a collision that cannot occur.
+        //
+        // That guard was not free. On this crate's monomorphization the `entry`
+        // chain compiled **out of line** (a standalone `hashbrown::rustc_entry`
+        // frame took 41% of this loop's samples, where the old crate's identical
+        // source construct inlines fully into `map_add_assign`). It cost ~1.44x
+        // against old *and* made the whole re-key bimodal across processes: with
+        // `entry` ~40% of processes landed in a ~1.5x-slower mode, with `insert`
+        // none of 34 did. See `docs/log.md` (`ps2.cnot.rekey.perf`,
+        // `ps2.rekey.bimodal`).
         self.aux.clear();
         self.aux.reserve(self.primary.len());
         for (k, c) in self.primary.drain() {
             let (nk, nc) = f(k, c);
-            self.aux
-                .entry(nk)
-                .and_modify(|e| *e += nc.clone())
-                .or_insert(nc);
+            let displaced = self.aux.insert(nk, nc);
+            debug_assert!(
+                displaced.is_none(),
+                "RekeyBijective requires an injective re-key: two distinct keys \
+                 collided, so a term was silently dropped"
+            );
         }
         std::mem::swap(&mut self.primary, &mut self.aux);
     }

@@ -13,3 +13,7 @@ edition = "2024"
 ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
 ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
 ppvm-phased-pauli-word-2 = { version = "0.1.0", path = "../ppvm-phased-pauli-word-2" }
+# `PauliError`'s transfer eigenvalue `λ_P = 1 − 2·(…)` needs the coefficient
+# ring's multiplicative identity; `Coefficient` bounds only `num::Zero`, so the
+# noise impl adds a `num::One` bound (see `src/noise.rs`).
+num = "0.4"

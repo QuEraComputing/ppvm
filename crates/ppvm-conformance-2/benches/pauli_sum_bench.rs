@@ -24,7 +24,9 @@ use ppvm_conformance_2::{
 use ppvm_pauli_sum_2::PauliWord as NewPauliWord;
 
 use ppvm_traits::traits::Clifford as OldClifford;
+use ppvm_traits::traits::{PauliError as OldPauliError, RotationOne as OldRotationOne};
 use ppvm_traits_2::Clifford as NewClifford;
+use ppvm_traits_2::{PauliError as NewPauliError, RotationOne as NewRotationOne};
 
 /// Qubit width for the moderate-support sums (fits both `u64` and `[u8; 8]`).
 const N: usize = 16;
@@ -165,6 +167,70 @@ fn bench_overlap(c: &mut Criterion) {
     g.finish();
 }
 
+// ---------------------------------------------------------------------------
+// 5. rx(q, θ) on a ~1000-term sum — the branching producer (the non-Clifford hot
+//    path: fan-out + accumulate_batch + reduce), new vs old.
+// ---------------------------------------------------------------------------
+
+fn bench_rotation_rx(c: &mut Criterion) {
+    let mut g = c.benchmark_group("pauli_sum/rotation_rx");
+    let t = terms(6, TERMS);
+
+    // A generic angle (both sin and cos nonzero) so every anticommuting term
+    // fans out to two, and the branch keys merge back through accumulate_batch +
+    // reduce. rx is NOT an involution, so we rebuild the sum each iteration to
+    // keep the timed workload's support size stable (otherwise the support would
+    // grow/rotate across iterations and the ratio would drift).
+    const THETA: f64 = 0.7;
+
+    let new0 = build_new_sum(N, &t);
+    g.bench_function("new/rx", |b| {
+        b.iter_batched_ref(
+            || new0.clone(),
+            |s| s.rx(black_box(0), black_box(THETA)),
+            criterion::BatchSize::SmallInput,
+        )
+    });
+
+    let old0 = build_old_sum(N, &t);
+    g.bench_function("old/rx", |b| {
+        b.iter_batched_ref(
+            || old0.clone(),
+            |s| s.rx(black_box(0), black_box(THETA)),
+            criterion::BatchSize::SmallInput,
+        )
+    });
+
+    g.finish();
+}
+
+// ---------------------------------------------------------------------------
+// 6. pauli_error(q, [..]) on a ~1000-term sum — the diagonal in-place scale,
+//    new vs old.
+// ---------------------------------------------------------------------------
+
+fn bench_pauli_error(c: &mut Criterion) {
+    let mut g = c.benchmark_group("pauli_sum/pauli_error");
+    let t = terms(7, TERMS);
+
+    // A diagonal channel is idempotent in shape (keys are fixed; only the ±λ
+    // scale changes), so repeated application over the same map is a stable,
+    // support-invariant in-place pass — no rebuild needed.
+    const P: [f64; 3] = [0.05, 0.1, 0.15];
+
+    let mut new = build_new_sum(N, &t);
+    g.bench_function("new/pauli_error", |b| {
+        b.iter(|| new.pauli_error(black_box(0), black_box(P)))
+    });
+
+    let mut old = build_old_sum(N, &t);
+    g.bench_function("old/pauli_error", |b| {
+        b.iter(|| old.pauli_error(black_box(0), black_box(P)))
+    });
+
+    g.finish();
+}
+
 criterion_group!(
     benches,
     bench_clifford_h,
@@ -173,5 +239,7 @@ criterion_group!(
     bench_build_batch,
     bench_scale,
     bench_overlap,
+    bench_rotation_rx,
+    bench_pauli_error,
 );
 criterion_main!(benches);

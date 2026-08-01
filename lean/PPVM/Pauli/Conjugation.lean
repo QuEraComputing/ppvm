@@ -169,6 +169,40 @@ theorem conjS_conjSdag : Function.LeftInverse conjS conjSdag := by
 theorem conjSdag_conjS : Function.LeftInverse conjSdag conjS := by
   intro p; revert p; decide
 
+/-! ### Pure-sign conjugation by the Pauli generators `X`, `Y`, `Z`
+
+Unlike `H`/`S` (which move the word), conjugating by a Pauli generator `G ∈
+{X,Y,Z}` **fixes the word** and applies only a `±1 = (−1)^{ω(G,P)}` sign. Because
+each generator is Hermitian and squares to `+I`, `G⁻¹ = G` and `G·P·G = G·P·G⁻¹`
+is literal group conjugation in `𝒫₁`; expanding it (`mul (mul G P) G`, so `decide`
+never touches the bundled `*`) gives `word(P)` back with the phase advanced by `2`
+exactly on the anticommuting Paulis. These are the exact signs the `PauliSum`
+`x`/`y`/`z` **fast path** folds straight into the coefficient
+(`ppvm-pauli-sum-2/src/clifford.rs`, `Sum::x`/`y`/`z` via `flip_sign_by_key`),
+*without* routing through the audited phased-word `Clifford` impl — so the
+duplicated fast-path signs are pinned here directly against the group product. -/
+
+/-- **`X·P·X = (−1)^{z} P`.** The word is fixed; the phase advances by `2` iff
+`p.z`. Matches `Sum::x` (`flip iff z_bit`, `clifford.rs:143`). -/
+theorem conjX (p : PhasedPauli) :
+    mul (mul ⟨0, true, false⟩ p) ⟨0, true, false⟩
+      = ⟨p.phase + (if p.z then 2 else 0), p.x, p.z⟩ := by
+  revert p; decide
+
+/-- **`Y·P·Y = (−1)^{x⊕z} P`.** Word fixed; phase advances by `2` iff `p.x ⊕ p.z`.
+Matches `Sum::y` (`flip iff x_bit ⊕ z_bit`, `clifford.rs:158`). -/
+theorem conjY (p : PhasedPauli) :
+    mul (mul ⟨0, true, true⟩ p) ⟨0, true, true⟩
+      = ⟨p.phase + (if xor p.x p.z then 2 else 0), p.x, p.z⟩ := by
+  revert p; decide
+
+/-- **`Z·P·Z = (−1)^{x} P`.** Word fixed; phase advances by `2` iff `p.x`. Matches
+`Sum::z` (`flip iff x_bit`, `clifford.rs:173`). -/
+theorem conjZ (p : PhasedPauli) :
+    mul (mul ⟨0, false, true⟩ p) ⟨0, false, true⟩
+      = ⟨p.phase + (if p.x then 2 else 0), p.x, p.z⟩ := by
+  revert p; decide
+
 /-! ### A Clifford conjugation never emits `±i`: the phase stays real
 
 `ppvm-pauli-sum-2/src/clifford.rs` conjugates each Pauli on a `Phased<PauliWord>`

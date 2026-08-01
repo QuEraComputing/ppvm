@@ -5,11 +5,12 @@
 //! draining each conjugation's `±1` sign to the coefficient. Two fast paths:
 //!
 //! * The **pure-sign** single-qubit gates `X`/`Y`/`Z` leave the Pauli word fixed
-//!   (`XPX = (−1)^z P`, `YPY = (−1)^{x⊕z} P`, `ZPZ = (−1)^x P`), so they take the
-//!   in-place [`Sum::flip_sign_by_key`](crate::Sum) path — walk the existing
-//!   entries and scale each coefficient by the `±1` its own bits demand, **no**
-//!   map rebuild, no key movement, no reallocation (the old crate's in-place
-//!   `scale`, restored).
+//!   (`XPX = (−1)^z P`, `YPY = (−1)^{x⊕z} P`, `ZPZ = (−1)^x P` — proven as the
+//!   group conjugation `G·P·G⁻¹` in `lean/PPVM/Pauli/Conjugation.lean`,
+//!   `conjX`/`conjY`/`conjZ`), so they take the in-place
+//!   [`Sum::flip_sign_by_key`](crate::Sum) path — walk the existing entries and
+//!   scale each coefficient by the `±1` its own bits demand, **no** map rebuild,
+//!   no key movement, no reallocation (the old crate's in-place `scale`, restored).
 //! * The **word-changing** gates `H`/`S`/`CNOT`/`CZ` re-key every term via the
 //!   move-based [`Sum::rekey_bijective`](crate::Sum) fast path.
 //!

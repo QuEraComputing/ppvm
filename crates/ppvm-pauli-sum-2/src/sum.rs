@@ -15,7 +15,7 @@ use ppvm_traits_2::{
 };
 
 use crate::policy::Policy;
-use crate::store::{RekeyBijective, SignFlipByKey, StoreAlloc};
+use crate::store::{RekeyBijective, RotateInPlace, ScaleByKey, SignFlipByKey, StoreAlloc};
 
 /// A sparse formal sum `Σ cₖ·k` over the free `C`-module on the keys `K`.
 ///
@@ -305,5 +305,76 @@ where
         F: Fn(&S::Key) -> i8,
     {
         self.storage.sign_flip_by_key(f);
+    }
+}
+
+// --- The diagonal-noise fast path: needs `ScaleByKey` (in-place per-key scale). -
+impl<S, P> Sum<S, P>
+where
+    S: Accumulate + ScaleByKey<S::Key, S::Coeff>,
+    P: Policy<S::Key, S::Coeff>,
+    S::Key: Word + Indexable,
+{
+    /// Multiply every term's coefficient in place by the per-key ring factor
+    /// `f(&k)`, keyed on that term's own key — **no** map rebuild, no key
+    /// movement, no reallocation. A `None` result leaves the term untouched.
+    ///
+    /// This is the fast path for a *diagonal* unital Pauli channel
+    /// ([`PauliError`](ppvm_traits_2::PauliError)), whose Pauli words are fixed so
+    /// only the coefficients pick up the channel's real transfer eigenvalue. Like
+    /// [`flip_sign_by_key`](Self::flip_sign_by_key) it skips the move-based
+    /// [`rekey_bijective`](Self::rekey_bijective) entirely — there is nothing to
+    /// re-key — restoring the old crate's in-place `scale`. The channel is
+    /// contractive (`|λ_P| ≤ 1`), so it can never grow a key's Pauli weight; a
+    /// term the channel scales to *exactly* zero (a zero eigenvalue, e.g.
+    /// `pauli_error(q, [0.0, 0.25, 0.25])` → `λ_X = 0`) is dropped inside
+    /// [`ScaleByKey`](crate::store::ScaleByKey) so the reduced-canonical-form
+    /// invariant holds, but no separate whole-map `reduce`/truncation pass runs.
+    ///
+    /// Design: §"Behavioral traits" (`PauliError`); the eigenvalue is
+    /// machine-checked in `lean/PPVM/Algebra/Noise.lean`
+    /// (`pauli_channel_eigenvalue`).
+    #[inline]
+    pub(crate) fn scale_by_key<F>(&mut self, f: F)
+    where
+        F: Fn(&S::Key) -> Option<S::Coeff>,
+    {
+        self.storage.scale_by_key(f);
+    }
+}
+
+// --- The rotation fast path: needs `RotateInPlace` (fused branching re-key). ---
+impl<S, P> Sum<S, P>
+where
+    S: Accumulate + RotateInPlace<S::Key, S::Coeff> + Retain<S::Key, S::Coeff>,
+    P: Policy<S::Key, S::Coeff>,
+    S::Key: Word + Indexable,
+{
+    /// Propagate a single-qubit rotation through the support in one fused pass:
+    /// `f(&k, &mut c)` scales each diagonal coefficient **in place** (the `cosθ`
+    /// factor) and returns the optional anticommuting branch term `(iGP, c·sinθ·ε)`
+    /// to merge, then the policy's truncation runs.
+    ///
+    /// This is the branching analogue of the pure-sign
+    /// [`flip_sign_by_key`](Self::flip_sign_by_key) / diagonal
+    /// [`scale_by_key`](Self::scale_by_key) fast paths: it deliberately bypasses
+    /// [`apply`](Self::apply)'s batch round-trip, whose read-side `iter()` key
+    /// clone, `reset`, and re-accumulation of the *whole* fan-out re-hash the `N`
+    /// untouched diagonals. Here each diagonal is scaled where it sits — cached
+    /// hash intact, no bucket move — and only the ≤`N` branch terms are hashed and
+    /// merged, restoring the old crate's single-pass `map_insert`
+    /// ([`RotateInPlace`](crate::store::RotateInPlace) friction note). Exact-zero
+    /// cancellations from a colliding merge are dropped inside the walk (the
+    /// `reduce` `apply` would run).
+    ///
+    /// Design: §"apply", §"Every gate is a producer feeding `accumulate`", and
+    /// §"Behavioral traits" (`RotationOne`).
+    #[inline]
+    pub(crate) fn rotate_in_place<F>(&mut self, f: F)
+    where
+        F: FnMut(&S::Key, &mut S::Coeff) -> Option<(S::Key, S::Coeff)>,
+    {
+        self.storage.rotate_in_place(f);
+        self.policy.truncate(&mut self.storage);
     }
 }

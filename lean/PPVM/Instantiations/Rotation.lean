@@ -53,6 +53,58 @@ because the `sin` branch carries coefficient `0`; `rot 0` below is the identity.
 theorem commute_bits (a b c d : Bool) :
     mulBits a b c d = (xor a c, xor b d) := rfl
 
+/-! ### The branch sign `ε` is the real phase of `iGP`, derived from `phaseExp`
+
+`Rotation.lean`'s 2-D `rot` *models* the coefficient plane but does not derive the
+per-axis `±1` sign the branch coefficient carries. That sign is a genuine Pauli
+phase fact: the stored branch key is the **real** word `g(G⊕P)`, and the physical
+branch term is `sinθ · (iGP)`, with
+
+  `iGP = i · (G·P) = i · i^{phaseExp(G,P)} · g(G⊕P) = i^{1 + phaseExp(G,P)} · g(G⊕P)`.
+
+So the coefficient sign is `ε = i^{1 + phaseExp(G,P)}` as a base-`i` exponent
+(`branchExp` below). When `G` and `P` anticommute (`ω = 1`) the single-qubit
+product `G·P` carries an odd power of `i`, so `1 + phaseExp` is *even* and `ε` is a
+real `±1` — this is why the leading `i` "cancels" and the branch stays real. The
+three axis theorems then check that this derived `±1` equals the hand-ported table
+in `producer.rs:141-143` (`RotationProducer::produce`) case-by-case. -/
+
+/-- The base-`i` exponent of the prefactor sitting on the *real* branch word
+`g(G⊕P)`: `iGP = i^{1 + phaseExp(G,P)} · g(G⊕P)`. -/
+def branchExp (gx gz x z : Bool) : ZMod 4 := 1 + phaseExp gx gz x z
+
+/-- **The `i` in `iGP` cancels the anticommuting product's `i`.** When `G = (gx,gz)`
+and `P = (x,z)` anticommute (`ω = 1`), `branchExp` is even (`∈ {0,2}`), i.e. the
+branch prefactor is a real `±1`, never `±i` — so `producer.rs` may store a real
+coefficient sign `ε` on the real word `g(G⊕P)`. -/
+theorem branchExp_isRealPhase (gx gz x z : Bool) (h : omega gx gz x z = 1) :
+    IsRealPhase (branchExp gx gz x z) := by
+  change branchExp gx gz x z = 0 ∨ branchExp gx gz x z = 2
+  revert h; revert gx gz x z; decide
+
+/-- **`rx` (`G = X = (1,0)`): the table `ε = −1 iff x`.** For an anticommuting `P`
+(`ω = 1`, i.e. `z = 1`), the phase-derived branch sign `i^{1+phaseExp(X,P)}` equals
+`−1` (exponent `2`) exactly when `x`, matching `producer.rs:141`
+(`RotAxis::X => … eps = if x { -1 } else { 1 }`). -/
+theorem rx_eps_from_product :
+    ∀ x z, omega true false x z = 1 →
+      branchExp true false x z = (if x then 2 else 0) := by decide
+
+/-- **`ry` (`G = Y = (1,1)`): the table `ε = −1 iff z`.** For an anticommuting `P`
+(`ω = 1`, i.e. `x ≠ z`), `i^{1+phaseExp(Y,P)}` equals `−1` exactly when `z`,
+matching `producer.rs:142` (`RotAxis::Y => … eps = if z { -1 } else { 1 }`). -/
+theorem ry_eps_from_product :
+    ∀ x z, omega true true x z = 1 →
+      branchExp true true x z = (if z then 2 else 0) := by decide
+
+/-- **`rz` (`G = Z = (0,1)`): the table `ε = +1 iff z`.** For an anticommuting `P`
+(`ω = 1`, i.e. `x = 1`), `i^{1+phaseExp(Z,P)}` equals `+1` (exponent `0`) exactly
+when `z`, matching `producer.rs:143`
+(`RotAxis::Z => … eps = if z { 1 } else { -1 }`). -/
+theorem rz_eps_from_product :
+    ∀ x z, omega false true x z = 1 →
+      branchExp false true x z = (if z then 0 else 2) := by decide
+
 /-! ### The branch is a norm-preserving 2-D rotation
 
 Model the `(coefficient of P, coefficient of P')` pair as a point of `ℝ²`. The

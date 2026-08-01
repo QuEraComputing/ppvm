@@ -16,13 +16,13 @@
 //! [`docs/design/traits-2-configuration-and-hashing.md`] and `lean/PPVM/**`; the
 //! algorithm is ported from `ppvm-pauli-sum` to hold the hot paths at parity.
 //!
-//! Phase 3 scaffold: the `Sum` core + graded traits + Clifford propagation land
-//! first; rotations/noise and the L4 `Multiply` product follow.
+//! Phase 3: the `Sum` core + graded traits + Clifford propagation, plus the
+//! non-Clifford [`RotationOne`](ppvm_traits_2::RotationOne) branch and the
+//! diagonal [`PauliError`](ppvm_traits_2::PauliError) channel; the L4 `Multiply`
+//! product follows.
 //!
 //! # Deferrals (this component)
 //!
-//! - **Rotations / noise producers** (`RotationOne`, `PauliError`) and their
-//!   fan-out `TermProducer`s — later component.
 //! - **L4 `Multiply`** (the twisted operator product) — later component.
 //! - **Columnar `ColumnStore` (SoA) backend** — Phase 6. `accumulate_batch`
 //!   takes an array-of-structs `TermBatch` here.
@@ -33,8 +33,10 @@
 use std::collections::HashMap;
 
 mod clifford;
+mod noise;
 mod policy;
 mod producer;
+mod rotation;
 mod store;
 mod sum;
 

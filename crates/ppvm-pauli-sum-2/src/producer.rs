@@ -7,8 +7,11 @@
 //! A Clifford conjugation is a pushforward along a Pauli bijection `w ↦ φ(w)`:
 //! exactly one produced term per input, and — because `φ` is injective — no
 //! collisions (`reduce` still runs; it is a no-op on the support size here).
-//! Rotation/noise producers (a fan-out per input) and the L4 multiply producer
-//! (an outer product) are deferred to later components.
+//! Rotation and the diagonal noise channel take dedicated in-place fast paths
+//! ([`RotateInPlace`](crate::store::RotateInPlace) /
+//! [`ScaleByKey`](crate::store::ScaleByKey)) rather than a batch producer, so this
+//! module carries only the bijective re-key; the L4 multiply producer (an outer
+//! product) is deferred to a later component.
 //!
 //! Design: §"Every gate is a producer feeding `accumulate`" (the `RekeyProducer`
 //! sketch). The Clifford re-key is the symplectic conjugation bijection: each

@@ -356,9 +356,16 @@ stays real: `conjH_isRealPhase`/`conjS_isRealPhase`/`conjSdag_isRealPhase` and
 `isRealPhase_zero`) prove exactly the reachability invariant that keeps
 `crates/ppvm-pauli-sum-2/src/clifford.rs`'s `clifford_sign` \(\pm1\) drain total —
 its `PosI`/`NegI` "bug" branch is unreachable, not merely `debug_assert!`ed away.
-The surjectivity that upgrades this containment to the full
-isomorphism \(\mathcal{C}_n/\mathcal{P}_n \cong \mathrm{Sp}(2n,2)\) is stated here
-but not formalized. The **loss-guarded** variant of this action — each generator
+Conjugation by a **Pauli generator** `G ∈ {X,Y,Z}` is the degenerate case that
+moves no word at all — a pure `(−1)^{ω(G,P)}` sign — and is the one the `PauliSum`
+takes as a hand-written fast path (`Sum::x`/`y`/`z` via `flip_sign_by_key`,
+`crates/ppvm-pauli-sum-2/src/clifford.rs`) *instead of* the audited phased-word
+`Clifford` impl. Those duplicated signs are pinned directly against the group
+product in `lean/PPVM/Pauli/Conjugation.lean`: `conjX`/`conjY`/`conjZ` prove
+\(XPX = (-1)^{z}P\), \(YPY = (-1)^{x\oplus z}P\), \(ZPZ = (-1)^{x}P\) as
+`G·P·G⁻¹` in \(\mathcal{P}_1\). The surjectivity that upgrades this containment
+to the full isomorphism \(\mathcal{C}_n/\mathcal{P}_n \cong \mathrm{Sp}(2n,2)\) is
+stated here but not formalized. The **loss-guarded** variant of this action — each generator
 is a no-op when any operand qubit is lost, as in
 `crates/ppvm-lossy-pauli-word-2/src/clifford.rs` — is machine-checked separately
 in the same file (`lean/PPVM/Pauli/Symplectic.lean`, the `…ActL` definitions):
@@ -1271,7 +1278,14 @@ genuinely distinct from both operands (`anticommute_new_key`), so exactly one
 fresh term is produced; and the `(c_P, c_{P'})` coefficient update is a 2-D
 rotation that is norm-preserving (`rot_norm_sq`), reversible (`rot_neg_rot`), and
 angle-additive (`rot_rot`) — the last being the identity a rotation-merging
-Trotter optimization relies on.
+Trotter optimization relies on. The branch's per-axis `±1` sign `ε` is *not* a
+free convention: `iGP = i^{1 + phaseExp(G,P)} · g(G⊕P)`, so `ε` is the real phase
+`i^{1+phaseExp}` of the anticommuting single-qubit product `G·P` (the leading `i`
+of `iGP` cancels the product's `i`, `branchExp_isRealPhase`). `rx_eps_from_product`
+/`ry_eps_from_product`/`rz_eps_from_product` check that this phase-derived `±1`
+equals the hand-ported table in `crates/ppvm-pauli-sum-2/src/producer.rs:141-143`
+(`RotationProducer::produce`, `rx: ε=−1 iff x`; `ry: ε=−1 iff z`; `rz: ε=+1 iff z`),
+grounding the one propagation sign the abstract `rot` model does not derive.
 
 A `TermProducer` *reads* the live map through `&` and *writes* the produced
 terms into a `TermSink` — a separate buffer, never the map itself — so there is

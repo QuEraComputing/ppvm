@@ -1370,6 +1370,7 @@ dependencies = [
 name = "ppvm-pauli-sum-2"
 version = "0.1.0"
 dependencies = [
+ "num",
  "ppvm-pauli-word-2",
  "ppvm-phased-pauli-word-2",
  "ppvm-traits-2",

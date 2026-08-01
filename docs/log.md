@@ -35,7 +35,7 @@ iterations, then escalate to human.
 ## ▶ Continue here — handoff (2026-08-01)
 
 Everything committed and green (whole workspace tests, clippy/fmt clean, `lake build PPVM` ok). Recent commits (newest first):
-`b68b7e8e` content-conditional hash invalidation + cnot/truncate microbenches · `d4aa7875` truncation is explicit-only (behaviour gap closed) · `8a1dc79b` integration coverage + workflow Baseline phase · `4385ef3c` storage aux double-buffer recovered · `33f48fe5` Mytkowicz same-build perf rule.
+`23860055` re-key uses `insert` not `entry()` (rekey 1.45×→1.11×, Trotter →~1.28×) · `1e597396` Phase-1 gate surface + complex-angle parity fix · `b68b7e8e` content-conditional hash invalidation + cnot/truncate microbenches · `d4aa7875` truncation is explicit-only (behaviour gap closed) · `8a1dc79b` integration coverage.
 
 ### ⚠ MEASUREMENT WARNING — read before touching any perf number here
 Two instruments previously trusted in this log are now known to be unsound:
@@ -109,10 +109,9 @@ support with its image — so `A *= (b0·P0 + b1·P1)` computes the product chai
 `A·b0P0·b1P1` instead of `A·b0P0 + A·b1P1`. Untested in old. The new `Multiply`
 must accumulate into a fresh accumulator (`twistedConv`, `Twisted.lean`).
 
-### 2 — DO NEXT: `ps2.cnot.rekey.perf` — still OPEN, partly reduced
-End-to-end Trotter is **~1.37–1.42×** (was ~1.47× at session start; criterion,
-same build, `[u8;8]`). Numerics match. The gap is now concentrated almost
-entirely in `cnot` / `RekeyBijective`.
+### 2 — `ps2.cnot.rekey.perf` — ✅ CLOSED (`23860055`)
+End-to-end Trotter is **~1.28×** (was ~1.47× at session start; criterion, same
+build, `[u8;8]`). Numerics match. The re-key itself is now **1.11×**.
 
 **What was established this session (with the new sound instrument):**
 - **`truncate` is at parity** — 237 ns new vs 240 ns old (`0.99×`) on a 372-term

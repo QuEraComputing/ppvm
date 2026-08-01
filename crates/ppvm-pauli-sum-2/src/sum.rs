@@ -216,7 +216,16 @@ where
 {
     /// Apply a term producer: read the current support through `&`, produce the
     /// transformed terms into a batch, then **replace** the support with the
-    /// accumulated batch, canonicalize (`reduce`), and truncate.
+    /// accumulated batch and canonicalize (`reduce`).
+    ///
+    /// **Truncation is not run here.** The policy acts only when the caller
+    /// invokes [`truncate`](Self::truncate) — the old crate's *deferred*
+    /// truncation semantics (`ppvm-pauli-sum/tests/truncation_semantics.rs`):
+    /// a gate must never drop a term on its own, because two individually
+    /// sub-threshold contributions to the same key can merge into a surviving
+    /// one (`|a + b| ≥ τ` while `|a|, |b| < τ`) when several gates run between
+    /// truncations. `reduce` still runs — dropping exact zeros is
+    /// canonicalization, not policy.
     ///
     /// The support is reset between producing and accumulating (see
     /// [`StoreAlloc`] — the design's `apply` sketch glosses this, which would
@@ -237,10 +246,12 @@ where
         self.storage.reset();
         self.storage.accumulate_batch(&batch);
         self.storage.reduce();
-        self.policy.truncate(&mut self.storage);
     }
 
     /// Run the configured policy's truncation on the current support.
+    ///
+    /// This is the **only** way terms leave the support by policy: gates never
+    /// truncate on their own (see [`apply`](Self::apply)).
     #[inline]
     pub fn truncate(&mut self) {
         self.policy.truncate(&mut self.storage);
@@ -250,13 +261,13 @@ where
 // --- The Clifford fast path: needs `RekeyBijective` (move-based re-key). ------
 impl<S, P> Sum<S, P>
 where
-    S: Accumulate + StoreAlloc + Retain<S::Key, S::Coeff> + RekeyBijective<S::Key, S::Coeff>,
+    S: Accumulate + RekeyBijective<S::Key, S::Coeff>,
     P: Policy<S::Key, S::Coeff>,
     S::Key: Word + Indexable,
 {
     /// Re-key every term by a **bijection** `f: (k, c) ↦ (φ(k), c')` in place —
     /// moving each term through `f` with no key or coefficient clones and reusing
-    /// the backing allocation — then run the policy's truncation.
+    /// the backing allocation.
     ///
     /// This is the fast path for a Clifford conjugation (a Pauli bijection). It
     /// deliberately bypasses [`apply`](Self::apply)'s batch round-trip, whose
@@ -264,9 +275,12 @@ where
     /// against the old crate's in-place aux-map swap
     /// ([`RekeyBijective`](crate::store::RekeyBijective) friction note). Because
     /// `f` is injective on keys, no re-keyed terms collide and `reduce` is
-    /// unnecessary — a `±1` sign never zeroes a coefficient — but truncation still
-    /// runs, since a Clifford can change a key's Pauli weight (e.g. `CNOT`:
-    /// `IX ↦ XX`).
+    /// unnecessary — a `±1` sign never zeroes a coefficient.
+    ///
+    /// **Truncation is not run here**, matching the old crate's deferred
+    /// semantics — even though a Clifford *can* change a key's Pauli weight
+    /// (`CNOT`: `IX ↦ XX`) and so make a term newly truncatable. Acting on that
+    /// is the caller's [`truncate`](Self::truncate).
     ///
     /// Design: §"apply" and §"Pauli algebra traits" (the sum "applies the one-row
     /// action pointwise and drains each term's phase delta to its coefficient").
@@ -276,7 +290,6 @@ where
         F: FnMut(S::Key, S::Coeff) -> (S::Key, S::Coeff),
     {
         self.storage.rekey_bijective(f);
-        self.policy.truncate(&mut self.storage);
     }
 }
 
@@ -346,14 +359,20 @@ where
 // --- The rotation fast path: needs `RotateInPlace` (fused branching re-key). ---
 impl<S, P> Sum<S, P>
 where
-    S: Accumulate + RotateInPlace<S::Key, S::Coeff> + Retain<S::Key, S::Coeff>,
+    S: Accumulate + RotateInPlace<S::Key, S::Coeff>,
     P: Policy<S::Key, S::Coeff>,
     S::Key: Word + Indexable,
 {
     /// Propagate a single-qubit rotation through the support in one fused pass:
     /// `f(&k, &mut c)` scales each diagonal coefficient **in place** (the `cosθ`
     /// factor) and returns the optional anticommuting branch term `(iGP, c·sinθ·ε)`
-    /// to merge, then the policy's truncation runs.
+    /// to merge.
+    ///
+    /// **Truncation is not run here** — a freshly branched term below the
+    /// coefficient threshold must survive to be merged by later gates (the exact
+    /// case `ppvm-pauli-sum/tests/truncation_semantics.rs` pins: two `rx(θ)` with
+    /// no truncate between them). The policy acts only on
+    /// [`truncate`](Self::truncate).
     ///
     /// This is the branching analogue of the pure-sign
     /// [`flip_sign_by_key`](Self::flip_sign_by_key) / diagonal
@@ -375,6 +394,5 @@ where
         F: FnMut(&S::Key, &mut S::Coeff) -> Option<(S::Key, S::Coeff)>,
     {
         self.storage.rotate_in_place(f);
-        self.policy.truncate(&mut self.storage);
     }
 }

@@ -374,6 +374,37 @@ orchestrator's convergence-loop guard now rejects a perf-drift gap that is unfai
 noisy, or unattributed (bounce back to re-measure) instead of escalating a
 benchmark artifact to the human.
 
+**Workflow hardening #2 — integration baseline + architecture-parity review.** The
+aux-map miss exposed a deeper process gap: the `-2` conformance suite had only
+*single-op microbenches*, which structurally cannot see cumulative per-gate costs
+(a tight one-gate `iter` loop lets the allocator recycle one warm page), and the
+review agent never checked whether the new impl preserved the old's perf-critical
+*architecture*. The old crate's real workloads (`benches/trotter*.rs`,
+`random-circuit.rs`, `truncation-weight.rs`, `tests/trotter.rs`, `ghz.rs`) were
+never ported. Fixes to `.claude/workflows/traits-2-component.js`:
+- **New `Baseline` phase (runs FIRST, behavioral components only):** an agent mines
+  the old crate's real workloads to define the **integration acceptance bar**
+  (end-to-end new-vs-old *numeric* golden masters + *perf* ratios) and to enumerate
+  the **perf-critical architecture features** the new impl must preserve (buffer/aux
+  reuse, packed layout, allocation strategy, in-place fast paths). Its brief is
+  threaded into every downstream agent.
+- **Impl** must preserve each enumerated feature (may relocate it — e.g. the aux
+  into the storage backend — but not silently drop it; omissions justified in
+  `frictions`).
+- **Review** gains an **architecture-parity** dimension: for each baseline feature,
+  verify the new impl still carries it; a dropped one is a HIGH `impl-friction` gap
+  routed to impl (the check that was missing when the aux-map vanished).
+- **Test** perf gate is now **integration-first**: the headline ratio is the
+  end-to-end deep-circuit propagation (microbenches are diagnostic only), plus an
+  end-to-end numeric golden-master as part of `differentialPass`.
+- **Lean backstop:** integration numerics target old-parity by default, but the
+  Baseline agent flags suspected old-impl bugs and the Prove agent adjudicates them
+  against the Lean oracle — if old is wrong, the golden-master targets the
+  Lean-correct value and the new impl is right by construction.
+(Concrete exemplar back-filled for `ppvm-pauli-sum-2`: an end-to-end Trotter-TFIM
+propagation diff-test + bench, new vs old — the coverage that would have caught the
+aux gap. See the ps2.integration.1 row.)
+
 **Storage: auxiliary double-buffer recovered (in the storage, not on `Sum`).**
 Maintainer flagged that the old crate's `PauliSum` held a persistent **double-
 buffer** (`map: (primary, aux)` swapped via an `aux` flag) + a reusable `scratch`
@@ -399,6 +430,29 @@ different mechanism — no extra traversal) it hadn't tried does help.
 | id | type | sev | routed | status | note |
 | --- | --- | --- | --- | --- | --- |
 | ps2.store.aux | impl-friction | med | design→fix | **closed — recovered** | Old persistent `(primary, aux)` double-buffer + `scratch` was dropped when `HashMapStore` became a bare `HashMap` alias (per-gate alloc). Recovered by making `HashMapStore` a newtype owning `{primary, aux, scratch}` — aux lives *in the storage* so `Sum` stays generic for the tableau. `clifford_h/cnot` ~1.05–1.08×→~1.04×, `rotation_rx`→0.94×; 108 tests green. |
+
+**Integration coverage added — and it immediately found a real regression the
+microbenches hid.** Back-filled the end-to-end coverage the `-2` suite was missing
+(porting the old crate's Trotter workload): `tests/pauli_sum_integration_diff.rs`
+(3 tests — Trotter-TFIM end-to-end new-vs-old golden master, `rzz=cnot·rz·cnot`
+decomposition validation, deep 400-gate random-circuit replay; identical config
+both sides: `[u8;8]`, `CombinedStrategy/Policy(CoefficientThreshold(1e-6),
+MaxPauliWeight)`) and `benches/pauli_sum_integration.rs` (the old `trotter` bench:
+n=12, 10 steps, same storage). **Discriminating power validated:** removing the aux
+moves the integration ratio ~6× more than the microbench (+13% vs +2.8%) — proof
+the deep circuit sees per-gate allocation the tight one-gate loop cannot.
+**But the headline result is a standing gap:** even *with* the aux, the new engine
+is **~1.4–1.5× slower than old on the real Trotter workload** (new ~1.14ms vs old
+~0.76ms, same-build) — while every single-gate microbench reads ~0.94–1.05×. The
+microbench suite was reporting "parity" on a workload the engine is ~1.45× behind
+on. Prime suspect: `truncate()` — called after *every* gate in the Trotter loop and
+run twice per call by `CombinedPolicy` (two full retain scans), yet it has **no
+microbench** at all. To be root-caused next (same discipline: same-build A/B).
+
+| id | type | sev | routed | status | note |
+| --- | --- | --- | --- | --- | --- |
+| ps2.integration.1 | missing-test | high | test (orch) | **closed — added** | The `-2` conformance suite had only single-op microbenches; the old crate's real-workload benches/tests (Trotter, random-circuit) were never ported, so nothing exercised cumulative allocation/truncation. Added end-to-end diff-test + bench (see above). This is the coverage that would have caught the aux-map miss (and did, in retro). |
+| ps2.trotter.perf | perf-drift | high | human | **OPEN — real regression** | New engine **~1.4–1.5×** slower than old on the end-to-end Trotter workload (new ~1.14ms / old ~0.76ms, same-build `[u8;8]`), invisible to the single-gate microbenches (~0.94–1.05×). Fair + stable; attribution pending (suspect: per-gate `truncate()` × `CombinedPolicy` double retain-scan, un-microbenched). Numerics match (golden master green). To root-cause. |
 
 **Deferred to component 3:** the L4 `Multiply` operator product (needs `Complex`
 + `ImaginaryUnit`); columnar `ColumnStore` stays Phase 6.

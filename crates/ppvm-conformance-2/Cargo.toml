@@ -45,3 +45,7 @@ harness = false
 [[bench]]
 name = "pauli_sum_bench"
 harness = false
+
+[[bench]]
+name = "pauli_sum_integration"
+harness = false

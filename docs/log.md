@@ -133,7 +133,7 @@ Needs `Complex`/`ImaginaryUnit`; Lean oracle `lean/PPVM/**` `Twisted.lean` (`tmu
 - Old reference: `crates/ppvm-pauli-sum/src/**` (real workloads: `benches/trotter.rs`, `benches/random-circuit.rs`, `tests/trotter.rs`, `tests/ghz.rs`).
 - Conformance harness: `crates/ppvm-conformance-2/{src/lib.rs, tests/*, benches/*}` — integration diff+bench are `pauli_sum_integration*`; microbenches `pauli_sum_bench.rs`; per-op attribution tool `examples/trotter_attrib.rs`.
 - Lean: `lean/PPVM/**` (`lake build PPVM` from `lean/`).
-- Open/closed gaps: ledger rows in the Phase 3.2 section — OPEN: `ps2.truncate.behaviour` (behaviour gap, fix first), `ps2.cnot.rekey.perf` (~1.32×). Closed: `ps2.integration.1`, `ps2.store.aux`, `ps2.rot.perf`, `ps2.trotter.perf` (root-caused → split into the two OPEN rows).
+- Open/closed gaps: ledger rows in the Phase 3.2 section — OPEN: `ps2.cnot.rekey.perf` (1.45× good mode), `ps2.rekey.bimodal` (1.74× process-dependent swing), `ps2.attrib.instrument` (unsound instrument). Closed: `ps2.integration.1`, `ps2.store.aux`, `ps2.rot.perf`, `ps2.trotter.perf`, `ps2.truncate.behaviour`.
 
 ---
 

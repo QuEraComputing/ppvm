@@ -299,9 +299,22 @@ new/rx ~5.84µs → **~5.65µs**, ratio **~1.19× → ~1.16×**. The residual si
 the 1.15× gate boundary** and is inherent: the dominant remaining cost is the
 cold `key_hash` finalization fold on each freshly-created branch key (pass-2),
 which the old crate's `Copy`/eager-hash word pays a bit more cheaply — not
-removable without changing the shared avalanche-tested hash. **Status: cheap win
-captured; residual ~1.16× at the boundary, pending maintainer call on whether to
-invest in deeper hash-path work.**
+removable without changing the shared avalanche-tested hash.
+
+**Pushed deeper (maintainer chose "push deeper"), then allowlisted.** Ruled out,
+empirically: per-call Vec alloc (67ns, negligible); a mid-merge hashbrown resize
+(pre-reserving the branch inserts gave no change — the map already had headroom).
+Read `key_hash`: the compute is already tight (3 `fxhash` rounds + fold, *shared*
+with the old crate); the only new-specific overhead is the lazy `AtomicU64`
+load/store, which is small and not removable without bypassing the `Hash` impl.
+The one genuine remaining lever is an **incremental/Zobrist hash** (the branch key
+differs from the diagonal by 1–2 bits, so an XOR-decomposable hash could update in
+O(1)) — but that is a large, risky rewrite of the **shared** avalanche-tested hash
+(used by every `-2` crate) for a boundary-case ~1.16× on one gate type, so it is
+**not** justified. **Resolved: cheap win captured (`with_bits_toggled`); residual
+~1.13–1.16× (branch path) allowlisted** as the lazy-hash/`Copy`-drop cost — a cost
+the same design pays back many-fold on every other sum path (Clifford 0.80×, build
+0.29×, overlap ~700×, noise 0.89×).
 
 Lean added (prove agent, `lake` green, orchestrator-verified non-vacuous):
 `Rotation.lean` `branchExp`/`branchExp_isRealPhase` + `rx/ry/rz_eps_from_product`
@@ -313,7 +326,7 @@ fast-path signs).
 | id | type | sev | routed | status | note |
 | --- | --- | --- | --- | --- | --- |
 | ps2.noise.1 | correctness | med | impl (orch) | closed | `pauli_error` with a zero transfer eigenvalue (reachable, `[0,0.25,0.25]`→λ_X=0) left a **phantom zero-coefficient key** in the support, violating the reduced-canonical-form invariant. Orchestrator fixed `ScaleByKey` (both backends) to drop any term scaled to exactly zero; added a `pauli_error_zero_eigenvalue_drops_the_term` test. |
-| ps2.rot.perf | perf-drift | med | human | **open** | `rotation_rx` ~1.15–1.17× (over the gate). The 2.42× was the batch path (real, fixed by `RotateInPlace` fusion); the residual is genuine branch-path cost (verified not a clone/bench artifact). Awaiting maintainer decision: optimize the branch-key path, or allowlist as the lazy-hash/`Copy`-drop trade-off. |
+| ps2.rot.perf | perf-drift | med | human | **allowlisted** | `rotation_rx` ~1.13–1.16× (branch path). The 2.42× was the batch path (real, fixed by `RotateInPlace` fusion). Optimized: `with_bits_toggled` (skip the wasted clone-hash-load+invalidate) → ~1.19×→~1.16×; alloc/resize ruled out empirically. Residual is inherent lazy-hash/`Copy`-drop cost on the key-creating path; the only bigger lever (Zobrist incremental hash) is a risky rewrite of the shared hash, not justified for a boundary case. Allowlisted. |
 | ps2.nsites.1 | impl-friction | low | impl | deferred | The `n_sites` `debug_assert!` is on `from_terms` but not on the `apply`/`rekey_bijective` produced-key paths. No live bug (every producer preserves width); low, deferred. |
 | ps2.xyz-dup.1 | impl-friction | low | accepted | noted | X/Y/Z sign logic (`(−1)^z`, etc.) is written a third time in the in-place fast path (besides `PhaseTrack` and `Phased`). Now has a Lean witness (`conjX/Y/Z`) and differential tests guard it; accepted — the in-place path exists precisely to avoid the `Phased` wrapper's cost. |
 
@@ -352,4 +365,5 @@ a crate. Anything not listed is a hard gate.
 
 | id | component | metric | accepted ratio | justification | approved-by |
 | --- | --- | --- | --- | --- | --- |
-| _(none)_ | | | | `lpw2.perf.1` was investigated and cleared as a nanobench artifact (converges to 1.00× at wide width), not an accepted regression — so nothing is allowlisted. | |
+| ps2.rot.perf | ppvm-pauli-sum-2 | `rotation_rx` (branch fan-out) | ~1.13–1.16× (new ~5.65µs vs old ~4.9µs) | Deeply investigated: cheap win captured (`with_bits_toggled`); alloc/resize ruled out; residual is the inherent lazy-hash/`Copy`-drop cost of hashing freshly-created branch keys. The only bigger lever (Zobrist incremental hash) is a risky rewrite of the shared avalanche-tested hash, not justified for one gate type at the gate boundary — the same design wins big on every other sum path (Clifford 0.80×, build 0.29×, overlap ~700×). | maintainer (chose optimize→then accept after deep dive) |
+| _(prior)_ | | | | `lpw2.perf.1` was a nanobench artifact (converges to 1.00× at wide width), not allowlisted. | |

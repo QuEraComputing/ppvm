@@ -131,7 +131,12 @@ use ppvm_pauli_sum_2::{PauliSum as NewPauliSum, PauliWord as NewPauliWord};
 /// so the two crates drop the same keys.
 pub type OldSum = OldPauliSum<ByteF64<8, CoefficientThreshold>>;
 
-/// The NEW `PauliSum<f64, NoPolicy>` under test — `Sum<HashMapStore<PauliWord, f64>>`.
+/// The NEW `PauliSum<f64, NoPolicy>` under test — the **shipped default**
+/// (`u64`-backed [`PauliWord`], `IdentityBuildHasher`). The differential and
+/// Lean-oracle suites run against this so they exercise the configuration that
+/// actually ships. (The perf benchmark separately pins its *own* `[u8; 8]`-backed
+/// variant to storage-match [`OldSum`] for a fair engine-to-engine ratio — that is
+/// a bench-local concern, since correctness is storage-independent.)
 pub type NewSum = NewPauliSum;
 
 /// The NEW crate's key type (`PauliWord<u64>`, 64-qubit-capacity), re-exported so

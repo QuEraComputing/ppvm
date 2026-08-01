@@ -5,6 +5,18 @@
 //! `ppvm-pauli-sum::PauliSum<f64>` on the hot sparse-sum paths, so the refactor's
 //! Phase-3 performance gate reads off as a new/old ratio per target.
 //!
+//! **Fair-comparison note (storage width).** Both sides here are pinned to `[u8; 8]`
+//! (64-qubit-capacity) storage — the new side via the bench-local [`BenchKey`] /
+//! [`BenchSum`], the old side via the harness's `ByteF64<8>`. This is deliberate:
+//! the shipped `PauliSum` default is `u64`-backed, but bitvec's `BitArray<u64>`
+//! single-bit ops differ from `[u8; 8]` by a few percent in *both* directions
+//! (faster on the Clifford re-key, ~neutral on the rotation branch), so mixing
+//! `u64`-new against `[u8; 8]`-old would fold a storage-codegen delta into the
+//! engine ratio and read as a phantom regression/speedup. The perf gate is an
+//! *engine-to-engine* comparison, so it must hold storage fixed. Correctness is
+//! storage-independent and is covered by the differential suite on the shipped
+//! `u64` default (see `ppvm_conformance_2::NewSum`).
+//!
 //! Targets (design: `traits-2-implementation-plan.md` Phase 3 perf gate):
 //! * **Clifford gate on a moderate-support sum** — `h(q)` and `cnot(c, t)` on a
 //!   ~1000-term `PauliSum`. This is the Phase-2 watch item come due: the new word
@@ -18,15 +30,28 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use ppvm_conformance_2::{
-    NewKey, build_new_sum, build_old_sum, random_terms, reduce_old, seeded_rng,
-};
-use ppvm_pauli_sum_2::PauliWord as NewPauliWord;
+use ppvm_conformance_2::{build_old_sum, random_terms, reduce_old, seeded_rng};
+use ppvm_pauli_sum_2::{HashMapStore, NoPolicy, PauliWord, Sum};
 
 use ppvm_traits::traits::Clifford as OldClifford;
 use ppvm_traits::traits::{PauliError as OldPauliError, RotationOne as OldRotationOne};
 use ppvm_traits_2::Clifford as NewClifford;
 use ppvm_traits_2::{PauliError as NewPauliError, RotationOne as NewRotationOne};
+
+/// The new sum, storage-width-matched to the old `ByteF64<8>` so the perf ratio is
+/// engine-to-engine (see the module-level fair-comparison note).
+type BenchKey = PauliWord<[u8; 8]>;
+type BenchSum = Sum<HashMapStore<BenchKey, f64>, NoPolicy>;
+
+/// Build the storage-matched new sum from `(string, coeff)` terms — the bench
+/// twin of `ppvm_conformance_2::build_new_sum` (which uses the shipped `u64`
+/// default), pinned to `[u8; 8]` for a fair ratio against [`build_old_sum`].
+fn build_new_sum(n_qubits: usize, terms: &[(String, f64)]) -> BenchSum {
+    BenchSum::from_terms(
+        n_qubits,
+        terms.iter().map(|(w, c)| (BenchKey::from(w.as_str()), *c)),
+    )
+}
 
 /// Qubit width for the moderate-support sums (fits both `u64` and `[u8; 8]`).
 const N: usize = 16;
@@ -103,13 +128,13 @@ fn bench_build_batch(c: &mut Criterion) {
     let t = terms(2, TERMS);
 
     // New: `from_terms` = accumulate_batch + reduce over the pre-keyed batch.
-    let new_terms: Vec<(NewPauliWord, f64)> = t
+    let new_terms: Vec<(BenchKey, f64)> = t
         .iter()
-        .map(|(w, c)| (NewKey::from(w.as_str()), *c))
+        .map(|(w, c)| (BenchKey::from(w.as_str()), *c))
         .collect();
     g.bench_function("new/from_terms", |b| {
         b.iter(|| {
-            let s = ppvm_conformance_2::NewSum::from_terms(N, new_terms.iter().cloned());
+            let s = BenchSum::from_terms(N, new_terms.iter().cloned());
             black_box(s.len());
         })
     });

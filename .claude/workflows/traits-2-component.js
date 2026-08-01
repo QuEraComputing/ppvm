@@ -101,14 +101,26 @@ const TEST_SCHEMA = {
     differentialPass: { type: 'boolean', description: 'new matches old on the diff surface (behavioral components)' },
     perfRatios: {
       type: 'array',
-      description: 'new/old wall-clock ratio per benchmarked target (behavioral components)',
+      description: 'new/old wall-clock ratio per benchmarked target (behavioral components). MUST be a FAIR, engine-to-engine comparison: identical algebraic config on both sides, and a ratio confirmed stable across ≥2 runs.',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['target', 'ratio'],
+        required: ['target', 'ratio', 'config', 'stable'],
         properties: {
           target: { type: 'string' },
-          ratio: { type: 'number' },
+          ratio: { type: 'number', description: 'new/old, median-vs-median' },
+          config: {
+            type: 'string',
+            description: 'The algebraic config held IDENTICAL on both sides — storage width (e.g. [u8;8]), coefficient type, and comparable hasher. State it explicitly; a mismatch here invalidates the ratio (e.g. u64-new vs [u8;8]-old folds BitArray codegen into the ratio).',
+          },
+          stable: {
+            type: 'boolean',
+            description: 'true only if the ratio held across ≥2 runs AND neither side has a wide CI. If a baseline is noisy (wide CI), set false and do NOT read a regression off it — rerun or widen measurement time first.',
+          },
+          attribution: {
+            type: 'string',
+            description: 'For any ratio flagged as drift: the VERIFIED cause from a controlled A/B (hold one variable) or a profile — NOT a guess. If not isolated, write "unattributed" rather than assert a mechanism.',
+          },
           note: { type: 'string' },
         },
       },
@@ -241,12 +253,38 @@ Cargo.toml) so tests/benches can see both crates.
 2. LEAN-ORACLE property tests — reproduce ${C.leanOracles} as Rust tests
    (exhaustive for finite single-qubit cases; randomized for n-qubit).
 3. PERFORMANCE GATE — add Criterion benches in ${CONF}/benches/ comparing NEW vs
-   OLD on: ${C.benchTargets}. Run them briefly (e.g. --measurement-time 1
-   --sample-size 20) and report the new/old ratio per target in \`perfRatios\` +
-   \`perfNote\`. If NEW is materially slower (ratio > 1.15) on any hot target,
-   raise a 'perf-drift' gap (with the ratio and suspected cause), and say whether
-   it is a design-accepted trade-off (e.g. lazy OnceLock hash costing Copy) — the
-   HUMAN owns the allowlist, so do not silently accept it.
+   OLD on: ${C.benchTargets}. Report the new/old ratio per target in \`perfRatios\`
+   + \`perfNote\`. A perf ratio is only meaningful if the comparison is FAIR and
+   the measurement is STABLE, and any drift you flag must be ATTRIBUTED, not
+   guessed. Three MANDATORY rules — a ratio that violates any of them is invalid
+   and must NOT be reported as a regression:
+
+   (a) FAIR CONFIG (apples-to-apples). Hold the algebraic config IDENTICAL on both
+       sides: same storage width (e.g. both \`[u8; 8]\` — do NOT bench the shipped
+       \`u64\` default new-sum against an \`[u8; 8]\` old-sum; \`BitArray<u64>\` vs
+       \`BitArray<[u8;8]>\` codegen differs a few percent and would fold into the
+       ratio), same coefficient type, comparable hasher. If the shipped default
+       differs from the old crate's, build a bench-LOCAL storage-matched new type
+       (correctness is storage-independent and is covered by the differential
+       suite on the shipped default). State the matched config in \`config\` for
+       every target. A config mismatch INVALIDATES the number.
+
+   (b) STABLE MEASUREMENT (no cherry-picking). Use enough measurement time for
+       tight CIs, and confirm each ratio across ≥2 runs. If either side has a wide
+       CI / noisy baseline, set \`stable:false\` and DO NOT read a regression off
+       it — rerun or widen \`--measurement-time\` until it settles. Never quote a
+       ratio (in EITHER direction — a flattering "parity" is as wrong as a scary
+       "regression") from a single run whose baseline swings.
+
+   (c) VERIFIED ATTRIBUTION (no hand-waving). Only raise a 'perf-drift' gap for a
+       ratio that is fair (a) AND stable (b). When you do, the cause in
+       \`attribution\` must come from a CONTROLLED experiment (A/B holding ONE
+       variable — storage, hasher, alloc, policy) or a profile, NOT a plausible
+       story. If you cannot isolate it, write "unattributed" — do not assert a
+       mechanism. Note whether it is a design-accepted trade-off (e.g. lazy hash
+       cache costing the old \`Copy\` word on fresh-key paths). The HUMAN owns the
+       allowlist, so do not silently accept it — but also do not manufacture a
+       regression from an unfair or noisy bench.
 
 Leave BOTH crates green (run, and set testsPass only if all pass):
   cargo fmt -p ${C.crate} -p ${CONF}   then   cargo fmt -p ${C.crate} -p ${CONF} -- --check
@@ -287,6 +325,18 @@ ${REPO}/lean and it must pass. Return the schema.`
 // Correctness/impl-friction block at high/medium; low-sev ergonomics and things
 // routed to design/human/test or deferred to a later phase are recorded but do
 // NOT spin the loop.
+//
+// VALIDITY GUARD (orchestrator, before escalating a perf-drift gap to the human):
+// a perf-drift gap is only real if its `perfRatios` entry is FAIR and STABLE and
+// ATTRIBUTED — i.e. `config` states an identical-on-both-sides algebraic config
+// (matched storage width / coeff / hasher), `stable` is true (ratio held over ≥2
+// runs, no wide-CI baseline), and `attribution` names a controlled-A/B or profiled
+// cause (not a guess, not "unattributed"). If any of those fails, the number is a
+// benchmark artifact, NOT a regression: bounce it back to the test agent to
+// re-measure (fair config, more measurement time, isolate the cause) rather than
+// escalate. This is the guard the ps2.rot.perf saga needed — the "1.15×" was
+// u64-vs-[u8;8] apples-to-oranges, and the later "parity 1.01×" was a cherry-picked
+// noisy old baseline; both would have been caught by requiring fair+stable+attributed.
 const blocks = (g) =>
   g.type === 'perf-drift'
     ? // ALWAYS block: any perf regression the test agent raises as a gap needs

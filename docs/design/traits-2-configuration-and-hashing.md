@@ -591,12 +591,43 @@ pub trait StabilizerFrame {
 The frame these primitives operate on is a genuine symplectic basis, and this is
 machine-checked in `lean/PPVM/Tableau/Frame.lean`: the `2n` generators satisfy
 the symplectic-basis relations `ω(dᵢ,sⱼ) = δᵢⱼ` (`IsSymplecticFrame`), are
-linearly independent (`frame_linearIndependent`), start as one
-(`isSymplecticFrame_identity`), and stay one under every Clifford generator
+linearly independent (`frame_linearIndependent`), **span** (`frame_surjective`,
+by the `|𝔽₂^{2n}| = |Sp n| = 4ⁿ` counting argument on the injective coordinate
+map `frameCombine`), start as one (`isSymplecticFrame_identity`), and stay one
+under every Clifford generator
 (`isSymplecticFrame_hAct`/`sAct`/`cnotAct`/`czAct` via `IsSymplecticFrame.map`).
 The `anticommuting_pivot` search rests on the measurement dichotomy
 (`measurement_dichotomy`): the outcome is deterministic exactly when the measured
 Pauli commutes with every stabilizer (`measure_deterministic_iff_xfree`).
+
+`compute_decomposition` (Yoder-2012 Lemma 5) is likewise a theorem, not a cited
+claim: `frame_coordinate_expansion` proves
+
+```text
+v = Σᵢ ω(v, sᵢ)·dᵢ + Σᵢ ω(v, dᵢ)·sᵢ
+```
+
+for every Pauli `v`, i.e. the anticommutation bitmasks the routine accumulates
+(`stab_anticomm_bits` = the `ω(v, sᵢ)` coordinates, `destab_anticomm_bits` = the
+`ω(v, dᵢ)` coordinates) really *are* `v`'s coordinates in the frame basis. The
+Rust returns `p_word.phase` without ever asserting that the residual word has
+collapsed to the identity; this theorem is what guarantees it has. Everything
+downstream inherits it — the branch relabel `idx ^ stab_anticomm_bits`,
+`get_deterministic_outcome`, `expectation` and `compute_decomposition_word`.
+
+`canonicalize` is a **no-op** on the tableau backend, and that is now a theorem
+rather than a claim. `IsSymplecticFrame.map` covers only the *unitary*
+generators — it needs an `ω`-isometry, which the Aaronson–Gottesman measurement
+projection is not (it overwrites two rows and is not injective on `GF(2)^{2n}`).
+Since that projection is the only non-unitary frame mutation in the crate
+(`update_tableau_according_to_outcome`), `Frame.lean` proves it separately:
+`isSymplecticFrame_projectFrame` shows that multiplying the pivot stabilizer into
+every other row with the measured `x`-bit set, then setting `dₚ := sₚ` and
+`sₚ := (−1)^b Z_q`, again satisfies `IsSymplecticFrame` (`projectFrame`,
+`rowUpdate_eq_ite` ties the `𝔽₂`-scalar form to the crate's conditional multiply;
+the outcome sign is a phase and so invisible on `Sp n`). So the `2n` rows are a
+symplectic basis after **every** public operation, unitary or not, and each
+subsequent `compute_decomposition` (Yoder-2012 Lemma 5) runs on a valid basis.
 
 The blanket's implementers (the `BlanketClifford` opt-ins) are the phaseless
 words `PauliWord` and `LossyPauliWord` (one row) and `Tableau` (all three).
@@ -798,6 +829,15 @@ for `PauliSum<Complex<f64>>` and not only for real coefficients) and, for the
 tableau path,
 the *unconditional* Cauchy–Schwarz `ℓ²` bound `l2_bound`, sharpened to
 `error² ≤ (Σ_{dropped} c_P²)·|D|` under `|⟨P⟩| ≤ 1` in `l2_bound_normalized`.
+
+The tableau spells its own cutoff three ways — `|c|² > t²` in the gates,
+`|c| > |t|` in `rotate_2`, `|c|² > t²·‖v‖²` in the case-a measurement — and
+`cutoff_abs_iff_sq` (same file) settles that only **two** of them are different
+rules: for `t ≥ 0` the first two are the same predicate, so `rotate_2`'s spelling
+differs only in float rounding and in paying a `hypot` per element. The real
+split is absolute versus **relative**, and it is the relative form that the error
+bounds above are stated for. All three are reproduced verbatim from old under the
+behaviour-preservation directive; unifying them is a sign-off item.
 
 Two properties of `retain` itself — not of any one policy — are what license the
 shipped `Policy` implementations, and both are machine-checked in
@@ -1312,6 +1352,91 @@ amplitude weight, never loses a term. The "Clifford touches the frame only" spli
 *modeling* statement: it holds `rfl`-by-construction of the state as a
 frame×amplitude pair, pinning down that the two factors are independent, not
 proving an emergent fact.
+
+Neither of those says what the **case-a measurement** computes, and that is the
+component's most load-bearing arithmetic. `lean/PPVM/Tableau/Projection.lean`
+covers it. Modeling the frame-conjugated `Z_q` as `M|k⟩ = i^{φ k}|k ⊕ s⟩` (an
+XOR shift with a `ℤ/4` phase, `s = stab_anticomm_bits`), it proves:
+`rustTerm_eq` — the overlap merge's four-way `ℤ/4` dispatch
+(`0 ⇒ +re_w, 1 ⇒ +im_w, 2 ⇒ −re_w, 3 ⇒ −im_w`) is exactly
+`Re(conj(iᵠ·a)·b)`, *not* `Re(iᵠ·conj a·b)` — the odd branches carry the
+conjugated phase, which is precisely where a sign slip would silently change a
+probability; `shiftOp_involutive` / `shiftOp_selfAdjoint` — `M² = I` and
+`M† = M`; `overlap_eq_inner` — the crate's `z_overlap_re` is `Re⟨c, M c⟩`;
+`proj_add` / `proj_idem` — `P₀ + P₁ = I` and `P_b² = P_b` for
+`P_b = (I + (−1)^b M)/2`, so the case-a step really is a projective measurement;
+`probOne_eq` — `prob_1 = 0.5 − 0.5·z_overlap_re` **is** the Born probability
+`⟨c, P₁ c⟩` for a normalized amplitude vector; and
+`projectRaw_eq_two_proj` — the keep-`A`/transform-`B`/merge map is `2·P_b` on the
+surviving half, the factor `2` being what the subsequent unconditional
+`normalize()` removes. One link is deliberately left open and is documented in
+that file's scope note: the projection's phase `ψ` (`alpha + 2·⟨idx, destab⟩`)
+omits the odd-phase-destabilizer term the overlap folds in through
+`compute_phase_with_mask_static`, because the two are read in different frames
+(pre- and post-projection); relating them needs a Hilbert-space model of the
+frame that this development does not have. Old and `-2` agree there verbatim, so
+it is a specification gap, not a port divergence.
+
+Every one of those theorems is stated under the hypothesis `SelfInverse s φ`, and
+`Projection.lean` keeps `φ` *abstract* — so on its own it says nothing about the
+`φ` the crate computes. `lean/PPVM/Tableau/BranchPhase.lean` closes that link. It
+models the amplitude basis as `|j⟩ = ∏_l d_l^{j_l}|ψ₀⟩` and *derives* the crate's
+formula: `frameOp_eq_shiftOp` proves that `i^{pd}·D_L·S_G` acting on amplitudes is
+exactly `phase_decomp + 2·⟨destab_anticomm, j⟩ + 2·popcount(j ∧ stab_anticomm ∧
+odd_phase_mask)` — i.e. `compute_phase_with_mask_static` (`data.rs`) is the
+composite of the generator actions, not a convention. On top of that:
+`frameOp_sq` / `frameOp_involutive_iff` give `M² = i^{2·pd + 2(⟨G,L⟩+⟨L,m⟩)}·I`,
+so `M² = I` **iff** the `ℤ/2` *frame identity*
+`phase_decomp + ⟨destab, stab⟩ + popcount(stab ∧ mask) ≡ 0`;
+`selfInverse_branchPhase_iff` proves that identity is *equivalent* to
+`SelfInverse`, and `selfInverse_branchPhase` discharges it — with
+`shiftOp_involutive_crate`, `proj_idem_crate` and `probOne_eq_crate` restating
+`M² = I`, `P_b² = P_b` and the Born rule for the concrete phase. Specialized to
+case b (`stab_anticomm = 0`), `frameInvolution_zero_iff` says the identity *is*
+`phase_decomp ∈ {0, 2}` — the crate's `debug_assert!` "Measurement result cannot
+be imaginary!" is now a theorem. `destabAction_sq` (`d_L² = (−1)^{popcount(L∧m)}`)
+plus `add_phase_eight_sub` (`8 − 2·ph = 2·ph` in `ℤ/4`) are the algebraic content
+of `compute_decomposition`'s "multiply the generator in and divide its phase
+squared out" step, and `stab_destab_commute_sign` shows the *opposite* visit order
+would shift `φ` by `2·⟨G, L⟩` — so the two-loop order ("all stabilizers first") is
+a real convention, and the crate's use of the **original** index in the
+`⟨destab, ·⟩` term is the one that matches it.
+`crates/ppvm-conformance-2/tests/tableau_lean.rs` checks the frame identity on
+every decomposition of a random Clifford+`T` sweep, so the discharge is pinned to
+the code, not just the model. (That sweep also confirms `odd_phase_mask` is always
+zero on a valid frame — rows are Hermitian, hence even-phased — so the mask term
+is a defensive no-op kept for behaviour parity; the theorems hold for arbitrary
+masks regardless.)
+
+`rotate_2` is covered by the same closed forms. It never builds a two-site
+decomposition: it applies `compute_coefficients_after_pauli_apply` at `b` and then
+at `a`, two independent single-site relabels. `shiftOp_comp` proves the composite
+is again an operator of the same shape — shift `L_a ⊕ L_b`, weight `w_a + w_b`,
+phase `pd_a + pd_b + 2⟨w_a, L_b⟩` — so the sequential relabel **is** the
+frame-conjugated `P_a ⊗ P_b`, phase included, and `rotate_2` therefore really is
+`cos(θ/2)·I − i·sin(θ/2)·(P_a ⊗ P_b)`. `dot_crateWeight_order` /
+`shiftOp_comp_order_iff` isolate the entire order dependence in
+`⟨G_a, L_b⟩ + ⟨G_b, L_a⟩` (the mask term is symmetric), which
+`omega_eq_frame_coords` (`Frame.lean`, new) identifies as `ω(P_a, P_b)` read in
+frame coordinates; since `rotate_2`'s two Paulis sit on distinct qubits they
+commute (`omega_disjoint_support`), so `rot2_order_irrelevant` /
+`rot2_order_irrelevant_of_commuting` prove the `b`-before-`a` order does **not**
+affect the accumulated `ℤ/4` phase. The port keeps that order anyway: what it
+pins is the float summation order, which is a separate concern.
+
+Multi-qubit `expectation(&word)` goes through `compute_decomposition_word`, which
+conjugates each site separately and folds the single-site results in the
+canonical form `iᵠ Xˣ Zᶻ`, correcting with `(−1)^{popcount(z_running ∧ x_new)}`.
+`lean/PPVM/Pauli/Word.lean` proves that fold is the genuine operator product:
+`phaseExpN_eq_canon` reconciles the canonical `Xˣ Zᶻ` normalization with the
+`g(x,z) = i^{x·z} Xˣ Zᶻ` one that `phaseExpN` (hence
+`PauliMatrix.tensorPauli_mul`, hence real `2ⁿ×2ⁿ` matrices) is stated for, so the
+cross term is operator multiplication rather than a convention;
+`Canon.toG_mul` states that step-wise (`toG (a·b) = toG a + toG b + phaseExpN`);
+and `crossPhase_cocycle` / `Canon.mul_assoc` / `Canon.foldl_eq_prod` show the
+left-fold with a *running* Z-mask equals the ordered product of the per-site
+conjugates. This is the only piece of the expectation path with no single-qubit
+oracle — the cross term vanishes identically at weight 1.
 
 The `Vec` backend is the right one here: the support is T-count-bounded (small),
 so linear-scan `accumulate` beats hashing — the concrete motivation for the `Vec`

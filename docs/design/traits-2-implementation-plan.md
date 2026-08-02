@@ -246,10 +246,35 @@ existing `benchmarks/plot_*` scripts target these). Gate on parity.
   non-Clifford branches the amplitude `Sum`, `O(n²)` measurement is tableau-local.
 
 Lean-oracle tests: symplectic-frame invariant preserved by every gate
-(`Frame.lean` `isSymplecticFrame_*`); frame generators independent
-(`frame_linearIndependent`); measurement dichotomy / deterministic⇔`X`-free
+(`Frame.lean` `isSymplecticFrame_*`) **and by the measurement projection**
+(`Frame.lean` `isSymplecticFrame_projectFrame` — the justification for
+`canonicalize` being a no-op); frame generators independent
+(`frame_linearIndependent`) **and spanning** (`frame_surjective`), so
+`compute_decomposition`'s anticommutation bitmasks are exactly the frame
+coordinates (`Frame.lean` `frame_coordinate_expansion`, Yoder-2012 Lemma 5);
+measurement dichotomy / deterministic⇔`X`-free
 (`measurement_dichotomy`, `measure_deterministic_iff_xfree`); Clifford leaves
-amplitudes fixed and the XOR relabel is a bijection (`Bitstring.lean`).
+amplitudes fixed and the XOR relabel is a bijection (`Bitstring.lean`); case-a
+measurement is the Born projector — the `ℤ/4` overlap sign table, `M² = I`,
+`M† = M`, `P₀ + P₁ = I`, `P_b² = P_b`, `prob_1 = ⟨c, P₁ c⟩`, and
+keep-`A`/transform-`B` `= 2·P_b` (`Projection.lean` `rustTerm_eq`,
+`shiftOp_involutive`, `shiftOp_selfAdjoint`, `overlap_eq_inner`, `proj_add`,
+`proj_idem`, `probOne_eq`, `projectRaw_eq_two_proj`); **case b** (`s = 0`, `Z`
+already a stabilizer) is the projector with **factor 1** — phases are `ℤ/2`-valued
+(`selfInverse_zero_phase_even`, the "measurement result cannot be imaginary"
+assert), survivors are untouched (`proj_zero_apply`), a projection that drops
+nothing is the identity and hence norm-preserving (`proj_zero_eq_self`, which is
+why case b applies no magnitude filter and normalizes only when the support
+shrank), and the crate's `retain` predicate is exactly that surviving set
+(`proj_zero_eq_caseB_retain`); fused batch gates — a batched sign is a site
+parity, `count_ones() & 1` (`Batch.lean` `two_mul_natCast`,
+`seqApply_eq_batchApply` on `Nodup` sites, `czSeq_phase` on pairwise-disjoint
+pairs, with `czSeq_phase_needs_disjoint` showing the disjointness precondition is
+**necessary**, and `isSitewise_*` pinning each gate's sign predicate against the
+audited `Conjugation.lean` tables); multi-site conjugation
+cross-phase — the `(−1)^{popcount(z_running ∧ x_new)}` fold of
+`compute_decomposition_word` is the genuine Pauli product (`Word.lean`
+`phaseExpN_eq_canon`, `Canon.toG_mul`, `Canon.foldl_eq_prod`).
 
 Differential tests vs old `ppvm-tableau` / `ppvm-tableau-sum`: identical Clifford
 circuits ⇒ identical measurement outcome distributions (seeded RNG) and identical

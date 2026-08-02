@@ -9,6 +9,7 @@ publish = false
 # compare. Not shipped. See docs/design/traits-2-implementation-plan.md.
 [dependencies]
 rand = "0.10.1"
+num = "0.4.3"
 ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
 ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
 ppvm-lossy-pauli-word-2 = { version = "0.1.0", path = "../ppvm-lossy-pauli-word-2" }
@@ -21,10 +22,15 @@ ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
 # differential tests only need its `fxhash` config.
 ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum", default-features = false }
 ppvm-pauli-sum-2 = { version = "0.1.0", path = "../ppvm-pauli-sum-2" }
+# The old and new stabilizer-tableau engines, diffed against each other by the
+# Phase-4 tableau differential suite (`tests/tableau_diff.rs`,
+# `tests/tableau_lean.rs`) and benched head-to-head, same-build, in
+# `benches/tableau_bench.rs`.
+ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+ppvm-tableau-2 = { version = "0.1.0", path = "../ppvm-tableau-2" }
 
 [dev-dependencies]
 criterion = "0.7.0"
-num = "0.4.3"
 
 [[bench]]
 name = "harness_smoke"
@@ -62,4 +68,13 @@ harness = false
 # so every ratio it reports is same-build.
 [[bench]]
 name = "pauli_sum_workloads"
+harness = false
+
+# The Phase-4 tableau perf gate: the end-to-end integration workloads (MSD-85q
+# naive + fused, the rot2 brickwork, the fused-T-gate circuit, the CNOT-chain
+# scaling sweep, the measure-all sweep) plus the diagnostic single-op
+# microbenches. Both engines live in this one binary, so every ratio it reports
+# is same-build and the code-layout bias cancels in the ratio.
+[[bench]]
+name = "tableau_bench"
 harness = false

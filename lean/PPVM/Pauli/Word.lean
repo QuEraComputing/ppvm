@@ -138,4 +138,162 @@ theorem phaseExpN_self (p : Word n) : phaseExpN p p = 0 := by
   rw [Finset.sum_eq_zero]
   exact fun i _ => phaseExp_self _ _
 
+/-! ### Canonical form `iᵠ Xˣ Zᶻ` and the multi-site conjugation fold
+
+`compute_decomposition_word` (`crates/ppvm-tableau-2/src/data.rs`) is the sole
+entry point for multi-qubit `expectation(&word)`, and hence for every golden
+expectation value in the acceptance bar (Bell `⟨YY⟩ = −1`, GHZ `⟨XXX⟩ = 1`, the
+`trace` sums). It conjugates a Pauli **word** through the frame by conjugating
+each site separately with `compute_decomposition`, then folding the single-site
+results left-to-right in the **canonical form** `iᵠ Xˣ Zᶻ`:
+
+```rust
+let cross = 2 * (symplectic_inner(destab_anticomm, q_stab) as u8 % 2);
+phase = (phase + q_phase + cross) % 4;
+stab_anticomm  ^= q_stab;    // the X plane
+destab_anticomm ^= q_destab; // the Z plane
+```
+
+The `cross` term is the commutation correction of
+`Z^{z_a} X^{x_b} = (−1)^{z_a·x_b} X^{x_b} Z^{z_a}`, taken between the **running**
+Z-mask and the **new** site's X-mask. The claim that folding this way reproduces
+the true conjugate of the product is a statement neither
+`Conjugation.lean` (per-generator signs) nor `phaseExpN` (the two-word product in
+the `g(x,z) = i^{x·z} Xˣ Zᶻ` normalization) makes, and it has no single-qubit
+oracle to fall back on — the cross term vanishes identically at weight 1. Two
+theorems settle it:
+
+* `phaseExpN_eq_canon` — the canonical-form cross-phase rule **is** the genuine
+  Pauli product phase, once the two normalizations are reconciled. Since
+  `phaseExpN` is grounded in real `2ⁿ×2ⁿ` matrices
+  (`PPVM.PauliMatrix.tensorPauli_mul`), this ties the `cross` term to actual
+  operator multiplication.
+* `Canon.foldl_eq_prod` — the running left-fold the Rust performs equals the
+  ordered product of the per-site factors (the fold is associative and unital),
+  so accumulating site by site is the same as multiplying the whole word at once.
+-/
+
+/-- `∑ᵢ xᵢ·zᵢ` in `ℤ/4ℤ`: the exponent of the `iˣᶻ` normalization relating the
+crate's canonical `Xˣ Zᶻ` form to the `g(x,z)` form `phaseExpN` is stated for. -/
+def xzOverlap (w : Word n) : ZMod 4 := ∑ i, b4 (w i).1 * b4 (w i).2
+
+/-- The Rust `cross` term: `2 · popcount(z_a ∧ x_b)`, i.e. the sign of
+`Z^{z_a} X^{x_b} = (−1)^{z_a·x_b} X^{x_b} Z^{z_a}`. -/
+def crossPhase (p q : Word n) : ZMod 4 := ∑ i, 2 * (b4 (p i).2 * b4 (q i).1)
+
+/-- **The canonical cross-phase rule is the genuine Pauli product phase.**
+Writing `A = i^{φ_a} X^{x_a} Z^{z_a}` and `B = i^{φ_b} X^{x_b} Z^{z_b}`, moving
+`Z^{z_a}` past `X^{x_b}` gives `A·B = i^{φ_a + φ_b + cross} X^{x_a⊕x_b} Z^{z_a⊕z_b}`.
+Converting both sides into the `g(x,z) = i^{x·z} Xˣ Zᶻ` normalization turns that
+into the identity below, whose per-site content is exactly `phaseRef` — hence
+`phaseExp`, hence (via `PPVM.PauliMatrix.tensorPauli_mul`) real matrices. So the
+`(−1)^{popcount(z_running ∧ x_new)}` correction in `compute_decomposition_word`
+is not a convention but the operator product. -/
+theorem phaseExpN_eq_canon (p q : Word n) :
+    phaseExpN p q
+      = xzOverlap p + xzOverlap q + crossPhase p q - xzOverlap (mulWord p q) := by
+  simp only [phaseExpN, xzOverlap, crossPhase, mulWord, mulBits, phaseExp_eq_ref,
+    phaseRef]
+  rw [← Finset.sum_add_distrib, ← Finset.sum_add_distrib, ← Finset.sum_sub_distrib]
+
+/-- A Pauli word in the crate's **canonical form** `iᵠ Xˣ Zᶻ`: the triple
+`compute_decomposition_word` accumulates (`phase`, and the `stab_anticomm` /
+`destab_anticomm` masks that are its X and Z planes). -/
+@[ext]
+structure Canon (n : ℕ) where
+  /-- Base-`i` phase exponent. -/
+  phase : ZMod 4
+  /-- The `(x, z)` bit planes. -/
+  word : Word n
+
+/-- The fold step: phases add, the cross term corrects the `Z`-past-`X`
+commutation, and the planes `⊕`. Verbatim the Rust loop body. -/
+def Canon.mul (a b : Canon n) : Canon n where
+  phase := a.phase + b.phase + crossPhase a.word b.word
+  word := mulWord a.word b.word
+
+/-- The fold's seed: `phase = 0`, both planes empty. -/
+def Canon.one : Canon n where
+  phase := 0
+  word := fun _ => (false, false)
+
+/-- The identity word contributes no cross phase on the left (its Z plane is
+empty). -/
+theorem crossPhase_zero_left (q : Word n) :
+    crossPhase (fun _ => (false, false)) q = 0 := by
+  refine Finset.sum_eq_zero fun i _ => ?_
+  simp [b4]
+
+/-- …nor on the right (its X plane is empty). -/
+theorem crossPhase_zero_right (p : Word n) :
+    crossPhase p (fun _ => (false, false)) = 0 := by
+  refine Finset.sum_eq_zero fun i _ => ?_
+  simp [b4]
+
+theorem Canon.one_mul (a : Canon n) : Canon.mul Canon.one a = a := by
+  ext i <;>
+    simp only [Canon.mul, Canon.one, crossPhase_zero_left, zero_add, add_zero, mulWord,
+      mulBits, Bool.false_xor]
+
+theorem Canon.mul_one (a : Canon n) : Canon.mul a Canon.one = a := by
+  ext i <;>
+    simp only [Canon.mul, Canon.one, crossPhase_zero_right, add_zero, mulWord, mulBits,
+      Bool.xor_false]
+
+private theorem crossPhase_cocycle_site (zp xq zq xr : Bool) :
+    2 * (b4 zp * b4 xq) + 2 * (b4 (xor zp zq) * b4 xr)
+      = 2 * (b4 zq * b4 xr) + 2 * (b4 zp * b4 (xor xq xr)) := by
+  cases zp <;> cases xq <;> cases zq <;> cases xr <;> decide
+
+/-- **The cross-phase is a 2-cocycle**, so the canonical-form product is
+associative — the fold may accumulate sites in any bracketing. Note this is a
+*different* cocycle from `phaseExp` (no `iˣᶻ` normalization); over `ℤ/4ℤ` the
+`2 ·` factor is what lets `⊕` be replaced by `+` inside it. -/
+theorem crossPhase_cocycle (p q r : Word n) :
+    crossPhase p q + crossPhase (mulWord p q) r
+      = crossPhase q r + crossPhase p (mulWord q r) := by
+  simp only [crossPhase, mulWord, mulBits]
+  rw [← Finset.sum_add_distrib, ← Finset.sum_add_distrib]
+  exact Finset.sum_congr rfl fun i _ => crossPhase_cocycle_site _ _ _ _
+
+theorem Canon.mul_assoc (a b c : Canon n) :
+    Canon.mul (Canon.mul a b) c = Canon.mul a (Canon.mul b c) := by
+  have h := crossPhase_cocycle a.word b.word c.word
+  ext i
+  · simp only [Canon.mul]; linear_combination h
+  · simp only [Canon.mul, mulWord_assoc]
+  · simp only [Canon.mul, mulWord_assoc]
+
+/-- The ordered product of a list of canonical factors. -/
+def Canon.prod (l : List (Canon n)) : Canon n := l.foldr Canon.mul Canon.one
+
+theorem Canon.foldl_mul (a : Canon n) :
+    ∀ l : List (Canon n), l.foldl Canon.mul a = Canon.mul a (Canon.prod l)
+  | [] => (Canon.mul_one a).symm
+  | x :: xs => by
+    rw [List.foldl_cons, Canon.foldl_mul (Canon.mul a x) xs, Canon.mul_assoc]
+    rfl
+
+/-- **The running fold is the ordered product.** `compute_decomposition_word`
+accumulates `(phase, x, z)` site by site, taking the cross term against the
+*running* Z-mask; that left-fold equals the product of the per-site canonical
+conjugates. Together with `phaseExpN_eq_canon` this is the machine-checked
+statement that the folded phase is the phase of the genuine conjugated word. -/
+theorem Canon.foldl_eq_prod (l : List (Canon n)) :
+    l.foldl Canon.mul Canon.one = Canon.prod l := by
+  rw [Canon.foldl_mul, Canon.one_mul]
+
+/-- The canonical phase re-expressed in the `g(x,z)` normalization
+`phaseExpN` uses. -/
+def Canon.toG (a : Canon n) : ZMod 4 := a.phase - xzOverlap a.word
+
+/-- **The fold step, read in the `g` normalization, is the genuine Pauli
+product.** `toG (a·b) = toG a + toG b + phaseExpN a b` — i.e. the Rust's
+`phase + q_phase + cross` accumulation carries exactly the phase that the
+matrix-grounded n-qubit Pauli product carries. -/
+theorem Canon.toG_mul (a b : Canon n) :
+    (Canon.mul a b).toG = a.toG + b.toG + phaseExpN a.word b.word := by
+  simp only [Canon.toG, Canon.mul, phaseExpN_eq_canon]
+  ring
+
 end PPVM.PauliWord

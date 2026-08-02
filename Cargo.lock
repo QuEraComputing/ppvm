@@ -1331,6 +1331,8 @@ dependencies = [
  "ppvm-pauli-word",
  "ppvm-pauli-word-2",
  "ppvm-phased-pauli-word-2",
+ "ppvm-tableau",
+ "ppvm-tableau-2",
  "ppvm-traits",
  "ppvm-traits-2",
  "rand 0.10.1",
@@ -1480,6 +1482,20 @@ dependencies = [
  "ppvm-traits",
  "rand 0.10.1",
  "rayon",
+ "smallvec",
+]
+
+[[package]]
+name = "ppvm-tableau-2"
+version = "0.1.0"
+dependencies = [
+ "bitvec",
+ "fxhash",
+ "getrandom 0.4.1",
+ "num",
+ "ppvm-pauli-word-2",
+ "ppvm-traits-2",
+ "rand 0.10.1",
  "smallvec",
 ]
 

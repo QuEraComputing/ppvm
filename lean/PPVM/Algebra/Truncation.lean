@@ -147,6 +147,23 @@ first rule and dropped by the second — the two backends disagree on the bounda
 theorem cutoff_mismatch (t : ℝ) (ht : 0 ≤ t) : (t ≤ |t|) ≠ (t < |t|) := by
   simp [abs_of_nonneg ht]
 
+/-- **The squared and unsquared *absolute* cutoffs are the same rule.** The
+generalized tableau applies its magnitude cutoff at three sites with three
+spellings: `branch_with_coefficients` / `compute_coefficients_after_pauli_apply`
+keep on `|c|² > t²`, `rotate_2` keeps on `|c| > |t|`, and the case-a measurement
+keeps on `|c|² > t²·‖v‖²`. Only **two** of those are genuinely different rules:
+for `t ≥ 0` the first two are equivalent (`t = |t|` and `x ↦ x²` is strictly
+monotone on `[0, ∞)`), so `rotate_2`'s spelling differs from the gates' only in
+float rounding and in paying a `hypot` per element. The real split is
+absolute-versus-**relative**: the measurement's `‖v‖²` factor, which is the form
+`l1_bound` / `l2_bound_normalized` are stated for (they bound the error of a
+*normalized* state). -/
+theorem cutoff_abs_iff_sq {t x : ℝ} (ht : 0 ≤ t) (hx : 0 ≤ x) :
+    t < x ↔ t ^ 2 < x ^ 2 := by
+  constructor
+  · intro h; nlinarith
+  · intro h; nlinarith
+
 /-! ### The preserved-key post-filter is a **widened** keep-rule
 
 `Sum::truncate` (`ppvm-pauli-sum-2/src/sum.rs`, ported from

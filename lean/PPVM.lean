@@ -15,5 +15,8 @@ import PPVM.Algebra.Twisted
 import PPVM.Algebra.Truncation
 import PPVM.Algebra.Noise
 import PPVM.Tableau.Frame
+import PPVM.Tableau.Projection
+import PPVM.Tableau.BranchPhase
+import PPVM.Tableau.Batch
 import PPVM.Instantiations.Bitstring
 import PPVM.Instantiations.Rotation

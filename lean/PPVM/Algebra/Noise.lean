@@ -153,6 +153,50 @@ theorem eigenvalue_abs_le_one_needs_substochastic :
   rw [Fintype.sum_bool] at this
   norm_num at this
 
+/-! ### The Bernoulli firing convention of the stochastic channels
+
+The crate's stochastic channels draw `r = rng.random::<f64>() ∈ [0,1)` and fire
+on a comparison against the channel probability `p`. Two *different* conventions
+coexist (`crates/ppvm-tableau/src/{noise.rs,tableau_like.rs}`, and the `-2` port
+reproduces both verbatim):
+
+* the depolarizing family (`depolarize_impl`, `pauli_error_impl`,
+  `two_qubit_pauli_error_impl`) uses `if p <= r { return }`, i.e. it fires on the
+  **strict** predicate `r < p`;
+* `loss_channel` / `asymmetric_loss_channel` use `if p < r { return }`, i.e. they
+  fire on the **non-strict** predicate `r ≤ p`.
+
+For an *ideal* continuous `Uniform[0,1)` the two are indistinguishable — they
+differ only on the null event `{r = p}` (`fire_conventions_agree_off_diagonal`),
+so neither is "wrong" as a sampler of a `Bernoulli(p)`. What is **not** a null
+event is the endpoint `p = 0`, which a real `f64` sampler does hit
+(`random::<f64>()` can return exactly `0.0`): the strict predicate is then a
+guaranteed no-op, the non-strict one fires (`fire_strict_zero_noop`,
+`fire_nonstrict_fires_at_zero`). So `loss_channel(q, 0.0)` is *not* the identity
+under the shipped convention, while `depolarize1(q, 0.0)` is.
+
+This is a convention inconsistency inside the channel family, not an algebraic
+defect: at every `p` that is not exactly representable as a multiple of `2⁻⁵³`
+the two conventions agree on every draw. Under the behaviour-preservation
+directive the port reproduces both verbatim; unifying them is a seeded-stream
+change and needs sign-off. -/
+
+/-- **Off the diagonal the two firing conventions agree.** For `r ≠ p` the strict
+and non-strict predicates coincide, so an ideal `Uniform[0,1)` draw fires with
+probability `p` under either. -/
+theorem fire_conventions_agree_off_diagonal (p r : ℝ) (h : r ≠ p) :
+    (r < p) ↔ (r ≤ p) :=
+  ⟨le_of_lt, fun hle => lt_of_le_of_ne hle h⟩
+
+/-- **Only the strict convention makes `p = 0` a guaranteed no-op**: no draw from
+`[0,1)` satisfies `r < 0`. -/
+theorem fire_strict_zero_noop (r : ℝ) (hr : 0 ≤ r) : ¬ (r < 0) := not_lt.mpr hr
+
+/-- **…and the non-strict convention fires at `p = 0` on the draw `r = 0`**, which
+a real `f64` `Uniform[0,1)` sampler produces with probability `2⁻⁵³`. This is the
+whole observable content of the `loss_channel` convention divergence. -/
+theorem fire_nonstrict_fires_at_zero : (0 : ℝ) ≤ 0 := le_refl 0
+
 /-! ### Pauli-basis orthonormality (the `overlap` pairing) -/
 
 /-- **Pauli-basis orthonormality** in the `C[K]` model: the basis vectors

@@ -1,0 +1,27 @@
+[package]
+name = "ppvm-tableau-2"
+version = "0.1.0"
+edition = "2024"
+
+# The stabilizer tableau rebuilt on the `-2` trait tower
+# (implementation-plan Phase 4): `Tableau` (the Clifford frame) and
+# `GeneralizedTableau` (frame + sparse amplitude vector). The packed bit-plane
+# row layout, every Clifford kernel, the sort-merge branch coalesce and the
+# measurement scratch are ported from `ppvm-tableau` so the hot paths stay at
+# parity; deps mirror that crate's (minus the old `ppvm-traits` /
+# `ppvm-pauli-sum`).
+[dependencies]
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+# `PauliStorage` (the packed backing-blob bound) is reused verbatim rather than
+# redeclared, and `PauliWord` is the word type `expectation` is exercised with.
+ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
+bitvec = "1.0.1"
+fxhash = "0.2.1"
+num = "0.4.3"
+rand = "0.10.1"
+smallvec = "1.15"
+
+# On wasm32, rand's entropy crate (getrandom) has no default source. Mirrors the
+# old crate's target-gated dependency so an OS-seeded `Tableau::new` links.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }

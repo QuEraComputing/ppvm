@@ -230,3 +230,7 @@ pub fn random_terms(rng: &mut StdRng, n: usize, count: usize) -> Vec<(String, f6
         })
         .collect()
 }
+
+/// Phase-4 tableau differential harness: matched OLD/NEW engines behind one
+/// [`Driver`](tableau::Driver) trait, plus the integration-baseline workloads.
+pub mod tableau;

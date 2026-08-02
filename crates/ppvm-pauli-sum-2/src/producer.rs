@@ -6,7 +6,9 @@
 //!
 //! A Clifford conjugation is a pushforward along a Pauli bijection `w ↦ φ(w)`:
 //! exactly one produced term per input, and — because `φ` is injective — no
-//! collisions (`reduce` still runs; it is a no-op on the support size here).
+//! collisions. [`Sum::apply`](crate::Sum::apply) runs neither `reduce` nor the
+//! policy's truncation (both are caller-driven), so a produced term whose
+//! coefficient is exactly zero survives, as in old.
 //! Rotation and the diagonal noise channel take dedicated in-place fast paths
 //! ([`RotateInPlace`](crate::store::RotateInPlace) /
 //! [`ScaleByKey`](crate::store::ScaleByKey)) rather than a batch producer, so this

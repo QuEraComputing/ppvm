@@ -117,13 +117,13 @@ fn build_old(n: usize, w: usize) -> OldSum {
 /// Build the new-side `Σ_i Z_i` observable under the CombinedPolicy config,
 /// storage-matched to [`build_old`].
 fn build_new(n: usize, w: usize) -> NewSum {
-    NewSum::from_terms_with_policy(
-        n,
-        new_policy(w),
-        sum_z_terms(n)
-            .into_iter()
-            .map(|(word, c)| (NewKey::from(word.as_str()), c)),
-    )
+    // Structurally the same construction as `build_old`: the explicit `n²`
+    // capacity override and `n` accumulating `+=` inserts, not a batch build.
+    let mut s = NewSum::with_capacity(n, new_policy(w), n.pow(2));
+    for (word, c) in sum_z_terms(n) {
+        s += (NewKey::from(word.as_str()), c);
+    }
+    s
 }
 
 /// The old sum's support as a sorted `(canonical_pauli_string, coeff)` vector.

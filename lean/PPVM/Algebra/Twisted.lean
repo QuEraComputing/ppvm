@@ -130,6 +130,34 @@ theorem gtmul_assoc (hi : i ^ 4 = 1) (kmul : K → K → K)
     rw [← iPow_add i hi, ← iPow_add i hi, hβ]
   linear_combination (a.1 * b.1 * c.1) * hcoc
 
+/-! #### A *third*, independent obligation: right-cancellativity
+
+`Sum::mul_word_assign` (right-multiply every term by one key) rewrites the whole
+support through `p ↦ kmul p q` and merges with a plain `insert` — the
+`RekeyBijective` fast path — whose stated precondition is injectivity: "violating
+it DROPS a term rather than summing it". That precondition is **not** implied by
+the two obligations above; a monoid need not be cancellative. So it is a separate
+law a `KeyProduct` impl owes before it may take that path. -/
+
+/-- The key product is right-cancellative: right-multiplication by any fixed key
+is injective. This is `RekeyBijective`'s precondition for `mul_word_assign`. -/
+def IsRightCancellative (kmul : K → K → K) : Prop :=
+  ∀ q, Function.Injective fun p => kmul p q
+
+/-- **Right-cancellativity is independent of associativity and the cocycle law.**
+The constant product `kmul u v = false` on `K = Bool` is associative and admits
+the zero 2-cocycle (so it satisfies every obligation `KeyProduct` currently
+documents), yet it collapses both keys onto one — the exact failure mode that
+silently drops a term on the plain-`insert` path. Hence injectivity must be
+discharged *per key type*, not inherited. -/
+theorem isRightCancellative_independent :
+    (∀ u v w : Bool, (fun _ _ : Bool => false) ((fun _ _ : Bool => false) u v) w
+        = (fun _ _ : Bool => false) u ((fun _ _ : Bool => false) v w))
+      ∧ IsCocycle (fun _ _ : Bool => false) (fun _ _ => 0)
+      ∧ ¬ IsRightCancellative (fun _ _ : Bool => false) := by
+  refine ⟨fun _ _ _ => rfl, fun _ _ _ => by simp, fun h => ?_⟩
+  exact Bool.noConfusion (h false (a₁ := true) (a₂ := false) rfl)
+
 /-- The Pauli key is an *instance* of the abstract obligation: `tmul` is `gtmul`
 at `kmul = componentwise xor` and `β = phaseExp`. -/
 theorem tmul_eq_gtmul (a b : Mono C) :
@@ -185,6 +213,164 @@ monomial case) extended to whole maps. -/
 noncomputable def twistedConv (A B : CMap (Word n) C) : CMap (Word n) C :=
   A.sum fun p a => B.sum fun q b =>
     Finsupp.single (mulWord p q) (a * b * iPow i (phaseExpN p q))
+
+/-- **The Pauli word discharges the right-cancellativity obligation**, so
+`Sum::mul_word_assign` on `PauliWord` keys may legitimately take the plain-insert
+`RekeyBijective` path. (`isRightCancellative_independent` shows a different
+`KeyProduct` key — e.g. a future ordered fermionic word — does *not* get this for
+free from the associativity/cocycle obligations.) -/
+theorem mulWord_isRightCancellative :
+    IsRightCancellative (mulWord (n := n)) :=
+  mulWord_right_injective
+
+/-! #### Right-multiplication by one monomial **is** the injective re-key
+
+`mulWord_isRightCancellative` says the destination map `p ↦ p·q` is injective;
+`twistedConv` says what the L4 product is. Nothing joined them — yet
+`Sum::mul_word_assign` (`crates/ppvm-pauli-sum-2/src/multiply.rs`) computes
+`A ← A·q` by a *completely different code path* from `multiply_into`: the
+`RekeyBijective` drain, whose `HashMapStore` impl merges with a plain `insert`
+guarded only by a `debug_assert!`. That path is the L4 product only if
+right-multiplication by a monomial really is the aggregation-free pushforward of
+`A` along `p ↦ p·q`. The two theorems below are exactly that claim:
+
+* `twistedConv_single_right` — the whole-map form: the outer product collapses to
+  a single re-key of `A`'s support, each coefficient multiplied by `b` and the
+  `i^{phaseExpN p q}` twist.
+* `twistedConv_single_right_apply` — the aggregation-free form: the coefficient
+  landing on the destination key `p·q` is *precisely* the one source term's
+  contribution, with no other term of `A` contributing to it. This is where
+  `mulWord_right_injective` is spent, and it is the licence for `insert` over
+  `entry().and_modify().or_insert()`: with a non-injective key product the two
+  sides differ and the plain `insert` would DROP a term instead of summing it. -/
+
+/-- **Right-multiplication by a monomial is a re-key.** `A · (b·q)` is the
+pushforward of `A` along `p ↦ p·q`, each coefficient scaled by `b` and twisted by
+`i^{phaseExpN p q}` — one term out per term in, no outer product. -/
+theorem twistedConv_single_right (A : CMap (Word n) C) (q : Word n) (b : C) :
+    twistedConv i A (Finsupp.single q b)
+      = A.sum fun p a => Finsupp.single (mulWord p q) (a * b * iPow i (phaseExpN p q)) := by
+  classical
+  simp only [twistedConv]
+  exact Finsupp.sum_congr fun p _ => Finsupp.sum_single_index (by simp)
+
+/-- **The re-key needs no aggregation.** The coefficient the product places on the
+destination key `p·q` is exactly the single source term `A p`'s contribution: no
+*other* source key can land there, because `p ↦ p·q` is injective
+(`mulWord_right_injective`). This is the machine-checked precondition of the
+`RekeyBijective` plain-`insert` fast path taken by `Sum::mul_word_assign`
+(`isRightCancellative_independent` shows a different `KeyProduct` key does not get
+it for free). -/
+theorem twistedConv_single_right_apply (A : CMap (Word n) C) (p q : Word n) (b : C) :
+    twistedConv i A (Finsupp.single q b) (mulWord p q)
+      = A p * b * iPow i (phaseExpN p q) := by
+  classical
+  rw [twistedConv_single_right, Finsupp.sum, Finset.sum_apply']
+  have hterm : ∀ p' ∈ A.support,
+      (Finsupp.single (mulWord p' q) (A p' * b * iPow i (phaseExpN p' q))
+        : CMap (Word n) C) (mulWord p q)
+        = if p' = p then A p' * b * iPow i (phaseExpN p' q) else 0 := by
+    intro p' _
+    rw [Finsupp.single_apply]
+    by_cases hp : p' = p
+    · rw [if_pos (by rw [hp]), if_pos hp]
+    · rw [if_neg (fun hc => hp (mulWord_right_injective q hc)), if_neg hp]
+  rw [Finset.sum_congr rfl hterm, Finset.sum_ite_eq' A.support p]
+  by_cases hp : p ∈ A.support
+  · rw [if_pos hp]
+  · rw [if_neg hp, Finsupp.notMem_support_iff.mp hp, zero_mul, zero_mul]
+
+/-! #### The convolution is **biadditive** and **associative**
+
+`tmul_assoc`/`gtmul_assoc` above are monomial laws; they say nothing about whole
+maps. What `Multiply::multiply_into` must satisfy is the *bilinear* extension:
+the product of two sums is the sum of the pairwise products. That is exactly the
+property `ppvm-pauli-sum`'s `MulAssign<PauliSum>` violates — it folds each rhs
+term in place through a support-replacing `map_add`, so `A * (b₀P₀ + b₁P₁)`
+computes the chain `A · b₀P₀ · b₁P₁` instead of `A·b₀P₀ + A·b₁P₁`. The three
+theorems below are the oracle that adjudicates that: `twistedConv` *is* additive
+in each argument, so the chain is wrong for any rhs with more than one term, and
+the new accumulator-based `multiply_into` is right by construction.
+
+Biadditivity is also the missing step that lifts the monomial `tmul_assoc` to
+whole-map `twistedConv_assoc`: monomial associativity alone does not imply the
+convolution's — one needs bilinearity to reduce the general case to monomials
+(`Finsupp.induction_linear`), and the cocycle law to settle the monomial case. -/
+
+@[simp] theorem twistedConv_zero_left (B : CMap (Word n) C) :
+    twistedConv i 0 B = 0 := by
+  simp [twistedConv]
+
+@[simp] theorem twistedConv_zero_right (A : CMap (Word n) C) :
+    twistedConv i A 0 = 0 := by
+  simp [twistedConv]
+
+/-- The convolution of two monomials is the monomial twisted product `tmul`
+(lifted to n qubits): one key `p ⊕ q`, coefficients multiplied, phase folded in.
+This is the base case bilinearity reduces everything to. -/
+theorem twistedConv_single_single (p q : Word n) (a b : C) :
+    twistedConv i (Finsupp.single p a) (Finsupp.single q b)
+      = Finsupp.single (mulWord p q) (a * b * iPow i (phaseExpN p q)) := by
+  classical
+  simp only [twistedConv]
+  rw [Finsupp.sum_single_index (by simp), Finsupp.sum_single_index (by simp)]
+
+/-- **Additive in the left argument**: `(A + B) · D = A·D + B·D`. -/
+theorem twistedConv_add_left (A B D : CMap (Word n) C) :
+    twistedConv i (A + B) D = twistedConv i A D + twistedConv i B D := by
+  classical
+  simp only [twistedConv]
+  exact Finsupp.sum_add_index' (fun _ => by simp)
+    (fun _ _ _ => by simp only [add_mul, Finsupp.single_add, Finsupp.sum_add])
+
+/-- **Additive in the right argument**: `A · (B + D) = A·B + A·D`.
+
+Together with `twistedConv_add_left` this is the bilinearity of the L4 product —
+and the precise law `ppvm-pauli-sum`'s `MulAssign<PauliSum>` breaks. -/
+theorem twistedConv_add_right (A B D : CMap (Word n) C) :
+    twistedConv i A (B + D) = twistedConv i A B + twistedConv i A D := by
+  classical
+  simp only [twistedConv]
+  rw [← Finsupp.sum_add]
+  refine Finsupp.sum_congr fun p _ => ?_
+  exact Finsupp.sum_add_index' (fun _ => by simp)
+    (fun _ _ _ => by simp only [mul_add, add_mul, Finsupp.single_add])
+
+/-- **The twisted convolution is associative** — `(A·B)·D = A·(B·D)` on whole
+maps, not just monomials. Biadditivity reduces the claim to the monomial case by
+`Finsupp.induction_linear`; there the keys agree by `mulWord_assoc` and the
+coefficients by the n-qubit phase 2-cocycle `phaseExpN_cocycle` transported
+through `iPow_add` (which is where `i⁴ = 1` is spent). This is the whole-map
+statement the Rust `product_is_associative` test asserts, and the reason a
+correct `multiply_into` must accumulate monomial products into a fresh
+accumulator rather than fold in place. -/
+theorem twistedConv_assoc (hi : i ^ 4 = 1) (A B D : CMap (Word n) C) :
+    twistedConv i (twistedConv i A B) D = twistedConv i A (twistedConv i B D) := by
+  classical
+  induction A using Finsupp.induction_linear with
+  | zero => simp
+  | add f g hf hg =>
+    rw [twistedConv_add_left, twistedConv_add_left, twistedConv_add_left, hf, hg]
+  | single p a =>
+    induction B using Finsupp.induction_linear with
+    | zero => simp
+    | add f g hf hg =>
+      rw [twistedConv_add_right, twistedConv_add_left, twistedConv_add_left,
+        twistedConv_add_right, hf, hg]
+    | single q b =>
+      induction D using Finsupp.induction_linear with
+      | zero => simp
+      | add f g hf hg =>
+        rw [twistedConv_add_right, twistedConv_add_right, twistedConv_add_right, hf, hg]
+      | single r c =>
+        simp only [twistedConv_single_single]
+        have hcoc :
+            iPow i (phaseExpN p q) * iPow i (phaseExpN (mulWord p q) r)
+              = iPow i (phaseExpN q r) * iPow i (phaseExpN p (mulWord q r)) := by
+          rw [← iPow_add i hi, ← iPow_add i hi, phaseExpN_cocycle]
+        rw [mulWord_assoc]
+        congr 1
+        linear_combination (a * b * c) * hcoc
 
 /-- **The L3 pairing is the identity coefficient of the L4 product.**
 `(A · B) I = ⟪A, B⟫` for the twisted convolution `A · B` and the bilinear

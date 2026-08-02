@@ -7,6 +7,7 @@ import Mathlib.Algebra.Order.BigOperators.Ring.Finset
 import Mathlib.Analysis.Complex.Basic
 import Mathlib.Analysis.Normed.Unbundled.RingSeminorm
 import Mathlib.Analysis.SpecialFunctions.Pow.Real
+import PPVM.Algebra.GradedMap
 
 /-!
 # Truncation error bounds
@@ -145,5 +146,99 @@ threshold `t ≥ 0`, a coefficient with `|c| = t` (take `c = t`) is kept by the
 first rule and dropped by the second — the two backends disagree on the boundary. -/
 theorem cutoff_mismatch (t : ℝ) (ht : 0 ≤ t) : (t ≤ |t|) ≠ (t < |t|) := by
   simp [abs_of_nonneg ht]
+
+/-! ### The preserved-key post-filter is a **widened** keep-rule
+
+`Sum::truncate` (`ppvm-pauli-sum-2/src/sum.rs`, ported from
+`ppvm-pauli-sum/src/sum/data.rs`) is not just the policy: with a non-empty
+keep-set `P` (`preserve_strings`) it runs three steps —
+
+1. **snapshot** the *pre-truncate* coefficients of the keys in `P` that are in
+   the support;
+2. run the configured policy **verbatim** (a `retain`);
+3. **restore**, through `AddTerm::add_term`, every snapshotted key the policy
+   dropped, guarded by a membership test.
+
+Both guards are load-bearing and neither is visible in the types: `add_term`
+*accumulates*, so without the membership test a survivor would have its
+coefficient **doubled**, and if the snapshot were taken after the policy ran it
+would restore a post-truncate residue instead of the original coefficient.
+
+`truncate_preserve_eq_widened_retain` collapses the whole composite to a single
+pass with the **widened** keep-rule `keep k c ∨ k ∈ P`. That is the specification
+`preserve_strings` advertises, and it has two immediate corollaries:
+
+* `truncatePreserve_apply_of_mem` — a preserved key keeps **exactly** its
+  pre-truncate coefficient (this is old's conservation test: `Σᵢ Zᵢ` under
+  repeated `rxx`/`ryy` with aggressive truncation holds every single-`Z`
+  coefficient at exactly `1.0`);
+* the dropped set is `D \ P`, so the `ℓ¹` bound above applies to `D \ P` — the
+  error guarantee a caller who passes a keep-set actually gets.
+
+As everywhere in this model the support is the canonical (zero-free) one
+(`GradedMap.reduce_structural`), so the statement is about **coefficients**: a
+backend that additionally stores explicit zeros — which `Sum` does, since it
+never drops them on its own — agrees with it pointwise, while whether such a key
+is *listed* is that backend's `reduce` question, not this one.
+-/
+
+section Preserve
+
+open PPVM.GradedMap
+
+variable {C : Type*} [AddCommMonoid C] [DecidableEq K]
+
+/-- Step 1 — the snapshot: the preserved keys' **pre-truncate** coefficients
+(only those actually in the support, exactly as the Rust `storage.get` scan). -/
+noncomputable def snapshot (P : Finset K) (A : CMap K C) : CMap K C :=
+  Finsupp.filter (· ∈ P) A
+
+/-- The whole three-step `Sum::truncate`: policy `keep`, then restore each
+snapshotted key the policy dropped, at its pre-truncate coefficient. The
+difference `\ (retain keep A).support` is the `storage.get(&key).is_none()`
+guard — without it the restore would *add* to a survivor. -/
+noncomputable def truncatePreserve (keep : K → C → Bool) (P : Finset K) (A : CMap K C) :
+    CMap K C :=
+  retain keep A
+    + ∑ k ∈ (snapshot P A).support \ (retain keep A).support, Finsupp.single k (A k)
+
+/-- **Snapshot–truncate–restore is one widened `retain`.**
+`truncatePreserve keep P A = retain (fun k c => keep k c ∨ k ∈ P) A`: the
+restored coefficient is the pre-truncate one, and no surviving key is doubled. -/
+theorem truncate_preserve_eq_widened_retain (keep : K → C → Bool) (P : Finset K)
+    (A : CMap K C) :
+    truncatePreserve keep P A = retain (fun k c => keep k c || decide (k ∈ P)) A := by
+  classical
+  ext j
+  have hsum : (∑ k ∈ (snapshot P A).support \ (retain keep A).support,
+      Finsupp.single k (A k)) j
+      = if j ∈ (snapshot P A).support \ (retain keep A).support then A j else 0 := by
+    rw [Finsupp.finsetSum_apply]
+    simp only [Finsupp.single_apply]
+    exact Finset.sum_ite_eq' _ _ _
+  rw [truncatePreserve, Finsupp.add_apply, hsum]
+  simp only [retain_apply, Finset.mem_sdiff, Finsupp.mem_support_iff, snapshot,
+    Finsupp.filter_apply]
+  by_cases hA : A j = 0
+  · simp [hA]
+  · by_cases hP : j ∈ P <;> cases hk : keep j (A j) <;> simp [hA, hP]
+
+/-- **A preserved key keeps its pre-truncate coefficient exactly.** Whatever the
+policy decides, `truncate()` leaves every key of the keep-set at the value it had
+before the call — old's `tests/preserve.rs` conservation property. -/
+theorem truncatePreserve_apply_of_mem (keep : K → C → Bool) (P : Finset K)
+    (A : CMap K C) {j : K} (hj : j ∈ P) : truncatePreserve keep P A j = A j := by
+  rw [truncate_preserve_eq_widened_retain, retain_apply, if_pos (by simp [hj])]
+
+/-- **An empty keep-set is the policy, verbatim** — the hot-path short-circuit
+(`if self.preserve.is_empty()`) is exact, not an approximation. -/
+theorem truncatePreserve_empty (keep : K → C → Bool) (A : CMap K C) :
+    truncatePreserve keep (∅ : Finset K) A = retain keep A := by
+  rw [truncate_preserve_eq_widened_retain]
+  congr 1
+  funext k c
+  simp
+
+end Preserve
 
 end PPVM.Truncation

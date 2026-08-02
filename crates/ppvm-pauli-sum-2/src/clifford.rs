@@ -38,8 +38,12 @@
 //! `conjSdag_isRealPhase`/`conjCNOT_isRealPhase`/`conjCZ_isRealPhase` over
 //! `IsRealPhase`).
 //!
-//! A Clifford re-key is a bijection, so colliding re-keyed terms never occur;
-//! `apply` still runs `reduce` (a no-op on support size here). The bijection is
+//! A Clifford re-key is a bijection, so colliding re-keyed terms never occur —
+//! which is what lets this path take the plain-`insert`
+//! [`Sum::rekey_bijective`] fast path rather than [`Sum::apply`]'s batch
+//! round-trip. Nothing here runs `reduce` (a `±1` sign cannot zero a
+//! coefficient, and a zero term must survive regardless — old has no `reduce`)
+//! and nothing here truncates (caller-driven, [`Sum::truncate`]). The bijection is
 //! machine-checked at the phase-stripped word level: each generator's `Sp(2n, 2)`
 //! bit map is an involution, hence bijective (`lean/PPVM/Pauli/Symplectic.lean`
 //! `hAct_involutive`/`sAct_involutive`/`cnotAct_involutive`/`czAct_involutive`,

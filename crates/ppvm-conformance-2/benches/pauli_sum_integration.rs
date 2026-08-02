@@ -101,13 +101,14 @@ fn build_old(n: usize) -> OldSum {
 }
 
 fn build_new(n: usize) -> NewSum {
-    NewSum::from_terms_with_policy(
-        n,
-        new_policy(),
-        sum_z_terms(n)
-            .into_iter()
-            .map(|(word, c)| (NewKey::from(word.as_str()), c)),
-    )
+    // Same capacity override as `build_old` (`n²`) and the same accumulating
+    // `+=` seeding path, so the ratio is engine-to-engine rather than an
+    // artifact of the two maps being sized differently.
+    let mut s = NewSum::with_capacity(n, new_policy(), n.pow(2));
+    for (word, c) in sum_z_terms(n) {
+        s += (NewKey::from(word.as_str()), c);
+    }
+    s
 }
 
 /// One `rzz(a, b, θ)` decomposed as `cnot(a, b); rz(b, θ); cnot(a, b)` — the same

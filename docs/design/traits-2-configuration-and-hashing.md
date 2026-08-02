@@ -289,6 +289,19 @@ symplectic form `ω(P,Q) = 1`. That algebraic form is machine-checked in
 `pauli_channel_eigenvalue_omega` tying `anti` to `PPVM.Symplectic.omega`); the
 zero-state read-out `⟨0ⁿ|ρ|0ⁿ⟩ = Σ_{P X-free} c_P` is `overlap_with_zero_xfree`.
 
+The eigenvalue is also **contractive**, which is what licenses the diagonal
+channel's `ScaleByKey` fast path skipping *both* a truncation pass and a
+Pauli-weight re-check: for a sub-stochastic `[p_X, p_Y, p_Z]` (`p ≥ 0`,
+`Σ p ≤ 1`), `|λ_P| ≤ 1` (`pauli_channel_eigenvalue_abs_le_one`, and
+`pauli_channel_eigenvalue_omega_abs_le_one` on the symplectic form), so the
+channel is an `ℓ¹` contraction (`l1_contractive`) — the hypothesis that makes
+`PPVM.Truncation.l1_bound` compose across a *noisy* propagation rather than only
+bound one truncation — and it never introduces or moves a key
+(`scaleByKey_support_subset`), so no surviving term's weight can have grown.
+Sub-stochasticity is a real precondition on the channel constructors, not a
+formality: `eigenvalue_abs_le_one_needs_substochastic` exhibits an
+over-normalized probability vector that breaks the bound.
+
 ```rust
 pub trait Measure {
     fn measure(&mut self, qubit: usize) -> Option<bool>;
@@ -742,14 +755,27 @@ value type now exposes only `magnitude()`, a property of the value; the policy
 owns the comparison:
 
 ```rust
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct CoefficientThreshold {
     pub threshold: f64,
 }
 
+// The default threshold is a USER-FACING value, carried over unchanged from
+// `ppvm-pauli-sum::strategy::CoefficientThreshold` (1e-12). A derived `Default`
+// would give 0.0 and silently keep terms the current crate drops.
+impl Default for CoefficientThreshold {
+    fn default() -> Self {
+        Self { threshold: 1e-12 }
+    }
+}
+
 impl<W: Word + Indexable, C: Coefficient> Policy<W, C> for CoefficientThreshold {
-    fn capacity(&self, _n_sites: usize) -> usize {
-        0
+    // Also carried over: the capacity hint is the current strategy's `n * 10`,
+    // not 0. Both maps of the double-buffer are sized from it at construction,
+    // and the caller can override it (`Sum::with_capacity`, the port of the
+    // current builder's `.capacity(..)`, which every real workload passes).
+    fn capacity(&self, n_sites: usize) -> usize {
+        n_sites * 10
     }
 
     fn truncate<M: Retain<W, C>>(&self, map: &mut M) {
@@ -772,6 +798,40 @@ for `PauliSum<Complex<f64>>` and not only for real coefficients) and, for the
 tableau path,
 the *unconditional* Cauchy–Schwarz `ℓ²` bound `l2_bound`, sharpened to
 `error² ≤ (Σ_{dropped} c_P²)·|D|` under `|⟨P⟩| ≤ 1` in `l2_bound_normalized`.
+
+Two properties of `retain` itself — not of any one policy — are what license the
+shipped `Policy` implementations, and both are machine-checked in
+`lean/PPVM/Algebra/GradedMap.lean` (§"`Retain`"):
+
+* `CombinedPolicy::truncate` runs its two members as **two sequential `retain`
+  passes** (a structural difference from PauliPropagation.jl's single combined
+  walk, carried over from `CombinedStrategy`). `retain_seq_eq_retain_and` proves
+  the sequential form computes the **conjunction** of the two keep-rules, and
+  `retain_comm` that the surviving key set does not depend on the pass order — so
+  the surviving set is a property of the policy pair, and a future backend
+  (parallel, columnar) may fuse or reorder the passes without re-litigating.
+* `MaxPauliWeight::truncate` (and `MaxLossWeight::truncate`) **early-returns** on
+  the `usize::MAX` disable sentinel rather than running an always-true walk —
+  the headline `CombinedPolicy(CoefficientThreshold(1e-6), MaxPauliWeight(MAX))`
+  configuration is why. `retain_of_all_true` / `retain_le_top_eq_self` are its
+  soundness: retain-all is the identity *pointwise*, so skipping the pass is
+  observationally exact, zero-coefficient terms included.
+
+`Sum::truncate`'s **preserved-key post-filter** (the port of the builder's
+`preserve_strings`) is adjudicated in `lean/PPVM/Algebra/Truncation.lean`
+(§"The preserved-key post-filter is a widened keep-rule"). Its three steps —
+snapshot the preserved keys' *pre-truncate* coefficients, run the policy
+verbatim, re-insert what the policy dropped through the accumulating
+`AddTerm::add_term` under a membership guard — collapse to a single pass with the
+widened keep-rule `keep k c ∨ k ∈ P` (`truncate_preserve_eq_widened_retain`).
+That equivalence is what pins the two otherwise invisible guards (without the
+membership test a survivor's coefficient would be **doubled**; with the snapshot
+taken after the policy it would restore a post-truncate residue), and it gives
+the two facts a caller relies on: a preserved key keeps exactly its pre-truncate
+coefficient (`truncatePreserve_apply_of_mem` — old's `Σᵢ Zᵢ` conservation test),
+the empty keep-set is the policy verbatim so the hot-path short-circuit is exact
+(`truncatePreserve_empty`), and the dropped set is `D \ P`, which is the set the
+`ℓ¹` bound above then applies to.
 
 `Policy` and its concrete implementations belong to the sparse-sum crate. This
 removes the current split where the `Strategy` trait lives in `ppvm-traits` but
@@ -841,6 +901,12 @@ pub trait Accumulate: Support {
     /// `lean/PPVM/Algebra/GradedMap.lean`. That is the licence for a backend to
     /// `gather` a batch into per-partition sub-batches and run them
     /// concurrently.
+    ///
+    /// A collision must **sum**, never overwrite: old's `AddAssign<PauliSum>`
+    /// routes through `HashMap::extend`, which replaces the shared key's
+    /// coefficient, and that is adjudicated wrong by the same file
+    /// (`accumulate_apply`, witness `accumulate_ne_overwrite`). This engine
+    /// diverges from old there by design.
     fn accumulate_batch(&mut self, terms: &TermBatch<Self::Key, Self::Coeff>);
 
     /// Canonicalize to reduced finite-support form: drop every key whose
@@ -943,6 +1009,16 @@ pub trait Conjugate: Coefficient {
 /// (`phaseExp_isCocycle`, `tmul_assoc_of_gtmul`). A future ordered fermionic-word
 /// key must discharge the same two hypotheses; it does not inherit associativity
 /// from the Pauli proof.
+///
+/// Third, *independent* obligation — **right-cancellativity**: `p ↦ key_mul(p,q)`
+/// must be injective for every fixed `q`. `Sum::mul_word_assign` re-keys the
+/// whole support through that map and merges with the plain-`insert`
+/// `RekeyBijective` path, where a collision silently **drops** a term instead of
+/// summing it. This does *not* follow from associativity + the cocycle law —
+/// `lean/PPVM/Algebra/Twisted.lean` (`isRightCancellative_independent`) exhibits
+/// a constant key product satisfying both while collapsing two keys onto one.
+/// `PauliWord` discharges it (`mulWord_right_injective`,
+/// `mulWord_isRightCancellative`); a key that cannot must not take that path.
 pub trait KeyProduct: Eq + Clone {
     /// Product of two keys, with the phase it produces (folded onto the coeff).
     fn key_mul(&self, other: &Self) -> (Self, Phase);
@@ -983,6 +1059,19 @@ pub trait ImaginaryUnit: Coefficient + num::One {
 /// by `mulWord_eq_id_iff`, where the `i^k` twist vanishes by `phaseExpN_self`).
 /// That is the correctness spec a container `Multiply` impl is checked against,
 /// and it is why `overlap` deserves the name Hilbert–Schmidt pairing.
+///
+/// `multiply_into` is **bilinear**: `(A + B)·D == A·D + B·D` and
+/// `A·(B + D) == A·B + A·D`, machine-checked as `twistedConv_add_left` /
+/// `twistedConv_add_right` in `lean/PPVM/Algebra/Twisted.lean`. So each monomial
+/// product must be accumulated into a *fresh* accumulator; folding rhs terms
+/// back into an operand computes the product **chain** `A·b₀P₀·b₁P₁` instead of
+/// the sum `A·b₀P₀ + A·b₁P₁` (which is precisely the latent bug in old's
+/// `MulAssign<PauliSum>` — Lean adjudicates old wrong here, see
+/// `crates/ppvm-pauli-sum-2/src/multiply.rs`). Biadditivity is also what lifts
+/// the *monomial* `tmul_assoc` to the whole-map law `twistedConv_assoc`
+/// (`(A·B)·D == A·(B·D)`, same file): monomial associativity alone does **not**
+/// imply the convolution's — bilinearity reduces the general case to monomials
+/// and the 2-cocycle settles them.
 pub trait Multiply: Accumulate
 where
     Self::Key: KeyProduct,
@@ -1150,6 +1239,28 @@ drain is total and the re-key is a bijection (`Symplectic.*_bijective`), so no t
 terms collide. Pure-sign gates `X`/`Y`/`Z` (word unchanged) take an in-place
 `SignFlipByKey` pass, not a map rebuild.
 
+The same licence — and only that licence — permits the `RekeyBijective` plain
+`insert` (no accumulation probe, `debug_assert!` only) on any *other* rewrite,
+because a non-injective map would silently **drop** a term there rather than sum
+it. L4's right-multiplication by a single Pauli word, `p ↦ p·q`
+(`Sum::mul_word_assign`, old's `MulAssign<PauliWord>`), qualifies: injectivity is
+machine-checked as `mulWord_right_injective` in `lean/PPVM/Pauli/Word.lean`, the
+word-product counterpart of the Clifford `Symplectic.*_bijective` /
+`Conjugation.conj*_injective`. Any future re-key wanting the fast path owes the
+same one-line theorem.
+
+Injectivity alone is not the whole obligation, though: `mul_word_assign` reaches
+the *product* by a different code path from `multiply_into`, so it also owes that
+the re-key **is** the L4 product against a one-term map.
+`lean/PPVM/Algebra/Twisted.lean` closes that: `twistedConv_single_right` shows
+`A · (b·q)` collapses to the pushforward of `A` along `p ↦ p·q` (coefficients
+scaled by `b` and twisted by `i^{phaseExpN p q}`), and
+`twistedConv_single_right_apply` shows the coefficient landing on `p·q` is exactly
+the one source term's contribution — i.e. the re-key needs **no** aggregation,
+which is precisely what makes `insert` (rather than `entry().and_modify()`)
+sound. Without injectivity those two differ and the plain `insert` drops a term
+instead of summing it (`isRightCancellative_independent`).
+
 For `S::Key = Tableau`, `next.h(q)` is the tableau's own phase-complete `Clifford`.
 Same engine, same producer, same `accumulate` / `reduce` — only the key's
 conjugation (and, for `PauliWord`, the sign-drain wrapper) varies. This is the
@@ -1237,6 +1348,20 @@ impl<S: Accumulate, P: Policy<S::Key, S::Coeff>> Sum<S, P> {
     }
 }
 ```
+
+The sketch above is missing one step, and the omission is load-bearing: a
+re-keying producer emits `(φ(k), c')` while the map still holds `(k, c)`, so
+`accumulate_batch` **onto the live support leaves both** — a silent double-count
+of the entire support on every Clifford gate. The support must therefore be
+**reset between producing and accumulating** (`ApplyProducer::apply_producer` in
+`ppvm-pauli-sum-2/src/store.rs` does this). Machine-checked in
+`lean/PPVM/Algebra/GradedMap.lean`: `pushforward_eq_reset_accumulate` shows the
+reset-then-accumulate composite equals the pushforward `mapDomain φ ∘ mapRange g`
+(with `pushforward_apply` giving the injective, per-key form for a Clifford's
+symplectic bijection), and `merge_without_reset_ne_pushforward` exhibits the
+double-count that merging without the reset produces. This is the `apply`-path
+analogue of `eagerWalk_ne_twoPass`, and it matters most where it would be hardest
+to spot: the Phase-4 tableau-keyed reuse of `apply`.
 
 The only staging that remains is the `TermBatch` the producer fills. It is
 **transient by default** (allocated per `apply`), which is exactly right for a
@@ -1429,6 +1554,23 @@ of `iGP` cancels the product's `i`, `branchExp_isRealPhase`). `rx_eps_from_produ
 equals the hand-ported table in `crates/ppvm-pauli-sum-2/src/producer.rs:141-143`
 (`RotationProducer::produce`, `rx: ε=−1 iff x`; `ry: ε=−1 iff z`; `rz: ε=+1 iff z`),
 grounding the one propagation sign the abstract `rot` model does not derive.
+
+Those are all *per-term* facts. The fused `RotateInPlace` fast path
+(`crates/ppvm-pauli-sum-2/src/store.rs`) that every rotation actually takes is a
+**two-pass** whole-map walk — pass 1 scales every diagonal in place and buffers
+the branch terms in `scratch`, pass 2 merges only the buffered branches — and its
+risk is *cross-term*: a branch key produced from `k` can collide with a different
+key `k'` that pass 1 has not scaled yet (`rx` on a support holding both `Z` and
+`Y` at one site swaps them). `anticommute_new_key` is a near miss here; it only
+rules out a branch colliding with its own source. The whole-map licence is
+`accumulate_rotBatch` in `lean/PPVM/Instantiations/Rotation.lean`: the two-pass
+map equals folding the whole `≤ 2N`-term produced batch into an empty map (the
+generic producer → `accumulate_batch` semantics), for **every** walk order, since
+the batch is a `Multiset` and `GradedMap.accumulateTerms_perm`/`_add` apply. The
+two-pass structure is load-bearing rather than an optimization:
+`eagerWalk_ne_twoPass` exhibits a support on which merging each branch eagerly
+*inside* the walk — the tidier single-pass refactor, and what a backend
+interleaving the passes computes — gives a different map.
 
 A `TermProducer` *reads* the live map through `&` and *writes* the produced
 terms into a `TermSink` — a separate buffer, never the map itself — so there is

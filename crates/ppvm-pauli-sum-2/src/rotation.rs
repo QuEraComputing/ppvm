@@ -15,9 +15,12 @@
 //! this drives the fused in-place [`Sum::rotate_in_place`] fast path: it scales
 //! each diagonal coefficient by `cosθ` **where it sits** (cached hash intact, no
 //! bucket move) and hashes/merges only the ≤`N` branch terms, aggregating any
-//! collision (a branch's `iGP` may land on another term) and dropping exact
-//! cancellations before the policy truncates. This mirrors the old crate's
-//! single-pass `map_insert` (`ppvm-pauli-sum::sum::rot1`), the pure-sign
+//! collision (a branch's `iGP` may land on another term). An exact cancellation
+//! is **kept** — the merge is old's `add_assign`, which leaves a `0.0` entry in
+//! the support — and neither `reduce` nor the policy runs here: truncation is
+//! caller-driven ([`Sum::truncate`]) and canonicalization is caller-driven
+//! ([`Sum::reduce`]). This mirrors the old crate's single-pass `map_insert`
+//! (`ppvm-pauli-sum::sum::rot1`), the pure-sign
 //! [`Sum::flip_sign_by_key`], and the diagonal [`Sum::scale_by_key`] paths.
 //!
 //! The `iGP` branch key is a **real** Pauli — the single-qubit anticommuting
@@ -44,7 +47,9 @@ use crate::sum::Sum;
 /// Single-qubit rotation propagation on a Pauli-keyed `Sum`. Each rotation drives
 /// the fused in-place [`Sum::rotate_in_place`] fast path: it scales every
 /// diagonal coefficient by `cosθ` where it sits and merges only the anticommuting
-/// `iGP` branch terms, then the policy truncates.
+/// `iGP` branch terms. The policy does **not** run: truncation is caller-driven
+/// ([`Sum::truncate`]), as in old, so two sub-threshold branches on the same key
+/// can still merge into a surviving term.
 ///
 /// The per-axis commute test, flipped bits, and `±1` sign `ε` are ported
 /// bit-for-bit from `ppvm-pauli-sum::sum::rot1` (`rx`/`ry`/`rz`). The `ε` column

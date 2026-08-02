@@ -157,8 +157,10 @@ pub fn build_old_sum(n_qubits: usize, terms: &[(String, f64)]) -> OldSum {
 
 /// Build the NEW sum on `n_qubits` from the *same* `(string, coeff)` terms.
 ///
-/// `from_terms` runs `accumulate_batch` + `reduce`, so colliding keys are combined
-/// and zero-coefficient keys are dropped — the NEW crate reduces at construction.
+/// `from_terms` runs `accumulate_batch` only: colliding keys are combined and a
+/// zero (or exactly-cancelling) coefficient is **kept**, matching old's `+=`.
+/// Canonicalization is caller-driven on both sides ([`reduce_old`] /
+/// `Sum::reduce`).
 pub fn build_new_sum(n_qubits: usize, terms: &[(String, f64)]) -> NewSum {
     NewSum::from_terms(
         n_qubits,

@@ -26,7 +26,7 @@
 //! (`phased_pauli_word_diff.rs` / `_lean.rs`); here we assert the *sum-level*
 //! consequences.
 
-use ppvm_conformance_2::{assert_close, build_new_sum, new_support, random_terms, seeded_rng};
+use ppvm_conformance_2::{assert_close, build_new_sum, random_terms, seeded_rng};
 use ppvm_pauli_sum_2::{CoefficientThreshold, MaxPauliWeight, PauliSum, PauliWord, Policy};
 use ppvm_traits_2::{Clifford, Word};
 
@@ -116,7 +116,10 @@ fn reduce_structural() {
         let mut rng = seeded_rng(seed);
         for &n in &WIDTHS {
             let terms = random_terms(&mut rng, n, 30);
-            let s = build_new_sum(n, &terms);
+            // `reduce` is caller-driven (construction keeps zeros, as in old), so
+            // realize it before asserting the reduced-form invariant.
+            let mut s = build_new_sum(n, &terms);
+            s.reduce();
             // Forward: every key in support has a nonzero coefficient.
             for (_w, c) in s.iter() {
                 assert!(c != 0.0, "reduced support contains a zero coefficient");
@@ -127,9 +130,10 @@ fn reduce_structural() {
                 terms.iter().filter(|(w, _)| *w != key).cloned().collect();
             with_cancel.push((key.clone(), 0.75));
             with_cancel.push((key.clone(), -0.75));
-            let s2 = build_new_sum(n, &with_cancel);
+            let mut s2 = build_new_sum(n, &with_cancel);
+            s2.reduce();
             assert!(
-                !s2.contains(&PauliWord::from(key.as_str())),
+                !s2.contains_key(&PauliWord::from(key.as_str())),
                 "cancelled key {key} survived reduce"
             );
         }
@@ -386,18 +390,18 @@ fn clifford_rekey_is_support_preserving_bijection() {
 fn single_qubit_exhaustive_scale_and_reduce() {
     for p in ["I", "X", "Y", "Z"] {
         // scale by 0 reduces to empty (every coefficient becomes an exact zero,
-        // which `scale` leaves in place — canonicalize by rebuilding).
+        // which `scale` leaves in place — `reduce` is the explicit canonicalizer).
         let s = build_new_sum(1, &[(p.to_string(), 3.0)]);
         let mut zeroed = s.clone();
         zeroed.scale(&0.0);
-        let canon = build_new_sum(
+        assert_eq!(
+            zeroed.len(),
             1,
-            &new_support(&zeroed)
-                .into_iter()
-                .collect::<Vec<(String, f64)>>(),
+            "scale must not remove the zeroed {p} term (contract 2)"
         );
+        zeroed.reduce();
         assert!(
-            canon.is_empty(),
+            zeroed.is_empty(),
             "scale-by-0 then reduce should empty the {p} sum"
         );
 

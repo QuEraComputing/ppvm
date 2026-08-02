@@ -165,6 +165,94 @@ theorem accumulateTerms_add (B₁ B₂ : Multiset (K × C)) (m : CMap K C) :
 theorem accumulateTerms_singleton (t : K × C) (m : CMap K C) :
     accumulateTerms {t} m = accumulate m (Finsupp.single t.1 t.2) := rfl
 
+/-! #### Producing a batch must **reset** the support before accumulating it
+
+`ApplyProducer::apply_producer` (`ppvm-pauli-sum-2/src/store.rs`) stages every
+stored term through a `TermProducer` and then merges the batch back. The design's
+`apply` sketch (§"There is no `SumStorage` trait…") writes that merge as
+`self.storage.accumulate_batch(&batch)` — straight onto the **live** support. For
+a re-keying producer (every Clifford gate, and right-multiplication by a Pauli
+word) that is wrong: the batch carries `(φ k, g c)` while the map still carries
+`(k, c)`, so the merge leaves *both*. The implementation therefore `reset`s the
+support between producing and accumulating; the two theorems below are the
+licence for that extra step and the witness that it is not optional.
+
+`produceBatch` models a producer that emits exactly one term `(φ k, g c)` per
+stored `(k, c)` — the shape of `RekeyProducer` — and `pushforward` is what the
+re-key is *supposed* to compute: Mathlib's `mapDomain ∘ mapRange`. -/
+
+/-- The batch a one-in/one-out re-keying `TermProducer` emits: `(φ k, g (A k))`
+for each key in the support. A `Multiset`, since the walk order is not part of
+the semantics (`accumulateTerms_perm`). -/
+noncomputable def produceBatch (φ : K → K) (g : C → C) (A : CMap K C) : Multiset (K × C) :=
+  A.support.val.map fun k => (φ k, g (A k))
+
+/-- The re-keyed map a Clifford conjugation denotes: push the coefficients
+forward along `φ` and through the coefficient map `g` (`c ↦ ±c`, so `g 0 = 0`). -/
+noncomputable def pushforward (φ : K → K) (g : C → C) (hg : g 0 = 0) (A : CMap K C) :
+    CMap K C :=
+  Finsupp.mapDomain φ (Finsupp.mapRange g hg A)
+
+/-- **Reset-then-accumulate is the pushforward.** Accumulating the produced batch
+into the **empty** map — `StoreAlloc::reset` followed by `accumulate_batch`, which
+is what `apply_producer` does — yields exactly the re-keyed map. (No injectivity
+is needed here: colliding images accumulate, matching `accumulate_batch`.) -/
+theorem pushforward_eq_reset_accumulate (φ : K → K) (g : C → C) (hg : g 0 = 0)
+    (A : CMap K C) :
+    accumulateTerms (produceBatch φ g A) 0 = pushforward φ g hg A := by
+  classical
+  rw [accumulateTerms_eq, accumulate, zero_add]
+  rw [batchMap, produceBatch, Multiset.map_map]
+  rw [pushforward, Finsupp.mapDomain,
+    Finsupp.sum_of_support_subset _ (Finsupp.support_mapRange) _
+      (fun _ _ => Finsupp.single_zero _)]
+  simp only [Finset.sum_eq_multiset_sum, Finsupp.mapRange_apply, Function.comp_def]
+
+/-- With `φ` **injective** — the Clifford case, `Symplectic.…_bijective` — the
+pushforward is a genuine re-key: the coefficient of `k` moves to `φ k` untouched
+(up to `g`), nothing is doubled and nothing is lost. -/
+theorem pushforward_apply (φ : K → K) (hφ : Function.Injective φ) (g : C → C)
+    (hg : g 0 = 0) (A : CMap K C) (k : K) :
+    pushforward φ g hg A (φ k) = g (A k) := by
+  rw [pushforward, Finsupp.mapDomain_apply hφ, Finsupp.mapRange_apply]
+
+/-- **Merging the produced batch onto the un-reset support is not the
+pushforward.** Take `A = 1·|true⟩` and the re-key `φ = not` (no coefficient
+change): the batch is `{(false, 1)}`, so merging it into `A` leaves `true` *and*
+`false`, while the pushforward carries only `false`. Dropping the `reset` would
+therefore double-count the entire support on every Clifford gate — silently, and
+with no per-term theorem to catch it (this is the `apply`-path analogue of
+`Rotation.eagerWalk_ne_twoPass`). -/
+theorem merge_without_reset_ne_pushforward :
+    accumulateTerms (produceBatch Bool.not (id : ℤ → ℤ) (Finsupp.single true 1))
+        (Finsupp.single true 1)
+      ≠ pushforward Bool.not (id : ℤ → ℤ) rfl (Finsupp.single true 1) := by
+  classical
+  intro h
+  have hval := DFunLike.congr_fun h true
+  rw [accumulateTerms_eq, ← pushforward_eq_reset_accumulate (hg := rfl),
+    accumulateTerms_eq, accumulate, accumulate, zero_add] at hval
+  simp at hval
+
+/-! #### Sum-plus-sum is coefficient **addition**, not a right-biased overwrite
+
+`ppvm-pauli-sum`'s `impl AddAssign<PauliSum> for PauliSum` routes through
+`HashMap::extend`, whose duplicate-key behaviour is `insert` — it **replaces** the
+left operand's coefficient with the right one's. That is not the free-module
+addition this layer specifies: `accumulate_apply` says the shared coordinate must
+be `f k + g k`. The witness below pins the discrepancy on the smallest case, so
+the adjudication is machine-checked rather than argued: `1·|k⟩ += 2·|k⟩` is
+`3·|k⟩`, not `2·|k⟩`. The new engine's `Accumulate::accumulate_batch` genuinely
+accumulates, so it *diverges from old here by design* — old is wrong. -/
+
+/-- **A right-biased overwrite is not module addition.** At a key both operands
+carry, `extend`-style replacement returns the right operand's coefficient while
+`accumulate` returns their sum; with `1` and `2` those are `2` and `3`. -/
+theorem accumulate_ne_overwrite {K : Type*} (k : K) :
+    accumulate (Finsupp.single k (1 : ℤ)) (Finsupp.single k 2) k
+      ≠ (Finsupp.single k (2 : ℤ)) k := by
+  classical simp
+
 /-- **`reduce()` is structural.** A key is in the canonical support *iff* its
 coefficient is nonzero: the ideal `C[K]` model carries no zero coordinates to
 drop, so canonicalization is meaningful only for a backend (`HashMap`) that
@@ -465,5 +553,93 @@ trunc (1 + 1)`. So `truncate` is not a module homomorphism and correctly lives
 outside the graded algebra (on `Policy`/`Retain`), not inside it. -/
 theorem truncMag_not_additive :
     truncMag 2 1 + truncMag 2 1 ≠ truncMag 2 (1 + 1) := by decide
+
+/-! ### `Retain` — the keep-filter every `Policy` truncates through
+
+`Policy::truncate` is written entirely as `map.retain(|k, c| …)`
+(`docs/design/…`, §"`Policy`"), the one non-algebraic map capability. Two shipped
+decisions in `ppvm-pauli-sum-2/src/policy.rs` are claims *about* `retain` rather
+than about any particular policy, and neither had an oracle:
+
+* `CombinedPolicy::truncate` runs its two members as **two sequential passes**
+  (old documents this as a structural difference from PauliPropagation.jl's
+  single combined walk). `retain_seq_eq_retain_and` says the sequential form
+  computes the **conjunction** of the two keep-rules, and `retain_comm` that the
+  surviving key set is a property of the policy pair, not of the pass order — so
+  a future backend may fuse or reorder the passes.
+* `MaxPauliWeight::truncate` early-returns on the `usize::MAX` sentinel instead
+  of running an always-true walk. `retain_of_all_true` / `retain_le_top_eq_self`
+  are its soundness: retain-all *is* the identity, so skipping the pass entirely
+  is observationally exact.
+
+`retain` is modelled with a `Bool`-valued keep-predicate over `(key, coeff)`,
+matching `fn retain(&mut self, keep: impl Fn(&W, &C) -> bool)`. -/
+
+section Retain
+variable [Zero C]
+
+/-- `Retain::retain` — keep the coordinate `k` when `keep k (f k)` holds, else
+zero it. Coefficients are never modified, only dropped. -/
+noncomputable def retain (keep : K → C → Bool) (f : CMap K C) : CMap K C :=
+  Finsupp.onFinset f.support (fun k => if keep k (f k) then f k else 0)
+    (by
+      intro k hk
+      by_cases h : keep k (f k) = true
+      · rw [if_pos h] at hk; exact Finsupp.mem_support_iff.2 hk
+      · rw [if_neg h] at hk; exact absurd rfl hk)
+
+@[simp] theorem retain_apply (keep : K → C → Bool) (f : CMap K C) (k : K) :
+    retain keep f k = if keep k (f k) then f k else 0 := rfl
+
+/-- **Two sequential `retain` passes compute the conjunction.** This is
+`CombinedPolicy::truncate`'s contract: running `P₁` then `P₂` keeps exactly the
+terms both keep-rules accept. (It needs no hypothesis beyond the predicates
+depending only on `(k, c)` and `retain` not modifying coefficients — both
+enforced by the definition: on a coordinate the first pass zeroed, the second
+pass returns `0` whichever way its predicate falls.) -/
+theorem retain_seq_eq_retain_and (p q : K → C → Bool) (f : CMap K C) :
+    retain p (retain q f) = retain (fun k c => p k c && q k c) f := by
+  classical
+  ext k
+  simp only [retain_apply]
+  cases hq : q k (f k) with
+  | false => simp [ite_self]
+  | true => simp
+
+/-- **…and the two passes commute.** The surviving key set is a property of the
+policy *pair*, not of the order `CombinedPolicy` happens to run them in, so a
+backend is free to fuse them into one walk or run them the other way round. -/
+theorem retain_comm (p q : K → C → Bool) (f : CMap K C) :
+    retain p (retain q f) = retain q (retain p f) := by
+  rw [retain_seq_eq_retain_and, retain_seq_eq_retain_and]
+  congr 1
+  funext k c
+  exact Bool.and_comm _ _
+
+/-- **Retain-all is the identity.** The equality is at *every* coordinate, not
+just on the support, so a backend that stores an explicit zero (which the design
+permits between `reduce`s — `Sum` never drops zeros on its own) keeps it too. -/
+theorem retain_of_all_true (keep : K → C → Bool) (f : CMap K C)
+    (h : ∀ k, keep k (f k) = true) : retain keep f = f := by
+  ext k
+  rw [retain_apply, if_pos (h k)]
+
+/-- **The `usize::MAX` disable-sentinel is exactly the identity.** A weight cap at
+the top of the weight order accepts every key, so `MaxPauliWeight::truncate`'s
+`if self.0 == usize::MAX { return; }` early return — skipping the bucket walk
+altogether — is observationally equal to running it (`MaxLossWeight` likewise).
+Since `retain_of_all_true` is pointwise, this holds including on zero-coefficient
+terms. -/
+theorem retain_le_top_eq_self {W : Type*} [LinearOrder W] [OrderTop W] (w : K → W)
+    (f : CMap K C) : retain (fun k _ => decide (w k ≤ ⊤)) f = f :=
+  retain_of_all_true _ _ fun k => by simp
+
+/-- The same statement for any bound that dominates every key's weight, which is
+the hypothesis `usize::MAX` discharges concretely. -/
+theorem retain_weight_le_eq_self (w : K → ℕ) (n : ℕ) (hn : ∀ k, w k ≤ n)
+    (f : CMap K C) : retain (fun k _ => decide (w k ≤ n)) f = f :=
+  retain_of_all_true _ _ fun k => by simp [hn k]
+
+end Retain
 
 end PPVM.GradedMap

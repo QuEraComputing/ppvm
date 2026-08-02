@@ -266,15 +266,27 @@ fn anticommuting_branch_produces_distinct_new_key_with_xor_bits() {
 #[test]
 fn rotation_by_zero_is_identity() {
     // rot_zero: R_0 = id on any support and any axis.
+    //
+    // "Identity" is identity *as an element of `C[K]`*, i.e. on the reduced
+    // support. At θ = 0 the branch coefficient is `sinθ · c = 0`, and the engine
+    // merges that zero branch rather than skipping it — deliberately, because old
+    // does (`map_insert` pass 2 calls `add_assign` for every produced term, and
+    // `add_assign` inserts a 0.0). So `R_0` can leave an extra *zero-coefficient*
+    // key, which `reduce` removes; both sides are compared in reduced form, and
+    // `reduce_structural` (`lean/PPVM/Algebra/GradedMap.lean`) is what says the two
+    // representations denote the same map.
     for &seed in &SEEDS {
         let mut rng = seeded_rng(seed);
         for &n in &[1usize, 3, 8] {
             let terms = random_terms(&mut rng, n, 20);
-            let base = support_map(&build_new_sum(n, &terms));
+            let mut base_sum = build_new_sum(n, &terms);
+            base_sum.reduce();
+            let base = support_map(&base_sum);
             for axis in 0..3usize {
                 let q = rng.random_range(0..n);
                 let mut s = build_new_sum(n, &terms);
                 apply_axis(&mut s, axis, q, 0.0);
+                s.reduce();
                 assert_eq!(support_map(&s), base, "R_0 not identity (axis {axis})");
             }
         }

@@ -43,6 +43,15 @@ where
         M: Retain<W, C>;
 }
 
+/// The ceiling [`NoPolicy`]'s exponential capacity hint is clamped to.
+///
+/// `16_384` terms — past the ~10⁴-term support an untruncated deep random
+/// circuit reaches, so that workload's map never resizes mid-circuit, while
+/// costing well under a megabyte instead of the tens of gigabytes the unclamped
+/// `4ⁿ/2` asks for at the widths the engine actually runs at. Old's number is
+/// reproduced exactly for `n_sites ≤ 7`.
+const NO_POLICY_CAPACITY_CEILING: usize = 1 << 14;
+
 /// No truncation: keep every term. The default policy.
 ///
 /// Design: §"`Policy`" (`NoStrategy` → `NoPolicy`).
@@ -54,9 +63,32 @@ where
     W: Word + Indexable,
     C: Coefficient,
 {
+    /// Old's `NoStrategy::capacity(n) = 1 << (2n − 1)` — "in exact simulation,
+    /// guess `4ⁿ/2` paths" (`ppvm-traits/src/traits/strategy.rs`) — **clamped**
+    /// to [`NO_POLICY_CAPACITY_CEILING`].
+    ///
+    /// Reproducing the formula verbatim is not viable: it is exact for `n ≤ 7`
+    /// but at `n = 16` it asks for `2³¹` entries (~80 GB across the primary and
+    /// aux maps) and at `n ≥ 32` the shift itself overflows. Old gets away with
+    /// it only because every one of its own workloads either runs `NoStrategy`
+    /// at a handful of qubits or overrides the hint through the builder's
+    /// `.capacity(..)`. The clamp keeps old's number wherever old's number is
+    /// allocatable and keeps the *purpose* of the hint (an untruncated
+    /// fan-out-driven run must not rehash mid-circuit) everywhere else; a caller
+    /// who wants a specific size passes it to
+    /// [`Sum::with_capacity`](crate::Sum::with_capacity), the port of old's
+    /// builder override. Deliberate, documented divergence.
     #[inline]
-    fn capacity(&self, _n_sites: usize) -> usize {
-        0
+    fn capacity(&self, n_sites: usize) -> usize {
+        if n_sites == 0 {
+            // Old underflows `2*n - 1` here; an empty word admits one term.
+            return 1;
+        }
+        let shift = 2 * n_sites - 1;
+        if shift >= usize::BITS as usize {
+            return NO_POLICY_CAPACITY_CEILING;
+        }
+        (1usize << shift).min(NO_POLICY_CAPACITY_CEILING)
     }
 
     #[inline]
@@ -108,6 +140,12 @@ where
         M: Retain<W, C>,
     {
         // `usize::MAX` is the "disabled" sentinel: skip the full support scan.
+        //
+        // Lean: `retain_le_top_eq_self` / `retain_of_all_true` in
+        // `lean/PPVM/Algebra/GradedMap.lean` — a cap at the top of the weight
+        // order accepts every key, and retain-all is the identity *pointwise*
+        // (zero-coefficient terms included), so skipping the walk entirely is
+        // observationally exact, not an approximation.
         if self.0 == usize::MAX {
             return;
         }
@@ -122,13 +160,26 @@ where
 /// strict `>`, so the two disagree at `|c| == threshold` — a boundary mismatch
 /// machine-checked in `lean/PPVM/Algebra/Truncation.lean` (`cutoff_mismatch`).
 ///
-/// Design: §"`Policy`" (the `CoefficientThreshold` impl, named-field form). The
-/// [`Default`] threshold is `0.0`, which keeps every term (magnitude is always
-/// `>= 0`).
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+/// Design: §"`Policy`" (the `CoefficientThreshold` impl, named-field form).
+///
+/// The [`Default`] threshold is **`1e-12`**, not `0.0`: that is old's
+/// `impl Default for CoefficientThreshold { fn default() -> Self { Self(1e-12) } }`
+/// (`ppvm-pauli-sum/src/strategy.rs`), and it is user-facing — a `Sum::new(n)`
+/// carrying the default policy drops everything below `1e-12` on `truncate()`.
+/// The design sketch sets it to `0.0`; the sketch is what has to change, since a
+/// silently loosened default would keep terms old dropped.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CoefficientThreshold {
     /// Terms with `magnitude() < threshold` are dropped.
     pub threshold: f64,
+}
+
+impl Default for CoefficientThreshold {
+    /// `1e-12` — old's default (`ppvm-pauli-sum/src/strategy.rs`).
+    #[inline]
+    fn default() -> Self {
+        Self { threshold: 1e-12 }
+    }
 }
 
 impl<W, C> Policy<W, C> for CoefficientThreshold
@@ -154,7 +205,15 @@ where
 /// smaller of the two.
 ///
 /// Design: §"`Policy`" (`CombinedStrategy` → `CombinedPolicy`). Ported from
-/// `ppvm-pauli-sum::strategy::CombinedStrategy`.
+/// `ppvm-pauli-sum::strategy::CombinedStrategy`, including its **two sequential
+/// `retain` passes** (old documents this as a structural difference from
+/// PauliPropagation.jl's single combined walk).
+///
+/// Lean: `retain_seq_eq_retain_and` in `lean/PPVM/Algebra/GradedMap.lean` — the
+/// sequential form computes the **conjunction** of the two keep-rules — and
+/// `retain_comm`, which says the surviving key set is a property of the policy
+/// pair, not an artifact of the pass order. Together they license a future
+/// backend to fuse or reorder the two walks.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct CombinedPolicy<P1, P2>(pub P1, pub P2);
 

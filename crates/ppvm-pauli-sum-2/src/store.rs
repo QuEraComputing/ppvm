@@ -20,8 +20,10 @@
 //! stored `(k, c)`; merging that batch onto the un-cleared support leaves both
 //! the old `k` *and* the new `φ(k)`, double-counting. The old
 //! `ppvm-pauli-sum::map_add` avoided this by writing into a **cleared** auxiliary
-//! map and swapping. `apply` must reproduce that "replace, not merge" semantics,
-//! so it resets `self.storage` between producing and accumulating.
+//! map and swapping. The producer path must reproduce that "replace, not merge"
+//! semantics, so [`ApplyProducer`] resets the support between producing and
+//! accumulating. (It also owns the produced-term `batch`, which is per-call state
+//! `Sum` has nowhere to keep — see that trait's friction note.)
 //!
 //! [`Accumulate`](ppvm_traits_2::Accumulate) exposes no `clear`, so this trait
 //! supplies one. It is a **local** trait `impl`'d on the foreign `Vec`/`HashMap`
@@ -33,8 +35,8 @@
 use std::collections::HashMap;
 
 use ppvm_traits_2::{
-    Accumulate, Coefficient, Conjugate, IdentityBuildHasher, Indexable, KeyBatch, Pair, Retain,
-    Scale, Support, TermBatch,
+    Accumulate, Coefficient, Conjugate, IdentityBuildHasher, ImaginaryUnit, Indexable, KeyBatch,
+    KeyProduct, Multiply, Pair, Retain, Scale, Support, TermBatch, TermProducer,
 };
 
 /// The provided hash-join storage backend for [`Sum`](crate::Sum): a primary
@@ -55,10 +57,15 @@ use ppvm_traits_2::{
 ///   allocations ping-pong across gates and are never freed.
 /// * [`RotateInPlace`] (rotation branch) buffers the ≤`N` branch terms in the
 ///   persistent `scratch` before merging — the old `map_insert`'s reused scratch.
+/// * [`ApplyProducer`] (the generic [`TermProducer`] path behind
+///   [`Sum::apply`](crate::Sum::apply)) stages the produced terms in the
+///   persistent `batch` — the design's "driver-owned reusable batch", owned by
+///   the driver that has somewhere to keep it.
 ///
-/// `aux` and `scratch` are **transient**: both are empty between operations
-/// (cleared on entry; left empty by the drain/swap on exit), so [`Clone`] copies
-/// only the primary support and equality/iteration observe only it.
+/// `aux`, `scratch` and `batch` are **transient**: all three are empty between
+/// operations (cleared on entry; left empty by the drain/swap on exit), so
+/// [`Clone`] copies only the primary support and equality/iteration observe only
+/// it.
 #[derive(Debug)]
 pub struct HashMapStore<K, C> {
     /// The reduced-canonical support the graded traits read and write.
@@ -69,17 +76,22 @@ pub struct HashMapStore<K, C> {
     /// Persistent branch/term scratch for [`RotateInPlace`]. Empty between
     /// operations.
     scratch: Vec<(K, C)>,
+    /// Persistent produced-term batch for [`ApplyProducer`]. Empty between
+    /// operations.
+    batch: TermBatch<K, C>,
 }
 
 impl<K: Clone, C: Clone> Clone for HashMapStore<K, C> {
-    /// Clone only the primary support; `aux`/`scratch` are transient (empty
-    /// between ops), so a clone starts them fresh rather than copying scratch.
+    /// Clone only the primary support; `aux`/`scratch`/`batch` are transient
+    /// (empty between ops), so a clone starts them fresh rather than copying
+    /// workspace.
     #[inline]
     fn clone(&self) -> Self {
         Self {
             primary: self.primary.clone(),
             aux: HashMap::with_hasher(IdentityBuildHasher),
             scratch: Vec::new(),
+            batch: TermBatch::new(),
         }
     }
 }
@@ -259,13 +271,19 @@ pub trait ScaleByKey<K, C> {
 /// `impl`'d on the foreign `Vec`/`HashMap` containers (legal: the trait is local),
 /// mirroring [`SignFlipByKey`], [`ScaleByKey`], and [`RekeyBijective`].
 ///
-/// A zero branch coefficient (an identity rotation `θ = 0` has `sinθ = 0`) is
-/// never inserted, so `R₀` adds no spurious key. Beyond that no whole-map `reduce`
-/// scan runs: a generic rotation's *collision* cancellations are measure-zero, so
-/// — like the old crate's `map_insert`, which leaves any residue for a later
-/// truncation — the fast path skips the retain [`apply`](crate::Sum::apply) would
-/// run. A physical near-zero is dropped by the policy's truncation the caller runs
-/// afterward.
+/// **Every** produced branch term is merged, including one whose coefficient is
+/// exactly zero (an identity rotation `θ = 0` has `sinθ = 0`, so `R₀` on a
+/// `Z`-bearing term produces a `0.0`-coefficient `Y` branch). That is old's
+/// behaviour and it is user-visible: old's `map_insert` unconditionally
+/// `add_assign`s every term its first pass produced
+/// (`ppvm-pauli-sum/src/sum/data.rs`), and `add_assign` is
+/// `entry().and_modify().or_insert(v)` — it inserts the zero. Old's exact-map
+/// `PartialEq` counts that key, so skipping it would change `len()`, `get()`,
+/// the key set and equality. No whole-map `reduce` scan runs either: a generic
+/// rotation's *collision* cancellations are left in place — like the old crate's
+/// `map_insert`, which leaves any residue for a later truncation, the fast path
+/// skips the retain [`apply`](crate::Sum::apply) would run. A physical near-zero
+/// is dropped by the policy's truncation the caller runs afterward.
 ///
 /// Design: `traits-2-configuration-and-hashing.md` §"apply" and §"Every gate is a
 /// producer feeding `accumulate`" (the fused in-place alternative to the batch
@@ -277,12 +295,178 @@ pub trait RotateInPlace<K, C> {
     /// Walk every term `(k, c)` in place: `f(&k, &mut c)` scales the diagonal
     /// coefficient in place (the `cosθ` factor) and returns `Some((k′, c′))` for
     /// the branch term to merge, or `None` when the term commutes. Colliding
-    /// branch keys are aggregated; a zero branch is skipped (identity rotation) and
-    /// no whole-map `reduce` scan runs (see the trait docs — collision
-    /// cancellations are measure-zero and left for the policy's truncation).
+    /// branch keys are aggregated; an exactly-zero branch is merged like any
+    /// other (old inserts it — see the trait docs) and no whole-map `reduce` scan
+    /// runs (collision cancellations are left for the policy's truncation).
+    ///
+    /// **Every implementer owes the two-pass ordering**: *all* diagonals must be
+    /// scaled before *any* branch is merged. It is not an optimization — a branch
+    /// produced from `k` can land on a different key `k′` that has not been scaled
+    /// yet (`rx` on a support holding `Z` and `Y` at one site sends `Z ↦ Y` and
+    /// `Y ↦ Z` at once), so an implementation that merged eagerly inside the walk,
+    /// or a parallel/columnar backend that interleaved the passes, would compute a
+    /// different map. Lean: `accumulate_rotBatch` in
+    /// `lean/PPVM/Instantiations/Rotation.lean` (the two-pass result equals the
+    /// one-pass produced batch, for every walk order), with `eagerWalk_ne_twoPass`
+    /// exhibiting the interleaved variant's divergence.
     fn rotate_in_place<F>(&mut self, f: F)
     where
         F: FnMut(&K, &mut C) -> Option<(K, C)>;
+}
+
+/// An in-place **L4 operator product** `A ← A · B` that rebuilds the support
+/// through the store's own double-buffer instead of allocating an accumulator.
+///
+/// # Friction: `Multiply::multiply_into` needs a *third* map, and a fresh one would allocate
+///
+/// [`Multiply::multiply_into`](ppvm_traits_2::Multiply) is deliberately
+/// three-address (`acc += self · other`): the twisted convolution's outer product
+/// writes each `(p, q)` contribution to key `p·q`, which may collide with a key
+/// still to be read from either operand, so it *cannot* be folded back into an
+/// operand in place. Old's `MulAssign<PauliSum>` tried to and got the wrong
+/// algebra (it computed the product **chain** `A·b₀P₀·b₁P₁` instead of the
+/// bilinear sum — `ppvm-pauli-sum/src/sum/ops.rs:70`; see `crate::multiply`).
+///
+/// A correct `A *= B` therefore needs a scratch map — and the store already owns
+/// one. This trait routes the accumulator to the persistent `aux` of the
+/// double-buffer (architecture feature 1: "any NEW support-rebuilding operation
+/// — notably `Multiply`'s accumulator — must draw from the same aux rather than
+/// allocating"), so the in-place product is the old `map_add` shape exactly:
+/// clear `aux` → write the whole convolution into it → swap. The two map
+/// allocations keep ping-ponging and are never freed.
+///
+/// Like its siblings this is a `ppvm-pauli-sum-2`-local trait `impl`'d on the
+/// foreign `Vec`/`HashMap` containers (legal: the trait is local).
+/// Accumulate **one** term into the support — the storage capability behind the
+/// engine's `sum += (key, coeff)` operator.
+///
+/// # Friction: `Accumulate` is batch-only, and a single `+=` should not allocate
+///
+/// [`Accumulate::accumulate_batch`](ppvm_traits_2::Accumulate) is the graded
+/// algebra's merge, and it takes a whole [`TermBatch`]. Routing a one-term `+=`
+/// through it means building a batch (two `Vec`s) per call, where the old crate's
+/// `sum += (word, coeff)` is a single `entry().and_modify().or_insert()` on the
+/// map (`ACMapAddAssign::add_assign`, `ppvm-traits/src/map/hashmap.rs`). Seeding
+/// the headline Trotter observable `Σᵢ Zᵢ` is `n` such calls, and a caller may
+/// stream terms one at a time, so the allocation is not amortized away.
+///
+/// This is the single-term door onto the same merge: **accumulate**, never
+/// replace, and — like old's `add_assign` — it inserts a zero coefficient rather
+/// than dropping it.
+pub trait AddTerm<K, C> {
+    /// Add `coeff` onto the coefficient at `key`, inserting the term if absent.
+    fn add_term(&mut self, key: K, coeff: C);
+}
+
+pub trait MultiplyInPlace<K, C> {
+    /// Replace this support with the twisted convolution `self · other`,
+    /// reusing the backing allocations. Accumulates colliding products; runs no
+    /// `reduce` and no truncation (an exact-zero cancellation survives).
+    fn multiply_in_place(&mut self, other: &Self);
+}
+
+/// The generic [`TermProducer`] step — "produce the whole support through the
+/// gate, then **replace** the support with the accumulated batch" — with the
+/// produced-term batch owned by the **store**.
+///
+/// # Friction: the batch is per-call state, and `Sum` has nowhere to keep it
+///
+/// The design's `apply` sketch (§"apply") stages the produced terms in a
+/// `TermBatch` and notes it should be a "driver-owned reusable batch". `Sum` is
+/// deliberately pure data (storage + policy + width — §"There is no `SumStorage`
+/// trait, and no owned workspace"), so the driver that can own it is the storage
+/// backend, which already owns the `aux` double-buffer and the rotation
+/// `scratch`. Building the batch inside `Sum::apply` instead means two `Vec`
+/// allocations **per gate** — precisely the per-gate allocation churn
+/// architecture features 1–2 exist to remove (measured at ~+13% end-to-end for
+/// the aux map, i.e. ~6× what the single-gate microbench reported).
+///
+/// It is latent today only because all four hot gate families bypass `apply`
+/// ([`RekeyBijective`], [`RotateInPlace`], [`ScaleByKey`], [`SignFlipByKey`]);
+/// the first producer-based gate that lands (the multiply producer, the lossy
+/// branching channels, a tableau-keyed gate) would otherwise reintroduce it with
+/// no bench to catch it. Putting the batch here means it cannot come back.
+///
+/// Like its siblings this is a `ppvm-pauli-sum-2`-local trait `impl`'d on the
+/// foreign `Vec`/`HashMap` containers (legal: the trait is local).
+pub trait ApplyProducer<K, C> {
+    /// Produce every stored term through `producer` and **replace** the support
+    /// with the accumulated result.
+    ///
+    /// "Replace, not merge" is load-bearing: for a bijective re-key the producer
+    /// emits `(φ(k), c)` for every `(k, c)`, and merging onto the un-cleared
+    /// support would leave both (see the module docs). The support is therefore
+    /// reset between producing and accumulating.
+    ///
+    /// Lean: `pushforward_eq_reset_accumulate` in
+    /// `lean/PPVM/Algebra/GradedMap.lean` — reset-then-accumulate *is* the
+    /// pushforward `mapDomain φ ∘ mapRange g` (`pushforward_apply` gives the
+    /// per-key form for an injective `φ`, i.e. a Clifford's symplectic
+    /// bijection) — and `merge_without_reset_ne_pushforward`, which exhibits the
+    /// double-count that dropping the reset produces. The design's `apply`
+    /// sketch omits this step; that omission is the `apply`-path analogue of
+    /// `eagerWalk_ne_twoPass`.
+    ///
+    /// Runs **no** `reduce` and **no** truncation — a produced term whose
+    /// coefficient is exactly zero survives, and two sub-threshold contributions
+    /// to one key merge rather than being dropped. Both are caller-driven
+    /// ([`Sum::reduce`](crate::Sum::reduce), [`Sum::truncate`](crate::Sum::truncate)).
+    fn apply_producer<TP>(&mut self, producer: TP)
+    where
+        TP: TermProducer<K, C>;
+}
+
+/// The ceiling on the eagerly-reserved product accumulator: `2²⁰` entries
+/// (~32 MB at a `[u8; 8]` key + `Complex<f64>` coefficient). Past this the
+/// convolution falls back to hashbrown's doubling, trading a few rehashes for a
+/// bounded up-front commitment.
+const PRODUCT_CAPACITY_CEILING: usize = 1 << 20;
+
+/// Capacity hint for the accumulator of a twisted convolution `A · B` whose
+/// operands have `a_len` and `b_len` terms.
+///
+/// The convolution emits `|A|·|B|` contributions, landing on **up to** `|A|·|B|`
+/// distinct keys, so that product — not `max(|A|, |B|)` — is the right size for
+/// the accumulator. `max(|A|, |B|)` is only the *lower* bound (the key product is
+/// a bijection in each argument, so the support is at least as large as either
+/// operand), and starting there makes the accumulator pay a chain of
+/// doubling + full-rehash rounds over a growing map, which is exactly the
+/// mid-run rehash stall architecture feature 6 exists to prevent.
+///
+/// Measured, one variable held (accumulator initial capacity), same process,
+/// 256 random 12-qubit terms squared, `|A·A| = 32611`:
+///
+/// | initial capacity | time |
+/// |---|---|
+/// | `\|A\|·\|B\|` (65536) | 444 µs |
+/// | 16384 (the `NoPolicy` hint a fresh accumulator used to get) | 582 µs |
+/// | 256 (`max(\|A\|, \|B\|)`, the previous heuristic) | 778 µs |
+///
+/// i.e. the old heuristic cost **1.75×** against a correctly-sized accumulator,
+/// and is what made the buffer-reusing `multiply_in_place` *slower* than the
+/// allocating product. The [`PRODUCT_CAPACITY_CEILING`] keeps the eager
+/// reservation bounded for very large operands, where the doubling chain is the
+/// cheaper end of the trade.
+///
+/// # Why `7/8` of the pair count and not the pair count itself
+///
+/// hashbrown sizes its table to `next_pow2(⌈requested · 8/7⌉)` buckets, so
+/// asking for `|A|·|B|` *slots* rounds the **table** up to twice the next power
+/// of two above `|A|·|B|` — and iteration, `clear` and drop are all `O(buckets)`,
+/// not `O(len)`. Asking for `7/8` of the pair count instead lands the table
+/// exactly on `next_pow2(|A|·|B|)`, which still holds `|A|·|B|` entries at
+/// hashbrown's `7/8` load factor. Measured on the `multiply_sum` bench (256
+/// 12-qubit terms, `|A·A| = 32611`), the difference is real in both directions:
+/// requesting the full pair count made the *fresh-accumulator* product 14%
+/// **slower** (434 µs → 493 µs — a 131072-bucket table walked by the subsequent
+/// `overlap` and drop), while the `7/8` form keeps the in-place product's win and
+/// leaves the fresh one at parity. The floor keeps the lower bound
+/// (`max(|A|, |B|)`) for tiny operands, where `7/8` of a handful rounds to
+/// nothing.
+#[inline]
+pub(crate) fn product_capacity_hint(a_len: usize, b_len: usize) -> usize {
+    let pairs = a_len.saturating_mul(b_len).min(PRODUCT_CAPACITY_CEILING);
+    (pairs - pairs / 8).max(a_len.max(b_len))
 }
 
 impl<K, C> ScaleByKey<K, C> for Vec<(K, C)>
@@ -342,22 +526,15 @@ where
         }
         // Pass 2: merge only the branch terms back (linear-scan hash-join, the
         // small-support cost model this backend targets), aggregating collisions.
-        // A zero branch (e.g. `sinθ = 0` at `θ = 0`, the identity rotation) is
-        // never inserted, so an identity rotation adds no spurious key. Beyond
-        // that no whole-map `reduce` scan runs — a generic rotation's collision
-        // cancellations are measure-zero and left for the policy's truncation,
-        // matching the old crate's `map_insert`.
+        // Every produced branch is merged, *including* an exactly-zero one (the
+        // identity rotation `θ = 0` has `sinθ = 0`): old's `map_insert` merges
+        // unconditionally through `add_assign`, which inserts the zero, and its
+        // exact-map equality counts that key. No whole-map `reduce` scan runs —
+        // a generic rotation's collision cancellations are left for the policy's
+        // truncation, matching the old crate's `map_insert`.
+        // The merge is [`AddTerm`] — the single definition of old's `add_assign`.
         for (nk, nc) in branches {
-            if nc.is_zero() {
-                continue;
-            }
-            // `as_slice` disambiguates from the now-in-scope `Support::iter`
-            // (which would yield owned pairs) — we want the borrowing slice iter.
-            if let Some(pos) = self.as_slice().iter().position(|(ek, _)| *ek == nk) {
-                self[pos].1 += nc;
-            } else {
-                self.push((nk, nc));
-            }
+            AddTerm::add_term(self, nk, nc);
         }
     }
 }
@@ -411,6 +588,83 @@ where
         // needs no aggregation.
         let taken = std::mem::take(self);
         *self = taken.into_iter().map(|(k, c)| f(k, c)).collect();
+    }
+}
+
+impl<K, C> MultiplyInPlace<K, C> for Vec<(K, C)>
+where
+    K: KeyProduct,
+    C: ImaginaryUnit,
+{
+    #[inline]
+    fn multiply_in_place(&mut self, other: &Self) {
+        // The coordinate-list backend has no persistent aux; take the current
+        // support out (no clone) and convolve it into `self`.
+        //
+        // `mem::take` leaves `self` as `Vec::new()` — capacity **zero**: the
+        // buffer moved into `lhs` and is dropped at the end of this call, so the
+        // accumulator would otherwise regrow from nothing on every product.
+        // Reserve the product hint up front instead (the same estimate the
+        // hash-join backend uses), which is also the larger allocation the
+        // convolution actually needs.
+        let lhs = std::mem::take(self);
+        self.reserve(product_capacity_hint(lhs.len(), other.len()));
+        Multiply::multiply_into(&lhs, other, self);
+    }
+}
+
+impl<K, C> ApplyProducer<K, C> for Vec<(K, C)>
+where
+    K: Indexable,
+    C: Coefficient,
+{
+    #[inline]
+    fn apply_producer<TP>(&mut self, producer: TP)
+    where
+        TP: TermProducer<K, C>,
+    {
+        // The coordinate-list backend carries no workspace (it is the
+        // small-support/reference backend, and a `Vec` field would be dead weight
+        // in the layout every other operation walks), so the batch is local here.
+        // The hash-join backend — the one every workload runs — keeps a
+        // persistent one.
+        let mut batch = TermBatch::with_capacity(self.len());
+        for (k, c) in Support::iter(&*self) {
+            producer.produce(&k, &c, &mut batch);
+        }
+        StoreAlloc::reset(self);
+        Accumulate::accumulate_batch(self, &batch);
+    }
+}
+
+impl<K, C> AddTerm<K, C> for Vec<(K, C)>
+where
+    K: Eq,
+    C: Coefficient,
+{
+    #[inline]
+    fn add_term(&mut self, key: K, coeff: C) {
+        if let Some(slot) = self.iter_mut().find(|(ek, _)| *ek == key) {
+            slot.1 += coeff;
+        } else {
+            self.push((key, coeff));
+        }
+    }
+}
+
+impl<K, C> AddTerm<K, C> for HashMap<K, C, IdentityBuildHasher>
+where
+    K: Indexable,
+    C: Coefficient,
+{
+    #[inline]
+    fn add_term(&mut self, key: K, coeff: C) {
+        // Old's `ACMapAddAssign::add_assign` verbatim: `and_modify` on a hit,
+        // `or_insert` otherwise — so an exactly-zero coefficient is *inserted*,
+        // not dropped.
+        self.entry(key)
+            .and_modify(|v| *v += coeff.clone())
+            .or_insert(coeff);
     }
 }
 
@@ -521,6 +775,63 @@ where
     }
 }
 
+impl<K, C> Multiply for HashMapStore<K, C>
+where
+    K: Indexable + KeyProduct,
+    C: ImaginaryUnit,
+{
+    /// The twisted convolution, accumulated into `acc`'s primary support. Reads
+    /// both operands' primaries; the aux/scratch buffers stay empty (this form
+    /// allocates nothing of its own — the accumulator is the caller's).
+    ///
+    /// The accumulator is sized up front from [`product_capacity_hint`] so a
+    /// `10³ × 10³` convolution does not walk a doubling chain of full rehashes
+    /// over a growing ~10⁶-entry map. `reserve` is a no-op when `acc` already has
+    /// the room (e.g. a caller who pre-sized it, or the second `A·C` accumulated
+    /// onto an `A·B` for bilinearity).
+    #[inline]
+    fn multiply_into(&self, other: &Self, acc: &mut Self) {
+        acc.primary.reserve(product_capacity_hint(
+            self.primary.len(),
+            other.primary.len(),
+        ));
+        Multiply::multiply_into(&self.primary, &other.primary, &mut acc.primary);
+    }
+}
+
+impl<K, C> MultiplyInPlace<K, C> for HashMapStore<K, C>
+where
+    K: Indexable + KeyProduct,
+    C: ImaginaryUnit,
+{
+    #[inline]
+    fn multiply_in_place(&mut self, other: &Self) {
+        // The old `map_add` shape, with the accumulator drawn from the store's
+        // persistent double-buffer rather than a fresh allocation: clear `aux`,
+        // write the whole outer product into it, swap. `aux` is left holding the
+        // (now stale) previous support and is cleared on its next use, so the two
+        // allocations ping-pong across products and are never freed.
+        self.aux.clear();
+        // Size the accumulator from the *product* estimate, not from
+        // `max(|A|, |B|)`: the latter is only the lower bound (a Pauli product is
+        // a bijection in each argument, so the support is at least as large as
+        // either operand) and starting there made this buffer-reusing path 1.75×
+        // slower than a correctly-sized accumulator — see
+        // [`product_capacity_hint`] for the controlled A/B.
+        self.aux.reserve(product_capacity_hint(
+            self.primary.len(),
+            other.primary.len(),
+        ));
+        Multiply::multiply_into(&self.primary, &other.primary, &mut self.aux);
+        std::mem::swap(&mut self.primary, &mut self.aux);
+        // Restore the "aux is empty between operations" invariant: after the swap
+        // it holds the stale pre-product support. (`RekeyBijective` gets this for
+        // free because it *drains* the primary; the convolution has to read the
+        // primary repeatedly, so it cannot.)
+        self.aux.clear();
+    }
+}
+
 impl<K, C> StoreAlloc for HashMapStore<K, C> {
     #[inline]
     fn with_capacity(cap: usize) -> Self {
@@ -529,6 +840,13 @@ impl<K, C> StoreAlloc for HashMapStore<K, C> {
             // Size the aux to the same hint so the first re-key never resizes.
             aux: HashMap::with_capacity_and_hasher(cap, IdentityBuildHasher),
             scratch: Vec::with_capacity(cap),
+            // The `apply` batch is deliberately **not** pre-sized: every workload
+            // shipped here drives the fused fast paths instead, so pre-sizing it
+            // from the hint would charge each sum two more `cap`-sized columns
+            // (at the gate bench's `1 << 20` that is tens of megabytes) for a
+            // path it never takes. It still keeps its allocation across calls —
+            // it grows once, on the first `apply`, and is only `clear`ed after.
+            batch: TermBatch::new(),
         }
     }
 
@@ -537,6 +855,62 @@ impl<K, C> StoreAlloc for HashMapStore<K, C> {
     #[inline]
     fn reset(&mut self) {
         self.primary.clear();
+    }
+}
+
+impl<K, C> AddTerm<K, C> for HashMapStore<K, C>
+where
+    K: Indexable,
+    C: Coefficient,
+{
+    #[inline]
+    fn add_term(&mut self, key: K, coeff: C) {
+        AddTerm::add_term(&mut self.primary, key, coeff);
+    }
+}
+
+impl<K, C> ApplyProducer<K, C> for HashMapStore<K, C>
+where
+    K: Indexable,
+    C: Coefficient,
+{
+    #[inline]
+    fn apply_producer<TP>(&mut self, producer: TP)
+    where
+        TP: TermProducer<K, C>,
+    {
+        // The produced terms are staged in the store's **persistent** batch — the
+        // design's "driver-owned reusable batch", sitting alongside `aux` and
+        // `scratch`. `clear` keeps both of its columns' allocations, so a gate
+        // stream pays the batch allocation once rather than once per gate.
+        self.batch.clear();
+        for (k, c) in Support::iter(&self.primary) {
+            producer.produce(&k, &c, &mut self.batch);
+        }
+        // Replace, not merge: a bijective re-key must not retain the old keys.
+        // `reset` keeps the primary's allocation across the clear.
+        StoreAlloc::reset(self);
+        Accumulate::accumulate_batch(&mut self.primary, &self.batch);
+        // Restore the "workspace is empty between operations" invariant the
+        // struct docs state (and `Clone`/`PartialEq` rely on). `clear` keeps the
+        // capacity, so the next gate still finds a warm buffer.
+        self.batch.clear();
+    }
+}
+
+/// Equality is the **primary support only**, exactly: same keys, same
+/// coefficients — zero-coefficient terms included, since old's map equality
+/// counts them (`ppvm-pauli-sum/src/sum/data.rs`, `PartialEq for PauliSum`). The
+/// transient `aux`/`scratch` buffers are deliberately **not** compared: they hold
+/// whatever the last operation left behind and are not part of the value.
+impl<K, C> PartialEq for HashMapStore<K, C>
+where
+    K: Indexable,
+    C: PartialEq,
+{
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.primary == other.primary
     }
 }
 
@@ -652,24 +1026,23 @@ where
         // any collision with an existing (already-scaled) diagonal or a sibling
         // branch — one hash pass over ≤N terms, not the whole 2N fan-out.
         //
-        // A zero branch (e.g. `sinθ = 0` at `θ = 0`, the identity rotation) is
-        // never inserted, so an identity rotation adds no spurious key and needs no
-        // whole-map cleanup. Beyond that no `reduce` scan runs: a generic
-        // rotation's collision cancellations are measure-zero, so — like the old
-        // crate's `map_insert` (`ppvm-pauli-sum::sum::rot1`), which leaves any
-        // residue for a later truncation — we skip the whole-map retain the general
-        // `apply` would run. A physical near-zero is dropped by the policy's
-        // truncation (or the caller's magnitude floor), not here.
+        // Every produced branch is merged, *including* an exactly-zero one. Old's
+        // `map_insert` pass 2 calls `data.add_assign(k, v)` for every term pass 1
+        // produced (`ppvm-pauli-sum/src/sum/data.rs`), and `add_assign` is
+        // `entry().and_modify().or_insert(v)` — it inserts a `0.0`. So an identity
+        // rotation `rx(q, 0.0)` on a `Z`-bearing term leaves old with
+        // `{Z: 1.0, Y: 0.0}`, and old's exact-map `PartialEq` counts the `Y`;
+        // skipping it here would change `len()`, `get()`, the key set and equality.
+        // No `reduce` scan runs either: a generic rotation's collision
+        // cancellations are — like the old crate's `map_insert`
+        // (`ppvm-pauli-sum::sum::rot1`), which leaves any residue for a later
+        // truncation — left for the policy's truncation (or the caller's magnitude
+        // floor), not dropped here.
         //
         // `drain(..)` empties `scratch` but keeps its allocation for the next gate.
+        // The merge is [`AddTerm`] — the single definition of old's `add_assign`.
         for (nk, nc) in self.scratch.drain(..) {
-            if nc.is_zero() {
-                continue;
-            }
-            self.primary
-                .entry(nk)
-                .and_modify(|e| *e += nc.clone())
-                .or_insert(nc);
+            AddTerm::add_term(&mut self.primary, nk, nc);
         }
     }
 }

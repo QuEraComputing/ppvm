@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: The PPVM Authors
 -/
 import PPVM.Pauli.Phase
+import PPVM.Algebra.GradedMap
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
 
 /-!
@@ -157,5 +158,172 @@ a rotation-merging optimization relies on. -/
 theorem rot_rot (θ φ : ℝ) (v : ℝ × ℝ) : rot θ (rot φ v) = rot (θ + φ) v := by
   refine Prod.ext ?_ ?_ <;>
     simp only [rot_fst, rot_snd, Real.cos_add, Real.sin_add] <;> ring
+
+/-! ### The whole-map two-pass decomposition (`RotateInPlace`)
+
+Everything above is a *per-term* fact: one input key, one branch key, one
+coefficient pair. The thing every rotation in every workload actually runs is
+`RotateInPlace` (`crates/ppvm-pauli-sum-2/src/store.rs`), a **two-pass** fused
+walk over the whole map:
+
+* **pass 1** — `iter_mut` over the live support: scale each diagonal coefficient
+  in place (`cos θ`, key untouched, cached hash intact) and *buffer* the branch
+  term `(iGP, c·sinθ·ε)` in `scratch`;
+* **pass 2** — merge the buffered branch terms into the map with `add_term`,
+  aggregating collisions.
+
+No per-term theorem licenses this, because the risk is **cross-term**: a branch
+key produced from `k` can collide with a *different* key `k'` that pass 1 has not
+scaled yet (`rx` on a support containing both `Z` and `Y` at one site sends
+`Z ↦ Y` and `Y ↦ Z` simultaneously). `anticommute_new_key` is the near miss — it
+rules out a branch colliding with *its own* source, which is a strictly weaker
+statement. The correctness of the split rests on pass 1 scaling **all** diagonals
+before pass 2 merges **any** branch.
+
+`accumulate_rotBatch` below is the licence: the two-pass map equals the one-pass
+"produce all `2N` terms, then accumulate the batch" semantics of the design's
+generic producer/`Accumulate` path — and, since the batch is a `Multiset`, for
+*every* order the walk visits keys in (so a hash-partitioned or columnar backend
+may reorder freely, `GradedMap.accumulateTerms_perm`/`_add`).
+
+`eagerWalk_ne_twoPass` shows the theorem has content: an implementation that
+merged each branch *eagerly inside* the walk — the natural "tidier" single-pass
+refactor, and what a backend interleaving the two passes would compute — is
+observably different, because a later diagonal then gets scaled *after* an
+earlier branch has already been added to it. -/
+
+section TwoPass
+
+open PPVM.GradedMap
+
+variable {K C : Type*} [CommRing C]
+
+/-- The terms one input `(k, a)` produces: on an anticommuting key the diagonal
+`(k, d·a)` (`d = cos θ`) **and** the branch `(br k, s k · a)`
+(`s k = sinθ·ε(G,q,k)`, `br k = iGP`'s key); on a commuting key just `(k, a)`.
+This is `RotationProducer::produce`'s fan-out, as an unordered batch. -/
+def rotTerms (anti : K → Prop) [DecidablePred anti] (br : K → K) (d : C) (s : K → C)
+    (k : K) (a : C) : Multiset (K × C) :=
+  if anti k then {(k, d * a), (br k, s k * a)} else {(k, a)}
+
+/-- The whole rotation as **one** batch of `≤ 2N` produced terms — the design's
+generic `TermProducer` → `TermSink` → `accumulate_batch` path, with no fast path.
+The `Multiset` records that the walk order is not part of the semantics. -/
+noncomputable def rotBatch (anti : K → Prop) [DecidablePred anti] (br : K → K) (d : C)
+    (s : K → C) (A : CMap K C) : Multiset (K × C) :=
+  A.support.val.bind fun k => rotTerms anti br d s k (A k)
+
+/-- **Pass 1** — scale every diagonal coefficient in place. No key moves, so this
+is a pointwise rescale of the *whole* map, done before any branch is merged. -/
+noncomputable def diagPass (anti : K → Prop) [DecidablePred anti] (d : C)
+    (A : CMap K C) : CMap K C :=
+  A.sum fun k a => Finsupp.single k (if anti k then d * a else a)
+
+/-- **Pass 2** — merge every buffered branch term, aggregating collisions. -/
+noncomputable def branchPass (anti : K → Prop) [DecidablePred anti] (br : K → K)
+    (s : K → C) (A : CMap K C) : CMap K C :=
+  A.sum fun k a => if anti k then Finsupp.single (br k) (s k * a) else 0
+
+/-- The `RotateInPlace` fast path: pass 1 then pass 2. -/
+noncomputable def twoPass (anti : K → Prop) [DecidablePred anti] (br : K → K) (d : C)
+    (s : K → C) (A : CMap K C) : CMap K C :=
+  diagPass anti d A + branchPass anti br s A
+
+/-- Pass 1 really is the pointwise rescale `k ↦ if anticommutes then cosθ·A k
+else A k` — in particular it touches *every* key of the support, including the
+ones that are also branch destinations. -/
+theorem diagPass_apply (anti : K → Prop) [DecidablePred anti] (d : C) (A : CMap K C)
+    (j : K) : diagPass anti d A j = if anti j then d * A j else A j := by
+  classical
+  rw [diagPass, Finsupp.sum, Finset.sum_apply']
+  have hterm : ∀ k ∈ A.support,
+      (Finsupp.single k (if anti k then d * A k else A k) : CMap K C) j
+        = if k = j then (if anti j then d * A j else A j) else 0 := by
+    intro k _
+    rw [Finsupp.single_apply]
+    by_cases hk : k = j
+    · subst hk; rfl
+    · simp only [if_neg hk]
+  rw [Finset.sum_congr rfl hterm, Finset.sum_ite_eq' A.support j]
+  by_cases hj : j ∈ A.support
+  · rw [if_pos hj]
+  · rw [if_neg hj, Finsupp.notMem_support_iff.mp hj, mul_zero, ite_self]
+
+/-- **The two-pass fast path computes the one-pass batch semantics.** Folding the
+whole `≤ 2N`-term batch into the empty map (the generic
+producer/`accumulate_batch` path) equals scaling every diagonal in place *first*
+and merging all branch terms *second*.
+
+This is the correctness licence for `RotateInPlace`, and it holds for **every**
+order the walk visits keys in: the batch is a `Multiset`, so
+`GradedMap.accumulateTerms_perm` (reordering) and `accumulateTerms_add`
+(partitioning across a parallel/columnar backend) apply to the left-hand side
+unchanged. -/
+theorem accumulate_rotBatch (anti : K → Prop) [DecidablePred anti] (br : K → K) (d : C)
+    (s : K → C) (A : CMap K C) :
+    accumulateTerms (rotBatch anti br d s A) 0 = twoPass anti br d s A := by
+  classical
+  rw [accumulateTerms_eq, accumulate, zero_add]
+  have hbatch : ∀ k : K, batchMap (rotTerms anti br d s k (A k))
+      = Finsupp.single k (if anti k then d * A k else A k)
+        + (if anti k then Finsupp.single (br k) (s k * A k) else 0) := by
+    intro k
+    by_cases hk : anti k <;> simp [batchMap, rotTerms, hk]
+  simp only [rotBatch, batchMap, Multiset.map_bind, Multiset.sum_bind, twoPass, diagPass,
+    branchPass, Finsupp.sum, Finset.sum, ← Multiset.sum_map_add]
+  exact congrArg Multiset.sum (Multiset.map_congr rfl fun k _ => hbatch k)
+
+/-! #### Interleaving the two passes is observably wrong
+
+An `eagerStep` visits one key, scales the coefficient the map *currently* holds
+there, and merges that key's branch immediately — the single-pass shape a
+"tidier" refactor (or a backend that fuses the produce and the merge) would
+compute. -/
+
+/-- One eager step: rescale the coefficient at `k` in place (`m k ↦ d · m k`, via
+the `+ (d−1)·m k` correction) and merge `k`'s branch, both against the *current*
+map. -/
+noncomputable def eagerStep (anti : K → Prop) [DecidablePred anti] (br : K → K) (d : C)
+    (s : K → C) (m : CMap K C) (k : K) : CMap K C :=
+  if anti k then
+    m + Finsupp.single k ((d - 1) * m k) + Finsupp.single (br k) (s k * m k)
+  else m
+
+/-- The eager walk in a given visit order. -/
+noncomputable def eagerWalk (anti : K → Prop) [DecidablePred anti] (br : K → K) (d : C)
+    (s : K → C) (l : List K) (m : CMap K C) : CMap K C :=
+  l.foldl (eagerStep anti br d s) m
+
+/-- **Merging branches eagerly inside the walk is wrong.** Two mutually-branching
+keys (the `rx`-on-`{Z, Y}` shape: `br` swaps them, both anticommute) already
+separate the two implementations: with `d = 1`, `s ≡ 1` and coefficients
+`(1, 1)`, the two-pass map carries `2` at the first key while the eager walk
+carries `3`, because visiting the second key rescales *and* re-branches a
+coefficient that already absorbed the first key's branch.
+
+So the two-pass structure of `RotateInPlace` is load-bearing, not a mere
+optimization: `anticommute_new_key` (a branch never collides with its own source)
+still holds here and does not save the eager version. -/
+theorem eagerWalk_ne_twoPass :
+    eagerWalk (fun _ : Bool => True) Bool.not (1 : ℤ) (fun _ => 1) [true, false]
+        (Finsupp.single true 1 + Finsupp.single false 1)
+      ≠ twoPass (fun _ : Bool => True) Bool.not (1 : ℤ) (fun _ => 1)
+        (Finsupp.single true 1 + Finsupp.single false 1) := by
+  classical
+  intro h
+  have hval := DFunLike.congr_fun h true
+  have hbranch : branchPass (fun _ : Bool => True) Bool.not (fun _ => (1 : ℤ))
+      (Finsupp.single true 1 + Finsupp.single false 1)
+      = Finsupp.single false 1 + Finsupp.single true 1 := by
+    rw [branchPass, Finsupp.sum_add_index' (fun _ => by simp)
+      (fun _ _ _ => by simp [mul_add, Finsupp.single_add]),
+      Finsupp.sum_single_index (by simp), Finsupp.sum_single_index (by simp)]
+    simp
+  rw [eagerWalk, twoPass, hbranch] at hval
+  simp only [List.foldl, eagerStep, Bool.not_true, Bool.not_false, if_pos trivial,
+    diagPass_apply, Finsupp.add_apply, Finsupp.single_apply] at hval
+  norm_num at hval
+
+end TwoPass
 
 end PPVM.Rotation

@@ -49,3 +49,17 @@ harness = false
 [[bench]]
 name = "pauli_sum_integration"
 harness = false
+
+[[bench]]
+name = "pauli_sum_multiply"
+harness = false
+
+# The remaining integration-baseline workloads (untruncated deep circuit, the
+# qubit-scaling sweep, the truncation cost grid). A separate target on purpose:
+# appending groups to `pauli_sum_integration` relayouts that binary and moves its
+# (otherwise untouched) old-side baselines, which would re-base the standing
+# headline ratio for no underlying reason. Each target still holds BOTH engines,
+# so every ratio it reports is same-build.
+[[bench]]
+name = "pauli_sum_workloads"
+harness = false

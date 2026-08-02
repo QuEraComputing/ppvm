@@ -98,7 +98,7 @@ fn contains_and_get_match() {
                 let key = NewKey::from(word.as_str());
                 let got = new.get(&key).expect("key in support has a coeff");
                 assert_close(got, coeff, TOL);
-                assert!(new.contains(&key), "new.contains {word}");
+                assert!(new.contains_key(&key), "new.contains {word}");
 
                 // The OLD sum agrees on presence + coefficient (via its support).
                 let old = build_old_sum(n, &terms);
@@ -112,7 +112,7 @@ fn contains_and_get_match() {
             // reported consistently): build it and compare membership.
             let absent = "I".repeat(n);
             let key = NewKey::from(absent.as_str());
-            let new_has = new.contains(&key);
+            let new_has = new.contains_key(&key);
             let old = build_old_sum(n, &terms);
             let old_has = old_support(&old).iter().any(|(w, _)| *w == absent);
             assert_eq!(
@@ -137,22 +137,18 @@ fn scale_matches() {
                 let mut old = build_old_sum(n, &terms);
                 let mut new = build_new_sum(n, &terms);
                 old *= s;
-                new.scale(&s);
+                new *= s;
 
-                // Scaling by 0 leaves the OLD map full of exact zeros while the NEW
-                // `scale` is a pure coefficient map (no reduce). Reduce both so the
-                // comparison is on canonical support.
-                reduce_old(&mut old);
-                // The NEW `scale` does not reduce; rebuild through from_terms to
-                // canonicalize (drop the zeros the s == 0 case creates).
-                let new = build_new_sum(
-                    n,
-                    &new_support(&new)
-                        .into_iter()
-                        .collect::<Vec<(String, f64)>>(),
-                );
-
+                // No canonicalization on either side: `*= 0.0` must leave BOTH maps
+                // holding the full key set at exactly 0.0 (behavioural contract 2 —
+                // a scale can only mutate, never remove). Comparing the raw supports
+                // is the point of the test.
                 assert_supports_match(&old, &new, TOL.max(s.abs() * 1e-12));
+                assert_eq!(
+                    old.len(),
+                    new.len(),
+                    "scale by {s} changed the support size (seed {seed}, n {n})"
+                );
             }
         }
     }
@@ -178,11 +174,26 @@ fn reduce_drops_cancelled_key_in_both() {
             terms.push((cancel_key.clone(), -1.5)); // sums to exactly 0.0
 
             let mut old = build_old_sum(n, &terms);
-            let new = build_new_sum(n, &terms); // from_terms already reduced
+            let mut new = build_new_sum(n, &terms);
+
+            // Neither crate reduces on construction: the cancelled key sits at
+            // exactly 0.0 in BOTH supports until asked to canonicalize.
+            let cancel = NewKey::from(cancel_key.as_str());
+            assert!(
+                new.contains(&cancel, &0.0),
+                "new dropped the cancelled key {cancel_key} at construction"
+            );
+            assert!(
+                old_support(&old)
+                    .iter()
+                    .any(|(w, c)| *w == cancel_key && *c == 0.0),
+                "old dropped the cancelled key {cancel_key} at construction"
+            );
 
             // OLD: `+=` leaves the cancelled key at 0.0; realize `reduce`.
             let before = old.len();
             reduce_old(&mut old);
+            new.reduce();
             assert!(
                 old.len() < before || before == 0,
                 "reduce did not shrink the old support (before {before})"
@@ -190,7 +201,7 @@ fn reduce_drops_cancelled_key_in_both() {
 
             // The cancelled key is absent from BOTH.
             assert!(
-                !new.contains(&NewKey::from(cancel_key.as_str())),
+                !new.contains_key(&NewKey::from(cancel_key.as_str())),
                 "new kept cancelled key {cancel_key}"
             );
             assert!(

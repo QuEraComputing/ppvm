@@ -99,6 +99,38 @@ theorem mulWord_eq_id_iff (p q : Word n) :
   · rintro rfl
     exact mulWord_self _
 
+/-- **The product bits are associative.** Per qubit both planes are `⊕`, and
+`⊕` is associative, so `(P·Q)·R` and `P·(Q·R)` carry the same bits. Together
+with `phaseExpN_cocycle` (the phase half) this is what makes the packed n-qubit
+product associative; it is the `kmul`-associativity hypothesis of
+`PPVM.Twisted.gtmul_assoc` for the Pauli key. -/
+theorem mulWord_assoc (p q r : Word n) :
+    mulWord (mulWord p q) r = mulWord p (mulWord q r) := by
+  funext i
+  simp only [mulWord, mulBits, Prod.mk.injEq]
+  exact ⟨Bool.xor_assoc _ _ _, Bool.xor_assoc _ _ _⟩
+
+/-- **Right multiplication by a fixed word is injective.**
+`P₁ · Q = P₂ · Q → P₁ = P₂`, because each plane is `p ⊕ q` and `⊕ q` is a
+bijection on `Bool`.
+
+This is the machine-checked licence for the `RekeyBijective` fast path in the L4
+`Multiply` component: `Sum::mul_word_assign` re-keys every term through
+`k ↦ mulWord k q` and merges with a *plain* `insert` plus a `debug_assert!`,
+because injectivity means two distinct source keys can never land on the same
+destination key. (Injectivity is a real precondition there, not a hint: a
+collision would silently drop a term in release rather than sum it.) It is the
+word-product analogue of the Clifford re-key's `PPVM.Symplectic.*_bijective` /
+`PPVM.Conjugation.conj*_injective`. -/
+theorem mulWord_right_injective (q : Word n) :
+    Function.Injective (fun p : Word n => mulWord p q) := by
+  have xor_cancel : ∀ a b c : Bool, xor a c = xor b c → a = b := by decide
+  intro p₁ p₂ h
+  funext i
+  have hi := congrFun h i
+  simp only [mulWord, mulBits, Prod.mk.injEq] at hi
+  exact Prod.ext (xor_cancel _ _ _ hi.1) (xor_cancel _ _ _ hi.2)
+
 /-- `P · P` is phase-free: the summed self-phase is `0`. Combined with
 `mulWord_self`, `P² = +I`. -/
 theorem phaseExpN_self (p : Word n) : phaseExpN p p = 0 := by

@@ -17,3 +17,8 @@ ppvm-phased-pauli-word-2 = { version = "0.1.0", path = "../ppvm-phased-pauli-wor
 # ring's multiplicative identity; `Coefficient` bounds only `num::Zero`, so the
 # noise impl adds a `num::One` bound (see `src/noise.rs`).
 num = "0.4"
+# `AbsDiffEq`/`RelativeEq` for `Sum` (`src/ops.rs`) — the approximate-equality
+# surface old exposes (`ppvm-pauli-sum/src/sum/approx.rs`), which the numeric
+# differential bars compare against. Unconditional here rather than old's
+# optional feature: `-2` has no feature axis.
+approx = "0.5.1"

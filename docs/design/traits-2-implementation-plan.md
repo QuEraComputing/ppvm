@@ -201,19 +201,29 @@ Lean-oracle tests:
   zero coefficients (`GradedMap.lean` `reduce_structural`); `scale` distributes.
 - **L4 multiply** — basis-monomial product `= key_mul` with the `iᵏ` folded onto
   the coefficient (`Twisted.lean` `tmul_assoc` — associativity of `multiply_into`
-  over `Complex<f64>` and, in Phase 5, the exact ring).
+  over `Complex<f64>` and, in Phase 5, the exact ring); and right-multiplication
+  by one word is the aggregation-free injective re-key `Sum::mul_word_assign`
+  takes (`Twisted.lean` `twistedConv_single_right`,
+  `twistedConv_single_right_apply`).
 - **`overlap` / `hermitian_overlap`** — symmetry of `overlap` (`overlap_comm`),
   Pauli-basis orthonormality (`Noise.lean` `overlap_single_single`), and for
   complex amplitudes conjugate symmetry + PSD of `hermitian_overlap`
   (`GradedMap.lean` `hermitianOverlap_*`).
 - **Rotation branch** — `c·P → cos·c·P + sin·c·P'` with `P' = iGP` distinct
   (`Rotation.lean` `anticommute_new_key`), norm preserved (`rot_norm_sq`), merge
-  additive (`rot_rot`).
+  additive (`rot_rot`); and the whole-map two-pass `RotateInPlace` fast path
+  equals the one-pass produce-and-accumulate batch for every walk order
+  (`Rotation.lean` `accumulate_rotBatch`, with `eagerWalk_ne_twoPass` showing an
+  interleaved single pass is observably different).
 - **Truncation** — dropping-error `ℓ¹` bound (`Truncation.lean` `l1_bound`) as a
   runtime assertion in a randomized test; document the `≥` keep-rule vs the
   tableau's `>` (`cutoff_mismatch`).
 - **Noise** — unital Pauli channel eigenvalue `λ_P = 1 − 2Σ_{anti} p_Q`
-  (`Noise.lean` `pauli_channel_eigenvalue_omega`).
+  (`Noise.lean` `pauli_channel_eigenvalue_omega`), and its contractivity
+  `|λ_P| ≤ 1` on a sub-stochastic probability vector
+  (`pauli_channel_eigenvalue_abs_le_one`, `l1_contractive`,
+  `scaleByKey_support_subset`) — the licence for the channel fast path skipping
+  truncation and the weight re-check.
 
 Differential tests vs old `ppvm-pauli-sum`: replay identical random circuits on
 old `PauliSum` and new `PauliSum`; after each gate assert equal support and

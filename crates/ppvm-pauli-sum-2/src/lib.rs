@@ -7,41 +7,53 @@
 //! the free `C`-module on the keys `K` — with a storage backend `S` (the graded
 //! traits `Support`/`Accumulate`/`Scale`/`Pair`/`Multiply` are impl'd directly on
 //! `Vec<(K,C)>` and `HashMap<K, C, IdentityBuildHasher>`) and a truncation
-//! `Policy` `P`. Gates are `TermProducer`s fed into `apply` →
-//! `accumulate_batch` → `reduce` → `policy.truncate`. `PauliSum = Sum<HashMapStore
-//! <PauliWord, C>, P>` is the domain alias.
+//! `Policy` `P`.
+//!
+//! A gate is a `TermProducer` fed into [`Sum::apply`] → `reset` →
+//! `accumulate_batch`; the four hot gate families (Clifford re-key, rotation,
+//! per-key scale, per-key sign flip) instead drive the storage's in-place fast
+//! paths, which produce and merge in one pass over the support. **No gate path
+//! runs `reduce` and no gate path truncates**: both are caller-driven
+//! ([`Sum::reduce`], [`Sum::truncate`]), which is the old crate's contract — a
+//! zero-coefficient term survives every operation, and two sub-threshold
+//! contributions to one key may merge before any truncation sees them.
+//! `PauliSum = Sum<HashMapStore<PauliWord, C>, P>` is the domain alias.
 //!
 //! Trait contracts and their Lean-validated semantics (the `C[K]` module/algebra
 //! laws in `GradedMap.lean`, truncation bounds in `Truncation.lean`) follow
 //! [`docs/design/traits-2-configuration-and-hashing.md`] and `lean/PPVM/**`; the
 //! algorithm is ported from `ppvm-pauli-sum` to hold the hot paths at parity.
 //!
-//! Phase 3: the `Sum` core + graded traits + Clifford propagation, plus the
-//! non-Clifford [`RotationOne`](ppvm_traits_2::RotationOne) branch and the
-//! diagonal [`PauliError`](ppvm_traits_2::PauliError) channel; the L4 `Multiply`
-//! product follows.
+//! Phase 3: the `Sum` core + graded traits + Clifford propagation, the
+//! non-Clifford [`RotationOne`](ppvm_traits_2::RotationOne) branch, the diagonal
+//! [`PauliError`](ppvm_traits_2::PauliError) channel, and the L4
+//! [`Multiply`](ppvm_traits_2::Multiply) operator product (the twisted
+//! convolution — see [`multiply`]).
 //!
 //! # Deferrals (this component)
 //!
-//! - **L4 `Multiply`** (the twisted operator product) — later component.
 //! - **Columnar `ColumnStore` (SoA) backend** — Phase 6. `accumulate_batch`
 //!   takes an array-of-structs `TermBatch` here.
 //! - The graded-algebra **container impls** (`Support`/`Accumulate`/`Scale`/
-//!   `Pair`/`Retain` on `Vec`/`HashMap`) live in `ppvm-traits-2` (orphan rule);
-//!   see `ppvm_traits_2::containers`.
+//!   `Pair`/`Multiply`/`Retain` on `Vec`/`HashMap`) live in `ppvm-traits-2`
+//!   (orphan rule); see `ppvm_traits_2::containers`.
 
 mod clifford;
+pub mod multiply;
 mod noise;
+mod ops;
 mod policy;
 mod producer;
 mod rotation;
 mod store;
 mod sum;
+mod trace;
 
 pub use policy::{CoefficientThreshold, CombinedPolicy, MaxPauliWeight, NoPolicy, Policy};
 pub use producer::RekeyProducer;
-pub use store::{HashMapStore, StoreAlloc};
-pub use sum::Sum;
+pub use store::{AddTerm, ApplyProducer, HashMapStore, MultiplyInPlace, StoreAlloc};
+pub use sum::{PreserveSet, Sum};
+pub use trace::{PauliPattern, SiteSet};
 
 // Re-exports so downstream can name the storage contract without depending on
 // `ppvm-traits-2` directly.

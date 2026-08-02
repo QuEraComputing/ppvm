@@ -47,10 +47,17 @@ type BenchSum = Sum<HashMapStore<BenchKey, f64>, NoPolicy>;
 /// twin of `ppvm_conformance_2::build_new_sum` (which uses the shipped `u64`
 /// default), pinned to `[u8; 8]` for a fair ratio against [`build_old_sum`].
 fn build_new_sum(n_qubits: usize, terms: &[(String, f64)]) -> BenchSum {
-    BenchSum::from_terms(
-        n_qubits,
-        terms.iter().map(|(w, c)| (BenchKey::from(w.as_str()), *c)),
-    )
+    // Capacity is pinned to the SAME hint the old side gets — `build_old_sum`
+    // runs the old `CoefficientThreshold` config, whose `capacity(n) = n * 10`.
+    // The two policies differ (`NoPolicy` here; nothing truncates on either side
+    // of a timed gate), and their *hints* differ by construction, so the hint is
+    // set explicitly rather than inherited: a map sized differently from its twin
+    // measures allocation, not the engine.
+    let mut s = BenchSum::with_capacity(n_qubits, NoPolicy, n_qubits * 10);
+    for (w, c) in terms {
+        s += (BenchKey::from(w.as_str()), *c);
+    }
+    s
 }
 
 /// Qubit width for the moderate-support sums (fits both `u64` and `[u8; 8]`).
@@ -127,7 +134,7 @@ fn bench_build_batch(c: &mut Criterion) {
     let mut g = c.benchmark_group("pauli_sum/build_batch");
     let t = terms(2, TERMS);
 
-    // New: `from_terms` = accumulate_batch + reduce over the pre-keyed batch.
+    // New: `from_terms` = one `accumulate_batch` over the pre-keyed batch.
     let new_terms: Vec<(BenchKey, f64)> = t
         .iter()
         .map(|(w, c)| (BenchKey::from(w.as_str()), *c))

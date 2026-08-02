@@ -20,3 +20,4 @@ import PPVM.Tableau.BranchPhase
 import PPVM.Tableau.Batch
 import PPVM.Instantiations.Bitstring
 import PPVM.Instantiations.Rotation
+import PPVM.Instantiations.Symbolic

@@ -711,6 +711,11 @@ where
     fn iter(&self) -> impl Iterator<Item = (K, C)> {
         Support::iter(&self.primary)
     }
+
+    #[inline]
+    fn for_each_ref(&self, f: impl FnMut(&K, &C)) {
+        Support::for_each_ref(&self.primary, f);
+    }
 }
 
 impl<K, C> Accumulate for HashMapStore<K, C>

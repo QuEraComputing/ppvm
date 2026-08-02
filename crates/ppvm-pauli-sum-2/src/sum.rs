@@ -156,6 +156,19 @@ where
         self.storage.iter()
     }
 
+    /// Borrowing scan of the support: `f(&key, &coeff)` per term, in the
+    /// backend's order.
+    ///
+    /// The read side for a *filtering* reader — [`iter`](Self::iter) clones every
+    /// coefficient before the filter sees it, which is free for `f64` and
+    /// quadratic-ish pain for a heap-owning symbolic coefficient. See
+    /// [`Support::for_each_ref`](ppvm_traits_2::Support::for_each_ref); this is
+    /// what [`Trace::trace`](ppvm_traits_2::Trace::trace) folds over.
+    #[inline]
+    pub fn for_each_ref(&self, f: impl FnMut(&S::Key, &S::Coeff)) {
+        self.storage.for_each_ref(f);
+    }
+
     /// Borrow the truncation policy.
     #[inline]
     pub fn policy(&self) -> &P {

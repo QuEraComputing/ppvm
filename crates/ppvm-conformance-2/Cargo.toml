@@ -28,9 +28,19 @@ ppvm-pauli-sum-2 = { version = "0.1.0", path = "../ppvm-pauli-sum-2" }
 # `benches/tableau_bench.rs`.
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
 ppvm-tableau-2 = { version = "0.1.0", path = "../ppvm-tableau-2" }
+# The old and new symbolic/exact coefficient rings, diffed against each other by
+# the Phase-5 suite (`tests/sym_diff.rs`, `tests/sym_lean.rs`) and benched
+# head-to-head, same-build, in `benches/sym_bench.rs`. Both are driven *through*
+# the respective Pauli-sum engines as well, because the point of the crate is
+# that the engine is generic over the coefficient ring.
+ppvm-sym = { version = "0.1.0", path = "../ppvm-sym" }
+ppvm-sym-2 = { version = "0.1.0", path = "../ppvm-sym-2" }
 
 [dev-dependencies]
 criterion = "0.7.0"
+# The seed-free hasher both crates key their monomial tables with; the Phase-5
+# hashing-contract tests hash `Prod` keys directly with it.
+fxhash = "0.2.1"
 
 [[bench]]
 name = "harness_smoke"
@@ -77,4 +87,16 @@ harness = false
 # is same-build and the code-layout bias cancels in the ratio.
 [[bench]]
 name = "tableau_bench"
+harness = false
+
+# The Phase-5 symbolic perf gate: the end-to-end `sym.*` integration workloads
+# (the deep Trotter propagation, the parametric trace, the truncation cost curve,
+# the VQE-shaped expectation grid, the random-circuit replay, the exact-ring
+# product) plus the diagnostic single-op microbenches. Both coefficient rings —
+# and both Pauli-sum engines driving them — live in this one binary, so every
+# ratio it reports is same-build and the code-layout bias cancels in the ratio.
+# A separate target from `pauli_sum_integration` on purpose: appending groups
+# there would relayout that binary and move its otherwise-untouched baselines.
+[[bench]]
+name = "sym_bench"
 harness = false

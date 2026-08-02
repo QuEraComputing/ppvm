@@ -642,4 +642,84 @@ theorem retain_weight_le_eq_self (w : K → ℕ) (n : ℕ) (hn : ∀ k, w k ≤ 
 
 end Retain
 
+/-! ### A **key-only** keep-rule commutes with accumulation
+
+`retain` in general is *not* additive — `truncMag_not_additive` above is the
+witness, and that is why truncation lives on `Policy`. But the witness is a
+*coefficient*-dependent rule. When the keep-rule looks only at the **key**, the
+picture inverts: `retain` becomes `Finsupp.filter`, an additive map, so dropping
+terms *as they are produced* and dropping them *after the whole batch has been
+accumulated* agree.
+
+That distinction is the licence for the symbolic coefficient's two truncation
+axes to behave differently, and it is consumed by
+`lean/PPVM/Instantiations/Symbolic.lean`:
+
+* `max_sin` is key-only (a monomial-degree bound), so `Sum::add_term`'s
+  drop-at-insert equals a post-pass — `batchMap_filter_key` below;
+* `min_eps` is coefficient-dependent, so drop-at-insert is a *different* rule
+  and cannot be relocated to a post-pass (`Symbolic.eps_drop_at_insert_ne_drop_at_end`).
+-/
+
+section KeyRetain
+variable [AddCommMonoid C]
+
+/-- Retaining nothing out of nothing: `retain` fixes the zero map. -/
+theorem retain_zero (keep : K → C → Bool) : retain keep (0 : CMap K C) = 0 := by
+  ext k
+  rw [retain_apply]
+  simp
+
+/-- **A key-only keep-rule is additive.** With `keep` independent of the
+coefficient, `retain` is `Finsupp.filter`, hence an additive map — the property
+the general (coefficient-dependent) `retain` provably lacks. -/
+theorem retain_key_add (P : K → Prop) [DecidablePred P] (f g : CMap K C) :
+    retain (fun k _ => decide (P k)) (f + g)
+      = retain (fun k _ => decide (P k)) f + retain (fun k _ => decide (P k)) g := by
+  ext k
+  by_cases h : P k <;> simp [retain_apply, h]
+
+/-- A single produced term survives a key-only rule whole… -/
+theorem retain_key_single_pos (P : K → Prop) [DecidablePred P] {k : K} (h : P k) (c : C) :
+    retain (fun j _ => decide (P j)) (Finsupp.single k c) = Finsupp.single k c := by
+  classical
+  ext j
+  rw [retain_apply, Finsupp.single_apply]
+  by_cases hj : k = j
+  · subst hj; simp [h]
+  · simp [hj]
+
+/-- …or is dropped whole. -/
+theorem retain_key_single_neg (P : K → Prop) [DecidablePred P] {k : K} (h : ¬ P k) (c : C) :
+    retain (fun j _ => decide (P j)) (Finsupp.single k c) = 0 := by
+  classical
+  ext j
+  rw [retain_apply, Finsupp.single_apply]
+  by_cases hj : k = j
+  · subst hj; simp [h]
+  · simp [hj]
+
+/-- **Drop-at-insert equals drop-at-end, for a key-only keep-rule.** Filtering
+the produced batch term by term *before* accumulating it gives the same map as
+accumulating the whole batch and running `retain` afterwards.
+
+This is the theorem behind the symbolic coefficient's `max_sin` early drop
+(`Sum::add_term` returns before the monomial is ever materialized): the
+optimization is *exact*, not an approximation, because the degree bound reads
+only the monomial. -/
+theorem batchMap_filter_key (P : K → Prop) [DecidablePred P] (B : Multiset (K × C)) :
+    batchMap (B.filter fun t => P t.1) = retain (fun k _ => decide (P k)) (batchMap B) := by
+  induction B using Multiset.induction with
+  | empty => simp [batchMap, retain_zero]
+  | cons a s ih =>
+    by_cases h : P a.1
+    · rw [Multiset.filter_cons_of_pos (p := fun t : K × C => P t.1) _ h]
+      simp only [batchMap, Multiset.map_cons, Multiset.sum_cons] at ih ⊢
+      rw [ih, retain_key_add, retain_key_single_pos P h]
+    · rw [Multiset.filter_cons_of_neg (p := fun t : K × C => P t.1) _ h]
+      simp only [batchMap, Multiset.map_cons, Multiset.sum_cons] at ih ⊢
+      rw [ih, retain_key_add, retain_key_single_neg P h, zero_add]
+
+end KeyRetain
+
 end PPVM.GradedMap

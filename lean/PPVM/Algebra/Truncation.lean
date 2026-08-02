@@ -122,6 +122,96 @@ theorem l1_bound_needs_subadditive :
     (fun _ => 1) (by intro k; norm_num) (fun _ => 1) Finset.univ
   norm_num [Fintype.sum_bool] at this
 
+/-! ### How far the `ℓ¹` bound's hypotheses can be weakened
+
+`l1_bound_abv` asks for a full `AbsoluteValue C ℝ`. That is more than the proof
+consumes, and the gap matters for a real coefficient ring: **no** absolute value
+exists on the symbolic ring `ℝ[sᵢ, cᵢ]` (`lean/PPVM/Instantiations/Symbolic.lean`)
+with values in `ℝ`, because the natural `ℓ¹` coefficient norm is only
+*sub*-multiplicative — `(1+x)(1−x) = 1−x²` gives `ℓ¹` `2·2 = 4` against `2`. So
+`ppvm-sym-2`'s `Coefficient::magnitude for Term` cannot satisfy the documented law
+as written, and the implementation has to choose between exact behaviour parity
+with old (`+∞` on every symbolic form, i.e. truncation is inert) and an honest
+`ℓ¹` norm.
+
+`l1_bound_seminorm` settles the algebraic half of that adjudication: the bound
+survives dropping *both* the exact multiplicativity `N (x·y) = N x · N y` (down to
+sub-multiplicativity) *and* the `N x = 0 → x = 0` direction. So an `ℓ¹`
+`magnitude` on the symbolic ring **would** carry the full truncation error
+guarantee; only the behaviour-parity argument (it starts dropping terms old kept)
+weighs against it.
+
+`l1_bound_seminorm_needs_zero` is the other side, and it is what rules the `+∞`
+choice out of any guarantee: the one clause of `N x = 0 ↔ x = 0` the proof really
+needs is `N 0 = 0`, and a `magnitude` that reports a positive constant (or `+∞`)
+on a value that is actually `0` has **no** `ℓ¹` bound at all — an explicit law
+exemption, not a harmless approximation. -/
+
+/-- **The `ℓ¹` bound holds for a merely sub-multiplicative seminorm.** Dropping
+`AbsoluteValue`'s `N x = 0 ↔ x = 0` (keeping only `N 0 = 0`) and weakening
+`N (x·y) = N x · N y` to `N (x·y) ≤ N x · N y` leaves the truncation error bound
+intact. Consequently the `ℓ¹` coefficient norm on the symbolic ring
+`ℝ[sᵢ, cᵢ]` — sub-multiplicative but not multiplicative, so *not* an
+`AbsoluteValue` — is a legitimate `Coefficient::magnitude` as far as the error
+guarantee is concerned. -/
+theorem l1_bound_seminorm {C : Type*} [Semiring C] (N : C → ℝ)
+    (hnonneg : ∀ x, 0 ≤ N x) (hzero : N 0 = 0)
+    (hadd : ∀ x y, N (x + y) ≤ N x + N y)
+    (hmul : ∀ x y, N (x * y) ≤ N x * N y)
+    (e : K → C) (he : ∀ k, N (e k) ≤ 1) (c : K → C) (D : Finset K) :
+    N (∑ k ∈ D, c k * e k) ≤ ∑ k ∈ D, N (c k) := by
+  classical
+  have hsum : ∀ (S : Finset K) (f : K → C), N (∑ k ∈ S, f k) ≤ ∑ k ∈ S, N (f k) := by
+    intro S f
+    induction S using Finset.induction with
+    | empty => simp [hzero]
+    | insert a s ha ih =>
+      rw [Finset.sum_insert ha, Finset.sum_insert ha]
+      exact (hadd _ _).trans (by linarith [ih])
+  refine (hsum D _).trans (Finset.sum_le_sum fun k _ => ?_)
+  calc N (c k * e k) ≤ N (c k) * N (e k) := hmul _ _
+    _ ≤ N (c k) * 1 := mul_le_mul_of_nonneg_left (he k) (hnonneg _)
+    _ = N (c k) := mul_one _
+
+/-- **`N 0 = 0` is the clause a `+∞`/constant `magnitude` breaks.** Without it the
+bound fails on the empty dropped set: nothing was dropped, so the error is `0`,
+yet a constant magnitude reports `1 > 0`. This is exactly the shape of
+`ppvm-sym-2`'s parity-preserving `magnitude() = f64::INFINITY` on symbolic forms
+(old's `cutoff` returned `false` for every non-`Const`): it makes
+`CoefficientThreshold` inert, which is the behaviour old had, but it carries **no**
+`ℓ¹` error guarantee and must be documented as a law exemption rather than as an
+absolute value. -/
+theorem l1_bound_seminorm_needs_zero :
+    ¬ ∀ (N : ℝ → ℝ), (∀ x, 0 ≤ N x) → (∀ x y, N (x + y) ≤ N x + N y) →
+      (∀ x y, N (x * y) ≤ N x * N y) →
+      ∀ (e : Bool → ℝ), (∀ k, N (e k) ≤ 1) → ∀ (c : Bool → ℝ) (D : Finset Bool),
+        N (∑ k ∈ D, c k * e k) ≤ ∑ k ∈ D, N (c k) := by
+  intro h
+  have := h (fun _ => 1) (fun _ => zero_le_one) (fun _ _ => by norm_num)
+    (fun _ _ => by norm_num) (fun _ => 1) (fun _ => le_refl 1) (fun _ => 1) ∅
+  norm_num at this
+
+/-- **The weakening is not vacuous**: `N x = 2·|x|` on `ℝ` satisfies every
+hypothesis of `l1_bound_seminorm` — nonnegative, vanishing at `0`, subadditive,
+sub-multiplicative — while failing the `AbsoluteValue` multiplicativity clause
+`l1_bound_abv` requires. So `l1_bound_seminorm` covers strictly more `magnitude`
+implementations than `l1_bound_abv`, the symbolic ring's `ℓ¹` norm among them. -/
+theorem seminorm_weaker_than_abv :
+    ∃ N : ℝ → ℝ, (∀ x, 0 ≤ N x) ∧ N 0 = 0 ∧ (∀ x y, N (x + y) ≤ N x + N y) ∧
+      (∀ x y, N (x * y) ≤ N x * N y) ∧ ¬ ∀ x y, N (x * y) = N x * N y := by
+  refine ⟨fun x => 2 * |x|, fun x => by positivity, by norm_num, fun x y => ?_,
+    fun x y => ?_, fun h => ?_⟩
+  · have := abs_add_le x y
+    change 2 * |x + y| ≤ 2 * |x| + 2 * |y|
+    linarith
+  · have h1 : |x * y| = |x| * |y| := abs_mul x y
+    have h2 : (0 : ℝ) ≤ |x| * |y| := by positivity
+    change 2 * |x * y| ≤ 2 * |x| * (2 * |y|)
+    rw [h1]
+    linarith
+  · have := h 1 1
+    norm_num at this
+
 /-- **L2 truncation bound.** The squared error from dropping the terms in `D` is
 bounded by the product of the dropped coefficients' and expectations' `ℓ²`
 masses. This is Cauchy–Schwarz specialized to the dropped set `D` — that is

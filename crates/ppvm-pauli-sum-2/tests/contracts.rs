@@ -308,3 +308,34 @@ fn pattern_site_sets_classify_words() {
     );
     assert!(!anchored.matches(&pw("YYZI")), "site 0 must be X");
 }
+
+/// The trace folds over the *borrowing* scan
+/// (`Support::for_each_ref`) rather than the cloning `iter`, so this pins that
+/// the scan sees the live support after every buffer-swapping operation — a
+/// re-key ping-pongs `primary`/`aux`, and a scan that read the wrong buffer
+/// would silently trace a stale sum.
+#[test]
+fn for_each_ref_sees_the_live_support_after_a_rekey() {
+    let mut s: PauliSum = PauliSum::from_terms(3, [(pw("ZZI"), 2.0), (pw("IZZ"), 3.0)]);
+    s.cnot(0, 1);
+    s.h(2);
+
+    let mut scanned: Vec<(PauliWord, f64)> = Vec::new();
+    s.for_each_ref(|k, c| scanned.push((k.clone(), *c)));
+    let mut expected: Vec<(PauliWord, f64)> = s.iter().collect();
+
+    let key = |p: &PauliWord| p.to_string();
+    scanned.sort_by_key(|(k, _)| key(k));
+    expected.sort_by_key(|(k, _)| key(k));
+    assert_eq!(scanned, expected);
+    assert_eq!(scanned.len(), s.len());
+
+    // …and the trace built on it agrees with an independent filter over `iter`.
+    let pattern = PauliPattern::zero_state();
+    let want: f64 = s
+        .iter()
+        .filter(|(k, _)| pattern.matches(k))
+        .map(|(_, c)| c)
+        .sum();
+    assert_eq!(s.trace(&pattern), want);
+}

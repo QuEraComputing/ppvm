@@ -246,8 +246,10 @@ where
     /// `map_add` over a bijection and is believed correct, so its behaviour is
     /// preserved exactly — the support is **replaced** by its image, the emitted
     /// `iᵏ` is folded onto the coefficient (old's `coeff.mul_phase(phase)`, here
-    /// `Phase::apply`, the audited same encoding), and nothing is truncated or
-    /// dropped.
+    /// `Phase::apply`, which delegates to `ImaginaryUnit::mul_i_pow` — the
+    /// coefficient's *own* `iᵏ` fold, so a ring that carries the phase as data
+    /// lands in old's representation and not merely at old's value), and nothing
+    /// is truncated or dropped.
     ///
     /// `p ↦ p·rhs` is injective (`p₁ ⊕ rhs = p₂ ⊕ rhs ⟹ p₁ = p₂`; the key product
     /// is a group operation up to phase), so this takes the plain-`insert`

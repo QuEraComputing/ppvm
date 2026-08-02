@@ -1,0 +1,31 @@
+[package]
+name = "ppvm-sym-2"
+version = "0.1.0"
+edition = "2024"
+
+# Symbolic / exact coefficient rings for the second trait-system experiment
+# (implementation-plan Phase 5): a `Term` polynomial in `sin`/`cos` of symbolic
+# parameters, and the `GaussianInt` (ℤ[i]) exact-ring witness that closes the L4
+# loop. Both implement `ppvm-traits-2`'s `Coefficient`, so
+# `ppvm-pauli-sum-2::Sum` instantiates over them exactly as old `PauliSum` did
+# over `ppvm-sym::Term`.
+[dependencies]
+# `eval` is fallible with old's `anyhow!("variable %{k} not found")` message.
+anyhow = "1.0.100"
+# Seed-free, few-ns hasher for the monomial table. NOT `RandomState`: old's
+# `Display` output is byte-stable across runs only because the hash is seedless
+# (integration baseline, perf feature 4).
+fxhash = "0.2.1"
+# `num::Zero`/`num::One` (the `Coefficient` / `ImaginaryUnit` bounds) and
+# `num::Complex` for the phase-aware `eval_complex`.
+num = "0.4"
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+# A REAL (non-dev) dependency for exactly one line, exactly as old `ppvm-sym`
+# depended on `ppvm-pauli-sum`: `src/mul.rs` instantiates the exported
+# `impl_scalar_mul!(Term)` macro, giving `pauli_sum *= Term::from(2.0)`. The
+# orphan rule forbids writing that impl here by hand, and old shipped it, so a
+# dev-only dependency would be a compile-level API regression. No algorithm here
+# uses the engine — it is generic over `C: Coefficient`. Also re-exports
+# `PauliWord`, so the instantiation tests need no separate
+# `ppvm-pauli-word-2` dependency.
+ppvm-pauli-sum-2 = { version = "0.1.0", path = "../ppvm-pauli-sum-2" }

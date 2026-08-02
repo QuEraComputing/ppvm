@@ -234,3 +234,7 @@ pub fn random_terms(rng: &mut StdRng, n: usize, count: usize) -> Vec<(String, f6
 /// Phase-4 tableau differential harness: matched OLD/NEW engines behind one
 /// [`Driver`](tableau::Driver) trait, plus the integration-baseline workloads.
 pub mod tableau;
+
+/// Phase-5 symbolic-coefficient differential harness: matched OLD/NEW
+/// `Term`-coefficient sums and the `sym.*` integration-baseline workloads.
+pub mod sym;

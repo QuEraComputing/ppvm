@@ -26,6 +26,7 @@ members = [
     "crates/ppvm-phased-pauli-word-2",
     "crates/ppvm-pauli-sum-2",
     "crates/ppvm-tableau-2",
+    "crates/ppvm-sym-2",
     "crates/ppvm-conformance-2",
     "crates/vihaco-circuit-isa",
     "crates/ppvm-vihaco",

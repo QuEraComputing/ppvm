@@ -60,6 +60,16 @@ pub use trace::{PauliPattern, SiteSet};
 pub use ppvm_pauli_word_2::PauliWord;
 pub use ppvm_traits_2::IdentityBuildHasher;
 
+/// Support module for [`impl_scalar_mul!`] — the `ppvm-traits-2` bounds its
+/// expansion mentions, re-exported so the macro's `$crate::`-absolute paths
+/// resolve in a downstream crate that does not itself depend on `ppvm-traits-2`.
+///
+/// Not a stability surface: name these traits through `ppvm_traits_2` instead.
+#[doc(hidden)]
+pub mod reexport {
+    pub use ppvm_traits_2::{Accumulate, Indexable, Scale, Word};
+}
+
 /// The Pauli-propagation sum: `C[PauliWord]` over the pass-through hash-map
 /// storage. `C` defaults to `f64` and the policy to [`NoPolicy`].
 ///

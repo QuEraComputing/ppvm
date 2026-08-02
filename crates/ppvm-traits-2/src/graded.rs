@@ -48,6 +48,36 @@ pub trait Support {
     /// Read-only export of the support as `(key, coeff)` pairs. A SoA backend
     /// synthesizes the pairs from its columns.
     fn iter(&self) -> impl Iterator<Item = (Self::Key, Self::Coeff)>;
+
+    /// Read-only **borrowing** visit of the support: `f(&key, &coeff)` once per
+    /// supported key, in the backend's own order.
+    ///
+    /// This is the scan side of L0 for readers that *reject most terms* — a
+    /// pattern trace, a predicate count, a max-weight scan. [`iter`](Self::iter)
+    /// hands out owned pairs (so that a columnar backend can synthesize them),
+    /// which forces a `Coeff::clone()` on **every** key before the reader gets to
+    /// look at it. That clone is free for `f64` and ruinous for a coefficient
+    /// that owns a heap table: on the `sym.random.circuit` shape (support 65534,
+    /// 255 matching keys, symbolic coefficients) cloning the whole support before
+    /// filtering cost 7.06 ms against 1.2 ms for the old crate's borrowing fold,
+    /// and the gap *grew* with coefficient size. Old could stay generic here
+    /// because its map iterator borrowed; this method restores that read side
+    /// without giving up the columnar option — a SoA backend passes
+    /// `(&keys[i], &coeffs[i])`, which needs no materialized pair.
+    ///
+    /// The default body goes through `iter`, so this is a capability an existing
+    /// backend may ignore; every backend whose keys and coefficients are actually
+    /// *stored* should override it, and the shipped ones do.
+    ///
+    /// It is a scan, not an iterator, deliberately: returning
+    /// `impl Iterator<Item = (&K, &C)>` would force every backend to have a
+    /// lending iterator, and a callback composes with the `Retain`/`Policy`
+    /// closures already used on this side of the API.
+    fn for_each_ref(&self, mut f: impl FnMut(&Self::Key, &Self::Coeff)) {
+        for (k, c) in self.iter() {
+            f(&k, &c);
+        }
+    }
 }
 
 /// L1 — the module core: form linear combinations, then canonicalize.

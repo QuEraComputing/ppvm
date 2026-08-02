@@ -21,11 +21,11 @@
 //! contract (`ppvm-pauli-sum/tests/truncation_semantics.rs`) covers every
 //! insertion path, not just gates.
 
-use std::ops::{AddAssign, Mul, MulAssign};
+use std::ops::AddAssign;
 
 use num::One;
 use ppvm_pauli_word_2::{PauliStorage, PauliWord};
-use ppvm_traits_2::{Accumulate, Indexable, Scale, Word};
+use ppvm_traits_2::{Accumulate, Indexable, Word};
 
 use crate::policy::Policy;
 use crate::store::AddTerm;
@@ -215,13 +215,42 @@ where
 /// `MulAssign<&Sum>` (`crate::multiply`), since coherence cannot rule out
 /// `S::Coeff` being `&Sum`. Old has the same shape for the same reason — a macro
 /// instantiated per scalar type (`impl_op_mul_assign_coefficient!(f64)`).
+///
+/// # Why it is exported
+///
+/// The orphan rule puts the instantiation for a coefficient ring defined
+/// *outside* this crate out of this crate's reach and out of that crate's reach
+/// alike: `Sum<S, P>` is foreign to `ppvm-sym-2`, and its type parameters precede
+/// the local `Term`, so `ppvm-sym-2` cannot write `MulAssign<Term> for Sum<..>`
+/// by hand. Exporting the macro — which places the impl in *this* crate's
+/// expansion, syntactically inside the downstream crate — is the same escape
+/// hatch old used: old `ppvm-sym` took a real (non-dev) dependency on
+/// `ppvm-pauli-sum` for the single line `impl_op_mul_assign_coefficient!(Term)`,
+/// which is what made `sum *= Term::from(2.0)` compile. `ppvm-sym-2` does the
+/// same with this macro, so that spelling survives the port.
+///
+/// All paths in the expansion are `$crate`- or `::`-absolute, so the macro needs
+/// nothing in scope at the call site:
+///
+/// ```
+/// # use ppvm_pauli_sum_2::{HashMapStore, NoPolicy, PauliWord, Sum};
+/// # #[derive(Clone, Copy, Debug, PartialEq, Default)]
+/// # struct MyScalar(f64);
+/// // (in a downstream crate that owns the coefficient ring)
+/// // ppvm_pauli_sum_2::impl_scalar_mul!(MyScalar);
+/// let mut s: Sum<HashMapStore<PauliWord<[u8; 8]>, f64>, NoPolicy> = Sum::new(2);
+/// s += (PauliWord::from("ZZ"), 1.0);
+/// s *= 2.0;
+/// assert_eq!(s.get(&PauliWord::from("ZZ")), Some(2.0));
+/// ```
+#[macro_export]
 macro_rules! impl_scalar_mul {
     ($ty:ty) => {
-        impl<S, P> MulAssign<$ty> for Sum<S, P>
+        impl<S, P> ::core::ops::MulAssign<$ty> for $crate::Sum<S, P>
         where
-            S: Accumulate<Coeff = $ty> + Scale,
-            P: Policy<S::Key, $ty>,
-            S::Key: Word + Indexable,
+            S: $crate::reexport::Accumulate<Coeff = $ty> + $crate::reexport::Scale,
+            P: $crate::Policy<S::Key, $ty>,
+            S::Key: $crate::reexport::Word + $crate::reexport::Indexable,
         {
             /// Scale every coefficient, zeros included; nothing is removed, so
             /// `sum *= 0.0` keeps the whole key set at `0.0` (old's
@@ -234,11 +263,11 @@ macro_rules! impl_scalar_mul {
             }
         }
 
-        impl<S, P> Mul<$ty> for Sum<S, P>
+        impl<S, P> ::core::ops::Mul<$ty> for $crate::Sum<S, P>
         where
-            S: Accumulate<Coeff = $ty> + Scale,
-            P: Policy<S::Key, $ty>,
-            S::Key: Word + Indexable,
+            S: $crate::reexport::Accumulate<Coeff = $ty> + $crate::reexport::Scale,
+            P: $crate::Policy<S::Key, $ty>,
+            S::Key: $crate::reexport::Word + $crate::reexport::Indexable,
         {
             type Output = Self;
 

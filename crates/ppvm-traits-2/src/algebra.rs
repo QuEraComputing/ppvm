@@ -101,14 +101,16 @@ impl Phase {
     /// components by hand — gave `−0 + inf·i`. `mul_i` restores the old
     /// component swap (and with it the sign of zero, visible through `Display`
     /// and serialization). See `phase_apply_matches_old_mul_phase_encoding`.
+    ///
+    /// The whole fold is delegated to [`ImaginaryUnit::mul_i_pow`], which is an
+    /// **override point**: a ring whose values carry `iᵏ` symbolically (the
+    /// symbolic `Term` of `ppvm-sym-2`) folds `iᵏ` into its own representation
+    /// rather than through the `±1`/`mul_i` arms, which is what old's
+    /// `ComplexCoefficient::mul_phase` did. The default body *is* those arms, so
+    /// nothing changes for `f64`/`Complex<f64>`/`GaussianInt`.
     #[inline]
     pub fn apply<C: ImaginaryUnit>(self, c: &C) -> C {
-        match self {
-            Phase::Pos1 => c.clone(),
-            Phase::PosI => c.mul_i(),
-            Phase::Neg1 => -(c.clone()),
-            Phase::NegI => -(c.mul_i()),
-        }
+        c.mul_i_pow(self.exponent())
     }
 }
 
@@ -195,6 +197,31 @@ pub trait ImaginaryUnit: Coefficient + num::One {
     #[inline]
     fn mul_i(&self) -> Self {
         self.clone() * Self::imaginary_unit()
+    }
+
+    /// Multiply by `iᵏ` (`k` taken mod 4) — the fold [`Phase::apply`] delegates
+    /// to, and the second **override point**.
+    ///
+    /// The default body is the four-arm `{clone, mul_i, neg, neg∘mul_i}` fold,
+    /// which is the only sensible spelling on a ring whose values are numbers.
+    /// It is overridable because a ring whose values carry the `iᵏ` *as data* —
+    /// the symbolic `Term` of `ppvm-sym-2`, whose monomials hold a `ℤ/4` phase
+    /// byte — must fold the phase into that representation instead: old's
+    /// `ComplexCoefficient::mul_phase` promoted `Const(c)` to `One(i⁰, c)`
+    /// **unconditionally**, including at `k = 0`, and `Term`'s `PartialEq` and
+    /// `Display` are representational, so taking the `clone()` arm at `k = 0`
+    /// would be a user-visible divergence from old.
+    ///
+    /// Impls must satisfy `x.mul_i_pow(k) == iᵏ · x` denotationally, and
+    /// `mul_i_pow(1) == mul_i`.
+    #[inline]
+    fn mul_i_pow(&self, k: u8) -> Self {
+        match k & 3 {
+            0 => self.clone(),
+            1 => self.mul_i(),
+            2 => -(self.clone()),
+            _ => -(self.mul_i()),
+        }
     }
 }
 

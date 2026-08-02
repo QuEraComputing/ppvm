@@ -112,6 +112,24 @@ itself is proved for an arbitrary coefficient ring carrying such an `N`
 configuration covered by the normed-field instance (`l1_bound_norm`,
 `l1_bound_complex`).
 
+The law is stated at its *sufficient* strength, not its necessary one, and one
+shipped coefficient ring cannot meet it: **no** absolute value `N : ℝ[sᵢ, cᵢ] → ℝ`
+exists on `ppvm-sym-2`'s symbolic `Term`, because the natural `ℓ¹` coefficient
+norm is only *sub*-multiplicative (`(1+x)(1−x) = 1−x²` gives `2·2 = 4` against
+`2`). `lean/PPVM/Algebra/Truncation.lean` adjudicates the resulting choice:
+
+* `l1_bound_seminorm` — the bound **survives** weakening `AbsoluteValue` to a
+  nonnegative, `0`-vanishing, subadditive, *sub*-multiplicative seminorm
+  (`seminorm_weaker_than_abv` witnesses that this is strictly weaker). So an `ℓ¹`
+  `magnitude` on the symbolic ring would carry the full error guarantee; only
+  behaviour parity with old (which never truncated a symbolic coefficient)
+  weighs against it.
+* `l1_bound_seminorm_needs_zero` — the surviving clause is `N 0 = 0`, and it is
+  exactly the one `ppvm-sym-2`'s parity-preserving `magnitude() = f64::INFINITY`
+  breaks. That choice is therefore a documented **law exemption** carrying no
+  `ℓ¹` guarantee (`CoefficientThreshold` is inert on symbolic coefficients, which
+  is old's behaviour), not an approximation of one.
+
 Halving (`0.5·x`) is deliberately **not** on `Coefficient` for the same reason
 `Mul<f64>` was dropped: `0.5·(1+i)` leaves `ℤ[i]`, so an exact ring could satisfy
 a `half()` bound only with a lossy integer `/2` for which `half(x)+half(x) != x`
@@ -151,6 +169,96 @@ domain as a defaulted parameter. Whether the "concrete coefficient, symbolic
 angle" combination is supported or deliberately forbidden (via a `where A = C`
 bound) is an explicit decision recorded in the open questions, not a silent
 property of one fused trait.
+
+#### The symbolic coefficient ring is *free*, so the rotation laws need `eval`
+
+`ppvm-sym-2` instantiates both domains with the same type: `impl Angle<Term> for
+Term`. Its coefficient ring is the **free** polynomial ring `ℝ[sᵢ, cᵢ]`, modelled
+in `lean/PPVM/Instantiations/Symbolic.lean` as `AddMonoidAlgebra ℝ (ℕ →₀ ℕ × ℕ)`
+— the same `CMap` object as the sum itself, one level down. Two consequences are
+machine-checked there and neither is optional reading for that instantiation:
+
+* **`sin² + cos² = 1` does not hold** (`pythagorean_ne_one`): `sin(x).square() +
+  cos(x).square()` is a genuine two-monomial `Sum` and no `Term`-level operation
+  reduces it. The rotation guarantees of
+  `lean/PPVM/Instantiations/Rotation.lean` (`rot_norm_sq`, `rot_rot`) consume
+  exactly that relation, so they transfer to the symbolic domain **only after
+  evaluation**, pointwise in `θ`: `evalHom_symRot` is the commuting square
+  (`ev ∘ symRot = rot θ ∘ ev`), `symRot_norm_sq_after_eval` the transferred norm
+  preservation, and `symRot_norm_sq_ne_symbolically` the witness that the
+  unqualified claim is false.
+* **The sine degree is a grading** (`sinDeg_add`), so the `max_sin` cutoff spans a
+  monomial *ideal* (`truncIdeal_mul_right`). That is what licenses the two
+  constructs the symbolic coefficient is built around: drop-at-accumulate inside
+  `Sum::add_term` is *exact*, equal to truncating the finished product
+  (`mulMono_drop_at_insert_eq_drop_at_end`, via
+  `GradedMap.batchMap_filter_key` — a key-only keep-rule is additive, unlike
+  `retain` in general), and `Sum::mul_term`'s whole-table `clear()` shortcut is
+  sound (`mulMono_clear_sound`). The companion negative result
+  `eps_drop_at_insert_ne_drop_at_end` shows the *coefficient*-magnitude axis
+  (`min_eps`) is **not** interchangeable with a post-pass, so unlike `max_sin` it
+  may not be relocated out of the accumulation loop.
+* **The `min_eps` arm of the same `clear()` shortcut is *not* the degree arm.**
+  `Sum::mul_term` also clears the whole table when `|coeff| < min_eps`, and that
+  arm is an **over-truncation**, not an equality: `epsClear_ne_retain_pointwise`
+  exhibits a table (one entry of magnitude `10⁶`, multiplier `10⁻¹³`,
+  `min_eps = 10⁻¹²`) whose product monomial the per-monomial rule in
+  `Sum::add_term` keeps and the shortcut discards. What licenses keeping the
+  shortcut anyway is the `ℓ¹` bound `epsClear_l1_eq` / `epsClear_l1_lt` and its
+  read-out corollary `epsClear_error_lt` (stated against
+  `PPVM.Truncation.l1_bound`): the discarded mass is exactly `|c|·ℓ¹(A)`, hence
+  strictly under `min_eps·ℓ¹(A)`. Citing only `mulMono_clear_sound` for the whole
+  shortcut would over-claim.
+* **The implemented ring is `ℤ/4`-graded, and its complex evaluation is not
+  injective.** `Prod` stores a phase byte that is part of its `Hash`/`Eq`, so the
+  ring is `PhasedSymRing = AddMonoidAlgebra ℝ (Mono × ZMod 4)`, not `SymRing`.
+  `Term::eval_complex` is the `ℝ`-algebra hom `evalC` into `ℂ` (`evalC_mul`,
+  built from `Twisted.iPow_add` on the grading and `monoValue_add` on the
+  exponents), and `evalC_not_injective` shows its kernel is non-trivial. That is
+  the machine-checked content of the `ImaginaryUnit` law exemption
+  `ppvm-sym-2/src/coeff.rs` documents: `i·i` is the key `phase 2`
+  (`iSym_sq_ne_neg_one`) while `−one()` is `−1` on `phase 0`, denotationally
+  equal (`evalC_iSym_sq_eq_neg_one`) but distinct hash keys. The same
+  non-injectivity is why symbolic truncation is *coarser* than truncation on the
+  values: `phaseTwo_cancel_ne_zero` gives two summands that cancel in `ℂ` yet
+  occupy different keys, so `min_eps` thresholds them independently.
+  `Conjugate for Term` is the phase-negating ring involution `conjSym`
+  (`conjSym_conjSym`), correct because `evalC ∘ conj = star ∘ evalC`
+  (`evalC_conjSym`, whence `conj i = −i`) — the ring-level form of
+  `Pauli/Matrix.lean`'s `star_iU`, which on its own is a fact about a 2×2 matrix,
+  not about this ring.
+* **`mul_phase` is a key relabelling, and that relabelling *is* multiplication by
+  `iᵏ`.** `Term::mul_phase k` touches no coefficient: it adds `k` to every
+  monomial's phase byte. `phaseFold_eq_iSym_pow_mul` proves that the relabelling
+  equals the ring product `iᵏ · x` in `PhasedSymRing`, with the read-out corollary
+  `evalC_phaseFold` (`evalC θ (mul_phase k x) = iᵏ · evalC θ x`). This is what
+  turns "phase *every* summand, the constant one included" into an identity rather
+  than a plausible choice — `phaseFold_const` is the `(0, 0) ↦ (0, k)` arm the new
+  `Sum::add_term` keeps out of its `c₀` short-circuit, and
+  `phaseFold_drop_const_ne` shows old's behaviour (leave the constant on key
+  `(0, 0)`) computes a *different function*, not another representation of the same
+  one. It is the machine-checked justification for the one deliberate behaviour
+  divergence on this path (`oldSuspectedBugs` #3); the previously cited
+  `Twisted.twistedConv_add_left`/`_right` are statements about the twisted
+  convolution on *Pauli* keys and do not by themselves cover the symbolic fold.
+* **`max_sin` is a property of the representation, not of the value.** The
+  truncation theorems above describe the *map-backed* accumulation only —
+  `Sum::add_term`/`Sum::mul_term` are the only sites that consult the bound. The
+  shipped `Term` has three non-map fast arms (`One × One`, `Const × One`,
+  `Const × Const`; perf feature 1) that never consult it, so the implemented
+  product does **not** factor through the denotation: `mulImpl_not_wellDefined`
+  exhibits `den a₁ = den a₂` with `den (mulImpl 2 a₁ b) ≠ den (mulImpl 2 a₂ b)`
+  (`a₁ = One(sin(x₀)², 1)`, `a₂` the map-backed `Sum` denoting the same
+  polynomial, `b = One(sin(x₁), 1)`). The positive half is
+  `mulImpl_one_one_untruncated`: the fast arm computes the *untruncated* ring
+  product for every `k`, hence `fastArm_escapes_bound` — a coefficient that stays a
+  single monomial escapes `set_max_sin` without limit. Consequences for citation
+  hygiene: `mulMono_drop_at_insert_eq_drop_at_end` must **not** be read as an
+  end-to-end guarantee that the propagated coefficient equals the truncated ring
+  product, and `set_max_sin` is not a hard degree bound on the result. Consequence
+  for maintenance: unifying the four `Inner` arms onto one map-backed
+  representation would make the product well-defined and therefore change numbers
+  — a spec violation, not a tidy-up.
 
 ### Representation types
 
@@ -924,6 +1032,19 @@ pub trait Support {
     fn len(&self) -> usize;
     fn get(&self, key: &Self::Key) -> Option<Self::Coeff>;
     fn iter(&self) -> impl Iterator<Item = (Self::Key, Self::Coeff)>;
+
+    /// Borrowing scan — the read side for a reader that REJECTS most terms
+    /// (`trace` against a pattern, a predicate count, a weight scan). `iter`
+    /// hands out owned pairs so that a columnar backend can synthesize them,
+    /// which forces a `Coeff::clone()` on every key before the reader looks at
+    /// it: free for `f64`, ruinous for a coefficient owning a heap table (the
+    /// symbolic `Term` measured 7×–33× slower than the old crate's borrowing
+    /// fold on a 65k-key support with 255 matches, and the gap grew with
+    /// coefficient size). A callback rather than `impl Iterator<Item = (&K,&C)>`
+    /// so no backend needs a lending iterator; a SoA backend passes
+    /// `(&keys[i], &coeffs[i])`, so this does not cost the columnar option.
+    /// Defaulted through `iter`, so it is optional for a backend to specialize.
+    fn for_each_ref(&self, f: impl FnMut(&Self::Key, &Self::Coeff)) { … }
 }
 
 /// L1 — the module core: form linear combinations, then canonicalize.
@@ -1082,7 +1203,33 @@ pub trait KeyProduct: Eq + Clone {
 pub trait ImaginaryUnit: Coefficient + num::One {
     /// The imaginary unit `i`; impls must satisfy
     /// `Self::imaginary_unit() * Self::imaginary_unit() == -Self::one()`.
+    ///
+    /// A ring that carries `i^k` as *data* satisfies this only denotationally,
+    /// and the exemption is machine-checked rather than asserted: for
+    /// `ppvm-sym-2`'s `Term` the implemented ring is the ℤ/4-graded
+    /// `PhasedSymRing`, on which `iSym_sq_ne_neg_one` shows `i·i` and `−one()`
+    /// are different keys, `evalC_iSym_sq_eq_neg_one` shows they have the same
+    /// complex value, and `evalC_not_injective` shows why both can hold at once
+    /// (`lean/PPVM/Instantiations/Symbolic.lean`). The law is discharged
+    /// literally by the exact `GaussianInt` witness instead.
     fn imaginary_unit() -> Self;
+
+    /// Multiply by `i` — semantically `self * imaginary_unit()`, but an OVERRIDE
+    /// POINT: on `Complex<f64>` the ring product spells the rotation as
+    /// `(re·0 − im·1, re·1 + im·0)`, which is `NaN`-contaminating and loses the
+    /// sign of zero, where old's `ComplexCoefficient::mul_phase` swapped the
+    /// components by hand. The impl restores the swap.
+    fn mul_i(&self) -> Self { self.clone() * Self::imaginary_unit() }
+
+    /// Multiply by `i^k` (mod 4) — what `Phase::apply` delegates to, and the
+    /// second override point. The default is the four-arm
+    /// `{clone, mul_i, neg, neg∘mul_i}` fold, right for any ring whose values
+    /// are numbers. A ring that carries `i^k` AS DATA (the symbolic `Term`, whose
+    /// monomials hold a ℤ/4 phase byte) must override it: old's `mul_phase`
+    /// promoted `Const(c)` to `One(i⁰, c)` unconditionally, including at `k = 0`,
+    /// and `Term`'s `PartialEq`/`Display` are representational, so folding
+    /// through `clone()`/`neg()` instead would be a user-visible divergence.
+    fn mul_i_pow(&self, k: u8) -> Self { … }
 }
 
 /// L4 — the ring product. The only layer that needs the *key* to carry a

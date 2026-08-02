@@ -1324,6 +1324,7 @@ name = "ppvm-conformance-2"
 version = "0.1.0"
 dependencies = [
  "criterion 0.7.0",
+ "fxhash",
  "num",
  "ppvm-lossy-pauli-word-2",
  "ppvm-pauli-sum",
@@ -1331,6 +1332,8 @@ dependencies = [
  "ppvm-pauli-word",
  "ppvm-pauli-word-2",
  "ppvm-phased-pauli-word-2",
+ "ppvm-sym",
+ "ppvm-sym-2",
  "ppvm-tableau",
  "ppvm-tableau-2",
  "ppvm-traits",
@@ -1463,6 +1466,17 @@ dependencies = [
  "num",
  "ppvm-pauli-sum",
  "ppvm-traits",
+]
+
+[[package]]
+name = "ppvm-sym-2"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "fxhash",
+ "num",
+ "ppvm-pauli-sum-2",
+ "ppvm-traits-2",
 ]
 
 [[package]]

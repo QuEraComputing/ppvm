@@ -104,19 +104,30 @@ where
         });
     }
 
-    /// Re-key with a replacement word built from the source in one operation.
-    ///
-    /// Two-site gates use this to let packed words copy both planes and refresh
-    /// their structural hash once, after all bit toggles, instead of recomputing
-    /// it after each individual setter.
+    /// Re-key by mutating a moved source word.
     #[inline(always)]
     fn rekey_owned<F>(&mut self, f: F)
     where
         F: Fn(W) -> (W, bool) + Send + Sync,
     {
-        self.rekey_bijective(|k: W, c: C| {
-            let (k, negate) = f(k);
-            if negate { (k, -c) } else { (k, c) }
+        self.rekey_bijective(|key: W, coeff: C| {
+            let (key, negate) = f(key);
+            if negate { (key, -coeff) } else { (key, coeff) }
+        });
+    }
+
+    /// Re-key from a borrowed source word, allowing packed implementations to
+    /// build the replacement planes directly without cloning a digest cache that
+    /// the two-site mutation would immediately invalidate.
+    #[inline(always)]
+    fn rekey_ref<F>(&mut self, f: F)
+    where
+        F: Fn(&W) -> (W, bool) + Send + Sync,
+    {
+        self.rekey_bijective_ref(|key: &W, coeff: &C| {
+            let (key, negate) = f(key);
+            let coeff = coeff.clone();
+            if negate { (key, -coeff) } else { (key, coeff) }
         });
     }
 }
@@ -215,32 +226,60 @@ where
 
     #[inline(always)]
     fn cnot(&mut self, control: usize, target: usize) {
-        self.rekey_owned(move |k| {
-            if k.is_lost(control) || k.is_lost(target) {
-                return (k, false);
-            }
-            let xc = k.x_bit(control);
-            let zc = k.z_bit(control);
-            let xt = k.x_bit(target);
-            let zt = k.z_bit(target);
-            let out = k.into_toggled_bits2(control, false, zt, target, xc, false);
-            (out, xc & zt & (xt == zc))
-        });
+        if W::PREFER_BORROWED_REKEY {
+            self.rekey_ref(move |k| {
+                if k.is_lost(control) || k.is_lost(target) {
+                    return (k.clone(), false);
+                }
+                let xc = k.x_bit(control);
+                let zc = k.z_bit(control);
+                let xt = k.x_bit(target);
+                let zt = k.z_bit(target);
+                let out = k.toggled_bits2(control, false, zt, target, xc, false);
+                (out, xc & zt & (xt == zc))
+            });
+        } else {
+            self.rekey_owned(move |k| {
+                if k.is_lost(control) || k.is_lost(target) {
+                    return (k, false);
+                }
+                let xc = k.x_bit(control);
+                let zc = k.z_bit(control);
+                let xt = k.x_bit(target);
+                let zt = k.z_bit(target);
+                let out = k.into_toggled_bits2(control, false, zt, target, xc, false);
+                (out, xc & zt & (xt == zc))
+            });
+        }
     }
 
     #[inline(always)]
     fn cz(&mut self, qubit0: usize, qubit1: usize) {
-        self.rekey_owned(move |k| {
-            if k.is_lost(qubit0) || k.is_lost(qubit1) {
-                return (k, false);
-            }
-            let x0 = k.x_bit(qubit0);
-            let z0 = k.z_bit(qubit0);
-            let x1 = k.x_bit(qubit1);
-            let z1 = k.z_bit(qubit1);
-            let out = k.into_toggled_bits2(qubit0, false, x1, qubit1, false, x0);
-            (out, x0 & x1 & (z0 ^ z1))
-        });
+        if W::PREFER_BORROWED_REKEY {
+            self.rekey_ref(move |k| {
+                if k.is_lost(qubit0) || k.is_lost(qubit1) {
+                    return (k.clone(), false);
+                }
+                let x0 = k.x_bit(qubit0);
+                let z0 = k.z_bit(qubit0);
+                let x1 = k.x_bit(qubit1);
+                let z1 = k.z_bit(qubit1);
+                let out = k.toggled_bits2(qubit0, false, x1, qubit1, false, x0);
+                (out, x0 & x1 & (z0 ^ z1))
+            });
+        } else {
+            self.rekey_owned(move |k| {
+                if k.is_lost(qubit0) || k.is_lost(qubit1) {
+                    return (k, false);
+                }
+                let x0 = k.x_bit(qubit0);
+                let z0 = k.z_bit(qubit0);
+                let x1 = k.x_bit(qubit1);
+                let z1 = k.z_bit(qubit1);
+                let out = k.into_toggled_bits2(qubit0, false, x1, qubit1, false, x0);
+                (out, x0 & x1 & (z0 ^ z1))
+            });
+        }
     }
 }
 
@@ -339,17 +378,31 @@ where
     /// as the audited phased-word kernel.
     #[inline(always)]
     fn cy(&mut self, control: usize, target: usize) {
-        self.rekey_owned(move |k| {
-            if k.is_lost(control) || k.is_lost(target) {
-                return (k, false);
-            }
-            let xc = k.x_bit(control);
-            let zc = k.z_bit(control);
-            let xt = k.x_bit(target);
-            let zt = k.z_bit(target);
-            let out = k.into_toggled_bits2(control, false, xt ^ zt, target, xc, xc);
-            (out, xc & (xt ^ zt) & !(zc ^ zt))
-        });
+        if W::PREFER_BORROWED_REKEY {
+            self.rekey_ref(move |k| {
+                if k.is_lost(control) || k.is_lost(target) {
+                    return (k.clone(), false);
+                }
+                let xc = k.x_bit(control);
+                let zc = k.z_bit(control);
+                let xt = k.x_bit(target);
+                let zt = k.z_bit(target);
+                let out = k.toggled_bits2(control, false, xt ^ zt, target, xc, xc);
+                (out, xc & (xt ^ zt) & !(zc ^ zt))
+            });
+        } else {
+            self.rekey_owned(move |k| {
+                if k.is_lost(control) || k.is_lost(target) {
+                    return (k, false);
+                }
+                let xc = k.x_bit(control);
+                let zc = k.z_bit(control);
+                let xt = k.x_bit(target);
+                let zt = k.z_bit(target);
+                let out = k.into_toggled_bits2(control, false, xt ^ zt, target, xc, xc);
+                (out, xc & (xt ^ zt) & !(zc ^ zt))
+            });
+        }
     }
 }
 

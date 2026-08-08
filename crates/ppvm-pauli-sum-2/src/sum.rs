@@ -558,6 +558,15 @@ where
     {
         self.storage.rekey_bijective(f);
     }
+
+    /// Borrow each source term while constructing its bijective replacement.
+    #[inline(always)]
+    pub(crate) fn rekey_bijective_ref<F>(&mut self, f: F)
+    where
+        F: FnMut(&S::Key, &S::Coeff) -> (S::Key, S::Coeff) + Send + Sync,
+    {
+        self.storage.rekey_bijective_ref(f);
+    }
 }
 
 // --- The pure-sign Clifford fast path: needs `SignFlipByKey` (in-place scale). -

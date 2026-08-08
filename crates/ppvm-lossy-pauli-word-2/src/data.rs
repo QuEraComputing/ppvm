@@ -330,6 +330,8 @@ impl<A: PauliStorage, H> Word for LossyPauliWord<A, H> {
 }
 
 impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
+    const PREFER_BORROWED_REKEY: bool = true;
+
     #[inline]
     fn x_bit(&self, i: usize) -> bool {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");

@@ -163,6 +163,19 @@ pub trait RekeyBijective<K, C> {
     fn rekey_bijective<F>(&mut self, f: F)
     where
         F: FnMut(K, C) -> (K, C) + Send + Sync;
+
+    /// Re-key from borrowed source entries.
+    ///
+    /// This lets a transform construct a replacement directly from packed
+    /// planes without first cloning synchronization-bearing derived state. The
+    /// default preserves compatibility by adapting through the owned method;
+    /// map backends with a dense borrowed traversal override it.
+    fn rekey_bijective_ref<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&K, &C) -> (K, C) + Send + Sync,
+    {
+        self.rekey_bijective(|key, coeff| f(&key, &coeff));
+    }
 }
 
 /// An in-place, **whole-map** per-key sign flip — the fast path a *pure-sign*
@@ -1235,6 +1248,28 @@ where
     }
 }
 
+impl<K, C> HashMapStore<K, C>
+where
+    K: Indexable,
+    C: Coefficient,
+{
+    #[inline(always)]
+    fn insert_bijective(map: &mut HashMap<K, C, IdentityBuildHasher>, key: K, coeff: C) {
+        let hash = key.key_hash();
+        match map
+            .raw_entry_mut()
+            .from_hash(hash, |candidate| candidate == &key)
+        {
+            hashbrown::hash_map::RawEntryMut::Occupied(_) => {
+                debug_assert!(false, "RekeyBijective requires an injective re-key");
+            }
+            hashbrown::hash_map::RawEntryMut::Vacant(entry) => {
+                entry.insert_hashed_nocheck(hash, key, coeff);
+            }
+        }
+    }
+}
+
 impl<K, C> RekeyBijective<K, C> for HashMapStore<K, C>
 where
     K: Indexable,
@@ -1272,23 +1307,25 @@ where
         // Match the legacy walk shape: transform borrowed primary entries into
         // the auxiliary map, then clear the primary before swapping. Besides
         // preserving the source map's dense read-only traversal, this avoids
-        // hashbrown's drain state machine in the inner re-key loop. The cloned
-        // key is immediately mutated and re-hashed just as in old `map_add`.
+        // hashbrown's drain state machine in the inner re-key loop.
         for (k, c) in &self.primary {
             let (nk, nc) = f(k.clone(), c.clone());
-            let hash = nk.key_hash();
-            match self
-                .aux
-                .raw_entry_mut()
-                .from_hash(hash, |candidate| candidate == &nk)
-            {
-                hashbrown::hash_map::RawEntryMut::Occupied(_) => {
-                    debug_assert!(false, "RekeyBijective requires an injective re-key");
-                }
-                hashbrown::hash_map::RawEntryMut::Vacant(entry) => {
-                    entry.insert_hashed_nocheck(hash, nk, nc);
-                }
-            }
+            Self::insert_bijective(&mut self.aux, nk, nc);
+        }
+        self.primary.clear();
+        std::mem::swap(&mut self.primary, &mut self.aux);
+    }
+
+    #[inline(always)]
+    fn rekey_bijective_ref<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&K, &C) -> (K, C) + Send + Sync,
+    {
+        self.aux.clear();
+        self.aux.reserve(self.primary.len());
+        for (key, coeff) in &self.primary {
+            let (new_key, new_coeff) = f(key, coeff);
+            Self::insert_bijective(&mut self.aux, new_key, new_coeff);
         }
         self.primary.clear();
         std::mem::swap(&mut self.primary, &mut self.aux);

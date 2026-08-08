@@ -116,6 +116,12 @@ pub struct FermionSite {
 /// `graded.rs`). `PauliWord` still implements `Word<Site = Pauli>`, so nothing
 /// on the ordinary path changes.
 pub trait PauliBits: Word {
+    /// Whether two-site sum re-keying should build from a borrowed source word.
+    ///
+    /// Copy-like words keep the owned mutation path. Representations whose
+    /// `Clone` carries synchronization cost can opt into direct branch builders.
+    const PREFER_BORROWED_REKEY: bool = false;
+
     /// Read the X bit at index `i`.
     fn x_bit(&self, i: usize) -> bool;
     /// Read the Z bit at index `i`.

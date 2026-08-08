@@ -334,8 +334,12 @@ the clone initially has identical structural contents.
 That standalone clone retains one unavoidable relaxed atomic load and
 construction, measuring about `2.1×` the legacy word's plain-`u64` copy at 256
 qubits. Starting clones cold would hide that micro-cost by weakening warm-clone
-lookup behavior, so production clone-and-mutate paths use direct packed-plane
-builders instead; ordinary unmodified clones keep the cached digest.
+lookup behavior. Production branch builders therefore copy packed planes
+directly, and the hash-map two-site Clifford re-key supplies a borrowed source
+to those builders instead of cloning a cache that the replacement key would
+immediately invalidate. Ordinary unmodified clones keep the cached digest, so
+the standalone atomic cost remains a required representation cost rather than
+being hidden by weaker clone semantics.
 
 ## Key columns (structure-of-arrays batches)
 

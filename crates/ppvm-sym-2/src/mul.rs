@@ -31,6 +31,7 @@ impl Prod {
     ///
     /// The cached `sin_pow` total is updated incrementally here (perf feature 2)
     /// so [`Sum::add_term`]'s `max_sin` test stays `O(1)`.
+    #[inline(always)]
     pub fn mul_sin(&mut self, u: u32) {
         self.merge_factor(Factor {
             var: u,
@@ -42,6 +43,7 @@ impl Prod {
     }
 
     /// Multiply this product by an additional `cos(x_u)`.
+    #[inline(always)]
     pub fn mul_cos(&mut self, u: u32) {
         self.merge_factor(Factor {
             var: u,

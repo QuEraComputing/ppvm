@@ -597,6 +597,48 @@ impl<A: RowStorage, H> Tableau<A, H> {
         }
         Some((masks, n_words))
     }
+
+    /// Build the Y mask while filtering lost sites, avoiding a separate loss
+    /// probe followed by a second traversal of `indices`.
+    #[inline]
+    fn y_many_skipping(&mut self, indices: &[usize], is_lost: &[bool]) {
+        if self.data.is_empty() || indices.is_empty() {
+            return;
+        }
+        let n_words = self.data[0].xbits.data.as_raw_slice().len();
+        let bits_per_word = bits_per_word!(A);
+        let one = <A as BitView>::Store::one();
+        let zero = <A as BitView>::Store::zero();
+        let mut masks: MaskBuf<A> = smallvec![zero; n_words];
+        let mut any = false;
+        for &addr0 in indices {
+            if !is_lost[addr0] {
+                masks[addr0 / bits_per_word] =
+                    masks[addr0 / bits_per_word] | (one << (addr0 % bits_per_word));
+                any = true;
+            }
+        }
+        if any {
+            self.y_with_masks(&masks);
+        }
+    }
+
+    #[inline]
+    fn y_with_masks(&mut self, masks: &[<A as BitView>::Store]) {
+        let zero = <A as BitView>::Store::zero();
+        self.invalidate_hash();
+        self.data.iter_mut().for_each(|pw| {
+            let xp = pw.xbits.data.as_raw_slice();
+            let zp = pw.zbits.data.as_raw_slice();
+            let mut popcount = 0u32;
+            for ((&xw, &zw), &mask) in xp.iter().zip(zp).zip(masks) {
+                if mask != zero {
+                    popcount += ((xw ^ zw) & mask).count_ones();
+                }
+            }
+            pw.phase ^= ((popcount & 1) as u8) << 1;
+        });
+    }
 }
 
 impl<A: RowStorage, H> CliffordBatch for Tableau<A, H> {
@@ -625,24 +667,10 @@ impl<A: RowStorage, H> CliffordBatch for Tableau<A, H> {
     /// `Y` is bit-preserving: the phase flips where `x ⊕ z = 1`.
     #[inline]
     fn y_many(&mut self, indices: &[usize]) {
-        let Some((masks, n_words)) = self.build_masks(indices) else {
+        let Some((masks, _)) = self.build_masks(indices) else {
             return;
         };
-        let zero = <A as BitView>::Store::zero();
-        self.invalidate_hash();
-        self.data.iter_mut().for_each(|pw| {
-            let xp = pw.xbits.data.as_raw_slice();
-            let zp = pw.zbits.data.as_raw_slice();
-            let mut popcount = 0u32;
-            for wi in 0..n_words {
-                let mask = masks[wi];
-                if mask == zero {
-                    continue;
-                }
-                popcount += ((xp[wi] ^ zp[wi]) & mask).count_ones();
-            }
-            pw.phase ^= ((popcount & 1) as u8) << 1;
-        });
+        self.y_with_masks(&masks);
     }
 
     /// `Z` is bit-preserving: the phase flips where `x = 1`.
@@ -1047,7 +1075,10 @@ macro_rules! forward_batch_pair {
 
 impl<A: RowStorage, I: Bitstring, H> CliffordBatch for GeneralizedTableau<A, I, H> {
     forward_batch_single!(x_many);
-    forward_batch_single!(y_many);
+    #[inline]
+    fn y_many(&mut self, indices: &[usize]) {
+        self.tableau.y_many_skipping(indices, &self.is_lost);
+    }
     forward_batch_single!(z_many);
     forward_batch_single!(h_many);
     forward_batch_single!(s_many);

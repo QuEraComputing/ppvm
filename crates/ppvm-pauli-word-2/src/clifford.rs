@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Clifford conjugation for [`PauliWord`], split into the role-independent
-//! symplectic bit algebra ([`SymplecticColumns`]) and the phase extension
-//! ([`PhaseTrack`]). A bare `PauliWord` carries **no phase**, so its
-//! [`PhaseTrack`] is the no-op that drops every phase delta; the blanket
-//! `impl<T: SymplecticColumns + PhaseTrack> Clifford for T` in `ppvm-traits-2`
-//! therefore realizes exactly the `Sp(2n, 2)` bit map — matching the old bare
-//! `PauliWord`'s bit-only Clifford (`ppvm-pauli-word/src/word/clifford.rs`).
+//! Clifford conjugation for [`PauliWord`]. Public gates use fused packed-bit
+//! kernels so each operation refreshes the eager structural digest exactly once.
+//! The role-independent [`SymplecticColumns`] and phase-discarding [`PhaseTrack`]
+//! primitives remain available for generic algebra, but this type intentionally
+//! does not opt into the blanket Clifford implementation: decomposing `CNOT`,
+//! `√X`, and `CY` into independently eager primitives would recompute the same
+//! width-sensitive digest multiple times.
 //!
 //! The single-qubit bit rules are ported from that old kernel.
 //!
@@ -22,28 +22,120 @@
 //! # The phaseless word's no-op `PhaseTrack`
 //!
 //! The bare word's packed layout has no phase field, so `PhaseTrack` here is a
-//! total no-op and the blanket `Clifford` reduces to the pure `Sp(2n, 2)` bit
-//! map — faithfully reproducing the old bare-word Clifford. Any Clifford sign is
-//! therefore dropped at this layer; recovering it is the job of the phased
-//! wrapper / the sum's phase-draining path (Phase 3). This is the authoritative
-//! trait assignment (`traits-2-configuration-and-hashing.md` §"Pauli algebra
-//! traits"; `word-data-structures.md`), not a workaround.
+//! total no-op. The fused public kernels apply the same pure `Sp(2n, 2)` maps and
+//! likewise drop every Clifford sign; recovering it is the job of the phased
+//! wrapper / the sum's phase-draining path (Phase 3).
 
 use std::hash::BuildHasher;
 
-use ppvm_traits_2::{BlanketClifford, PhaseTrack, SymplecticColumns};
+use ppvm_traits_2::{Clifford, CliffordExtensions, PhaseTrack, SymplecticColumns};
 
 use crate::data::PauliWord;
 use crate::storage::{HashFinalize, PauliStorage};
 
-/// Opt into the single audited blanket `Clifford` (`ppvm-traits-2`): a bare word
-/// composes its `Sp(2n, 2)` [`SymplecticColumns`] bit map with the
-/// phase-discarding [`PhaseTrack`] below.
-impl<A, H> BlanketClifford for PauliWord<A, H>
+impl<A, H> Clifford for PauliWord<A, H>
 where
     A: PauliStorage,
     H: BuildHasher + Default + HashFinalize,
 {
+    #[inline]
+    fn x(&mut self, _q: usize) {}
+
+    #[inline]
+    fn y(&mut self, _q: usize) {}
+
+    #[inline]
+    fn z(&mut self, _q: usize) {}
+
+    #[inline]
+    fn h(&mut self, q: usize) {
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
+        let x = self.xbits[q];
+        self.xbits.set(q, self.zbits[q]);
+        self.zbits.set(q, x);
+        self.invalidate_hash();
+    }
+
+    #[inline]
+    fn s(&mut self, q: usize) {
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
+        let z = self.zbits[q] ^ self.xbits[q];
+        self.zbits.set(q, z);
+        self.invalidate_hash();
+    }
+
+    #[inline]
+    fn cnot(&mut self, control: usize, target: usize) {
+        debug_assert!(
+            control < self.nqubits && target < self.nqubits,
+            "qubit out of bounds"
+        );
+        let xt = self.xbits[target] ^ self.xbits[control];
+        let zc = self.zbits[control] ^ self.zbits[target];
+        self.xbits.set(target, xt);
+        self.zbits.set(control, zc);
+        self.invalidate_hash();
+    }
+
+    #[inline]
+    fn cz(&mut self, a: usize, b: usize) {
+        debug_assert!(a < self.nqubits && b < self.nqubits, "qubit out of bounds");
+        let za = self.zbits[a] ^ self.xbits[b];
+        let zb = self.zbits[b] ^ self.xbits[a];
+        self.zbits.set(a, za);
+        self.zbits.set(b, zb);
+        self.invalidate_hash();
+    }
+}
+
+impl<A, H> CliffordExtensions for PauliWord<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
+    #[inline]
+    fn s_dag(&mut self, q: usize) {
+        self.s(q);
+    }
+
+    #[inline]
+    fn sqrt_x(&mut self, q: usize) {
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
+        let x = self.xbits[q] ^ self.zbits[q];
+        self.xbits.set(q, x);
+        self.invalidate_hash();
+    }
+
+    #[inline]
+    fn sqrt_x_dag(&mut self, q: usize) {
+        self.sqrt_x(q);
+    }
+
+    #[inline]
+    fn sqrt_y(&mut self, q: usize) {
+        self.h(q);
+    }
+
+    #[inline]
+    fn sqrt_y_dag(&mut self, q: usize) {
+        self.h(q);
+    }
+
+    #[inline]
+    fn cy(&mut self, control: usize, target: usize) {
+        debug_assert!(
+            control < self.nqubits && target < self.nqubits,
+            "qubit out of bounds"
+        );
+        let xc = self.xbits[control];
+        let zc = self.zbits[control];
+        let xt = self.xbits[target];
+        let zt = self.zbits[target];
+        self.zbits.set(control, zc ^ xt ^ zt);
+        self.xbits.set(target, xt ^ xc);
+        self.zbits.set(target, zt ^ xc);
+        self.invalidate_hash();
+    }
 }
 
 impl<A, H> SymplecticColumns for PauliWord<A, H>

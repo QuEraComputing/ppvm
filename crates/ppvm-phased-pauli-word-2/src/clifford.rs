@@ -98,8 +98,7 @@ impl<W: PauliBits> Clifford for Phased<W> {
         }
         let x = self.word.x_bit(q);
         let z = self.word.z_bit(q);
-        self.word.set_x_bit(q, z);
-        self.word.set_z_bit(q, x);
+        self.word.set_xz_bits(q, z, x);
         self.flip_sign_if(x && z);
     }
 
@@ -131,8 +130,7 @@ impl<W: PauliBits> Clifford for Phased<W> {
         let zc = self.word.z_bit(ctrl);
         let xt = self.word.x_bit(tgt);
         let zt = self.word.z_bit(tgt);
-        self.word.set_x_bit(tgt, xt ^ xc);
-        self.word.set_z_bit(ctrl, zc ^ zt);
+        self.word.set_xz_bits2(ctrl, xc, zc ^ zt, tgt, xt ^ xc, zt);
         self.flip_sign_if(xc && zt && (xt == zc));
     }
 
@@ -147,8 +145,7 @@ impl<W: PauliBits> Clifford for Phased<W> {
         let za = self.word.z_bit(a);
         let xb = self.word.x_bit(b);
         let zb = self.word.z_bit(b);
-        self.word.set_z_bit(a, za ^ xb);
-        self.word.set_z_bit(b, zb ^ xa);
+        self.word.set_xz_bits2(a, xa, za ^ xb, b, xb, zb ^ xa);
         self.flip_sign_if(xa && xb && (za ^ zb));
     }
 }
@@ -222,8 +219,7 @@ impl<W: PauliBits> CliffordExtensions for Phased<W> {
         }
         let x = self.word.x_bit(q);
         let z = self.word.z_bit(q);
-        self.word.set_x_bit(q, z);
-        self.word.set_z_bit(q, x);
+        self.word.set_xz_bits(q, z, x);
         self.flip_sign_if(!x && z);
     }
 
@@ -235,8 +231,7 @@ impl<W: PauliBits> CliffordExtensions for Phased<W> {
         }
         let x = self.word.x_bit(q);
         let z = self.word.z_bit(q);
-        self.word.set_x_bit(q, z);
-        self.word.set_z_bit(q, x);
+        self.word.set_xz_bits(q, z, x);
         self.flip_sign_if(x && !z);
     }
 
@@ -252,9 +247,8 @@ impl<W: PauliBits> CliffordExtensions for Phased<W> {
         let zc = self.word.z_bit(control);
         let xt = self.word.x_bit(target);
         let zt = self.word.z_bit(target);
-        self.word.set_z_bit(control, zc ^ xt ^ zt);
-        self.word.set_x_bit(target, xt ^ xc);
-        self.word.set_z_bit(target, zt ^ xc);
+        self.word
+            .set_xz_bits2(control, xc, zc ^ xt ^ zt, target, xt ^ xc, zt ^ xc);
         self.flip_sign_if(xc && (xt ^ zt) && !(zc ^ zt));
     }
 }

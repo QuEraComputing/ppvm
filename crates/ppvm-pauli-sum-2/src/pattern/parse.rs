@@ -121,10 +121,16 @@ fn op_from_nonidentity_set(set: SiteSet) -> Result<OpPattern, PatternParseError>
 }
 
 fn parse_count(chars: &mut Peekable<Chars<'_>>, braced: bool) -> Result<usize, PatternParseError> {
-    let mut number = String::new();
+    let mut number = 0usize;
+    let mut has_digit = false;
     while let Some(ch) = chars.peek().copied() {
         if ch.is_ascii_digit() {
-            number.push(ch);
+            let digit = (ch as u8 - b'0') as usize;
+            number = number
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(digit))
+                .ok_or(PatternParseError::InvalidCount)?;
+            has_digit = true;
             chars.next();
         } else if braced && ch == '}' {
             chars.next();
@@ -135,8 +141,8 @@ fn parse_count(chars: &mut Peekable<Chars<'_>>, braced: bool) -> Result<usize, P
             break;
         }
     }
-    if number.is_empty() {
+    if !has_digit {
         return Err(PatternParseError::ExpectedCount);
     }
-    number.parse().map_err(|_| PatternParseError::InvalidCount)
+    Ok(number)
 }

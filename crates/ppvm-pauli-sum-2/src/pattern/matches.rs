@@ -1,9 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::iter::Peekable;
-
-use ppvm_traits_2::{Pauli, PauliBits, Word};
+use ppvm_traits_2::{Pauli, PauliBits};
 
 use super::data::{Decorated, OpPattern, PatternSite, PauliPattern, SiteSet};
 
@@ -32,25 +30,29 @@ impl PauliPattern {
     /// Whether `word` is accepted, using the original greedy matcher.
     pub fn matches<W>(&self, word: &W) -> bool
     where
-        W: Word,
+        W: PauliBits,
         W::Site: PatternSite,
     {
-        let mut sites = word
-            .iter()
-            .enumerate()
-            .map(|(position, site)| (position, site.to_pauli()))
-            .peekable();
+        let mut position = 0;
         for decorated in &self.0 {
             let matched = match decorated {
-                Decorated::Position(op, position) => match_position(&mut sites, *op, *position),
-                Decorated::Star(op) => match_star(&mut sites, *op),
-                Decorated::Repeat(op, count) => match_repeat(&mut sites, *op, *count),
+                Decorated::Position(op, target) => {
+                    match_position(word, &mut position, *op, *target)
+                }
+                Decorated::Star(op) => match_star(word, &mut position, *op),
+                Decorated::Repeat(op, count) => match_repeat(word, &mut position, *op, *count),
             };
             if !matched {
                 return false;
             }
         }
-        sites.all(|(_, pauli)| pauli == Some(Pauli::I))
+        while position < word.n_sites() {
+            if !is_identity(word, position) {
+                return false;
+            }
+            position += 1;
+        }
+        true
     }
 
     /// Match a Pauli bit-vector, specializing the ubiquitous zero-state
@@ -71,42 +73,58 @@ impl PauliPattern {
     }
 }
 
-fn match_position<I>(sites: &mut Peekable<I>, pattern: OpPattern, position: usize) -> bool
+fn match_position<W>(word: &W, position: &mut usize, pattern: OpPattern, target: usize) -> bool
 where
-    I: Iterator<Item = (usize, Option<Pauli>)>,
+    W: PauliBits,
 {
-    for (site_position, pauli) in sites.by_ref() {
-        if site_position == position {
-            return pattern.accepts_site(pauli);
-        }
-        if pauli != Some(Pauli::I) {
+    if *position > target {
+        return false;
+    }
+    while *position < target {
+        if *position >= word.n_sites() || !is_identity(word, *position) {
             return false;
         }
+        *position += 1;
     }
-    false
+    if *position >= word.n_sites() || !accepts_at(pattern, word, *position) {
+        return false;
+    }
+    *position += 1;
+    true
 }
 
-fn match_star<I>(sites: &mut Peekable<I>, pattern: OpPattern) -> bool
+fn match_star<W>(word: &W, position: &mut usize, pattern: OpPattern) -> bool
 where
-    I: Iterator<Item = (usize, Option<Pauli>)>,
+    W: PauliBits,
 {
-    while sites
-        .peek()
-        .is_some_and(|(_, pauli)| pattern.accepts_site(*pauli))
-    {
-        sites.next();
+    if pattern == OpPattern::AnyPauliOrIdentity {
+        *position = word.n_sites();
+        return true;
+    }
+    while *position < word.n_sites() && accepts_at(pattern, word, *position) {
+        *position += 1;
     }
     true
 }
 
-fn match_repeat<I>(sites: &mut Peekable<I>, pattern: OpPattern, count: usize) -> bool
+fn match_repeat<W>(word: &W, position: &mut usize, pattern: OpPattern, count: usize) -> bool
 where
-    I: Iterator<Item = (usize, Option<Pauli>)>,
+    W: PauliBits,
 {
+    if count != 0 && pattern == OpPattern::AnyPauliOrIdentity {
+        let Some(end) = position.checked_add(count) else {
+            return false;
+        };
+        if end > word.n_sites() {
+            return false;
+        }
+        *position = end;
+        return true;
+    }
     let mut matched = 0;
-    while let Some((_, pauli)) = sites.peek() {
-        if pattern.accepts_site(*pauli) {
-            sites.next();
+    while *position < word.n_sites() {
+        if accepts_at(pattern, word, *position) {
+            *position += 1;
             matched += 1;
             if matched == count {
                 return true;
@@ -116,6 +134,26 @@ where
         }
     }
     matched == count
+}
+
+#[inline(always)]
+fn is_identity<W: PauliBits>(word: &W, position: usize) -> bool {
+    !word.is_lost(position) && word.pauli_code(position) == 0
+}
+
+#[inline(always)]
+fn accepts_at<W: PauliBits>(pattern: OpPattern, word: &W, position: usize) -> bool {
+    if word.is_lost(position) {
+        return pattern == OpPattern::AnyPauliOrIdentity;
+    }
+    let pauli = match word.pauli_code(position) {
+        0 => Pauli::I,
+        1 => Pauli::X,
+        2 => Pauli::Z,
+        3 => Pauli::Y,
+        _ => unreachable!("a Pauli code has two bits"),
+    };
+    pattern.accepts(pauli)
 }
 
 fn op_from_set(set: SiteSet) -> OpPattern {

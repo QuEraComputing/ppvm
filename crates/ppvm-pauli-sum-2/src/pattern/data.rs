@@ -92,15 +92,6 @@ impl OpPattern {
         self.site_set().accepts(pauli)
     }
 
-    pub(crate) fn accepts_site(self, pauli: Option<Pauli>) -> bool {
-        match pauli {
-            Some(pauli) => self.accepts(pauli),
-            // Old's `_` / `[XYZ]?` arm returns `true` without inspecting the
-            // symbol, so it also accepts the lossy alphabet's `L`.
-            None => self == Self::AnyPauliOrIdentity,
-        }
-    }
-
     pub(crate) fn site_set(self) -> SiteSet {
         match self {
             Self::Identity => SiteSet::I,

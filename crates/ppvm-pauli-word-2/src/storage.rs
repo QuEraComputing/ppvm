@@ -14,7 +14,7 @@
 //! the hot paths and the bucket distribution at parity.
 
 use bitvec::view::BitViewSized;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash, Hasher};
 
 /// Native-word default storage: `u64` on native targets and `usize` on wasm32.
 ///
@@ -62,6 +62,17 @@ pub trait HashFinalize {
         let _ = storage_bytes;
         raw
     }
+
+    /// Apply the map-index transform to a finalized structural digest.
+    #[inline(always)]
+    fn index_hash(raw: u64) -> u64
+    where
+        Self: BuildHasher + Default,
+    {
+        let mut hasher = Self::default().build_hasher();
+        hasher.write_u64(raw);
+        hasher.finish()
+    }
 }
 
 impl HashFinalize for fxhash::FxBuildHasher {
@@ -78,6 +89,12 @@ impl HashFinalize for fxhash::FxBuildHasher {
         } else {
             raw
         }
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[inline(always)]
+    fn index_hash(raw: u64) -> u64 {
+        raw.wrapping_mul(0x517c_c1b7_2722_0a95)
     }
 }
 
@@ -103,6 +120,18 @@ mod tests {
             assert_eq!(
                 <fxhash::FxBuildHasher as HashFinalize>::finalize_hash(RAW, width),
                 RAW,
+            );
+        }
+    }
+
+    #[test]
+    fn fxhash_index_fast_path_matches_hasher() {
+        for raw in [0, 1, RAW, u64::MAX] {
+            let mut hasher = fxhash::FxBuildHasher::default().build_hasher();
+            hasher.write_u64(raw);
+            assert_eq!(
+                <fxhash::FxBuildHasher as HashFinalize>::index_hash(raw),
+                hasher.finish()
             );
         }
     }

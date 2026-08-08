@@ -50,9 +50,7 @@ where
     // perform its exact index transform here. Besides restoring the same
     // support-size-dependent bucket arrangement, this makes a parsed key ready
     // for direct insertion with no extra hashing at the map boundary.
-    let mut index_hasher = H::default().build_hasher();
-    index_hasher.write_u64(structural);
-    index_hasher.finish()
+    H::index_hash(structural)
 }
 
 /// `Hash` writes exactly the finalized `key_hash()` as a single `u64`, so the

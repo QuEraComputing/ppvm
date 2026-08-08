@@ -371,6 +371,33 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
         self.invalidate_xz();
     }
 
+    #[inline]
+    fn set_xz_bits(&mut self, i: usize, x: bool, z: bool) {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        self.xbits.set(i, x);
+        self.zbits.set(i, z);
+        if (x || z) && self.lbits[i] {
+            self.lbits.set(i, false);
+        }
+        self.invalidate_xz();
+    }
+
+    #[inline]
+    fn set_xz_bits2(&mut self, i: usize, xi: bool, zi: bool, j: usize, xj: bool, zj: bool) {
+        debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
+        self.xbits.set(i, xi);
+        self.zbits.set(i, zi);
+        self.xbits.set(j, xj);
+        self.zbits.set(j, zj);
+        if (xi || zi) && self.lbits[i] {
+            self.lbits.set(i, false);
+        }
+        if (xj || zj) && self.lbits[j] {
+            self.lbits.set(j, false);
+        }
+        self.invalidate_xz();
+    }
+
     /// Build a rotation branch directly from the packed planes. This avoids
     /// cloning an atomic cache only to invalidate it on the first bit write.
     #[inline]

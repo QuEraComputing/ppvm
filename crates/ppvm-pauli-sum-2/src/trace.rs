@@ -39,7 +39,7 @@ use crate::sum::Sum;
 /// sum-side trace below consumes.
 impl<'a, W> Trace<'a, W> for PauliPattern
 where
-    W: Word + 'a,
+    W: Word + PauliBits + 'a,
     W::Site: PatternSite,
 {
     type Output = bool;

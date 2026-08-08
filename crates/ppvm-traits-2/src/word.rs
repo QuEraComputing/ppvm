@@ -139,6 +139,16 @@ pub trait PauliBits: Word {
         self.set_x_bit(i, x);
         self.set_z_bit(i, z);
     }
+    /// Set both packed bit planes at two sites.
+    ///
+    /// The default composes the one-site setter. Packed words with eager
+    /// structural metadata can override this to refresh exactly once after the
+    /// four writes.
+    #[inline(always)]
+    fn set_xz_bits2(&mut self, i: usize, xi: bool, zi: bool, j: usize, xj: bool, zj: bool) {
+        self.set_xz_bits(i, xi, zi);
+        self.set_xz_bits(j, xj, zj);
+    }
     /// Whether index `i` is lost; `LossyPauliWord` overrides this.
     #[inline(always)]
     fn is_lost(&self, i: usize) -> bool {

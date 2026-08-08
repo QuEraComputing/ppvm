@@ -243,7 +243,7 @@ fn preserve_set_restore_is_identical() {
         hash += (pw(w), c);
         column += (pw(w), c);
     }
-    hash = hash.preserving(keep.clone());
+    hash = hash.preserving(keep);
     column = column.preserving(keep);
 
     hash.truncate();

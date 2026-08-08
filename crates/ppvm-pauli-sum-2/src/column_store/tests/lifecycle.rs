@@ -62,7 +62,7 @@ fn readded_key_appends_instead_of_reviving_its_old_row() {
     Retain::retain(&mut store, |candidate, _| candidate != &key);
     assert_eq!(store.primary.rows(), 16);
 
-    store.add_term(key.clone(), 7.0);
+    store.add_term(key, 7.0);
 
     assert_eq!(store.primary.rows(), 17);
     assert_eq!(store.primary.len(), 16);
@@ -83,9 +83,9 @@ fn stale_index_entry_is_repointed_for_add_and_insert() {
         assert_eq!(store.primary.find_any(&key, hash), Some(5));
 
         if insert {
-            store.insert_term(key.clone(), 11.0);
+            store.insert_term(key, 11.0);
         } else {
-            store.add_term(key.clone(), 11.0);
+            store.add_term(key, 11.0);
         }
 
         assert_eq!(store.primary.find_any(&key, hash), Some(16));

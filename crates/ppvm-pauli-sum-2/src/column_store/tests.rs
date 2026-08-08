@@ -59,7 +59,7 @@ fn probe_survives_index_growth() {
         })
         .collect();
     for (i, word) in words.iter().enumerate() {
-        store.add_term(word.clone(), i as f64);
+        store.add_term(*word, i as f64);
     }
     for word in &words {
         assert!(

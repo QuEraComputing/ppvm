@@ -141,7 +141,7 @@ where
     /// than [`Coefficient::mul_sign`], which takes `&self` and therefore clones on
     /// a heap-owning coefficient ring, and the `+1` case does not touch the
     /// coefficient at all (old's `v.clone()` vs `-v.clone()` branch).
-    #[inline]
+    #[inline(always)]
     fn rekey_bits<F>(&mut self, f: F)
     where
         F: Fn(&mut W) -> bool + Send + Sync,
@@ -216,7 +216,7 @@ where
     /// set): `HXH = Z`, `HZH = X`, `HYH = −Y`. A direct bit rewrite
     /// ([`rekey_bits`](Sum::rekey_bits)), as in old — not a [`Phased`]
     /// round-trip.
-    #[inline]
+    #[inline(always)]
     fn h(&mut self, qubit: usize) {
         self.rekey_bits(move |k| {
             if k.is_lost(qubit) {
@@ -232,7 +232,7 @@ where
 
     /// `S`: `z ← x ⊕ z`; the sign flips only for `X` (x set, z clear):
     /// `SXS† = −Y`, `SYS† = X`, `SZS† = Z`.
-    #[inline]
+    #[inline(always)]
     fn s(&mut self, qubit: usize) {
         self.rekey_bits(move |k| {
             if k.is_lost(qubit) {
@@ -245,7 +245,7 @@ where
         });
     }
 
-    #[inline]
+    #[inline(always)]
     fn cnot(&mut self, control: usize, target: usize) {
         self.rekey_bits(move |k| {
             if k.is_lost(control) || k.is_lost(target) {
@@ -261,7 +261,7 @@ where
         });
     }
 
-    #[inline]
+    #[inline(always)]
     fn cz(&mut self, qubit0: usize, qubit1: usize) {
         self.rekey_bits(move |k| {
             if k.is_lost(qubit0) || k.is_lost(qubit1) {
@@ -295,7 +295,7 @@ where
 {
     /// `S†`: the same bit map as `S` (`z ← x ⊕ z`); the sign flips for `Y`
     /// (both bits set): `S†XS = Y`, `S†YS = −X`, `S†ZS = Z`.
-    #[inline]
+    #[inline(always)]
     fn s_dag(&mut self, qubit: usize) {
         self.rekey_bits(move |k| {
             if k.is_lost(qubit) {
@@ -309,7 +309,7 @@ where
     }
 
     /// `√X`: `x ← x ⊕ z`; the sign flips for `Y`: `X ↦ X`, `Y ↦ −Z`, `Z ↦ Y`.
-    #[inline]
+    #[inline(always)]
     fn sqrt_x(&mut self, qubit: usize) {
         self.rekey_bits(move |k| {
             if k.is_lost(qubit) {
@@ -324,7 +324,7 @@ where
 
     /// `(√X)†`: the same bit map as `√X`; the sign flips for `Z` (z set, x
     /// clear): `X ↦ X`, `Y ↦ Z`, `Z ↦ −Y`.
-    #[inline]
+    #[inline(always)]
     fn sqrt_x_dag(&mut self, qubit: usize) {
         self.rekey_bits(move |k| {
             if k.is_lost(qubit) {
@@ -339,7 +339,7 @@ where
 
     /// `√Y`: swap the X and Z bits; the sign flips for `Z`: `X ↦ Z`, `Y ↦ Y`,
     /// `Z ↦ −X`.
-    #[inline]
+    #[inline(always)]
     fn sqrt_y(&mut self, qubit: usize) {
         self.rekey_bits(move |k| {
             if k.is_lost(qubit) {
@@ -355,7 +355,7 @@ where
 
     /// `(√Y)†`: swap the X and Z bits; the sign flips for `X`: `X ↦ −Z`,
     /// `Y ↦ Y`, `Z ↦ X`.
-    #[inline]
+    #[inline(always)]
     fn sqrt_y_dag(&mut self, qubit: usize) {
         self.rekey_bits(move |k| {
             if k.is_lost(qubit) {

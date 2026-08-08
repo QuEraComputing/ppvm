@@ -29,17 +29,28 @@
 //! trait assignment (`traits-2-configuration-and-hashing.md` §"Pauli algebra
 //! traits"; `word-data-structures.md`), not a workaround.
 
+use std::hash::BuildHasher;
+
 use ppvm_traits_2::{BlanketClifford, PhaseTrack, SymplecticColumns};
 
 use crate::data::PauliWord;
-use crate::storage::PauliStorage;
+use crate::storage::{HashFinalize, PauliStorage};
 
 /// Opt into the single audited blanket `Clifford` (`ppvm-traits-2`): a bare word
 /// composes its `Sp(2n, 2)` [`SymplecticColumns`] bit map with the
 /// phase-discarding [`PhaseTrack`] below.
-impl<A: PauliStorage, H> BlanketClifford for PauliWord<A, H> {}
+impl<A, H> BlanketClifford for PauliWord<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
+}
 
-impl<A: PauliStorage, H> SymplecticColumns for PauliWord<A, H> {
+impl<A, H> SymplecticColumns for PauliWord<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
     #[inline]
     fn n_qubits(&self) -> usize {
         self.nqubits

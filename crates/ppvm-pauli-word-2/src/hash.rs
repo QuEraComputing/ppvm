@@ -13,11 +13,10 @@
 //! realizing the design's interior-mutable lazy-cache contract).
 
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::sync::atomic::Ordering;
 
 use ppvm_traits_2::Indexable;
 
-use crate::data::{HASH_UNCACHED, PauliWord};
+use crate::data::PauliWord;
 use crate::storage::{HashFinalize, PauliStorage};
 
 /// The finalized structural digest of the planes `(x, z)`.
@@ -29,7 +28,7 @@ use crate::storage::{HashFinalize, PauliStorage};
 /// digest is folded per-hasher/per-width by [`HashFinalize`] so the low bits
 /// (hashbrown's bucket) are avalanche-quality even for a short key consumed
 /// directly.
-#[inline]
+#[inline(always)]
 pub(crate) fn structural_hash<A, H>(x: &A, z: &A, _nqubits: usize) -> u64
 where
     A: PauliStorage,
@@ -54,7 +53,7 @@ where
     A: PauliStorage,
     H: BuildHasher + Default + HashFinalize,
 {
-    #[inline]
+    #[inline(always)]
     fn hash<S: Hasher>(&self, state: &mut S) {
         state.write_u64(self.key_hash());
     }
@@ -70,18 +69,9 @@ where
     A: PauliStorage,
     H: BuildHasher + Default + HashFinalize,
 {
-    #[inline]
+    #[inline(always)]
     fn key_hash(&self) -> u64 {
-        // Relaxed is sufficient: the cache is a pure function of the immutable
-        // structural fields, so any thread that observes a non-sentinel value
-        // observes *the* digest. A racing miss just recomputes the same value.
-        let cached = self.hash_cache.load(Ordering::Relaxed);
-        if cached != HASH_UNCACHED {
-            return cached;
-        }
-        let digest = structural_hash::<A, H>(&self.xbits.data, &self.zbits.data, self.nqubits);
-        self.hash_cache.store(digest, Ordering::Relaxed);
-        digest
+        self.hash_cache
     }
 }
 
@@ -104,17 +94,17 @@ mod tests {
         // identity build-hasher.
         let w: PauliWord = "XYZI".into();
         let bh = IdentityBuildHasher;
-        assert_eq!(bh.hash_one(&w), w.key_hash());
+        assert_eq!(bh.hash_one(w), w.key_hash());
     }
 
     #[test]
     fn cache_is_stable_across_clone_and_mutation() {
         let w: PauliWord = "XYZI".into();
         let h0 = w.key_hash();
-        let c = w.clone();
+        let c = w;
         assert_eq!(c.key_hash(), h0, "clone copies the cached digest");
 
-        let mut m = w.clone();
+        let mut m = w;
         m.set_x_bit(3, true); // I -> X on qubit 3, a structural change
         assert_ne!(m.key_hash(), h0, "mutation invalidates and recomputes");
     }

@@ -560,7 +560,7 @@ mod tests {
 
         let q = word("ZY");
         let expected_word = a.multiply(&sum(2, &[("ZY", c(1.0))]));
-        assert_same(&(a.clone() * q.clone()), &expected_word, "A * q");
+        assert_same(&(a.clone() * q), &expected_word, "A * q");
         let mut assigned_word = a;
         assigned_word *= q;
         assert_same(&assigned_word, &expected_word, "A *= q");

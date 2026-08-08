@@ -37,7 +37,11 @@ pub struct PauliKeyColumn<A: PauliStorage, H = fxhash::FxBuildHasher> {
     _hasher: PhantomData<fn() -> H>,
 }
 
-impl<A: PauliStorage, H> PauliKeyColumn<A, H> {
+impl<A, H> PauliKeyColumn<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
     #[inline(always)]
     fn plane_bit(plane: &A, qubit: usize) -> bool {
         #[cfg(target_endian = "little")]

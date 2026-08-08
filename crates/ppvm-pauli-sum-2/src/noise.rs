@@ -63,7 +63,7 @@ where
     /// verbatim in shape as well as arithmetic: an in-place mutation that cannot
     /// remove, so a zero eigenvalue leaves a zero-coefficient term in the support
     /// exactly as old does.
-    #[inline(never)]
+    #[inline(always)]
     fn pauli_error(&mut self, qubit: usize, probabilities: [C; 3]) {
         let [x_factor, z_factor, y_factor] = C::pauli_error_factors(probabilities);
         self.scale_pauli_error(qubit, x_factor, z_factor, y_factor);
@@ -162,6 +162,7 @@ where
     C: Coefficient + num::One + std::ops::Mul<f64, Output = C>,
     P: crate::policy::Policy<W, C>,
 {
+    #[inline(always)]
     fn depolarize1(&mut self, qubit: usize, p: C) {
         let factor = C::one() - p * (4.0 / 3.0);
         self.scale_by_key(move |k: &W, c: &mut C| {
@@ -181,6 +182,7 @@ where
     C: Coefficient + num::One + std::ops::Mul<f64, Output = C>,
     P: crate::policy::Policy<W, C>,
 {
+    #[inline(always)]
     fn depolarize2(&mut self, qubit0: usize, qubit1: usize, p: C) {
         let factor = C::one() - p * (16.0 / 15.0);
         self.scale_by_key(move |k: &W, c: &mut C| {

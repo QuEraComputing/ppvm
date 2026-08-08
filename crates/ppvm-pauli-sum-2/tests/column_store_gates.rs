@@ -107,7 +107,7 @@ fn hermitian_overlap_matches_between_backends() {
         (PauliWord::from("XI"), Complex::new(1.0, 2.0)),
         (PauliWord::from("IZ"), Complex::new(-0.5, 0.25)),
     ];
-    let hash = H::from_terms(2, terms.clone());
+    let hash = H::from_terms(2, terms);
     let column = C::from_terms(2, terms);
     assert_eq!(
         hash.hermitian_overlap(&hash),

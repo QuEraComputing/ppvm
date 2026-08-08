@@ -219,9 +219,7 @@ fn apply_does_not_truncate() {
             CoefficientThreshold { threshold: 0.5 },
             [(pw("XI"), 1.0)],
         );
-    sum.apply(RekeyProducer::new(|k: &PauliWord, c: &f64| {
-        (k.clone(), *c * 0.1)
-    }));
+    sum.apply(RekeyProducer::new(|k: &PauliWord, c: &f64| (*k, *c * 0.1)));
     assert_eq!(sum.get(&pw("XI")), Some(0.1), "sub-threshold term survives");
     sum.truncate();
     assert!(!sum.contains_key(&pw("XI")), "…until the caller truncates");

@@ -65,7 +65,7 @@ where
     /// The key's width must match the sum's — a `debug_assert!`, as in old
     /// (`debug_assert_eq!(self.n_qubits(), key.n_qubits())`): a mismatch panics
     /// in debug and is unchecked in release.
-    #[inline]
+    #[inline(always)]
     pub fn add_term(&mut self, key: S::Key, coeff: S::Coeff) {
         debug_assert_eq!(
             key.n_sites(),
@@ -86,7 +86,7 @@ where
     /// `sum += (key, coeff)` — see [`Sum::add_term`]. `key` is anything the key
     /// type converts from, so the old crate's string form
     /// `sum += ("IIZI", 1.0)` carries over verbatim.
-    #[inline]
+    #[inline(always)]
     fn add_assign(&mut self, rhs: (K, S::Coeff)) {
         self.add_term(rhs.0.into(), rhs.1);
     }
@@ -313,6 +313,7 @@ where
 {
     /// Extend using old's backing-map semantics: a duplicate key is replaced,
     /// not accumulated. Algebraic addition continues to use [`Sum::add_sum`].
+    #[inline(always)]
     fn extend<I>(&mut self, iter: I)
     where
         I: IntoIterator<Item = (S::Key, S::Coeff)>,

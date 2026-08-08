@@ -21,14 +21,16 @@
 use bitvec::view::BitView;
 use num::PrimInt;
 use ppvm_traits_2::{KeyProduct, Phase};
+use std::hash::BuildHasher;
 
 use crate::data::PauliWord;
-use crate::storage::PauliStorage;
+use crate::storage::{HashFinalize, PauliStorage};
 
 impl<A, H> KeyProduct for PauliWord<A, H>
 where
     A: PauliStorage,
     <A as BitView>::Store: PrimInt,
+    H: BuildHasher + Default + HashFinalize,
     // `KeyProduct: Eq + Clone` — both hold for `PauliWord<A, H>` with no `H`
     // bound (see `data.rs`).
 {
@@ -67,6 +69,7 @@ where
                 out_z[i] = b ^ d;
             }
         }
+        out.invalidate_hash();
         let k = ((2 * sign_count + imag_count) % 4) as u8;
         (out, Phase::from_exponent(k))
     }

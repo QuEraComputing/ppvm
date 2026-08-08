@@ -335,7 +335,7 @@ fn for_each_ref_sees_the_live_support_after_a_rekey() {
     s.h(2);
 
     let mut scanned: Vec<(PauliWord, f64)> = Vec::new();
-    s.for_each_ref(|k, c| scanned.push((k.clone(), *c)));
+    s.for_each_ref(|k, c| scanned.push((*k, *c)));
     let mut expected: Vec<(PauliWord, f64)> = s.iter().collect();
 
     let key = |p: &PauliWord| p.to_string();

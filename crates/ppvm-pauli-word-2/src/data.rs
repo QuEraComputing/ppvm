@@ -11,22 +11,14 @@
 //! §"Representation types" and §"Pauli algebra traits" (`PauliBits`).
 
 use std::fmt;
+use std::hash::BuildHasher;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use bitvec::array::BitArray;
 use ppvm_traits_2::{Pauli, PauliBits, Word};
 
-use crate::storage::{DefaultStorage, PauliStorage};
-
-/// The [`hash_cache`](PauliWord::hash_cache) sentinel meaning "not yet computed".
-///
-/// A word whose finalized structural digest happens to equal this value is
-/// simply recomputed on every `key_hash()` — the result is still the true
-/// digest, only the caching is skipped, so this is a `1`-in-`2⁶⁴` perf non-event
-/// with **no** correctness consequence (`key_hash()` and
-/// `KeyColumn::hash_into` stay bit-for-bit identical either way).
-pub(crate) const HASH_UNCACHED: u64 = 0;
+use crate::hash::structural_hash;
+use crate::storage::{DefaultStorage, HashFinalize, PauliStorage};
 
 /// A fixed-width Pauli word stored as parallel packed `x` and `z` bit planes.
 ///
@@ -81,16 +73,18 @@ pub struct PauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildHasher
     pub(crate) zbits: BitArray<A>,
     /// Number of qubits (logical width).
     pub(crate) nqubits: usize,
-    /// Lazy structural-hash cache (Design: §"Lazy hashing and interior
-    /// mutability"). Holds [`HASH_UNCACHED`] until `key_hash()` first populates
-    /// it with the finalized digest.
-    pub(crate) hash_cache: AtomicU64,
+    /// Eager finalized structural digest.
+    pub(crate) hash_cache: u64,
     /// The private internal digest algorithm; never a runtime value.
     /// `fn() -> H` keeps `PauliWord` `Send + Sync` for any `H`.
     pub(crate) _hasher: PhantomData<fn() -> H>,
 }
 
-impl<A: PauliStorage, H> PauliWord<A, H> {
+impl<A, H> PauliWord<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
     /// Construct the identity word `I…I` on `nqubits` qubits (all planes zero).
     ///
     /// Constructors leave the cache empty (Design: `word-data-structures.md`
@@ -102,26 +96,18 @@ impl<A: PauliStorage, H> PauliWord<A, H> {
             "nqubits {nqubits} exceeds the {}-bit backing storage",
             8 * std::mem::size_of::<A>(),
         );
-        Self {
-            xbits: BitArray::ZERO,
-            zbits: BitArray::ZERO,
-            nqubits,
-            hash_cache: AtomicU64::new(HASH_UNCACHED),
-            _hasher: PhantomData,
-        }
+        Self::from_planes(BitArray::ZERO, BitArray::ZERO, nqubits)
     }
 
-    /// Assemble from already-packed planes and a width. Callers must uphold the
-    /// canonical-unused-bits invariant (bits at index `>= nqubits` are `0`); the
-    /// cache is left empty. Crate-internal — used by the twisted product and the
-    /// key column, which both preserve the invariant.
+    /// Assemble from already-packed planes and a width.
     #[inline]
     pub(crate) fn from_planes(xbits: BitArray<A>, zbits: BitArray<A>, nqubits: usize) -> Self {
+        let hash_cache = structural_hash::<A, H>(&xbits.data, &zbits.data, nqubits);
         Self {
             xbits,
             zbits,
             nqubits,
-            hash_cache: AtomicU64::new(HASH_UNCACHED),
+            hash_cache,
             _hasher: PhantomData,
         }
     }
@@ -131,9 +117,7 @@ impl<A: PauliStorage, H> PauliWord<A, H> {
     /// through `&mut self`).
     #[inline]
     pub(crate) fn invalidate_hash(&mut self) {
-        // Exclusive `&mut self` access — reset without an atomic RMW; the next
-        // `key_hash()` recomputes.
-        *self.hash_cache.get_mut() = HASH_UNCACHED;
+        self.hash_cache = structural_hash::<A, H>(&self.xbits.data, &self.zbits.data, self.nqubits);
     }
 
     /// A copy with the X and/or Z bit at `i` toggled and a fresh **uncached**
@@ -268,7 +252,11 @@ impl<A: PauliStorage, H> Word for PauliWord<A, H> {
     }
 }
 
-impl<A: PauliStorage, H> PauliBits for PauliWord<A, H> {
+impl<A, H> PauliBits for PauliWord<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
     #[inline(always)]
     fn x_bit(&self, i: usize) -> bool {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");
@@ -362,17 +350,11 @@ impl<A: PauliStorage, H> Clone for PauliWord<A, H> {
     /// rules"). Hand-written so no spurious `H: Clone` bound is imposed.
     #[inline]
     fn clone(&self) -> Self {
-        Self {
-            xbits: self.xbits,
-            zbits: self.zbits,
-            nqubits: self.nqubits,
-            // Copy the (possibly still-uncached) digest verbatim; the clone has
-            // identical structural contents.
-            hash_cache: AtomicU64::new(self.hash_cache.load(Ordering::Relaxed)),
-            _hasher: PhantomData,
-        }
+        *self
     }
 }
+
+impl<A: PauliStorage, H> Copy for PauliWord<A, H> {}
 
 impl<A: PauliStorage, H> fmt::Debug for PauliWord<A, H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -412,7 +394,11 @@ impl<A: PauliStorage, H> fmt::Display for PauliWord<A, H> {
     }
 }
 
-impl<A: PauliStorage, H> From<&str> for PauliWord<A, H> {
+impl<A, H> From<&str> for PauliWord<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
     /// Parse a Pauli string of `I`/`X`/`Y`/`Z` symbols (underscores are ignored
     /// separators), mirroring `ppvm-pauli-word`'s `From<&str>`. Panics on any
     /// other character or if the width exceeds the backing storage.
@@ -438,7 +424,11 @@ impl<A: PauliStorage, H> From<&str> for PauliWord<A, H> {
     }
 }
 
-impl<A: PauliStorage, H> From<String> for PauliWord<A, H> {
+impl<A, H> From<String> for PauliWord<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
     #[inline]
     fn from(value: String) -> Self {
         Self::from(value.as_str())

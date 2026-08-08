@@ -20,8 +20,9 @@
 //! (`ℤ₄ × 𝔽₂²`) of `lean/PPVM/Pauli/Phase.lean`.
 
 use std::fmt;
+use std::hash::BuildHasher;
 
-use ppvm_pauli_word_2::{PauliStorage, PauliWord};
+use ppvm_pauli_word_2::{HashFinalize, PauliStorage, PauliWord};
 use ppvm_traits_2::{Phase, Word};
 
 /// A base word `W` paired with an explicit `ℤ₄` phase — the standalone phased
@@ -153,7 +154,11 @@ impl<W: fmt::Display> fmt::Display for Phased<W> {
     }
 }
 
-impl<A: PauliStorage, H> From<&str> for Phased<PauliWord<A, H>> {
+impl<A, H> From<&str> for Phased<PauliWord<A, H>>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
     /// Parse a `"[sign][i]<PauliString>"` literal into a phased Pauli word:
     /// `+`/`-` set the sign, an optional `i` immediately after sets the
     /// imaginary flag, and the remainder is the [`PauliWord`] string. Ported from
@@ -175,7 +180,11 @@ impl<A: PauliStorage, H> From<&str> for Phased<PauliWord<A, H>> {
     }
 }
 
-impl<A: PauliStorage, H> From<String> for Phased<PauliWord<A, H>> {
+impl<A, H> From<String> for Phased<PauliWord<A, H>>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
     #[inline]
     fn from(s: String) -> Self {
         Self::from(s.as_str())

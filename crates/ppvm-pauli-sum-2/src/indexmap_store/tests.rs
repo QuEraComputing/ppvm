@@ -124,10 +124,7 @@ fn all_workspace_capacities_survive_reuse() {
     let mut store = Store::with_capacity(16);
     AddTerm::add_term(&mut store, key("X"), 1.0);
     RotateInPlace::rotate_in_place(&mut store, |_, _| Some((key("Z"), 0.0)));
-    ApplyProducer::apply_producer(
-        &mut store,
-        RekeyProducer::new(|k: &Key, c: &f64| (k.clone(), *c)),
-    );
+    ApplyProducer::apply_producer(&mut store, RekeyProducer::new(|k: &Key, c: &f64| (*k, *c)));
 
     let capacities = (
         store.primary.capacity(),

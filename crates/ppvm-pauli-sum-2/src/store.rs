@@ -32,8 +32,7 @@
 //! millions of gates — matching the old aux-map reuse and avoiding a per-gate
 //! reallocation.
 
-use std::collections::HashMap;
-
+use hashbrown::HashMap;
 use ppvm_traits_2::{
     Accumulate, Coefficient, Conjugate, IdentityBuildHasher, ImaginaryUnit, Indexable, KeyBatch,
     KeyProduct, Multiply, Pair, PauliBits, Retain, Scale, Support, TermBatch, TermProducer,
@@ -99,7 +98,7 @@ impl<K: Clone, C: Clone> Clone for HashMapStore<K, C> {
         Self {
             primary: self.primary.clone(),
             aux: HashMap::with_capacity_and_hasher(self.primary.capacity(), IdentityBuildHasher),
-            scratch: Vec::with_capacity(self.scratch.capacity()),
+            scratch: Vec::new(),
             batch: TermBatch::new(),
         }
     }
@@ -847,13 +846,10 @@ where
     K: Indexable,
     C: Coefficient,
 {
-    #[inline]
+    #[inline(always)]
     fn add_term(&mut self, key: K, coeff: C) {
-        // Old's `ACMapAddAssign::add_assign` verbatim: `and_modify` on a hit,
-        // `or_insert` otherwise — so an exactly-zero coefficient is *inserted*,
-        // not dropped.
         self.entry(key)
-            .and_modify(|v| *v += coeff.clone())
+            .and_modify(|slot| *slot += coeff.clone())
             .or_insert(coeff);
     }
 }
@@ -862,7 +858,7 @@ impl<K, C> InsertTerm<K, C> for HashMap<K, C, IdentityBuildHasher>
 where
     K: Indexable,
 {
-    #[inline]
+    #[inline(always)]
     fn insert_term(&mut self, key: K, coeff: C) {
         self.insert(key, coeff);
     }
@@ -899,22 +895,26 @@ where
 
     #[inline]
     fn len(&self) -> usize {
-        Support::len(&self.primary)
+        self.primary.len()
     }
 
-    #[inline]
+    #[inline(always)]
     fn get(&self, key: &K) -> Option<C> {
-        Support::get(&self.primary, key)
+        self.primary.get(key).cloned()
     }
 
     #[inline]
     fn iter(&self) -> impl Iterator<Item = (K, C)> {
-        Support::iter(&self.primary)
+        self.primary
+            .iter()
+            .map(|(key, coeff)| (key.clone(), coeff.clone()))
     }
 
     #[inline]
-    fn for_each_ref(&self, f: impl FnMut(&K, &C)) {
-        Support::for_each_ref(&self.primary, f);
+    fn for_each_ref(&self, mut f: impl FnMut(&K, &C)) {
+        for (key, coeff) in &self.primary {
+            f(key, coeff);
+        }
     }
 }
 
@@ -925,12 +925,14 @@ where
 {
     #[inline]
     fn accumulate_batch(&mut self, terms: &TermBatch<K, C>) {
-        Accumulate::accumulate_batch(&mut self.primary, terms);
+        for (key, coeff) in terms.iter() {
+            AddTerm::add_term(&mut self.primary, key.clone(), coeff.clone());
+        }
     }
 
     #[inline]
     fn reduce(&mut self) {
-        Accumulate::reduce(&mut self.primary);
+        self.primary.retain(|_, coeff| !coeff.is_zero());
     }
 }
 
@@ -941,7 +943,9 @@ where
 {
     #[inline]
     fn scale(&mut self, s: &C) {
-        Scale::scale(&mut self.primary, s);
+        for coeff in self.primary.values_mut() {
+            *coeff *= s.clone();
+        }
     }
 }
 
@@ -952,12 +956,26 @@ where
 {
     #[inline]
     fn probe_batch(&self, keys: &KeyBatch<K>, out: &mut [Option<C>]) {
-        Pair::probe_batch(&self.primary, keys, out);
+        debug_assert!(out.len() >= keys.keys().len());
+        for (slot, key) in out.iter_mut().zip(keys.keys()) {
+            *slot = self.get(key);
+        }
     }
 
     #[inline]
     fn overlap(&self, other: &Self) -> C {
-        Pair::overlap(&self.primary, &other.primary)
+        if self.len() <= other.len() {
+            self.primary
+                .iter()
+                .filter_map(|(key, a)| other.get(key).map(|b| a.clone() * b))
+                .sum()
+        } else {
+            other
+                .primary
+                .iter()
+                .filter_map(|(key, b)| self.get(key).map(|a| a * b.clone()))
+                .sum()
+        }
     }
 
     #[inline]
@@ -965,7 +983,18 @@ where
     where
         C: Conjugate,
     {
-        Pair::hermitian_overlap(&self.primary, &other.primary)
+        if self.len() <= other.len() {
+            self.primary
+                .iter()
+                .filter_map(|(key, a)| other.get(key).map(|b| a.conj() * b))
+                .sum()
+        } else {
+            other
+                .primary
+                .iter()
+                .filter_map(|(key, b)| self.get(key).map(|a| a.conj() * b.clone()))
+                .sum()
+        }
     }
 }
 
@@ -976,7 +1005,7 @@ where
 {
     #[inline(always)]
     fn retain(&mut self, keep: impl Fn(&K, &C) -> bool) {
-        Retain::retain(&mut self.primary, keep);
+        self.primary.retain(|key, coeff| keep(key, coeff));
     }
 }
 
@@ -1000,7 +1029,13 @@ where
             self.primary.len(),
             other.primary.len(),
         ));
-        Multiply::multiply_into(&self.primary, &other.primary, &mut acc.primary);
+        for (p, a) in &self.primary {
+            for (q, b) in &other.primary {
+                let (key, phase) = p.key_mul(q);
+                let coeff = phase.apply(&(a.clone() * b.clone()));
+                AddTerm::add_term(&mut acc.primary, key, coeff);
+            }
+        }
     }
 }
 
@@ -1027,7 +1062,13 @@ where
             self.primary.len(),
             other.primary.len(),
         ));
-        Multiply::multiply_into(&self.primary, &other.primary, &mut self.aux);
+        for (p, a) in &self.primary {
+            for (q, b) in &other.primary {
+                let (key, phase) = p.key_mul(q);
+                let coeff = phase.apply(&(a.clone() * b.clone()));
+                AddTerm::add_term(&mut self.aux, key, coeff);
+            }
+        }
         std::mem::swap(&mut self.primary, &mut self.aux);
         // Restore the "aux is empty between operations" invariant: after the swap
         // it holds the stale pre-product support. (`RekeyBijective` gets this for
@@ -1044,7 +1085,11 @@ impl<K, C> StoreAlloc for HashMapStore<K, C> {
             primary: HashMap::with_capacity_and_hasher(cap, IdentityBuildHasher),
             // Size the aux to the same hint so the first re-key never resizes.
             aux: HashMap::with_capacity_and_hasher(cap, IdentityBuildHasher),
-            scratch: Vec::with_capacity(cap),
+            // Old leaves rotation scratch cold. It grows on the first branching
+            // gate and then keeps that allocation; pre-sizing it charges every
+            // sum construction and clone for a path Clifford/noise workloads
+            // never take.
+            scratch: Vec::new(),
             // The `apply` batch is deliberately **not** pre-sized: every workload
             // shipped here drives the fused fast paths instead, so pre-sizing it
             // from the hint would charge each sum two more `cap`-sized columns
@@ -1068,9 +1113,11 @@ where
     K: Indexable,
     C: Coefficient,
 {
-    #[inline]
+    #[inline(always)]
     fn add_term(&mut self, key: K, coeff: C) {
-        AddTerm::add_term(&mut self.primary, key, coeff);
+        if let Some(previous) = self.primary.insert(key.clone(), coeff.clone()) {
+            self.primary.insert(key, previous + coeff);
+        }
     }
 }
 
@@ -1079,7 +1126,7 @@ where
     K: Indexable,
     C: Coefficient,
 {
-    #[inline]
+    #[inline(always)]
     fn insert_term(&mut self, key: K, coeff: C) {
         InsertTerm::insert_term(&mut self.primary, key, coeff);
     }
@@ -1100,13 +1147,15 @@ where
         // `scratch`. `clear` keeps both of its columns' allocations, so a gate
         // stream pays the batch allocation once rather than once per gate.
         self.batch.clear();
-        for (k, c) in Support::iter(&self.primary) {
-            producer.produce(&k, &c, &mut self.batch);
+        for (key, coeff) in &self.primary {
+            producer.produce(key, coeff, &mut self.batch);
         }
         // Replace, not merge: a bijective re-key must not retain the old keys.
         // `reset` keeps the primary's allocation across the clear.
         StoreAlloc::reset(self);
-        Accumulate::accumulate_batch(&mut self.primary, &self.batch);
+        for (key, coeff) in self.batch.iter() {
+            AddTerm::add_term(&mut self.primary, key.clone(), coeff.clone());
+        }
         // Restore the "workspace is empty between operations" invariant the
         // struct docs state (and `Clone`/`PartialEq` rely on). `clear` keeps the
         // capacity, so the next gate still finds a warm buffer.
@@ -1140,7 +1189,9 @@ where
     where
         F: Fn(&K, &mut C) + Send + Sync,
     {
-        ScaleByKey::scale_by_key(&mut self.primary, f);
+        for (key, coeff) in &mut self.primary {
+            f(key, coeff);
+        }
     }
 
     #[inline(always)]
@@ -1173,7 +1224,12 @@ where
     where
         F: Fn(&K) -> i8 + Send + Sync,
     {
-        SignFlipByKey::sign_flip_by_key(&mut self.primary, f);
+        for (key, coeff) in &mut self.primary {
+            let sign = f(key);
+            if sign != 1 {
+                *coeff = coeff.mul_sign(sign);
+            }
+        }
     }
 }
 
@@ -1182,7 +1238,7 @@ where
     K: Indexable,
     C: Coefficient,
 {
-    #[inline]
+    #[inline(always)]
     fn rekey_bijective<F>(&mut self, mut f: F)
     where
         F: FnMut(K, C) -> (K, C) + Send + Sync,
@@ -1211,15 +1267,28 @@ where
         // `ps2.rekey.bimodal`).
         self.aux.clear();
         self.aux.reserve(self.primary.len());
-        for (k, c) in self.primary.drain() {
-            let (nk, nc) = f(k, c);
-            let displaced = self.aux.insert(nk, nc);
-            debug_assert!(
-                displaced.is_none(),
-                "RekeyBijective requires an injective re-key: two distinct keys \
-                 collided, so a term was silently dropped"
-            );
+        // Match the legacy walk shape: transform borrowed primary entries into
+        // the auxiliary map, then clear the primary before swapping. Besides
+        // preserving the source map's dense read-only traversal, this avoids
+        // hashbrown's drain state machine in the inner re-key loop. The cloned
+        // key is immediately mutated and re-hashed just as in old `map_add`.
+        for (k, c) in &self.primary {
+            let (nk, nc) = f(k.clone(), c.clone());
+            let hash = nk.key_hash();
+            match self
+                .aux
+                .raw_entry_mut()
+                .from_hash(hash, |candidate| candidate == &nk)
+            {
+                hashbrown::hash_map::RawEntryMut::Occupied(_) => {
+                    debug_assert!(false, "RekeyBijective requires an injective re-key");
+                }
+                hashbrown::hash_map::RawEntryMut::Vacant(entry) => {
+                    entry.insert_hashed_nocheck(hash, nk, nc);
+                }
+            }
         }
+        self.primary.clear();
         std::mem::swap(&mut self.primary, &mut self.aux);
     }
 }

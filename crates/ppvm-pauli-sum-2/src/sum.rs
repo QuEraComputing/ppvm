@@ -111,7 +111,7 @@ where
     }
 
     /// The coefficient at `key`, if present.
-    #[inline]
+    #[inline(always)]
     pub fn get(&self, key: &S::Key) -> Option<S::Coeff> {
         self.storage.get(key)
     }
@@ -249,7 +249,7 @@ where
 
     /// Mutably borrow the storage backend — **crate-internal**; see
     /// [`storage`](Self::storage).
-    #[inline]
+    #[inline(always)]
     pub(crate) fn storage_mut(&mut self) -> &mut S {
         &mut self.storage
     }
@@ -486,9 +486,21 @@ where
     /// `truncatePreserve_empty` (the empty-keep-set fast path is exact).
     #[inline(always)]
     pub fn truncate(&mut self) {
+        // A disabled policy cannot drop a preserved or ordinary term, so the
+        // entire preserve snapshot/restore pipeline is the identity too.
+        if self.policy.is_noop() {
+            return;
+        }
+
         // 1. Hot path: no keep-set → just the policy (no snapshot scan).
         if self.preserve.is_empty() {
-            self.policy.truncate(&mut self.storage);
+            // Match old's borrow-splitting shape: copy/clone the tiny policy out
+            // before handing the store out mutably. For the shipped policies
+            // this is a register copy and lets the retain predicate carry its
+            // threshold/cap directly instead of repeatedly reaching through
+            // `self`.
+            let policy = self.policy.clone();
+            policy.truncate(&mut self.storage);
             return;
         }
 
@@ -539,7 +551,7 @@ where
     ///
     /// Design: §"apply" and §"Pauli algebra traits" (the sum "applies the one-row
     /// action pointwise and drains each term's phase delta to its coefficient").
-    #[inline]
+    #[inline(always)]
     pub(crate) fn rekey_bijective<F>(&mut self, f: F)
     where
         F: FnMut(S::Key, S::Coeff) -> (S::Key, S::Coeff) + Send + Sync,

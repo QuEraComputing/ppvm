@@ -37,6 +37,12 @@ where
     /// Predicted initial capacity for a sum of `n_sites`-wide keys.
     fn capacity(&self, n_sites: usize) -> usize;
 
+    /// Whether truncation is observationally the identity for every support.
+    #[inline(always)]
+    fn is_noop(&self) -> bool {
+        false
+    }
+
     /// Drop the terms this policy does not retain.
     fn truncate<M>(&self, map: &mut M)
     where
@@ -91,6 +97,11 @@ where
         (1usize << shift).min(NO_POLICY_CAPACITY_CEILING)
     }
 
+    #[inline(always)]
+    fn is_noop(&self) -> bool {
+        true
+    }
+
     #[inline]
     fn truncate<M>(&self, _map: &mut M)
     where
@@ -132,6 +143,11 @@ where
         // Conservative: capacity has a direct performance impact (clearing scales
         // with it), so avoid the binomial blow-up. Ported from the old strategy.
         n_sites * 10
+    }
+
+    #[inline(always)]
+    fn is_noop(&self) -> bool {
+        self.0 == usize::MAX
     }
 
     #[inline(always)]
@@ -230,6 +246,11 @@ where
     }
 
     #[inline(always)]
+    fn is_noop(&self) -> bool {
+        self.0.is_noop() && self.1.is_noop()
+    }
+
+    #[inline(always)]
     fn truncate<M>(&self, map: &mut M)
     where
         M: Retain<W, C>,
@@ -279,6 +300,11 @@ where
     #[inline]
     fn capacity(&self, n_sites: usize) -> usize {
         n_sites * 10
+    }
+
+    #[inline(always)]
+    fn is_noop(&self) -> bool {
+        self.0 == usize::MAX
     }
 
     #[inline]

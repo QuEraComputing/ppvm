@@ -32,7 +32,7 @@ fn matched_rx_stores(pairs: usize, closed: bool) -> (Store, Store, PauliWord) {
 
     let dead = dead_sentinel();
     let mut sparse = dense.clone();
-    sparse.add_term(dead.clone(), -17.0);
+    sparse.add_term(dead, -17.0);
     Retain::retain(&mut sparse, |key, _| key != &dead);
     assert!(dense.primary.is_dense());
     assert!(!sparse.primary.is_dense());
@@ -98,8 +98,8 @@ fn append_and_readd_leave_a_dirty_cache_for_lazy_rebuild() {
     let appended = rx_word(100, false);
     let old_rows = sparse.primary.rows();
 
-    sparse.add_term(appended.clone(), 23.0);
-    sparse.add_term(dead.clone(), 29.0);
+    sparse.add_term(appended, 23.0);
+    sparse.add_term(dead, 29.0);
 
     assert!(sparse.primary.sparse_cache_dirty);
     assert!(sparse.primary.sparse_rows.is_empty());

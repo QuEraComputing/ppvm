@@ -989,7 +989,11 @@ macro_rules! forward_single {
 // Two-qubit gate: skip the pair when either endpoint is lost.
 macro_rules! forward_pair {
     ($name:ident) => {
-        #[inline]
+        // Keep one compact monomorphized copy of the packed row kernel. Inlining
+        // it through the generalized loss guard duplicates the full loop into
+        // every gate/alias caller and makes LLVM spill the four addressed bits
+        // at multi-word widths.
+        #[inline(never)]
         fn $name(&mut self, control: usize, target: usize) {
             if self.is_lost[control] || self.is_lost[target] {
                 return;

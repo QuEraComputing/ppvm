@@ -29,7 +29,7 @@
 use num::Zero;
 use ppvm_traits_2::{
     AsymmetricLossChannel, Clifford, CorrelatedLossChannel, Depolarizing, Depolarizing2,
-    LossChannel, Measure, Pauli, PauliError, ResetLossChannel, TwoQubitPauliError,
+    LossChannel, Pauli, PauliError, ResetLossChannel, TwoQubitPauliError,
 };
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt};
@@ -318,7 +318,14 @@ impl<A: RowStorage, I: Bitstring, H> AsymmetricLossChannel<f64> for GeneralizedT
         if p_tot < self.tableau.rng.random::<f64>() {
             return;
         }
-        if let Some(true) = Measure::measure(self, qubit) {
+        // This event immediately marks the qubit lost, so retained measurement
+        // scratch cannot serve this site again. Run the same projection kernel
+        // with ephemeral buffers, as the legacy path did, while keeping the
+        // intentionally observable record append.
+        let (phase, stab, destab) = self.compute_decomposition(qubit, Pauli::Z);
+        if let Some(true) =
+            self.measure_with_scratch(qubit, &mut MeasureScratch::new(), phase, stab, destab, true)
+        {
             Clifford::x(self, qubit);
         }
         self.is_lost[qubit] = true;

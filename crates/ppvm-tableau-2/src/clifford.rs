@@ -992,13 +992,13 @@ impl<A: RowStorage, I: Bitstring, H> CliffordExtensions for GeneralizedTableau<A
 
 impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// Fast path: is any qubit in the slice lost?
-    #[inline]
+    #[inline(always)]
     fn any_lost_single(&self, indices: &[usize]) -> bool {
         indices.iter().any(|&i| self.is_lost[i])
     }
 
     /// Fast path: does any pair have a lost qubit?
-    #[inline]
+    #[inline(always)]
     fn any_lost_pair(&self, pairs: &[(usize, usize)]) -> bool {
         pairs
             .iter()
@@ -1011,6 +1011,7 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
 // filtered `Vec`. The surviving indices still get the gate.
 macro_rules! forward_batch_single {
     ($name:ident) => {
+        #[inline(always)]
         fn $name(&mut self, indices: &[usize]) {
             if !self.any_lost_single(indices) {
                 self.tableau.$name(indices);
@@ -1028,6 +1029,7 @@ macro_rules! forward_batch_single {
 
 macro_rules! forward_batch_pair {
     ($name:ident) => {
+        #[inline(always)]
         fn $name(&mut self, pairs: &[(usize, usize)]) {
             if !self.any_lost_pair(pairs) {
                 self.tableau.$name(pairs);

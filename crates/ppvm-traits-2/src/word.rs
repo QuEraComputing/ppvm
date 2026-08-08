@@ -159,6 +159,22 @@ pub trait PauliBits: Word {
         let _ = i;
     }
 
+    /// A copy of this word with the loss flag at `i` cleared.
+    ///
+    /// The default preserves compatibility for custom word types by cloning and
+    /// calling [`clear_lost`](PauliBits::clear_lost). Packed lossy words can
+    /// override it to copy their planes directly, avoiding an atomic cache copy
+    /// that the loss mutation would immediately invalidate.
+    #[inline]
+    fn loss_cleared(&self, i: usize) -> Self
+    where
+        Self: Sized + Clone,
+    {
+        let mut out = self.clone();
+        out.clear_lost(i);
+        out
+    }
+
     /// A copy of this word with the X and/or Z bit at `i` toggled — the
     /// **rotation-branch key builder** (`iGP` from a diagonal `P`).
     ///

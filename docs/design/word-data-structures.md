@@ -147,18 +147,18 @@ pub struct LossyPauliWord<A, H> {
     zbits: BitArray<A>,
     lbits: BitArray<A>,
     nqubits: usize,
-    xz_hash_cache: AtomicU64,
-    loss_hash_cache: AtomicU64,
-    combined_hash_cache: AtomicU64,
+    hash_cache: AtomicU64,
     _hasher: PhantomData<fn() -> H>,
 }
 ```
 
 Inlining all three planes avoids wrapper nesting and keeps the lossy hot path
-and component hashes direct. A generic loss wrapper is not introduced until a
-second real word representation demonstrates that it needs the same
-composition. `A` and `H` remain private implementation parameters from the
-perspective of `Word`.
+and component hash computation direct. Only the finalized digest is cached:
+retaining the two intermediates made clone-and-mutate branch keys copy and
+invalidate three atomic cells, while cold recomputation over the packed planes
+is cheaper. A generic loss wrapper is not introduced until a second real word
+representation demonstrates that it needs the same composition. `A` and `H`
+remain private implementation parameters from the perspective of `Word`.
 
 ### Canonical loss invariant
 
@@ -298,19 +298,17 @@ The finalization fold is applied per-algorithm and per-width by the private
 decorrelate, while a strong hasher (`gxhash`) folds nothing. This helper lives
 in `ppvm-pauli-word`, not in the algebra-agnostic trait crate.
 
-The same component caches back the bulk `hash_into` on a word's key column (see
-[Key columns](#key-columns-structure-of-arrays-batches)): filling a batch's hash
-column mostly gathers already-cached values, so the group-prefetch loop in the
-[batch contract](traits-2-configuration-and-hashing.md#batch-execution-and-the-hash-join-contract)
-pays no hashing on its critical path.
+The same ordered fold backs bulk `hash_into` on a word's key column (see
+[Key columns](#key-columns-structure-of-arrays-batches)), so scalar and column
+digests remain bit-for-bit identical.
 
 ## Component hashes
 
-Hash composition follows the logical wrappers:
+Hashing follows the flattened logical representation:
 
 ```text
 packed Pauli hash = hash(X bits, Z bits)
-lossy hash        = combine(Pauli hash, loss hash)
+lossy hash        = hash(X bits, Z bits, loss bits)
 ```
 
 Width remains part of structural equality but is omitted from the digest,
@@ -318,25 +316,26 @@ matching the legacy bucket distribution. Different-width words may therefore
 collide, which is valid under the hash contract; a `Sum` already enforces one
 common width across its support.
 
-`combine` must be ordered and domain-separated. It must not be an
-unqualified XOR of arbitrary component digests.
-
-Loss masks may be large, so `LossyPauliWord` caches the loss component
-separately from the X/Z component. A loss-only mutation then avoids rehashing
-X/Z. `Phased<W>` is absent from this composition because it is not indexable.
+The fixed-size planes are written in a fixed order, so their positions provide
+domain separation without constructing intermediate component hashers. The
+flattened fold and one finalized-digest cache measured faster than component
+hashers on cold branch keys and loss-channel map probes. `Phased<W>` is absent
+from this composition because it is not indexable.
 
 ## Invalidation rules
 
-| Mutation | X/Z component | Loss component |
-| --- | --- | --- |
-| Change ordinary Pauli site | invalidate | preserve |
-| Mark identity site lost | preserve | invalidate |
-| Mark nonidentity site lost | invalidate | invalidate |
-| Clear loss to identity | preserve | invalidate |
-| Replace loss with Pauli | invalidate if nonidentity | invalidate |
+Every structural mutation invalidates the finalized digest. Direct branch-key
+builders copy the packed planes and start with an empty cache, avoiding an
+atomic cache copy that would be immediately discarded.
 
-Constructors leave caches empty. Cloning may copy a valid cached value because
+Constructors leave the cache empty. Cloning copies a valid cached value because
 the clone initially has identical structural contents.
+
+That standalone clone retains one unavoidable relaxed atomic load and
+construction, measuring about `2.1×` the legacy word's plain-`u64` copy at 256
+qubits. Starting clones cold would hide that micro-cost by weakening warm-clone
+lookup behavior, so production clone-and-mutate paths use direct packed-plane
+builders instead; ordinary unmodified clones keep the cached digest.
 
 ## Key columns (structure-of-arrays batches)
 

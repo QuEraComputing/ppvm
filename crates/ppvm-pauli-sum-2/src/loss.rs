@@ -59,9 +59,7 @@ use crate::sum::Sum;
 /// `k.set(addr, Pauli::I)` on a lost site).
 #[inline]
 fn with_loss_cleared<W: PauliBits + Clone>(k: &W, q: usize) -> W {
-    let mut nk = k.clone();
-    nk.clear_lost(q);
-    nk
+    k.loss_cleared(q)
 }
 
 /// The single-qubit loss channel: with probability `p` the atom is lost.
@@ -192,9 +190,7 @@ where
             if k.x_bit(qubit) {
                 return None;
             }
-            let mut lost = k.clone();
-            lost.set_lost(qubit);
-            Some((lost, c.clone()))
+            Some((k.with_lost(qubit), c.clone()))
         });
     }
 }

@@ -395,9 +395,9 @@ fn structurally_equal_keys_hash_equal() {
 fn loss_plane_participates_in_digest() {
     // Two words with the SAME present X/Z pattern but a DIFFERENT loss plane must
     // (with overwhelming probability) hash differently: loss is part of the
-    // structural identity, and `combine_components` is domain-separated, so a
-    // loss-only difference is not allowed to collapse. Sweep random pairs and
-    // require the digest to change whenever the loss mask changes.
+    // structural identity, and its plane occupies a distinct position in the
+    // ordered fold, so a loss-only difference is not allowed to collapse. Sweep
+    // random pairs and require the digest to change whenever the loss mask changes.
     for &seed in &SEEDS {
         let mut rng = seeded_rng(seed);
         for &n in &[2usize, 3, 5, 16, 60] {

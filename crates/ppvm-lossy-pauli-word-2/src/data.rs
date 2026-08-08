@@ -3,7 +3,8 @@
 
 //! The packed [`LossyPauliWord`] struct, its inherent constructors/accessors and
 //! loss writes, the read-only [`Word`] inspection impl (`Site = LossySite<Pauli>`),
-//! the [`PauliBits`] sub-site mutation impl (with `is_lost` overridden), and the
+//! the [`PauliBits`] sub-site mutation impl (with direct branch-key builders and
+//! `is_lost` overridden), and the
 //! structural [`PartialEq`]/[`Eq`]/[`Clone`]/[`Debug`]/[`Display`]/parsing that
 //! all agree on the logical identity `(nqubits, X bits, Z bits, loss bits)`.
 //!
@@ -47,15 +48,12 @@ use ppvm_traits_2::{LossySite, Pauli, PauliBits, Word};
 /// loss bits)`. Equality and hashing exclude unused capacity, the caches, and the
 /// `PhantomData` marker.
 ///
-/// The hash is split into two lazy `AtomicU64` component caches — one for the
-/// X/Z plane and one for the (possibly large) loss plane — so a loss-only
-/// mutation avoids rehashing X/Z (`word-data-structures.md` §"Component hashes").
-/// A third `AtomicU64` caches the finalized combined digest so a warm
-/// `key_hash()` (the hashbrown map-lookup hot path) is a single field read
-/// instead of re-folding the two components every call; it is invalidated
-/// alongside whichever component a mutation touches. Relaxed atomics are enough:
-/// every cached value is a pure function of structural fields mutated only
-/// through `&mut self`; racing misses recompute the same digest.
+/// One `AtomicU64` lazily caches the finalized structural digest. A warm
+/// `key_hash()` (the hashbrown map-lookup hot path) is therefore a single field
+/// read. Mutations invalidate the cell through their exclusive `&mut self`;
+/// relaxed atomics are enough because racing misses recompute the same pure
+/// digest. Keeping only the consumed digest avoids copying and invalidating three
+/// atomic cells on every gate-produced key.
 ///
 /// # Examples
 ///
@@ -80,16 +78,8 @@ pub struct LossyPauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildH
     pub(crate) lbits: BitArray<A>,
     /// Number of qubits (logical width).
     pub(crate) nqubits: usize,
-    /// Lazy hash cache for the `(nqubits, X, Z)` component.
-    pub(crate) xz_hash_cache: AtomicU64,
-    /// Lazy hash cache for the loss component (kept separate so loss-only
-    /// mutations do not rehash X/Z).
-    pub(crate) loss_hash_cache: AtomicU64,
-    /// Lazy hash cache for the finalized combined digest (the folded
-    /// `combine_components` of the two components). Populated on the first warm
-    /// `key_hash()` and invalidated by any mutation, so the steady-state
-    /// map-lookup read is a single field load rather than a re-fold.
-    pub(crate) combined_hash_cache: AtomicU64,
+    /// Lazy cache for the finalized structural digest.
+    pub(crate) hash_cache: AtomicU64,
     /// The private internal digest algorithm; `fn() -> H` keeps `Send + Sync`.
     pub(crate) _hasher: PhantomData<fn() -> H>,
 }
@@ -111,9 +101,7 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
             zbits: BitArray::ZERO,
             lbits: BitArray::ZERO,
             nqubits,
-            xz_hash_cache: AtomicU64::new(0),
-            loss_hash_cache: AtomicU64::new(0),
-            combined_hash_cache: AtomicU64::new(0),
+            hash_cache: AtomicU64::new(0),
             _hasher: PhantomData,
         }
     }
@@ -134,28 +122,21 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
             zbits,
             lbits,
             nqubits,
-            xz_hash_cache: AtomicU64::new(0),
-            loss_hash_cache: AtomicU64::new(0),
-            combined_hash_cache: AtomicU64::new(0),
+            hash_cache: AtomicU64::new(0),
             _hasher: PhantomData,
         }
     }
 
-    /// Clear the X/Z-component hash cache after a structural mutation to a present
-    /// Pauli site (Design: §"Invalidation rules" — mutators clear the affected
-    /// private cache through `&mut self`).
+    /// Clear the structural digest after an X/Z mutation.
     #[inline]
     pub(crate) fn invalidate_xz(&mut self) {
-        *self.xz_hash_cache.get_mut() = 0;
-        *self.combined_hash_cache.get_mut() = 0;
+        *self.hash_cache.get_mut() = 0;
     }
 
-    /// Clear the loss-component hash cache after a loss mutation. The combined
-    /// digest depends on both components, so it is invalidated too.
+    /// Clear the structural digest after a loss mutation.
     #[inline]
     pub(crate) fn invalidate_loss(&mut self) {
-        *self.loss_hash_cache.get_mut() = 0;
-        *self.combined_hash_cache.get_mut() = 0;
+        *self.hash_cache.get_mut() = 0;
     }
 
     /// Whether qubit `q` is lost. Inherent per `word-data-structures.md`
@@ -197,6 +178,23 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
             self.lbits.set(q, false);
             self.invalidate_loss();
         }
+    }
+
+    /// Build the reset-channel branch with `q` marked lost.
+    ///
+    /// This copies the packed planes directly and starts the derived digest cold;
+    /// unlike `clone` followed by `set_lost`, it does not copy an atomic cache
+    /// that the mutation immediately invalidates.
+    #[inline]
+    pub fn with_lost(&self, q: usize) -> Self {
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
+        let mut xbits = self.xbits;
+        let mut zbits = self.zbits;
+        let mut lbits = self.lbits;
+        xbits.set(q, false);
+        zbits.set(q, false);
+        lbits.set(q, true);
+        Self::from_planes(xbits, zbits, lbits, self.nqubits)
     }
 
     /// Write a whole [`LossySite`] at qubit `q`, upholding the canonical loss
@@ -371,6 +369,58 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
         self.invalidate_xz();
     }
 
+    /// Build a rotation branch directly from the packed planes. This avoids
+    /// cloning an atomic cache only to invalidate it on the first bit write.
+    #[inline]
+    fn toggled_bits(&self, i: usize, toggle_x: bool, toggle_z: bool) -> Self {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        let mut xbits = self.xbits;
+        let mut zbits = self.zbits;
+        if toggle_x {
+            let bit = xbits[i];
+            xbits.set(i, !bit);
+        }
+        if toggle_z {
+            let bit = zbits[i];
+            zbits.set(i, !bit);
+        }
+        Self::from_planes(xbits, zbits, self.lbits, self.nqubits)
+    }
+
+    /// Build a two-site rotation branch with one packed-plane copy.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn toggled_bits2(
+        &self,
+        i: usize,
+        toggle_x_i: bool,
+        toggle_z_i: bool,
+        j: usize,
+        toggle_x_j: bool,
+        toggle_z_j: bool,
+    ) -> Self {
+        debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
+        let mut xbits = self.xbits;
+        let mut zbits = self.zbits;
+        if toggle_x_i {
+            let bit = xbits[i];
+            xbits.set(i, !bit);
+        }
+        if toggle_z_i {
+            let bit = zbits[i];
+            zbits.set(i, !bit);
+        }
+        if toggle_x_j {
+            let bit = xbits[j];
+            xbits.set(j, !bit);
+        }
+        if toggle_z_j {
+            let bit = zbits[j];
+            zbits.set(j, !bit);
+        }
+        Self::from_planes(xbits, zbits, self.lbits, self.nqubits)
+    }
+
     /// A lossy word reports genuine loss (overriding the `false` default), so
     /// loss-aware generic propagation and the Clifford loss-guard see it.
     #[inline]
@@ -391,6 +441,15 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
         LossyPauliWord::clear_loss(self, i);
     }
 
+    /// Build a loss-channel recovery branch directly from the packed planes.
+    #[inline]
+    fn loss_cleared(&self, i: usize) -> Self {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        let mut lbits = self.lbits;
+        lbits.set(i, false);
+        Self::from_planes(self.xbits, self.zbits, lbits, self.nqubits)
+    }
+
     /// Delegates to the inherent [`LossyPauliWord::loss_weight`] — the popcount
     /// over the loss plane the `MaxLossWeight` policy thresholds.
     #[inline]
@@ -400,9 +459,12 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
 }
 
 impl<A: PauliStorage, H> Clone for LossyPauliWord<A, H> {
-    /// Cloning copies the (possibly cached) component hashes because the clone has
-    /// identical structural contents (`word-data-structures.md` §"Invalidation
-    /// rules"). Hand-written so no spurious `H: Clone` bound is imposed.
+    /// Cloning copies the cached finalized digest because the clone has identical
+    /// structural contents. The remaining relaxed atomic load is intentional:
+    /// preserving a warm lookup on an unmodified clone is part of the lazy-cache
+    /// performance contract. Branch builders above avoid this cost only when they
+    /// immediately change the key. Hand-written so no spurious `H: Clone` bound
+    /// is imposed.
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -410,9 +472,7 @@ impl<A: PauliStorage, H> Clone for LossyPauliWord<A, H> {
             zbits: self.zbits,
             lbits: self.lbits,
             nqubits: self.nqubits,
-            xz_hash_cache: AtomicU64::new(self.xz_hash_cache.load(Ordering::Relaxed)),
-            loss_hash_cache: AtomicU64::new(self.loss_hash_cache.load(Ordering::Relaxed)),
-            combined_hash_cache: AtomicU64::new(self.combined_hash_cache.load(Ordering::Relaxed)),
+            hash_cache: AtomicU64::new(self.hash_cache.load(Ordering::Relaxed)),
             _hasher: PhantomData,
         }
     }
@@ -546,6 +606,15 @@ mod tests {
         assert_eq!(w.get(0), LossySite::Lost);
         assert!(!w.x_bit(0) && !w.z_bit(0), "lost site must be X/Z identity");
         assert_eq!(w.to_string(), "LYZ");
+    }
+
+    #[test]
+    fn with_lost_builds_canonical_branch_without_mutating_source() {
+        let w: LossyPauliWord = "XYZ".into();
+        let lost = w.with_lost(1);
+        assert_eq!(w.to_string(), "XYZ");
+        assert_eq!(lost.to_string(), "XLZ");
+        assert!(!lost.x_bit(1) && !lost.z_bit(1));
     }
 
     #[test]

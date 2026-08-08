@@ -23,9 +23,8 @@
 //! and [`HashFinalize`](ppvm_pauli_word_2::HashFinalize) are reused from
 //! `ppvm-pauli-word-2`.
 //!
-//! The backing fields (packed X/Z/loss planes, the two `AtomicU64` component
-//! hash caches plus a combined-digest `AtomicU64`, the representation
-//! parameters `A`/`H`) are **private**; behavior
+//! The backing fields (packed X/Z/loss planes, one lazy finalized-digest
+//! `AtomicU64`, and the representation parameters `A`/`H`) are **private**; behavior
 //! is exposed only through the implemented traits and a small set of inherent
 //! constructors/accessors.
 

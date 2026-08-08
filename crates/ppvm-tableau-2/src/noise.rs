@@ -29,12 +29,13 @@
 use num::Zero;
 use ppvm_traits_2::{
     AsymmetricLossChannel, Clifford, CorrelatedLossChannel, Depolarizing, Depolarizing2,
-    LossChannel, Measure, PauliError, Reset, ResetLossChannel, TwoQubitPauliError,
+    LossChannel, Measure, Pauli, PauliError, ResetLossChannel, TwoQubitPauliError,
 };
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt};
 
 use crate::data::{Bitstring, GeneralizedTableau, RowStorage, Tableau};
+use crate::measure::MeasureScratch;
 
 /// `true` iff `p` lies in the closed unit interval `[0, 1]`.
 #[inline]
@@ -230,6 +231,31 @@ impl_tableau_noise! { generics: [, I: Bitstring, H], ty: GeneralizedTableau<A, I
 
 // ─── Loss channels (generalized tableau only) ─────────────────────────────
 
+impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
+    /// Collapse one qubit for a loss event without retaining measurement
+    /// scratch that the channel cannot reuse.
+    #[inline]
+    fn lose_qubit(&mut self, qubit: usize) {
+        let outcome = if self.is_lost[qubit] {
+            None
+        } else {
+            let (phase, stab, destab) = self.compute_decomposition(qubit, Pauli::Z);
+            self.measure_with_scratch(
+                qubit,
+                &mut MeasureScratch::new(),
+                phase,
+                stab,
+                destab,
+                false,
+            )
+        };
+        if let Some(true) = outcome {
+            Clifford::x(self, qubit);
+        }
+        self.is_lost[qubit] = true;
+    }
+}
+
 impl<A: RowStorage, I: Bitstring, H> LossChannel<f64> for GeneralizedTableau<A, I, H> {
     /// Lose `qubit` with probability `p`, then collapse it and reset to `|0⟩`.
     ///
@@ -254,13 +280,7 @@ impl<A: RowStorage, I: Bitstring, H> LossChannel<f64> for GeneralizedTableau<A, 
         }
 
         // O(n²), but it also potentially removes coefficients, which is nice.
-        let outcome = Measure::measure(self, qubit);
-        self.measurement_record.pop();
-        if let Some(true) = outcome {
-            // flip back to |0⟩
-            Clifford::x(self, qubit);
-        }
-        self.is_lost[qubit] = true;
+        self.lose_qubit(qubit);
     }
 }
 
@@ -331,19 +351,15 @@ impl<A: RowStorage, I: Bitstring, H> CorrelatedLossChannel<f64> for GeneralizedT
             if cumulative > r {
                 if i == 0 {
                     // both lost
-                    self.reset(qubit0);
-                    self.reset(qubit1);
-                    self.is_lost[qubit0] = true;
-                    self.is_lost[qubit1] = true;
+                    self.lose_qubit(qubit0);
+                    self.lose_qubit(qubit1);
                 } else {
                     // only a single qubit is lost
                     let choice = self.tableau.rng.random::<bool>();
                     if choice {
-                        self.reset(qubit1);
-                        self.is_lost[qubit1] = true;
+                        self.lose_qubit(qubit1);
                     } else {
-                        self.reset(qubit0);
-                        self.is_lost[qubit0] = true;
+                        self.lose_qubit(qubit0);
                     }
                 }
                 return;

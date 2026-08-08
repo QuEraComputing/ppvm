@@ -168,6 +168,7 @@ impl<A: RowStorage, I: Bitstring, H> Measure for GeneralizedTableau<A, I, H> {
                 phase_decomp,
                 stab_anticomm_bits,
                 destab_anticomm_bits,
+                true,
             )
         })
     }
@@ -267,6 +268,7 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
             phase_decomp,
             stab_anticomm_bits,
             destab_anticomm_bits,
+            true,
         )
     }
 
@@ -284,6 +286,8 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     ///   cutoff that is **relative to the merged norm**
     ///   (`|c|² > threshold² · ‖v‖²`), then an unconditional `normalize()`, then
     ///   the frame projection (which invalidates the cached mask).
+    /// * `record = false` suppresses only the final record append, for internal
+    ///   loss events whose previous push/pop pair was observationally neutral.
     ///
     /// The case-b arithmetic is machine-checked in
     /// `lean/PPVM/Tableau/Projection.lean` as the `s = 0` specialization of the
@@ -305,6 +309,7 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
         phase_decomp: u8,
         stab_anticomm_bits: I,
         destab_anticomm_bits: I,
+        record: bool,
     ) -> Option<bool> {
         if stab_anticomm_bits == I::zero() {
             // ── Case b (fast path) ───────────────────────────────────────
@@ -347,7 +352,9 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
             }
 
             // Case b doesn't mutate destabilizers, so the cached mask stays valid.
-            self.measurement_record.push(Some(outcome));
+            if record {
+                self.measurement_record.push(Some(outcome));
+            }
             Some(outcome)
         } else {
             // ── Case a ───────────────────────────────────────────────────
@@ -509,7 +516,9 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
                 .update_tableau_according_to_outcome(addr0, q_idx, outcome);
             // Destabilizer phases just changed; invalidate the cached mask.
             scratch.odd_phase_mask = None;
-            self.measurement_record.push(Some(outcome));
+            if record {
+                self.measurement_record.push(Some(outcome));
+            }
 
             // Hand the (now-cleared, still-allocated) buffers back.
             merged.clear();

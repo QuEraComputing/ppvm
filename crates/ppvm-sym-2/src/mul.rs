@@ -94,9 +94,12 @@ impl Sum {
     /// Here the persistent `aux` buffer is swapped in instead, so both
     /// allocations survive the rebuild (integration baseline, perf feature 5 —
     /// the crate's aux-double-buffer gap).
+    #[inline]
     pub fn mul_term(&mut self, p: Prod, coeff: f64, max: usize, min_eps: f64) {
         if p.sin_pow() > max || coeff.abs() < min_eps {
-            self.terms.clear();
+            if let Some(maps) = &mut self.maps {
+                maps.terms.clear();
+            }
             self.c0 = 0.0;
             return;
         }
@@ -110,10 +113,12 @@ impl Sum {
 
         // Ping-pong: `aux` is empty on entry, so after the swap `terms` holds
         // `aux`'s retained capacity and `aux` holds the table to rebuild from.
-        debug_assert!(self.aux.is_empty());
-        let mut old_terms = std::mem::take(&mut self.aux);
-        std::mem::swap(&mut self.terms, &mut old_terms);
-        self.terms.reserve(old_terms.len());
+        let mut maps = self.maps.take().unwrap_or_default();
+        debug_assert!(maps.aux.is_empty());
+        std::mem::swap(&mut maps.terms, &mut maps.aux);
+        let mut old_terms = std::mem::take(&mut maps.aux);
+        maps.terms.reserve(old_terms.len());
+        self.maps = Some(maps);
 
         let c0 = self.c0;
         self.add_term(p.clone(), c0 * coeff, max, min_eps);
@@ -122,13 +127,14 @@ impl Sum {
         }
         self.c0 = 0.0;
         // Hand the (now empty, still-allocated) buffer back for the next multiply.
-        self.aux = old_terms;
+        self.maps.as_mut().unwrap().aux = old_terms;
     }
 }
 
 impl std::ops::Mul<Prod> for Prod {
     type Output = Prod;
 
+    #[inline]
     fn mul(self, rhs: Prod) -> Self::Output {
         let mut new = self;
         new *= rhs;
@@ -152,6 +158,7 @@ impl std::ops::Mul<Prod> for Prod {
 /// `ppvm-traits-2::Phase::compose` is the correct model and is what this
 /// reproduces.
 impl std::ops::MulAssign<Prod> for Prod {
+    #[inline]
     fn mul_assign(&mut self, rhs: Prod) {
         self.phase = (self.phase + rhs.phase) % 4;
         self.sin_pow += rhs.sin_pow;
@@ -179,15 +186,19 @@ impl std::ops::MulAssign<Prod> for Prod {
 }
 
 impl std::ops::MulAssign<f64> for Sum {
+    #[inline]
     fn mul_assign(&mut self, rhs: f64) {
         self.c0 *= rhs;
-        for v in self.terms.values_mut() {
-            *v *= rhs;
+        if let Some(maps) = &mut self.maps {
+            for v in maps.terms.values_mut() {
+                *v *= rhs;
+            }
         }
     }
 }
 
 impl std::ops::MulAssign<f64> for Term {
+    #[inline]
     fn mul_assign(&mut self, rhs: f64) {
         match self.inner {
             Inner::Sum(ref mut s) => {
@@ -210,6 +221,7 @@ impl std::ops::MulAssign<f64> for Term {
 }
 
 impl std::ops::MulAssign<Term> for Term {
+    #[inline]
     fn mul_assign(&mut self, rhs: Term) {
         match self.inner {
             Inner::Sum(ref mut s1) => match rhs.inner {
@@ -218,28 +230,34 @@ impl std::ops::MulAssign<Term> for Term {
                     new_sum.c0 = s1.c0 * s2.c0;
                     // Skip the `s1.terms × s2.c0` cross loop when `s2.c0` is
                     // below `min_eps` (perf feature 6).
-                    if s2.c0.abs() > self.min_eps {
-                        for (p1, c1) in s1.terms.iter() {
+                    if s2.c0.abs() > self.min_eps
+                        && let Some(maps) = &s1.maps
+                    {
+                        for (p1, c1) in &maps.terms {
                             let p = p1.clone();
                             new_sum.add_term(p, c1 * s2.c0, self.max_sin, self.min_eps);
                         }
                     }
 
-                    if s1.c0.abs() > self.min_eps {
-                        for (p2, c2) in s2.terms.iter() {
+                    if s1.c0.abs() > self.min_eps
+                        && let Some(maps) = &s2.maps
+                    {
+                        for (p2, c2) in &maps.terms {
                             let p = p2.clone();
                             new_sum.add_term(p, c2 * s1.c0, self.max_sin, self.min_eps);
                         }
                     }
 
-                    for (p1, c1) in s1.terms.iter() {
-                        for (p2, c2) in s2.terms.iter() {
-                            new_sum.add_term(
-                                p1.clone() * p2.clone(),
-                                c1 * c2,
-                                self.max_sin,
-                                self.min_eps,
-                            );
+                    if let (Some(maps1), Some(maps2)) = (&s1.maps, &s2.maps) {
+                        for (p1, c1) in &maps1.terms {
+                            for (p2, c2) in &maps2.terms {
+                                new_sum.add_term(
+                                    p1.clone() * p2.clone(),
+                                    c1 * c2,
+                                    self.max_sin,
+                                    self.min_eps,
+                                );
+                            }
                         }
                     }
                     self.inner = Inner::Sum(new_sum);
@@ -306,6 +324,7 @@ impl std::ops::MulAssign<Term> for Term {
 impl std::ops::Mul<f64> for Term {
     type Output = Term;
 
+    #[inline]
     fn mul(self, rhs: f64) -> Self::Output {
         let mut ret = self;
         ret *= rhs;
@@ -316,6 +335,7 @@ impl std::ops::Mul<f64> for Term {
 impl std::ops::Mul<Term> for f64 {
     type Output = Term;
 
+    #[inline]
     fn mul(self, rhs: Term) -> Self::Output {
         let mut ret = rhs;
         ret *= self;
@@ -326,6 +346,7 @@ impl std::ops::Mul<Term> for f64 {
 impl std::ops::Mul<Term> for Term {
     type Output = Term;
 
+    #[inline]
     fn mul(self, rhs: Term) -> Self::Output {
         let mut ret = self;
         ret *= rhs;
@@ -394,8 +415,9 @@ mod tests {
             s.add_term(Prod::cos(i), 1.0, usize::MAX, f64::EPSILON);
         }
         s.mul_term(Prod::sin(0), 1.0, usize::MAX, f64::EPSILON);
-        assert!(s.aux.is_empty());
-        assert!(s.aux.capacity() > 0, "aux allocation was freed");
+        let maps = s.maps.as_ref().expect("first monomial creates the map box");
+        assert!(maps.aux.is_empty());
+        assert!(maps.aux.capacity() > 0, "aux allocation was freed");
         assert_eq!(s.len(), 16);
     }
 

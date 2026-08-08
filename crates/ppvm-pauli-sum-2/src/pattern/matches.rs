@@ -3,7 +3,7 @@
 
 use std::iter::Peekable;
 
-use ppvm_traits_2::{Pauli, Word};
+use ppvm_traits_2::{Pauli, PauliBits, Word};
 
 use super::data::{Decorated, OpPattern, PatternSite, PauliPattern, SiteSet};
 
@@ -51,6 +51,23 @@ impl PauliPattern {
             }
         }
         sites.all(|(_, pauli)| pauli == Some(Pauli::I))
+    }
+
+    /// Match a Pauli bit-vector, specializing the ubiquitous zero-state
+    /// contraction to one X-plane scan.
+    #[inline]
+    pub(crate) fn matches_bits<W>(&self, word: &W) -> bool
+    where
+        W: PauliBits,
+        W::Site: PatternSite,
+    {
+        if matches!(
+            self.0.as_slice(),
+            [Decorated::Star(OpPattern::SingleOrIdentity(Pauli::Z))]
+        ) {
+            return (0..word.n_sites()).all(|i| !word.x_bit(i) && !word.is_lost(i));
+        }
+        self.matches(word)
     }
 }
 

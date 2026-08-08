@@ -39,10 +39,21 @@ impl Coefficient for Term {
     ///
     /// Like old it is **partial**: a bare [`Term::var`] receiver panics, because
     /// the scaling routes through `MulAssign<f64>` (`oldSuspectedBugs` #7).
+    #[inline]
     fn mul_sign(&self, sign: i8) -> Self {
         let mut ret = self.clone();
         ret *= sign as f64;
         ret
+    }
+
+    #[inline]
+    fn mul_sign_assign(&mut self, sign: i8) {
+        *self *= sign as f64;
+    }
+
+    #[inline]
+    fn add_assign_ref(&mut self, rhs: &Self) {
+        self.add_ref(rhs);
     }
 
     /// `|c|` for a constant, `f64::INFINITY` for every symbolic form.
@@ -117,6 +128,7 @@ impl Coefficient for Term {
 /// witness that the unqualified claim is false. Citing `rot_norm_sq` for the
 /// symbolic ring without the `eval` qualifier would be unsound.
 impl Angle<Term> for Term {
+    #[inline]
     fn sin_cos(&self) -> (Term, Term) {
         (self.clone().sin(), self.clone().cos())
     }
@@ -134,6 +146,7 @@ impl Angle<Term> for Term {
 /// uninferable at the call site), so that caller spelling is preserved here
 /// instead — exactly as `ppvm-traits-2` does for `Angle<Complex<f64>> for f64`.
 impl Angle<Term> for f64 {
+    #[inline]
     fn sin_cos(&self) -> (Term, Term) {
         let (s, c) = f64::sin_cos(*self);
         (Term::from_f64(s), Term::from_f64(c))
@@ -163,14 +176,17 @@ impl Term {
     /// `lean/PPVM/Algebra/Twisted.lean` `twistedConv_add_left` /
     /// `twistedConv_add_right` and `iPow_add`, is the Pauli-key analogue and
     /// supports but does not by itself state the symbolic fold.)
+    #[inline]
     pub fn mul_phase(&self, phase: u8) -> Self {
         match self.inner {
             Inner::Sum(ref s) => {
                 let mut ret = Sum::new();
-                for (p, c) in s.terms.iter() {
-                    let mut new_p = p.clone();
-                    new_p.add_phase(phase);
-                    ret.add_term(new_p, *c, self.max_sin, self.min_eps);
+                if let Some(maps) = &s.maps {
+                    for (p, c) in &maps.terms {
+                        let mut new_p = p.clone();
+                        new_p.add_phase(phase);
+                        ret.add_term(new_p, *c, self.max_sin, self.min_eps);
+                    }
                 }
                 let mut c0 = Prod::new();
                 c0.add_phase(phase);
@@ -307,10 +323,12 @@ impl Conjugate for Term {
             Inner::Sum(ref s) => {
                 let mut ret = Sum::new();
                 ret.c0 = s.c0;
-                for (p, c) in s.terms.iter() {
-                    let mut q = p.clone();
-                    q.phase = (4 - q.phase) % 4;
-                    ret.add_term(q, *c, self.max_sin, self.min_eps);
+                if let Some(maps) = &s.maps {
+                    for (p, c) in &maps.terms {
+                        let mut q = p.clone();
+                        q.phase = (4 - q.phase) % 4;
+                        ret.add_term(q, *c, self.max_sin, self.min_eps);
+                    }
                 }
                 Term {
                     inner: Inner::Sum(ret),
@@ -334,6 +352,7 @@ impl Conjugate for Term {
 /// summand's table is then adopted wholesale by the `Const + Sum` arm and becomes
 /// the accumulator.
 impl std::iter::Sum for Term {
+    #[inline]
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         let mut total = Term::from_f64(0.0);
         for t in iter {
@@ -346,6 +365,7 @@ impl std::iter::Sum for Term {
 impl std::ops::Neg for Term {
     type Output = Term;
 
+    #[inline]
     fn neg(self) -> Self::Output {
         let mut ret = self;
         ret *= -1.0;
@@ -354,24 +374,28 @@ impl std::ops::Neg for Term {
 }
 
 impl From<f32> for Term {
+    #[inline]
     fn from(value: f32) -> Self {
         Term::from_f64(value as f64)
     }
 }
 
 impl From<f64> for Term {
+    #[inline]
     fn from(value: f64) -> Self {
         Term::from_f64(value)
     }
 }
 
 impl From<i32> for Term {
+    #[inline]
     fn from(value: i32) -> Self {
         Term::from_f64(value as f64)
     }
 }
 
 impl From<i64> for Term {
+    #[inline]
     fn from(value: i64) -> Self {
         Term::from_f64(value as f64)
     }

@@ -221,26 +221,37 @@ impl Prod {
 /// already has capacity, and hands the (now empty, still-allocated) buffer back.
 /// Neither allocation is ever freed.
 ///
-/// `aux` is **transient**: it is empty between operations, so [`Clone`] starts it
-/// fresh and `PartialEq` (representational, per old) observes only `c0`/`terms`.
-/// It is kept *inside* the coefficient so `ppvm-pauli-sum-2`'s engine stays
-/// generic over `C: Coefficient` and needs no new bound.
+/// The maps are boxed together and allocated only when the first monomial is
+/// inserted. This keeps the overwhelmingly common [`Inner::Const`] and
+/// [`Inner::One`] forms compact while retaining a per-sum persistent rebuild
+/// buffer. `aux` is transient and empty between operations, so [`Clone`] copies
+/// only the value map and `PartialEq` observes only `c0`/`terms`.
 #[derive(Debug, Default)]
 pub struct Sum {
     pub(crate) c0: f64,
+    pub(crate) maps: Option<Box<SumMaps>>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct SumMaps {
     pub(crate) terms: FxHashMap<Prod, f64>,
-    /// Persistent rebuild buffer for [`Sum::mul_term`]; empty between operations.
+    /// Persistent rebuild buffer for [`Sum::mul_term`], empty between operations.
     pub(crate) aux: FxHashMap<Prod, f64>,
 }
 
 impl Clone for Sum {
     /// Clone the value only. `aux` is workspace, empty between operations, so a
     /// clone starts it fresh rather than copying a buffer.
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             c0: self.c0,
-            terms: self.terms.clone(),
-            aux: FxHashMap::default(),
+            maps: self.maps.as_ref().map(|maps| {
+                Box::new(SumMaps {
+                    terms: maps.terms.clone(),
+                    aux: FxHashMap::default(),
+                })
+            }),
         }
     }
 }
@@ -251,17 +262,22 @@ impl Clone for Sum {
 /// as in old (behavioural contract 4/5). `aux` is workspace and is not compared.
 impl PartialEq for Sum {
     fn eq(&self, other: &Self) -> bool {
-        self.c0 == other.c0 && self.terms == other.terms
+        let terms_equal = match (&self.maps, &other.maps) {
+            (Some(lhs), Some(rhs)) => lhs.terms == rhs.terms,
+            (Some(maps), None) | (None, Some(maps)) => maps.terms.is_empty(),
+            (None, None) => true,
+        };
+        self.c0 == other.c0 && terms_equal
     }
 }
 
 impl Sum {
     /// Construct an empty sum (value `0`).
+    #[inline]
     pub fn new() -> Self {
         Self {
             c0: 0.0,
-            terms: FxHashMap::default(),
-            aux: FxHashMap::default(),
+            maps: None,
         }
     }
 
@@ -274,28 +290,36 @@ impl Sum {
     /// The number of monomials in the table (excluding `c₀`).
     #[inline]
     pub fn len(&self) -> usize {
-        self.terms.len()
+        self.maps.as_ref().map_or(0, |maps| maps.terms.len())
     }
 
     /// Whether the monomial table is empty (`c₀` is not considered).
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.terms.is_empty()
+        self.maps.as_ref().is_none_or(|maps| maps.terms.is_empty())
     }
 
     /// Iterate the monomial table in the backend's (deterministic, seed-free)
     /// order.
     pub fn iter(&self) -> impl Iterator<Item = (&Prod, f64)> + '_ {
-        self.terms.iter().map(|(p, c)| (p, *c))
+        self.maps
+            .iter()
+            .flat_map(|maps| maps.terms.iter())
+            .map(|(p, c)| (p, *c))
     }
 
     /// The coefficient of `p`, or `0.0` if absent.
     pub fn coeff(&self, p: &Prod) -> f64 {
-        self.terms.get(p).copied().unwrap_or(0.0)
+        self.maps
+            .as_ref()
+            .and_then(|maps| maps.terms.get(p))
+            .copied()
+            .unwrap_or(0.0)
     }
 
     /// Add the constant `c` into the sum's `c₀`, dropping it if
     /// `|c| < min_eps`.
+    #[inline]
     pub fn add_const(&mut self, c: f64, min_eps: f64) {
         if c.abs() < min_eps {
             return;
@@ -347,6 +371,7 @@ impl Sum {
     /// function. (`lean/PPVM/Algebra/Twisted.lean` `twistedConv_add_left` /
     /// `twistedConv_add_right` and `iPow_add` are the Pauli-key analogues:
     /// additivity in each argument, and no room to drop an `i^k`.)
+    #[inline]
     pub fn add_term(&mut self, p: Prod, coeff: f64, max: usize, min_eps: f64) {
         if p.sin_pow() > max || coeff.abs() < min_eps {
             return;
@@ -356,7 +381,8 @@ impl Sum {
             self.c0 += coeff;
             return;
         }
-        *self.terms.entry(p).or_insert(0.0) += coeff;
+        let maps = self.maps.get_or_insert_with(Default::default);
+        *maps.terms.entry(p).or_insert(0.0) += coeff;
     }
 }
 
@@ -433,11 +459,13 @@ pub struct Term {
 
 impl Term {
     /// Set the maximum sine power retained during arithmetic.
+    #[inline]
     pub fn set_max_sin(&mut self, max: usize) {
         self.max_sin = max;
     }
 
     /// Set the coefficient cutoff used during arithmetic.
+    #[inline]
     pub fn set_min_eps(&mut self, eps: f64) {
         self.min_eps = eps;
     }
@@ -528,7 +556,7 @@ impl Term {
     /// retained); not part of old's API.
     pub fn n_monomials(&self) -> usize {
         match &self.inner {
-            Inner::Sum(s) => s.terms.len(),
+            Inner::Sum(s) => s.len(),
             Inner::One(..) => 1,
             Inner::Var(_) | Inner::Const(_) => 0,
         }
@@ -540,7 +568,13 @@ impl Term {
     /// propagated through a whole circuit.
     pub fn max_monomial_sin_pow(&self) -> usize {
         match &self.inner {
-            Inner::Sum(s) => s.terms.keys().map(|p| p.sin_pow()).max().unwrap_or(0),
+            Inner::Sum(s) => s
+                .maps
+                .iter()
+                .flat_map(|maps| maps.terms.keys())
+                .map(|p| p.sin_pow())
+                .max()
+                .unwrap_or(0),
             Inner::One(p, _) => p.sin_pow(),
             Inner::Var(_) | Inner::Const(_) => 0,
         }

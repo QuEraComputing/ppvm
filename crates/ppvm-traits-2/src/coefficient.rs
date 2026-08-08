@@ -40,6 +40,25 @@ pub trait Coefficient:
     /// Multiply by `sign ∈ {-1, +1}` (encoded as `i8`).
     fn mul_sign(&self, sign: i8) -> Self;
 
+    /// Multiply this coefficient in place by `sign ∈ {-1, +1}`.
+    ///
+    /// The default preserves `*self = self.mul_sign(sign)`. Heap-backed rings
+    /// can override it to mutate their allocation without cloning it first.
+    #[inline]
+    fn mul_sign_assign(&mut self, sign: i8) {
+        *self = self.mul_sign(sign);
+    }
+
+    /// Accumulate a borrowed coefficient.
+    ///
+    /// The default preserves the value semantics of `*self += rhs.clone()`.
+    /// Heap-backed rings may override it to clone only the entries they actually
+    /// insert instead of first cloning an entire temporary coefficient.
+    #[inline]
+    fn add_assign_ref(&mut self, rhs: &Self) {
+        *self += rhs.clone();
+    }
+
     /// Add this coefficient to itself. Numeric implementations may use their
     /// native multiply-by-two operation; exact rings retain the additive default.
     #[inline(always)]

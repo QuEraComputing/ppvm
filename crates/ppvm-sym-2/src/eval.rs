@@ -11,6 +11,8 @@
 //! The packed-vector layout preserves that order because the factors are stored
 //! ascending by variable.
 
+use std::mem::MaybeUninit;
+
 use anyhow::Result;
 use num::Complex;
 
@@ -37,18 +39,15 @@ const INLINE_VARS: usize = 32;
 /// **bit-identical**: `res *= s.powi(e)` keeps exactly the same operands in
 /// exactly the same fold order (behavioural contract 7).
 ///
-/// One slot per variable, one validity bit, both trigonometric values filled on
-/// a miss: a variable the sum never mentions is never evaluated, so the cost is
-/// at most two transcendentals per *distinct variable of the whole sum*, against
-/// old's two per factor per monomial. (The only shape that loses is a map-backed
-/// sum holding a single monomial that uses each of its variables once — `2V` vs
-/// `V`; a one-monomial coefficient is normally `Inner::One`, which goes through
-/// the uncached [`Prod::eval`].) Three alternatives were measured on
-/// `sym/expectation_eval` (new/old = 0.40 here) and are recorded so they are not
-/// re-tried: independent `sin`/`cos` slots with two masks (+6.8% — twice the
-/// working set to save a transcendental the sums ask for anyway); a 16-slot
-/// window (+0.8%, and it stops covering a 10-layer Trotter circuit); and filling
-/// the whole `vals[..=k]` prefix on a miss (−1.6% here, but it evaluates
+/// One slot per variable and one validity bit per trigonometric function: a
+/// variable/function pair the sum never mentions is never evaluated. This is
+/// important for one-use workloads (for example `Σ sin(xᵢ)`), where eagerly
+/// computing both functions doubles the transcendental count. The backing
+/// slots are uninitialized until their validity bit is set, avoiding a
+/// 512-byte zero-fill on every evaluation while retaining the no-allocation
+/// property. A 16-slot window (+0.8% on `sym/expectation_eval`, but it stops
+/// covering a 10-layer Trotter circuit) and filling the whole `vals[..=k]`
+/// prefix on a miss (−1.6% there, but it evaluates
 /// variables the sum never mentions, so a term over a few *high* variable ids
 /// would pay up to 32 useless transcendental pairs — rejected for the worst
 /// case, not the average).
@@ -62,9 +61,11 @@ const INLINE_VARS: usize = 32;
 /// stack array owned by the one `eval` call that fills it.
 struct AngleCache<'a> {
     vals: &'a [f64],
-    /// Bit `i` set <=> `pairs[i]` is valid.
-    valid: u32,
-    pairs: [(f64, f64); INLINE_VARS],
+    /// Bit `i` set <=> the corresponding slot is initialized.
+    sin_valid: u32,
+    cos_valid: u32,
+    sin: [MaybeUninit<f64>; INLINE_VARS],
+    cos: [MaybeUninit<f64>; INLINE_VARS],
 }
 
 impl<'a> AngleCache<'a> {
@@ -72,27 +73,50 @@ impl<'a> AngleCache<'a> {
     fn new(vals: &'a [f64]) -> Self {
         Self {
             vals,
-            valid: 0,
-            pairs: [(0.0, 0.0); INLINE_VARS],
+            sin_valid: 0,
+            cos_valid: 0,
+            sin: [MaybeUninit::uninit(); INLINE_VARS],
+            cos: [MaybeUninit::uninit(); INLINE_VARS],
         }
     }
 
-    /// `(sin(vals[k]), cos(vals[k]))`, or old's error if `k` is out of range.
+    /// Validate and return `(index, value)`, preserving old's first-error order.
     #[inline]
-    fn get(&mut self, k: u32) -> Result<(f64, f64)> {
+    fn value(&self, k: u32) -> Result<(usize, f64)> {
         let i = k as usize;
         let v = *self
             .vals
             .get(i)
             .ok_or_else(|| anyhow::anyhow!("variable %{k} not found"))?;
+        Ok((i, v))
+    }
+
+    #[inline]
+    fn sin(&mut self, k: u32) -> Result<f64> {
+        let (i, v) = self.value(k)?;
         if i >= INLINE_VARS {
-            return Ok((v.sin(), v.cos()));
+            return Ok(v.sin());
         }
-        if self.valid & (1 << i) == 0 {
-            self.pairs[i] = (v.sin(), v.cos());
-            self.valid |= 1 << i;
+        if self.sin_valid & (1 << i) == 0 {
+            self.sin[i].write(v.sin());
+            self.sin_valid |= 1 << i;
         }
-        Ok(self.pairs[i])
+        // SAFETY: the validity bit is set only after this slot is initialized.
+        Ok(unsafe { self.sin[i].assume_init() })
+    }
+
+    #[inline]
+    fn cos(&mut self, k: u32) -> Result<f64> {
+        let (i, v) = self.value(k)?;
+        if i >= INLINE_VARS {
+            return Ok(v.cos());
+        }
+        if self.cos_valid & (1 << i) == 0 {
+            self.cos[i].write(v.cos());
+            self.cos_valid |= 1 << i;
+        }
+        // SAFETY: the validity bit is set only after this slot is initialized.
+        Ok(unsafe { self.cos[i].assume_init() })
     }
 }
 
@@ -110,6 +134,7 @@ impl Prod {
     /// and old's `Prod::eval` ignored it too (`oldSuspectedBugs` #4). Keeping
     /// that here preserves every real-valued golden master. Use
     /// [`Prod::eval_complex`] to observe the phase.
+    #[inline]
     pub fn eval(&self, vals: &[f64]) -> Result<f64> {
         if self.pow() == 0 {
             return Ok(1.0);
@@ -165,7 +190,7 @@ impl Prod {
                 if f.sin == 0 {
                     continue;
                 }
-                res *= cache.get(f.var)?.0.powi(f.sin as i32);
+                res *= cache.sin(f.var)?.powi(f.sin as i32);
             }
         }
 
@@ -174,7 +199,7 @@ impl Prod {
                 if f.cos == 0 {
                     continue;
                 }
-                res *= cache.get(f.var)?.1.powi(f.cos as i32);
+                res *= cache.cos(f.var)?.powi(f.cos as i32);
             }
         }
         Ok(res)
@@ -232,11 +257,14 @@ impl Sum {
     /// The per-variable `sin`/`cos` are computed **once per call** into an
     /// [`AngleCache`] rather than once per factor per monomial; see that type for
     /// why the result is bit-identical and the error shape unchanged.
+    #[inline]
     pub fn eval(&self, vals: &[f64]) -> Result<f64> {
         let mut cache = AngleCache::new(vals);
         let mut res = self.c0;
-        for (p, c) in &self.terms {
-            res += p.eval_cached(&mut cache)? * c;
+        if let Some(maps) = &self.maps {
+            for (p, c) in &maps.terms {
+                res += p.eval_cached(&mut cache)? * c;
+            }
         }
         Ok(res)
     }
@@ -245,8 +273,10 @@ impl Sum {
     pub fn eval_complex(&self, vals: &[f64]) -> Result<Complex<f64>> {
         let mut cache = AngleCache::new(vals);
         let mut res = Complex::new(self.c0, 0.0);
-        for (p, c) in &self.terms {
-            res += p.eval_complex_cached(&mut cache)? * *c;
+        if let Some(maps) = &self.maps {
+            for (p, c) in &maps.terms {
+                res += p.eval_complex_cached(&mut cache)? * *c;
+            }
         }
         Ok(res)
     }
@@ -257,6 +287,7 @@ impl Term {
     ///
     /// A bare [`Term::var`] evaluates to `vals[u]` — one of the only two
     /// operations a bare variable supports (the other is `Display`).
+    #[inline]
     pub fn eval(&self, vals: &[f64]) -> Result<f64> {
         match self.inner {
             Inner::Const(c) => Ok(c),

@@ -11,10 +11,33 @@
 
 use crate::term::{Inner, Prod, Sum, Term};
 
+impl Term {
+    /// Borrowed accumulation used by readout folds.
+    ///
+    /// For two map-backed terms this clones each monomial directly into the
+    /// destination, avoiding a full temporary map clone whose entries would
+    /// immediately be moved out again. All other representation pairs retain
+    /// the owned operator path exactly.
+    #[inline]
+    pub(crate) fn add_ref(&mut self, rhs: &Self) {
+        if let (Inner::Sum(lhs), Inner::Sum(rhs)) = (&mut self.inner, &rhs.inner) {
+            if let Some(maps) = &rhs.maps {
+                for (p, c) in &maps.terms {
+                    lhs.add_term(p.clone(), *c, self.max_sin, self.min_eps);
+                }
+            }
+            lhs.c0 += rhs.c0;
+            return;
+        }
+        *self += rhs.clone();
+    }
+}
+
 /// Bare `c₀ += rhs`, with **no `min_eps` check** — asymmetric with the method
 /// form [`Sum::add_const`], which does drop `|c| < min_eps`. Old behaviour,
 /// reproduced deliberately (behavioural contract 11).
 impl std::ops::AddAssign<f64> for Sum {
+    #[inline]
     fn add_assign(&mut self, rhs: f64) {
         self.c0 += rhs;
     }
@@ -25,8 +48,10 @@ impl std::ops::AddAssign<f64> for Sum {
 /// including a `pow() == 0` monomial. Old behaviour, reproduced deliberately
 /// (behavioural contract 11).
 impl std::ops::AddAssign<Prod> for Sum {
+    #[inline]
     fn add_assign(&mut self, rhs: Prod) {
-        *self.terms.entry(rhs).or_insert(0.0) += 1.0;
+        let maps = self.maps.get_or_insert_with(Default::default);
+        *maps.terms.entry(rhs).or_insert(0.0) += 1.0;
     }
 }
 
@@ -47,6 +72,7 @@ impl std::ops::AddAssign<Prod> for Sum {
 /// `AddAssign<Term>`'s own `One` receiver arms already assign), so the golden
 /// masters are unaffected.
 impl std::ops::AddAssign<f64> for Term {
+    #[inline]
     fn add_assign(&mut self, rhs: f64) {
         match self.inner {
             Inner::Const(ref mut c) => {
@@ -72,6 +98,7 @@ impl std::ops::AddAssign<f64> for Term {
 }
 
 impl std::ops::AddAssign<Prod> for Term {
+    #[inline]
     fn add_assign(&mut self, rhs: Prod) {
         match self.inner {
             Inner::Const(c) => {
@@ -102,12 +129,15 @@ impl std::ops::AddAssign<Prod> for Term {
 /// The truncation parameters are inherited from **`self` only**; `rhs`'s
 /// `max_sin`/`min_eps` are silently ignored (behavioural contract 1).
 impl std::ops::AddAssign<Term> for Term {
+    #[inline]
     fn add_assign(&mut self, rhs: Term) {
         match self.inner {
             Inner::Sum(ref mut s1) => match rhs.inner {
                 Inner::Sum(s2) => {
-                    for (p, c) in s2.terms {
-                        s1.add_term(p, c, self.max_sin, self.min_eps);
+                    if let Some(maps) = s2.maps {
+                        for (p, c) in maps.terms {
+                            s1.add_term(p, c, self.max_sin, self.min_eps);
+                        }
                     }
                     s1.c0 += s2.c0;
                 }
@@ -187,6 +217,7 @@ impl std::ops::AddAssign<Term> for Term {
 impl std::ops::Add for Term {
     type Output = Term;
 
+    #[inline]
     fn add(mut self, rhs: Term) -> Self::Output {
         self += rhs;
         self
@@ -196,6 +227,7 @@ impl std::ops::Add for Term {
 impl std::ops::Add<f64> for Term {
     type Output = Term;
 
+    #[inline]
     fn add(mut self, rhs: f64) -> Self::Output {
         self += rhs;
         self
@@ -205,6 +237,7 @@ impl std::ops::Add<f64> for Term {
 impl std::ops::Add<Term> for f64 {
     type Output = Term;
 
+    #[inline]
     fn add(self, mut rhs: Term) -> Self::Output {
         rhs += self;
         rhs
@@ -214,6 +247,7 @@ impl std::ops::Add<Term> for f64 {
 impl std::ops::Sub<Term> for Term {
     type Output = Term;
 
+    #[inline]
     fn sub(mut self, rhs: Term) -> Self::Output {
         self += -rhs;
         self
@@ -223,6 +257,7 @@ impl std::ops::Sub<Term> for Term {
 impl std::ops::Sub<f64> for Term {
     type Output = Term;
 
+    #[inline]
     fn sub(mut self, rhs: f64) -> Self::Output {
         self += -rhs;
         self

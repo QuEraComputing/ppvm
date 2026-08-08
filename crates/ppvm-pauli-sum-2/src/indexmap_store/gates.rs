@@ -25,7 +25,7 @@ impl<K: Indexable, C: Coefficient> SignFlipByKey<K, C> for IndexMapStore<K, C> {
         for (key, coeff) in &mut self.primary {
             let sign = f(key);
             if sign != 1 {
-                *coeff = coeff.mul_sign(sign);
+                coeff.mul_sign_assign(sign);
             }
         }
     }

@@ -50,14 +50,17 @@ impl Display for Sum {
         if self.c0 != 0.0 {
             write!(f, "{:.3} ", self.c0)?;
 
-            if self.terms.is_empty() {
+            if self.is_empty() {
                 return Ok(());
             } else {
                 write!(f, "+ ")?;
             }
         }
 
-        let mut sorted_keys = self.terms.keys().collect::<Vec<_>>();
+        let Some(maps) = &self.maps else {
+            return Ok(());
+        };
+        let mut sorted_keys = maps.terms.keys().collect::<Vec<_>>();
         sorted_keys.sort_by(|a, b| {
             a.sin_pow()
                 .cmp(&b.sin_pow())
@@ -65,7 +68,7 @@ impl Display for Sum {
         });
 
         for (i, p) in sorted_keys.iter().enumerate() {
-            let c = self.terms.get(*p).unwrap();
+            let c = maps.terms.get(*p).unwrap();
             write!(f, "{c:.3} * {p}")?;
             if i + 1 < sorted_keys.len() {
                 write!(f, " + ")?;

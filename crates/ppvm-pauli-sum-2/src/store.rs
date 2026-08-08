@@ -714,7 +714,7 @@ where
         for (k, c) in self.iter_mut() {
             let sign = f(k);
             if sign != 1 {
-                *c = c.mul_sign(sign);
+                c.mul_sign_assign(sign);
             }
         }
     }
@@ -741,7 +741,7 @@ where
         for (k, c) in self.iter_mut() {
             let sign = f(k);
             if sign != 1 {
-                *c = c.mul_sign(sign);
+                c.mul_sign_assign(sign);
             }
         }
     }
@@ -1567,7 +1567,7 @@ mod parallel_backend_bounds {
                 for (k, c) in part.iter_mut() {
                     let sign = f(k);
                     if sign != 1 {
-                        *c = c.mul_sign(sign);
+                        c.mul_sign_assign(sign);
                     }
                 }
             };

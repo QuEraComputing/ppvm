@@ -28,7 +28,7 @@
 //! machine-checked in `lean/PPVM/Algebra/GradedMap.lean`.
 //!
 use num::Zero;
-use ppvm_traits_2::{Accumulate, Indexable, Trace, Word};
+use ppvm_traits_2::{Accumulate, Coefficient, Indexable, PauliBits, Trace, Word};
 
 use crate::pattern::{PatternSite, PauliPattern};
 use crate::policy::Policy;
@@ -67,13 +67,14 @@ where
 /// iterator borrows for `'a`. `PauliPattern` is the only implementer old ever
 /// had.
 ///
-/// # Only the matching coefficients are cloned
+/// # Only matching coefficients are accumulated
 ///
 /// The fold runs over
 /// [`Support::for_each_ref`](ppvm_traits_2::Support::for_each_ref) — the
-/// borrowing scan — and clones a coefficient only *after* the pattern accepts
-/// its key, which is old's `fold(zero, |acc, (k, v)| { value.trace(k).then(||
-/// acc += v.clone()); acc })` term for term. Reading through
+/// borrowing scan — and calls [`Coefficient::add_assign_ref`] only *after* the
+/// pattern accepts its key. Its default is old's
+/// `acc += v.clone()` term for term; heap-backed coefficient rings can avoid a
+/// whole temporary clone while preserving that value. Reading through
 /// [`Support::iter`](ppvm_traits_2::Support::iter) instead would clone every
 /// coefficient in the support before the filter looked at it: invisible for
 /// `f64`, but on a symbolic coefficient (an owned monomial table per term) that
@@ -84,7 +85,7 @@ impl<'a, S, P> Trace<'a, PauliPattern> for Sum<S, P>
 where
     S: Accumulate,
     P: Policy<S::Key, S::Coeff>,
-    S::Key: Word + Indexable,
+    S::Key: Word + PauliBits + Indexable,
     <S::Key as Word>::Site: PatternSite,
 {
     type Output = S::Coeff;
@@ -94,8 +95,8 @@ where
         // over a filtered iterator, which would have to own each pair.
         let mut acc = S::Coeff::zero();
         self.for_each_ref(|k, c| {
-            if value.matches(k) {
-                acc += c.clone();
+            if value.matches_bits(k) {
+                acc.add_assign_ref(c);
             }
         });
         acc

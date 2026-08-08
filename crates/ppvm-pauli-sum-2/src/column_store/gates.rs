@@ -41,8 +41,7 @@ where
             let key = self.primary.keys.get(i);
             let sign = f(&key);
             if sign != 1 {
-                let flipped = self.primary.coeffs[i].mul_sign(sign);
-                self.primary.coeffs[i] = flipped;
+                self.primary.coeffs[i].mul_sign_assign(sign);
             }
         }
     }

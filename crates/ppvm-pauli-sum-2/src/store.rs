@@ -1128,10 +1128,11 @@ where
 {
     #[inline(always)]
     fn add_term(&mut self, key: K, coeff: C) {
-        if let Some(slot) = self.primary.get_mut(&key) {
-            *slot += coeff;
-        } else {
-            self.primary.insert(key, coeff);
+        // Optimize the overwhelmingly common miss path (support growth): one
+        // insertion probe and no preliminary lookup. A collision is repaired
+        // with the legacy accumulating semantics; exact zeros still survive.
+        if let Some(previous) = self.primary.insert(key.clone(), coeff.clone()) {
+            self.primary.insert(key, previous + coeff);
         }
     }
 }

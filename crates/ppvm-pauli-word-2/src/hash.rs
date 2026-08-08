@@ -19,14 +19,17 @@ use ppvm_traits_2::Indexable;
 use crate::data::PauliWord;
 use crate::storage::{HashFinalize, PauliStorage};
 
-/// The finalized structural digest of the planes `(x, z)`.
+/// The finalized, index-ready digest of the planes `(x, z)`.
 ///
 /// Factored out so `Indexable::key_hash` and `KeyColumn::hash_into` compute the
 /// **bit-for-bit identical** digest from, respectively, a scalar word and a
 /// column plane — the agreement the batch contract requires (Design:
-/// §"Concrete word hashing"; `word-data-structures.md` §"Key columns"). The raw
-/// digest is folded per-hasher/per-width by [`HashFinalize`] so the low bits
-/// (hashbrown's bucket) are avalanche-quality even for a short key consumed
+/// §"Concrete word hashing"; `word-data-structures.md` §"Key columns"). The
+/// structural digest is first folded per-hasher/per-width by [`HashFinalize`],
+/// then passed through the key hasher's `write_u64` path once. The latter is the
+/// indexing step legacy `HashMap<K, _, H>` applies after `K::hash` writes its
+/// cached structural digest; baking it into `key_hash()` preserves that proven
+/// bucket layout when the new store's identity hasher consumes the digest
 /// directly.
 #[inline(always)]
 pub(crate) fn structural_hash<A, H>(x: &A, z: &A, _nqubits: usize) -> u64
@@ -37,11 +40,19 @@ where
     let mut hasher = H::default().build_hasher();
     // Width is deliberately omitted, matching the legacy digest. Equality still
     // checks it, so cross-width words merely collide; sums already require one
-    // common width. Keeping the plane-only digest also preserves the legacy
-    // bucket distribution on the map-iteration and re-key hot paths.
+    // common width.
     hasher.write(bytemuck::bytes_of(x));
     hasher.write(bytemuck::bytes_of(z));
-    H::finalize_hash(hasher.finish(), std::mem::size_of::<A>())
+    let structural = H::finalize_hash(hasher.finish(), std::mem::size_of::<A>());
+    // Legacy stores use `HashMap<PauliWord<_, H>, _, H>`: `PauliWord::hash`
+    // writes the cached value into a fresh H, whose `finish()` selects the
+    // hashbrown bucket. The new pass-through store removes that outer hasher, so
+    // perform its exact index transform here. Besides restoring the same
+    // support-size-dependent bucket arrangement, this makes a parsed key ready
+    // for direct insertion with no extra hashing at the map boundary.
+    let mut index_hasher = H::default().build_hasher();
+    index_hasher.write_u64(structural);
+    index_hasher.finish()
 }
 
 /// `Hash` writes exactly the finalized `key_hash()` as a single `u64`, so the

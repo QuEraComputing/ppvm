@@ -28,6 +28,11 @@ use crate::term::{Inner, Prod, Sum, Term};
 /// domain feeds are machine-checked in `lean/PPVM/Algebra/GradedMap.lean`
 /// (`accumulate_comm`, `accumulate_assoc`, `scale_scale`).
 impl Coefficient for Term {
+    // Clifford re-keys can transfer the owned monomial table. Cloning it from a
+    // borrowed map traversal duplicates every monomial only to discard the
+    // source table after the auxiliary-map swap.
+    const PREFER_MOVED_REKEY: bool = true;
+
     /// A **scalar** sign flip on the stored `f64` coefficients — never a ring
     /// multiply by a `Term` denoting `±1`.
     ///

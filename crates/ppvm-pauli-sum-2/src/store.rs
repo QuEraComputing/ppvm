@@ -1309,11 +1309,24 @@ where
         // the auxiliary map, then clear the primary before swapping. Besides
         // preserving the source map's dense read-only traversal, this avoids
         // hashbrown's drain state machine in the inner re-key loop.
-        for (k, c) in &self.primary {
-            let (nk, nc) = f(k.clone(), c.clone());
-            Self::insert_bijective(&mut self.aux, nk, nc);
+        //
+        // Heap-backed coefficient rings can make that borrowed traversal much
+        // more expensive: cloning a coefficient may walk and allocate its whole
+        // owned representation. Their compile-time opt-in transfers each value
+        // through `drain` instead. Both arms apply exactly the same bijection and
+        // leave the same maps empty/full; only ownership transfer differs.
+        if C::PREFER_MOVED_REKEY {
+            for (k, c) in self.primary.drain() {
+                let (nk, nc) = f(k, c);
+                Self::insert_bijective(&mut self.aux, nk, nc);
+            }
+        } else {
+            for (k, c) in &self.primary {
+                let (nk, nc) = f(k.clone(), c.clone());
+                Self::insert_bijective(&mut self.aux, nk, nc);
+            }
+            self.primary.clear();
         }
-        self.primary.clear();
         std::mem::swap(&mut self.primary, &mut self.aux);
     }
 

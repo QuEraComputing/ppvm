@@ -317,6 +317,16 @@ where
         }
     }
 
+    #[inline(always)]
+    fn set_xz_bits(&mut self, i: usize, x: bool, z: bool) {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        if self.xbits[i] != x || self.zbits[i] != z {
+            self.xbits.set(i, x);
+            self.zbits.set(i, z);
+            self.invalidate_hash();
+        }
+    }
+
     /// The direct plane-copy branch key builder — see
     /// [`with_bits_toggled`](PauliWord::with_bits_toggled). Overrides the trait's
     /// clone-then-flip default, which would load and then immediately invalidate

@@ -203,8 +203,7 @@ where
             }
             let x = k.x_bit(qubit);
             let z = k.z_bit(qubit);
-            k.set_x_bit(qubit, z);
-            k.set_z_bit(qubit, x);
+            k.set_xz_bits(qubit, z, x);
             x & z
         });
     }
@@ -352,8 +351,7 @@ where
             }
             let x = k.x_bit(qubit);
             let z = k.z_bit(qubit);
-            k.set_x_bit(qubit, z);
-            k.set_z_bit(qubit, x);
+            k.set_xz_bits(qubit, z, x);
             !x & z
         });
     }
@@ -368,8 +366,7 @@ where
             }
             let x = k.x_bit(qubit);
             let z = k.z_bit(qubit);
-            k.set_x_bit(qubit, z);
-            k.set_z_bit(qubit, x);
+            k.set_xz_bits(qubit, z, x);
             x & !z
         });
     }

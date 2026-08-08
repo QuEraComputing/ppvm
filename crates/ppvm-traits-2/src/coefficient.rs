@@ -37,6 +37,15 @@ pub trait Coefficient:
     + Send
     + Sync
 {
+    /// Prefer moving coefficients through a bijective map re-key instead of
+    /// cloning them from a borrowed bucket traversal.
+    ///
+    /// The two traversals are algebraically identical. The borrowed default is
+    /// faster for small numeric coefficients because it walks a dense, stable
+    /// table; heap-backed coefficients whose clone walks owned state may opt in
+    /// to draining traversal to transfer that state without allocation.
+    const PREFER_MOVED_REKEY: bool = false;
+
     /// Multiply by `sign ∈ {-1, +1}` (encoded as `i8`).
     fn mul_sign(&self, sign: i8) -> Self;
 

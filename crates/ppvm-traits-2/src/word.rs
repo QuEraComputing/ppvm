@@ -130,6 +130,15 @@ pub trait PauliBits: Word {
     fn set_x_bit(&mut self, i: usize, v: bool);
     /// Set the Z bit at index `i` (invalidates the hash lazily).
     fn set_z_bit(&mut self, i: usize, v: bool);
+    /// Set both bit planes at one site.
+    ///
+    /// The default composes the scalar setters. Packed words whose setters
+    /// refresh structural metadata eagerly may override this to refresh once.
+    #[inline(always)]
+    fn set_xz_bits(&mut self, i: usize, x: bool, z: bool) {
+        self.set_x_bit(i, x);
+        self.set_z_bit(i, z);
+    }
     /// Whether index `i` is lost; `LossyPauliWord` overrides this.
     #[inline(always)]
     fn is_lost(&self, i: usize) -> bool {

@@ -1560,6 +1560,111 @@ fn integration_sym_random_circuit() {
     assert!(ns.len() > 1, "the replay should have grown the support");
 }
 
+#[test]
+fn symbolic_clifford_surface_matches_old() {
+    let mut old = new_old_sum(6);
+    old += ("XYZIYZ", OldTerm::var(0).sin() + OldTerm::var(1).cos());
+    old += ("YZXZYI", OldTerm::from(2.0) + OldTerm::var(2).sin());
+    let mut new = new_new_sum(6);
+    new += (
+        NewSymKey::from("XYZIYZ"),
+        NewTerm::var(0).sin() + NewTerm::var(1).cos(),
+    );
+    new += (
+        NewSymKey::from("YZXZYI"),
+        NewTerm::from(2.0) + NewTerm::var(2).sin(),
+    );
+    let angles = [fixed_angles(3)];
+
+    macro_rules! pair {
+        ($label:literal, $old:expr, $new:expr) => {{
+            let mut old_case = old.clone();
+            let mut new_case = new.clone();
+            $old(&mut old_case);
+            $new(&mut new_case);
+            assert_sums_match(&old_case, &new_case, &angles, $label);
+        }};
+    }
+
+    pair!("h", |s| ppvm_traits::traits::Clifford::h(s, 0), |s| {
+        ppvm_traits_2::Clifford::h(s, 0)
+    });
+    pair!("s", |s| ppvm_traits::traits::Clifford::s(s, 1), |s| {
+        ppvm_traits_2::Clifford::s(s, 1)
+    });
+    pair!(
+        "cnot",
+        |s| ppvm_traits::traits::Clifford::cnot(s, 0, 1),
+        |s| ppvm_traits_2::Clifford::cnot(s, 0, 1)
+    );
+    pair!("cz", |s| ppvm_traits::traits::Clifford::cz(s, 1, 2), |s| {
+        ppvm_traits_2::Clifford::cz(s, 1, 2)
+    });
+    pair!(
+        "aliases",
+        |s: &mut OldSymSum| {
+            ppvm_traits::traits::Clifford::cx(&mut *s, 0, 1);
+            ppvm_traits::traits::Clifford::zcx(&mut *s, 1, 2);
+            ppvm_traits::traits::Clifford::zcz(&mut *s, 2, 3);
+            ppvm_traits::traits::CliffordExtensions::zcy(&mut *s, 3, 4);
+        },
+        |s: &mut NewSymSum| {
+            ppvm_traits_2::Clifford::cx(&mut *s, 0, 1);
+            ppvm_traits_2::Clifford::zcx(&mut *s, 1, 2);
+            ppvm_traits_2::Clifford::zcz(&mut *s, 2, 3);
+            ppvm_traits_2::CliffordExtensions::zcy(&mut *s, 3, 4);
+        }
+    );
+    pair!(
+        "extensions",
+        |s: &mut OldSymSum| {
+            ppvm_traits::traits::CliffordExtensions::s_dag(&mut *s, 0);
+            ppvm_traits::traits::CliffordExtensions::sqrt_x(&mut *s, 1);
+            ppvm_traits::traits::CliffordExtensions::sqrt_x_dag(&mut *s, 2);
+            ppvm_traits::traits::CliffordExtensions::sqrt_y(&mut *s, 3);
+            ppvm_traits::traits::CliffordExtensions::sqrt_y_dag(&mut *s, 4);
+            ppvm_traits::traits::CliffordExtensions::cy(&mut *s, 4, 5);
+        },
+        |s: &mut NewSymSum| {
+            ppvm_traits_2::CliffordExtensions::s_dag(&mut *s, 0);
+            ppvm_traits_2::CliffordExtensions::sqrt_x(&mut *s, 1);
+            ppvm_traits_2::CliffordExtensions::sqrt_x_dag(&mut *s, 2);
+            ppvm_traits_2::CliffordExtensions::sqrt_y(&mut *s, 3);
+            ppvm_traits_2::CliffordExtensions::sqrt_y_dag(&mut *s, 4);
+            ppvm_traits_2::CliffordExtensions::cy(&mut *s, 4, 5);
+        }
+    );
+    let targets = &[0, 2, 4];
+    let pairs = &[(0, 1), (2, 3)];
+    pair!(
+        "batches",
+        |s: &mut OldSymSum| {
+            ppvm_traits::traits::CliffordBatch::h_many(&mut *s, targets);
+            ppvm_traits::traits::CliffordBatch::s_many(&mut *s, targets);
+            ppvm_traits::traits::CliffordBatch::cnot_many(&mut *s, pairs);
+            ppvm_traits::traits::CliffordBatch::cz_many(&mut *s, pairs);
+            ppvm_traits::traits::CliffordExtensionsBatch::s_dag_many(&mut *s, targets);
+            ppvm_traits::traits::CliffordExtensionsBatch::sqrt_x_many(&mut *s, targets);
+            ppvm_traits::traits::CliffordExtensionsBatch::sqrt_x_dag_many(&mut *s, targets);
+            ppvm_traits::traits::CliffordExtensionsBatch::sqrt_y_many(&mut *s, targets);
+            ppvm_traits::traits::CliffordExtensionsBatch::sqrt_y_dag_many(&mut *s, targets);
+            ppvm_traits::traits::CliffordExtensionsBatch::cy_many(&mut *s, pairs);
+        },
+        |s: &mut NewSymSum| {
+            ppvm_traits_2::CliffordBatch::h_many(&mut *s, targets);
+            ppvm_traits_2::CliffordBatch::s_many(&mut *s, targets);
+            ppvm_traits_2::CliffordBatch::cnot_many(&mut *s, pairs);
+            ppvm_traits_2::CliffordBatch::cz_many(&mut *s, pairs);
+            ppvm_traits_2::CliffordExtensionsBatch::s_dag_many(&mut *s, targets);
+            ppvm_traits_2::CliffordExtensionsBatch::sqrt_x_many(&mut *s, targets);
+            ppvm_traits_2::CliffordExtensionsBatch::sqrt_x_dag_many(&mut *s, targets);
+            ppvm_traits_2::CliffordExtensionsBatch::sqrt_y_many(&mut *s, targets);
+            ppvm_traits_2::CliffordExtensionsBatch::sqrt_y_dag_many(&mut *s, targets);
+            ppvm_traits_2::CliffordExtensionsBatch::cy_many(&mut *s, pairs);
+        }
+    );
+}
+
 /// `sym.exact.multiply`, the half where old's semantics are sound: the
 /// **single-word** operator product `A ← A·P`.
 ///

@@ -611,7 +611,8 @@ impl<A: RowStorage, H> CliffordBatch for Tableau<A, H> {
         self.data.iter_mut().for_each(|pw| {
             let zp = pw.zbits.data.as_raw_slice();
             let mut popcount = 0u32;
-            for (wi, &mask) in masks.iter().enumerate().take(n_words) {
+            for wi in 0..n_words {
+                let mask = masks[wi];
                 if mask == zero {
                     continue;
                 }
@@ -633,7 +634,8 @@ impl<A: RowStorage, H> CliffordBatch for Tableau<A, H> {
             let xp = pw.xbits.data.as_raw_slice();
             let zp = pw.zbits.data.as_raw_slice();
             let mut popcount = 0u32;
-            for (wi, &mask) in masks.iter().enumerate().take(n_words) {
+            for wi in 0..n_words {
+                let mask = masks[wi];
                 if mask == zero {
                     continue;
                 }
@@ -654,7 +656,8 @@ impl<A: RowStorage, H> CliffordBatch for Tableau<A, H> {
         self.data.iter_mut().for_each(|pw| {
             let xp = pw.xbits.data.as_raw_slice();
             let mut popcount = 0u32;
-            for (wi, &mask) in masks.iter().enumerate().take(n_words) {
+            for wi in 0..n_words {
+                let mask = masks[wi];
                 if mask == zero {
                     continue;
                 }
@@ -676,7 +679,8 @@ impl<A: RowStorage, H> CliffordBatch for Tableau<A, H> {
             let xp = pw.xbits.data.as_raw_mut_slice();
             let zp = pw.zbits.data.as_raw_mut_slice();
             let mut popcount = 0u32;
-            for (wi, &mask) in masks.iter().enumerate().take(n_words) {
+            for wi in 0..n_words {
+                let mask = masks[wi];
                 if mask == zero {
                     continue;
                 }
@@ -701,7 +705,8 @@ impl<A: RowStorage, H> CliffordBatch for Tableau<A, H> {
         self.data.iter_mut().for_each(|pw| {
             let xp = pw.xbits.data.as_raw_mut_slice();
             let zp = pw.zbits.data.as_raw_mut_slice();
-            for (wi, &mask) in masks.iter().enumerate().take(n_words) {
+            for wi in 0..n_words {
+                let mask = masks[wi];
                 if mask == zero {
                     continue;
                 }
@@ -787,7 +792,8 @@ impl<A: RowStorage, H> CliffordExtensionsBatch for Tableau<A, H> {
             let xp = pw.xbits.data.as_raw_mut_slice();
             let zp = pw.zbits.data.as_raw_mut_slice();
             let mut popcount = 0u32;
-            for (wi, &mask) in masks.iter().enumerate().take(n_words) {
+            for wi in 0..n_words {
+                let mask = masks[wi];
                 if mask == zero {
                     continue;
                 }
@@ -838,7 +844,8 @@ impl<A: RowStorage, H> CliffordExtensionsBatch for Tableau<A, H> {
         self.data.iter_mut().for_each(|pw| {
             let xp = pw.xbits.data.as_raw_mut_slice();
             let zp = pw.zbits.data.as_raw_mut_slice();
-            for (wi, &mask) in masks.iter().enumerate().take(n_words) {
+            for wi in 0..n_words {
+                let mask = masks[wi];
                 if mask == zero {
                     continue;
                 }
@@ -866,7 +873,8 @@ impl<A: RowStorage, H> CliffordExtensionsBatch for Tableau<A, H> {
         self.data.iter_mut().for_each(|pw| {
             let xp = pw.xbits.data.as_raw_mut_slice();
             let zp = pw.zbits.data.as_raw_mut_slice();
-            for (wi, &mask) in masks.iter().enumerate().take(n_words) {
+            for wi in 0..n_words {
+                let mask = masks[wi];
                 if mask == zero {
                     continue;
                 }
@@ -894,7 +902,8 @@ impl<A: RowStorage, H> CliffordExtensionsBatch for Tableau<A, H> {
         self.data.iter_mut().for_each(|pw| {
             let xp = pw.xbits.data.as_raw_mut_slice();
             let zp = pw.zbits.data.as_raw_mut_slice();
-            for (wi, &mask) in masks.iter().enumerate().take(n_words) {
+            for wi in 0..n_words {
+                let mask = masks[wi];
                 if mask == zero {
                     continue;
                 }
@@ -918,7 +927,8 @@ impl<A: RowStorage, H> CliffordExtensionsBatch for Tableau<A, H> {
         self.data.iter_mut().for_each(|pw| {
             let xp = pw.xbits.data.as_raw_mut_slice();
             let zp = pw.zbits.data.as_raw_mut_slice();
-            for (wi, &mask) in masks.iter().enumerate().take(n_words) {
+            for wi in 0..n_words {
+                let mask = masks[wi];
                 if mask == zero {
                     continue;
                 }

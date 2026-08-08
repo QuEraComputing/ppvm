@@ -1231,6 +1231,38 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
 
         let cutoff_sq = self.coefficient_threshold * self.coefficient_threshold;
 
+        #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
+        if n_coefficients >= 16_384 {
+            // Match the old large-support FxHashMap fold exactly: branch before
+            // non-branch insertion fixes collision identity, floating-point
+            // addition order, and final iteration order. Computing each pair
+            // immediately avoids the old intermediate parallel `pairs` vector.
+            let mut map: fxhash::FxHashMap<I, Complex64> =
+                fxhash::FxHashMap::with_capacity_and_hasher(2 * n_coefficients, Default::default());
+            for (coeff, idx) in old_coefficients {
+                let branch_idx = idx ^ stab_anticomm_bits;
+                let bpc = compute_phase_with_mask_static(
+                    destab_anticomm_bits,
+                    idx,
+                    stab_anticomm_bits,
+                    odd_phase_mask,
+                );
+                let branch_phase = (bpc + phase_decomp) % 4;
+                let phase_factor = COMPLEX_PHASE_CONVERSION[branch_phase as usize];
+                let branch_coeff = phase_factor * coeff * branch_factor;
+                let nonbranch_coeff = coeff * coefficient_factor;
+                *map.entry(branch_idx).or_insert(Complex64::new(0.0, 0.0)) += branch_coeff;
+                *map.entry(idx).or_insert(Complex64::new(0.0, 0.0)) += nonbranch_coeff;
+            }
+            self.coefficients.reserve(map.len());
+            for (idx, coeff) in map {
+                if coeff.norm_sqr() > cutoff_sq {
+                    self.coefficients.unsafe_insert(idx, coeff);
+                }
+            }
+            return;
+        }
+
         let mut nb: Vec<(I, Complex64)> = Vec::with_capacity(n_coefficients);
         let mut brv: Vec<Complex64> = Vec::with_capacity(n_coefficients);
         let mut packed: Vec<u64> = Vec::with_capacity(n_coefficients);

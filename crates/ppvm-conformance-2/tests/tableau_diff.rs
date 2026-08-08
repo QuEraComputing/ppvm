@@ -1037,7 +1037,8 @@ fn integration_branch_coalesce_regimes() {
 ///
 /// `branch_with_coefficients` takes the `u64`-packed fast path only when
 /// `n_coefficients <= 0xFFFF` **and** every branch key fits in 47 bits; both
-/// engines otherwise fall back to a `(I, u32)` sort. `integration_branch_coalesce_regimes`
+/// sequential engines otherwise fall back to a `(I, u32)` sort.
+/// `integration_branch_coalesce_regimes`
 /// only ever reaches `j = 11` on qubits `0..j`, so it exercises the packed path
 /// exclusively and a divergence in the fallback would go unseen.
 ///
@@ -1100,46 +1101,48 @@ fn branch_coalesce_generic_fallback_on_wide_keys() {
 ///
 /// The baseline's `fused-tgate` sweep tops out at 12 T gates (4096 branches) and
 /// the coalesce sweep at `j = 11`, so nothing in the suite crosses the 65535
-/// support cutoff where BOTH engines switch merge implementations. A drifted
-/// port would pass every other test and then diverge on exactly the workload the
-/// cutoff exists for. `j = 17` gives a 65536-entry input to the final `T`, one
-/// past the cutoff, in both the doubling and the merge regime.
+/// support cutoff. A drifted port would pass every other test and then diverge
+/// on exactly the workload the cutoff exists for. `j = 16` gives a 65536-entry
+/// input to the final `T`, one past the packed cutoff, while `j = 17` covers the
+/// next scaling point. With Rayon enabled these also verify the large-support
+/// FxHashMap path's exact public order.
 ///
-/// Marked `#[ignore]` only because a 131072-branch merge is slow in an
+/// Marked `#[ignore]` only because a 262144-branch doubling is slow in an
 /// unoptimised test build; run it with
 /// `cargo test -p ppvm-conformance-2 --release --test tableau_diff -- --ignored`.
 #[test]
 #[ignore = "slow in a debug build; run under --release"]
 fn branch_coalesce_generic_fallback_above_the_support_cutoff() {
-    let j = 17usize;
-    let mut o: OldWide = branch_grow(j);
-    let mut m: NewWide = branch_grow(j);
-    assert_eq!(o.n_coeffs(), 1 << j);
-    assert_eq!(m.n_coeffs(), 1 << j);
+    for j in [16usize, 17] {
+        let mut o: OldWide = branch_grow(j);
+        let mut m: NewWide = branch_grow(j);
+        assert_eq!(o.n_coeffs(), 1 << j);
+        assert_eq!(m.n_coeffs(), 1 << j);
 
-    o.h(j);
-    m.h(j);
-    o.t(j);
-    m.t(j);
-    assert_eq!(o.n_coeffs(), 1 << (j + 1), "fallback doubling output size");
-    assert_coeffs_eq(&o, &m, 1e-9, "wide-support fallback, doubling");
-    assert_eq!(
-        o.coeffs(),
-        m.coeffs(),
-        "wide-support fallback, doubling: emitted amplitude ORDER diverged"
-    );
+        o.h(j);
+        m.h(j);
+        o.t(j);
+        m.t(j);
+        assert_eq!(o.n_coeffs(), 1 << (j + 1), "doubling output size");
+        assert_coeffs_eq(&o, &m, 1e-9, &format!("wide support j={j}, doubling"));
+        assert_eq!(
+            o.coeffs(),
+            m.coeffs(),
+            "wide support j={j}, doubling: emitted amplitude ORDER diverged"
+        );
 
-    let mut o2: OldWide = branch_grow(j);
-    let mut m2: NewWide = branch_grow(j);
-    o2.t(0);
-    m2.t(0);
-    assert_eq!(o2.n_coeffs(), 1 << j, "fallback merge output size");
-    assert_coeffs_eq(&o2, &m2, 1e-9, "wide-support fallback, merge");
-    assert_eq!(
-        o2.coeffs(),
-        m2.coeffs(),
-        "wide-support fallback, merge: emitted amplitude ORDER diverged"
-    );
+        let mut o2: OldWide = branch_grow(j);
+        let mut m2: NewWide = branch_grow(j);
+        o2.t(0);
+        m2.t(0);
+        assert_eq!(o2.n_coeffs(), 1 << j, "merge output size");
+        assert_coeffs_eq(&o2, &m2, 1e-9, &format!("wide support j={j}, merge"));
+        assert_eq!(
+            o2.coeffs(),
+            m2.coeffs(),
+            "wide support j={j}, merge: emitted amplitude ORDER diverged"
+        );
+    }
 }
 
 // ===========================================================================

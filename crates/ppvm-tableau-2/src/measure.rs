@@ -436,19 +436,25 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
             let mut bt = std::mem::take(&mut scratch.bt);
             a.clear();
             bt.clear();
-            for (idx, coeff) in by_idx.drain(..) {
+            for &(idx, coeff) in &by_idx {
                 if (idx & k) == I::zero() {
                     a.push((idx, coeff));
-                } else {
+                }
+            }
+            // `shifted` is already sorted by the transformed index. Selecting
+            // the original B partition from it makes `bt` sorted by
+            // construction and avoids a second comparison sort.
+            for &(transformed_idx, coeff) in &shifted {
+                let idx = transformed_idx ^ stab_anticomm_bits;
+                if (idx & k) != I::zero() {
                     let symp = symplectic_inner(idx, destab_anticomm_bits);
                     let phase_idx =
                         ((alpha as i32 + if symp % 2 == 1 { 2 } else { 0 }) % 4) as usize;
                     let q = COMPLEX_PHASE_CONVERSION[phase_idx];
-                    bt.push((idx ^ stab_anticomm_bits, q * coeff));
+                    bt.push((transformed_idx, q * coeff));
                 }
             }
-            // `a` is already sorted (a subset of the sorted `by_idx`); `bt` is not.
-            bt.sort_unstable_by_key(|e| e.0);
+            by_idx.clear();
 
             // 2-way merge summing equal keys → sorted merged output.
             let mut merged = std::mem::take(&mut scratch.merged);

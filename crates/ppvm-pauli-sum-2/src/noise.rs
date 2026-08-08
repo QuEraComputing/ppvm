@@ -68,6 +68,43 @@ where
         let [x_factor, z_factor, y_factor] = C::pauli_error_factors(probabilities);
         self.scale_pauli_error(qubit, x_factor, z_factor, y_factor);
     }
+
+    #[inline(always)]
+    fn pauli_error_many(&mut self, targets: &[usize], probabilities: [C; 3]) {
+        let [x_factor, z_factor, y_factor] = C::pauli_error_factors(probabilities);
+        self.scale_by_key(move |key, coeff| {
+            for &qubit in targets {
+                if key.is_lost(qubit) {
+                    continue;
+                }
+                match key.pauli_code(qubit) {
+                    0 => {}
+                    1 => *coeff *= x_factor.clone(),
+                    2 => *coeff *= z_factor.clone(),
+                    3 => *coeff *= y_factor.clone(),
+                    _ => unreachable!(),
+                }
+            }
+        });
+    }
+
+    #[inline(always)]
+    fn x_error_many(&mut self, targets: &[usize], p: C) {
+        let zero = C::zero();
+        self.pauli_error_many(targets, [p, zero.clone(), zero]);
+    }
+
+    #[inline(always)]
+    fn y_error_many(&mut self, targets: &[usize], p: C) {
+        let zero = C::zero();
+        self.pauli_error_many(targets, [zero.clone(), p, zero]);
+    }
+
+    #[inline(always)]
+    fn z_error_many(&mut self, targets: &[usize], p: C) {
+        let zero = C::zero();
+        self.pauli_error_many(targets, [zero.clone(), zero, p]);
+    }
 }
 
 /// `1 − 2·(p[i₀] + p[i₁] + …)` over a hand-written index list — old's

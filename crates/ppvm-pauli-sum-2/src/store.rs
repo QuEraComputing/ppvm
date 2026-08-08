@@ -1128,11 +1128,18 @@ where
 {
     #[inline(always)]
     fn add_term(&mut self, key: K, coeff: C) {
-        // Optimize the overwhelmingly common miss path (support growth): one
-        // insertion probe and no preliminary lookup. A collision is repaired
-        // with the legacy accumulating semantics; exact zeros still survive.
-        if let Some(previous) = self.primary.insert(key.clone(), coeff.clone()) {
-            self.primary.insert(key, previous + coeff);
+        let hash = key.key_hash();
+        match self
+            .primary
+            .raw_entry_mut()
+            .from_hash(hash, |candidate| candidate == &key)
+        {
+            hashbrown::hash_map::RawEntryMut::Occupied(mut entry) => {
+                *entry.get_mut() += coeff;
+            }
+            hashbrown::hash_map::RawEntryMut::Vacant(entry) => {
+                entry.insert_hashed_nocheck(hash, key, coeff);
+            }
         }
     }
 }

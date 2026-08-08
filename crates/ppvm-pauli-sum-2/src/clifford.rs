@@ -230,26 +230,30 @@ where
                 if k.is_lost(control) || k.is_lost(target) {
                     return (k.clone(), false);
                 }
-                let xc = k.x_bit(control);
-                let zc = k.z_bit(control);
-                let xt = k.x_bit(target);
-                let zt = k.z_bit(target);
+                let control_code = k.pauli_code(control);
+                let target_code = k.pauli_code(target);
+                let xc = control_code & 1 != 0;
+                let zc = control_code & 2 != 0;
+                let xt = target_code & 1 != 0;
+                let zt = target_code & 2 != 0;
                 let out = k.toggled_bits2(control, false, zt, target, xc, false);
                 (out, xc & zt & (xt == zc))
             });
-        } else {
-            self.rekey_owned(move |k| {
-                if k.is_lost(control) || k.is_lost(target) {
-                    return (k, false);
-                }
-                let xc = k.x_bit(control);
-                let zc = k.z_bit(control);
-                let xt = k.x_bit(target);
-                let zt = k.z_bit(target);
-                let out = k.into_toggled_bits2(control, false, zt, target, xc, false);
-                (out, xc & zt & (xt == zc))
-            });
+            return;
         }
+        self.rekey_owned(move |k| {
+            if k.is_lost(control) || k.is_lost(target) {
+                return (k, false);
+            }
+            let control_code = k.pauli_code(control);
+            let target_code = k.pauli_code(target);
+            let xc = control_code & 1 != 0;
+            let zc = control_code & 2 != 0;
+            let xt = target_code & 1 != 0;
+            let zt = target_code & 2 != 0;
+            let out = k.into_toggled_bits2(control, false, zt, target, xc, false);
+            (out, xc & zt & (xt == zc))
+        });
     }
 
     #[inline(always)]
@@ -259,26 +263,30 @@ where
                 if k.is_lost(qubit0) || k.is_lost(qubit1) {
                     return (k.clone(), false);
                 }
-                let x0 = k.x_bit(qubit0);
-                let z0 = k.z_bit(qubit0);
-                let x1 = k.x_bit(qubit1);
-                let z1 = k.z_bit(qubit1);
+                let code0 = k.pauli_code(qubit0);
+                let code1 = k.pauli_code(qubit1);
+                let x0 = code0 & 1 != 0;
+                let z0 = code0 & 2 != 0;
+                let x1 = code1 & 1 != 0;
+                let z1 = code1 & 2 != 0;
                 let out = k.toggled_bits2(qubit0, false, x1, qubit1, false, x0);
                 (out, x0 & x1 & (z0 ^ z1))
             });
-        } else {
-            self.rekey_owned(move |k| {
-                if k.is_lost(qubit0) || k.is_lost(qubit1) {
-                    return (k, false);
-                }
-                let x0 = k.x_bit(qubit0);
-                let z0 = k.z_bit(qubit0);
-                let x1 = k.x_bit(qubit1);
-                let z1 = k.z_bit(qubit1);
-                let out = k.into_toggled_bits2(qubit0, false, x1, qubit1, false, x0);
-                (out, x0 & x1 & (z0 ^ z1))
-            });
+            return;
         }
+        self.rekey_owned(move |k| {
+            if k.is_lost(qubit0) || k.is_lost(qubit1) {
+                return (k, false);
+            }
+            let code0 = k.pauli_code(qubit0);
+            let code1 = k.pauli_code(qubit1);
+            let x0 = code0 & 1 != 0;
+            let z0 = code0 & 2 != 0;
+            let x1 = code1 & 1 != 0;
+            let z1 = code1 & 2 != 0;
+            let out = k.into_toggled_bits2(qubit0, false, x1, qubit1, false, x0);
+            (out, x0 & x1 & (z0 ^ z1))
+        });
     }
 }
 
@@ -380,26 +388,37 @@ where
                 if k.is_lost(control) || k.is_lost(target) {
                     return (k.clone(), false);
                 }
-                let xc = k.x_bit(control);
-                let zc = k.z_bit(control);
-                let xt = k.x_bit(target);
-                let zt = k.z_bit(target);
-                let out = k.toggled_bits2(control, false, xt ^ zt, target, xc, xc);
-                (out, xc & (xt ^ zt) & !(zc ^ zt))
+                let control_code = k.pauli_code(control);
+                let target_code = k.pauli_code(target);
+                let xc = control_code & 1 != 0;
+                let zc = control_code & 2 != 0;
+                let xt = target_code & 1 != 0;
+                let zt = target_code & 2 != 0;
+                let target_mix = xt ^ zt;
+                let out = k.toggled_bits2(control, false, target_mix, target, xc, xc);
+                (out, xc & target_mix & !(zc ^ zt))
             });
-        } else {
-            self.rekey_owned(move |k| {
-                if k.is_lost(control) || k.is_lost(target) {
-                    return (k, false);
-                }
-                let xc = k.x_bit(control);
-                let zc = k.z_bit(control);
-                let xt = k.x_bit(target);
-                let zt = k.z_bit(target);
-                let out = k.into_toggled_bits2(control, false, xt ^ zt, target, xc, xc);
-                (out, xc & (xt ^ zt) & !(zc ^ zt))
-            });
+            return;
         }
+        self.rekey_owned(move |k| {
+            if k.is_lost(control) || k.is_lost(target) {
+                return (k, false);
+            }
+            let control_code = k.pauli_code(control);
+            let target_code = k.pauli_code(target);
+            let xc = control_code & 1 != 0;
+            let zc = control_code & 2 != 0;
+            let xt = target_code & 1 != 0;
+            let zt = target_code & 2 != 0;
+            let target_mix = xt ^ zt;
+            let out = k.into_toggled_bits2(control, false, target_mix, target, xc, xc);
+            (out, xc & target_mix & !(zc ^ zt))
+        });
+    }
+
+    #[inline(always)]
+    fn zcy(&mut self, control: usize, target: usize) {
+        self.cy(control, target);
     }
 }
 
@@ -416,6 +435,32 @@ where
     C: Coefficient,
     P: Policy<W, C>,
 {
+    #[inline(always)]
+    fn cnot_many(&mut self, pairs: &[(usize, usize)]) {
+        if W::PREFER_BORROWED_REKEY {
+            for &(control, target) in pairs {
+                self.cnot(control, target);
+            }
+            return;
+        }
+        self.rekey_owned(move |mut key| {
+            let mut negate = false;
+            for &(control, target) in pairs {
+                if key.is_lost(control) || key.is_lost(target) {
+                    continue;
+                }
+                let control_code = key.pauli_code(control);
+                let target_code = key.pauli_code(target);
+                let xc = control_code & 1 != 0;
+                let zc = control_code & 2 != 0;
+                let xt = target_code & 1 != 0;
+                let zt = target_code & 2 != 0;
+                negate ^= xc & zt & (xt == zc);
+                key = key.into_toggled_bits2(control, false, zt, target, xc, false);
+            }
+            (key, negate)
+        });
+    }
 }
 
 impl<S, P, W, C> CliffordExtensionsBatch for Sum<S, P>

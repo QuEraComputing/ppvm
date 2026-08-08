@@ -20,7 +20,6 @@ pub(crate) type LazyBranch = (usize, Mutation, f64, u64);
 ///
 /// Fingerprints only select collision buckets. Entries merge only after a full
 /// frame/loss comparison and coefficient-wise approximate comparison.
-#[derive(Clone)]
 pub struct GeneralizedTableauMixture<
     A: RowStorage = DefaultStorage,
     I: Bitstring = usize,
@@ -33,6 +32,27 @@ pub struct GeneralizedTableauMixture<
     pub(crate) fingerprints: Vec<u64>,
     pub(crate) buckets: HashMap<u64, Vec<usize>, H>,
     pub(crate) dirty: bool,
+}
+
+impl<A, I, H> Clone for GeneralizedTableauMixture<A, I, H>
+where
+    A: RowStorage,
+    I: Bitstring,
+    H: BuildHasher + Default,
+{
+    fn clone(&self) -> Self {
+        Self {
+            n_qubits: self.n_qubits,
+            entries: self.entries.clone(),
+            rng: self.rng.clone(),
+            sum_cutoff: self.sum_cutoff,
+            // Fingerprints are compact and let small cloned mixtures use a
+            // linear collision-bucket scan without cloning the nested map.
+            fingerprints: self.fingerprints.clone(),
+            buckets: HashMap::with_hasher(H::default()),
+            dirty: self.dirty,
+        }
+    }
 }
 
 impl<A, I, H> GeneralizedTableauMixture<A, I, H>
@@ -122,6 +142,11 @@ where
 
     pub(crate) fn rebuild_buckets(&mut self) {
         if !self.dirty {
+            if self.buckets.is_empty() && self.entries.len() > 8 {
+                for (index, &fp) in self.fingerprints.iter().enumerate() {
+                    self.buckets.entry(fp).or_default().push(index);
+                }
+            }
             return;
         }
         self.fingerprints.clear();
@@ -135,22 +160,36 @@ where
     }
 
     pub(crate) fn insert_branches(&mut self, branches: Vec<Branch<A, I, H>>) -> bool {
+        if branches.is_empty() {
+            return false;
+        }
         self.rebuild_buckets();
         let mut dropped = false;
         for (tab, probability, fp) in branches {
-            let found = self.buckets.get(&fp).and_then(|candidates| {
-                candidates
+            let found = if self.buckets.is_empty() {
+                self.fingerprints
                     .iter()
-                    .copied()
+                    .enumerate()
+                    .filter(|(_, candidate)| **candidate == fp)
+                    .map(|(index, _)| index)
                     .find(|&i| structurally_equal(&self.entries[i].0, &tab))
-            });
+            } else {
+                self.buckets.get(&fp).and_then(|candidates| {
+                    candidates
+                        .iter()
+                        .copied()
+                        .find(|&i| structurally_equal(&self.entries[i].0, &tab))
+                })
+            };
             if let Some(index) = found {
                 self.entries[index].1 += probability;
             } else if probability > self.sum_cutoff {
                 let index = self.entries.len();
                 self.entries.push((tab, probability));
                 self.fingerprints.push(fp);
-                self.buckets.entry(fp).or_default().push(index);
+                if !self.buckets.is_empty() {
+                    self.buckets.entry(fp).or_default().push(index);
+                }
             } else {
                 dropped = true;
             }
@@ -159,20 +198,38 @@ where
     }
 
     pub(crate) fn insert_lazy_branches(&mut self, branches: Vec<LazyBranch>) -> bool {
+        if branches.is_empty() {
+            return false;
+        }
         self.rebuild_buckets();
         let parent_count = self.entries.len();
         let mut dropped = false;
         for (parent, mutation, probability, fp) in branches {
             debug_assert!(parent < parent_count);
-            let found = self.buckets.get(&fp).and_then(|candidates| {
-                candidates.iter().copied().find(|&i| {
-                    structurally_equal_mutated(
-                        &self.entries[i].0,
-                        &self.entries[parent].0,
-                        mutation,
-                    )
+            let found = if self.buckets.is_empty() {
+                self.fingerprints
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, candidate)| **candidate == fp)
+                    .map(|(index, _)| index)
+                    .find(|&i| {
+                        structurally_equal_mutated(
+                            &self.entries[i].0,
+                            &self.entries[parent].0,
+                            mutation,
+                        )
+                    })
+            } else {
+                self.buckets.get(&fp).and_then(|candidates| {
+                    candidates.iter().copied().find(|&i| {
+                        structurally_equal_mutated(
+                            &self.entries[i].0,
+                            &self.entries[parent].0,
+                            mutation,
+                        )
+                    })
                 })
-            });
+            };
             if let Some(index) = found {
                 self.entries[index].1 += probability;
             } else if probability > self.sum_cutoff {
@@ -181,7 +238,9 @@ where
                 let index = self.entries.len();
                 self.entries.push((tab, probability));
                 self.fingerprints.push(fp);
-                self.buckets.entry(fp).or_default().push(index);
+                if !self.buckets.is_empty() {
+                    self.buckets.entry(fp).or_default().push(index);
+                }
             } else {
                 dropped = true;
             }

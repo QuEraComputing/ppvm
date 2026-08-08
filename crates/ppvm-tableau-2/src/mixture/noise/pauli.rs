@@ -11,21 +11,54 @@ use crate::mixture::fingerprint::sign_mask;
 use crate::mixture::{GeneralizedTableauMixture, LazyBranch};
 use crate::{Bitstring, GeneralizedTableau, RowStorage};
 
-fn pauli_delta<A: RowStorage, I, H>(
-    tab: &GeneralizedTableau<A, I, H>,
-    qubit: usize,
-    pauli: Pauli,
-) -> u64 {
-    tab.tableau.rows().enumerate().fold(0, |delta, (row, _)| {
+fn pauli_deltas<A: RowStorage, I, H>(tab: &GeneralizedTableau<A, I, H>, qubit: usize) -> [u64; 4] {
+    let (mut dx, mut dz) = (0, 0);
+    for (row, _) in tab.tableau.rows().enumerate() {
         let site = tab.tableau.row_site(row, qubit);
-        let flip = matches!(
-            (pauli, site),
-            (Pauli::X, Pauli::Y | Pauli::Z)
-                | (Pauli::Y, Pauli::X | Pauli::Z)
-                | (Pauli::Z, Pauli::X | Pauli::Y)
-        );
-        if flip { delta ^ sign_mask(row) } else { delta }
-    })
+        let mask = sign_mask(row);
+        if matches!(site, Pauli::Y | Pauli::Z) {
+            dx ^= mask;
+        }
+        if matches!(site, Pauli::X | Pauli::Y) {
+            dz ^= mask;
+        }
+    }
+    [0, dx, dx ^ dz, dz]
+}
+
+fn pauli_index(pauli: Pauli) -> usize {
+    match pauli {
+        Pauli::I => 0,
+        Pauli::X => 1,
+        Pauli::Y => 2,
+        Pauli::Z => 3,
+    }
+}
+
+fn two_qubit_pauli_deltas<A: RowStorage, I, H>(
+    tab: &GeneralizedTableau<A, I, H>,
+    qubit0: usize,
+    qubit1: usize,
+) -> [[u64; 4]; 2] {
+    let ([mut dx0, mut dz0], [mut dx1, mut dz1]) = ([0, 0], [0, 0]);
+    for (row, _) in tab.tableau.rows().enumerate() {
+        let first = tab.tableau.row_site(row, qubit0);
+        let second = tab.tableau.row_site(row, qubit1);
+        let mask = sign_mask(row);
+        if matches!(first, Pauli::Y | Pauli::Z) {
+            dx0 ^= mask;
+        }
+        if matches!(first, Pauli::X | Pauli::Y) {
+            dz0 ^= mask;
+        }
+        if matches!(second, Pauli::Y | Pauli::Z) {
+            dx1 ^= mask;
+        }
+        if matches!(second, Pauli::X | Pauli::Y) {
+            dz1 ^= mask;
+        }
+    }
+    [[0, dx0, dx0 ^ dz0, dz0], [0, dx1, dx1 ^ dz1, dz1]]
 }
 
 impl<A, I, H> PauliError<f64> for GeneralizedTableauMixture<A, I, H>
@@ -44,16 +77,16 @@ where
                 continue;
             }
             let base = self.fingerprints[parent];
+            let deltas = pauli_deltas(&self.entries[parent].0, qubit);
             for (pauli, probability) in [Pauli::X, Pauli::Y, Pauli::Z]
                 .into_iter()
                 .zip(probabilities)
             {
-                let delta = pauli_delta(&self.entries[parent].0, qubit, pauli);
                 branches.push((
                     parent,
                     Mutation::Pauli { pauli, qubit },
                     self.entries[parent].1 * probability,
-                    base ^ delta,
+                    base ^ deltas[pauli_index(pauli)],
                 ));
             }
             self.entries[parent].1 *= 1.0 - total;
@@ -109,9 +142,10 @@ where
             if tab.is_lost[qubit0] || tab.is_lost[qubit1] {
                 continue;
             }
+            let deltas = two_qubit_pauli_deltas(tab, qubit0, qubit1);
             for ((first, second), probability) in PAIRS.into_iter().zip(probabilities) {
                 let _: u64 = self.rng.random();
-                let delta = pauli_delta(tab, qubit0, first) ^ pauli_delta(tab, qubit1, second);
+                let delta = deltas[0][pauli_index(first)] ^ deltas[1][pauli_index(second)];
                 branches.push((
                     parent,
                     Mutation::Pauli2 {

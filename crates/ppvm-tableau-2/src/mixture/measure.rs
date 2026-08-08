@@ -19,17 +19,19 @@ where
     pub(crate) fn for_each_z_branch(
         &mut self,
         qubit: usize,
-        mut visit: impl FnMut(&mut GeneralizedTableau<A, I, H>, Option<bool>, f64),
+        mut visit: impl FnMut(&mut GeneralizedTableau<A, I, H>, Option<bool>, f64) -> bool,
     ) {
+        self.rebuild_buckets();
         let original_len = self.entries.len();
-        let mut branches: Vec<Branch<A, I, H>> = Vec::with_capacity(original_len);
-        let mut scratch = MeasureScratch::new();
-        let mut other_scratch = MeasureScratch::new();
+        let mut branches: Vec<Branch<A, I, H>> = Vec::new();
+        let mut scratch = None;
+        let mut other_scratch = None;
+        let mut keys_changed = false;
 
         for index in 0..original_len {
             let (tab, probability) = &mut self.entries[index];
             if tab.is_lost[qubit] {
-                visit(tab, None, *probability);
+                let _ = visit(tab, None, *probability);
                 continue;
             }
             let (phase, stab, destab) = tab.compute_decomposition(qubit, Pauli::Z);
@@ -47,14 +49,21 @@ where
                 let other_probability = *probability * p_other;
                 if p_other > self.sum_cutoff {
                     other.project_case_b(&entries, !likely, phase, destab);
-                    visit(&mut other, Some(!likely), other_probability);
-                    let fp = fingerprint(&other);
+                    let changed = visit(&mut other, Some(!likely), other_probability);
+                    let fp = if changed {
+                        keys_changed = true;
+                        fingerprint(&other)
+                    } else {
+                        self.fingerprints[index]
+                    };
                     branches.push((other, other_probability, fp));
                 }
                 tab.project_case_b(&entries, likely, phase, destab);
                 *probability *= p_likely;
-                visit(tab, Some(likely), *probability);
+                keys_changed |= visit(tab, Some(likely), *probability);
             } else {
+                let scratch = scratch.get_or_insert_with(MeasureScratch::new);
+                let other_scratch = other_scratch.get_or_insert_with(MeasureScratch::new);
                 scratch.coeff_map.clear();
                 for (value, bitstring) in tab.coefficients.take() {
                     scratch.coeff_map.insert(bitstring, value);
@@ -75,18 +84,21 @@ where
                 let p_other = 1.0 - p_likely;
                 let other_probability = *probability * p_other;
                 if p_other > self.sum_cutoff {
-                    other.project_case_a(!likely, &mut other_scratch, phase, stab, destab, qubit);
-                    visit(&mut other, Some(!likely), other_probability);
+                    other.project_case_a(!likely, &mut *other_scratch, phase, stab, destab, qubit);
+                    let _ = visit(&mut other, Some(!likely), other_probability);
                     let fp = fingerprint(&other);
                     branches.push((other, other_probability, fp));
                 }
-                tab.project_case_a(likely, &mut scratch, phase, stab, destab, qubit);
+                tab.project_case_a(likely, &mut *scratch, phase, stab, destab, qubit);
                 *probability *= p_likely;
-                visit(tab, Some(likely), *probability);
+                let _ = visit(tab, Some(likely), *probability);
+                keys_changed = true;
             }
         }
 
-        self.mark_dirty();
+        if keys_changed {
+            self.mark_dirty();
+        }
         if self.insert_branches(branches) {
             self.normalize_probabilities();
         }
@@ -95,17 +107,29 @@ where
 
     /// Analytic Z-basis measurement probabilities `(zero, one, lost)`.
     pub fn measure(&mut self, qubit: usize) -> (f64, f64, f64) {
-        let mut probabilities = (Vec::new(), Vec::new(), Vec::new());
-        self.for_each_z_branch(qubit, |_, outcome, probability| match outcome {
-            Some(false) => probabilities.0.push(probability),
-            Some(true) => probabilities.1.push(probability),
-            None => probabilities.2.push(probability),
+        if let Some(lost) = self
+            .entries
+            .iter()
+            .try_fold(0.0, |total, (tab, probability)| {
+                tab.is_lost[qubit].then_some(total + probability)
+            })
+        {
+            // Match the general path's order: report pre-truncation mass, then
+            // apply the cutoff (which may normalize the retained entries).
+            self.truncate();
+            return (0.0, 0.0, lost);
+        }
+
+        let mut probabilities = (0.0, 0.0, 0.0);
+        self.for_each_z_branch(qubit, |_, outcome, probability| {
+            match outcome {
+                Some(false) => probabilities.0 += probability,
+                Some(true) => probabilities.1 += probability,
+                None => probabilities.2 += probability,
+            }
+            false
         });
-        (
-            probabilities.0.into_iter().sum(),
-            probabilities.1.into_iter().sum(),
-            probabilities.2.into_iter().sum(),
-        )
+        probabilities
     }
 }
 
@@ -119,6 +143,9 @@ where
         self.for_each_z_branch(qubit, |tab, outcome, _| {
             if outcome == Some(true) {
                 tab.x(qubit);
+                true
+            } else {
+                false
             }
         });
     }

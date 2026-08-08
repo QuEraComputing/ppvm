@@ -19,7 +19,8 @@ use ppvm_traits_2::{
 
 use crate::policy::Policy;
 use crate::store::{
-    AddTerm, ApplyProducer, RekeyBijective, RotateInPlace, ScaleByKey, SignFlipByKey, StoreAlloc,
+    AddTerm, ApplyProducer, BranchInPlace, RekeyBijective, RotateInPlace, ScaleByKey,
+    SignFlipByKey, StoreAlloc,
 };
 
 /// The keep-set carried by a [`Sum`]: keys [`Sum::truncate`] restores if the
@@ -70,26 +71,9 @@ where
     preserve: PreserveSet<S::Key>,
 }
 
-/// Hand-written rather than derived so the keep-set does not force
-/// `S::Key: Debug` on the whole engine (the derive would make every `Sum` with a
-/// non-`Debug` key un-printable). The set is summarized by size; the storage,
-/// policy, width and capacity hint print as before.
-impl<S, P> std::fmt::Debug for Sum<S, P>
-where
-    S: Accumulate + std::fmt::Debug,
-    P: Policy<S::Key, S::Coeff> + std::fmt::Debug,
-    S::Key: Word + Indexable,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Sum")
-            .field("storage", &self.storage)
-            .field("policy", &self.policy)
-            .field("n_sites", &self.n_sites)
-            .field("capacity", &self.capacity)
-            .field("preserved_keys", &self.preserve.len())
-            .finish()
-    }
-}
+// `Debug` (and `Display`) live in `crate::display`: old renders a sum as its
+// weight-sorted terms joined by `" + "`, not as a struct dump, and that string is
+// a user-facing contract (see that module).
 
 // --- Inspection: needs only `Support` (a supertrait of `Accumulate`). --------
 impl<S, P> Sum<S, P>
@@ -486,13 +470,10 @@ where
     /// inserted by this: the snapshot only records keys that were there, exactly
     /// as old's scan does.
     ///
-    /// The one implementation difference from old is the snapshot: old walks the
-    /// **whole support** with an always-true `retain` (it had no other route to
-    /// `(k, v)` pairs through its map traits) and tests each key for membership;
-    /// this probes the `|keep-set|` keys directly. Same snapshot, same restores,
-    /// `O(|keep-set|)` instead of `O(|support|)` — and it is why the keep-set is
-    /// hashed through the pass-through [`IdentityBuildHasher`], so a probe costs
-    /// no hashing either.
+    /// The snapshot walks support order, exactly as old's always-true `retain`
+    /// scan did. This matters for insertion-ordered storage: if a policy drops
+    /// several preserved keys, they must be restored in their original relative
+    /// order rather than the keep-set hash table's iteration order.
     ///
     /// Lean: `truncate_preserve_eq_widened_retain` in
     /// `lean/PPVM/Algebra/Truncation.lean` — the three-step composite equals a
@@ -503,6 +484,7 @@ where
     /// `truncatePreserve_apply_of_mem` (a preserved key keeps *exactly* its
     /// pre-truncate coefficient — old's `Σᵢ Zᵢ` conservation test) and
     /// `truncatePreserve_empty` (the empty-keep-set fast path is exact).
+    #[inline(always)]
     pub fn truncate(&mut self) {
         // 1. Hot path: no keep-set → just the policy (no snapshot scan).
         if self.preserve.is_empty() {
@@ -512,11 +494,11 @@ where
 
         // 2. Snapshot the preserved keys' pre-truncate coefficients.
         let mut saved: Vec<(S::Key, S::Coeff)> = Vec::with_capacity(self.preserve.len());
-        for key in &self.preserve {
-            if let Some(coeff) = self.storage.get(key) {
-                saved.push((key.clone(), coeff));
+        self.storage.for_each_ref(|key, coeff| {
+            if self.preserve.contains(key) {
+                saved.push((key.clone(), coeff.clone()));
             }
-        }
+        });
 
         // 3. The configured policy, verbatim.
         self.policy.truncate(&mut self.storage);
@@ -560,7 +542,7 @@ where
     #[inline]
     pub(crate) fn rekey_bijective<F>(&mut self, f: F)
     where
-        F: FnMut(S::Key, S::Coeff) -> (S::Key, S::Coeff),
+        F: FnMut(S::Key, S::Coeff) -> (S::Key, S::Coeff) + Send + Sync,
     {
         self.storage.rekey_bijective(f);
     }
@@ -588,7 +570,7 @@ where
     #[inline]
     pub(crate) fn flip_sign_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&S::Key) -> i8,
+        F: Fn(&S::Key) -> i8 + Send + Sync,
     {
         self.storage.sign_flip_by_key(f);
     }
@@ -628,12 +610,26 @@ where
     /// (`scaleByKey_support_subset`) — so no weight re-check is owed. An
     /// over-normalized probability vector voids both claims
     /// (`eigenvalue_abs_le_one_needs_substochastic`).
-    #[inline]
+    #[inline(always)]
     pub(crate) fn scale_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&S::Key, &mut S::Coeff),
+        F: Fn(&S::Key, &mut S::Coeff) + Send + Sync,
     {
         self.storage.scale_by_key(f);
+    }
+
+    #[inline(always)]
+    pub(crate) fn scale_pauli_error(
+        &mut self,
+        qubit: usize,
+        x_factor: S::Coeff,
+        z_factor: S::Coeff,
+        y_factor: S::Coeff,
+    ) where
+        S::Key: ppvm_traits_2::PauliBits,
+    {
+        self.storage
+            .scale_pauli_error(qubit, x_factor, z_factor, y_factor);
     }
 }
 
@@ -681,8 +677,58 @@ where
     #[inline]
     pub(crate) fn rotate_in_place<F>(&mut self, f: F)
     where
-        F: FnMut(&S::Key, &mut S::Coeff) -> Option<(S::Key, S::Coeff)>,
+        F: FnMut(&S::Key, &mut S::Coeff) -> Option<(S::Key, S::Coeff)> + Send + Sync,
     {
         self.storage.rotate_in_place(f);
+    }
+
+    #[inline(always)]
+    pub(crate) fn rotate_x(&mut self, qubit: usize, sin: S::Coeff, cos: S::Coeff)
+    where
+        S::Key: ppvm_traits_2::PauliBits,
+    {
+        self.storage.rotate_x(qubit, sin, cos);
+    }
+
+    #[inline(always)]
+    pub(crate) fn rotate_zz(&mut self, a: usize, b: usize, sin: S::Coeff, cos: S::Coeff)
+    where
+        S::Key: ppvm_traits_2::PauliBits,
+    {
+        self.storage.rotate_zz(a, b, sin, cos);
+    }
+}
+
+// --- The multi-branch fast path: needs `BranchInPlace`. ----------------------
+impl<S, P> Sum<S, P>
+where
+    S: Accumulate + BranchInPlace<S::Key, S::Coeff>,
+    P: Policy<S::Key, S::Coeff>,
+    S::Key: Word + Indexable,
+{
+    /// Propagate a **multi-outcome** channel through the support in one fused
+    /// pass: `f(&k, &mut c, sink)` scales the surviving coefficient in place and
+    /// pushes zero or more branch terms into `sink`.
+    ///
+    /// The zero-or-*many* sibling of
+    /// [`rotate_in_place`](Self::rotate_in_place) — old's `map_insert_multiple`
+    /// against its `map_insert` — and the path the correlated loss channel drives,
+    /// whose both-lost arm emits three terms from one input. Like every other
+    /// fast path it runs **no** truncation and **no** `reduce`: colliding branches
+    /// accumulate through the store's `AddTerm` (old's `add_assign`), an
+    /// exactly-zero branch is inserted, and an exact cancellation stays in the
+    /// support.
+    ///
+    /// The backend owns the merge, including its **direction**: old merges the
+    /// smaller of the two supports into the larger (`consume`, architecture
+    /// feature 3), which matters precisely here because a multi-branch channel can
+    /// produce more terms than the input support. See
+    /// [`BranchInPlace`](crate::store::BranchInPlace).
+    #[inline]
+    pub(crate) fn branch_in_place<F>(&mut self, f: F)
+    where
+        F: FnMut(&S::Key, &mut S::Coeff, &mut Vec<(S::Key, S::Coeff)>) + Send + Sync,
+    {
+        self.storage.branch_in_place(f);
     }
 }

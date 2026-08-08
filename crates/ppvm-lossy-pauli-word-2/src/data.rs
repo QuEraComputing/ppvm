@@ -15,10 +15,10 @@
 
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use bitvec::array::BitArray;
-use ppvm_pauli_word_2::PauliStorage;
+use ppvm_pauli_word_2::{DefaultStorage, PauliStorage};
 use ppvm_traits_2::{LossySite, Pauli, PauliBits, Word};
 
 /// A fixed-width **lossy** Pauli word: parallel packed `x`, `z`, and `loss` bit
@@ -47,14 +47,15 @@ use ppvm_traits_2::{LossySite, Pauli, PauliBits, Word};
 /// loss bits)`. Equality and hashing exclude unused capacity, the caches, and the
 /// `PhantomData` marker.
 ///
-/// The hash is split into two lazy `OnceLock<u64>` component caches — one for the
+/// The hash is split into two lazy `AtomicU64` component caches — one for the
 /// X/Z plane and one for the (possibly large) loss plane — so a loss-only
 /// mutation avoids rehashing X/Z (`word-data-structures.md` §"Component hashes").
-/// A third `OnceLock<u64>` caches the finalized combined digest so a warm
+/// A third `AtomicU64` caches the finalized combined digest so a warm
 /// `key_hash()` (the hashbrown map-lookup hot path) is a single field read
 /// instead of re-folding the two components every call; it is invalidated
-/// alongside whichever component a mutation touches. `Copy` is intentionally
-/// dropped for correct lazy caching.
+/// alongside whichever component a mutation touches. Relaxed atomics are enough:
+/// every cached value is a pure function of structural fields mutated only
+/// through `&mut self`; racing misses recompute the same digest.
 ///
 /// # Examples
 ///
@@ -70,7 +71,7 @@ use ppvm_traits_2::{LossySite, Pauli, PauliBits, Word};
 /// assert_eq!(w.loss_weight(), 2); // two qubits are lost
 /// assert!(w.is_lost(1));
 /// ```
-pub struct LossyPauliWord<A: PauliStorage = u64, H = fxhash::FxBuildHasher> {
+pub struct LossyPauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildHasher> {
     /// X-bit plane (unused high bits are `0`; lost slots are `0`).
     pub(crate) xbits: BitArray<A>,
     /// Z-bit plane (unused high bits are `0`; lost slots are `0`).
@@ -80,15 +81,15 @@ pub struct LossyPauliWord<A: PauliStorage = u64, H = fxhash::FxBuildHasher> {
     /// Number of qubits (logical width).
     pub(crate) nqubits: usize,
     /// Lazy hash cache for the `(nqubits, X, Z)` component.
-    pub(crate) xz_hash_cache: OnceLock<u64>,
+    pub(crate) xz_hash_cache: AtomicU64,
     /// Lazy hash cache for the loss component (kept separate so loss-only
     /// mutations do not rehash X/Z).
-    pub(crate) loss_hash_cache: OnceLock<u64>,
+    pub(crate) loss_hash_cache: AtomicU64,
     /// Lazy hash cache for the finalized combined digest (the folded
     /// `combine_components` of the two components). Populated on the first warm
     /// `key_hash()` and invalidated by any mutation, so the steady-state
     /// map-lookup read is a single field load rather than a re-fold.
-    pub(crate) combined_hash_cache: OnceLock<u64>,
+    pub(crate) combined_hash_cache: AtomicU64,
     /// The private internal digest algorithm; `fn() -> H` keeps `Send + Sync`.
     pub(crate) _hasher: PhantomData<fn() -> H>,
 }
@@ -110,9 +111,9 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
             zbits: BitArray::ZERO,
             lbits: BitArray::ZERO,
             nqubits,
-            xz_hash_cache: OnceLock::new(),
-            loss_hash_cache: OnceLock::new(),
-            combined_hash_cache: OnceLock::new(),
+            xz_hash_cache: AtomicU64::new(0),
+            loss_hash_cache: AtomicU64::new(0),
+            combined_hash_cache: AtomicU64::new(0),
             _hasher: PhantomData,
         }
     }
@@ -133,9 +134,9 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
             zbits,
             lbits,
             nqubits,
-            xz_hash_cache: OnceLock::new(),
-            loss_hash_cache: OnceLock::new(),
-            combined_hash_cache: OnceLock::new(),
+            xz_hash_cache: AtomicU64::new(0),
+            loss_hash_cache: AtomicU64::new(0),
+            combined_hash_cache: AtomicU64::new(0),
             _hasher: PhantomData,
         }
     }
@@ -145,16 +146,16 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
     /// private cache through `&mut self`).
     #[inline]
     pub(crate) fn invalidate_xz(&mut self) {
-        self.xz_hash_cache = OnceLock::new();
-        self.combined_hash_cache = OnceLock::new();
+        *self.xz_hash_cache.get_mut() = 0;
+        *self.combined_hash_cache.get_mut() = 0;
     }
 
     /// Clear the loss-component hash cache after a loss mutation. The combined
     /// digest depends on both components, so it is invalidated too.
     #[inline]
     pub(crate) fn invalidate_loss(&mut self) {
-        self.loss_hash_cache = OnceLock::new();
-        self.combined_hash_cache = OnceLock::new();
+        *self.loss_hash_cache.get_mut() = 0;
+        *self.combined_hash_cache.get_mut() = 0;
     }
 
     /// Whether qubit `q` is lost. Inherent per `word-data-structures.md`
@@ -376,6 +377,26 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
     fn is_lost(&self, i: usize) -> bool {
         LossyPauliWord::is_lost(self, i)
     }
+
+    /// Delegates to the inherent [`LossyPauliWord::set_lost`] — clears the site's
+    /// X/Z bits, then sets the loss bit (canonical loss invariant).
+    #[inline]
+    fn set_lost(&mut self, i: usize) {
+        LossyPauliWord::set_lost(self, i);
+    }
+
+    /// Delegates to the inherent [`LossyPauliWord::clear_loss`].
+    #[inline]
+    fn clear_lost(&mut self, i: usize) {
+        LossyPauliWord::clear_loss(self, i);
+    }
+
+    /// Delegates to the inherent [`LossyPauliWord::loss_weight`] — the popcount
+    /// over the loss plane the `MaxLossWeight` policy thresholds.
+    #[inline]
+    fn loss_weight(&self) -> usize {
+        LossyPauliWord::loss_weight(self)
+    }
 }
 
 impl<A: PauliStorage, H> Clone for LossyPauliWord<A, H> {
@@ -389,9 +410,9 @@ impl<A: PauliStorage, H> Clone for LossyPauliWord<A, H> {
             zbits: self.zbits,
             lbits: self.lbits,
             nqubits: self.nqubits,
-            xz_hash_cache: self.xz_hash_cache.clone(),
-            loss_hash_cache: self.loss_hash_cache.clone(),
-            combined_hash_cache: self.combined_hash_cache.clone(),
+            xz_hash_cache: AtomicU64::new(self.xz_hash_cache.load(Ordering::Relaxed)),
+            loss_hash_cache: AtomicU64::new(self.loss_hash_cache.load(Ordering::Relaxed)),
+            combined_hash_cache: AtomicU64::new(self.combined_hash_cache.load(Ordering::Relaxed)),
             _hasher: PhantomData,
         }
     }

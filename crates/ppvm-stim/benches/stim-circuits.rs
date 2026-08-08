@@ -24,9 +24,9 @@
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{execute, parse_extended};
-use ppvm_tableau::prelude::*;
 use stim_parser::prelude::{ExtendedInstruction, ExtendedProgram};
 
 type Tab = GeneralizedTableau<ByteFxHashF64<8>, usize>;

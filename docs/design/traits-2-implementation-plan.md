@@ -35,12 +35,12 @@ test oracles.
 | Old crate | New crate | Core content |
 | --- | --- | --- |
 | `ppvm-traits` (`Config`, `Coefficient`, `Word`/`PauliWordTrait`, `ACMap*`, `Strategy`, gate traits) | **`ppvm-traits-2`** | Trait *definitions* (+ the `BlanketClifford` blanket and, forced by the orphan rule, the graded-trait container impls in `containers.rs`): split `Coefficient`, `Angle`; `Word`/`Indexable`/`PauliBits`; `SymplecticColumns`/`PhaseTrack`/`StabilizerFrame`; gate/noise traits (`Clifford`/`CliffordExtensions` + the batched forms, `RotationOne`, `Reset`, `Measure`, `PauliError` and the channel family); graded map layers `Support`/`Accumulate`/`Scale`/`Pair`/`Multiply` (impl'd on `Vec`/`HashMap` here, since both trait and container are foreign to the sum crate); algebra capabilities `KeyProduct`/`ImaginaryUnit`/`Conjugate`; batch contract `Columnar`/`KeyColumn`/`KeyBatch`/`TermBatch`/`TermSink`/`TermProducer`; `IdentityHasher`; small concrete leaf types (`Pauli`, `Phase`, `LossySite`). |
-| `ppvm-pauli-word` (word/) | **`ppvm-pauli-word-2`** | Concrete `PauliWord`; private packed X/Z planes + lazy `OnceLock<u64>` hash cache + `HashFinalize`/`PauliStorage`/`PauliKeyColumn` (re-exported for the lossy/phased crates to reuse). Impls of `Word`/`Indexable`/`PauliBits`/`SymplecticColumns`/`PhaseTrack`/`BlanketClifford`/`KeyProduct`/`Columnar`. |
+| `ppvm-pauli-word` (word/) | **`ppvm-pauli-word-2`** | Concrete `PauliWord`; private packed X/Z planes + lazy relaxed-atomic sentinel hash cache + `HashFinalize`/`PauliStorage`/`PauliKeyColumn` (re-exported for the lossy/phased crates to reuse). Impls of `Word`/`Indexable`/`PauliBits`/`SymplecticColumns`/`PhaseTrack`/`BlanketClifford`/`KeyProduct`/`Columnar`. |
 | `ppvm-pauli-word` (phase/) | **`ppvm-phased-pauli-word-2`** | The generic `Phased<W>` wrapper + `PhasedPauliWord = Phased<PauliWord>`; carries an explicit ℤ₄ phase and a hand-written **fused** `impl Clifford` (reads each inner X/Z bit once via `W: PauliBits`, computes the ℤ₄ sign, applies the bit update, folds in the sign) — *not* the blanket, so it does **not** implement `BlanketClifford`. Delegates `Word` to `W`, phased product via `W`'s `KeyProduct`. **Non-indexable.** |
 | `ppvm-pauli-word` (loss/) | **`ppvm-lossy-pauli-word-2`** | `LossyPauliWord` — a *distinct* concrete Pauli-word impl in its own crate (adds a packed loss plane). Reuses `ppvm-pauli-word-2`'s packed-storage/hash infra. `Word<Site = LossySite<Pauli>>` + `PauliBits` (`is_lost`) + phase-discarding `SymplecticColumns`/`PhaseTrack` + `BlanketClifford` + `Indexable`; loss writes and `loss_weight()` inherent. |
 | `ppvm-pauli-sum` | **`ppvm-pauli-sum-2`** | `Sum<S, P>`; graded traits `impl`'d on `Vec<(K,C)>` and `HashMap<K,C,IdentityBuildHasher>`; `Policy` + `NoPolicy`/`MaxPauliWeight`/`CoefficientThreshold`/`CombinedPolicy` + `Retain`; `TermProducer` impls (`RekeyProducer`, rotation/noise producers); gate/rotation/noise trait impls; `PauliSum`/`LossyPauliSum`/`FermionSum` aliases; `IdentityBuildHasher` + `HashMapStore` aliases. |
 | `ppvm-tableau` | **`ppvm-tableau-2`** | `Tableau` (`Indexable` + `SymplecticColumns` + `PhaseTrack` + `StabilizerFrame` + `Clifford` + `Measure`); `GeneralizedTableau` (`frame: Tableau` + `amplitudes: Sum<Vec<(Bitstring, Complex<C>)>, CoefficientThreshold>`). |
-| `ppvm-tableau-sum` | folds into **`ppvm-pauli-sum-2`** as `TableauMixture = Sum<HashMapStore<Tableau, C>, P>` | The mixture is `C[Tableau]` — the same graded engine keyed on `Tableau`. No separate storage crate; `O(n²)` measurement stays a `Tableau`-specific algorithm. |
+| `ppvm-tableau-sum` | folds into **`ppvm-tableau-2::mixture`** as `GeneralizedTableauMixture` (`GeneralizedTableauSum` compatibility alias) | A specialized probability mixture over full generalized tableaux. Fingerprint buckets narrow candidates, then collision-checked structural comparison includes frame/loss and approximately-equal amplitudes. It cannot be a normal `HashMap` key because approximate amplitude equality is not an equivalence relation. |
 | `ppvm-sym` | **`ppvm-sym-2`** | Exact/symbolic coefficient ring implementing the loosened bounds: `Coefficient` (no `Mul<f64>`), `ImaginaryUnit` (`i²=−one()`), `Conjugate`. Doubles as the concrete witness that L4 admits exact rings (mirrors the Lean `GaussianInt` instance). |
 | `ppvm-stim`, `ppvm-vihaco`, `ppvm-cli`, `ppvm-python-native`, `ppvm-tui` | unchanged until cutover | Downstream consumers; adapters added in Phase 7. |
 | (new, test-only) | **`ppvm-conformance-2`** | Not shipped. Depends on old + new. Houses cross-crate differential tests, shared random-circuit/random-word generators, and comparative benchmarks. |
@@ -142,7 +142,7 @@ bulk of the correctness-critical, Lean-validated logic lives.
 
 Order:
 1. **`PauliWord`** — private packed X/Z planes (const-generic width internally;
-   `PauliStorage` is *not* re-exposed) + lazy `OnceLock<u64>` hash cache.
+   `PauliStorage` is *not* re-exposed) + lazy relaxed-atomic sentinel hash cache.
    Impl `Word<Site = Pauli>`, `PauliBits`, `SymplecticColumns`, `PhaseTrack`,
    `BlanketClifford` (opt into the shared blanket `Clifford`),
    `KeyProduct` (the twisted product `v·w = iᵏ(v⊕w)`), `Indexable` (`key_hash`
@@ -172,7 +172,7 @@ multiplication result+phase, equal Clifford results, equal weight/iter, and equa
 *bucket distribution* (not necessarily equal raw digest — the fold may differ).
 
 Benchmarks vs old: `mul`, single-gate Clifford conjugation, `key_hash` (cold and
-cached), `weight`. Gate: parity or better. Watch the lazy-`OnceLock` vs old eager
+cached), `weight`. Gate: parity or better. Watch the lazy-cache vs old eager
 `hash_cache` + `Copy` trade-off (the design accepts losing `Copy` for correct lazy
 caching — confirm the throughput cost is acceptable here).
 
@@ -239,8 +239,15 @@ existing `benchmarks/plot_*` scripts target these). Gate on parity.
 - **`Tableau`** — `SymplecticColumns` + `PhaseTrack` (ℤ₂ sign + Aaronson–Gottesman
   `g`-rule) + `StabilizerFrame` + blanket `Clifford` + `Measure` (pure-Clifford
   algorithm) + `Indexable`.
-- **`TableauMixture = Sum<HashMapStore<Tableau, C>, P>`** — free once `Tableau:
-  Indexable + Clifford`; the engine from Phase 3 keys on `Tableau` unchanged.
+- **`GeneralizedTableauMixture<A, I, H>`** — a specialized probability
+  distribution over full `GeneralizedTableau` states, exported under the old
+  `GeneralizedTableauSum` name for compatibility. It retains the old
+  fingerprint-bucket + collision-check design: merge identity includes frame
+  rows/phases, loss flags, and amplitude vectors equal within the coefficient
+  threshold, while excluding RNG/record/scratch/probability state. It is
+  deliberately **not** `Sum<HashMapStore<Tableau, _>, _>`: bare frames omit
+  amplitudes/loss, and approximate amplitude equality is non-transitive, so it
+  cannot lawfully be `Eq`/`Hash`.
 - **`GeneralizedTableau`** — `frame: Tableau` + `amplitudes: Sum<Vec<(Bitstring,
   Complex<C>)>, CoefficientThreshold>`; Clifford updates the frame only,
   non-Clifford branches the amplitude `Sum`, `O(n²)` measurement is tableau-local.
@@ -342,7 +349,7 @@ intended speedup over the `HashMap` backend on large support.
 ## Risks and open questions
 
 - **Lazy hashing vs `Copy`.** The design drops `Copy` for a correct
-  `OnceLock<u64>` cache. Confirm in Phase 2 that the throughput cost on `mul`/hash
+  interior-mutable cache. Confirm in Phase 2 that the throughput cost on `mul`/hash
   is acceptable; if not, revisit the cache representation (the contract only fixes
   the `key_hash()` *value*, not the mechanism).
 - **`Multiply` and commutativity.** The Lean `tmul_assoc` needs `[CommRing C]`;

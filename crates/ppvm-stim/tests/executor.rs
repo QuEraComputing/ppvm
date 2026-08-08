@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{execute, parse_extended};
-use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
 
@@ -497,4 +497,23 @@ fn sample_parallel_matches_sample_serial_for_seeded_factory() {
     let serial = sample_serial::<_, _, _, _>(&prog, n, factory).unwrap();
     let parallel = sample_parallel::<_, _, _, _>(&prog, n, factory).unwrap();
     assert_eq!(serial, parallel);
+}
+
+#[cfg(not(feature = "rayon"))]
+#[test]
+fn sample_keeps_non_sync_factories_on_serial_builds() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let program = parse_extended("M 0").expect("parse");
+    let calls = Rc::new(Cell::new(0usize));
+    let captured = Rc::clone(&calls);
+    let shots = ppvm_stim::sample::<_, _, _, _>(&program, 3, move |i| {
+        captured.set(captured.get() + 1);
+        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64)
+    })
+    .expect("sample");
+
+    assert_eq!(shots.len(), 3);
+    assert_eq!(calls.get(), 3);
 }

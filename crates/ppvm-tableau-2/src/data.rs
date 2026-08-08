@@ -28,7 +28,7 @@ use bitvec::array::BitArray;
 use bitvec::view::BitView;
 use num::complex::Complex64;
 use num::{One, PrimInt, Zero};
-use ppvm_pauli_word_2::PauliStorage;
+use ppvm_pauli_word_2::{DefaultStorage, PauliStorage};
 use ppvm_traits_2::{Indexable, Pauli, Scale, Support};
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -361,7 +361,7 @@ impl<A: RowStorage> Row<A> {
 /// assert_eq!(tab.n_qubits(), 2);
 /// assert_eq!(tab.stabilizer_rows().count(), 2);
 /// ```
-pub struct Tableau<A: RowStorage = u64, H = fxhash::FxBuildHasher> {
+pub struct Tableau<A: RowStorage = DefaultStorage, H = fxhash::FxBuildHasher> {
     pub(crate) n_qubits: usize,
     /// Destabilizers in `0..n`, stabilizers in `n..2n`.
     pub(crate) data: Vec<Row<A>>,
@@ -883,7 +883,8 @@ impl<I: Bitstring> ppvm_traits_2::Retain<I, Complex64> for Amplitudes<I> {
 /// tab.cnot(0, 1);
 /// assert_eq!(tab.measure(0), tab.measure(1));
 /// ```
-pub struct GeneralizedTableau<A: RowStorage = u64, I = usize, H = fxhash::FxBuildHasher> {
+pub struct GeneralizedTableau<A: RowStorage = DefaultStorage, I = usize, H = fxhash::FxBuildHasher>
+{
     /// The underlying Clifford frame.
     pub tableau: Tableau<A, H>,
     /// The sparse amplitude vector indexed by bitstrings.

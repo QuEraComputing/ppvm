@@ -16,6 +16,16 @@
 use bitvec::view::BitViewSized;
 use std::hash::Hash;
 
+/// Native-word default storage: `u64` on native targets and `usize` on wasm32.
+///
+/// `bitvec` implements `BitStore` for `u64` only on 64-bit pointer-width
+/// targets; browser wasm is 32-bit and therefore uses its native `usize`.
+#[cfg(not(target_arch = "wasm32"))]
+pub type DefaultStorage = u64;
+/// See the native definition above.
+#[cfg(target_arch = "wasm32")]
+pub type DefaultStorage = usize;
+
 /// Backing storage for a [`crate::PauliWord`] — a fixed-size, `Copy`-able block
 /// of bits (typically `u64`, `[u8; N]`, or `[u64; N]`).
 ///

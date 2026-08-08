@@ -15,6 +15,7 @@
 //! finalization fold, reused here from `ppvm-pauli-word-2`'s [`HashFinalize`]).
 
 use std::hash::{BuildHasher, Hash, Hasher};
+use std::sync::atomic::Ordering;
 
 use ppvm_pauli_word_2::{HashFinalize, PauliStorage};
 use ppvm_traits_2::Indexable;
@@ -68,7 +69,8 @@ where
     H::finalize_hash(hasher.finish(), storage_bytes)
 }
 
-/// The finalized structural digest of the planes `(nqubits, x, z, loss)`.
+/// The finalized structural digest of the planes `(x, z, loss)`. Width remains
+/// part of equality but, as for the ordinary word, not of the digest.
 ///
 /// Factored out so [`Indexable::key_hash`] and `KeyColumn::hash_into` compute the
 /// **bit-for-bit identical** digest from a scalar word and from a column plane
@@ -103,7 +105,7 @@ where
 
 /// The finalized structural digest, computed lazily and cached **per component**:
 /// the `(nqubits, X, Z)` component and the loss component each populate their own
-/// `OnceLock<u64>`, and `key_hash()` combines them into a third `OnceLock<u64>`
+/// `AtomicU64`, and `key_hash()` combines them into a third `AtomicU64`
 /// so a warm read (the map-lookup hot path) is a single field load. A loss-only
 /// mutation clears only the loss cell and the combined cell, so the X/Z digest is
 /// reused (`word-data-structures.md` §"Component hashes";
@@ -116,19 +118,23 @@ where
 {
     #[inline]
     fn key_hash(&self) -> u64 {
-        // Warm reads (the hashbrown map-lookup hot path) hit the combined cache
-        // and return a single field load. On a miss we populate the two
-        // component caches and fold once; a loss-only mutation keeps the X/Z
-        // component so only the loss digest and this combined digest recompute.
-        *self.combined_hash_cache.get_or_init(|| {
-            let xz = *self.xz_hash_cache.get_or_init(|| {
-                xz_component::<A, H>(&self.xbits.data, &self.zbits.data, self.nqubits)
-            });
-            let loss = *self
-                .loss_hash_cache
-                .get_or_init(|| loss_component::<A, H>(&self.lbits.data));
-            combine_components::<H>(xz, loss, std::mem::size_of::<A>())
-        })
+        let cached = self.combined_hash_cache.load(Ordering::Relaxed);
+        if cached != 0 {
+            return cached;
+        }
+        let mut xz = self.xz_hash_cache.load(Ordering::Relaxed);
+        if xz == 0 {
+            xz = xz_component::<A, H>(&self.xbits.data, &self.zbits.data, self.nqubits);
+            self.xz_hash_cache.store(xz, Ordering::Relaxed);
+        }
+        let mut loss = self.loss_hash_cache.load(Ordering::Relaxed);
+        if loss == 0 {
+            loss = loss_component::<A, H>(&self.lbits.data);
+            self.loss_hash_cache.store(loss, Ordering::Relaxed);
+        }
+        let digest = combine_components::<H>(xz, loss, std::mem::size_of::<A>());
+        self.combined_hash_cache.store(digest, Ordering::Relaxed);
+        digest
     }
 }
 
@@ -165,39 +171,35 @@ mod tests {
         // component cell is preserved across the loss write.
         let mut w: LossyPauliWord = "XIZI".into();
         let _ = w.key_hash(); // populate both component caches
-        let xz_before = *w.xz_hash_cache.get().expect("xz cached");
+        let xz_before = w.xz_hash_cache.load(Ordering::Relaxed);
+        assert_ne!(xz_before, 0, "xz cached");
         w.set_lost(1); // identity site -> lost (X/Z unchanged)
         assert_eq!(
-            w.xz_hash_cache.get().copied(),
-            Some(xz_before),
+            w.xz_hash_cache.load(Ordering::Relaxed),
+            xz_before,
             "loss-only mutation must preserve the X/Z hash component",
         );
-        assert!(
-            w.loss_hash_cache.get().is_none(),
-            "loss mutation invalidates the loss component",
-        );
+        assert_eq!(w.loss_hash_cache.load(Ordering::Relaxed), 0);
     }
 
     #[test]
     fn combined_cache_warm_read_and_invalidation() {
         // Warm read populates the combined digest cell; a mutation clears it.
         let mut w: LossyPauliWord = "XIZI".into();
-        assert!(w.combined_hash_cache.get().is_none(), "starts cold");
+        assert_eq!(
+            w.combined_hash_cache.load(Ordering::Relaxed),
+            0,
+            "starts cold"
+        );
         let h0 = w.key_hash();
         assert_eq!(
-            w.combined_hash_cache.get().copied(),
-            Some(h0),
+            w.combined_hash_cache.load(Ordering::Relaxed),
+            h0,
             "warm read caches the finalized combined digest",
         );
         w.set_lost(1); // loss-only mutation invalidates the combined cell
-        assert!(
-            w.combined_hash_cache.get().is_none(),
-            "any mutation invalidates the combined digest",
-        );
-        assert!(
-            w.xz_hash_cache.get().is_some(),
-            "loss-only mutation preserves the X/Z component",
-        );
+        assert_eq!(w.combined_hash_cache.load(Ordering::Relaxed), 0);
+        assert_ne!(w.xz_hash_cache.load(Ordering::Relaxed), 0);
         assert_ne!(w.key_hash(), h0, "recompute reflects the loss mutation");
     }
 
@@ -206,8 +208,8 @@ mod tests {
         let mut w: LossyPauliWord = "XIZI".into();
         let _ = w.key_hash();
         w.set_lost(0); // X -> lost, nonidentity: both components change
-        assert!(w.xz_hash_cache.get().is_none());
-        assert!(w.loss_hash_cache.get().is_none());
+        assert_eq!(w.xz_hash_cache.load(Ordering::Relaxed), 0);
+        assert_eq!(w.loss_hash_cache.load(Ordering::Relaxed), 0);
     }
 
     #[test]

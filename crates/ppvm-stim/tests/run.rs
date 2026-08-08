@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{Error, ExecError, run_file, run_string};
-use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
 

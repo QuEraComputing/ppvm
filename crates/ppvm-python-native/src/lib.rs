@@ -4,10 +4,24 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+#[cfg(feature = "legacy")]
+extern crate ppvm_pauli_sum_legacy as ppvm_pauli_sum;
+#[cfg(feature = "legacy")]
+extern crate ppvm_tableau_legacy as ppvm_tableau;
+#[cfg(feature = "legacy")]
+extern crate ppvm_tableau_sum_legacy as ppvm_tableau_sum;
+
+pub mod backend;
 pub mod interface;
 pub mod interface_tableau;
 pub mod interface_tableau_sum;
 pub mod stim_program;
+
+/// Backend compiled into this extension; used by isolated parity-test builds.
+#[pyfunction]
+pub fn backend_name() -> &'static str {
+    backend::NAME
+}
 
 pub(crate) fn flat_pairs(targets: &[usize]) -> PyResult<Vec<(usize, usize)>> {
     if !targets.len().is_multiple_of(2) {
@@ -26,6 +40,9 @@ pub(crate) fn flat_pairs(targets: &[usize]) -> PyResult<Vec<(usize, usize)>> {
 #[pymodule]
 pub mod _core {
     // NOTE: it's not possible to use #[pymodule_export] inside a macro_rules!
+
+    #[pymodule_export]
+    pub use crate::backend_name;
 
     // PauliSum
     #[pymodule_export]

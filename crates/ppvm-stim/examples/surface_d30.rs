@@ -12,9 +12,9 @@
 use std::time::Instant;
 
 use bnum::types::U2048;
-use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{parse_extended, sample};
-use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<ByteFxHashF64<237>, U2048>;
 

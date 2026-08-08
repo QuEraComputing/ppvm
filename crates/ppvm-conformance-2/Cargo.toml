@@ -20,14 +20,15 @@ ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
 # `Sum` differential suite. The old crate is pulled with default features off so
 # the test harness does not drag in dashmap/gxhash/indexmap/approx — the
 # differential tests only need its `fxhash` config.
-ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum", default-features = false }
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum", default-features = false, features = ["approx", "indexmap"] }
 ppvm-pauli-sum-2 = { version = "0.1.0", path = "../ppvm-pauli-sum-2" }
 # The old and new stabilizer-tableau engines, diffed against each other by the
 # Phase-4 tableau differential suite (`tests/tableau_diff.rs`,
 # `tests/tableau_lean.rs`) and benched head-to-head, same-build, in
 # `benches/tableau_bench.rs`.
 ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
-ppvm-tableau-2 = { version = "0.1.0", path = "../ppvm-tableau-2" }
+ppvm-tableau-2 = { version = "0.1.0", path = "../ppvm-tableau-2", features = ["rayon"] }
+ppvm-tableau-sum = { version = "0.1.0", path = "../ppvm-tableau-sum", features = ["rayon"] }
 # The old and new symbolic/exact coefficient rings, diffed against each other by
 # the Phase-5 suite (`tests/sym_diff.rs`, `tests/sym_lean.rs`) and benched
 # head-to-head, same-build, in `benches/sym_bench.rs`. Both are driven *through*
@@ -38,6 +39,7 @@ ppvm-sym-2 = { version = "0.1.0", path = "../ppvm-sym-2" }
 
 [dev-dependencies]
 criterion = "0.7.0"
+approx = "0.5.1"
 # The seed-free hasher both crates key their monomial tables with; the Phase-5
 # hashing-contract tests hash `Prod` keys directly with it.
 fxhash = "0.2.1"
@@ -59,7 +61,15 @@ name = "phased_pauli_word_bench"
 harness = false
 
 [[bench]]
+name = "word_surface_bench"
+harness = false
+
+[[bench]]
 name = "pauli_sum_bench"
+harness = false
+
+[[bench]]
+name = "pauli_sum_surface_bench"
 harness = false
 
 [[bench]]
@@ -89,6 +99,14 @@ harness = false
 name = "tableau_bench"
 harness = false
 
+[[bench]]
+name = "tableau_surface_bench"
+harness = false
+
+[[bench]]
+name = "tableau_mixture_bench"
+harness = false
+
 # The Phase-5 symbolic perf gate: the end-to-end `sym.*` integration workloads
 # (the deep Trotter propagation, the parametric trace, the truncation cost curve,
 # the VQE-shaped expectation grid, the random-circuit replay, the exact-ring
@@ -99,4 +117,22 @@ harness = false
 # there would relayout that binary and move its otherwise-untouched baselines.
 [[bench]]
 name = "sym_bench"
+harness = false
+
+# The Phase-6 storage-layout perf gate: the columnar `ColumnStore` (SoA) backend
+# against the shipped `HashMapStore` (hash-join) backend, per op class plus an
+# end-to-end Trotter run. BOTH backends are the same `-2` engine and live in this
+# one binary, so every ratio is same-build and the only variable is the storage
+# layout. A separate target from `pauli_sum_bench` on purpose: appending groups
+# there would relayout that binary and move its old-vs-new baselines.
+[[bench]]
+name = "pauli_sum_column_store"
+harness = false
+
+[[bench]]
+name = "pauli_sum_loss"
+harness = false
+
+[[bench]]
+name = "pauli_sum_indexmap"
 harness = false

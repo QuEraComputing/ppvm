@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use bitvec::array::BitArray;
 use ppvm_traits_2::{Pauli, PauliBits, Word};
 
-use crate::storage::PauliStorage;
+use crate::storage::{DefaultStorage, PauliStorage};
 
 /// The [`hash_cache`](PauliWord::hash_cache) sentinel meaning "not yet computed".
 ///
@@ -74,7 +74,7 @@ pub(crate) const HASH_UNCACHED: u64 = 0;
 /// w2.set_z_bit(1, true); // Z on qubit 1
 /// assert_eq!(w2.to_string(), "XZ");
 /// ```
-pub struct PauliWord<A: PauliStorage = u64, H = fxhash::FxBuildHasher> {
+pub struct PauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildHasher> {
     /// X-bit plane (one logical bit per qubit; unused high bits are `0`).
     pub(crate) xbits: BitArray<A>,
     /// Z-bit plane (one logical bit per qubit; unused high bits are `0`).
@@ -160,6 +160,50 @@ impl<A: PauliStorage, H> PauliWord<A, H> {
         }
         Self::from_planes(xbits, zbits, self.nqubits)
     }
+
+    /// A copy with the X and/or Z bits at **two** sites toggled and a fresh
+    /// **uncached** hash — the *two-qubit* rotation-branch key builder
+    /// (`rzz`/`rxx`/`ryy`/`rotate_2`).
+    ///
+    /// One plane copy, up to four bit flips, one rebuild. Chaining
+    /// [`with_bits_toggled`](PauliWord::with_bits_toggled) twice instead copies
+    /// **both** planes and rebuilds the word *twice* per produced branch term, and
+    /// the redundant half scales with the storage tier (64 extra bytes moved per
+    /// branch at `[u8; 32]`). Old built one `k.clone()` and wrote four bits into it
+    /// (`ppvm-pauli-sum/src/sum/rot2.rs`); this is that shape, minus the cache
+    /// load+invalidate the clone would pay.
+    #[inline]
+    pub fn with_bits_toggled2(
+        &self,
+        i: usize,
+        toggle_x_i: bool,
+        toggle_z_i: bool,
+        j: usize,
+        toggle_x_j: bool,
+        toggle_z_j: bool,
+    ) -> Self {
+        debug_assert!(i < self.nqubits, "qubit {i} out of bounds");
+        debug_assert!(j < self.nqubits, "qubit {j} out of bounds");
+        let mut xbits = self.xbits;
+        let mut zbits = self.zbits;
+        if toggle_x_i {
+            let b = xbits[i];
+            xbits.set(i, !b);
+        }
+        if toggle_z_i {
+            let b = zbits[i];
+            zbits.set(i, !b);
+        }
+        if toggle_x_j {
+            let b = xbits[j];
+            xbits.set(j, !b);
+        }
+        if toggle_z_j {
+            let b = zbits[j];
+            zbits.set(j, !b);
+        }
+        Self::from_planes(xbits, zbits, self.nqubits)
+    }
 }
 
 impl<A: PauliStorage, H> Word for PauliWord<A, H> {
@@ -225,16 +269,33 @@ impl<A: PauliStorage, H> Word for PauliWord<A, H> {
 }
 
 impl<A: PauliStorage, H> PauliBits for PauliWord<A, H> {
-    #[inline]
+    #[inline(always)]
     fn x_bit(&self, i: usize) -> bool {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");
         self.xbits[i]
     }
 
-    #[inline]
+    #[inline(always)]
     fn z_bit(&self, i: usize) -> bool {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");
         self.zbits[i]
+    }
+
+    #[inline(always)]
+    fn pauli_code(&self, i: usize) -> u8 {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        #[cfg(target_endian = "little")]
+        {
+            let byte = i >> 3;
+            let shift = i & 7;
+            let x = (bytemuck::bytes_of(&self.xbits.data)[byte] >> shift) & 1;
+            let z = (bytemuck::bytes_of(&self.zbits.data)[byte] >> shift) & 1;
+            x | (z << 1)
+        }
+        #[cfg(target_endian = "big")]
+        {
+            (self.xbits[i] as u8) | ((self.zbits[i] as u8) << 1)
+        }
     }
 
     /// Set the X bit at `i`, then lazily invalidate the hash (Design:
@@ -250,7 +311,7 @@ impl<A: PauliStorage, H> PauliBits for PauliWord<A, H> {
     /// terms are `I` at the gate's qubits, so an unconditional invalidation
     /// forced a full structural re-hash of nearly the whole support on every
     /// gate — recomputing a digest guaranteed to be bit-identical.
-    #[inline]
+    #[inline(always)]
     fn set_x_bit(&mut self, i: usize, v: bool) {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");
         if self.xbits[i] != v {
@@ -259,13 +320,39 @@ impl<A: PauliStorage, H> PauliBits for PauliWord<A, H> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn set_z_bit(&mut self, i: usize, v: bool) {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");
         if self.zbits[i] != v {
             self.zbits.set(i, v);
             self.invalidate_hash();
         }
+    }
+
+    /// The direct plane-copy branch key builder — see
+    /// [`with_bits_toggled`](PauliWord::with_bits_toggled). Overrides the trait's
+    /// clone-then-flip default, which would load and then immediately invalidate
+    /// the source's cached digest.
+    #[inline]
+    fn toggled_bits(&self, i: usize, toggle_x: bool, toggle_z: bool) -> Self {
+        PauliWord::with_bits_toggled(self, i, toggle_x, toggle_z)
+    }
+
+    /// The direct plane-copy **two-site** branch key builder — see
+    /// [`with_bits_toggled2`](PauliWord::with_bits_toggled2). Overrides the trait's
+    /// clone-then-flip default so the two-qubit rotations copy the planes exactly
+    /// once.
+    #[inline]
+    fn toggled_bits2(
+        &self,
+        i: usize,
+        toggle_x_i: bool,
+        toggle_z_i: bool,
+        j: usize,
+        toggle_x_j: bool,
+        toggle_z_j: bool,
+    ) -> Self {
+        PauliWord::with_bits_toggled2(self, i, toggle_x_i, toggle_z_i, j, toggle_x_j, toggle_z_j)
     }
 }
 

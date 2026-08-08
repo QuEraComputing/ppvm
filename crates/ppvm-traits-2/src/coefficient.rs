@@ -40,6 +40,29 @@ pub trait Coefficient:
     /// Multiply by `sign ∈ {-1, +1}` (encoded as `i8`).
     fn mul_sign(&self, sign: i8) -> Self;
 
+    /// Add this coefficient to itself. Numeric implementations may use their
+    /// native multiply-by-two operation; exact rings retain the additive default.
+    #[inline(always)]
+    fn doubled(&self) -> Self {
+        self.clone() + self.clone()
+    }
+
+    /// Transfer eigenvalues `(λ_X, λ_Z, λ_Y)` for Pauli probabilities
+    /// `(p_X, p_Y, p_Z)`.
+    #[inline(always)]
+    fn pauli_error_factors(probabilities: [Self; 3]) -> [Self; 3]
+    where
+        Self: Sized + num::One,
+    {
+        let [px, py, pz] = probabilities;
+        let one = Self::one();
+        [
+            one.clone() - py.doubled() - pz.doubled(),
+            one.clone() - px.doubled() - py.doubled(),
+            one - px.doubled() - pz.doubled(),
+        ]
+    }
+
     /// Nonnegative magnitude. Exposes a property of the value for a `Policy` to
     /// threshold; it does not itself decide any cutoff. Replaces the old
     /// `Coefficient::cutoff`.
@@ -161,6 +184,20 @@ impl Coefficient for f64 {
         (sign as f64) * (*self)
     }
 
+    #[inline(always)]
+    fn doubled(&self) -> Self {
+        *self * 2.0
+    }
+
+    #[inline(always)]
+    fn pauli_error_factors([px, py, pz]: [Self; 3]) -> [Self; 3] {
+        [
+            1.0 - py * 2.0 - pz * 2.0,
+            1.0 - px * 2.0 - py * 2.0,
+            1.0 - px * 2.0 - pz * 2.0,
+        ]
+    }
+
     #[inline]
     fn magnitude(&self) -> f64 {
         self.abs()
@@ -178,6 +215,21 @@ impl Coefficient for num::Complex<f64> {
     #[inline]
     fn mul_sign(&self, sign: i8) -> Self {
         (sign as f64) * (*self)
+    }
+
+    #[inline(always)]
+    fn doubled(&self) -> Self {
+        *self * 2.0
+    }
+
+    #[inline(always)]
+    fn pauli_error_factors([px, py, pz]: [Self; 3]) -> [Self; 3] {
+        let one = Self::new(1.0, 0.0);
+        [
+            one - py * 2.0 - pz * 2.0,
+            one - px * 2.0 - py * 2.0,
+            one - px * 2.0 - pz * 2.0,
+        ]
     }
 
     #[inline]

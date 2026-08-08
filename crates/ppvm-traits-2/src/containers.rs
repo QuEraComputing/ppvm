@@ -276,21 +276,50 @@ where
         }
     }
 
+    /// `Σ_k self[k]·other[k]`, driven from the **smaller** support.
+    ///
+    /// The shared support is contained in both, so scanning either side and
+    /// probing the other is `O(1)` per candidate and yields the same pair set;
+    /// walking the smaller one makes the cost `O(min(|a|, |b|))` instead of
+    /// `O(|self|)`. Against old's `data().trace(k)`-per-term
+    /// (`ppvm-pauli-sum/src/sum/trace.rs`, a full linear scan of `self` per term
+    /// of `other` — anti-feature 13) this is the intended asymptotic improvement;
+    /// picking the smaller side is the second half of it, and it matters when the
+    /// operands are deliberately unequal (`|a| = 10⁵`, `|b| = 10`).
+    ///
+    /// The *value* is unchanged — the pairing is symmetric and the left factor
+    /// stays `self`'s coefficient either way — only the float **summation order**
+    /// depends on the direction, which is why the differential bar on `overlap` is
+    /// relative (`1e-12`) rather than bit-exact.
     #[inline]
     fn overlap(&self, other: &Self) -> C {
-        HashMap::iter(self)
-            .filter_map(|(k, a)| HashMap::get(other, k).map(|b| a.clone() * b.clone()))
-            .sum()
+        if self.len() <= other.len() {
+            HashMap::iter(self)
+                .filter_map(|(k, a)| HashMap::get(other, k).map(|b| a.clone() * b.clone()))
+                .sum()
+        } else {
+            HashMap::iter(other)
+                .filter_map(|(k, b)| HashMap::get(self, k).map(|a| a.clone() * b.clone()))
+                .sum()
+        }
     }
 
+    /// `Σ_k conj(self[k])·other[k]`, driven from the smaller support — see
+    /// [`Pair::overlap`] for why the direction is free to differ.
     #[inline]
     fn hermitian_overlap(&self, other: &Self) -> C
     where
         C: Conjugate,
     {
-        HashMap::iter(self)
-            .filter_map(|(k, a)| HashMap::get(other, k).map(|b| a.conj() * b.clone()))
-            .sum()
+        if self.len() <= other.len() {
+            HashMap::iter(self)
+                .filter_map(|(k, a)| HashMap::get(other, k).map(|b| a.conj() * b.clone()))
+                .sum()
+        } else {
+            HashMap::iter(other)
+                .filter_map(|(k, b)| HashMap::get(self, k).map(|a| a.conj() * b.clone()))
+                .sum()
+        }
     }
 }
 

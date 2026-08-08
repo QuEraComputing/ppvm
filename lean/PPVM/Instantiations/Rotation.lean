@@ -106,6 +106,132 @@ theorem rz_eps_from_product :
     ∀ x z, omega false true x z = 1 →
       branchExp false true x z = (if z then 0 else 2) := by decide
 
+/-! ### The two-site branch (`rzz` / `rxx` / `ryy`, and the generic `rotate_2`)
+
+Everything above is stated at **one** site. `RotationTwo` rotates about a
+two-site generator `G = G_a ⊗ G_b` acting on sites `(a,b)`, and its three native
+kernels (`rzz`/`rxx`/`ryy`, `crates/ppvm-pauli-sum/src/sum/rot2.rs:62-184`, ported
+onto `Sum`'s in-place rotate path) read only the **two bit pairs** at `(a,b)` and
+consult *no* Levi-Civita table: each toggles bits at both sites at once and gets
+its `ε` from a *two-factor* product, so the sign convention has two independent
+places to be wrong. The old crate validates these kernels only by a Rust diff
+against its own generic `comm_2`/`rotate_2` (`rot2.rs::rxx_matches_generic`) —
+agreement between two implementations, not an oracle. This section is the oracle.
+
+The two-site facts are exactly the one-site ones plus one extra ingredient:
+`phaseExp_of_commute` — a *commuting* single-site pair contributes **no** phase at
+all. So the two-site branch exponent collapses onto the unique anticommuting
+site, and the `ε` column of each kernel is the corresponding single-site column
+(`rx`/`ry`/`rz` above) evaluated there. -/
+
+/-- The single-site anticommutation bit `ω(G,P)` as a `Bool` — the two-bit
+predicate the kernels literally evaluate (`x_G ∧ z_P` xor `z_G ∧ x_P`). -/
+def antiBit (gx gz x z : Bool) : Bool := xor (gx && z) (gz && x)
+
+/-- `antiBit` is the symplectic form `ω` of `PPVM.PauliPhase`. -/
+theorem antiBit_eq_omega : ∀ gx gz x z,
+    (antiBit gx gz x z = true ↔ omega gx gz x z = 1) := by decide
+
+/-- **The two-site branch key `w₂(P,G) = ω(P_a,G_a) ⊕ ω(P_b,G_b)`.** The branch
+fires iff *exactly one* site anticommutes; both-commute and both-anticommute are
+inert. This is the single boolean each kernel's early-`return None` tests. -/
+def anti2 (gxa gza gxb gzb xa za xb zb : Bool) : Bool :=
+  xor (antiBit gxa gza xa za) (antiBit gxb gzb xb zb)
+
+/-- **A commuting single-site pair carries no phase at all.** `G·P = g(G⊕P)`
+exactly (not merely up to a real sign) whenever `ω(G,P) = 0` — the reason the
+two-site branch exponent below collapses onto the one anticommuting site. -/
+theorem phaseExp_of_commute : ∀ gx gz x z,
+    antiBit gx gz x z = false → phaseExp gx gz x z = 0 := by decide
+
+/-- The base-`i` exponent of the prefactor sitting on the **real** two-site branch
+word `g(G ⊕ P)`: `iGP = i^{1 + phaseExp_a + phaseExp_b} · g(G⊕P)`, because the two
+per-site cocycles simply add (`PPVM.PauliPhase.TwoPauli.mul`). -/
+def branchExp2 (gxa gza gxb gzb xa za xb zb : Bool) : ZMod 4 :=
+  1 + phaseExp gxa gza xa za + phaseExp gxb gzb xb zb
+
+/-- **The leading `i` still cancels at two sites.** When exactly one site
+anticommutes (`w₂ = 1`) the two-site product `G·P` carries a single odd power of
+`i`, so `branchExp2` is even and the branch prefactor is a real `±1`, never `±i`
+— the two-site form of `branchExp_isRealPhase`, and the licence for the kernels
+to store a real `ε` on the real word `g(G⊕P)`. -/
+theorem branchExp2_isRealPhase (gxa gza gxb gzb xa za xb zb : Bool)
+    (h : anti2 gxa gza gxb gzb xa za xb zb = true) :
+    IsRealPhase (branchExp2 gxa gza gxb gzb xa za xb zb) := by
+  change branchExp2 gxa gza gxb gzb xa za xb zb = 0
+    ∨ branchExp2 gxa gza gxb gzb xa za xb zb = 2
+  revert h; revert gxa gza gxb gzb xa za xb zb; decide
+
+/-- The two-site branch key: `mulBits` at **both** sites (`G ⊕ P` site-wise). -/
+def mulBits2 (gxa gza gxb gzb xa za xb zb : Bool) : (Bool × Bool) × (Bool × Bool) :=
+  (mulBits gxa gza xa za, mulBits gxb gzb xb zb)
+
+/-- **The two-site branch also produces a genuinely new key.** When `w₂ = 1` the
+branch word differs from `P` *and* from `G`, so a two-qubit rotation adds exactly
+one fresh term per input and never silently merges back into its own source. (The
+two-pass structure of `RotateInPlace` is still what handles collisions with
+*other* keys — see `accumulate_rotBatch` / `eagerWalk_ne_twoPass` below.) -/
+theorem anticommute_new_key2 : ∀ gxa gza gxb gzb xa za xb zb,
+    anti2 gxa gza gxb gzb xa za xb zb = true →
+      mulBits2 gxa gza gxb gzb xa za xb zb ≠ ((xa, za), (xb, zb))
+        ∧ mulBits2 gxa gza gxb gzb xa za xb zb ≠ ((gxa, gza), (gxb, gzb)) := by decide
+
+/-! #### The three native kernels
+
+`rzz`, `rxx`, `ryy` are the `G = Z⊗Z`, `X⊗X`, `Y⊗Y` instances. For each we pin
+(i) the branch predicate, (ii) the bits the kernel toggles, and (iii) the `ε`
+column — each against the exact two-bit expression in `sum/rot2.rs`. -/
+
+/-- **`rzz` branch predicate**: `ZZ` commutes iff the two sites agree on carrying
+an `X` component (`rot2.rs:139`, `if xa == xb { return None }`). -/
+theorem rzz_anti : ∀ xa za xb zb,
+    anti2 false true false true xa za xb zb = xor xa xb := by decide
+
+/-- **`rzz` branch key**: the `x` bits are untouched and both `z` bits flip
+(`set_zbit(a, !za); set_zbit(b, !zb)`). -/
+theorem rzz_branch_key : ∀ xa za xb zb,
+    mulBits2 false true false true xa za xb zb = ((xa, !za), (xb, !zb)) := by decide
+
+/-- **`rzz`'s `ε` column**: `ε = +1` iff the *anticommuting* site (the one with
+`x` set) carries `z` too, i.e. is `Y` rather than `X` — exactly
+`let z_anti = if xa { za } else { zb }; eps = if z_anti { 1 } else { -1 }`
+(`rot2.rs:145-148`). Derived, not asserted: it is `i^{1+phaseExp_a+phaseExp_b}`. -/
+theorem rzz_eps_from_product : ∀ xa za xb zb, xor xa xb = true →
+    branchExp2 false true false true xa za xb zb
+      = (if (if xa then za else zb) then 0 else 2) := by decide
+
+/-- **`rxx` branch predicate**: `XX` commutes iff the two sites agree on carrying
+a `Z` component (`rot2.rs:177`, `if za == zb { return None }`). -/
+theorem rxx_anti : ∀ xa za xb zb,
+    anti2 true false true false xa za xb zb = xor za zb := by decide
+
+/-- **`rxx` branch key**: the `z` bits are untouched and both `x` bits flip. -/
+theorem rxx_branch_key : ∀ xa za xb zb,
+    mulBits2 true false true false xa za xb zb = ((!xa, za), (!xb, zb)) := by decide
+
+/-- **`rxx`'s `ε` column**: `ε = −1` iff the anticommuting site (the one with `z`
+set) carries `x` too, i.e. is `Y` rather than `Z` — exactly
+`let x_anti = if za { xa } else { xb }; eps = if x_anti { -1 } else { 1 }`. -/
+theorem rxx_eps_from_product : ∀ xa za xb zb, xor za zb = true →
+    branchExp2 true false true false xa za xb zb
+      = (if (if za then xa else xb) then 2 else 0) := by decide
+
+/-- **`ryy` branch predicate**: `YY` commutes iff the two sites agree on `x ⊕ z`
+(`rot2.rs:222`, `pa = xa ^ za`, `pb = xb ^ zb`, `if pa == pb { return None }`). -/
+theorem ryy_anti : ∀ xa za xb zb,
+    anti2 true true true true xa za xb zb = xor (xor xa za) (xor xb zb) := by decide
+
+/-- **`ryy` branch key**: both bits flip at both sites. -/
+theorem ryy_branch_key : ∀ xa za xb zb,
+    mulBits2 true true true true xa za xb zb = ((!xa, !za), (!xb, !zb)) := by decide
+
+/-- **`ryy`'s `ε` column**: `ε = +1` iff the anticommuting site (the one with
+`x ≠ z`) is `X` rather than `Z` — exactly
+`let x_anti = if pa { xa } else { xb }; eps = if x_anti { 1 } else { -1 }`. -/
+theorem ryy_eps_from_product : ∀ xa za xb zb, xor (xor xa za) (xor xb zb) = true →
+    branchExp2 true true true true xa za xb zb
+      = (if (if xor xa za then xa else xb) then 0 else 2) := by decide
+
 /-! ### The branch is a norm-preserving 2-D rotation
 
 Model the `(coefficient of P, coefficient of P')` pair as a point of `ℝ²`. The
@@ -324,6 +450,230 @@ theorem eagerWalk_ne_twoPass :
     diagPass_apply, Finsupp.add_apply, Finsupp.single_apply] at hval
   norm_num at hval
 
+/-- **The fused two-pass `RotateInPlace` shape is sound for the two-qubit branch
+too.** `accumulate_rotBatch` is stated over an *abstract* key type with an
+abstract anticommutation predicate and branch map, so the two-site kernels are an
+instance of it: read the four bits at `(a,b)` off the key (`bits`), branch on
+`anti2`, and re-key by the two-site product. The one-pass produced-batch
+semantics and the two-pass walk agree, in every visit order — nothing about the
+lift is single-site. -/
+theorem accumulate_rotBatch_two (bits : K → Bool × Bool × Bool × Bool)
+    (gxa gza gxb gzb : Bool) (br : K → K) (d : C) (s : K → C) (A : CMap K C) :
+    accumulateTerms
+        (rotBatch (fun k => anti2 gxa gza gxb gzb (bits k).1 (bits k).2.1
+          (bits k).2.2.1 (bits k).2.2.2 = true) br d s A) 0
+      = twoPass (fun k => anti2 gxa gza gxb gzb (bits k).1 (bits k).2.1
+          (bits k).2.2.1 (bits k).2.2.2 = true) br d s A :=
+  accumulate_rotBatch _ br d s A
+
 end TwoPass
+
+/-! ### The **generic** `rotate_2` kernel: `comm_2`'s `SIGN_NEG` table
+
+Everything above pins the three *native* two-site kernels (`rzz`/`rxx`/`ryy`),
+which is where the workloads spend their time. But `rotate_2` is itself a shipped
+public method accepting an **arbitrary** `[x, z]` axis pair, and it does not use
+those kernels: it runs the branch-free `comm_2`
+(`crates/ppvm-pauli-sum-2/src/rotation.rs:109-140`, ported verbatim from
+`ppvm-pauli-sum/src/sum/rot2.rs`) over a hand-rolled 16-entry orientation mask
+`SIGN_NEG = 0x2840`, and then applies the *opposite* sign convention to the fast
+paths: `sin.mul_sign(-eps)` where `rzz`/`rxx`/`ryy` use `sin.mul_sign(eps)`.
+
+The only checks on any of that — old's `*_matches_generic` tests and this crate's
+ports of them — compare the generic path against the fast paths at exactly the
+three **diagonal** axes `ZZ`, `XX`, `YY`. Every off-diagonal pair (`XZ`, `YX`,
+`ZY`, …) is untested on both sides, and a `+eps`/`−eps` asymmetry is exactly the
+kind of thing that is correct by coincidence on the diagonal. This section closes
+it: over all `2⁸` (axis, key) bit patterns, the generic path's sign is the real
+branch prefactor `i^{1+phaseExp_a+phaseExp_b}` of `branchExp2`, and its masked
+output bits are `mulBits2`. -/
+
+section GenericTwo
+
+/-- The `SIGN_NEG` constant of `comm_2`, verbatim (`0x2840`). Its set bits are
+`{6, 11, 13}`, i.e. the negatively-oriented single-site pairs `(X, Z)`, `(Z, Y)`,
+`(Y, X)`. -/
+def signNegMask : ℕ := 0x2840
+
+/-- `comm_2`'s per-site table index `(z_G ≪ 3) | (x_G ≪ 2) | (z_P ≪ 1) | x_P`. -/
+def signNegIdx (gx gz x z : Bool) : ℕ :=
+  (if gz then 8 else 0) + (if gx then 4 else 0) + (if z then 2 else 0) + (if x then 1 else 0)
+
+/-- The mask lookup `((SIGN_NEG >> idx) as u8) & 1`. -/
+def signNegBit (gx gz x z : Bool) : Bool :=
+  (signNegMask >>> signNegIdx gx gz x z) % 2 == 1
+
+/-- **`comm_2`'s returned `ε`**, transcribed line for line:
+
+```text
+a0 = (x_a & z_c) ^ (z_a & x_c);   a1 = (x_b & z_d) ^ (z_b & x_d);
+present = a0 ^ a1;
+neg0 = ((SIGN_NEG >> idx0) & 1) & a0;   neg1 = ((SIGN_NEG >> idx1) & 1) & a1;
+coeff = ((1 - (neg0 << 1)) * a0 + (1 - (neg1 << 1)) * a1) * present;
+```
+-/
+def comm2Coeff (gxa gza gxb gzb xa za xb zb : Bool) : ℤ :=
+  let a0 := antiBit gxa gza xa za
+  let a1 := antiBit gxb gzb xb zb
+  let neg0 := signNegBit gxa gza xa za && a0
+  let neg1 := signNegBit gxb gzb xb zb && a1
+  ((1 - 2 * (if neg0 then 1 else 0)) * (if a0 then 1 else 0)
+      + (1 - 2 * (if neg1 then 1 else 0)) * (if a1 then 1 else 0))
+    * (if anti2 gxa gza gxb gzb xa za xb zb then 1 else 0)
+
+/-- `comm_2`'s four returned bit flags `(x_out0, z_out0, x_out1, z_out1)`, each
+masked by `present`. -/
+def comm2Key (gxa gza gxb gzb xa za xb zb : Bool) : (Bool × Bool) × (Bool × Bool) :=
+  let present := anti2 gxa gza gxb gzb xa za xb zb
+  ((xor gxa xa && present, xor gza za && present),
+   (xor gxb xb && present, xor gzb zb && present))
+
+/-- A real (`±1`) `ℤ/4` phase as an integer sign. -/
+def realSign (φ : ZMod 4) : ℤ := if φ = 2 then -1 else 1
+
+/-- **`comm_2`'s `ε` is zero exactly on the commuting pairs**, so the generic
+kernel's `if eps == 0 { return None }` early-out is precisely the `anti2` branch
+predicate the native kernels test — the two paths agree on *which* terms branch,
+at every axis pair, not only the diagonal ones. -/
+theorem comm2Coeff_eq_zero_iff : ∀ gxa gza gxb gzb xa za xb zb,
+    (comm2Coeff gxa gza gxb gzb xa za xb zb = 0
+      ↔ anti2 gxa gza gxb gzb xa za xb zb = false) := by decide
+
+/-- **The generic `rotate_2` sign table is the Pauli product phase.** For *every*
+axis pair `(G_a, G_b)` and every two-site key `P`, the value the generic path
+actually multiplies `sin` by — `−ε` with `ε` from `comm_2`, i.e. old's
+`sin.mul_sign(-eps)` — equals the real branch prefactor
+`i^{1 + phaseExp_a + phaseExp_b}` of `−i·[G_a ⊗ G_b, P]/2` (`branchExp2`, real by
+`branchExp2_isRealPhase`).
+
+So the `SIGN_NEG = 0x2840` mask *and* the `+eps`/`−eps` asymmetry between the
+generic path and the `rzz`/`rxx`/`ryy` fast paths are both correct, and correct
+off the diagonal too — the regime neither old's `*_matches_generic` tests nor
+their ports ever exercise. -/
+theorem comm2_generic_sign_eq_branchExp2 : ∀ gxa gza gxb gzb xa za xb zb,
+    anti2 gxa gza gxb gzb xa za xb zb = true →
+      -comm2Coeff gxa gza gxb gzb xa za xb zb
+        = realSign (branchExp2 gxa gza gxb gzb xa za xb zb) := by decide
+
+/-- **The generic path's branch key is the two-site product key.** `comm_2`'s
+`present`-masked output bits are `mulBits2 = G ⊕ P` site-wise whenever the branch
+fires, so the generic kernel re-keys exactly as the native ones do (and
+`anticommute_new_key2` then applies to it verbatim). -/
+theorem comm2_key_eq_mulBits2 : ∀ gxa gza gxb gzb xa za xb zb,
+    anti2 gxa gza gxb gzb xa za xb zb = true →
+      comm2Key gxa gza gxb gzb xa za xb zb = mulBits2 gxa gza gxb gzb xa za xb zb := by
+  decide
+
+end GenericTwo
+
+/-! ### `RotXY::r` — the sub-rotation **order** is Heisenberg (backward)
+
+`RotXY::r(q, φ, θ)` emits `rz(q, φ); rx(q, θ); rz(q, −φ)` in that order
+(`crates/ppvm-pauli-sum-2/src/rotation.rs`, `impl RotXY`), the *reverse* of the
+tableau's forward order. Behavioural contract 10 singles this out because a
+forward-ordered implementation yields `ry(q, −θ)` at `φ = π/2` and passes every
+*other* rotation test; up to now the order was pinned only by two ported example
+values (`rot1.rs::test_r`, `tests/gate_surface.rs::r_is_heisenberg_ordered`) and
+`grep -rl 'RotXY|rotXY' lean/PPVM/` was empty.
+
+The per-axis `ε` columns above already fix each single-qubit rotation's action on
+the Pauli basis; assembling them into a `3 × 3` real matrix on the coefficient
+triple `(c_X, c_Y, c_Z)` — the site-restricted `C[K]` — makes the order claim a
+short computation. The matrix entries are *read off the kernel*, not modeled:
+`mz_from_kernel`/`mx_from_kernel`/`my_from_kernel` check each off-diagonal entry
+against `mulBits` (which key the branch lands on) and `branchExp` (its `±1`),
+i.e. against `rz_eps_from_product` / `rx_eps_from_product` / `ry_eps_from_product`. -/
+
+section RotXY
+
+open Real
+
+/-- The coefficient triple `(c_X, c_Y, c_Z)` at one site — `C[K]` restricted to
+the rotated qubit, in the basis the `ε` columns above are stated over. -/
+abbrev Vec3 := ℝ × ℝ × ℝ
+
+/-- **`rz(θ)`'s action.** From the `rz` column (`rz_eps_from_product`): `Z` is
+inert, `X ↦ cosθ·X − sinθ·Y`, `Y ↦ cosθ·Y + sinθ·X`. -/
+noncomputable def mz (θ : ℝ) (v : Vec3) : Vec3 :=
+  (cos θ * v.1 + sin θ * v.2.1, -(sin θ) * v.1 + cos θ * v.2.1, v.2.2)
+
+/-- **`rx(θ)`'s action.** From the `rx` column (`rx_eps_from_product`): `X` is
+inert, `Z ↦ cosθ·Z + sinθ·Y`, `Y ↦ cosθ·Y − sinθ·Z`. -/
+noncomputable def mx (θ : ℝ) (v : Vec3) : Vec3 :=
+  (v.1, cos θ * v.2.1 + sin θ * v.2.2, -(sin θ) * v.2.1 + cos θ * v.2.2)
+
+/-- **`ry(θ)`'s action.** From the `ry` column (`ry_eps_from_product`): `Y` is
+inert, `X ↦ cosθ·X + sinθ·Z`, `Z ↦ cosθ·Z − sinθ·X`. -/
+noncomputable def my (θ : ℝ) (v : Vec3) : Vec3 :=
+  (cos θ * v.1 - sin θ * v.2.2, v.2.1, sin θ * v.1 + cos θ * v.2.2)
+
+/-- **`mz`'s off-diagonal entries are the kernel's.** `rz` on `X = (1,0)` branches
+to `mulBits = (1,1) = Y` with `branchExp = 2` (`ε = −1`), and on `Y = (1,1)`
+branches to `(1,0) = X` with `branchExp = 0` (`ε = +1`) — the `−sinθ` and `+sinθ`
+of `mz`. -/
+theorem mz_from_kernel :
+    mulBits false true true false = (true, true) ∧ branchExp false true true false = 2
+      ∧ mulBits false true true true = (true, false)
+      ∧ branchExp false true true true = 0 := by decide
+
+/-- **`mx`'s off-diagonal entries are the kernel's.** `rx` on `Z = (0,1)` branches
+to `(1,1) = Y` with `branchExp = 0` (`ε = +1`), and on `Y` branches to
+`(0,1) = Z` with `branchExp = 2` (`ε = −1`). -/
+theorem mx_from_kernel :
+    mulBits true false false true = (true, true) ∧ branchExp true false false true = 0
+      ∧ mulBits true false true true = (false, true)
+      ∧ branchExp true false true true = 2 := by decide
+
+/-- **`my`'s off-diagonal entries are the kernel's.** `ry` on `X = (1,0)` branches
+to `(0,1) = Z` with `branchExp = 0` (`ε = +1`), and on `Z` branches to
+`(1,0) = X` with `branchExp = 2` (`ε = −1`). -/
+theorem my_from_kernel :
+    mulBits true true true false = (false, true) ∧ branchExp true true true false = 0
+      ∧ mulBits true true false true = (true, false)
+      ∧ branchExp true true false true = 2 := by decide
+
+/-- Rotation of the coefficient triple about a unit axis `n` by `θ`, in the same
+(Heisenberg / backward) orientation as `mx`/`my`/`mz` — Rodrigues' formula with
+angle `−θ`:  `v·cosθ − (n × v)·sinθ + n (n·v)(1 − cosθ)`. -/
+noncomputable def rotAxis (n : Vec3) (θ : ℝ) (v : Vec3) : Vec3 :=
+  ( cos θ * v.1 - sin θ * (n.2.1 * v.2.2 - n.2.2 * v.2.1)
+      + n.1 * (n.1 * v.1 + n.2.1 * v.2.1 + n.2.2 * v.2.2) * (1 - cos θ),
+    cos θ * v.2.1 - sin θ * (n.2.2 * v.1 - n.1 * v.2.2)
+      + n.2.1 * (n.1 * v.1 + n.2.1 * v.2.1 + n.2.2 * v.2.2) * (1 - cos θ),
+    cos θ * v.2.2 - sin θ * (n.1 * v.2.1 - n.2.1 * v.1)
+      + n.2.2 * (n.1 * v.1 + n.2.1 * v.2.1 + n.2.2 * v.2.2) * (1 - cos θ) )
+
+/-- **`RotXY::r` is rotation about the in-plane axis `cos φ·X + sin φ·Y`.**
+Applying the crate's three sub-rotations in the order it emits them —
+`rz(φ)` first, then `rx(θ)`, then `rz(−φ)`, so the composite map is
+`M_z(−φ) ∘ M_x(θ) ∘ M_z(φ)` — is exactly `rotAxis (cos φ, sin φ, 0) θ`.
+
+The forward (Schrödinger) order composes to the *inverse* rotation, which is why
+contract 10 calls this out: only the backward order gives `r(q, π/2, θ) = ry(q, θ)`
+rather than `ry(q, −θ)`. -/
+theorem rotXY_heisenberg_order (φ θ : ℝ) (v : Vec3) :
+    mz (-φ) (mx θ (mz φ v)) = rotAxis (cos φ, sin φ, 0) θ v := by
+  have h : sin φ ^ 2 + cos φ ^ 2 = 1 := sin_sq_add_cos_sq φ
+  refine Prod.ext ?_ (Prod.ext ?_ ?_) <;>
+    simp only [mz, mx, rotAxis, cos_neg, sin_neg]
+  · linear_combination (cos θ * v.1) * h
+  · linear_combination (cos θ * v.2.1) * h
+  · ring
+
+/-- **`r(q, 0, θ) = rx(q, θ)`** — the `φ = 0` end of the family. -/
+theorem rotXY_zero_eq_rx (θ : ℝ) (v : Vec3) : mz (-0) (mx θ (mz 0 v)) = mx θ v := by
+  rw [rotXY_heisenberg_order]
+  refine Prod.ext ?_ (Prod.ext ?_ ?_) <;> simp only [rotAxis, mx, cos_zero, sin_zero] <;> ring
+
+/-- **`r(q, π/2, θ) = ry(q, θ)`** — the identity behavioural contract 10 names as
+the order detector: a forward-ordered implementation returns `ry(q, −θ)` here and
+is otherwise indistinguishable. -/
+theorem rotXY_halfPi_eq_ry (θ : ℝ) (v : Vec3) :
+    mz (-(π / 2)) (mx θ (mz (π / 2) v)) = my θ v := by
+  rw [rotXY_heisenberg_order]
+  refine Prod.ext ?_ (Prod.ext ?_ ?_) <;>
+    simp only [rotAxis, my, cos_pi_div_two, sin_pi_div_two] <;> ring
+
+end RotXY
 
 end PPVM.Rotation

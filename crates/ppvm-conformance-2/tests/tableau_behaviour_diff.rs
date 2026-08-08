@@ -27,6 +27,33 @@ fn norm_sq<D: Driver>(t: &D) -> f64 {
     t.coeffs().iter().map(|(_, c)| c.norm_sqr()).sum()
 }
 
+#[test]
+fn pattern_trace_matches_old() {
+    let mut old: OldNarrow = OldGT::new(3, 1e-12);
+    let mut new: NewNarrow = NewGT::new(3, 1e-12);
+    for q in 0..3 {
+        old.h(q);
+        new.h(q);
+        old.rz(q, 0.37);
+        new.rz(q, 0.37);
+    }
+    old.cnot(0, 1);
+    new.cnot(0, 1);
+    old.t(2);
+    new.t(2);
+
+    let old_pattern =
+        ppvm_pauli_word::pattern::PauliPattern::parse("Z?{3}").expect("parse counted pattern");
+    let new_pattern =
+        ppvm_pauli_sum_2::PauliPattern::parse("Z?{3}").expect("parse counted pattern");
+    let old_value = old.trace(&old_pattern);
+    let new_value = new.trace(&new_pattern);
+    assert!(
+        (old_value - new_value).abs() <= 1e-12 * old_value.abs().max(1.0),
+        "pattern trace differs: old {old_value}, new {new_value}"
+    );
+}
+
 // ===========================================================================
 // 1 & 2 — truncation timing and the strict, absolute gate keep-rule
 // ===========================================================================

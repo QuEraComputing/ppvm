@@ -25,9 +25,11 @@
 //! * Truncation is caller-driven on both (`truncate()` after each operation),
 //!   exactly like the old `trotter_func`.
 //!
-//! The new crate has no native `rzz`, so a `ZZ` rotation is decomposed as
-//! `rzz(a, b, θ) = cnot(a, b); rz(b, θ); cnot(a, b)` and the SAME decomposed
-//! sequence is applied on BOTH sides (a sub-test verifies old-native `rzz` ≈
+//! The `ZZ` bond runs through the **native** single-pass `rzz` on BOTH sides —
+//! the kernel old actually ships and `-2` now ships too, so the golden master
+//! covers the code path the headline benchmark measures. The decomposition
+//! `rzz(a, b, θ) = cnot(a, b); rz(b, θ); cnot(a, b)` is retained as a *check*
+//! on each engine separately (a sub-test verifies native `rzz` ≈
 //! old-decomposed, so the decomposition itself is validated).
 
 use ppvm_conformance_2::{GateOp, assert_close, random_circuit, seeded_rng};
@@ -50,6 +52,7 @@ use ppvm_pauli_sum_2::{
 };
 use ppvm_traits_2::{
     Clifford as NewClifford, PauliError as NewPauliError, RotationOne as NewRotationOne,
+    RotationTwo as NewRotationTwo,
 };
 
 use rand::rngs::StdRng;
@@ -205,6 +208,11 @@ fn new_rzz_decomposed(state: &mut NewSum, a: usize, b: usize, theta: f64) {
     state.cnot(a, b);
 }
 
+/// Apply one `rzz(a, b, θ)` on the NEW sum via the native two-qubit rotation.
+fn new_rzz_native(state: &mut NewSum, a: usize, b: usize, theta: f64) {
+    state.rzz(a, b, theta);
+}
+
 /// The Trotter step body on the OLD sum (caller-driven truncation after each
 /// operation, exactly like the old `trotter_func`).
 fn trotter_old(
@@ -227,7 +235,7 @@ fn trotter_old(
             state.truncate();
             state.pauli_error(i, noise);
             state.truncate();
-            old_rzz_decomposed(state, i, i + 1, theta_zz);
+            old_rzz_native(state, i, i + 1, theta_zz);
             state.truncate();
         }
     }
@@ -254,7 +262,7 @@ fn trotter_new(
             state.truncate();
             state.pauli_error(i, noise);
             state.truncate();
-            new_rzz_decomposed(state, i, i + 1, theta_zz);
+            new_rzz_native(state, i, i + 1, theta_zz);
             state.truncate();
         }
     }
@@ -298,6 +306,122 @@ fn old_rzz_decomposition_matches_native() {
             for (x, y) in ns.iter().zip(ds.iter()) {
                 assert_eq!(x.0, y.0, "rzz decomposition key differs at a={a} b={b}");
                 assert_close(x.1, y.1, 1e-12);
+            }
+        }
+    }
+}
+
+/// The same check on the NEW crate: its native `rzz` reproduces the
+/// `cnot; rz; cnot` decomposition term for term. Together with
+/// `old_rzz_decomposition_matches_native` this pins the two native kernels to a
+/// common, independently-defined reference.
+#[test]
+fn new_rzz_decomposition_matches_native() {
+    let n = 6;
+    let w = usize::MAX;
+    for &(a, b) in &[(0usize, 1usize), (2, 4), (1, 5), (0, 5)] {
+        for &theta in &[0.1_f64, 0.3, 0.7, 1.0, std::f64::consts::FRAC_PI_2] {
+            let mut native = build_new(n, w);
+            let mut decomp = build_new(n, w);
+            for s in [&mut native, &mut decomp] {
+                s.rx(a, 0.4);
+                s.truncate();
+                s.rx(b, 0.5);
+                s.truncate();
+            }
+
+            new_rzz_native(&mut native, a, b, theta);
+            native.truncate();
+            new_rzz_decomposed(&mut decomp, a, b, theta);
+            decomp.truncate();
+
+            let ns = new_support(&native);
+            let ds = new_support(&decomp);
+            assert_eq!(
+                ns.len(),
+                ds.len(),
+                "new rzz decomposition support size differs at a={a} b={b} θ={theta}"
+            );
+            for (x, y) in ns.iter().zip(ds.iter()) {
+                assert_eq!(x.0, y.0, "new rzz decomposition key differs at a={a} b={b}");
+                assert_close(x.1, y.1, 1e-12);
+            }
+        }
+    }
+}
+
+/// Every named two-qubit rotation, old vs new, on a spread-out support: the
+/// three hand-written fast paths (`rxx`/`ryy`/`rzz`) **and** the six that route
+/// through the generic `rotate_2`/`comm_2` kernel.
+#[test]
+fn two_qubit_rotations_match_old() {
+    let n = 6;
+    let w = usize::MAX;
+    type OldGate = fn(&mut OldSum, usize, usize, f64);
+    type NewGate = fn(&mut NewSum, usize, usize, f64);
+    let gates: [(&str, OldGate, NewGate); 9] = [
+        (
+            "rxx",
+            |s, a, b, t| s.rxx(a, b, t),
+            |s, a, b, t| s.rxx(a, b, t),
+        ),
+        (
+            "rxy",
+            |s, a, b, t| s.rxy(a, b, t),
+            |s, a, b, t| s.rxy(a, b, t),
+        ),
+        (
+            "rxz",
+            |s, a, b, t| s.rxz(a, b, t),
+            |s, a, b, t| s.rxz(a, b, t),
+        ),
+        (
+            "ryx",
+            |s, a, b, t| s.ryx(a, b, t),
+            |s, a, b, t| s.ryx(a, b, t),
+        ),
+        (
+            "ryy",
+            |s, a, b, t| s.ryy(a, b, t),
+            |s, a, b, t| s.ryy(a, b, t),
+        ),
+        (
+            "ryz",
+            |s, a, b, t| s.ryz(a, b, t),
+            |s, a, b, t| s.ryz(a, b, t),
+        ),
+        (
+            "rzx",
+            |s, a, b, t| s.rzx(a, b, t),
+            |s, a, b, t| s.rzx(a, b, t),
+        ),
+        (
+            "rzy",
+            |s, a, b, t| s.rzy(a, b, t),
+            |s, a, b, t| s.rzy(a, b, t),
+        ),
+        (
+            "rzz",
+            |s, a, b, t| s.rzz(a, b, t),
+            |s, a, b, t| s.rzz(a, b, t),
+        ),
+    ];
+
+    for (name, old_gate, new_gate) in gates {
+        for &(a, b) in &[(0usize, 1usize), (2, 4), (1, 5)] {
+            for &theta in &[0.1_f64, 0.7, std::f64::consts::FRAC_PI_2] {
+                let mut old = build_old(n, w);
+                let mut new = build_new(n, w);
+                // Spread the seed so every Pauli occurs at the two target sites.
+                old.rx(a, 0.4);
+                old.ry(b, 0.5);
+                new.rx(a, 0.4);
+                new.ry(b, 0.5);
+
+                old_gate(&mut old, a, b, theta);
+                new_gate(&mut new, a, b, theta);
+
+                assert_integration_match(&old, &new, &format!("{name}(a={a},b={b},θ={theta})"));
             }
         }
     }

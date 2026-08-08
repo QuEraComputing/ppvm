@@ -410,6 +410,37 @@ Sub-stochasticity is a real precondition on the channel constructors, not a
 formality: `eigenvalue_abs_le_one_needs_substochastic` exhibits an
 over-normalized probability vector that breaks the bound.
 
+That eigenvalue formula says *which* `p_Q` a factor must sum, and
+`two_qubit_pauli_error` is where the port could get it wrong silently: the old
+crate hard-codes, for each of the 16 observed pairs, a hand-written list of eight
+indices into `p: [Coeff; 15]` (`crates/ppvm-pauli-sum/src/sum/noise.rs:50-104`)
+with no derivation in the source, and the shipped tests only probe one-hot
+probability vectors, on which a transposed index is invisible.
+`twoQubitPauliError_indices_anticommuting` checks all fifteen lists against
+genuine two-qubit anticommutation in the crate's documented probability order
+`{IX, IY, IZ, XI, …, ZZ}` (`crates/ppvm-traits/src/traits/noise.rs:73`), with
+`…_length`/`…_nodup` making `contains`-agreement genuine set equality. All fifteen
+are correct as shipped; the port copies them.
+
+**Loss channels are channels, and the trace statement is about `I + L`, not `I`.**
+A site of `LossyPauliWord` carries `I, X, Y, Z, L`, and `I` is the identity on the
+*qubit subspace only* (zero on the loss level) while `L` is the loss projector, so
+the identity of the full space is `𝟙 = I + L` per site and trace preservation of
+the Heisenberg transfer is `Λ*(𝟙) = 𝟙`. `lossChannel_trace_preserving`,
+`resetLossChannel_trace_preserving` and `correlatedLossChannel_trace_preserving`
+(same file) discharge that for `loss_channel(p)`, `reset_loss_channel` and
+`correlated_loss_channel(p₀,p₁,p₂)` — the last for *arbitrary* `(p₀,p₁,p₂)`, with
+no normalization hypothesis. That is the oracle the loss port (workload 6) needs
+before it lands, and it **vindicates** the old arithmetic the baseline flagged: in
+the one-already-lost arms the `1 − p₂` survivor scale and the `p₁` branch weight
+belong to different columns of `Λ*(𝟙)` (loss of the second qubit vs. gain from the
+both-in-subspace sector), and the `(L,L)` arm's unscaled survivor is *required*,
+because loss is irreversible. `lossChannel_nonLossy_scales_by_one_minus_p` records
+the complementary convention: on the plain `PauliWord`, where `L` is
+unrepresentable and the branch arm is dead code, `loss_channel` scales the trace by
+`1 − p` — the documented behaviour, with `ResetLossChannel` as the
+trace-preserving variant.
+
 ```rust
 pub trait Measure {
     fn measure(&mut self, qubit: usize) -> Option<bool>;
@@ -545,7 +576,19 @@ phase-*carrying* opt-in as well. That composition is discharged in
 `extSqrtXdag_*`/`extSqrtY_*`/`extSqrtYdag_*` rows, with the dagger pairs proven
 mutually inverse (`extSqrtXdag_extSqrtX`, `extSqrtYdag_extSqrtY`,
 `extSdag_conjSdag`) and `extSqrtX_sq`/`extSqrtY_sq` recovering
-\(\sqrt X^2 = X\), \(\sqrt Y^2 = Y\). Two-qubit `CY` is the same story one level
+\(\sqrt X^2 = X\), \(\sqrt Y^2 = Y\). Those tables fix each composite on the three
+basis Paulis; what a **port** has to reproduce is the closed form, because the old
+crate ships these gates as hand-written two-bit `map_add` kernels with no
+derivation in the source (`crates/ppvm-pauli-sum/src/sum/clifford.rs:107-221`), and
+a sign transposed between a gate and its dagger is invisible on one-hot test
+vectors. So each closed form is derived from the generator product too:
+`extSqrtX_bits`/`extSqrtX_sign` (\(x \leftarrow x\oplus z\), \(-1\) on \(x\wedge z\)),
+`extSqrtXdag_bits`/`_sign` (same bit map, \(-1\) on \(\neg x\wedge z\)),
+`extSqrtY_bits`/`_sign` (the swap, \(-1\) on \(\neg x\wedge z\)) and
+`extSqrtYdag_bits`/`_sign` (the swap, \(-1\) on \(x\wedge\neg z\)) — the
+\(\sqrt Y\) pair sharing a bit map and differing *only* in that predicate is
+exactly the transposition the theorems rule out. (`s_dag` needs no entry:
+`extSdag_eq_conjS` collapses it to `conjS_bits`/`conjS_sign`.) Two-qubit `CY` is the same story one level
 up: `conjCY` is *defined* as the crate's call sequence
 \((I\otimes S)\cdot\mathrm{CNOT}\cdot(I\otimes S^\dagger)\) on \(\mathcal{P}_2\)
 (`conjSdagT` / `conjCNOT` / `conjST`, with `conjCY_calls` showing the literal
@@ -1724,8 +1767,8 @@ changed according to whether their underlying responsibility changes:
 | `Reset` (`reset`, `reset_z`, `reset_x`, `reset_y`, `*_many`) | retained verbatim | The basis variants are *behaviour*, not sugar (`reset_x` = `reset` then `h`, `reset_y` = `reset` then `h` then `s`), so the default bodies and the `Clifford + CliffordExtensions` supertrait bound are reproduced call-for-call. |
 | `RotationOne<T: Config>` (`rotate_1`, `rx`/`ry`/`rz`, `rx_many`/`ry_many`/`rz_many`) | `RotationOne<C, A = C>`, same required/defaulted split | The whole surface crosses over: `rotate_1(axis, qubit, theta)` stays the *required* axis-generic entry point (it is what `rotate_2` and the tableau backends compose with), `rx`/`ry`/`rz` stay one-line defaults over it (a backend with per-axis fast paths overrides them, as `PauliSum` does), and the three `*_many` batch loops stay (the Python bindings call them). Two edits follow from the shape change: the `Pauli::L` axis panic is unrepresentable because `L` is not a `Pauli` any more (loss is a `LossySite`), and `theta` is the angle domain `A` rather than `impl Into<T::Coeff>` — with `A` a free trait parameter an `Into` conversion would be uninferable at the call site, so the one instantiation callers used (`sum.rx(0, 0.1)` on a complex sum) is preserved by `impl Angle<Complex<f64>> for f64` instead. The batch defaults clone the angle, so they carry an explicit `where A: Clone` (the old crate got it free from `Coefficient: Clone`). |
 | `RotationTwo` (`rotate_2` + the `rxx`…`rzz` family and their `*_many`) | `RotationTwo<C, A = C>`, unchanged shape | User-facing gate surface implemented today by `ppvm-pauli-sum` and `ppvm-tableau-sum`; the `[x, z]` axis encoding, the nine named gates and the batch loops are ported verbatim. Only the angle domain and the `where A: Clone` on the batch defaults change. |
-| `TGate` (`t`, `t_dag`, `*_many`), `Projection` (`p0`, `p1`) | retained; both unparameterized | Neither takes a numeric argument — old `TGate<T: Config>` never used its parameter — so the rule that leaves `Clifford` and `ResetLossChannel` unparameterized applies. Default bodies verbatim. |
-| `U3Gate` (`u3`), `RotXY` (`r`), `CRx` (`crx`) | `U3Gate<C, A = C>`, `RotXY<C, A = C>`, `CRx<C, A = C>` | Angle-carrying single/two-qubit gates; retained with the angle-domain edit only. `RotXY::r` keeps its documented `RZ(φ)·RX(θ)·RZ(−φ)` decomposition as *behaviour* of the implementing backend. |
+| `TGate` (`t`, `t_dag`, `*_many`), `Projection` (`p0`, `p1`) | retained; both unparameterized | Neither takes a numeric argument — old `TGate<T: Config>` never used its parameter — so the rule that leaves `Clifford` and `ResetLossChannel` unparameterized applies. Default bodies verbatim, with one exception: `Projection`'s halving. `lean/PPVM/Instantiations/Projector.lean` (`projLin_add`/`projLin_smul`/`projLin_idem` vs `oldStep_not_additive`/`oldProj_not_idem`, `oldStep_eq_half_iff`) adjudicates old's `let half = v.half(); *v *= half` — which computes `c ↦ c²/2` — as a genuine defect; the Lean-correct halving is the ring constant `½`. |
+| `U3Gate` (`u3`), `RotXY` (`r`), `CRx` (`crx`) | `U3Gate<C, A = C>`, `RotXY<C, A = C>`, `CRx<C, A = C>` | Angle-carrying single/two-qubit gates; retained with the angle-domain edit only. `RotXY::r` keeps its documented `RZ(φ)·RX(θ)·RZ(−φ)` decomposition as *behaviour* of the implementing backend — the Heisenberg (backward) sub-rotation order, machine-checked in `lean/PPVM/Instantiations/Rotation.lean` (`rotXY_heisenberg_order`, `rotXY_halfPi_eq_ry`). |
 | `Trace<'a, RHS>` | retained (in `graded.rs`, next to `Pair`) | **Not** subsumed by `Pair::overlap`: `overlap` pairs a map with another map of the same type, while `Trace` is the heterogeneous `tr(self·value)` the old crate used against a `PauliPattern`. Kept with its free right-hand type and `Output`; implementers land with the pattern port. |
 | `PauliWordTrait::anticommutes_at` | provided method on `PauliBits` | Derivable from the two bit reads (`ω(P,Q) = x_P·z_Q ⊕ z_P·x_Q`), and consumed by the tableau's measurement pivot search, so it stays — as a default body, adding no required method. |
 | `PauliWordTrait::get_multiple`/`get_slice`/`set_multiple`/`set_new`/`set_new_2` | removed from the trait; inherent on the concrete word | Every one of them *constructs* a word (`Self::new(Q)`, clone-and-edit), and construction is deliberately concrete in this design — `Word` is read-only inspection and has no constructor, `PauliBits` is bit mutation. They remain available as inherent methods on `PauliWord`/`LossyPauliWord`, where the width and backing storage are known; no generic consumer needs them. |
@@ -1827,6 +1870,64 @@ equals the hand-ported table in `crates/ppvm-pauli-sum-2/src/producer.rs:141-143
 (`RotationProducer::produce`, `rx: ε=−1 iff x`; `ry: ε=−1 iff z`; `rz: ε=+1 iff z`),
 grounding the one propagation sign the abstract `rot` model does not derive.
 
+The **two-qubit** branch (`RotationTwo`: the headline workload's native `rzz`, plus
+`rxx`/`ryy`) is not a trivial special case of that, and it is the one gate family
+whose fast path the old crate validates only by a Rust diff against its own
+generic `comm_2`/`rotate_2` (`rot2.rs::rxx_matches_generic`) — agreement between
+two implementations, not an oracle. The branch key toggles bits at **two** sites
+at once and \(\varepsilon\) comes from a two-factor product, so the sign
+convention has two independent places to be wrong. The same file now supplies the
+oracle. `anti2` is the two-site branch key
+\(w_2(P,G) = \omega(P_a,G_a)\oplus\omega(P_b,G_b)\) (`antiBit_eq_omega` ties the
+kernels' two-bit expression to \(\omega\)); `branchExp2` is the two-site
+\(i^{1+\text{phaseExp}_a+\text{phaseExp}_b}\), real whenever the branch fires
+(`branchExp2_isRealPhase`), and `anticommute_new_key2` again gives exactly one
+fresh term. The collapse onto a *single* site's \(\varepsilon\) column is
+`phaseExp_of_commute` — a commuting single-site pair carries **no** phase at all —
+after which each native kernel is pinned expression-for-expression:
+`rzz_anti`/`rzz_branch_key`/`rzz_eps_from_product`, and the `rxx_*` / `ryy_*` rows
+(`sum/rot2.rs:62-184`: the commutation test, the bits toggled, and
+`eps = if z_anti {1} else {-1}` etc.). `accumulate_rotBatch_two` records that the
+fused two-pass shape lifts to the two-site branch unchanged — `accumulate_rotBatch`
+is stated over an abstract key type and predicate, so the two-qubit kernel is an
+instance of it, not a new obligation.
+
+The **generic** `rotate_2` — the shipped public method that accepts an arbitrary
+`[x, z]` axis pair — does not use those three kernels at all: it runs the
+branch-free `comm_2` (`crates/ppvm-pauli-sum-2/src/rotation.rs:109-140`) over a
+hand-rolled 16-entry orientation mask `SIGN_NEG = 0x2840`, and then applies the
+*opposite* sign convention to the fast paths (`sin.mul_sign(-eps)` against their
+`sin.mul_sign(eps)`). The only checks on any of that — old's `*_matches_generic`
+tests and their ports — compare the two paths at exactly the three **diagonal**
+axes; every off-diagonal pair (`XZ`, `YX`, `ZY`, …) was untested on both sides and
+unproven, and a `+eps`/`−eps` asymmetry is precisely what can be correct by
+coincidence on the diagonal. `lean/PPVM/Instantiations/Rotation.lean` (§"The
+generic `rotate_2` kernel") now transcribes `comm_2` line for line (`signNegMask`,
+`signNegIdx`, `comm2Coeff`, `comm2Key`) and closes it over all `2⁸` (axis, key)
+bit patterns: `comm2Coeff_eq_zero_iff` — the `if eps == 0 { return None }`
+early-out is exactly the `anti2` branch predicate the native kernels test;
+`comm2_generic_sign_eq_branchExp2` — the sign the generic path actually applies
+(`−ε`) **is** the real branch prefactor `i^{1+phaseExp_a+phaseExp_b}` of
+`−i·[G_a ⊗ G_b, P]/2`, so both the mask and the sign flip are right off the
+diagonal too; and `comm2_key_eq_mulBits2` — its `present`-masked output bits are
+the two-site product key, so `anticommute_new_key2` applies to the generic path
+verbatim.
+
+`RotXY::r` is the one rotation-family contract whose **order** (not its per-axis
+arithmetic) is user-visible: the crate emits `rz(φ); rx(θ); rz(−φ)` — Heisenberg
+(backward) — so the composite is `M_z(−φ) ∘ M_x(θ) ∘ M_z(φ)`, and a
+forward-ordered implementation yields `ry(q, −θ)` at `φ = π/2` while passing every
+other rotation test. Same file, §"`RotXY::r`": the per-axis `ε` columns are
+assembled into the `3 × 3` action on the coefficient triple `(c_X, c_Y, c_Z)`
+(`mz`/`mx`/`my`, whose off-diagonal entries are checked against `mulBits` and
+`branchExp` by `mz_from_kernel`/`mx_from_kernel`/`my_from_kernel`, i.e. read off
+the kernel rather than modeled), and `rotXY_heisenberg_order` proves the composite
+is Rodrigues rotation about the in-plane axis `cos φ·X + sin φ·Y` by `θ`
+(`rotAxis`). The two behavioural corollaries drop out: `rotXY_zero_eq_rx`
+(`r(q,0,θ) = rx(q,θ)`) and `rotXY_halfPi_eq_ry` (`r(q,π/2,θ) = ry(q,θ)`, **not**
+`ry(q,−θ)`) — contract 10's order detector, previously pinned only by two ported
+example values.
+
 Those are all *per-term* facts. The fused `RotateInPlace` fast path
 (`crates/ppvm-pauli-sum-2/src/store.rs`) that every rotation actually takes is a
 **two-pass** whole-map walk — pass 1 scales every diagonal in place and buffers
@@ -1843,6 +1944,31 @@ two-pass structure is load-bearing rather than an optimization:
 `eagerWalk_ne_twoPass` exhibits a support on which merging each branch eagerly
 *inside* the walk — the tidier single-pass refactor, and what a backend
 interleaving the passes computes — gives a different map.
+
+`Projection` (`p0`/`p1`) was the remaining shipped gate on `Sum` with **no**
+oracle at all: `lean/PPVM/Tableau/Projection.lean` is about the generalized
+tableau's amplitude vector, not the Heisenberg action of a computational-basis
+projector on `C[K]`, and no old test or bench exercises `p0`/`p1`.
+`lean/PPVM/Instantiations/Projector.lean` supplies it, and it adjudicates the old
+kernel **wrong**. The intended map — halve by the ring constant `½` and add the
+`Z`-toggled partner with sign `ε` — is linear (`projLin_add`, `projLin_smul`) and
+idempotent (`projLin_idem`), i.e. a genuine projector on `C[K]`. Old instead reads
+`let half = v.half()` (a *value*, `c/2`) and then does `*v *= half`, so both the
+survivor and the branch come out at `c²/2`: `oldStep_not_additive`,
+`oldStep_not_homogeneous` and `oldProj_not_idem` show that map is neither linear
+nor idempotent (on `2·I` the "projector" *grows* the state), and
+`oldStep_eq_half_iff` pins the blind spot exactly — `c²/2 = c/2 ↔ c ∈ {0,1}`, and
+unit-coefficient stabilizer sums were old's only usage. The Lean-correct value is
+`c/2`, so the implementation builds the ring's `½` once outside the walk. A
+*second*, independent defect is corrected by the same Lean-governed exception:
+over honest `ℤ[i]`
+matrices with `2Π = I + Z`, `twoProj_conj_I`/`twoProj_conj_Z` agree with `projLin`
+on the `I`/`Z` block but `twoProj_conj_X`/`twoProj_conj_Y` give `Π X Π = Π Y Π = 0`,
+where the crate's `_ => None` leaves `X`/`Y` untouched — `projLin_p0_add_p1` shows
+the consequence, `p0 + p1` is the identity on `I`/`Z` but *doubles* `X`/`Y` where
+completeness `Π₀ + Π₁ = 1` forces the dephasing channel. The new kernel zeros
+those coefficients in place and leaves their keys present until caller-driven
+`reduce()`, preserving the engine's explicit-reduction contract.
 
 A `TermProducer` *reads* the live map through `&` and *writes* the produced
 terms into a `TermSink` — a separate buffer, never the map itself — so there is

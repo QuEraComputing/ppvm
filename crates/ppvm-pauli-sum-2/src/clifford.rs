@@ -65,11 +65,11 @@
 //! `conjCNOT_sign`, `conjCZ_sign`); the underlying bit maps are the `Sp(2n, 2)`
 //! isometries of `lean/PPVM/Pauli/Symplectic.lean`.
 
-use std::hash::BuildHasher;
-
-use ppvm_pauli_word_2::{HashFinalize, PauliStorage, PauliWord};
 use ppvm_phased_pauli_word_2::Phased;
-use ppvm_traits_2::{Accumulate, Clifford, Coefficient, PauliBits, Phase, Retain};
+use ppvm_traits_2::{
+    Accumulate, Clifford, CliffordBatch, CliffordExtensions, CliffordExtensionsBatch, Coefficient,
+    Indexable, PauliBits, Phase, Retain, Word,
+};
 
 use crate::policy::Policy;
 use crate::store::{RekeyBijective, SignFlipByKey, StoreAlloc};
@@ -92,16 +92,12 @@ fn clifford_sign(phase: Phase) -> i8 {
     }
 }
 
-impl<S, P, A, H, C> Sum<S, P>
+impl<S, P, W, C> Sum<S, P>
 where
-    S: Accumulate<Key = PauliWord<A, H>, Coeff = C>
-        + StoreAlloc
-        + Retain<PauliWord<A, H>, C>
-        + RekeyBijective<PauliWord<A, H>, C>,
-    A: PauliStorage,
-    H: BuildHasher + Default + HashFinalize,
+    S: Accumulate<Key = W, Coeff = C> + StoreAlloc + Retain<W, C> + RekeyBijective<W, C>,
+    W: Word + Indexable + PauliBits,
     C: Coefficient,
-    P: Policy<PauliWord<A, H>, C>,
+    P: Policy<W, C>,
 {
     /// Re-key every term by conjugating its Pauli with `gate` (run on a phased
     /// wrapper), draining the resulting `±1` sign to the coefficient.
@@ -114,30 +110,61 @@ where
     #[inline]
     fn rekey_clifford<G>(&mut self, gate: G)
     where
-        G: Fn(&mut Phased<PauliWord<A, H>>),
+        G: Fn(&mut Phased<W>) + Send + Sync,
     {
-        self.rekey_bijective(|k: PauliWord<A, H>, c: C| {
+        self.rekey_bijective(|k: W, c: C| {
             let mut p = Phased::new(k);
             gate(&mut p);
             let (word, phase) = p.into_parts();
             (word, c.mul_sign(clifford_sign(phase)))
         });
     }
+
+    /// Re-key every term by a **direct bit rewrite** of its own word: `f` mutates
+    /// the moved key's X/Z bits at the gate's qubit and returns whether the
+    /// conjugation sign is `−1`.
+    ///
+    /// This is the specialization the *single-qubit* word-changing Cliffords take
+    /// instead of [`rekey_clifford`](Self::rekey_clifford)'s [`Phased`]
+    /// round-trip, and it is a named baseline feature, not an incidental
+    /// difference: old implements `h`/`s`/`s_dag`/`sqrt_*` as `map_add` closures
+    /// that read `get_xbit`/`get_zbit`, write the swapped/XOR'd bits, `rehash()`,
+    /// and pick the sign from a two-bit test, with the source comment
+    ///
+    /// > "Single-qubit gates are specialised to bit-level updates so we avoid
+    /// > round-tripping through `PhasedPauliWord`; the two-qubit gates still go
+    /// > through the macro"
+    ///
+    /// (`ppvm-pauli-sum/src/sum/clifford.rs`). Only `cnot`/`cz`/`cy` — whose sign
+    /// rules genuinely want the phased word's audited fused kernel — keep the
+    /// wrapper. The sign is applied as a `Neg` on the *moved* coefficient rather
+    /// than [`Coefficient::mul_sign`], which takes `&self` and therefore clones on
+    /// a heap-owning coefficient ring, and the `+1` case does not touch the
+    /// coefficient at all (old's `v.clone()` vs `-v.clone()` branch).
+    #[inline]
+    fn rekey_bits<F>(&mut self, f: F)
+    where
+        F: Fn(&mut W) -> bool + Send + Sync,
+    {
+        self.rekey_bijective(|mut k: W, c: C| {
+            let negate = f(&mut k);
+            if negate { (k, -c) } else { (k, c) }
+        });
+    }
 }
 
 /// Clifford propagation on a Pauli-keyed `Sum`. Each gate re-keys the whole
 /// support pointwise, folding the conjugation sign into the coefficient.
-impl<S, P, A, H, C> Clifford for Sum<S, P>
+impl<S, P, W, C> Clifford for Sum<S, P>
 where
-    S: Accumulate<Key = PauliWord<A, H>, Coeff = C>
+    S: Accumulate<Key = W, Coeff = C>
         + StoreAlloc
-        + Retain<PauliWord<A, H>, C>
-        + RekeyBijective<PauliWord<A, H>, C>
-        + SignFlipByKey<PauliWord<A, H>, C>,
-    A: PauliStorage,
-    H: BuildHasher + Default + HashFinalize,
+        + Retain<W, C>
+        + RekeyBijective<W, C>
+        + SignFlipByKey<W, C>,
+    W: Word + Indexable + PauliBits,
     C: Coefficient,
-    P: Policy<PauliWord<A, H>, C>,
+    P: Policy<W, C>,
 {
     /// `X` conjugation is a **pure sign**: `XPX = (−1)^z P`. The word is fixed, so
     /// this takes the in-place [`Sum::flip_sign_by_key`] fast path — flipping each
@@ -185,23 +212,195 @@ where
         });
     }
 
+    /// `H` **swaps** the X and Z bits; the sign flips only for `Y` (both bits
+    /// set): `HXH = Z`, `HZH = X`, `HYH = −Y`. A direct bit rewrite
+    /// ([`rekey_bits`](Sum::rekey_bits)), as in old — not a [`Phased`]
+    /// round-trip.
     #[inline]
     fn h(&mut self, qubit: usize) {
-        self.rekey_clifford(move |p| p.h(qubit));
+        self.rekey_bits(move |k| {
+            if k.is_lost(qubit) {
+                return false;
+            }
+            let x = k.x_bit(qubit);
+            let z = k.z_bit(qubit);
+            k.set_x_bit(qubit, z);
+            k.set_z_bit(qubit, x);
+            x & z
+        });
     }
 
+    /// `S`: `z ← x ⊕ z`; the sign flips only for `X` (x set, z clear):
+    /// `SXS† = −Y`, `SYS† = X`, `SZS† = Z`.
     #[inline]
     fn s(&mut self, qubit: usize) {
-        self.rekey_clifford(move |p| p.s(qubit));
+        self.rekey_bits(move |k| {
+            if k.is_lost(qubit) {
+                return false;
+            }
+            let x = k.x_bit(qubit);
+            let z = k.z_bit(qubit);
+            k.set_z_bit(qubit, x ^ z);
+            x & !z
+        });
     }
 
     #[inline]
     fn cnot(&mut self, control: usize, target: usize) {
-        self.rekey_clifford(move |p| p.cnot(control, target));
+        self.rekey_bits(move |k| {
+            if k.is_lost(control) || k.is_lost(target) {
+                return false;
+            }
+            let xc = k.x_bit(control);
+            let zc = k.z_bit(control);
+            let xt = k.x_bit(target);
+            let zt = k.z_bit(target);
+            k.set_x_bit(target, xt ^ xc);
+            k.set_z_bit(control, zc ^ zt);
+            xc && zt && (xt == zc)
+        });
     }
 
     #[inline]
     fn cz(&mut self, qubit0: usize, qubit1: usize) {
-        self.rekey_clifford(move |p| p.cz(qubit0, qubit1));
+        self.rekey_bits(move |k| {
+            if k.is_lost(qubit0) || k.is_lost(qubit1) {
+                return false;
+            }
+            let x0 = k.x_bit(qubit0);
+            let z0 = k.z_bit(qubit0);
+            let x1 = k.x_bit(qubit1);
+            let z1 = k.z_bit(qubit1);
+            k.set_z_bit(qubit0, z0 ^ x1);
+            k.set_z_bit(qubit1, z1 ^ x0);
+            x0 && x1 && (z0 ^ z1)
+        });
     }
+}
+
+/// The extended Clifford set, ported from `ppvm-pauli-sum/src/sum/clifford.rs`
+/// with old's own split: the five single-qubit gates are direct bit rewrites
+/// ([`Sum::rekey_bits`]) and only the two-qubit `cy` goes through the phased
+/// word.
+impl<S, P, W, C> CliffordExtensions for Sum<S, P>
+where
+    S: Accumulate<Key = W, Coeff = C>
+        + StoreAlloc
+        + Retain<W, C>
+        + RekeyBijective<W, C>
+        + SignFlipByKey<W, C>,
+    W: Word + Indexable + PauliBits,
+    C: Coefficient,
+    P: Policy<W, C>,
+{
+    /// `S†`: the same bit map as `S` (`z ← x ⊕ z`); the sign flips for `Y`
+    /// (both bits set): `S†XS = Y`, `S†YS = −X`, `S†ZS = Z`.
+    #[inline]
+    fn s_dag(&mut self, qubit: usize) {
+        self.rekey_bits(move |k| {
+            if k.is_lost(qubit) {
+                return false;
+            }
+            let x = k.x_bit(qubit);
+            let z = k.z_bit(qubit);
+            k.set_z_bit(qubit, x ^ z);
+            x & z
+        });
+    }
+
+    /// `√X`: `x ← x ⊕ z`; the sign flips for `Y`: `X ↦ X`, `Y ↦ −Z`, `Z ↦ Y`.
+    #[inline]
+    fn sqrt_x(&mut self, qubit: usize) {
+        self.rekey_bits(move |k| {
+            if k.is_lost(qubit) {
+                return false;
+            }
+            let x = k.x_bit(qubit);
+            let z = k.z_bit(qubit);
+            k.set_x_bit(qubit, x ^ z);
+            x & z
+        });
+    }
+
+    /// `(√X)†`: the same bit map as `√X`; the sign flips for `Z` (z set, x
+    /// clear): `X ↦ X`, `Y ↦ Z`, `Z ↦ −Y`.
+    #[inline]
+    fn sqrt_x_dag(&mut self, qubit: usize) {
+        self.rekey_bits(move |k| {
+            if k.is_lost(qubit) {
+                return false;
+            }
+            let x = k.x_bit(qubit);
+            let z = k.z_bit(qubit);
+            k.set_x_bit(qubit, x ^ z);
+            !x & z
+        });
+    }
+
+    /// `√Y`: swap the X and Z bits; the sign flips for `Z`: `X ↦ Z`, `Y ↦ Y`,
+    /// `Z ↦ −X`.
+    #[inline]
+    fn sqrt_y(&mut self, qubit: usize) {
+        self.rekey_bits(move |k| {
+            if k.is_lost(qubit) {
+                return false;
+            }
+            let x = k.x_bit(qubit);
+            let z = k.z_bit(qubit);
+            k.set_x_bit(qubit, z);
+            k.set_z_bit(qubit, x);
+            !x & z
+        });
+    }
+
+    /// `(√Y)†`: swap the X and Z bits; the sign flips for `X`: `X ↦ −Z`,
+    /// `Y ↦ Y`, `Z ↦ X`.
+    #[inline]
+    fn sqrt_y_dag(&mut self, qubit: usize) {
+        self.rekey_bits(move |k| {
+            if k.is_lost(qubit) {
+                return false;
+            }
+            let x = k.x_bit(qubit);
+            let z = k.z_bit(qubit);
+            k.set_x_bit(qubit, z);
+            k.set_z_bit(qubit, x);
+            x & !z
+        });
+    }
+
+    /// `CY` — a two-qubit gate, so it keeps the [`Phased`] round-trip (old's
+    /// `map_word!` macro), whose sign rules are the audited fused kernel's.
+    #[inline]
+    fn cy(&mut self, control: usize, target: usize) {
+        self.rekey_clifford(move |p| p.cy(control, target));
+    }
+}
+
+/// Old ships the batch forms as empty `impl`s over the loop defaults
+/// (`impl<T: Config> CliffordBatch for PauliSum<T> {}`); same here.
+impl<S, P, W, C> CliffordBatch for Sum<S, P>
+where
+    S: Accumulate<Key = W, Coeff = C>
+        + StoreAlloc
+        + Retain<W, C>
+        + RekeyBijective<W, C>
+        + SignFlipByKey<W, C>,
+    W: Word + Indexable + PauliBits,
+    C: Coefficient,
+    P: Policy<W, C>,
+{
+}
+
+impl<S, P, W, C> CliffordExtensionsBatch for Sum<S, P>
+where
+    S: Accumulate<Key = W, Coeff = C>
+        + StoreAlloc
+        + Retain<W, C>
+        + RekeyBijective<W, C>
+        + SignFlipByKey<W, C>,
+    W: Word + Indexable + PauliBits,
+    C: Coefficient,
+    P: Policy<W, C>,
+{
 }

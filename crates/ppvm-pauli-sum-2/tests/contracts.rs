@@ -126,6 +126,20 @@ fn add_assign_accumulates_and_scales() {
 }
 
 #[test]
+fn collection_surface_preserves_old_extend_and_into_iter_semantics() {
+    let mut sum: PauliSum = PauliSum::from_terms(2, [(pw("XI"), 1.0)]);
+    sum.extend([(pw("XI"), 7.0), (pw("IZ"), 2.0)]);
+    assert_eq!(sum.get(&pw("XI")), Some(7.0), "Extend replaces duplicates");
+
+    let mut terms: Vec<_> = sum
+        .into_iter()
+        .map(|(key, coeff)| (key.to_string(), coeff))
+        .collect();
+    terms.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(terms, vec![("IZ".into(), 2.0), ("XI".into(), 7.0)]);
+}
+
+#[test]
 #[should_panic(expected = "term key width must match")]
 fn width_mismatch_is_a_debug_panic() {
     // Old: `debug_assert_eq!(self.n_qubits(), key.n_qubits())` on every insert.

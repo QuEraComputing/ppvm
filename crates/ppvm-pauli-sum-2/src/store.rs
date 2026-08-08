@@ -36,7 +36,7 @@ use std::collections::HashMap;
 
 use ppvm_traits_2::{
     Accumulate, Coefficient, Conjugate, IdentityBuildHasher, ImaginaryUnit, Indexable, KeyBatch,
-    KeyProduct, Multiply, Pair, Retain, Scale, Support, TermBatch, TermProducer,
+    KeyProduct, Multiply, Pair, PauliBits, Retain, Scale, Support, TermBatch, TermProducer,
 };
 
 /// The provided hash-join storage backend for [`Sum`](crate::Sum): a primary
@@ -82,15 +82,24 @@ pub struct HashMapStore<K, C> {
 }
 
 impl<K: Clone, C: Clone> Clone for HashMapStore<K, C> {
-    /// Clone only the primary support; `aux`/`scratch`/`batch` are transient
-    /// (empty between ops), so a clone starts them fresh rather than copying
-    /// workspace.
+    /// Clone the primary support **and the double-buffer's allocation**;
+    /// `aux`/`scratch`/`batch` hold no live *contents* (they are empty between
+    /// ops), so only their capacity is carried, not their bytes.
+    ///
+    /// Carrying the capacity is architecture features 1/2/6 on the clone path.
+    /// Old derives `Clone` over `map: (T::Map, T::Map)`
+    /// (`ppvm-pauli-sum/src/sum/data.rs`), so a cloned sum starts with a
+    /// fully-allocated aux. Every `criterion` `iter_batched_ref(|| seed.clone(),
+    /// ..)` iteration — the shape all the integration benches use — and every
+    /// stabilizer-mixture clone would otherwise start from a **cold** aux and grow
+    /// it on the first re-key, while `Sum::capacity()` still reported the resolved
+    /// hint: the reported hint and the real allocation would disagree.
     #[inline]
     fn clone(&self) -> Self {
         Self {
             primary: self.primary.clone(),
-            aux: HashMap::with_hasher(IdentityBuildHasher),
-            scratch: Vec::new(),
+            aux: HashMap::with_capacity_and_hasher(self.primary.capacity(), IdentityBuildHasher),
+            scratch: Vec::with_capacity(self.scratch.capacity()),
             batch: TermBatch::new(),
         }
     }
@@ -154,7 +163,7 @@ pub trait RekeyBijective<K, C> {
     /// guarding a case the type-level contract already excludes.
     fn rekey_bijective<F>(&mut self, f: F)
     where
-        F: FnMut(K, C) -> (K, C);
+        F: FnMut(K, C) -> (K, C) + Send + Sync;
 }
 
 /// An in-place, **whole-map** per-key sign flip — the fast path a *pure-sign*
@@ -192,9 +201,20 @@ pub trait RekeyBijective<K, C> {
 pub trait SignFlipByKey<K, C> {
     /// Multiply every term's coefficient in place by `f(&k) ∈ {−1, +1}`, keyed on
     /// that term's own key — no key movement, no reallocation.
+    ///
+    /// **A `+1` slot must not be written.** Old's `x`/`y`/`z` ride
+    /// `scale(Fn(&K, &mut C))` and write nothing when the flip condition is false
+    /// (`if !k.get_lbit(i) && k.get_zbit(i) { *v *= -1.0; }`,
+    /// `ppvm-pauli-sum/src/sum/clifford.rs`), so a no-op slot costs *zero*. For
+    /// `f64` an unconditional `mul_sign(1)` would be one multiply and a store, but
+    /// for the exact/symbolic ring it is a per-term heap operation
+    /// (`ppvm-sym-2`'s `Term::mul_sign` clones the monomial map), i.e. every
+    /// `x`/`y`/`z` gate would clone and walk a map for every term in the support
+    /// where old touched nothing. Implementers therefore branch on `sign == 1` and
+    /// leave the coefficient alone — same values, same key set, no write.
     fn sign_flip_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K) -> i8;
+        F: Fn(&K) -> i8 + Send + Sync;
 }
 
 /// An in-place, **whole-map** per-key coefficient scale by an arbitrary ring
@@ -240,7 +260,29 @@ pub trait ScaleByKey<K, C> {
     /// expressed by leaving `c` untouched.
     fn scale_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K, &mut C);
+        F: Fn(&K, &mut C) + Send + Sync;
+
+    /// Specialized diagonal Pauli-channel walk. Backends may override this to
+    /// keep the bit decode and coefficient update in one monomorphized loop.
+    #[inline(always)]
+    fn scale_pauli_error(&mut self, qubit: usize, x: C, z: C, y: C)
+    where
+        K: PauliBits,
+        C: Coefficient,
+    {
+        self.scale_by_key(move |key, coeff| {
+            if key.is_lost(qubit) {
+                return;
+            }
+            match key.pauli_code(qubit) {
+                0 => {}
+                1 => *coeff *= x.clone(),
+                2 => *coeff *= z.clone(),
+                3 => *coeff *= y.clone(),
+                _ => unreachable!(),
+            }
+        });
+    }
 }
 
 /// An in-place, **fused branching** re-key — the fast path a single-qubit
@@ -311,7 +353,118 @@ pub trait RotateInPlace<K, C> {
     /// exhibiting the interleaved variant's divergence.
     fn rotate_in_place<F>(&mut self, f: F)
     where
-        F: FnMut(&K, &mut C) -> Option<(K, C)>;
+        F: FnMut(&K, &mut C) -> Option<(K, C)> + Send + Sync;
+
+    /// Specialized X-axis rotation. Columnar backends can override this to read
+    /// packed X/Z planes directly and materialize only anticommuting branches.
+    #[inline]
+    fn rotate_x(&mut self, qubit: usize, sin: C, cos: C)
+    where
+        K: PauliBits + Clone,
+        C: Coefficient,
+    {
+        self.rotate_in_place(move |key, coeff| {
+            if key.is_lost(qubit) || !key.z_bit(qubit) {
+                return None;
+            }
+            let branch = coeff.clone() * sin.mul_sign(if key.x_bit(qubit) { -1 } else { 1 });
+            *coeff *= cos.clone();
+            Some((key.toggled_bits(qubit, true, false), branch))
+        });
+    }
+
+    /// Specialized ZZ rotation, including the lossy single-site fallbacks.
+    #[inline]
+    fn rotate_zz(&mut self, a: usize, b: usize, sin: C, cos: C)
+    where
+        K: PauliBits + Clone,
+        C: Coefficient,
+    {
+        self.rotate_in_place(move |key, coeff| {
+            let (site, two_site) = if key.is_lost(a) {
+                if key.is_lost(b) {
+                    return None;
+                }
+                (b, false)
+            } else if key.is_lost(b) {
+                (a, false)
+            } else {
+                (a, true)
+            };
+
+            if two_site {
+                let xa = key.x_bit(a);
+                let xb = key.x_bit(b);
+                if xa == xb {
+                    return None;
+                }
+                let z_anti = if xa { key.z_bit(a) } else { key.z_bit(b) };
+                let branch = coeff.clone() * sin.mul_sign(if z_anti { 1 } else { -1 });
+                *coeff *= cos.clone();
+                Some((key.toggled_bits2(a, false, true, b, false, true), branch))
+            } else {
+                if !key.x_bit(site) {
+                    return None;
+                }
+                let branch = coeff.clone() * sin.mul_sign(if key.z_bit(site) { 1 } else { -1 });
+                *coeff *= cos.clone();
+                Some((key.toggled_bits(site, false, true), branch))
+            }
+        });
+    }
+}
+
+/// An in-place, **fused multi-branching** walk — [`RotateInPlace`]'s
+/// zero-or-*many* sibling, and the path a correlated (multi-outcome) channel
+/// drives.
+///
+/// # Friction: a correlated channel emits up to three branches, not one
+///
+/// [`RotateInPlace`] returns `Option<(K, C)>`, which covers every rotation, the
+/// amplitude-damping `Z → I` branch and the single-qubit loss channel. The
+/// **correlated** loss channel's both-lost arm emits *three* terms from one input
+/// (`ppvm-pauli-sum/src/sum/noise.rs`), so it needs old's other driver,
+/// `map_insert_multiple`. Old's returns `Option<Vec<(K, C)>>`, i.e. a heap
+/// allocation per input term; here the callback is handed the store's own
+/// persistent scratch and pushes into it, so a multi-branch channel allocates
+/// nothing per term either.
+///
+/// # Architecture feature 3: the merge is **size-directed**
+///
+/// Old's `map_insert_multiple` writes its produced terms into the *aux map* and
+/// then merges with `consume()`, which picks the direction:
+///
+/// ```text
+/// if aux.len() > data.len() { aux.consume(data); swap() } else { data.consume(aux) }
+/// ```
+///
+/// (`ppvm-pauli-sum/src/sum/data.rs`) — i.e. it always moves the **smaller** map
+/// into the larger, halving the entry moves whenever a branching channel produces
+/// more terms than the input support. That is exactly this path (high fan-out),
+/// which is why the direction lives here and not in the single-branch
+/// [`RotateInPlace`], where the produced side is bounded by the support and
+/// merging into the primary is always the cheaper end.
+///
+/// The direction is **not** observable in the key set or in any value the engine
+/// promises: it only changes the order in which colliding coefficients are added,
+/// i.e. float rounding on a three-way collision — old has the same
+/// data-dependent order for the same reason.
+///
+/// Like its siblings this is a `ppvm-pauli-sum-2`-local trait `impl`'d on the
+/// foreign `Vec`/`HashMap` containers (legal: the trait is local).
+pub trait BranchInPlace<K, C> {
+    /// Walk every term `(k, c)` in place: `f(&k, &mut c, sink)` scales the
+    /// surviving coefficient and pushes zero or more branch terms into `sink`.
+    ///
+    /// All survivors are scaled before any branch is merged (the same two-pass
+    /// obligation [`RotateInPlace`] carries, and for the same reason: a branch may
+    /// land on a not-yet-walked key). Colliding branches are **aggregated**
+    /// through [`AddTerm`] — old's `add_assign` — so an exactly-zero branch is
+    /// inserted and an exact cancellation survives; no `reduce` and no truncation
+    /// runs.
+    fn branch_in_place<F>(&mut self, f: F)
+    where
+        F: FnMut(&K, &mut C, &mut Vec<(K, C)>) + Send + Sync;
 }
 
 /// An in-place **L4 operator product** `A ← A · B` that rebuilds the support
@@ -356,6 +509,17 @@ pub trait RotateInPlace<K, C> {
 pub trait AddTerm<K, C> {
     /// Add `coeff` onto the coefficient at `key`, inserting the term if absent.
     fn add_term(&mut self, key: K, coeff: C);
+}
+
+/// Replace the coefficient at one key, inserting it when absent.
+///
+/// This deliberately differs from [`AddTerm`]: old's public [`Extend`] surface
+/// delegated to the backing map's `extend`, whose duplicate-key behavior is
+/// replacement. Keeping the operation explicit prevents algebraic accumulation
+/// paths from accidentally inheriting that behavior.
+pub trait InsertTerm<K, C> {
+    /// Insert `(key, coeff)`, returning no information about a replaced value.
+    fn insert_term(&mut self, key: K, coeff: C);
 }
 
 pub trait MultiplyInPlace<K, C> {
@@ -473,10 +637,10 @@ impl<K, C> ScaleByKey<K, C> for Vec<(K, C)>
 where
     C: Coefficient,
 {
-    #[inline]
+    #[inline(always)]
     fn scale_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K, &mut C),
+        F: Fn(&K, &mut C) + Send + Sync,
     {
         // A pure in-place walk — the old crate's `scale`. Nothing is removed, so a
         // term scaled to exactly zero survives (old keeps it).
@@ -490,10 +654,10 @@ impl<K, C> ScaleByKey<K, C> for HashMap<K, C, IdentityBuildHasher>
 where
     C: Coefficient,
 {
-    #[inline]
+    #[inline(always)]
     fn scale_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K, &mut C),
+        F: Fn(&K, &mut C) + Send + Sync,
     {
         // Walk the existing buckets in place: read each key, let `f` mutate its
         // coefficient. No bucket is moved and the backing allocation is untouched
@@ -514,7 +678,7 @@ where
     #[inline]
     fn rotate_in_place<F>(&mut self, mut f: F)
     where
-        F: FnMut(&K, &mut C) -> Option<(K, C)>,
+        F: FnMut(&K, &mut C) -> Option<(K, C)> + Send + Sync,
     {
         // Pass 1: scale each diagonal coefficient in place, buffering the
         // anticommuting branch terms. The diagonal keeps its slot — no clone.
@@ -546,10 +710,13 @@ where
     #[inline]
     fn sign_flip_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K) -> i8,
+        F: Fn(&K) -> i8 + Send + Sync,
     {
         for (k, c) in self.iter_mut() {
-            *c = c.mul_sign(f(k));
+            let sign = f(k);
+            if sign != 1 {
+                *c = c.mul_sign(sign);
+            }
         }
     }
 }
@@ -561,13 +728,22 @@ where
     #[inline]
     fn sign_flip_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K) -> i8,
+        F: Fn(&K) -> i8 + Send + Sync,
     {
         // Walk the existing buckets in place: read each key, scale its coefficient
         // by the `±1` that key's bits demand. No bucket is moved and the backing
         // allocation is untouched — the old crate's in-place `scale`, restored.
+        //
+        // The `sign != 1` guard is old's shape, not an optimization on top of it:
+        // old's `x`/`y`/`z` are `scale(|k, v| if cond { *v *= -1.0 })`, so the
+        // commuting majority of terms is never written. See the trait docs — on a
+        // heap-owning coefficient ring an unconditional `mul_sign(1)` is a clone
+        // per term.
         for (k, c) in self.iter_mut() {
-            *c = c.mul_sign(f(k));
+            let sign = f(k);
+            if sign != 1 {
+                *c = c.mul_sign(sign);
+            }
         }
     }
 }
@@ -580,7 +756,7 @@ where
     #[inline]
     fn rekey_bijective<F>(&mut self, mut f: F)
     where
-        F: FnMut(K, C) -> (K, C),
+        F: FnMut(K, C) -> (K, C) + Send + Sync,
     {
         // Coordinate-list backend (small support): move every term out with
         // `mem::take` (no clones) and rebuild by re-keying each in turn. A
@@ -652,6 +828,20 @@ where
     }
 }
 
+impl<K, C> InsertTerm<K, C> for Vec<(K, C)>
+where
+    K: Eq,
+{
+    #[inline]
+    fn insert_term(&mut self, key: K, coeff: C) {
+        if let Some(slot) = self.iter_mut().find(|(existing, _)| *existing == key) {
+            slot.1 = coeff;
+        } else {
+            self.push((key, coeff));
+        }
+    }
+}
+
 impl<K, C> AddTerm<K, C> for HashMap<K, C, IdentityBuildHasher>
 where
     K: Indexable,
@@ -665,6 +855,16 @@ where
         self.entry(key)
             .and_modify(|v| *v += coeff.clone())
             .or_insert(coeff);
+    }
+}
+
+impl<K, C> InsertTerm<K, C> for HashMap<K, C, IdentityBuildHasher>
+where
+    K: Indexable,
+{
+    #[inline]
+    fn insert_term(&mut self, key: K, coeff: C) {
+        self.insert(key, coeff);
     }
 }
 
@@ -774,7 +974,7 @@ where
     K: Indexable,
     C: Coefficient,
 {
-    #[inline]
+    #[inline(always)]
     fn retain(&mut self, keep: impl Fn(&K, &C) -> bool) {
         Retain::retain(&mut self.primary, keep);
     }
@@ -874,6 +1074,17 @@ where
     }
 }
 
+impl<K, C> InsertTerm<K, C> for HashMapStore<K, C>
+where
+    K: Indexable,
+    C: Coefficient,
+{
+    #[inline]
+    fn insert_term(&mut self, key: K, coeff: C) {
+        InsertTerm::insert_term(&mut self.primary, key, coeff);
+    }
+}
+
 impl<K, C> ApplyProducer<K, C> for HashMapStore<K, C>
 where
     K: Indexable,
@@ -924,12 +1135,31 @@ where
     K: Indexable,
     C: Coefficient,
 {
-    #[inline]
+    #[inline(always)]
     fn scale_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K, &mut C),
+        F: Fn(&K, &mut C) + Send + Sync,
     {
         ScaleByKey::scale_by_key(&mut self.primary, f);
+    }
+
+    #[inline(always)]
+    fn scale_pauli_error(&mut self, qubit: usize, x: C, z: C, y: C)
+    where
+        K: PauliBits,
+    {
+        for (key, coeff) in &mut self.primary {
+            if key.is_lost(qubit) {
+                continue;
+            }
+            match key.pauli_code(qubit) {
+                0 => {}
+                1 => *coeff *= x.clone(),
+                2 => *coeff *= z.clone(),
+                3 => *coeff *= y.clone(),
+                _ => unreachable!(),
+            }
+        }
     }
 }
 
@@ -941,7 +1171,7 @@ where
     #[inline]
     fn sign_flip_by_key<F>(&mut self, f: F)
     where
-        F: Fn(&K) -> i8,
+        F: Fn(&K) -> i8 + Send + Sync,
     {
         SignFlipByKey::sign_flip_by_key(&mut self.primary, f);
     }
@@ -955,7 +1185,7 @@ where
     #[inline]
     fn rekey_bijective<F>(&mut self, mut f: F)
     where
-        F: FnMut(K, C) -> (K, C),
+        F: FnMut(K, C) -> (K, C) + Send + Sync,
     {
         // The old crate's `map_add`, with the aux living in the store: clear the
         // persistent aux, **move** every term through the re-key into it
@@ -1002,7 +1232,7 @@ where
     #[inline]
     fn rotate_in_place<F>(&mut self, mut f: F)
     where
-        F: FnMut(&K, &mut C) -> Option<(K, C)>,
+        F: FnMut(&K, &mut C) -> Option<(K, C)> + Send + Sync,
     {
         // Pass 1: scale each diagonal coefficient in place (the key is unchanged,
         // so its cached hash stays valid and the entry never moves), buffering the
@@ -1049,5 +1279,377 @@ where
         for (nk, nc) in self.scratch.drain(..) {
             AddTerm::add_term(&mut self.primary, nk, nc);
         }
+    }
+
+    #[inline(always)]
+    fn rotate_x(&mut self, qubit: usize, sin: C, cos: C)
+    where
+        K: PauliBits + Clone,
+    {
+        self.scratch.clear();
+        for (key, coeff) in &mut self.primary {
+            if key.is_lost(qubit) || !key.z_bit(qubit) {
+                continue;
+            }
+            let sign = if key.x_bit(qubit) { -1 } else { 1 };
+            let branch = coeff.clone() * sin.mul_sign(sign);
+            *coeff *= cos.clone();
+            let branch_key = key.toggled_bits(qubit, true, false);
+            let _ = branch_key.key_hash();
+            self.scratch.push((branch_key, branch));
+        }
+        for (key, coeff) in self.scratch.drain(..) {
+            AddTerm::add_term(&mut self.primary, key, coeff);
+        }
+    }
+
+    #[inline(always)]
+    fn rotate_zz(&mut self, a: usize, b: usize, sin: C, cos: C)
+    where
+        K: PauliBits + Clone,
+    {
+        self.scratch.clear();
+        for (key, coeff) in &mut self.primary {
+            let (site, two_site) = if key.is_lost(a) {
+                if key.is_lost(b) {
+                    continue;
+                }
+                (b, false)
+            } else if key.is_lost(b) {
+                (a, false)
+            } else {
+                (a, true)
+            };
+            let (branch_key, sign) = if two_site {
+                let xa = key.x_bit(a);
+                let xb = key.x_bit(b);
+                if xa == xb {
+                    continue;
+                }
+                (
+                    key.toggled_bits2(a, false, true, b, false, true),
+                    if if xa { key.z_bit(a) } else { key.z_bit(b) } {
+                        1
+                    } else {
+                        -1
+                    },
+                )
+            } else {
+                if !key.x_bit(site) {
+                    continue;
+                }
+                (
+                    key.toggled_bits(site, false, true),
+                    if key.z_bit(site) { 1 } else { -1 },
+                )
+            };
+            let branch = coeff.clone() * sin.mul_sign(sign);
+            *coeff *= cos.clone();
+            let _ = branch_key.key_hash();
+            self.scratch.push((branch_key, branch));
+        }
+        for (key, coeff) in self.scratch.drain(..) {
+            AddTerm::add_term(&mut self.primary, key, coeff);
+        }
+    }
+}
+
+impl<K, C> BranchInPlace<K, C> for Vec<(K, C)>
+where
+    K: Eq + Clone,
+    C: Coefficient,
+{
+    #[inline]
+    fn branch_in_place<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&K, &mut C, &mut Vec<(K, C)>) + Send + Sync,
+    {
+        // The coordinate-list backend carries no workspace, so the sink is local
+        // (see `ApplyProducer`); the hash-join backend keeps a persistent one.
+        let mut branches: Vec<(K, C)> = Vec::new();
+        for (k, c) in self.iter_mut() {
+            f(k, c, &mut branches);
+        }
+        for (nk, nc) in branches {
+            AddTerm::add_term(self, nk, nc);
+        }
+    }
+}
+
+impl<K, C> BranchInPlace<K, C> for HashMapStore<K, C>
+where
+    K: Indexable,
+    C: Coefficient,
+{
+    #[inline]
+    fn branch_in_place<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&K, &mut C, &mut Vec<(K, C)>) + Send + Sync,
+    {
+        // Disjoint field borrows: the walk reads/writes `primary` while the
+        // callback pushes into `scratch`.
+        let Self {
+            primary,
+            aux,
+            scratch,
+            ..
+        } = self;
+
+        // Pass 1: scale the survivors in place, buffering every branch term in the
+        // persistent scratch (architecture feature 2 — no per-gate allocation, and
+        // no hashing on production).
+        scratch.clear();
+        for (k, c) in primary.iter_mut() {
+            f(k, c, scratch);
+        }
+        // Warm each branch key's digest before pass 2 probes on it, exactly as
+        // `RotateInPlace` does: the fold's mul chain is on the bucket-index
+        // critical path otherwise. Semantic no-op.
+        for (k, _) in scratch.iter() {
+            let _ = k.key_hash();
+        }
+
+        // Pass 2: merge, moving the **smaller** side (architecture feature 3 —
+        // old's size-directed `consume`). At high fan-out the produced side is the
+        // bigger one, and then draining the primary into it is strictly cheaper.
+        if scratch.len() > primary.len() {
+            aux.clear();
+            aux.reserve(scratch.len() + primary.len());
+            for (nk, nc) in scratch.drain(..) {
+                AddTerm::add_term(aux, nk, nc);
+            }
+            for (k, c) in primary.drain() {
+                AddTerm::add_term(aux, k, c);
+            }
+            std::mem::swap(primary, aux);
+            // Restore the "aux is empty between operations" invariant.
+            aux.clear();
+        } else {
+            for (nk, nc) in scratch.drain(..) {
+                AddTerm::add_term(primary, nk, nc);
+            }
+        }
+    }
+}
+
+// ===========================================================================
+// Architecture feature 12: a concurrent backend is a swap, not an engine rewrite.
+// ===========================================================================
+
+/// Compile-time guard that the in-place walk traits' closure bounds — and
+/// [`TermProducer`]'s supertrait — are wide enough for a **partitioned /
+/// multi-threaded** storage backend.
+///
+/// The old crate bounded every driver closure `F: Fn(..) + Sync + Send`
+/// (`ppvm-traits/src/map/hashmap.rs`: `map_add_assign`, `map_insert`,
+/// `map_insert_vec`, `map_insert_multiple`, `scale`) precisely so that its
+/// `DashMap`-backed `Config` — benchmarked side by side with the `HashMap` and
+/// `IndexMap` ones on the same circuit — was a *backend swap*. Narrowing the
+/// bounds here would be silent: no bench and no behavioural test can see it,
+/// and the cost only surfaces later as "widen six trait signatures and every
+/// impl".
+///
+/// So this module ships a toy backend that **actually** splits each walk across
+/// scoped threads. A trait method's `impl` may not be *stricter* than the trait
+/// declares, so if any `+ Send + Sync` is dropped from a bound in this file,
+/// these impls stop compiling. That is the regression detector.
+#[cfg(test)]
+mod parallel_backend_bounds {
+    use super::*;
+
+    /// A coordinate-list store whose walks run on worker threads.
+    struct ThreadedStore<K, C>(Vec<(K, C)>);
+
+    impl<K, C> ScaleByKey<K, C> for ThreadedStore<K, C>
+    where
+        K: Send + Sync,
+        C: Coefficient,
+    {
+        fn scale_by_key<F>(&mut self, f: F)
+        where
+            F: Fn(&K, &mut C) + Send + Sync,
+        {
+            // Two halves, one shared `&F` — this is what `Sync` buys.
+            let mid = self.0.len() / 2;
+            let (lo, hi) = self.0.split_at_mut(mid);
+            let f = &f;
+            std::thread::scope(|s| {
+                s.spawn(move || lo.iter_mut().for_each(|(k, c)| f(k, c)));
+                s.spawn(move || hi.iter_mut().for_each(|(k, c)| f(k, c)));
+            });
+        }
+    }
+
+    impl<K, C> SignFlipByKey<K, C> for ThreadedStore<K, C>
+    where
+        K: Send + Sync,
+        C: Coefficient,
+    {
+        fn sign_flip_by_key<F>(&mut self, f: F)
+        where
+            F: Fn(&K) -> i8 + Send + Sync,
+        {
+            let mid = self.0.len() / 2;
+            let (lo, hi) = self.0.split_at_mut(mid);
+            let f = &f;
+            let half = |part: &mut [(K, C)]| {
+                for (k, c) in part.iter_mut() {
+                    let sign = f(k);
+                    if sign != 1 {
+                        *c = c.mul_sign(sign);
+                    }
+                }
+            };
+            std::thread::scope(|s| {
+                s.spawn(move || half(lo));
+                s.spawn(move || half(hi));
+            });
+        }
+    }
+
+    impl<K, C> RekeyBijective<K, C> for ThreadedStore<K, C>
+    where
+        K: Send,
+        C: Coefficient,
+    {
+        fn rekey_bijective<F>(&mut self, f: F)
+        where
+            F: FnMut(K, C) -> (K, C) + Send + Sync,
+        {
+            // An `FnMut` cannot be shared, but it can be *moved* onto a worker —
+            // which is what a partitioned backend does per shard, and what `Send`
+            // buys.
+            let taken = std::mem::take(&mut self.0);
+            self.0 = std::thread::scope(|s| {
+                s.spawn(move || {
+                    let mut f = f;
+                    taken.into_iter().map(|(k, c)| f(k, c)).collect::<Vec<_>>()
+                })
+                .join()
+                .unwrap()
+            });
+        }
+    }
+
+    impl<K, C> RotateInPlace<K, C> for ThreadedStore<K, C>
+    where
+        K: Eq + Clone + Send,
+        C: Coefficient,
+    {
+        fn rotate_in_place<F>(&mut self, f: F)
+        where
+            F: FnMut(&K, &mut C) -> Option<(K, C)> + Send + Sync,
+        {
+            let mut terms = std::mem::take(&mut self.0);
+            let branches = std::thread::scope(|s| {
+                s.spawn(|| {
+                    let mut f = f;
+                    let mut branches = Vec::new();
+                    for (k, c) in terms.iter_mut() {
+                        if let Some(t) = f(k, c) {
+                            branches.push(t);
+                        }
+                    }
+                    branches
+                })
+                .join()
+                .unwrap()
+            });
+            self.0 = terms;
+            for (nk, nc) in branches {
+                AddTerm::add_term(&mut self.0, nk, nc);
+            }
+        }
+    }
+
+    impl<K, C> BranchInPlace<K, C> for ThreadedStore<K, C>
+    where
+        K: Eq + Clone + Send,
+        C: Coefficient,
+    {
+        fn branch_in_place<F>(&mut self, f: F)
+        where
+            F: FnMut(&K, &mut C, &mut Vec<(K, C)>) + Send + Sync,
+        {
+            let mut terms = std::mem::take(&mut self.0);
+            let branches = std::thread::scope(|s| {
+                s.spawn(|| {
+                    let mut f = f;
+                    let mut branches = Vec::new();
+                    for (k, c) in terms.iter_mut() {
+                        f(k, c, &mut branches);
+                    }
+                    branches
+                })
+                .join()
+                .unwrap()
+            });
+            self.0 = terms;
+            for (nk, nc) in branches {
+                AddTerm::add_term(&mut self.0, nk, nc);
+            }
+        }
+    }
+
+    /// A generic producer walk on a worker thread: compiles only while
+    /// [`TermProducer`] carries the `Send + Sync` supertrait, since nothing else
+    /// here declares it.
+    fn produce_on_a_worker<K, C, TP>(terms: &[(K, C)], producer: TP) -> TermBatch<K, C>
+    where
+        K: Send + Sync,
+        C: Coefficient,
+        TP: TermProducer<K, C>,
+    {
+        std::thread::scope(|s| {
+            s.spawn(move || {
+                let mut batch = TermBatch::new();
+                for (k, c) in terms {
+                    producer.produce(k, c, &mut batch);
+                }
+                batch
+            })
+            .join()
+            .unwrap()
+        })
+    }
+
+    #[test]
+    fn threaded_backend_runs_every_in_place_walk() {
+        let mut store = ThreadedStore(vec![(1u32, 1.0f64), (2, 2.0), (3, 3.0), (4, 4.0)]);
+
+        ScaleByKey::scale_by_key(&mut store, |k: &u32, c: &mut f64| *c *= *k as f64);
+        assert_eq!(store.0, vec![(1, 1.0), (2, 4.0), (3, 9.0), (4, 16.0)]);
+
+        SignFlipByKey::sign_flip_by_key(
+            &mut store,
+            |k: &u32| if k.is_multiple_of(2) { -1 } else { 1 },
+        );
+        assert_eq!(store.0, vec![(1, 1.0), (2, -4.0), (3, 9.0), (4, -16.0)]);
+
+        RekeyBijective::rekey_bijective(&mut store, |k: u32, c: f64| (k + 10, c));
+        assert_eq!(store.0[0], (11, 1.0));
+
+        RotateInPlace::rotate_in_place(&mut store, |k: &u32, c: &mut f64| {
+            let branch = *c * 0.5;
+            *c *= 2.0;
+            Some((k + 100, branch))
+        });
+        assert_eq!(store.0.len(), 8);
+
+        BranchInPlace::branch_in_place(&mut store, |k: &u32, c: &mut f64, sink| {
+            *c += 1.0;
+            sink.push((k + 1000, 0.0));
+        });
+        assert_eq!(store.0.len(), 16);
+    }
+
+    #[test]
+    fn producer_walk_runs_on_a_worker_thread() {
+        let terms = vec![(1u32, 1.0f64), (2, 2.0)];
+        let batch = produce_on_a_worker(
+            &terms,
+            crate::RekeyProducer::new(|k: &u32, c: &f64| (k + 1, *c)),
+        );
+        assert_eq!(batch.len(), 2);
     }
 }

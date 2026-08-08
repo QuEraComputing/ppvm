@@ -37,4 +37,4 @@ mod storage;
 
 pub use column::PauliKeyColumn;
 pub use data::PauliWord;
-pub use storage::{HashFinalize, PauliStorage};
+pub use storage::{DefaultStorage, HashFinalize, PauliStorage};

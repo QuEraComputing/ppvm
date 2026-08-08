@@ -9,9 +9,9 @@
 
 use std::path::PathBuf;
 
-use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{execute, parse_extended};
-use ppvm_tableau::prelude::*;
 
 type Tab = GeneralizedTableau<ByteFxHashF64<8>, usize>;
 

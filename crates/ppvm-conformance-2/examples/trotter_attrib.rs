@@ -4,7 +4,7 @@
 //! Per-op-class time-attribution harness for the deep Trotter workload, new vs
 //! old, SAME build (both engines in one binary — the sound instrument; cross-build
 //! absolutes swing from code-alignment/Mytkowicz bias). Wraps each op class
-//! (pauli_error / rx / rz / cnot / the *explicit* truncate) with `Instant`
+//! (pauli_error / rx / native rzz / the *explicit* truncate) with `Instant`
 //! accumulators so the end-to-end new-vs-old gap can be split by operation. This is
 //! the tool that decomposed the `ps2.trotter.perf` regression; kept for the
 //! continuation of that investigation (see docs/log.md → "▶ Continue here").
@@ -23,7 +23,7 @@ use ppvm_pauli_sum::strategy::{
 };
 use ppvm_pauli_sum::sum::PauliSum as OldPauliSum;
 use ppvm_traits::traits::{
-    Clifford as OldClifford, PauliError as OldPauliError, RotationOne as OldRotationOne,
+    PauliError as OldPauliError, RotationOne as OldRotationOne, RotationTwo as OldRotationTwo,
 };
 
 use ppvm_pauli_sum_2::{
@@ -31,7 +31,7 @@ use ppvm_pauli_sum_2::{
     MaxPauliWeight as NewMaxWeight, PauliWord as NewPauliWord, Sum,
 };
 use ppvm_traits_2::{
-    Clifford as NewClifford, PauliError as NewPauliError, RotationOne as NewRotationOne,
+    PauliError as NewPauliError, RotationOne as NewRotationOne, RotationTwo as NewRotationTwo,
 };
 
 const THRESHOLD: f64 = 1e-6;
@@ -124,9 +124,7 @@ fn trotter_old(
             timed!(t.truncate, state.truncate());
             timed!(t.pauli_error, state.pauli_error(i, noise));
             timed!(t.truncate, state.truncate());
-            timed!(t.cnot, state.cnot(i, i + 1));
-            timed!(t.rz, state.rz(i + 1, tzz));
-            timed!(t.cnot, state.cnot(i, i + 1));
+            timed!(t.rz, state.rzz(i, i + 1, tzz));
             timed!(t.truncate, state.truncate());
         }
     }
@@ -152,9 +150,7 @@ fn trotter_new(
             timed!(t.truncate, state.truncate());
             timed!(t.pauli_error, state.pauli_error(i, noise));
             timed!(t.truncate, state.truncate());
-            timed!(t.cnot, state.cnot(i, i + 1));
-            timed!(t.rz, state.rz(i + 1, tzz));
-            timed!(t.cnot, state.cnot(i, i + 1));
+            timed!(t.rz, state.rzz(i, i + 1, tzz));
             timed!(t.truncate, state.truncate());
         }
     }

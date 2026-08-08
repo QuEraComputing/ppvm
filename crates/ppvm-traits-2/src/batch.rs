@@ -28,6 +28,7 @@
 //! at `Eq + Clone`.
 
 use crate::hash::Indexable;
+use crate::word::PauliBits;
 
 /// A key that can be laid out as a structure-of-arrays column. Separate from
 /// [`Indexable`] so the minimal hashing contract is unchanged: a batched key is
@@ -50,6 +51,12 @@ pub trait KeyColumn: Default + Clone {
     /// Number of keys currently in the column.
     fn len(&self) -> usize;
 
+    /// Number of keys the existing plane allocations can hold without growing.
+    ///
+    /// Live stores use this when cloning persistent workspaces: cloning only the
+    /// populated rows would silently discard a caller's capacity hint.
+    fn capacity(&self) -> usize;
+
     /// Whether the column is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -60,6 +67,23 @@ pub trait KeyColumn: Default + Clone {
 
     /// Append one produced key; the column keeps each plane contiguous.
     fn push(&mut self, key: Self::Key);
+
+    /// Reserve room for `additional` more keys, keeping the ones already stored.
+    ///
+    /// The column spelling of `Vec::reserve`, and the counterpart of
+    /// [`with_capacity`](Self::with_capacity) for a column that is a *live
+    /// support* rather than a throwaway batch: `ColumnStore`'s branch-merge pass
+    /// knows its worst-case append count up front (the scratch length), and
+    /// pre-sizing from it collapses a doubling chain of plane reallocations —
+    /// plus the parallel bucket-table `reindex`es — into one.
+    ///
+    /// **Default: a no-op.** Pre-sizing is a pure optimization, so a column that
+    /// cannot express it (a device-backed or fixed-extent one) stays legal and
+    /// simply reallocates on `push`.
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        let _ = additional;
+    }
 
     /// Bulk structural hash of the whole column into a parallel hash column.
     /// `out[i]` must equal the `i`-th key's [`Indexable::key_hash`].
@@ -76,6 +100,113 @@ pub trait KeyColumn: Default + Clone {
     /// Scalar materialization of one element — a naive backend's fallback,
     /// never the hot path.
     fn get(&self, i: usize) -> Self::Key;
+
+    /// Read one row's X bit without requiring scalar materialization when the
+    /// concrete column can address its packed plane directly.
+    #[inline]
+    fn x_bit(&self, row: usize, qubit: usize) -> bool
+    where
+        Self::Key: crate::PauliBits,
+    {
+        self.get(row).x_bit(qubit)
+    }
+
+    /// Read one row's Z bit directly when supported.
+    #[inline]
+    fn z_bit(&self, row: usize, qubit: usize) -> bool
+    where
+        Self::Key: crate::PauliBits,
+    {
+        self.get(row).z_bit(qubit)
+    }
+
+    /// Read one row's loss bit directly when supported.
+    #[inline]
+    fn is_lost(&self, row: usize, qubit: usize) -> bool
+    where
+        Self::Key: crate::PauliBits,
+    {
+        self.get(row).is_lost(qubit)
+    }
+
+    /// Materialize one row while toggling selected bits. Packed columns can
+    /// build the branch key directly from their planes.
+    #[inline]
+    fn toggled_bits(&self, row: usize, qubit: usize, toggle_x: bool, toggle_z: bool) -> Self::Key
+    where
+        Self::Key: crate::PauliBits,
+    {
+        self.get(row).toggled_bits(qubit, toggle_x, toggle_z)
+    }
+
+    /// Materialize one row while toggling bits at two sites.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn toggled_bits2(
+        &self,
+        row: usize,
+        i: usize,
+        toggle_x_i: bool,
+        toggle_z_i: bool,
+        j: usize,
+        toggle_x_j: bool,
+        toggle_z_j: bool,
+    ) -> Self::Key
+    where
+        Self::Key: crate::PauliBits,
+    {
+        self.get(row)
+            .toggled_bits2(i, toggle_x_i, toggle_z_i, j, toggle_x_j, toggle_z_j)
+    }
+
+    /// Reset to an empty column, **keeping the backing plane allocations**.
+    ///
+    /// # Friction: a column that is a *store* needs in-place mutation, and the
+    /// batch-only surface has none
+    ///
+    /// [`gather`](Self::gather) allocates a fresh column, and the design's
+    /// batch contract needs nothing more: a `TermBatch`'s column is built by
+    /// `push` and thrown away. The `ColumnStore` backend
+    /// (implementation-plan Phase 6) makes the *same* column type the live
+    /// support, and every one of its buffer-reusing fast paths — the old
+    /// crate's `map_add` clear→write→swap (architecture feature 1), the retain
+    /// compaction, the in-place Clifford re-key — is defined by mutating a
+    /// column it already owns. Expressed through `gather` alone each of those
+    /// allocates a whole new key column **per gate**, which is exactly the
+    /// per-gate allocation churn the double-buffer exists to remove.
+    ///
+    /// So this trio ([`clear`](Self::clear), [`set`](Self::set),
+    /// [`truncate`](Self::truncate)) is the minimal in-place surface: they are
+    /// the column spellings of `Vec::clear`/`IndexMut`/`Vec::truncate`, they
+    /// stay plane-oriented (a SIMD/GPU column implements them as plane writes),
+    /// and they expose no `&mut Key` — so design rule 4 of §"Backends are
+    /// containers" ("no signature exposes `&mut (W, C)` or `&mut [C]`") is
+    /// untouched and the AoS layout still cannot leak.
+    fn clear(&mut self);
+
+    /// Overwrite element `i` in place, keeping every other element and the
+    /// backing allocation. Panics (or debug-panics) if `i >= len()`.
+    ///
+    /// The write side of the in-place re-key: a Clifford conjugation is a
+    /// bijection, so a columnar backend rewrites the key planes at each slot and
+    /// leaves the parallel coefficient column completely untouched.
+    fn set(&mut self, i: usize, key: Self::Key);
+
+    /// Shorten to `len` elements, keeping the backing allocation. A no-op if
+    /// `len >= self.len()`. The tail step of a stable retain compaction
+    /// (`set` the survivors down, then cut).
+    fn truncate(&mut self, len: usize);
+
+    /// Remove row `i` by moving the final row into its slot.
+    fn swap_remove(&mut self, i: usize) -> Self::Key {
+        let len = self.len();
+        let removed = self.get(i);
+        if i + 1 != len {
+            self.set(i, self.get(len - 1));
+        }
+        self.truncate(len - 1);
+        removed
+    }
 }
 
 /// Keys plus their precomputed structural hashes, in parallel columns. The
@@ -118,6 +249,11 @@ impl<W> KeyBatch<W> {
     /// Number of keys in the batch.
     pub fn len(&self) -> usize {
         self.keys.len()
+    }
+
+    /// Number of keys the existing columns can hold without growing.
+    pub fn capacity(&self) -> usize {
+        self.keys.capacity().min(self.hashes.capacity())
     }
 
     /// Whether the batch is empty.
@@ -203,6 +339,11 @@ impl<W, C> TermBatch<W, C> {
         self.coeffs.len()
     }
 
+    /// Number of terms all three columns can hold without growing.
+    pub fn capacity(&self) -> usize {
+        self.keys.capacity().min(self.coeffs.capacity())
+    }
+
     /// Whether the batch is empty.
     pub fn is_empty(&self) -> bool {
         self.coeffs.is_empty()
@@ -257,7 +398,24 @@ impl<W, C> TermSink<W, C> for TermBatch<W, C> {
 /// producers (Clifford pushforward, rotation branch, multiply outer product)
 /// live in `ppvm-pauli-sum-2`; their term shapes are validated in
 /// `lean/PPVM/Instantiations/Rotation.lean` and `lean/PPVM/Algebra/Twisted.lean`.
-pub trait TermProducer<K, C> {
+///
+/// # `Send + Sync` is part of the contract (architecture feature 12)
+///
+/// A producer is *read-only* over its own state (`produce` takes `&self`), so a
+/// storage backend is free to split the produce walk across threads — which is
+/// the whole point of keeping the backend a **configuration choice**: the old
+/// crate bounded every driver closure `F: Fn(..) + Sync + Send`
+/// (`ppvm-traits/src/map/hashmap.rs`, `map_add_assign`/`map_insert*`/`scale`) so
+/// that a concurrent map (it shipped a `DashMap`-backed config benchmarked beside
+/// the `HashMap`/`IndexMap` ones) was a **backend swap, not an engine rewrite**.
+/// Requiring it here — and on the `ppvm-pauli-sum-2` in-place walk closures
+/// (`ScaleByKey`/`SignFlipByKey`/`RekeyBijective`/`RotateInPlace`/
+/// `BranchInPlace`) — keeps that door open: widening the bound later would mean
+/// touching every trait signature *and* every impl, i.e. exactly the coupling the
+/// feature exists to prevent. Every real producer is a closure over gate indices
+/// and ring elements, and `Coefficient` is already `Send + Sync`, so the bound
+/// costs nothing today.
+pub trait TermProducer<K, C>: Send + Sync {
     /// Push the produced terms for one existing `(key, coeff)` into the sink.
     fn produce<S: TermSink<K, C>>(&self, key: &K, coeff: &C, sink: &mut S);
 }

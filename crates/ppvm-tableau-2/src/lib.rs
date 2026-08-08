@@ -73,11 +73,9 @@
 //!
 //! Items deliberately **not** ported in this component, with the reason:
 //!
-//! 1. **`trace(&PauliPattern)`.** `expectation` is ported; the pattern-sum
-//!    `trace` is not, because `PauliPattern` lives in the old
-//!    `ppvm-pauli-word` and has no `-2` counterpart yet. It lands with the
-//!    pattern port; the shipped Python/vihaco surface keeps using the old crate
-//!    until then.
+//! 1. **`trace(&PauliPattern)` — resolved in Phase 7.** The `-2` pattern now
+//!    exists in `ppvm-pauli-sum-2`; [`GeneralizedTableau::trace`] enumerates its
+//!    accepted words and delegates each leaf to the audited expectation kernel.
 //! 2. **The `rayon` feature.** The old crate gated an opt-in parallel branch
 //!    path on `RAYON_COEFF_THRESHOLD = 16384` coefficients with a
 //!    `rayon::current_thread_index().is_none()` nesting guard. The default build
@@ -141,17 +139,23 @@ pub mod expectation;
 pub mod gates;
 /// Z-basis measurement, `measure_all`/`measure_many`, and the reusable scratch.
 pub mod measure;
+/// Classical probability mixtures over complete generalized-tableau states.
+pub mod mixture;
 /// Stochastic channels: Pauli errors, depolarizing, and loss.
 pub mod noise;
 
+pub use bnum::types::{U256, U512, U1024, U2048};
 pub use data::{Amplitudes, Bitstring, GeneralizedTableau, RowStorage, Tableau};
 pub use measure::MeasureScratch;
+pub use mixture::{GeneralizedTableauMixture, GeneralizedTableauSum, MixtureSampler};
 pub use noise::TableauLike;
 
 /// Convenience re-exports for downstream code.
 pub mod prelude {
     pub use crate::data::{Amplitudes, Bitstring, GeneralizedTableau, RowStorage, Tableau};
     pub use crate::measure::MeasureScratch;
+    pub use crate::mixture::{GeneralizedTableauMixture, GeneralizedTableauSum, MixtureSampler};
     pub use crate::noise::TableauLike;
+    pub use bnum::types::{U256, U512, U1024, U2048};
     pub use ppvm_traits_2::prelude::*;
 }

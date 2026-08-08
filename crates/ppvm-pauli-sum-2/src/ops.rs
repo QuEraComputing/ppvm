@@ -28,7 +28,7 @@ use ppvm_pauli_word_2::{PauliStorage, PauliWord};
 use ppvm_traits_2::{Accumulate, Indexable, Word};
 
 use crate::policy::Policy;
-use crate::store::AddTerm;
+use crate::store::{AddTerm, InsertTerm};
 use crate::sum::Sum;
 
 /// Sealed marker for the types the *bare* `sum += key` form accepts.
@@ -283,6 +283,45 @@ macro_rules! impl_scalar_mul {
 
 impl_scalar_mul!(f64);
 impl_scalar_mul!(num::Complex<f64>);
+
+// --- Collection compatibility ------------------------------------------------
+
+impl<S, P> IntoIterator for Sum<S, P>
+where
+    S: Accumulate,
+    P: Policy<S::Key, S::Coeff>,
+    S::Key: Word + Indexable,
+{
+    type Item = (S::Key, S::Coeff);
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    /// Consume the sum and yield its terms in the backend's unspecified order.
+    ///
+    /// The generic storage contract exposes a synthesized owned iterator rather
+    /// than its concrete collection's drain type, so the terms are staged in a
+    /// `Vec`. Concrete backends remain hidden from callers.
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter().collect::<Vec<_>>().into_iter()
+    }
+}
+
+impl<S, P> Extend<(S::Key, S::Coeff)> for Sum<S, P>
+where
+    S: Accumulate + InsertTerm<S::Key, S::Coeff>,
+    P: Policy<S::Key, S::Coeff>,
+    S::Key: Word + Indexable,
+{
+    /// Extend using old's backing-map semantics: a duplicate key is replaced,
+    /// not accumulated. Algebraic addition continues to use [`Sum::add_sum`].
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = (S::Key, S::Coeff)>,
+    {
+        for (key, coeff) in iter {
+            self.storage_mut().insert_term(key, coeff);
+        }
+    }
+}
 
 // --- Equality ----------------------------------------------------------------
 

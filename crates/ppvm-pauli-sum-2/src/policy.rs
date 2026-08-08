@@ -12,10 +12,10 @@
 //! the graded algebra (Design: §"The map is a graded algebra over `C[K]`" and
 //! §"`truncate` bounds on `Retain`").
 //!
-//! Ported from `ppvm-pauli-sum/src/strategy.rs`. Loss-weight truncation
-//! (`MaxLossWeight`) is deferred to the lossy component.
+//! Ported from `ppvm-pauli-sum/src/strategy.rs`, including the loss-weight
+//! policy [`MaxLossWeight`].
 
-use ppvm_traits_2::{Coefficient, Indexable, Retain, Word};
+use ppvm_traits_2::{Coefficient, Indexable, PauliBits, Retain, Word};
 
 /// A truncation policy: predict an initial map capacity, and drop terms outside
 /// the policy's support.
@@ -134,7 +134,7 @@ where
         n_sites * 10
     }
 
-    #[inline]
+    #[inline(always)]
     fn truncate<M>(&self, map: &mut M)
     where
         M: Retain<W, C>,
@@ -192,7 +192,7 @@ where
         n_sites * 10
     }
 
-    #[inline]
+    #[inline(always)]
     fn truncate<M>(&self, map: &mut M)
     where
         M: Retain<W, C>,
@@ -229,12 +229,69 @@ where
         self.0.capacity(n_sites).min(self.1.capacity(n_sites))
     }
 
-    #[inline]
+    #[inline(always)]
     fn truncate<M>(&self, map: &mut M)
     where
         M: Retain<W, C>,
     {
         self.0.truncate(map);
         self.1.truncate(map);
+    }
+}
+
+/// Drop terms whose **loss weight** (number of lost sites) exceeds the bound.
+///
+/// Only meaningful for a lossy key: [`PauliBits::loss_weight`] is a const `0` for
+/// the ordinary `PauliWord`, so this policy keeps everything there. `usize::MAX`
+/// disables the pass entirely (the same sentinel [`MaxPauliWeight`] uses).
+///
+/// The [`Default`] is **`10`**, not `usize::MAX` — old's
+/// `impl Default for MaxLossWeight { fn default() -> Self { Self(10) } }`
+/// (`ppvm-pauli-sum/src/strategy.rs`), and it is user-facing, so it is reproduced
+/// exactly (behavioural contract 7).
+///
+/// Design: §"`Policy`". Ported from `ppvm-pauli-sum::strategy::MaxLossWeight`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaxLossWeight(pub usize);
+
+impl MaxLossWeight {
+    /// Maximum loss weight retained.
+    #[inline]
+    pub fn max_loss_weight(&self) -> usize {
+        self.0
+    }
+}
+
+impl Default for MaxLossWeight {
+    /// `10` — old's default.
+    #[inline]
+    fn default() -> Self {
+        Self(10)
+    }
+}
+
+impl<W, C> Policy<W, C> for MaxLossWeight
+where
+    W: Word + Indexable + PauliBits,
+    C: Coefficient,
+{
+    /// Old's conservative `n_sites * 10` (clearing a map scales with capacity).
+    #[inline]
+    fn capacity(&self, n_sites: usize) -> usize {
+        n_sites * 10
+    }
+
+    #[inline]
+    fn truncate<M>(&self, map: &mut M)
+    where
+        M: Retain<W, C>,
+    {
+        // The `usize::MAX` disable sentinel, as in `MaxPauliWeight`: skip the
+        // whole retain pass rather than walking every bucket for a predicate that
+        // is always true (architecture feature 7).
+        if self.0 == usize::MAX {
+            return;
+        }
+        map.retain(|w, _| w.loss_weight() <= self.0);
     }
 }

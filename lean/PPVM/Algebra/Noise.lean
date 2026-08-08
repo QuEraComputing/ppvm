@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: The PPVM Authors
 -/
 import Mathlib.Algebra.BigOperators.Ring.Finset
+import Mathlib.Algebra.BigOperators.Fin
 import Mathlib.Data.Real.Basic
 import PPVM.Algebra.GradedMap
 import PPVM.Pauli.Symplectic
@@ -153,6 +154,96 @@ theorem eigenvalue_abs_le_one_needs_substochastic :
   rw [Fintype.sum_bool] at this
   norm_num at this
 
+/-! ### `two_qubit_pauli_error`'s fifteen hand-written index lists
+
+`pauli_channel_eigenvalue_omega` gives the *formula* `λ_P = 1 − 2·Σ_{Q anti P} p_Q`
+but says nothing about which `Q` a given implementation actually sums. The old
+crate's `two_qubit_pauli_error` (`crates/ppvm-pauli-sum/src/sum/noise.rs:50-104`)
+hard-codes, for each of the 16 observed pairs `P`, a **hand-written list of eight
+indices** into `p : [Coeff; 15]`, with no derivation in the source; the shipped
+tests only probe one-hot probability vectors, on which a transposed index is
+invisible. The theorem below is the missing check: each list is *exactly* the
+anticommuting set of its `P`, in the crate's documented probability order
+`{IX, IY, IZ, XI, XX, XY, XZ, YI, YX, YY, YZ, ZI, ZX, ZY, ZZ}`
+(`crates/ppvm-traits/src/traits/noise.rs:73`).
+
+(The `(I,I)` arm is the remaining case and needs no list: nothing anticommutes
+with the identity, so `λ_{II} = 1` and the arm is the no-op the crate ships. The
+`_ =>` arm — no noise when either site is *lost* — is a deliberate modeling
+choice, outside this algebra.) -/
+
+/-- A single-qubit Pauli as `(x, z)` bits, indexed by its position in the
+alphabet order `0 = I, 1 = X, 2 = Y, 3 = Z` the probability vector uses. -/
+def code : Fin 4 → Bool × Bool
+  | 0 => (false, false)
+  | 1 => (true, false)
+  | 2 => (true, true)
+  | 3 => (false, true)
+
+/-- The 15 non-identity two-qubit Paulis in the crate's documented probability
+order: index `i` is the pair numbered `i + 1` in base 4 over `{I, X, Y, Z}` —
+`0 ↦ IX`, `3 ↦ XI`, `14 ↦ ZZ`. This is also the order of the `match` arms in
+`noise.rs`. -/
+def qPair : Fin 15 → (Bool × Bool) × (Bool × Bool)
+  | 0 => (code 0, code 1)   -- IX
+  | 1 => (code 0, code 2)   -- IY
+  | 2 => (code 0, code 3)   -- IZ
+  | 3 => (code 1, code 0)   -- XI
+  | 4 => (code 1, code 1)   -- XX
+  | 5 => (code 1, code 2)   -- XY
+  | 6 => (code 1, code 3)   -- XZ
+  | 7 => (code 2, code 0)   -- YI
+  | 8 => (code 2, code 1)   -- YX
+  | 9 => (code 2, code 2)   -- YY
+  | 10 => (code 2, code 3)  -- YZ
+  | 11 => (code 3, code 0)  -- ZI
+  | 12 => (code 3, code 1)  -- ZX
+  | 13 => (code 3, code 2)  -- ZY
+  | 14 => (code 3, code 3)  -- ZZ
+
+/-- Single-site anticommutation `ω` on `(x,z)` bits, as a `Bool`. -/
+def antiSite (p q : Bool × Bool) : Bool := xor (p.1 && q.2) (p.2 && q.1)
+
+/-- Two-qubit anticommutation: the site-wise `ω`s add in `𝔽₂`. -/
+def antiPair (P Q : (Bool × Bool) × (Bool × Bool)) : Bool :=
+  xor (antiSite P.1 Q.1) (antiSite P.2 Q.2)
+
+/-- The fifteen index lists of `two_qubit_pauli_error`, transcribed **verbatim and
+in source order** from `noise.rs:53-100` (arm `qPair i` gets list `oldIndices i`). -/
+def oldIndices : Fin 15 → List (Fin 15)
+  | 0 => [1, 10, 13, 14, 2, 5, 6, 9]      -- (I, X)
+  | 1 => [0, 10, 12, 14, 2, 4, 6, 8]      -- (I, Y)
+  | 2 => [0, 1, 12, 13, 4, 5, 8, 9]       -- (I, Z)
+  | 3 => [10, 11, 12, 13, 14, 7, 8, 9]    -- (X, I)
+  | 4 => [1, 11, 12, 2, 5, 6, 7, 8]       -- (X, X)
+  | 5 => [0, 11, 13, 2, 4, 6, 7, 9]       -- (X, Y)
+  | 6 => [0, 1, 10, 11, 14, 4, 5, 7]      -- (X, Z)
+  | 7 => [11, 12, 13, 14, 3, 4, 5, 6]     -- (Y, I)
+  | 8 => [1, 10, 11, 12, 2, 3, 4, 9]      -- (Y, X)
+  | 9 => [0, 10, 11, 13, 2, 3, 5, 8]      -- (Y, Y)
+  | 10 => [0, 1, 11, 14, 3, 6, 8, 9]      -- (Y, Z)
+  | 11 => [10, 3, 4, 5, 6, 7, 8, 9]       -- (Z, I)
+  | 12 => [1, 13, 14, 2, 3, 4, 7, 8]      -- (Z, X)
+  | 13 => [0, 12, 14, 2, 3, 5, 7, 9]      -- (Z, Y)
+  | 14 => [0, 1, 10, 12, 13, 3, 6, 7]     -- (Z, Z)
+
+/-- **Every hand-written index list is exactly the anticommuting set of its
+observed pair.** Together with `pauli_channel_eigenvalue_omega` this makes each of
+the 15 `1 − 2·Σ p[i]` factors in `two_qubit_pauli_error` the genuine Pauli-transfer
+eigenvalue `λ_P`, for an *arbitrary* probability vector — not only for the one-hot
+vectors the crate's tests probe. -/
+theorem twoQubitPauliError_indices_anticommuting :
+    ∀ i j : Fin 15, (oldIndices i).contains j = antiPair (qPair i) (qPair j) := by
+  decide
+
+/-- Each list has eight entries and no repeats, so `contains`-agreement above is
+genuine set equality (each `p[i]` is counted exactly once). -/
+theorem twoQubitPauliError_indices_length : ∀ i : Fin 15, (oldIndices i).length = 8 := by
+  decide
+
+theorem twoQubitPauliError_indices_nodup : ∀ i : Fin 15, (oldIndices i).Nodup := by
+  decide
+
 /-! ### The Bernoulli firing convention of the stochastic channels
 
 The crate's stochastic channels draw `r = rng.random::<f64>() ∈ [0,1)` and fire
@@ -196,6 +287,176 @@ theorem fire_strict_zero_noop (r : ℝ) (hr : 0 ≤ r) : ¬ (r < 0) := not_lt.mp
 a real `f64` `Uniform[0,1)` sampler produces with probability `2⁻⁵³`. This is the
 whole observable content of the `loss_channel` convention divergence. -/
 theorem fire_nonstrict_fires_at_zero : (0 : ℝ) ≤ 0 := le_refl 0
+
+/-! ### Loss channels: the Heisenberg transfer is trace-preserving
+
+Nothing above (or in `PPVM.Symplectic`, which proves only bit-level loss
+*invariance*) says anything about the loss channels **as channels**. Workload 6 of
+the integration baseline is the acceptance bar for the loss port, and the old
+crate's `correlated_loss_channel` (`crates/ppvm-pauli-sum/src/sum/noise.rs:192-247`)
+carries an arithmetic no test covers at distinct `p₀/p₁/p₂`. This section is the
+oracle for it.
+
+**The alphabet.** A site of `LossyPauliWord` carries one of `I, X, Y, Z, L`. The
+crucial (and easy-to-miss) convention is that `I` is the identity on the **qubit
+subspace only** — it is `0` on the loss level — while `L` is the loss projector
+`|L⟩⟨L|`. So the identity of the *full* space is `𝟙 = I + L` per site, and the
+statement "the channel is trace preserving" is `Λ*(𝟙) = 𝟙` for the Heisenberg
+transfer `Λ*` the crate applies to observables, **not** `Λ*(I) = I`.
+
+That distinction is the whole content:
+
+* `loss_channel(p)` sends `I ↦ (1−p)·I` and `L ↦ L + p·I`, and `(1−p) + p = 1`
+  drains exactly into the `I` component of `𝟙`. It is trace preserving on the
+  lossy word (`lossChannel_trace_preserving`) and trace-*reducing* by `1−p` on the
+  plain `PauliWord`, where `L` is unrepresentable so the `L`-arm is dead
+  (`lossChannel_nonLossy_scales_by_one_minus_p`) — which is exactly what the
+  method's own doc comment says.
+* `reset_loss_channel` sends `I ↦ I + L`, `Z ↦ Z + L`, `X, Y ↦ themselves`, and
+  `L ↦ 0` (the crate's `*v *= 0.0`, which keeps the term in the map at coefficient
+  zero). Trace preserving (`resetLossChannel_trace_preserving`).
+* `correlated_loss_channel(p₀,p₁,p₂)` is trace preserving **for every**
+  `(p₀,p₁,p₂)`, with no normalization hypothesis at all
+  (`correlatedLossChannel_trace_preserving`). In particular the two arms the
+  baseline flags as suspicious are *correct*: the one-already-lost arm scales its
+  survivor by `1 − p₂` because that population leaves for `LL` at rate `p₂`, and
+  weights its emitted branch `p₁` because it *gains* from the both-in-subspace
+  population at rate `p₁` — two different processes, so they are not meant to
+  pair; and the `(L,L)` arm leaves its survivor unscaled because loss is
+  irreversible (`LL` population never leaves). The books balance column-wise, not
+  arm-wise.
+
+The channels are modeled by their transfer **matrix** `T k j` = coefficient of key
+`j` in the image of the basis observable `k`, transcribed arm-for-arm from the
+Rust `map_insert` / `map_insert_multiple` closures. Only the arm *selection*
+depends on the site alphabet (the Rust `match` tests solely for `Pauli::L`), so
+the loss sector `{I, L}ⁿ` — where `𝟙` lives — is invariant, and the theorems below
+are complete statements of trace preservation. -/
+
+section Loss
+
+/-- A site of `LossyPauliWord`, as `Fin 5`: `0 = I, 1 = X, 2 = Y, 3 = Z, 4 = L`.
+`I` is the identity on the *qubit subspace* (zero on the loss level); `L` is the
+loss projector `|L⟩⟨L|`. -/
+abbrev Site := Fin 5
+
+/-- `I` — identity on the qubit subspace. -/
+def sI : Site := 0
+/-- `Z`. -/
+def sZ : Site := 3
+/-- `L` — the loss projector. -/
+def sL : Site := 4
+
+/-- An observable on one site, as its coefficient vector in the `{I,X,Y,Z,L}`
+basis. -/
+abbrev Obs1 := Site → ℝ
+
+/-- The Heisenberg transfer of a (possibly branching) channel, given as a matrix:
+`T k j` is the coefficient of key `j` in the image of the basis observable `k`.
+This is exactly what a `map_insert` closure returns — the scaled survivor plus the
+emitted branches. -/
+def transfer1 (T : Site → Site → ℝ) (A : Obs1) : Obs1 := fun j => ∑ k, A k * T k j
+
+/-- The identity observable on one site: `𝟙 = I + L`. Trace preservation is
+`Λ*(𝟙) = 𝟙`. -/
+def unit1 : Obs1 := fun s => if s = sI then 1 else if s = sL then 1 else 0
+
+/-- `loss_channel(p)` (`noise.rs:164-179`): an in-subspace site is scaled by
+`1 − p` with no branch; a already-lost site keeps its (unscaled) term and emits a
+branch onto `I` with weight `p`. -/
+def lossT (p : ℝ) : Site → Site → ℝ := fun k j =>
+  if k = sL then (if j = sL then 1 else if j = sI then p else 0)
+  else (if j = k then 1 - p else 0)
+
+/-- **`loss_channel` is trace preserving on the lossy word.** `Λ*(I + L) = I + L`
+for every `p`: the `1 − p` the survivor loses is exactly the `p` the already-lost
+key branches back onto `I`. -/
+theorem lossChannel_trace_preserving (p : ℝ) : transfer1 (lossT p) unit1 = unit1 := by
+  funext j
+  fin_cases j <;> simp [transfer1, lossT, unit1, sI, sL, Fin.sum_univ_five]
+
+/-- **…and trace-reducing by `1 − p` on the plain `PauliWord`**, where `L` is
+unrepresentable so the branch arm is dead code: the qubit-subspace identity is
+scaled, `I ↦ (1−p)·I`. This is the documented behaviour of the trait
+(`noise.rs:155-162`, "reduces the trace of the density matrix as (1 − p) per lost
+qubit"), and it is a *convention*, not a defect — `ResetLossChannel` is the
+trace-preserving variant. -/
+theorem lossChannel_nonLossy_scales_by_one_minus_p (p : ℝ) :
+    transfer1 (lossT p) (fun s => if s = sI then 1 else 0)
+      = fun s => if s = sI then 1 - p else 0 := by
+  funext j
+  fin_cases j <;> simp [transfer1, lossT, sI, sL, Fin.sum_univ_five]
+
+/-- `reset_loss_channel` (`noise.rs:253-266`): `I` and `Z` keep their term and emit
+an `L` branch at the same coefficient; `X`/`Y` are untouched; `L` is scaled to `0`
+(the term stays in the map — the "no implicit reduce" contract). -/
+def resetT : Site → Site → ℝ := fun k j =>
+  if k = sL then 0
+  else if k = sI ∨ k = sZ then (if j = k then 1 else if j = sL then 1 else 0)
+  else (if j = k then 1 else 0)
+
+/-- **`reset_loss_channel` is trace preserving.** `Λ*(I + L) = (I + L) + 0`: the
+lost population is reset into `|0⟩`, on which the qubit-subspace identity reads
+`1`. -/
+theorem resetLossChannel_trace_preserving : transfer1 resetT unit1 = unit1 := by
+  funext j
+  fin_cases j <;> simp [transfer1, resetT, unit1, sI, sL, sZ, Fin.sum_univ_five]
+
+/-- A two-site observable. -/
+abbrev Obs2 := Site × Site → ℝ
+
+/-- The two-site Heisenberg transfer (same matrix convention as `transfer1`). -/
+def transfer2 (T : Site × Site → Site × Site → ℝ) (A : Obs2) : Obs2 :=
+  fun j => ∑ k, A k * T k j
+
+/-- The two-site identity observable `𝟙 ⊗ 𝟙 = (I + L) ⊗ (I + L)`. -/
+def unit2 : Obs2 := fun k => unit1 k.1 * unit1 k.2
+
+/-- `correlated_loss_channel(p₀,p₁,p₂)` (`noise.rs:192-247`), arm for arm:
+
+* both already lost — survivor unscaled, three branches `(I,L)`, `(L,I)` at `p₂`
+  and `(I,I)` at `p₀`;
+* exactly one already lost — survivor scaled by `1 − p₂`, one branch replacing the
+  lost site by `I` at weight `p₁`;
+* both in subspace — survivor scaled by `1 − 2p₁ − p₀`, no branch. -/
+def corrT (p0 p1 p2 : ℝ) : Site × Site → Site × Site → ℝ := fun k j =>
+  if k.1 = sL ∧ k.2 = sL then
+    (if j = (sL, sL) then 1
+     else if j = (sI, sL) then p2
+     else if j = (sL, sI) then p2
+     else if j = (sI, sI) then p0 else 0)
+  else if k.2 = sL then
+    (if j = k then 1 - p2 else if j = (k.1, sI) then p1 else 0)
+  else if k.1 = sL then
+    (if j = k then 1 - p2 else if j = (sI, k.2) then p1 else 0)
+  else (if j = k then 1 - 2 * p1 - p0 else 0)
+
+-- `simp` discharges most of the 25 columns outright, so the trailing `ring` must
+-- be `<;>`-distributed (a plain `;` hits "no goals" on those); the seq-focus
+-- linter's suggestion is a false positive here.
+set_option linter.unnecessarySeqFocus false in
+/-- **`correlated_loss_channel` is trace preserving for every `(p₀,p₁,p₂)`** — no
+normalization hypothesis is needed. Reading the four columns of `Λ*(𝟙) = 𝟙`:
+
+* `(I,I)`: `(1 − 2p₁ − p₀) + p₁ + p₁ + p₀ = 1`;
+* `(I,L)` and `(L,I)`: `(1 − p₂) + p₂ = 1`;
+* `(L,L)`: `1`.
+
+So the baseline's suspicion is refuted: the `1 − p₂` survivor scale and the `p₁`
+branch weight in the one-already-lost arms belong to *different* columns (loss of
+the second qubit vs. gain from the both-in-subspace sector), and the unscaled
+`(L,L)` survivor is required — loss is irreversible, so that column is closed.
+The port must reproduce this arithmetic verbatim. -/
+theorem correlatedLossChannel_trace_preserving (p0 p1 p2 : ℝ) :
+    transfer2 (corrT p0 p1 p2) unit2 = unit2 := by
+  funext j
+  obtain ⟨j1, j2⟩ := j
+  fin_cases j1 <;> fin_cases j2 <;>
+    simp [transfer2, corrT, unit2, unit1, sI, sL, Fintype.sum_prod_type,
+      Fin.sum_univ_five, Prod.ext_iff] <;>
+    ring
+
+end Loss
 
 /-! ### Pauli-basis orthonormality (the `overlap` pairing) -/
 

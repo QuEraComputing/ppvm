@@ -352,6 +352,67 @@ theorem extSqrtYdag_X : extSqrtYdag ⟨0, true, false⟩ = ⟨2, false, true⟩ 
 theorem extSqrtYdag_Y : extSqrtYdag ⟨0, true, true⟩ = ⟨0, true, true⟩ := by decide
 theorem extSqrtYdag_Z : extSqrtYdag ⟨0, false, true⟩ = ⟨0, true, false⟩ := by decide
 
+/-! #### The closed-form bit map and sign predicate of each extension gate
+
+The tables above fix each composite on the three non-identity basis Paulis. What
+a *port* has to reproduce is the closed form: the old crate ships these five gates
+as **hand-written** `map_add` bit-and-sign kernels over the two bits at the site
+(`crates/ppvm-pauli-sum/src/sum/clifford.rs:107-221`), with no derivation in the
+source, and a transposed sign there is invisible on one-hot test vectors. The
+`_bits`/`_sign` pairs below are those kernels' exact expressions, now *derived*
+from the generator product rather than asserted — the same shape as
+`conjH_bits`/`conjH_sign` and `conjS_bits`/`conjS_sign`.
+
+(`s_dag` needs no entry of its own: `extSdag_eq_conjS` collapses it to `conjS`, so
+its closed form is `conjS_bits` / `conjS_sign` — bit map `z ← x ⊕ z`, sign `x ∧ z`,
+matching `clifford.rs:110-127`'s "phase flip for Y".) -/
+
+/-- **`sqrt_x` bit map**: `x ← x ⊕ z`, `z` untouched (`clifford.rs:150`). -/
+theorem extSqrtX_bits (p : PhasedPauli) :
+    (extSqrtX p).x = xor p.x p.z ∧ (extSqrtX p).z = p.z := by
+  revert p; decide
+
+/-- **`sqrt_x` sign**: `−1` exactly on `Y` (`x ∧ z`) — `clifford.rs:152`'s
+`if xbit & zbit`. -/
+theorem extSqrtX_sign (p : PhasedPauli) :
+    (extSqrtX p).phase = p.phase + (if p.x && p.z then 2 else 0) := by
+  revert p; decide
+
+/-- **`sqrt_x_dag` bit map**: the same `x ← x ⊕ z` (`clifford.rs:190`). -/
+theorem extSqrtXdag_bits (p : PhasedPauli) :
+    (extSqrtXdag p).x = xor p.x p.z ∧ (extSqrtXdag p).z = p.z := by
+  revert p; decide
+
+/-- **`sqrt_x_dag` sign**: `−1` exactly on `Z` (`¬x ∧ z`) — the dagger's whole
+difference from `sqrt_x` is which of `Y`/`Z` carries the sign
+(`clifford.rs:192`, `if !xbit & zbit`). -/
+theorem extSqrtXdag_sign (p : PhasedPauli) :
+    (extSqrtXdag p).phase = p.phase + (if !p.x && p.z then 2 else 0) := by
+  revert p; decide
+
+/-- **`sqrt_y` bit map**: the swap `(x,z) ↦ (z,x)` (`clifford.rs:170-171`). -/
+theorem extSqrtY_bits (p : PhasedPauli) :
+    (extSqrtY p).x = p.z ∧ (extSqrtY p).z = p.x := by
+  revert p; decide
+
+/-- **`sqrt_y` sign**: `−1` exactly on `Z` (`¬x ∧ z`) — `clifford.rs:173`. -/
+theorem extSqrtY_sign (p : PhasedPauli) :
+    (extSqrtY p).phase = p.phase + (if !p.x && p.z then 2 else 0) := by
+  revert p; decide
+
+/-- **`sqrt_y_dag` bit map**: the same swap (`clifford.rs:210-211`). -/
+theorem extSqrtYdag_bits (p : PhasedPauli) :
+    (extSqrtYdag p).x = p.z ∧ (extSqrtYdag p).z = p.x := by
+  revert p; decide
+
+/-- **`sqrt_y_dag` sign**: `−1` exactly on `X` (`x ∧ ¬z`) — `clifford.rs:213`.
+Note the `sqrt_y`/`sqrt_y_dag` pair share a bit map and differ *only* in this
+predicate, so a transposition between the two is exactly the invisible bug this
+theorem rules out. -/
+theorem extSqrtYdag_sign (p : PhasedPauli) :
+    (extSqrtYdag p).phase = p.phase + (if p.x && !p.z then 2 else 0) := by
+  revert p; decide
+
 /-- **Each dagger really is the inverse conjugation** — the property the `S³ = S†`
 / `H·S·H` products must not silently break
 (`phase1_gate_surface.rs::blanket_extension_daggers_are_inverse_conjugations`). -/

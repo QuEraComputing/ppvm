@@ -23,7 +23,8 @@
 //! crate, an FxHash-class seed-free monomial hasher, and no sum-level truncation
 //! strategy — truncation on this path is intrinsic to the coefficient
 //! (`max_sin`/`min_eps` seeded on the initial observable), identically on both
-//! sides. The gate sequence is literally shared code: `trotter_old`/`trotter_new`
+//! sides. The gate sequence is literally shared code: `bench_trotter_old` /
+//! `bench_trotter_new`
 //! and `replay_old`/`replay_new` are written against one circuit description, and
 //! `rzz` is decomposed as `cnot; rz; cnot` on both sides rather than calling old's
 //! built-in.
@@ -39,6 +40,7 @@
 //! `PauliSum` propagation is the realistic driver in every case.
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use std::collections::BTreeMap;
 
 use ppvm_conformance_2::seeded_rng;
 use ppvm_conformance_2::sym::*;
@@ -46,6 +48,51 @@ use ppvm_conformance_2::sym::*;
 use ppvm_pauli_sum_2::{HashMapStore, NoPolicy, PauliWord as NewPauliWord, Sum as NewSum};
 use ppvm_sym::{Prod as OldProd, Sum as OldSumTy, Term as OldTerm2};
 use ppvm_sym_2::{GaussianInt, Prod as NewProd, Sum as NewSumTy, Term as NewTerm2};
+
+mod sym_surface;
+
+fn fixed_angles(n: usize) -> Vec<f64> {
+    (0..n).map(|i| 0.23 + 0.17 * i as f64).collect()
+}
+
+#[track_caller]
+fn assert_terms_match(old: &OldTerm2, new: &NewTerm2, angles: &[&[f64]], label: &str) {
+    let old_view = old_view(old);
+    let new_view = new_view(new);
+    assert_eq!(old_view.form, new_view.form, "[{label}] form differs");
+    assert_eq!(old_view.c0, new_view.c0, "[{label}] constant differs");
+    assert_eq!(
+        old_view.monomials, new_view.monomials,
+        "[{label}] canonical monomial coefficients differ"
+    );
+    for values in angles {
+        let old_value = old.eval(values).unwrap();
+        let new_value = new.eval(values).unwrap();
+        assert!(
+            (old_value - new_value).abs() < 1e-12,
+            "[{label}] evaluated output differs at {values:?}: old={old_value}, new={new_value}"
+        );
+    }
+}
+
+#[track_caller]
+fn assert_sym_sums_match(old: &OldSymSum, new: &NewSymSum, angles: &[&[f64]], label: &str) {
+    let old = old_sym_support(old);
+    let new = new_sym_support(new);
+    assert_eq!(
+        old.iter().map(|(key, _)| key).collect::<Vec<_>>(),
+        new.iter().map(|(key, _)| key).collect::<Vec<_>>(),
+        "[{label}] canonical Pauli support differs"
+    );
+    for ((key, old_coeff), (_, new_coeff)) in old.iter().zip(&new) {
+        assert_terms_match(
+            old_coeff,
+            new_coeff,
+            angles,
+            &format!("{label} coefficient at {key}"),
+        );
+    }
+}
 
 // ---------------------------------------------------------------------------
 // 1. HEADLINE — `sym.tfim.trotter`: the deep symbolic Trotter propagation.
@@ -64,13 +111,51 @@ fn headline(max_sin: usize) -> TrotterSpec {
     }
 }
 
+fn bench_trotter_old(spec: &TrotterSpec) -> OldSymSum {
+    let mut sum = sym_surface::old_sum(spec.n);
+    sum += (spec.observable, old_seed_coeff(spec.max_sin, spec.min_eps));
+    for layer in 0..spec.layers {
+        for q in 0..spec.n {
+            ppvm_traits::traits::RotationOne::rx(&mut sum, q, OldTerm2::var(2 * layer));
+        }
+        for q in 0..spec.n - 1 {
+            ppvm_traits::traits::Clifford::cnot(&mut sum, q, q + 1);
+            ppvm_traits::traits::RotationOne::rz(&mut sum, q + 1, OldTerm2::var(2 * layer + 1));
+            ppvm_traits::traits::Clifford::cnot(&mut sum, q, q + 1);
+        }
+    }
+    sum
+}
+
+fn bench_trotter_new(spec: &TrotterSpec) -> NewSymSum {
+    let mut sum = sym_surface::new_sum(spec.n);
+    sum += (
+        NewSymKey::from(spec.observable),
+        new_seed_coeff(spec.max_sin, spec.min_eps),
+    );
+    for layer in 0..spec.layers {
+        for q in 0..spec.n {
+            ppvm_traits_2::RotationOne::rx(&mut sum, q, NewTerm2::var(2 * layer));
+        }
+        for q in 0..spec.n - 1 {
+            ppvm_traits_2::Clifford::cnot(&mut sum, q, q + 1);
+            ppvm_traits_2::RotationOne::rz(&mut sum, q + 1, NewTerm2::var(2 * layer + 1));
+            ppvm_traits_2::Clifford::cnot(&mut sum, q, q + 1);
+        }
+    }
+    sum
+}
+
 fn bench_tfim_trotter(c: &mut Criterion) {
     for k in [3usize, 4] {
         let spec = headline(k);
 
         // Diagnostic counters, printed once so a future change that silently
         // shrinks (or explodes) the workload is visible in the bench output.
-        let ns = trotter_new(&spec);
+        let ns = bench_trotter_new(&spec);
+        let os = bench_trotter_old(&spec);
+        let angles = fixed_angles(spec.n_vars());
+        assert_sym_sums_match(&os, &ns, &[&angles], &format!("tfim trotter k={k}"));
         let total: usize = new_sym_support(&ns)
             .iter()
             .map(|(_, t)| new_view(t).n_monomials())
@@ -88,8 +173,8 @@ fn bench_tfim_trotter(c: &mut Criterion) {
         let mut g = c.benchmark_group(format!("sym/tfim_trotter_k{k}"));
         // The timed body is the WHOLE propagation (seed + every gate), which is
         // where the per-coefficient-per-gate allocation costs live.
-        g.bench_function("new/trotter", |b| b.iter(|| trotter_new(&spec)));
-        g.bench_function("old/trotter", |b| b.iter(|| trotter_old(&spec)));
+        g.bench_function("new/trotter", |b| b.iter(|| bench_trotter_new(&spec)));
+        g.bench_function("old/trotter", |b| b.iter(|| bench_trotter_old(&spec)));
         g.finish();
     }
 }
@@ -99,6 +184,10 @@ fn bench_tfim_trotter(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_trace_parametric(c: &mut Criterion) {
+    let old = parametric_trace_old();
+    let new = parametric_trace_new();
+    assert_terms_match(&old, &new, &[&[1.1, 2.1]], "parametric trace");
+
     let mut g = c.benchmark_group("sym/trace_parametric");
     g.bench_function("new/build_propagate_trace_eval", |b| {
         b.iter(|| {
@@ -134,10 +223,10 @@ fn bench_truncation_sweep(c: &mut Criterion) {
     let mut g = c.benchmark_group("sym/truncation_sweep");
     for k in 1..=5usize {
         let spec = TrotterSpec { max_sin: k, ..base };
-        // The allocation-sensitive proxy: monomials retained (a differing drop
-        // ratio between the two crates would mean truncation moved).
-        let ns = trotter_new(&spec);
-        let os = trotter_old(&spec);
+        let ns = bench_trotter_new(&spec);
+        let os = bench_trotter_old(&spec);
+        let angles = fixed_angles(spec.n_vars());
+        assert_sym_sums_match(&os, &ns, &[&angles], &format!("truncation sweep k={k}"));
         let nm: usize = new_sym_support(&ns)
             .iter()
             .map(|(_, t)| new_view(t).n_monomials())
@@ -147,10 +236,13 @@ fn bench_truncation_sweep(c: &mut Criterion) {
             .map(|(_, t)| old_view(t).n_monomials())
             .sum();
         println!("[sym/truncation_sweep k={k}] retained monomials: new={nm} old={om}");
-        assert_eq!(nm, om, "the drop ratio moved at k={k}");
+        assert_eq!(
+            nm, om,
+            "canonical comparison must retain equal counts at k={k}"
+        );
 
-        g.bench_function(format!("new/k{k}"), |b| b.iter(|| trotter_new(&spec)));
-        g.bench_function(format!("old/k{k}"), |b| b.iter(|| trotter_old(&spec)));
+        g.bench_function(format!("new/k{k}"), |b| b.iter(|| bench_trotter_new(&spec)));
+        g.bench_function(format!("old/k{k}"), |b| b.iter(|| bench_trotter_old(&spec)));
     }
     g.finish();
 
@@ -161,8 +253,16 @@ fn bench_truncation_sweep(c: &mut Criterion) {
             min_eps,
             ..base
         };
-        g.bench_function(format!("new/{label}"), |b| b.iter(|| trotter_new(&spec)));
-        g.bench_function(format!("old/{label}"), |b| b.iter(|| trotter_old(&spec)));
+        let ns = bench_trotter_new(&spec);
+        let os = bench_trotter_old(&spec);
+        let angles = fixed_angles(spec.n_vars());
+        assert_sym_sums_match(&os, &ns, &[&angles], &format!("truncation sweep {label}"));
+        g.bench_function(format!("new/{label}"), |b| {
+            b.iter(|| bench_trotter_new(&spec))
+        });
+        g.bench_function(format!("old/{label}"), |b| {
+            b.iter(|| bench_trotter_old(&spec))
+        });
     }
     g.finish();
 }
@@ -186,18 +286,28 @@ fn bench_expectation_grid(c: &mut Criterion) {
     };
     let mut rng = seeded_rng(0x9_81D);
     let grid = angle_grid(&mut rng, spec.n_vars(), 1000);
+    let validation_angles: Vec<&[f64]> = grid.iter().map(Vec::as_slice).collect();
+
+    let propagated_new = bench_trotter_new(&spec);
+    let propagated_old = bench_trotter_old(&spec);
+    assert_sym_sums_match(
+        &propagated_old,
+        &propagated_new,
+        &[validation_angles[0]],
+        "expectation propagation",
+    );
 
     // (a) one-shot propagation + trace.
     let mut g = c.benchmark_group("sym/expectation_propagate");
     g.bench_function("new/propagate_trace", |b| {
         b.iter(|| {
-            let s = trotter_new(&spec);
+            let s = bench_trotter_new(&spec);
             ppvm_traits_2::Trace::trace(&s, &ppvm_pauli_sum_2::PauliPattern::zero_state())
         })
     });
     g.bench_function("old/propagate_trace", |b| {
         b.iter(|| {
-            let s = trotter_old(&spec);
+            let s = bench_trotter_old(&spec);
             ppvm_traits::traits::Trace::trace(
                 &s,
                 &ppvm_pauli_word::pattern::PauliPattern::from("Z?*"),
@@ -208,13 +318,14 @@ fn bench_expectation_grid(c: &mut Criterion) {
 
     // (b) `eval` throughput over the grid, on the ALREADY propagated trace.
     let nt = ppvm_traits_2::Trace::trace(
-        &trotter_new(&spec),
+        &propagated_new,
         &ppvm_pauli_sum_2::PauliPattern::zero_state(),
     );
     let ot = ppvm_traits::traits::Trace::trace(
-        &trotter_old(&spec),
+        &propagated_old,
         &ppvm_pauli_word::pattern::PauliPattern::from("Z?*"),
     );
+    assert_terms_match(&ot, &nt, &validation_angles, "expectation trace");
     println!(
         "[sym/expectation_eval] trace monomials: new={} old={}",
         new_view(&nt).n_monomials(),
@@ -283,13 +394,35 @@ fn bench_random_circuit(c: &mut Criterion) {
     let seed_new =
         |s: &mut NewSymSum| *s += (NewSymKey::from("ZIIIIIII"), new_seed_coeff(3, 1e-12));
 
+    let mut old_probe = sym_surface::old_sum(n);
+    let mut new_probe = sym_surface::new_sum(n);
+    seed_old(&mut old_probe);
+    seed_new(&mut new_probe);
+    replay_old(&mut old_probe, &circuit);
+    replay_new(&mut new_probe, &circuit);
+    let angles = fixed_angles(n_vars as usize);
+    assert_sym_sums_match(&old_probe, &new_probe, &[&angles], "random circuit");
+
+    let mut old_clifford_probe = sym_surface::old_sum(n);
+    let mut new_clifford_probe = sym_surface::new_sum(n);
+    seed_old(&mut old_clifford_probe);
+    seed_new(&mut new_clifford_probe);
+    replay_old(&mut old_clifford_probe, &clifford);
+    replay_new(&mut new_clifford_probe, &clifford);
+    assert_sym_sums_match(
+        &old_clifford_probe,
+        &new_clifford_probe,
+        &[&angles],
+        "random circuit Clifford phase",
+    );
+
     let mut g = c.benchmark_group("sym/random_circuit");
     g.sample_size(10);
     g.measurement_time(std::time::Duration::from_secs(10));
     g.bench_function("new/full_replay", |b| {
         b.iter_batched_ref(
             || {
-                let mut s = new_new_sum(n);
+                let mut s = sym_surface::new_sum(n);
                 seed_new(&mut s);
                 s
             },
@@ -300,7 +433,7 @@ fn bench_random_circuit(c: &mut Criterion) {
     g.bench_function("old/full_replay", |b| {
         b.iter_batched_ref(
             || {
-                let mut s = new_old_sum(n);
+                let mut s = sym_surface::old_sum(n);
                 seed_old(&mut s);
                 s
             },
@@ -315,7 +448,7 @@ fn bench_random_circuit(c: &mut Criterion) {
     g.bench_function("new/clifford_prefix", |b| {
         b.iter_batched_ref(
             || {
-                let mut s = new_new_sum(n);
+                let mut s = sym_surface::new_sum(n);
                 seed_new(&mut s);
                 s
             },
@@ -326,7 +459,7 @@ fn bench_random_circuit(c: &mut Criterion) {
     g.bench_function("old/clifford_prefix", |b| {
         b.iter_batched_ref(
             || {
-                let mut s = new_old_sum(n);
+                let mut s = sym_surface::old_sum(n);
                 seed_old(&mut s);
                 s
             },
@@ -357,13 +490,24 @@ fn bench_trace_readout(c: &mut Criterion) {
     let new_pat = ppvm_pauli_sum_2::PauliPattern::zero_state();
 
     for k in [2usize, 3, 4, 5] {
-        let mut os = new_old_sum(n);
+        let mut os = sym_surface::old_sum(n);
         os += ("ZIIIIIII", old_seed_coeff(k, 1e-12));
         replay_old(&mut os, &circuit);
 
-        let mut ns = new_new_sum(n);
+        let mut ns = sym_surface::new_sum(n);
         ns += (NewSymKey::from("ZIIIIIII"), new_seed_coeff(k, 1e-12));
         replay_new(&mut ns, &circuit);
+
+        let angles = fixed_angles(8);
+        assert_sym_sums_match(&os, &ns, &[&angles], &format!("trace readout input k={k}"));
+        let old_trace = ppvm_traits::traits::Trace::trace(&os, &old_pat);
+        let new_trace = ppvm_traits_2::Trace::trace(&ns, &new_pat);
+        assert_terms_match(
+            &old_trace,
+            &new_trace,
+            &[&angles],
+            &format!("trace readout k={k}"),
+        );
 
         let matching = new_sym_support(&ns)
             .iter()
@@ -438,6 +582,18 @@ fn bench_exact_multiply(c: &mut Criterion) {
     let mut cacc: ComplexSum = ComplexSum::new(n);
     ea.multiply_into(&eb, &mut eacc);
     ca.multiply_into(&cb, &mut cacc);
+    let exact: BTreeMap<_, _> = eacc
+        .iter()
+        .map(|(key, coeff)| (key.to_string(), (coeff.re as f64, coeff.im as f64)))
+        .collect();
+    let complex: BTreeMap<_, _> = cacc
+        .iter()
+        .map(|(key, coeff)| (key.to_string(), (coeff.re, coeff.im)))
+        .collect();
+    assert_eq!(
+        exact, complex,
+        "exact and complex multiplication outputs differ"
+    );
 
     let mut g = c.benchmark_group("sym/exact_multiply");
     g.bench_function("exact_zi/multiply_into", |b| {
@@ -569,5 +725,6 @@ criterion_group!(
     bench_trace_readout,
     bench_exact_multiply,
     bench_micro,
+    sym_surface::bench,
 );
 criterion_main!(benches);

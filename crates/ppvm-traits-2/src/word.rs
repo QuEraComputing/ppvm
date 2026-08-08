@@ -125,9 +125,121 @@ pub trait PauliBits: Word {
     /// Set the Z bit at index `i` (invalidates the hash lazily).
     fn set_z_bit(&mut self, i: usize, v: bool);
     /// Whether index `i` is lost; `LossyPauliWord` overrides this.
+    #[inline(always)]
     fn is_lost(&self, i: usize) -> bool {
         let _ = i;
         false
+    }
+
+    /// Packed local Pauli code: `0=I, 1=X, 2=Z, 3=Y`.
+    #[inline(always)]
+    fn pauli_code(&self, i: usize) -> u8 {
+        (self.x_bit(i) as u8) | ((self.z_bit(i) as u8) << 1)
+    }
+
+    /// Mark index `i` lost. **No-op by default** — a word with no loss component
+    /// cannot represent loss, and old's shared loss kernels reach this arm only
+    /// under an `is_lost` guard that is a const `false` there.
+    ///
+    /// `LossyPauliWord` overrides it (clearing the site's X/Z bits first, per the
+    /// canonical loss invariant). Keeping the mutator on `PauliBits` beside the
+    /// const-`false` [`is_lost`](PauliBits::is_lost) is what lets **one** loss
+    /// kernel serve both word types at zero cost for the non-lossy one
+    /// (architecture feature 11): every `if k.is_lost(q) { … }` branch folds away
+    /// at monomorphization, taking the `set_lost`/`clear_lost` calls inside it with
+    /// it.
+    fn set_lost(&mut self, i: usize) {
+        let _ = i;
+    }
+
+    /// Clear the loss flag at index `i`, returning the site to identity.
+    /// **No-op by default**; `LossyPauliWord` overrides it. See
+    /// [`set_lost`](PauliBits::set_lost).
+    fn clear_lost(&mut self, i: usize) {
+        let _ = i;
+    }
+
+    /// A copy of this word with the X and/or Z bit at `i` toggled — the
+    /// **rotation-branch key builder** (`iGP` from a diagonal `P`).
+    ///
+    /// Provided as clone-then-flip so every `PauliBits` implementer gets a branch
+    /// builder for free and the rotation/branching kernels can be generic over the
+    /// word type (the ordinary and the lossy key run the *same* kernel — see
+    /// `ppvm-pauli-sum-2`'s rotation and loss modules). `PauliWord` overrides it
+    /// with a direct plane copy that leaves the digest cache empty, skipping the
+    /// wasted cache load+invalidate a `clone` + `set_*_bit` pair performs.
+    fn toggled_bits(&self, i: usize, toggle_x: bool, toggle_z: bool) -> Self
+    where
+        Self: Sized + Clone,
+    {
+        let mut out = self.clone();
+        if toggle_x {
+            let b = out.x_bit(i);
+            out.set_x_bit(i, !b);
+        }
+        if toggle_z {
+            let b = out.z_bit(i);
+            out.set_z_bit(i, !b);
+        }
+        out
+    }
+
+    /// A copy of this word with the X and/or Z bits at **two** sites toggled —
+    /// the **two-qubit** rotation-branch key builder (`iG_aG_b·P`).
+    ///
+    /// Chaining [`toggled_bits`](PauliBits::toggled_bits) twice would build two
+    /// whole words per produced branch term, and for a packed word each of those is
+    /// a full copy of *both* bit planes plus a word rebuild — so the intermediate
+    /// is pure waste on the hot path of `rzz`/`rxx`/`ryy`/`rotate_2` (old built
+    /// **one** `k.clone()` and then wrote four bits into it,
+    /// `ppvm-pauli-sum/src/sum/rot2.rs`). The two-site entry point makes the single
+    /// copy the *only* copy, and it scales with the storage tier: at `[u8; 32]` the
+    /// chained form moved 64 redundant bytes per branch term.
+    ///
+    /// The default is clone-then-flip (one clone, up to four bit writes), which is
+    /// already old's shape; `PauliWord` overrides it with a direct plane copy that
+    /// leaves the digest cache empty, exactly as it does for the single-site form.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn toggled_bits2(
+        &self,
+        i: usize,
+        toggle_x_i: bool,
+        toggle_z_i: bool,
+        j: usize,
+        toggle_x_j: bool,
+        toggle_z_j: bool,
+    ) -> Self
+    where
+        Self: Sized + Clone,
+    {
+        let mut out = self.clone();
+        if toggle_x_i {
+            let b = out.x_bit(i);
+            out.set_x_bit(i, !b);
+        }
+        if toggle_z_i {
+            let b = out.z_bit(i);
+            out.set_z_bit(i, !b);
+        }
+        if toggle_x_j {
+            let b = out.x_bit(j);
+            out.set_x_bit(j, !b);
+        }
+        if toggle_z_j {
+            let b = out.z_bit(j);
+            out.set_z_bit(j, !b);
+        }
+        out
+    }
+
+    /// Number of lost sites. **Zero by default**; `LossyPauliWord` overrides it
+    /// with a popcount over its loss plane. This is the `MaxLossWeight` truncation
+    /// predicate (old's `PauliWordTrait::loss_weight`), which is why it belongs on
+    /// the read side of the same trait rather than on the lossy word alone: a
+    /// policy is generic over the key.
+    fn loss_weight(&self) -> usize {
+        0
     }
 
     /// Whether this word anticommutes with the single-qubit Pauli

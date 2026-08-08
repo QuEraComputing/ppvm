@@ -32,10 +32,15 @@ iterations, then escalate to human.
 
 ---
 
-## ▶ Continue here — handoff (2026-08-01)
+## ▶ Continue here — handoff (2026-08-07)
 
-Everything committed and green (whole workspace tests, clippy/fmt clean, `lake build PPVM` ok). Recent commits (newest first):
-`e3e1f9cc` ScaleByKey in-place (pauli_error 2.03×→1.06×, **Trotter →~1.09×**) · `23860055` re-key `insert` not `entry()` (rekey 1.45×→1.11×) · `1e597396` Phase-1 gate surface + complex-angle parity fix · `b68b7e8e` content-conditional hash invalidation + cnot/truncate microbenches · `d4aa7875` truncation is explicit-only (behaviour gap closed) · `8a1dc79b` integration coverage.
+Phases 0–5 are committed (`c6b0ac8a` newest). Phase 6 is implemented in the
+current uncommitted tree, its deterministic Rust/Lean gates are green, and its
+former hash-join/row-build regressions are fixed. The scalar-batch contract
+remains explicitly deferred. Phase 7's adapter phase is complete and verified;
+the old reference crates remain untouched. The complete 901-pair core
+performance audit found 102 confirmed and 50 provisional regressions; these are
+hard blockers before destructive cutover (`docs/performance-report.md`).
 
 ### ⚠ MEASUREMENT WARNING — read before touching any perf number here
 Two instruments previously trusted in this log are now known to be unsound:
@@ -327,7 +332,7 @@ depends on `ppvm-pauli-word-2` and reuses its `PauliStorage`/`HashFinalize`. The
 first (mis-targeted) run into `ppvm-pauli-word-2` was stopped and reverted.
 
 Deliverables: `LossyPauliWord` (data/clifford/hash/column) — packed X/Z/loss
-planes, two component `OnceLock<u64>` caches (loss-only mutation skips X/Z
+planes, two component relaxed-atomic caches (loss-only mutation skips X/Z
 rehash); `Word<Site=LossySite<Pauli>>`, `PauliBits`(`is_lost`),
 `SymplecticColumns`+`PhaseTrack` (loss-guarded, phase-discarding), `Indexable`,
 `Columnar`; inherent `set_lost`/`clear_loss`/`loss_weight`. 27 in-crate tests.
@@ -338,7 +343,7 @@ did not regress `ppvm-pauli-word-2` (27 tests still pass).
 
 **Perf gate: 6/6 pass (1 flag investigated → benign).** product **0.79×**, cnot
 **0.78×**, key_hash-warm **1.02×**, weight **1.02×**; key_hash-cold 15.6ns is the
-design-accepted lazy-OnceLock trade-off. `loss_weight` flagged at 1.28× at single-
+design-accepted lazy-cache trade-off. `loss_weight` flagged at 1.28× at single-
 `u64` width — **investigated and cleared**: the body is a verbatim port over
 identical `BitArray<u64>` storage, and at `[u64; 8]` width (8× the popcount work)
 new/old converge to **1.00×** (0.915ns each), as does `weight`. The single-word
@@ -679,20 +684,296 @@ _(no entries yet)_
 
 ## Phase 6 — ColumnStore backend
 
-_(no entries yet)_
+Status: **complete** (human perf/design sign-off 2026-08-05).
+
+Deliverables:
+
+- `ColumnStore<K, C>` is a real structure-of-arrays backend: `K::Column` key
+  planes, contiguous coefficients and digests, and a grouped-probe row index.
+  The implementation is split under `src/column_store/mod.rs`, including
+  dedicated rotation and lifecycle-test modules. `ColumnPauliSum` is the
+  drop-in alias.
+- Persistent aux/scratch/batch workspace, exact `7/8` index sizing, in-place
+  bijective re-key, two-pass rotations, size-reserved branch append, and
+  capacity-preserving clone are all present. Repeated L4 products now reserve
+  relative to the accumulator's existing length; the aux-reuse test exercises
+  the same store twice instead of cloning away the workspace.
+- The old public collection/operator spellings are restored:
+  `IntoIterator`, replacement-semantics `Extend`, by-value sum product, and
+  single-word `*`/`*=`. The documented Lean-correct product remains bilinear.
+- Three-way old/hash/column differential coverage includes the Trotter and random
+  workloads, truncation/preserve/zero timing, pairings, L4, the complete gate
+  surface, and lossy words/channels. A separate old/new lossy-sum differential
+  suite closes baseline workload 6.
+- `Projection` follows the Lean oracle rather than old's two independent bugs:
+  coefficients use the ring constant `½` (`c/2`, not `c²/2`) and `X`/`Y` are
+  annihilated. Their zero-valued keys remain until caller-driven `reduce()`.
+
+The lossy integration benchmark exposed a cross-component regression hidden by
+the Phase-2 word microbench: three `OnceLock` component caches made the real
+loss-interleaved sum **2.45×** slower than old. Replacing them with the same
+relaxed-atomic sentinel mechanism already validated on `PauliWord` preserves the
+component split and loss-only invalidation while removing the `Once` path.
+Controlled stage ratios improved from reset `4.92×`→`1.24×`, loss
+`2.55×`→`1.36×`, correlated `2.21×`→`0.72×`, Clifford `1.74×`→`1.26×`, and
+rotation `2.64×`→`1.31×`. The realistic n=12 loss-interleaved GHZ workload is
+inside the gate in two processes: new/old medians **0.99×** and **0.84×**.
+
+Final performance gate, four fresh process runs after the index, rotation,
+noise-codegen and tombstone fixes:
+
+| target | ratio | verdict |
+| --- | --- | --- |
+| Column steady `rx` / hash | **0.94–0.97×** | fixed; paired dense kernel |
+| Column sustained `rx` growth / hash | **0.93–0.96×** | fixed; grouped row index |
+| Column `from_terms` / hash | **0.89–0.92×** | fixed; lazy workspace + grouped index |
+| Column active truncate / hash | **0.94–0.95×** | fixed; lazy tombstones, stable 1/8 compaction |
+| Column realistic `rx` / hash | **0.95–0.98×** | fixed; cached sparse-row runs |
+| Column native `rzz` / hash | **0.93–0.95×** | fixed; column-native packed-bit kernel |
+| Column / hash noisy TFIM Trotter | **0.98–0.99×** | no regression |
+| New hash / old noisy TFIM Trotter | **0.86–0.90×** | faster |
+
+The full earlier op sweep showed the intended coefficient/re-key wins
+(`scale` ~0.13×, `reduce` ~0.40×, `h` ~0.37×, `cnot` ~0.53×,
+threshold/weight/channel walks ~0.64–0.76×). The final grouped index, packed
+column rotations, and tombstoned retention remove the former losing rows
+without weakening those scan/re-key wins.
+
+| id | type | sev | routed | status | note |
+| --- | --- | --- | --- | --- | --- |
+| col6.clone.capacity | perf-drift | high | impl | **closed** | Clone now preserves primary key/coeff/digest capacity plus aux/scratch/batch capacity. |
+| col6.multiply.reserve | perf-drift | med | impl | **closed** | `multiply_into` reserves `existing + product_hint`; repeated accumulation no longer walks a resize chain. |
+| col6.rot2.copy | perf-drift | med | impl | **closed** | All two-site rotations use one `toggled_bits2` plane copy. |
+| col6.index.load | correctness | low | impl | **closed** | Exact ceil-at-7/8 sizing, grow only above 7/8, plus a debug duplicate-key guard during reindex. |
+| col6.loss.diff | missing-test | high | test | **closed** | Exact old/new loss-channel, correlated-loss, GHZ, zero-survival and max-loss-weight differential suite + integration bench. |
+| col6.surface | missing-test | med | test | **closed** | Hash/column parity now covers extended/batched Clifford, generic/named RotationTwo, RotXY, all noise/projection paths, Hermitian overlap and lossy ColumnStore. |
+| col6.projection | correctness | high | impl/proof | **closed** | Lean adjudicated both old defects; Rust and discriminating tests now target the matrix-correct projector. |
+| col6.batch.scalar | impl-friction | med | design/human | **closed — explicitly deferred (human, 2026-08-05)** | `TermBatch` keys and `probe_batch` remain scalar; a column-native produced batch/coalesced gather requires changing the shared batch contract. Accepted as follow-up because the shipped SoA support is complete and end-to-end faster. |
+| col6.insert.perf | perf-drift | med | impl | **closed — fixed** | Replaced scalar probing with a grouped row index, fused paired packed-column rotations, made aux allocation lazy, and added separate dense/sparse kernels. Four-process ratios: steady `rx` 0.94–0.97×, sustained growth 0.93–0.96×, `from_terms` 0.89–0.92× versus hash. |
+| col6.truncate.perf | perf-drift | med | impl | **closed — fixed** | Active 408→390 truncation exposed physical SoA compaction (2.4–2.5× hash). Retain now tombstones rows immediately, rebuilds sparse traversal lazily, and compacts stably at 1/8 dead rows. Final column/hash ratio 0.94–0.95×; Trotter remains 0.98–0.99×. |
+| col6.aligned.proof | missing-proof | low | proof | **OPEN** | Alignment is mutation-tested after every operation, but Lean's abstract `Finsupp` model cannot express misaligned physical columns. |
 
 ## Phase 7 — downstream + cutover
 
-_(no entries yet)_
+Status: **adapter phase complete; destructive rename/removal blocked by the full
+core performance audit.**
+
+First adapter prerequisite landed: `ppvm-tableau-2::GeneralizedTableau::trace`
+now consumes the `-2` `PauliPattern`, enumerates the bounded accepted words, and
+delegates each leaf to `expectation`. Differential coverage against old's
+counted-pattern trace is green. This closes Phase 4's trace deferral and removes
+one blocker for the vihaco/Python adapters. The full old stateful pattern grammar
+and greedy matcher are now ported as a dedicated `pattern/` module; bounded
+enumeration matches old, including rejecting every star pattern.
+
+Phase 7 Step 1 is complete for `ppvm-stim`. Its default `legacy` and opt-in
+`traits-2` features are mutually exclusive, both implement the same sealed
+semantic executor adapter, and `rayon` remains orthogonal (shot-level
+parallelism only). The former 872-line executor is split into a `mod.rs`
+hierarchy (largest file: 159 lines). Exact verification:
+
+- `cargo test -p ppvm-stim`: 106 passed, 0 failed; 1 doctest ignored.
+- `cargo test -p ppvm-stim --features rayon`: 106 passed, 0 failed; 1 doctest ignored.
+- `cargo test -p ppvm-stim --no-default-features --features traits-2`: 106 passed, 0 failed; 1 doctest ignored.
+- `cargo test -p ppvm-stim --no-default-features --features traits-2,rayon`: 106 passed, 0 failed; 1 doctest ignored.
+- `cargo check -p ppvm-stim --all-targets` passed in all four matrices above.
+- `cargo clippy -p ppvm-stim --all-targets -- -D warnings` passed in all four matrices.
+- `cargo fmt --all -- --check` passed.
+- `cargo check --workspace --all-targets` passed with the default legacy backend.
+- No-backend and dual-backend checks reached their intended `compile_error!` guards.
+- Review follow-up closed three gaps: width aliases now preserve their real
+  `[u8; N]` / `[usize; N]` capacity, serial `sample` accepts non-`Sync`
+  factories (guarded by an `Rc<Cell<_>>` regression test), and CI runs explicit
+  traits-2 native/rayon plus wasm-library checks. Public default storage is
+  target-correct (`u64` native, `usize` wasm); the selected traits-2 Stim library
+  builds on `wasm32-unknown-unknown`. Criterion benches remain native-only.
+
+Phase 7 Step 2 is complete for `ppvm-vihaco`. The default `legacy` and opt-in
+`traits-2` features select aliased old/new dependencies and are mutually
+exclusive. Public `Circuit`/`PPVM` routing is unchanged; constructors, policy
+spelling, width-specific words, seeded initial states, and rendering are
+normalized behind backend modules. The former 1032-line `component.rs` is a
+`mod.rs` hierarchy (largest file: 208 lines). The traits-2 width aliases use the
+full `Sum<HashMapStore<PauliWord<[u8; N]>, f64>, CombinedPolicy<...>>` and
+equivalent `LossyPauliWord` forms. `rayon` remains orthogonal; traits-2 exposes
+shot-level/downstream parallelism only and does not claim tableau-internal
+parallelism. Exact verification:
+
+- `cargo test -p ppvm-vihaco`: 115 unit tests + 29 fixture tests passed, 0 failed.
+- `cargo test -p ppvm-vihaco --features rayon`: 117 unit tests + 29 fixture tests passed, 0 failed.
+- `cargo test -p ppvm-vihaco --no-default-features --features traits-2`: 115 unit tests + 29 fixture tests passed, 0 failed.
+- `cargo test -p ppvm-vihaco --no-default-features --features traits-2,rayon`: 117 unit tests + 29 fixture tests passed, 0 failed.
+- All 18 existing `.sst` fixtures ran in both backend matrices; the seeded
+  branch fixture matches the same `[Zero], [Zero]` snapshot in legacy and traits-2.
+- `cargo check -p ppvm-vihaco --all-targets` passed in all four matrices.
+- `cargo clippy -p ppvm-vihaco --all-targets -- -D warnings` passed in all four matrices.
+- `cargo fmt --all -- --check` passed.
+- `cargo check --workspace --all-targets` passed with the default legacy backend.
+- No-backend and dual-backend checks reached their intended `compile_error!` guards.
+
+Remaining gaps are outside Steps 1–2: the TUI, CLI, and Python adapters are not
+cut over, and `ppvm-tableau-2`'s internal coefficient-level rayon branch remains
+deferred. Neither Stim nor Vihaco enables that branch under traits-2.
+
+Phase 7 Steps 3–4 are complete for the transitive frontends. `ppvm-tui` and
+`ppvm-cli` expose the same mutually exclusive `legacy` / `traits-2` selection
+and forward it to Vihaco; the CLI keeps its historical default Rayon behavior as
+an orthogonal feature. Default and traits-2 TUI tests pass, as do CLI all-target
+tests under default legacy+rayon and traits-2+rayon.
+
+Vihaco's traits-2 tableau buckets preserve their semantic widths on both pointer
+sizes: `[usize; N]` on native and doubled `[usize; 2N]` on wasm32. Its selected
+traits-2 library passes the explicit wasm cross-check; CI now exercises Vihaco
+and both frontends under traits-2 in addition to the Stim matrices.
+
+Review also restored the public `TableauCircuit::new` /
+`TableauCircuit::new_with_seed` overloads (a private shared builder carries the
+optional seed) and made the two pure-Rust fixture references feature-selected.
+The traits-2 fixture matrix now constructs explicit new `Sum<HashMapStore<...>>`
+lossless/lossy states rather than always using the legacy dev oracle. Both
+review-fixed legacy/traits-2 suites and the traits-2 wasm library check pass.
+
+The first traits-2 wasm cross-check found that public defaults and temporary
+Stim aliases hard-coded `u64`, which is not a `bitvec::BitStore` on 32-bit wasm.
+The default is now target-correct (`u64` native, `usize` wasm), while compatibility
+aliases preserve their actual `[u8; N]` / `[usize; N]` widths. Native word/tableau
+suites and the selected traits-2 Stim wasm library check pass. Criterion benches
+remain native-only, so wasm CI checks the library rather than `--all-targets`.
+
+The Phase-7 specialized tableau mixture is complete. `ppvm-tableau-2::mixture`
+exports `GeneralizedTableauMixture<A, I, H>`, the compatibility
+`GeneralizedTableauSum` alias, and `MixtureSampler`. It retains fingerprint
+buckets followed by collision-checked frame/loss and approximately-equal
+amplitude comparison; RNG, record, scratch, and probability are excluded from
+identity. Strict cutoff and normalization timing, lazy Pauli/loss branch
+materialization, analytic case-a/case-b measurement/reset, the complete gate and
+noise surfaces, and seeded serial/native-Rayon sampling match the old oracle.
+The implementation is split into files below 200 lines.
+
+Differential coverage includes structural snapshots, deterministic gates,
+measurement cases, reset coalescing, noise/loss, exact cutoff boundaries, wide
+`u128` indices, forced fingerprint collisions, and seeded sampler streams.
+`ppvm-tableau-sum`'s 109 legacy tests and the new 7-test differential suite pass.
+The same-build benchmark was run in four fresh processes: noisy build
+**0.75–0.76×** old and serial 128-shot sampling **0.94–0.95×** old (new faster;
+no regression). An initially oversized benchmark workload did not complete a
+warmup and produced no ratio; it was reduced before measurements were recorded.
+
+Review found one boundary divergence: construction inserted the initial
+probability-1 entry without applying the strict `probability > sum_cutoff` rule.
+Construction now goes through the normal insertion door, so cutoffs `0.999`,
+`1.0`, and `2.0` produce lengths `1`, `0`, and `0` exactly as old. In-crate and
+old/new differential guards pass; changed-crate Clippy remains clean. The other
+review item—the old/new generic-axis mismatch—is intentionally owned by the
+feature-gated Python backend facade, not by pretending the compatibility alias
+accepts old `Config` parameters.
+
+Python adapter preflight found that the public 1–2048-qubit tableau classes need
+wide `bnum` amplitude indices. `ppvm-tableau-2` now depends on `bnum` with
+`numtraits`, re-exports `U256`/`U512`/`U1024`/`U2048`, and runs each through a
+real generalized-tableau gate sequence (including the existing 200-qubit tier).
+The wide-index test, all-target Clippy, and dependency hygiene pass.
+
+Python's insertion-order ABI prerequisite is also complete.
+`IndexMapStore<K, C>` implements the full `Sum` algebra/gate/lifecycle surface,
+including persistent workspace reuse, exact-zero support, replacement `Extend`,
+and legacy-compatible re-key/branch ordering. All ordered unit and five old/new
+differential tests pass. Two same-build processes show no regression: build
+**0.57×**, ordered term export **0.73–0.75×**, CNOT **0.81×**, and rotation
+**0.89–0.94×** old.
+
+Review closed three order holes before binding it to Python: multi-branch merge
+direction now compares the **deduplicated** branch map cardinality (not raw
+fan-out), multiple preserved keys are snapshotted by support order rather than
+the preserve `HashSet` order, and clone/in-place-product tests compare ordered
+term vectors instead of `IndexMap`'s order-insensitive equality. Discriminating
+unit/differential tests and changed-crate Clippy pass.
+
+The Phase-7 Python native cutover is complete behind mutually exclusive
+`legacy` (default) and `traits-2` features. The facade selects aliased optional
+Pauli/tableau/mixture dependencies and exactly one Stim backend. Traits-2
+ordinary and lossy sums use fixed `[u8; 2^N]` words, `IndexMapStore`, explicit
+`CombinedPolicy` values, Python's `usize::MAX` loss default, and caller-driven
+truncation. Tableau rows remain `[usize; N]`; the amplitude index tiers remain
+`usize`, `u128`, and `U256` through `U2048`. The specialized mixture and sampler
+replace the old `ppvm-tableau-sum` path, and native `GeneralizedTableauSum.r` is
+now present in both modes.
+
+Fresh mixed-project maturin builds through `ppvm-python/pyproject.toml` each pass
+the complete 238-test Python/docs suite. The extension exports and the tests
+assert `backend_name()` (`legacy` / `traits-2`), so a stale or wrong-feature
+`ppvm._core` cannot masquerade as parity. Added coverage fixes the native class
+inventory and checks ordered
+rendering, 8/9/64/65/128/129/200/1024/2048 width boundaries, genuinely
+greater-than-u128 Python coefficient keys, trace/loss encodings, tableau
+copy/deepcopy RNG streams on randomized qubits, equal-seed fork streams plus
+cross-seed diversity, retained `GeneralizedTableauSum.r` behavior, mixture
+sampler snapshots, and seeded Stim output across one and four Rayon threads.
+Both native Clippy matrices, traits-2 Pauli/tableau
+and selected Stim wasm library checks, formatting, and `cargo machete` pass.
+No ABI gap or measured performance regression was observed in this cutover;
+the final full-suite wall times were 36.59 s traits-2 and 48.29 s legacy, which
+are coarse sequential test-run observations after separate builds, not a
+benchmark and not used as a performance claim.
+
+The three shared macro-generated binding implementations are now module
+directories. Their state, gate, rotation/noise, Stim, and sampler surfaces use
+cohesive private submodules (all at or near 200 lines) while the public module
+paths and generated class inventory remain unchanged. Fresh legacy and
+traits-2 mixed-project builds each pass the complete 238-test Python/docs
+suite, including backend identity and native class inventory checks; both
+native check/Clippy matrices, formatting, and `cargo machete` also pass.
+
+| id | type | sev | routed | status | note |
+| --- | --- | --- | --- | --- | --- |
+| cutover.trace | impl-friction | med | impl/test | **closed** | `GeneralizedTableau::trace(&PauliPattern)` added on the `-2` tower; counted `Z?{n}` differential test matches old. |
+| cutover.pattern.parse | impl-friction | med | impl/test | **closed** | Full old grammar and greedy stateful matching ported: literals, `_`, alternation, optional identity, counted/star repetition, absolute positions and sequential stars. Differential parser/matcher/enumeration tests pass on ordinary and lossy words; bounded star enumeration preserves old's panic contract. |
+| cutover.stim | impl-friction | high | impl/test/review | **closed** | `ppvm-stim` has mutually exclusive legacy/traits-2 adapters with source-compatible execute/sample APIs; all four native matrices pass. Review restored width-accurate aliases and serial non-`Sync` factories; explicit wasm library and CI gates pass. |
+| cutover.vihaco | impl-friction | high | impl/test/review | **closed** | `ppvm-vihaco` has stable `Circuit`/`PPVM` routing over mutually exclusive legacy/traits-2 facades; review restored public constructors, direct traits-2 fixture references and pointer-width-correct wasm aliases. All fixtures/matrices and wasm library check pass. |
+| cutover.frontends | impl-friction | med | impl/test | **closed** | TUI/CLI forward mutually exclusive backend features; both TUI matrices and both CLI all-target matrices pass, with Rayon kept orthogonal. |
+| cutover.wasm.default | correctness | high | impl/test | **closed** | Replaced invalid wasm `u64` defaults with native-word defaults and width-accurate compatibility aliases; traits-2 Stim library builds for `wasm32-unknown-unknown`. |
+| cutover.rayon | impl-friction | med | impl/design | **OPEN — stim/vihaco resolved** | Stim and Vihaco map traits-2 rayon to shot-level/downstream parallelism only. `ppvm-tableau-2` still records old's internal coefficient-level rayon branch as deferred, and other downstream mappings remain. |
+| cutover.mixture | impl-friction | high | design/impl/test/review | **closed** | Added specialized `GeneralizedTableauMixture` + compatibility alias and sampler; fingerprint buckets are collision-checked against full structural/approximate-amplitude identity, avoiding the invalid generic `Sum` alias. Review restored constructor cutoff parity. Differential, seeded, collision, wide-index, wasm, and four-process benchmark gates pass. |
+| cutover.python.wide-index | impl-friction | high | impl/test | **closed** | Added/re-exported `bnum` U256/U512/U1024/U2048 `Bitstring` tiers and executable generalized-tableau coverage through 1600 qubits. |
+| cutover.python.ordered-sum | impl-friction | high | impl/test/review | **closed** | Added full `IndexMapStore` + fixed-width `IndexPauliSum`; review fixed deduplicated branch cardinality, multi-preserve restore order and false-positive equality tests. Order-sensitive old/new tests pass and all measured paths are 0.57–0.94× old. |
+| cutover.python.sum-r | impl-friction | med | impl/test | **closed** | Native `GeneralizedTableauSum.r` is exported in both backend modes and parity-tested through the Python `RotationsMixin`. |
+| cutover.python.binding-split | maintenance | low | refactor | **closed** | Split all three shared binding generators into `mod.rs` module directories with cohesive multi-`#[pymethods]` submodules. Both fresh 238-test backend suites, class inventory/backend identity checks, native check/Clippy matrices, formatting, and machete pass. |
+| cutover.core-perf | perf-drift | high | impl/human | **OPEN — cutover blocker** | Complete core audit now covers 901 comparable public-operation pairs: 587 improvements, 162 parity, 102 confirmed and 50 provisional regressions at the 1.03 gate. Full measurements and attribution are in `docs/performance-report.md`. |
+
+### Full core benchmark audit (2026-08-07)
+
+The comparative harness now covers every comparable public operation across
+ordinary/lossy/phased words, Pauli sums and storage variants, bare/generalized
+tableau, tableau mixtures, and symbolic propagation. The audit fixed unequal
+capacity, timed parsing on one side, decaying channel state, stale native-vs-
+decomposed paths, broad Criterion filters, and missing output assertions.
+
+The complete screening contains **901 old/new pairs**. Confirmed regressions
+were rerun in fresh processes with 20 samples, 1 s warm-up and 2 s measurement;
+one pathological mixture branch expansion was stopped during process three, so
+50 under-sampled rows remain explicitly provisional. Headline confirmed gaps:
+
+- tableau observation helpers: 2.56–3.95×, but only +2.8–5.9 ns and
+  implementation-identical (code placement/inlining artifact);
+- lossy branch-key construction: 1.60–1.80× from three atomic caches plus
+  guarded invalidation;
+- disabled truncation sentinels: 1.52–1.67×, about +1 ns, unattributed;
+- symbolic propagation/trace: roughly 1.19–1.71×, mostly unattributed;
+- Pauli-sum Clifford/re-key families: roughly 1.15–1.29×; the path is isolated,
+  the residual mechanism remains unattributed;
+- lossy-sum Clifford/loss/reset/rotation stages: roughly 1.20–1.41×,
+  unattributed;
+- mixture measurement/clone/two-site noise: 1.10–1.34× from eager fingerprint
+  rebuilding, bucket-map cloning, and repeated two-site row scans.
+
+No regression is allowlisted. The destructive cutover remains blocked until
+these rows are fixed or explicitly adjudicated.
 
 ---
 
-## Perf-drift allowlist (human-approved regressions)
+## Perf-drift allowlist
 
-Regressions listed here are accepted as designed-in trade-offs and do **not** block
-a crate. Anything not listed is a hard gate.
-
-| id | component | metric | accepted ratio | justification | approved-by |
-| --- | --- | --- | --- | --- | --- |
-| ps2.rot.perf | ppvm-pauli-sum-2 | `rotation_rx` | **FIXED — not allowlisted (now parity)** | Was a real ~1.15× (fair same-storage); root-caused (lazy branch-key hash firing on pass-2's probe critical path) and fixed by warming the digest in `RotateInPlace` pass 1 (semantic no-op, 108 tests green). `new/rx` ~5.5→~4.9µs; interleaved ratio ~0.99. Nothing to allowlist. |
-| _(prior)_ | | | | `lpw2.perf.1` was a nanobench artifact (converges to 1.00× at wide width), not allowlisted. | |
+**Empty.** The previously accepted `ColumnStore` `rx`/`from_terms` regressions
+were temporary implementation gaps and are now fixed. `ps2.rot.perf` is also
+fixed; `lpw2.perf.1` was a nanobenchmark artifact rather than a regression.
+Anything newly exceeding the 1.03 confirmation gate remains a hard blocker.

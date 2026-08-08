@@ -120,6 +120,9 @@
 //! let _ = &a * &b;
 //! ```
 
+use std::hash::BuildHasher;
+
+use ppvm_pauli_word_2::{HashFinalize, PauliStorage, PauliWord};
 use ppvm_traits_2::{Accumulate, ImaginaryUnit, Indexable, KeyProduct, Multiply, Word};
 
 use crate::policy::Policy;
@@ -235,7 +238,12 @@ where
 impl<S, P> Sum<S, P>
 where
     S: Accumulate + RekeyBijective<S::Key, S::Coeff>,
-    S::Key: Word + Indexable + KeyProduct,
+    // `Sync` is what lets the re-key closure — which borrows `rhs` — satisfy the
+    // `Send + Sync` bound `RekeyBijective` carries for a partitioned backend
+    // (architecture feature 12). It is not a new restriction on real keys:
+    // `PauliStorage` is `Send + Sync` in `-2` exactly as in old, so `PauliWord`
+    // and `LossyPauliWord` are both.
+    S::Key: Word + Indexable + KeyProduct + Sync,
     S::Coeff: ImaginaryUnit,
     P: Policy<S::Key, S::Coeff>,
 {
@@ -295,6 +303,23 @@ where
     }
 }
 
+/// `A * B` — old's by-value operator spelling, with the Lean-correct bilinear
+/// product rather than old's product chain.
+impl<S, P> std::ops::Mul<Sum<S, P>> for Sum<S, P>
+where
+    S: Multiply + StoreAlloc,
+    S::Key: Word + Indexable + KeyProduct,
+    S::Coeff: ImaginaryUnit,
+    P: Policy<S::Key, S::Coeff>,
+{
+    type Output = Sum<S, P>;
+
+    #[inline]
+    fn mul(self, rhs: Sum<S, P>) -> Sum<S, P> {
+        self.multiply(&rhs)
+    }
+}
+
 /// `A *= &B` — the in-place operator product, i.e. [`Sum::multiply_in_place`].
 /// Bilinear, unlike old's `MulAssign` (module docs).
 impl<S, P> std::ops::MulAssign<&Sum<S, P>> for Sum<S, P>
@@ -306,6 +331,54 @@ where
     #[inline]
     fn mul_assign(&mut self, rhs: &Sum<S, P>) {
         self.multiply_in_place(rhs);
+    }
+}
+
+/// `A *= B` — the by-value form old exposed.
+impl<S, P> std::ops::MulAssign<Sum<S, P>> for Sum<S, P>
+where
+    S: Accumulate + MultiplyInPlace<S::Key, S::Coeff>,
+    S::Key: Word + Indexable,
+    P: Policy<S::Key, S::Coeff>,
+{
+    #[inline]
+    fn mul_assign(&mut self, rhs: Sum<S, P>) {
+        self.multiply_in_place(&rhs);
+    }
+}
+
+/// Right-multiply by one ordinary Pauli word, preserving old's operator surface.
+impl<A, H, S, P> std::ops::MulAssign<PauliWord<A, H>> for Sum<S, P>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize + Send + Sync,
+    PauliWord<A, H>: KeyProduct,
+    S: Accumulate<Key = PauliWord<A, H>> + RekeyBijective<PauliWord<A, H>, S::Coeff>,
+    S::Coeff: ImaginaryUnit,
+    P: Policy<PauliWord<A, H>, S::Coeff>,
+{
+    #[inline]
+    fn mul_assign(&mut self, rhs: PauliWord<A, H>) {
+        self.mul_word_assign(&rhs);
+    }
+}
+
+/// `A * word` — by-value single-word right multiplication.
+impl<A, H, S, P> std::ops::Mul<PauliWord<A, H>> for Sum<S, P>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize + Send + Sync,
+    PauliWord<A, H>: KeyProduct,
+    S: Accumulate<Key = PauliWord<A, H>> + RekeyBijective<PauliWord<A, H>, S::Coeff>,
+    S::Coeff: ImaginaryUnit,
+    P: Policy<PauliWord<A, H>, S::Coeff>,
+{
+    type Output = Sum<S, P>;
+
+    #[inline]
+    fn mul(mut self, rhs: PauliWord<A, H>) -> Sum<S, P> {
+        self *= rhs;
+        self
     }
 }
 
@@ -472,5 +545,24 @@ mod tests {
         assert_same(&got, &expected, "A·q");
         // Bijective: the support size is preserved exactly.
         assert_eq!(got.len(), a.len());
+    }
+
+    #[test]
+    fn by_value_operator_spellings_match_the_methods() {
+        let a = sum(2, &[("XZ", c(1.0)), ("IY", c(-0.5))]);
+        let b = sum(2, &[("ZI", c(2.0)), ("IX", c(3.0))]);
+        let expected = a.multiply(&b);
+
+        assert_same(&(a.clone() * b.clone()), &expected, "A * B");
+        let mut assigned = a.clone();
+        assigned *= b;
+        assert_same(&assigned, &expected, "A *= B");
+
+        let q = word("ZY");
+        let expected_word = a.multiply(&sum(2, &[("ZY", c(1.0))]));
+        assert_same(&(a.clone() * q.clone()), &expected_word, "A * q");
+        let mut assigned_word = a;
+        assigned_word *= q;
+        assert_same(&assigned_word, &expected_word, "A *= q");
     }
 }

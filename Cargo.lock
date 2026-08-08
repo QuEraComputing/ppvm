@@ -408,7 +408,7 @@ checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width 0.1.14",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -795,6 +795,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -870,14 +876,19 @@ checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
  "allocator-api2",
  "equivalent",
- "foldhash",
+ "foldhash 0.1.5",
 ]
 
 [[package]]
 name = "hashbrown"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5419bdc4f6a9207fbeba6d11b604d481addf78ecd10c11ad51e76c2f6482748d"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash 0.2.0",
+]
 
 [[package]]
 name = "heck"
@@ -905,12 +916,12 @@ checksum = "964de6e86d545b246d84badc0fef527924ace5134f30641c203ef52ba83f58d5"
 
 [[package]]
 name = "indexmap"
-version = "2.11.4"
+version = "2.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
+checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
- "hashbrown 0.16.0",
+ "hashbrown 0.17.1",
  "serde",
  "serde_core",
 ]
@@ -1323,6 +1334,7 @@ dependencies = [
 name = "ppvm-conformance-2"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "criterion 0.7.0",
  "fxhash",
  "num",
@@ -1336,6 +1348,7 @@ dependencies = [
  "ppvm-sym-2",
  "ppvm-tableau",
  "ppvm-tableau-2",
+ "ppvm-tableau-sum",
  "ppvm-traits",
  "ppvm-traits-2",
  "rand 0.10.1",
@@ -1376,7 +1389,10 @@ name = "ppvm-pauli-sum-2"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "hashbrown 0.17.1",
+ "indexmap",
  "num",
+ "ppvm-lossy-pauli-word-2",
  "ppvm-pauli-word-2",
  "ppvm-phased-pauli-word-2",
  "ppvm-traits-2",
@@ -1422,11 +1438,16 @@ name = "ppvm-python-native"
 version = "0.1.0"
 dependencies = [
  "bnum",
+ "fxhash",
+ "num",
  "paste",
  "ppvm-pauli-sum",
+ "ppvm-pauli-sum-2",
  "ppvm-stim",
  "ppvm-tableau",
+ "ppvm-tableau-2",
  "ppvm-tableau-sum",
+ "ppvm-traits-2",
  "pyo3",
 ]
 
@@ -1451,6 +1472,7 @@ dependencies = [
  "num",
  "ppvm-pauli-sum",
  "ppvm-tableau",
+ "ppvm-tableau-2",
  "rayon",
  "smallvec",
  "stim-parser",
@@ -1504,12 +1526,17 @@ name = "ppvm-tableau-2"
 version = "0.1.0"
 dependencies = [
  "bitvec",
+ "bnum",
+ "bytemuck",
  "fxhash",
  "getrandom 0.4.1",
+ "gxhash",
  "num",
+ "ppvm-pauli-sum-2",
  "ppvm-pauli-word-2",
  "ppvm-traits-2",
  "rand 0.10.1",
+ "rayon",
  "smallvec",
 ]
 
@@ -1569,14 +1596,15 @@ dependencies = [
 name = "ppvm-vihaco"
 version = "0.1.0"
 dependencies = [
- "bitvec",
  "bnum",
  "chumsky 0.10.1",
  "eyre",
  "log",
  "num",
  "ppvm-pauli-sum",
+ "ppvm-pauli-sum-2",
  "ppvm-tableau",
+ "ppvm-tableau-2",
  "rayon",
  "smallvec",
  "vihaco",

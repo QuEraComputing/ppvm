@@ -23,6 +23,21 @@ use std::hash::BuildHasher;
 
 const SEEDS: [u64; 6] = [1, 7, 42, 123, 2024, 31337];
 
+/// An `n`-site word of weight 1–4 — the shape a propagated observable actually
+/// holds (`Σ Z_i` fanned out by a few gates), and the population that exposes a
+/// weak low-bit avalanche: almost every storage byte is zero, so the hasher sees
+/// a nearly constant input and only the few set bits can decorrelate the buckets.
+fn low_weight_word(rng: &mut rand::rngs::StdRng, n: usize) -> String {
+    use rand::RngExt;
+    let weight = rng.random_range(1..5usize).min(n);
+    let mut sites = vec!['I'; n];
+    for _ in 0..weight {
+        let i = rng.random_range(0..n);
+        sites[i] = ['X', 'Y', 'Z'][rng.random_range(0..3usize)];
+    }
+    sites.into_iter().collect()
+}
+
 /// `Hash` must write **exactly** `key_hash()`: pushing the word through the
 /// identity build-hasher (which returns verbatim the single `u64` written) yields
 /// the finalized digest. If `Hash` wrote anything else — or more than one value —
@@ -125,4 +140,95 @@ fn avalanche_low_collision() {
         min_flipped >= 8,
         "weak avalanche: a single-site flip changed only {min_flipped} digest bits"
     );
+}
+
+/// The **storage-tier fold** must hold on every `[u8; N]` width, not just the
+/// default word.
+///
+/// This is the regression detector for the architecture feature the old crate
+/// documents in `examples/trotter_storage_cliff.rs`: raw fxhash correlates in its
+/// low bits for short keys, which clusters the bucket index at high map fill and
+/// cost old a 4–5× *storage-tier cliff* until `HashFinalize::finalize_hash(h,
+/// size_of::<A>())` folded the high bits down. `avalanche_low_collision` above
+/// only exercises the default width, so a fold that silently became a no-op for,
+/// say, `[u8; 8]` would pass it.
+///
+/// The low bits matter to BOTH backends and are the *only* thing either one uses
+/// to pick a bucket: `HashMapStore` feeds the digest to hashbrown verbatim
+/// through `IdentityBuildHasher`, and `ColumnStore` masks it itself
+/// (`bucket = hash & mask`). So the property is asserted on the digest's low bits
+/// at each tier's *full* width — the fill regime where old cliffed.
+///
+/// The key population is deliberately **not** uniform-random: it is the
+/// *low-weight* population a real propagated observable holds (a Trotter support
+/// is `Σ Z_i` fanned out to a few sites, so almost every plane byte is zero).
+/// Uniform-random 64-bit planes spread even without the fold — it is exactly the
+/// sparse, structured population that exposes fxhash's low-bit correlation, which
+/// is why old's cliff showed up in `trotter_storage_cliff.rs` and not in a
+/// random-key microbench.
+#[test]
+fn the_finalize_fold_survives_every_storage_tier() {
+    /// Draw `TARGET` distinct `$n`-site words of one storage width and report
+    /// `(distinct digests, distinct low-12-bit buckets, population)`. A macro
+    /// rather than a generic function: the storage bound lives in a private
+    /// module of `ppvm-pauli-word-2`, so the width can only be named at a use
+    /// site.
+    macro_rules! spread {
+        ($storage:ty, $n:expr) => {{
+            let mut rng = seeded_rng(0xC0FFEE);
+            let mut words: HashSet<String> = HashSet::new();
+            let mut digests: HashSet<u64> = HashSet::new();
+            let mut buckets: HashSet<u64> = HashSet::new();
+            let mut attempts = 0usize;
+            while words.len() < TARGET && attempts < TARGET * 40 {
+                attempts += 1;
+                let s = low_weight_word(&mut rng, $n);
+                if !words.insert(s.clone()) {
+                    continue;
+                }
+                let h = PauliWord::<$storage>::from(s.as_str()).key_hash();
+                digests.insert(h);
+                buckets.insert(h & 0xfff);
+            }
+            (digests.len(), buckets.len(), words.len())
+        }};
+    }
+
+    const TARGET: usize = 4000;
+    // (tier label, full site width for that storage)
+    let tiers: [(&str, (usize, usize, usize)); 4] = [
+        ("[u8; 8]", spread!([u8; 8], 64)),
+        ("[u8; 16]", spread!([u8; 16], 128)),
+        ("[u8; 32]", spread!([u8; 32], 256)),
+        ("u64", spread!(u64, 64)),
+    ];
+
+    for (label, (digests, buckets, count)) in tiers {
+        // Reported so `--nocapture` shows the margin, not just pass/fail.
+        println!("[{label}] {count} keys → {digests} digests, {buckets}/4096 buckets");
+        assert!(
+            count as f64 >= TARGET as f64 * 0.9,
+            "[{label}] too few distinct words: {count}"
+        );
+        // Full-digest collisions stay rare. Note this is NOT the fold's job: the
+        // fold `raw ^ (raw >> 32)` is a bijection on `u64`, so it moves no
+        // full-digest collision either way (measured: 3 either side on this
+        // population — fxhash's own rate on sparse input). It is asserted only as
+        // a sanity bound on the underlying hash.
+        let full_collisions = count - digests;
+        assert!(
+            full_collisions * 200 <= count,
+            "[{label}] too many full-digest collisions: {full_collisions} over {count} keys"
+        );
+        // THE detector. 4096 buckets, ~4000 sparse keys: with the fold the digest
+        // hits ~2300 of them; with the fold disabled it hits 589 — a 3.9×
+        // clustering of hashbrown's / `ColumnStore`'s bucket index, which is old's
+        // documented 4–5× storage-tier cliff. The threshold sits between the two
+        // measured regimes with margin on both sides.
+        assert!(
+            buckets >= 1500,
+            "[{label}] the finalize fold collapsed: only {buckets} of 4096 buckets \
+             hit by {count} keys — this is the storage-tier cliff"
+        );
+    }
 }

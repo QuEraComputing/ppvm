@@ -8,7 +8,7 @@
 //! Design: `traits-2-configuration-and-hashing.md` §"Indexable values" (the
 //! `key_hash()` value contract) and §"Concrete word hashing" (the private,
 //! per-algorithm/per-width finalization fold); `word-data-structures.md`
-//! §"Component hashes" (`packed Pauli hash = hash(nqubits, X bits, Z bits)`) and
+//! §"Component hashes" (`packed Pauli hash = hash(X bits, Z bits)`) and
 //! §"Lazy hashing and interior mutability" (a lazy `AtomicU64` sentinel cache
 //! realizing the design's interior-mutable lazy-cache contract).
 
@@ -20,7 +20,7 @@ use ppvm_traits_2::Indexable;
 use crate::data::{HASH_UNCACHED, PauliWord};
 use crate::storage::{HashFinalize, PauliStorage};
 
-/// The finalized structural digest of the planes `(nqubits, x, z)`.
+/// The finalized structural digest of the planes `(x, z)`.
 ///
 /// Factored out so `Indexable::key_hash` and `KeyColumn::hash_into` compute the
 /// **bit-for-bit identical** digest from, respectively, a scalar word and a
@@ -30,16 +30,16 @@ use crate::storage::{HashFinalize, PauliStorage};
 /// (hashbrown's bucket) are avalanche-quality even for a short key consumed
 /// directly.
 #[inline]
-pub(crate) fn structural_hash<A, H>(x: &A, z: &A, nqubits: usize) -> u64
+pub(crate) fn structural_hash<A, H>(x: &A, z: &A, _nqubits: usize) -> u64
 where
     A: PauliStorage,
     H: BuildHasher + Default + HashFinalize,
 {
     let mut hasher = H::default().build_hasher();
-    // Domain-separate the width from the planes so words of different widths
-    // (structurally distinct) do not collide. The planes go through the
-    // byte-slice path so the internal hasher consumes machine words, not bytes.
-    hasher.write_usize(nqubits);
+    // Width is deliberately omitted, matching the legacy digest. Equality still
+    // checks it, so cross-width words merely collide; sums already require one
+    // common width. Keeping the plane-only digest also preserves the legacy
+    // bucket distribution on the map-iteration and re-key hot paths.
     hasher.write(bytemuck::bytes_of(x));
     hasher.write(bytemuck::bytes_of(z));
     H::finalize_hash(hasher.finish(), std::mem::size_of::<A>())

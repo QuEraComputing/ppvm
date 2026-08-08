@@ -22,16 +22,17 @@
 //!   ~1000-term `PauliSum`. This is the Phase-2 watch item come due: the new word
 //!   dropped `Copy` (lazy `OnceLock` hash cache), so the per-term key clones on the
 //!   re-key path may cost against the old `Copy` word. The ratio is the gate here.
-//! * **`accumulate_batch` + `reduce`** of a produced batch — `from_terms` (new) vs
-//!   the old `+=` build.
+//! * **Preparsed construction + canonicalization** with equal capacity hints.
 //! * **`scale`** by a constant.
 //! * **`Pair` overlap** of two sums.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use ppvm_conformance_2::{build_old_sum, random_terms, reduce_old, seeded_rng};
+use ppvm_conformance_2::{OldSum, build_old_sum, random_terms, reduce_old, seeded_rng};
+use ppvm_pauli_sum::sum::PauliSum as OldPauliSum;
 use ppvm_pauli_sum_2::{HashMapStore, NoPolicy, PauliWord, Sum};
+use ppvm_pauli_word::word::PauliWord as OldKey;
 
 use ppvm_traits::traits::Clifford as OldClifford;
 use ppvm_traits::traits::{PauliError as OldPauliError, RotationOne as OldRotationOne};
@@ -127,30 +128,68 @@ fn bench_clifford_cnot(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. accumulate_batch + reduce of a produced batch.
+// 2. Preparsed construction with equal capacity and canonicalization.
 // ---------------------------------------------------------------------------
 
 fn bench_build_batch(c: &mut Criterion) {
     let mut g = c.benchmark_group("pauli_sum/build_batch");
     let t = terms(2, TERMS);
+    const CAPACITY: usize = TERMS * 2;
 
-    // New: `from_terms` = one `accumulate_batch` over the pre-keyed batch.
     let new_terms: Vec<(BenchKey, f64)> = t
         .iter()
         .map(|(w, c)| (BenchKey::from(w.as_str()), *c))
         .collect();
-    g.bench_function("new/from_terms", |b| {
+    let old_terms: Vec<(OldKey<[u8; 8]>, f64)> = t
+        .iter()
+        .map(|(w, c)| (OldKey::from(w.as_str()), *c))
+        .collect();
+
+    let build_new = || {
+        let mut s = BenchSum::with_capacity(N, NoPolicy, CAPACITY);
+        for (word, coeff) in &new_terms {
+            s += (word.clone(), *coeff);
+        }
+        s.reduce();
+        s
+    };
+    let build_old = || {
+        let mut s: OldSum = OldPauliSum::builder()
+            .n_qubits(N)
+            .capacity(CAPACITY)
+            .build();
+        for (word, coeff) in &old_terms {
+            s += (*word, *coeff);
+        }
+        reduce_old(&mut s);
+        s
+    };
+
+    let mut new_output: Vec<_> = build_new()
+        .iter()
+        .map(|(word, coeff)| (word.to_string(), coeff))
+        .collect();
+    let mut old_output: Vec<_> = build_old()
+        .data()
+        .iter()
+        .map(|(word, coeff)| (word.to_string(), *coeff))
+        .collect();
+    new_output.sort_by(|a, b| a.0.cmp(&b.0));
+    old_output.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(new_output, old_output, "build outputs must match");
+
+    // Parsing is excluded, both maps receive the same capacity hint, and both
+    // outputs are canonicalized before their support length is observed.
+    g.bench_function("new/build_add_assign", |b| {
         b.iter(|| {
-            let s = BenchSum::from_terms(N, new_terms.iter().cloned());
+            let s = build_new();
             black_box(s.len());
         })
     });
 
-    // Old: build the map by `+=` then `truncate()` (the reduce equivalent).
     g.bench_function("old/build_add_assign", |b| {
         b.iter(|| {
-            let mut s = build_old_sum(N, &t);
-            reduce_old(&mut s);
+            let s = build_old();
             black_box(s.len());
         })
     });
@@ -245,19 +284,26 @@ fn bench_pauli_error(c: &mut Criterion) {
     let mut g = c.benchmark_group("pauli_sum/pauli_error");
     let t = terms(7, TERMS);
 
-    // A diagonal channel is idempotent in shape (keys are fixed; only the ±λ
-    // scale changes), so repeated application over the same map is a stable,
-    // support-invariant in-place pass — no rebuild needed.
+    // The support is fixed, but every application contracts coefficients.
+    // Restore the same coefficient state for every timed iteration.
     const P: [f64; 3] = [0.05, 0.1, 0.15];
 
-    let mut new = build_new_sum(N, &t);
+    let new = build_new_sum(N, &t);
     g.bench_function("new/pauli_error", |b| {
-        b.iter(|| new.pauli_error(black_box(0), black_box(P)))
+        b.iter_batched_ref(
+            || new.clone(),
+            |s| s.pauli_error(black_box(0), black_box(P)),
+            criterion::BatchSize::LargeInput,
+        )
     });
 
-    let mut old = build_old_sum(N, &t);
+    let old = build_old_sum(N, &t);
     g.bench_function("old/pauli_error", |b| {
-        b.iter(|| old.pauli_error(black_box(0), black_box(P)))
+        b.iter_batched_ref(
+            || old.clone(),
+            |s| s.pauli_error(black_box(0), black_box(P)),
+            criterion::BatchSize::LargeInput,
+        )
     });
 
     g.finish();

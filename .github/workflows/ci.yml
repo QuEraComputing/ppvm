@@ -69,6 +69,23 @@ jobs:
       - name: Run ppvm-stim tests with rayon feature
         run: cargo test -p ppvm-stim --features rayon
 
+      - name: Run ppvm-stim tests on traits-2 backend
+        run: cargo test -p ppvm-stim --no-default-features --features traits-2
+
+      - name: Run ppvm-stim traits-2 tests with rayon
+        run: cargo test -p ppvm-stim --no-default-features --features traits-2,rayon
+
+      - name: Run ppvm-vihaco tests on traits-2 backend
+        run: cargo test -p ppvm-vihaco --no-default-features --features traits-2
+
+      - name: Run ppvm-vihaco traits-2 tests with rayon
+        run: cargo test -p ppvm-vihaco --no-default-features --features traits-2,rayon
+
+      - name: Run traits-2 frontend tests
+        run: |
+          cargo test -p ppvm-tui --no-default-features --features traits-2
+          cargo test -p ppvm-cli --all-targets --no-default-features --features traits-2,rayon
+
   # Cross-compile the whole workspace for browser wasm so a wasm regression
   # surfaces in CI. Three crates are never browser-wasm targets and are
   # excluded: `ppvm-python-native` (a CPython extension), `ppvm-cli` (a terminal
@@ -94,6 +111,15 @@ jobs:
       - name: Build workspace for wasm32-unknown-unknown
         run: cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-native --exclude ppvm-cli --exclude ppvm-tui
 
+      # Criterion's benchmark targets are native-only (its dependency enables
+      # Rayon), so cross-check the selected browser library rather than
+      # `--all-targets`.
+      - name: Check ppvm-stim traits-2 library for wasm32
+        run: cargo check -p ppvm-stim --target wasm32-unknown-unknown --no-default-features --features traits-2 --lib
+
+      - name: Check ppvm-vihaco traits-2 library for wasm32
+        run: cargo check -p ppvm-vihaco --target wasm32-unknown-unknown --no-default-features --features traits-2 --lib
+
   python-tests:
     name: Python tests
     needs: pre-commit
@@ -107,7 +133,18 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
-      - name: Run Python tests
+      - name: Run Python tests on legacy backend
+        env:
+          PPVM_EXPECT_BACKEND: legacy
+        run: uv run --project ppvm-python --group dev pytest ppvm-python/test/ docs/examples/
+
+      - name: Build traits-2 Python extension
+        working-directory: ppvm-python
+        run: uv run --group dev maturin develop --no-default-features --features traits-2
+
+      - name: Run Python tests on traits-2 backend
+        env:
+          PPVM_EXPECT_BACKEND: traits-2
         run: uv run --project ppvm-python --group dev pytest ppvm-python/test/ docs/examples/
 
   # The pure-Rust crates are platform-agnostic and fully verified on Linux by

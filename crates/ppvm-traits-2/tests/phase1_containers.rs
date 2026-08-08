@@ -296,6 +296,9 @@ impl KeyColumn for KeyCol {
     fn len(&self) -> usize {
         self.0.len()
     }
+    fn capacity(&self) -> usize {
+        self.0.capacity()
+    }
     fn with_capacity(n: usize) -> Self {
         KeyCol(Vec::with_capacity(n))
     }
@@ -315,6 +318,18 @@ impl KeyColumn for KeyCol {
     }
     fn get(&self, i: usize) -> Key {
         self.0[i]
+    }
+    // The in-place surface a column that is a *store* (the `ColumnStore`
+    // backend) needs; on the naive scalar layout they are the `Vec` operations
+    // they are named after.
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+    fn set(&mut self, i: usize, key: Key) {
+        self.0[i] = key;
+    }
+    fn truncate(&mut self, len: usize) {
+        self.0.truncate(len);
     }
 }
 

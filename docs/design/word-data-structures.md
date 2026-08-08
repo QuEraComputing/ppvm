@@ -147,8 +147,9 @@ pub struct LossyPauliWord<A, H> {
     zbits: BitArray<A>,
     lbits: BitArray<A>,
     nqubits: usize,
-    xz_hash_cache: OnceLock<u64>,
-    loss_hash_cache: OnceLock<u64>,
+    xz_hash_cache: AtomicU64,
+    loss_hash_cache: AtomicU64,
+    combined_hash_cache: AtomicU64,
     _hasher: PhantomData<fn() -> H>,
 }
 ```
@@ -284,11 +285,12 @@ finalization fold that makes `key_hash()` avalanche-quality. Cache
 representation, the algorithm choice, and invalidation are not exposed through
 `Indexable`, which surfaces only the finalized digest value via `key_hash()`.
 
-The shipped indexable words use component `OnceLock<u64>` caches. `key_hash()`
+The shipped indexable words use relaxed-atomic sentinel caches. `key_hash()`
 (and the `Hash` impl, which is just `state.write_u64(self.key_hash())`) can
 populate them through `&self`; structural mutators clear affected cells through
-`&mut self`. This preserves `Send + Sync` without imposing either bound on the
-`Indexable` trait.
+`&mut self`. The cached value is a pure function of immutable structural fields,
+so racing misses compute the same digest and require no compare-and-swap. This
+preserves `Send + Sync` without imposing either bound on `Indexable`.
 
 The finalization fold is applied per-algorithm and per-width by the private
 `HashFinalize` helper: narrow storage under a weak hasher (`[u8; 8]` +
@@ -307,9 +309,14 @@ pays no hashing on its critical path.
 Hash composition follows the logical wrappers:
 
 ```text
-packed Pauli hash = hash(nqubits, X bits, Z bits)
+packed Pauli hash = hash(X bits, Z bits)
 lossy hash        = combine(Pauli hash, loss hash)
 ```
+
+Width remains part of structural equality but is omitted from the digest,
+matching the legacy bucket distribution. Different-width words may therefore
+collide, which is valid under the hash contract; a `Sum` already enforces one
+common width across its support.
 
 `combine` must be ordered and domain-separated. It must not be an
 unqualified XOR of arbitrary component digests.
@@ -372,9 +379,10 @@ layer:
 - planes are stored as flat plane blocks, not `Vec<[u8; N]>`, and each key's
   plane slot is padded to the alignment the backend's widest SIMD lane (or a
   device's coalescing width) requires; and
-- `hash_into` computes the whole hash column from the planes and from the
-  private `OnceLock<u64>` component caches, so the plane-parallel hash and the
-  scalar `Hash` in [Component hashes](#component-hashes) must agree bit for bit.
+- `hash_into` computes the whole hash column directly from the planes using the
+  same structural fold the scalar word caches in relaxed atomics, so the
+  plane-parallel hash and scalar `Hash` in
+  [Component hashes](#component-hashes) agree bit for bit.
 
 `gather` selects or permutes columns by index for radix partitioning, truncation
 compaction, and device staging; it copies plane by plane and never materializes

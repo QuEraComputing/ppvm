@@ -58,8 +58,8 @@ pub fn run_shots_serial(
 /// Run `shots` shots across the global rayon pool. One entry per shot, in order
 /// (preserved by the indexed parallel iterator). The pool size is whatever
 /// [`set_global_threads`] configured at startup; each shot runs on a worker
-/// thread, so the intra-shot parallelism guard keeps a single shot serial and
-/// the pool is never oversubscribed.
+/// thread. Under `traits-2`, this is shot-level/downstream parallelism only;
+/// the tableau itself remains serial.
 #[cfg(feature = "rayon")]
 pub fn run_shots_parallel(
     module: &PPVMModule,
@@ -100,8 +100,7 @@ pub fn run_shots(
 }
 
 /// Configure the process-wide rayon thread pool. Call once, before any parallel
-/// work runs. A count of `1` forces fully serial, deterministic execution — both
-/// across shots and within a single machine's coefficient propagation.
+/// work runs. A count of `1` forces serial shot execution.
 #[cfg(feature = "rayon")]
 pub fn set_global_threads(threads: usize) -> eyre::Result<()> {
     rayon::ThreadPoolBuilder::new()

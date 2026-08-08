@@ -4,13 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = []
+default = ["legacy"]
+legacy = ["dep:ppvm-pauli-sum-legacy", "dep:ppvm-tableau-legacy"]
+traits-2 = ["dep:ppvm-tableau-2"]
 # Parallelise multi-shot sampling across the global rayon thread pool.
 rayon = ["dep:rayon"]
 
 [dependencies]
-ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
-ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+ppvm-pauli-sum-legacy = { package = "ppvm-pauli-sum", version = "0.1.0", path = "../ppvm-pauli-sum", optional = true }
+ppvm-tableau-legacy = { package = "ppvm-tableau", version = "0.1.0", path = "../ppvm-tableau", optional = true }
+ppvm-tableau-2 = { version = "0.1.0", path = "../ppvm-tableau-2", optional = true }
 bitvec = "1.0.1"
 itertools = "0.14"
 num = "0.4.3"

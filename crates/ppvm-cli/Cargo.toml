@@ -3,11 +3,18 @@ name = "ppvm-cli"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# The CLI historically enabled Vihaco's Rayon path unconditionally.
+default = ["legacy", "rayon"]
+legacy = ["ppvm-tui/legacy", "ppvm-vihaco/legacy"]
+traits-2 = ["ppvm-tui/traits-2", "ppvm-vihaco/traits-2"]
+rayon = ["ppvm-vihaco/rayon"]
+
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
 eyre = "0.6.12"
-ppvm-tui = { version = "0.1.0", path = "../ppvm-tui" }
-ppvm-vihaco = { version = "0.1.0", path = "../ppvm-vihaco", features = ["rayon"] }
+ppvm-tui = { version = "0.1.0", path = "../ppvm-tui", default-features = false }
+ppvm-vihaco = { version = "0.1.0", path = "../ppvm-vihaco", default-features = false }
 ratatui = "0.29.0"
 
 [[bin]]

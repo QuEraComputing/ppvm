@@ -16,14 +16,10 @@
 //!   `(weight profile) × (policy cell)`, including the `usize::MAX` disable
 //!   sentinel, which must be ~free on both sides.
 //!
-//! # Why a separate bench target
+//! # Separate benchmark target
 //!
-//! Appending groups to `pauli_sum_integration` was measured to move that
-//! binary's **old**-side numbers by ±10% with no old-crate change — pure
-//! code-layout sensitivity (Mytkowicz), since both engines share one binary. A
-//! separate target leaves the headline bench byte-identical while still holding
-//! both engines here, so every ratio below is same-build and the layout bias
-//! cancels in the ratio.
+//! These longer workload sweeps are kept out of `pauli_sum_integration` so that
+//! target remains focused and each benchmark process has a manageable runtime.
 //!
 //! # Fair-config note
 //!
@@ -33,6 +29,7 @@
 //! ratio is engine-to-engine rather than a storage-codegen artifact.
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use std::collections::BTreeMap;
 
 use ppvm_pauli_sum::config::fxhash::ByteF64 as OldByteF64;
 use ppvm_pauli_sum::strategy::{
@@ -62,6 +59,63 @@ type NewThreshSum = Sum<HashMapStore<NewKey, f64>, NewCoeffThreshold>;
 type OldExactSum = OldPauliSum<OldByteF64<8>>;
 type NewExactSum = Sum<HashMapStore<NewKey, f64>, NoPolicy>;
 
+macro_rules! old_support {
+    ($sum:expr) => {
+        $sum.data()
+            .iter()
+            .map(|(key, coeff)| (key.to_string(), *coeff))
+            .collect::<BTreeMap<_, _>>()
+    };
+}
+
+macro_rules! new_support {
+    ($sum:expr) => {
+        $sum.iter()
+            .map(|(key, coeff)| (key.to_string(), coeff))
+            .collect::<BTreeMap<_, _>>()
+    };
+}
+
+#[track_caller]
+fn assert_supports_match(
+    old: BTreeMap<String, f64>,
+    new: BTreeMap<String, f64>,
+    tolerance: f64,
+    label: &str,
+) {
+    assert_eq!(
+        old.keys().collect::<Vec<_>>(),
+        new.keys().collect::<Vec<_>>(),
+        "[{label}] canonical support keys differ"
+    );
+    for (key, old_coeff) in old {
+        let new_coeff = new[&key];
+        let bound = tolerance.max(old_coeff.abs() * tolerance);
+        assert!(
+            (old_coeff - new_coeff).abs() <= bound,
+            "[{label}] coefficient at {key} differs: old={old_coeff}, new={new_coeff}, tol={bound}"
+        );
+    }
+}
+
+#[track_caller]
+fn assert_threshold_supports_match(
+    old: BTreeMap<String, f64>,
+    new: BTreeMap<String, f64>,
+    label: &str,
+) {
+    // Merge order may put a coefficient a few ulps to either side of the
+    // inclusive threshold. Keep the integration suite's intentional 1% band.
+    const BOUNDARY_BAND: f64 = THRESHOLD * 1.01;
+    let solid = |support: BTreeMap<String, f64>| {
+        support
+            .into_iter()
+            .filter(|(_, coeff)| coeff.abs() >= BOUNDARY_BAND)
+            .collect()
+    };
+    assert_supports_match(solid(old), solid(new), 1e-9, label);
+}
+
 /// `Σ_i Z_i` as `(string, coeff)` terms.
 fn sum_z_terms(n: usize) -> Vec<(String, f64)> {
     (0..n)
@@ -72,8 +126,8 @@ fn sum_z_terms(n: usize) -> Vec<(String, f64)> {
         .collect()
 }
 
-/// The Trotter body (`rzz` decomposed to `cnot; rz; cnot` on both sides), with
-/// caller-driven truncation after every single operation.
+/// The Trotter body using the same explicit `cnot; rz; cnot` decomposition on
+/// both sides, with caller-driven truncation after every single operation.
 macro_rules! trotter_evolve {
     ($state:expr, $n:expr, $steps:expr, $theta_x:expr, $theta_zz:expr, $noise:expr) => {{
         for _ in 0..$steps {
@@ -138,14 +192,21 @@ fn bench_qubit_sweep(c: &mut Criterion) {
             new_seed += (NewKey::from(w.as_str()), v);
         }
 
-        // Report the support the point actually reaches, so a future change that
-        // silently shrinks the workload is visible in the log.
+        // Validate canonical keys and coefficients outside the timed path, then
+        // report support so workload-size movement remains visible in the log.
         {
-            let mut probe = new_seed.clone();
-            trotter_evolve!(probe, n, SWEEP_STEPS, theta_x, theta_zz, noise);
+            let mut new_probe = new_seed.clone();
+            let mut old_probe = old_seed.clone();
+            trotter_evolve!(new_probe, n, SWEEP_STEPS, theta_x, theta_zz, noise);
+            trotter_evolve!(old_probe, n, SWEEP_STEPS, theta_x, theta_zz, noise);
+            assert_threshold_supports_match(
+                old_support!(old_probe),
+                new_support!(new_probe),
+                &format!("qubit sweep n={n}"),
+            );
             println!(
                 "[workload_qubit_sweep] n={n}: final support {} terms",
-                probe.len()
+                new_probe.len()
             );
         }
 
@@ -168,16 +229,14 @@ fn bench_qubit_sweep(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// Attribution — the headline Trotter circuit with the Clifford re-key ABLATED.
+// Attribution — the decomposed Trotter control with the Clifford re-key ABLATED.
 // ---------------------------------------------------------------------------
 //
-// A single-variable A/B for the standing end-to-end drift. `full` is the
-// headline circuit verbatim (`n = 12`, 10 steps, `Combined(1e-6, MAX)`,
-// capacity `n²`); `no_rekey` is the SAME circuit with the two `cnot`s of each
-// `rzz` decomposition removed and everything else — gate count per class,
-// truncate placement, policy, seed, storage — held fixed. Comparing the two
-// ratios attributes (or exonerates) the `RekeyBijective` path as the source of
-// the end-to-end gap, rather than inferring it from a microbench.
+// `full` uses the explicit `cnot; rz; cnot` decomposition (`n = 12`, 10 steps,
+// `Combined(1e-6, MAX)`, capacity `n²`); `no_rekey` removes the two `cnot`s from
+// each decomposition while retaining the other operations, truncate placement,
+// policy, seed and storage. This is an attribution control for the
+// `RekeyBijective` path, not the native-`rzz` integration workload.
 //
 // (The ablated circuit is not physically the same evolution — that is fine and
 // deliberate: it is a timing control, never a numeric one.)
@@ -236,6 +295,23 @@ fn bench_trotter_ablation(c: &mut Criterion) {
     > = Sum::with_capacity(n, combined_new, n.pow(2));
     for (w, v) in sum_z_terms(n) {
         new_seed += (NewKey::from(w.as_str()), v);
+    }
+
+    for (label, no_rekey) in [("full", false), ("no_rekey", true)] {
+        let mut old_probe = old_seed.clone();
+        let mut new_probe = new_seed.clone();
+        if no_rekey {
+            trotter_evolve_no_rekey!(old_probe, n, steps, theta_x, theta_zz, noise);
+            trotter_evolve_no_rekey!(new_probe, n, steps, theta_x, theta_zz, noise);
+        } else {
+            trotter_evolve!(old_probe, n, steps, theta_x, theta_zz, noise);
+            trotter_evolve!(new_probe, n, steps, theta_x, theta_zz, noise);
+        }
+        assert_threshold_supports_match(
+            old_support!(old_probe),
+            new_support!(new_probe),
+            &format!("trotter ablation {label}"),
+        );
     }
 
     let mut g = c.benchmark_group("pauli_sum/workload_trotter_ablation");
@@ -297,28 +373,36 @@ macro_rules! random_circuit_evolve {
 }
 
 fn bench_untruncated_circuit(c: &mut Criterion) {
-    // `n = 8, depth = 2` — a ~10⁴-term support (fan-out saturates the 4⁸ = 65 536
-    // key space) with no truncation to bound it. Old's committed random-circuit
-    // params are `n = 4, depth = 2`; its gate-bench prologue's `n = 12, depth = 2`
-    // saturates 4¹² = 16.7 M terms and runs 5.4 s *per iteration* on both engines,
-    // which is a memory-bandwidth benchmark rather than an engine one — the
-    // interesting regime (map growth, capacity hints, the aux ping-pong) is
-    // already fully exercised at `n = 8`.
+    // `n = 8, depth = 2` reaches a large fraction of the 4⁸ = 65 536 key space
+    // without making the benchmark impractically large. This exercises map
+    // growth and the auxiliary-store ping-pong without truncation.
     let n = 8usize;
     let depth = 2usize;
+    let capacity = n.pow(2);
     let zz: String = (0..n).map(|i| if i < 2 { 'Z' } else { 'I' }).collect();
 
-    let mut old_seed: OldExactSum = OldPauliSum::builder().n_qubits(n).build();
+    let mut old_seed: OldExactSum = OldPauliSum::builder()
+        .n_qubits(n)
+        .capacity(capacity)
+        .build();
     old_seed += (zz.as_str(), 1.0);
-    let mut new_seed = NewExactSum::with_policy(n, NoPolicy);
+    let mut new_seed = NewExactSum::with_capacity(n, NoPolicy, capacity);
     new_seed += (NewKey::from(zz.as_str()), 1.0);
 
     {
-        let mut probe = new_seed.clone();
-        random_circuit_evolve!(probe, n, depth);
+        let mut new_probe = new_seed.clone();
+        let mut old_probe = old_seed.clone();
+        random_circuit_evolve!(new_probe, n, depth);
+        random_circuit_evolve!(old_probe, n, depth);
+        assert_supports_match(
+            old_support!(old_probe),
+            new_support!(new_probe),
+            1e-9,
+            "untruncated circuit",
+        );
         println!(
             "[workload_random_circuit] n={n} depth={depth}: final support {} terms",
-            probe.len()
+            new_probe.len()
         );
     }
 
@@ -385,6 +469,17 @@ macro_rules! truncate_cell {
         for (w, v) in $terms {
             new += (NewWideKey::from(w.as_str()), *v);
         }
+
+        let mut old_probe = old.clone();
+        let mut new_probe = new.clone();
+        old_probe.truncate();
+        new_probe.truncate();
+        assert_supports_match(
+            old_support!(old_probe),
+            new_support!(new_probe),
+            0.0,
+            &$label,
+        );
 
         $group.bench_function(format!("new/{}", $label), |b| {
             b.iter_batched_ref(|| new.clone(), |s| s.truncate(), BatchSize::LargeInput)

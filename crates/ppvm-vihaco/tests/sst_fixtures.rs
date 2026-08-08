@@ -126,6 +126,33 @@ fn branch_on_outcome_deterministic_x_path() {
     );
 }
 
+/// This snapshot is run unchanged in both Cargo backend matrices. The seeded
+/// random branch has a fully defined outcome, so matching this same snapshot
+/// proves the legacy and traits-2 adapters preserve the public PPVM record.
+#[test]
+fn seeded_branch_fixture_matches_cross_backend_snapshot() {
+    let mut machine = PPVM::default();
+    machine
+        .load_file("tests/branch_on_outcome.sst")
+        .expect("load seeded branch fixture");
+    machine
+        .run_with_seed(Some(42))
+        .expect("run seeded branch fixture");
+    let snapshot: Vec<Vec<MeasurementOutcome>> = machine
+        .measurement_record()
+        .into_iter()
+        .map(|event| event.into_iter().collect())
+        .collect();
+    assert_eq!(
+        snapshot,
+        vec![
+            vec![MeasurementOutcome::Zero],
+            vec![MeasurementOutcome::Zero],
+        ]
+    );
+    assert!(machine.trace_record().is_empty());
+}
+
 #[test]
 fn branch_on_outcome_statistics_balanced_and_invariant_holds() {
     // `branch_on_outcome.sst` puts q0 in |+>, so its measurement is a fair
@@ -250,27 +277,60 @@ fn paulisum_trotter_matches_pure_rust_reference() {
 
     // Pure Rust reference: same N=8 / strategy / circuit order as the PauliSum
     // Bits64 bucket in `ppvm_vihaco::component`.
-    use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
-    use ppvm_pauli_sum::prelude::*;
-    use ppvm_pauli_sum::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
-    type RefConfig = ByteFxHashF64<8, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
+    #[cfg(feature = "legacy")]
+    let reference = {
+        use ppvm_pauli_sum_legacy::config::indexmap::ByteFxHashF64;
+        use ppvm_pauli_sum_legacy::prelude::*;
+        use ppvm_pauli_sum_legacy::strategy::{
+            CoefficientThreshold, CombinedStrategy, MaxPauliWeight,
+        };
+        type RefConfig = ByteFxHashF64<8, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>;
 
-    let mut state: PauliSum<RefConfig> = PauliSum::builder()
-        .n_qubits(2)
-        .strategy(CombinedStrategy(
-            CoefficientThreshold(1e-6),
-            MaxPauliWeight(usize::MAX),
-        ))
-        .build();
-    state += ("ZZ", 1.0);
-    state.rxx(0, 1, 0.1);
-    state.rzz(0, 1, 0.05);
-    state.truncate();
-    state.rxx(0, 1, 0.1);
-    state.rzz(0, 1, 0.05);
-    state.truncate();
-    let pat = PauliPattern::parse("Z?*").expect("parse pattern");
-    let reference = state.trace(&pat);
+        let mut state: PauliSum<RefConfig> = PauliSum::builder()
+            .n_qubits(2)
+            .strategy(CombinedStrategy(
+                CoefficientThreshold(1e-6),
+                MaxPauliWeight(usize::MAX),
+            ))
+            .build();
+        state += ("ZZ", 1.0);
+        state.rxx(0, 1, 0.1);
+        state.rzz(0, 1, 0.05);
+        state.truncate();
+        state.rxx(0, 1, 0.1);
+        state.rzz(0, 1, 0.05);
+        state.truncate();
+        state.trace(&PauliPattern::parse("Z?*").expect("parse pattern"))
+    };
+
+    #[cfg(feature = "traits-2")]
+    let reference = {
+        use ppvm_pauli_sum_2::{
+            CoefficientThreshold, CombinedPolicy, HashMapStore, MaxPauliWeight, PauliPattern,
+            PauliWord, Sum,
+        };
+        use ppvm_tableau_2::prelude::{RotationTwo, Trace};
+        type RefSum = Sum<
+            HashMapStore<PauliWord<[u8; 8]>, f64>,
+            CombinedPolicy<CoefficientThreshold, MaxPauliWeight>,
+        >;
+
+        let mut state: RefSum = Sum::with_policy(
+            2,
+            CombinedPolicy(
+                CoefficientThreshold { threshold: 1e-6 },
+                MaxPauliWeight(usize::MAX),
+            ),
+        );
+        state += (PauliWord::from("ZZ"), 1.0);
+        state.rxx(0, 1, 0.1);
+        state.rzz(0, 1, 0.05);
+        state.truncate();
+        state.rxx(0, 1, 0.1);
+        state.rzz(0, 1, 0.05);
+        state.truncate();
+        state.trace(&PauliPattern::parse("Z?*").expect("parse pattern"))
+    };
 
     assert_eq!(
         through_sst[0], reference,
@@ -289,28 +349,58 @@ fn lossy_paulisum_loss_trace_matches_pure_rust_reference() {
     let through_sst = machine.trace_record();
     assert_eq!(through_sst.len(), 1, "expected one trace emission");
 
-    use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
-    use ppvm_pauli_sum::prelude::*;
-    use ppvm_pauli_sum::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
-    type RefConfig = ByteFxHashF64<
-        8,
-        CombinedStrategy<CoefficientThreshold, MaxPauliWeight>,
-        LossyPauliWord<[u8; 8]>,
-    >;
+    #[cfg(feature = "legacy")]
+    let reference = {
+        use ppvm_pauli_sum_legacy::config::indexmap::ByteFxHashF64;
+        use ppvm_pauli_sum_legacy::prelude::*;
+        use ppvm_pauli_sum_legacy::strategy::{
+            CoefficientThreshold, CombinedStrategy, MaxPauliWeight,
+        };
+        type RefConfig = ByteFxHashF64<
+            8,
+            CombinedStrategy<CoefficientThreshold, MaxPauliWeight>,
+            LossyPauliWord<[u8; 8]>,
+        >;
 
-    let mut state: PauliSum<RefConfig> = PauliSum::builder()
-        .n_qubits(2)
-        .strategy(CombinedStrategy(
-            CoefficientThreshold(1e-10),
-            MaxPauliWeight(usize::MAX),
-        ))
-        .build();
-    state += ("ZZ", 1.0);
-    state.cnot(0, 1);
-    state.loss_channel(0, 0.3);
-    state.truncate();
-    let pat = PauliPattern::parse("Z?*").expect("parse pattern");
-    let reference = state.trace(&pat);
+        let mut state: PauliSum<RefConfig> = PauliSum::builder()
+            .n_qubits(2)
+            .strategy(CombinedStrategy(
+                CoefficientThreshold(1e-10),
+                MaxPauliWeight(usize::MAX),
+            ))
+            .build();
+        state += ("ZZ", 1.0);
+        state.cnot(0, 1);
+        state.loss_channel(0, 0.3);
+        state.truncate();
+        state.trace(&PauliPattern::parse("Z?*").expect("parse pattern"))
+    };
+
+    #[cfg(feature = "traits-2")]
+    let reference = {
+        use ppvm_pauli_sum_2::{
+            CoefficientThreshold, CombinedPolicy, HashMapStore, LossyPauliWord, MaxPauliWeight,
+            PauliPattern, Sum,
+        };
+        use ppvm_tableau_2::prelude::{Clifford, LossChannel, Trace};
+        type RefSum = Sum<
+            HashMapStore<LossyPauliWord<[u8; 8]>, f64>,
+            CombinedPolicy<CoefficientThreshold, MaxPauliWeight>,
+        >;
+
+        let mut state: RefSum = Sum::with_policy(
+            2,
+            CombinedPolicy(
+                CoefficientThreshold { threshold: 1e-10 },
+                MaxPauliWeight(usize::MAX),
+            ),
+        );
+        state += (LossyPauliWord::from("ZZ"), 1.0);
+        state.cnot(0, 1);
+        state.loss_channel(0, 0.3);
+        state.truncate();
+        state.trace(&PauliPattern::parse("Z?*").expect("parse pattern"))
+    };
 
     assert_eq!(
         through_sst[0], reference,

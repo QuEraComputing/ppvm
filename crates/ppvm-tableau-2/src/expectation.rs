@@ -20,6 +20,7 @@
 
 use fxhash::FxHashMap as HashMap;
 use num::complex::Complex64;
+use ppvm_pauli_sum_2::PauliPattern;
 use ppvm_traits_2::{Pauli, Word};
 
 use crate::data::{Bitstring, GeneralizedTableau, RowStorage};
@@ -77,5 +78,18 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
                 odd_phase_mask,
             )
         }
+    }
+
+    /// Sum `⟨ψ|P|ψ⟩` over every Pauli word accepted by `pattern`.
+    ///
+    /// This is old `GeneralizedTableau::trace`: pattern enumeration is
+    /// exponential by definition, while each leaf delegates to the audited
+    /// single-word [`expectation`](Self::expectation) kernel. Unbounded star
+    /// patterns panic, matching the old enumerator.
+    pub fn trace(&self, pattern: &PauliPattern) -> f64 {
+        pattern
+            .enumerate_matches::<A>(self.n_qubits())
+            .map(|word| self.expectation(&word))
+            .sum()
     }
 }

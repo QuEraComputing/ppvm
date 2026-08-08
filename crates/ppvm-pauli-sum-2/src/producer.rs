@@ -50,7 +50,11 @@ impl<F> RekeyProducer<F> {
 
 impl<K, C, F> TermProducer<K, C> for RekeyProducer<F>
 where
-    F: Fn(&K, &C) -> (K, C),
+    // `Send + Sync` on the closure is what makes `RekeyProducer<F>` satisfy
+    // `TermProducer`'s `Send + Sync` supertrait — architecture feature 12: a
+    // producer is `&self`-only, so a concurrent storage backend can split the
+    // produce walk without widening a single signature.
+    F: Fn(&K, &C) -> (K, C) + Send + Sync,
 {
     #[inline(always)]
     fn produce<S: TermSink<K, C>>(&self, key: &K, coeff: &C, sink: &mut S) {

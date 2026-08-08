@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Parse and execute Stim circuits against a [`GeneralizedTableau`].
+//! Parse and execute Stim circuits against a supported generalized tableau.
 //!
 //! Two-stage pipeline:
 //!
@@ -18,7 +18,7 @@
 //!
 //! ```ignore
 //! use ppvm_stim::{parse_extended, sample};
-//! use ppvm_tableau::prelude::*;
+//! use ppvm_stim::backend::prelude::*;
 //!
 //! let prog = parse_extended(circuit_src)?;
 //! let shots = sample(&prog, 10_000, |_| {
@@ -31,7 +31,47 @@
 //! single-shot demos — never call them from a shot loop.
 //!
 //! [`ExtendedProgram`]: stim_parser::prelude::ExtendedProgram
-//! [`GeneralizedTableau`]: ppvm_tableau::prelude::GeneralizedTableau
+//! [`GeneralizedTableau`]: backend::prelude::GeneralizedTableau
+
+#[cfg(all(feature = "legacy", feature = "traits-2"))]
+compile_error!("features `legacy` and `traits-2` are mutually exclusive");
+#[cfg(not(any(feature = "legacy", feature = "traits-2")))]
+compile_error!("enable exactly one ppvm-stim backend: `legacy` or `traits-2`");
+
+/// Types and traits from the selected tableau backend.
+pub mod backend {
+    #[cfg(feature = "legacy")]
+    pub use ppvm_pauli_sum_legacy as pauli_sum;
+    #[cfg(feature = "traits-2")]
+    pub use ppvm_tableau_2 as tableau;
+    #[cfg(feature = "legacy")]
+    pub use ppvm_tableau_legacy as tableau;
+
+    /// Configuration names used by the selected backend.
+    #[cfg(feature = "legacy")]
+    pub use ppvm_pauli_sum_legacy::config;
+    /// Storage aliases matching legacy call sites. The `-2` tableau stores
+    /// dynamically sized rows, so the legacy byte-width parameter is inert.
+    #[cfg(feature = "traits-2")]
+    pub mod config {
+        pub mod indexmap {
+            /// Byte-packed row storage matching legacy `ByteFxHashF64<N>`.
+            pub type ByteFxHashF64<const N: usize> = [u8; N];
+        }
+        pub mod fx64hash {
+            /// Native-word row storage matching legacy `Byte8F64<N>`.
+            pub type Byte8F64<const N: usize> = [usize; N];
+        }
+    }
+
+    /// Convenience imports from the selected tableau backend.
+    pub mod prelude {
+        #[cfg(feature = "traits-2")]
+        pub use ppvm_tableau_2::prelude::*;
+        #[cfg(feature = "legacy")]
+        pub use ppvm_tableau_legacy::prelude::*;
+    }
+}
 
 pub mod executor;
 pub mod validate;
@@ -39,7 +79,8 @@ pub mod validate;
 pub use stim_parser::prelude::*;
 
 pub use executor::{
-    execute, execute_validated, sample, sample_serial, sample_serial_validated, sample_validated,
+    BackendTableau, StimTableau, execute, execute_validated, sample, sample_serial,
+    sample_serial_validated, sample_validated,
 };
 #[cfg(feature = "rayon")]
 pub use executor::{sample_parallel, sample_parallel_validated};
@@ -65,66 +106,24 @@ pub enum Error {
 
 /// Parse → validate → execute in one shot. Re-parses each call; do **not**
 /// use in shot loops — use [`parse_extended`] + [`sample`] instead.
-pub fn run_string<T, I, C>(
+pub fn run_string<C, I, S>(
     src: &str,
-    tab: &mut ppvm_tableau::prelude::GeneralizedTableau<T, I, C>,
+    tab: &mut BackendTableau<C, I, S>,
 ) -> Result<Vec<Option<bool>>, Error>
 where
-    T: ppvm_pauli_sum::prelude::Config,
-    <<T as ppvm_pauli_sum::prelude::Config>::Storage as bitvec::view::BitView>::Store: num::PrimInt,
-    C: ppvm_tableau::prelude::SparseVector<num::Complex<T::Coeff>, I> + std::fmt::Debug,
-    T::Coeff: num::One
-        + num::Zero
-        + Clone
-        + num::Num
-        + num::ToPrimitive
-        + std::fmt::Debug
-        + std::ops::Mul<f64>
-        + PartialOrd<f64>
-        + PartialOrd
-        + Send
-        + Sync,
-    num::Complex<T::Coeff>: std::ops::Mul<Output = num::Complex<T::Coeff>>
-        + From<num::complex::Complex64>
-        + std::ops::MulAssign
-        + std::ops::AddAssign
-        + num::One
-        + num::complex::ComplexFloat
-        + Copy,
-    I: ppvm_tableau::prelude::TableauIndex + std::fmt::Debug + Send + Sync,
+    executor::SelectedBackend: executor::TableauType<C, I, S>,
 {
     let prog = parse_extended(src)?;
     let results = execute(&prog, tab)?;
     Ok(results)
 }
 
-pub fn run_file<T, I, C>(
+pub fn run_file<C, I, S>(
     path: &Path,
-    tab: &mut ppvm_tableau::prelude::GeneralizedTableau<T, I, C>,
+    tab: &mut BackendTableau<C, I, S>,
 ) -> Result<Vec<Option<bool>>, Error>
 where
-    T: ppvm_pauli_sum::prelude::Config,
-    <<T as ppvm_pauli_sum::prelude::Config>::Storage as bitvec::view::BitView>::Store: num::PrimInt,
-    C: ppvm_tableau::prelude::SparseVector<num::Complex<T::Coeff>, I> + std::fmt::Debug,
-    T::Coeff: num::One
-        + num::Zero
-        + Clone
-        + num::Num
-        + num::ToPrimitive
-        + std::fmt::Debug
-        + std::ops::Mul<f64>
-        + PartialOrd<f64>
-        + PartialOrd
-        + Send
-        + Sync,
-    num::Complex<T::Coeff>: std::ops::Mul<Output = num::Complex<T::Coeff>>
-        + From<num::complex::Complex64>
-        + std::ops::MulAssign
-        + std::ops::AddAssign
-        + num::One
-        + num::complex::ComplexFloat
-        + Copy,
-    I: ppvm_tableau::prelude::TableauIndex + std::fmt::Debug + Send + Sync,
+    executor::SelectedBackend: executor::TableauType<C, I, S>,
 {
     let src = std::fs::read_to_string(path).map_err(|source| Error::Io {
         path: path.to_path_buf(),

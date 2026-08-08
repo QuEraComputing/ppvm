@@ -233,6 +233,44 @@ pub trait PauliBits: Word {
         out
     }
 
+    /// Consume a word and toggle X/Z bits at two sites in place.
+    ///
+    /// Re-keying kernels already own their key, so this avoids the structural
+    /// copy required by [`toggled_bits2`](PauliBits::toggled_bits2). Packed words
+    /// may override it to defer derived-hash refresh until all writes complete.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn into_toggled_bits2(
+        mut self,
+        i: usize,
+        toggle_x_i: bool,
+        toggle_z_i: bool,
+        j: usize,
+        toggle_x_j: bool,
+        toggle_z_j: bool,
+    ) -> Self
+    where
+        Self: Sized,
+    {
+        if toggle_x_i {
+            let b = self.x_bit(i);
+            self.set_x_bit(i, !b);
+        }
+        if toggle_z_i {
+            let b = self.z_bit(i);
+            self.set_z_bit(i, !b);
+        }
+        if toggle_x_j {
+            let b = self.x_bit(j);
+            self.set_x_bit(j, !b);
+        }
+        if toggle_z_j {
+            let b = self.z_bit(j);
+            self.set_z_bit(j, !b);
+        }
+        self
+    }
+
     /// Number of lost sites. **Zero by default**; `LossyPauliWord` overrides it
     /// with a popcount over its loss plane. This is the `MaxLossWeight` truncation
     /// predicate (old's `PauliWordTrait::loss_weight`), which is why it belongs on

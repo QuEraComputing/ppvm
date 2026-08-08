@@ -1115,8 +1115,10 @@ where
 {
     #[inline(always)]
     fn add_term(&mut self, key: K, coeff: C) {
-        if let Some(previous) = self.primary.insert(key.clone(), coeff.clone()) {
-            self.primary.insert(key, previous + coeff);
+        if let Some(slot) = self.primary.get_mut(&key) {
+            *slot += coeff;
+        } else {
+            self.primary.insert(key, coeff);
         }
     }
 }

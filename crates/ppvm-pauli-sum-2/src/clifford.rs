@@ -11,8 +11,9 @@
 //!   [`Sum::flip_sign_by_key`](crate::Sum) path — walk the existing entries and
 //!   scale each coefficient by the `±1` its own bits demand, **no** map rebuild,
 //!   no key movement, no reallocation (the old crate's in-place `scale`, restored).
-//! * The **word-changing** gates `H`/`S`/`CNOT`/`CZ` re-key every term via the
-//!   move-based [`Sum::rekey_bijective`](crate::Sum) fast path.
+//! * The **word-changing** gates re-key every term via the move-based
+//!   [`Sum::rekey_bijective`](crate::Sum) fast path and direct audited bit/sign
+//!   formulas.
 //!
 //! # The Clifford-sign subtlety
 //!
@@ -23,20 +24,11 @@
 //! `impl<S> Clifford for Sum<S, P> where S::Key: Clifford` would therefore lose
 //! every conjugation sign for a `PauliSum` — a silent correctness bug.
 //!
-//! So this impl does **not** dispatch to the key's bare `Clifford`. For each key
-//! `w` it wraps `w` in a [`Phased`]`<PauliWord>` at phase `+1`, applies the gate
-//! through the phased word's **audited fused** `Clifford` (which *does* track the
-//! `ℤ₄` sign — `ppvm-phased-pauli-word-2`), extracts the resulting phase (a
-//! Clifford never emits `i`, only `ℤ₄ ∈ {+1, −1}`), and multiplies the
-//! coefficient by that `±1` via [`Coefficient::mul_sign`]. The re-keyed term is
-//! keyed on the bare, phase-stripped word. No `ImaginaryUnit` capability is
-//! needed — the phase is a pure real sign. That "never emits `i`" fact is
-//! machine-checked: every generator's conjugation delta is even in `ℤ₄` (`∈ {0,
-//! 2}`), so a phase starting at `+1` stays real, making `clifford_sign`'s `±1`
-//! drain total and its `PosI`/`NegI` branch unreachable
-//! (`lean/PPVM/Pauli/Conjugation.lean` `conjH_isRealPhase`/`conjS_isRealPhase`/
-//! `conjSdag_isRealPhase`/`conjCNOT_isRealPhase`/`conjCZ_isRealPhase` over
-//! `IsRealPhase`).
+//! So this impl does **not** dispatch to the key's bare `Clifford`. It applies
+//! the same pre-mutation bit/sign formulas as the audited fused phased-word
+//! kernels, drains the resulting real sign to the coefficient, and builds each
+//! replacement key directly. The two-site path batches all toggles into one word
+//! rebuild so packed words refresh their structural hash once.
 //!
 //! A Clifford re-key is a bijection, so colliding re-keyed terms never occur —
 //! which is what lets this path take the plain-`insert`
@@ -65,32 +57,14 @@
 //! `conjCNOT_sign`, `conjCZ_sign`); the underlying bit maps are the `Sp(2n, 2)`
 //! isometries of `lean/PPVM/Pauli/Symplectic.lean`.
 
-use ppvm_phased_pauli_word_2::Phased;
 use ppvm_traits_2::{
     Accumulate, Clifford, CliffordBatch, CliffordExtensions, CliffordExtensionsBatch, Coefficient,
-    Indexable, PauliBits, Phase, Retain, Word,
+    Indexable, PauliBits, Retain, Word,
 };
 
 use crate::policy::Policy;
 use crate::store::{RekeyBijective, SignFlipByKey, StoreAlloc};
 use crate::sum::Sum;
-
-/// The `±1` a Clifford conjugation puts on the coefficient, read off the phase
-/// the fused phased-word `Clifford` accumulated from a `+1`-phase input.
-///
-/// A Clifford maps a Pauli to `±` a Pauli, so the phase is always `Pos1` or
-/// `Neg1`; an imaginary result would indicate a bug in the fused kernel.
-#[inline]
-fn clifford_sign(phase: Phase) -> i8 {
-    match phase {
-        Phase::Pos1 => 1,
-        Phase::Neg1 => -1,
-        Phase::PosI | Phase::NegI => {
-            debug_assert!(false, "Clifford conjugation emitted an imaginary phase");
-            1
-        }
-    }
-}
 
 impl<S, P, W, C> Sum<S, P>
 where
@@ -99,35 +73,13 @@ where
     C: Coefficient,
     P: Policy<W, C>,
 {
-    /// Re-key every term by conjugating its Pauli with `gate` (run on a phased
-    /// wrapper), draining the resulting `±1` sign to the coefficient.
-    ///
-    /// Each key is **moved** into the [`Phased`] wrapper (`Phased::new` takes the
-    /// word by value), conjugated in place, and moved back out — no key clone.
-    /// The whole re-key runs through [`Sum::rekey_bijective`], the move-based
-    /// fast path that reuses the support's allocation and skips the batch
-    /// round-trip.
-    #[inline]
-    fn rekey_clifford<G>(&mut self, gate: G)
-    where
-        G: Fn(&mut Phased<W>) + Send + Sync,
-    {
-        self.rekey_bijective(|k: W, c: C| {
-            let mut p = Phased::new(k);
-            gate(&mut p);
-            let (word, phase) = p.into_parts();
-            (word, c.mul_sign(clifford_sign(phase)))
-        });
-    }
-
     /// Re-key every term by a **direct bit rewrite** of its own word: `f` mutates
     /// the moved key's X/Z bits at the gate's qubit and returns whether the
     /// conjugation sign is `−1`.
     ///
-    /// This is the specialization the *single-qubit* word-changing Cliffords take
-    /// instead of [`rekey_clifford`](Self::rekey_clifford)'s [`Phased`]
-    /// round-trip, and it is a named baseline feature, not an incidental
-    /// difference: old implements `h`/`s`/`s_dag`/`sqrt_*` as `map_add` closures
+    /// This is the specialization the *single-qubit* word-changing Cliffords take,
+    /// and it is a named baseline feature, not an incidental difference: old
+    /// implements `h`/`s`/`s_dag`/`sqrt_*` as `map_add` closures
     /// that read `get_xbit`/`get_zbit`, write the swapped/XOR'd bits, `rehash()`,
     /// and pick the sign from a two-bit test, with the source comment
     ///
@@ -148,6 +100,22 @@ where
     {
         self.rekey_bijective(|mut k: W, c: C| {
             let negate = f(&mut k);
+            if negate { (k, -c) } else { (k, c) }
+        });
+    }
+
+    /// Re-key with a replacement word built from the source in one operation.
+    ///
+    /// Two-site gates use this to let packed words copy both planes and refresh
+    /// their structural hash once, after all bit toggles, instead of recomputing
+    /// it after each individual setter.
+    #[inline(always)]
+    fn rekey_owned<F>(&mut self, f: F)
+    where
+        F: Fn(W) -> (W, bool) + Send + Sync,
+    {
+        self.rekey_bijective(|k: W, c: C| {
+            let (k, negate) = f(k);
             if negate { (k, -c) } else { (k, c) }
         });
     }
@@ -247,33 +215,31 @@ where
 
     #[inline(always)]
     fn cnot(&mut self, control: usize, target: usize) {
-        self.rekey_bits(move |k| {
+        self.rekey_owned(move |k| {
             if k.is_lost(control) || k.is_lost(target) {
-                return false;
+                return (k, false);
             }
             let xc = k.x_bit(control);
             let zc = k.z_bit(control);
             let xt = k.x_bit(target);
             let zt = k.z_bit(target);
-            k.set_x_bit(target, xt ^ xc);
-            k.set_z_bit(control, zc ^ zt);
-            xc && zt && (xt == zc)
+            let out = k.into_toggled_bits2(control, false, zt, target, xc, false);
+            (out, xc & zt & (xt == zc))
         });
     }
 
     #[inline(always)]
     fn cz(&mut self, qubit0: usize, qubit1: usize) {
-        self.rekey_bits(move |k| {
+        self.rekey_owned(move |k| {
             if k.is_lost(qubit0) || k.is_lost(qubit1) {
-                return false;
+                return (k, false);
             }
             let x0 = k.x_bit(qubit0);
             let z0 = k.z_bit(qubit0);
             let x1 = k.x_bit(qubit1);
             let z1 = k.z_bit(qubit1);
-            k.set_z_bit(qubit0, z0 ^ x1);
-            k.set_z_bit(qubit1, z1 ^ x0);
-            x0 && x1 && (z0 ^ z1)
+            let out = k.into_toggled_bits2(qubit0, false, x1, qubit1, false, x0);
+            (out, x0 & x1 & (z0 ^ z1))
         });
     }
 }
@@ -369,11 +335,21 @@ where
         });
     }
 
-    /// `CY` — a two-qubit gate, so it keeps the [`Phased`] round-trip (old's
-    /// `map_word!` macro), whose sign rules are the audited fused kernel's.
-    #[inline]
+    /// `CY`: direct two-site rewrite using the same pre-mutation sign predicate
+    /// as the audited phased-word kernel.
+    #[inline(always)]
     fn cy(&mut self, control: usize, target: usize) {
-        self.rekey_clifford(move |p| p.cy(control, target));
+        self.rekey_owned(move |k| {
+            if k.is_lost(control) || k.is_lost(target) {
+                return (k, false);
+            }
+            let xc = k.x_bit(control);
+            let zc = k.z_bit(control);
+            let xt = k.x_bit(target);
+            let zt = k.z_bit(target);
+            let out = k.into_toggled_bits2(control, false, xt ^ zt, target, xc, xc);
+            (out, xc & (xt ^ zt) & !(zc ^ zt))
+        });
     }
 }
 

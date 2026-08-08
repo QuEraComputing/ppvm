@@ -12,7 +12,6 @@ edition = "2024"
 [dependencies]
 ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
 ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
-ppvm-phased-pauli-word-2 = { version = "0.1.0", path = "../ppvm-phased-pauli-word-2" }
 # The lossy key type behind `LossyPauliSum` and the `ResetLossChannel` impl,
 # which old restricts to `LossyPauliWord` keys (`ppvm-pauli-sum/src/sum/noise.rs`).
 ppvm-lossy-pauli-word-2 = { version = "0.1.0", path = "../ppvm-lossy-pauli-word-2" }

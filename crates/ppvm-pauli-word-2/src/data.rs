@@ -342,6 +342,38 @@ where
     ) -> Self {
         PauliWord::with_bits_toggled2(self, i, toggle_x_i, toggle_z_i, j, toggle_x_j, toggle_z_j)
     }
+
+    #[inline(always)]
+    fn into_toggled_bits2(
+        mut self,
+        i: usize,
+        toggle_x_i: bool,
+        toggle_z_i: bool,
+        j: usize,
+        toggle_x_j: bool,
+        toggle_z_j: bool,
+    ) -> Self {
+        debug_assert!(i < self.nqubits, "qubit {i} out of bounds");
+        debug_assert!(j < self.nqubits, "qubit {j} out of bounds");
+        if toggle_x_i {
+            let bit = self.xbits[i];
+            self.xbits.set(i, !bit);
+        }
+        if toggle_z_i {
+            let bit = self.zbits[i];
+            self.zbits.set(i, !bit);
+        }
+        if toggle_x_j {
+            let bit = self.xbits[j];
+            self.xbits.set(j, !bit);
+        }
+        if toggle_z_j {
+            let bit = self.zbits[j];
+            self.zbits.set(j, !bit);
+        }
+        self.invalidate_hash();
+        self
+    }
 }
 
 impl<A: PauliStorage, H> Clone for PauliWord<A, H> {

@@ -171,6 +171,18 @@ where
             }
         });
     }
+
+    #[inline(always)]
+    fn depolarize1_many(&mut self, targets: &[usize], p: C) {
+        let factor = C::one() - p * (4.0 / 3.0);
+        self.scale_by_key(move |k: &W, c: &mut C| {
+            for &qubit in targets {
+                if !k.is_lost(qubit) && (k.x_bit(qubit) || k.z_bit(qubit)) {
+                    *c *= factor.clone();
+                }
+            }
+        });
+    }
 }
 
 /// Two-qubit depolarizing: scale by `1 − 16p/15` every term that is non-identity
@@ -193,6 +205,23 @@ where
             let b = k.x_bit(qubit1) || k.z_bit(qubit1);
             if a || b {
                 *c *= factor.clone();
+            }
+        });
+    }
+
+    #[inline(always)]
+    fn depolarize2_many(&mut self, pairs: &[(usize, usize)], p: C) {
+        let factor = C::one() - p * (16.0 / 15.0);
+        self.scale_by_key(move |k: &W, c: &mut C| {
+            for &(qubit0, qubit1) in pairs {
+                if k.is_lost(qubit0) || k.is_lost(qubit1) {
+                    continue;
+                }
+                let a = k.x_bit(qubit0) || k.z_bit(qubit0);
+                let b = k.x_bit(qubit1) || k.z_bit(qubit1);
+                if a || b {
+                    *c *= factor.clone();
+                }
             }
         });
     }

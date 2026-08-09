@@ -31,6 +31,29 @@ mise run perf-report -- --reuse target/perf-report/raw.txt
 Outputs land in `target/perf-report/`: `raw.txt` (concatenated Criterion
 output), `pairs.tsv` (every pair, slowest first), and `report.md`.
 
+## Ruling out executable placement
+
+A row can clear four launches and still not be an engine regression: both sides
+live in one binary, so a loop whose branch target lands badly relative to a
+cache line pays for it in every process. The control is to rebuild with the
+instruction stream unchanged and only the padding moved, then remeasure.
+
+```bash
+RUSTFLAGS="-Cllvm-args=-align-all-functions=6" \
+  mise run perf-report -- --bench pauli_sum_integration --filter pauli_error \
+                          --launches 4 --out /tmp/layout-a
+RUSTFLAGS="-Cllvm-args=-align-all-nofallthru-blocks=5" \
+  mise run perf-report -- --bench pauli_sum_integration --filter pauli_error \
+                          --launches 4 --out /tmp/layout-b
+```
+
+If the ratio crosses parity — or the *absolute* time of one side moves while
+the other holds — the row is placement, not work. That is exactly how
+`pauli_error_sweep` was adjudicated (1.130× → 0.948× / 0.958×, with the new
+side moving 5010 → ~4395 ns); see the 2026-08-09 follow-up in
+`../docs/performance-report.md`. Note these flags change codegen for the whole
+binary, so use them only as a control, never to report a headline number.
+
 Accepted regressions go in `perf-allowlist.txt`, one `fnmatch` pattern per
 line with a comment explaining the acceptance. It is empty on purpose; the
 standing policy is in the "Perf-drift allowlist" section of `docs/log.md`.

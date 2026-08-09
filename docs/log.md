@@ -969,6 +969,8 @@ native check/Clippy matrices, formatting, and `cargo machete` also pass.
 | cutover.python.sum-r | impl-friction | med | impl/test | **closed** | Native `GeneralizedTableauSum.r` is exported in both backend modes and parity-tested through the Python `RotationsMixin`. |
 | cutover.python.binding-split | maintenance | low | refactor | **closed** | Split all three shared binding generators into `mod.rs` module directories with cohesive multi-`#[pymethods]` submodules. Both fresh 238-test backend suites, class inventory/backend identity checks, native check/Clippy matrices, formatting, and machete pass. |
 | cutover.core-perf | perf-drift | high | impl/human | **closed — performance gate cleared (`73580afa`)** | After `0fc0c57e` and `73580afa` plus final adjudication, the original 75 above-gate rows are 14 fixed, 11 parity, 0 actionable, and 50 non-actionable. The five grouped adjacent rows are 3 fixed, 1 parity, 1 non-actionable, and 0 robust. All 80 observations have no actionable regression; raw ranges and adjudications are in `docs/performance-report.md`. Destructive cutover remains a maintainer approval/review decision. |
+| perf.harness | maintenance | med | tooling | **closed** | `mise run perf-report` (`benchmarks/perf_regression_report.py`) drives the whole conformance matrix, pairs the medians, classifies against the 1.03 gate and refuses to call a one-launch row robust. Reproduced 15 of the audit's adjudicated controls within measurement noise on first use. |
+| perf.reaudit | perf-drift | med | impl/human | **closed — no actionable regression at `e3a37026`** | Post-RNG-injection re-audit: 828 pairs, 590 improved, 170 parity, 0 actionable. `pauli_error_sweep` (1.158×) is executable placement — two alignment-perturbed builds put NEW at ~4395 ns against its 5010 ns default, and a work-removing ablation measured *worse*. `pauli_sum_surface/add/term` is unchanged at 1.67× since `73580afa`; the `1.014×` headline in `docs/performance-report.md` does not reproduce at its own commit and is corrected there. |
 
 ### Full core benchmark audit (2026-08-07)
 
@@ -1060,3 +1062,50 @@ The complete row lists, before→after ratios, evidence adjudications, and raw
 output paths are in `docs/performance-report.md`. The performance cutover
 blocker is closed. Destructive rename/removal still awaits maintainer approval
 and review.
+
+### Post-RNG-injection re-audit (2026-08-09)
+
+`e3a37026` inverted RNG ownership across the whole stochastic surface after the
+gate closed at `73580afa`, so the matrix was rerun — this time through
+`mise run perf-report` rather than by hand. **828 pairs: 590 improved, 170 at
+parity, 66 above the 1.03 gate, 0 actionable.** Every end-to-end workload
+(Trotter, MSD-85q, qubit sweeps, branch coalescing, mixture sampling) is at
+parity or better.
+
+The screening reproduced 15 of the rows already adjudicated in
+`docs/performance-report.md` within measurement noise — `scratch_new_x85`
+3.685× vs 3.647×, lossy `clone_warm` 2.071× vs 2.071×, `inspect/get` 1.325× vs
+1.380×, `read/get` 1.299× vs 1.291×, and so on. That agreement is what
+qualifies the new harness: it recovers the prior audit's numbers without
+inheriting its scripts.
+
+Two rows needed new work.
+
+`pauli_sum/pauli_error/{side}/pauli_error_sweep` screened at 1.158×
+(1.152–1.163 over four launches, 4.43 → 5.12 µs) and is the only row that ever
+looked like an engine regression on real work. It is not one. The two walks
+disassemble to the same ~23 instructions per slot over the same 40-byte entry
+stride, and the ratio inverts under pure placement perturbation: rebuilt with
+`-Cllvm-args=-align-all-functions=6` the pair measures 0.948× (NEW 4395 ns) and
+with `-align-all-nofallthru-blocks=5` it measures 0.958× (NEW 4396 ns), against
+NEW's 5010 ns in the default layout — same instruction bytes, only `nop`
+padding differs. An ablation that replaced the four-way branch tree with old's
+indexed-factor shape (136 → 112 byte loop body, strictly less work) measured
+*worse* at 1.163×, and was reverted. The row joins `clifford/cy`,
+`clifford/zcy_alias` and `workload_trotter_ablation/full` as executable
+placement.
+
+`pauli_sum_surface/add/term` confirmed at 1.666× (1.641–1.669, 7.14 →
+11.88 ns), which contradicted the `1.014×` headline recorded at `73580afa`.
+Rebuilding that commit in a clean worktree and remeasuring it with the same
+harness gives **1.668× (1.658–1.677, 7.13 → 11.89 ns)** — indistinguishable
+from HEAD. Nothing regressed; the headline entry does not reproduce at its own
+commit and is corrected in `docs/performance-report.md`. The row is a 4.7 ns
+single-probe insert whose neighbours are healthy (`add/extend` 0.96×,
+`add/sum_disjoint` 0.58×), and the whole timed path — `ppvm-pauli-sum-2`'s
+`store.rs`/`ops.rs`/`sum.rs` and all of `ppvm-pauli-word-2` — is byte-identical
+across the range.
+
+No engine code changed. `cargo test --workspace` (133 result sets, 0 failures),
+fmt, and strict Clippy including `--all-targets` on `ppvm-pauli-sum-2` all
+pass.

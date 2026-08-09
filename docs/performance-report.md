@@ -75,7 +75,7 @@ and source-identical helpers remain non-actionable.
 | ordinary CY | 1.399× | 1.004× | 0.998–1.021× | parity |
 | ordinary √X | 1.294× | 0.870× | 0.850–0.893× | fixed |
 | pattern parse, indexed | 1.151× | 0.478× | 0.465–0.492× | fixed |
-| PauliSum add term | 1.153× | 1.014× | 1.004–1.030× | parity |
+| PauliSum add term | 1.153× | 1.014× | 1.004–1.030× | parity — **does not reproduce, see the 2026-08-09 follow-up** |
 | PauliSum CNOT batch | 1.044× | 0.853× | 0.845–0.919× | fixed |
 | PauliSum Z-noise batch | 1.037× | 0.755× | 0.745–0.800× | fixed |
 | phased CNOT | — | 0.980× | final median | no regression |
@@ -214,3 +214,135 @@ cutover has not been performed and still awaits maintainer approval and review.
 - `/tmp/ppvm-core-perf-dd1fee00/verification/fmt.out`
 - `/tmp/ppvm-core-perf-dd1fee00/verification/relevant-clippy.out`
 - `/tmp/ppvm-core-perf-dd1fee00/verification/lean.out`
+
+---
+
+# Follow-up re-audit — 2026-08-09
+
+Commit: `e3a370268baedd0473a3c61427e00640a55df170` (`e3a37026`), the RNG
+ownership inversion, which landed after the gate above closed and rewrote every
+stochastic entry point on the `-2` surface.
+
+## Method
+
+Driven by `mise run perf-report` (`benchmarks/perf_regression_report.py`)
+rather than by hand. Darwin, release profile, Criterion 0.7, otherwise idle
+machine. Screening protocol 20 samples / 1 s warm-up / 2 s measurement; every
+reported ratio below is the median of **four** independent launches with its
+process range. Same gate as above: improvement below 0.97, parity 0.97–1.03,
+and a robust regression needs both the median and the process minimum above
+1.03.
+
+**828 pairs: 590 improved, 170 parity, 66 above the gate, 0 actionable.** All
+end-to-end workloads — Trotter, MSD-85q, qubit sweeps, branch coalescing,
+mixture sampling — are at parity or better.
+
+## Harness cross-check
+
+The screening recovered the "Prior evidence-adjudicated controls" table above
+without reusing any of its scripts, which is the evidence that the two
+harnesses measure the same thing:
+
+| benchmark | 2026-08-08 | 2026-08-09 |
+|---|---:|---:|
+| `tableau-micro/scratch_new_x85/{side}` | 3.647× | 3.685× |
+| `sym/surface/construct/{side}/term_variable` | 3.011× | 2.944× |
+| `sym/surface/construct/{side}/term_constant` | 2.427× | 2.467× |
+| `word_surface/clone_copy/256/lossy/{side}/clone_warm` | 2.071× | 2.071× |
+| `word_surface/clone_copy/256/lossy/{side}/clone_cold` | 2.055× | 2.056× |
+| `word_surface/ordinary/mutate/256/{side}/set_x_bit` | 1.658× | 1.592× |
+| `word_surface/ordinary/mutate/256/{side}/set_z_bit` | 1.496× | 1.455× |
+| `pauli_sum_surface/inspect/get/{side}` | 1.380× | 1.325× |
+| `word_surface/ordinary/read/256/{side}/get` | 1.291× | 1.299× |
+| `word_surface/ordinary/observation/256/{side}/equality` | 1.206× | 1.193× |
+| `pauli_sum_surface/inspect/contains_key/{side}` | 1.079× | 1.090× |
+| `pauli_sum_surface/inspect/contains_key_value/{side}` | 1.078× | 1.087× |
+
+Their prior adjudications stand unchanged.
+
+## `pauli_error_sweep` — executable placement
+
+`pauli_sum/pauli_error/{side}/pauli_error_sweep` screened at **1.158×**
+(1.152–1.163, 4.43 → 5.12 µs). It is the only row in the whole matrix that ever
+looked like an engine regression on a real workload, and it is not one.
+
+The two kernels are equivalent instruction for instruction: the new walk
+(`HashMapStore::scale_pauli_error`) inlines to ~23 instructions per full slot
+and old's out-of-line `ACMapScale::scale` to the same ~23, over the same 40-byte
+entry stride, the same two `ldurb`+`lsr` bit decode, the same `rbit/clz/smaddl`
+hashbrown group scan. New is if anything leaner — it keeps the three
+eigenvalues in registers where old reloads them from the closure environment.
+The support is identical on both sides at every intermediate step.
+
+The ratio inverts under pure placement perturbation. Same source, same commit,
+`-Cllvm-args` alignment flags only; the two disassemblies differ solely by
+inserted `nop` padding:
+
+| build | ratio | process range | old | new |
+|---|---:|---:|---:|---:|
+| default | 1.130× | 1.123–1.141× | 4419.3 ns | 5010.0 ns |
+| `-align-all-functions=6` | 0.948× | 0.942–0.962× | 4617.2 ns | 4394.7 ns |
+| `-align-all-nofallthru-blocks=5` | 0.958× | 0.953–0.993× | 4585.1 ns | 4395.6 ns |
+
+The new walk lands at ~4395 ns in both perturbed layouts and only reaches
+5010 ns in the default one, where its loop's backward-branch target sits 20
+bytes into a cache line instead of on a 64-byte boundary. Two further controls
+agree: a standalone binary linking both engines over identical grown states
+measured 0.952–0.973× (new faster), and an ablation replacing the four-way
+branch tree with old's indexed-factor shape — 136 → 112 byte loop body, a
+strict reduction in work — measured **worse** at 1.163×. The ablation was
+reverted.
+
+Classification: **non-actionable executable-placement control**, the same class
+as `clifford/cy`, `clifford/zcy_alias` and `workload_trotter_ablation/full`.
+The `-Cllvm-args` builds above are a cheap, reusable layout-matched control for
+any future row of this shape.
+
+## `PauliSum add term` — headline correction
+
+`pauli_sum_surface/add/term` confirmed at **1.666×** (1.641–1.669, 7.14 →
+11.88 ns), against the **1.014×** recorded for "PauliSum add term" in the
+headline table of the 2026-08-08 report. Unlike `pauli_error_sweep` it is
+stable *within* a build — the block-alignment control leaves it at 1.644×
+(1.507–1.653) with unchanged absolute times — so placement does not explain it.
+
+`73580afa` was therefore rebuilt in a clean worktree and remeasured with this
+harness, at the exact commit the `1.014×` was recorded against:
+
+| commit | ratio | process range | old | new |
+|---|---:|---:|---:|---:|
+| `73580afa` (audit commit) | 1.668× | 1.658–1.677× | 7.127 ns | 11.885 ns |
+| `99246eb6` (HEAD) | 1.666× | 1.641–1.669× | 7.138 ns | 11.880 ns |
+
+The two are indistinguishable. **Nothing regressed** — the row has been at
+~1.67× throughout, and the `1.014×` headline entry does not reproduce at its
+own commit. `git diff 73580afa..HEAD` corroborates this independently: the
+entire timed path (`ppvm-pauli-sum-2`'s `store.rs`, `ops.rs`, `sum.rs` and all
+of `ppvm-pauli-word-2`) is byte-identical across the range, and the only edit
+to the timed body is `new_term.0.clone()` → `new_term.0` on a `Copy` word,
+which is identical codegen. There is no commit in the range that could have
+caused a change, and measurement confirms none did.
+
+The row itself is a 4.7 ns single-probe insert into a 192-term / 2048-bucket
+map, with healthy neighbours (`add/extend` 0.96×, `add/sum_disjoint` 0.58×). It
+belongs with the other identical-primitive nanobenchmark controls; the
+headline table's entry for it is annotated accordingly.
+
+## Verification
+
+No engine code was changed by this re-audit.
+
+- `cargo test --workspace`: 133 result sets, 0 failures.
+- `cargo test -p ppvm-pauli-sum-2 -p ppvm-conformance-2`: all pass.
+- `cargo fmt --all -- --check`: passed.
+- `cargo clippy --workspace -- -D warnings` and
+  `cargo clippy -p ppvm-pauli-sum-2 --all-targets -- -D warnings`: passed.
+
+## Raw outputs
+
+- `target/perf-report/{raw.txt,pairs.tsv,report.md}` — the 828-pair screening.
+- `target/perf-report/{baseline,after,addterm}/` — `pauli_error_sweep`
+  baseline, the reverted ablation, and the `add/term` confirmation.
+- `/tmp/ppvm-layout-report/`, `/tmp/ppvm-layout-report2/`,
+  `/tmp/ppvm-layout-addterm/` — the alignment-perturbed control builds.
+- `/tmp/ppvm-bisect-73580afa/out/` — the `73580afa` remeasurement.

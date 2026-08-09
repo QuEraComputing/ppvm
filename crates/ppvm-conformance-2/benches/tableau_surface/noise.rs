@@ -10,18 +10,34 @@ macro_rules! channel {
      $old_g:expr, $new_g:expr $(, $arg:expr)* $(,)?) => {{
         let (mut ob, mut nb) = (($old_b).clone(), ($new_b).clone());
         ppvm_traits::traits::$trait::$op(&mut ob $(, $arg)*);
-        ppvm_traits_2::$trait::$op(&mut nb $(, $arg)*);
+        ppvm_traits_2::$trait::$op(
+            &mut nb
+            $(, $arg)*,
+            &mut ppvm_conformance_2::analytic_rng(),
+        );
         assert_bare_eq(&ob, &nb);
         let (mut og, mut ng) = (($old_g).clone(), ($new_g).clone());
         ppvm_traits::traits::$trait::$op(&mut og $(, $arg)*);
-        ppvm_traits_2::$trait::$op(&mut ng $(, $arg)*);
+        ppvm_traits_2::$trait::$op(
+            &mut ng
+            $(, $arg)*,
+            &mut ppvm_conformance_2::analytic_rng(),
+        );
         assert_gen_eq(&og, &ng);
         bench_mut_pair!($group, concat!("bare/", $name), $old_b, $new_b,
             |t: &mut OldBare| ppvm_traits::traits::$trait::$op(t $(, $arg)*),
-            |t: &mut NewBare| ppvm_traits_2::$trait::$op(t $(, $arg)*));
+            |t: &mut NewBare| ppvm_traits_2::$trait::$op(
+                t
+                $(, $arg)*,
+                &mut ppvm_conformance_2::analytic_rng(),
+            ));
         bench_mut_pair!($group, concat!("generalized/", $name), $old_g, $new_g,
             |t: &mut OldGen| ppvm_traits::traits::$trait::$op(t $(, $arg)*),
-            |t: &mut NewGen| ppvm_traits_2::$trait::$op(t $(, $arg)*));
+            |t: &mut NewGen| ppvm_traits_2::$trait::$op(
+                t
+                $(, $arg)*,
+                &mut ppvm_conformance_2::analytic_rng(),
+            ));
     }};
 }
 
@@ -30,11 +46,19 @@ macro_rules! loss {
      $(, $arg:expr)* $(,)?) => {{
         let (mut oc, mut nc) = (($old).clone(), ($new).clone());
         ppvm_traits::traits::$trait::$op(&mut oc $(, $arg)*);
-        ppvm_traits_2::$trait::$op(&mut nc $(, $arg)*);
+        ppvm_traits_2::$trait::$op(
+            &mut nc
+            $(, $arg)*,
+            &mut ppvm_conformance_2::analytic_rng(),
+        );
         assert_gen_eq(&oc, &nc);
         bench_mut_pair!($group, concat!("generalized/", $name), $old, $new,
             |t: &mut OldGen| ppvm_traits::traits::$trait::$op(t $(, $arg)*),
-            |t: &mut NewGen| ppvm_traits_2::$trait::$op(t $(, $arg)*));
+            |t: &mut NewGen| ppvm_traits_2::$trait::$op(
+                t
+                $(, $arg)*,
+                &mut ppvm_conformance_2::analytic_rng(),
+            ));
     }};
 }
 
@@ -226,15 +250,23 @@ pub fn bench(c: &mut Criterion) {
 
     let (mut old_lost, mut new_lost) = (old_g.clone(), new_g.clone());
     ppvm_traits::traits::LossChannel::loss_channel(&mut old_lost, 0, 1.0);
-    ppvm_traits_2::LossChannel::loss_channel(&mut new_lost, 0, 1.0);
-    loss!(
+    ppvm_traits_2::LossChannel::loss_channel(
+        &mut new_lost,
+        0,
+        1.0,
+        &mut ppvm_conformance_2::analytic_rng(),
+    );
+    let (mut old_check, mut new_check) = (old_lost.clone(), new_lost.clone());
+    ppvm_traits::traits::ResetLossChannel::reset_loss_channel(&mut old_check, 0);
+    ppvm_traits_2::ResetLossChannel::reset_loss_channel(&mut new_check, 0);
+    assert_gen_eq(&old_check, &new_check);
+    bench_mut_pair!(
         group,
-        "reset_loss_channel",
-        ResetLossChannel,
-        reset_loss_channel,
+        "generalized/reset_loss_channel",
         old_lost,
         new_lost,
-        0
+        |t: &mut OldGen| ppvm_traits::traits::ResetLossChannel::reset_loss_channel(t, 0),
+        |t: &mut NewGen| ppvm_traits_2::ResetLossChannel::reset_loss_channel(t, 0)
     );
     group.finish();
 }

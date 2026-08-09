@@ -22,3 +22,16 @@ pub type GeneralizedTableauSum<const N: usize, I> =
     ppvm_tableau_2::GeneralizedTableauSum<[usize; N], I>;
 pub type MixtureSampler<const N: usize, I> =
     ppvm_tableau_2::MixtureSampler<[usize; N], I, fxhash::FxBuildHasher>;
+
+/// The generator a `#[pyclass]` wrapper owns (see `§ Where the randomness
+/// lives` in `backend/mod.rs`). `None` seeds from OS entropy.
+///
+/// `SmallRng` matches what the legacy tableau embedded, so a given seed
+/// reproduces the same stream across both backends.
+pub fn make_rng(seed: Option<u64>) -> rand::rngs::SmallRng {
+    use rand::SeedableRng;
+    match seed {
+        Some(s) => rand::rngs::SmallRng::seed_from_u64(s),
+        None => rand::make_rng(),
+    }
+}

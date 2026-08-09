@@ -8,20 +8,34 @@ use vihaco_circuit_isa::{CircuitInstruction, CircuitMessage};
 use super::MAX_QUBITS;
 use super::backend::{
     Backend, CorrelatedLossChannel as _, LossChannel as _, Lossy64, Lossy128, Lossy256, Lossy512,
-    Lossy1024, Lossy2048, Sum64, Sum128, Sum256, Sum512, Sum1024, Sum2048,
+    Lossy1024, Lossy2048, Sum64, Sum128, Sum256, Sum512, Sum1024, Sum2048, draw, executor,
 };
-use super::dispatch::{batch_for, batch_pairs_for, dispatch_pauli_sum};
+use super::dispatch::{batch_draw, batch_pairs_draw, dispatch_pauli_sum};
 use crate::device_info::PPVMDeviceInfo;
 use crate::measurements::CircuitOutcomeEffect;
 
 pub struct PauliSumExecutor<S> {
     pub state: S,
     initial: S,
+    /// See `§ Where the randomness lives` in [`super::backend`].
+    ///
+    /// The sum channels scale coefficients analytically and never draw; this
+    /// stream exists so the executor, not the caller, answers the injected-RNG
+    /// gate surface.
+    #[cfg(feature = "traits-2")]
+    rng: rand::rngs::SmallRng,
 }
 
 pub struct LossyPauliSumExecutor<S> {
     pub state: S,
     initial: S,
+    /// See `§ Where the randomness lives` in [`super::backend`].
+    ///
+    /// The sum channels scale coefficients analytically and never draw; this
+    /// stream exists so the executor, not the caller, answers the injected-RNG
+    /// gate surface.
+    #[cfg(feature = "traits-2")]
+    rng: rand::rngs::SmallRng,
 }
 
 pub enum PauliSumCircuit {
@@ -46,7 +60,13 @@ macro_rules! construct {
     ($info:expr, $terms:expr, $wrapper:ident, $variant:ident, $method:ident) => {{
         let state = Backend::$method($info, $terms);
         let initial = state.clone();
-        Ok(Self::$variant($wrapper { state, initial }))
+        Ok(Self::$variant(executor!(
+            $wrapper {
+                state: state,
+                initial: initial
+            },
+            None
+        )))
     }};
 }
 
@@ -79,12 +99,12 @@ impl PauliSumCircuit {
             ));
         }
         match self {
-            Self::Bits64(ex) => dispatch_pauli_sum!(ex.state, inst, msg, "PauliSum"),
-            Self::Bits128(ex) => dispatch_pauli_sum!(ex.state, inst, msg, "PauliSum"),
-            Self::Bits256(ex) => dispatch_pauli_sum!(ex.state, inst, msg, "PauliSum"),
-            Self::Bits512(ex) => dispatch_pauli_sum!(ex.state, inst, msg, "PauliSum"),
-            Self::Bits1024(ex) => dispatch_pauli_sum!(ex.state, inst, msg, "PauliSum"),
-            Self::Bits2048(ex) => dispatch_pauli_sum!(ex.state, inst, msg, "PauliSum"),
+            Self::Bits64(ex) => dispatch_pauli_sum!(ex, state, inst, msg, "PauliSum"),
+            Self::Bits128(ex) => dispatch_pauli_sum!(ex, state, inst, msg, "PauliSum"),
+            Self::Bits256(ex) => dispatch_pauli_sum!(ex, state, inst, msg, "PauliSum"),
+            Self::Bits512(ex) => dispatch_pauli_sum!(ex, state, inst, msg, "PauliSum"),
+            Self::Bits1024(ex) => dispatch_pauli_sum!(ex, state, inst, msg, "PauliSum"),
+            Self::Bits2048(ex) => dispatch_pauli_sum!(ex, state, inst, msg, "PauliSum"),
         }
     }
 
@@ -124,30 +144,30 @@ impl LossyPauliSumCircuit {
     ) -> Result<Effects<CircuitOutcomeEffect>> {
         use vihaco_circuit_isa::{CircuitInstruction::*, CircuitMessage::*};
         macro_rules! dispatch_lossy {
-            ($state:expr) => {{
+            ($ex:expr) => {{
                 match (inst, msg) {
-                    (Loss, &QubitAndFloat(q, p)) => $state.loss_channel(q, p),
+                    (Loss, &QubitAndFloat(q, p)) => draw!($ex, state, loss_channel(q, p)),
                     (CorrelatedLoss, TwoQubitAndFloatArr3(a, b, p)) => {
-                        $state.correlated_loss_channel(*a, *b, *p)
+                        draw!($ex, state, correlated_loss_channel(*a, *b, *p))
                     }
                     (Loss, QubitBatchAndFloat(qs, p)) => {
-                        batch_for!($state, loss_channel, qs, *p)
+                        batch_draw!($ex, state, loss_channel, qs, *p)
                     }
                     (CorrelatedLoss, TwoQubitBatchAndFloatArr3(ps, p)) => {
-                        batch_pairs_for!($state, correlated_loss_channel, ps, *p)
+                        batch_pairs_draw!($ex, state, correlated_loss_channel, ps, *p)
                     }
-                    _ => return dispatch_pauli_sum!($state, inst, msg, "LossyPauliSum"),
+                    _ => return dispatch_pauli_sum!($ex, state, inst, msg, "LossyPauliSum"),
                 }
                 Ok(Effects::None)
             }};
         }
         match self {
-            Self::Bits64(ex) => dispatch_lossy!(ex.state),
-            Self::Bits128(ex) => dispatch_lossy!(ex.state),
-            Self::Bits256(ex) => dispatch_lossy!(ex.state),
-            Self::Bits512(ex) => dispatch_lossy!(ex.state),
-            Self::Bits1024(ex) => dispatch_lossy!(ex.state),
-            Self::Bits2048(ex) => dispatch_lossy!(ex.state),
+            Self::Bits64(ex) => dispatch_lossy!(ex),
+            Self::Bits128(ex) => dispatch_lossy!(ex),
+            Self::Bits256(ex) => dispatch_lossy!(ex),
+            Self::Bits512(ex) => dispatch_lossy!(ex),
+            Self::Bits1024(ex) => dispatch_lossy!(ex),
+            Self::Bits2048(ex) => dispatch_lossy!(ex),
         }
     }
 

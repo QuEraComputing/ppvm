@@ -17,14 +17,14 @@ fn explicit_phase(c: &mut Criterion) {
     let text = ordinary_string(WIDTH);
     let new_word = NewWord::from(text.as_str());
     let old_word = OldWord::from(text.as_str());
-    let new = NewPhased::with_phase(new_word.clone(), ppvm_traits_2::Phase::NegI);
+    let new = NewPhased::with_phase(new_word, ppvm_traits_2::Phase::NegI);
     let old = OldPhased::build_from_word(old_word, 3);
     assert_eq!(new.to_string(), old.to_string());
 
     let mut g = c.benchmark_group("word_surface/construct/phased_explicit_phase/256");
     g.bench_function("new/from_word_and_phase", |b| {
         b.iter_batched(
-            || new_word.clone(),
+            || new_word,
             |word| {
                 black_box(NewPhased::with_phase(
                     black_box(word),

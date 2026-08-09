@@ -16,22 +16,22 @@ pub fn bench(c: &mut Criterion) {
 fn mutations(c: &mut Criterion) {
     let mut g = c.benchmark_group("word_surface/ordinary/mutate/256");
     let cold = NewWord::from(ordinary_string(WIDTH).as_str());
-    let warm = cold.clone();
+    let warm = cold;
     black_box(warm.key_hash());
     let old = OldWord::from(ordinary_string(WIDTH).as_str());
-    let mut nc = warm.clone();
+    let mut nc = warm;
     let mut oc = old;
     nc.set_x_bit(SITE, !nc.x_bit(SITE));
     oc.set_xbit(SITE, !oc.get_xbit(SITE));
     assert_eq!(nc.x_bit(SITE), oc.get_xbit(SITE));
-    nc = warm.clone();
+    nc = warm;
     oc = old;
     nc.set_z_bit(SITE, !nc.z_bit(SITE));
     oc.set_zbit(SITE, !oc.get_zbit(SITE));
     assert_eq!(nc.z_bit(SITE), oc.get_zbit(SITE));
     g.bench_function("new/new_only_set_x_bit_cold_cache", |b| {
         b.iter_batched(
-            || cold.clone(),
+            || cold,
             |mut w| {
                 let v = !w.x_bit(SITE);
                 w.set_x_bit(black_box(SITE), black_box(v));
@@ -42,7 +42,7 @@ fn mutations(c: &mut Criterion) {
     });
     g.bench_function("new/set_x_bit", |b| {
         b.iter_batched(
-            || warm.clone(),
+            || warm,
             |mut w| {
                 let v = !w.x_bit(SITE);
                 w.set_x_bit(black_box(SITE), black_box(v));
@@ -65,7 +65,7 @@ fn mutations(c: &mut Criterion) {
     });
     g.bench_function("new/set_z_bit", |b| {
         b.iter_batched(
-            || warm.clone(),
+            || warm,
             |mut w| {
                 let v = !w.z_bit(SITE);
                 w.set_z_bit(black_box(SITE), black_box(v));

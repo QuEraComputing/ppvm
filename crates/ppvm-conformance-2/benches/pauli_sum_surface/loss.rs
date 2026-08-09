@@ -114,7 +114,7 @@ pub fn bench(c: &mut Criterion) {
         c,
         "channel",
         |s| s.loss_channel(3, 0.17),
-        |s| s.loss_channel(3, 0.17),
+        |s| s.loss_channel(3, 0.17, &mut ppvm_conformance_2::analytic_rng()),
     );
     paired(
         c,
@@ -126,7 +126,14 @@ pub fn bench(c: &mut Criterion) {
         c,
         "correlated",
         |s| s.correlated_loss_channel(2, 5, [0.07, 0.11, 0.19]),
-        |s| s.correlated_loss_channel(2, 5, [0.07, 0.11, 0.19]),
+        |s| {
+            s.correlated_loss_channel(
+                2,
+                5,
+                [0.07, 0.11, 0.19],
+                &mut ppvm_conformance_2::analytic_rng(),
+            )
+        },
     );
     max_loss(c, usize::MAX, "max_loss_weight_disabled");
     max_loss(c, 2, "max_loss_weight_active");

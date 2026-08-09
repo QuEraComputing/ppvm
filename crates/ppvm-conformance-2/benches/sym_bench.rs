@@ -561,10 +561,10 @@ fn bench_exact_multiply(c: &mut Criterion) {
         let k = NewPauliWord::<[u8; 8]>::from(w.as_str());
         let (re, im) = ((i % 7) as i64 - 3, (i % 5) as i64 - 2);
         if i % 2 == 0 {
-            ea += (k.clone(), GaussianInt::new(re, im));
+            ea += (k, GaussianInt::new(re, im));
             ca += (k, num::Complex::new(re as f64, im as f64));
         } else {
-            eb += (k.clone(), GaussianInt::new(re, im));
+            eb += (k, GaussianInt::new(re, im));
             cb += (k, num::Complex::new(re as f64, im as f64));
         }
     }

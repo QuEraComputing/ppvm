@@ -24,7 +24,7 @@ pub fn branch_pair(branches: usize) -> (Old, New) {
     let (mut old, mut new) = pair();
     for qubit in 0..branches.ilog2() as usize {
         old.loss_channel(qubit, 0.2);
-        new.loss_channel(qubit, 0.2);
+        new.loss_channel(qubit, 0.2, &mut ppvm_conformance_2::analytic_rng());
     }
     assert_eq!(old.len(), branches);
     assert_eq!(new.len(), branches);

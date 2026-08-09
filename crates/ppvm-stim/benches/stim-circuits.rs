@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! General STIM-program benchmark: parse a `.stim` source once, then time the
-//! tableau [`execute`] cost on a freshly built [`GeneralizedTableau`] per
+//! tableau [`execute_with_rng`] cost on a freshly built [`GeneralizedTableau`] per
 //! iteration. Parsing stays outside the timed loop — the optimization target is
 //! the tableau branching workload, not the parser.
 //!
@@ -26,7 +26,8 @@ use std::time::Duration;
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
 use ppvm_stim::backend::prelude::*;
-use ppvm_stim::{execute, parse_extended};
+use ppvm_stim::{execute_with_rng, parse_extended};
+use rand::SeedableRng;
 use stim_parser::prelude::{ExtendedInstruction, ExtendedProgram};
 
 type Tab = GeneralizedTableau<ByteFxHashF64<8>, usize>;
@@ -111,7 +112,7 @@ fn required_qubits(program: &ExtendedProgram) -> usize {
 }
 
 /// Parse `src` once (panicking with context on failure), then benchmark
-/// [`execute`] on a freshly constructed tableau per iteration. The fresh
+/// [`execute_with_rng`] on a freshly constructed tableau per iteration. The fresh
 /// tableau is built in the `iter_batched_ref` setup closure, so the timed
 /// routine measures `execute` including the per-run tableau state — matching
 /// the sibling `tableau-msd-stim` bench.
@@ -126,8 +127,15 @@ fn bench_stim_program(
 
     group.bench_function(name, |b| {
         b.iter_batched_ref(
-            || GeneralizedTableau::new(n_qubits, 1e-10),
-            |tab: &mut Tab| execute(&prog, tab).expect("execute"),
+            || {
+                (
+                    GeneralizedTableau::new(n_qubits, 1e-10),
+                    rand::rngs::SmallRng::seed_from_u64(0),
+                )
+            },
+            |(tab, rng): &mut (Tab, rand::rngs::SmallRng)| {
+                execute_with_rng(&prog, tab, rng).expect("execute");
+            },
             criterion::BatchSize::SmallInput,
         );
     });

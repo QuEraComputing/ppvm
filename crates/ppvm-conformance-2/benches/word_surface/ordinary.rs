@@ -87,13 +87,13 @@ fn hash(c: &mut Criterion) {
     let mut g = c.benchmark_group("word_surface/ordinary/hash_protocol/256");
     let bh = IdentityBuildHasher;
     let cold = NewWord::from(ordinary_string(WIDTH).as_str());
-    let warm = cold.clone();
-    assert_eq!(bh.hash_one(&warm), warm.key_hash());
+    let warm = cold;
+    assert_eq!(bh.hash_one(warm), warm.key_hash());
     let old = OldWord::from(ordinary_string(WIDTH).as_str());
     assert_eq!(bh.hash_one(old), bh.hash_one(old));
     g.bench_function("new/new_only_cold_first_compute", |b| {
         b.iter_batched(
-            || cold.clone(),
+            || cold,
             |w| black_box(bh.hash_one(black_box(&w))),
             BatchSize::SmallInput,
         )

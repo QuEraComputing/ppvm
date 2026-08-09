@@ -236,6 +236,12 @@ pub mod mixture;
 /// [`Driver`](tableau::Driver) trait, plus the integration-baseline workloads.
 pub mod tableau;
 
+/// Deterministic throwaway RNG for analytic trait implementations that accept
+/// the shared stochastic-trait parameter but consume no random draws.
+pub fn analytic_rng() -> rand::rngs::SmallRng {
+    <rand::rngs::SmallRng as rand::SeedableRng>::seed_from_u64(0)
+}
+
 /// Phase-5 symbolic-coefficient differential harness: matched OLD/NEW
 /// `Term`-coefficient sums and the `sym.*` integration-baseline workloads.
 pub mod sym;

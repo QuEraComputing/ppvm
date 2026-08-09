@@ -11,6 +11,9 @@ extern crate ppvm_tableau_legacy as ppvm_tableau;
 #[cfg(feature = "legacy")]
 extern crate ppvm_tableau_sum_legacy as ppvm_tableau_sum;
 
+// `draw!` / `wrap!` / `wrap_cloned!` are defined here and used by every
+// `interface*` macro below, so this must stay first.
+#[macro_use]
 pub mod backend;
 pub mod interface;
 pub mod interface_tableau;

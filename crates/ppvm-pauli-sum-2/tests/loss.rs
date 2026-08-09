@@ -15,6 +15,15 @@ use ppvm_pauli_sum_2::{
 use ppvm_traits_2::{
     Clifford, CorrelatedLossChannel, LossChannel, ResetLossChannel, RotationOne, Trace,
 };
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
+
+/// The `-2` sum backends are density-matrix-like: the noise and loss channels
+/// are analytic coefficient scalings and never draw. Call sites thread this
+/// fixed-seed RNG only to satisfy the injected-RNG trait surface.
+fn rng() -> SmallRng {
+    SmallRng::seed_from_u64(0)
+}
 
 type L1 = LossyPauliSum<f64, NoPolicy>;
 
@@ -84,7 +93,7 @@ fn loss_channel_scales_present_sites_and_branches_lost_ones() {
     for p in ["X", "Y", "I", "Z"] {
         let mut state = sum(1, &[(p, 1.0)]);
         let mut want = state.clone();
-        state.loss_channel(0, 0.2);
+        state.loss_channel(0, 0.2, &mut rng());
         want *= 0.8;
         assert_eq!(state, want, "loss_channel on {p}");
     }
@@ -92,7 +101,7 @@ fn loss_channel_scales_present_sites_and_branches_lost_ones() {
     // A lost site branches to `I` at `p` and is itself left **unscaled**.
     let mut state = sum(1, &[("L", 1.0)]);
     let mut want = state.clone();
-    state.loss_channel(0, 0.2);
+    state.loss_channel(0, 0.2, &mut rng());
     want += (lw("I"), 0.2);
     assert_eq!(state, want);
 }
@@ -112,7 +121,7 @@ fn single_qubit_loss_overlap() {
     state.x(0);
     assert_eq!(state, intermediate, "x∘x is the identity");
 
-    state.loss_channel(0, 0.1);
+    state.loss_channel(0, 0.1, &mut rng());
     state.x(0);
 
     let overlap = state.trace(&zero_state());
@@ -138,8 +147,8 @@ fn ghz_final_loss() {
     state.x(0);
     state.x(1);
 
-    state.loss_channel(0, p_l);
-    state.loss_channel(1, p_l);
+    state.loss_channel(0, p_l, &mut rng());
+    state.loss_channel(1, p_l, &mut rng());
 
     state.cnot(0, 1);
     state.h(0);
@@ -157,10 +166,10 @@ fn ghz_loss_mid_circuit() {
 
     state.reset_loss_channel(0);
     state.reset_loss_channel(1);
-    state.loss_channel(0, p_l);
-    state.loss_channel(1, p_l);
+    state.loss_channel(0, p_l, &mut rng());
+    state.loss_channel(1, p_l, &mut rng());
     state.cnot(0, 1);
-    state.loss_channel(0, 2.0 * p_l);
+    state.loss_channel(0, 2.0 * p_l, &mut rng());
     state.h(0);
 
     let overlap = state.trace(&zero_state());
@@ -180,7 +189,7 @@ fn max_loss_weight_truncation() {
         state.reset_loss_channel(q);
     }
     for q in 0..3 {
-        state.loss_channel(q, 0.1);
+        state.loss_channel(q, 0.1, &mut rng());
     }
 
     let original_len = state.len();
@@ -214,7 +223,7 @@ fn max_loss_weight_defaults_and_sentinel() {
 #[test]
 fn correlated_loss_both_present_is_a_pure_scale() {
     let mut state = sum(2, &[("ZZ", 1.0), ("XI", 2.0)]);
-    state.correlated_loss_channel(0, 1, [0.01, 0.02, 0.03]);
+    state.correlated_loss_channel(0, 1, [0.01, 0.02, 0.03], &mut rng());
     let f = 1.0 - 2.0 * 0.02 - 0.01;
     assert_eq!(state.len(), 2);
     assert!((state.get(&lw("ZZ")).unwrap() - f).abs() < 1e-12);
@@ -226,7 +235,7 @@ fn correlated_loss_both_present_is_a_pure_scale() {
 #[test]
 fn correlated_loss_one_already_lost() {
     let mut state = sum(2, &[("LZ", 1.0)]);
-    state.correlated_loss_channel(0, 1, [0.01, 0.02, 0.03]);
+    state.correlated_loss_channel(0, 1, [0.01, 0.02, 0.03], &mut rng());
     assert_eq!(state.len(), 2);
     assert!((state.get(&lw("LZ")).unwrap() - (1.0 - 0.03)).abs() < 1e-12);
     assert!((state.get(&lw("IZ")).unwrap() - 0.02).abs() < 1e-12);
@@ -238,7 +247,7 @@ fn correlated_loss_one_already_lost() {
 #[test]
 fn correlated_loss_both_lost_emits_three_branches() {
     let mut state = sum(2, &[("LL", 1.0)]);
-    state.correlated_loss_channel(0, 1, [0.5, 0.02, 0.25]);
+    state.correlated_loss_channel(0, 1, [0.5, 0.02, 0.25], &mut rng());
     assert_eq!(state.len(), 4, "LL + IL + LI + II");
     assert!((state.get(&lw("LL")).unwrap() - 1.0).abs() < 1e-12);
     assert!((state.get(&lw("IL")).unwrap() - 0.25).abs() < 1e-12);
@@ -250,7 +259,7 @@ fn correlated_loss_both_lost_emits_three_branches() {
 #[test]
 fn correlated_loss_branches_accumulate() {
     let mut state = sum(2, &[("LL", 1.0), ("II", 3.0)]);
-    state.correlated_loss_channel(0, 1, [0.5, 0.0, 0.25]);
+    state.correlated_loss_channel(0, 1, [0.5, 0.0, 0.25], &mut rng());
     // `II` gets 3.0 (unchanged by the both-present arm at p = [0.5, 0, 0.25]?)
     // — no: `II` is both-present, so it is scaled by 1 − 0 − 0.5 = 0.5 → 1.5,
     // and then the `LL` term's double-recovery branch adds 0.5.

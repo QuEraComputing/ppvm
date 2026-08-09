@@ -54,7 +54,7 @@ fn branching_channel_scaling(c: &mut Criterion) {
         let qubit = branches.ilog2() as usize + 1;
         let (mut old_check, mut new_check) = (old.clone(), new.clone());
         old_check.loss_channel(qubit, 0.2);
-        new_check.loss_channel(qubit, 0.2);
+        new_check.loss_channel(qubit, 0.2, &mut ppvm_conformance_2::analytic_rng());
         assert_eq!(old_check.len(), 2 * branches);
         assert_eq!(new_check.len(), 2 * branches);
         assert_same(&old_check, &new_check);
@@ -72,7 +72,7 @@ fn branching_channel_scaling(c: &mut Criterion) {
             b.iter_batched(
                 || new.clone(),
                 |mut state| {
-                    state.loss_channel(qubit, 0.2);
+                    state.loss_channel(qubit, 0.2, &mut ppvm_conformance_2::analytic_rng());
                     black_box(state)
                 },
                 BatchSize::SmallInput,

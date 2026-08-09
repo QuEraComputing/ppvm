@@ -15,15 +15,18 @@ use super::backend::{
     CliffordExtensionsBatch as _, CorrelatedLossChannel as _, Depolarizing as _,
     Depolarizing2 as _, LossChannel as _, PauliError as _, PauliPattern, Reset as _, RotXY as _,
     RotationOne as _, RotationTwo as _, TGate as _, Tab64, Tab128, Tab256, Tab512, Tab1024,
-    Tab2048, TwoQubitPauliError as _, U3Gate as _,
+    Tab2048, TwoQubitPauliError as _, U3Gate as _, draw, executor, new_tableau,
 };
-use super::dispatch::batch_for;
+use super::dispatch::batch_draw;
 use crate::measurements::{
     CircuitOutcomeEffect, MeasurementEffect, MeasurementOutcome, TraceEffect,
 };
 
 pub struct CircuitExecutor<T> {
     pub tab: T,
+    /// See `§ Where the randomness lives` in [`super::backend`].
+    #[cfg(feature = "traits-2")]
+    pub rng: rand::rngs::SmallRng,
 }
 
 pub enum TableauCircuit {
@@ -36,98 +39,98 @@ pub enum TableauCircuit {
 }
 
 macro_rules! dispatch {
-    ($tab:expr, $inst:expr, $msg:expr) => {{
+    ($ex:expr, $tab:ident, $inst:expr, $msg:expr) => {{
         use vihaco_circuit_isa::{CircuitInstruction::*, CircuitMessage::*};
         match ($inst, $msg) {
-            (X, &Qubit(q)) => $tab.x(q),
-            (Y, &Qubit(q)) => $tab.y(q),
-            (Z, &Qubit(q)) => $tab.z(q),
-            (H, &Qubit(q)) => $tab.h(q),
-            (S, &Qubit(q)) => $tab.s(q),
-            (SAdj, &Qubit(q)) => $tab.s_dag(q),
-            (SqrtX, &Qubit(q)) => $tab.sqrt_x(q),
-            (SqrtY, &Qubit(q)) => $tab.sqrt_y(q),
-            (SqrtXAdj, &Qubit(q)) => $tab.sqrt_x_dag(q),
-            (SqrtYAdj, &Qubit(q)) => $tab.sqrt_y_dag(q),
-            (CNOT, &TwoQubit(a, b)) => $tab.cnot(a, b),
-            (CZ, &TwoQubit(a, b)) => $tab.cz(a, b),
-            (T, &Qubit(q)) => $tab.t(q),
-            (TAdj, &Qubit(q)) => $tab.t_dag(q),
-            (RX, &QubitAndFloat(q, a)) => $tab.rx(q, a),
-            (RY, &QubitAndFloat(q, a)) => $tab.ry(q, a),
-            (RZ, &QubitAndFloat(q, a)) => $tab.rz(q, a),
-            (RXX, &TwoQubitAndFloat(a, b, t)) => $tab.rxx(a, b, t),
-            (RYY, &TwoQubitAndFloat(a, b, t)) => $tab.ryy(a, b, t),
-            (RZZ, &TwoQubitAndFloat(a, b, t)) => $tab.rzz(a, b, t),
-            (U3, &QubitU3(q, t, p, l)) => $tab.u3(q, t, p, l),
-            (R, &QubitAndTwoFloats(q, a, t)) => $tab.r(q, a, t),
+            (X, &Qubit(q)) => $ex.$tab.x(q),
+            (Y, &Qubit(q)) => $ex.$tab.y(q),
+            (Z, &Qubit(q)) => $ex.$tab.z(q),
+            (H, &Qubit(q)) => $ex.$tab.h(q),
+            (S, &Qubit(q)) => $ex.$tab.s(q),
+            (SAdj, &Qubit(q)) => $ex.$tab.s_dag(q),
+            (SqrtX, &Qubit(q)) => $ex.$tab.sqrt_x(q),
+            (SqrtY, &Qubit(q)) => $ex.$tab.sqrt_y(q),
+            (SqrtXAdj, &Qubit(q)) => $ex.$tab.sqrt_x_dag(q),
+            (SqrtYAdj, &Qubit(q)) => $ex.$tab.sqrt_y_dag(q),
+            (CNOT, &TwoQubit(a, b)) => $ex.$tab.cnot(a, b),
+            (CZ, &TwoQubit(a, b)) => $ex.$tab.cz(a, b),
+            (T, &Qubit(q)) => $ex.$tab.t(q),
+            (TAdj, &Qubit(q)) => $ex.$tab.t_dag(q),
+            (RX, &QubitAndFloat(q, a)) => $ex.$tab.rx(q, a),
+            (RY, &QubitAndFloat(q, a)) => $ex.$tab.ry(q, a),
+            (RZ, &QubitAndFloat(q, a)) => $ex.$tab.rz(q, a),
+            (RXX, &TwoQubitAndFloat(a, b, t)) => $ex.$tab.rxx(a, b, t),
+            (RYY, &TwoQubitAndFloat(a, b, t)) => $ex.$tab.ryy(a, b, t),
+            (RZZ, &TwoQubitAndFloat(a, b, t)) => $ex.$tab.rzz(a, b, t),
+            (U3, &QubitU3(q, t, p, l)) => $ex.$tab.u3(q, t, p, l),
+            (R, &QubitAndTwoFloats(q, a, t)) => $ex.$tab.r(q, a, t),
             (Measure, &Qubit(q)) => {
-                let outcome: MeasurementOutcome = $tab.measure(q).into();
+                let outcome: MeasurementOutcome = draw!($ex, $tab, measure(q)).into();
                 return Ok(Effects::one(CircuitOutcomeEffect::Measurement(
                     MeasurementEffect {
                         measurement_results: smallvec::smallvec![outcome],
                     },
                 )));
             }
-            (Reset, &Qubit(q)) => $tab.reset(q),
-            (Depolarize, &QubitAndFloat(q, p)) => $tab.depolarize1(q, p),
-            (Depolarize2, &TwoQubitAndFloat(a, b, p)) => $tab.depolarize2(a, b, p),
-            (PauliError, QubitAndFloatArr3(q, p)) => $tab.pauli_error(*q, *p),
+            (Reset, &Qubit(q)) => draw!($ex, $tab, reset(q)),
+            (Depolarize, &QubitAndFloat(q, p)) => draw!($ex, $tab, depolarize1(q, p)),
+            (Depolarize2, &TwoQubitAndFloat(a, b, p)) => draw!($ex, $tab, depolarize2(a, b, p)),
+            (PauliError, QubitAndFloatArr3(q, p)) => draw!($ex, $tab, pauli_error(*q, *p)),
             (TwoQubitPauliError, TwoQubitAndFloatArr15(a, b, p)) => {
-                $tab.two_qubit_pauli_error(*a, *b, *p)
+                draw!($ex, $tab, two_qubit_pauli_error(*a, *b, *p))
             }
-            (Loss, &QubitAndFloat(q, p)) => $tab.loss_channel(q, p),
+            (Loss, &QubitAndFloat(q, p)) => draw!($ex, $tab, loss_channel(q, p)),
             (CorrelatedLoss, TwoQubitAndFloatArr3(a, b, p)) => {
-                $tab.correlated_loss_channel(*a, *b, *p)
+                draw!($ex, $tab, correlated_loss_channel(*a, *b, *p))
             }
-            (X, QubitBatch(qs)) => $tab.x_many(qs),
-            (Y, QubitBatch(qs)) => $tab.y_many(qs),
-            (Z, QubitBatch(qs)) => $tab.z_many(qs),
-            (H, QubitBatch(qs)) => $tab.h_many(qs),
-            (S, QubitBatch(qs)) => $tab.s_many(qs),
-            (SAdj, QubitBatch(qs)) => $tab.s_dag_many(qs),
-            (SqrtX, QubitBatch(qs)) => $tab.sqrt_x_many(qs),
-            (SqrtY, QubitBatch(qs)) => $tab.sqrt_y_many(qs),
-            (SqrtXAdj, QubitBatch(qs)) => $tab.sqrt_x_dag_many(qs),
-            (SqrtYAdj, QubitBatch(qs)) => $tab.sqrt_y_dag_many(qs),
-            (T, QubitBatch(qs)) => $tab.t_many(qs),
-            (TAdj, QubitBatch(qs)) => $tab.t_dag_many(qs),
-            (Reset, QubitBatch(qs)) => $tab.reset_many(qs),
-            (RX, QubitBatchAndFloat(qs, a)) => $tab.rx_many(qs, *a),
-            (RY, QubitBatchAndFloat(qs, a)) => $tab.ry_many(qs, *a),
-            (RZ, QubitBatchAndFloat(qs, a)) => $tab.rz_many(qs, *a),
+            (X, QubitBatch(qs)) => $ex.$tab.x_many(qs),
+            (Y, QubitBatch(qs)) => $ex.$tab.y_many(qs),
+            (Z, QubitBatch(qs)) => $ex.$tab.z_many(qs),
+            (H, QubitBatch(qs)) => $ex.$tab.h_many(qs),
+            (S, QubitBatch(qs)) => $ex.$tab.s_many(qs),
+            (SAdj, QubitBatch(qs)) => $ex.$tab.s_dag_many(qs),
+            (SqrtX, QubitBatch(qs)) => $ex.$tab.sqrt_x_many(qs),
+            (SqrtY, QubitBatch(qs)) => $ex.$tab.sqrt_y_many(qs),
+            (SqrtXAdj, QubitBatch(qs)) => $ex.$tab.sqrt_x_dag_many(qs),
+            (SqrtYAdj, QubitBatch(qs)) => $ex.$tab.sqrt_y_dag_many(qs),
+            (T, QubitBatch(qs)) => $ex.$tab.t_many(qs),
+            (TAdj, QubitBatch(qs)) => $ex.$tab.t_dag_many(qs),
+            (Reset, QubitBatch(qs)) => draw!($ex, $tab, reset_many(qs)),
+            (RX, QubitBatchAndFloat(qs, a)) => $ex.$tab.rx_many(qs, *a),
+            (RY, QubitBatchAndFloat(qs, a)) => $ex.$tab.ry_many(qs, *a),
+            (RZ, QubitBatchAndFloat(qs, a)) => $ex.$tab.rz_many(qs, *a),
             (U3, QubitBatchU3(qs, t, p, l)) => {
                 for &q in qs {
-                    $tab.u3(q, *t, *p, *l);
+                    $ex.$tab.u3(q, *t, *p, *l);
                 }
             }
-            (CNOT, TwoQubitBatch(ps)) => $tab.cnot_many(ps),
-            (CZ, TwoQubitBatch(ps)) => $tab.cz_many(ps),
-            (RXX, TwoQubitBatchAndFloat(ps, a)) => $tab.rxx_many(ps, *a),
-            (RYY, TwoQubitBatchAndFloat(ps, a)) => $tab.ryy_many(ps, *a),
-            (RZZ, TwoQubitBatchAndFloat(ps, a)) => $tab.rzz_many(ps, *a),
-            (Depolarize, QubitBatchAndFloat(qs, p)) => batch_for!($tab, depolarize1, qs, *p),
-            (Loss, QubitBatchAndFloat(qs, p)) => batch_for!($tab, loss_channel, qs, *p),
+            (CNOT, TwoQubitBatch(ps)) => $ex.$tab.cnot_many(ps),
+            (CZ, TwoQubitBatch(ps)) => $ex.$tab.cz_many(ps),
+            (RXX, TwoQubitBatchAndFloat(ps, a)) => $ex.$tab.rxx_many(ps, *a),
+            (RYY, TwoQubitBatchAndFloat(ps, a)) => $ex.$tab.ryy_many(ps, *a),
+            (RZZ, TwoQubitBatchAndFloat(ps, a)) => $ex.$tab.rzz_many(ps, *a),
+            (Depolarize, QubitBatchAndFloat(qs, p)) => batch_draw!($ex, $tab, depolarize1, qs, *p),
+            (Loss, QubitBatchAndFloat(qs, p)) => batch_draw!($ex, $tab, loss_channel, qs, *p),
             (PauliError, QubitBatchAndFloatArr3(qs, p)) => {
-                batch_for!($tab, pauli_error, qs, *p)
+                batch_draw!($ex, $tab, pauli_error, qs, *p)
             }
             (Depolarize2, TwoQubitBatchAndFloat(ps, p)) => {
                 for &(a, b) in ps {
-                    $tab.depolarize2(a, b, *p);
+                    draw!($ex, $tab, depolarize2(a, b, *p));
                 }
             }
             (TwoQubitPauliError, TwoQubitBatchAndFloatArr15(ps, p)) => {
                 for &(a, b) in ps {
-                    $tab.two_qubit_pauli_error(a, b, *p);
+                    draw!($ex, $tab, two_qubit_pauli_error(a, b, *p));
                 }
             }
             (CorrelatedLoss, TwoQubitBatchAndFloatArr3(ps, p)) => {
                 for &(a, b) in ps {
-                    $tab.correlated_loss_channel(a, b, *p);
+                    draw!($ex, $tab, correlated_loss_channel(a, b, *p));
                 }
             }
             (Measure, QubitBatch(qs)) => {
-                let outcomes = $tab.measure_many(qs);
+                let outcomes = draw!($ex, $tab, measure_many(qs));
                 return Ok(Effects::one(CircuitOutcomeEffect::Measurement(
                     MeasurementEffect {
                         measurement_results: outcomes.into_iter().map(Into::into).collect(),
@@ -139,7 +142,7 @@ macro_rules! dispatch {
                 let pattern = PauliPattern::parse(s)
                     .map_err(|e| eyre!("invalid Pauli pattern `{s}`: {e:?}"))?;
                 return Ok(Effects::one(CircuitOutcomeEffect::Trace(TraceEffect {
-                    value: $tab.trace(&pattern),
+                    value: $ex.$tab.trace(&pattern),
                 })));
             }
             (inst, msg) => {
@@ -166,12 +169,12 @@ impl TableauCircuit {
     fn build(n: usize, threshold: f64, seed: Option<u64>) -> Result<Self> {
         macro_rules! make {
             ($variant:ident, $new:ident, $seeded:ident) => {
-                Ok(Self::$variant(CircuitExecutor {
-                    tab: match seed {
-                        Some(seed) => Backend::$seeded(n, threshold, seed),
-                        None => Backend::$new(n, threshold),
+                Ok(Self::$variant(executor!(
+                    CircuitExecutor {
+                        tab: new_tableau!($new, $seeded, n, threshold, seed),
                     },
-                }))
+                    seed
+                )))
             };
         }
         match n {
@@ -191,12 +194,12 @@ impl TableauCircuit {
         msg: &CircuitMessage,
     ) -> Result<Effects<CircuitOutcomeEffect>> {
         match self {
-            Self::Bits64(ex) => dispatch!(ex.tab, inst, msg),
-            Self::Bits128(ex) => dispatch!(ex.tab, inst, msg),
-            Self::Bits256(ex) => dispatch!(ex.tab, inst, msg),
-            Self::Bits512(ex) => dispatch!(ex.tab, inst, msg),
-            Self::Bits1024(ex) => dispatch!(ex.tab, inst, msg),
-            Self::Bits2048(ex) => dispatch!(ex.tab, inst, msg),
+            Self::Bits64(ex) => dispatch!(ex, tab, inst, msg),
+            Self::Bits128(ex) => dispatch!(ex, tab, inst, msg),
+            Self::Bits256(ex) => dispatch!(ex, tab, inst, msg),
+            Self::Bits512(ex) => dispatch!(ex, tab, inst, msg),
+            Self::Bits1024(ex) => dispatch!(ex, tab, inst, msg),
+            Self::Bits2048(ex) => dispatch!(ex, tab, inst, msg),
         }
     }
 

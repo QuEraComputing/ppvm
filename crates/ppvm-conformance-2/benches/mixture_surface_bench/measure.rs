@@ -16,7 +16,7 @@ macro_rules! reset_one {
             $old,
             $new,
             |state: &mut Old| state.$method(5),
-            |state: &mut New| state.$method(5),
+            |state: &mut New| state.$method(5, &mut ppvm_conformance_2::analytic_rng()),
         );
     };
 }
@@ -29,7 +29,7 @@ macro_rules! reset_many {
             $old,
             $new,
             |state: &mut Old| state.$method(&[5, 6, 7]),
-            |state: &mut New| state.$method(&[5, 6, 7]),
+            |state: &mut New| state.$method(&[5, 6, 7], &mut ppvm_conformance_2::analytic_rng()),
         );
     };
 }
@@ -60,7 +60,7 @@ pub fn register(c: &mut Criterion) {
 
     let (mut lost_old, mut lost_new) = branch_pair(2);
     lost_old.loss_channel(5, 1.0);
-    lost_new.loss_channel(5, 1.0);
+    lost_new.loss_channel(5, 1.0, &mut ppvm_conformance_2::analytic_rng());
     assert_same(&lost_old, &lost_new);
     bench_output(
         c,

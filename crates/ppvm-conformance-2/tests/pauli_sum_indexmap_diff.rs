@@ -162,9 +162,14 @@ fn loss_and_correlated_loss_match_observable_order() {
         new += (NewLossyWord::from(word), coeff);
     }
     old.loss_channel(0, 0.2);
-    new.loss_channel(0, 0.2);
+    new.loss_channel(0, 0.2, &mut ppvm_conformance_2::analytic_rng());
     old.correlated_loss_channel(0, 1, [0.07, 0.11, 0.19]);
-    new.correlated_loss_channel(0, 1, [0.07, 0.11, 0.19]);
+    new.correlated_loss_channel(
+        0,
+        1,
+        [0.07, 0.11, 0.19],
+        &mut ppvm_conformance_2::analytic_rng(),
+    );
     assert_eq!(old_terms(&old), new_terms(&new));
 }
 

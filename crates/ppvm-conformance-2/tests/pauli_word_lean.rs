@@ -726,7 +726,7 @@ fn clifford_generators_preserve_symplectic_form() {
                 }
 
                 for gate in 0..4 {
-                    let (mut v, mut w) = (v0.clone(), w0.clone());
+                    let (mut v, mut w) = (v0, w0);
                     match gate {
                         0 => {
                             v.h(q);

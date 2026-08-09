@@ -108,7 +108,6 @@ pub fn bench(c: &mut Criterion) {
     );
 
     record_mutations(&mut group, &old_g, &new_g);
-    random_helpers(&mut group, &old_g, &new_g);
 
     // Iteration shapes differ (old returns slices, new returns row iterators), so
     // compare equal full traversals but keep the labels explicit rather than
@@ -160,32 +159,5 @@ fn record_mutations(
         new_record,
         |t: &mut OldGen| t.overwrite_last_measurement_record(Some(false)),
         |t: &mut NewGen| t.overwrite_last_measurement_record(Some(false))
-    );
-}
-
-fn random_helpers(
-    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
-    old: &OldGen,
-    new: &NewGen,
-) {
-    let (mut oc, mut nc) = (old.fork(Some(SEED)), new.fork(Some(SEED)));
-    assert_eq!(oc.bernoulli(0.3), nc.bernoulli(0.3));
-    bench_mut_pair!(
-        group,
-        "generalized/bernoulli",
-        old,
-        new,
-        |t: &mut OldGen| t.bernoulli(0.3),
-        |t: &mut NewGen| t.bernoulli(0.3)
-    );
-    let (mut oc, mut nc) = (old.fork(Some(SEED)), new.fork(Some(SEED)));
-    assert_eq!(oc.flip_with_prob(true, 0.3), nc.flip_with_prob(true, 0.3));
-    bench_mut_pair!(
-        group,
-        "generalized/flip_with_prob",
-        old,
-        new,
-        |t: &mut OldGen| t.flip_with_prob(true, 0.3),
-        |t: &mut NewGen| t.flip_with_prob(true, 0.3)
     );
 }

@@ -8,9 +8,7 @@ macro_rules! create_interface_python {
             // some python niceties
 
             fn __copy__(&self) -> Self {
-                Self {
-                    inner: self.inner.clone(),
-                }
+                wrap_cloned!(self)
             }
 
             fn __richcmp__(
@@ -28,9 +26,7 @@ macro_rules! create_interface_python {
             }
 
             fn __deepcopy__(&self, _memo: &Bound<'_, PyAny>) -> Self {
-                Self {
-                    inner: self.inner.clone(),
-                }
+                wrap_cloned!(self)
             }
 
             fn __len__(&self) -> usize {

@@ -4,7 +4,6 @@
 use std::hash::BuildHasher;
 
 use ppvm_traits_2::{Clifford, Pauli, Reset};
-use rand::RngExt;
 
 use super::fingerprint::fingerprint;
 use super::{Branch, GeneralizedTableauMixture};
@@ -29,17 +28,18 @@ where
         let mut keys_changed = false;
 
         for index in 0..original_len {
-            let (tab, probability) = &mut self.entries[index];
-            if tab.is_lost[qubit] {
+            if self.entries[index].0.is_lost[qubit] {
+                let (tab, probability) = &mut self.entries[index];
                 let _ = visit(tab, None, *probability);
                 continue;
             }
+            self.burn_legacy_tableau_seeds(1);
+            let (tab, probability) = &mut self.entries[index];
             let (phase, stab, destab) = tab.compute_decomposition(qubit, Pauli::Z);
-            let tab_seed = self.rng.random();
 
             if stab == I::zero() {
                 let entries = tab.coefficients.take();
-                let mut other = tab.fork(Some(tab_seed));
+                let mut other = tab.fork();
                 let overlap =
                     GeneralizedTableau::<A, I, H>::compute_overlap_case_b(&entries, phase, destab);
                 let p_one = 0.5 - 0.5 * overlap;
@@ -69,7 +69,7 @@ where
                     scratch.coeff_map.insert(bitstring, value);
                 }
                 other_scratch.coeff_map.clone_from(&scratch.coeff_map);
-                let mut other = tab.fork(Some(tab_seed));
+                let mut other = tab.fork();
                 let mask = tab.odd_phase_destabilizer_mask();
                 let overlap = GeneralizedTableau::<A, I, H>::compute_overlap_case_a(
                     &scratch.coeff_map,
@@ -139,7 +139,7 @@ where
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
-    fn reset(&mut self, qubit: usize) {
+    fn reset<R: rand::Rng + ?Sized>(&mut self, qubit: usize, _rng: &mut R) {
         self.for_each_z_branch(qubit, |tab, outcome, _| {
             if outcome == Some(true) {
                 tab.x(qubit);

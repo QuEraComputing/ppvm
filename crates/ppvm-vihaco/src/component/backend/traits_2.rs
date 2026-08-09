@@ -107,25 +107,35 @@ impl Backend {
     }
 }
 
-macro_rules! tableau_constructors {
-    ($new:ident, $seeded:ident, $ty:ty) => {
+/// The generator an executor owns (see `§ Where the randomness lives` in
+/// `component/backend/mod.rs`). `None` seeds from OS entropy.
+///
+/// `SmallRng` matches what the legacy tableau embedded, so a given seed
+/// reproduces the same stream across both backends.
+pub fn make_rng(seed: Option<u64>) -> rand::rngs::SmallRng {
+    use rand::SeedableRng;
+    match seed {
+        Some(s) => rand::rngs::SmallRng::seed_from_u64(s),
+        None => rand::make_rng(),
+    }
+}
+
+macro_rules! tableau_constructor {
+    ($new:ident, $ty:ty) => {
+        /// The `-2` tableau is pure state; the seed goes to the executor's RNG.
         pub fn $new(n_qubits: usize, threshold: f64) -> $ty {
             <$ty>::new(n_qubits, threshold)
-        }
-
-        pub fn $seeded(n_qubits: usize, threshold: f64, seed: u64) -> $ty {
-            <$ty>::new_with_seed(n_qubits, threshold, seed)
         }
     };
 }
 
 impl Backend {
-    tableau_constructors!(tab64, tab64_seeded, Tab64);
-    tableau_constructors!(tab128, tab128_seeded, Tab128);
-    tableau_constructors!(tab256, tab256_seeded, Tab256);
-    tableau_constructors!(tab512, tab512_seeded, Tab512);
-    tableau_constructors!(tab1024, tab1024_seeded, Tab1024);
-    tableau_constructors!(tab2048, tab2048_seeded, Tab2048);
+    tableau_constructor!(tab64, Tab64);
+    tableau_constructor!(tab128, Tab128);
+    tableau_constructor!(tab256, Tab256);
+    tableau_constructor!(tab512, Tab512);
+    tableau_constructor!(tab1024, Tab1024);
+    tableau_constructor!(tab2048, Tab2048);
 }
 
 macro_rules! sum_constructor {

@@ -250,17 +250,18 @@ fn trotter_new(
     theta_zz: f64,
     noise: [f64; 3],
 ) {
+    let mut rng = ppvm_conformance_2::analytic_rng();
     for _ in 0..steps {
         for i in 0..n {
-            state.pauli_error(i, noise);
+            state.pauli_error(i, noise, &mut rng);
             state.truncate();
             state.rx(i, theta_x);
             state.truncate();
         }
         for i in 0..n - 1 {
-            state.pauli_error(i + 1, noise);
+            state.pauli_error(i + 1, noise, &mut rng);
             state.truncate();
-            state.pauli_error(i, noise);
+            state.pauli_error(i, noise, &mut rng);
             state.truncate();
             new_rzz_native(state, i, i + 1, theta_zz);
             state.truncate();

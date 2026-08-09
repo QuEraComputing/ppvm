@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn generalized_tableau_display_renders_frame_coefficients_and_loss() {
-        let tab: GeneralizedTableau = GeneralizedTableau::new_with_seed(1, 1e-12, 0);
+        let tab: GeneralizedTableau = GeneralizedTableau::new(1, 1e-12);
         let rendered = tab.to_string();
         assert!(rendered.starts_with("Generalized Tableau (1 qubits):\n  Tableau:\n"));
         // The nested frame ends in a newline and `writeln!` adds another, so a

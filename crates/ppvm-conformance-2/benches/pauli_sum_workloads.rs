@@ -59,6 +59,31 @@ type NewThreshSum = Sum<HashMapStore<NewKey, f64>, NewCoeffThreshold>;
 type OldExactSum = OldPauliSum<OldByteF64<8>>;
 type NewExactSum = Sum<HashMapStore<NewKey, f64>, NoPolicy>;
 
+trait ApplyPauliNoise {
+    fn apply_pauli_noise(&mut self, qubit: usize, p: [f64; 3]);
+}
+
+impl<T> ApplyPauliNoise for OldPauliSum<T>
+where
+    T: ppvm_traits::config::Config<Coeff = f64>,
+{
+    fn apply_pauli_noise(&mut self, qubit: usize, p: [f64; 3]) {
+        self.pauli_error(qubit, p);
+    }
+}
+
+impl<S, P> ApplyPauliNoise for Sum<S, P>
+where
+    S: ppvm_traits_2::Accumulate,
+    S::Key: ppvm_traits_2::Word + ppvm_traits_2::Indexable,
+    P: ppvm_pauli_sum_2::Policy<S::Key, S::Coeff>,
+    Sum<S, P>: NewPauliError<f64>,
+{
+    fn apply_pauli_noise(&mut self, qubit: usize, p: [f64; 3]) {
+        self.pauli_error(qubit, p, &mut ppvm_conformance_2::analytic_rng());
+    }
+}
+
 macro_rules! old_support {
     ($sum:expr) => {
         $sum.data()
@@ -132,15 +157,15 @@ macro_rules! trotter_evolve {
     ($state:expr, $n:expr, $steps:expr, $theta_x:expr, $theta_zz:expr, $noise:expr) => {{
         for _ in 0..$steps {
             for i in 0..$n {
-                $state.pauli_error(i, $noise);
+                $state.apply_pauli_noise(i, $noise);
                 $state.truncate();
                 $state.rx(i, $theta_x);
                 $state.truncate();
             }
             for i in 0..$n - 1 {
-                $state.pauli_error(i + 1, $noise);
+                $state.apply_pauli_noise(i + 1, $noise);
                 $state.truncate();
-                $state.pauli_error(i, $noise);
+                $state.apply_pauli_noise(i, $noise);
                 $state.truncate();
                 $state.cnot(i, i + 1);
                 $state.rz(i + 1, $theta_zz);
@@ -246,15 +271,15 @@ macro_rules! trotter_evolve_no_rekey {
     ($state:expr, $n:expr, $steps:expr, $theta_x:expr, $theta_zz:expr, $noise:expr) => {{
         for _ in 0..$steps {
             for i in 0..$n {
-                $state.pauli_error(i, $noise);
+                $state.apply_pauli_noise(i, $noise);
                 $state.truncate();
                 $state.rx(i, $theta_x);
                 $state.truncate();
             }
             for i in 0..$n - 1 {
-                $state.pauli_error(i + 1, $noise);
+                $state.apply_pauli_noise(i + 1, $noise);
                 $state.truncate();
-                $state.pauli_error(i, $noise);
+                $state.apply_pauli_noise(i, $noise);
                 $state.truncate();
                 $state.rz(i + 1, $theta_zz);
                 $state.truncate();

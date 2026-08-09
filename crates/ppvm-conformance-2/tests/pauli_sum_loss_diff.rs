@@ -76,7 +76,7 @@ fn reset_and_single_loss_match_exactly_including_zero_entries() {
         assert_same(&old, &new);
 
         old.loss_channel(0, 0.2);
-        new.loss_channel(0, 0.2);
+        new.loss_channel(0, 0.2, &mut ppvm_conformance_2::analytic_rng());
         assert_same(&old, &new);
     }
 
@@ -101,7 +101,7 @@ fn correlated_loss_matches_all_four_loss_arms() {
     let mut old = old_sum(2, &terms);
     let mut new = new_sum(2, &terms);
     old.correlated_loss_channel(0, 1, probabilities);
-    new.correlated_loss_channel(0, 1, probabilities);
+    new.correlated_loss_channel(0, 1, probabilities, &mut ppvm_conformance_2::analytic_rng());
     assert_same(&old, &new);
 }
 
@@ -114,12 +114,12 @@ fn loss_interleaved_ghz_workload_matches() {
         old.reset_loss_channel(q);
         new.reset_loss_channel(q);
         old.loss_channel(q, 0.1);
-        new.loss_channel(q, 0.1);
+        new.loss_channel(q, 0.1, &mut ppvm_conformance_2::analytic_rng());
     }
     old.cnot(0, 1);
     new.cnot(0, 1);
     old.loss_channel(0, 0.2);
-    new.loss_channel(0, 0.2);
+    new.loss_channel(0, 0.2, &mut ppvm_conformance_2::analytic_rng());
     old.h(0);
     new.h(0);
     old.rx(1, 0.37);

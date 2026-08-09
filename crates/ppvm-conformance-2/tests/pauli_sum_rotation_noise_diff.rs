@@ -282,7 +282,7 @@ fn pauli_error_matches_old_and_reference() {
                 let mut old = build_old_sum(n, &terms);
                 let mut new = build_new_sum(n, &terms);
                 old.pauli_error(q, p);
-                new.pauli_error(q, p);
+                new.pauli_error(q, p, &mut ppvm_conformance_2::analytic_rng());
 
                 // Diagonal channel: no re-key, no fan-out — every term keeps its
                 // key and is scaled by λ_P. Supports match term for term.
@@ -508,7 +508,7 @@ fn zero_channel_eigenvalue_keeps_the_term_exactly_as_old_does() {
     let mut old = build_old_sum(2, &terms);
     let mut new = build_new_sum(2, &terms);
     old.pauli_error(0, p);
-    new.pauli_error(0, p);
+    new.pauli_error(0, p, &mut ppvm_conformance_2::analytic_rng());
 
     let os = old_support(&old);
     let ns = new_support(&new);

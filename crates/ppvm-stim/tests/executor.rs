@@ -3,9 +3,23 @@
 
 use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
 use ppvm_stim::backend::prelude::*;
-use ppvm_stim::{execute, parse_extended};
+use ppvm_stim::{execute, execute_with_rng, parse_extended};
+use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
 
 type Tab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
+
+fn seeded_tab(n_qubits: usize, seed: u64) -> Tab {
+    #[cfg(feature = "legacy")]
+    {
+        GeneralizedTableau::new_with_seed(n_qubits, 1e-10, seed)
+    }
+    #[cfg(feature = "traits-2")]
+    {
+        let _ = seed;
+        GeneralizedTableau::new(n_qubits, 1e-10)
+    }
+}
 
 fn run(src: &str, n_qubits: usize) -> (Vec<Option<bool>>, Tab) {
     let prog = parse_extended(src).expect("parse_extended");
@@ -16,8 +30,9 @@ fn run(src: &str, n_qubits: usize) -> (Vec<Option<bool>>, Tab) {
 
 fn run_seeded(src: &str, n_qubits: usize, seed: u64) -> Vec<Option<bool>> {
     let prog = parse_extended(src).expect("parse_extended");
-    let mut tab: Tab = GeneralizedTableau::new_with_seed(n_qubits, 1e-10, seed);
-    execute(&prog, &mut tab).expect("execute")
+    let mut tab = seeded_tab(n_qubits, seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
+    execute_with_rng(&prog, &mut tab, &mut rng).expect("execute")
 }
 
 #[test]
@@ -133,6 +148,53 @@ fn grouped_measurement_matches_separate_measurements() {
 }
 
 #[test]
+fn zero_probability_operations_do_not_draw_from_external_rng() {
+    let prog = parse_extended("DEPOLARIZE1(0) 0\nX_ERROR(0) 0\nM(0) 0\nMPAD(0) 0").unwrap();
+    let mut tab = seeded_tab(1, 41);
+    let mut rng = SmallRng::seed_from_u64(99);
+    let mut control = rng.clone();
+
+    let results = execute_with_rng(&prog, &mut tab, &mut rng).unwrap();
+
+    assert_eq!(results, vec![Some(false), Some(false)]);
+    assert_eq!(rng.random::<u64>(), control.random::<u64>());
+}
+
+#[test]
+fn dispatcher_preserves_draw_order_across_instruction_boundaries() {
+    let whole = parse_extended("H 0\nM 0\nMPAD(0.25) 0\nH 1\nMPP(0.2) X1").unwrap();
+    let first = parse_extended("H 0\nM 0\nMPAD(0.25) 0").unwrap();
+    let second = parse_extended("H 1\nMPP(0.2) X1").unwrap();
+
+    for seed in 0..32 {
+        let mut whole_tab = seeded_tab(2, seed);
+        let mut split_tab = seeded_tab(2, seed);
+        let mut whole_rng = SmallRng::seed_from_u64(seed);
+        let mut split_rng = SmallRng::seed_from_u64(seed);
+
+        let expected = execute_with_rng(&whole, &mut whole_tab, &mut whole_rng).unwrap();
+        let mut actual = execute_with_rng(&first, &mut split_tab, &mut split_rng).unwrap();
+        actual.extend(execute_with_rng(&second, &mut split_tab, &mut split_rng).unwrap());
+
+        assert_eq!(actual, expected, "draw order changed for seed {seed}");
+        assert_eq!(split_rng.random::<u64>(), whole_rng.random::<u64>());
+    }
+}
+
+#[cfg(feature = "legacy")]
+#[test]
+fn legacy_adapter_does_not_consume_supplied_rng() {
+    let prog = parse_extended("H 0\nM 0\nDEPOLARIZE1(0.5) 0\nMPAD(0.5) 0").unwrap();
+    let mut tab = seeded_tab(1, 7);
+    let mut rng = SmallRng::seed_from_u64(17);
+    let mut control = rng.clone();
+
+    execute_with_rng(&prog, &mut tab, &mut rng).unwrap();
+
+    assert_eq!(rng.random::<u64>(), control.random::<u64>());
+}
+
+#[test]
 fn measurement_buffer_is_pre_sized() {
     let prog = parse_extended("X 0\nM 0 1 2 3 4").unwrap();
     assert_eq!(prog.measurement_count(), 5);
@@ -169,12 +231,15 @@ fn sample_zero_shots_returns_empty() {
 #[test]
 fn sample_random_h_distribution_within_3_sigma() {
     // H 0; M 0 — over 4096 shots, expect ≈50% ones, allow 3σ slack.
-    use ppvm_stim::sample;
+    use ppvm_stim::sample_with_rng;
     let prog = parse_extended("H 0\nM 0").unwrap();
     let n = 4096;
-    let shots = sample::<_, _, _, _>(&prog, n, |i| {
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1)
-    })
+    let shots = sample_with_rng(
+        &prog,
+        n,
+        |i| seeded_tab(1, i as u64 + 1),
+        |i| SmallRng::seed_from_u64(i as u64 + 1),
+    )
     .unwrap();
     let ones = shots.iter().filter(|s| s[0] == Some(true)).count();
     let mean = (n / 2) as f64;
@@ -411,14 +476,17 @@ fn mr_noise_one_flips_recorded_but_resets_correctly() {
 
 #[test]
 fn measure_noise_distribution_within_3_sigma() {
-    use ppvm_stim::sample;
+    use ppvm_stim::sample_with_rng;
     // X 0; MZ(0.3) 0 — true outcome is 1, recorded bit flips with prob 0.3.
     // So recorded == 0 with probability 0.3 over many shots.
     let prog = parse_extended("X 0\nMZ(0.3) 0").unwrap();
     let n = 4096usize;
-    let shots = sample::<_, _, _, _>(&prog, n, |i| {
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1)
-    })
+    let shots = sample_with_rng(
+        &prog,
+        n,
+        |i| seeded_tab(1, i as u64 + 1),
+        |i| SmallRng::seed_from_u64(i as u64 + 1),
+    )
     .unwrap();
     let zeros = shots.iter().filter(|s| s[0] == Some(false)).count();
     let mean = (n as f64) * 0.3;
@@ -464,13 +532,16 @@ fn mpad_inside_repeat_block_executes_each_iteration() {
 
 #[test]
 fn mpad_noise_distribution_within_3_sigma() {
-    use ppvm_stim::sample;
+    use ppvm_stim::sample_with_rng;
     // MPAD(0.3) 0 — pad value is 0; recorded bit flips to 1 with prob 0.3.
     let prog = parse_extended("MPAD(0.3) 0").unwrap();
     let n = 4096usize;
-    let shots = sample::<_, _, _, _>(&prog, n, |i| {
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64 + 1)
-    })
+    let shots = sample_with_rng(
+        &prog,
+        n,
+        |i| seeded_tab(1, i as u64 + 1),
+        |i| SmallRng::seed_from_u64(i as u64 + 1),
+    )
     .unwrap();
     let ones = shots.iter().filter(|s| s[0] == Some(true)).count();
     let mean = (n as f64) * 0.3;
@@ -484,18 +555,17 @@ fn mpad_noise_distribution_within_3_sigma() {
 #[cfg(feature = "rayon")]
 #[test]
 fn sample_parallel_matches_sample_serial_for_seeded_factory() {
-    use ppvm_stim::{sample_parallel, sample_serial};
+    use ppvm_stim::{sample_parallel_with_rng, sample_serial_with_rng};
     // A randomising circuit (H then measure on two qubits, with a noisy
     // readout) so each shot's outcome depends on its RNG draws. With a
     // per-shot seed derived from the index, the parallel result must match
     // the serial result shot-for-shot regardless of thread scheduling.
     let prog = parse_extended("H 0\nH 1\nM 0\nMZ(0.2) 1").unwrap();
     let n = 1024usize;
-    let factory = |i: usize| {
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(2, 1e-10, i as u64 + 1)
-    };
-    let serial = sample_serial::<_, _, _, _>(&prog, n, factory).unwrap();
-    let parallel = sample_parallel::<_, _, _, _>(&prog, n, factory).unwrap();
+    let factory = |i: usize| seeded_tab(2, i as u64 + 1);
+    let rng = |i: usize| SmallRng::seed_from_u64(i as u64 + 1);
+    let serial = sample_serial_with_rng(&prog, n, factory, rng).unwrap();
+    let parallel = sample_parallel_with_rng(&prog, n, factory, rng).unwrap();
     assert_eq!(serial, parallel);
 }
 
@@ -510,7 +580,7 @@ fn sample_keeps_non_sync_factories_on_serial_builds() {
     let captured = Rc::clone(&calls);
     let shots = ppvm_stim::sample::<_, _, _, _>(&program, 3, move |i| {
         captured.set(captured.get() + 1);
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new_with_seed(1, 1e-10, i as u64)
+        seeded_tab(1, i as u64)
     })
     .expect("sample");
 

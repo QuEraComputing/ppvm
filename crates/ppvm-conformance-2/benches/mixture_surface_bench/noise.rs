@@ -24,7 +24,7 @@ macro_rules! error_one {
             $old,
             $new,
             |state: &mut Old| state.$method(5, 0.03),
-            |state: &mut New| state.$method(5, 0.03),
+            |state: &mut New| state.$method(5, 0.03, &mut ppvm_conformance_2::analytic_rng()),
         );
     };
 }
@@ -37,7 +37,9 @@ macro_rules! error_many {
             $old,
             $new,
             |state: &mut Old| state.$method(&[5, 6, 7], 0.02),
-            |state: &mut New| state.$method(&[5, 6, 7], 0.02),
+            |state: &mut New| {
+                state.$method(&[5, 6, 7], 0.02, &mut ppvm_conformance_2::analytic_rng())
+            },
         );
     };
 }
@@ -53,7 +55,7 @@ pub fn register(c: &mut Criterion) {
         &old,
         &new,
         move |s: &mut Old| s.pauli_error(5, probabilities),
-        move |s: &mut New| s.pauli_error(5, probabilities),
+        move |s: &mut New| s.pauli_error(5, probabilities, &mut ppvm_conformance_2::analytic_rng()),
     );
     error_one!(c, &old, &new, x_error);
     error_one!(c, &old, &new, y_error);
@@ -64,7 +66,13 @@ pub fn register(c: &mut Criterion) {
         &old,
         &new,
         move |s: &mut Old| s.pauli_error_many(&[5, 6, 7], probabilities),
-        move |s: &mut New| s.pauli_error_many(&[5, 6, 7], probabilities),
+        move |s: &mut New| {
+            s.pauli_error_many(
+                &[5, 6, 7],
+                probabilities,
+                &mut ppvm_conformance_2::analytic_rng(),
+            )
+        },
     );
     error_many!(c, &old, &new, x_error_many);
     error_many!(c, &old, &new, y_error_many);
@@ -76,7 +84,14 @@ pub fn register(c: &mut Criterion) {
         &old,
         &new,
         move |s: &mut Old| s.two_qubit_pauli_error(4, 5, probabilities_2),
-        move |s: &mut New| s.two_qubit_pauli_error(4, 5, probabilities_2),
+        move |s: &mut New| {
+            s.two_qubit_pauli_error(
+                4,
+                5,
+                probabilities_2,
+                &mut ppvm_conformance_2::analytic_rng(),
+            )
+        },
     );
     bench_mut(
         c,
@@ -84,7 +99,13 @@ pub fn register(c: &mut Criterion) {
         &old,
         &new,
         move |s: &mut Old| s.two_qubit_pauli_error_many(&[(4, 5), (6, 7)], probabilities_2),
-        move |s: &mut New| s.two_qubit_pauli_error_many(&[(4, 5), (6, 7)], probabilities_2),
+        move |s: &mut New| {
+            s.two_qubit_pauli_error_many(
+                &[(4, 5), (6, 7)],
+                probabilities_2,
+                &mut ppvm_conformance_2::analytic_rng(),
+            )
+        },
     );
     bench_mut(
         c,
@@ -92,7 +113,7 @@ pub fn register(c: &mut Criterion) {
         &old,
         &new,
         |s: &mut Old| s.depolarize1(5, 0.03),
-        |s: &mut New| s.depolarize1(5, 0.03),
+        |s: &mut New| s.depolarize1(5, 0.03, &mut ppvm_conformance_2::analytic_rng()),
     );
     bench_mut(
         c,
@@ -100,7 +121,7 @@ pub fn register(c: &mut Criterion) {
         &old,
         &new,
         |s: &mut Old| s.depolarize1_many(&[5, 6, 7], 0.02),
-        |s: &mut New| s.depolarize1_many(&[5, 6, 7], 0.02),
+        |s: &mut New| s.depolarize1_many(&[5, 6, 7], 0.02, &mut ppvm_conformance_2::analytic_rng()),
     );
     bench_mut(
         c,
@@ -108,7 +129,7 @@ pub fn register(c: &mut Criterion) {
         &old,
         &new,
         |s: &mut Old| s.depolarize2(4, 5, 0.03),
-        |s: &mut New| s.depolarize2(4, 5, 0.03),
+        |s: &mut New| s.depolarize2(4, 5, 0.03, &mut ppvm_conformance_2::analytic_rng()),
     );
     bench_mut(
         c,
@@ -116,7 +137,13 @@ pub fn register(c: &mut Criterion) {
         &old,
         &new,
         |s: &mut Old| s.depolarize2_many(&[(4, 5), (6, 7)], 0.02),
-        |s: &mut New| s.depolarize2_many(&[(4, 5), (6, 7)], 0.02),
+        |s: &mut New| {
+            s.depolarize2_many(
+                &[(4, 5), (6, 7)],
+                0.02,
+                &mut ppvm_conformance_2::analytic_rng(),
+            )
+        },
     );
 
     bench_mut(
@@ -125,7 +152,7 @@ pub fn register(c: &mut Criterion) {
         &old,
         &new,
         |s: &mut Old| s.loss_channel(5, 0.11),
-        |s: &mut New| s.loss_channel(5, 0.11),
+        |s: &mut New| s.loss_channel(5, 0.11, &mut ppvm_conformance_2::analytic_rng()),
     );
     bench_mut(
         c,
@@ -133,12 +160,19 @@ pub fn register(c: &mut Criterion) {
         &old,
         &new,
         |s: &mut Old| s.correlated_loss_channel(4, 5, [0.01, 0.02, 0.03]),
-        |s: &mut New| s.correlated_loss_channel(4, 5, [0.01, 0.02, 0.03]),
+        |s: &mut New| {
+            s.correlated_loss_channel(
+                4,
+                5,
+                [0.01, 0.02, 0.03],
+                &mut ppvm_conformance_2::analytic_rng(),
+            )
+        },
     );
 
     let (mut old_lost, mut new_lost) = (old.clone(), new.clone());
     old_lost.loss_channel(5, 0.3);
-    new_lost.loss_channel(5, 0.3);
+    new_lost.loss_channel(5, 0.3, &mut ppvm_conformance_2::analytic_rng());
     assert_same(&old_lost, &new_lost);
     bench_mut(
         c,

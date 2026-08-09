@@ -3,9 +3,22 @@
 
 use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
 use ppvm_stim::backend::prelude::*;
-use ppvm_stim::{Error, ExecError, run_file, run_string};
+use ppvm_stim::{Error, ExecError, run_file, run_file_with_rng, run_string, run_string_with_rng};
+use rand::SeedableRng;
 
 type Tab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
+
+fn seeded_tab(n_qubits: usize, seed: u64) -> Tab {
+    #[cfg(feature = "legacy")]
+    {
+        GeneralizedTableau::new_with_seed(n_qubits, 1e-10, seed)
+    }
+    #[cfg(feature = "traits-2")]
+    {
+        let _ = seed;
+        GeneralizedTableau::new(n_qubits, 1e-10)
+    }
+}
 
 #[test]
 fn run_string_executes_one_shot() {
@@ -20,12 +33,12 @@ fn run_file_round_trips_with_run_string() {
     let path = std::env::temp_dir().join("ppvm_stim_test.stim");
     std::fs::write(&path, circuit).unwrap();
 
-    let mut a: GeneralizedTableau<ByteFxHashF64<1>, usize> =
-        GeneralizedTableau::new_with_seed(3, 1e-10, 7);
-    let mut b: GeneralizedTableau<ByteFxHashF64<1>, usize> =
-        GeneralizedTableau::new_with_seed(3, 1e-10, 7);
-    let r_str = run_string(circuit, &mut a).unwrap();
-    let r_file = run_file(&path, &mut b).unwrap();
+    let mut a = seeded_tab(3, 7);
+    let mut b = seeded_tab(3, 7);
+    let mut rng_a = rand::rngs::SmallRng::seed_from_u64(7);
+    let mut rng_b = rand::rngs::SmallRng::seed_from_u64(7);
+    let r_str = run_string_with_rng(circuit, &mut a, &mut rng_a).unwrap();
+    let r_file = run_file_with_rng(&path, &mut b, &mut rng_b).unwrap();
     assert_eq!(r_str, r_file);
 }
 

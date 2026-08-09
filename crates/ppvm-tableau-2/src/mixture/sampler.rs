@@ -35,19 +35,22 @@ impl<A: RowStorage, I: Bitstring, H> MixtureSampler<A, I, H> {
         }
     }
 
-    fn choice(&mut self) -> (usize, u64) {
+    fn choice(&mut self) -> (usize, SmallRng) {
         let probability = self.rng.random::<f64>();
         let index = self
             .cumulative
             .partition_point(|&bound| bound <= probability)
             .min(self.entries.len().saturating_sub(1));
-        (index, self.rng.random())
+        // Compatibility schedule: historically this `u64` seeded the cloned
+        // tableau's embedded RNG. Keep that exact derivation in the sampler.
+        let seed = self.rng.random();
+        (index, SmallRng::seed_from_u64(seed))
     }
 
     pub fn sample(&mut self) -> Vec<Option<bool>> {
-        let (index, seed) = self.choice();
-        let mut tab = self.entries[index].0.fork(Some(seed));
-        tab.measure_all_with_scratch(&mut self.scratch)
+        let (index, mut rng) = self.choice();
+        let mut tab = self.entries[index].0.fork();
+        tab.measure_all_with_scratch(&mut self.scratch, &mut rng)
     }
 
     pub fn sample_shots_serial(&mut self, shots: usize) -> Vec<Vec<Option<bool>>> {
@@ -63,10 +66,10 @@ impl<A: RowStorage, I: Bitstring, H> MixtureSampler<A, I, H> {
     {
         let choices: Vec<_> = (0..shots).map(|_| self.choice()).collect();
         choices
-            .par_iter()
-            .map_init(MeasureScratch::new, |scratch, &(index, seed)| {
-                let mut tab = self.entries[index].0.fork(Some(seed));
-                tab.measure_all_with_scratch(scratch)
+            .into_par_iter()
+            .map_init(MeasureScratch::new, |scratch, (index, mut rng)| {
+                let mut tab = self.entries[index].0.fork();
+                tab.measure_all_with_scratch(scratch, &mut rng)
             })
             .collect()
     }

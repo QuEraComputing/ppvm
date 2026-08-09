@@ -38,10 +38,7 @@ pub fn criterion_config() -> Criterion {
 }
 
 pub fn bare_pair(n: usize) -> (OldBare, NewBare) {
-    (
-        OldBare::new_with_seed(n, SEED),
-        NewBare::new_with_seed(n, SEED),
-    )
+    (OldBare::new_with_seed(n, SEED), NewBare::new(n))
 }
 
 pub fn gen_pair(n: usize) -> (OldGen, NewGen) {

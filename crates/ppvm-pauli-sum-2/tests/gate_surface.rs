@@ -16,6 +16,15 @@ use ppvm_traits_2::{
     AmplitudeDamping, Clifford, CliffordExtensions, Depolarizing, Depolarizing2, PauliBits,
     Projection, RotXY, RotationOne, RotationTwo, TwoQubitPauliError, Word,
 };
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
+
+/// The `-2` sum backends are density-matrix-like: the noise channels are
+/// analytic coefficient scalings and never draw. Call sites thread this
+/// fixed-seed RNG only to satisfy the injected-RNG trait surface.
+fn rng() -> SmallRng {
+    SmallRng::seed_from_u64(0)
+}
 
 fn pw(s: &str) -> PauliWord {
     PauliWord::from(s)
@@ -323,20 +332,20 @@ fn diagonal_channels_never_insert_or_remove() {
     );
 
     let mut s = seed.clone();
-    s.two_qubit_pauli_error(0, 1, [0.01; 15]);
+    s.two_qubit_pauli_error(0, 1, [0.01; 15], &mut rng());
     assert_eq!(s.len(), seed.len());
     for (k, _) in seed.iter() {
         assert!(s.contains_key(&k), "{k} vanished");
     }
 
     let mut s = seed.clone();
-    s.depolarize1(0, 0.75); // factor 1 − 4·0.75/3 == 0.0 exactly
+    s.depolarize1(0, 0.75, &mut rng()); // factor 1 − 4·0.75/3 == 0.0 exactly
     assert_eq!(s.len(), seed.len(), "a zero factor must not remove terms");
     approx(&s, "XI", 0.0);
     approx(&s, "II", 1.0);
 
     let mut s = seed.clone();
-    s.depolarize2(0, 1, 0.1);
+    s.depolarize2(0, 1, 0.1, &mut rng());
     assert_eq!(s.len(), seed.len());
     let f = 1.0 - 0.1 * (16.0 / 15.0);
     approx(&s, "II", 1.0);
@@ -359,7 +368,7 @@ fn two_qubit_pauli_error_one_hot_zi() {
             (pw("IX"), 1.0),
         ],
     );
-    s.two_qubit_pauli_error(0, 1, p);
+    s.two_qubit_pauli_error(0, 1, p, &mut rng());
     approx(&s, "II", 1.0); // commutes
     approx(&s, "XI", 1.0 - 0.2); // anticommutes with Z₀
     approx(&s, "ZI", 1.0); // commutes

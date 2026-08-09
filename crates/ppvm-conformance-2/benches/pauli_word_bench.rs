@@ -79,7 +79,7 @@ fn bench_key_hash(c: &mut Criterion) {
     let cold_template: New = LHS.into();
     g.bench_function("new/cold", |b| {
         b.iter_batched(
-            || cold_template.clone(),
+            || cold_template,
             |w| {
                 black_box(w.key_hash());
                 w

@@ -98,17 +98,18 @@ fn grown_support(n: usize) -> Vec<String> {
             (NewKey::from(s.as_str()), 1.0)
         }),
     );
+    let mut rng = ppvm_conformance_2::analytic_rng();
     for _ in 0..steps {
         for i in 0..n {
-            state.pauli_error(i, noise);
+            state.pauli_error(i, noise, &mut rng);
             state.truncate();
             state.rx(i, theta_x);
             state.truncate();
         }
         for i in 0..n - 1 {
-            state.pauli_error(i + 1, noise);
+            state.pauli_error(i + 1, noise, &mut rng);
             state.truncate();
-            state.pauli_error(i, noise);
+            state.pauli_error(i, noise, &mut rng);
             state.truncate();
             state.cnot(i, i + 1);
             state.rz(i + 1, theta_zz);

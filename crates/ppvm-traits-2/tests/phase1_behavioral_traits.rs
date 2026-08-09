@@ -28,6 +28,8 @@ use std::f64::consts::TAU;
 use ppvm_traits_2::coefficient::Angle;
 use ppvm_traits_2::gates::{Measure, PauliError, RotationOne, RotationTwo, TGate};
 use ppvm_traits_2::word::Pauli;
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
 
 // ---------------------------------------------------------------------------
 // RotationOne: defaulted angle (A = C) and a symbolic angle domain (A != C).
@@ -92,7 +94,12 @@ impl RotationOne<f64, Turns> for StubSum {
 }
 
 impl PauliError<f64> for StubSum {
-    fn pauli_error(&mut self, qubit: usize, probabilities: [f64; 3]) {
+    fn pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        probabilities: [f64; 3],
+        _rng: &mut R,
+    ) {
         self.noise.push((qubit, probabilities));
     }
 }
@@ -261,7 +268,8 @@ fn a_real_f64_angle_still_drives_a_complex_coefficient_rotation() {
 #[test]
 fn pauli_error_takes_three_probabilities_in_the_coefficient_domain() {
     let mut s = StubSum::default();
-    s.pauli_error(2, [0.01, 0.02, 0.03]);
+    let mut rng = SmallRng::seed_from_u64(0);
+    s.pauli_error(2, [0.01, 0.02, 0.03], &mut rng);
     assert_eq!(s.noise, vec![(2, [0.01, 0.02, 0.03])]);
 }
 
@@ -380,7 +388,7 @@ struct StubMeasure {
 }
 
 impl Measure for StubMeasure {
-    fn measure(&mut self, qubit: usize) -> Option<bool> {
+    fn measure<R: rand::Rng + ?Sized>(&mut self, qubit: usize, _rng: &mut R) -> Option<bool> {
         self.seen.push(qubit);
         if self.lost.contains(&qubit) {
             None
@@ -396,7 +404,8 @@ fn measure_many_returns_one_result_per_target_in_order() {
         lost: vec![2],
         seen: Vec::new(),
     };
-    let out = m.measure_many(&[0, 1, 2, 3, 1]);
+    let mut rng = SmallRng::seed_from_u64(0);
+    let out = m.measure_many(&[0, 1, 2, 3, 1], &mut rng);
     assert_eq!(
         out,
         vec![Some(false), Some(true), None, Some(true), Some(true)]
@@ -406,6 +415,6 @@ fn measure_many_returns_one_result_per_target_in_order() {
 
     // Empty target list measures nothing.
     m.seen.clear();
-    assert!(m.measure_many(&[]).is_empty());
+    assert!(m.measure_many(&[], &mut rng).is_empty());
     assert!(m.seen.is_empty());
 }

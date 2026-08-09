@@ -54,7 +54,7 @@ pub trait StimTableau: sealed::Sealed {
     #[doc(hidden)]
     type Coefficients;
 
-    fn reset(&mut self, q: usize);
+    fn reset<R: rand::Rng + ?Sized>(&mut self, q: usize, rng: &mut R);
     fn x(&mut self, q: usize);
     fn y(&mut self, q: usize);
     fn z(&mut self, q: usize);
@@ -87,16 +87,37 @@ pub trait StimTableau: sealed::Sealed {
     fn ry(&mut self, q: usize, theta: f64);
     fn rz(&mut self, q: usize, theta: f64);
     fn u3(&mut self, q: usize, theta: f64, phi: f64, lambda: f64);
-    fn depolarize1(&mut self, q: usize, p: f64);
-    fn depolarize2(&mut self, a: usize, b: usize, p: f64);
-    fn pauli_error(&mut self, q: usize, p: [f64; 3]);
-    fn two_qubit_pauli_error(&mut self, a: usize, b: usize, p: [f64; 15]);
-    fn loss_channel(&mut self, q: usize, p: f64);
-    fn correlated_loss_channel(&mut self, a: usize, b: usize, p: [f64; 3]);
-    fn measure(&mut self, q: usize) -> Option<bool>;
-    fn measure_many(&mut self, q: &[usize]) -> Vec<Option<bool>>;
-    fn measure_noisy(&mut self, q: usize, p: f64) -> Option<bool>;
-    fn flip_with_prob(&mut self, bit: bool, p: f64) -> bool;
+    fn depolarize1<R: rand::Rng + ?Sized>(&mut self, q: usize, p: f64, rng: &mut R);
+    fn depolarize2<R: rand::Rng + ?Sized>(&mut self, a: usize, b: usize, p: f64, rng: &mut R);
+    fn pauli_error<R: rand::Rng + ?Sized>(&mut self, q: usize, p: [f64; 3], rng: &mut R);
+    fn two_qubit_pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        a: usize,
+        b: usize,
+        p: [f64; 15],
+        rng: &mut R,
+    );
+    fn loss_channel<R: rand::Rng + ?Sized>(&mut self, q: usize, p: f64, rng: &mut R);
+    fn correlated_loss_channel<R: rand::Rng + ?Sized>(
+        &mut self,
+        a: usize,
+        b: usize,
+        p: [f64; 3],
+        rng: &mut R,
+    );
+    fn measure<R: rand::Rng + ?Sized>(&mut self, q: usize, rng: &mut R) -> Option<bool>;
+    fn measure_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        q: &[usize],
+        rng: &mut R,
+    ) -> Vec<Option<bool>>;
+    fn measure_noisy<R: rand::Rng + ?Sized>(
+        &mut self,
+        q: usize,
+        p: f64,
+        rng: &mut R,
+    ) -> Option<bool>;
+    fn flip_with_prob<R: rand::Rng + ?Sized>(&mut self, bit: bool, p: f64, rng: &mut R) -> bool;
     fn measurement_record(&self) -> &[Option<bool>];
     fn append_measurement_record(&mut self, result: Option<bool>);
     fn overwrite_last_measurement_record(&mut self, result: Option<bool>);

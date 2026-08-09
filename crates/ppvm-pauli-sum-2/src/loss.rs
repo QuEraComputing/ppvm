@@ -79,7 +79,7 @@ where
     C: Coefficient + num::One,
     P: crate::policy::Policy<W, C>,
 {
-    fn loss_channel(&mut self, qubit: usize, p: C) {
+    fn loss_channel<R: rand::Rng + ?Sized>(&mut self, qubit: usize, p: C, _rng: &mut R) {
         let survive = C::one() - p.clone();
         self.rotate_in_place(move |k: &W, c: &mut C| {
             if k.is_lost(qubit) {
@@ -124,7 +124,13 @@ where
     C: Coefficient + num::One,
     P: crate::policy::Policy<W, C>,
 {
-    fn correlated_loss_channel(&mut self, qubit0: usize, qubit1: usize, p: [C; 3]) {
+    fn correlated_loss_channel<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit0: usize,
+        qubit1: usize,
+        p: [C; 3],
+        _rng: &mut R,
+    ) {
         let [p0, p1, p2] = p;
         // `1 − 2·p1 − p0` for the both-present arm, with the doubling as `x + x`
         // (the `Coefficient` ring carries no bare-`f64` scaling).

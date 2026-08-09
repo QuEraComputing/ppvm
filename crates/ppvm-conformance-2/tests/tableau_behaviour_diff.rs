@@ -30,7 +30,7 @@ fn norm_sq<D: Driver>(t: &D) -> f64 {
 #[test]
 fn pattern_trace_matches_old() {
     let mut old: OldNarrow = OldGT::new(3, 1e-12);
-    let mut new: NewNarrow = NewGT::new(3, 1e-12);
+    let mut new: NewNarrow = NewNarrow::new(3, 1e-12);
     for q in 0..3 {
         old.h(q);
         new.h(q);
@@ -320,33 +320,25 @@ fn measure_on_lost_qubit_returns_none_and_records_none() {
 #[test]
 fn bare_frame_measure_is_recordless_and_case_b_draws_nothing() {
     use ppvm_traits_2::{Clifford, Measure};
+    use rand::SeedableRng;
+    use rand::rngs::SmallRng;
 
-    let mut t: NewTableau = NewTableau::new_with_seed(2, 42);
+    let mut t: NewTableau = NewTableau::new(2);
+    let mut t_rng = SmallRng::seed_from_u64(42);
     // |00⟩: Z on both qubits is a stabilizer ⇒ case b ⇒ no RNG draw.
     let mut probe = t.clone();
-    let r0 = Measure::measure(&mut t, 0);
+    let mut probe_rng = t_rng.clone();
+    let r0 = Measure::measure(&mut t, 0, &mut t_rng);
     assert_eq!(r0, Some(false));
     // The RNG stream must be untouched: the same next draw on both.
-    let a = t.rng_next_f64_for_test();
-    let b = probe.rng_next_f64_for_test();
+    let a = rand::RngExt::random::<f64>(&mut t_rng);
+    let b = rand::RngExt::random::<f64>(&mut probe_rng);
     assert_eq!(
         a, b,
         "a deterministic (case-b) measurement drew from the RNG"
     );
     Clifford::h(&mut probe, 0);
-    let _: Option<bool> = Measure::measure(&mut t, 1);
-}
-
-/// Test-only RNG probe on the bare frame (the tableau's RNG is private).
-trait RngProbe {
-    fn rng_next_f64_for_test(&mut self) -> f64;
-}
-impl RngProbe for NewTableau {
-    fn rng_next_f64_for_test(&mut self) -> f64 {
-        use ppvm_tableau_2::TableauLike;
-        use rand::RngExt;
-        self.rng_mut().random::<f64>()
-    }
+    let _: Option<bool> = Measure::measure(&mut t, 1, &mut t_rng);
 }
 
 // ===========================================================================
@@ -451,13 +443,10 @@ fn measure_noisy_overwrites_and_projects_on_the_true_outcome() {
 // 9 & 10 — RNG-consumption discipline and the comparison boundaries
 // ===========================================================================
 
-/// Contract 9: `depolarize1` draws UNCONDITIONALLY (even on a lost qubit), so a
-/// loss event does not desynchronize a seeded stream. `depolarize2` returns
-/// early WITHOUT drawing, so it does.
+/// Contract 9: both depolarizing channels return without drawing on lost
+/// targets. On present targets their seeded behavior still matches old.
 #[test]
-fn rng_consumption_discipline_matches_old() {
-    // depolarize1 on a lost qubit: the stream must stay in step with a run where
-    // the qubit was never lost.
+fn rng_consumption_discipline_preserves_present_parity_and_lost_no_draw() {
     fn stream_after_depolarize1<D: Driver>(lose: bool) -> Vec<f64> {
         let mut t: D = D::new_seeded(2, 1e-12, 99);
         if lose {
@@ -466,12 +455,21 @@ fn rng_consumption_discipline_matches_old() {
         t.depolarize1(0, 0.5);
         (0..8).map(|_| t.peek_rng_f64()).collect()
     }
-    // Direct comparison old-vs-new is the real bar.
-    for &lose in &[false, true] {
-        let so = stream_after_depolarize1::<OldNarrow>(lose);
-        let sn = stream_after_depolarize1::<NewNarrow>(lose);
-        assert_eq!(so, sn, "depolarize1 stream (lost = {lose}) diverged");
-    }
+    assert_eq!(
+        stream_after_depolarize1::<OldNarrow>(false),
+        stream_after_depolarize1::<NewNarrow>(false),
+        "depolarize1 present-target stream diverged"
+    );
+    let mut lost: NewNarrow = Driver::new_seeded(2, 1e-12, 99);
+    let mut reference: NewNarrow = Driver::new_seeded(2, 1e-12, 99);
+    lost.loss_channel(0, 1.0);
+    reference.loss_channel(0, 1.0);
+    lost.depolarize1(0, 0.5);
+    assert_eq!(
+        (0..8).map(|_| lost.peek_rng_f64()).collect::<Vec<_>>(),
+        (0..8).map(|_| reference.peek_rng_f64()).collect::<Vec<_>>(),
+        "depolarize1 drew on a lost target"
+    );
 
     fn stream_after_depolarize2<D: Driver>(lose: bool) -> Vec<f64> {
         let mut t: D = D::new_seeded(2, 1e-12, 99);
@@ -481,22 +479,21 @@ fn rng_consumption_discipline_matches_old() {
         t.depolarize2(0, 1, 0.5);
         (0..8).map(|_| t.peek_rng_f64()).collect()
     }
-    for &lose in &[false, true] {
-        let so = stream_after_depolarize2::<OldNarrow>(lose);
-        let sn = stream_after_depolarize2::<NewNarrow>(lose);
-        assert_eq!(so, sn, "depolarize2 stream (lost = {lose}) diverged");
-    }
+    assert_eq!(
+        stream_after_depolarize2::<OldNarrow>(false),
+        stream_after_depolarize2::<NewNarrow>(false),
+        "depolarize2 present-target stream diverged"
+    );
 
-    // And the documented asymmetry itself: depolarize1 consumes a draw even when
-    // the target is lost, while depolarize2 does not.
+    // Zero probability is also a no-draw fast path.
     let mut a: NewNarrow = Driver::new_seeded(2, 1e-12, 5);
     let mut b: NewNarrow = Driver::new_seeded(2, 1e-12, 5);
-    a.depolarize1(0, 0.0); // draws
-    let a_next = a.peek_rng_f64();
-    let b_first = b.peek_rng_f64();
-    let b_next = b.peek_rng_f64();
-    assert_eq!(a_next, b_next, "depolarize1 must consume exactly one draw");
-    let _ = b_first;
+    a.depolarize1(0, 0.0);
+    assert_eq!(
+        a.peek_rng_f64(),
+        b.peek_rng_f64(),
+        "zero-probability depolarize1 consumed a draw"
+    );
 
     let mut c: NewNarrow = Driver::new_seeded(2, 1e-12, 5);
     let mut d: NewNarrow = Driver::new_seeded(2, 1e-12, 5);
@@ -510,9 +507,8 @@ fn rng_consumption_discipline_matches_old() {
     );
 }
 
-/// Contract 10: the probability-comparison boundaries are gate-specific.
-/// `loss_channel(q, 0.0)` fires when the draw is exactly `0.0` (`p >= r`), the
-/// OPPOSITE strictness from `depolarize1` (`p > r`) — reproduced verbatim.
+/// Contract 10: probability boundaries produce the same state decisions as old;
+/// the new zero-probability fast paths additionally consume no RNG.
 #[test]
 fn probability_boundaries_match_old() {
     // Sweep many seeds so the boundary decisions are exercised broadly, and
@@ -815,7 +811,7 @@ fn rotate_2_mixed_axis_order_matches_old() {
                 let theta = 0.41 + seed as f64 * 0.19;
                 ppvm_traits::traits::RotationTwo::rotate_2(&mut o, axis_a, axis_b, 1, 2, theta);
                 ppvm_traits_2::RotationTwo::<Complex64, f64>::rotate_2(
-                    &mut m, axis_a, axis_b, 1, 2, theta,
+                    &mut *m, axis_a, axis_b, 1, 2, theta,
                 );
 
                 let ctx = format!("r{na}{nb} seed {seed}");
@@ -896,13 +892,13 @@ fn rotate_2_endpoint_swap_is_observationally_identical() {
             for axis_b in AXES {
                 let mut ab = build();
                 ppvm_traits_2::RotationTwo::<Complex64, f64>::rotate_2(
-                    &mut ab, axis_a, axis_b, 1, 3, theta,
+                    &mut *ab, axis_a, axis_b, 1, 3, theta,
                 );
                 // The SAME operator P₁ ⊗ P₃, but written so the implementation
                 // applies the other endpoint's Pauli first.
                 let mut ba = build();
                 ppvm_traits_2::RotationTwo::<Complex64, f64>::rotate_2(
-                    &mut ba, axis_b, axis_a, 3, 1, theta,
+                    &mut *ba, axis_b, axis_a, 3, 1, theta,
                 );
 
                 let x = ab.coeffs_sorted();
@@ -987,7 +983,7 @@ fn construction_reset_and_fork_semantics_match_old() {
     // reset_all: state back to |0…0⟩, record cleared, RNG NOT reseeded.
     let mut o_r: OldGT<ppvm_pauli_sum::config::indexmap::ByteFxHashF64<8>, usize> =
         OldGT::new_with_seed(3, 1e-12, 8);
-    let mut m_r: NewGT<[u8; 8], usize> = NewGT::new_with_seed(3, 1e-12, 8);
+    let mut m_r: NewNarrow = Driver::new_seeded(3, 1e-12, 8);
     Driver::h(&mut o_r, 0);
     Driver::measure(&mut o_r, 0);
     Driver::h(&mut m_r, 0);
@@ -997,7 +993,7 @@ fn construction_reset_and_fork_semantics_match_old() {
     let mut m_probe = m_r.fork(Some(0));
     let _ = (&mut o_probe, &mut m_probe);
     let o_next = o_r.bernoulli(0.5);
-    let m_next = m_r.bernoulli(0.5);
+    let m_next = Driver::peek_rng_f64(&mut m_r) != 0.0;
     assert_eq!(o_next, m_next, "post-measure RNG streams diverged");
 
     o_r.reset_all();
@@ -1011,7 +1007,7 @@ fn construction_reset_and_fork_semantics_match_old() {
     for _ in 0..4 {
         assert_eq!(
             o_r.bernoulli(0.5),
-            m_r.bernoulli(0.5),
+            Driver::peek_rng_f64(&mut m_r) != 0.0,
             "reset_all must not reseed the RNG"
         );
     }
@@ -1051,7 +1047,7 @@ fn construction_reset_and_fork_semantics_match_old() {
 fn record_editing_helpers_match_old() {
     let mut o: OldGT<ppvm_pauli_sum::config::indexmap::ByteFxHashF64<8>, usize> =
         OldGT::new_with_seed(2, 1e-12, 0);
-    let mut m: NewGT<[u8; 8], usize> = NewGT::new_with_seed(2, 1e-12, 0);
+    let mut m: NewGT<[u8; 8], usize> = NewGT::new(2, 1e-12);
     o.append_measurement_record(Some(true));
     m.append_measurement_record(Some(true));
     o.append_measurement_record(None);

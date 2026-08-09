@@ -23,6 +23,7 @@ traits-2 = [
     "dep:ppvm-pauli-sum-2",
     "dep:ppvm-tableau-2",
     "dep:ppvm-traits-2",
+    "dep:rand",
     "ppvm-stim/traits-2",
 ]
 
@@ -38,6 +39,10 @@ ppvm-tableau-legacy = { package = "ppvm-tableau", version = "0.1.0", path = "../
 ppvm-tableau-2 = { version = "0.1.0", path = "../ppvm-tableau-2", optional = true, features = ["rayon"] }
 ppvm-tableau-sum-legacy = { package = "ppvm-tableau-sum", version = "0.1.0", path = "../ppvm-tableau-sum", optional = true, features = ["rayon"] }
 ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2", optional = true }
+# `-2` injects randomness at the call site, so the `#[pyclass]` wrappers own the
+# generator on Python's behalf (`src/backend/mod.rs`). The legacy tableau embeds
+# its own, hence the feature gate.
+rand = { version = "0.10.1", optional = true }
 # abi3-py310: build a single stable-ABI wheel that loads on CPython 3.10+,
 # instead of one wheel per Python version.
 pyo3 = { version = "0.29.0", features = [

@@ -23,7 +23,7 @@ pub fn bench(c: &mut Criterion) {
         b.iter(|| std::hint::black_box(format!("{old_gen}")))
     });
     group.bench_function("generalized/new", |b| {
-        b.iter(|| std::hint::black_box(format!("{new_gen}")))
+        b.iter(|| std::hint::black_box(format!("{}", new_gen.tab)))
     });
     group.finish();
 }

@@ -29,6 +29,8 @@ use ppvm_pauli_sum_2::{
 use ppvm_traits_2::{
     Accumulate, Clifford, Indexable, PauliError, Projection, RotationOne, Trace, Word,
 };
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
 
 fn pw(s: &str) -> PauliWord {
     PauliWord::from(s)
@@ -65,10 +67,18 @@ fn assert_identical(a: &[(String, f64)], b: &[(String, f64)]) {
 
 /// Expand one driver body against both backends and return the two sorted
 /// supports.
+///
+/// The body also binds a fresh `$rng` per backend. Both sum backends scale
+/// coefficients analytically and never draw from it, but seeding it separately
+/// keeps the two runs independent, so the identity being asserted stays "same
+/// driver, same entropy, same support" rather than relying on the channels
+/// happening to be deterministic.
 macro_rules! both_backends {
-    (n = $n:expr, policy = $policy:expr, seed = $seed:expr, |$sum:ident| $body:block) => {{
+    (n = $n:expr, policy = $policy:expr, seed = $seed:expr, |$sum:ident, $rng:ident| $body:block) => {{
         let hash = {
             let mut $sum: PauliSum<f64, _> = PauliSum::with_policy($n, $policy);
+            #[allow(unused_variables, unused_mut)]
+            let mut $rng = SmallRng::seed_from_u64(0);
             for (w, c) in $seed {
                 $sum += (pw(w), c);
             }
@@ -77,6 +87,8 @@ macro_rules! both_backends {
         };
         let column = {
             let mut $sum: ColumnPauliSum<f64, _> = ColumnPauliSum::with_policy($n, $policy);
+            #[allow(unused_variables, unused_mut)]
+            let mut $rng = SmallRng::seed_from_u64(0);
             for (w, c) in $seed {
                 $sum += (pw(w), c);
             }
@@ -93,7 +105,7 @@ fn clifford_and_rotation_propagation_is_identical() {
         n = 4,
         policy = CoefficientThreshold { threshold: 1e-9 },
         seed = [("ZIII", 1.0), ("IZII", 1.0), ("IIZI", 1.0), ("IIIZ", 1.0)],
-        |sum| {
+        |sum, rng| {
             for q in 0..4 {
                 sum.h(q);
                 sum.rz(q, 1.1);
@@ -110,7 +122,7 @@ fn clifford_and_rotation_propagation_is_identical() {
             }
             sum.truncate();
             for q in 0..4 {
-                sum.pauli_error(q, [1e-3, 2e-3, 3e-3]);
+                sum.pauli_error(q, [1e-3, 2e-3, 3e-3], &mut rng);
                 sum.ry(q, 0.9);
             }
             sum.truncate();
@@ -136,10 +148,10 @@ fn truncation_and_zero_preservation_are_identical() {
             ("IIZI", 1.0),
             ("IIIZ", 1.0)
         ],
-        |sum| {
+        |sum, rng| {
             // λ_X = 0 here, so the X-carrying term is scaled to exactly 0.0 and
             // MUST stay in the support on both backends (old has no `reduce`).
-            sum.pauli_error(0, [0.0, 0.25, 0.25]);
+            sum.pauli_error(0, [0.0, 0.25, 0.25], &mut rng);
             // Sub-threshold branches that must be allowed to merge before any
             // truncation sees them.
             sum.rx(1, 0.03);
@@ -165,8 +177,8 @@ fn zero_coefficients_survive_every_gate_on_both_backends() {
         n = 4,
         policy = NoPolicy,
         seed = [("XIII", 1.0), ("ZIII", 1.0), ("IIXI", 1.0)],
-        |sum| {
-            sum.pauli_error(0, [0.0, 0.25, 0.25]);
+        |sum, rng| {
+            sum.pauli_error(0, [0.0, 0.25, 0.25], &mut rng);
             sum.rz(2, 0.0);
         }
     );
@@ -189,7 +201,7 @@ fn lean_correct_projection_is_identical_on_both_backends() {
         n = 1,
         policy = NoPolicy,
         seed = [("I", 2.0), ("X", 3.0)],
-        |sum| {
+        |sum, rng| {
             sum.p0(0);
             sum.p0(0);
         }
@@ -205,18 +217,23 @@ fn lean_correct_projection_is_identical_on_both_backends() {
 fn deep_untruncated_fanout_is_identical() {
     // The random-circuit shape: no truncation, so the support grows by pure
     // fan-out — this is what stresses column growth and index rebuilds.
-    let (a, b) = both_backends!(n = 6, policy = NoPolicy, seed = [("ZZIIII", 1.0)], |sum| {
-        for _layer in 0..4 {
-            for q in 0..6 {
-                sum.rz(q, 1.1);
-                sum.ry(q, 2.1);
-                sum.rz(q, 1.1);
-            }
-            for q in 0..6 {
-                sum.cnot(q, (q + 1) % 6);
+    let (a, b) = both_backends!(
+        n = 6,
+        policy = NoPolicy,
+        seed = [("ZZIIII", 1.0)],
+        |sum, rng| {
+            for _layer in 0..4 {
+                for q in 0..6 {
+                    sum.rz(q, 1.1);
+                    sum.ry(q, 2.1);
+                    sum.rz(q, 1.1);
+                }
+                for q in 0..6 {
+                    sum.cnot(q, (q + 1) % 6);
+                }
             }
         }
-    });
+    );
     assert!(
         a.len() > 200,
         "the fan-out workload should grow a large support, got {}",
@@ -418,18 +435,18 @@ fn tfim_trotter_propagation_is_identical() {
             MaxPauliWeight(usize::MAX)
         ),
         seed = seed.clone(),
-        |sum| {
+        |sum, rng| {
             for _ in 0..STEPS {
                 for i in 0..NQ {
-                    sum.pauli_error(i, NOISE);
+                    sum.pauli_error(i, NOISE, &mut rng);
                     sum.truncate();
                     sum.rx(i, THETA_X);
                     sum.truncate();
                 }
                 for i in 0..NQ - 1 {
-                    sum.pauli_error(i + 1, NOISE);
+                    sum.pauli_error(i + 1, NOISE, &mut rng);
                     sum.truncate();
-                    sum.pauli_error(i, NOISE);
+                    sum.pauli_error(i, NOISE, &mut rng);
                     sum.truncate();
                     sum.cnot(i, i + 1);
                     sum.rz(i + 1, THETA_ZZ);

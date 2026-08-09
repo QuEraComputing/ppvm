@@ -47,7 +47,7 @@
 use fxhash::FxHashMap as HashMap;
 use num::complex::Complex64;
 use ppvm_traits_2::{Clifford, Measure, Pauli, Reset};
-use rand::RngExt;
+use rand::{Rng, RngExt};
 
 use crate::data::{
     Bitstring, COMPLEX_PHASE_CONVERSION, GeneralizedTableau, RowStorage, Tableau,
@@ -67,12 +67,12 @@ use crate::data::{
 /// Keeps no measurement record and never normalizes. Case a consumes exactly one
 /// `random::<bool>()`; case b consumes **no** randomness.
 impl<A: RowStorage, H> Measure for Tableau<A, H> {
-    fn measure(&mut self, qubit: usize) -> Option<bool> {
+    fn measure<R: Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R) -> Option<bool> {
         match self.find_z_anticommuting_stabilizer(qubit) {
             Some(q_idx) => {
                 // Case a: at least one stabilizer anticommutes with `Z_qubit`,
                 // so the outcome is a fair coin.
-                let outcome = self.rng.random::<bool>();
+                let outcome = rng.random::<bool>();
                 self.update_tableau_according_to_outcome(qubit, q_idx, outcome);
                 Some(outcome)
             }
@@ -152,24 +152,16 @@ impl<A: RowStorage, I: Bitstring, H> Measure for GeneralizedTableau<A, I, H> {
     /// This is allocation only: `with_scratch` resets the cached odd-phase mask,
     /// so every call sees exactly the `None` a freshly constructed scratch would
     /// have given it, and the merge order and arithmetic are untouched.
-    fn measure(&mut self, qubit: usize) -> Option<bool> {
+    fn measure<R: Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R) -> Option<bool> {
         if self.is_lost[qubit] {
             self.measurement_record.push(None);
             return None;
         }
 
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
-            self.compute_decomposition(qubit, Pauli::Z);
+        let decomposition = self.compute_decomposition(qubit, Pauli::Z);
 
         self.with_scratch(|s, scratch| {
-            s.measure_with_scratch(
-                qubit,
-                scratch,
-                phase_decomp,
-                stab_anticomm_bits,
-                destab_anticomm_bits,
-                true,
-            )
+            s.measure_with_scratch(qubit, scratch, decomposition, true, rng)
         })
     }
 
@@ -178,8 +170,12 @@ impl<A: RowStorage, I: Bitstring, H> Measure for GeneralizedTableau<A, I, H> {
     /// Outcomes, the measurement record, and the RNG-draw **order** are identical
     /// to measuring each target individually; only the internal allocation
     /// pattern changes.
-    fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
-        self.with_scratch(|s, scratch| s.measure_many_with_scratch(targets, scratch))
+    fn measure_many<R: Rng + ?Sized>(
+        &mut self,
+        targets: &[usize],
+        rng: &mut R,
+    ) -> Vec<Option<bool>> {
+        self.with_scratch(|s, scratch| s.measure_many_with_scratch(targets, scratch, rng))
     }
 }
 
@@ -215,8 +211,8 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     }
 
     /// Measure every qubit `0..n` in ascending order, reusing one scratch.
-    pub fn measure_all(&mut self) -> Vec<Option<bool>> {
-        self.with_scratch(|s, scratch| s.measure_all_with_scratch(scratch))
+    pub fn measure_all<R: Rng + ?Sized>(&mut self, rng: &mut R) -> Vec<Option<bool>> {
+        self.with_scratch(|s, scratch| s.measure_all_with_scratch(scratch, rng))
     }
 
     /// [`Self::measure_all`] with a caller-supplied scratch, reused across the
@@ -225,51 +221,46 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// This is the entry point a sampler should use: initialize one scratch
     /// alongside the sampler and thread it through every shot to amortize the
     /// case-a working set.
-    pub fn measure_all_with_scratch(
+    pub fn measure_all_with_scratch<R: Rng + ?Sized>(
         &mut self,
         scratch: &mut MeasureScratch<I>,
+        rng: &mut R,
     ) -> Vec<Option<bool>> {
         (0..self.n_qubits())
-            .map(|idx| self.measure_one_with_scratch(idx, scratch))
+            .map(|idx| self.measure_one_with_scratch(idx, scratch, rng))
             .collect()
     }
 
     /// Measure the given qubit `indices` **in the caller's order**, reusing a
     /// caller-supplied scratch — the explicit-index analogue of
     /// [`Self::measure_all_with_scratch`].
-    pub fn measure_many_with_scratch(
+    pub fn measure_many_with_scratch<R: Rng + ?Sized>(
         &mut self,
         indices: &[usize],
         scratch: &mut MeasureScratch<I>,
+        rng: &mut R,
     ) -> Vec<Option<bool>> {
         indices
             .iter()
-            .map(|&idx| self.measure_one_with_scratch(idx, scratch))
+            .map(|&idx| self.measure_one_with_scratch(idx, scratch, rng))
             .collect()
     }
 
     /// One qubit, reusing `scratch`. A lost qubit pushes `None` and returns
     /// `None`, exactly as the standalone `measure` path does — which is what
     /// makes every batched path observationally identical to a per-qubit loop.
-    fn measure_one_with_scratch(
+    fn measure_one_with_scratch<R: Rng + ?Sized>(
         &mut self,
         idx: usize,
         scratch: &mut MeasureScratch<I>,
+        rng: &mut R,
     ) -> Option<bool> {
         if self.is_lost[idx] {
             self.measurement_record.push(None);
             return None;
         }
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
-            self.compute_decomposition(idx, Pauli::Z);
-        self.measure_with_scratch(
-            idx,
-            scratch,
-            phase_decomp,
-            stab_anticomm_bits,
-            destab_anticomm_bits,
-            true,
-        )
+        let decomposition = self.compute_decomposition(idx, Pauli::Z);
+        self.measure_with_scratch(idx, scratch, decomposition, true, rng)
     }
 
     /// The coefficient-aware measurement kernel.
@@ -302,15 +293,15 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// shrank; and `proj_zero_eq_caseB_retain` shows the `retain` predicate
     /// `(parity ⊕ outcome) == (phase_decomp == 2)` is exactly the indicator of
     /// the surviving set.
-    pub(crate) fn measure_with_scratch(
+    pub(crate) fn measure_with_scratch<R: Rng + ?Sized>(
         &mut self,
         addr0: usize,
         scratch: &mut MeasureScratch<I>,
-        phase_decomp: u8,
-        stab_anticomm_bits: I,
-        destab_anticomm_bits: I,
+        decomposition: (u8, I, I),
         record: bool,
+        rng: &mut R,
     ) -> Option<bool> {
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) = decomposition;
         if stab_anticomm_bits == I::zero() {
             // ── Case b (fast path) ───────────────────────────────────────
             let mut z_overlap_re = 0.0f64;
@@ -330,7 +321,7 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
             }
 
             let prob_1 = 0.5 - 0.5 * z_overlap_re;
-            let outcome = self.tableau.rng.random::<f64>() < prob_1;
+            let outcome = Self::sample_probability(prob_1, rng);
 
             // A theorem, not a hope: `lean/PPVM/Tableau/BranchPhase.lean`'s
             // `frameInvolution_zero_iff` shows that with `stab_anticomm == 0`
@@ -427,7 +418,7 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
             }
 
             let prob_1 = 0.5 - 0.5 * z_overlap_re;
-            let outcome = self.tableau.rng.random::<f64>() < prob_1;
+            let outcome = rng.random::<f64>() < prob_1;
 
             // PROJECTION: partition A (k-bit = 0) and B (k-bit = 1), transform
             // B, merge.
@@ -714,31 +705,40 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// one record entry is pushed per logical measurement (the internal
     /// `measure` pushes it, this overwrites it). Returns `None` for a lost
     /// qubit, regardless of `flip_prob`.
-    pub fn measure_noisy(&mut self, qubit: usize, flip_prob: f64) -> Option<bool> {
+    pub fn measure_noisy<R: Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        flip_prob: f64,
+        rng: &mut R,
+    ) -> Option<bool> {
         debug_assert!(
             (0.0..=1.0).contains(&flip_prob),
             "flip_prob must be in [0, 1], got {flip_prob}"
         );
-        let outcome = self.measure(qubit)?;
-        let noisy = self.flip_with_prob(outcome, flip_prob);
+        let outcome = self.measure(qubit, rng)?;
+        let noisy = Self::flip_with_prob(outcome, flip_prob, rng);
         self.overwrite_last_measurement_record(Some(noisy));
         Some(noisy)
     }
 
-    /// Sample a `Bernoulli(p)` outcome from the tableau's internal RNG.
-    pub fn bernoulli(&mut self, p: f64) -> bool {
-        debug_assert!((0.0..=1.0).contains(&p), "p must be in [0, 1], got {p}");
-        self.tableau.rng.random::<f64>() < p
-    }
-
     /// Flip `bit` with probability `p`. Returns `bit` unchanged — and draws
-    /// **no** randomness — when `p <= 0.0`.
-    pub fn flip_with_prob(&mut self, bit: bool, p: f64) -> bool {
+    /// **no** randomness — when `p <= 0.0` or `p >= 1.0`.
+    pub fn flip_with_prob<R: Rng + ?Sized>(bit: bool, p: f64, rng: &mut R) -> bool {
         debug_assert!((0.0..=1.0).contains(&p), "p must be in [0, 1], got {p}");
-        if p > 0.0 && self.bernoulli(p) {
+        if Self::sample_probability(p, rng) {
             !bit
         } else {
             bit
+        }
+    }
+
+    fn sample_probability<R: Rng + ?Sized>(p: f64, rng: &mut R) -> bool {
+        if p <= 0.0 {
+            false
+        } else if p >= 1.0 {
+            true
+        } else {
+            rng.random::<f64>() < p
         }
     }
 }
@@ -748,8 +748,8 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
 impl<A: RowStorage, H> Reset for Tableau<A, H> {
     /// Measure, then `X` if the outcome was `1`. No record exists on a bare
     /// frame.
-    fn reset(&mut self, qubit: usize) {
-        if let Some(true) = Measure::measure(self, qubit) {
+    fn reset<R: Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R) {
+        if let Some(true) = Measure::measure(self, qubit, rng) {
             Clifford::x(self, qubit);
         }
     }
@@ -761,8 +761,8 @@ impl<A: RowStorage, I: Bitstring, H> Reset for GeneralizedTableau<A, I, H> {
     ///
     /// A reset is not a measurement in stim's model, so the operation is
     /// **measurement-record-neutral**.
-    fn reset(&mut self, qubit: usize) {
-        let m = Measure::measure(self, qubit);
+    fn reset<R: Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R) {
+        let m = Measure::measure(self, qubit, rng);
         self.measurement_record.pop();
         if let Some(true) = m {
             Clifford::x(self, qubit);

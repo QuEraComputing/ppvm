@@ -239,17 +239,18 @@ fn trotter_new(
     noise: [f64; 3],
     rzz_mode: Rzz,
 ) {
+    let mut rng = ppvm_conformance_2::analytic_rng();
     for _ in 0..steps {
         for i in 0..n {
-            state.pauli_error(i, noise);
+            state.pauli_error(i, noise, &mut rng);
             state.truncate();
             state.rx(i, theta_x);
             state.truncate();
         }
         for i in 0..n - 1 {
-            state.pauli_error(i + 1, noise);
+            state.pauli_error(i + 1, noise, &mut rng);
             state.truncate();
-            state.pauli_error(i, noise);
+            state.pauli_error(i, noise, &mut rng);
             state.truncate();
             new_rzz(state, i, i + 1, theta_zz, rzz_mode);
             state.truncate();
@@ -462,7 +463,7 @@ fn bench_rekey_and_truncate(c: &mut Criterion) {
     let mut new_probe = new_state.clone();
     let mut old_probe = old_state.clone();
     for i in 0..p.n {
-        new_probe.pauli_error(i, noise);
+        new_probe.pauli_error(i, noise, &mut ppvm_conformance_2::analytic_rng());
         old_probe.pauli_error(i, noise);
     }
     assert_supports_match(
@@ -477,7 +478,7 @@ fn bench_rekey_and_truncate(c: &mut Criterion) {
             || new_state.clone(),
             |s| {
                 for i in 0..p.n {
-                    s.pauli_error(i, noise);
+                    s.pauli_error(i, noise, &mut ppvm_conformance_2::analytic_rng());
                 }
             },
             criterion::BatchSize::LargeInput,
@@ -626,7 +627,7 @@ fn bench_trotter_mode(c: &mut Criterion, rzz_mode: Rzz, group: &str) {
         let mut cumulative_support = [0usize; 2];
         for _ in 0..steps {
             for i in 0..n {
-                a.pauli_error(i, noise);
+                a.pauli_error(i, noise, &mut ppvm_conformance_2::analytic_rng());
                 o.pauli_error(i, noise);
                 a.truncate();
                 o.truncate();
@@ -640,12 +641,12 @@ fn bench_trotter_mode(c: &mut Criterion, rzz_mode: Rzz, group: &str) {
                 cumulative_support[1] += o.data().len();
             }
             for i in 0..n - 1 {
-                a.pauli_error(i + 1, noise);
+                a.pauli_error(i + 1, noise, &mut ppvm_conformance_2::analytic_rng());
                 o.pauli_error(i + 1, noise);
                 a.truncate();
                 o.truncate();
 
-                a.pauli_error(i, noise);
+                a.pauli_error(i, noise, &mut ppvm_conformance_2::analytic_rng());
                 o.pauli_error(i, noise);
                 a.truncate();
                 o.truncate();

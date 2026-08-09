@@ -1177,9 +1177,9 @@ fn remaining_gate_surface_matches() {
         o.h(0);
         m.h(0);
         ot::U3Gate::u3(&mut o, 0, th, th * 0.5, th * 1.5);
-        nt::U3Gate::<Complex64, f64>::u3(&mut m, 0, th, th * 0.5, th * 1.5);
+        nt::U3Gate::<Complex64, f64>::u3(&mut *m, 0, th, th * 0.5, th * 1.5);
         ot::RotXY::r(&mut o, 1, th, th * 0.7);
-        nt::RotXY::<Complex64, f64>::r(&mut m, 1, th, th * 0.7);
+        nt::RotXY::<Complex64, f64>::r(&mut *m, 1, th, th * 0.7);
         assert_states_eq(&o, &m, 1e-12, &format!("seed {seed}: u3 + r"));
 
         // batched rotations and T gates
@@ -1190,15 +1190,15 @@ fn remaining_gate_surface_matches() {
         }
         let targets = [0usize, 2];
         ot::TGate::t_many(&mut o, &targets);
-        nt::TGate::t_many(&mut m, &targets);
+        nt::TGate::t_many(&mut *m, &targets);
         ot::TGate::t_dag_many(&mut o, &targets);
-        nt::TGate::t_dag_many(&mut m, &targets);
+        nt::TGate::t_dag_many(&mut *m, &targets);
         ot::RotationOne::rx_many(&mut o, &targets, th);
-        nt::RotationOne::<Complex64, f64>::rx_many(&mut m, &targets, th);
+        nt::RotationOne::<Complex64, f64>::rx_many(&mut *m, &targets, th);
         ot::RotationOne::ry_many(&mut o, &targets, th);
-        nt::RotationOne::<Complex64, f64>::ry_many(&mut m, &targets, th);
+        nt::RotationOne::<Complex64, f64>::ry_many(&mut *m, &targets, th);
         ot::RotationOne::rz_many(&mut o, &targets, th);
-        nt::RotationOne::<Complex64, f64>::rz_many(&mut m, &targets, th);
+        nt::RotationOne::<Complex64, f64>::rz_many(&mut *m, &targets, th);
         assert_states_eq(&o, &m, 1e-12, &format!("seed {seed}: batched rotations"));
 
         // Pauli-error channels (seeded — the RNG draw order is part of the diff)
@@ -1206,20 +1206,20 @@ fn remaining_gate_surface_matches() {
         o.h(0);
         m.h(0);
         ot::PauliError::pauli_error(&mut o, 0, [0.1, 0.2, 0.3]);
-        nt::PauliError::<f64>::pauli_error(&mut m, 0, [0.1, 0.2, 0.3]);
+        m.pauli_error(0, [0.1, 0.2, 0.3]);
         ot::PauliError::x_error(&mut o, 1, 0.4);
-        nt::PauliError::<f64>::x_error(&mut m, 1, 0.4);
+        m.x_error(1, 0.4);
         ot::PauliError::y_error(&mut o, 2, 0.4);
-        nt::PauliError::<f64>::y_error(&mut m, 2, 0.4);
+        m.y_error(2, 0.4);
         ot::PauliError::z_error(&mut o, 3, 0.4);
-        nt::PauliError::<f64>::z_error(&mut m, 3, 0.4);
+        m.z_error(3, 0.4);
         let p15 = [1.0 / 30.0; 15];
         ot::TwoQubitPauliError::two_qubit_pauli_error(&mut o, 0, 1, p15);
-        nt::TwoQubitPauliError::<f64>::two_qubit_pauli_error(&mut m, 0, 1, p15);
+        m.two_qubit_pauli_error(0, 1, p15);
         ot::Depolarizing::depolarize1(&mut o, 2, 0.3);
-        nt::Depolarizing::<f64>::depolarize1(&mut m, 2, 0.3);
+        m.depolarize1(2, 0.3);
         ot::Depolarizing2::depolarize2(&mut o, 2, 3, 0.3);
-        nt::Depolarizing2::<f64>::depolarize2(&mut m, 2, 3, 0.3);
+        m.depolarize2(2, 3, 0.3);
         assert_states_eq(&o, &m, 1e-12, &format!("seed {seed}: Pauli channels"));
         assert_eq!(
             o.measure_all(),
@@ -1236,13 +1236,13 @@ fn remaining_gate_surface_matches() {
             m.t(q);
         }
         ot::Reset::reset_z(&mut o, 0);
-        nt::Reset::reset_z(&mut m, 0);
+        m.reset_z(0);
         ot::Reset::reset_x(&mut o, 1);
-        nt::Reset::reset_x(&mut m, 1);
+        m.reset_x(1);
         ot::Reset::reset_y(&mut o, 2);
-        nt::Reset::reset_y(&mut m, 2);
+        m.reset_y(2);
         ot::Reset::reset_many(&mut o, &[3]);
-        nt::Reset::reset_many(&mut m, &[3]);
+        m.reset_many(&[3]);
         assert_states_eq(&o, &m, 1e-12, &format!("seed {seed}: basis resets"));
     }
 }

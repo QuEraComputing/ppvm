@@ -11,12 +11,18 @@
 use num::complex::Complex64;
 use ppvm_pauli_word_2::PauliWord;
 use ppvm_tableau_2::prelude::*;
+use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
 
 type Tab = GeneralizedTableau<u64, usize>;
 type WideTab = GeneralizedTableau<[u64; 2], u128>;
 
 fn word(s: &str) -> PauliWord {
     s.into()
+}
+
+fn rng(seed: u64) -> SmallRng {
+    SmallRng::seed_from_u64(seed)
 }
 
 fn assert_close(actual: f64, expected: f64, tol: f64) {
@@ -208,10 +214,11 @@ fn normalization_timing() {
     tab.rz(0, 0.3);
     assert_close(norm_sq(&tab), after_gate, 1e-15);
 
-    let mut m: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 3);
+    let mut m: Tab = GeneralizedTableau::new(1, 1e-12);
+    let mut m_rng = rng(3);
     m.h(0);
     m.t(0);
-    let _ = m.measure(0); // case a: Z is not a stabilizer of H|0⟩
+    let _ = m.measure(0, &mut m_rng); // case a: Z is not a stabilizer of H|0⟩
     assert_close(norm_sq(&m), 1.0, 1e-15);
 }
 
@@ -219,7 +226,8 @@ fn normalization_timing() {
 /// byte-identical — no renormalization, and the pre-existing order preserved.
 #[test]
 fn case_b_measurement_that_drops_nothing_is_byte_identical() {
-    let mut tab: Tab = GeneralizedTableau::new_with_seed(2, 0.1, 1);
+    let mut tab: Tab = GeneralizedTableau::new(2, 0.1);
+    let mut rng = rng(1);
     tab.h(0);
     tab.cnot(0, 1);
     tab.rx(0, 0.05); // truncates → norm != 1, and Z_0 stays non-deterministic
@@ -227,9 +235,9 @@ fn case_b_measurement_that_drops_nothing_is_byte_identical() {
 
     // Qubit 1 is perfectly correlated with 0; measuring 0 first makes 1
     // deterministic (case b) with nothing to drop.
-    let r0 = tab.measure(0).unwrap();
+    let r0 = tab.measure(0, &mut rng).unwrap();
     let mid: Vec<_> = tab.coefficients.iter().copied().collect();
-    let r1 = tab.measure(1).unwrap();
+    let r1 = tab.measure(1, &mut rng).unwrap();
     assert_eq!(r0, r1, "Bell outcomes must agree");
     assert_eq!(
         mid,
@@ -260,32 +268,35 @@ fn branching_gate_leaves_ascending_order() {
 
 #[test]
 fn measure_returns_none_and_records_none_for_a_lost_qubit() {
-    let mut tab: Tab = GeneralizedTableau::new_with_seed(2, 1e-12, 1);
-    tab.loss_channel(0, 1.0);
+    let mut tab: Tab = GeneralizedTableau::new(2, 1e-12);
+    let mut rng = rng(1);
+    tab.loss_channel(0, 1.0, &mut rng);
     assert!(tab.is_lost[0]);
     assert!(
         tab.current_measurement_record().is_empty(),
         "a loss event is measurement-record-neutral"
     );
 
-    assert_eq!(tab.measure(0), None);
+    assert_eq!(tab.measure(0, &mut rng), None);
     assert_eq!(tab.current_measurement_record(), &[None]);
 }
 
 #[test]
 fn reset_is_measurement_record_neutral() {
-    let mut tab: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 0);
+    let mut tab: Tab = GeneralizedTableau::new(1, 1e-12);
+    let mut rng = rng(0);
     tab.x(0);
-    tab.reset(0);
+    tab.reset(0, &mut rng);
     assert!(tab.current_measurement_record().is_empty());
-    assert_eq!(tab.measure(0), Some(false));
+    assert_eq!(tab.measure(0, &mut rng), Some(false));
 }
 
 /// `measure_all`, `measure_many(all)` and a per-qubit `measure` loop must be
 /// observationally identical — outcomes *and* record *and* RNG-draw order.
 #[test]
 fn batched_measurement_matches_a_per_qubit_loop() {
-    let mut base: Tab = GeneralizedTableau::new_with_seed(6, 1e-10, 17);
+    let mut base: Tab = GeneralizedTableau::new(6, 1e-10);
+    let mut setup_rng = rng(17);
     for q in 0..6 {
         base.h(q);
     }
@@ -293,15 +304,18 @@ fn batched_measurement_matches_a_per_qubit_loop() {
     base.t(2);
     base.cz(3, 4);
     base.t(4);
-    base.loss_channel(5, 1.0); // one lost qubit, so `None` entries appear
+    base.loss_channel(5, 1.0, &mut setup_rng); // one lost qubit, so `None` entries appear
 
-    let mut a = base.fork(Some(7));
-    let mut b = base.fork(Some(7));
-    let mut c = base.fork(Some(7));
+    let mut a = base.fork();
+    let mut b = base.fork();
+    let mut c = base.fork();
+    let mut ar = rng(7);
+    let mut br = rng(7);
+    let mut cr = rng(7);
 
-    let ra = a.measure_all();
-    let rb = b.measure_many(&(0..6).collect::<Vec<_>>());
-    let rc: Vec<Option<bool>> = (0..6).map(|q| c.measure(q)).collect();
+    let ra = a.measure_all(&mut ar);
+    let rb = b.measure_many(&(0..6).collect::<Vec<_>>(), &mut br);
+    let rc: Vec<Option<bool>> = (0..6).map(|q| c.measure(q, &mut cr)).collect();
 
     assert_eq!(ra, rb);
     assert_eq!(ra, rc);
@@ -319,7 +333,7 @@ fn batched_measurement_matches_a_per_qubit_loop() {
 /// A caller-owned scratch threaded across shots must not change any outcome.
 #[test]
 fn scratch_reuse_across_shots_is_observationally_neutral() {
-    let mut base: Tab = GeneralizedTableau::new_with_seed(5, 1e-10, 4);
+    let mut base: Tab = GeneralizedTableau::new(5, 1e-10);
     for q in 0..5 {
         base.h(q);
     }
@@ -330,21 +344,27 @@ fn scratch_reuse_across_shots_is_observationally_neutral() {
     let mut with: Vec<Vec<Option<bool>>> = Vec::new();
     let mut without: Vec<Vec<Option<bool>>> = Vec::new();
     for seed in 0..8 {
-        with.push(base.fork(Some(seed)).measure_all_with_scratch(&mut scratch));
-        without.push(base.fork(Some(seed)).measure_all());
+        let mut with_tab = base.fork();
+        let mut without_tab = base.fork();
+        let mut with_rng = rng(seed);
+        let mut without_rng = rng(seed);
+        with.push(with_tab.measure_all_with_scratch(&mut scratch, &mut with_rng));
+        without.push(without_tab.measure_all(&mut without_rng));
     }
     assert_eq!(with, without);
 }
 
 #[test]
 fn measure_noisy_overwrites_the_record_and_keeps_the_true_projection() {
-    let mut plain: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 11);
+    let mut plain: Tab = GeneralizedTableau::new(1, 1e-12);
+    let mut plain_rng = rng(11);
     plain.h(0);
-    let truth = plain.measure(0).unwrap();
+    let truth = plain.measure(0, &mut plain_rng).unwrap();
 
-    let mut noisy: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 11);
+    let mut noisy: Tab = GeneralizedTableau::new(1, 1e-12);
+    let mut noisy_rng = rng(11);
     noisy.h(0);
-    let reported = noisy.measure_noisy(0, 1.0).unwrap();
+    let reported = noisy.measure_noisy(0, 1.0, &mut noisy_rng).unwrap();
 
     assert_eq!(reported, !truth, "flip_prob = 1 must invert the report");
     assert_eq!(
@@ -353,36 +373,52 @@ fn measure_noisy_overwrites_the_record_and_keeps_the_true_projection() {
         "exactly one record entry, holding the reported bit"
     );
     // The state followed the TRUE outcome, so re-measuring reproduces it.
-    assert_eq!(noisy.measure(0), Some(truth));
+    assert_eq!(noisy.measure(0, &mut noisy_rng), Some(truth));
 }
 
 /// `flip_with_prob(bit, 0.0)` returns `bit` and draws nothing.
 #[test]
 fn zero_flip_probability_does_not_perturb_the_stream() {
-    let mut a: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 5);
-    let mut b: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 5);
-    assert!(!a.flip_with_prob(false, 0.0));
-    let sa: Vec<bool> = (0..16).map(|_| a.bernoulli(0.5)).collect();
-    let sb: Vec<bool> = (0..16).map(|_| b.bernoulli(0.5)).collect();
+    let mut a = rng(5);
+    let mut b = rng(5);
+    assert!(!Tab::flip_with_prob(false, 0.0, &mut a));
+    let sa: Vec<bool> = (0..16).map(|_| a.random::<f64>() < 0.5).collect();
+    let sb: Vec<bool> = (0..16).map(|_| b.random::<f64>() < 0.5).collect();
     assert_eq!(sa, sb);
+}
+
+#[test]
+fn deterministic_measurement_and_flip_do_not_perturb_the_stream() {
+    let mut measured: Tab = GeneralizedTableau::new(1, 1e-12);
+    let mut actual = rng(6);
+    let mut reference = rng(6);
+
+    assert_eq!(measured.measure(0, &mut actual), Some(false));
+    assert!(Tab::flip_with_prob(false, 1.0, &mut actual));
+    assert_eq!(
+        actual.random::<u64>(),
+        reference.random::<u64>(),
+        "deterministic operations consumed an RNG draw"
+    );
 }
 
 // ─── RNG-consumption discipline (contracts 9, 10) ─────────────────────────
 
-/// `depolarize1` draws **unconditionally**, even on a lost qubit, so a loss
-/// event does not desynchronize a seeded run.
+/// `depolarize1` draws nothing on a lost qubit.
 #[test]
-fn single_qubit_depolarize_preserves_the_stream_across_loss() {
-    let mut lost: Tab = GeneralizedTableau::new_with_seed(2, 1e-12, 21);
+fn single_qubit_depolarize_skips_the_draw_on_loss() {
+    let mut lost: Tab = GeneralizedTableau::new(2, 1e-12);
+    let mut lost_rng = rng(21);
     lost.is_lost[0] = true;
-    lost.depolarize1(0, 0.5);
+    lost.depolarize1(0, 0.5, &mut lost_rng);
 
-    let mut present: Tab = GeneralizedTableau::new_with_seed(2, 1e-12, 21);
-    present.depolarize1(0, 0.5);
+    let mut present: Tab = GeneralizedTableau::new(2, 1e-12);
+    let mut present_rng = rng(21);
+    present.depolarize1(0, 0.5, &mut present_rng);
 
-    let sa: Vec<bool> = (0..24).map(|_| lost.bernoulli(0.5)).collect();
-    let sb: Vec<bool> = (0..24).map(|_| present.bernoulli(0.5)).collect();
-    assert_eq!(sa, sb, "the single-qubit channel must consume the draw");
+    let sa: Vec<bool> = (0..24).map(|_| lost_rng.random::<f64>() < 0.5).collect();
+    let sb: Vec<bool> = (0..24).map(|_| present_rng.random::<f64>() < 0.5).collect();
+    assert_ne!(sa, sb, "the lost-target channel must consume no draw");
 }
 
 /// The two-qubit channels return early **without** drawing, so a loss event
@@ -390,30 +426,39 @@ fn single_qubit_depolarize_preserves_the_stream_across_loss() {
 /// crate's `# Deferrals`).
 #[test]
 fn two_qubit_depolarize_skips_the_draw_on_loss() {
-    let mut lost: Tab = GeneralizedTableau::new_with_seed(2, 1e-12, 21);
+    let mut lost: Tab = GeneralizedTableau::new(2, 1e-12);
+    let mut lost_rng = rng(21);
     lost.is_lost[0] = true;
-    lost.depolarize2(0, 1, 0.5);
+    lost.depolarize2(0, 1, 0.5, &mut lost_rng);
 
-    let mut present: Tab = GeneralizedTableau::new_with_seed(2, 1e-12, 21);
-    present.depolarize2(0, 1, 0.5);
+    let mut present: Tab = GeneralizedTableau::new(2, 1e-12);
+    let mut present_rng = rng(21);
+    present.depolarize2(0, 1, 0.5, &mut present_rng);
 
-    let sa: Vec<bool> = (0..24).map(|_| lost.bernoulli(0.5)).collect();
-    let sb: Vec<bool> = (0..24).map(|_| present.bernoulli(0.5)).collect();
+    let sa: Vec<bool> = (0..24).map(|_| lost_rng.random::<f64>() < 0.5).collect();
+    let sb: Vec<bool> = (0..24).map(|_| present_rng.random::<f64>() < 0.5).collect();
     assert_ne!(sa, sb);
 }
 
-/// `depolarize1(q, 0.0)` fires never (`p <= r` returns), but still draws.
+/// `depolarize1(q, 0.0)` is a state and stream no-op.
 #[test]
-fn depolarize_zero_probability_is_a_state_noop_but_draws() {
-    let mut a: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 2);
+fn zero_probability_channels_are_state_and_stream_noops() {
+    let mut a: Tab = GeneralizedTableau::new(2, 1e-12);
+    let mut a_rng = rng(2);
     let before: Vec<_> = a.tableau.rows().collect();
-    a.depolarize1(0, 0.0);
+    a.depolarize1(0, 0.0, &mut a_rng);
+    a.pauli_error(0, [0.0; 3], &mut a_rng);
+    a.depolarize2(0, 1, 0.0, &mut a_rng);
+    a.two_qubit_pauli_error(0, 1, [0.0; 15], &mut a_rng);
+    a.loss_channel(0, 0.0, &mut a_rng);
+    a.correlated_loss_channel(0, 1, [0.0; 3], &mut a_rng);
     assert_eq!(before, a.tableau.rows().collect::<Vec<_>>());
+    assert!(!a.is_lost.iter().any(|lost| *lost));
 
-    let mut b: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 2);
-    let sa: Vec<bool> = (0..8).map(|_| a.bernoulli(0.5)).collect();
-    let sb: Vec<bool> = (0..8).map(|_| b.bernoulli(0.5)).collect();
-    assert_ne!(sa, sb, "the draw is consumed even at p = 0");
+    let mut b_rng = rng(2);
+    let sa: Vec<bool> = (0..8).map(|_| a_rng.random::<f64>() < 0.5).collect();
+    let sb: Vec<bool> = (0..8).map(|_| b_rng.random::<f64>() < 0.5).collect();
+    assert_eq!(sa, sb, "p = 0 must consume no draw");
 }
 
 // ─── Loss semantics (contracts 11, 12) ────────────────────────────────────
@@ -491,8 +536,9 @@ fn rotate_2_degrades_to_rotate_1_on_loss() {
 
 #[test]
 fn reset_loss_channel_only_clears_the_flag() {
-    let mut tab: Tab = GeneralizedTableau::new_with_seed(2, 1e-12, 0);
-    tab.loss_channel(0, 1.0);
+    let mut tab: Tab = GeneralizedTableau::new(2, 1e-12);
+    let mut rng = rng(0);
+    tab.loss_channel(0, 1.0, &mut rng);
     assert!(tab.is_lost[0]);
     let before: Vec<_> = tab.tableau.rows().collect();
 
@@ -576,16 +622,18 @@ fn fused_batches_match_the_single_qubit_loops() {
 #[test]
 fn frame_case_b_measurement_leaves_the_rng_untouched() {
     for seed in 0..32 {
-        let mut a: Tableau = Tableau::new_with_seed(2, seed);
-        assert_eq!(a.measure(0), Some(false)); // |0⟩: Z is a stabilizer → case b
+        let mut a: Tableau = Tableau::new(2);
+        let mut ar = rng(seed);
+        assert_eq!(a.measure(0, &mut ar), Some(false)); // |0⟩: Z is a stabilizer → case b
         a.h(1);
 
-        let mut b: Tableau = Tableau::new_with_seed(2, seed);
+        let mut b: Tableau = Tableau::new(2);
+        let mut br = rng(seed);
         b.h(1);
 
         assert_eq!(
-            a.measure(1),
-            b.measure(1),
+            a.measure(1, &mut ar),
+            b.measure(1, &mut br),
             "case b must not draw (seed {seed})"
         );
     }
@@ -594,22 +642,24 @@ fn frame_case_b_measurement_leaves_the_rng_untouched() {
 /// The frame's `reset` is measure-then-`X`; it leaves `|0⟩`.
 #[test]
 fn frame_reset_returns_to_zero() {
-    let mut tab: Tableau = Tableau::new_with_seed(2, 0);
+    let mut tab: Tableau = Tableau::new(2);
+    let mut rng = rng(0);
     tab.h(0);
-    tab.reset(0);
-    assert_eq!(tab.measure(0), Some(false));
+    tab.reset(0, &mut rng);
+    assert_eq!(tab.measure(0, &mut rng), Some(false));
 }
 
 // ─── Construction, fork, determinism ──────────────────────────────────────
 
 #[test]
-fn fork_clones_the_record_and_reseeds() {
-    let mut tab: Tab = GeneralizedTableau::new_with_seed(2, 1e-12, 3);
+fn fork_clones_the_record_and_logical_state() {
+    let mut tab: Tab = GeneralizedTableau::new(2, 1e-12);
+    let mut rng = rng(3);
     tab.h(0);
-    let _ = tab.measure(0);
+    let _ = tab.measure(0, &mut rng);
     assert_eq!(tab.current_measurement_record().len(), 1);
 
-    let forked = tab.fork(Some(7));
+    let forked = tab.fork();
     assert_eq!(forked.current_measurement_record().len(), 1);
     assert_eq!(
         forked.tableau.rows().collect::<Vec<_>>(),
@@ -620,8 +670,8 @@ fn fork_clones_the_record_and_reseeds() {
 /// Same seed + same circuit ⇒ identical trajectories over many forked shots.
 #[test]
 fn seeded_runs_are_reproducible() {
-    let build = |seed: u64| {
-        let mut t: Tab = GeneralizedTableau::new_with_seed(4, 1e-10, seed);
+    let build = || {
+        let mut t: Tab = GeneralizedTableau::new(4, 1e-10);
         t.h(0);
         t.cnot(0, 1);
         t.t(2);
@@ -629,13 +679,12 @@ fn seeded_runs_are_reproducible() {
         t.rxx(2, 3, 0.4);
         t
     };
-    let a = build(42);
-    let b = build(42);
+    let a = build();
+    let b = build();
     for shot in 0..50 {
-        assert_eq!(
-            a.fork(Some(shot)).measure_all(),
-            b.fork(Some(shot)).measure_all()
-        );
+        let mut ar = rng(shot);
+        let mut br = rng(shot);
+        assert_eq!(a.fork().measure_all(&mut ar), b.fork().measure_all(&mut br));
     }
 }
 
@@ -653,36 +702,42 @@ fn fresh_state_is_the_computational_zero() {
 
 #[test]
 fn rotations_on_the_computational_basis() {
+    let mut rng = rng(0);
     let mut rx: Tab = GeneralizedTableau::new(1, 1e-12);
     rx.rx(0, std::f64::consts::PI);
     assert_eq!(rx.coefficients.len(), 1, "rx(π) must not branch");
-    assert_eq!(rx.measure(0), Some(true));
+    assert_eq!(rx.measure(0, &mut rng), Some(true));
 
     let mut rz: Tab = GeneralizedTableau::new(1, 1e-12);
     rz.rz(0, 0.123);
     assert_eq!(rz.coefficients.len(), 1);
-    assert_eq!(rz.measure(0), Some(false));
+    assert_eq!(rz.measure(0, &mut rng), Some(false));
 
     let mut ry: Tab = GeneralizedTableau::new(1, 1e-10);
     ry.ry(0, 2.0 * std::f64::consts::PI);
     assert_eq!(ry.coefficients.len(), 1);
-    assert_eq!(ry.measure(0), Some(false));
+    assert_eq!(ry.measure(0, &mut rng), Some(false));
 }
 
 #[test]
 fn two_qubit_rotations_correlate_the_outcomes() {
     // rxx(π/2)|00⟩ = (|00⟩ − i|11⟩)/√2: the outcomes must agree.
-    let mut tab: Tab = GeneralizedTableau::new_with_seed(2, 1e-12, 0);
+    let mut tab: Tab = GeneralizedTableau::new(2, 1e-12);
+    let mut tab_rng = rng(0);
     tab.rxx(0, 1, std::f64::consts::FRAC_PI_2);
     assert_eq!(tab.coefficients.len(), 2);
-    assert_eq!(tab.measure(0), tab.measure(1));
+    assert_eq!(tab.measure(0, &mut tab_rng), tab.measure(1, &mut tab_rng));
 
     // rxx(π/2)|10⟩ = (|10⟩ − i|01⟩)/√2: the outcomes must differ.
-    let mut anti: Tab = GeneralizedTableau::new_with_seed(2, 1e-12, 0);
+    let mut anti: Tab = GeneralizedTableau::new(2, 1e-12);
+    let mut anti_rng = rng(0);
     anti.x(0);
     anti.rxx(0, 1, std::f64::consts::FRAC_PI_2);
     assert_eq!(anti.coefficients.len(), 2);
-    assert_ne!(anti.measure(0), anti.measure(1));
+    assert_ne!(
+        anti.measure(0, &mut anti_rng),
+        anti.measure(1, &mut anti_rng)
+    );
 
     // rzz never branches on a computational basis state.
     let mut rzz: Tab = GeneralizedTableau::new(2, 1e-12);
@@ -693,18 +748,20 @@ fn two_qubit_rotations_correlate_the_outcomes() {
 #[test]
 fn u3_matches_its_rz_ry_rz_decomposition() {
     let (theta, phi, lambda) = (0.34, 0.21, 0.46);
-    let mut u3: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 0);
+    let mut u3: Tab = GeneralizedTableau::new(1, 1e-12);
     u3.u3(0, theta, phi, lambda);
 
-    let mut manual: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 0);
+    let mut manual: Tab = GeneralizedTableau::new(1, 1e-12);
     manual.rz(0, lambda);
     manual.ry(0, theta);
     manual.rz(0, phi);
 
     for seed in 0..64 {
+        let mut ur = rng(seed);
+        let mut mr = rng(seed);
         assert_eq!(
-            u3.fork(Some(seed)).measure(0),
-            manual.fork(Some(seed)).measure(0)
+            u3.fork().measure(0, &mut ur),
+            manual.fork().measure(0, &mut mr)
         );
     }
 }
@@ -712,18 +769,20 @@ fn u3_matches_its_rz_ry_rz_decomposition() {
 #[test]
 fn r_matches_rz_rx_rz() {
     let (axis_angle, theta) = (0.21, 0.34);
-    let mut r: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 0);
+    let mut r: Tab = GeneralizedTableau::new(1, 1e-12);
     r.r(0, axis_angle, theta);
 
-    let mut manual: Tab = GeneralizedTableau::new_with_seed(1, 1e-12, 0);
+    let mut manual: Tab = GeneralizedTableau::new(1, 1e-12);
     manual.rz(0, -axis_angle);
     manual.rx(0, theta);
     manual.rz(0, axis_angle);
 
     for seed in 0..64 {
+        let mut rr = rng(seed);
+        let mut mr = rng(seed);
         assert_eq!(
-            r.fork(Some(seed)).measure(0),
-            manual.fork(Some(seed)).measure(0)
+            r.fork().measure(0, &mut rr),
+            manual.fork().measure(0, &mut mr)
         );
     }
 }
@@ -750,8 +809,8 @@ fn t_followed_by_t_dag_is_the_identity() {
 /// addressing and the wide (`u128`) bitstring path.
 #[test]
 fn wide_msd_shaped_circuit_runs_and_agrees_with_the_naive_form() {
-    fn build(fused: bool, seed: u64) -> WideTab {
-        let mut tab: WideTab = GeneralizedTableau::new_with_seed(85, 1e-10, seed);
+    fn build(fused: bool) -> WideTab {
+        let mut tab: WideTab = GeneralizedTableau::new(85, 1e-10);
         let block0: Vec<usize> = (0..17).collect();
         let block1: Vec<usize> = (17..34).collect();
         if fused {
@@ -780,8 +839,8 @@ fn wide_msd_shaped_circuit_runs_and_agrees_with_the_naive_form() {
         tab
     }
 
-    let fused = build(true, 5);
-    let naive = build(false, 5);
+    let fused = build(true);
+    let naive = build(false);
     assert_eq!(
         fused.tableau.rows().collect::<Vec<_>>(),
         naive.tableau.rows().collect::<Vec<_>>(),
@@ -791,9 +850,11 @@ fn wide_msd_shaped_circuit_runs_and_agrees_with_the_naive_form() {
     assert!(fused.coefficients.len() > 1, "the T layer must branch");
 
     for shot in 0..8 {
+        let mut fused_rng = rng(shot);
+        let mut naive_rng = rng(shot);
         assert_eq!(
-            fused.fork(Some(shot)).measure_all(),
-            naive.fork(Some(shot)).measure_all()
+            fused.fork().measure_all(&mut fused_rng),
+            naive.fork().measure_all(&mut naive_rng)
         );
     }
 }

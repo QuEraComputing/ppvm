@@ -8,7 +8,7 @@ macro_rules! create_interface_loss_methods {
         impl $name {
             #[pyo3(signature = (addr0, p, truncate = true))]
             pub fn loss_channel(&mut self, addr0: usize, p: f64, truncate: bool) {
-                self.inner.loss_channel(addr0, p);
+                draw!(self.inner.loss_channel(addr0, p));
                 if truncate {
                     self.inner.truncate();
                 }
@@ -22,7 +22,7 @@ macro_rules! create_interface_loss_methods {
                 p: [f64; 3],
                 truncate: bool,
             ) {
-                self.inner.correlated_loss_channel(addr0, addr1, p);
+                draw!(self.inner.correlated_loss_channel(addr0, addr1, p));
                 if truncate {
                     self.inner.truncate();
                 }

@@ -4,7 +4,6 @@
 use std::hash::BuildHasher;
 
 use ppvm_traits_2::{CorrelatedLossChannel, LossChannel, ResetLossChannel};
-use rand::RngExt;
 
 use crate::mixture::equality::Mutation;
 use crate::mixture::fingerprint::loss_mask;
@@ -17,7 +16,12 @@ where
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
-    fn loss_channel(&mut self, qubit: usize, probability: f64) {
+    fn loss_channel<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        probability: f64,
+        _rng: &mut R,
+    ) {
         self.rebuild_buckets();
         let original_len = self.entries.len();
         let mut branches: Vec<LazyBranch> = Vec::with_capacity(original_len);
@@ -46,7 +50,13 @@ where
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
-    fn correlated_loss_channel(&mut self, qubit0: usize, qubit1: usize, probabilities: [f64; 3]) {
+    fn correlated_loss_channel<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit0: usize,
+        qubit1: usize,
+        probabilities: [f64; 3],
+        _rng: &mut R,
+    ) {
         self.rebuild_buckets();
         let original_len = self.entries.len();
         let mut branches = Vec::with_capacity(3 * original_len);
@@ -56,12 +66,12 @@ where
             if lost0 || lost1 {
                 let qubit = if lost0 { qubit1 } else { qubit0 };
                 if !self.entries[parent].0.is_lost[qubit] {
-                    let _: u64 = self.rng.random();
+                    self.burn_legacy_tableau_seeds(1);
                     push_loss(self, &mut branches, parent, qubit, probabilities[2]);
                 }
                 continue;
             }
-            let _: [u64; 3] = std::array::from_fn(|_| self.rng.random());
+            self.burn_legacy_tableau_seeds(3);
             let base = self.fingerprints[parent];
             let p = self.entries[parent].1;
             branches.push((

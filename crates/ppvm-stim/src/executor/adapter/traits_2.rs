@@ -40,7 +40,9 @@ where
     type Index = I;
     type Coefficients = H;
 
-    unary!(reset, Reset);
+    fn reset<R: rand::Rng + ?Sized>(&mut self, q: usize, rng: &mut R) {
+        Reset::reset(self, q, rng);
+    }
     unary!(x, Clifford);
     unary!(y, Clifford);
     unary!(z, Clifford);
@@ -82,35 +84,56 @@ where
     fn u3(&mut self, q: usize, theta: f64, phi: f64, lambda: f64) {
         U3Gate::u3(self, q, theta, phi, lambda);
     }
-    fn depolarize1(&mut self, q: usize, p: f64) {
-        Depolarizing::depolarize1(self, q, p);
+    fn depolarize1<R: rand::Rng + ?Sized>(&mut self, q: usize, p: f64, rng: &mut R) {
+        Depolarizing::depolarize1(self, q, p, rng);
     }
-    fn depolarize2(&mut self, a: usize, b: usize, p: f64) {
-        Depolarizing2::depolarize2(self, a, b, p);
+    fn depolarize2<R: rand::Rng + ?Sized>(&mut self, a: usize, b: usize, p: f64, rng: &mut R) {
+        Depolarizing2::depolarize2(self, a, b, p, rng);
     }
-    fn pauli_error(&mut self, q: usize, p: [f64; 3]) {
-        PauliError::pauli_error(self, q, p);
+    fn pauli_error<R: rand::Rng + ?Sized>(&mut self, q: usize, p: [f64; 3], rng: &mut R) {
+        PauliError::pauli_error(self, q, p, rng);
     }
-    fn two_qubit_pauli_error(&mut self, a: usize, b: usize, p: [f64; 15]) {
-        TwoQubitPauliError::two_qubit_pauli_error(self, a, b, p);
+    fn two_qubit_pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        a: usize,
+        b: usize,
+        p: [f64; 15],
+        rng: &mut R,
+    ) {
+        TwoQubitPauliError::two_qubit_pauli_error(self, a, b, p, rng);
     }
-    fn loss_channel(&mut self, q: usize, p: f64) {
-        LossChannel::loss_channel(self, q, p);
+    fn loss_channel<R: rand::Rng + ?Sized>(&mut self, q: usize, p: f64, rng: &mut R) {
+        LossChannel::loss_channel(self, q, p, rng);
     }
-    fn correlated_loss_channel(&mut self, a: usize, b: usize, p: [f64; 3]) {
-        CorrelatedLossChannel::correlated_loss_channel(self, a, b, p);
+    fn correlated_loss_channel<R: rand::Rng + ?Sized>(
+        &mut self,
+        a: usize,
+        b: usize,
+        p: [f64; 3],
+        rng: &mut R,
+    ) {
+        CorrelatedLossChannel::correlated_loss_channel(self, a, b, p, rng);
     }
-    fn measure(&mut self, q: usize) -> Option<bool> {
-        Measure::measure(self, q)
+    fn measure<R: rand::Rng + ?Sized>(&mut self, q: usize, rng: &mut R) -> Option<bool> {
+        Measure::measure(self, q, rng)
     }
-    fn measure_many(&mut self, q: &[usize]) -> Vec<Option<bool>> {
-        Measure::measure_many(self, q)
+    fn measure_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        q: &[usize],
+        rng: &mut R,
+    ) -> Vec<Option<bool>> {
+        Measure::measure_many(self, q, rng)
     }
-    fn measure_noisy(&mut self, q: usize, p: f64) -> Option<bool> {
-        GeneralizedTableau::measure_noisy(self, q, p)
+    fn measure_noisy<R: rand::Rng + ?Sized>(
+        &mut self,
+        q: usize,
+        p: f64,
+        rng: &mut R,
+    ) -> Option<bool> {
+        GeneralizedTableau::measure_noisy(self, q, p, rng)
     }
-    fn flip_with_prob(&mut self, bit: bool, p: f64) -> bool {
-        GeneralizedTableau::flip_with_prob(self, bit, p)
+    fn flip_with_prob<R: rand::Rng + ?Sized>(&mut self, bit: bool, p: f64, rng: &mut R) -> bool {
+        GeneralizedTableau::<A, I, H>::flip_with_prob(bit, p, rng)
     }
     fn measurement_record(&self) -> &[Option<bool>] {
         self.current_measurement_record()

@@ -13,6 +13,15 @@ use ppvm_traits_2::{
     CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel, Projection, ResetLossChannel,
     RotXY, RotationTwo, TwoQubitPauliError,
 };
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
+
+/// The `-2` sum backends are density-matrix-like: every channel scales
+/// coefficients analytically and never draws. The injected RNG is threaded only
+/// to satisfy the trait surface, so a fixed seed suffices everywhere here.
+fn rng() -> SmallRng {
+    SmallRng::seed_from_u64(0)
+}
 
 fn sorted<S>(sum: &S) -> Vec<(String, f64)>
 where
@@ -67,6 +76,7 @@ fn ordinary_pair() -> (PauliSum, ColumnPauliSum) {
 #[test]
 fn complete_gate_surface_matches_between_backends() {
     let (mut hash, mut column) = ordinary_pair();
+    let mut rng = rng();
     macro_rules! both {
         ($method:ident($($arg:expr),* $(,)?)) => {{
             hash.$method($($arg),*);
@@ -90,10 +100,11 @@ fn complete_gate_surface_matches_between_backends() {
     both!(two_qubit_pauli_error(
         0,
         3,
-        std::array::from_fn(|i| 0.001 * (i + 1) as f64)
+        std::array::from_fn(|i| 0.001 * (i + 1) as f64),
+        &mut rng
     ));
-    both!(depolarize1(2, 0.13));
-    both!(depolarize2(0, 1, 0.09));
+    both!(depolarize1(2, 0.13, &mut rng));
+    both!(depolarize2(0, 1, 0.09, &mut rng));
     both!(amplitude_damping(3, 0.17));
     both!(p0(0));
     both!(p1(2));
@@ -124,11 +135,12 @@ fn lossy_channels_match_on_columnar_lossy_words() {
     let mut column: ColumnLossy =
         Sum::from_terms(2, terms.map(|(w, c)| (LossyPauliWord::from(w), c)));
 
+    let mut rng = rng();
     hash.reset_loss_channel(0);
     column.reset_loss_channel(0);
-    hash.loss_channel(1, 0.13);
-    column.loss_channel(1, 0.13);
-    hash.correlated_loss_channel(0, 1, [0.03, 0.07, 0.11]);
-    column.correlated_loss_channel(0, 1, [0.03, 0.07, 0.11]);
+    hash.loss_channel(1, 0.13, &mut rng);
+    column.loss_channel(1, 0.13, &mut rng);
+    hash.correlated_loss_channel(0, 1, [0.03, 0.07, 0.11], &mut rng);
+    column.correlated_loss_channel(0, 1, [0.03, 0.07, 0.11], &mut rng);
     assert_close(&hash, &column);
 }

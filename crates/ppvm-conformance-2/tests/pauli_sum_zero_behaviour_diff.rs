@@ -109,7 +109,11 @@ fn zero_eigenvalue_channel_keeps_the_term() {
                 let mut new = build_new_sum(w, &terms);
                 let before = old.len();
                 old.pauli_error(q, [0.0, 0.25, 0.25]);
-                new.pauli_error(q, [0.0, 0.25, 0.25]);
+                new.pauli_error(
+                    q,
+                    [0.0, 0.25, 0.25],
+                    &mut ppvm_conformance_2::analytic_rng(),
+                );
                 assert_eq!(old.len(), before, "old never removes a zeroed term");
                 assert_supports_identical_including_zeros(&old, &new);
             }

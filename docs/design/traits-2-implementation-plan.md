@@ -29,6 +29,14 @@ test oracles.
 5. **Cutover last.** Rename/replace happens only after all `-2` crates are green,
    at-parity, and downstream consumers have a shim. Until then the old crates
    remain the production path.
+6. **Randomness is injected, never owned.** Every stochastic method on the
+   `-2` trait surface takes a `rng: &mut R` (`R: rand::Rng + ?Sized`) — measure,
+   reset, and the whole channel family. The simulators are pure state: no
+   `SmallRng` field, no `new_with_seed`, and `fork` is a plain `clone`, since
+   there is no stream to duplicate. This is what makes the states `Send`-friendly,
+   trivially checkpointable, and replayable — the caller decides how per-shot
+   streams are derived, rather than inheriting whatever the tableau happened to
+   carry. See § *Where the randomness lives* below.
 
 ## Crate map (old → new)
 
@@ -59,6 +67,43 @@ ppvm-conformance-2 (dev/test) ──►  every *-2 AND every old counterpart
 ```
 
 This is the old graph with `Config` removed and `ppvm-tableau-sum` collapsed.
+
+### Where the randomness lives
+
+The old crates embed a `SmallRng` in the tableau. That made `Tableau::new` an
+entropy-consuming constructor, forced `new_with_seed` / `fork(seed)` to exist
+purely to manage the field, and left every fork silently deciding whether the
+copy replays or diverges. It also meant a "pure state" type was neither
+reproducible from its data nor free to be cloned.
+
+`-2` inverts the ownership. The rule, one layer at a time:
+
+| Layer | Owns the RNG? | Surface |
+| --- | --- | --- |
+| `ppvm-traits-2` | no | every stochastic method takes `rng: &mut R` — `Measure::measure`/`measure_many`, `Reset::reset*`, `PauliError`/`PauliErrorAll`/`TwoQubitPauliError`/`Depolarizing`/`Depolarizing2`/`LossChannel`/`CorrelatedLossChannel`/`AsymmetricLossChannel` |
+| `ppvm-tableau-2`, `ppvm-pauli-sum-2` | no | pure state. `new` is deterministic, `fork()` is `clone()`, `PartialEq`/`Debug`/`key_hash` need no RNG carve-out |
+| `ppvm-tableau-2::mixture` | yes, for **sampling only** | the mixture owns the stream its `sampler()` draws branches from; its channels still take an injected `rng` and branch analytically without drawing |
+| `ppvm-stim` | no, but offers both | `execute` / `sample*` construct an OS-seeded `SmallRng` per call; `*_with_rng` take the caller's (and, for `sample`, a per-shot `make_rng(i)` evaluated serially before any Rayon fan-out, so shots are thread-count-independent) |
+| Frontends — `ppvm-python-native`, `ppvm-vihaco` | **yes** | this is the point of the split |
+
+The frontends are where a "global RNG for convenience" belongs. A Python user
+writing `tab.measure(0)` should not thread a generator, so each `#[pyclass]`
+wrapper owns one `SmallRng`, seeded from the constructor's `seed=` (or OS
+entropy), and a cfg'd `draw!` macro passes it into every call that needs it —
+which also keeps the `interface*` macros identical across the legacy and `-2`
+backends. Vihaco does the same in its executors, seeded by `run_with_seed`. The
+Python semantics are unchanged and still hold: `copy.copy` / `copy.deepcopy`
+carry the RNG state across (both replay the same stream), while `fork(seed)`
+clones the state and reseeds.
+
+`SmallRng::seed_from_u64` and the per-call draw order are preserved verbatim from
+old, so a given seed reproduces the same outcomes on both backends — pinned by
+`ppvm-vihaco`'s `seeded_branch_fixture_matches_cross_backend_snapshot` and the
+Python `PPVM_EXPECT_BACKEND` matrix. Where a draw historically existed only to
+seed a state that is now pure data (the mixture's per-branch tableau seeds), the
+draw is *retained* as an explicit burn — see
+`GeneralizedTableauMixture::burn_legacy_tableau_seeds` — so every later seed byte
+still lands where it did before.
 
 ## Phase 0 — scaffolding and the equivalence harness
 

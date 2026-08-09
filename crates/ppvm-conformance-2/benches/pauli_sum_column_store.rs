@@ -158,7 +158,13 @@ fn bench_pauli_error(c: &mut Criterion) {
     g.bench_function("hash/pauli_error", |b| {
         b.iter_batched_ref(
             || hash_seed.clone(),
-            |sum| sum.pauli_error(black_box(0), [1e-4, 1e-4, 1e-4]),
+            |sum| {
+                sum.pauli_error(
+                    black_box(0),
+                    [1e-4, 1e-4, 1e-4],
+                    &mut ppvm_conformance_2::analytic_rng(),
+                )
+            },
             criterion::BatchSize::LargeInput,
         )
     });
@@ -166,7 +172,13 @@ fn bench_pauli_error(c: &mut Criterion) {
     g.bench_function("column/pauli_error", |b| {
         b.iter_batched_ref(
             || col_seed.clone(),
-            |sum| sum.pauli_error(black_box(0), [1e-4, 1e-4, 1e-4]),
+            |sum| {
+                sum.pauli_error(
+                    black_box(0),
+                    [1e-4, 1e-4, 1e-4],
+                    &mut ppvm_conformance_2::analytic_rng(),
+                )
+            },
             criterion::BatchSize::LargeInput,
         )
     });
@@ -293,15 +305,15 @@ macro_rules! trotter_body {
     ($sum:ident) => {{
         for _ in 0..TROTTER_STEPS {
             for i in 0..TROTTER_N {
-                $sum.pauli_error(i, NOISE);
+                $sum.pauli_error(i, NOISE, &mut ppvm_conformance_2::analytic_rng());
                 $sum.truncate();
                 $sum.rx(i, THETA_X);
                 $sum.truncate();
             }
             for i in 0..TROTTER_N - 1 {
-                $sum.pauli_error(i + 1, NOISE);
+                $sum.pauli_error(i + 1, NOISE, &mut ppvm_conformance_2::analytic_rng());
                 $sum.truncate();
-                $sum.pauli_error(i, NOISE);
+                $sum.pauli_error(i, NOISE, &mut ppvm_conformance_2::analytic_rng());
                 $sum.truncate();
                 $sum.rzz(i, i + 1, THETA_ZZ);
                 $sum.truncate();
@@ -330,7 +342,7 @@ fn bench_trotter(c: &mut Criterion) {
     let hash_seed = {
         let mut s = HashSum::with_capacity(TROTTER_N, policy, cap);
         for (w, c) in &seed {
-            s += (w.clone(), *c);
+            s += (*w, *c);
         }
         s
     };
@@ -345,7 +357,7 @@ fn bench_trotter(c: &mut Criterion) {
     let col_seed = {
         let mut s = ColSum::with_capacity(TROTTER_N, policy, cap);
         for (w, c) in &seed {
-            s += (w.clone(), *c);
+            s += (*w, *c);
         }
         s
     };

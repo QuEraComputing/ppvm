@@ -140,7 +140,7 @@ fn assert_aligned<P: Policy<PauliWord, f64>>(s: &ColSum<P>, label: &str) {
     }
     // A key outside the support must not resolve — a stale index slot would.
     if let Some((k, _)) = rows.first() {
-        let mut absent = k.clone();
+        let mut absent = *k;
         // Flip one site's X bit; skip the check if that lands on another live key.
         let bit = absent.x_bit(0);
         absent.set_x_bit(0, !bit);
@@ -176,7 +176,11 @@ fn columns_stay_index_aligned_under_every_mutation() {
 
             // `scale_by_key` (the diagonal channel path).
             for q in 0..n {
-                s.pauli_error(q, [1e-3, 2e-3, 3e-3]);
+                s.pauli_error(
+                    q,
+                    [1e-3, 2e-3, 3e-3],
+                    &mut ppvm_conformance_2::analytic_rng(),
+                );
             }
             assert_aligned(&s, "after pauli_error");
 

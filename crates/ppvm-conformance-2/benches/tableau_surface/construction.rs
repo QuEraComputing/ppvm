@@ -25,7 +25,7 @@ pub fn bench(c: &mut Criterion) {
             b.iter(|| std::hint::black_box(OldBare::new_with_seed(n, SEED)))
         });
         group.bench_with_input(BenchmarkId::new("bare/new/new", n), &n, |b, &n| {
-            b.iter(|| std::hint::black_box(NewBare::new_with_seed(n, SEED)))
+            b.iter(|| std::hint::black_box(NewBare::new(n)))
         });
         group.bench_with_input(BenchmarkId::new("generalized/new/old", n), &n, |b, &n| {
             b.iter(|| std::hint::black_box(<OldGen as Driver>::new_seeded(n, THRESHOLD, SEED)))

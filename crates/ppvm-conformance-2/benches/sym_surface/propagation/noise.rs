@@ -48,7 +48,7 @@ pub(super) fn bench(c: &mut Criterion) {
         old_p.clone(),
         new_p.clone(),
         |s, p| OldError::pauli_error(s, 0, p),
-        |s, p| NewError::pauli_error(s, 0, p),
+        |s, p| NewError::pauli_error(s, 0, p, &mut ppvm_conformance_2::analytic_rng()),
     );
     paired_args(
         &mut group,
@@ -56,31 +56,31 @@ pub(super) fn bench(c: &mut Criterion) {
         old_p,
         new_p,
         |s, p| OldError::pauli_error_many(s, targets, p),
-        |s, p| NewError::pauli_error_many(s, targets, p),
+        |s, p| NewError::pauli_error_many(s, targets, p, &mut ppvm_conformance_2::analytic_rng()),
     );
     scalar!("x_error", |s, p| OldError::x_error(s, 0, p), |s, p| {
-        NewError::x_error(s, 0, p)
+        NewError::x_error(s, 0, p, &mut ppvm_conformance_2::analytic_rng())
     });
     scalar!("y_error", |s, p| OldError::y_error(s, 0, p), |s, p| {
-        NewError::y_error(s, 0, p)
+        NewError::y_error(s, 0, p, &mut ppvm_conformance_2::analytic_rng())
     });
     scalar!("z_error", |s, p| OldError::z_error(s, 0, p), |s, p| {
-        NewError::z_error(s, 0, p)
+        NewError::z_error(s, 0, p, &mut ppvm_conformance_2::analytic_rng())
     });
     scalar!(
         "batch_x_error",
         |s, p| OldError::x_error_many(s, targets, p),
-        |s, p| NewError::x_error_many(s, targets, p)
+        |s, p| { NewError::x_error_many(s, targets, p, &mut ppvm_conformance_2::analytic_rng(),) }
     );
     scalar!(
         "batch_y_error",
         |s, p| OldError::y_error_many(s, targets, p),
-        |s, p| NewError::y_error_many(s, targets, p)
+        |s, p| { NewError::y_error_many(s, targets, p, &mut ppvm_conformance_2::analytic_rng(),) }
     );
     scalar!(
         "batch_z_error",
         |s, p| OldError::z_error_many(s, targets, p),
-        |s, p| NewError::z_error_many(s, targets, p)
+        |s, p| { NewError::z_error_many(s, targets, p, &mut ppvm_conformance_2::analytic_rng(),) }
     );
 
     let old_p2 = std::array::from_fn(|i| OldTerm::from((i + 1) as f64 * 1e-4));
@@ -91,7 +91,9 @@ pub(super) fn bench(c: &mut Criterion) {
         old_p2.clone(),
         new_p2.clone(),
         |s, p| OldError2::two_qubit_pauli_error(s, 0, 1, p),
-        |s, p| NewError2::two_qubit_pauli_error(s, 0, 1, p),
+        |s, p| {
+            NewError2::two_qubit_pauli_error(s, 0, 1, p, &mut ppvm_conformance_2::analytic_rng())
+        },
     );
     paired_args(
         &mut group,
@@ -99,28 +101,35 @@ pub(super) fn bench(c: &mut Criterion) {
         old_p2,
         new_p2,
         |s, p| OldError2::two_qubit_pauli_error_many(s, pairs, p),
-        |s, p| NewError2::two_qubit_pauli_error_many(s, pairs, p),
+        |s, p| {
+            NewError2::two_qubit_pauli_error_many(
+                s,
+                pairs,
+                p,
+                &mut ppvm_conformance_2::analytic_rng(),
+            )
+        },
     );
 
     scalar!(
         "depolarize1",
         |s, p| OldDep::depolarize1(s, 0, p),
-        |s, p| NewDep::depolarize1(s, 0, p)
+        |s, p| NewDep::depolarize1(s, 0, p, &mut ppvm_conformance_2::analytic_rng())
     );
     scalar!(
         "batch_depolarize1",
         |s, p| OldDep::depolarize1_many(s, targets, p),
-        |s, p| NewDep::depolarize1_many(s, targets, p)
+        |s, p| { NewDep::depolarize1_many(s, targets, p, &mut ppvm_conformance_2::analytic_rng()) }
     );
     scalar!(
         "depolarize2",
         |s, p| OldDep2::depolarize2(s, 0, 1, p),
-        |s, p| NewDep2::depolarize2(s, 0, 1, p)
+        |s, p| NewDep2::depolarize2(s, 0, 1, p, &mut ppvm_conformance_2::analytic_rng())
     );
     scalar!(
         "batch_depolarize2",
         |s, p| OldDep2::depolarize2_many(s, pairs, p),
-        |s, p| NewDep2::depolarize2_many(s, pairs, p)
+        |s, p| { NewDep2::depolarize2_many(s, pairs, p, &mut ppvm_conformance_2::analytic_rng(),) }
     );
     group.finish();
 }

@@ -49,7 +49,7 @@ fn hash_writes_exactly_key_hash() {
         for n in 1..=16 {
             let s = random_pauli_string(&mut rng, n);
             let w: PauliWord = PauliWord::from(s.as_str());
-            let via_hasher = IdentityBuildHasher.hash_one(&w);
+            let via_hasher = IdentityBuildHasher.hash_one(w);
             assert_eq!(
                 via_hasher,
                 w.key_hash(),
@@ -72,7 +72,7 @@ fn structurally_equal_keys_equal_digest() {
             assert_eq!(a, b, "equal words {s}");
             assert_eq!(a.key_hash(), b.key_hash(), "equal words, equal digest {s}");
             // Clone preserves the digest (and the cache).
-            let c = a.clone();
+            let c = a;
             assert_eq!(c.key_hash(), a.key_hash(), "clone digest {s}");
         }
     }
@@ -131,7 +131,7 @@ fn avalanche_low_collision() {
     let mut min_flipped = u32::MAX;
     for i in 0..n {
         use ppvm_traits_2::PauliBits;
-        let mut w = base.clone();
+        let mut w = base;
         w.set_x_bit(i, true);
         let flipped = (w.key_hash() ^ h0).count_ones();
         min_flipped = min_flipped.min(flipped);

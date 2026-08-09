@@ -27,6 +27,8 @@ use ppvm_traits_2::{
     Depolarizing2, LossChannel, PauliError, PauliErrorAll, PhaseTrack, Reset, ResetLossChannel,
     SymplecticColumns, TwoQubitPauliError,
 };
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
 
 // ---------------------------------------------------------------------------
 // A two-qubit ℤ₄-phased stub: the smallest honest `SymplecticColumns` +
@@ -547,7 +549,7 @@ impl CliffordBatch for GateLog {}
 impl CliffordExtensionsBatch for GateLog {}
 
 impl Reset for GateLog {
-    fn reset(&mut self, q: usize) {
+    fn reset<R: rand::Rng + ?Sized>(&mut self, q: usize, _rng: &mut R) {
         self.log.push(format!("reset({q})"));
     }
 }
@@ -625,10 +627,11 @@ fn clifford_extensions_batch_defaults_loop_in_order() {
 #[test]
 fn reset_defaults_compose_reset_with_basis_change_cliffords() {
     let mut g = GateLog::default();
-    g.reset(0);
-    g.reset_z(1);
-    g.reset_x(2);
-    g.reset_y(3);
+    let mut rng = SmallRng::seed_from_u64(0);
+    g.reset(0, &mut rng);
+    g.reset_z(1, &mut rng);
+    g.reset_x(2, &mut rng);
+    g.reset_y(3, &mut rng);
     assert_eq!(
         g.log,
         vec![
@@ -640,10 +643,11 @@ fn reset_defaults_compose_reset_with_basis_change_cliffords() {
 #[test]
 fn reset_batch_defaults_loop_in_order() {
     let mut g = GateLog::default();
-    g.reset_many(&[0, 1]);
-    g.reset_z_many(&[2]);
-    g.reset_x_many(&[3]);
-    g.reset_y_many(&[4]);
+    let mut rng = SmallRng::seed_from_u64(0);
+    g.reset_many(&[0, 1], &mut rng);
+    g.reset_z_many(&[2], &mut rng);
+    g.reset_x_many(&[3], &mut rng);
+    g.reset_y_many(&[4], &mut rng);
     assert_eq!(
         g.log,
         vec![
@@ -663,31 +667,42 @@ struct NoiseLog {
 }
 
 impl PauliError<f64> for NoiseLog {
-    fn pauli_error(&mut self, qubit: usize, probabilities: [f64; 3]) {
+    fn pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        probabilities: [f64; 3],
+        _rng: &mut R,
+    ) {
         self.pauli.push((qubit, probabilities));
     }
 }
 
 impl PauliErrorAll<f64> for NoiseLog {
-    fn pauli_error_all(&mut self, p: [f64; 3]) {
+    fn pauli_error_all<R: rand::Rng + ?Sized>(&mut self, p: [f64; 3], _rng: &mut R) {
         self.other.push(format!("all{p:?}"));
     }
 }
 
 impl TwoQubitPauliError<f64> for NoiseLog {
-    fn two_qubit_pauli_error(&mut self, q0: usize, q1: usize, p: [f64; 15]) {
+    fn two_qubit_pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        q0: usize,
+        q1: usize,
+        p: [f64; 15],
+        _rng: &mut R,
+    ) {
         self.other.push(format!("two({q0},{q1},{})", p[0]));
     }
 }
 
 impl Depolarizing<f64> for NoiseLog {
-    fn depolarize1(&mut self, qubit: usize, p: f64) {
+    fn depolarize1<R: rand::Rng + ?Sized>(&mut self, qubit: usize, p: f64, _rng: &mut R) {
         self.other.push(format!("dep1({qubit},{p})"));
     }
 }
 
 impl Depolarizing2<f64> for NoiseLog {
-    fn depolarize2(&mut self, q0: usize, q1: usize, p: f64) {
+    fn depolarize2<R: rand::Rng + ?Sized>(&mut self, q0: usize, q1: usize, p: f64, _rng: &mut R) {
         self.other.push(format!("dep2({q0},{q1},{p})"));
     }
 }
@@ -699,13 +714,19 @@ impl AmplitudeDamping<f64> for NoiseLog {
 }
 
 impl LossChannel<f64> for NoiseLog {
-    fn loss_channel(&mut self, qubit: usize, p: f64) {
+    fn loss_channel<R: rand::Rng + ?Sized>(&mut self, qubit: usize, p: f64, _rng: &mut R) {
         self.other.push(format!("loss({qubit},{p})"));
     }
 }
 
 impl CorrelatedLossChannel<f64> for NoiseLog {
-    fn correlated_loss_channel(&mut self, q0: usize, q1: usize, p: [f64; 3]) {
+    fn correlated_loss_channel<R: rand::Rng + ?Sized>(
+        &mut self,
+        q0: usize,
+        q1: usize,
+        p: [f64; 3],
+        _rng: &mut R,
+    ) {
         self.other.push(format!("corr({q0},{q1},{p:?})"));
     }
 }
@@ -717,7 +738,13 @@ impl ResetLossChannel for NoiseLog {
 }
 
 impl AsymmetricLossChannel<f64> for NoiseLog {
-    fn asymmetric_loss_channel(&mut self, qubit: usize, p0: f64, p1: f64) {
+    fn asymmetric_loss_channel<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        p0: f64,
+        p1: f64,
+        _rng: &mut R,
+    ) {
         self.other.push(format!("asym({qubit},{p0},{p1})"));
     }
 }
@@ -727,9 +754,10 @@ impl AsymmetricLossChannel<f64> for NoiseLog {
 #[test]
 fn pauli_error_stim_aliases_are_one_hot_channels() {
     let mut n = NoiseLog::default();
-    n.x_error(0, 0.1);
-    n.y_error(1, 0.2);
-    n.z_error(2, 0.3);
+    let mut rng = SmallRng::seed_from_u64(0);
+    n.x_error(0, 0.1, &mut rng);
+    n.y_error(1, 0.2, &mut rng);
+    n.z_error(2, 0.3, &mut rng);
     assert_eq!(
         n.pauli,
         vec![
@@ -743,10 +771,11 @@ fn pauli_error_stim_aliases_are_one_hot_channels() {
 #[test]
 fn pauli_error_batch_defaults_loop_in_order() {
     let mut n = NoiseLog::default();
-    n.pauli_error_many(&[0, 1], [0.1, 0.2, 0.3]);
-    n.x_error_many(&[2, 3], 0.4);
-    n.y_error_many(&[4], 0.5);
-    n.z_error_many(&[5], 0.6);
+    let mut rng = SmallRng::seed_from_u64(0);
+    n.pauli_error_many(&[0, 1], [0.1, 0.2, 0.3], &mut rng);
+    n.x_error_many(&[2, 3], 0.4, &mut rng);
+    n.y_error_many(&[4], 0.5, &mut rng);
+    n.z_error_many(&[5], 0.6, &mut rng);
     assert_eq!(
         n.pauli,
         vec![
@@ -763,15 +792,16 @@ fn pauli_error_batch_defaults_loop_in_order() {
 #[test]
 fn channel_family_is_callable_and_batches_in_order() {
     let mut n = NoiseLog::default();
-    n.pauli_error_all([0.01, 0.02, 0.03]);
-    n.two_qubit_pauli_error_many(&[(0, 1), (2, 3)], [0.5; 15]);
-    n.depolarize1_many(&[0, 1], 0.1);
-    n.depolarize2_many(&[(0, 1)], 0.2);
+    let mut rng = SmallRng::seed_from_u64(0);
+    n.pauli_error_all([0.01, 0.02, 0.03], &mut rng);
+    n.two_qubit_pauli_error_many(&[(0, 1), (2, 3)], [0.5; 15], &mut rng);
+    n.depolarize1_many(&[0, 1], 0.1, &mut rng);
+    n.depolarize2_many(&[(0, 1)], 0.2, &mut rng);
     n.amplitude_damping(3, 0.05);
-    n.loss_channel(4, 0.01);
-    n.correlated_loss_channel(0, 1, [0.1, 0.2, 0.3]);
+    n.loss_channel(4, 0.01, &mut rng);
+    n.correlated_loss_channel(0, 1, [0.1, 0.2, 0.3], &mut rng);
     n.reset_loss_channel(4);
-    n.asymmetric_loss_channel(5, 0.01, 0.02);
+    n.asymmetric_loss_channel(5, 0.01, 0.02, &mut rng);
     assert_eq!(
         n.other,
         vec![

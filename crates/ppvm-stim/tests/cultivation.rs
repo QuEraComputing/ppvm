@@ -11,7 +11,8 @@ use std::path::PathBuf;
 
 use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
 use ppvm_stim::backend::prelude::*;
-use ppvm_stim::{execute, parse_extended};
+use ppvm_stim::{execute_with_rng, parse_extended};
+use rand::SeedableRng;
 
 type Tab = GeneralizedTableau<ByteFxHashF64<8>, usize>;
 
@@ -30,8 +31,12 @@ fn cultivation_d5_parses_validates_and_runs() {
 
     // 36 Z-basis (M) + 57 X-basis (MX) single-qubit readouts, plus the two MPP
     // lines (1 + 18 Pauli-product detectors) = 112 recorded measurements.
+    #[cfg(feature = "legacy")]
     let mut tab: Tab = GeneralizedTableau::new_with_seed(64, 1e-10, 1);
-    let results = execute(&prog, &mut tab).expect("cultivation_d5 must execute");
+    #[cfg(feature = "traits-2")]
+    let mut tab: Tab = GeneralizedTableau::new(64, 1e-10);
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(1);
+    let results = execute_with_rng(&prog, &mut tab, &mut rng).expect("cultivation_d5 must execute");
     assert_eq!(results.len(), 112);
     // Every measurement resolves to a concrete bit (no lost qubits in this file).
     assert!(results.iter().all(|r| r.is_some()));

@@ -25,7 +25,12 @@ pub fn bench(c: &mut Criterion) {
 
     assert_eq!(
         ppvm_traits::traits::Measure::measure(&mut old_bd.clone(), 0),
-        ppvm_traits_2::Measure::measure(&mut new_bd.clone(), 0).unwrap()
+        ppvm_traits_2::Measure::measure(
+            &mut new_bd.clone(),
+            0,
+            &mut ppvm_conformance_2::analytic_rng(),
+        )
+        .unwrap()
     );
     bench_mut_pair!(
         group,
@@ -33,11 +38,18 @@ pub fn bench(c: &mut Criterion) {
         old_bd,
         new_bd,
         |t: &mut OldBare| ppvm_traits::traits::Measure::measure(t, 0),
-        |t: &mut NewBare| ppvm_traits_2::Measure::measure(t, 0)
+        |t: &mut NewBare| {
+            ppvm_traits_2::Measure::measure(t, 0, &mut ppvm_conformance_2::analytic_rng())
+        }
     );
     assert_eq!(
         ppvm_traits::traits::Measure::measure(&mut old_br.clone(), 0),
-        ppvm_traits_2::Measure::measure(&mut new_br.clone(), 0).unwrap()
+        ppvm_traits_2::Measure::measure(
+            &mut new_br.clone(),
+            0,
+            &mut ppvm_conformance_2::analytic_rng(),
+        )
+        .unwrap()
     );
     bench_mut_pair!(
         group,
@@ -45,7 +57,9 @@ pub fn bench(c: &mut Criterion) {
         old_br,
         new_br,
         |t: &mut OldBare| ppvm_traits::traits::Measure::measure(t, 0),
-        |t: &mut NewBare| ppvm_traits_2::Measure::measure(t, 0)
+        |t: &mut NewBare| {
+            ppvm_traits_2::Measure::measure(t, 0, &mut ppvm_conformance_2::analytic_rng())
+        }
     );
 
     // NEW-only: old bare `Measure` has no batch method.
@@ -53,7 +67,13 @@ pub fn bench(c: &mut Criterion) {
     group.bench_function("bare/measure_many/new-only", |b| {
         b.iter_batched_ref(
             || new_br.clone(),
-            |t| std::hint::black_box(ppvm_traits_2::Measure::measure_many(t, &targets)),
+            |t| {
+                std::hint::black_box(ppvm_traits_2::Measure::measure_many(
+                    t,
+                    &targets,
+                    &mut ppvm_conformance_2::analytic_rng(),
+                ))
+            },
             BatchSize::SmallInput,
         )
     });

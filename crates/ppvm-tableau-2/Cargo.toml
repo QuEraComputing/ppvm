@@ -33,7 +33,7 @@ bytemuck = "1.23"
 gxhash = "3.5"
 rayon = { version = "1.11", optional = true }
 
-# On wasm32, rand's entropy crate (getrandom) has no default source. Mirrors the
-# old crate's target-gated dependency so an OS-seeded `Tableau::new` links.
+# On wasm32, rand's entropy crate (getrandom) has no default source. The
+# RNG-owning mixture's entropy-seeded `new` constructor still needs this source.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", features = ["wasm_js"] }

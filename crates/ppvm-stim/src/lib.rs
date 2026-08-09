@@ -79,11 +79,16 @@ pub mod validate;
 pub use stim_parser::prelude::*;
 
 pub use executor::{
-    BackendTableau, StimTableau, execute, execute_validated, sample, sample_serial,
-    sample_serial_validated, sample_validated,
+    BackendTableau, StimTableau, execute, execute_validated, execute_validated_with_rng,
+    execute_with_rng, sample, sample_serial, sample_serial_validated,
+    sample_serial_validated_with_rng, sample_serial_with_rng, sample_validated,
+    sample_validated_with_rng, sample_with_rng,
 };
 #[cfg(feature = "rayon")]
-pub use executor::{sample_parallel, sample_parallel_validated};
+pub use executor::{
+    sample_parallel, sample_parallel_validated, sample_parallel_validated_with_rng,
+    sample_parallel_with_rng,
+};
 pub use validate::{ExecError, validate};
 
 use std::path::{Path, PathBuf};
@@ -118,6 +123,19 @@ where
     Ok(results)
 }
 
+/// Parse, validate, and execute with caller-supplied randomness.
+pub fn run_string_with_rng<C, I, S, R: rand::Rng + ?Sized>(
+    src: &str,
+    tab: &mut BackendTableau<C, I, S>,
+    rng: &mut R,
+) -> Result<Vec<Option<bool>>, Error>
+where
+    executor::SelectedBackend: executor::TableauType<C, I, S>,
+{
+    let prog = parse_extended(src)?;
+    Ok(execute_with_rng(&prog, tab, rng)?)
+}
+
 pub fn run_file<C, I, S>(
     path: &Path,
     tab: &mut BackendTableau<C, I, S>,
@@ -130,4 +148,20 @@ where
         source,
     })?;
     run_string(&src, tab)
+}
+
+/// Read, parse, validate, and execute with caller-supplied randomness.
+pub fn run_file_with_rng<C, I, S, R: rand::Rng + ?Sized>(
+    path: &Path,
+    tab: &mut BackendTableau<C, I, S>,
+    rng: &mut R,
+) -> Result<Vec<Option<bool>>, Error>
+where
+    executor::SelectedBackend: executor::TableauType<C, I, S>,
+{
+    let src = std::fs::read_to_string(path).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    run_string_with_rng(&src, tab, rng)
 }

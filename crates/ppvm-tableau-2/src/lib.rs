@@ -29,13 +29,15 @@
 //!
 //! ```
 //! use ppvm_tableau_2::prelude::*;
+//! use rand::SeedableRng;
 //!
-//! let mut tab: GeneralizedTableau = GeneralizedTableau::new_with_seed(2, 1e-12, 0);
+//! let mut tab: GeneralizedTableau = GeneralizedTableau::new(2, 1e-12);
+//! let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
 //! tab.h(0);
 //! tab.cnot(0, 1);
 //!
-//! let r0 = tab.measure(0);
-//! let r1 = tab.measure(1);
+//! let r0 = tab.measure(0, &mut rng);
+//! let r1 = tab.measure(1, &mut rng);
 //! assert_eq!(r0, r1);
 //! ```
 //!

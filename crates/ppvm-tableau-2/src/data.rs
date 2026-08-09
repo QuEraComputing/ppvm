@@ -30,8 +30,6 @@ use num::complex::Complex64;
 use num::{One, PrimInt, Zero};
 use ppvm_pauli_word_2::{DefaultStorage, PauliStorage};
 use ppvm_traits_2::{Indexable, Pauli, Scale, Support};
-use rand::SeedableRng;
-use rand::rngs::SmallRng;
 
 /// Backing storage for a tableau row's packed X/Z bit planes.
 ///
@@ -365,7 +363,6 @@ pub struct Tableau<A: RowStorage = DefaultStorage, H = fxhash::FxBuildHasher> {
     pub(crate) n_qubits: usize,
     /// Destabilizers in `0..n`, stabilizers in `n..2n`.
     pub(crate) data: Vec<Row<A>>,
-    pub(crate) rng: SmallRng,
     /// Lazy structural digest (Design: §"Lazy hashing and interior mutability").
     /// Holds [`HASH_UNCACHED`] until [`Indexable::key_hash`] first populates it;
     /// every structural mutation resets it through `&mut self`.
@@ -392,25 +389,17 @@ impl<A: RowStorage, H> Tableau<A, H> {
         data
     }
 
-    /// Construct a fresh frame initialised to `|0…0⟩`, OS-seeded.
+    /// Construct a fresh frame initialised to `|0…0⟩`.
     pub fn new(n_qubits: usize) -> Self {
         Self {
             n_qubits,
             data: Self::new_data(n_qubits),
-            rng: rand::make_rng(),
             hash_cache: AtomicU64::new(HASH_UNCACHED),
             _hasher: PhantomData,
         }
     }
 
-    /// Same as [`Tableau::new`], but seed the RNG deterministically.
-    pub fn new_with_seed(n_qubits: usize, seed: u64) -> Self {
-        let mut t = Self::new(n_qubits);
-        t.rng = SmallRng::seed_from_u64(seed);
-        t
-    }
-
-    /// Restore the identity frame. Does **not** reseed the RNG.
+    /// Restore the identity frame.
     pub fn reset_all(&mut self) {
         self.data = Self::new_data(self.n_qubits);
         self.invalidate_hash();
@@ -566,15 +555,14 @@ impl<A: RowStorage, H> Clone for Tableau<A, H> {
         Self {
             n_qubits: self.n_qubits,
             data: self.data.clone(),
-            rng: self.rng.clone(),
             hash_cache: AtomicU64::new(self.hash_cache.load(Ordering::Relaxed)),
             _hasher: PhantomData,
         }
     }
 }
 
-/// Hand-written for the same reason as [`Clone`]; the RNG state and the digest
-/// cache are omitted (neither is part of the frame's identity).
+/// Hand-written for the same reason as [`Clone`]; the digest cache is omitted
+/// because it is not part of the frame's identity.
 impl<A: RowStorage, H> Debug for Tableau<A, H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tableau")
@@ -585,8 +573,8 @@ impl<A: RowStorage, H> Debug for Tableau<A, H> {
 }
 
 impl<A: RowStorage, H> PartialEq for Tableau<A, H> {
-    /// Structural: width and rows. The RNG and the digest cache are not part of
-    /// the frame's identity.
+    /// Structural: width and rows. The digest cache is not part of the frame's
+    /// identity.
     fn eq(&self, other: &Self) -> bool {
         self.n_qubits == other.n_qubits && self.data == other.data
     }
@@ -877,11 +865,13 @@ impl<I: Bitstring> ppvm_traits_2::Retain<I, Complex64> for Amplitudes<I> {
 /// ```
 /// use ppvm_tableau_2::GeneralizedTableau;
 /// use ppvm_traits_2::{Clifford, Measure};
+/// use rand::SeedableRng;
 ///
-/// let mut tab: GeneralizedTableau = GeneralizedTableau::new_with_seed(2, 1e-12, 0);
+/// let mut tab: GeneralizedTableau = GeneralizedTableau::new(2, 1e-12);
+/// let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
 /// tab.h(0);
 /// tab.cnot(0, 1);
-/// assert_eq!(tab.measure(0), tab.measure(1));
+/// assert_eq!(tab.measure(0, &mut rng), tab.measure(1, &mut rng));
 /// ```
 pub struct GeneralizedTableau<A: RowStorage = DefaultStorage, I = usize, H = fxhash::FxBuildHasher>
 {
@@ -950,7 +940,7 @@ impl<A: RowStorage, I: Debug, H> Debug for GeneralizedTableau<A, I, H> {
 }
 
 impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
-    /// Construct a generalized tableau in the `|0…0⟩` state, OS-seeded.
+    /// Construct a generalized tableau in the `|0…0⟩` state.
     ///
     /// Branches whose coefficient magnitude falls at or below
     /// `coefficient_threshold` are dropped **during gate application** — unlike
@@ -967,15 +957,8 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
         }
     }
 
-    /// Same as [`GeneralizedTableau::new`], but seed the RNG deterministically.
-    pub fn new_with_seed(n_qubits: usize, coefficient_threshold: f64, seed: u64) -> Self {
-        let mut s = Self::new(n_qubits, coefficient_threshold);
-        s.tableau.rng = SmallRng::seed_from_u64(seed);
-        s
-    }
-
     /// Restore the `|0…0⟩` state: fresh frame rows, amplitudes `{0 ↦ 1}`, all
-    /// loss flags cleared, empty measurement record. Does **not** reseed the RNG.
+    /// loss flags cleared, empty measurement record.
     pub fn reset_all(&mut self) {
         self.tableau.reset_all();
         self.coefficients = Amplitudes::unit();
@@ -986,15 +969,12 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
         self.scratch = None;
     }
 
-    /// Clone the whole state (including the measurement record) and reseed the
-    /// RNG, producing an independent trajectory. `None` seeds from OS entropy.
-    pub fn fork(&self, seed: Option<u64>) -> Self {
-        let mut cloned = self.clone();
-        cloned.tableau.rng = match seed {
-            Some(s) => SmallRng::seed_from_u64(s),
-            None => rand::make_rng(),
-        };
-        cloned
+    /// Clone the whole logical state, including the measurement record.
+    ///
+    /// Randomness is supplied by the caller and is therefore never duplicated
+    /// by a fork.
+    pub fn fork(&self) -> Self {
+        self.clone()
     }
 
     /// Number of qubits.
@@ -1866,12 +1846,8 @@ mod tests {
     #[test]
     fn key_hash_is_structural_and_cache_transparent() {
         let mut a: Tableau = Tableau::new(4);
-        let mut b: Tableau = Tableau::new_with_seed(4, 99);
-        assert_eq!(
-            a.key_hash(),
-            b.key_hash(),
-            "the RNG is not part of identity"
-        );
+        let mut b: Tableau = Tableau::new(4);
+        assert_eq!(a.key_hash(), b.key_hash());
 
         a.h(0);
         assert_ne!(a.key_hash(), b.key_hash());

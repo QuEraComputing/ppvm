@@ -138,17 +138,18 @@ fn trotter_new(
     noise: [f64; 3],
     t: &mut T,
 ) {
+    let mut rng = ppvm_conformance_2::analytic_rng();
     for _ in 0..steps {
         for i in 0..n {
-            timed!(t.pauli_error, state.pauli_error(i, noise));
+            timed!(t.pauli_error, state.pauli_error(i, noise, &mut rng));
             timed!(t.truncate, state.truncate());
             timed!(t.rx, state.rx(i, tx));
             timed!(t.truncate, state.truncate());
         }
         for i in 0..n - 1 {
-            timed!(t.pauli_error, state.pauli_error(i + 1, noise));
+            timed!(t.pauli_error, state.pauli_error(i + 1, noise, &mut rng));
             timed!(t.truncate, state.truncate());
-            timed!(t.pauli_error, state.pauli_error(i, noise));
+            timed!(t.pauli_error, state.pauli_error(i, noise, &mut rng));
             timed!(t.truncate, state.truncate());
             timed!(t.rz, state.rzz(i, i + 1, tzz));
             timed!(t.truncate, state.truncate());

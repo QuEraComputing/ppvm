@@ -309,7 +309,7 @@ fn hash_writes_exactly_key_hash() {
         for &n in &WIDTHS {
             let s = random_pauli_string(&mut rng, n);
             let w: New = s.as_str().into();
-            assert_eq!(bh.hash_one(&w), w.key_hash(), "hash==key_hash for {s}");
+            assert_eq!(bh.hash_one(w), w.key_hash(), "hash==key_hash for {s}");
         }
     }
 }

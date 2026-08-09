@@ -7,6 +7,13 @@ macro_rules! create_sum_state {
         #[pyclass]
         pub struct $tab_name {
             inner: $type,
+            /// See `§ Where the randomness lives` in `crate::backend`.
+            ///
+            /// The mixture owns the stream its `sampler()` draws from; this one
+            /// only satisfies the injected-RNG channel surface, whose mixture
+            /// impls branch analytically and never draw.
+            #[cfg(feature = "traits-2")]
+            rng: rand::rngs::SmallRng,
         }
         #[pymethods]
         impl $tab_name {
@@ -29,7 +36,7 @@ macro_rules! create_sum_state {
                     }
                     None => <$type>::new(n_qubits, min_abs_coeff, sum_cutoff),
                 };
-                Self { inner }
+                wrap!(inner, seed)
             }
 
             /// Number of branches currently in the sum.
@@ -77,15 +84,11 @@ macro_rules! create_sum_state {
             }
 
             fn __copy__(&self) -> Self {
-                Self {
-                    inner: self.inner.clone(),
-                }
+                wrap_cloned!(self)
             }
 
             fn __deepcopy__(&self, _memo: &Bound<'_, PyAny>) -> Self {
-                Self {
-                    inner: self.inner.clone(),
-                }
+                wrap_cloned!(self)
             }
         }
     };

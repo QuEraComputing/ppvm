@@ -132,7 +132,7 @@ fn reset_coalesces_both_outcomes() {
     old.h(0);
     new.h(0);
     old.reset(0);
-    new.reset(0);
+    new.reset(0, &mut ppvm_conformance_2::analytic_rng());
     assert_eq!(old.len(), 1);
     assert_eq!(new.len(), 1);
     assert_same(&old, &new);
@@ -144,16 +144,25 @@ fn noise_loss_and_reset_loss_match() {
     old.h(0);
     new.h(0);
     old.pauli_error(0, [0.11, 0.07, 0.03]);
-    new.pauli_error(0, [0.11, 0.07, 0.03]);
+    new.pauli_error(
+        0,
+        [0.11, 0.07, 0.03],
+        &mut ppvm_conformance_2::analytic_rng(),
+    );
     old.depolarize1(1, 0.2);
-    new.depolarize1(1, 0.2);
+    new.depolarize1(1, 0.2, &mut ppvm_conformance_2::analytic_rng());
     let p = std::array::from_fn(|i| (i + 1) as f64 / 2000.0);
     old.two_qubit_pauli_error(2, 3, p);
-    new.two_qubit_pauli_error(2, 3, p);
+    new.two_qubit_pauli_error(2, 3, p, &mut ppvm_conformance_2::analytic_rng());
     old.loss_channel(4, 0.3);
-    new.loss_channel(4, 0.3);
+    new.loss_channel(4, 0.3, &mut ppvm_conformance_2::analytic_rng());
     old.correlated_loss_channel(5, 6, [0.08, 0.12, 0.25]);
-    new.correlated_loss_channel(5, 6, [0.08, 0.12, 0.25]);
+    new.correlated_loss_channel(
+        5,
+        6,
+        [0.08, 0.12, 0.25],
+        &mut ppvm_conformance_2::analytic_rng(),
+    );
     old.reset_loss_channel(4);
     new.reset_loss_channel(4);
     assert_same(&old, &new);
@@ -163,7 +172,7 @@ fn noise_loss_and_reset_loss_match() {
 fn strict_sum_cutoff_boundary_matches() {
     let (mut old, mut new) = (old(19, 0.25), new(19, 0.25));
     old.loss_channel(0, 0.25);
-    new.loss_channel(0, 0.25);
+    new.loss_channel(0, 0.25, &mut ppvm_conformance_2::analytic_rng());
     assert_eq!(old.len(), 1);
     assert_eq!(new.len(), 1);
     assert_same(&old, &new);
@@ -175,7 +184,7 @@ fn wide_bitstring_indices_are_supported() {
     let mut mixture = Wide::new_with_seed(80, 1e-12, 1e-14, 23);
     mixture.h(79);
     mixture.t(79);
-    mixture.loss_channel(70, 0.2);
+    mixture.loss_channel(70, 0.2, &mut ppvm_conformance_2::analytic_rng());
     assert!(!mixture.is_empty());
 }
 
@@ -188,11 +197,11 @@ fn seeded_sampler_matches_old_and_is_reproducible() {
         old.cnot(0, 1);
         new.cnot(0, 1);
         old.loss_channel(2, 0.35);
-        new.loss_channel(2, 0.35);
+        new.loss_channel(2, 0.35, &mut ppvm_conformance_2::analytic_rng());
         old.two_qubit_pauli_error(3, 4, [0.0; 15]);
-        new.two_qubit_pauli_error(3, 4, [0.0; 15]);
+        new.two_qubit_pauli_error(3, 4, [0.0; 15], &mut ppvm_conformance_2::analytic_rng());
         old.correlated_loss_channel(5, 6, [0.0; 3]);
-        new.correlated_loss_channel(5, 6, [0.0; 3]);
+        new.correlated_loss_channel(5, 6, [0.0; 3], &mut ppvm_conformance_2::analytic_rng());
         let old_shots = old.sampler().sample_shots_serial(64);
         let new_shots = new.sampler().sample_shots_serial(64);
         assert_eq!(old_shots, new_shots);

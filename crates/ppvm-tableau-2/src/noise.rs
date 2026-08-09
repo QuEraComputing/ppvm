@@ -31,7 +31,6 @@ use ppvm_traits_2::{
     AsymmetricLossChannel, Clifford, CorrelatedLossChannel, Depolarizing, Depolarizing2,
     LossChannel, Pauli, PauliError, ResetLossChannel, TwoQubitPauliError,
 };
-use rand::rngs::SmallRng;
 use rand::{Rng, RngExt};
 
 use crate::data::{Bitstring, GeneralizedTableau, RowStorage, Tableau};
@@ -46,22 +45,13 @@ fn is_probability(p: &f64) -> bool {
     *p <= 1.0
 }
 
-/// A stabilizer-tableau-like backend supporting Clifford gates and an RNG.
+/// A stabilizer-tableau-like backend supporting Clifford gates.
 ///
 /// Implementing this grants the four Pauli noise channels through the default
-/// bodies below. The associated `Rng` lets each backend choose its own
-/// generator; nothing here depends on `SmallRng`.
-///
 /// Ported from `ppvm-tableau/src/tableau_like.rs`; the `Config`-derived
 /// coefficient associated type collapses to `f64` (the probability domain), in
 /// line with the crate-wide `Config` removal.
 pub trait TableauLike: Clifford {
-    /// RNG type backing the stochastic channels.
-    type Rng: Rng + RngExt;
-
-    /// Mutable access to the backend's RNG.
-    fn rng_mut(&mut self) -> &mut Self::Rng;
-
     /// Whether the qubit at `addr` is lost. Default: never lost.
     #[inline]
     fn is_qubit_lost(&self, _addr: usize) -> bool {
@@ -70,13 +60,14 @@ pub trait TableauLike: Clifford {
 
     /// Single-qubit depolarizing channel.
     ///
-    /// The RNG is consumed **unconditionally**; the selected Clifford is
-    /// expected to no-op on a lost qubit. This preserves seeded RNG sequences
-    /// across loss events.
+    /// Zero probability and a lost target both return without consuming RNG.
     #[inline]
-    fn depolarize_impl(&mut self, addr0: usize, p: f64) {
+    fn depolarize_impl<R: Rng + ?Sized>(&mut self, addr0: usize, p: f64, rng: &mut R) {
         debug_assert!(is_probability(&p));
-        let r = self.rng_mut().random::<f64>();
+        if p <= 0.0 || self.is_qubit_lost(addr0) {
+            return;
+        }
+        let r = rng.random::<f64>();
         if p <= r {
             return;
         }
@@ -93,11 +84,14 @@ pub trait TableauLike: Clifford {
     }
 
     /// Single-qubit Pauli-error channel (`X`, `Y`, `Z` with given
-    /// probabilities). The RNG is consumed unconditionally, as above.
+    /// probabilities). Zero total probability and a lost target consume no RNG.
     #[inline]
-    fn pauli_error_impl(&mut self, addr0: usize, p: [f64; 3]) {
+    fn pauli_error_impl<R: Rng + ?Sized>(&mut self, addr0: usize, p: [f64; 3], rng: &mut R) {
         debug_assert!(p.iter().all(is_probability));
-        let r = self.rng_mut().random::<f64>();
+        if self.is_qubit_lost(addr0) || p.iter().all(|&probability| probability <= 0.0) {
+            return;
+        }
+        let r = rng.random::<f64>();
         let mut cumulative = f64::zero();
         for (i, p_) in p.iter().enumerate() {
             cumulative += *p_;
@@ -116,12 +110,21 @@ pub trait TableauLike: Clifford {
     ///
     /// Returns early — **without drawing** — if either qubit is lost.
     #[inline]
-    fn two_qubit_pauli_error_impl(&mut self, addr0: usize, addr1: usize, p: [f64; 15]) {
+    fn two_qubit_pauli_error_impl<R: Rng + ?Sized>(
+        &mut self,
+        addr0: usize,
+        addr1: usize,
+        p: [f64; 15],
+        rng: &mut R,
+    ) {
         if self.is_qubit_lost(addr0) || self.is_qubit_lost(addr1) {
             return;
         }
         debug_assert!(p.iter().all(is_probability));
-        let r = self.rng_mut().random::<f64>();
+        if p.iter().all(|&probability| probability <= 0.0) {
+            return;
+        }
+        let r = rng.random::<f64>();
         let sum = f64::zero();
         let idx = p
             .iter()
@@ -163,33 +166,25 @@ pub trait TableauLike: Clifford {
     /// Two-qubit depolarizing channel: spreads `p` over the 15 non-identity
     /// two-qubit Pauli errors. Returns early — without drawing — on loss.
     #[inline]
-    fn depolarize2_impl(&mut self, addr0: usize, addr1: usize, p: f64) {
+    fn depolarize2_impl<R: Rng + ?Sized>(
+        &mut self,
+        addr0: usize,
+        addr1: usize,
+        p: f64,
+        rng: &mut R,
+    ) {
         if self.is_qubit_lost(addr0) || self.is_qubit_lost(addr1) {
             return;
         }
         debug_assert!(is_probability(&p));
         let p_arr: [f64; 15] = core::array::from_fn(|_| p * (1.0 / 15.0));
-        self.two_qubit_pauli_error_impl(addr0, addr1, p_arr);
+        self.two_qubit_pauli_error_impl(addr0, addr1, p_arr, rng);
     }
 }
 
-impl<A: RowStorage, H> TableauLike for Tableau<A, H> {
-    type Rng = SmallRng;
-
-    #[inline]
-    fn rng_mut(&mut self) -> &mut Self::Rng {
-        &mut self.rng
-    }
-}
+impl<A: RowStorage, H> TableauLike for Tableau<A, H> {}
 
 impl<A: RowStorage, I: Bitstring, H> TableauLike for GeneralizedTableau<A, I, H> {
-    type Rng = SmallRng;
-
-    #[inline]
-    fn rng_mut(&mut self) -> &mut Self::Rng {
-        &mut self.tableau.rng
-    }
-
     #[inline]
     fn is_qubit_lost(&self, addr: usize) -> bool {
         self.is_lost[addr]
@@ -201,26 +196,43 @@ impl<A: RowStorage, I: Bitstring, H> TableauLike for GeneralizedTableau<A, I, H>
 macro_rules! impl_tableau_noise {
     (generics: [$($gen:tt)*], ty: $ty:ty $(,)?) => {
         impl<A: RowStorage $($gen)*> Depolarizing<f64> for $ty {
-            fn depolarize1(&mut self, qubit: usize, p: f64) {
-                self.depolarize_impl(qubit, p);
+            fn depolarize1<R: Rng + ?Sized>(&mut self, qubit: usize, p: f64, rng: &mut R) {
+                self.depolarize_impl(qubit, p, rng);
             }
         }
 
         impl<A: RowStorage $($gen)*> PauliError<f64> for $ty {
-            fn pauli_error(&mut self, qubit: usize, probabilities: [f64; 3]) {
-                self.pauli_error_impl(qubit, probabilities);
+            fn pauli_error<R: Rng + ?Sized>(
+                &mut self,
+                qubit: usize,
+                probabilities: [f64; 3],
+                rng: &mut R,
+            ) {
+                self.pauli_error_impl(qubit, probabilities, rng);
             }
         }
 
         impl<A: RowStorage $($gen)*> TwoQubitPauliError<f64> for $ty {
-            fn two_qubit_pauli_error(&mut self, qubit0: usize, qubit1: usize, p: [f64; 15]) {
-                self.two_qubit_pauli_error_impl(qubit0, qubit1, p);
+            fn two_qubit_pauli_error<R: Rng + ?Sized>(
+                &mut self,
+                qubit0: usize,
+                qubit1: usize,
+                p: [f64; 15],
+                rng: &mut R,
+            ) {
+                self.two_qubit_pauli_error_impl(qubit0, qubit1, p, rng);
             }
         }
 
         impl<A: RowStorage $($gen)*> Depolarizing2<f64> for $ty {
-            fn depolarize2(&mut self, qubit0: usize, qubit1: usize, p: f64) {
-                self.depolarize2_impl(qubit0, qubit1, p);
+            fn depolarize2<R: Rng + ?Sized>(
+                &mut self,
+                qubit0: usize,
+                qubit1: usize,
+                p: f64,
+                rng: &mut R,
+            ) {
+                self.depolarize2_impl(qubit0, qubit1, p, rng);
             }
         }
     };
@@ -235,19 +247,12 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// Collapse one qubit for a loss event without retaining measurement
     /// scratch that the channel cannot reuse.
     #[inline]
-    fn lose_qubit(&mut self, qubit: usize) {
+    fn lose_qubit<R: Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R) {
         let outcome = if self.is_lost[qubit] {
             None
         } else {
-            let (phase, stab, destab) = self.compute_decomposition(qubit, Pauli::Z);
-            self.measure_with_scratch(
-                qubit,
-                &mut MeasureScratch::new(),
-                phase,
-                stab,
-                destab,
-                false,
-            )
+            let decomposition = self.compute_decomposition(qubit, Pauli::Z);
+            self.measure_with_scratch(qubit, &mut MeasureScratch::new(), decomposition, false, rng)
         };
         if let Some(true) = outcome {
             Clifford::x(self, qubit);
@@ -259,28 +264,18 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
 impl<A: RowStorage, I: Bitstring, H> LossChannel<f64> for GeneralizedTableau<A, I, H> {
     /// Lose `qubit` with probability `p`, then collapse it and reset to `|0⟩`.
     ///
-    /// Note the comparison: the channel **fires when `p >= r`**, the opposite
-    /// strictness from the depolarizing family. A loss event is not a logical
-    /// measurement, so the record entry the internal `measure` pushed is popped
-    /// — the channel is measurement-record-neutral.
-    ///
-    /// The convention split is adjudicated in `lean/PPVM/Algebra/Noise.lean`
-    /// (§"The Bernoulli firing convention"): for an ideal `Uniform[0,1)` the two
-    /// predicates differ only on the null event `{r = p}`
-    /// (`fire_conventions_agree_off_diagonal`), so neither is a wrong
-    /// `Bernoulli(p)` sampler — but at `p = 0` only the strict convention is a
-    /// guaranteed no-op (`fire_strict_zero_noop` vs
-    /// `fire_nonstrict_fires_at_zero`), so `loss_channel(q, 0.0)` fires with
-    /// probability `2⁻⁵³` here while `depolarize1(q, 0.0)` never does.
-    /// Reproduced verbatim from old under the behaviour-preservation directive;
-    /// unifying the family is a seeded-stream change needing sign-off.
-    fn loss_channel(&mut self, qubit: usize, p: f64) {
-        if p < self.tableau.rng.random::<f64>() {
+    /// Zero probability and an already-lost target return without consuming
+    /// RNG. A loss event is measurement-record-neutral.
+    fn loss_channel<R: Rng + ?Sized>(&mut self, qubit: usize, p: f64, rng: &mut R) {
+        if p <= 0.0 || self.is_lost[qubit] {
+            return;
+        }
+        if p < rng.random::<f64>() {
             return;
         }
 
         // O(n²), but it also potentially removes coefficients, which is nice.
-        self.lose_qubit(qubit);
+        self.lose_qubit(qubit, rng);
     }
 }
 
@@ -308,23 +303,29 @@ impl<A: RowStorage, I: Bitstring, H> AsymmetricLossChannel<f64> for GeneralizedT
     /// measurement" rule and shifting every `rec[-k]` lookback downstream. It is
     /// reproduced verbatim under the behaviour-preserving contract and listed in
     /// this crate's `# Deferrals` for sign-off.
-    fn asymmetric_loss_channel(&mut self, qubit: usize, p0: f64, p1: f64) {
+    fn asymmetric_loss_channel<R: Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        p0: f64,
+        p1: f64,
+        rng: &mut R,
+    ) {
         if self.is_lost[qubit] {
             return;
         }
         let z = self.z_expectation(qubit);
         let p_tot = p0 * 0.5 * (1.0 + z) + p1 * 0.5 * (1.0 - z);
 
-        if p_tot < self.tableau.rng.random::<f64>() {
+        if p_tot <= 0.0 || p_tot < rng.random::<f64>() {
             return;
         }
         // This event immediately marks the qubit lost, so retained measurement
         // scratch cannot serve this site again. Run the same projection kernel
         // with ephemeral buffers, as the legacy path did, while keeping the
         // intentionally observable record append.
-        let (phase, stab, destab) = self.compute_decomposition(qubit, Pauli::Z);
+        let decomposition = self.compute_decomposition(qubit, Pauli::Z);
         if let Some(true) =
-            self.measure_with_scratch(qubit, &mut MeasureScratch::new(), phase, stab, destab, true)
+            self.measure_with_scratch(qubit, &mut MeasureScratch::new(), decomposition, true, rng)
         {
             Clifford::x(self, qubit);
         }
@@ -342,31 +343,40 @@ impl<A: RowStorage, I: Bitstring, H> CorrelatedLossChannel<f64> for GeneralizedT
     /// Draws one `f64` for the `p[0]`/`p[1]` choice and, on the single-loss
     /// branch, one extra `bool` to pick which qubit. Goes through
     /// [`Reset::reset`], so it inherits the record pop.
-    fn correlated_loss_channel(&mut self, qubit0: usize, qubit1: usize, p: [f64; 3]) {
+    fn correlated_loss_channel<R: Rng + ?Sized>(
+        &mut self,
+        qubit0: usize,
+        qubit1: usize,
+        p: [f64; 3],
+        rng: &mut R,
+    ) {
         if self.is_lost[qubit0] {
-            self.loss_channel(qubit1, p[2]);
+            self.loss_channel(qubit1, p[2], rng);
             return;
         } else if self.is_lost[qubit1] {
-            self.loss_channel(qubit0, p[2]);
+            self.loss_channel(qubit0, p[2], rng);
             return;
         }
 
-        let r = self.tableau.rng.random::<f64>();
+        if p[0] <= 0.0 && p[1] <= 0.0 {
+            return;
+        }
+        let r = rng.random::<f64>();
         let mut cumulative = f64::zero();
         for (i, p_i) in p[..2].iter().enumerate() {
             cumulative += *p_i;
             if cumulative > r {
                 if i == 0 {
                     // both lost
-                    self.lose_qubit(qubit0);
-                    self.lose_qubit(qubit1);
+                    self.lose_qubit(qubit0, rng);
+                    self.lose_qubit(qubit1, rng);
                 } else {
                     // only a single qubit is lost
-                    let choice = self.tableau.rng.random::<bool>();
+                    let choice = rng.random::<bool>();
                     if choice {
-                        self.lose_qubit(qubit1);
+                        self.lose_qubit(qubit1, rng);
                     } else {
-                        self.lose_qubit(qubit0);
+                        self.lose_qubit(qubit0, rng);
                     }
                 }
                 return;

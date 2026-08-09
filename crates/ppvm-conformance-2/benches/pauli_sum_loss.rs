@@ -70,6 +70,31 @@ fn assert_same(old: &OldSum, new: &NewSum, label: &str) {
     }
 }
 
+trait ApplyLoss {
+    fn apply_loss(&mut self, q: usize, p: f64);
+    fn apply_correlated_loss(&mut self, a: usize, b: usize, p: [f64; 3]);
+}
+
+impl ApplyLoss for OldSum {
+    fn apply_loss(&mut self, q: usize, p: f64) {
+        self.loss_channel(q, p);
+    }
+
+    fn apply_correlated_loss(&mut self, a: usize, b: usize, p: [f64; 3]) {
+        self.correlated_loss_channel(a, b, p);
+    }
+}
+
+impl ApplyLoss for NewSum {
+    fn apply_loss(&mut self, q: usize, p: f64) {
+        self.loss_channel(q, p, &mut ppvm_conformance_2::analytic_rng());
+    }
+
+    fn apply_correlated_loss(&mut self, a: usize, b: usize, p: [f64; 3]) {
+        self.correlated_loss_channel(a, b, p, &mut ppvm_conformance_2::analytic_rng());
+    }
+}
+
 fn old_seed() -> OldSum {
     let mut sum = OldSum::builder().n_qubits(N).capacity(CAPACITY).build();
     sum += ("Z".repeat(N).as_str(), 1.0);
@@ -102,10 +127,10 @@ macro_rules! workload {
     ($sum:ident) => {{
         for q in 0..N {
             $sum.reset_loss_channel(q);
-            $sum.loss_channel(q, 0.01);
+            $sum.apply_loss(q, 0.01);
         }
         for q in 0..N - 1 {
-            $sum.correlated_loss_channel(q, q + 1, [0.002, 0.003, 0.004]);
+            $sum.apply_correlated_loss(q, q + 1, [0.002, 0.003, 0.004]);
         }
         for q in (0..N - 1).rev() {
             $sum.cnot(q, q + 1);
@@ -192,12 +217,12 @@ fn bench_loss(c: &mut Criterion) {
     });
     stage!("loss", old_expanded(), new_expanded(), |sum| {
         for q in 0..N {
-            sum.loss_channel(q, 0.01);
+            sum.apply_loss(q, 0.01);
         }
     });
     stage!("correlated", old_expanded(), new_expanded(), |sum| {
         for q in 0..N - 1 {
-            sum.correlated_loss_channel(q, q + 1, [0.002, 0.003, 0.004]);
+            sum.apply_correlated_loss(q, q + 1, [0.002, 0.003, 0.004]);
         }
     });
     stage!("clifford", old_expanded(), new_expanded(), |sum| {

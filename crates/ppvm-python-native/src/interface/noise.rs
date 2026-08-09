@@ -8,7 +8,7 @@ macro_rules! create_interface_noise {
             // noise
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn x_error(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
-                self.inner.x_error_many(targets.as_slice(), p);
+                draw!(self.inner.x_error_many(targets.as_slice(), p));
                 if truncate {
                     self.inner.truncate();
                 }
@@ -16,7 +16,7 @@ macro_rules! create_interface_noise {
 
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn y_error(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
-                self.inner.y_error_many(targets.as_slice(), p);
+                draw!(self.inner.y_error_many(targets.as_slice(), p));
                 if truncate {
                     self.inner.truncate();
                 }
@@ -24,7 +24,7 @@ macro_rules! create_interface_noise {
 
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn z_error(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
-                self.inner.z_error_many(targets.as_slice(), p);
+                draw!(self.inner.z_error_many(targets.as_slice(), p));
                 if truncate {
                     self.inner.truncate();
                 }
@@ -32,7 +32,7 @@ macro_rules! create_interface_noise {
 
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn pauli_error(&mut self, targets: Vec<usize>, p: [f64; 3], truncate: bool) {
-                self.inner.pauli_error_many(targets.as_slice(), p);
+                draw!(self.inner.pauli_error_many(targets.as_slice(), p));
                 if truncate {
                     self.inner.truncate();
                 }
@@ -46,7 +46,7 @@ macro_rules! create_interface_noise {
                 truncate: bool,
             ) -> PyResult<()> {
                 let pairs = crate::flat_pairs(&targets)?;
-                self.inner.two_qubit_pauli_error_many(&pairs, p);
+                draw!(self.inner.two_qubit_pauli_error_many(&pairs, p));
                 if truncate {
                     self.inner.truncate();
                 }
@@ -55,7 +55,7 @@ macro_rules! create_interface_noise {
 
             #[pyo3(signature = (targets, p, truncate = true))]
             pub fn depolarize1(&mut self, targets: Vec<usize>, p: f64, truncate: bool) {
-                self.inner.depolarize1_many(targets.as_slice(), p);
+                draw!(self.inner.depolarize1_many(targets.as_slice(), p));
                 if truncate {
                     self.inner.truncate();
                 }
@@ -69,7 +69,7 @@ macro_rules! create_interface_noise {
                 truncate: bool,
             ) -> PyResult<()> {
                 let pairs = crate::flat_pairs(&targets)?;
-                self.inner.depolarize2_many(&pairs, p);
+                draw!(self.inner.depolarize2_many(&pairs, p));
                 if truncate {
                     self.inner.truncate();
                 }

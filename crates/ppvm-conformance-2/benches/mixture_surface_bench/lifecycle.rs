@@ -74,7 +74,7 @@ fn normalize(c: &mut Criterion) {
 fn truncate(c: &mut Criterion) {
     let (mut old_state, mut new_state) = (old(SEED, 0.1), new(SEED, 0.1));
     old_state.loss_channel(0, 0.2);
-    new_state.loss_channel(0, 0.2);
+    new_state.loss_channel(0, 0.2, &mut ppvm_conformance_2::analytic_rng());
     old_state.entries.entries[0].1 = 0.95;
     old_state.entries.entries[1].1 = 0.05;
     new_state.entries[0].1 = 0.95;

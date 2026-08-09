@@ -53,6 +53,7 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use rand::SeedableRng;
 
 use ppvm_conformance_2::tableau::*;
 
@@ -616,8 +617,13 @@ fn bench_micro(c: &mut Criterion) {
     });
     g.bench_function("frame_project/new", |b| {
         b.iter_batched_ref(
-            || new_a1.tableau.clone(),
-            |t| black_box(ppvm_traits_2::Measure::measure(t, 0)),
+            || {
+                (
+                    new_a1.tableau.clone(),
+                    rand::rngs::SmallRng::seed_from_u64(0),
+                )
+            },
+            |(t, rng)| black_box(ppvm_traits_2::Measure::measure(t, 0, rng)),
             criterion::BatchSize::SmallInput,
         )
     });
@@ -629,14 +635,14 @@ fn bench_micro(c: &mut Criterion) {
     g.bench_function("msd_sweep_all/new", |b| {
         b.iter_batched_ref(
             || new_msd.fork(None),
-            |t| black_box(ppvm_tableau_2::GeneralizedTableau::measure_all(t)),
+            |t| black_box(t.measure_all()),
             criterion::BatchSize::LargeInput,
         )
     });
     g.bench_function("msd_sweep_many/new", |b| {
         b.iter_batched_ref(
             || new_msd.fork(None),
-            |t| black_box(ppvm_traits_2::Measure::measure_many(t, &all85)),
+            |t| black_box(t.measure_many(&all85)),
             criterion::BatchSize::LargeInput,
         )
     });
@@ -799,10 +805,15 @@ fn bench_measure_sweep_attribution(c: &mut Criterion) {
         });
         g.bench_with_input(BenchmarkId::new("frame_sweep/new", n), &n, |b, _| {
             b.iter_batched_ref(
-                || new_prepared.tableau.clone(),
-                |t| {
+                || {
+                    (
+                        new_prepared.tableau.clone(),
+                        rand::rngs::SmallRng::seed_from_u64(0),
+                    )
+                },
+                |(t, rng)| {
                     for i in 0..n {
-                        black_box(ppvm_traits_2::Measure::measure(t, i));
+                        black_box(ppvm_traits_2::Measure::measure(t, i, rng));
                     }
                 },
                 criterion::BatchSize::SmallInput,

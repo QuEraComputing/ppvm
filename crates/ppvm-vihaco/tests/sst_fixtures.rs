@@ -383,6 +383,7 @@ fn lossy_paulisum_loss_trace_matches_pure_rust_reference() {
             PauliPattern, Sum,
         };
         use ppvm_tableau_2::prelude::{Clifford, LossChannel, Trace};
+        use rand::SeedableRng;
         type RefSum = Sum<
             HashMapStore<LossyPauliWord<[u8; 8]>, f64>,
             CombinedPolicy<CoefficientThreshold, MaxPauliWeight>,
@@ -397,7 +398,9 @@ fn lossy_paulisum_loss_trace_matches_pure_rust_reference() {
         );
         state += (LossyPauliWord::from("ZZ"), 1.0);
         state.cnot(0, 1);
-        state.loss_channel(0, 0.3);
+        // The sum's loss channel is an analytic coefficient scaling and never
+        // draws; the RNG is threaded only to satisfy the injected-RNG surface.
+        state.loss_channel(0, 0.3, &mut rand::rngs::SmallRng::seed_from_u64(0));
         state.truncate();
         state.trace(&PauliPattern::parse("Z?*").expect("parse pattern"))
     };

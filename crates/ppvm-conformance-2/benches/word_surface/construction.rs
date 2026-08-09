@@ -19,12 +19,12 @@ fn phased_from_word(c: &mut Criterion) {
     let s = ordinary_string(WIDTH);
     let new_word = NewWord::from(s.as_str());
     let old_word = OldWord::from(s.as_str());
-    let new = NewPhased::new(new_word.clone());
+    let new = NewPhased::new(new_word);
     let old = OldPhased::build_from_word(old_word, 0);
     assert_eq!(new.to_string(), old.to_string());
     g.bench_function("new/from_existing_word", |b| {
         b.iter_batched(
-            || new_word.clone(),
+            || new_word,
             |word| black_box(NewPhased::new(black_box(word))),
             BatchSize::SmallInput,
         )
@@ -125,10 +125,10 @@ fn clone_copy(c: &mut Criterion) {
     assert_eq!(ordinary_cold.clone(), ordinary_cold);
     assert_eq!(ordinary_warm.clone(), ordinary_warm);
     g.bench_function("ordinary/new/clone_cold", |b| {
-        b.iter(|| black_box(black_box(&ordinary_cold).clone()))
+        b.iter(|| black_box(*black_box(&ordinary_cold)))
     });
     g.bench_function("ordinary/new/clone_warm", |b| {
-        b.iter(|| black_box(black_box(&ordinary_warm).clone()))
+        b.iter(|| black_box(*black_box(&ordinary_warm)))
     });
     let ordinary_old = OldWord::from(plain.as_str());
     assert_eq!(*black_box(&ordinary_old), ordinary_old);

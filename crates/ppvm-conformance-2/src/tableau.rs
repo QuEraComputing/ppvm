@@ -31,6 +31,8 @@
 //! Both use `FxHash`, which is also the new crate's default `H`.)
 
 use num::complex::Complex64;
+use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
 
 // --- OLD engine ------------------------------------------------------------
 use ppvm_pauli_sum::config::fx64hash::Byte8F64;
@@ -41,6 +43,8 @@ use ppvm_tableau::measure_all::LossyMeasureAll;
 // --- NEW engine ------------------------------------------------------------
 use ppvm_tableau_2::GeneralizedTableau as NewGeneralizedTableau;
 
+mod new_driver;
+
 // Every gate call below is written in fully-qualified (UFCS) form: the two trait
 // towers export same-named traits (`Clifford`, `TGate`, …) *and* the concrete
 // types carry same-named inherent methods, so importing either set into scope
@@ -48,18 +52,127 @@ use ppvm_tableau_2::GeneralizedTableau as NewGeneralizedTableau;
 
 /// OLD 85-qubit MSD / fused-T configuration (`[usize; 2]` storage, `u128` index).
 pub type OldWide = OldGeneralizedTableau<Byte8F64<2>, u128>;
+/// Conformance-only owner pairing a pure traits-2 tableau with its trajectory RNG.
+#[derive(Clone, Debug)]
+pub struct NewDriver<T> {
+    pub tab: T,
+    rng: SmallRng,
+}
+
+impl<T> std::ops::Deref for NewDriver<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tab
+    }
+}
+
+impl<T> std::ops::DerefMut for NewDriver<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.tab
+    }
+}
+
+impl<A, I, H> NewDriver<NewGeneralizedTableau<A, I, H>>
+where
+    A: ppvm_tableau_2::RowStorage,
+    I: ppvm_tableau_2::Bitstring,
+{
+    pub fn new(n_qubits: usize, threshold: f64) -> Self {
+        Self {
+            tab: NewGeneralizedTableau::new(n_qubits, threshold),
+            rng: rand::make_rng(),
+        }
+    }
+
+    pub fn new_with_seed(n_qubits: usize, threshold: f64, seed: u64) -> Self {
+        Self {
+            tab: NewGeneralizedTableau::new(n_qubits, threshold),
+            rng: SmallRng::seed_from_u64(seed),
+        }
+    }
+
+    pub fn fork(&self, seed: Option<u64>) -> Self
+    where
+        H: Clone,
+    {
+        Self {
+            tab: self.tab.fork(),
+            rng: seed.map_or_else(rand::make_rng, SmallRng::seed_from_u64),
+        }
+    }
+
+    pub fn pauli_error(&mut self, qubit: usize, p: [f64; 3]) {
+        ppvm_traits_2::PauliError::pauli_error(&mut self.tab, qubit, p, &mut self.rng);
+    }
+
+    pub fn x_error(&mut self, qubit: usize, p: f64) {
+        ppvm_traits_2::PauliError::x_error(&mut self.tab, qubit, p, &mut self.rng);
+    }
+
+    pub fn y_error(&mut self, qubit: usize, p: f64) {
+        ppvm_traits_2::PauliError::y_error(&mut self.tab, qubit, p, &mut self.rng);
+    }
+
+    pub fn z_error(&mut self, qubit: usize, p: f64) {
+        ppvm_traits_2::PauliError::z_error(&mut self.tab, qubit, p, &mut self.rng);
+    }
+
+    pub fn two_qubit_pauli_error(&mut self, a: usize, b: usize, p: [f64; 15]) {
+        ppvm_traits_2::TwoQubitPauliError::two_qubit_pauli_error(
+            &mut self.tab,
+            a,
+            b,
+            p,
+            &mut self.rng,
+        );
+    }
+
+    pub fn depolarize1(&mut self, qubit: usize, p: f64) {
+        ppvm_traits_2::Depolarizing::depolarize1(&mut self.tab, qubit, p, &mut self.rng);
+    }
+
+    pub fn depolarize2(&mut self, a: usize, b: usize, p: f64) {
+        ppvm_traits_2::Depolarizing2::depolarize2(&mut self.tab, a, b, p, &mut self.rng);
+    }
+
+    pub fn loss_channel(&mut self, qubit: usize, p: f64) {
+        ppvm_traits_2::LossChannel::loss_channel(&mut self.tab, qubit, p, &mut self.rng);
+    }
+
+    pub fn asymmetric_loss_channel(&mut self, qubit: usize, p0: f64, p1: f64) {
+        ppvm_traits_2::AsymmetricLossChannel::asymmetric_loss_channel(
+            &mut self.tab,
+            qubit,
+            p0,
+            p1,
+            &mut self.rng,
+        );
+    }
+
+    pub fn correlated_loss_channel(&mut self, a: usize, b: usize, p: [f64; 3]) {
+        ppvm_traits_2::CorrelatedLossChannel::correlated_loss_channel(
+            &mut self.tab,
+            a,
+            b,
+            p,
+            &mut self.rng,
+        );
+    }
+}
+
 /// NEW 85-qubit MSD / fused-T configuration, storage-matched to [`OldWide`].
-pub type NewWide = NewGeneralizedTableau<[usize; 2], u128>;
+pub type NewWide = NewDriver<NewGeneralizedTableau<[usize; 2], u128>>;
 
 /// OLD rot2-brickwork configuration (`[u8; 8]` storage, `usize` index).
 pub type OldNarrow = OldGeneralizedTableau<ByteFxHashF64<8>, usize>;
 /// NEW rot2-brickwork configuration, storage-matched to [`OldNarrow`].
-pub type NewNarrow = NewGeneralizedTableau<[u8; 8], usize>;
+pub type NewNarrow = NewDriver<NewGeneralizedTableau<[u8; 8], usize>>;
 
 /// OLD scaling-sweep configuration (`[usize; 2]` storage, `usize` index).
 pub type OldScaling = OldGeneralizedTableau<Byte8F64<2>, usize>;
 /// NEW scaling-sweep configuration, storage-matched to [`OldScaling`].
-pub type NewScaling = NewGeneralizedTableau<[usize; 2], usize>;
+pub type NewScaling = NewDriver<NewGeneralizedTableau<[usize; 2], usize>>;
 
 /// A `(x-plane, z-plane, phase)` snapshot of one tableau row, normalized to
 /// `Vec<u64>` planes so the OLD `[usize; N]` / `[u8; N]` rows and the NEW ones
@@ -430,164 +543,190 @@ macro_rules! impl_new_driver {
     ($ty:ty, $store:ty, $idx:ty) => {
         impl Driver for $ty {
             fn new_seeded(n_qubits: usize, threshold: f64, seed: u64) -> Self {
-                <$ty>::new_with_seed(n_qubits, threshold, seed)
+                Self {
+                    tab: NewGeneralizedTableau::<$store, $idx>::new(n_qubits, threshold),
+                    rng: SmallRng::seed_from_u64(seed),
+                }
             }
             fn new_entropy(n_qubits: usize, threshold: f64) -> Self {
-                <$ty>::new(n_qubits, threshold)
+                Self {
+                    tab: NewGeneralizedTableau::<$store, $idx>::new(n_qubits, threshold),
+                    rng: rand::make_rng(),
+                }
             }
             fn fork(&self, seed: Option<u64>) -> Self {
-                NewGeneralizedTableau::fork(self, seed)
+                Self {
+                    tab: self.tab.fork(),
+                    rng: seed.map_or_else(rand::make_rng, SmallRng::seed_from_u64),
+                }
             }
             fn n_qubits(&self) -> usize {
-                NewGeneralizedTableau::n_qubits(self)
+                self.tab.n_qubits()
             }
 
             fn x(&mut self, q: usize) {
-                ppvm_traits_2::Clifford::x(self, q)
+                ppvm_traits_2::Clifford::x(&mut self.tab, q)
             }
             fn y(&mut self, q: usize) {
-                ppvm_traits_2::Clifford::y(self, q)
+                ppvm_traits_2::Clifford::y(&mut self.tab, q)
             }
             fn z(&mut self, q: usize) {
-                ppvm_traits_2::Clifford::z(self, q)
+                ppvm_traits_2::Clifford::z(&mut self.tab, q)
             }
             fn h(&mut self, q: usize) {
-                ppvm_traits_2::Clifford::h(self, q)
+                ppvm_traits_2::Clifford::h(&mut self.tab, q)
             }
             fn s(&mut self, q: usize) {
-                ppvm_traits_2::Clifford::s(self, q)
+                ppvm_traits_2::Clifford::s(&mut self.tab, q)
             }
             fn s_dag(&mut self, q: usize) {
-                ppvm_traits_2::CliffordExtensions::s_dag(self, q)
+                ppvm_traits_2::CliffordExtensions::s_dag(&mut self.tab, q)
             }
             fn sqrt_x(&mut self, q: usize) {
-                ppvm_traits_2::CliffordExtensions::sqrt_x(self, q)
+                ppvm_traits_2::CliffordExtensions::sqrt_x(&mut self.tab, q)
             }
             fn sqrt_x_dag(&mut self, q: usize) {
-                ppvm_traits_2::CliffordExtensions::sqrt_x_dag(self, q)
+                ppvm_traits_2::CliffordExtensions::sqrt_x_dag(&mut self.tab, q)
             }
             fn sqrt_y(&mut self, q: usize) {
-                ppvm_traits_2::CliffordExtensions::sqrt_y(self, q)
+                ppvm_traits_2::CliffordExtensions::sqrt_y(&mut self.tab, q)
             }
             fn sqrt_y_dag(&mut self, q: usize) {
-                ppvm_traits_2::CliffordExtensions::sqrt_y_dag(self, q)
+                ppvm_traits_2::CliffordExtensions::sqrt_y_dag(&mut self.tab, q)
             }
             fn cnot(&mut self, c: usize, t: usize) {
-                ppvm_traits_2::Clifford::cnot(self, c, t)
+                ppvm_traits_2::Clifford::cnot(&mut self.tab, c, t)
             }
             fn cz(&mut self, a: usize, b: usize) {
-                ppvm_traits_2::Clifford::cz(self, a, b)
+                ppvm_traits_2::Clifford::cz(&mut self.tab, a, b)
             }
             fn cy(&mut self, c: usize, t: usize) {
-                ppvm_traits_2::CliffordExtensions::cy(self, c, t)
+                ppvm_traits_2::CliffordExtensions::cy(&mut self.tab, c, t)
             }
             fn zcx(&mut self, c: usize, t: usize) {
-                ppvm_traits_2::Clifford::zcx(self, c, t)
+                ppvm_traits_2::Clifford::zcx(&mut self.tab, c, t)
             }
             fn zcy(&mut self, c: usize, t: usize) {
-                ppvm_traits_2::CliffordExtensions::zcy(self, c, t)
+                ppvm_traits_2::CliffordExtensions::zcy(&mut self.tab, c, t)
             }
             fn zcz(&mut self, a: usize, b: usize) {
-                ppvm_traits_2::Clifford::zcz(self, a, b)
+                ppvm_traits_2::Clifford::zcz(&mut self.tab, a, b)
             }
 
             fn h_many(&mut self, qs: &[usize]) {
-                ppvm_traits_2::CliffordBatch::h_many(self, qs)
+                ppvm_traits_2::CliffordBatch::h_many(&mut self.tab, qs)
             }
             fn x_many(&mut self, qs: &[usize]) {
-                ppvm_traits_2::CliffordBatch::x_many(self, qs)
+                ppvm_traits_2::CliffordBatch::x_many(&mut self.tab, qs)
             }
             fn s_many(&mut self, qs: &[usize]) {
-                ppvm_traits_2::CliffordBatch::s_many(self, qs)
+                ppvm_traits_2::CliffordBatch::s_many(&mut self.tab, qs)
             }
             fn sqrt_x_many(&mut self, qs: &[usize]) {
-                ppvm_traits_2::CliffordExtensionsBatch::sqrt_x_many(self, qs)
+                ppvm_traits_2::CliffordExtensionsBatch::sqrt_x_many(&mut self.tab, qs)
             }
             fn sqrt_x_dag_many(&mut self, qs: &[usize]) {
-                ppvm_traits_2::CliffordExtensionsBatch::sqrt_x_dag_many(self, qs)
+                ppvm_traits_2::CliffordExtensionsBatch::sqrt_x_dag_many(&mut self.tab, qs)
             }
             fn sqrt_y_many(&mut self, qs: &[usize]) {
-                ppvm_traits_2::CliffordExtensionsBatch::sqrt_y_many(self, qs)
+                ppvm_traits_2::CliffordExtensionsBatch::sqrt_y_many(&mut self.tab, qs)
             }
             fn sqrt_y_dag_many(&mut self, qs: &[usize]) {
-                ppvm_traits_2::CliffordExtensionsBatch::sqrt_y_dag_many(self, qs)
+                ppvm_traits_2::CliffordExtensionsBatch::sqrt_y_dag_many(&mut self.tab, qs)
             }
             fn cz_many(&mut self, pairs: &[(usize, usize)]) {
-                ppvm_traits_2::CliffordBatch::cz_many(self, pairs)
+                ppvm_traits_2::CliffordBatch::cz_many(&mut self.tab, pairs)
             }
             fn cnot_many(&mut self, pairs: &[(usize, usize)]) {
-                ppvm_traits_2::CliffordBatch::cnot_many(self, pairs)
+                ppvm_traits_2::CliffordBatch::cnot_many(&mut self.tab, pairs)
             }
             fn cz_block(&mut self, control_base: usize, target_base: usize, count: usize) {
-                NewGeneralizedTableau::cz_block(self, control_base, target_base, count)
+                self.tab.cz_block(control_base, target_base, count)
             }
             fn cz_block_pairs(&mut self, base: usize, offset: usize, count: usize) {
-                NewGeneralizedTableau::cz_block_pairs(self, base, offset, count)
+                self.tab.cz_block_pairs(base, offset, count)
             }
 
             fn t(&mut self, q: usize) {
-                ppvm_traits_2::TGate::t(self, q)
+                ppvm_traits_2::TGate::t(&mut self.tab, q)
             }
             fn t_dag(&mut self, q: usize) {
-                ppvm_traits_2::TGate::t_dag(self, q)
+                ppvm_traits_2::TGate::t_dag(&mut self.tab, q)
             }
             fn rx(&mut self, q: usize, theta: f64) {
-                ppvm_traits_2::RotationOne::<Complex64, f64>::rx(self, q, theta)
+                ppvm_traits_2::RotationOne::<Complex64, f64>::rx(&mut self.tab, q, theta)
             }
             fn ry(&mut self, q: usize, theta: f64) {
-                ppvm_traits_2::RotationOne::<Complex64, f64>::ry(self, q, theta)
+                ppvm_traits_2::RotationOne::<Complex64, f64>::ry(&mut self.tab, q, theta)
             }
             fn rz(&mut self, q: usize, theta: f64) {
-                ppvm_traits_2::RotationOne::<Complex64, f64>::rz(self, q, theta)
+                ppvm_traits_2::RotationOne::<Complex64, f64>::rz(&mut self.tab, q, theta)
             }
             fn rxx(&mut self, a: usize, b: usize, theta: f64) {
-                ppvm_traits_2::RotationTwo::<Complex64, f64>::rxx(self, a, b, theta)
+                ppvm_traits_2::RotationTwo::<Complex64, f64>::rxx(&mut self.tab, a, b, theta)
             }
             fn ryy(&mut self, a: usize, b: usize, theta: f64) {
-                ppvm_traits_2::RotationTwo::<Complex64, f64>::ryy(self, a, b, theta)
+                ppvm_traits_2::RotationTwo::<Complex64, f64>::ryy(&mut self.tab, a, b, theta)
             }
             fn rzz(&mut self, a: usize, b: usize, theta: f64) {
-                ppvm_traits_2::RotationTwo::<Complex64, f64>::rzz(self, a, b, theta)
+                ppvm_traits_2::RotationTwo::<Complex64, f64>::rzz(&mut self.tab, a, b, theta)
             }
 
             fn measure(&mut self, q: usize) -> Option<bool> {
-                ppvm_traits_2::Measure::measure(self, q)
+                NewDriver::measure(self, q)
             }
             fn measure_all(&mut self) -> Vec<Option<bool>> {
-                NewGeneralizedTableau::measure_all(self)
+                NewDriver::measure_all(self)
             }
             fn measure_many(&mut self, qs: &[usize]) -> Vec<Option<bool>> {
-                ppvm_traits_2::Measure::measure_many(self, qs)
+                NewDriver::measure_many(self, qs)
             }
             fn measure_noisy(&mut self, q: usize, flip_prob: f64) -> Option<bool> {
-                NewGeneralizedTableau::measure_noisy(self, q, flip_prob)
+                NewDriver::measure_noisy(self, q, flip_prob)
             }
             fn reset(&mut self, q: usize) {
-                ppvm_traits_2::Reset::reset(self, q)
+                NewDriver::reset(self, q)
             }
             fn depolarize1(&mut self, q: usize, p: f64) {
-                ppvm_traits_2::Depolarizing::<f64>::depolarize1(self, q, p)
+                ppvm_traits_2::Depolarizing::<f64>::depolarize1(&mut self.tab, q, p, &mut self.rng)
             }
             fn depolarize2(&mut self, a: usize, b: usize, p: f64) {
-                ppvm_traits_2::Depolarizing2::<f64>::depolarize2(self, a, b, p)
+                ppvm_traits_2::Depolarizing2::<f64>::depolarize2(
+                    &mut self.tab,
+                    a,
+                    b,
+                    p,
+                    &mut self.rng,
+                )
             }
             fn loss_channel(&mut self, q: usize, p: f64) {
-                ppvm_traits_2::LossChannel::<f64>::loss_channel(self, q, p)
+                ppvm_traits_2::LossChannel::<f64>::loss_channel(&mut self.tab, q, p, &mut self.rng)
             }
             fn asymmetric_loss_channel(&mut self, q: usize, p0: f64, p1: f64) {
                 ppvm_traits_2::AsymmetricLossChannel::<f64>::asymmetric_loss_channel(
-                    self, q, p0, p1,
+                    &mut self.tab,
+                    q,
+                    p0,
+                    p1,
+                    &mut self.rng,
                 )
             }
             fn correlated_loss_channel(&mut self, a: usize, b: usize, p: [f64; 3]) {
-                ppvm_traits_2::CorrelatedLossChannel::<f64>::correlated_loss_channel(self, a, b, p)
+                ppvm_traits_2::CorrelatedLossChannel::<f64>::correlated_loss_channel(
+                    &mut self.tab,
+                    a,
+                    b,
+                    p,
+                    &mut self.rng,
+                )
             }
             fn reset_loss_channel(&mut self, q: usize) {
-                ppvm_traits_2::ResetLossChannel::reset_loss_channel(self, q)
+                ppvm_traits_2::ResetLossChannel::reset_loss_channel(&mut self.tab, q)
             }
 
             fn rows(&self) -> Vec<RowSnapshot> {
-                self.tableau
+                self.tab
+                    .tableau
                     .rows()
                     .map(|(x, z, p)| {
                         (
@@ -599,29 +738,30 @@ macro_rules! impl_new_driver {
                     .collect()
             }
             fn coeffs(&self) -> Vec<(u128, Complex64)> {
-                self.coefficients
+                self.tab
+                    .coefficients
                     .iter()
                     .map(|&(c, i)| (i as u128, c))
                     .collect()
             }
             fn n_coeffs(&self) -> usize {
-                self.coefficients.len()
+                self.tab.coefficients.len()
             }
             fn record(&self) -> Vec<Option<bool>> {
-                self.measurement_record.clone()
+                self.tab.measurement_record.clone()
             }
             fn lost(&self) -> Vec<bool> {
-                self.is_lost.clone()
+                self.tab.is_lost.clone()
             }
             fn z_expectation(&self, q: usize) -> f64 {
-                NewGeneralizedTableau::z_expectation(self, q)
+                self.tab.z_expectation(q)
             }
             fn expectation_str(&self, word: &str) -> f64 {
                 let w: ppvm_pauli_word_2::PauliWord<$store> = word.into();
-                NewGeneralizedTableau::expectation(self, &w)
+                self.tab.expectation(&w)
             }
             fn peek_rng_f64(&mut self) -> f64 {
-                NewGeneralizedTableau::bernoulli(self, 0.5) as u8 as f64
+                (self.rng.random::<f64>() < 0.5) as u8 as f64
             }
         }
     };

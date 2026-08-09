@@ -148,7 +148,7 @@ fn bench_build_batch(c: &mut Criterion) {
     let build_new = || {
         let mut s = BenchSum::with_capacity(N, NoPolicy, CAPACITY);
         for (word, coeff) in &new_terms {
-            s += (word.clone(), *coeff);
+            s += (*word, *coeff);
         }
         s.reduce();
         s
@@ -292,7 +292,13 @@ fn bench_pauli_error(c: &mut Criterion) {
     g.bench_function("new/pauli_error", |b| {
         b.iter_batched_ref(
             || new.clone(),
-            |s| s.pauli_error(black_box(0), black_box(P)),
+            |s| {
+                s.pauli_error(
+                    black_box(0),
+                    black_box(P),
+                    &mut ppvm_conformance_2::analytic_rng(),
+                )
+            },
             criterion::BatchSize::LargeInput,
         )
     });

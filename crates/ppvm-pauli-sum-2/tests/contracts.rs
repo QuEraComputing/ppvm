@@ -12,6 +12,15 @@ use ppvm_pauli_sum_2::{
     PauliWord, Policy, SiteSet,
 };
 use ppvm_traits_2::{Clifford, PauliError, RotationOne, Trace};
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
+
+/// The `-2` sum backends are density-matrix-like: the noise channels are
+/// analytic coefficient scalings and never draw. Call sites thread this
+/// fixed-seed RNG only to satisfy the injected-RNG trait surface.
+fn rng() -> SmallRng {
+    SmallRng::seed_from_u64(0)
+}
 
 fn pw(s: &str) -> PauliWord {
     PauliWord::from(s)
@@ -185,7 +194,7 @@ fn zero_eigenvalue_channel_keeps_the_term() {
     // λ_X = 1 − 2(p_Y + p_Z) = 0 for [0.0, 0.25, 0.25]: the X term stays at 0.0.
     let mut s: PauliSum = PauliSum::from_terms(2, [(pw("XI"), 1.0), (pw("ZI"), 1.0)]);
     let len = s.len();
-    s.pauli_error(0, [0.0, 0.25, 0.25]);
+    s.pauli_error(0, [0.0, 0.25, 0.25], &mut rng());
     assert_eq!(s.len(), len, "a zeroed term must stay in the support");
     assert_eq!(s.get(&pw("XI")), Some(0.0));
 }
@@ -301,7 +310,7 @@ fn depolarizing_zero_state_trace_is_the_product_of_factors() {
     let mut s: PauliSum = PauliSum::from_terms(3, [(pw("ZZZ"), 1.0)]);
     let ps = [0.1, 0.2, 0.3];
     for (q, p) in ps.iter().enumerate() {
-        s.pauli_error(q, [p / 3.0, p / 3.0, p / 3.0]);
+        s.pauli_error(q, [p / 3.0, p / 3.0, p / 3.0], &mut rng());
     }
     let expected: f64 = ps.iter().map(|p| 1.0 - 4.0 * p / 3.0).product();
     assert!((s.trace(&PauliPattern::zero_state()) - expected).abs() < 1e-10);

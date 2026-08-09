@@ -7,6 +7,15 @@
 
 use ppvm_pauli_sum_2::{PauliSum, PauliWord};
 use ppvm_traits_2::{PauliError, RotationOne};
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
+
+/// The `-2` sum backends are density-matrix-like: the noise channels are
+/// analytic coefficient scalings and never draw. Call sites thread this
+/// fixed-seed RNG only to satisfy the injected-RNG trait surface.
+fn rng() -> SmallRng {
+    SmallRng::seed_from_u64(0)
+}
 
 fn pw(s: &str) -> PauliWord {
     PauliWord::from(s)
@@ -131,7 +140,7 @@ fn pauli_error_scales_each_pauli_by_its_eigenvalue() {
             (pw("Z"), 1.0),
         ],
     );
-    sum.pauli_error(0, p);
+    sum.pauli_error(0, p, &mut rng());
     approx(&sum, "I", 1.0);
     approx(&sum, "X", 0.4);
     approx(&sum, "Y", 0.6);
@@ -157,7 +166,7 @@ fn pauli_error_zero_eigenvalue_keeps_the_term_matching_old() {
     // prime directive (gap `ps2.zero.behaviour`). Restored to match old.
     let p = [0.0_f64, 0.25, 0.25];
     let mut sum: PauliSum = PauliSum::from_terms(1, [(pw("X"), 1.0), (pw("Z"), 1.0)]);
-    sum.pauli_error(0, p);
+    sum.pauli_error(0, p, &mut rng());
     assert_eq!(
         sum.get(&pw("X")),
         Some(0.0),
@@ -174,7 +183,7 @@ fn pauli_error_only_touches_target_qubit() {
     // Symmetric depolarizing-ish: λ for any non-I Pauli = 1 − 2(0.1) = 0.8.
     let p = [0.05_f64, 0.05, 0.05];
     let mut sum: PauliSum = PauliSum::from_terms(2, [(pw("XZ"), 1.0), (pw("IZ"), 1.0)]);
-    sum.pauli_error(0, p);
+    sum.pauli_error(0, p, &mut rng());
     // Qubit 0 is X on the first term (scaled by 0.8) and I on the second (kept).
     approx(&sum, "XZ", 0.8);
     approx(&sum, "IZ", 1.0);

@@ -612,10 +612,7 @@ fn products_and_gates_interleave_without_leaking_store_buffers() {
                     move |s: &mut CSum| *s *= &b
                 }),
                 Box::new(|s: &mut CSum| s.rz(0, 0.37)),
-                Box::new({
-                    let q = q.clone();
-                    move |s: &mut CSum| s.mul_word_assign(&q)
-                }),
+                Box::new(move |s: &mut CSum| s.mul_word_assign(&q)),
                 Box::new(|s: &mut CSum| s.rx(1, 0.21)),
                 Box::new({
                     let b = b.clone();

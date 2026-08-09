@@ -6,7 +6,8 @@ use std::time::Duration;
 use criterion::{Criterion, criterion_group, criterion_main};
 use ppvm_stim::backend::config::fx64hash::Byte8F64;
 use ppvm_stim::backend::prelude::*;
-use ppvm_stim::{execute, parse_extended};
+use ppvm_stim::{execute_with_rng, parse_extended};
+use rand::SeedableRng;
 use stim_parser::prelude::ExtendedProgram;
 
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
@@ -128,7 +129,8 @@ fn fmt_cz_index_pairs(q: &[usize], pairs: &[[usize; 2]]) -> String {
 fn msd_stim_func(prog: &ExtendedProgram) {
     let n_qubits = 17 * 5;
     let mut tab: Tab = GeneralizedTableau::new(n_qubits, 1e-10);
-    execute(prog, &mut tab).expect("execute");
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+    execute_with_rng(prog, &mut tab, &mut rng).expect("execute");
 }
 
 pub fn benchmark_suite_msd_stim(c: &mut Criterion, name: impl AsRef<str>) {

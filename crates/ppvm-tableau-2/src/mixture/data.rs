@@ -63,8 +63,8 @@ where
 {
     pub fn new(n_qubits: usize, coefficient_threshold: f64, sum_cutoff: f64) -> Self {
         let mut rng: SmallRng = rand::make_rng();
-        let seed = rng.random();
-        Self::from_seeds(n_qubits, coefficient_threshold, sum_cutoff, rng, seed)
+        Self::burn_legacy_initial_tableau_seed(&mut rng);
+        Self::from_rng(n_qubits, coefficient_threshold, sum_cutoff, rng)
     }
 
     pub fn new_with_seed(
@@ -74,18 +74,17 @@ where
         seed: u64,
     ) -> Self {
         let mut rng = SmallRng::seed_from_u64(seed);
-        let tab_seed = rng.random();
-        Self::from_seeds(n_qubits, coefficient_threshold, sum_cutoff, rng, tab_seed)
+        Self::burn_legacy_initial_tableau_seed(&mut rng);
+        Self::from_rng(n_qubits, coefficient_threshold, sum_cutoff, rng)
     }
 
-    fn from_seeds(
+    fn from_rng(
         n_qubits: usize,
         coefficient_threshold: f64,
         sum_cutoff: f64,
         rng: SmallRng,
-        tab_seed: u64,
     ) -> Self {
-        let tab = GeneralizedTableau::new_with_seed(n_qubits, coefficient_threshold, tab_seed);
+        let tab = GeneralizedTableau::new(n_qubits, coefficient_threshold);
         let fp = fingerprint(&tab);
         let mut mixture = Self {
             n_qubits,
@@ -101,6 +100,20 @@ where
         // `sum_cutoff >= 1.0`; bypassing this door silently changed that boundary.
         let _ = mixture.insert_branches(vec![(tab, 1.0, fp)]);
         mixture
+    }
+
+    fn burn_legacy_initial_tableau_seed(rng: &mut SmallRng) {
+        let _: u64 = rng.random();
+    }
+
+    /// Consume draws that historically seeded cloned tableaus.
+    ///
+    /// The cloned state is now pure data, but retaining these burns keeps every
+    /// later sampler seed byte-for-byte compatible with the pre-migration stream.
+    pub(crate) fn burn_legacy_tableau_seeds(&mut self, count: usize) {
+        for _ in 0..count {
+            let _: u64 = self.rng.random();
+        }
     }
 
     #[inline]

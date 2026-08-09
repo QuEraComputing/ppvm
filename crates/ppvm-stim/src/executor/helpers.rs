@@ -38,12 +38,17 @@ pub(super) fn record_bit(record: &[Option<bool>], k: usize) -> bool {
         .unwrap_or(false)
 }
 
-pub(super) fn measure_reset_z<T: StimTableau>(tab: &mut T, q: usize, noise: f64) -> Option<bool> {
-    let true_outcome = tab.measure(q);
+pub(super) fn measure_reset_z<T: StimTableau, R: rand::Rng + ?Sized>(
+    tab: &mut T,
+    q: usize,
+    noise: f64,
+    rng: &mut R,
+) -> Option<bool> {
+    let true_outcome = tab.measure(q, rng);
     if true_outcome == Some(true) {
         tab.x(q);
     }
-    let recorded = true_outcome.map(|b| tab.flip_with_prob(b, noise));
+    let recorded = true_outcome.map(|b| tab.flip_with_prob(b, noise, rng));
     tab.overwrite_last_measurement_record(recorded);
     recorded
 }

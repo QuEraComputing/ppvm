@@ -32,7 +32,8 @@ fn mr_record_matches_reported_value_under_readout_noise() {
     assert_eq!(results, vec![Some(false)]); // true outcome 1, flipped to 0
     assert_eq!(t.current_measurement_record(), results.as_slice());
     // And the reset actually happened: qubit is back in |0>.
-    assert_eq!(t.measure(0), Some(false));
+    let verify = parse_extended("M 0").unwrap();
+    assert_eq!(execute(&verify, &mut t).unwrap(), vec![Some(false)]);
 }
 
 #[test]

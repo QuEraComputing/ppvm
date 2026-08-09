@@ -6,23 +6,33 @@ use stim_parser::prelude::{GateName, GateOp, Target};
 use super::StimTableau;
 use super::helpers::{has_record_control, qubit, qubit_pairs, qubits, record_bit};
 
-pub(super) fn execute<T: StimTableau>(op: &GateOp, tab: &mut T) {
+pub(super) fn execute<T: StimTableau, R: rand::Rng + ?Sized>(
+    op: &GateOp,
+    tab: &mut T,
+    rng: &mut R,
+) {
     let GateOp { name, targets, .. } = op;
     match name {
         GateName::Reset | GateName::ResetZ => {
-            targets.iter().for_each(|&t| tab.reset(qubit(t)));
+            for &target in targets {
+                tab.reset(qubit(target), rng);
+            }
         }
-        GateName::ResetX => targets.iter().for_each(|&t| {
-            let q = qubit(t);
-            tab.reset(q);
-            tab.h(q);
-        }),
-        GateName::ResetY => targets.iter().for_each(|&t| {
-            let q = qubit(t);
-            tab.reset(q);
-            tab.h(q);
-            tab.s(q);
-        }),
+        GateName::ResetX => {
+            for &target in targets {
+                let q = qubit(target);
+                tab.reset(q, rng);
+                tab.h(q);
+            }
+        }
+        GateName::ResetY => {
+            for &target in targets {
+                let q = qubit(target);
+                tab.reset(q, rng);
+                tab.h(q);
+                tab.s(q);
+            }
+        }
         GateName::X => tab.x_many(&qubits(targets)),
         GateName::Y => tab.y_many(&qubits(targets)),
         GateName::Z => tab.z_many(&qubits(targets)),

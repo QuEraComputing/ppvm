@@ -8,11 +8,11 @@ macro_rules! reset_case {
      $old_g:expr, $new_g:expr, $arg:expr) => {{
         let (mut ob, mut nb) = (($old_b).clone(), ($new_b).clone());
         ppvm_traits::traits::Reset::$op(&mut ob, $arg);
-        ppvm_traits_2::Reset::$op(&mut nb, $arg);
+        ppvm_traits_2::Reset::$op(&mut nb, $arg, &mut ppvm_conformance_2::analytic_rng());
         assert_bare_eq(&ob, &nb);
         let (mut og, mut ng) = (($old_g).fork(Some(SEED + 1)), ($new_g).fork(Some(SEED + 1)));
         ppvm_traits::traits::Reset::$op(&mut og, $arg);
-        ppvm_traits_2::Reset::$op(&mut ng, $arg);
+        ppvm_traits_2::Reset::$op(&mut ng, $arg, &mut ppvm_conformance_2::analytic_rng());
         assert_gen_eq(&og, &ng);
         bench_mut_pair!(
             $group,
@@ -20,7 +20,9 @@ macro_rules! reset_case {
             $old_b,
             $new_b,
             |t: &mut OldBare| ppvm_traits::traits::Reset::$op(t, $arg),
-            |t: &mut NewBare| ppvm_traits_2::Reset::$op(t, $arg)
+            |t: &mut NewBare| {
+                ppvm_traits_2::Reset::$op(t, $arg, &mut ppvm_conformance_2::analytic_rng())
+            }
         );
         bench_mut_pair!(
             $group,
@@ -28,7 +30,9 @@ macro_rules! reset_case {
             $old_g,
             $new_g,
             |t: &mut OldGen| ppvm_traits::traits::Reset::$op(t, $arg),
-            |t: &mut NewGen| ppvm_traits_2::Reset::$op(t, $arg)
+            |t: &mut NewGen| {
+                ppvm_traits_2::Reset::$op(t, $arg, &mut ppvm_conformance_2::analytic_rng())
+            }
         );
     }};
 }

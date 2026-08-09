@@ -145,7 +145,7 @@ fn identity(n: usize) -> Phased {
 /// The group inverse `⟨-φ, x, z⟩` (each Pauli is an involution, so bits are kept
 /// and only the phase negates; `Phase.lean inv` / `inv_mul_cancel'`).
 fn group_inverse(w: &Phased) -> Phased {
-    Phased::with_phase(w.word().clone(), w.phase().inverse())
+    Phased::with_phase(*w.word(), w.phase().inverse())
 }
 
 /// Symplectic form `ω(p,q) = Σᵢ (x_pᵢ·z_qᵢ ⊕ z_pᵢ·x_qᵢ)` over 𝔽₂, read from the

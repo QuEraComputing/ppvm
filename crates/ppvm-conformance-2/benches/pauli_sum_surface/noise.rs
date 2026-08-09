@@ -46,23 +46,23 @@ fn pauli_one(c: &mut Criterion) {
         c,
         "noise/pauli_error",
         |s| s.pauli_error(3, P1),
-        |s| s.pauli_error(3, P1),
+        |s| s.pauli_error(3, P1, &mut ppvm_conformance_2::analytic_rng()),
     );
     let gates: [(&str, OneOld, OneNew); 3] = [
         (
             "x_error",
             |s, q, p| s.x_error(q, p),
-            |s, q, p| s.x_error(q, p),
+            |s, q, p| s.x_error(q, p, &mut ppvm_conformance_2::analytic_rng()),
         ),
         (
             "y_error",
             |s, q, p| s.y_error(q, p),
-            |s, q, p| s.y_error(q, p),
+            |s, q, p| s.y_error(q, p, &mut ppvm_conformance_2::analytic_rng()),
         ),
         (
             "z_error",
             |s, q, p| s.z_error(q, p),
-            |s, q, p| s.z_error(q, p),
+            |s, q, p| s.z_error(q, p, &mut ppvm_conformance_2::analytic_rng()),
         ),
     ];
     for (name, old, new) in gates {
@@ -77,23 +77,23 @@ fn pauli_one(c: &mut Criterion) {
         c,
         "noise_batch/pauli_error",
         |s| s.pauli_error_many(TARGETS, P1),
-        |s| s.pauli_error_many(TARGETS, P1),
+        |s| s.pauli_error_many(TARGETS, P1, &mut ppvm_conformance_2::analytic_rng()),
     );
     let batches: [(&str, ManyOld, ManyNew); 3] = [
         (
             "x_error",
             |s, q, p| s.x_error_many(q, p),
-            |s, q, p| s.x_error_many(q, p),
+            |s, q, p| s.x_error_many(q, p, &mut ppvm_conformance_2::analytic_rng()),
         ),
         (
             "y_error",
             |s, q, p| s.y_error_many(q, p),
-            |s, q, p| s.y_error_many(q, p),
+            |s, q, p| s.y_error_many(q, p, &mut ppvm_conformance_2::analytic_rng()),
         ),
         (
             "z_error",
             |s, q, p| s.z_error_many(q, p),
-            |s, q, p| s.z_error_many(q, p),
+            |s, q, p| s.z_error_many(q, p, &mut ppvm_conformance_2::analytic_rng()),
         ),
     ];
     for (name, old, new) in batches {
@@ -111,13 +111,13 @@ fn pauli_two(c: &mut Criterion) {
         c,
         "noise/two_qubit_pauli_error",
         |s| s.two_qubit_pauli_error(2, 5, P2),
-        |s| s.two_qubit_pauli_error(2, 5, P2),
+        |s| s.two_qubit_pauli_error(2, 5, P2, &mut ppvm_conformance_2::analytic_rng()),
     );
     bench_mut(
         c,
         "noise_batch/two_qubit_pauli_error",
         |s| s.two_qubit_pauli_error_many(PAIRS, P2),
-        |s| s.two_qubit_pauli_error_many(PAIRS, P2),
+        |s| s.two_qubit_pauli_error_many(PAIRS, P2, &mut ppvm_conformance_2::analytic_rng()),
     );
 }
 
@@ -126,24 +126,24 @@ fn depolarizing(c: &mut Criterion) {
         c,
         "noise/depolarize1",
         |s| s.depolarize1(3, P),
-        |s| s.depolarize1(3, P),
+        |s| s.depolarize1(3, P, &mut ppvm_conformance_2::analytic_rng()),
     );
     bench_mut(
         c,
         "noise_batch/depolarize1",
         |s| s.depolarize1_many(TARGETS, P),
-        |s| s.depolarize1_many(TARGETS, P),
+        |s| s.depolarize1_many(TARGETS, P, &mut ppvm_conformance_2::analytic_rng()),
     );
     bench_mut(
         c,
         "noise/depolarize2",
         |s| s.depolarize2(2, 5, P),
-        |s| s.depolarize2(2, 5, P),
+        |s| s.depolarize2(2, 5, P, &mut ppvm_conformance_2::analytic_rng()),
     );
     bench_mut(
         c,
         "noise_batch/depolarize2",
         |s| s.depolarize2_many(PAIRS, P),
-        |s| s.depolarize2_many(PAIRS, P),
+        |s| s.depolarize2_many(PAIRS, P, &mut ppvm_conformance_2::analytic_rng()),
     );
 }

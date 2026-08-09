@@ -354,7 +354,7 @@ fn pauli_channel_eigenvalue_omega_matches() {
 
                 // The channel scales a pure P by exactly λ_P.
                 let mut s = build_new_sum(1, &[(pstr.to_string(), 1.0)]);
-                s.pauli_error(0, p);
+                s.pauli_error(0, p, &mut ppvm_conformance_2::analytic_rng());
                 let got = s
                     .get(&NewKey::from(pstr))
                     .expect("diagonal channel keeps the key");

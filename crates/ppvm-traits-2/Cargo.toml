@@ -9,3 +9,4 @@ edition = "2024"
 # docs/design/traits-2-implementation-plan.md.
 [dependencies]
 num = "0.4"
+rand = "0.10.1"

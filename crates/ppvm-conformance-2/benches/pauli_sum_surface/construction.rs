@@ -84,7 +84,7 @@ fn build(c: &mut Criterion) {
         b.iter(|| {
             let mut sum = NewSum::with_capacity(N, ppvm_pauli_sum_2::NoPolicy, CAPACITY);
             for (key, coeff) in &new_terms {
-                sum += (key.clone(), *coeff);
+                sum += (*key, *coeff);
             }
             black_box(sum)
         })
@@ -110,7 +110,7 @@ fn add_term(c: &mut Criterion) {
     let mut op = old.clone();
     op += old_term;
     let mut np = new.clone();
-    np.add_term(new_term.0.clone(), new_term.1);
+    np.add_term(new_term.0, new_term.1);
     assert_pair(&op, &np);
     let mut group = c.benchmark_group("pauli_sum_surface/add/term");
     group.bench_function("old", |b| {
@@ -119,7 +119,7 @@ fn add_term(c: &mut Criterion) {
     group.bench_function("new", |b| {
         b.iter_batched_ref(
             || new.clone(),
-            |s| s.add_term(new_term.0.clone(), new_term.1),
+            |s| s.add_term(new_term.0, new_term.1),
             BatchSize::LargeInput,
         )
     });

@@ -6,6 +6,9 @@ macro_rules! create_interface_state {
         #[pyclass]
         pub struct $name {
             inner: $type,
+            /// See `§ Where the randomness lives` in `crate::backend`.
+            #[cfg(feature = "traits-2")]
+            rng: rand::rngs::SmallRng,
         }
         #[pymethods]
         impl $name {
@@ -41,7 +44,7 @@ macro_rules! create_interface_state {
                     coefficients
                 );
 
-                Self { inner: ps }
+                wrap!(ps, None)
             }
 
             fn __repr__(&self) -> String {

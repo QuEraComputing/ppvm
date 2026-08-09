@@ -64,13 +64,23 @@ where
     /// remove, so a zero eigenvalue leaves a zero-coefficient term in the support
     /// exactly as old does.
     #[inline(always)]
-    fn pauli_error(&mut self, qubit: usize, probabilities: [C; 3]) {
+    fn pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        probabilities: [C; 3],
+        _rng: &mut R,
+    ) {
         let [x_factor, z_factor, y_factor] = C::pauli_error_factors(probabilities);
         self.scale_pauli_error(qubit, x_factor, z_factor, y_factor);
     }
 
     #[inline(always)]
-    fn pauli_error_many(&mut self, targets: &[usize], probabilities: [C; 3]) {
+    fn pauli_error_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        targets: &[usize],
+        probabilities: [C; 3],
+        _rng: &mut R,
+    ) {
         let [x_factor, z_factor, y_factor] = C::pauli_error_factors(probabilities);
         self.scale_by_key(move |key, coeff| {
             for &qubit in targets {
@@ -89,21 +99,21 @@ where
     }
 
     #[inline(always)]
-    fn x_error_many(&mut self, targets: &[usize], p: C) {
+    fn x_error_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], p: C, rng: &mut R) {
         let zero = C::zero();
-        self.pauli_error_many(targets, [p, zero.clone(), zero]);
+        self.pauli_error_many(targets, [p, zero.clone(), zero], rng);
     }
 
     #[inline(always)]
-    fn y_error_many(&mut self, targets: &[usize], p: C) {
+    fn y_error_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], p: C, rng: &mut R) {
         let zero = C::zero();
-        self.pauli_error_many(targets, [zero.clone(), p, zero]);
+        self.pauli_error_many(targets, [zero.clone(), p, zero], rng);
     }
 
     #[inline(always)]
-    fn z_error_many(&mut self, targets: &[usize], p: C) {
+    fn z_error_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], p: C, rng: &mut R) {
         let zero = C::zero();
-        self.pauli_error_many(targets, [zero.clone(), zero, p]);
+        self.pauli_error_many(targets, [zero.clone(), zero, p], rng);
     }
 }
 
@@ -149,7 +159,13 @@ where
     C: Coefficient + num::One,
     P: crate::policy::Policy<W, C>,
 {
-    fn two_qubit_pauli_error(&mut self, qubit0: usize, qubit1: usize, p: [C; 15]) {
+    fn two_qubit_pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit0: usize,
+        qubit1: usize,
+        p: [C; 15],
+        _rng: &mut R,
+    ) {
         self.scale_by_key(move |k: &W, c: &mut C| {
             if k.is_lost(qubit0) || k.is_lost(qubit1) {
                 return;
@@ -200,7 +216,7 @@ where
     P: crate::policy::Policy<W, C>,
 {
     #[inline(always)]
-    fn depolarize1(&mut self, qubit: usize, p: C) {
+    fn depolarize1<R: rand::Rng + ?Sized>(&mut self, qubit: usize, p: C, _rng: &mut R) {
         let factor = C::one() - p * (4.0 / 3.0);
         self.scale_by_key(move |k: &W, c: &mut C| {
             if !k.is_lost(qubit) && (k.x_bit(qubit) || k.z_bit(qubit)) {
@@ -210,7 +226,7 @@ where
     }
 
     #[inline(always)]
-    fn depolarize1_many(&mut self, targets: &[usize], p: C) {
+    fn depolarize1_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], p: C, _rng: &mut R) {
         let factor = C::one() - p * (4.0 / 3.0);
         self.scale_by_key(move |k: &W, c: &mut C| {
             for &qubit in targets {
@@ -232,7 +248,13 @@ where
     P: crate::policy::Policy<W, C>,
 {
     #[inline(always)]
-    fn depolarize2(&mut self, qubit0: usize, qubit1: usize, p: C) {
+    fn depolarize2<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit0: usize,
+        qubit1: usize,
+        p: C,
+        _rng: &mut R,
+    ) {
         let factor = C::one() - p * (16.0 / 15.0);
         self.scale_by_key(move |k: &W, c: &mut C| {
             if k.is_lost(qubit0) || k.is_lost(qubit1) {
@@ -247,7 +269,12 @@ where
     }
 
     #[inline(always)]
-    fn depolarize2_many(&mut self, pairs: &[(usize, usize)], p: C) {
+    fn depolarize2_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        pairs: &[(usize, usize)],
+        p: C,
+        _rng: &mut R,
+    ) {
         let factor = C::one() - p * (16.0 / 15.0);
         self.scale_by_key(move |k: &W, c: &mut C| {
             for &(qubit0, qubit1) in pairs {

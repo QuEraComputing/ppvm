@@ -47,17 +47,18 @@ fn build_old() -> Old {
 
 fn build_new() -> New {
     let mut state = new(41, 1e-5);
+    let mut rng = ppvm_conformance_2::analytic_rng();
     for layer in 0..3 {
         for qubit in 0..6 {
             state.h(qubit);
             state.t(qubit);
-            state.depolarize1(qubit, 0.002);
+            state.depolarize1(qubit, 0.002, &mut rng);
         }
         for qubit in 0..5 {
             state.cnot(qubit, qubit + 1);
         }
-        state.correlated_loss_channel(layer, layer + 1, [0.001, 0.002, 0.003]);
-        state.loss_channel(layer + 8, 0.001);
+        state.correlated_loss_channel(layer, layer + 1, [0.001, 0.002, 0.003], &mut rng);
+        state.loss_channel(layer + 8, 0.001, &mut rng);
     }
     state
 }

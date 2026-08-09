@@ -6,7 +6,7 @@ edition = "2024"
 [features]
 default = ["legacy"]
 legacy = ["dep:ppvm-pauli-sum-legacy", "dep:ppvm-tableau-legacy"]
-traits-2 = ["dep:ppvm-pauli-sum-2", "dep:ppvm-tableau-2"]
+traits-2 = ["dep:ppvm-pauli-sum-2", "dep:ppvm-tableau-2", "dep:rand"]
 # Parallelism is orthogonal to backend selection. It always enables shot-level
 # parallelism; the legacy backend additionally retains its existing
 # tableau-internal branch. The traits-2 backend makes no such claim.
@@ -29,6 +29,10 @@ vihaco-parser-core = "0.1.1"
 vihaco-circuit-isa = { version = "0.1.0", path = "../vihaco-circuit-isa" }
 ppvm-pauli-sum-legacy = { package = "ppvm-pauli-sum", version = "0.1.0", path = "../ppvm-pauli-sum", optional = true }
 ppvm-pauli-sum-2 = { version = "0.1.0", path = "../ppvm-pauli-sum-2", optional = true }
+# `-2` injects randomness at the call site, so the executors own the generator
+# (`src/component/backend/mod.rs`). The legacy tableau embeds its own, hence the
+# feature gate.
+rand = { version = "0.10.1", optional = true }
 
 [dev-dependencies]
 # Cross-backend fixture oracles remain on the read-only reference engine.

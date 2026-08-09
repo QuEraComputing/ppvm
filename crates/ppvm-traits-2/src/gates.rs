@@ -427,51 +427,61 @@ pub trait Projection {
 /// `PPVM.Symplectic.omega`).
 pub trait PauliError<C: Coefficient> {
     /// Apply a single-qubit Pauli channel with `X`, `Y`, `Z` probabilities.
-    fn pauli_error(&mut self, qubit: usize, probabilities: [C; 3]);
+    fn pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        probabilities: [C; 3],
+        rng: &mut R,
+    );
 
     /// stim `X_ERROR(p)` — apply `X` with probability `p` to one qubit.
-    fn x_error(&mut self, qubit: usize, p: C) {
+    fn x_error<R: rand::Rng + ?Sized>(&mut self, qubit: usize, p: C, rng: &mut R) {
         let zero = C::zero();
-        self.pauli_error(qubit, [p, zero.clone(), zero])
+        self.pauli_error(qubit, [p, zero.clone(), zero], rng)
     }
 
     /// stim `Y_ERROR(p)` — apply `Y` with probability `p` to one qubit.
-    fn y_error(&mut self, qubit: usize, p: C) {
+    fn y_error<R: rand::Rng + ?Sized>(&mut self, qubit: usize, p: C, rng: &mut R) {
         let zero = C::zero();
-        self.pauli_error(qubit, [zero.clone(), p, zero])
+        self.pauli_error(qubit, [zero.clone(), p, zero], rng)
     }
 
     /// stim `Z_ERROR(p)` — apply `Z` with probability `p` to one qubit.
-    fn z_error(&mut self, qubit: usize, p: C) {
+    fn z_error<R: rand::Rng + ?Sized>(&mut self, qubit: usize, p: C, rng: &mut R) {
         let zero = C::zero();
-        self.pauli_error(qubit, [zero.clone(), zero, p])
+        self.pauli_error(qubit, [zero.clone(), zero, p], rng)
     }
 
     /// Explicit batched Pauli-error channel.
-    fn pauli_error_many(&mut self, targets: &[usize], p: [C; 3]) {
+    fn pauli_error_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        targets: &[usize],
+        p: [C; 3],
+        rng: &mut R,
+    ) {
         for &q in targets {
-            self.pauli_error(q, p.clone());
+            self.pauli_error(q, p.clone(), rng);
         }
     }
 
     /// Explicit batched `X_ERROR(p)`.
-    fn x_error_many(&mut self, targets: &[usize], p: C) {
+    fn x_error_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], p: C, rng: &mut R) {
         for &q in targets {
-            self.x_error(q, p.clone());
+            self.x_error(q, p.clone(), rng);
         }
     }
 
     /// Explicit batched `Y_ERROR(p)`.
-    fn y_error_many(&mut self, targets: &[usize], p: C) {
+    fn y_error_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], p: C, rng: &mut R) {
         for &q in targets {
-            self.y_error(q, p.clone());
+            self.y_error(q, p.clone(), rng);
         }
     }
 
     /// Explicit batched `Z_ERROR(p)`.
-    fn z_error_many(&mut self, targets: &[usize], p: C) {
+    fn z_error_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], p: C, rng: &mut R) {
         for &q in targets {
-            self.z_error(q, p.clone());
+            self.z_error(q, p.clone(), rng);
         }
     }
 }
@@ -480,7 +490,7 @@ pub trait PauliError<C: Coefficient> {
 /// the system.
 pub trait PauliErrorAll<C: Coefficient> {
     /// Apply the Pauli channel `p = [p_x, p_y, p_z]` to every qubit.
-    fn pauli_error_all(&mut self, p: [C; 3]);
+    fn pauli_error_all<R: rand::Rng + ?Sized>(&mut self, p: [C; 3], rng: &mut R);
 }
 
 /// Two-qubit Pauli error channel.
@@ -488,12 +498,23 @@ pub trait TwoQubitPauliError<C: Coefficient> {
     /// Apply a two-qubit Pauli-error channel to one pair. Probabilities are given
     /// in the order
     /// `{IX, IY, IZ, XI, XX, XY, XZ, YI, YX, YY, YZ, ZI, ZX, ZY, ZZ}`.
-    fn two_qubit_pauli_error(&mut self, qubit0: usize, qubit1: usize, p: [C; 15]);
+    fn two_qubit_pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit0: usize,
+        qubit1: usize,
+        p: [C; 15],
+        rng: &mut R,
+    );
 
     /// Explicit batched two-qubit Pauli-error channel.
-    fn two_qubit_pauli_error_many(&mut self, pairs: &[(usize, usize)], p: [C; 15]) {
+    fn two_qubit_pauli_error_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        pairs: &[(usize, usize)],
+        p: [C; 15],
+        rng: &mut R,
+    ) {
         for &(a, b) in pairs {
-            self.two_qubit_pauli_error(a, b, p.clone());
+            self.two_qubit_pauli_error(a, b, p.clone(), rng);
         }
     }
 }
@@ -501,12 +522,12 @@ pub trait TwoQubitPauliError<C: Coefficient> {
 /// Single-qubit depolarizing channel.
 pub trait Depolarizing<C: Coefficient> {
     /// Depolarize one qubit with probability `p`.
-    fn depolarize1(&mut self, qubit: usize, p: C);
+    fn depolarize1<R: rand::Rng + ?Sized>(&mut self, qubit: usize, p: C, rng: &mut R);
 
     /// Explicit batched single-qubit depolarizing channel.
-    fn depolarize1_many(&mut self, targets: &[usize], p: C) {
+    fn depolarize1_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], p: C, rng: &mut R) {
         for &q in targets {
-            self.depolarize1(q, p.clone());
+            self.depolarize1(q, p.clone(), rng);
         }
     }
 }
@@ -514,12 +535,23 @@ pub trait Depolarizing<C: Coefficient> {
 /// Two-qubit depolarizing channel.
 pub trait Depolarizing2<C: Coefficient> {
     /// Depolarize one qubit pair with probability `p`.
-    fn depolarize2(&mut self, qubit0: usize, qubit1: usize, p: C);
+    fn depolarize2<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit0: usize,
+        qubit1: usize,
+        p: C,
+        rng: &mut R,
+    );
 
     /// Explicit batched two-qubit depolarizing channel.
-    fn depolarize2_many(&mut self, pairs: &[(usize, usize)], p: C) {
+    fn depolarize2_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        pairs: &[(usize, usize)],
+        p: C,
+        rng: &mut R,
+    ) {
         for &(a, b) in pairs {
-            self.depolarize2(a, b, p.clone());
+            self.depolarize2(a, b, p.clone(), rng);
         }
     }
 }
@@ -534,7 +566,7 @@ pub trait AmplitudeDamping<C: Coefficient> {
 /// ([`LossySite::Lost`](crate::word::LossySite::Lost)).
 pub trait LossChannel<C: Coefficient> {
     /// Apply a loss channel to `qubit` with loss probability `p`.
-    fn loss_channel(&mut self, qubit: usize, p: C);
+    fn loss_channel<R: rand::Rng + ?Sized>(&mut self, qubit: usize, p: C, rng: &mut R);
 }
 
 /// Correlated two-qubit loss channel.
@@ -547,7 +579,13 @@ pub trait CorrelatedLossChannel<C: Coefficient> {
     /// * `p[1]`: losing either one qubit when both are in the qubit subspace.
     /// * `p[2]`: losing one qubit when the other has already been lost prior to
     ///   the channel.
-    fn correlated_loss_channel(&mut self, qubit0: usize, qubit1: usize, p: [C; 3]);
+    fn correlated_loss_channel<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit0: usize,
+        qubit1: usize,
+        p: [C; 3],
+        rng: &mut R,
+    );
 }
 
 /// Reset the loss bit on a qubit — models a re-cooling / re-loading event that
@@ -570,7 +608,13 @@ pub trait AsymmetricLossChannel<C: Coefficient> {
     /// Apply asymmetric loss to `qubit`, with `p0` / `p1` the loss probabilities
     /// from `|0⟩` / `|1⟩`. See the backend impl for the trajectory approximation
     /// used (the survival back-action is omitted).
-    fn asymmetric_loss_channel(&mut self, qubit: usize, p0: C, p1: C);
+    fn asymmetric_loss_channel<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        p0: C,
+        p1: C,
+        rng: &mut R,
+    );
 }
 
 /// Loss-aware projective computational-basis measurement.
@@ -587,11 +631,15 @@ pub trait AsymmetricLossChannel<C: Coefficient> {
 /// `measure_deterministic_iff_xfree`).
 pub trait Measure {
     /// Measure `qubit`; `None` if the qubit has been lost.
-    fn measure(&mut self, qubit: usize) -> Option<bool>;
+    fn measure<R: rand::Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R) -> Option<bool>;
 
     /// Measure each target in order, one result per target.
-    fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
-        targets.iter().map(|&q| self.measure(q)).collect()
+    fn measure_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        targets: &[usize],
+        rng: &mut R,
+    ) -> Vec<Option<bool>> {
+        targets.iter().map(|&q| self.measure(q, rng)).collect()
     }
 }
 
@@ -605,49 +653,49 @@ pub trait Measure {
 /// are reproduced call-for-call rather than re-derived.
 pub trait Reset: Clifford + CliffordExtensions {
     /// Reset one qubit to `|0⟩` (stim `R`/`RZ`).
-    fn reset(&mut self, qubit: usize);
+    fn reset<R: rand::Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R);
 
     /// stim `RZ` alias — reset to `|0⟩`.
-    fn reset_z(&mut self, qubit: usize) {
-        self.reset(qubit)
+    fn reset_z<R: rand::Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R) {
+        self.reset(qubit, rng)
     }
 
     /// stim `RX` — reset to `|+⟩`.
-    fn reset_x(&mut self, qubit: usize) {
-        self.reset(qubit);
+    fn reset_x<R: rand::Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R) {
+        self.reset(qubit, rng);
         self.h(qubit);
     }
 
     /// stim `RY` — reset to `|i⟩`.
-    fn reset_y(&mut self, qubit: usize) {
-        self.reset(qubit);
+    fn reset_y<R: rand::Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R) {
+        self.reset(qubit, rng);
         self.h(qubit);
         self.s(qubit);
     }
 
     /// Explicit batched reset to `|0⟩`.
-    fn reset_many(&mut self, targets: &[usize]) {
+    fn reset_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], rng: &mut R) {
         for &q in targets {
-            self.reset(q);
+            self.reset(q, rng);
         }
     }
 
     /// Explicit batched `RZ` alias.
-    fn reset_z_many(&mut self, targets: &[usize]) {
-        self.reset_many(targets)
+    fn reset_z_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], rng: &mut R) {
+        self.reset_many(targets, rng)
     }
 
     /// Explicit batched `RX`.
-    fn reset_x_many(&mut self, targets: &[usize]) {
+    fn reset_x_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], rng: &mut R) {
         for &q in targets {
-            self.reset_x(q);
+            self.reset_x(q, rng);
         }
     }
 
     /// Explicit batched `RY`.
-    fn reset_y_many(&mut self, targets: &[usize]) {
+    fn reset_y_many<R: rand::Rng + ?Sized>(&mut self, targets: &[usize], rng: &mut R) {
         for &q in targets {
-            self.reset_y(q);
+            self.reset_y(q, rng);
         }
     }
 }

@@ -11,7 +11,6 @@ use ppvm_pauli_word::pattern::{Contains, PauliPattern as OldPattern};
 use ppvm_pauli_word::word::PauliWord as OldWord;
 use ppvm_pauli_word_2::PauliWord as NewWord;
 use ppvm_tableau::data::GeneralizedTableau as OldTableau;
-use ppvm_tableau_2::GeneralizedTableau as NewTableau;
 
 #[test]
 fn parser_accepts_and_canonicalizes_the_old_surface() {
@@ -150,7 +149,7 @@ fn bounded_enumeration_matches_old_in_order() {
 #[test]
 fn tableau_enumeration_rejects_stars_like_old() {
     let old: OldNarrow = OldTableau::new(3, 1e-12);
-    let new: NewNarrow = NewTableau::new(3, 1e-12);
+    let new: NewNarrow = NewNarrow::new(3, 1e-12);
     let old_pattern = OldPattern::parse("Z?*").unwrap();
     let new_pattern = NewPattern::parse("Z?*").unwrap();
 

@@ -4,7 +4,6 @@
 use std::hash::BuildHasher;
 
 use ppvm_traits_2::{Depolarizing, Depolarizing2, Pauli, PauliError, TwoQubitPauliError};
-use rand::RngExt;
 
 use crate::mixture::equality::Mutation;
 use crate::mixture::fingerprint::sign_mask;
@@ -67,7 +66,12 @@ where
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
-    fn pauli_error(&mut self, qubit: usize, probabilities: [f64; 3]) {
+    fn pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        probabilities: [f64; 3],
+        _rng: &mut R,
+    ) {
         self.rebuild_buckets();
         let original_len = self.entries.len();
         let total: f64 = probabilities.iter().sum();
@@ -104,8 +108,8 @@ where
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
-    fn depolarize1(&mut self, qubit: usize, probability: f64) {
-        self.pauli_error(qubit, [probability / 3.0; 3]);
+    fn depolarize1<R: rand::Rng + ?Sized>(&mut self, qubit: usize, probability: f64, rng: &mut R) {
+        self.pauli_error(qubit, [probability / 3.0; 3], rng);
     }
 }
 
@@ -115,7 +119,13 @@ where
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
-    fn two_qubit_pauli_error(&mut self, qubit0: usize, qubit1: usize, probabilities: [f64; 15]) {
+    fn two_qubit_pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit0: usize,
+        qubit1: usize,
+        probabilities: [f64; 15],
+        _rng: &mut R,
+    ) {
         const PAIRS: [(Pauli, Pauli); 15] = [
             (Pauli::I, Pauli::X),
             (Pauli::I, Pauli::Y),
@@ -138,13 +148,13 @@ where
         let total: f64 = probabilities.iter().sum();
         let mut branches = Vec::with_capacity(15 * original_len);
         for parent in 0..original_len {
-            let tab = &self.entries[parent].0;
-            if tab.is_lost[qubit0] || tab.is_lost[qubit1] {
+            if self.entries[parent].0.is_lost[qubit0] || self.entries[parent].0.is_lost[qubit1] {
                 continue;
             }
+            self.burn_legacy_tableau_seeds(15);
+            let tab = &self.entries[parent].0;
             let deltas = two_qubit_pauli_deltas(tab, qubit0, qubit1);
             for ((first, second), probability) in PAIRS.into_iter().zip(probabilities) {
-                let _: u64 = self.rng.random();
                 let delta = deltas[0][pauli_index(first)] ^ deltas[1][pauli_index(second)];
                 branches.push((
                     parent,
@@ -173,7 +183,13 @@ where
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
-    fn depolarize2(&mut self, qubit0: usize, qubit1: usize, probability: f64) {
-        self.two_qubit_pauli_error(qubit0, qubit1, [probability / 15.0; 15]);
+    fn depolarize2<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit0: usize,
+        qubit1: usize,
+        probability: f64,
+        rng: &mut R,
+    ) {
+        self.two_qubit_pauli_error(qubit0, qubit1, [probability / 15.0; 15], rng);
     }
 }

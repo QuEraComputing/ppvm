@@ -6,10 +6,11 @@ use stim_parser::prelude::{MeasureName, MeasureOp, MppOp, PauliAxis};
 use super::StimTableau;
 use super::helpers::measure_reset_z;
 
-pub(super) fn execute<T: StimTableau>(
+pub(super) fn execute<T: StimTableau, R: rand::Rng + ?Sized>(
     op: &MeasureOp,
     tab: &mut T,
     results: &mut Vec<Option<bool>>,
+    rng: &mut R,
 ) {
     let MeasureOp {
         name,
@@ -22,21 +23,21 @@ pub(super) fn execute<T: StimTableau>(
         MeasureName::M | MeasureName::MZ => {
             if noise > 0.0 {
                 for &q in targets {
-                    results.push(tab.measure_noisy(q, noise));
+                    results.push(tab.measure_noisy(q, noise, rng));
                 }
             } else {
-                results.extend(tab.measure_many(targets));
+                results.extend(tab.measure_many(targets, rng));
             }
         }
         MeasureName::MR => {
             for &q in targets {
-                results.push(measure_reset_z(tab, q, noise));
+                results.push(measure_reset_z(tab, q, noise, rng));
             }
         }
         MeasureName::MX => {
             for &q in targets {
                 tab.h(q);
-                results.push(tab.measure_noisy(q, noise));
+                results.push(tab.measure_noisy(q, noise, rng));
                 tab.h(q);
             }
         }
@@ -44,7 +45,7 @@ pub(super) fn execute<T: StimTableau>(
             for &q in targets {
                 tab.s_dag(q);
                 tab.h(q);
-                results.push(tab.measure_noisy(q, noise));
+                results.push(tab.measure_noisy(q, noise, rng));
                 tab.h(q);
                 tab.s(q);
             }
@@ -52,7 +53,7 @@ pub(super) fn execute<T: StimTableau>(
         MeasureName::MRX => {
             for &q in targets {
                 tab.h(q);
-                results.push(measure_reset_z(tab, q, noise));
+                results.push(measure_reset_z(tab, q, noise, rng));
                 tab.h(q);
             }
         }
@@ -60,7 +61,7 @@ pub(super) fn execute<T: StimTableau>(
             for &q in targets {
                 tab.s_dag(q);
                 tab.h(q);
-                results.push(measure_reset_z(tab, q, noise));
+                results.push(measure_reset_z(tab, q, noise, rng));
                 tab.h(q);
                 tab.s(q);
             }
@@ -71,10 +72,11 @@ pub(super) fn execute<T: StimTableau>(
     }
 }
 
-pub(super) fn execute_mpp<T: StimTableau>(
+pub(super) fn execute_mpp<T: StimTableau, R: rand::Rng + ?Sized>(
     op: &MppOp,
     tab: &mut T,
     results: &mut Vec<Option<bool>>,
+    rng: &mut R,
 ) {
     let noise = op.args.first().copied().unwrap_or(0.0);
     for product in &op.products {
@@ -85,7 +87,7 @@ pub(super) fn execute_mpp<T: StimTableau>(
         for factor in &product[1..] {
             tab.cnot(factor.qubit, q0);
         }
-        results.push(tab.measure_noisy(q0, noise));
+        results.push(tab.measure_noisy(q0, noise, rng));
         for factor in product[1..].iter().rev() {
             tab.cnot(factor.qubit, q0);
         }

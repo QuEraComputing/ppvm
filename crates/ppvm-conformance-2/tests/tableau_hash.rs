@@ -49,7 +49,7 @@ impl Hasher for RecordingHasher {
 /// A randomized Clifford frame on `n` qubits.
 fn random_frame(n: usize, seed: u64, len: usize) -> Tab {
     let mut rng = seeded_rng(seed);
-    let mut t: Tab = Tableau::new_with_seed(n, seed);
+    let mut t: Tab = Tableau::new(n);
     for _ in 0..len {
         let q = rng.random_range(0..n);
         let mut b = rng.random_range(0..n);
@@ -216,14 +216,14 @@ fn digest_ignores_the_rng_state() {
     // changing the frame: use a deterministic (case-b) measurement, which is
     // frame-preserving when the outcome is already fixed.
     let before = b.key_hash();
-    let _: Tab = Tableau::new_with_seed(6, 999);
+    let _: Tab = Tableau::new(6);
     assert_eq!(before, a.key_hash());
     assert_eq!(a, b);
     assert_eq!(a.key_hash(), b.key_hash());
     // Two frames built with different seeds but the same circuit are Eq and hash
     // equal.
     let c = random_frame(6, 5, 20);
-    let mut d: Tab = Tableau::new_with_seed(6, 123_456);
+    let mut d: Tab = Tableau::new(6);
     {
         let mut rng = seeded_rng(5);
         for _ in 0..20 {

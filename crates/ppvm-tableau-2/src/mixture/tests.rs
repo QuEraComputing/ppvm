@@ -40,9 +40,9 @@ fn approximate_amplitudes_merge_without_eq_or_hash() {
 }
 
 #[test]
-fn record_rng_scratch_and_probability_are_not_identity() {
+fn record_scratch_and_probability_are_not_identity() {
     let mut mixture = Mixture::new_with_seed(1, 1e-12, 0.0, 7);
-    let mut same_state = mixture.entries[0].0.fork(Some(999));
+    let mut same_state = mixture.entries[0].0.fork();
     same_state.append_measurement_record(Some(true));
     let fp = fingerprint(&same_state);
     assert!(!mixture.insert_branches(vec![(same_state, 0.5, fp)]));

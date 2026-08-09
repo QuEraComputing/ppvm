@@ -32,7 +32,31 @@ iterations, then escalate to human.
 
 ---
 
-## ▶ Continue here — handoff (2026-08-08)
+## ▶ Continue here — handoff (2026-08-09)
+
+**RNG ownership migration — done.** The `-2` tableau no longer embeds a
+`SmallRng`. Every stochastic trait method now takes `rng: &mut R`, the simulators
+are pure state (`new` is deterministic, `fork()` is `clone()`, no
+`new_with_seed`), and the *frontends* own a generator on the user's behalf:
+`ppvm-python-native`'s `#[pyclass]` wrappers and `ppvm-vihaco`'s executors each
+hold one `SmallRng`, threaded through a cfg'd `draw!` macro that keeps the
+interface/dispatch tables identical across the legacy and `-2` backends.
+`ppvm-stim` offers both shapes (`execute`/`sample*` self-seed; `*_with_rng` take
+the caller's). Rationale and the layer-by-layer rule are in
+[`traits-2-implementation-plan.md`](design/traits-2-implementation-plan.md)
+§ *Where the randomness lives*.
+
+Seeded behaviour is byte-identical to old: the draw order is preserved, and the
+draws that used to seed a per-branch tableau are retained as explicit burns
+(`GeneralizedTableauMixture::burn_legacy_tableau_seeds`). Pinned by
+`ppvm-vihaco`'s `seeded_branch_fixture_matches_cross_backend_snapshot` and the
+Python `PPVM_EXPECT_BACKEND` matrix (238 tests × both backends). Green:
+`cargo test --workspace`; stim/vihaco/tui/cli under `traits-2` and
+`traits-2,rayon`; the `traits-2` wasm32 library checks; `cargo fmt`;
+`cargo clippy --workspace -- -D warnings` plus `--all-targets` on every `-2`
+crate; `cargo-machete`; `lake build`. (Pre-existing and untouched: `--all-targets`
+Clippy and the wasm workspace build both fail inside the *old* `ppvm-tableau` /
+`ppvm-tableau-sum` / `ppvm-pauli-sum` crates.)
 
 Phases 0–7 and the post-baseline performance optimizations are committed through
 `73580afa` (including `0fc0c57e`); the old reference crates remain untouched.

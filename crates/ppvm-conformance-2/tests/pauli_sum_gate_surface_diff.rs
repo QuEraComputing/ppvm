@@ -120,7 +120,7 @@ fn two_qubit_pauli_error_matches_old() {
     for (a, b) in [(0usize, 1usize), (2, 3), (0, 3)] {
         let (mut old, mut new) = matched(0x2100_u64.wrapping_add(a as u64), 40);
         old.two_qubit_pauli_error(a, b, p);
-        new.two_qubit_pauli_error(a, b, p);
+        new.two_qubit_pauli_error(a, b, p, &mut ppvm_conformance_2::analytic_rng());
         assert_supports_match(&old, &new, TOL);
     }
 }
@@ -131,7 +131,7 @@ fn depolarizing_matches_old() {
         for q in 0..N {
             let (mut old, mut new) = matched(0xDE00, 32);
             old.depolarize1(q, prob);
-            new.depolarize1(q, prob);
+            new.depolarize1(q, prob, &mut ppvm_conformance_2::analytic_rng());
             assert_supports_match(&old, &new, TOL);
         }
     }
@@ -143,7 +143,7 @@ fn depolarizing2_matches_old() {
         for (a, b) in [(0usize, 1usize), (1, 2), (0, 3)] {
             let (mut old, mut new) = matched(0xDE02, 32);
             old.depolarize2(a, b, prob);
-            new.depolarize2(a, b, prob);
+            new.depolarize2(a, b, prob, &mut ppvm_conformance_2::analytic_rng());
             assert_supports_match(&old, &new, TOL);
         }
     }

@@ -32,15 +32,21 @@ iterations, then escalate to human.
 
 ---
 
-## ▶ Continue here — handoff (2026-08-07)
+## ▶ Continue here — handoff (2026-08-08)
 
-Phases 0–5 are committed (`c6b0ac8a` newest). Phase 6 is implemented in the
-current uncommitted tree, its deterministic Rust/Lean gates are green, and its
-former hash-join/row-build regressions are fixed. The scalar-batch contract
-remains explicitly deferred. Phase 7's adapter phase is complete and verified;
-the old reference crates remain untouched. The complete 901-pair core
-performance audit found 102 confirmed and 50 provisional regressions; these are
-hard blockers before destructive cutover (`docs/performance-report.md`).
+Phases 0–7 and the post-baseline performance optimizations are committed through
+`73580afa` (including `0fc0c57e`); the old reference crates remain untouched.
+Final targeted
+full-duration confirmation reran every actionable `36850446` row in at least
+four independent processes and hash/layout-sensitive rows in eight. Of the 75
+original above-gate rows, 14 are fixed, 11 are parity, none is actionable, and
+50 are evidence-adjudicated atomic-semantics, duplicate-path, identical/no-op,
+or representation/layout controls. The five grouped adjacent rows are three
+fixed, one parity, one non-actionable, and none robust. The performance cutover
+blocker is closed; destructive cutover still awaits maintainer approval and
+review (`docs/performance-report.md`). All
+benchmark modes, conformance/workspace tests, formatting, strict optimized-target
+Clippy, and Lean are green.
 
 ### ⚠ MEASUREMENT WARNING — read before touching any perf number here
 Two instruments previously trusted in this log are now known to be unsound:
@@ -755,8 +761,8 @@ without weakening those scan/re-key wins.
 
 ## Phase 7 — downstream + cutover
 
-Status: **adapter phase complete; destructive rename/removal blocked by the full
-core performance audit.**
+Status: **adapter phase complete; the core performance blocker is closed.
+Destructive rename/removal awaits maintainer approval and review.**
 
 First adapter prerequisite landed: `ppvm-tableau-2::GeneralizedTableau::trace`
 now consumes the `-2` `PauliPattern`, enumerates the bounded accepted words, and
@@ -938,7 +944,7 @@ native check/Clippy matrices, formatting, and `cargo machete` also pass.
 | cutover.python.ordered-sum | impl-friction | high | impl/test/review | **closed** | Added full `IndexMapStore` + fixed-width `IndexPauliSum`; review fixed deduplicated branch cardinality, multi-preserve restore order and false-positive equality tests. Order-sensitive old/new tests pass and all measured paths are 0.57–0.94× old. |
 | cutover.python.sum-r | impl-friction | med | impl/test | **closed** | Native `GeneralizedTableauSum.r` is exported in both backend modes and parity-tested through the Python `RotationsMixin`. |
 | cutover.python.binding-split | maintenance | low | refactor | **closed** | Split all three shared binding generators into `mod.rs` module directories with cohesive multi-`#[pymethods]` submodules. Both fresh 238-test backend suites, class inventory/backend identity checks, native check/Clippy matrices, formatting, and machete pass. |
-| cutover.core-perf | perf-drift | high | impl/human | **OPEN — cutover blocker** | Complete core audit now covers 901 comparable public-operation pairs: 587 improvements, 162 parity, 102 confirmed and 50 provisional regressions at the 1.03 gate. Full measurements and attribution are in `docs/performance-report.md`. |
+| cutover.core-perf | perf-drift | high | impl/human | **closed — performance gate cleared (`73580afa`)** | After `0fc0c57e` and `73580afa` plus final adjudication, the original 75 above-gate rows are 14 fixed, 11 parity, 0 actionable, and 50 non-actionable. The five grouped adjacent rows are 3 fixed, 1 parity, 1 non-actionable, and 0 robust. All 80 observations have no actionable regression; raw ranges and adjudications are in `docs/performance-report.md`. Destructive cutover remains a maintainer approval/review decision. |
 
 ### Full core benchmark audit (2026-08-07)
 
@@ -966,8 +972,8 @@ one pathological mixture branch expansion was stopped during process three, so
 - mixture measurement/clone/two-site noise: 1.10–1.34× from eager fingerprint
   rebuilding, bucket-map cloning, and repeated two-site row scans.
 
-No regression is allowlisted. The destructive cutover remains blocked until
-these rows are fixed or explicitly adjudicated.
+No regression was allowlisted at this screening stage. The rows were subsequently
+fixed or explicitly adjudicated by the final confirmation below.
 
 ---
 
@@ -977,3 +983,56 @@ these rows are fixed or explicitly adjudicated.
 were temporary implementation gaps and are now fixed. `ps2.rot.perf` is also
 fixed; `lpw2.perf.1` was a nanobenchmark artifact rather than a regression.
 Anything newly exceeding the 1.03 confirmation gate remains a hard blocker.
+
+### Final integrated post-optimization confirmation (2026-08-08)
+
+The final confirmation ran at
+`73580afa69ca20f179fa7344773c64056fbf3ae8`, including the phased-word update
+from `0fc0c57e`. No competing benchmark process was active. Every row in the
+`36850446` actionable manifest was rerun in fresh full-duration processes: at
+least four launches per row and eight for word/pattern, symbolic, PauliSum
+hash/re-key/batch, Trotter, and qubit-scaling rows. The longer Criterion
+defaults were retained for word/pattern.
+
+Adjudication of the 75 original above-gate rows is now:
+
+- **14 fixed**, including ordinary/lossy pattern matching
+  (**2.278×→0.015×**, **1.916×→0.011×**), indexed parsing
+  (**1.151×→0.478×**), branch coalescing (**1.863×→0.670×**),
+  PauliSum CNOT batch (**1.044×→0.853×**), and Z-noise batch
+  (**1.037×→0.755×**);
+- **11 parity**;
+- **0 actionable regressions**;
+- **50 non-actionable** required atomic/cache, duplicate executable-path,
+  identical disabled-no-op, or representation/layout observations whose raw
+  evidence is retained.
+
+The five grouped adjacent rows finish as **3 fixed, 1 parity, 1
+non-actionable, and 0 robust**. Thus all 80 original/adjacent above-gate
+observations have no actionable regression. Final medians are phased
+CNOT/CX/ZCX **0.980×/0.985×/0.989×**, decomposed RZZ **0.963×**
+(**0.949–0.971×**), n=12 **1.025×** (**0.997–1.039×**), native RZZ
+**0.960×**, direct CNOT **0.871×**, and full ablation **1.001×**.
+
+Generalized reset-loss retains its prior **1.217×** (**1.151–1.256×**) raw
+ratio but is a representation/layout nanobenchmark: the difference is only
+about **+1.2 ns**, and the stride control is **1.048×** with parity crossing.
+The prior CY, ZCY, and full-ablation ratios are duplicate-path
+executable-placement controls, not different engine work; their raw evidence
+remains in `docs/performance-report.md`. Process-unstable symbolic ratios are
+likewise executable-layout effects. The actionable manifest had no mixture row;
+a separate four-process spot confirmation kept both prior mixture controls at
+parity (`is_empty` **1.004×**, parallel 8-branch/16-shot sampling **1.000×**).
+
+Verification is fully green:
+
+- all **18** registered benchmark test modes passed (**1,930** Criterion cases);
+- conformance: **350 passed**, **0 failed**, **1 ignored**;
+- workspace: **1,913 passed**, **0 failed**, **3 ignored**;
+- formatting and strict all-target Clippy for every optimized production crate;
+- `lake build PPVM` (**2,132 jobs**).
+
+The complete row lists, before→after ratios, evidence adjudications, and raw
+output paths are in `docs/performance-report.md`. The performance cutover
+blocker is closed. Destructive rename/removal still awaits maintainer approval
+and review.

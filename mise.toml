@@ -34,3 +34,21 @@ run = "lake build"
 description = "Download the prebuilt Mathlib olean cache for the pinned revision."
 dir = "lean"
 run = "lake exe cache get"
+
+# Old-vs-`-2` performance gate. Every `ppvm-conformance-2` benchmark target
+# holds both engines in one binary, so each `<id>/old` + `<id>/new` pair is a
+# same-build ratio. The task screens all of them, writes
+# `target/perf-report/report.md`, and exits non-zero on a robust regression.
+# Keep it until the `-2` crates replace their legacy twins outright.
+#
+#   mise run perf-report                                  # full screening sweep
+#   mise run perf-report -- --bench tableau_surface_bench  # one target
+#   mise run perf-report -- --filter noise --launches 4    # confirm a suspect row
+#   mise run perf-report -- --reuse target/perf-report/raw.txt   # re-summarize
+#
+# A single launch cannot distinguish a regression from an executable-layout
+# artifact; rerun anything above the gate with `--launches 4` before believing
+# it. Run it on an otherwise idle machine.
+[tasks.perf-report]
+description = "Benchmark the ppvm-*-2 crates against their legacy twins and report regressions."
+run = "uv run --no-project python3 benchmarks/perf_regression_report.py"

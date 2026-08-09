@@ -1,3 +1,44 @@
+# Old-vs-`-2` regression report
+
+`mise run perf-report` screens every `ppvm-conformance-2` benchmark target and
+writes `target/perf-report/report.md`. Each of those targets links **both**
+engines into one binary, so a `<id>/old` + `<id>/new` pair is a same-build
+ratio and the executable-layout bias cancels inside it. Keep this around until
+the `-2` crates replace their legacy twins outright — it is the standing check
+that the refactor has not lost ground.
+
+Ratios are `new / old`: below 0.97 is an improvement, 0.97–1.03 is parity, and
+above 1.03 is a regression. A regression only *blocks* when the slowest of
+several processes also stays above the gate, which is what separates a real
+one from an executable-layout artifact — so a one-launch screening run reports
+but never fails.
+
+```bash
+# Screen everything (long; run it on an otherwise idle machine).
+mise run perf-report
+
+# Narrow to one target, or one Criterion filter.
+mise run perf-report -- --bench tableau_surface_bench
+mise run perf-report -- --filter noise
+
+# Confirm suspects in fresh processes. This is the invocation that can fail.
+mise run perf-report -- --filter clifford --launches 4
+
+# Re-summarize an existing raw log without re-benchmarking.
+mise run perf-report -- --reuse target/perf-report/raw.txt
+```
+
+Outputs land in `target/perf-report/`: `raw.txt` (concatenated Criterion
+output), `pairs.tsv` (every pair, slowest first), and `report.md`.
+
+Accepted regressions go in `perf-allowlist.txt`, one `fnmatch` pattern per
+line with a comment explaining the acceptance. It is empty on purpose; the
+standing policy is in the "Perf-drift allowlist" section of `docs/log.md`.
+
+- `perf_regression_report.py` — the runner, classifier, and report writer.
+- `summarize_criterion_output.py` — the pairing/median parser it reuses; also
+  usable standalone against a hand-collected log.
+
 # TFIM Trotter scaling benchmark
 
 Runtime-per-Trotter-run vs qubit count for the ppvm Pauli-propagation backend

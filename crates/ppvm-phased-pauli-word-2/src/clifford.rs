@@ -130,7 +130,7 @@ impl<W: PauliBits> Clifford for Phased<W> {
         let zc = self.word.z_bit(ctrl);
         let xt = self.word.x_bit(tgt);
         let zt = self.word.z_bit(tgt);
-        self.word.set_xz_bits2(ctrl, xc, zc ^ zt, tgt, xt ^ xc, zt);
+        self.word.set_x_bit_and_z_bit(tgt, xt ^ xc, ctrl, zc ^ zt);
         self.flip_sign_if(xc && zt && (xt == zc));
     }
 

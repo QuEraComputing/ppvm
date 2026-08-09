@@ -1263,17 +1263,17 @@ where
 {
     #[inline(always)]
     fn insert_bijective(map: &mut HashMap<K, C, IdentityBuildHasher>, key: K, coeff: C) {
-        let hash = key.key_hash();
-        match map
-            .raw_entry_mut()
-            .from_hash(hash, |candidate| candidate == &key)
-        {
-            hashbrown::hash_map::RawEntryMut::Occupied(_) => {
-                debug_assert!(false, "RekeyBijective requires an injective re-key");
-            }
-            hashbrown::hash_map::RawEntryMut::Vacant(entry) => {
-                entry.insert_hashed_nocheck(hash, key, coeff);
-            }
+        debug_assert!(
+            !map.contains_key(&key),
+            "RekeyBijective requires an injective re-key"
+        );
+        // SAFETY: `RekeyBijective` requires an injective key transform and the
+        // destination is empty on entry, so each transformed key is unique.
+        // Skipping the equality lookup is the map-level expression of that
+        // contract: hashbrown still finds a vacant bucket and grows normally,
+        // but does not compare against same-tag occupants that cannot be equal.
+        unsafe {
+            map.insert_unique_unchecked(key, coeff);
         }
     }
 }

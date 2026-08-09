@@ -328,6 +328,87 @@ map, with healthy neighbours (`add/extend` 0.96×, `add/sum_disjoint` 0.58×). I
 belongs with the other identical-primitive nanobenchmark controls; the
 headline table's entry for it is annotated accordingly.
 
+## Coverage gaps — 26 unconfirmed above-gate rows
+
+**This re-audit is not complete.** The 4-launch confirmations were run per
+*family*, and 26 of the 66 above-gate rows fall outside both those runs and the
+adjudication tables of the 2026-08-08 report. Each is a **single-launch**
+observation, which under this document's own gate proves nothing: a lone median
+above 1.03 with no process spread is exactly the evidence class that the
+`pauli_error_sweep` and `add/term` findings above were built to distrust.
+
+None is a confirmed regression. None is *cleared* either. They are listed so
+the next audit starts from the real coverage rather than from this section's
+apparent completeness.
+
+| ratio (1 run) | old | new | benchmark |
+|---:|---:|---:|---|
+| 1.264× | 1435.6 ns | 1815.0 ns | `pauli_sum_surface/clifford/zcz_alias/{side}` |
+| 1.249× | 1457.7 ns | 1820.9 ns | `pauli_sum_surface/clifford/cz/{side}` |
+| 1.194× | 4.0 ns | 4.8 ns | `word_surface/lossy/clifford_present/256/{side}/z` |
+| 1.167× | 3222.7 ns | 3759.4 ns | `sym/surface/propagation/noise/{side}/pauli_error` |
+| 1.153× | 3119.3 ns | 3598.1 ns | `sym/surface/propagation/clifford/{side}/z` |
+| 1.147× | 2837.6 ns | 3256.0 ns | `sym/surface/propagation/noise/{side}/x_error` |
+| 1.119× | 8.9 ns | 9.9 ns | `word_surface/phased/clifford/256/{side}/cz` |
+| 1.115× | 4.1 ns | 4.6 ns | `word_surface/lossy/clifford_present/256/{side}/x` |
+| 1.096× | 413.4 ns | 453.1 ns | `tableau-surface/clifford/bare/s_many/{side}` |
+| 1.095× | 426.0 ns | 466.4 ns | `tableau-surface/clifford/generalized/s_many/{side}` |
+| 1.091× | 4.3 ns | 4.7 ns | `word_surface/lossy/clifford_present/256/{side}/y` |
+| 1.087× | 3331.5 ns | 3622.5 ns | `sym/surface/propagation/rotation_two/{side}/ryz` |
+| 1.086× | 3165.5 ns | 3436.9 ns | `sym/surface/propagation/clifford/{side}/x` |
+| 1.085× | 9.0 ns | 9.8 ns | `word_surface/phased/clifford/256/{side}/zcz_alias` |
+| 1.067× | 7539.5 ns | 8045.0 ns | `sym/surface/propagation/clifford/{side}/batch_y` |
+| 1.062× | 4299.4 ns | 4565.1 ns | `sym/surface/propagation/rotation_two/{side}/rxx` |
+| 1.054× | 3081.8 ns | 3247.5 ns | `sym/surface/propagation/noise/{side}/y_error` |
+| 1.050× | 5769.9 ns | 6061.2 ns | `sym/surface/propagation/rotation_one/{side}/ry` |
+| 1.050× | 657.4 ns | 690.3 ns | `pauli_sum/workload_truncate/{side}/w3/cut1000` |
+| 1.050× | 5193.5 ns | 5452.3 ns | `tableau-surface/clifford/bare/cz_many/{side}` |
+| 1.048× | 184.1 ns | 193.1 ns | `pauli_sum_surface/truncate/combined_active/{side}` |
+| 1.045× | 3198.9 ns | 3341.9 ns | `sym/surface/propagation/noise/{side}/depolarize2` |
+| 1.040× | 5260.4 ns | 5469.7 ns | `tableau-surface/clifford/generalized/cnot_many/{side}` |
+| 1.038× | 1103.4 ns | 1145.9 ns | `pauli_sum_surface/clifford_batch/z/{side}` |
+| 1.033× | 459.2 ns | 474.5 ns | `pauli_sum/workload_truncate/{side}/w3/threshold` |
+| 1.032× | 3007.8 ns | 3102.6 ns | `sym/surface/propagation/rotation_two/{side}/ryx` |
+
+### Priors, and why they are not conclusions
+
+Most of these are siblings of rows already adjudicated above, which raises the
+prior that they share the same cause — but a prior is not a measurement, and
+this document has now twice recorded a number that did not survive one.
+
+- **`pauli_sum_surface/clifford/{cz,zcz_alias}`** (1.25–1.26×, the largest pair
+  here) are the same shape as `cy`/`zcy_alias`, adjudicated above as a
+  duplicate executable path. Highest-value pair to settle: the ratio is large
+  and the mechanism is already characterised for their twins.
+- **The 11 `sym/surface/propagation/*` rows** sit beside 14 siblings adjudicated
+  as process-layout crossing, whose 8-launch ranges (e.g. 0.919–1.367×) straddle
+  parity freely. `z`, `x`, `batch_y`, the two-qubit rotations and the noise
+  variants were simply never listed.
+- **`pauli_sum/workload_truncate/w3/*`** — the `w50` and `w120` variants of the
+  same grid are adjudicated above; only the `w3` column is missing.
+- **`tableau-surface/clifford/*_many`** (4 rows) and the five `word_surface`
+  gate rows have **no adjudicated sibling at all**. If any row in this table
+  turns out to be real, it is most likely one of these nine.
+
+None of the 26 was above the gate *and* listed in the 2026-08-08 audit, so none
+is new breakage introduced by `e3a37026`.
+
+### Closing them out
+
+Five filtered runs at `--launches 4`, roughly 60–90 minutes on an idle machine:
+
+```bash
+mise run perf-report -- --launches 4 --bench pauli_sum_surface_bench --filter surface/clifford
+mise run perf-report -- --launches 4 --bench sym_bench              --filter surface/propagation
+mise run perf-report -- --launches 4 --bench tableau_surface_bench  --filter clifford
+mise run perf-report -- --launches 4 --bench word_surface_bench     --filter clifford --full
+mise run perf-report -- --launches 4 --bench pauli_sum_workloads    --filter workload_truncate
+```
+
+Anything that stays above 1.03 with a process minimum above 1.03 gets the
+`-Cllvm-args` layout control from `benchmarks/README.md` before it is called a
+regression.
+
 ## Verification
 
 No engine code was changed by this re-audit.

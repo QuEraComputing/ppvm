@@ -971,6 +971,7 @@ native check/Clippy matrices, formatting, and `cargo machete` also pass.
 | cutover.core-perf | perf-drift | high | impl/human | **closed — performance gate cleared (`73580afa`)** | After `0fc0c57e` and `73580afa` plus final adjudication, the original 75 above-gate rows are 14 fixed, 11 parity, 0 actionable, and 50 non-actionable. The five grouped adjacent rows are 3 fixed, 1 parity, 1 non-actionable, and 0 robust. All 80 observations have no actionable regression; raw ranges and adjudications are in `docs/performance-report.md`. Destructive cutover remains a maintainer approval/review decision. |
 | perf.harness | maintenance | med | tooling | **closed** | `mise run perf-report` (`benchmarks/perf_regression_report.py`) drives the whole conformance matrix, pairs the medians, classifies against the 1.03 gate and refuses to call a one-launch row robust. Reproduced 15 of the audit's adjudicated controls within measurement noise on first use. |
 | perf.reaudit | perf-drift | med | impl/human | **closed — no actionable regression at `e3a37026`** | Post-RNG-injection re-audit: 828 pairs, 590 improved, 170 parity, 0 actionable. `pauli_error_sweep` (1.158×) is executable placement — two alignment-perturbed builds put NEW at ~4395 ns against its 5010 ns default, and a work-removing ablation measured *worse*. `pauli_sum_surface/add/term` is unchanged at 1.67× since `73580afa`; the `1.014×` headline in `docs/performance-report.md` does not reproduce at its own commit and is corrected there. |
+| perf.reaudit.gaps | perf-drift | low | human | **OPEN — 26 rows unconfirmed** | 26 of the 66 above-gate rows in the `e3a37026` screening rest on a single launch and were never 4-launch confirmed, so they are neither regressions nor cleared. Nine have no adjudicated sibling. List, priors and the five closing commands are in the "Coverage gaps" section of `docs/performance-report.md`. Not new breakage: none was above the gate in the 2026-08-08 audit. |
 
 ### Full core benchmark audit (2026-08-07)
 
@@ -1109,3 +1110,15 @@ across the range.
 No engine code changed. `cargo test --workspace` (133 result sets, 0 failures),
 fmt, and strict Clippy including `--all-targets` on `ppvm-pauli-sum-2` all
 pass.
+
+**The re-audit is not complete, and is recorded as incomplete.** The 4-launch
+confirmations were run per family, and 26 of the 66 above-gate rows fall
+outside both those runs and the 2026-08-08 adjudication tables — they rest on a
+single launch each, which is the evidence class this whole exercise exists to
+distrust. None is a confirmed regression; none is cleared. Most are siblings of
+adjudicated rows, but nine (`tableau-surface/clifford/*_many` and five
+`word_surface` gate rows) have no adjudicated sibling at all. The full list,
+the priors, and the five commands that would close them out are in the
+"Coverage gaps" section of `docs/performance-report.md`. None of the 26 was
+above the gate in the 2026-08-08 audit, so none is new breakage from
+`e3a37026`.

@@ -31,6 +31,42 @@ mise run perf-report -- --reuse target/perf-report/raw.txt
 Outputs land in `target/perf-report/`: `raw.txt` (concatenated Criterion
 output), `pairs.tsv` (every pair, slowest first), and `report.md`.
 
+## Measure the row you are changing, not the group it lives in
+
+Fixing one kernel means iterating edit → measure many times, so the cost of a
+single measurement sets how many attempts you get. Filter to the **pair** under
+investigation, not the family:
+
+```bash
+# Check what a filter actually selects before trusting it — it is instant.
+cargo bench -p ppvm-conformance-2 --bench pauli_sum_surface_bench -- --list | grep cy
+```
+
+For the `CY` investigation that is 4 benchmarks against the 60 that
+`--filter clifford` selects, and against 233 for the whole target — a **15×**
+difference per iteration, multiplied by `--launches`.
+
+Narrow the **filter**, never the **launch count**. The gate needs the median
+*and* the slowest of ≥4 processes above 1.03; a single launch cannot separate a
+regression from an executable-layout artifact, so cutting launches does not save
+time, it invalidates the result.
+
+Widen exactly once, at the end, when you have a candidate you believe in:
+
+1. the sibling rows the change could have disturbed —
+   `--bench pauli_sum_surface_bench --filter clifford --launches 4`;
+2. the end-to-end workload —
+   `--bench pauli_sum_integration --launches 4`.
+
+That ordering matters for more than speed. A micro-benchmark that moves while
+the integration workload does not has told you the kernel is not on the critical
+path, which is a result worth having before optimising further. Conversely a
+whole-group sweep on every iteration buries the one row you care about in 59
+others whose noise you then have to reason about.
+
+Do not run the full screening sweep (`mise run perf-report` with no filter) as
+part of a fix loop. It exists for the periodic audit and takes tens of minutes.
+
 Run these through `mise run perf-report`, not a bare `python3`. The task routes
 through `uv run --no-project`, which resolves the interpreter pinned by the
 repo-root `.python-version` (3.12, matching `ppvm-python/.python-version`);

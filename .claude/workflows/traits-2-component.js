@@ -491,6 +491,22 @@ Cargo.toml) so tests/benches can see both crates.
        allowlist, so do not silently accept it — but also do not manufacture a
        regression from an unfair or noisy bench.
 
+   (d) NARROW SCOPE WHILE ITERATING (measure the row, not the family). Chasing a
+       single kernel is an edit→measure loop, so the cost of one measurement sets
+       how many attempts you get. Filter to the PAIR under investigation. Check
+       what a filter selects first — it is instant:
+         cargo bench -p ${CONF} --bench <target> -- --list | grep <thing>
+       For one gate that is typically ~4 benchmarks against ~60 for its group and
+       ~230 for the whole target: a 15× difference per iteration, multiplied by
+       --launches. Narrow the FILTER, never the LAUNCH COUNT — the gate needs the
+       median AND slowest of ≥4 processes, so cutting launches does not save time,
+       it invalidates the result. Widen exactly ONCE at the end, on a candidate you
+       believe in: first the sibling rows the change could disturb, then the
+       end-to-end integration workload. Never run the unfiltered screening sweep
+       inside a fix loop. Ordering matters beyond speed: a microbench that moves
+       while the integration workload does not has told you the kernel is off the
+       critical path — a result worth having before optimising further.
+
 Leave BOTH crates green (run, and set testsPass only if all pass):
   cargo fmt -p ${C.crate} -p ${CONF}   then   cargo fmt -p ${C.crate} -p ${CONF} -- --check
   cargo clippy -p ${C.crate} -p ${CONF} --all-targets -- -D warnings

@@ -38,7 +38,16 @@ where
     x.hash(&mut hasher);
     z.hash(&mut hasher);
     l.hash(&mut hasher);
-    H::finalize_hash(hasher.finish(), std::mem::size_of::<A>())
+    let structural = H::finalize_hash(hasher.finish(), std::mem::size_of::<A>());
+    // The same index transform `ppvm-pauli-word-2`'s `structural_hash` applies,
+    // and for the same reason: legacy stores are `HashMap<LossyPauliWord<_, H>,
+    // _, H>`, where `Hash` writes the cached digest into a fresh `H` whose
+    // `finish()` picks the hashbrown bucket. The `-2` store hashes through
+    // `IdentityBuildHasher`, so without this fold the digest reaches hashbrown
+    // one transform short of old's and the buckets are arranged differently —
+    // `fxhash` leaves its low bits correlated, which is exactly the clustering
+    // the storage-tier cliff in `benchmarks/README.md` is about.
+    H::index_hash(structural)
 }
 
 /// `Hash` writes exactly the finalized `key_hash()` as a single `u64`, so the

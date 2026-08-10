@@ -72,6 +72,31 @@ review (`docs/performance-report.md`). All
 benchmark modes, conformance/workspace tests, formatting, strict optimized-target
 Clippy, and Lean are green.
 
+**Coverage gap closed, two real regressions fixed (2026-08-09, second pass).**
+All 26 rows the re-audit had left on a single launch are now 4-launch measured:
+13 cleared, `tableau-surface/clifford/*/s_many` proven executable placement by the
+layout control (0.957× when only padding moves), and the `CZ` family real and
+**fixed** — 1.27× → 0.998× on the Pauli sum, 1.11× → 0.886× on the phased word,
+by fusing `CZ`'s same-plane bit toggles into one masked XOR per storage word and
+giving the phased kernel a two-bit Z setter instead of the four-bit one that
+rewrote both X bits unchanged. Two more real fixes came out of reading rather
+than measuring: `HashMapStore::sign_flip_by_key` cloned a whole heap-owning
+coefficient per flipped term where every other sign-flip site in the crate used
+`mul_sign_assign`, and `ppvm-lossy-pauli-word-2`'s digest was missing the
+`index_hash` transform that keeps the pass-through store on old's bucket layout.
+Two rows remain open and are tracked as `perf.cy` (a real, layout-controlled,
+still-unexplained 1.11× on the *single-gate* sum `CY`; its batch and word-level
+siblings are 0.85/0.85×) and `perf.sym.fixture` (the symbolic propagation family
+measures a 131072-bucket control-byte sweep over a 2-term support, and drifts
+10%+ run to run on the **old** side). A third, `perf.trotter.native`, was chased
+to ground and closed as executable placement: the post-fix screening put the
+native-`Rzz` Trotter workload at 1.08×, but with the rotation builders restored
+byte-identically it read 1.160× and the alignment control — padding only — put it
+at 0.963×, new faster. The detour it caused is worth keeping (`perf.rotkey`): a
+masked-branchless bit helper is a win where the toggle is a runtime bit and a
+pessimization where it is a constant, so the Clifford re-key builder takes it and
+the rotation branch builders deliberately do not.
+
 ### ⚠ MEASUREMENT WARNING — read before touching any perf number here
 Two instruments previously trusted in this log are now known to be unsound:
 
@@ -971,7 +996,15 @@ native check/Clippy matrices, formatting, and `cargo machete` also pass.
 | cutover.core-perf | perf-drift | high | impl/human | **closed — performance gate cleared (`73580afa`)** | After `0fc0c57e` and `73580afa` plus final adjudication, the original 75 above-gate rows are 14 fixed, 11 parity, 0 actionable, and 50 non-actionable. The five grouped adjacent rows are 3 fixed, 1 parity, 1 non-actionable, and 0 robust. All 80 observations have no actionable regression; raw ranges and adjudications are in `docs/performance-report.md`. Destructive cutover remains a maintainer approval/review decision. |
 | perf.harness | maintenance | med | tooling | **closed** | `mise run perf-report` (`benchmarks/perf_regression_report.py`) drives the whole conformance matrix, pairs the medians, classifies against the 1.03 gate and refuses to call a one-launch row robust. Reproduced 15 of the audit's adjudicated controls within measurement noise on first use. |
 | perf.reaudit | perf-drift | med | impl/human | **closed — no actionable regression at `e3a37026`** | Post-RNG-injection re-audit: 828 pairs, 590 improved, 170 parity, 0 actionable. `pauli_error_sweep` (1.158×) is executable placement — two alignment-perturbed builds put NEW at ~4395 ns against its 5010 ns default, and a work-removing ablation measured *worse*. `pauli_sum_surface/add/term` is unchanged at 1.67× since `73580afa`; the `1.014×` headline in `docs/performance-report.md` does not reproduce at its own commit and is corrected there. |
-| perf.reaudit.gaps | perf-drift | low | human | **OPEN — 26 rows unconfirmed** | 26 of the 66 above-gate rows in the `e3a37026` screening rest on a single launch and were never 4-launch confirmed, so they are neither regressions nor cleared. Nine have no adjudicated sibling. List, priors and the five closing commands are in the "Coverage gaps" section of `docs/performance-report.md`. Not new breakage: none was above the gate in the 2026-08-08 audit. |
+| perf.reaudit.gaps | perf-drift | low | human | ~~**OPEN — 26 rows unconfirmed**~~ **closed — all 26 measured at 4 launches** | 12 cleared, 2 (`tableau-surface/clifford/*/s_many`) proven executable placement by the layout control, 2 real and fixed (the `CZ` family), 10 `sym/surface/propagation/*` rows left in a separately-tracked high-variance family. The pass also re-opened `clifford/{cy,zcy_alias}`, which the 2026-08-08 report had adjudicated as a duplicate path. Evidence in the "Closing the coverage gap" section of `docs/performance-report.md`. |
+| perf.cz | perf-drift | med | impl | **closed** | `CZ` was 1.27× on the Pauli sum and 1.11× on the phased word, with its `CNOT` sibling at parity in both. `CZ` is the one two-qubit gate whose whole bit action lands on one plane: the packed Clifford re-key builder applied it one bit at a time behind a per-term-unpredictable branch (and serialized when both qubits shared a storage word), and `Phased::cz` wrote it through the four-bit `set_xz_bits2`, rewriting both X bits with the values they already held. Fused to one masked XOR per storage word plus a new `PauliBits::set_z_bit_pair`; `cz`/`zcz_alias` are now 0.998×/0.996× (sum) and 0.886×/0.876× (phased word), and nothing in the phased `clifford/256` group is above the gate. |
+| perf.rotkey | perf-drift | med | impl | **closed — do not share the masked helper with the rotation builders** | Routing `with_bits_toggled{,2}` through the same masked helper as the Clifford re-key cost ~5% on `pauli_sum/integration_trotter`. The rotations reach it with *constant* toggles (`rzz` is `toggled_bits2(a, false, true, b, false, true)`), so the unpredictable branch it removes is already gone at compile time and its `wi == wj` test is pure overhead. Reverted; the shipped rotation builders are byte-identical to the base commit. General rule: masked-branchless bit helpers win where the toggle is a runtime bit and lose where it is a constant. |
+| perf.trotter.native | perf-drift | med | impl/human | **closed — executable placement** | The post-fix screening put `pauli_sum/integration_trotter` above the gate (0.985 → 1.08×, robust at four launches) while its decomposed-`rzz` twin improved. With the rotation builders restored byte-identically it still read 1.160×, and the `-align-all-functions=6` control — same source, padding only — put it at **0.963×** (0.957–0.964), new faster. Across five builds it read 0.985–1.223 with no monotone relation to the source and the *old* side swinging 258–328 µs. The workload makes 340 `scale_pauli_error` calls per iteration: the same kernel already adjudicated placement-bound as `pauli_error_sweep`. |
+| perf.symsign | perf-drift | med | impl | **closed** | `HashMapStore::sign_flip_by_key` used `*coeff = coeff.mul_sign(sign)`, which takes `&self` and so clones the whole coefficient on a heap-owning ring before negating the copy — a per-term symbolic clone where old's `x`/`y`/`z` are `*v *= -1.0` in place. Every other sign-flip site in the crate already used `mul_sign_assign`, and `ppvm-sym-2`'s `Term` already overrides it; this one call site now does too. |
+| perf.lossy.index-hash | perf-drift | low | impl | **closed** | `ppvm-lossy-pauli-word-2`'s `structural_hash_lossy` stopped one transform short of `ppvm-pauli-word-2`'s `structural_hash`: no `H::index_hash`, so lossy keys reached the pass-through `IdentityBuildHasher` indexed by a raw `fxhash` digest whose low bits stay correlated — the clustering behind the storage-tier cliff in `benchmarks/README.md`. Added; it is multiplication by an odd constant, so the "0 means uncached" sentinel is unaffected. |
+| perf.cy | perf-drift | med | impl/human | **OPEN — 1.11×, real, unexplained** | `pauli_sum_surface/clifford/{cy,zcy_alias}` survives *both* `-Cllvm-args` layout controls (1.111 / 1.116 / 1.114×), so it is not placement. Two candidate causes were tested and eliminated: hash distribution (old and new probe the fixture's post-`CY` key set at the same 1.057 mean) and an out-of-line re-key closure (fixed — the body moved behind an `#[inline(always)]` `cy_toggles` and the binary now has zero calls to it — worth <1%). New's `CY` does strictly less memory work than old's and is still ~1 ns/term slower. Scope is the single-gate row only: `clifford_batch/cy` is 0.848× and the phased word's own `cy` is 0.873×. |
+| perf.sym.fixture | perf-drift | low | test/human | **OPEN — fixture, not a ratio** | The `sym/surface/propagation/*` family sits at 1.05–1.22× with process minima that move between runs, and the **old** side drifts 10%+ run to run. The fixture is two terms in a map sized from the symbolic capacity hint `2^(2n-1)` (a 131072-bucket table), so a single-qubit gate costs 3–6 µs of control-byte sweep that both engines must do and the measurement tracks memory-system state rather than engine work. Settling it needs a fixture whose support is a meaningful fraction of its capacity, not more launches. |
+| perf.reaudit.gaps.combined-active | perf-drift | low | human | ~~**OPEN — one launch**~~ **closed** | `pauli_sum_surface/truncate/combined_active` was the one row of the original 26 no filtered run covered. Four launches put it below the gate; the only rows still above it in the `truncate` group are the two `*_disabled` sentinels already adjudicated as identical ~1 ns no-ops. |
 
 ### Full core benchmark audit (2026-08-07)
 

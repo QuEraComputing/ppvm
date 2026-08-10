@@ -13,7 +13,8 @@
 //! are ported from `ppvm-pauli-word`'s `PauliStorage` / `HashFinalize` to keep
 //! the hot paths and the bucket distribution at parity.
 
-use bitvec::view::BitViewSized;
+use bitvec::view::{BitView, BitViewSized};
+use num::PrimInt;
 use std::hash::{BuildHasher, Hash, Hasher};
 
 /// Native-word default storage: `u64` on native targets and `usize` on wasm32.
@@ -33,13 +34,37 @@ pub type DefaultStorage = usize;
 /// bit patterns valid, which lets the structural hash view the blob as a `&[u8]`
 /// without `unsafe`. Design: `word-data-structures.md` §"`PauliWord` packed
 /// representation" (the `A` parameter).
+///
+/// The `Store: PrimInt` bound names what every instantiation already is — the
+/// `bitvec` element type of `u64`, `[u8; N]` and `[u64; N]` is a primitive
+/// integer — and lets the fused plane kernels address a whole storage word
+/// instead of one bit at a time. `ppvm-tableau-2`'s `RowStorage` carries the
+/// same bound for the same reason.
 pub trait PauliStorage:
-    BitViewSized + Clone + Copy + Hash + Eq + Send + Sync + std::fmt::Debug + bytemuck::Pod
+    BitViewSized
+    + BitView<Store: PrimInt>
+    + Clone
+    + Copy
+    + Hash
+    + Eq
+    + Send
+    + Sync
+    + std::fmt::Debug
+    + bytemuck::Pod
 {
 }
 
 impl<A> PauliStorage for A where
-    A: BitViewSized + Clone + Copy + Hash + Eq + Send + Sync + std::fmt::Debug + bytemuck::Pod
+    A: BitViewSized
+        + BitView<Store: PrimInt>
+        + Clone
+        + Copy
+        + Hash
+        + Eq
+        + Send
+        + Sync
+        + std::fmt::Debug
+        + bytemuck::Pod
 {
 }
 

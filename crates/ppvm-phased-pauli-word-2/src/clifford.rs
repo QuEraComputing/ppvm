@@ -145,7 +145,11 @@ impl<W: PauliBits> Clifford for Phased<W> {
         let za = self.word.z_bit(a);
         let xb = self.word.x_bit(b);
         let zb = self.word.z_bit(b);
-        self.word.set_xz_bits2(a, xa, za ^ xb, b, xb, zb ^ xa);
+        // Only the two Z bits move; `set_xz_bits2` would also read and rewrite
+        // `x_a`/`x_b` with the values they already hold, and refresh the eager
+        // digest over both planes instead of one. `CNOT` above already takes the
+        // matching two-bit setter for its own (x_target, z_control) pair.
+        self.word.set_z_bit_pair(a, za ^ xb, b, zb ^ xa);
         self.flip_sign_if(xa && xb && (za ^ zb));
     }
 }

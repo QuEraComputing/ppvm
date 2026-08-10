@@ -159,6 +159,19 @@ pub trait PauliBits: Word {
         self.set_x_bit(x_i, x);
         self.set_z_bit(z_i, z);
     }
+    /// Set two Z-plane bits as one structural mutation.
+    ///
+    /// `CZ` updates exactly this pair (`z_a`, `z_b`) and leaves both X bits
+    /// alone — the counterpart of [`set_x_bit_and_z_bit`](PauliBits::set_x_bit_and_z_bit)
+    /// for `CNOT`. Routing it through the four-bit
+    /// [`set_xz_bits2`](PauliBits::set_xz_bits2) instead makes a packed word read
+    /// and rewrite the two unchanged X bits on every gate. The default composes
+    /// the scalar setters.
+    #[inline(always)]
+    fn set_z_bit_pair(&mut self, i: usize, zi: bool, j: usize, zj: bool) {
+        self.set_z_bit(i, zi);
+        self.set_z_bit(j, zj);
+    }
     /// Whether index `i` is lost; `LossyPauliWord` overrides this.
     #[inline(always)]
     fn is_lost(&self, i: usize) -> bool {

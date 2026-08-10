@@ -398,6 +398,23 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
         self.invalidate_xz();
     }
 
+    /// `CZ`'s Z-plane pair. Same shape as [`set_xz_bits2`](Self::set_xz_bits2)
+    /// minus the two X writes it does not need, and one cache invalidation
+    /// rather than the default's two.
+    #[inline]
+    fn set_z_bit_pair(&mut self, i: usize, zi: bool, j: usize, zj: bool) {
+        debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
+        self.zbits.set(i, zi);
+        self.zbits.set(j, zj);
+        if zi && self.lbits[i] {
+            self.lbits.set(i, false);
+        }
+        if zj && self.lbits[j] {
+            self.lbits.set(j, false);
+        }
+        self.invalidate_xz();
+    }
+
     /// Build a rotation branch directly from the packed planes. This avoids
     /// cloning an atomic cache only to invalidate it on the first bit write.
     #[inline]

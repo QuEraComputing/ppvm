@@ -15,6 +15,8 @@ use std::hash::BuildHasher;
 use std::marker::PhantomData;
 
 use bitvec::array::BitArray;
+use bitvec::view::BitView;
+use num::{One, Zero};
 use ppvm_traits_2::{Pauli, PauliBits, Word};
 
 use crate::hash::structural_hash;
@@ -78,6 +80,61 @@ pub struct PauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildHasher
     /// The private internal digest algorithm; never a runtime value.
     /// `fn() -> H` keeps `PauliWord` `Send + Sync` for any `H`.
     pub(crate) _hasher: PhantomData<fn() -> H>,
+}
+
+/// The storage word holding logical bit `i`, and `i`'s offset inside it.
+#[inline(always)]
+fn word_of<A: PauliStorage>(i: usize) -> (usize, usize) {
+    let bits = std::mem::size_of::<<A as BitView>::Store>() * 8;
+    (i / bits, i % bits)
+}
+
+/// `1 << offset` when `toggle`, else `0` — a select on a register, never a
+/// branch on memory.
+#[inline(always)]
+fn bit_mask<A: PauliStorage>(offset: usize, toggle: bool) -> <A as BitView>::Store {
+    let one = <A as BitView>::Store::one();
+    let zero = <A as BitView>::Store::zero();
+    if toggle { one << offset } else { zero }
+}
+
+/// XOR `toggle_i` into bit `i` and `toggle_j` into bit `j` of the **same**
+/// plane, touching each storage word once.
+///
+/// This is the *Clifford re-key* shape, and only that: the two-qubit re-keys
+/// reach it with both toggles on one plane and both derived from bits of the
+/// term's own word — `CZ` is `z ⊕= x` at each of its two sites — so `if toggle {
+/// plane.set(i, !plane[i]) }` is a branch the predictor cannot learn, and when
+/// both qubits share a storage word the second read-modify-write serializes
+/// behind the first store. Building both masks and folding them into one XOR
+/// removes both; the `wi == wj` test is loop-invariant across the re-key, so it
+/// predicts perfectly.
+///
+/// XOR, not OR, when the words coincide: with `i == j` the two masks are the
+/// same bit and must cancel, exactly as toggling one bit twice does. For
+/// distinct bits the masks are disjoint and `^` is `|`.
+///
+/// The *rotation* branch builders deliberately do **not** come here — see
+/// [`PauliWord::with_bits_toggled2`].
+#[inline(always)]
+fn xor_bits2<A: PauliStorage>(
+    plane: &mut BitArray<A>,
+    i: usize,
+    toggle_i: bool,
+    j: usize,
+    toggle_j: bool,
+) {
+    let (wi, oi) = word_of::<A>(i);
+    let (wj, oj) = word_of::<A>(j);
+    let mask_i = bit_mask::<A>(oi, toggle_i);
+    let mask_j = bit_mask::<A>(oj, toggle_j);
+    let raw = plane.data.as_raw_mut_slice();
+    if wi == wj {
+        raw[wi] = raw[wi] ^ (mask_i ^ mask_j);
+    } else {
+        raw[wi] = raw[wi] ^ mask_i;
+        raw[wj] = raw[wj] ^ mask_j;
+    }
 }
 
 impl<A, H> PauliWord<A, H>
@@ -156,6 +213,16 @@ where
     /// branch at `[u8; 32]`). Old built one `k.clone()` and wrote four bits into it
     /// (`ppvm-pauli-sum/src/sum/rot2.rs`); this is that shape, minus the cache
     /// load+invalidate the clone would pay.
+    ///
+    /// Note it does **not** share [`xor_bits2`] with the Clifford re-key builder
+    /// [`PauliBits::into_toggled_bits2`], even though the bit action is the same
+    /// shape. Every rotation reaches this with *constant* toggles (`rzz` is
+    /// `toggled_bits2(a, false, true, b, false, true)`), so the branch the
+    /// masked form exists to remove is already gone at compile time and its
+    /// `wi == wj` test is pure overhead. Sharing it moved
+    /// `pauli_sum/integration_trotter` — ten Trotter steps of `rx`/`rzz` over a
+    /// growing support — from 0.985x against old to 1.08–1.15x, reproducibly and
+    /// across three executable layouts.
     #[inline]
     pub fn with_bits_toggled2(
         &self,
@@ -353,6 +420,24 @@ where
         }
     }
 
+    #[inline(always)]
+    fn set_z_bit_pair(&mut self, i: usize, zi: bool, j: usize, zj: bool) {
+        debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
+        if i == j {
+            // The trait default is two scalar sets, so a repeated index is
+            // last-write-wins; the fused arm below would instead treat the two
+            // requests as independent toggles.
+            self.set_z_bit(j, zj);
+            return;
+        }
+        let toggle_i = self.zbits[i] != zi;
+        let toggle_j = self.zbits[j] != zj;
+        if toggle_i || toggle_j {
+            xor_bits2(&mut self.zbits, i, toggle_i, j, toggle_j);
+            self.invalidate_hash();
+        }
+    }
+
     /// The direct plane-copy branch key builder — see
     /// [`with_bits_toggled`](PauliWord::with_bits_toggled). Overrides the trait's
     /// clone-then-flip default, which would load and then immediately invalidate
@@ -391,22 +476,8 @@ where
     ) -> Self {
         debug_assert!(i < self.nqubits, "qubit {i} out of bounds");
         debug_assert!(j < self.nqubits, "qubit {j} out of bounds");
-        if toggle_x_i {
-            let bit = self.xbits[i];
-            self.xbits.set(i, !bit);
-        }
-        if toggle_z_i {
-            let bit = self.zbits[i];
-            self.zbits.set(i, !bit);
-        }
-        if toggle_x_j {
-            let bit = self.xbits[j];
-            self.xbits.set(j, !bit);
-        }
-        if toggle_z_j {
-            let bit = self.zbits[j];
-            self.zbits.set(j, !bit);
-        }
+        xor_bits2(&mut self.xbits, i, toggle_x_i, j, toggle_x_j);
+        xor_bits2(&mut self.zbits, i, toggle_z_i, j, toggle_z_j);
         self.invalidate_hash();
         self
     }
@@ -506,6 +577,64 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ppvm_traits_2::Indexable;
+
+    /// The fused two-site toggle must equal two sequential one-site toggles for
+    /// every index pair, including a repeated index (where the two requests
+    /// cancel) and one straddling a storage word.
+    #[test]
+    fn toggled_bits2_matches_two_single_toggles() {
+        let text = "XYZI".repeat(32);
+        let base: PauliWord<[u8; 16]> = PauliWord::from(text.as_str());
+        for (i, j) in [(1usize, 5usize), (5, 1), (3, 3), (2, 70), (70, 2), (70, 71)] {
+            for bits in 0..16u8 {
+                let (xi, zi) = (bits & 1 != 0, bits & 2 != 0);
+                let (xj, zj) = (bits & 4 != 0, bits & 8 != 0);
+                let fused = base.with_bits_toggled2(i, xi, zi, j, xj, zj);
+                let chained = base
+                    .with_bits_toggled(i, xi, zi)
+                    .with_bits_toggled(j, xj, zj);
+                assert_eq!(fused, chained, "({i},{j}) toggles {bits:04b}");
+                assert_eq!(fused.key_hash(), chained.key_hash(), "digest {bits:04b}");
+                assert_eq!(
+                    base.into_toggled_bits2(i, xi, zi, j, xj, zj),
+                    chained,
+                    "owned ({i},{j}) toggles {bits:04b}"
+                );
+            }
+        }
+    }
+
+    /// `set_z_bit_pair` must agree with two scalar `set_z_bit` calls — including
+    /// when both sites share one storage word (the fused single-XOR arm) and
+    /// when they straddle two (the split arm), and when neither bit moves (no
+    /// write, and the digest must be unchanged rather than merely equal).
+    #[test]
+    fn set_z_bit_pair_matches_scalar_setters() {
+        for (i, j) in [(1usize, 5usize), (5, 1), (3, 3), (2, 70), (70, 2), (70, 71)] {
+            for zi in [false, true] {
+                for zj in [false, true] {
+                    // 128 sites: `[u8; 16]` is exactly two 64-bit halves, so
+                    // sites 2 and 70 straddle a storage-word boundary.
+                    let text = "XYZI".repeat(32);
+                    let base: PauliWord<[u8; 16]> = PauliWord::from(text.as_str());
+                    let mut fused = base;
+                    fused.set_z_bit_pair(i, zi, j, zj);
+                    let mut scalar = base;
+                    scalar.set_z_bit(i, zi);
+                    scalar.set_z_bit(j, zj);
+                    assert_eq!(fused, scalar, "({i},{j}) <- ({zi},{zj})");
+                    assert_eq!(
+                        fused.key_hash(),
+                        scalar.key_hash(),
+                        "digest ({i},{j}) <- ({zi},{zj})"
+                    );
+                    assert_eq!(fused.x_bit(i), base.x_bit(i), "X plane must not move");
+                    assert_eq!(fused.x_bit(j), base.x_bit(j), "X plane must not move");
+                }
+            }
+        }
+    }
 
     #[test]
     fn parse_get_roundtrip() {

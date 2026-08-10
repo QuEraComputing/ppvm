@@ -52,3 +52,24 @@ run = "lake exe cache get"
 [tasks.perf-report]
 description = "Benchmark the ppvm-*-2 crates against their legacy twins and report regressions."
 run = "uv run --no-project python3 benchmarks/perf_regression_report.py"
+
+# Cross-library comparison: the `ppvm-*-2` engine against its own v1 (the
+# pre-refactor `ppvm-pauli-sum`), PauliPropagation.jl, PauliStrings.jl and
+# Qiskit's `pauli-prop`, on a TFIM Trotter circuit and a
+# Heisenberg-model correlator. All four run the *same* gate list in the same
+# order with the same truncation, and the driver diffs their propagated supports
+# term-for-term before it will report a timing.
+#
+#   mise run xbench                                  # both models, then the plot
+#   mise run xbench -- --model tfim --qubits 8,16,24 # narrower sweep
+#   mise run xbench -- --libs ppvm-2,pauli-prop      # subset of engines
+#
+# Needs `julia` (with the `julia-benchmarks` project instantiated) and `uv` for
+# the Qiskit runner; engines whose toolchain is missing are skipped with a note.
+# See `benchmarks/cross-library/README.md`.
+[tasks.xbench]
+description = "Benchmark ppvm-*-2 against ppvm v1, PauliPropagation.jl, PauliStrings.jl and pauli-prop."
+run = [
+  "uv run --no-project python3 benchmarks/cross-library/run_xbench.py {{arg(name='args', var=true, default='')}}",
+  "uv run --no-project --with matplotlib python3 benchmarks/cross-library/plot_xbench.py --csv target/xbench/results.csv --out target/xbench/xbench.png --title 'Pauli propagation: ppvm-2 vs ppvm-1, PauliPropagation.jl, PauliStrings.jl, pauli-prop'",
+]

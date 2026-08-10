@@ -1247,10 +1247,17 @@ where
     where
         F: Fn(&K) -> i8 + Send + Sync,
     {
+        // `mul_sign_assign`, not `*coeff = coeff.mul_sign(sign)`: the by-value
+        // form takes `&self`, so on a heap-owning ring it clones the whole
+        // coefficient, negates the copy, then drops the original. Old's `x`/`y`/
+        // `z` are `*v *= -1.0` in place (`ppvm-pauli-sum/src/sum/clifford.rs`),
+        // and `ppvm-sym-2`'s `Term` overrides `mul_sign_assign` to match that;
+        // every other sign-flip site in this crate already went through it. The
+        // `Vec` backend below is the same body.
         for (key, coeff) in &mut self.primary {
             let sign = f(key);
             if sign != 1 {
-                *coeff = coeff.mul_sign(sign);
+                coeff.mul_sign_assign(sign);
             }
         }
     }

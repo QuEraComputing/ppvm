@@ -66,6 +66,40 @@ use crate::policy::Policy;
 use crate::store::{RekeyBijective, SignFlipByKey, StoreAlloc};
 use crate::sum::Sum;
 
+/// `CY`'s conjugation rule on one term: `None` when a lost qubit makes the gate
+/// a no-op, else `(toggle z_control, toggle both target planes, negate)`.
+///
+/// It is a named `#[inline(always)]` function rather than the body of the two
+/// closures in [`CliffordExtensions::cy`] because *closures* carry no inline
+/// attribute. `rekey_owned` and `rekey_bijective` are `inline(always)`, so the
+/// re-key loop always inlines, but whether the closure it calls per term joins
+/// it is left to LLVM's cost model — and `CY`'s body (three bit toggles plus the
+/// eager digest rebuild, one toggle more than `CNOT`/`CZ`) landed on the wrong
+/// side of that threshold. It compiled out of line, so every term in the support
+/// paid a call, a stack frame, a spilled plane copy and an indirect struct
+/// return: `pauli_sum_surface/clifford/cy` measured 1.11x against old and stayed
+/// there under both `-Cllvm-args` layout controls, while its `cz`/`cnot`
+/// siblings — same machinery, closures LLVM did inline — sat at parity. With the
+/// body behind `inline(always)` the closure is a forwarder the cost model always
+/// takes, and the body lands back in the loop.
+#[inline(always)]
+fn cy_toggles<W>(k: &W, control: usize, target: usize) -> Option<(bool, bool, bool)>
+where
+    W: Word + PauliBits,
+{
+    if k.is_lost(control) || k.is_lost(target) {
+        return None;
+    }
+    let control_code = k.pauli_code(control);
+    let target_code = k.pauli_code(target);
+    let xc = control_code & 1 != 0;
+    let zc = control_code & 2 != 0;
+    let xt = target_code & 1 != 0;
+    let zt = target_code & 2 != 0;
+    let target_mix = xt ^ zt;
+    Some((target_mix, xc, xc & target_mix & !(zc ^ zt)))
+}
+
 impl<S, P, W, C> Sum<S, P>
 where
     S: Accumulate<Key = W, Coeff = C> + StoreAlloc + Retain<W, C> + RekeyBijective<W, C>,
@@ -381,38 +415,31 @@ where
 
     /// `CY`: direct two-site rewrite using the same pre-mutation sign predicate
     /// as the audited phased-word kernel.
+    ///
+    /// The bodies live in [`cy_toggles`] rather than inline in the closures, so
+    /// each closure is a one-line forwarder — see that function for why.
     #[inline(always)]
     fn cy(&mut self, control: usize, target: usize) {
         if W::PREFER_BORROWED_REKEY {
             self.rekey_ref(move |k| {
-                if k.is_lost(control) || k.is_lost(target) {
+                let Some((toggle_z_c, toggle_t, negate)) = cy_toggles(k, control, target) else {
                     return (k.clone(), false);
-                }
-                let control_code = k.pauli_code(control);
-                let target_code = k.pauli_code(target);
-                let xc = control_code & 1 != 0;
-                let zc = control_code & 2 != 0;
-                let xt = target_code & 1 != 0;
-                let zt = target_code & 2 != 0;
-                let target_mix = xt ^ zt;
-                let out = k.toggled_bits2(control, false, target_mix, target, xc, xc);
-                (out, xc & target_mix & !(zc ^ zt))
+                };
+                (
+                    k.toggled_bits2(control, false, toggle_z_c, target, toggle_t, toggle_t),
+                    negate,
+                )
             });
             return;
         }
         self.rekey_owned(move |k| {
-            if k.is_lost(control) || k.is_lost(target) {
+            let Some((toggle_z_c, toggle_t, negate)) = cy_toggles(&k, control, target) else {
                 return (k, false);
-            }
-            let control_code = k.pauli_code(control);
-            let target_code = k.pauli_code(target);
-            let xc = control_code & 1 != 0;
-            let zc = control_code & 2 != 0;
-            let xt = target_code & 1 != 0;
-            let zt = target_code & 2 != 0;
-            let target_mix = xt ^ zt;
-            let out = k.into_toggled_bits2(control, false, target_mix, target, xc, xc);
-            (out, xc & target_mix & !(zc ^ zt))
+            };
+            (
+                k.into_toggled_bits2(control, false, toggle_z_c, target, toggle_t, toggle_t),
+                negate,
+            )
         });
     }
 

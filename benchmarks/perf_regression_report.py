@@ -35,6 +35,26 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Fail in the first second, not after the benchmarks.
+#
+# This script's last step imports `summarize_criterion_output`, which uses
+# `itertools.pairwise` (3.10+). Reached on an older interpreter, the run dies
+# *after* the measurement — a 15-minute sweep discarded at the summarize step,
+# with the raw capture the only thing left. The repo targets 3.10+ everywhere
+# (`ppvm-python`'s `requires-python`, its `.python-version`, the root
+# `.python-version` this check backstops), so the only way to arrive here on 3.9
+# is to invoke a bare `python3` — typically macOS's `/usr/bin/python3` — instead
+# of the documented `mise run perf-report`. Say so, up front.
+if sys.version_info < (3, 10):
+    sys.exit(
+        f"perf_regression_report.py needs Python 3.10+, got "
+        f"{platform.python_version()} ({sys.executable}).\n"
+        f"Run it as `mise run perf-report` (or `uv run --no-project python3 "
+        f"{Path(__file__).name}`), which resolves the pinned interpreter.\n"
+        f"Refusing to start: this failure would otherwise surface only after "
+        f"the benchmarks had finished."
+    )
+
 ROOT = Path(__file__).resolve().parent.parent
 CONFORMANCE = ROOT / "crates" / "ppvm-conformance-2"
 PACKAGE = "ppvm-conformance-2"

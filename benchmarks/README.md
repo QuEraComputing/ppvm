@@ -31,6 +31,16 @@ mise run perf-report -- --reuse target/perf-report/raw.txt
 Outputs land in `target/perf-report/`: `raw.txt` (concatenated Criterion
 output), `pairs.tsv` (every pair, slowest first), and `report.md`.
 
+Run these through `mise run perf-report`, not a bare `python3`. The task routes
+through `uv run --no-project`, which resolves the interpreter pinned by the
+repo-root `.python-version` (3.12, matching `ppvm-python/.python-version`);
+`requires-python = ">=3.10"` remains the *support* floor for users of the Python
+package and is unaffected. A bare `python3` on macOS is `/usr/bin/python3`
+(3.9.x), which is below the floor these scripts need — `perf_regression_report.py`
+refuses to start on it rather than failing at the summarize step, after the
+benchmarks have already run. If a run does die late, nothing is lost:
+`--reuse target/perf-report/raw.txt` re-summarizes the saved capture.
+
 ## Ruling out executable placement
 
 A row can clear four launches and still not be an engine regression: both sides

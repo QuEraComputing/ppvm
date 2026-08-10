@@ -11,38 +11,13 @@ crate-type = ["cdylib"]
 # binary cannot link an extension-module crate without embedding libpython.
 test = false
 
-[features]
-default = ["legacy"]
-legacy = [
-    "dep:ppvm-pauli-sum-legacy",
-    "dep:ppvm-tableau-legacy",
-    "dep:ppvm-tableau-sum-legacy",
-    "ppvm-stim/legacy",
-]
-traits-2 = [
-    "dep:ppvm-pauli-sum-2",
-    "dep:ppvm-tableau-2",
-    "dep:ppvm-traits-2",
-    "dep:rand",
-    "ppvm-stim/traits-2",
-]
-
 [dependencies]
 bnum = "0.13.0"
-fxhash = "0.2.1"
-num = "0.4.3"
 paste = "1.0.15"
-ppvm-pauli-sum-legacy = { package = "ppvm-pauli-sum", version = "0.1.0", path = "../ppvm-pauli-sum", optional = true }
-ppvm-pauli-sum-2 = { version = "0.1.0", path = "../ppvm-pauli-sum-2", optional = true }
-ppvm-stim = { version = "0.1.0", path = "../ppvm-stim", default-features = false, features = ["rayon"] }
-ppvm-tableau-legacy = { package = "ppvm-tableau", version = "0.1.0", path = "../ppvm-tableau", optional = true }
-ppvm-tableau-2 = { version = "0.1.0", path = "../ppvm-tableau-2", optional = true, features = ["rayon"] }
-ppvm-tableau-sum-legacy = { package = "ppvm-tableau-sum", version = "0.1.0", path = "../ppvm-tableau-sum", optional = true, features = ["rayon"] }
-ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2", optional = true }
-# `-2` injects randomness at the call site, so the `#[pyclass]` wrappers own the
-# generator on Python's behalf (`src/backend/mod.rs`). The legacy tableau embeds
-# its own, hence the feature gate.
-rand = { version = "0.10.1", optional = true }
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
+ppvm-stim = { version = "0.1.0", path = "../ppvm-stim", features = ["rayon"] }
+ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+ppvm-tableau-sum = { version = "0.1.0", path = "../ppvm-tableau-sum", features = ["rayon"] }
 # abi3-py310: build a single stable-ABI wheel that loads on CPython 3.10+,
 # instead of one wheel per Python version.
 pyo3 = { version = "0.29.0", features = [

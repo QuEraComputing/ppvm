@@ -87,14 +87,25 @@ jobs:
           cargo test -p ppvm-cli --all-targets --no-default-features --features traits-2,rayon
 
   # Cross-compile the whole workspace for browser wasm so a wasm regression
-  # surfaces in CI. Three crates are never browser-wasm targets and are
+  # surfaces in CI. Four crates are never browser-wasm targets and are
   # excluded: `ppvm-python-native` (a CPython extension), `ppvm-cli` (a terminal
-  # binary), and `ppvm-tui` (its ratatui/crossterm terminal UI). The reusable
+  # binary), `ppvm-tui` (its ratatui/crossterm terminal UI), and
+  # `ppvm-conformance-2` (a `publish = false` differential-test/Criterion crate
+  # that links both engines). The reusable
   # engine lives in the library crates, which stay covered. Native-only
   # acceleration deps (gxhash, dashmap →
   # rayon, ahash) are pruned automatically by the `cfg(not(target_arch =
   # "wasm32"))` dependency tables, and `rand`'s entropy uses the getrandom
   # `wasm_js` backend wired in `.cargo/config.toml` — so no extra flags here.
+  #
+  # `ppvm-conformance-2` must be excluded rather than merely skipped, because a
+  # workspace build UNIFIES features: it depends on `ppvm-tableau-sum` with
+  # `features = ["rayon"]`, which propagates to `ppvm-tableau/rayon`. That
+  # crate declares the feature globally but its `rayon` *dependency* only under
+  # `cfg(not(target_arch = "wasm32"))`, so on wasm the `#[cfg(feature =
+  # "rayon")]` bodies compile with no `rayon` crate to link (E0433). Nothing
+  # enabled that feature before this crate existed, which is why the latent
+  # mismatch in `ppvm-tableau` only surfaced now.
   wasm-build:
     name: wasm32 build (browser)
     needs: pre-commit
@@ -109,7 +120,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build workspace for wasm32-unknown-unknown
-        run: cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-native --exclude ppvm-cli --exclude ppvm-tui
+        run: cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-native --exclude ppvm-cli --exclude ppvm-tui --exclude ppvm-conformance-2
 
       # Criterion's benchmark targets are native-only (its dependency enables
       # Rayon), so cross-check the selected browser library rather than
@@ -133,18 +144,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
-      - name: Run Python tests on legacy backend
-        env:
-          PPVM_EXPECT_BACKEND: legacy
-        run: uv run --project ppvm-python --group dev pytest ppvm-python/test/ docs/examples/
-
-      - name: Build traits-2 Python extension
-        working-directory: ppvm-python
-        run: uv run --group dev maturin develop --no-default-features --features traits-2
-
-      - name: Run Python tests on traits-2 backend
-        env:
-          PPVM_EXPECT_BACKEND: traits-2
+      - name: Run Python tests
         run: uv run --project ppvm-python --group dev pytest ppvm-python/test/ docs/examples/
 
   # The pure-Rust crates are platform-agnostic and fully verified on Linux by

@@ -1438,18 +1438,12 @@ name = "ppvm-python-native"
 version = "0.1.0"
 dependencies = [
  "bnum",
- "fxhash",
- "num",
  "paste",
  "ppvm-pauli-sum",
- "ppvm-pauli-sum-2",
  "ppvm-stim",
  "ppvm-tableau",
- "ppvm-tableau-2",
  "ppvm-tableau-sum",
- "ppvm-traits-2",
  "pyo3",
- "rand 0.10.1",
 ]
 
 [[package]]

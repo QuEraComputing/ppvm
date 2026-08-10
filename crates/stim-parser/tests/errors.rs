@@ -77,6 +77,24 @@ fn unclosed_bracket_yields_syntax_error() {
 }
 
 #[test]
+fn unknown_tag_escape_yields_syntax_error() {
+    let err = parse(r"H[bad\x] 0").unwrap_err();
+    assert_eq!(err.iter().next().unwrap().code, Some("syntax"));
+}
+
+#[test]
+fn raw_newline_in_tag_yields_syntax_error() {
+    let err = parse("H[bad\ntag] 0").unwrap_err();
+    assert_eq!(err.iter().next().unwrap().code, Some("syntax"));
+}
+
+#[test]
+fn raw_carriage_return_in_tag_yields_syntax_error() {
+    let err = parse("H[bad\rtag] 0").unwrap_err();
+    assert_eq!(err.iter().next().unwrap().code, Some("syntax"));
+}
+
+#[test]
 fn line_numbers_in_errors_are_correct() {
     let err = parse("X 0\nY 0\nFROBNICATE 0").unwrap_err();
     let s = err.to_string();

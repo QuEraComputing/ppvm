@@ -31,13 +31,13 @@ fn vanilla_h_passes_through() {
     match &p.instructions[0] {
         ExtendedInstruction::Gate(GateOp {
             name,
-            tags,
+            tag,
             targets,
             span,
             ..
         }) => {
             assert_eq!(*name, GateName::H);
-            assert!(tags.is_empty());
+            assert!(tag.is_empty());
             assert_eq!(targets, &vec![0]);
             assert_eq!(span.line(&p.line_map), 1);
         }
@@ -154,10 +154,9 @@ fn repeat_invalid_extended_tag_in_body_errors() {
 fn lenient_unknown_tag_on_h_passes_through() {
     let p = parse_ok("H[unrelated] 0\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Gate(GateOp { name, tags, .. }) => {
+        ExtendedInstruction::Gate(GateOp { name, tag, .. }) => {
             assert_eq!(*name, GateName::H);
-            assert_eq!(tags.len(), 1);
-            assert_eq!(tags[0].name, "unrelated");
+            assert_eq!(tag, "unrelated");
         }
         other => panic!("{other:?}"),
     }
@@ -205,9 +204,9 @@ fn s_dag_t_promotes_to_t_dag() {
 fn s_with_no_tag_is_vanilla_gate() {
     let p = parse_ok("S 0\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Gate(GateOp { name, tags, .. }) => {
+        ExtendedInstruction::Gate(GateOp { name, tag, .. }) => {
             assert_eq!(*name, GateName::S);
-            assert!(tags.is_empty());
+            assert!(tag.is_empty());
         }
         other => panic!("{other:?}"),
     }
@@ -217,43 +216,45 @@ fn s_with_no_tag_is_vanilla_gate() {
 fn s_dag_with_no_tag_is_vanilla_gate() {
     let p = parse_ok("S_DAG 0\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Gate(GateOp { name, tags, .. }) => {
+        ExtendedInstruction::Gate(GateOp { name, tag, .. }) => {
             assert_eq!(*name, GateName::SDag);
-            assert!(tags.is_empty());
+            assert!(tag.is_empty());
         }
         other => panic!("{other:?}"),
     }
 }
 
 #[test]
-fn s_with_unknown_tag_errors() {
-    let err = parse_err("S[X] 0\n");
-    let d = err.iter().next().unwrap();
-    assert_eq!(d.code, Some("invalid-tag"));
-    assert!(
-        err.to_string().starts_with("error at line 1,"),
-        "display: {err}"
-    );
+fn non_t_tags_on_s_and_s_dag_are_ignored() {
+    for (src, expected_name, expected_tag) in [
+        ("S[note: abc] 0\n", GateName::S, "note: abc"),
+        ("S_DAG[X] 0\n", GateName::SDag, "X"),
+        ("S[T, X] 0\n", GateName::S, "T, X"),
+        ("S[T(0.5)] 0\n", GateName::S, "T(0.5)"),
+        ("S_DAG[T(0.5)] 0\n", GateName::SDag, "T(0.5)"),
+        (r"S[T\n] 0", GateName::S, "T\n"),
+    ] {
+        let p = parse_ok(src);
+        match &p.instructions[0] {
+            ExtendedInstruction::Gate(GateOp { name, tag, .. }) => {
+                assert_eq!(*name, expected_name);
+                assert_eq!(tag, expected_tag);
+            }
+            other => panic!("{src}: {other:?}"),
+        }
+    }
 }
 
 #[test]
-fn s_dag_with_unknown_tag_errors() {
-    assert_eq!(err_code("S_DAG[X] 0\n"), Some("invalid-tag"));
-}
-
-#[test]
-fn s_with_multiple_tags_errors() {
-    assert_eq!(err_code("S[T, X] 0\n"), Some("invalid-tag"));
-}
-
-#[test]
-fn s_t_with_params_errors() {
-    assert_eq!(err_code("S[T(0.5)] 0\n"), Some("invalid-tag"));
-}
-
-#[test]
-fn s_dag_t_with_params_errors() {
-    assert_eq!(err_code("S_DAG[T(0.5)] 0\n"), Some("invalid-tag"));
+fn tags_on_native_t_and_t_dag_are_ignored() {
+    assert!(matches!(
+        &parse_ok("T[note] 0\n").instructions[0],
+        ExtendedInstruction::T { targets, .. } if targets == &vec![0]
+    ));
+    assert!(matches!(
+        &parse_ok("T_DAG[T] 1\n").instructions[0],
+        ExtendedInstruction::TDag { targets, .. } if targets == &vec![1]
+    ));
 }
 
 #[test]
@@ -334,9 +335,9 @@ fn i_u3_missing_phi_errors() {
 fn i_with_no_tag_is_vanilla_identity() {
     let p = parse_ok("I 0\n");
     match &p.instructions[0] {
-        ExtendedInstruction::Gate(GateOp { name, tags, .. }) => {
+        ExtendedInstruction::Gate(GateOp { name, tag, .. }) => {
             assert_eq!(*name, GateName::Identity);
-            assert!(tags.is_empty());
+            assert!(tag.is_empty());
         }
         other => panic!("{other:?}"),
     }
@@ -401,6 +402,16 @@ fn i_with_unknown_tag_errors() {
         err.to_string().starts_with("error at line 1,"),
         "display: {err}"
     );
+}
+
+#[test]
+fn i_with_general_comment_tag_errors() {
+    assert_eq!(err_code("I[note: abc] 0\n"), Some("invalid-tag"));
+
+    let err = parse_err(r"I[note\nbad] 0");
+    let message = &err.iter().next().unwrap().message;
+    assert!(message.contains(r"note\nbad"), "message: {message}");
+    assert!(!message.contains('\n'), "message: {message}");
 }
 
 #[test]
@@ -499,6 +510,7 @@ fn i_error_loss_wrong_arg_count_errors() {
 #[test]
 fn i_error_unknown_tag_errors() {
     assert_eq!(err_code("I_ERROR[bogus](0.1) 0\n"), Some("invalid-tag"));
+    assert_eq!(err_code(r"I_ERROR[loss\r](0.1) 0"), Some("invalid-tag"));
 }
 
 #[test]

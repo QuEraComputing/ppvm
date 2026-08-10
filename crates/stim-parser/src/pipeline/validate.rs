@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use crate::ast::shared::{
-    AnnotationOp, GateOp, MeasureOp, MppOp, NoiseOp, PauliAxis, PauliFactor, Tag, Target,
+    AnnotationOp, GateOp, MeasureOp, MppOp, NoiseOp, PauliAxis, PauliFactor, Target,
 };
 use crate::ast::vanilla::{Instruction, Program};
 use crate::diagnostics::{Aborted, DiagnosticSink, LineMap, Span};
@@ -62,7 +62,7 @@ fn validate_node(
     match node {
         RawSyntaxNode::Instruction {
             name,
-            tags,
+            tag,
             args,
             targets,
             span,
@@ -103,7 +103,7 @@ fn validate_node(
                     );
                 }
                 return Ok(Some(Instruction::Mpp(MppOp {
-                    tags,
+                    tag,
                     args,
                     products,
                     span,
@@ -168,16 +168,26 @@ fn validate_node(
 
             Ok(Some(build_instruction(
                 entry,
-                tags,
+                tag,
                 args,
                 parsed_targets,
                 span,
             )))
         }
-        RawSyntaxNode::Repeat { count, body, span } => {
+        RawSyntaxNode::Repeat {
+            tag,
+            count,
+            body,
+            span,
+        } => {
             let span: Span = span.into();
             let body = validate_slice(body, line_map, sink)?;
-            Ok(Some(Instruction::Repeat { count, body, span }))
+            Ok(Some(Instruction::Repeat {
+                tag,
+                count,
+                body,
+                span,
+            }))
         }
     }
 }
@@ -272,7 +282,7 @@ fn qubit_indices(targets: Vec<Target>) -> Vec<usize> {
 
 fn build_instruction(
     entry: TableEntry,
-    tags: Vec<Tag>,
+    tag: String,
     args: Vec<f64>,
     targets: Vec<Target>,
     span: Span,
@@ -280,33 +290,34 @@ fn build_instruction(
     match entry.kind {
         EntryKind::Gate(name) => Instruction::Gate(GateOp {
             name,
-            tags,
+            tag,
             args,
             targets,
             span,
         }),
         EntryKind::Noise(name) => Instruction::Noise(NoiseOp {
             name,
-            tags,
+            tag,
             args,
             targets: qubit_indices(targets),
             span,
         }),
         EntryKind::Measure(name) => Instruction::Measure(MeasureOp {
             name,
-            tags,
+            tag,
             args,
             targets: qubit_indices(targets),
             span,
         }),
         EntryKind::Annotation(kind) => Instruction::Annotation(AnnotationOp {
             kind,
+            tag,
             args,
             targets: qubit_indices(targets),
             span,
         }),
         EntryKind::MPad => Instruction::MPad {
-            tags,
+            tag,
             prob: args.into_iter().next(),
             bits: qubit_indices(targets),
             span,
@@ -317,7 +328,7 @@ fn build_instruction(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::shared::{Tag, TagParam, Target};
+    use crate::ast::shared::Target;
     use crate::ast::vanilla::Instruction;
     use crate::diagnostics::{Collect, Diagnostic, FailFast, LineMap};
     use crate::instructions::{GateName, MeasureName, NoiseName};
@@ -337,7 +348,7 @@ mod tests {
     ) -> RawSyntaxNode {
         RawSyntaxNode::Instruction {
             name: name.to_string(),
-            tags: vec![],
+            tag: String::new(),
             args,
             targets: targets
                 .into_iter()
@@ -358,7 +369,7 @@ mod tests {
     ) -> RawSyntaxNode {
         RawSyntaxNode::Instruction {
             name: name.to_string(),
-            tags: vec![],
+            tag: String::new(),
             args,
             targets: targets
                 .into_iter()
@@ -371,10 +382,10 @@ mod tests {
         }
     }
 
-    fn instr_with_tags(name: &str, tags: Vec<Tag>) -> RawSyntaxNode {
+    fn instr_with_tag(name: &str, tag: &str) -> RawSyntaxNode {
         RawSyntaxNode::Instruction {
             name: name.to_string(),
-            tags,
+            tag: tag.to_string(),
             args: vec![],
             targets: vec![RawTarget {
                 text: "0".to_string(),
@@ -514,6 +525,7 @@ mod tests {
     #[test]
     fn repeat_body_is_validated_recursively() {
         let nodes = vec![RawSyntaxNode::Repeat {
+            tag: String::new(),
             count: 3,
             body: vec![instr("H", vec![], vec!["0"], (11, 12))],
             span: SimpleSpan::from(0..6),
@@ -521,7 +533,9 @@ mod tests {
         let line_map = Arc::new(LineMap::new("REPEAT 3 { H 0 }"));
         let prog = ok_program(nodes, &line_map);
         match &prog.instructions[0] {
-            Instruction::Repeat { count, body, span } => {
+            Instruction::Repeat {
+                count, body, span, ..
+            } => {
                 assert_eq!(*count, 3);
                 assert_eq!(span.line(&prog.line_map), 1);
                 assert!(matches!(
@@ -538,31 +552,11 @@ mod tests {
     }
 
     #[test]
-    fn tags_pass_through_validator() {
-        let nodes = vec![instr_with_tags(
-            "H",
-            vec![Tag {
-                name: "R".to_string(),
-                params: vec![
-                    TagParam::Positional(0.5),
-                    TagParam::Named {
-                        key: "theta".to_string(),
-                        value: 0.25,
-                        had_pi: false,
-                    },
-                ],
-            }],
-        )];
+    fn tag_passes_through_validator() {
+        let nodes = vec![instr_with_tag("H", "R(0.5, theta=0.25)")];
         let prog = ok_program(nodes, &lm());
         match &prog.instructions[0] {
-            Instruction::Gate(GateOp { tags, .. }) => {
-                assert_eq!(tags[0].name, "R");
-                assert!(matches!(tags[0].params[0], TagParam::Positional(0.5)));
-                assert!(matches!(
-                    &tags[0].params[1],
-                    TagParam::Named { key, value, .. } if key == "theta" && *value == 0.25
-                ));
-            }
+            Instruction::Gate(GateOp { tag, .. }) => assert_eq!(tag, "R(0.5, theta=0.25)"),
             other => panic!("{other:?}"),
         }
     }

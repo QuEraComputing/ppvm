@@ -61,7 +61,9 @@ fn parse_simple_repeat() {
     let p = parse(src).unwrap();
     assert_eq!(p.instructions.len(), 1);
     match &p.instructions[0] {
-        Instruction::Repeat { count, body, span } => {
+        Instruction::Repeat {
+            count, body, span, ..
+        } => {
             assert_eq!(*count, 3);
             assert_eq!(body.len(), 2);
             assert_eq!(span.line(&p.line_map), 1);

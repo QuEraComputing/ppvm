@@ -54,7 +54,7 @@ pub fn parse_extended(src: &str) -> Result<ExtendedProgram, Diagnostics> {
 pub mod prelude {
     pub use crate::ast::{
         AnnotationOp, Axis, ExtendedInstruction, ExtendedProgram, GateOp, Instruction, MeasureOp,
-        MppOp, NoiseOp, PauliAxis, PauliFactor, Program, Tag, TagParam, Target,
+        MppOp, NoiseOp, PauliAxis, PauliFactor, Program, Target,
     };
     pub use crate::diagnostics::{
         Diagnostic, DiagnosticSink, Diagnostics, Flow, LineMap, Severity, Span,

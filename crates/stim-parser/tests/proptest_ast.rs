@@ -108,7 +108,7 @@ fn gate_instr() -> impl Strategy<Value = Instruction> {
         (single_qubit_clifford(), one_q_targets()).prop_map(|(name, targets)| {
             Instruction::Gate(GateOp {
                 name,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![],
                 targets: targets.into_iter().map(Target::Qubit).collect(),
                 span: span0(),
@@ -117,7 +117,7 @@ fn gate_instr() -> impl Strategy<Value = Instruction> {
         (two_qubit_clifford(), two_q_pair_targets()).prop_map(|(name, targets)| {
             Instruction::Gate(GateOp {
                 name,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![],
                 targets: targets.into_iter().map(Target::Qubit).collect(),
                 span: span0(),
@@ -130,14 +130,14 @@ fn noise_instr() -> impl Strategy<Value = Instruction> {
     prop_oneof![
         (prob_lit(), one_q_targets()).prop_map(|(p, targets)| Instruction::Noise(NoiseOp {
             name: NoiseName::Depolarize1,
-            tags: vec![],
+            tag: String::new(),
             args: vec![p],
             targets,
             span: span0(),
         })),
         (prob_lit(), two_q_pair_targets()).prop_map(|(p, targets)| Instruction::Noise(NoiseOp {
             name: NoiseName::Depolarize2,
-            tags: vec![],
+            tag: String::new(),
             args: vec![p],
             targets,
             span: span0(),
@@ -145,7 +145,7 @@ fn noise_instr() -> impl Strategy<Value = Instruction> {
         (prob_lit(), prob_lit(), prob_lit(), one_q_targets()).prop_map(|(a, b, c, targets)| {
             Instruction::Noise(NoiseOp {
                 name: NoiseName::PauliChannel1,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![a, b, c],
                 targets,
                 span: span0(),
@@ -153,21 +153,21 @@ fn noise_instr() -> impl Strategy<Value = Instruction> {
         }),
         (prob_lit(), one_q_targets()).prop_map(|(p, targets)| Instruction::Noise(NoiseOp {
             name: NoiseName::XError,
-            tags: vec![],
+            tag: String::new(),
             args: vec![p],
             targets,
             span: span0(),
         })),
         (prob_lit(), one_q_targets()).prop_map(|(p, targets)| Instruction::Noise(NoiseOp {
             name: NoiseName::YError,
-            tags: vec![],
+            tag: String::new(),
             args: vec![p],
             targets,
             span: span0(),
         })),
         (prob_lit(), one_q_targets()).prop_map(|(p, targets)| Instruction::Noise(NoiseOp {
             name: NoiseName::ZError,
-            tags: vec![],
+            tag: String::new(),
             args: vec![p],
             targets,
             span: span0(),
@@ -184,7 +184,7 @@ fn measure_instr() -> impl Strategy<Value = Instruction> {
     (name, proptest::option::of(prob_lit()), one_q_targets()).prop_map(|(name, args, targets)| {
         Instruction::Measure(MeasureOp {
             name,
-            tags: vec![],
+            tag: String::new(),
             args: args.map(|p| vec![p]).unwrap_or_default(),
             targets,
             span: span0(),
@@ -196,12 +196,14 @@ fn annotation_instr() -> impl Strategy<Value = Instruction> {
     prop_oneof![
         Just(Instruction::Annotation(AnnotationOp {
             kind: AnnotationKind::Tick,
+            tag: String::new(),
             args: vec![],
             targets: vec![],
             span: span0(),
         })),
         Just(Instruction::Annotation(AnnotationOp {
             kind: AnnotationKind::Detector,
+            tag: String::new(),
             args: vec![],
             targets: vec![],
             span: span0(),
@@ -215,7 +217,7 @@ fn mpad_instr() -> impl Strategy<Value = Instruction> {
         prop::collection::vec(0usize..2, 1..6),
     )
         .prop_map(|(prob, bits)| Instruction::MPad {
-            tags: vec![],
+            tag: String::new(),
             prob,
             bits,
             span: span0(),
@@ -238,6 +240,7 @@ fn instr() -> impl Strategy<Value = Instruction> {
     flat_instr().prop_recursive(1, 6, 2, |_inner| {
         (1u64..5, prop::collection::vec(flat_instr(), 1..3)).prop_map(|(count, body)| {
             Instruction::Repeat {
+                tag: String::new(),
                 count,
                 body,
                 span: span0(),
@@ -260,7 +263,7 @@ fn ext_gate_instr() -> impl Strategy<Value = ExtendedInstruction> {
         (single_qubit_clifford(), one_q_targets()).prop_map(|(name, targets)| {
             ExtendedInstruction::Gate(GateOp {
                 name,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![],
                 targets: targets.into_iter().map(Target::Qubit).collect(),
                 span: span0(),
@@ -269,7 +272,7 @@ fn ext_gate_instr() -> impl Strategy<Value = ExtendedInstruction> {
         (two_qubit_clifford(), two_q_pair_targets()).prop_map(|(name, targets)| {
             ExtendedInstruction::Gate(GateOp {
                 name,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![],
                 targets: targets.into_iter().map(Target::Qubit).collect(),
                 span: span0(),
@@ -283,7 +286,7 @@ fn ext_noise_instr() -> impl Strategy<Value = ExtendedInstruction> {
         (prob_lit(), one_q_targets()).prop_map(|(p, targets)| ExtendedInstruction::Noise(
             NoiseOp {
                 name: NoiseName::Depolarize1,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![p],
                 targets,
                 span: span0(),
@@ -292,7 +295,7 @@ fn ext_noise_instr() -> impl Strategy<Value = ExtendedInstruction> {
         (prob_lit(), two_q_pair_targets()).prop_map(|(p, targets)| ExtendedInstruction::Noise(
             NoiseOp {
                 name: NoiseName::Depolarize2,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![p],
                 targets,
                 span: span0(),
@@ -301,7 +304,7 @@ fn ext_noise_instr() -> impl Strategy<Value = ExtendedInstruction> {
         (prob_lit(), prob_lit(), prob_lit(), one_q_targets()).prop_map(|(a, b, c, targets)| {
             ExtendedInstruction::Noise(NoiseOp {
                 name: NoiseName::PauliChannel1,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![a, b, c],
                 targets,
                 span: span0(),
@@ -310,7 +313,7 @@ fn ext_noise_instr() -> impl Strategy<Value = ExtendedInstruction> {
         (prob_lit(), one_q_targets()).prop_map(|(p, targets)| ExtendedInstruction::Noise(
             NoiseOp {
                 name: NoiseName::XError,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![p],
                 targets,
                 span: span0(),
@@ -319,7 +322,7 @@ fn ext_noise_instr() -> impl Strategy<Value = ExtendedInstruction> {
         (prob_lit(), one_q_targets()).prop_map(|(p, targets)| ExtendedInstruction::Noise(
             NoiseOp {
                 name: NoiseName::YError,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![p],
                 targets,
                 span: span0(),
@@ -328,7 +331,7 @@ fn ext_noise_instr() -> impl Strategy<Value = ExtendedInstruction> {
         (prob_lit(), one_q_targets()).prop_map(|(p, targets)| ExtendedInstruction::Noise(
             NoiseOp {
                 name: NoiseName::ZError,
-                tags: vec![],
+                tag: String::new(),
                 args: vec![p],
                 targets,
                 span: span0(),
@@ -346,7 +349,7 @@ fn ext_measure_instr() -> impl Strategy<Value = ExtendedInstruction> {
     (name, proptest::option::of(prob_lit()), one_q_targets()).prop_map(|(name, args, targets)| {
         ExtendedInstruction::Measure(MeasureOp {
             name,
-            tags: vec![],
+            tag: String::new(),
             args: args.map(|p| vec![p]).unwrap_or_default(),
             targets,
             span: span0(),
@@ -358,12 +361,14 @@ fn ext_annotation_instr() -> impl Strategy<Value = ExtendedInstruction> {
     prop_oneof![
         Just(ExtendedInstruction::Annotation(AnnotationOp {
             kind: AnnotationKind::Tick,
+            tag: String::new(),
             args: vec![],
             targets: vec![],
             span: span0(),
         })),
         Just(ExtendedInstruction::Annotation(AnnotationOp {
             kind: AnnotationKind::Detector,
+            tag: String::new(),
             args: vec![],
             targets: vec![],
             span: span0(),
@@ -436,7 +441,7 @@ fn ext_flat() -> impl Strategy<Value = ExtendedInstruction> {
             prop::collection::vec(any::<bool>(), 1..6),
         )
             .prop_map(|(prob, bits)| ExtendedInstruction::MPad {
-                tags: vec![],
+                tag: String::new(),
                 prob,
                 bits,
                 span: span0(),
@@ -448,6 +453,7 @@ fn ext_instr() -> impl Strategy<Value = ExtendedInstruction> {
     ext_flat().prop_recursive(1, 6, 2, |_inner| {
         (1u64..5, prop::collection::vec(ext_flat(), 1..3)).prop_map(|(count, body)| {
             ExtendedInstruction::Repeat {
+                tag: String::new(),
                 count,
                 body,
                 span: span0(),

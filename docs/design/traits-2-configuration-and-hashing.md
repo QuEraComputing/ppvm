@@ -366,8 +366,15 @@ pub trait RotationOne<C: Coefficient, A: Angle<C> = C> {
     // ry/rz likewise; rx_many/ry_many/rz_many loop over them (`where A: Clone`)
 }
 
+// Stochastic operations take the randomness as a parameter; see
+// "Where the randomness lives" below.
 pub trait PauliError<C: Coefficient> {
-    fn pauli_error(&mut self, qubit: usize, probabilities: [C; 3]);
+    fn pauli_error<R: rand::Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        probabilities: [C; 3],
+        rng: &mut R,
+    );
 }
 ```
 
@@ -384,10 +391,27 @@ sit on top of) together with the other gate traits `RotationTwo`, `RotXY`,
 and the channel family
 (`PauliErrorAll`, `TwoQubitPauliError`, `Depolarizing`, `Depolarizing2`,
 `AmplitudeDamping`, `LossChannel`, `CorrelatedLossChannel`, `ResetLossChannel`,
-`AsymmetricLossChannel`). Their only edit is the global one this document
-already applies everywhere — the `Config` bundle parameter becomes the
-coefficient type itself, and an operation with no numeric parameter (like
-`ResetLossChannel`) carries none.
+`AsymmetricLossChannel`). Two global edits apply to them, and nothing else:
+
+1. The `Config` bundle parameter becomes the coefficient type itself, and an
+   operation with no numeric parameter (like `ResetLossChannel`) carries none.
+2. Every **stochastic** method takes the generator as a parameter,
+   `rng: &mut R` (`R: rand::Rng + ?Sized`), rather than drawing from state the
+   simulator owns — see [Where the randomness lives](#where-the-randomness-lives).
+   The full inventory across this trait surface: `Measure` (both methods), all
+   eight `Reset` methods, all eight `PauliError` methods, and every method of
+   `PauliErrorAll`, `TwoQubitPauliError`, `Depolarizing`, `Depolarizing2`,
+   `LossChannel`, `CorrelatedLossChannel` and `AsymmetricLossChannel`.
+
+   The edit is deliberately **not** uniform across the channel family: two of its
+   members draw no randomness and therefore take no `rng` —
+   `AmplitudeDamping::amplitude_damping` (a deterministic Kraus rescaling of the
+   coefficients) and `ResetLossChannel::reset_loss_channel` (an unconditional
+   clear of the loss bit). "Is it a channel?" is the wrong test for this
+   parameter; "does it draw?" is the right one.
+
+Default bodies are otherwise reproduced call-for-call — `reset_x` is still
+`reset` then `h` — they simply thread `rng` through to the required method.
 
 A unital Pauli channel acts diagonally in the Pauli basis, `P ↦ λ_P·P`, and its
 transfer eigenvalue collapses (using `Σ_Q p_Q = 1`) to
@@ -443,13 +467,23 @@ trace-preserving variant.
 
 ```rust
 pub trait Measure {
-    fn measure(&mut self, qubit: usize) -> Option<bool>;
+    fn measure<R: rand::Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R) -> Option<bool>;
 
-    fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
-        targets.iter().map(|&q| self.measure(q)).collect()
+    fn measure_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        targets: &[usize],
+        rng: &mut R,
+    ) -> Vec<Option<bool>> {
+        targets.iter().map(|&q| self.measure(q, rng)).collect()
     }
 }
 ```
+
+The `rng` parameter is the point of [Where the randomness lives](#where-the-randomness-lives):
+a measurement is the canonical stochastic operation, and the state it measures
+owns no generator. This is the same signature
+[`tableau-data-structure.md`](tableau-data-structure.md) specifies for the
+concrete tableau.
 
 The same concrete tableau may implement a numeric trait for every supported
 coefficient type without storing that coefficient type. Measurement and reset
@@ -471,6 +505,62 @@ There is no shared `TableauStorage` trait in the first design. If multiple
 tableau implementations are later useful, each concrete type can implement
 the same behavioral traits. A storage abstraction should only be introduced
 after two implementations demonstrate a common interface.
+
+#### Where the randomness lives
+
+**Randomness is injected, never owned.** A generator is not part of quantum
+data, so no state type on this trait surface holds one. Every stochastic method
+takes `rng: &mut R` (`R: rand::Rng + ?Sized`); the caller decides where the
+stream comes from. This is the same kind of separation the rest of this document
+performs on `Config`: a per-instance RNG is an *algorithm-driver* choice that the
+old design had welded onto the data.
+
+The old crates embed a `SmallRng` in the tableau. That made construction
+entropy-consuming, forced `new_with_seed` / `fork(seed)` to exist purely to
+manage the field, and left every clone silently deciding whether the copy
+replays the stream or diverges from it. It also meant a value advertised as pure
+state was neither reproducible from its own contents nor safely `Clone`.
+
+Three consequences make the inversion load-bearing rather than stylistic:
+
+- **Clone is honest.** A classical-mixture branch clones a tableau into two
+  branches. With an owned generator both branches inherit the same stream and
+  draw identical outcomes — a correctness bug that hides as a statistical one.
+  With injection there is no stream to duplicate, so `fork()` is a plain
+  `clone()` and the caller derives independent streams explicitly.
+- **The states are `Send`-friendly and checkpointable.** Structural identity
+  (`PartialEq`, `Debug`, `key_hash`) needs no RNG carve-out, because there is no
+  RNG field to exclude. A state is fully determined by its data, so it can be
+  serialized, replayed, or shipped to another thread.
+- **Seeded reproducibility becomes a caller contract.** Per-shot stream
+  derivation is specified where the shots are scheduled, not inherited from
+  whatever generator a state happened to carry.
+
+The rule, one layer at a time:
+
+| Layer | Owns a generator? | Surface |
+| --- | --- | --- |
+| `ppvm-traits-2` (this document) | no | every stochastic method takes `rng: &mut R` |
+| the sparse sum and the tableau | no | pure state; `new` is deterministic, `fork()` is `clone()` |
+| a stabilizer **mixture** | yes, for **sampling only** | it owns the stream its `sampler()` draws branches from; its channels still take an injected `rng` and branch analytically without drawing |
+| frontends (Python, circuit executors) | **yes** | this is the point of the split |
+
+The frontends are where a "global generator for convenience" belongs: a Python
+user writing `tab.measure(0)` should not thread a generator, so each binding
+wrapper owns one, seeded from its constructor, and passes it into every call that
+needs it. Pushing that ownership to the boundary is what lets the core stay pure
+without changing the user-facing semantics.
+
+Two members of the channel family take no `rng` because they draw nothing —
+`AmplitudeDamping` and `ResetLossChannel`; see the enumeration in
+[Behavioral traits](#behavioral-traits) above.
+
+[`tableau-data-structure.md`](tableau-data-structure.md) applies this rule to the
+concrete tableau (no RNG field, no RNG in the structural hash).
+[`traits-2-implementation-plan.md`](traits-2-implementation-plan.md) records the
+migration specifics the rule implies — per-layer ownership during cutover, and
+how a given seed is kept reproducing the same outcomes across the old and new
+backends.
 
 `Clifford` is not implemented by hand on each standard type. It is a *derived*
 behavioral trait, blanket-implemented once over the Pauli algebra primitives
@@ -1764,7 +1854,7 @@ changed according to whether their underlying responsibility changes:
 | word-level Clifford (blanket over `PauliWordTrait`) | `Clifford` blanket over `SymplecticColumns` + `PhaseTrack` + `BlanketClifford` (opt-in marker) | The symplectic sign logic is written once and shared by the phaseless words and `Tableau`; `PhasedPauliWord` opts *out* and supplies a read-once fused `impl Clifford` instead (avoids the blanket's double bit read). |
 | `CliffordExtensions` (`s_dag`, `sqrt_x`, `sqrt_x_dag`, `sqrt_y`, `sqrt_y_dag`, `cy`, `zcy`) | `CliffordExtensions`, unchanged shape; blanket-implemented over the same `BlanketClifford` opt-ins | Same user-facing gate set and the same required/defaulted split. Only the blanket's *derivation* changes: each gate is a product of audited `Clifford` generators (`S† = S·Z`, `√X ≃ H·S·H`, `√Y ≃ H·Z`, `CY = (I⊗S)·CNOT·(I⊗S†)`) rather than a fresh hand-written bit rule, so the blanket is correct for phase-carrying opt-ins (`Tableau`) without six new unproved `PhaseTrack` deltas. Diffed against the old tables in `ppvm-conformance-2`; `PhasedPauliWord` keeps a read-once fused override, as for `Clifford`. |
 | `CliffordBatch`, `CliffordExtensionsBatch` | retained verbatim | Loop defaults over the single-qubit methods, overridable by the tableau's fused sweeps; the "empty `impl` opts in to the defaults" convention is preserved. |
-| `Reset` (`reset`, `reset_z`, `reset_x`, `reset_y`, `*_many`) | retained verbatim | The basis variants are *behaviour*, not sugar (`reset_x` = `reset` then `h`, `reset_y` = `reset` then `h` then `s`), so the default bodies and the `Clifford + CliffordExtensions` supertrait bound are reproduced call-for-call. |
+| `Reset` (`reset`, `reset_z`, `reset_x`, `reset_y`, `*_many`) | retained; each method gains `rng: &mut R` | The basis variants are *behaviour*, not sugar (`reset_x` = `reset` then `h`, `reset_y` = `reset` then `h` then `s`), so the default bodies and the `Clifford + CliffordExtensions` supertrait bound are reproduced call-for-call — they just thread the injected generator through. Reset is stochastic (it measures, then corrects), hence the parameter; see [Where the randomness lives](#where-the-randomness-lives). |
 | `RotationOne<T: Config>` (`rotate_1`, `rx`/`ry`/`rz`, `rx_many`/`ry_many`/`rz_many`) | `RotationOne<C, A = C>`, same required/defaulted split | The whole surface crosses over: `rotate_1(axis, qubit, theta)` stays the *required* axis-generic entry point (it is what `rotate_2` and the tableau backends compose with), `rx`/`ry`/`rz` stay one-line defaults over it (a backend with per-axis fast paths overrides them, as `PauliSum` does), and the three `*_many` batch loops stay (the Python bindings call them). Two edits follow from the shape change: the `Pauli::L` axis panic is unrepresentable because `L` is not a `Pauli` any more (loss is a `LossySite`), and `theta` is the angle domain `A` rather than `impl Into<T::Coeff>` — with `A` a free trait parameter an `Into` conversion would be uninferable at the call site, so the one instantiation callers used (`sum.rx(0, 0.1)` on a complex sum) is preserved by `impl Angle<Complex<f64>> for f64` instead. The batch defaults clone the angle, so they carry an explicit `where A: Clone` (the old crate got it free from `Coefficient: Clone`). |
 | `RotationTwo` (`rotate_2` + the `rxx`…`rzz` family and their `*_many`) | `RotationTwo<C, A = C>`, unchanged shape | User-facing gate surface implemented today by `ppvm-pauli-sum` and `ppvm-tableau-sum`; the `[x, z]` axis encoding, the nine named gates and the batch loops are ported verbatim. Only the angle domain and the `where A: Clone` on the batch defaults change. |
 | `TGate` (`t`, `t_dag`, `*_many`), `Projection` (`p0`, `p1`) | retained; both unparameterized | Neither takes a numeric argument — old `TGate<T: Config>` never used its parameter — so the rule that leaves `Clifford` and `ResetLossChannel` unparameterized applies. Default bodies verbatim, with one exception: `Projection`'s halving. `lean/PPVM/Instantiations/Projector.lean` (`projLin_add`/`projLin_smul`/`projLin_idem` vs `oldStep_not_additive`/`oldProj_not_idem`, `oldStep_eq_half_iff`) adjudicates old's `let half = v.half(); *v *= half` — which computes `c ↦ c²/2` — as a genuine defect; the Lean-correct halving is the ring constant `½`. |
@@ -1772,8 +1862,8 @@ changed according to whether their underlying responsibility changes:
 | `Trace<'a, RHS>` | retained (in `graded.rs`, next to `Pair`) | **Not** subsumed by `Pair::overlap`: `overlap` pairs a map with another map of the same type, while `Trace` is the heterogeneous `tr(self·value)` the old crate used against a `PauliPattern`. Kept with its free right-hand type and `Output`; implementers land with the pattern port. |
 | `PauliWordTrait::anticommutes_at` | provided method on `PauliBits` | Derivable from the two bit reads (`ω(P,Q) = x_P·z_Q ⊕ z_P·x_Q`), and consumed by the tableau's measurement pivot search, so it stays — as a default body, adding no required method. |
 | `PauliWordTrait::get_multiple`/`get_slice`/`set_multiple`/`set_new`/`set_new_2` | removed from the trait; inherent on the concrete word | Every one of them *constructs* a word (`Self::new(Q)`, clone-and-edit), and construction is deliberately concrete in this design — `Word` is read-only inspection and has no constructor, `PauliBits` is bit mutation. They remain available as inherent methods on `PauliWord`/`LossyPauliWord`, where the width and backing storage are known; no generic consumer needs them. |
-| `PauliError<T: Config>` stim aliases (`x_error`/`y_error`/`z_error`, `*_many`) | retained on `PauliError<C: Coefficient>` | One-hot defaults over `pauli_error`; only the `Config` parameter becomes the coefficient type itself. |
-| noise channels: `PauliErrorAll`, `TwoQubitPauliError`, `Depolarizing`, `Depolarizing2`, `AmplitudeDamping`, `LossChannel`, `CorrelatedLossChannel`, `ResetLossChannel`, `AsymmetricLossChannel` | retained, each `<T: Config>` → `<C: Coefficient>` | The channel family is user-facing behaviour, so it moves across unchanged (defaults and probability orderings included). `ResetLossChannel` consumes no coefficient, so it drops the parameter entirely — the same rule that leaves `Clifford` unparameterized. |
+| `PauliError<T: Config>` stim aliases (`x_error`/`y_error`/`z_error`, `*_many`) | retained on `PauliError<C: Coefficient>`; each method gains `rng: &mut R` | One-hot defaults over `pauli_error`, unchanged in body. Two edits to the signatures: the `Config` parameter becomes the coefficient type itself, and the generator is injected ([Where the randomness lives](#where-the-randomness-lives)). |
+| noise channels: `PauliErrorAll`, `TwoQubitPauliError`, `Depolarizing`, `Depolarizing2`, `AmplitudeDamping`, `LossChannel`, `CorrelatedLossChannel`, `ResetLossChannel`, `AsymmetricLossChannel` | retained, each `<T: Config>` → `<C: Coefficient>`; the seven **drawing** channels gain `rng: &mut R` | The channel family is user-facing behaviour, so the defaults and probability orderings move across unchanged. Two signature edits, applied by different rules. Coefficient: `ResetLossChannel` consumes none, so it drops the parameter entirely — the same rule that leaves `Clifford` unparameterized. Generator: injected into every channel that *draws* ([Where the randomness lives](#where-the-randomness-lives)), which excludes `AmplitudeDamping` (a deterministic Kraus rescaling) and `ResetLossChannel` (an unconditional bit clear). The two carve-outs are not the same set, so neither parameter can be inferred from the other. |
 | (new) | `SymplecticColumns`, `PhaseTrack`, `BlanketClifford`, `StabilizerFrame` | The symplectic-bits + phase-extension decomposition (role-independent column algebra, role-dependent phase, role-exclusive frame ops), plus the empty `BlanketClifford` marker that selects the shared blanket so a fused override stays coherence-legal. |
 | concrete `PauliWord` | `PauliWord` | The packed X/Z word is the same domain concept. |
 | concrete `LossyPauliWord` | `LossyPauliWord` | The packed X/Z/loss representation remains concrete and flattened. |

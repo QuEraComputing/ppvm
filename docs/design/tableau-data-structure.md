@@ -377,9 +377,11 @@ mutable loss plane uses a third cache.
 pub struct Tableau {
     data: TableauData,
     lost_count: usize,
-    xz_hash: OnceLock<u64>,
-    phase_hash: OnceLock<u64>,
-    loss_hash: OnceLock<u64>,
+    // One sentinel `AtomicU64` in the shipped crate, not three `OnceLock`s: the
+    // component split measured slower (three cells to copy and invalidate per
+    // clone-and-mutate) than one flattened digest. See
+    // `word-data-structures.md` "Hash ownership".
+    hash_cache: AtomicU64,
     // no rng — randomness is injected at `measure` (see above)
 }
 ```

@@ -126,9 +126,9 @@ pub trait PauliBits: Word {
     fn x_bit(&self, i: usize) -> bool;
     /// Read the Z bit at index `i`.
     fn z_bit(&self, i: usize) -> bool;
-    /// Set the X bit at index `i` (invalidates the hash lazily).
+    /// Set the X bit at index `i` (refreshes any structural-hash cache).
     fn set_x_bit(&mut self, i: usize, v: bool);
-    /// Set the Z bit at index `i` (invalidates the hash lazily).
+    /// Set the Z bit at index `i` (refreshes any structural-hash cache).
     fn set_z_bit(&mut self, i: usize, v: bool);
     /// Set both bit planes at one site.
     ///
@@ -230,8 +230,8 @@ pub trait PauliBits: Word {
     /// builder for free and the rotation/branching kernels can be generic over the
     /// word type (the ordinary and the lossy key run the *same* kernel — see
     /// `ppvm-pauli-sum-2`'s rotation and loss modules). `PauliWord` overrides it
-    /// with a direct plane copy that leaves the digest cache empty, skipping the
-    /// wasted cache load+invalidate a `clone` + `set_*_bit` pair performs.
+    /// with a direct plane copy that computes the digest exactly once, skipping
+    /// the redundant refresh a `clone` + `set_*_bit` pair performs.
     fn toggled_bits(&self, i: usize, toggle_x: bool, toggle_z: bool) -> Self
     where
         Self: Sized + Clone,
@@ -262,7 +262,7 @@ pub trait PauliBits: Word {
     ///
     /// The default is clone-then-flip (one clone, up to four bit writes), which is
     /// already old's shape; `PauliWord` overrides it with a direct plane copy that
-    /// leaves the digest cache empty, exactly as it does for the single-site form.
+    /// computes the digest exactly once, as it does for the single-site form.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     fn toggled_bits2(

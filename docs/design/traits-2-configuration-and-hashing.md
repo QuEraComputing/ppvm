@@ -2135,11 +2135,12 @@ cache misses outstanding at once, up to the hardware's fill-buffer limit.
 Neither is expressible through a scalar lookup; both need the whole group of
 keys up front. This is the concrete reason the layout is batch-first.
 
-The private structural-hash cache (the shipped words' `OnceLock<u64>`
-components) is a prerequisite: because each key already carries its computed
-hash, a bulk `hash_into` mostly gathers cached values, so the group-prefetch
-loop reduces to "prefetch the bucket now, confirm later" with no hashing on the
-critical path.
+The private structural-hash cache is a prerequisite: because each key already
+carries its computed digest, a bulk `hash_into` mostly gathers cached values, so
+the group-prefetch loop reduces to "prefetch the bucket now, confirm later" with
+no hashing on the critical path. That is also the argument, one level down, for
+`PauliWord` caching *eagerly* — see
+[Lazy hashing and interior mutability](#lazy-hashing-and-interior-mutability).
 
 ### The batch contract
 
@@ -2351,15 +2352,17 @@ Structural mutation already occurs through `&mut self`, so each mutator can
 clear the affected private cache as part of maintaining its concrete
 invariants.
 
-### Lazy hashing and interior mutability
+### Digest caching: lazy, eager, and interior mutability
 
-Rust's `Hash::hash` receives `&self`, so shipped indexable words and tableaus
-cache their digest through interior mutability. `Hash::hash` may populate a cache
-through shared access, while structural mutators clear affected cells through
-their exclusive `&mut self` access. This preserves `Send + Sync` for the shipped
-representations. `Indexable` itself does not require either concurrency bound.
+The contract this section fixes is the `key_hash()` **value**. The *mechanism* is
+a private representation choice, and the shipped types make two different ones,
+both measured.
 
-The *mechanism* is a private representation choice. `PauliWord` realizes it with a
+**Lazy, for `LossyPauliWord` and `Tableau`.** Rust's `Hash::hash` receives
+`&self`, so a lazily-cached digest needs interior mutability: `Hash::hash` may
+populate the cache through shared access while structural mutators clear affected
+cells through their exclusive `&mut self`. This preserves `Send + Sync` for the
+shipped representations; `Indexable` itself requires neither bound. Both use a
 sentinel `AtomicU64` (a distinguished `HASH_UNCACHED` value = "not yet computed";
 `key_hash()` does a relaxed load, computes-and-relaxed-stores on a miss, and
 mutators reset it) rather than the `OnceLock<u64>` this section originally
@@ -2368,8 +2371,31 @@ miss just recomputes *the same* value — a relaxed atomic is correct and avoids
 `Once`'s CAS init path, which measurably dominated the `PauliSum` Clifford re-key
 hot loop (every freshly built key hits the cold init once). A key whose true
 digest equals the sentinel is simply recomputed each time — a `1`-in-`2⁶⁴`
-perf non-event with no correctness effect. Both realizations satisfy the same
-contract; the choice is invisible through `Indexable`.
+perf non-event with no correctness effect. Laziness earns its keep here because
+invalidation is frequent and reads are not: every Clifford gate invalidates a
+tableau, and a loss-only mutation must not rehash the X/Z planes.
+
+**Eager, for `PauliWord`.** The ordinary word instead refreshes a plain `u64` at
+each mutation boundary, so `key_hash()` is a field read, nothing is
+interior-mutable, and the word keeps `Copy`. It is a map key whose digest is read
+for essentially every instance, so there is no laziness to win — and lazily was
+measurably worse: after moving off `OnceLock`, the sentinel-atomic digest still
+fired inside the accumulate probe's `entry()`, i.e. **on the bucket-index critical
+path**, where the finalize mul-chain stalls the dependent bucket load. The old
+crate hashes eagerly in its first pass, so its probe hits a cached `u64` and the
+hashing overlaps other terms' work; hoisting the digest earlier took
+`rotation_rx` from `1.07×` to `~0.99×`, and computing it eagerly at the mutation
+boundary is the limit of that same move. Keeping `Copy` additionally avoids the
+atomic clone cost that
+[`word-data-structures.md`](word-data-structures.md#invalidation-rules)
+quantifies at about `2.1×` a plain-`u64` copy at 256 qubits.
+
+This makes the non-goal "preserving `Copy` at the expense of correct lazy
+caching" narrower than first stated: `Copy` is not preserved *at the expense of*
+correctness here, because an eagerly maintained digest is trivially correct. It
+is the lazy mechanism, not the value contract, that was traded away. Every
+realization above satisfies the same contract, and the choice stays invisible
+through `Indexable`.
 
 ### Key mutation invariant
 

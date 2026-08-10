@@ -156,8 +156,9 @@ pub(crate) fn compute_phase_with_mask_static<I: Bitstring>(
 /// # Why not `Phased<PauliWord>`
 ///
 /// A row *is* a phased Pauli word mathematically, but the shipped
-/// `ppvm-pauli-word-2::PauliWord` (a) carries a lazy `AtomicU64` hash cache and
-/// is therefore **not `Copy`**, and (b) keeps its packed planes `pub(crate)`, so
+/// `ppvm-pauli-word-2::PauliWord` (a) carries a structural hash cache the row
+/// would have to refresh on every raw-word write, and (b) keeps its packed
+/// planes `pub(crate)`, so
 /// no downstream crate can reach the raw machine words. Both are fatal here: the
 /// tableau copies rows on every measurement projection and `2n` times per
 /// construction (`let g_q = stabilizers[q_idx];`), and every Clifford gate needs

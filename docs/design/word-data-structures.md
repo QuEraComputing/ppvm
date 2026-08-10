@@ -111,7 +111,7 @@ pub struct PauliWord<A, H> {
     xbits: BitArray<A>,
     zbits: BitArray<A>,
     nqubits: usize,
-    hash_cache: OnceLock<u64>,
+    hash_cache: u64,   // eager; see "Hash ownership" below
     _hasher: PhantomData<fn() -> H>,
 }
 ```
@@ -285,12 +285,35 @@ finalization fold that makes `key_hash()` avalanche-quality. Cache
 representation, the algorithm choice, and invalidation are not exposed through
 `Indexable`, which surfaces only the finalized digest value via `key_hash()`.
 
-The shipped indexable words use relaxed-atomic sentinel caches. `key_hash()`
+The shipped words split two ways, and the split is a measured one.
+
+`LossyPauliWord` and `Tableau` use **relaxed-atomic sentinel** caches. `key_hash()`
 (and the `Hash` impl, which is just `state.write_u64(self.key_hash())`) can
 populate them through `&self`; structural mutators clear affected cells through
 `&mut self`. The cached value is a pure function of immutable structural fields,
 so racing misses compute the same digest and require no compare-and-swap. This
-preserves `Send + Sync` without imposing either bound on `Indexable`.
+preserves `Send + Sync` without imposing either bound on `Indexable`. It is the
+right trade where invalidation is frequent and reads are not: every Clifford gate
+invalidates a tableau, and a loss-only mutation must not rehash the X/Z planes.
+
+The ordinary `PauliWord` instead refreshes an **eager** plain `u64` at each
+mutation boundary, so `key_hash()` is a field read, nothing is interior-mutable,
+and the word stays `Copy`. It is a map key whose digest is read for essentially
+every instance, so there is no laziness to win, and two measurements pushed it
+here: `Once`'s CAS init path dominated the Clifford re-key loop (every freshly
+built key hits cold init exactly once), and after moving to a sentinel atomic the
+digest still fired lazily inside the accumulate probe's `entry()` — on the
+bucket-index critical path, where the finalize mul-chain stalls the dependent
+bucket load. Hoisting it earlier took `rotation_rx` from `1.07×` to `~0.99×`;
+computing it eagerly at the mutation boundary is the limit of that move. Keeping
+`Copy` also avoids the atomic clone cost quantified under *Invalidation rules*
+below.
+
+This is a deliberate departure from
+[`traits-2-configuration-and-hashing.md`](traits-2-configuration-and-hashing.md#lazy-hashing-and-interior-mutability),
+whose non-goals list "preserving `Copy` at the expense of correct lazy caching".
+The contract that section actually fixes — the `key_hash()` *value* — is
+unchanged; only the mechanism differs, and the mechanism is explicitly private.
 
 The finalization fold is applied per-algorithm and per-width by the private
 `HashFinalize` helper: narrow storage under a weak hasher (`[u8; 8]` +
@@ -324,12 +347,17 @@ from this composition because it is not indexable.
 
 ## Invalidation rules
 
-Every structural mutation invalidates the finalized digest. Direct branch-key
-builders copy the packed planes and start with an empty cache, avoiding an
-atomic cache copy that would be immediately discarded.
+Every structural mutation refreshes (`PauliWord`) or invalidates
+(`LossyPauliWord`, `Tableau`) the finalized digest. Direct branch-key builders
+copy the packed planes and pay exactly one digest, avoiding the
+refresh-then-discard a `clone` + `set_*_bit` pair performs. `PauliWord`
+additionally skips the invalidation when a write does not change the bit — the
+Clifford kernels write both target bits unconditionally, and in a real circuit
+most terms are `I` at a given gate's qubits.
 
-Constructors leave the cache empty. Cloning copies a valid cached value because
-the clone initially has identical structural contents.
+Constructors establish the digest eagerly on `PauliWord` and leave it empty on
+the atomic-cached types. Cloning copies a valid cached value because the clone
+initially has identical structural contents.
 
 That standalone clone retains one unavoidable relaxed atomic load and
 construction, measuring about `2.1×` the legacy word's plain-`u64` copy at 256

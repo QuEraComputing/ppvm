@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! The lazy structural hash: the shared [`structural_hash`] fold, the
+//! The eager structural hash: the shared [`structural_hash`] fold, the
 //! [`Hash`](std::hash::Hash) impl that writes exactly `key_hash()`, and the
 //! [`Indexable`] impl that finalizes and caches the avalanche-quality digest.
 //!
@@ -9,8 +9,10 @@
 //! `key_hash()` value contract) and §"Concrete word hashing" (the private,
 //! per-algorithm/per-width finalization fold); `word-data-structures.md`
 //! §"Component hashes" (`packed Pauli hash = hash(X bits, Z bits)`) and
-//! §"Lazy hashing and interior mutability" (a lazy `AtomicU64` sentinel cache
-//! realizing the design's interior-mutable lazy-cache contract).
+//! §"Lazy hashing and interior mutability" — from which this word deliberately
+//! departs: the digest is refreshed eagerly at each mutation boundary and stored
+//! as a plain `u64`, so `key_hash()` is a field read and the word stays `Copy`.
+//! See the note on [`PauliWord`] for the measurements behind that choice.
 
 use std::hash::{BuildHasher, Hash, Hasher};
 
@@ -118,11 +120,11 @@ mod tests {
         assert_ne!(m.key_hash(), h0, "mutation invalidates and recomputes");
     }
 
-    // The `AtomicU64` hash cache is interior-mutable, but it is excluded from
-    // `Eq`/`Hash` (only `(nqubits, X, Z)` participate), so the digest a stored
-    // key hashes under is stable — precisely the lazy-cache pattern the design
-    // sanctions (§"Lazy hashing and interior mutability"). Clippy's
-    // `mutable_key_type` cannot see that exclusion.
+    // The digest is excluded from `Eq`/`Hash` (only `(nqubits, X, Z)`
+    // participate), so the value a stored key hashes under is stable. The cache
+    // is a plain `u64` and not interior-mutable at all, so this is strictly
+    // safer than the lazy pattern the design sanctions; Clippy's
+    // `mutable_key_type` still cannot see the exclusion.
     #[test]
     #[allow(clippy::mutable_key_type)]
     fn usable_as_identity_hashmap_key() {

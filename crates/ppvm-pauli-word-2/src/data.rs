@@ -41,15 +41,37 @@ use crate::storage::{DefaultStorage, HashFinalize, PauliStorage};
 /// comparing the full backing blob is equivalent to comparing only the logical
 /// bits.
 ///
-/// The `hash_cache` is a lazy `AtomicU64` (Design: §"Lazy hashing and interior
-/// mutability" — the design sketches this with an `OnceLock<u64>`; a sentinel
-/// `AtomicU64` realizes the *same* contract — lazy, interior-mutable, `Send +
-/// Sync` — in half the width and with a plain relaxed load/store instead of
-/// `Once`'s CAS init path, which measurably dominated the Clifford re-key hot
-/// loop where every freshly built key hit the cold init once): `key_hash()` may
-/// populate it through `&self` with a relaxed store, and each structural mutator
-/// resets it to [`HASH_UNCACHED`] through `&mut self`. `Copy` is intentionally
-/// dropped for correct lazy caching.
+/// The `hash_cache` is an **eager** plain `u64`: every constructor and every
+/// structural mutator recomputes the finalized digest immediately, so
+/// [`Indexable::key_hash`](ppvm_traits_2::Indexable::key_hash) is a field read
+/// that never mutates. Because nothing is interior-mutable, the word stays
+/// `Copy`.
+///
+/// This is a deliberate, measured departure from the design's §"Lazy hashing and
+/// interior mutability" (which specifies a lazy cache and lists preserving `Copy`
+/// as a non-goal). The lazy forms were both shipped first and then measured out:
+///
+/// * `OnceLock<u64>` (the design's sketch) — `Once`'s CAS init path dominated the
+///   `PauliSum` Clifford re-key loop, where every freshly built key hits the cold
+///   init exactly once.
+/// * a relaxed-atomic sentinel — better, but the digest still fired *lazily*
+///   inside the accumulate probe's `entry()`, i.e. on the bucket-index critical
+///   path, where the finalize mul-chain stalls the dependent bucket load. Old
+///   hashes eagerly in its first pass, so its probe hits a cached `u64` and the
+///   hashing overlaps other terms' work. Hoisting the digest earlier took
+///   `rotation_rx` from 1.07× to ~0.99× (`53ebc66e`); computing it eagerly at the
+///   mutation boundary is the limit of that same move.
+///
+/// Losing interior mutability also restores `Copy`, which matters on the re-key
+/// path: an atomic cache makes `clone` measurably more expensive (about `2.1×` a
+/// plain-`u64` copy at 256 qubits) and forced a borrowed-source builder — see
+/// [`PauliBits::PREFER_BORROWED_REKEY`](ppvm_traits_2::PauliBits::PREFER_BORROWED_REKEY),
+/// which this word leaves `false` precisely because it is `Copy`.
+///
+/// `LossyPauliWord` and `Tableau` keep the lazy sentinel atomic, and that split is
+/// intentional: their invalidation-to-read ratio is the opposite (every Clifford
+/// gate invalidates a tableau; loss-only mutations must not rehash the X/Z
+/// planes), so paying the digest up front would be wasted work there.
 ///
 /// # Examples
 ///
@@ -144,8 +166,8 @@ where
 {
     /// Construct the identity word `I…I` on `nqubits` qubits (all planes zero).
     ///
-    /// Constructors leave the cache empty (Design: `word-data-structures.md`
-    /// §"Invalidation rules").
+    /// Constructors compute the digest eagerly, so the word is immediately a
+    /// valid map key (Design: `word-data-structures.md` §"Invalidation rules").
     #[inline]
     pub fn new(nqubits: usize) -> Self {
         debug_assert!(
@@ -169,23 +191,25 @@ where
         }
     }
 
-    /// Clear the lazy structural-hash cache after a structural mutation
-    /// (Design: §"Indexable values" — mutators clear the affected private cache
-    /// through `&mut self`).
+    /// Recompute the structural-hash cache after a structural mutation
+    /// (Design: §"Indexable values" — mutators maintain the affected private
+    /// cache through `&mut self`).
+    ///
+    /// Named `invalidate_*` for continuity with the lazy design, but the cache is
+    /// eager: this refreshes the digest rather than clearing it. See the type-level
+    /// note on why the digest is computed at the mutation boundary.
     #[inline]
     pub(crate) fn invalidate_hash(&mut self) {
         self.hash_cache = structural_hash::<A, H>(&self.xbits.data, &self.zbits.data, self.nqubits);
     }
 
-    /// A copy with the X and/or Z bit at `i` toggled and a fresh **uncached**
-    /// hash (recomputed on the next `key_hash()`).
+    /// A copy with the X and/or Z bit at `i` toggled, digest refreshed once.
     ///
     /// This is the rotation-branch key builder (`iGP` from a diagonal `P`). The
-    /// branch always toggles a bit, so `clone()` — which copies the source's
-    /// *cached* digest — followed by `set_x_bit`/`set_z_bit` — which immediately
-    /// invalidates it — does a wasted atomic load + store per branch key. Building
-    /// the toggled key directly (copy the plane words, flip the bit, leave the
-    /// cache empty) skips both.
+    /// branch always toggles a bit, so `clone()` followed by
+    /// `set_x_bit`/`set_z_bit` would copy the source's digest and then immediately
+    /// recompute it. Building the toggled key directly — copy the plane words,
+    /// flip the bit, hash once — pays for exactly one digest.
     #[inline]
     pub fn with_bits_toggled(&self, i: usize, toggle_x: bool, toggle_z: bool) -> Self {
         debug_assert!(i < self.nqubits, "qubit {i} out of bounds");
@@ -202,8 +226,8 @@ where
         Self::from_planes(xbits, zbits, self.nqubits)
     }
 
-    /// A copy with the X and/or Z bits at **two** sites toggled and a fresh
-    /// **uncached** hash — the *two-qubit* rotation-branch key builder
+    /// A copy with the X and/or Z bits at **two** sites toggled, digest refreshed
+    /// once — the *two-qubit* rotation-branch key builder
     /// (`rzz`/`rxx`/`ryy`/`rotate_2`).
     ///
     /// One plane copy, up to four bit flips, one rebuild. Chaining

@@ -70,18 +70,9 @@ use crate::sum::Sum;
 /// a no-op, else `(toggle z_control, toggle both target planes, negate)`.
 ///
 /// It is a named `#[inline(always)]` function rather than the body of the two
-/// closures in [`CliffordExtensions::cy`] because *closures* carry no inline
-/// attribute. `rekey_owned` and `rekey_bijective` are `inline(always)`, so the
-/// re-key loop always inlines, but whether the closure it calls per term joins
-/// it is left to LLVM's cost model — and `CY`'s body (three bit toggles plus the
-/// eager digest rebuild, one toggle more than `CNOT`/`CZ`) landed on the wrong
-/// side of that threshold. It compiled out of line, so every term in the support
-/// paid a call, a stack frame, a spilled plane copy and an indirect struct
-/// return: `pauli_sum_surface/clifford/cy` measured 1.11x against old and stayed
-/// there under both `-Cllvm-args` layout controls, while its `cz`/`cnot`
-/// siblings — same machinery, closures LLVM did inline — sat at parity. With the
-/// body behind `inline(always)` the closure is a forwarder the cost model always
-/// takes, and the body lands back in the loop.
+/// closures in [`CliffordExtensions::cy`] only so the two arms of that gate
+/// share one audited copy of the rule. It is **not** what keeps the re-key loop
+/// fast — see the `#[inline(never)]` on [`CliffordExtensions::cy`] for that.
 #[inline(always)]
 fn cy_toggles<W>(k: &W, control: usize, target: usize) -> Option<(bool, bool, bool)>
 where
@@ -414,11 +405,45 @@ where
     }
 
     /// `CY`: direct two-site rewrite using the same pre-mutation sign predicate
-    /// as the audited phased-word kernel.
+    /// as the audited phased-word kernel. The bit/sign rule lives in
+    /// [`cy_toggles`] so both arms share one audited copy.
     ///
-    /// The bodies live in [`cy_toggles`] rather than inline in the closures, so
-    /// each closure is a one-line forwarder — see that function for why.
-    #[inline(always)]
+    /// # Why `#[inline(never)]` on a gate whose siblings are `#[inline(always)]`
+    ///
+    /// Every other gate here is `#[inline(always)]`, and so are `rekey_owned`
+    /// and `rekey_bijective` — so the whole 192-term re-key loop lands in the
+    /// caller. What is *not* forced is the per-term closure the loop calls:
+    /// closures carry no inline attribute, so joining the loop is left to LLVM's
+    /// cost model, and `CY`'s body — one toggle more than `CNOT`/`CZ`, plus the
+    /// eager digest rebuild — sat on the wrong side of the threshold. It was the
+    /// **only** re-key closure in the whole conformance binary that compiled out
+    /// of line, and out of line is expensive out of all proportion to the call:
+    /// a 32-byte `PauliWord` exceeds the AArch64 register-return limit, so the
+    /// planes are copied to the stack, the bit toggles become byte
+    /// read-modify-writes *in memory*, the digest's 16-byte plane load then
+    /// overlaps those byte stores (a store-forwarding stall), and the result
+    /// goes back out through an indirect `(word, coeff)` struct return — per
+    /// term. `pauli_sum_surface/clifford/cy` measured 1.11x against old and
+    /// stayed there under both `-Cllvm-args` layout controls, while `cz`/`cnot`
+    /// — same machinery, closures LLVM did inline — sat at parity.
+    ///
+    /// Shrinking the body to sneak back under the threshold is not a fix that
+    /// stays fixed; neither is `#[inline(always)]` on a helper the closure calls
+    /// (that inlines *into* the closure and makes it bigger — it was tried, and
+    /// left the closure out of line). What decides it is the **number of call
+    /// sites**: LLVM always inlines the last call to an internal function.
+    /// `#[inline(always)]` here cloned the loop into `cy`'s every caller
+    /// (`zcy`, `cy_many`, each user call site), giving the closure several call
+    /// sites and no such bonus. Pinning `cy` out of line leaves exactly one copy
+    /// of the loop, hence exactly one call to the closure, which LLVM then
+    /// folds in unconditionally. The gate costs one extra call per *gate* — not
+    /// per term — and buys back a call, a frame, two 32-byte plane copies and a
+    /// store-forwarding stall on every term. Four launches each, ratios vs old:
+    /// `clifford/cy` 1.107x → **0.896x** (0.891–0.900), `clifford/zcy_alias`
+    /// 1.107x → **0.887x**, `clifford_batch/cy` 0.848x → **0.785x**; the
+    /// `-align-all-functions=6` control agrees (0.901x / 0.898x / 0.866x), and
+    /// `cz`/`cnot`/`h`/`s` are unmoved.
+    #[inline(never)]
     fn cy(&mut self, control: usize, target: usize) {
         if W::PREFER_BORROWED_REKEY {
             self.rekey_ref(move |k| {

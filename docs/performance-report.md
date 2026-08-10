@@ -636,7 +636,11 @@ the toggle is a runtime bit, and a pessimization where it is a constant.
 
 ## Still open
 
-### `pauli_sum_surface/clifford/{cy,zcy_alias}` — 1.11×, real
+### `pauli_sum_surface/clifford/{cy,zcy_alias}` — CLOSED, 1.107× → 0.896×
+
+**Resolved after this report was written; kept for the record because the
+diagnosis below was right and the fix was not.** See the follow-up section
+"`clifford/{cy,zcy_alias}` — closed" at the end of this file.
 
 The one row this pass could not close. It survives both layout controls, so
 unlike `s_many` it is not placement:
@@ -752,7 +756,7 @@ own section. Spot checks against the base commit, same protocol:
 | `word_surface/phased/clifford/256/{side}/zcz_alias` | 1.085× | **0.887×** |
 | `pauli_sum/workload_qubit_sweep/{side}/n20` | 1.001× | 0.963× |
 | `pauli_sum/pauli_error/{side}/pauli_error_sweep` | 1.149× | 0.961× |
-| `pauli_sum_surface/clifford/cy/{side}` | 1.116× | 1.108× (open) |
+| `pauli_sum_surface/clifford/cy/{side}` | 1.116× | 1.108× (since closed → 0.896×) |
 
 `pauli_error_sweep` landing at 0.961× in the very build where
 `integration_trotter` — 340 calls of that same walk per iteration — reads 1.155×
@@ -770,3 +774,77 @@ is one more datum for the placement reading of both.
   — the `integration_trotter` bisection.
 - `/tmp/ppvm-gaps/z-final/{raw.txt,pairs.tsv,report.md}` — the final 828-pair
   screening.
+
+---
+
+# `clifford/{cy,zcy_alias}` — closed, 1.107× → 0.896×
+
+The last open row. The earlier section diagnosed the mechanism correctly — an
+out-of-line re-key closure — and then **verified the wrong thing**: it checked
+that `cy_toggles` had no call sites, not that the closure had been inlined. It
+had not. `nm` on the shipped build still showed
+
+```
+0000000100130608 t ..ppvm_pauli_sum_2..clifford..Sum<S,P>::rekey_owned::{{closure}}
+```
+
+with one `bl` to it from `CY`'s re-key loop, executed once per term. That is why
+the earlier attempt moved the row by <1%.
+
+## Why out-of-line costs ~2 ns/term
+
+A 32-byte `PauliWord` exceeds the AArch64 register-return limit, so the
+standalone function must copy both planes to the stack (`ldp q1,q2 / stp
+q1,q2`), perform each bit toggle as a byte read-modify-write in memory
+(`ldrb/eor/strb` ×4) rather than in registers, then reload 16 bytes overlapping
+those byte stores — a store-to-load-forwarding stall sitting directly on the
+digest's dependency chain — and return through an indirect sret. On a 192-term
+support that is the measured gap.
+
+This also resolves the paradox the earlier section left standing ("new does
+strictly less memory work and is still slower"): the *algorithmic* memory work
+is lower, but the ABI reintroduces three 32-byte copies and a forwarding stall
+that the inlined siblings never pay.
+
+## Why `CY` and not `CZ`/`CNOT`
+
+Every gate is `#[inline(always)]`, so the whole re-key loop is cloned into each
+caller (`zcy`, `cy_many`, every bench call site). The closure therefore has
+several call sites, LLVM's "last call to an internal function" bonus never
+applies, and the decision falls to the raw cost threshold — which `CY`'s body
+(one toggle more than `CNOT`/`CZ`, plus the eager digest rebuild) sits just
+above and its siblings just below. `#[inline(always)]` on `cy_toggles` makes it
+*worse*: it inlines into the closure, enlarging it.
+
+## The fix
+
+`CliffordExtensions::cy`: `#[inline(always)]` → **`#[inline(never)]`**. One
+attribute; the gate body, the conjugation table and the sign predicate are
+byte-identical. Pinning `cy` out of line leaves exactly one copy of the re-key
+loop, hence one call to the closure, which LLVM then folds in unconditionally —
+one extra call per *gate* instead of a stack round-trip per *term*.
+
+Established by ablation, checking the symbol table after each build: routing
+through `rekey_bits` with in-place toggling left the closure out of line (and
+slightly worse); `#[inline]` on `cy` left it out of line; `#[inline(never)]`
+removed the symbol entirely and the toggles now operate directly on the map's
+storage.
+
+| row | before | after | process range |
+|---|---:|---:|---:|
+| `clifford/cy` | 1.107× | **0.895×** | 0.890–0.896 |
+| `clifford/zcy_alias` | 1.107× | **0.889×** | 0.888–0.890 |
+| `clifford_batch/cy` | 0.848× | **0.785×** | 0.662–0.797 |
+
+Four launches each, independently reproduced. New's `cy` went 1884–1985 →
+1541–1554 ns while the old side held (1729 ns), and the `-align-all-functions=6`
+control agrees (0.901×), so this is work removed, not placement. Siblings
+unmoved or better (`cz` 0.964×, `cnot` 1.026×, `h` 0.923×, `s` 0.972×);
+end-to-end `pauli_sum_integration` shows `rx` 0.814×, `rzz` 0.801×,
+`rekey_cnot` 0.927×.
+
+**Generalizable lesson.** `#[inline(always)]` on a gate that owns a per-term
+closure can *prevent* the closure from being inlined, by multiplying the call
+sites the cost model sees. When a per-term closure returns a type larger than
+the ABI's register-return limit, verify inlining by looking for the symbol
+(`nm | grep closure`), not by reasoning about the attributes.

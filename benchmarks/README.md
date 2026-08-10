@@ -42,9 +42,12 @@ investigation, not the family:
 cargo bench -p ppvm-conformance-2 --bench pauli_sum_surface_bench -- --list | grep cy
 ```
 
-For the `CY` investigation that is 4 benchmarks against the 60 that
-`--filter clifford` selects, and against 233 for the whole target — a **15×**
-difference per iteration, multiplied by `--launches`.
+`--filter` is a plain **substring** match, not a regex, so check rather than
+assume: `clifford/cy` selects the `cy` pair only — `zcy_alias` does *not* contain
+that substring and needs its own run. Two filters of 2 benchmarks each is 4,
+against the 60 that `--filter clifford` selects and 233 for the whole target — a
+**15×** difference per iteration, multiplied by `--launches`. Measured: 24 s per
+narrow filter at 4 launches, against tens of minutes for the group.
 
 Narrow the **filter**, never the **launch count**. The gate needs the median
 *and* the slowest of ≥4 processes above 1.03; a single launch cannot separate a

@@ -496,9 +496,11 @@ Cargo.toml) so tests/benches can see both crates.
        how many attempts you get. Filter to the PAIR under investigation. Check
        what a filter selects first — it is instant:
          cargo bench -p ${CONF} --bench <target> -- --list | grep <thing>
-       For one gate that is typically ~4 benchmarks against ~60 for its group and
-       ~230 for the whole target: a 15× difference per iteration, multiplied by
-       --launches. Narrow the FILTER, never the LAUNCH COUNT — the gate needs the
+       --filter is a plain SUBSTRING match, not a regex, so verify rather than
+       assume — 'clifford/cy' does NOT cover 'clifford/zcy_alias'; run one filter
+       per row. For one gate that is ~2 benchmarks per filter against ~60 for its
+       group and ~230 for the whole target: a 15× difference per iteration,
+       multiplied by --launches (measured: 24s vs tens of minutes). Narrow the FILTER, never the LAUNCH COUNT — the gate needs the
        median AND slowest of ≥4 processes, so cutting launches does not save time,
        it invalidates the result. Widen exactly ONCE at the end, on a candidate you
        believe in: first the sibling rows the change could disturb, then the

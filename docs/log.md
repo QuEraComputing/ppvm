@@ -1154,3 +1154,82 @@ the priors, and the five commands that would close them out are in the
 "Coverage gaps" section of `docs/performance-report.md`. None of the 26 was
 above the gate in the 2026-08-08 audit, so none is new breakage from
 `e3a37026`.
+
+---
+
+## Lean ⇄ `ppvm-*-2` verification campaign — rounds 1–2 (2026-08-10)
+
+New durable ledger: [`lean-gap.md`](lean-gap.md). It supersedes this file for
+Lean/verification gaps; this entry is the pointer and the round record.
+
+**Round 1 (audit).** 12 sectors of the `-2` surface audited against `lean/PPVM/**`
+and the `*_lean.rs` oracle suite, each sector's findings then attacked by an
+adversarial skeptic instructed to default to *refuted*. **83 gaps opened**
+(G-001…G-083), **16 candidates refuted** (R-01…R-16, kept in an appendix so later
+rounds do not re-litigate them). Verified means two legs: a Lean theorem over a
+model faithful to the shipped code, *and* a `*_lean.rs` oracle that pins the real
+Rust to it and would fail under mutation. Agreement with legacy (`*_diff.rs`) is
+explicitly **not** evidence — legacy may be wrong, and where legacy and `-2` share
+a kernel a diff test cannot detect a kernel defect by construction. That is why
+`provenance` is a gap class.
+
+Best-verified code in the repo: the phase kernel (`word-algebra`, 6 gaps, 0 high).
+Zero Lean coverage: `hashing-digests`, the whole `ppvm-tableau-2/src/mixture/**`
+subtree, and the trajectory noise samplers.
+
+**Round 2 (adjudication).** Six clusters of *suspected live defects* were
+adjudicated before any proof work, so that a wrong convention could not be
+machine-checked into the spec. Each verdict was independently re-derived from
+scratch by a second agent; all six corroborated. **9 live defects confirmed**,
+three units' code came out **correct** (producing spec corrections instead), and
+**8 proposed closures were rewritten** because they would have proved the wrong
+statement.
+
+Confirmed defects, all with reproductions in the ledger: `G-061` a legal `.stim`
+file with a repeated single-qubit target flips a sampled bit
+(`run_string("X 0 0\nM 0")` → `[Some(true)]`, truth `false`); `G-060` the fused
+`cz_block` with overlapping pairs corrupts both bit planes and the sign, and
+adjacent-pair brickwork is exactly that case; `G-018` the mixture returns a false
+Born probability and leaks mass as `0.97^k`; `G-019` `MixtureSampler` dumps the
+missing mass on the smallest-weight entry (a 0.1 entry samples at 0.2007 over 400k
+shots); `G-020` `structurally_equal` is non-reflexive at `coefficient_threshold =
+0`, so dedup is dead; `G-054` an exact `ℤ[i]` coefficient above ~3e9 reports
+magnitude `0.0`/`NaN` and is then silently truncated; `G-035`/`G-043` no
+sub-stochasticity guard anywhere, and `normalize_probabilities` divides by a
+possibly-zero sum; `G-040` below.
+
+Cleared by positive verification, not merely unfalsified: **every ℤ/4 measurement
+sign in `ppvm-tableau-2` is correct** — ~40k deterministic measurements against a
+dense state-vector simulator with zero mismatches, plus 939,648 full-Pauli
+post-measurement state checks (worst 7.5e-16). Six rows drop from suspected
+defects to bridge/strength gaps, and `G-021`'s "a +2 phase mutation is invisible"
+is overstated: `behaviour.rs:627` and `tableau_lean.rs:700` catch it. Also cleared:
+the rotation kernel (the code computes the backward Heisenberg map correctly; the
+false statement is `lean/PPVM/Instantiations/Rotation.lean:17`, and
+`clifford.rs:237` documents `SXS†`/`SYS†` backwards), and lossy canonicality
+(`G-013`'s premise is refuted — deleting the `xor_z_col` guard *does* fail
+`lossy_pauli_word_diff.rs:248`).
+
+**`G-040`, the correlated-loss convention — ruled.** Three shipped backends
+disagreed by a factor of two on the single-loss mass, and the repository documents
+*both* readings: the paper draft (`../ppvm-paper/main.tex:462`, `:523`, and the
+demo arithmetic at `:845`) defines `p[1]` as the probability a *named* one of the
+pair is lost, so P(exactly one) `= 2·p[1]`; the shipped Python API
+(`mixins.py:507`) and three Python tests say `p[1]` *is* P(exactly one). Both are
+the same CPTP family reparameterized by a factor of two, so channel mathematics
+cannot pick one — round 2 initially settled on the Python reading and had begun
+rewriting closures to enshrine it. **Ruled in favour of the paper** (definitions of
+record): `ppvm-pauli-sum-2`, legacy `ppvm-pauli-sum` and Lean's `corrT` are
+correct and do not change; `ppvm-tableau-2`'s mixture and trajectory are the
+defect, along with the `mixins.py` docstring and `test_loss.py:82`/`:90`/`:173`
+(`:82`'s `p = [0, 1, 0]` is inadmissible under the ruling — use `[0, 0.5, 0]`).
+Two follow-ups for the paper: the transport figure is consistent with the ruling,
+but the MSD figure's effective per-CZ loss is `2·p_loss/3` rather than `p_loss` and
+should be re-checked before publication.
+
+From round 3 on, `../ppvm-paper/main.tex` is a required source for every agent,
+cited alongside the Rust — it is the definitions of record and it settles rows the
+audit could only mark ambiguous.
+
+**Nothing was applied to any crate in rounds 1–2.** Working tree carries the
+ledger only.

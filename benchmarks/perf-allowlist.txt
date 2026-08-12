@@ -1,0 +1,13 @@
+# Accepted `new/old` regressions for `mise run perf-report`.
+#
+# One `fnmatch` pattern per line, matched against the paired benchmark key —
+# the Criterion id with the side replaced by `{side}`, e.g.
+#
+#     pauli_sum_surface/clifford/cy/{side}
+#     tableau-surface/noise/generalized/*
+#
+# A row that matches is still reported, but no longer fails the run. Every entry
+# needs a comment saying why the regression is acceptable and who accepted it;
+# see the "Perf-drift allowlist" section of docs/log.md for the standing policy.
+#
+# Currently empty on purpose: anything above the 1.03 gate is a hard blocker.

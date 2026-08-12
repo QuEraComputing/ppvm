@@ -1,0 +1,38 @@
+[package]
+name = "ppvm-tableau-2"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+rayon = ["dep:rayon"]
+
+# The stabilizer tableau rebuilt on the `-2` trait tower
+# (implementation-plan Phase 4): `Tableau` (the Clifford frame) and
+# `GeneralizedTableau` (frame + sparse amplitude vector). The frame's storage
+# is `src/storage/` — one aligned contiguous column-major arena, per
+# `docs/design/tableau-data-structure.md` — so `bitvec` and the per-word mask
+# `smallvec` the ported row layout needed are gone. The sort-merge branch
+# coalesce and the measurement scratch are still `ppvm-tableau`'s.
+[dependencies]
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+# `PauliStorage` bounds the caller-chosen word storage `trace` enumerates a
+# pattern into; `PauliWord` is the word type `expectation` is exercised with.
+# The frame itself no longer uses it: its rows are a runtime-strided arena.
+ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
+# Shared `PauliPattern` used by the Phase-7 downstream trace adapter.
+ppvm-pauli-sum-2 = { version = "0.1.0", path = "../ppvm-pauli-sum-2" }
+bnum = { version = "0.13.0", features = ["numtraits"] }
+fxhash = "0.2.1"
+num = "0.4.3"
+rand = "0.10.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bytemuck = "1.23"
+gxhash = "3.5"
+rayon = { version = "1.11", optional = true }
+
+# On wasm32, rand's entropy crate (getrandom) has no default source. The
+# RNG-owning mixture's entropy-seeded `new` constructor still needs this source.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }

@@ -1,11 +1,22 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
+#[cfg(feature = "legacy")]
+use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{execute, parse_extended};
-use ppvm_tableau::prelude::*;
+
+// The legacy frame is parameterized by a packed-blob storage width; the `-2`
+
+// frame is runtime-sized and has none, so the alias differs by backend.
+
+#[cfg(feature = "legacy")]
 
 type Tab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
+
+#[cfg(feature = "traits-2")]
+
+type Tab = GeneralizedTableau<usize>;
 
 #[test]
 fn run_populates_measurement_record() {
@@ -32,7 +43,8 @@ fn mr_record_matches_reported_value_under_readout_noise() {
     assert_eq!(results, vec![Some(false)]); // true outcome 1, flipped to 0
     assert_eq!(t.current_measurement_record(), results.as_slice());
     // And the reset actually happened: qubit is back in |0>.
-    assert_eq!(t.measure(0), Some(false));
+    let verify = parse_extended("M 0").unwrap();
+    assert_eq!(execute(&verify, &mut t).unwrap(), vec![Some(false)]);
 }
 
 #[test]

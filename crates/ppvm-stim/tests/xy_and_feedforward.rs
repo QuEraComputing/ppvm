@@ -5,11 +5,22 @@
 //! (`MX`/`MY`/`MRX`/`MRY`, `RX`/`RY`) and measurement-record controlled
 //! feed-forward gates (`CX`/`CY`/`CZ rec[-k]`).
 
-use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
+#[cfg(feature = "legacy")]
+use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
+use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{execute, parse_extended};
-use ppvm_tableau::prelude::*;
+
+// The legacy frame is parameterized by a packed-blob storage width; the `-2`
+
+// frame is runtime-sized and has none, so the alias differs by backend.
+
+#[cfg(feature = "legacy")]
 
 type Tab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
+
+#[cfg(feature = "traits-2")]
+
+type Tab = GeneralizedTableau<usize>;
 
 fn run(src: &str, qubits: usize) -> Vec<Option<bool>> {
     let prog = parse_extended(src).expect("parse_extended");

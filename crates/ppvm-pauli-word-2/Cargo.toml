@@ -1,0 +1,16 @@
+[package]
+name = "ppvm-pauli-word-2"
+version = "0.1.0"
+edition = "2024"
+
+# Concrete packed Pauli word representations for the second trait-system
+# experiment (implementation-plan Phase 2): PauliWord first, then LossyPauliWord
+# and the Phased wrapper. The packed X/Z layout, the phase-multiplication kernel,
+# and the Clifford-conjugation kernel are ported from `ppvm-pauli-word` to keep
+# the hot paths at parity; deps mirror that crate's (minus the old `ppvm-traits`).
+[dependencies]
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+bitvec = "1.0.1"
+bytemuck = { version = "1", features = ["min_const_generics"] }
+fxhash = "0.2.1"
+num = "0.4.3"

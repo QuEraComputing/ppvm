@@ -1,0 +1,138 @@
+[package]
+name = "ppvm-conformance-2"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Test-only harness for the ppvm-*-2 refactor. Depends on both the old and new
+# crates so differential tests can replay identical, seeded workloads on each and
+# compare. Not shipped. See docs/design/traits-2-implementation-plan.md.
+[dependencies]
+rand = "0.10.1"
+num = "0.4.3"
+ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
+ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
+ppvm-lossy-pauli-word-2 = { version = "0.1.0", path = "../ppvm-lossy-pauli-word-2" }
+ppvm-phased-pauli-word-2 = { version = "0.1.0", path = "../ppvm-phased-pauli-word-2" }
+ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+# The old and new Pauli-sum engines, diffed against each other by the Phase-3
+# `Sum` differential suite. The old crate is pulled with default features off so
+# the test harness does not drag in dashmap/gxhash/indexmap/approx — the
+# differential tests only need its `fxhash` config.
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum", default-features = false, features = ["approx", "indexmap"] }
+ppvm-pauli-sum-2 = { version = "0.1.0", path = "../ppvm-pauli-sum-2" }
+# The old and new stabilizer-tableau engines, diffed against each other by the
+# Phase-4 tableau differential suite (`tests/tableau_diff.rs`,
+# `tests/tableau_lean.rs`) and benched head-to-head, same-build, in
+# `benches/tableau_bench.rs`.
+ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+ppvm-tableau-2 = { version = "0.1.0", path = "../ppvm-tableau-2", features = ["rayon"] }
+ppvm-tableau-sum = { version = "0.1.0", path = "../ppvm-tableau-sum", features = ["rayon"] }
+# The old and new symbolic/exact coefficient rings, diffed against each other by
+# the Phase-5 suite (`tests/sym_diff.rs`, `tests/sym_lean.rs`) and benched
+# head-to-head, same-build, in `benches/sym_bench.rs`. Both are driven *through*
+# the respective Pauli-sum engines as well, because the point of the crate is
+# that the engine is generic over the coefficient ring.
+ppvm-sym = { version = "0.1.0", path = "../ppvm-sym" }
+ppvm-sym-2 = { version = "0.1.0", path = "../ppvm-sym-2" }
+
+[dev-dependencies]
+criterion = "0.7.0"
+approx = "0.5.1"
+# The seed-free hasher both crates key their monomial tables with; the Phase-5
+# hashing-contract tests hash `Prod` keys directly with it.
+fxhash = "0.2.1"
+
+[[bench]]
+name = "harness_smoke"
+harness = false
+
+[[bench]]
+name = "pauli_word_bench"
+harness = false
+
+[[bench]]
+name = "lossy_pauli_word_bench"
+harness = false
+
+[[bench]]
+name = "phased_pauli_word_bench"
+harness = false
+
+[[bench]]
+name = "word_surface_bench"
+harness = false
+
+[[bench]]
+name = "pauli_sum_bench"
+harness = false
+
+[[bench]]
+name = "pauli_sum_surface_bench"
+harness = false
+
+[[bench]]
+name = "pauli_sum_integration"
+harness = false
+
+[[bench]]
+name = "pauli_sum_multiply"
+harness = false
+
+# The remaining integration-baseline workloads (untruncated deep circuit, the
+# qubit-scaling sweep, the truncation cost grid). A separate target on purpose:
+# appending groups to `pauli_sum_integration` relayouts that binary and moves its
+# (otherwise untouched) old-side baselines, which would re-base the standing
+# headline ratio for no underlying reason. Each target still holds BOTH engines,
+# so every ratio it reports is same-build.
+[[bench]]
+name = "pauli_sum_workloads"
+harness = false
+
+# The Phase-4 tableau perf gate: the end-to-end integration workloads (MSD-85q
+# naive + fused, the rot2 brickwork, the fused-T-gate circuit, the CNOT-chain
+# scaling sweep, the measure-all sweep) plus the diagnostic single-op
+# microbenches. Both engines live in this one binary, so every ratio it reports
+# is same-build and the code-layout bias cancels in the ratio.
+[[bench]]
+name = "tableau_bench"
+harness = false
+
+[[bench]]
+name = "tableau_surface_bench"
+harness = false
+
+[[bench]]
+name = "tableau_mixture_bench"
+harness = false
+
+# The Phase-5 symbolic perf gate: the end-to-end `sym.*` integration workloads
+# (the deep Trotter propagation, the parametric trace, the truncation cost curve,
+# the VQE-shaped expectation grid, the random-circuit replay, the exact-ring
+# product) plus the diagnostic single-op microbenches. Both coefficient rings —
+# and both Pauli-sum engines driving them — live in this one binary, so every
+# ratio it reports is same-build and the code-layout bias cancels in the ratio.
+# A separate target from `pauli_sum_integration` on purpose: appending groups
+# there would relayout that binary and move its otherwise-untouched baselines.
+[[bench]]
+name = "sym_bench"
+harness = false
+
+# The Phase-6 storage-layout perf gate: the columnar `ColumnStore` (SoA) backend
+# against the shipped `HashMapStore` (hash-join) backend, per op class plus an
+# end-to-end Trotter run. BOTH backends are the same `-2` engine and live in this
+# one binary, so every ratio is same-build and the only variable is the storage
+# layout. A separate target from `pauli_sum_bench` on purpose: appending groups
+# there would relayout that binary and move its old-vs-new baselines.
+[[bench]]
+name = "pauli_sum_column_store"
+harness = false
+
+[[bench]]
+name = "pauli_sum_loss"
+harness = false
+
+[[bench]]
+name = "pauli_sum_indexmap"
+harness = false

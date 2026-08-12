@@ -1,0 +1,15 @@
+[package]
+name = "ppvm-phased-pauli-word-2"
+version = "0.1.0"
+edition = "2024"
+
+# The phased Pauli word wrapper for the second trait-system experiment
+# (implementation-plan Phase 2) — a generic `Phased<W>` that carries an explicit
+# ℤ₄ phase on top of a base word, giving a real (non-discarding) `PhaseTrack` so
+# Clifford conjugation tracks the sign the bare words drop. Non-indexable (the
+# phase is part of identity, so it is not a production map key). Ported from
+# `ppvm-pauli-word`'s `phase/` module. Deps are added by the implementation as
+# used; empty at scaffold time keeps `cargo machete` green.
+[dependencies]
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }

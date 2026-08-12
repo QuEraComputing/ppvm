@@ -1,3 +1,116 @@
+# Old-vs-`-2` regression report
+
+`mise run perf-report` screens every `ppvm-conformance-2` benchmark target and
+writes `target/perf-report/report.md`. Each of those targets links **both**
+engines into one binary, so a `<id>/old` + `<id>/new` pair is a same-build
+ratio and the executable-layout bias cancels inside it. Keep this around until
+the `-2` crates replace their legacy twins outright — it is the standing check
+that the refactor has not lost ground.
+
+Ratios are `new / old`: below 0.97 is an improvement, 0.97–1.03 is parity, and
+above 1.03 is a regression. A regression only *blocks* when the slowest of
+several processes also stays above the gate, which is what separates a real
+one from an executable-layout artifact — so a one-launch screening run reports
+but never fails.
+
+```bash
+# Screen everything (long; run it on an otherwise idle machine).
+mise run perf-report
+
+# Narrow to one target, or one Criterion filter.
+mise run perf-report -- --bench tableau_surface_bench
+mise run perf-report -- --filter noise
+
+# Confirm suspects in fresh processes. This is the invocation that can fail.
+mise run perf-report -- --filter clifford --launches 4
+
+# Re-summarize an existing raw log without re-benchmarking.
+mise run perf-report -- --reuse target/perf-report/raw.txt
+```
+
+Outputs land in `target/perf-report/`: `raw.txt` (concatenated Criterion
+output), `pairs.tsv` (every pair, slowest first), and `report.md`.
+
+## Measure the row you are changing, not the group it lives in
+
+Fixing one kernel means iterating edit → measure many times, so the cost of a
+single measurement sets how many attempts you get. Filter to the **pair** under
+investigation, not the family:
+
+```bash
+# Check what a filter actually selects before trusting it — it is instant.
+cargo bench -p ppvm-conformance-2 --bench pauli_sum_surface_bench -- --list | grep cy
+```
+
+`--filter` is a plain **substring** match, not a regex, so check rather than
+assume: `clifford/cy` selects the `cy` pair only — `zcy_alias` does *not* contain
+that substring and needs its own run. Two filters of 2 benchmarks each is 4,
+against the 60 that `--filter clifford` selects and 233 for the whole target — a
+**15×** difference per iteration, multiplied by `--launches`. Measured: 24 s per
+narrow filter at 4 launches, against tens of minutes for the group.
+
+Narrow the **filter**, never the **launch count**. The gate needs the median
+*and* the slowest of ≥4 processes above 1.03; a single launch cannot separate a
+regression from an executable-layout artifact, so cutting launches does not save
+time, it invalidates the result.
+
+Widen exactly once, at the end, when you have a candidate you believe in:
+
+1. the sibling rows the change could have disturbed —
+   `--bench pauli_sum_surface_bench --filter clifford --launches 4`;
+2. the end-to-end workload —
+   `--bench pauli_sum_integration --launches 4`.
+
+That ordering matters for more than speed. A micro-benchmark that moves while
+the integration workload does not has told you the kernel is not on the critical
+path, which is a result worth having before optimising further. Conversely a
+whole-group sweep on every iteration buries the one row you care about in 59
+others whose noise you then have to reason about.
+
+Do not run the full screening sweep (`mise run perf-report` with no filter) as
+part of a fix loop. It exists for the periodic audit and takes tens of minutes.
+
+Run these through `mise run perf-report`, not a bare `python3`. The task routes
+through `uv run --no-project`, which resolves the interpreter pinned by the
+repo-root `.python-version` (3.12, matching `ppvm-python/.python-version`);
+`requires-python = ">=3.10"` remains the *support* floor for users of the Python
+package and is unaffected. A bare `python3` on macOS is `/usr/bin/python3`
+(3.9.x), which is below the floor these scripts need — `perf_regression_report.py`
+refuses to start on it rather than failing at the summarize step, after the
+benchmarks have already run. If a run does die late, nothing is lost:
+`--reuse target/perf-report/raw.txt` re-summarizes the saved capture.
+
+## Ruling out executable placement
+
+A row can clear four launches and still not be an engine regression: both sides
+live in one binary, so a loop whose branch target lands badly relative to a
+cache line pays for it in every process. The control is to rebuild with the
+instruction stream unchanged and only the padding moved, then remeasure.
+
+```bash
+RUSTFLAGS="-Cllvm-args=-align-all-functions=6" \
+  mise run perf-report -- --bench pauli_sum_integration --filter pauli_error \
+                          --launches 4 --out /tmp/layout-a
+RUSTFLAGS="-Cllvm-args=-align-all-nofallthru-blocks=5" \
+  mise run perf-report -- --bench pauli_sum_integration --filter pauli_error \
+                          --launches 4 --out /tmp/layout-b
+```
+
+If the ratio crosses parity — or the *absolute* time of one side moves while
+the other holds — the row is placement, not work. That is exactly how
+`pauli_error_sweep` was adjudicated (1.130× → 0.948× / 0.958×, with the new
+side moving 5010 → ~4395 ns); see the 2026-08-09 follow-up in
+`../docs/performance-report.md`. Note these flags change codegen for the whole
+binary, so use them only as a control, never to report a headline number.
+
+Accepted regressions go in `perf-allowlist.txt`, one `fnmatch` pattern per
+line with a comment explaining the acceptance. It is empty on purpose; the
+standing policy is in the "Perf-drift allowlist" section of `docs/log.md`.
+
+- `perf_regression_report.py` — the runner, classifier, and report writer.
+- `summarize_criterion_output.py` — the pairing/median parser it reuses; also
+  usable standalone against a hand-collected log.
+
 # TFIM Trotter scaling benchmark
 
 Runtime-per-Trotter-run vs qubit count for the ppvm Pauli-propagation backend

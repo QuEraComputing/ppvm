@@ -4,24 +4,36 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-# Parallelism via rayon: shot-level (`run_shots`) and tableau-internal. Off by
-# default; enable with `features = ["rayon"]` (native only — wasm has no thread
-# support, so keeping it off by default keeps the default build wasm-safe).
-rayon = ["dep:rayon", "ppvm-tableau/rayon"]
+default = ["legacy"]
+legacy = ["dep:ppvm-pauli-sum-legacy", "dep:ppvm-tableau-legacy"]
+traits-2 = ["dep:ppvm-pauli-sum-2", "dep:ppvm-tableau-2", "dep:rand"]
+# Parallelism is orthogonal to backend selection. It always enables shot-level
+# parallelism; the legacy backend additionally retains its existing
+# tableau-internal branch. The traits-2 backend makes no such claim.
+rayon = ["dep:rayon", "ppvm-tableau-legacy?/rayon"]
 
 [dependencies]
-bitvec = "1.0.1"
-bnum = { version = "0.13.0", features = ["num-traits"] }
+bnum = { version = "0.13.0", features = ["numtraits"] }
 chumsky = "0.10.0"
 eyre = "0.6.12"
 log = "0.4.29"
 num = "0.4.3"
 rayon = { version = "1.10", optional = true }
-ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+ppvm-tableau-legacy = { package = "ppvm-tableau", version = "0.1.0", path = "../ppvm-tableau", optional = true }
+ppvm-tableau-2 = { version = "0.1.0", path = "../ppvm-tableau-2", optional = true }
 smallvec = "1.15.1"
 vihaco = "0.1.1"
 vihaco-cpu = "0.1.1"
 vihaco-parser = "0.1.1"
 vihaco-parser-core = "0.1.1"
 vihaco-circuit-isa = { version = "0.1.0", path = "../vihaco-circuit-isa" }
-ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
+ppvm-pauli-sum-legacy = { package = "ppvm-pauli-sum", version = "0.1.0", path = "../ppvm-pauli-sum", optional = true }
+ppvm-pauli-sum-2 = { version = "0.1.0", path = "../ppvm-pauli-sum-2", optional = true }
+# `-2` injects randomness at the call site, so the executors own the generator
+# (`src/component/backend/mod.rs`). The legacy tableau embeds its own, hence the
+# feature gate.
+rand = { version = "0.10.1", optional = true }
+
+[dev-dependencies]
+# Cross-backend fixture oracles remain on the read-only reference engine.
+ppvm-pauli-sum-legacy = { package = "ppvm-pauli-sum", version = "0.1.0", path = "../ppvm-pauli-sum" }

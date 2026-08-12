@@ -4,3 +4,72 @@ prek = "latest"
 "github:korandoru/hawkeye" = "latest"
 # Unused-dependency checker
 "cargo:cargo-machete" = "0.9.2"
+# Lean toolchain manager. `elan` reads `lean/lean-toolchain` and provisions the
+# pinned Lean/Lake proxies into `~/.elan/bin`.
+"github:leanprover/elan" = "latest"
+
+[env]
+# Put the elan-managed `lean` / `lake` proxies on PATH for every mise task and
+# `mise exec` shell, so the Lean formalization builds without a manual PATH edit.
+_.path = ["~/.elan/bin"]
+
+# Lean tasks `cd` into `lean/` first so elan reads `lean/lean-toolchain` and uses
+# the pinned Lean v4.31.0 (running `lake` at the repo root would resolve to
+# elan's default toolchain instead).
+[tasks.setup]
+description = "Install toolchains, fetch the Mathlib cache, and build the Lean library."
+dir = "lean"
+run = [
+  "mise install",
+  "lake exe cache get",
+  "lake build",
+]
+
+[tasks.lean-build]
+description = "Build the PPVM Lean formalization (lake build)."
+dir = "lean"
+run = "lake build"
+
+[tasks.lean-cache]
+description = "Download the prebuilt Mathlib olean cache for the pinned revision."
+dir = "lean"
+run = "lake exe cache get"
+
+# Old-vs-`-2` performance gate. Every `ppvm-conformance-2` benchmark target
+# holds both engines in one binary, so each `<id>/old` + `<id>/new` pair is a
+# same-build ratio. The task screens all of them, writes
+# `target/perf-report/report.md`, and exits non-zero on a robust regression.
+# Keep it until the `-2` crates replace their legacy twins outright.
+#
+#   mise run perf-report                                  # full screening sweep
+#   mise run perf-report -- --bench tableau_surface_bench  # one target
+#   mise run perf-report -- --filter noise --launches 4    # confirm a suspect row
+#   mise run perf-report -- --reuse target/perf-report/raw.txt   # re-summarize
+#
+# A single launch cannot distinguish a regression from an executable-layout
+# artifact; rerun anything above the gate with `--launches 4` before believing
+# it. Run it on an otherwise idle machine.
+[tasks.perf-report]
+description = "Benchmark the ppvm-*-2 crates against their legacy twins and report regressions."
+run = "uv run --no-project python3 benchmarks/perf_regression_report.py"
+
+# Cross-library comparison: the `ppvm-*-2` engine against its own v1 (the
+# pre-refactor `ppvm-pauli-sum`), PauliPropagation.jl, PauliStrings.jl and
+# Qiskit's `pauli-prop`, on a TFIM Trotter circuit and a
+# Heisenberg-model correlator. All four run the *same* gate list in the same
+# order with the same truncation, and the driver diffs their propagated supports
+# term-for-term before it will report a timing.
+#
+#   mise run xbench                                  # both models, then the plot
+#   mise run xbench -- --model tfim --qubits 8,16,24 # narrower sweep
+#   mise run xbench -- --libs ppvm-2,pauli-prop      # subset of engines
+#
+# Needs `julia` (with the `julia-benchmarks` project instantiated) and `uv` for
+# the Qiskit runner; engines whose toolchain is missing are skipped with a note.
+# See `benchmarks/cross-library/README.md`.
+[tasks.xbench]
+description = "Benchmark ppvm-*-2 against ppvm v1, PauliPropagation.jl, PauliStrings.jl and pauli-prop."
+run = [
+  "uv run --no-project python3 benchmarks/cross-library/run_xbench.py {{arg(name='args', var=true, default='')}}",
+  "uv run --no-project --with matplotlib python3 benchmarks/cross-library/plot_xbench.py --csv target/xbench/results.csv --out target/xbench/xbench.png --title 'Pauli propagation: ppvm-2 vs ppvm-1, PauliPropagation.jl, PauliStrings.jl, pauli-prop'",
+]

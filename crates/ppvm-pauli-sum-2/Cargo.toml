@@ -1,0 +1,29 @@
+[package]
+name = "ppvm-pauli-sum-2"
+version = "0.1.0"
+edition = "2024"
+
+# The graded sparse-sum engine for the second trait-system experiment
+# (implementation-plan Phase 3): `Sum<S, P>` over the graded algebra `C[K]`, with
+# the graded traits impl'd on `Vec`/`HashMap`, policies, term producers, and the
+# gate/rotation/noise trait impls. `PauliSum` is the domain alias. Deps are added
+# by the implementation as used; empty at scaffold time keeps `cargo machete`
+# green.
+[dependencies]
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
+# The lossy key type behind `LossyPauliSum` and the `ResetLossChannel` impl,
+# which old restricts to `LossyPauliWord` keys (`ppvm-pauli-sum/src/sum/noise.rs`).
+ppvm-lossy-pauli-word-2 = { version = "0.1.0", path = "../ppvm-lossy-pauli-word-2" }
+# `PauliError`'s transfer eigenvalue `λ_P = 1 − 2·(…)` needs the coefficient
+# ring's multiplicative identity; `Coefficient` bounds only `num::Zero`, so the
+# noise impl adds a `num::One` bound (see `src/noise.rs`).
+num = "0.4"
+# `AbsDiffEq`/`RelativeEq` for `Sum` (`src/ops.rs`) — the approximate-equality
+# surface old exposes (`ppvm-pauli-sum/src/sum/approx.rs`), which the numeric
+# differential bars compare against. Unconditional here rather than old's
+# optional feature: `-2` has no feature axis.
+approx = "0.5.1"
+indexmap = "2.14.0"
+hashbrown = "0.17.1"
+rand = "0.10.1"

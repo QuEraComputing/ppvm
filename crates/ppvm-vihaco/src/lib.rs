@@ -1,6 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(all(feature = "legacy", feature = "traits-2"))]
+compile_error!("features `legacy` and `traits-2` are mutually exclusive");
+#[cfg(not(any(feature = "legacy", feature = "traits-2")))]
+compile_error!("enable exactly one ppvm-vihaco backend: `legacy` or `traits-2`");
+
 pub mod bytecode;
 pub mod component;
 pub mod composite;

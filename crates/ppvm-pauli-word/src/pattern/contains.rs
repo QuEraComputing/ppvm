@@ -35,7 +35,9 @@ impl Contains<Pauli> for OpPattern {
             OpPattern::DoubleOrIdentity(left, right) => {
                 left.contains(item) || right.contains(item) || *item == Pauli::I
             }
-            OpPattern::AnyPauliOrIdentity => *item == Pauli::I,
+            // `[XYZ]?` — an optional Pauli: matches any single-qubit Pauli
+            // (`X`, `Y`, `Z`) as well as the identity `I`, i.e. every `item`.
+            OpPattern::AnyPauliOrIdentity => true,
         }
     }
 }

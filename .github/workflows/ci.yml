@@ -69,15 +69,43 @@ jobs:
       - name: Run ppvm-stim tests with rayon feature
         run: cargo test -p ppvm-stim --features rayon
 
+      - name: Run ppvm-stim tests on traits-2 backend
+        run: cargo test -p ppvm-stim --no-default-features --features traits-2
+
+      - name: Run ppvm-stim traits-2 tests with rayon
+        run: cargo test -p ppvm-stim --no-default-features --features traits-2,rayon
+
+      - name: Run ppvm-vihaco tests on traits-2 backend
+        run: cargo test -p ppvm-vihaco --no-default-features --features traits-2
+
+      - name: Run ppvm-vihaco traits-2 tests with rayon
+        run: cargo test -p ppvm-vihaco --no-default-features --features traits-2,rayon
+
+      - name: Run traits-2 frontend tests
+        run: |
+          cargo test -p ppvm-tui --no-default-features --features traits-2
+          cargo test -p ppvm-cli --all-targets --no-default-features --features traits-2,rayon
+
   # Cross-compile the whole workspace for browser wasm so a wasm regression
-  # surfaces in CI. Three crates are never browser-wasm targets and are
+  # surfaces in CI. Four crates are never browser-wasm targets and are
   # excluded: `ppvm-python-native` (a CPython extension), `ppvm-cli` (a terminal
-  # binary), and `ppvm-tui` (its ratatui/crossterm terminal UI). The reusable
+  # binary), `ppvm-tui` (its ratatui/crossterm terminal UI), and
+  # `ppvm-conformance-2` (a `publish = false` differential-test/Criterion crate
+  # that links both engines). The reusable
   # engine lives in the library crates, which stay covered. Native-only
   # acceleration deps (gxhash, dashmap →
   # rayon, ahash) are pruned automatically by the `cfg(not(target_arch =
   # "wasm32"))` dependency tables, and `rand`'s entropy uses the getrandom
   # `wasm_js` backend wired in `.cargo/config.toml` — so no extra flags here.
+  #
+  # `ppvm-conformance-2` must be excluded rather than merely skipped, because a
+  # workspace build UNIFIES features: it depends on `ppvm-tableau-sum` with
+  # `features = ["rayon"]`, which propagates to `ppvm-tableau/rayon`. That
+  # crate declares the feature globally but its `rayon` *dependency* only under
+  # `cfg(not(target_arch = "wasm32"))`, so on wasm the `#[cfg(feature =
+  # "rayon")]` bodies compile with no `rayon` crate to link (E0433). Nothing
+  # enabled that feature before this crate existed, which is why the latent
+  # mismatch in `ppvm-tableau` only surfaced now.
   wasm-build:
     name: wasm32 build (browser)
     needs: pre-commit
@@ -92,7 +120,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build workspace for wasm32-unknown-unknown
-        run: cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-native --exclude ppvm-cli --exclude ppvm-tui
+        run: cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-native --exclude ppvm-cli --exclude ppvm-tui --exclude ppvm-conformance-2
+
+      # Criterion's benchmark targets are native-only (its dependency enables
+      # Rayon), so cross-check the selected browser library rather than
+      # `--all-targets`.
+      - name: Check ppvm-stim traits-2 library for wasm32
+        run: cargo check -p ppvm-stim --target wasm32-unknown-unknown --no-default-features --features traits-2 --lib
+
+      - name: Check ppvm-vihaco traits-2 library for wasm32
+        run: cargo check -p ppvm-vihaco --target wasm32-unknown-unknown --no-default-features --features traits-2 --lib
 
   python-tests:
     name: Python tests

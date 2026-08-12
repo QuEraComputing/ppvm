@@ -21,6 +21,11 @@ uv run --no-project python3 benchmarks/cross-library/run_xbench.py \
 uv run --no-project --with matplotlib python3 benchmarks/cross-library/plot_xbench.py \
     --csv target/xbench/results.csv --out target/xbench/xbench.png \
     --title "Pauli propagation: ppvm vs PauliPropagation.jl, PauliStrings.jl, pauli-prop, monoprop"
+
+# How wrong each engine is at a given atol, rather than how fast — see
+# "Known differences" below. Regenerates accuracy.csv.
+uv run --no-project python3 benchmarks/cross-library/xbench_accuracy.py \
+    --out benchmarks/cross-library/accuracy.csv
 ```
 
 A subset, if you prefer: `--libs ppvm,monoprop`.
@@ -157,14 +162,15 @@ the runtime. Read them before quoting a ratio.
   the `L2` distance of the whole coefficient vector from a converged reference
   (`ppvm` at `atol=1e-16`; the Heisenberg `n=8` sector saturates at 16 384 terms,
   so that reference is exact), across `atol` from `1e-3` to `1e-7` at `n=8`,
-  `steps=10`: `monoprop` lands 0–12 % above `ppvm`'s error and `pauli-prop`
-  1.7–2.0× above it. Error falls by a decade for every decade of `atol` in all
-  three, so the policies share a convergence order and differ only in the
-  constant. Don't read this off the `observable` column instead — it is one
-  scalar and its truncation error changes sign, so `ppvm` on TFIM goes
+  `steps=10`: `monoprop` lands within 1.00–1.12× of `ppvm`'s error and
+  `pauli-prop` at 1.23–2.60×. Error falls by a decade for every decade of `atol`
+  in all five engines, so the two policies share a convergence order and differ
+  only in the constant. Don't read this off the `observable` column instead — it
+  is one scalar and its truncation error changes sign, so `ppvm` on TFIM goes
   `7.7e-4, 1.8e-3, 1.0e-4, 3.0e-7, 1.2e-6` over those five thresholds. That dip
-  is a cancellation, and comparing against it manufactures a 27× gap that the
-  vector norm shows to be 6 %.
+  is a cancellation, and comparing against it manufactures a 27× gap where the
+  vector norm shows 6 %. `xbench_accuracy.py` writes both, for that reason;
+  [`accuracy.csv`](accuracy.csv) is the run these figures come from.
 * **`monoprop` tracks more rows than it reports.** It retains monomials whose
   coefficient has cancelled to exactly zero. This is the visible end of
   prune-at-creation: a branch that cleared the threshold when it was emitted is
@@ -265,6 +271,9 @@ itself converges once `n` exceeds the light cone (identical from `n≈10` at
 - `xbench_monoprop.py` — `monoprop`, including the thread-cap assertion.
 - `run_xbench.py` — validation, driving, CSV merge, summary table.
 - `plot_xbench.py` — the figure.
+- `xbench_accuracy.py` — the `atol` sweep behind `accuracy.csv`: each engine's
+  coefficient vector against a converged reference, so the timings can be read
+  next to what each truncation rule costs.
 
 [pp]: https://github.com/MSRudolph/PauliPropagation.jl
 [ps]: https://github.com/nicolasloizeau/PauliStrings.jl

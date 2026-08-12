@@ -362,6 +362,32 @@ pub(crate) fn add_scalar_phase(lo: &mut [u64], hi: &mut [u64], delta: u8, mask: 
     }
 }
 
+/// How many bits of `words` are set.
+#[inline]
+pub(crate) fn count_set(words: &[u64]) -> usize {
+    words.iter().map(|w| w.count_ones() as usize).sum()
+}
+
+/// Whether folding `k` generators is cheaper by gathering them one at a time
+/// than by re-orienting the whole frame.
+///
+/// Gathering costs `k·n` strided bit reads ([`TableauData::gather_row`](super::TableauData::gather_row));
+/// a [`TransposedTableau`](crate::data::TransposedTableau) pair costs about
+/// `n²/16` bit-read-equivalents — eight square transposes of `(n/64)²` blocks,
+/// each block ~320 cache-friendly word ops. Break-even is therefore `k ≈ n/16`,
+/// and choosing that way bounds the worst case at `n²/16` either way: a dense
+/// fold never pays more than the transpose it declined, and a sparse one never
+/// pays for a transpose it did not need.
+///
+/// The two regimes are both real. A surface-code stabilizer measurement has `k`
+/// set by the code's local weight, independent of `n` — 27870 of them on a
+/// 1889-qubit patch, which is what makes gathering worth 100x there. A GHZ frame
+/// is dense, `k ≈ n`, and wants the transpose.
+#[inline]
+pub(crate) fn prefer_gather(k: usize, n_qubits: usize) -> bool {
+    k.saturating_mul(16) < n_qubits
+}
+
 /// The index of the lowest set bit of `words`, or `None`.
 #[inline]
 pub(crate) fn first_set(words: &[u64]) -> Option<usize> {

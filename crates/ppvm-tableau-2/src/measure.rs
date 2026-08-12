@@ -82,6 +82,48 @@ impl<H> Measure for Tableau<H> {
     }
 }
 
+/// A generalized tableau whose frame is held row-major for the guard's lifetime.
+///
+/// This exists rather than a bare [`TransposedTableau`](crate::data::TransposedTableau)
+/// because the batched measurement loop needs `&mut` on the *whole* generalized
+/// tableau — it also drains and rebuilds the amplitude vector — not just on the
+/// frame. Deref-ing through it gives that while keeping the orientation restore
+/// in a [`Drop`], so the frame is canonical again even if a measurement unwinds
+/// (`normalize` panics on a zero-norm projection).
+struct RowGuard<'a, I: Bitstring, H> {
+    tab: &'a mut GeneralizedTableau<I, H>,
+}
+
+impl<'a, I: Bitstring, H> RowGuard<'a, I, H> {
+    #[inline]
+    fn new(tab: &'a mut GeneralizedTableau<I, H>) -> Self {
+        tab.tableau.enter_row_major();
+        Self { tab }
+    }
+}
+
+impl<I: Bitstring, H> Drop for RowGuard<'_, I, H> {
+    #[inline]
+    fn drop(&mut self) {
+        self.tab.tableau.exit_row_major();
+    }
+}
+
+impl<I: Bitstring, H> std::ops::Deref for RowGuard<'_, I, H> {
+    type Target = GeneralizedTableau<I, H>;
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.tab
+    }
+}
+
+impl<I: Bitstring, H> std::ops::DerefMut for RowGuard<'_, I, H> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.tab
+    }
+}
+
 /// Per-measurement scratch buffers, reused across qubits within a single
 /// `measure_all` / `measure_many` — and, when threaded through
 /// [`GeneralizedTableau::measure_all_with_scratch`], across many shots of a
@@ -227,9 +269,11 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         rng: &mut R,
     ) -> Vec<Option<bool>> {
         let n = self.n_qubits();
-        (0..n)
-            .map(|idx| self.measure_one_with_scratch(idx, scratch, rng))
-            .collect()
+        self.under_one_row_guard(|s| {
+            (0..n)
+                .map(|idx| s.measure_one_with_scratch(idx, scratch, rng))
+                .collect()
+        })
     }
 
     /// Measure the given qubit `indices` **in the caller's order**, reusing a
@@ -241,10 +285,32 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         scratch: &mut MeasureScratch<I>,
         rng: &mut R,
     ) -> Vec<Option<bool>> {
-        indices
-            .iter()
-            .map(|&idx| self.measure_one_with_scratch(idx, scratch, rng))
-            .collect()
+        self.under_one_row_guard(|s| {
+            indices
+                .iter()
+                .map(|&idx| s.measure_one_with_scratch(idx, scratch, rng))
+                .collect()
+        })
+    }
+
+    /// Run `f` with the frame held row-major for its whole duration.
+    ///
+    /// This is Stim's amortization: `TableauSimulator` wraps a whole run of
+    /// `collapse_qubit_z` calls in one `TableauTransposedRaii` rather than
+    /// re-orienting per measurement. Inside the guard the decomposition fold and
+    /// the projection both find generators contiguous, and every nested
+    /// per-measurement guard collapses into this one
+    /// ([`TransposedTableau`](crate::data::TransposedTableau) is re-entrant).
+    ///
+    /// A single unbatched `measure` skips this and stays column-major, where the
+    /// fold gathers only the generators it needs — see
+    /// [`blocks::prefer_gather`](crate::storage::blocks::prefer_gather). The two
+    /// regimes are why both orientations are supported rather than one being
+    /// canonical for measurement.
+    #[inline]
+    fn under_one_row_guard<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let mut held = RowGuard::new(self);
+        f(&mut held)
     }
 
     /// One qubit, reusing `scratch`. A lost qubit pushes `None` and returns

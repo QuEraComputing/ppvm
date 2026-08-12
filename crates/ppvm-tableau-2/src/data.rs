@@ -232,17 +232,21 @@ impl ScratchRow {
     /// Multiply the generator at `major` of `data` into `self` using the
     /// Aaronson–Gottesman `g`-rule.
     ///
-    /// `data` must be in [`Orientation::RowMajor`], where a generator's bits are
-    /// contiguous; `major` is the generator's index *within* `half`. This is the
-    /// replaced `Row::mul_assign` — same predicates, same `ℤ/4` accumulation —
-    /// reading the multiplicand straight out of the arena instead of from a
-    /// copied row.
+    /// `major` is the generator's index *within* `half`, and `src` is a caller-
+    /// owned scratch the multiplicand is materialized into — see
+    /// [`TableauData::gather_row`] for why gathering beats transposing here.
+    /// Same predicates and same `ℤ/4` accumulation as the replaced
+    /// `Row::mul_assign`.
     #[inline]
-    pub(crate) fn mul_generator(&mut self, data: &TableauData, half: Half, major: usize) {
-        debug_assert_eq!(data.orientation(), Orientation::RowMajor);
-        let src_x = data.major(half, Plane::X, major);
-        let src_z = data.major(half, Plane::Z, major);
-        let g = blocks::row_multiply(&mut self.x, &mut self.z, src_x, src_z);
+    pub(crate) fn mul_generator(
+        &mut self,
+        data: &TableauData,
+        half: Half,
+        major: usize,
+        src: &mut ScratchRow,
+    ) {
+        data.gather_row(half, major, &mut src.x, &mut src.z);
+        let g = blocks::row_multiply(&mut self.x, &mut self.z, &src.x, &src.z);
         self.add_phase(g);
         self.add_phase(data.phase_of(half, major));
     }
@@ -385,6 +389,28 @@ impl<H> Tableau<H> {
         self.data.phase(generator)
     }
 
+    /// Enter the row-major orientation, or nest inside an enclosing guard.
+    ///
+    /// The manual counterpart of [`TransposedTableau`], for a caller that cannot
+    /// hold the guard's borrow — see `measure.rs`'s `RowGuard`. Pair every call
+    /// with exactly one [`Self::exit_row_major`], from a `Drop`.
+    #[inline]
+    pub(crate) fn enter_row_major(&mut self) {
+        if self.transpose_depth == 0 {
+            self.data.transpose_quadrants();
+        }
+        self.transpose_depth += 1;
+    }
+
+    /// Leave the row-major orientation, restoring column-major at depth zero.
+    #[inline]
+    pub(crate) fn exit_row_major(&mut self) {
+        self.transpose_depth -= 1;
+        if self.transpose_depth == 0 {
+            self.data.transpose_quadrants();
+        }
+    }
+
     /// The frame's X/Z bits as one contiguous byte range, for fingerprinting.
     #[inline]
     pub(crate) fn xz_bytes(&self) -> &[u8] {
@@ -444,28 +470,38 @@ impl<H> Tableau<H> {
     /// stabilizers whose destabilizer partner anticommutes with `Z_addr0`. The
     /// product must be real — the debug assert pins that, exactly as before.
     ///
-    /// Takes the row guard: the product is a fold of whole generators, which is
-    /// contiguous only in [`Orientation::RowMajor`].
+    /// The selector is a contiguous column read. The fold then either gathers
+    /// the `k` generators it multiplies or takes the row guard, whichever
+    /// [`blocks::prefer_gather`] says is cheaper.
     pub(crate) fn get_deterministic_outcome(&mut self, addr0: usize) -> bool {
         let n = self.n_qubits();
-        // The selector is a *column* read, so it is taken before transposing.
-        let selector = self.data.major(Half::Destab, Plane::X, addr0).to_vec();
         let stride = self.data.stride();
+        let selector = self.data.major(Half::Destab, Plane::X, addr0).to_vec();
 
-        let mut result = ScratchRow::zeroed(stride);
-        let guard = TransposedTableau::new(self);
-        for i in 0..n {
-            if TableauData::bit(&selector, i) {
-                result.mul_generator(guard.data(), Half::Stab, i);
+        // `mul_generator` reads through `gather_row`, which serves either
+        // orientation, so the same fold runs on both paths.
+        let fold = |data: &TableauData| {
+            let mut result = ScratchRow::zeroed(stride);
+            let mut src = ScratchRow::zeroed(stride);
+            for i in 0..n {
+                if TableauData::bit(&selector, i) {
+                    result.mul_generator(data, Half::Stab, i, &mut src);
+                }
             }
-        }
-        drop(guard);
+            result.phase
+        };
 
+        let phase = if blocks::prefer_gather(blocks::count_set(&selector), n) {
+            fold(&self.data)
+        } else {
+            let guard = TransposedTableau::new(self);
+            fold(guard.data())
+        };
         debug_assert!(
-            result.phase == 0 || result.phase == 2,
+            phase == 0 || phase == 2,
             "Measurement result cannot be imaginary!"
         );
-        result.phase >= 2
+        phase >= 2
     }
 
     /// Project the frame onto the sampled case-a outcome (Aaronson–Gottesman
@@ -489,10 +525,19 @@ impl<H> Tableau<H> {
         q_idx: usize,
         outcome: bool,
     ) {
-        debug_assert_eq!(self.data.orientation(), Orientation::ColumnMajor);
         let n = self.n_qubits();
         let stride = self.data.stride();
         self.invalidate_hash();
+
+        // Under a batch guard the frame is already row-major, where the
+        // elimination is `k` contiguous row multiplies — Stim's
+        // `collapse_qubit_z`. Outside one it is column-major, where the same
+        // arithmetic runs a column at a time (below) and needs no re-orientation
+        // at all. Both paths are exercised by the conformance differentials.
+        if self.data.orientation() == Orientation::RowMajor {
+            self.project_row_major(addr0, q_idx, outcome);
+            return;
+        }
 
         // Which generators of each half take the pivot. `ω(Z_addr0, g) =
         // x_g[addr0]`, so each selector is one contiguous column; `q_idx` is
@@ -570,6 +615,63 @@ impl<H> Tableau<H> {
         self.data.set_phase_of(Half::Destab, q_idx, pivot_phase);
         self.data
             .set_phase_of(Half::Stab, q_idx, if outcome { 2 } else { 0 });
+    }
+
+    /// The measurement projection with generators contiguous — the shape Stim's
+    /// `collapse_qubit_z` uses, and the one a batch guard makes available.
+    ///
+    /// `k` row multiplies against the pivot, where `k` is the number of selected
+    /// generators, versus the column-wise form's fixed sweep over all `n` qubit
+    /// columns. Cheaper exactly when the frame is dense, which is when a caller
+    /// bothered to take the guard.
+    fn project_row_major(&mut self, addr0: usize, q_idx: usize, outcome: bool) {
+        let n = self.n_qubits();
+        let stride = self.data.stride();
+        let mut stab_selector = vec![0u64; stride];
+        let mut destab_selector = vec![0u64; stride];
+        self.data
+            .gather_column(Half::Stab, Plane::X, addr0, &mut stab_selector);
+        self.data
+            .gather_column(Half::Destab, Plane::X, addr0, &mut destab_selector);
+
+        let data = &mut self.data;
+
+        // The pivot generator, copied once before the loop rewrites its
+        // neighbours — the replaced code's `let g_q = stabilizers[q_idx];`.
+        let mut pivot = ScratchRow::zeroed(stride);
+        pivot
+            .x
+            .copy_from_slice(data.major(Half::Stab, Plane::X, q_idx));
+        pivot
+            .z
+            .copy_from_slice(data.major(Half::Stab, Plane::Z, q_idx));
+        pivot.phase = data.phase_of(Half::Stab, q_idx);
+
+        for i in 0..n {
+            if i == q_idx {
+                continue;
+            }
+            if TableauData::bit(&stab_selector, i) {
+                data.multiply_row_by(Half::Stab, i, &pivot.x, &pivot.z, pivot.phase);
+            }
+            if TableauData::bit(&destab_selector, i) {
+                data.multiply_row_by(Half::Destab, i, &pivot.x, &pivot.z, pivot.phase);
+            }
+        }
+
+        // The pivot becomes the new destabilizer; the new stabilizer is the
+        // measured `±Z_addr0`.
+        data.major_mut(Half::Destab, Plane::X, q_idx)
+            .copy_from_slice(&pivot.x);
+        data.major_mut(Half::Destab, Plane::Z, q_idx)
+            .copy_from_slice(&pivot.z);
+        data.set_phase_of(Half::Destab, q_idx, pivot.phase);
+
+        data.major_mut(Half::Stab, Plane::X, q_idx).fill(0);
+        let stab_z = data.major_mut(Half::Stab, Plane::Z, q_idx);
+        stab_z.fill(0);
+        TableauData::set_bit(stab_z, addr0, true);
+        data.set_phase_of(Half::Stab, q_idx, if outcome { 2 } else { 0 });
     }
 }
 // ─── TransposedTableau ────────────────────────────────────────────────────
@@ -1133,10 +1235,11 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
     ///
     /// The two anticommutation masks are *column* reads, taken in the canonical
     /// column-major orientation where they are contiguous. The `ℤ/4` residual,
-    /// by contrast, is a fold of whole generators, contiguous only in
-    /// [`Orientation::RowMajor`] — so the multiply loop runs under the
-    /// [`TransposedTableau`] guard, and the guard needs unique access. Nothing
-    /// logically mutates: the frame is byte-identical on return.
+    /// by contrast, is a fold of whole generators, and which orientation serves
+    /// it best depends on how many generators are selected —
+    /// [`blocks::prefer_gather`] decides. `&mut self` is for the guard the dense
+    /// branch takes; nothing logically mutates, and the frame is byte-identical
+    /// on return.
     pub fn compute_decomposition(&mut self, addr0: usize, pauli: Pauli) -> (u8, I, I) {
         debug_assert_ne!(pauli, Pauli::I);
         let n = self.n_qubits();
@@ -1156,30 +1259,43 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         let destab_anticomm_bits = bits_to_index::<I>(&destab_anticomm, n);
         let stab_anticomm_bits = bits_to_index::<I>(&stab_anticomm, n);
 
-        let mut p_word = ScratchRow::zeroed(stride);
-        p_word.set(addr0, pauli);
-
-        let guard = TransposedTableau::new(&mut self.tableau);
-        let data = guard.data();
-        for i in 0..n {
-            if TableauData::bit(&destab_anticomm, i) {
-                // The stabilizer is its own inverse up to its phase; rather than
-                // inverting we multiply and divide out the phase squared.
-                let phase = data.phase_of(Half::Stab, i);
-                p_word.mul_generator(data, Half::Stab, i);
-                p_word.add_phase(8 - 2 * phase);
+        // The visit order — all selected stabilizers ascending, then all
+        // selected destabilizers ascending — is a genuine convention, not a free
+        // choice, so the fold is written once and run on whichever orientation
+        // is cheaper.
+        let fold = |data: &TableauData| {
+            let mut p_word = ScratchRow::zeroed(stride);
+            p_word.set(addr0, pauli);
+            let mut src = ScratchRow::zeroed(stride);
+            for i in 0..n {
+                if TableauData::bit(&destab_anticomm, i) {
+                    // The stabilizer is its own inverse up to its phase; rather
+                    // than inverting we multiply and divide out the phase
+                    // squared.
+                    let phase = data.phase_of(Half::Stab, i);
+                    p_word.mul_generator(data, Half::Stab, i, &mut src);
+                    p_word.add_phase(8 - 2 * phase);
+                }
             }
-        }
-        for i in 0..n {
-            if TableauData::bit(&stab_anticomm, i) {
-                let phase = data.phase_of(Half::Destab, i);
-                p_word.mul_generator(data, Half::Destab, i);
-                p_word.add_phase(8 - 2 * phase);
+            for i in 0..n {
+                if TableauData::bit(&stab_anticomm, i) {
+                    let phase = data.phase_of(Half::Destab, i);
+                    p_word.mul_generator(data, Half::Destab, i, &mut src);
+                    p_word.add_phase(8 - 2 * phase);
+                }
             }
-        }
-        drop(guard);
+            p_word.phase
+        };
 
-        (p_word.phase, stab_anticomm_bits, destab_anticomm_bits)
+        let selected = blocks::count_set(&destab_anticomm) + blocks::count_set(&stab_anticomm);
+        let phase = if blocks::prefer_gather(selected, n) {
+            fold(&self.tableau.data)
+        } else {
+            let guard = TransposedTableau::new(&mut self.tableau);
+            fold(guard.data())
+        };
+
+        (phase, stab_anticomm_bits, destab_anticomm_bits)
     }
 
     /// Multi-qubit generalization of [`Self::compute_decomposition`]: conjugate

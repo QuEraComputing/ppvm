@@ -349,6 +349,32 @@ impl TableauData {
         }
     }
 
+    /// Materialize generator `i` of `half` as a qubit-indexed `(x, z)` pair.
+    ///
+    /// The transpose of [`Self::gather_column`]: `O(n)` strided bit reads in the
+    /// canonical orientation, a `memcpy` under a row guard. Folding `k` selected
+    /// generators this way costs `k·n` bit reads against the guard's
+    /// `O(n²/64)` word ops for the transpose *pair*, so it is the cheaper route
+    /// whenever `k` is well below `n/16` — which is every measurement in a
+    /// local code, where the decomposition weight does not scale with `n`.
+    pub(crate) fn gather_row(&self, half: Half, i: usize, out_x: &mut [u64], out_z: &mut [u64]) {
+        debug_assert_eq!(out_x.len(), self.stride);
+        match self.orientation {
+            Orientation::RowMajor => {
+                out_x.copy_from_slice(self.major(half, Plane::X, i));
+                out_z.copy_from_slice(self.major(half, Plane::Z, i));
+            }
+            Orientation::ColumnMajor => {
+                out_x.fill(0);
+                out_z.fill(0);
+                for q in 0..self.n_qubits {
+                    Self::set_bit(out_x, q, Self::bit(self.major(half, Plane::X, q), i));
+                    Self::set_bit(out_z, q, Self::bit(self.major(half, Plane::Z, q), i));
+                }
+            }
+        }
+    }
+
     /// The four X/Z quadrants as one contiguous byte range.
     ///
     /// Zero padding makes this a faithful digest of the frame's bits: two frames

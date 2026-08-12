@@ -1,6 +1,10 @@
 # Contiguous tableau data structure
 
-Status: design sketch
+Status: **partly implemented** in `ppvm-tableau-2` as of 2026-08-11. The
+contiguous column-major storage, the transposition guard and the measurement
+route are shipped (`crates/ppvm-tableau-2/src/storage/`); the inverse tableau
+and the loss-plane cutover are not. Sections below are marked where the shipped
+code decided a question this sketch left open, or contradicted it.
 
 ## Purpose
 
@@ -39,9 +43,25 @@ orientation.
   that the memory and synchronization cost is worthwhile.
 
 Orientation (column- vs row-major) and inversion (forward vs inverse) are
-independent choices; this document now fixes both — column-major storage of the
-**inverse** tableau (see [Inverse tableau](#inverse-tableau)) — because that
-pairing is what lets gates and measurement share one orientation.
+independent choices; this document fixes both — column-major storage of the
+**inverse** tableau (see [Inverse tableau](#inverse-tableau)).
+
+**Correction (2026-08-11).** The stated reason for that pairing — that it lets
+gates and measurement share one orientation, so no measurement transposes — is
+wrong, and Stim's own source is the counterexample: `collapse_qubit_z` runs
+under a `TableauTransposedRaii`
+([`tableau_simulator.inl:96`, `:1341`](https://github.com/quantumlib/Stim/blob/main/src/stim/simulators/tableau_simulator.inl)),
+which transposes on construction and again on destruction. Storing the inverse
+does not remove row work from measurement; it removes the *search* (the
+determinism check becomes a contiguous read) and, for PPVM specifically, it
+would make `compute_decomposition`'s two anticommutation masks one row read.
+Elimination still multiplies whole generators. The inverse tableau therefore
+remains worth building, for a narrower reason, and the guard stays.
+
+What shipped instead, and what removed the per-measurement transpose, is under
+[Temporary transposition](#temporary-transposition): the frame is the **forward**
+tableau, and a row-oriented fold either gathers the `k` generators it multiplies
+out of the column-major arena or takes the guard, whichever is cheaper.
 
 ## Logical model
 
@@ -91,6 +111,16 @@ block. It is not an associated type of a public tableau trait. Offsets and
 strides account for alignment and padding, while logical accessors enforce the
 actual `(2n, n)` dimensions.
 
+**Shipped (2026-08-11).** `u64` blocks in a 32-byte-aligned allocation, and the
+block type is private rather than a generic parameter, so a 256-bit SIMD block
+is a later drop-in that changes no signature (open question 1, resolved). Rust
+has no stable portable SIMD, so widening now would cost a dependency or a
+nightly feature for no measured gain: the gate kernels are already
+memory-bound at the widths that matter. The four X/Z quadrants are stored
+**square** (`n × n` each, not `2n × n` per plane) because an in-place blockwise
+transpose needs square quadrants — the same reason Stim's
+`do_transpose_quadrants` is written over quadrants rather than the whole table.
+
 Keeping all planes in one allocation improves cloning and locality and avoids
 one allocation per generator. It also lets a mixture branch copy a single
 contiguous region. If benchmarks favor separate aligned allocations for X and
@@ -101,6 +131,24 @@ padding is preferable because it permits bulk comparison and hashing of
 canonical ranges.
 
 ## Loss ownership
+
+**Superseded (2026-08-11).** The section below says loss is a capability of the
+one `Tableau` type and explicitly not a `LossyTableau` variant. That is
+overruled: loss becomes a **tower**, `Tableau` (lossless) → `LossyTableau`
+(`Tableau` plus a packed loss plane) → `GeneralizedTableau` generic over the
+frame. This mirrors `ppvm-pauli-word-2`'s `PauliWord` / `LossyPauliWord` split,
+where `PauliBits::is_lost` is a const-`false` default that the lossy word
+overrides, so one loss-aware kernel serves both types and the lossless build
+folds every `if is_lost(q)` branch away at monomorphization. Making
+`GeneralizedTableau` frame-generic is what carries that property up: a lossless
+simulation stops paying for loss checks it cannot need, which the always-owned
+plane below cannot express.
+
+Everything the section says about *representation* still holds — the loss plane
+is bit-packed, never transposed, excluded from the X/Z digest, and carries a
+`lost_count` fast path. Only its ownership moves. The shipped `TableauData`
+already allocates the plane and its accessors, marked reserved; the live flags
+are still `GeneralizedTableau::is_lost: Vec<bool>` until the tower lands.
 
 The existing concrete `Tableau` always owns the per-qubit loss plane. This is a
 capability of the same tableau type, not a `LossyTableau` variant or a
@@ -190,6 +238,30 @@ quadrants rather than a permanently stored second copy. Because a non-square
 `2n × n` bit-matrix transpose is not a swap, the guard is expected to work over
 square, padded blocks (as Stim does) and may use a scratch buffer; that padding
 and scratch are budgeted here rather than assumed away:
+
+**Shipped (2026-08-11), and the cost model this sketch was missing.** The guard
+exists as described and is re-entrant, so a batch of measurements amortizes one
+transpose (`GeneralizedTableau::measure_all` / `measure_many` hold it, as Stim's
+`TableauSimulator` does around a run of collapses). Two facts the sketch does
+not account for:
+
+- The transpose has a **floor**, not a cost proportional to `n`: it moves whole
+  `64 × 64` blocks, so an `n = 12` frame costs the same as an `n = 64` one, and
+  the pair (enter plus restore) is roughly `3072 · ⌈n/64⌉²` word operations.
+  Paying that per measurement is what made a `.stim` `MR` sweep — one target at
+  a time, no batch to amortize over — 46× slower than the row-major engine it
+  replaced.
+- A fold over `k` selected generators can dodge the guard entirely by
+  **gathering** those `k` generators out of the column-major arena
+  (`TableauData::gather_row`, `O(n)` strided bit reads each). `blocks::prefer_gather`
+  picks the cheaper route, which bounds the worst case at the transpose cost
+  either way.
+
+Gathering is a *mitigation, not a fix*: at `k · n` bit reads it is still
+asymptotically worse than the row-major engine's `k · ⌈n/64⌉` word operations,
+and the confirmed remedy for the folds themselves is the
+[inverse tableau](#inverse-tableau) — see
+[Open questions](#open-questions) item 5 for the measured gap.
 
 ```rust
 pub enum Orientation {
@@ -288,13 +360,37 @@ structural-hash exclusion list — there is nothing to exclude.
 
 ### Inverse tableau
 
-`Tableau` stores the **inverse** tableau. In a forward tableau, measurement must
-scan a column to find an anticommuting generator and then eliminate — row work
-in the opposite orientation from the column-major gate path, forcing a transpose
-per measurement. The inverse tableau makes the anticommutation structure a
-**row read in the same column-major orientation gates already use**, so gates
-and measurement no longer fight over layout and the per-measurement transpose
-disappears. The inverse is a *private representation choice* of `Tableau`: the
+**Not yet implemented (2026-08-11); the rationale below is restated.** The
+frame ships as the forward tableau. Stim's `collapse_qubit_z` transposes even
+with the inverse in hand, so "the per-measurement transpose disappears" was
+never the inverse's contribution. What it does contribute, and why it is still
+the next piece of work, is specific to PPVM's generalized measurement:
+
+For forward rows `dᵢ = U Xᵢ U†`, `sᵢ = U Zᵢ U†` and a Pauli `P`,
+
+```text
+ω(P, sᵢ) = ω(U†PU, Zᵢ) = x-bit i of U†PU
+ω(P, dᵢ) = ω(U†PU, Xᵢ) = z-bit i of U†PU
+```
+
+and `U†PU` is exactly one row of the inverse tableau. So
+`GeneralizedTableau::compute_decomposition` — today two column reads for the
+anticommutation masks plus a fold of `k` whole generators for the `ℤ/4` residual
+— becomes **one contiguous row read for both masks** plus an `O(1)` phase
+correction. That fold is the single hottest thing in the crate: it runs on every
+measurement, every `T`, every rotation, every expectation value. The correction
+is the fixed stabilizers-then-destabilizers ordering convention
+(`stab_destab_commute_sign`: reordering shifts the phase by
+`2·⟨destab_anticomm, stab_anticomm⟩`), so it is a popcount rather than new
+mathematics. The determinism check becomes a contiguous scan, as in Stim's
+`is_deterministic_z` (`!inv_state.zs[t].xs.not_zero()`).
+
+The forward tableau must stay: the amplitude-carrying algorithm is stated over
+forward rows. So this is a **dual representation** (forward plus inverse, each
+gate updating both), not a dual orientation — which is the answer to open
+question 4.
+
+The inverse is a *private representation choice* of `Tableau`: the
 `SymplecticColumns` / `PhaseTrack` impls encode the inverse update rule and
 `StabilizerFrame` reads the inverse, but the behavioral traits above them
 (`Clifford`, `Measure`) are unchanged. Reference-frame sampling composes on top
@@ -449,10 +545,10 @@ measurement. Temporary transposition makes elimination and row products
 contiguous when required.
 
 This layout should be evaluated separately from higher-level sampling
-algorithms. PPVM follows Stim in storing the inverse tableau (see
-[Inverse tableau](#inverse-tableau)), and reference-frame sampling composes on
-top; both are internal choices of the concrete `Tableau` and do not surface in
-the PPVM trait system.
+algorithms. PPVM intends to follow Stim in storing the inverse tableau (see
+[Inverse tableau](#inverse-tableau) — designed, not yet shipped), and
+reference-frame sampling composes on top; both are internal choices of the
+concrete `Tableau` and do not surface in the PPVM trait system.
 
 ## Prototype validation
 
@@ -477,16 +573,34 @@ The prototype should include:
 
 ## Open questions
 
-1. What block width and alignment should the first implementation use?
-2. Should phases occupy one or two bits per generator in the tableau model?
-3. Which operations should receive a transposition guard versus performing
-   column-strided work directly?
-4. Does a dual-orientation representation still add anything now that the inverse
-   tableau keeps measurement in the gate orientation, or is temporary
-   transposition needed only for rare bulk elimination?
-
-**Resolved:** PPVM stores the **inverse** tableau (see
-[Inverse tableau](#inverse-tableau)). This keeps measurement a row read in the
-same column-major orientation gates use, so the per-measurement transpose is
-gone and the guard is reserved for rare bulk row work. Reference-frame sampling
-composes on top for measurement-dominated sampling workloads.
+1. ~~What block width and alignment should the first implementation use?~~
+   **Resolved:** `u64` blocks, 32-byte alignment, block type private rather than
+   generic. See [Physical storage](#physical-storage).
+2. ~~Should phases occupy one or two bits per generator in the tableau model?~~
+   **Resolved:** two bit planes, `(low, high)`, so a phase is a `ℤ/4` value and
+   the `g`-rule's carry-save accumulation is two XOR planes. One bit cannot hold
+   the imaginary residual that row multiplication produces.
+3. ~~Which operations should receive a transposition guard versus performing
+   column-strided work directly?~~ **Resolved by measurement, not by taste:**
+   the projection runs column-strided (it multiplies one pivot into many
+   generators, which transposes cleanly into plane expressions); folds of many
+   generators into one Pauli choose per call between gathering and the guard;
+   batched measurement holds one guard for the whole batch.
+4. ~~Does a dual-orientation representation still add anything now that the
+   inverse tableau keeps measurement in the gate orientation?~~ **Resolved:**
+   the answer is dual *representation* (forward plus inverse), not dual
+   orientation. See [Inverse tableau](#inverse-tableau).
+5. **New, and currently the blocking one.** Row-oriented folds are the layout's
+   remaining cost. Against the row-major engine this replaces, a per-target
+   measurement sweep on a dense state is 10–25× slower at `n = 32…128`
+   (`tableau-attrib/measure-sweep/*`, `tableau-integration/measure-all-msd/*`),
+   and the generalized `T`/rotation path, which folds through the same
+   `compute_decomposition`, is 12–14× slower on a 12-qubit mixture. Neither
+   gathering nor the guard closes that: a row-major engine folds `k` generators
+   in `k · ⌈n/64⌉` word operations and both column-major routes are a factor of
+   `n` above it. The [inverse tableau](#inverse-tableau) removes the fold rather
+   than optimizing it, and is the next piece of work; the question this leaves
+   open is whether the batched Clifford sweeps (`h_many`, `cz_block`, currently
+   1.6–3.6× slower for the same reason in reverse — one column pass per qubit
+   where the row-major engine masked all qubits in one pass) want a fused
+   whole-plane kernel or a different batching primitive.

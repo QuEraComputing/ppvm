@@ -1233,3 +1233,100 @@ audit could only mark ambiguous.
 
 **Nothing was applied to any crate in rounds 1–2.** Working tree carries the
 ledger only.
+
+---
+
+## Tableau layout rebuild — Stim-like storage landed, measurement folds still open (2026-08-11)
+
+Worktree `.worktrees/tableau-2-stim-layout`, branch `codex/tableau-2-stim-layout`
+off `codex/traits-2-impl` @ `3fdad531`. Design:
+[`tableau-data-structure.md`](design/tableau-data-structure.md), whose
+corrections from this work are marked inline there.
+
+**The drift.** `ppvm-tableau-2`'s frame was `Vec<Row<A>>` — one
+compile-time-sized `BitArray` pair per generator — the exact representation the
+design forbids. Two costs followed: every Clifford walked all `2n` generators to
+touch 8 bytes in each, and the row stride came from the storage width `A` rather
+than from `n` (an 85-qubit frame at `U2048` spent 87 KB carrying 3.7 KB of live
+bits).
+
+**Shipped** (`7e4f4047`, `ca8dedd3`, `916e9038`). `src/storage/` is now
+`TableauData`: one 32-byte-aligned allocation split by computed offsets into four
+**square** `n × n` X/Z quadrants (square because the blockwise transpose is
+in-place, as Stim's `do_transpose_quadrants` requires), two bit-packed `ℤ/4`
+phase planes, and a loss plane. Runtime strides, `64 × 64` blockwise transpose,
+re-entrant `TransposedTableau` guard. `A: RowStorage` is gone from `Tableau`,
+`GeneralizedTableau` and all four downstream crates, so there is no compile-time
+qubit cap left and `ppvm-vihaco`'s width-dispatch enum collapses to one arm.
+1929 workspace tests pass; the `ppvm-conformance-2` differentials against legacy
+pass with no re-baselining of values, seeds or measurement records (row snapshots
+needed a `repack_bits` normalizer only because the two engines no longer share a
+limb width).
+
+Gate throughput is what the layout was for — ns/gate, legacy → `-2`:
+
+| | n=85 | n=200 | n=500 | n=1889 |
+|---|---|---|---|---|
+| `h` | 96.3 → 4.7 | 209 → 4.6 | 729 → 6.3 | 6660 → 21.0 |
+| `cnot` | 154 → 8.3 | 333 → 8.1 | 1197 → 9.8 | 8609 → 28.2 |
+
+**The regression this exposed, and the mitigation.** Row-oriented work is
+contiguous only under the transpose guard, and that guard costs
+`~3072·⌈n/64⌉²` word ops — a *floor*, not a function of the live bits — while a
+deterministic measurement reads `O(n/64)`. A `.stim` `MR` sweep measures one
+target at a time, so nothing amortizes it: `surface_d30` (1889 qubits, 27 870
+measurements) went **630 ms/shot on legacy → 29 s/shot**. Instrumentation put
+28 769 of those measurements in the deterministic case-b branch against 900
+branching, i.e. 97% of them did no projection at all and paid a full transpose
+round-trip purely for `compute_decomposition`'s phase fold.
+
+Two fixes landed. The projection no longer needs either orientation — multiplying
+one pivot into many selected generators transposes into plane expressions, so
+`accumulate_column_phase` runs it a qubit column at a time (`ca8dedd3`). And a
+fold of `k` generators now **gathers** those `k` out of the column-major arena
+(`TableauData::gather_row`) when that is cheaper than re-orienting, chosen by
+`blocks::prefer_gather` at `k ≈ n/16`, with batched measurement holding one guard
+as Stim does (`916e9038`). `surface_d30`: **29 s → 224 ms/shot**, 2.8× faster
+than legacy. GHZ `measure_all` at n=1889: 992 → 44.6 µs per measured qubit.
+
+**Perf gate: not green, and gathering cannot make it green.**
+`mise run perf-report --bench tableau_bench --bench tableau_surface_bench
+--bench tableau_mixture_bench` at `916e9038` (single-launch screening, so no row
+is *robust* yet): 385 paired rows — **154 improved, 10 parity, 221 above the
+1.03× gate**. The allowlist is empty and the 2026-08-08 confirmation had 0
+actionable regressions, so these are new.
+
+They fall into three families, all one root cause — the layout is optimal for
+"one qubit, all generators" and pessimal for "one generator, all qubits":
+
+1. **Row-oriented folds, 10–25×.** `tableau-attrib/measure-sweep/frame_sweep/128`
+   25.4×, `.../decomp_only/128` 18.5×, `tableau-integration/measure-all-msd/*`
+   13–16×, `tableau-integration/noisy-shots` 17.9×. A row-major engine folds `k`
+   generators in `k·⌈n/64⌉` word ops; gathering is `k·n` bit reads and the guard
+   is its floor. No heuristic closes a factor of `n` — only the
+   **inverse tableau** does, by making the fold one contiguous row read plus an
+   `O(1)` ordering correction.
+2. **Generalized non-Clifford gates on a 12-qubit mixture, 8–14×.** Every
+   `mixture/rotation/*`, `mixture/reset/*` and `mixture/sampler/*_serial/*` row.
+   Same `compute_decomposition` fold, and at `n = 12` the transpose floor is at
+   its worst relative to the live bits. `mixture::structurally_equal` compounds
+   it by comparing frames through `Tableau::rows()`, which allocates two `Vec`s
+   per generator; the canonical byte range already supports a bulk compare.
+3. **Batched Clifford sweeps, 1.6–3.6×.** `h_many`, `s_many`, `sqrt_*_many`,
+   `cz_block_pairs` (3.4–3.6×), `width-8/cnot-edge` (3.5×). The reverse
+   asymmetry: legacy masked all qubits in one pass over `2n` rows, whereas one
+   column pass per qubit re-reads the phase planes `n` times. In column-major,
+   "H on every qubit" is a plane swap — these rows should end up *faster* than
+   legacy, not slower, so this is an unwritten kernel rather than a layout limit.
+
+Single-qubit Clifford rows meanwhile improved 4–10× (`cy_many` **0.106×**,
+`width-65/h` **0.129×**, `bare/h` **0.250×**), which is the trade the rewrite
+was making.
+
+**Next**, in the order the numbers argue for: the inverse tableau (families 1
+and 2 at once — the risky derivation, keep the forward path as a `debug_assert`
+oracle); the fused whole-plane batch kernels (family 3); the bulk frame compare
+in the mixture; then the `LossyTableau` tower (`Tableau` → `LossyTableau` →
+frame-generic `GeneralizedTableau`, which replaces
+`GeneralizedTableau::is_lost: Vec<bool>` — the storage plane is allocated and
+reserved for it already).

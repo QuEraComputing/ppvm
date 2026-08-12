@@ -17,10 +17,16 @@
 //! `lean/PPVM/Algebra/Truncation.lean` (`cutoff_mismatch`, the tableau's strict
 //! `>` keep-rule vs `CoefficientThreshold`'s `>=`).
 //!
-//! The algorithm — the packed bit-plane row layout, every Clifford kernel, the
-//! `u64`-packed sort-merge branch coalesce, the fused batch mask sweeps, the
-//! `cz_block` family, and the reusable measurement scratch — is ported from
-//! `ppvm-tableau` so the hot paths stay at parity.
+//! The *algebra* — every Clifford kernel's bit and sign rules, the `u64`-packed
+//! sort-merge branch coalesce, the fused batch mask sweeps, the `cz_block`
+//! family, and the reusable measurement scratch — is ported from
+//! `ppvm-tableau`, so values, visit order and RNG consumption stay identical.
+//! The *layout* is not: old stored one compile-time-sized `BitArray` pair per
+//! generator, which made every gate a strided walk over all `2n` of them and
+//! capped the qubit count at the storage width. The frame now lives in one
+//! aligned contiguous column-major allocation (`storage::TableauData`), where a
+//! one-qubit Clifford is two `n`-bit sweeps and `n` is a runtime value. See
+//! [`Tableau`]'s "Storage" section and `docs/design/tableau-data-structure.md`.
 //!
 //! # Quick example
 //!

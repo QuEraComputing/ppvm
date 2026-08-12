@@ -244,8 +244,13 @@ and scratch are budgeted here rather than assumed away:
 **Shipped (2026-08-11), and the cost model this sketch was missing.** The guard
 exists as described and is re-entrant, so a batch of measurements amortizes one
 transpose (`GeneralizedTableau::measure_all` / `measure_many` hold it, as Stim's
-`TableauSimulator` does around a run of collapses). Two facts the sketch does
-not account for:
+`TableauSimulator` does around a run of collapses). A caller that cannot use
+those entry points — because it has per-measurement work of its own, like the
+conformance driver advancing a compatibility RNG stream per outcome — should
+hold `GeneralizedTableau::with_row_major` over its own loop rather than pay the
+orientation change `n` times; on the 85-qubit MSD frame that is the difference
+between 0.80 µs and 2.4 µs per measurement. Two facts the sketch does not
+account for:
 
 - The transpose had a **floor**, not a cost proportional to `n`: it moved whole
   `64 × 64` blocks, so an `n = 12` frame cost the same as an `n = 64` one, and
@@ -632,8 +637,11 @@ The prototype should include:
    inverse at `n = 85…1889`. **What is left is the elimination, in one specific
    shape:** an *unbatched* case-a measurement on a *dense* frame, where the
    inverse-sign update's site reads take the guard and the transpose pair is ~69%
-   of the measurement (`tableau-micro/msd_sweep_loop`, 9× the row-major engine;
-   the batched form of the same sweep is 2.5×).
+   of the measurement (`tableau-micro/msd_sweep_loop`, 7.8× the row-major engine;
+   the batched form of the same sweep is 2.7×). Closing the remaining gap between
+   the two shapes wants a **lazy** orientation — stay row-major after a
+   measurement until a column-major access demands otherwise — so an unbatched
+   loop amortizes the transpose without the caller having to say so.
 
    **Partly resolved (2026-08-12), for small `n`.** The 69% was two separate
    mistakes, both now fixed and both cheap:

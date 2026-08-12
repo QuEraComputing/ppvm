@@ -269,7 +269,7 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         rng: &mut R,
     ) -> Vec<Option<bool>> {
         let n = self.n_qubits();
-        self.under_one_row_guard(|s| {
+        self.with_row_major(|s| {
             (0..n)
                 .map(|idx| s.measure_one_with_scratch(idx, scratch, rng))
                 .collect()
@@ -285,7 +285,7 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         scratch: &mut MeasureScratch<I>,
         rng: &mut R,
     ) -> Vec<Option<bool>> {
-        self.under_one_row_guard(|s| {
+        self.with_row_major(|s| {
             indices
                 .iter()
                 .map(|&idx| s.measure_one_with_scratch(idx, scratch, rng))
@@ -307,8 +307,15 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
     /// [`blocks::prefer_gather`](crate::storage::blocks::prefer_gather). The two
     /// regimes are why both orientations are supported rather than one being
     /// canonical for measurement.
+    ///
+    /// Public because the batched entry points below cannot serve a caller that
+    /// has to interleave its own work with each measurement — a trajectory RNG
+    /// it must advance per outcome, a record it must annotate — and such a
+    /// caller would otherwise pay the orientation change `n` times. Measuring
+    /// through `&mut Self` inside `f` is exactly a measurement sweep; the guard
+    /// is re-entrant, so a nested batched call collapses into this one.
     #[inline]
-    fn under_one_row_guard<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+    pub fn with_row_major<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         let mut held = RowGuard::new(self);
         f(&mut held)
     }

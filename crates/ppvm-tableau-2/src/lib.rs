@@ -145,6 +145,11 @@ pub mod display;
 pub mod expectation;
 /// Non-Clifford gates: `T`, the rotations, `R` and `U3`.
 pub mod gates;
+/// The inverse tableau's sign algebra: one rule per Clifford, and the `O(1)`
+/// decomposition phase that replaces a fold of `k` generators.
+pub(crate) mod inverse;
+#[cfg(test)]
+mod inverse_tests;
 /// Z-basis measurement, `measure_all`/`measure_many`, and the reusable scratch.
 pub mod measure;
 /// Classical probability mixtures over complete generalized-tableau states.

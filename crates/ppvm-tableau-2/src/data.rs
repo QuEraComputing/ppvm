@@ -470,13 +470,29 @@ impl<H> Tableau<H> {
     /// stabilizers whose destabilizer partner anticommutes with `Z_addr0`. The
     /// product must be real — the debug assert pins that, exactly as before.
     ///
-    /// The selector is a contiguous column read. The fold then either gathers
-    /// the `k` generators it multiplies or takes the row guard, whichever
-    /// [`blocks::prefer_gather`] says is cheaper.
+    /// With the inverse signs current this is **one bit**: `U†Z_qU = ±Z_q` in
+    /// the deterministic case, and that sign is the outcome
+    /// ([`Self::inverse_outcome`]). Otherwise the selector is a contiguous column
+    /// read and the fold either gathers the `k` generators it multiplies or takes
+    /// the row guard, whichever [`blocks::prefer_gather`] says is cheaper.
     pub(crate) fn get_deterministic_outcome(&mut self, addr0: usize) -> bool {
+        if self.inverse_readable(Pauli::Z) {
+            let outcome = self.inverse_outcome(addr0);
+            debug_assert_eq!(outcome, self.deterministic_outcome_by_fold(addr0));
+            return outcome;
+        }
+        self.deterministic_outcome_by_fold(addr0)
+    }
+
+    /// [`Self::get_deterministic_outcome`] by folding the selected stabilizers —
+    /// the fallback when the inverse signs have been abandoned, and the oracle
+    /// the inverse row is checked against in debug builds.
+    fn deterministic_outcome_by_fold(&mut self, addr0: usize) -> bool {
         let n = self.n_qubits();
         let stride = self.data.stride();
-        let selector = self.data.major(Half::Destab, Plane::X, addr0).to_vec();
+        let mut selector = vec![0u64; stride];
+        self.data
+            .gather_column(Half::Destab, Plane::X, addr0, &mut selector);
 
         // `mul_generator` reads through `gather_row`, which serves either
         // orientation, so the same fold runs on both paths.
@@ -519,6 +535,10 @@ impl<H> Tableau<H> {
     /// multiplies, so the column reads are snapshotted first and the rest runs
     /// under the [`TransposedTableau`] guard — the same split Stim makes when it
     /// wraps `collapse_qubit_z` in `TableauTransposedRaii`.
+    ///
+    /// The inverse signs are carried through by
+    /// [`Self::project_inverse`](crate::inverse), which must run *first*: it
+    /// reads the pre-projection generators.
     pub(crate) fn update_tableau_according_to_outcome(
         &mut self,
         addr0: usize,
@@ -531,12 +551,37 @@ impl<H> Tableau<H> {
 
         // Under a batch guard the frame is already row-major, where the
         // elimination is `k` contiguous row multiplies — Stim's
-        // `collapse_qubit_z`. Outside one it is column-major, where the same
-        // arithmetic runs a column at a time (below) and needs no re-orientation
-        // at all. Both paths are exercised by the conformance differentials.
+        // `collapse_qubit_z` — and the inverse update's site-planes are
+        // `memcpy`s. Outside one it is column-major, where the same arithmetic
+        // runs a column at a time (below) and needs no re-orientation at all.
+        // Both paths are exercised by the conformance differentials.
         if self.data.orientation() == Orientation::RowMajor {
+            if self.data.inverse_valid() {
+                self.project_inverse(addr0, q_idx, outcome);
+            }
             self.project_row_major(addr0, q_idx, outcome);
             return;
+        }
+
+        // Column-major: the inverse update reads *generators*, so it gathers —
+        // `k·n` strided bit reads, against `n²/16` for a transpose pair. That is
+        // the same trade [`blocks::prefer_gather`] settles for the decomposition
+        // fold, and settling it the same way bounds the cost of keeping the
+        // inverse by the cost the very next reader would otherwise pay for
+        // losing it: a dense frame re-orients once and runs the whole projection
+        // contiguously, a sparse one gathers and stays put.
+        if self.data.inverse_valid() {
+            let selected = blocks::count_set(self.data.major(Half::Stab, Plane::X, addr0))
+                + blocks::count_set(self.data.major(Half::Destab, Plane::X, addr0));
+            if blocks::prefer_gather(selected, n) {
+                self.project_inverse(addr0, q_idx, outcome);
+            } else {
+                self.enter_row_major();
+                self.project_inverse(addr0, q_idx, outcome);
+                self.project_row_major(addr0, q_idx, outcome);
+                self.exit_row_major();
+                return;
+            }
         }
 
         // Which generators of each half take the pivot. `ω(Z_addr0, g) =
@@ -1287,6 +1332,19 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
             p_word.phase
         };
 
+        // With the inverse signs current the whole fold collapses to one sign
+        // read plus a popcount — see [`Tableau::decomposition_phase`], which
+        // serves either orientation for `X`/`Z`. The fold stays as the fallback
+        // for an abandoned inverse, for a `Y` site under a row guard, and as the
+        // debug oracle for both.
+        if self.tableau.inverse_readable(pauli) {
+            let phase =
+                self.tableau
+                    .decomposition_phase(addr0, pauli, &destab_anticomm, &stab_anticomm);
+            debug_assert_eq!(phase, fold(&self.tableau.data));
+            return (phase, stab_anticomm_bits, destab_anticomm_bits);
+        }
+
         let selected = blocks::count_set(&destab_anticomm) + blocks::count_set(&stab_anticomm);
         let phase = if blocks::prefer_gather(selected, n) {
             fold(&self.tableau.data)
@@ -1710,6 +1768,17 @@ impl<H> Tableau<H> {
             return;
         }
         self.invalidate_hash();
+        // Disjoint pairs are a sequence of `CZ`s, so the inverse signs follow one
+        // rule per pair — read before the sweep below moves any bit. An
+        // overlapping run is deliberately *not* a `CZ` sequence (the `|` in the
+        // delta pass, `G-060`), so there the signs are abandoned.
+        if offset >= count && offset != 0 {
+            for k in 0..count {
+                self.prepend_cz(base + k, base + offset + k);
+            }
+        } else {
+            self.invalidate_inverse();
+        }
         let stride = self.data.stride();
         let mut delta = vec![0u64; stride];
 

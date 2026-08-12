@@ -65,7 +65,16 @@ use crate::data::{Bitstring, GeneralizedTableau, ScratchRow, Tableau, Transposed
 use crate::storage::{HALVES, Half, Plane, TableauData, blocks};
 
 /// Run a one-qubit column kernel over both halves.
+///
+/// The optional `inverse: <rule>` clause names the [`crate::inverse`] sign rule
+/// for this gate, and it runs **first** — the rules are stated over the pre-gate
+/// rows. A sweep without one is not a Clifford (the bare `SymplecticColumns` /
+/// `PhaseTrack` primitives), so it abandons the inverse signs instead.
 macro_rules! sweep1 {
+    ($tab:expr, $q:expr, inverse: $rule:ident, $kernel:expr) => {{
+        $tab.$rule($q);
+        sweep1!($tab, $q, $kernel)
+    }};
     ($tab:expr, $q:expr, $kernel:expr) => {{
         $tab.invalidate_hash();
         for half in HALVES {
@@ -76,8 +85,12 @@ macro_rules! sweep1 {
     }};
 }
 
-/// Run a two-qubit column kernel over both halves.
+/// Run a two-qubit column kernel over both halves. `inverse:` as [`sweep1`].
 macro_rules! sweep2 {
+    ($tab:expr, $a:expr, $b:expr, inverse: $rule:ident, $kernel:expr) => {{
+        $tab.$rule($a, $b);
+        sweep2!($tab, $a, $b, $kernel)
+    }};
     ($tab:expr, $a:expr, $b:expr, $kernel:expr) => {{
         $tab.invalidate_hash();
         for half in HALVES {
@@ -103,6 +116,7 @@ impl<H> SymplecticColumns for Tableau<H> {
 
     #[inline]
     fn swap_xz(&mut self, q: usize) {
+        self.invalidate_inverse();
         sweep1!(self, q, |x: &mut [u64], z: &mut [u64], _ph: &mut [u64]| {
             x.swap_with_slice(z);
         });
@@ -110,6 +124,7 @@ impl<H> SymplecticColumns for Tableau<H> {
 
     #[inline]
     fn xor_z_from_x(&mut self, q: usize) {
+        self.invalidate_inverse();
         sweep1!(self, q, |x: &mut [u64], z: &mut [u64], _ph: &mut [u64]| {
             for (zw, &xw) in z.iter_mut().zip(x.iter()) {
                 *zw ^= xw;
@@ -119,6 +134,7 @@ impl<H> SymplecticColumns for Tableau<H> {
 
     #[inline]
     fn xor_x_col(&mut self, ctrl: usize, tgt: usize) {
+        self.invalidate_inverse();
         sweep2!(
             self,
             ctrl,
@@ -133,6 +149,7 @@ impl<H> SymplecticColumns for Tableau<H> {
 
     #[inline]
     fn xor_z_col(&mut self, tgt: usize, ctrl: usize) {
+        self.invalidate_inverse();
         sweep2!(
             self,
             ctrl,
@@ -147,6 +164,7 @@ impl<H> SymplecticColumns for Tableau<H> {
 
     #[inline]
     fn cz_bits(&mut self, a: usize, b: usize) {
+        self.invalidate_inverse();
         sweep2!(self, a, b, |xa: &mut [u64],
                              za: &mut [u64],
                              xb: &mut [u64],
@@ -167,6 +185,7 @@ impl<H> SymplecticColumns for Tableau<H> {
 impl<H> PhaseTrack for Tableau<H> {
     #[inline]
     fn flip_phase_where_xz(&mut self, q: usize) {
+        self.invalidate_inverse();
         sweep1!(self, q, |x: &mut [u64], z: &mut [u64], ph: &mut [u64]| {
             for i in 0..ph.len() {
                 ph[i] ^= x[i] & z[i];
@@ -184,6 +203,7 @@ impl<H> PhaseTrack for Tableau<H> {
 
     #[inline]
     fn cnot_phase(&mut self, ctrl: usize, tgt: usize) {
+        self.invalidate_inverse();
         sweep2!(
             self,
             ctrl,
@@ -198,6 +218,7 @@ impl<H> PhaseTrack for Tableau<H> {
 
     #[inline]
     fn cz_phase(&mut self, a: usize, b: usize) {
+        self.invalidate_inverse();
         sweep2!(self, a, b, |xa: &mut [u64],
                              za: &mut [u64],
                              xb: &mut [u64],
@@ -245,6 +266,9 @@ impl<H> StabilizerFrame for Tableau<H> {
         assert_ne!(src, dst, "row_multiply needs distinct rows");
         let n = SymplecticColumns::n_qubits(self);
         self.invalidate_hash();
+        // Two anticommuting generators have a non-Hermitian product, and then no
+        // `U` exists for the inverse signs to be the signs *of*.
+        self.invalidate_inverse();
         let stride = self.data.stride();
         let mut guard = TransposedTableau::new(self);
         let data = guard.data_mut();
@@ -288,7 +312,7 @@ impl<H> StabilizerFrame for Tableau<H> {
 impl<H> Clifford for Tableau<H> {
     #[inline]
     fn x(&mut self, qubit: usize) {
-        sweep1!(self, qubit, |_x: &mut [u64],
+        sweep1!(self, qubit, inverse: prepend_x, |_x: &mut [u64],
                               z: &mut [u64],
                               ph: &mut [u64]| {
             blocks::pauli_x(z, ph)
@@ -297,7 +321,7 @@ impl<H> Clifford for Tableau<H> {
 
     #[inline]
     fn y(&mut self, qubit: usize) {
-        sweep1!(self, qubit, |x: &mut [u64],
+        sweep1!(self, qubit, inverse: prepend_y, |x: &mut [u64],
                               z: &mut [u64],
                               ph: &mut [u64]| {
             blocks::pauli_y(x, z, ph)
@@ -306,7 +330,7 @@ impl<H> Clifford for Tableau<H> {
 
     #[inline]
     fn z(&mut self, qubit: usize) {
-        sweep1!(self, qubit, |x: &mut [u64],
+        sweep1!(self, qubit, inverse: prepend_z, |x: &mut [u64],
                               _z: &mut [u64],
                               ph: &mut [u64]| {
             blocks::pauli_z(x, ph)
@@ -315,14 +339,14 @@ impl<H> Clifford for Tableau<H> {
 
     #[inline]
     fn h(&mut self, qubit: usize) {
-        sweep1!(self, qubit, blocks::h);
+        sweep1!(self, qubit, inverse: prepend_h, blocks::h);
     }
 
     #[inline]
     fn s(&mut self, qubit: usize) {
         // NOTE: S is the only Clifford where forward and backward propagation
         // differ (it is non-Hermitian); only the phase rule differs.
-        sweep1!(self, qubit, |x: &mut [u64],
+        sweep1!(self, qubit, inverse: prepend_s, |x: &mut [u64],
                               z: &mut [u64],
                               ph: &mut [u64]| {
             blocks::s(x, z, ph)
@@ -335,6 +359,7 @@ impl<H> Clifford for Tableau<H> {
             self,
             control,
             target,
+            inverse: prepend_cnot,
             |xc: &mut [u64], zc: &mut [u64], xt: &mut [u64], zt: &mut [u64], ph: &mut [u64]| {
                 blocks::cnot(xc, zc, xt, zt, ph)
             }
@@ -347,6 +372,7 @@ impl<H> Clifford for Tableau<H> {
             self,
             qubit0,
             qubit1,
+            inverse: prepend_cz,
             |xa: &mut [u64], za: &mut [u64], xb: &mut [u64], zb: &mut [u64], ph: &mut [u64]| {
                 blocks::cz(xa, za, xb, zb, ph)
             }
@@ -367,7 +393,7 @@ impl<H> Clifford for Tableau<H> {
 impl<H> CliffordExtensions for Tableau<H> {
     #[inline]
     fn s_dag(&mut self, qubit: usize) {
-        sweep1!(self, qubit, |x: &mut [u64],
+        sweep1!(self, qubit, inverse: prepend_s_dag, |x: &mut [u64],
                               z: &mut [u64],
                               ph: &mut [u64]| {
             blocks::s_dag(x, z, ph)
@@ -376,7 +402,7 @@ impl<H> CliffordExtensions for Tableau<H> {
 
     #[inline]
     fn sqrt_x(&mut self, qubit: usize) {
-        sweep1!(self, qubit, |x: &mut [u64],
+        sweep1!(self, qubit, inverse: prepend_sqrt_x, |x: &mut [u64],
                               z: &mut [u64],
                               ph: &mut [u64]| {
             blocks::sqrt_x(x, z, ph)
@@ -385,7 +411,7 @@ impl<H> CliffordExtensions for Tableau<H> {
 
     #[inline]
     fn sqrt_x_dag(&mut self, qubit: usize) {
-        sweep1!(self, qubit, |x: &mut [u64],
+        sweep1!(self, qubit, inverse: prepend_sqrt_x_dag, |x: &mut [u64],
                               z: &mut [u64],
                               ph: &mut [u64]| {
             blocks::sqrt_x_dag(x, z, ph)
@@ -394,12 +420,12 @@ impl<H> CliffordExtensions for Tableau<H> {
 
     #[inline]
     fn sqrt_y(&mut self, qubit: usize) {
-        sweep1!(self, qubit, blocks::sqrt_y);
+        sweep1!(self, qubit, inverse: prepend_sqrt_y, blocks::sqrt_y);
     }
 
     #[inline]
     fn sqrt_y_dag(&mut self, qubit: usize) {
-        sweep1!(self, qubit, blocks::sqrt_y_dag);
+        sweep1!(self, qubit, inverse: prepend_sqrt_y_dag, blocks::sqrt_y_dag);
     }
 
     // control: row, target: col
@@ -418,6 +444,7 @@ impl<H> CliffordExtensions for Tableau<H> {
             self,
             control,
             target,
+            inverse: prepend_cy,
             |xc: &mut [u64], zc: &mut [u64], xt: &mut [u64], zt: &mut [u64], ph: &mut [u64]| {
                 blocks::cy(xc, zc, xt, zt, ph)
             }

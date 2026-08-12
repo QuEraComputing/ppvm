@@ -63,8 +63,10 @@
 use std::hash::{Hash, Hasher};
 
 pub(crate) mod blocks;
+pub(crate) mod inverse;
 pub(crate) mod transpose;
 
+pub(crate) use inverse::{InvRow, InverseSigns};
 pub(crate) use transpose::BITS_PER_WORD;
 
 /// Words per allocation block. The arena is a `Vec<Block>`, so every region
@@ -149,6 +151,9 @@ pub(crate) struct TableauData {
     /// Words per major, `n.div_ceil(64)` rounded up to a whole block.
     stride: usize,
     orientation: Orientation,
+    /// Signs of the inverse tableau's rows — a derived cache whose bits live in
+    /// the quadrants above. See [`inverse`]; excluded from equality and hashing.
+    inverse: InverseSigns,
 }
 
 impl TableauData {
@@ -162,6 +167,7 @@ impl TableauData {
             n_qubits,
             stride,
             orientation: Orientation::ColumnMajor,
+            inverse: InverseSigns::identity(stride),
         };
         data.write_identity();
         data
@@ -171,6 +177,7 @@ impl TableauData {
     pub(crate) fn reset_to_identity(&mut self) {
         self.blocks.fill(Block([0; WORDS_PER_BLOCK]));
         self.orientation = Orientation::ColumnMajor;
+        self.inverse.reset();
         self.write_identity();
     }
 
@@ -341,9 +348,27 @@ impl TableauData {
         match self.orientation {
             Orientation::ColumnMajor => out.copy_from_slice(self.major(half, plane, addr0)),
             Orientation::RowMajor => {
-                out.fill(0);
-                for i in 0..self.n_qubits {
-                    Self::set_bit(out, i, Self::bit(self.major(half, plane, i), addr0));
+                // The `addr0` bit of `n` consecutive majors. Walking the majors
+                // by stride and accumulating a whole output word before storing
+                // it keeps this to one load and one shift per generator, where
+                // going through `major`/`set_bit` re-derives the quadrant base
+                // and re-checks two bounds on every bit.
+                let words = self.words();
+                let base = Self::major_start(self.n_qubits, self.stride, half, plane)
+                    + addr0 / BITS_PER_WORD;
+                let mask = 1u64 << (addr0 % BITS_PER_WORD);
+                let mut src = base;
+                for chunk in out.iter_mut() {
+                    let mut acc = 0u64;
+                    let end =
+                        (src + self.stride * BITS_PER_WORD).min(base + self.stride * self.n_qubits);
+                    let mut bit = 0;
+                    while src < end {
+                        acc |= u64::from(words[src] & mask != 0) << bit;
+                        src += self.stride;
+                        bit += 1;
+                    }
+                    *chunk = acc;
                 }
             }
         }
@@ -365,11 +390,26 @@ impl TableauData {
                 out_z.copy_from_slice(self.major(half, Plane::Z, i));
             }
             Orientation::ColumnMajor => {
-                out_x.fill(0);
-                out_z.fill(0);
-                for q in 0..self.n_qubits {
-                    Self::set_bit(out_x, q, Self::bit(self.major(half, Plane::X, q), i));
-                    Self::set_bit(out_z, q, Self::bit(self.major(half, Plane::Z, q), i));
+                // The mirror image of [`Self::gather_column`]'s strided branch,
+                // and word-oriented for the same reason: bit `i` of `n`
+                // consecutive majors, one output word at a time.
+                let words = self.words();
+                let (word, mask) = (i / BITS_PER_WORD, 1u64 << (i % BITS_PER_WORD));
+                for (plane, out) in [(Plane::X, out_x), (Plane::Z, out_z)] {
+                    let base = Self::major_start(self.n_qubits, self.stride, half, plane) + word;
+                    let limit = base + self.stride * self.n_qubits;
+                    let mut src = base;
+                    for chunk in out.iter_mut() {
+                        let mut acc = 0u64;
+                        let end = (src + self.stride * BITS_PER_WORD).min(limit);
+                        let mut bit = 0;
+                        while src < end {
+                            acc |= u64::from(words[src] & mask != 0) << bit;
+                            src += self.stride;
+                            bit += 1;
+                        }
+                        *chunk = acc;
+                    }
                 }
             }
         }

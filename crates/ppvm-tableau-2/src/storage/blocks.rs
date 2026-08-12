@@ -198,6 +198,26 @@ pub(crate) fn row_multiply(
     ((2 * sign_count + imag_count) % 4) as u8
 }
 
+/// [`row_multiply`]'s phase without its bit writes.
+///
+/// The inverse-tableau sign rules ([`crate::storage::inverse`]) need the `ℤ/4`
+/// phase of a product of two rows whose *bits* the forward gate already
+/// maintains, so there is nothing to write back — and the operands are borrowed
+/// forward majors, which a writing kernel could not take.
+#[inline]
+pub(crate) fn row_multiply_phase(a_x: &[u64], a_z: &[u64], b_x: &[u64], b_z: &[u64]) -> u8 {
+    let mut sign_count = 0u32;
+    let mut imag_count = 0u32;
+    for i in 0..a_x.len() {
+        let (a, b, c, d) = (a_x[i], a_z[i], b_x[i], b_z[i]);
+        let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
+        let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
+        sign_count += sign.count_ones();
+        imag_count += imag.count_ones();
+    }
+    ((2 * sign_count + imag_count) % 4) as u8
+}
+
 // ─── Column-wise row multiplication ───────────────────────────────────────
 
 /// The running `ℤ/4` phase delta of a column sweep, one entry per generator.
@@ -366,6 +386,15 @@ pub(crate) fn add_scalar_phase(lo: &mut [u64], hi: &mut [u64], delta: u8, mask: 
 #[inline]
 pub(crate) fn count_set(words: &[u64]) -> usize {
     words.iter().map(|w| w.count_ones() as usize).sum()
+}
+
+/// How many bits are set in both operands.
+#[inline]
+pub(crate) fn and_count(a: &[u64], b: &[u64]) -> usize {
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| (x & y).count_ones() as usize)
+        .sum()
 }
 
 /// Whether folding `k` generators is cheaper by gathering them one at a time

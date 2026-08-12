@@ -400,21 +400,59 @@ pub(crate) fn and_count(a: &[u64], b: &[u64]) -> usize {
 /// Whether folding `k` generators is cheaper by gathering them one at a time
 /// than by re-orienting the whole frame.
 ///
-/// Gathering costs `k·n` strided bit reads ([`TableauData::gather_row`](super::TableauData::gather_row));
-/// a [`TransposedTableau`](crate::data::TransposedTableau) pair costs about
-/// `n²/16` bit-read-equivalents — eight square transposes of `(n/64)²` blocks,
-/// each block ~320 cache-friendly word ops. Break-even is therefore `k ≈ n/16`,
-/// and choosing that way bounds the worst case at `n²/16` either way: a dense
-/// fold never pays more than the transpose it declined, and a sparse one never
-/// pays for a transpose it did not need.
+/// Gathering costs `k·n` strided bit reads
+/// ([`TableauData::gather_row`](super::TableauData::gather_row)); a
+/// [`TransposedTableau`](crate::data::TransposedTableau) pair costs
+/// [`transpose_pair_ops`] shift-mask exchanges. Both sides are counted in word
+/// operations and compared at face value — no fitted coefficient (see the
+/// calibration below for why one would not help).
+///
+/// The old model was `k·16 < n`, from a transpose pair costing `n²/16`. That is
+/// wrong at both ends. Below 64 qubits the transpose is **floored**, not
+/// quadratic — one block per quadrant however small `n` is — and above 64 it
+/// steps with `⌈n/64⌉²` rather than growing smoothly. At `n = 64` the old rule
+/// declined to gather from `k = 4` upwards where the break-even is `k = 24`; at
+/// `n = 85` from `k = 6` where it is `k = 72`.
 ///
 /// The two regimes are both real. A surface-code stabilizer measurement has `k`
 /// set by the code's local weight, independent of `n` — 27870 of them on a
-/// 1889-qubit patch, which is what makes gathering worth 100x there. A GHZ frame
-/// is dense, `k ≈ n`, and wants the transpose.
+/// 1889-qubit patch, which is what makes gathering worth 100x there. Both models
+/// call that case the same way (`k < 118` before, `k < 731` now, against a weight
+/// in the single digits), so the change does not touch it. A GHZ frame is dense,
+/// `k ≈ n`, and wants the transpose once `n` is large enough to amortize it.
+///
+/// Calibration: a multiplier on the transpose side was swept over
+/// `{½, 1, 2, 4, 8, 16}` against the 85-qubit MSD sweep
+/// (`examples/msd_attrib` — the densest workload the crate has, and the only one
+/// of the three regimes sensitive to this predicate at all). Unbatched it is
+/// flat across the whole range, 2320 ± 40 ns/measurement against 2740 for the
+/// old rule; batched under one row guard every setting including the old rule
+/// lands in 770–930 ns, which is that harness's run-to-run spread. GHZ at
+/// `n = 2…128` is indifferent to all of them, because once the transpose spans
+/// only `n` rows (see [`super::transpose`]) neither branch costs anything there.
+/// So `1` is chosen as the unbiased reading of the model rather than as a fit.
 #[inline]
 pub(crate) fn prefer_gather(k: usize, n_qubits: usize) -> bool {
-    k.saturating_mul(16) < n_qubits
+    k.saturating_mul(n_qubits) < transpose_pair_ops(n_qubits)
+}
+
+/// Shift-mask exchanges in one [`TransposedTableau`](crate::data::TransposedTableau)
+/// round trip: four quadrants, twice, `⌈n/64⌉²` blocks each,
+/// `(span/2)·log₂ span` exchanges per block.
+///
+/// `span` is 64 for every block of a multi-block frame, and
+/// `n.next_power_of_two()` when the whole frame is one block — the truncation
+/// [`transpose_square`](super::transpose::transpose_square) applies to the
+/// trailing diagonal block.
+#[inline]
+fn transpose_pair_ops(n_qubits: usize) -> usize {
+    let blocks = n_qubits.div_ceil(super::BITS_PER_WORD);
+    let span = if blocks > 1 {
+        super::BITS_PER_WORD
+    } else {
+        n_qubits.max(2).next_power_of_two()
+    };
+    8 * blocks * blocks * (span / 2) * span.trailing_zeros() as usize
 }
 
 /// The index of the lowest set bit of `words`, or `None`.

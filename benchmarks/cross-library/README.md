@@ -153,8 +153,25 @@ the runtime. Read them before quoting a ratio.
   `monoprop` is within 1 % on TFIM and 4–12 % over on Heisenberg. The driver
   prints a `note:` line for any engine more than 2 % off, and the plot's third
   panel is there so the ratio is never read without it.
+* **Prune-at-creation costs a little accuracy, not an order of it.** Measured as
+  the `L2` distance of the whole coefficient vector from a converged reference
+  (`ppvm` at `atol=1e-16`; the Heisenberg `n=8` sector saturates at 16 384 terms,
+  so that reference is exact), across `atol` from `1e-3` to `1e-7` at `n=8`,
+  `steps=10`: `monoprop` lands 0–12 % above `ppvm`'s error and `pauli-prop`
+  1.7–2.0× above it. Error falls by a decade for every decade of `atol` in all
+  three, so the policies share a convergence order and differ only in the
+  constant. Don't read this off the `observable` column instead — it is one
+  scalar and its truncation error changes sign, so `ppvm` on TFIM goes
+  `7.7e-4, 1.8e-3, 1.0e-4, 3.0e-7, 1.2e-6` over those five thresholds. That dip
+  is a cancellation, and comparing against it manufactures a 27× gap that the
+  vector norm shows to be 6 %.
 * **`monoprop` tracks more rows than it reports.** It retains monomials whose
-  coefficient has cancelled to exactly zero. Its `size()` at Heisenberg `n=14` is
+  coefficient has cancelled to exactly zero. This is the visible end of
+  prune-at-creation: a branch that cleared the threshold when it was emitted is
+  never re-tested after later contributions cancel it. At Heisenberg `n=8`,
+  `atol=1e-4` it holds 2 074 terms whose converged value is below `atol`, against
+  `ppvm`'s 1 107 — so roughly 7 % of its support is dead weight. That is a cost
+  in work rather than in accuracy; the coefficients it keeps are still right. Its `size()` at Heisenberg `n=14` is
   7 355 928 rows against the 3 204 697 terms above threshold — 2.3× — while on
   TFIM the two are within 1 %. The `terms` column is the above-threshold support,
   which is what the other four engines mean by it; `size()` goes to stderr next

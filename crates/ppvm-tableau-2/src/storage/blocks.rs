@@ -198,6 +198,170 @@ pub(crate) fn row_multiply(
     ((2 * sign_count + imag_count) % 4) as u8
 }
 
+// ─── Column-wise row multiplication ───────────────────────────────────────
+
+/// The running `ℤ/4` phase delta of a column sweep, one entry per generator.
+///
+/// `sign_parity` is a single XOR plane because `row_multiply`'s `2·sign_count`
+/// term is `ℤ/2`-valued; `imag_count` needs the full `mod 4` and so rides the
+/// `(imag_lo, imag_hi)` carry-save pair. The delta a generator ends up with is
+/// `2·(sign_parity ⊕ imag_hi) + imag_lo`.
+#[derive(Debug)]
+pub(crate) struct PhaseAccumulator {
+    /// Parity of `row_multiply`'s `sign` predicate.
+    pub(crate) sign_parity: Vec<u64>,
+    /// Low bit of `imag_count mod 4`.
+    pub(crate) imag_lo: Vec<u64>,
+    /// High bit of `imag_count mod 4`.
+    pub(crate) imag_hi: Vec<u64>,
+}
+
+impl PhaseAccumulator {
+    /// A zeroed accumulator for a frame of the given stride.
+    #[inline]
+    pub(crate) fn zeroed(stride: usize) -> Self {
+        Self {
+            sign_parity: vec![0; stride],
+            imag_lo: vec![0; stride],
+            imag_hi: vec![0; stride],
+        }
+    }
+
+    /// The `(low, high)` phase-delta planes this accumulator represents.
+    #[inline]
+    pub(crate) fn delta(&self) -> (&[u64], Vec<u64>) {
+        let high = self
+            .sign_parity
+            .iter()
+            .zip(self.imag_hi.iter())
+            .map(|(&s, &h)| s ^ h)
+            .collect();
+        (&self.imag_lo, high)
+    }
+}
+
+/// The `ℤ/4` phase a set of generators picks up when one fixed Pauli is
+/// multiplied into all of them, accumulated one **qubit column** at a time.
+///
+/// [`row_multiply`] folds one generator against another along the generator's
+/// own bits, which is contiguous only in [`Orientation::RowMajor`](super::Orientation::RowMajor).
+/// The measurement projection multiplies a *single* pivot into many generators
+/// at once, and that shape transposes: hold the qubit fixed and the pivot's two
+/// bits `(c, d)` at that qubit are **scalars**, so `row_multiply`'s `sign` and
+/// `imag` predicates collapse to plane expressions over the selected generators.
+/// Specialising the four `(c, d)` cases of
+///
+/// ```text
+/// sign = (a&b&c&!d) | (a&!b&!c&d) | (!a&b&c&d)
+/// imag = (a&!b&d) | (a&!c&d) | (!a&b&c) | (b&c&!d)
+/// ```
+///
+/// gives, with `a` the X plane and `b` the Z plane over generators:
+///
+/// | pivot at this qubit | `sign` | `imag` |
+/// |:--|:--|:--|
+/// | `I` (`c=0, d=0`) | `0` | `0` |
+/// | `X` (`c=1, d=0`) | `a & b` | `b` |
+/// | `Z` (`c=0, d=1`) | `a & !b` | `a` |
+/// | `XZ` (`c=1, d=1`) | `!a & b` | `a ^ b` |
+///
+/// so an identity column contributes nothing and is skipped outright.
+///
+/// # The two accumulators
+///
+/// `row_multiply` returns `(2·sign_count + imag_count) mod 4`. The `2·` makes
+/// the sign term `ℤ/2`-valued, so only its **parity** survives — one XOR plane.
+/// `imag_count` needs the full `mod 4`, so it rides a two-plane carry-save
+/// counter. The delta is then `2·(sign_parity ⊕ imag_hi) + imag_lo`, i.e.
+/// `imag_lo` is the low phase bit and `sign_parity ⊕ imag_hi` the high one.
+///
+/// `mask` selects the generators taking part; unselected ones contribute to
+/// neither accumulator and are left untouched by [`xor_masked`].
+#[inline]
+pub(crate) fn accumulate_column_phase(
+    x: &[u64],
+    z: &[u64],
+    mask: &[u64],
+    pivot: (bool, bool),
+    acc: &mut PhaseAccumulator,
+) {
+    let (pivot_x, pivot_z) = pivot;
+    let PhaseAccumulator {
+        sign_parity,
+        imag_lo,
+        imag_hi,
+    } = acc;
+    for i in 0..mask.len() {
+        let m = mask[i];
+        if m == 0 {
+            continue;
+        }
+        let (a, b) = (x[i], z[i]);
+        let (sign, imag) = match (pivot_x, pivot_z) {
+            (false, false) => continue,
+            (true, false) => (a & b, b),
+            (false, true) => (a & !b, a),
+            (true, true) => (!a & b, a ^ b),
+        };
+        sign_parity[i] ^= sign & m;
+        let bit = imag & m;
+        let carry = imag_lo[i] & bit;
+        imag_lo[i] ^= bit;
+        imag_hi[i] ^= carry;
+    }
+}
+
+/// `dst ^= mask` where `flag` is set, elementwise. The bit-plane form of
+/// "XOR a scalar bit into every selected generator".
+#[inline]
+pub(crate) fn xor_mask_if(dst: &mut [u64], mask: &[u64], flag: bool) {
+    if !flag {
+        return;
+    }
+    for i in 0..dst.len() {
+        dst[i] ^= mask[i];
+    }
+}
+
+/// Add a per-generator `ℤ/4` delta into a `(low, high)` phase plane pair,
+/// restricted to `mask`.
+///
+/// The two-plane ripple `carry = lo & dlo; lo ^= dlo; hi ^= dhi ^ carry` is the
+/// `ℤ/4` addition; `mask` is applied to the delta so unselected generators keep
+/// their phase.
+#[inline]
+pub(crate) fn add_phase_planes(
+    lo: &mut [u64],
+    hi: &mut [u64],
+    delta_lo: &[u64],
+    delta_hi: &[u64],
+    mask: &[u64],
+) {
+    for i in 0..lo.len() {
+        let (dlo, dhi) = (delta_lo[i] & mask[i], delta_hi[i] & mask[i]);
+        let carry = lo[i] & dlo;
+        lo[i] ^= dlo;
+        hi[i] ^= dhi ^ carry;
+    }
+}
+
+/// Add the *scalar* `ℤ/4` value `delta` to every generator selected by `mask`.
+#[inline]
+pub(crate) fn add_scalar_phase(lo: &mut [u64], hi: &mut [u64], delta: u8, mask: &[u64]) {
+    if delta == 0 {
+        return;
+    }
+    let (dlo, dhi) = (delta & 1 == 1, delta & 2 == 2);
+    for i in 0..lo.len() {
+        let m = mask[i];
+        let d_lo = if dlo { m } else { 0 };
+        let d_hi = if dhi { m } else { 0 };
+        let carry = lo[i] & d_lo;
+        lo[i] ^= d_lo;
+        hi[i] ^= d_hi ^ carry;
+    }
+}
+
 /// The index of the lowest set bit of `words`, or `None`.
 #[inline]
 pub(crate) fn first_set(words: &[u64]) -> Option<usize> {

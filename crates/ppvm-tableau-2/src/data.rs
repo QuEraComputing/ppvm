@@ -385,28 +385,6 @@ impl<H> Tableau<H> {
         self.data.phase(generator)
     }
 
-    /// Enter the row-major orientation, or nest inside an enclosing guard.
-    ///
-    /// The manual counterpart of [`TransposedTableau`], for a caller that cannot
-    /// hold the guard's borrow — see `measure.rs`'s `RowGuard`. Pair every call
-    /// with exactly one [`Self::exit_row_major`], from a `Drop`.
-    #[inline]
-    pub(crate) fn enter_row_major(&mut self) {
-        if self.transpose_depth == 0 {
-            self.data.transpose_quadrants();
-        }
-        self.transpose_depth += 1;
-    }
-
-    /// Leave the row-major orientation, restoring column-major at depth zero.
-    #[inline]
-    pub(crate) fn exit_row_major(&mut self) {
-        self.transpose_depth -= 1;
-        if self.transpose_depth == 0 {
-            self.data.transpose_quadrants();
-        }
-    }
-
     /// The frame's X/Z bits as one contiguous byte range, for fingerprinting.
     #[inline]
     pub(crate) fn xz_bytes(&self) -> &[u8] {
@@ -511,58 +489,89 @@ impl<H> Tableau<H> {
         q_idx: usize,
         outcome: bool,
     ) {
+        debug_assert_eq!(self.data.orientation(), Orientation::ColumnMajor);
         let n = self.n_qubits();
-        self.invalidate_hash();
         let stride = self.data.stride();
-        let mut stab_selector = vec![0u64; stride];
-        let mut destab_selector = vec![0u64; stride];
-        self.data
-            .gather_column(Half::Stab, Plane::X, addr0, &mut stab_selector);
-        self.data
-            .gather_column(Half::Destab, Plane::X, addr0, &mut destab_selector);
+        self.invalidate_hash();
 
-        let mut guard = TransposedTableau::new(self);
-        let data = guard.data_mut();
+        // Which generators of each half take the pivot. `ω(Z_addr0, g) =
+        // x_g[addr0]`, so each selector is one contiguous column; `q_idx` is
+        // cleared because the pivot is not multiplied into itself — the
+        // replaced loop's `if i == q_idx { continue }`.
+        let mut sel = [vec![0u64; stride], vec![0u64; stride]];
+        for half in HALVES {
+            self.data
+                .gather_column(half, Plane::X, addr0, &mut sel[half as usize]);
+            TableauData::set_bit(&mut sel[half as usize], q_idx, false);
+        }
 
-        // The pivot generator, copied once before the loop rewrites its
-        // neighbours — the replaced code's `let g_q = stabilizers[q_idx];`.
-        let mut pivot = ScratchRow::zeroed(stride);
-        pivot
-            .x
-            .copy_from_slice(data.major(Half::Stab, Plane::X, q_idx));
-        pivot
-            .z
-            .copy_from_slice(data.major(Half::Stab, Plane::Z, q_idx));
-        pivot.phase = data.phase_of(Half::Stab, q_idx);
+        // One `ℤ/4` accumulator per half; see [`blocks::PhaseAccumulator`] for
+        // why the sign term only needs a parity plane while the imaginary term
+        // needs a carry-save pair.
+        let mut acc = [
+            blocks::PhaseAccumulator::zeroed(stride),
+            blocks::PhaseAccumulator::zeroed(stride),
+        ];
+        let pivot_phase = self.data.phase_of(Half::Stab, q_idx);
 
-        for i in 0..n {
-            if i == q_idx {
+        for u in 0..n {
+            // The pivot's two bits at this qubit. Read from the live planes
+            // rather than a copied row: `sel` has bit `q_idx` cleared, so the
+            // sweep below never writes the pivot's own bits.
+            let px = TableauData::bit(self.data.major(Half::Stab, Plane::X, u), q_idx);
+            let pz = TableauData::bit(self.data.major(Half::Stab, Plane::Z, u), q_idx);
+            if !px && !pz {
+                // Identity at this qubit: contributes no phase and flips no
+                // bits. Skipping it is what makes a sparse pivot cheap.
                 continue;
             }
-            if TableauData::bit(&stab_selector, i) {
-                data.multiply_row_by(Half::Stab, i, &pivot.x, &pivot.z, pivot.phase);
-            }
-            if TableauData::bit(&destab_selector, i) {
-                data.multiply_row_by(Half::Destab, i, &pivot.x, &pivot.z, pivot.phase);
+            for half in HALVES {
+                let h = half as usize;
+                blocks::accumulate_column_phase(
+                    self.data.major(half, Plane::X, u),
+                    self.data.major(half, Plane::Z, u),
+                    &sel[h],
+                    (px, pz),
+                    &mut acc[h],
+                );
+                // `row_multiply` reads a word's pre-values and only then writes
+                // it, so reading this column before writing it is the same
+                // arithmetic — columns are independent.
+                blocks::xor_mask_if(self.data.major_mut(half, Plane::X, u), &sel[h], px);
+                blocks::xor_mask_if(self.data.major_mut(half, Plane::Z, u), &sel[h], pz);
             }
         }
 
-        // The pivot becomes the new destabilizer; the new stabilizer is the
-        // measured `±Z_addr0`.
-        data.major_mut(Half::Destab, Plane::X, q_idx)
-            .copy_from_slice(&pivot.x);
-        data.major_mut(Half::Destab, Plane::Z, q_idx)
-            .copy_from_slice(&pivot.z);
-        data.set_phase_of(Half::Destab, q_idx, pivot.phase);
+        // Fold in the accumulated `g`-rule phase and the pivot's own, exactly
+        // as `multiply_row_by` does per row.
+        for half in HALVES {
+            let h = half as usize;
+            let (delta_lo, delta_hi) = acc[h].delta();
+            let delta_lo = delta_lo.to_vec();
+            let (lo, hi) = self.data.phase_planes_mut(half);
+            blocks::add_phase_planes(lo, hi, &delta_lo, &delta_hi, &sel[h]);
+            blocks::add_scalar_phase(lo, hi, pivot_phase, &sel[h]);
+        }
 
-        data.major_mut(Half::Stab, Plane::X, q_idx).fill(0);
-        let stab_z = data.major_mut(Half::Stab, Plane::Z, q_idx);
-        stab_z.fill(0);
-        TableauData::set_bit(stab_z, addr0, true);
-        data.set_phase_of(Half::Stab, q_idx, if outcome { 2 } else { 0 });
+        // The pivot becomes the new destabilizer and the new stabilizer is the
+        // measured `±Z_addr0`. Both are single-bit writes down each column.
+        for u in 0..n {
+            let px = TableauData::bit(self.data.major(Half::Stab, Plane::X, u), q_idx);
+            let pz = TableauData::bit(self.data.major(Half::Stab, Plane::Z, u), q_idx);
+            TableauData::set_bit(self.data.major_mut(Half::Destab, Plane::X, u), q_idx, px);
+            TableauData::set_bit(self.data.major_mut(Half::Destab, Plane::Z, u), q_idx, pz);
+            TableauData::set_bit(self.data.major_mut(Half::Stab, Plane::X, u), q_idx, false);
+            TableauData::set_bit(
+                self.data.major_mut(Half::Stab, Plane::Z, u),
+                q_idx,
+                u == addr0,
+            );
+        }
+        self.data.set_phase_of(Half::Destab, q_idx, pivot_phase);
+        self.data
+            .set_phase_of(Half::Stab, q_idx, if outcome { 2 } else { 0 });
     }
 }
-
 // ─── TransposedTableau ────────────────────────────────────────────────────
 
 /// A frame temporarily held in [`Orientation::RowMajor`], where a generator's

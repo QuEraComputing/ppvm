@@ -308,6 +308,17 @@ impl TableauData {
         &self.words()[self.phase_range(half, hi)]
     }
 
+    /// Both phase planes of one half, `(low, high)`, mutably.
+    #[inline]
+    pub(crate) fn phase_planes_mut(&mut self, half: Half) -> (&mut [u64], &mut [u64]) {
+        let ranges = [self.phase_range(half, false), self.phase_range(half, true)];
+        let [lo, hi] = self
+            .words_mut()
+            .get_disjoint_mut(ranges)
+            .expect("the low and high phase planes are disjoint regions");
+        (lo, hi)
+    }
+
     /// Mutable [`Self::phase_plane`].
     #[inline]
     pub(crate) fn phase_plane_mut(&mut self, half: Half, hi: bool) -> &mut [u64] {

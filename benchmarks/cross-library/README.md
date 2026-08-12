@@ -26,6 +26,12 @@ uv run --no-project --with matplotlib python3 benchmarks/cross-library/plot_xben
 # "Known differences" below. Regenerates accuracy.csv.
 uv run --no-project python3 benchmarks/cross-library/xbench_accuracy.py \
     --out benchmarks/cross-library/accuracy.csv
+
+# The regime where the two truncation rules actually diverge: a scrambling
+# circuit with small angles and great depth. Regenerates accuracy_scramble.csv.
+uv run --no-project python3 benchmarks/cross-library/xbench_accuracy.py \
+    --models scramble --libs ppvm,monoprop --qubits 8 --steps 400 --dt 0.05 \
+    --seeds 1,2,3,4,5 --atols 1e-3,1e-4,1e-5 --out target/xbench/scr-small.csv
 ```
 
 A subset, if you prefer: `--libs ppvm,monoprop`.
@@ -58,6 +64,31 @@ coefficients of the X-free terms.
 Observable `O = Z₀`; readout the autocorrelator `S(t) = tr[Z₀·O(t)]/2ⁿ`, which
 is just the coefficient of `Z₀` (the Paulis are orthonormal under that pairing).
 
+### `scramble` — random all-to-all rotations, autocorrelator
+
+`steps·n` two-qubit Pauli rotations `exp(−iθ/2·Pₐ⊗P_b)`, each drawing a uniformly
+random **all-to-all** pair `a≠b`, random axes `Pₐ, P_b ∈ {X,Y,Z}` and a random
+angle `θ ∈ (0, 2J·dt]`. Observable and readout as for `heisenberg`.
+
+Only `ppvm` and `monoprop` implement it (`--libs ppvm,monoprop`); it exists
+because the two Trotter models are a weak test bed for *truncation* questions.
+They are nearest-neighbour, uniform-angle and conserve enough structure that
+their support saturates a symmetry sector — at `n=8` Heisenberg reaches exactly
+16 384 of 65 536 words, and the other 49 152 are zero by symmetry rather than by
+dynamics. `scramble` has no lattice, no conserved quantity and no repeated angle:
+at `n=8` it fills all 65 535 non-identity words, and since unitary conjugation
+preserves the Frobenius norm the whole coefficient vector has `‖c‖₂ = 1` spread
+across them. That makes it the right instance for asking whether a truncation
+rule can resolve one coefficient against a scrambled background.
+
+Both runners generate the circuit from a **splitmix64 stream reimplemented
+identically in Rust and Python**, seeded by `SEED`. Neither language's stdlib RNG
+is specified tightly enough to rely on, and the draw order (pair, offset, axis,
+axis, angle) has to match exactly — including the `b = (a+1+r mod n−1) mod n`
+trick, which avoids a rejection loop that would consume a variable number of
+draws and desynchronise the two streams. The term-for-term dump diff is what
+enforces this; it catches any divergence immediately.
+
 `θ = 2·c·dt` for a Hamiltonian term `c·G` is the convention four of the five
 engines use directly for `exp(iθ/2·G)·P·exp(−iθ/2·G)`, so the propagated
 operators are identical, not merely similar. monoprop is the exception and needs
@@ -70,12 +101,13 @@ they can be run directly as well as through the driver:
 
 | variable | meaning |
 |---|---|
-| `MODEL` | `tfim` or `heisenberg` |
+| `MODEL` | `tfim`, `heisenberg`, or `scramble` (`ppvm` and `monoprop` only) |
 | `QUBITS` | comma-separated widths |
 | `STEPS` | Trotter steps |
 | `DT`, `JCOUP`, `HFIELD` | `dt`, `J`, `h` |
 | `ATOL` | truncation threshold on `|c|` |
 | `ITERS` | timed repeats; the **minimum** is reported |
+| `SEED` | `scramble` only — the circuit seed |
 | `DUMP` | print the propagated support instead of timing it |
 | `MAX_TERMS` | `pauli-prop` only — its mandatory cap (see below) |
 | `monoprop_NUM_THREADS`, `monoprop_PARTITIONS` | `monoprop` only — the thread cap (see below) |
@@ -203,6 +235,57 @@ the runtime. Read them before quoting a ratio.
 * Everything is single-threaded (`julia -t1`; `pauli-prop` is single-threaded by
   design; `monoprop` is capped as above; `ppvm` here uses no Rayon).
 
+### Where the two truncation rules actually diverge
+
+Worth writing down, because the intuitive guesses about this are wrong and the
+scalar `observable` will mislead you about all of them.
+
+A Pauli rotation sends `Q → cos θ·Q + sin θ·(iPQ)`, so a word receives
+contributions from **at most two** sources: itself, scaled by `cos`, and its
+partner `PQ`, scaled by `sin`. `ppvm` thresholds that sum; `monoprop` thresholds
+each contribution as it is emitted. Two consequences follow, and they set the
+whole shape of the difference:
+
+* `monoprop` discards a child whenever `|c|·sin θ < atol` even though its parent
+  survives, so it loses every child of a parent in the band
+  `atol < |c| < atol/sin θ`. The band's width is `1/sin θ` — **set by the
+  rotation angle alone**, with no dependence on the shape of the coefficient
+  distribution.
+* Because a sum of two terms can exceed its larger member by at most 2×, the
+  mass `ppvm` rescues is `O(atol)` per word. Both engines' errors are therefore
+  anchored to the same threshold and cannot be decoupled: drive `atol` low enough
+  that `ppvm` is accurate and `monoprop` is accurate too.
+
+So the gap needs three things *at once*: small `sin θ` to widen the band, depth
+to populate it and compound the loss, and a scrambled instance so the loss shows
+up in the answer instead of averaging out. Missing any one of them, the gap
+collapses to 1.0–1.2× or reverses. Measured, at `n=8`:
+
+| circuit | `atol` | `monoprop` error / `ppvm` error |
+|---|---|---|
+| `scramble`, `dt=0.05` (`θ ≤ 0.1`), 3 200 gates | `1e-4` | **2.96×** (2.89–3.07× over 10 seeds) |
+| `heisenberg`, `dt=0.05`, 320 steps | `1e-3` | 2.77× |
+| `tfim`/`heisenberg`, `dt=0.1`, converged `atol` | `≤1e-5` | 1.02–1.15× |
+| `scramble`, `dt=π/4` (random `θ ≤ π/2`), 80 gates | `1e-3…1e-5` | 0.85–1.00× |
+| `heisenberg`, `dt=0.6` | `1e-3` | **0.67×** |
+
+The last two rows are the ones that catch people out. **Large angles favour
+`monoprop`**, by up to 1.5×, because that is where `ppvm`'s rule has its own
+failure mode: `truncate()` after each gate permanently deletes a term whose
+merged coefficient has transiently cancelled below `atol`, where `monoprop` keeps
+the row and lets later gates revive it. Uniform amplitudes do not help either —
+`θ = π/4` is where the distribution is flattest (`sd(log|c|)` 0.66 against 2.23
+at `dt=0.1`) and it is also `monoprop`'s *best* regime, since `sin θ = 0.707`
+makes the rejection band 1.41× wide, the narrowest possible. Flat amplitudes and
+a wide band are mutually exclusive: you get the band from small angles, and small
+angles force the geometric spread that makes amplitudes non-uniform.
+
+None of this is visible in the `observable` column. On the `scramble` instance
+above the peak-error ratio has a median of 4.2× but a range of 0.1–576×, because
+a single scalar's truncation error changes sign; the 576× is `ppvm` landing
+accidentally near-exact on one seed. Neither engine loses the signal there —
+relative errors are 0.4 % and 2.6 % against a peak of 0.16.
+
 ## A run
 
 Apple M4 Pro (10 P + 4 E cores), macOS 26.6, rustc 1.96.0, Julia 1.12.6,
@@ -271,9 +354,9 @@ itself converges once `n` exceeds the light cone (identical from `n≈10` at
 - `xbench_monoprop.py` — `monoprop`, including the thread-cap assertion.
 - `run_xbench.py` — validation, driving, CSV merge, summary table.
 - `plot_xbench.py` — the figure.
-- `xbench_accuracy.py` — the `atol` sweep behind `accuracy.csv`: each engine's
-  coefficient vector against a converged reference, so the timings can be read
-  next to what each truncation rule costs.
+- `xbench_accuracy.py` — the `atol` sweep behind `accuracy.csv` and
+  `accuracy_scramble.csv`: each engine's coefficient vector against a converged
+  reference, so the timings can be read next to what each truncation rule costs.
 
 [pp]: https://github.com/MSRudolph/PauliPropagation.jl
 [ps]: https://github.com/nicolasloizeau/PauliStrings.jl

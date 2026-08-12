@@ -28,12 +28,14 @@ struct Params {
     h: f64,
     atol: f64,
     iters: usize,
+    seed: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Model {
     Tfim,
     Heisenberg,
+    Scramble,
 }
 
 impl Model {
@@ -41,7 +43,10 @@ impl Model {
         match s {
             "tfim" => Model::Tfim,
             "heisenberg" => Model::Heisenberg,
-            other => panic!("unknown MODEL {other:?} (expected `tfim` or `heisenberg`)"),
+            "scramble" => Model::Scramble,
+            other => {
+                panic!("unknown MODEL {other:?} (expected `tfim`, `heisenberg` or `scramble`)")
+            }
         }
     }
 
@@ -49,8 +54,72 @@ impl Model {
         match self {
             Model::Tfim => "tfim",
             Model::Heisenberg => "heisenberg",
+            Model::Scramble => "scramble",
         }
     }
+}
+
+/// splitmix64. Reimplemented rather than pulled in as a dependency because the
+/// monoprop runner has to emit a bit-identical gate sequence from Python, and
+/// this is short enough to state twice and check against a term-for-term diff.
+struct SplitMix64(u64);
+
+impl SplitMix64 {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// Uniform in `[0, 1)`, from the top 53 bits.
+    fn unit(&mut self) -> f64 {
+        (self.next() >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+/// One two-qubit Pauli rotation `exp(-i θ/2 · P_a ⊗ P_b)`.
+#[derive(Clone, Copy)]
+struct Gate {
+    axis_a: [u8; 2],
+    axis_b: [u8; 2],
+    a: usize,
+    b: usize,
+    theta: f64,
+}
+
+/// `[x, z]` bits for the three non-identity Paulis, indexed `0..3`.
+const AXES: [[u8; 2]; 3] = [[1, 0], [1, 1], [0, 1]];
+
+/// The `scramble` workload: `steps · n` two-qubit Pauli rotations on uniformly
+/// random *all-to-all* pairs, with random axes and random angles in `(0, 2·J·dt]`.
+///
+/// Unlike the two Trotter models this has no lattice, no conserved quantity and
+/// no uniform angle, so the propagated operator spreads over the whole `4^n`
+/// space and the coefficient distribution is genuinely scrambled rather than
+/// hierarchically ordered by Pauli weight.
+fn scramble_gates(n: usize, p: Params) -> Vec<Gate> {
+    assert!(n >= 2, "scramble needs at least 2 qubits");
+    let mut rng = SplitMix64(p.seed);
+    let theta_max = 2.0 * p.j * p.dt;
+    (0..p.steps * n)
+        .map(|_| {
+            let a = (rng.next() % n as u64) as usize;
+            // Offset by 1..n-1 so `b != a` without a rejection loop, which would
+            // desynchronise the two implementations' draw counts.
+            let b = (a + 1 + (rng.next() % (n as u64 - 1)) as usize) % n;
+            let axis_a = AXES[(rng.next() % 3) as usize];
+            let axis_b = AXES[(rng.next() % 3) as usize];
+            Gate {
+                axis_a,
+                axis_b,
+                a,
+                b,
+                theta: theta_max * rng.unit(),
+            }
+        })
+        .collect()
 }
 
 fn env_f64(key: &str, default: f64) -> f64 {
@@ -77,6 +146,7 @@ impl Params {
             h: env_f64("HFIELD", 1.0),
             atol: env_f64("ATOL", 1e-6),
             iters: env_usize("ITERS", 3),
+            seed: env_usize("SEED", 12345) as u64,
         }
     }
 }
@@ -111,7 +181,7 @@ fn seed<const N: usize>(n: usize, p: Params) -> PauliSum<Cfg<N>> {
                 sum += (PauliWord::from(site_word(n, i, 'Z').as_str()), 1.0);
             }
         }
-        Model::Heisenberg => {
+        Model::Heisenberg | Model::Scramble => {
             sum += (PauliWord::from(site_word(n, 0, 'Z').as_str()), 1.0);
         }
     }
@@ -119,9 +189,16 @@ fn seed<const N: usize>(n: usize, p: Params) -> PauliSum<Cfg<N>> {
 }
 
 /// Propagate the shared gate sequence through `state`.
-fn propagate<const N: usize>(state: &mut PauliSum<Cfg<N>>, n: usize, p: Params) {
+fn propagate<const N: usize>(state: &mut PauliSum<Cfg<N>>, n: usize, p: Params, gates: &[Gate]) {
     let theta_bond = 2.0 * p.j * p.dt;
     let theta_site = 2.0 * p.h * p.dt;
+    if p.model == Model::Scramble {
+        for g in gates {
+            state.rotate_2(g.axis_a, g.axis_b, g.a, g.b, g.theta);
+            state.truncate();
+        }
+        return;
+    }
     for _ in 0..p.steps {
         match p.model {
             Model::Tfim => {
@@ -148,6 +225,7 @@ fn propagate<const N: usize>(state: &mut PauliSum<Cfg<N>>, n: usize, p: Params) 
                     state.truncate();
                 }
             }
+            Model::Scramble => unreachable!("handled above"),
         }
     }
 }
@@ -164,7 +242,7 @@ fn readout<const N: usize>(state: &PauliSum<Cfg<N>>, n: usize, p: Params) -> f64
             .filter(|(word, _)| (0..n).all(|i| !word.get_xbit(i)))
             .map(|(_, c)| *c)
             .sum(),
-        Model::Heisenberg => state
+        Model::Heisenberg | Model::Scramble => state
             .data()
             .get(&PauliWord::from(site_word(n, 0, 'Z').as_str()))
             .copied()
@@ -175,13 +253,18 @@ fn readout<const N: usize>(state: &PauliSum<Cfg<N>>, n: usize, p: Params) -> f64
 /// Run one model at width `n`, returning `(best seconds, final support, observable)`.
 fn run<const N: usize>(n: usize, p: Params) -> (f64, usize, f64) {
     let base = seed::<N>(n, p);
+    let gates = if p.model == Model::Scramble {
+        scramble_gates(n, p)
+    } else {
+        Vec::new()
+    };
     let mut best = f64::INFINITY;
     let mut terms = 0usize;
     let mut observable = f64::NAN;
     for _ in 0..p.iters {
         let mut state = base.clone();
         let t0 = Instant::now();
-        propagate(&mut state, n, p);
+        propagate(&mut state, n, p, &gates);
         best = best.min(t0.elapsed().as_secs_f64());
         terms = state.len();
         observable = readout(&state, n, p);
@@ -193,7 +276,12 @@ fn run<const N: usize>(n: usize, p: Params) -> (f64, usize, f64) {
 /// the format the driver diffs across engines.
 fn dump<const N: usize>(n: usize, p: Params) {
     let mut state = seed::<N>(n, p);
-    propagate(&mut state, n, p);
+    let gates = if p.model == Model::Scramble {
+        scramble_gates(n, p)
+    } else {
+        Vec::new()
+    };
+    propagate(&mut state, n, p, &gates);
     let mut out: Vec<(String, f64)> = state.iter().map(|(k, c)| (k.to_string(), *c)).collect();
     out.sort_by(|a, b| {
         b.1.abs()

@@ -40,6 +40,7 @@ CSV_COLUMNS = [
     "qubits",
     "steps",
     "dt",
+    "seed",
     "atol",
     "ref_atol",
     "ref_terms",
@@ -99,6 +100,12 @@ def main() -> None:
     ap.add_argument("--dt", default="0.1")
     ap.add_argument("--atols", default="1e-3,1e-4,1e-5,1e-6,1e-7")
     ap.add_argument(
+        "--seeds",
+        default="12345",
+        help="comma-separated circuit seeds; only `scramble` reads them, and it "
+        "needs several because a random instance varies",
+    )
+    ap.add_argument(
         "--ref-atol",
         default="1e-16",
         help="threshold for the reference run; must be converged at this width",
@@ -127,43 +134,45 @@ def main() -> None:
     }
     rows = []
     for model in args.models.split(","):
-        env = {**base, "MODEL": model}
-        ref, ref_obs = run(BASELINE, {**env, "ATOL": args.ref_atol}, args.quiet)
-        print(
-            f"{model} n={args.qubits}: reference is {BASELINE} at atol={args.ref_atol}"
-            f" — {len(ref)} terms, observable {ref_obs:.12g}",
-            file=sys.stderr,
-        )
-        for atol in args.atols.split(","):
-            for lib in libs:
-                approx, obs = run(lib, {**env, "ATOL": atol}, args.quiet)
-                row = {
-                    "model": model,
-                    "library": lib,
-                    "qubits": args.qubits,
-                    "steps": args.steps,
-                    "dt": args.dt,
-                    "atol": atol,
-                    "ref_atol": args.ref_atol,
-                    "ref_terms": len(ref),
-                    "observable": f"{obs:.15g}",
-                    "ref_observable": f"{ref_obs:.15g}",
-                    "obs_abs_err": f"{abs(obs - ref_obs):.6e}",
-                }
-                stats = measure(approx, ref, float(atol))
-                row["terms"] = stats.pop("terms")
-                row.update(
-                    {
-                        k: f"{v:.6e}" if isinstance(v, float) else v
-                        for k, v in stats.items()
+        for seed in args.seeds.split(","):
+            env = {**base, "MODEL": model, "SEED": seed}
+            ref, ref_obs = run(BASELINE, {**env, "ATOL": args.ref_atol}, args.quiet)
+            print(
+                f"{model} n={args.qubits} seed={seed}: reference is {BASELINE} at"
+                f" atol={args.ref_atol} — {len(ref)} terms, observable {ref_obs:.12g}",
+                file=sys.stderr,
+            )
+            for atol in args.atols.split(","):
+                for lib in libs:
+                    approx, obs = run(lib, {**env, "ATOL": atol}, args.quiet)
+                    row = {
+                        "model": model,
+                        "library": lib,
+                        "qubits": args.qubits,
+                        "steps": args.steps,
+                        "dt": args.dt,
+                        "seed": seed,
+                        "atol": atol,
+                        "ref_atol": args.ref_atol,
+                        "ref_terms": len(ref),
+                        "observable": f"{obs:.15g}",
+                        "ref_observable": f"{ref_obs:.15g}",
+                        "obs_abs_err": f"{abs(obs - ref_obs):.6e}",
                     }
-                )
-                rows.append(row)
-                print(
-                    f"  atol={atol} {lib:>20}: {row['terms']:>6} terms,"
-                    f" L2 {stats['l2_err']:.3e}, observable err {row['obs_abs_err']}",
-                    file=sys.stderr,
-                )
+                    stats = measure(approx, ref, float(atol))
+                    row["terms"] = stats.pop("terms")
+                    row.update(
+                        {
+                            k: f"{v:.6e}" if isinstance(v, float) else v
+                            for k, v in stats.items()
+                        }
+                    )
+                    rows.append(row)
+                    print(
+                        f"  atol={atol} {lib:>20}: {row['terms']:>6} terms,"
+                        f" L2 {stats['l2_err']:.3e}, obs err {row['obs_abs_err']}",
+                        file=sys.stderr,
+                    )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", newline="") as fh:

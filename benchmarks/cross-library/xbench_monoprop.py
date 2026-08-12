@@ -62,6 +62,7 @@ JCOUP = float(os.environ.get("JCOUP", "1.0"))
 HFIELD = float(os.environ.get("HFIELD", "1.0"))
 ATOL = float(os.environ.get("ATOL", "1e-6"))
 ITERS = int(os.environ.get("ITERS", "3"))
+SEED = int(os.environ.get("SEED", "12345"))
 # A serial run has CPU/wall ~1. Anything materially above it means the thread cap
 # did not take and the timing is not comparable with the other engines.
 CPU_WALL_MAX = float(os.environ.get("CPU_WALL_MAX", "1.5"))
@@ -78,7 +79,7 @@ def cpu_seconds() -> float:
 
 
 def seed_operator(n: int) -> PauliOperator:
-    """`Σ_i Z_i` for TFIM, `Z_0` for Heisenberg."""
+    """`Σ_i Z_i` for TFIM, `Z_0` for Heisenberg and scramble."""
     if MODEL == "tfim":
         terms: dict[Pauli | str, float] = {Pauli("Z", (i,)): 1.0 for i in range(n)}
     else:
@@ -86,8 +87,65 @@ def seed_operator(n: int) -> PauliOperator:
     return PauliOperator(terms, n)
 
 
+class SplitMix64:
+    """splitmix64, matching `SplitMix64` in `examples/xbench.rs` bit for bit.
+
+    Both runners have to emit the *same* random circuit, and neither language's
+    stdlib RNG is specified tightly enough to rely on. This is short enough to
+    state in both and is checked by the term-for-term dump diff.
+    """
+
+    MASK = (1 << 64) - 1
+
+    def __init__(self, seed: int) -> None:
+        self.state = seed & self.MASK
+
+    def next(self) -> int:
+        self.state = (self.state + 0x9E3779B97F4A7C15) & self.MASK
+        z = self.state
+        z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & self.MASK
+        z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & self.MASK
+        return z ^ (z >> 31)
+
+    def unit(self) -> float:
+        """Uniform in `[0, 1)`, from the top 53 bits."""
+        return (self.next() >> 11) / float(1 << 53)
+
+
+AXES = "XYZ"
+
+
+def scramble_gates(n: int) -> list[tuple[str, tuple[int, ...], float]]:
+    """`STEPS · n` random all-to-all two-qubit Pauli rotations.
+
+    Draw order — pair, offset, axis, axis, angle — must match `scramble_gates`
+    in `examples/xbench.rs` exactly, including the offset trick that avoids a
+    rejection loop for `b != a` (a loop would consume a variable number of
+    draws and desynchronise the two streams).
+    """
+    if n < 2:
+        raise SystemExit("scramble needs at least 2 qubits")
+    rng = SplitMix64(SEED)
+    theta_max = 2 * JCOUP * DT
+    gates = []
+    for _ in range(STEPS * n):
+        a = rng.next() % n
+        b = (a + 1 + rng.next() % (n - 1)) % n
+        pa = AXES[rng.next() % 3]
+        pb = AXES[rng.next() % 3]
+        theta = theta_max * rng.unit()
+        # P_a ⊗ P_b is symmetric under swapping both, so normalise to ascending
+        # qubit order -- monoprop's `Pauli` expects sorted supports.
+        if a > b:
+            a, b, pa, pb = b, a, pb, pa
+        gates.append((pa + pb, (a, b), theta))
+    return gates
+
+
 def gate_list(n: int) -> list[tuple[str, tuple[int, ...], float]]:
-    """`STEPS` first-order Trotter steps in *application* order, per the spec."""
+    """The gate sequence in *application* order, per the spec."""
+    if MODEL == "scramble":
+        return scramble_gates(n)
     gates: list[tuple[str, tuple[int, ...], float]] = []
     for _ in range(STEPS):
         if MODEL == "tfim":

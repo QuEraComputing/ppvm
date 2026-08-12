@@ -594,7 +594,7 @@ fn golden_expectation_values() {
     let close =
         |a: f64, b: f64, ctx: &str| assert!((a - b).abs() < tol, "{ctx}: got {a}, expected {b}");
 
-    let z0: NewNarrow = Driver::new_seeded(1, 1e-12, 0);
+    let mut z0: NewNarrow = Driver::new_seeded(1, 1e-12, 0);
     close(z0.expectation_str("Z"), 1.0, "<Z> on |0>");
     close(z0.expectation_str("X"), 0.0, "<X> on |0>");
     close(z0.expectation_str("I"), 1.0, "<I> on |0>");

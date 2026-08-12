@@ -9,12 +9,23 @@
 
 use std::path::PathBuf;
 
+#[cfg(feature = "legacy")]
 use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
 use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{execute_with_rng, parse_extended};
 use rand::SeedableRng;
 
+// The legacy frame is parameterized by a packed-blob storage width; the `-2`
+
+// frame is runtime-sized and has none, so the alias differs by backend.
+
+#[cfg(feature = "legacy")]
+
 type Tab = GeneralizedTableau<ByteFxHashF64<8>, usize>;
+
+#[cfg(feature = "traits-2")]
+
+type Tab = GeneralizedTableau<usize>;
 
 fn cultivation_src() -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

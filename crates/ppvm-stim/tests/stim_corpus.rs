@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+#[cfg(feature = "legacy")]
 use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
 use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{ExecError, execute, parse_extended};
@@ -79,7 +80,12 @@ fn corpus_table_covers_every_file() {
 
 #[test]
 fn corpus_obeys_expectations() {
+    // The legacy frame is parameterized by a packed-blob storage width; the `-2`
+    // frame is runtime-sized and has none, so the alias differs by backend.
+    #[cfg(feature = "legacy")]
     type Tab = GeneralizedTableau<ByteFxHashF64<8>, usize>;
+    #[cfg(feature = "traits-2")]
+    type Tab = GeneralizedTableau<usize>;
 
     for (name, expect) in CASES {
         let src = read(name);

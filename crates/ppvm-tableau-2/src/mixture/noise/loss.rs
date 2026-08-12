@@ -5,14 +5,13 @@ use std::hash::BuildHasher;
 
 use ppvm_traits_2::{CorrelatedLossChannel, LossChannel, ResetLossChannel};
 
+use crate::Bitstring;
 use crate::mixture::equality::Mutation;
 use crate::mixture::fingerprint::loss_mask;
 use crate::mixture::{Branch, GeneralizedTableauMixture, LazyBranch};
-use crate::{Bitstring, RowStorage};
 
-impl<A, I, H> LossChannel<f64> for GeneralizedTableauMixture<A, I, H>
+impl<I, H> LossChannel<f64> for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -44,9 +43,8 @@ where
     }
 }
 
-impl<A, I, H> CorrelatedLossChannel<f64> for GeneralizedTableauMixture<A, I, H>
+impl<I, H> CorrelatedLossChannel<f64> for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -101,14 +99,13 @@ where
     }
 }
 
-fn push_loss<A, I, H>(
-    mixture: &mut GeneralizedTableauMixture<A, I, H>,
+fn push_loss<I, H>(
+    mixture: &mut GeneralizedTableauMixture<I, H>,
     branches: &mut Vec<LazyBranch>,
     parent: usize,
     qubit: usize,
     probability: f64,
 ) where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -121,9 +118,8 @@ fn push_loss<A, I, H>(
     mixture.entries[parent].1 *= 1.0 - probability;
 }
 
-impl<A, I, H> ResetLossChannel for GeneralizedTableauMixture<A, I, H>
+impl<I, H> ResetLossChannel for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -133,7 +129,7 @@ where
             .filter(|&i| self.entries[i].0.is_lost[qubit])
             .collect();
         indices.reverse();
-        let mut branches: Vec<Branch<A, I, H>> = Vec::with_capacity(indices.len());
+        let mut branches: Vec<Branch<I, H>> = Vec::with_capacity(indices.len());
         for index in indices {
             let (mut tab, probability) = self.entries.swap_remove(index);
             let fp = self.fingerprints.swap_remove(index) ^ loss_mask(qubit);

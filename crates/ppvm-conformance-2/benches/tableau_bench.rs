@@ -523,7 +523,7 @@ fn bench_micro(c: &mut Criterion) {
     // `measure` ratio and the `z_expectation` ratio move together, the cost is
     // in the frame walk, not in the scratch.
     let old_msd: OldWide = msd_state(Some(3));
-    let new_msd: NewWide = msd_state(Some(3));
+    let mut new_msd: NewWide = msd_state(Some(3));
     g.bench_function("msd_measure_single/old", |b| {
         b.iter_batched_ref(
             || old_msd.fork(None),

@@ -14,8 +14,8 @@ use ppvm_tableau_2::prelude::*;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
-type Tab = GeneralizedTableau<u64, usize>;
-type WideTab = GeneralizedTableau<[u64; 2], u128>;
+type Tab = GeneralizedTableau<usize>;
+type WideTab = GeneralizedTableau<u128>;
 
 fn word(s: &str) -> PauliWord {
     s.into()
@@ -51,7 +51,7 @@ fn bell() -> Tab {
 
 #[test]
 fn single_qubit_expectations() {
-    let tab: Tab = GeneralizedTableau::new(1, 1e-12);
+    let mut tab: Tab = GeneralizedTableau::new(1, 1e-12);
     assert_close(tab.expectation(&word("Z")), 1.0, 1e-12);
     assert_close(tab.expectation(&word("X")), 0.0, 1e-12);
     assert_close(tab.expectation(&word("I")), 1.0, 1e-12);
@@ -64,7 +64,7 @@ fn single_qubit_expectations() {
 
 #[test]
 fn bell_state_pauli_expectations() {
-    let tab = bell();
+    let mut tab = bell();
     assert_close(tab.expectation(&word("II")), 1.0, 1e-12);
     assert_close(tab.expectation(&word("ZZ")), 1.0, 1e-12);
     assert_close(tab.expectation(&word("XX")), 1.0, 1e-12);

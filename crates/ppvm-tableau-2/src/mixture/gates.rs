@@ -10,7 +10,7 @@ use ppvm_traits_2::{
 };
 
 use super::GeneralizedTableauMixture;
-use crate::{Bitstring, RowStorage};
+use crate::Bitstring;
 
 macro_rules! one_qubit {
     ($name:ident) => {
@@ -34,9 +34,8 @@ macro_rules! two_qubit {
     };
 }
 
-impl<A, I, H> Clifford for GeneralizedTableauMixture<A, I, H>
+impl<I, H> Clifford for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -49,9 +48,8 @@ where
     two_qubit!(cz);
 }
 
-impl<A, I, H> CliffordExtensions for GeneralizedTableauMixture<A, I, H>
+impl<I, H> CliffordExtensions for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -63,25 +61,22 @@ where
     two_qubit!(cy);
 }
 
-impl<A, I, H> CliffordBatch for GeneralizedTableauMixture<A, I, H>
+impl<I, H> CliffordBatch for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
 }
 
-impl<A, I, H> CliffordExtensionsBatch for GeneralizedTableauMixture<A, I, H>
+impl<I, H> CliffordExtensionsBatch for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
 }
 
-impl<A, I, H> TGate for GeneralizedTableauMixture<A, I, H>
+impl<I, H> TGate for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -89,9 +84,8 @@ where
     one_qubit!(t_dag);
 }
 
-impl<A, I, H> RotationOne<Complex64, f64> for GeneralizedTableauMixture<A, I, H>
+impl<I, H> RotationOne<Complex64, f64> for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -103,9 +97,8 @@ where
     }
 }
 
-impl<A, I, H> RotationTwo<Complex64, f64> for GeneralizedTableauMixture<A, I, H>
+impl<I, H> RotationTwo<Complex64, f64> for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -117,9 +110,8 @@ where
     }
 }
 
-impl<A, I, H> RotXY<Complex64, f64> for GeneralizedTableauMixture<A, I, H>
+impl<I, H> RotXY<Complex64, f64> for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -131,9 +123,8 @@ where
     }
 }
 
-impl<A, I, H> U3Gate<Complex64, f64> for GeneralizedTableauMixture<A, I, H>
+impl<I, H> U3Gate<Complex64, f64> for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {

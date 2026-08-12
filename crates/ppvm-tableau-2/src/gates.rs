@@ -22,7 +22,7 @@
 use num::complex::{Complex, Complex64};
 use ppvm_traits_2::{Pauli, RotXY, RotationOne, RotationTwo, TGate, U3Gate};
 
-use crate::data::{Amplitudes, Bitstring, GeneralizedTableau, RowStorage};
+use crate::data::{Amplitudes, Bitstring, GeneralizedTableau};
 
 /// `exp(iπ/8)·cos(π/8)`.
 const COS_PI_OVER_8_TIMES_EXPIPI8: Complex64 = Complex {
@@ -35,7 +35,7 @@ const ISIN_PI_OVER_8_TIMES_EXPIPI8: Complex64 = Complex {
     im: -0.353_553_390_593_273_8,
 };
 
-impl<A: RowStorage, I: Bitstring, H> TGate for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> TGate for GeneralizedTableau<I, H> {
     fn t(&mut self, qubit: usize) {
         if self.is_lost[qubit] {
             return;
@@ -61,7 +61,7 @@ impl<A: RowStorage, I: Bitstring, H> TGate for GeneralizedTableau<A, I, H> {
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> RotationOne<Complex64, f64> for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> RotationOne<Complex64, f64> for GeneralizedTableau<I, H> {
     fn rotate_1(&mut self, axis: Pauli, qubit: usize, theta: f64) {
         if self.is_lost[qubit] {
             return;
@@ -73,7 +73,7 @@ impl<A: RowStorage, I: Bitstring, H> RotationOne<Complex64, f64> for Generalized
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> RotXY<Complex64, f64> for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> RotXY<Complex64, f64> for GeneralizedTableau<I, H> {
     /// `R(axis_angle, θ) = RZ(axis_angle)·RX(θ)·RZ(−axis_angle)`.
     ///
     /// The tableau runs in the Schrödinger picture, so the sub-rotations are
@@ -86,7 +86,7 @@ impl<A: RowStorage, I: Bitstring, H> RotXY<Complex64, f64> for GeneralizedTablea
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> U3Gate<Complex64, f64> for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> U3Gate<Complex64, f64> for GeneralizedTableau<I, H> {
     /// `U3(θ, φ, λ) = RZ(φ)·RY(θ)·RZ(λ)`.
     fn u3(&mut self, qubit: usize, theta: f64, phi: f64, lambda: f64) {
         self.rz(qubit, lambda);
@@ -98,7 +98,7 @@ impl<A: RowStorage, I: Bitstring, H> U3Gate<Complex64, f64> for GeneralizedTable
 /// Axis decoding for [`RotationTwo::rotate_2`]: `PAULIS[(axis_z << 1) | axis_x]`.
 const PAULIS: [Pauli; 4] = [Pauli::I, Pauli::X, Pauli::Z, Pauli::Y];
 
-impl<A: RowStorage, I: Bitstring, H> RotationTwo<Complex64, f64> for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> RotationTwo<Complex64, f64> for GeneralizedTableau<I, H> {
     /// `exp(−i·θ/2·P_a ⊗ P_b)`.
     ///
     /// # Loss

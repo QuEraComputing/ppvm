@@ -4,13 +4,19 @@
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
+#[cfg(feature = "legacy")]
 use ppvm_stim::backend::config::fx64hash::Byte8F64;
 use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{execute_with_rng, parse_extended};
 use rand::SeedableRng;
 use stim_parser::prelude::ExtendedProgram;
 
+// The legacy frame is parameterized by a packed-blob storage width; the `-2`
+// frame is runtime-sized and has none, so the alias differs by backend.
+#[cfg(feature = "legacy")]
 type Tab = GeneralizedTableau<Byte8F64<2>, u128>;
+#[cfg(feature = "traits-2")]
+type Tab = GeneralizedTableau<u128>;
 
 fn msd_stim_string() -> String {
     let qubits_per_code_block = 17;

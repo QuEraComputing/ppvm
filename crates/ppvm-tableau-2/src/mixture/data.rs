@@ -5,28 +5,23 @@ use std::collections::HashMap;
 use std::hash::BuildHasher;
 
 use fxhash::FxBuildHasher;
-use ppvm_pauli_word_2::DefaultStorage;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
 use super::equality::{Mutation, apply_mutation, structurally_equal, structurally_equal_mutated};
 use super::fingerprint::fingerprint;
-use crate::{Bitstring, GeneralizedTableau, RowStorage};
+use crate::{Bitstring, GeneralizedTableau};
 
-pub(crate) type Branch<A, I, H> = (GeneralizedTableau<A, I, H>, f64, u64);
+pub(crate) type Branch<I, H> = (GeneralizedTableau<I, H>, f64, u64);
 pub(crate) type LazyBranch = (usize, Mutation, f64, u64);
 
 /// A classical probability distribution over complete generalized-tableau states.
 ///
 /// Fingerprints only select collision buckets. Entries merge only after a full
 /// frame/loss comparison and coefficient-wise approximate comparison.
-pub struct GeneralizedTableauMixture<
-    A: RowStorage = DefaultStorage,
-    I: Bitstring = usize,
-    H = FxBuildHasher,
-> {
+pub struct GeneralizedTableauMixture<I: Bitstring = usize, H = FxBuildHasher> {
     pub n_qubits: usize,
-    pub entries: Vec<(GeneralizedTableau<A, I, H>, f64)>,
+    pub entries: Vec<(GeneralizedTableau<I, H>, f64)>,
     pub(crate) rng: SmallRng,
     pub(crate) sum_cutoff: f64,
     pub(crate) fingerprints: Vec<u64>,
@@ -34,9 +29,8 @@ pub struct GeneralizedTableauMixture<
     pub(crate) dirty: bool,
 }
 
-impl<A, I, H> Clone for GeneralizedTableauMixture<A, I, H>
+impl<I, H> Clone for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Default,
 {
@@ -55,9 +49,8 @@ where
     }
 }
 
-impl<A, I, H> GeneralizedTableauMixture<A, I, H>
+impl<I, H> GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -126,7 +119,7 @@ where
         self.entries.is_empty()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&GeneralizedTableau<A, I, H>, &f64)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&GeneralizedTableau<I, H>, &f64)> {
         self.entries
             .iter()
             .map(|(tab, probability)| (tab, probability))
@@ -172,7 +165,7 @@ where
         self.dirty = false;
     }
 
-    pub(crate) fn insert_branches(&mut self, branches: Vec<Branch<A, I, H>>) -> bool {
+    pub(crate) fn insert_branches(&mut self, branches: Vec<Branch<I, H>>) -> bool {
         if branches.is_empty() {
             return false;
         }
@@ -263,5 +256,4 @@ where
 }
 
 /// Compatibility spelling retained for old Rust and future Python adapters.
-pub type GeneralizedTableauSum<A = DefaultStorage, I = usize, H = FxBuildHasher> =
-    GeneralizedTableauMixture<A, I, H>;
+pub type GeneralizedTableauSum<I = usize, H = FxBuildHasher> = GeneralizedTableauMixture<I, H>;

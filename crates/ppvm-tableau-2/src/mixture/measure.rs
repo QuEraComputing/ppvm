@@ -7,22 +7,21 @@ use ppvm_traits_2::{Clifford, Pauli, Reset};
 
 use super::fingerprint::fingerprint;
 use super::{Branch, GeneralizedTableauMixture};
-use crate::{Bitstring, GeneralizedTableau, MeasureScratch, RowStorage};
+use crate::{Bitstring, GeneralizedTableau, MeasureScratch};
 
-impl<A, I, H> GeneralizedTableauMixture<A, I, H>
+impl<I, H> GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
     pub(crate) fn for_each_z_branch(
         &mut self,
         qubit: usize,
-        mut visit: impl FnMut(&mut GeneralizedTableau<A, I, H>, Option<bool>, f64) -> bool,
+        mut visit: impl FnMut(&mut GeneralizedTableau<I, H>, Option<bool>, f64) -> bool,
     ) {
         self.rebuild_buckets();
         let original_len = self.entries.len();
-        let mut branches: Vec<Branch<A, I, H>> = Vec::new();
+        let mut branches: Vec<Branch<I, H>> = Vec::new();
         let mut scratch = None;
         let mut other_scratch = None;
         let mut keys_changed = false;
@@ -41,7 +40,7 @@ where
                 let entries = tab.coefficients.take();
                 let mut other = tab.fork();
                 let overlap =
-                    GeneralizedTableau::<A, I, H>::compute_overlap_case_b(&entries, phase, destab);
+                    GeneralizedTableau::<I, H>::compute_overlap_case_b(&entries, phase, destab);
                 let p_one = 0.5 - 0.5 * overlap;
                 let likely = p_one > 0.5;
                 let p_likely = if likely { p_one } else { 1.0 - p_one };
@@ -71,7 +70,7 @@ where
                 other_scratch.coeff_map.clone_from(&scratch.coeff_map);
                 let mut other = tab.fork();
                 let mask = tab.odd_phase_destabilizer_mask();
-                let overlap = GeneralizedTableau::<A, I, H>::compute_overlap_case_a(
+                let overlap = GeneralizedTableau::<I, H>::compute_overlap_case_a(
                     &scratch.coeff_map,
                     phase,
                     destab,
@@ -133,9 +132,8 @@ where
     }
 }
 
-impl<A, I, H> Reset for GeneralizedTableauMixture<A, I, H>
+impl<I, H> Reset for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {

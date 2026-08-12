@@ -37,7 +37,13 @@ fn projection_pair() -> (OldGen, NewGen) {
 
 fn decomposition(old: &OldGen, new: &NewGen, qubit: usize) -> Decomposition {
     let old_d = old.compute_decomposition(qubit, ppvm_traits::Pauli::Z);
-    let new_d = new.compute_decomposition(qubit, ppvm_traits_2::Pauli::Z);
+    // The new engine's decomposition re-orients the frame, so it needs `&mut`;
+    // this helper is a setup step (its result is what the benches below are
+    // parameterized by), so a fork keeps the shared-reference signature the
+    // callers use without the fork landing inside a measured loop.
+    let new_d = new
+        .fork(None)
+        .compute_decomposition(qubit, ppvm_traits_2::Pauli::Z);
     assert_eq!(old_d, new_d);
     Decomposition {
         phase: old_d.0,

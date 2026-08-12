@@ -34,12 +34,7 @@ mod sealed {
     }
 
     #[cfg(feature = "traits-2")]
-    impl<A, I, H> Sealed for ppvm_tableau_2::GeneralizedTableau<A, I, H>
-    where
-        A: ppvm_tableau_2::RowStorage,
-        I: ppvm_tableau_2::Bitstring,
-    {
-    }
+    impl<I, H> Sealed for ppvm_tableau_2::GeneralizedTableau<I, H> where I: ppvm_tableau_2::Bitstring {}
 }
 
 /// Semantic surface required by the Stim instruction executor.
@@ -142,15 +137,16 @@ where
     type Tableau = ppvm_tableau_legacy::prelude::GeneralizedTableau<C, I, S>;
 }
 
+// The `-2` frame carries no storage-width config, so this backend is selected
+// at `C = ()` rather than at a packed-blob type. A caller that used to write
+// `sample::<ByteFxHashF64<237>, U2048, _>(..)` writes `sample::<(), U2048, _>(..)`.
 #[cfg(feature = "traits-2")]
-impl<C, I, S> TableauType<C, I, S> for SelectedBackend
+impl<I, S> TableauType<(), I, S> for SelectedBackend
 where
-    C: ppvm_tableau_2::RowStorage,
     I: ppvm_tableau_2::Bitstring,
-    ppvm_tableau_2::GeneralizedTableau<C, I, S>:
-        StimTableau<Config = C, Index = I, Coefficients = S>,
+    ppvm_tableau_2::GeneralizedTableau<I, S>: StimTableau<Config = (), Index = I, Coefficients = S>,
 {
-    type Tableau = ppvm_tableau_2::GeneralizedTableau<C, I, S>;
+    type Tableau = ppvm_tableau_2::GeneralizedTableau<I, S>;
 }
 
 #[cfg(feature = "legacy")]

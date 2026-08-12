@@ -145,16 +145,19 @@ pub mod measure;
 pub mod mixture;
 /// Stochastic channels: Pauli errors, depolarizing, and loss.
 pub mod noise;
+/// The frame's physical storage: one aligned contiguous allocation holding four
+/// square X/Z quadrants, two phase bit planes and the loss plane.
+pub(crate) mod storage;
 
 pub use bnum::types::{U256, U512, U1024, U2048};
-pub use data::{Amplitudes, Bitstring, GeneralizedTableau, RowStorage, Tableau};
+pub use data::{Amplitudes, Bitstring, GeneralizedTableau, Tableau};
 pub use measure::MeasureScratch;
 pub use mixture::{GeneralizedTableauMixture, GeneralizedTableauSum, MixtureSampler};
 pub use noise::TableauLike;
 
 /// Convenience re-exports for downstream code.
 pub mod prelude {
-    pub use crate::data::{Amplitudes, Bitstring, GeneralizedTableau, RowStorage, Tableau};
+    pub use crate::data::{Amplitudes, Bitstring, GeneralizedTableau, Tableau};
     pub use crate::measure::MeasureScratch;
     pub use crate::mixture::{GeneralizedTableauMixture, GeneralizedTableauSum, MixtureSampler};
     pub use crate::noise::TableauLike;

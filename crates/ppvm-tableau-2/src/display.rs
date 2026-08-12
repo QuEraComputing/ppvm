@@ -17,25 +17,22 @@ use std::fmt::{self, Display};
 
 use ppvm_traits_2::Pauli;
 
-use crate::data::{Bitstring, GeneralizedTableau, Row, RowStorage, Tableau};
+use crate::data::{Bitstring, GeneralizedTableau, Tableau};
 
 /// `+` / `+i` / `-` / `-i` for the `ℤ/4` phase convention `0: +1, 1: +i,
 /// 2: −1, 3: −i`.
 const PHASE_PREFIX: [&str; 4] = ["+", "+i", "-", "-i"];
 
-/// One row as `<phase-prefix><Pauli letters>`, e.g. `-iXYZI`.
+/// One generator as `<phase-prefix><Pauli letters>`, e.g. `-iXYZI`.
 ///
-/// A free function rather than a `Display` impl on [`Row`] because a row does
-/// not carry its own width — the frame supplies it.
-fn fmt_row<A: RowStorage>(
-    f: &mut fmt::Formatter<'_>,
-    row: &Row<A>,
-    n_qubits: usize,
-) -> fmt::Result {
-    debug_assert!(row.phase < 4, "Invalid phase value: {}", row.phase);
-    f.write_str(PHASE_PREFIX[(row.phase % 4) as usize])?;
-    for i in 0..n_qubits {
-        f.write_str(match row.get(i) {
+/// Reads the frame site by site rather than materializing a row: `Display` is
+/// not a hot path, and the column-major arena has no row object to borrow.
+fn fmt_row<H>(f: &mut fmt::Formatter<'_>, tab: &Tableau<H>, generator: usize) -> fmt::Result {
+    let phase = tab.row_phase(generator);
+    debug_assert!(phase < 4, "Invalid phase value: {phase}");
+    f.write_str(PHASE_PREFIX[(phase % 4) as usize])?;
+    for i in 0..tab.n_qubits() {
+        f.write_str(match tab.row_site(generator, i) {
             Pauli::I => "I",
             Pauli::X => "X",
             Pauli::Y => "Y",
@@ -45,20 +42,21 @@ fn fmt_row<A: RowStorage>(
     Ok(())
 }
 
-impl<A: RowStorage, H> Display for Tableau<A, H> {
+impl<H> Display for Tableau<H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Tableau ({} qubits):", self.n_qubits)?;
+        let n = self.n_qubits();
+        writeln!(f, "Tableau ({n} qubits):")?;
         writeln!(f, "  Destabilizers: [")?;
-        for row in self.destabilizers().iter() {
+        for g in 0..n {
             f.write_str("    ")?;
-            fmt_row(f, row, self.n_qubits)?;
+            fmt_row(f, self, g)?;
             f.write_str("\n")?;
         }
         writeln!(f, "  ]")?;
         writeln!(f, "  Stabilizers: [")?;
-        for row in self.stabilizers().iter() {
+        for g in n..2 * n {
             f.write_str("    ")?;
-            fmt_row(f, row, self.n_qubits)?;
+            fmt_row(f, self, g)?;
             f.write_str("\n")?;
         }
         writeln!(f, "  ]")?;
@@ -66,9 +64,13 @@ impl<A: RowStorage, H> Display for Tableau<A, H> {
     }
 }
 
-impl<A: RowStorage, I: Bitstring + Display, H> Display for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring + Display, H> Display for GeneralizedTableau<I, H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Generalized Tableau ({} qubits):", self.tableau.n_qubits)?;
+        writeln!(
+            f,
+            "Generalized Tableau ({} qubits):",
+            self.tableau.n_qubits()
+        )?;
         writeln!(f, "  Tableau:")?;
         writeln!(f, "{}", self.tableau)?;
         writeln!(f, "  Coefficients:")?;

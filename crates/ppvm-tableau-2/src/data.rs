@@ -24,24 +24,11 @@ use std::marker::PhantomData;
 use std::ops::{BitAnd, BitOrAssign, BitXor, Shl};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use bitvec::array::BitArray;
-use bitvec::view::BitView;
+use num::PrimInt;
 use num::complex::Complex64;
-use num::{One, PrimInt, Zero};
-use ppvm_pauli_word_2::{DefaultStorage, PauliStorage};
 use ppvm_traits_2::{Indexable, Pauli, Scale, Support};
 
-/// Backing storage for a tableau row's packed X/Z bit planes.
-///
-/// Reuses [`PauliStorage`] from `ppvm-pauli-word-2` (the same blob bound the
-/// packed word uses — `word-data-structures.md` §"`PauliWord` packed
-/// representation") and adds the `PrimInt` bound on the raw machine word, which
-/// is what lets every Clifford gate hoist `index / bits` and touch **one** word
-/// per plane per row instead of going through `bitvec`'s bounds-checked per-bit
-/// addressing (the old crate's `<T::Storage as BitView>::Store: PrimInt` clause).
-pub trait RowStorage: PauliStorage + BitView<Store: PrimInt> {}
-
-impl<A> RowStorage for A where A: PauliStorage + BitView<Store: PrimInt> {}
+use crate::storage::{BITS_PER_WORD, HALVES, Half, Orientation, Plane, TableauData, blocks};
 
 /// Bit-string index type addressing one branch of the amplitude vector.
 ///
@@ -109,6 +96,35 @@ pub fn symplectic_inner<I: Bitstring>(alpha: I, beta: I) -> u32 {
     (alpha & beta).count_ones()
 }
 
+/// Widen a generator-indexed bit plane into a branch index.
+///
+/// The frame's masks (`destab_anticomm_bits`, `stab_anticomm_bits`, the
+/// odd-phase destabilizer mask) are produced as contiguous `u64` planes but
+/// consumed as `I`, which may be a `bnum` big integer wider than a machine word.
+/// Set bits are OR'd in one at a time — exactly the `mask |= one << i` the
+/// replaced per-row scans did, so a wide `I` pays no more than it did before.
+#[inline]
+pub(crate) fn bits_to_index<I: Bitstring>(words: &[u64], n_bits: usize) -> I {
+    let mut acc = I::zero();
+    let one = I::one();
+    for (w, &word) in words.iter().enumerate() {
+        if word == 0 {
+            continue;
+        }
+        let base = w * BITS_PER_WORD;
+        let mut rest = word;
+        while rest != 0 {
+            let i = base + rest.trailing_zeros() as usize;
+            if i >= n_bits {
+                break;
+            }
+            acc |= one << i;
+            rest &= rest - 1;
+        }
+    }
+    acc
+}
+
 /// The per-coefficient phase contribution, given the destabilizer
 /// anticommutation bits and the pre-hoisted odd-phase destabilizer mask.
 ///
@@ -148,56 +164,53 @@ pub(crate) fn compute_phase_with_mask_static<I: Bitstring>(
     phase
 }
 
-// ─── Row ──────────────────────────────────────────────────────────────────
+// ─── ScratchRow ───────────────────────────────────────────────────────────
 
-/// One tableau row: a phased Pauli word over packed X/Z bit planes with a
-/// `ℤ/4` phase.
+/// A heap-allocated phased Pauli word used as an *accumulator* by the frame's
+/// row algebra — the residual `p_word` of
+/// [`GeneralizedTableau::compute_decomposition`], the product built by
+/// [`Tableau::get_deterministic_outcome`], and the pivot copy the measurement
+/// projection multiplies into its neighbours.
 ///
-/// # Why not `Phased<PauliWord>`
+/// It is not the tableau's storage. The frame's own generators live in
+/// [`TableauData`]'s four square quadrants; this is the one place a *single*
+/// generator has to exist on its own, and it uses the same
+/// `(x-words, z-words, ℤ/4 phase)` shape so [`blocks::row_multiply`] serves both.
 ///
-/// A row *is* a phased Pauli word mathematically, but the shipped
-/// `ppvm-pauli-word-2::PauliWord` (a) carries a structural hash cache the row
-/// would have to refresh on every raw-word write, and (b) keeps its packed
-/// planes `pub(crate)`, so
-/// no downstream crate can reach the raw machine words. Both are fatal here: the
-/// tableau copies rows on every measurement projection and `2n` times per
-/// construction (`let g_q = stabilizers[q_idx];`), and every Clifford gate needs
-/// one raw-word read/write per plane per row. The row therefore owns its own
-/// hash-free, `Copy` packed representation; the digest that
-/// [`Indexable`](ppvm_traits_2::Indexable) exposes is computed over the *whole
-/// tableau*, never cached per row.
+/// # Why not `Row<A>` any more
 ///
-/// Design: `word-data-structures.md` §"Logical Pauli model" for the `(x, z)`
-/// encoding; the `ℤ/4` phase and the Aaronson–Gottesman `g`-rule product are the
-/// "extension part" of `traits-2-configuration-and-hashing.md` §"Pauli algebra
-/// traits".
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct Row<A: RowStorage> {
-    /// X-bit plane (unused high bits are permanently `0`).
-    pub(crate) xbits: BitArray<A>,
-    /// Z-bit plane (unused high bits are permanently `0`).
-    pub(crate) zbits: BitArray<A>,
+/// The replaced `Row<A>` was `Copy` over a compile-time-sized `BitArray<A>`,
+/// which is what forced the whole tableau to be a `Vec<Row<A>>` — and with it
+/// the compile-time qubit cap and the padding blow-up documented in
+/// [`crate::storage`]. A scratch row is allocated once per measurement scratch
+/// and reused, so it does not need to be `Copy`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ScratchRow {
+    /// X bits, qubit-indexed. Length is the frame's stride; padding stays zero.
+    pub(crate) x: Vec<u64>,
+    /// Z bits, qubit-indexed.
+    pub(crate) z: Vec<u64>,
     /// Phase in `ℤ/4` with the convention `0: +1, 1: +i, 2: −1, 3: −i`.
     pub(crate) phase: u8,
 }
 
-impl<A: RowStorage> Row<A> {
-    /// The identity row `+I…I`.
+impl ScratchRow {
+    /// The identity row `+I…I`, sized for a frame of the given stride.
     #[inline]
-    pub(crate) fn new(n_qubits: usize) -> Self {
-        debug_assert!(
-            n_qubits <= 8 * std::mem::size_of::<A>(),
-            "n_qubits {n_qubits} exceeds the {}-bit backing storage",
-            8 * std::mem::size_of::<A>(),
-        );
+    pub(crate) fn zeroed(stride: usize) -> Self {
         Self {
-            xbits: BitArray::ZERO,
-            zbits: BitArray::ZERO,
+            x: vec![0; stride],
+            z: vec![0; stride],
             phase: 0,
         }
     }
 
     /// Write the Pauli at site `i`.
+    ///
+    /// Note the encoding is `X^x Z^z`, **not** the Hermitian Pauli: `Pauli::Y`
+    /// sets both bits and leaves the phase at zero, so the row denotes
+    /// `X Z = −i Y`. That is the replaced `Row::set`'s convention verbatim, and
+    /// every phase the decomposition returns is stated relative to it.
     #[inline]
     pub(crate) fn set(&mut self, i: usize, pauli: Pauli) {
         let (x, z) = match pauli {
@@ -206,80 +219,8 @@ impl<A: RowStorage> Row<A> {
             Pauli::Y => (true, true),
             Pauli::Z => (false, true),
         };
-        self.xbits.set(i, x);
-        self.zbits.set(i, z);
-    }
-
-    /// Read the Pauli at site `i`.
-    #[inline]
-    pub(crate) fn get(&self, i: usize) -> Pauli {
-        match (self.xbits[i], self.zbits[i]) {
-            (false, false) => Pauli::I,
-            (true, false) => Pauli::X,
-            (false, true) => Pauli::Z,
-            (true, true) => Pauli::Y,
-        }
-    }
-
-    /// Resolve site `i` to the `(word index, single-bit mask)` pair the
-    /// `_masked` accessors take.
-    ///
-    /// Hoisting this out of a row loop is the same move every Clifford gate
-    /// makes (module note in `clifford.rs`): the frame's `O(n)` scans —
-    /// `compute_decomposition`, `find_z_anticommuting_stabilizer`,
-    /// `get_deterministic_outcome`, `update_tableau_according_to_outcome` — all
-    /// probe the **same** site on all `2n` rows, so the `i / bits`, `i % bits`
-    /// and shift belong outside the loop, leaving one raw-word `AND` per row
-    /// instead of `bitvec`'s bounds-checked per-bit addressing.
-    #[inline]
-    pub(crate) fn site_word(i: usize) -> (usize, <A as BitView>::Store) {
-        let bits = std::mem::size_of::<<A as BitView>::Store>() * 8;
-        let one = <A as BitView>::Store::one();
-        (i / bits, one << (i % bits))
-    }
-
-    /// Resolve site `i` **and** a fixed probe Pauli `pauli = (x_bit, z_bit)`
-    /// into the `(word index, x-probe, z-probe)` triple
-    /// [`Self::anticommutes_at_probe`] takes.
-    ///
-    /// The two probes are the site mask gated by the *opposite* component of
-    /// the probe Pauli, because `ω(P, Q) = x_P·z_Q ⊕ z_P·x_Q`. Folding the
-    /// gating in here turns the per-row test into two `AND`s and an `XOR` on
-    /// whole words with no per-row `bool` materialization.
-    #[inline]
-    pub(crate) fn site_probe(
-        i: usize,
-        pauli: (bool, bool),
-    ) -> (usize, <A as BitView>::Store, <A as BitView>::Store) {
-        let (wi, mask) = Self::site_word(i);
-        let zero = <A as BitView>::Store::zero();
-        (
-            wi,
-            if pauli.1 { mask } else { zero },
-            if pauli.0 { mask } else { zero },
-        )
-    }
-
-    /// Whether this row anticommutes with the probe Pauli pre-resolved by
-    /// [`Self::site_probe`] — `ω(P, Q) = x_P·z_Q ⊕ z_P·x_Q`, the same value as
-    /// [`PauliBits::anticommutes_at`](ppvm_traits_2::PauliBits::anticommutes_at)
-    /// would give at that site.
-    #[inline]
-    pub(crate) fn anticommutes_at_probe(
-        &self,
-        wi: usize,
-        x_probe: <A as BitView>::Store,
-        z_probe: <A as BitView>::Store,
-    ) -> bool {
-        let xw = self.xbits.data.as_raw_slice()[wi];
-        let zw = self.zbits.data.as_raw_slice()[wi];
-        ((xw & x_probe) ^ (zw & z_probe)) != <A as BitView>::Store::zero()
-    }
-
-    /// The X bit at a site pre-resolved by [`Self::site_word`].
-    #[inline]
-    pub(crate) fn x_at_masked(&self, wi: usize, mask: <A as BitView>::Store) -> bool {
-        (self.xbits.data.as_raw_slice()[wi] & mask) != <A as BitView>::Store::zero()
+        TableauData::set_bit(&mut self.x, i, x);
+        TableauData::set_bit(&mut self.z, i, z);
     }
 
     /// `phase += delta (mod 4)`.
@@ -288,82 +229,70 @@ impl<A: RowStorage> Row<A> {
         self.phase = (self.phase + delta) % 4;
     }
 
-    /// Multiply `rhs` into `self` using the Aaronson–Gottesman `g`-rule.
+    /// Multiply the generator at `major` of `data` into `self` using the
+    /// Aaronson–Gottesman `g`-rule.
     ///
-    /// Ported word-for-word from `ppvm-pauli-word/src/phase/mul.rs`
-    /// (`MulAssign for PhasedPauliWord`): the `sign`/`imag` masks are popcounted
-    /// per machine word, so the phase is recovered without a per-site table
-    /// lookup. This is the `row_multiply` primitive of
-    /// [`StabilizerFrame`](ppvm_traits_2::StabilizerFrame).
+    /// `data` must be in [`Orientation::RowMajor`], where a generator's bits are
+    /// contiguous; `major` is the generator's index *within* `half`. This is the
+    /// replaced `Row::mul_assign` — same predicates, same `ℤ/4` accumulation —
+    /// reading the multiplicand straight out of the arena instead of from a
+    /// copied row.
     #[inline]
-    pub(crate) fn mul_assign(&mut self, rhs: &Self) {
-        let mut sign_count = 0u32;
-        let mut imag_count = 0u32;
-        let lhs_x = &mut self.xbits.data;
-        let lhs_z = &mut self.zbits.data;
-        let rhs_x = &rhs.xbits.data;
-        let rhs_z = &rhs.zbits.data;
-        for i in 0..lhs_x.as_raw_slice().len() {
-            let a = lhs_x.as_raw_slice()[i];
-            let b = lhs_z.as_raw_slice()[i];
-            let c = rhs_x.as_raw_slice()[i];
-            let d = rhs_z.as_raw_slice()[i];
-            let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
-            let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
-            sign_count += sign.count_ones();
-            imag_count += imag.count_ones();
-            lhs_x.as_raw_mut_slice()[i] = a ^ c;
-            lhs_z.as_raw_mut_slice()[i] = b ^ d;
-        }
-        self.add_phase(((2 * sign_count + imag_count) % 4) as u8);
-        self.add_phase(rhs.phase);
+    pub(crate) fn mul_generator(&mut self, data: &TableauData, half: Half, major: usize) {
+        debug_assert_eq!(data.orientation(), Orientation::RowMajor);
+        let src_x = data.major(half, Plane::X, major);
+        let src_z = data.major(half, Plane::Z, major);
+        let g = blocks::row_multiply(&mut self.x, &mut self.z, src_x, src_z);
+        self.add_phase(g);
+        self.add_phase(data.phase_of(half, major));
     }
 }
 
 // ─── Tableau ──────────────────────────────────────────────────────────────
 
-/// A `2n`-row stabilizer / destabilizer frame.
+/// A `2n`-generator stabilizer / destabilizer frame.
 ///
-/// Rows `0..n` hold the destabilizers, rows `n..2n` the stabilizers. Each row is
-/// a phased Pauli word tracking its X/Z bits and a `ℤ/4` phase. The frame is a
-/// genuine symplectic basis: the `2n` generators satisfy `ω(dᵢ, sⱼ) = δᵢⱼ`, are
-/// linearly independent, start as such and stay such under every Clifford
+/// Generators `0..n` are the destabilizers, `n..2n` the stabilizers. The frame
+/// is a genuine symplectic basis: the `2n` generators satisfy `ω(dᵢ, sⱼ) = δᵢⱼ`,
+/// are linearly independent, start as such and stay such under every Clifford
 /// generator — machine-checked in `lean/PPVM/Tableau/Frame.lean`
 /// (`IsSymplecticFrame`, `frame_linearIndependent`, `isSymplecticFrame_identity`,
 /// `isSymplecticFrame_hAct`/`sAct`/`cnotAct`/`czAct`).
 ///
-/// Design: `traits-2-configuration-and-hashing.md` §"Pauli algebra traits" and
-/// §"Tableau indexability" — the tableau may itself key a classical mixture, so
-/// it implements [`Indexable`] directly, owning the lazy digest cache behind the
-/// contract (which fixes the digest *value*, not the mechanism).
+/// # Storage
+///
+/// The bits live in [`TableauData`]: one aligned contiguous allocation holding
+/// four square `n × n` X/Z quadrants, two bit-packed `ℤ/4` phase planes and the
+/// per-qubit loss plane. The canonical orientation is **column-major** — the
+/// generator dimension is contiguous for a fixed qubit — so a one-qubit Clifford
+/// is two `n`-bit sweeps rather than a walk over all `2n` generators. See
+/// [`crate::storage`] for why, and for the padding invariant equality and
+/// hashing rest on.
+///
+/// Operations that need the opposite orientation (row multiplication, the
+/// measurement projection, the decomposition's phase fold) take a
+/// [`TransposedTableau`] guard, which transposes on construction and restores
+/// the canonical orientation on drop.
+///
+/// Design: `tableau-data-structure.md`; `traits-2-configuration-and-hashing.md`
+/// §"Pauli algebra traits" and §"Tableau indexability" — the tableau may itself
+/// key a classical mixture, so it implements [`Indexable`] directly, owning the
+/// lazy digest cache behind the contract (which fixes the digest *value*, not
+/// the mechanism).
 ///
 /// # Cache representation
 ///
-/// The design sketches the lazy cache as an `OnceLock<u64>`; this uses the
-/// sentinel [`AtomicU64`] that `ppvm-pauli-word-2` already settled on, for the
-/// same measured reason. Every Clifford gate must invalidate, and
-/// `OnceLock::take()` resets `Once`'s state word as well as the payload:
-/// A/B-ing the two representations on the 85-qubit MSD workload (same build,
-/// interleaved, 5 separate processes) moved the new/old ratio from ~1.04 to
-/// ~1.01. The contract is unchanged — lazy, interior-mutable, `Send + Sync`, and
-/// the same finalized digest.
-///
-/// # Examples
-///
-/// ```
-/// use ppvm_tableau_2::Tableau;
-/// use ppvm_traits_2::Clifford;
-///
-/// let mut tab: Tableau = Tableau::new(2);
-/// tab.h(0);
-/// tab.cnot(0, 1);
-/// assert_eq!(tab.n_qubits(), 2);
-/// assert_eq!(tab.stabilizer_rows().count(), 2);
-/// ```
-pub struct Tableau<A: RowStorage = DefaultStorage, H = fxhash::FxBuildHasher> {
-    pub(crate) n_qubits: usize,
-    /// Destabilizers in `0..n`, stabilizers in `n..2n`.
-    pub(crate) data: Vec<Row<A>>,
+/// The design sketches the lazy digest as a `OnceLock<u64>`; this uses the
+/// sentinel [`AtomicU64`] that `ppvm-pauli-word-2` settled on. Same contract
+/// (lazy, interior-mutable, `Send + Sync`, same finalized value), measurably
+/// cheaper to *invalidate* — which every Clifford gate must do.
+pub struct Tableau<H = fxhash::FxBuildHasher> {
+    pub(crate) data: TableauData,
+    /// How many [`TransposedTableau`] guards are currently held. Zero outside a
+    /// guard, which is the only state any public method can be entered in.
+    /// Excluded from equality, hashing and cloning — it is a borrow-lifetime
+    /// fact, not part of the frame's identity.
+    pub(crate) transpose_depth: usize,
     /// Lazy structural digest (Design: §"Lazy hashing and interior mutability").
     /// Holds [`HASH_UNCACHED`] until [`Indexable::key_hash`] first populates it;
     /// every structural mutation resets it through `&mut self`.
@@ -371,30 +300,12 @@ pub struct Tableau<A: RowStorage = DefaultStorage, H = fxhash::FxBuildHasher> {
     pub(crate) _hasher: PhantomData<fn() -> H>,
 }
 
-impl<A: RowStorage, H> Tableau<A, H> {
-    fn new_data(n_qubits: usize) -> Vec<Row<A>> {
-        let mut data: Vec<Row<A>> = Vec::with_capacity(2 * n_qubits);
-        let pw_cache = Row::<A>::new(n_qubits);
-        for i in 0..n_qubits {
-            // destabilizer
-            let mut pw = pw_cache;
-            pw.set(i, Pauli::X);
-            data.push(pw);
-        }
-        for i in 0..n_qubits {
-            // stabilizer
-            let mut pw = pw_cache;
-            pw.set(i, Pauli::Z);
-            data.push(pw);
-        }
-        data
-    }
-
+impl<H> Tableau<H> {
     /// Construct a fresh frame initialised to `|0…0⟩`.
     pub fn new(n_qubits: usize) -> Self {
         Self {
-            n_qubits,
-            data: Self::new_data(n_qubits),
+            data: TableauData::identity(n_qubits),
+            transpose_depth: 0,
             hash_cache: AtomicU64::new(HASH_UNCACHED),
             _hasher: PhantomData,
         }
@@ -402,14 +313,14 @@ impl<A: RowStorage, H> Tableau<A, H> {
 
     /// Restore the identity frame.
     pub fn reset_all(&mut self) {
-        self.data = Self::new_data(self.n_qubits);
+        self.data.reset_to_identity();
         self.invalidate_hash();
     }
 
     /// Number of qubits.
     #[inline]
     pub fn n_qubits(&self) -> usize {
-        self.n_qubits
+        self.data.n_qubits()
     }
 
     /// Clear the lazy digest after a structural mutation.
@@ -421,73 +332,156 @@ impl<A: RowStorage, H> Tableau<A, H> {
         *self.hash_cache.get_mut() = HASH_UNCACHED;
     }
 
-    /// The `(x-plane, z-plane, phase)` triple of every row, destabilizers first.
+    /// The `(x-bits, z-bits, phase)` triple of every generator, destabilizers
+    /// first, each bit vector qubit-indexed.
     ///
-    /// The differential/snapshot view the old crate's tests reach for by
-    /// touching `tab.data[i].word.xbits.data`; exposed as a read-only projection
-    /// so the packed planes themselves stay private.
-    pub fn rows(&self) -> impl Iterator<Item = (A, A, u8)> + '_ {
-        self.data
-            .iter()
-            .map(|r| (r.xbits.data, r.zbits.data, r.phase))
+    /// The differential/snapshot view the tests reach for. Materializing a
+    /// generator out of the column-major arena costs `O(n)` bit gathers, so this
+    /// is a debugging and test surface, not a hot path — the frame's own
+    /// algorithms read columns, or take the [`TransposedTableau`] guard.
+    pub fn rows(&self) -> impl Iterator<Item = (Vec<u64>, Vec<u64>, u8)> + '_ {
+        (0..2 * self.n_qubits()).map(|g| self.row(g))
     }
 
-    /// The stabilizer rows' `(x-plane, z-plane, phase)` triples.
-    pub fn stabilizer_rows(&self) -> impl Iterator<Item = (A, A, u8)> + '_ {
-        self.data[self.n_qubits..]
-            .iter()
-            .map(|r| (r.xbits.data, r.zbits.data, r.phase))
+    /// The stabilizer generators' `(x-bits, z-bits, phase)` triples.
+    pub fn stabilizer_rows(&self) -> impl Iterator<Item = (Vec<u64>, Vec<u64>, u8)> + '_ {
+        let n = self.n_qubits();
+        (n..2 * n).map(|g| self.row(g))
     }
 
-    /// The destabilizer rows' `(x-plane, z-plane, phase)` triples.
-    pub fn destabilizer_rows(&self) -> impl Iterator<Item = (A, A, u8)> + '_ {
-        self.data[..self.n_qubits]
-            .iter()
-            .map(|r| (r.xbits.data, r.zbits.data, r.phase))
+    /// The destabilizer generators' `(x-bits, z-bits, phase)` triples.
+    pub fn destabilizer_rows(&self) -> impl Iterator<Item = (Vec<u64>, Vec<u64>, u8)> + '_ {
+        (0..self.n_qubits()).map(|g| self.row(g))
     }
 
-    /// The Pauli at `(row, qubit)`, destabilizers first.
-    pub fn row_site(&self, row: usize, qubit: usize) -> Pauli {
-        self.data[row].get(qubit)
+    /// Materialize one generator as `(x-bits, z-bits, phase)`.
+    pub fn row(&self, generator: usize) -> (Vec<u64>, Vec<u64>, u8) {
+        let stride = self.data.stride();
+        let mut x = vec![0u64; stride];
+        let mut z = vec![0u64; stride];
+        for q in 0..self.n_qubits() {
+            TableauData::set_bit(&mut x, q, self.data.x_bit(generator, q));
+            TableauData::set_bit(&mut z, q, self.data.z_bit(generator, q));
+        }
+        (x, z, self.data.phase(generator))
     }
 
+    /// The Pauli at `(generator, qubit)`, destabilizers first.
+    pub fn row_site(&self, generator: usize, qubit: usize) -> Pauli {
+        match (
+            self.data.x_bit(generator, qubit),
+            self.data.z_bit(generator, qubit),
+        ) {
+            (false, false) => Pauli::I,
+            (true, false) => Pauli::X,
+            (false, true) => Pauli::Z,
+            (true, true) => Pauli::Y,
+        }
+    }
+
+    /// The `ℤ/4` phase of a generator, destabilizers first.
     #[inline]
-    pub(crate) fn stabilizers(&self) -> &[Row<A>] {
-        &self.data[self.n_qubits..]
+    pub fn row_phase(&self, generator: usize) -> u8 {
+        self.data.phase(generator)
     }
 
+    /// Enter the row-major orientation, or nest inside an enclosing guard.
+    ///
+    /// The manual counterpart of [`TransposedTableau`], for a caller that cannot
+    /// hold the guard's borrow — see `measure.rs`'s `RowGuard`. Pair every call
+    /// with exactly one [`Self::exit_row_major`], from a `Drop`.
     #[inline]
-    pub(crate) fn destabilizers(&self) -> &[Row<A>] {
-        &self.data[..self.n_qubits]
+    pub(crate) fn enter_row_major(&mut self) {
+        if self.transpose_depth == 0 {
+            self.data.transpose_quadrants();
+        }
+        self.transpose_depth += 1;
+    }
+
+    /// Leave the row-major orientation, restoring column-major at depth zero.
+    #[inline]
+    pub(crate) fn exit_row_major(&mut self) {
+        self.transpose_depth -= 1;
+        if self.transpose_depth == 0 {
+            self.data.transpose_quadrants();
+        }
+    }
+
+    /// The frame's X/Z bits as one contiguous byte range, for fingerprinting.
+    #[inline]
+    pub(crate) fn xz_bytes(&self) -> &[u8] {
+        self.data.xz_bytes()
     }
 
     /// First stabilizer anticommuting with `Z_addr0`, if any.
+    ///
+    /// `ω(Z_q, sᵢ) = x_{sᵢ}[q]`, so this is the lowest set bit of the
+    /// stabilizer-X quadrant's column `addr0` — one contiguous scan in the
+    /// canonical orientation, where the replaced layout probed one bit in each
+    /// of `n` separately addressed rows.
     pub(crate) fn find_z_anticommuting_stabilizer(&self, addr0: usize) -> Option<usize> {
-        let (wi, mask) = Row::<A>::site_word(addr0);
-        self.stabilizers()
-            .iter()
-            .position(|stab| stab.x_at_masked(wi, mask))
+        if self.data.orientation() == Orientation::ColumnMajor {
+            let column = self.data.major(Half::Stab, Plane::X, addr0);
+            return blocks::first_set(column).filter(|&i| i < self.n_qubits());
+        }
+        // Under a row guard the same predicate is a strided probe. `O(n)` scalar
+        // reads, against the `O(n²/64)` the caller is under the guard for.
+        (0..self.n_qubits())
+            .find(|&i| TableauData::bit(self.data.major(Half::Stab, Plane::X, i), addr0))
+    }
+
+    /// The anticommutation mask of a single-site Pauli against one half of the
+    /// frame: bit `i` is `ω(P at addr0, gᵢ)`.
+    ///
+    /// `ω(P, g) = x_P·z_g ⊕ z_P·x_g`, so with `P` supported on one site this is
+    /// one of the two columns at `addr0`, or their `XOR` for `Y` — contiguous in
+    /// the canonical orientation, where the replaced code probed the same site
+    /// in each of `n` separately addressed rows.
+    pub(crate) fn anticommutation_column(
+        &self,
+        half: Half,
+        addr0: usize,
+        pauli: Pauli,
+    ) -> Vec<u64> {
+        let mut out = vec![0u64; self.data.stride()];
+        match pauli {
+            Pauli::I => {}
+            Pauli::X => self.data.gather_column(half, Plane::Z, addr0, &mut out),
+            Pauli::Z => self.data.gather_column(half, Plane::X, addr0, &mut out),
+            Pauli::Y => {
+                let mut z = vec![0u64; self.data.stride()];
+                self.data.gather_column(half, Plane::X, addr0, &mut out);
+                self.data.gather_column(half, Plane::Z, addr0, &mut z);
+                for (o, &zw) in out.iter_mut().zip(z.iter()) {
+                    *o ^= zw;
+                }
+            }
+        }
+        out
     }
 
     /// The deterministic (case-b) measurement outcome for `Z_addr0`.
     ///
     /// `±Z_addr0` is a stabilizer; it is recovered as the product of the
     /// stabilizers whose destabilizer partner anticommutes with `Z_addr0`. The
-    /// product must be real — the debug assert pins that, exactly as old.
-    pub(crate) fn get_deterministic_outcome(&self, addr0: usize) -> bool {
-        let destabilizers = self.destabilizers();
-        let stabilizers = self.stabilizers();
-        let n = self.n_qubits;
-        let mut result = Row::<A>::new(n);
-        // Same site on every row, so the word index and mask are hoisted and the
-        // stabilizer partner is zipped rather than re-indexed (both slices are
-        // exactly `n` long, so the pairing is the `i`-th of each).
-        let (wi, mask) = Row::<A>::site_word(addr0);
-        for (destab, stab) in destabilizers.iter().zip(stabilizers.iter()) {
-            if destab.x_at_masked(wi, mask) {
-                result.mul_assign(stab);
+    /// product must be real — the debug assert pins that, exactly as before.
+    ///
+    /// Takes the row guard: the product is a fold of whole generators, which is
+    /// contiguous only in [`Orientation::RowMajor`].
+    pub(crate) fn get_deterministic_outcome(&mut self, addr0: usize) -> bool {
+        let n = self.n_qubits();
+        // The selector is a *column* read, so it is taken before transposing.
+        let selector = self.data.major(Half::Destab, Plane::X, addr0).to_vec();
+        let stride = self.data.stride();
+
+        let mut result = ScratchRow::zeroed(stride);
+        let guard = TransposedTableau::new(self);
+        for i in 0..n {
+            if TableauData::bit(&selector, i) {
+                result.mul_generator(guard.data(), Half::Stab, i);
             }
         }
+        drop(guard);
 
         debug_assert!(
             result.phase == 0 || result.phase == 2,
@@ -506,56 +500,146 @@ impl<A: RowStorage, H> Tableau<A, H> {
     /// machine-checked as `isSymplecticFrame_projectFrame` in
     /// `lean/PPVM/Tableau/Frame.lean` (`projectFrame` is this sweep;
     /// `rowUpdate_eq_ite` is the `xbits[addr0]` conditional multiply).
+    ///
+    /// The two selectors are column reads and the eliminations are row
+    /// multiplies, so the column reads are snapshotted first and the rest runs
+    /// under the [`TransposedTableau`] guard — the same split Stim makes when it
+    /// wraps `collapse_qubit_z` in `TableauTransposedRaii`.
     pub(crate) fn update_tableau_according_to_outcome(
         &mut self,
         addr0: usize,
         q_idx: usize,
         outcome: bool,
     ) {
-        let n = self.n_qubits;
+        let n = self.n_qubits();
         self.invalidate_hash();
-        let (destabilizers, stabilizers) = self.data.split_at_mut(n);
+        let stride = self.data.stride();
+        let mut stab_selector = vec![0u64; stride];
+        let mut destab_selector = vec![0u64; stride];
+        self.data
+            .gather_column(Half::Stab, Plane::X, addr0, &mut stab_selector);
+        self.data
+            .gather_column(Half::Destab, Plane::X, addr0, &mut destab_selector);
 
-        // Copy g_q once before the loop (a register/memcpy copy — this is why
-        // rows must stay `Copy`).
-        let g_q = stabilizers[q_idx];
+        let mut guard = TransposedTableau::new(self);
+        let data = guard.data_mut();
 
-        // One site, all `2n` rows: hoist the word index and mask (module note in
-        // `clifford.rs`) and walk the two halves in lockstep.
-        let (wi, mask) = Row::<A>::site_word(addr0);
-        for (i, (destab, stab)) in destabilizers
-            .iter_mut()
-            .zip(stabilizers.iter_mut())
-            .enumerate()
-        {
+        // The pivot generator, copied once before the loop rewrites its
+        // neighbours — the replaced code's `let g_q = stabilizers[q_idx];`.
+        let mut pivot = ScratchRow::zeroed(stride);
+        pivot
+            .x
+            .copy_from_slice(data.major(Half::Stab, Plane::X, q_idx));
+        pivot
+            .z
+            .copy_from_slice(data.major(Half::Stab, Plane::Z, q_idx));
+        pivot.phase = data.phase_of(Half::Stab, q_idx);
+
+        for i in 0..n {
             if i == q_idx {
                 continue;
             }
-            if stab.x_at_masked(wi, mask) {
-                stab.mul_assign(&g_q);
+            if TableauData::bit(&stab_selector, i) {
+                data.multiply_row_by(Half::Stab, i, &pivot.x, &pivot.z, pivot.phase);
             }
-            if destab.x_at_masked(wi, mask) {
-                destab.mul_assign(&g_q);
+            if TableauData::bit(&destab_selector, i) {
+                data.multiply_row_by(Half::Destab, i, &pivot.x, &pivot.z, pivot.phase);
             }
         }
 
-        destabilizers[q_idx] = g_q;
+        // The pivot becomes the new destabilizer; the new stabilizer is the
+        // measured `±Z_addr0`.
+        data.major_mut(Half::Destab, Plane::X, q_idx)
+            .copy_from_slice(&pivot.x);
+        data.major_mut(Half::Destab, Plane::Z, q_idx)
+            .copy_from_slice(&pivot.z);
+        data.set_phase_of(Half::Destab, q_idx, pivot.phase);
 
-        let stab_q = &mut stabilizers[q_idx];
-        stab_q.xbits = BitArray::ZERO;
-        stab_q.zbits = BitArray::ZERO;
-        stab_q.zbits.set(addr0, true);
-        stab_q.phase = if outcome { 2 } else { 0 };
+        data.major_mut(Half::Stab, Plane::X, q_idx).fill(0);
+        let stab_z = data.major_mut(Half::Stab, Plane::Z, q_idx);
+        stab_z.fill(0);
+        TableauData::set_bit(stab_z, addr0, true);
+        data.set_phase_of(Half::Stab, q_idx, if outcome { 2 } else { 0 });
+    }
+}
+
+// ─── TransposedTableau ────────────────────────────────────────────────────
+
+/// A frame temporarily held in [`Orientation::RowMajor`], where a generator's
+/// bits are contiguous.
+///
+/// Construction transposes the four quadrants; [`Drop`] transposes them back, so
+/// a public method always returns with the frame in its canonical column-major
+/// orientation — including on unwind. The guard borrows `&mut Tableau` for its
+/// whole lifetime, which is also what makes "hashing only ever observes the
+/// canonical orientation" a *borrow-checker* fact rather than a convention: no
+/// shared `&self` read can coexist with the guard.
+///
+/// The direct analogue of Stim's `TableauTransposedRaii`. Row multiplication and
+/// elimination want the opposite grain from gates, and paying one transpose for
+/// a whole batch of them beats fighting the layout on every row.
+/// # Re-entrant
+///
+/// Guards nest. Only the outermost one transposes; inner ones just bump a depth
+/// counter. That is what makes `measure_all` affordable: the transpose is
+/// `O(n²/64)` and so is the elimination it enables, so paying it per
+/// measurement would be a constant-factor disaster (measured at ~27× on a
+/// 1889-qubit `measure_all`). One guard around the whole sweep amortizes it over
+/// `n` measurements, exactly as Stim wraps a run of `collapse_qubit_z` calls in
+/// a single `TableauTransposedRaii`. Everything the inner code reads is
+/// orientation-aware, so it does not care which guard it is under.
+pub(crate) struct TransposedTableau<'a, H> {
+    tableau: &'a mut Tableau<H>,
+}
+
+impl<'a, H> TransposedTableau<'a, H> {
+    /// Transpose into row-major and hold the frame there, unless an enclosing
+    /// guard already has.
+    #[inline]
+    pub(crate) fn new(tableau: &'a mut Tableau<H>) -> Self {
+        if tableau.transpose_depth == 0 {
+            debug_assert_eq!(tableau.data.orientation(), Orientation::ColumnMajor);
+            tableau.data.transpose_quadrants();
+        }
+        tableau.transpose_depth += 1;
+        Self { tableau }
+    }
+
+    /// The row-major arena.
+    #[inline]
+    pub(crate) fn data(&self) -> &TableauData {
+        &self.tableau.data
+    }
+
+    /// The row-major arena, mutably.
+    #[inline]
+    pub(crate) fn data_mut(&mut self) -> &mut TableauData {
+        &mut self.tableau.data
+    }
+}
+
+impl<H> Drop for TransposedTableau<'_, H> {
+    #[inline]
+    fn drop(&mut self) {
+        self.tableau.transpose_depth -= 1;
+        if self.tableau.transpose_depth == 0 {
+            self.tableau.data.transpose_quadrants();
+            debug_assert_eq!(
+                self.tableau.data.orientation(),
+                Orientation::ColumnMajor,
+                "the outermost guard must restore the canonical orientation"
+            );
+        }
     }
 }
 
 /// Hand-written so the digest algorithm `H` — a private representation
 /// parameter that is never a runtime value — does not have to be `Clone`.
-impl<A: RowStorage, H> Clone for Tableau<A, H> {
+impl<H> Clone for Tableau<H> {
     fn clone(&self) -> Self {
         Self {
-            n_qubits: self.n_qubits,
             data: self.data.clone(),
+            transpose_depth: 0,
             hash_cache: AtomicU64::new(self.hash_cache.load(Ordering::Relaxed)),
             _hasher: PhantomData,
         }
@@ -564,26 +648,27 @@ impl<A: RowStorage, H> Clone for Tableau<A, H> {
 
 /// Hand-written for the same reason as [`Clone`]; the digest cache is omitted
 /// because it is not part of the frame's identity.
-impl<A: RowStorage, H> Debug for Tableau<A, H> {
+impl<H> Debug for Tableau<H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tableau")
-            .field("n_qubits", &self.n_qubits)
+            .field("n_qubits", &self.n_qubits())
             .field("data", &self.data)
-            .finish_non_exhaustive()
+            .finish()
     }
 }
 
-impl<A: RowStorage, H> PartialEq for Tableau<A, H> {
-    /// Structural: width and rows. The digest cache is not part of the frame's
-    /// identity.
+impl<H> PartialEq for Tableau<H> {
+    /// Structural: width and bits. The digest cache is not part of the frame's
+    /// identity. Compares the whole arena in bulk, which is sound because
+    /// padding is held at zero (see [`crate::storage`]).
     fn eq(&self, other: &Self) -> bool {
-        self.n_qubits == other.n_qubits && self.data == other.data
+        self.data == other.data
     }
 }
 
-impl<A: RowStorage, H> Eq for Tableau<A, H> {}
+impl<H> Eq for Tableau<H> {}
 
-impl<A: RowStorage, H: BuildHasher + Default> Hash for Tableau<A, H> {
+impl<H: BuildHasher + Default> Hash for Tableau<H> {
     /// Per the [`Indexable`] contract: exactly `write_u64(self.key_hash())`.
     #[inline]
     fn hash<S: Hasher>(&self, state: &mut S) {
@@ -591,7 +676,7 @@ impl<A: RowStorage, H: BuildHasher + Default> Hash for Tableau<A, H> {
     }
 }
 
-impl<A: RowStorage, H: BuildHasher + Default> Indexable for Tableau<A, H> {
+impl<H: BuildHasher + Default> Indexable for Tableau<H> {
     /// The finalized structural digest of the frame.
     ///
     /// Design: §"Tableau indexability" — a tableau may key a classical mixture,
@@ -600,18 +685,19 @@ impl<A: RowStorage, H: BuildHasher + Default> Indexable for Tableau<A, H> {
     /// `H` is passed through a `splitmix64` finalizer so both the low bits (the
     /// hashbrown bucket) and the top 7 (the control tag) avalanche, which is the
     /// property the pass-through storage contract needs.
+    ///
+    /// The digest is taken over the arena's canonical ranges rather than
+    /// generator by generator: zero padding makes the bulk read equivalent, and
+    /// it is the whole reason the frame no longer has to materialize `2n` rows
+    /// to hash itself.
     fn key_hash(&self) -> u64 {
         let cached = self.hash_cache.load(Ordering::Relaxed);
         if cached != HASH_UNCACHED {
             return cached;
         }
         let mut hasher = H::default().build_hasher();
-        hasher.write_usize(self.n_qubits);
-        for row in &self.data {
-            row.xbits.data.hash(&mut hasher);
-            row.zbits.data.hash(&mut hasher);
-            hasher.write_u8(row.phase);
-        }
+        hasher.write_usize(self.n_qubits());
+        self.data.hash(&mut hasher);
         let digest = finalize(hasher.finish());
         self.hash_cache.store(digest, Ordering::Relaxed);
         digest
@@ -874,10 +960,9 @@ impl<I: Bitstring> ppvm_traits_2::Retain<I, Complex64> for Amplitudes<I> {
 /// tab.cnot(0, 1);
 /// assert_eq!(tab.measure(0, &mut rng), tab.measure(1, &mut rng));
 /// ```
-pub struct GeneralizedTableau<A: RowStorage = DefaultStorage, I = usize, H = fxhash::FxBuildHasher>
-{
+pub struct GeneralizedTableau<I = usize, H = fxhash::FxBuildHasher> {
     /// The underlying Clifford frame.
-    pub tableau: Tableau<A, H>,
+    pub tableau: Tableau<H>,
     /// The sparse amplitude vector indexed by bitstrings.
     pub coefficients: Amplitudes<I>,
     /// Per-qubit loss flags.
@@ -911,7 +996,7 @@ pub struct GeneralizedTableau<A: RowStorage = DefaultStorage, I = usize, H = fxh
 /// Hand-written so the digest algorithm `H` need not be `Clone`; `fork` and
 /// every bench's `iter_batched_ref` setup lean on this staying cheap (`2n` rows
 /// plus the support).
-impl<A: RowStorage, I: Clone, H> Clone for GeneralizedTableau<A, I, H> {
+impl<I: Clone, H> Clone for GeneralizedTableau<I, H> {
     fn clone(&self) -> Self {
         Self {
             tableau: self.tableau.clone(),
@@ -928,7 +1013,7 @@ impl<A: RowStorage, I: Clone, H> Clone for GeneralizedTableau<A, I, H> {
     }
 }
 
-impl<A: RowStorage, I: Debug, H> Debug for GeneralizedTableau<A, I, H> {
+impl<I: Debug, H> Debug for GeneralizedTableau<I, H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GeneralizedTableau")
             .field("tableau", &self.tableau)
@@ -940,7 +1025,7 @@ impl<A: RowStorage, I: Debug, H> Debug for GeneralizedTableau<A, I, H> {
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> GeneralizedTableau<I, H> {
     /// Construct a generalized tableau in the `|0…0⟩` state.
     ///
     /// Branches whose coefficient magnitude falls at or below
@@ -981,7 +1066,7 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// Number of qubits.
     #[inline]
     pub fn n_qubits(&self) -> usize {
-        self.tableau.n_qubits
+        self.tableau.n_qubits()
     }
 
     /// All measurement outcomes recorded so far, in order.
@@ -1034,54 +1119,56 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// phase by `2·⟨destab_anticomm, stab_anticomm⟩`, and `frameOp_eq_shiftOp`
     /// confirms this order is the one the downstream per-coefficient formula
     /// ([`compute_phase_with_mask_static`]) is stated for.
-    pub fn compute_decomposition(&self, addr0: usize, pauli: Pauli) -> (u8, I, I) {
+    ///
+    /// # Why this takes `&mut self`
+    ///
+    /// The two anticommutation masks are *column* reads, taken in the canonical
+    /// column-major orientation where they are contiguous. The `ℤ/4` residual,
+    /// by contrast, is a fold of whole generators, contiguous only in
+    /// [`Orientation::RowMajor`] — so the multiply loop runs under the
+    /// [`TransposedTableau`] guard, and the guard needs unique access. Nothing
+    /// logically mutates: the frame is byte-identical on return.
+    pub fn compute_decomposition(&mut self, addr0: usize, pauli: Pauli) -> (u8, I, I) {
+        debug_assert_ne!(pauli, Pauli::I);
         let n = self.n_qubits();
+        let stride = self.tableau.data.stride();
 
-        let mut p_word = Row::<A>::new(n);
+        // `ω(P, g) = x_g[addr0]·z_P ⊕ z_g[addr0]·x_P`, so each half's
+        // anticommutation mask is one contiguous column of the arena. The
+        // replaced code probed the same site on all `2n` separately addressed
+        // rows; the *values*, the visit order and the accumulated phase below
+        // are unchanged.
+        let destab_anticomm = self
+            .tableau
+            .anticommutation_column(Half::Destab, addr0, pauli);
+        let stab_anticomm = self
+            .tableau
+            .anticommutation_column(Half::Stab, addr0, pauli);
+        let destab_anticomm_bits = bits_to_index::<I>(&destab_anticomm, n);
+        let stab_anticomm_bits = bits_to_index::<I>(&stab_anticomm, n);
+
+        let mut p_word = ScratchRow::zeroed(stride);
         p_word.set(addr0, pauli);
 
-        let mut destab_anticomm_bits = I::zero();
-        let mut stab_anticomm_bits = I::zero();
-
-        debug_assert_ne!(pauli, Pauli::I);
-        let pauli_bits = match pauli {
-            Pauli::I => (false, false),
-            Pauli::X => (true, false),
-            Pauli::Y => (true, true),
-            Pauli::Z => (false, true),
-        };
-
-        let stabilizers = self.tableau.stabilizers();
-        let destabilizers = self.tableau.destabilizers();
-        let one = I::one();
-
-        // Both scans probe site `addr0` on all `2n` rows, so the word index and
-        // the single-bit mask are hoisted once (the same move every Clifford
-        // gate makes — module note in `clifford.rs`) and the `i`-th partner row
-        // comes from a `zip` rather than a bounds-checked re-index. Purely a
-        // codegen change: the visit order, the multiplication order and the
-        // accumulated phase are exactly the old crate's.
-        let (wi, x_probe, z_probe) = Row::<A>::site_probe(addr0, pauli_bits);
-
-        for (i, (stab, destab)) in stabilizers.iter().zip(destabilizers.iter()).enumerate() {
-            if !destab.anticommutes_at_probe(wi, x_probe, z_probe) {
-                continue;
+        let guard = TransposedTableau::new(&mut self.tableau);
+        let data = guard.data();
+        for i in 0..n {
+            if TableauData::bit(&destab_anticomm, i) {
+                // The stabilizer is its own inverse up to its phase; rather than
+                // inverting we multiply and divide out the phase squared.
+                let phase = data.phase_of(Half::Stab, i);
+                p_word.mul_generator(data, Half::Stab, i);
+                p_word.add_phase(8 - 2 * phase);
             }
-            destab_anticomm_bits |= one << i;
-            // The stabilizer is its own inverse up to its phase; rather than
-            // inverting we multiply and divide out the phase squared.
-            p_word.mul_assign(stab);
-            p_word.add_phase(8 - 2 * stab.phase);
         }
-
-        for (i, (stab, destab)) in stabilizers.iter().zip(destabilizers.iter()).enumerate() {
-            if !stab.anticommutes_at_probe(wi, x_probe, z_probe) {
-                continue;
+        for i in 0..n {
+            if TableauData::bit(&stab_anticomm, i) {
+                let phase = data.phase_of(Half::Destab, i);
+                p_word.mul_generator(data, Half::Destab, i);
+                p_word.add_phase(8 - 2 * phase);
             }
-            stab_anticomm_bits |= one << i;
-            p_word.mul_assign(destab);
-            p_word.add_phase(8 - 2 * destab.phase);
         }
+        drop(guard);
 
         (p_word.phase, stab_anticomm_bits, destab_anticomm_bits)
     }
@@ -1104,7 +1191,7 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// *running* Z-mask equals the ordered product of the per-site conjugates.
     /// There is no single-qubit oracle for this: the cross term vanishes
     /// identically at weight 1.
-    pub(crate) fn compute_decomposition_word<W>(&self, word: &W) -> (u8, I, I)
+    pub(crate) fn compute_decomposition_word<W>(&mut self, word: &W) -> (u8, I, I)
     where
         W: ppvm_traits_2::Word<Site = Pauli>,
     {
@@ -1128,14 +1215,26 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// Bitmask whose bit `i` is set iff destabilizer `i` has an odd (imaginary)
     /// phase.
     ///
-    /// Computed **once** per gate/measurement (an `O(n)` scan) and then folded
-    /// into the per-coefficient [`compute_phase_with_mask_static`], which is what
-    /// keeps the branching inner loop `O(n + m)` rather than `O(n·m)`.
+    /// Computed **once** per gate/measurement and then folded into the
+    /// per-coefficient [`compute_phase_with_mask_static`], which is what keeps
+    /// the branching inner loop `O(n + m)` rather than `O(n·m)`.
+    ///
+    /// The parity bit of a generator's `ℤ/4` phase has its own bit plane
+    /// ([`crate::storage`]), so the "odd phase" predicate over the whole
+    /// destabilizer half is that plane read verbatim — no per-generator walk.
     pub fn odd_phase_destabilizer_mask(&self) -> I {
+        let n = self.n_qubits();
+        bits_to_index::<I>(self.tableau.data.phase_plane(Half::Destab, false), n)
+    }
+
+    /// The replaced per-generator walk, kept as a test oracle for the bit-plane
+    /// read above.
+    #[cfg(test)]
+    pub(crate) fn odd_phase_destabilizer_mask_by_walk(&self) -> I {
         let mut mask = I::zero();
         let one = I::one();
-        for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
-            if destab.phase % 2 != 0 {
+        for i in 0..self.n_qubits() {
+            if self.tableau.row_phase(i) % 2 != 0 {
                 mask |= one << i;
             }
         }
@@ -1155,11 +1254,11 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
         let zero = I::zero();
         let mut phase = (2 * symplectic_inner(destab_anticomm_bits, basis_index) as u8) % 4;
         let active = basis_index & stab_anticomm_bits;
-        for (i, destab) in self.tableau.destabilizers().iter().enumerate() {
+        for i in 0..self.n_qubits() {
             if active & (one << i) == zero {
                 continue;
             }
-            if destab.phase % 2 != 0 {
+            if self.tableau.row_phase(i) % 2 != 0 {
                 phase = (phase + 2) % 4;
             }
         }
@@ -1406,7 +1505,7 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// this. Applies the same inline absolute cutoff as
     /// [`Self::branch_with_coefficients`].
     pub(crate) fn compute_coefficients_after_pauli_apply(
-        &self,
+        &mut self,
         coefficients: &mut Amplitudes<I>,
         addr0: usize,
         pauli: Pauli,
@@ -1452,72 +1551,111 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
 
 // ─── Fused CZ blocks ──────────────────────────────────────────────────────
 
-impl<A: RowStorage, H> Tableau<A, H> {
+/// The word width the `cz_block` family segments on.
+///
+/// In the replaced layout this was `size_of::<A::Store>() * 8` — the compile-time
+/// storage word — and it decided both *where* a run was split and, for
+/// overlapping runs, *what the answer was*. The frame is runtime-sized now, so
+/// the constant is pinned at 64, which is what every shipped configuration
+/// (`[usize; K]` storage on a 64-bit target) already used.
+const CZ_BLOCK_WORD: usize = BITS_PER_WORD;
+
+impl<H> Tableau<H> {
     /// Apply CZ to `count` pairs at a constant offset — `(base + i, base +
-    /// offset + i)` — as a **single** shift+XOR word operation per row.
+    /// offset + i)` — **simultaneously**, all reads taken before any write.
     ///
-    /// All pairs must live in the same storage word. Replaces `count`
-    /// full `2n`-row sweeps with one.
+    /// The single phase parity replaces `count` sequential `ℤ/4` updates. That
+    /// is sound **only** because the pairs have pairwise-disjoint supports:
+    /// `lean/PPVM/Tableau/Batch.lean` proves `czSeq_phase` under exactly that
+    /// hypothesis, and `czSeq_phase_needs_disjoint` exhibits two overlapping
+    /// pairs on which the batched parity and the per-pair loop **disagree** (a
+    /// pair's sign reads a `z`-bit an earlier pair already rewrote).
     ///
-    /// The single `count_ones() & 1` phase parity replaces `count` sequential
-    /// `ℤ/4` updates. That is sound **only** because the pairs have
-    /// pairwise-disjoint supports: `lean/PPVM/Tableau/Batch.lean` proves
-    /// `czSeq_phase` under exactly that hypothesis, and
-    /// `czSeq_phase_needs_disjoint` exhibits two overlapping pairs on which the
-    /// batched parity and the per-pair loop **disagree** (a pair's sign reads a
-    /// `z`-bit an earlier pair already rewrote).
+    /// # The overlapping case is reproduced, not fixed
     ///
-    /// # Panics
-    ///
-    /// Debug-asserts that all bits are within the same word.
-    #[inline]
+    /// When `offset < count` a qubit is both a control and a target. The
+    /// replaced word kernel combined the two z-deltas with `|`, not `^`
+    /// (`((x >> offset) & mask_c) | ((x << offset) & mask_t)`), which is
+    /// `G-060` in `docs/lean-gap.md`. The delta pass below reproduces that `|`
+    /// exactly. Adjacent-pair brickwork is precisely this case, so "fixing" it
+    /// here would silently change every such circuit's output while the ledger
+    /// is still adjudicating it.
     pub fn cz_block_pairs(&mut self, base: usize, offset: usize, count: usize) {
         if count == 0 {
             return;
         }
         self.invalidate_hash();
-        let bits_per_word = std::mem::size_of::<<A as BitView>::Store>() * 8;
-        let base_bit = base % bits_per_word;
-        let word_idx = base / bits_per_word;
+        let stride = self.data.stride();
+        let mut delta = vec![0u64; stride];
 
-        debug_assert_eq!(
-            (base + offset + count - 1) / bits_per_word,
-            word_idx,
-            "All CZ pairs must be in the same word"
-        );
+        for half in HALVES {
+            // Phase pass: every predicate reads pre-update `z`, so it runs to
+            // completion before the delta pass touches a single z-word.
+            for k in 0..count {
+                let (c, t) = (base + k, base + offset + k);
+                if c == t {
+                    continue;
+                }
+                let (xc, zc, xt, zt, ph) = self.data.gate2_mut(half, c, t);
+                for i in 0..ph.len() {
+                    ph[i] ^= xc[i] & xt[i] & (zc[i] ^ zt[i]);
+                }
+            }
+            if offset == 0 {
+                // Degenerate: control and target coincide, so `x[u] | x[u]`.
+                for u in base..base + count {
+                    delta.copy_from_slice(self.data.major(half, Plane::X, u));
+                    let z = self.data.major_mut(half, Plane::Z, u);
+                    for (zw, &dw) in z.iter_mut().zip(delta.iter()) {
+                        *zw ^= dw;
+                    }
+                }
+                continue;
+            }
 
-        let one = <A as BitView>::Store::one();
-        let zero = <A as BitView>::Store::zero();
-        let count_mask = if count >= bits_per_word {
-            !zero
-        } else {
-            (one << count) - one
-        };
-        let mask_c = count_mask << base_bit;
-        let mask_t = count_mask << (base_bit + offset);
-
-        self.data.iter_mut().for_each(|pw| {
-            let xp = pw.xbits.data.as_raw_mut_slice();
-            let zp = pw.zbits.data.as_raw_mut_slice();
-            let x = xp[word_idx];
-            let z = zp[word_idx];
-
-            // Phase must use the original z, before the update.
-            let xc = (x >> base_bit) & count_mask;
-            let xt = (x >> (base_bit + offset)) & count_mask;
-            let zc = (z >> base_bit) & count_mask;
-            let zt = (z >> (base_bit + offset)) & count_mask;
-            let phase_bits = xc & xt & (zc ^ zt);
-            pw.phase ^= ((phase_bits.count_ones() & 1) as u8) << 1;
-
-            // z[c] ^= x[t], z[t] ^= x[c]
-            let z_delta = ((x >> offset) & mask_c) | ((x << offset) & mask_t);
-            zp[word_idx] = z ^ z_delta;
-        });
+            // Delta pass: `z[u] ^= ctrl_delta(u) | tgt_delta(u)`, where a qubit
+            // acting as a control picks up its partner's x-column and one acting
+            // as a target picks up its control's. `x` is never written, so both
+            // reads are of pre-update values regardless of visit order.
+            for u in base..base + offset + count {
+                let is_control = u < base + count;
+                let is_target = u >= base + offset;
+                if !is_control && !is_target {
+                    continue;
+                }
+                delta.fill(0);
+                if is_control {
+                    for (dw, &xw) in
+                        delta
+                            .iter_mut()
+                            .zip(self.data.major(half, Plane::X, u + offset))
+                    {
+                        *dw |= xw;
+                    }
+                }
+                if is_target {
+                    for (dw, &xw) in
+                        delta
+                            .iter_mut()
+                            .zip(self.data.major(half, Plane::X, u - offset))
+                    {
+                        *dw |= xw;
+                    }
+                }
+                let z = self.data.major_mut(half, Plane::Z, u);
+                for (zw, &dw) in z.iter_mut().zip(delta.iter()) {
+                    *zw ^= dw;
+                }
+            }
+        }
     }
 
     /// Apply CZ to `count` pairs whose controls and targets live in *different*
-    /// storage words.
+    /// `CZ_BLOCK_WORD`-sized index words.
+    ///
+    /// Distinct words mean the control set and the target set are disjoint, so
+    /// every qubit appears in exactly one pair and the simultaneous form and the
+    /// sequential loop coincide — `czSeq_phase`'s disjointness hypothesis holds.
     #[inline]
     pub fn cz_block_pairs_cross_word(
         &mut self,
@@ -1530,40 +1668,18 @@ impl<A: RowStorage, H> Tableau<A, H> {
         if count == 0 {
             return;
         }
-        self.invalidate_hash();
-        let one = <A as BitView>::Store::one();
-        let zero = <A as BitView>::Store::zero();
-        let bits_per_word = std::mem::size_of::<<A as BitView>::Store>() * 8;
-
-        debug_assert!(base_bit_c + count <= bits_per_word);
-        debug_assert!(base_bit_t + count <= bits_per_word);
+        debug_assert!(base_bit_c + count <= CZ_BLOCK_WORD);
+        debug_assert!(base_bit_t + count <= CZ_BLOCK_WORD);
         debug_assert_ne!(word_c, word_t);
-
-        let count_mask = if count >= bits_per_word {
-            !zero
-        } else {
-            (one << count) - one
-        };
-
-        self.data.iter_mut().for_each(|pw| {
-            let xp = pw.xbits.data.as_raw_mut_slice();
-            let zp = pw.zbits.data.as_raw_mut_slice();
-
-            let xc = (xp[word_c] >> base_bit_c) & count_mask;
-            let xt = (xp[word_t] >> base_bit_t) & count_mask;
-            let zc = (zp[word_c] >> base_bit_c) & count_mask;
-            let zt = (zp[word_t] >> base_bit_t) & count_mask;
-
-            let phase_bits = xc & xt & (zc ^ zt);
-            pw.phase ^= ((phase_bits.count_ones() & 1) as u8) << 1;
-
-            zp[word_c] = zp[word_c] ^ (xt << base_bit_c);
-            zp[word_t] = zp[word_t] ^ (xc << base_bit_t);
-        });
+        for k in 0..count {
+            let c = word_c * CZ_BLOCK_WORD + base_bit_c + k;
+            let t = word_t * CZ_BLOCK_WORD + base_bit_t + k;
+            ppvm_traits_2::Clifford::cz(self, c, t);
+        }
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> GeneralizedTableau<I, H> {
     /// Loss-aware [`Tableau::cz_block_pairs`]: falls back to a per-pair `cz`
     /// loop (skipping lost pairs) when any qubit in the range is lost.
     pub fn cz_block_pairs(&mut self, base: usize, offset: usize, count: usize) {
@@ -1591,10 +1707,9 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
         base_bit_t: usize,
         count: usize,
     ) {
-        let bits_per_word = std::mem::size_of::<<A as BitView>::Store>() * 8;
         let any_lost = (0..count).any(|i| {
-            let c = word_c * bits_per_word + base_bit_c + i;
-            let t = word_t * bits_per_word + base_bit_t + i;
+            let c = word_c * CZ_BLOCK_WORD + base_bit_c + i;
+            let t = word_t * CZ_BLOCK_WORD + base_bit_t + i;
             self.is_lost[c] || self.is_lost[t]
         });
         if !any_lost {
@@ -1602,8 +1717,8 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
                 .cz_block_pairs_cross_word(word_c, base_bit_c, word_t, base_bit_t, count);
         } else {
             for i in 0..count {
-                let c = word_c * bits_per_word + base_bit_c + i;
-                let t = word_t * bits_per_word + base_bit_t + i;
+                let c = word_c * CZ_BLOCK_WORD + base_bit_c + i;
+                let t = word_t * CZ_BLOCK_WORD + base_bit_t + i;
                 if !self.is_lost[c] && !self.is_lost[t] {
                     ppvm_traits_2::Clifford::cz(&mut self.tableau, c, t);
                 }
@@ -1614,10 +1729,15 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// Apply CZ to `count` pairs `(control_base + i, target_base + i)`.
     ///
     /// The high-level entry point for a fused block of CZs: splits the run at
-    /// storage-word boundaries internally and dispatches each segment to
+    /// `CZ_BLOCK_WORD` boundaries and dispatches each segment to
     /// [`Self::cz_block_pairs`] (same word) or
     /// [`Self::cz_block_pairs_cross_word`] (straddling two). CZ is symmetric, so
     /// the two bases may be passed in either order.
+    ///
+    /// The segmentation is kept even though the layout no longer has a
+    /// "storage word": it is observable. Where a run is split decides which
+    /// pairs land in the same simultaneous batch, and for an overlapping run
+    /// that changes the answer (see [`Tableau::cz_block_pairs`]).
     pub fn cz_block(&mut self, control_base: usize, target_base: usize, count: usize) {
         if count == 0 {
             return;
@@ -1628,14 +1748,13 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
         } else {
             (target_base, control_base)
         };
-        let bits_per_word = std::mem::size_of::<<A as BitView>::Store>() * 8;
         let mut i = 0;
         while i < count {
             let (c, t) = (lo + i, hi + i);
-            let (wc, bc) = (c / bits_per_word, c % bits_per_word);
-            let (wt, bt) = (t / bits_per_word, t % bits_per_word);
+            let (wc, bc) = (c / CZ_BLOCK_WORD, c % CZ_BLOCK_WORD);
+            let (wt, bt) = (t / CZ_BLOCK_WORD, t % CZ_BLOCK_WORD);
             // Longest run before either index crosses into the next word.
-            let run = (bits_per_word - bc).min(bits_per_word - bt).min(count - i);
+            let run = (CZ_BLOCK_WORD - bc).min(CZ_BLOCK_WORD - bt).min(count - i);
             if wc == wt {
                 self.cz_block_pairs(c, t - c, run);
             } else {
@@ -1651,9 +1770,9 @@ mod tests {
     use super::*;
     use ppvm_traits_2::{Clifford, RotationOne};
 
-    type TestTableau = GeneralizedTableau<u64, usize>;
+    type TestTableau = GeneralizedTableau<usize>;
 
-    fn snapshot<A: RowStorage, H>(tab: &Tableau<A, H>) -> Vec<(A, A, u8)> {
+    fn snapshot<H>(tab: &Tableau<H>) -> Vec<(Vec<u64>, Vec<u64>, u8)> {
         tab.rows().collect()
     }
 
@@ -1715,6 +1834,30 @@ mod tests {
         }
     }
 
+    /// The odd-phase mask is now the low phase plane read verbatim rather than a
+    /// per-generator walk. This pins the two against each other on a frame whose
+    /// destabilizers carry every `ℤ/4` residue.
+    #[test]
+    fn odd_phase_mask_bit_plane_matches_the_generator_walk() {
+        for n in [1usize, 4, 65, 70] {
+            let mut tab: GeneralizedTableau<u128> = GeneralizedTableau::new(n, 1e-12);
+            for q in 0..n {
+                tab.tableau.h(q);
+                if q % 2 == 0 {
+                    tab.tableau.s(q);
+                }
+                if q % 3 == 0 && q + 1 < n {
+                    tab.tableau.cnot(q, q + 1);
+                }
+            }
+            assert_eq!(
+                tab.odd_phase_destabilizer_mask(),
+                tab.odd_phase_destabilizer_mask_by_walk(),
+                "n = {n}"
+            );
+        }
+    }
+
     // ─── cz_block family ──────────────────────────────────────────────
 
     #[test]
@@ -1765,7 +1908,7 @@ mod tests {
     fn cz_block_matches_individual_across_word_boundary() {
         // (34,51)..(46,63) sits in word 0; (47,64)..(50,67) straddles.
         let n = 85;
-        let mut tab1: GeneralizedTableau<[u64; 2], u128> = GeneralizedTableau::new(n, 1e-12);
+        let mut tab1: GeneralizedTableau<u128> = GeneralizedTableau::new(n, 1e-12);
         for i in 0..n {
             tab1.h(i);
         }
@@ -1779,7 +1922,7 @@ mod tests {
         assert_eq!(snapshot(&tab1.tableau), snapshot(&tab2.tableau));
 
         // CZ is symmetric: reversed bases must agree.
-        let mut tab3: GeneralizedTableau<[u64; 2], u128> = GeneralizedTableau::new(n, 1e-12);
+        let mut tab3: GeneralizedTableau<u128> = GeneralizedTableau::new(n, 1e-12);
         for i in 0..n {
             tab3.h(i);
         }

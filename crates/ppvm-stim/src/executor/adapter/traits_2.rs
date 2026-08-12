@@ -4,7 +4,7 @@
 use ppvm_tableau_2::prelude::{
     Bitstring, Clifford, CliffordBatch, CliffordExtensions, CliffordExtensionsBatch,
     CorrelatedLossChannel, Depolarizing, Depolarizing2, GeneralizedTableau, LossChannel, Measure,
-    PauliError, Reset, RotationOne, RowStorage, TGate, TwoQubitPauliError, U3Gate,
+    PauliError, Reset, RotationOne, TGate, TwoQubitPauliError, U3Gate,
 };
 
 use super::StimTableau;
@@ -31,12 +31,14 @@ macro_rules! batch {
     };
 }
 
-impl<A, I, H> StimTableau for GeneralizedTableau<A, I, H>
+impl<I, H> StimTableau for GeneralizedTableau<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
 {
-    type Config = A;
+    // The `-2` frame is runtime-sized, so it has no storage-width config to
+    // name. The selector's `C` slot is therefore `()` for this backend; see
+    // `adapter/mod.rs`.
+    type Config = ();
     type Index = I;
     type Coefficients = H;
 
@@ -133,7 +135,7 @@ where
         GeneralizedTableau::measure_noisy(self, q, p, rng)
     }
     fn flip_with_prob<R: rand::Rng + ?Sized>(&mut self, bit: bool, p: f64, rng: &mut R) -> bool {
-        GeneralizedTableau::<A, I, H>::flip_with_prob(bit, p, rng)
+        GeneralizedTableau::<I, H>::flip_with_prob(bit, p, rng)
     }
     fn measurement_record(&self) -> &[Option<bool>] {
         self.current_measurement_record()

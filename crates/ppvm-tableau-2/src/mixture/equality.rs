@@ -4,11 +4,11 @@
 use num::complex::Complex64;
 use ppvm_traits_2::{Clifford, Pauli};
 
-use crate::{Bitstring, GeneralizedTableau, RowStorage};
+use crate::{Bitstring, GeneralizedTableau};
 
-fn amplitudes_equal<I: Bitstring>(
-    left: &GeneralizedTableau<impl RowStorage, I, impl Sized>,
-    right: &GeneralizedTableau<impl RowStorage, I, impl Sized>,
+fn amplitudes_equal<I: Bitstring, H>(
+    left: &GeneralizedTableau<I, H>,
+    right: &GeneralizedTableau<I, H>,
 ) -> bool {
     if left.coefficients.len() != right.coefficients.len() {
         return false;
@@ -20,9 +20,9 @@ fn amplitudes_equal<I: Bitstring>(
     })
 }
 
-pub(crate) fn structurally_equal<A: RowStorage, I: Bitstring, H>(
-    left: &GeneralizedTableau<A, I, H>,
-    right: &GeneralizedTableau<A, I, H>,
+pub(crate) fn structurally_equal<I: Bitstring, H>(
+    left: &GeneralizedTableau<I, H>,
+    right: &GeneralizedTableau<I, H>,
 ) -> bool {
     left.is_lost == right.is_lost
         && left.tableau.rows().eq(right.tableau.rows())
@@ -50,8 +50,8 @@ pub(crate) enum Mutation {
     },
 }
 
-pub(crate) fn apply_mutation<A: RowStorage, I: Bitstring, H>(
-    tab: &mut GeneralizedTableau<A, I, H>,
+pub(crate) fn apply_mutation<I: Bitstring, H>(
+    tab: &mut GeneralizedTableau<I, H>,
     mutation: Mutation,
 ) {
     match mutation {
@@ -90,9 +90,9 @@ pub(crate) fn apply_mutation<A: RowStorage, I: Bitstring, H>(
     }
 }
 
-pub(crate) fn structurally_equal_mutated<A: RowStorage, I: Bitstring, H>(
-    existing: &GeneralizedTableau<A, I, H>,
-    parent: &GeneralizedTableau<A, I, H>,
+pub(crate) fn structurally_equal_mutated<I: Bitstring, H>(
+    existing: &GeneralizedTableau<I, H>,
+    parent: &GeneralizedTableau<I, H>,
     mutation: Mutation,
 ) -> bool {
     let loss_equal = match mutation {

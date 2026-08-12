@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use ppvm_tableau_2::{Bitstring, GeneralizedTableau, RowStorage};
+use ppvm_tableau_2::{Bitstring, GeneralizedTableau};
 use ppvm_traits_2::{
     AsymmetricLossChannel, Clifford, CorrelatedLossChannel, Depolarizing, Depolarizing2,
     LossChannel, Measure, PauliError, Reset, ResetLossChannel, TwoQubitPauliError,
@@ -10,9 +10,9 @@ use rand::{Rng, RngExt};
 
 use super::super::NewDriver;
 
-type Driven<A, I, H> = NewDriver<GeneralizedTableau<A, I, H>>;
+type Driven<I, H> = NewDriver<GeneralizedTableau<I, H>>;
 
-impl<A: RowStorage, I: Bitstring, H> Driven<A, I, H> {
+impl<I: Bitstring, H> Driven<I, H> {
     /// Preserve the old generalized-tableau stream in differential workloads.
     ///
     /// The migrated core intentionally skips deterministic probability draws.
@@ -93,7 +93,7 @@ impl<A: RowStorage, I: Bitstring, H> Driven<A, I, H> {
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> Measure for Driven<A, I, H> {
+impl<I: Bitstring, H> Measure for Driven<I, H> {
     fn measure<R: Rng + ?Sized>(&mut self, q: usize, _rng: &mut R) -> Option<bool> {
         Driven::measure(self, q)
     }
@@ -107,19 +107,19 @@ impl<A: RowStorage, I: Bitstring, H> Measure for Driven<A, I, H> {
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> Reset for Driven<A, I, H> {
+impl<I: Bitstring, H> Reset for Driven<I, H> {
     fn reset<R: Rng + ?Sized>(&mut self, q: usize, _rng: &mut R) {
         Driven::reset(self, q);
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> PauliError<f64> for Driven<A, I, H> {
+impl<I: Bitstring, H> PauliError<f64> for Driven<I, H> {
     fn pauli_error<R: Rng + ?Sized>(&mut self, q: usize, p: [f64; 3], _rng: &mut R) {
         self.tab.pauli_error(q, p, &mut self.rng);
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> TwoQubitPauliError<f64> for Driven<A, I, H> {
+impl<I: Bitstring, H> TwoQubitPauliError<f64> for Driven<I, H> {
     fn two_qubit_pauli_error<R: Rng + ?Sized>(
         &mut self,
         a: usize,
@@ -131,25 +131,25 @@ impl<A: RowStorage, I: Bitstring, H> TwoQubitPauliError<f64> for Driven<A, I, H>
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> Depolarizing<f64> for Driven<A, I, H> {
+impl<I: Bitstring, H> Depolarizing<f64> for Driven<I, H> {
     fn depolarize1<R: Rng + ?Sized>(&mut self, q: usize, p: f64, _rng: &mut R) {
         self.tab.depolarize1(q, p, &mut self.rng);
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> Depolarizing2<f64> for Driven<A, I, H> {
+impl<I: Bitstring, H> Depolarizing2<f64> for Driven<I, H> {
     fn depolarize2<R: Rng + ?Sized>(&mut self, a: usize, b: usize, p: f64, _rng: &mut R) {
         self.tab.depolarize2(a, b, p, &mut self.rng);
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> LossChannel<f64> for Driven<A, I, H> {
+impl<I: Bitstring, H> LossChannel<f64> for Driven<I, H> {
     fn loss_channel<R: Rng + ?Sized>(&mut self, q: usize, p: f64, _rng: &mut R) {
         self.tab.loss_channel(q, p, &mut self.rng);
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> AsymmetricLossChannel<f64> for Driven<A, I, H> {
+impl<I: Bitstring, H> AsymmetricLossChannel<f64> for Driven<I, H> {
     fn asymmetric_loss_channel<R: Rng + ?Sized>(
         &mut self,
         q: usize,
@@ -161,7 +161,7 @@ impl<A: RowStorage, I: Bitstring, H> AsymmetricLossChannel<f64> for Driven<A, I,
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> CorrelatedLossChannel<f64> for Driven<A, I, H> {
+impl<I: Bitstring, H> CorrelatedLossChannel<f64> for Driven<I, H> {
     fn correlated_loss_channel<R: Rng + ?Sized>(
         &mut self,
         a: usize,
@@ -173,7 +173,7 @@ impl<A: RowStorage, I: Bitstring, H> CorrelatedLossChannel<f64> for Driven<A, I,
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> ResetLossChannel for Driven<A, I, H> {
+impl<I: Bitstring, H> ResetLossChannel for Driven<I, H> {
     fn reset_loss_channel(&mut self, q: usize) {
         self.tab.reset_loss_channel(q);
     }

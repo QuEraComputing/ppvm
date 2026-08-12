@@ -59,6 +59,34 @@ pub struct NewDriver<T> {
     rng: SmallRng,
 }
 
+/// Repack a packed bit plane into the canonical qubit-indexed, 64-bit-per-word
+/// form both engines' row snapshots are compared in.
+///
+/// The two engines no longer share a storage width: the `-2` frame is
+/// runtime-sized, while the legacy one is a compile-time blob whose limb may be
+/// a `u8`. Copying limb-for-limb into `u64`s would therefore compare an
+/// 8-bit-limbed plane against a 64-bit-limbed one and report a mismatch even
+/// when every bit agrees. Trailing zero words are trimmed so two planes of the
+/// same logical content compare equal regardless of how much padding each
+/// engine carries.
+fn repack_bits<T: num::PrimInt>(limbs: &[T]) -> Vec<u64> {
+    let limb_bits = std::mem::size_of::<T>() * 8;
+    let mut out = vec![0u64; (limbs.len() * limb_bits).div_ceil(64)];
+    for (i, &limb) in limbs.iter().enumerate() {
+        let value = limb.to_u64().expect("bit-plane limb fits a u64");
+        for b in 0..limb_bits {
+            if value >> b & 1 == 1 {
+                let bit = i * limb_bits + b;
+                out[bit / 64] |= 1u64 << (bit % 64);
+            }
+        }
+    }
+    while out.last() == Some(&0) {
+        out.pop();
+    }
+    out
+}
+
 impl<T> std::ops::Deref for NewDriver<T> {
     type Target = T;
 
@@ -73,9 +101,8 @@ impl<T> std::ops::DerefMut for NewDriver<T> {
     }
 }
 
-impl<A, I, H> NewDriver<NewGeneralizedTableau<A, I, H>>
+impl<I, H> NewDriver<NewGeneralizedTableau<I, H>>
 where
-    A: ppvm_tableau_2::RowStorage,
     I: ppvm_tableau_2::Bitstring,
 {
     pub fn new(n_qubits: usize, threshold: f64) -> Self {
@@ -161,18 +188,22 @@ where
     }
 }
 
-/// NEW 85-qubit MSD / fused-T configuration, storage-matched to [`OldWide`].
-pub type NewWide = NewDriver<NewGeneralizedTableau<[usize; 2], u128>>;
+/// NEW 85-qubit MSD / fused-T configuration. The frame is runtime-sized now,
+/// so only the branch index is still a type parameter; the storage width that
+/// used to be matched against [`OldWide`] no longer exists.
+pub type NewWide = NewDriver<NewGeneralizedTableau<u128>>;
 
 /// OLD rot2-brickwork configuration (`[u8; 8]` storage, `usize` index).
 pub type OldNarrow = OldGeneralizedTableau<ByteFxHashF64<8>, usize>;
-/// NEW rot2-brickwork configuration, storage-matched to [`OldNarrow`].
-pub type NewNarrow = NewDriver<NewGeneralizedTableau<[u8; 8], usize>>;
+/// NEW rot2-brickwork configuration.
+pub type NewNarrow = NewDriver<NewGeneralizedTableau<usize>>;
 
 /// OLD scaling-sweep configuration (`[usize; 2]` storage, `usize` index).
 pub type OldScaling = OldGeneralizedTableau<Byte8F64<2>, usize>;
 /// NEW scaling-sweep configuration, storage-matched to [`OldScaling`].
-pub type NewScaling = NewDriver<NewGeneralizedTableau<[usize; 2], usize>>;
+/// NEW scaling-sweep configuration. Identical to [`NewNarrow`] now that the
+/// frame carries no storage width — the two used to differ only in that.
+pub type NewScaling = NewNarrow;
 
 /// A `(x-plane, z-plane, phase)` snapshot of one tableau row, normalized to
 /// `Vec<u64>` planes so the OLD `[usize; N]` / `[u8; N]` rows and the NEW ones
@@ -315,9 +346,9 @@ pub trait Driver {
     /// Per-qubit loss flags.
     fn lost(&self) -> Vec<bool>;
     /// `⟨Z_q⟩`, non-destructively.
-    fn z_expectation(&self, q: usize) -> f64;
+    fn z_expectation(&mut self, q: usize) -> f64;
     /// `⟨ψ|P|ψ⟩` for the Pauli string `word` (e.g. `"ZZ"`).
-    fn expectation_str(&self, word: &str) -> f64;
+    fn expectation_str(&mut self, word: &str) -> f64;
     /// The next `f64` from the state's RNG (drains the stream — test-only, used
     /// to prove two runs left the stream in the same place).
     fn peek_rng_f64(&mut self) -> f64;
@@ -495,8 +526,8 @@ macro_rules! impl_old_driver {
                     .iter()
                     .map(|r| {
                         (
-                            r.word.xbits.data.iter().map(|&w| w as u64).collect(),
-                            r.word.zbits.data.iter().map(|&w| w as u64).collect(),
+                            repack_bits(r.word.xbits.data.as_ref()),
+                            repack_bits(r.word.zbits.data.as_ref()),
                             r.phase,
                         )
                     })
@@ -517,10 +548,10 @@ macro_rules! impl_old_driver {
             fn lost(&self) -> Vec<bool> {
                 self.is_lost.clone()
             }
-            fn z_expectation(&self, q: usize) -> f64 {
+            fn z_expectation(&mut self, q: usize) -> f64 {
                 OldGeneralizedTableau::z_expectation(self, q)
             }
-            fn expectation_str(&self, word: &str) -> f64 {
+            fn expectation_str(&mut self, word: &str) -> f64 {
                 let w: ppvm_pauli_word::word::PauliWord<$store> = word.into();
                 OldGeneralizedTableau::expectation(self, &w)
             }
@@ -544,13 +575,13 @@ macro_rules! impl_new_driver {
         impl Driver for $ty {
             fn new_seeded(n_qubits: usize, threshold: f64, seed: u64) -> Self {
                 Self {
-                    tab: NewGeneralizedTableau::<$store, $idx>::new(n_qubits, threshold),
+                    tab: NewGeneralizedTableau::<$idx>::new(n_qubits, threshold),
                     rng: SmallRng::seed_from_u64(seed),
                 }
             }
             fn new_entropy(n_qubits: usize, threshold: f64) -> Self {
                 Self {
-                    tab: NewGeneralizedTableau::<$store, $idx>::new(n_qubits, threshold),
+                    tab: NewGeneralizedTableau::<$idx>::new(n_qubits, threshold),
                     rng: rand::make_rng(),
                 }
             }
@@ -728,13 +759,7 @@ macro_rules! impl_new_driver {
                 self.tab
                     .tableau
                     .rows()
-                    .map(|(x, z, p)| {
-                        (
-                            x.iter().map(|&w| w as u64).collect(),
-                            z.iter().map(|&w| w as u64).collect(),
-                            p,
-                        )
-                    })
+                    .map(|(x, z, p)| (repack_bits(&x), repack_bits(&z), p))
                     .collect()
             }
             fn coeffs(&self) -> Vec<(u128, Complex64)> {
@@ -753,10 +778,10 @@ macro_rules! impl_new_driver {
             fn lost(&self) -> Vec<bool> {
                 self.tab.is_lost.clone()
             }
-            fn z_expectation(&self, q: usize) -> f64 {
+            fn z_expectation(&mut self, q: usize) -> f64 {
                 self.tab.z_expectation(q)
             }
-            fn expectation_str(&self, word: &str) -> f64 {
+            fn expectation_str(&mut self, word: &str) -> f64 {
                 let w: ppvm_pauli_word_2::PauliWord<$store> = word.into();
                 self.tab.expectation(&w)
             }
@@ -768,8 +793,7 @@ macro_rules! impl_new_driver {
 }
 
 impl_new_driver!(NewWide, [usize; 2], u128);
-impl_new_driver!(NewNarrow, [u8; 8], usize);
-impl_new_driver!(NewScaling, [usize; 2], usize);
+impl_new_driver!(NewNarrow, [usize; 2], usize);
 
 // ===========================================================================
 // Integration-baseline workloads — written once, replayed on both engines

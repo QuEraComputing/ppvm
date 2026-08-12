@@ -24,7 +24,7 @@ use ppvm_tableau_2::Tableau;
 use ppvm_traits_2::{Clifford, CliffordExtensions, Indexable};
 use rand::RngExt;
 
-type Tab = Tableau<[usize; 2]>;
+type Tab = Tableau;
 
 /// Records every `Hasher` call so the test can assert the exact write sequence.
 #[derive(Default)]

@@ -1,13 +1,24 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(feature = "legacy")]
 use ppvm_stim::backend::config::indexmap::ByteFxHashF64;
 use ppvm_stim::backend::prelude::*;
 use ppvm_stim::{execute, execute_with_rng, parse_extended};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
+// The legacy frame is parameterized by a packed-blob storage width; the `-2`
+
+// frame is runtime-sized and has none, so the alias differs by backend.
+
+#[cfg(feature = "legacy")]
+
 type Tab = GeneralizedTableau<ByteFxHashF64<1>, usize>;
+
+#[cfg(feature = "traits-2")]
+
+type Tab = GeneralizedTableau<usize>;
 
 fn seeded_tab(n_qubits: usize, seed: u64) -> Tab {
     #[cfg(feature = "legacy")]
@@ -207,10 +218,7 @@ fn measurement_buffer_is_pre_sized() {
 fn sample_runs_n_shots_each_with_fresh_tableau() {
     use ppvm_stim::sample;
     let prog = parse_extended("X 0\nM 0").unwrap();
-    let shots = sample::<_, _, _, _>(&prog, 5, |_| {
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new(1, 1e-10)
-    })
-    .unwrap();
+    let shots = sample::<_, _, _, _>(&prog, 5, |_| Tab::new(1, 1e-10)).unwrap();
     assert_eq!(shots.len(), 5);
     for shot in &shots {
         assert_eq!(shot, &vec![Some(true)]);
@@ -221,10 +229,7 @@ fn sample_runs_n_shots_each_with_fresh_tableau() {
 fn sample_zero_shots_returns_empty() {
     use ppvm_stim::sample;
     let prog = parse_extended("X 0\nM 0").unwrap();
-    let shots = sample::<_, _, _, _>(&prog, 0, |_| {
-        GeneralizedTableau::<ByteFxHashF64<1>, usize>::new(1, 1e-10)
-    })
-    .unwrap();
+    let shots = sample::<_, _, _, _>(&prog, 0, |_| Tab::new(1, 1e-10)).unwrap();
     assert!(shots.is_empty());
 }
 

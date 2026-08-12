@@ -149,12 +149,12 @@ fn bounded_enumeration_matches_old_in_order() {
 #[test]
 fn tableau_enumeration_rejects_stars_like_old() {
     let old: OldNarrow = OldTableau::new(3, 1e-12);
-    let new: NewNarrow = NewNarrow::new(3, 1e-12);
+    let mut new: NewNarrow = NewNarrow::new(3, 1e-12);
     let old_pattern = OldPattern::parse("Z?*").unwrap();
     let new_pattern = NewPattern::parse("Z?*").unwrap();
 
     assert!(catch_unwind(AssertUnwindSafe(|| old.trace(&old_pattern))).is_err());
-    assert!(catch_unwind(AssertUnwindSafe(|| new.trace(&new_pattern))).is_err());
+    assert!(catch_unwind(AssertUnwindSafe(|| new.trace::<[u8; 8]>(&new_pattern))).is_err());
 }
 
 fn assert_match_parity(pattern: &str, word: &str, expected: bool) {

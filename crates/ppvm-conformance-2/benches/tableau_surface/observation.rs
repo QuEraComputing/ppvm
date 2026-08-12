@@ -5,6 +5,24 @@ use criterion::Criterion;
 
 use super::*;
 
+/// `read_pair!` for readers the new engine can only serve through `&mut`.
+///
+/// `expectation` / `z_expectation` / `trace` re-orient the frame internally —
+/// the residual phase is a fold of whole generators, contiguous only under the
+/// row guard — so they take `&mut self` even though the frame is byte-identical
+/// on return. The transpose pair is therefore part of what this row measures,
+/// which is deliberate: it is the cost the caller actually pays.
+macro_rules! read_pair_new_mut {
+    ($group:expr, $name:expr, $old:expr, $new:expr, $old_op:expr, $new_op:expr) => {{
+        $group.bench_function(concat!($name, "/old"), |b| {
+            b.iter(|| std::hint::black_box(($old_op)(&$old)))
+        });
+        $group.bench_function(concat!($name, "/new"), |b| {
+            b.iter(|| std::hint::black_box(($new_op)(&mut $new)))
+        });
+    }};
+}
+
 macro_rules! read_pair {
     ($group:expr, $name:expr, $old:expr, $new:expr, $old_op:expr, $new_op:expr) => {{
         $group.bench_function(concat!($name, "/old"), |b| {
@@ -19,7 +37,7 @@ macro_rules! read_pair {
 pub fn bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("tableau-surface/observation");
     let (old_b, new_b) = prepared_bare(96);
-    let (old_g, new_g) = prepared_gen(96);
+    let (old_g, mut new_g) = prepared_gen(96);
 
     assert_eq!(old_g.n_qubits(), new_g.n_qubits());
     assert_eq!(
@@ -47,13 +65,13 @@ pub fn bench(c: &mut Criterion) {
         old_g.compute_decomposition(65, ppvm_traits::Pauli::Z),
         new_g.compute_decomposition(65, ppvm_traits_2::Pauli::Z)
     );
-    read_pair!(
+    read_pair_new_mut!(
         group,
         "generalized/compute_decomposition",
         old_g,
         new_g,
         |t: &OldGen| t.compute_decomposition(65, ppvm_traits::Pauli::Z),
-        |t: &NewGen| t.compute_decomposition(65, ppvm_traits_2::Pauli::Z)
+        |t: &mut NewGen| t.compute_decomposition(65, ppvm_traits_2::Pauli::Z)
     );
     assert_eq!(
         old_g.odd_phase_destabilizer_mask(),
@@ -74,37 +92,40 @@ pub fn bench(c: &mut Criterion) {
     let oe = old_g.expectation(&old_word);
     let ne = new_g.expectation(&new_word);
     assert!((oe - ne).abs() <= 1e-10);
-    read_pair!(
+    read_pair_new_mut!(
         group,
         "generalized/expectation",
         old_g,
         new_g,
         |t: &OldGen| t.expectation(&old_word),
-        |t: &NewGen| t.expectation(&new_word)
+        |t: &mut NewGen| t.expectation(&new_word)
     );
     let (oz, nz) = (old_g.z_expectation(65), new_g.z_expectation(65));
     assert!((oz - nz).abs() <= 1e-10);
-    read_pair!(
+    read_pair_new_mut!(
         group,
         "generalized/z_expectation",
         old_g,
         new_g,
         |t: &OldGen| t.z_expectation(65),
-        |t: &NewGen| t.z_expectation(65)
+        |t: &mut NewGen| t.z_expectation(65)
     );
 
     let old_pattern =
         ppvm_pauli_word::pattern::PauliPattern::parse("Z?{4}").expect("valid old pattern");
     let new_pattern = ppvm_pauli_sum_2::PauliPattern::parse("Z?{4}").expect("valid new pattern");
-    let (ot, nt) = (old_g.trace(&old_pattern), new_g.trace(&new_pattern));
+    let (ot, nt) = (
+        old_g.trace(&old_pattern),
+        new_g.trace::<[usize; 2]>(&new_pattern),
+    );
     assert!((ot - nt).abs() <= 1e-10);
-    read_pair!(
+    read_pair_new_mut!(
         group,
         "generalized/trace-pattern",
         old_g,
         new_g,
         |t: &OldGen| t.trace(&old_pattern),
-        |t: &NewGen| t.trace(&new_pattern)
+        |t: &mut NewGen| t.trace::<[usize; 2]>(&new_pattern)
     );
 
     record_mutations(&mut group, &old_g, &new_g);

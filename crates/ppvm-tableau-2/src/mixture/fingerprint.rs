@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 
-use crate::{GeneralizedTableau, RowStorage};
+use crate::GeneralizedTableau;
 
 thread_local! {
     static WORD_BYTES: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -29,34 +29,34 @@ pub(crate) fn loss_mask(qubit: usize) -> u64 {
     mask(qubit, 0xc3c3_c3c3_c3c3_c3c3)
 }
 
-pub(crate) fn word_fingerprint<A: RowStorage, I, H>(tab: &GeneralizedTableau<A, I, H>) -> u64 {
+/// Digest of the frame's X/Z bits.
+///
+/// Reads the four quadrants as one contiguous byte range instead of
+/// materializing `2n` rows — sound because the arena's padding is held at zero
+/// (see [`crate::storage`]), so equal frames have equal bytes. The digest
+/// *value* differs from the replaced row-by-row one, which is not observable:
+/// a fingerprint only selects a collision bucket, and membership is decided by
+/// `structurally_equal`.
+pub(crate) fn word_fingerprint<I, H>(tab: &GeneralizedTableau<I, H>) -> u64 {
+    let bits = tab.tableau.xz_bytes();
     #[cfg(not(target_arch = "wasm32"))]
     {
-        WORD_BYTES.with(|bytes| {
-            let mut bytes = bytes.borrow_mut();
-            bytes.clear();
-            for (x, z, _) in tab.tableau.rows() {
-                bytes.extend_from_slice(bytemuck::bytes_of(&x));
-                bytes.extend_from_slice(bytemuck::bytes_of(&z));
-            }
-            gxhash::gxhash64(&bytes, 0)
-        })
+        let _ = &WORD_BYTES;
+        gxhash::gxhash64(bits, 0)
     }
     #[cfg(target_arch = "wasm32")]
     {
         use std::hash::Hasher;
         let mut hasher = fxhash::FxHasher::default();
-        for (x, z, _) in tab.tableau.rows() {
-            x.hash(&mut hasher);
-            z.hash(&mut hasher);
-        }
+        hasher.write(bits);
         hasher.finish()
     }
 }
 
-pub(crate) fn phase_loss_hash<A: RowStorage, I, H>(tab: &GeneralizedTableau<A, I, H>) -> u64 {
+pub(crate) fn phase_loss_hash<I, H>(tab: &GeneralizedTableau<I, H>) -> u64 {
     let mut hash = 0;
-    for (row, (_, _, phase)) in tab.tableau.rows().enumerate() {
+    for row in 0..2 * tab.tableau.n_qubits() {
+        let phase = tab.tableau.row_phase(row);
         if phase & 1 != 0 {
             hash ^= mask(row, 0xb2b2_b2b2_b2b2_b2b2);
         }
@@ -72,6 +72,6 @@ pub(crate) fn phase_loss_hash<A: RowStorage, I, H>(tab: &GeneralizedTableau<A, I
     hash
 }
 
-pub(crate) fn fingerprint<A: RowStorage, I, H>(tab: &GeneralizedTableau<A, I, H>) -> u64 {
+pub(crate) fn fingerprint<I, H>(tab: &GeneralizedTableau<I, H>) -> u64 {
     word_fingerprint(tab) ^ phase_loss_hash(tab)
 }

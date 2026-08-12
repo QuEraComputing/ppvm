@@ -8,9 +8,9 @@ use ppvm_traits_2::{Depolarizing, Depolarizing2, Pauli, PauliError, TwoQubitPaul
 use crate::mixture::equality::Mutation;
 use crate::mixture::fingerprint::sign_mask;
 use crate::mixture::{GeneralizedTableauMixture, LazyBranch};
-use crate::{Bitstring, GeneralizedTableau, RowStorage};
+use crate::{Bitstring, GeneralizedTableau};
 
-fn pauli_deltas<A: RowStorage, I, H>(tab: &GeneralizedTableau<A, I, H>, qubit: usize) -> [u64; 4] {
+fn pauli_deltas<I, H>(tab: &GeneralizedTableau<I, H>, qubit: usize) -> [u64; 4] {
     let (mut dx, mut dz) = (0, 0);
     for (row, _) in tab.tableau.rows().enumerate() {
         let site = tab.tableau.row_site(row, qubit);
@@ -34,8 +34,8 @@ fn pauli_index(pauli: Pauli) -> usize {
     }
 }
 
-fn two_qubit_pauli_deltas<A: RowStorage, I, H>(
-    tab: &GeneralizedTableau<A, I, H>,
+fn two_qubit_pauli_deltas<I, H>(
+    tab: &GeneralizedTableau<I, H>,
     qubit0: usize,
     qubit1: usize,
 ) -> [[u64; 4]; 2] {
@@ -60,9 +60,8 @@ fn two_qubit_pauli_deltas<A: RowStorage, I, H>(
     [[0, dx0, dx0 ^ dz0, dz0], [0, dx1, dx1 ^ dz1, dz1]]
 }
 
-impl<A, I, H> PauliError<f64> for GeneralizedTableauMixture<A, I, H>
+impl<I, H> PauliError<f64> for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -102,9 +101,8 @@ where
     }
 }
 
-impl<A, I, H> Depolarizing<f64> for GeneralizedTableauMixture<A, I, H>
+impl<I, H> Depolarizing<f64> for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -113,9 +111,8 @@ where
     }
 }
 
-impl<A, I, H> TwoQubitPauliError<f64> for GeneralizedTableauMixture<A, I, H>
+impl<I, H> TwoQubitPauliError<f64> for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
@@ -177,9 +174,8 @@ where
     }
 }
 
-impl<A, I, H> Depolarizing2<f64> for GeneralizedTableauMixture<A, I, H>
+impl<I, H> Depolarizing2<f64> for GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {

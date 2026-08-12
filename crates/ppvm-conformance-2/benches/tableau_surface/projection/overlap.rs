@@ -5,7 +5,7 @@ use fxhash::FxHashMap;
 
 use super::*;
 
-type RawNew = ppvm_tableau_2::GeneralizedTableau<[usize; 2], u128>;
+type RawNew = ppvm_tableau_2::GeneralizedTableau<u128>;
 
 pub fn bench(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,

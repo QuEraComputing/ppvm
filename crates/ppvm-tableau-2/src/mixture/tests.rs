@@ -7,7 +7,7 @@ use ppvm_traits_2::Clifford;
 use super::GeneralizedTableauMixture;
 use super::fingerprint::fingerprint;
 
-type Mixture = GeneralizedTableauMixture<u64, usize>;
+type Mixture = GeneralizedTableauMixture<usize>;
 
 #[test]
 fn constructor_obeys_strict_sum_cutoff() {

@@ -180,7 +180,7 @@ fn strict_sum_cutoff_boundary_matches() {
 
 #[test]
 fn wide_bitstring_indices_are_supported() {
-    type Wide = ppvm_tableau_2::GeneralizedTableauMixture<[u8; 16], u128>;
+    type Wide = ppvm_tableau_2::GeneralizedTableauMixture<u128>;
     let mut mixture = Wide::new_with_seed(80, 1e-12, 1e-14, 23);
     mixture.h(79);
     mixture.t(79);

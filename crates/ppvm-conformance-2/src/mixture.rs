@@ -14,11 +14,15 @@ pub type Old = OldMixture<
     Vec<(Complex64, u128)>,
     VecStorage<ByteF64<2>, u128, Vec<(Complex64, u128)>>,
 >;
-pub type New = GeneralizedTableauMixture<[u8; 2], u128>;
+pub type New = GeneralizedTableauMixture<u128>;
 
 #[derive(Clone, Debug)]
 pub struct StateSnapshot {
-    pub rows: Vec<([u8; 2], [u8; 2], u8)>,
+    /// One `(x-bits, z-bits, phase)` triple per generator, both bit vectors
+    /// qubit-indexed. Twelve qubits fit one machine word, so the two engines'
+    /// different packings (old: a `[u8; 2]` blob; new: the frame's runtime
+    /// stride) normalize to the same `u64` here.
+    pub rows: Vec<(u64, u64, u8)>,
     pub amplitudes: Vec<(u128, Complex64)>,
     pub loss: Vec<bool>,
     pub probability: f64,
@@ -41,7 +45,13 @@ pub fn old_snapshot(mixture: &Old) -> Vec<StateSnapshot> {
                 .tableau
                 .data
                 .iter()
-                .map(|row| (row.word.xbits.data, row.word.zbits.data, row.phase))
+                .map(|row| {
+                    (
+                        u16::from_le_bytes(row.word.xbits.data) as u64,
+                        u16::from_le_bytes(row.word.zbits.data) as u64,
+                        row.phase,
+                    )
+                })
                 .collect();
             let mut amplitudes: Vec<_> = tab
                 .coefficients
@@ -63,7 +73,11 @@ pub fn new_snapshot(mixture: &New) -> Vec<StateSnapshot> {
     mixture
         .iter()
         .map(|(tab, probability)| {
-            let rows = tab.tableau.rows().collect();
+            let rows = tab
+                .tableau
+                .rows()
+                .map(|(x, z, phase)| (x[0], z[0], phase))
+                .collect();
             let mut amplitudes: Vec<_> = tab
                 .coefficients
                 .iter()

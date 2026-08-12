@@ -1521,7 +1521,6 @@ dependencies = [
 name = "ppvm-tableau-2"
 version = "0.1.0"
 dependencies = [
- "bitvec",
  "bnum",
  "bytemuck",
  "fxhash",
@@ -1533,7 +1532,6 @@ dependencies = [
  "ppvm-traits-2",
  "rand 0.10.1",
  "rayon",
- "smallvec",
 ]
 
 [[package]]

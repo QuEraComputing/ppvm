@@ -33,7 +33,7 @@ use ppvm_traits_2::{
 };
 use rand::{Rng, RngExt};
 
-use crate::data::{Bitstring, GeneralizedTableau, RowStorage, Tableau};
+use crate::data::{Bitstring, GeneralizedTableau, Tableau};
 use crate::measure::MeasureScratch;
 
 /// `true` iff `p` lies in the closed unit interval `[0, 1]`.
@@ -182,9 +182,9 @@ pub trait TableauLike: Clifford {
     }
 }
 
-impl<A: RowStorage, H> TableauLike for Tableau<A, H> {}
+impl<H> TableauLike for Tableau<H> {}
 
-impl<A: RowStorage, I: Bitstring, H> TableauLike for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> TableauLike for GeneralizedTableau<I, H> {
     #[inline]
     fn is_qubit_lost(&self, addr: usize) -> bool {
         self.is_lost[addr]
@@ -195,13 +195,13 @@ impl<A: RowStorage, I: Bitstring, H> TableauLike for GeneralizedTableau<A, I, H>
 // X`, so the four channel traits are expanded per backend.
 macro_rules! impl_tableau_noise {
     (generics: [$($gen:tt)*], ty: $ty:ty $(,)?) => {
-        impl<A: RowStorage $($gen)*> Depolarizing<f64> for $ty {
+        impl<$($gen)*> Depolarizing<f64> for $ty {
             fn depolarize1<R: Rng + ?Sized>(&mut self, qubit: usize, p: f64, rng: &mut R) {
                 self.depolarize_impl(qubit, p, rng);
             }
         }
 
-        impl<A: RowStorage $($gen)*> PauliError<f64> for $ty {
+        impl<$($gen)*> PauliError<f64> for $ty {
             fn pauli_error<R: Rng + ?Sized>(
                 &mut self,
                 qubit: usize,
@@ -212,7 +212,7 @@ macro_rules! impl_tableau_noise {
             }
         }
 
-        impl<A: RowStorage $($gen)*> TwoQubitPauliError<f64> for $ty {
+        impl<$($gen)*> TwoQubitPauliError<f64> for $ty {
             fn two_qubit_pauli_error<R: Rng + ?Sized>(
                 &mut self,
                 qubit0: usize,
@@ -224,7 +224,7 @@ macro_rules! impl_tableau_noise {
             }
         }
 
-        impl<A: RowStorage $($gen)*> Depolarizing2<f64> for $ty {
+        impl<$($gen)*> Depolarizing2<f64> for $ty {
             fn depolarize2<R: Rng + ?Sized>(
                 &mut self,
                 qubit0: usize,
@@ -238,12 +238,12 @@ macro_rules! impl_tableau_noise {
     };
 }
 
-impl_tableau_noise! { generics: [, H], ty: Tableau<A, H> }
-impl_tableau_noise! { generics: [, I: Bitstring, H], ty: GeneralizedTableau<A, I, H> }
+impl_tableau_noise! { generics: [H], ty: Tableau<H> }
+impl_tableau_noise! { generics: [I: Bitstring, H], ty: GeneralizedTableau<I, H> }
 
 // ─── Loss channels (generalized tableau only) ─────────────────────────────
 
-impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> GeneralizedTableau<I, H> {
     /// Collapse one qubit for a loss event without retaining measurement
     /// scratch that the channel cannot reuse.
     #[inline]
@@ -261,7 +261,7 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> LossChannel<f64> for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> LossChannel<f64> for GeneralizedTableau<I, H> {
     /// Lose `qubit` with probability `p`, then collapse it and reset to `|0⟩`.
     ///
     /// Zero probability and an already-lost target return without consuming
@@ -279,7 +279,7 @@ impl<A: RowStorage, I: Bitstring, H> LossChannel<f64> for GeneralizedTableau<A, 
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> AsymmetricLossChannel<f64> for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> AsymmetricLossChannel<f64> for GeneralizedTableau<I, H> {
     /// State-dependent single-qubit loss.
     ///
     /// Models a three-level atom whose `|0⟩`/`|1⟩` levels leak into a loss state
@@ -333,7 +333,7 @@ impl<A: RowStorage, I: Bitstring, H> AsymmetricLossChannel<f64> for GeneralizedT
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> CorrelatedLossChannel<f64> for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> CorrelatedLossChannel<f64> for GeneralizedTableau<I, H> {
     /// Correlated loss on `(qubit0, qubit1)`.
     ///
     /// * `p[0]`: losing both simultaneously when both are in the qubit subspace.
@@ -385,7 +385,7 @@ impl<A: RowStorage, I: Bitstring, H> CorrelatedLossChannel<f64> for GeneralizedT
     }
 }
 
-impl<A: RowStorage, I: Bitstring, H> ResetLossChannel for GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> ResetLossChannel for GeneralizedTableau<I, H> {
     /// Clear the loss bit only; the quantum state is untouched.
     fn reset_loss_channel(&mut self, qubit: usize) {
         self.is_lost[qubit] = false;

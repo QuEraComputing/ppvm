@@ -10,20 +10,20 @@ use rand::rngs::SmallRng;
 use rayon::prelude::*;
 
 use super::GeneralizedTableauMixture;
-use crate::{Bitstring, GeneralizedTableau, MeasureScratch, RowStorage};
+use crate::{Bitstring, GeneralizedTableau, MeasureScratch};
 
 /// Immutable mixture snapshot plus an independent seeded shot stream.
 #[derive(Clone)]
-pub struct MixtureSampler<A: RowStorage, I: Bitstring, H> {
-    pub entries: Vec<(GeneralizedTableau<A, I, H>, f64)>,
+pub struct MixtureSampler<I: Bitstring, H> {
+    pub entries: Vec<(GeneralizedTableau<I, H>, f64)>,
     cumulative: Vec<f64>,
     rng: SmallRng,
     scratch: MeasureScratch<I>,
 }
 
-impl<A: RowStorage, I: Bitstring, H> MixtureSampler<A, I, H> {
+impl<I: Bitstring, H> MixtureSampler<I, H> {
     pub(crate) fn new(
-        entries: Vec<(GeneralizedTableau<A, I, H>, f64)>,
+        entries: Vec<(GeneralizedTableau<I, H>, f64)>,
         cumulative: Vec<f64>,
         rng: SmallRng,
     ) -> Self {
@@ -60,7 +60,6 @@ impl<A: RowStorage, I: Bitstring, H> MixtureSampler<A, I, H> {
     #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
     pub fn sample_shots_parallel(&mut self, shots: usize) -> Vec<Vec<Option<bool>>>
     where
-        A: Send + Sync,
         I: Send + Sync,
         H: Sync,
     {
@@ -82,7 +81,6 @@ impl<A: RowStorage, I: Bitstring, H> MixtureSampler<A, I, H> {
     #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
     pub fn sample_shots(&mut self, shots: usize) -> Vec<Vec<Option<bool>>>
     where
-        A: Send + Sync,
         I: Send + Sync,
         H: Sync,
     {
@@ -95,13 +93,12 @@ impl<A: RowStorage, I: Bitstring, H> MixtureSampler<A, I, H> {
     }
 }
 
-impl<A, I, H> GeneralizedTableauMixture<A, I, H>
+impl<I, H> GeneralizedTableauMixture<I, H>
 where
-    A: RowStorage,
     I: Bitstring,
     H: BuildHasher + Clone + Default,
 {
-    pub fn sampler(&mut self) -> MixtureSampler<A, I, H> {
+    pub fn sampler(&mut self) -> MixtureSampler<I, H> {
         let mut entries = self.entries.clone();
         entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         let mut sum = 0.0;

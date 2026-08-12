@@ -47,7 +47,7 @@ fn pattern_trace_matches_old() {
     let new_pattern =
         ppvm_pauli_sum_2::PauliPattern::parse("Z?{3}").expect("parse counted pattern");
     let old_value = old.trace(&old_pattern);
-    let new_value = new.trace(&new_pattern);
+    let new_value = new.trace::<[u8; 8]>(&new_pattern);
     assert!(
         (old_value - new_value).abs() <= 1e-12 * old_value.abs().max(1.0),
         "pattern trace differs: old {old_value}, new {new_value}"
@@ -1047,7 +1047,7 @@ fn construction_reset_and_fork_semantics_match_old() {
 fn record_editing_helpers_match_old() {
     let mut o: OldGT<ppvm_pauli_sum::config::indexmap::ByteFxHashF64<8>, usize> =
         OldGT::new_with_seed(2, 1e-12, 0);
-    let mut m: NewGT<[u8; 8], usize> = NewGT::new(2, 1e-12);
+    let mut m: NewGT<usize> = NewGT::new(2, 1e-12);
     o.append_measurement_record(Some(true));
     m.append_measurement_record(Some(true));
     o.append_measurement_record(None);

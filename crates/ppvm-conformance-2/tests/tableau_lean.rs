@@ -346,11 +346,14 @@ fn lean_generator_tables() {
 // The impl vs the Lean reference: every row of a randomized frame
 // ===========================================================================
 
-/// Read site `q` of a `(x-plane, z-plane, phase)` snapshot. The planes come from
-/// the `[usize; 2]` (64-bit-element) configuration, so 64 bits per element.
+/// Read site `q` of a `(x-plane, z-plane, phase)` snapshot.
+///
+/// Snapshot planes are canonical 64-bit-per-word bit vectors trimmed of trailing
+/// zero words, so a word past the end is a zero word rather than out of range.
 fn site(row: &RowSnapshot, q: usize) -> (bool, bool) {
     let (w, off) = (q / 64, q % 64);
-    ((row.0[w] >> off) & 1 == 1, (row.1[w] >> off) & 1 == 1)
+    let bit = |plane: &[u64]| plane.get(w).is_some_and(|word| word >> off & 1 == 1);
+    (bit(&row.0), bit(&row.1))
 }
 
 /// A randomized frame on `n` qubits (Clifford only — the frame is what the Lean
@@ -477,10 +480,19 @@ fn tableau_two_qubit_rows_follow_the_lean_conjugation() {
 // ===========================================================================
 
 /// `ω(p, q) = Σ_k (x_p[k]·z_q[k] ⊕ z_p[k]·x_q[k])` over all sites.
+///
+/// Row snapshots are trimmed of trailing zero words (the two engines pad to
+/// different widths), so a plane may be shorter than its partner. A missing word
+/// is a zero word and contributes nothing, hence the `min` — indexing to
+/// `a.0.len()` would panic on the identity frame, whose destabilizer Z plane is
+/// empty.
 fn omega(a: &RowSnapshot, b: &RowSnapshot) -> bool {
     let mut acc = 0u32;
-    for k in 0..a.0.len() {
-        acc += (a.0[k] & b.1[k]).count_ones() + (a.1[k] & b.0[k]).count_ones();
+    for k in 0..a.0.len().min(b.1.len()) {
+        acc += (a.0[k] & b.1[k]).count_ones();
+    }
+    for k in 0..a.1.len().min(b.0.len()) {
+        acc += (a.1[k] & b.0[k]).count_ones();
     }
     acc % 2 == 1
 }
@@ -871,7 +883,7 @@ fn rotations_are_norm_preserving_and_angle_additive() {
 
 /// Drive a `NewWide` through a pseudo-random Clifford+`T` circuit, calling
 /// `check` on the live frame every few gates.
-fn decomposition_sweep(mut check: impl FnMut(&NewWide, usize, u64)) {
+fn decomposition_sweep(mut check: impl FnMut(&mut NewWide, usize, u64)) {
     const N: usize = 12;
     for seed in 0..24u64 {
         let mut tab: NewWide = Driver::new_seeded(N, 1e-12, seed);
@@ -888,7 +900,7 @@ fn decomposition_sweep(mut check: impl FnMut(&NewWide, usize, u64)) {
                 _ => tab.t(a),
             }
             if step % 7 == 0 {
-                check(&tab, step, seed);
+                check(&mut tab, step, seed);
             }
         }
     }

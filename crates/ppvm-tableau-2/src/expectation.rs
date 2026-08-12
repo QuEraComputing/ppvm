@@ -21,18 +21,23 @@
 use fxhash::FxHashMap as HashMap;
 use num::complex::Complex64;
 use ppvm_pauli_sum_2::PauliPattern;
+use ppvm_pauli_word_2::PauliStorage;
 use ppvm_traits_2::{Pauli, Word};
 
-use crate::data::{Bitstring, GeneralizedTableau, RowStorage};
+use crate::data::{Bitstring, GeneralizedTableau};
 
-impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
+impl<I: Bitstring, H> GeneralizedTableau<I, H> {
     /// `⟨ψ|word|ψ⟩` for the multi-qubit Pauli `word`.
     ///
     /// Conjugates `word` through the Clifford frame (giving a Pauli on the
     /// canonical basis: an X-mask, a Z-mask and an `i^φ` phase), then sums
     /// `⟨α|P_conj|β⟩ c_α* c_β` over the amplitude vector. Always real (a
     /// Hermitian operator on a normalized state).
-    pub fn expectation<W: Word<Site = Pauli>>(&self, word: &W) -> f64 {
+    ///
+    /// Takes `&mut self` because the decomposition briefly re-orients the frame
+    /// (see [`GeneralizedTableau::compute_decomposition`]); the state is not
+    /// logically changed and is byte-identical on return.
+    pub fn expectation<W: Word<Site = Pauli>>(&mut self, word: &W) -> f64 {
         let (phase, stab_anticomm, destab_anticomm) = self.compute_decomposition_word(word);
         if stab_anticomm == I::zero() {
             let entries: Vec<(Complex64, I)> = self.coefficients.iter().copied().collect();
@@ -56,7 +61,7 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     ///
     /// Reuses the measurement overlap machinery; cost scales with the number of
     /// coefficients (and `n²` for the decomposition).
-    pub fn z_expectation(&self, qubit: usize) -> f64 {
+    pub fn z_expectation(&mut self, qubit: usize) -> f64 {
         let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
             self.compute_decomposition(qubit, Pauli::Z);
 
@@ -86,10 +91,13 @@ impl<A: RowStorage, I: Bitstring, H> GeneralizedTableau<A, I, H> {
     /// exponential by definition, while each leaf delegates to the audited
     /// single-word [`expectation`](Self::expectation) kernel. Unbounded star
     /// patterns panic, matching the old enumerator.
-    pub fn trace(&self, pattern: &PauliPattern) -> f64 {
-        pattern
-            .enumerate_matches::<A>(self.n_qubits())
-            .map(|word| self.expectation(&word))
-            .sum()
+    ///
+    /// The enumerated leaves are `PauliWord<A>`, so the frame no longer supplies
+    /// the word storage — it has none. `A` is a caller-chosen packed blob wide
+    /// enough for `n_qubits`; [`DefaultStorage`](ppvm_pauli_word_2::DefaultStorage)
+    /// is the usual pick.
+    pub fn trace<A: PauliStorage>(&mut self, pattern: &PauliPattern) -> f64 {
+        let words: Vec<_> = pattern.enumerate_matches::<A>(self.n_qubits()).collect();
+        words.iter().map(|word| self.expectation(word)).sum()
     }
 }

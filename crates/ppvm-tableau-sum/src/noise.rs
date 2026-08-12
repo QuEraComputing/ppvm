@@ -10,7 +10,8 @@ use num::{
 };
 use ppvm_pauli_word::pattern::NotIdentity;
 use ppvm_tableau::{
-    data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
+    data::GeneralizedTableau, noise::is_admissible_correlated_loss, sparsevec::SparseVector,
+    tableau_index::TableauIndex,
 };
 use ppvm_traits::config::Config;
 use ppvm_traits::traits::{
@@ -450,6 +451,10 @@ where
         addr1: usize,
         p: [<T as Config>::Coeff; 3],
     ) {
+        debug_assert!(
+            is_admissible_correlated_loss(&p),
+            "correlated loss needs p0, p1 >= 0, p0 + 2*p1 <= 1, p2 in [0, 1]; got {p:?}"
+        );
         let mut branches = Vec::<(GeneralizedTableau<T, I, C>, T::Coeff, u64, u64)>::with_capacity(
             3 * self.entries.len(),
         );
@@ -481,7 +486,11 @@ where
                 }
 
                 // if both are present, then we create 3 new branches:
-                // losing both (p[0]), one, or the other qubit (p[1])
+                // losing both (p[0]), one, or the other qubit. `p[1]` is the
+                // probability that a *named* one of the pair is lost, so each
+                // single-loss branch carries `p[1]` and the survivor keeps
+                // `1 − p[0] − 2·p[1]`. See
+                // `ppvm_traits::traits::CorrelatedLossChannel`.
 
                 let tab_seed_both = self.rng.random::<u64>();
                 let mut tab_lose_both = tab.fork(Some(tab_seed_both));
@@ -503,7 +512,7 @@ where
                 tab_lose_0.is_lost[addr0] = true;
                 branches.push((
                     tab_lose_0,
-                    p_sum.clone() * (p[1].clone() / 2.0.into()),
+                    p_sum.clone() * p[1].clone(),
                     word_fp,
                     phase_loss ^ loss_mask(addr0),
                 ));
@@ -513,12 +522,12 @@ where
                 tab_lose_1.is_lost[addr1] = true;
                 branches.push((
                     tab_lose_1,
-                    p_sum.clone() * (p[1].clone() / 2.0.into()),
+                    p_sum.clone() * p[1].clone(),
                     word_fp,
                     phase_loss ^ loss_mask(addr1),
                 ));
 
-                let p_total = p[0].clone() + p[1].clone();
+                let p_total = p[0].clone() + p[1].clone() + p[1].clone();
                 *p_sum *= T::Coeff::one() - p_total;
             });
 
@@ -571,5 +580,157 @@ where
         let _ = self
             .entries
             .insert_or_merge_batch(branches, &self.sum_cutoff);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // === G-040 — the correlated-loss `p[1]` convention ===
+    //
+    // The paper (`ppvm-paper/main.tex:462`, `:523`, `:845`) is the definition of
+    // record: `p[1]` is `p_LQ`, the probability that a **named** one of the pair
+    // is lost, so each single-loss branch carries `p[1]`, the total weight on
+    // "exactly one lost" is `2·p[1]`, and the survivor keeps `1 − p[0] − 2·p[1]`.
+    // The same number is observable three ways — as a Heisenberg coefficient
+    // (`ppvm-pauli-sum`), as a branch weight (this mixture) and as a sampling
+    // frequency (`ppvm-tableau`'s trajectory) — and the three must agree, since
+    // the cross-backend disagreement is what a Python user actually hits.
+
+    use ppvm_pauli_sum::config::fxhash::ByteF64;
+    use ppvm_pauli_sum::prelude::*;
+    use ppvm_tableau::prelude::*;
+    use ppvm_traits::traits::{CorrelatedLossChannel, NoStrategy};
+
+    use crate::data::GeneralizedTableauSum;
+    use crate::storage::EntryStore;
+
+    type Cfg = ByteF64<1>;
+    type TabSum = GeneralizedTableauSum<Cfg, u128>;
+    type Tab = GeneralizedTableau<Cfg, u128>;
+    type LossyTestSum = PauliSum<
+        ppvm_pauli_sum::config::fxhash::Byte<
+            1,
+            f64,
+            NoStrategy,
+            LossyPauliWord<[u8; 1], fxhash::FxBuildHasher>,
+        >,
+    >;
+
+    /// Total mixture weight on branches with exactly one lost qubit.
+    /// `sum_cutoff = 0.0`, so no branch is truncated away and no
+    /// renormalization can hide a mis-weighted survivor.
+    fn mixture_single_loss_weight(p: [f64; 3]) -> f64 {
+        let mut sum: TabSum = GeneralizedTableauSum::new_with_seed(2, 1e-12, 0.0, 7);
+        sum.correlated_loss_channel(0, 1, p);
+        sum.entries
+            .iter()
+            .filter(|(tab, _)| tab.is_lost[0] ^ tab.is_lost[1])
+            .map(|(_, probability)| *probability)
+            .sum()
+    }
+
+    /// Total mixture weight on branches where both qubits are still present.
+    fn mixture_survivor_weight(p: [f64; 3]) -> f64 {
+        let mut sum: TabSum = GeneralizedTableauSum::new_with_seed(2, 1e-12, 0.0, 7);
+        sum.correlated_loss_channel(0, 1, p);
+        sum.entries
+            .iter()
+            .filter(|(tab, _)| !tab.is_lost[0] && !tab.is_lost[1])
+            .map(|(_, probability)| *probability)
+            .sum()
+    }
+
+    /// The Heisenberg scale factor `ppvm-pauli-sum` applies to a fully
+    /// in-subspace observable, i.e. `1 − p[0] − P(exactly one lost)`.
+    fn pauli_sum_survivor(p: [f64; 3]) -> f64 {
+        let mut sum = LossyTestSum::builder().n_qubits(2).build();
+        sum += ("ZZ", 1.0);
+        sum.correlated_loss_channel(0, 1, p);
+        let zz: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "ZZ".into();
+        *sum.data()
+            .get(&zz)
+            .expect("the all-present term survives a pure rescale")
+    }
+
+    /// The trajectory's sampled fraction of runs that lose exactly one qubit.
+    fn trajectory_single_loss_fraction(p: [f64; 3], trials: u64) -> f64 {
+        let mut hits = 0u64;
+        for seed in 0..trials {
+            let mut tab: Tab = GeneralizedTableau::new_with_seed(2, 1e-12, seed);
+            tab.correlated_loss_channel(0, 1, p);
+            if tab.is_lost[0] ^ tab.is_lost[1] {
+                hits += 1;
+            }
+        }
+        hits as f64 / trials as f64
+    }
+
+    #[test]
+    fn correlated_loss_exactly_one_lost_is_two_p1_on_every_backend() {
+        let p1 = 0.3_f64;
+        let p = [0.0, p1, 0.0];
+        let expected = 2.0 * p1;
+
+        let mixture = mixture_single_loss_weight(p);
+        let pauli_sum = 1.0 - pauli_sum_survivor(p);
+        let trajectory = trajectory_single_loss_fraction(p, 20_000);
+
+        // Report every dissenting backend, so a failure names the split rather
+        // than only its first symptom.
+        let mut wrong = Vec::new();
+        for (backend, value, tolerance) in [
+            ("mixture", mixture, 1e-12),
+            ("ppvm-pauli-sum", pauli_sum, 1e-12),
+            ("trajectory (20k seeds)", trajectory, 0.02),
+        ] {
+            if (value - expected).abs() >= tolerance {
+                wrong.push(format!("  {backend}: {value}"));
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "p = {p:?}: P(exactly one lost) must be 2*p[1] = {expected} on every \
+             backend, got\n{}",
+            wrong.join("\n")
+        );
+    }
+
+    #[test]
+    fn correlated_loss_survivor_weight_is_one_minus_p0_minus_two_p1() {
+        let p = [0.2_f64, 0.3, 0.4];
+        let expected = 1.0 - p[0] - 2.0 * p[1];
+        let mixture = mixture_survivor_weight(p);
+        assert!(
+            (mixture - expected).abs() < 1e-12,
+            "mixture survivor weight {mixture}, want 1 - p0 - 2*p1 = {expected}"
+        );
+        let pauli_sum = pauli_sum_survivor(p);
+        assert!(
+            (pauli_sum - expected).abs() < 1e-12,
+            "ppvm-pauli-sum survivor {pauli_sum}, want {expected}"
+        );
+    }
+
+    // G-043 — the admissible region `p0, p1 >= 0`, `p0 + 2·p1 <= 1`,
+    // `p2 ∈ [0, 1]` is what makes the channel completely positive. Outside it
+    // the mixture truncates a negative survivor weight and renormalizes,
+    // silently.
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "p0 + 2*p1 <= 1")]
+    fn correlated_loss_rejects_inadmissible_probabilities() {
+        let mut sum: TabSum = GeneralizedTableauSum::new_with_seed(2, 1e-12, 0.0, 7);
+        sum.correlated_loss_channel(0, 1, [0.6, 0.6, 0.0]);
+    }
+
+    /// The saturated boundary `p0 + 2·p1 == 1` is admissible and must not trip
+    /// the guard.
+    #[test]
+    fn correlated_loss_saturated_boundary_is_admissible() {
+        let mut sum: TabSum = GeneralizedTableauSum::new_with_seed(2, 1e-12, 0.0, 7);
+        sum.correlated_loss_channel(0, 1, [0.2, 0.4, 1.0]);
+        let survivor = mixture_survivor_weight([0.2, 0.4, 1.0]);
+        assert!(survivor.abs() < 1e-15, "survivor {survivor} should vanish");
     }
 }

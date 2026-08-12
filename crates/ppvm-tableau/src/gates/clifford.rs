@@ -354,15 +354,102 @@ where
     impl_generalized_tableau_clifford_pair!(cy);
 }
 
+/// How many sites a per-word mask covers — one bit per distinct index, so this
+/// equals the index count exactly when the indices are distinct.
+#[inline]
+fn mask_bits<S: PrimInt>(masks: &[S]) -> u64 {
+    masks.iter().map(|m| u64::from(m.count_ones())).sum()
+}
+
+/// Take the fused per-word masks, or bail out of the caller: `return` when there
+/// is nothing to do, and on a **repeated** index hand the whole batch to the
+/// gate's outlined `$fallback`.
+///
+/// A mask carries one bit per site, so a repeated index would make the fused
+/// sweep apply the gate once where the per-index loop — the `CliffordBatch`
+/// contract, and what a legal `X 0 0` in a `.stim` file means — conjugates by
+/// `Gᵏ`. `Gᵏ` is the identity only for the involutory gates (`S² = Z`,
+/// `(√X)² = X`, `(√Y)² = Y`), so neither one bit nor an XOR-cancelled bit is
+/// right for every family; only the per-index loop is (G-061).
+///
+/// The fast path costs exactly one branch on a flag `build_masks` has already
+/// computed, and the slow path is a *call* — no scalar loop is inlined into the
+/// fused body. Spelling the fallback out here instead (so each gate inlined a
+/// whole `2n`-row sweep per index into its own preamble) cost 22–31% on the five
+/// gates that map the x/z bit planes (`h`, `√X`, `√X†`, `√Y`, `√Y†`) when it was
+/// measured on the `-2` crates: the bodies with real work to do lose registers
+/// and I-cache to code that never runs. The phase-only gates (`x`/`y`/`z`/`s`)
+/// never move, which is why A/B'ing only those rows hides it.
+macro_rules! masks_or_scalar_fallback {
+    ($self:ident, $indices:ident, $fallback:ident) => {
+        match $self.build_masks($indices) {
+            // Distinct indices: the fused sweep is licensed.
+            Some((masks, n_words, false)) => (masks, n_words),
+            // No rows or no indices: the batch is a no-op.
+            None => return,
+            // A repeated index: owe `Gᵏ`, i.e. the per-index loop.
+            Some((.., true)) => return $self.$fallback($indices),
+        }
+    };
+}
+
+/// Define the outlined per-index loops the batched gates fall back to on a
+/// repeated index (`$fallback` runs the canonical `$one` once per occurrence).
+///
+/// `#[cold]` + `#[inline(never)]` is the point: each loop is a full `2n`-row
+/// sweep per index, and keeping it out of line keeps it off the fused bodies'
+/// register budget and out of their cache lines — the caller keeps a call.
+macro_rules! repeated_index_loops {
+    ($($fallback:ident => $one:ident),+ $(,)?) => {
+        impl<T: Config> Tableau<T>
+        where
+            <T::Storage as BitView>::Store: PrimInt,
+        {
+            $(
+                #[cold]
+                #[inline(never)]
+                fn $fallback(&mut self, indices: &[usize]) {
+                    for &q in indices {
+                        self.$one(q);
+                    }
+                }
+            )+
+        }
+    };
+}
+
+repeated_index_loops! {
+    x_each => x,
+    y_each => y,
+    z_each => z,
+    h_each => h,
+    s_each => s,
+    s_dag_each => s_dag,
+    sqrt_x_each => sqrt_x,
+    sqrt_x_dag_each => sqrt_x_dag,
+    sqrt_y_each => sqrt_y,
+    sqrt_y_dag_each => sqrt_y_dag,
+}
+
 impl<T: Config> Tableau<T>
 where
     <T::Storage as BitView>::Store: PrimInt,
 {
     /// Build per-word bitmasks from a list of qubit indices.
-    /// Returns `(masks, n_words)`. Stack-allocates for up to 8 storage words;
-    /// spills to the heap beyond that, so there is no hard qubit cap.
+    /// Returns `(masks, n_words, repeated)`. Stack-allocates for up to 8 storage
+    /// words; spills to the heap beyond that, so there is no hard qubit cap.
+    ///
+    /// Distinctness is **checked**, not assumed, and checked here, in the third
+    /// tuple slot: the mask holds one bit per *distinct* index, so it is short of
+    /// `indices.len()` bits exactly when an index repeats. That is `n_words`
+    /// popcounts (typically one or two) *after* the index walk, which is left
+    /// byte-for-byte as it was — folding the test *into* the walk, as a
+    /// `repeated |= word & bit` accumulator, measured worse on the `-2` crates
+    /// (it adds a loop-carried dependency to the walk), and outlining this whole
+    /// function was worse again. `repeated` sends the caller, via
+    /// [`masks_or_scalar_fallback`], to its outlined per-index loop.
     #[inline]
-    fn build_masks(&self, indices: &[usize]) -> Option<(MaskBuf<T>, usize)> {
+    fn build_masks(&self, indices: &[usize]) -> Option<(MaskBuf<T>, usize, bool)> {
         if self.data.is_empty() || indices.is_empty() {
             return None;
         }
@@ -375,7 +462,8 @@ where
             masks[addr0 / bits_per_word] =
                 masks[addr0 / bits_per_word] | (one << (addr0 % bits_per_word));
         }
-        Some((masks, n_words))
+        let repeated = mask_bits(&masks) != indices.len() as u64;
+        Some((masks, n_words, repeated))
     }
 }
 
@@ -386,10 +474,7 @@ where
     /// `X` is bit-preserving: phase flips for each masked qubit where z=1.
     #[inline]
     fn x_many(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
+        let (masks, n_words) = masks_or_scalar_fallback!(self, indices, x_each);
         let zero = <T::Storage as BitView>::Store::zero();
 
         self.data.iter_mut().for_each(|pw| {
@@ -409,10 +494,7 @@ where
     /// `Y` is bit-preserving: phase flips for each masked qubit where x⊕z=1.
     #[inline]
     fn y_many(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
+        let (masks, n_words) = masks_or_scalar_fallback!(self, indices, y_each);
         let zero = <T::Storage as BitView>::Store::zero();
 
         self.data.iter_mut().for_each(|pw| {
@@ -433,10 +515,7 @@ where
     /// `Z` is bit-preserving: phase flips for each masked qubit where x=1.
     #[inline]
     fn z_many(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
+        let (masks, n_words) = masks_or_scalar_fallback!(self, indices, z_each);
         let zero = <T::Storage as BitView>::Store::zero();
 
         self.data.iter_mut().for_each(|pw| {
@@ -456,10 +535,7 @@ where
     /// Forward `S`: phase flips where x&z=1, then z ^= x for masked qubits.
     #[inline]
     fn s_many(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
+        let (masks, n_words) = masks_or_scalar_fallback!(self, indices, s_each);
         let zero = <T::Storage as BitView>::Store::zero();
 
         self.data.iter_mut().for_each(|pw| {
@@ -514,10 +590,7 @@ where
     /// phase += 2 when x=1 & z=1 (Y goes to -Y).
     #[inline]
     fn h_many(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
+        let (masks, n_words) = masks_or_scalar_fallback!(self, indices, h_each);
         let zero = <T::Storage as BitView>::Store::zero();
 
         self.data.iter_mut().for_each(|pw| {
@@ -579,10 +652,7 @@ where
     /// Phase flips where x&!z=1, then z ^= x for masked qubits.
     #[inline]
     fn s_dag_many(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
+        let (masks, n_words) = masks_or_scalar_fallback!(self, indices, s_dag_each);
         let zero = <T::Storage as BitView>::Store::zero();
 
         self.data.iter_mut().for_each(|pw| {
@@ -637,10 +707,7 @@ where
     /// reducing N individual operations to O(n_words) per row.
     #[inline]
     fn sqrt_y_many(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
+        let (masks, n_words) = masks_or_scalar_fallback!(self, indices, sqrt_y_each);
         let zero = <T::Storage as BitView>::Store::zero();
 
         self.data.iter_mut().for_each(|pw| {
@@ -667,10 +734,7 @@ where
     /// Apply `(√Y)†` to multiple qubits using combined bitmask operations.
     #[inline]
     fn sqrt_y_dag_many(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
+        let (masks, n_words) = masks_or_scalar_fallback!(self, indices, sqrt_y_dag_each);
         let zero = <T::Storage as BitView>::Store::zero();
 
         self.data.iter_mut().for_each(|pw| {
@@ -697,10 +761,7 @@ where
     /// Apply `√X` to multiple qubits using combined bitmask operations.
     #[inline]
     fn sqrt_x_many(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
+        let (masks, n_words) = masks_or_scalar_fallback!(self, indices, sqrt_x_each);
         let zero = <T::Storage as BitView>::Store::zero();
 
         self.data.iter_mut().for_each(|pw| {
@@ -723,10 +784,7 @@ where
     /// Apply `(√X)†` to multiple qubits using combined bitmask operations.
     #[inline]
     fn sqrt_x_dag_many(&mut self, indices: &[usize]) {
-        let (masks, n_words) = match self.build_masks(indices) {
-            Some(m) => m,
-            None => return,
-        };
+        let (masks, n_words) = masks_or_scalar_fallback!(self, indices, sqrt_x_dag_each);
         let zero = <T::Storage as BitView>::Store::zero();
 
         self.data.iter_mut().for_each(|pw| {
@@ -1645,6 +1703,186 @@ mod tests {
             assert_eq!(read(t), (false, false, true, false, 0));
             // Z_t (stabilizer of target) → Z_c Z_t, no phase.
             assert_eq!(read(n + t), (false, true, false, true, 0));
+        }
+    }
+
+    // G-061: a repeated qubit index in a batched Clifford owes conjugation by
+    // `Gᵏ`, i.e. the per-index loop — `X 0 0` is legal Stim meaning
+    // apply-to-each-target-in-order, and the fused mask carries one bit per
+    // *distinct* site. `Gᵏ` is the identity only for the involutory gates
+    // (`S² = Z`, `(√X)² = X`, `(√Y)² = Y`), so neither one bit nor an
+    // XOR-cancelled bit is right for every family.
+    mod duplicate_index_tests {
+        use super::*;
+        use ppvm_pauli_sum::config::fxhash::ByteF64;
+
+        // 2 u8 words → qubits 0..8 in word 0, qubits 8..16 in word 1.
+        type TC = ByteF64<2>;
+        type TTab = Tableau<TC>;
+        type GenTab = GeneralizedTableau<TC>;
+
+        fn snapshot(tab: &TTab) -> Vec<(Vec<u8>, Vec<u8>, u8)> {
+            tab.data
+                .iter()
+                .map(|pw| {
+                    (
+                        pw.word.xbits.data.as_raw_slice().to_vec(),
+                        pw.word.zbits.data.as_raw_slice().to_vec(),
+                        pw.phase,
+                    )
+                })
+                .collect()
+        }
+
+        /// A frame with all four bit patterns (`I`/`X`/`Y`/`Z`) live in the
+        /// rows, so a wrong number of gate applications cannot cancel out by
+        /// accident.
+        fn prepared(n: usize) -> TTab {
+            let mut tab = TTab::new(n);
+            for q in 0..n {
+                tab.h(q);
+                if q % 2 == 0 {
+                    tab.s(q);
+                }
+            }
+            for q in 1..n {
+                tab.cnot(q - 1, q);
+            }
+            tab
+        }
+
+        /// The batch on `$indices` must equal `$one` applied once per
+        /// occurrence.
+        macro_rules! check {
+            ($many:ident, $one:ident, $indices:expr) => {{
+                let indices: &[usize] = $indices;
+                let mut batched = prepared(16);
+                let mut looped = prepared(16);
+                batched.$many(indices);
+                for &q in indices {
+                    looped.$one(q);
+                }
+                assert_eq!(
+                    snapshot(&batched),
+                    snapshot(&looped),
+                    "{} on repeated indices {:?} must equal the {} loop",
+                    stringify!($many),
+                    indices,
+                    stringify!($one),
+                );
+            }};
+        }
+
+        macro_rules! check_all {
+            ($indices:expr) => {{
+                check!(x_many, x, $indices);
+                check!(y_many, y, $indices);
+                check!(z_many, z, $indices);
+                check!(h_many, h, $indices);
+                check!(s_many, s, $indices);
+                check!(s_dag_many, s_dag, $indices);
+                check!(sqrt_x_many, sqrt_x, $indices);
+                check!(sqrt_x_dag_many, sqrt_x_dag, $indices);
+                check!(sqrt_y_many, sqrt_y, $indices);
+                check!(sqrt_y_dag_many, sqrt_y_dag, $indices);
+            }};
+        }
+
+        #[test]
+        fn duplicate_indices_batch_equals_per_index_loop() {
+            check_all!(&[0, 0]);
+            check_all!(&[1, 1, 1]);
+            check_all!(&[0, 2, 2, 3]);
+        }
+
+        /// Independent of the loop: `G²` is a Clifford in its own right, so
+        /// `g_many(&[q, q])` must equal conjugation by `G²`.
+        #[test]
+        fn duplicate_indices_equal_conjugation_by_g_squared() {
+            // Involutory: G² = I, so the batch must leave the frame untouched.
+            for (name, apply) in [
+                ("x_many", TTab::x_many as fn(&mut TTab, &[usize])),
+                ("y_many", TTab::y_many),
+                ("z_many", TTab::z_many),
+                ("h_many", TTab::h_many),
+            ] {
+                let mut batched = prepared(16);
+                let untouched = prepared(16);
+                apply(&mut batched, &[1, 1]);
+                assert_eq!(
+                    snapshot(&batched),
+                    snapshot(&untouched),
+                    "{name}(&[1, 1]) must be the identity (G² = I)"
+                );
+            }
+
+            // S² = Z, (S†)² = Z, (√X)² = X, (√X†)² = X, (√Y)² = Y, (√Y†)² = Y.
+            for (name, apply, square) in [
+                (
+                    "s_many",
+                    TTab::s_many as fn(&mut TTab, &[usize]),
+                    TTab::z as fn(&mut TTab, usize),
+                ),
+                ("s_dag_many", TTab::s_dag_many, TTab::z),
+                ("sqrt_x_many", TTab::sqrt_x_many, TTab::x),
+                ("sqrt_x_dag_many", TTab::sqrt_x_dag_many, TTab::x),
+                ("sqrt_y_many", TTab::sqrt_y_many, TTab::y),
+                ("sqrt_y_dag_many", TTab::sqrt_y_dag_many, TTab::y),
+            ] {
+                let mut batched = prepared(16);
+                let mut squared = prepared(16);
+                apply(&mut batched, &[1, 1]);
+                square(&mut squared, 1);
+                assert_eq!(
+                    snapshot(&batched),
+                    snapshot(&squared),
+                    "{name}(&[1, 1]) must equal conjugation by G²"
+                );
+            }
+        }
+
+        /// The same defect across storage words: the duplicate sits in word 1
+        /// while another index sits in word 0.
+        #[test]
+        fn duplicate_indices_batch_equals_loop_multiword() {
+            check!(h_many, h, &[3, 10, 10]);
+            check!(s_many, s, &[3, 10, 10]);
+            check!(sqrt_y_many, sqrt_y, &[3, 10, 10]);
+        }
+
+        /// The `GeneralizedTableau` wrappers filter lost qubits and forward the
+        /// rest, duplicates included, so they inherit the same contract.
+        #[test]
+        fn duplicate_indices_generalized_tableau_equals_loop() {
+            let indices: &[usize] = &[0, 2, 2];
+            for lost in [None, Some(0usize)] {
+                let mut batched: GenTab = GeneralizedTableau::new(16, 1e-12);
+                let mut looped: GenTab = GeneralizedTableau::new(16, 1e-12);
+                for tab in [&mut batched, &mut looped] {
+                    tab.tableau = prepared(16);
+                    if let Some(q) = lost {
+                        tab.is_lost[q] = true;
+                    }
+                }
+                batched.sqrt_x_many(indices);
+                for &q in indices {
+                    looped.sqrt_x(q);
+                }
+                assert_eq!(
+                    snapshot(&batched.tableau),
+                    snapshot(&looped.tableau),
+                    "sqrt_x_many(&[0, 2, 2]) with lost = {lost:?}"
+                );
+            }
+        }
+
+        /// The user-visible symptom from G-061's `.stim` reproduction:
+        /// `X 0 0` on `|0…0⟩` is the identity, so the sampled bit must be 0.
+        #[test]
+        fn batched_x_twice_on_ground_state_measures_zero() {
+            let mut tab: GenTab = GeneralizedTableau::new(1, 1e-12);
+            tab.x_many(&[0, 0]);
+            assert_eq!(tab.measure(0), Some(false));
         }
     }
 }

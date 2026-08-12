@@ -56,6 +56,28 @@ where
     }
 }
 
+/// `true` iff `p` is an admissible correlated-loss parameter triple.
+///
+/// The channel is completely positive exactly when every event weight is
+/// nonnegative, i.e. `p0, p1 >= 0`, `p0 + 2·p1 <= 1` (`p1` is the probability
+/// that a *named* one of the pair is lost, so the exactly-one event carries
+/// `2·p1`) and `p2 ∈ [0, 1]`. Outside that region the mixture truncates a
+/// negative survivor weight and renormalizes, and the trajectory's cumulative
+/// scan stops being a categorical sampler — both silently.
+///
+/// Coefficients that do not convert to `f64` (symbolic ones) are not checked.
+pub fn is_admissible_correlated_loss<C: ToPrimitive>(p: &[C; 3]) -> bool {
+    // The slack matches `ppvm-tableau-2`'s guard: reject genuinely out-of-region
+    // parameters, not last-bit noise in a legitimately saturated triple. An exact
+    // `<= 1.0` would spuriously fire on e.g. `[1/3, 1/3, _]`, where
+    // `p0 + 2·p1` rounds to `1.0000000000000002`.
+    const SLACK: f64 = 1e-9;
+    let (Some(p0), Some(p1), Some(p2)) = (p[0].to_f64(), p[1].to_f64(), p[2].to_f64()) else {
+        return true;
+    };
+    p0 >= 0.0 && p1 >= 0.0 && p0 + 2.0 * p1 <= 1.0 + SLACK && (0.0..=1.0).contains(&p2)
+}
+
 // === Noise trait impls ===
 //
 // Orphan rules (E0210) forbid `impl<X: TableauLike<Coeff = T::Coeff>> Depolarizing<T> for X`,
@@ -257,8 +279,12 @@ where
     /// The three probabilities are:
     /// * `p[0]`: The probability of losing both qubits simultaneously when
     ///   both of them are in the qubit subspace.
-    /// * `p[1]`: The probability of losing either one qubit when both of them are
-    ///   in the qubit subspace.
+    /// * `p[1]`: The probability of losing a **named** one of the two qubits when
+    ///   both of them are in the qubit subspace, so the probability of losing
+    ///   *exactly one* is `2·p[1]` and the both-present survivor keeps
+    ///   `1 − 2·p[1] − p[0]` (which qubit is lost is 50/50). See
+    ///   [`ppvm_traits::traits::CorrelatedLossChannel`] for the normative
+    ///   statement.
     /// * `p[2]`: The probability of losing one qubit when the other one has already
     ///   been lost prior to the channel.
     fn correlated_loss_channel(
@@ -267,6 +293,10 @@ where
         addr1: usize,
         p: [<T as Config>::Coeff; 3],
     ) {
+        debug_assert!(
+            is_admissible_correlated_loss(&p),
+            "correlated loss needs p0, p1 >= 0, p0 + 2*p1 <= 1, p2 in [0, 1]; got {p:?}"
+        );
         if self.is_lost[addr0] {
             self.loss_channel(addr1, p[2].clone());
             return;
@@ -278,7 +308,14 @@ where
         let r = self.tableau.rng.random::<f64>();
         let mut cumulative = T::Coeff::zero();
         for (i, p_i) in p[..2].iter().enumerate() {
-            cumulative += p_i.clone();
+            // `p[1]` is the probability that a *named* one of the pair is lost,
+            // so the exactly-one event carries `2·p[1]` in this categorical
+            // scan; the fair coin below then picks which qubit.
+            cumulative += if i == 1 {
+                p_i.clone() + p_i.clone()
+            } else {
+                p_i.clone()
+            };
             if cumulative > r {
                 if i == 0 {
                     // both lost
@@ -731,12 +768,16 @@ mod tests {
 
     #[test]
     fn correlated_loss_p1_exactly_one_lost() {
-        // p[1]=1 → exactly one qubit lost each time.
+        // p[1]=0.5 → exactly one qubit lost each time, since `p[1]` is the
+        // probability that a *named* one of the pair is lost and so the
+        // exactly-one event carries 2·p[1] = 1. (`[0.0, 1.0, 0.0]`, which this
+        // test used before, is inadmissible under that convention:
+        // p0 + 2·p1 = 2 > 1.)
         let trials = 200;
         for seed in 0..trials {
             let mut t = tab(2);
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
-            t.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0]);
+            t.correlated_loss_channel(0, 1, [0.0, 0.5, 0.0]);
             assert!(
                 t.is_lost[0] ^ t.is_lost[1],
                 "Expected exactly one lost qubit (seed {seed})"
@@ -746,13 +787,14 @@ mod tests {
 
     #[test]
     fn correlated_loss_p1_both_qubits_chosen_equally() {
-        // With p[1]=1 the coin flip should lose addr0 and addr1 with equal frequency.
+        // With 2·p[1]=1 the coin flip should lose addr0 and addr1 with equal
+        // frequency.
         let trials = 1000u64;
         let mut addr0_lost = 0u64;
         for seed in 0..trials {
             let mut t = tab(2);
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
-            t.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0]);
+            t.correlated_loss_channel(0, 1, [0.0, 0.5, 0.0]);
             if t.is_lost[0] {
                 addr0_lost += 1;
             }
@@ -790,7 +832,8 @@ mod tests {
             let mut t = tab(2);
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
             t.x(0); // put addr0 in |1⟩
-            t.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0]);
+            // 2·p[1] = 1: exactly one qubit is lost in every trial.
+            t.correlated_loss_channel(0, 1, [0.0, 0.5, 0.0]);
             if t.is_lost[0] {
                 t.is_lost[0] = false;
                 assert!(!t.measure(0).unwrap(), "Lost qubit should be reset to |0⟩");
@@ -853,8 +896,11 @@ mod tests {
 
     #[test]
     fn correlated_loss_statistics_single() {
-        // P(exactly one lost) should converge to p[1].
-        let p_single = 0.4_f64;
+        // `p[1]` is the probability that a *named* one of the pair is lost, so
+        // P(exactly one lost) converges to 2·p[1]. (This test previously
+        // asserted `p[1]`, i.e. the rejected convention.)
+        let p_single = 0.2_f64;
+        let expected = 2.0 * p_single;
         let trials = 1000u64;
         let mut one_lost = 0u64;
         for seed in 0..trials {
@@ -868,9 +914,130 @@ mod tests {
         let fraction = one_lost as f64 / trials as f64;
         // 5σ: σ = sqrt(0.4*0.6/1000) ≈ 0.015
         assert!(
-            (fraction - p_single).abs() < 0.08,
-            "Expected ~{p_single:.2}, got {fraction:.3}"
+            (fraction - expected).abs() < 0.08,
+            "Expected ~{expected:.2}, got {fraction:.3}"
         );
+    }
+
+    // === G-040 — the correlated-loss `p[1]` convention ===
+    //
+    // The paper (`ppvm-paper/main.tex:462`, `:523`, `:845`) is the definition of
+    // record: `p[1]` is `p_LQ`, the probability that a **named** one of the pair
+    // is lost, so `P(exactly one lost) = 2·p[1]` and the both-present survivor
+    // scales by `1 − 2·p[1] − p[0]`. `ppvm-pauli-sum` already reads it that way;
+    // these tests pin this trajectory sampler to the same number, because the
+    // cross-backend disagreement is the actual bug a Python user hits.
+
+    type LossyTestSum = PauliSum<
+        ppvm_pauli_sum::config::fxhash::Byte<
+            1,
+            f64,
+            NoStrategy,
+            LossyPauliWord<[u8; 1], fxhash::FxBuildHasher>,
+        >,
+    >;
+
+    /// The Heisenberg scale factor `ppvm-pauli-sum` applies to a fully
+    /// in-subspace observable, i.e. `1 − p[0] − P(exactly one lost)`.
+    fn pauli_sum_survivor(p: [f64; 3]) -> f64 {
+        let mut sum = LossyTestSum::builder().n_qubits(2).build();
+        sum += ("ZZ", 1.0);
+        sum.correlated_loss_channel(0, 1, p);
+        let zz: LossyPauliWord<[u8; 1], fxhash::FxBuildHasher> = "ZZ".into();
+        *sum.data()
+            .get(&zz)
+            .expect("the all-present term survives a pure rescale")
+    }
+
+    #[test]
+    fn correlated_loss_exactly_one_lost_is_two_p1_and_agrees_with_pauli_sum() {
+        let p1 = 0.3_f64;
+        let p = [0.0, p1, 0.0];
+        let trials = 20_000u64;
+        let mut one_lost = 0u64;
+        for seed in 0..trials {
+            let mut t = tab(2);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.correlated_loss_channel(0, 1, p);
+            if t.is_lost[0] ^ t.is_lost[1] {
+                one_lost += 1;
+            }
+        }
+        let trajectory = one_lost as f64 / trials as f64;
+        // Same number, read off the (already correct) Heisenberg backend.
+        let pauli_sum = 1.0 - pauli_sum_survivor(p);
+        assert!(
+            (pauli_sum - 2.0 * p1).abs() < 1e-12,
+            "ppvm-pauli-sum P(exactly one) = {pauli_sum}, want 2*p[1] = {}",
+            2.0 * p1
+        );
+        assert!(
+            (trajectory - 2.0 * p1).abs() < 0.02,
+            "trajectory P(exactly one lost) = {trajectory:.4}, want 2*p[1] = {} \
+             (ppvm-pauli-sum says {pauli_sum})",
+            2.0 * p1
+        );
+    }
+
+    /// The paper's transport prediction: with `[p/3, p/3, p/3]` the per-event
+    /// both-present survival is `1 − p[0] − 2·p[1] = 1 − p`.
+    #[test]
+    fn correlated_loss_paper_transport_survival_is_one_minus_p() {
+        let p = 0.15_f64;
+        let third = p / 3.0;
+        let probabilities = [third, third, third];
+        let trials = 20_000u64;
+        let mut none_lost = 0u64;
+        for seed in 0..trials {
+            let mut t = tab(2);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.correlated_loss_channel(0, 1, probabilities);
+            if !t.is_lost[0] && !t.is_lost[1] {
+                none_lost += 1;
+            }
+        }
+        let fraction = none_lost as f64 / trials as f64;
+        assert!(
+            (fraction - (1.0 - p)).abs() < 0.02,
+            "trajectory P(no loss) = {fraction:.4}, want 1 - {p} = {}",
+            1.0 - p
+        );
+        let survivor = pauli_sum_survivor(probabilities);
+        assert!(
+            (survivor - (1.0 - p)).abs() < 1e-12,
+            "ppvm-pauli-sum survivor {survivor}, want 1 - {p}"
+        );
+    }
+
+    // G-043 — the admissible region `p0, p1 >= 0`, `p0 + 2·p1 <= 1`,
+    // `p2 ∈ [0, 1]` is what makes the channel completely positive. Outside it
+    // the cumulative scan below silently stops being a categorical sampler.
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "p0 + 2*p1 <= 1")]
+    fn correlated_loss_rejects_inadmissible_probabilities() {
+        let mut t = tab(2);
+        t.correlated_loss_channel(0, 1, [0.6, 0.6, 0.0]);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "p0 + 2*p1 <= 1")]
+    fn correlated_loss_rejects_negative_probabilities() {
+        let mut t = tab(2);
+        t.correlated_loss_channel(0, 1, [5.0, -3.0, 17.0]);
+    }
+
+    /// The saturated boundary `p0 + 2·p1 == 1` is admissible and must not trip
+    /// the guard — including the `[1/3, 1/3, _]` triple whose sum rounds above
+    /// one in binary floating point.
+    #[test]
+    fn correlated_loss_saturated_boundary_is_admissible() {
+        let mut t = tab(2);
+        t.correlated_loss_channel(0, 1, [0.2, 0.4, 1.0]);
+        let mut t = tab(2);
+        t.correlated_loss_channel(0, 1, [1.0 / 3.0, 1.0 / 3.0, 0.5]);
     }
 
     // === z_expectation ===

@@ -182,13 +182,23 @@ impl<T: Config> LossChannel<T> for PauliSum<T> {
 impl<T: Config> CorrelatedLossChannel<T> for PauliSum<T> {
     /// Apply a correlated loss channel to qubits at `addr0` and `addr1`.
     ///
-    /// The three probabilities are:
+    /// The parameters are exactly those of
+    /// [`CorrelatedLossChannel`](ppvm_traits::traits::CorrelatedLossChannel),
+    /// which is the normative statement; this impl only restates them:
     /// * `p[0]`: The probability of losing both qubits simultaneously when
     ///   both of them are in the qubit subspace.
-    /// * `p[1]`: The probability of losing either one qubit when both of them are
-    ///   in the qubit subspace.
+    /// * `p[1]`: The probability of losing a **named** one of the two when both
+    ///   of them are in the qubit subspace — so the probability of losing
+    ///   *exactly one* is `2·p[1]`, split evenly between the two qubits, and the
+    ///   survivor is scaled by `1 − 2·p[1] − p[0]`.
     /// * `p[2]`: The probability of losing one qubit when the other one has already
     ///   been lost prior to the channel.
+    ///
+    /// Admissible region: `p[0], p[1] >= 0`, `p[0] + 2·p[1] <= 1`,
+    /// `p[2] ∈ [0, 1]`. Outside it the map is not completely positive and this
+    /// impl will produce negative coefficients rather than raising — unlike the
+    /// tableau backends, which `debug_assert`. Guarding a generic
+    /// `Coefficient` (which carries no ordering) is tracked separately.
     fn correlated_loss_channel(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 3]) {
         self.map_insert_multiple(|k, v| {
             match (k.get(addr0), k.get(addr1)) {

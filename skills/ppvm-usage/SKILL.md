@@ -110,7 +110,7 @@ for _ in range(50):
 print(ps.overlap_with_zero())
 ```
 
-Loss channels live on `LossyPauliSum` (same API, plus `loss_channel(q, p)` and `correlated_loss_channel(q0, q1, [p_x, p_y, p_z])`).
+Loss channels live on `LossyPauliSum` (same API, plus `loss_channel(q, p)` and `correlated_loss_channel(q0, q1, [p_LL, p_LQ, p_LN])`).
 
 ### Generalized stabilizer tableau
 
@@ -266,7 +266,7 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 | `two_qubit_pauli_error(q0, q1, p[15])`                                      | ✓ | ✓   | ✓   |
 | `amplitude_damping(q, gamma)`                                               | ✓ | ✓   | —   |
 | `loss_channel(q, p)` (Lossy types)                                          | ✓ | ✓\* | ✓   |
-| `correlated_loss_channel(q0, q1, [px,py,pz])`                               | ✓ | ✓\* | ✓   |
+| `correlated_loss_channel(q0, q1, [p_LL, p_LQ, p_LN])`                               | ✓ | ✓\* | ✓   |
 | `reset_loss_channel(q)`                                                     | ✓ | ✓\* | ✓   |
 
 \* Python side: loss methods live on `LossyPauliSum`, not the plain `PauliSum`.

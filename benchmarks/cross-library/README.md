@@ -27,11 +27,22 @@ uv run --no-project --with matplotlib python3 benchmarks/cross-library/plot_xben
 uv run --no-project python3 benchmarks/cross-library/xbench_accuracy.py \
     --out benchmarks/cross-library/accuracy.csv
 
-# The regime where the two truncation rules actually diverge: a scrambling
-# circuit with small angles and great depth. Regenerates accuracy_scramble.csv.
-uv run --no-project python3 benchmarks/cross-library/xbench_accuracy.py \
-    --models scramble --libs ppvm,monoprop --qubits 8 --steps 400 --dt 0.05 \
-    --seeds 1,2,3,4,5 --atols 1e-3,1e-4,1e-5 --out target/xbench/scr-small.csv
+# The regime where the two truncation rules actually diverge. Three sweeps make
+# up accuracy_divergence.csv — depth, angle, and a scrambling circuit with small
+# angles and great depth (plus a θ=π/4 control on the same family).
+A=benchmarks/cross-library/xbench_accuracy.py
+uv run --no-project python3 $A --models heisenberg --libs ppvm,monoprop \
+    --qubits 6 --dt 0.05 --steps 10,20,40,80,160,320 --atols 1e-3,1e-5 --out d.csv
+uv run --no-project python3 $A --models heisenberg --libs ppvm,monoprop \
+    --qubits 8 --steps 10 --dt 0.02,0.05,0.1,0.2,0.4,0.6,0.785 --atols 1e-3 --out a.csv
+uv run --no-project python3 $A --models scramble --libs ppvm,monoprop --qubits 8 \
+    --steps 400 --dt 0.05 --seeds 1,2,3,4,5 --atols 1e-3,1e-4,1e-5 --out s.csv
+
+# Four panels: atol scaling, the depth trend, the angle reversal, the scrambler.
+uv run --no-project --with matplotlib python3 benchmarks/cross-library/plot_accuracy.py \
+    --csv benchmarks/cross-library/accuracy.csv \
+    --divergence benchmarks/cross-library/accuracy_divergence.csv \
+    --out target/xbench/accuracy.png
 ```
 
 A subset, if you prefer: `--libs ppvm,monoprop`.
@@ -269,6 +280,10 @@ collapses to 1.0–1.2× or reverses. Measured, at `n=8`:
 | `scramble`, `dt=π/4` (random `θ ≤ π/2`), 80 gates | `1e-3…1e-5` | 0.85–1.00× |
 | `heisenberg`, `dt=0.6` | `1e-3` | **0.67×** |
 
+[`accuracy_divergence.csv`](accuracy_divergence.csv) holds these sweeps, and
+`plot_accuracy.py` renders them as four panels — the `atol` scaling, the depth
+trend, the angle reversal, and the scrambler beside its control.
+
 The last two rows are the ones that catch people out. **Large angles favour
 `monoprop`**, by up to 1.5×, because that is where `ppvm`'s rule has its own
 failure mode: `truncate()` after each gate permanently deletes a term whose
@@ -354,9 +369,12 @@ itself converges once `n` exceeds the light cone (identical from `n≈10` at
 - `xbench_monoprop.py` — `monoprop`, including the thread-cap assertion.
 - `run_xbench.py` — validation, driving, CSV merge, summary table.
 - `plot_xbench.py` — the figure.
-- `xbench_accuracy.py` — the `atol` sweep behind `accuracy.csv` and
-  `accuracy_scramble.csv`: each engine's coefficient vector against a converged
-  reference, so the timings can be read next to what each truncation rule costs.
+- `xbench_accuracy.py` — the sweeps behind `accuracy.csv` (all five engines vs
+  `atol`) and `accuracy_divergence.csv` (depth, angle, and the scrambler): each
+  engine's coefficient vector against a converged reference, so the timings can
+  be read next to what each truncation rule costs. Sweeps any of `--models`,
+  `--steps`, `--dt`, `--seeds`, `--atols` as comma-separated lists.
+- `plot_accuracy.py` — the four-panel error-scaling figure from those two CSVs.
 
 [pp]: https://github.com/MSRudolph/PauliPropagation.jl
 [ps]: https://github.com/nicolasloizeau/PauliStrings.jl

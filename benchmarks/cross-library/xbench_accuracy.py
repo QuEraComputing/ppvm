@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import math
 import sys
 from pathlib import Path
@@ -44,6 +45,7 @@ CSV_COLUMNS = [
     "atol",
     "ref_atol",
     "ref_terms",
+    "ref_norm",
     "terms",
     "l2_err",
     "l1_err",
@@ -55,6 +57,12 @@ CSV_COLUMNS = [
     "ref_observable",
     "obs_abs_err",
 ]
+
+
+def norm(terms: dict[str, float]) -> float:
+    """`‖c‖₂`. Unitary conjugation preserves it, so it is the scale the absolute
+    errors should be read against."""
+    return math.sqrt(sum(v * v for v in terms.values()))
 
 
 def measure(approx: dict[str, float], ref: dict[str, float], atol: float) -> dict:
@@ -96,8 +104,12 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--models", default="tfim,heisenberg")
     ap.add_argument("--qubits", type=int, default=8)
-    ap.add_argument("--steps", type=int, default=10)
-    ap.add_argument("--dt", default="0.1")
+    ap.add_argument(
+        "--steps",
+        default="10",
+        help="comma-separated depths; the reference is recomputed per depth",
+    )
+    ap.add_argument("--dt", default="0.1", help="comma-separated angles scales")
     ap.add_argument("--atols", default="1e-3,1e-4,1e-5,1e-6,1e-7")
     ap.add_argument(
         "--seeds",
@@ -124,55 +136,54 @@ def main() -> None:
     if BASELINE not in libs:
         raise SystemExit(f"{BASELINE} is the reference and cannot be skipped")
 
-    base = {
-        "QUBITS": str(args.qubits),
-        "STEPS": str(args.steps),
-        "DT": args.dt,
-        "ITERS": "1",
-        "JCOUP": "1.0",
-        "HFIELD": "1.0",
-    }
+    base = {"QUBITS": str(args.qubits), "ITERS": "1", "JCOUP": "1.0", "HFIELD": "1.0"}
+    grid = itertools.product(
+        args.models.split(","),
+        args.steps.split(","),
+        args.dt.split(","),
+        args.seeds.split(","),
+    )
     rows = []
-    for model in args.models.split(","):
-        for seed in args.seeds.split(","):
-            env = {**base, "MODEL": model, "SEED": seed}
-            ref, ref_obs = run(BASELINE, {**env, "ATOL": args.ref_atol}, args.quiet)
-            print(
-                f"{model} n={args.qubits} seed={seed}: reference is {BASELINE} at"
-                f" atol={args.ref_atol} — {len(ref)} terms, observable {ref_obs:.12g}",
-                file=sys.stderr,
-            )
-            for atol in args.atols.split(","):
-                for lib in libs:
-                    approx, obs = run(lib, {**env, "ATOL": atol}, args.quiet)
-                    row = {
+    for model, steps, dt, seed in grid:
+        env = {**base, "MODEL": model, "STEPS": steps, "DT": dt, "SEED": seed}
+        # The reference depends on every axis, so it is recomputed per cell.
+        ref, ref_obs = run(BASELINE, {**env, "ATOL": args.ref_atol}, args.quiet)
+        print(
+            f"{model} n={args.qubits} steps={steps} dt={dt} seed={seed}: reference is"
+            f" {BASELINE} at atol={args.ref_atol} — {len(ref)} terms,"
+            f" observable {ref_obs:.12g}",
+            file=sys.stderr,
+        )
+        for atol in args.atols.split(","):
+            for lib in libs:
+                approx, obs = run(lib, {**env, "ATOL": atol}, args.quiet)
+                stats = measure(approx, ref, float(atol))
+                rows.append(
+                    {
                         "model": model,
                         "library": lib,
                         "qubits": args.qubits,
-                        "steps": args.steps,
-                        "dt": args.dt,
+                        "steps": steps,
+                        "dt": dt,
                         "seed": seed,
                         "atol": atol,
                         "ref_atol": args.ref_atol,
                         "ref_terms": len(ref),
+                        "ref_norm": f"{norm(ref):.6e}",
                         "observable": f"{obs:.15g}",
                         "ref_observable": f"{ref_obs:.15g}",
                         "obs_abs_err": f"{abs(obs - ref_obs):.6e}",
-                    }
-                    stats = measure(approx, ref, float(atol))
-                    row["terms"] = stats.pop("terms")
-                    row.update(
-                        {
+                        **{
                             k: f"{v:.6e}" if isinstance(v, float) else v
                             for k, v in stats.items()
-                        }
-                    )
-                    rows.append(row)
-                    print(
-                        f"  atol={atol} {lib:>20}: {row['terms']:>6} terms,"
-                        f" L2 {stats['l2_err']:.3e}, obs err {row['obs_abs_err']}",
-                        file=sys.stderr,
-                    )
+                        },
+                    }
+                )
+                print(
+                    f"  atol={atol} {lib:>20}: {stats['terms']:>7} terms,"
+                    f" L2 {stats['l2_err']:.3e}, obs err {rows[-1]['obs_abs_err']}",
+                    file=sys.stderr,
+                )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", newline="") as fh:

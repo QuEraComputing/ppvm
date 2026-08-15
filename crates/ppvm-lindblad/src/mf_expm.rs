@@ -35,7 +35,7 @@ use rayon::prelude::*;
 /// action output of `L*(basis[c])` that lands back in `basis` (CSC column
 /// `c`), and `per_col[c] = (raw, diag)` with `raw = Σ|coeff|` over ALL action
 /// outputs (in- and out-of-basis, an upper bound on the column 1-norm) and
-/// `diag` the coefficient of the output Word equal to the input Word. The
+/// `diag` the coefficient of the output Word<C> equal to the input Word<C>. The
 /// cache is reused by [`CscOp`] across every Krylov/Taylor matvec. Same
 /// scratch pattern as [`crate::orbit_rep::build_orbit_rep_cols`].
 /// CSC columns of the cached in-basis action: `cols[c]` = `(row, coeff)`.
@@ -43,10 +43,10 @@ type MfCols = Vec<Vec<(u32, f64)>>;
 /// Per-column `(raw, diag)` for the `μ`/1-norm selection.
 type MfPerCol = Vec<(f64, f64)>;
 
-fn build_mf_cols(
-    spec: &LindbladSpec,
-    basis: &[Word],
-    index: &FxHashMap<Word, u32>,
+fn build_mf_cols<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
+    index: &FxHashMap<Word<C>, u32>,
 ) -> (MfCols, MfPerCol) {
     basis
         .par_iter()
@@ -55,7 +55,7 @@ fn build_mf_cols(
                 (
                     Vec::<u32>::with_capacity(spec.n_qubits()),
                     Vec::<u32>::with_capacity(128),
-                    FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                    FxHashMap::<Word<C>, Complex<f64>>::with_capacity_and_hasher(
                         128,
                         FxBuildHasher::default(),
                     ),
@@ -225,9 +225,9 @@ where
 /// exact column 1-norm of `M − μ·I`; from `‖dt·(M−μI)‖₁` we pick the Taylor
 /// partition `(m*, s)` and hand everything to
 /// [`quspin_expm::ExpmOp::from_parts`].
-pub(crate) fn expm_apply_mf(
-    spec: &LindbladSpec,
-    basis: &[Word],
+pub(crate) fn expm_apply_mf<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
     dt: f64,
     coeffs: &[f64],
     drop_tol: f64,
@@ -286,9 +286,9 @@ pub(crate) fn expm_apply_mf(
 /// matrix-free applies, and recombine. Used by the test-only full-space
 /// complex reference step.
 #[cfg(test)]
-pub(crate) fn expm_apply_mf_cxvec(
-    spec: &LindbladSpec,
-    basis: &[Word],
+pub(crate) fn expm_apply_mf_cxvec<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
     dt: f64,
     b: &[Complex<f64>],
     drop_tol: f64,

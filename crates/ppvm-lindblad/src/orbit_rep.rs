@@ -39,7 +39,7 @@ use ppvm_pauli_sum::symmetry::TranslationGroup;
 use quspin_expm::ExpmOp;
 use rayon::prelude::*;
 
-// Word type re-exported from lib.rs.
+// Word<C> type re-exported from lib.rs.
 use crate::Word;
 
 /// Replace each entry of `basis` with its canonical orbit
@@ -49,7 +49,7 @@ use crate::Word;
 ///
 /// Does NOT deduplicate — if multiple input entries collapse to the
 /// same rep, both are kept (caller should run a merge afterwards).
-pub fn canonicalize_basis_to_rep(basis: &mut [Word], group: &TranslationGroup) {
+pub fn canonicalize_basis_to_rep<const C: usize>(basis: &mut [Word<C>], group: &TranslationGroup) {
     for w in basis.iter_mut() {
         *w = group.canonicalize(w);
     }
@@ -65,10 +65,10 @@ pub fn canonicalize_basis_to_rep(basis: &mut [Word], group: &TranslationGroup) {
 /// orbit-rep dynamics (`compute_action_terms`, `canonicalize_with_shift`,
 /// `character`); it is computed once and reused by the CSC-style matvec
 /// in [`CscOp`].
-pub(crate) fn build_orbit_rep_cols(
-    spec: &LindbladSpec,
-    basis: &[Word],
-    index: &FxHashMap<Word, u32>,
+pub(crate) fn build_orbit_rep_cols<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
+    index: &FxHashMap<Word<C>, u32>,
     group: &TranslationGroup,
     k_modes: &[i32],
 ) -> Vec<Vec<(u32, Complex<f64>)>> {
@@ -79,7 +79,7 @@ pub(crate) fn build_orbit_rep_cols(
                 (
                     Vec::<u32>::with_capacity(spec.n_qubits()),
                     Vec::<u32>::with_capacity(128),
-                    FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                    FxHashMap::<Word<C>, Complex<f64>>::with_capacity_and_hasher(
                         128,
                         FxBuildHasher::default(),
                     ),
@@ -113,9 +113,9 @@ pub(crate) fn build_orbit_rep_cols(
 /// partition `(m*, s)` and hand everything to
 /// [`quspin_expm::ExpmOp::from_parts`] (mirroring
 /// [`crate::mf_expm::expm_apply_mf`]).
-pub(crate) fn expm_apply_orbit_rep_cached(
-    spec: &LindbladSpec,
-    basis: &[Word],
+pub(crate) fn expm_apply_orbit_rep_cached<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
     group: &TranslationGroup,
     k_modes: &[i32],
     dt: f64,
@@ -195,15 +195,15 @@ pub(crate) fn expm_apply_orbit_rep_cached(
 /// candidates are kept. A large `max_basis` (room ≥ all candidates)
 /// disables the cap — the near-exact case.
 #[allow(clippy::too_many_arguments)]
-pub fn leakage_orbit_rep(
-    spec: &LindbladSpec,
-    basis: &[Word],
+pub fn leakage_orbit_rep<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
     coeffs: &[Complex<f64>],
-    protected: &[Word],
+    protected: &[Word<C>],
     group: &TranslationGroup,
     k_modes: &[i32],
     max_basis: usize,
-) -> Result<Vec<(Word, Complex<f64>)>, Error> {
+) -> Result<Vec<(Word<C>, Complex<f64>)>, Error> {
     if basis.len() != coeffs.len() {
         return Err(Error::LengthMismatch {
             what: "basis and coeffs",
@@ -211,8 +211,8 @@ pub fn leakage_orbit_rep(
             b: coeffs.len(),
         });
     }
-    let in_basis: FxHashMap<&Word, ()> = basis.iter().map(|w| (w, ())).collect();
-    let protected_set: FxHashMap<&Word, ()> = protected.iter().map(|w| (w, ())).collect();
+    let in_basis: FxHashMap<&Word<C>, ()> = basis.iter().map(|w| (w, ())).collect();
+    let protected_set: FxHashMap<&Word<C>, ()> = protected.iter().map(|w| (w, ())).collect();
 
     // Descending sort by |c|: process largest-magnitude contributors first
     // so the running room-cap keeps the right entries.
@@ -226,16 +226,16 @@ pub fn leakage_orbit_rep(
 
     const CHUNK_SIZE: usize = 4096;
     let room = max_basis.saturating_sub(basis.len());
-    let mut merged: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
+    let mut merged: FxHashMap<Word<C>, Complex<f64>> = FxHashMap::default();
     for chunk_indices in order.chunks(CHUNK_SIZE) {
-        let local: Vec<Vec<(Word, Complex<f64>)>> = chunk_indices
+        let local: Vec<Vec<(Word<C>, Complex<f64>)>> = chunk_indices
             .par_iter()
             .map_init(
                 || {
                     (
                         Vec::<u32>::with_capacity(spec.n_qubits()),
                         Vec::<u32>::with_capacity(128),
-                        FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                        FxHashMap::<Word<C>, Complex<f64>>::with_capacity_and_hasher(
                             128,
                             FxBuildHasher::default(),
                         ),
@@ -303,12 +303,12 @@ pub fn leakage_orbit_rep(
 /// `basis` is assumed to contain only canonical orbit representatives.
 /// If not, [`canonicalize_basis_to_rep`] should be called first.
 #[allow(clippy::too_many_arguments)]
-pub fn pc_step_orbit_rep(
-    spec: &LindbladSpec,
-    basis: &mut Vec<Word>,
+pub fn pc_step_orbit_rep<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &mut Vec<Word<C>>,
     coeffs: &mut Vec<Complex<f64>>,
     dt: f64,
-    protected: &[Word],
+    protected: &[Word<C>],
     group: &TranslationGroup,
     k_modes: &[i32],
     cfg: &crate::PcStepConfig,
@@ -367,10 +367,10 @@ pub fn pc_step_orbit_rep(
 /// basis.len()`, so the in-step orbit-rep basis never exceeds `max_basis`.
 /// New reps get coefficient 0; the surrounding expm fills them. No
 /// magnitude filter — the top-`room` by `|leakage|` are added.
-fn add_leakage_capped_complex(
-    basis: &mut Vec<Word>,
+fn add_leakage_capped_complex<const C: usize>(
+    basis: &mut Vec<Word<C>>,
     coeffs: &mut Vec<Complex<f64>>,
-    mut leak: Vec<(Word, Complex<f64>)>,
+    mut leak: Vec<(Word<C>, Complex<f64>)>,
     max_basis: usize,
 ) {
     let room = max_basis.saturating_sub(basis.len());
@@ -393,16 +393,16 @@ fn add_leakage_capped_complex(
 /// Complex analogue of `crate::cap_basis`: keep only the `max_basis`
 /// largest-`|c|` reps (protected reps always kept), dropping the rest.
 /// A `max_basis` large enough to cover the whole basis is a no-op.
-fn cap_basis_complex(
-    basis: &mut Vec<Word>,
+fn cap_basis_complex<const C: usize>(
+    basis: &mut Vec<Word<C>>,
     coeffs: &mut Vec<Complex<f64>>,
     max_basis: usize,
-    protected: &[Word],
+    protected: &[Word<C>],
 ) {
     if basis.len() <= max_basis {
         return;
     }
-    let protected_set: fxhash::FxHashSet<&Word> = protected.iter().collect();
+    let protected_set: fxhash::FxHashSet<&Word<C>> = protected.iter().collect();
     let n_prot = basis.iter().filter(|w| protected_set.contains(w)).count();
     let slots = max_basis.saturating_sub(n_prot);
     let mut mags: Vec<f64> = basis
@@ -438,16 +438,16 @@ fn cap_basis_complex(
 
 /// Complex analogue of `crate::prune_basis`: drop reps with `|c| <
 /// drop_tol`, never dropping `protected` reps. No-op when `drop_tol <= 0`.
-fn prune_basis_complex_local(
-    basis: &mut Vec<Word>,
+fn prune_basis_complex_local<const C: usize>(
+    basis: &mut Vec<Word<C>>,
     coeffs: &mut Vec<Complex<f64>>,
     drop_tol: f64,
-    protected: &[Word],
+    protected: &[Word<C>],
 ) {
     if drop_tol <= 0.0 {
         return;
     }
-    let protected_set: fxhash::FxHashSet<&Word> = protected.iter().collect();
+    let protected_set: fxhash::FxHashSet<&Word<C>> = protected.iter().collect();
     let mut write = 0;
     for read in 0..basis.len() {
         if coeffs[read].norm() >= drop_tol || protected_set.contains(&basis[read]) {

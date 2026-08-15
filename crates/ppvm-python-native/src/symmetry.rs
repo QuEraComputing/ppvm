@@ -18,6 +18,25 @@ use ppvm_lindblad::{codes_from_word, word_from_codes};
 use ppvm_pauli_sum::symmetry as core_sym;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
+/// Run `$body` at the narrowest Pauli-word width that fits `$n`.
+///
+/// Mirrors the width dispatch in [`crate::lindblad`]: `n <= 128` uses the
+/// original `C = 2` layout, so nothing changes for existing callers.
+macro_rules! with_width {
+    ($n:expr, $C:ident => $body:expr) => {
+        if $n <= 128 {
+            const $C: usize = 2;
+            $body
+        } else if $n <= 256 {
+            const $C: usize = 4;
+            $body
+        } else {
+            const $C: usize = 8;
+            $body
+        }
+    };
+}
+
 type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
 type PyPauliMapComplex<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>);
 
@@ -156,10 +175,13 @@ impl TranslationGroup {
                 self.inner.n_qubits()
             )));
         }
-        let w = word_from_codes(codes).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let canon = self.inner.canonicalize(&w);
         let mut out = vec![0u8; codes.len()];
-        codes_from_word(&canon, &mut out);
+        with_width!(codes.len(), C => {
+            let w = word_from_codes::<C>(codes)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            let canon = self.inner.canonicalize(&w);
+            codes_from_word(&canon, &mut out);
+        });
         Ok(out.into_pyarray(py))
     }
 }
@@ -185,58 +207,60 @@ pub fn canonicalize_basis_arr_complex<'py>(
     group: &TranslationGroup,
     momentum: PyReadonlyArray1<'py, i32>,
 ) -> PyResult<PyPauliMapComplex<'py>> {
-    let basis_view = basis.as_array();
-    let n_q = group.inner.n_qubits();
-    if basis_view.shape().get(1).copied() != Some(n_q) {
-        return Err(PyValueError::new_err(format!(
-            "basis has {} qubits per row but group acts on {n_q}",
-            basis_view.shape().get(1).copied().unwrap_or(0)
-        )));
-    }
-    let n = basis_view.shape()[0];
-    let coeffs_slice = coeffs.as_slice()?;
-    if coeffs_slice.len() != n {
-        return Err(PyValueError::new_err(format!(
-            "coeffs has length {} but basis has {} rows",
-            coeffs_slice.len(),
-            n
-        )));
-    }
-    let k_slice = momentum.as_slice()?;
-    if k_slice.len() != group.inner.n_generators() {
-        return Err(PyValueError::new_err(format!(
-            "momentum has {} entries but group has {} generators",
-            k_slice.len(),
-            group.inner.n_generators()
-        )));
-    }
-    let mut basis_words = crate::lindblad::decode_basis(&basis_view, n_q)?;
-    let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
-        .iter()
-        .map(|c| Complex::new(c.re, c.im))
-        .collect();
+    with_width!(group.inner.n_qubits(), C => {
+        let basis_view = basis.as_array();
+        let n_q = group.inner.n_qubits();
+        if basis_view.shape().get(1).copied() != Some(n_q) {
+            return Err(PyValueError::new_err(format!(
+                "basis has {} qubits per row but group acts on {n_q}",
+                basis_view.shape().get(1).copied().unwrap_or(0)
+            )));
+        }
+        let n = basis_view.shape()[0];
+        let coeffs_slice = coeffs.as_slice()?;
+        if coeffs_slice.len() != n {
+            return Err(PyValueError::new_err(format!(
+                "coeffs has length {} but basis has {} rows",
+                coeffs_slice.len(),
+                n
+            )));
+        }
+        let k_slice = momentum.as_slice()?;
+        if k_slice.len() != group.inner.n_generators() {
+            return Err(PyValueError::new_err(format!(
+                "momentum has {} entries but group has {} generators",
+                k_slice.len(),
+                group.inner.n_generators()
+            )));
+        }
+        let mut basis_words = crate::lindblad::decode_basis::<C>(&basis_view, n_q)?;
+        let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
+            .iter()
+            .map(|c| Complex::new(c.re, c.im))
+            .collect();
 
-    core_sym::canonicalize_pauli_sum_complex(
-        &mut basis_words,
-        &mut coeffs_vec,
-        &group.inner,
-        k_slice,
-    );
+        core_sym::canonicalize_pauli_sum_complex(
+            &mut basis_words,
+            &mut coeffs_vec,
+            &group.inner,
+            k_slice,
+        );
 
-    let m = basis_words.len();
-    let mut out_basis = vec![0u8; m * n_q];
-    for (i, w) in basis_words.iter().enumerate() {
-        codes_from_word(w, &mut out_basis[i * n_q..(i + 1) * n_q]);
-    }
-    let out_coeffs: Vec<Complex64> = coeffs_vec
-        .iter()
-        .map(|c| Complex64::new(c.re, c.im))
-        .collect();
-    let basis_arr = out_basis
-        .into_pyarray(py)
-        .reshape([m, n_q])
-        .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
-    Ok((basis_arr, out_coeffs.into_pyarray(py)))
+        let m = basis_words.len();
+        let mut out_basis = vec![0u8; m * n_q];
+        for (i, w) in basis_words.iter().enumerate() {
+            codes_from_word(w, &mut out_basis[i * n_q..(i + 1) * n_q]);
+        }
+        let out_coeffs: Vec<Complex64> = coeffs_vec
+            .iter()
+            .map(|c| Complex64::new(c.re, c.im))
+            .collect();
+        let basis_arr = out_basis
+            .into_pyarray(py)
+            .reshape([m, n_q])
+            .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
+        Ok((basis_arr, out_coeffs.into_pyarray(py)))
+    })
 }
 
 /// Verify that a `(basis_arr, complex_coeffs)` Pauli sum lies in the
@@ -254,23 +278,25 @@ pub fn check_momentum_sector_arr<'py>(
     momentum: PyReadonlyArray1<'py, i32>,
     tol: f64,
 ) -> PyResult<()> {
-    let basis_view = basis.as_array();
-    let n_q = group.inner.n_qubits();
-    if basis_view.shape().get(1).copied() != Some(n_q) {
-        return Err(PyValueError::new_err(format!(
-            "basis has {} qubits per row but group acts on {n_q}",
-            basis_view.shape().get(1).copied().unwrap_or(0)
-        )));
-    }
-    let coeffs_slice = coeffs.as_slice()?;
-    let k_slice = momentum.as_slice()?;
-    let basis_words = crate::lindblad::decode_basis(&basis_view, n_q)?;
-    let coeffs_vec: Vec<Complex<f64>> = coeffs_slice
-        .iter()
-        .map(|c| Complex::new(c.re, c.im))
-        .collect();
-    core_sym::check_momentum_sector(&basis_words, &coeffs_vec, &group.inner, k_slice, tol)
-        .map_err(|e| PyValueError::new_err(format!("{e}")))
+    with_width!(group.inner.n_qubits(), C => {
+        let basis_view = basis.as_array();
+        let n_q = group.inner.n_qubits();
+        if basis_view.shape().get(1).copied() != Some(n_q) {
+            return Err(PyValueError::new_err(format!(
+                "basis has {} qubits per row but group acts on {n_q}",
+                basis_view.shape().get(1).copied().unwrap_or(0)
+            )));
+        }
+        let coeffs_slice = coeffs.as_slice()?;
+        let k_slice = momentum.as_slice()?;
+        let basis_words = crate::lindblad::decode_basis::<C>(&basis_view, n_q)?;
+        let coeffs_vec: Vec<Complex<f64>> = coeffs_slice
+            .iter()
+            .map(|c| Complex::new(c.re, c.im))
+            .collect();
+        core_sym::check_momentum_sector(&basis_words, &coeffs_vec, &group.inner, k_slice, tol)
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
+    })
 }
 
 /// Merge a `(basis_arr, coeffs)` Pauli sum (the representation used by
@@ -292,38 +318,40 @@ pub fn canonicalize_basis_arr<'py>(
     coeffs: PyReadonlyArray1<'py, f64>,
     group: &TranslationGroup,
 ) -> PyResult<PyPauliMap<'py>> {
-    let basis_view = basis.as_array();
-    let n_q = group.inner.n_qubits();
-    if basis_view.shape().get(1).copied() != Some(n_q) {
-        return Err(PyValueError::new_err(format!(
-            "basis has {} qubits per row but group acts on {n_q}",
-            basis_view.shape().get(1).copied().unwrap_or(0)
-        )));
-    }
-    let n = basis_view.shape()[0];
-    let coeffs_slice = coeffs.as_slice()?;
-    if coeffs_slice.len() != n {
-        return Err(PyValueError::new_err(format!(
-            "coeffs has length {} but basis has {} rows",
-            coeffs_slice.len(),
-            n
-        )));
-    }
+    with_width!(group.inner.n_qubits(), C => {
+        let basis_view = basis.as_array();
+        let n_q = group.inner.n_qubits();
+        if basis_view.shape().get(1).copied() != Some(n_q) {
+            return Err(PyValueError::new_err(format!(
+                "basis has {} qubits per row but group acts on {n_q}",
+                basis_view.shape().get(1).copied().unwrap_or(0)
+            )));
+        }
+        let n = basis_view.shape()[0];
+        let coeffs_slice = coeffs.as_slice()?;
+        if coeffs_slice.len() != n {
+            return Err(PyValueError::new_err(format!(
+                "coeffs has length {} but basis has {} rows",
+                coeffs_slice.len(),
+                n
+            )));
+        }
 
-    let mut basis_words = crate::lindblad::decode_basis(&basis_view, n_q)?;
-    let mut coeffs_vec = coeffs_slice.to_vec();
+        let mut basis_words = crate::lindblad::decode_basis::<C>(&basis_view, n_q)?;
+        let mut coeffs_vec = coeffs_slice.to_vec();
 
-    core_sym::canonicalize_pauli_sum(&mut basis_words, &mut coeffs_vec, &group.inner);
+        core_sym::canonicalize_pauli_sum(&mut basis_words, &mut coeffs_vec, &group.inner);
 
-    // Re-encode.
-    let m = basis_words.len();
-    let mut out_basis = vec![0u8; m * n_q];
-    for (i, w) in basis_words.iter().enumerate() {
-        codes_from_word(w, &mut out_basis[i * n_q..(i + 1) * n_q]);
-    }
-    let basis_arr = out_basis
-        .into_pyarray(py)
-        .reshape([m, n_q])
-        .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
-    Ok((basis_arr, coeffs_vec.into_pyarray(py)))
+        // Re-encode.
+        let m = basis_words.len();
+        let mut out_basis = vec![0u8; m * n_q];
+        for (i, w) in basis_words.iter().enumerate() {
+            codes_from_word(w, &mut out_basis[i * n_q..(i + 1) * n_q]);
+        }
+        let basis_arr = out_basis
+            .into_pyarray(py)
+            .reshape([m, n_q])
+            .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
+        Ok((basis_arr, coeffs_vec.into_pyarray(py)))
+    })
 }

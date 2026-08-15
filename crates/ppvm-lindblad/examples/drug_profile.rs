@@ -143,7 +143,7 @@ fn model(
     (h, ops, k)
 }
 
-fn observable(n: usize) -> (Vec<Word>, Vec<f64>) {
+fn observable(n: usize) -> (Vec<Word<2>>, Vec<f64>) {
     let mut basis = Vec::new();
     let mut coeffs = Vec::new();
     for a in 0..n {

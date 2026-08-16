@@ -201,6 +201,17 @@ orbit FID matches an independent real-space run to 1e-4 at matched
 truncation (B=512 reps vs 13.8k strings; the residual is the truncation
 difference, not the rotation).
 
+TRUNCATION-FREE CROSS-CHECK (the decisive one): with the cap far above the
+reached basis, neither path truncates, so orbit and real space compute the
+same object by independent routes. At L=3, 2 steps (t = 0, 2, 4 us):
+193,194 orbit reps in 5.8 s versus 5,216,004 real-space strings in 33.7 s,
+compression 26.999 (= |G| = 27 up to stabilised orbits), and
+**max |G_orbit − G_real| = 1.110e-16** — round-off, matching the figure
+model.py's docstring quotes. The 5.8x wall win exceeds the ~3x at matched
+truncation because here the orbit path really does hold |G|x fewer objects
+rather than a fixed B. Only 2 steps: uncapped growth under the all-pairs
+dipolar H reaches ~1e7-1e8 strings by step 3.
+
 ### Not done (next lever)
 
 The action cache (per-rep template of output reps and phased matrix

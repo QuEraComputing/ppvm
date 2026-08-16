@@ -83,13 +83,77 @@ mixed-radix group) and `odometer_walk_covers_the_whole_group` (the
 incremental walk still enumerates each element exactly once, and every
 member canonicalizes to the lex-min).
 
+### Second lever: O(N) least-rotation canonicalizer (same day)
+
+For a single generator shifting contiguous blocks of qubits — exactly the
+`chain_1d` and `ladder` layouts — the canonical rep is a least-rotation
+problem, so Booth/Duval replaces the `O(|G|·N)` walk with `O(N)`.
+
+Not, however, as *one* Booth call. `PauliWord`'s `Ord` compares the whole
+x-bit plane in qubit order and only then the z-bit plane (verified
+empirically: `chain_1d(4)` sends `XZII → ZIIX`, the bit-lexicographic
+minimum, not the integer minimum). Under a shift by `r` the comparison key
+is therefore `rot_r(x_block0) ‖ … ‖ rot_r(z_block0) ‖ …` — `2·n_blocks`
+strings rotated *together*, which is not a single rotated string. Running
+Booth on an interleaved per-site symbol would be one call but minimises a
+*different* order, silently changing which orbit member is canonical (a
+gauge change: harmless for observables, but a needless compatibility
+break). So instead the candidate rotation set is refined plane by plane:
+after each plane the survivors are the rotations achieving that plane's
+minimum, which are spaced by the *period* of the minimal rotation, i.e. a
+residue class `{start + i·step}` with `step · m = L`. The next plane is
+then a least-rotation problem over `m` super-symbols of `step` bits.
+Per plane: `O(L)` symbol comparisons of `O(step)` bits = `O(L)`; total
+`O(n_blocks · L) = O(N)`, allocation-free apart from the output word.
+Period per stage comes from the first Lyndon factor (Duval), `O(m)` and
+allocation-free — no KMP table. The tie-break is chosen to reproduce the
+odometer's exact choice (smallest number of generator applications), so
+the shift index — and hence the momentum phase — is unchanged too.
+Groups without the block-cyclic layout (2D/3D tori, arbitrary
+`from_generators`) keep the odometer, which now also serves as the test
+oracle.
+
+µs per canonicalization (same protocol):
+
+| L (=\|G\|) | 4 | 8 | 16 | 32 | 64 | 96 |
+|---|---|---|---|---|---|---|
+| original | 0.52 | 0.99 | 4.05 | 27.03 | 198.90 | 657.40 |
+| odometer | 0.23 | 0.34 | 0.84 |  2.74 |   9.10 |  19.25 |
+| Booth    | 0.21 | 0.24 | 0.32 |  0.47 |   0.84 |   1.20 |
+
+i.e. 4×/13×/58×/237×/548× over the original at L = 8…96, and flat in |G|
+as designed (the residual growth is the `O(N)` scan itself).
+
+`pc_step` µs per basis entry (B = 30 000): momentum k=1 at L=11
+23.11 → 8.08 → **3.77**, at L=16 61.37 → 12.99 → **4.27**, against 1.42
+for real space. The momentum/real per-entry ratio across sizes is now
+2.58 (L=8), 2.62 (11), 3.01 (16), 3.45 (24), 3.96 (32) — it grows like the
+`O(N)` scan rather than like `|G|`, and sits far below the break-even
+line `|G|` at which a single-mode run costs the same as a full real-space
+run. At L=32 one k-mode is ~8× cheaper than a real-space run (and 32×
+lighter).
+
+**End-to-end validation.** The same driver job
+(`main_k_pec_ladder.py --L 12 --dt 0.05 --steps 40 --ks 1 --max_basis 20000
+--admit_basis 60000 --drop_tol 0`) run on all three builds returns
+`C_k(t)` that is **bit-identical** (`max |ΔC| = 0.000e+00`, peak basis
+20 000 in all three), at 58.0 s → 17.8 s → 7.4 s wall = **7.9× end to
+end**. Convention, phases and truncation decisions are all unchanged; only
+the cost moved.
+
+A 400-random-word × all-orbit-members × 6-group property test
+(`block_cyclic_canonicalizer_matches_the_odometer`) asserts the fast path
+matches the odometer on both the rep and the shift index, with structured
+cases for every period dividing L (fully stabilised words are where a
+naive tie-break would diverge).
+
 ### Not done (next lever)
 
-For single-generator groups the canonical rep is a least-rotation problem,
-solvable in `O(N)` by Booth/Duval instead of `O(|G|·N)` — that would close
-the remaining ~6-9× per-entry gap to real space, at the cost of changing
-the rep convention (any consistent choice is valid). Worth it only if D(k)
-turns out to be canonicalization-bound after this fix.
+Momentum is now within ~3-4× of real space per entry, so the next-largest
+item is no longer canonicalization: it is `apply_generator`/rep
+construction (`O(N)` bit-by-bit with a `rehash`) and the action pass
+itself. Chunk-wise rotation of the bit planes would take the rep
+construction to `O(N/64)`.
 
 Note: `cargo clippy --all-targets -p ppvm-lindblad` fails on the two
 benches (`drug_dipolar`, `kossakowski`) with "missing generics for type

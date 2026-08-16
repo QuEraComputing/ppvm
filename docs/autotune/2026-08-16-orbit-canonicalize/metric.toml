@@ -12,6 +12,7 @@
 "pcstep_us_per_entry_realspace_L16" = 1.49
 
 [[metric]]
+"commit" = "7e8ff64b"
 "status" = "keep"
 "description" = "odometer group walk (O(|G| N), allocation-free) + per-call character table indexed by canonicalize_with_index; same-session A/B against the baseline build of the same commit"
 "canonicalize_us_L16" = 0.84
@@ -22,3 +23,17 @@
 "pcstep_us_per_entry_momentum_L16" = 12.99
 "pcstep_us_per_entry_realspace_L11" = 1.38
 "pcstep_us_per_entry_realspace_L16" = 1.49
+
+[[metric]]
+"status" = "keep"
+"description" = "staged least-rotation (Booth/Duval) canonicalizer for chain/ladder layouts, O(N); identical rep AND shift index to the odometer (property-tested), bit-identical C_k(t) end to end; driver job L=12 k=1 40 steps: 58.0 -> 17.8 -> 7.4 s"
+"canonicalize_us_L16" = 0.32
+"canonicalize_us_L32" = 0.47
+"canonicalize_us_L64" = 0.84
+"canonicalize_us_L96" = 1.20
+"pcstep_us_per_entry_momentum_L11" = 3.77
+"pcstep_us_per_entry_momentum_L16" = 4.27
+"pcstep_us_per_entry_momentum_L32" = 5.93
+"pcstep_us_per_entry_realspace_L16" = 1.42
+"momentum_over_realspace_ratio_L32" = 3.96
+"driver_L12_k1_wall_s" = 7.4

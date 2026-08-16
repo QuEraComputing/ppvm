@@ -1,0 +1,24 @@
+[[metric]]
+"commit" = "4c079995"
+"status" = "keep"
+"description" = "baseline (branch tip, pre-fix): canonicalize rebuilds each group element from the identity -> O(|G|^2 N); us/call for ladder(L,2) weight-4 words, and us per basis entry for one pc_step at B=30k"
+"canonicalize_us_L16" = 4.05
+"canonicalize_us_L32" = 27.03
+"canonicalize_us_L64" = 198.90
+"canonicalize_us_L96" = 657.40
+"pcstep_us_per_entry_momentum_L11" = 23.11
+"pcstep_us_per_entry_momentum_L16" = 61.37
+"pcstep_us_per_entry_realspace_L11" = 1.38
+"pcstep_us_per_entry_realspace_L16" = 1.49
+
+[[metric]]
+"status" = "keep"
+"description" = "odometer group walk (O(|G| N), allocation-free) + per-call character table indexed by canonicalize_with_index; same-session A/B against the baseline build of the same commit"
+"canonicalize_us_L16" = 0.84
+"canonicalize_us_L32" = 2.74
+"canonicalize_us_L64" = 9.10
+"canonicalize_us_L96" = 19.25
+"pcstep_us_per_entry_momentum_L11" = 8.08
+"pcstep_us_per_entry_momentum_L16" = 12.99
+"pcstep_us_per_entry_realspace_L11" = 1.38
+"pcstep_us_per_entry_realspace_L16" = 1.49

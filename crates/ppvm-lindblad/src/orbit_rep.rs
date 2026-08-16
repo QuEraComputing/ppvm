@@ -62,9 +62,11 @@ pub fn canonicalize_basis_to_rep<const C: usize>(basis: &mut [Word<C>], group: &
 /// `(row, χ_k(g_{cnt_q}) · v_q)` pairs for every action output Pauli `q`
 /// of `L*(basis[c])` whose orbit rep `r_q` is in `basis` at index `row`.
 /// Outputs not in `basis` are dropped. This is the expensive part of the
-/// orbit-rep dynamics (`compute_action_terms`, `canonicalize_with_shift`,
-/// `character`); it is computed once and reused by the CSC-style matvec
-/// in [`CscOp`].
+/// orbit-rep dynamics (`compute_action_terms` + one `canonicalize_with_index`
+/// per action term); it is computed once and reused by the CSC-style matvec
+/// in [`CscOp`]. The `χ_k` factors come from a per-call
+/// [`TranslationGroup::character_table`] lookup rather than a `sin`/`cos`
+/// per term.
 pub(crate) fn build_orbit_rep_cols<const C: usize>(
     spec: &LindbladSpec<C>,
     basis: &[Word<C>],
@@ -72,6 +74,9 @@ pub(crate) fn build_orbit_rep_cols<const C: usize>(
     group: &TranslationGroup,
     k_modes: &[i32],
 ) -> Vec<Vec<(u32, Complex<f64>)>> {
+    // `χ_k` for all |G| group elements, built once and indexed by the
+    // element index returned with each canonicalization.
+    let chi = group.character_table(k_modes);
     basis
         .par_iter()
         .map_init(
@@ -89,10 +94,9 @@ pub(crate) fn build_orbit_rep_cols<const C: usize>(
                 let terms = spec.compute_action_terms(r, s1, s2, lm);
                 let mut out = Vec::with_capacity(terms.len());
                 for (q, v) in terms.iter() {
-                    let (r_q, cnt_q) = group.canonicalize_with_shift(q);
+                    let (r_q, g_idx) = group.canonicalize_with_index(q);
                     if let Some(&row) = index.get(&r_q) {
-                        let phase = group.character(k_modes, &cnt_q);
-                        out.push((row, phase * *v));
+                        out.push((row, chi[g_idx] * *v));
                     }
                 }
                 out
@@ -225,6 +229,7 @@ pub fn leakage_orbit_rep<const C: usize>(
     });
 
     const CHUNK_SIZE: usize = 4096;
+    let chi = group.character_table(k_modes);
     let room = max_basis.saturating_sub(basis.len());
     let mut merged: FxHashMap<Word<C>, Complex<f64>> = FxHashMap::default();
     for chunk_indices in order.chunks(CHUNK_SIZE) {
@@ -247,10 +252,9 @@ pub fn leakage_orbit_rep<const C: usize>(
                     let terms = spec.compute_action_terms(r, s1, s2, lm);
                     let mut out = Vec::with_capacity(terms.len());
                     for (q, v) in terms.iter() {
-                        let (r_q, cnt_q) = group.canonicalize_with_shift(q);
+                        let (r_q, g_idx) = group.canonicalize_with_index(q);
                         if !in_basis.contains_key(&r_q) && !protected_set.contains_key(&r_q) {
-                            let phase = group.character(k_modes, &cnt_q);
-                            out.push((r_q, phase * *v * c_r));
+                            out.push((r_q, chi[g_idx] * *v * c_r));
                         }
                     }
                     out

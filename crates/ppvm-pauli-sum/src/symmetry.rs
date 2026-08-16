@@ -258,9 +258,38 @@ impl TranslationGroup {
         out
     }
 
+    /// Odometer step: advance `cur` from the group element with
+    /// mixed-radix index `idx - 1` to the one with index `idx`.
+    ///
+    /// Generator `0` is the fastest-varying digit, so it advances on
+    /// every step; digit `g` advances only when all lower digits roll
+    /// over, i.e. when `idx` is a multiple of `orders[0..=g-1]`. Applying
+    /// generator `g` once always moves digit `g` forward *cyclically*
+    /// (the `orders[g]`-th application is the identity), so a roll-over
+    /// is just one more application — no rebuild from the identity.
+    ///
+    /// Cost: `O(1)` generator applications amortised, hence `O(|G| × N)`
+    /// for a full walk instead of the `O(|G|² × N)` of rebuilding each
+    /// element from scratch.
+    #[inline]
+    fn advance<A, S, const R: bool>(&self, cur: &mut PauliWord<A, S, R>, idx: usize)
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+    {
+        let mut p = 1usize;
+        for (g, &o) in self.orders.iter().enumerate() {
+            *cur = self.apply_generator(cur, g);
+            p *= o as usize;
+            if !idx.is_multiple_of(p) {
+                break;
+            }
+        }
+    }
+
     /// Lex-min canonical representative of `w`'s translation orbit
-    /// under this group. Walks the full group via mixed-radix counters,
-    /// keeping the smallest word seen.
+    /// under this group. Walks the full group as a mixed-radix odometer
+    /// (see [`Self::advance`]), keeping the smallest word seen.
     ///
     /// Total cost: `O(|G| × n_qubits)` per call.
     pub fn canonicalize<A, S, const R: bool>(&self, w: &PauliWord<A, S, R>) -> PauliWord<A, S, R>
@@ -276,41 +305,13 @@ impl TranslationGroup {
         if self.perms.is_empty() {
             return *w;
         }
-        // Mixed-radix counter `(c[0], c[1], …)` ranges over
-        // `0..orders[0] × 0..orders[1] × …`. We track the "current"
-        // word obtained by applying generator `g` once each time
-        // `c[g]` increments; rolling over `c[g]` means we apply
-        // generator `g` exactly `orders[g]` times (= identity), so
-        // `cur` returns to the orbit member that had `c[g..]` as its
-        // tail and `0` in slots 0..g.
-        //
-        // The simplest correct implementation just enumerates: for each
-        // group element index, build the corresponding word from scratch
-        // by applying the right number of each generator.
         let mut best = *w;
-        let order = self.order();
-        let mut idx = 0usize;
-        while idx < order {
-            // Decode `idx` to mixed-radix counter `c`
-            let mut rem = idx;
-            let mut counters: Vec<u32> = Vec::with_capacity(self.perms.len());
-            for &o in &self.orders {
-                counters.push((rem as u32) % o);
-                rem /= o as usize;
-            }
-            // Construct the group element's permutation by composing
-            // `generator g` applied `c[g]` times, for each g.
-            // We do this lazily by iterating over qubits.
-            let mut cur = *w;
-            for (g, &c) in counters.iter().enumerate() {
-                for _ in 0..c {
-                    cur = self.apply_generator(&cur, g);
-                }
-            }
+        let mut cur = *w;
+        for idx in 1..self.order() {
+            self.advance(&mut cur, idx);
             if cur < best {
                 best = cur;
             }
-            idx += 1;
         }
         best
     }
@@ -325,6 +326,11 @@ impl TranslationGroup {
     /// momentum phases by the phase-aware merge routines.
     ///
     /// Same `O(|G| × n_qubits)` cost as `canonicalize`.
+    ///
+    /// Allocates the counter `Vec`. Hot paths that only need the momentum
+    /// phase should prefer [`Self::canonicalize_with_index`] together with
+    /// [`Self::character_table`] — allocation-free, and no transcendental
+    /// per call.
     pub fn canonicalize_with_shift<A, S, const R: bool>(
         &self,
         w: &PauliWord<A, S, R>,
@@ -333,43 +339,107 @@ impl TranslationGroup {
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
     {
-        debug_assert_eq!(w.n_qubits(), self.n_qubits);
         if self.perms.is_empty() {
             return (*w, Vec::new());
         }
+        let (rep, inv_idx) = self.canonicalize_with_index(w);
+        (rep, self.counter_from_index(inv_idx))
+    }
+
+    /// Lex-min canonical representative `r` of `w` together with the
+    /// **mixed-radix index** of the group element `g` such that `g·r = w`
+    /// — i.e. the index of the counter returned by
+    /// [`Self::canonicalize_with_shift`].
+    ///
+    /// The index is directly usable as a subscript into
+    /// [`Self::character_table`], which is how the phase-aware evolution
+    /// gets `χ_k(g)` without decoding a counter or calling `sin`/`cos`
+    /// per term.
+    ///
+    /// Cost: `O(|G| × n_qubits)`, allocation-free.
+    pub fn canonicalize_with_index<A, S, const R: bool>(
+        &self,
+        w: &PauliWord<A, S, R>,
+    ) -> (PauliWord<A, S, R>, usize)
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+    {
+        debug_assert_eq!(w.n_qubits(), self.n_qubits);
+        if self.perms.is_empty() {
+            return (*w, 0);
+        }
         let mut best = *w;
-        let mut best_counter: Vec<u32> = vec![0; self.perms.len()];
-        let order = self.order();
-        for idx in 0..order {
-            // Decode `idx` to mixed-radix counter.
-            let mut rem = idx;
-            let mut counter: Vec<u32> = Vec::with_capacity(self.perms.len());
-            for &o in &self.orders {
-                counter.push((rem as u32) % o);
-                rem /= o as usize;
-            }
-            // Build the candidate by applying generator `g` exactly
-            // `counter[g]` times.
-            let mut cur = *w;
-            for (g, &c) in counter.iter().enumerate() {
-                for _ in 0..c {
-                    cur = self.apply_generator(&cur, g);
-                }
-            }
+        let mut best_idx = 0usize;
+        let mut cur = *w;
+        for idx in 1..self.order() {
+            self.advance(&mut cur, idx);
             if cur < best {
                 best = cur;
-                // We need the counter such that g·best = w. The loop
-                // above computed cur = g·w with counter, so w = g^{-1}·cur.
-                // For abelian cyclic groups, g^{-1} = g^{order-1}, i.e.
-                // the counter `(orders[g] - counter[g]) mod orders[g]`.
-                best_counter = counter
-                    .iter()
-                    .zip(self.orders.iter())
-                    .map(|(&c, &o)| (o - c) % o)
-                    .collect();
+                best_idx = idx;
             }
         }
-        (best, best_counter)
+        // The walk found `best = g·w` at index `best_idx`, so `w = g⁻¹·best`
+        // and the element we must report is the inverse. In an abelian
+        // product of cyclic groups that is `(orders[g] − c[g]) mod orders[g]`
+        // componentwise.
+        (best, self.invert_index(best_idx))
+    }
+
+    /// Decode a group-element index (mixed-radix, generator `0` fastest)
+    /// into its per-generator counter.
+    pub fn counter_from_index(&self, idx: usize) -> Vec<u32> {
+        let mut rem = idx;
+        let mut counter: Vec<u32> = Vec::with_capacity(self.perms.len());
+        for &o in &self.orders {
+            counter.push((rem as u32) % o);
+            rem /= o as usize;
+        }
+        counter
+    }
+
+    /// Index of the inverse of the group element with index `idx`.
+    fn invert_index(&self, idx: usize) -> usize {
+        let mut rem = idx;
+        let mut out = 0usize;
+        let mut stride = 1usize;
+        for &o in &self.orders {
+            let c = (rem as u32) % o;
+            rem /= o as usize;
+            out += (((o - c) % o) as usize) * stride;
+            stride *= o as usize;
+        }
+        out
+    }
+
+    /// All `|G|` momentum-sector characters, indexed by group-element
+    /// index: `table[idx] == self.character(k_modes,
+    /// &self.counter_from_index(idx))`.
+    ///
+    /// Build this once per evolution step and index it with the value from
+    /// [`Self::canonicalize_with_index`]; the alternative — calling
+    /// [`Self::character`] per action term — costs a `sin`/`cos` pair and a
+    /// counter `Vec` every time.
+    pub fn character_table(&self, k_modes: &[i32]) -> Vec<Complex<f64>> {
+        assert_eq!(
+            k_modes.len(),
+            self.perms.len(),
+            "k_modes length {} != number of generators {}",
+            k_modes.len(),
+            self.perms.len()
+        );
+        (0..self.order())
+            .map(|idx| {
+                let mut rem = idx;
+                let mut phase = 0.0_f64;
+                for (&k, &o) in k_modes.iter().zip(self.orders.iter()) {
+                    let c = (rem as u32) % o;
+                    rem /= o as usize;
+                    phase += 2.0 * PI * (k as f64) * (c as f64) / (o as f64);
+                }
+                Complex::from_polar(1.0, phase)
+            })
+            .collect()
     }
 
     /// Momentum-sector character `χ_k(g) = exp(i Σ_g 2π · k[g] · counter[g] / orders[g])`
@@ -390,8 +460,12 @@ impl TranslationGroup {
         Complex::from_polar(1.0, phase)
     }
 
-    /// Iterate over all group elements applied to `w`. Yields `|G|`
-    /// Pauli words (including `w` itself for the identity element).
+    /// Iterate over all group elements applied to `w`, in mixed-radix
+    /// index order. Yields `|G|` Pauli words (`w` itself first, for the
+    /// identity element).
+    ///
+    /// Walks the odometer incrementally (see [`Self::advance`]): `O(|G| × N)`
+    /// for the whole orbit.
     pub fn orbit<'a, A, S, const R: bool>(
         &'a self,
         w: &'a PauliWord<A, S, R>,
@@ -400,16 +474,10 @@ impl TranslationGroup {
         A: PauliStorage + 'a,
         S: BuildHasher + Clone + Default + HashFinalize + 'a,
     {
-        let order = self.order();
-        (0..order).map(move |idx| {
-            let mut rem = idx;
-            let mut cur = *w;
-            for (g, &o) in self.orders.iter().enumerate() {
-                let c = (rem as u32) % o;
-                rem /= o as usize;
-                for _ in 0..c {
-                    cur = self.apply_generator(&cur, g);
-                }
+        let mut cur = *w;
+        (0..self.order()).map(move |idx| {
+            if idx > 0 {
+                self.advance(&mut cur, idx);
             }
             cur
         })
@@ -494,11 +562,12 @@ pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
         group.n_generators()
     );
     let inv_g: f64 = 1.0 / (group.order() as f64);
+    let chi_table = group.character_table(k_modes);
     let mut merged: FxHashMap<PauliWord<A, S, R>, Complex<f64>> =
         FxHashMap::with_capacity_and_hasher(basis.len(), Default::default());
     for (w, &c) in basis.iter().zip(coeffs.iter()) {
-        let (rep, cnt) = group.canonicalize_with_shift(w);
-        let chi = group.character(k_modes, &cnt);
+        let (rep, idx) = group.canonicalize_with_index(w);
+        let chi = chi_table[idx];
         let contrib = inv_g * chi * c;
         *merged.entry(rep).or_insert(Complex::new(0.0, 0.0)) += contrib;
     }
@@ -541,11 +610,13 @@ where
 
     // Group entries by orbit rep, picking the first-seen member as
     // reference and checking later members against it.
+    let chi_table = group.character_table(k_modes);
     let mut reference: FxHashMap<PauliWord<A, S, R>, (Complex<f64>, Vec<u32>)> =
         FxHashMap::default();
     for (p, &c) in basis.iter().zip(coeffs.iter()) {
-        let (rep, cnt) = group.canonicalize_with_shift(p);
-        let chi = group.character(k_modes, &cnt);
+        let (rep, idx) = group.canonicalize_with_index(p);
+        let cnt = group.counter_from_index(idx);
+        let chi = chi_table[idx];
         // expected c_p given the rep coefficient c_r:
         //   c_p = χ_k(g)⁻¹ · c_r,  where p = g·r
         // equivalently, c_r = χ_k(g) · c_p (a rearrangement).
@@ -762,6 +833,71 @@ mod tests {
                 cur = g.apply_generator(&cur, 0);
             }
             assert_eq!(cur, w, "shift {cnt:?} doesn't reproduce {src}");
+        }
+    }
+
+    #[test]
+    fn canonicalize_with_index_matches_shift_and_table() {
+        // The index form must agree with the counter form on both the
+        // rep and the momentum phase, for every element of a group with
+        // two generators of different orders (mixed-radix odometer).
+        let g = TranslationGroup::torus_2d(2, 3);
+        assert_eq!(g.order(), 6);
+        for k in [[0, 0], [1, 0], [0, 2], [1, 1]] {
+            let table = g.character_table(&k);
+            assert_eq!(table.len(), g.order());
+            for (idx, chi) in table.iter().enumerate() {
+                let cnt = g.counter_from_index(idx);
+                assert!((chi - g.character(&k, &cnt)).norm() < 1e-12);
+            }
+            for src in ["XIIIII", "IXZIII", "IIYIXI", "ZIIIIY"] {
+                let w = word(src);
+                let (rep_s, cnt) = g.canonicalize_with_shift(&w);
+                let (rep_i, idx) = g.canonicalize_with_index(&w);
+                assert_eq!(rep_s, rep_i, "reps disagree for {src}");
+                assert_eq!(
+                    cnt,
+                    g.counter_from_index(idx),
+                    "counters disagree for {src}"
+                );
+                assert!((table[idx] - g.character(&k, &cnt)).norm() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn odometer_walk_covers_the_whole_group() {
+        // `orbit` must still enumerate every group element exactly once,
+        // and `canonicalize` must be the lex-min of that enumeration —
+        // the property the incremental walk could plausibly break.
+        for g in [
+            TranslationGroup::chain_1d(5),
+            TranslationGroup::ladder(3, 2),
+            TranslationGroup::torus_2d(2, 3),
+        ] {
+            let n = g.n_qubits();
+            let mut w: W = PauliWord::new(n);
+            w.set_xbit(0, true);
+            w.set_zbit(1, true);
+            w.rehash();
+            let members: Vec<W> = g.orbit(&w).collect();
+            assert_eq!(members.len(), g.order());
+            assert_eq!(members[0], w, "identity element must come first");
+            // Every member canonicalizes to the same rep = lex-min member.
+            let lex_min = *members.iter().min().unwrap();
+            assert_eq!(g.canonicalize(&w), lex_min);
+            for m in &members {
+                assert_eq!(g.canonicalize(m), lex_min);
+                // …and the reported shift reproduces the member.
+                let (rep, cnt) = g.canonicalize_with_shift(m);
+                let mut cur = rep;
+                for (gi, &c) in cnt.iter().enumerate() {
+                    for _ in 0..c {
+                        cur = g.apply_generator(&cur, gi);
+                    }
+                }
+                assert_eq!(cur, *m, "shift {cnt:?} does not reproduce the member");
+            }
         }
     }
 

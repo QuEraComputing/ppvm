@@ -103,6 +103,9 @@ pub struct TranslationGroup {
     /// `O(N)` least-rotation canonicalizer (see
     /// [`Self::canonicalize_block_cyclic`]).
     block_cyclic: Option<BlockCyclic>,
+    /// Per generator, its block-rotation form when it has one (all lattice
+    /// translations do). Enables the masked-shift `apply_generator`.
+    rotations: Vec<Option<BlockRotation>>,
 }
 
 /// Layout of a single-generator group acting as a cyclic shift within
@@ -112,6 +115,109 @@ pub struct TranslationGroup {
 struct BlockCyclic {
     n_blocks: usize,
     len: usize,
+}
+
+/// A generator that acts as a cyclic shift by `stride` positions within
+/// aligned blocks of `block` qubits: `b·block + p ↦ b·block + (p + stride) mod block`.
+///
+/// Every lattice-translation generator has this form: the fastest axis of a
+/// torus is `stride = 1` with `block = lx`, the next is `stride = lx` with
+/// `block = lx·ly`, and so on. Recognising it lets the whole permutation be
+/// applied as a masked shift of the two bit planes rather than a per-qubit
+/// gather (see [`TranslationGroup::apply_block_rotation`]).
+#[derive(Debug, Clone)]
+struct BlockRotation {
+    stride: usize,
+    block: usize,
+    /// Destinations that survive the plain left shift: everything except the
+    /// low `stride` slots of each block (which receive the previous block's
+    /// spill) and everything at or beyond `n_qubits`.
+    keep: Vec<u64>,
+    /// Sources that wrap: the top `stride` slots of each block.
+    high: Vec<u64>,
+}
+
+/// Widest storage the masked-shift path handles, in 64-bit words.
+const MAX_ROT_WORDS: usize = 16;
+
+/// Recognise a generator permutation as a [`BlockRotation`], and precompute
+/// its masks. Returns `None` for permutations that are not block rotations.
+fn detect_block_rotation(n_qubits: usize, perm: &[u32]) -> Option<BlockRotation> {
+    if n_qubits == 0 {
+        return None;
+    }
+    let stride = perm[0] as usize;
+    if stride == 0 {
+        return None;
+    }
+    // Whatever maps to qubit 0 sits `stride` below the top of block 0.
+    let block = perm.iter().position(|&t| t == 0)? + stride;
+    if block > n_qubits || stride >= block || !n_qubits.is_multiple_of(block) {
+        return None;
+    }
+    for b in 0..n_qubits / block {
+        for p in 0..block {
+            if perm[b * block + p] as usize != b * block + (p + stride) % block {
+                return None;
+            }
+        }
+    }
+    let mut keep = vec![0u64; n_qubits.div_ceil(64)];
+    let mut high = keep.clone();
+    for q in 0..n_qubits {
+        let p = q % block;
+        if p >= stride {
+            keep[q / 64] |= 1u64 << (q % 64);
+        }
+        if p >= block - stride {
+            high[q / 64] |= 1u64 << (q % 64);
+        }
+    }
+    Some(BlockRotation {
+        stride,
+        block,
+        keep,
+        high,
+    })
+}
+
+/// `dst = src << s` over a little-endian multiword bit array.
+#[inline]
+fn shl_words(src: &[u64], dst: &mut [u64], s: usize) {
+    let (ws, bs) = (s / 64, s % 64);
+    for i in (0..src.len()).rev() {
+        let lo = if i >= ws { src[i - ws] } else { 0 };
+        dst[i] = if bs == 0 {
+            lo
+        } else {
+            let hi = if i > ws {
+                src[i - ws - 1] >> (64 - bs)
+            } else {
+                0
+            };
+            (lo << bs) | hi
+        };
+    }
+}
+
+/// `dst = src >> s` over a little-endian multiword bit array.
+#[inline]
+fn shr_words(src: &[u64], dst: &mut [u64], s: usize) {
+    let n = src.len();
+    let (ws, bs) = (s / 64, s % 64);
+    for i in 0..n {
+        let hi = if i + ws < n { src[i + ws] } else { 0 };
+        dst[i] = if bs == 0 {
+            hi
+        } else {
+            let lo = if i + ws + 1 < n {
+                src[i + ws + 1] << (64 - bs)
+            } else {
+                0
+            };
+            (hi >> bs) | lo
+        };
+    }
 }
 
 /// Detect the [`BlockCyclic`] layout, if the generators have it.
@@ -221,11 +327,16 @@ impl TranslationGroup {
             }
         }
         let block_cyclic = detect_block_cyclic(n_qubits, &perms, &orders);
+        let rotations = perms
+            .iter()
+            .map(|p| detect_block_rotation(n_qubits, p))
+            .collect();
         Self {
             n_qubits,
             perms,
             orders,
             block_cyclic,
+            rotations,
         }
     }
 
@@ -332,11 +443,15 @@ impl TranslationGroup {
         self.orders[g]
     }
 
-    /// Apply a single generator's permutation to a Pauli word, returning
-    /// the resulting word.
+    /// Apply a single generator's permutation to a Pauli word: for each
+    /// qubit `q` of the input, the `(xbit, zbit)` pair is placed at position
+    /// `perm[q]` of the output.
     ///
-    /// For each qubit `q` of the input, the corresponding `(xbit, zbit)`
-    /// pair is placed at position `perm[q]` of the output.
+    /// Does **not** refresh the cached hash. Equality compares the bit
+    /// planes, so an unhashed word is safe to compare and to keep as an
+    /// intermediate; only words that escape into a hash container need
+    /// `rehash`. The odometer walk applies a generator per group element and
+    /// hashes just the winner.
     fn apply_generator<A, S, const R: bool>(
         &self,
         w: &PauliWord<A, S, R>,
@@ -346,6 +461,11 @@ impl TranslationGroup {
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
     {
+        if let Some(rot) = &self.rotations[g]
+            && let Some(out) = self.apply_block_rotation(w, rot)
+        {
+            return out;
+        }
         let perm = &self.perms[g];
         let mut out: PauliWord<A, S, R> = PauliWord::new(self.n_qubits);
         for (q, &pq) in perm.iter().enumerate().take(self.n_qubits) {
@@ -358,8 +478,64 @@ impl TranslationGroup {
                 out.set_zbit(pq as usize, true);
             }
         }
-        out.rehash();
         out
+    }
+
+    /// Apply a block-rotation generator as a masked shift of both bit
+    /// planes: `out = ((in << stride) & keep) | ((in & high) >> (block − stride))`.
+    ///
+    /// This is the same permutation as the per-qubit gather, in `O(N/64)`
+    /// word operations instead of `O(N)` bit operations. The cached hash is
+    /// *not* refreshed. Returns `None` on big-endian targets (where the byte
+    /// view of the bit planes is not in bit order) or if the storage is wider
+    /// than [`MAX_ROT_WORDS`], leaving the caller on the general path.
+    fn apply_block_rotation<A, S, const R: bool>(
+        &self,
+        w: &PauliWord<A, S, R>,
+        rot: &BlockRotation,
+    ) -> Option<PauliWord<A, S, R>>
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+    {
+        if !cfg!(target_endian = "little") || size_of::<A>() > MAX_ROT_WORDS * 8 {
+            return None;
+        }
+        let mut out = *w;
+        for plane in 0..2 {
+            let (src_arr, dst_arr) = if plane == 0 {
+                (&w.xbits.data, &mut out.xbits.data)
+            } else {
+                (&w.zbits.data, &mut out.zbits.data)
+            };
+            let bytes = bytemuck::bytes_of(src_arr);
+            let nw = bytes.len().div_ceil(8);
+            let (mut src, mut shifted, mut wrapped) = (
+                [0u64; MAX_ROT_WORDS],
+                [0u64; MAX_ROT_WORDS],
+                [0u64; MAX_ROT_WORDS],
+            );
+            for (i, chunk) in bytes.chunks(8).enumerate() {
+                let mut b = [0u8; 8];
+                b[..chunk.len()].copy_from_slice(chunk);
+                src[i] = u64::from_le_bytes(b);
+            }
+            shl_words(&src[..nw], &mut shifted[..nw], rot.stride);
+            for (i, s) in src[..nw].iter_mut().enumerate() {
+                *s &= rot.high.get(i).copied().unwrap_or(0);
+            }
+            shr_words(&src[..nw], &mut wrapped[..nw], rot.block - rot.stride);
+            for i in 0..nw {
+                shifted[i] = (shifted[i] & rot.keep.get(i).copied().unwrap_or(0)) | wrapped[i];
+            }
+            let dst = bytemuck::bytes_of_mut(dst_arr);
+            for (i, chunk) in dst.chunks_mut(8).enumerate() {
+                let b = shifted[i].to_le_bytes();
+                let n = chunk.len();
+                chunk.copy_from_slice(&b[..n]);
+            }
+        }
+        Some(out)
     }
 
     /// Odometer step: advance `cur` from the group element with
@@ -439,6 +615,9 @@ impl TranslationGroup {
                 best_idx = idx;
             }
         }
+        // `advance` leaves the cached hash stale; the winner escapes to the
+        // caller (and into hash containers), so refresh it here.
+        best.rehash();
         // The walk found `best = g·w` at index `best_idx`, so `w = g⁻¹·best`
         // and the element we must report is the inverse. In an abelian
         // product of cyclic groups that is `(orders[g] − c[g]) mod orders[g]`
@@ -698,7 +877,10 @@ impl TranslationGroup {
             if idx > 0 {
                 self.advance(&mut cur, idx);
             }
-            cur
+            // `advance` skips hashing; yielded words may become hash keys.
+            let mut out = cur;
+            out.rehash();
+            out
         })
     }
 }
@@ -1052,6 +1234,67 @@ mod tests {
                 cur = g.apply_generator(&cur, 0);
             }
             assert_eq!(cur, w, "shift {cnt:?} doesn't reproduce {src}");
+        }
+    }
+
+    #[test]
+    fn masked_shift_generator_matches_the_per_qubit_gather() {
+        // The word-parallel generator application must reproduce the plain
+        // permutation gather exactly, for every generator of every layout —
+        // including strides that are not 1 (the y/z axes of a torus) and
+        // block lengths that do not divide 64.
+        type W64 = PauliWord<[u64; 2], fxhash::FxBuildHasher, true>;
+        let mut rng = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next = move || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+        let groups = [
+            ("chain_1d(7)", TranslationGroup::chain_1d(7), 7),
+            ("chain_1d(64)", TranslationGroup::chain_1d(64), 64),
+            ("ladder(5,2)", TranslationGroup::ladder(5, 2), 10),
+            ("torus_2d(3,5)", TranslationGroup::torus_2d(3, 5), 15),
+            ("torus_3d(3,3,3)", TranslationGroup::torus_3d(3, 3, 3), 27),
+            ("torus_3d(5,5,5)", TranslationGroup::torus_3d(5, 5, 5), 125),
+        ];
+        for (name, g, n) in groups {
+            for gi in 0..g.n_generators() {
+                assert!(
+                    g.rotations[gi].is_some(),
+                    "{name}: generator {gi} should be recognised as a block rotation"
+                );
+                let rot = g.rotations[gi].as_ref().unwrap();
+                for _ in 0..200 {
+                    let mut w: W64 = PauliWord::new(n);
+                    for q in 0..n {
+                        let v = next();
+                        if v % 3 == 0 {
+                            w.set_xbit(q, true);
+                        }
+                        if (v >> 8) % 3 == 0 {
+                            w.set_zbit(q, true);
+                        }
+                    }
+                    w.rehash();
+                    // reference: the per-qubit gather
+                    let perm = &g.perms[gi];
+                    let mut want: W64 = PauliWord::new(n);
+                    for (q, &pq) in perm.iter().enumerate().take(n) {
+                        if w.get_xbit(q) {
+                            want.set_xbit(pq as usize, true);
+                        }
+                        if w.get_zbit(q) {
+                            want.set_zbit(pq as usize, true);
+                        }
+                    }
+                    let got = g
+                        .apply_block_rotation(&w, rot)
+                        .expect("fast path available");
+                    assert_eq!(got, want, "{name}: generator {gi} mismatch");
+                }
+            }
         }
     }
 

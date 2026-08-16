@@ -37,3 +37,15 @@
 "pcstep_us_per_entry_realspace_L16" = 1.42
 "momentum_over_realspace_ratio_L32" = 3.96
 "driver_L12_k1_wall_s" = 7.4
+
+[[metric]]
+"status" = "keep"
+"description" = "word-parallel (masked-shift) generator application + deferred rehash in the odometer; measured on the real CaF2 all-pairs dipolar model, orbit/real per-entry RATIO (machine-state independent) at 3^3/4^3/5^3"
+"caf2_ratio_L3" = 8.8
+"caf2_ratio_L4" = 25.0
+"caf2_ratio_L5" = 37.6
+"caf2_ratio_L3_before" = 30.0
+"caf2_ratio_L4_before" = 93.7
+"caf2_net_vs_realspace_L5" = 3.3
+"caf2_orbit_us_per_entry_L5" = 12246.6
+"caf2_real_us_per_entry_L5" = 325.9

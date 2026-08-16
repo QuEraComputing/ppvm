@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
 ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
+bytemuck = { version = "1", features = ["min_const_generics"] }
 fxhash = "0.2.1"
 num = "0.4.3"
 itertools = "0.14.0"

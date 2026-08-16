@@ -147,13 +147,71 @@ matches the odometer on both the rep and the shift index, with structured
 cases for every period dividing L (fully stabilised words are where a
 naive tie-break would diverge).
 
+### Third lever: word-parallel generator application (same day)
+
+Target: the 3D k=0 CaF2 bulk FID (`CTPP Figures/fig16_caf2_bulk_fid`), a
+simple-cubic PBC torus with the ALL-PAIRS minimum-image secular dipolar
+Hamiltonian (Elsayed-Fine protocol, no radial cutoff) and the uniform Mx
+observable. Three generators, so the Booth path does not apply and every
+canonicalization is `|G|` generator applications.
+
+Every lattice translation is a cyclic shift by `stride` within aligned
+blocks of `block` qubits (torus axes: stride 1/lx/lx·ly, block lx/lx·ly/N),
+so the whole permutation is a masked shift of the two bit planes,
+`out = ((in << stride) & keep) | ((in & high) >> (block − stride))`, in
+`O(N/64)` word operations instead of an `O(N)` per-qubit gather. Detected
+per generator at construction, with the masks precomputed; anything else
+(and big-endian targets, and storage wider than 1024 bits) keeps the
+gather. The odometer also stops refreshing the cached hash on
+intermediates: equality compares bit planes, so only the winner needs
+`rehash`.
+
+MEASURED on the real CaF2 model (all pairs, B0=[100], B≈2048 entries,
+µs per basis entry for one pc_step). The orbit/real RATIO is the
+machine-state-independent figure, since the real-space path does not touch
+the group code:
+
+| | 3³ (N=27) | 4³ (N=64) | 5³ (N=125) |
+|---|---|---|---|
+| ratio before | 30.0 | 93.7 | ~229 (extrap.) |
+| ratio after | 8.8 | 22–29 | 37.6 |
+| speedup | 3.4× | 3.2–4.3× | ~6× |
+| net vs real space, before | 0.90× | 0.68× | ~0.55× |
+| net vs real space, after | **3.1×** | **2.2–3.0×** | **3.3×** |
+
+So the k=0 orbit formulation flips from a net loss at every size to a
+~3× net win at every size, and the gain grows with N (3.4× at 27 qubits,
+~6× at 125) as the fixed per-call overhead amortises. In absolute terms
+5³ is 12.2 ms/entry, i.e. ~18 min for a full fig16 cell at B=2048 / 43
+steps on the laptop, against ~1.8 h before.
+
+ESTIMATE POSTMORTEM: predicted 10–30×, measured 3.4–6×. The prediction
+assumed `N/64` word parallelism, but at 27–125 qubits a bit plane is only
+1–2 words, so a masked shift cannot beat a 27–125-iteration loop by 64×;
+most of the realised gain is the removed per-qubit gather overhead and the
+deferred rehash. Expect more at 7³/8³ (343/512 qubits = 6–8 words), but
+the trend is measured only to 125.
+
+Validation: `masked_shift_generator_matches_the_per_qubit_gather` checks
+the fast path against the gather on 200 random words per generator for
+chain/ladder/torus_2d/torus_3d up to 125 qubits, including strides ≠ 1 and
+block lengths that do not divide 64. Full Rust suite and the 34 Python
+lindblad/momentum tests pass. End to end on the CaF2 model at L=3, the
+orbit FID matches an independent real-space run to 1e-4 at matched
+truncation (B=512 reps vs 13.8k strings; the residual is the truncation
+difference, not the rotation).
+
 ### Not done (next lever)
 
-Momentum is now within ~3-4× of real space per entry, so the next-largest
-item is no longer canonicalization: it is `apply_generator`/rep
-construction (`O(N)` bit-by-bit with a `rehash`) and the action pass
-itself. Chunk-wise rotation of the bit planes would take the rep
-construction to `O(N/64)`.
+The action cache (per-rep template of output reps and phased matrix
+elements, reused across the four passes per step and across steps) is the
+only remaining lever that removes the N-scaling rather than shrinking its
+constant, and the only one that could take momentum *below* real-space
+per-entry cost, since it also eliminates the action recomputation that
+real space pays every step. Measured churn under displacement is ~12%
+genuinely new reps per step, so it needs a bounded (LRU) capacity; at 512
+qubits a naive per-rep template is ~2 KB, so output words would want
+interning. Defer until a converged-B fig16 cell shows it is needed.
 
 Note: `cargo clippy --all-targets -p ppvm-lindblad` fails on the two
 benches (`drug_dipolar`, `kossakowski`) with "missing generics for type

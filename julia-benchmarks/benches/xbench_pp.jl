@@ -10,6 +10,7 @@
 #     julia --project=@. -t1 benches/xbench_pp.jl
 
 using PauliPropagation
+import PauliPropagation.Performance
 using Printf
 
 const MODEL = get(ENV, "MODEL", "tfim")
@@ -25,49 +26,44 @@ const THETA_SITE = 2 * HFIELD * DT
 
 """The seed observable: `Σ_i Z_i` for TFIM, `Z_1` for Heisenberg."""
 function seed_operator(n::Int)
-    ps = PauliSum(n)
     if MODEL == "tfim"
-        for i in 1:n
-            add!(ps, PauliString(n, [:Z], [i]))
-        end
-    else
-        add!(ps, PauliString(n, [:Z], [1]))
+        return VectorPauliSum(n, [PauliString(n, [:Z], [i]).term for i in 1:n], ones(n))
     end
-    return ps
+    return VectorPauliSum(PauliString(n, [:Z], [1]))
 end
 
 """One first-order Trotter step, gates in the order the shared spec fixes."""
-function trotter_step!(state, n::Int)
+function trotter_step!(cache, n::Int)
     if MODEL == "tfim"
         for i in 1:n
-            state = propagate(PauliRotation([:X], [i], THETA_SITE), state; min_abs_coeff = ATOL)
+            Performance.propagate!(PauliRotation([:X], [i], THETA_SITE), cache; min_abs_coeff = ATOL)
         end
         for i in 1:(n - 1)
-            state = propagate(
-                PauliRotation([:Z, :Z], [i, i + 1], THETA_BOND), state; min_abs_coeff = ATOL
+            Performance.propagate!(
+                PauliRotation([:Z, :Z], [i, i + 1], THETA_BOND), cache; min_abs_coeff = ATOL
             )
         end
     else
         for i in 1:(n - 1)
             for axes in ([:X, :X], [:Y, :Y], [:Z, :Z])
-                state = propagate(
-                    PauliRotation(axes, [i, i + 1], THETA_BOND), state; min_abs_coeff = ATOL
+                Performance.propagate!(
+                    PauliRotation(axes, [i, i + 1], THETA_BOND), cache; min_abs_coeff = ATOL
                 )
             end
         end
         for i in 1:n
-            state = propagate(PauliRotation([:Z], [i], THETA_SITE), state; min_abs_coeff = ATOL)
+            Performance.propagate!(PauliRotation([:Z], [i], THETA_SITE), cache; min_abs_coeff = ATOL)
         end
     end
-    return state
+    return cache
 end
 
 function run_model(n::Int)
-    state = seed_operator(n)
+    cache = PropagationCache(seed_operator(n))
     for _ in 1:STEPS
-        state = trotter_step!(state, n)
+        trotter_step!(cache, n)
     end
-    return state
+    return PauliPropagation.extractsum!(cache)
 end
 
 """`⟨0…0|O|0…0⟩` for TFIM; the `Z_1` autocorrelator for Heisenberg."""

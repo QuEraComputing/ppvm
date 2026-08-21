@@ -312,7 +312,12 @@ impl PPVM {
 
     pub fn load(
         &mut self,
-        module: &vihaco::module::LocalModule<Instruction, vihaco::Value, vihaco::Type, PPVMDeviceInfo>,
+        module: &vihaco::module::LocalModule<
+            Instruction,
+            vihaco::Value,
+            vihaco::Type,
+            PPVMDeviceInfo,
+        >,
     ) -> eyre::Result<()> {
         self.loader.module = module.clone();
         Ok(())
@@ -425,9 +430,10 @@ impl PPVM {
                 let msg = self.resolve_cpu(&cpu_inst)?;
                 self.cpu.set_current_pc(self.loader.pc());
                 let stdout_effect = match (&cpu_inst, &msg) {
-                    (vihaco_cpu::RuntimeInstruction::Print, vihaco_cpu::CPUMessage::Print(text)) => {
-                        Some(PPVMEffect::Stdout(StdoutEffect(text.clone())))
-                    }
+                    (
+                        vihaco_cpu::RuntimeInstruction::Print,
+                        vihaco_cpu::CPUMessage::Print(text),
+                    ) => Some(PPVMEffect::Stdout(StdoutEffect(text.clone()))),
                     _ => None,
                 };
                 let outcome = vihaco::expect_exactly_one_effect(
@@ -637,7 +643,8 @@ mod tests {
 
     #[test]
     fn test_run_ppvm() -> eyre::Result<()> {
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
 
         module.extra.n_qubits = 2;
 
@@ -645,8 +652,14 @@ mod tests {
         cpu::cpu.const u64, 0
         circuit::circuit.h
         */
-        let zero = PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(Type::U64, Value::U64(0)));
-        let one = PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(Type::U64, Value::U64(1)));
+        let zero = PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+            Type::U64,
+            Value::U64(0),
+        ));
+        let one = PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+            Type::U64,
+            Value::U64(1),
+        ));
         module.code.push(zero.clone());
         module
             .code
@@ -725,7 +738,8 @@ mod tests {
         //
         //     fn @main() { ...5-qubit GHZ + 5 measurements... }
 
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
 
         module.extra.n_qubits = 5;
         module.extra.coefficient_threshold = 1e-10;
@@ -805,7 +819,8 @@ mod tests {
 
         // A 1-qubit device with no code; the REPL builds up instructions
         // incrementally, one command at a time, rather than loading a program.
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
 
         let mut machine = PPVM::default();
@@ -814,7 +829,10 @@ mod tests {
 
         // First command: X on q0 (|0> -> |1>).
         let x = [
-            PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(Type::U64, Value::U64(0))),
+            PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::U64,
+                Value::U64(0),
+            )),
             PPVMInstruction::Circuit(CircuitInstruction::X),
         ];
         machine.execute_single_instruction(&x)?;
@@ -824,7 +842,10 @@ mod tests {
         // Second command: measure q0. The X from the first command must persist,
         // so the outcome is deterministically |1>.
         let measure = [
-            PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(Type::U64, Value::U64(0))),
+            PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::U64,
+                Value::U64(0),
+            )),
             PPVMInstruction::Circuit(CircuitInstruction::Measure),
         ];
         machine.execute_single_instruction(&measure)?;
@@ -844,7 +865,8 @@ mod tests {
         // NOTE: an out-of-range qubit index (>= n_qubits) currently *panics* in
         // the tableau rather than erroring, so the REPL command layer must
         // bounds-check qubit indices before calling `execute`.
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
 
         let mut machine = PPVM::default();
@@ -884,7 +906,8 @@ mod tests {
         // floats) and popped in reverse. So every two-qubit circuit must read q0 as
         // the first operand pushed, consistently, with or without trailing
         // floats. (CNOT already obeyed this; the float-carrying arms did not.)
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 8;
         let mut machine = PPVM::default();
         machine.load(&module)?;
@@ -1094,7 +1117,11 @@ mod tests {
                 break;
             }
         }
-        assert_eq!(outcome, StepOutcome::Breakpoint, "cpu::cpu.breakpoint should pause");
+        assert_eq!(
+            outcome,
+            StepOutcome::Breakpoint,
+            "cpu::cpu.breakpoint should pause"
+        );
         let pc_at_break = machine.current_pc();
 
         // Stepping again must make progress (advance the pc) rather than
@@ -1115,7 +1142,8 @@ mod tests {
         // Smoke test: a `circuit::circuit.truncate` reaches the PauliSum executor's
         // Truncate arm and calls `state.truncate()`. Task 8 makes the
         // observable mandatory for PauliSum init, so seed `Z` here.
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::PauliSum;
         module.extra.observable = Some("Z".to_string());
@@ -1135,7 +1163,8 @@ mod tests {
         // End-to-end Trace pipeline: with the observable `Z` seeded (Task 8),
         // tracing the `Z0` pattern picks up that one term with coefficient
         // 1.0, so the trace should be exactly 1.0.
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::PauliSum;
         module.extra.observable = Some("Z".to_string());
@@ -1168,7 +1197,8 @@ mod tests {
         // Task 11: a sum-valued observable seeds every term. With
         // `"ZZ + 0.5*XX"` the state holds `1.0 * ZZ + 0.5 * XX`; tracing
         // `[XZ]0[XZ]1` matches both words and returns 1.0 + 0.5 = 1.5.
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 2;
         module.extra.backend = BackendKind::PauliSum;
         module.extra.observable = Some("ZZ + 0.5*XX".to_string());
@@ -1198,7 +1228,8 @@ mod tests {
     #[test]
     fn paulisum_init_rejects_missing_observable() {
         // Task 8 requires `device circuit.observable` for PauliSum / Lossy.
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::PauliSum;
 
@@ -1213,7 +1244,8 @@ mod tests {
 
     #[test]
     fn paulisum_init_rejects_mismatched_observable_length() {
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 2;
         module.extra.backend = BackendKind::PauliSum;
         // Three letters but only two qubits — should error.
@@ -1233,7 +1265,8 @@ mod tests {
         // Task 9: `circuit::circuit.truncate` on the default Tableau backend should run
         // without error — the tableau prunes via coefficient_threshold during
         // every gate, so the explicit Truncate instruction has nothing to do.
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         // backend defaults to Tableau; no observable needed.
         module
@@ -1358,7 +1391,8 @@ mod tests {
         // Σ_{P matches pat} ⟨ψ|P|ψ⟩ via `GeneralizedTableau::trace`. On the
         // freshly-initialized |0⟩ state, pattern `Z0` matches the single
         // Pauli Z and ⟨0|Z|0⟩ = 1, so the trace_record gets one entry: 1.0.
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.strings.push("Z0".to_string());
         module
@@ -1392,7 +1426,8 @@ mod tests {
         // Seed the observable `Z` (PauliSum backend), then apply H(0), which
         // conjugates Z -> X in the Heisenberg picture and changes the state.
         // reset() must rebuild the state from the seeded observable.
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::PauliSum;
         module.extra.observable = Some("Z".to_string());
@@ -1436,7 +1471,8 @@ mod tests {
 
         // Same as `paulisum_reset_restores_seeded_observable`, but through the
         // LossyPauliSum dispatch path.
-        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> = LocalModule::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::LossyPauliSum;
         module.extra.observable = Some("Z".to_string());

@@ -233,11 +233,15 @@ fn encode_instruction(inst: &PPVMInstruction) -> eyre::Result<BytecodeInstructio
             CpuInstruction::Le(t) => BytecodeCpu::Le(encode_type(*t)),
             CpuInstruction::Ge(t) => BytecodeCpu::Ge(encode_type(*t)),
             CpuInstruction::Label(_) => {
-                return Err(eyre::eyre!("runtime labels are not serializable in PPVM bytecode"));
+                return Err(eyre::eyre!(
+                    "runtime labels are not serializable in PPVM bytecode"
+                ));
             }
         }),
         PPVMInstruction::Circuit(inst) => BytecodeInstruction::Circuit(match inst {
-            vihaco_circuit_isa::CircuitInstruction::TwoQubitPauliError => BytecodeCircuit::TwoQubitPauliError,
+            vihaco_circuit_isa::CircuitInstruction::TwoQubitPauliError => {
+                BytecodeCircuit::TwoQubitPauliError
+            }
             vihaco_circuit_isa::CircuitInstruction::Truncate => BytecodeCircuit::Truncate,
             vihaco_circuit_isa::CircuitInstruction::Trace => BytecodeCircuit::Trace,
             vihaco_circuit_isa::CircuitInstruction::X => BytecodeCircuit::X,
@@ -265,7 +269,9 @@ fn encode_instruction(inst: &PPVMInstruction) -> eyre::Result<BytecodeInstructio
             vihaco_circuit_isa::CircuitInstruction::Reset => BytecodeCircuit::Reset,
             vihaco_circuit_isa::CircuitInstruction::R => BytecodeCircuit::R,
             vihaco_circuit_isa::CircuitInstruction::Loss => BytecodeCircuit::Loss,
-            vihaco_circuit_isa::CircuitInstruction::CorrelatedLoss => BytecodeCircuit::CorrelatedLoss,
+            vihaco_circuit_isa::CircuitInstruction::CorrelatedLoss => {
+                BytecodeCircuit::CorrelatedLoss
+            }
             vihaco_circuit_isa::CircuitInstruction::PauliError => BytecodeCircuit::PauliError,
             vihaco_circuit_isa::CircuitInstruction::Depolarize2 => BytecodeCircuit::Depolarize2,
             vihaco_circuit_isa::CircuitInstruction::Depolarize => BytecodeCircuit::Depolarize,
@@ -320,7 +326,9 @@ fn decode_instruction(inst: BytecodeInstruction) -> PPVMInstruction {
             BytecodeCpu::Ge(t) => CpuInstruction::Ge(decode_type(t)),
         }),
         BytecodeInstruction::Circuit(inst) => PPVMInstruction::Circuit(match inst {
-            BytecodeCircuit::TwoQubitPauliError => vihaco_circuit_isa::CircuitInstruction::TwoQubitPauliError,
+            BytecodeCircuit::TwoQubitPauliError => {
+                vihaco_circuit_isa::CircuitInstruction::TwoQubitPauliError
+            }
             BytecodeCircuit::Truncate => vihaco_circuit_isa::CircuitInstruction::Truncate,
             BytecodeCircuit::Trace => vihaco_circuit_isa::CircuitInstruction::Trace,
             BytecodeCircuit::X => vihaco_circuit_isa::CircuitInstruction::X,
@@ -348,7 +356,9 @@ fn decode_instruction(inst: BytecodeInstruction) -> PPVMInstruction {
             BytecodeCircuit::Reset => vihaco_circuit_isa::CircuitInstruction::Reset,
             BytecodeCircuit::R => vihaco_circuit_isa::CircuitInstruction::R,
             BytecodeCircuit::Loss => vihaco_circuit_isa::CircuitInstruction::Loss,
-            BytecodeCircuit::CorrelatedLoss => vihaco_circuit_isa::CircuitInstruction::CorrelatedLoss,
+            BytecodeCircuit::CorrelatedLoss => {
+                vihaco_circuit_isa::CircuitInstruction::CorrelatedLoss
+            }
             BytecodeCircuit::PauliError => vihaco_circuit_isa::CircuitInstruction::PauliError,
             BytecodeCircuit::Depolarize2 => vihaco_circuit_isa::CircuitInstruction::Depolarize2,
             BytecodeCircuit::Depolarize => vihaco_circuit_isa::CircuitInstruction::Depolarize,
@@ -776,7 +786,9 @@ mod tests {
         let mut m = empty_module();
         m.extra.n_qubits = 3;
         m.strings = vec!["hi".to_string()];
-        m.code = vec![PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Return(0))];
+        m.code = vec![PPVMInstruction::Cpu(
+            vihaco_cpu::RuntimeInstruction::Return(0),
+        )];
 
         let mut buf = Vec::new();
         write_module(&m, &mut buf).unwrap();
@@ -851,7 +863,9 @@ mod tests {
     fn read_rejects_truncated_input() {
         let mut m = empty_module();
         m.extra.n_qubits = 2;
-        m.code = vec![PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Return(0))];
+        m.code = vec![PPVMInstruction::Cpu(
+            vihaco_cpu::RuntimeInstruction::Return(0),
+        )];
 
         let mut buf = Vec::new();
         write_module(&m, &mut buf).unwrap();

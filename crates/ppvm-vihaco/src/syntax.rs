@@ -5,15 +5,15 @@ use std::collections::HashMap;
 
 use chumsky::{IterParser, Parser};
 use vihaco::module::{FunctionInfo, LabelInfo, LocalModule, Parameter, Signature};
-use vihaco::syntax::{skip, Param, ParsedFunction, ParsedModule, Resolve};
+use vihaco::syntax::{Param, ParsedFunction, ParsedModule, Resolve, skip};
 use vihaco::{Parse, Type, Value};
 use vihaco_circuit_isa::{CircuitInstruction, CircuitSurfaceInstruction};
 use vihaco_cpu::{RuntimeInstruction as CpuRuntime, SurfaceInstruction as CpuSurface};
 use vihaco_cpu::{SurfaceType, SurfaceValue};
 use vihaco_parser::{BareToken, Ident, QuotedString};
 
-use crate::composite::{BackendKind, PPVMDeviceInfo, PPVMInstruction};
 use crate::composite::ppvm_module as ppvm;
+use crate::composite::{BackendKind, PPVMDeviceInfo, PPVMInstruction};
 
 #[derive(Debug, Clone, PartialEq, vihaco_parser_derive::Parse)]
 #[syntax_class(value)]
@@ -129,24 +129,26 @@ impl PPVMResolver {
             S::FunctionStart => R::FunctionStart,
             S::FunctionEnd => R::FunctionEnd,
             S::Breakpoint => R::Breakpoint,
-            S::Branch(name) => R::Branch(*labels.get(name.as_str()).ok_or_else(|| {
-                eyre::eyre!("undefined label `@{}`", name.as_str())
-            })?),
+            S::Branch(name) => R::Branch(
+                *labels
+                    .get(name.as_str())
+                    .ok_or_else(|| eyre::eyre!("undefined label `@{}`", name.as_str()))?,
+            ),
             S::ConditionalBranch(a, b) => R::ConditionalBranch(
-                *labels.get(a.as_str()).ok_or_else(|| {
-                    eyre::eyre!("undefined label `@{}`", a.as_str())
-                })?,
-                *labels.get(b.as_str()).ok_or_else(|| {
-                    eyre::eyre!("undefined label `@{}`", b.as_str())
-                })?,
+                *labels
+                    .get(a.as_str())
+                    .ok_or_else(|| eyre::eyre!("undefined label `@{}`", a.as_str()))?,
+                *labels
+                    .get(b.as_str())
+                    .ok_or_else(|| eyre::eyre!("undefined label `@{}`", b.as_str()))?,
             ),
             S::Return(n) => R::Return(n),
             S::IndirectCall => R::IndirectCall,
             S::Call(arity, name) => R::Call(
                 arity,
-                *functions.get(name.as_str()).ok_or_else(|| {
-                    eyre::eyre!("undefined function `@{}`", name.as_str())
-                })?,
+                *functions
+                    .get(name.as_str())
+                    .ok_or_else(|| eyre::eyre!("undefined function `@{}`", name.as_str()))?,
             ),
             S::Halt => R::Halt,
             S::Print => R::Print,
@@ -247,7 +249,10 @@ impl Resolve<ppvm::syntax::Instruction, SurfaceType, Vec<PPVMHeader>> for PPVMRe
                 .body
                 .iter()
                 .filter(|instruction| {
-                    !matches!(instruction, ppvm::syntax::Instruction::Cpu(CpuSurface::Label(_)))
+                    !matches!(
+                        instruction,
+                        ppvm::syntax::Instruction::Cpu(CpuSurface::Label(_))
+                    )
                 })
                 .count() as u32;
         }
@@ -275,9 +280,9 @@ impl Resolve<ppvm::syntax::Instruction, SurfaceType, Vec<PPVMHeader>> for PPVMRe
                     ppvm::syntax::Instruction::Cpu(cpu) => self
                         .lower_cpu(cpu, &labels, &functions)?
                         .map(PPVMInstruction::Cpu),
-                    ppvm::syntax::Instruction::Circuit(circuit) => Some(
-                        PPVMInstruction::Circuit(Self::lower_circuit(circuit)),
-                    ),
+                    ppvm::syntax::Instruction::Circuit(circuit) => {
+                        Some(PPVMInstruction::Circuit(Self::lower_circuit(circuit)))
+                    }
                 };
                 if let Some(runtime) = runtime {
                     module.code.push(runtime);
@@ -295,7 +300,11 @@ impl Resolve<ppvm::syntax::Instruction, SurfaceType, Vec<PPVMHeader>> for PPVMRe
                             ty: Self::runtime_type(ty),
                         })
                         .collect(),
-                    ret: function.return_ty.map(Self::runtime_type).into_iter().collect(),
+                    ret: function
+                        .return_ty
+                        .map(Self::runtime_type)
+                        .into_iter()
+                        .collect(),
                 },
                 local_count: 0,
                 start_address,

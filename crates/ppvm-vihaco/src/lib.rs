@@ -18,8 +18,8 @@ pub use vihaco_circuit_isa::CircuitInstruction;
 use vihaco::syntax::{ParsedModule, Resolve};
 use vihaco::{Type, Value, module::LocalModule};
 
-use crate::composite::{PPVM, PPVMDeviceInfo, PPVMInstruction};
 use crate::composite::ppvm_module as ppvm;
+use crate::composite::{PPVM, PPVMDeviceInfo, PPVMInstruction};
 use crate::syntax::{PPVMHeader, PPVMResolver, parse_functions, parse_headers};
 
 /// A fully resolved PPVM module, ready to load into a [`PPVM`].
@@ -53,7 +53,8 @@ pub fn run_program(program: &str) -> eyre::Result<PPVM> {
 /// Parse `.sst` source into the unresolved AST.
 pub fn parse_program(
     source: &str,
-) -> eyre::Result<ParsedModule<ppvm::syntax::Instruction, vihaco_cpu::SurfaceType, Vec<PPVMHeader>>> {
+) -> eyre::Result<ParsedModule<ppvm::syntax::Instruction, vihaco_cpu::SurfaceType, Vec<PPVMHeader>>>
+{
     let (header, body) = parse_headers(source)?;
     Ok(ParsedModule {
         header,
@@ -61,9 +62,7 @@ pub fn parse_program(
     })
 }
 
-pub fn compile_program(
-    source: &str,
-) -> eyre::Result<PPVMModule> {
+pub fn compile_program(source: &str) -> eyre::Result<PPVMModule> {
     PPVMResolver::new().resolve_module(parse_program(source)?)
 }
 

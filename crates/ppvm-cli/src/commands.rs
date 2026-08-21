@@ -292,8 +292,7 @@ mod tests {
     use std::fs;
 
     /// Minimal program that compiles and measures q0 in |0> (deterministic).
-    const PROGRAM: &str =
-        "device circuit.n_qubits 1;\nfn @main() { cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
+    const PROGRAM: &str = "device circuit.n_qubits 1;\nfn @main() { cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
 
     fn row(outcomes: &[MeasurementOutcome]) -> MeasurementResult {
         outcomes.iter().copied().collect()

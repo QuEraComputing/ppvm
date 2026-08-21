@@ -201,17 +201,20 @@ mod tests {
 
     #[test]
     fn rejects_unknown_token() {
-        assert!(CircuitSurfaceInstruction::parser()
-            .parse("circuit.nope")
-            .has_errors());
+        assert!(
+            CircuitSurfaceInstruction::parser()
+                .parse("circuit.nope")
+                .has_errors()
+        );
     }
 
     #[test]
     fn rejects_pascal_case_token() {
         // The parse token is lowercase; the Display form must not parse back.
-        assert!(CircuitSurfaceInstruction::parser()
-            .parse("circuit.CNOT")
-            .has_errors());
+        assert!(
+            CircuitSurfaceInstruction::parser()
+                .parse("circuit.CNOT")
+                .has_errors()
+        );
     }
-
 }

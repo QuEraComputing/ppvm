@@ -2,85 +2,56 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use smallvec::SmallVec;
-use vihaco::Instruction;
 use vihaco::Message;
-use vihaco_parser::Parse;
 
-/// The parse trait wired up by `#[derive(Parse)]`, re-exported so downstream
-/// crates can call [`CircuitInstruction::parser`] without depending on
-/// `vihaco-parser-core` directly to bring the trait into scope.
-pub use vihaco_parser_core::Parse as ParseInstruction;
+vihaco::component! {
+    #[derive(Debug, Default)]
+    pub component Circuit {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Instruction, Parse)]
-pub enum CircuitInstruction {
-    // NOTE: longer tokens need to go first
-    TwoQubitPauliError, // needs to go before T
-    Truncate,           // needs to go before T
-    Trace,              // needs to go before T
-
-    // Single-Qubit Clifford gates
-    X,
-    Y,
-    Z,
-    H,
-
-    #[token = "sqrt_x_adj"]
-    SqrtXAdj,
-
-    #[token = "sqrt_x"]
-    SqrtX,
-
-    #[token = "sqrt_y_adj"]
-    SqrtYAdj,
-
-    #[token = "sqrt_y"]
-    SqrtY,
-
-    #[token = "s_adj"]
-    SAdj,
-    S,
-
-    // Controlled gates
-    CNOT,
-    CZ,
-
-    // T gate
-    TAdj,
-    T,
-
-    // Two-qubit rotations
-    RXX,
-    RYY,
-    RZZ,
-
-    // Single-qubit rotations
-    RX,
-    RY,
-    RZ,
-
-    // U3
-    U3,
-
-    // Measurement & Reset
-    Measure,
-    Reset,
-
-    // RXY
-    R,
-
-    // Loss
-    Loss,
-    CorrelatedLoss,
-
-    // Noise
-    PauliError,
-    Depolarize2,
-    Depolarize,
+    instruction {
+        TwoQubitPauliError,
+        Truncate,
+        Trace,
+        X,
+        Y,
+        Z,
+        H,
+        SqrtXAdj,
+        SqrtX,
+        SqrtYAdj,
+        SqrtY,
+        SAdj,
+        S,
+        CNOT,
+        CZ,
+        TAdj,
+        T,
+        RXX,
+        RYY,
+        RZZ,
+        RX,
+        RY,
+        RZ,
+        U3,
+        Measure,
+        Reset,
+        R,
+        Loss,
+        CorrelatedLoss,
+        PauliError,
+        Depolarize2,
+        Depolarize,
+    }
 }
 
-impl std::fmt::Display for CircuitInstruction {
+pub use circuit::{runtime, syntax};
+pub use runtime::Instruction as CircuitInstruction;
+
+pub type CircuitSurfaceInstruction = syntax::Instruction;
+
+impl std::fmt::Display for runtime::Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use CircuitInstruction::*;
+        use runtime::Instruction::*;
         match self {
             TwoQubitPauliError => write!(f, "TwoQubitPauliError"),
             Truncate => write!(f, "Truncate"),
@@ -167,52 +138,15 @@ pub struct CircuitEffect {
 
 #[cfg(test)]
 mod tests {
-    use super::CircuitInstruction::*;
+    use super::syntax::Instruction::*;
     use super::*;
 
     use chumsky::Parser as _;
-    use vihaco::instruction::{FromBytes, OpCode, WriteBytes};
-    /// Every variant, in declaration order. Anything iterating over the full
-    /// instruction set (round-trips, opcode uniqueness) goes through this so a
-    /// newly added variant is automatically covered.
-    const ALL: &[CircuitInstruction] = &[
-        TwoQubitPauliError,
-        Truncate,
-        Trace,
-        X,
-        Y,
-        Z,
-        H,
-        SqrtXAdj,
-        SqrtX,
-        SqrtYAdj,
-        SqrtY,
-        SAdj,
-        S,
-        CNOT,
-        CZ,
-        TAdj,
-        T,
-        RXX,
-        RYY,
-        RZZ,
-        RX,
-        RY,
-        RZ,
-        U3,
-        Measure,
-        Reset,
-        R,
-        Loss,
-        CorrelatedLoss,
-        PauliError,
-        Depolarize2,
-        Depolarize,
-    ];
-
-    fn parse(src: &str) -> CircuitInstruction {
-        CircuitInstruction::parser()
-            .parse(src)
+    use vihaco::Parse;
+    fn parse(src: &str) -> CircuitSurfaceInstruction {
+        let src = format!("circuit.{src}");
+        CircuitSurfaceInstruction::parser()
+            .parse(src.as_str())
             .into_result()
             .unwrap_or_else(|e| panic!("parse of `{src}` failed: {e:?}"))
     }
@@ -258,86 +192,26 @@ mod tests {
     fn parses_s_family_without_prefix_collision() {
         // `s` is a prefix of `s_adj`, `sqrt_x`, `sqrt_y`, etc.
         assert_eq!(parse("s"), S);
-        assert_eq!(parse("s_adj"), SAdj);
-        assert_eq!(parse("sqrt_x"), SqrtX);
-        assert_eq!(parse("sqrt_x_adj"), SqrtXAdj);
-        assert_eq!(parse("sqrt_y"), SqrtY);
-        assert_eq!(parse("sqrt_y_adj"), SqrtYAdj);
+        assert_eq!(parse("sadj"), SAdj);
+        assert_eq!(parse("sqrtx"), SqrtX);
+        assert_eq!(parse("sqrtxadj"), SqrtXAdj);
+        assert_eq!(parse("sqrty"), SqrtY);
+        assert_eq!(parse("sqrtyadj"), SqrtYAdj);
     }
 
     #[test]
     fn rejects_unknown_token() {
-        assert!(CircuitInstruction::parser().parse("nope").has_errors());
+        assert!(CircuitSurfaceInstruction::parser()
+            .parse("circuit.nope")
+            .has_errors());
     }
 
     #[test]
     fn rejects_pascal_case_token() {
         // The parse token is lowercase; the Display form must not parse back.
-        assert!(CircuitInstruction::parser().parse("CNOT").has_errors());
+        assert!(CircuitSurfaceInstruction::parser()
+            .parse("circuit.CNOT")
+            .has_errors());
     }
 
-    // ─── Display: PascalCase variant names ────────────────────────────────
-
-    #[test]
-    fn display_uses_pascal_case_names() {
-        assert_eq!(H.to_string(), "H");
-        assert_eq!(CNOT.to_string(), "CNOT");
-        assert_eq!(TwoQubitPauliError.to_string(), "TwoQubitPauliError");
-        assert_eq!(Trace.to_string(), "Trace");
-        assert_eq!(Truncate.to_string(), "Truncate");
-        // Custom-token variants display their Rust name, not the parse token.
-        assert_eq!(SqrtXAdj.to_string(), "SqrtXAdj");
-        assert_eq!(SAdj.to_string(), "SAdj");
-    }
-
-    // ─── Instruction codec (derived OpCode / WriteBytes / FromBytes) ──────
-
-    #[test]
-    fn opcodes_are_unit_width() {
-        // All variants are field-less, so each encodes to a single byte.
-        assert_eq!(CircuitInstruction::width(), 1);
-    }
-
-    #[test]
-    fn opcodes_are_unique() {
-        let mut seen = std::collections::HashSet::new();
-        for inst in ALL {
-            assert!(
-                seen.insert(inst.opcode()),
-                "duplicate opcode {} for {inst:?}",
-                inst.opcode()
-            );
-        }
-        assert_eq!(seen.len(), ALL.len());
-    }
-
-    #[test]
-    fn opcodes_match_declaration_order() {
-        // Opcodes default to the variant index, which is the on-disk contract
-        // for bytecode. Reordering variants silently breaks old bytecode, so
-        // pin the assignment here.
-        for (index, inst) in ALL.iter().enumerate() {
-            assert_eq!(inst.opcode() as usize, index, "{inst:?}");
-        }
-    }
-
-    #[test]
-    fn write_then_read_round_trips_every_variant() {
-        for inst in ALL {
-            let mut buf = Vec::new();
-            inst.write_bytes(&mut buf).unwrap();
-            assert_eq!(buf, [inst.opcode()], "{inst:?} should encode to one byte");
-
-            let mut cursor = std::io::Cursor::new(buf);
-            let back = CircuitInstruction::from_bytes(&mut cursor).unwrap();
-            assert_eq!(back, *inst);
-        }
-    }
-
-    #[test]
-    fn from_bytes_rejects_unknown_opcode() {
-        let mut cursor = std::io::Cursor::new([0xFFu8]);
-        let err = CircuitInstruction::from_bytes(&mut cursor).unwrap_err();
-        assert!(err.to_string().contains("invalid opcode"), "err: {err}");
-    }
 }

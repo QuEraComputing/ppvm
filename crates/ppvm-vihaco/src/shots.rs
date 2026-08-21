@@ -128,10 +128,10 @@ mod tests {
 
     /// Measures q0 in |0>: every shot is deterministically `0`.
     const DETERMINISTIC: &str =
-        "device circuit.n_qubits 1;\nfn @main() { const.u64 0\n circuit.measure\n ret }\n";
+        "device circuit.n_qubits 1;\nfn @main() { cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
 
     /// Prepares |+> with H, then measures q0: each shot is a random 0/1.
-    const RANDOM: &str = "device circuit.n_qubits 1;\nfn @main() { const.u64 0\n circuit.h\n const.u64 0\n circuit.measure\n ret }\n";
+    const RANDOM: &str = "device circuit.n_qubits 1;\nfn @main() { cpu::cpu.const u64, 0\n circuit::circuit.h\n cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
 
     fn module(src: &str) -> PPVMModule {
         compile_program(src).unwrap()

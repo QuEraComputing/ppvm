@@ -2243,7 +2243,6 @@ dependencies = [
  "smallvec",
  "vihaco",
  "vihaco-parser",
- "vihaco-parser-derive",
 ]
 
 [[package]]

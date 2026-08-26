@@ -146,6 +146,7 @@ enum BytecodeCpu {
     Ge(BytecodeType),
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, vihaco::Instruction)]
 enum BytecodeCircuit {
     TwoQubitPauliError,

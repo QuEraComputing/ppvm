@@ -45,60 +45,41 @@ enum BytecodeValue {
     HeapRef(u32),
 }
 
-fn encode_type(value: Type) -> BytecodeType {
-    match value {
-        Type::Undefined => BytecodeType::Undefined,
-        Type::String => BytecodeType::String,
-        Type::Bool => BytecodeType::Bool,
-        Type::I64 => BytecodeType::I64,
-        Type::U32 => BytecodeType::U32,
-        Type::U64 => BytecodeType::U64,
-        Type::F64 => BytecodeType::F64,
-        Type::FunctionRef => BytecodeType::FunctionRef,
-        Type::HeapRef => BytecodeType::HeapRef,
-    }
+/// Makes the boilerplate encode and decode functions for moving between
+/// {Type|Value} and Bytecode{Type|Value}.
+macro_rules! define_bytecode_codec {
+    (
+        $source:ident, $encoded:ident, $encode:ident, $decode:ident;
+        $($variant:ident $(($binding:ident))?),+ $(,)?
+    ) => {
+        fn $encode(value: $source) -> $encoded {
+            match value {
+                $(
+                    $source::$variant $(($binding))? =>
+                        $encoded::$variant $(($binding))?,
+                )+
+            }
+        }
+
+        fn $decode(value: $encoded) -> $source {
+            match value {
+                $(
+                    $encoded::$variant $(($binding))? =>
+                        $source::$variant $(($binding))?,
+                )+
+            }
+        }
+    };
 }
 
-fn decode_type(value: BytecodeType) -> Type {
-    match value {
-        BytecodeType::Undefined => Type::Undefined,
-        BytecodeType::String => Type::String,
-        BytecodeType::Bool => Type::Bool,
-        BytecodeType::I64 => Type::I64,
-        BytecodeType::U32 => Type::U32,
-        BytecodeType::U64 => Type::U64,
-        BytecodeType::F64 => Type::F64,
-        BytecodeType::FunctionRef => Type::FunctionRef,
-        BytecodeType::HeapRef => Type::HeapRef,
-    }
+define_bytecode_codec! {
+    Type, BytecodeType, encode_type, decode_type;
+    Undefined, String, Bool, I64, U32, U64, F64, FunctionRef, HeapRef,
 }
 
-fn encode_value(value: Value) -> BytecodeValue {
-    match value {
-        Value::Undefined => BytecodeValue::Undefined,
-        Value::String(v) => BytecodeValue::String(v),
-        Value::Bool(v) => BytecodeValue::Bool(v),
-        Value::I64(v) => BytecodeValue::I64(v),
-        Value::U32(v) => BytecodeValue::U32(v),
-        Value::U64(v) => BytecodeValue::U64(v),
-        Value::F64(v) => BytecodeValue::F64(v),
-        Value::FunctionRef(v) => BytecodeValue::FunctionRef(v),
-        Value::HeapRef(v) => BytecodeValue::HeapRef(v),
-    }
-}
-
-fn decode_value(value: BytecodeValue) -> Value {
-    match value {
-        BytecodeValue::Undefined => Value::Undefined,
-        BytecodeValue::String(v) => Value::String(v),
-        BytecodeValue::Bool(v) => Value::Bool(v),
-        BytecodeValue::I64(v) => Value::I64(v),
-        BytecodeValue::U32(v) => Value::U32(v),
-        BytecodeValue::U64(v) => Value::U64(v),
-        BytecodeValue::F64(v) => Value::F64(v),
-        BytecodeValue::FunctionRef(v) => Value::FunctionRef(v),
-        BytecodeValue::HeapRef(v) => Value::HeapRef(v),
-    }
+define_bytecode_codec! {
+    Value, BytecodeValue, encode_value, decode_value;
+    Undefined, String(v), Bool(v), I64(v), U32(v), U64(v), F64(v), FunctionRef(v), HeapRef(v),
 }
 
 #[derive(Debug, Clone, vihaco::Instruction)]

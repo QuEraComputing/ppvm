@@ -16,10 +16,20 @@ vihaco::component! {
         Y,
         Z,
         H,
+
+        #[pattern = "'sqrt_x_adj"]
         SqrtXAdj,
+
+        #[pattern = "'sqrt_x"]
         SqrtX,
+
+        #[pattern = "'sqrt_y_adj"]
         SqrtYAdj,
+
+        #[pattern = "'sqrt_y"]
         SqrtY,
+
+        #[pattern = "'s_adj"]
         SAdj,
         S,
         CNOT,
@@ -192,11 +202,11 @@ mod tests {
     fn parses_s_family_without_prefix_collision() {
         // `s` is a prefix of `s_adj`, `sqrt_x`, `sqrt_y`, etc.
         assert_eq!(parse("s"), S);
-        assert_eq!(parse("sadj"), SAdj);
-        assert_eq!(parse("sqrtx"), SqrtX);
-        assert_eq!(parse("sqrtxadj"), SqrtXAdj);
-        assert_eq!(parse("sqrty"), SqrtY);
-        assert_eq!(parse("sqrtyadj"), SqrtYAdj);
+        assert_eq!(parse("s_adj"), SAdj);
+        assert_eq!(parse("sqrt_x"), SqrtX);
+        assert_eq!(parse("sqrt_x_adj"), SqrtXAdj);
+        assert_eq!(parse("sqrt_y"), SqrtY);
+        assert_eq!(parse("sqrt_y_adj"), SqrtYAdj);
     }
 
     #[test]
@@ -206,6 +216,16 @@ mod tests {
                 .parse("circuit.nope")
                 .has_errors()
         );
+
+        for token in ["sadj", "sqrtx", "sqrtxadj", "sqrty", "sqrtyadj"] {
+            let source = format!("circuit.{token}");
+            assert!(
+                CircuitSurfaceInstruction::parser()
+                    .parse(&source)
+                    .has_errors(),
+                "legacy compact token should be rejected: {token}"
+            );
+        }
     }
 
     #[test]

@@ -27,8 +27,7 @@ use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
 // existing `crate::composite::{…}` paths keep resolving.
 pub use crate::device_info::{BackendKind, PPVM_MAGIC, PPVMDeviceInfo};
 
-type Instruction = ppvm::runtime::Instruction;
-pub type PPVMInstruction = Instruction;
+pub type PPVMInstruction = ppvm::runtime::Instruction;
 
 #[composite]
 #[derive(Default)]
@@ -313,7 +312,7 @@ impl PPVM {
     pub fn load(
         &mut self,
         module: &vihaco::module::LocalModule<
-            Instruction,
+            PPVMInstruction,
             vihaco::Value,
             vihaco::Type,
             PPVMDeviceInfo,
@@ -423,7 +422,7 @@ impl PPVM {
         result
     }
 
-    fn execute_effects(&mut self, inst: Instruction) -> eyre::Result<Effects<PPVMEffect>> {
+    fn execute_effects(&mut self, inst: PPVMInstruction) -> eyre::Result<Effects<PPVMEffect>> {
         log::debug!("exec inst: {:?}, stack: {:?}", inst, self.cpu.stack());
         match inst {
             PPVMInstruction::Cpu(cpu_inst) => {

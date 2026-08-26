@@ -1,6 +1,8 @@
+min_version = { hard = "2026.8.10" }
+
 [tools]
-prek = "latest"
+prek = "0.4.14"
 # License header checker/formatter (used by prek hawkeye hook)
-"github:korandoru/hawkeye" = "latest"
+"github:korandoru/hawkeye" = "6.5.1"
 # Unused-dependency checker
 "cargo:cargo-machete" = "0.9.2"

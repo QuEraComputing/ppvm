@@ -1,7 +1,5 @@
-[header]
-path = "licenserc.header.txt"
+headerPath = "licenserc.header.txt"
 
-[files]
 includes = [
   "crates/**/*.rs",
   "ppvm-python/src/**/*.py",
@@ -18,6 +16,8 @@ excludes = [
   "julia-benchmarks/**",
 ]
 
-[props]
+useDefaultMapping = true
+
+[properties]
 inceptionYear = 2026
 copyrightOwner = "The PPVM Authors"

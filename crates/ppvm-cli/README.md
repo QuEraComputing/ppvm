@@ -122,15 +122,15 @@ wherever you want execution to stop:
 
 ```
 fn @main() {
-    const.u64 0
-    circuit.h
+    cpu::cpu.const u64, 0
+    circuit::circuit.h
 
     // execution pauses here
-    breakpoint
+    cpu::cpu.breakpoint
 
-    const.u64 0
-    circuit.measure
-    ret
+    cpu::cpu.const u64, 0
+    circuit::circuit.measure
+    cpu::cpu.ret 0
 }
 ```
 
@@ -144,6 +144,10 @@ measurements:
 > s step | c continue | q quit: Program finished.
 Measurements: 0
 ```
+
+The `next:` display shows the runtime instruction formatter (for example,
+`const.u64`); `.sst` source files must use the qualified v0.4 spelling shown
+above.
 
 To step through a program that has no breakpoints, pass `-b`/`--break-at-start`
 to pause before the very first instruction:

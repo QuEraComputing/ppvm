@@ -1,18 +1,18 @@
 device circuit.n_qubits 2;
 
 fn @main() {
-    const.u64 0
-    circuit.h
+    cpu::cpu.const u64, 0
+    circuit::circuit.h
 
-    const.u64 0
-    const.u64 1
-    circuit.cnot
+    cpu::cpu.const u64, 0
+    cpu::cpu.const u64, 1
+    circuit::circuit.cnot
 
-    const.u64 0
-    circuit.measure
+    cpu::cpu.const u64, 0
+    circuit::circuit.measure
 
-    const.u64 1
-    circuit.measure
+    cpu::cpu.const u64, 1
+    circuit::circuit.measure
 
-    ret
+    cpu::cpu.ret 0
 }

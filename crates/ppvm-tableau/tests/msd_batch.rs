@@ -78,7 +78,12 @@ fn run_msd_naive(seed: u64) -> String {
     let n = 85;
     let mut tab: Tab = GeneralizedTableau::new_with_seed(n, 1e-10, seed);
     let qa: Vec<usize> = (0..n).collect();
-    let ql: Vec<&[usize]> = qa.chunks_exact(17).collect();
+    let ql: Vec<&[usize]> = qa
+        .as_chunks::<17>()
+        .0
+        .iter()
+        .map(|chunk| &chunk[..])
+        .collect();
 
     for q in &ql {
         tab.h(q[7]);
@@ -131,7 +136,12 @@ fn run_msd_batch(seed: u64) -> String {
     let n = 85;
     let mut tab: Tab = GeneralizedTableau::new_with_seed(n, 1e-10, seed);
     let qa: Vec<usize> = (0..n).collect();
-    let ql: Vec<&[usize]> = qa.chunks_exact(17).collect();
+    let ql: Vec<&[usize]> = qa
+        .as_chunks::<17>()
+        .0
+        .iter()
+        .map(|chunk| &chunk[..])
+        .collect();
 
     for q in &ql {
         tab.h(q[7]);

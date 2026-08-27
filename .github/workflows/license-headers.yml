@@ -12,5 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: jdx/mise-action@v2
+
       - name: Check SPDX headers
-        uses: korandoru/hawkeye@v6
+        run: mise exec -- hawkeye check --config licenserc.toml

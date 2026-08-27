@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["PPVMEffect","PPVMInstruction","StepOutcome"],"struct":["PPVM"],"type":["Instruction"]};
+window.SIDEBAR_ITEMS = {"enum":["PPVMEffect","StepOutcome"],"struct":["PPVM"],"type":["PPVMInstruction"]};

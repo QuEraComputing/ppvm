@@ -11,7 +11,7 @@ device circuit.coefficient_threshold 1e-10;
 // sum directly: 1.0 + 0.5 = 1.5. Add `circuit.cnot; circuit.h; circuit.truncate`
 // in textbook-reversed order to evolve before tracing.
 fn @main() {
-    const.str "[XZ]?*"
-    circuit.trace
-    ret
+    cpu::cpu.const str, "[XZ]?*"
+    circuit::circuit.trace
+    cpu::cpu.ret 0
 }

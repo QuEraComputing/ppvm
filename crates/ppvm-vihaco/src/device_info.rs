@@ -10,12 +10,11 @@ pub const PPVM_MAGIC: u32 = 0x5050564D;
 /// Which execution backend the circuit runs on. Selected via the
 /// `device circuit.backend` header; defaults to `Tableau` so existing
 /// programs that don't declare a backend keep working.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, vihaco_parser::Parse)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BackendKind {
     #[default]
     Tableau,
     PauliSum,
-    #[token = "lossy_paulisum"]
     LossyPauliSum,
 }
 

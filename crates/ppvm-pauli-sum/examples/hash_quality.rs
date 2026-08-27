@@ -13,7 +13,7 @@
 //!   * compare both for `[u8;8]` and `[u8;16]` storage
 
 use std::collections::HashMap;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{BuildHasher, Hash};
 
 use ppvm_pauli_sum::prelude::*;
 use ppvm_pauli_sum::strategy::CoefficientThreshold;
@@ -70,13 +70,7 @@ where
     H: BuildHasher + Default,
 {
     let hasher = H::default();
-    let hashes: Vec<u64> = keys
-        .map(|k| {
-            let mut h = hasher.build_hasher();
-            k.hash(&mut h);
-            h.finish()
-        })
-        .collect();
+    let hashes: Vec<u64> = keys.map(|k| hasher.hash_one(&k)).collect();
 
     let n = hashes.len();
     let mut counts: HashMap<u64, u32> = HashMap::new();

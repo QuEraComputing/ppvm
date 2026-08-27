@@ -15,16 +15,15 @@ mod syntax;
 /// crate directly.
 pub use vihaco_circuit_isa::CircuitInstruction;
 
-use chumsky::Parser;
 use vihaco::syntax::{ParsedModule, Resolve};
-use vihaco::{Type, Value, module::Module};
-use vihaco_parser_core::Parse;
+use vihaco::{Type, Value, module::LocalModule};
 
+use crate::composite::ppvm_module as ppvm;
 use crate::composite::{PPVM, PPVMDeviceInfo, PPVMInstruction};
-use crate::syntax::{PPVMHeader, PPVMResolver};
+use crate::syntax::{PPVMHeader, PPVMResolver, parse_functions, parse_headers};
 
 /// A fully resolved PPVM module, ready to load into a [`PPVM`].
-pub type PPVMModule = Module<PPVMInstruction, Value, Type, PPVMDeviceInfo>;
+pub type PPVMModule = LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo>;
 
 /// Read a file and produce a loadable module, auto-detecting the format: a
 /// leading PPVM magic is parsed as `.ssb` bytecode, otherwise as `.sst` source.
@@ -52,16 +51,18 @@ pub fn run_program(program: &str) -> eyre::Result<PPVM> {
 }
 
 /// Parse `.sst` source into the unresolved AST.
-pub fn parse_program(source: &str) -> eyre::Result<ParsedModule<PPVMInstruction, PPVMHeader>> {
-    ParsedModule::<PPVMInstruction, PPVMHeader>::parser()
-        .parse(source)
-        .into_result()
-        .map_err(|errs| eyre::eyre!("parsing failed: {errs:?}"))
+pub fn parse_program(
+    source: &str,
+) -> eyre::Result<ParsedModule<ppvm::syntax::Instruction, vihaco_cpu::SurfaceType, Vec<PPVMHeader>>>
+{
+    let (header, body) = parse_headers(source)?;
+    Ok(ParsedModule {
+        header,
+        functions: parse_functions(&body)?,
+    })
 }
 
-pub fn compile_program(
-    source: &str,
-) -> eyre::Result<Module<PPVMInstruction, Value, Type, PPVMDeviceInfo>> {
+pub fn compile_program(source: &str) -> eyre::Result<PPVMModule> {
     PPVMResolver::new().resolve_module(parse_program(source)?)
 }
 
@@ -91,7 +92,7 @@ mod tests {
     #[test]
     fn dump_program_writes_loadable_bytecode() {
         let src = "device circuit.n_qubits 1;\n\
-                   fn @main() { const.u64 0\n circuit.measure\n ret }\n";
+                   fn @main() { cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
         let path = std::env::temp_dir().join("ppvm_dump_program_test.ssb");
         dump_program(src, path.to_str().unwrap()).unwrap();
 

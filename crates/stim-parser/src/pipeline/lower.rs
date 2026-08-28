@@ -453,10 +453,8 @@ fn qubit_targets(
 }
 
 fn pair_targets(targets: &[usize]) -> Vec<(usize, usize)> {
-    targets
-        .chunks_exact(2)
-        .map(|pair| (pair[0], pair[1]))
-        .collect()
+    let (pairs, _) = targets.as_chunks::<2>();
+    pairs.iter().map(|[a, b]| (*a, *b)).collect()
 }
 
 /// Validate that a tag carries exactly the `required` named parameters — no

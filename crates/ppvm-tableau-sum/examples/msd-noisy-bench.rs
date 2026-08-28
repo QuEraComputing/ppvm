@@ -97,7 +97,12 @@ fn build(seed: u64) -> GTabSum {
 
     let mut tab: GTabSum = GeneralizedTableauSum::new_with_seed(n_qubits, 1e-10, sum_cutoff, seed);
     let qubit_addrs: Vec<usize> = (0..n_qubits).collect();
-    let ql: Vec<&[usize]> = qubit_addrs.chunks_exact(17).collect();
+    let ql: Vec<&[usize]> = qubit_addrs
+        .as_chunks::<17>()
+        .0
+        .iter()
+        .map(|chunk| &chunk[..])
+        .collect();
 
     for q in ql.iter() {
         let encoding_qubit = q[7];

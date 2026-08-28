@@ -44,7 +44,9 @@ fn qubits(targets: &[Target]) -> SmallVec<[usize; TARGETS_INLINE]> {
 /// Only valid when no target is a measurement record (see [`has_record_control`]).
 fn qubit_pairs(targets: &[Target]) -> SmallVec<[(usize, usize); TARGETS_INLINE / 2]> {
     targets
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|p| (qubit(p[0]), qubit(p[1])))
         .collect()
 }
@@ -575,7 +577,7 @@ pub fn execute_validated<T, I, C>(
                 // With no record control present, keep the batched fast path.
                 GateName::CX | GateName::ZCX | GateName::CNot => {
                     if has_record_control(targets) {
-                        for p in targets.chunks_exact(2) {
+                        for p in targets.as_chunks::<2>().0 {
                             match p[0] {
                                 Target::Qubit(c) => tab.cnot(c, qubit(p[1])),
                                 Target::Rec(k) => {
@@ -591,7 +593,7 @@ pub fn execute_validated<T, I, C>(
                 }
                 GateName::CY | GateName::ZCY => {
                     if has_record_control(targets) {
-                        for p in targets.chunks_exact(2) {
+                        for p in targets.as_chunks::<2>().0 {
                             match p[0] {
                                 Target::Qubit(c) => tab.cy(c, qubit(p[1])),
                                 Target::Rec(k) => {
@@ -607,7 +609,7 @@ pub fn execute_validated<T, I, C>(
                 }
                 GateName::CZ | GateName::ZCZ => {
                     if has_record_control(targets) {
-                        for p in targets.chunks_exact(2) {
+                        for p in targets.as_chunks::<2>().0 {
                             match p[0] {
                                 Target::Qubit(c) => tab.cz(c, qubit(p[1])),
                                 Target::Rec(k) => {

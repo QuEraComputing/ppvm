@@ -64,7 +64,7 @@ where
         .strategy(strat)
         .build();
     for (w, c) in terms {
-        state += (w.clone(), *c);
+        state += (*w, *c);
     }
     state
 }

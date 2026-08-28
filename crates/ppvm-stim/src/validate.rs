@@ -163,7 +163,7 @@ fn check_record_controls(
     }
     // Targets come in (control, target) pairs; the target may never be a record,
     // and a control may never look back past the start of the record.
-    for pair in targets.chunks_exact(2) {
+    for pair in targets.as_chunks::<2>().0 {
         if matches!(pair[1], Target::Rec(_)) {
             return Err(ExecError::InvalidRecordControl {
                 name: name.canonical_name().to_string(),

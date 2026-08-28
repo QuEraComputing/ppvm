@@ -4,15 +4,15 @@ device circuit.observable ZZ;
 
 fn @main() {
     // Textbook H(0); CNOT(0,1) — emit reversed for Heisenberg propagation.
-    const.u64 0
-    const.u64 1
-    circuit.cnot
+    cpu::cpu.const u64, 0
+    cpu::cpu.const u64, 1
+    circuit::circuit.cnot
 
-    const.u64 0
-    circuit.h
+    cpu::cpu.const u64, 0
+    circuit::circuit.h
 
     // Trace against |00>: match Z-or-identity on every qubit.
-    const.str "Z?*"
-    circuit.trace
-    ret
+    cpu::cpu.const str, "Z?*"
+    circuit::circuit.trace
+    cpu::cpu.ret 0
 }

@@ -48,8 +48,8 @@ pub fn gate_spec(name: &str) -> Option<GateSpec> {
         "depolarize" => (Depolarize, 1, 1),
         "depolarize2" => (Depolarize2, 2, 1),
         "loss" => (Loss, 1, 1),
-        "paulierror" => (PauliError, 1, 3),
-        "correlatedloss" => (CorrelatedLoss, 2, 3),
+        "pauli_error" => (PauliError, 1, 3),
+        "correlated_loss" => (CorrelatedLoss, 2, 3),
         _ => return None,
     };
     Some(GateSpec {
@@ -72,7 +72,7 @@ pub enum Command {
     },
     /// Advance one instruction (also the meaning of an empty line).
     Step,
-    /// Run to the next breakpoint or program end.
+    /// Run to the next cpu::cpu.breakpoint or program end.
     Continue,
     /// Reset the loaded program / device to its initial state.
     Reset,

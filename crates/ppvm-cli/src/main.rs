@@ -78,7 +78,7 @@ enum Commands {
         format: commands::MeasurementFormat,
     },
 
-    /// Step through a program interactively, pausing at `breakpoint` instructions
+    /// Step through a program interactively, pausing at `cpu::cpu.breakpoint` instructions
     Debug {
         /// Input file (.sst source or .ssb bytecode)
         #[arg(value_name = "FILE")]

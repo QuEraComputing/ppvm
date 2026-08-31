@@ -1,0 +1,65 @@
+device circuit.n_qubits 1;
+
+// Binary arithmetic pushes operands in source order: lhs, then rhs.
+// The CPU pops rhs first and lhs second before applying the operation.
+fn @main() {
+    cpu::cpu.const u64, 10
+    cpu::cpu.const u64, 3
+    cpu::cpu.sub u64
+    cpu::cpu.const u64, 7
+    cpu::cpu.eq u64
+    cpu::cpu.cond_br @check_div, @fail_sub
+
+cpu::cpu.label @check_div
+    cpu::cpu.const u64, 10
+    cpu::cpu.const u64, 3
+    cpu::cpu.div u64
+    cpu::cpu.const u64, 3
+    cpu::cpu.eq u64
+    cpu::cpu.cond_br @check_rem, @fail_div
+
+cpu::cpu.label @check_rem
+    cpu::cpu.const u64, 10
+    cpu::cpu.const u64, 3
+    cpu::cpu.rem u64
+    cpu::cpu.const u64, 1
+    cpu::cpu.eq u64
+    cpu::cpu.cond_br @check_mul, @fail_rem
+
+cpu::cpu.label @check_mul
+    cpu::cpu.const u64, 10
+    cpu::cpu.const u64, 3
+    cpu::cpu.mul u64
+    cpu::cpu.const u64, 30
+    cpu::cpu.eq u64
+    cpu::cpu.cond_br @check_add, @fail_mul
+
+cpu::cpu.label @check_add
+    cpu::cpu.const u64, 10
+    cpu::cpu.const u64, 3
+    cpu::cpu.add u64
+    cpu::cpu.const u64, 13
+    cpu::cpu.eq u64
+    cpu::cpu.cond_br @success, @fail_add
+
+cpu::cpu.label @fail_sub
+    cpu::cpu.br @fail
+cpu::cpu.label @fail_div
+    cpu::cpu.br @fail
+cpu::cpu.label @fail_rem
+    cpu::cpu.br @fail
+cpu::cpu.label @fail_mul
+    cpu::cpu.br @fail
+cpu::cpu.label @fail_add
+    cpu::cpu.br @fail
+
+cpu::cpu.label @fail
+    cpu::cpu.const u64, 0
+    circuit::circuit.x
+    cpu::cpu.br @success
+
+cpu::cpu.label @success
+    cpu::cpu.const u64, 0
+    circuit::circuit.measure
+    cpu::cpu.ret 0
+}

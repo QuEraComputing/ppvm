@@ -2175,9 +2175,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vihaco"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ca5492013a046a93fbc33c86b1a780c094cc1c7f330b1a863518abf2f5d9263"
+checksum = "868af4f85b69eaed7e7f7ce8b80dedae1c1f84ab349d99f5062924200d9e48d8"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -2199,9 +2199,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-abi"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ce60d30d7bbdd0680a3e2f03602019a8e40e18ca0fdcf862fe7ad05ef8f253c"
+checksum = "c41eba1bb03d1c13acac5b6bcdc195d410dfcf31fec55dcabc1ba77ef1b72b62"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -2212,9 +2212,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-abi-derive"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7f9e9ea31ac0f95b81b80039d9ad0efcbf613e7821a137cddad474ce35eee63"
+checksum = "49d82820d6174e30131097191fbe81af06151d4000294e7a30017d9ef170b288"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2224,9 +2224,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-bytecode"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "daab07fd1060f2d7480a83a2f0674c7047e972a25420a6896b8761a55de40c21"
+checksum = "94e2e4dce87f22f042ca709df72b07f3c154e19bb3f3a97f2dc976a0dcc34ee8"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -2247,9 +2247,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-cpu"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d43a9411dfe3802d58fec11952f33ab816a64ce1388742e1b2138b5768874072"
+checksum = "6e9b331dceb7844b2b14e0d71ec3f089cb75219a424d0fb204020381fde0a887"
 dependencies = [
  "chumsky 0.10.1",
  "codespan",
@@ -2262,9 +2262,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-module"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fb64aeec69cda6c683ed066db8466a4c3450c2380b02218ea2008ae1c26c227"
+checksum = "154e6af7c180498f6d91122eef2bc1fb78265d565467e51f5b3c2aa09298b7ad"
 dependencies = [
  "colored",
  "eyre",
@@ -2274,9 +2274,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-parser"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7055d520235e111a3ab1b709b12598cb85b22af917a989249854faab2239e3c5"
+checksum = "de2817e4f96bebb254211655ecbf55ab31f8ffbd04149820cf747a196483940a"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -2285,9 +2285,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-parser-derive"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4da6e8db950479302542e9327e51b9457ee8b029c3d68ff8b8dec827ddae757"
+checksum = "49716816ec02d2098acd1ce7f73feb9c95c6cf6c8adab6c9cbc84671a1417fe0"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",
@@ -2299,9 +2299,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-runtime"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f27c5c78eac004e23269c32967345901ebfd44f73b0cf4cdd018695c9fad176"
+checksum = "90d88037beb7373cfd99f270010f4b7b6215cc0d4107cbfd05a042efa5ec5a85"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",
@@ -2314,9 +2314,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-runtime-derive"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bec5b07b344dcad68f0d09c900056c8eea9f442b46daa1003d7420749314ee37"
+checksum = "f3f2e39337a9b2c34a1d849ad601c6fa3a5da1c2fc5971637670643913b831a7"
 dependencies = [
  "convert_case",
  "proc-macro-crate",
@@ -2327,9 +2327,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-stdlib"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd65a4e9145dc1a3c0ff004b146f960ce2971ed9c6ed9213e0db49627b21417e"
+checksum = "5f144e86c79b496099e751fcb2f7ef35fe8d8a5486cd93324d67f76f6d7d3943"
 dependencies = [
  "eyre",
  "vihaco-runtime",
@@ -2337,9 +2337,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-syntax"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc1b62d87ca4a2a2eb225b6d00e62adaddd8b5b0c332ab044adf0b7c96d64fe3"
+checksum = "1f845dd3cc8b4f6497ce391cd216b57c78419d80475f9a9f3db996b5becbd6e0"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",

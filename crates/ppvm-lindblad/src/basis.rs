@@ -12,7 +12,7 @@ use rayon::prelude::*;
 
 /// Build a `word → row` map for a basis assumed to contain unique Pauli
 /// words; debug-asserts the uniqueness invariant.
-pub(crate) fn build_basis_index(basis: &[Word]) -> FxHashMap<Word, u32> {
+pub fn build_basis_index(basis: &[Word]) -> FxHashMap<Word, u32> {
     let mut index: FxHashMap<Word, u32> = FxHashMap::default();
     for (i, w) in basis.iter().enumerate() {
         let prev = index.insert(*w, i as u32);

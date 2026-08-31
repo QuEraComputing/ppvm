@@ -58,7 +58,7 @@ pub fn word_from_codes(codes: &[u8]) -> Result<Word, Error> {
 
 /// Inverse of [`word_from_codes`]: write `n_qubits` Pauli labels into `out`.
 pub fn codes_from_word(w: &Word, out: &mut [u8]) {
-    assert_eq!(out.len(), w.n_qubits());
+    debug_assert_eq!(out.len(), w.n_qubits());
     for (q, slot) in out.iter_mut().enumerate() {
         let xb = w.xbits[q] as u8;
         let zb = w.zbits[q] as u8;

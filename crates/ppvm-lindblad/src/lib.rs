@@ -45,13 +45,12 @@ mod word;
 /// Matrix-free / quspin-expm-backed `exp(dt·L*)·b` engine. See module docs.
 pub(crate) mod mf_expm;
 
+pub use basis::build_basis_index;
 pub use config::PcStepConfig;
 pub use error::Error;
 pub use spec::{JumpInput, LindbladSpec};
 pub use step::PcStepTimings;
 pub use word::{MAX_QUBITS, Word, codes_from_word, parse_pauli_string, word_from_codes};
-
-pub(crate) use basis::build_basis_index;
 
 #[cfg(test)]
 mod tests;

@@ -32,6 +32,22 @@ impl PcStepTimings {
     }
 }
 
+/// Clock for one `pc_step` phase. Disarmed (`None`) on the untimed path, so
+/// [`LindbladSpec::pc_step`] pays no `Instant` syscalls.
+struct Phase(Option<Instant>);
+
+impl Phase {
+    fn start(timed: bool) -> Self {
+        Self(timed.then(Instant::now))
+    }
+
+    fn stop(self, slot: &mut u64) {
+        if let Some(t0) = self.0 {
+            *slot = t0.elapsed().as_micros() as u64;
+        }
+    }
+}
+
 /// Compact `basis` / `coeffs` in place: drop entries whose absolute
 /// coefficient is below `drop_tol` unless the word appears in `protected`.
 /// No-op when `drop_tol ≤ 0`.
@@ -143,7 +159,7 @@ impl LindbladSpec {
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
         self.run_in_pool(cfg, |this| {
-            this.pc_step_inner(basis, coeffs, dt, protected, cfg)
+            this.pc_step_inner(basis, coeffs, dt, protected, cfg, false)
                 .map(|_| ())
         })
     }
@@ -160,7 +176,7 @@ impl LindbladSpec {
         cfg: &PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
         self.run_in_pool(cfg, |this| {
-            this.pc_step_inner(basis, coeffs, dt, protected, cfg)
+            this.pc_step_inner(basis, coeffs, dt, protected, cfg, true)
         })
     }
 
@@ -187,6 +203,7 @@ impl LindbladSpec {
         dt: f64,
         protected: &[Word],
         cfg: &PcStepConfig,
+        timed: bool,
     ) -> Result<PcStepTimings, Error> {
         let PcStepConfig {
             max_basis,
@@ -209,37 +226,37 @@ impl LindbladSpec {
         // coefficients followed by zeros for the newly-added leakage strings.
         // We rely on `coeffs` itself as the pre-step buffer for the corrector
         // — no `.clone()` is needed because `expm_step` only borrows it.
-        let t0 = Instant::now();
+        let p = Phase::start(timed);
         let leak = self.leakage_with_prune(basis, coeffs, protected, admit, tau_add)?;
-        t.leakage1_us = t0.elapsed().as_micros() as u64;
+        p.stop(&mut t.leakage1_us);
 
-        let t0 = Instant::now();
+        let p = Phase::start(timed);
         add_leakage_capped(basis, coeffs, leak, admit);
-        t.expand1_us = t0.elapsed().as_micros() as u64;
+        p.stop(&mut t.expand1_us);
 
         // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
         // new owned vector with the predicted state.
-        let t0 = Instant::now();
+        let p = Phase::start(timed);
         let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol);
-        t.expm1_us = t0.elapsed().as_micros() as u64;
+        p.stop(&mut t.expm1_us);
 
         // 3. Second-hop expansion from the predicted state. After leakage2
         // we no longer need `coeffs_predict`. Extend `coeffs` with zeros for
         // any newly-added second-hop strings so it remains a valid input
         // (pre-step state) for the corrector.
-        let t0 = Instant::now();
+        let p = Phase::start(timed);
         let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, admit, tau_add)?;
-        t.leakage2_us = t0.elapsed().as_micros() as u64;
+        p.stop(&mut t.leakage2_us);
         drop(coeffs_predict);
 
-        let t0 = Instant::now();
+        let p = Phase::start(timed);
         add_leakage_capped(basis, coeffs, leak2, admit);
-        t.expand2_us = t0.elapsed().as_micros() as u64;
+        p.stop(&mut t.expand2_us);
 
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.
-        let t0 = Instant::now();
+        let p = Phase::start(timed);
         *coeffs = self.expm_step(basis, dt, coeffs, drop_tol);
-        t.expm2_us = t0.elapsed().as_micros() as u64;
+        p.stop(&mut t.expm2_us);
 
         // 5. Prune basis entries below `drop_tol` (protected words never dropped).
         prune_basis(basis, coeffs, drop_tol, protected);

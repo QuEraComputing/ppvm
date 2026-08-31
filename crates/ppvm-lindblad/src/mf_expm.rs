@@ -36,8 +36,7 @@ use rayon::prelude::*;
 /// `c`), and `per_col[c] = (raw, diag)` with `raw = Σ|coeff|` over ALL action
 /// outputs (in- and out-of-basis, an upper bound on the column 1-norm) and
 /// `diag` the coefficient of the output Word equal to the input Word. The
-/// cache is reused by [`CscOp`] across every Krylov/Taylor matvec. Same
-/// scratch pattern as [`crate::orbit_rep::build_orbit_rep_cols`].
+/// cache is reused by [`CscOp`] across every Krylov/Taylor matvec.
 /// CSC columns of the cached in-basis action: `cols[c]` = `(row, coeff)`.
 type MfCols = Vec<Vec<(u32, f64)>>;
 /// Per-column `(raw, diag)` for the `μ`/1-norm selection.
@@ -83,9 +82,7 @@ fn build_mf_cols(
 
 /// Borrowed CSC-style view of an in-basis-restricted generator `M`, backed
 /// by a cached per-column action computed once per expm call
-/// ([`build_mf_cols`] for the real path,
-/// [`crate::orbit_rep::build_orbit_rep_cols`] for the complex orbit-rep
-/// path). `dot` performs the CSC matvec `y = M·x` against the cache; the
+/// ([`build_mf_cols`]). `dot` performs the CSC matvec `y = M·x` against the cache; the
 /// remaining `LinearOperator` entry points are unused on the `from_parts` +
 /// single-vector `apply` path.
 ///

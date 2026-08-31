@@ -91,7 +91,7 @@ def _basis_to_codes(basis: Sequence[str], n_qubits: int) -> np.ndarray:
 
 
 def _codes_to_basis(arr: np.ndarray) -> list[str]:
-    """Inverse of :func:`_basis_to_codes`. One call into C per row."""
+    """Inverse of `_basis_to_codes`. One call into C per row."""
     bytes_per_row = _CODE_TO_ASCII[arr].tobytes()
     n = arr.shape[1]
     return [bytes_per_row[i * n : (i + 1) * n].decode("ascii") for i in range(arr.shape[0])]
@@ -150,8 +150,8 @@ class Lindbladian:
         Pauli string ``"XYZI..."`` (treated as a Hermitian-Pauli jump
         with coefficient 1, hitting the fast path) or an iterable of
         ``(pauli_string, complex_coeff)`` pairs for a general complex
-        Pauli linear combination such as :func:`sigma_plus` or
-        :func:`sigma_minus`. ``rate`` is the non-negative GKSL rate
+        Pauli linear combination such as `sigma_plus` or
+        `sigma_minus`. ``rate`` is the non-negative GKSL rate
         ``γ_k``.
 
     Examples
@@ -216,7 +216,7 @@ class Lindbladian:
         that must NEVER appear in the leakage output.
 
         Returns ``(out_basis, out_coeffs)`` packed the same way as
-        :meth:`action_arr`.
+        `action_arr`.
         """
         n = self.n_qubits
         if protected_arr is None:
@@ -299,8 +299,10 @@ class Lindbladian:
         drop_tol: float = 1e-12,
         protected: Sequence[str] | None = None,
         num_threads: int | None = None,
+        admit_basis: int | None = None,
+        tau_add: float | None = None,
     ) -> tuple[list[str], np.ndarray]:
-        """String-keyed variant of :meth:`pc_step_arr`."""
+        """String-keyed variant of `pc_step_arr`."""
         n = self.n_qubits
         basis_arr = _basis_to_codes(basis, n)
         protected_arr = (
@@ -314,6 +316,8 @@ class Lindbladian:
             drop_tol,
             protected_arr,
             num_threads,
+            admit_basis,
+            tau_add,
         )
         return _codes_to_basis(new_basis_arr), new_coeffs
 
@@ -361,7 +365,7 @@ class Lindbladian:
 
     def generator(self, basis: Sequence[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Generator matrix as COO triples ``(rows, cols, vals)``,
-        basis given as strings. See :meth:`generator_arr` for the conversion
+        basis given as strings. See `generator_arr` for the conversion
         to a SciPy sparse matrix."""
         n = self.n_qubits
         basis_arr = _basis_to_codes(basis, n)

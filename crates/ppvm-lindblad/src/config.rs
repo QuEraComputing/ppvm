@@ -4,12 +4,10 @@
 //! Configuration objects for the predictor-corrector stepper.
 
 /// Truncation and execution policy for a single predictor-corrector step
-/// ([`crate::LindbladSpec::pc_step`], [`crate::LindbladSpec::pc_step_timed`],
-/// [`crate::orbit_rep::pc_step_orbit_rep`]).
+/// ([`crate::LindbladSpec::pc_step`], [`crate::LindbladSpec::pc_step_timed`]).
 ///
 /// These are the per-run *tuning knobs*, kept separate from the per-call data
-/// (`basis`, `coeffs`, `dt`, `protected`, and — on the orbit path — the
-/// translation group and momentum).
+/// (`basis`, `coeffs`, `dt`, `protected`).
 ///
 /// `max_basis` is the primary accuracy/cost dial; `admit_basis` selects the
 /// displacement scheme; `drop_tol` is the churn valve of the admission-bound

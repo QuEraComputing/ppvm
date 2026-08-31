@@ -36,7 +36,7 @@ pub struct AppState {
     /// True while a program is loaded (Program panel) vs a REPL session (Log).
     has_program: bool,
     /// True while the debugger is stopped and waiting for input (at start, after
-    /// a step, or at a breakpoint).
+    /// a step, or at a cpu::cpu.breakpoint).
     paused: bool,
     /// True once the loaded program has run to Return/Halt.
     finished: bool,
@@ -236,7 +236,7 @@ impl AppState {
             }
             StepOutcome::Breakpoint => {
                 self.paused = true;
-                self.set_status("-- breakpoint hit --");
+                self.set_status("-- cpu::cpu.breakpoint hit --");
             }
             StepOutcome::Return | StepOutcome::Halt => {
                 self.paused = false;
@@ -459,7 +459,7 @@ Meta / debug
   device N              create a fresh N-qubit tableau device
   :load <file>          load a .sst / .ssb program (paused at start)
   Enter (empty)  :s     step one instruction
-  :continue  :c         run to the next breakpoint or the end
+  :continue  :c         run to the next cpu::cpu.breakpoint or the end
   :reset                restart the loaded program / device
   :help  :h             toggle this help
   :quit  :q  (Ctrl-C)   leave
@@ -471,7 +471,7 @@ Gates  (q = qubit index; angles / probabilities are floats)
   u3 <q> <theta> <phi> <lam>
   rxx ryy rzz <a> <b> <angle>
   depolarize loss <q> <p>     depolarize2 <a> <b> <p>
-  paulierror <q> <px> <py> <pz>     correlatedloss <a> <b> <p0> <p1> <p2>
+  pauli_error <q> <px> <py> <pz>     correlated_loss <a> <b> <p0> <p1> <p2>
 
 Line editing: ←/→ move · Home/End · Backspace/Del · ↑/↓ history";
 
@@ -602,9 +602,9 @@ mod tests {
         assert!(app.should_exit);
     }
 
-    /// A 1-qubit program with a breakpoint before measuring q0 (|0> -> 0).
+    /// A 1-qubit program with a cpu::cpu.breakpoint before measuring q0 (|0> -> 0).
     const BP_PROGRAM: &str = "device circuit.n_qubits 1;\n\
-                              fn @main() { breakpoint\n const.u64 0\n circuit.measure\n ret }\n";
+                              fn @main() { cpu::cpu.breakpoint\n cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
 
     #[test]
     fn load_source_starts_paused_with_a_listing() {
@@ -624,7 +624,7 @@ mod tests {
         app.load_source(BP_PROGRAM).unwrap();
         app.dispatch(":c");
         assert!(
-            app.status().contains("breakpoint"),
+            app.status().contains("cpu::cpu.breakpoint"),
             "status: {}",
             app.status()
         );
@@ -642,7 +642,7 @@ mod tests {
     fn finishing_clears_paused() {
         let mut app = AppState::new();
         app.load_source(BP_PROGRAM).unwrap();
-        app.dispatch(":c"); // pause at breakpoint
+        app.dispatch(":c"); // pause at cpu::cpu.breakpoint
         assert!(app.paused());
         app.dispatch(":c"); // run to Return
         assert!(!app.paused(), "paused must clear once the program finishes");
@@ -652,7 +652,7 @@ mod tests {
     fn finished_hint_does_not_suggest_stepping() {
         let mut app = AppState::new();
         app.load_source(BP_PROGRAM).unwrap();
-        app.dispatch(":c"); // pause at breakpoint
+        app.dispatch(":c"); // pause at cpu::cpu.breakpoint
         app.dispatch(":c"); // run to Return
         assert!(
             !app.hint().contains("step") && !app.hint().contains("continue"),
@@ -686,11 +686,11 @@ mod tests {
 
     #[test]
     fn inject_gate_at_breakpoint_then_resume() {
-        // At the breakpoint, inject X on q0; resuming, the program measures |1>.
+        // At the cpu::cpu.breakpoint, inject X on q0; resuming, the program measures |1>.
         let mut app = AppState::new();
         app.load_source(BP_PROGRAM).unwrap();
-        app.dispatch(":c"); // run to the breakpoint
-        assert!(app.status().contains("breakpoint"));
+        app.dispatch(":c"); // run to the cpu::cpu.breakpoint
+        assert!(app.status().contains("cpu::cpu.breakpoint"));
         app.dispatch("x 0"); // inject while paused
         app.dispatch(":c"); // resume; program measures q0
         assert!(

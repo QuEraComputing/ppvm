@@ -1,6 +1,6 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.6"
+julia_version = "1.12.5"
 manifest_format = "2.0"
 project_hash = "52f0dd51f0e051696bfc24b6c265049f3b4a890d"
 
@@ -882,15 +882,17 @@ version = "2.8.5"
 
 [[deps.PauliPropagation]]
 deps = ["AcceleratedKernels", "BitIntegers", "Bits", "JSON", "LinearAlgebra", "PlotGraphviz", "ProfileCanvas", "Random", "StatsBase", "Test", "UUIDs"]
-git-tree-sha1 = "757b43af3c247d9fad953dd056d3df76fe6e6a08"
+git-tree-sha1 = "25a5e6eebc97b9680e16ab7e80dfb1969d828e24"
 uuid = "293282d5-3c99-4fb6-92d0-fd3280a19750"
-version = "0.7.3"
+version = "0.8.1"
 
     [deps.PauliPropagation.extensions]
     PauliPropagationCUDA = "CUDA"
+    PauliPropagationYao = "YaoBlocks"
 
     [deps.PauliPropagation.weakdeps]
     CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    YaoBlocks = "418bc28f-b43b-5e0b-a6e7-61bbc1a2c1df"
 
 [[deps.PauliStrings]]
 deps = ["BitIntegers", "Combinatorics", "Dictionaries", "LinearAlgebra", "ProgressBars", "Random", "SparseArrays"]

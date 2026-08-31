@@ -14,7 +14,7 @@ use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
 use ppvm_pauli_sum::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
 use ppvm_tableau::prelude::*;
-use vihaco::{Effects, component, observe};
+use vihaco::{Effects, dispatch, observe};
 use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
 
 /// Largest qubit count any backend can simulate. The widest size bucket is
@@ -71,7 +71,7 @@ pub struct CircuitExecutor<T: Config<Coeff = f64>, I: TableauIndex, C: SparseVec
     pub tab: GeneralizedTableau<T, I, C>,
 }
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
+#[dispatch(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
 impl<T, I, C> CircuitExecutor<T, I, C>
 where
     T: Config<Coeff = f64>,
@@ -449,7 +449,7 @@ pub struct PauliSumExecutor<T: Config<Coeff = f64>> {
     initial: PauliSum<T>,
 }
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
+#[dispatch(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
 impl<T> PauliSumExecutor<T>
 where
     T: Config<Coeff = f64>,
@@ -500,7 +500,7 @@ pub struct LossyPauliSumExecutor<T: Config<Coeff = f64>> {
     initial: PauliSum<T>,
 }
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
+#[dispatch(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
 impl<T> LossyPauliSumExecutor<T>
 where
     T: Config<Coeff = f64>,
@@ -855,7 +855,12 @@ pub enum Circuit {
     LossyPauliSum(LossyPauliSumCircuit),
 }
 
-#[component(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
+impl vihaco::HasInstructionSet for Circuit {
+    type Runtime = vihaco_circuit_isa::CircuitInstruction;
+    type Syntax = vihaco_circuit_isa::CircuitSurfaceInstruction;
+}
+
+#[dispatch(instruction = CircuitInstruction, message = CircuitMessage, effect = CircuitOutcomeEffect)]
 impl Circuit {
     /// Build a Tableau-backed circuit. Tableau init only needs `n_qubits` and
     /// `coefficient_threshold` from `info`; no observable required.

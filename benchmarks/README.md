@@ -87,3 +87,19 @@ uv run --with matplotlib python benchmarks/plot_branch_coalesce.py \
 - `plot_branch_coalesce.py` — left panel: time vs `m` (log-log); right panel:
   sort-merge speedup `t_hash / t_sortmerge` vs `m`, with the crossover line and
   the "hash wins" band.
+
+# Cross-library Pauli propagation
+
+`ppvm` against [PauliPropagation.jl][xpp], [PauliStrings.jl][xps], Qiskit's
+[pauli-prop][xqk] and Algorithmiq's [monoprop][xmp], on TFIM Trotter and
+Heisenberg autocorrelator workloads, all single-threaded and all validated to
+propagate the identical operator term-for-term before anything is timed.
+
+Lives in [`cross-library/`](cross-library/README.md) — see that README for the
+circuit spec, the shared environment contract, the per-engine caveats (notably
+that monoprop is parallel unless capped), and a measured run.
+
+[xpp]: https://github.com/MSRudolph/PauliPropagation.jl
+[xps]: https://github.com/nicolasloizeau/PauliStrings.jl
+[xqk]: https://github.com/Qiskit/pauli-prop
+[xmp]: https://github.com/Algorithmiq/monoprop

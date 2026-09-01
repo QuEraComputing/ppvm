@@ -11,7 +11,10 @@ use num::{
 use ppvm_traits::{char::Pauli, config::Config};
 
 use crate::measure::MeasureScratch;
-use crate::{data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex};
+use crate::{
+    data::GeneralizedTableau, qubit_status::QubitStatus, sparsevec::SparseVector,
+    tableau_index::TableauIndex,
+};
 
 pub trait LossyMeasureAll {
     fn measure_all(&mut self) -> Vec<Option<bool>>;
@@ -117,7 +120,7 @@ where
         idx: usize,
         scratch: &mut MeasureScratch<I, T::Coeff>,
     ) -> Option<bool> {
-        if self.is_lost[idx] {
+        if self.qubit_status[idx] == QubitStatus::Lost {
             self.measurement_record.push(None);
             return None;
         }

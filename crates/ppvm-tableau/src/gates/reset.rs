@@ -46,7 +46,7 @@ where
         // Skip qubits outside the computational subspace. Currently a no-op for
         // loss (the `x` below is already skipped and `measure` returns `None`),
         // but leaked qubits must not be re-zeroed, and this short-cuts both.
-        if self.is_lost_or_leaked(addr0) {
+        if self.is_inactive(addr0) {
             return;
         }
 

@@ -54,7 +54,7 @@ where
 
     #[inline]
     fn is_qubit_lost(&self, addr: usize) -> bool {
-        self.is_lost_or_leaked(addr)
+        self.is_inactive(addr)
     }
 }
 
@@ -177,7 +177,14 @@ where
         if p < self.tableau.rng.random::<f64>() {
             return;
         }
+        if self.qubit_status[addr0] == QubitStatus::Lost {
+            return;
+        }
 
+        // Temporarily live so the collapse-to-|0⟩ is not skipped on a leaked
+        // qubit. Loss overwrites leakage: after this the status is Lost,
+        // indistinguishable from a qubit lost from the computational subspace.
+        self.qubit_status[addr0] = QubitStatus::Live;
         // NOTE: this is O(n^2) but also potentially removes coefficients, which is nice
         let outcome = self.measure(addr0);
         // A loss event is not a logical measurement: keep the measurement
@@ -187,7 +194,7 @@ where
             // flip back to 0
             self.x(addr0);
         }
-        self.is_lost[addr0] = true;
+        self.qubit_status[addr0] = QubitStatus::Lost;
     }
 }
 
@@ -242,7 +249,7 @@ where
     /// branches the coefficient vector like an `rz`), so it is omitted to keep
     /// the channel cheap enough to apply after every gate. See issue #39.
     fn asymmetric_loss_channel(&mut self, addr0: usize, p0: T::Coeff, p1: T::Coeff) {
-        if self.is_lost[addr0] {
+        if self.qubit_status[addr0] == QubitStatus::Lost {
             return;
         }
         // State-dependent loss probability from the populations pop0/pop1.
@@ -252,11 +259,13 @@ where
         if p_tot < self.tableau.rng.random::<f64>() {
             return;
         }
-        // Lost: collapse + reset to |0⟩, mirroring loss_channel.
+        // Lost: collapse + reset to |0⟩, mirroring loss_channel. Clear leakage
+        // first so the |1⟩ → |0⟩ flip is not skipped.
+        self.qubit_status[addr0] = QubitStatus::Live;
         if let Some(true) = self.measure(addr0) {
             self.x(addr0);
         }
-        self.is_lost[addr0] = true;
+        self.qubit_status[addr0] = QubitStatus::Lost;
     }
 }
 
@@ -306,10 +315,11 @@ where
             is_admissible_correlated_loss(&p),
             "correlated loss needs p0, p1 >= 0, p0 + 2*p1 <= 1, p2 in [0, 1]; got {p:?}"
         );
-        if self.is_lost[addr0] {
+
+        if self.qubit_status[addr0] == QubitStatus::Lost {
             self.loss_channel(addr1, p[2].clone());
             return;
-        } else if self.is_lost[addr1] {
+        } else if self.qubit_status[addr1] == QubitStatus::Lost {
             self.loss_channel(addr0, p[2].clone());
             return;
         }
@@ -327,20 +337,24 @@ where
             };
             if cumulative > r {
                 if i == 0 {
-                    // both lost
+                    // both lost — un-leak first so reset canonicalizes to |0⟩
+                    self.qubit_status[addr0] = QubitStatus::Live;
+                    self.qubit_status[addr1] = QubitStatus::Live;
                     self.reset(addr0);
                     self.reset(addr1);
-                    self.is_lost[addr0] = true;
-                    self.is_lost[addr1] = true;
+                    self.qubit_status[addr0] = QubitStatus::Lost;
+                    self.qubit_status[addr1] = QubitStatus::Lost;
                 } else {
                     // only losing a single qubit,
                     let choice = self.tableau.rng.random::<bool>();
                     if choice {
+                        self.qubit_status[addr1] = QubitStatus::Live;
                         self.reset(addr1);
-                        self.is_lost[addr1] = true;
+                        self.qubit_status[addr1] = QubitStatus::Lost;
                     } else {
+                        self.qubit_status[addr0] = QubitStatus::Live;
                         self.reset(addr0);
-                        self.is_lost[addr0] = true;
+                        self.qubit_status[addr0] = QubitStatus::Lost;
                     }
                 }
                 return;
@@ -353,7 +367,9 @@ impl<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coeff>, I>> ResetLos
     for GeneralizedTableau<T, I, C>
 {
     fn reset_loss_channel(&mut self, addr0: usize) {
-        self.is_lost[addr0] = false;
+        if self.qubit_status[addr0] == QubitStatus::Lost {
+            self.qubit_status[addr0] = QubitStatus::Live;
+        }
     }
 }
 
@@ -380,7 +396,7 @@ where
     I: Debug,
 {
     fn leakage_channel(&mut self, addr0: usize, p0: T::Coeff, p1: T::Coeff) {
-        if self.is_lost_or_leaked(addr0) {
+        if self.is_inactive(addr0) {
             return;
         }
 
@@ -409,7 +425,7 @@ where
         // Pin the qubit to |0⟩ (prob p0) or |1⟩ (prob p1). r < p_tot = p0 + p1
         // here, so r < p0 selects |0⟩ and p0 <= r < p_tot selects |1⟩. The pin
         // must be applied before flagging the qubit leaked, otherwise the `x`
-        // gate would be skipped by `is_lost_or_leaked`.
+        // gate would be skipped by `is_inactive`.
         if p0 > r {
             if m {
                 self.x(addr0);
@@ -417,7 +433,7 @@ where
         } else if !m {
             self.x(addr0);
         }
-        self.is_leaked[addr0] = true;
+        self.qubit_status[addr0] = QubitStatus::Leaked;
     }
 }
 
@@ -444,16 +460,12 @@ where
         + Copy,
 {
     fn reset_leakage_channel(&mut self, addr0: usize) {
-        if self.is_lost[addr0] {
-            // cannot recover a lost qubit
+        if self.qubit_status[addr0] != QubitStatus::Leaked {
+            // Live: no-op. Lost: cannot recover a lost qubit.
             return;
         }
 
-        if !self.is_leaked[addr0] {
-            return;
-        }
-
-        self.is_leaked[addr0] = false;
+        self.qubit_status[addr0] = QubitStatus::Live;
         self.reset(addr0);
     }
 }
@@ -484,7 +496,7 @@ mod tests {
         // With p=1.0 an error is always applied; verify is_lost is unaffected
         let mut t = tab(1);
         t.depolarize1(0, 1.0);
-        assert!(!t.is_lost[0]);
+        assert!(!t.is_lost(0));
     }
 
     // === PauliError ===
@@ -582,20 +594,20 @@ mod tests {
     #[test]
     fn two_qubit_pauli_error_both_lost_no_change() {
         let mut t = tab(2);
-        t.is_lost[0] = true;
-        t.is_lost[1] = true;
+        t.qubit_status[0] = QubitStatus::Lost;
+        t.qubit_status[1] = QubitStatus::Lost;
         let mut p = [0.0f64; 15];
         p[4] = 1.0; // XX — skipped entirely
         t.two_qubit_pauli_error(0, 1, p);
-        assert!(t.is_lost[0]);
-        assert!(t.is_lost[1]);
+        assert!(t.is_lost(0));
+        assert!(t.is_lost(1));
     }
 
     #[test]
     fn two_qubit_pauli_error_first_lost_no_apply() {
         // addr0 lost; p[0] = 1.0 (IX) → marginal p_x for addr1 = 1.0
         let mut t = tab(2);
-        t.is_lost[0] = true;
+        t.qubit_status[0] = QubitStatus::Lost;
         let mut p = [0.0f64; 15];
         p[0] = 1.0; // IX
         t.two_qubit_pauli_error(0, 1, p);
@@ -615,17 +627,17 @@ mod tests {
     #[test]
     fn depolarize2_both_lost_no_change() {
         let mut t = tab(2);
-        t.is_lost[0] = true;
-        t.is_lost[1] = true;
+        t.qubit_status[0] = QubitStatus::Lost;
+        t.qubit_status[1] = QubitStatus::Lost;
         t.depolarize2(0, 1, 1.0);
-        assert!(t.is_lost[0]);
-        assert!(t.is_lost[1]);
+        assert!(t.is_lost(0));
+        assert!(t.is_lost(1));
     }
 
     #[test]
     fn depolarize2_first_lost_p0_second_unchanged() {
         let mut t = tab(2);
-        t.is_lost[0] = true;
+        t.qubit_status[0] = QubitStatus::Lost;
         t.depolarize2(0, 1, 0.0); // effective p on addr1 = 4/5 * 0 = 0
         assert!(!t.measure(1).unwrap());
     }
@@ -633,7 +645,7 @@ mod tests {
     #[test]
     fn depolarize2_second_lost_p0_first_unchanged() {
         let mut t = tab(2);
-        t.is_lost[1] = true;
+        t.qubit_status[1] = QubitStatus::Lost;
         t.depolarize2(0, 1, 0.0); // effective p on addr0 = 4/5 * 0 = 0
         assert!(!t.measure(0).unwrap());
     }
@@ -644,14 +656,14 @@ mod tests {
     fn loss_channel_p0_qubit_not_lost() {
         let mut t = tab(1);
         t.loss_channel(0, 0.0);
-        assert!(!t.is_lost[0]);
+        assert!(!t.is_lost(0));
     }
 
     #[test]
     fn loss_channel_p1_qubit_marked_lost() {
         let mut t = tab(1);
         t.loss_channel(0, 1.0);
-        assert!(t.is_lost[0]);
+        assert!(t.is_lost(0));
     }
 
     #[test]
@@ -660,7 +672,7 @@ mod tests {
         let mut t = tab(1);
         t.x(0);
         t.loss_channel(0, 1.0);
-        assert!(t.is_lost[0]);
+        assert!(t.is_lost(0));
         assert!(t.measure(0).is_none()); // Reset to |0⟩ before marking lost
     }
 
@@ -680,7 +692,7 @@ mod tests {
         t.loss_channel(0, 1.0);
         t.x(0); // No-op: qubit is lost
         assert!(t.measure(0).is_none());
-        t.is_lost[0] = false;
+        t.qubit_status[0] = QubitStatus::Live;
         assert!(!t.measure(0).unwrap()); // still 0
     }
 
@@ -689,8 +701,8 @@ mod tests {
         let mut t = tab(2);
         t.loss_channel(0, 0.0);
         t.loss_channel(1, 0.0);
-        assert!(!t.is_lost[0]);
-        assert!(!t.is_lost[1]);
+        assert!(!t.is_lost(0));
+        assert!(!t.is_lost(1));
     }
 
     // === ResetLossChannel ===
@@ -699,9 +711,9 @@ mod tests {
     fn reset_loss_channel_clears_lost_flag() {
         let mut t = tab(1);
         t.loss_channel(0, 1.0);
-        assert!(t.is_lost[0]);
+        assert!(t.is_lost(0));
         t.reset_loss_channel(0);
-        assert!(!t.is_lost[0]);
+        assert!(!t.is_lost(0));
     }
 
     #[test]
@@ -739,7 +751,7 @@ mod tests {
 
         let mut t_lost = tab(1);
         t_lost.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
-        t_lost.is_lost[0] = true;
+        t_lost.qubit_status[0] = QubitStatus::Lost;
         t_lost.depolarize1(0, 0.3);
         let next_lost: f64 = t_lost.tableau.rng.random();
 
@@ -756,7 +768,7 @@ mod tests {
 
         let mut t_lost = tab(1);
         t_lost.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
-        t_lost.is_lost[0] = true;
+        t_lost.qubit_status[0] = QubitStatus::Lost;
         t_lost.pauli_error(0, [0.1, 0.1, 0.1]);
         let next_lost: f64 = t_lost.tableau.rng.random();
 
@@ -863,8 +875,8 @@ mod tests {
         // All probabilities zero: neither qubit should be lost.
         let mut t = tab(2);
         t.correlated_loss_channel(0, 1, [0.0, 0.0, 0.0]);
-        assert!(!t.is_lost[0]);
-        assert!(!t.is_lost[1]);
+        assert!(!t.is_lost(0));
+        assert!(!t.is_lost(1));
     }
 
     #[test]
@@ -872,8 +884,8 @@ mod tests {
         // p[0]=1 → both qubits always lost.
         let mut t = tab(2);
         t.correlated_loss_channel(0, 1, [1.0, 0.0, 0.0]);
-        assert!(t.is_lost[0]);
-        assert!(t.is_lost[1]);
+        assert!(t.is_lost(0));
+        assert!(t.is_lost(1));
     }
 
     #[test]
@@ -889,7 +901,7 @@ mod tests {
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
             t.correlated_loss_channel(0, 1, [0.0, 0.5, 0.0]);
             assert!(
-                t.is_lost[0] ^ t.is_lost[1],
+                t.is_lost(0) ^ t.is_lost(1),
                 "Expected exactly one lost qubit (seed {seed})"
             );
         }
@@ -905,7 +917,7 @@ mod tests {
             let mut t = tab(2);
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
             t.correlated_loss_channel(0, 1, [0.0, 0.5, 0.0]);
-            if t.is_lost[0] {
+            if t.is_lost(0) {
                 addr0_lost += 1;
             }
         }
@@ -924,11 +936,11 @@ mod tests {
         t.x(0);
         t.x(1);
         t.correlated_loss_channel(0, 1, [1.0, 0.0, 0.0]);
-        assert!(t.is_lost[0]);
-        assert!(t.is_lost[1]);
+        assert!(t.is_lost(0));
+        assert!(t.is_lost(1));
         // Restore so we can measure.
-        t.is_lost[0] = false;
-        t.is_lost[1] = false;
+        t.qubit_status[0] = QubitStatus::Live;
+        t.qubit_status[1] = QubitStatus::Live;
         assert!(!t.measure(0).unwrap());
         assert!(!t.measure(1).unwrap());
     }
@@ -944,8 +956,8 @@ mod tests {
             t.x(0); // put addr0 in |1⟩
             // 2·p[1] = 1: exactly one qubit is lost in every trial.
             t.correlated_loss_channel(0, 1, [0.0, 0.5, 0.0]);
-            if t.is_lost[0] {
-                t.is_lost[0] = false;
+            if t.is_lost(0) {
+                t.qubit_status[0] = QubitStatus::Live;
                 assert!(!t.measure(0).unwrap(), "Lost qubit should be reset to |0⟩");
                 return;
             }
@@ -957,29 +969,29 @@ mod tests {
     fn correlated_loss_addr0_already_lost_applies_p2_to_addr1() {
         // addr0 already lost → addr1 should be lost with probability p[2]=1.
         let mut t = tab(2);
-        t.is_lost[0] = true;
+        t.qubit_status[0] = QubitStatus::Lost;
         t.correlated_loss_channel(0, 1, [0.0, 0.0, 1.0]);
-        assert!(t.is_lost[0]);
-        assert!(t.is_lost[1]);
+        assert!(t.is_lost(0));
+        assert!(t.is_lost(1));
     }
 
     #[test]
     fn correlated_loss_addr1_already_lost_applies_p2_to_addr0() {
         // addr1 already lost → addr0 should be lost with probability p[2]=1.
         let mut t = tab(2);
-        t.is_lost[1] = true;
+        t.qubit_status[1] = QubitStatus::Lost;
         t.correlated_loss_channel(0, 1, [0.0, 0.0, 1.0]);
-        assert!(t.is_lost[0]);
-        assert!(t.is_lost[1]);
+        assert!(t.is_lost(0));
+        assert!(t.is_lost(1));
     }
 
     #[test]
     fn correlated_loss_addr0_already_lost_p2_zero_addr1_survives() {
         // addr0 already lost, p[2]=0 → addr1 stays active.
         let mut t = tab(2);
-        t.is_lost[0] = true;
+        t.qubit_status[0] = QubitStatus::Lost;
         t.correlated_loss_channel(0, 1, [0.0, 0.0, 0.0]);
-        assert!(!t.is_lost[1]);
+        assert!(!t.is_lost(1));
     }
 
     #[test]
@@ -992,7 +1004,7 @@ mod tests {
             let mut t = tab(2);
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
             t.correlated_loss_channel(0, 1, [p_both, 0.0, 0.0]);
-            if t.is_lost[0] && t.is_lost[1] {
+            if t.is_lost(0) && t.is_lost(1) {
                 both_lost += 1;
             }
         }
@@ -1017,7 +1029,7 @@ mod tests {
             let mut t = tab(2);
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
             t.correlated_loss_channel(0, 1, [0.0, p_single, 0.0]);
-            if t.is_lost[0] ^ t.is_lost[1] {
+            if t.is_lost(0) ^ t.is_lost(1) {
                 one_lost += 1;
             }
         }
@@ -1069,7 +1081,7 @@ mod tests {
             let mut t = tab(2);
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
             t.correlated_loss_channel(0, 1, p);
-            if t.is_lost[0] ^ t.is_lost[1] {
+            if t.is_lost(0) ^ t.is_lost(1) {
                 one_lost += 1;
             }
         }
@@ -1102,7 +1114,7 @@ mod tests {
             let mut t = tab(2);
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
             t.correlated_loss_channel(0, 1, probabilities);
-            if !t.is_lost[0] && !t.is_lost[1] {
+            if !t.is_lost(0) && !t.is_lost(1) {
                 none_lost += 1;
             }
         }
@@ -1243,11 +1255,11 @@ mod tests {
         // |0⟩: pop0 = 1, so p_tot = p0.
         let mut t = tab(1);
         t.asymmetric_loss_channel(0, 1.0, 0.0);
-        assert!(t.is_lost[0]);
+        assert!(t.is_lost(0));
 
         let mut t = tab(1);
         t.asymmetric_loss_channel(0, 0.0, 1.0); // p_tot = 0
-        assert!(!t.is_lost[0]);
+        assert!(!t.is_lost(0));
     }
 
     #[test]
@@ -1256,27 +1268,27 @@ mod tests {
         let mut t = tab(1);
         t.x(0);
         t.asymmetric_loss_channel(0, 0.0, 1.0);
-        assert!(t.is_lost[0]);
+        assert!(t.is_lost(0));
 
         let mut t = tab(1);
         t.x(0);
         t.asymmetric_loss_channel(0, 1.0, 0.0); // p_tot = 0
-        assert!(!t.is_lost[0]);
+        assert!(!t.is_lost(0));
     }
 
     #[test]
     fn asymmetric_loss_zero_prob_not_lost() {
         let mut t = tab(1);
         t.asymmetric_loss_channel(0, 0.0, 0.0);
-        assert!(!t.is_lost[0]);
+        assert!(!t.is_lost(0));
     }
 
     #[test]
     fn asymmetric_loss_already_lost_is_noop() {
         let mut t = tab(1);
-        t.is_lost[0] = true;
+        t.qubit_status[0] = QubitStatus::Lost;
         t.asymmetric_loss_channel(0, 1.0, 1.0);
-        assert!(t.is_lost[0]);
+        assert!(t.is_lost(0));
     }
 
     #[test]
@@ -1285,8 +1297,8 @@ mod tests {
         let mut t = tab(1);
         t.x(0);
         t.asymmetric_loss_channel(0, 0.0, 1.0);
-        assert!(t.is_lost[0]);
-        t.is_lost[0] = false;
+        assert!(t.is_lost(0));
+        t.qubit_status[0] = QubitStatus::Live;
         assert!(!t.measure(0).unwrap());
     }
 
@@ -1301,7 +1313,7 @@ mod tests {
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
             t.h(0);
             t.asymmetric_loss_channel(0, p, p);
-            if t.is_lost[0] {
+            if t.is_lost(0) {
                 lost += 1;
             }
         }
@@ -1321,7 +1333,7 @@ mod tests {
             t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
             t.h(0);
             t.asymmetric_loss_channel(0, p0, p1);
-            if t.is_lost[0] {
+            if t.is_lost(0) {
                 lost += 1;
             }
         }
@@ -1339,8 +1351,8 @@ mod tests {
         // p0 = p1 = 0 → p_tot = 0, never leaks; the qubit stays live.
         let mut t = tab(1);
         t.leakage_channel(0, 0.0, 0.0);
-        assert!(!t.is_leaked[0]);
-        assert!(!t.is_lost[0]);
+        assert!(!t.is_leaked(0));
+        assert!(!t.is_lost(0));
         assert!(!t.measure(0).unwrap());
     }
 
@@ -1350,8 +1362,8 @@ mod tests {
         let mut t = tab(1);
         t.x(0);
         t.leakage_channel(0, 1.0, 0.0);
-        assert!(t.is_leaked[0]);
-        assert!(!t.is_lost[0]); // leaked, not lost
+        assert!(t.is_leaked(0));
+        assert!(!t.is_lost(0)); // leaked, not lost
         assert_eq!(t.measure(0), Some(false));
     }
 
@@ -1360,8 +1372,8 @@ mod tests {
         // Start in |0⟩; leak-to-|1⟩ (p1 = 1) must pin the qubit to |1⟩.
         let mut t = tab(1);
         t.leakage_channel(0, 0.0, 1.0);
-        assert!(t.is_leaked[0]);
-        assert!(!t.is_lost[0]);
+        assert!(t.is_leaked(0));
+        assert!(!t.is_lost(0));
         assert_eq!(t.measure(0), Some(true));
     }
 
@@ -1390,7 +1402,7 @@ mod tests {
         t.tableau.rng = rand::SeedableRng::seed_from_u64(7);
         t.h(0); // |+⟩
         t.leakage_channel(0, 0.0, 1.0);
-        assert!(t.is_leaked[0]);
+        assert!(t.is_leaked(0));
         assert_eq!(t.measure(0), Some(true));
         assert_eq!(t.measure(0), Some(true));
     }
@@ -1441,8 +1453,25 @@ mod tests {
         let mut t = tab(1);
         t.leakage_channel(0, 0.0, 1.0);
         t.loss_channel(0, 1.0);
-        assert!(t.is_lost[0]);
+        assert!(t.is_lost(0));
         assert!(t.measure(0).is_none());
+    }
+
+    #[test]
+    fn loss_of_leaked_qubit_is_indistinguishable_from_lost() {
+        // Loss overwrites leakage: the qubit is Lost, not Leaked-and-Lost.
+        // After reset_loss it must be a live |0⟩, same as a qubit that was
+        // lost from the computational subspace — the leaked pin must not
+        // survive in the tableau.
+        let mut t = tab(1);
+        t.leakage_channel(0, 0.0, 1.0); // pin |1⟩
+        t.loss_channel(0, 1.0);
+        assert!(t.is_lost(0));
+        assert!(!t.is_leaked(0));
+        t.reset_loss_channel(0);
+        assert!(!t.is_lost(0));
+        assert!(!t.is_leaked(0));
+        assert_eq!(t.measure(0), Some(false));
     }
 
     #[test]
@@ -1451,7 +1480,7 @@ mod tests {
         let mut t = tab(1);
         t.leakage_channel(0, 0.0, 1.0); // leaked, |1⟩
         t.reset(0);
-        assert!(t.is_leaked[0]);
+        assert!(t.is_leaked(0));
         assert_eq!(t.measure(0), Some(true));
     }
 
@@ -1463,8 +1492,8 @@ mod tests {
         let mut t = tab(1);
         t.leakage_channel(0, 0.0, 1.0); // leaked, pinned |1⟩
         t.reset_leakage_channel(0);
-        assert!(!t.is_leaked[0]);
-        assert!(!t.is_lost[0]);
+        assert!(!t.is_leaked(0));
+        assert!(!t.is_lost(0));
         assert!(t.current_measurement_record().is_empty()); // record-neutral
         assert_eq!(t.measure(0), Some(false)); // back in |0⟩
     }
@@ -1483,9 +1512,9 @@ mod tests {
     fn reset_leakage_channel_does_not_recover_lost() {
         // A lost qubit cannot be brought back by leakage reduction.
         let mut t = tab(1);
-        t.is_lost[0] = true;
+        t.qubit_status[0] = QubitStatus::Lost;
         t.reset_leakage_channel(0);
-        assert!(t.is_lost[0]);
+        assert!(t.is_lost(0));
         assert!(t.measure(0).is_none());
     }
 
@@ -1495,7 +1524,7 @@ mod tests {
         let mut t = tab(1);
         t.x(0); // |1⟩
         t.reset_leakage_channel(0);
-        assert!(!t.is_leaked[0]);
+        assert!(!t.is_leaked(0));
         assert_eq!(t.measure(0), Some(true)); // unchanged, still |1⟩
     }
 }

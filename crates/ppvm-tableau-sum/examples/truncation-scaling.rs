@@ -89,7 +89,7 @@ fn apply_layer<B>(
         tab.depolarize1(q, p_depolarize);
     }
 
-    let pairs: &[(usize, usize)] = if layer_idx % 2 == 0 {
+    let pairs: &[(usize, usize)] = if layer_idx.is_multiple_of(2) {
         &[(0, 1), (2, 3)]
     } else {
         &[(1, 2)]
@@ -188,6 +188,7 @@ fn pure_trajectory_shots(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_main_sweep(
     n_qubits: usize,
     depth: usize,

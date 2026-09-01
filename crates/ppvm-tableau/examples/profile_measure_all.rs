@@ -174,10 +174,10 @@ fn main() {
     let mut per_qubit_runs: Vec<Vec<Duration>> = vec![Vec::with_capacity(n_runs); n];
     for _ in 0..n_runs {
         let mut t = base.fork(Some(42));
-        for q in 0..n {
+        for (q, runs) in per_qubit_runs.iter_mut().enumerate().take(n) {
             let start = Instant::now();
             let _ = LossyMeasure::measure(&mut t, q);
-            per_qubit_runs[q].push(start.elapsed());
+            runs.push(start.elapsed());
         }
     }
     let per_qubit_medians: Vec<Duration> = per_qubit_runs.into_iter().map(median).collect();

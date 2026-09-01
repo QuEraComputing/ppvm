@@ -1565,7 +1565,7 @@ mod tests {
         tab.cnot(0, 1);
         tab.ry(2, 0.7); // non-Clifford: branches the coefficient vector
         assert!(
-            tab.coefficients.iter().count() > 1,
+            tab.coefficients.len() > 1,
             "rotation should branch the coefficient vector"
         );
 
@@ -1575,8 +1575,8 @@ mod tests {
             snapshot_tableau(&tab.tableau),
             snapshot_tableau(&fresh.tableau)
         );
-        let coeffs: Vec<_> = tab.coefficients.iter().copied().collect();
-        let fresh_coeffs: Vec<_> = fresh.coefficients.iter().copied().collect();
+        let coeffs = tab.coefficients.to_vec();
+        let fresh_coeffs = fresh.coefficients.to_vec();
         assert_eq!(coeffs, fresh_coeffs);
     }
 

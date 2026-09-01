@@ -2,7 +2,7 @@
 agnostic: no code here owns a terminal or runs an event loop, so the
 <code>Widget</code> components and <code>AppState</code> can be embedded in another ratatui app.</p>
 </div></details><h2 id="reexports" class="section-header">Re-exports<a href="#reexports" class="anchor">§</a></h2><dl class="item-table reexports"><dt id="reexport.AppState"><code>pub use app::<a class="struct" href="app/struct.AppState.html" title="struct ppvm_tui::app::AppState">AppState</a>;</code></dt></dl><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="app/index.html" title="mod ppvm_tui::app">app</a></dt><dd><code>AppState</code> — the terminal-agnostic state of the ppvm TUI. Owns an optional
-[<code>PPVM</code>] plus a <a href="editor/struct.LineEditor.html" title="struct ppvm_tui::editor::LineEditor"><code>LineEditor</code></a>, status line, program listing, and REPL log.
+<a href="../ppvm_vihaco/composite/struct.PPVM.html" title="struct ppvm_vihaco::composite::PPVM"><code>PPVM</code></a> plus a <a href="editor/struct.LineEditor.html" title="struct ppvm_tui::editor::LineEditor"><code>LineEditor</code></a>, status line, program listing, and REPL log.
 <code>dispatch</code> runs one command string; <code>handle_key</code> routes app-level keys
 (submit, quit) and delegates editing to the <a href="editor/struct.LineEditor.html" title="struct ppvm_tui::editor::LineEditor"><code>LineEditor</code></a>. Nothing here
 touches a terminal or runs a loop.</dd><dt><a class="mod" href="codeview/index.html" title="mod ppvm_tui::codeview">codeview</a></dt><dd>A minimal scrollable list of lines with one optionally-highlighted row.

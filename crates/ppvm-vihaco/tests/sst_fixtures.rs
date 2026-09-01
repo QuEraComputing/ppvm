@@ -44,6 +44,19 @@ fn hello_circuit_sst_parses_and_runs() {
 }
 
 #[test]
+fn arithmetic_sst_uses_lhs_then_rhs_order() {
+    let machine = ppvm_vihaco::run_file("tests/arithmetic.sst")
+        .unwrap_or_else(|e| panic!("run arithmetic.sst: {e:?}"));
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1, "expected exactly one measurement");
+    assert_eq!(
+        record[0].as_slice(),
+        &[MeasurementOutcome::Zero],
+        "all arithmetic checks should pass without flipping q0"
+    );
+}
+
+#[test]
 fn rotxy_sst_runs_and_flips_qubit() {
     // `rotxy.sst` applies R(axis_angle=π/2, θ=π) = RY(π) to q0, deterministically
     // sending |0> → |1>, then measures it. Exercises the `circuit::circuit.r` path end to

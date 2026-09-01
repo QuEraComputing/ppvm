@@ -6,7 +6,7 @@
         document.documentElement.setAttribute("data-theme", resolved);
         document.documentElement.setAttribute("data-theme-pref", stored);
       })();
-    </script><link rel="stylesheet" href="/ppvm/pr-preview/pr-195/_astro/Base.VWOtR8-4.css"></head><body><header class="masthead"><div class="masthead-inner"><a class="brand" href="/ppvm/pr-preview/pr-195/"><span class="brand-mark" aria-hidden="true"></span><span class="brand-mono">ppvm</span><span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span></a><button type="button" class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation menu"><span class="nav-toggle-bars" aria-hidden="true"></span></button><nav class="nav-links" id="primary-nav"><a href="/ppvm/pr-preview/pr-195/">Overview</a><a href="/ppvm/pr-preview/pr-195/quickstart">Quick Start</a><a href="/ppvm/pr-preview/pr-195/examples" aria-current="page">Examples</a><a href="/ppvm/pr-preview/pr-195/develop">Develop</a><a href="/ppvm/pr-preview/pr-195/api">Reference</a><div class="theme-toggle" role="group" aria-label="Theme"><button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></button><button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg></button><button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg></button></div></nav></div></header><main><div class="page-shell"><details class="page-toc side-nav" aria-label="On this page"><summary class="page-toc-label">On this page</summary><ol><li><a href="#Parameters" data-toc-link="#Parameters">Parameters</a></li><li><a href="#Noiseless-simulation" data-toc-link="#Noiseless-simulation">Noiseless simulation</a></li><li><a href="#Noiseless-time-evolution" data-toc-link="#Noiseless-time-evolution">Noiseless time evolution</a></li><li><a href="#Noisy-simulation-with-qubit-loss" data-toc-link="#Noisy-simulation-with-qubit-loss">Noisy simulation with qubit loss</a></li><li><a href="#Noisy-time-evolution" data-toc-link="#Noisy-time-evolution">Noisy time evolution</a></li><li><a href="#Results" data-toc-link="#Results">Results</a></li></ol></details><div class="page-toc-content"><article class="shell narrow notebook"><div class="titleblock"><div class="eyebrow"><a href="/ppvm/pr-preview/pr-195/examples">Examples</a> &middot; executed during build</div><h1>Trotterized Time Evolution of the XZZ Ising Chain</h1><p class="byline"><span class="examples-lang">python</span><span class="examples-source-label">Source</span><a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/4aff5c120679e5c7ae87f7444a95e0a05fa024a2/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a></p></div><div class="notebook-body" data-language="python"><div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=d814924f">
+    </script><link rel="stylesheet" href="/ppvm/pr-preview/pr-195/_astro/Base.VWOtR8-4.css"></head><body><header class="masthead"><div class="masthead-inner"><a class="brand" href="/ppvm/pr-preview/pr-195/"><span class="brand-mark" aria-hidden="true"></span><span class="brand-mono">ppvm</span><span class="brand-sub">/ Pauli propagation &amp; tableau simulation</span></a><button type="button" class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation menu"><span class="nav-toggle-bars" aria-hidden="true"></span></button><nav class="nav-links" id="primary-nav"><a href="/ppvm/pr-preview/pr-195/">Overview</a><a href="/ppvm/pr-preview/pr-195/quickstart">Quick Start</a><a href="/ppvm/pr-preview/pr-195/examples" aria-current="page">Examples</a><a href="/ppvm/pr-preview/pr-195/develop">Develop</a><a href="/ppvm/pr-preview/pr-195/api">Reference</a><div class="theme-toggle" role="group" aria-label="Theme"><button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></button><button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg></button><button type="button" data-theme-set="auto" title="Match system theme" aria-label="Auto (follow system)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg></button></div></nav></div></header><main><div class="page-shell"><details class="page-toc side-nav" aria-label="On this page"><summary class="page-toc-label">On this page</summary><ol><li><a href="#Parameters" data-toc-link="#Parameters">Parameters</a></li><li><a href="#Noiseless-simulation" data-toc-link="#Noiseless-simulation">Noiseless simulation</a></li><li><a href="#Noiseless-time-evolution" data-toc-link="#Noiseless-time-evolution">Noiseless time evolution</a></li><li><a href="#Noisy-simulation-with-qubit-loss" data-toc-link="#Noisy-simulation-with-qubit-loss">Noisy simulation with qubit loss</a></li><li><a href="#Noisy-time-evolution" data-toc-link="#Noisy-time-evolution">Noisy time evolution</a></li><li><a href="#Results" data-toc-link="#Results">Results</a></li></ol></details><div class="page-toc-content"><article class="shell narrow notebook"><div class="titleblock"><div class="eyebrow"><a href="/ppvm/pr-preview/pr-195/examples">Examples</a> &middot; executed during build</div><h1>Trotterized Time Evolution of the XZZ Ising Chain</h1><p class="byline"><span class="examples-lang">python</span><span class="examples-source-label">Source</span><a class="examples-source" href="https://github.com/QuEraComputing/ppvm/blob/c9e384282d736343cc44344834f4ed379ee15b64/docs/notebooks/trotter.py">docs/notebooks/trotter.py</a></p></div><div class="notebook-body" data-language="python"><div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=a8b219b8">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -25,7 +25,7 @@ to truncation and therefore an approximate solution.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=14c75f02">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=60b4c260">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -41,7 +41,7 @@ to truncation and therefore an approximate solution.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=c84664c4">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=5586790c">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -50,7 +50,7 @@ to truncation and therefore an approximate solution.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=d3a0aa7f">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=5d7c9d2a">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -68,7 +68,7 @@ to truncation and therefore an approximate solution.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=ea527c0a">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=017587c2">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -91,7 +91,7 @@ There are currently two possible ways to truncate in a loss-less simulation:</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=261e4e56">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=68dff056">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -120,7 +120,7 @@ There are currently two possible ways to truncate in a loss-less simulation:</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=d9aca64f">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=1002670f">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -129,7 +129,7 @@ There are currently two possible ways to truncate in a loss-less simulation:</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=4639a778">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=3e3832fd">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -164,7 +164,7 @@ There are currently two possible ways to truncate in a loss-less simulation:</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=11b6a770">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=02a3fc93">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -184,7 +184,7 @@ little to the final average value.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=2746abd2">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=8d9b2282">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -233,7 +233,7 @@ little to the final average value.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=f40cdb27">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=318b02f4">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -242,7 +242,7 @@ little to the final average value.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=a88d26eb">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=152df441">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -275,7 +275,7 @@ little to the final average value.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=d07a5e33">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=efb8dd8f">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -286,7 +286,7 @@ faster due to depolarisation and qubit loss.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=c525689a">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=fd9f98d9">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -505,7 +505,7 @@ faster due to depolarisation and qubit loss.</p>
         window.addEventListener("resize", sync);
         sync();
       })();
-    </script><footer class="foot"><div class="foot-inner"><span>PPVM · QuEra Computing · open source, Apache License 2.0</span><span><a href="https://github.com/QuEraComputing/ppvm">source</a> · documentation generated <time>2026-08-28</time></span></div></footer><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script><script>
+    </script><footer class="foot"><div class="foot-inner"><span>PPVM · QuEra Computing · open source, Apache License 2.0</span><span><a href="https://github.com/QuEraComputing/ppvm">source</a> · documentation generated <time>2026-09-01</time></span></div></footer><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous"><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script><script>
       document.addEventListener("DOMContentLoaded", () => {
         if (typeof renderMathInElement !== "function") return;
         renderMathInElement(document.body, {

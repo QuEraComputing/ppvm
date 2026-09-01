@@ -3,64 +3,64 @@ device circuit.n_qubits 5;
 // Data: q0, q1, q2.
 // Syndrome ancillas: q3, q4.
 fn @main() {
-    const.u64 1
-    const.f64 0.25
-    const.f64 0.0
-    const.f64 0.0
-    circuit.paulierror
+    cpu::cpu.const u64, 1
+    cpu::cpu.const f64, 0.25
+    cpu::cpu.const f64, 0.0
+    cpu::cpu.const f64, 0.0
+    circuit::circuit.paulierror
 
-    const.u64 0
-    const.u64 3
-    circuit.cnot
-    const.u64 1
-    const.u64 3
-    circuit.cnot
-    const.u64 3
-    circuit.measure
+    cpu::cpu.const u64, 0
+    cpu::cpu.const u64, 3
+    circuit::circuit.cnot
+    cpu::cpu.const u64, 1
+    cpu::cpu.const u64, 3
+    circuit::circuit.cnot
+    cpu::cpu.const u64, 3
+    circuit::circuit.measure
 
-    const.u64 1
-    const.u64 4
-    circuit.cnot
-    const.u64 2
-    const.u64 4
-    circuit.cnot
-    const.u64 4
-    circuit.measure
+    cpu::cpu.const u64, 1
+    cpu::cpu.const u64, 4
+    circuit::circuit.cnot
+    cpu::cpu.const u64, 2
+    cpu::cpu.const u64, 4
+    circuit::circuit.cnot
+    cpu::cpu.const u64, 4
+    circuit::circuit.measure
 
-    const.u32 1
-    eq.u32
-    cond_br @s12_one, @s12_zero
+    cpu::cpu.const u32, 1
+    cpu::cpu.eq u32
+    cpu::cpu.cond_br @s12_one, @s12_zero
 
-@s12_one:
-    const.u32 1
-    eq.u32
-    cond_br @correct_q1, @correct_q2
+cpu::cpu.label @s12_one
+    cpu::cpu.const u32, 1
+    cpu::cpu.eq u32
+    cpu::cpu.cond_br @correct_q1, @correct_q2
 
-@s12_zero:
-    const.u32 1
-    eq.u32
-    cond_br @correct_q0, @readout
+cpu::cpu.label @s12_zero
+    cpu::cpu.const u32, 1
+    cpu::cpu.eq u32
+    cpu::cpu.cond_br @correct_q0, @readout
 
-@correct_q0:
-    const.u64 0
-    circuit.x
-    br @readout
+cpu::cpu.label @correct_q0
+    cpu::cpu.const u64, 0
+    circuit::circuit.x
+    cpu::cpu.br @readout
 
-@correct_q1:
-    const.u64 1
-    circuit.x
-    br @readout
+cpu::cpu.label @correct_q1
+    cpu::cpu.const u64, 1
+    circuit::circuit.x
+    cpu::cpu.br @readout
 
-@correct_q2:
-    const.u64 2
-    circuit.x
+cpu::cpu.label @correct_q2
+    cpu::cpu.const u64, 2
+    circuit::circuit.x
 
-@readout:
-    const.u64 0
-    circuit.measure
-    const.u64 1
-    circuit.measure
-    const.u64 2
-    circuit.measure
-    ret
+cpu::cpu.label @readout
+    cpu::cpu.const u64, 0
+    circuit::circuit.measure
+    cpu::cpu.const u64, 1
+    circuit::circuit.measure
+    cpu::cpu.const u64, 2
+    circuit::circuit.measure
+    cpu::cpu.ret 0
 }

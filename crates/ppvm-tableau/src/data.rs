@@ -1575,8 +1575,8 @@ mod tests {
             snapshot_tableau(&tab.tableau),
             snapshot_tableau(&fresh.tableau)
         );
-        let coeffs = tab.coefficients.to_vec();
-        let fresh_coeffs = fresh.coefficients.to_vec();
+        let coeffs: Vec<_> = tab.coefficients.to_vec();
+        let fresh_coeffs: Vec<_> = fresh.coefficients.to_vec();
         assert_eq!(coeffs, fresh_coeffs);
     }
 

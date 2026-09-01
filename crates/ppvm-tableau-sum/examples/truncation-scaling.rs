@@ -188,8 +188,7 @@ fn pure_trajectory_shots(
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
-fn run_main_sweep(
+struct MainSweepConfig<'a> {
     n_qubits: usize,
     depth: usize,
     p: f64,
@@ -197,8 +196,20 @@ fn run_main_sweep(
     circuit_seed: u64,
     sum_seed: u64,
     reference_cutoff: f64,
-    cutoffs: &[f64],
-) {
+    cutoffs: &'a [f64],
+}
+
+fn run_main_sweep(config: MainSweepConfig<'_>) {
+    let MainSweepConfig {
+        n_qubits,
+        depth,
+        p,
+        n_shots,
+        circuit_seed,
+        sum_seed,
+        reference_cutoff,
+        cutoffs,
+    } = config;
     println!("\n========================================================");
     println!("Main sweep: random brickwork (Clifford + T), n={n_qubits}, depth={depth}, p={p:.0e}");
     println!(
@@ -367,16 +378,16 @@ fn main() {
 
     // p = 0.01: main sweep — orders 1..~5 visible analytically, orders 1..2
     // resolvable by sampling at 1e6 shots.
-    run_main_sweep(
+    run_main_sweep(MainSweepConfig {
         n_qubits,
         depth,
-        1e-2,
+        p: 1e-2,
         n_shots,
         circuit_seed,
         sum_seed,
-        1e-14,
-        &[1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10],
-    );
+        reference_cutoff: 1e-14,
+        cutoffs: &[1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10],
+    });
 
     // p = 1e-3: realistic regime, analytic only. At p=1e-3 the dropped
     // mass at cutoff = 1e-4 is already ~p^? ; see what the sweep shows.

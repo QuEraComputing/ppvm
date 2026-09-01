@@ -174,7 +174,7 @@ fn main() {
     let mut per_qubit_runs: Vec<Vec<Duration>> = vec![Vec::with_capacity(n_runs); n];
     for _ in 0..n_runs {
         let mut t = base.fork(Some(42));
-        for (q, runs) in per_qubit_runs.iter_mut().enumerate().take(n) {
+        for (q, runs) in per_qubit_runs.iter_mut().enumerate() {
             let start = Instant::now();
             let _ = LossyMeasure::measure(&mut t, q);
             runs.push(start.elapsed());

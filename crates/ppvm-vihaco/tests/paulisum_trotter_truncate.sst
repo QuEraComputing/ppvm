@@ -7,31 +7,31 @@ fn @main() {
     // Two Trotter layers of RXX(0.1) RZZ(0.05), with explicit truncate
     // between layers. RXX branches Z->Y so the sum grows; truncate prunes
     // small-coefficient terms via `coefficient_threshold`.
-    const.u64 0
-    const.u64 1
-    const.f64 0.1
-    circuit.rxx
+    cpu::cpu.const u64, 0
+    cpu::cpu.const u64, 1
+    cpu::cpu.const f64, 0.1
+    circuit::circuit.rxx
 
-    const.u64 0
-    const.u64 1
-    const.f64 0.05
-    circuit.rzz
+    cpu::cpu.const u64, 0
+    cpu::cpu.const u64, 1
+    cpu::cpu.const f64, 0.05
+    circuit::circuit.rzz
 
-    circuit.truncate
+    circuit::circuit.truncate
 
-    const.u64 0
-    const.u64 1
-    const.f64 0.1
-    circuit.rxx
+    cpu::cpu.const u64, 0
+    cpu::cpu.const u64, 1
+    cpu::cpu.const f64, 0.1
+    circuit::circuit.rxx
 
-    const.u64 0
-    const.u64 1
-    const.f64 0.05
-    circuit.rzz
+    cpu::cpu.const u64, 0
+    cpu::cpu.const u64, 1
+    cpu::cpu.const f64, 0.05
+    circuit::circuit.rzz
 
-    circuit.truncate
+    circuit::circuit.truncate
 
-    const.str "Z?*"
-    circuit.trace
-    ret
+    cpu::cpu.const str, "Z?*"
+    circuit::circuit.trace
+    cpu::cpu.ret 0
 }

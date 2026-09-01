@@ -21,9 +21,8 @@
 //!   - `compute_decomposition` cost
 //!   - `update_tableau_according_to_outcome` cost
 //!   - HashMap traffic in the case-a path
-//!
-//! And a small adjacent subtree for `fork` (expect ~1% based on the
-//! instrumented run).
+//!     And a small adjacent subtree for `fork` (expect ~1% based on the
+//!     instrumented run).
 //!
 //! NOTE: the MSD setup is duplicated from `profile_measure_all.rs` — fine for
 //! examples, hoist into a shared module if we keep growing these.

@@ -250,20 +250,32 @@ fn l1_distance_stats(a: &[[f64; 3]], b: &[[f64; 3]]) -> (f64, f64) {
     (max, mean)
 }
 
-/// Run one sweep at fixed noise rate `p`. Builds the pure baseline and an
-/// alt-seed pure run (for the shot-noise floor), then sweeps `cutoffs` on
-/// the sum backend. Prints a comparison table.
-#[allow(clippy::too_many_arguments)]
-fn run_sweep(
-    label: &str,
+struct RunSweepArgs<'a> {
+    label: &'a str,
     n_qubits: usize,
     n_shots: usize,
     p: f64,
-    cutoffs: &[f64],
+    cutoffs: &'a [f64],
     pure_seed: u64,
     sum_seed: u64,
-    ql: &[&[usize]],
-) {
+    ql: &'a [&'a [usize]],
+}
+
+/// Run one sweep at fixed noise rate `p`. Builds the pure baseline and an
+/// alt-seed pure run (for the shot-noise floor), then sweeps `cutoffs` on
+/// the sum backend. Prints a comparison table.
+fn run_sweep(args: RunSweepArgs) {
+    let RunSweepArgs {
+        label,
+        n_qubits,
+        n_shots,
+        p,
+        cutoffs,
+        pure_seed,
+        sum_seed,
+        ql,
+    } = args;
+
     println!("\n========================================================");
     println!("Sweep: {label}");
     println!("  p_loss = p_depolarize = {p:.0e}");
@@ -354,7 +366,12 @@ fn main() {
     let sum_seed: u64 = 0x00C0_FFEE;
 
     let qubit_addrs: Vec<usize> = (0..n_qubits).collect();
-    let ql: Vec<&[usize]> = qubit_addrs.chunks_exact(17).collect();
+    let ql: Vec<&[usize]> = qubit_addrs
+        .as_chunks::<17>()
+        .0
+        .iter()
+        .map(|chunk| &chunk[..])
+        .collect();
 
     println!("MSD-noisy comparison: GeneralizedTableauSum vs GeneralizedTableau");
     println!("  n_qubits         = {n_qubits}");
@@ -379,21 +396,21 @@ fn main() {
     //    safe regime. The convergence in this regime requires cutoff far
     //    below p^2 and is combinatorially out of reach; included for
     //    comparison only.
-    run_sweep(
-        "msd-noisy parameters (p = 1e-4)",
+    run_sweep(RunSweepArgs {
+        label: "msd-noisy parameters (p = 1e-4)",
         n_qubits,
         n_shots,
-        1e-4,
-        &[1e-3, 5e-4, 1e-4, 1e-5, 1e-6, 1e-7, 5e-8],
+        p: 1e-4,
+        cutoffs: &[1e-3, 5e-4, 1e-4, 1e-5, 1e-6, 1e-7, 5e-8],
         pure_seed,
         sum_seed,
-        &ql,
-    );
-    run_sweep(
-        "amplified noise (p = 1e-2)",
+        ql: &ql,
+    });
+    run_sweep(RunSweepArgs {
+        label: "amplified noise (p = 1e-2)",
         n_qubits,
         n_shots,
-        1e-2,
+        p: 1e-2,
         // p^2 = 1e-4 is the boundary mentioned in the script's preamble:
         //   - cutoffs > p (1e-1, 1e-2) drop single-error structure → 1 branch
         //   - cutoffs in (p^2, p) keep first-order branches (~789..2025)
@@ -406,9 +423,9 @@ fn main() {
         // cutoff ≪ (p/3)^3 ≈ 4e-8 to also capture three-error events,
         // which is combinatorially out of reach. With this list the full
         // example takes ~90s in release on an 8-core laptop.
-        &[1e-1, 1e-2, 1e-3, 1e-4, 5e-5, 1e-5],
+        cutoffs: &[1e-1, 1e-2, 1e-3, 1e-4, 5e-5, 1e-5],
         pure_seed,
         sum_seed,
-        &ql,
-    );
+        ql: &ql,
+    });
 }

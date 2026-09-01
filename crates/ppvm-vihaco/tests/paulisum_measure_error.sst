@@ -3,7 +3,7 @@ device circuit.backend paulisum;
 device circuit.observable Z;
 
 fn @main() {
-    const.u64 0
-    circuit.measure
-    ret
+    cpu::cpu.const u64, 0
+    circuit::circuit.measure
+    cpu::cpu.ret 0
 }

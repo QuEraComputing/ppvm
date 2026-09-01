@@ -1,4 +1,4 @@
-from ppvm import GeneralizedTableau
+from ppvm import GeneralizedTableau, StimProgram
 from ppvm.generalized_tableau import MeasurementResult
 
 
@@ -265,3 +265,43 @@ def test_asymmetric_loss_superposition_averages_probs():
     )
     fraction = lost / trials
     assert abs(fraction - expected) < 0.07, f"Expected ~{expected:.2f}, got {fraction:.3f}"
+
+
+def _leak_to_one(n_qubits: int = 1, q: int = 0) -> GeneralizedTableau:
+    tab = GeneralizedTableau(n_qubits=n_qubits, seed=0)
+    tab.run(StimProgram.parse(f"I_ERROR[leakage](0.0, 1.0) {q}"))
+    return tab
+
+
+def test_is_leaked_initially_false():
+    tab = GeneralizedTableau(n_qubits=3)
+    for i in range(3):
+        assert not tab.is_leaked(i)
+
+
+def test_is_leaked_after_leakage_channel():
+    tab = _leak_to_one(n_qubits=2, q=0)
+    assert tab.is_leaked(0)
+    assert not tab.is_leaked(1)
+    assert not tab.is_lost(0)
+
+
+def test_leakage_values_initially_all_false():
+    n = 4
+    tab = GeneralizedTableau(n_qubits=n)
+    assert tab.leakage_values() == [False] * n
+
+
+def test_leakage_values_after_leakage_channel():
+    tab = _leak_to_one(n_qubits=3, q=1)
+    values = tab.leakage_values()
+    assert values == [False, True, False]
+
+
+def test_loss_of_leaked_qubit_clears_leakage():
+    tab = _leak_to_one()
+    tab.loss_channel(0, 1.0)
+    assert tab.is_lost(0)
+    assert not tab.is_leaked(0)
+    assert tab.leakage_values() == [False]
+    assert tab.loss_values() == [True]

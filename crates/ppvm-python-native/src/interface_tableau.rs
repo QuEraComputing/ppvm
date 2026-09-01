@@ -298,11 +298,23 @@ macro_rules! create_interface {
                 self.inner.is_lost(addr0)
             }
 
+            pub fn is_leaked(&self, addr0: usize) -> bool {
+                self.inner.is_leaked(addr0)
+            }
+
             pub fn loss_values(&self) -> Vec<bool> {
                 self.inner
                     .qubit_status
                     .iter()
                     .map(|&o| o == QubitStatus::Lost)
+                    .collect()
+            }
+
+            pub fn leakage_values(&self) -> Vec<bool> {
+                self.inner
+                    .qubit_status
+                    .iter()
+                    .map(|&o| o == QubitStatus::Leaked)
                     .collect()
             }
 

@@ -74,7 +74,7 @@ where
 
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss_fp| {
-                if tab.is_lost[addr0] {
+                if tab.is_lost(addr0) {
                     // NOTE: deterministically outputs lost, no branching
                     let _ = per_branch(tab, None, &*p_sum);
                     return;

@@ -10,7 +10,9 @@ use num::{
 };
 use ppvm_pauli_word::pattern::NotIdentity;
 use ppvm_tableau::{
-    data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
+    data::{GeneralizedTableau, QubitStatus},
+    sparsevec::SparseVector,
+    tableau_index::TableauIndex,
 };
 use ppvm_traits::config::Config;
 use ppvm_traits::traits::{
@@ -60,14 +62,14 @@ fn single_qubit_loss_branch<T, I, C>(
     I: TableauIndex + Send + Sync + Debug,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
-    if tab.is_lost[addr0] {
+    if tab.is_lost(addr0) {
         // Don't branch if it's already lost
         return;
     }
 
     let tab_seed = rng.random::<u64>();
     let mut tab_branch = tab.fork(Some(tab_seed));
-    tab_branch.is_lost[addr0] = true;
+    tab_branch.qubit_status[addr0] = QubitStatus::Lost;
     // is_lost flip leaves the Pauli words and phases unchanged, so
     // the branch reuses its parent's word-fingerprint and the only
     // change to the phase/loss hash is the lost qubit's mask.
@@ -121,7 +123,7 @@ where
                 // parent_idx aligns with for_each_mut_with_keys' order.
                 let parent_idx = idx;
                 idx += 1;
-                if tab.is_lost[addr0] {
+                if tab.is_lost(addr0) {
                     return;
                 }
                 branches.push((
@@ -228,7 +230,7 @@ where
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
                 let parent_idx = idx;
                 idx += 1;
-                if tab.is_lost[addr0] {
+                if tab.is_lost(addr0) {
                     return;
                 }
 
@@ -354,7 +356,7 @@ where
 
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
-                if tab.is_lost[addr0] || tab.is_lost[addr1] {
+                if tab.is_lost(addr0) || tab.is_lost(addr1) {
                     return;
                 }
 
@@ -456,7 +458,7 @@ where
         self.entries
             .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss| {
                 // if either is lost already, we just lose the other with probability p[2]
-                if tab.is_lost[addr0] {
+                if tab.is_lost(addr0) {
                     single_qubit_loss_branch(
                         addr1,
                         &p[2],
@@ -467,7 +469,7 @@ where
                         (word_fp, phase_loss),
                     );
                     return;
-                } else if tab.is_lost[addr1] {
+                } else if tab.is_lost(addr1) {
                     single_qubit_loss_branch(
                         addr0,
                         &p[2],
@@ -485,8 +487,8 @@ where
 
                 let tab_seed_both = self.rng.random::<u64>();
                 let mut tab_lose_both = tab.fork(Some(tab_seed_both));
-                tab_lose_both.is_lost[addr0] = true;
-                tab_lose_both.is_lost[addr1] = true;
+                tab_lose_both.qubit_status[addr0] = QubitStatus::Lost;
+                tab_lose_both.qubit_status[addr1] = QubitStatus::Lost;
 
                 // is_lost flip leaves the Pauli words and phases unchanged, so
                 // the branch reuses its parent's word-fingerprint and the only
@@ -500,7 +502,7 @@ where
 
                 let tab_seed_0 = self.rng.random::<u64>();
                 let mut tab_lose_0 = tab.fork(Some(tab_seed_0));
-                tab_lose_0.is_lost[addr0] = true;
+                tab_lose_0.qubit_status[addr0] = QubitStatus::Lost;
                 branches.push((
                     tab_lose_0,
                     p_sum.clone() * (p[1].clone() / 2.0.into()),
@@ -510,7 +512,7 @@ where
 
                 let tab_seed_1 = self.rng.random::<u64>();
                 let mut tab_lose_1 = tab.fork(Some(tab_seed_1));
-                tab_lose_1.is_lost[addr1] = true;
+                tab_lose_1.qubit_status[addr1] = QubitStatus::Lost;
                 branches.push((
                     tab_lose_1,
                     p_sum.clone() * (p[1].clone() / 2.0.into()),
@@ -560,9 +562,9 @@ where
 {
     fn reset_loss_channel(&mut self, addr0: usize) {
         let delta = loss_mask(addr0);
-        let mut branches = self.entries.drain_where(|tab| tab.is_lost[addr0]);
+        let mut branches = self.entries.drain_where(|tab| tab.is_lost(addr0));
         for (tab, _, _, phase_loss) in branches.iter_mut() {
-            tab.is_lost[addr0] = false;
+            tab.qubit_status[addr0] = QubitStatus::Live;
             *phase_loss ^= delta;
         }
         // reset_loss preserves total probability mass and never drops entries

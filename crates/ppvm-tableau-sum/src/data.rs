@@ -151,6 +151,7 @@ where
 mod tests {
     use super::*;
     use ppvm_pauli_sum::config::fxhash::ByteF64;
+    use ppvm_tableau::data::QubitStatus;
     use ppvm_traits::traits::{
         Clifford, Depolarizing, LossChannel, LossyMeasure, PauliError, Reset, ResetLossChannel,
         TGate,
@@ -192,7 +193,13 @@ mod tests {
         assert_eq!(tab.len(), 1);
         assert_eq!(tab.n_qubits, 3);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
-        assert!(tab.entries.entries[0].0.is_lost.iter().all(|x| !x));
+        assert!(
+            tab.entries.entries[0]
+                .0
+                .qubit_status
+                .iter()
+                .all(|&occ| occ == QubitStatus::Live)
+        );
     }
 
     #[test]
@@ -257,7 +264,7 @@ mod tests {
         tab.loss_channel(0, 0.0);
         assert_eq!(tab.len(), 1);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
-        assert!(!tab.entries.entries[0].0.is_lost[0]);
+        assert!(!tab.entries.entries[0].0.is_lost(0));
     }
 
     #[test]
@@ -266,7 +273,7 @@ mod tests {
         tab.loss_channel(0, 0.5);
         assert_eq!(tab.len(), 2);
         assert!((sum_of_probabilities(&tab) - 1.0).abs() < 1e-12);
-        let lost_count = tab.entries.iter().filter(|e| e.0.is_lost[0]).count();
+        let lost_count = tab.entries.iter().filter(|e| e.0.is_lost(0)).count();
         assert_eq!(lost_count, 1);
         for entry in tab.entries.iter() {
             assert!((*entry.1 - 0.5).abs() < 1e-12);
@@ -342,7 +349,7 @@ mod tests {
 
         assert_eq!(tab.len(), 1);
         let (entry, p) = tab.entries.iter().next().unwrap();
-        assert!(!entry.is_lost[0]);
+        assert!(!entry.is_lost(0));
         assert!((*p - 1.0).abs() < 1e-12);
     }
 
@@ -357,7 +364,7 @@ mod tests {
         assert_eq!(tab.len(), 1);
         assert_eq!(tab.entries.buckets.len(), 1);
         let (entry, p) = tab.entries.iter().next().unwrap();
-        assert!(!entry.is_lost[0]);
+        assert!(!entry.is_lost(0));
         assert!((*p - 1.0).abs() < 1e-12);
     }
 
@@ -396,7 +403,7 @@ mod tests {
 
         assert_eq!(tab.len(), 1);
         assert!((sum_of_probabilities(&tab) - 1.0).abs() < 1e-12);
-        assert!(tab.entries.entries[0].0.is_lost[0]);
+        assert!(tab.entries.entries[0].0.is_lost(0));
     }
 
     #[test]
@@ -479,8 +486,8 @@ mod tests {
         tab.loss_channel(0, 1.0);
         assert_eq!(tab.len(), 1);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
-        assert!(tab.entries.entries[0].0.is_lost[0]);
-        assert!(!tab.entries.entries[0].0.is_lost[1]);
+        assert!(tab.entries.entries[0].0.is_lost(0));
+        assert!(!tab.entries.entries[0].0.is_lost(1));
     }
 
     #[test]
@@ -493,7 +500,7 @@ mod tests {
         tab.loss_channel(0, 0.5);
         assert_eq!(tab.len(), 1);
         assert!((tab.entries.entries[0].1 - 1.0).abs() < 1e-12);
-        assert!(tab.entries.entries[0].0.is_lost[0]);
+        assert!(tab.entries.entries[0].0.is_lost(0));
     }
 
     #[test]

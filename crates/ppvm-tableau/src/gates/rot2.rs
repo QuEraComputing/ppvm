@@ -39,9 +39,9 @@ where
         let pauli_a = PAULIS[(axis_a_z << 1 | axis_a_x) as usize];
         let pauli_b = PAULIS[(axis_b_z << 1 | axis_b_x) as usize];
         // NOTE: if both qubits are lost/leaked, the rot1 will be a no-op
-        if self.is_lost_or_leaked(a) {
+        if self.is_inactive(a) {
             return self.rotate_1(pauli_b, b, theta);
-        } else if self.is_lost_or_leaked(b) {
+        } else if self.is_inactive(b) {
             return self.rotate_1(pauli_a, a, theta);
         }
 

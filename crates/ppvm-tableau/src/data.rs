@@ -22,6 +22,8 @@ use rand::rngs::SmallRng;
 
 type PhasedPauliWordNoHash<A, H> = PhasedPauliWord<A, H, PauliWord<A, H, false>>;
 
+pub use crate::qubit_status::QubitStatus;
+
 /// A `2n`-row stabilizer / destabilizer tableau.
 ///
 /// Rows `0..n` hold the destabilizers; rows `n..2n` hold the
@@ -591,8 +593,9 @@ where
 /// * `IndexType = bnum::types::U256` and friends for the very wide
 ///   regime.
 ///
-/// Per-qubit loss is tracked in [`is_lost`](GeneralizedTableau::is_lost);
-/// gates respect it automatically.
+/// Per-qubit status (loss / leakage) is tracked in
+/// [`qubit_status`](GeneralizedTableau::qubit_status); gates skip any qubit that is
+/// not [`QubitStatus::Live`].
 ///
 /// # Examples
 ///
@@ -639,26 +642,13 @@ pub struct GeneralizedTableau<
     pub tableau: Tableau<T>,
     /// Sparse coefficient vector indexed by bitstrings.
     pub coefficients: SparseVectorType,
-    /// Per-qubit loss flags.
-    pub is_lost: Vec<bool>,
-    /// Per-qubit leakage flags. A leaked qubit has been pinned to a
-    /// computational basis state (`|0⟩`/`|1⟩`) in the tableau, so gates skip it
-    /// and measurement reports the pinned value directly.
-    pub is_leaked: Vec<bool>,
+    /// Per-qubit status relative to the computational subspace.
+    pub qubit_status: Vec<QubitStatus>,
     /// Coefficient-magnitude threshold below which branches are dropped.
     pub coefficient_threshold: T::Coeff,
     /// Ordered log of every measurement performed (mirrors stim's record).
     pub measurement_record: Vec<Option<bool>>,
     _index_phantom: PhantomData<IndexType>,
-}
-
-impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C> {
-    /// Whether qubit `addr0` is outside the computational subspace — either lost
-    /// or leaked. Gates skip such qubits.
-    #[inline]
-    pub fn is_lost_or_leaked(&self, addr0: usize) -> bool {
-        self.is_leaked[addr0] || self.is_lost[addr0]
-    }
 }
 
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
@@ -685,8 +675,7 @@ where
         Self {
             tableau: Tableau::new(n_qubits),
             coefficients,
-            is_lost: vec![false; n_qubits],
-            is_leaked: vec![false; n_qubits],
+            qubit_status: vec![QubitStatus::Live; n_qubits],
             coefficient_threshold,
             measurement_record: Vec::new(),
             _index_phantom: PhantomData,
@@ -710,11 +699,8 @@ where
         };
         coefficients.unsafe_insert(I::zero(), complex_one);
         self.coefficients = coefficients;
-        for l in self.is_lost.iter_mut() {
-            *l = false;
-        }
-        for l in self.is_leaked.iter_mut() {
-            *l = false;
+        for occ in self.qubit_status.iter_mut() {
+            *occ = QubitStatus::Live;
         }
         self.measurement_record.clear();
     }
@@ -767,8 +753,8 @@ where
         <T::Storage as BitView>::Store: PrimInt + TryFrom<usize>,
     {
         // Check if any qubit in the range is lost or leaked
-        let any_lost = (0..count)
-            .any(|i| self.is_lost_or_leaked(base + i) || self.is_lost_or_leaked(base + offset + i));
+        let any_lost =
+            (0..count).any(|i| self.is_inactive(base + i) || self.is_inactive(base + offset + i));
         if !any_lost {
             self.tableau.cz_block_pairs(base, offset, count);
         } else {
@@ -776,7 +762,7 @@ where
             for i in 0..count {
                 let c = base + i;
                 let t = base + offset + i;
-                if !self.is_lost_or_leaked(c) && !self.is_lost_or_leaked(t) {
+                if !self.is_inactive(c) && !self.is_inactive(t) {
                     Clifford::cz(&mut self.tableau, c, t);
                 }
             }
@@ -799,7 +785,7 @@ where
         let any_lost = (0..count).any(|i| {
             let c = word_c * bits_per_word + base_bit_c + i;
             let t = word_t * bits_per_word + base_bit_t + i;
-            self.is_lost_or_leaked(c) || self.is_lost_or_leaked(t)
+            self.is_inactive(c) || self.is_inactive(t)
         });
         if !any_lost {
             self.tableau
@@ -808,7 +794,7 @@ where
             for i in 0..count {
                 let c = word_c * bits_per_word + base_bit_c + i;
                 let t = word_t * bits_per_word + base_bit_t + i;
-                if !self.is_lost_or_leaked(c) && !self.is_lost_or_leaked(t) {
+                if !self.is_inactive(c) && !self.is_inactive(t) {
                     Clifford::cz(&mut self.tableau, c, t);
                 }
             }
@@ -1029,7 +1015,7 @@ where
     ) where
         <<T as Config>::Storage as BitView>::Store: PrimInt,
     {
-        if self.is_lost_or_leaked(addr0) {
+        if self.is_inactive(addr0) {
             return;
         }
 
@@ -1232,7 +1218,7 @@ where
     ) where
         <<T as Config>::Storage as BitView>::Store: PrimInt,
     {
-        if self.is_lost_or_leaked(addr0) {
+        if self.is_inactive(addr0) {
             return;
         }
 
@@ -1510,14 +1496,14 @@ mod tests {
         for i in 0..n {
             Clifford::h(&mut tab1.tableau, i);
         }
-        tab1.is_lost[2] = true; // Mark qubit 2 as lost
+        tab1.qubit_status[2] = QubitStatus::Lost; // Mark qubit 2 as lost
         let mut tab2 = tab1.clone();
 
         // Individual, skipping lost qubits
         for i in 0..4 {
             let c = i;
             let t = 4 + i;
-            if !tab1.is_lost[c] && !tab1.is_lost[t] {
+            if !tab1.is_lost(c) && !tab1.is_lost(t) {
                 Clifford::cz(&mut tab1.tableau, c, t);
             }
         }
@@ -1616,24 +1602,24 @@ mod tests {
     #[test]
     fn reset_all_clears_loss_flags() {
         let mut tab: TestTableau = GeneralizedTableau::new(3, 1e-12);
-        tab.is_lost[0] = true;
-        tab.is_lost[2] = true;
+        tab.qubit_status[0] = QubitStatus::Lost;
+        tab.qubit_status[2] = QubitStatus::Lost;
 
         tab.reset_all();
 
-        assert!(tab.is_lost.iter().all(|&lost| !lost));
+        assert!(tab.qubit_status.iter().all(|&occ| occ == QubitStatus::Live));
     }
 
     /// A full reset clears per-qubit leakage flags.
     #[test]
     fn reset_all_clears_leak_flags() {
         let mut tab: TestTableau = GeneralizedTableau::new(3, 1e-12);
-        tab.is_leaked[0] = true;
-        tab.is_leaked[2] = true;
+        tab.qubit_status[0] = QubitStatus::Leaked;
+        tab.qubit_status[2] = QubitStatus::Leaked;
 
         tab.reset_all();
 
-        assert!(tab.is_leaked.iter().all(|&leaked| !leaked));
+        assert!(tab.qubit_status.iter().all(|&occ| occ == QubitStatus::Live));
     }
 
     /// `Tableau::reset_all` restores the fresh identity tableau rows.

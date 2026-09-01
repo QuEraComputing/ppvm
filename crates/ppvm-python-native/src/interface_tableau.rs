@@ -295,11 +295,15 @@ macro_rules! create_interface {
             }
 
             pub fn is_lost(&self, addr0: usize) -> bool {
-                self.inner.is_lost[addr0]
+                self.inner.is_lost(addr0)
             }
 
             pub fn loss_values(&self) -> Vec<bool> {
-                self.inner.is_lost.clone()
+                self.inner
+                    .qubit_status
+                    .iter()
+                    .map(|&o| o == QubitStatus::Lost)
+                    .collect()
             }
 
             pub fn run(

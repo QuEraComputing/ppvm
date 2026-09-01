@@ -17,7 +17,7 @@ type MaskBuf<T> = SmallVec<[<<T as Config>::Storage as BitView>::Store; 8]>;
 macro_rules! impl_generalized_tableau_clifford {
     ($name:ident) => {
         fn $name(&mut self, index: usize) {
-            if self.is_lost_or_leaked(index) {
+            if self.is_inactive(index) {
                 return;
             }
             self.tableau.$name(index);
@@ -29,7 +29,7 @@ macro_rules! impl_generalized_tableau_clifford {
 macro_rules! impl_generalized_tableau_clifford_pair {
     ($name:ident) => {
         fn $name(&mut self, control: usize, target: usize) {
-            if self.is_lost_or_leaked(control) || self.is_lost_or_leaked(target) {
+            if self.is_inactive(control) || self.is_inactive(target) {
                 return;
             }
             self.tableau.$name(control, target);
@@ -747,37 +747,17 @@ where
     }
 }
 
-impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> GeneralizedTableau<T, I, C>
-where
-    Complex<<T as Config>::Coeff>: From<Complex<f64>>,
-    <T::Storage as BitView>::Store: PrimInt,
-{
-    /// Fast path: check if any qubit in the slice is lost or leaked
-    #[inline]
-    fn any_lost_single(&self, indices: &[usize]) -> bool {
-        indices.iter().any(|&i| self.is_lost_or_leaked(i))
-    }
-
-    /// Fast path: check if any qubit pair has a lost or leaked qubit
-    #[inline]
-    fn any_lost_pair(&self, pairs: &[(usize, usize)]) -> bool {
-        pairs
-            .iter()
-            .any(|&(c, t)| self.is_lost_or_leaked(c) || self.is_lost_or_leaked(t))
-    }
-}
-
 macro_rules! impl_gen_tableau_batch_single {
     ($name:ident) => {
         fn $name(&mut self, indices: &[usize]) {
-            if !self.any_lost_single(indices) {
+            if !self.any_inactive(indices) {
                 self.tableau.$name(indices);
                 return;
             }
             let filtered: Vec<usize> = indices
                 .iter()
                 .copied()
-                .filter(|&i| !self.is_lost_or_leaked(i))
+                .filter(|&i| !self.is_inactive(i))
                 .collect();
             self.tableau.$name(&filtered);
         }
@@ -787,14 +767,14 @@ macro_rules! impl_gen_tableau_batch_single {
 macro_rules! impl_gen_tableau_batch_pair {
     ($name:ident) => {
         fn $name(&mut self, pairs: &[(usize, usize)]) {
-            if !self.any_lost_pair(pairs) {
+            if !self.any_inactive_pair(pairs) {
                 self.tableau.$name(pairs);
                 return;
             }
             let filtered: Vec<(usize, usize)> = pairs
                 .iter()
                 .copied()
-                .filter(|&(c, t)| !self.is_lost_or_leaked(c) && !self.is_lost_or_leaked(t))
+                .filter(|&(c, t)| !self.is_inactive(c) && !self.is_inactive(t))
                 .collect();
             self.tableau.$name(&filtered);
         }
@@ -930,7 +910,7 @@ mod tests {
     fn test_sqrt_x_on_lost_qubit_is_noop() {
         let initial = rows(&GeneralizedTableau::new(1, 1e-12));
         let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
-        tab.is_lost[0] = true;
+        tab.qubit_status[0] = QubitStatus::Lost;
         tab.sqrt_x(0);
         assert_eq!(rows(&tab), initial);
     }
@@ -939,7 +919,7 @@ mod tests {
     fn test_sqrt_y_on_lost_qubit_is_noop() {
         let initial = rows(&GeneralizedTableau::new(1, 1e-12));
         let mut tab: TestTableau = GeneralizedTableau::new(1, 1e-12);
-        tab.is_lost[0] = true;
+        tab.qubit_status[0] = QubitStatus::Lost;
         tab.sqrt_y(0);
         assert_eq!(rows(&tab), initial);
     }

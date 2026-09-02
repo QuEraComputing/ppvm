@@ -1037,8 +1037,8 @@ mod tests {
         t.correlated_loss_channel(0, 1, [5.0, -3.0, 17.0]);
     }
 
-    /// Coeff stand-in that refuses `to_f64`, so the helper cannot take the
-    /// float-conversion path. Comparisons still work via `PartialOrd<f64>`.
+    /// Coeff stand-in that cannot be converted to `f64`; used to ensure the helper
+    /// only relies on `PartialOrd<f64>` comparisons.
     #[derive(Clone, Copy)]
     struct NoF64(f64);
 

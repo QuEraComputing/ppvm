@@ -58,4 +58,3 @@ pub use word::{MAX_QUBITS, Word, codes_from_word, parse_pauli_string, word_from_
 
 #[cfg(test)]
 mod tests;
-

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fmt::Debug;
+use std::ops::Add;
 
 use bitvec::view::BitView;
 use num::PrimInt;
@@ -65,17 +66,24 @@ where
 /// negative survivor weight and renormalizes, and the trajectory's cumulative
 /// scan stops being a categorical sampler — both silently.
 ///
-/// Coefficients that do not convert to `f64` (symbolic ones) are not checked.
-pub fn is_admissible_correlated_loss<C: ToPrimitive>(p: &[C; 3]) -> bool {
+/// Coefficients are checked in `Coeff` space via `PartialOrd<f64>` (the
+/// bound every loss-channel impl already carries). Slack still applies
+/// to the `p0 + 2·p1 <= 1` sum so a saturated `[1/3, 1/3, _]` is not
+/// rejected by last-bit rounding.
+pub fn is_admissible_correlated_loss<C>(p: &[C; 3]) -> bool
+where
+    C: Clone + PartialOrd<f64> + Add<Output = C>,
+{
     // The slack matches `ppvm-tableau-2`'s guard: reject genuinely out-of-region
     // parameters, not last-bit noise in a legitimately saturated triple. An exact
     // `<= 1.0` would spuriously fire on e.g. `[1/3, 1/3, _]`, where
     // `p0 + 2·p1` rounds to `1.0000000000000002`.
     const SLACK: f64 = 1e-9;
-    let (Some(p0), Some(p1), Some(p2)) = (p[0].to_f64(), p[1].to_f64(), p[2].to_f64()) else {
-        return true;
-    };
-    p0 >= 0.0 && p1 >= 0.0 && p0 + 2.0 * p1 <= 1.0 + SLACK && (0.0..=1.0).contains(&p2)
+    p[0] >= 0.0
+        && p[1] >= 0.0
+        && p[2] >= 0.0
+        && p[2] <= 1.0
+        && p[0].clone() + p[1].clone() + p[1].clone() <= 1.0 + SLACK
 }
 
 // === Noise trait impls ===
@@ -1027,6 +1035,70 @@ mod tests {
     fn correlated_loss_rejects_negative_probabilities() {
         let mut t = tab(2);
         t.correlated_loss_channel(0, 1, [5.0, -3.0, 17.0]);
+    }
+
+    /// Coeff stand-in that refuses `to_f64`, so the helper cannot take the
+    /// float-conversion path. Comparisons still work via `PartialOrd<f64>`.
+    #[derive(Clone, Copy)]
+    struct NoF64(f64);
+
+    impl ToPrimitive for NoF64 {
+        fn to_i64(&self) -> Option<i64> {
+            None
+        }
+        fn to_u64(&self) -> Option<u64> {
+            None
+        }
+        fn to_f64(&self) -> Option<f64> {
+            None
+        }
+    }
+
+    impl PartialEq<f64> for NoF64 {
+        fn eq(&self, other: &f64) -> bool {
+            self.0 == *other
+        }
+    }
+
+    impl PartialOrd<f64> for NoF64 {
+        fn partial_cmp(&self, other: &f64) -> Option<std::cmp::Ordering> {
+            self.0.partial_cmp(other)
+        }
+    }
+
+    impl std::ops::Add for NoF64 {
+        type Output = Self;
+        fn add(self, rhs: Self) -> Self {
+            Self(self.0 + rhs.0)
+        }
+    }
+
+    #[test]
+    fn is_admissible_rejects_negative_p1() {
+        assert!(!is_admissible_correlated_loss(&[0.0, -0.1, 0.0]));
+    }
+
+    #[test]
+    fn is_admissible_accepts_f64_saturated_third() {
+        assert!(is_admissible_correlated_loss(&[1.0 / 3.0, 1.0 / 3.0, 0.5]));
+    }
+
+    #[test]
+    fn is_admissible_rejects_when_to_f64_fails() {
+        let p = [NoF64(0.6), NoF64(0.6), NoF64(0.0)];
+        assert!(
+            !is_admissible_correlated_loss(&p),
+            "p0 + 2·p1 = 1.8 must be inadmissible even without an f64 conversion"
+        );
+    }
+
+    #[test]
+    fn is_admissible_accepts_saturated_boundary_when_to_f64_fails() {
+        let p = [NoF64(1.0 / 3.0), NoF64(1.0 / 3.0), NoF64(0.5)];
+        assert!(
+            is_admissible_correlated_loss(&p),
+            "[1/3, 1/3, _] must stay admissible without an f64 conversion"
+        );
     }
 
     /// The saturated boundary `p0 + 2·p1 == 1` is admissible and must not trip

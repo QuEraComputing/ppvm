@@ -160,10 +160,11 @@ class GeneralizedTableau(
 
         Applies CZ to ``(control_base + i, target_base + i)`` for ``i`` in
         ``range(count)`` -- i.e. the gates ``zip(range(control_base, ...),
-        range(target_base, ...))`` would produce. This uses a word-level kernel
-        that is much faster than the equivalent `cz` call when the pairs form a
-        contiguous, constant-offset block (e.g. entangling two adjacent qubit
-        registers). For scattered pairs, use `cz`.
+        range(target_base, ...))`` would produce. Disjoint constant-offset
+        blocks use a word-level kernel that is much faster than the equivalent
+        `cz` call (e.g. entangling two adjacent qubit registers). Overlapping
+        / brickwork pairs such as ``cz_block(0, 1, n)`` are still correct: they
+        fall back to the per-pair loop. For scattered pairs, use `cz`.
 
         CZ is symmetric, so ``control_base`` and ``target_base`` may be given in
         either order.

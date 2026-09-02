@@ -368,9 +368,11 @@ fn mask_bits<S: PrimInt>(masks: &[S]) -> u64 {
 /// A mask carries one bit per site, so a repeated index would make the fused
 /// sweep apply the gate once where the per-index loop — the `CliffordBatch`
 /// contract, and what a legal `X 0 0` in a `.stim` file means — conjugates by
-/// `Gᵏ`. `Gᵏ` is the identity only for the involutory gates (`S² = Z`,
-/// `(√X)² = X`, `(√Y)² = Y`), so neither one bit nor an XOR-cancelled bit is
-/// right for every family; only the per-index loop is (G-061).
+/// `Gᵏ`. XOR-cancelling a repeated bit would recover `Gᵏ` only when
+/// `G² = I` (`X`, `Y`, `Z`, `H`). For `S`, `√X`, `√Y`, even `k = 2` is
+/// another Pauli (`S² = Z`, `(√X)² = X`, `(√Y)² = Y`), so neither one bit
+/// nor an XOR-cancelled bit is right for every family; only the per-index
+/// loop is (G-061).
 ///
 /// The fast path costs exactly one branch on a flag `build_masks` has already
 /// computed, and the slow path is a *call* — no scalar loop is inlined into the
@@ -1709,9 +1711,10 @@ mod tests {
     // G-061: a repeated qubit index in a batched Clifford owes conjugation by
     // `Gᵏ`, i.e. the per-index loop — `X 0 0` is legal Stim meaning
     // apply-to-each-target-in-order, and the fused mask carries one bit per
-    // *distinct* site. `Gᵏ` is the identity only for the involutory gates
-    // (`S² = Z`, `(√X)² = X`, `(√Y)² = Y`), so neither one bit nor an
-    // XOR-cancelled bit is right for every family.
+    // *distinct* site. XOR-cancelling a repeated bit would recover `Gᵏ` only
+    // when `G² = I` (`X`, `Y`, `Z`, `H`). For `S`, `√X`, `√Y`, even `k = 2`
+    // is another Pauli (`S² = Z`, `(√X)² = X`, `(√Y)² = Y`), so neither one
+    // bit nor an XOR-cancelled bit is right for every family.
     mod duplicate_index_tests {
         use super::*;
         use ppvm_pauli_sum::config::fxhash::ByteF64;

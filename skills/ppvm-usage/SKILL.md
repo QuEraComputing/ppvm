@@ -110,7 +110,13 @@ for _ in range(50):
 print(ps.overlap_with_zero())
 ```
 
-Loss channels live on `LossyPauliSum` (same API, plus `loss_channel(q, p)` and `correlated_loss_channel(q0, q1, [p_LL, p_LQ, p_LN])`).
+On Pauli propagation, loss lives on `LossyPauliSum` (same API as `PauliSum`,
+plus `loss_channel(q, p)` and `correlated_loss_channel(q0, q1, [p_LL, p_LQ, p_LN])`).
+The same loss methods are on `GeneralizedTableau`. `p_LL` is both-lost,
+`p_LQ` is per-named-qubit loss (exactly-one is `2·p_LQ`; both-present survival
+is `1 − p_LL − 2·p_LQ`), and `p_LN` is loss of the survivor after the partner
+is already gone. Admissible region: `p_LL, p_LQ >= 0`, `p_LL + 2·p_LQ <= 1`,
+`p_LN ∈ [0, 1]`.
 
 ### Generalized stabilizer tableau
 
@@ -266,7 +272,7 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 | `two_qubit_pauli_error(q0, q1, p[15])`                                      | ✓ | ✓   | ✓   |
 | `amplitude_damping(q, gamma)`                                               | ✓ | ✓   | —   |
 | `loss_channel(q, p)` (Lossy types)                                          | ✓ | ✓\* | ✓   |
-| `correlated_loss_channel(q0, q1, [p_LL, p_LQ, p_LN])`                               | ✓ | ✓\* | ✓   |
+| `correlated_loss_channel(q0, q1, [p_LL, p_LQ, p_LN])` (`p_LQ` = named one)  | ✓ | ✓\* | ✓   |
 | `reset_loss_channel(q)`                                                     | ✓ | ✓\* | ✓   |
 
 \* Python side: loss methods live on `LossyPauliSum`, not the plain `PauliSum`.

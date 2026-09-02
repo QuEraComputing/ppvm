@@ -202,21 +202,21 @@ impl<T: Config> Tableau<T> {
     ///
     /// # Preconditions
     ///
-    /// `offset >= count`, i.e. the pairs have pairwise-disjoint supports (pairs
-    /// `i != j` collide iff `|i - j| == offset`, which needs `offset < count`, or
-    /// `offset == 0`). Both fused updates need it: the single
-    /// `count_ones() & 1` phase reads the pre-update `z` plane for every pair at
-    /// once (`Batch.lean::czSeq_phase` proves it equal to the sequential loop
-    /// only under pairwise disjointness, and `czSeq_phase_needs_disjoint`
-    /// exhibits a counterexample), and the `z` delta `OR`s the two shifted
-    /// planes, so a `z` bit written by two pairs is set once instead of
-    /// XOR-cancelled. Callers that cannot guarantee it must use
-    /// [`GeneralizedTableau::cz_block_pairs`] or
-    /// [`GeneralizedTableau::cz_block`], which fall back to the per-pair loop.
+    /// The fused kernel needs `offset >= count`, i.e. pairwise-disjoint
+    /// supports (pairs `i != j` collide iff `|i - j| == offset`, which needs
+    /// `offset < count`, or `offset == 0`). Both fused updates need it: the
+    /// single `count_ones() & 1` phase reads the pre-update `z` plane for
+    /// every pair at once (`Batch.lean::czSeq_phase` proves it equal to the
+    /// sequential loop only under pairwise disjointness, and
+    /// `czSeq_phase_needs_disjoint` exhibits a counterexample), and the `z`
+    /// delta `OR`s the two shifted planes, so a `z` bit written by two pairs
+    /// is set once instead of XOR-cancelled.
+    ///
+    /// Overlapping pairs (`offset < count`, including `offset == 0`) fall
+    /// back to the per-pair `cz` loop, so this method is safe in release.
     ///
     /// # Panics
-    /// Debug-asserts that all bits are within the same word and that the pairs
-    /// have pairwise-disjoint supports.
+    /// Debug-asserts that all bits are within the same word.
     #[inline]
     pub fn cz_block_pairs(&mut self, base: usize, offset: usize, count: usize)
     where
@@ -226,6 +226,9 @@ impl<T: Config> Tableau<T> {
         if count == 0 {
             return;
         }
+        if offset < count {
+            return self.cz_pairs_each(base, offset, count);
+        }
         let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
         let base_bit = base % bits_per_word;
         let word_idx = base / bits_per_word;
@@ -234,11 +237,6 @@ impl<T: Config> Tableau<T> {
             (base + offset + count - 1) / bits_per_word,
             word_idx,
             "All CZ pairs must be in the same word"
-        );
-        debug_assert!(
-            offset >= count,
-            "cz_block pairs must have pairwise-disjoint supports \
-             (Batch.lean::czSeq_phase_needs_disjoint)"
         );
 
         let one = <T::Storage as BitView>::Store::one();
@@ -269,6 +267,19 @@ impl<T: Config> Tableau<T> {
             let z_delta = ((x >> offset) & mask_c) | ((x << offset) & mask_t);
             zp[word_idx] = z ^ z_delta;
         });
+    }
+
+    /// Per-pair `cz` fallback for overlapping [`Self::cz_block_pairs`] runs.
+    /// Outlined so the fused kernel keeps a single call on the disjoint path.
+    #[cold]
+    #[inline(never)]
+    fn cz_pairs_each(&mut self, base: usize, offset: usize, count: usize)
+    where
+        <T::Storage as BitView>::Store: PrimInt,
+    {
+        for i in 0..count {
+            Clifford::cz(self, base + i, base + offset + i);
+        }
     }
 
     /// Apply CZ to N pairs with constant offset across two different words.
@@ -763,19 +774,16 @@ where
     }
 
     /// Apply CZ to N pairs with constant offset: (base+i, base+offset+i) for i in 0..count.
-    /// Falls back to individual CZ calls if any qubit in the range is lost, or
-    /// if the pairs' supports overlap (`offset < count`, including the
-    /// degenerate `offset == 0`), which the fused kernel does not handle — see
-    /// [`Tableau::cz_block_pairs`]'s preconditions.
+    /// Falls back to individual CZ calls if any qubit in the range is lost.
+    /// Overlap (`offset < count`) is owned by [`Tableau::cz_block_pairs`].
     pub fn cz_block_pairs(&mut self, base: usize, offset: usize, count: usize)
     where
         <<T::Storage as BitView>::Store as TryFrom<usize>>::Error: Debug,
         <T::Storage as BitView>::Store: PrimInt + TryFrom<usize>,
     {
-        // Check if any qubit in the range is lost
         let any_lost =
             (0..count).any(|i| self.is_lost[base + i] || self.is_lost[base + offset + i]);
-        if !any_lost && offset >= count {
+        if !any_lost {
             self.tableau.cz_block_pairs(base, offset, count);
         } else {
             self.cz_pairs_each(base, offset, count);
@@ -845,10 +853,10 @@ where
     ///
     /// Overlapping pairs — `|target_base - control_base| < count`, of which
     /// adjacent-pair brickwork `cz_block(0, 1, n)` is the extreme case — are
-    /// handled: the same-word segments route through [`Self::cz_block_pairs`],
-    /// which falls back to the per-pair loop. A cross-word segment is always
-    /// disjoint (its `run` never exceeds the offset), so the fused kernel stays
-    /// live there.
+    /// handled: the same-word segments route through [`Self::cz_block_pairs`]
+    /// into [`Tableau::cz_block_pairs`], which falls back to the per-pair
+    /// loop. A cross-word segment is always disjoint (its `run` never exceeds
+    /// the offset), so the fused kernel stays live there.
     pub fn cz_block(&mut self, control_base: usize, target_base: usize, count: usize)
     where
         <<T::Storage as BitView>::Store as TryFrom<usize>>::Error: Debug,
@@ -1721,6 +1729,58 @@ mod tests {
 
         assert_eq!(snapshot_tableau(&seq.tableau)[0], ([0b111], [0b101], 2));
         assert_eq!(snapshot_tableau(&fused.tableau)[0], ([0b111], [0b101], 2));
+    }
+
+    /// Same algebraic witness as above, but through the public `Tableau`
+    /// kernel — overlapping pairs must fall back, not `debug_assert` and
+    /// corrupt in release.
+    #[test]
+    fn test_tableau_cz_block_pairs_overlapping_hits_the_algebraic_answer() {
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
+        type TTab = Tableau<Byte8F64<1>>;
+        let mut fused = TTab::new(3);
+        Clifford::cnot(&mut fused, 0, 1);
+        Clifford::cnot(&mut fused, 0, 2);
+        assert_eq!(snapshot_tableau(&fused)[0], ([0b111], [0b000], 0));
+
+        fused.cz_block_pairs(0, 1, 2);
+
+        assert_eq!(snapshot_tableau(&fused)[0], ([0b111], [0b101], 2));
+    }
+
+    /// `Tableau::cz_block_pairs` itself, not only the `GeneralizedTableau`
+    /// wrapper, must match the sequential loop on overlapping pairs.
+    #[test]
+    fn test_tableau_cz_block_pairs_matches_per_pair_loop_on_overlapping_pairs() {
+        use ppvm_pauli_sum::config::fx64hash::Byte8F64;
+        type TTab = Tableau<Byte8F64<1>>;
+        let n = 16;
+        let configs = [
+            (0usize, 1usize, 2usize),
+            (0, 1, 15),
+            (0, 2, 5),
+            (4, 4, 3),
+            (0, 8, 8),
+        ];
+        for seed in 0..8u64 {
+            let mut prepared = TTab::new(n);
+            prepare_frame(&mut prepared, n, seed);
+            for &(cb, tb, count) in &configs {
+                let mut seq = prepared.clone();
+                let mut fused = prepared.clone();
+                for i in 0..count {
+                    Clifford::cz(&mut seq, cb + i, tb + i);
+                }
+                fused.cz_block_pairs(cb, tb - cb, count);
+                assert_eq!(
+                    snapshot_tableau(&seq),
+                    snapshot_tableau(&fused),
+                    "Tableau::cz_block_pairs({cb}, {}, {count}) disagrees \
+                     with the per-pair loop (seed {seed})",
+                    tb - cb
+                );
+            }
+        }
     }
 
     /// Overlapping brickwork that straddles a storage-word boundary: the

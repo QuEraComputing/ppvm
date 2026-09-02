@@ -1229,7 +1229,7 @@ fn correlated_loss_channel_both_certain() {
 
 #[test]
 fn correlated_loss_channel_single_loss_certain_is_5050_between_qubits() {
-    // p[1] = 1.0: exactly one of the two qubits is lost, 50/50 which one.
+    // p[1] = 0.5: exactly one of the two qubits is lost, 50/50 which one.
     // Never both, never neither.
     let shots = 8000;
     let sum = run_sum(2, shots, 1e-12, |t| {
@@ -1270,7 +1270,7 @@ fn correlated_loss_channel_single_loss_certain_is_5050_between_qubits() {
 fn correlated_loss_channel_marginals_on_ground_state() {
     // Mid-probability values, |00⟩ input. Check both the analytic outcome
     // probabilities and TVD against pure.
-    // p[0] = 0.20, p[1] = 0.40, p[2] is unused (no qubit pre-lost).
+    // p[0] = 0.20, p[1] = 0.20, p[2] is unused (no qubit pre-lost).
     // Expected outcome probabilities:
     //   P(both lost)    = 0.20   (p[0])
     //   P(only q0 lost) = 0.20   (p[1])

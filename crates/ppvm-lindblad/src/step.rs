@@ -198,7 +198,23 @@ impl LindbladSpec {
     /// representatives. If not, call
     /// [`canonicalize_basis_to_rep`](crate::canonicalize_basis_to_rep)
     /// first.
+    ///
+    /// Honours `cfg.num_threads` the same way [`Self::pc_step`] does.
     pub fn pc_step_orbit_rep(
+        &self,
+        basis: &mut Vec<Word>,
+        coeffs: &mut Vec<Complex<f64>>,
+        dt: f64,
+        protected: &[Word],
+        sector: Sector<'_>,
+        cfg: &PcStepConfig,
+    ) -> Result<(), Error> {
+        self.run_in_pool(cfg, |this| {
+            this.pc_step_orbit_rep_inner(basis, coeffs, dt, protected, sector, cfg)
+        })
+    }
+
+    fn pc_step_orbit_rep_inner(
         &self,
         basis: &mut Vec<Word>,
         coeffs: &mut Vec<Complex<f64>>,

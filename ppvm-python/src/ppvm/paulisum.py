@@ -386,7 +386,7 @@ class PauliSum(
         """
         return self._interface.trace(pattern)
 
-    def symmetry_merge(self, group) -> None:
+    def symmetry_merge(self, group: _core.TranslationGroup) -> None:
         """Merge entries into orbit-representative form under a translation group.
 
         Each Pauli word in the sum is replaced by its canonical (lex-min)
@@ -407,7 +407,12 @@ class PauliSum(
         """
         self._interface.symmetry_merge(group)
 
-    def momentum_merge(self, other: "PauliSum", group, momentum) -> None:
+    def momentum_merge(
+        self,
+        other: "PauliSum",
+        group: _core.TranslationGroup,
+        momentum: Sequence[int],
+    ) -> None:
         """Phase-aware (momentum-sector) merge for a complex operator stored
         as a *real pair*: ``self`` is the real part and ``other`` the
         imaginary part of ``O = self + i·other``. Both are overwritten in

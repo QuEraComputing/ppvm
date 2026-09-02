@@ -115,6 +115,17 @@ def test_momentum_merge_idempotent_on_stabilized_orbit(word):
     assert max(abs(once.get(x, 0j) - twice.get(x, 0j)) for x in keys) < 1e-12
 
 
+def test_momentum_merge_rejects_the_same_object_twice():
+    """``self`` and ``other`` hold the real and imaginary parts, so they must
+    be distinct; passing one object twice gets a message saying so rather
+    than a raw borrow error."""
+    n = 4
+    g = TranslationGroup.chain_1d(n)
+    PA, _ = _seed_pair(n, 1)
+    with pytest.raises(ValueError, match="must be distinct PauliSum objects"):
+        PA.momentum_merge(PA, g, [1])
+
+
 def test_momentum_merge_projects_out_other_sectors():
     """Merging a pure sector-k operator in sector k' != k gives ~zero."""
     n = 4

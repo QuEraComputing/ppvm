@@ -199,6 +199,28 @@ def test_protected_reps_are_never_dropped():
         assert keep <= {string(w) for w in basis}
 
 
+@pytest.mark.parametrize("num_threads", [1, 2])
+def test_num_threads_does_not_change_the_result(num_threads):
+    """``num_threads`` pins the call to a fresh rayon pool — same result, and
+    (unlike before) it is no longer silently ignored on this path."""
+    n = 4
+    dt = 0.03
+    op = xy_chain_pbc(n, gamma=0.2)
+    group = TranslationGroup.chain_1d(n)
+    k_arr = momentum(1)
+    seed_basis, seed_coeffs = z_momentum_seed(n, 1)
+    basis, coeffs = canonicalize_basis_arr_complex(seed_basis, seed_coeffs, group, k_arr)
+
+    ref_b, ref_c = op.pc_step_orbit_rep(basis, coeffs, dt, 10_000_000, group, k_arr)
+    got_b, got_c = op.pc_step_orbit_rep(
+        basis, coeffs, dt, 10_000_000, group, k_arr, num_threads=num_threads
+    )
+    ref, got = to_dict(ref_b, ref_c), to_dict(got_b, got_c)
+    assert ref.keys() == got.keys()
+    for w in ref:
+        assert abs(ref[w] - got[w]) < 1e-12
+
+
 def test_pc_step_orbit_rep_validates_inputs():
     n = 3
     op = xy_chain_pbc(n, gamma=0.0)

@@ -102,10 +102,19 @@ macro_rules! create_interface_symmetry_methods {
             #[pyo3(signature = (other, group, momentum))]
             pub fn momentum_merge(
                 &mut self,
-                mut other: pyo3::PyRefMut<'_, Self>,
+                other: &Bound<'_, Self>,
                 group: &crate::symmetry::TranslationGroup,
                 momentum: Vec<i32>,
             ) -> pyo3::PyResult<()> {
+                // `self` is already mutably borrowed, so passing the same
+                // object twice fails here — report that rather than letting
+                // PyO3's raw borrow error surface.
+                let mut other = other.try_borrow_mut().map_err(|_| {
+                    pyo3::exceptions::PyValueError::new_err(
+                        "momentum_merge: `self` and `other` must be distinct \
+                         PauliSum objects (got the same one twice)",
+                    )
+                })?;
                 let n_q = group.core().n_qubits();
                 for (label, n) in [
                     ("self", self.inner.n_qubits()),

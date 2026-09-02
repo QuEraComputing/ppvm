@@ -413,6 +413,7 @@ class LindbladSpec:
         canonicalize_first: bool = False,
         admit_basis: int | None = None,
         tau_add: float | None = None,
+        num_threads: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]: ...
     def generator(self, basis: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]: ...
 

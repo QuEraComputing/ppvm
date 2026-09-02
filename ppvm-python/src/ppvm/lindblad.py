@@ -42,7 +42,9 @@ from collections.abc import Iterable, Sequence
 from typing import Union
 
 import numpy as np
+import numpy.typing as npt
 
+from . import _core
 from ._core import LindbladSpec as _LindbladSpec
 
 _PAULI_CODE = {"I": 0, "X": 1, "Z": 2, "Y": 3}
@@ -297,13 +299,14 @@ class Lindbladian:
         coeffs: np.ndarray,
         dt: float,
         max_basis: int,
-        group,
-        momentum: np.ndarray,
+        group: _core.TranslationGroup,
+        momentum: npt.ArrayLike,
         drop_tol: float = 1e-12,
         protected_arr: np.ndarray | None = None,
         canonicalize_first: bool = False,
         admit_basis: int | None = None,
         tau_add: float | None = None,
+        num_threads: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Per-step orbit-representative pc evolution.
 
@@ -330,6 +333,9 @@ class Lindbladian:
         ``basis_arr`` is assumed to contain canonical reps only. Pass
         ``canonicalize_first=True`` to rewrite each row to its canonical
         rep on entry (coefficients unchanged).
+
+        ``num_threads``, when set, pins this call to a freshly-built rayon
+        pool of that size, exactly as for `pc_step_arr`.
         """
         n = self.n_qubits
         if protected_arr is None:
@@ -346,6 +352,7 @@ class Lindbladian:
             bool(canonicalize_first),
             None if admit_basis is None else int(admit_basis),
             None if tau_add is None else float(tau_add),
+            None if num_threads is None else int(num_threads),
         )
 
     def pc_step(

@@ -202,13 +202,7 @@ impl LindbladSpec {
         let mut basis_words = decode_basis(&basis_view, n_q)?;
         assert_basis_unique(&basis_words)?;
         let mut coeffs_vec = coeffs.as_slice()?.to_vec();
-        if coeffs_vec.len() != basis_words.len() {
-            return Err(PyValueError::new_err(format!(
-                "coeffs has length {} but basis has {} rows",
-                coeffs_vec.len(),
-                basis_words.len()
-            )));
-        }
+        check_coeffs_len(coeffs_vec.len(), basis_words.len())?;
         let protected_words: Vec<Word> = if let Some(ref p) = protected {
             decode_basis(&p.as_array(), n_q)?
         } else {
@@ -264,13 +258,7 @@ impl LindbladSpec {
         let mut basis_words = decode_basis(&basis_view, n_q)?;
         assert_basis_unique(&basis_words)?;
         let mut coeffs_vec = coeffs.as_slice()?.to_vec();
-        if coeffs_vec.len() != basis_words.len() {
-            return Err(PyValueError::new_err(format!(
-                "coeffs has length {} but basis has {} rows",
-                coeffs_vec.len(),
-                basis_words.len()
-            )));
-        }
+        check_coeffs_len(coeffs_vec.len(), basis_words.len())?;
         let protected_words: Vec<Word> = if let Some(ref p) = protected {
             decode_basis(&p.as_array(), n_q)?
         } else {
@@ -334,6 +322,7 @@ impl LindbladSpec {
         canonicalize_first = false,
         admit_basis = None,
         tau_add = None,
+        num_threads = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step_orbit_rep<'py>(
@@ -350,6 +339,7 @@ impl LindbladSpec {
         canonicalize_first: bool,
         admit_basis: Option<usize>,
         tau_add: Option<f64>,
+        num_threads: Option<usize>,
     ) -> PyResult<PyPauliMapComplex<'py>> {
         use num::Complex;
         use ppvm_lindblad::{Sector, canonicalize_basis_to_rep};
@@ -358,13 +348,7 @@ impl LindbladSpec {
         let basis_view = basis.as_array();
         let mut basis_words = decode_basis(&basis_view, n_q)?;
         let coeffs_slice = coeffs.as_slice()?;
-        if coeffs_slice.len() != basis_words.len() {
-            return Err(PyValueError::new_err(format!(
-                "coeffs has length {} but basis has {} rows",
-                coeffs_slice.len(),
-                basis_words.len()
-            )));
-        }
+        check_coeffs_len(coeffs_slice.len(), basis_words.len())?;
         let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
             .iter()
             .map(|c| Complex::new(c.re, c.im))
@@ -391,7 +375,7 @@ impl LindbladSpec {
                     admit_basis,
                     drop_tol,
                     tau_add,
-                    num_threads: None,
+                    num_threads,
                 },
             )
             .map_err(map_err)?;

@@ -1169,7 +1169,7 @@ All pairs must be in the same u64 word. This replaces N individual CZ calls
 with a single word-level shift+XOR operation per row.</p>
 <h1>Preconditions</h1>
 <p><code>offset &gt;= count</code>, i.e. the pairs have pairwise-disjoint supports (pairs
-<code>i != j</code> collide iff <code>i - j == offset</code>, which needs <code>offset &lt; count</code>, or
+<code>i != j</code> collide iff <code>|i - j| == offset</code>, which needs <code>offset &lt; count</code>, or
 <code>offset == 0</code>). Both fused updates need it: the single
 <code>count_ones() &amp; 1</code> phase reads the pre-update <code>z</code> plane for every pair at
 once (<code>Batch.lean::czSeq_phase</code> proves it equal to the sequential loop

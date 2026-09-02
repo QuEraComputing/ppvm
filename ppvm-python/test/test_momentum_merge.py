@@ -91,6 +91,32 @@ def test_momentum_merge_idempotent(k):
     assert max(abs(once.get(x, 0j) - twice.get(x, 0j)) for x in keys) < 1e-12
 
 
+@pytest.mark.xfail(
+    reason="momentum_merge rescales by |G| but the projector averages over the "
+    "|orbit| DISTINCT members, so orbits with a non-trivial stabilizer are "
+    "amplified by |G|/|orbit| on every merge. `_seed_pair` only produces free "
+    "orbits, which is why test_momentum_merge_idempotent passes.",
+    strict=True,
+)
+@pytest.mark.parametrize("word, orbit_size", [("ZZZZ", 1), ("ZIZI", 2)])
+def test_momentum_merge_idempotent_on_stabilized_orbit(word, orbit_size):
+    """Idempotency must hold for every orbit, not just the free ones.
+
+    ``ZZZZ`` is translation-invariant (orbit size 1) and ``ZIZI`` has period 2,
+    so on a 4-site chain they pick up factors of 4 and 2 per merge.
+    """
+    n = 4
+    g = TranslationGroup.chain_1d(n)
+    PA = PauliSum.new(n, [(word, 1.0)], min_abs_coeff=0.0, max_pauli_weight=n)
+    PB = PauliSum.new(n, [(word, 0.0)], min_abs_coeff=0.0, max_pauli_weight=n)
+    PA.momentum_merge(PB, g, [0])
+    once = _to_complex_dict(PA, PB)
+    PA.momentum_merge(PB, g, [0])
+    twice = _to_complex_dict(PA, PB)
+    keys = set(once) | set(twice)
+    assert max(abs(once.get(x, 0j) - twice.get(x, 0j)) for x in keys) < 1e-12
+
+
 def test_momentum_merge_projects_out_other_sectors():
     """Merging a pure sector-k operator in sector k' != k gives ~zero."""
     n = 4

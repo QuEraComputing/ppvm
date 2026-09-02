@@ -95,7 +95,7 @@ fn parse_repeat_then_following_instruction() {
 fn parse_repeat_one_line() {
     let p = parse("REPEAT 5 { H 0 }").unwrap();
     let Instruction::Repeat { count, body, .. } = &p.instructions[0] else {
-        panic!("expected Repeat, got {:?}", &p.instructions[0]);
+        panic!("expected Repeat, got {:?}", p.instructions[0]);
     };
     assert_eq!(*count, 5);
     assert_eq!(body.len(), 1);

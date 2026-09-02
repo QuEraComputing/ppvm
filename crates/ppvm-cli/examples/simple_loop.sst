@@ -1,33 +1,33 @@
 device circuit.n_qubits 1;
 
 fn @main() {
-    const.u64 0
+    cpu::cpu.const u64, 0
 
-@loop:
-    const.u64 0
-    circuit.h
-    const.u64 0
-    circuit.measure
+cpu::cpu.label @loop
+    cpu::cpu.const u64, 0
+    circuit::circuit.h
+    cpu::cpu.const u64, 0
+    circuit::circuit.measure
 
     // stop here to investigate
-    breakpoint
+    cpu::cpu.breakpoint
 
-    const.u32 1
-    eq.u32
-    cond_br @flip, @next
+    cpu::cpu.const u32, 1
+    cpu::cpu.eq u32
+    cpu::cpu.cond_br @flip, @next
 
-@flip:
-    const.u64 0
-    circuit.x
+cpu::cpu.label @flip
+    cpu::cpu.const u64, 0
+    circuit::circuit.x
 
-@next:
-    const.u64 1
-    add.u64
-    dup
-    const.u64 2
-    lt.u64
-    cond_br @loop, @done
+cpu::cpu.label @next
+    cpu::cpu.const u64, 1
+    cpu::cpu.add u64
+    cpu::cpu.dup
+    cpu::cpu.const u64, 2
+    cpu::cpu.lt u64
+    cpu::cpu.cond_br @loop, @done
 
-@done:
-    ret
+cpu::cpu.label @done
+    cpu::cpu.ret 0
 }

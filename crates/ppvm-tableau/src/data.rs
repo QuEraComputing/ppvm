@@ -1045,6 +1045,15 @@ where
         + Copy,
     I: TableauIndex + Send + Sync,
 {
+    /// Split every coefficient into a branch and non-branch term for a
+    /// single-qubit Pauli measurement/rotation, in one pass over the whole
+    /// coefficient array.
+    ///
+    /// This is a whole-batch primitive over the coefficient array — see the
+    /// crate-level "Data-parallel / GPU-offloadable surface" section. The
+    /// `#[cfg(feature = "rayon")]` path computes each entry's branch/non-branch
+    /// coefficients in parallel; only the final accumulation into the
+    /// coefficient map is sequential.
     pub(crate) fn branch_with_coefficients(
         &mut self,
         addr0: usize,
@@ -1755,7 +1764,7 @@ mod tests {
         tab.cnot(0, 1);
         tab.ry(2, 0.7); // non-Clifford: branches the coefficient vector
         assert!(
-            tab.coefficients.iter().count() > 1,
+            tab.coefficients.len() > 1,
             "rotation should branch the coefficient vector"
         );
 
@@ -1765,8 +1774,8 @@ mod tests {
             snapshot_tableau(&tab.tableau),
             snapshot_tableau(&fresh.tableau)
         );
-        let coeffs: Vec<_> = tab.coefficients.iter().copied().collect();
-        let fresh_coeffs: Vec<_> = fresh.coefficients.iter().copied().collect();
+        let coeffs: Vec<_> = tab.coefficients.to_vec();
+        let fresh_coeffs: Vec<_> = fresh.coefficients.to_vec();
         assert_eq!(coeffs, fresh_coeffs);
     }
 

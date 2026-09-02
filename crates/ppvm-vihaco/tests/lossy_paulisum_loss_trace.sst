@@ -12,17 +12,17 @@ device circuit.observable ZZ;
 // reference with the same Config/strategy, so we don't have to commit to
 // the exact loss-channel value — only that .sst and direct API agree.
 fn @main() {
-    const.u64 0
-    const.u64 1
-    circuit.cnot
+    cpu::cpu.const u64, 0
+    cpu::cpu.const u64, 1
+    circuit::circuit.cnot
 
-    const.u64 0
-    const.f64 0.3
-    circuit.loss
+    cpu::cpu.const u64, 0
+    cpu::cpu.const f64, 0.3
+    circuit::circuit.loss
 
-    circuit.truncate
+    circuit::circuit.truncate
 
-    const.str "Z?*"
-    circuit.trace
-    ret
+    cpu::cpu.const str, "Z?*"
+    circuit::circuit.trace
+    cpu::cpu.ret 0
 }

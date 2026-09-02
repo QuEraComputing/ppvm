@@ -62,7 +62,7 @@ macro_rules! create_interface_symmetry_methods {
             /// entry count by up to `|group|×` for translation-invariant
             /// operators.
             ///
-            /// See `ppvm._core.TranslationGroup` for constructors
+            /// See `ppvm.TranslationGroup` for constructors
             /// (`chain_1d`, `torus_2d`, `torus_3d`, `ladder`).
             ///
             /// Plain real-coefficient merge (the `k=0` symmetry sector).

@@ -13,10 +13,8 @@
 use std::collections::HashMap;
 
 use num::Complex;
-use numpy::{
-    Complex64, IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
-};
-use ppvm_lindblad::{JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes};
+use numpy::{Complex64, IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use ppvm_lindblad::{JumpInput, LindbladSpec as CoreSpec, Word, word_from_codes};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
@@ -27,7 +25,7 @@ type PyCoo<'py> = (
     Bound<'py, PyArray1<f64>>,
 );
 
-fn map_err(e: ppvm_lindblad::Error) -> PyErr {
+pub(crate) fn map_err(e: ppvm_lindblad::Error) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
@@ -46,29 +44,7 @@ fn assert_basis_unique(basis: &[Word]) -> PyResult<()> {
     Ok(())
 }
 
-/// Decode a `(N, n_qubits)` uint8 ndarray view into `N` packed [`Word`]s.
-pub(crate) fn decode_basis(
-    view: &numpy::ndarray::ArrayView2<u8>,
-    n_qubits: usize,
-) -> PyResult<Vec<Word>> {
-    let n_basis = view.shape()[0];
-    let n_cols = view.shape()[1];
-    if n_cols != n_qubits {
-        return Err(PyValueError::new_err(format!(
-            "basis has {n_cols} columns but spec.n_qubits = {n_qubits}"
-        )));
-    }
-    let mut out = Vec::with_capacity(n_basis);
-    let mut row_buf = vec![0u8; n_qubits];
-    for i in 0..n_basis {
-        let row = view.row(i);
-        for (q, slot) in row_buf.iter_mut().enumerate() {
-            *slot = row[q];
-        }
-        out.push(word_from_codes(&row_buf).map_err(map_err)?);
-    }
-    Ok(out)
-}
+use crate::pauli_arr::{check_coeffs_len, check_momentum_len, decode_basis, encode_basis};
 
 /// Pack `Vec<(Word, f64)>` into the standard PyO3 return shape.
 fn pack_pauli_map<'py>(
@@ -76,17 +52,8 @@ fn pack_pauli_map<'py>(
     pairs: Vec<(Word, f64)>,
     n_qubits: usize,
 ) -> PyResult<PyPauliMap<'py>> {
-    let m = pairs.len();
-    let mut basis = vec![0u8; m * n_qubits];
-    let mut coeffs = vec![0f64; m];
-    for (i, (w, c)) in pairs.into_iter().enumerate() {
-        codes_from_word(&w, &mut basis[i * n_qubits..(i + 1) * n_qubits]);
-        coeffs[i] = c;
-    }
-    let basis_arr = basis
-        .into_pyarray(py)
-        .reshape([m, n_qubits])
-        .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
+    let (words, coeffs): (Vec<Word>, Vec<f64>) = pairs.into_iter().unzip();
+    let basis_arr = encode_basis(py, &words, n_qubits)?;
     Ok((basis_arr, coeffs.into_pyarray(py)))
 }
 
@@ -178,13 +145,7 @@ impl LindbladSpec {
         let basis_view = basis.as_array();
         let basis_words = decode_basis(&basis_view, n_q)?;
         let coeffs_slice = coeffs.as_slice()?;
-        if coeffs_slice.len() != basis_words.len() {
-            return Err(PyValueError::new_err(format!(
-                "coeffs has length {} but basis has {} rows",
-                coeffs_slice.len(),
-                basis_words.len()
-            )));
-        }
+        check_coeffs_len(coeffs_slice.len(), basis_words.len())?;
         let protected_words: Vec<Word> = if let Some(ref prot) = protected {
             let pv = prot.as_array();
             decode_basis(&pv, n_q)?
@@ -414,13 +375,7 @@ impl LindbladSpec {
             Vec::new()
         };
         let k_slice = momentum.as_slice()?;
-        if k_slice.len() != group.core().n_generators() {
-            return Err(PyValueError::new_err(format!(
-                "momentum has {} entries but group has {} generators",
-                k_slice.len(),
-                group.core().n_generators()
-            )));
-        }
+        check_momentum_len(k_slice.len(), group.core().n_generators())?;
         if canonicalize_first {
             canonicalize_basis_to_rep(&mut basis_words, group.core());
         }
@@ -441,19 +396,11 @@ impl LindbladSpec {
             )
             .map_err(map_err)?;
 
-        let m = basis_words.len();
-        let mut out_basis = vec![0u8; m * n_q];
-        for (i, w) in basis_words.iter().enumerate() {
-            codes_from_word(w, &mut out_basis[i * n_q..(i + 1) * n_q]);
-        }
         let out_coeffs: Vec<Complex64> = coeffs_vec
             .iter()
             .map(|c| Complex64::new(c.re, c.im))
             .collect();
-        let basis_arr = out_basis
-            .into_pyarray(py)
-            .reshape([m, n_q])
-            .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
+        let basis_arr = encode_basis(py, &basis_words, n_q)?;
         Ok((basis_arr, out_coeffs.into_pyarray(py)))
     }
 

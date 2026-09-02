@@ -401,7 +401,7 @@ class PauliSum(
         sector only.
 
         Args:
-            group: A `ppvm._core.TranslationGroup`
+            group: A `ppvm.TranslationGroup`
                 (use ``TranslationGroup.chain_1d(n)``, ``.torus_2d``,
                 ``.torus_3d``, ``.ladder``, or ``.from_generators``).
         """
@@ -429,7 +429,7 @@ class PauliSum(
 
         Args:
             other: the PauliSum holding the imaginary component (modified in place).
-            group: a `ppvm._core.TranslationGroup`.
+            group: a `ppvm.TranslationGroup`.
             momentum: sequence of integer modes, one per group generator
                 (e.g. ``[k]`` for a 1D chain; ``[0, ...]`` is the trivial sector).
         """

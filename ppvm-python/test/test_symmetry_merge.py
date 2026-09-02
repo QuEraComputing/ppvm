@@ -12,8 +12,7 @@ for the phase-aware (``k != 0``) counterpart.
 import numpy as np
 import pytest
 
-from ppvm import PauliSum
-from ppvm._core import TranslationGroup
+from ppvm import PauliSum, TranslationGroup
 
 _CODE = {"I": 0, "X": 1, "Z": 2, "Y": 3}
 _CHAR = {v: k for k, v in _CODE.items()}

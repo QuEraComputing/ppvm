@@ -18,8 +18,7 @@ import math
 import numpy as np
 import pytest
 
-from ppvm import PauliSum
-from ppvm._core import TranslationGroup
+from ppvm import PauliSum, TranslationGroup
 
 # ── dense Pauli helpers (exact references) ───────────────────────────────────
 _I = np.eye(2, dtype=complex)

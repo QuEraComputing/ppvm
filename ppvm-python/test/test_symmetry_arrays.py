@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for the array-form symmetry primitives on the ``(basis_arr, coeffs)``
-representation used by ``Lindbladian.pc_step_arr``:
+representation used by ``Lindbladian.pc_step_arr``, as exported from the
+``ppvm`` package (thin dtype-coercing wrappers over ``ppvm._core``):
 
 - ``canonicalize_basis_arr`` — plain real merge (sums colliding coefficients)
 - ``canonicalize_basis_arr_complex`` — momentum-sector projection (averages
@@ -19,7 +20,7 @@ import cmath
 import numpy as np
 import pytest
 
-from ppvm._core import (
+from ppvm import (
     TranslationGroup,
     canonicalize_basis_arr,
     canonicalize_basis_arr_complex,
@@ -48,13 +49,36 @@ def rep_of(group, s):
 
 
 def momentum(*modes):
-    """The ``_core`` free functions take momentum as an int32 array; numpy's
-    default integer dtype is int64, which they reject."""
-    return np.array(modes, dtype=np.int32)
+    """The wrappers coerce momentum for us; most tests pass a plain tuple.
+
+    See `test_wrappers_coerce_argument_dtypes` for the coercion itself.
+    """
+    return modes
 
 
 def z_strings(n):
     return ["I" * j + "Z" + "I" * (n - j - 1) for j in range(n)]
+
+
+# ── argument coercion (the reason the wrappers exist) ────────────────────────
+def test_wrappers_coerce_argument_dtypes():
+    """The compiled entry points demand exact dtypes — uint8 basis, float64 /
+    complex128 coefficients, int32 momentum. numpy's default integer dtype is
+    int64, so an unwrapped ``np.array([0])`` momentum is rejected; the wrappers
+    accept plain Python sequences and default-dtype arrays.
+    """
+    n = 4
+    g = TranslationGroup.chain_1d(n)
+    words = z_strings(n)
+    py_basis = [[_CODE[c] for c in s] for s in words]  # list[list[int]]
+
+    real = to_dict(canonicalize_basis_arr(py_basis, [1.0] * n, g))
+    assert real == pytest.approx({rep_of(g, words[0]): float(n)})
+
+    # int64 momentum (numpy default) and a plain list of complex.
+    cx = to_dict(canonicalize_basis_arr_complex(py_basis, [1 + 0j] * n, g, np.array([0])))
+    assert len(cx) == 1
+    assert check_momentum_sector_arr(py_basis, [1 + 0j] * n, g, [0]) is None
 
 
 # ── canonicalize_basis_arr (real, k=0) ───────────────────────────────────────

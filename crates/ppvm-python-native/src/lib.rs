@@ -15,6 +15,7 @@ pub mod interface;
 pub mod interface_tableau;
 pub mod interface_tableau_sum;
 pub mod lindblad;
+pub mod pauli_arr;
 pub mod stim_program;
 pub mod symmetry;
 

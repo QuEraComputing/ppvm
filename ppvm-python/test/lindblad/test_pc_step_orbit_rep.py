@@ -20,8 +20,7 @@ import cmath
 import numpy as np
 import pytest
 
-from ppvm import Lindbladian
-from ppvm._core import TranslationGroup, canonicalize_basis_arr_complex
+from ppvm import Lindbladian, TranslationGroup, canonicalize_basis_arr_complex
 
 from ._helpers import all_strings
 
@@ -45,7 +44,9 @@ def to_dict(basis, coeffs):
 
 
 def momentum(*modes):
-    return np.array(modes, dtype=np.int32)
+    """A plain tuple: both the wrappers and `Lindbladian.pc_step_orbit_rep`
+    coerce momentum to the int32 the compiled code needs."""
+    return modes
 
 
 def xy_chain_pbc(n, gamma):

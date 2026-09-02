@@ -203,7 +203,7 @@ impl<T: Config> Tableau<T> {
     /// # Preconditions
     ///
     /// `offset >= count`, i.e. the pairs have pairwise-disjoint supports (pairs
-    /// `i != j` collide iff `i - j == offset`, which needs `offset < count`, or
+    /// `i != j` collide iff `|i - j| == offset`, which needs `offset < count`, or
     /// `offset == 0`). Both fused updates need it: the single
     /// `count_ones() & 1` phase reads the pre-update `z` plane for every pair at
     /// once (`Batch.lean::czSeq_phase` proves it equal to the sequential loop

@@ -51,6 +51,54 @@ impl TranslationGroup {
         let phase = 2.0 * PI * numerator as f64 / self.phase_modulus() as f64;
         Complex::from_polar(1.0, phase)
     }
+
+    /// Everything the phase-aware routines need about `w`'s orbit in
+    /// momentum sector `k_modes`, from ONE orbit traversal: the lex-min
+    /// representative `r`, the mixed-radix counter of the group element
+    /// mapping `r` to `w` (as [`Self::canonicalize_with_shift`]), and the
+    /// number of **distinct** orbit members `|orbit|`.
+    ///
+    /// Returns `None` when the orbit's stabilizer is incompatible with
+    /// `k_modes` — i.e. some `s` with `s·w = w` has `χ_k(s) ≠ 1`. Such an
+    /// orbit cannot carry this sector: its momentum projection is
+    /// identically zero, and the rep coefficient a single traversal would
+    /// report depends on which counter the traversal happens to pick.
+    ///
+    /// `|orbit| = |G| / |stabilizer|` (orbit-stabilizer), and equals
+    /// `|G|` only for free orbits.
+    ///
+    /// Same `O(|G| × n_qubits)` cost as [`Self::canonicalize_with_shift`].
+    pub fn canonicalize_in_sector<A, S, const R: bool>(
+        &self,
+        w: &PauliWord<A, S, R>,
+        k_modes: &[i32],
+    ) -> Option<(PauliWord<A, S, R>, Vec<u32>, usize)>
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+    {
+        let mut best: Option<(PauliWord<A, S, R>, Vec<u32>)> = None;
+        let mut stabilizer = 0usize;
+        for (candidate, counter) in self.orbit_with_counters(w) {
+            if candidate == *w {
+                if self.character_numerator(k_modes, &counter) != 0 {
+                    return None;
+                }
+                stabilizer += 1;
+            }
+            if best.as_ref().is_none_or(|(b, _)| candidate < *b) {
+                best = Some((candidate, counter));
+            }
+        }
+        let (rep, counter_from_word) = best.expect("a finite group contains the identity element");
+        let shift = (0..self.n_generators())
+            .map(|g| {
+                let order = self.generator_order(g);
+                (order - counter_from_word[g]) % order
+            })
+            .collect();
+        Some((rep, shift, self.order() / stabilizer))
+    }
 }
 
 /// Replace `(basis, complex_coeffs)` in-place with the orbit-rep form

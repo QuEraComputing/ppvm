@@ -12,7 +12,7 @@ for the phase-aware (``k != 0``) counterpart.
 import numpy as np
 import pytest
 
-from ppvm import PauliSum, TranslationGroup
+from ppvm import LossyPauliSum, PauliSum, TranslationGroup
 
 _CODE = {"I": 0, "X": 1, "Z": 2, "Y": 3}
 _CHAR = {v: k for k, v in _CODE.items()}
@@ -63,11 +63,38 @@ def test_from_generators_matches_chain_1d():
         ([[1, 0, 2]], [2], "permutation length"),
         ([[1, 0, 2, 9]], [2], "out of range"),
         ([[1, 1, 2, 3]], [2], "duplicate target"),
+        # The declared order must be the permutation's *exact* cyclic
+        # order, not a multiple of it and not zero.
+        ([[1, 2, 3, 0]], [2], "declared order 2 != exact permutation order 4"),
+        ([[1, 2, 3, 0]], [8], "declared order 8 != exact permutation order 4"),
+        ([[1, 2, 3, 0]], [0], "order must be nonzero"),
+        # Generators must commute: (0 1) and (1 2) do not.
+        ([[1, 0, 2, 3], [0, 2, 1, 3]], [2, 2], "generators 0 and 1 do not commute"),
     ],
 )
 def test_from_generators_validates(perms, orders, message):
+    """Every precondition is reported as ``ValueError``, never as a panic."""
     with pytest.raises(ValueError, match=message):
         TranslationGroup.from_generators(4, perms, orders)
+
+
+@pytest.mark.parametrize(
+    "ctor, args, message",
+    [
+        (TranslationGroup.chain_1d, (0,), "n must be positive"),
+        (TranslationGroup.torus_2d, (0, 2), "lx must be positive"),
+        (TranslationGroup.torus_2d, (2, 0), "ly must be positive"),
+        (TranslationGroup.torus_3d, (2, 0, 2), "ly must be positive"),
+        (TranslationGroup.torus_3d, (2, 2, 0), "lz must be positive"),
+        (TranslationGroup.ladder, (0, 2), "l must be positive"),
+        (TranslationGroup.ladder, (2, 0), "n_legs must be positive"),
+    ],
+)
+def test_lattice_constructors_reject_empty_extents(ctor, args, message):
+    """Degenerate lattice extents raise ``ValueError`` rather than tripping
+    the core's ``assert!`` (which would surface as a ``PanicException``)."""
+    with pytest.raises(ValueError, match=message):
+        ctor(*args)
 
 
 def test_canonicalize_is_orbit_invariant():
@@ -139,3 +166,16 @@ def test_symmetry_merge_rejects_qubit_count_mismatch():
     p = psum(4, [("ZIII", 1.0)])
     with pytest.raises(ValueError, match="4 qubits but the TranslationGroup acts on 3"):
         p.symmetry_merge(TranslationGroup.chain_1d(3))
+
+
+def test_lossy_pauli_sum_rejects_symmetry_merging():
+    """`LossyPauliSum` inherits the merge wrappers but the Rust core expands
+    them only for non-loss variants, so both must fail with a clear
+    `NotImplementedError` rather than an `AttributeError` from inside the
+    wrapper."""
+    lossy = LossyPauliSum(["ZIZI"], 4, [1.0])
+    group = TranslationGroup.chain_1d(4)
+    with pytest.raises(NotImplementedError, match="not implemented for LossyPauliSum"):
+        lossy.symmetry_merge(group)
+    with pytest.raises(NotImplementedError, match="not implemented for LossyPauliSum"):
+        lossy.momentum_merge(LossyPauliSum(["ZIZI"], 4, [1.0]), group, [0])

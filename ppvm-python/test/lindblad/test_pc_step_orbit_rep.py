@@ -144,6 +144,59 @@ def test_orbit_rep_matches_dense_full_space_then_project(k):
     assert any(abs(c) > 1e-6 for c in got.values()), "orbit-rep state decayed away"
 
 
+def test_orbit_rep_handles_stabilized_orbits():
+    """Same dense cross-check, seeded on a **stabilized** orbit.
+
+    ``ZIZI + IZIZ`` has period 2 on a 4-site chain, so its orbit has 2
+    distinct members rather than 4. The phase-aware action is naturally the
+    orbit-rep generator in the *summing* convention; converting it to the
+    *averaged* convention that ``canonicalize_basis_arr_complex`` returns
+    costs a per-orbit-pair ``|orbit_in| / |orbit_out|`` factor, which is 1
+    only when both orbits are free. Without it every coefficient here comes
+    out exactly 2x too large.
+    """
+    n = 4
+    dt = 0.05
+    n_steps = 2
+    op = xy_chain_pbc(n, gamma=0.3)
+    group = TranslationGroup.chain_1d(n)
+    k_arr = momentum(0)
+    seed_basis, seed_coeffs = basis_arr(["ZIZI", "IZIZ"], n), np.array([1.0 + 0j, 1.0 + 0j])
+
+    # --- dense full-space reference ---
+    full = all_strings(n)
+    generator = np.zeros((len(full), len(full)), dtype=float)
+    rows, cols, vals = op.generator(full)
+    generator[rows, cols] = vals
+    index = {s: i for i, s in enumerate(full)}
+    v = np.zeros(len(full), dtype=complex)
+    for w, c in zip(seed_basis, seed_coeffs, strict=True):
+        v[index[string(w)]] = c
+    step = _dense_expm(dt * generator)
+    v_re, v_im = v.real.copy(), v.imag.copy()
+    for _ in range(n_steps):
+        v_re = step @ v_re
+        v_im = step @ v_im
+    expected = to_dict(
+        *canonicalize_basis_arr_complex(basis_arr(full, n), v_re + 1j * v_im, group, k_arr)
+    )
+
+    # --- orbit-rep evolution ---
+    rep_basis, rep_coeffs = canonicalize_basis_arr_complex(seed_basis, seed_coeffs, group, k_arr)
+    assert len(rep_coeffs) == 1, "the seed is a single orbit"
+    for _ in range(n_steps):
+        rep_basis, rep_coeffs = op.pc_step_orbit_rep(
+            rep_basis, rep_coeffs, dt, 10_000_000, group, k_arr, drop_tol=0.0
+        )
+    got = to_dict(rep_basis, rep_coeffs)
+
+    for word in set(expected) | set(got):
+        e = expected.get(word, 0.0)
+        g = got.get(word, 0.0)
+        assert abs(e - g) < 1e-9, f"rep {word} dense {e} vs orbit-rep {g}"
+    assert any(abs(c) > 1e-6 for c in got.values()), "orbit-rep state decayed away"
+
+
 def test_canonicalize_first_accepts_non_canonical_input():
     """The same physical state seeded on a non-canonical orbit member gives
     the same evolution once ``canonicalize_first=True`` normalizes it."""
@@ -230,6 +283,28 @@ def test_pc_step_orbit_rep_validates_inputs():
         op.pc_step_orbit_rep(basis, coeffs, 0.01, 100, group, momentum(0, 0))
     with pytest.raises(ValueError, match="coeffs has length 2 but basis has 3 rows"):
         op.pc_step_orbit_rep(basis, coeffs[:2], 0.01, 100, group, momentum(0))
+    with pytest.raises(ValueError, match="spec has 3 qubits but the TranslationGroup acts on 4"):
+        op.pc_step_orbit_rep(basis, coeffs, 0.01, 100, TranslationGroup.chain_1d(4), momentum(0))
+
+
+def test_pc_step_orbit_rep_rejects_duplicate_reps():
+    """The step indexes the basis by Pauli word, so duplicate rows would
+    silently collapse. They are rejected — including duplicates created by
+    ``canonicalize_first``, which does not deduplicate."""
+    n = 4
+    op = xy_chain_pbc(n, gamma=0.0)
+    group = TranslationGroup.chain_1d(n)
+    coeffs = np.array([1.0 + 0j, 1.0 + 0j])
+    duplicate = basis_arr(["ZIZI", "ZIZI"], n)
+    with pytest.raises(ValueError, match="duplicate Pauli word at row 0 and row 1"):
+        op.pc_step_orbit_rep(duplicate, coeffs, 0.01, 100, group, momentum(0))
+    # "ZIZI" and "IZIZ" are distinct words on one orbit: legal as input,
+    # but canonicalize_first collapses them onto the same rep.
+    same_orbit = basis_arr(["ZIZI", "IZIZ"], n)
+    with pytest.raises(ValueError, match="duplicate Pauli word at row 0 and row 1"):
+        op.pc_step_orbit_rep(
+            same_orbit, coeffs, 0.01, 100, group, momentum(0), canonicalize_first=True
+        )
 
 
 def test_returns_complex_arrays_of_matching_shape():

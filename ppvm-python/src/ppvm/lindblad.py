@@ -316,6 +316,14 @@ class Lindbladian:
         is ~``|group|×`` smaller than the equivalent full-basis complex
         evolution, and the reduction persists across every step.
 
+        Coefficients use the same convention as
+        `ppvm.canonicalize_basis_arr_complex`: ``coeffs[i]`` is the plain
+        coefficient of the representative Pauli word itself (the
+        orbit-*averaged* convention, not the summing one
+        `PauliSum.momentum_merge` uses). Reps whose orbit cannot carry
+        ``momentum`` — its stabilizer has a non-trivial character — are
+        dropped, matching that projection.
+
         Truncation. ``max_basis`` is a hard rank cap on the live orbit-rep
         basis: enrichment adds at most ``max_basis - len(basis)`` of the
         largest leakage reps, and the post-step basis is trimmed to the

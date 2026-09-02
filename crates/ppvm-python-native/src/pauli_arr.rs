@@ -73,6 +73,19 @@ pub(crate) fn check_group_width(
     Ok(())
 }
 
+/// Check that a [`crate::symmetry::TranslationGroup`] acts on the same
+/// qubit count as the object being evolved. The core group routines
+/// assert this on the first Pauli word they see, so without this the
+/// mismatch surfaces as a panic from deep inside the step.
+pub(crate) fn check_group_qubits(n_qubits: usize, group_n_qubits: usize) -> PyResult<()> {
+    if n_qubits != group_n_qubits {
+        return Err(PyValueError::new_err(format!(
+            "spec has {n_qubits} qubits but the TranslationGroup acts on {group_n_qubits}"
+        )));
+    }
+    Ok(())
+}
+
 /// Check that a coefficient vector has one entry per basis row.
 pub(crate) fn check_coeffs_len(n_coeffs: usize, n_rows: usize) -> PyResult<()> {
     if n_coeffs != n_rows {

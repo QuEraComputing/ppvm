@@ -53,75 +53,75 @@ impl TranslationGroup {
     }
 }
 
+/// Validate lattice extents before handing them to a core constructor,
+/// which asserts these preconditions rather than reporting them. Each
+/// extent must be positive and `u32`-addressable, and the qubit count
+/// (their product) must not overflow.
+fn check_lattice(dims: &[(&str, usize)]) -> PyResult<()> {
+    let mut n_qubits = 1usize;
+    for &(name, dim) in dims {
+        if dim == 0 {
+            return Err(PyValueError::new_err(format!("{name} must be positive")));
+        }
+        n_qubits = n_qubits
+            .checked_mul(dim)
+            .ok_or_else(|| PyValueError::new_err(format!("qubit count overflows: {name}={dim}")))?;
+    }
+    u32::try_from(n_qubits - 1).map_err(|_| {
+        PyValueError::new_err(format!(
+            "qubit count {n_qubits} exceeds the u32-addressable range"
+        ))
+    })?;
+    Ok(())
+}
+
 #[pymethods]
 impl TranslationGroup {
     #[staticmethod]
-    pub fn chain_1d(n: usize) -> Self {
-        Self {
+    pub fn chain_1d(n: usize) -> PyResult<Self> {
+        check_lattice(&[("n", n)])?;
+        Ok(Self {
             inner: core_sym::TranslationGroup::chain_1d(n),
-        }
+        })
     }
 
     #[staticmethod]
-    pub fn torus_2d(lx: usize, ly: usize) -> Self {
-        Self {
+    pub fn torus_2d(lx: usize, ly: usize) -> PyResult<Self> {
+        check_lattice(&[("lx", lx), ("ly", ly)])?;
+        Ok(Self {
             inner: core_sym::TranslationGroup::torus_2d(lx, ly),
-        }
+        })
     }
 
     #[staticmethod]
-    pub fn torus_3d(lx: usize, ly: usize, lz: usize) -> Self {
-        Self {
+    pub fn torus_3d(lx: usize, ly: usize, lz: usize) -> PyResult<Self> {
+        check_lattice(&[("lx", lx), ("ly", ly), ("lz", lz)])?;
+        Ok(Self {
             inner: core_sym::TranslationGroup::torus_3d(lx, ly, lz),
-        }
+        })
     }
 
     #[staticmethod]
-    pub fn ladder(l: usize, n_legs: usize) -> Self {
-        Self {
+    pub fn ladder(l: usize, n_legs: usize) -> PyResult<Self> {
+        check_lattice(&[("l", l), ("n_legs", n_legs)])?;
+        Ok(Self {
             inner: core_sym::TranslationGroup::ladder(l, n_legs),
-        }
+        })
     }
 
+    /// Every precondition — permutation shape and validity, exact cyclic
+    /// orders, pairwise commutation — is checked by the core's fallible
+    /// constructor, so bad generators raise `ValueError` here instead of
+    /// aborting.
     #[staticmethod]
     pub fn from_generators(
         n_qubits: usize,
         perms: Vec<Vec<u32>>,
         orders: Vec<u32>,
     ) -> PyResult<Self> {
-        if perms.len() != orders.len() {
-            return Err(PyValueError::new_err(format!(
-                "perms ({} generators) and orders ({}) must have the same length",
-                perms.len(),
-                orders.len()
-            )));
-        }
-        for (g, perm) in perms.iter().enumerate() {
-            if perm.len() != n_qubits {
-                return Err(PyValueError::new_err(format!(
-                    "generator {g}: permutation length {} != n_qubits {n_qubits}",
-                    perm.len()
-                )));
-            }
-            let mut seen = vec![false; n_qubits];
-            for &p in perm {
-                let p = p as usize;
-                if p >= n_qubits {
-                    return Err(PyValueError::new_err(format!(
-                        "generator {g}: target {p} out of range [0, {n_qubits})"
-                    )));
-                }
-                if seen[p] {
-                    return Err(PyValueError::new_err(format!(
-                        "generator {g}: not a permutation (duplicate target {p})"
-                    )));
-                }
-                seen[p] = true;
-            }
-        }
-        Ok(Self {
-            inner: core_sym::TranslationGroup::from_generators(n_qubits, perms, orders),
-        })
+        let inner = core_sym::TranslationGroup::try_from_generators(n_qubits, perms, orders)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
     }
 
     /// Number of qubits this group acts on.

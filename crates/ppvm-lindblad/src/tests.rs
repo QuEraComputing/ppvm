@@ -94,68 +94,61 @@ fn word_codec_roundtrip() {
     assert_eq!(out.as_slice(), &codes);
 }
 
-/// Per-step orbit-rep evolution gives the SAME final orbit-rep
-/// state as full-basis complex evolution followed by a single
-/// projection at the end. Validates that the phase-aware complex
-/// action machinery is consistent with the full-basis reference.
-#[test]
-fn pc_step_orbit_rep_matches_full_basis_projection() {
-    use std::f64::consts::PI;
-
-    use ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex;
-    let n = 4usize;
-    let dt = 0.01f64;
-    let n_steps = 3usize;
+/// Translation-invariant XY chain with PBC on `n` sites, no dissipation.
+fn xy_chain_pbc(n: usize) -> Vec<(String, f64)> {
     let mut h_terms: Vec<(String, f64)> = Vec::new();
     for j in 0..n {
         let nxt = (j + 1) % n;
-        for op in ["X", "Y"] {
+        for op in ['X', 'Y'] {
             let mut s = vec!['I'; n];
-            s[j] = op.chars().next().unwrap();
-            s[nxt] = op.chars().next().unwrap();
+            s[j] = op;
+            s[nxt] = op;
             h_terms.push((s.into_iter().collect(), 1.0));
         }
     }
-    let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
+    h_terms
+}
+
+/// Per-step orbit-rep evolution must give the SAME final orbit-rep state
+/// as full-basis complex evolution followed by a single projection at the
+/// end (the projection theorem), for a `seed` that is a momentum-`k`
+/// eigenstate in full-basis form.
+///
+/// Both sides run untruncated: `pc_step_complex_full` admits every
+/// leakage string, and the orbit-rep side gets a huge `max_basis`, so the
+/// only remaining difference would be a bug in the phase-aware action.
+fn assert_orbit_rep_matches_projection(
+    n: usize,
+    h_terms: &[(String, f64)],
+    seed: &[(&str, Complex<f64>)],
+    k: &[i32],
+    dt: f64,
+    n_steps: usize,
+) {
+    use ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex;
+
+    let spec = LindbladSpec::new(n, h_terms, &[]).unwrap();
     let group = ppvm_pauli_sum::symmetry::TranslationGroup::chain_1d(n);
-    let k_mode: i32 = 1;
-    let k = vec![k_mode];
-
-    // Build the k=1 eigenstate in FULL basis form.
-    let basis_full: Vec<Word> = (0..n)
-        .map(|j| {
-            let mut s = vec!['I'; n];
-            s[j] = 'Z';
-            let (w, _) = parse_pauli_string(&s.into_iter().collect::<String>(), n).unwrap();
-            w
-        })
+    let basis_full: Vec<Word> = seed
+        .iter()
+        .map(|(s, _)| parse_pauli_string(s, n).unwrap().0)
         .collect();
-    let coeffs_full: Vec<Complex<f64>> = (0..n as i32)
-        .map(|a| Complex::from_polar(1.0, -2.0 * PI * (k_mode as f64) * (a as f64) / (n as f64)))
-        .collect();
+    let coeffs_full: Vec<Complex<f64>> = seed.iter().map(|(_, c)| *c).collect();
 
-    // ----- Full-basis path -----
+    // ----- Full-basis path, projected once at the end -----
     let mut bf = basis_full.clone();
     let mut cf = coeffs_full.clone();
     let protected: Vec<Word> = Vec::new();
     for _ in 0..n_steps {
-        // Full enrichment (tau_add = 0.0 adds every leakage string):
-        // for a momentum eigenstate the leakage is pure-sector, so the
-        // full-basis and orbit-rep paths build corresponding bases and
-        // the projection theorem gives an exact match. The orbit-rep
-        // side uses a large max_basis so its rank cap never binds.
         pc_step_complex_full(&spec, &mut bf, &mut cf, dt);
     }
-    // Project at the end.
-    canonicalize_pauli_sum_complex(&mut bf, &mut cf, &group, &k);
+    canonicalize_pauli_sum_complex(&mut bf, &mut cf, &group, k);
 
-    // ----- Orbit-rep path -----
-    // Initial orbit-rep form: project the full-basis input.
+    // ----- Orbit-rep path: project the seed, then evolve in rep form -----
     let mut br = basis_full.clone();
     let mut cr = coeffs_full.clone();
-    canonicalize_pauli_sum_complex(&mut br, &mut cr, &group, &k);
-    // Evolve in orbit-rep form (max_basis large ⇒ full enrichment).
-    let sector = Sector::new(&group, &k);
+    canonicalize_pauli_sum_complex(&mut br, &mut cr, &group, k);
+    let sector = Sector::new(&group, k);
     for _ in 0..n_steps {
         spec.pc_step_orbit_rep(
             &mut br,
@@ -171,7 +164,6 @@ fn pc_step_orbit_rep_matches_full_basis_projection() {
         .unwrap();
     }
 
-    // Compare.
     let mf: FxHashMap<Word, Complex<f64>> = bf.into_iter().zip(cf).collect();
     let mr: FxHashMap<Word, Complex<f64>> = br.into_iter().zip(cr).collect();
     assert_eq!(
@@ -186,13 +178,61 @@ fn pc_step_orbit_rep_matches_full_basis_projection() {
         let cf_val = mf
             .get(w)
             .copied()
-            .unwrap_or_else(|| panic!("rep {:?} in orbit-rep but not in full-basis", w));
+            .unwrap_or_else(|| panic!("rep {w} in orbit-rep but not in full-basis"));
         max_diff = max_diff.max((cm - cf_val).norm());
     }
     assert!(
         max_diff < 1e-9,
         "orbit-rep diverged from full-basis: max |Δc| = {max_diff:e}"
     );
+}
+
+/// Validates the phase-aware complex action against the full-basis
+/// reference on a `k=1` seed whose orbits are all free.
+#[test]
+fn pc_step_orbit_rep_matches_full_basis_projection() {
+    use std::f64::consts::PI;
+
+    let n = 4usize;
+    let k_mode = 1i32;
+    // `O_k = Σ_a e^{-2πi k a / n} Z_a`, a k=1 momentum eigenstate.
+    let words: Vec<String> = (0..n)
+        .map(|j| {
+            let mut s = vec!['I'; n];
+            s[j] = 'Z';
+            s.into_iter().collect()
+        })
+        .collect();
+    let seed: Vec<(&str, Complex<f64>)> = words
+        .iter()
+        .enumerate()
+        .map(|(a, s)| {
+            let phase = -2.0 * PI * (k_mode as f64) * (a as f64) / (n as f64);
+            (s.as_str(), Complex::from_polar(1.0, phase))
+        })
+        .collect();
+
+    assert_orbit_rep_matches_projection(n, &xy_chain_pbc(n), &seed, &[k_mode], 0.01, 3);
+}
+
+/// Same projection-theorem check on a seed living on a **stabilized**
+/// orbit: `ZIZI + IZIZ` has period 2 on a 4-site chain, so its orbit has
+/// 2 distinct members, not 4.
+///
+/// Regression test: the phase-aware action is the orbit-rep generator in
+/// the *summing* convention, and converting it to the *averaged*
+/// convention that `canonicalize_pauli_sum_complex` uses takes a per-
+/// orbit-pair `|orbit_in| / |orbit_out|` factor — which is 1 only when
+/// both orbits are free. Without that factor this evolves `ZIZI + IZIZ`
+/// with every coefficient off by exactly 2.
+#[test]
+fn pc_step_orbit_rep_handles_stabilized_orbits() {
+    let n = 4usize;
+    let seed = [
+        ("ZIZI", Complex::new(1.0, 0.0)),
+        ("IZIZ", Complex::new(1.0, 0.0)),
+    ];
+    assert_orbit_rep_matches_projection(n, &xy_chain_pbc(n), &seed, &[0], 0.01, 3);
 }
 
 /// The full-space complex step at momentum k=0 must reproduce the real

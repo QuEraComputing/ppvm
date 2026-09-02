@@ -241,9 +241,15 @@ impl LindbladSpec {
     ///
     /// For each input rep `r` with coefficient `c_r`, and each output `q`
     /// of `L*(r) = Σ_q v_q · q`:
-    /// 1. Canonicalize `q` → `(r_q, χ_k)` via [`Sector::canonicalize_phase`].
+    /// 1. Canonicalize `q` → `(r_q, χ_k, |orbit_q|)` via
+    ///    [`Sector::canonicalize_phase`].
     /// 2. If `r_q` NOT in `basis` and NOT in `protected`:
-    ///    `merged[r_q] += χ_k · v_q · c_r`.
+    ///    `merged[r_q] += χ_k · v_q · c_r · |orbit_r| / |orbit_q|`.
+    ///
+    /// The `|orbit_r| / |orbit_q|` factor is the convention conversion
+    /// documented on [`crate::mf_expm`]'s `build_orbit_rep_cols`, so the
+    /// admitted rates are comparable to the averaged-convention
+    /// coefficients the caller holds.
     ///
     /// Returns `(r_q, sum)` pairs for all candidates with nonzero sum.
     ///
@@ -293,12 +299,20 @@ impl LindbladSpec {
                     |(s1, s2, lm), &i| {
                         let r = &basis[i];
                         let c_r = coeffs[i];
+                        // A rep that cannot carry the sector contributes
+                        // nothing (its coefficient is identically zero).
+                        let Some(orbit_in) = sector.orbit_size(r) else {
+                            return Vec::new();
+                        };
                         let terms = self.compute_action_terms(r, s1, s2, lm);
                         let mut out = Vec::with_capacity(terms.len());
                         for (q, v) in terms.iter() {
-                            let (r_q, phase) = sector.canonicalize_phase(q);
+                            let Some((r_q, phase, orbit_out)) = sector.canonicalize_phase(q) else {
+                                continue;
+                            };
                             if !in_basis.contains(&r_q) && !protected_set.contains(&r_q) {
-                                out.push((r_q, phase * *v * c_r));
+                                let rate = phase * *v * c_r * (orbit_in as f64 / orbit_out as f64);
+                                out.push((r_q, rate));
                             }
                         }
                         out

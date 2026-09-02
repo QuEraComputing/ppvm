@@ -551,3 +551,33 @@ class LossyPauliSum(PauliSum):
                 strategy after the channel; if ``False``, defer it.
         """
         self._interface.reset_loss_channel(addr0, truncate=truncate)
+
+    def symmetry_merge(self, group: _core.TranslationGroup) -> None:
+        """Not available on `LossyPauliSum`.
+
+        Raises:
+            NotImplementedError: always. Canonicalizing a lossy Pauli word
+                would have to permute the loss bitmap along with the Pauli
+                alphabet, which the Rust core does not implement.
+        """
+        raise NotImplementedError(
+            "symmetry_merge is not implemented for LossyPauliSum: canonicalizing a "
+            "lossy Pauli word would have to permute the loss bitmap too"
+        )
+
+    def momentum_merge(
+        self,
+        other: "PauliSum",
+        group: _core.TranslationGroup,
+        momentum: Sequence[int],
+    ) -> None:
+        """Not available on `LossyPauliSum`.
+
+        Raises:
+            NotImplementedError: always, for the same reason as
+                `symmetry_merge`.
+        """
+        raise NotImplementedError(
+            "momentum_merge is not implemented for LossyPauliSum: canonicalizing a "
+            "lossy Pauli word would have to permute the loss bitmap too"
+        )

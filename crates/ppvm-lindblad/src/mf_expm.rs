@@ -92,11 +92,21 @@ fn build_mf_cols(
 /// generator `M` at momentum `sector`, plus the `(m, s)`/`μ` selection data
 /// — from ONE action pass over the basis.
 ///
-/// `cols[c]` holds `(row, χ_k(g_{cnt_q}) · v_q)` for every action output
-/// Pauli `q` of `L*(basis[c])` whose orbit rep `r_q` is in `basis` at index
-/// `row`; outputs whose rep is out of basis are dropped. This is the
-/// expensive part of the orbit-rep dynamics (`compute_action_terms`,
-/// [`Sector::canonicalize_phase`]).
+/// `cols[c]` holds `(row, χ_k(g_{cnt_q}) · v_q · |orbit_c| / |orbit_row|)`
+/// for every action output Pauli `q` of `L*(basis[c])` whose orbit rep
+/// `r_q` is in `basis` at index `row`; outputs whose rep is out of basis
+/// are dropped. This is the expensive part of the orbit-rep dynamics
+/// (`compute_action_terms`, [`Sector::canonicalize_phase`]).
+///
+/// The character-weighted sum runs over the *output* orbit's distinct
+/// members, which makes it the generator in the **summing** convention
+/// `ĉ_r = |orbit_r| · c_r`. Coefficients here are in the *averaged*
+/// convention (`c_r` = the plain coefficient of the rep word, what
+/// `canonicalize_pauli_sum_complex` produces), so each entry carries the
+/// similarity factor `|orbit_c| / |orbit_row|` that converts between
+/// them. It is 1 exactly when both orbits are free — hence the factor is
+/// invisible until an orbit has a non-trivial stabilizer, and cannot be
+/// hoisted out as a global `|G|`.
 ///
 /// Unlike [`build_mf_cols`], `per_col[c].0` sums only the retained
 /// in-basis entries — the exact column 1-norm of the restricted `M`, not an
@@ -124,14 +134,21 @@ fn build_orbit_rep_cols(
                 )
             },
             |(s1, s2, lm), (c, r)| {
+                // A rep that cannot carry the sector has coefficient zero
+                // identically, so its column is empty.
+                let Some(orbit_in) = sector.orbit_size(r) else {
+                    return (Vec::new(), (0.0, Complex::new(0.0, 0.0)));
+                };
                 let terms = spec.compute_action_terms(r, s1, s2, lm);
                 let mut out = Vec::with_capacity(terms.len());
                 let mut raw = 0.0;
                 let mut diag = Complex::new(0.0, 0.0);
                 for (q, v) in terms.iter() {
-                    let (r_q, phase) = sector.canonicalize_phase(q);
+                    let Some((r_q, phase, orbit_out)) = sector.canonicalize_phase(q) else {
+                        continue;
+                    };
                     if let Some(&row) = index.get(&r_q) {
-                        let val = phase * *v;
+                        let val = phase * *v * (orbit_in as f64 / orbit_out as f64);
                         raw += val.norm();
                         if row as usize == c {
                             diag += val;

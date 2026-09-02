@@ -72,7 +72,7 @@ mod group;
 mod merge;
 mod momentum;
 
-pub use group::TranslationGroup;
+pub use group::{GroupError, TranslationGroup};
 pub use merge::{canonicalize_pauli_sum, symmetry_merge_pauli_sum};
 pub use momentum::{
     SectorCheckError, canonicalize_pauli_sum_complex, check_momentum_sector,

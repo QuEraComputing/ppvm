@@ -44,7 +44,9 @@ fn assert_basis_unique(basis: &[Word]) -> PyResult<()> {
     Ok(())
 }
 
-use crate::pauli_arr::{check_coeffs_len, check_momentum_len, decode_basis, encode_basis};
+use crate::pauli_arr::{
+    check_coeffs_len, check_group_qubits, check_momentum_len, decode_basis, encode_basis,
+};
 
 /// Pack `Vec<(Word, f64)>` into the standard PyO3 return shape.
 fn pack_pauli_map<'py>(
@@ -360,9 +362,14 @@ impl LindbladSpec {
         };
         let k_slice = momentum.as_slice()?;
         check_momentum_len(k_slice.len(), group.core().n_generators())?;
+        check_group_qubits(n_q, group.core().n_qubits())?;
         if canonicalize_first {
             canonicalize_basis_to_rep(&mut basis_words, group.core());
         }
+        // Canonicalization can collapse several input rows onto one rep,
+        // and the step indexes the basis by Pauli word — so uniqueness is
+        // checked after the rewrite, not before.
+        assert_basis_unique(&basis_words)?;
         self.inner
             .pc_step_orbit_rep(
                 &mut basis_words,

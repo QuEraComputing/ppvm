@@ -277,7 +277,7 @@ fn bench_noise(c: &mut Criterion) {
     group.bench_function("correlated_loss_channel", |b| {
         b.iter_batched_ref(
             || tab.fork(None),
-            |t| t.correlated_loss_channel(0, 1, [0.5, 0.3, 0.2]),
+            |t| t.correlated_loss_channel(0, 1, [0.4, 0.3, 0.2]),
             criterion::BatchSize::SmallInput,
         );
     });

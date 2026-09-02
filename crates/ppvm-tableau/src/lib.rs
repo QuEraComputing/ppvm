@@ -28,6 +28,45 @@
 //! let r1 = LossyMeasure::measure(&mut tab, 1);
 //! assert_eq!(r0, r1);
 //! ```
+//!
+//! ## Data-parallel / GPU-offloadable surface
+//!
+//! A handful of primitives in this crate operate on whole contiguous arrays
+//! at once, with no per-element host closures — the shape a thread pool or a
+//! CUDA kernel would want:
+//!
+//! - Every tableau row ([`PhasedPauliWord`](ppvm_pauli_word::phase::PhasedPauliWord))
+//!   stores its Pauli word as fixed-size `bytemuck::Pod` integer bit-planes
+//!   (`xbits`/`zbits`, backed by `[u8; N]` or `[u64; N]`), reachable as
+//!   contiguous raw integer slices via `as_raw_slice`/`as_raw_mut_slice` —
+//!   plain-old-data, not a bit-addressed abstraction.
+//! - The single-gate Clifford path
+//!   (`crates/ppvm-tableau/src/gates/clifford.rs`) has one shared
+//!   implementation per gate that loops over rows operating directly on
+//!   those raw integer slices with a hoisted word-index/bit/mask, bypassing
+//!   `bitvec`'s per-bit bounds checks inside the loop. Both
+//!   [`data::Tableau`] and [`data::GeneralizedTableau`] (via the
+//!   `impl_generalized_tableau_clifford*` macros) funnel through it.
+//! - The batch path does **not** share that implementation. The
+//!   [`CliffordBatch`](ppvm_traits::traits::CliffordBatch) methods (`x_many`,
+//!   `cz_many`, …) each carry their own raw-plane loop that fuses many gates
+//!   into a single pass over the rows, and `Tableau` and
+//!   `GeneralizedTableau` have separate `CliffordBatch` impls (the latter
+//!   via the `impl_gen_tableau_batch_*` macros). Anyone porting the Clifford
+//!   layer to a thread pool or a CUDA kernel has to cover both the
+//!   single-gate implementation and these batch bodies.
+//! - The batch methods take arbitrary index lists (`&[usize]`,
+//!   `&[(usize, usize)]`). [`data::GeneralizedTableau::cz_block`] /
+//!   `cz_block_pairs` / `cz_block_pairs_cross_word` are the
+//!   contiguous-block variants: they apply CZ to a whole contiguous range
+//!   of qubits as bulk masked slice operations, which is the layout a
+//!   kernel can address without an index indirection.
+//! - `GeneralizedTableau::branch_with_coefficients` (crate-private) transforms
+//!   the whole coefficient array in one pass. Its `#[cfg(feature = "rayon")]`
+//!   path (`branch_coefficients_parallel`, gated by `RAYON_COEFF_THRESHOLD`)
+//!   computes the per-entry branch/non-branch coefficient math in parallel,
+//!   with no shared mutable state — the accumulation of those results into
+//!   the coefficient map afterwards remains sequential.
 
 /// Core [`Tableau`](data::Tableau) and
 /// [`GeneralizedTableau`](data::GeneralizedTableau) types.

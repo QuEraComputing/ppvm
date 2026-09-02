@@ -471,8 +471,12 @@ class LossyPauliSum(PauliSum):
         The channel accepts 3 probabilities as argument:
             * `p[0]`: The probability of losing both qubits, when they are originally
                 in the qubit subspace.
-            * `p[1]`: The probability of losing a single qubit, when both qubits
-                are originally in the qubit subspace.
+            * `p[1]`: The probability of losing a *named* one of the two qubits,
+                when both qubits are originally in the qubit subspace. The two
+                single-loss events are disjoint, so the probability of losing
+                **exactly one** qubit is `2 * p[1]`, and the probability that
+                both qubits remain in the qubit subspace — the factor a fully
+                in-subspace observable is scaled by — is `1 - 2 * p[1] - p[0]`.
             * `p[2]`: The probability of losing one qubit when the other one
                 has already been lost prior to applying the channel. This is to
                 account for the fact that when one qubit is missing during e.g.

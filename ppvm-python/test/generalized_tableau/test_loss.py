@@ -1,4 +1,4 @@
-from ppvm import GeneralizedTableau, StimProgram
+from ppvm import GeneralizedTableau, LossyPauliSum, StimProgram
 from ppvm.generalized_tableau import MeasurementResult
 
 
@@ -80,22 +80,25 @@ def test_correlated_loss_p0_both_lost():
 
 
 def test_correlated_loss_p1_exactly_one_lost():
-    # p[1]=1 → exactly one qubit lost in every trial.
+    # ``p[1]`` is the probability that a *named* one of the pair is lost, so
+    # P(exactly one lost) = 2 * p[1]. p[1] = 0.5 therefore loses exactly one
+    # qubit in every trial; p[1] = 1 would be inadmissible (p[0] + 2*p[1] > 1).
     for seed in range(200):
         tab = GeneralizedTableau(n_qubits=2, seed=seed)
-        tab.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0])
+        tab.correlated_loss_channel(0, 1, [0.0, 0.5, 0.0])
         assert tab.is_lost(0) ^ tab.is_lost(1), f"Expected exactly one lost qubit (seed {seed})"
 
 
 def test_correlated_loss_p1_both_qubits_chosen_equally():
-    # With p[1]=1 the 50/50 coin flip should lose addr0 and addr1 equally.
+    # With p[1]=0.5 (2*p[1] = 1) the 50/50 coin flip should lose addr0 and addr1
+    # equally.
     trials = 1000
     addr0_lost = sum(
         1
         for seed in range(trials)
         if (
             tab := GeneralizedTableau(n_qubits=2, seed=seed),
-            tab.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0]),
+            tab.correlated_loss_channel(0, 1, [0.0, 0.5, 0.0]),
             tab.is_lost(0),
         )[-1]
     )
@@ -118,11 +121,12 @@ def test_correlated_loss_both_lost_resets_to_zero():
 
 
 def test_correlated_loss_single_lost_resets_to_zero():
-    # The lost qubit should be reset to |0⟩.
+    # The lost qubit should be reset to |0⟩. p[1] = 0.5 (i.e. 2*p[1] = 1) is the
+    # admissible witness for "exactly one lost"; [0, 1, 0] is out of the region.
     for seed in range(1000):
         tab = GeneralizedTableau(n_qubits=2, seed=seed)
         tab.x(0)
-        tab.correlated_loss_channel(0, 1, [0.0, 1.0, 0.0])
+        tab.correlated_loss_channel(0, 1, [0.0, 0.5, 0.0])
         if tab.is_lost(0):
             tab.reset_loss_channel(0)
             assert tab.measure(0) == MeasurementResult.ZERO, "Lost qubit should be reset to |0⟩"
@@ -171,8 +175,10 @@ def test_correlated_loss_statistics_both():
 
 
 def test_correlated_loss_statistics_single():
-    # P(exactly one lost) should converge to p[1].
+    # ``p[1]`` is the probability that a *named* one of the pair is lost, so
+    # P(exactly one lost) should converge to 2 * p[1].
     p_single = 0.4
+    expected = 2 * p_single
     trials = 1000
     one_lost = sum(
         1
@@ -184,7 +190,39 @@ def test_correlated_loss_statistics_single():
         )[-1]
     )
     fraction = one_lost / trials
-    assert abs(fraction - p_single) < 0.08, f"Expected ~{p_single:.2f}, got {fraction:.3f}"
+    assert abs(fraction - expected) < 0.08, f"Expected ~{expected:.2f}, got {fraction:.3f}"
+
+
+def test_correlated_loss_exactly_one_lost_agrees_with_lossy_pauli_sum():
+    # ``p[1]`` is the probability that a *named* one of the pair is lost, so
+    # P(exactly one lost) = ``2 * p[1]`` on *every* backend. Reading the same
+    # number off ``LossyPauliSum`` and off ``GeneralizedTableau`` used to give
+    # answers that differed by a factor of two — that cross-backend split is the
+    # actual bug this test pins.
+    p1 = 0.3
+    p = [0.0, p1, 0.0]
+
+    # Heisenberg picture: a fully in-subspace observable is scaled by
+    # ``1 - 2 * p[1] - p[0]``, so its complement is P(exactly one lost).
+    ps = LossyPauliSum.new(n_qubits=2, terms=["ZZ"])
+    ps.correlated_loss_channel(0, 1, p)
+    pauli_sum = 1.0 - ps.overlap_with_zero()
+    assert abs(pauli_sum - 2 * p1) < 1e-9, (
+        f"LossyPauliSum P(exactly one) = {pauli_sum}, want 2 * p[1] = {2 * p1}"
+    )
+
+    # Trajectory picture: the sampled frequency of the exactly-one-lost outcome.
+    trials = 4000
+    one_lost = 0
+    for seed in range(trials):
+        tab = GeneralizedTableau(n_qubits=2, seed=seed)
+        tab.correlated_loss_channel(0, 1, p)
+        one_lost += tab.is_lost(0) ^ tab.is_lost(1)
+    trajectory = one_lost / trials
+    assert abs(trajectory - 2 * p1) < 0.04, (
+        f"GeneralizedTableau P(exactly one lost) = {trajectory:.4f}, "
+        f"want 2 * p[1] = {2 * p1} (LossyPauliSum says {pauli_sum})"
+    )
 
 
 # === AsymmetricLossChannel ===

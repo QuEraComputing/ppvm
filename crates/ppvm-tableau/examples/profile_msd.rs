@@ -60,7 +60,12 @@ fn main() {
 
         let mut tab: Tab = GeneralizedTableau::new(n_qubits, 1e-10);
         let qubit_addrs: Vec<usize> = (0..n_qubits).collect();
-        let ql: Vec<&[usize]> = qubit_addrs.chunks_exact(17).collect();
+        let ql: Vec<&[usize]> = qubit_addrs
+            .as_chunks::<17>()
+            .0
+            .iter()
+            .map(|chunk| &chunk[..])
+            .collect();
 
         // Phase 1: Encoding (H + T + encode per block)
         let t0 = Instant::now();

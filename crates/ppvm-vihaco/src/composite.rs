@@ -5,8 +5,8 @@ use eyre::{Result, eyre};
 use vihaco::frame::Frame;
 use vihaco::machine::StackFrame;
 use vihaco::observer::stdio::{StdoutEffect, StdoutObserver};
-use vihaco::traits::{GetProgramGlobal, ProgramCounter, StackMemory};
-use vihaco::{Effects, Observe, ProgramLoader, Value, composite, observe};
+use vihaco::traits::{GetProgramInfo, ProgramCounter, StackMemory};
+use vihaco::{Effects, NoContext, Observe, ProgramImage, Type, Value, composite, observe};
 use vihaco_cpu::{CPU, CPUMessage};
 
 /// Re-exported so consumers (e.g. the CLI debugger) can match on step results
@@ -27,13 +27,12 @@ use vihaco_circuit_isa::{CircuitEffect, CircuitInstruction, CircuitMessage};
 // existing `crate::composite::{…}` paths keep resolving.
 pub use crate::device_info::{BackendKind, PPVM_MAGIC, PPVMDeviceInfo};
 
-pub type Instruction = PPVMInstruction;
+pub type PPVMInstruction = ppvm::runtime::Instruction;
 
 #[composite]
 #[derive(Default)]
 pub struct PPVM {
-    #[program]
-    loader: ProgramLoader<PPVMInstruction, PPVMDeviceInfo>,
+    loader: ProgramImage<PPVMInstruction, NoContext, Value, Type, PPVMDeviceInfo>,
 
     #[device(0x00)]
     cpu: CPU,
@@ -47,6 +46,8 @@ pub struct PPVM {
 
     trace_record: TraceObserver,
 }
+
+pub(crate) use self::ppvm as ppvm_module;
 
 #[derive(Debug, Clone)]
 pub enum PPVMEffect {
@@ -137,8 +138,8 @@ impl PartialEq for PPVMInstruction {
     }
 }
 
-impl From<vihaco_cpu::Instruction> for PPVMInstruction {
-    fn from(value: vihaco_cpu::Instruction) -> Self {
+impl From<vihaco_cpu::RuntimeInstruction> for PPVMInstruction {
+    fn from(value: vihaco_cpu::RuntimeInstruction) -> Self {
         Self::Cpu(value)
     }
 }
@@ -150,9 +151,9 @@ impl From<CircuitInstruction> for PPVMInstruction {
 }
 
 impl PPVM {
-    fn resolve_cpu(&mut self, inst: &vihaco_cpu::Instruction) -> eyre::Result<CPUMessage> {
+    fn resolve_cpu(&mut self, inst: &vihaco_cpu::RuntimeInstruction) -> eyre::Result<CPUMessage> {
         match inst {
-            vihaco_cpu::Instruction::IndirectCall => {
+            vihaco_cpu::RuntimeInstruction::IndirectCall => {
                 let function_id: u32 = self.cpu.stack_top()?.get_function_ref()?;
                 let function = self.loader.get_function(function_id as usize)?;
                 Ok(CPUMessage::FunctionInfo {
@@ -160,7 +161,7 @@ impl PPVM {
                     start_address: function.start_address,
                 })
             }
-            vihaco_cpu::Instruction::Print => {
+            vihaco_cpu::RuntimeInstruction::Print => {
                 let value = *self.cpu.stack_top()?;
                 match value {
                     vihaco::Value::String(addr) => {
@@ -310,14 +311,19 @@ impl PPVM {
 
     pub fn load(
         &mut self,
-        module: &vihaco::module::Module<Instruction, vihaco::Value, vihaco::Type, PPVMDeviceInfo>,
+        module: &vihaco::module::LocalModule<
+            PPVMInstruction,
+            vihaco::Value,
+            vihaco::Type,
+            PPVMDeviceInfo,
+        >,
     ) -> eyre::Result<()> {
         self.loader.module = module.clone();
         Ok(())
     }
 
     pub fn step_once(&mut self) -> eyre::Result<StepOutcome> {
-        let inst = self.peek_instruction()?.clone();
+        let inst = self.loader.peek_instruction()?.clone();
         let effects = self.execute_effects(inst)?;
         self.continue_effects(effects)
     }
@@ -330,7 +336,7 @@ impl PPVM {
     /// The next instruction to execute, or `None` once execution has run off
     /// the end of the code. Intended for debuggers/inspection.
     pub fn current_instruction(&self) -> Option<PPVMInstruction> {
-        self.peek_instruction().ok().cloned()
+        self.loader.peek_instruction().ok().cloned()
     }
 
     /// Append one REPL command's lowered VM ops and run just that block against
@@ -358,7 +364,7 @@ impl PPVM {
     /// `n_qubits` is zero (a device must have at least one qubit).
     pub fn with_qubits(n_qubits: usize) -> eyre::Result<Self> {
         let mut machine = Self::default();
-        let mut module = vihaco::module::Module::<
+        let mut module = vihaco::module::LocalModule::<
             PPVMInstruction,
             Value,
             vihaco::Type,
@@ -390,12 +396,14 @@ impl PPVM {
 
         let mut instrs = Vec::with_capacity(qubits.len() + params.len() + 1);
         for &q in qubits {
-            instrs.push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+            instrs.push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::U64,
                 Value::U64(q as u64),
             )));
         }
         for &p in params {
-            instrs.push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+            instrs.push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::F64,
                 Value::F64(p),
             )));
         }
@@ -414,22 +422,23 @@ impl PPVM {
         result
     }
 
-    fn execute_effects(&mut self, inst: Instruction) -> eyre::Result<Effects<PPVMEffect>> {
+    fn execute_effects(&mut self, inst: PPVMInstruction) -> eyre::Result<Effects<PPVMEffect>> {
         log::debug!("exec inst: {:?}, stack: {:?}", inst, self.cpu.stack());
         match inst {
             PPVMInstruction::Cpu(cpu_inst) => {
                 let msg = self.resolve_cpu(&cpu_inst)?;
                 self.cpu.set_current_pc(self.loader.pc());
                 let stdout_effect = match (&cpu_inst, &msg) {
-                    (vihaco_cpu::Instruction::Print, vihaco_cpu::CPUMessage::Print(text)) => {
-                        Some(PPVMEffect::Stdout(StdoutEffect(text.clone())))
-                    }
+                    (
+                        vihaco_cpu::RuntimeInstruction::Print,
+                        vihaco_cpu::CPUMessage::Print(text),
+                    ) => Some(PPVMEffect::Stdout(StdoutEffect(text.clone()))),
                     _ => None,
                 };
                 let outcome = vihaco::expect_exactly_one_effect(
                     vihaco::GeneratedComponent::execute_generated(&mut self.cpu, cpu_inst, msg)?,
                 )?;
-                // Advance past a breakpoint as well, so the debugger that paused
+                // Advance past a cpu::cpu.breakpoint as well, so the debugger that paused
                 // on it doesn't re-hit the same instruction on the next step.
                 if matches!(outcome, StepOutcome::Continue | StepOutcome::Breakpoint) {
                     if let Some(target) = self.cpu.take_pending_pc() {
@@ -627,30 +636,37 @@ fn parse_observable_terms(info: &PPVMDeviceInfo) -> Result<Vec<(String, f64)>> {
 
 #[cfg(test)]
 mod tests {
-    use vihaco::{Type, Value, module::Module};
+    use vihaco::{Type, Value, module::LocalModule};
 
     use super::*;
 
     #[test]
     fn test_run_ppvm() -> eyre::Result<()> {
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
 
         module.extra.n_qubits = 2;
 
         /*
-        const.u64 0
-        circuit.h
+        cpu::cpu.const u64, 0
+        circuit::circuit.h
         */
-        let zero = PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(0)));
-        let one = PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(1)));
+        let zero = PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+            Type::U64,
+            Value::U64(0),
+        ));
+        let one = PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+            Type::U64,
+            Value::U64(1),
+        ));
         module.code.push(zero.clone());
         module
             .code
             .push(PPVMInstruction::Circuit(CircuitInstruction::H));
 
         /*
-        const.u64 0
-        circuit.t
+        cpu::cpu.const u64, 0
+        circuit::circuit.t
         */
 
         module.code.push(zero.clone());
@@ -659,9 +675,9 @@ mod tests {
             .push(PPVMInstruction::Circuit(CircuitInstruction::T));
 
         /*
-        const.u64 0
-        const.u64 1
-        circuit.cnot
+        cpu::cpu.const u64, 0
+        cpu::cpu.const u64, 1
+        circuit::circuit.cnot
         */
         module.code.push(zero.clone());
         module.code.push(one.clone());
@@ -721,19 +737,21 @@ mod tests {
         //
         //     fn @main() { ...5-qubit GHZ + 5 measurements... }
 
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
 
         module.extra.n_qubits = 5;
         module.extra.coefficient_threshold = 1e-10;
 
         // 5-qubit GHZ: H on q0, then CNOT(q_i, q_{i+1}) for i = 0..4.
         /*
-        const.u64 0
-        circuit.h
+        cpu::cpu.const u64, 0
+        circuit::circuit.h
         */
         module
             .code
-            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+            .push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::U64,
                 Value::U64(0),
             )));
         module
@@ -742,18 +760,20 @@ mod tests {
 
         for i in 0..4u64 {
             /*
-            const.u64 i
-            const.u64 i+1
-            circuit.cnot
+            cpu::cpu.const u64, i
+            cpu::cpu.const u64, i+1
+            circuit::circuit.cnot
             */
             module
                 .code
-                .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                .push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                    Type::U64,
                     Value::U64(i),
                 )));
             module
                 .code
-                .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                .push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                    Type::U64,
                     Value::U64(i + 1),
                 )));
             module
@@ -764,12 +784,13 @@ mod tests {
         // Measure all 5 qubits.
         for q in 0..5u64 {
             /*
-            const.u64 q
-            circuit.measure
+            cpu::cpu.const u64, q
+            circuit::circuit.measure
             */
             module
                 .code
-                .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+                .push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                    Type::U64,
                     Value::U64(q),
                 )));
             module
@@ -797,7 +818,8 @@ mod tests {
 
         // A 1-qubit device with no code; the REPL builds up instructions
         // incrementally, one command at a time, rather than loading a program.
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
 
         let mut machine = PPVM::default();
@@ -806,7 +828,10 @@ mod tests {
 
         // First command: X on q0 (|0> -> |1>).
         let x = [
-            PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(0))),
+            PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::U64,
+                Value::U64(0),
+            )),
             PPVMInstruction::Circuit(CircuitInstruction::X),
         ];
         machine.execute_single_instruction(&x)?;
@@ -816,7 +841,10 @@ mod tests {
         // Second command: measure q0. The X from the first command must persist,
         // so the outcome is deterministically |1>.
         let measure = [
-            PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(0))),
+            PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::U64,
+                Value::U64(0),
+            )),
             PPVMInstruction::Circuit(CircuitInstruction::Measure),
         ];
         machine.execute_single_instruction(&measure)?;
@@ -836,14 +864,15 @@ mod tests {
         // NOTE: an out-of-range qubit index (>= n_qubits) currently *panics* in
         // the tableau rather than erroring, so the REPL command layer must
         // bounds-check qubit indices before calling `execute`.
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
 
         let mut machine = PPVM::default();
         machine.load(&module)?;
         machine.init()?;
 
-        // `circuit.h` with nothing on the stack: `pop_u64` fails.
+        // `circuit::circuit.h` with nothing on the stack: `pop_u64` fails.
         let missing_operand = [PPVMInstruction::Circuit(CircuitInstruction::H)];
         assert!(
             machine
@@ -855,7 +884,7 @@ mod tests {
 
     #[test]
     fn state_string_renders_a_small_device() -> eyre::Result<()> {
-        let source = "device circuit.n_qubits 2;\nfn @main() { ret }\n";
+        let source = "device circuit.n_qubits 2;\nfn @main() { cpu::cpu.ret 0 }\n";
         let mut machine = PPVM::default();
         machine.load_program(source)?;
         machine.init()?;
@@ -876,7 +905,8 @@ mod tests {
         // floats) and popped in reverse. So every two-qubit circuit must read q0 as
         // the first operand pushed, consistently, with or without trailing
         // floats. (CNOT already obeyed this; the float-carrying arms did not.)
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 8;
         let mut machine = PPVM::default();
         machine.load(&module)?;
@@ -950,15 +980,15 @@ mod tests {
         let source = "device circuit.n_qubits 2;\n\
                       device circuit.coefficient_threshold 1e-8;\n\
                       fn @main() {\n\
-                          const.u64 0\n\
-                          circuit.h\n\
-                          ret\n\
+                          cpu::cpu.const u64, 0\n\
+                          circuit::circuit.h\n\
+                          cpu::cpu.ret 0\n\
                       }\n";
         let mut machine = PPVM::default();
         machine.load_program(source)?;
         assert_eq!(machine.loader.module.extra.n_qubits, 2);
         assert_eq!(machine.loader.module.extra.coefficient_threshold, 1e-8);
-        // const.u64 0 / circuit.h / ret = 3
+        // cpu::cpu.const u64, 0 / circuit::circuit.h / ret = 3
         assert_eq!(machine.loader.module.code.len(), 3);
         Ok(())
     }
@@ -967,16 +997,16 @@ mod tests {
     fn run_program_executes_bell_circuit() -> eyre::Result<()> {
         let source = "device circuit.n_qubits 2;\n\
                       fn @main() {\n\
-                          const.u64 0\n\
-                          circuit.h\n\
-                          const.u64 0\n\
-                          const.u64 1\n\
-                          circuit.cnot\n\
-                          const.u64 0\n\
-                          circuit.measure\n\
-                          const.u64 1\n\
-                          circuit.measure\n\
-                          ret\n\
+                          cpu::cpu.const u64, 0\n\
+                          circuit::circuit.h\n\
+                          cpu::cpu.const u64, 0\n\
+                          cpu::cpu.const u64, 1\n\
+                          circuit::circuit.cnot\n\
+                          cpu::cpu.const u64, 0\n\
+                          circuit::circuit.measure\n\
+                          cpu::cpu.const u64, 1\n\
+                          circuit::circuit.measure\n\
+                          cpu::cpu.ret 0\n\
                       }\n";
         let mut machine = PPVM::default();
         machine.run_program(source)?;
@@ -991,16 +1021,16 @@ mod tests {
 
         let source = "device circuit.n_qubits 2;\n\
                       fn @main() {\n\
-                          const.u64 0\n\
-                          circuit.h\n\
-                          const.u64 0\n\
-                          const.u64 1\n\
-                          circuit.cnot\n\
-                          const.u64 0\n\
-                          circuit.measure\n\
-                          const.u64 1\n\
-                          circuit.measure\n\
-                          ret\n\
+                          cpu::cpu.const u64, 0\n\
+                          circuit::circuit.h\n\
+                          cpu::cpu.const u64, 0\n\
+                          cpu::cpu.const u64, 1\n\
+                          circuit::circuit.cnot\n\
+                          cpu::cpu.const u64, 0\n\
+                          circuit::circuit.measure\n\
+                          cpu::cpu.const u64, 1\n\
+                          circuit::circuit.measure\n\
+                          cpu::cpu.ret 0\n\
                       }\n";
         let mut machine = PPVM::default();
         machine.run_program(source)?;
@@ -1019,7 +1049,7 @@ mod tests {
 
     #[test]
     fn init_fails_when_n_qubits_undeclared() -> eyre::Result<()> {
-        let source = "fn @main() { ret }\n";
+        let source = "fn @main() { cpu::cpu.ret 0 }\n";
         let mut machine = PPVM::default();
         machine.load_program(source)?;
         let err = machine.init().unwrap_err();
@@ -1031,13 +1061,14 @@ mod tests {
     fn run_program_reports_parse_errors() {
         let source = "device circuit.n_qubits 2;\n\
                       fn @main() {\n\
-                          circuit.not_a_real_gate\n\
-                          ret\n\
+                          circuit::circuit.not_a_real_gate\n\
+                          cpu::cpu.ret 0\n\
                       }\n";
         let mut machine = PPVM::default();
         let err = machine.run_program(source).unwrap_err();
         assert!(
             err.to_string().contains("parsing failed")
+                || err.to_string().contains("parsing functions failed")
                 || err.to_string().contains("unhandled raw form"),
             "err: {err}"
         );
@@ -1045,25 +1076,25 @@ mod tests {
 
     // ─── Breakpoints ──────────────────────────────────────────────────────
 
-    /// Bell circuit with a `breakpoint` between the two measurements.
+    /// Bell circuit with a `cpu::cpu.breakpoint` between the two measurements.
     const BREAKPOINT_PROGRAM: &str = "device circuit.n_qubits 2;\n\
                                       fn @main() {\n\
-                                          const.u64 0\n\
-                                          circuit.h\n\
-                                          const.u64 0\n\
-                                          const.u64 1\n\
-                                          circuit.cnot\n\
-                                          const.u64 0\n\
-                                          circuit.measure\n\
-                                          breakpoint\n\
-                                          const.u64 1\n\
-                                          circuit.measure\n\
-                                          ret\n\
+                                          cpu::cpu.const u64, 0\n\
+                                          circuit::circuit.h\n\
+                                          cpu::cpu.const u64, 0\n\
+                                          cpu::cpu.const u64, 1\n\
+                                          circuit::circuit.cnot\n\
+                                          cpu::cpu.const u64, 0\n\
+                                          circuit::circuit.measure\n\
+                                          cpu::cpu.breakpoint\n\
+                                          cpu::cpu.const u64, 1\n\
+                                          circuit::circuit.measure\n\
+                                          cpu::cpu.ret 0\n\
                                       }\n";
 
     #[test]
     fn run_ignores_breakpoints() -> eyre::Result<()> {
-        // A batch run must execute straight through the breakpoint and record
+        // A batch run must execute straight through the cpu::cpu.breakpoint and record
         // both measurements, exactly as if it weren't there.
         let mut machine = PPVM::default();
         machine.run_program(BREAKPOINT_PROGRAM)?;
@@ -1077,7 +1108,7 @@ mod tests {
         machine.load_program(BREAKPOINT_PROGRAM)?;
         machine.init()?;
 
-        // Step until the breakpoint pauses us.
+        // Step until the cpu::cpu.breakpoint pauses us.
         let mut outcome = StepOutcome::Continue;
         for _ in 0..machine.loader.module.code.len() {
             outcome = machine.step_once()?;
@@ -1085,16 +1116,20 @@ mod tests {
                 break;
             }
         }
-        assert_eq!(outcome, StepOutcome::Breakpoint, "breakpoint should pause");
+        assert_eq!(
+            outcome,
+            StepOutcome::Breakpoint,
+            "cpu::cpu.breakpoint should pause"
+        );
         let pc_at_break = machine.current_pc();
 
         // Stepping again must make progress (advance the pc) rather than
-        // re-hitting the same breakpoint instruction.
+        // re-hitting the same cpu::cpu.breakpoint instruction.
         let next = machine.step_once()?;
         assert_ne!(
             next,
             StepOutcome::Breakpoint,
-            "must move past the breakpoint"
+            "must move past the cpu::cpu.breakpoint"
         );
         assert!(machine.current_pc() > pc_at_break, "pc must advance");
 
@@ -1103,10 +1138,11 @@ mod tests {
 
     #[test]
     fn paulisum_truncate_runs_without_error() -> eyre::Result<()> {
-        // Smoke test: a `circuit.truncate` reaches the PauliSum executor's
+        // Smoke test: a `circuit::circuit.truncate` reaches the PauliSum executor's
         // Truncate arm and calls `state.truncate()`. Task 8 makes the
         // observable mandatory for PauliSum init, so seed `Z` here.
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::PauliSum;
         module.extra.observable = Some("Z".to_string());
@@ -1126,7 +1162,8 @@ mod tests {
         // End-to-end Trace pipeline: with the observable `Z` seeded (Task 8),
         // tracing the `Z0` pattern picks up that one term with coefficient
         // 1.0, so the trace should be exactly 1.0.
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::PauliSum;
         module.extra.observable = Some("Z".to_string());
@@ -1135,7 +1172,8 @@ mod tests {
 
         module
             .code
-            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+            .push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::String,
                 Value::String(0),
             )));
         module
@@ -1158,7 +1196,8 @@ mod tests {
         // Task 11: a sum-valued observable seeds every term. With
         // `"ZZ + 0.5*XX"` the state holds `1.0 * ZZ + 0.5 * XX`; tracing
         // `[XZ]0[XZ]1` matches both words and returns 1.0 + 0.5 = 1.5.
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 2;
         module.extra.backend = BackendKind::PauliSum;
         module.extra.observable = Some("ZZ + 0.5*XX".to_string());
@@ -1166,7 +1205,8 @@ mod tests {
 
         module
             .code
-            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+            .push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::String,
                 Value::String(0),
             )));
         module
@@ -1187,7 +1227,8 @@ mod tests {
     #[test]
     fn paulisum_init_rejects_missing_observable() {
         // Task 8 requires `device circuit.observable` for PauliSum / Lossy.
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::PauliSum;
 
@@ -1202,7 +1243,8 @@ mod tests {
 
     #[test]
     fn paulisum_init_rejects_mismatched_observable_length() {
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 2;
         module.extra.backend = BackendKind::PauliSum;
         // Three letters but only two qubits — should error.
@@ -1219,10 +1261,11 @@ mod tests {
 
     #[test]
     fn tableau_truncate_is_silent_no_op() -> eyre::Result<()> {
-        // Task 9: `circuit.truncate` on the default Tableau backend should run
+        // Task 9: `circuit::circuit.truncate` on the default Tableau backend should run
         // without error — the tableau prunes via coefficient_threshold during
         // every gate, so the explicit Truncate instruction has nothing to do.
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         // backend defaults to Tableau; no observable needed.
         module
@@ -1243,14 +1286,14 @@ mod tests {
     fn apply_circuit_instruction_preserves_pc_and_code_len() -> eyre::Result<()> {
         use crate::measurements::MeasurementOutcome;
 
-        // breakpoint; then measure q0. Step to the breakpoint, inject X, resume.
+        // cpu::cpu.breakpoint; then measure q0. Step to the cpu::cpu.breakpoint, inject X, resume.
         let src = "device circuit.n_qubits 1;\n\
-                   fn @main() { breakpoint\n const.u64 0\n circuit.measure\n ret }\n";
+                   fn @main() { cpu::cpu.breakpoint\n cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
         let mut m = PPVM::default();
         m.load_program(src)?;
         m.init()?;
 
-        // Run until the breakpoint pauses us.
+        // Run until the cpu::cpu.breakpoint pauses us.
         loop {
             if m.step_once()? == StepOutcome::Breakpoint {
                 break;
@@ -1289,7 +1332,7 @@ mod tests {
         // A program stepped to a known pc; an injected gate that errors mid-block
         // must NOT corrupt the code vector or the program counter.
         let src = "device circuit.n_qubits 1;\n\
-                   fn @main() { breakpoint\n const.u64 0\n circuit.measure\n ret }\n";
+                   fn @main() { cpu::cpu.breakpoint\n cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
         let mut m = PPVM::default();
         m.load_program(src)?;
         m.init()?;
@@ -1324,7 +1367,7 @@ mod tests {
 
     #[test]
     fn apply_circuit_instruction_measurement_does_not_grow_the_stack() -> eyre::Result<()> {
-        // `circuit.measure` pushes its outcome onto the CPU operand stack for
+        // `circuit::circuit.measure` pushes its outcome onto the CPU operand stack for
         // bytecode to consume. An injected measurement has no such consumer, so
         // that push must be rolled back: otherwise a paused program resumes with
         // a stray operand, and a REPL session's stack grows without bound.
@@ -1343,16 +1386,18 @@ mod tests {
 
     #[test]
     fn tableau_trace_emits_expectation_on_zero_state() {
-        // Task 16: `circuit.trace` on the Tableau backend now computes
+        // Task 16: `circuit::circuit.trace` on the Tableau backend now computes
         // Σ_{P matches pat} ⟨ψ|P|ψ⟩ via `GeneralizedTableau::trace`. On the
         // freshly-initialized |0⟩ state, pattern `Z0` matches the single
         // Pauli Z and ⟨0|Z|0⟩ = 1, so the trace_record gets one entry: 1.0.
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.strings.push("Z0".to_string());
         module
             .code
-            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+            .push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::String,
                 Value::String(0),
             )));
         module
@@ -1363,7 +1408,7 @@ mod tests {
         machine.load(&module).unwrap();
         machine.init().unwrap();
         machine.step_once().unwrap(); // const.string
-        machine.step_once().unwrap(); // circuit.trace
+        machine.step_once().unwrap(); // circuit::circuit.trace
         let trace = machine.trace_record();
         assert_eq!(trace.len(), 1);
         assert!(
@@ -1380,14 +1425,16 @@ mod tests {
         // Seed the observable `Z` (PauliSum backend), then apply H(0), which
         // conjugates Z -> X in the Heisenberg picture and changes the state.
         // reset() must rebuild the state from the seeded observable.
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::PauliSum;
         module.extra.observable = Some("Z".to_string());
 
         module
             .code
-            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+            .push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::U64,
                 Value::U64(0),
             )));
         module
@@ -1423,14 +1470,16 @@ mod tests {
 
         // Same as `paulisum_reset_restores_seeded_observable`, but through the
         // LossyPauliSum dispatch path.
-        let mut module: Module<PPVMInstruction, Value, Type, PPVMDeviceInfo> = Module::default();
+        let mut module: LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo> =
+            LocalModule::default();
         module.extra.n_qubits = 1;
         module.extra.backend = BackendKind::LossyPauliSum;
         module.extra.observable = Some("Z".to_string());
 
         module
             .code
-            .push(PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(
+            .push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
+                Type::U64,
                 Value::U64(0),
             )));
         module

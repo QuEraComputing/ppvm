@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use crate::ast::shared::{AnnotationOp, Axis, GateOp, MeasureOp, MppOp, NoiseOp, Tag};
+use crate::ast::shared::{AnnotationOp, Axis, GateOp, MeasureOp, MppOp, NoiseOp};
 use crate::diagnostics::{LineMap, Span};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,12 +51,13 @@ pub enum ExtendedInstruction {
         span: Span,
     },
     MPad {
-        tags: Vec<Tag>,
+        tag: String,
         prob: Option<f64>,
         bits: Vec<bool>,
         span: Span,
     },
     Repeat {
+        tag: String,
         count: u64,
         body: Vec<ExtendedInstruction>,
         span: Span,
@@ -167,13 +168,14 @@ mod tests {
     fn measurement_count_scales_with_repeat() {
         let m = ExtendedInstruction::Measure(MeasureOp {
             name: MeasureName::M,
-            tags: vec![],
+            tag: String::new(),
             args: vec![],
             targets: vec![0, 1],
             span: span(),
         });
         let prog = ExtendedProgram {
             instructions: vec![ExtendedInstruction::Repeat {
+                tag: String::new(),
                 count: 3,
                 body: vec![m],
                 span: span(),
@@ -190,14 +192,14 @@ mod tests {
             instructions: vec![
                 ExtendedInstruction::Gate(GateOp {
                     name: GateName::H,
-                    tags: vec![],
+                    tag: String::new(),
                     args: vec![],
                     targets: vec![Target::Qubit(0), Target::Qubit(4)],
                     span: span(),
                 }),
                 ExtendedInstruction::Measure(MeasureOp {
                     name: MeasureName::M,
-                    tags: vec![],
+                    tag: String::new(),
                     args: vec![],
                     targets: vec![2],
                     span: span(),
@@ -212,10 +214,11 @@ mod tests {
     fn num_qubits_recurses_into_repeat() {
         let prog = ExtendedProgram {
             instructions: vec![ExtendedInstruction::Repeat {
+                tag: String::new(),
                 count: 3,
                 body: vec![ExtendedInstruction::Measure(MeasureOp {
                     name: MeasureName::M,
-                    tags: vec![],
+                    tag: String::new(),
                     args: vec![],
                     targets: vec![7],
                     span: span(),
@@ -241,7 +244,7 @@ mod tests {
     fn gate_op_is_shared_with_vanilla() {
         let _ = ExtendedInstruction::Gate(GateOp {
             name: GateName::H,
-            tags: vec![],
+            tag: String::new(),
             args: vec![],
             targets: vec![],
             span: span(),

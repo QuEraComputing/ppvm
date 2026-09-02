@@ -57,7 +57,7 @@ fn generalized_tableau() {
     assert_eq!(tableau.coefficients.len(), 2);
 
     let mut sorted_coefficients = tableau.coefficients.clone();
-    sorted_coefficients.sort_by(|entry1, entry2| entry1.1.cmp(&entry2.1));
+    sorted_coefficients.sort_by_key(|entry| entry.1);
 
     const PI: f64 = std::f64::consts::PI;
     let cos_pi_8: f64 = (PI / 8.0).cos();
@@ -94,7 +94,7 @@ fn test_generalized_tableau_phase() {
     tableau.t(0);
 
     let mut sorted_coefficients = tableau.coefficients.clone();
-    sorted_coefficients.sort_by(|entry1, entry2| entry1.1.cmp(&entry2.1));
+    sorted_coefficients.sort_by_key(|entry| entry.1);
 
     let expected_coefficients = [Complex { re: 0.5, im: 0.5 }, Complex { re: 0.5, im: -0.5 }];
 
@@ -116,7 +116,7 @@ fn test_generalized_tableau_phase() {
     tableau.t(0);
 
     let mut sorted_coefficients = tableau.coefficients.clone();
-    sorted_coefficients.sort_by(|entry1, entry2| entry1.1.cmp(&entry2.1));
+    sorted_coefficients.sort_by_key(|entry| entry.1);
 
     let expected_coefficients = [
         Complex {
@@ -377,7 +377,7 @@ fn test_two_t_gates_coefficients() {
     assert_eq!(tableau.coefficients.len(), 2);
 
     let mut sorted = tableau.coefficients.clone();
-    sorted.sort_by(|a, b| a.1.cmp(&b.1));
+    sorted.sort_by_key(|entry| entry.1);
 
     // Expected: TT|+⟩ represented as two branches with these coefficients
     let expected = [Complex { re: 0.5, im: 0.5 }, Complex { re: 0.5, im: -0.5 }];

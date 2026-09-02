@@ -7,20 +7,19 @@
 
 use chumsky::span::SimpleSpan;
 
-use crate::ast::shared::Tag;
-
 pub(crate) type RawSyntaxTree = Vec<RawSyntaxNode>;
 
 #[derive(Debug, Clone)]
 pub(crate) enum RawSyntaxNode {
     Instruction {
         name: String,
-        tags: Vec<Tag>,
+        tag: String,
         args: Vec<f64>,
         targets: Vec<RawTarget>,
         span: SimpleSpan<usize>,
     },
     Repeat {
+        tag: String,
         count: u64,
         body: Vec<RawSyntaxNode>,
         span: SimpleSpan<usize>,

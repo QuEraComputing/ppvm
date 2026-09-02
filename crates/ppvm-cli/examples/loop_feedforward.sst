@@ -8,37 +8,37 @@ device circuit.n_qubits 2;
 // prints 4 bits: q0_round1 q0_round2 q0_round3 q1.
 fn @main() {
     // Loop counter starts at 0 and lives on the bottom of the stack.
-    const.u64 0
+    cpu::cpu.const u64, 0
 
-@loop:
+cpu::cpu.label @loop
     // Flip a fair coin: H then measure q0 (pushes outcome 0/1 as u32).
-    const.u64 0
-    circuit.h
-    const.u64 0
-    circuit.measure
+    cpu::cpu.const u64, 0
+    circuit::circuit.h
+    cpu::cpu.const u64, 0
+    circuit::circuit.measure
 
     // Feed-forward: if the outcome was 1, apply X to q1.
-    const.u32 1
-    eq.u32
-    cond_br @flip, @next
+    cpu::cpu.const u32, 1
+    cpu::cpu.eq u32
+    cpu::cpu.cond_br @flip, @next
 
-@flip:
-    const.u64 1
-    circuit.x
-    br @next
+cpu::cpu.label @flip
+    cpu::cpu.const u64, 1
+    circuit::circuit.x
+    cpu::cpu.br @next
 
-@next:
+cpu::cpu.label @next
     // counter += 1, then loop while counter < 3.
-    const.u64 1
-    add.u64
-    dup
-    const.u64 3
-    lt.u64
-    cond_br @loop, @done
+    cpu::cpu.const u64, 1
+    cpu::cpu.add u64
+    cpu::cpu.dup
+    cpu::cpu.const u64, 3
+    cpu::cpu.lt u64
+    cpu::cpu.cond_br @loop, @done
 
-@done:
+cpu::cpu.label @done
     // Final readout of q1.
-    const.u64 1
-    circuit.measure
-    ret
+    cpu::cpu.const u64, 1
+    circuit::circuit.measure
+    cpu::cpu.ret 0
 }

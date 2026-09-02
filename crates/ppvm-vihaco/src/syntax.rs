@@ -3,37 +3,51 @@
 
 use std::collections::HashMap;
 
-use chumsky::{Parser, error::Simple, extra};
-use vihaco::{
-    Type, Value,
-    module::Module,
-    syntax::{BodyItem, RawForm, RawOperand, Resolve},
-};
-use vihaco_circuit_isa::CircuitInstruction;
-use vihaco_parser_core::Parse;
+use chumsky::{IterParser, Parser};
+use vihaco::module::{FunctionInfo, LabelInfo, LocalModule, Parameter, Signature};
+use vihaco::syntax::{Param, ParsedFunction, ParsedModule, Resolve, skip};
+use vihaco::{Parse, Type, Value};
+use vihaco_circuit_isa::{CircuitInstruction, CircuitSurfaceInstruction};
+use vihaco_cpu::{RuntimeInstruction as CpuRuntime, SurfaceInstruction as CpuSurface};
+use vihaco_cpu::{SurfaceType, SurfaceValue};
+use vihaco_parser::{BareToken, Ident, QuotedString};
 
+use crate::composite::ppvm_module as ppvm;
 use crate::composite::{BackendKind, PPVMDeviceInfo, PPVMInstruction};
 
-#[derive(Debug, Clone, PartialEq, vihaco_parser::Parse)]
-#[head = "device "]
+#[derive(Debug, Clone, PartialEq, vihaco_parser_derive::Parse)]
+#[syntax_class(value)]
+pub enum BackendKindSyntax {
+    #[pattern = "`tableau`"]
+    Tableau,
+    #[pattern = "`paulisum`"]
+    PauliSum,
+    #[pattern = "`lossy_paulisum`"]
+    LossyPauliSum,
+}
+
+impl From<BackendKindSyntax> for BackendKind {
+    fn from(value: BackendKindSyntax) -> Self {
+        match value {
+            BackendKindSyntax::Tableau => Self::Tableau,
+            BackendKindSyntax::PauliSum => Self::PauliSum,
+            BackendKindSyntax::LossyPauliSum => Self::LossyPauliSum,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, vihaco_parser_derive::Parse)]
+#[syntax_class(metadata, head = "device")]
 pub enum PPVMHeader {
-    #[token = "circuit.n_qubits"]
-    #[delimiters(open = "", close = "", separator = "")]
+    #[pattern = "circuit.n_qubits $0"]
     NumQubits(usize),
-
-    #[token = "circuit.coefficient_threshold"]
-    #[delimiters(open = "", close = "", separator = "")]
+    #[pattern = "circuit.coefficient_threshold $0"]
     CoefficientThreshold(f64),
-    #[token = "circuit.backend"]
-    #[delimiters(open = "", close = "", separator = "")]
-    Backend(BackendKind),
-
-    #[token = "circuit.observable"]
-    #[delimiters(open = "", close = "", separator = "")]
-    Observable(#[parse_with = "vihaco_parser_core::ident"] String),
-
-    #[token = "circuit.max_pauli_weight"]
-    #[delimiters(open = "", close = "", separator = "")]
+    #[pattern = "circuit.backend $0"]
+    Backend(BackendKindSyntax),
+    #[pattern = "circuit.observable $0"]
+    Observable(Ident),
+    #[pattern = "circuit.max_pauli_weight $0"]
     MaxPauliWeight(usize),
 }
 
@@ -49,676 +63,292 @@ impl PPVMResolver {
 
     fn apply_header(info: &mut PPVMDeviceInfo, header: PPVMHeader) -> eyre::Result<()> {
         match header {
-            PPVMHeader::NumQubits(n) => {
-                info.n_qubits = n;
-            }
-            PPVMHeader::CoefficientThreshold(t) => {
-                info.coefficient_threshold = t;
-            }
-            PPVMHeader::Backend(b) => {
-                info.backend = b;
-            }
-            PPVMHeader::Observable(s) => {
-                info.observable = Some(s);
-            }
-            PPVMHeader::MaxPauliWeight(w) => {
-                info.max_pauli_weight = Some(w);
-            }
+            PPVMHeader::NumQubits(n) => info.n_qubits = n,
+            PPVMHeader::CoefficientThreshold(t) => info.coefficient_threshold = t,
+            PPVMHeader::Backend(b) => info.backend = b.into(),
+            PPVMHeader::Observable(s) => info.observable = Some(s.as_str().to_owned()),
+            PPVMHeader::MaxPauliWeight(w) => info.max_pauli_weight = Some(w),
         }
         Ok(())
     }
 
-    fn lower_raw(&mut self, raw: RawForm) -> eyre::Result<Vec<PPVMInstruction>> {
-        match raw.mnemonic.as_str() {
-            "ret" => {
-                let keep = match raw.operands.as_slice() {
-                    [] => 0u32,
-                    [RawOperand::UInt(n)] => u32::try_from(*n)
-                        .map_err(|_| eyre::eyre!("`ret` keep count {n} does not fit in u32"))?,
-                    other => {
-                        return Err(eyre::eyre!(
-                            "`ret` takes 0 or 1 unsigned int operands, got {other:?}"
-                        ));
-                    }
-                };
-                Ok(vec![vihaco_cpu::Instruction::Return(keep).into()])
+    fn intern(&mut self, value: &str) -> u32 {
+        if let Some(index) = self.strings.iter().position(|item| item == value) {
+            return index as u32;
+        }
+        let index = self.strings.len() as u32;
+        self.strings.push(value.to_owned());
+        index
+    }
+
+    fn runtime_type(ty: SurfaceType) -> Type {
+        match ty {
+            SurfaceType::Undefined => Type::Undefined,
+            SurfaceType::String => Type::String,
+            SurfaceType::Bool => Type::Bool,
+            SurfaceType::I64 => Type::I64,
+            SurfaceType::U32 => Type::U32,
+            SurfaceType::U64 => Type::U64,
+            SurfaceType::F64 => Type::F64,
+            SurfaceType::FunctionRef => Type::FunctionRef,
+            SurfaceType::HeapRef => Type::HeapRef,
+        }
+    }
+
+    fn lower_value(&mut self, ty: SurfaceType, value: SurfaceValue) -> eyre::Result<Value> {
+        let text = match value {
+            SurfaceValue::Quoted(QuotedString(value)) => {
+                return Ok(Value::String(self.intern(&value)));
             }
-            "const.str" => {
-                let lit = match raw.operands.as_slice() {
-                    [RawOperand::StringLit(s)] => s.clone(),
-                    other => {
-                        return Err(eyre::eyre!(
-                            "`const.str` takes one string literal, got {other:?}"
-                        ));
-                    }
-                };
-                let addr = u32::try_from(self.strings.len()).map_err(|_| {
-                    eyre::eyre!("string table overflowed u32 at `const.str` lowering")
-                })?;
-                self.strings.push(lit);
-                Ok(vec![
-                    vihaco_cpu::Instruction::Const(vihaco::Value::String(addr)).into(),
-                ])
+            SurfaceValue::Bare(BareToken(value)) => value,
+        };
+        Ok(match ty {
+            SurfaceType::Undefined => Value::Undefined,
+            SurfaceType::String => Value::String(self.intern(&text)),
+            SurfaceType::Bool => Value::Bool(text.parse()?),
+            SurfaceType::I64 => Value::I64(text.parse()?),
+            SurfaceType::U32 => Value::U32(text.parse()?),
+            SurfaceType::U64 => Value::U64(text.parse()?),
+            SurfaceType::F64 => Value::F64(text.parse()?),
+            SurfaceType::FunctionRef => Value::FunctionRef(text.parse()?),
+            SurfaceType::HeapRef => Value::HeapRef(text.parse()?),
+        })
+    }
+
+    fn lower_cpu(
+        &mut self,
+        instruction: CpuSurface,
+        labels: &HashMap<String, u32>,
+        functions: &HashMap<String, u32>,
+    ) -> eyre::Result<Option<CpuRuntime>> {
+        use CpuRuntime as R;
+        use CpuSurface as S;
+        let runtime = match instruction {
+            S::Span(a, b, c) => R::Span(a, b, c),
+            S::Label(_) => return Ok(None),
+            S::FunctionStart => R::FunctionStart,
+            S::FunctionEnd => R::FunctionEnd,
+            S::Breakpoint => R::Breakpoint,
+            S::Branch(name) => R::Branch(
+                *labels
+                    .get(name.as_str())
+                    .ok_or_else(|| eyre::eyre!("undefined label `@{}`", name.as_str()))?,
+            ),
+            S::ConditionalBranch(a, b) => R::ConditionalBranch(
+                *labels
+                    .get(a.as_str())
+                    .ok_or_else(|| eyre::eyre!("undefined label `@{}`", a.as_str()))?,
+                *labels
+                    .get(b.as_str())
+                    .ok_or_else(|| eyre::eyre!("undefined label `@{}`", b.as_str()))?,
+            ),
+            S::Return(n) => R::Return(n),
+            S::IndirectCall => R::IndirectCall,
+            S::Call(arity, name) => R::Call(
+                arity,
+                *functions
+                    .get(name.as_str())
+                    .ok_or_else(|| eyre::eyre!("undefined function `@{}`", name.as_str()))?,
+            ),
+            S::Halt => R::Halt,
+            S::Print => R::Print,
+            S::Load(ty, slot) => R::Load(Self::runtime_type(ty), slot),
+            S::Store(ty, slot) => R::Store(Self::runtime_type(ty), slot),
+            S::Dup => R::Dup,
+            S::HeapAlloc(n) => R::HeapAlloc(n),
+            S::GetItem => R::GetItem,
+            S::HeapDealloc => R::HeapDealloc,
+            S::Const(ty, value) => {
+                let value = self.lower_value(ty, value)?;
+                R::Const(Self::runtime_type(ty), value)
             }
-            other => Err(eyre::eyre!(
-                "PPVMResolver: unhandled raw form `{other}` (operands: {:?})",
-                raw.operands
-            )),
+            S::Add(ty) => R::Add(Self::runtime_type(ty)),
+            S::Sub(ty) => R::Sub(Self::runtime_type(ty)),
+            S::Mul(ty) => R::Mul(Self::runtime_type(ty)),
+            S::Div(ty) => R::Div(Self::runtime_type(ty)),
+            S::Rem(ty) => R::Rem(Self::runtime_type(ty)),
+            S::Neg(ty) => R::Neg(Self::runtime_type(ty)),
+            S::Shl(ty) => R::Shl(Self::runtime_type(ty)),
+            S::Shr(ty) => R::Shr(Self::runtime_type(ty)),
+            S::Rol(ty) => R::Rol(Self::runtime_type(ty)),
+            S::Ror(ty) => R::Ror(Self::runtime_type(ty)),
+            S::BitAnd(ty) => R::BitAnd(Self::runtime_type(ty)),
+            S::BitOr(ty) => R::BitOr(Self::runtime_type(ty)),
+            S::BitXor(ty) => R::BitXor(Self::runtime_type(ty)),
+            S::Not => R::Not,
+            S::And => R::And,
+            S::Or => R::Or,
+            S::Xor => R::Xor,
+            S::Eq(ty) => R::Eq(Self::runtime_type(ty)),
+            S::Ne(ty) => R::Ne(Self::runtime_type(ty)),
+            S::Lt(ty) => R::Lt(Self::runtime_type(ty)),
+            S::Gt(ty) => R::Gt(Self::runtime_type(ty)),
+            S::Le(ty) => R::Le(Self::runtime_type(ty)),
+            S::Ge(ty) => R::Ge(Self::runtime_type(ty)),
+        };
+        Ok(Some(runtime))
+    }
+
+    fn lower_circuit(instruction: CircuitSurfaceInstruction) -> CircuitInstruction {
+        use CircuitInstruction as R;
+        use CircuitSurfaceInstruction as S;
+        match instruction {
+            S::TwoQubitPauliError => R::TwoQubitPauliError,
+            S::Truncate => R::Truncate,
+            S::Trace => R::Trace,
+            S::X => R::X,
+            S::Y => R::Y,
+            S::Z => R::Z,
+            S::H => R::H,
+            S::SqrtXAdj => R::SqrtXAdj,
+            S::SqrtX => R::SqrtX,
+            S::SqrtYAdj => R::SqrtYAdj,
+            S::SqrtY => R::SqrtY,
+            S::SAdj => R::SAdj,
+            S::S => R::S,
+            S::CNOT => R::CNOT,
+            S::CZ => R::CZ,
+            S::TAdj => R::TAdj,
+            S::T => R::T,
+            S::RXX => R::RXX,
+            S::RYY => R::RYY,
+            S::RZZ => R::RZZ,
+            S::RX => R::RX,
+            S::RY => R::RY,
+            S::RZ => R::RZ,
+            S::U3 => R::U3,
+            S::Measure => R::Measure,
+            S::Reset => R::Reset,
+            S::R => R::R,
+            S::Loss => R::Loss,
+            S::CorrelatedLoss => R::CorrelatedLoss,
+            S::PauliError => R::PauliError,
+            S::Depolarize2 => R::Depolarize2,
+            S::Depolarize => R::Depolarize,
         }
     }
 }
 
-impl Resolve<PPVMInstruction, PPVMHeader> for PPVMResolver {
-    type Module = Module<PPVMInstruction, Value, Type, PPVMDeviceInfo>;
+impl Resolve<ppvm::syntax::Instruction, SurfaceType, Vec<PPVMHeader>> for PPVMResolver {
+    type Module = LocalModule<PPVMInstruction, Value, Type, PPVMDeviceInfo>;
+
     fn resolve_module(
         &mut self,
-        parsed: vihaco::syntax::ParsedModule<PPVMInstruction, PPVMHeader>,
+        parsed: ParsedModule<ppvm::syntax::Instruction, SurfaceType, Vec<PPVMHeader>>,
     ) -> eyre::Result<Self::Module> {
-        let mut info = PPVMDeviceInfo::default();
-        for header in parsed.headers {
-            Self::apply_header(&mut info, header)?;
+        let mut module = LocalModule::default();
+        for header in parsed.header {
+            Self::apply_header(&mut module.extra, header)?;
         }
 
-        let mut code: Vec<PPVMInstruction> = Vec::new();
-        let mut labels: HashMap<String, u32> = HashMap::new();
-        let mut branch_patches: Vec<(usize, BranchPatch)> = Vec::new();
-        let mut call_patches: Vec<(usize, CallPatch)> = Vec::new();
-        for function in parsed.functions {
-            if labels
-                .insert(function.name.clone(), code.len() as u32)
-                .is_some()
-            {
-                return Err(eyre::eyre!("duplicate function name `@{}`", function.name));
-            }
-            for item in function.body {
-                match item {
-                    BodyItem::Direct(inst) => code.push(inst),
-                    BodyItem::Raw(raw) => {
-                        if let Some(name) = raw_as_label(&raw) {
-                            if labels.insert(name.clone(), code.len() as u32).is_some() {
-                                return Err(eyre::eyre!("duplicate label `@{name}`"));
-                            }
-                            continue;
-                        }
-                        if let Some(patch) = raw_as_branch(&raw) {
-                            let idx = code.len();
-                            code.push(patch.placeholder());
-                            branch_patches.push((idx, patch));
-                            continue;
-                        }
-                        if let Some(patch) = raw_as_call(&raw)? {
-                            let idx = code.len();
-                            code.push(patch.placeholder());
-                            call_patches.push((idx, patch));
-                            continue;
-                        }
-                        code.extend(self.lower_raw(raw)?);
-                    }
+        let mut functions = HashMap::new();
+        let mut function_address = 0u32;
+        for function in &parsed.functions {
+            functions.insert(function.name.as_str().to_owned(), function_address);
+            function_address += function
+                .body
+                .iter()
+                .filter(|instruction| {
+                    !matches!(
+                        instruction,
+                        ppvm::syntax::Instruction::Cpu(CpuSurface::Label(_))
+                    )
+                })
+                .count() as u32;
+        }
+
+        let mut labels = HashMap::new();
+        let mut address = 0u32;
+        for function in &parsed.functions {
+            for instruction in &function.body {
+                if let ppvm::syntax::Instruction::Cpu(CpuSurface::Label(name)) = instruction {
+                    labels.insert(name.as_str().to_owned(), address);
+                    module.labels.push(LabelInfo {
+                        address,
+                        name: self.intern(name.as_str()),
+                    });
+                } else {
+                    address += 1;
                 }
             }
         }
-        for (idx, patch) in branch_patches {
-            patch.apply(&mut code, idx, &labels)?;
-        }
-        for (idx, patch) in call_patches {
-            patch.apply(&mut code, idx, &labels)?;
-        }
 
-        let strings = std::mem::take(&mut self.strings);
-        let module = Module {
-            code,
-            strings,
-            extra: info,
-            ..Default::default()
-        };
+        for function in parsed.functions {
+            let start_address = module.code.len() as u32;
+            for instruction in function.body {
+                let runtime = match instruction {
+                    ppvm::syntax::Instruction::Cpu(cpu) => self
+                        .lower_cpu(cpu, &labels, &functions)?
+                        .map(PPVMInstruction::Cpu),
+                    ppvm::syntax::Instruction::Circuit(circuit) => {
+                        Some(PPVMInstruction::Circuit(Self::lower_circuit(circuit)))
+                    }
+                };
+                if let Some(runtime) = runtime {
+                    module.code.push(runtime);
+                }
+            }
+            let end_address = module.code.len() as u32;
+            module.functions.push(FunctionInfo {
+                name: self.intern(function.name.as_str()),
+                signature: Signature {
+                    params: function
+                        .params
+                        .into_iter()
+                        .map(|Param { name, ty }| Parameter {
+                            name: self.intern(name.as_str()),
+                            ty: Self::runtime_type(ty),
+                        })
+                        .collect(),
+                    ret: function
+                        .return_ty
+                        .map(Self::runtime_type)
+                        .into_iter()
+                        .collect(),
+                },
+                local_count: 0,
+                start_address,
+                end_address,
+                file: 0,
+            });
+        }
+        module.main_function = functions.get("main").copied();
+        module.strings = std::mem::take(&mut self.strings);
         Ok(module)
     }
 }
 
-type Err<'src> = extra::Err<Simple<'src, char>>;
-
-impl<'src> Parse<'src> for PPVMInstruction {
-    fn parser() -> impl Parser<'src, &'src str, Self, Err<'src>> {
-        use chumsky::prelude::*;
-
-        let cpu = <vihaco_cpu::Instruction as Parse>::parser().map(PPVMInstruction::Cpu);
-
-        // Reuse the derived parser for all CircuitInstruction variants,
-        // gated behind the `circuit.` prefix (covers gates, noise channels,
-        // measure/reset, trace, and truncate — i.e. everything circuit-side).
-        let circuit = just("circuit")
-            .then(just('.'))
-            .ignore_then(<CircuitInstruction as Parse>::parser())
-            .map(PPVMInstruction::Circuit);
-
-        // Try `circuit.` first so CPU doesn't see "circuit" as an identifier.
-        choice((circuit, cpu))
-    }
-}
-
-// ---- Everything below is 1:1 copy from Acamar with Acamar -> PPVM renaming ----
-
-/// A deferred branch whose target(s) couldn't be resolved at lowering time
-/// because the label may appear later in the function body. Patched in a
-/// second pass once all labels are known.
-#[derive(Debug)]
-enum BranchPatch {
-    /// `br @target` — fills the `u32` in `cpu::Instruction::Branch`.
-    Unconditional(String),
-    /// `br @t, @f` / `cond_br @t, @f` — fills both `u32`s in
-    /// `cpu::Instruction::ConditionalBranch`.
-    Conditional(String, String),
-}
-
-/// `@name:` → `Some("name")`. Body parser already emits `@entry:` as a single
-/// raw mnemonic with no operands, so the check is purely on the mnemonic
-/// shape.
-fn raw_as_label(raw: &RawForm) -> Option<String> {
-    if !raw.operands.is_empty() {
-        return None;
-    }
-    let m = raw.mnemonic.as_str();
-    let stripped = m.strip_prefix('@')?.strip_suffix(':')?;
-    if stripped.is_empty() {
-        return None;
-    }
-    Some(stripped.to_string())
-}
-
-/// `br @t` / `br @t, @f` / `cond_br @t, @f`.
-fn raw_as_branch(raw: &RawForm) -> Option<BranchPatch> {
-    let symbols: Vec<&str> = raw
-        .operands
-        .iter()
-        .map(|op| match op {
-            RawOperand::Symbol(s) => Some(s.as_str()),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()?;
-
-    match (raw.mnemonic.as_str(), symbols.as_slice()) {
-        ("br", [t]) => Some(BranchPatch::Unconditional((*t).to_string())),
-        ("br", [t, f]) | ("cond_br", [t, f]) => {
-            Some(BranchPatch::Conditional((*t).to_string(), (*f).to_string()))
-        }
-        _ => None,
-    }
-}
-
-impl BranchPatch {
-    fn placeholder(&self) -> PPVMInstruction {
-        match self {
-            BranchPatch::Unconditional(_) => vihaco_cpu::Instruction::Branch(u32::MAX).into(),
-            BranchPatch::Conditional(_, _) => {
-                vihaco_cpu::Instruction::ConditionalBranch(u32::MAX, u32::MAX).into()
-            }
+pub fn parse_headers(source: &str) -> eyre::Result<(Vec<PPVMHeader>, String)> {
+    let mut headers = Vec::new();
+    let mut body = String::new();
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("device ") {
+            let header = trimmed.strip_suffix(';').unwrap_or(trimmed);
+            let parsed = PPVMHeader::parser()
+                .parse(header)
+                .into_result()
+                .map_err(|errors| eyre::eyre!("invalid device header `{header}`: {errors:?}"))?;
+            headers.push(parsed);
+        } else {
+            body.push_str(line);
+            body.push('\n');
         }
     }
-
-    fn apply(
-        self,
-        code: &mut [PPVMInstruction],
-        idx: usize,
-        labels: &HashMap<String, u32>,
-    ) -> eyre::Result<()> {
-        let lookup = |name: &str| {
-            labels
-                .get(name)
-                .copied()
-                .ok_or_else(|| eyre::eyre!("undefined label `@{name}`"))
-        };
-        let resolved = match self {
-            BranchPatch::Unconditional(t) => vihaco_cpu::Instruction::Branch(lookup(&t)?).into(),
-            BranchPatch::Conditional(t, f) => {
-                vihaco_cpu::Instruction::ConditionalBranch(lookup(&t)?, lookup(&f)?).into()
-            }
-        };
-        code[idx] = resolved;
-        Ok(())
-    }
+    Ok((headers, body))
 }
 
-/// `call <arity>, @target` — symbolic target resolved in a second pass against
-/// the same label table that holds branch targets and function entry points.
-#[derive(Debug)]
-struct CallPatch {
-    arity: u32,
-    target: String,
-}
-
-/// `call <arity>, @target` → `Some(CallPatch)`. Returns `Ok(None)` for any
-/// other mnemonic so the resolver can fall through to `lower_raw`.
-fn raw_as_call(raw: &RawForm) -> eyre::Result<Option<CallPatch>> {
-    if raw.mnemonic != "call" {
-        return Ok(None);
-    }
-    match raw.operands.as_slice() {
-        [RawOperand::UInt(arity), RawOperand::Symbol(target)] => {
-            let arity = u32::try_from(*arity)
-                .map_err(|_| eyre::eyre!("`call` arity {arity} does not fit in u32"))?;
-            Ok(Some(CallPatch {
-                arity,
-                target: target.clone(),
-            }))
-        }
-        other => Err(eyre::eyre!(
-            "`call` expects `<arity:uint>, @<target>`, got operands {other:?}"
-        )),
-    }
-}
-
-impl CallPatch {
-    fn placeholder(&self) -> PPVMInstruction {
-        vihaco_cpu::Instruction::Call(self.arity, u32::MAX).into()
-    }
-
-    fn apply(
-        self,
-        code: &mut [PPVMInstruction],
-        idx: usize,
-        labels: &HashMap<String, u32>,
-    ) -> eyre::Result<()> {
-        let target = labels
-            .get(&self.target)
-            .copied()
-            .ok_or_else(|| eyre::eyre!("undefined function `@{}`", self.target))?;
-        code[idx] = vihaco_cpu::Instruction::Call(self.arity, target).into();
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use vihaco::syntax::ParsedModule;
-
-    fn parse_module(source: &str) -> ParsedModule<PPVMInstruction, PPVMHeader> {
-        ParsedModule::<PPVMInstruction, PPVMHeader>::parser()
-            .parse(source)
-            .into_result()
-            .unwrap_or_else(|e| panic!("parse failed: {e:?}"))
-    }
-
-    fn raw(mnemonic: &str, operands: Vec<RawOperand>) -> RawForm {
-        RawForm {
-            mnemonic: mnemonic.to_string(),
-            operands,
-        }
-    }
-
-    // ─── Header parsing ───────────────────────────────────────────────────
-
-    #[test]
-    fn header_parses_n_qubits() {
-        let got = <PPVMHeader as Parse>::parser()
-            .parse("device circuit.n_qubits 5")
-            .into_result()
-            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
-        assert_eq!(got, PPVMHeader::NumQubits(5));
-    }
-
-    #[test]
-    fn header_parses_coefficient_threshold() {
-        let got = <PPVMHeader as Parse>::parser()
-            .parse("device circuit.coefficient_threshold 1e-10")
-            .into_result()
-            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
-        assert_eq!(got, PPVMHeader::CoefficientThreshold(1e-10));
-    }
-
-    #[test]
-    fn header_n_qubits_rejects_extra_operand() {
-        // The variant has exactly one field, so the parser consumes one
-        // integer. Wrapped in a full module, a second integer must trip the
-        // module-level parser.
-        let result = ParsedModule::<PPVMInstruction, PPVMHeader>::parser()
-            .parse(
-                "device circuit.n_qubits 5 6;\n\
-                 fn @main() { ret }\n",
-            )
-            .into_result();
-        assert!(result.is_err(), "expected parse error, got {result:?}");
-    }
-
-    #[test]
-    fn header_coefficient_threshold_rejects_extra_operand() {
-        let result = ParsedModule::<PPVMInstruction, PPVMHeader>::parser()
-            .parse(
-                "device circuit.coefficient_threshold 1e-10 0.5;\n\
-                 fn @main() { ret }\n",
-            )
-            .into_result();
-        assert!(result.is_err(), "expected parse error, got {result:?}");
-    }
-
-    #[test]
-    fn header_parses_backend_tableau() {
-        let got = <PPVMHeader as Parse>::parser()
-            .parse("device circuit.backend tableau")
-            .into_result()
-            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
-        assert_eq!(got, PPVMHeader::Backend(BackendKind::Tableau));
-    }
-
-    #[test]
-    fn header_parses_backend_paulisum() {
-        let got = <PPVMHeader as Parse>::parser()
-            .parse("device circuit.backend paulisum")
-            .into_result()
-            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
-        assert_eq!(got, PPVMHeader::Backend(BackendKind::PauliSum));
-    }
-
-    #[test]
-    fn header_parses_backend_lossy_paulisum() {
-        let got = <PPVMHeader as Parse>::parser()
-            .parse("device circuit.backend lossy_paulisum")
-            .into_result()
-            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
-        assert_eq!(got, PPVMHeader::Backend(BackendKind::LossyPauliSum));
-    }
-
-    #[test]
-    fn header_parses_observable_single_pauli_word() {
-        let got = <PPVMHeader as Parse>::parser()
-            .parse("device circuit.observable ZZIIII")
-            .into_result()
-            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
-        assert_eq!(got, PPVMHeader::Observable("ZZIIII".to_string()));
-    }
-
-    #[test]
-    fn header_parses_max_pauli_weight() {
-        let got = <PPVMHeader as Parse>::parser()
-            .parse("device circuit.max_pauli_weight 8")
-            .into_result()
-            .unwrap_or_else(|e| panic!("parse failed: {e:?}"));
-        assert_eq!(got, PPVMHeader::MaxPauliWeight(8));
-    }
-
-    #[test]
-    fn apply_header_sets_n_qubits() {
-        let mut info = PPVMDeviceInfo::default();
-        PPVMResolver::apply_header(&mut info, PPVMHeader::NumQubits(7)).unwrap();
-        assert_eq!(info.n_qubits, 7);
-    }
-
-    #[test]
-    fn apply_header_sets_coefficient_threshold() {
-        let mut info = PPVMDeviceInfo::default();
-        PPVMResolver::apply_header(&mut info, PPVMHeader::CoefficientThreshold(5e-6)).unwrap();
-        assert_eq!(info.coefficient_threshold, 5e-6);
-    }
-
-    #[test]
-    fn apply_header_sets_backend() {
-        let mut info = PPVMDeviceInfo::default();
-        PPVMResolver::apply_header(&mut info, PPVMHeader::Backend(BackendKind::PauliSum)).unwrap();
-        assert_eq!(info.backend, BackendKind::PauliSum);
-    }
-
-    #[test]
-    fn apply_header_sets_observable() {
-        let mut info = PPVMDeviceInfo::default();
-        PPVMResolver::apply_header(&mut info, PPVMHeader::Observable("ZZ".to_string())).unwrap();
-        assert_eq!(info.observable.as_deref(), Some("ZZ"));
-    }
-
-    #[test]
-    fn apply_header_sets_max_pauli_weight() {
-        let mut info = PPVMDeviceInfo::default();
-        PPVMResolver::apply_header(&mut info, PPVMHeader::MaxPauliWeight(4)).unwrap();
-        assert_eq!(info.max_pauli_weight, Some(4));
-    }
-
-    #[test]
-    fn device_info_defaults_match_tableau_no_observable_no_truncation() {
-        let info = PPVMDeviceInfo::default();
-        assert_eq!(info.backend, BackendKind::Tableau);
-        assert_eq!(info.observable, None);
-        assert_eq!(info.max_pauli_weight, None);
-    }
-
-    // ─── PPVMInstruction parser dispatch ──────────────────────────────────
-
-    #[test]
-    fn ppvm_instruction_parses_cpu_const() {
-        let got = <PPVMInstruction as Parse>::parser()
-            .parse("const.u64 7")
-            .into_result()
-            .unwrap();
-        assert!(matches!(
-            got,
-            PPVMInstruction::Cpu(vihaco_cpu::Instruction::Const(Value::U64(7)))
-        ));
-    }
-
-    #[test]
-    fn ppvm_instruction_parses_gate_h() {
-        let got = <PPVMInstruction as Parse>::parser()
-            .parse("circuit.h")
-            .into_result()
-            .unwrap();
-        assert!(matches!(
-            got,
-            PPVMInstruction::Circuit(CircuitInstruction::H)
-        ));
-    }
-
-    #[test]
-    fn ppvm_instruction_parses_gate_cnot() {
-        let got = <PPVMInstruction as Parse>::parser()
-            .parse("circuit.cnot")
-            .into_result()
-            .unwrap();
-        assert!(matches!(
-            got,
-            PPVMInstruction::Circuit(CircuitInstruction::CNOT)
-        ));
-    }
-
-    #[test]
-    fn ppvm_instruction_parses_gate_measure() {
-        let got = <PPVMInstruction as Parse>::parser()
-            .parse("circuit.measure")
-            .into_result()
-            .unwrap();
-        assert!(matches!(
-            got,
-            PPVMInstruction::Circuit(CircuitInstruction::Measure)
-        ));
-    }
-
-    #[test]
-    fn ppvm_instruction_parses_gate_rx() {
-        let got = <PPVMInstruction as Parse>::parser()
-            .parse("circuit.rx")
-            .into_result()
-            .unwrap();
-        assert!(matches!(
-            got,
-            PPVMInstruction::Circuit(CircuitInstruction::RX)
-        ));
-    }
-
-    #[test]
-    fn ppvm_instruction_rejects_bare_circuit_token_without_circuit_prefix() {
-        // `h` on its own must not parse as Circuit(H) — only `circuit.h` does.
-        // Without `circuit `, the CPU parser is tried, which should reject
-        // `h` (not a CPU mnemonic).
-        let result = <PPVMInstruction as Parse>::parser()
-            .parse("h")
-            .into_result();
-        assert!(result.is_err(), "expected parse error, got {result:?}");
-    }
-
-    // ─── lower_raw ────────────────────────────────────────────────────────
-
-    #[test]
-    fn lower_raw_ret_emits_return_zero() {
-        let mut r = PPVMResolver::new();
-        let out = r.lower_raw(raw("ret", vec![])).unwrap();
-        assert_eq!(out.len(), 1);
-        assert!(matches!(
-            out[0],
-            PPVMInstruction::Cpu(vihaco_cpu::Instruction::Return(0))
-        ));
-    }
-
-    #[test]
-    fn lower_raw_ret_with_uint_operand_emits_return_n() {
-        let mut r = PPVMResolver::new();
-        let out = r.lower_raw(raw("ret", vec![RawOperand::UInt(2)])).unwrap();
-        assert_eq!(out.len(), 1);
-        assert!(matches!(
-            out[0],
-            PPVMInstruction::Cpu(vihaco_cpu::Instruction::Return(2))
-        ));
-    }
-
-    #[test]
-    fn lower_raw_ret_with_non_uint_operand_errors() {
-        let mut r = PPVMResolver::new();
-        let err = r
-            .lower_raw(raw("ret", vec![RawOperand::Symbol("foo".into())]))
-            .unwrap_err();
-        assert!(
-            err.to_string().contains("`ret` takes 0 or 1 unsigned int"),
-            "err: {err}"
-        );
-    }
-
-    #[test]
-    fn lower_raw_unknown_mnemonic_errors() {
-        let mut r = PPVMResolver::new();
-        let err = r.lower_raw(raw("nope", vec![])).unwrap_err();
-        assert!(err.to_string().contains("unhandled raw form"), "err: {err}");
-    }
-
-    // ─── End-to-end resolver behaviour ────────────────────────────────────
-
-    #[test]
-    fn resolver_populates_device_info_from_headers() {
-        let parsed = parse_module(
-            "device circuit.n_qubits 3;\n\
-             device circuit.coefficient_threshold 1e-8;\n\
-             fn @main() { ret }\n",
-        );
-        let m = PPVMResolver::new().resolve_module(parsed).unwrap();
-        assert_eq!(m.extra.n_qubits, 3);
-        assert_eq!(m.extra.coefficient_threshold, 1e-8);
-    }
-
-    #[test]
-    fn resolver_populates_paulisum_headers() {
-        let parsed = parse_module(
-            "device circuit.n_qubits 4;\n\
-             device circuit.backend paulisum;\n\
-             device circuit.observable ZZII;\n\
-             device circuit.max_pauli_weight 8;\n\
-             fn @main() { ret }\n",
-        );
-        let m = PPVMResolver::new().resolve_module(parsed).unwrap();
-        assert_eq!(m.extra.n_qubits, 4);
-        assert_eq!(m.extra.backend, BackendKind::PauliSum);
-        assert_eq!(m.extra.observable.as_deref(), Some("ZZII"));
-        assert_eq!(m.extra.max_pauli_weight, Some(8));
-    }
-
-    #[test]
-    fn resolver_lowers_simple_bell_body() {
-        // Smoke test the whole pipeline on a tiny bell-like body.
-        let parsed = parse_module(
-            "device circuit.n_qubits 2;\n\
-             fn @main() {\n\
-                 const.u64 0\n\
-                 circuit.h\n\
-                 const.u64 0\n\
-                 const.u64 1\n\
-                 circuit.cnot\n\
-                 ret\n\
-             }\n",
-        );
-        let m = PPVMResolver::new().resolve_module(parsed).unwrap();
-        // const.u64 0 / circuit.h / const.u64 0 / const.u64 1 / circuit.cnot / ret
-        assert_eq!(m.code.len(), 6);
-        assert!(matches!(
-            m.code[1],
-            PPVMInstruction::Circuit(CircuitInstruction::H)
-        ));
-        assert!(matches!(
-            m.code[4],
-            PPVMInstruction::Circuit(CircuitInstruction::CNOT)
-        ));
-        assert!(matches!(
-            m.code[5],
-            PPVMInstruction::Cpu(vihaco_cpu::Instruction::Return(0))
-        ));
-    }
-
-    #[test]
-    fn resolver_resolves_forward_branch_targets() {
-        let parsed = parse_module(
-            "fn @main() {\n\
-                 @loop:\n\
-                     br @done\n\
-                 @done:\n\
-                     ret\n\
-             }\n",
-        );
-        let m = PPVMResolver::new().resolve_module(parsed).unwrap();
-        assert!(matches!(
-            m.code[0],
-            PPVMInstruction::Cpu(vihaco_cpu::Instruction::Branch(1))
-        ));
-    }
-
-    #[test]
-    fn resolver_resolves_conditional_branch_with_two_targets() {
-        let parsed = parse_module(
-            "fn @main() {\n\
-                 @head:\n\
-                     br @head, @exit\n\
-                 @exit:\n\
-                     ret\n\
-             }\n",
-        );
-        let m = PPVMResolver::new().resolve_module(parsed).unwrap();
-        assert!(matches!(
-            m.code[0],
-            PPVMInstruction::Cpu(vihaco_cpu::Instruction::ConditionalBranch(0, 1))
-        ));
-    }
-
-    #[test]
-    fn resolver_rejects_undefined_branch_target() {
-        let parsed = parse_module(
-            "fn @main() {\n\
-                 br @missing\n\
-                 ret\n\
-             }\n",
-        );
-        let err = PPVMResolver::new().resolve_module(parsed).unwrap_err();
-        assert!(
-            err.to_string().contains("undefined label `@missing`"),
-            "err: {err}"
-        );
-    }
-
-    #[test]
-    fn resolver_rejects_duplicate_label() {
-        let parsed = parse_module(
-            "fn @main() {\n\
-                 @same:\n\
-                     ret\n\
-                 @same:\n\
-                     ret\n\
-             }\n",
-        );
-        let err = PPVMResolver::new().resolve_module(parsed).unwrap_err();
-        assert!(
-            err.to_string().contains("duplicate label `@same`"),
-            "err: {err}"
-        );
-    }
+pub fn parse_functions(
+    source: &str,
+) -> eyre::Result<Vec<ParsedFunction<ppvm::syntax::Instruction, SurfaceType>>> {
+    skip()
+        .ignore_then(
+            ParsedFunction::<ppvm::syntax::Instruction, SurfaceType>::parser()
+                .repeated()
+                .collect::<Vec<_>>(),
+        )
+        .then_ignore(skip())
+        .parse(source)
+        .into_result()
+        .map_err(|errors| eyre::eyre!("parsing functions failed: {errors:?}"))
 }

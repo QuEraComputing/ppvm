@@ -14,13 +14,13 @@ fn parse_single_h_one_target() {
     match &instructions(&p)[0] {
         Instruction::Gate(GateOp {
             name,
-            tags,
+            tag,
             args,
             targets,
             span,
         }) => {
             assert_eq!(*name, GateName::H);
-            assert!(tags.is_empty());
+            assert!(tag.is_empty());
             assert!(args.is_empty());
             assert_eq!(targets, &[Target::Qubit(0)]);
             assert_eq!(span.line(&p.line_map), 1);

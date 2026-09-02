@@ -144,12 +144,12 @@ fn parse_m_with_two_args_rejected() {
 fn parse_mpad_no_args_no_tags() {
     let p = parse("MPAD 0 1 0").unwrap();
     let Instruction::MPad {
-        tags, prob, bits, ..
+        tag, prob, bits, ..
     } = &p.instructions[0]
     else {
         panic!("{:?}", p.instructions[0]);
     };
-    assert!(tags.is_empty());
+    assert!(tag.is_empty());
     assert_eq!(*prob, None);
     assert_eq!(bits, &[0usize, 1, 0]);
 }

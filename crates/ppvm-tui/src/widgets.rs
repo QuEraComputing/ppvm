@@ -93,7 +93,7 @@ mod tests {
     use ratatui::backend::TestBackend;
 
     const BP_PROGRAM: &str = "device circuit.n_qubits 1;\n\
-                              fn @main() { breakpoint\n const.u64 0\n circuit.measure\n ret }\n";
+                              fn @main() { cpu::cpu.breakpoint\n cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
 
     #[test]
     fn renders_all_panels_without_panic() {

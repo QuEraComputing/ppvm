@@ -40,20 +40,27 @@
 //!   (`xbits`/`zbits`, backed by `[u8; N]` or `[u64; N]`), reachable as
 //!   contiguous raw integer slices via `as_raw_slice`/`as_raw_mut_slice` —
 //!   plain-old-data, not a bit-addressed abstraction.
-//! - The Clifford single-/two-qubit gates
-//!   (`crates/ppvm-tableau/src/gates/clifford.rs`) all run through one shared
+//! - The single-gate Clifford path
+//!   (`crates/ppvm-tableau/src/gates/clifford.rs`) has one shared
 //!   implementation per gate that loops over rows operating directly on
 //!   those raw integer slices with a hoisted word-index/bit/mask, bypassing
-//!   `bitvec`'s per-bit bounds checks inside the loop. Every caller —
-//!   [`data::Tableau`], [`data::GeneralizedTableau`] (via the
-//!   `impl_generalized_tableau_clifford*` macros), and the fused batch path
-//!   below — funnels through that one implementation.
-//! - [`CliffordBatch`](ppvm_traits::traits::CliffordBatch) methods (`x_many`,
-//!   `cz_many`, …) and [`data::GeneralizedTableau::cz_block`] /
-//!   `cz_block_pairs` / `cz_block_pairs_cross_word` apply a gate to a whole
-//!   contiguous block of qubits as bulk masked slice operations — the entry
-//!   points a thread pool or CUDA kernel would implement over the row
-//!   planes.
+//!   `bitvec`'s per-bit bounds checks inside the loop. Both
+//!   [`data::Tableau`] and [`data::GeneralizedTableau`] (via the
+//!   `impl_generalized_tableau_clifford*` macros) funnel through it.
+//! - The batch path does **not** share that implementation. The
+//!   [`CliffordBatch`](ppvm_traits::traits::CliffordBatch) methods (`x_many`,
+//!   `cz_many`, …) each carry their own raw-plane loop that fuses many gates
+//!   into a single pass over the rows, and `Tableau` and
+//!   `GeneralizedTableau` have separate `CliffordBatch` impls (the latter
+//!   via the `impl_gen_tableau_batch_*` macros). Anyone porting the Clifford
+//!   layer to a thread pool or a CUDA kernel has to cover both the
+//!   single-gate implementation and these batch bodies.
+//! - The batch methods take arbitrary index lists (`&[usize]`,
+//!   `&[(usize, usize)]`). [`data::GeneralizedTableau::cz_block`] /
+//!   `cz_block_pairs` / `cz_block_pairs_cross_word` are the
+//!   contiguous-block variants: they apply CZ to a whole contiguous range
+//!   of qubits as bulk masked slice operations, which is the layout a
+//!   kernel can address without an index indirection.
 //! - `GeneralizedTableau::branch_with_coefficients` (crate-private) transforms
 //!   the whole coefficient array in one pass. Its `#[cfg(feature = "rayon")]`
 //!   path (`branch_coefficients_parallel`, gated by `RAYON_COEFF_THRESHOLD`)

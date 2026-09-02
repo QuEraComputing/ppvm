@@ -151,10 +151,10 @@ pub trait ACMapRetain<
 ///
 /// A new backing map (a GPU-resident map, a sharded map, anything beyond
 /// the existing `HashMap` / `IndexMap` / `AHashMap` / `DashMap` backends)
-/// must implement exactly these traits — nothing more:
+/// needs these to satisfy the `ACMap` bound itself:
 ///
+/// * `Clone`.
 /// * [`ACMapBase`] — construction, length, clear.
-/// * [`ACMapIter`] — borrowing iteration over `(key, value)`.
 /// * [`ACMapAddAssign`] — `+=` insert-or-accumulate.
 /// * [`ACMapMulAssign`] — scalar `*=`.
 /// * [`ACMapInsert`] — just `map_insert_vec` and `map_insert_multiple`
@@ -164,6 +164,17 @@ pub trait ACMapRetain<
 /// * [`ACMapRetain`] — predicate-based entry removal.
 /// * [`ACMapConsume`] — drain-and-accumulate merge of two maps.
 ///
+/// Satisfying `ACMap` is necessary but not sufficient: `ppvm-pauli-sum`
+/// bounds individual operations on further traits, so a backend that skips
+/// them only fails to compile at those call sites. In practice you also
+/// want:
+///
+/// * [`ACMapIter`] — borrowing iteration over `(key, value)`; needed by
+///   `PauliSum::iter`, `Display`, and the approximate-comparison helpers.
+/// * [`Trace`](crate::traits::Trace) — needed by `PauliSum::trace`.
+/// * `Extend<(Word, Coeff)>` — needed by the arithmetic operators.
+/// * `PartialEq` — needed by `PauliSum`'s approximate comparisons.
+///
 /// Of these, `map_insert_vec`, `map_insert_multiple`, `scale`,
 /// `mul_assign`, `retain`, and `consume` are whole-collection batch entry
 /// points: a concurrent or GPU backend can dispatch each of them as one
@@ -171,8 +182,11 @@ pub trait ACMapRetain<
 /// operates on a single key at a time, so a thread-pool backend typically
 /// only parallelizes its batch sibling, `map_add_assign`. See the
 /// `DashMap` impl in `crates/ppvm-traits/src/map/dashmap.rs` for a working
-/// concurrent precedent: it implements every batch method with rayon
-/// `par_iter`.
+/// concurrent precedent: `map_add_assign`, `mul_assign`, `map_insert_vec`,
+/// `map_insert_multiple`, `scale`, `consume`, and `trace` all go through
+/// rayon `par_iter`. `retain` is the one that does not — its `FnMut`
+/// predicate is not shareable across threads, so `DashMap` forwards to the
+/// sequential `DashMap::retain`.
 pub trait ACMap<
     S: PauliStorage,
     V: Coefficient,

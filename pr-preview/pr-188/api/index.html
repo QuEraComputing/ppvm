@@ -609,10 +609,10 @@ covers any type that implements all the constituent traits.</p>
 <h1>Map-backend implementor&#39;s guide</h1>
 <p>A new backing map (a GPU-resident map, a sharded map, anything beyond
 the existing <code>HashMap</code> / <code>IndexMap</code> / <code>AHashMap</code> / <code>DashMap</code> backends)
-must implement exactly these traits — nothing more:</p>
+needs these to satisfy the <code>ACMap</code> bound itself:</p>
 <ul>
+<li><code>Clone</code>.</li>
 <li><a href="#rs-ppvm-traits-traits-map-ACMapBase"><code>ACMapBase</code></a> — construction, length, clear.</li>
-<li><a href="#rs-ppvm-traits-traits-map-ACMapIter"><code>ACMapIter</code></a> — borrowing iteration over <code>(key, value)</code>.</li>
 <li><a href="#rs-ppvm-traits-traits-map-ACMapAddAssign"><code>ACMapAddAssign</code></a> — <code>+=</code> insert-or-accumulate.</li>
 <li><a href="#rs-ppvm-traits-traits-map-ACMapMulAssign"><code>ACMapMulAssign</code></a> — scalar <code>*=</code>.</li>
 <li><a href="#rs-ppvm-traits-traits-map-ACMapInsert"><code>ACMapInsert</code></a> — just <code>map_insert_vec</code> and <code>map_insert_multiple</code>
@@ -622,6 +622,17 @@ must implement exactly these traits — nothing more:</p>
 <li><a href="#rs-ppvm-traits-traits-map-ACMapRetain"><code>ACMapRetain</code></a> — predicate-based entry removal.</li>
 <li><a href="#rs-ppvm-traits-traits-map-ACMapConsume"><code>ACMapConsume</code></a> — drain-and-accumulate merge of two maps.</li>
 </ul>
+<p>Satisfying <code>ACMap</code> is necessary but not sufficient: <code>ppvm-pauli-sum</code>
+bounds individual operations on further traits, so a backend that skips
+them only fails to compile at those call sites. In practice you also
+want:</p>
+<ul>
+<li><a href="#rs-ppvm-traits-traits-map-ACMapIter"><code>ACMapIter</code></a> — borrowing iteration over <code>(key, value)</code>; needed by
+<code>PauliSum::iter</code>, <code>Display</code>, and the approximate-comparison helpers.</li>
+<li><a href="#rs-ppvm-traits-traits-trace-Trace"><code>Trace</code></a> — needed by <code>PauliSum::trace</code>.</li>
+<li><code>Extend&lt;(Word, Coeff)&gt;</code> — needed by the arithmetic operators.</li>
+<li><code>PartialEq</code> — needed by <code>PauliSum</code>&#39;s approximate comparisons.</li>
+</ul>
 <p>Of these, <code>map_insert_vec</code>, <code>map_insert_multiple</code>, <code>scale</code>,
 <code>mul_assign</code>, <code>retain</code>, and <code>consume</code> are whole-collection batch entry
 points: a concurrent or GPU backend can dispatch each of them as one
@@ -629,8 +640,11 @@ parallel pass over every entry. <code>add_assign</code> is the exception — it
 operates on a single key at a time, so a thread-pool backend typically
 only parallelizes its batch sibling, <code>map_add_assign</code>. See the
 <code>DashMap</code> impl in <code>crates/ppvm-traits/src/map/dashmap.rs</code> for a working
-concurrent precedent: it implements every batch method with rayon
-<code>par_iter</code>.</p>
+concurrent precedent: <code>map_add_assign</code>, <code>mul_assign</code>, <code>map_insert_vec</code>,
+<code>map_insert_multiple</code>, <code>scale</code>, <code>consume</code>, and <code>trace</code> all go through
+rayon <code>par_iter</code>. <code>retain</code> is the one that does not — its <code>FnMut</code>
+predicate is not shareable across threads, so <code>DashMap</code> forwards to the
+sequential <code>DashMap::retain</code>.</p>
 </div></div></details></article><article class="api-item" id="rs-ppvm-traits-traits-map-ACMapAddAssign" data-name="acmapaddassign" data-path="ppvm_traits::traits::map::acmapaddassign" data-kind="trait"><div class="row1"><span class="kind kind-trait">trait</span><span class="name"><a href="#rs-ppvm-traits-traits-map-ACMapAddAssign">ACMapAddAssign</a></span><span class="path">ppvm_traits::traits::map::ACMapAddAssign</span></div><div class="signature">trait ACMapAddAssign&lt;S, V, H, W&gt;</div><p class="summary"><code>+=</code> semantics for an <code>ACMap</code>: insert a new entry or accumulate into
 the existing one with the same key.</p></article><article class="api-item" id="rs-ppvm-traits-traits-map-ACMapBase" data-name="acmapbase" data-path="ppvm_traits::traits::map::acmapbase" data-kind="trait"><div class="row1"><span class="kind kind-trait">trait</span><span class="name"><a href="#rs-ppvm-traits-traits-map-ACMapBase">ACMapBase</a></span><span class="path">ppvm_traits::traits::map::ACMapBase</span></div><div class="signature">trait ACMapBase</div><p class="summary">Minimal interface for any &quot;associative coefficient map&quot; backing a
 <code>PauliSum</code> — construction, length, and clear.</p><details><summary>Full docstring</summary><div class="docstring"><div class="doc-prose"><p>Minimal interface for any &quot;associative coefficient map&quot; backing a
@@ -933,20 +947,27 @@ stores its Pauli word as fixed-size <code>bytemuck::Pod</code> integer bit-plane
 (<code>xbits</code>/<code>zbits</code>, backed by <code>[u8; N]</code> or <code>[u64; N]</code>), reachable as
 contiguous raw integer slices via <code>as_raw_slice</code>/<code>as_raw_mut_slice</code> —
 plain-old-data, not a bit-addressed abstraction.</li>
-<li>The Clifford single-/two-qubit gates
-(<code>crates/ppvm-tableau/src/gates/clifford.rs</code>) all run through one shared
+<li>The single-gate Clifford path
+(<code>crates/ppvm-tableau/src/gates/clifford.rs</code>) has one shared
 implementation per gate that loops over rows operating directly on
 those raw integer slices with a hoisted word-index/bit/mask, bypassing
-<code>bitvec</code>&#39;s per-bit bounds checks inside the loop. Every caller —
-<a href="#rs-ppvm-tableau-data-Tableau"><code>data::Tableau</code></a>, <a href="#rs-ppvm-tableau-data-GeneralizedTableau"><code>data::GeneralizedTableau</code></a> (via the
-<code>impl_generalized_tableau_clifford*</code> macros), and the fused batch path
-below — funnels through that one implementation.</li>
-<li><a href="#rs-ppvm-traits-traits-clifford-CliffordBatch"><code>CliffordBatch</code></a> methods (<code>x_many</code>,
-<code>cz_many</code>, …) and <a href="#rs-ppvm-tableau-data-GeneralizedTableau-cz-block"><code>data::GeneralizedTableau::cz_block</code></a> /
-<code>cz_block_pairs</code> / <code>cz_block_pairs_cross_word</code> apply a gate to a whole
-contiguous block of qubits as bulk masked slice operations — the entry
-points a thread pool or CUDA kernel would implement over the row
-planes.</li>
+<code>bitvec</code>&#39;s per-bit bounds checks inside the loop. Both
+<a href="#rs-ppvm-tableau-data-Tableau"><code>data::Tableau</code></a> and <a href="#rs-ppvm-tableau-data-GeneralizedTableau"><code>data::GeneralizedTableau</code></a> (via the
+<code>impl_generalized_tableau_clifford*</code> macros) funnel through it.</li>
+<li>The batch path does <strong>not</strong> share that implementation. The
+<a href="#rs-ppvm-traits-traits-clifford-CliffordBatch"><code>CliffordBatch</code></a> methods (<code>x_many</code>,
+<code>cz_many</code>, …) each carry their own raw-plane loop that fuses many gates
+into a single pass over the rows, and <code>Tableau</code> and
+<code>GeneralizedTableau</code> have separate <code>CliffordBatch</code> impls (the latter
+via the <code>impl_gen_tableau_batch_*</code> macros). Anyone porting the Clifford
+layer to a thread pool or a CUDA kernel has to cover both the
+single-gate implementation and these batch bodies.</li>
+<li>The batch methods take arbitrary index lists (<code>&amp;[usize]</code>,
+<code>&amp;[(usize, usize)]</code>). <a href="#rs-ppvm-tableau-data-GeneralizedTableau-cz-block"><code>data::GeneralizedTableau::cz_block</code></a> /
+<code>cz_block_pairs</code> / <code>cz_block_pairs_cross_word</code> are the
+contiguous-block variants: they apply CZ to a whole contiguous range
+of qubits as bulk masked slice operations, which is the layout a
+kernel can address without an index indirection.</li>
 <li><code>GeneralizedTableau::branch_with_coefficients</code> (crate-private) transforms
 the whole coefficient array in one pass. Its <code>#[cfg(feature = &quot;rayon&quot;)]</code>
 path (<code>branch_coefficients_parallel</code>, gated by <code>RAYON_COEFF_THRESHOLD</code>)

@@ -807,6 +807,9 @@ where
     /// word) or [`Self::cz_block_pairs_cross_word`] (straddling two words), so
     /// callers never need to reason about the `u64` packing. CZ is symmetric,
     /// so the two bases may be passed in either order.
+    ///
+    /// This is a whole-block primitive over the POD raw-word planes — see the
+    /// crate-level "Data-parallel / GPU-offloadable surface" section.
     pub fn cz_block(&mut self, control_base: usize, target_base: usize, count: usize)
     where
         <<T::Storage as BitView>::Store as TryFrom<usize>>::Error: Debug,
@@ -1003,6 +1006,15 @@ where
         + Copy,
     I: TableauIndex + Send + Sync,
 {
+    /// Split every coefficient into a branch and non-branch term for a
+    /// single-qubit Pauli measurement/rotation, in one pass over the whole
+    /// coefficient array.
+    ///
+    /// This is a whole-batch primitive over the coefficient array — see the
+    /// crate-level "Data-parallel / GPU-offloadable surface" section. The
+    /// `#[cfg(feature = "rayon")]` path computes each entry's branch/non-branch
+    /// coefficients in parallel; only the final accumulation into the
+    /// coefficient map is sequential.
     pub(crate) fn branch_with_coefficients(
         &mut self,
         addr0: usize,

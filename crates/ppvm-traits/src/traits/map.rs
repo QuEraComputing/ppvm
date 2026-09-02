@@ -59,8 +59,9 @@ pub trait ACMapMulAssign<V: Coefficient, H: BuildHasher + Clone + Default> {
     fn mul_assign(&mut self, value: V);
 }
 
-/// Combined in-place modify + insert pattern used to express branching
-/// gates (where one input entry can produce several output entries).
+/// In-place modify + insert pattern used to express branching gates
+/// (where one input entry can produce zero, one, or several output
+/// entries).
 pub trait ACMapInsert<
     S: PauliStorage,
     V: Coefficient,
@@ -69,21 +70,17 @@ pub trait ACMapInsert<
 >
 {
     /// Modify each existing entry in place; if `f` returns `Some((k', v'))`,
-    /// also insert that new entry into `dest`.
-    fn map_insert<F>(&mut self, dest: &mut Self, f: F)
-    where
-        F: Fn(&W, &mut V) -> Option<(W, V)> + Sync + Send;
-
-    /// Like [`map_insert`](Self::map_insert) but appends produced entries
-    /// into a plain `Vec` (a push per entry, no hashing) instead of a map.
-    /// The caller merges the buffer into the destination map afterwards,
-    /// avoiding a second hashmap probe per produced entry.
+    /// append that new entry into `dest`, a plain `Vec` (a push per entry,
+    /// no hashing). This is the primary hot-path entry point: the caller
+    /// merges the buffer into the destination map afterwards, avoiding a
+    /// second hashmap probe per produced entry.
     fn map_insert_vec<F>(&mut self, dest: &mut Vec<(W, V)>, f: F)
     where
         F: Fn(&W, &mut V) -> Option<(W, V)> + Sync + Send;
 
-    /// Same as [`map_insert`](Self::map_insert) but `f` may return a
-    /// `Vec` of new entries to be inserted into `dest`.
+    /// Like [`map_insert_vec`](Self::map_insert_vec) but `f` may return a
+    /// `Vec` of new entries per existing entry, inserted directly into the
+    /// destination map `dest`.
     fn map_insert_multiple<F>(&mut self, dest: &mut Self, f: F)
     where
         F: Fn(&W, &mut V) -> Option<Vec<(W, V)>> + Sync + Send;
@@ -149,6 +146,47 @@ pub trait ACMapRetain<
 ///
 /// You don't normally implement `ACMap` directly: the blanket impl below
 /// covers any type that implements all the constituent traits.
+///
+/// # Map-backend implementor's guide
+///
+/// A new backing map (a GPU-resident map, a sharded map, anything beyond
+/// the existing `HashMap` / `IndexMap` / `AHashMap` / `DashMap` backends)
+/// needs these to satisfy the `ACMap` bound itself:
+///
+/// * `Clone`.
+/// * [`ACMapBase`] — construction, length, clear.
+/// * [`ACMapAddAssign`] — `+=` insert-or-accumulate.
+/// * [`ACMapMulAssign`] — scalar `*=`.
+/// * [`ACMapInsert`] — just `map_insert_vec` and `map_insert_multiple`
+///   (there is no third variant to implement).
+/// * [`ACMapContains`] — membership queries.
+/// * [`ACMapScale`] — in-place per-entry transform.
+/// * [`ACMapRetain`] — predicate-based entry removal.
+/// * [`ACMapConsume`] — drain-and-accumulate merge of two maps.
+///
+/// Satisfying `ACMap` is necessary but not sufficient: `ppvm-pauli-sum`
+/// bounds individual operations on further traits, so a backend that skips
+/// them only fails to compile at those call sites. In practice you also
+/// want:
+///
+/// * [`ACMapIter`] — borrowing iteration over `(key, value)`; needed by
+///   `PauliSum::iter`, `Display`, and the approximate-comparison helpers.
+/// * [`Trace`](crate::traits::Trace) — needed by `PauliSum::trace`.
+/// * `Extend<(Word, Coeff)>` — needed by the arithmetic operators.
+/// * `PartialEq` — needed by `PauliSum`'s approximate comparisons.
+///
+/// Of these, `map_insert_vec`, `map_insert_multiple`, `scale`,
+/// `mul_assign`, `retain`, and `consume` are whole-collection batch entry
+/// points: a concurrent or GPU backend can dispatch each of them as one
+/// parallel pass over every entry. `add_assign` is the exception — it
+/// operates on a single key at a time, so a thread-pool backend typically
+/// only parallelizes its batch sibling, `map_add_assign`. See the
+/// `DashMap` impl in `crates/ppvm-traits/src/map/dashmap.rs` for a working
+/// concurrent precedent: `map_add_assign`, `mul_assign`, `map_insert_vec`,
+/// `map_insert_multiple`, `scale`, `consume`, and `trace` all go through
+/// rayon `par_iter`. `retain` is the one that does not — its `FnMut`
+/// predicate is not shareable across threads, so `DashMap` forwards to the
+/// sequential `DashMap::retain`.
 pub trait ACMap<
     S: PauliStorage,
     V: Coefficient,

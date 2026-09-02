@@ -105,15 +105,15 @@ macro_rules! create_interface_symmetry_methods {
                 group: &crate::symmetry::TranslationGroup,
                 momentum: Vec<i32>,
             ) -> pyo3::PyResult<()> {
-                let n_g = group.core().n_qubits();
+                let n_q = group.core().n_qubits();
                 for (label, n) in [
                     ("self", self.inner.n_qubits()),
                     ("other", other.inner.n_qubits()),
                 ] {
-                    if n != n_g {
+                    if n != n_q {
                         return Err(pyo3::exceptions::PyValueError::new_err(format!(
                             "{label} PauliSum has {n} qubits but the \
-                             TranslationGroup acts on {n_g}",
+                             TranslationGroup acts on {n_q}",
                         )));
                     }
                 }
@@ -124,54 +124,12 @@ macro_rules! create_interface_symmetry_methods {
                         group.core().n_generators(),
                     )));
                 }
-                // Gather both real components into word -> (re + i·im).
-                let mut combined: std::collections::HashMap<
-                    <$type as Config>::PauliWordType,
-                    num::Complex<f64>,
-                > = std::collections::HashMap::new();
-                for (w, v) in self.inner.data().iter() {
-                    combined
-                        .entry(w.clone())
-                        .or_insert(num::Complex::new(0.0, 0.0))
-                        .re += *v;
-                }
-                for (w, v) in other.inner.data().iter() {
-                    combined
-                        .entry(w.clone())
-                        .or_insert(num::Complex::new(0.0, 0.0))
-                        .im += *v;
-                }
-                let mut basis = Vec::with_capacity(combined.len());
-                let mut coeffs = Vec::with_capacity(combined.len());
-                for (w, c) in combined {
-                    basis.push(w);
-                    coeffs.push(c);
-                }
-                // Character-weighted fold onto orbit reps.
-                // `canonicalize_pauli_sum_complex` carries a 1/|G| prefactor;
-                // we rescale by |G| so the merge is the *summing* projector
-                // (like `symmetry_merge`): idempotent on already-merged input,
-                // hence stable under merging after every Trotter step.
-                ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex(
-                    &mut basis,
-                    &mut coeffs,
+                ppvm_pauli_sum::symmetry::momentum_merge_pauli_sum_pair(
+                    &mut self.inner,
+                    &mut other.inner,
                     group.core(),
                     &momentum,
                 );
-                let scale = group.core().order() as f64;
-                // Write the real/imag parts back into the two sums.
-                self.inner.data_mut().clear();
-                other.inner.data_mut().clear();
-                for (w, c) in basis.into_iter().zip(coeffs.into_iter()) {
-                    let re = c.re * scale;
-                    let im = c.im * scale;
-                    if re != 0.0 {
-                        self.inner += (w.clone(), re);
-                    }
-                    if im != 0.0 {
-                        other.inner += (w, im);
-                    }
-                }
                 Ok(())
             }
         }

@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::sum::PauliSum;
 use fxhash::{FxHashMap, FxHashSet};
 use num::Complex;
 use ppvm_pauli_word::word::PauliWord;
-use ppvm_traits::{HashFinalize, PauliStorage};
+use ppvm_traits::{ACMapAddAssign, ACMapBase, ACMapIter, Config, HashFinalize, PauliStorage};
 use std::f64::consts::PI;
 use std::hash::BuildHasher;
 
@@ -140,6 +141,92 @@ pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
     for (w, c) in projected {
         basis.push(w);
         coeffs.push(c);
+    }
+}
+
+/// Momentum-sector merge of a complex operator carried as a **real
+/// pair**: `re` and `im` are the real and imaginary parts of
+/// `O = re + i·im`. Both are overwritten in place with the
+/// orbit-representative form of `O` projected onto momentum sector
+/// `k_modes`.
+///
+/// This is the momentum-sector counterpart of
+/// [`super::symmetry_merge_pauli_sum`], and generalizes it to `k ≠ 0`
+/// while keeping real coefficients on both sums — the only complex
+/// arithmetic is the internal character-weighted fold, which reuses
+/// [`canonicalize_pauli_sum_complex`].
+///
+/// [`canonicalize_pauli_sum_complex`] carries a `1/|orbit|` prefactor
+/// (it *averages* over orbit members); we rescale by `group.order()` so
+/// that the result is the *summing* projector, matching
+/// [`super::symmetry_merge_pauli_sum`].
+///
+/// Entries whose rescaled component is exactly zero are dropped, so a
+/// purely real operator leaves `im` empty.
+///
+/// # Panics
+///
+/// If `re` and `im` disagree on qubit count, if either disagrees with
+/// `group.n_qubits()`, or if `k_modes.len() != group.n_generators()`.
+pub fn momentum_merge_pauli_sum_pair<T, A, S, const R: bool>(
+    re: &mut PauliSum<T>,
+    im: &mut PauliSum<T>,
+    group: &TranslationGroup,
+    k_modes: &[i32],
+) where
+    T: Config<PauliWordType = PauliWord<A, S, R>, Coeff = f64>,
+    T::Map: ACMapAddAssign<T::Storage, f64, T::BuildHasher, PauliWord<A, S, R>>,
+    for<'a> T::Map: ACMapIter<'a, Item = (&'a PauliWord<A, S, R>, &'a f64)>,
+    A: PauliStorage,
+    S: BuildHasher + Clone + Default + HashFinalize,
+{
+    assert_eq!(
+        re.n_qubits(),
+        im.n_qubits(),
+        "real and imaginary parts disagree on qubit count"
+    );
+    assert_eq!(
+        re.n_qubits(),
+        group.n_qubits(),
+        "PauliSum qubit count {} != group qubit count {}",
+        re.n_qubits(),
+        group.n_qubits()
+    );
+    assert_eq!(
+        k_modes.len(),
+        group.n_generators(),
+        "k_modes length {} != number of generators {}",
+        k_modes.len(),
+        group.n_generators()
+    );
+
+    // Gather both real components into `word -> re + i·im`.
+    let mut combined: FxHashMap<PauliWord<A, S, R>, Complex<f64>> = FxHashMap::default();
+    for (word, coeff) in re.data().iter() {
+        combined.entry(*word).or_insert(Complex::new(0.0, 0.0)).re += *coeff;
+    }
+    for (word, coeff) in im.data().iter() {
+        combined.entry(*word).or_insert(Complex::new(0.0, 0.0)).im += *coeff;
+    }
+    let mut basis = Vec::with_capacity(combined.len());
+    let mut coeffs = Vec::with_capacity(combined.len());
+    for (word, coeff) in combined {
+        basis.push(word);
+        coeffs.push(coeff);
+    }
+
+    canonicalize_pauli_sum_complex(&mut basis, &mut coeffs, group, k_modes);
+
+    let scale = group.order() as f64;
+    re.data_mut().clear();
+    im.data_mut().clear();
+    for (word, coeff) in basis.into_iter().zip(coeffs) {
+        if coeff.re != 0.0 {
+            *re += (word, coeff.re * scale);
+        }
+        if coeff.im != 0.0 {
+            *im += (word, coeff.im * scale);
+        }
     }
 }
 

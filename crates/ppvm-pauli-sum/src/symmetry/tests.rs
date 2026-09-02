@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::sum::PauliSum;
 use fxhash::FxHashMap;
 use num::Complex;
 use ppvm_pauli_word::word::PauliWord;
@@ -450,6 +451,152 @@ fn pauli_sum_symmetry_merge_matches_plain_trotter() {
         max_diff < 1e-7,
         "Trotter with-merging diverged from without-merging: max |Δc| = {max_diff:e}"
     );
+}
+
+/// Build the `(re, im)` real pair of the momentum-`k` eigenstate
+/// `O_k = Σ_a e^{-2πi k a / n} Z_a` on an `n`-site chain.
+fn seed_z_momentum_pair<Cfg>(n: usize, k: i32) -> (PauliSum<Cfg>, PauliSum<Cfg>)
+where
+    Cfg: ppvm_traits::Config<Coeff = f64>,
+    PauliSum<Cfg>: for<'s> std::ops::AddAssign<(&'s str, f64)>,
+{
+    let mut re: PauliSum<Cfg> = PauliSum::builder().n_qubits(n).build();
+    let mut im: PauliSum<Cfg> = PauliSum::builder().n_qubits(n).build();
+    for a in 0..n {
+        let mut s: Vec<char> = vec!['I'; n];
+        s[a] = 'Z';
+        let st: String = s.into_iter().collect();
+        let phase = -2.0 * PI * (k as f64) * (a as f64) / (n as f64);
+        re += (st.as_str(), phase.cos());
+        im += (st.as_str(), phase.sin());
+    }
+    (re, im)
+}
+
+/// At `k = 0` on free orbits, the phase-aware pair merge must agree
+/// with the independent real-coefficient `symmetry_merge_pauli_sum`
+/// code path — this is what pins the `|G|` rescale (the momentum
+/// projector averages; `symmetry_merge` sums).
+#[test]
+fn momentum_merge_pair_matches_symmetry_merge_at_k0() {
+    use crate::config::indexmap::ByteFxHashF64;
+    use crate::prelude::*;
+
+    type Cfg = ByteFxHashF64<1>;
+    let n = 4usize;
+    let group = TranslationGroup::chain_1d(n);
+
+    // Σ_j Z_j and Σ_j X_j X_{j+1}: both free orbits (|orbit| = |G|).
+    let mut reference: PauliSum<Cfg> = PauliSum::builder().n_qubits(n).build();
+    let mut re: PauliSum<Cfg> = PauliSum::builder().n_qubits(n).build();
+    let mut im: PauliSum<Cfg> = PauliSum::builder().n_qubits(n).build();
+    for j in 0..n {
+        let mut z: Vec<char> = vec!['I'; n];
+        z[j] = 'Z';
+        let mut xx: Vec<char> = vec!['I'; n];
+        xx[j] = 'X';
+        xx[(j + 1) % n] = 'X';
+        for (s, c) in [(z, 1.5), (xx, -0.25)] {
+            let st: String = s.into_iter().collect();
+            reference += (st.as_str(), c);
+            re += (st.as_str(), c);
+        }
+    }
+    // `im` needs an entry to exist; a zero coefficient must not survive.
+    im += ("IIII", 0.0);
+
+    symmetry_merge_pauli_sum(&mut reference, &group);
+    momentum_merge_pauli_sum_pair(&mut re, &mut im, &group, &[0]);
+
+    let expected: FxHashMap<_, f64> = reference.iter().map(|(w, c)| (*w, *c)).collect();
+    let got: FxHashMap<_, f64> = re.iter().map(|(w, c)| (*w, *c)).collect();
+    assert_eq!(expected.len(), got.len(), "basis sizes differ");
+    for (w, &c) in &expected {
+        let g = *got.get(w).unwrap_or_else(|| panic!("missing rep {w:?}"));
+        assert!(
+            (c - g).abs() < 1e-12,
+            "rep {w:?}: symmetry_merge gave {c}, momentum_merge gave {g}"
+        );
+    }
+    assert_eq!(im.len(), 0, "a purely real input must leave `im` empty");
+}
+
+/// A momentum-`k` eigenstate folds onto a single orbit rep whose
+/// coefficient is the *summing* projector `Σ_{p ∈ orbit} χ_k(g_p) · c_p`,
+/// computed here directly from the group API.
+#[test]
+fn momentum_merge_pair_matches_summing_projector() {
+    use crate::config::indexmap::ByteFxHashF64;
+
+    type Cfg = ByteFxHashF64<1>;
+    let n = 4usize;
+    let group = TranslationGroup::chain_1d(n);
+
+    for k in 0..n as i32 {
+        let (mut re, mut im) = seed_z_momentum_pair::<Cfg>(n, k);
+        // Coefficient of each orbit member before merging.
+        let before: FxHashMap<W, Complex<f64>> = (0..n)
+            .map(|a| {
+                let mut s: Vec<char> = vec!['I'; n];
+                s[a] = 'Z';
+                let phase = -2.0 * PI * (k as f64) * (a as f64) / (n as f64);
+                (
+                    word(&s.into_iter().collect::<String>()),
+                    Complex::from_polar(1.0, phase),
+                )
+            })
+            .collect();
+
+        momentum_merge_pauli_sum_pair(&mut re, &mut im, &group, &[k]);
+
+        let got_re: FxHashMap<_, f64> = re.iter().map(|(w, c)| (*w, *c)).collect();
+        let got_im: FxHashMap<_, f64> = im.iter().map(|(w, c)| (*w, *c)).collect();
+        assert!(
+            !got_re.is_empty() || !got_im.is_empty(),
+            "k={k}: merged away"
+        );
+
+        let rep = group.canonicalize(&word(&{
+            let mut s: Vec<char> = vec!['I'; n];
+            s[0] = 'Z';
+            s.into_iter().collect::<String>()
+        }));
+        // Σ over the orbit of χ_k(g) · c_{g·rep}.
+        let mut expected = Complex::new(0.0, 0.0);
+        for (member, counter) in group.orbit_with_counters(&rep) {
+            expected += group.character(&[k], &counter) * before[&member];
+        }
+        let got = Complex::new(
+            got_re.get(&rep).copied().unwrap_or(0.0),
+            got_im.get(&rep).copied().unwrap_or(0.0),
+        );
+        assert!(
+            (got - expected).norm() < 1e-12,
+            "k={k}: rep {rep:?} expected {expected:?}, got {got:?}"
+        );
+    }
+}
+
+#[test]
+#[should_panic(expected = "k_modes length 2 != number of generators 1")]
+fn momentum_merge_pair_rejects_wrong_momentum_length() {
+    use crate::config::indexmap::ByteFxHashF64;
+
+    type Cfg = ByteFxHashF64<1>;
+    let group = TranslationGroup::chain_1d(4);
+    let (mut re, mut im) = seed_z_momentum_pair::<Cfg>(4, 0);
+    momentum_merge_pauli_sum_pair(&mut re, &mut im, &group, &[0, 0]);
+}
+
+#[test]
+#[should_panic(expected = "PauliSum qubit count 4 != group qubit count 3")]
+fn momentum_merge_pair_rejects_qubit_count_mismatch() {
+    use crate::config::indexmap::ByteFxHashF64;
+
+    type Cfg = ByteFxHashF64<1>;
+    let group = TranslationGroup::chain_1d(3);
+    let (mut re, mut im) = seed_z_momentum_pair::<Cfg>(4, 0);
+    momentum_merge_pauli_sum_pair(&mut re, &mut im, &group, &[0]);
 }
 
 #[test]

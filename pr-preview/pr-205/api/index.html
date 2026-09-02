@@ -41,10 +41,11 @@ internal state.</p>
 </div><section class="doc-section"><h5>Returns</h5><dl class="return-list"><dt></dt><dd><p>A list of <code>MeasurementResult</code> outcomes in measurement order.</p>
 </dd></dl></section></div></details></article><article class="api-item" id="py-ppvm-generalized-tableau-GeneralizedTableau-cz-block" data-name="cz_block" data-path="ppvm.generalized_tableau.generalizedtableau.cz_block" data-kind="method"><div class="row1"><span class="kind kind-method">method</span><span class="name"><a href="#py-ppvm-generalized-tableau-GeneralizedTableau-cz-block">cz_block</a></span><span class="path">ppvm.generalized_tableau.GeneralizedTableau.cz_block</span></div><div class="signature">cz_block(control_base: int, target_base: int, count: int) -&gt; None</div><p class="summary">Apply a fused block of CZ gates over constant-offset qubit pairs.</p><details><summary>Full docstring</summary><div class="docstring"><div class="doc-prose"><p>Apply a fused block of CZ gates over constant-offset qubit pairs.</p>
 <p>Applies CZ to <code>(control_base + i, target_base + i)</code> for <code>i</code> in
-<code>range(count)</code> -- i.e. the gates <code>zip(range(control_base, ...), range(target_base, ...))</code> would produce. This uses a word-level kernel
-that is much faster than the equivalent <code>cz</code> call when the pairs form a
-contiguous, constant-offset block (e.g. entangling two adjacent qubit
-registers). For scattered pairs, use <code>cz</code>.</p>
+<code>range(count)</code> -- i.e. the gates <code>zip(range(control_base, ...), range(target_base, ...))</code> would produce. Disjoint constant-offset
+blocks use a word-level kernel that is much faster than the equivalent
+<code>cz</code> call (e.g. entangling two adjacent qubit registers). Overlapping
+/ brickwork pairs such as <code>cz_block(0, 1, n)</code> are still correct: they
+fall back to the per-pair loop. For scattered pairs, use <code>cz</code>.</p>
 <p>CZ is symmetric, so <code>control_base</code> and <code>target_base</code> may be given in
 either order.</p>
 </div><section class="doc-section"><h5>Parameters</h5><dl class="param-list"><dt><code class="param-name">control_base</code><code class="param-type">int</code></dt><dd><p>First qubit of the control run.</p>
@@ -1137,19 +1138,13 @@ callers never need to reason about the <code>u64</code> packing. CZ is symmetric
 so the two bases may be passed in either order.</p>
 <p>Overlapping pairs — <code>|target_base - control_base| &lt; count</code>, of which
 adjacent-pair brickwork <code>cz_block(0, 1, n)</code> is the extreme case — are
-handled: the same-word segments route through <a href="#rs-ppvm-tableau-data-GeneralizedTableau-cz-block-pairs"><code>Self::cz_block_pairs</code></a>,
-which falls back to the per-pair loop. A cross-word segment is always
-disjoint (its <code>run</code> never exceeds the offset), so the fused kernel stays
-live there.</p>
+handled: the same-word segments route through <a href="#rs-ppvm-tableau-data-GeneralizedTableau-cz-block-pairs"><code>Self::cz_block_pairs</code></a>
+into <a href="#rs-ppvm-tableau-data-Tableau-cz-block-pairs"><code>Tableau::cz_block_pairs</code></a>, which falls back to the per-pair
+loop. A cross-word segment is always disjoint (its <code>run</code> never exceeds
+the offset), so the fused kernel stays live there.</p>
 </div></div></details></article><article class="api-item" id="rs-ppvm-tableau-data-GeneralizedTableau-cz-block-pairs" data-name="cz_block_pairs" data-path="ppvm_tableau::data::generalizedtableau::cz_block_pairs" data-kind="function"><div class="row1"><span class="kind kind-function">function</span><span class="name"><a href="#rs-ppvm-tableau-data-GeneralizedTableau-cz-block-pairs">cz_block_pairs</a></span><span class="path">ppvm_tableau::data::GeneralizedTableau::cz_block_pairs</span></div><div class="signature">fn cz_block_pairs(self, base, offset, count)</div><p class="summary">Apply CZ to N pairs with constant offset: (base+i, base+offset+i) for i in 0..count.
-Falls back to individual CZ calls if any qubit in the range is lost, or
-if the pairs&#39; supports overlap (<code>offset &lt; count</code>, including the
-degenerate `offs…</p><details><summary>Full docstring</summary><div class="docstring"><div class="doc-prose"><p>Apply CZ to N pairs with constant offset: (base+i, base+offset+i) for i in 0..count.
-Falls back to individual CZ calls if any qubit in the range is lost, or
-if the pairs&#39; supports overlap (<code>offset &lt; count</code>, including the
-degenerate <code>offset == 0</code>), which the fused kernel does not handle — see
-<a href="#rs-ppvm-tableau-data-Tableau-cz-block-pairs"><code>Tableau::cz_block_pairs</code></a>&#39;s preconditions.</p>
-</div></div></details></article><article class="api-item" id="rs-ppvm-tableau-data-GeneralizedTableau-cz-block-pairs-cross-word" data-name="cz_block_pairs_cross_word" data-path="ppvm_tableau::data::generalizedtableau::cz_block_pairs_cross_word" data-kind="function"><div class="row1"><span class="kind kind-function">function</span><span class="name"><a href="#rs-ppvm-tableau-data-GeneralizedTableau-cz-block-pairs-cross-word">cz_block_pairs_cross_word</a></span><span class="path">ppvm_tableau::data::GeneralizedTableau::cz_block_pairs_cross_word</span></div><div class="signature">fn cz_block_pairs_cross_word(self, word_c, base_bit_c, word_t, base_bit_t, count)</div><p class="summary">Apply CZ to N cross-word pairs. Controls at word_c, targets at word_t.
+Falls back to individual CZ calls if any qubit in the range is lost.
+Overlap (<code>offset &lt; count</code>) is owned by <a href="#rs-ppvm-tableau-data-Tableau-cz-block-pairs"><code>Tableau::cz_block_pairs</code></a>.</p></article><article class="api-item" id="rs-ppvm-tableau-data-GeneralizedTableau-cz-block-pairs-cross-word" data-name="cz_block_pairs_cross_word" data-path="ppvm_tableau::data::generalizedtableau::cz_block_pairs_cross_word" data-kind="function"><div class="row1"><span class="kind kind-function">function</span><span class="name"><a href="#rs-ppvm-tableau-data-GeneralizedTableau-cz-block-pairs-cross-word">cz_block_pairs_cross_word</a></span><span class="path">ppvm_tableau::data::GeneralizedTableau::cz_block_pairs_cross_word</span></div><div class="signature">fn cz_block_pairs_cross_word(self, word_c, base_bit_c, word_t, base_bit_t, count)</div><p class="summary">Apply CZ to N cross-word pairs. Controls at word_c, targets at word_t.
 Falls back to individual CZ calls if any qubit is lost.</p></article><article class="api-item" id="rs-ppvm-tableau-data-GeneralizedTableau-measure-all-with-scratch" data-name="measure_all_with_scratch" data-path="ppvm_tableau::data::generalizedtableau::measure_all_with_scratch" data-kind="function"><div class="row1"><span class="kind kind-function">function</span><span class="name"><a href="#rs-ppvm-tableau-data-GeneralizedTableau-measure-all-with-scratch">measure_all_with_scratch</a></span><span class="path">ppvm_tableau::data::GeneralizedTableau::measure_all_with_scratch</span></div><div class="signature">fn measure_all_with_scratch(self, scratch) -&gt; …</div><p class="summary">Same as <a href="#rs-ppvm-tableau"><code>LossyMeasureAll::measure_all</code></a>, but the caller supplies a
 <code>MeasureScratch</code> that&#39;s reused across the n per-qubit measurements
 (and, if the caller chooses, across many invocations / shots).</p><details><summary>Full docstring</summary><div class="docstring"><div class="doc-prose"><p>Same as <a href="#rs-ppvm-tableau"><code>LossyMeasureAll::measure_all</code></a>, but the caller supplies a
@@ -1168,20 +1163,19 @@ with a single word-level shift+XOR operation per row.</p><details><summary>Full 
 All pairs must be in the same u64 word. This replaces N individual CZ calls
 with a single word-level shift+XOR operation per row.</p>
 <h1>Preconditions</h1>
-<p><code>offset &gt;= count</code>, i.e. the pairs have pairwise-disjoint supports (pairs
-<code>i != j</code> collide iff <code>|i - j| == offset</code>, which needs <code>offset &lt; count</code>, or
-<code>offset == 0</code>). Both fused updates need it: the single
-<code>count_ones() &amp; 1</code> phase reads the pre-update <code>z</code> plane for every pair at
-once (<code>Batch.lean::czSeq_phase</code> proves it equal to the sequential loop
-only under pairwise disjointness, and <code>czSeq_phase_needs_disjoint</code>
-exhibits a counterexample), and the <code>z</code> delta <code>OR</code>s the two shifted
-planes, so a <code>z</code> bit written by two pairs is set once instead of
-XOR-cancelled. Callers that cannot guarantee it must use
-<a href="#rs-ppvm-tableau-data-GeneralizedTableau-cz-block-pairs"><code>GeneralizedTableau::cz_block_pairs</code></a> or
-<a href="#rs-ppvm-tableau-data-GeneralizedTableau-cz-block"><code>GeneralizedTableau::cz_block</code></a>, which fall back to the per-pair loop.</p>
+<p>The fused kernel needs <code>offset &gt;= count</code>, i.e. pairwise-disjoint
+supports (pairs <code>i != j</code> collide iff <code>|i - j| == offset</code>, which needs
+<code>offset &lt; count</code>, or <code>offset == 0</code>). Both fused updates need it: the
+single <code>count_ones() &amp; 1</code> phase reads the pre-update <code>z</code> plane for
+every pair at once (<code>Batch.lean::czSeq_phase</code> proves it equal to the
+sequential loop only under pairwise disjointness, and
+<code>czSeq_phase_needs_disjoint</code> exhibits a counterexample), and the <code>z</code>
+delta <code>OR</code>s the two shifted planes, so a <code>z</code> bit written by two pairs
+is set once instead of XOR-cancelled.</p>
+<p>Overlapping pairs (<code>offset &lt; count</code>, including <code>offset == 0</code>) fall
+back to the per-pair <code>cz</code> loop, so this method is safe in release.</p>
 <h1>Panics</h1>
-<p>Debug-asserts that all bits are within the same word and that the pairs
-have pairwise-disjoint supports.</p>
+<p>Debug-asserts that all bits are within the same word.</p>
 </div></div></details></article><article class="api-item" id="rs-ppvm-tableau-data-Tableau-new" data-name="new" data-path="ppvm_tableau::data::tableau::new" data-kind="function"><div class="row1"><span class="kind kind-function">function</span><span class="name"><a href="#rs-ppvm-tableau-data-Tableau-new">new</a></span><span class="path">ppvm_tableau::data::Tableau::new</span></div><div class="signature">fn new(n_qubits) -&gt; …</div><p class="summary">Construct a fresh tableau initialised to <code>|0…0⟩</code>.</p></article><article class="api-item" id="rs-ppvm-tableau-noise-is-admissible-correlated-loss" data-name="is_admissible_correlated_loss" data-path="ppvm_tableau::noise::is_admissible_correlated_loss" data-kind="function"><div class="row1"><span class="kind kind-function">function</span><span class="name"><a href="#rs-ppvm-tableau-noise-is-admissible-correlated-loss">is_admissible_correlated_loss</a></span><span class="path">ppvm_tableau::noise::is_admissible_correlated_loss</span></div><div class="signature">fn is_admissible_correlated_loss(p) -&gt; …</div><p class="summary"><code>true</code> iff <code>p</code> is an admissible correlated-loss parameter triple.</p><details><summary>Full docstring</summary><div class="docstring"><div class="doc-prose"><p><code>true</code> iff <code>p</code> is an admissible correlated-loss parameter triple.</p>
 <p>The channel is completely positive exactly when every event weight is
 nonnegative, i.e. <code>p0, p1 &gt;= 0</code>, <code>p0 + 2·p1 &lt;= 1</code> (<code>p1</code> is the probability
@@ -1189,7 +1183,10 @@ that a <em>named</em> one of the pair is lost, so the exactly-one event carries
 <code>2·p1</code>) and <code>p2 ∈ [0, 1]</code>. Outside that region the mixture truncates a
 negative survivor weight and renormalizes, and the trajectory&#39;s cumulative
 scan stops being a categorical sampler — both silently.</p>
-<p>Coefficients that do not convert to <code>f64</code> (symbolic ones) are not checked.</p>
+<p>Coefficients are checked in <code>Coeff</code> space via <code>PartialOrd&lt;f64&gt;</code> (the
+bound every loss-channel impl already carries). Slack still applies
+to the <code>p0 + 2·p1 &lt;= 1</code> sum so a saturated <code>[1/3, 1/3, _]</code> is not
+rejected by last-bit rounding.</p>
 </div></div></details></article></div><div><h3><code>ppvm-sym</code></h3><p class="crate-blurb">Symbolic, parametric Pauli propagation.</p><article class="api-item" id="rs-ppvm-sym" data-name="ppvm_sym" data-path="ppvm_sym" data-kind="module"><div class="row1"><span class="kind kind-module">module</span><span class="name"><a href="#rs-ppvm-sym">ppvm_sym</a></span><span class="path">ppvm_sym</span></div><div class="signature">mod ppvm_sym</div><p class="summary">Symbolic, parametric Pauli propagation.</p><details><summary>Full docstring</summary><div class="docstring"><div class="doc-prose"><p>Symbolic, parametric Pauli propagation.</p>
 <p><code>ppvm-sym</code> provides a <a href="#rs-ppvm-sym-term-Term"><code>Term</code></a> type that represents a polynomial in
 sines and cosines of symbolic parameters. It is used by ppvm to

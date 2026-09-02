@@ -88,20 +88,6 @@ macro_rules! impl_acmap_iter {
                 Self::iter(self)
             }
         }
-
-        // impl<'a, S, V, State> crate::traits::ACMapIterMut<'a, S, V>
-        //     for $name<PauliWord<S>, V, State>
-        // where
-        //     S: PauliStorage + 'a,
-        //     V: Coefficient + 'a,
-        //     State: Clone + BuildHasher + 'a,
-        // {
-        //     type Item = (&'a PauliWord<S>, &'a mut V);
-        //     type IterMut = std::collections::hash_map::IterMut<'a, PauliWord<S>, V>;
-        //     fn iter_mut(&'a mut self) -> Self::IterMut {
-        //         Self::iter_mut(self)
-        //     }
-        // }
     };
 }
 
@@ -154,19 +140,6 @@ macro_rules! impl_acmap_insert {
             Hasher: Default + Clone + BuildHasher + 'a,
             W: PauliWordTrait + 'a,
         {
-            fn map_insert<F>(&mut self, dest: &mut Self, f: F)
-            where
-                F: Fn(&W, &mut C) -> Option<(W, C)> + Sync + Send,
-            {
-                for (k, v) in self.iter_mut() {
-                    if let Some((new_k, new_v)) = f(k, v) {
-                        dest.entry(new_k)
-                            .and_modify(|val| *val += new_v.clone())
-                            .or_insert(new_v);
-                    }
-                }
-            }
-
             fn map_insert_vec<F>(&mut self, dest: &mut Vec<(W, C)>, f: F)
             where
                 F: Fn(&W, &mut C) -> Option<(W, C)> + Sync + Send,

@@ -59,14 +59,6 @@ pub trait PauliError<T: Config> {
     }
 }
 
-/// Apply the same single-qubit Pauli error channel uniformly to every
-/// qubit in the system.
-pub trait PauliErrorAll<T: Config> {
-    /// Apply `Pauli error` with probabilities `p = [p_x, p_y, p_z]` to
-    /// every qubit.
-    fn pauli_error_all(&mut self, p: [T::Coeff; 3]);
-}
-
 /// Two-qubit Pauli error channel.
 pub trait TwoQubitPauliError<T: Config> {
     /// Apply a two-qubit Pauli-error channel to one pair. Probabilities are given in the order:

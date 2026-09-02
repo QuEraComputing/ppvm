@@ -155,15 +155,14 @@ fn pc_step_orbit_rep_matches_full_basis_projection() {
     let mut cr = coeffs_full.clone();
     canonicalize_pauli_sum_complex(&mut br, &mut cr, &group, &k);
     // Evolve in orbit-rep form (max_basis large ⇒ full enrichment).
+    let sector = Sector::new(&group, &k);
     for _ in 0..n_steps {
-        orbit_rep::pc_step_orbit_rep(
-            &spec,
+        spec.pc_step_orbit_rep(
             &mut br,
             &mut cr,
             dt,
             &protected,
-            &group,
-            &k,
+            sector,
             &PcStepConfig {
                 max_basis: 10_000_000,
                 ..Default::default()

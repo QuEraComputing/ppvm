@@ -391,7 +391,7 @@ impl LindbladSpec {
         tau_add: Option<f64>,
     ) -> PyResult<PyPauliMapComplex<'py>> {
         use num::Complex;
-        use ppvm_lindblad::orbit_rep;
+        use ppvm_lindblad::{Sector, canonicalize_basis_to_rep};
 
         let n_q = self.inner.n_qubits();
         let basis_view = basis.as_array();
@@ -422,25 +422,24 @@ impl LindbladSpec {
             )));
         }
         if canonicalize_first {
-            orbit_rep::canonicalize_basis_to_rep(&mut basis_words, group.core());
+            canonicalize_basis_to_rep(&mut basis_words, group.core());
         }
-        orbit_rep::pc_step_orbit_rep(
-            &self.inner,
-            &mut basis_words,
-            &mut coeffs_vec,
-            dt,
-            &protected_words,
-            group.core(),
-            k_slice,
-            &ppvm_lindblad::PcStepConfig {
-                max_basis,
-                admit_basis,
-                drop_tol,
-                tau_add,
-                num_threads: None,
-            },
-        )
-        .map_err(map_err)?;
+        self.inner
+            .pc_step_orbit_rep(
+                &mut basis_words,
+                &mut coeffs_vec,
+                dt,
+                &protected_words,
+                Sector::new(group.core(), k_slice),
+                &ppvm_lindblad::PcStepConfig {
+                    max_basis,
+                    admit_basis,
+                    drop_tol,
+                    tau_add,
+                    num_threads: None,
+                },
+            )
+            .map_err(map_err)?;
 
         let m = basis_words.len();
         let mut out_basis = vec![0u8; m * n_q];

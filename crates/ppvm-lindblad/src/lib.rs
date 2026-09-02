@@ -38,8 +38,11 @@ mod basis;
 pub mod config;
 pub mod error;
 pub(crate) mod expm;
+mod scalar;
+pub mod sector;
 mod spec;
 mod step;
+mod truncate;
 mod word;
 
 /// Matrix-free / quspin-expm-backed `exp(dt·L*)·b` engine. See module docs.
@@ -48,6 +51,7 @@ pub(crate) mod mf_expm;
 pub use basis::build_basis_index;
 pub use config::PcStepConfig;
 pub use error::Error;
+pub use sector::{Sector, canonicalize_basis_to_rep};
 pub use spec::{JumpInput, LindbladSpec};
 pub use step::PcStepTimings;
 pub use word::{MAX_QUBITS, Word, codes_from_word, parse_pauli_string, word_from_codes};

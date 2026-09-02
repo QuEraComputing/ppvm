@@ -62,6 +62,92 @@ pub(super) fn validate_site_count(n: usize, context: &str) {
         .unwrap_or_else(|_| panic!("{context}: site count {n} exceeds the u32-addressable range"));
 }
 
+/// A precondition violation in [`TranslationGroup::try_from_generators`].
+///
+/// Every variant is caller-supplied-input error, and its [`Display`]
+/// text is exactly what [`TranslationGroup::from_generators`] panics
+/// with. Arithmetic overflow in the group order or character phase
+/// modulus is NOT covered — that needs generator orders in the billions
+/// and still panics.
+///
+/// [`Display`]: std::fmt::Display
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroupError {
+    /// `perms` and `orders` describe different numbers of generators.
+    LengthMismatch { perms: usize, orders: usize },
+    /// A generator's permutation is not `n_qubits` long.
+    PermutationLength {
+        generator: usize,
+        len: usize,
+        n_qubits: usize,
+    },
+    /// A generator maps a qubit outside `0..n_qubits`.
+    TargetOutOfRange {
+        generator: usize,
+        target: u32,
+        n_qubits: usize,
+    },
+    /// A generator maps two qubits to the same position.
+    DuplicateTarget { generator: usize, target: u32 },
+    /// A generator declares cyclic order zero.
+    ZeroOrder { generator: usize },
+    /// A generator's declared order is not its exact cyclic order.
+    OrderMismatch {
+        generator: usize,
+        declared: u32,
+        exact: u32,
+    },
+    /// Two generators do not commute, so they generate no abelian group.
+    NonCommuting { left: usize, right: usize },
+}
+
+impl std::fmt::Display for GroupError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LengthMismatch { perms, orders } => write!(
+                f,
+                "perms ({perms} generators) and orders ({orders}) must have the same length"
+            ),
+            Self::PermutationLength {
+                generator,
+                len,
+                n_qubits,
+            } => write!(
+                f,
+                "generator {generator}: permutation length {len} != n_qubits {n_qubits}"
+            ),
+            Self::TargetOutOfRange {
+                generator,
+                target,
+                n_qubits,
+            } => write!(
+                f,
+                "generator {generator}: target {target} out of range [0, {n_qubits})"
+            ),
+            Self::DuplicateTarget { generator, target } => write!(
+                f,
+                "generator {generator}: not a permutation (duplicate target {target})"
+            ),
+            Self::ZeroOrder { generator } => {
+                write!(f, "generator {generator} order must be nonzero")
+            }
+            Self::OrderMismatch {
+                generator,
+                declared,
+                exact,
+            } => write!(
+                f,
+                "generator {generator} declared order {declared} != exact permutation order {exact}"
+            ),
+            Self::NonCommuting { left, right } => {
+                write!(f, "generators {left} and {right} do not commute")
+            }
+        }
+    }
+}
+
+impl std::error::Error for GroupError {}
+
 /// A finite abelian symmetry group acting on qubit positions by
 /// permutations.
 ///
@@ -94,61 +180,90 @@ pub struct TranslationGroup {
 }
 
 impl TranslationGroup {
-    /// Construct from explicit generator permutations and orders.
+    /// Construct from explicit generator permutations and orders,
+    /// panicking on any precondition violation.
     ///
     /// Each `perm` must be a permutation of `0..n_qubits`. Each `order`
     /// must be the permutation's exact cyclic order, not merely a
     /// multiple for which `perm^order == identity`. Generators must
     /// commute, but their combined action may still have a kernel.
+    ///
+    /// Use [`Self::try_from_generators`] when the generators come from
+    /// outside the program (an FFI boundary, a config file) and a
+    /// precondition violation should be reported rather than abort.
     pub fn from_generators(n_qubits: usize, perms: Vec<Vec<u32>>, orders: Vec<u32>) -> Self {
-        assert_eq!(perms.len(), orders.len(), "perms and orders must match");
-        for (g, perm) in perms.iter().enumerate() {
-            assert_eq!(
-                perm.len(),
-                n_qubits,
-                "generator {g} permutation has length {} != n_qubits {n_qubits}",
-                perm.len()
-            );
+        Self::try_from_generators(n_qubits, perms, orders)
+            .unwrap_or_else(|err| panic!("TranslationGroup::from_generators: {err}"))
+    }
+
+    /// Fallible [`Self::from_generators`]: validates every precondition
+    /// on the caller-supplied generators and reports the first violation
+    /// as a [`GroupError`] instead of panicking.
+    pub fn try_from_generators(
+        n_qubits: usize,
+        perms: Vec<Vec<u32>>,
+        orders: Vec<u32>,
+    ) -> Result<Self, GroupError> {
+        if perms.len() != orders.len() {
+            return Err(GroupError::LengthMismatch {
+                perms: perms.len(),
+                orders: orders.len(),
+            });
+        }
+        for (generator, perm) in perms.iter().enumerate() {
+            if perm.len() != n_qubits {
+                return Err(GroupError::PermutationLength {
+                    generator,
+                    len: perm.len(),
+                    n_qubits,
+                });
+            }
             let mut seen = vec![false; n_qubits];
-            for &p in perm {
-                assert!(
-                    (p as usize) < n_qubits,
-                    "generator {g} maps to out-of-range position {p}"
-                );
-                assert!(
-                    !seen[p as usize],
-                    "generator {g} is not a permutation (duplicate target {p})"
-                );
-                seen[p as usize] = true;
+            for &target in perm {
+                if target as usize >= n_qubits {
+                    return Err(GroupError::TargetOutOfRange {
+                        generator,
+                        target,
+                        n_qubits,
+                    });
+                }
+                if seen[target as usize] {
+                    return Err(GroupError::DuplicateTarget { generator, target });
+                }
+                seen[target as usize] = true;
             }
         }
-        for (g, &declared) in orders.iter().enumerate() {
-            assert!(declared != 0, "generator {g} order must be nonzero");
-            let exact = permutation_order(&perms[g], g);
-            assert_eq!(
-                declared, exact,
-                "generator {g} declared order {declared} != exact permutation order {exact}",
-            );
+        for (generator, &declared) in orders.iter().enumerate() {
+            if declared == 0 {
+                return Err(GroupError::ZeroOrder { generator });
+            }
+            let exact = permutation_order(&perms[generator], generator);
+            if declared != exact {
+                return Err(GroupError::OrderMismatch {
+                    generator,
+                    declared,
+                    exact,
+                });
+            }
         }
         for left in 0..perms.len() {
             for right in left + 1..perms.len() {
-                assert!(
-                    permutations_commute(&perms[left], &perms[right]),
-                    "generators {left} and {right} do not commute",
-                );
+                if !permutations_commute(&perms[left], &perms[right]) {
+                    return Err(GroupError::NonCommuting { left, right });
+                }
             }
         }
         let order = checked_group_order(&orders);
         let phase_modulus = orders.iter().fold(1usize, |acc, &value| {
             checked_lcm(acc, value as usize, "character phase modulus")
         });
-        Self {
+        Ok(Self {
             n_qubits,
             perms,
             orders,
             order,
             phase_modulus,
-        }
+        })
     }
 
     /// 1D chain of `n` sites with periodic boundary conditions.

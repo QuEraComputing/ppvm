@@ -1,12 +1,14 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Matrix-free `exp(dt · L*) · b` for the real (`f64`) path, driven by the
-//! external `quspin-expm` crate.
+//! Matrix-free `exp(dt · L*) · b`, driven by the external `quspin-expm`
+//! crate — for both the real (`f64`) adaptive path and the complex,
+//! phase-aware orbit-rep path.
 //!
 //! Instead of materialising the in-basis-restricted generator as a CSR, the
 //! per-column generator action is computed ONCE per expm call (via
-//! [`build_mf_cols`]) and reused, CSC-style, across every Krylov/Taylor matvec
+//! [`build_mf_cols`] / [`build_orbit_rep_cols`]) and reused, CSC-style,
+//! across every Krylov/Taylor matvec
 //! by [`CscOp`] (a [`quspin_types::LinearOperator`]) fed to
 //! [`quspin_expm::ExpmOp::from_parts`]. Each matvec is then a cheap CSC
 //! scatter; the Pauli-commutator action is never recomputed per matvec.
@@ -16,17 +18,28 @@
 //! `dot_transpose` are never invoked on the single-vector `apply` path; only
 //! [`LinearOperator::dot`] runs.
 //!
-//! `μ`, the trace, and the exact column 1-norm of `A − μ·I` are computed in
-//! the same single action pass as the cache. The `(m, s)` Taylor partition is
+//! `μ`, the trace, and the column 1-norm of `A − μ·I` are computed in the
+//! same single action pass as the cache, and turned into an `apply` by the
+//! shared [`expm_apply_cached`] tail. The `(m, s)` Taylor partition is
 //! picked with the tolerance-matched tables in [`crate::expm`]: a relaxed
 //! `tol=1e-6` table when the PC prunes coarsely (`drop_tol ≥ 1e-4`), else the
 //! double-precision table (keeping the exact-reference test paths bit-exact).
 
+use crate::scalar::Coeff;
+use crate::sector::Sector;
 use crate::{LindbladSpec, Word, build_basis_index, expm};
 use fxhash::{FxBuildHasher, FxHashMap};
 use num::Complex;
 use quspin_types::{ExpmComputation, LinearOperator, QuSpinError};
 use rayon::prelude::*;
+use std::iter::Sum;
+use std::ops::{AddAssign, Div, Mul, Sub};
+
+/// CSC columns of a cached in-basis action: `cols[c]` = `(row, coeff)`.
+type Cols<T> = Vec<Vec<(u32, T)>>;
+/// Per-column `(raw, diag)` for the `μ`/1-norm selection: `raw` bounds
+/// `Σ_r |M[r,c]|` from above and `diag = M[c,c]`.
+type PerCol<T> = Vec<(f64, T)>;
 
 /// Per-column in-basis action of the real generator `M`, plus the data the
 /// `(m, s)`/`μ` selection needs — all from ONE action pass over the basis.
@@ -37,16 +50,11 @@ use rayon::prelude::*;
 /// outputs (in- and out-of-basis, an upper bound on the column 1-norm) and
 /// `diag` the coefficient of the output Word equal to the input Word. The
 /// cache is reused by [`CscOp`] across every Krylov/Taylor matvec.
-/// CSC columns of the cached in-basis action: `cols[c]` = `(row, coeff)`.
-type MfCols = Vec<Vec<(u32, f64)>>;
-/// Per-column `(raw, diag)` for the `μ`/1-norm selection.
-type MfPerCol = Vec<(f64, f64)>;
-
 fn build_mf_cols(
     spec: &LindbladSpec,
     basis: &[Word],
     index: &FxHashMap<Word, u32>,
-) -> (MfCols, MfPerCol) {
+) -> (Cols<f64>, PerCol<f64>) {
     basis
         .par_iter()
         .map_init(
@@ -72,6 +80,80 @@ fn build_mf_cols(
                     }
                     if let Some(&row) = index.get(w) {
                         out.push((row, *c));
+                    }
+                }
+                (out, (raw, diag))
+            },
+        )
+        .unzip()
+}
+
+/// Per-column **phase-aware** action of the in-basis-restricted orbit-rep
+/// generator `M` at momentum `sector`, plus the `(m, s)`/`μ` selection data
+/// — from ONE action pass over the basis.
+///
+/// `cols[c]` holds `(row, χ_k(g_{cnt_q}) · v_q · |orbit_c| / |orbit_row|)`
+/// for every action output Pauli `q` of `L*(basis[c])` whose orbit rep
+/// `r_q` is in `basis` at index `row`; outputs whose rep is out of basis
+/// are dropped. This is the expensive part of the orbit-rep dynamics
+/// (`compute_action_terms`, [`Sector::canonicalize_phase`]).
+///
+/// The character-weighted sum runs over the *output* orbit's distinct
+/// members, which makes it the generator in the **summing** convention
+/// `ĉ_r = |orbit_r| · c_r`. Coefficients here are in the *averaged*
+/// convention (`c_r` = the plain coefficient of the rep word, what
+/// `canonicalize_pauli_sum_complex` produces), so each entry carries the
+/// similarity factor `|orbit_c| / |orbit_row|` that converts between
+/// them. It is 1 exactly when both orbits are free — hence the factor is
+/// invisible until an orbit has a non-trivial stabilizer, and cannot be
+/// hoisted out as a global `|G|`.
+///
+/// Unlike [`build_mf_cols`], `per_col[c].0` sums only the retained
+/// in-basis entries — the exact column 1-norm of the restricted `M`, not an
+/// upper bound: several distinct outputs `q` can share one rep, so the
+/// out-of-basis magnitudes are not attributable to a column of `M`. `diag`
+/// accumulates for the same reason.
+fn build_orbit_rep_cols(
+    spec: &LindbladSpec,
+    basis: &[Word],
+    index: &FxHashMap<Word, u32>,
+    sector: Sector<'_>,
+) -> (Cols<Complex<f64>>, PerCol<Complex<f64>>) {
+    basis
+        .par_iter()
+        .enumerate()
+        .map_init(
+            || {
+                (
+                    Vec::<u32>::with_capacity(spec.n_qubits()),
+                    Vec::<u32>::with_capacity(128),
+                    FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                        128,
+                        FxBuildHasher::default(),
+                    ),
+                )
+            },
+            |(s1, s2, lm), (c, r)| {
+                // A rep that cannot carry the sector has coefficient zero
+                // identically, so its column is empty.
+                let Some(orbit_in) = sector.orbit_size(r) else {
+                    return (Vec::new(), (0.0, Complex::new(0.0, 0.0)));
+                };
+                let terms = spec.compute_action_terms(r, s1, s2, lm);
+                let mut out = Vec::with_capacity(terms.len());
+                let mut raw = 0.0;
+                let mut diag = Complex::new(0.0, 0.0);
+                for (q, v) in terms.iter() {
+                    let Some((r_q, phase, orbit_out)) = sector.canonicalize_phase(q) else {
+                        continue;
+                    };
+                    if let Some(&row) = index.get(&r_q) {
+                        let val = phase * *v * (orbit_in as f64 / orbit_out as f64);
+                        raw += val.norm();
+                        if row as usize == c {
+                            diag += val;
+                        }
+                        out.push((row, val));
                     }
                 }
                 (out, (raw, diag))
@@ -214,14 +296,58 @@ where
     }
 }
 
+/// Shared tail of every matrix-free expm: from the cached per-column action
+/// derive the diagonal shift `μ = tr(M)/n` and a bound on the column 1-norm
+/// of `M − μ·I` (`raw − |diag| + |diag − μ|` per column), pick the Taylor
+/// partition via `select` from `‖dt·(M−μI)‖₁`, and hand everything to
+/// [`quspin_expm::ExpmOp::from_parts`]. Returns `exp(dt · M) · coeffs`.
+///
+/// `select` maps `‖dt·(M−μI)‖₁` to `(m*, s, backward-error tol)`; the two
+/// call sites differ only in that choice.
+fn expm_apply_cached<T>(
+    cols: &Cols<T>,
+    per_col: &PerCol<T>,
+    dt: f64,
+    coeffs: &[T],
+    select: impl FnOnce(f64) -> (u32, u32, f64),
+) -> Vec<T>
+where
+    T: ExpmComputation<Real = f64>
+        + Coeff
+        + PartialEq
+        + num::Zero
+        + AddAssign
+        + Mul<Output = T>
+        + Sub<Output = T>
+        + Div<f64, Output = T>
+        + From<f64>
+        + Sum,
+{
+    let n = cols.len();
+    let trace: T = per_col.iter().map(|(_, d)| *d).sum();
+    let mu = trace / n as f64;
+    let onenorm = per_col
+        .iter()
+        .map(|&(raw, diag)| raw - diag.mag() + (diag - mu).mag())
+        .fold(0.0_f64, f64::max);
+    let (m_star, s, expm_tol) = select(dt.abs() * onenorm);
+
+    let mut v = coeffs.to_vec();
+    let op = CscOp { cols, dim: n };
+    let expm =
+        quspin_expm::ExpmOp::from_parts(op, T::from(dt), mu, s as usize, m_star as usize, expm_tol);
+    expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
+        .expect("expm apply");
+    v
+}
+
 /// Compute `exp(dt · M) · coeffs` for the in-basis-restricted generator
 /// `M`, matrix-free, via `quspin-expm`. Returns a fresh `Vec<f64>` of length
 /// `basis.len()`.
 ///
-/// One matrix-free pass extracts the diagonal shift `μ = tr(M)/n` and the
-/// exact column 1-norm of `M − μ·I`; from `‖dt·(M−μI)‖₁` we pick the Taylor
-/// partition `(m*, s)` and hand everything to
-/// [`quspin_expm::ExpmOp::from_parts`].
+/// ONE action pass builds the CSC cache `cols` (reused across every matvec)
+/// and, in the same pass, the `(raw, diag)` data the `μ`/1-norm selection
+/// needs; [`expm_apply_cached`] does the rest.
 pub(crate) fn expm_apply_mf(
     spec: &LindbladSpec,
     basis: &[Word],
@@ -229,25 +355,11 @@ pub(crate) fn expm_apply_mf(
     coeffs: &[f64],
     drop_tol: f64,
 ) -> Vec<f64> {
-    let n = basis.len();
-    if n == 0 {
+    if basis.is_empty() {
         return Vec::new();
     }
-
-    // ONE action pass: build the CSC cache `cols` (reused across every matvec)
-    // and, in the same pass, `per_col = (raw, diag)` for the `μ`/1-norm
-    // selection. `raw = Σ|coeff|` (all outputs), `diag` = coeff of the
-    // output == input term. From these: `trace = Σ diag`, `μ = trace/n`, and
-    // the column 1-norm of `M − μ·I` is `raw − |diag| + |diag − μ|`.
     let index = build_basis_index(basis);
     let (cols, per_col) = build_mf_cols(spec, basis, &index);
-
-    let trace: f64 = per_col.iter().map(|(_, d)| *d).sum();
-    let mu = trace / n as f64;
-    let onenorm = per_col
-        .iter()
-        .map(|(raw, diag)| raw - diag.abs() + (diag - mu).abs())
-        .fold(0.0_f64, f64::max);
 
     // Pick the Taylor backward-error tolerance to match the basis truncation:
     // when the PC prunes coarsely (drop_tol >= 1e-4) a double-precision exp is
@@ -256,24 +368,41 @@ pub(crate) fn expm_apply_mf(
     // lower-degree Taylor polynomial and cuts the SpMV count with no effect on
     // the truncated result. At tight/zero drop_tol we keep double precision so
     // the exact-reference paths (orbit-rep / merged) still agree bit-for-bit.
-    let t_norm = dt.abs() * onenorm;
-    let (m_star, s, expm_tol) = if drop_tol >= 1e-4 {
-        let (m, s) = expm::select_ms_loose(t_norm);
-        (m, s, 1e-6_f64)
-    } else {
-        let (m, s) = expm::select_ms(t_norm);
-        (m, s, 1e-12_f64)
-    };
+    expm_apply_cached(&cols, &per_col, dt, coeffs, |t_norm| {
+        if drop_tol >= 1e-4 {
+            let (m, s) = expm::select_ms_loose(t_norm);
+            (m, s, 1e-6)
+        } else {
+            let (m, s) = expm::select_ms(t_norm);
+            (m, s, 1e-12)
+        }
+    })
+}
 
-    let mut v = coeffs.to_vec();
-    let op = CscOp {
-        cols: &cols,
-        dim: n,
-    };
-    let expm = quspin_expm::ExpmOp::from_parts(op, dt, mu, s as usize, m_star as usize, expm_tol);
-    expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
-        .expect("expm apply");
-    v
+/// Compute `exp(dt · M) · coeffs` for the in-basis-restricted **orbit-rep**
+/// generator `M` at momentum `sector`, via `quspin-expm`. Returns a fresh
+/// `Vec<Complex<f64>>` of length `basis.len()`.
+///
+/// The expensive phase-aware action is computed ONCE here (via
+/// [`build_orbit_rep_cols`]) and reused, CSC-style, across every
+/// Krylov–Taylor matvec, exactly as on the real path.
+pub(crate) fn expm_apply_orbit_rep(
+    spec: &LindbladSpec,
+    basis: &[Word],
+    sector: Sector<'_>,
+    dt: f64,
+    coeffs: &[Complex<f64>],
+) -> Vec<Complex<f64>> {
+    if basis.is_empty() {
+        return Vec::new();
+    }
+    let index = build_basis_index(basis);
+    let (cols, per_col) = build_orbit_rep_cols(spec, basis, &index, sector);
+
+    expm_apply_cached(&cols, &per_col, dt, coeffs, |t_norm| {
+        let (m, s) = expm::select_ms(t_norm);
+        (m, s, 1e-12)
+    })
 }
 
 /// `exp(dt · M) · b` where `M` is the REAL in-basis-restricted generator but

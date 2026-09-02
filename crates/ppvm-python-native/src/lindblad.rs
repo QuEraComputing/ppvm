@@ -13,18 +13,19 @@
 use std::collections::HashMap;
 
 use num::Complex;
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
-use ppvm_lindblad::{JumpInput, LindbladSpec as CoreSpec, Word, codes_from_word, word_from_codes};
+use numpy::{Complex64, IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use ppvm_lindblad::{JumpInput, LindbladSpec as CoreSpec, Word, word_from_codes};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
+type PyPauliMapComplex<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<Complex64>>);
 type PyCoo<'py> = (
     Bound<'py, PyArray1<u64>>,
     Bound<'py, PyArray1<u64>>,
     Bound<'py, PyArray1<f64>>,
 );
 
-fn map_err(e: ppvm_lindblad::Error) -> PyErr {
+pub(crate) fn map_err(e: ppvm_lindblad::Error) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
@@ -43,29 +44,9 @@ fn assert_basis_unique(basis: &[Word]) -> PyResult<()> {
     Ok(())
 }
 
-/// Decode a `(N, n_qubits)` uint8 ndarray view into `N` packed [`Word`]s.
-pub(crate) fn decode_basis(
-    view: &numpy::ndarray::ArrayView2<u8>,
-    n_qubits: usize,
-) -> PyResult<Vec<Word>> {
-    let n_basis = view.shape()[0];
-    let n_cols = view.shape()[1];
-    if n_cols != n_qubits {
-        return Err(PyValueError::new_err(format!(
-            "basis has {n_cols} columns but spec.n_qubits = {n_qubits}"
-        )));
-    }
-    let mut out = Vec::with_capacity(n_basis);
-    let mut row_buf = vec![0u8; n_qubits];
-    for i in 0..n_basis {
-        let row = view.row(i);
-        for (q, slot) in row_buf.iter_mut().enumerate() {
-            *slot = row[q];
-        }
-        out.push(word_from_codes(&row_buf).map_err(map_err)?);
-    }
-    Ok(out)
-}
+use crate::pauli_arr::{
+    check_coeffs_len, check_group_qubits, check_momentum_len, decode_basis, encode_basis,
+};
 
 /// Pack `Vec<(Word, f64)>` into the standard PyO3 return shape.
 fn pack_pauli_map<'py>(
@@ -73,17 +54,8 @@ fn pack_pauli_map<'py>(
     pairs: Vec<(Word, f64)>,
     n_qubits: usize,
 ) -> PyResult<PyPauliMap<'py>> {
-    let m = pairs.len();
-    let mut basis = vec![0u8; m * n_qubits];
-    let mut coeffs = vec![0f64; m];
-    for (i, (w, c)) in pairs.into_iter().enumerate() {
-        codes_from_word(&w, &mut basis[i * n_qubits..(i + 1) * n_qubits]);
-        coeffs[i] = c;
-    }
-    let basis_arr = basis
-        .into_pyarray(py)
-        .reshape([m, n_qubits])
-        .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
+    let (words, coeffs): (Vec<Word>, Vec<f64>) = pairs.into_iter().unzip();
+    let basis_arr = encode_basis(py, &words, n_qubits)?;
     Ok((basis_arr, coeffs.into_pyarray(py)))
 }
 
@@ -175,13 +147,7 @@ impl LindbladSpec {
         let basis_view = basis.as_array();
         let basis_words = decode_basis(&basis_view, n_q)?;
         let coeffs_slice = coeffs.as_slice()?;
-        if coeffs_slice.len() != basis_words.len() {
-            return Err(PyValueError::new_err(format!(
-                "coeffs has length {} but basis has {} rows",
-                coeffs_slice.len(),
-                basis_words.len()
-            )));
-        }
+        check_coeffs_len(coeffs_slice.len(), basis_words.len())?;
         let protected_words: Vec<Word> = if let Some(ref prot) = protected {
             let pv = prot.as_array();
             decode_basis(&pv, n_q)?
@@ -238,13 +204,7 @@ impl LindbladSpec {
         let mut basis_words = decode_basis(&basis_view, n_q)?;
         assert_basis_unique(&basis_words)?;
         let mut coeffs_vec = coeffs.as_slice()?.to_vec();
-        if coeffs_vec.len() != basis_words.len() {
-            return Err(PyValueError::new_err(format!(
-                "coeffs has length {} but basis has {} rows",
-                coeffs_vec.len(),
-                basis_words.len()
-            )));
-        }
+        check_coeffs_len(coeffs_vec.len(), basis_words.len())?;
         let protected_words: Vec<Word> = if let Some(ref p) = protected {
             decode_basis(&p.as_array(), n_q)?
         } else {
@@ -300,13 +260,7 @@ impl LindbladSpec {
         let mut basis_words = decode_basis(&basis_view, n_q)?;
         assert_basis_unique(&basis_words)?;
         let mut coeffs_vec = coeffs.as_slice()?.to_vec();
-        if coeffs_vec.len() != basis_words.len() {
-            return Err(PyValueError::new_err(format!(
-                "coeffs has length {} but basis has {} rows",
-                coeffs_vec.len(),
-                basis_words.len()
-            )));
-        }
+        check_coeffs_len(coeffs_vec.len(), basis_words.len())?;
         let protected_words: Vec<Word> = if let Some(ref p) = protected {
             decode_basis(&p.as_array(), n_q)?
         } else {
@@ -339,6 +293,106 @@ impl LindbladSpec {
         d.set_item("expand2_us", timings.expand2_us)?;
         d.set_item("expm2_us", timings.expm2_us)?;
         Ok((map, d))
+    }
+
+    /// Per-step orbit-rep predictor-corrector evolution under
+    /// translation symmetry. State lives entirely in **orbit-rep form**:
+    /// basis contains only canonical orbit representatives, coefficients
+    /// are complex. The action is phase-aware: output Paulis canonicalize
+    /// to their orbit rep with momentum-character weight.
+    ///
+    /// Per-step memory benefit: basis is ~|group|× smaller than the
+    /// full-basis representation, and the reduction persists through
+    /// every step.
+    ///
+    /// **Pre-condition**: every row of `basis` must be the canonical
+    /// orbit representative of its translation orbit under `group`.
+    /// Pass `canonicalize_first=True` to enforce this on entry (rewrites
+    /// each basis row to its canonical rep; coefficients unchanged).
+    /// Default `False` — the caller is trusted.
+    ///
+    /// `max_basis` is a hard rank cap on the live orbit-rep basis:
+    /// enrichment adds at most `max_basis − basis.len()` of the largest
+    /// leakage reps and the post-step basis is trimmed to the top-`max_basis`
+    /// by `|c|` (protected reps always kept). Pass a large value for the
+    /// near-exact case. `drop_tol` additionally prunes by magnitude.
+    #[pyo3(signature = (
+        basis, coeffs, dt, max_basis,
+        group, momentum,
+        drop_tol = 0.0,
+        protected = None,
+        canonicalize_first = false,
+        admit_basis = None,
+        tau_add = None,
+        num_threads = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn pc_step_orbit_rep<'py>(
+        &self,
+        py: Python<'py>,
+        basis: PyReadonlyArray2<'py, u8>,
+        coeffs: PyReadonlyArray1<'py, Complex64>,
+        dt: f64,
+        max_basis: usize,
+        group: &crate::symmetry::TranslationGroup,
+        momentum: PyReadonlyArray1<'py, i32>,
+        drop_tol: f64,
+        protected: Option<PyReadonlyArray2<'py, u8>>,
+        canonicalize_first: bool,
+        admit_basis: Option<usize>,
+        tau_add: Option<f64>,
+        num_threads: Option<usize>,
+    ) -> PyResult<PyPauliMapComplex<'py>> {
+        use num::Complex;
+        use ppvm_lindblad::{Sector, canonicalize_basis_to_rep};
+
+        let n_q = self.inner.n_qubits();
+        let basis_view = basis.as_array();
+        let mut basis_words = decode_basis(&basis_view, n_q)?;
+        let coeffs_slice = coeffs.as_slice()?;
+        check_coeffs_len(coeffs_slice.len(), basis_words.len())?;
+        let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
+            .iter()
+            .map(|c| Complex::new(c.re, c.im))
+            .collect();
+        let protected_words: Vec<Word> = if let Some(ref p) = protected {
+            decode_basis(&p.as_array(), n_q)?
+        } else {
+            Vec::new()
+        };
+        let k_slice = momentum.as_slice()?;
+        check_momentum_len(k_slice.len(), group.core().n_generators())?;
+        check_group_qubits(n_q, group.core().n_qubits())?;
+        if canonicalize_first {
+            canonicalize_basis_to_rep(&mut basis_words, group.core());
+        }
+        // Canonicalization can collapse several input rows onto one rep,
+        // and the step indexes the basis by Pauli word — so uniqueness is
+        // checked after the rewrite, not before.
+        assert_basis_unique(&basis_words)?;
+        self.inner
+            .pc_step_orbit_rep(
+                &mut basis_words,
+                &mut coeffs_vec,
+                dt,
+                &protected_words,
+                Sector::new(group.core(), k_slice),
+                &ppvm_lindblad::PcStepConfig {
+                    max_basis,
+                    admit_basis,
+                    drop_tol,
+                    tau_add,
+                    num_threads,
+                },
+            )
+            .map_err(map_err)?;
+
+        let out_coeffs: Vec<Complex64> = coeffs_vec
+            .iter()
+            .map(|c| Complex64::new(c.re, c.im))
+            .collect();
+        let basis_arr = encode_basis(py, &basis_words, n_q)?;
+        Ok((basis_arr, out_coeffs.into_pyarray(py)))
     }
 
     /// Sparse generator matrix in COO form: `(rows, cols, vals)`.

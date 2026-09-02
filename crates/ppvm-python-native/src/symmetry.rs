@@ -171,8 +171,9 @@ impl TranslationGroup {
 /// `momentum` is a length-`group.n_generators` integer array of mode
 /// indices; the wavenumber along generator `g` is
 /// `2π · momentum[g] / group.generator_order(g)`. Use `momentum=[0, …]`
-/// for the trivial (k=0) sector — equivalent to plain merging modulo
-/// the 1/|G| normalization the complex merge applies.
+/// for the trivial (k=0) sector — equivalent to plain merging modulo the
+/// `1/|orbit|` normalization this projection applies (it *averages* over
+/// each orbit's distinct members; `PauliSum.momentum_merge` sums).
 ///
 /// If the input is **not** in sector `momentum`, the projection
 /// silently throws away the other components. Use

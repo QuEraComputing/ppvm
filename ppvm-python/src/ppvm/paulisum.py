@@ -416,7 +416,12 @@ class PauliSum(
 
         Generalizes `symmetry_merge` to non-trivial momentum sectors
         (``k != 0``) while keeping real coefficients on both PauliSums — the
-        only complex arithmetic is the internal character-weighted fold.
+        only complex arithmetic is the internal character-weighted fold. Like
+        `symmetry_merge` it is the *summing* projector
+        ``Σ_{p in orbit} χ_k(g_p)·c_p``, hence idempotent on every orbit and
+        safe to apply after each Trotter step; at ``momentum=[0, ...]`` it
+        reduces exactly to `symmetry_merge`.
+
         ``self`` and ``other`` must be distinct objects with the same qubit
         count. Exact after a translation-covariant gate layer; under a
         generic Trotter step it carries the same ``O(dt^{p+1})`` equivariance

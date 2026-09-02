@@ -473,10 +473,11 @@ where
     (re, im)
 }
 
-/// At `k = 0` on free orbits, the phase-aware pair merge must agree
-/// with the independent real-coefficient `symmetry_merge_pauli_sum`
-/// code path — this is what pins the `|G|` rescale (the momentum
-/// projector averages; `symmetry_merge` sums).
+/// At `k = 0` the phase-aware pair merge must agree with the independent
+/// real-coefficient `symmetry_merge_pauli_sum` code path — for *every*
+/// orbit, free or stabilized. This is the
+/// regression test for the summing-vs-averaging convention: a global
+/// `|G|` rescale of the averaged projector agrees only on free orbits.
 #[test]
 fn momentum_merge_pair_matches_symmetry_merge_at_k0() {
     use crate::config::indexmap::ByteFxHashF64;
@@ -486,10 +487,10 @@ fn momentum_merge_pair_matches_symmetry_merge_at_k0() {
     let n = 4usize;
     let group = TranslationGroup::chain_1d(n);
 
-    // Σ_j Z_j and Σ_j X_j X_{j+1}: both free orbits (|orbit| = |G|).
     let mut reference: PauliSum<Cfg> = PauliSum::builder().n_qubits(n).build();
     let mut re: PauliSum<Cfg> = PauliSum::builder().n_qubits(n).build();
     let mut im: PauliSum<Cfg> = PauliSum::builder().n_qubits(n).build();
+    // Σ_j Z_j and Σ_j X_j X_{j+1}: free orbits (|orbit| = |G|).
     for j in 0..n {
         let mut z: Vec<char> = vec!['I'; n];
         z[j] = 'Z';
@@ -501,6 +502,12 @@ fn momentum_merge_pair_matches_symmetry_merge_at_k0() {
             reference += (st.as_str(), c);
             re += (st.as_str(), c);
         }
+    }
+    // Orbits WITH a stabilizer, where a global |G| rescale would be wrong:
+    // "ZZZZ" is translation-invariant (|orbit| = 1) and "ZIZI" has period 2.
+    for (st, c) in [("ZZZZ", 0.75), ("ZIZI", 2.0), ("IZIZ", -0.5)] {
+        reference += (st, c);
+        re += (st, c);
     }
     // `im` needs an entry to exist; a zero coefficient must not survive.
     im += ("IIII", 0.0);

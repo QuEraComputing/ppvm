@@ -100,6 +100,43 @@ pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
     for (word, &coeff) in basis.iter().zip(coeffs.iter()) {
         *input.entry(*word).or_insert(Complex::new(0.0, 0.0)) += coeff;
     }
+    let projected = project_onto_reps(&input, group, k_modes);
+    basis.clear();
+    coeffs.clear();
+    basis.reserve(projected.len());
+    coeffs.reserve(projected.len());
+    for (word, (sum, orbit_size)) in projected {
+        basis.push(word);
+        coeffs.push(sum / orbit_size as f64);
+    }
+}
+
+/// Character-weighted fold of `input` onto translation-orbit
+/// representatives, the shared core of the two momentum-projection
+/// conventions.
+///
+/// Returns `rep → (Σ_{p ∈ orbit} χ_k(g_p) · c_p, |orbit|)`: the
+/// **summing** projector, paired with the number of *distinct* orbit
+/// members. Callers pick their convention —
+/// [`canonicalize_pauli_sum_complex`] divides by `|orbit|` to average,
+/// [`momentum_merge_pauli_sum_pair`] takes the sum as-is.
+///
+/// `|orbit|` is `group.order()` only for free orbits; an orbit with a
+/// non-trivial stabilizer has fewer distinct members, which is exactly
+/// why the two conventions must not be related by a global `|G|` factor.
+///
+/// Orbits whose stabilizer is incompatible with `k_modes` (the same
+/// orbit member reached with different character numerators) project to
+/// zero and are omitted from the output.
+fn project_onto_reps<A, S, const R: bool>(
+    input: &FxHashMap<PauliWord<A, S, R>, Complex<f64>>,
+    group: &TranslationGroup,
+    k_modes: &[i32],
+) -> FxHashMap<PauliWord<A, S, R>, (Complex<f64>, usize)>
+where
+    A: PauliStorage,
+    S: BuildHasher + Clone + Default + HashFinalize,
+{
     let reps: FxHashSet<_> = input.keys().map(|word| group.canonicalize(word)).collect();
     let mut projected = FxHashMap::default();
 
@@ -123,25 +160,18 @@ pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
         if !compatible {
             continue;
         }
-        let orbit_size = members.len() as f64;
-        let mut rep_coeff = Complex::new(0.0, 0.0);
+        let orbit_size = members.len();
+        let mut sum = Complex::new(0.0, 0.0);
         for (member, (counter, _)) in members {
             let coeff = input
                 .get(&member)
                 .copied()
                 .unwrap_or(Complex::new(0.0, 0.0));
-            rep_coeff += group.character(k_modes, &counter) * coeff / orbit_size;
+            sum += group.character(k_modes, &counter) * coeff;
         }
-        projected.insert(rep, rep_coeff);
+        projected.insert(rep, (sum, orbit_size));
     }
-    basis.clear();
-    coeffs.clear();
-    basis.reserve(projected.len());
-    coeffs.reserve(projected.len());
-    for (w, c) in projected {
-        basis.push(w);
-        coeffs.push(c);
-    }
+    projected
 }
 
 /// Momentum-sector merge of a complex operator carried as a **real
@@ -156,13 +186,16 @@ pub fn canonicalize_pauli_sum_complex<A, S, const R: bool>(
 /// arithmetic is the internal character-weighted fold, which reuses
 /// [`canonicalize_pauli_sum_complex`].
 ///
-/// [`canonicalize_pauli_sum_complex`] carries a `1/|orbit|` prefactor
-/// (it *averages* over orbit members); we rescale by `group.order()` so
-/// that the result is the *summing* projector, matching
-/// [`super::symmetry_merge_pauli_sum`].
+/// This is the **summing** projector
+/// `Σ_{p ∈ orbit} χ_k(g_p) · c_p` over each orbit's *distinct* members, not the
+/// orbit-averaged one that [`canonicalize_pauli_sum_complex`] returns.
+/// Summing is what makes the merge idempotent — and hence safe to apply
+/// after every Trotter step — for *every* orbit, including orbits with a
+/// non-trivial stabilizer, and it reduces exactly to
+/// [`super::symmetry_merge_pauli_sum`] at `k = 0`.
 ///
-/// Entries whose rescaled component is exactly zero are dropped, so a
-/// purely real operator leaves `im` empty.
+/// Entries whose component is exactly zero are dropped, so a purely real
+/// operator leaves `im` empty.
 ///
 /// # Panics
 ///
@@ -208,24 +241,15 @@ pub fn momentum_merge_pauli_sum_pair<T, A, S, const R: bool>(
     for (word, coeff) in im.data().iter() {
         combined.entry(*word).or_insert(Complex::new(0.0, 0.0)).im += *coeff;
     }
-    let mut basis = Vec::with_capacity(combined.len());
-    let mut coeffs = Vec::with_capacity(combined.len());
-    for (word, coeff) in combined {
-        basis.push(word);
-        coeffs.push(coeff);
-    }
-
-    canonicalize_pauli_sum_complex(&mut basis, &mut coeffs, group, k_modes);
-
-    let scale = group.order() as f64;
+    let projected = project_onto_reps(&combined, group, k_modes);
     re.data_mut().clear();
     im.data_mut().clear();
-    for (word, coeff) in basis.into_iter().zip(coeffs) {
-        if coeff.re != 0.0 {
-            *re += (word, coeff.re * scale);
+    for (word, (sum, _orbit_size)) in projected {
+        if sum.re != 0.0 {
+            *re += (word, sum.re);
         }
-        if coeff.im != 0.0 {
-            *im += (word, coeff.im * scale);
+        if sum.im != 0.0 {
+            *im += (word, sum.im);
         }
     }
 }

@@ -91,19 +91,16 @@ def test_momentum_merge_idempotent(k):
     assert max(abs(once.get(x, 0j) - twice.get(x, 0j)) for x in keys) < 1e-12
 
 
-@pytest.mark.xfail(
-    reason="momentum_merge rescales by |G| but the projector averages over the "
-    "|orbit| DISTINCT members, so orbits with a non-trivial stabilizer are "
-    "amplified by |G|/|orbit| on every merge. `_seed_pair` only produces free "
-    "orbits, which is why test_momentum_merge_idempotent passes.",
-    strict=True,
-)
-@pytest.mark.parametrize("word, orbit_size", [("ZZZZ", 1), ("ZIZI", 2)])
-def test_momentum_merge_idempotent_on_stabilized_orbit(word, orbit_size):
+@pytest.mark.parametrize("word", ["ZZZZ", "ZIZI"])
+def test_momentum_merge_idempotent_on_stabilized_orbit(word):
     """Idempotency must hold for every orbit, not just the free ones.
 
-    ``ZZZZ`` is translation-invariant (orbit size 1) and ``ZIZI`` has period 2,
-    so on a 4-site chain they pick up factors of 4 and 2 per merge.
+    ``ZZZZ`` is translation-invariant (orbit size 1) and ``ZIZI`` has period
+    2, so on a 4-site chain their orbits are smaller than the group. A merge
+    that rescaled the orbit-*averaged* projection by a global ``|G|`` would
+    amplify them by ``|G|/|orbit|`` — 4x and 2x — on every merge; the summing
+    projector leaves them fixed. ``_seed_pair`` only produces free orbits,
+    where the two conventions coincide, so this case needs its own test.
     """
     n = 4
     g = TranslationGroup.chain_1d(n)
@@ -111,6 +108,8 @@ def test_momentum_merge_idempotent_on_stabilized_orbit(word, orbit_size):
     PB = PauliSum.new(n, [(word, 0.0)], min_abs_coeff=0.0, max_pauli_weight=n)
     PA.momentum_merge(PB, g, [0])
     once = _to_complex_dict(PA, PB)
+    # The coefficient is conserved outright, not just stable under re-merging.
+    assert sorted(abs(v) for v in once.values() if abs(v) > 1e-12) == pytest.approx([1.0])
     PA.momentum_merge(PB, g, [0])
     twice = _to_complex_dict(PA, PB)
     keys = set(once) | set(twice)

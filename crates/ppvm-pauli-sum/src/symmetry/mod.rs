@@ -17,13 +17,19 @@
 //! (`k=0`) symmetry sector, e.g. sums of single-Z operators over the
 //! lattice.
 //!
-//! **Non-trivial momentum sectors (`k ≠ 0`)** are handled by
-//! [`canonicalize_pauli_sum_complex`], which folds with the character
-//! phase `χ_k(g)` of each translation. On the Python side, an operator in
-//! sector `k` is carried as a *real pair* (real + imaginary components, two
-//! real `PauliSum`s) and merged via `PauliSum.momentum_merge`, which reuses
-//! this routine — letting gate-based Trotter evolution stay symmetry-
-//! compressed in any momentum sector with real coefficients throughout.
+//! **Non-trivial momentum sectors (`k ≠ 0`)** fold with the character
+//! phase `χ_k(g)` of each translation. Two conventions share one core:
+//! [`canonicalize_pauli_sum_complex`] *averages* over each orbit's
+//! distinct members (`1/|orbit|`), while
+//! [`momentum_merge_pauli_sum_pair`] *sums* — the convention that is
+//! idempotent on every orbit and reduces exactly to
+//! [`symmetry_merge_pauli_sum`] at `k = 0`. Note `|orbit| = |G|` only for
+//! free orbits, so the two are **not** related by a global `|G|` factor.
+//! On the Python side, an operator in sector `k` is carried as a *real
+//! pair* (real + imaginary components, two real `PauliSum`s) and merged
+//! via `PauliSum.momentum_merge` — letting gate-based Trotter evolution
+//! stay symmetry-compressed in any momentum sector with real
+//! coefficients throughout.
 //!
 //! ## Data model
 //!

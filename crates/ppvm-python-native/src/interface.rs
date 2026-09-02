@@ -91,8 +91,9 @@ macro_rules! create_interface_symmetry_methods {
             /// reduces to `symmetry_merge`).  This generalizes
             /// `symmetry_merge` to k != 0 while keeping real coefficients on
             /// the Python side — the only place complex arithmetic appears
-            /// is the internal character-weighted fold, reusing the tested
-            /// `canonicalize_pauli_sum_complex`.
+            /// is the internal character-weighted fold, which like
+            /// `symmetry_merge` *sums* over each orbit (so the merge is
+            /// idempotent on every orbit, free or stabilized).
             ///
             /// `self` and `other` must be distinct objects with identical
             /// qubit count.  After a translation-covariant gate layer this

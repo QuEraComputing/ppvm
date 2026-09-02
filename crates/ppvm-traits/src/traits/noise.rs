@@ -113,14 +113,33 @@ pub trait LossChannel<T: Config> {
 }
 
 /// Correlated two-qubit loss channel.
+///
+/// # The `p[1]` convention (normative)
+///
+/// This is the one place the parameterization is defined; every backend
+/// (`ppvm-pauli-sum`, `ppvm-tableau`'s trajectory, `ppvm-tableau-sum`'s mixture)
+/// and every binding cites it rather than restating it. In the paper's notation
+/// `p = [p_LL, p_LQ, p_LN]`, and `p[1] = p_LQ` is the probability that a
+/// **named** one of the two atoms is lost while the other survives. The two
+/// single-loss events are disjoint, so
+///
+/// * the probability of losing *exactly one* atom is `2·p[1]`, and
+/// * the probability that both remain in the qubit subspace — the factor a
+///   fully in-subspace observable is scaled by — is `1 − 2·p[1] − p[0]`.
+///
+/// The channel is completely positive exactly on `p[0], p[1] >= 0`,
+/// `p[0] + 2·p[1] <= 1`, `p[2] ∈ [0, 1]`; the tableau backends `debug_assert`
+/// that region.
 pub trait CorrelatedLossChannel<T: Config> {
     /// Apply a correlated loss channel to qubits at `addr0` and `addr1`.
     ///
     /// The three probabilities are:
     /// * `p[0]`: The probability of losing both qubits simultaneously when
     ///   both of them are in the qubit subspace.
-    /// * `p[1]`: The probability of losing either one qubit when both of them are
-    ///   in the qubit subspace.
+    /// * `p[1]`: The probability of losing a **named** one of the two qubits when
+    ///   both of them are in the qubit subspace, so losing *exactly one* has
+    ///   probability `2·p[1]` and the both-present survivor is scaled by
+    ///   `1 − 2·p[1] − p[0]` (which qubit is lost is 50/50).
     /// * `p[2]`: The probability of losing one qubit when the other one has already
     ///   been lost prior to the channel.
     fn correlated_loss_channel(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 3]);

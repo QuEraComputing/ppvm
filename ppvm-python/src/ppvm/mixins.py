@@ -505,10 +505,18 @@ class LossMixin:
 
                 - ``p[0]``: probability of losing both qubits simultaneously
                   when both are in the qubit subspace.
-                - ``p[1]``: probability of losing exactly one qubit when both
-                  are in the qubit subspace (which qubit is lost is 50/50 random).
+                - ``p[1]``: probability of losing a *named* one of the two
+                  qubits when both are in the qubit subspace. The two
+                  single-loss events are disjoint, so the probability of losing
+                  **exactly one** qubit is ``2 * p[1]`` and the probability that
+                  both remain is ``1 - 2 * p[1] - p[0]`` (which qubit is lost is
+                  50/50 random).
                 - ``p[2]``: probability of losing the remaining active qubit
                   when the other has already been lost prior to this channel.
+
+            The channel is physical (completely positive) exactly on
+            ``p[0], p[1] >= 0``, ``p[0] + 2 * p[1] <= 1`` and
+            ``0 <= p[2] <= 1``.
         """
         self._interface.correlated_loss_channel(addr0, addr1, p)
 

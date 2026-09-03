@@ -1,4 +1,4 @@
-from ppvm import GeneralizedTableau, LossyPauliSum, StimProgram
+from ppvm import GeneralizedTableau, LossyPauliSum
 from ppvm.generalized_tableau import MeasurementResult
 
 
@@ -307,8 +307,39 @@ def test_asymmetric_loss_superposition_averages_probs():
 
 def _leak_to_one(n_qubits: int = 1, q: int = 0) -> GeneralizedTableau:
     tab = GeneralizedTableau(n_qubits=n_qubits, seed=0)
-    tab.run(StimProgram.parse(f"I_ERROR[leakage](0.0, 1.0) {q}"))
+    tab.leakage_channel(q, 0.0, 1.0)
     return tab
+
+
+def test_leakage_channel_pins_to_one():
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
+    tab.leakage_channel(0, 0.0, 1.0)
+    assert tab.is_leaked(0)
+    assert not tab.is_lost(0)
+    assert tab.measure(0) == MeasurementResult.ONE
+
+
+def test_leakage_channel_pins_to_zero():
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
+    tab.x(0)
+    tab.leakage_channel(0, 1.0, 0.0)
+    assert tab.is_leaked(0)
+    assert tab.measure(0) == MeasurementResult.ZERO
+
+
+def test_leakage_channel_zero_prob_no_leak():
+    tab = GeneralizedTableau(n_qubits=1, seed=0)
+    tab.leakage_channel(0, 0.0, 0.0)
+    assert not tab.is_leaked(0)
+    assert tab.measure(0) == MeasurementResult.ZERO
+
+
+def test_reset_leakage_channel_recovers_to_zero():
+    tab = _leak_to_one()
+    assert tab.is_leaked(0)
+    tab.reset_leakage_channel(0)
+    assert not tab.is_leaked(0)
+    assert tab.measure(0) == MeasurementResult.ZERO
 
 
 def test_is_leaked_initially_false():

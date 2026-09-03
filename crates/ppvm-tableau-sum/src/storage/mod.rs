@@ -24,7 +24,9 @@ use num::{
 };
 use ppvm_pauli_word::pattern::NotIdentity;
 use ppvm_tableau::{
-    data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
+    data::{GeneralizedTableau, QubitStatus},
+    sparsevec::SparseVector,
+    tableau_index::TableauIndex,
 };
 use ppvm_traits::config::Config;
 #[cfg(target_arch = "wasm32")]
@@ -155,7 +157,7 @@ where
     // Single implementation: build a one-shot mask table and delegate so the
     // table-indexed and from-scratch values are guaranteed identical.
     // `is_lost.len() == n_qubits` and is available under these minimal bounds.
-    let masks = RowMasks::new(tab.is_lost.len());
+    let masks = RowMasks::new(tab.qubit_status.len());
     phase_loss_hash_with(tab, &masks)
 }
 
@@ -180,8 +182,8 @@ where
             h ^= masks.sign[row];
         }
     }
-    for (q, lost) in tab.is_lost.iter().enumerate() {
-        if *lost {
+    for (q, status) in tab.qubit_status.iter().enumerate() {
+        if status.is_lost() {
             h ^= masks.loss[q];
         }
     }
@@ -247,7 +249,7 @@ where
 {
     // NOTE: comparing is_lost and rows is only necessary to avoid hash collisions
 
-    if tab0.is_lost != tab1.is_lost {
+    if tab0.qubit_status != tab1.qubit_status {
         return false;
     }
 
@@ -313,7 +315,7 @@ pub(crate) fn apply_branch_mutation<T, I, C>(
             NotIdentity::Z => tab.z(addr0),
         },
         BranchMutation::Loss { q } => {
-            tab.is_lost[q] = true;
+            tab.qubit_status[q] = QubitStatus::Lost;
         }
     }
 }
@@ -348,25 +350,25 @@ where
 
     match m {
         BranchMutation::Loss { q } => {
-            // Virtual is_lost == parent's with index q forced true.
-            if existing.is_lost.len() != parent.is_lost.len() {
+            // Virtual qubit_status == parent's with index q forced Lost.
+            if existing.qubit_status.len() != parent.qubit_status.len() {
                 return false;
             }
             for (i, (&e, &p)) in existing
-                .is_lost
+                .qubit_status
                 .iter()
-                .zip(parent.is_lost.iter())
+                .zip(parent.qubit_status.iter())
                 .enumerate()
             {
-                let virt = if i == q { true } else { p };
+                let virt = if i == q { QubitStatus::Lost } else { p };
                 if e != virt {
                     return false;
                 }
             }
         }
         BranchMutation::Pauli { .. } => {
-            // Virtual is_lost == parent's, unchanged.
-            if existing.is_lost != parent.is_lost {
+            // Virtual qubit_status == parent's, unchanged.
+            if existing.qubit_status != parent.qubit_status {
                 return false;
             }
         }
@@ -441,7 +443,7 @@ mod fingerprint_tests {
         fingerprint, loss_mask, pauli_branch_phase_loss, phase_loss_hash, word_fingerprint,
     };
     use ppvm_pauli_sum::config::fxhash::ByteF64;
-    use ppvm_tableau::data::GeneralizedTableau;
+    use ppvm_tableau::data::{GeneralizedTableau, QubitStatus};
     use ppvm_traits::traits::Clifford;
 
     type Cfg = ByteF64<1>;
@@ -489,7 +491,7 @@ mod fingerprint_tests {
         // Marking a qubit lost must equal XORing loss_mask(q) into the hash.
         let parent = make();
         let mut branch = parent.clone();
-        branch.is_lost[1] = true;
+        branch.qubit_status[1] = QubitStatus::Lost;
         assert_eq!(
             phase_loss_hash(&parent) ^ loss_mask(1),
             phase_loss_hash(&branch)
@@ -533,7 +535,7 @@ mod fingerprint_tests {
         }
 
         let mut b = parent.clone();
-        b.is_lost[0] = true;
+        b.qubit_status[0] = QubitStatus::Lost;
         assert_eq!(word_fingerprint(&b), parent_word, "loss changed word-hash");
         assert_eq!(
             parent_word ^ phase_loss_hash(&b),

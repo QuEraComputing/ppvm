@@ -343,6 +343,34 @@ class GeneralizedTableau(
         """
         self._interface.asymmetric_loss_channel(addr0, p0, p1)
 
+    def leakage_channel(self, addr0: int, p0: float, p1: float) -> None:
+        """Apply a leakage channel that pins the qubit out of the computational subspace.
+
+        With probability ``p0`` the qubit leaks and is pinned to `|0⟩`; with
+        probability ``p1`` it leaks and is pinned to `|1⟩`. The total leak
+        probability is ``p0 + p1`` (independent of the current state). A
+        leaked qubit still measures as the pinned bit; gates skip it.
+
+        Distinct from `asymmetric_loss_channel`, whose ``p0`` / ``p1`` are
+        loss probabilities *from* `|0⟩` / `|1⟩`.
+
+        Args:
+            addr0: The index of the target qubit.
+            p0: Probability of leaking into a pinned `|0⟩`.
+            p1: Probability of leaking into a pinned `|1⟩`.
+        """
+        self._interface.leakage_channel(addr0, p0, p1)
+
+    def reset_leakage_channel(self, addr0: int) -> None:
+        """Return a leaked qubit to the computational subspace in `|0⟩`.
+
+        No-op if the qubit is live. A lost qubit cannot be recovered this way.
+
+        Args:
+            addr0: The index of the target qubit.
+        """
+        self._interface.reset_leakage_channel(addr0)
+
     def is_lost(self, addr0: int) -> bool:
         """Check whether a qubit has been lost.
 
@@ -354,6 +382,20 @@ class GeneralizedTableau(
         """
         return self._interface.is_lost(addr0)
 
+    def is_leaked(self, addr0: int) -> bool:
+        """Check whether a qubit has leaked out of the computational subspace.
+
+        A leaked qubit is still present and measures as a pinned `0`/`1`;
+        gates skip it. Distinct from `is_lost`.
+
+        Args:
+            addr0: The index of the qubit.
+
+        Returns:
+            True if the qubit is leaked, False otherwise.
+        """
+        return self._interface.is_leaked(addr0)
+
     def loss_values(self) -> list[bool]:
         """Return the loss state of all qubits.
 
@@ -362,6 +404,15 @@ class GeneralizedTableau(
             True if the corresponding qubit is lost and False otherwise.
         """
         return self._interface.loss_values()
+
+    def leakage_values(self) -> list[bool]:
+        """Return the leakage state of all qubits.
+
+        Returns:
+            A list of booleans of length ``n_qubits``, where each entry is
+            True if the corresponding qubit is leaked and False otherwise.
+        """
+        return self._interface.leakage_values()
 
     def run(self, prog: StimProgram) -> list[MeasurementResult]:
         """Execute a parsed Stim program against this tableau (single shot).

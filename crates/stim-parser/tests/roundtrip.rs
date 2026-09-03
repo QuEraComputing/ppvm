@@ -85,6 +85,7 @@ const EXTENDED_CORPUS: &[(&str, &str)] = &[
         "correlated_loss",
         "I_ERROR[correlated_loss](0.1, 0.05, 0.05) 0 1 2 3\n",
     ),
+    ("leakage", "I_ERROR[leakage](0.1, 0.2) 0 1\n"),
     ("mpad_bits", "MPAD 0 1 0\nMPAD(0.01) 1 1 0 0\n"),
     (
         "extended_in_repeat",

@@ -151,6 +151,35 @@ def test_run_stim_string_loss_channel():
     assert results == [MeasurementResult.LOST]
 
 
+def test_run_stim_string_leakage_to_one_measures_one():
+    # I_ERROR[leakage](p0, p1): p1=1 pins the qubit to |1>. Unlike loss, a
+    # leaked qubit reads a definite classical bit (ONE), not LOST.
+    tab = GeneralizedTableau(1)
+    results = tab.run(StimProgram.parse("I_ERROR[leakage](0.0, 1.0) 0\nM 0"))
+    assert results == [MeasurementResult.ONE]
+
+
+def test_run_stim_string_leakage_to_zero_measures_zero():
+    # p0=1 pins the qubit to |0>.
+    tab = GeneralizedTableau(1)
+    results = tab.run(StimProgram.parse("X 0\nI_ERROR[leakage](1.0, 0.0) 0\nM 0"))
+    assert results == [MeasurementResult.ZERO]
+
+
+def test_run_stim_string_leaked_qubit_skips_gates():
+    # A leaked qubit is frozen: the X after leakage is a no-op, so a qubit
+    # pinned to |1> still reads ONE (a live qubit would flip to |0>).
+    tab = GeneralizedTableau(1)
+    results = tab.run(StimProgram.parse("I_ERROR[leakage](0.0, 1.0) 0\nX 0\nM 0"))
+    assert results == [MeasurementResult.ONE]
+
+
+def test_run_stim_string_leakage_applies_to_all_targets():
+    tab = GeneralizedTableau(2)
+    results = tab.run(StimProgram.parse("I_ERROR[leakage](0.0, 1.0) 0 1\nM 0 1"))
+    assert results == [MeasurementResult.ONE, MeasurementResult.ONE]
+
+
 def test_run_stim_string_comments_and_blank_lines_ignored():
     # Comments (#) and blank lines must not affect execution
     circuit = """

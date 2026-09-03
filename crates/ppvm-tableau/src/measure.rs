@@ -107,7 +107,7 @@ where
     I: TableauIndex + Debug,
 {
     fn measure(&mut self, addr0: usize) -> Option<bool> {
-        if self.is_lost[addr0] {
+        if self.qubit_status[addr0] == QubitStatus::Lost {
             self.measurement_record.push(None);
             return None;
         }

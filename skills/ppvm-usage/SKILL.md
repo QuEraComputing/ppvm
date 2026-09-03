@@ -148,7 +148,9 @@ results = tab.run(prog)                        # list[MeasurementResult]
 shots = sample_stim(prog, shots=1000, n_qubits=5)
 ```
 
-`MeasurementResult` is an `IntEnum` (`ZERO`, `ONE`, `LOST`). Loss is first-class — neutral-atom hardware effects model directly.
+`MeasurementResult` is an `IntEnum` (`ZERO`, `ONE`, `LOST`). Loss is first-class — a lost qubit measures `LOST`.
+
+Stim leakage is `I_ERROR[leakage](p0, p1)` — same `p0`/`p1` as `leakage_channel`. A leaked qubit measures the pinned `ZERO`/`ONE`, not `LOST`.
 
 ## Rust API
 
@@ -274,8 +276,18 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 | `loss_channel(q, p)` (Lossy types)                                          | ✓ | ✓\* | ✓   |
 | `correlated_loss_channel(q0, q1, [p_LL, p_LQ, p_LN])` (`p_LQ` = named one)  | ✓ | ✓\* | ✓   |
 | `reset_loss_channel(q)`                                                     | ✓ | ✓\* | ✓   |
+| `leakage_channel(q, p0, p1)` (pin to 0/1; total `p0+p1`)                     | † | —   | ✓   |
+| `reset_leakage_channel(q)`                                                  | † | —   | ✓   |
+| `is_leaked(q)`, `leakage_values()`                                          | † | —   | ✓   |
 
 \* Python side: loss methods live on `LossyPauliSum`, not the plain `PauliSum`.
+† Leakage is `GeneralizedTableau` only (Rust + Python) — not on `PauliSum` /
+`LossyPauliSum`, and not on `GeneralizedTableauSum`. `p0`/`p1` are the
+probabilities of leaking *into* a pinned `|0⟩`/`|1⟩` (sum is the leak rate).
+Do not confuse with `asymmetric_loss_channel(q, p0, p1)`, whose `p0`/`p1` are
+loss *from* `|0⟩`/`|1⟩` and whose total depends on `⟨Z⟩`. Stim:
+`I_ERROR[leakage](p0, p1)` (no Stim leakage-reset instruction). A leaked
+qubit measures the pinned `ZERO`/`ONE`, not `LOST`.
 
 ### Naming traps
 

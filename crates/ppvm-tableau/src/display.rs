@@ -38,9 +38,9 @@ where
         for (coeff, idx) in self.coefficients.clone().into_iter() {
             writeln!(f, "    Index {}: {}", idx, coeff)?;
         }
-        writeln!(f, "  Is Lost: [")?;
-        for (i, &lost) in self.is_lost.iter().enumerate() {
-            writeln!(f, "    Qubit {}: {}", i, lost)?;
+        writeln!(f, "  Qubit status: [")?;
+        for (i, &occ) in self.qubit_status.iter().enumerate() {
+            writeln!(f, "    Qubit {}: {:?}", i, occ)?;
         }
         writeln!(f, "  ]")?;
         Ok(())

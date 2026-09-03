@@ -148,7 +148,9 @@ results = tab.run(prog)                        # list[MeasurementResult]
 shots = sample_stim(prog, shots=1000, n_qubits=5)
 ```
 
-`MeasurementResult` is an `IntEnum` (`ZERO`, `ONE`, `LOST`). Loss is first-class — a lost qubit measures `LOST`. A leaked qubit is different: it still measures the pinned `ZERO`/`ONE`, and gates skip it. Stim: `I_ERROR[leakage](p0, p1)`.
+`MeasurementResult` is an `IntEnum` (`ZERO`, `ONE`, `LOST`). Loss is first-class — a lost qubit measures `LOST`.
+
+Stim leakage is `I_ERROR[leakage](p0, p1)` — same `p0`/`p1` as `leakage_channel`. A leaked qubit measures the pinned `ZERO`/`ONE`, not `LOST`.
 
 ## Rust API
 

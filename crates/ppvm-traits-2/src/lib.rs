@@ -13,6 +13,7 @@ pub mod gates;
 pub mod loss;
 pub mod pauli;
 pub mod word;
+pub mod fermion_factor;
 
 pub use algebra::{Conjugate, ImaginaryUnit, KeyProduct, Phase};
 pub use arithmetic::{Angle, Coefficient, Halvable};
@@ -30,6 +31,7 @@ pub use gates::{
 pub use loss::LossState;
 pub use pauli::{BlanketClifford, Pauli, PhaseTrack, StabilizerFrame, SymplecticColumns};
 pub use word::{PauliBits, Word};
+pub use fermion_factor::{FermionSite, FermionAction};
 
 /// Common traits and types for implementing and using the interfaces.
 pub mod prelude {
@@ -42,6 +44,6 @@ pub mod prelude {
         PauliErrorAll, PauliErrorFactors, Phase, PhaseTrack, Projection, RekeyStrategy, Reset,
         ResetLossChannel, Retain, RotXY, RotationOne, RotationTwo, Scale, StabilizerFrame, Support,
         SymplecticColumns, TGate, TermBatch, TermProducer, TermSink, Trace, TwoQubitPauliError,
-        U3Gate, Word,
+        U3Gate, Word, FermionAction, FermionSite
     };
 }

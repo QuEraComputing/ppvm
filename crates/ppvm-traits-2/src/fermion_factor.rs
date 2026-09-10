@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
 /// The action a fermionic factor performs on its mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FermionAction {

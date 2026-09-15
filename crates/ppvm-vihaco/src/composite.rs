@@ -188,7 +188,7 @@ impl PPVM {
                 let q0 = self.pop_u64()?;
                 Ok(CircuitMessage::TwoQubit(q0, q1))
             }
-            RX | RY | RZ | Depolarize | Loss => {
+            RX | RY | RZ | Depolarize | Loss | Leakage => {
                 let theta = self.pop_f64()?;
                 let q = self.pop_u64()?;
                 Ok(CircuitMessage::QubitAndFloat(q, theta))

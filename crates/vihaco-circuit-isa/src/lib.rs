@@ -184,6 +184,8 @@ mod tests {
         assert_eq!(parse("rxx"), RXX);
         assert_eq!(parse("depolarize2"), Depolarize2);
         assert_eq!(parse("depolarize"), Depolarize);
+        assert_eq!(parse("loss"), Loss);
+        assert_eq!(parse("leakage"), Leakage);
     }
 
     // ─── Parse: prefix-sensitive disambiguation ───────────────────────────

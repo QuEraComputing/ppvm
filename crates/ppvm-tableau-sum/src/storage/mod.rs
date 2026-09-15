@@ -53,7 +53,7 @@ pub(crate) fn bit_at<S: PrimInt>(words: &[S], word_idx: usize, bit: usize) -> bo
 
 /// Hash of the `word` (Pauli content) of every row, in order. This is the
 /// expensive component (each word is several machine words wide) and is
-/// *invariant* under X/Y/Z and `is_lost` flips, so a branch inherits it from
+/// *invariant* under X/Y/Z and loss (`qubit_status` → Lost), so a branch inherits it from
 /// its parent unchanged.
 /// NOTE: this inheritance is only valid right now (loss + depolarize channels)
 /// but may need re-evaluation in the future when more gates are added
@@ -145,7 +145,7 @@ impl RowMasks {
     }
 }
 
-/// XOR-combinable hash of `is_lost` plus every row's `phase`, formed as the
+/// XOR-combinable hash of lost qubits in `qubit_status` plus every row's `phase`, formed as the
 /// XOR of per-row contributions (the phase/loss half of [`fingerprint`]). Being
 /// XOR-combinable lets a branch inherit its parent's value and update only the
 /// rows it changed — a sign flip XORs [`sign_mask`], a loss XORs [`loss_mask`].
@@ -156,7 +156,7 @@ where
 {
     // Single implementation: build a one-shot mask table and delegate so the
     // table-indexed and from-scratch values are guaranteed identical.
-    // `is_lost.len() == n_qubits` and is available under these minimal bounds.
+    // `qubit_status.len() == n_qubits` and is available under these minimal bounds.
     let masks = RowMasks::new(tab.qubit_status.len());
     phase_loss_hash_with(tab, &masks)
 }
@@ -192,7 +192,7 @@ where
 
 /// Phase/loss hash of a Pauli (depolarize) branch: the parent's hash with
 /// [`sign_mask`] XORed in for each row whose phase the Pauli flipped. The
-/// branch shares the parent's words and `is_lost`, and a Pauli flips only sign
+/// branch shares the parent's words and `qubit_status`, and a Pauli flips only sign
 /// bits, so this single walk over the (already-forked) rows reproduces a
 /// from-scratch [`phase_loss_hash`] without re-hashing anything.
 pub(crate) fn pauli_branch_phase_loss<T, I, C>(
@@ -247,7 +247,7 @@ where
     I: TableauIndex,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
-    // NOTE: comparing is_lost and rows is only necessary to avoid hash collisions
+    // NOTE: comparing qubit_status and rows is only necessary to avoid hash collisions
 
     if tab0.qubit_status != tab1.qubit_status {
         return false;
@@ -294,7 +294,7 @@ where
 pub enum BranchMutation {
     /// Apply a non-identity Pauli at `addr0`: flips per-row sign bits only.
     Pauli { op: NotIdentity, addr0: usize },
-    /// Mark qubit `q` lost (set is_lost[q] = true).
+    /// Mark qubit `q` lost (`qubit_status[q] = Lost`).
     Loss { q: usize },
 }
 
@@ -323,7 +323,7 @@ pub(crate) fn apply_branch_mutation<T, I, C>(
 /// Like [`structurally_equal`], but compares `existing` against the *virtual*
 /// tableau `parent + m` without materializing it. Mirrors `structurally_equal`
 /// field-by-field, deriving each field of the virtual tableau from `parent`:
-/// - `is_lost`: for `Loss { q }`, equals `parent`'s with index `q` forced true;
+/// - `qubit_status`: for `Loss { q }`, equals `parent`'s with index `q` forced Lost;
 ///   for `Pauli`, equals `parent`'s unchanged.
 /// - `coefficients`: unchanged by both mutations.
 /// - rows: for `Loss`, unchanged; for `Pauli`, each row's sign bit (phase bit 1)
@@ -346,7 +346,7 @@ where
     I: TableauIndex,
     C: SparseVector<Complex<T::Coeff>, I>,
 {
-    // NOTE: comparing is_lost and rows is only necessary to avoid hash collisions
+    // NOTE: comparing qubit_status and rows is only necessary to avoid hash collisions
 
     match m {
         BranchMutation::Loss { q } => {
@@ -513,7 +513,7 @@ mod fingerprint_tests {
 
     #[test]
     fn pauli_and_loss_preserve_word_fingerprint() {
-        // X/Y/Z flip only phase bits and loss flips only is_lost; neither
+        // X/Y/Z flip only phase bits and loss flips only qubit_status to Lost; neither
         // touches `word`. So a branch may inherit its parent's word-hash, and
         // inherited-word XOR fresh-phase_lost must equal a full recompute.
         let parent = make();

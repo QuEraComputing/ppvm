@@ -784,9 +784,9 @@ where
         <<T::Storage as BitView>::Store as TryFrom<usize>>::Error: Debug,
         <T::Storage as BitView>::Store: PrimInt + TryFrom<usize>,
     {
-        let any_lost =
+        let any_inactive =
             (0..count).any(|i| self.is_inactive(base + i) || self.is_inactive(base + offset + i));
-        if !any_lost {
+        if !any_inactive {
             self.tableau.cz_block_pairs(base, offset, count);
         } else {
             self.cz_pairs_each(base, offset, count);
@@ -825,12 +825,12 @@ where
         <T::Storage as BitView>::Store: PrimInt,
     {
         let bits_per_word = std::mem::size_of::<<T::Storage as BitView>::Store>() * 8;
-        let any_lost = (0..count).any(|i| {
+        let any_inactive = (0..count).any(|i| {
             let c = word_c * bits_per_word + base_bit_c + i;
             let t = word_t * bits_per_word + base_bit_t + i;
             self.is_inactive(c) || self.is_inactive(t)
         });
-        if !any_lost {
+        if !any_inactive {
             self.tableau
                 .cz_block_pairs_cross_word(word_c, base_bit_c, word_t, base_bit_t, count);
         } else {
@@ -1568,6 +1568,34 @@ mod tests {
         }
 
         // Batch (should fall back internally)
+        tab2.cz_block_pairs(0, 4, 4);
+
+        assert_eq!(
+            snapshot_tableau(&tab1.tableau),
+            snapshot_tableau(&tab2.tableau)
+        );
+    }
+
+    #[test]
+    fn test_generalized_tableau_cz_block_pairs_with_leakage() {
+        // Leaked qubits take the same inactive fallback as lost ones.
+        type GTab = GeneralizedTableau<ByteF64<1>>;
+        let n = 8;
+        let mut tab1: GTab = GeneralizedTableau::new(n, 1e-12);
+        for i in 0..n {
+            Clifford::h(&mut tab1.tableau, i);
+        }
+        tab1.qubit_status[2] = QubitStatus::Leaked;
+        let mut tab2 = tab1.clone();
+
+        for i in 0..4 {
+            let c = i;
+            let t = 4 + i;
+            if !tab1.is_inactive(c) && !tab1.is_inactive(t) {
+                Clifford::cz(&mut tab1.tableau, c, t);
+            }
+        }
+
         tab2.cz_block_pairs(0, 4, 4);
 
         assert_eq!(

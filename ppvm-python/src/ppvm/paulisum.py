@@ -422,9 +422,10 @@ class LossyPauliSum(PauliSum):
 
     This is achieved by extending the set of Pauli basis operators to include
     an addition operator ``{I, X, Y, Z, L}``, where ``L`` is the projector on
-    a third leakage state. This basis effectively allows simulating qutrits,
-    where we neglect any coherences between the qubit subspace and the leakage
-    state.
+    a third loss state ``|L⟩``. Distinct from leakage on
+    `GeneralizedTableau`, which pins a qubit to ``|0⟩``/``|1⟩``. This basis
+    effectively allows simulating qutrits, where we neglect any coherences
+    between the qubit subspace and the loss state.
 
     In addition to the new channels, there is also another truncation strategy:
     Since Pauli Strings that have an `L` at multiple positions contribute only

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::debug_assert;
 use std::fmt::Debug;
 use std::ops::Add;
 
@@ -322,6 +321,10 @@ where
             self.loss_channel(addr0, p[2].clone());
             return;
         }
+        // A leaked partner is still present, so it does not take the p[2] path.
+        // Using the both-present (p[0], p[1]) rates is the current approximation:
+        // leakage would change the two-qubit dynamics, but the channel stays
+        // correlated.
 
         let r = self.tableau.rng.random::<f64>();
         let mut cumulative = T::Coeff::zero();
@@ -418,7 +421,7 @@ where
         // record entry it pushed (mirrors `loss_channel`).
         let m = self
             .measure(addr0)
-            .expect("Loss was checked before, this should be unreachable");
+            .expect("qubit was checked active before, this should be unreachable");
         self.measurement_record.pop();
 
         // Pin the qubit to |0⟩ (prob p0) or |1⟩ (prob p1). r < p_tot = p0 + p1
@@ -991,6 +994,18 @@ mod tests {
         t.qubit_status[0] = QubitStatus::Lost;
         t.correlated_loss_channel(0, 1, [0.0, 0.0, 0.0]);
         assert!(!t.is_lost(1));
+    }
+
+    #[test]
+    fn correlated_loss_leaked_partner_uses_both_present_branch() {
+        // Leaked atoms are still present, so p[0]=1 loses both (overwriting
+        // leakage) rather than taking the p[2] early return.
+        let mut t = tab(2);
+        t.leakage_channel(0, 0.0, 1.0);
+        t.correlated_loss_channel(0, 1, [1.0, 0.0, 0.0]);
+        assert!(t.is_lost(0));
+        assert!(t.is_lost(1));
+        assert!(!t.is_leaked(0));
     }
 
     #[test]

@@ -50,6 +50,9 @@ pub fn gate_spec(name: &str) -> Option<GateSpec> {
         "loss" => (Loss, 1, 1),
         "pauli_error" => (PauliError, 1, 3),
         "correlated_loss" => (CorrelatedLoss, 2, 3),
+        // Same shape as `r`: one qubit, two floats. Push order is q, p0, p1
+        // (probabilities of leaking into pinned |0⟩ / |1⟩).
+        "leakage" => (Leakage, 1, 2),
         _ => return None,
     };
     Some(GateSpec {
@@ -206,6 +209,20 @@ mod tests {
                 params: vec![0.5],
             }
         );
+    }
+
+    #[test]
+    fn leakage_parses_qubit_and_two_probs() {
+        assert_eq!(
+            parse_command("leakage 0 0.0 1.0").unwrap(),
+            Command::Gate {
+                inst: CircuitInstruction::Leakage,
+                qubits: vec![0],
+                params: vec![0.0, 1.0],
+            }
+        );
+        assert!(parse_command("leakage 0 1.0").is_err());
+        assert!(parse_command("leakage 0").is_err());
     }
 
     #[test]

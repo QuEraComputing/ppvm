@@ -158,6 +158,7 @@ where
             (CorrelatedLoss, TwoQubitAndFloatArr3(addr0, addr1, ps)) => {
                 self.tab.correlated_loss_channel(*addr0, *addr1, *ps)
             }
+            (Leakage, &QubitAndTwoFloats(addr, p0, p1)) => self.tab.leakage_channel(addr, p0, p1),
 
             /* BATCH OPERATIONS START HERE */
             // Batch: dedicated batch methods
@@ -389,7 +390,9 @@ macro_rules! dispatch_common_paulisum {
             // Not supported on either backend (Decision 11 + Gate Support
             // Matrix). Loss / CorrelatedLoss handling differs by backend
             // and lives in the caller's impl block, not this macro.
-            (Measure | Reset, _) => {
+            // Leakage is GeneralizedTableau-only (pinned |0⟩/|1⟩), not a
+            // LossyPauliSum qutrit |L⟩ channel.
+            (Measure | Reset | Leakage, _) => {
                 return Err(eyre!("{} is not supported on the {} backend", $inst, $backend));
             }
 

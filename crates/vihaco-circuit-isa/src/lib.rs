@@ -51,6 +51,7 @@ vihaco::component! {
         PauliError,
         Depolarize2,
         Depolarize,
+        Leakage,
     }
 }
 
@@ -110,6 +111,8 @@ impl std::fmt::Display for runtime::Instruction {
             PauliError => write!(f, "PauliError"),
             Depolarize2 => write!(f, "Depolarize2"),
             Depolarize => write!(f, "Depolarize"),
+
+            Leakage => write!(f, "Leakage"),
         }
     }
 }

@@ -99,7 +99,35 @@ fn loss_channel_with_p1_marks_qubit_lost() {
     let prog = parse_extended("I_ERROR[loss](1.0) 0").unwrap();
     let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
     execute(&prog, &mut tab).unwrap();
-    assert!(tab.is_lost[0]);
+    assert!(tab.is_lost(0));
+}
+
+#[test]
+fn leakage_channel_leaks_qubit_to_one() {
+    // p1 = 1.0 pins the qubit to |1⟩ and flags it leaked (not lost).
+    let prog = parse_extended("I_ERROR[leakage](0.0, 1.0) 0").unwrap();
+    let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
+    execute(&prog, &mut tab).unwrap();
+    assert!(tab.is_leaked(0));
+    assert!(!tab.is_lost(0));
+    assert_eq!(tab.measure(0), Some(true));
+}
+
+#[test]
+fn leakage_channel_zero_prob_no_leak() {
+    let prog = parse_extended("I_ERROR[leakage](0.0, 0.0) 0").unwrap();
+    let mut tab: Tab = GeneralizedTableau::new(1, 1e-10);
+    execute(&prog, &mut tab).unwrap();
+    assert!(!tab.is_leaked(0));
+    assert!(!tab.is_lost(0));
+}
+
+#[test]
+fn leakage_channel_applies_to_all_targets() {
+    let prog = parse_extended("I_ERROR[leakage](0.0, 1.0) 0 1 2").unwrap();
+    let mut tab: Tab = GeneralizedTableau::new(3, 1e-10);
+    execute(&prog, &mut tab).unwrap();
+    assert!(tab.is_leaked(0) && tab.is_leaked(1) && tab.is_leaked(2));
 }
 
 #[test]
@@ -304,7 +332,7 @@ fn test_stim_correlated_loss_simple() {
     let mut tab: Tab = GeneralizedTableau::new(2, 1e-10);
     run_str("I_ERROR[correlated_loss](1.0) 0 1", &mut tab);
     assert!(
-        tab.is_lost[0] && tab.is_lost[1],
+        tab.is_lost(0) && tab.is_lost(1),
         "Both qubits should be lost"
     );
 }
@@ -315,7 +343,7 @@ fn test_stim_correlated_loss_zero_prob() {
     let mut tab: Tab = GeneralizedTableau::new(2, 1e-10);
     run_str("I_ERROR[correlated_loss](0.0) 0 1", &mut tab);
     assert!(
-        !tab.is_lost[0] && !tab.is_lost[1],
+        !tab.is_lost(0) && !tab.is_lost(1),
         "No qubits should be lost"
     );
 }

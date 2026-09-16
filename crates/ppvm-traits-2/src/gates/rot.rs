@@ -26,7 +26,10 @@ pub trait RotationOne<C: Coefficient, A: Angle<C> = C> {
     fn rz(&mut self, qubit: usize, theta: A) {
         self.rotate_1(Pauli::Z, qubit, theta)
     }
+}
 
+/// Batched single-qubit rotations, defaulting to scalar calls in target order.
+pub trait RotationOneBatch<C: Coefficient, A: Angle<C> = C>: RotationOne<C, A> {
     /// Explicit batched `RX(θ)`.
     fn rx_many(&mut self, targets: &[usize], theta: A)
     where
@@ -107,7 +110,10 @@ pub trait RotationTwo<C: Coefficient, A: Angle<C> = C> {
     fn rzz(&mut self, a: usize, b: usize, theta: A) {
         self.rotate_2(Pauli::Z, Pauli::Z, a, b, theta);
     }
+}
 
+/// Batched two-qubit rotations, defaulting to scalar calls in pair order.
+pub trait RotationTwoBatch<C: Coefficient, A: Angle<C> = C>: RotationTwo<C, A> {
     /// Apply RXX to each pair in order.
     fn rxx_many(&mut self, pairs: &[(usize, usize)], theta: A)
     where

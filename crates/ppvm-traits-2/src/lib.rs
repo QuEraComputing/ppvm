@@ -22,7 +22,8 @@ pub use gates::{
     AmplitudeDamping, AsymmetricLossChannel, CRx, Clifford, CliffordBatch, CliffordExtensions,
     CliffordExtensionsBatch, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel,
     Measure, PauliError, PauliErrorAll, PauliErrorFactors, Projection, Reset, ResetLossChannel,
-    RotXY, RotationOne, RotationTwo, TGate, TwoQubitPauliError, U3Gate,
+    RotXY, RotationOne, RotationOneBatch, RotationTwo, RotationTwoBatch, TGate, TwoQubitPauliError,
+    U3Gate,
 };
 pub use loss::LossState;
 pub use pauli::{BlanketClifford, Pauli, PhaseTrack, SymplecticColumns};
@@ -37,7 +38,7 @@ pub mod prelude {
         IdentityBuildHasher, IdentityHasher, ImaginaryUnit, Indexable, KeyBatch, KeyColumn,
         KeyProduct, LossChannel, LossState, Measure, Multiply, Pair, Pauli, PauliBits, PauliError,
         PauliErrorAll, PauliErrorFactors, Phase, PhaseTrack, Projection, Reset, ResetLossChannel,
-        Retain, RotXY, RotationOne, RotationTwo, Scale, Support, SymplecticColumns, TGate,
-        TermBatch, TermSink, TwoQubitPauliError, U3Gate, Word,
+        Retain, RotXY, RotationOne, RotationOneBatch, RotationTwo, RotationTwoBatch, Scale,
+        Support, SymplecticColumns, TGate, TermBatch, TermSink, TwoQubitPauliError, U3Gate, Word,
     };
 }

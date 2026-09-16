@@ -15,4 +15,6 @@ pub use channel::{
 };
 pub use clifford::{Clifford, CliffordBatch, CliffordExtensions, CliffordExtensionsBatch};
 pub use measure::{Measure, Projection, Reset};
-pub use rot::{CRx, RotXY, RotationOne, RotationTwo, TGate, U3Gate};
+pub use rot::{
+    CRx, RotXY, RotationOne, RotationOneBatch, RotationTwo, RotationTwoBatch, TGate, U3Gate,
+};

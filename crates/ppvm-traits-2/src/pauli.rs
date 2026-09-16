@@ -15,14 +15,8 @@ pub enum Pauli {
     /// Pauli `Z`.
     Z,
 }
-/// `Sp`-part: bit-plane column algebra, written **once** and shared by
-/// `PhasedPauliWord` (1-bit columns) and `Tableau` (SIMD blocks over its `2n`
-/// rows). Same meaning, different width. No phase — this is the role-independent
-/// symplectic action.
-///
-/// Design: §"Pauli algebra traits". The bit rules realize the per-generator
-/// `Sp(2n, 2)` isometries of `lean/PPVM/Pauli/Symplectic.lean`
-/// (`hAct_isometry`/`sAct_isometry`/`cnotAct_isometry`/`czAct_isometry`).
+/// Phase-free symplectic operations on X/Z bit columns.
+/// Shared by single-word bits and multi-row tableau columns.
 pub trait SymplecticColumns {
     /// Number of qubits (columns) this operator spans.
     fn n_qubits(&self) -> usize;
@@ -30,10 +24,7 @@ pub trait SymplecticColumns {
     /// `H` on `q`: swap the X and Z columns.
     fn swap_xz(&mut self, q: usize);
 
-    /// `S` on `q`: `z_q ⊕= x_q` (maps `X → Y`).
-    ///
-    /// (Completes the design's abbreviated `// ...`; see the module friction
-    /// note.)
+    /// S bit update on `q`: `z_q ⊕= x_q` (maps X to Y).
     fn xor_z_from_x(&mut self, q: usize);
 
     /// `CNOT` bit rule, part one: `x_tgt ⊕= x_ctrl`.
@@ -42,10 +33,7 @@ pub trait SymplecticColumns {
     /// `CNOT` bit rule, part two: `z_ctrl ⊕= z_tgt`.
     fn xor_z_col(&mut self, tgt: usize, ctrl: usize);
 
-    /// `CZ` bit rule on `(a, b)`: `z_a ⊕= x_b` and `z_b ⊕= x_a`.
-    ///
-    /// (Completes the design's abbreviated `// ...`; see the module friction
-    /// note.)
+    /// CZ bit update: `z_a ⊕= x_b` and `z_b ⊕= x_a`.
     fn cz_bits(&mut self, a: usize, b: usize);
 }
 
@@ -76,10 +64,8 @@ pub trait PhaseTrack {
     fn z_phase(&mut self, q: usize);
 }
 
-/// Role-*exclusive* operations that interpret the rows as a symplectic basis
-/// rather than as independent operators. A tableau-only trait a word never
-/// implements. Holds the frame **primitives**, not `measure` itself — the two
-/// measurement algorithms are built *on* these.
+/// Tableau frame primitives interpreting rows as a symplectic basis.
+/// Measurement algorithms build on these operations; individual words do not implement them.
 pub trait StabilizerFrame {
     /// Find a generator that anticommutes with the measured Pauli (the pivot).
     fn anticommuting_pivot(&self, qubit: usize) -> Option<usize>;

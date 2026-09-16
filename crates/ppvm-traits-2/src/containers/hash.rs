@@ -1,38 +1,20 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Indexable keys and the identity pass-through hasher.
-//!
-//! Design: `traits-2-configuration-and-hashing.md` §"Indexable values" and
-//! §"The pass-through storage contract". `Indexable` is *not* the universal key
-//! bound (that is `Eq + Clone`); it is required only on the hash backends.
+//! Structural key digests and a pass-through hasher.
+//! [`Indexable`] is required by hash backends, not by all container keys.
 
 use std::hash::{BuildHasher, Hash, Hasher};
 
-/// A key whose finalized structural digest is first class.
-///
-/// The digest is avalanche-quality in both the low bits (the hashbrown bucket)
-/// and the top 7 (the control tag), so it can be consumed *directly* as the map
-/// hash. Contracts:
-///
-///   * `Hash for Self` is exactly `state.write_u64(self.key_hash())`;
-///   * structurally equal keys return equal digests; and
-///   * `KeyColumn::hash_into` reproduces this value bit for bit.
-///
-/// This exposes the digest *value*, not the cache mechanics — there is no cache
-/// type or invalidation hook in the contract.
-///
-/// Design: §"Indexable values".
+/// A key with an avalanche-quality structural digest; equal keys have equal digests.
+/// `Hash` must write exactly one `u64`: `state.write_u64(self.key_hash())`.
+/// Column hashing must reproduce that digest bit for bit.
 pub trait Indexable: Clone + Eq + Hash {
     /// The finalized structural digest of this key.
     fn key_hash(&self) -> u64;
 }
 
-/// A pass-through `Hasher`: a key writes its already-finalized `key_hash()` as a
-/// single `u64` and this hands it back verbatim, so the digest reaches
-/// hashbrown untouched.
-///
-/// Design: §"The pass-through storage contract".
+/// A pass-through hasher returning the single `u64` digest written by a key.
 #[derive(Debug, Default, Clone)]
 pub struct IdentityHasher(u64);
 
@@ -52,11 +34,7 @@ impl Hasher for IdentityHasher {
     }
 }
 
-/// `BuildHasher` for [`IdentityHasher`]; the storage aliases in
-/// `ppvm-pauli-sum-2` bake this into their `HashMap` so `finish() ==
-/// key.key_hash()`.
-///
-/// Design: §"The pass-through storage contract".
+/// Builds [`IdentityHasher`] instances so map hashes equal the supplied key digests.
 #[derive(Debug, Default, Clone)]
 pub struct IdentityBuildHasher;
 

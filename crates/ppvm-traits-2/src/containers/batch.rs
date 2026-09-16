@@ -5,20 +5,15 @@ use crate::containers::Indexable;
 use crate::loss::LossState;
 use crate::word::PauliBits;
 
-/// A key that can be laid out as a structure-of-arrays column. Separate from
-/// [`Indexable`] so the minimal hashing contract is unchanged: a batched key is
-/// both `Indexable` (a valid map key) and `Columnar` (has a column layout).
-///
-/// Design: §"The batch contract".
+/// An [`Indexable`] key with a structure-of-arrays column representation.
+/// Hashing and column layout remain separate capabilities.
 pub trait Columnar: Indexable {
     /// The concrete structure-of-arrays column for this key type.
     type Column: KeyColumn<Key = Self>;
 }
 
-/// A structure-of-arrays column of keys, owned by the concrete key type (only it
-/// knows its planes). Operates plane by plane, never scalar on the hot path.
-///
-/// Design: §"The batch contract".
+/// A structure-of-arrays key column with plane-oriented operations.
+/// The concrete key type determines its column representation.
 pub trait KeyColumn: Default + Clone {
     /// The key type this column stores.
     type Key: Columnar;
@@ -27,9 +22,6 @@ pub trait KeyColumn: Default + Clone {
     fn len(&self) -> usize;
 
     /// Number of keys the existing plane allocations can hold without growing.
-    ///
-    /// Live stores use this when cloning persistent workspaces: cloning only the
-    /// populated rows would silently discard a caller's capacity hint.
     fn capacity(&self) -> usize;
 
     /// Whether the column is empty.
@@ -43,18 +35,8 @@ pub trait KeyColumn: Default + Clone {
     /// Append one produced key; the column keeps each plane contiguous.
     fn push(&mut self, key: Self::Key);
 
-    /// Reserve room for `additional` more keys, keeping the ones already stored.
-    ///
-    /// The column spelling of `Vec::reserve`, and the counterpart of
-    /// [`with_capacity`](Self::with_capacity) for a column that is a *live
-    /// support* rather than a throwaway batch: `ColumnStore`'s branch-merge pass
-    /// knows its worst-case append count up front (the scratch length), and
-    /// pre-sizing from it collapses a doubling chain of plane reallocations —
-    /// plus the parallel bucket-table `reindex`es — into one.
-    ///
-    /// **Default: a no-op.** Pre-sizing is a pure optimization, so a column that
-    /// cannot express it (a device-backed or fixed-extent one) stays legal and
-    /// simply reallocates on `push`.
+    /// Reserve room for `additional` keys while retaining existing entries.
+    /// The default is a no-op for backends without reservation support.
     #[inline]
     fn reserve(&mut self, additional: usize) {
         let _ = additional;
@@ -134,37 +116,13 @@ pub trait KeyColumn: Default + Clone {
             .toggled_bits2(i, toggle_x_i, toggle_z_i, j, toggle_x_j, toggle_z_j)
     }
 
-    /// Reset to an empty column, **keeping the backing plane allocations**.
-    ///
-    /// # Friction: a column that is a *store* needs in-place mutation, and the
-    /// batch-only surface has none
-    ///
-    /// [`gather`](Self::gather) allocates a fresh column, and the design's
-    /// batch contract needs nothing more: a `TermBatch`'s column is built by
-    /// `push` and thrown away. The `ColumnStore` backend
-    /// (implementation-plan Phase 6) makes the *same* column type the live
-    /// support, and every one of its buffer-reusing fast paths — the old
-    /// crate's `map_add` clear→write→swap (architecture feature 1), the retain
-    /// compaction, the in-place Clifford re-key — is defined by mutating a
-    /// column it already owns. Expressed through `gather` alone each of those
-    /// allocates a whole new key column **per gate**, which is exactly the
-    /// per-gate allocation churn the double-buffer exists to remove.
-    ///
-    /// So this trio ([`clear`](Self::clear), [`set`](Self::set),
-    /// [`truncate`](Self::truncate)) is the minimal in-place surface: they are
-    /// the column spellings of `Vec::clear`/`IndexMut`/`Vec::truncate`, they
-    /// stay plane-oriented (a SIMD/GPU column implements them as plane writes),
-    /// and they expose no `&mut Key` — so design rule 4 of §"Backends are
-    /// containers" ("no signature exposes `&mut (W, C)` or `&mut [C]`") is
-    /// untouched and the AoS layout still cannot leak.
+    /// Clear the column while retaining its backing allocations.
+    /// Together with [`Self::set`] and [`Self::truncate`], permits in-place storage
+    /// updates without exposing mutable key references or allocating gathered columns.
     fn clear(&mut self);
 
-    /// Overwrite element `i` in place, keeping every other element and the
-    /// backing allocation. Panics (or debug-panics) if `i >= len()`.
-    ///
-    /// The write side of the in-place re-key: a Clifford conjugation is a
-    /// bijection, so a columnar backend rewrites the key planes at each slot and
-    /// leaves the parallel coefficient column completely untouched.
+    /// Overwrite element `i`, preserving other elements and backing allocations.
+    /// Panics (or debug-panics) if `i >= len()`.
     fn set(&mut self, i: usize, key: Self::Key);
 
     /// Shorten to `len` elements, keeping the backing allocation. A no-op if
@@ -184,14 +142,9 @@ pub trait KeyColumn: Default + Clone {
     }
 }
 
-/// Keys plus their precomputed structural hashes, in parallel columns. The
-/// probe side of the join; it carries no coefficients.
-///
-/// See the module-level friction note: the key column is a scalar `Vec<W>`
-/// fallback rather than the design's `W::Column`, so the batch is expressible
-/// for any `W: Eq + Clone` (not only `Columnar` keys).
-///
-/// Design: §"The batch contract".
+/// Keys and cached structural hashes in parallel columns, without coefficients.
+/// Uses `Vec<W>` so keys need not implement [`Columnar`].
+/// Mutations invalidate hashes; [`Self::hashes`] exposes cache validity.
 #[derive(Debug, Clone)]
 pub struct KeyBatch<W> {
     keys: Vec<W>,
@@ -284,11 +237,7 @@ impl<W: Indexable> KeyBatch<W> {
     }
 }
 
-/// A [`KeyBatch`] with the coefficient column attached: the produced terms
-/// awaiting merge. Coefficients are a separate column, touched only when a
-/// probe resolves to an aggregate.
-///
-/// Design: §"The batch contract".
+/// A [`KeyBatch`] plus a separate coefficient column, ready for accumulation.
 #[derive(Debug, Clone)]
 pub struct TermBatch<W, C> {
     keys: KeyBatch<W>,
@@ -357,11 +306,8 @@ impl<W, C> TermBatch<W, C> {
     }
 }
 
-/// The append side of a term batch: a producer pushes `(key, coeff)` terms into
-/// a sink, filling the key and coefficient columns. A naive sink collects into a
-/// scalar `Vec`; a columnar sink appends into planes.
-///
-/// Design: §"Every gate is a producer feeding `accumulate`".
+/// Append produced key/coefficient pairs to a sink.
+/// Backends may collect scalar pairs or append to separate columns.
 pub trait TermSink<K, C> {
     /// Append one produced term.
     fn push(&mut self, key: K, coeff: C);
@@ -375,25 +321,8 @@ impl<W, C> TermSink<W, C> for TermBatch<W, C> {
     }
 }
 
-/// A monomorphized, inlinable term producer — never `dyn`, since this is the
-/// hot loop and the abstraction must compile to nothing.
-///
-/// # `Send + Sync` is part of the contract (architecture feature 12)
-///
-/// A producer is *read-only* over its own state (`produce` takes `&self`), so a
-/// storage backend is free to split the produce walk across threads — which is
-/// the whole point of keeping the backend a **configuration choice**: the old
-/// crate bounded every driver closure `F: Fn(..) + Sync + Send`
-/// (`ppvm-traits/src/map/hashmap.rs`, `map_add_assign`/`map_insert*`/`scale`) so
-/// that a concurrent map (it shipped a `DashMap`-backed config benchmarked beside
-/// the `HashMap`/`IndexMap` ones) was a **backend swap, not an engine rewrite**.
-/// Requiring it here — and on the `ppvm-pauli-sum-2` in-place walk closures
-/// (`ScaleByKey`/`SignFlipByKey`/`RekeyBijective`/`RotateInPlace`/
-/// `BranchInPlace`) — keeps that door open: widening the bound later would mean
-/// touching every trait signature *and* every impl, i.e. exactly the coupling the
-/// feature exists to prevent. Every real producer is a closure over gate indices
-/// and ring elements, and `Coefficient` is already `Send + Sync`, so the bound
-/// costs nothing today.
+/// A statically dispatched producer that reads terms and writes to a sink.
+/// `Send + Sync` permits storage backends to partition production across threads.
 pub trait TermProducer<K, C>: Send + Sync {
     /// Push the produced terms for one existing `(key, coeff)` into the sink.
     fn produce<S: TermSink<K, C>>(&self, key: &K, coeff: &C, sink: &mut S);

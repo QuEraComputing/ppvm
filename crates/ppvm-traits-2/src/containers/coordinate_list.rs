@@ -1,11 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Vec<(K, C)>` — the coordinate-list backend: an unsorted association list
-//! scanned linearly, requiring only `K: Eq + Clone` (it never hashes). Best for
-//! small support, e.g. the `GeneralizedTableau` amplitude vector.
-//!
-//! See [`super`] for the shared design references and the orphan-rule note.
+//! An unsorted `Vec<(K, C)>` backend using linear scans and `K: Eq + Clone`.
+//! Suitable for small supports; no hashing is required.
 
 use crate::algebra::{Conjugate, ImaginaryUnit, KeyProduct};
 use crate::arithmetic::Coefficient;
@@ -139,13 +136,8 @@ where
     K: KeyProduct,
     C: ImaginaryUnit,
 {
-    /// The twisted convolution `(A·B)[k] = Σ_{p·q = k} A[p]·B[q]·i^{β(p,q)}`,
-    /// accumulated into `acc` — the coordinate-list spelling of `twistedConv`
-    /// (`lean/PPVM/Algebra/Twisted.lean`), whose monomial case is `tmul`.
-    ///
-    /// Neither `reduce` nor any truncation runs: `acc` keeps an exact-zero
-    /// cancellation, exactly as `twistedConv` (a finitely-supported map is
-    /// canonicalized only by an explicit [`Accumulate::reduce`]).
+    /// Accumulate `(A·B)[k] = Σ_{p·q=k} A[p] B[q] i^{β(p,q)}` into `acc`.
+    /// No reduction or truncation runs; exact-zero entries remain until explicit reduction.
     fn multiply_into(&self, other: &Self, acc: &mut Self) {
         for (p, a) in self.as_slice() {
             for (q, b) in other.as_slice() {

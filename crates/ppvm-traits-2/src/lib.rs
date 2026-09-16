@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Shared arithmetic, word, gate, and container interfaces.
-//!
-//! Includes small algebraic types, default gate implementations, and
-//! container implementations for `Vec` and `HashMap`.
+//! Includes small algebraic types, default gates, and `Vec`/`HashMap` implementations.
 
 pub mod algebra;
 pub mod arithmetic;

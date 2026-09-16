@@ -6,12 +6,8 @@ use crate::{
     pauli::Pauli,
 };
 
-/// Single-qubit rotations parameterized by an angle domain `A` that yields
-/// amplitudes in coefficient domain `C`.
-///
-/// The angle defaults to the coefficient (`A = C`), recovering today's
-/// `rx(theta: C)` while permitting a symbolic/parametric angle over an
-/// `f64`-coefficient sum.
+/// Single-qubit rotations with angle domain `A` producing coefficients in `C`.
+/// Defaults to `A = C`; distinct angle types can represent symbolic parameters.
 pub trait RotationOne<C: Coefficient, A: Angle<C> = C> {
     /// Rotate about `axis` (one of `X`, `Y`, `Z`) on `qubit` by `theta`.
     ///
@@ -203,11 +199,8 @@ pub trait RotationTwo<C: Coefficient, A: Angle<C> = C> {
     }
 }
 
-/// Rotation about an axis in the x/y plane:
-/// `R(axis_angle, θ) = exp(−i·θ/2·(cos(axis_angle)·X + sin(axis_angle)·Y))`.
-///
-/// The in-plane axis is `X` rotated about `Z` by `axis_angle`, so
-/// `R(axis_angle, θ) = RZ(axis_angle)·RX(θ)·RZ(−axis_angle)`
+/// Rotation about an axis in the X/Y plane:
+/// `R(axis_angle, θ) = exp(-i θ/2 · (cos(axis_angle) X + sin(axis_angle) Y))`.
 pub trait RotXY<C: Coefficient, A: Angle<C> = C> {
     /// `R(axis_angle, θ)` on `qubit`.
     fn r(&mut self, qubit: usize, axis_angle: A, theta: A);

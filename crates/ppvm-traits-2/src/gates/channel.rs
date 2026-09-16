@@ -3,10 +3,8 @@
 
 use crate::arithmetic::Coefficient;
 
-/// Coefficients that can calculate single-qubit Pauli-channel factors.
-///
-/// This optional channel capability keeps noise formulas out of scalar
-/// arithmetic. Implementers may use the generic default or specialize it.
+/// Optional coefficient capability for single-qubit Pauli-channel factors.
+/// Implementers can use the generic default or specialize the noise calculation.
 pub trait PauliErrorFactors: Coefficient + num::One {
     /// Transfer eigenvalues `(λ_X, λ_Z, λ_Y)` for Pauli probabilities
     /// `(p_X, p_Y, p_Z)`.
@@ -192,14 +190,9 @@ pub trait LossChannel<C: Coefficient> {
 
 /// Correlated two-qubit loss channel.
 pub trait CorrelatedLossChannel<C: Coefficient> {
-    /// Apply a correlated loss channel to `qubit0` and `qubit1`.
-    ///
-    /// The three probabilities are:
-    /// * `p[0]`: losing both qubits simultaneously when both are in the qubit
-    ///   subspace.
-    /// * `p[1]`: losing either one qubit when both are in the qubit subspace.
-    /// * `p[2]`: losing one qubit when the other has already been lost prior to
-    ///   the channel.
+    /// Apply correlated loss: `p[0]` loses both qubits when both are present;
+    /// `p[1]` loses either one when both are present; `p[2]` loses the remaining
+    /// qubit when the other was already lost.
     fn correlated_loss_channel<R: rand::Rng + ?Sized>(
         &mut self,
         qubit0: usize,
@@ -216,10 +209,8 @@ pub trait ResetLossChannel {
     fn reset_loss_channel(&mut self, qubit: usize);
 }
 
-/// State-dependent ("asymmetric") single-qubit loss channel: a qubit is lost from
-/// `|0⟩` with probability `p0` and from `|1⟩` with probability `p1`. Unlike
-/// [`LossChannel`], the total loss probability depends on the qubit's
-/// populations, so the channel reads the current `⟨Z⟩`.
+/// State-dependent loss: probability `p0` from `|0⟩`, `p1` from `|1⟩`.
+/// The total loss probability depends on the populations, so the channel reads `⟨Z⟩`.
 pub trait AsymmetricLossChannel<C: Coefficient> {
     /// Apply asymmetric loss to `qubit`, with `p0` / `p1` the loss probabilities
     /// from `|0⟩` / `|1⟩`. See the backend impl for the trajectory approximation

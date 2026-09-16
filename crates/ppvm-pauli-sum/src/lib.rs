@@ -7,6 +7,7 @@
 pub mod config;
 pub mod strategy;
 pub mod sum;
+pub mod symmetry;
 
 /// Drop-in replacement for the old `ppvm_runtime::prelude`.
 pub mod prelude {

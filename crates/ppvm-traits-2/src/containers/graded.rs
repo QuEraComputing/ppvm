@@ -85,15 +85,6 @@ pub trait Pair: Support {
         Self::Coeff: Conjugate;
 }
 
-/// Compute `tr(self · value)` against a potentially different right-hand type.
-/// Unlike [`Pair::overlap`], both the right-hand type and output are unconstrained.
-pub trait Trace<'a, RHS: 'a> {
-    /// Numeric output of the trace.
-    type Output;
-    /// Compute `tr(self · value)`.
-    fn trace(&'a self, value: &'a RHS) -> Self::Output;
-}
-
 /// Accumulate a ring product using [`KeyProduct`] and [`ImaginaryUnit`].
 /// Key-product phases are absorbed into coefficients; types without a product
 /// need not implement this layer.

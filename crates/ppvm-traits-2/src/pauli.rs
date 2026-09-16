@@ -64,18 +64,4 @@ pub trait PhaseTrack {
     fn z_phase(&mut self, q: usize);
 }
 
-/// Tableau frame primitives interpreting rows as a symplectic basis.
-/// Measurement algorithms build on these operations; individual words do not implement them.
-pub trait StabilizerFrame {
-    /// Find a generator that anticommutes with the measured Pauli (the pivot).
-    fn anticommuting_pivot(&self, qubit: usize) -> Option<usize>;
-
-    /// Multiply generator `src` into `dst` (uses the Aaronson–Gottesman
-    /// `g`-rule).
-    fn row_multiply(&mut self, src: usize, dst: usize);
-
-    /// Restore canonical form after elimination.
-    fn canonicalize(&mut self);
-}
-
 pub trait BlanketClifford {}

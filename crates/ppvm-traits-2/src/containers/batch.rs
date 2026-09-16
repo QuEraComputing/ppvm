@@ -317,13 +317,6 @@ impl<W, C> TermSink<W, C> for TermBatch<W, C> {
     }
 }
 
-/// A statically dispatched producer that reads terms and writes to a sink.
-/// `Send + Sync` permits storage backends to partition production across threads.
-pub trait TermProducer<K, C>: Send + Sync {
-    /// Push the produced terms for one existing `(key, coeff)` into the sink.
-    fn produce<S: TermSink<K, C>>(&self, key: &K, coeff: &C, sink: &mut S);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

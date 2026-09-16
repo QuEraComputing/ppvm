@@ -19,26 +19,25 @@ pub use containers::{
     Multiply, Pair, Retain, Scale, Support, TermBatch, TermSink,
 };
 pub use gates::{
-    AmplitudeDamping, AsymmetricLossChannel, CRx, Clifford, CliffordBatch, CliffordExtensions,
-    CliffordExtensionsBatch, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel,
-    Measure, PauliError, PauliErrorAll, PauliErrorFactors, Projection, Reset, ResetLossChannel,
-    RotXY, RotationOne, RotationOneBatch, RotationTwo, RotationTwoBatch, TGate, TwoQubitPauliError,
-    U3Gate,
+    AmplitudeDamping, AsymmetricLossChannel, CRx, Clifford, CliffordBatch, CorrelatedLossChannel,
+    Depolarizing, Depolarizing2, LossChannel, Measure, PauliError, PauliErrorAll,
+    PauliErrorFactors, Projection, Reset, ResetLossChannel, RotXY, RotationOne, RotationOneBatch,
+    RotationTwo, RotationTwoBatch, TGate, TwoQubitPauliError, U3Gate,
 };
 pub use loss::LossState;
-pub use pauli::{BlanketClifford, Pauli, PhaseTrack, SymplecticColumns};
+pub use pauli::{Pauli, PhaseTrack, SymplecticColumns};
 pub use word::{PauliBits, Word};
 
 /// Common traits and types for implementing and using the interfaces.
 pub mod prelude {
     pub use crate::{
-        Accumulate, AmplitudeDamping, Angle, AsymmetricLossChannel, BlanketClifford, CRx, Clifford,
-        CliffordBatch, CliffordExtensions, CliffordExtensionsBatch, Coefficient, Columnar,
-        Conjugate, CorrelatedLossChannel, Depolarizing, Depolarizing2, Halvable,
-        IdentityBuildHasher, IdentityHasher, ImaginaryUnit, Indexable, KeyBatch, KeyColumn,
-        KeyProduct, LossChannel, LossState, Measure, Multiply, Pair, Pauli, PauliBits, PauliError,
-        PauliErrorAll, PauliErrorFactors, Phase, PhaseTrack, Projection, Reset, ResetLossChannel,
-        Retain, RotXY, RotationOne, RotationOneBatch, RotationTwo, RotationTwoBatch, Scale,
-        Support, SymplecticColumns, TGate, TermBatch, TermSink, TwoQubitPauliError, U3Gate, Word,
+        Accumulate, AmplitudeDamping, Angle, AsymmetricLossChannel, CRx, Clifford, CliffordBatch,
+        Coefficient, Columnar, Conjugate, CorrelatedLossChannel, Depolarizing, Depolarizing2,
+        Halvable, IdentityBuildHasher, IdentityHasher, ImaginaryUnit, Indexable, KeyBatch,
+        KeyColumn, KeyProduct, LossChannel, LossState, Measure, Multiply, Pair, Pauli, PauliBits,
+        PauliError, PauliErrorAll, PauliErrorFactors, Phase, PhaseTrack, Projection, Reset,
+        ResetLossChannel, Retain, RotXY, RotationOne, RotationOneBatch, RotationTwo,
+        RotationTwoBatch, Scale, Support, SymplecticColumns, TGate, TermBatch, TermSink,
+        TwoQubitPauliError, U3Gate, Word,
     };
 }

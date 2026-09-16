@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::pauli::{BlanketClifford, PhaseTrack, SymplecticColumns};
-
 /// The Clifford gate set, applied in the Heisenberg picture.
+/// Consumers implement the gate methods directly; aliases delegate to those methods.
 pub trait Clifford {
     /// Apply Pauli `X` to one qubit.
     fn x(&mut self, qubit: usize);
@@ -44,7 +43,7 @@ pub trait Clifford {
     fn sqrt_y_dag(&mut self, qubit: usize);
     /// Apply `CY` to one `(control, target)` pair.
     fn cy(&mut self, control: usize, target: usize);
-    /// stim alias for [`cy`](CliffordExtensions::cy).
+    /// stim alias for [`cy`](Clifford::cy).
     fn zcy(&mut self, control: usize, target: usize) {
         self.cy(control, target)
     }
@@ -129,85 +128,5 @@ pub trait CliffordBatch: Clifford {
         for &(c, t) in pairs {
             self.cy(c, t);
         }
-    }
-}
-
-impl<T: SymplecticColumns + PhaseTrack + BlanketClifford> Clifford for T {
-    #[inline]
-    fn x(&mut self, q: usize) {
-        self.x_phase(q);
-    }
-
-    #[inline]
-    fn y(&mut self, q: usize) {
-        self.y_phase(q);
-    }
-
-    #[inline]
-    fn z(&mut self, q: usize) {
-        self.z_phase(q);
-    }
-
-    #[inline]
-    fn h(&mut self, q: usize) {
-        self.flip_phase_where_xz(q);
-        self.swap_xz(q);
-    }
-
-    #[inline]
-    fn s(&mut self, q: usize) {
-        self.s_phase(q);
-        self.xor_z_from_x(q);
-    }
-
-    #[inline]
-    fn cnot(&mut self, c: usize, t: usize) {
-        self.cnot_phase(c, t);
-        self.xor_x_col(c, t);
-        self.xor_z_col(t, c);
-    }
-
-    #[inline]
-    fn cz(&mut self, a: usize, b: usize) {
-        self.cz_phase(a, b);
-        self.cz_bits(a, b);
-    }
-    #[inline]
-    fn s_dag(&mut self, q: usize) {
-        self.s(q);
-        self.z(q);
-    }
-
-    #[inline]
-    fn sqrt_x(&mut self, q: usize) {
-        self.h(q);
-        self.s(q);
-        self.h(q);
-    }
-
-    #[inline]
-    fn sqrt_x_dag(&mut self, q: usize) {
-        self.h(q);
-        self.s_dag(q);
-        self.h(q);
-    }
-
-    #[inline]
-    fn sqrt_y(&mut self, q: usize) {
-        self.h(q);
-        self.z(q);
-    }
-
-    #[inline]
-    fn sqrt_y_dag(&mut self, q: usize) {
-        self.z(q);
-        self.h(q);
-    }
-
-    #[inline]
-    fn cy(&mut self, control: usize, target: usize) {
-        self.s(target);
-        self.cnot(control, target);
-        self.s_dag(target);
     }
 }

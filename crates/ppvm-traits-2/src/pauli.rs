@@ -63,5 +63,3 @@ pub trait PhaseTrack {
     /// `Z` phase delta on `q` (pure sign; no bit change).
     fn z_phase(&mut self, q: usize);
 }
-
-pub trait BlanketClifford {}

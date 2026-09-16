@@ -3,7 +3,7 @@
 
 //! Measurement, projection, and reset operations.
 
-use super::{Clifford, CliffordExtensions};
+use super::Clifford;
 
 /// Loss-aware projective computational-basis measurement.
 ///
@@ -22,7 +22,7 @@ pub trait Measure {
 }
 
 // Reset one qubit to a computational/Pauli basis state.
-pub trait Reset: Clifford + CliffordExtensions {
+pub trait Reset: Clifford {
     /// Reset one qubit to `|0⟩` (stim `R`/`RZ`).
     fn reset<R: rand::Rng + ?Sized>(&mut self, qubit: usize, rng: &mut R);
 

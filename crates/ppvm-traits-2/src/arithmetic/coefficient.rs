@@ -12,7 +12,9 @@ pub trait Coefficient:
     + Sub<Self, Output = Self>
     + Mul<Self, Output = Self>
     + AddAssign<Self>
+    + for<'a> AddAssign<&'a Self>
     + MulAssign<Self>
+    + for<'a> MulAssign<&'a Self>
     + std::iter::Sum
     + Send
     + Sync
@@ -29,7 +31,7 @@ pub trait Coefficient:
     ///  Accumulates a borrowed coefficient.
     #[inline]
     fn add_assign_ref(&mut self, rhs: &Self) {
-        *self += rhs.clone();
+        *self += rhs;
     }
 
     /// Add this coefficient to itself. Numeric implementations may use their

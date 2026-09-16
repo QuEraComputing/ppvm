@@ -96,24 +96,20 @@ pub trait KeyColumn: Default + Clone {
         self.get(row).toggled_bits(qubit, toggle_x, toggle_z)
     }
 
-    /// Materialize one row while toggling bits at two sites.
+    /// Materialize one row while toggling two sites with `[toggle_x, toggle_z]` masks.
     #[inline]
-    #[allow(clippy::too_many_arguments)]
     fn toggled_bits2(
         &self,
         row: usize,
         i: usize,
-        toggle_x_i: bool,
-        toggle_z_i: bool,
+        toggle_i: [bool; 2],
         j: usize,
-        toggle_x_j: bool,
-        toggle_z_j: bool,
+        toggle_j: [bool; 2],
     ) -> Self::Key
     where
         Self::Key: PauliBits,
     {
-        self.get(row)
-            .toggled_bits2(i, toggle_x_i, toggle_z_i, j, toggle_x_j, toggle_z_j)
+        self.get(row).toggled_bits2(i, toggle_i, j, toggle_j)
     }
 
     /// Clear the column while retaining its backing allocations.

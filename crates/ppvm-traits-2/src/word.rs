@@ -89,71 +89,59 @@ pub trait PauliBits: Word {
     }
 
     /// Copy this word once and toggle selected X/Z bits at two sites.
-    /// Avoids the intermediate copy from chaining two single-site builders.
+    /// Each mask is `[toggle_x, toggle_z]`; only one copy is made.
     /// Packed implementations may compute the structural digest once.
     #[inline]
-    #[allow(clippy::too_many_arguments)]
-    fn toggled_bits2(
-        &self,
-        i: usize,
-        toggle_x_i: bool,
-        toggle_z_i: bool,
-        j: usize,
-        toggle_x_j: bool,
-        toggle_z_j: bool,
-    ) -> Self
+    fn toggled_bits2(&self, i: usize, toggle_i: [bool; 2], j: usize, toggle_j: [bool; 2]) -> Self
     where
         Self: Sized + Clone,
     {
         let mut out = self.clone();
-        if toggle_x_i {
+        if toggle_i[0] {
             let b = out.x_bit(i);
             out.set_x_bit(i, !b);
         }
-        if toggle_z_i {
+        if toggle_i[1] {
             let b = out.z_bit(i);
             out.set_z_bit(i, !b);
         }
-        if toggle_x_j {
+        if toggle_j[0] {
             let b = out.x_bit(j);
             out.set_x_bit(j, !b);
         }
-        if toggle_z_j {
+        if toggle_j[1] {
             let b = out.z_bit(j);
             out.set_z_bit(j, !b);
         }
         out
     }
 
-    /// Consume this word and toggle selected X/Z bits at two sites without cloning.
+    /// Consume this word and toggle two sites using `[toggle_x, toggle_z]` masks.
     /// Packed implementations may defer metadata refresh until all writes complete.
     #[inline]
-    #[allow(clippy::too_many_arguments)]
     fn into_toggled_bits2(
         mut self,
         i: usize,
-        toggle_x_i: bool,
-        toggle_z_i: bool,
+        toggle_i: [bool; 2],
         j: usize,
-        toggle_x_j: bool,
-        toggle_z_j: bool,
+        toggle_j: [bool; 2],
     ) -> Self
     where
         Self: Sized,
     {
-        if toggle_x_i {
+        if toggle_i[0] {
             let b = self.x_bit(i);
             self.set_x_bit(i, !b);
         }
-        if toggle_z_i {
+        if toggle_i[1] {
             let b = self.z_bit(i);
             self.set_z_bit(i, !b);
         }
-        if toggle_x_j {
+        if toggle_j[0] {
             let b = self.x_bit(j);
             self.set_x_bit(j, !b);
         }
-        if toggle_z_j {
+        if toggle_j[1] {
             let b = self.z_bit(j);
             self.set_z_bit(j, !b);
         }

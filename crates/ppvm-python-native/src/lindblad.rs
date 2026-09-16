@@ -48,6 +48,15 @@ use crate::pauli_arr::{
     check_coeffs_len, check_group_qubits, check_momentum_len, decode_basis, encode_basis,
 };
 
+/// Convert the `(pauli_string, re, im)` triple encoding used across the
+/// Python boundary into a complex Pauli linear combination.
+fn to_lincomb(terms: Vec<(String, f64, f64)>) -> Vec<(String, Complex<f64>)> {
+    terms
+        .into_iter()
+        .map(|(s, re, im)| (s, Complex::new(re, im)))
+        .collect()
+}
+
 /// Pack `Vec<(Word, f64)>` into the standard PyO3 return shape.
 fn pack_pauli_map<'py>(
     py: Python<'py>,
@@ -72,14 +81,22 @@ impl LindbladSpec {
     /// `jump_lincombs[k]` is a list of `(pauli_string, real, imag)` triples
     /// encoding `L_k = Σ_a (re + i·im) P_a`. A length-1 jump with `im == 0`
     /// is routed to the Hermitian-Pauli fast path (with rate scaled by `re²`).
+    ///
+    /// `kossakowski_ops` / `kossakowski_k` optionally add a Kossakowski-form
+    /// dissipator `D*(O) = Σ_nm K_nm (A_n† O A_m − ½{A_n†A_m, O})`:
+    /// `kossakowski_ops[i]` is the Pauli lincomb of `A_i` in the same triple
+    /// encoding, `kossakowski_k[n][m] = (re, im)` the Hermitian pair matrix.
     #[new]
-    #[pyo3(signature = (n_qubits, h_terms, h_coeffs, jump_lincombs, jump_rates))]
+    #[pyo3(signature = (n_qubits, h_terms, h_coeffs, jump_lincombs, jump_rates,
+                        kossakowski_ops = vec![], kossakowski_k = vec![]))]
     fn new(
         n_qubits: usize,
         h_terms: Vec<String>,
         h_coeffs: Vec<f64>,
         jump_lincombs: Vec<Vec<(String, f64, f64)>>,
         jump_rates: Vec<f64>,
+        kossakowski_ops: Vec<Vec<(String, f64, f64)>>,
+        kossakowski_k: Vec<Vec<(f64, f64)>>,
     ) -> PyResult<Self> {
         if h_terms.len() != h_coeffs.len() {
             return Err(PyValueError::new_err(
@@ -96,14 +113,24 @@ impl LindbladSpec {
             .into_iter()
             .zip(jump_rates)
             .map(|(lincomb, rate)| JumpInput {
-                lincomb: lincomb
-                    .into_iter()
-                    .map(|(s, re, im)| (s, Complex::new(re, im)))
-                    .collect(),
+                lincomb: to_lincomb(lincomb),
                 rate,
             })
             .collect();
-        let inner = CoreSpec::new(n_qubits, &h, &jumps).map_err(map_err)?;
+        let mut inner = CoreSpec::new(n_qubits, &h, &jumps).map_err(map_err)?;
+        if !kossakowski_ops.is_empty() || !kossakowski_k.is_empty() {
+            let ops: Vec<Vec<(String, Complex<f64>)>> =
+                kossakowski_ops.into_iter().map(to_lincomb).collect();
+            let k: Vec<Vec<Complex<f64>>> = kossakowski_k
+                .into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .map(|(re, im)| Complex::new(re, im))
+                        .collect()
+                })
+                .collect();
+            inner.add_kossakowski(&ops, &k).map_err(map_err)?;
+        }
         Ok(Self { inner })
     }
 

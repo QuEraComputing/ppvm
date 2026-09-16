@@ -38,6 +38,7 @@ mod basis;
 pub mod config;
 pub mod error;
 pub(crate) mod expm;
+mod kossakowski;
 mod scalar;
 pub mod sector;
 mod spec;

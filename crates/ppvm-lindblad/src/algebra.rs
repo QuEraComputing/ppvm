@@ -10,9 +10,53 @@
 //! keeps a copy that returns the unpacked `(word, phase)` pair without
 //! constructing a phased wrapper.
 
-use crate::word::{W_CHUNKS, Word};
+use crate::word::{Chunk, W_CHUNKS, Word};
+use fxhash::FxHashMap;
 use num::Complex;
 use ppvm_traits::PauliWordTrait;
+
+/// Magnitude below which an expanded Pauli coefficient is treated as
+/// cancellation noise and dropped.
+pub(crate) const COEFF_DROP_TOL: f64 = 1e-14;
+
+/// One Pauli term in a complex linear combination (a single summand of
+/// `L = Σ_a λ_a P_a`, or of a precomputed product such as `L†L`).
+#[derive(Clone)]
+pub(crate) struct PauliTerm {
+    pub(crate) word: Word,
+    pub(crate) coeff: Complex<f64>,
+}
+
+/// Expand `A†B = (Σ_a λ_a P_a)† (Σ_b μ_b P_b) = Σ_{a,b} λ_a* μ_b P_a P_b`
+/// as a Pauli linear combination, dropping FP-noise zeros. For `A = B`
+/// (the jump-operator `L†L`) the coefficients are real; in general they
+/// are complex.
+pub(crate) fn precompute_adag_b(a_terms: &[PauliTerm], b_terms: &[PauliTerm]) -> Vec<PauliTerm> {
+    let zero = Complex::new(0.0, 0.0);
+    let mut acc: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
+    for a in a_terms {
+        for b in b_terms {
+            let (word, phase) = pauli_mul(&a.word, &b.word);
+            let coeff = a.coeff.conj() * b.coeff * phase_factor(phase);
+            *acc.entry(word).or_insert(zero) += coeff;
+        }
+    }
+    acc.into_iter()
+        .filter(|(_, c)| c.norm() > COEFF_DROP_TOL)
+        .map(|(word, coeff)| PauliTerm { word, coeff })
+        .collect()
+}
+
+/// Union of the supports (`xbits | zbits`) of every term, as raw chunks.
+pub(crate) fn support_mask(terms: &[PauliTerm]) -> [Chunk; W_CHUNKS] {
+    let mut mask = [0 as Chunk; W_CHUNKS];
+    for t in terms {
+        for (i, slot) in mask.iter_mut().enumerate() {
+            *slot |= t.word.xbits.data[i] | t.word.zbits.data[i];
+        }
+    }
+    mask
+}
 
 #[inline(always)]
 pub(crate) fn phase_factor(phase: u8) -> Complex<f64> {

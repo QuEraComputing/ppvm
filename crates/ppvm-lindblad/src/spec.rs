@@ -4,7 +4,10 @@
 //! Precompiled Lindbladian: construction and the single-Pauli `L*` kernel.
 
 use crate::Error;
-use crate::algebra::{anti_commutes, comm_product, pauli_mul, phase_factor};
+use crate::algebra::{
+    PauliTerm, anti_commutes, comm_product, pauli_mul, phase_factor, precompute_adag_b,
+};
+use crate::kossakowski;
 use crate::word::{MAX_QUBITS, Word, parse_pauli_string, word_support};
 use fxhash::FxHashMap;
 use num::Complex;
@@ -16,17 +19,9 @@ struct HTerm {
     coeff: f64,
 }
 
-/// One Pauli term in a complex linear combination (a single summand of
-/// `L = Σ_a λ_a P_a` or of the precomputed `L†L`).
-#[derive(Clone)]
-struct PauliTerm {
-    word: Word,
-    coeff: Complex<f64>,
-}
-
-/// One jump operator `L_k` with rate `γ_k`. The `HermitianPauli` variant
-/// is a fast path; `General` handles arbitrary complex Pauli sums.
-#[derive(Clone)]
+/// One entry of the dissipator. `HermitianPauli` and `General` are the
+/// jump-operator form (`K` diagonal); `Kossakowski` is one compiled pair of
+/// the general form. See [`crate::kossakowski`].
 enum JumpKind {
     HermitianPauli {
         word: Word,
@@ -37,26 +32,7 @@ enum JumpKind {
         dagger_dagger: Vec<PauliTerm>, // L†L = Σ_c μ_c P_c  (μ_c ∈ ℝ)
         rate: f64,
     },
-}
-
-/// Expand `L†L = (Σ_a λ_a P_a)† (Σ_b λ_b P_b) = Σ_{a,b} λ_a* λ_b P_a P_b`
-/// as a Pauli linear combination, dropping FP-noise zeros. Coefficients are
-/// real because `L†L` is Hermitian; we keep them complex for arithmetic
-/// uniformity.
-fn precompute_ldagger_l(terms: &[PauliTerm]) -> Vec<PauliTerm> {
-    let zero = Complex::new(0.0, 0.0);
-    let mut acc: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
-    for a in terms {
-        for b in terms {
-            let (word, phase) = pauli_mul(&a.word, &b.word);
-            let coeff = a.coeff.conj() * b.coeff * phase_factor(phase);
-            *acc.entry(word).or_insert(zero) += coeff;
-        }
-    }
-    acc.into_iter()
-        .filter(|(_, c)| c.norm() > 1e-14)
-        .map(|(word, coeff)| PauliTerm { word, coeff })
-        .collect()
+    Kossakowski(kossakowski::Pair),
 }
 
 /// Union of `index[q]` for each `q ∈ p_support`, deduped.
@@ -163,7 +139,7 @@ impl LindbladSpec {
             for q in union_support {
                 j_support_idx[q as usize].push(k as u32);
             }
-            let dagger_dagger = precompute_ldagger_l(&terms);
+            let dagger_dagger = precompute_adag_b(&terms, &terms);
             j_kinds.push(JumpKind::General {
                 terms,
                 dagger_dagger,
@@ -178,6 +154,28 @@ impl LindbladSpec {
             h_support: h_support_idx,
             j_support: j_support_idx,
         })
+    }
+
+    /// Add a Kossakowski-form dissipator
+    /// `D*(O) = Σ_{n,m} K_nm ( A_n† O A_m − ½ {A_n† A_m, O} )`.
+    ///
+    /// `ops` lists the operators `A_n` as complex Pauli linear combinations;
+    /// `k` is the `n_ops × n_ops` Hermitian pair matrix. Contributions are
+    /// added to any jumps already present. See [`crate::kossakowski`] for
+    /// how each `(n, m)` entry is compiled.
+    pub fn add_kossakowski(
+        &mut self,
+        ops: &[Vec<(String, Complex<f64>)>],
+        k: &[Vec<Complex<f64>>],
+    ) -> Result<(), Error> {
+        for (pair, support) in kossakowski::compile(ops, k, self.n_qubits)? {
+            let idx = self.j_kinds.len() as u32;
+            self.j_kinds.push(JumpKind::Kossakowski(pair));
+            for q in support {
+                self.j_support[q as usize].push(idx);
+            }
+        }
+        Ok(())
     }
 
     pub fn n_qubits(&self) -> usize {
@@ -263,6 +261,7 @@ impl LindbladSpec {
                         }
                     }
                 }
+                JumpKind::Kossakowski(pair) => pair.accumulate(p, local),
             }
         }
 

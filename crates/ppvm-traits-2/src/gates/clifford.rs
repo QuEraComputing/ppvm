@@ -32,11 +32,6 @@ pub trait Clifford {
     fn zcz(&mut self, qubit0: usize, qubit1: usize) {
         self.cz(qubit0, qubit1)
     }
-}
-
-/// Additional Clifford gates beyond the minimal set: `S†`, `√X`, `√X†`, `√Y`,
-/// `√Y†`, and `CY`.
-pub trait CliffordExtensions: Clifford {
     /// Apply `S†` to one qubit.
     fn s_dag(&mut self, qubit: usize);
     /// Apply `√X` to one qubit.
@@ -99,40 +94,37 @@ pub trait CliffordBatch: Clifford {
             self.cz(c, t);
         }
     }
-}
-
-pub trait CliffordExtensionsBatch: CliffordExtensions + CliffordBatch {
-    /// Apply `S†` to every qubit in `indices`.
+    /// apply `s†` to every qubit in `indices`.
     fn s_dag_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.s_dag(q);
         }
     }
-    /// Apply `√X` to every qubit in `indices`.
+    /// apply `√x` to every qubit in `indices`.
     fn sqrt_x_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_x(q);
         }
     }
-    /// Apply `(√X)†` to every qubit in `indices`.
+    /// apply `(√x)†` to every qubit in `indices`.
     fn sqrt_x_dag_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_x_dag(q);
         }
     }
-    /// Apply `√Y` to every qubit in `indices`.
+    /// apply `√y` to every qubit in `indices`.
     fn sqrt_y_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_y(q);
         }
     }
-    /// Apply `(√Y)†` to every qubit in `indices`.
+    /// apply `(√y)†` to every qubit in `indices`.
     fn sqrt_y_dag_many(&mut self, indices: &[usize]) {
         for &q in indices {
             self.sqrt_y_dag(q);
         }
     }
-    /// Apply `CY` to every `(control, target)` pair.
+    /// apply `cy` to every `(control, target)` pair.
     fn cy_many(&mut self, pairs: &[(usize, usize)]) {
         for &(c, t) in pairs {
             self.cy(c, t);
@@ -180,12 +172,6 @@ impl<T: SymplecticColumns + PhaseTrack + BlanketClifford> Clifford for T {
         self.cz_phase(a, b);
         self.cz_bits(a, b);
     }
-}
-
-/// Shared extension gates for [`BlanketClifford`] opt-ins, composed from generators
-/// in backward Heisenberg order (`P ↦ U†PU`). Loss guards belong in the primitives.
-/// Types needing fused implementations can opt out and implement the traits directly.
-impl<T: SymplecticColumns + PhaseTrack + BlanketClifford> CliffordExtensions for T {
     #[inline]
     fn s_dag(&mut self, q: usize) {
         self.s(q);

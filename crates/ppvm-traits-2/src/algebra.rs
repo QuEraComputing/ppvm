@@ -24,12 +24,7 @@ impl Phase {
     /// The exponent `k ∈ {0, 1, 2, 3}` such that this phase equals `iᵏ`.
     #[inline]
     pub fn exponent(self) -> u8 {
-        match self {
-            Phase::Pos1 => 0,
-            Phase::PosI => 1,
-            Phase::Neg1 => 2,
-            Phase::NegI => 3,
-        }
+        self as u8
     }
 
     /// The phase `iᵏ` for exponent `k` (taken mod 4).

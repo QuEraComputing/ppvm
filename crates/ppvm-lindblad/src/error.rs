@@ -34,6 +34,17 @@ pub enum Error {
     EmptyLincomb {
         index: usize,
     },
+    /// Row `row` of the Kossakowski matrix is not `n_ops` wide.
+    KMatrixRowLength {
+        row: usize,
+        expected: usize,
+        got: usize,
+    },
+    /// `K_nm ≠ conj(K_mn)`: not a valid GKSL pair matrix.
+    KMatrixNotHermitian {
+        n: usize,
+        m: usize,
+    },
     Internal(String),
 }
 
@@ -68,6 +79,14 @@ impl fmt::Display for Error {
                     "jump {index}: lincomb must contain at least one Pauli term"
                 )
             }
+            Error::KMatrixRowLength { row, expected, got } => write!(
+                f,
+                "kossakowski K row {row} has length {got}; expected {expected} (one per operator)"
+            ),
+            Error::KMatrixNotHermitian { n, m } => write!(
+                f,
+                "kossakowski K must be Hermitian; K[{n}][{m}] ≠ conj(K[{m}][{n}])"
+            ),
             Error::Internal(msg) => write!(f, "internal error: {msg}"),
         }
     }

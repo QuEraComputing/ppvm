@@ -19,3 +19,16 @@ quspin-expm = { git = "https://github.com/QuSpin/QuSpin-rust", rev = "a0ad6c9fe2
 # we implement in `mf_expm.rs`) is not re-exported from `quspin-expm`'s root,
 # so we depend on `quspin-types` directly. Same git rev as `quspin-expm`.
 quspin-types = { git = "https://github.com/QuSpin/QuSpin-rust", rev = "a0ad6c9fe2e8063208f9ba1c6677150c993bb554" }
+
+[dev-dependencies]
+approx = "0.5.1"
+criterion = "0.7.0"
+nalgebra = "0.34"
+
+[[bench]]
+name = "kossakowski"
+harness = false
+
+[[bench]]
+name = "drug_dipolar"
+harness = false

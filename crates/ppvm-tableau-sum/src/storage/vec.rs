@@ -112,7 +112,7 @@ where
         // Build the per-row mask table once for all entries (every tableau in a
         // sum shares the same qubit count). Skip when there are no entries.
         if let Some((first, _)) = self.entries.first() {
-            let masks = RowMasks::new(first.is_lost.len());
+            let masks = RowMasks::new(first.qubit_status.len());
             for (t, _) in self.entries.iter() {
                 let wfp = word_fingerprint(t);
                 let plh = phase_loss_hash_with(t, &masks);

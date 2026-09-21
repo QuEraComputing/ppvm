@@ -135,7 +135,7 @@ where
             .values()
             .flat_map(|v| v.iter())
             .next()
-            .map(|(t, _)| RowMasks::new(t.is_lost.len()));
+            .map(|(t, _)| RowMasks::new(t.qubit_status.len()));
         if let Some(masks) = masks {
             for v in self.buckets.values_mut() {
                 for (tab, c) in v.iter_mut() {

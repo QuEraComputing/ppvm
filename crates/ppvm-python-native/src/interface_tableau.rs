@@ -278,6 +278,14 @@ macro_rules! create_interface {
                 self.inner.asymmetric_loss_channel(addr0, p0, p1);
             }
 
+            pub fn leakage_channel(&mut self, addr0: usize, p0: f64, p1: f64) {
+                self.inner.leakage_channel(addr0, p0, p1);
+            }
+
+            pub fn reset_leakage_channel(&mut self, addr0: usize) {
+                self.inner.reset_leakage_channel(addr0);
+            }
+
             pub fn reset(&mut self, targets: Vec<usize>) {
                 self.inner.reset_many(targets.as_slice());
             }
@@ -295,11 +303,27 @@ macro_rules! create_interface {
             }
 
             pub fn is_lost(&self, addr0: usize) -> bool {
-                self.inner.is_lost[addr0]
+                self.inner.is_lost(addr0)
+            }
+
+            pub fn is_leaked(&self, addr0: usize) -> bool {
+                self.inner.is_leaked(addr0)
             }
 
             pub fn loss_values(&self) -> Vec<bool> {
-                self.inner.is_lost.clone()
+                self.inner
+                    .qubit_status
+                    .iter()
+                    .map(|&o| o == QubitStatus::Lost)
+                    .collect()
+            }
+
+            pub fn leakage_values(&self) -> Vec<bool> {
+                self.inner
+                    .qubit_status
+                    .iter()
+                    .map(|&o| o == QubitStatus::Leaked)
+                    .collect()
             }
 
             pub fn run(

@@ -105,7 +105,8 @@ fn validate_slice(
             | ExtendedInstruction::Rotation { .. }
             | ExtendedInstruction::U3 { .. }
             | ExtendedInstruction::Loss { .. }
-            | ExtendedInstruction::CorrelatedLoss { .. } => {}
+            | ExtendedInstruction::CorrelatedLoss { .. }
+            | ExtendedInstruction::Leakage { .. } => {}
             ExtendedInstruction::MPad {
                 prob, bits, span, ..
             } => {

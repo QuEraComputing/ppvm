@@ -339,7 +339,7 @@ fn test_generalized_tableau_reset_from_superposition() {
 fn test_generalized_tableau_reset_lost_qubit() {
     // Reset on a lost qubit: measure returns None, so reset should not flip
     let mut g: GTab = GeneralizedTableau::new_with_seed(1, 1e-12, 42);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.reset(0);
     // Measurement of lost qubit returns None
     assert_eq!(g.measure(0), None);
@@ -381,7 +381,7 @@ fn test_tableau_reset_preserves_other_qubits() {
 fn test_lost_qubit_x_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(1, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(1, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.x(0);
     assert_eq!(snapshot(&g), initial);
 }
@@ -390,7 +390,7 @@ fn test_lost_qubit_x_is_noop() {
 fn test_lost_qubit_y_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(1, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(1, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.y(0);
     assert_eq!(snapshot(&g), initial);
 }
@@ -399,7 +399,7 @@ fn test_lost_qubit_y_is_noop() {
 fn test_lost_qubit_z_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(1, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(1, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.z(0);
     assert_eq!(snapshot(&g), initial);
 }
@@ -408,7 +408,7 @@ fn test_lost_qubit_z_is_noop() {
 fn test_lost_qubit_h_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(1, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(1, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.h(0);
     assert_eq!(snapshot(&g), initial);
 }
@@ -417,7 +417,7 @@ fn test_lost_qubit_h_is_noop() {
 fn test_lost_qubit_s_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(1, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(1, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.s(0);
     assert_eq!(snapshot(&g), initial);
 }
@@ -426,7 +426,7 @@ fn test_lost_qubit_s_is_noop() {
 fn test_lost_qubit_s_dag_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(1, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(1, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.s_dag(0);
     assert_eq!(snapshot(&g), initial);
 }
@@ -435,7 +435,7 @@ fn test_lost_qubit_s_dag_is_noop() {
 fn test_lost_control_cnot_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.cnot(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
@@ -444,7 +444,7 @@ fn test_lost_control_cnot_is_noop() {
 fn test_lost_target_cnot_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[1] = true;
+    g.qubit_status[1] = QubitStatus::Lost;
     g.cnot(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
@@ -453,7 +453,7 @@ fn test_lost_target_cnot_is_noop() {
 fn test_lost_control_cz_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.cz(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
@@ -462,7 +462,7 @@ fn test_lost_control_cz_is_noop() {
 fn test_lost_target_cz_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[1] = true;
+    g.qubit_status[1] = QubitStatus::Lost;
     g.cz(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
@@ -471,7 +471,7 @@ fn test_lost_target_cz_is_noop() {
 fn test_lost_control_cy_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.cy(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
@@ -480,7 +480,7 @@ fn test_lost_control_cy_is_noop() {
 fn test_lost_target_cy_is_noop() {
     let initial = snapshot(&GeneralizedTableau::new(2, 1e-12));
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[1] = true;
+    g.qubit_status[1] = QubitStatus::Lost;
     g.cy(0, 1);
     assert_eq!(snapshot(&g), initial);
 }
@@ -493,7 +493,7 @@ fn test_lost_qubit_t_is_noop() {
         initial_coeffs_len = g.coefficients.len();
     }
     let mut g: GTab = GeneralizedTableau::new(1, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.t(0);
     assert_eq!(
         g.coefficients.len(),
@@ -505,7 +505,7 @@ fn test_lost_qubit_t_is_noop() {
 #[test]
 fn test_lost_qubit_t_dag_is_noop() {
     let mut g: GTab = GeneralizedTableau::new(1, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.t_dag(0);
     assert_eq!(
         g.coefficients.len(),
@@ -659,7 +659,7 @@ fn test_rot2_lost_qubit_a_falls_back_to_rot1_on_b() {
     // If qubit a is lost, rxx(a,b,θ) should fall back to rx(b,θ)
     // rx(π)|0⟩ = -i|1⟩
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.rxx(0, 1, PI);
     // Qubit 1 should have been flipped by rx(π)
     assert!(g.measure(1).unwrap(), "rx fallback should flip qubit 1");
@@ -669,7 +669,7 @@ fn test_rot2_lost_qubit_a_falls_back_to_rot1_on_b() {
 fn test_rot2_lost_qubit_b_falls_back_to_rot1_on_a() {
     // If qubit b is lost, rxx(a,b,θ) should fall back to rx(a,θ)
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[1] = true;
+    g.qubit_status[1] = QubitStatus::Lost;
     g.rxx(0, 1, PI);
     assert!(g.measure(0).unwrap(), "rx fallback should flip qubit 0");
 }
@@ -678,8 +678,8 @@ fn test_rot2_lost_qubit_b_falls_back_to_rot1_on_a() {
 fn test_rot2_both_lost_is_noop() {
     // If both qubits are lost, rotate_2 calls rotate_1 on b which is also lost → no-op
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[0] = true;
-    g.is_lost[1] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
+    g.qubit_status[1] = QubitStatus::Lost;
     g.rxx(0, 1, PI);
     // No branching, no state change
     assert_eq!(g.coefficients.len(), 1);
@@ -690,7 +690,7 @@ fn test_rxy_lost_a_falls_back_to_ry_on_b() {
     // rxy with qubit a lost → ry(b, θ)
     // ry(π)|0⟩ = |1⟩
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.rxy(0, 1, PI);
     assert!(g.measure(1).unwrap(), "ry fallback should flip qubit 1");
 }
@@ -699,7 +699,7 @@ fn test_rxy_lost_a_falls_back_to_ry_on_b() {
 fn test_rxz_lost_b_falls_back_to_rx_on_a() {
     // rxz with qubit b lost → rx(a, θ)
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[1] = true;
+    g.qubit_status[1] = QubitStatus::Lost;
     g.rxz(0, 1, PI);
     assert!(g.measure(0).unwrap(), "rx fallback should flip qubit 0");
 }
@@ -709,7 +709,7 @@ fn test_rzz_lost_a_falls_back_to_rz_on_b() {
     // rzz with qubit a lost → rz(b, θ)
     // rz leaves |0⟩ invariant (just adds phase)
     let mut g: GTab = GeneralizedTableau::new(2, 1e-12);
-    g.is_lost[0] = true;
+    g.qubit_status[0] = QubitStatus::Lost;
     g.rzz(0, 1, PI);
     assert!(!g.measure(1).unwrap(), "rz on |0⟩ should stay |0⟩");
     assert_eq!(g.coefficients.len(), 1, "rz on |0⟩ should not branch");

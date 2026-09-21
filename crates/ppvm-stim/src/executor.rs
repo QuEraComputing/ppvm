@@ -738,6 +738,13 @@ pub fn execute_validated<T, I, C>(
                     tab.correlated_loss_channel(a, b, ps.clone());
                 }
             }
+            ExtendedInstruction::Leakage {
+                p0, p1, targets, ..
+            } => {
+                for &q in targets {
+                    tab.leakage_channel(q, (*p0).into(), (*p1).into());
+                }
+            }
             ExtendedInstruction::Measure(MeasureOp {
                 name,
                 args,
@@ -830,6 +837,8 @@ pub fn execute_validated<T, I, C>(
             // the first qubit maps the product `Z_0 Z_1 ... Z_{m-1}` to a single
             // `Z_0`, that qubit is measured, then the ladder and basis changes
             // are undone so only the product operator is projected.
+            // With leakage, this intentionally models the physical ladder: gates touching leaked qubits are skipped, so the result may differ from an ideal
+            // abstract Pauli-product measurement
             ExtendedInstruction::Mpp(MppOp { products, args, .. }) => {
                 let noise = args.first().copied().unwrap_or(0.0);
                 for product in products {

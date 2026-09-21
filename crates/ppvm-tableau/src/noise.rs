@@ -264,6 +264,7 @@ where
         if let Some(true) = self.measure(addr0) {
             self.x(addr0);
         }
+        self.measurement_record.pop();
         self.qubit_status[addr0] = QubitStatus::Lost;
     }
 }

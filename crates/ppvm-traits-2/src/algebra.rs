@@ -34,7 +34,8 @@ impl Phase {
             0 => Phase::Pos1,
             1 => Phase::PosI,
             2 => Phase::Neg1,
-            _ => Phase::NegI,
+            3 => Phase::NegI,
+            _ => unreachable!("masking with 3 produces an exponent in 0..=3"),
         }
     }
 
@@ -120,7 +121,8 @@ pub trait ImaginaryUnit: Coefficient + num::One {
             0 => self.clone(),
             1 => self.mul_i(),
             2 => -(self.clone()),
-            _ => -(self.mul_i()),
+            3 => -(self.mul_i()),
+            _ => unreachable!("masking with 3 produces an exponent in 0..=3"),
         }
     }
 }

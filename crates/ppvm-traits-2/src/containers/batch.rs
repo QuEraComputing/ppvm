@@ -12,8 +12,8 @@ pub trait Columnar: Indexable {
     type Column: KeyColumn<Key = Self>;
 }
 
-/// A structure-of-arrays key column with plane-oriented operations.
-/// The concrete key type determines its column representation.
+/// Read access and value-producing operations on a structure-of-arrays key column.
+/// See [`KeyColumnMut`] for construction and mutation.
 pub trait KeyColumn: Default + Clone {
     /// The key type this column stores.
     type Key: Columnar;
@@ -27,19 +27,6 @@ pub trait KeyColumn: Default + Clone {
     /// Whether the column is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// A column pre-sized for `n` keys.
-    fn with_capacity(n: usize) -> Self;
-
-    /// Append one produced key; the column keeps each plane contiguous.
-    fn push(&mut self, key: Self::Key);
-
-    /// Reserve room for `additional` keys while retaining existing entries.
-    /// The default is a no-op for backends without reservation support.
-    #[inline]
-    fn reserve(&mut self, additional: usize) {
-        let _ = additional;
     }
 
     /// Bulk structural hash of the whole column into a parallel hash column.
@@ -111,10 +98,22 @@ pub trait KeyColumn: Default + Clone {
     {
         self.get(row).toggled_bits2(i, toggle_i, j, toggle_j)
     }
+}
+
+/// Construction and mutation of a [`KeyColumn`].
+pub trait KeyColumnMut: KeyColumn {
+    /// Create an empty column with capacity for `n` keys.
+    fn with_capacity(n: usize) -> Self;
+
+    /// Append one key while keeping each plane contiguous.
+    fn push(&mut self, key: Self::Key);
+
+    /// Reserve room for `additional` keys while retaining existing entries.
+    /// The default is a no-op for backends without reservation support.
+    #[inline]
+    fn reserve(&mut self, _additional: usize) {}
 
     /// Clear the column while retaining its backing allocations.
-    /// Together with [`Self::set`] and [`Self::truncate`], permits in-place storage
-    /// updates without exposing mutable key references or allocating gathered columns.
     fn clear(&mut self);
 
     /// Overwrite element `i`, preserving other elements and backing allocations.

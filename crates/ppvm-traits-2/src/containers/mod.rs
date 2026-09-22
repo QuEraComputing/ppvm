@@ -11,6 +11,6 @@ mod graded;
 mod hash;
 mod hash_join;
 
-pub use batch::{Columnar, KeyBatch, KeyColumn, TermBatch, TermSink};
+pub use batch::{Columnar, KeyBatch, KeyColumn, KeyColumnMut, TermBatch, TermSink};
 pub use graded::{Accumulate, Multiply, Pair, Retain, Scale, Support};
 pub use hash::{IdentityBuildHasher, IdentityHasher, Indexable};

@@ -16,7 +16,7 @@ pub use algebra::{Conjugate, ImaginaryUnit, KeyProduct, Phase};
 pub use arithmetic::{Angle, Coefficient, Halvable};
 pub use containers::{
     Accumulate, Columnar, IdentityBuildHasher, IdentityHasher, Indexable, KeyBatch, KeyColumn,
-    Multiply, Pair, Retain, Scale, Support, TermBatch, TermSink,
+    KeyColumnMut, Multiply, Pair, Retain, Scale, Support, TermBatch, TermSink,
 };
 pub use gates::{
     AmplitudeDamping, AsymmetricLossChannel, CRx, Clifford, CliffordBatch, CorrelatedLossChannel,
@@ -34,10 +34,10 @@ pub mod prelude {
         Accumulate, AmplitudeDamping, Angle, AsymmetricLossChannel, CRx, Clifford, CliffordBatch,
         Coefficient, Columnar, Conjugate, CorrelatedLossChannel, Depolarizing, Depolarizing2,
         Halvable, IdentityBuildHasher, IdentityHasher, ImaginaryUnit, Indexable, KeyBatch,
-        KeyColumn, KeyProduct, LossChannel, LossState, Measure, Multiply, Pair, Pauli, PauliBits,
-        PauliError, PauliErrorAll, PauliErrorFactors, Phase, PhaseTrack, Projection, Reset,
-        ResetLossChannel, Retain, RotXY, RotationOne, RotationOneBatch, RotationTwo,
-        RotationTwoBatch, Scale, Support, SymplecticColumns, TGate, TermBatch, TermSink,
-        TwoQubitPauliError, U3Gate, Word,
+        KeyColumn, KeyColumnMut, KeyProduct, LossChannel, LossState, Measure, Multiply, Pair,
+        Pauli, PauliBits, PauliError, PauliErrorAll, PauliErrorFactors, Phase, PhaseTrack,
+        Projection, Reset, ResetLossChannel, Retain, RotXY, RotationOne, RotationOneBatch,
+        RotationTwo, RotationTwoBatch, Scale, Support, SymplecticColumns, TGate, TermBatch,
+        TermSink, TwoQubitPauliError, U3Gate, Word,
     };
 }

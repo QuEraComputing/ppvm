@@ -28,12 +28,6 @@ pub trait Coefficient:
         *self = self.mul_sign(sign)
     }
 
-    ///  Accumulates a borrowed coefficient.
-    #[inline]
-    fn add_assign_ref(&mut self, rhs: &Self) {
-        *self += rhs;
-    }
-
     /// Add this coefficient to itself. Numeric implementations may use their
     /// native multiply-by-two operation; exact rings retain the additive default.
     #[inline(always)]

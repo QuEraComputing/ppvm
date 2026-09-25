@@ -1,0 +1,146 @@
+{
+  "8": {
+    "comm": "88201fb960ff6465",
+    "mul": "13c801105d4330e7",
+    "h": "757db5c6193574fc",
+    "s": "6c3fcee6d9c32f06",
+    "cnot": "7101b454cba7c36e",
+    "circuit": "56bcc6834c43fec3",
+    "transpose_roundtrip": "7ecbd3174e6cfd54"
+  },
+  "31": {
+    "comm": "824addfc3ce8f89d",
+    "mul": "09fbd3b32bd302c9",
+    "h": "b8102caa64869a96",
+    "s": "940561aed6ee79ea",
+    "cnot": "80136887d46801a3",
+    "circuit": "7e0281a83c26cf4e",
+    "transpose_roundtrip": "936d62bbc41f3f00"
+  },
+  "32": {
+    "comm": "b9b23f3a46fd0825",
+    "mul": "7991a39740c6b990",
+    "h": "94b4d53ec1dd2807",
+    "s": "f8c7acb165f0d446",
+    "cnot": "902e42bafae23b87",
+    "circuit": "8ee606f165d7b8b4",
+    "transpose_roundtrip": "e2f0f6432b9f5a6e"
+  },
+  "33": {
+    "comm": "33bf1941cd091ced",
+    "mul": "af4c8b60bf4f9d30",
+    "h": "ca0461d1c3268a44",
+    "s": "a8190e111a2a6f31",
+    "cnot": "3a7156678c3c5898",
+    "circuit": "5f0e2cb714334b80",
+    "transpose_roundtrip": "1052739b4851af9b"
+  },
+  "63": {
+    "comm": "9183fc343753559d",
+    "mul": "7896a6bd3df3c99c",
+    "h": "8bb557748dc8dd23",
+    "s": "5b6eb097c90a4c3a",
+    "cnot": "819a50e6ca64dd4d",
+    "circuit": "47e183d30308d2b0",
+    "transpose_roundtrip": "6d579c826225d480"
+  },
+  "64": {
+    "comm": "8421ae126c7ced25",
+    "mul": "415981f88f2bb866",
+    "h": "f0cd4e54b7b7f3a3",
+    "s": "bbe12cdb758921b2",
+    "cnot": "eac2109c0e1caee0",
+    "circuit": "81527ad7f2733293",
+    "transpose_roundtrip": "3186f83db04f3c1e"
+  },
+  "65": {
+    "comm": "f0cfce200093c9ed",
+    "mul": "aeb6a01bf5bac413",
+    "h": "6bfec5826f0e1140",
+    "s": "e86fa912c5380eff",
+    "cnot": "b06e26bef093b067",
+    "circuit": "f42a967926861640",
+    "transpose_roundtrip": "418dbf6fef211459"
+  },
+  "127": {
+    "comm": "cbfb46ec8d7f0f9d",
+    "mul": "489c230125becc35",
+    "h": "b9098284f82d26c8",
+    "s": "ec8fc25f2a3a24e0",
+    "cnot": "7a61cffa66318891",
+    "circuit": "eb4a5eb25653f2c3",
+    "transpose_roundtrip": "76c52f86a70141a0"
+  },
+  "128": {
+    "comm": "d80ac658736bb725",
+    "mul": "becd0183a349437d",
+    "h": "f286b01f7376d04a",
+    "s": "c98f84225a0b61c8",
+    "cnot": "663d3fb814767ddf",
+    "circuit": "8dc02ba525a99c8a",
+    "transpose_roundtrip": "4e3aff6787dcbe0e"
+  },
+  "129": {
+    "comm": "c4b2d75a6df023ed",
+    "mul": "c471fc22d2555c62",
+    "h": "24bfefd391a85390",
+    "s": "d88a85359e61dc7c",
+    "cnot": "f637c6eb7b864b39",
+    "circuit": "82403acbde0cf3d0",
+    "transpose_roundtrip": "31dddc3cc9bca6fc"
+  },
+  "255": {
+    "comm": "29158fb9eb32839d",
+    "mul": "a8de446644ddd531",
+    "h": "2ed564981cebf2b4",
+    "s": "25252d26615f9619",
+    "cnot": "7fbb7334f65b1663",
+    "circuit": "3e550032a7680db6",
+    "transpose_roundtrip": "798a9bfe705db9fd"
+  },
+  "256": {
+    "comm": "7da144b97d054b25",
+    "mul": "1b16cd351c8324b2",
+    "h": "23b088f574c8b373",
+    "s": "82ee2f6498e2e5df",
+    "cnot": "3de011a04e9c1a32",
+    "circuit": "e2df6590b40cd2d5",
+    "transpose_roundtrip": "ef568ebad9b86ced"
+  },
+  "257": {
+    "comm": "a597339b4dc4d7ed",
+    "mul": "bd8d1331bd7ced3c",
+    "h": "40950d6df3f4fa46",
+    "s": "751bb5d463a78292",
+    "cnot": "4cb974ebc91258dd",
+    "circuit": "8d8174bf95d4e624",
+    "transpose_roundtrip": "5b5501d51dfbca8c"
+  },
+  "512": {
+    "comm": "51d88627df287325",
+    "mul": "bf96c43d05b51f69",
+    "h": "0b0317f949eeee3e",
+    "s": "3837a30453a52ef4",
+    "cnot": "8203b9540fc10175",
+    "circuit": "22e13ec7e0b34a7b",
+    "transpose_roundtrip": "4fba08630bbf391e"
+  },
+  "1024": {
+    "comm": "28c31cf8df2ec325",
+    "mul": "33d5829fd8c3d238",
+    "h": "a33e47493535a067",
+    "s": "0d269c22f787e1ed",
+    "cnot": "a0d73c165a03c0c1",
+    "circuit": "6be946916e5f2377",
+    "transpose_roundtrip": "201e66e12f2cb8ab"
+  },
+  "2048": {
+    "comm": "b93a0c83ce3b6325",
+    "mul": "e432fe3220db67ca",
+    "h": "91e19e76cfd7166e",
+    "s": "aea1ab4a0336673e",
+    "cnot": "f28ef8e601d39f9e",
+    "circuit": "6bcbab7e7e0eac96",
+    "transpose_roundtrip": "d2b4b1319b06e362"
+  }
+}

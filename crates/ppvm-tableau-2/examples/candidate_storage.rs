@@ -165,23 +165,24 @@ impl<W: Word, const COLUMNS: bool> Packed<W, COLUMNS> {
         self.set_phase(dst, (phase & 3) as u8);
     }
 
-    fn gate(&mut self, operation: &str, q: usize) {
+    // Specialize before entering a word sweep: 0=H, 1=S, 2=CNOT.
+    fn gate<const GATE: u8>(&mut self, q: usize) {
         let target = (q + 1) % self.n;
         if COLUMNS {
             for i in 0..self.stride {
                 let a = q * self.stride + i;
                 let (x, z) = (self.x[a], self.z[a]);
-                let sign = match operation {
-                    "h" => {
+                let sign = match GATE {
+                    0 => {
                         self.x[a] = z;
                         self.z[a] = x;
                         x & z
                     }
-                    "s" => {
+                    1 => {
                         self.z[a] = z ^ x;
                         x & z
                     }
-                    "cnot" => {
+                    2 => {
                         let b = target * self.stride + i;
                         let (xt, zt) = (self.x[b], self.z[b]);
                         self.x[b] = xt ^ x;
@@ -196,10 +197,10 @@ impl<W: Word, const COLUMNS: bool> Packed<W, COLUMNS> {
             for r in 0..2 * self.n {
                 let a = self.site(r, q);
                 let (x, z) = (a & 1, a >> 1);
-                let (site, sign) = match operation {
-                    "h" => ((x << 1) | z, x & z),
-                    "s" => (x | ((z ^ x) << 1), x & z),
-                    "cnot" => {
+                let (site, sign) = match GATE {
+                    0 => ((x << 1) | z, x & z),
+                    1 => (x | ((z ^ x) << 1), x & z),
+                    2 => {
                         let b = self.site(r, target);
                         let (xt, zt) = (b & 1, b >> 1);
                         self.set_site(r, target, (xt ^ x) | (zt << 1));
@@ -213,31 +214,44 @@ impl<W: Word, const COLUMNS: bool> Packed<W, COLUMNS> {
         }
     }
 
-    fn sweep(&mut self, operation: &str) -> u64 {
-        match operation {
-            "comm" => (0..2 * self.n)
+    fn sweep<const OP: usize>(&mut self) -> u64 {
+        match OP {
+            0 => (0..2 * self.n)
                 .map(|dst| u64::from(black_box(self.anticommutes(dst, (dst + 1) % (2 * self.n)))))
                 .sum(),
-            "mul" => {
+            1 => {
                 for dst in 0..2 * self.n {
                     self.multiply(dst, (dst + 1) % (2 * self.n));
                 }
                 0
             }
-            "circuit" => {
+            5 => {
                 for q in 0..self.n {
-                    for gate in ["h", "s", "cnot"] {
-                        self.gate(gate, q);
-                    }
+                    self.gate::<0>(q);
+                    self.gate::<1>(q);
+                    self.gate::<2>(q);
                 }
                 0
             }
-            gate => {
+            2 => {
                 for q in 0..self.n {
-                    self.gate(gate, q);
+                    self.gate::<0>(q);
                 }
                 0
             }
+            3 => {
+                for q in 0..self.n {
+                    self.gate::<1>(q);
+                }
+                0
+            }
+            4 => {
+                for q in 0..self.n {
+                    self.gate::<2>(q);
+                }
+                0
+            }
+            _ => unreachable!(),
         }
     }
 }
@@ -338,7 +352,14 @@ fn verify<W: Word, const COLUMNS: bool>(fixture: &[Row], operation: &str) -> u64
     } else {
         let mut expected = fixture.to_vec();
         scalar_sweep(&mut expected, operation);
-        packed.sweep(operation);
+        match operation {
+            "mul" => packed.sweep::<1>(),
+            "h" => packed.sweep::<2>(),
+            "s" => packed.sweep::<3>(),
+            "cnot" => packed.sweep::<4>(),
+            "circuit" => packed.sweep::<5>(),
+            _ => unreachable!(),
+        };
         let actual = packed.rows();
         assert_eq!(
             actual,
@@ -354,7 +375,11 @@ fn verify<W: Word, const COLUMNS: bool>(fixture: &[Row], operation: &str) -> u64
     }
 }
 
-fn benchmark<W: Word, const COLUMNS: bool>(fixture: &[Row], samples: usize, minimum: Duration) {
+fn benchmark_operation<W: Word, const COLUMNS: bool, const OP: usize>(
+    fixture: &[Row],
+    samples: usize,
+    minimum: Duration,
+) {
     let original = Packed::<W, COLUMNS>::new(fixture);
     let layout = if COLUMNS {
         "generator_bits"
@@ -362,36 +387,43 @@ fn benchmark<W: Word, const COLUMNS: bool>(fixture: &[Row], samples: usize, mini
         "qubit_bits"
     };
     let n = original.n;
-    for operation in OPERATIONS {
-        let checksum = verify::<W, COLUMNS>(fixture, operation);
-        let operations = match operation {
-            "comm" | "mul" => 2 * n,
-            "circuit" => 3 * n,
-            _ => n,
-        };
-        let timed = |iterations| {
-            let mut data = original.clone();
-            let start = Instant::now();
-            for _ in 0..iterations {
-                black_box(black_box(&mut data).sweep(black_box(operation)));
-            }
-            let elapsed = start.elapsed();
-            black_box(data);
-            elapsed
-        };
-        // Also warms each monomorphized kernel before recording samples.
-        let mut iterations = 1usize;
-        while timed(iterations) < minimum {
-            iterations = iterations.checked_mul(2).expect("iteration count overflow");
+    let operation = OPERATIONS[OP];
+    let checksum = verify::<W, COLUMNS>(fixture, operation);
+    let operations = match operation {
+        "comm" | "mul" => 2 * n,
+        "circuit" => 3 * n,
+        _ => n,
+    };
+    let timed = |iterations| {
+        let mut data = original.clone();
+        let start = Instant::now();
+        for _ in 0..iterations {
+            black_box(black_box(&mut data).sweep::<OP>());
         }
-        for sample in 0..samples {
-            let elapsed = timed(iterations).as_nanos();
-            println!(
-                "candidate,{layout},{},{n},{operation},{iterations},{sample},{elapsed},{operations},{checksum:016x}",
-                W::BITS
-            );
-        }
+        let elapsed = start.elapsed();
+        black_box(data);
+        elapsed
+    };
+    // Also warms each monomorphized kernel before recording samples.
+    let mut iterations = 1usize;
+    while timed(iterations) < minimum {
+        iterations = iterations.checked_mul(2).expect("iteration count overflow");
     }
+    for sample in 1..=samples {
+        let elapsed = timed(iterations).as_nanos();
+        println!(
+            "candidate,{layout},{},{n},{operation},{iterations},{sample},{elapsed},{operations},{checksum:016x}",
+            W::BITS
+        );
+    }
+}
+
+fn benchmark<W: Word, const COLUMNS: bool>(fixture: &[Row], samples: usize, minimum: Duration) {
+    // Dispatch once, outside the timer, as with QuantumClifford's Val kernels.
+    macro_rules! run { ($($op:literal),*) => {$(
+        benchmark_operation::<W, COLUMNS, $op>(fixture, samples, minimum);
+    )*}; }
+    run!(0, 1, 2, 3, 4, 5);
 }
 
 fn read_fixture(path: &Path) -> Vec<Row> {

@@ -1,0 +1,83 @@
+{
+  "2": {
+    "comm": "447bfb7f98e6154a",
+    "mul": "3145d894fbf13f34",
+    "h": "8c8805673fe95b73",
+    "s": "b7272f2480e648f1",
+    "cnot": "4cbe91ccf5b8b57e",
+    "circuit": "5296c33f3753119e",
+    "transpose_roundtrip": "0f6fe0febbdc65c3"
+  },
+  "3": {
+    "comm": "9b45dfcf91de861f",
+    "mul": "6b754e23d2b621bd",
+    "h": "8855ec40d3077291",
+    "s": "c7a8d8af2c8720b4",
+    "cnot": "813b04c58d230faf",
+    "circuit": "f36de045aa97a53e",
+    "transpose_roundtrip": "4a821ea953b3aeb8"
+  },
+  "7": {
+    "comm": "a09e2a2ecb522f48",
+    "mul": "afc2327dd53871db",
+    "h": "f79a956d45493e45",
+    "s": "ae1c9ec0991fe97e",
+    "cnot": "b8324f1d548a8401",
+    "circuit": "69ac215e24d73540",
+    "transpose_roundtrip": "bf6b277a30e783ae"
+  },
+  "9": {
+    "comm": "f9d2185eb8ddc945",
+    "mul": "65fd7df952971752",
+    "h": "a3662513a90c40ae",
+    "s": "9d33b56965e23638",
+    "cnot": "4f52588655384b3b",
+    "circuit": "c453843988ae915f",
+    "transpose_roundtrip": "f7f0f5358d51ef24"
+  },
+  "17": {
+    "comm": "381833f22bfc30c2",
+    "mul": "4a5fb9de7a51f2d8",
+    "h": "31c8f3a1f66dce98",
+    "s": "98e3a73ad122bc45",
+    "cnot": "ef8c6b8f506f6b26",
+    "circuit": "13bede071f269a96",
+    "transpose_roundtrip": "0dee0832942141c1"
+  },
+  "33": {
+    "comm": "6e376063760d3d59",
+    "mul": "b7cf7d73c12d4f9f",
+    "h": "8ac5206c70c51f65",
+    "s": "0b13b8947e1b371c",
+    "cnot": "ecab49b8071fa980",
+    "circuit": "9db5484b556efa01",
+    "transpose_roundtrip": "afa6a8d6833f81c8"
+  },
+  "65": {
+    "comm": "99106ba1acf0a24d",
+    "mul": "972ee88549d43cb5",
+    "h": "d1c10aeec7458cb5",
+    "s": "700cd8bf2442d1b2",
+    "cnot": "ea13beef08c3ca2a",
+    "circuit": "62346ffc0f73b3dc",
+    "transpose_roundtrip": "99cea8b9f72469d0"
+  },
+  "129": {
+    "comm": "b01c0fa9cce39e93",
+    "mul": "76dc7ad5b55d91e5",
+    "h": "b61f2f6254ef998c",
+    "s": "6d38c35df9749556",
+    "cnot": "7a96674251e7f145",
+    "circuit": "215ebe6a0b2bd496",
+    "transpose_roundtrip": "05feeff2404cc038"
+  },
+  "257": {
+    "comm": "e9b7e07a85451abe",
+    "mul": "b7871fdd56590186",
+    "h": "e909d643bc58bfa3",
+    "s": "398e11611b149862",
+    "cnot": "35a10d59d2344054",
+    "circuit": "b254a0bb04cc2763",
+    "transpose_roundtrip": "7950cd769bffd1f8"
+  }
+}

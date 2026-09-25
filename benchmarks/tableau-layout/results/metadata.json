@@ -1,0 +1,46 @@
+{
+  "created_utc": "2026-09-25T05:36:49.965749+00:00",
+  "ppvm_base": "3befaf1b597033138d6c1bab394b967b09cd57fb",
+  "harness_commit": "1e6e1878ae0b9de233c4d94d9fa8b8c643897b52",
+  "harness_status": "",
+  "quantumclifford_commit": "1e553b25fdf12c67b55ccedfbc2f48f4dea78fcc",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "cpu": "Apple M5 Pro",
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25) (Homebrew)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.6",
+  "julia": "julia version 1.12.6",
+  "python": "3.12.13 (main, Jul 23 2026, 14:33:47) [Clang 22.1.3 ]",
+  "arguments": {
+    "quantumclifford": "/Users/skrastanov/Documents/QuEraSpace/worktree-codex-qc-layout-baseline",
+    "sizes": "8,31,32,33,63,64,65,127,128,129,255,256,257,512,1024,2048",
+    "samples": 5,
+    "min_ms": 10,
+    "launches": 3,
+    "out": "/Users/skrastanov/Documents/QuEraSpace/worktree-codex-tableau-layout/target/tableau-layout",
+    "julia_project": "target/tableau-layout/julia-env",
+    "skip_build": false,
+    "workers": "native,candidate,quantumclifford"
+  },
+  "environment": {
+    "RUSTFLAGS": "-C target-cpu=native",
+    "JULIA_NUM_THREADS": "1",
+    "JULIA_CPU_TARGET": "native",
+    "OPENBLAS_NUM_THREADS": "1"
+  },
+  "source_sha256": {
+    "benchmarks/tableau-layout/run.py": "870ec31d9feb8556b9247ef016119c63b8c18177b18d3d66aa36d16e705575a7",
+    "benchmarks/tableau-layout/reference.py": "bfcdd65cdc23cf56d57d8eda1115721341521197b171360299b34db95e748add",
+    "benchmarks/tableau-layout/quantumclifford.jl": "f75753cee3fae91085bde75e8c3b5f16f938d54f1eb42a70af7219788aa6d8ff",
+    "benchmarks/tableau-layout/setup.jl": "49a1046b13cb2cea53fda46c74187749237d46bb827974a4084ab7e37c436c5c",
+    "crates/ppvm-tableau-2/examples/tableau_layout.rs": "43fe3246fd152b3c33206860848342d3f1114828b8b4e9ad19ed32654b50119d",
+    "crates/ppvm-tableau-2/examples/candidate_storage.rs": "f4a715405aa7d001022d011abbe70768d1b01737b170bfe4730b8feb4d797833"
+  },
+  "quantumclifford_loaded": {
+    "path": "/Users/skrastanov/Documents/QuEraSpace/worktree-codex-qc-layout-baseline",
+    "version": "0.11.8"
+  },
+  "julia_manifest_sha256": "8384cb90956652b1c74dfab7e62dda76cb3997bcf88140813a8f873c0f74d7d8",
+  "executable_sha256": {
+    "native": "447b7583e1cde1da63ea47856fa4ba48c99dfdadf55328bf7427edbcd525e973",
+    "candidate": "9de23dbb4cfa98e01c2da2595e928d78ba50a4ebe1cc0b9349611d073308eefb"
+  }
+}

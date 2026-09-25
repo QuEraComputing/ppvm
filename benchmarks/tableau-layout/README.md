@@ -26,6 +26,8 @@ uv run --no-project python benchmarks/tableau-layout/run.py \
 The command prepares fixtures, builds both Rust workers in release mode,
 creates an isolated Julia environment, validates arbitrary phased Pauli
 matrices, runs all workers sequentially, and writes raw and summarized CSV.
+New Julia environments reuse the dependency versions in the recorded Manifest,
+with local package paths adjusted to the supplied checkout.
 The default sweep has 16 sizes from 8 to 2048 qubits, including 31/32/33,
 63/64/65, 127/128/129 and 255/256/257. Each configuration has five samples
 in each of three independent launches. Each sample has at least 10 ms of
@@ -68,6 +70,9 @@ cargo test --workspace
 The candidate is a storage experiment, not a complete simulator backend.
 It has no inverse cache, measurement support, quadrant split or extra SIMD
 alignment. Both Rust packing axes pad to the selected word width.
+Its contiguous-axis operations use whole words; its orthogonal-axis operations
+use scalar bit access. This is a controlled storage experiment, not a claim
+that these are the fastest possible Rust kernels for every layout.
 QuantumClifford `fastcolumn` transposes **words**, while the candidate's
 `generator_bits` and ppvm's columns transpose the **bit packing axis**.
 QuantumClifford `UInt128`/`fastrow` multiplication is unsupported by SIMD.jl;
@@ -114,6 +119,13 @@ ranges. `metadata.json` records source commits, hashes, CPU, toolchains,
 flags, and actual loaded Julia package. Julia's Project and Manifest are
 retained with results. Worker logs preserve unsupported cases and errors.
 `expected.json` and `validation-expected.json` record reference digests.
+
+To generate the size and word-width figures from a summary:
+
+```bash
+uv run --no-project --with matplotlib python benchmarks/tableau-layout/plot.py \
+  target/tableau-layout
+```
 
 Library comparisons also include kernel differences: native row multiplication
 copies its source to scratch, while the candidate and QuantumClifford borrow

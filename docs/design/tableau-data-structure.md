@@ -7,6 +7,11 @@ and the inverse tableau are shipped (`crates/ppvm-tableau-2/src/storage/`,
 where the shipped code decided a question this sketch left open, or contradicted
 it.
 
+The [PR 204 storage benchmark study](../../benchmarks/tableau-layout/REPORT.md)
+compares this implementation with QuantumClifford.jl and a Rust experiment
+across word sizes and packing axes. The [harness instructions](../../benchmarks/tableau-layout/README.md)
+describe validation, setup, and reproducible timing runs.
+
 ## Purpose
 
 The tableau should be a specialized bit-matrix data structure. It should not

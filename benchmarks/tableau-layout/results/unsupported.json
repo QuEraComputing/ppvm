@@ -1,0 +1,130 @@
+[
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 8,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 31,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 32,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 33,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 63,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 64,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 65,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 127,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 128,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 129,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 255,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 256,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 257,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 512,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 1024,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  },
+  {
+    "implementation": "quantumclifford",
+    "layout": "fastrow",
+    "word_bits": 128,
+    "operation": "mul",
+    "n": 2048,
+    "reason": "SIMD.jl rejects UInt128 vector lanes"
+  }
+]

@@ -906,11 +906,11 @@ source = { editable = "." }
 dependencies = [
     { name = "bloqade-circuit" },
     { name = "kirin-toolchain" },
+    { name = "numpy" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "numpy" },
     { name = "pytest" },
     { name = "pytest-benchmark" },
 ]
@@ -919,11 +919,11 @@ dev = [
 requires-dist = [
     { name = "bloqade-circuit", specifier = ">=0.14.1" },
     { name = "kirin-toolchain", specifier = "~=0.22.2" },
+    { name = "numpy", specifier = ">=2.2.6" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "numpy", specifier = ">=2.2.6" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-benchmark", specifier = ">=5.2.3" },
 ]

@@ -5,7 +5,7 @@ use bnum::types::{U256, U512, U1024, U2048};
 use paste::paste;
 use ppvm_tableau::prelude::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyComplex, PyDict};
+use pyo3::types::{PyByteArray, PyComplex, PyDict};
 
 pub(crate) fn measurement_to_u8(m: Option<bool>) -> u8 {
     match m {
@@ -322,16 +322,19 @@ macro_rules! create_interface {
             /// (wrapping mod 2⁶⁴), so results are reproducible and
             /// independent of the thread count; set the `RAYON_NUM_THREADS`
             /// environment variable to control the pool size.
+            ///
+            /// Returns the outcome codes (0/1/2 = zero/one/lost) as one flat,
+            /// shot-major `bytearray` plus its `(num_shots, n_measurements)` shape.
             #[staticmethod]
             #[pyo3(signature = (prog, n_qubits, min_abs_coeff = 1e-10, num_shots = 1, seed = None))]
-            pub fn sample(
-                py: Python<'_>,
+            pub fn sample<'py>(
+                py: Python<'py>,
                 prog: &crate::stim_program::PyStimProgram,
                 n_qubits: usize,
                 min_abs_coeff: f64,
                 num_shots: usize,
                 seed: Option<u64>,
-            ) -> pyo3::PyResult<Vec<Vec<u8>>> {
+            ) -> pyo3::PyResult<(Bound<'py, PyByteArray>, (usize, usize))> {
                 // `prog` was already validated at `StimProgram.parse()` time;
                 // use the validated path to skip redundant re-validation.
                 let raw = py.detach(|| {
@@ -352,14 +355,19 @@ macro_rules! create_interface {
                         },
                     )
                 });
-                Ok(raw
+                let n_meas = prog.measurement_count();
+                let flat: Vec<u8> = raw
                     .into_iter()
-                    .map(|shot| {
-                        shot.into_iter()
-                            .map(crate::interface_tableau::measurement_to_u8)
-                            .collect()
-                    })
-                    .collect())
+                    .flatten()
+                    .map(crate::interface_tableau::measurement_to_u8)
+                    .collect();
+                if flat.len() != num_shots * n_meas {
+                    return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        "expected {num_shots} x {n_meas} measurements, got {}",
+                        flat.len()
+                    )));
+                }
+                Ok((PyByteArray::new(py, &flat), (num_shots, n_meas)))
             }
 
             /// Fork this tableau, cloning all quantum state but reinitializing the RNG.

@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "bloqade-circuit>=0.14.1",
     "kirin-toolchain~=0.22.2",
+    "numpy>=2.2.6",
 ]
 
 [build-system]
@@ -54,7 +55,6 @@ addopts = "--benchmark-disable"
 
 [dependency-groups]
 dev = [
-    "numpy>=2.2.6",
     "pytest>=9.0.2",
     "pytest-benchmark>=5.2.3",
 ]

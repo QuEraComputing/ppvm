@@ -17,7 +17,7 @@ use ppvm_pauli_sum::symmetry as core_sym;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::pauli_arr::{
-    check_coeffs_len, check_group_width, check_momentum_len, decode_basis, encode_basis,
+    check_coeffs_len, check_group_width, check_momentum_len, decode_basis, encode_basis, with_width,
 };
 
 type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
@@ -158,10 +158,13 @@ impl TranslationGroup {
                 self.inner.n_qubits()
             )));
         }
-        let w = word_from_codes(codes).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let canon = self.inner.canonicalize(&w);
         let mut out = vec![0u8; codes.len()];
-        codes_from_word(&canon, &mut out);
+        with_width!(codes.len(), C => {
+            let w = word_from_codes::<C>(codes).map_err(|e| PyValueError::new_err(e.to_string()))?;
+            let canon = self.inner.canonicalize(&w);
+            codes_from_word(&canon, &mut out);
+            PyResult::Ok(())
+        })?;
         Ok(out.into_pyarray(py))
     }
 }
@@ -195,25 +198,27 @@ pub fn canonicalize_basis_arr_complex<'py>(
     check_coeffs_len(coeffs_slice.len(), basis_view.shape()[0])?;
     let k_slice = momentum.as_slice()?;
     check_momentum_len(k_slice.len(), group.inner.n_generators())?;
-    let mut basis_words = decode_basis(&basis_view, n_q)?;
-    let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
-        .iter()
-        .map(|c| Complex::new(c.re, c.im))
-        .collect();
+    with_width!(n_q, C => {
+        let mut basis_words = decode_basis::<C>(&basis_view, n_q)?;
+        let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
+            .iter()
+            .map(|c| Complex::new(c.re, c.im))
+            .collect();
 
-    core_sym::canonicalize_pauli_sum_complex(
-        &mut basis_words,
-        &mut coeffs_vec,
-        &group.inner,
-        k_slice,
-    );
+        core_sym::canonicalize_pauli_sum_complex(
+            &mut basis_words,
+            &mut coeffs_vec,
+            &group.inner,
+            k_slice,
+        );
 
-    let out_coeffs: Vec<Complex64> = coeffs_vec
-        .iter()
-        .map(|c| Complex64::new(c.re, c.im))
-        .collect();
-    let basis_arr = encode_basis(py, &basis_words, n_q)?;
-    Ok((basis_arr, out_coeffs.into_pyarray(py)))
+        let out_coeffs: Vec<Complex64> = coeffs_vec
+            .iter()
+            .map(|c| Complex64::new(c.re, c.im))
+            .collect();
+        let basis_arr = encode_basis(py, &basis_words, n_q)?;
+        Ok((basis_arr, out_coeffs.into_pyarray(py)))
+    })
 }
 
 /// Verify that a `(basis_arr, complex_coeffs)` Pauli sum lies in the
@@ -238,13 +243,15 @@ pub fn check_momentum_sector_arr<'py>(
     check_coeffs_len(coeffs_slice.len(), basis_view.shape()[0])?;
     let k_slice = momentum.as_slice()?;
     check_momentum_len(k_slice.len(), group.inner.n_generators())?;
-    let basis_words = decode_basis(&basis_view, n_q)?;
-    let coeffs_vec: Vec<Complex<f64>> = coeffs_slice
-        .iter()
-        .map(|c| Complex::new(c.re, c.im))
-        .collect();
-    core_sym::check_momentum_sector(&basis_words, &coeffs_vec, &group.inner, k_slice, tol)
-        .map_err(|e| PyValueError::new_err(format!("{e}")))
+    with_width!(n_q, C => {
+        let basis_words = decode_basis::<C>(&basis_view, n_q)?;
+        let coeffs_vec: Vec<Complex<f64>> = coeffs_slice
+            .iter()
+            .map(|c| Complex::new(c.re, c.im))
+            .collect();
+        core_sym::check_momentum_sector(&basis_words, &coeffs_vec, &group.inner, k_slice, tol)
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
+    })
 }
 
 /// Merge a `(basis_arr, coeffs)` Pauli sum (the representation used by
@@ -272,11 +279,13 @@ pub fn canonicalize_basis_arr<'py>(
     let coeffs_slice = coeffs.as_slice()?;
     check_coeffs_len(coeffs_slice.len(), basis_view.shape()[0])?;
 
-    let mut basis_words = decode_basis(&basis_view, n_q)?;
-    let mut coeffs_vec = coeffs_slice.to_vec();
+    with_width!(n_q, C => {
+        let mut basis_words = decode_basis::<C>(&basis_view, n_q)?;
+        let mut coeffs_vec = coeffs_slice.to_vec();
 
-    core_sym::canonicalize_pauli_sum(&mut basis_words, &mut coeffs_vec, &group.inner);
+        core_sym::canonicalize_pauli_sum(&mut basis_words, &mut coeffs_vec, &group.inner);
 
-    let basis_arr = encode_basis(py, &basis_words, n_q)?;
-    Ok((basis_arr, coeffs_vec.into_pyarray(py)))
+        let basis_arr = encode_basis(py, &basis_words, n_q)?;
+        Ok((basis_arr, coeffs_vec.into_pyarray(py)))
+    })
 }

@@ -24,7 +24,10 @@ pub(crate) fn order_by_desc_mag<T: Coeff>(coeffs: &[T]) -> Vec<usize> {
 /// candidate map — `room` being the number of strings we could actually
 /// admit to the basis, so there is no point tracking more. Applied after
 /// each accumulation chunk.
-pub(crate) fn cap_map_to_room<T: Coeff>(merged: &mut FxHashMap<Word, T>, room: usize) {
+pub(crate) fn cap_map_to_room<const C: usize, T: Coeff>(
+    merged: &mut FxHashMap<Word<C>, T>,
+    room: usize,
+) {
     if merged.len() <= room {
         return;
     }
@@ -41,17 +44,17 @@ pub(crate) fn cap_map_to_room<T: Coeff>(merged: &mut FxHashMap<Word, T>, room: u
 /// Compact `basis` / `coeffs` in place: drop entries whose coefficient
 /// magnitude is below `drop_tol` unless the word appears in `protected`.
 /// No-op when `drop_tol ≤ 0`.
-pub(crate) fn prune_basis<T: Coeff>(
-    basis: &mut Vec<Word>,
+pub(crate) fn prune_basis<const C: usize, T: Coeff>(
+    basis: &mut Vec<Word<C>>,
     coeffs: &mut Vec<T>,
     drop_tol: f64,
-    protected: &[Word],
+    protected: &[Word<C>],
 ) {
     if drop_tol <= 0.0 {
         return;
     }
     debug_assert_eq!(basis.len(), coeffs.len());
-    let protected_set: FxHashSet<&Word> = protected.iter().collect();
+    let protected_set: FxHashSet<&Word<C>> = protected.iter().collect();
     retain_in_place(basis, coeffs, |w, c| {
         c.mag() >= drop_tol || protected_set.contains(w)
     });
@@ -61,16 +64,16 @@ pub(crate) fn prune_basis<T: Coeff>(
 /// `max_basis` largest-magnitude terms (protected strings always kept),
 /// dropping the rest. Rank-based total-basis bound; dual of `drop_tol`.
 /// A `max_basis` large enough to cover the whole basis is a no-op.
-pub(crate) fn cap_basis<T: Coeff>(
-    basis: &mut Vec<Word>,
+pub(crate) fn cap_basis<const C: usize, T: Coeff>(
+    basis: &mut Vec<Word<C>>,
     coeffs: &mut Vec<T>,
     max_basis: usize,
-    protected: &[Word],
+    protected: &[Word<C>],
 ) {
     if basis.len() <= max_basis {
         return;
     }
-    let protected_set: FxHashSet<&Word> = protected.iter().collect();
+    let protected_set: FxHashSet<&Word<C>> = protected.iter().collect();
     let n_prot = basis.iter().filter(|w| protected_set.contains(w)).count();
     let slots = max_basis.saturating_sub(n_prot);
     let mut mags: Vec<f64> = basis
@@ -96,10 +99,10 @@ pub(crate) fn cap_basis<T: Coeff>(
 /// expm/leakage peak memory) never exceeds `max_basis`. New strings get
 /// coefficient 0; the surrounding expm fills them. No magnitude filter: the
 /// top-`room` by `|leakage|` are added (a large `max_basis` adds them all).
-pub(crate) fn add_leakage_capped<T: Coeff>(
-    basis: &mut Vec<Word>,
+pub(crate) fn add_leakage_capped<const C: usize, T: Coeff>(
+    basis: &mut Vec<Word<C>>,
     coeffs: &mut Vec<T>,
-    mut leak: Vec<(Word, T)>,
+    mut leak: Vec<(Word<C>, T)>,
     max_basis: usize,
 ) {
     let room = max_basis.saturating_sub(basis.len());
@@ -117,10 +120,10 @@ pub(crate) fn add_leakage_capped<T: Coeff>(
 
 /// Keep the `basis`/`coeffs` entries satisfying `keep`, preserving order,
 /// by swapping survivors down and truncating.
-fn retain_in_place<T>(
-    basis: &mut Vec<Word>,
+fn retain_in_place<const C: usize, T>(
+    basis: &mut Vec<Word<C>>,
     coeffs: &mut Vec<T>,
-    mut keep: impl FnMut(&Word, &T) -> bool,
+    mut keep: impl FnMut(&Word<C>, &T) -> bool,
 ) {
     let mut write = 0;
     for read in 0..basis.len() {

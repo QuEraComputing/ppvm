@@ -88,7 +88,10 @@ impl<'a> Sector<'a> {
     /// is incompatible with `k`): the coefficient of such a rep is
     /// identically zero, so the term is dropped.
     #[inline]
-    pub fn canonicalize_phase(&self, q: &Word) -> Option<(Word, Complex<f64>, usize)> {
+    pub fn canonicalize_phase<const C: usize>(
+        &self,
+        q: &Word<C>,
+    ) -> Option<(Word<C>, Complex<f64>, usize)> {
         let (rep, idx, orbit_size) = self
             .group
             .canonicalize_in_sector_indexed(q, &self.characters)?;
@@ -105,7 +108,7 @@ impl<'a> Sector<'a> {
     /// `ĉ_r = |orbit_r| · c_r` (what `momentum_merge_pauli_sum_pair`
     /// uses). It is `|G|` only for free orbits.
     #[inline]
-    pub fn orbit_size(&self, w: &Word) -> Option<usize> {
+    pub fn orbit_size<const C: usize>(&self, w: &Word<C>) -> Option<usize> {
         self.group
             .canonicalize_in_sector_indexed(w, &self.characters)
             .map(|(_, _, orbit_size)| orbit_size)
@@ -119,7 +122,7 @@ impl<'a> Sector<'a> {
 ///
 /// Does NOT deduplicate — if multiple input entries collapse to the
 /// same rep, both are kept (caller should run a merge afterwards).
-pub fn canonicalize_basis_to_rep(basis: &mut [Word], group: &TranslationGroup) {
+pub fn canonicalize_basis_to_rep<const C: usize>(basis: &mut [Word<C>], group: &TranslationGroup) {
     for w in basis.iter_mut() {
         *w = group.canonicalize(w);
     }

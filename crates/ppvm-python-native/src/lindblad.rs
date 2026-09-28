@@ -9,12 +9,21 @@
 //! only for the Python boundary: decoding the `(N, n_qubits)` numpy uint8
 //! arrays into [`ppvm_lindblad::Word`] vectors, and re-encoding outputs
 //! back into numpy.
+//!
+//! The core crate is const-generic in the Pauli-word width. [`AnySpec`]
+//! holds a spec at the narrowest of the 128/256/512-qubit widths that fits
+//! `n_qubits` (picked once, at construction), and every method dispatches
+//! on it with [`with_spec!`]. Registers of at most 128 qubits use exactly
+//! the historical word layout, so nothing changes for them.
 
 use std::collections::HashMap;
 
 use num::Complex;
 use numpy::{Complex64, IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
-use ppvm_lindblad::{JumpInput, LindbladSpec as CoreSpec, Word, word_from_codes};
+use ppvm_lindblad::{
+    JumpInput, LindbladSpec as CoreSpec, MAX_SUPPORTED_QUBITS, WIDTHS, Word, chunks_for,
+    word_from_codes,
+};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 type PyPauliMap<'py> = (Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f64>>);
@@ -32,8 +41,8 @@ pub(crate) fn map_err(e: ppvm_lindblad::Error) -> PyErr {
 /// Reject a basis that contains the same Pauli word at two distinct rows.
 /// Duplicate rows would silently overwrite each other in the generator's
 /// row-index map and produce an incorrect sparse matrix.
-fn assert_basis_unique(basis: &[Word]) -> PyResult<()> {
-    let mut seen: HashMap<&Word, usize> = HashMap::with_capacity(basis.len());
+fn assert_basis_unique<const C: usize>(basis: &[Word<C>]) -> PyResult<()> {
+    let mut seen: HashMap<&Word<C>, usize> = HashMap::with_capacity(basis.len());
     for (i, w) in basis.iter().enumerate() {
         if let Some(prev) = seen.insert(w, i) {
             return Err(PyValueError::new_err(format!(
@@ -48,21 +57,79 @@ use crate::pauli_arr::{
     check_coeffs_len, check_group_qubits, check_momentum_len, decode_basis, encode_basis,
 };
 
+/// Convert the `(pauli_string, re, im)` triple encoding used across the
+/// Python boundary into a complex Pauli linear combination.
+fn to_lincomb(terms: Vec<(String, f64, f64)>) -> Vec<(String, Complex<f64>)> {
+    terms
+        .into_iter()
+        .map(|(s, re, im)| (s, Complex::new(re, im)))
+        .collect()
+}
+
 /// Pack `Vec<(Word, f64)>` into the standard PyO3 return shape.
-fn pack_pauli_map<'py>(
+fn pack_pauli_map<'py, const C: usize>(
     py: Python<'py>,
-    pairs: Vec<(Word, f64)>,
+    pairs: Vec<(Word<C>, f64)>,
     n_qubits: usize,
 ) -> PyResult<PyPauliMap<'py>> {
-    let (words, coeffs): (Vec<Word>, Vec<f64>) = pairs.into_iter().unzip();
+    let (words, coeffs): (Vec<Word<C>>, Vec<f64>) = pairs.into_iter().unzip();
     let basis_arr = encode_basis(py, &words, n_qubits)?;
     Ok((basis_arr, coeffs.into_pyarray(py)))
+}
+
+/// A [`CoreSpec`] at one of the [`WIDTHS`] (128, 256 or 512 qubits).
+enum AnySpec {
+    W128(CoreSpec<{ WIDTHS[0] }>),
+    W256(CoreSpec<{ WIDTHS[1] }>),
+    W512(CoreSpec<{ WIDTHS[2] }>),
+}
+
+/// Run `$body` with `$spec` bound to the concrete-width spec inside
+/// `$inner: &AnySpec` and `$C` to its chunk count.
+macro_rules! with_spec {
+    ($inner:expr, $spec:ident, $C:ident => $body:expr) => {
+        match $inner {
+            AnySpec::W128($spec) => {
+                #[allow(dead_code)]
+                const $C: usize = WIDTHS[0];
+                $body
+            }
+            AnySpec::W256($spec) => {
+                #[allow(dead_code)]
+                const $C: usize = WIDTHS[1];
+                $body
+            }
+            AnySpec::W512($spec) => {
+                #[allow(dead_code)]
+                const $C: usize = WIDTHS[2];
+                $body
+            }
+        }
+    };
+}
+
+/// Kossakowski operators `A_n` (Pauli lincombs) and the pair matrix `K`.
+type Kossakowski<'a> = (&'a [Vec<(String, Complex<f64>)>], &'a [Vec<Complex<f64>>]);
+
+/// Build the core spec at width `C` and attach the optional Kossakowski
+/// dissipator.
+fn build_spec<const C: usize>(
+    n_qubits: usize,
+    h: &[(String, f64)],
+    jumps: &[JumpInput],
+    koss: Option<Kossakowski<'_>>,
+) -> PyResult<CoreSpec<C>> {
+    let mut spec = CoreSpec::<C>::new(n_qubits, h, jumps).map_err(map_err)?;
+    if let Some((ops, k)) = koss {
+        spec.add_kossakowski(ops, k).map_err(map_err)?;
+    }
+    Ok(spec)
 }
 
 /// PyO3 facade exposing [`ppvm_lindblad::LindbladSpec`] to Python.
 #[pyclass]
 pub struct LindbladSpec {
-    inner: CoreSpec,
+    inner: AnySpec,
 }
 
 #[pymethods]
@@ -72,14 +139,22 @@ impl LindbladSpec {
     /// `jump_lincombs[k]` is a list of `(pauli_string, real, imag)` triples
     /// encoding `L_k = Σ_a (re + i·im) P_a`. A length-1 jump with `im == 0`
     /// is routed to the Hermitian-Pauli fast path (with rate scaled by `re²`).
+    ///
+    /// `kossakowski_ops` / `kossakowski_k` optionally add a Kossakowski-form
+    /// dissipator `D*(O) = Σ_nm K_nm (A_n† O A_m − ½{A_n†A_m, O})`:
+    /// `kossakowski_ops[i]` is the Pauli lincomb of `A_i` in the same triple
+    /// encoding, `kossakowski_k[n][m] = (re, im)` the Hermitian pair matrix.
     #[new]
-    #[pyo3(signature = (n_qubits, h_terms, h_coeffs, jump_lincombs, jump_rates))]
+    #[pyo3(signature = (n_qubits, h_terms, h_coeffs, jump_lincombs, jump_rates,
+                        kossakowski_ops = vec![], kossakowski_k = vec![]))]
     fn new(
         n_qubits: usize,
         h_terms: Vec<String>,
         h_coeffs: Vec<f64>,
         jump_lincombs: Vec<Vec<(String, f64, f64)>>,
         jump_rates: Vec<f64>,
+        kossakowski_ops: Vec<Vec<(String, f64, f64)>>,
+        kossakowski_k: Vec<Vec<(f64, f64)>>,
     ) -> PyResult<Self> {
         if h_terms.len() != h_coeffs.len() {
             return Err(PyValueError::new_err(
@@ -96,30 +171,53 @@ impl LindbladSpec {
             .into_iter()
             .zip(jump_rates)
             .map(|(lincomb, rate)| JumpInput {
-                lincomb: lincomb
-                    .into_iter()
-                    .map(|(s, re, im)| (s, Complex::new(re, im)))
-                    .collect(),
+                lincomb: to_lincomb(lincomb),
                 rate,
             })
             .collect();
-        let inner = CoreSpec::new(n_qubits, &h, &jumps).map_err(map_err)?;
+        let ops: Vec<Vec<(String, Complex<f64>)>> =
+            kossakowski_ops.into_iter().map(to_lincomb).collect();
+        let k: Vec<Vec<Complex<f64>>> = kossakowski_k
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|(re, im)| Complex::new(re, im))
+                    .collect()
+            })
+            .collect();
+        let koss = (!ops.is_empty() || !k.is_empty()).then_some((&ops[..], &k[..]));
+        let inner = match chunks_for(n_qubits) {
+            Some(c) if c == WIDTHS[0] => AnySpec::W128(build_spec(n_qubits, &h, &jumps, koss)?),
+            Some(c) if c == WIDTHS[1] => AnySpec::W256(build_spec(n_qubits, &h, &jumps, koss)?),
+            Some(_) => AnySpec::W512(build_spec(n_qubits, &h, &jumps, koss)?),
+            None => {
+                return Err(PyValueError::new_err(format!(
+                    "LindbladSpec supports n_qubits ≤ {MAX_SUPPORTED_QUBITS}; got {n_qubits}"
+                )));
+            }
+        };
         Ok(Self { inner })
     }
 
     #[getter]
     fn n_qubits(&self) -> usize {
-        self.inner.n_qubits()
+        with_spec!(&self.inner, inner, C => {
+            inner.n_qubits()
+        })
     }
 
     #[getter]
     fn num_h_terms(&self) -> usize {
-        self.inner.num_h_terms()
+        with_spec!(&self.inner, inner, C => {
+            inner.num_h_terms()
+        })
     }
 
     #[getter]
     fn num_jump_terms(&self) -> usize {
-        self.inner.num_jump_terms()
+        with_spec!(&self.inner, inner, C => {
+            inner.num_jump_terms()
+        })
     }
 
     /// Apply `L*` to a single Pauli string `p`.
@@ -128,10 +226,12 @@ impl LindbladSpec {
         py: Python<'py>,
         p: PyReadonlyArray1<'py, u8>,
     ) -> PyResult<PyPauliMap<'py>> {
-        let p_slice = p.as_slice()?;
-        let p_word = word_from_codes(p_slice).map_err(map_err)?;
-        let pairs = self.inner.action(&p_word);
-        pack_pauli_map(py, pairs, self.inner.n_qubits())
+        with_spec!(&self.inner, inner, C => {
+            let p_slice = p.as_slice()?;
+            let p_word = word_from_codes::<C>(p_slice).map_err(map_err)?;
+            let pairs = inner.action(&p_word);
+            pack_pauli_map(py, pairs, inner.n_qubits())
+        })
     }
 
     /// Off-basis component of `L*( Σ_j coeffs[j] · basis[j] )`.
@@ -143,22 +243,23 @@ impl LindbladSpec {
         coeffs: PyReadonlyArray1<'py, f64>,
         protected: Option<PyReadonlyArray2<'py, u8>>,
     ) -> PyResult<PyPauliMap<'py>> {
-        let n_q = self.inner.n_qubits();
-        let basis_view = basis.as_array();
-        let basis_words = decode_basis(&basis_view, n_q)?;
-        let coeffs_slice = coeffs.as_slice()?;
-        check_coeffs_len(coeffs_slice.len(), basis_words.len())?;
-        let protected_words: Vec<Word> = if let Some(ref prot) = protected {
-            let pv = prot.as_array();
-            decode_basis(&pv, n_q)?
-        } else {
-            Vec::new()
-        };
-        let pairs = self
-            .inner
-            .leakage(&basis_words, coeffs_slice, &protected_words)
-            .map_err(map_err)?;
-        pack_pauli_map(py, pairs, n_q)
+        with_spec!(&self.inner, inner, C => {
+            let n_q = inner.n_qubits();
+            let basis_view = basis.as_array();
+            let basis_words = decode_basis::<C>(&basis_view, n_q)?;
+            let coeffs_slice = coeffs.as_slice()?;
+            check_coeffs_len(coeffs_slice.len(), basis_words.len())?;
+            let protected_words: Vec<Word<C>> = if let Some(ref prot) = protected {
+                let pv = prot.as_array();
+                decode_basis::<C>(&pv, n_q)?
+            } else {
+                Vec::new()
+            };
+            let pairs = inner
+                .leakage(&basis_words, coeffs_slice, &protected_words)
+                .map_err(map_err)?;
+            pack_pauli_map(py, pairs, n_q)
+        })
     }
 
     /// One predictor-corrector adaptive step.
@@ -199,36 +300,38 @@ impl LindbladSpec {
         admit_basis: Option<usize>,
         tau_add: Option<f64>,
     ) -> PyResult<PyPauliMap<'py>> {
-        let n_q = self.inner.n_qubits();
-        let basis_view = basis.as_array();
-        let mut basis_words = decode_basis(&basis_view, n_q)?;
-        assert_basis_unique(&basis_words)?;
-        let mut coeffs_vec = coeffs.as_slice()?.to_vec();
-        check_coeffs_len(coeffs_vec.len(), basis_words.len())?;
-        let protected_words: Vec<Word> = if let Some(ref p) = protected {
-            decode_basis(&p.as_array(), n_q)?
-        } else {
-            Vec::new()
-        };
-        self.inner
-            .pc_step(
-                &mut basis_words,
-                &mut coeffs_vec,
-                dt,
-                &protected_words,
-                &ppvm_lindblad::PcStepConfig {
-                    max_basis,
-                    admit_basis,
-                    drop_tol,
-                    tau_add,
-                    num_threads,
-                },
-            )
-            .map_err(map_err)?;
+        with_spec!(&self.inner, inner, C => {
+            let n_q = inner.n_qubits();
+            let basis_view = basis.as_array();
+            let mut basis_words = decode_basis::<C>(&basis_view, n_q)?;
+            assert_basis_unique(&basis_words)?;
+            let mut coeffs_vec = coeffs.as_slice()?.to_vec();
+            check_coeffs_len(coeffs_vec.len(), basis_words.len())?;
+            let protected_words: Vec<Word<C>> = if let Some(ref p) = protected {
+                decode_basis::<C>(&p.as_array(), n_q)?
+            } else {
+                Vec::new()
+            };
+            inner
+                .pc_step(
+                    &mut basis_words,
+                    &mut coeffs_vec,
+                    dt,
+                    &protected_words,
+                    &ppvm_lindblad::PcStepConfig {
+                        max_basis,
+                        admit_basis,
+                        drop_tol,
+                        tau_add,
+                        num_threads,
+                    },
+                )
+                .map_err(map_err)?;
 
-        // Pack output. Basis may have grown; coeffs has the same new length.
-        let pairs: Vec<(Word, f64)> = basis_words.into_iter().zip(coeffs_vec).collect();
-        pack_pauli_map(py, pairs, n_q)
+            // Pack output. Basis may have grown; coeffs has the same new length.
+            let pairs: Vec<(Word<C>, f64)> = basis_words.into_iter().zip(coeffs_vec).collect();
+            pack_pauli_map(py, pairs, n_q)
+        })
     }
 
     /// Same as [`Self::pc_step`] but also returns a dict mapping phase
@@ -255,44 +358,45 @@ impl LindbladSpec {
         admit_basis: Option<usize>,
         tau_add: Option<f64>,
     ) -> PyResult<(PyPauliMap<'py>, Bound<'py, pyo3::types::PyDict>)> {
-        let n_q = self.inner.n_qubits();
-        let basis_view = basis.as_array();
-        let mut basis_words = decode_basis(&basis_view, n_q)?;
-        assert_basis_unique(&basis_words)?;
-        let mut coeffs_vec = coeffs.as_slice()?.to_vec();
-        check_coeffs_len(coeffs_vec.len(), basis_words.len())?;
-        let protected_words: Vec<Word> = if let Some(ref p) = protected {
-            decode_basis(&p.as_array(), n_q)?
-        } else {
-            Vec::new()
-        };
-        let timings = self
-            .inner
-            .pc_step_timed(
-                &mut basis_words,
-                &mut coeffs_vec,
-                dt,
-                &protected_words,
-                &ppvm_lindblad::PcStepConfig {
-                    max_basis,
-                    admit_basis,
-                    drop_tol,
-                    tau_add,
-                    num_threads,
-                },
-            )
-            .map_err(map_err)?;
+        with_spec!(&self.inner, inner, C => {
+            let n_q = inner.n_qubits();
+            let basis_view = basis.as_array();
+            let mut basis_words = decode_basis::<C>(&basis_view, n_q)?;
+            assert_basis_unique(&basis_words)?;
+            let mut coeffs_vec = coeffs.as_slice()?.to_vec();
+            check_coeffs_len(coeffs_vec.len(), basis_words.len())?;
+            let protected_words: Vec<Word<C>> = if let Some(ref p) = protected {
+                decode_basis::<C>(&p.as_array(), n_q)?
+            } else {
+                Vec::new()
+            };
+            let timings = inner
+                .pc_step_timed(
+                    &mut basis_words,
+                    &mut coeffs_vec,
+                    dt,
+                    &protected_words,
+                    &ppvm_lindblad::PcStepConfig {
+                        max_basis,
+                        admit_basis,
+                        drop_tol,
+                        tau_add,
+                        num_threads,
+                    },
+                )
+                .map_err(map_err)?;
 
-        let pairs: Vec<(Word, f64)> = basis_words.into_iter().zip(coeffs_vec).collect();
-        let map = pack_pauli_map(py, pairs, n_q)?;
-        let d = pyo3::types::PyDict::new(py);
-        d.set_item("leakage1_us", timings.leakage1_us)?;
-        d.set_item("expand1_us", timings.expand1_us)?;
-        d.set_item("expm1_us", timings.expm1_us)?;
-        d.set_item("leakage2_us", timings.leakage2_us)?;
-        d.set_item("expand2_us", timings.expand2_us)?;
-        d.set_item("expm2_us", timings.expm2_us)?;
-        Ok((map, d))
+            let pairs: Vec<(Word<C>, f64)> = basis_words.into_iter().zip(coeffs_vec).collect();
+            let map = pack_pauli_map(py, pairs, n_q)?;
+            let d = pyo3::types::PyDict::new(py);
+            d.set_item("leakage1_us", timings.leakage1_us)?;
+            d.set_item("expand1_us", timings.expand1_us)?;
+            d.set_item("expm1_us", timings.expm1_us)?;
+            d.set_item("leakage2_us", timings.leakage2_us)?;
+            d.set_item("expand2_us", timings.expand2_us)?;
+            d.set_item("expm2_us", timings.expm2_us)?;
+            Ok((map, d))
+        })
     }
 
     /// Per-step orbit-rep predictor-corrector evolution under
@@ -343,56 +447,58 @@ impl LindbladSpec {
         tau_add: Option<f64>,
         num_threads: Option<usize>,
     ) -> PyResult<PyPauliMapComplex<'py>> {
-        use num::Complex;
-        use ppvm_lindblad::{Sector, canonicalize_basis_to_rep};
+        with_spec!(&self.inner, inner, C => {
+            use num::Complex;
+            use ppvm_lindblad::{Sector, canonicalize_basis_to_rep};
 
-        let n_q = self.inner.n_qubits();
-        let basis_view = basis.as_array();
-        let mut basis_words = decode_basis(&basis_view, n_q)?;
-        let coeffs_slice = coeffs.as_slice()?;
-        check_coeffs_len(coeffs_slice.len(), basis_words.len())?;
-        let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
-            .iter()
-            .map(|c| Complex::new(c.re, c.im))
-            .collect();
-        let protected_words: Vec<Word> = if let Some(ref p) = protected {
-            decode_basis(&p.as_array(), n_q)?
-        } else {
-            Vec::new()
-        };
-        let k_slice = momentum.as_slice()?;
-        check_momentum_len(k_slice.len(), group.core().n_generators())?;
-        check_group_qubits(n_q, group.core().n_qubits())?;
-        if canonicalize_first {
-            canonicalize_basis_to_rep(&mut basis_words, group.core());
-        }
-        // Canonicalization can collapse several input rows onto one rep,
-        // and the step indexes the basis by Pauli word — so uniqueness is
-        // checked after the rewrite, not before.
-        assert_basis_unique(&basis_words)?;
-        self.inner
-            .pc_step_orbit_rep(
-                &mut basis_words,
-                &mut coeffs_vec,
-                dt,
-                &protected_words,
-                &Sector::new(group.core(), k_slice),
-                &ppvm_lindblad::PcStepConfig {
-                    max_basis,
-                    admit_basis,
-                    drop_tol,
-                    tau_add,
-                    num_threads,
-                },
-            )
-            .map_err(map_err)?;
+            let n_q = inner.n_qubits();
+            let basis_view = basis.as_array();
+            let mut basis_words = decode_basis::<C>(&basis_view, n_q)?;
+            let coeffs_slice = coeffs.as_slice()?;
+            check_coeffs_len(coeffs_slice.len(), basis_words.len())?;
+            let mut coeffs_vec: Vec<Complex<f64>> = coeffs_slice
+                .iter()
+                .map(|c| Complex::new(c.re, c.im))
+                .collect();
+            let protected_words: Vec<Word<C>> = if let Some(ref p) = protected {
+                decode_basis::<C>(&p.as_array(), n_q)?
+            } else {
+                Vec::new()
+            };
+            let k_slice = momentum.as_slice()?;
+            check_momentum_len(k_slice.len(), group.core().n_generators())?;
+            check_group_qubits(n_q, group.core().n_qubits())?;
+            if canonicalize_first {
+                canonicalize_basis_to_rep(&mut basis_words, group.core());
+            }
+            // Canonicalization can collapse several input rows onto one rep,
+            // and the step indexes the basis by Pauli word — so uniqueness is
+            // checked after the rewrite, not before.
+            assert_basis_unique(&basis_words)?;
+            inner
+                .pc_step_orbit_rep(
+                    &mut basis_words,
+                    &mut coeffs_vec,
+                    dt,
+                    &protected_words,
+                    &Sector::new(group.core(), k_slice),
+                    &ppvm_lindblad::PcStepConfig {
+                        max_basis,
+                        admit_basis,
+                        drop_tol,
+                        tau_add,
+                        num_threads,
+                    },
+                )
+                .map_err(map_err)?;
 
-        let out_coeffs: Vec<Complex64> = coeffs_vec
-            .iter()
-            .map(|c| Complex64::new(c.re, c.im))
-            .collect();
-        let basis_arr = encode_basis(py, &basis_words, n_q)?;
-        Ok((basis_arr, out_coeffs.into_pyarray(py)))
+            let out_coeffs: Vec<Complex64> = coeffs_vec
+                .iter()
+                .map(|c| Complex64::new(c.re, c.im))
+                .collect();
+            let basis_arr = encode_basis(py, &basis_words, n_q)?;
+            Ok((basis_arr, out_coeffs.into_pyarray(py)))
+        })
     }
 
     /// Sparse generator matrix in COO form: `(rows, cols, vals)`.
@@ -401,24 +507,26 @@ impl LindbladSpec {
         py: Python<'py>,
         basis: PyReadonlyArray2<'py, u8>,
     ) -> PyResult<PyCoo<'py>> {
-        let n_q = self.inner.n_qubits();
-        let basis_view = basis.as_array();
-        let basis_words = decode_basis(&basis_view, n_q)?;
-        assert_basis_unique(&basis_words)?;
-        let triplets = self.inner.generator(&basis_words);
-        let total = triplets.len();
-        let mut rows = Vec::with_capacity(total);
-        let mut cols = Vec::with_capacity(total);
-        let mut vals = Vec::with_capacity(total);
-        for (r, c, v) in triplets {
-            rows.push(r as u64);
-            cols.push(c as u64);
-            vals.push(v);
-        }
-        Ok((
-            rows.into_pyarray(py),
-            cols.into_pyarray(py),
-            vals.into_pyarray(py),
-        ))
+        with_spec!(&self.inner, inner, C => {
+            let n_q = inner.n_qubits();
+            let basis_view = basis.as_array();
+            let basis_words = decode_basis::<C>(&basis_view, n_q)?;
+            assert_basis_unique(&basis_words)?;
+            let triplets = inner.generator(&basis_words);
+            let total = triplets.len();
+            let mut rows = Vec::with_capacity(total);
+            let mut cols = Vec::with_capacity(total);
+            let mut vals = Vec::with_capacity(total);
+            for (r, c, v) in triplets {
+                rows.push(r as u64);
+                cols.push(c as u64);
+                vals.push(v);
+            }
+            Ok((
+                rows.into_pyarray(py),
+                cols.into_pyarray(py),
+                vals.into_pyarray(py),
+            ))
+        })
     }
 }

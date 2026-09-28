@@ -3,14 +3,15 @@
 
 //! Error type for [`crate::LindbladSpec`] construction and stepping.
 
-use crate::MAX_QUBITS;
 use std::fmt;
 
 /// Errors raised when constructing a [`crate::LindbladSpec`].
 #[derive(Debug, Clone)]
 pub enum Error {
+    /// `got` qubits do not fit the word width in use, which holds `max`.
     TooManyQubits {
         got: usize,
+        max: usize,
     },
     LengthMismatch {
         what: &'static str,
@@ -34,17 +35,25 @@ pub enum Error {
     EmptyLincomb {
         index: usize,
     },
+    /// Row `row` of the Kossakowski matrix is not `n_ops` wide.
+    KMatrixRowLength {
+        row: usize,
+        expected: usize,
+        got: usize,
+    },
+    /// `K_nm ≠ conj(K_mn)`: not a valid GKSL pair matrix.
+    KMatrixNotHermitian {
+        n: usize,
+        m: usize,
+    },
     Internal(String),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::TooManyQubits { got } => {
-                write!(
-                    f,
-                    "LindbladSpec supports n_qubits ≤ {MAX_QUBITS}; got {got}"
-                )
+            Error::TooManyQubits { got, max } => {
+                write!(f, "LindbladSpec supports n_qubits ≤ {max}; got {got}")
             }
             Error::LengthMismatch { what, a, b } => {
                 write!(f, "{what}: expected matching lengths, got {a} and {b}")
@@ -68,6 +77,14 @@ impl fmt::Display for Error {
                     "jump {index}: lincomb must contain at least one Pauli term"
                 )
             }
+            Error::KMatrixRowLength { row, expected, got } => write!(
+                f,
+                "kossakowski K row {row} has length {got}; expected {expected} (one per operator)"
+            ),
+            Error::KMatrixNotHermitian { n, m } => write!(
+                f,
+                "kossakowski K must be Hermitian; K[{n}][{m}] ≠ conj(K[{m}][{n}])"
+            ),
             Error::Internal(msg) => write!(f, "internal error: {msg}"),
         }
     }

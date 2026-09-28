@@ -4,59 +4,35 @@
 //! Precompiled Lindbladian: construction and the single-Pauli `L*` kernel.
 
 use crate::Error;
-use crate::algebra::{anti_commutes, comm_product, pauli_mul, phase_factor};
-use crate::word::{MAX_QUBITS, Word, parse_pauli_string, word_support};
+use crate::algebra::{
+    PauliTerm, anti_commutes, comm_product, pauli_mul, phase_factor, precompute_adag_b,
+};
+use crate::kossakowski;
+use crate::word::{W_CHUNKS, Word, check_width, parse_pauli_string, word_support};
 use fxhash::FxHashMap;
 use num::Complex;
 
 /// Parsed Hamiltonian term.
 #[derive(Clone)]
-struct HTerm {
-    word: Word,
+struct HTerm<const C: usize = W_CHUNKS> {
+    word: Word<C>,
     coeff: f64,
 }
 
-/// One Pauli term in a complex linear combination (a single summand of
-/// `L = Σ_a λ_a P_a` or of the precomputed `L†L`).
-#[derive(Clone)]
-struct PauliTerm {
-    word: Word,
-    coeff: Complex<f64>,
-}
-
-/// One jump operator `L_k` with rate `γ_k`. The `HermitianPauli` variant
-/// is a fast path; `General` handles arbitrary complex Pauli sums.
-#[derive(Clone)]
-enum JumpKind {
+/// One entry of the dissipator. `HermitianPauli` and `General` are the
+/// jump-operator form (`K` diagonal); `Kossakowski` is one compiled pair of
+/// the general form. See [`crate::kossakowski`].
+enum JumpKind<const C: usize> {
     HermitianPauli {
-        word: Word,
+        word: Word<C>,
         rate: f64,
     },
     General {
-        terms: Vec<PauliTerm>,         // L = Σ_a λ_a P_a
-        dagger_dagger: Vec<PauliTerm>, // L†L = Σ_c μ_c P_c  (μ_c ∈ ℝ)
+        terms: Vec<PauliTerm<C>>,         // L = Σ_a λ_a P_a
+        dagger_dagger: Vec<PauliTerm<C>>, // L†L = Σ_c μ_c P_c  (μ_c ∈ ℝ)
         rate: f64,
     },
-}
-
-/// Expand `L†L = (Σ_a λ_a P_a)† (Σ_b λ_b P_b) = Σ_{a,b} λ_a* λ_b P_a P_b`
-/// as a Pauli linear combination, dropping FP-noise zeros. Coefficients are
-/// real because `L†L` is Hermitian; we keep them complex for arithmetic
-/// uniformity.
-fn precompute_ldagger_l(terms: &[PauliTerm]) -> Vec<PauliTerm> {
-    let zero = Complex::new(0.0, 0.0);
-    let mut acc: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
-    for a in terms {
-        for b in terms {
-            let (word, phase) = pauli_mul(&a.word, &b.word);
-            let coeff = a.coeff.conj() * b.coeff * phase_factor(phase);
-            *acc.entry(word).or_insert(zero) += coeff;
-        }
-    }
-    acc.into_iter()
-        .filter(|(_, c)| c.norm() > 1e-14)
-        .map(|(word, coeff)| PauliTerm { word, coeff })
-        .collect()
+    Kossakowski(kossakowski::Pair<C>),
 }
 
 /// Union of `index[q]` for each `q ∈ p_support`, deduped.
@@ -76,10 +52,10 @@ fn candidate_terms(p_support: &[u32], index: &[Vec<u32>], scratch: &mut Vec<u32>
 /// call rather than cached: for sparse-local Hamiltonians a per-word cache
 /// costs more than the recompute (hash lookup ≳ recompute) and its several
 /// KB per cached word dominate memory at large basis sizes.
-pub struct LindbladSpec {
+pub struct LindbladSpec<const C: usize = W_CHUNKS> {
     n_qubits: usize,
-    h_terms: Vec<HTerm>,
-    j_kinds: Vec<JumpKind>,
+    h_terms: Vec<HTerm<C>>,
+    j_kinds: Vec<JumpKind<C>>,
     /// `h_support[q]` = indices of Hamiltonian terms acting on qubit `q`.
     h_support: Vec<Vec<u32>>,
     /// `j_support[q]` = indices of jumps whose support contains qubit `q`.
@@ -96,7 +72,7 @@ pub struct JumpInput {
     pub rate: f64,
 }
 
-impl LindbladSpec {
+impl<const C: usize> LindbladSpec<C> {
     /// Construct a Lindbladian spec from Hamiltonian terms and jump operators.
     ///
     /// `h_terms` are `(pauli_string, coefficient)` pairs forming the Hermitian
@@ -108,11 +84,9 @@ impl LindbladSpec {
         h_terms: &[(String, f64)],
         jumps: &[JumpInput],
     ) -> Result<Self, Error> {
-        if n_qubits > MAX_QUBITS {
-            return Err(Error::TooManyQubits { got: n_qubits });
-        }
+        check_width::<C>(n_qubits)?;
 
-        let mut h_parsed: Vec<HTerm> = Vec::with_capacity(h_terms.len());
+        let mut h_parsed: Vec<HTerm<C>> = Vec::with_capacity(h_terms.len());
         let mut h_support_idx: Vec<Vec<u32>> = vec![Vec::new(); n_qubits];
         for (i, (s, c)) in h_terms.iter().enumerate() {
             let (word, support) = parse_pauli_string(s, n_qubits)?;
@@ -122,7 +96,7 @@ impl LindbladSpec {
             h_parsed.push(HTerm { word, coeff: *c });
         }
 
-        let mut j_kinds: Vec<JumpKind> = Vec::with_capacity(jumps.len());
+        let mut j_kinds: Vec<JumpKind<C>> = Vec::with_capacity(jumps.len());
         let mut j_support_idx: Vec<Vec<u32>> = vec![Vec::new(); n_qubits];
         for (k, jump) in jumps.iter().enumerate() {
             if jump.rate < 0.0 {
@@ -150,7 +124,7 @@ impl LindbladSpec {
             }
 
             // General path: parse all terms, precompute L†L, record union support.
-            let mut terms: Vec<PauliTerm> = Vec::with_capacity(jump.lincomb.len());
+            let mut terms: Vec<PauliTerm<C>> = Vec::with_capacity(jump.lincomb.len());
             let mut union_support: std::collections::BTreeSet<u32> =
                 std::collections::BTreeSet::new();
             for (s, c) in &jump.lincomb {
@@ -163,7 +137,7 @@ impl LindbladSpec {
             for q in union_support {
                 j_support_idx[q as usize].push(k as u32);
             }
-            let dagger_dagger = precompute_ldagger_l(&terms);
+            let dagger_dagger = precompute_adag_b(&terms, &terms);
             j_kinds.push(JumpKind::General {
                 terms,
                 dagger_dagger,
@@ -180,6 +154,28 @@ impl LindbladSpec {
         })
     }
 
+    /// Add a Kossakowski-form dissipator
+    /// `D*(O) = Σ_{n,m} K_nm ( A_n† O A_m − ½ {A_n† A_m, O} )`.
+    ///
+    /// `ops` lists the operators `A_n` as complex Pauli linear combinations;
+    /// `k` is the `n_ops × n_ops` Hermitian pair matrix. Contributions are
+    /// added to any jumps already present. See [`crate::kossakowski`] for
+    /// how each `(n, m)` entry is compiled.
+    pub fn add_kossakowski(
+        &mut self,
+        ops: &[Vec<(String, Complex<f64>)>],
+        k: &[Vec<Complex<f64>>],
+    ) -> Result<(), Error> {
+        for (pair, support) in kossakowski::compile(ops, k, self.n_qubits)? {
+            let idx = self.j_kinds.len() as u32;
+            self.j_kinds.push(JumpKind::Kossakowski(pair));
+            for q in support {
+                self.j_support[q as usize].push(idx);
+            }
+        }
+        Ok(())
+    }
+
     pub fn n_qubits(&self) -> usize {
         self.n_qubits
     }
@@ -194,8 +190,8 @@ impl LindbladSpec {
 
     /// Apply `L*` to a single Pauli string `p`. Returns the output Pauli
     /// strings and their real coefficients (zero entries omitted).
-    pub fn action(&self, p: &Word) -> Vec<(Word, f64)> {
-        let mut out: FxHashMap<Word, f64> = FxHashMap::default();
+    pub fn action(&self, p: &Word<C>) -> Vec<(Word<C>, f64)> {
+        let mut out: FxHashMap<Word<C>, f64> = FxHashMap::default();
         let mut s1 = Vec::new();
         let mut s2 = Vec::new();
         self.accumulate_action(p, 1.0, &mut out, &mut s1, &mut s2);
@@ -206,11 +202,11 @@ impl LindbladSpec {
     /// `L*(p)` contributes (without the input coefficient).
     pub(crate) fn compute_action_terms(
         &self,
-        p: &Word,
+        p: &Word<C>,
         scratch_support: &mut Vec<u32>,
         scratch_cands: &mut Vec<u32>,
-        scratch_local: &mut FxHashMap<Word, Complex<f64>>,
-    ) -> Vec<(Word, f64)> {
+        scratch_local: &mut FxHashMap<Word<C>, Complex<f64>>,
+    ) -> Vec<(Word<C>, f64)> {
         word_support(p, scratch_support);
         let zero = Complex::new(0.0, 0.0);
         scratch_local.clear();
@@ -263,6 +259,7 @@ impl LindbladSpec {
                         }
                     }
                 }
+                JumpKind::Kossakowski(pair) => pair.accumulate(p, local),
             }
         }
 
@@ -284,9 +281,9 @@ impl LindbladSpec {
     /// Accumulate `scale · L*(p)` into `out`.
     fn accumulate_action(
         &self,
-        p: &Word,
+        p: &Word<C>,
         scale: f64,
-        out: &mut FxHashMap<Word, f64>,
+        out: &mut FxHashMap<Word<C>, f64>,
         scratch_support: &mut Vec<u32>,
         scratch_cands: &mut Vec<u32>,
     ) {

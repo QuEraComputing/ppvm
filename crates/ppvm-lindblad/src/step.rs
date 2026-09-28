@@ -50,7 +50,7 @@ impl Phase {
     }
 }
 
-impl LindbladSpec {
+impl<const C: usize> LindbladSpec<C> {
     /// One predictor-corrector step `O ← exp(dt·L*) O` in the adaptive
     /// real-coefficient Pauli basis: first-hop leakage admission, predictor
     /// exponential, second-hop admission from the predicted state, corrector
@@ -58,13 +58,21 @@ impl LindbladSpec {
     /// rank cap) per [`PcStepConfig`]. Exact in `dt` within the working
     /// basis — the only error is basis truncation.
     ///
+    /// When the second hop admits no string (in particular when the first
+    /// hop already filled the admission room `admit_basis − |basis|`, the
+    /// usual case once the basis has reached `max_basis`), the corrector
+    /// would repeat the predictor exactly; the second leakage pass (if
+    /// `room = 0`) and the corrector exponential are then skipped, with
+    /// bit-identical results. The step's timings report 0 for skipped
+    /// phases.
+    ///
     /// `protected` words are never dropped. All tuning knobs live in `cfg`.
     pub fn pc_step(
         &self,
-        basis: &mut Vec<Word>,
+        basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        protected: &[Word],
+        protected: &[Word<C>],
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
         self.run_in_pool(cfg, |this| {
@@ -78,10 +86,10 @@ impl LindbladSpec {
     /// spots.
     pub fn pc_step_timed(
         &self,
-        basis: &mut Vec<Word>,
+        basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        protected: &[Word],
+        protected: &[Word<C>],
         cfg: &PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
         self.run_in_pool(cfg, |this| {
@@ -107,10 +115,10 @@ impl LindbladSpec {
 
     fn pc_step_inner(
         &self,
-        basis: &mut Vec<Word>,
+        basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        protected: &[Word],
+        protected: &[Word<C>],
         cfg: &PcStepConfig,
         timed: bool,
     ) -> Result<PcStepTimings, Error> {
@@ -149,23 +157,35 @@ impl LindbladSpec {
         let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol);
         p.stop(&mut t.expm1_us);
 
-        // 3. Second-hop expansion from the predicted state. After leakage2
-        // we no longer need `coeffs_predict`. Extend `coeffs` with zeros for
-        // any newly-added second-hop strings so it remains a valid input
-        // (pre-step state) for the corrector.
-        let p = Phase::start(timed);
-        let leak2 = self.leakage_with_prune(basis, &coeffs_predict, protected, admit, tau_add)?;
-        p.stop(&mut t.leakage2_us);
-        drop(coeffs_predict);
+        // 3. Second-hop expansion from the predicted state. Extend `coeffs`
+        // with zeros for any newly-added second-hop strings so it remains a
+        // valid input (pre-step state) for the corrector. Once the basis is
+        // full, the first hop usually fills the whole admission room; with
+        // `room = 0` the second hop can admit nothing, so its leakage pass
+        // is skipped.
+        let n_predict = basis.len();
+        if admit > n_predict {
+            let p = Phase::start(timed);
+            let leak2 =
+                self.leakage_with_prune(basis, &coeffs_predict, protected, admit, tau_add)?;
+            p.stop(&mut t.leakage2_us);
 
-        let p = Phase::start(timed);
-        add_leakage_capped(basis, coeffs, leak2, admit);
-        p.stop(&mut t.expand2_us);
+            let p = Phase::start(timed);
+            add_leakage_capped(basis, coeffs, leak2, admit);
+            p.stop(&mut t.expand2_us);
+        }
 
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.
-        let p = Phase::start(timed);
-        *coeffs = self.expm_step(basis, dt, coeffs, drop_tol);
-        p.stop(&mut t.expm2_us);
+        // If the second hop admitted nothing, the corrector would repeat the
+        // predictor's computation exactly, so the predicted state is kept.
+        if basis.len() == n_predict {
+            *coeffs = coeffs_predict;
+        } else {
+            drop(coeffs_predict);
+            let p = Phase::start(timed);
+            *coeffs = self.expm_step(basis, dt, coeffs, drop_tol);
+            p.stop(&mut t.expm2_us);
+        }
 
         // 5. Prune basis entries below `drop_tol` (protected words never dropped).
         prune_basis(basis, coeffs, drop_tol, protected);
@@ -175,7 +195,7 @@ impl LindbladSpec {
 
     /// Compute `exp(dt · M) · b` for the in-basis-restricted generator
     /// `M`, matrix-free, via `quspin-expm` (see [`crate::mf_expm`]).
-    fn expm_step(&self, basis: &[Word], dt: f64, b: &[f64], drop_tol: f64) -> Vec<f64> {
+    fn expm_step(&self, basis: &[Word<C>], dt: f64, b: &[f64], drop_tol: f64) -> Vec<f64> {
         mf_expm::expm_apply_mf(self, basis, dt, b, drop_tol)
     }
 
@@ -202,10 +222,10 @@ impl LindbladSpec {
     /// Honours `cfg.num_threads` the same way [`Self::pc_step`] does.
     pub fn pc_step_orbit_rep(
         &self,
-        basis: &mut Vec<Word>,
+        basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<Complex<f64>>,
         dt: f64,
-        protected: &[Word],
+        protected: &[Word<C>],
         sector: &Sector<'_>,
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
@@ -216,10 +236,10 @@ impl LindbladSpec {
 
     fn pc_step_orbit_rep_inner(
         &self,
-        basis: &mut Vec<Word>,
+        basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<Complex<f64>>,
         dt: f64,
-        protected: &[Word],
+        protected: &[Word<C>],
         sector: &Sector<'_>,
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
@@ -250,16 +270,26 @@ impl LindbladSpec {
         //    across every matvec.
         let coeffs_predict = mf_expm::expm_apply_orbit_rep(self, basis, sector, dt, coeffs);
 
-        // 3. Second-hop leakage from the predicted state.
-        let mut leak2 = self.leakage_orbit_rep(basis, &coeffs_predict, protected, sector, admit)?;
-        drop(coeffs_predict);
-        if tau_add > 0.0 {
-            leak2.retain(|(_, c)| c.norm() > tau_add);
+        // 3. Second-hop leakage from the predicted state, skipped when the
+        //    first hop left no admission room (see `pc_step_inner`).
+        let n_predict = basis.len();
+        if admit > n_predict {
+            let mut leak2 =
+                self.leakage_orbit_rep(basis, &coeffs_predict, protected, sector, admit)?;
+            if tau_add > 0.0 {
+                leak2.retain(|(_, c)| c.norm() > tau_add);
+            }
+            add_leakage_capped(basis, coeffs, leak2, admit);
         }
-        add_leakage_capped(basis, coeffs, leak2, admit);
 
-        // 4. Corrector: redo from the pre-step state (the basis grew).
-        *coeffs = mf_expm::expm_apply_orbit_rep(self, basis, sector, dt, coeffs);
+        // 4. Corrector: redo from the pre-step state if the basis grew;
+        //    otherwise it would reproduce the predictor exactly.
+        if basis.len() == n_predict {
+            *coeffs = coeffs_predict;
+        } else {
+            drop(coeffs_predict);
+            *coeffs = mf_expm::expm_apply_orbit_rep(self, basis, sector, dt, coeffs);
+        }
 
         // 5. Prune by magnitude, then rank-cap to max_basis.
         prune_basis(basis, coeffs, drop_tol, protected);

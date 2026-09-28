@@ -18,8 +18,8 @@ const CHUNK_SIZE: usize = 4096;
 
 /// Build a `word → row` map for a basis assumed to contain unique Pauli
 /// words; debug-asserts the uniqueness invariant.
-pub fn build_basis_index(basis: &[Word]) -> FxHashMap<Word, u32> {
-    let mut index: FxHashMap<Word, u32> = FxHashMap::default();
+pub fn build_basis_index<const C: usize>(basis: &[Word<C>]) -> FxHashMap<Word<C>, u32> {
+    let mut index: FxHashMap<Word<C>, u32> = FxHashMap::default();
     for (i, w) in basis.iter().enumerate() {
         let prev = index.insert(*w, i as u32);
         debug_assert!(
@@ -32,15 +32,15 @@ pub fn build_basis_index(basis: &[Word]) -> FxHashMap<Word, u32> {
     index
 }
 
-impl LindbladSpec {
+impl<const C: usize> LindbladSpec<C> {
     /// Off-basis component of `L*( Σ_j coeffs[j] · basis[j] )`. Output
     /// strings that lie in `basis` or in `protected` are dropped.
     pub fn leakage(
         &self,
-        basis: &[Word],
+        basis: &[Word<C>],
         coeffs: &[f64],
-        protected: &[Word],
-    ) -> Result<Vec<(Word, f64)>, Error> {
+        protected: &[Word<C>],
+    ) -> Result<Vec<(Word<C>, f64)>, Error> {
         self.leakage_with_prune(basis, coeffs, protected, usize::MAX, 0.0)
     }
 
@@ -56,12 +56,12 @@ impl LindbladSpec {
     /// `room ≥ all candidates`, nothing is dropped — the near-exact case.
     pub fn leakage_with_prune(
         &self,
-        basis: &[Word],
+        basis: &[Word<C>],
         coeffs: &[f64],
-        protected: &[Word],
+        protected: &[Word<C>],
         max_basis: usize,
         tau_add: f64,
-    ) -> Result<Vec<(Word, f64)>, Error> {
+    ) -> Result<Vec<(Word<C>, f64)>, Error> {
         if basis.len() != coeffs.len() {
             return Err(Error::LengthMismatch {
                 what: "basis and coeffs",
@@ -80,16 +80,16 @@ impl LindbladSpec {
         let order = order_by_desc_mag(coeffs);
         let room = max_basis.saturating_sub(basis.len());
         let n_qubits = self.n_qubits();
-        let mut merged: FxHashMap<Word, f64> = FxHashMap::default();
+        let mut merged: FxHashMap<Word<C>, f64> = FxHashMap::default();
         for chunk_indices in order.chunks(CHUNK_SIZE) {
-            let local: Vec<Vec<(Word, f64)>> = chunk_indices
+            let local: Vec<Vec<(Word<C>, f64)>> = chunk_indices
                 .par_iter()
                 .map_init(
                     || {
                         (
                             Vec::<u32>::with_capacity(n_qubits),
                             Vec::<u32>::with_capacity(128),
-                            FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                            FxHashMap::<Word<C>, Complex<f64>>::with_capacity_and_hasher(
                                 128,
                                 FxBuildHasher::default(),
                             ),
@@ -132,7 +132,7 @@ impl LindbladSpec {
     ///
     /// Precondition: `basis` must not contain duplicate Pauli words
     /// (asserted in debug builds).
-    pub fn generator(&self, basis: &[Word]) -> Vec<(usize, usize, f64)> {
+    pub fn generator(&self, basis: &[Word<C>]) -> Vec<(usize, usize, f64)> {
         let index = build_basis_index(basis);
         let n_qubits = self.n_qubits();
 
@@ -146,7 +146,7 @@ impl LindbladSpec {
                     (
                         Vec::<u32>::with_capacity(n_qubits),
                         Vec::<u32>::with_capacity(128),
-                        FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                        FxHashMap::<Word<C>, Complex<f64>>::with_capacity_and_hasher(
                             128,
                             FxBuildHasher::default(),
                         ),
@@ -178,10 +178,10 @@ impl LindbladSpec {
     /// component of `L*( Σ_j coeffs[j] · basis[j] )` with complex `coeffs`.
     pub fn leakage_complex(
         &self,
-        basis: &[Word],
+        basis: &[Word<C>],
         coeffs: &[Complex<f64>],
-        protected: &[Word],
-    ) -> Result<Vec<(Word, Complex<f64>)>, Error> {
+        protected: &[Word<C>],
+    ) -> Result<Vec<(Word<C>, Complex<f64>)>, Error> {
         if basis.len() != coeffs.len() {
             return Err(Error::LengthMismatch {
                 what: "basis and coeffs",
@@ -194,12 +194,12 @@ impl LindbladSpec {
             protected.iter().map(|w| (word_hash(w), ())).collect();
 
         let n_qubits = self.n_qubits();
-        let mut merged: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
+        let mut merged: FxHashMap<Word<C>, Complex<f64>> = FxHashMap::default();
         for chunk_start in (0..basis.len()).step_by(CHUNK_SIZE) {
             let chunk_end = (chunk_start + CHUNK_SIZE).min(basis.len());
             let chunk_basis = &basis[chunk_start..chunk_end];
             let chunk_coeffs = &coeffs[chunk_start..chunk_end];
-            let local: Vec<Vec<(Word, Complex<f64>)>> = chunk_basis
+            let local: Vec<Vec<(Word<C>, Complex<f64>)>> = chunk_basis
                 .par_iter()
                 .zip(chunk_coeffs.par_iter())
                 .map_init(
@@ -207,7 +207,7 @@ impl LindbladSpec {
                         (
                             Vec::<u32>::with_capacity(n_qubits),
                             Vec::<u32>::with_capacity(128),
-                            FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                            FxHashMap::<Word<C>, Complex<f64>>::with_capacity_and_hasher(
                                 128,
                                 FxBuildHasher::default(),
                             ),
@@ -260,12 +260,12 @@ impl LindbladSpec {
     /// (room ≥ all candidates) disables the cap — the near-exact case.
     pub fn leakage_orbit_rep(
         &self,
-        basis: &[Word],
+        basis: &[Word<C>],
         coeffs: &[Complex<f64>],
-        protected: &[Word],
+        protected: &[Word<C>],
         sector: &Sector<'_>,
         max_basis: usize,
-    ) -> Result<Vec<(Word, Complex<f64>)>, Error> {
+    ) -> Result<Vec<(Word<C>, Complex<f64>)>, Error> {
         if basis.len() != coeffs.len() {
             return Err(Error::LengthMismatch {
                 what: "basis and coeffs",
@@ -275,22 +275,22 @@ impl LindbladSpec {
         }
         // Membership is tested on the canonical rep `r_q`, so unlike the
         // real path these are full-Word sets, not `word_hash` tables.
-        let in_basis: FxHashSet<&Word> = basis.iter().collect();
-        let protected_set: FxHashSet<&Word> = protected.iter().collect();
+        let in_basis: FxHashSet<&Word<C>> = basis.iter().collect();
+        let protected_set: FxHashSet<&Word<C>> = protected.iter().collect();
 
         let order = order_by_desc_mag(coeffs);
         let room = max_basis.saturating_sub(basis.len());
         let n_qubits = self.n_qubits();
-        let mut merged: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
+        let mut merged: FxHashMap<Word<C>, Complex<f64>> = FxHashMap::default();
         for chunk_indices in order.chunks(CHUNK_SIZE) {
-            let local: Vec<Vec<(Word, Complex<f64>)>> = chunk_indices
+            let local: Vec<Vec<(Word<C>, Complex<f64>)>> = chunk_indices
                 .par_iter()
                 .map_init(
                     || {
                         (
                             Vec::<u32>::with_capacity(n_qubits),
                             Vec::<u32>::with_capacity(128),
-                            FxHashMap::<Word, Complex<f64>>::with_capacity_and_hasher(
+                            FxHashMap::<Word<C>, Complex<f64>>::with_capacity_and_hasher(
                                 128,
                                 FxBuildHasher::default(),
                             ),

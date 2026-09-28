@@ -37,7 +37,7 @@
 
 use crate::Word;
 use num::Complex;
-use ppvm_pauli_sum::symmetry::TranslationGroup;
+use ppvm_pauli_sum::symmetry::{CharacterTable, TranslationGroup};
 
 /// A momentum sector of a translation group: the group `G` together with
 /// one integer mode index per generator. The wavenumber along generator
@@ -45,16 +45,35 @@ use ppvm_pauli_sum::symmetry::TranslationGroup;
 /// is the trivial sector.
 ///
 /// The two halves are meaningless apart — every phase-aware routine
-/// needs both — so they travel as one value.
-#[derive(Clone, Copy)]
+/// needs both — so they travel as one value. Construction precomputes the
+/// sector's [`CharacterTable`] (`|G|` entries), so the per-term work in the
+/// hot loops is one canonicalization and a table lookup; build a `Sector`
+/// once per step and pass it by reference.
+#[derive(Clone)]
 pub struct Sector<'a> {
     group: &'a TranslationGroup,
     k_modes: &'a [i32],
+    characters: CharacterTable,
 }
 
 impl<'a> Sector<'a> {
     pub fn new(group: &'a TranslationGroup, k_modes: &'a [i32]) -> Self {
-        Self { group, k_modes }
+        let characters = group.character_table(k_modes);
+        Self {
+            group,
+            k_modes,
+            characters,
+        }
+    }
+
+    /// The translation group.
+    pub fn group(&self) -> &'a TranslationGroup {
+        self.group
+    }
+
+    /// The integer momentum mode per generator.
+    pub fn k_modes(&self) -> &'a [i32] {
+        self.k_modes
     }
 
     /// Canonicalize `q` to its orbit representative `r_q` and return it
@@ -69,10 +88,14 @@ impl<'a> Sector<'a> {
     /// is incompatible with `k`): the coefficient of such a rep is
     /// identically zero, so the term is dropped.
     #[inline]
-    pub fn canonicalize_phase(&self, q: &Word) -> Option<(Word, Complex<f64>, usize)> {
-        let (rep, counter, orbit_size) = self.group.canonicalize_in_sector(q, self.k_modes)?;
-        let phase = self.group.character(self.k_modes, &counter);
-        Some((rep, phase, orbit_size))
+    pub fn canonicalize_phase<const C: usize>(
+        &self,
+        q: &Word<C>,
+    ) -> Option<(Word<C>, Complex<f64>, usize)> {
+        let (rep, idx, orbit_size) = self
+            .group
+            .canonicalize_in_sector_indexed(q, &self.characters)?;
+        Some((rep, self.characters.value(idx), orbit_size))
     }
 
     /// Number of **distinct** members of `w`'s translation orbit, or
@@ -85,9 +108,9 @@ impl<'a> Sector<'a> {
     /// `ĉ_r = |orbit_r| · c_r` (what `momentum_merge_pauli_sum_pair`
     /// uses). It is `|G|` only for free orbits.
     #[inline]
-    pub fn orbit_size(&self, w: &Word) -> Option<usize> {
+    pub fn orbit_size<const C: usize>(&self, w: &Word<C>) -> Option<usize> {
         self.group
-            .canonicalize_in_sector(w, self.k_modes)
+            .canonicalize_in_sector_indexed(w, &self.characters)
             .map(|(_, _, orbit_size)| orbit_size)
     }
 }
@@ -99,7 +122,7 @@ impl<'a> Sector<'a> {
 ///
 /// Does NOT deduplicate — if multiple input entries collapse to the
 /// same rep, both are kept (caller should run a merge afterwards).
-pub fn canonicalize_basis_to_rep(basis: &mut [Word], group: &TranslationGroup) {
+pub fn canonicalize_basis_to_rep<const C: usize>(basis: &mut [Word<C>], group: &TranslationGroup) {
     for w in basis.iter_mut() {
         *w = group.canonicalize(w);
     }

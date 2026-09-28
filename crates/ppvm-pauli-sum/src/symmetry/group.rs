@@ -164,8 +164,9 @@ impl std::error::Error for GroupError {}
 /// permutation action may have a kernel, so distinct group elements can
 /// act identically.
 ///
-/// Only the **generators** are stored; the algorithm in
-/// [`Self::canonicalize`] walks the group via mixed-radix increments.
+/// Only the **generators** are stored; [`Self::canonicalize`] either runs
+/// the `O(N)` least-rotation scan (chain/ladder layouts) or walks the
+/// group as a mixed-radix odometer.
 #[derive(Debug, Clone)]
 pub struct TranslationGroup {
     /// Number of qubits the group acts on.
@@ -177,6 +178,206 @@ pub struct TranslationGroup {
     pub(super) orders: Vec<u32>,
     order: usize,
     phase_modulus: usize,
+    /// Set when the group is a *single* generator acting as a cyclic
+    /// shift inside contiguous, aligned blocks of qubits — i.e. exactly
+    /// the [`Self::chain_1d`] and [`Self::ladder`] layouts. Enables the
+    /// `O(N)` least-rotation canonicalizer (see
+    /// [`Self::canonicalize_block_cyclic`]).
+    pub(super) block_cyclic: Option<BlockCyclic>,
+    /// Per generator, its block-rotation form when it has one (all lattice
+    /// translations do). Enables the masked-shift [`Self::apply_generator`].
+    pub(super) rotations: Vec<Option<BlockRotation>>,
+}
+
+/// Layout of a single-generator group acting as a cyclic shift within
+/// `n_blocks` contiguous, aligned blocks of `len` qubits each: qubit
+/// `b * len + j` maps to `b * len + (j + 1) % len`.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct BlockCyclic {
+    n_blocks: usize,
+    len: usize,
+}
+
+/// A generator that acts as a cyclic shift by `stride` positions within
+/// aligned blocks of `block` qubits: `b·block + p ↦ b·block + (p + stride) mod block`.
+///
+/// Every lattice-translation generator has this form: the fastest axis of a
+/// torus is `stride = 1` with `block = lx`, the next is `stride = lx` with
+/// `block = lx·ly`, and so on. Recognising it lets the whole permutation be
+/// applied as a masked shift of the two bit planes rather than a per-qubit
+/// gather (see [`TranslationGroup::apply_block_rotation`]).
+#[derive(Debug, Clone)]
+pub(super) struct BlockRotation {
+    stride: usize,
+    block: usize,
+    /// Destinations that survive the plain left shift: everything except the
+    /// low `stride` slots of each block (which receive the previous block's
+    /// spill) and everything at or beyond `n_qubits`.
+    keep: Vec<u64>,
+    /// Sources that wrap: the top `stride` slots of each block.
+    high: Vec<u64>,
+}
+
+/// Widest storage the masked-shift path handles, in 64-bit words.
+const MAX_ROT_WORDS: usize = 16;
+
+/// Recognise a generator permutation as a [`BlockRotation`], and precompute
+/// its masks. Returns `None` for permutations that are not block rotations.
+fn detect_block_rotation(n_qubits: usize, perm: &[u32]) -> Option<BlockRotation> {
+    if n_qubits == 0 {
+        return None;
+    }
+    let stride = perm[0] as usize;
+    if stride == 0 {
+        return None;
+    }
+    // Whatever maps to qubit 0 sits `stride` below the top of block 0.
+    let block = perm.iter().position(|&t| t == 0)? + stride;
+    if block > n_qubits || stride >= block || !n_qubits.is_multiple_of(block) {
+        return None;
+    }
+    for b in 0..n_qubits / block {
+        for p in 0..block {
+            if perm[b * block + p] as usize != b * block + (p + stride) % block {
+                return None;
+            }
+        }
+    }
+    let mut keep = vec![0u64; n_qubits.div_ceil(64)];
+    let mut high = keep.clone();
+    for q in 0..n_qubits {
+        let p = q % block;
+        if p >= stride {
+            keep[q / 64] |= 1u64 << (q % 64);
+        }
+        if p >= block - stride {
+            high[q / 64] |= 1u64 << (q % 64);
+        }
+    }
+    Some(BlockRotation {
+        stride,
+        block,
+        keep,
+        high,
+    })
+}
+
+/// `dst = src << s` over a little-endian multiword bit array.
+#[inline]
+fn shl_words(src: &[u64], dst: &mut [u64], s: usize) {
+    let (ws, bs) = (s / 64, s % 64);
+    for i in (0..src.len()).rev() {
+        let lo = if i >= ws { src[i - ws] } else { 0 };
+        dst[i] = if bs == 0 {
+            lo
+        } else {
+            let hi = if i > ws {
+                src[i - ws - 1] >> (64 - bs)
+            } else {
+                0
+            };
+            (lo << bs) | hi
+        };
+    }
+}
+
+/// `dst = src >> s` over a little-endian multiword bit array.
+#[inline]
+fn shr_words(src: &[u64], dst: &mut [u64], s: usize) {
+    let n = src.len();
+    let (ws, bs) = (s / 64, s % 64);
+    for i in 0..n {
+        let hi = if i + ws < n { src[i + ws] } else { 0 };
+        dst[i] = if bs == 0 {
+            hi
+        } else {
+            let lo = if i + ws + 1 < n {
+                src[i + ws + 1] << (64 - bs)
+            } else {
+                0
+            };
+            (hi >> bs) | lo
+        };
+    }
+}
+
+/// Detect the [`BlockCyclic`] layout, if the generators have it.
+fn detect_block_cyclic(n_qubits: usize, perms: &[Vec<u32>], orders: &[u32]) -> Option<BlockCyclic> {
+    if perms.len() != 1 {
+        return None;
+    }
+    let len = orders[0] as usize;
+    if len == 0 || n_qubits == 0 || !n_qubits.is_multiple_of(len) {
+        return None;
+    }
+    let n_blocks = n_qubits / len;
+    let perm = &perms[0];
+    for b in 0..n_blocks {
+        for j in 0..len {
+            if perm[b * len + j] as usize != b * len + (j + 1) % len {
+                return None;
+            }
+        }
+    }
+    Some(BlockCyclic { n_blocks, len })
+}
+
+/// Start index of the lexicographically smallest rotation of an abstract
+/// `m`-symbol cyclic sequence, via the two-pointer (Booth/Duval) scan.
+///
+/// `cmp(a, b)` compares the symbols at positions `a` and `b`. `O(m)`
+/// comparisons, no allocation.
+fn least_rotation<F>(m: usize, cmp: &F) -> usize
+where
+    F: Fn(usize, usize) -> std::cmp::Ordering,
+{
+    let (mut i, mut j, mut k) = (0usize, 1usize, 0usize);
+    while i < m && j < m && k < m {
+        match cmp((i + k) % m, (j + k) % m) {
+            std::cmp::Ordering::Equal => {
+                k += 1;
+                continue;
+            }
+            std::cmp::Ordering::Greater => i += k + 1,
+            std::cmp::Ordering::Less => j += k + 1,
+        }
+        if i == j {
+            j += 1;
+        }
+        k = 0;
+    }
+    i.min(j)
+}
+
+/// Period of the cyclic sequence `t ↦ start + t (mod m)` — the smallest
+/// `p` dividing `m` with `s[t] == s[t + p]` for all `t`.
+///
+/// Computed as the length of the first Lyndon factor (Duval): the minimal
+/// rotation of a sequence is a power `w^{m/|w|}` of a Lyndon word `w`, and
+/// `|w|` is the period. `O(m)` comparisons, no allocation. Callers pass the
+/// `start` returned by [`least_rotation`]; the count of rotations achieving
+/// the minimum is then `m / period`, spaced `period` apart.
+fn minimal_rotation_period<F>(m: usize, start: usize, cmp: &F) -> usize
+where
+    F: Fn(usize, usize) -> std::cmp::Ordering,
+{
+    let at = |t: usize| (start + t) % m;
+    let (mut j, mut k) = (1usize, 0usize);
+    while j < m {
+        match cmp(at(k), at(j)) {
+            std::cmp::Ordering::Less => {
+                k = 0;
+                j += 1;
+            }
+            std::cmp::Ordering::Equal => {
+                k += 1;
+                j += 1;
+            }
+            std::cmp::Ordering::Greater => break,
+        }
+    }
+    let len = j - k;
+    if m.is_multiple_of(len) { len } else { m }
 }
 
 impl TranslationGroup {
@@ -257,12 +458,19 @@ impl TranslationGroup {
         let phase_modulus = orders.iter().fold(1usize, |acc, &value| {
             checked_lcm(acc, value as usize, "character phase modulus")
         });
+        let block_cyclic = detect_block_cyclic(n_qubits, &perms, &orders);
+        let rotations = perms
+            .iter()
+            .map(|p| detect_block_rotation(n_qubits, p))
+            .collect();
         Ok(Self {
             n_qubits,
             perms,
             orders,
             order,
             phase_modulus,
+            block_cyclic,
+            rotations,
         })
     }
 
@@ -420,11 +628,15 @@ impl TranslationGroup {
         self.phase_modulus
     }
 
-    /// Apply a single generator's permutation to a Pauli word, returning
-    /// the resulting word.
+    /// Apply a single generator's permutation to a Pauli word: for each
+    /// qubit `q` of the input, the `(xbit, zbit)` pair is placed at position
+    /// `perm[q]` of the output.
     ///
-    /// For each qubit `q` of the input, the corresponding `(xbit, zbit)`
-    /// pair is placed at position `perm[q]` of the output.
+    /// Does **not** refresh the cached hash. Equality and ordering compare
+    /// the bit planes, so an unhashed word is safe to compare and to keep as
+    /// an intermediate; only words that escape into a hash container need
+    /// `rehash`. The odometer walk applies a generator per group element and
+    /// hashes just the winner.
     pub(super) fn apply_generator<A, S, const R: bool>(
         &self,
         w: &PauliWord<A, S, R>,
@@ -434,6 +646,11 @@ impl TranslationGroup {
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
     {
+        if let Some(rot) = &self.rotations[g]
+            && let Some(out) = Self::apply_block_rotation(w, rot)
+        {
+            return out;
+        }
         let perm = &self.perms[g];
         let mut out: PauliWord<A, S, R> = PauliWord::new(self.n_qubits);
         for (q, &pq) in perm.iter().enumerate().take(self.n_qubits) {
@@ -446,8 +663,93 @@ impl TranslationGroup {
                 out.set_zbit(pq as usize, true);
             }
         }
-        out.rehash();
         out
+    }
+
+    /// Apply a block-rotation generator as a masked shift of both bit
+    /// planes: `out = ((in << stride) & keep) | ((in & high) >> (block − stride))`.
+    ///
+    /// This is the same permutation as the per-qubit gather, in `O(N/64)`
+    /// word operations instead of `O(N)` bit operations. The cached hash is
+    /// *not* refreshed. Returns `None` on big-endian targets (where the byte
+    /// view of the bit planes is not in bit order) or if the storage is wider
+    /// than [`MAX_ROT_WORDS`], leaving the caller on the general path.
+    pub(super) fn apply_block_rotation<A, S, const R: bool>(
+        w: &PauliWord<A, S, R>,
+        rot: &BlockRotation,
+    ) -> Option<PauliWord<A, S, R>>
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+    {
+        if !cfg!(target_endian = "little") || size_of::<A>() > MAX_ROT_WORDS * 8 {
+            return None;
+        }
+        let mut out = *w;
+        for plane in 0..2 {
+            let (src_arr, dst_arr) = if plane == 0 {
+                (&w.xbits.data, &mut out.xbits.data)
+            } else {
+                (&w.zbits.data, &mut out.zbits.data)
+            };
+            let bytes = bytemuck::bytes_of(src_arr);
+            let nw = bytes.len().div_ceil(8);
+            let (mut src, mut shifted, mut wrapped) = (
+                [0u64; MAX_ROT_WORDS],
+                [0u64; MAX_ROT_WORDS],
+                [0u64; MAX_ROT_WORDS],
+            );
+            for (i, chunk) in bytes.chunks(8).enumerate() {
+                let mut b = [0u8; 8];
+                b[..chunk.len()].copy_from_slice(chunk);
+                src[i] = u64::from_le_bytes(b);
+            }
+            shl_words(&src[..nw], &mut shifted[..nw], rot.stride);
+            for (i, s) in src[..nw].iter_mut().enumerate() {
+                *s &= rot.high.get(i).copied().unwrap_or(0);
+            }
+            shr_words(&src[..nw], &mut wrapped[..nw], rot.block - rot.stride);
+            for i in 0..nw {
+                shifted[i] = (shifted[i] & rot.keep.get(i).copied().unwrap_or(0)) | wrapped[i];
+            }
+            let dst = bytemuck::bytes_of_mut(dst_arr);
+            for (i, chunk) in dst.chunks_mut(8).enumerate() {
+                let b = shifted[i].to_le_bytes();
+                let n = chunk.len();
+                chunk.copy_from_slice(&b[..n]);
+            }
+        }
+        Some(out)
+    }
+
+    /// Odometer step: advance `cur` from the group element with
+    /// mixed-radix index `idx - 1` to the one with index `idx`.
+    ///
+    /// Generator `0` is the fastest-varying digit, so it advances on
+    /// every step; digit `g` advances only when all lower digits roll
+    /// over, i.e. when `idx` is a multiple of `orders[0..=g-1]`. Applying
+    /// generator `g` once always moves digit `g` forward *cyclically*
+    /// (the `orders[g]`-th application is the identity), so a roll-over
+    /// is just one more application — no rebuild from the identity.
+    ///
+    /// Cost: `O(1)` generator applications amortised, hence `O(|G| × N)`
+    /// for a full walk. Leaves the cached hash of `cur` stale.
+    #[inline]
+    fn advance<A, S, const R: bool>(&self, cur: &mut PauliWord<A, S, R>, idx: usize)
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+    {
+        let mut p = 1usize;
+        for (g, &o) in self.orders.iter().enumerate() {
+            if o > 1 {
+                *cur = self.apply_generator(cur, g);
+            }
+            p *= o as usize;
+            if !idx.is_multiple_of(p) {
+                break;
+            }
+        }
     }
 
     pub(super) fn orbit_with_counters<'a, A, S, const R: bool>(
@@ -472,25 +774,17 @@ impl TranslationGroup {
     }
 
     /// Lex-min canonical representative of `w`'s translation orbit
-    /// under this group. Walks the full group via mixed-radix counters,
-    /// keeping the smallest word seen.
+    /// under this group.
     ///
-    /// Total cost: `O(|G| × n_qubits)` per call.
+    /// For chain/ladder layouts this is `O(N)` via the least-rotation
+    /// canonicalizer ([`Self::canonicalize_block_cyclic`]); otherwise it
+    /// walks the full group as a mixed-radix odometer, `O(|G| × N)`.
     pub fn canonicalize<A, S, const R: bool>(&self, w: &PauliWord<A, S, R>) -> PauliWord<A, S, R>
     where
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
     {
-        let mut traversal = self.orbit_with_counters(w);
-        let (mut best, _) = traversal
-            .next()
-            .expect("a finite group contains the identity");
-        for (candidate, _) in traversal {
-            if candidate < best {
-                best = candidate;
-            }
-        }
-        best
+        self.canonicalize_with_index(w).0
     }
 
     /// Lex-min canonical representative `r` of `w` together with the
@@ -505,7 +799,10 @@ impl TranslationGroup {
     /// combined action has a kernel). The counter is used to compute
     /// momentum phases by the phase-aware merge routines.
     ///
-    /// Same `O(|G| × n_qubits)` cost as `canonicalize`.
+    /// Same cost as [`Self::canonicalize`], plus the counter `Vec`. Hot
+    /// paths should prefer [`Self::canonicalize_with_index`], which is
+    /// allocation-free and indexes a precomputed
+    /// [`Self::character_table`](crate::symmetry::TranslationGroup::character_table).
     pub fn canonicalize_with_shift<A, S, const R: bool>(
         &self,
         w: &PauliWord<A, S, R>,
@@ -514,22 +811,260 @@ impl TranslationGroup {
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
     {
-        let mut traversal = self.orbit_with_counters(w);
-        let (mut best, mut counter_from_word) = traversal
-            .next()
-            .expect("a finite group contains the identity");
-        for (candidate, counter) in traversal {
-            if candidate < best {
-                best = candidate;
-                counter_from_word = counter;
+        let (rep, idx) = self.canonicalize_with_index(w);
+        (rep, self.counter_from_index(idx))
+    }
+
+    /// Lex-min canonical representative `r` of `w` together with the
+    /// **mixed-radix index** (generator `0` fastest) of the group element
+    /// `g` such that `g·r = w` — i.e. the index of the counter returned by
+    /// [`Self::canonicalize_with_shift`].
+    ///
+    /// The index is directly usable as a subscript into a
+    /// [`CharacterTable`](crate::symmetry::CharacterTable), which is how the
+    /// phase-aware evolution gets `χ_k(g)` without decoding a counter or
+    /// calling `sin`/`cos` per term.
+    ///
+    /// Cost: `O(N)` for chain/ladder layouts, else `O(|G| × N)`.
+    /// Allocation-free apart from the returned word.
+    pub fn canonicalize_with_index<A, S, const R: bool>(
+        &self,
+        w: &PauliWord<A, S, R>,
+    ) -> (PauliWord<A, S, R>, usize)
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+    {
+        assert_eq!(
+            w.n_qubits(),
+            self.n_qubits,
+            "word and group must agree on n_qubits"
+        );
+        match self.block_cyclic {
+            Some(bc) => {
+                let (rep, r, _) = self.canonicalize_block_cyclic(w, bc);
+                (rep, r)
+            }
+            None => {
+                let (rep, idx, _) = self.canonicalize_odometer(w, |_| true);
+                (rep, idx)
             }
         }
-        let counter_to_word = counter_from_word
-            .iter()
-            .zip(self.orders.iter())
-            .map(|(&counter, &order)| (order - counter) % order)
-            .collect();
-        (best, counter_to_word)
+    }
+
+    /// Canonical rep, the index of the group element mapping it back to `w`,
+    /// and the **stabilizer** of `w` checked against `trivial`: returns
+    /// `None` as soon as a stabilizer element `s` (`s·w = w`) with
+    /// `!trivial(index(s))` is found, else `Some((rep, index, |stabilizer|))`.
+    ///
+    /// One traversal gives everything the momentum-sector routines need.
+    /// `trivial` is only consulted on stabilizer elements, which are rare
+    /// (none but the identity for a free orbit).
+    pub(super) fn canonicalize_with_stabilizer<A, S, const R: bool, F>(
+        &self,
+        w: &PauliWord<A, S, R>,
+        trivial: F,
+    ) -> Option<(PauliWord<A, S, R>, usize, usize)>
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+        F: Fn(usize) -> bool,
+    {
+        assert_eq!(
+            w.n_qubits(),
+            self.n_qubits,
+            "word and group must agree on n_qubits"
+        );
+        match self.block_cyclic {
+            Some(bc) => {
+                let (rep, r, step) = self.canonicalize_block_cyclic(w, bc);
+                // The stabilizer of a single-generator group is the cyclic
+                // subgroup generated by `g^step`; its characters are all
+                // trivial iff that generator's is.
+                if step < bc.len && !trivial(step) {
+                    return None;
+                }
+                Some((rep, r, bc.len / step))
+            }
+            None => {
+                let (rep, idx, stabilizer) = self.canonicalize_odometer(w, trivial);
+                (stabilizer != 0).then_some((rep, idx, stabilizer))
+            }
+        }
+    }
+
+    /// Reference canonicalizer: walk the whole group as a mixed-radix
+    /// odometer (see [`Self::advance`]), keeping the first smallest word
+    /// seen. Returns the rep, the index of the group element mapping it
+    /// back to `w`, and the stabilizer size — or `0` for the latter if a
+    /// stabilizer element fails `trivial` (the walk stops there).
+    ///
+    /// `O(|G| × N)`; used for groups without a [`BlockCyclic`] layout, and
+    /// as the test oracle for the fast path.
+    pub(super) fn canonicalize_odometer<A, S, const R: bool, F>(
+        &self,
+        w: &PauliWord<A, S, R>,
+        trivial: F,
+    ) -> (PauliWord<A, S, R>, usize, usize)
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+        F: Fn(usize) -> bool,
+    {
+        let mut best = *w;
+        let mut best_idx = 0usize;
+        let mut stabilizer = 1usize;
+        let mut cur = *w;
+        for idx in 1..self.order {
+            self.advance(&mut cur, idx);
+            if cur == *w {
+                if !trivial(idx) {
+                    return (best, 0, 0);
+                }
+                stabilizer += 1;
+            }
+            if cur < best {
+                best = cur;
+                best_idx = idx;
+            }
+        }
+        // `advance` leaves the cached hash stale; the winner escapes to the
+        // caller (and into hash containers), so refresh it here.
+        best.rehash();
+        // The walk found `best = g·w` at index `best_idx`, so `w = g⁻¹·best`
+        // and the element we must report is the inverse.
+        (best, self.invert_index(best_idx), stabilizer)
+    }
+
+    /// `O(N)` canonicalizer for single-generator cyclic-block groups
+    /// (chain, ladder): returns the same rep as the odometer walk — the
+    /// `Ord`-lex-min of the orbit — the index `r` of the group element
+    /// with `g^r · rep = w` (the odometer's choice), and the smallest
+    /// `step > 0` with `g^step · w = w` (`step == len` for a free orbit).
+    ///
+    /// ## Why this is not one Booth call
+    ///
+    /// `PauliWord`'s `Ord` compares the whole x-bit plane in qubit order,
+    /// *then* the whole z-bit plane. Under a shift by `r`, the comparison
+    /// key is therefore the concatenation
+    /// `rot_r(x_block0) ‖ … ‖ rot_r(z_block0) ‖ …` — `2 · n_blocks` strings
+    /// rotated *together*, not one rotated string, so lex-min over rotations
+    /// is not a single least-rotation problem. (Running Booth on an
+    /// interleaved per-site symbol would be one call, but it minimises a
+    /// different order and so would silently change which orbit member is
+    /// canonical.)
+    ///
+    /// Instead we refine the candidate rotation set plane by plane. After
+    /// each plane the surviving rotations form a residue class
+    /// `{start + i·step}` of size `m = L / step`, because the rotations
+    /// achieving a minimum are exactly those spaced by the *period* of that
+    /// minimal rotation. Plane `p + 1` then compares its own string only at
+    /// those rotations — which is again a least-rotation problem, over `m`
+    /// super-symbols of `step` bits each. Every plane costs `O(L)` symbol
+    /// comparisons of `O(step)` bits = `O(L)`, so the whole call is
+    /// `O(n_blocks · L) = O(N)`, allocation-free apart from the output word.
+    /// The final survivors are one coset of the stabilizer, so `step` is
+    /// its generator.
+    pub(super) fn canonicalize_block_cyclic<A, S, const R: bool>(
+        &self,
+        w: &PauliWord<A, S, R>,
+        bc: BlockCyclic,
+    ) -> (PauliWord<A, S, R>, usize, usize)
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+    {
+        let l = bc.len;
+        // Surviving rotations: { (start + i·step) mod l : i < m }, with
+        // step · m == l throughout, and `start < step` (the smallest one).
+        let (mut start, mut step, mut m) = (0usize, 1usize, l);
+        for plane in 0..2 * bc.n_blocks {
+            if m == 1 {
+                break;
+            }
+            let is_x = plane < bc.n_blocks;
+            let base = (if is_x { plane } else { plane - bc.n_blocks }) * l;
+            // Symbol `j` is the run of `step` bits of this plane starting at
+            // rotation offset `start + j·step`.
+            let bit = |j: usize, t: usize| -> bool {
+                let pos = base + (start + j * step + t) % l;
+                if is_x {
+                    w.get_xbit(pos)
+                } else {
+                    w.get_zbit(pos)
+                }
+            };
+            let cmp = |a: usize, b: usize| -> std::cmp::Ordering {
+                for t in 0..step {
+                    let (x, y) = (bit(a, t), bit(b, t));
+                    if x != y {
+                        // `false < true`, matching bit-slice lex order.
+                        return x.cmp(&y);
+                    }
+                }
+                std::cmp::Ordering::Equal
+            };
+            let j0 = least_rotation(m, &cmp);
+            let period = minimal_rotation_period(m, j0, &cmp);
+            start = (start + j0 * step) % l;
+            step *= period;
+            m /= period;
+            start %= step; // smallest member of the surviving residue class
+        }
+        // Tie-break exactly as the odometer does: it keeps the *first*
+        // minimal word it meets, i.e. the smallest number of generator
+        // applications `idx = (l − r) mod l`. That is `r = 0` when `r = 0`
+        // survives, and otherwise the largest surviving `r`.
+        let r = if start == 0 {
+            0
+        } else {
+            start + (m - 1) * step
+        };
+        // rep = g^{−r}·w, i.e. rep[base + j] = w[base + (j + r) mod l].
+        let mut rep: PauliWord<A, S, R> = PauliWord::new(self.n_qubits);
+        for b in 0..bc.n_blocks {
+            let base = b * l;
+            for j in 0..l {
+                let src = base + (j + r) % l;
+                if w.get_xbit(src) {
+                    rep.set_xbit(base + j, true);
+                }
+                if w.get_zbit(src) {
+                    rep.set_zbit(base + j, true);
+                }
+            }
+        }
+        rep.rehash();
+        (rep, r, step)
+    }
+
+    /// Decode a group-element index (mixed-radix, generator `0` fastest)
+    /// into its per-generator counter.
+    pub fn counter_from_index(&self, idx: usize) -> Vec<u32> {
+        let mut rem = idx;
+        let mut counter: Vec<u32> = Vec::with_capacity(self.orders.len());
+        for &o in &self.orders {
+            counter.push((rem % o as usize) as u32);
+            rem /= o as usize;
+        }
+        counter
+    }
+
+    /// Index of the inverse of the group element with index `idx`. In an
+    /// abelian product of cyclic groups that is `(orders[g] − c[g]) mod
+    /// orders[g]` componentwise.
+    pub(super) fn invert_index(&self, idx: usize) -> usize {
+        let mut rem = idx;
+        let mut out = 0usize;
+        let mut stride = 1usize;
+        for &o in &self.orders {
+            let o = o as usize;
+            let c = rem % o;
+            rem /= o;
+            out += ((o - c) % o) * stride;
+            stride *= o;
+        }
+        out
     }
 
     /// Iterate over all abstract group elements applied to `w`. Yields
@@ -571,7 +1106,11 @@ where
         if self.remaining == 0 {
             return None;
         }
-        let item = (self.current, self.counter.clone());
+        // `apply_generator` skips hashing; yielded words may become hash
+        // keys, so hash each one on the way out.
+        let mut word = self.current;
+        word.rehash();
+        let item = (word, self.counter.clone());
         self.remaining -= 1;
         if self.remaining == 0 {
             return Some(item);

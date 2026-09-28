@@ -13,7 +13,7 @@
 //! Usage: `cargo run --release --example drug_profile -- [N] [B] [STEPS]`
 
 use num::Complex;
-use ppvm_lindblad::{LindbladSpec, PcStepConfig, Word, parse_pauli_string};
+use ppvm_lindblad::{LindbladSpec, PcStepConfig, W_CHUNKS, Word, parse_pauli_string};
 use std::time::Instant;
 
 const N_M: usize = 5;
@@ -147,7 +147,11 @@ fn observable(n: usize) -> (Vec<Word>, Vec<f64>) {
     let mut basis = Vec::new();
     let mut coeffs = Vec::new();
     for a in 0..n {
-        basis.push(parse_pauli_string(&pstr(n, &[(a, 'X')]), n).unwrap().0);
+        basis.push(
+            parse_pauli_string::<W_CHUNKS>(&pstr(n, &[(a, 'X')]), n)
+                .unwrap()
+                .0,
+        );
         coeffs.push(1.0);
     }
     (basis, coeffs)
@@ -161,7 +165,7 @@ fn main() {
     let dt = 1e-3;
 
     let (h, (ops, k)) = model(n);
-    let mut spec = LindbladSpec::new(n, &h, &[]).unwrap();
+    let mut spec = <LindbladSpec>::new(n, &h, &[]).unwrap();
     let t0 = Instant::now();
     spec.add_kossakowski(&ops, &k).unwrap();
     let build_ms = t0.elapsed().as_secs_f64() * 1e3;

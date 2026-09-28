@@ -28,8 +28,11 @@
 //!   FP noise).
 //!
 //! Pauli strings are stored as [`ppvm_pauli_word::word::PauliWord`] backed by
-//! two 64-bit chunks (≤128 qubits; four 32-bit chunks on 32-bit targets)
-//! with cached hashes for fast HashMap lookup. The hot-path commutator/
+//! a fixed array of `C` chunks (64-bit, or 32-bit on 32-bit targets) with
+//! cached hashes for fast HashMap lookup. The crate is const-generic in `C`
+//! ([`Word`], [`LindbladSpec`]); the default is the 128-qubit width,
+//! and [`chunks_for`] picks the narrowest of the 128/256/512-qubit widths
+//! for a register. The hot-path commutator/
 //! product loops bypass the higher-level word API and operate directly on
 //! the raw chunks for speed.
 
@@ -55,7 +58,10 @@ pub use error::Error;
 pub use sector::{Sector, canonicalize_basis_to_rep};
 pub use spec::{JumpInput, LindbladSpec};
 pub use step::PcStepTimings;
-pub use word::{MAX_QUBITS, Word, codes_from_word, parse_pauli_string, word_from_codes};
+pub use word::{
+    CHUNK_BITS, MAX_QUBITS, MAX_SUPPORTED_QUBITS, W_CHUNKS, WIDTHS, Word, chunks_for,
+    codes_from_word, max_qubits, parse_pauli_string, word_from_codes,
+};
 
 #[cfg(test)]
 mod tests;

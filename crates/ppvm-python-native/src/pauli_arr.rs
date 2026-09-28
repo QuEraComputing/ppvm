@@ -15,11 +15,42 @@ use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::lindblad::map_err;
 
+/// Run `$body` with `$C` bound to the narrowest Pauli-word chunk count
+/// that holds `$n` qubits (see [`ppvm_lindblad::chunks_for`]); a
+/// `ValueError` above [`ppvm_lindblad::MAX_SUPPORTED_QUBITS`].
+///
+/// Mirrors the width `LindbladSpec` picks, so `n <= 128` keeps the
+/// original 128-qubit word layout.
+macro_rules! with_width {
+    ($n:expr, $C:ident => $body:expr) => {{
+        let n: usize = $n;
+        match ppvm_lindblad::chunks_for(n) {
+            Some(c) if c == ppvm_lindblad::WIDTHS[0] => {
+                const $C: usize = ppvm_lindblad::WIDTHS[0];
+                $body
+            }
+            Some(c) if c == ppvm_lindblad::WIDTHS[1] => {
+                const $C: usize = ppvm_lindblad::WIDTHS[1];
+                $body
+            }
+            Some(_) => {
+                const $C: usize = ppvm_lindblad::WIDTHS[2];
+                $body
+            }
+            None => Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Pauli words support n_qubits ≤ {}; got {n}",
+                ppvm_lindblad::MAX_SUPPORTED_QUBITS
+            ))),
+        }
+    }};
+}
+pub(crate) use with_width;
+
 /// Decode a `(N, n_qubits)` uint8 ndarray view into `N` packed [`Word`]s.
-pub(crate) fn decode_basis(
+pub(crate) fn decode_basis<const C: usize>(
     view: &numpy::ndarray::ArrayView2<u8>,
     n_qubits: usize,
-) -> PyResult<Vec<Word>> {
+) -> PyResult<Vec<Word<C>>> {
     let n_basis = view.shape()[0];
     let n_cols = view.shape()[1];
     if n_cols != n_qubits {
@@ -40,9 +71,9 @@ pub(crate) fn decode_basis(
 }
 
 /// Encode packed [`Word`]s back into an `(M, n_qubits)` uint8 array.
-pub(crate) fn encode_basis<'py>(
+pub(crate) fn encode_basis<'py, const C: usize>(
     py: Python<'py>,
-    words: &[Word],
+    words: &[Word<C>],
     n_qubits: usize,
 ) -> PyResult<Bound<'py, PyArray2<u8>>> {
     let m = words.len();

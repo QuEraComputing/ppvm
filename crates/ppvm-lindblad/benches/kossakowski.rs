@@ -15,7 +15,7 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use num::Complex;
-use ppvm_lindblad::{JumpInput, LindbladSpec, PcStepConfig, Word, parse_pauli_string};
+use ppvm_lindblad::{JumpInput, LindbladSpec, PcStepConfig, W_CHUNKS, Word, parse_pauli_string};
 use std::f64::consts::PI;
 use std::hint::black_box;
 
@@ -112,7 +112,7 @@ fn observable(n: usize, gam: &[Vec<f64>]) -> (Vec<Word>, Vec<f64>) {
     let mut basis = Vec::new();
     let mut coeffs = Vec::new();
     let mut push = |s: String, c: f64| {
-        basis.push(parse_pauli_string(&s, n).unwrap().0);
+        basis.push(parse_pauli_string::<W_CHUNKS>(&s, n).unwrap().0);
         coeffs.push(c);
     };
     push(pstr(n, &[]), n as f64 * G0 / 2.0);
@@ -133,8 +133,8 @@ fn bench_kossakowski(c: &mut Criterion) {
         let (j, gam) = chain_couplings(n);
         let h = hamiltonian_terms(n, &j);
 
-        let spec_eig = LindbladSpec::new(n, &h, &eigenmode_jumps(n, &gam)).unwrap();
-        let mut spec_koss = LindbladSpec::new(n, &h, &[]).unwrap();
+        let spec_eig = <LindbladSpec>::new(n, &h, &eigenmode_jumps(n, &gam)).unwrap();
+        let mut spec_koss = <LindbladSpec>::new(n, &h, &[]).unwrap();
         let ops: Vec<_> = (0..n).map(|q| sigma_minus(q, n)).collect();
         let k: Vec<Vec<Complex<f64>>> = gam
             .iter()

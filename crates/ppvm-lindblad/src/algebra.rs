@@ -22,8 +22,8 @@ pub(crate) const COEFF_DROP_TOL: f64 = 1e-14;
 /// One Pauli term in a complex linear combination (a single summand of
 /// `L = Σ_a λ_a P_a`, or of a precomputed product such as `L†L`).
 #[derive(Clone)]
-pub(crate) struct PauliTerm {
-    pub(crate) word: Word,
+pub(crate) struct PauliTerm<const C: usize = W_CHUNKS> {
+    pub(crate) word: Word<C>,
     pub(crate) coeff: Complex<f64>,
 }
 
@@ -31,9 +31,12 @@ pub(crate) struct PauliTerm {
 /// as a Pauli linear combination, dropping FP-noise zeros. For `A = B`
 /// (the jump-operator `L†L`) the coefficients are real; in general they
 /// are complex.
-pub(crate) fn precompute_adag_b(a_terms: &[PauliTerm], b_terms: &[PauliTerm]) -> Vec<PauliTerm> {
+pub(crate) fn precompute_adag_b<const C: usize>(
+    a_terms: &[PauliTerm<C>],
+    b_terms: &[PauliTerm<C>],
+) -> Vec<PauliTerm<C>> {
     let zero = Complex::new(0.0, 0.0);
-    let mut acc: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
+    let mut acc: FxHashMap<Word<C>, Complex<f64>> = FxHashMap::default();
     for a in a_terms {
         for b in b_terms {
             let (word, phase) = pauli_mul(&a.word, &b.word);
@@ -48,8 +51,8 @@ pub(crate) fn precompute_adag_b(a_terms: &[PauliTerm], b_terms: &[PauliTerm]) ->
 }
 
 /// Union of the supports (`xbits | zbits`) of every term, as raw chunks.
-pub(crate) fn support_mask(terms: &[PauliTerm]) -> [Chunk; W_CHUNKS] {
-    let mut mask = [0 as Chunk; W_CHUNKS];
+pub(crate) fn support_mask<const C: usize>(terms: &[PauliTerm<C>]) -> [Chunk; C] {
+    let mut mask = [0 as Chunk; C];
     for t in terms {
         for (i, slot) in mask.iter_mut().enumerate() {
             *slot |= t.word.xbits.data[i] | t.word.zbits.data[i];
@@ -73,9 +76,9 @@ pub(crate) fn phase_factor(phase: u8) -> Complex<f64> {
 /// Two Pauli strings anti-commute iff
 /// `popcount(a.x & b.z) + popcount(a.z & b.x)` is odd.
 #[inline(always)]
-pub(crate) fn anti_commutes(a: &Word, b: &Word) -> bool {
+pub(crate) fn anti_commutes<const C: usize>(a: &Word<C>, b: &Word<C>) -> bool {
     let mut bits: u32 = 0;
-    for i in 0..W_CHUNKS {
+    for i in 0..C {
         bits += (a.xbits.data[i] & b.zbits.data[i]).count_ones();
         bits += (a.zbits.data[i] & b.xbits.data[i]).count_ones();
     }
@@ -88,7 +91,7 @@ pub(crate) fn anti_commutes(a: &Word, b: &Word) -> bool {
 /// - `eps = -2.0` if `h·p` has phase `+i` (so `i·[h,p] = -2·out`),
 /// - `eps = +2.0` if `h·p` has phase `-i` (so `i·[h,p] = +2·out`).
 #[inline(always)]
-pub(crate) fn comm_product(h: &Word, p: &Word) -> (Word, f64) {
+pub(crate) fn comm_product<const C: usize>(h: &Word<C>, p: &Word<C>) -> (Word<C>, f64) {
     let (out, phase) = pauli_mul(h, p);
     let eps = match phase {
         1 => -2.0,
@@ -101,11 +104,11 @@ pub(crate) fn comm_product(h: &Word, p: &Word) -> (Word, f64) {
 /// Full Pauli product `p · q`: returns `(out, phase)` where the product
 /// is `ω · out` with `ω = i^phase`.
 #[inline(always)]
-pub(crate) fn pauli_mul(p: &Word, q: &Word) -> (Word, u8) {
-    let mut out = Word::new(p.n_qubits());
+pub(crate) fn pauli_mul<const C: usize>(p: &Word<C>, q: &Word<C>) -> (Word<C>, u8) {
+    let mut out = Word::<C>::new(p.n_qubits());
     let mut sign_count: u32 = 0;
     let mut imag_count: u32 = 0;
-    for i in 0..W_CHUNKS {
+    for i in 0..C {
         let a = p.xbits.data[i];
         let b = p.zbits.data[i];
         let c = q.xbits.data[i];

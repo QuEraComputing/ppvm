@@ -386,6 +386,60 @@ class PauliSum(
         """
         return self._interface.trace(pattern)
 
+    def symmetry_merge(self, group: _core.TranslationGroup) -> None:
+        """Merge entries into orbit-representative form under a translation group.
+
+        Each Pauli word in the sum is replaced by its canonical (lex-min)
+        representative under the action of ``group``; coefficients of words
+        that collapse to the same representative are summed. Entry count
+        reduces by up to ``|group|×`` for translation-invariant operators.
+
+        For a translation-invariant dynamics that you apply between
+        merging steps, this preserves all ``group``-invariant expectation
+        values (Theorem 1 of Teng et al., arXiv:2512.12094). Plain
+        real-coefficient merge — handles the trivial (``k=0``) momentum
+        sector only.
+
+        Args:
+            group: A `ppvm.TranslationGroup`
+                (use ``TranslationGroup.chain_1d(n)``, ``.torus_2d``,
+                ``.torus_3d``, ``.ladder``, or ``.from_generators``).
+        """
+        self._interface.symmetry_merge(group)
+
+    def momentum_merge(
+        self,
+        other: "PauliSum",
+        group: _core.TranslationGroup,
+        momentum: Sequence[int],
+    ) -> None:
+        """Phase-aware (momentum-sector) merge for a complex operator stored
+        as a *real pair*: ``self`` is the real part and ``other`` the
+        imaginary part of ``O = self + i·other``. Both are overwritten in
+        place with the orbit-representative form projected onto momentum
+        sector ``momentum``.
+
+        Generalizes `symmetry_merge` to non-trivial momentum sectors
+        (``k != 0``) while keeping real coefficients on both PauliSums — the
+        only complex arithmetic is the internal character-weighted fold. Like
+        `symmetry_merge` it is the *summing* projector
+        ``Σ_{p in orbit} χ_k(g_p)·c_p``, hence idempotent on every orbit and
+        safe to apply after each Trotter step; at ``momentum=[0, ...]`` it
+        reduces exactly to `symmetry_merge`.
+
+        ``self`` and ``other`` must be distinct objects with the same qubit
+        count. Exact after a translation-covariant gate layer; under a
+        generic Trotter step it carries the same ``O(dt^{p+1})`` equivariance
+        error as the ``k=0`` merge.
+
+        Args:
+            other: the PauliSum holding the imaginary component (modified in place).
+            group: a `ppvm.TranslationGroup`.
+            momentum: sequence of integer modes, one per group generator
+                (e.g. ``[k]`` for a 1D chain; ``[0, ...]`` is the trivial sector).
+        """
+        self._interface.momentum_merge(other._interface, group, list(momentum))
+
     def amplitude_damping(self, addr0: int, gamma: float, *, truncate: bool = True):
         """Apply an amplitude-damping channel.
 
@@ -497,3 +551,33 @@ class LossyPauliSum(PauliSum):
                 strategy after the channel; if ``False``, defer it.
         """
         self._interface.reset_loss_channel(addr0, truncate=truncate)
+
+    def symmetry_merge(self, group: _core.TranslationGroup) -> None:
+        """Not available on `LossyPauliSum`.
+
+        Raises:
+            NotImplementedError: always. Canonicalizing a lossy Pauli word
+                would have to permute the loss bitmap along with the Pauli
+                alphabet, which the Rust core does not implement.
+        """
+        raise NotImplementedError(
+            "symmetry_merge is not implemented for LossyPauliSum: canonicalizing a "
+            "lossy Pauli word would have to permute the loss bitmap too"
+        )
+
+    def momentum_merge(
+        self,
+        other: "PauliSum",
+        group: _core.TranslationGroup,
+        momentum: Sequence[int],
+    ) -> None:
+        """Not available on `LossyPauliSum`.
+
+        Raises:
+            NotImplementedError: always, for the same reason as
+                `symmetry_merge`.
+        """
+        raise NotImplementedError(
+            "momentum_merge is not implemented for LossyPauliSum: canonicalizing a "
+            "lossy Pauli word would have to permute the loss bitmap too"
+        )

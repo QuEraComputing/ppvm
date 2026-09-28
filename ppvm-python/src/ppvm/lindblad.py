@@ -9,7 +9,8 @@ strings) with rates γ_k ≥ 0, this module exposes the primitives for
 adaptive Heisenberg-picture evolution:
 
 - ``pc_step(...)`` / ``pc_step_arr(...)``: one adaptive predictor-corrector
-  step ``O ← exp(dt·L*) O``
+  step ``O ← exp(dt·L*) O``; ``pc_step_orbit_rep(...)`` is the
+  translation-symmetric (momentum-sector) variant
 - ``action(p)`` / ``action_arr(p)``: L*(p) for one Pauli string p
 - ``leakage(basis, coeffs)`` / ``leakage_arr(...)``: off-basis component of
   L*(Σ c_j p_j), driving basis expansion
@@ -41,7 +42,9 @@ from collections.abc import Iterable, Sequence
 from typing import Union
 
 import numpy as np
+import numpy.typing as npt
 
+from . import _core
 from ._core import LindbladSpec as _LindbladSpec
 
 _PAULI_CODE = {"I": 0, "X": 1, "Z": 2, "Y": 3}
@@ -140,7 +143,10 @@ class Lindbladian:
     Parameters
     ----------
     n_qubits:
-        Number of qubits.
+        Number of qubits, at most 512. The Pauli word width is chosen
+        automatically: up to 128 qubits uses the original 128-bit layout,
+        then 256- and 512-bit words. Narrow problems are unaffected by the
+        wider layouts being available.
     h_terms:
         Iterable of ``(pauli_string, coefficient)`` pairs for the
         Hermitian Hamiltonian ``H = Σ c_i P_i``. Each ``pauli_string`` is
@@ -153,6 +159,21 @@ class Lindbladian:
         Pauli linear combination such as `sigma_plus` or
         `sigma_minus`. ``rate`` is the non-negative GKSL rate
         ``γ_k``.
+    kossakowski:
+        Optional ``(ops, K)`` pair adding a Kossakowski-form dissipator
+        ``D*(O) = Σ_nm K_nm (A_n† O A_m − ½{A_n†A_m, O})``. ``ops`` is a
+        length-``M`` sequence of Pauli lincombs (same format as a
+        ``jump_op``, e.g. ``[sigma_minus(j, n) for j in range(n)]``);
+        ``K`` is an ``(M, M)`` Hermitian positive-semidefinite array
+        (e.g. the collective-decay pair matrix ``Γ_nm``). Mathematically
+        identical to passing the eigenmode jumps
+        ``L_ν = √γ_ν Σ_j V*_jν A_j`` of ``K = V diag(γ) V†``, but the
+        per-string action cost scales with the number of nonzero
+        ``K_nm`` entries instead of carrying an extra factor of ``M``.
+        May coexist with ``jump_terms`` (both contribute). Raises
+        ``ValueError`` if ``K`` is not Hermitian or has an eigenvalue
+        below ``−tol·‖K‖`` (a non-PSD ``K`` is not a valid GKSL
+        generator; no silent clipping).
 
     Examples
     --------
@@ -164,13 +185,23 @@ class Lindbladian:
 
     >>> jumps = [(sigma_minus(0, 2), 0.5)]
     >>> Lindbladian(2, [("XX", 1.0)], jumps)
+
+    Collective decay from a pair matrix:
+
+    >>> ops = [sigma_minus(j, 2) for j in range(2)]
+    >>> gamma = [[1.0, 0.6], [0.6, 1.0]]
+    >>> Lindbladian(2, [("XX", 1.0)], kossakowski=(ops, gamma))
     """
+
+    #: Relative tolerance for the Hermiticity and PSD checks on ``K``.
+    _K_TOL = 1e-10
 
     def __init__(
         self,
         n_qubits: int,
         h_terms: Iterable[tuple[str, float]],
         jump_terms: Iterable[tuple[str | PauliLincomb, float]] = (),
+        kossakowski: tuple[Sequence[str | PauliLincomb], npt.ArrayLike] | None = None,
     ):
         self.n_qubits = int(n_qubits)
         h_strs: list[str] = []
@@ -183,7 +214,42 @@ class Lindbladian:
         for jump_op, rate in jump_terms:
             j_lincombs.append(_normalize_jump(jump_op))
             j_rates.append(float(rate))
-        self._spec = _LindbladSpec(self.n_qubits, h_strs, h_coeffs, j_lincombs, j_rates)
+        k_ops, k_mat = self._normalize_kossakowski(kossakowski)
+        self._spec = _LindbladSpec(
+            self.n_qubits, h_strs, h_coeffs, j_lincombs, j_rates, k_ops, k_mat
+        )
+
+    @classmethod
+    def _normalize_kossakowski(
+        cls, kossakowski: tuple[Sequence[str | PauliLincomb], npt.ArrayLike] | None
+    ) -> tuple[list[list[tuple[str, float, float]]], list[list[tuple[float, float]]]]:
+        """Validate and flatten the ``(ops, K)`` pair for the native constructor.
+
+        The core rejects a non-Hermitian ``K`` too, but the check is repeated
+        here because ``eigvalsh`` reads only one triangle: without it a
+        non-Hermitian ``K`` would pass the PSD test on its symmetric part.
+        """
+        if kossakowski is None:
+            return [], []
+        ops, k = kossakowski
+        k_ops = [_normalize_jump(op) for op in ops]
+        k_arr = np.asarray(k, dtype=np.complex128)
+        if k_arr.shape != (len(k_ops), len(k_ops)):
+            raise ValueError(
+                f"kossakowski K has shape {k_arr.shape} but ops has length {len(k_ops)}"
+            )
+        scale = max(float(np.abs(k_arr).max(initial=0.0)), 1.0)
+        if float(np.abs(k_arr - k_arr.conj().T).max(initial=0.0)) > cls._K_TOL * scale:
+            raise ValueError("kossakowski K is not Hermitian")
+        evals = np.linalg.eigvalsh(k_arr)
+        if float(evals.min(initial=0.0)) < -cls._K_TOL * scale:
+            raise ValueError(
+                f"kossakowski K is not positive semidefinite "
+                f"(min eigenvalue {evals.min():.3e}); a non-PSD pair matrix "
+                f"is not a valid GKSL generator"
+            )
+        k_mat = [[(float(v.real), float(v.imag)) for v in row] for row in k_arr]
+        return k_ops, k_mat
 
     @property
     def num_h_terms(self) -> int:
@@ -288,6 +354,76 @@ class Lindbladian:
             None if num_threads is None else int(num_threads),
             None if admit_basis is None else int(admit_basis),
             None if tau_add is None else float(tau_add),
+        )
+
+    def pc_step_orbit_rep(
+        self,
+        basis_arr: np.ndarray,
+        coeffs: np.ndarray,
+        dt: float,
+        max_basis: int,
+        group: _core.TranslationGroup,
+        momentum: npt.ArrayLike,
+        drop_tol: float = 1e-12,
+        protected_arr: np.ndarray | None = None,
+        canonicalize_first: bool = False,
+        admit_basis: int | None = None,
+        tau_add: float | None = None,
+        num_threads: int | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Per-step orbit-representative pc evolution.
+
+        State lives entirely in orbit-rep form throughout: ``basis_arr``
+        contains only canonical translation-orbit representatives,
+        ``coeffs`` are complex, and the action is phase-aware. The basis
+        is ~``|group|×`` smaller than the equivalent full-basis complex
+        evolution, and the reduction persists across every step.
+
+        Coefficients use the same convention as
+        `ppvm.canonicalize_basis_arr_complex`: ``coeffs[i]`` is the plain
+        coefficient of the representative Pauli word itself (the
+        orbit-*averaged* convention, not the summing one
+        `PauliSum.momentum_merge` uses). Reps whose orbit cannot carry
+        ``momentum`` — its stabilizer has a non-trivial character — are
+        dropped, matching that projection.
+
+        Truncation. ``max_basis`` is a hard rank cap on the live orbit-rep
+        basis: enrichment adds at most ``max_basis - len(basis)`` of the
+        largest leakage reps, and the post-step basis is trimmed to the
+        top-``max_basis`` reps by ``|c|`` (``protected`` reps always kept).
+        Pass a large value (e.g. ``10_000_000``) for the near-exact,
+        uncapped case. ``drop_tol`` additionally prunes reps whose absolute
+        coefficient is below the threshold after the corrector.
+
+        ``admit_basis``, when set (>= ``max_basis``), bounds the enriched
+        working set instead of ``max_basis``: the step may hold up to
+        ``admit_basis`` reps transiently and the final truncation keeps the
+        top-``max_basis`` by evolved ``|c|`` over the whole union — the
+        displacement scheme, matching the real-space ``pc_step_arr``.
+
+        ``basis_arr`` is assumed to contain canonical reps only. Pass
+        ``canonicalize_first=True`` to rewrite each row to its canonical
+        rep on entry (coefficients unchanged).
+
+        ``num_threads``, when set, pins this call to a freshly-built rayon
+        pool of that size, exactly as for `pc_step_arr`.
+        """
+        n = self.n_qubits
+        if protected_arr is None:
+            protected_arr = np.zeros((0, n), dtype=np.uint8)
+        return self._spec.pc_step_orbit_rep(
+            np.ascontiguousarray(basis_arr, dtype=np.uint8),
+            np.ascontiguousarray(coeffs, dtype=np.complex128),
+            float(dt),
+            int(max_basis),
+            group,
+            np.ascontiguousarray(momentum, dtype=np.int32),
+            float(drop_tol),
+            np.ascontiguousarray(protected_arr, dtype=np.uint8),
+            bool(canonicalize_first),
+            None if admit_basis is None else int(admit_basis),
+            None if tau_add is None else float(tau_add),
+            None if num_threads is None else int(num_threads),
         )
 
     def pc_step(

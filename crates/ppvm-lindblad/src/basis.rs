@@ -263,7 +263,7 @@ impl LindbladSpec {
         basis: &[Word],
         coeffs: &[Complex<f64>],
         protected: &[Word],
-        sector: Sector<'_>,
+        sector: &Sector<'_>,
         max_basis: usize,
     ) -> Result<Vec<(Word, Complex<f64>)>, Error> {
         if basis.len() != coeffs.len() {

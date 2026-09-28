@@ -52,6 +52,45 @@ impl TranslationGroup {
         Complex::from_polar(1.0, phase)
     }
 
+    /// All `|G|` momentum-sector characters of sector `k_modes`, indexed
+    /// by group-element index (mixed-radix, generator `0` fastest):
+    /// `table.value(idx) == self.character(k_modes, &self.counter_from_index(idx))`
+    /// exactly, bit for bit.
+    ///
+    /// Build this once per evolution step and index it with the value from
+    /// [`Self::canonicalize_with_index`] or
+    /// [`Self::canonicalize_in_sector_indexed`]; the alternative — calling
+    /// [`Self::character`] per action term — costs a counter `Vec`, the
+    /// exact-numerator arithmetic and a `sin`/`cos` pair every time.
+    pub fn character_table(&self, k_modes: &[i32]) -> CharacterTable {
+        assert_eq!(
+            k_modes.len(),
+            self.n_generators(),
+            "k_modes length mismatch"
+        );
+        let modulus = self.phase_modulus();
+        let mut numerators = Vec::with_capacity(self.order());
+        let mut values = Vec::with_capacity(self.order());
+        let mut counter = vec![0u32; self.n_generators()];
+        for _ in 0..self.order() {
+            let numerator = self.character_numerator(k_modes, &counter);
+            numerators.push(numerator);
+            values.push(Complex::from_polar(
+                1.0,
+                2.0 * PI * numerator as f64 / modulus as f64,
+            ));
+            // Mixed-radix increment, generator 0 fastest.
+            for (c, &o) in counter.iter_mut().zip(self.orders.iter()) {
+                *c += 1;
+                if *c < o {
+                    break;
+                }
+                *c = 0;
+            }
+        }
+        CharacterTable { numerators, values }
+    }
+
     /// Everything the phase-aware routines need about `w`'s orbit in
     /// momentum sector `k_modes`, from ONE orbit traversal: the lex-min
     /// representative `r`, the mixed-radix counter of the group element
@@ -67,7 +106,9 @@ impl TranslationGroup {
     /// `|orbit| = |G| / |stabilizer|` (orbit-stabilizer), and equals
     /// `|G|` only for free orbits.
     ///
-    /// Same `O(|G| × n_qubits)` cost as [`Self::canonicalize_with_shift`].
+    /// Same cost as [`Self::canonicalize_with_shift`]. Hot loops should
+    /// build a [`CharacterTable`] once and call
+    /// [`Self::canonicalize_in_sector_indexed`] instead.
     pub fn canonicalize_in_sector<A, S, const R: bool>(
         &self,
         w: &PauliWord<A, S, R>,
@@ -77,27 +118,79 @@ impl TranslationGroup {
         A: PauliStorage,
         S: BuildHasher + Clone + Default + HashFinalize,
     {
-        let mut best: Option<(PauliWord<A, S, R>, Vec<u32>)> = None;
-        let mut stabilizer = 0usize;
-        for (candidate, counter) in self.orbit_with_counters(w) {
-            if candidate == *w {
-                if self.character_numerator(k_modes, &counter) != 0 {
-                    return None;
-                }
-                stabilizer += 1;
-            }
-            if best.as_ref().is_none_or(|(b, _)| candidate < *b) {
-                best = Some((candidate, counter));
-            }
-        }
-        let (rep, counter_from_word) = best.expect("a finite group contains the identity element");
-        let shift = (0..self.n_generators())
-            .map(|g| {
-                let order = self.generator_order(g);
-                (order - counter_from_word[g]) % order
-            })
-            .collect();
-        Some((rep, shift, self.order() / stabilizer))
+        assert_eq!(
+            k_modes.len(),
+            self.n_generators(),
+            "k_modes length mismatch"
+        );
+        let (rep, idx, stabilizer) = self.canonicalize_with_stabilizer(w, |idx| {
+            self.character_numerator(k_modes, &self.counter_from_index(idx)) == 0
+        })?;
+        Some((rep, self.counter_from_index(idx), self.order() / stabilizer))
+    }
+
+    /// [`Self::canonicalize_in_sector`] against a precomputed
+    /// [`CharacterTable`]: returns the rep, the **index** of the group
+    /// element mapping it to `w` (look its character up with
+    /// [`CharacterTable::value`]), and `|orbit|` — or `None` when the
+    /// orbit cannot carry the table's sector.
+    ///
+    /// Allocation-free apart from the returned word; `O(N)` for chain /
+    /// ladder layouts, else `O(|G| × N)`.
+    #[inline]
+    pub fn canonicalize_in_sector_indexed<A, S, const R: bool>(
+        &self,
+        w: &PauliWord<A, S, R>,
+        table: &CharacterTable,
+    ) -> Option<(PauliWord<A, S, R>, usize, usize)>
+    where
+        A: PauliStorage,
+        S: BuildHasher + Clone + Default + HashFinalize,
+    {
+        assert_eq!(
+            table.len(),
+            self.order(),
+            "character table does not belong to this group"
+        );
+        let (rep, idx, stabilizer) =
+            self.canonicalize_with_stabilizer(w, |idx| table.is_trivial(idx))?;
+        Some((rep, idx, self.order() / stabilizer))
+    }
+}
+
+/// The characters `χ_k(g)` of one momentum sector for every element of a
+/// [`TranslationGroup`], indexed by group-element index. Built by
+/// [`TranslationGroup::character_table`].
+#[derive(Debug, Clone)]
+pub struct CharacterTable {
+    /// Exact phase numerators (see `character_numerator`); `0` ⇔ `χ = 1`.
+    numerators: Vec<usize>,
+    values: Vec<Complex<f64>>,
+}
+
+impl CharacterTable {
+    /// `χ_k` of the group element with index `idx`.
+    #[inline]
+    pub fn value(&self, idx: usize) -> Complex<f64> {
+        self.values[idx]
+    }
+
+    /// Whether `χ_k` of element `idx` is exactly `1`.
+    #[inline]
+    pub fn is_trivial(&self, idx: usize) -> bool {
+        self.numerators[idx] == 0
+    }
+
+    /// Number of entries, i.e. the group order.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    /// Whether the table is empty (never, for a valid group).
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
     }
 }
 

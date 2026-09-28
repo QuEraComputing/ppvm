@@ -155,7 +155,7 @@ fn assert_orbit_rep_matches_projection(
             &mut cr,
             dt,
             &protected,
-            sector,
+            &sector,
             &PcStepConfig {
                 max_basis: 10_000_000,
                 ..Default::default()

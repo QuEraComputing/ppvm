@@ -117,7 +117,7 @@ fn build_orbit_rep_cols(
     spec: &LindbladSpec,
     basis: &[Word],
     index: &FxHashMap<Word, u32>,
-    sector: Sector<'_>,
+    sector: &Sector<'_>,
 ) -> (Cols<Complex<f64>>, PerCol<Complex<f64>>) {
     basis
         .par_iter()
@@ -389,7 +389,7 @@ pub(crate) fn expm_apply_mf(
 pub(crate) fn expm_apply_orbit_rep(
     spec: &LindbladSpec,
     basis: &[Word],
-    sector: Sector<'_>,
+    sector: &Sector<'_>,
     dt: f64,
     coeffs: &[Complex<f64>],
 ) -> Vec<Complex<f64>> {

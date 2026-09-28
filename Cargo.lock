@@ -2053,6 +2053,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "bon",
+ "bytemuck",
  "criterion 0.7.0",
  "dashmap",
  "fxhash",

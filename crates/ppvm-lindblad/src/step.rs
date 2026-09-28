@@ -206,7 +206,7 @@ impl LindbladSpec {
         coeffs: &mut Vec<Complex<f64>>,
         dt: f64,
         protected: &[Word],
-        sector: Sector<'_>,
+        sector: &Sector<'_>,
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
         self.run_in_pool(cfg, |this| {
@@ -220,7 +220,7 @@ impl LindbladSpec {
         coeffs: &mut Vec<Complex<f64>>,
         dt: f64,
         protected: &[Word],
-        sector: Sector<'_>,
+        sector: &Sector<'_>,
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
         let PcStepConfig {

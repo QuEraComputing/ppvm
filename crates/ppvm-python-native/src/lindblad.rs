@@ -376,7 +376,7 @@ impl LindbladSpec {
                 &mut coeffs_vec,
                 dt,
                 &protected_words,
-                Sector::new(group.core(), k_slice),
+                &Sector::new(group.core(), k_slice),
                 &ppvm_lindblad::PcStepConfig {
                     max_basis,
                     admit_basis,

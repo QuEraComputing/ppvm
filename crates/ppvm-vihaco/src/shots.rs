@@ -12,6 +12,7 @@
 use crate::PPVMModule;
 use crate::composite::PPVM;
 use crate::measurements::MeasurementResult;
+use rand::{RngExt, SeedableRng, rngs::SmallRng};
 
 /// One shot's full output: the measurement record and the trace-instruction
 /// record. Either may be empty depending on what the program emits.
@@ -29,8 +30,13 @@ pub const PARALLEL_SHOT_THRESHOLD: usize = 128;
 /// gets a distinct RNG stream (a shared seed would make all shots identical).
 /// Depends only on `(base, index)`, so serial and parallel runs are bit-for-bit
 /// identical for a given seed regardless of thread count.
+#[inline]
 fn shot_seed(base: Option<u64>, index: usize) -> Option<u64> {
-    base.map(|b| b.wrapping_add(index as u64))
+    base.map(|b| {
+        SmallRng::seed_from_u64(b)
+            .random::<u64>()
+            .wrapping_add(index as u64)
+    })
 }
 
 /// Run a single shot on a fresh machine and return both records.

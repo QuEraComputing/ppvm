@@ -25,3 +25,4 @@ vihaco-parser = "0.4.1"
 vihaco-parser-derive = "0.4.1"
 vihaco-circuit-isa = { version = "0.1.0", path = "../vihaco-circuit-isa" }
 ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
+rand = "0.10.3"

@@ -40,7 +40,7 @@ use std::ops::{AddAssign, Div, Mul, Sub};
 type PerCol<T> = Vec<(f64, T)>;
 
 /// Scratch buffers for [`LindbladSpec::compute_action_terms`].
-type ActionScratch = (Vec<u32>, Vec<u32>, FxHashMap<Word, Complex<f64>>);
+type ActionScratch<const C: usize> = (Vec<u32>, Vec<u32>, FxHashMap<Word<C>, Complex<f64>>);
 
 /// Consecutive CSC columns stored flat: local column `j` holds
 /// `rows[offsets[j]..offsets[j + 1]]` and the matching `vals`.
@@ -83,10 +83,14 @@ impl<T> BlockCsc<T> {
 /// a `dim`-column generator in one parallel pass. `col(c, scratch, rows,
 /// vals)` appends the in-basis entries of column `c` to `rows`/`vals` and
 /// returns its `(raw, diag)`.
-fn build_block_csc<T, F>(spec: &LindbladSpec, dim: usize, col: F) -> (BlockCsc<T>, PerCol<T>)
+fn build_block_csc<const C: usize, T, F>(
+    spec: &LindbladSpec<C>,
+    dim: usize,
+    col: F,
+) -> (BlockCsc<T>, PerCol<T>)
 where
     T: Copy + Send + Sync,
-    F: Fn(usize, &mut ActionScratch, &mut Vec<u32>, &mut Vec<T>) -> (f64, T) + Sync,
+    F: Fn(usize, &mut ActionScratch<C>, &mut Vec<u32>, &mut Vec<T>) -> (f64, T) + Sync,
 {
     // ~16 blocks per thread for load balance, but never so small that the
     // per-block allocations matter.
@@ -97,7 +101,7 @@ where
         .into_par_iter()
         .map_init(
             || {
-                let scratch: ActionScratch = (
+                let scratch: ActionScratch<C> = (
                     Vec::with_capacity(spec.n_qubits()),
                     Vec::with_capacity(128),
                     FxHashMap::with_capacity_and_hasher(128, FxBuildHasher::default()),
@@ -139,10 +143,10 @@ where
 /// outputs (in- and out-of-basis, an upper bound on the column 1-norm) and
 /// `diag` the coefficient of the output Word equal to the input Word. The
 /// cache is reused by [`CscOp`] across every Krylov/Taylor matvec.
-fn build_mf_cols(
-    spec: &LindbladSpec,
-    basis: &[Word],
-    index: &FxHashMap<Word, u32>,
+fn build_mf_cols<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
+    index: &FxHashMap<Word<C>, u32>,
 ) -> (BlockCsc<f64>, PerCol<f64>) {
     build_block_csc(spec, basis.len(), |c, (s1, s2, lm), rows, vals| {
         let p = &basis[c];
@@ -188,11 +192,11 @@ fn build_mf_cols(
 /// upper bound: several distinct outputs `q` can share one rep, so the
 /// out-of-basis magnitudes are not attributable to a column of `M`. `diag`
 /// accumulates for the same reason.
-fn build_orbit_rep_cols(
-    spec: &LindbladSpec,
-    basis: &[Word],
-    index: &FxHashMap<Word, u32>,
-    sector: Sector<'_>,
+fn build_orbit_rep_cols<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
+    index: &FxHashMap<Word<C>, u32>,
+    sector: &Sector<'_>,
 ) -> (BlockCsc<Complex<f64>>, PerCol<Complex<f64>>) {
     build_block_csc(spec, basis.len(), |c, (s1, s2, lm), rows, vals| {
         let r = &basis[c];
@@ -405,9 +409,9 @@ where
 /// ONE action pass builds the CSC cache `cols` (reused across every matvec)
 /// and, in the same pass, the `(raw, diag)` data the `μ`/1-norm selection
 /// needs; [`expm_apply_cached`] does the rest.
-pub(crate) fn expm_apply_mf(
-    spec: &LindbladSpec,
-    basis: &[Word],
+pub(crate) fn expm_apply_mf<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
     dt: f64,
     coeffs: &[f64],
     drop_tol: f64,
@@ -443,10 +447,10 @@ pub(crate) fn expm_apply_mf(
 /// The expensive phase-aware action is computed ONCE here (via
 /// [`build_orbit_rep_cols`]) and reused, CSC-style, across every
 /// Krylov–Taylor matvec, exactly as on the real path.
-pub(crate) fn expm_apply_orbit_rep(
-    spec: &LindbladSpec,
-    basis: &[Word],
-    sector: Sector<'_>,
+pub(crate) fn expm_apply_orbit_rep<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
+    sector: &Sector<'_>,
     dt: f64,
     coeffs: &[Complex<f64>],
 ) -> Vec<Complex<f64>> {

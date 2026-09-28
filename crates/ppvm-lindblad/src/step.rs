@@ -50,7 +50,7 @@ impl Phase {
     }
 }
 
-impl LindbladSpec {
+impl<const C: usize> LindbladSpec<C> {
     /// One predictor-corrector step `O ← exp(dt·L*) O` in the adaptive
     /// real-coefficient Pauli basis: first-hop leakage admission, predictor
     /// exponential, second-hop admission from the predicted state, corrector
@@ -61,10 +61,10 @@ impl LindbladSpec {
     /// `protected` words are never dropped. All tuning knobs live in `cfg`.
     pub fn pc_step(
         &self,
-        basis: &mut Vec<Word>,
+        basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        protected: &[Word],
+        protected: &[Word<C>],
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
         self.run_in_pool(cfg, |this| {
@@ -78,10 +78,10 @@ impl LindbladSpec {
     /// spots.
     pub fn pc_step_timed(
         &self,
-        basis: &mut Vec<Word>,
+        basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        protected: &[Word],
+        protected: &[Word<C>],
         cfg: &PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
         self.run_in_pool(cfg, |this| {
@@ -107,10 +107,10 @@ impl LindbladSpec {
 
     fn pc_step_inner(
         &self,
-        basis: &mut Vec<Word>,
+        basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<f64>,
         dt: f64,
-        protected: &[Word],
+        protected: &[Word<C>],
         cfg: &PcStepConfig,
         timed: bool,
     ) -> Result<PcStepTimings, Error> {
@@ -175,7 +175,7 @@ impl LindbladSpec {
 
     /// Compute `exp(dt · M) · b` for the in-basis-restricted generator
     /// `M`, matrix-free, via `quspin-expm` (see [`crate::mf_expm`]).
-    fn expm_step(&self, basis: &[Word], dt: f64, b: &[f64], drop_tol: f64) -> Vec<f64> {
+    fn expm_step(&self, basis: &[Word<C>], dt: f64, b: &[f64], drop_tol: f64) -> Vec<f64> {
         mf_expm::expm_apply_mf(self, basis, dt, b, drop_tol)
     }
 
@@ -202,11 +202,11 @@ impl LindbladSpec {
     /// Honours `cfg.num_threads` the same way [`Self::pc_step`] does.
     pub fn pc_step_orbit_rep(
         &self,
-        basis: &mut Vec<Word>,
+        basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<Complex<f64>>,
         dt: f64,
-        protected: &[Word],
-        sector: Sector<'_>,
+        protected: &[Word<C>],
+        sector: &Sector<'_>,
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
         self.run_in_pool(cfg, |this| {
@@ -216,11 +216,11 @@ impl LindbladSpec {
 
     fn pc_step_orbit_rep_inner(
         &self,
-        basis: &mut Vec<Word>,
+        basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<Complex<f64>>,
         dt: f64,
-        protected: &[Word],
-        sector: Sector<'_>,
+        protected: &[Word<C>],
+        sector: &Sector<'_>,
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
         let PcStepConfig {

@@ -18,7 +18,7 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use num::Complex;
-use ppvm_lindblad::{JumpInput, LindbladSpec, PcStepConfig, Word, parse_pauli_string};
+use ppvm_lindblad::{JumpInput, LindbladSpec, PcStepConfig, W_CHUNKS, Word, parse_pauli_string};
 use std::hint::black_box;
 
 const B: usize = 4096;
@@ -213,7 +213,11 @@ fn observable(n: usize) -> (Vec<Word>, Vec<f64>) {
     let mut basis = Vec::new();
     let mut coeffs = Vec::new();
     for a in 0..n {
-        basis.push(parse_pauli_string(&pstr(n, &[(a, 'X')]), n).unwrap().0);
+        basis.push(
+            parse_pauli_string::<W_CHUNKS>(&pstr(n, &[(a, 'X')]), n)
+                .unwrap()
+                .0,
+        );
         coeffs.push(1.0);
     }
     (basis, coeffs)
@@ -227,8 +231,8 @@ fn bench_drug(c: &mut Criterion) {
         let h = hamiltonian_terms(n, &pairs, &bmag);
         let (ops, k) = kossakowski_model(n);
 
-        let spec_eig = LindbladSpec::new(n, &h, &eigenmode_jumps(&ops, &k)).unwrap();
-        let mut spec_koss = LindbladSpec::new(n, &h, &[]).unwrap();
+        let spec_eig = <LindbladSpec>::new(n, &h, &eigenmode_jumps(&ops, &k)).unwrap();
+        let mut spec_koss = <LindbladSpec>::new(n, &h, &[]).unwrap();
         spec_koss.add_kossakowski(&ops, &k).unwrap();
 
         let cfg = PcStepConfig {

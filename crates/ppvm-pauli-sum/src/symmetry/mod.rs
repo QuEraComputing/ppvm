@@ -75,7 +75,7 @@ mod momentum;
 pub use group::{GroupError, TranslationGroup};
 pub use merge::{canonicalize_pauli_sum, symmetry_merge_pauli_sum};
 pub use momentum::{
-    SectorCheckError, canonicalize_pauli_sum_complex, check_momentum_sector,
+    CharacterTable, SectorCheckError, canonicalize_pauli_sum_complex, check_momentum_sector,
     momentum_merge_pauli_sum_pair,
 };
 

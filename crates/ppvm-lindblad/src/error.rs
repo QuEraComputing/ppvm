@@ -3,14 +3,15 @@
 
 //! Error type for [`crate::LindbladSpec`] construction and stepping.
 
-use crate::MAX_QUBITS;
 use std::fmt;
 
 /// Errors raised when constructing a [`crate::LindbladSpec`].
 #[derive(Debug, Clone)]
 pub enum Error {
+    /// `got` qubits do not fit the word width in use, which holds `max`.
     TooManyQubits {
         got: usize,
+        max: usize,
     },
     LengthMismatch {
         what: &'static str,
@@ -51,11 +52,8 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::TooManyQubits { got } => {
-                write!(
-                    f,
-                    "LindbladSpec supports n_qubits ≤ {MAX_QUBITS}; got {got}"
-                )
+            Error::TooManyQubits { got, max } => {
+                write!(f, "LindbladSpec supports n_qubits ≤ {max}; got {got}")
             }
             Error::LengthMismatch { what, a, b } => {
                 write!(f, "{what}: expected matching lengths, got {a} and {b}")

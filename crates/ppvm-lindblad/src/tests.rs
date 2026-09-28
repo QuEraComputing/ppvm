@@ -45,13 +45,13 @@ fn jump_hpauli(s: &str, rate: f64) -> JumpInput {
 #[test]
 fn z_dephasing_action_on_x() {
     // L = Z on a single qubit; L*(X) = γ(ZXZ - X) = γ(-X - X) = -2γ X.
-    let spec = LindbladSpec::new(
+    let spec = <LindbladSpec>::new(
         1,
         &[("X".to_string(), 0.0)], // no Hamiltonian
         &[jump_hpauli("Z", 0.5)],
     )
     .unwrap();
-    let (x, _) = parse_pauli_string("X", 1).unwrap();
+    let (x, _) = parse_pauli_string::<W_CHUNKS>("X", 1).unwrap();
     let terms = spec.action(&x);
     assert_eq!(terms.len(), 1);
     assert!((terms[0].1 - (-1.0)).abs() < 1e-12); // -2·0.5 = -1
@@ -68,10 +68,10 @@ fn amplitude_damping_action_on_z() {
         ],
         rate: 1.0,
     };
-    let spec = LindbladSpec::new(1, &[], &[sigma_minus]).unwrap();
-    let (z, _) = parse_pauli_string("Z", 1).unwrap();
+    let spec = <LindbladSpec>::new(1, &[], &[sigma_minus]).unwrap();
+    let (z, _) = parse_pauli_string::<W_CHUNKS>("Z", 1).unwrap();
     let terms = spec.action(&z);
-    let (i_word, _) = parse_pauli_string("I", 1).unwrap();
+    let (i_word, _) = parse_pauli_string::<W_CHUNKS>("I", 1).unwrap();
     let mut i_coeff = 0.0;
     let mut z_coeff = 0.0;
     for (w, c) in &terms {
@@ -88,7 +88,7 @@ fn amplitude_damping_action_on_z() {
 #[test]
 fn word_codec_roundtrip() {
     let codes = [0u8, 1, 2, 3, 1, 0, 3, 2];
-    let w = word_from_codes(&codes).unwrap();
+    let w = word_from_codes::<W_CHUNKS>(&codes).unwrap();
     let mut out = vec![0u8; codes.len()];
     codes_from_word(&w, &mut out);
     assert_eq!(out.as_slice(), &codes);
@@ -127,11 +127,11 @@ fn assert_orbit_rep_matches_projection(
 ) {
     use ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex;
 
-    let spec = LindbladSpec::new(n, h_terms, &[]).unwrap();
+    let spec = <LindbladSpec>::new(n, h_terms, &[]).unwrap();
     let group = ppvm_pauli_sum::symmetry::TranslationGroup::chain_1d(n);
     let basis_full: Vec<Word> = seed
         .iter()
-        .map(|(s, _)| parse_pauli_string(s, n).unwrap().0)
+        .map(|(s, _)| parse_pauli_string::<W_CHUNKS>(s, n).unwrap().0)
         .collect();
     let coeffs_full: Vec<Complex<f64>> = seed.iter().map(|(_, c)| *c).collect();
 
@@ -155,7 +155,7 @@ fn assert_orbit_rep_matches_projection(
             &mut cr,
             dt,
             &protected,
-            sector,
+            &sector,
             &PcStepConfig {
                 max_basis: 10_000_000,
                 ..Default::default()
@@ -252,14 +252,14 @@ fn complex_full_matches_real_at_kzero() {
             h_terms.push((s.into_iter().collect(), 1.0));
         }
     }
-    let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
+    let spec = <LindbladSpec>::new(n, &h_terms, &[]).unwrap();
 
     let mut basis_r: Vec<Word> = (0..n)
         .map(|j| {
             let mut s = vec!['I'; n];
             s[j] = 'Z';
             let st: String = s.into_iter().collect();
-            let (w, _) = parse_pauli_string(&st, n).unwrap();
+            let (w, _) = parse_pauli_string::<W_CHUNKS>(&st, n).unwrap();
             w
         })
         .collect();
@@ -344,7 +344,7 @@ fn pc_step_matches_symmetry_merged_on_small_chain() {
         }
     }
     // No dissipation.
-    let spec = LindbladSpec::new(n, &h_terms, &[]).unwrap();
+    let spec = <LindbladSpec>::new(n, &h_terms, &[]).unwrap();
     let group = TranslationGroup::chain_1d(n);
 
     // Initial: O(0) = Σ_j Z_j (translation-invariant).
@@ -353,7 +353,7 @@ fn pc_step_matches_symmetry_merged_on_small_chain() {
             let mut s = vec!['I'; n];
             s[j] = 'Z';
             let st: String = s.into_iter().collect();
-            let (w, _) = parse_pauli_string(&st, n).unwrap();
+            let (w, _) = parse_pauli_string::<W_CHUNKS>(&st, n).unwrap();
             w
         })
         .collect();

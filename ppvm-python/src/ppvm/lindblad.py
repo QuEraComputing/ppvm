@@ -143,7 +143,10 @@ class Lindbladian:
     Parameters
     ----------
     n_qubits:
-        Number of qubits.
+        Number of qubits, at most 512. The Pauli word width is chosen
+        automatically: up to 128 qubits uses the original 128-bit layout,
+        then 256- and 512-bit words. Narrow problems are unaffected by the
+        wider layouts being available.
     h_terms:
         Iterable of ``(pauli_string, coefficient)`` pairs for the
         Hermitian Hamiltonian ``H = Σ c_i P_i``. Each ``pauli_string`` is

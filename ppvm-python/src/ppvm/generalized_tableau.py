@@ -439,9 +439,10 @@ class GeneralizedTableau(
 
         Shots run in parallel across CPU cores (the GIL is released during
         sampling), with a serial fallback for small batches. When ``seed`` is
-        given (it must fit in an unsigned 64-bit integer), shot ``i`` uses
-        ``(seed + i) % 2**64`` (wrapping ``u64`` arithmetic), so results are
-        reproducible and independent of the number of threads. Set the
+        given (it must fit in an unsigned 64-bit integer), each shot's seed is
+        derived deterministically from ``seed`` and the shot index, so results
+        are reproducible and independent of the number of threads, and nearby
+        seeds (``seed`` and ``seed + 1``) give unrelated shots. Set the
         ``RAYON_NUM_THREADS`` environment variable before the first call to
         control the pool size (it defaults to the number of logical cores).
 

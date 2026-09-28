@@ -157,7 +157,9 @@ where
 /// `make_tableau(i)`.
 ///
 /// The shot index lets callers derive a deterministic per-shot seed (e.g.
-/// `seed + i`) so results are independent of evaluation order — the same
+/// `base.wrapping_add(i)` with `base = SmallRng::seed_from_u64(seed).random()`;
+/// don't use `seed + i` directly, or calls with seeds `s` and `s + 1` share
+/// almost all shots) so results are independent of evaluation order — the same
 /// factory then yields identical results from `sample_parallel` (when the `rayon` feature is enabled).
 pub fn sample_serial<T, I, C, F>(
     program: &ExtendedProgram,

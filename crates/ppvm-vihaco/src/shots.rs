@@ -28,8 +28,11 @@ pub const PARALLEL_SHOT_THRESHOLD: usize = 128;
 
 /// Per-shot seed derived from the base seed and the shot index, so every shot
 /// gets a distinct RNG stream (a shared seed would make all shots identical).
-/// Depends only on `(base, index)`, so serial and parallel runs are bit-for-bit
-/// identical for a given seed regardless of thread count.
+/// The base seed is scrambled through a `SmallRng` before the index is added,
+/// so nearby base seeds (`s`, `s + 1`, ...) give unrelated shots rather than
+/// the same shots shifted by one (issue #228). Depends only on
+/// `(base, index)`, so serial and parallel runs are bit-for-bit identical for
+/// a given seed regardless of thread count.
 #[inline]
 fn shot_seed(base: Option<u64>, index: usize) -> Option<u64> {
     base.map(|b| {
@@ -181,6 +184,21 @@ mod tests {
         assert!(
             records.iter().any(|r| r != first),
             "expected varied outcomes across shots, got {records:?}"
+        );
+    }
+
+    #[test]
+    fn nearby_seeds_do_not_share_shots() {
+        // Regression test for #228: with `seed + i` per-shot seeds, the run
+        // with seed 8 was the run with seed 7 shifted by one shot. Each shot is
+        // one random bit, so a chance match of 127 bits is ~2^-127.
+        let m = module(RANDOM);
+        let a = run_shots_serial(&m, 128, Some(7)).unwrap();
+        let b = run_shots_serial(&m, 128, Some(8)).unwrap();
+        assert_ne!(
+            a[1..],
+            b[..127],
+            "seed 8 reproduced seed 7's shots shifted by one"
         );
     }
 

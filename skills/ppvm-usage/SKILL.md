@@ -224,7 +224,10 @@ let prog = parse_extended(stim_src)?;
 
 // Multi-shot: pass a factory closure to `sample` — it reuses the parsed
 // program. The closure receives the shot index `i`; derive a per-shot seed
-// from it (e.g. `new_with_seed(.., base.wrapping_add(i as u64))`) for reproducible runs.
+// from it for reproducible runs. Scramble the user seed first
+// (`let base = SmallRng::seed_from_u64(seed).random::<u64>();`), then use
+// `new_with_seed(.., base.wrapping_add(i as u64))`. Plain `seed + i` makes calls
+// with seeds `s` and `s + 1` share almost all their shots.
 let shots = sample(&prog, 10_000, |_i| {
     GeneralizedTableau::<_, usize, _>::new(n_qubits, 1e-10)
 })?;

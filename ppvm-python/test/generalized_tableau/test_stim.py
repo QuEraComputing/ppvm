@@ -256,8 +256,7 @@ def test_generalized_tableau_sample_classmethod_equivalent():
 
 
 def test_sample_nearby_seeds_do_not_share_shots():
-    # Regression test for #228: with `seed + i` per-shot seeds, the batch for
-    # seed 8 was the batch for seed 7 shifted by one shot (999 of 1000 shared).
+    # With `seed + i`, seed 8 was seed 7 shifted by one shot.
     n = 32
     qubits = " ".join(map(str, range(n)))
     prog = StimProgram.parse(f"H {qubits}\nM {qubits}")
@@ -268,8 +267,7 @@ def test_sample_nearby_seeds_do_not_share_shots():
 
     a, b = shots(7), shots(8)
     assert b[:-1] != a[1:]
-    # 32 random bits per shot: a chance collision between the two batches is
-    # ~1000^2 / 2^32 ≈ 2e-4, so allow a handful.
+    # Chance collisions of 32-bit shots are rare (~2e-4).
     assert len(set(a) & set(b)) < 5
 
 

@@ -318,13 +318,10 @@ macro_rules! create_interface {
             /// Multi-shot sampling: builds a fresh tableau per shot.
             ///
             /// Shots run in parallel on rayon's global thread pool (GIL
-            /// released), falling back to serial for small batches. When
-            /// `seed` is given, it is first scrambled into a base seed
-            /// (`SmallRng::seed_from_u64(seed).random::<u64>()`) and shot `i`
-            /// is seeded with `base.wrapping_add(i)`. Results are reproducible
-            /// and independent of the thread count, and nearby seeds (`s`,
-            /// `s + 1`, ...) give unrelated shots. Set the `RAYON_NUM_THREADS`
-            /// environment variable to control the pool size.
+            /// released), falling back to serial for small batches. Shot `i`
+            /// is seeded with a scrambled `seed` plus `i`, so results are
+            /// reproducible, thread-count independent, and nearby seeds give
+            /// unrelated shots. Set `RAYON_NUM_THREADS` to control the pool size.
             ///
             /// Returns the outcome codes (0/1/2 = zero/one/lost) as one flat,
             /// shot-major `bytearray` plus its `(num_shots, n_measurements)` shape.

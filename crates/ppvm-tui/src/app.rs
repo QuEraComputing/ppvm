@@ -471,6 +471,7 @@ Gates  (q = qubit index; angles / probabilities are floats)
   u3 <q> <theta> <phi> <lam>
   rxx ryy rzz <a> <b> <angle>
   depolarize loss <q> <p>     depolarize2 <a> <b> <p>
+  leakage <q> <p0> <p1>
   pauli_error <q> <px> <py> <pz>     correlated_loss <a> <b> <p0> <p1> <p2>
 
 Line editing: ←/→ move · Home/End · Backspace/Del · ↑/↓ history";

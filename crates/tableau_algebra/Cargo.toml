@@ -1,0 +1,10 @@
+[package]
+name = "tableau_algebra"
+version = "0.1.0"
+edition = "2024"
+description = "Stabilizer canonicalization for PPVM tableaux"
+license = "Apache-2.0"
+
+[dependencies]
+ppvm-tableau-2 = { version = "0.1.0", path = "../ppvm-tableau-2" }
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }

@@ -22,12 +22,19 @@ the `cupauliprop-cu12` wheel on PyPI (a zip with `cuquantum/lib` and
 
 ```bash
 curl -fsSL https://pypi.org/pypi/cupauliprop-cu12/0.5.0/json \
-  | jq -r '.urls[] | select(.filename | endswith("x86_64.whl")) | .url' \
+  | jq -r --arg a "$(uname -m)" '.urls[] | select(.filename | endswith($a + ".whl")) | .url' \
   | xargs curl -fsSLO
 unzip cupauliprop_cu12-*.whl 'cuquantum/*' -d ~/cupauliprop
 export CUPAULIPROP_LIB_DIR=~/cupauliprop/cuquantum/lib
 export CUDA_HOME=/usr/local/cuda            # or CUDART_LIB_DIR=<dir of libcudart.so>
 export LD_LIBRARY_PATH=$CUPAULIPROP_LIB_DIR:$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+```
+
+On aarch64 hosts (e.g. GH200) gxhash also needs AES enabled explicitly
+(`.cargo/config.toml` only does this for x86_64):
+
+```bash
+export RUSTFLAGS="-C target-feature=+aes,+neon"
 ```
 
 ## Running

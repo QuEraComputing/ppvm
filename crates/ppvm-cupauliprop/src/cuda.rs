@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use ppvm_cupauliprop_sys::*;
 
 use crate::Propagator;
-use crate::encode::{num_words, pauli_channel_probs, push_packed_term};
+use crate::encode::{num_words, pauli_channel_probs, push_packed_term, unpack_term};
 
 fn check(status: cupaulipropStatus_t, call: &str) {
     if status != CUPAULIPROP_STATUS_SUCCESS {
@@ -530,6 +530,43 @@ impl CudaPauliSum {
             "cupaulipropDestroyPauliExpansionView",
         );
         significand * exponent.exp2()
+    }
+
+    /// Download all `(dense Pauli string, coefficient)` terms, sorted by
+    /// string.
+    pub fn terms(&self) -> Vec<(String, f64)> {
+        self.synchronize();
+        let (n, words) = (self.num_terms(), num_words(self.n_qubits));
+        let current = &self.expansions[self.current];
+        let mut packed = vec![0u64; n * 2 * words];
+        let mut coefs = vec![0f64; n];
+        unsafe {
+            check_cuda(
+                cudaMemcpy(
+                    packed.as_mut_ptr().cast(),
+                    current.xz,
+                    packed.len() * 8,
+                    CUDA_MEMCPY_DEVICE_TO_HOST,
+                ),
+                "cudaMemcpy",
+            );
+            check_cuda(
+                cudaMemcpy(
+                    coefs.as_mut_ptr().cast(),
+                    current.coef,
+                    coefs.len() * 8,
+                    CUDA_MEMCPY_DEVICE_TO_HOST,
+                ),
+                "cudaMemcpy",
+            );
+        }
+        let mut terms: Vec<_> = packed
+            .chunks_exact(2 * words)
+            .map(|t| unpack_term(t, self.n_qubits))
+            .zip(coefs)
+            .collect();
+        terms.sort_by(|a, b| a.0.cmp(&b.0));
+        terms
     }
 
     pub fn len(&self) -> usize {

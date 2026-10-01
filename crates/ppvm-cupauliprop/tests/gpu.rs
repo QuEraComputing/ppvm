@@ -7,6 +7,7 @@
 
 use ppvm_cupauliprop::circuits::{heisenberg, lattice_edges, sum_z_terms, tfim};
 use ppvm_cupauliprop::{CpuPauliSum, CudaOptions, CudaPauliSum, Propagator};
+use ppvm_pauli_sum::prelude::*;
 
 // Small fixed buffers so tests don't reserve the whole device.
 const OPTIONS: CudaOptions = CudaOptions {
@@ -31,6 +32,75 @@ fn rx_on_z_matches_analytic() {
             "q={q}"
         );
         assert_eq!(s.len(), 2);
+        // The overlap is even in θ; the Y coefficient pins the sign (adjoint).
+        let mut y = single_z(80, q)[0].clone();
+        y.replace_range(q..=q, "Y");
+        let terms = s.terms();
+        let (_, c) = terms.iter().find(|(t, _)| *t == y).expect("Y term");
+        assert!((c - 0.3f64.sin()).abs() < 1e-12, "q={q}: Y coefficient {c}");
+    }
+}
+
+/// `X, Y, Z` on qubits `a` and `b`, so every gate below has anticommuting terms.
+fn single_paulis(n: usize, a: usize, b: usize) -> Vec<String> {
+    let mut terms = Vec::new();
+    for q in [a, b] {
+        for p in ["X", "Y", "Z"] {
+            let mut t = "I".repeat(n);
+            t.replace_range(q..=q, p);
+            terms.push(t);
+        }
+    }
+    terms
+}
+
+#[test]
+#[ignore = "needs a CUDA GPU"]
+fn gate_terms_match_cpu() {
+    // Compares coefficients with sign, which overlaps alone cannot see.
+    // Qubit 70 sits in the second packed word.
+    let (n, a, b, theta) = (80, 3, 70, 0.3);
+    type Gate = (
+        &'static str,
+        fn(&mut CpuPauliSum<16>, usize, usize, f64),
+        fn(&mut CudaPauliSum, usize, usize, f64),
+    );
+    let gates: [Gate; 6] = [
+        ("rx", |s, a, _, t| s.0.rx(a, t), |s, a, _, t| s.rx(a, t)),
+        ("ry", |s, a, _, t| s.0.ry(a, t), |s, a, _, t| s.ry(a, t)),
+        ("rz", |s, a, _, t| s.0.rz(a, t), |s, a, _, t| s.rz(a, t)),
+        (
+            "rxx",
+            |s, a, b, t| s.0.rxx(a, b, t),
+            |s, a, b, t| s.rxx(a, b, t),
+        ),
+        (
+            "ryy",
+            |s, a, b, t| s.0.ryy(a, b, t),
+            |s, a, b, t| s.ryy(a, b, t),
+        ),
+        (
+            "rzz",
+            |s, a, b, t| s.0.rzz(a, b, t),
+            |s, a, b, t| s.rzz(a, b, t),
+        ),
+    ];
+    let terms = single_paulis(n, a, b);
+    for (name, cpu_gate, gpu_gate) in gates {
+        let mut cpu = CpuPauliSum::<16>::new(n, &terms, 0.0);
+        let mut gpu = CudaPauliSum::new(n, &terms, 0.0, OPTIONS);
+        cpu_gate(&mut cpu, a, b, theta);
+        cpu.0.truncate();
+        gpu_gate(&mut gpu, a, b, theta);
+        let (c, g) = (cpu.terms(), gpu.terms());
+        assert_eq!(
+            c.iter().map(|t| &t.0).collect::<Vec<_>>(),
+            g.iter().map(|t| &t.0).collect::<Vec<_>>(),
+            "{name}: term strings"
+        );
+        for ((t, cc), (_, gc)) in c.iter().zip(&g) {
+            assert!((cc - gc).abs() < 1e-12, "{name}: {t} cpu {cc} vs gpu {gc}");
+        }
     }
 }
 

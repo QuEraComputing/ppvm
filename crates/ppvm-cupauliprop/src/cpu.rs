@@ -40,6 +40,13 @@ impl<const B: usize> CpuPauliSum<B> {
         }
         Self(ps)
     }
+
+    /// All `(dense Pauli string, coefficient)` terms, sorted by string.
+    pub fn terms(&self) -> Vec<(String, f64)> {
+        let mut terms: Vec<_> = self.0.iter().map(|(k, c)| (k.to_string(), *c)).collect();
+        terms.sort_by(|a, b| a.0.cmp(&b.0));
+        terms
+    }
 }
 
 impl<const B: usize> Propagator for CpuPauliSum<B> {
@@ -99,5 +106,16 @@ mod tests {
         s.rx(0, 0.3);
         assert!((s.overlap_with_zero() - 0.3f64.cos()).abs() < 1e-12);
         assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn terms_are_dense_strings() {
+        // ppvm rx: Z -> cos θ Z + sin θ Y.
+        let mut s = CpuPauliSum::<16>::new(70, &[format!("{}Z", "I".repeat(69))], 0.0);
+        s.rx(69, 0.3);
+        let terms = s.terms();
+        assert_eq!(terms[0].0, format!("{}Y", "I".repeat(69)));
+        assert!((terms[0].1 - 0.3f64.sin()).abs() < 1e-15);
+        assert_eq!(terms[1].0, format!("{}Z", "I".repeat(69)));
     }
 }

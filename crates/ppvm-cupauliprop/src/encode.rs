@@ -35,6 +35,23 @@ pub fn push_packed_term(out: &mut Vec<u64>, term: &str, words: usize) {
     }
 }
 
+/// Inverse of [`push_packed_term`]: the dense Pauli string of one packed term
+/// (`2 * words` `u64`s).
+pub fn unpack_term(packed: &[u64], n_qubits: usize) -> String {
+    let (x, z) = packed.split_at(packed.len() / 2);
+    (0..n_qubits)
+        .map(|q| {
+            let (w, bit) = (q / 64, 1u64 << (q % 64));
+            match (x[w] & bit != 0, z[w] & bit != 0) {
+                (false, false) => 'I',
+                (true, false) => 'X',
+                (true, true) => 'Y',
+                (false, true) => 'Z',
+            }
+        })
+        .collect()
+}
+
 /// ppvm `[p_x, p_y, p_z]` → cuPauliProp `[p_I, p_X, p_Y, p_Z]`.
 pub fn pauli_channel_probs(p: [f64; 3]) -> [f64; 4] {
     [1.0 - p[0] - p[1] - p[2], p[0], p[1], p[2]]
@@ -69,6 +86,14 @@ mod tests {
         push_packed_term(&mut out, "XI", 1);
         push_packed_term(&mut out, "IZ", 1);
         assert_eq!(out, [0b01, 0, 0, 0b10]);
+    }
+
+    #[test]
+    fn unpack_inverts_push() {
+        let term: String = "XYZI".repeat(20).chars().take(70).collect();
+        let mut out = Vec::new();
+        push_packed_term(&mut out, &term, 2);
+        assert_eq!(unpack_term(&out, 70), term);
     }
 
     #[test]

@@ -6,7 +6,7 @@ of, on two workloads:
 | library | language | entry point used |
 |---|---|---|
 | **`ppvm`** (this repo) | Rust | `PauliSum<config::fxhash::Byte<N, f64, CoefficientThreshold>>` |
-| [PauliPropagation.jl][pp] | Julia | `propagate(PauliRotation(...), psum; min_abs_coeff)` |
+| [PauliPropagation.jl][pp] | Julia | `propagate!(PauliRotation(...), cache; min_abs_coeff)` on a `VectorPauliSum` |
 | [PauliStrings.jl][ps] | Julia | `trotter_step!(O, gates; truncation, truncate_every)` |
 | [pauli-prop][qk] (Qiskit) | Rust-accelerated Python | `propagate_through_circuit(op, qc, max_terms, atol, frame="h")` |
 | [monoprop][mp] (Algorithmiq) | C++ with Python bindings | `PauliPropagator.from_circuit(circuit, op, cutoff, lower_atol)` |

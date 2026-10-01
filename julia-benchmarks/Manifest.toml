@@ -881,10 +881,10 @@ uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
 version = "2.8.5"
 
 [[deps.PauliPropagation]]
-deps = ["AcceleratedKernels", "BitIntegers", "Bits", "JSON", "LinearAlgebra", "PlotGraphviz", "ProfileCanvas", "Random", "StatsBase", "Test", "UUIDs"]
-git-tree-sha1 = "25a5e6eebc97b9680e16ab7e80dfb1969d828e24"
+deps = ["AcceleratedKernels", "Bits", "JSON", "LinearAlgebra", "PlotGraphviz", "ProfileCanvas", "Random", "StatsBase", "Test", "UUIDs"]
+git-tree-sha1 = "4052d508451de246865d67228aba34ca184e8c67"
 uuid = "293282d5-3c99-4fb6-92d0-fd3280a19750"
-version = "0.8.1"
+version = "0.9.0"
 
     [deps.PauliPropagation.extensions]
     PauliPropagationCUDA = "CUDA"

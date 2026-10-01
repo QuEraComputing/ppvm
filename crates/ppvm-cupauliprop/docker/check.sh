@@ -25,6 +25,8 @@ else
 fi
 
 docker run "${run_args[@]}" -e LD_LIBRARY_PATH="/opt/cupauliprop/lib:/usr/local/cuda/lib64$extra_ld" "$IMAGE" bash -euxc "
+  # gxhash needs AES; .cargo/config.toml only enables it for x86_64.
+  if [[ \$(uname -m) == aarch64 ]]; then export RUSTFLAGS='-C target-feature=+aes,+neon'; fi
   cargo build --release -p ppvm-cupauliprop --features cuda --examples
   cargo test --release -p ppvm-cupauliprop -p ppvm-cupauliprop-sys --features cuda ${test_args[*]:-}
   ldd target/release/examples/trotter_gpu | grep -E 'cupauliprop|cudart|libcuda'

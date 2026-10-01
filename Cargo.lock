@@ -1320,6 +1320,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-cupauliprop"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "ppvm-cupauliprop-sys",
+ "ppvm-pauli-sum",
+ "serde_json",
+]
+
+[[package]]
+name = "ppvm-cupauliprop-sys"
+version = "0.1.0"
+
+[[package]]
 name = "ppvm-pauli-sum"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,24 @@
+[package]
+name = "ppvm-cupauliprop"
+version = "0.1.0"
+edition = "2024"
+description = "GPU Pauli propagation backend for ppvm on NVIDIA cuPauliProp, plus CPU/GPU Trotter benchmarks"
+
+[dependencies]
+ppvm-cupauliprop-sys = { version = "0.1.0", path = "../ppvm-cupauliprop-sys" }
+ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
+
+[dev-dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Build `CudaPauliSum` and link cuPauliProp + cudart (see ppvm-cupauliprop-sys).
+cuda = ["ppvm-cupauliprop-sys/cuda"]
+
+[[example]]
+name = "trotter_cpu"
+
+[[example]]
+name = "trotter_gpu"
+required-features = ["cuda"]

@@ -1,0 +1,11 @@
+[package]
+name = "ppvm-cupauliprop-sys"
+version = "0.1.0"
+edition = "2024"
+description = "Hand-written FFI declarations for the subset of NVIDIA cuPauliProp used by ppvm-cupauliprop"
+links = "cupauliprop"
+
+[features]
+# Emit link directives for libcupauliprop and cudart. Off by default so the
+# workspace builds on hosts without the CUDA toolkit.
+cuda = []

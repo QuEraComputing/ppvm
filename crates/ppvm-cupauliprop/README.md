@@ -63,6 +63,6 @@ naming the required size.
 
 ## Docker
 
-`docker/check.sh` builds the `cuda` feature in a CUDA devel container and
-runs the tests that don't need a GPU (`GPU=1` adds `--gpus all` and the GPU
-tests).
+A Docker image with all dependencies (CUDA toolkit, cuPauliProp, Rust) and a
+script that runs the tests and both benchmarks against a ppvm checkout live
+in ppvm-benchmarks under `trotter-benchmarks/cupauliprop/`.

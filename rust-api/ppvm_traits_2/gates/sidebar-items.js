@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"trait":["AmplitudeDamping","AsymmetricLossChannel","CRx","Clifford","CliffordBatch","CorrelatedLossChannel","Depolarizing","Depolarizing2","LossChannel","Measure","PauliError","Projection","Reset","ResetLossChannel","RotXY","RotationOne","RotationOneBatch","RotationTwo","RotationTwoBatch","TGate","TwoQubitPauliError","U3Gate"]};

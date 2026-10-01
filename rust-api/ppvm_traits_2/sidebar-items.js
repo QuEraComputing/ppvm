@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["algebra","arithmetic","containers","gates","loss","pauli","prelude","word"]};

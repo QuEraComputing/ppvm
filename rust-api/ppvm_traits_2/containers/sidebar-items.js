@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["IdentityBuildHasher","IdentityHasher","KeyBatch","TermBatch"],"trait":["Accumulate","Columnar","Indexable","KeyColumn","KeyColumnMut","LossColumn","Multiply","Pair","PauliColumn","Retain","Scale","Support","TermSink"]};

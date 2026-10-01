@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Phase"],"trait":["Conjugate","ImaginaryUnit","KeyProduct"]};

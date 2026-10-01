@@ -30,6 +30,7 @@ fn run<const B: usize>(args: &BenchArgs, size: usize) -> Value {
         |n, terms| CpuPauliSum::<B>::new(n, terms, args.cutoff),
         |_| {},
     )
+    .0
 }
 
 fn main() {

@@ -99,13 +99,13 @@ impl BenchArgs {
 
 /// Time `rounds` propagations of one size. `build` creates a fresh state
 /// (untimed); `finish` runs inside the timed region after the circuit
-/// (e.g. a device sync).
+/// (e.g. a device sync). Returns the results row and the last final state.
 pub fn bench_size<P: Propagator>(
     args: &BenchArgs,
     size: usize,
     build: impl Fn(usize, &[String]) -> P,
     finish: impl Fn(&P),
-) -> Value {
+) -> (Value, P) {
     let n_qubits = args.n_qubits(size);
     let terms = sum_z_terms(n_qubits);
     let mut times = Vec::with_capacity(args.rounds());
@@ -151,7 +151,7 @@ pub fn bench_size<P: Propagator>(
     if args.model == Model::Heisenberg {
         row["L"] = json!(size);
     }
-    row
+    (row, state)
 }
 
 fn git_commit() -> Option<String> {

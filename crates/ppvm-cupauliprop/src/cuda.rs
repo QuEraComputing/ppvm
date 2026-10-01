@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 use std::ffi::{CStr, c_void};
 use std::ptr;
+use std::time::{Duration, Instant};
 
 use ppvm_cupauliprop_sys::*;
 
@@ -99,6 +100,20 @@ enum OpKey {
     },
 }
 
+/// Host wall time spent in each phase of operator application, summed over
+/// all applies since construction. The compute call blocks until the GPU is
+/// done, so `compute` includes the GPU work.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CallTimes {
+    pub applies: usize,
+    /// Term count query + view creation/destruction.
+    pub view: Duration,
+    pub prepare: Duration,
+    /// Workspace size query + re-attach.
+    pub workspace: Duration,
+    pub compute: Duration,
+}
+
 struct DeviceExpansion {
     expansion: cupaulipropPauliExpansion_t,
     xz: *mut c_void,
@@ -119,6 +134,7 @@ pub struct CudaPauliSum {
     capacity: usize,
     cutoff: f64,
     operators: HashMap<OpKey, cupaulipropQuantumOperator_t>,
+    times: CallTimes,
 }
 
 impl CudaPauliSum {
@@ -224,6 +240,7 @@ impl CudaPauliSum {
             capacity,
             cutoff,
             operators: HashMap::new(),
+            times: CallTimes::default(),
         }
     }
 
@@ -234,6 +251,11 @@ impl CudaPauliSum {
     /// Term capacity of each expansion.
     pub fn capacity(&self) -> usize {
         self.capacity
+    }
+
+    /// Per-phase host time of all applies so far.
+    pub fn call_times(&self) -> CallTimes {
+        self.times
     }
 
     /// Wait for all queued GPU work.
@@ -359,8 +381,11 @@ impl CudaPauliSum {
             strategy: CUPAULIPROP_TRUNCATION_STRATEGY_COEFFICIENT_BASED,
             paramStruct: (&raw mut params).cast(),
         };
+        let t = Instant::now();
         let view = self.current_view();
+        self.times.view += t.elapsed();
 
+        let t = Instant::now();
         let (mut xz_needed, mut coef_needed) = (0, 0);
         check(
             unsafe {
@@ -386,8 +411,12 @@ impl CudaPauliSum {
             "operator application needs capacity {needed_terms} terms, have {}",
             self.capacity
         );
+        self.times.prepare += t.elapsed();
+        let t = Instant::now();
         self.attach_workspace("operator application");
+        self.times.workspace += t.elapsed();
 
+        let t = Instant::now();
         let out = self.expansions[1 - self.current].expansion;
         check(
             unsafe {
@@ -407,10 +436,15 @@ impl CudaPauliSum {
             },
             "cupaulipropPauliExpansionViewComputeOperatorApplication",
         );
+        self.times.compute += t.elapsed();
+
+        let t = Instant::now();
         check(
             unsafe { cupaulipropDestroyPauliExpansionView(view) },
             "cupaulipropDestroyPauliExpansionView",
         );
+        self.times.view += t.elapsed();
+        self.times.applies += 1;
         self.current = 1 - self.current;
     }
 

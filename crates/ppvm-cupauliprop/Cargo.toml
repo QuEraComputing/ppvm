@@ -22,3 +22,7 @@ name = "trotter_cpu"
 [[example]]
 name = "trotter_gpu"
 required-features = ["cuda"]
+
+[[example]]
+name = "gpu_latency"
+required-features = ["cuda"]

@@ -215,6 +215,7 @@ unsafe extern "C" {
         count: usize,
         kind: cudaMemcpyKind,
     ) -> cudaError_t;
+    pub fn cudaMemset(devPtr: *mut c_void, value: i32, count: usize) -> cudaError_t;
     pub fn cudaMemGetInfo(free: *mut usize, total: *mut usize) -> cudaError_t;
     pub fn cudaDeviceSynchronize() -> cudaError_t;
     pub fn cudaGetErrorString(error: cudaError_t) -> *const c_char;

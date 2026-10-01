@@ -15,7 +15,7 @@ mod common;
 
 use clap::Parser;
 use common::{BenchArgs, bench_size, write_results};
-use ppvm_cupauliprop::cuda::{device_memory, library_version};
+use ppvm_cupauliprop::cuda::{CallTimes, device_memory, library_version};
 use ppvm_cupauliprop::{CudaOptions, CudaPauliSum};
 use serde_json::json;
 
@@ -30,6 +30,22 @@ struct Cli {
     /// Workspace size in MiB [default: derived from free GPU memory].
     #[arg(long)]
     workspace_mib: Option<usize>,
+    /// Print host time per apply phase (view, prepare, workspace, compute).
+    #[arg(long)]
+    timings: bool,
+}
+
+/// Per-apply mean host time of each phase, for the last round.
+fn print_call_times(t: &CallTimes) {
+    let per = |d: std::time::Duration| d.as_secs_f64() * 1e6 / t.applies.max(1) as f64;
+    eprintln!(
+        "    per apply ({} applies): view {:.1} µs  prepare {:.1} µs  workspace {:.1} µs  compute {:.1} µs",
+        t.applies,
+        per(t.view),
+        per(t.prepare),
+        per(t.workspace),
+        per(t.compute)
+    );
 }
 
 fn main() {
@@ -51,12 +67,16 @@ fn main() {
         .sizes()
         .into_iter()
         .map(|size| {
-            bench_size(
+            let (row, state) = bench_size(
                 args,
                 size,
                 |n, terms| CudaPauliSum::new(n, terms, args.cutoff, options),
                 CudaPauliSum::synchronize,
-            )
+            );
+            if cli.timings {
+                print_call_times(&state.call_times());
+            }
+            row
         })
         .collect();
     let info = json!({

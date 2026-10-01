@@ -10,7 +10,6 @@
 #     julia --project=@. -t1 benches/xbench_pp.jl
 
 using PauliPropagation
-import PauliPropagation.Performance
 using Printf
 
 const MODEL = get(ENV, "MODEL", "tfim")
@@ -36,23 +35,23 @@ end
 function trotter_step!(cache, n::Int)
     if MODEL == "tfim"
         for i in 1:n
-            Performance.propagate!(PauliRotation([:X], [i], THETA_SITE), cache; min_abs_coeff = ATOL)
+            propagate!(PauliRotation([:X], [i], THETA_SITE), cache; min_abs_coeff = ATOL)
         end
         for i in 1:(n - 1)
-            Performance.propagate!(
+            propagate!(
                 PauliRotation([:Z, :Z], [i, i + 1], THETA_BOND), cache; min_abs_coeff = ATOL
             )
         end
     else
         for i in 1:(n - 1)
             for axes in ([:X, :X], [:Y, :Y], [:Z, :Z])
-                Performance.propagate!(
+                propagate!(
                     PauliRotation(axes, [i, i + 1], THETA_BOND), cache; min_abs_coeff = ATOL
                 )
             end
         end
         for i in 1:n
-            Performance.propagate!(PauliRotation([:Z], [i], THETA_SITE), cache; min_abs_coeff = ATOL)
+            propagate!(PauliRotation([:Z], [i], THETA_SITE), cache; min_abs_coeff = ATOL)
         end
     end
     return cache

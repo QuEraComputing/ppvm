@@ -4,7 +4,7 @@
 use stim_parser::prelude::{MeasureName, MeasureOp, MppOp, PauliAxis};
 
 use super::StimTableau;
-use super::helpers::measure_reset_z;
+use super::helpers::has_repeats;
 
 pub(super) fn execute<T: StimTableau, R: rand::Rng + ?Sized>(
     op: &MeasureOp,
@@ -22,45 +22,31 @@ pub(super) fn execute<T: StimTableau, R: rand::Rng + ?Sized>(
     match name {
         MeasureName::M | MeasureName::MZ => {
             if noise > 0.0 {
-                for &q in targets {
-                    results.push(tab.measure_noisy(q, noise, rng));
-                }
+                tab.measure_noisy_many(targets, noise, rng, results);
             } else {
                 results.extend(tab.measure_many(targets, rng));
             }
         }
         MeasureName::MR => tab.measure_reset_many(targets, noise, rng, results),
-        MeasureName::MX => {
-            for &q in targets {
-                tab.h(q);
-                results.push(tab.measure_noisy(q, noise, rng));
-                tab.h(q);
-            }
+        MeasureName::MX | MeasureName::MY => {
+            let axis = if *name == MeasureName::MX {
+                PauliAxis::X
+            } else {
+                PauliAxis::Y
+            };
+            measure_in_basis(tab, targets, axis, results, |tab, q, results| {
+                tab.measure_noisy_many(q, noise, rng, results)
+            });
         }
-        MeasureName::MY => {
-            for &q in targets {
-                tab.s_dag(q);
-                tab.h(q);
-                results.push(tab.measure_noisy(q, noise, rng));
-                tab.h(q);
-                tab.s(q);
-            }
-        }
-        MeasureName::MRX => {
-            for &q in targets {
-                tab.h(q);
-                results.push(measure_reset_z(tab, q, noise, rng));
-                tab.h(q);
-            }
-        }
-        MeasureName::MRY => {
-            for &q in targets {
-                tab.s_dag(q);
-                tab.h(q);
-                results.push(measure_reset_z(tab, q, noise, rng));
-                tab.h(q);
-                tab.s(q);
-            }
+        MeasureName::MRX | MeasureName::MRY => {
+            let axis = if *name == MeasureName::MRX {
+                PauliAxis::X
+            } else {
+                PauliAxis::Y
+            };
+            measure_in_basis(tab, targets, axis, results, |tab, q, results| {
+                tab.measure_reset_many(q, noise, rng, results)
+            });
         }
         MeasureName::MXX | MeasureName::MYY | MeasureName::MZZ | MeasureName::MPP => {
             unreachable!("unsupported measure {name:?} should have been rejected by validate")
@@ -91,6 +77,29 @@ pub(super) fn execute_mpp<T: StimTableau, R: rand::Rng + ?Sized>(
             basis_from_z(tab, factor.axis, factor.qubit);
         }
     }
+}
+
+/// Measure `targets` along `axis` with `measure`, a Z-basis batch. Distinct
+/// targets rotate onto Z all at once around one batch; a repeated target keeps
+/// the per-target order, where the rotations between its measurements matter.
+fn measure_in_basis<T: StimTableau>(
+    tab: &mut T,
+    targets: &[usize],
+    axis: PauliAxis,
+    results: &mut Vec<Option<bool>>,
+    mut measure: impl FnMut(&mut T, &[usize], &mut Vec<Option<bool>>),
+) {
+    if has_repeats(targets) {
+        for &q in targets {
+            basis_to_z(tab, axis, q);
+            measure(tab, &[q], results);
+            basis_from_z(tab, axis, q);
+        }
+        return;
+    }
+    targets.iter().for_each(|&q| basis_to_z(tab, axis, q));
+    measure(tab, targets, results);
+    targets.iter().for_each(|&q| basis_from_z(tab, axis, q));
 }
 
 fn basis_to_z<T: StimTableau>(tab: &mut T, axis: PauliAxis, q: usize) {

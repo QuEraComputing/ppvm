@@ -624,3 +624,26 @@ fn batched_measure_reset_repeated_target_sees_the_reset() {
         "MR(1) flips each record"
     );
 }
+
+/// Batched `MX`/`MY`/`MRX`/`MRY` and noisy `M` must keep per-target semantics:
+/// the right basis, the record order, the resets and the per-record noise.
+#[test]
+fn batched_basis_and_noisy_measurements() {
+    let (results, _) = run("H 0\nH 1\nH 2\nS 2\nMX 1 0\nMY 2", 3);
+    assert_eq!(results, vec![Some(false); 3], "|+> in X and |+i> in Y are 0");
+
+    for seed in 0..16 {
+        // X⊗X = +1 on the Bell pair; the |+> qubit 2 sits between them.
+        let r = run_seeded("H 0\nCX 0 1\nH 2\nMX 0 2 1\nMRX 0 1\nMX 0 1", 3, seed);
+        assert_eq!(r[0], r[2], "the Bell pair agrees in X");
+        assert_eq!(r[1], Some(false));
+        assert_eq!(r[3], r[4], "MRX measures the same collapsed pair");
+        assert_eq!(&r[5..], &[Some(false); 2], "MRX resets to |+>");
+
+        let r = run_seeded("MRX 0 0\nMRY 1 1", 2, seed);
+        assert_eq!((r[1], r[3]), (Some(false), Some(false)), "a repeat sees the reset");
+    }
+
+    let (results, _) = run("X 0\nM(1.0) 0 1\nH 2\nMX(1.0) 2", 3);
+    assert_eq!(results, vec![Some(false), Some(true), Some(true)], "p = 1 flips each record");
+}

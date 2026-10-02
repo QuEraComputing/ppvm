@@ -126,6 +126,22 @@ pub trait StimTableau: sealed::Sealed {
         }
     }
 
+    /// `M(noise)` on every target, in order, pushing each recorded bit onto
+    /// `results`. Backends may batch the measurements.
+    fn measure_noisy_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        q: &[usize],
+        noise: f64,
+        rng: &mut R,
+        results: &mut Vec<Option<bool>>,
+    ) where
+        Self: Sized,
+    {
+        for &q in q {
+            results.push(self.measure_noisy(q, noise, rng));
+        }
+    }
+
     /// `MR(noise)` on every target, in order, pushing each recorded bit onto
     /// `results`. Backends may batch the measurements.
     fn measure_reset_many<R: rand::Rng + ?Sized>(

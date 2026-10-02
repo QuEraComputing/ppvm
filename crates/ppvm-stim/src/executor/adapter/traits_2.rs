@@ -6,10 +6,9 @@ use ppvm_tableau_2::prelude::{
     CorrelatedLossChannel, Depolarizing, Depolarizing2, GeneralizedTableau, LossChannel, Measure,
     PauliError, Reset, RotationOne, TGate, TwoQubitPauliError, U3Gate,
 };
-use smallvec::SmallVec;
 
 use super::StimTableau;
-use crate::executor::helpers::measure_reset_z;
+use crate::executor::helpers::{has_repeats, measure_reset_z};
 
 macro_rules! unary {
     ($name:ident, $trait:ident) => {
@@ -33,11 +32,21 @@ macro_rules! batch {
     };
 }
 
-/// Whether any qubit appears more than once in `qs`.
-fn has_repeats(qs: &[usize]) -> bool {
-    let mut sorted: SmallVec<[usize; 16]> = qs.into();
-    sorted.sort_unstable();
-    sorted.windows(2).any(|w| w[0] == w[1])
+/// Flip each of the last `outcomes.len()` records with probability `noise`,
+/// pushing the recorded bits onto `results`. A lost qubit's `None` stays.
+fn record_with_noise<I: Bitstring, H, R: rand::Rng + ?Sized>(
+    tab: &mut GeneralizedTableau<I, H>,
+    outcomes: &[Option<bool>],
+    noise: f64,
+    rng: &mut R,
+    results: &mut Vec<Option<bool>>,
+) {
+    let base = tab.measurement_record.len() - outcomes.len();
+    for (k, outcome) in outcomes.iter().enumerate() {
+        let recorded = outcome.map(|b| GeneralizedTableau::<I, H>::flip_with_prob(b, noise, rng));
+        tab.measurement_record[base + k] = recorded;
+        results.push(recorded);
+    }
 }
 
 /// `X` on every target whose true outcome was `1`.
@@ -184,14 +193,20 @@ where
             return;
         }
         let outcomes = self.measure_batch(q, rng);
-        let base = self.measurement_record.len() - q.len();
-        for (k, outcome) in outcomes.iter().enumerate() {
-            let recorded =
-                outcome.map(|b| GeneralizedTableau::<I, H>::flip_with_prob(b, noise, rng));
-            self.measurement_record[base + k] = recorded;
-            results.push(recorded);
-        }
+        record_with_noise(self, &outcomes, noise, rng, results);
         reset_ones(self, q, &outcomes);
+    }
+    // A repeated target needs no fallback: its second measurement is simply
+    // deterministic, and each record's flip is independent.
+    fn measure_noisy_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        q: &[usize],
+        noise: f64,
+        rng: &mut R,
+        results: &mut Vec<Option<bool>>,
+    ) {
+        let outcomes = self.measure_batch(q, rng);
+        record_with_noise(self, &outcomes, noise, rng, results);
     }
 
     fn measurement_record(&self) -> &[Option<bool>] {

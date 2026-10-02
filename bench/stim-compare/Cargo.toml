@@ -1,0 +1,23 @@
+[package]
+name = "stim-compare"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Wall-clock comparison of ppvm's tableau against Stim's TableauSimulator on surface_d30"
+
+# Standalone: keeps the C++ `stim` dependency out of the ppvm workspace.
+[workspace]
+
+[features]
+default = ["traits-2"]
+traits-2 = ["ppvm-stim/traits-2"]
+legacy = ["ppvm-stim/legacy"]
+
+[dependencies]
+ppvm-stim = { path = "../../crates/ppvm-stim", default-features = false }
+bnum = { version = "0.13", features = ["numtraits"] }
+rand = "0.10.1"
+stim = "=0.4.5"
+
+[profile.release]
+debug = "line-tables-only"

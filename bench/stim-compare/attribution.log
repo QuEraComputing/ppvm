@@ -1,0 +1,8 @@
+surface_d30 full 3befaf1b=38530.0  2fa24ce4=38460.0  d7d23c0e=26840.0  4e8aeb5a=22670.0  b4ea1ce9=21020.0  295aaa8b=16820.0  stim=18637.6
+surface_d30 1 round 3befaf1b=25910.0  2fa24ce4=26020.0  d7d23c0e=14060.0  4e8aeb5a=9630.0  b4ea1ce9=9110.0  295aaa8b=6400.0  stim=6892.6
+surface_d30 no measure 3befaf1b=10240.0  2fa24ce4=10230.0  d7d23c0e=10260.0  4e8aeb5a=10240.0  b4ea1ce9=10250.0  295aaa8b=10240.0  stim=12264.6
+surface_d7 3befaf1b=160.0  2fa24ce4=161.8  d7d23c0e=143.7  4e8aeb5a=139.1  b4ea1ce9=112.2  295aaa8b=85.0  stim=62.1
+surface_d11 3befaf1b=736.1  2fa24ce4=734.5  d7d23c0e=622.6  4e8aeb5a=579.7  b4ea1ce9=480.0  295aaa8b=373.0  stim=236.5
+surface_d19 3befaf1b=6300.0  2fa24ce4=6320.0  d7d23c0e=4510.0  4e8aeb5a=4040.0  b4ea1ce9=3570.0  295aaa8b=2760.0  stim=2448.0
+repetition_d75 3befaf1b=976.4  2fa24ce4=974.2  d7d23c0e=983.2  4e8aeb5a=1050.0  b4ea1ce9=677.2  295aaa8b=500.0  stim=205.9
+color_d31 3befaf1b=59580.0  2fa24ce4=59240.0  d7d23c0e=52400.0  4e8aeb5a=51560.0  b4ea1ce9=50750.0  295aaa8b=50090.0  stim=7072.4

@@ -1,0 +1,9 @@
+surface_d30 full 6e8bc36a=15900.0  f5942998=15470.0  stim=19093.8
+surface_d30 1 round 6e8bc36a=6290.0  f5942998=6250.0  stim=7010.9
+surface_d30 no measure 6e8bc36a=9290.0  f5942998=8750.0  stim=12517.5
+surface_d7 6e8bc36a=73.5  f5942998=67.9  stim=62.6
+surface_d11 6e8bc36a=328.9  f5942998=302.4  stim=236.1
+surface_d19 6e8bc36a=2460.0  f5942998=2230.0  stim=2536.3
+repetition_d75 6e8bc36a=450.5  f5942998=409.6  stim=207.1
+color_d31 6e8bc36a=7390.0  f5942998=6620.0  stim=7237.4
+color_d43 6e8bc36a=29920.0  f5942998=28680.0  stim=32699.2

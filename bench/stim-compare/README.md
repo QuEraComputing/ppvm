@@ -162,6 +162,34 @@ goes from ~25 to ~15.5 ns (see "Per-gate cost"), surface d7 −14%, surface d19
 variant −11%. Tableaus are unchanged: mean outcomes over 200 seeded shots are
 identical to `cfd25143` on five Clifford and three non-Clifford circuits.
 
+### `f5942998` perf(tableau-2): fuse `CX`'s forward update with its inverse-sign products
+
+A `CX` fetched its columns twice: once for the inverse-sign row products
+(`ix_c·ix_t`, `iz_c·iz_t`), once per half for the forward update. Those are the
+same eight columns, so `TableauData::cnot_fused` borrows them and both phase
+planes once, reads the two `g`-rule terms, then applies the forward kernel. The
+loops stay separate so they vectorize (one interleaved loop was 48% *slower*
+at n=512), except at one live word (n ≤ 64), where a single scalar pass is
+cheaper. Tableaus are unchanged: mean outcomes over 100–300 seeded shots are
+identical to `6e8bc36a` on 8 Clifford and 4 non-Clifford circuits.
+
+Two-build run (`6e8bc36a` vs `f5942998` vs Stim, 3 alternating rounds) on a
+machine that was not fully idle — Stim itself measured 3–5% slower than in the
+runs above, so read the ratios, not the absolute times. Raw data:
+`attribution-f5942998.csv`, `attribution-f5942998.log`.
+
+| Workload | `6e8bc36a` | `f5942998` | change | Stim | `f5942998` / Stim |
+|---|---|---|---|---|---|
+| surface_d30 full | 15.90 ms | 15.47 | −2.7% | 19.09 | 0.81× |
+| surface_d30 1 round | 6.29 ms | 6.25 | −0.6% | 7.01 | 0.89× |
+| surface_d30 no measure | 9.29 ms | 8.75 | −5.8% | 12.52 | 0.70× |
+| surface d7 (118 q) | 73.5 µs | 67.9 | −7.6% | 62.6 | 1.08× |
+| surface d11 (274 q) | 328.9 µs | 302.4 | −8.1% | 236.1 | 1.28× |
+| surface d19 (778 q) | 2.46 ms | 2.23 | −9.3% | 2.54 | 0.88× |
+| repetition d75 (149 q) | 450.5 µs | 409.6 | −9.1% | 207.1 | 1.98× |
+| color d31 (1081 q) | 7.39 ms | 6.62 | −10.4% | 7.24 | 0.91× |
+| color d43 (2080 q) | 29.92 ms | 28.68 | −4.1% | 32.70 | 0.88× |
+
 ## Size sweep
 
 `sweep.py` generates Stim memory circuits (`rounds = d`, all four noise
@@ -226,18 +254,20 @@ time at small n, with measurement down to 22–25%. `gates.py` isolates it:
 `REPEAT 200` of a `CX` brickwork or an `H` layer, no noise or measurement.
 Raw data: `gates.log`.
 
-| n | ppvm `CX` before | after (`6e8bc36a`) | Stim `CX` | after / Stim | ppvm `H` before | after | Stim `H` | after / Stim |
-|---|---|---|---|---|---|---|---|---|
-| 32 | 25.0 ns | 15.6 | 7.4 | 2.11× | 8.0 ns | 4.6 | 3.6 | 1.26× |
-| 64 | 24.7 | 15.6 | 7.2 | 2.18× | 7.9 | 4.5 | 3.5 | 1.28× |
-| 128 | 23.8 | 15.4 | 9.1 | 1.70× | 7.3 | 4.4 | 5.2 | 0.85× |
-| 274 | 27.3 | 19.4 | 14.0 | 1.38× | 10.2 | 8.4 | 7.4 | 1.14× |
-| 512 | 27.8 | 20.2 | 25.5 | 0.79× | 11.3 | 10.6 | 9.8 | 1.09× |
-| 1024 | 40.7 | 34.5 | 39.6 | 0.87× | 15.6 | 12.9 | 14.6 | 0.89× |
-| 2048 | 72.5 | 65.2 | 69.5 | 0.94× | 22.1 | 21.7 | 18.9 | 1.15× |
+| n | `CX` `cfd25143` | `6e8bc36a` | `f5942998` | Stim | `f5942998` / Stim | `H` `cfd25143` | `f5942998` | Stim | `f5942998` / Stim |
+|---|---|---|---|---|---|---|---|---|---|
+| 32 | 25.0 ns | 15.6 | 8.6 | 7.6 | 1.13× | 8.0 ns | 4.9 | 3.7 | 1.34× |
+| 64 | 24.7 | 15.6 | 8.8 | 7.4 | 1.19× | 7.9 | 4.5 | 3.6 | 1.27× |
+| 128 | 23.8 | 15.4 | 12.0 | 9.3 | 1.30× | 7.3 | 4.6 | 5.3 | 0.86× |
+| 274 | 27.3 | 19.4 | 16.7 | 14.5 | 1.15× | 10.2 | 9.0 | 7.4 | 1.22× |
+| 512 | 27.8 | 20.2 | 18.0 | 25.0 | 0.72× | 11.3 | 10.8 | 9.6 | 1.12× |
+| 1024 | 40.7 | 34.5 | 33.7 | 41.2 | 0.82× | 15.6 | 13.1 | 14.9 | 0.88× |
+| 2048 | 72.5 | 65.2 | 65.5 | 71.6 | 0.91× | 22.1 | 22.6 | 19.3 | 1.17× |
 
-"Before" is `cfd25143`. Before `6e8bc36a` ppvm's `CX` had a ~25 ns floor up to
-~512 qubits: a fixed per-gate cost (the 4-word stride padding, swept twice per
+The `f5942998` column (`gates.log`) was measured on the not-fully-idle machine;
+`H` is unaffected by that commit, so its `f5942998` column doubles as a noise
+check against `6e8bc36a` (4.6 / 4.5 / 4.4 / 8.4 / 10.6 / 12.9 / 21.7 ns there).
+Before `6e8bc36a` ppvm's `CX` had a ~25 ns floor up to ~512 qubits: a fixed per-gate cost (the 4-word stride padding, swept twice per
 `CX`, plus the per-gate overlap check). What remains at small n is mostly
 structural: every gate updates the forward generator phases *and* the inverse
 signs (`inv_pair_phase`, two row-phase products per `CX`), where Stim keeps only
@@ -247,11 +277,13 @@ the fallback when the inverse goes stale, so dropping either side is a redesign.
 
 ## Open gaps
 
-1. **Per-gate cost at small n.** `CX` is ~15.5 ns against Stim's 7–9 ns up to
-   ~128 qubits, mostly the dual phase bookkeeping (see "Per-gate cost"). It is
-   most of why small and mid-size circuits (≈30–500 qubits) are still
-   1.1–2.2× slower, and why the repetition code, almost all `CX`, trails at every
-   size.
+1. **Per-gate cost at small n.** After `f5942998`, `CX` is within 1.1–1.3× of
+   Stim up to ~274 qubits and faster beyond; `CZ` and `CY` still fetch their
+   columns twice and could get the same fusion. Small and mid-size circuits
+   (≈30–500 qubits) are still up to ~1.3× slower (repetition codes ~2×); the
+   rest of the per-gate gap is the dual phase bookkeeping (see "Per-gate
+   cost"), and noise sampling (one RNG draw per target and channel, where Stim
+   skips geometrically) is 10–19% of small circuits.
 2. **Measurement overhead at small n**: `measure_batch_one`, the per-target
    2048-bit "all amplitudes at index 0" check (`memcmp`), the determinism
    pre-scan, `has_repeats`.

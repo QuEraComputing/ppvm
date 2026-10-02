@@ -541,11 +541,15 @@ impl TableauData {
         // One live word (n <= 64): a single scalar pass saves the four loops'
         // overhead. Otherwise separate loops, each simple enough to vectorize.
         if sph.len() == 1 {
-            let g_x = blocks::product_phase_word(szc[0], dzc[0], szt[0], dzt[0]);
-            let g_z = blocks::product_phase_word(sxc[0], dxc[0], sxt[0], dxt[0]);
+            let (mut g_x, mut g_z) = (
+                blocks::PhaseCounter::default(),
+                blocks::PhaseCounter::default(),
+            );
+            g_x.add(szc[0], dzc[0], szt[0], dzt[0]);
+            g_z.add(sxc[0], dxc[0], sxt[0], dxt[0]);
             blocks::cnot_word(sxc[0], &mut szc[0], &mut sxt[0], szt[0], &mut sph[0]);
             blocks::cnot_word(dxc[0], &mut dzc[0], &mut dxt[0], dzt[0], &mut dph[0]);
-            return ((g_x % 4) as u8, (g_z % 4) as u8);
+            return (g_x.total(), g_z.total());
         }
         let g_x = blocks::row_multiply_phase(szc, dzc, szt, dzt);
         let g_z = blocks::row_multiply_phase(sxc, dxc, sxt, dxt);

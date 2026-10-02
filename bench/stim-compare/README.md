@@ -65,19 +65,21 @@ was memory access. Profiled with samply:
 
 Each commit on `david/batch-mr-reset`, timed in one session, alternating all
 binaries and Stim over 3 rounds (median of round medians; PR 204 is `3befaf1b`).
+This is the third such run; per-commit numbers agree with the earlier two
+within a few percent.
 Stim = official 1.15.0. Raw data: `attribution.csv`.
 
-| Workload | PR 204 | `2fa24ce4` | `d7d23c0e` | `4e8aeb5a` | `b4ea1ce9` | `295aaa8b` | `cfd25143` | Stim |
-|---|---|---|---|---|---|---|---|---|
-| surface_d30 full | 38.46 ms | 38.42 | **26.75** | **22.84** | 20.78 | **16.85** | 16.89 | 18.66 |
-| surface_d30 1 round | 26.07 ms | 25.94 | **13.96** | **9.62** | 9.09 | **6.19** | 6.24 | 6.79 |
-| surface_d30 no measure | 10.19 ms | 10.22 | 10.25 | 10.26 | 10.24 | 10.26 | 10.22 | 12.32 |
-| surface d7 (118 q) | 160.4 µs | 161.3 | 143.6 | 139.7 | **113.0** | **86.2** | 84.7 | 61.7 |
-| surface d11 (274 q) | 740.3 µs | 740.8 | 621.4 | 591.0 | **484.5** | **376.5** | 374.6 | 238.4 |
-| surface d19 (778 q) | 6.41 ms | 6.40 | **4.61** | 4.09 | 3.63 | **2.77** | 2.79 | 2.49 |
-| repetition d75 (149 q) | 988.4 µs | 988.8 | 996.6 | 1060.0 | **682.2** | **505.1** | 504.6 | 207.9 |
-| color d31 (1081 q) | 60.15 ms | 60.20 | 53.02 | 52.70 | 51.40 | 50.85 | **8.18** | 7.21 |
-| color d43 (2080 q) | 349.93 ms | 348.72 | 330.32 | 327.39 | 321.34 | 283.97 | **32.09** | 32.36 |
+| Workload | PR 204 | `2fa24ce4` | `d7d23c0e` | `4e8aeb5a` | `b4ea1ce9` | `295aaa8b` | `cfd25143` | `6e8bc36a` | Stim |
+|---|---|---|---|---|---|---|---|---|---|
+| surface_d30 full | 37.86 ms | 37.61 | **26.29** | **22.38** | 20.47 | **16.72** | 16.62 | **15.49** | 18.26 |
+| surface_d30 1 round | 25.45 ms | 25.42 | **13.65** | **9.57** | 9.08 | **6.10** | 6.32 | 6.07 | 6.65 |
+| surface_d30 no measure | 9.99 ms | 9.99 | 10.02 | 10.02 | 10.05 | 10.01 | 10.00 | **8.90** | 12.06 |
+| surface d7 (118 q) | 160.1 µs | 160.2 | 140.8 | 138.1 | **110.9** | **84.4** | 83.8 | **72.2** | 61.4 |
+| surface d11 (274 q) | 734.0 µs | 733.2 | 610.9 | 582.2 | **482.1** | **371.6** | 374.5 | **326.3** | 234.9 |
+| surface d19 (778 q) | 6.32 ms | 6.32 | **4.51** | 4.05 | 3.58 | **2.75** | 2.76 | **2.38** | 2.45 |
+| repetition d75 (149 q) | 972.0 µs | 975.7 | 983.7 | 1050.0 | **675.5** | **499.0** | 502.5 | **445.1** | 207.1 |
+| color d31 (1081 q) | 59.27 ms | 59.51 | 52.35 | 52.18 | 50.46 | 50.02 | **8.11** | 7.13 | 7.08 |
+| color d43 (2080 q) | 343.40 ms | 342.69 | 323.06 | 320.34 | 314.09 | 278.39 | **31.42** | 28.95 | 31.70 |
 
 Every commit leaves outcomes and RNG draws unchanged on these circuits; for
 `295aaa8b`, `surface_d30` records were checked bit-identical against
@@ -91,14 +93,14 @@ in the canonical orientation (contiguous), collapses those under one row guard,
 then measures the deterministic ones column-major — Stim's `collapse_z`. Nothing
 calls it yet, so no change.
 
-### `d7d23c0e` perf(stim): batch `M`, `MR`, `R` — surface_d30 38.4 → 26.8 ms
+### `d7d23c0e` perf(stim): batch `M`, `MR`, `R` — surface_d30 37.6 → 26.3 ms
 
 The traits-2 executor routes noise-free `M`, `MR` and `R`/`RZ` through
 `measure_batch`, applying the `X` resets afterwards (gates need column-major;
 `X_q` commutes with `Z_p`, so deferring is exact; repeated targets keep the old
 loop). Random measurements now amortize one transpose per instruction and
 contiguous projections; all-deterministic instructions never transpose. This is
-the largest single win on `surface_d30` (−11.7 ms; −12.0 ms of the 1-round
+the largest single win on `surface_d30` (−11.3 ms; −11.8 ms of the 1-round
 variant).
 
 **Dead end, not committed:** batching under the *eager* row guard (transpose
@@ -107,25 +109,25 @@ every measurement's column reads become strided, including the 29 all-
 deterministic rounds. Checking determinism first, as Stim does, is what makes
 batching pay.
 
-### `4e8aeb5a` perf(tableau-2): gather columns once — 26.8 → 22.8 ms
+### `4e8aeb5a` perf(tableau-2): gather columns once — 26.3 → 22.4 ms
 
 A random measurement read the same two X columns at the measured qubit three
 times (decomposition, `project_inverse`, `project_row_major`), each a strided
 pass under the guard. Now gathered once and passed down. −3.9 ms on
 `surface_d30`. `repetition_d75` (deterministic measurements only) is ~6%
-slower with this commit, reproduced in two separate attribution runs; not
+slower with this commit, reproduced in three attribution runs; not
 investigated (b4ea1ce9 more than recovers it).
 
-### `b4ea1ce9` perf(tableau-2): reuse buffers, skip unused masks — 22.8 → 20.8 ms
+### `b4ea1ce9` perf(tableau-2): reuse buffers, skip unused masks — 22.4 → 20.5 ms
 
 Column buffers live in `MeasureScratch` instead of being allocated per
 measurement, and a deterministic outcome on a state whose amplitudes are all at
 index 0 (every Clifford run) skips widening the masks into the 2048-bit branch
 index (one full-width shift and OR per set bit). Small on `surface_d30`
-(−2.1 ms) but the biggest win for many-measurement, small-n circuits:
-`repetition_d75` −36%, surface d7 −19%.
+(−1.9 ms) but the biggest win for many-measurement, small-n circuits:
+`repetition_d75` −36%, surface d7 −20%.
 
-### `295aaa8b` perf(tableau-2): Stim-style collapse on stabilizer states — 20.8 → 16.9 ms
+### `295aaa8b` perf(tableau-2): Stim-style collapse on stabilizer states — 20.5 → 16.7 ms
 
 On a stabilizer state (one amplitude at index 0, inverse signs valid)
 `measure_batch` now collapses like Stim's `collapse_qubit_z`: CX appends from
@@ -135,9 +137,9 @@ destabilizer column is never read and no other destabilizer is multiplied; a
 deterministic outcome is one inverse-sign read. The new stabilizer is `±Z`
 times other stabilizers rather than `±Z` itself, so the frame differs from the
 textbook projection's while describing the same state. This is what puts ppvm
-ahead of Stim on `surface_d30` (0.90×) and gives a further −24% on surface d7.
+ahead of Stim on `surface_d30` (0.92×) and gives a further −24% on surface d7.
 
-### `cfd25143` perf(stim): batch `MX`, `MY`, `MRX`, `MRY`, noisy `M` — color d43 284.0 → 32.1 ms
+### `cfd25143` perf(stim): batch `MX`, `MY`, `MRX`, `MRY`, noisy `M` — color d43 278.4 → 31.4 ms
 
 These still ran per qubit (`H`, one measurement, `H`) on the column-major
 strided path, which profiling showed was 78% of color d31: Stim's color-code
@@ -147,40 +149,52 @@ per-target order), and `StimTableau::measure_noisy_many` flips each record
 after the batch. Color d31 −84%, d43 −89%, which takes the large color codes
 level with Stim; circuits without these instructions are unchanged.
 
+### `6e8bc36a` perf(tableau-2): trim gate kernels to live words — every circuit −4% to −14%
+
+A column's stride is rounded up to a whole 4-word block, so below 256 qubits
+every gate kernel and the inverse-sign row product swept 4 words where only
+`n.div_ceil(64)` can hold a set bit. The padding is zero and every kernel maps
+zero words to zero words, so `gate1_mut` / `gate2_mut` and `inv_pair_phase` now
+borrow only the live words, and the per-gate `get_disjoint_mut` overlap check
+becomes a debug check on ranges that are disjoint by layout. `CX` at n ≤ 128
+goes from ~25 to ~15.5 ns (see "Per-gate cost"), surface d7 −14%, surface d19
+−14% (now ahead of Stim), `surface_d30` −7%, and the gates-only `no measure`
+variant −11%. Tableaus are unchanged: mean outcomes over 200 seeded shots are
+identical to `cfd25143` on five Clifford and three non-Clifford circuits.
+
 ## Size sweep
 
 `sweep.py` generates Stim memory circuits (`rounds = d`, all four noise
 parameters 0.001): rotated surface code, repetition code, and color code
 (`C_XYZ`, which ppvm-stim rejects, rewritten as `H` then `SQRT_X_DAG` for both
-simulators), plus clifft-bench's `pure_surface_d7_r7`. Branch = `cfd25143`.
+simulators), plus clifft-bench's `pure_surface_d7_r7`. Branch = `6e8bc36a`.
 Raw data: `sweep.csv`, `sweep.log`. Ratios are time / Stim time.
 
 | Surface | d=3 | 5 | 7 | 9 | 11 | 15 | 19 | 23 | 27 | 31 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | qubits | 26 | 64 | 118 | 188 | 274 | 494 | 778 | 1126 | 1538 | 2014 |
-| branch / Stim | 1.07 | 1.25 | 1.39 | 1.46 | 1.59 | 1.24 | 1.11 | 1.07 | 0.96 | 0.91 |
-| PR 204 / Stim | 1.81 | 2.26 | 2.63 | 2.92 | 3.11 | 2.61 | 2.57 | 2.47 | 2.22 | 2.07 |
+| branch / Stim | 0.99 | 1.06 | 1.17 | 1.33 | 1.39 | 1.09 | 0.97 | 0.96 | 0.88 | 0.86 |
+| PR 204 / Stim | 1.87 | 2.32 | 2.61 | 2.93 | 3.14 | 2.60 | 2.57 | 2.47 | 2.23 | 2.07 |
 
 | Repetition | d=3 | 9 | 25 | 75 | 225 | 675 |
 |---|---|---|---|---|---|---|
 | qubits | 5 | 17 | 49 | 149 | 449 | 1349 |
-| branch / Stim | 0.69 | 1.41 | 2.35 | 2.42 | 1.85 | 1.57 |
-| PR 204 / Stim | 1.41 | 2.85 | 4.54 | 4.75 | 3.40 | 2.30 |
+| branch / Stim | 0.60 | 1.16 | 1.88 | 2.15 | 1.54 | 1.38 |
+| PR 204 / Stim | 1.36 | 2.88 | 4.56 | 4.75 | 3.42 | 2.29 |
 
 | Color | d=3 | 5 | 7 | 9 | 13 | 17 | 21 | 25 | 31 | 37 | 43 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | qubits | 10 | 28 | 55 | 91 | 190 | 325 | 496 | 703 | 1081 | 1540 | 2080 |
-| branch / Stim | 0.76 | 1.56 | 2.17 | 2.00 | 1.73 | 1.66 | 1.36 | 1.19 | 1.14 | 1.06 | 0.98 |
-| `295aaa8b` / Stim | 0.78 | 1.94 | 2.85 | 1.99 | 3.18 | 3.59 | 1.34 | 5.75 | 6.99 | 8.00 | 8.69 |
-| PR 204 / Stim | 1.26 | 2.83 | 4.17 | 3.70 | 4.53 | 5.18 | 3.04 | 7.15 | 8.36 | 9.29 | 10.74 |
+| branch / Stim | 0.68 | 1.30 | 1.77 | 1.68 | 1.57 | 1.44 | 1.20 | 1.11 | 1.00 | 0.97 | 0.92 |
+| PR 204 / Stim | 1.23 | 2.82 | 4.14 | 3.67 | 4.52 | 5.09 | 3.06 | 7.15 | 8.37 | 9.25 | 10.71 |
 
-The `295aaa8b` color row is from the previous sweep: its non-monotonic jumps
-(d21 at 1.34× between d17 at 3.59× and d25 at 5.75×) were the unbatched `MX`.
+Before `cfd25143` the color row was non-monotonic (d21 at 1.34× between d17 at
+3.59× and d25 at 5.75×, `295aaa8b`): that was the unbatched `MX`.
 
-clifft-bench `pure_surface_d7_r7`: branch 84.9 µs, PR 204 160.8 µs, Stim 61.5 µs.
+clifft-bench `pure_surface_d7_r7`: branch 72.7 µs, Stim 61.7 µs (1.18×).
 Sanity check: mean `1` outcomes per shot agree with Stim's compiled sampler
 within ≈2 standard errors on repetition d9, surface d5, color d5 and color d9.
-Both color circuits sit ≈2σ *above* Stim (also before `cfd25143`), which is
+Both color circuits sit ≈2σ *above* Stim (since before this work), which is
 worth a dedicated statistical test.
 
 ## Non-Clifford regression check
@@ -212,31 +226,35 @@ time at small n, with measurement down to 22–25%. `gates.py` isolates it:
 `REPEAT 200` of a `CX` brickwork or an `H` layer, no noise or measurement.
 Raw data: `gates.log`.
 
-| n | ppvm `CX` | Stim `CX` | ratio | ppvm `H` | Stim `H` | ratio |
-|---|---|---|---|---|---|---|
-| 32 | 25.0 ns | 7.3 ns | 3.44× | 8.0 ns | 3.6 ns | 2.20× |
-| 64 | 24.7 | 7.2 | 3.44× | 7.9 | 3.5 | 2.24× |
-| 128 | 23.8 | 9.0 | 2.64× | 7.3 | 5.1 | 1.45× |
-| 274 | 27.3 | 14.0 | 1.95× | 10.2 | 7.4 | 1.37× |
-| 512 | 27.8 | 25.5 | 1.09× | 11.3 | 9.8 | 1.15× |
-| 1024 | 40.7 | 39.5 | 1.03× | 15.6 | 14.7 | 1.06× |
-| 2048 | 72.5 | 69.4 | 1.04× | 22.1 | 18.8 | 1.17× |
+| n | ppvm `CX` before | after (`6e8bc36a`) | Stim `CX` | after / Stim | ppvm `H` before | after | Stim `H` | after / Stim |
+|---|---|---|---|---|---|---|---|---|
+| 32 | 25.0 ns | 15.6 | 7.4 | 2.11× | 8.0 ns | 4.6 | 3.6 | 1.26× |
+| 64 | 24.7 | 15.6 | 7.2 | 2.18× | 7.9 | 4.5 | 3.5 | 1.28× |
+| 128 | 23.8 | 15.4 | 9.1 | 1.70× | 7.3 | 4.4 | 5.2 | 0.85× |
+| 274 | 27.3 | 19.4 | 14.0 | 1.38× | 10.2 | 8.4 | 7.4 | 1.14× |
+| 512 | 27.8 | 20.2 | 25.5 | 0.79× | 11.3 | 10.6 | 9.8 | 1.09× |
+| 1024 | 40.7 | 34.5 | 39.6 | 0.87× | 15.6 | 12.9 | 14.6 | 0.89× |
+| 2048 | 72.5 | 65.2 | 69.5 | 0.94× | 22.1 | 21.7 | 18.9 | 1.15× |
 
-ppvm's `CX` has a ~25 ns floor up to ~512 qubits, where Stim starts at 7 ns:
-a fixed per-gate cost, not a per-qubit one. In the circuit profiles it is the
-inverse-sign update (`inv_pair_phase`, two row-phase products per `CX`, 13–18%),
-the forward update (`cnot`, 14–18%) and slice setup (`gate2_mut` →
-`get_disjoint_mut`, bounds and overlap checks on 5 slices per half, 9–14%).
+"Before" is `cfd25143`. Before `6e8bc36a` ppvm's `CX` had a ~25 ns floor up to
+~512 qubits: a fixed per-gate cost (the 4-word stride padding, swept twice per
+`CX`, plus the per-gate overlap check). What remains at small n is mostly
+structural: every gate updates the forward generator phases *and* the inverse
+signs (`inv_pair_phase`, two row-phase products per `CX`), where Stim keeps only
+its inverse tableau. The forward phases carry the multi-amplitude state
+(`odd_phase_destabilizer_mask` in branching, case-a merge and expectations) and
+the fallback when the inverse goes stale, so dropping either side is a redesign.
 
 ## Open gaps
 
-1. **Fixed per-gate cost.** `CX` costs ~25 ns up to ~512 qubits against Stim's
-   7–25 ns (`H`: ~8 vs 3.5 ns), which is most of why small and mid-size circuits
-   (≈30–500 qubits) are 1.2–2.4× slower on every family and why the repetition
-   code, which is almost all `CX`, trails at every size (see "Per-gate cost").
-2. **Measurement overhead at small n** (22–25% of small circuits):
-   `measure_batch_one`, the per-target 2048-bit "all amplitudes at index 0"
-   check (`memcmp`), the determinism pre-scan, `has_repeats`.
+1. **Per-gate cost at small n.** `CX` is ~15.5 ns against Stim's 7–9 ns up to
+   ~128 qubits, mostly the dual phase bookkeeping (see "Per-gate cost"). It is
+   most of why small and mid-size circuits (≈30–500 qubits) are still
+   1.1–2.2× slower, and why the repetition code, almost all `CX`, trails at every
+   size.
+2. **Measurement overhead at small n**: `measure_batch_one`, the per-target
+   2048-bit "all amplitudes at index 0" check (`memcmp`), the determinism
+   pre-scan, `has_repeats`.
 3. `4e8aeb5a`'s ~6% slowdown on deterministic-only measurement
-   (`repetition_d75`).
+   (`repetition_d75`); more than recovered by `b4ea1ce9`.
 4. Color codes sit ≈2σ above Stim's mean `1` count (see the sweep).

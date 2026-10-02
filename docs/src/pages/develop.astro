@@ -59,6 +59,9 @@ const xrefs: Record<string, string> = {
   Tableau: "ppvm-tableau:Tableau",
   GeneralizedTableau: "ppvm-tableau:GeneralizedTableau",
   SparseVector: "ppvm-tableau:SparseVector",
+  TranslationGroup: "ppvm-pauli-sum:TranslationGroup",
+  LindbladSpec: "ppvm-lindblad:LindbladSpec",
+  PcStepConfig: "ppvm-lindblad:PcStepConfig",
 };
 
 // Pre-resolve so the template stays declarative.
@@ -119,9 +122,10 @@ const toc = [
 ├── crates/
 │   ├── ppvm-traits          # Trait system, Config bundle, Pauli alphabet, map impls
 │   ├── ppvm-pauli-word      # Packed Pauli strings: PauliWord, phased, lossy, pattern
-│   ├── ppvm-pauli-sum       # PauliSum engine, truncation strategy, concrete configs
+│   ├── ppvm-pauli-sum       # PauliSum engine, truncation strategy, configs, translation symmetry
 │   ├── ppvm-tableau         # Stabilizer + generalized-tableau simulator
 │   ├── ppvm-sym             # Symbolic (parametric) Pauli propagation
+│   ├── ppvm-lindblad        # Adaptive Heisenberg-picture Lindbladian evolution
 │   ├── ppvm-stim            # Stim program execution against the tableau
 │   ├── stim-parser          # Standalone parser for the Stim circuit format
 │   └── ppvm-python-native   # PyO3 bindings, compiled into `ppvm` as `ppvm._core`
@@ -138,8 +142,9 @@ const toc = [
       <code>ppvm-sym</code>, and <code>ppvm-stim</code> depend on the Pauli
       crates. <code>ppvm-stim</code> additionally depends on
       <code>ppvm-tableau</code> and <code>stim-parser</code>.
-      <code>ppvm-python-native</code> depends on <code>ppvm-pauli-sum</code>
-      and <code>ppvm-tableau</code>.
+      <code>ppvm-lindblad</code> builds on the three Pauli crates.
+      <code>ppvm-python-native</code> depends on <code>ppvm-pauli-sum</code>,
+      <code>ppvm-tableau</code>, and <code>ppvm-lindblad</code>.
     </p>
 
     <h2 id="build"><span class="sec-num">§ 2</span>Build &amp; test</h2>
@@ -731,6 +736,12 @@ chore: restore lockfile consistency</code></pre>
 
       <dt><a href={link.Config}><code>Config</code></a> trait &amp; implementations</dt>
       <dd>trait in <code>crates/ppvm-traits/src/config.rs</code>; concrete bundles in <code>crates/ppvm-pauli-sum/src/config/</code></dd>
+
+      <dt>Translation symmetry (<a href={link.TranslationGroup}><code>TranslationGroup</code></a>, orbit &amp; momentum-sector merging)</dt>
+      <dd><code>crates/ppvm-pauli-sum/src/symmetry/</code>; Python bindings in <code>crates/ppvm-python-native/src/symmetry.rs</code> and <code>ppvm-python/src/ppvm/symmetry.py</code></dd>
+
+      <dt>Lindbladian evolution (<a href={link.LindbladSpec}><code>LindbladSpec</code></a>, <a href={link.PcStepConfig}><code>PcStepConfig</code></a>)</dt>
+      <dd><code>crates/ppvm-lindblad/src/</code>; Python bindings in <code>crates/ppvm-python-native/src/lindblad.rs</code> and <code>ppvm-python/src/ppvm/lindblad.py</code>; tests in <code>ppvm-python/test/lindblad/</code></dd>
 
       <dt>Stabilizer tableau core (<a href={link.Tableau}><code>Tableau</code></a>, <a href={link.GeneralizedTableau}><code>GeneralizedTableau</code></a>)</dt>
       <dd><code>crates/ppvm-tableau/src/data.rs</code>, <code>tableau_like.rs</code></dd>

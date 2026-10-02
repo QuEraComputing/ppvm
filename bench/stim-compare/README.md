@@ -190,6 +190,31 @@ runs above, so read the ratios, not the absolute times. Raw data:
 | color d31 (1081 q) | 7.39 ms | 6.62 | −10.4% | 7.24 | 0.91× |
 | color d43 (2080 q) | 29.92 ms | 28.68 | −4.1% | 32.70 | 0.88× |
 
+### `5f840789` perf(stim): sample noise Stim-style — repetition d25 −28%
+
+`DEPOLARIZE1`, `DEPOLARIZE2`, `X/Y/Z_ERROR` and `PAULI_CHANNEL_1` drew one
+random number per target (and `DEPOLARIZE2` built and scanned a 15-entry table
+per pair), where Stim's `RareErrorIterator` skips to the next error with a
+geometric gap. The traits-2 adapter now does the same and then picks the
+error's Pauli; lost qubits behave as before. Same distributions (statistical
+executor test per channel and the `DEPOLARIZE2` pair correlation); seeded
+results change.
+
+Against `f5942998`, alternating the two builds (2 rounds, both agree):
+
+| Workload | `f5942998` | `5f840789` | change |
+|---|---|---|---|
+| repetition d25 / d75 / d675 | 37.5 µs / 411.4 µs / 67.2 ms | 27.1 µs / 311.2 µs / 58.8 ms | −28% / −25% / −13% |
+| surface d5 / d11 / d19 | 23.8 µs / 301.1 µs / 2.23 ms | 19.9 µs / 264.0 µs / 2.01 ms | −16% / −12% / −10% |
+| color d9 / d31 | 85.4 µs / 6.63 ms | 74.7 µs / 6.13 ms | −13% / −8% |
+| surface_d30 | 14.96 ms | 14.31 ms | −4% |
+
+Mean `1` outcomes now agree with Stim's compiled sampler within ≈1σ on
+repetition d9/d25, surface d5/d7 and color d5/d9 (20 000 ppvm shots, 200 000
+Stim samples). The color codes' earlier ≈2σ excess is gone (color d5 +0.75σ,
+color d9 +0.37σ), which may point at the old per-target sampler or may have
+been chance.
+
 ## Size sweep
 
 `sweep.py` generates Stim memory circuits (`rounds = d`, all four noise
@@ -282,11 +307,13 @@ the fallback when the inverse goes stale, so dropping either side is a redesign.
    columns twice and could get the same fusion. Small and mid-size circuits
    (≈30–500 qubits) are still up to ~1.3× slower (repetition codes ~2×); the
    rest of the per-gate gap is the dual phase bookkeeping (see "Per-gate
-   cost"), and noise sampling (one RNG draw per target and channel, where Stim
-   skips geometrically) is 10–19% of small circuits.
+   cost"). Noise sampling, 10–19% of small circuits before `5f840789`, now
+   draws once per error.
 2. **Measurement overhead at small n**: `measure_batch_one`, the per-target
    2048-bit "all amplitudes at index 0" check (`memcmp`), the determinism
    pre-scan, `has_repeats`.
 3. `4e8aeb5a`'s ~6% slowdown on deterministic-only measurement
    (`repetition_d75`); more than recovered by `b4ea1ce9`.
-4. Color codes sit ≈2σ above Stim's mean `1` count (see the sweep).
+4. Color codes sat ≈2σ above Stim's mean `1` count with the old per-target noise
+   sampler and ≈0.4–0.75σ with `5f840789`'s; a targeted test of the old
+   sampler would tell whether that was a bias or chance.

@@ -518,6 +518,42 @@ impl TableauData {
         (xa, za, xb, zb, ph)
     }
 
+    /// `CNOT(c, t)` on both halves from one borrow of the live words, returning the
+    /// `g`-rule terms of the inverse-row products `ix_c·ix_t` and `iz_c·iz_t`,
+    /// read before any write. An inverse `X` row is the two halves' `Z` columns
+    /// and a `Z` row their `X` columns (see [`inverse`]), so these are the same
+    /// eight columns the forward update touches.
+    pub(crate) fn cnot_fused(&mut self, c: usize, t: usize) -> (u8, u8) {
+        debug_assert_eq!(self.orientation, Orientation::ColumnMajor);
+        debug_assert_ne!(c, t, "two-qubit gate needs distinct qubits");
+        let [sxc, szc, sxt, szt, sph, dxc, dzc, dxt, dzt, dph] = self.live_disjoint_mut([
+            self.major_range(Half::Stab, Plane::X, c),
+            self.major_range(Half::Stab, Plane::Z, c),
+            self.major_range(Half::Stab, Plane::X, t),
+            self.major_range(Half::Stab, Plane::Z, t),
+            self.phase_range(Half::Stab, true),
+            self.major_range(Half::Destab, Plane::X, c),
+            self.major_range(Half::Destab, Plane::Z, c),
+            self.major_range(Half::Destab, Plane::X, t),
+            self.major_range(Half::Destab, Plane::Z, t),
+            self.phase_range(Half::Destab, true),
+        ]);
+        // One live word (n <= 64): a single scalar pass saves the four loops'
+        // overhead. Otherwise separate loops, each simple enough to vectorize.
+        if sph.len() == 1 {
+            let g_x = blocks::product_phase_word(szc[0], dzc[0], szt[0], dzt[0]);
+            let g_z = blocks::product_phase_word(sxc[0], dxc[0], sxt[0], dxt[0]);
+            blocks::cnot_word(sxc[0], &mut szc[0], &mut sxt[0], szt[0], &mut sph[0]);
+            blocks::cnot_word(dxc[0], &mut dzc[0], &mut dxt[0], dzt[0], &mut dph[0]);
+            return ((g_x % 4) as u8, (g_z % 4) as u8);
+        }
+        let g_x = blocks::row_multiply_phase(szc, dzc, szt, dzt);
+        let g_z = blocks::row_multiply_phase(sxc, dxc, sxt, dxt);
+        blocks::cnot(sxc, szc, sxt, szt, sph);
+        blocks::cnot(dxc, dzc, dxt, dzt, dph);
+        (g_x, g_z)
+    }
+
     // ─── Logical bit access ───────────────────────────────────────────────
 
     /// Read bit `i` of `words`.

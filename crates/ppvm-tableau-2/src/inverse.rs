@@ -233,16 +233,17 @@ impl<H> Tableau<H> {
     // ─── Two-qubit rules ──────────────────────────────────────────────────
 
     /// `CNOT†`: `X_c ↦ X_cX_t`, `Z_t ↦ Z_cZ_t`, the other two fixed.
-    pub(crate) fn prepend_cnot(&mut self, control: usize, target: usize) {
+    ///
+    /// `g_x` / `g_z` are the `g`-rule terms of the products `ix_c·ix_t` and
+    /// `iz_c·iz_t`, which [`TableauData::cnot_fused`] reads in the same pass as
+    /// the forward update.
+    pub(crate) fn prepend_cnot(&mut self, control: usize, target: usize, g_x: u8, g_z: u8) {
         if !self.inverse_valid() {
             return;
         }
-        let nx = self
-            .data
-            .inv_pair_phase((InvRow::X, control), (InvRow::X, target));
-        let nz = self
-            .data
-            .inv_pair_phase((InvRow::Z, control), (InvRow::Z, target));
+        let sign = |row| self.data.inv_sign(row, control) + self.data.inv_sign(row, target);
+        let nx = (sign(InvRow::X) + g_x) % 4;
+        let nz = (sign(InvRow::Z) + g_z) % 4;
         self.data.set_inv_sign(InvRow::X, control, nx);
         self.data.set_inv_sign(InvRow::Z, target, nz);
     }

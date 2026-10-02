@@ -134,11 +134,16 @@ pub(crate) fn sqrt_y_dag(x: &mut [u64], z: &mut [u64], ph: &mut [u64]) {
 #[inline]
 pub(crate) fn cnot(xc: &[u64], zc: &mut [u64], xt: &mut [u64], zt: &[u64], ph: &mut [u64]) {
     for i in 0..ph.len() {
-        let (a, b, c, d) = (xc[i], zc[i], xt[i], zt[i]);
-        ph[i] ^= a & d & !(c ^ b);
-        zc[i] = b ^ d;
-        xt[i] = c ^ a;
+        cnot_word(xc[i], &mut zc[i], &mut xt[i], zt[i], &mut ph[i]);
     }
+}
+
+/// One word of [`cnot`].
+#[inline(always)]
+pub(crate) fn cnot_word(xc: u64, zc: &mut u64, xt: &mut u64, zt: u64, ph: &mut u64) {
+    *ph ^= xc & zt & !(*xt ^ *zc);
+    *zc ^= zt;
+    *xt ^= xc;
 }
 
 /// `CZ`: `z_a ^= x_b`, `z_b ^= x_a`, sign flips where `x_a & x_b & (z_a ^ z_b)`.
@@ -184,18 +189,14 @@ pub(crate) fn row_multiply(
     src_x: &[u64],
     src_z: &[u64],
 ) -> u8 {
-    let mut sign_count = 0u32;
-    let mut imag_count = 0u32;
+    let mut count = 0u32;
     for i in 0..dst_x.len() {
         let (a, b, c, d) = (dst_x[i], dst_z[i], src_x[i], src_z[i]);
-        let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
-        let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
-        sign_count += sign.count_ones();
-        imag_count += imag.count_ones();
+        count += product_phase_word(a, b, c, d);
         dst_x[i] = a ^ c;
         dst_z[i] = b ^ d;
     }
-    ((2 * sign_count + imag_count) % 4) as u8
+    (count % 4) as u8
 }
 
 /// [`row_multiply`]'s phase without its bit writes.
@@ -206,16 +207,19 @@ pub(crate) fn row_multiply(
 /// forward majors, which a writing kernel could not take.
 #[inline]
 pub(crate) fn row_multiply_phase(a_x: &[u64], a_z: &[u64], b_x: &[u64], b_z: &[u64]) -> u8 {
-    let mut sign_count = 0u32;
-    let mut imag_count = 0u32;
+    let mut count = 0u32;
     for i in 0..a_x.len() {
-        let (a, b, c, d) = (a_x[i], a_z[i], b_x[i], b_z[i]);
-        let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
-        let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
-        sign_count += sign.count_ones();
-        imag_count += imag.count_ones();
+        count += product_phase_word(a_x[i], a_z[i], b_x[i], b_z[i]);
     }
-    ((2 * sign_count + imag_count) % 4) as u8
+    (count % 4) as u8
+}
+
+/// One word of [`row_multiply_phase`]'s `g`-rule, as `2·signs + imaginaries`.
+#[inline(always)]
+pub(crate) fn product_phase_word(a: u64, b: u64, c: u64, d: u64) -> u32 {
+    let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
+    let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
+    2 * sign.count_ones() + imag.count_ones()
 }
 
 // ─── Column-wise row multiplication ───────────────────────────────────────

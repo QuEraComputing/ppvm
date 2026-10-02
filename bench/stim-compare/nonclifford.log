@@ -1,0 +1,7 @@
+cultivation_d5                     n= 42 shots=166  3befaf1b     5980.0µs  cfd25143     5990.0µs  cfd25143/3befaf1b 1.00x
+msc_d3_inject_cultivate_p1e-3      n= 15 shots=500  3befaf1b       83.8µs  cfd25143       82.0µs  cfd25143/3befaf1b 0.98x
+msc_d5_inject_cultivate_p1e-3      n= 42 shots=161  3befaf1b     5990.0µs  cfd25143     6010.0µs  cfd25143/3befaf1b 1.00x
+distillation                       n= 85 shots=500  3befaf1b      201.9µs  cfd25143      193.7µs  cfd25143/3befaf1b 0.96x
+coherent_d3_r1                     n= 26 shots=500  3befaf1b      285.3µs  cfd25143      280.6µs  cfd25143/3befaf1b 0.98x
+coherent_d3_r3                     n= 26 shots=230  3befaf1b     4290.0µs  cfd25143     4300.0µs  cfd25143/3befaf1b 1.00x
+quantum_volume_q10_seed42          n= 10 shots=  7  3befaf1b   140060.0µs  cfd25143   140610.0µs  cfd25143/3befaf1b 1.00x

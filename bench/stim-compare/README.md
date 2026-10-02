@@ -33,7 +33,12 @@ STIM_RS_BUILD_FROM_SOURCE=1 cargo build --release
 ../../ppvm-python/.venv/bin/python stim_bench.py file <circuit.stim> 50
 ../../ppvm-python/.venv/bin/python sweep.py 3          # regenerates circuits/, writes sweep.csv
 ../../ppvm-python/.venv/bin/python attribute.py <bin-dir> <commit>...  # writes attribution.csv
+../../ppvm-python/.venv/bin/python nonclifford.py <bin-dir> <commit>... # ppvm only; writes nonclifford.csv
+../../ppvm-python/.venv/bin/python gates.py 50                         # per-gate cost; see gates.log
 ```
+
+`file` mode takes an optional fifth argument, the qubit count; with `only = ppvm`
+it then skips Stim's parse, so programs with `T` gates and rotations run.
 
 `attribute.py` expects one harness binary per commit in `<bin-dir>`, named by
 commit, each built from this crate with the workspace checked out at that commit.
@@ -178,14 +183,60 @@ within ≈2 standard errors on repetition d9, surface d5, color d5 and color d9.
 Both color circuits sit ≈2σ *above* Stim (also before `cfd25143`), which is
 worth a dedicated statistical test.
 
+## Non-Clifford regression check
+
+The fast collapse only fires on stabilizer states, but `4e8aeb5a` and
+`b4ea1ce9` touch the general measurement path too. `nonclifford.py` times PR 204
+against `cfd25143` (3 alternating rounds) on ppvm's `cultivation_d5` and
+clifft-bench's non-Clifford circuits, with clifft's half-turn `R_X(a)` / `U3`
+rewritten as ppvm's `I[R_X(theta=a*pi)]` / `I[U3(...)]` tags for both builds.
+Raw data: `nonclifford.csv`, `nonclifford.log`.
+
+| Program | qubits | PR 204 | `cfd25143` | ratio |
+|---|---|---|---|---|
+| cultivation_d5 | 42 | 5.98 ms | 5.99 ms | 1.00× |
+| msc d3 | 15 | 83.8 µs | 82.0 µs | 0.98× |
+| msc d5 | 42 | 5.99 ms | 6.01 ms | 1.00× |
+| distillation | 85 | 201.9 µs | 193.7 µs | 0.96× |
+| coherent d3 r1 | 26 | 285.3 µs | 280.6 µs | 0.98× |
+| coherent d3 r3 | 26 | 4.29 ms | 4.30 ms | 1.00× |
+| quantum volume q10 | 10 | 140.1 ms | 140.6 ms | 1.00× |
+
+No regressions. (`coherent_d5` and `quantum_volume_q20` take seconds to minutes
+per shot and were left out.)
+
+## Per-gate cost
+
+Profiles of surface d11, repetition d75 and color d9 put `CX` at 39–55% of the
+time at small n, with measurement down to 22–25%. `gates.py` isolates it:
+`REPEAT 200` of a `CX` brickwork or an `H` layer, no noise or measurement.
+Raw data: `gates.log`.
+
+| n | ppvm `CX` | Stim `CX` | ratio | ppvm `H` | Stim `H` | ratio |
+|---|---|---|---|---|---|---|
+| 32 | 25.0 ns | 7.3 ns | 3.44× | 8.0 ns | 3.6 ns | 2.20× |
+| 64 | 24.7 | 7.2 | 3.44× | 7.9 | 3.5 | 2.24× |
+| 128 | 23.8 | 9.0 | 2.64× | 7.3 | 5.1 | 1.45× |
+| 274 | 27.3 | 14.0 | 1.95× | 10.2 | 7.4 | 1.37× |
+| 512 | 27.8 | 25.5 | 1.09× | 11.3 | 9.8 | 1.15× |
+| 1024 | 40.7 | 39.5 | 1.03× | 15.6 | 14.7 | 1.06× |
+| 2048 | 72.5 | 69.4 | 1.04× | 22.1 | 18.8 | 1.17× |
+
+ppvm's `CX` has a ~25 ns floor up to ~512 qubits, where Stim starts at 7 ns:
+a fixed per-gate cost, not a per-qubit one. In the circuit profiles it is the
+inverse-sign update (`inv_pair_phase`, two row-phase products per `CX`, 13–18%),
+the forward update (`cnot`, 14–18%) and slice setup (`gate2_mut` →
+`get_disjoint_mut`, bounds and overlap checks on 5 slices per half, 9–14%).
+
 ## Open gaps
 
-1. **Repetition code: `CX` dominates.** At d675, `CX` is 67% of samples (forward
-   `cnot` 32%, inverse-sign `inv_pair_phase` 28%, `gate2_mut` 7%), while on
-   `surface_d30` ppvm's gates beat Stim's. Needs a gate-level comparison.
-2. **Small and mid-size circuits (≈30–500 qubits) are 1.2–2.4× slower** on every
-   family. Not profiled yet; fixed per-instruction and per-measurement costs are
-   the likely suspects.
+1. **Fixed per-gate cost.** `CX` costs ~25 ns up to ~512 qubits against Stim's
+   7–25 ns (`H`: ~8 vs 3.5 ns), which is most of why small and mid-size circuits
+   (≈30–500 qubits) are 1.2–2.4× slower on every family and why the repetition
+   code, which is almost all `CX`, trails at every size (see "Per-gate cost").
+2. **Measurement overhead at small n** (22–25% of small circuits):
+   `measure_batch_one`, the per-target 2048-bit "all amplitudes at index 0"
+   check (`memcmp`), the determinism pre-scan, `has_repeats`.
 3. `4e8aeb5a`'s ~6% slowdown on deterministic-only measurement
    (`repetition_d75`).
 4. Color codes sit ≈2σ above Stim's mean `1` count (see the sweep).

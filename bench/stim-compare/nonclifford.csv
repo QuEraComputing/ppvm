@@ -1,0 +1,8 @@
+program,qubits,shots,3befaf1b_us,cfd25143_us,ratio
+cultivation_d5,42,166,5980.0,5990.0,1.002
+msc_d3_inject_cultivate_p1e-3,15,500,83.8,82.0,0.979
+msc_d5_inject_cultivate_p1e-3,42,161,5990.0,6010.0,1.003
+distillation,85,500,201.9,193.7,0.959
+coherent_d3_r1,26,500,285.3,280.6,0.984
+coherent_d3_r3,26,230,4290.0,4300.0,1.002
+quantum_volume_q10_seed42,10,7,140060.0,140610.0,1.004

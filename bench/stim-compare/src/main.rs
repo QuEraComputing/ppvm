@@ -3,7 +3,9 @@
 //!
 //! Usage: `stim-compare [shots] [only] [variant]` where `only` is `ppvm`, `stim`
 //! or `both`, and `variant` is one of [`VARIANTS`] (default: all of them).
-//! `stim-compare file <path> [shots] [only]` times one `.stim` file instead.
+//! `stim-compare file <path> [shots] [only] [n_qubits]` times one `.stim` file
+//! instead; with `only = ppvm` and `n_qubits` given, Stim never parses it, so
+//! non-Clifford programs work.
 
 use std::time::{Duration, Instant};
 
@@ -94,20 +96,30 @@ fn stats(name: &str, shots: &[Shot], n_meas: usize) -> Duration {
     e
 }
 
-fn run_variant(name: &str, src: &str, shots: usize, run_ppvm: bool, run_stim: bool) {
+fn run_variant(
+    name: &str,
+    src: &str,
+    shots: usize,
+    run_ppvm: bool,
+    run_stim: bool,
+    n_qubits: Option<usize>,
+) {
     let prog = parse_extended(src).expect("ppvm parse");
-    let circuit: stim::Circuit = src.parse().expect("stim parse");
-    let n_qubits = circuit.num_qubits().max(1);
     validate(&prog).expect("ppvm validate");
     let n_meas = prog.measurement_count();
-    assert_eq!(n_meas as u64, circuit.num_measurements());
+    let circuit: Option<stim::Circuit> =
+        (run_stim || n_qubits.is_none()).then(|| src.parse().expect("stim parse"));
+    let n_qubits = n_qubits.unwrap_or_else(|| circuit.as_ref().unwrap().num_qubits().max(1));
+    if let Some(circuit) = &circuit {
+        assert_eq!(n_meas as u64, circuit.num_measurements());
+    }
     println!("\n[{name}] {n_qubits} qubits, {n_meas} measurements");
 
     let (mut ps, mut ss) = (vec![], vec![]);
     for i in 0..WARMUP + shots {
         let seed = i as u64;
         let p = run_ppvm.then(|| ppvm_shot(&prog, n_qubits, seed));
-        let s = run_stim.then(|| stim_shot(&circuit, n_qubits, seed));
+        let s = run_stim.then(|| stim_shot(circuit.as_ref().unwrap(), n_qubits, seed));
         if i >= WARMUP {
             ps.extend(p);
             ss.extend(s);
@@ -128,9 +140,10 @@ fn main() {
         let path = args.get(2).expect("file path");
         let shots: usize = args.get(3).map_or(20, |s| s.parse().expect("shots"));
         let only = args.get(4).map_or("ppvm", String::as_str);
+        let n_qubits = args.get(5).map(|s| s.parse().expect("n_qubits"));
         let src = std::fs::read_to_string(path).expect("read circuit");
         println!("{path}: ppvm backend = {backend}, {shots} shots");
-        run_variant("file", &src, shots, only != "stim", only != "ppvm");
+        run_variant("file", &src, shots, only != "stim", only != "ppvm", n_qubits);
         return;
     }
     let shots: usize = args.get(1).map_or(20, |s| s.parse().expect("shots"));
@@ -141,7 +154,7 @@ fn main() {
     for &(name, a, b, reps) in VARIANTS {
         if variant.is_none_or(|v| v == name) {
             let src = strip(SRC, a, b, reps);
-            run_variant(name, &src, shots, only != "stim", only != "ppvm");
+            run_variant(name, &src, shots, only != "stim", only != "ppvm", None);
         }
     }
 }

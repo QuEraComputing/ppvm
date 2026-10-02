@@ -150,6 +150,8 @@ pub(crate) struct TableauData {
     n_qubits: usize,
     /// Words per major, `n.div_ceil(64)` rounded up to a whole block.
     stride: usize,
+    /// `n.div_ceil(64)`: the words of a major that can hold a set bit.
+    live: usize,
     orientation: Orientation,
     /// Signs of the inverse tableau's rows — a derived cache whose bits live in
     /// the quadrants above. See [`inverse`]; excluded from equality and hashing.
@@ -166,6 +168,7 @@ impl TableauData {
             blocks: vec![Block([0; WORDS_PER_BLOCK]); words / WORDS_PER_BLOCK],
             n_qubits,
             stride,
+            live: n_qubits.div_ceil(BITS_PER_WORD),
             orientation: Orientation::ColumnMajor,
             inverse: InverseSigns::identity(stride),
         };
@@ -450,6 +453,37 @@ impl TableauData {
 
     // ─── Disjoint borrows for the gate kernels ────────────────────────────
 
+    /// Words of a major that can hold a set bit, `n.div_ceil(64)`. The rest of
+    /// the stride is zero padding, and every gate kernel maps all-zero words to
+    /// all-zero words, so the gate borrows stop here.
+    #[inline]
+    fn live_words(&self) -> usize {
+        self.live
+    }
+
+    /// Borrow `ranges` of the arena mutably at once, trimmed to
+    /// [`Self::live_words`]. The caller passes ranges that are disjoint by
+    /// layout (distinct majors, or a major and a phase plane), so the
+    /// overlap check `get_disjoint_mut` repeats on every gate is a debug check.
+    #[inline]
+    fn live_disjoint_mut<const N: usize>(
+        &mut self,
+        ranges: [std::ops::Range<usize>; N],
+    ) -> [&mut [u64]; N] {
+        let live = self.live_words();
+        let ranges = ranges.map(|r| r.start..r.start + live);
+        let len = self.blocks.len() * WORDS_PER_BLOCK;
+        debug_assert!(ranges.iter().all(|r| r.end <= len));
+        debug_assert!(ranges.iter().enumerate().all(|(i, a)| {
+            ranges[i + 1..]
+                .iter()
+                .all(|b| a.end <= b.start || b.end <= a.start)
+        }));
+        // SAFETY: every range is in bounds and no two overlap (checked above in
+        // debug builds; guaranteed by the arena layout).
+        unsafe { self.words_mut().get_disjoint_unchecked_mut(ranges) }
+    }
+
     /// The `(X, Z, phase-hi)` slices a one-qubit Clifford sweeps, for one half.
     ///
     /// Column-major only: `q` indexes a qubit column.
@@ -460,15 +494,11 @@ impl TableauData {
         q: usize,
     ) -> (&mut [u64], &mut [u64], &mut [u64]) {
         debug_assert_eq!(self.orientation, Orientation::ColumnMajor);
-        let ranges = [
+        let [x, z, ph] = self.live_disjoint_mut([
             self.major_range(half, Plane::X, q),
             self.major_range(half, Plane::Z, q),
             self.phase_range(half, true),
-        ];
-        let [x, z, ph] = self
-            .words_mut()
-            .get_disjoint_mut(ranges)
-            .expect("quadrant and phase-plane regions are disjoint by construction");
+        ]);
         (x, z, ph)
     }
 
@@ -478,18 +508,54 @@ impl TableauData {
     pub(crate) fn gate2_mut(&mut self, half: Half, a: usize, b: usize) -> Gate2Slices<'_> {
         debug_assert_eq!(self.orientation, Orientation::ColumnMajor);
         debug_assert_ne!(a, b, "two-qubit gate needs distinct qubits");
-        let ranges = [
+        let [xa, za, xb, zb, ph] = self.live_disjoint_mut([
             self.major_range(half, Plane::X, a),
             self.major_range(half, Plane::Z, a),
             self.major_range(half, Plane::X, b),
             self.major_range(half, Plane::Z, b),
             self.phase_range(half, true),
-        ];
-        let [xa, za, xb, zb, ph] = self
-            .words_mut()
-            .get_disjoint_mut(ranges)
-            .expect("distinct qubit columns and the phase plane are disjoint");
+        ]);
         (xa, za, xb, zb, ph)
+    }
+
+    /// `CNOT(c, t)` on both halves from one borrow of the live words, returning the
+    /// `g`-rule terms of the inverse-row products `ix_c·ix_t` and `iz_c·iz_t`,
+    /// read before any write. An inverse `X` row is the two halves' `Z` columns
+    /// and a `Z` row their `X` columns (see [`inverse`]), so these are the same
+    /// eight columns the forward update touches.
+    pub(crate) fn cnot_fused(&mut self, c: usize, t: usize) -> (u8, u8) {
+        debug_assert_eq!(self.orientation, Orientation::ColumnMajor);
+        debug_assert_ne!(c, t, "two-qubit gate needs distinct qubits");
+        let [sxc, szc, sxt, szt, sph, dxc, dzc, dxt, dzt, dph] = self.live_disjoint_mut([
+            self.major_range(Half::Stab, Plane::X, c),
+            self.major_range(Half::Stab, Plane::Z, c),
+            self.major_range(Half::Stab, Plane::X, t),
+            self.major_range(Half::Stab, Plane::Z, t),
+            self.phase_range(Half::Stab, true),
+            self.major_range(Half::Destab, Plane::X, c),
+            self.major_range(Half::Destab, Plane::Z, c),
+            self.major_range(Half::Destab, Plane::X, t),
+            self.major_range(Half::Destab, Plane::Z, t),
+            self.phase_range(Half::Destab, true),
+        ]);
+        // One live word (n <= 64): a single scalar pass saves the four loops'
+        // overhead. Otherwise separate loops, each simple enough to vectorize.
+        if sph.len() == 1 {
+            let (mut g_x, mut g_z) = (
+                blocks::PhaseCounter::default(),
+                blocks::PhaseCounter::default(),
+            );
+            g_x.add(szc[0], dzc[0], szt[0], dzt[0]);
+            g_z.add(sxc[0], dxc[0], sxt[0], dxt[0]);
+            blocks::cnot_word(sxc[0], &mut szc[0], &mut sxt[0], szt[0], &mut sph[0]);
+            blocks::cnot_word(dxc[0], &mut dzc[0], &mut dxt[0], dzt[0], &mut dph[0]);
+            return (g_x.total(), g_z.total());
+        }
+        let g_x = blocks::row_multiply_phase(szc, dzc, szt, dzt);
+        let g_z = blocks::row_multiply_phase(sxc, dxc, sxt, dxt);
+        blocks::cnot(sxc, szc, sxt, szt, sph);
+        blocks::cnot(dxc, dzc, dxt, dzt, dph);
+        (g_x, g_z)
     }
 
     // ─── Logical bit access ───────────────────────────────────────────────

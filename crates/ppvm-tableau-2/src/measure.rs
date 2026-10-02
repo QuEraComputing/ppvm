@@ -50,9 +50,10 @@ use ppvm_traits_2::{Clifford, Measure, Pauli, Reset};
 use rand::{Rng, RngExt};
 
 use crate::data::{
-    Bitstring, COMPLEX_PHASE_CONVERSION, GeneralizedTableau, Tableau,
+    Bitstring, COMPLEX_PHASE_CONVERSION, GeneralizedTableau, HalfColumns, Tableau, bits_to_index,
     compute_phase_with_mask_static, symplectic_inner,
 };
+use crate::storage::{Half, blocks};
 
 /// The pure Clifford measurement procedure.
 ///
@@ -156,6 +157,7 @@ pub struct MeasureScratch<I> {
     a: Vec<(I, Complex64)>,
     bt: Vec<(I, Complex64)>,
     merged: Vec<(I, Complex64)>,
+    columns: HalfColumns,
 }
 
 impl<I> MeasureScratch<I> {
@@ -170,6 +172,7 @@ impl<I> MeasureScratch<I> {
             a: Vec::new(),
             bt: Vec::new(),
             merged: Vec::new(),
+            columns: HalfColumns::default(),
         }
     }
 }
@@ -200,11 +203,7 @@ impl<I: Bitstring, H> Measure for GeneralizedTableau<I, H> {
             return None;
         }
 
-        let decomposition = self.compute_decomposition(qubit, Pauli::Z);
-
-        self.with_scratch(|s, scratch| {
-            s.measure_with_scratch(qubit, scratch, decomposition, true, rng)
-        })
+        self.with_scratch(|s, scratch| s.measure_z_with_scratch(qubit, scratch, true, rng))
     }
 
     /// Override the trait default (a per-target `measure` loop) with one scratch
@@ -333,8 +332,123 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
             self.measurement_record.push(None);
             return None;
         }
-        let decomposition = self.compute_decomposition(idx, Pauli::Z);
-        self.measure_with_scratch(idx, scratch, decomposition, true, rng)
+        self.measure_z_with_scratch(idx, scratch, true, rng)
+    }
+
+    /// Measure `indices` in the Z basis the way Stim's `collapse_z` does: the
+    /// random ones first, under one row guard, then the deterministic ones in
+    /// the canonical orientation. Records are pushed in the caller's order.
+    ///
+    /// A target is random when some stabilizer anticommutes with `Z`, a cheap
+    /// contiguous check before any transpose. Collapsing one target can make a
+    /// later one deterministic but never the reverse, so the split is exact and
+    /// a frame with no random target never re-orients.
+    ///
+    /// Unlike [`Self::measure_many`], the RNG-draw order is not that of a
+    /// per-target loop: random targets draw first. Measurements on distinct
+    /// qubits commute, so the outcome distribution is the same. On a stabilizer
+    /// state the collapse is Stim's, so the frame afterwards can differ from
+    /// [`Self::measure_many`]'s while describing the same state.
+    pub fn measure_batch<R: Rng + ?Sized>(
+        &mut self,
+        indices: &[usize],
+        rng: &mut R,
+    ) -> Vec<Option<bool>> {
+        self.with_scratch(|s, scratch| s.measure_batch_with_scratch(indices, scratch, rng))
+    }
+
+    /// [`Self::measure_batch`] with a caller-supplied scratch.
+    pub fn measure_batch_with_scratch<R: Rng + ?Sized>(
+        &mut self,
+        indices: &[usize],
+        scratch: &mut MeasureScratch<I>,
+        rng: &mut R,
+    ) -> Vec<Option<bool>> {
+        let random: Vec<bool> = indices
+            .iter()
+            .map(|&q| !self.is_lost[q] && self.tableau.find_z_anticommuting_stabilizer(q).is_some())
+            .collect();
+        let mut outcomes = vec![None; indices.len()];
+        if random.contains(&true) {
+            self.with_row_major(|s| {
+                for (k, &q) in indices.iter().enumerate().filter(|&(k, _)| random[k]) {
+                    outcomes[k] = s.measure_batch_one(q, scratch, rng);
+                }
+            });
+        }
+        for (k, &q) in indices.iter().enumerate().filter(|&(k, _)| !random[k]) {
+            outcomes[k] = self.measure_batch_one(q, scratch, rng);
+        }
+        self.measurement_record.extend_from_slice(&outcomes);
+        outcomes
+    }
+
+    /// One unrecorded target of [`Self::measure_batch`]. On a stabilizer state
+    /// (one amplitude, at index 0) this is Stim's collapse, which never reads
+    /// the destabilizer column; otherwise the general kernel.
+    ///
+    /// Both draw the same `random::<f64>() < 0.5` for a random outcome, so the
+    /// outcomes match; only the frame chosen for the post-measurement state
+    /// differs. The amplitude is untouched: the frame alone carries the state.
+    fn measure_batch_one<R: Rng + ?Sized>(
+        &mut self,
+        idx: usize,
+        scratch: &mut MeasureScratch<I>,
+        rng: &mut R,
+    ) -> Option<bool> {
+        if self.is_lost[idx] {
+            return None;
+        }
+        let stabilizer_state =
+            self.tableau.inverse_valid() && self.coefficients.iter().all(|&(_, i)| i == I::zero());
+        if !stabilizer_state {
+            return self.measure_z_with_scratch(idx, scratch, false, rng);
+        }
+        let mut column = std::mem::take(&mut scratch.columns[Half::Stab as usize]);
+        self.tableau
+            .z_anticommuting_stabilizers_into(idx, &mut column);
+        let n = self.n_qubits();
+        let outcome = match blocks::first_set(&column).filter(|&p| p < n) {
+            None => self.tableau.inverse_outcome(idx),
+            Some(pivot) => {
+                let outcome = rng.random::<f64>() < 0.5;
+                self.tableau.collapse_z(idx, pivot, outcome, &column);
+                scratch.odd_phase_mask = None;
+                outcome
+            }
+        };
+        scratch.columns[Half::Stab as usize] = column;
+        Some(outcome)
+    }
+
+    /// Measure `Z_qubit` on a qubit that is not lost. Its anticommutation
+    /// columns are gathered once, for the decomposition and the projection.
+    pub(crate) fn measure_z_with_scratch<R: Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        scratch: &mut MeasureScratch<I>,
+        record: bool,
+        rng: &mut R,
+    ) -> Option<bool> {
+        let mut columns = std::mem::take(&mut scratch.columns);
+        self.tableau
+            .z_anticommutation_columns_into(qubit, &mut columns);
+        let phase = self.decomposition_phase_with(qubit, Pauli::Z, &columns);
+        // A deterministic outcome reads the masks only through amplitude
+        // indices; with every index zero (a Clifford run) skip widening them.
+        let [destab, stab] = &columns;
+        let decomposition = if stab.iter().all(|&w| w == 0)
+            && self.coefficients.iter().all(|&(_, idx)| idx == I::zero())
+        {
+            (phase, I::zero(), I::zero())
+        } else {
+            let n = self.n_qubits();
+            (phase, bits_to_index(stab, n), bits_to_index(destab, n))
+        };
+        let outcome =
+            self.measure_with_scratch(qubit, scratch, decomposition, &columns, record, rng);
+        scratch.columns = columns;
+        outcome
     }
 
     /// The coefficient-aware measurement kernel.
@@ -372,6 +486,7 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         addr0: usize,
         scratch: &mut MeasureScratch<I>,
         decomposition: (u8, I, I),
+        columns: &HalfColumns,
         record: bool,
         rng: &mut R,
     ) -> Option<bool> {
@@ -578,7 +693,7 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
 
             self.coefficients.normalize();
             self.tableau
-                .update_tableau_according_to_outcome(addr0, q_idx, outcome);
+                .update_tableau_with_columns(addr0, q_idx, outcome, columns);
             // Destabilizer phases just changed; invalidate the cached mask.
             scratch.odd_phase_mask = None;
             if record {

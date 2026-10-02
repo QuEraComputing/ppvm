@@ -592,3 +592,124 @@ fn sample_keeps_non_sync_factories_on_serial_builds() {
     assert_eq!(shots.len(), 3);
     assert_eq!(calls.get(), 3);
 }
+
+/// Batched `MR`/`R` must reset every target, keep the record in target order,
+/// and see each earlier reset of a repeated target.
+#[test]
+fn batched_measure_reset_and_reset_over_many_targets() {
+    // Bell pair on (0, 1), |1> on 2, |+> on 3; the random targets follow
+    // deterministic ones in the target list.
+    let src = "H 0\nCX 0 1\nX 2\nH 3\nMR 2 1 0 3\nM 0 1 2 3";
+    for seed in 0..16 {
+        let r = run_seeded(src, 4, seed);
+        assert_eq!(r[0], Some(true));
+        assert_eq!(r[1], r[2], "the Bell pair must agree");
+        assert_eq!(&r[4..], &[Some(false); 4], "MR must reset every target");
+    }
+
+    let (results, _) = run("X 0\nX 1\nR 1 0\nM 0 1", 2);
+    assert_eq!(results, vec![Some(false), Some(false)]);
+}
+
+#[test]
+fn batched_measure_reset_repeated_target_sees_the_reset() {
+    for seed in 0..16 {
+        let r = run_seeded("H 0\nMR 0 0", 1, seed);
+        assert_eq!(r[1], Some(false), "the second MR of 0 follows its reset");
+    }
+    let (results, _) = run("X 0\nMR(1.0) 0 1", 2);
+    assert_eq!(
+        results,
+        vec![Some(false), Some(true)],
+        "MR(1) flips each record"
+    );
+}
+
+/// Batched `MX`/`MY`/`MRX`/`MRY` and noisy `M` must keep per-target semantics:
+/// the right basis, the record order, the resets and the per-record noise.
+#[test]
+fn batched_basis_and_noisy_measurements() {
+    let (results, _) = run("H 0\nH 1\nH 2\nS 2\nMX 1 0\nMY 2", 3);
+    assert_eq!(
+        results,
+        vec![Some(false); 3],
+        "|+> in X and |+i> in Y are 0"
+    );
+
+    for seed in 0..16 {
+        // X⊗X = +1 on the Bell pair; the |+> qubit 2 sits between them.
+        let r = run_seeded("H 0\nCX 0 1\nH 2\nMX 0 2 1\nMRX 0 1\nMX 0 1", 3, seed);
+        assert_eq!(r[0], r[2], "the Bell pair agrees in X");
+        assert_eq!(r[1], Some(false));
+        assert_eq!(r[3], r[4], "MRX measures the same collapsed pair");
+        assert_eq!(&r[5..], &[Some(false); 2], "MRX resets to |+>");
+
+        let r = run_seeded("MRX 0 0\nMRY 1 1", 2, seed);
+        assert_eq!(
+            (r[1], r[3]),
+            (Some(false), Some(false)),
+            "a repeat sees the reset"
+        );
+    }
+
+    let (results, _) = run("X 0\nM(1.0) 0 1\nH 2\nMX(1.0) 2", 3);
+    assert_eq!(
+        results,
+        vec![Some(false), Some(true), Some(true)],
+        "p = 1 flips each record"
+    );
+}
+
+/// Fraction of `1`s per measured qubit over `shots` seeded runs of `src`, and
+/// the fraction of shots where qubits 0 and 1 both read `1`.
+fn flip_rates(src: &str, shots: u64) -> (f64, f64) {
+    let (mut ones, mut both, mut total) = (0usize, 0usize, 0usize);
+    for seed in 0..shots {
+        let r = run_seeded(src, 8, 1000 + seed);
+        ones += r.iter().filter(|&&b| b == Some(true)).count();
+        total += r.len();
+        both += usize::from(r[0] == Some(true) && r[1] == Some(true));
+    }
+    (ones as f64 / total as f64, both as f64 / shots as f64)
+}
+
+/// The batched noise channels must keep the per-target distributions: each
+/// target independently, each Pauli with its probability, and `DEPOLARIZE2`'s
+/// 15 pair errors correlated across the pair.
+#[test]
+fn noise_channels_keep_their_distributions() {
+    let all = "0 1 2 3 4 5 6 7";
+    let cases = [
+        (format!("X_ERROR(0.1) {all}\nM {all}"), 0.1),
+        (format!("Y_ERROR(0.1) {all}\nM {all}"), 0.1),
+        (
+            format!("H {all}\nZ_ERROR(0.1) {all}\nH {all}\nM {all}"),
+            0.1,
+        ),
+        // X and Y flip a Z measurement: 2/3 of p.
+        (format!("DEPOLARIZE1(0.3) {all}\nM {all}"), 0.2),
+        (
+            format!("PAULI_CHANNEL_1(0.05, 0.1, 0.2) {all}\nM {all}"),
+            0.15,
+        ),
+        // 8 of the 15 pair errors put X or Y on a given qubit.
+        (format!("DEPOLARIZE2(0.3) {all}\nM {all}"), 0.16),
+    ];
+    for (src, expected) in &cases {
+        let (rate, _) = flip_rates(src, 600);
+        assert!(
+            (rate - expected).abs() < 0.012,
+            "{src}: {rate} vs {expected}"
+        );
+    }
+
+    // 4 of the 15 pair errors flip both qubits of a pair.
+    let (_, both) = flip_rates(&format!("DEPOLARIZE2(0.3) {all}\nM {all}"), 4000);
+    assert!(
+        (both - 0.08).abs() < 0.012,
+        "DEPOLARIZE2 pair correlation: {both}"
+    );
+
+    assert_eq!(flip_rates(&format!("X_ERROR(1) {all}\nM {all}"), 4).0, 1.0);
+    assert_eq!(flip_rates(&format!("X_ERROR(0) {all}\nM {all}"), 4).0, 0.0);
+}

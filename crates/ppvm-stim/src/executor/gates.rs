@@ -13,11 +13,7 @@ pub(super) fn execute<T: StimTableau, R: rand::Rng + ?Sized>(
 ) {
     let GateOp { name, targets, .. } = op;
     match name {
-        GateName::Reset | GateName::ResetZ => {
-            for &target in targets {
-                tab.reset(qubit(target), rng);
-            }
-        }
+        GateName::Reset | GateName::ResetZ => tab.reset_many(&qubits(targets), rng),
         GateName::ResetX => {
             for &target in targets {
                 let q = qubit(target);

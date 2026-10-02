@@ -236,7 +236,9 @@ impl TableauData {
     pub(crate) fn inv_pair_phase(&self, a: (InvRow, usize), b: (InvRow, usize)) -> u8 {
         let (ax, az) = self.inv_planes(a.0, a.1);
         let (bx, bz) = self.inv_planes(b.0, b.1);
-        let g = blocks::row_multiply_phase(ax, az, bx, bz);
+        // Padding words are zero and contribute no phase.
+        let live = self.live_words();
+        let g = blocks::row_multiply_phase(&ax[..live], &az[..live], &bx[..live], &bz[..live]);
         (self.inv_sign(a.0, a.1) + self.inv_sign(b.0, b.1) + g) % 4
     }
 

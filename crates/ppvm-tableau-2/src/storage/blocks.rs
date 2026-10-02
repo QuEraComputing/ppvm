@@ -134,11 +134,16 @@ pub(crate) fn sqrt_y_dag(x: &mut [u64], z: &mut [u64], ph: &mut [u64]) {
 #[inline]
 pub(crate) fn cnot(xc: &[u64], zc: &mut [u64], xt: &mut [u64], zt: &[u64], ph: &mut [u64]) {
     for i in 0..ph.len() {
-        let (a, b, c, d) = (xc[i], zc[i], xt[i], zt[i]);
-        ph[i] ^= a & d & !(c ^ b);
-        zc[i] = b ^ d;
-        xt[i] = c ^ a;
+        cnot_word(xc[i], &mut zc[i], &mut xt[i], zt[i], &mut ph[i]);
     }
+}
+
+/// One word of [`cnot`].
+#[inline(always)]
+pub(crate) fn cnot_word(xc: u64, zc: &mut u64, xt: &mut u64, zt: u64, ph: &mut u64) {
+    *ph ^= xc & zt & !(*xt ^ *zc);
+    *zc ^= zt;
+    *xt ^= xc;
 }
 
 /// `CZ`: `z_a ^= x_b`, `z_b ^= x_a`, sign flips where `x_a & x_b & (z_a ^ z_b)`.
@@ -184,18 +189,26 @@ pub(crate) fn row_multiply(
     src_x: &[u64],
     src_z: &[u64],
 ) -> u8 {
-    let mut sign_count = 0u32;
-    let mut imag_count = 0u32;
-    for i in 0..dst_x.len() {
-        let (a, b, c, d) = (dst_x[i], dst_z[i], src_x[i], src_z[i]);
-        let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
-        let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
-        sign_count += sign.count_ones();
-        imag_count += imag.count_ones();
-        dst_x[i] = a ^ c;
-        dst_z[i] = b ^ d;
+    // Short rows: one fused serial pass. Longer: phase first, then the bits —
+    // two simple passes vectorize, one fused does not.
+    if dst_x.len() < 8 {
+        let mut phase = PhaseCounter::default();
+        for i in 0..dst_x.len() {
+            let (a, b, c, d) = (dst_x[i], dst_z[i], src_x[i], src_z[i]);
+            phase.add(a, b, c, d);
+            dst_x[i] = a ^ c;
+            dst_z[i] = b ^ d;
+        }
+        return phase.total();
     }
-    ((2 * sign_count + imag_count) % 4) as u8
+    let phase = row_multiply_phase(dst_x, dst_z, src_x, src_z);
+    for (d, s) in dst_x.iter_mut().zip(src_x) {
+        *d ^= s;
+    }
+    for (d, s) in dst_z.iter_mut().zip(src_z) {
+        *d ^= s;
+    }
+    phase
 }
 
 /// [`row_multiply`]'s phase without its bit writes.
@@ -204,18 +217,63 @@ pub(crate) fn row_multiply(
 /// phase of a product of two rows whose *bits* the forward gate already
 /// maintains, so there is nothing to write back — and the operands are borrowed
 /// forward majors, which a writing kernel could not take.
-#[inline]
+#[inline(always)]
 pub(crate) fn row_multiply_phase(a_x: &[u64], a_z: &[u64], b_x: &[u64], b_z: &[u64]) -> u8 {
-    let mut sign_count = 0u32;
-    let mut imag_count = 0u32;
-    for i in 0..a_x.len() {
-        let (a, b, c, d) = (a_x[i], a_z[i], b_x[i], b_z[i]);
-        let sign = (a & b & c & !d) | (a & !b & !c & d) | (!a & b & c & d);
-        let imag = (a & !b & d) | (a & !c & d) | (!a & b & c) | (b & c & !d);
-        sign_count += sign.count_ones();
-        imag_count += imag.count_ones();
+    // Below two chunks one serial counter is cheapest. From there, four
+    // counters over 4-word chunks are independent lanes the compiler can
+    // vectorize (a serial counter cannot be); the tail uses one more counter.
+    if a_x.len() < 8 {
+        let mut phase = PhaseCounter::default();
+        for i in 0..a_x.len() {
+            phase.add(a_x[i], a_z[i], b_x[i], b_z[i]);
+        }
+        return phase.total();
     }
-    ((2 * sign_count + imag_count) % 4) as u8
+    let (ax, ax_tail) = a_x.as_chunks::<4>();
+    let (az, az_tail) = a_z.as_chunks::<4>();
+    let (bx, bx_tail) = b_x.as_chunks::<4>();
+    let (bz, bz_tail) = b_z.as_chunks::<4>();
+    let mut lanes = [PhaseCounter::default(); 4];
+    for (((a, b), c), d) in ax.iter().zip(az).zip(bx).zip(bz) {
+        for k in 0..4 {
+            lanes[k].add(a[k], b[k], c[k], d[k]);
+        }
+    }
+    let mut tail = PhaseCounter::default();
+    for i in 0..ax_tail.len() {
+        tail.add(ax_tail[i], az_tail[i], bx_tail[i], bz_tail[i]);
+    }
+    let lanes: u32 = lanes.iter().map(|c| u32::from(c.total())).sum();
+    ((lanes + u32::from(tail.total())) % 4) as u8
+}
+
+/// The `g`-rule phase of a row product, summed mod 4 with one 2-bit counter
+/// per bit position (`lo` + 2·`hi`), so a product popcounts once at the end
+/// rather than twice per word. This is Stim's `cnt1` / `cnt2` update; it adds
+/// exactly the Aaronson–Gottesman `g` term at every bit (checked exhaustively
+/// in the tests below).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct PhaseCounter {
+    lo: u64,
+    hi: u64,
+}
+
+impl PhaseCounter {
+    /// Add the term of `(a, b) · (c, d)` — `x`/`z` bits of the left and right
+    /// factor — at every bit.
+    #[inline(always)]
+    pub(crate) fn add(&mut self, a: u64, b: u64, c: u64, d: u64) {
+        let ad = a & d;
+        let anticommute = (c & b) ^ ad;
+        self.hi ^= (self.lo ^ a ^ c ^ b ^ d ^ ad) & anticommute;
+        self.lo ^= anticommute;
+    }
+
+    /// The accumulated phase, mod 4.
+    #[inline(always)]
+    pub(crate) fn total(self) -> u8 {
+        ((self.lo.count_ones() + 2 * self.hi.count_ones()) % 4) as u8
+    }
 }
 
 // ─── Column-wise row multiplication ───────────────────────────────────────
@@ -462,4 +520,36 @@ pub(crate) fn first_set(words: &[u64]) -> Option<usize> {
         .iter()
         .position(|&w| w != 0)
         .map(|i| i * super::BITS_PER_WORD + words[i].trailing_zeros() as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PhaseCounter;
+
+    /// The Aaronson–Gottesman `g` term at one bit, as the replaced per-word
+    /// formula computed it.
+    fn g_term(a: bool, b: bool, c: bool, d: bool) -> u8 {
+        let sign = (a && b && c && !d) || (a && !b && !c && d) || (!a && b && c && d);
+        let imag = (a && !b && d) || (a && !c && d) || (!a && b && c) || (b && c && !d);
+        (2 * u8::from(sign) + u8::from(imag)) % 4
+    }
+
+    #[test]
+    fn phase_counter_adds_the_g_term_from_every_state() {
+        for bits in 0..16u8 {
+            let [a, b, c, d] = [0, 1, 2, 3].map(|k| bits >> k & 1 == 1);
+            for start in 0..4u8 {
+                let mut counter = PhaseCounter {
+                    lo: u64::from(start & 1),
+                    hi: u64::from(start >> 1),
+                };
+                counter.add(a.into(), b.into(), c.into(), d.into());
+                assert_eq!(
+                    counter.total(),
+                    (start + g_term(a, b, c, d)) % 4,
+                    "{bits:04b} from {start}"
+                );
+            }
+        }
+    }
 }

@@ -63,8 +63,8 @@
 
 use ppvm_traits_2::Pauli;
 
-use crate::data::Tableau;
-use crate::storage::{HALVES, Half, InvRow, Orientation, Plane, TableauData, blocks};
+use crate::data::{HalfColumns, Tableau};
+use crate::storage::{Half, InvRow, Orientation, TableauData, blocks};
 
 impl<H> Tableau<H> {
     /// Whether the inverse-row signs can be read.
@@ -233,16 +233,17 @@ impl<H> Tableau<H> {
     // ─── Two-qubit rules ──────────────────────────────────────────────────
 
     /// `CNOT†`: `X_c ↦ X_cX_t`, `Z_t ↦ Z_cZ_t`, the other two fixed.
-    pub(crate) fn prepend_cnot(&mut self, control: usize, target: usize) {
+    ///
+    /// `g_x` / `g_z` are the `g`-rule terms of the products `ix_c·ix_t` and
+    /// `iz_c·iz_t`, which [`TableauData::cnot_fused`] reads in the same pass as
+    /// the forward update.
+    pub(crate) fn prepend_cnot(&mut self, control: usize, target: usize, g_x: u8, g_z: u8) {
         if !self.inverse_valid() {
             return;
         }
-        let nx = self
-            .data
-            .inv_pair_phase((InvRow::X, control), (InvRow::X, target));
-        let nz = self
-            .data
-            .inv_pair_phase((InvRow::Z, control), (InvRow::Z, target));
+        let sign = |row| self.data.inv_sign(row, control) + self.data.inv_sign(row, target);
+        let nx = (sign(InvRow::X) + g_x) % 4;
+        let nz = (sign(InvRow::Z) + g_z) % 4;
         self.data.set_inv_sign(InvRow::X, control, nx);
         self.data.set_inv_sign(InvRow::Z, target, nz);
     }
@@ -363,7 +364,29 @@ impl<H> Tableau<H> {
     /// Pauli's *bits* alone, so the frame's `ℤ/4` phases — which the forward
     /// projection is busy folding `g`-rules into — never enter here. The two
     /// bookkeepings are independent computations of the same frame.
-    pub(crate) fn project_inverse(&mut self, addr0: usize, pivot: usize, outcome: bool) {
+    pub(crate) fn project_inverse(
+        &mut self,
+        addr0: usize,
+        pivot: usize,
+        outcome: bool,
+        columns: &HalfColumns,
+    ) {
+        let [destab, stab] = columns;
+        self.collapse_inverse(addr0, pivot, outcome, stab, Some(destab));
+    }
+
+    /// The appends behind [`Self::project_inverse`]. With `destab_column` `None`
+    /// the destabilizer `CZ`s are skipped — Stim's `collapse_qubit_z`, which
+    /// leaves `s_p` a product of `±Z_a` and other stabilizers. Returns whether
+    /// the final `append_X(p)` ran.
+    pub(crate) fn collapse_inverse(
+        &mut self,
+        addr0: usize,
+        pivot: usize,
+        outcome: bool,
+        stab_column: &[u64],
+        destab_column: Option<&[u64]>,
+    ) -> bool {
         debug_assert!(self.data.inverse_valid());
         let n = self.n_qubits();
         let stride = self.data.stride();
@@ -381,8 +404,12 @@ impl<H> Tableau<H> {
         // `ω(Z_a, g) = x_g[a]`: one column per half, minus the pivot, which is
         // not multiplied into itself.
         let mut selected = [destab_sel, stab_sel];
-        for (half, out) in HALVES.into_iter().zip(selected.iter_mut()) {
-            self.data.gather_column(half, Plane::X, addr0, out);
+        match destab_column {
+            Some(column) => selected[Half::Destab as usize].copy_from_slice(column),
+            None => selected[Half::Destab as usize].fill(0),
+        }
+        selected[Half::Stab as usize].copy_from_slice(stab_column);
+        for out in selected.iter_mut() {
             TableauData::set_bit(out, pivot, false);
         }
 
@@ -479,9 +506,10 @@ impl<H> Tableau<H> {
             self.data.inv_sign_plane_mut(InvRow::Z),
         );
         debug_assert!(
-            p.stab.0.iter().all(|&w| w == 0)
-                && blocks::first_set(p.stab.1) == Some(addr0)
-                && blocks::count_set(p.stab.1) == 1,
+            destab_column.is_none()
+                || p.stab.0.iter().all(|&w| w == 0)
+                    && blocks::first_set(p.stab.1) == Some(addr0)
+                    && blocks::count_set(p.stab.1) == 1,
             "the appends must leave the pivot stabilizer at ±Z_{addr0}"
         );
 
@@ -490,11 +518,13 @@ impl<H> Tableau<H> {
         // `iz_a = U'†Z_aU' = (−1)^r Z_p`, so that row's sign is the outcome. If
         // it disagrees, `append_X(p)` flips the sign of every inverse row with a
         // `Z` at site `p` — `iz_a` among them — which is exactly negating `s_p`.
-        if (self.data.inv_sign(InvRow::Z, addr0) == 2) != outcome {
+        let flip = (self.data.inv_sign(InvRow::Z, addr0) == 2) != outcome;
+        if flip {
             blocks::pauli_x(p.destab.1, self.data.inv_sign_plane_mut(InvRow::X));
             blocks::pauli_x(p.destab.0, self.data.inv_sign_plane_mut(InvRow::Z));
         }
         self.data.restore_inv_scratch(scratch);
+        flip
     }
 }
 

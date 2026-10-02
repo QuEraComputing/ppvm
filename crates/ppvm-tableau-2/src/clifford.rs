@@ -355,15 +355,10 @@ impl<H> Clifford for Tableau<H> {
 
     #[inline]
     fn cnot(&mut self, control: usize, target: usize) {
-        sweep2!(
-            self,
-            control,
-            target,
-            inverse: prepend_cnot,
-            |xc: &mut [u64], zc: &mut [u64], xt: &mut [u64], zt: &mut [u64], ph: &mut [u64]| {
-                blocks::cnot(xc, zc, xt, zt, ph)
-            }
-        );
+        self.invalidate_hash();
+        // One pass for the bits, the forward phases and the inverse-sign products.
+        let (g_x, g_z) = self.data.cnot_fused(control, target);
+        self.prepend_cnot(control, target, g_x, g_z);
     }
 
     #[inline]

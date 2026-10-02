@@ -38,6 +38,13 @@ pub(super) fn record_bit(record: &[Option<bool>], k: usize) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether any qubit appears more than once in `qs`.
+pub(super) fn has_repeats(qs: &[usize]) -> bool {
+    let mut sorted: SmallVec<[usize; TARGETS_INLINE]> = qs.into();
+    sorted.sort_unstable();
+    sorted.windows(2).any(|w| w[0] == w[1])
+}
+
 pub(super) fn measure_reset_z<T: StimTableau, R: rand::Rng + ?Sized>(
     tab: &mut T,
     q: usize,

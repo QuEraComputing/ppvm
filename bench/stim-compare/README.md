@@ -215,6 +215,37 @@ Stim samples). The color codes' earlier ≈2σ excess is gone (color d5 +0.75σ,
 color d9 +0.37σ), which may point at the old per-target sampler or may have
 been chance.
 
+### `771daf64` perf(tableau-2): carry-save phase counters — `CX` −4% to −24%
+
+Keeping the inverse signs current is about half of a `CX` (a throwaway build
+without it ran gate-only `surface_d30` in 4.1 ms instead of 7.7 ms; lazy signs
+would not recover that for QEC circuits, which read the signs every round).
+The cost is the `g`-rule row products, which ran two popcounts per word.
+`PhaseCounter` keeps a 2-bit counter per bit position instead (Stim's
+`cnt1` / `cnt2` update, checked exhaustively against the `g` term) and
+popcounts once at the end.
+
+What the measurements forced:
+
+- A single serial counter does not vectorize: +21% at n=512, +9% on
+  `surface_d30`. From 8 words on, four counters over 4-word chunks; below
+  that one serial counter. Indexing the lanes as `i % 4` instead of by chunk
+  was +73% at n=512.
+- Out of line in `cnot_fused` it cost more than it saved (surface d19 +3%);
+  `#[inline(always)]` fixed that.
+
+Against `5f840789`, alternating builds (2–3 rounds):
+
+| Workload | `5f840789` | `771daf64` | change |
+|---|---|---|---|
+| `CX` n = 64 / 274 / 778 / 2048 | 113.8 µs / 886 µs / 4.23 ms / 26.4 ms | 108.8 µs / 841 µs / 3.53 ms / 20.1 ms | −4% / −5% / −17% / −24% |
+| surface d7 / d11 / d19 / d23 | 56.9 µs / 262.1 µs / 2.02 ms / 4.37 ms | 52.8 µs / 257.6 µs / 1.96 ms / 4.31 ms | −7% / −2% / −3% / −1% |
+| repetition d75 | 311.4 µs | 266.7 µs | −14% |
+| color d9 | 74.2 µs | 68.9 µs | −7% |
+| surface_d30 | 14.38 ms | 13.21 ms | −8% |
+
+Outcomes are identical to `5f840789` on 8 Clifford and 4 non-Clifford circuits.
+
 ## Size sweep
 
 `sweep.py` generates Stim memory circuits (`rounds = d`, all four noise

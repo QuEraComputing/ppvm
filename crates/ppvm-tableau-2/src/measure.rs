@@ -50,7 +50,7 @@ use ppvm_traits_2::{Clifford, Measure, Pauli, Reset};
 use rand::{Rng, RngExt};
 
 use crate::data::{
-    Bitstring, COMPLEX_PHASE_CONVERSION, GeneralizedTableau, HalfColumns, Tableau,
+    Bitstring, COMPLEX_PHASE_CONVERSION, GeneralizedTableau, HalfColumns, Tableau, bits_to_index,
     compute_phase_with_mask_static, symplectic_inner,
 };
 
@@ -156,6 +156,7 @@ pub struct MeasureScratch<I> {
     a: Vec<(I, Complex64)>,
     bt: Vec<(I, Complex64)>,
     merged: Vec<(I, Complex64)>,
+    columns: HalfColumns,
 }
 
 impl<I> MeasureScratch<I> {
@@ -170,6 +171,7 @@ impl<I> MeasureScratch<I> {
             a: Vec::new(),
             bt: Vec::new(),
             merged: Vec::new(),
+            columns: HalfColumns::default(),
         }
     }
 }
@@ -400,9 +402,25 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         record: bool,
         rng: &mut R,
     ) -> Option<bool> {
-        let columns = self.tableau.z_anticommutation_columns(qubit);
-        let decomposition = self.compute_decomposition_with(qubit, Pauli::Z, &columns);
-        self.measure_with_scratch(qubit, scratch, decomposition, &columns, record, rng)
+        let mut columns = std::mem::take(&mut scratch.columns);
+        self.tableau
+            .z_anticommutation_columns_into(qubit, &mut columns);
+        let phase = self.decomposition_phase_with(qubit, Pauli::Z, &columns);
+        // A deterministic outcome reads the masks only through amplitude
+        // indices; with every index zero (a Clifford run) skip widening them.
+        let [destab, stab] = &columns;
+        let decomposition = if stab.iter().all(|&w| w == 0)
+            && self.coefficients.iter().all(|&(_, idx)| idx == I::zero())
+        {
+            (phase, I::zero(), I::zero())
+        } else {
+            let n = self.n_qubits();
+            (phase, bits_to_index(stab, n), bits_to_index(destab, n))
+        };
+        let outcome =
+            self.measure_with_scratch(qubit, scratch, decomposition, &columns, record, rng);
+        scratch.columns = columns;
+        outcome
     }
 
     /// The coefficient-aware measurement kernel.

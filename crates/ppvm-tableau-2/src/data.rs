@@ -447,7 +447,18 @@ impl<H> Tableau<H> {
     /// [`Self::anticommutation_column`] of both halves for `Z_addr0`, indexed by
     /// [`Half`]. A measurement reads these three times, so it gathers them once.
     pub(crate) fn z_anticommutation_columns(&self, addr0: usize) -> HalfColumns {
-        HALVES.map(|half| self.anticommutation_column(half, addr0, Pauli::Z))
+        let mut columns = HalfColumns::default();
+        self.z_anticommutation_columns_into(addr0, &mut columns);
+        columns
+    }
+
+    /// [`Self::z_anticommutation_columns`] into reused buffers.
+    pub(crate) fn z_anticommutation_columns_into(&self, addr0: usize, columns: &mut HalfColumns) {
+        for half in HALVES {
+            let column = &mut columns[half as usize];
+            column.resize(self.data.stride(), 0);
+            self.data.gather_column(half, Plane::X, addr0, column);
+        }
     }
 
     pub(crate) fn anticommutation_column(
@@ -1319,6 +1330,24 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         pauli: Pauli,
         anticomm: &HalfColumns,
     ) -> (u8, I, I) {
+        let n = self.n_qubits();
+        let phase = self.decomposition_phase_with(addr0, pauli, anticomm);
+        let [destab_anticomm, stab_anticomm] = anticomm;
+        (
+            phase,
+            bits_to_index::<I>(stab_anticomm, n),
+            bits_to_index::<I>(destab_anticomm, n),
+        )
+    }
+
+    /// The phase of [`Self::compute_decomposition_with`], without widening the
+    /// masks into branch indices.
+    pub(crate) fn decomposition_phase_with(
+        &mut self,
+        addr0: usize,
+        pauli: Pauli,
+        anticomm: &HalfColumns,
+    ) -> u8 {
         debug_assert_ne!(pauli, Pauli::I);
         let n = self.n_qubits();
         let stride = self.tableau.data.stride();
@@ -1329,8 +1358,6 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         // rows; the *values*, the visit order and the accumulated phase below
         // are unchanged.
         let [destab_anticomm, stab_anticomm] = anticomm;
-        let destab_anticomm_bits = bits_to_index::<I>(destab_anticomm, n);
-        let stab_anticomm_bits = bits_to_index::<I>(stab_anticomm, n);
 
         // The visit order — all selected stabilizers ascending, then all
         // selected destabilizers ascending — is a genuine convention, not a free
@@ -1370,18 +1397,16 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
                 self.tableau
                     .decomposition_phase(addr0, pauli, destab_anticomm, stab_anticomm);
             debug_assert_eq!(phase, fold(&self.tableau.data));
-            return (phase, stab_anticomm_bits, destab_anticomm_bits);
+            return phase;
         }
 
         let selected = blocks::count_set(destab_anticomm) + blocks::count_set(stab_anticomm);
-        let phase = if blocks::prefer_gather(selected, n) {
+        if blocks::prefer_gather(selected, n) {
             fold(&self.tableau.data)
         } else {
             let guard = TransposedTableau::new(&mut self.tableau);
             fold(guard.data())
-        };
-
-        (phase, stab_anticomm_bits, destab_anticomm_bits)
+        }
     }
 
     /// Multi-qubit generalization of [`Self::compute_decomposition`]: conjugate

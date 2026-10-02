@@ -452,6 +452,12 @@ impl<H> Tableau<H> {
         columns
     }
 
+    /// The stabilizer half of [`Self::z_anticommutation_columns`], into `column`.
+    pub(crate) fn z_anticommuting_stabilizers_into(&self, addr0: usize, column: &mut Vec<u64>) {
+        column.resize(self.data.stride(), 0);
+        self.data.gather_column(Half::Stab, Plane::X, addr0, column);
+    }
+
     /// [`Self::z_anticommutation_columns`] into reused buffers.
     pub(crate) fn z_anticommutation_columns_into(&self, addr0: usize, columns: &mut HalfColumns) {
         for half in HALVES {
@@ -700,6 +706,69 @@ impl<H> Tableau<H> {
     /// generators, versus the column-wise form's fixed sweep over all `n` qubit
     /// columns. Cheaper exactly when the frame is dense, which is when a caller
     /// bothered to take the guard.
+    /// Collapse onto outcome `outcome` of `Z_addr0` the way Stim's
+    /// `collapse_qubit_z` does: eliminate over the stabilizers only, so the
+    /// destabilizer column is never needed. `stab_column` selects the
+    /// stabilizers anticommuting with `Z_addr0`; `pivot` is one of them.
+    ///
+    /// As appends `U ↦ U·V`: `CX(p, k)` per selected `k` (`s_k ← s_k·s_p`,
+    /// `d_p ← d_p·d_k`), `S(p)` if `d_p` then anticommutes with `Z_addr0`
+    /// (`d_p ← i·d_p·s_p`), `H(p)` (swap the pair), and `X(p)` (negate `s_p`)
+    /// if the outcome needs it. The new `s_p` is `±Z_addr0` times other
+    /// stabilizers rather than `±Z_addr0` itself. Row-major only, inverse valid.
+    pub(crate) fn collapse_z(
+        &mut self,
+        addr0: usize,
+        pivot: usize,
+        outcome: bool,
+        stab_column: &[u64],
+    ) {
+        debug_assert_eq!(self.data.orientation(), Orientation::RowMajor);
+        self.invalidate_hash();
+        let flip = self.collapse_inverse(addr0, pivot, outcome, stab_column, None);
+
+        let n = self.n_qubits();
+        let stride = self.data.stride();
+        let data = &mut self.data;
+        let mut s_p = ScratchRow::zeroed(stride);
+        s_p.x
+            .copy_from_slice(data.major(Half::Stab, Plane::X, pivot));
+        s_p.z
+            .copy_from_slice(data.major(Half::Stab, Plane::Z, pivot));
+        s_p.phase = data.phase_of(Half::Stab, pivot);
+        let mut d_p = ScratchRow::zeroed(stride);
+        d_p.x
+            .copy_from_slice(data.major(Half::Destab, Plane::X, pivot));
+        d_p.z
+            .copy_from_slice(data.major(Half::Destab, Plane::Z, pivot));
+        d_p.phase = data.phase_of(Half::Destab, pivot);
+
+        let mut src = ScratchRow::zeroed(stride);
+        for k in (0..n).filter(|&k| k != pivot && TableauData::bit(stab_column, k)) {
+            data.multiply_row_by(Half::Stab, k, &s_p.x, &s_p.z, s_p.phase);
+            d_p.mul_generator(data, Half::Destab, k, &mut src);
+        }
+        if TableauData::bit(&d_p.x, addr0) {
+            let g = blocks::row_multiply(&mut d_p.x, &mut d_p.z, &s_p.x, &s_p.z);
+            d_p.add_phase(g + s_p.phase + 1);
+        }
+
+        data.major_mut(Half::Destab, Plane::X, pivot)
+            .copy_from_slice(&s_p.x);
+        data.major_mut(Half::Destab, Plane::Z, pivot)
+            .copy_from_slice(&s_p.z);
+        data.set_phase_of(Half::Destab, pivot, s_p.phase);
+        data.major_mut(Half::Stab, Plane::X, pivot)
+            .copy_from_slice(&d_p.x);
+        data.major_mut(Half::Stab, Plane::Z, pivot)
+            .copy_from_slice(&d_p.z);
+        data.set_phase_of(
+            Half::Stab,
+            pivot,
+            (d_p.phase + if flip { 2 } else { 0 }) % 4,
+        );
+    }
+
     fn project_row_major(
         &mut self,
         addr0: usize,

@@ -861,7 +861,8 @@ fn wide_msd_shaped_circuit_runs_and_agrees_with_the_naive_form() {
 
 /// On a stabilizer state only random measurements draw, so `measure_batch`
 /// draws in the same order as a per-qubit loop and must match it exactly, even
-/// when a deterministic target precedes the random one it depends on.
+/// when a deterministic target precedes the random one it depends on. It must
+/// also leave the same state behind.
 #[test]
 fn measure_batch_matches_a_per_qubit_loop_on_a_stabilizer_state() {
     let mut base: Tab = GeneralizedTableau::new(6, 1e-10);
@@ -888,7 +889,15 @@ fn measure_batch_matches_a_per_qubit_loop_on_a_stabilizer_state() {
             a.current_measurement_record(),
             b.current_measurement_record()
         );
-        assert!(a.tableau == b.tableau, "the frames must agree");
+        // The frames may differ (Stim's collapse picks another basis for the
+        // same state), so compare every Pauli expectation value instead.
+        for code in 0..4usize.pow(6) {
+            let w: String = (0..6)
+                .map(|q| b"IXYZ"[(code >> (2 * q)) & 3] as char)
+                .collect();
+            let (ea, eb) = (a.expectation(&word(&w)), b.expectation(&word(&w)));
+            assert_close(ea, eb, 1e-12);
+        }
     }
 }
 

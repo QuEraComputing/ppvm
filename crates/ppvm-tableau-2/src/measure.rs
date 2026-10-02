@@ -53,6 +53,7 @@ use crate::data::{
     Bitstring, COMPLEX_PHASE_CONVERSION, GeneralizedTableau, HalfColumns, Tableau, bits_to_index,
     compute_phase_with_mask_static, symplectic_inner,
 };
+use crate::storage::{Half, blocks};
 
 /// The pure Clifford measurement procedure.
 ///
@@ -345,7 +346,9 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
     ///
     /// Unlike [`Self::measure_many`], the RNG-draw order is not that of a
     /// per-target loop: random targets draw first. Measurements on distinct
-    /// qubits commute, so the outcome distribution is the same.
+    /// qubits commute, so the outcome distribution is the same. On a stabilizer
+    /// state the collapse is Stim's, so the frame afterwards can differ from
+    /// [`Self::measure_many`]'s while describing the same state.
     pub fn measure_batch<R: Rng + ?Sized>(
         &mut self,
         indices: &[usize],
@@ -369,19 +372,25 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         if random.contains(&true) {
             self.with_row_major(|s| {
                 for (k, &q) in indices.iter().enumerate().filter(|&(k, _)| random[k]) {
-                    outcomes[k] = s.measure_one_unrecorded(q, scratch, rng);
+                    outcomes[k] = s.measure_batch_one(q, scratch, rng);
                 }
             });
         }
         for (k, &q) in indices.iter().enumerate().filter(|&(k, _)| !random[k]) {
-            outcomes[k] = self.measure_one_unrecorded(q, scratch, rng);
+            outcomes[k] = self.measure_batch_one(q, scratch, rng);
         }
         self.measurement_record.extend_from_slice(&outcomes);
         outcomes
     }
 
-    /// [`Self::measure_one_with_scratch`] without the record push.
-    fn measure_one_unrecorded<R: Rng + ?Sized>(
+    /// One unrecorded target of [`Self::measure_batch`]. On a stabilizer state
+    /// (one amplitude, at index 0) this is Stim's collapse, which never reads
+    /// the destabilizer column; otherwise the general kernel.
+    ///
+    /// Both draw the same `random::<f64>() < 0.5` for a random outcome, so the
+    /// outcomes match; only the frame chosen for the post-measurement state
+    /// differs. The amplitude is untouched: the frame alone carries the state.
+    fn measure_batch_one<R: Rng + ?Sized>(
         &mut self,
         idx: usize,
         scratch: &mut MeasureScratch<I>,
@@ -390,7 +399,26 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         if self.is_lost[idx] {
             return None;
         }
-        self.measure_z_with_scratch(idx, scratch, false, rng)
+        let stabilizer_state =
+            self.tableau.inverse_valid() && self.coefficients.iter().all(|&(_, i)| i == I::zero());
+        if !stabilizer_state {
+            return self.measure_z_with_scratch(idx, scratch, false, rng);
+        }
+        let mut column = std::mem::take(&mut scratch.columns[Half::Stab as usize]);
+        self.tableau
+            .z_anticommuting_stabilizers_into(idx, &mut column);
+        let n = self.n_qubits();
+        let outcome = match blocks::first_set(&column).filter(|&p| p < n) {
+            None => self.tableau.inverse_outcome(idx),
+            Some(pivot) => {
+                let outcome = rng.random::<f64>() < 0.5;
+                self.tableau.collapse_z(idx, pivot, outcome, &column);
+                scratch.odd_phase_mask = None;
+                outcome
+            }
+        };
+        scratch.columns[Half::Stab as usize] = column;
+        Some(outcome)
     }
 
     /// Measure `Z_qubit` on a qubit that is not lost. Its anticommutation

@@ -218,3 +218,30 @@ fn scramble_frame<H>(tab: &mut Tableau<H>, rng: &mut SmallRng, gates: usize) {
         apply_indexed_gate(tab, rng.random_range(0..limit), a, b);
     }
 }
+
+/// Stim's collapse in `measure_batch` must keep the inverse signs exact and
+/// leave the same state as the textbook projection: equal outcomes now, and
+/// equal outcomes after a further shared circuit.
+#[test]
+fn stabilizer_collapse_matches_the_projection() {
+    for (n, seed) in [(1usize, 50u64), (6, 51), (64, 52), (70, 53)] {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let mut a = GeneralizedTableau::<U256>::new(n, 1e-12);
+        let mut b = GeneralizedTableau::<U256>::new(n, 1e-12);
+        let half: Vec<usize> = (0..n).step_by(2).collect();
+        let all: Vec<usize> = (0..n).collect();
+        for round in 0..3 {
+            let circuit = rng.random::<u64>();
+            scramble_frame(&mut a.tableau, &mut SmallRng::seed_from_u64(circuit), 8 * n);
+            scramble_frame(&mut b.tableau, &mut SmallRng::seed_from_u64(circuit), 8 * n);
+            let shot = rng.random::<u64>();
+            let (mut ar, mut br) = (SmallRng::seed_from_u64(shot), SmallRng::seed_from_u64(shot));
+            let targets = if round == 2 { &all } else { &half };
+            let ra = a.measure_batch(targets, &mut ar);
+            let rb: Vec<_> = targets.iter().map(|&q| b.measure(q, &mut br)).collect();
+            assert_eq!(ra, rb, "n={n} round={round}");
+            a.tableau.assert_inverse_consistent();
+            assert!(a.tableau.inverse_valid());
+        }
+    }
+}

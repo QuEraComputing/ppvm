@@ -251,35 +251,33 @@ Outcomes are identical to `5f840789` on 8 Clifford and 4 non-Clifford circuits.
 `sweep.py` generates Stim memory circuits (`rounds = d`, all four noise
 parameters 0.001): rotated surface code, repetition code, and color code
 (`C_XYZ`, which ppvm-stim rejects, rewritten as `H` then `SQRT_X_DAG` for both
-simulators), plus clifft-bench's `pure_surface_d7_r7`. Branch = `6e8bc36a`.
+simulators), plus clifft-bench's `pure_surface_d7_r7`. Branch = `771daf64`.
 Raw data: `sweep.csv`, `sweep.log`. Ratios are time / Stim time.
 
 | Surface | d=3 | 5 | 7 | 9 | 11 | 15 | 19 | 23 | 27 | 31 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | qubits | 26 | 64 | 118 | 188 | 274 | 494 | 778 | 1126 | 1538 | 2014 |
-| branch / Stim | 0.99 | 1.06 | 1.17 | 1.33 | 1.39 | 1.09 | 0.97 | 0.96 | 0.88 | 0.86 |
-| PR 204 / Stim | 1.87 | 2.32 | 2.61 | 2.93 | 3.14 | 2.60 | 2.57 | 2.47 | 2.23 | 2.07 |
+| branch / Stim | 0.76 | 0.77 | 0.87 | 0.97 | 1.09 | 0.83 | 0.78 | 0.81 | 0.74 | 0.72 |
+| PR 204 / Stim | 1.82 | 2.25 | 2.62 | 2.91 | 3.14 | 2.62 | 2.56 | 2.46 | 2.23 | 2.07 |
 
 | Repetition | d=3 | 9 | 25 | 75 | 225 | 675 |
 |---|---|---|---|---|---|---|
 | qubits | 5 | 17 | 49 | 149 | 449 | 1349 |
-| branch / Stim | 0.60 | 1.16 | 1.88 | 2.15 | 1.54 | 1.38 |
-| PR 204 / Stim | 1.36 | 2.88 | 4.56 | 4.75 | 3.42 | 2.29 |
+| branch / Stim | 0.50 | 0.78 | 1.10 | 1.28 | 0.96 | 0.95 |
+| PR 204 / Stim | 1.33 | 2.96 | 4.54 | 4.74 | 3.39 | 2.30 |
 
 | Color | d=3 | 5 | 7 | 9 | 13 | 17 | 21 | 25 | 31 | 37 | 43 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | qubits | 10 | 28 | 55 | 91 | 190 | 325 | 496 | 703 | 1081 | 1540 | 2080 |
-| branch / Stim | 0.68 | 1.30 | 1.77 | 1.68 | 1.57 | 1.44 | 1.20 | 1.11 | 1.00 | 0.97 | 0.92 |
-| PR 204 / Stim | 1.23 | 2.82 | 4.14 | 3.67 | 4.52 | 5.09 | 3.06 | 7.15 | 8.37 | 9.25 | 10.71 |
+| branch / Stim | 0.61 | 1.02 | 1.36 | 1.25 | 1.14 | 1.14 | 0.89 | 0.86 | 0.80 | 0.79 | 0.74 |
+| PR 204 / Stim | 1.24 | 2.83 | 4.16 | 3.71 | 4.59 | 5.13 | 3.03 | 7.18 | 8.39 | 9.26 | 10.74 |
 
 Before `cfd25143` the color row was non-monotonic (d21 at 1.34× between d17 at
 3.59× and d25 at 5.75×, `295aaa8b`): that was the unbatched `MX`.
 
-clifft-bench `pure_surface_d7_r7`: branch 72.7 µs, Stim 61.7 µs (1.18×).
-Sanity check: mean `1` outcomes per shot agree with Stim's compiled sampler
-within ≈2 standard errors on repetition d9, surface d5, color d5 and color d9.
-Both color circuits sit ≈2σ *above* Stim (since before this work), which is
-worth a dedicated statistical test.
+clifft-bench `pure_surface_d7_r7`: branch 52.5 µs, Stim 60.5 µs (0.87×).
+Mean `1` outcomes per shot track Stim's on every circuit (e.g. surface d19
+2228.5 vs 2228.1, color d31 4929.1 vs 4926.2).
 
 ## Non-Clifford regression check
 
@@ -333,13 +331,13 @@ the fallback when the inverse goes stale, so dropping either side is a redesign.
 
 ## Open gaps
 
-1. **Per-gate cost at small n.** After `f5942998`, `CX` is within 1.1–1.3× of
-   Stim up to ~274 qubits and faster beyond; `CZ` and `CY` still fetch their
-   columns twice and could get the same fusion. Small and mid-size circuits
-   (≈30–500 qubits) are still up to ~1.3× slower (repetition codes ~2×); the
-   rest of the per-gate gap is the dual phase bookkeeping (see "Per-gate
-   cost"). Noise sampling, 10–19% of small circuits before `5f840789`, now
-   draws once per error.
+1. **Mid-size circuits.** As of `771daf64` the branch is ahead of Stim on most
+   of the sweep; the remaining band is ≈50–330 qubits (1–6 words per column):
+   surface d11 1.09×, repetition d25/d75 1.10×/1.28×, color d7–d17 1.14–1.36×.
+   Fixed per-gate and per-measurement costs dominate there; the rest of the
+   per-gate gap is the dual phase bookkeeping (see "Per-gate cost"). `CZ` / `CY`
+   could get `CX`'s fusion, but only distillation, cultivation and MSC use `CZ`
+   and no benchmark uses `CY`.
 2. **Measurement overhead at small n**: `measure_batch_one`, the per-target
    2048-bit "all amplitudes at index 0" check (`memcmp`), the determinism
    pre-scan, `has_repeats`.

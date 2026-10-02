@@ -1,28 +1,28 @@
-clifft_surface d=  7 n=  118 meas=    385 shots=500  branch       72.7µs  pr204      163.5µs  stim       61.7µs  branch/stim 1.18x  pr204/stim 2.65x
-surface        d=  3 n=   26 meas=     33 shots=500  branch        7.0µs  pr204       13.3µs  stim        7.1µs  branch/stim 0.99x  pr204/stim 1.87x
-surface        d=  5 n=   64 meas=    145 shots=500  branch       26.5µs  pr204       58.2µs  stim       25.1µs  branch/stim 1.06x  pr204/stim 2.32x
-surface        d=  7 n=  118 meas=    385 shots=500  branch       71.8µs  pr204      160.2µs  stim       61.3µs  branch/stim 1.17x  pr204/stim 2.61x
-surface        d=  9 n=  188 meas=    801 shots=500  branch      165.5µs  pr204      365.3µs  stim      124.5µs  branch/stim 1.33x  pr204/stim 2.93x
-surface        d= 11 n=  274 meas=   1441 shots=500  branch      325.5µs  pr204      734.8µs  stim      234.0µs  branch/stim 1.39x  pr204/stim 3.14x
-surface        d= 15 n=  494 meas=   3585 shots=500  branch      887.9µs  pr204     2110.0µs  stim      810.8µs  branch/stim 1.09x  pr204/stim 2.60x
-surface        d= 19 n=  778 meas=   7201 shots=418  branch     2370.0µs  pr204     6300.0µs  stim     2447.5µs  branch/stim 0.97x  pr204/stim 2.57x
-surface        d= 23 n= 1126 meas=  12673 shots=198  branch     5020.0µs  pr204    12850.0µs  stim     5211.3µs  branch/stim 0.96x  pr204/stim 2.47x
-surface        d= 27 n= 1538 meas=  20385 shots=102  branch     9730.0µs  pr204    24710.0µs  stim    11054.7µs  branch/stim 0.88x  pr204/stim 2.23x
-surface        d= 31 n= 2014 meas=  30721 shots= 57  branch    18020.0µs  pr204    43160.0µs  stim    20833.4µs  branch/stim 0.86x  pr204/stim 2.07x
-repetition     d=  3 n=    5 meas=      9 shots=500  branch        1.0µs  pr204        2.2µs  stim        1.6µs  branch/stim 0.60x  pr204/stim 1.36x
-repetition     d=  9 n=   17 meas=     81 shots=500  branch        6.1µs  pr204       15.2µs  stim        5.3µs  branch/stim 1.16x  pr204/stim 2.88x
-repetition     d= 25 n=   49 meas=    625 shots=500  branch       45.6µs  pr204      110.5µs  stim       24.2µs  branch/stim 1.88x  pr204/stim 4.56x
-repetition     d= 75 n=  149 meas=   5625 shots=500  branch      450.0µs  pr204      990.7µs  stim      208.8µs  branch/stim 2.15x  pr204/stim 4.75x
-repetition     d=225 n=  449 meas=  50625 shots=222  branch     4440.0µs  pr204     9870.0µs  stim     2887.9µs  branch/stim 1.54x  pr204/stim 3.42x
-repetition     d=675 n= 1349 meas= 455625 shots= 13  branch    74170.0µs  pr204   123200.0µs  stim    53676.7µs  branch/stim 1.38x  pr204/stim 2.29x
-color          d=  3 n=   10 meas=     16 shots=500  branch        4.5µs  pr204        8.2µs  stim        6.7µs  branch/stim 0.68x  pr204/stim 1.23x
-color          d=  5 n=   28 meas=     64 shots=500  branch       16.9µs  pr204       36.7µs  stim       13.0µs  branch/stim 1.30x  pr204/stim 2.82x
-color          d=  7 n=   55 meas=    163 shots=500  branch       43.4µs  pr204      101.5µs  stim       24.5µs  branch/stim 1.77x  pr204/stim 4.14x
-color          d=  9 n=   91 meas=    331 shots=500  branch       92.2µs  pr204      201.2µs  stim       54.9µs  branch/stim 1.68x  pr204/stim 3.67x
-color          d= 13 n=  190 meas=    946 shots=500  branch      299.5µs  pr204      863.7µs  stim      190.9µs  branch/stim 1.57x  pr204/stim 4.52x
-color          d= 17 n=  325 meas=   2053 shots=500  branch      747.6µs  pr204     2640.0µs  stim      518.9µs  branch/stim 1.44x  pr204/stim 5.09x
-color          d= 21 n=  496 meas=   3796 shots=500  branch     1470.0µs  pr204     3760.0µs  stim     1228.9µs  branch/stim 1.20x  pr204/stim 3.06x
-color          d= 25 n=  703 meas=   6319 shots=317  branch     3150.0µs  pr204    20250.0µs  stim     2830.5µs  branch/stim 1.11x  pr204/stim 7.15x
-color          d= 31 n= 1081 meas=  11881 shots=136  branch     7230.0µs  pr204    60340.0µs  stim     7211.6µs  branch/stim 1.00x  pr204/stim 8.37x
-color          d= 37 n= 1540 meas=  20008 shots= 64  branch    15450.0µs  pr204   147670.0µs  stim    15968.8µs  branch/stim 0.97x  pr204/stim 9.25x
-color          d= 43 n= 2080 meas=  31186 shots= 33  branch    29840.0µs  pr204   348000.0µs  stim    32509.6µs  branch/stim 0.92x  pr204/stim 10.71x
+clifft_surface d=  7 n=  118 meas=    385 shots=500  branch       52.5µs  pr204      157.7µs  stim       60.5µs  branch/stim 0.87x  pr204/stim 2.61x
+surface        d=  3 n=   26 meas=     33 shots=500  branch        5.3µs  pr204       12.7µs  stim        7.0µs  branch/stim 0.76x  pr204/stim 1.82x
+surface        d=  5 n=   64 meas=    145 shots=500  branch       19.2µs  pr204       56.1µs  stim       25.0µs  branch/stim 0.77x  pr204/stim 2.25x
+surface        d=  7 n=  118 meas=    385 shots=500  branch       52.0µs  pr204      157.6µs  stim       60.1µs  branch/stim 0.87x  pr204/stim 2.62x
+surface        d=  9 n=  188 meas=    801 shots=500  branch      119.2µs  pr204      356.2µs  stim      122.4µs  branch/stim 0.97x  pr204/stim 2.91x
+surface        d= 11 n=  274 meas=   1441 shots=500  branch      252.2µs  pr204      725.0µs  stim      230.6µs  branch/stim 1.09x  pr204/stim 3.14x
+surface        d= 15 n=  494 meas=   3585 shots=500  branch      665.3µs  pr204     2090.0µs  stim      797.3µs  branch/stim 0.83x  pr204/stim 2.62x
+surface        d= 19 n=  778 meas=   7201 shots=500  branch     1900.0µs  pr204     6210.0µs  stim     2424.0µs  branch/stim 0.78x  pr204/stim 2.56x
+surface        d= 23 n= 1126 meas=  12673 shots=240  branch     4160.0µs  pr204    12710.0µs  stim     5156.9µs  branch/stim 0.81x  pr204/stim 2.46x
+surface        d= 27 n= 1538 meas=  20385 shots=122  branch     8120.0µs  pr204    24400.0µs  stim    10943.5µs  branch/stim 0.74x  pr204/stim 2.23x
+surface        d= 31 n= 2014 meas=  30721 shots= 69  branch    14440.0µs  pr204    41670.0µs  stim    20137.1µs  branch/stim 0.72x  pr204/stim 2.07x
+repetition     d=  3 n=    5 meas=      9 shots=500  branch        0.8µs  pr204        2.0µs  stim        1.5µs  branch/stim 0.50x  pr204/stim 1.33x
+repetition     d=  9 n=   17 meas=     81 shots=500  branch        4.0µs  pr204       15.1µs  stim        5.1µs  branch/stim 0.78x  pr204/stim 2.96x
+repetition     d= 25 n=   49 meas=    625 shots=500  branch       26.3µs  pr204      108.2µs  stim       23.8µs  branch/stim 1.10x  pr204/stim 4.54x
+repetition     d= 75 n=  149 meas=   5625 shots=500  branch      261.5µs  pr204      968.0µs  stim      204.2µs  branch/stim 1.28x  pr204/stim 4.74x
+repetition     d=225 n=  449 meas=  50625 shots=364  branch     2770.0µs  pr204     9810.0µs  stim     2894.6µs  branch/stim 0.96x  pr204/stim 3.39x
+repetition     d=675 n= 1349 meas= 455625 shots= 19  branch    50380.0µs  pr204   121960.0µs  stim    53024.1µs  branch/stim 0.95x  pr204/stim 2.30x
+color          d=  3 n=   10 meas=     16 shots=500  branch        4.0µs  pr204        8.0µs  stim        6.5µs  branch/stim 0.61x  pr204/stim 1.24x
+color          d=  5 n=   28 meas=     64 shots=500  branch       13.0µs  pr204       36.2µs  stim       12.8µs  branch/stim 1.02x  pr204/stim 2.83x
+color          d=  7 n=   55 meas=    163 shots=500  branch       32.3µs  pr204       98.9µs  stim       23.8µs  branch/stim 1.36x  pr204/stim 4.16x
+color          d=  9 n=   91 meas=    331 shots=500  branch       67.2µs  pr204      199.6µs  stim       53.8µs  branch/stim 1.25x  pr204/stim 3.71x
+color          d= 13 n=  190 meas=    946 shots=500  branch      213.1µs  pr204      859.0µs  stim      187.1µs  branch/stim 1.14x  pr204/stim 4.59x
+color          d= 17 n=  325 meas=   2053 shots=500  branch      582.2µs  pr204     2630.0µs  stim      512.8µs  branch/stim 1.14x  pr204/stim 5.13x
+color          d= 21 n=  496 meas=   3796 shots=500  branch     1090.0µs  pr204     3710.0µs  stim     1225.4µs  branch/stim 0.89x  pr204/stim 3.03x
+color          d= 25 n=  703 meas=   6319 shots=414  branch     2380.0µs  pr204    19970.0µs  stim     2781.1µs  branch/stim 0.86x  pr204/stim 7.18x
+color          d= 31 n= 1081 meas=  11881 shots=178  branch     5620.0µs  pr204    59310.0µs  stim     7068.0µs  branch/stim 0.80x  pr204/stim 8.39x
+color          d= 37 n= 1540 meas=  20008 shots= 77  branch    12560.0µs  pr204   146490.0µs  stim    15826.9µs  branch/stim 0.79x  pr204/stim 9.26x
+color          d= 43 n= 2080 meas=  31186 shots= 42  branch    23670.0µs  pr204   344410.0µs  stim    32056.8µs  branch/stim 0.74x  pr204/stim 10.74x

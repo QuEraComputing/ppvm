@@ -126,6 +126,38 @@ pub trait StimTableau: sealed::Sealed {
         }
     }
 
+    /// `DEPOLARIZE1(p)` on every target. Backends may sample the errors jointly.
+    fn depolarize1_many<R: rand::Rng + ?Sized>(&mut self, q: &[usize], p: f64, rng: &mut R)
+    where
+        Self: Sized,
+    {
+        for &q in q {
+            self.depolarize1(q, p, rng);
+        }
+    }
+
+    /// `DEPOLARIZE2(p)` on consecutive target pairs. Backends may sample the
+    /// errors jointly.
+    fn depolarize2_many<R: rand::Rng + ?Sized>(&mut self, q: &[usize], p: f64, rng: &mut R)
+    where
+        Self: Sized,
+    {
+        for &[a, b] in q.as_chunks::<2>().0 {
+            self.depolarize2(a, b, p, rng);
+        }
+    }
+
+    /// `X`/`Y`/`Z` with probabilities `p` on every target (`X_ERROR`, `Y_ERROR`,
+    /// `Z_ERROR`, `PAULI_CHANNEL_1`). Backends may sample the errors jointly.
+    fn pauli_error_many<R: rand::Rng + ?Sized>(&mut self, q: &[usize], p: [f64; 3], rng: &mut R)
+    where
+        Self: Sized,
+    {
+        for &q in q {
+            self.pauli_error(q, p, rng);
+        }
+    }
+
     /// `M(noise)` on every target, in order, pushing each recorded bit onto
     /// `results`. Backends may batch the measurements.
     fn measure_noisy_many<R: rand::Rng + ?Sized>(

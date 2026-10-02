@@ -9,6 +9,7 @@ use ppvm_tableau_2::prelude::{
 
 use super::StimTableau;
 use crate::executor::helpers::{has_repeats, measure_reset_z};
+use rand::RngExt;
 
 macro_rules! unary {
     ($name:ident, $trait:ident) => {
@@ -46,6 +47,47 @@ fn record_with_noise<I: Bitstring, H, R: rand::Rng + ?Sized>(
         let recorded = outcome.map(|b| GeneralizedTableau::<I, H>::flip_with_prob(b, noise, rng));
         tab.measurement_record[base + k] = recorded;
         results.push(recorded);
+    }
+}
+
+/// Call `hit(i, rng)` for each index in `0..n` that an independent event of
+/// probability `p` lands on, in order. Gaps between hits are geometric, so this
+/// draws once per hit rather than once per index — Stim's `RareErrorIterator`.
+fn for_each_hit<R: rand::Rng + ?Sized>(
+    n: usize,
+    p: f64,
+    rng: &mut R,
+    mut hit: impl FnMut(usize, &mut R),
+) {
+    if p <= 0.0 {
+        return;
+    }
+    if p >= 1.0 {
+        (0..n).for_each(|i| hit(i, rng));
+        return;
+    }
+    let log_miss = (-p).ln_1p();
+    let mut i = 0;
+    while i < n {
+        // `1 - u` is in (0, 1], so the gap is finite and non-negative.
+        let gap = (1.0 - rng.random::<f64>()).ln() / log_miss;
+        if gap >= (n - i) as f64 {
+            return;
+        }
+        i += gap as usize;
+        hit(i, rng);
+        i += 1;
+    }
+}
+
+/// Pauli `1 = X`, `2 = Y`, `3 = Z` on `q`; `0` is the identity. A lost qubit is
+/// left alone by the gates themselves.
+fn apply_pauli<I: Bitstring, H>(tab: &mut GeneralizedTableau<I, H>, q: usize, pauli: usize) {
+    match pauli {
+        1 => Clifford::x(tab, q),
+        2 => Clifford::y(tab, q),
+        3 => Clifford::z(tab, q),
+        _ => {}
     }
 }
 
@@ -207,6 +249,41 @@ where
     ) {
         let outcomes = self.measure_batch(q, rng);
         record_with_noise(self, &outcomes, noise, rng, results);
+    }
+
+    // Noise draws once per error (geometric gaps), not once per target; each
+    // error then picks its Pauli. Same distribution as the per-target channels.
+    fn depolarize1_many<R: rand::Rng + ?Sized>(&mut self, q: &[usize], p: f64, rng: &mut R) {
+        for_each_hit(q.len(), p, rng, |i, rng| {
+            apply_pauli(self, q[i], rng.random_range(1..4));
+        });
+    }
+    fn depolarize2_many<R: rand::Rng + ?Sized>(&mut self, q: &[usize], p: f64, rng: &mut R) {
+        let pairs = q.len() / 2;
+        for_each_hit(pairs, p, rng, |i, rng| {
+            let (a, b) = (q[2 * i], q[2 * i + 1]);
+            if self.is_lost[a] || self.is_lost[b] {
+                return;
+            }
+            // One of the 15 non-identity pairs `(k / 4, k % 4)`, as `depolarize2`.
+            let k = rng.random_range(1..16);
+            apply_pauli(self, a, k / 4);
+            apply_pauli(self, b, k % 4);
+        });
+    }
+    fn pauli_error_many<R: rand::Rng + ?Sized>(&mut self, q: &[usize], p: [f64; 3], rng: &mut R) {
+        let total: f64 = p.iter().sum();
+        for_each_hit(q.len(), total, rng, |i, rng| {
+            let r = rng.random::<f64>() * total;
+            let pauli = if r < p[0] {
+                1
+            } else if r < p[0] + p[1] {
+                2
+            } else {
+                3
+            };
+            apply_pauli(self, q[i], pauli);
+        });
     }
 
     fn measurement_record(&self) -> &[Option<bool>] {

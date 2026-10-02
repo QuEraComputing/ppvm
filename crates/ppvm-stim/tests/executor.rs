@@ -592,3 +592,35 @@ fn sample_keeps_non_sync_factories_on_serial_builds() {
     assert_eq!(shots.len(), 3);
     assert_eq!(calls.get(), 3);
 }
+
+/// Batched `MR`/`R` must reset every target, keep the record in target order,
+/// and see each earlier reset of a repeated target.
+#[test]
+fn batched_measure_reset_and_reset_over_many_targets() {
+    // Bell pair on (0, 1), |1> on 2, |+> on 3; the random targets follow
+    // deterministic ones in the target list.
+    let src = "H 0\nCX 0 1\nX 2\nH 3\nMR 2 1 0 3\nM 0 1 2 3";
+    for seed in 0..16 {
+        let r = run_seeded(src, 4, seed);
+        assert_eq!(r[0], Some(true));
+        assert_eq!(r[1], r[2], "the Bell pair must agree");
+        assert_eq!(&r[4..], &[Some(false); 4], "MR must reset every target");
+    }
+
+    let (results, _) = run("X 0\nX 1\nR 1 0\nM 0 1", 2);
+    assert_eq!(results, vec![Some(false), Some(false)]);
+}
+
+#[test]
+fn batched_measure_reset_repeated_target_sees_the_reset() {
+    for seed in 0..16 {
+        let r = run_seeded("H 0\nMR 0 0", 1, seed);
+        assert_eq!(r[1], Some(false), "the second MR of 0 follows its reset");
+    }
+    let (results, _) = run("X 0\nMR(1.0) 0 1", 2);
+    assert_eq!(
+        results,
+        vec![Some(false), Some(true)],
+        "MR(1) flips each record"
+    );
+}

@@ -6,8 +6,10 @@ use ppvm_tableau_2::prelude::{
     CorrelatedLossChannel, Depolarizing, Depolarizing2, GeneralizedTableau, LossChannel, Measure,
     PauliError, Reset, RotationOne, TGate, TwoQubitPauliError, U3Gate,
 };
+use smallvec::SmallVec;
 
 use super::StimTableau;
+use crate::executor::helpers::measure_reset_z;
 
 macro_rules! unary {
     ($name:ident, $trait:ident) => {
@@ -29,6 +31,26 @@ macro_rules! batch {
             $trait::$name(self, q);
         }
     };
+}
+
+/// Whether any qubit appears more than once in `qs`.
+fn has_repeats(qs: &[usize]) -> bool {
+    let mut sorted: SmallVec<[usize; 16]> = qs.into();
+    sorted.sort_unstable();
+    sorted.windows(2).any(|w| w[0] == w[1])
+}
+
+/// `X` on every target whose true outcome was `1`.
+fn reset_ones<I: Bitstring, H>(
+    tab: &mut GeneralizedTableau<I, H>,
+    q: &[usize],
+    outcomes: &[Option<bool>],
+) {
+    for (&q, &outcome) in q.iter().zip(outcomes) {
+        if outcome == Some(true) {
+            Clifford::x(tab, q);
+        }
+    }
 }
 
 impl<I, H> StimTableau for GeneralizedTableau<I, H>
@@ -124,7 +146,7 @@ where
         q: &[usize],
         rng: &mut R,
     ) -> Vec<Option<bool>> {
-        Measure::measure_many(self, q, rng)
+        GeneralizedTableau::measure_batch(self, q, rng)
     }
     fn measure_noisy<R: rand::Rng + ?Sized>(
         &mut self,
@@ -137,6 +159,41 @@ where
     fn flip_with_prob<R: rand::Rng + ?Sized>(&mut self, bit: bool, p: f64, rng: &mut R) -> bool {
         GeneralizedTableau::<I, H>::flip_with_prob(bit, p, rng)
     }
+    // Batch the measurements, then apply the `X` resets: `X_q` commutes with
+    // `Z_p` for `p != q`, so deferring it is exact. A repeated target can't defer.
+    fn reset_many<R: rand::Rng + ?Sized>(&mut self, q: &[usize], rng: &mut R) {
+        if has_repeats(q) {
+            q.iter().for_each(|&q| Reset::reset(self, q, rng));
+            return;
+        }
+        let outcomes = self.measure_batch(q, rng);
+        let kept = self.measurement_record.len() - q.len();
+        self.measurement_record.truncate(kept);
+        reset_ones(self, q, &outcomes);
+    }
+    fn measure_reset_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        q: &[usize],
+        noise: f64,
+        rng: &mut R,
+        results: &mut Vec<Option<bool>>,
+    ) {
+        if has_repeats(q) {
+            q.iter()
+                .for_each(|&q| results.push(measure_reset_z(self, q, noise, rng)));
+            return;
+        }
+        let outcomes = self.measure_batch(q, rng);
+        let base = self.measurement_record.len() - q.len();
+        for (k, outcome) in outcomes.iter().enumerate() {
+            let recorded =
+                outcome.map(|b| GeneralizedTableau::<I, H>::flip_with_prob(b, noise, rng));
+            self.measurement_record[base + k] = recorded;
+            results.push(recorded);
+        }
+        reset_ones(self, q, &outcomes);
+    }
+
     fn measurement_record(&self) -> &[Option<bool>] {
         self.current_measurement_record()
     }

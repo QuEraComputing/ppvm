@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use super::helpers::measure_reset_z;
+
 mod sealed {
     pub trait Sealed {}
 
@@ -113,6 +115,33 @@ pub trait StimTableau: sealed::Sealed {
         rng: &mut R,
     ) -> Option<bool>;
     fn flip_with_prob<R: rand::Rng + ?Sized>(&mut self, bit: bool, p: f64, rng: &mut R) -> bool;
+
+    /// `R` on every target, in order. Backends may batch the measurements.
+    fn reset_many<R: rand::Rng + ?Sized>(&mut self, q: &[usize], rng: &mut R)
+    where
+        Self: Sized,
+    {
+        for &q in q {
+            self.reset(q, rng);
+        }
+    }
+
+    /// `MR(noise)` on every target, in order, pushing each recorded bit onto
+    /// `results`. Backends may batch the measurements.
+    fn measure_reset_many<R: rand::Rng + ?Sized>(
+        &mut self,
+        q: &[usize],
+        noise: f64,
+        rng: &mut R,
+        results: &mut Vec<Option<bool>>,
+    ) where
+        Self: Sized,
+    {
+        for &q in q {
+            results.push(measure_reset_z(self, q, noise, rng));
+        }
+    }
+
     fn measurement_record(&self) -> &[Option<bool>];
     fn append_measurement_record(&mut self, result: Option<bool>);
     fn overwrite_last_measurement_record(&mut self, result: Option<bool>);

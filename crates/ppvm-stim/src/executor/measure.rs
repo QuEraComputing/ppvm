@@ -29,11 +29,7 @@ pub(super) fn execute<T: StimTableau, R: rand::Rng + ?Sized>(
                 results.extend(tab.measure_many(targets, rng));
             }
         }
-        MeasureName::MR => {
-            for &q in targets {
-                results.push(measure_reset_z(tab, q, noise, rng));
-            }
-        }
+        MeasureName::MR => tab.measure_reset_many(targets, noise, rng, results),
         MeasureName::MX => {
             for &q in targets {
                 tab.h(q);

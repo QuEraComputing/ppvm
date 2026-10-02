@@ -30,6 +30,9 @@ use ppvm_traits_2::{Indexable, Pauli, Scale, Support};
 
 use crate::storage::{BITS_PER_WORD, HALVES, Half, Orientation, Plane, TableauData, blocks};
 
+/// One bit column per half, indexed by [`Half`].
+pub(crate) type HalfColumns = [Vec<u64>; 2];
+
 /// Bit-string index type addressing one branch of the amplitude vector.
 ///
 /// Blanket-implemented for every primitive (and `bnum`-style) unsigned integer
@@ -441,6 +444,12 @@ impl<H> Tableau<H> {
     /// one of the two columns at `addr0`, or their `XOR` for `Y` — contiguous in
     /// the canonical orientation, where the replaced code probed the same site
     /// in each of `n` separately addressed rows.
+    /// [`Self::anticommutation_column`] of both halves for `Z_addr0`, indexed by
+    /// [`Half`]. A measurement reads these three times, so it gathers them once.
+    pub(crate) fn z_anticommutation_columns(&self, addr0: usize) -> HalfColumns {
+        HALVES.map(|half| self.anticommutation_column(half, addr0, Pauli::Z))
+    }
+
     pub(crate) fn anticommutation_column(
         &self,
         half: Half,
@@ -545,6 +554,19 @@ impl<H> Tableau<H> {
         q_idx: usize,
         outcome: bool,
     ) {
+        let columns = self.z_anticommutation_columns(addr0);
+        self.update_tableau_with_columns(addr0, q_idx, outcome, &columns);
+    }
+
+    /// [`Self::update_tableau_according_to_outcome`] with `addr0`'s
+    /// [`Self::z_anticommutation_columns`] already gathered.
+    pub(crate) fn update_tableau_with_columns(
+        &mut self,
+        addr0: usize,
+        q_idx: usize,
+        outcome: bool,
+        columns: &HalfColumns,
+    ) {
         let n = self.n_qubits();
         let stride = self.data.stride();
         self.invalidate_hash();
@@ -557,9 +579,9 @@ impl<H> Tableau<H> {
         // Both paths are exercised by the conformance differentials.
         if self.data.orientation() == Orientation::RowMajor {
             if self.data.inverse_valid() {
-                self.project_inverse(addr0, q_idx, outcome);
+                self.project_inverse(addr0, q_idx, outcome, columns);
             }
-            self.project_row_major(addr0, q_idx, outcome);
+            self.project_row_major(addr0, q_idx, outcome, columns);
             return;
         }
 
@@ -574,11 +596,11 @@ impl<H> Tableau<H> {
             let selected = blocks::count_set(self.data.major(Half::Stab, Plane::X, addr0))
                 + blocks::count_set(self.data.major(Half::Destab, Plane::X, addr0));
             if blocks::prefer_gather(selected, n) {
-                self.project_inverse(addr0, q_idx, outcome);
+                self.project_inverse(addr0, q_idx, outcome, columns);
             } else {
                 self.enter_row_major();
-                self.project_inverse(addr0, q_idx, outcome);
-                self.project_row_major(addr0, q_idx, outcome);
+                self.project_inverse(addr0, q_idx, outcome, columns);
+                self.project_row_major(addr0, q_idx, outcome, columns);
                 self.exit_row_major();
                 return;
             }
@@ -588,10 +610,8 @@ impl<H> Tableau<H> {
         // x_g[addr0]`, so each selector is one contiguous column; `q_idx` is
         // cleared because the pivot is not multiplied into itself — the
         // replaced loop's `if i == q_idx { continue }`.
-        let mut sel = [vec![0u64; stride], vec![0u64; stride]];
+        let mut sel = columns.clone();
         for half in HALVES {
-            self.data
-                .gather_column(half, Plane::X, addr0, &mut sel[half as usize]);
             TableauData::set_bit(&mut sel[half as usize], q_idx, false);
         }
 
@@ -669,15 +689,16 @@ impl<H> Tableau<H> {
     /// generators, versus the column-wise form's fixed sweep over all `n` qubit
     /// columns. Cheaper exactly when the frame is dense, which is when a caller
     /// bothered to take the guard.
-    fn project_row_major(&mut self, addr0: usize, q_idx: usize, outcome: bool) {
+    fn project_row_major(
+        &mut self,
+        addr0: usize,
+        q_idx: usize,
+        outcome: bool,
+        columns: &HalfColumns,
+    ) {
         let n = self.n_qubits();
         let stride = self.data.stride();
-        let mut stab_selector = vec![0u64; stride];
-        let mut destab_selector = vec![0u64; stride];
-        self.data
-            .gather_column(Half::Stab, Plane::X, addr0, &mut stab_selector);
-        self.data
-            .gather_column(Half::Destab, Plane::X, addr0, &mut destab_selector);
+        let [destab_selector, stab_selector] = columns;
 
         let data = &mut self.data;
 
@@ -696,10 +717,10 @@ impl<H> Tableau<H> {
             if i == q_idx {
                 continue;
             }
-            if TableauData::bit(&stab_selector, i) {
+            if TableauData::bit(stab_selector, i) {
                 data.multiply_row_by(Half::Stab, i, &pivot.x, &pivot.z, pivot.phase);
             }
-            if TableauData::bit(&destab_selector, i) {
+            if TableauData::bit(destab_selector, i) {
                 data.multiply_row_by(Half::Destab, i, &pivot.x, &pivot.z, pivot.phase);
             }
         }
@@ -1286,6 +1307,18 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
     /// branch takes; nothing logically mutates, and the frame is byte-identical
     /// on return.
     pub fn compute_decomposition(&mut self, addr0: usize, pauli: Pauli) -> (u8, I, I) {
+        let anticomm = HALVES.map(|half| self.tableau.anticommutation_column(half, addr0, pauli));
+        self.compute_decomposition_with(addr0, pauli, &anticomm)
+    }
+
+    /// [`Self::compute_decomposition`] with both halves' anticommutation
+    /// columns (`Tableau::anticommutation_column`) already gathered.
+    pub(crate) fn compute_decomposition_with(
+        &mut self,
+        addr0: usize,
+        pauli: Pauli,
+        anticomm: &HalfColumns,
+    ) -> (u8, I, I) {
         debug_assert_ne!(pauli, Pauli::I);
         let n = self.n_qubits();
         let stride = self.tableau.data.stride();
@@ -1295,14 +1328,9 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         // replaced code probed the same site on all `2n` separately addressed
         // rows; the *values*, the visit order and the accumulated phase below
         // are unchanged.
-        let destab_anticomm = self
-            .tableau
-            .anticommutation_column(Half::Destab, addr0, pauli);
-        let stab_anticomm = self
-            .tableau
-            .anticommutation_column(Half::Stab, addr0, pauli);
-        let destab_anticomm_bits = bits_to_index::<I>(&destab_anticomm, n);
-        let stab_anticomm_bits = bits_to_index::<I>(&stab_anticomm, n);
+        let [destab_anticomm, stab_anticomm] = anticomm;
+        let destab_anticomm_bits = bits_to_index::<I>(destab_anticomm, n);
+        let stab_anticomm_bits = bits_to_index::<I>(stab_anticomm, n);
 
         // The visit order — all selected stabilizers ascending, then all
         // selected destabilizers ascending — is a genuine convention, not a free
@@ -1313,7 +1341,7 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
             p_word.set(addr0, pauli);
             let mut src = ScratchRow::zeroed(stride);
             for i in 0..n {
-                if TableauData::bit(&destab_anticomm, i) {
+                if TableauData::bit(destab_anticomm, i) {
                     // The stabilizer is its own inverse up to its phase; rather
                     // than inverting we multiply and divide out the phase
                     // squared.
@@ -1323,7 +1351,7 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
                 }
             }
             for i in 0..n {
-                if TableauData::bit(&stab_anticomm, i) {
+                if TableauData::bit(stab_anticomm, i) {
                     let phase = data.phase_of(Half::Destab, i);
                     p_word.mul_generator(data, Half::Destab, i, &mut src);
                     p_word.add_phase(8 - 2 * phase);
@@ -1340,12 +1368,12 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         if self.tableau.inverse_readable(pauli) {
             let phase =
                 self.tableau
-                    .decomposition_phase(addr0, pauli, &destab_anticomm, &stab_anticomm);
+                    .decomposition_phase(addr0, pauli, destab_anticomm, stab_anticomm);
             debug_assert_eq!(phase, fold(&self.tableau.data));
             return (phase, stab_anticomm_bits, destab_anticomm_bits);
         }
 
-        let selected = blocks::count_set(&destab_anticomm) + blocks::count_set(&stab_anticomm);
+        let selected = blocks::count_set(destab_anticomm) + blocks::count_set(stab_anticomm);
         let phase = if blocks::prefer_gather(selected, n) {
             fold(&self.tableau.data)
         } else {

@@ -29,7 +29,7 @@
 use num::Zero;
 use ppvm_traits_2::{
     AsymmetricLossChannel, Clifford, CorrelatedLossChannel, Depolarizing, Depolarizing2,
-    LossChannel, Pauli, PauliError, ResetLossChannel, TwoQubitPauliError,
+    LossChannel, PauliError, ResetLossChannel, TwoQubitPauliError,
 };
 use rand::{Rng, RngExt};
 
@@ -251,8 +251,7 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         let outcome = if self.is_lost[qubit] {
             None
         } else {
-            let decomposition = self.compute_decomposition(qubit, Pauli::Z);
-            self.measure_with_scratch(qubit, &mut MeasureScratch::new(), decomposition, false, rng)
+            self.measure_z_with_scratch(qubit, &mut MeasureScratch::new(), false, rng)
         };
         if let Some(true) = outcome {
             Clifford::x(self, qubit);
@@ -323,9 +322,8 @@ impl<I: Bitstring, H> AsymmetricLossChannel<f64> for GeneralizedTableau<I, H> {
         // scratch cannot serve this site again. Run the same projection kernel
         // with ephemeral buffers, as the legacy path did, while keeping the
         // intentionally observable record append.
-        let decomposition = self.compute_decomposition(qubit, Pauli::Z);
         if let Some(true) =
-            self.measure_with_scratch(qubit, &mut MeasureScratch::new(), decomposition, true, rng)
+            self.measure_z_with_scratch(qubit, &mut MeasureScratch::new(), true, rng)
         {
             Clifford::x(self, qubit);
         }

@@ -50,7 +50,7 @@ use ppvm_traits_2::{Clifford, Measure, Pauli, Reset};
 use rand::{Rng, RngExt};
 
 use crate::data::{
-    Bitstring, COMPLEX_PHASE_CONVERSION, GeneralizedTableau, Tableau,
+    Bitstring, COMPLEX_PHASE_CONVERSION, GeneralizedTableau, HalfColumns, Tableau,
     compute_phase_with_mask_static, symplectic_inner,
 };
 
@@ -200,11 +200,7 @@ impl<I: Bitstring, H> Measure for GeneralizedTableau<I, H> {
             return None;
         }
 
-        let decomposition = self.compute_decomposition(qubit, Pauli::Z);
-
-        self.with_scratch(|s, scratch| {
-            s.measure_with_scratch(qubit, scratch, decomposition, true, rng)
-        })
+        self.with_scratch(|s, scratch| s.measure_z_with_scratch(qubit, scratch, true, rng))
     }
 
     /// Override the trait default (a per-target `measure` loop) with one scratch
@@ -333,8 +329,7 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
             self.measurement_record.push(None);
             return None;
         }
-        let decomposition = self.compute_decomposition(idx, Pauli::Z);
-        self.measure_with_scratch(idx, scratch, decomposition, true, rng)
+        self.measure_z_with_scratch(idx, scratch, true, rng)
     }
 
     /// Measure `indices` in the Z basis the way Stim's `collapse_z` does: the
@@ -393,8 +388,21 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         if self.is_lost[idx] {
             return None;
         }
-        let decomposition = self.compute_decomposition(idx, Pauli::Z);
-        self.measure_with_scratch(idx, scratch, decomposition, false, rng)
+        self.measure_z_with_scratch(idx, scratch, false, rng)
+    }
+
+    /// Measure `Z_qubit` on a qubit that is not lost. Its anticommutation
+    /// columns are gathered once, for the decomposition and the projection.
+    pub(crate) fn measure_z_with_scratch<R: Rng + ?Sized>(
+        &mut self,
+        qubit: usize,
+        scratch: &mut MeasureScratch<I>,
+        record: bool,
+        rng: &mut R,
+    ) -> Option<bool> {
+        let columns = self.tableau.z_anticommutation_columns(qubit);
+        let decomposition = self.compute_decomposition_with(qubit, Pauli::Z, &columns);
+        self.measure_with_scratch(qubit, scratch, decomposition, &columns, record, rng)
     }
 
     /// The coefficient-aware measurement kernel.
@@ -432,6 +440,7 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         addr0: usize,
         scratch: &mut MeasureScratch<I>,
         decomposition: (u8, I, I),
+        columns: &HalfColumns,
         record: bool,
         rng: &mut R,
     ) -> Option<bool> {
@@ -638,7 +647,7 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
 
             self.coefficients.normalize();
             self.tableau
-                .update_tableau_according_to_outcome(addr0, q_idx, outcome);
+                .update_tableau_with_columns(addr0, q_idx, outcome, columns);
             // Destabilizer phases just changed; invalidate the cached mask.
             scratch.odd_phase_mask = None;
             if record {

@@ -63,8 +63,8 @@
 
 use ppvm_traits_2::Pauli;
 
-use crate::data::Tableau;
-use crate::storage::{HALVES, Half, InvRow, Orientation, Plane, TableauData, blocks};
+use crate::data::{HalfColumns, Tableau};
+use crate::storage::{HALVES, Half, InvRow, Orientation, TableauData, blocks};
 
 impl<H> Tableau<H> {
     /// Whether the inverse-row signs can be read.
@@ -363,7 +363,13 @@ impl<H> Tableau<H> {
     /// Pauli's *bits* alone, so the frame's `ℤ/4` phases — which the forward
     /// projection is busy folding `g`-rules into — never enter here. The two
     /// bookkeepings are independent computations of the same frame.
-    pub(crate) fn project_inverse(&mut self, addr0: usize, pivot: usize, outcome: bool) {
+    pub(crate) fn project_inverse(
+        &mut self,
+        addr0: usize,
+        pivot: usize,
+        outcome: bool,
+        columns: &HalfColumns,
+    ) {
         debug_assert!(self.data.inverse_valid());
         let n = self.n_qubits();
         let stride = self.data.stride();
@@ -382,7 +388,7 @@ impl<H> Tableau<H> {
         // not multiplied into itself.
         let mut selected = [destab_sel, stab_sel];
         for (half, out) in HALVES.into_iter().zip(selected.iter_mut()) {
-            self.data.gather_column(half, Plane::X, addr0, out);
+            out.copy_from_slice(&columns[half as usize]);
             TableauData::set_bit(out, pivot, false);
         }
 

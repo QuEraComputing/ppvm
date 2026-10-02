@@ -858,3 +858,61 @@ fn wide_msd_shaped_circuit_runs_and_agrees_with_the_naive_form() {
         );
     }
 }
+
+/// On a stabilizer state only random measurements draw, so `measure_batch`
+/// draws in the same order as a per-qubit loop and must match it exactly, even
+/// when a deterministic target precedes the random one it depends on.
+#[test]
+fn measure_batch_matches_a_per_qubit_loop_on_a_stabilizer_state() {
+    let mut base: Tab = GeneralizedTableau::new(6, 1e-10);
+    let mut setup_rng = rng(3);
+    base.h(0);
+    base.cnot(0, 1);
+    base.h(2);
+    base.x(4);
+    base.loss_channel(5, 1.0, &mut setup_rng);
+    let targets = [3, 1, 0, 4, 2, 5, 0];
+
+    for seed in 0..16 {
+        let mut a = base.fork();
+        let mut b = base.fork();
+        let (mut ar, mut br) = (rng(seed), rng(seed));
+        let ra = a.measure_batch(&targets, &mut ar);
+        let rb: Vec<Option<bool>> = targets.iter().map(|&q| b.measure(q, &mut br)).collect();
+
+        assert_eq!(ra, rb);
+        assert_eq!(ra[1], ra[2], "the Bell pair must agree");
+        assert_eq!(ra[2], ra[6], "a repeated target must repeat its outcome");
+        assert_eq!((ra[0], ra[3], ra[5]), (Some(false), Some(true), None));
+        assert_eq!(
+            a.current_measurement_record(),
+            b.current_measurement_record()
+        );
+        assert!(a.tableau == b.tableau, "the frames must agree");
+    }
+}
+
+/// With several amplitudes a deterministic-frame target also draws, so the
+/// order differs from a per-qubit loop; the distribution must not.
+#[test]
+fn measure_batch_samples_the_per_qubit_distribution() {
+    let mut base: Tab = GeneralizedTableau::new(3, 1e-10);
+    base.h(0);
+    base.t(0);
+    base.h(0); // P(1) = sin²(π/8), from a frame where Z₀ is a stabilizer
+    base.h(1);
+    base.cnot(1, 2);
+
+    let shots = 4000;
+    let (mut ones0, mut ones1) = (0, 0);
+    for seed in 0..shots {
+        let mut tab = base.fork();
+        let r = tab.measure_batch(&[0, 2, 1], &mut rng(seed));
+        assert_eq!(r[1], r[2], "the Bell pair must agree");
+        ones0 += usize::from(r[0] == Some(true));
+        ones1 += usize::from(r[2] == Some(true));
+    }
+    let p1 = (std::f64::consts::PI / 8.0).sin().powi(2);
+    assert_close(ones0 as f64 / shots as f64, p1, 0.03);
+    assert_close(ones1 as f64 / shots as f64, 0.5, 0.04);
+}

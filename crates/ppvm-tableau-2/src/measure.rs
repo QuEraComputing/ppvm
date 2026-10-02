@@ -337,6 +337,66 @@ impl<I: Bitstring, H> GeneralizedTableau<I, H> {
         self.measure_with_scratch(idx, scratch, decomposition, true, rng)
     }
 
+    /// Measure `indices` in the Z basis the way Stim's `collapse_z` does: the
+    /// random ones first, under one row guard, then the deterministic ones in
+    /// the canonical orientation. Records are pushed in the caller's order.
+    ///
+    /// A target is random when some stabilizer anticommutes with `Z`, a cheap
+    /// contiguous check before any transpose. Collapsing one target can make a
+    /// later one deterministic but never the reverse, so the split is exact and
+    /// a frame with no random target never re-orients.
+    ///
+    /// Unlike [`Self::measure_many`], the RNG-draw order is not that of a
+    /// per-target loop: random targets draw first. Measurements on distinct
+    /// qubits commute, so the outcome distribution is the same.
+    pub fn measure_batch<R: Rng + ?Sized>(
+        &mut self,
+        indices: &[usize],
+        rng: &mut R,
+    ) -> Vec<Option<bool>> {
+        self.with_scratch(|s, scratch| s.measure_batch_with_scratch(indices, scratch, rng))
+    }
+
+    /// [`Self::measure_batch`] with a caller-supplied scratch.
+    pub fn measure_batch_with_scratch<R: Rng + ?Sized>(
+        &mut self,
+        indices: &[usize],
+        scratch: &mut MeasureScratch<I>,
+        rng: &mut R,
+    ) -> Vec<Option<bool>> {
+        let random: Vec<bool> = indices
+            .iter()
+            .map(|&q| !self.is_lost[q] && self.tableau.find_z_anticommuting_stabilizer(q).is_some())
+            .collect();
+        let mut outcomes = vec![None; indices.len()];
+        if random.contains(&true) {
+            self.with_row_major(|s| {
+                for (k, &q) in indices.iter().enumerate().filter(|&(k, _)| random[k]) {
+                    outcomes[k] = s.measure_one_unrecorded(q, scratch, rng);
+                }
+            });
+        }
+        for (k, &q) in indices.iter().enumerate().filter(|&(k, _)| !random[k]) {
+            outcomes[k] = self.measure_one_unrecorded(q, scratch, rng);
+        }
+        self.measurement_record.extend_from_slice(&outcomes);
+        outcomes
+    }
+
+    /// [`Self::measure_one_with_scratch`] without the record push.
+    fn measure_one_unrecorded<R: Rng + ?Sized>(
+        &mut self,
+        idx: usize,
+        scratch: &mut MeasureScratch<I>,
+        rng: &mut R,
+    ) -> Option<bool> {
+        if self.is_lost[idx] {
+            return None;
+        }
+        let decomposition = self.compute_decomposition(idx, Pauli::Z);
+        self.measure_with_scratch(idx, scratch, decomposition, false, rng)
+    }
+
     /// The coefficient-aware measurement kernel.
     ///
     /// The `stab_anticomm_bits == 0` dichotomy is an **explicit** branch, not a

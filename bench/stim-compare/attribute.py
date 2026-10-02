@@ -26,6 +26,7 @@ WORKLOADS = [
             ("surface_d19", "200"),
             ("repetition_d75", "500"),
             ("color_d31", "20"),
+            ("color_d43", "10"),
         ]
     ),
 ]

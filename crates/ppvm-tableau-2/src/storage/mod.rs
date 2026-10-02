@@ -150,6 +150,8 @@ pub(crate) struct TableauData {
     n_qubits: usize,
     /// Words per major, `n.div_ceil(64)` rounded up to a whole block.
     stride: usize,
+    /// `n.div_ceil(64)`: the words of a major that can hold a set bit.
+    live: usize,
     orientation: Orientation,
     /// Signs of the inverse tableau's rows — a derived cache whose bits live in
     /// the quadrants above. See [`inverse`]; excluded from equality and hashing.
@@ -166,6 +168,7 @@ impl TableauData {
             blocks: vec![Block([0; WORDS_PER_BLOCK]); words / WORDS_PER_BLOCK],
             n_qubits,
             stride,
+            live: n_qubits.div_ceil(BITS_PER_WORD),
             orientation: Orientation::ColumnMajor,
             inverse: InverseSigns::identity(stride),
         };
@@ -450,6 +453,37 @@ impl TableauData {
 
     // ─── Disjoint borrows for the gate kernels ────────────────────────────
 
+    /// Words of a major that can hold a set bit, `n.div_ceil(64)`. The rest of
+    /// the stride is zero padding, and every gate kernel maps all-zero words to
+    /// all-zero words, so the gate borrows stop here.
+    #[inline]
+    fn live_words(&self) -> usize {
+        self.live
+    }
+
+    /// Borrow `ranges` of the arena mutably at once, trimmed to
+    /// [`Self::live_words`]. The caller passes ranges that are disjoint by
+    /// layout (distinct majors, or a major and a phase plane), so the
+    /// overlap check `get_disjoint_mut` repeats on every gate is a debug check.
+    #[inline]
+    fn live_disjoint_mut<const N: usize>(
+        &mut self,
+        ranges: [std::ops::Range<usize>; N],
+    ) -> [&mut [u64]; N] {
+        let live = self.live_words();
+        let ranges = ranges.map(|r| r.start..r.start + live);
+        let len = self.blocks.len() * WORDS_PER_BLOCK;
+        debug_assert!(ranges.iter().all(|r| r.end <= len));
+        debug_assert!(ranges.iter().enumerate().all(|(i, a)| {
+            ranges[i + 1..]
+                .iter()
+                .all(|b| a.end <= b.start || b.end <= a.start)
+        }));
+        // SAFETY: every range is in bounds and no two overlap (checked above in
+        // debug builds; guaranteed by the arena layout).
+        unsafe { self.words_mut().get_disjoint_unchecked_mut(ranges) }
+    }
+
     /// The `(X, Z, phase-hi)` slices a one-qubit Clifford sweeps, for one half.
     ///
     /// Column-major only: `q` indexes a qubit column.
@@ -460,15 +494,11 @@ impl TableauData {
         q: usize,
     ) -> (&mut [u64], &mut [u64], &mut [u64]) {
         debug_assert_eq!(self.orientation, Orientation::ColumnMajor);
-        let ranges = [
+        let [x, z, ph] = self.live_disjoint_mut([
             self.major_range(half, Plane::X, q),
             self.major_range(half, Plane::Z, q),
             self.phase_range(half, true),
-        ];
-        let [x, z, ph] = self
-            .words_mut()
-            .get_disjoint_mut(ranges)
-            .expect("quadrant and phase-plane regions are disjoint by construction");
+        ]);
         (x, z, ph)
     }
 
@@ -478,17 +508,13 @@ impl TableauData {
     pub(crate) fn gate2_mut(&mut self, half: Half, a: usize, b: usize) -> Gate2Slices<'_> {
         debug_assert_eq!(self.orientation, Orientation::ColumnMajor);
         debug_assert_ne!(a, b, "two-qubit gate needs distinct qubits");
-        let ranges = [
+        let [xa, za, xb, zb, ph] = self.live_disjoint_mut([
             self.major_range(half, Plane::X, a),
             self.major_range(half, Plane::Z, a),
             self.major_range(half, Plane::X, b),
             self.major_range(half, Plane::Z, b),
             self.phase_range(half, true),
-        ];
-        let [xa, za, xb, zb, ph] = self
-            .words_mut()
-            .get_disjoint_mut(ranges)
-            .expect("distinct qubit columns and the phase plane are disjoint");
+        ]);
         (xa, za, xb, zb, ph)
     }
 

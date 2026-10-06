@@ -33,6 +33,10 @@ jobs:
     name: Release-plz release
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
+    # One release at a time, so quick merges can't race to publish the same version.
+    concurrency:
+      group: release-plz-release-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: write       # tags + GitHub release
       pull-requests: read   # link merged PRs in the release notes

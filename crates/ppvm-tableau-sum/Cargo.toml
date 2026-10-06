@@ -1,7 +1,10 @@
 [package]
 name = "ppvm-tableau-sum"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Sums of generalized stabilizer tableaux with sampling, measurement and noise, for ppvm."
 
 [dependencies]
 bitvec = "1.0.1"

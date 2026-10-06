@@ -1,7 +1,10 @@
 [package]
 name = "ppvm-cli"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line tool and TUI for parsing, running and stepping through ppvm `.sst` programs."
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }

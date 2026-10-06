@@ -1,7 +1,9 @@
 [package]
 name = "ppvm"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+# Examples-only package; not published.
+publish = false
 
 [dependencies]
 ppvm-pauli-sum = { version = "0.1.0", path = "crates/ppvm-pauli-sum" }
@@ -28,6 +30,14 @@ members = [
     "crates/ppvm-tui",
     "skills/ppvm-usage/examples/rust",
 ]
+
+# Single version for every crate and the `bloqade-ppvm` Python package
+# (via ppvm-python-native); bumped by release-plz.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/QuEraComputing/ppvm"
 
 # Keep function names and line numbers in release builds so profilers
 # (cargo-flamegraph, samply, Instruments) produce readable output. Adds

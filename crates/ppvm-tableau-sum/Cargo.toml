@@ -15,12 +15,14 @@ rand = "0.10.1"
 smallvec = "1.15"
 ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
 
-# Native-only deps: gxhash (AES, used for the word_fingerprint hasher — see the
-# target-gated alias in src/storage/mod.rs) and rayon (OS threads). Pruned on
-# wasm32; fxhash backs the fingerprint there.
+# Native-only dep: rayon (OS threads). Pruned on wasm32.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-gxhash = "3.5.0"
 rayon = { version = "1", optional = true }
+
+# gxhash backs the word_fingerprint hasher but only compiles with hardware AES
+# enabled; fxhash is used otherwise (same condition in src/storage/mod.rs).
+[target.'cfg(all(target_feature = "aes", any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
+gxhash = "3.5.0"
 
 [dev-dependencies]
 criterion = "0.8.2"

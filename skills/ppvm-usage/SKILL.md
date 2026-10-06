@@ -171,7 +171,7 @@ ppvm-stim    = { git = "https://github.com/QuEraComputing/ppvm" }   # for Stim e
 ppvm-sym     = { git = "https://github.com/QuEraComputing/ppvm" }   # for symbolic propagation
 ```
 
-On x86, set `RUSTFLAGS="-C target-feature=+aes,+sse2"` (gxhash needs AES). On other targets, build with `--no-default-features --features=indexmap,ahash` to drop gxhash.
+Set `RUSTFLAGS="-C target-feature=+aes"` (or `-C target-cpu=native`) to use the faster gxhash hasher. Without AES enabled at compile time, gxhash is dropped automatically: the `gxhash` configs disappear and everything else falls back to fxhash.
 
 ### Pauli propagation
 

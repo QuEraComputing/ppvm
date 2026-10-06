@@ -14,9 +14,9 @@ itertools = "0.14.0"
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 bincode = { version = "2.0.1", optional = true }
 
-# gxhash needs AES intrinsics and does not build on wasm32; pruned there (the
-# `gxhash` feature goes inert). No non-test code in this crate names the crate.
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# gxhash only compiles with hardware AES enabled; pruned otherwise (the `gxhash`
+# feature goes inert). No non-test code in this crate names the crate.
+[target.'cfg(all(target_feature = "aes", any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
 gxhash = { version = "3.5.0", features = ["deterministic"], optional = true }
 
 [features]

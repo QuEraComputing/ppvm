@@ -225,8 +225,15 @@ fn main() {
         println!("{n},fxhash,{bytes},{fx_t:.6},{fx_len}");
         eprintln!("n={n:3} bytes={bytes:2} fxhash        {fx_t:8.4}s ({fx_len} terms)");
 
-        let (gx_t, gx_len) = sweep!(ByteGxHashF64, n, it, p);
-        println!("{n},gxhash,{bytes},{gx_t:.6},{gx_len}");
-        eprintln!("n={n:3} bytes={bytes:2} gxhash        {gx_t:8.4}s ({gx_len} terms)");
+        // The gxhash configs only exist when AES is enabled at compile time.
+        #[cfg(all(
+            target_feature = "aes",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
+        {
+            let (gx_t, gx_len) = sweep!(ByteGxHashF64, n, it, p);
+            println!("{n},gxhash,{bytes},{gx_t:.6},{gx_len}");
+            eprintln!("n={n:3} bytes={bytes:2} gxhash        {gx_t:8.4}s ({gx_len} terms)");
+        }
     }
 }

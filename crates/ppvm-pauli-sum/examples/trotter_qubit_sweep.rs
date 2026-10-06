@@ -225,8 +225,9 @@ fn main() {
         println!("{n},fxhash,{bytes},{fx_t:.6},{fx_len}");
         eprintln!("n={n:3} bytes={bytes:2} fxhash        {fx_t:8.4}s ({fx_len} terms)");
 
-        // The gxhash configs only exist when AES is enabled at compile time.
+        // The gxhash configs need the `gxhash` feature and AES at compile time.
         #[cfg(all(
+            feature = "gxhash",
             target_feature = "aes",
             any(target_arch = "x86_64", target_arch = "aarch64")
         ))]

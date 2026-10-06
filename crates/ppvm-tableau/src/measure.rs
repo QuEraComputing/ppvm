@@ -83,6 +83,45 @@ impl<I, R> Default for MeasureScratch<I, R> {
     }
 }
 
+/// Outcome probabilities below this are treated as zero by
+/// [`project`](GeneralizedTableau::project): the projected state cannot be
+/// normalized, so the projection is refused.
+pub const PROJECT_ZERO_TOL: f64 = 1e-12;
+
+/// Error returned by [`project`](GeneralizedTableau::project).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProjectError {
+    /// The target qubit is lost; projecting a lost qubit is not implemented.
+    QubitLost(usize),
+    /// The requested outcome has (numerically) zero probability.
+    ZeroProbability {
+        addr0: usize,
+        outcome: bool,
+        prob: f64,
+    },
+}
+
+impl std::fmt::Display for ProjectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProjectError::QubitLost(addr0) => {
+                write!(f, "cannot project qubit {addr0}: qubit is lost")
+            }
+            ProjectError::ZeroProbability {
+                addr0,
+                outcome,
+                prob,
+            } => write!(
+                f,
+                "cannot project qubit {addr0} onto outcome {}: probability {prob:e} is zero",
+                *outcome as u8
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ProjectError {}
+
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> LossyMeasure
     for GeneralizedTableau<T, I, C>
 where
@@ -372,6 +411,101 @@ where
             self.measurement_record.push(Some(outcome));
             Some(outcome)
         }
+    }
+
+    /// Post-select qubit `addr0` onto the Z-basis `outcome` (`false` = |0⟩,
+    /// `true` = |1⟩) and return the probability of that outcome.
+    ///
+    /// This is a non-physical, forced-outcome version of
+    /// [`measure`](LossyMeasure::measure): the state is projected onto
+    /// `outcome` and renormalized, and the outcome is appended to the
+    /// measurement record, but no RNG draw is made. Chaining it over every
+    /// qubit gives `P(z) = |⟨z|ψ⟩|²` as the product of the returned
+    /// probabilities.
+    ///
+    /// Acts on the current pure state of this trajectory: any noise or loss
+    /// channels applied earlier have already been sampled.
+    ///
+    /// # Errors
+    ///
+    /// - [`ProjectError::QubitLost`] if `addr0` is lost.
+    /// - [`ProjectError::ZeroProbability`] if the outcome's probability is
+    ///   below [`PROJECT_ZERO_TOL`].
+    ///
+    /// The state is left unchanged when an error is returned.
+    pub fn project(&mut self, addr0: usize, outcome: bool) -> Result<f64, ProjectError> {
+        if self.is_lost[addr0] {
+            return Err(ProjectError::QubitLost(addr0));
+        }
+
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
+            self.compute_decomposition(addr0, Pauli::Z);
+
+        if stab_anticomm_bits == I::zero() {
+            // Case b: Z is a stabilizer — self-pairing overlap, then filter.
+            let entries: Vec<(Complex<T::Coeff>, I)> = self.coefficients.iter().copied().collect();
+            let z = Self::compute_overlap_case_b(&entries, phase_decomp, destab_anticomm_bits);
+            let prob = Self::outcome_probability(z, outcome);
+            if prob < PROJECT_ZERO_TOL {
+                return Err(ProjectError::ZeroProbability {
+                    addr0,
+                    outcome,
+                    prob,
+                });
+            }
+            // `project_case_b` refills `self.coefficients` from `entries`.
+            self.coefficients = C::new();
+            self.project_case_b(&entries, outcome, phase_decomp, destab_anticomm_bits);
+            self.measurement_record.push(Some(outcome));
+            Ok(prob)
+        } else {
+            // Case a: Z is not a stabilizer — cross-index pairing via HashMap.
+            let odd_phase_mask = self.odd_phase_destabilizer_mask();
+            let coeff_map: HashMap<I, Complex<T::Coeff>> =
+                self.coefficients.iter().map(|&(c, i)| (i, c)).collect();
+            let z = Self::compute_overlap_case_a(
+                &coeff_map,
+                phase_decomp,
+                destab_anticomm_bits,
+                stab_anticomm_bits,
+                odd_phase_mask,
+            );
+            let prob = Self::outcome_probability(z, outcome);
+            if prob < PROJECT_ZERO_TOL {
+                return Err(ProjectError::ZeroProbability {
+                    addr0,
+                    outcome,
+                    prob,
+                });
+            }
+
+            // `project_case_a` expects the coefficients drained into
+            // `scratch.coeff_map` and refills `self.coefficients` from it.
+            self.coefficients = C::new();
+            let mut scratch = MeasureScratch::new();
+            scratch.coeff_map = coeff_map;
+            scratch.odd_phase_mask = Some(odd_phase_mask);
+            self.project_case_a(
+                outcome,
+                &mut scratch,
+                phase_decomp,
+                stab_anticomm_bits,
+                destab_anticomm_bits,
+                addr0,
+            );
+            self.measurement_record.push(Some(outcome));
+            Ok(prob)
+        }
+    }
+
+    /// Probability of `outcome` given `⟨Z⟩ = z`, clamped to `[0, 1]`.
+    fn outcome_probability(z: f64, outcome: bool) -> f64 {
+        let prob = if outcome {
+            0.5 - 0.5 * z
+        } else {
+            0.5 + 0.5 * z
+        };
+        prob.clamp(0.0, 1.0)
     }
 
     pub fn project_case_a(

@@ -191,6 +191,37 @@ class GeneralizedTableau(
         """
         return _BY_VALUE[self._interface.measure(addr0)]
 
+    def project(self, addr0: int, value: MeasurementResult) -> float:
+        """Post-select the specified qubit onto a Z-basis outcome.
+
+        A non-physical, forced-outcome version of `measure`: the state is
+        projected onto ``value`` and renormalized, and ``value`` is appended
+        to the measurement record, but no random outcome is drawn. Chaining
+        it over every qubit gives the bitstring probability
+        ``P(z) = |⟨z|ψ⟩|²`` as the product of the returned probabilities.
+
+        This acts on the current pure state of this trajectory: any noise or
+        loss channels applied earlier have already been sampled.
+
+        Args:
+            addr0: The index of the target qubit.
+            value: The outcome to project onto, ``ZERO`` or ``ONE``.
+
+        Returns:
+            The probability of measuring ``value`` on the state before projection.
+
+        Raises:
+            NotImplementedError: If ``value`` is ``LOST`` or the qubit has
+                been lost; projection with loss is not implemented.
+            ValueError: If ``value`` has zero probability (the state cannot
+                be normalized). The state is left unchanged.
+        """
+        if value == MeasurementResult.LOST:
+            raise NotImplementedError("Projecting onto a LOST outcome is not implemented.")
+        if value not in (MeasurementResult.ZERO, MeasurementResult.ONE):
+            raise ValueError(f"value must be MeasurementResult.ZERO or ONE (got {value!r}).")
+        return self._interface.project(addr0, value == MeasurementResult.ONE)
+
     def measure_many(self, *targets: int | Iterable[int]) -> list[MeasurementResult]:
         """Measure several qubits in the Z basis.
 

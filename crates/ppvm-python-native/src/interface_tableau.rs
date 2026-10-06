@@ -47,6 +47,18 @@ macro_rules! create_interface {
                 measurement_to_u8(self.inner.measure(addr0)) as i64
             }
 
+            /// Post-select qubit `addr0` onto `outcome` and return its probability.
+            pub fn project(&mut self, addr0: usize, outcome: bool) -> PyResult<f64> {
+                self.inner.project(addr0, outcome).map_err(|e| match e {
+                    ProjectError::QubitLost(_) => {
+                        pyo3::exceptions::PyNotImplementedError::new_err(e.to_string())
+                    }
+                    ProjectError::ZeroProbability { .. } => {
+                        pyo3::exceptions::PyValueError::new_err(e.to_string())
+                    }
+                })
+            }
+
             pub fn measure_many(&mut self, targets: Vec<usize>) -> Vec<i64> {
                 self.inner
                     .measure_many(targets.as_slice())

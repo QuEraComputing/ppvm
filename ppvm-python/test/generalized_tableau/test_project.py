@@ -241,6 +241,11 @@ def test_project_out_of_range_is_atomic():
         tab.project_many([0, -1], [ZERO, ZERO])
     with pytest.raises(IndexError):
         tab.probability([-1], [ZERO])
+    # Larger than usize::MAX: must still be IndexError, not OverflowError.
+    with pytest.raises(IndexError):
+        tab.project(2**64, ZERO)
+    with pytest.raises(IndexError):
+        tab.probability([0, 2**64], [ZERO, ZERO])
     assert str(tab) == before
     assert tab.current_measurement_record() == []
 

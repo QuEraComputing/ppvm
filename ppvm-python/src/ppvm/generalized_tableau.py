@@ -65,23 +65,24 @@ def _projection_outcome(value: MeasurementResult) -> bool:
 
 
 def _projection_args(
-    targets: Iterable[int], values: Iterable[MeasurementResult]
+    targets: Iterable[int], values: Iterable[MeasurementResult], n_qubits: int
 ) -> tuple[list[int], list[bool]]:
-    """Convert ``project_many`` / ``probability`` arguments for the native call.
+    """Validate and convert ``project_many`` / ``probability`` arguments.
 
-    Length mismatches and indices ``>= n_qubits`` are checked natively.
+    Length mismatches are checked natively.
     """
     targets = list(targets)
     for addr0 in targets:
-        _check_nonnegative_index(addr0)
+        _check_qubit_index(addr0, n_qubits)
     return targets, [_projection_outcome(v) for v in values]
 
 
-def _check_nonnegative_index(addr0: int) -> None:
-    # The native layer takes unsigned indices; a negative int would surface as
-    # OverflowError instead of the documented IndexError.
-    if addr0 < 0:
-        raise IndexError(f"qubit index must be non-negative (got {addr0}).")
+def _check_qubit_index(addr0: int, n_qubits: int) -> None:
+    # Check here rather than relying on the native check: the native layer
+    # takes unsigned machine-sized indices, so a negative or very large int
+    # would surface as OverflowError instead of the documented IndexError.
+    if not 0 <= addr0 < n_qubits:
+        raise IndexError(f"qubit index {addr0} is out of range for {n_qubits} qubits.")
 
 
 @dataclass(frozen=True)
@@ -246,7 +247,7 @@ class GeneralizedTableau(
                 be normalized). The state is left unchanged.
             IndexError: If ``addr0`` is not a valid qubit index.
         """
-        _check_nonnegative_index(addr0)
+        _check_qubit_index(addr0, self.n_qubits)
         return self._interface.project(addr0, _projection_outcome(value))
 
     def project_many(self, targets: Iterable[int], values: Iterable[MeasurementResult]) -> float:
@@ -273,7 +274,7 @@ class GeneralizedTableau(
                 unchanged.
             IndexError: If any target is not a valid qubit index.
         """
-        return self._interface.project_many(*_projection_args(targets, values))
+        return self._interface.project_many(*_projection_args(targets, values, self.n_qubits))
 
     def probability(self, targets: Iterable[int], values: Iterable[MeasurementResult]) -> float:
         """Return the joint probability of measuring ``values`` on ``targets``.
@@ -298,7 +299,7 @@ class GeneralizedTableau(
             ValueError: If ``targets`` and ``values`` differ in length.
             IndexError: If any target is not a valid qubit index.
         """
-        return self._interface.probability(*_projection_args(targets, values))
+        return self._interface.probability(*_projection_args(targets, values, self.n_qubits))
 
     def measure_many(self, *targets: int | Iterable[int]) -> list[MeasurementResult]:
         """Measure several qubits in the Z basis.

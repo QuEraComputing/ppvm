@@ -52,12 +52,51 @@ def test_project_zero_state():
     assert tab.current_measurement_record() == [ZERO]
 
 
-def test_project_zero_probability_raises_and_preserves_state():
-    tab = GeneralizedTableau(1)
+def _assert_zero_probability_preserves_state(tab: GeneralizedTableau, addr0: int, value):
+    paulis = ["".join(p) for p in itertools.product("IXYZ", repeat=tab.n_qubits)]
+    before_str = str(tab)
+    before = [tab.expectation(p) for p in paulis]
+    before_coeffs = tab.coefficients()
+    before_record = tab.current_measurement_record()
     with pytest.raises(ValueError, match="probability"):
-        tab.project(0, ONE)
-    assert tab.expectation("Z") == pytest.approx(1.0, abs=1e-12)
-    assert tab.current_measurement_record() == []
+        tab.project(addr0, value)
+    assert str(tab) == before_str
+    assert tab.coefficients() == before_coeffs
+    assert [tab.expectation(p) for p in paulis] == pytest.approx(before, abs=1e-12)
+    assert tab.current_measurement_record() == before_record
+
+
+def test_project_zero_probability_z_stabilizer():
+    # |0⟩: Z is a stabilizer (case b).
+    tab = GeneralizedTableau(1)
+    _assert_zero_probability_preserves_state(tab, 0, ONE)
+
+    # Projecting |+⟩·T onto 0 makes Z a stabilizer; projecting onto 1 is then impossible.
+    tab = GeneralizedTableau(1)
+    tab.h(0)
+    tab.t(0)
+    tab.project(0, ZERO)
+    _assert_zero_probability_preserves_state(tab, 0, ONE)
+
+
+def test_project_zero_probability_z_not_stabilizer():
+    # H then RY(-π/2) is |0⟩, but the stabilizer frame still holds X, so the
+    # projection takes the case-a path with P(1) = 0.
+    tab = GeneralizedTableau(1)
+    tab.h(0)
+    tab.ry(0, -math.pi / 2)
+    _assert_zero_probability_preserves_state(tab, 0, ONE)
+    assert tab.project(0, ZERO) == pytest.approx(1.0, abs=1e-12)
+
+    # 3 qubits: qubit 0 as above, next to an entangled non-Clifford pair.
+    tab = GeneralizedTableau(3, min_abs_coeff=1e-12)
+    tab.h(0, 1, 2)
+    tab.t(1)
+    tab.cz(1, 2)
+    tab.ry(0, -math.pi / 2)
+    assert tab.num_coefficients() > 1
+    _assert_zero_probability_preserves_state(tab, 0, ONE)
+    assert tab.project(0, ZERO) == pytest.approx(1.0, abs=1e-12)
 
 
 @pytest.mark.parametrize("value", [ZERO, ONE])

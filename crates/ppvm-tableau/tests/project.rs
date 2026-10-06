@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::f64::consts::FRAC_PI_2;
+
 use ppvm_pauli_sum::config::fxhash::ByteF64;
 use ppvm_tableau::prelude::*;
 
@@ -88,29 +90,81 @@ fn project_zero_state() {
     assert_eq!(tab.current_measurement_record(), &[Some(false)]);
 }
 
-#[test]
-fn project_zero_probability_leaves_state_unchanged() {
-    let mut tab = TestTableau::new(1, 1e-12);
-    let err = tab.project(0, true).unwrap_err();
-    assert!(matches!(
-        err,
-        ProjectError::ZeroProbability {
-            addr0: 0,
-            outcome: true,
-            ..
-        }
-    ));
-    assert_close(tab.expectation(&word("Z")), 1.0, 1e-12);
-    assert!(tab.current_measurement_record().is_empty());
+/// True if projecting `addr0` takes the case-a path (Z anticommutes with some
+/// stabilizer), false for case b (Z is a stabilizer up to sign).
+fn is_case_a(tab: &TestTableau, addr0: usize) -> bool {
+    let (_, stab_anticomm_bits, _) = tab.compute_decomposition(addr0, Pauli::Z);
+    stab_anticomm_bits != 0
+}
 
-    // Same for a case-a (random-outcome) qubit whose outcome is still impossible:
-    // |+⟩ with a T phase has P(1) = 0.5, but after projecting onto 0, P(1) = 0.
+/// Projects `addr0` onto an outcome that must have zero probability, and checks
+/// that the error is returned and the tableau, coefficients, Pauli expectations,
+/// and measurement record are all unchanged.
+fn assert_zero_probability_preserves_state(tab: &mut TestTableau, addr0: usize, outcome: bool) {
+    let n = tab.n_qubits();
+    let paulis = all_paulis(n);
+    let before_display = format!("{tab}");
+    let before_expectations: Vec<f64> = paulis.iter().map(|p| tab.expectation(&word(p))).collect();
+    let before_record = tab.current_measurement_record().to_vec();
+
+    let err = tab.project(addr0, outcome).unwrap_err();
+    assert!(
+        matches!(err, ProjectError::ZeroProbability { addr0: a, outcome: o, .. } if a == addr0 && o == outcome),
+        "unexpected error: {err:?}"
+    );
+
+    assert_eq!(format!("{tab}"), before_display);
+    for (p, before) in paulis.iter().zip(before_expectations) {
+        assert_close(tab.expectation(&word(p)), before, 1e-12);
+    }
+    assert_eq!(tab.current_measurement_record(), before_record.as_slice());
+}
+
+#[test]
+fn project_zero_probability_case_b() {
+    // |0⟩: Z is a stabilizer, P(1) = 0.
+    let mut tab = TestTableau::new(1, 1e-12);
+    assert!(!is_case_a(&tab, 0));
+    assert_zero_probability_preserves_state(&mut tab, 0, true);
+
+    // |+⟩ with a T phase, projected onto 0: the projection makes Z a
+    // stabilizer, so the impossible second projection also goes through case b.
     let mut tab = TestTableau::new(1, 1e-12);
     tab.h(0);
     tab.t(0);
+    assert!(is_case_a(&tab, 0));
     tab.project(0, false).unwrap();
-    assert!(tab.project(0, true).is_err());
+    assert!(!is_case_a(&tab, 0));
+    assert_zero_probability_preserves_state(&mut tab, 0, true);
+}
+
+#[test]
+fn project_zero_probability_case_a() {
+    // H then RY(-π/2) returns to |0⟩, but the rotation only reweights the
+    // coefficients: the stabilizer frame still holds X, so Z is not a stabilizer
+    // and the projection takes case a even though P(1) = 0.
+    let mut tab = TestTableau::new(1, 1e-12);
+    tab.h(0);
+    tab.ry(0, -FRAC_PI_2);
+    assert!(is_case_a(&tab, 0));
     assert_close(tab.expectation(&word("Z")), 1.0, 1e-12);
+    assert_zero_probability_preserves_state(&mut tab, 0, true);
+    // The possible outcome still projects, with probability 1.
+    assert_close(tab.project(0, false).unwrap(), 1.0, 1e-12);
+
+    // Same on 3 qubits, with qubit 0 in |0⟩ (case a) next to an entangled,
+    // non-Clifford pair on qubits 1 and 2.
+    let mut tab = TestTableau::new(3, 1e-12);
+    tab.h(0);
+    tab.h(1);
+    tab.h(2);
+    tab.t(1);
+    tab.cz(1, 2);
+    tab.ry(0, -FRAC_PI_2);
+    assert!(is_case_a(&tab, 0));
+    assert!(tab.coefficients.len() > 1);
+    assert_zero_probability_preserves_state(&mut tab, 0, true);
+    assert_close(tab.project(0, false).unwrap(), 1.0, 1e-12);
 }
 
 #[test]

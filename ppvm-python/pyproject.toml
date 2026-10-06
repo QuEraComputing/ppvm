@@ -1,17 +1,31 @@
 [project]
-name = "ppvm"
-version = "0.1.0"
-description = "Add your description here"
+name = "bloqade-ppvm"
+# Taken from crates/ppvm-python-native/Cargo.toml by maturin.
+dynamic = ["version"]
+description = "Fast Pauli propagation and stabilizer-tableau quantum circuit simulator, with a Rust core."
 readme = "README.md"
+license = "Apache-2.0"
 authors = [
     { name = "David Plankensteiner", email = "dplankensteiner@quera.com" }
 ]
 requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
     "bloqade-circuit>=0.14.1",
     "kirin-toolchain~=0.22.2",
     "numpy>=2.2.6",
 ]
+
+[project.urls]
+Homepage = "https://queracomputing.github.io/ppvm/"
+Repository = "https://github.com/QuEraComputing/ppvm"
+Issues = "https://github.com/QuEraComputing/ppvm/issues"
 
 [build-system]
 requires = ["maturin>=1.10,<2.0"]

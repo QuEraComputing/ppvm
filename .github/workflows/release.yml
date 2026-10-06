@@ -1,0 +1,179 @@
+name: Release
+
+# Build `bloqade-ppvm` wheels + sdist and publish them to PyPI.
+#
+# - Push a `v*` tag (matching the version in
+#   `crates/ppvm-python-native/Cargo.toml`) to build, test and publish.
+# - Run manually ("Run workflow") for a dry run: builds and tests only;
+#   publishing is skipped unless the run is on a tag with `dry_run` unchecked.
+#
+# Publishing uses PyPI trusted publishing (OIDC), so there is no API token.
+# Requires a `pypi` environment in the repo settings and a matching trusted
+# publisher on PyPI (workflow `release.yml`, environment `pypi`).
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and test only; skip publishing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # One abi3 wheel per platform (pyo3 `abi3-py310`), so no Python matrix.
+  build:
+    name: Wheel (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: macos-14
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # manylinux_2_28 = glibc 2.28+ (RHEL 8 / Ubuntu 20.04+); ignored off Linux.
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: ppvm-python
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          manylinux: "2_28"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.target }}
+          path: ppvm-python/dist/*.whl
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: ppvm-python
+          command: sdist
+          args: --out dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: ppvm-python/dist/*.tar.gz
+
+  # Install each wheel into a clean env and run the Python test suite against
+  # it, so a broken wheel never reaches PyPI. The x86_64 macOS wheel is not
+  # tested: there is no native runner for it.
+  test:
+    name: Test (${{ matrix.target }}, py${{ matrix.python }})
+    needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - aarch64-apple-darwin
+          - x86_64-pc-windows-msvc
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist
+
+      # Run from outside ppvm-python/ so the src/ tree can't shadow the wheel.
+      - name: Run tests against the installed wheel
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: >-
+          uv run --no-project --isolated --python ${{ matrix.python }}
+          --with "$(ls "$GITHUB_WORKSPACE"/dist/*.whl)"
+          --with pytest --with pytest-benchmark
+          pytest -p no:cacheprovider "$GITHUB_WORKSPACE/ppvm-python/test"
+
+  publish-to-pypi:
+    name: Publish to PyPI
+    if: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.dry_run }}
+    needs: [build, sdist, test]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/bloqade-ppvm
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Guard against tagging a commit whose Cargo.toml version wasn't bumped.
+      - name: Check tag matches package version
+        run: |
+          expected="dist/bloqade_ppvm-${GITHUB_REF_NAME#v}.tar.gz"
+          if [ ! -f "$expected" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the built version:" dist/*.tar.gz
+            exit 1
+          fi
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: GitHub Release
+    needs: [publish-to-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release with notes and artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME"
+          --generate-notes --verify-tag

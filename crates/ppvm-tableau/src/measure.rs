@@ -88,7 +88,8 @@ impl<I, R> Default for MeasureScratch<I, R> {
 /// normalized, so the projection is refused.
 pub const PROJECT_ZERO_TOL: f64 = 1e-12;
 
-/// Error returned by [`project`](GeneralizedTableau::project).
+/// Error returned by [`project`](GeneralizedTableau::project) and
+/// [`project_many`](GeneralizedTableau::project_many).
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProjectError {
     /// The target qubit is lost; projecting a lost qubit is not implemented.
@@ -99,6 +100,8 @@ pub enum ProjectError {
         outcome: bool,
         prob: f64,
     },
+    /// `project_many` was given different numbers of targets and outcomes.
+    LengthMismatch { targets: usize, outcomes: usize },
 }
 
 impl std::fmt::Display for ProjectError {
@@ -115,6 +118,10 @@ impl std::fmt::Display for ProjectError {
                 f,
                 "cannot project qubit {addr0} onto outcome {}: probability {prob:e} is zero",
                 *outcome as u8
+            ),
+            ProjectError::LengthMismatch { targets, outcomes } => write!(
+                f,
+                "got {targets} targets but {outcomes} outcomes; they must have the same length"
             ),
         }
     }
@@ -495,6 +502,64 @@ where
             );
             self.measurement_record.push(Some(outcome));
             Ok(prob)
+        }
+    }
+
+    /// Post-select each `targets[k]` onto `outcomes[k]`, in order, and return
+    /// the joint probability of those outcomes.
+    ///
+    /// Equivalent to calling [`project`](Self::project) on each pair and
+    /// multiplying the returned conditional probabilities, but atomic: if any
+    /// projection fails, the state (including the measurement record) is
+    /// restored to what it was before the call.
+    ///
+    /// # Errors
+    ///
+    /// - [`ProjectError::LengthMismatch`] if `targets` and `outcomes` differ in
+    ///   length.
+    /// - Any error from [`project`](Self::project) on one of the targets.
+    pub fn project_many(
+        &mut self,
+        targets: &[usize],
+        outcomes: &[bool],
+    ) -> Result<f64, ProjectError> {
+        if targets.len() != outcomes.len() {
+            return Err(ProjectError::LengthMismatch {
+                targets: targets.len(),
+                outcomes: outcomes.len(),
+            });
+        }
+        let backup = self.clone();
+        let mut prob = 1.0;
+        for (&addr0, &outcome) in targets.iter().zip(outcomes) {
+            match self.project(addr0, outcome) {
+                Ok(p) => prob *= p,
+                Err(e) => {
+                    *self = backup;
+                    return Err(e);
+                }
+            }
+        }
+        Ok(prob)
+    }
+
+    /// Joint probability of measuring `outcomes` on `targets`, without
+    /// modifying this state.
+    ///
+    /// Forks the state and calls [`project_many`](Self::project_many) on the
+    /// fork. Outcomes with zero joint probability return `Ok(0.0)` rather than
+    /// an error.
+    ///
+    /// # Errors
+    ///
+    /// - [`ProjectError::LengthMismatch`] if `targets` and `outcomes` differ in
+    ///   length.
+    /// - [`ProjectError::QubitLost`] if any target qubit is lost.
+    pub fn probability(&self, targets: &[usize], outcomes: &[bool]) -> Result<f64, ProjectError> {
+        // Projection never draws from the RNG, so the fork's seed is irrelevant.
+        match self.fork(Some(0)).project_many(targets, outcomes) {
+            Err(ProjectError::ZeroProbability { .. }) => Ok(0.0),
+            result => result,
         }
     }
 

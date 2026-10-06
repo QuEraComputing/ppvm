@@ -55,6 +55,29 @@ class MeasurementResult(enum.IntEnum):
 _BY_VALUE = (MeasurementResult.ZERO, MeasurementResult.ONE, MeasurementResult.LOST)
 
 
+def _projection_outcome(value: MeasurementResult) -> bool:
+    """Convert a projection target value to the native bool outcome."""
+    if value == MeasurementResult.LOST:
+        raise NotImplementedError("Projecting onto a LOST outcome is not implemented.")
+    if value not in (MeasurementResult.ZERO, MeasurementResult.ONE):
+        raise ValueError(f"value must be MeasurementResult.ZERO or ONE (got {value!r}).")
+    return value == MeasurementResult.ONE
+
+
+def _projection_args(
+    targets: Iterable[int], values: Iterable[MeasurementResult]
+) -> tuple[list[int], list[bool]]:
+    """Validate ``project_many`` / ``probability`` arguments for the native call."""
+    targets = list(targets)
+    outcomes = [_projection_outcome(v) for v in values]
+    if len(targets) != len(outcomes):
+        raise ValueError(
+            f"got {len(targets)} targets but {len(outcomes)} values; "
+            "they must have the same length."
+        )
+    return targets, outcomes
+
+
 @dataclass(frozen=True)
 class GeneralizedTableau(
     CliffordMixin,
@@ -216,11 +239,56 @@ class GeneralizedTableau(
             ValueError: If ``value`` has zero probability (the state cannot
                 be normalized). The state is left unchanged.
         """
-        if value == MeasurementResult.LOST:
-            raise NotImplementedError("Projecting onto a LOST outcome is not implemented.")
-        if value not in (MeasurementResult.ZERO, MeasurementResult.ONE):
-            raise ValueError(f"value must be MeasurementResult.ZERO or ONE (got {value!r}).")
-        return self._interface.project(addr0, value == MeasurementResult.ONE)
+        return self._interface.project(addr0, _projection_outcome(value))
+
+    def project_many(self, targets: Iterable[int], values: Iterable[MeasurementResult]) -> float:
+        """Post-select several qubits onto Z-basis outcomes, in order.
+
+        Equivalent to calling `project` on each ``(target, value)`` pair and
+        multiplying the returned probabilities, but atomic: if any projection
+        fails, the state and measurement record are restored to what they
+        were before the call.
+
+        Args:
+            targets: The indices of the target qubits.
+            values: The outcome to project each target onto, ``ZERO`` or
+                ``ONE``; must have the same length as ``targets``.
+
+        Returns:
+            The joint probability of measuring ``values`` on ``targets``.
+
+        Raises:
+            NotImplementedError: If any value is ``LOST`` or any target qubit
+                has been lost.
+            ValueError: If ``targets`` and ``values`` differ in length, or the
+                outcomes have zero joint probability. The state is left
+                unchanged.
+        """
+        return self._interface.project_many(*_projection_args(targets, values))
+
+    def probability(self, targets: Iterable[int], values: Iterable[MeasurementResult]) -> float:
+        """Return the joint probability of measuring ``values`` on ``targets``.
+
+        Unlike `project_many`, this does not modify the state: it forks the
+        state and calls `project_many` on the fork. Outcomes with zero joint
+        probability return ``0.0`` rather than raising. Passing every qubit
+        gives the bitstring probability ``P(z) = |⟨z|ψ⟩|²``; passing a subset
+        gives the marginal probability over those qubits.
+
+        Args:
+            targets: The indices of the target qubits.
+            values: The outcome for each target, ``ZERO`` or ``ONE``; must
+                have the same length as ``targets``.
+
+        Returns:
+            The joint probability of measuring ``values`` on ``targets``.
+
+        Raises:
+            NotImplementedError: If any value is ``LOST`` or any target qubit
+                has been lost.
+            ValueError: If ``targets`` and ``values`` differ in length.
+        """
+        return self._interface.probability(*_projection_args(targets, values))
 
     def measure_many(self, *targets: int | Iterable[int]) -> list[MeasurementResult]:
         """Measure several qubits in the Z basis.

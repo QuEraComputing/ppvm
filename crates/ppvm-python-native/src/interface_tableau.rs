@@ -16,6 +16,17 @@ pub(crate) fn measurement_to_u8(m: Option<bool>) -> u8 {
     }
 }
 
+fn project_error_to_py(e: ProjectError) -> PyErr {
+    match e {
+        ProjectError::QubitLost(_) => {
+            pyo3::exceptions::PyNotImplementedError::new_err(e.to_string())
+        }
+        ProjectError::ZeroProbability { .. } | ProjectError::LengthMismatch { .. } => {
+            pyo3::exceptions::PyValueError::new_err(e.to_string())
+        }
+    }
+}
+
 macro_rules! create_interface {
     ($name: ident, $type: ident, $indexType: ident) => {
         #[pyclass]
@@ -49,14 +60,27 @@ macro_rules! create_interface {
 
             /// Post-select qubit `addr0` onto `outcome` and return its probability.
             pub fn project(&mut self, addr0: usize, outcome: bool) -> PyResult<f64> {
-                self.inner.project(addr0, outcome).map_err(|e| match e {
-                    ProjectError::QubitLost(_) => {
-                        pyo3::exceptions::PyNotImplementedError::new_err(e.to_string())
-                    }
-                    ProjectError::ZeroProbability { .. } => {
-                        pyo3::exceptions::PyValueError::new_err(e.to_string())
-                    }
-                })
+                self.inner
+                    .project(addr0, outcome)
+                    .map_err(project_error_to_py)
+            }
+
+            /// Joint probability of `outcomes` on `targets`, without modifying the state.
+            pub fn probability(&self, targets: Vec<usize>, outcomes: Vec<bool>) -> PyResult<f64> {
+                self.inner
+                    .probability(&targets, &outcomes)
+                    .map_err(project_error_to_py)
+            }
+
+            /// Post-select each target onto its outcome and return the joint probability.
+            pub fn project_many(
+                &mut self,
+                targets: Vec<usize>,
+                outcomes: Vec<bool>,
+            ) -> PyResult<f64> {
+                self.inner
+                    .project_many(&targets, &outcomes)
+                    .map_err(project_error_to_py)
             }
 
             pub fn measure_many(&mut self, targets: Vec<usize>) -> Vec<i64> {

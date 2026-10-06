@@ -297,3 +297,82 @@ fn project_lost_qubit_errors() {
     // Other qubits are unaffected.
     assert_close(tab.project(1, false).unwrap(), 1.0, 1e-12);
 }
+
+#[test]
+fn project_many_gives_joint_probability() {
+    let tab = magic_circuit();
+    for bits in all_bitstrings(3) {
+        let mut t = tab.fork(Some(0));
+        let expected = bitstring_prob_from_expectations(&tab, &bits);
+        match t.project_many(&[0, 1, 2], &bits) {
+            Ok(p) => {
+                assert_close(p, expected, 1e-9);
+                let record: Vec<Option<bool>> = bits.iter().map(|&b| Some(b)).collect();
+                assert_eq!(t.current_measurement_record(), record.as_slice());
+            }
+            Err(ProjectError::ZeroProbability { .. }) => assert_close(expected, 0.0, 1e-9),
+            Err(e) => panic!("unexpected error: {e}"),
+        }
+    }
+}
+
+#[test]
+fn project_many_rolls_back_on_error() {
+    let mut tab = TestTableau::new(3, 1e-12);
+    tab.h(0);
+    tab.cnot(0, 1);
+    tab.cnot(1, 2);
+    let before = format!("{tab}");
+
+    // The first projection succeeds; the second is impossible for GHZ.
+    let err = tab.project_many(&[0, 1], &[false, true]).unwrap_err();
+    assert!(matches!(
+        err,
+        ProjectError::ZeroProbability {
+            addr0: 1,
+            outcome: true,
+            ..
+        }
+    ));
+    assert_eq!(format!("{tab}"), before);
+    assert!(tab.current_measurement_record().is_empty());
+
+    assert_eq!(
+        tab.project_many(&[0, 1], &[false]),
+        Err(ProjectError::LengthMismatch {
+            targets: 2,
+            outcomes: 1
+        })
+    );
+    assert_eq!(format!("{tab}"), before);
+}
+
+#[test]
+fn probability_does_not_modify_state() {
+    let tab = magic_circuit();
+    let before = format!("{tab}");
+    for bits in all_bitstrings(3) {
+        let p = tab.probability(&[0, 1, 2], &bits).unwrap();
+        assert_close(p, bitstring_prob_from_expectations(&tab, &bits), 1e-9);
+    }
+    // Marginal over a subset: P(q0 = 0) = (1 + ⟨Z₀⟩) / 2.
+    let z0 = tab.expectation(&word("ZII"));
+    assert_close(
+        tab.probability(&[0], &[false]).unwrap(),
+        0.5 + 0.5 * z0,
+        1e-9,
+    );
+    assert_eq!(format!("{tab}"), before);
+    assert!(tab.current_measurement_record().is_empty());
+
+    // Zero-probability outcomes return 0.0; other errors propagate.
+    let mut ghz = TestTableau::new(3, 1e-12);
+    ghz.h(0);
+    ghz.cnot(0, 1);
+    ghz.cnot(1, 2);
+    assert_eq!(ghz.probability(&[0, 1], &[false, true]), Ok(0.0));
+    assert!(matches!(
+        ghz.probability(&[0, 1], &[false]),
+        Err(ProjectError::LengthMismatch { .. })
+    ));
+}

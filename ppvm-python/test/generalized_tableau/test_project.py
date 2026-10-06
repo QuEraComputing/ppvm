@@ -167,3 +167,59 @@ def test_project_lost_qubit_not_implemented():
         tab.project(0, ZERO)
     assert tab.current_measurement_record() == []
     assert tab.project(1, ZERO) == pytest.approx(1.0, abs=1e-12)
+
+
+def test_project_many_gives_joint_probability():
+    tab = _magic_circuit()
+    for bits in itertools.product((0, 1), repeat=3):
+        t = tab.fork(seed=0)
+        expected = _prob_by_expectation(tab, bits)
+        values = [MeasurementResult(b) for b in bits]
+        try:
+            p = t.project_many([0, 1, 2], values)
+        except ValueError:
+            assert expected == pytest.approx(0.0, abs=1e-9)
+            continue
+        assert p == pytest.approx(expected, abs=1e-9)
+        assert t.current_measurement_record() == values
+
+
+def test_project_many_rolls_back_on_error():
+    tab = GeneralizedTableau(3)
+    tab.h(0)
+    tab.cnot(0, 1)
+    tab.cnot(1, 2)
+    before = str(tab)
+    with pytest.raises(ValueError, match="probability"):
+        tab.project_many([0, 1], [ZERO, ONE])
+    assert str(tab) == before
+    assert tab.current_measurement_record() == []
+
+    with pytest.raises(ValueError, match="same length"):
+        tab.project_many([0, 1], [ZERO])
+    with pytest.raises(NotImplementedError):
+        tab.project_many([0], [LOST])
+    assert str(tab) == before
+
+
+def test_probability_does_not_modify_state():
+    tab = _magic_circuit()
+    before = str(tab)
+    for bits in itertools.product((0, 1), repeat=3):
+        p = tab.probability([0, 1, 2], [MeasurementResult(b) for b in bits])
+        assert p == pytest.approx(_prob_by_expectation(tab, bits), abs=1e-9)
+    # Marginal over a subset: P(q0 = 0) = (1 + ⟨Z₀⟩) / 2.
+    z0 = tab.expectation("ZII")
+    assert tab.probability([0], [ZERO]) == pytest.approx(0.5 + 0.5 * z0, abs=1e-9)
+    assert str(tab) == before
+    assert tab.current_measurement_record() == []
+
+    ghz = GeneralizedTableau(3)
+    ghz.h(0)
+    ghz.cnot(0, 1)
+    ghz.cnot(1, 2)
+    assert ghz.probability([0, 1], [ZERO, ONE]) == 0.0
+    with pytest.raises(ValueError, match="same length"):
+        ghz.probability([0, 1], [ZERO])
+    with pytest.raises(NotImplementedError):
+        ghz.probability([0], [LOST])

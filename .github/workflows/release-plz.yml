@@ -1,37 +1,92 @@
-name: Release
+name: Release-plz
 
-# Build `bloqade-ppvm` wheels + sdist and publish them to PyPI.
+# Lockstep release of the Rust crates (crates.io) and bloqade-ppvm (PyPI).
 #
-# - Push a `v*` tag (matching the version in
-#   `crates/ppvm-python-native/Cargo.toml`) to build, test and publish.
-# - Run manually ("Run workflow") for a dry run: builds and tests only;
-#   publishing is skipped unless the run is on a tag with `dry_run` unchecked.
+# On every push to main:
+#   - release-plz-pr opens/updates the release PR (version bump + CHANGELOG.md).
+#   - release-plz-release publishes any unpublished crate versions, then
+#     creates the `v0.x.y` tag and GitHub release (i.e. when the release PR
+#     is merged). If it released, the wheels are built, tested and published.
+# Run manually for a build-and-test dry run of the wheels; `publish_pypi`
+# (main only) also publishes the current version to PyPI.
 #
-# Publishing uses PyPI trusted publishing (OIDC), so there is no API token.
-# Requires a `pypi` environment in the repo settings and a matching trusted
-# publisher on PyPI (workflow `release.yml`, environment `pypi`).
+# Auth: crates.io and PyPI both use OIDC trusted publishing (no tokens). The
+# PyPI publisher points at this file and the `pypi` environment.
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: "Build and test only; skip publishing"
+      publish_pypi:
+        description: "Publish the current version to PyPI (main only)"
         type: boolean
-        default: true
+        default: false
 
-permissions:
-  contents: read
+permissions: {}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  release-plz-release:
+    name: Release-plz release
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # tags + GitHub release
+      pull-requests: read   # link merged PRs in the release notes
+      id-token: write       # crates.io trusted publishing
+    outputs:
+      releases_created: ${{ steps.release-plz.outputs.releases_created }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Run release-plz
+        id: release-plz
+        uses: release-plz/action@v0.5.139
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-plz-pr:
+    name: Release-plz PR
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Run release-plz
+        uses: release-plz/action@v0.5.139
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # One abi3 wheel per platform (pyo3 `abi3-py310`), so no Python matrix.
   build:
     name: Wheel (${{ matrix.target }})
+    needs: [release-plz-release]
+    if: >-
+      ${{ !cancelled() && (needs.release-plz-release.outputs.releases_created == 'true'
+      || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -70,6 +125,12 @@ jobs:
 
   sdist:
     name: sdist
+    needs: [release-plz-release]
+    if: >-
+      ${{ !cancelled() && (needs.release-plz-release.outputs.releases_created == 'true'
+      || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +153,9 @@ jobs:
   test:
     name: Test (${{ matrix.target }}, py${{ matrix.python }})
     needs: [build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -133,8 +197,11 @@ jobs:
 
   publish-to-pypi:
     name: Publish to PyPI
-    if: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.dry_run }}
-    needs: [build, sdist, test]
+    needs: [release-plz-release, sdist, test]
+    if: >-
+      ${{ !cancelled() && needs.sdist.result == 'success' && needs.test.result == 'success'
+      && (needs.release-plz-release.outputs.releases_created == 'true'
+      || (inputs.publish_pypi && github.ref == 'refs/heads/main')) }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -147,33 +214,4 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # Guard against tagging a commit whose Cargo.toml version wasn't bumped.
-      - name: Check tag matches package version
-        run: |
-          expected="dist/bloqade_ppvm-${GITHUB_REF_NAME#v}.tar.gz"
-          if [ ! -f "$expected" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match the built version:" dist/*.tar.gz
-            exit 1
-          fi
-
       - uses: pypa/gh-action-pypi-publish@release/v1
-
-  github-release:
-    name: GitHub Release
-    needs: [publish-to-pypi]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Create release with notes and artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME" dist/*
-          --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME"
-          --generate-notes --verify-tag

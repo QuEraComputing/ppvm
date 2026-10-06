@@ -6,3 +6,5 @@ prek = "0.4.14"
 "github:korandoru/hawkeye" = "6.5.1"
 # Unused-dependency checker
 "cargo:cargo-machete" = "0.9.2"
+# Local release preview (`release-plz update`); same version the CI action uses
+release-plz = "0.3.169"

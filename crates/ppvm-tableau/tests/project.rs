@@ -425,3 +425,33 @@ fn project_small_probability_is_exact_when_z_is_stabilizer() {
     assert!((p - expected).abs() < 1e-9 * expected);
     assert_close(tab.expectation(&word("Z")), -1.0, 1e-9);
 }
+
+#[test]
+fn project_case_a_normalizes_pruned_state() {
+    // Gate branching prunes coefficients below the threshold without
+    // renormalizing, so the coefficient norm can drop below 1. Here RY(0.4) on
+    // qubit 1 prunes its sin(0.2) ≈ 0.199 branch (threshold 0.25), leaving
+    // norm² = cos²(0.2) ≈ 0.96. Qubit 0 is then |0⟩ on the case-a path, so
+    // P(0) must be exactly 1 and P(1) exactly 0 regardless of that norm.
+    let mut tab = TestTableau::new(3, 0.25);
+    tab.ry(1, 0.4);
+    tab.h(2);
+    tab.cz(1, 2);
+    tab.h(0);
+    tab.ry(0, -FRAC_PI_2);
+    let norm_sq: f64 = tab.coefficients.iter().map(|(c, _)| c.norm_sqr()).sum();
+    assert!(
+        norm_sq < 0.99,
+        "test needs a pruned, unnormalized state: {norm_sq}"
+    );
+    assert!(is_case_a(&tab, 0));
+
+    assert_close(tab.probability(&[0], &[false]).unwrap(), 1.0, 1e-12);
+    assert_eq!(tab.probability(&[0], &[true]), Ok(0.0));
+    let total: f64 = all_bitstrings(3)
+        .iter()
+        .map(|bits| tab.probability(&[0, 1, 2], bits).unwrap())
+        .sum();
+    assert_close(total, 1.0, 1e-12);
+    assert_close(tab.project(0, false).unwrap(), 1.0, 1e-12);
+}

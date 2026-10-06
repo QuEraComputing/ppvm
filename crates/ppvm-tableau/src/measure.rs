@@ -597,13 +597,25 @@ where
             let odd_phase_mask = self.odd_phase_destabilizer_mask();
             let coeff_map: HashMap<I, Complex<T::Coeff>> =
                 self.coefficients.iter().map(|&(c, i)| (i, c)).collect();
-            let z = Self::compute_overlap_case_a(
+            let overlap = Self::compute_overlap_case_a(
                 &coeff_map,
                 phase_decomp,
                 destab_anticomm_bits,
                 stab_anticomm_bits,
                 odd_phase_mask,
             );
+            // Gate branching prunes small coefficients without renormalizing,
+            // so the overlap is ⟨ψ|Z|ψ⟩ for an unnormalized ψ. Divide by the
+            // norm to get ⟨Z⟩ before taking (1 ± ⟨Z⟩)/2.
+            let norm_sq: f64 = coeff_map
+                .values()
+                .map(|c| c.norm_sqr().to_f64().unwrap_or(0.0))
+                .sum();
+            let z = if norm_sq > 0.0 {
+                overlap / norm_sq
+            } else {
+                0.0
+            };
             let prob = Self::outcome_probability(z, outcome);
             if prob < PROJECT_ZERO_TOL {
                 return Err(ProjectError::ZeroProbability {

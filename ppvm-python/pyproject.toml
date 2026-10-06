@@ -5,6 +5,8 @@ dynamic = ["version"]
 description = "Fast Pauli propagation and stabilizer-tableau quantum circuit simulator, with a Rust core."
 readme = "README.md"
 license = "Apache-2.0"
+# Copies of the repo-root files; packaging can't reference paths outside this dir.
+license-files = ["LICENSE", "NOTICE", "AUTHORS"]
 authors = [
     { name = "David Plankensteiner", email = "dplankensteiner@quera.com" }
 ]

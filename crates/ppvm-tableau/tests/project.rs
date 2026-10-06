@@ -376,3 +376,52 @@ fn probability_does_not_modify_state() {
         Err(ProjectError::LengthMismatch { .. })
     ));
 }
+
+#[test]
+fn project_out_of_range_is_atomic() {
+    let mut tab = TestTableau::new(2, 1e-12);
+    tab.h(0);
+    let before = format!("{tab}");
+    let oor = Err(ProjectError::QubitOutOfRange {
+        addr0: 9,
+        n_qubits: 2,
+    });
+    assert_eq!(tab.project(9, false), oor);
+    // Target 0 is valid, but nothing is projected because target 9 is checked first.
+    assert_eq!(tab.project_many(&[0, 9], &[false, false]), oor);
+    assert_eq!(tab.probability(&[0, 9], &[false, false]), oor);
+    assert_eq!(format!("{tab}"), before);
+    assert!(tab.current_measurement_record().is_empty());
+}
+
+#[test]
+fn project_lost_target_errors_regardless_of_order() {
+    // Qubit 0 is |0⟩ (so outcome 1 is impossible) and qubit 1 is lost.
+    let mut tab = TestTableau::new(2, 1e-12);
+    tab.loss_channel(1, 1.0);
+    let lost = Err(ProjectError::QubitLost(1));
+    assert_eq!(tab.probability(&[0, 1], &[true, false]), lost);
+    assert_eq!(tab.probability(&[1, 0], &[false, true]), lost);
+    assert_eq!(tab.project_many(&[0, 1], &[true, false]), lost);
+}
+
+#[test]
+fn project_small_probability_is_exact_when_z_is_stabilizer() {
+    // RX(θ)|0⟩ keeps Z as a stabilizer of the frame (case b), and
+    // P(1) = sin²(θ/2) ≈ 2.5e-13 is below PROJECT_ZERO_TOL.
+    let theta: f64 = 1e-6;
+    let expected = (theta / 2.0).sin().powi(2);
+    assert!(expected < PROJECT_ZERO_TOL);
+
+    let mut tab = TestTableau::new(1, 1e-12);
+    tab.rx(0, theta);
+    assert!(!is_case_a(&tab, 0));
+    let p = tab.probability(&[0], &[true]).unwrap();
+    assert!(
+        (p - expected).abs() < 1e-9 * expected,
+        "expected {expected}, got {p}"
+    );
+    let p = tab.project(0, true).unwrap();
+    assert!((p - expected).abs() < 1e-9 * expected);
+    assert_close(tab.expectation(&word("Z")), -1.0, 1e-9);
+}

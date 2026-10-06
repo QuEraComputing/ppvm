@@ -67,15 +67,21 @@ def _projection_outcome(value: MeasurementResult) -> bool:
 def _projection_args(
     targets: Iterable[int], values: Iterable[MeasurementResult]
 ) -> tuple[list[int], list[bool]]:
-    """Validate ``project_many`` / ``probability`` arguments for the native call."""
+    """Convert ``project_many`` / ``probability`` arguments for the native call.
+
+    Length mismatches and indices ``>= n_qubits`` are checked natively.
+    """
     targets = list(targets)
-    outcomes = [_projection_outcome(v) for v in values]
-    if len(targets) != len(outcomes):
-        raise ValueError(
-            f"got {len(targets)} targets but {len(outcomes)} values; "
-            "they must have the same length."
-        )
-    return targets, outcomes
+    for addr0 in targets:
+        _check_nonnegative_index(addr0)
+    return targets, [_projection_outcome(v) for v in values]
+
+
+def _check_nonnegative_index(addr0: int) -> None:
+    # The native layer takes unsigned indices; a negative int would surface as
+    # OverflowError instead of the documented IndexError.
+    if addr0 < 0:
+        raise IndexError(f"qubit index must be non-negative (got {addr0}).")
 
 
 @dataclass(frozen=True)
@@ -238,16 +244,18 @@ class GeneralizedTableau(
                 been lost; projection with loss is not implemented.
             ValueError: If ``value`` has zero probability (the state cannot
                 be normalized). The state is left unchanged.
+            IndexError: If ``addr0`` is not a valid qubit index.
         """
+        _check_nonnegative_index(addr0)
         return self._interface.project(addr0, _projection_outcome(value))
 
     def project_many(self, targets: Iterable[int], values: Iterable[MeasurementResult]) -> float:
         """Post-select several qubits onto Z-basis outcomes, in order.
 
         Equivalent to calling `project` on each ``(target, value)`` pair and
-        multiplying the returned probabilities, but atomic: if any projection
-        fails, the state and measurement record are restored to what they
-        were before the call.
+        multiplying the returned probabilities, but atomic: every target is
+        validated first, and if any projection fails, the state and
+        measurement record are restored to what they were before the call.
 
         Args:
             targets: The indices of the target qubits.
@@ -263,6 +271,7 @@ class GeneralizedTableau(
             ValueError: If ``targets`` and ``values`` differ in length, or the
                 outcomes have zero joint probability. The state is left
                 unchanged.
+            IndexError: If any target is not a valid qubit index.
         """
         return self._interface.project_many(*_projection_args(targets, values))
 
@@ -287,6 +296,7 @@ class GeneralizedTableau(
             NotImplementedError: If any value is ``LOST`` or any target qubit
                 has been lost.
             ValueError: If ``targets`` and ``values`` differ in length.
+            IndexError: If any target is not a valid qubit index.
         """
         return self._interface.probability(*_projection_args(targets, values))
 

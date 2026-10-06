@@ -18,6 +18,9 @@ pub(crate) fn measurement_to_u8(m: Option<bool>) -> u8 {
 
 fn project_error_to_py(e: ProjectError) -> PyErr {
     match e {
+        ProjectError::QubitOutOfRange { .. } => {
+            pyo3::exceptions::PyIndexError::new_err(e.to_string())
+        }
         ProjectError::QubitLost(_) => {
             pyo3::exceptions::PyNotImplementedError::new_err(e.to_string())
         }

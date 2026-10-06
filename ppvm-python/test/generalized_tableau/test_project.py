@@ -223,3 +223,42 @@ def test_probability_does_not_modify_state():
         ghz.probability([0, 1], [ZERO])
     with pytest.raises(NotImplementedError):
         ghz.probability([0], [LOST])
+
+
+def test_project_out_of_range_is_atomic():
+    tab = GeneralizedTableau(2)
+    tab.h(0)
+    before = str(tab)
+    with pytest.raises(IndexError):
+        tab.project(9, ZERO)
+    with pytest.raises(IndexError):
+        tab.project_many([0, 9], [ZERO, ZERO])
+    with pytest.raises(IndexError):
+        tab.probability([0, 9], [ZERO, ZERO])
+    with pytest.raises(IndexError):
+        tab.project(-1, ZERO)
+    with pytest.raises(IndexError):
+        tab.project_many([0, -1], [ZERO, ZERO])
+    with pytest.raises(IndexError):
+        tab.probability([-1], [ZERO])
+    assert str(tab) == before
+    assert tab.current_measurement_record() == []
+
+
+def test_lost_target_errors_regardless_of_order():
+    tab = GeneralizedTableau(2)
+    tab.loss_channel(1, 1.0)
+    for targets, values in [([0, 1], [ONE, ZERO]), ([1, 0], [ZERO, ONE])]:
+        with pytest.raises(NotImplementedError):
+            tab.probability(targets, values)
+        with pytest.raises(NotImplementedError):
+            tab.project_many(targets, values)
+
+
+def test_small_probability_is_exact():
+    theta = 1e-6
+    expected = math.sin(theta / 2) ** 2  # ≈ 2.5e-13
+    tab = GeneralizedTableau(1, min_abs_coeff=1e-12)
+    tab.rx(0, theta)
+    assert tab.probability([0], [ONE]) == pytest.approx(expected, rel=1e-9)
+    assert tab.project(0, ONE) == pytest.approx(expected, rel=1e-9)

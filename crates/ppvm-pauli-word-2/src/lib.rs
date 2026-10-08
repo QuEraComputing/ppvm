@@ -10,6 +10,7 @@ mod pauli_parser;
 mod phase;
 mod product;
 mod storage;
+mod clifford;
 
 pub use column::PauliKeyColumn;
 pub use data::PauliWord;

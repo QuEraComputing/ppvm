@@ -83,17 +83,17 @@ where
     /// Computes the hash eagerly so the word is ready for map insertion.
     #[inline]
     pub fn new(nqubits: usize) -> Self {
-        debug_assert!(
+        Self::from_planes(BitArray::ZERO, BitArray::ZERO, nqubits)
+    }
+
+    /// Assembles packed planes, rejecting widths beyond the backing storage capacity.
+    #[inline]
+    pub(crate) fn from_planes(xbits: BitArray<A>, zbits: BitArray<A>, nqubits: usize) -> Self {
+        assert!(
             nqubits <= 8 * std::mem::size_of::<A>(),
             "nqubits {nqubits} exceeds the {}-bit backing storage",
             8 * std::mem::size_of::<A>(),
         );
-        Self::from_planes(BitArray::ZERO, BitArray::ZERO, nqubits)
-    }
-
-    /// Assemble from already-packed planes and a width.
-    #[inline]
-    pub(crate) fn from_planes(xbits: BitArray<A>, zbits: BitArray<A>, nqubits: usize) -> Self {
         let hash_cache = structural_hash::<A, H>(&xbits.data, &zbits.data, nqubits);
         Self {
             xbits,
@@ -397,6 +397,22 @@ impl<A: PauliStorage, H> Eq for PauliWord<A, H> {}
 mod tests {
     use super::*;
     use ppvm_traits_2::Indexable;
+
+    #[test]
+    fn constructors_enforce_storage_capacity() {
+        assert!(std::panic::catch_unwind(|| PauliWord::<u8>::new(9)).is_err());
+        assert!(
+            std::panic::catch_unwind(|| {
+                PauliWord::<u8>::from_planes(BitArray::ZERO, BitArray::ZERO, 9)
+            })
+            .is_err()
+        );
+        for width in [0, 8] {
+            let word = PauliWord::<u8>::new(width);
+            assert_eq!(word.n_sites(), width);
+            assert_eq!(word.to_string(), "I".repeat(width));
+        }
+    }
 
     /// The fused two-site toggle must equal two sequential one-site toggles for
     /// every index pair, including a repeated index (where the two requests

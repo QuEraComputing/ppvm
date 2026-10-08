@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["ByteFxHash","ByteGxHash"],"type":["ByteFxHashF64","ByteGxHashF64"]};
+window.SIDEBAR_ITEMS = {"struct":["ByteFxHash"],"type":["ByteFxHashF64"]};

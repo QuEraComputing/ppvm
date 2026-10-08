@@ -3,6 +3,7 @@
 
 //! Packed Pauli words, explicit phases, and hashing utilities.
 
+mod clifford;
 mod column;
 mod data;
 mod hash;
@@ -10,7 +11,6 @@ mod pauli_parser;
 mod phase;
 mod product;
 mod storage;
-mod clifford;
 
 pub use column::PauliKeyColumn;
 pub use data::PauliWord;

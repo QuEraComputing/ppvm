@@ -1,0 +1,457 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
+use std::f64::consts::FRAC_PI_2;
+
+use ppvm_pauli_sum::config::fxhash::ByteF64;
+use ppvm_tableau::prelude::*;
+
+type TestTableau = GeneralizedTableau<ByteF64<1>>;
+
+fn word(s: &str) -> PauliWord<u64> {
+    s.into()
+}
+
+fn assert_close(actual: f64, expected: f64, tol: f64) {
+    assert!(
+        (actual - expected).abs() < tol,
+        "expected {expected}, got {actual} (|Δ| = {})",
+        (actual - expected).abs()
+    );
+}
+
+/// All `4^n` Pauli strings on `n` qubits.
+fn all_paulis(n: usize) -> Vec<String> {
+    let mut out = vec![String::new()];
+    for _ in 0..n {
+        out = out
+            .into_iter()
+            .flat_map(|s| ["I", "X", "Y", "Z"].map(|p| format!("{s}{p}")))
+            .collect();
+    }
+    out
+}
+
+/// `P(b) = 2^-n Σ_T (-1)^{b·T} ⟨Z_T⟩`, computed without collapsing the state.
+fn bitstring_prob_from_expectations(tab: &TestTableau, bits: &[bool]) -> f64 {
+    let n = bits.len();
+    let mut sum = 0.0;
+    for mask in 0..(1usize << n) {
+        let w: String = (0..n)
+            .map(|q| if mask >> q & 1 == 1 { 'Z' } else { 'I' })
+            .collect();
+        let sign = (0..n).filter(|&q| mask >> q & 1 == 1 && bits[q]).count() % 2;
+        let e = tab.expectation(&word(&w));
+        sum += if sign == 0 { e } else { -e };
+    }
+    sum / (1usize << n) as f64
+}
+
+/// Chain-rule bitstring probability via successive projections.
+fn bitstring_prob_by_projection(tab: &TestTableau, bits: &[bool]) -> f64 {
+    let mut t = tab.fork(Some(0));
+    let mut prob = 1.0;
+    for (q, &b) in bits.iter().enumerate() {
+        match t.project(q, b) {
+            Ok(p) => prob *= p,
+            Err(ProjectError::ZeroProbability { .. }) => return 0.0,
+            Err(e) => panic!("unexpected error: {e}"),
+        }
+    }
+    prob
+}
+
+fn all_bitstrings(n: usize) -> Vec<Vec<bool>> {
+    (0..(1usize << n))
+        .map(|m| (0..n).map(|q| m >> q & 1 == 1).collect())
+        .collect()
+}
+
+/// A small entangled, non-Clifford circuit exercising both measurement cases.
+fn magic_circuit() -> TestTableau {
+    let mut tab = TestTableau::new(3, 1e-12);
+    tab.h(0);
+    tab.t(0);
+    tab.cnot(0, 1);
+    tab.h(2);
+    tab.t(2);
+    tab.cnot(1, 2);
+    tab.ry(1, 0.7);
+    tab.t(1);
+    tab.h(1);
+    tab.rx(2, 0.3);
+    tab
+}
+
+#[test]
+fn project_zero_state() {
+    let mut tab = TestTableau::new(1, 1e-12);
+    assert_close(tab.project(0, false).unwrap(), 1.0, 1e-12);
+    assert_eq!(tab.current_measurement_record(), &[Some(false)]);
+}
+
+/// True if projecting `addr0` takes the case-a path (Z anticommutes with some
+/// stabilizer), false for case b (Z is a stabilizer up to sign).
+fn is_case_a(tab: &TestTableau, addr0: usize) -> bool {
+    let (_, stab_anticomm_bits, _) = tab.compute_decomposition(addr0, Pauli::Z);
+    stab_anticomm_bits != 0
+}
+
+/// Projects `addr0` onto an outcome that must have zero probability, and checks
+/// that the error is returned and the tableau, coefficients, Pauli expectations,
+/// and measurement record are all unchanged.
+fn assert_zero_probability_preserves_state(tab: &mut TestTableau, addr0: usize, outcome: bool) {
+    let n = tab.n_qubits();
+    let paulis = all_paulis(n);
+    let before_display = format!("{tab}");
+    let before_expectations: Vec<f64> = paulis.iter().map(|p| tab.expectation(&word(p))).collect();
+    let before_record = tab.current_measurement_record().to_vec();
+
+    let err = tab.project(addr0, outcome).unwrap_err();
+    assert!(
+        matches!(err, ProjectError::ZeroProbability { addr0: a, outcome: o, .. } if a == addr0 && o == outcome),
+        "unexpected error: {err:?}"
+    );
+
+    assert_eq!(format!("{tab}"), before_display);
+    for (p, before) in paulis.iter().zip(before_expectations) {
+        assert_close(tab.expectation(&word(p)), before, 1e-12);
+    }
+    assert_eq!(tab.current_measurement_record(), before_record.as_slice());
+}
+
+#[test]
+fn project_zero_probability_case_b() {
+    // |0⟩: Z is a stabilizer, P(1) = 0.
+    let mut tab = TestTableau::new(1, 1e-12);
+    assert!(!is_case_a(&tab, 0));
+    assert_zero_probability_preserves_state(&mut tab, 0, true);
+
+    // |+⟩ with a T phase, projected onto 0: the projection makes Z a
+    // stabilizer, so the impossible second projection also goes through case b.
+    let mut tab = TestTableau::new(1, 1e-12);
+    tab.h(0);
+    tab.t(0);
+    assert!(is_case_a(&tab, 0));
+    tab.project(0, false).unwrap();
+    assert!(!is_case_a(&tab, 0));
+    assert_zero_probability_preserves_state(&mut tab, 0, true);
+}
+
+#[test]
+fn project_zero_probability_case_a() {
+    // H then RY(-π/2) returns to |0⟩, but the rotation only reweights the
+    // coefficients: the stabilizer frame still holds X, so Z is not a stabilizer
+    // and the projection takes case a even though P(1) = 0.
+    let mut tab = TestTableau::new(1, 1e-12);
+    tab.h(0);
+    tab.ry(0, -FRAC_PI_2);
+    assert!(is_case_a(&tab, 0));
+    assert_close(tab.expectation(&word("Z")), 1.0, 1e-12);
+    assert_zero_probability_preserves_state(&mut tab, 0, true);
+    // The possible outcome still projects, with probability 1.
+    assert_close(tab.project(0, false).unwrap(), 1.0, 1e-12);
+
+    // Same on 3 qubits, with qubit 0 in |0⟩ (case a) next to an entangled,
+    // non-Clifford pair on qubits 1 and 2.
+    let mut tab = TestTableau::new(3, 1e-12);
+    tab.h(0);
+    tab.h(1);
+    tab.h(2);
+    tab.t(1);
+    tab.cz(1, 2);
+    tab.ry(0, -FRAC_PI_2);
+    assert!(is_case_a(&tab, 0));
+    assert!(tab.coefficients.len() > 1);
+    assert_zero_probability_preserves_state(&mut tab, 0, true);
+    assert_close(tab.project(0, false).unwrap(), 1.0, 1e-12);
+}
+
+#[test]
+fn project_plus_state() {
+    for outcome in [false, true] {
+        let mut tab = TestTableau::new(1, 1e-12);
+        tab.h(0);
+        assert_close(tab.project(0, outcome).unwrap(), 0.5, 1e-12);
+        let z = if outcome { -1.0 } else { 1.0 };
+        assert_close(tab.expectation(&word("Z")), z, 1e-12);
+        // The outcome is now deterministic.
+        assert_close(tab.project(0, outcome).unwrap(), 1.0, 1e-12);
+        assert_eq!(
+            tab.current_measurement_record(),
+            &[Some(outcome), Some(outcome)]
+        );
+    }
+}
+
+#[test]
+fn project_ry_matches_cos_squared() {
+    for theta in [0.1, 0.7, 1.3, 2.0, 2.9] {
+        for outcome in [false, true] {
+            let mut tab = TestTableau::new(1, 1e-12);
+            tab.ry(0, theta);
+            let p0 = (theta / 2.0_f64).cos().powi(2);
+            let expected = if outcome { 1.0 - p0 } else { p0 };
+            assert_close(tab.project(0, outcome).unwrap(), expected, 1e-10);
+            let z = if outcome { -1.0 } else { 1.0 };
+            assert_close(tab.expectation(&word("Z")), z, 1e-10);
+        }
+    }
+}
+
+#[test]
+fn project_matches_measure() {
+    let base = magic_circuit();
+    let paulis = all_paulis(3);
+    for q in 0..3 {
+        for outcome in [false, true] {
+            let mut projected = base.fork(Some(0));
+            if projected.project(q, outcome).is_err() {
+                continue;
+            }
+            let mut measured = (0..1000u64)
+                .map(|s| {
+                    let mut t = base.fork(Some(s));
+                    let m = t.measure(q);
+                    (t, m)
+                })
+                .find(|(_, m)| *m == Some(outcome))
+                .expect("outcome with nonzero probability should be sampled")
+                .0;
+            for p in &paulis {
+                assert_close(
+                    projected.expectation(&word(p)),
+                    measured.expectation(&word(p)),
+                    1e-9,
+                );
+            }
+            // Subsequent measurements on the two states agree in distribution;
+            // check that the next qubit's probabilities agree exactly.
+            let next = (q + 1) % 3;
+            let p_proj = projected.fork(Some(1)).project(next, false);
+            let p_meas = measured.project(next, false);
+            match (p_proj, p_meas) {
+                (Ok(a), Ok(b)) => assert_close(a, b, 1e-9),
+                (Err(_), Err(_)) => {}
+                other => panic!("mismatch: {other:?}"),
+            }
+        }
+    }
+}
+
+#[test]
+fn project_chain_rule_matches_expectations() {
+    let tab = magic_circuit();
+    let mut total = 0.0;
+    for bits in all_bitstrings(3) {
+        let by_projection = bitstring_prob_by_projection(&tab, &bits);
+        let by_expectation = bitstring_prob_from_expectations(&tab, &bits);
+        assert_close(by_projection, by_expectation, 1e-9);
+        total += by_projection;
+    }
+    assert_close(total, 1.0, 1e-9);
+}
+
+#[test]
+fn project_chain_rule_order_independent() {
+    let tab = magic_circuit();
+    for bits in all_bitstrings(3) {
+        let mut t = tab.fork(Some(0));
+        let mut prob = 1.0;
+        for q in [2, 0, 1] {
+            match t.project(q, bits[q]) {
+                Ok(p) => prob *= p,
+                Err(_) => {
+                    prob = 0.0;
+                    break;
+                }
+            }
+        }
+        assert_close(prob, bitstring_prob_from_expectations(&tab, &bits), 1e-9);
+    }
+}
+
+#[test]
+fn project_ghz() {
+    let mut tab = TestTableau::new(3, 1e-12);
+    tab.h(0);
+    tab.cnot(0, 1);
+    tab.cnot(1, 2);
+    for bits in all_bitstrings(3) {
+        let expected = if bits.iter().all(|&b| b) || bits.iter().all(|&b| !b) {
+            0.5
+        } else {
+            0.0
+        };
+        assert_close(bitstring_prob_by_projection(&tab, &bits), expected, 1e-12);
+    }
+}
+
+#[test]
+fn project_lost_qubit_errors() {
+    let mut tab = TestTableau::new(2, 1e-12);
+    tab.h(0);
+    tab.loss_channel(0, 1.0);
+    assert_eq!(tab.project(0, false), Err(ProjectError::QubitLost(0)));
+    assert!(tab.current_measurement_record().is_empty());
+    // Other qubits are unaffected.
+    assert_close(tab.project(1, false).unwrap(), 1.0, 1e-12);
+}
+
+#[test]
+fn project_many_gives_joint_probability() {
+    let tab = magic_circuit();
+    for bits in all_bitstrings(3) {
+        let mut t = tab.fork(Some(0));
+        let expected = bitstring_prob_from_expectations(&tab, &bits);
+        match t.project_many(&[0, 1, 2], &bits) {
+            Ok(p) => {
+                assert_close(p, expected, 1e-9);
+                let record: Vec<Option<bool>> = bits.iter().map(|&b| Some(b)).collect();
+                assert_eq!(t.current_measurement_record(), record.as_slice());
+            }
+            Err(ProjectError::ZeroProbability { .. }) => assert_close(expected, 0.0, 1e-9),
+            Err(e) => panic!("unexpected error: {e}"),
+        }
+    }
+}
+
+#[test]
+fn project_many_rolls_back_on_error() {
+    let mut tab = TestTableau::new(3, 1e-12);
+    tab.h(0);
+    tab.cnot(0, 1);
+    tab.cnot(1, 2);
+    let before = format!("{tab}");
+
+    // The first projection succeeds; the second is impossible for GHZ.
+    let err = tab.project_many(&[0, 1], &[false, true]).unwrap_err();
+    assert!(matches!(
+        err,
+        ProjectError::ZeroProbability {
+            addr0: 1,
+            outcome: true,
+            ..
+        }
+    ));
+    assert_eq!(format!("{tab}"), before);
+    assert!(tab.current_measurement_record().is_empty());
+
+    assert_eq!(
+        tab.project_many(&[0, 1], &[false]),
+        Err(ProjectError::LengthMismatch {
+            targets: 2,
+            outcomes: 1
+        })
+    );
+    assert_eq!(format!("{tab}"), before);
+}
+
+#[test]
+fn probability_does_not_modify_state() {
+    let tab = magic_circuit();
+    let before = format!("{tab}");
+    for bits in all_bitstrings(3) {
+        let p = tab.probability(&[0, 1, 2], &bits).unwrap();
+        assert_close(p, bitstring_prob_from_expectations(&tab, &bits), 1e-9);
+    }
+    // Marginal over a subset: P(q0 = 0) = (1 + ⟨Z₀⟩) / 2.
+    let z0 = tab.expectation(&word("ZII"));
+    assert_close(
+        tab.probability(&[0], &[false]).unwrap(),
+        0.5 + 0.5 * z0,
+        1e-9,
+    );
+    assert_eq!(format!("{tab}"), before);
+    assert!(tab.current_measurement_record().is_empty());
+
+    // Zero-probability outcomes return 0.0; other errors propagate.
+    let mut ghz = TestTableau::new(3, 1e-12);
+    ghz.h(0);
+    ghz.cnot(0, 1);
+    ghz.cnot(1, 2);
+    assert_eq!(ghz.probability(&[0, 1], &[false, true]), Ok(0.0));
+    assert!(matches!(
+        ghz.probability(&[0, 1], &[false]),
+        Err(ProjectError::LengthMismatch { .. })
+    ));
+}
+
+#[test]
+fn project_out_of_range_is_atomic() {
+    let mut tab = TestTableau::new(2, 1e-12);
+    tab.h(0);
+    let before = format!("{tab}");
+    let oor = Err(ProjectError::QubitOutOfRange {
+        addr0: 9,
+        n_qubits: 2,
+    });
+    assert_eq!(tab.project(9, false), oor);
+    // Target 0 is valid, but nothing is projected because target 9 is checked first.
+    assert_eq!(tab.project_many(&[0, 9], &[false, false]), oor);
+    assert_eq!(tab.probability(&[0, 9], &[false, false]), oor);
+    assert_eq!(format!("{tab}"), before);
+    assert!(tab.current_measurement_record().is_empty());
+}
+
+#[test]
+fn project_lost_target_errors_regardless_of_order() {
+    // Qubit 0 is |0⟩ (so outcome 1 is impossible) and qubit 1 is lost.
+    let mut tab = TestTableau::new(2, 1e-12);
+    tab.loss_channel(1, 1.0);
+    let lost = Err(ProjectError::QubitLost(1));
+    assert_eq!(tab.probability(&[0, 1], &[true, false]), lost);
+    assert_eq!(tab.probability(&[1, 0], &[false, true]), lost);
+    assert_eq!(tab.project_many(&[0, 1], &[true, false]), lost);
+}
+
+#[test]
+fn project_small_probability_is_exact_when_z_is_stabilizer() {
+    // RX(θ)|0⟩ keeps Z as a stabilizer of the frame (case b), and
+    // P(1) = sin²(θ/2) ≈ 2.5e-13 is below PROJECT_ZERO_TOL.
+    let theta: f64 = 1e-6;
+    let expected = (theta / 2.0).sin().powi(2);
+    assert!(expected < PROJECT_ZERO_TOL);
+
+    let mut tab = TestTableau::new(1, 1e-12);
+    tab.rx(0, theta);
+    assert!(!is_case_a(&tab, 0));
+    let p = tab.probability(&[0], &[true]).unwrap();
+    assert!(
+        (p - expected).abs() < 1e-9 * expected,
+        "expected {expected}, got {p}"
+    );
+    let p = tab.project(0, true).unwrap();
+    assert!((p - expected).abs() < 1e-9 * expected);
+    assert_close(tab.expectation(&word("Z")), -1.0, 1e-9);
+}
+
+#[test]
+fn project_case_a_normalizes_pruned_state() {
+    // Gate branching prunes coefficients below the threshold without
+    // renormalizing, so the coefficient norm can drop below 1. Here RY(0.4) on
+    // qubit 1 prunes its sin(0.2) ≈ 0.199 branch (threshold 0.25), leaving
+    // norm² = cos²(0.2) ≈ 0.96. Qubit 0 is then |0⟩ on the case-a path, so
+    // P(0) must be exactly 1 and P(1) exactly 0 regardless of that norm.
+    let mut tab = TestTableau::new(3, 0.25);
+    tab.ry(1, 0.4);
+    tab.h(2);
+    tab.cz(1, 2);
+    tab.h(0);
+    tab.ry(0, -FRAC_PI_2);
+    let norm_sq: f64 = tab.coefficients.iter().map(|(c, _)| c.norm_sqr()).sum();
+    assert!(
+        norm_sq < 0.99,
+        "test needs a pruned, unnormalized state: {norm_sq}"
+    );
+    assert!(is_case_a(&tab, 0));
+
+    assert_close(tab.probability(&[0], &[false]).unwrap(), 1.0, 1e-12);
+    assert_eq!(tab.probability(&[0], &[true]), Ok(0.0));
+    let total: f64 = all_bitstrings(3)
+        .iter()
+        .map(|bits| tab.probability(&[0, 1, 2], bits).unwrap())
+        .sum();
+    assert_close(total, 1.0, 1e-12);
+    assert_close(tab.project(0, false).unwrap(), 1.0, 1e-12);
+}

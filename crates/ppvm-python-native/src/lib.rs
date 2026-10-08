@@ -1,13 +1,23 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+// mimalloc returns freed pages to the kernel more aggressively than the
+// default system allocator. This materially reduces peak RSS for the
+// allocation-heavy adaptive-Pauli paths (leakage + generator each
+// allocate hundreds of MB of transient Vec data per pc_step).
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 pub mod interface;
 pub mod interface_tableau;
 pub mod interface_tableau_sum;
+pub mod lindblad;
+pub mod pauli_arr;
 pub mod stim_program;
+pub mod symmetry;
 
 pub(crate) fn flat_pairs(targets: &[usize]) -> PyResult<Vec<(usize, usize)>> {
     if !targets.len().is_multiple_of(2) {
@@ -298,4 +308,18 @@ pub mod _core {
     // Stim
     #[pymodule_export]
     pub use crate::stim_program::PyStimProgram;
+
+    // Lindbladian time evolution
+    #[pymodule_export]
+    pub use crate::lindblad::LindbladSpec;
+
+    // Symmetry merging
+    #[pymodule_export]
+    pub use crate::symmetry::TranslationGroup;
+    #[pymodule_export]
+    pub use crate::symmetry::canonicalize_basis_arr;
+    #[pymodule_export]
+    pub use crate::symmetry::canonicalize_basis_arr_complex;
+    #[pymodule_export]
+    pub use crate::symmetry::check_momentum_sector_arr;
 }

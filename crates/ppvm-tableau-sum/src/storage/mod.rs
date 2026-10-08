@@ -9,14 +9,17 @@ pub use entry_store::{Branch, EntryStore};
 use fxhash::FxHashMap;
 use ppvm_traits::traits::Clifford;
 
-// Hasher for the structural `word_fingerprint`. gxhash (AES-based) is fastest on
-// native and exposes a `gxhash64` bulk free function, but it needs hardware AES
-// and does not build on wasm32, so fall back to fxhash there. The fingerprint is
+// Hasher for the structural `word_fingerprint`. gxhash (AES-based) is fastest and
+// exposes a `gxhash64` bulk free function, but it only compiles with hardware AES
+// enabled (never on wasm32), so fall back to fxhash otherwise. The fingerprint is
 // a transient in-memory dedup key — collisions are resolved by
 // `structurally_equal`, and it is never persisted or compared across builds — so
 // the hasher may differ per target without affecting results.
 use bitvec::view::{BitView, BitViewSized};
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(all(
+    target_feature = "aes",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+)))]
 use fxhash::FxHasher as FingerprintHasher;
 use num::{
     Complex, One, PrimInt, Zero,
@@ -27,7 +30,10 @@ use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
 use ppvm_traits::config::Config;
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(all(
+    target_feature = "aes",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+)))]
 use std::hash::Hasher;
 use std::ops::AddAssign;
 
@@ -75,11 +81,17 @@ where
             buf.extend_from_slice(bytemuck::bytes_of(&row.word.zbits.data));
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(
+            target_feature = "aes",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
         {
             gxhash::gxhash64(&buf, 0)
         }
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(not(all(
+            target_feature = "aes",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
         {
             let mut hasher = FingerprintHasher::default();
             hasher.write(&buf);

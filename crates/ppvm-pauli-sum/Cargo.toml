@@ -16,11 +16,14 @@ bon = "3.7.2"
 approx = { version = "0.5.1", optional = true }
 indexmap = { version = "2.11.4", optional = true }
 
-# Native-only optional deps: dashmap pulls rayon (OS threads) and gxhash needs
-# AES intrinsics — neither builds on wasm32. Pruned there; the matching features
-# go inert (see the `not(target_arch = "wasm32")` gates on the config modules).
+# Native-only optional dep: dashmap pulls rayon (OS threads), which doesn't build
+# on wasm32. Pruned there; the feature goes inert (see the config module gates).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dashmap = { version = "6.1.0", features = ["rayon"], optional = true }
+
+# gxhash only compiles with hardware AES enabled; pruned otherwise, which drops
+# the gxhash configs (same condition on the config gates).
+[target.'cfg(all(target_feature = "aes", any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
 gxhash = { version = "3.5.0", features = ["deterministic"], optional = true }
 
 [dev-dependencies]

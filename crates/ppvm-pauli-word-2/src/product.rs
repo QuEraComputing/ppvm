@@ -23,7 +23,7 @@ where
     /// Returns the XORed word and its residual phase for the coefficient to absorb.
     /// Both inputs must have equal width; zero unused bits stay zero.
     fn key_mul(&self, other: &Self) -> (Self, Phase) {
-        debug_assert_eq!(
+        assert_eq!(
             self.nqubits, other.nqubits,
             "twisted product requires equal-width words",
         );
@@ -69,6 +69,18 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multiplication_rejects_mismatched_widths() {
+        for (lhs, rhs) in [("I", "IX"), ("IX", "I"), ("", "I"), ("I", "")] {
+            let left = PauliWord::<u64>::from(lhs);
+            let right = PauliWord::<u64>::from(rhs);
+            assert!(
+                std::panic::catch_unwind(|| left.key_mul(&right)).is_err(),
+                "accepted mismatched widths: {lhs:?} * {rhs:?}"
+            );
+        }
+    }
 
     /// A `Phase` rendered as a `+ / +i / - / -i` prefix, for readable asserts.
     fn phase_str(p: Phase) -> &'static str {

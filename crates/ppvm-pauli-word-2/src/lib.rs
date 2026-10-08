@@ -3,13 +3,15 @@
 
 //! Packed Pauli words, explicit phases, and hashing utilities.
 
+mod column;
 mod data;
 mod hash;
 mod pauli_parser;
 mod phase;
-mod storage;
 mod product;
+mod storage;
 
+pub use column::PauliKeyColumn;
 pub use data::PauliWord;
 pub use hash::HashFinalize;
 pub use phase::Phased;

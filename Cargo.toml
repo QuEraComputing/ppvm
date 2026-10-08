@@ -22,6 +22,7 @@ members = [
     "crates/ppvm-vihaco",
     "crates/ppvm-cli",
     "crates/ppvm-traits-2",
+    "crates/ppvm-pauli-word-2",
     # Runnable copies of the Rust code blocks in skills/ppvm-usage/SKILL.md.
     # Built by `cargo build --workspace --all-targets` in CI so the skill
     # can't silently drift away from the public API.

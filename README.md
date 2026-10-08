@@ -1,4 +1,4 @@
-# Pauli Propagation Virtual Machine
+# Programmable Pauli Virtual Machine
 
 A fast quantum circuit simulator written in Rust, with Python bindings.
 

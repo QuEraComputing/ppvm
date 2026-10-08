@@ -65,7 +65,11 @@ impl HashFinalize for fxhash::FxBuildHasher {
 // max bucket 6, essentially ideal, vs fxhash's 2257 at 64 qubits), so the
 // identity default is exactly right — folding would only pay the tag/bucket
 // coupling cost above with no distribution benefit.
-#[cfg(all(feature = "gxhash", not(target_arch = "wasm32")))]
+#[cfg(all(
+    feature = "gxhash",
+    target_feature = "aes",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 impl HashFinalize for gxhash::GxBuildHasher {}
 
 #[cfg(test)]
@@ -99,7 +103,11 @@ mod tests {
         }
     }
 
-    #[cfg(all(feature = "gxhash", not(target_arch = "wasm32")))]
+    #[cfg(all(
+        feature = "gxhash",
+        target_feature = "aes",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     #[test]
     fn gxhash_never_folds() {
         // gxhash already distributes its low bits, so it is the identity at

@@ -100,6 +100,11 @@ pub fn trotter_benchmarks(c: &mut Criterion) {
         .build_global()
         .unwrap();
     println!("Using {} threads", current_num_threads());
+    #[cfg(all(
+        feature = "gxhash",
+        target_feature = "aes",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     benchmark_suite_trotter::<
         config::gxhash::ByteF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
     >(
@@ -118,6 +123,11 @@ pub fn trotter_benchmarks(c: &mut Criterion) {
         c,
         "ByteF64FxDashMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>",
     );
+    #[cfg(all(
+        feature = "gxhash",
+        target_feature = "aes",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     benchmark_suite_trotter::<
         config::dashmap::ByteGxHashF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
     >(
@@ -130,6 +140,11 @@ pub fn trotter_benchmarks(c: &mut Criterion) {
         c,
         "ByteF64FxIndexMap<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>",
     );
+    #[cfg(all(
+        feature = "gxhash",
+        target_feature = "aes",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     benchmark_suite_trotter::<
         config::indexmap::ByteGxHashF64<2, CombinedStrategy<CoefficientThreshold, MaxPauliWeight>>,
     >(

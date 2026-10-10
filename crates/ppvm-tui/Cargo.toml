@@ -1,7 +1,10 @@
 [package]
 name = "ppvm-tui"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Composable ratatui components and app state for the ppvm terminal UI."
 
 [dependencies]
 eyre = "0.6.12"

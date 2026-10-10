@@ -1,7 +1,10 @@
 [package]
 name = "ppvm-stim"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Parse and run Stim circuits on the ppvm generalized stabilizer tableau."
 
 [features]
 default = []

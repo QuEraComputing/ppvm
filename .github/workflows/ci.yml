@@ -7,10 +7,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # gxhash's AES/SSE2 target features are set arch-scoped in `.cargo/config.toml`
-  # (`cfg(target_arch = "x86_64")`), so we do NOT set a global RUSTFLAGS here:
-  # `-C target-feature=+aes,+sse2` is invalid on aarch64 (macos-latest) and
-  # would break that runner. The config applies the flags only on x86_64.
+  # Use each target's baseline CPU features so CI exercises the portable
+  # hashing fallback used by Linux/Windows wheels and crates.io consumers.
 
 # The `pre-commit` job runs the full prek hook suite (rustfmt, clippy,
 # cargo check, ruff, ty, hawkeye, and the file hygiene hooks). Every other

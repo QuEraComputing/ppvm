@@ -1,0 +1,221 @@
+name: Release-plz
+
+# Lockstep release of the Rust crates (crates.io) and bloqade-ppvm (PyPI).
+#
+# On every push to main:
+#   - release-plz-pr opens/updates the release PR (version bump + CHANGELOG.md).
+#   - release-plz-release publishes any unpublished crate versions, then
+#     creates the `v0.x.y` tag and GitHub release (i.e. when the release PR
+#     is merged). If it released, the wheels are built, tested and published.
+# Run manually for a build-and-test dry run of the wheels; `publish_pypi`
+# (main only) also publishes the current version to PyPI.
+#
+# Auth: crates.io and PyPI both use OIDC trusted publishing (no tokens). The
+# PyPI publisher points at this file and the `pypi` environment.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish_pypi:
+        description: "Publish the current version to PyPI (main only)"
+        type: boolean
+        default: false
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-plz-release:
+    name: Release-plz release
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    # One release at a time, so quick merges can't race to publish the same version.
+    concurrency:
+      group: release-plz-release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write       # tags + GitHub release
+      pull-requests: read   # link merged PRs in the release notes
+      id-token: write       # crates.io trusted publishing
+    outputs:
+      releases_created: ${{ steps.release-plz.outputs.releases_created }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Run release-plz
+        id: release-plz
+        uses: release-plz/action@v0.5.139
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-plz-pr:
+    name: Release-plz PR
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Run release-plz
+        uses: release-plz/action@v0.5.139
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # One abi3 wheel per platform (pyo3 `abi3-py310`), so no Python matrix.
+  build:
+    name: Wheel (${{ matrix.target }})
+    needs: [release-plz-release]
+    if: >-
+      ${{ !cancelled() && (needs.release-plz-release.outputs.releases_created == 'true'
+      || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: macos-14
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # manylinux_2_28 = glibc 2.28+ (RHEL 8 / Ubuntu 20.04+); ignored off Linux.
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: ppvm-python
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          manylinux: "2_28"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.target }}
+          path: ppvm-python/dist/*.whl
+
+  sdist:
+    name: sdist
+    needs: [release-plz-release]
+    if: >-
+      ${{ !cancelled() && (needs.release-plz-release.outputs.releases_created == 'true'
+      || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: ppvm-python
+          command: sdist
+          args: --out dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: ppvm-python/dist/*.tar.gz
+
+  # Install each wheel into a clean env and run the Python test suite against
+  # it, so a broken wheel never reaches PyPI. The x86_64 macOS wheel is not
+  # tested: there is no native runner for it.
+  test:
+    name: Test (${{ matrix.target }}, py${{ matrix.python }})
+    needs: [build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - aarch64-apple-darwin
+          - x86_64-pc-windows-msvc
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist
+
+      # Run from outside ppvm-python/ so the src/ tree can't shadow the wheel.
+      - name: Run tests against the installed wheel
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: >-
+          uv run --no-project --isolated --python ${{ matrix.python }}
+          --with "$(ls "$GITHUB_WORKSPACE"/dist/*.whl)"
+          --with pytest --with pytest-benchmark
+          pytest -p no:cacheprovider "$GITHUB_WORKSPACE/ppvm-python/test"
+
+  publish-to-pypi:
+    name: Publish to PyPI
+    needs: [release-plz-release, sdist, test]
+    if: >-
+      ${{ !cancelled() && needs.sdist.result == 'success' && needs.test.result == 'success'
+      && (needs.release-plz-release.outputs.releases_created == 'true'
+      || (inputs.publish_pypi && github.ref == 'refs/heads/main')) }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/bloqade-ppvm
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

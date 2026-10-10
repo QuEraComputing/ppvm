@@ -73,6 +73,7 @@ const toc = [
   { label: "§ 5 Python bindings", href: "#python-bindings" },
   { label: "§ 6 Extending ppvm", href: "#extending" },
   { label: "§ 7 Where to look for X", href: "#where-to-look" },
+  { label: "§ 8 Releasing", href: "#releasing" },
 ];
 ---
 <Base title="Developer Guide" current="develop" toc={toc}>
@@ -160,10 +161,12 @@ cargo bench --bench micro -- "gates/single-qubit/h"</code></pre>
 
     <p>
       Rust edition 2024. The fast hasher (gxhash) only compiles with AES
-      enabled at compile time; this repo enables it for x86_64 in
-      <code>.cargo/config.toml</code> (Apple Silicon has it by default), and CI
-      does the same. Without AES, the <code>gxhash</code> dependency is pruned
-      and fxhash is used instead (see the WebAssembly notes below).
+      enabled at compile time. Builds use each target's baseline CPU features
+      (Apple Silicon includes AES); without AES, the <code>gxhash</code>
+      dependency is pruned and fxhash is used instead. On a machine with AES,
+      opt into accelerated local benchmarks with
+      <code>RUSTFLAGS="-C target-feature=+aes" cargo bench</code>.
+      Keep those flags out of distributed wheels and source packages.
     </p>
 
     <h3>WebAssembly (wasm32)</h3>
@@ -222,9 +225,9 @@ uv run --project ppvm-python --group dev pytest ppvm-python/test/test_basics.py
 uv run --project ppvm-python --group dev pytest ppvm-python/test/ -k test_ghz</code></pre>
 
     <p>
-      The compiled <code>ppvm._core</code> is part of the <code>ppvm</code>
+      The compiled <code>ppvm._core</code> is part of the <code>bloqade-ppvm</code>
       wheel, so after changing Rust force a rebuild with <code>uv sync
-      --project ppvm-python --reinstall-package ppvm</code> (or <code>maturin
+      --project ppvm-python --reinstall-package bloqade-ppvm</code> (or <code>maturin
       develop -m crates/ppvm-python-native/Cargo.toml</code>). The Python
       project is configured to use uv-managed Python installations, so a fresh
       <code>uv sync</code> avoids linking PyO3 builds against a system Python.
@@ -496,13 +499,13 @@ npm run build          # extract everything, then `astro build` → dist/</code>
       <code>cargo build</code> for the whole workspace three times.
     </p>
     <p>
-      <strong>No global <code>RUSTFLAGS</code>.</strong> gxhash's
-      <code>+aes,+sse2</code> target features are set <em>arch-scoped</em> in
-      <code>.cargo/config.toml</code>
-      (<code>cfg(target_arch = "x86_64")</code>), not as a workflow-wide
-      <code>RUSTFLAGS</code> — those x86 features are invalid on the aarch64
-      <code>macos-latest</code> runner and would fail to compile there. Linux
-      and Windows (x86_64) still pick them up from the config.
+      <strong>Portable CPU defaults.</strong> Neither the shared Cargo
+      configuration nor the release workflow forces AES. Linux and Windows
+      wheels use fxhash on their baseline targets, so they also run on CPUs
+      without AES. The same fallback works for crates.io consumers without
+      any repository-local configuration. Apple Silicon targets include AES in their
+      baseline and can use gxhash. AES-only benchmarks are compiled only
+      when the target enables AES.
     </p>
 
     <h2 id="architecture"><span class="sec-num">§ 3</span>Architecture</h2>
@@ -753,6 +756,111 @@ chore: restore lockfile consistency</code></pre>
       <dt>Python tests</dt>
       <dd><code>ppvm-python/test/</code></dd>
     </dl>
+
+    <h2 id="releasing"><span class="sec-num">§ 8</span>Releasing</h2>
+
+    <p>
+      Releases are automated with <a href="https://release-plz.dev">release-plz</a>
+      and driven by the Conventional Commit messages on <code>main</code>
+      (<a href="#conventions">§ 4.1</a>). All published crates and the
+      <code>bloqade-ppvm</code> Python package share one version
+      (<code>[workspace.package]</code> in the root <code>Cargo.toml</code>;
+      maturin reads it through <code>ppvm-python-native</code>) and release
+      together under a single <code>v0.x.y</code> tag, one root
+      <code>CHANGELOG.md</code> and one GitHub release. Configuration lives in
+      <code>release-plz.toml</code>; the workflow is
+      <code>.github/workflows/release-plz.yml</code>.
+    </p>
+
+    <h3>8.1 The normal flow</h3>
+    <ol>
+      <li>Merge PRs to <code>main</code> with conventional-commit titles (PRs are squash-merged, so the title is the commit message).</li>
+      <li>The <code>release-plz-pr</code> job keeps a release PR open that bumps the shared version and updates <code>CHANGELOG.md</code>. Edit it before merging if the version or notes look wrong.</li>
+      <li>
+        Merging it triggers <code>release-plz-release</code>: it publishes
+        the crates to crates.io in dependency order, then creates the tag and
+        GitHub release. Because it released something, the same run builds
+        abi3 wheels (linux x86_64/aarch64, macOS x86_64/arm64, windows
+        x86_64) and an sdist, runs the Python test suite against each
+        installed wheel, and publishes to PyPI.
+      </li>
+    </ol>
+    <p>
+      The release PR is opened with the default <code>GITHUB_TOKEN</code>, so
+      CI does not run on it. It only changes versions and the changelog.
+    </p>
+
+    <h3>8.2 Versions and breaking changes</h3>
+    <p>
+      Pre-1.0, <code>feat:</code>/<code>fix:</code> bump the patch version and
+      a breaking change (<code>feat!:</code>, or a <code>BREAKING CHANGE:</code>
+      footer) bumps the minor version. <code>semver_check</code> runs
+      <code>cargo-semver-checks</code> and reports Rust API breaks in the
+      release PR. It cannot see the Python API, so mark Python-facing breaking
+      changes with <code>!</code> yourself and review the release PR with
+      that in mind.
+    </p>
+    <p>
+      <strong>Python-only changes don't open a release PR.</strong>
+      release-plz only tracks the published crates, so commits confined to
+      <code>ppvm-python/</code> or <code>ppvm-python-native</code> are
+      invisible to it. To release them, open a PR that bumps
+      <code>version</code> in <code>[workspace.package]</code>, updates the
+      internal <code>version = "&hellip;"</code> requirements on path
+      dependencies to match (for a minor bump they would otherwise reject the
+      new crates), runs <code>cargo update --workspace</code> to refresh
+      <code>Cargo.lock</code>, and adds the notes to <code>CHANGELOG.md</code>
+      by hand. Once it is merged,
+      <code>release-plz-release</code> sees an unpublished version and runs
+      the full release as above.
+    </p>
+
+    <h3>8.3 Dry runs and recovery</h3>
+    <p>
+      Running the <em>Release-plz</em> workflow manually (Actions &rarr; Run
+      workflow) builds and tests the wheels without publishing anything.
+      Checking <code>publish_pypi</code> on <code>main</code> also publishes
+      the current version to PyPI &mdash; use this if the Python half of a
+      release failed after the crates were already published. To preview
+      the next version bump and changelog locally, run
+      <code>mise exec -- release-plz update</code>; it rewrites files in
+      place, so inspect with <code>git diff</code> and then discard.
+    </p>
+    <p>
+      Published versions can't be deleted or replaced, only yanked
+      (<code>cargo yank --version X.Y.Z &lt;crate&gt;</code>, or "yank" in
+      the PyPI project settings). Fix a bad release with a new patch release.
+    </p>
+
+    <h3 id="release-auth">8.4 Auth</h3>
+    <p>
+      crates.io and PyPI both use OIDC trusted publishing, so no tokens are
+      stored. Each crate's trusted publisher (crates.io &rarr; crate
+      settings &rarr; Trusted Publishing) and the PyPI publisher point at
+      owner <code>QuEraComputing</code>, repo <code>ppvm</code>, workflow
+      <code>release-plz.yml</code>; PyPI additionally uses the
+      <code>pypi</code> environment.
+    </p>
+
+    <h3>8.5 Adding a published crate</h3>
+    <ol>
+      <li>Inherit <code>version</code>, <code>edition</code>, <code>license</code> and <code>repository</code> from the workspace, add a <code>description</code>, and symlink <code>LICENSE</code> and <code>NOTICE</code> into the crate directory (<code>ln -s ../../LICENSE</code>). Internal-only crates get <code>publish = false</code> instead.</li>
+      <li>In <code>release-plz.toml</code>, give it a <code>[[package]]</code> entry with <code>version_group = "workspace"</code> <em>and</em> add it to <code>ppvm-cli</code>'s <code>changelog_include</code>. Neither omission fails loudly: the crate would version on its own, or its commits would be missing from the release notes.</li>
+      <li>Trusted publishing only works for crates that already exist, so a crate owner publishes the first version by hand (<code>cargo publish -p &lt;crate&gt;</code>) and then configures its trusted publisher.</li>
+    </ol>
+
+    <h3>8.6 First release (one-time)</h3>
+    <p>
+      Until the crates exist on crates.io, <code>release-plz-release</code>
+      fails on every push to <code>main</code>. Bootstrap 0.1.0 by hand:
+    </p>
+    <ol>
+      <li>From an up-to-date <code>main</code>, a crates.io account that will own the crates runs <code>cargo login</code> and <code>cargo publish --workspace</code>, then adds a GitHub team as co-owner of each crate (<code>cargo owner --add github:QuEraComputing:&lt;team&gt; &lt;crate&gt;</code>).</li>
+      <li>Configure the trusted publisher of each of the 12 crates (<a href="#release-auth">§ 8.4</a>).</li>
+      <li>Tag the published commit so the next changelog starts from it: <code>git tag -a v0.1.0 -m v0.1.0 &amp;&amp; git push origin v0.1.0</code>, and optionally <code>gh release create v0.1.0 --generate-notes</code>.</li>
+      <li>Run the workflow manually on <code>main</code> with <code>publish_pypi</code> checked to publish <code>bloqade-ppvm</code> 0.1.0.</li>
+      <li>Close the stale "release v0.1.0" PR if release-plz opened one before the crates were published.</li>
+    </ol>
 
     <hr class="ornament" />
     <p style="text-align: center; color: var(--ink-faint); font-style: italic;">

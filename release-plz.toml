@@ -1,0 +1,86 @@
+# release-plz configuration: https://release-plz.dev/docs/config
+#
+# All crates (and bloqade-ppvm, via ppvm-python-native) share the workspace
+# version and release in lockstep: one `v0.x.y` tag, one CHANGELOG.md, one
+# GitHub release. See the "Releasing" section of the Developer Guide.
+
+[workspace]
+semver_check = true
+git_tag_name = "v{{ version }}"
+# Separate key; does not inherit from git_tag_name.
+git_release_name = "v{{ version }}"
+# Disabled here and re-enabled on the single tag owner below, so the
+# packages don't all try to create the same tag.
+git_tag_enable = false
+git_release_enable = false
+changelog_update = false
+
+# Tag owner. Must be a published crate in the version group, or no tag is
+# ever created. Published last, as it depends on most other crates.
+[[package]]
+name = "ppvm-cli"
+git_tag_enable = true
+git_release_enable = true
+changelog_update = true
+changelog_path = "CHANGELOG.md"
+# Without this, commits touching only another crate miss the release notes.
+# A new published crate must be added here and given a [[package]] entry.
+changelog_include = [
+    "ppvm-traits",
+    "ppvm-pauli-word",
+    "ppvm-pauli-sum",
+    "ppvm-sym",
+    "ppvm-tableau",
+    "ppvm-tableau-sum",
+    "ppvm-stim",
+    "stim-parser",
+    "vihaco-circuit-isa",
+    "ppvm-vihaco",
+    "ppvm-tui",
+]
+version_group = "workspace"
+
+# Every published crate joins the group so they all bump together.
+[[package]]
+name = "ppvm-traits"
+version_group = "workspace"
+
+[[package]]
+name = "ppvm-pauli-word"
+version_group = "workspace"
+
+[[package]]
+name = "ppvm-pauli-sum"
+version_group = "workspace"
+
+[[package]]
+name = "ppvm-sym"
+version_group = "workspace"
+
+[[package]]
+name = "ppvm-tableau"
+version_group = "workspace"
+
+[[package]]
+name = "ppvm-tableau-sum"
+version_group = "workspace"
+
+[[package]]
+name = "ppvm-stim"
+version_group = "workspace"
+
+[[package]]
+name = "stim-parser"
+version_group = "workspace"
+
+[[package]]
+name = "vihaco-circuit-isa"
+version_group = "workspace"
+
+[[package]]
+name = "ppvm-vihaco"
+version_group = "workspace"
+
+[[package]]
+name = "ppvm-tui"
+version_group = "workspace"

@@ -172,12 +172,22 @@ pub fn micro_benchmark(c: &mut Criterion) {
         .build_global()
         .unwrap();
     println!("Using {} threads", current_num_threads());
+    #[cfg(all(
+        feature = "gxhash",
+        target_feature = "aes",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     benchmark_suite::<config::gxhash::ByteF64<2, CoefficientThreshold>>(c, "ByteF64GxHashMap<2>");
     benchmark_suite::<config::fxhash::ByteF64<2, CoefficientThreshold>>(c, "ByteF64FxHashMap<2>");
     benchmark_suite::<config::dashmap::ByteFxHashF64<2, CoefficientThreshold>>(
         c,
         "ByteF64FxDashMap<2>",
     );
+    #[cfg(all(
+        feature = "gxhash",
+        target_feature = "aes",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     benchmark_suite::<config::dashmap::ByteGxHashF64<2, CoefficientThreshold>>(
         c,
         "ByteF64GxDashMap<2>",
@@ -186,6 +196,11 @@ pub fn micro_benchmark(c: &mut Criterion) {
         c,
         "ByteF64FxIndexMap<2>",
     );
+    #[cfg(all(
+        feature = "gxhash",
+        target_feature = "aes",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     benchmark_suite::<config::indexmap::ByteGxHashF64<2, CoefficientThreshold>>(
         c,
         "ByteF64GxIndexMap<2>",

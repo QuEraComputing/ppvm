@@ -225,6 +225,7 @@ impl PPVMResolver {
             S::PauliError => R::PauliError,
             S::Depolarize2 => R::Depolarize2,
             S::Depolarize => R::Depolarize,
+            S::Leakage => R::Leakage,
         }
     }
 }

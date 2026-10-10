@@ -1,13 +1,3 @@
-# gxhash requires AES/SSE2 on x86_64; set this once so local cargo
-# build/test commands match CI without per-command RUSTFLAGS.
-[target.'cfg(target_arch = "x86_64")']
-rustflags = ["-C", "target-feature=+aes,+sse2"]
-
-# Same for aarch64 Linux, whose default target features lack AES (Apple
-# targets already enable it). Needed for the linux-aarch64 release wheel.
-[target.'cfg(all(target_arch = "aarch64", target_os = "linux"))']
-rustflags = ["-C", "target-feature=+aes,+neon"]
-
 # On wasm32 (browser) `getrandom` has no default entropy source. Select its JS
 # backend so `rand` (e.g. `rand::make_rng()` in the tableau simulators) reads
 # from the Web Crypto API. Pairs with the `getrandom`/`wasm_js` feature enabled

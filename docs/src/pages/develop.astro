@@ -161,10 +161,12 @@ cargo bench --bench micro -- "gates/single-qubit/h"</code></pre>
 
     <p>
       Rust edition 2024. The fast hasher (gxhash) only compiles with AES
-      enabled at compile time; this repo enables it for x86_64 in
-      <code>.cargo/config.toml</code> (Apple Silicon has it by default), and CI
-      does the same. Without AES, the <code>gxhash</code> dependency is pruned
-      and fxhash is used instead (see the WebAssembly notes below).
+      enabled at compile time. Builds use each target's baseline CPU features
+      (Apple Silicon includes AES); without AES, the <code>gxhash</code>
+      dependency is pruned and fxhash is used instead. On a machine with AES,
+      opt into accelerated local benchmarks with
+      <code>RUSTFLAGS="-C target-feature=+aes" cargo bench</code>.
+      Keep those flags out of distributed wheels and source packages.
     </p>
 
     <h3>WebAssembly (wasm32)</h3>
@@ -497,16 +499,13 @@ npm run build          # extract everything, then `astro build` → dist/</code>
       <code>cargo build</code> for the whole workspace three times.
     </p>
     <p>
-      <strong>No global <code>RUSTFLAGS</code>.</strong> gxhash's
-      <code>+aes,+sse2</code> target features are set <em>arch-scoped</em> in
-      <code>.cargo/config.toml</code>
-      (<code>cfg(target_arch = "x86_64")</code>), not as a workflow-wide
-      <code>RUSTFLAGS</code> — those x86 features are invalid on the aarch64
-      <code>macos-latest</code> runner and would fail to compile there. Linux
-      and Windows (x86_64) still pick them up from the config. aarch64 Linux
-      gets <code>+aes,+neon</code> the same way (its default target features
-      lack AES; Apple targets already enable it), which the linux-aarch64
-      release wheel needs.
+      <strong>Portable CPU defaults.</strong> Neither the shared Cargo
+      configuration nor the release workflow forces AES. Linux and Windows
+      wheels use fxhash on their baseline targets, so they also run on CPUs
+      without AES. The same fallback works for crates.io consumers without
+      any repository-local configuration. Apple Silicon targets include AES in their
+      baseline and can use gxhash. AES-only benchmarks are compiled only
+      when the target enables AES.
     </p>
 
     <h2 id="architecture"><span class="sec-num">§ 3</span>Architecture</h2>

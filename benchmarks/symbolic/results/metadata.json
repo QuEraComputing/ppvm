@@ -1,0 +1,26 @@
+{
+  "source_sha256": {
+    "examples/symbolic_benchmark.rs": "43a296e1ef3c6acd9321ded062d4950713824ab2571eb71e9c5e429c5ffa7abf",
+    "benchmarks/symbolic/surrogate.jl": "843c9c2216a04c3881b247e03ec16861291852b58e8528b656fa8943a4ef510a",
+    "benchmarks/symbolic/run.py": "4a8f7a1bc097e9574b123cd1a4c39312c9d29b6f8e9ab84518b98486e8a58bd7"
+  },
+  "utc": "2026-10-10T18:57:18.924223+00:00",
+  "platform": "macOS-26.7-arm64-arm-64bit",
+  "machine": "arm64",
+  "ppvm_revision": "661fc66fffe1826dad5ee14b514f151b8703a69e",
+  "rust": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+  "julia": "julia version 1.12.6",
+  "paulipropagation_revision": "b2125c7d2dc61626dbd50f44a47064f290dc5ce9",
+  "julia_package": "0.9.0",
+  "trials": 7,
+  "batch": 2000,
+  "threads": 1,
+  "arguments": {
+    "qubits": "3,4",
+    "steps": "1,2,3,4,5,6",
+    "trials": 7,
+    "batch": 2000,
+    "out": "/Users/roger/.codex/worktrees/symbolic-benchmark/ppvm/benchmarks/symbolic/results"
+  },
+  "hardware": "Apple M4 Pro"
+}

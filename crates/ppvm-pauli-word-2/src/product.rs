@@ -23,7 +23,7 @@ where
     /// Returns the XORed word and its residual phase for the coefficient to absorb.
     /// Both inputs must have equal width; zero unused bits stay zero.
     fn key_mul(&self, other: &Self) -> (Self, Phase) {
-        assert_eq!(
+        debug_assert_eq!(
             self.nqubits, other.nqubits,
             "twisted product requires equal-width words",
         );

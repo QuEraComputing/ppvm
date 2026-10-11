@@ -167,7 +167,7 @@ where
         if self.xplanes.is_empty() {
             self.nqubits = key.nqubits;
         } else {
-            assert_eq!(self.nqubits, key.nqubits, "column width mismatch");
+            debug_assert_eq!(self.nqubits, key.nqubits, "column width mismatch");
         }
         self.xplanes.push(key.xbits.data);
         self.zplanes.push(key.zbits.data);
@@ -192,7 +192,7 @@ where
     /// Used by `ColumnStore` for in-place Clifford updates.
     #[inline]
     fn set(&mut self, i: usize, key: Self::Key) {
-        assert_eq!(self.nqubits, key.nqubits, "column width mismatch");
+        debug_assert_eq!(self.nqubits, key.nqubits, "column width mismatch");
         self.xplanes[i] = key.xbits.data;
         self.zplanes[i] = key.zbits.data;
     }
@@ -228,7 +228,7 @@ where
 
     #[inline(always)]
     fn toggled_bits(&self, row: usize, qubit: usize, toggle_x: bool, toggle_z: bool) -> Self::Key {
-        assert!(qubit < self.nqubits, "qubit {qubit} out of bounds");
+        debug_assert!(qubit < self.nqubits, "qubit {qubit} out of bounds");
         let mut x = self.xplanes[row];
         let mut z = self.zplanes[row];
         Self::toggle_plane(&mut x, qubit, toggle_x);
@@ -246,8 +246,8 @@ where
         j: usize,
         [xj, zj]: [bool; 2],
     ) -> Self::Key {
-        assert!(i < self.nqubits, "qubit {i} out of bounds");
-        assert!(j < self.nqubits, "qubit {j} out of bounds");
+        debug_assert!(i < self.nqubits, "qubit {i} out of bounds");
+        debug_assert!(j < self.nqubits, "qubit {j} out of bounds");
         let mut x = self.xplanes[row];
         let mut z = self.zplanes[row];
         Self::toggle_plane(&mut x, i, xi);

@@ -20,22 +20,22 @@ where
 {
     #[inline]
     fn x(&mut self, q: usize) {
-        assert!(q < self.nqubits, "qubit {q} out of bounds");
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
     }
 
     #[inline]
     fn y(&mut self, q: usize) {
-        assert!(q < self.nqubits, "qubit {q} out of bounds");
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
     }
 
     #[inline]
     fn z(&mut self, q: usize) {
-        assert!(q < self.nqubits, "qubit {q} out of bounds");
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
     }
 
     #[inline]
     fn h(&mut self, q: usize) {
-        assert!(q < self.nqubits, "qubit {q} out of bounds");
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
         let x = self.xbits[q];
         self.xbits.set(q, self.zbits[q]);
         self.zbits.set(q, x);
@@ -44,7 +44,7 @@ where
 
     #[inline]
     fn s(&mut self, q: usize) {
-        assert!(q < self.nqubits, "qubit {q} out of bounds");
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
         let z = self.zbits[q] ^ self.xbits[q];
         self.zbits.set(q, z);
         self.refresh_hash();
@@ -52,8 +52,8 @@ where
 
     #[inline]
     fn cnot(&mut self, control: usize, target: usize) {
-        assert_ne!(control, target, "CNOT requires distinct qubits");
-        assert!(
+        debug_assert_ne!(control, target, "CNOT requires distinct qubits");
+        debug_assert!(
             control < self.nqubits && target < self.nqubits,
             "qubit out of bounds"
         );
@@ -66,8 +66,8 @@ where
 
     #[inline]
     fn cz(&mut self, a: usize, b: usize) {
-        assert_ne!(a, b, "CZ requires distinct qubits");
-        assert!(a < self.nqubits && b < self.nqubits, "qubit out of bounds");
+        debug_assert_ne!(a, b, "CZ requires distinct qubits");
+        debug_assert!(a < self.nqubits && b < self.nqubits, "qubit out of bounds");
         let za = self.zbits[a] ^ self.xbits[b];
         let zb = self.zbits[b] ^ self.xbits[a];
         self.zbits.set(a, za);
@@ -81,7 +81,7 @@ where
 
     #[inline]
     fn sqrt_x(&mut self, q: usize) {
-        assert!(q < self.nqubits, "qubit {q} out of bounds");
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
         let x = self.xbits[q] ^ self.zbits[q];
         self.xbits.set(q, x);
         self.refresh_hash();
@@ -104,8 +104,8 @@ where
 
     #[inline]
     fn cy(&mut self, control: usize, target: usize) {
-        assert_ne!(control, target, "CY requires distinct qubits");
-        assert!(
+        debug_assert_ne!(control, target, "CY requires distinct qubits");
+        debug_assert!(
             control < self.nqubits && target < self.nqubits,
             "qubit out of bounds"
         );
@@ -134,7 +134,7 @@ where
     /// canonical-unused-bits invariant is preserved.
     #[inline]
     fn swap_xz(&mut self, q: usize) {
-        assert!(q < self.nqubits, "qubit {q} out of bounds");
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
         let xb = self.xbits[q];
         let zb = self.zbits[q];
         self.xbits.set(q, zb);
@@ -145,7 +145,7 @@ where
     /// `S` on `q`: `z_q ⊕= x_q` (maps `X → Y`).
     #[inline]
     fn xor_z_from_x(&mut self, q: usize) {
-        assert!(q < self.nqubits, "qubit {q} out of bounds");
+        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
         let z = self.zbits[q] ^ self.xbits[q];
         self.zbits.set(q, z);
         self.refresh_hash();
@@ -154,7 +154,7 @@ where
     /// `CNOT` bit rule, part one: `x_tgt ⊕= x_ctrl`.
     #[inline]
     fn xor_x_col(&mut self, ctrl: usize, tgt: usize) {
-        assert!(
+        debug_assert!(
             ctrl < self.nqubits && tgt < self.nqubits,
             "qubit out of bounds"
         );
@@ -166,7 +166,7 @@ where
     /// `CNOT` bit rule, part two: `z_ctrl ⊕= z_tgt`.
     #[inline]
     fn xor_z_col(&mut self, tgt: usize, ctrl: usize) {
-        assert!(
+        debug_assert!(
             ctrl < self.nqubits && tgt < self.nqubits,
             "qubit out of bounds"
         );
@@ -178,7 +178,7 @@ where
     /// `CZ` on `(a, b)`: `z_a ⊕= x_b` and `z_b ⊕= x_a`.
     #[inline]
     fn cz_bits(&mut self, a: usize, b: usize) {
-        assert!(a < self.nqubits && b < self.nqubits, "qubit out of bounds");
+        debug_assert!(a < self.nqubits && b < self.nqubits, "qubit out of bounds");
         let za = self.zbits[a] ^ self.xbits[b];
         let zb = self.zbits[b] ^ self.xbits[a];
         self.zbits.set(a, za);

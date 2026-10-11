@@ -89,7 +89,7 @@ where
     /// Assembles packed planes, rejecting widths beyond the backing storage capacity.
     #[inline]
     pub(crate) fn from_planes(xbits: BitArray<A>, zbits: BitArray<A>, nqubits: usize) -> Self {
-        assert!(
+        debug_assert!(
             nqubits <= 8 * std::mem::size_of::<A>(),
             "nqubits {nqubits} exceeds the {}-bit backing storage",
             8 * std::mem::size_of::<A>(),
@@ -176,7 +176,7 @@ impl<A: PauliStorage, H> Word for PauliWord<A, H> {
 
     #[inline]
     fn get(&self, index: usize) -> Pauli {
-        assert!(index < self.nqubits, "index {index} out of bounds");
+        debug_assert!(index < self.nqubits, "index {index} out of bounds");
         match (self.xbits[index], self.zbits[index]) {
             (false, false) => Pauli::I,
             (true, false) => Pauli::X,

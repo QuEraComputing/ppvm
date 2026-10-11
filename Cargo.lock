@@ -1355,6 +1355,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-pauli-word-2"
+version = "0.1.0"
+dependencies = [
+ "bitvec",
+ "bytemuck",
+ "fxhash",
+ "num",
+ "ppvm-traits-2",
+]
+
+[[package]]
 name = "ppvm-python-native"
 version = "0.1.0"
 dependencies = [

@@ -98,12 +98,13 @@ entry = "mise exec -- hawkeye check"
 pass_filenames = false
 
 # Python: ty type check
+# Pinned: ty 0.0.86 added invalid-attribute-override, which flags `_interface`.
 [[repos]]
 repo = "local"
 [[repos.hooks]]
 id = "ty-check"
 name = "ty check"
 language = "system"
-entry = "uvx ty check --project ppvm-python"
+entry = "uvx ty@0.0.85 check --project ppvm-python"
 pass_filenames = false
 types = ["python"]

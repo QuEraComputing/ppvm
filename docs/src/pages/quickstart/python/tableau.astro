@@ -8,6 +8,7 @@ const toc = [
   { label: "Overview",               href: "#overview" },
   { label: "Drive it from Python",   href: "#basic-usage" },
   { label: "Forking for multi-shot", href: "#forking" },
+  { label: "Post-selection",         href: "#postselect" },
   { label: "Stim circuit support",   href: "#stim" },
   { label: "Noise and loss",         href: "#noise" },
   { label: "Coefficient pruning",    href: "#pruning" },
@@ -23,6 +24,19 @@ tab.cnot(0, 1)
 for shot in range(100):
     t = tab.fork(seed=shot)
     print(t.measure(0), t.measure(1))`;
+
+const postselect = `from ppvm.generalized_tableau import MeasurementResult as M
+
+tab = GeneralizedTableau(n_qubits=2)
+tab.h(0)
+tab.cnot(0, 1)
+
+print(tab.probability([0, 1], [M.ZERO, M.ZERO]))  # 0.5, state unchanged
+print(tab.probability([0, 1], [M.ZERO, M.ONE]))   # 0.0
+print(tab.probability([1], [M.ONE]))              # 0.5, marginal on qubit 1
+
+p = tab.project(0, M.ONE)   # 0.5; qubit 0 is now |1>
+print(tab.measure(1) == M.ONE)  # True (Bell correlation)`;
 
 const stimUsage = `from ppvm import GeneralizedTableau, StimProgram, sample_stim
 
@@ -130,6 +144,48 @@ const sumPruning = `tab = GeneralizedTableauSum(n_qubits=4, min_abs_coeff=1e-10,
       <p>
         To preserve the RNG state exactly (e.g. for checkpointing), use
         <code>copy.copy()</code> instead.
+      </p>
+    </section>
+
+    <section id="postselect">
+      <h2>Post-selection and bitstring probabilities</h2>
+      <p>
+        <code>measure</code> draws its outcome from the RNG. To force the
+        outcome instead, use <code>project</code>. It projects the qubit onto
+        the requested Z-basis value, records that value in the measurement
+        record, and returns the outcome's probability. This is non-physical,
+        but by the chain rule it computes bitstring and marginal
+        probabilities, <code>P(z) = |⟨z|ψ⟩|²</code>, directly instead of
+        estimating them from samples:
+      </p>
+<pre><code class="language-python">{postselect}</code></pre>
+      <p>
+        <code>project_many</code> projects several qubits in order and returns
+        their joint probability. If any projection fails, the state is rolled
+        back to what it was before the call. <code>probability</code> takes the
+        same arguments but runs on a fork, so the state is never modified.
+        <code>project</code> and <code>project_many</code> raise
+        <code>ValueError</code> for an outcome with zero probability, leaving
+        the state unchanged; <code>probability</code> returns <code>0.0</code>
+        instead. All three raise <code>NotImplementedError</code> for
+        <code>LOST</code> values or lost qubits, and <code>IndexError</code>
+        for out-of-range targets. Every target is checked before any is
+        projected.
+      </p>
+      <p>
+        When <code>Z</code> on a target is a stabilizer of the tableau frame,
+        the probability is computed exactly from the coefficient weights.
+        Otherwise it comes from <code>(1 ± ⟨Z⟩)/2</code>, whose rounding error
+        grows with the number of coefficients, and values below about
+        <code>1e-12</code> are reported as zero. In both cases the result
+        reflects any coefficients already pruned by
+        <code>min_abs_coeff</code>.
+      </p>
+      <p>
+        These methods act on the current trajectory's pure state: noise
+        channels applied earlier have already sampled their outcomes, so the
+        result is the probability for that trajectory. Average over
+        trajectories to estimate it under noise.
       </p>
     </section>
 

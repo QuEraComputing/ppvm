@@ -134,6 +134,21 @@ r1 = tab.measure(1)   # correlated with r0 (Bell state)
 
 For throughput on tableau circuits, batch same-gate layers in one Python call. Single-qubit gates accept variadic targets or a sequence: `tab.h(0, 2, 4)` and `tab.h([0, 2, 4])` are equivalent. Two-qubit gates consume a flat target list as consecutive pairs: `tab.cnot([0, 1, 2, 3])` applies `(0, 1)` and `(2, 3)`. Rotations and Pauli/depolarizing noise use the same convention with `theta=...` or `p=...`. This avoids one Python→Rust call per target and forwards to fused Rust tableau kernels internally. `measure` stays scalar; use `tab.measure_many([0, 1, 2])` for readout layers.
 
+To post-select instead of sampling, use `project`, `project_many`, or `probability`. They force the Z-basis outcome rather than drawing it from the RNG, and return its probability. This is non-physical, but by the chain rule it computes bitstring and marginal probabilities, P(z) = |⟨z|ψ⟩|², directly instead of estimating them from samples:
+
+```python
+from ppvm.generalized_tableau import MeasurementResult as M
+
+tab = GeneralizedTableau(n_qubits=2)
+tab.h(0)
+tab.cnot(0, 1)
+p = tab.probability([0, 1], [M.ZERO, M.ZERO])  # P(00) = 0.5; the state is unchanged
+p = tab.project_many([0, 1], [M.ONE, M.ONE])   # P(11) = 0.5; collapses to |11>, rolls back on error
+p = tab.project(0, M.ONE)                      # 1.0: projects one qubit, returns its probability
+```
+
+`project` / `project_many` raise `ValueError` for an outcome with zero probability, leaving the state unchanged; `probability` returns `0.0` instead. All three raise `NotImplementedError` for `LOST` values or lost qubits, and `IndexError` for out-of-range targets, checking every target before projecting any. Probabilities below about 1e-12 can be reported as zero when `Z` on the target is not a stabilizer of the tableau frame. They act on the current trajectory's pure state: noise channels applied earlier have already been sampled.
+
 Non-Clifford gates and Stim programs:
 
 ```python
@@ -212,6 +227,8 @@ let outcome = tab.measure(0);
 
 For layer-style tableau circuits in Rust, prefer explicit batch methods instead of per-target loops: `tab.h_many(&[0, 2, 4])`, `tab.cnot_many(&[(0, 1), (2, 3)])`, `tab.rx_many(&targets, theta)`, `tab.rzz_many(&pairs, theta)`, `tab.depolarize1_many(&targets, p)`, `tab.measure_many(&targets)`, `tab.reset_many(&targets)`, and the analogous `*_many` forms. `GeneralizedTableau` specializes these into fused bit operations. Other backends may expose trait-default `*_many` methods too, but the fused speedup is tableau-specific.
 
+For post-selection in Rust, use `tab.project(q, outcome)`, `tab.project_many(&targets, &outcomes)`, and `tab.probability(&targets, &outcomes)`, with `bool` outcomes. Each returns `Result<f64, ProjectError>`. These are not fused kernels: they project one qubit at a time, and `project_many` / `probability` copy the state once per call.
+
 Pick `IndexType` by qubit count: `usize` up to ~64, `u128` up to 128, `bnum::types::U256` / `U512` / `U1024` beyond. **Using `usize` past 64 qubits silently overflows** — this is the second-most-common bug after Heisenberg-order mistakes.
 
 ### Running Stim programs (Rust)
@@ -238,7 +255,7 @@ With the `rayon` feature, `sample` fans shots across the global thread pool (ser
 
 Availability varies by backend and language binding. Don't trust intuition: the Python `PauliSum` exposes a deliberately narrower surface than the Rust `PauliSum` or the `GeneralizedTableau`. Names: everything is `snake_case`; daggers are `_dag` (e.g. `s_dag`, `sqrt_x_dag`, `t_dag`) on both Rust and Python.
 
-In the tables below: **R** = Rust on both backends, **P-S** = Python `PauliSum` / `LossyPauliSum`, **P-T** = Python `GeneralizedTableau`. A check means the method is exposed there.
+In the tables below: **R** = Rust on both backends, **P-S** = Python `PauliSum` / `LossyPauliSum`, **P-T** = Python `GeneralizedTableau`. A check means the method is exposed there. "tableau" in the **R** column means Rust `GeneralizedTableau` only, not Rust `PauliSum`.
 
 ### Clifford gates
 
@@ -267,6 +284,9 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 | Method                                                                      | R | P-S | P-T |
 |-----------------------------------------------------------------------------|---|-----|-----|
 | `measure(q)` → `MeasurementResult` (`ZERO`/`ONE`/`LOST` on tableau)         | ✓ | —   | ✓   |
+| `project(q, value)` → probability (post-select; mutates the state)         | tableau | — | ✓ |
+| `project_many(targets, values)` → joint probability (atomic on error)       | tableau | — | ✓ |
+| `probability(targets, values)` → joint probability (state unchanged)        | tableau | — | ✓ |
 | `reset(q)`                                                                  | ✓ | —   | ✓   |
 | `depolarize1(q, p=...)`                                                     | ✓ | ✓   | ✓   |
 | `depolarize2(q0, q1, p=...)`                                                | ✓ | —   | —   |

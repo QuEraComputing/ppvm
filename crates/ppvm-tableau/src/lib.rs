@@ -96,6 +96,7 @@ pub mod tableau_like;
 /// Convenience re-exports for downstream code.
 pub mod prelude {
     pub use crate::data::{GeneralizedTableau, Tableau};
+    pub use crate::measure::{PROJECT_ZERO_TOL, ProjectError};
     pub use crate::sparsevec::SparseVector;
     pub use crate::tableau_index::TableauIndex;
     pub use crate::tableau_like::TableauLike;

@@ -55,6 +55,36 @@ class MeasurementResult(enum.IntEnum):
 _BY_VALUE = (MeasurementResult.ZERO, MeasurementResult.ONE, MeasurementResult.LOST)
 
 
+def _projection_outcome(value: MeasurementResult) -> bool:
+    """Convert a projection target value to the native bool outcome."""
+    if value == MeasurementResult.LOST:
+        raise NotImplementedError("Projecting onto a LOST outcome is not implemented.")
+    if value not in (MeasurementResult.ZERO, MeasurementResult.ONE):
+        raise ValueError(f"value must be MeasurementResult.ZERO or ONE (got {value!r}).")
+    return value == MeasurementResult.ONE
+
+
+def _projection_args(
+    targets: Iterable[int], values: Iterable[MeasurementResult], n_qubits: int
+) -> tuple[list[int], list[bool]]:
+    """Validate and convert ``project_many`` / ``probability`` arguments.
+
+    Length mismatches are checked natively.
+    """
+    targets = list(targets)
+    for addr0 in targets:
+        _check_qubit_index(addr0, n_qubits)
+    return targets, [_projection_outcome(v) for v in values]
+
+
+def _check_qubit_index(addr0: int, n_qubits: int) -> None:
+    # Check here rather than relying on the native check: the native layer
+    # takes unsigned machine-sized indices, so a negative or very large int
+    # would surface as OverflowError instead of the documented IndexError.
+    if not 0 <= addr0 < n_qubits:
+        raise IndexError(f"qubit index {addr0} is out of range for {n_qubits} qubits.")
+
+
 @dataclass(frozen=True)
 class GeneralizedTableau(
     CliffordMixin,
@@ -190,6 +220,86 @@ class GeneralizedTableau(
             ``LOST`` if the qubit has been lost, ``ZERO`` or ``ONE`` otherwise.
         """
         return _BY_VALUE[self._interface.measure(addr0)]
+
+    def project(self, addr0: int, value: MeasurementResult) -> float:
+        """Post-select the specified qubit onto a Z-basis outcome.
+
+        A non-physical, forced-outcome version of `measure`: the state is
+        projected onto ``value`` and renormalized, and ``value`` is appended
+        to the measurement record, but no random outcome is drawn. Chaining
+        it over every qubit gives the bitstring probability
+        ``P(z) = |⟨z|ψ⟩|²`` as the product of the returned probabilities.
+
+        This acts on the current pure state of this trajectory: any noise or
+        loss channels applied earlier have already been sampled.
+
+        Args:
+            addr0: The index of the target qubit.
+            value: The outcome to project onto, ``ZERO`` or ``ONE``.
+
+        Returns:
+            The probability of measuring ``value`` on the state before projection.
+
+        Raises:
+            NotImplementedError: If ``value`` is ``LOST`` or the qubit has
+                been lost; projection with loss is not implemented.
+            ValueError: If ``value`` has zero probability (the state cannot
+                be normalized). The state is left unchanged.
+            IndexError: If ``addr0`` is not a valid qubit index.
+        """
+        _check_qubit_index(addr0, self.n_qubits)
+        return self._interface.project(addr0, _projection_outcome(value))
+
+    def project_many(self, targets: Iterable[int], values: Iterable[MeasurementResult]) -> float:
+        """Post-select several qubits onto Z-basis outcomes, in order.
+
+        Equivalent to calling `project` on each ``(target, value)`` pair and
+        multiplying the returned probabilities, but atomic: every target is
+        validated first, and if any projection fails, the state and
+        measurement record are restored to what they were before the call.
+
+        Args:
+            targets: The indices of the target qubits.
+            values: The outcome to project each target onto, ``ZERO`` or
+                ``ONE``; must have the same length as ``targets``.
+
+        Returns:
+            The joint probability of measuring ``values`` on ``targets``.
+
+        Raises:
+            NotImplementedError: If any value is ``LOST`` or any target qubit
+                has been lost.
+            ValueError: If ``targets`` and ``values`` differ in length, or the
+                outcomes have zero joint probability. The state is left
+                unchanged.
+            IndexError: If any target is not a valid qubit index.
+        """
+        return self._interface.project_many(*_projection_args(targets, values, self.n_qubits))
+
+    def probability(self, targets: Iterable[int], values: Iterable[MeasurementResult]) -> float:
+        """Return the joint probability of measuring ``values`` on ``targets``.
+
+        Unlike `project_many`, this does not modify the state: it forks the
+        state and calls `project_many` on the fork. Outcomes with zero joint
+        probability return ``0.0`` rather than raising. Passing every qubit
+        gives the bitstring probability ``P(z) = |⟨z|ψ⟩|²``; passing a subset
+        gives the marginal probability over those qubits.
+
+        Args:
+            targets: The indices of the target qubits.
+            values: The outcome for each target, ``ZERO`` or ``ONE``; must
+                have the same length as ``targets``.
+
+        Returns:
+            The joint probability of measuring ``values`` on ``targets``.
+
+        Raises:
+            NotImplementedError: If any value is ``LOST`` or any target qubit
+                has been lost.
+            ValueError: If ``targets`` and ``values`` differ in length.
+            IndexError: If any target is not a valid qubit index.
+        """
+        return self._interface.probability(*_projection_args(targets, values, self.n_qubits))
 
     def measure_many(self, *targets: int | Iterable[int]) -> list[MeasurementResult]:
         """Measure several qubits in the Z basis.

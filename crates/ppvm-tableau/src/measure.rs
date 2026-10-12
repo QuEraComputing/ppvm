@@ -83,6 +83,64 @@ impl<I, R> Default for MeasureScratch<I, R> {
     }
 }
 
+/// When `Z` on the target is not a stabilizer of the frame, outcome
+/// probabilities below this are treated as zero by
+/// [`project`](GeneralizedTableau::project) and its batched variants. There the
+/// probability comes from `(1 ± ⟨Z⟩)/2`, whose cancellation leaves noise of
+/// order machine epsilon, and normalizing a noise-sized projection would
+/// produce garbage amplitudes. (When `Z` is a stabilizer the probability is
+/// computed exactly and only exact zeros are refused.)
+pub const PROJECT_ZERO_TOL: f64 = 1e-12;
+
+/// Error returned by [`project`](GeneralizedTableau::project),
+/// [`project_many`](GeneralizedTableau::project_many), and
+/// [`probability`](GeneralizedTableau::probability).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProjectError {
+    /// The target qubit index is not less than the number of qubits.
+    QubitOutOfRange { addr0: usize, n_qubits: usize },
+    /// The target qubit is lost; projecting a lost qubit is not implemented.
+    QubitLost(usize),
+    /// The requested outcome has (numerically) zero probability.
+    ZeroProbability {
+        addr0: usize,
+        outcome: bool,
+        prob: f64,
+    },
+    /// `project_many` / `probability` got different numbers of targets and
+    /// outcomes.
+    LengthMismatch { targets: usize, outcomes: usize },
+}
+
+impl std::fmt::Display for ProjectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProjectError::QubitOutOfRange { addr0, n_qubits } => write!(
+                f,
+                "cannot project qubit {addr0}: index out of range for {n_qubits} qubits"
+            ),
+            ProjectError::QubitLost(addr0) => {
+                write!(f, "cannot project qubit {addr0}: qubit is lost")
+            }
+            ProjectError::ZeroProbability {
+                addr0,
+                outcome,
+                prob,
+            } => write!(
+                f,
+                "cannot project qubit {addr0} onto outcome {}: probability {prob:e} is zero",
+                *outcome as u8
+            ),
+            ProjectError::LengthMismatch { targets, outcomes } => write!(
+                f,
+                "got {targets} targets but {outcomes} outcomes; they must have the same length"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ProjectError {}
+
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> LossyMeasure
     for GeneralizedTableau<T, I, C>
 where
@@ -372,6 +430,228 @@ where
             self.measurement_record.push(Some(outcome));
             Some(outcome)
         }
+    }
+
+    /// Post-select qubit `addr0` onto the Z-basis `outcome` (`false` = |0⟩,
+    /// `true` = |1⟩) and return the probability of that outcome.
+    ///
+    /// This is a non-physical, forced-outcome version of
+    /// [`measure`](LossyMeasure::measure): the state is projected onto
+    /// `outcome` and renormalized, and the outcome is appended to the
+    /// measurement record, but no RNG draw is made. Chaining it over every
+    /// qubit gives `P(z) = |⟨z|ψ⟩|²` as the product of the returned
+    /// probabilities.
+    ///
+    /// Acts on the current pure state of this trajectory: any noise or loss
+    /// channels applied earlier have already been sampled.
+    ///
+    /// # Errors
+    ///
+    /// - [`ProjectError::QubitOutOfRange`] if `addr0 >= n_qubits`.
+    /// - [`ProjectError::QubitLost`] if `addr0` is lost.
+    /// - [`ProjectError::ZeroProbability`] if the outcome has zero probability.
+    ///   When `Z` on `addr0` is a stabilizer of the frame, the probability is
+    ///   computed exactly and only an exact zero is refused; otherwise it comes
+    ///   from `⟨Z⟩` and anything below [`PROJECT_ZERO_TOL`] is refused.
+    ///
+    /// The state is left unchanged when an error is returned.
+    pub fn project(&mut self, addr0: usize, outcome: bool) -> Result<f64, ProjectError> {
+        self.check_project_target(addr0)?;
+        self.project_unchecked(addr0, outcome)
+    }
+
+    /// Post-select each `targets[k]` onto `outcomes[k]`, in order, and return
+    /// the joint probability of those outcomes.
+    ///
+    /// Equivalent to calling [`project`](Self::project) on each pair and
+    /// multiplying the returned conditional probabilities, but atomic: every
+    /// target is validated before any projection, and if a later outcome has
+    /// zero probability the state (including the measurement record) is
+    /// restored to what it was before the call.
+    ///
+    /// # Errors
+    ///
+    /// - [`ProjectError::LengthMismatch`] if `targets` and `outcomes` differ in
+    ///   length.
+    /// - Any error from [`project`](Self::project) on one of the targets.
+    pub fn project_many(
+        &mut self,
+        targets: &[usize],
+        outcomes: &[bool],
+    ) -> Result<f64, ProjectError> {
+        Self::check_lengths(targets, outcomes)?;
+        for &addr0 in targets {
+            self.check_project_target(addr0)?;
+        }
+        let backup = self.clone();
+        let result = self.project_sequence(targets, outcomes);
+        if result.is_err() {
+            *self = backup;
+        }
+        result
+    }
+
+    /// Joint probability of measuring `outcomes` on `targets`, without
+    /// modifying this state.
+    ///
+    /// Forks the state and projects the fork as in
+    /// [`project_many`](Self::project_many). Outcomes with zero joint
+    /// probability return `Ok(0.0)` rather than an error.
+    ///
+    /// # Errors
+    ///
+    /// - [`ProjectError::LengthMismatch`] if `targets` and `outcomes` differ in
+    ///   length.
+    /// - [`ProjectError::QubitOutOfRange`] or [`ProjectError::QubitLost`] if
+    ///   any target is out of range or lost, regardless of target order.
+    pub fn probability(&self, targets: &[usize], outcomes: &[bool]) -> Result<f64, ProjectError> {
+        Self::check_lengths(targets, outcomes)?;
+        for &addr0 in targets {
+            self.check_project_target(addr0)?;
+        }
+        // Projection never draws from the RNG, so the fork's seed is irrelevant.
+        // The fork is discarded, so no rollback backup is needed.
+        match self.fork(Some(0)).project_sequence(targets, outcomes) {
+            Err(ProjectError::ZeroProbability { .. }) => Ok(0.0),
+            result => result,
+        }
+    }
+
+    fn check_lengths(targets: &[usize], outcomes: &[bool]) -> Result<(), ProjectError> {
+        if targets.len() != outcomes.len() {
+            return Err(ProjectError::LengthMismatch {
+                targets: targets.len(),
+                outcomes: outcomes.len(),
+            });
+        }
+        Ok(())
+    }
+
+    fn check_project_target(&self, addr0: usize) -> Result<(), ProjectError> {
+        let n_qubits = self.is_lost.len();
+        if addr0 >= n_qubits {
+            return Err(ProjectError::QubitOutOfRange { addr0, n_qubits });
+        }
+        if self.is_lost[addr0] {
+            return Err(ProjectError::QubitLost(addr0));
+        }
+        Ok(())
+    }
+
+    /// Project each target in order and multiply the probabilities. Targets
+    /// must already be validated; on error the state may be partially projected.
+    fn project_sequence(
+        &mut self,
+        targets: &[usize],
+        outcomes: &[bool],
+    ) -> Result<f64, ProjectError> {
+        let mut prob = 1.0;
+        for (&addr0, &outcome) in targets.iter().zip(outcomes) {
+            prob *= self.project_unchecked(addr0, outcome)?;
+        }
+        Ok(prob)
+    }
+
+    /// [`project`](Self::project) without the range and loss checks. Returns
+    /// `ZeroProbability` before mutating anything.
+    fn project_unchecked(&mut self, addr0: usize, outcome: bool) -> Result<f64, ProjectError> {
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
+            self.compute_decomposition(addr0, Pauli::Z);
+
+        if stab_anticomm_bits == I::zero() {
+            // Case b: Z is a stabilizer, so each entry lies wholly in one
+            // outcome. The probability is the kept share of the norm, computed
+            // directly to avoid the cancellation in (1 ± ⟨Z⟩)/2.
+            debug_assert!(
+                phase_decomp == 0 || phase_decomp == 2,
+                "Measurement result cannot be imaginary!"
+            );
+            let z_sign = phase_decomp == 2;
+            let (mut kept, mut total) = (0.0f64, 0.0f64);
+            for &(coeff, alpha) in self.coefficients.iter() {
+                let norm_sq = coeff.norm_sqr().to_f64().unwrap_or(0.0);
+                total += norm_sq;
+                let parity = symplectic_inner(alpha, destab_anticomm_bits) % 2 != 0;
+                if (parity ^ outcome) == z_sign {
+                    kept += norm_sq;
+                }
+            }
+            let prob = if total > 0.0 { kept / total } else { 0.0 };
+            if prob <= 0.0 {
+                return Err(ProjectError::ZeroProbability {
+                    addr0,
+                    outcome,
+                    prob,
+                });
+            }
+            // `project_case_b` refills `self.coefficients` from `entries`.
+            let entries: Vec<(Complex<T::Coeff>, I)> =
+                std::mem::replace(&mut self.coefficients, C::new())
+                    .into_iter()
+                    .collect();
+            self.project_case_b(&entries, outcome, phase_decomp, destab_anticomm_bits);
+            self.measurement_record.push(Some(outcome));
+            Ok(prob)
+        } else {
+            // Case a: Z is not a stabilizer — cross-index pairing via HashMap.
+            let odd_phase_mask = self.odd_phase_destabilizer_mask();
+            let coeff_map: HashMap<I, Complex<T::Coeff>> =
+                self.coefficients.iter().map(|&(c, i)| (i, c)).collect();
+            let overlap = Self::compute_overlap_case_a(
+                &coeff_map,
+                phase_decomp,
+                destab_anticomm_bits,
+                stab_anticomm_bits,
+                odd_phase_mask,
+            );
+            // Gate branching prunes small coefficients without renormalizing,
+            // so the overlap is ⟨ψ|Z|ψ⟩ for an unnormalized ψ. Divide by the
+            // norm to get ⟨Z⟩ before taking (1 ± ⟨Z⟩)/2.
+            let norm_sq: f64 = coeff_map
+                .values()
+                .map(|c| c.norm_sqr().to_f64().unwrap_or(0.0))
+                .sum();
+            let z = if norm_sq > 0.0 {
+                overlap / norm_sq
+            } else {
+                0.0
+            };
+            let prob = Self::outcome_probability(z, outcome);
+            if prob < PROJECT_ZERO_TOL {
+                return Err(ProjectError::ZeroProbability {
+                    addr0,
+                    outcome,
+                    prob,
+                });
+            }
+
+            // `project_case_a` expects the coefficients drained into
+            // `scratch.coeff_map` and refills `self.coefficients` from it.
+            self.coefficients = C::new();
+            let mut scratch = MeasureScratch::new();
+            scratch.coeff_map = coeff_map;
+            scratch.odd_phase_mask = Some(odd_phase_mask);
+            self.project_case_a(
+                outcome,
+                &mut scratch,
+                phase_decomp,
+                stab_anticomm_bits,
+                destab_anticomm_bits,
+                addr0,
+            );
+            self.measurement_record.push(Some(outcome));
+            Ok(prob)
+        }
+    }
+
+    /// Probability of `outcome` given `⟨Z⟩ = z`, clamped to `[0, 1]`.
+    fn outcome_probability(z: f64, outcome: bool) -> f64 {
+        let prob = if outcome {
+            0.5 - 0.5 * z
+        } else {
+            0.5 + 0.5 * z
+        };
+        prob.clamp(0.0, 1.0)
     }
 
     pub fn project_case_a(

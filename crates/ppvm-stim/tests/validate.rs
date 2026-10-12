@@ -187,3 +187,30 @@ fn invalid_mpad_probability_rejected() {
     assert_eq!(line, 1);
     assert_eq!(value, -0.1);
 }
+
+#[test]
+fn invalid_leakage_probability_rejected() {
+    let ExecError::InvalidProbability { name, line, value } =
+        err_from_src("I_ERROR[leakage](0.1, -0.1) 0")
+    else {
+        panic!("expected ExecError::InvalidProbability");
+    };
+    assert_eq!(name, "I_ERROR[leakage]");
+    assert_eq!(line, 1);
+    assert_eq!(value, -0.1);
+}
+
+#[test]
+fn leakage_probability_sum_above_one_rejected() {
+    let ExecError::InvalidProbability { value, .. } = err_from_src("I_ERROR[leakage](0.8, 0.8) 0")
+    else {
+        panic!("expected ExecError::InvalidProbability");
+    };
+    assert_eq!(value, 1.6);
+}
+
+#[test]
+fn valid_leakage_accepted() {
+    let prog = parse_extended("I_ERROR[leakage](0.5, 0.5) 0").expect("parse_extended");
+    assert_eq!(validate(&prog), Ok(()));
+}

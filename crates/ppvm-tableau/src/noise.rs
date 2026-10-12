@@ -51,6 +51,7 @@ where
         &mut self.tableau.rng
     }
 
+    // Leaked qubits are reported too, so Pauli noise skips them like lost ones.
     #[inline]
     fn is_qubit_lost(&self, addr: usize) -> bool {
         self.is_inactive(addr)

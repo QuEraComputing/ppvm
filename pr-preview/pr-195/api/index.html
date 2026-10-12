@@ -1059,7 +1059,8 @@ stabilizer-tableau backends.
 single- and two-qubit Pauli noise channels (Depolarizing, PauliError,
 Depolarizing2, TwoQubitPauliError). New tableau backends only need to
 provide <a href="#rs-ppvm-tableau-tableau-like-TableauLike"><code>TableauLike::rng_mut</code></a> and (optionally) override
-<a href="#rs-ppvm-tableau-tableau-like-TableauLike"><code>TableauLike::is_qubit_lost</code></a>.</p>
+<a href="#rs-ppvm-tableau-tableau-like-TableauLike"><code>TableauLike::is_qubit_lost</code></a>
+(which reports lost <em>or</em> leaked qubits, both skipped by the noise channels).</p>
 </div></div></details></article><article class="api-item" id="rs-ppvm-tableau-data-GeneralizedTableau" data-name="generalizedtableau" data-path="ppvm_tableau::data::generalizedtableau" data-kind="struct"><div class="row1"><span class="kind kind-struct">struct</span><span class="name"><a href="#rs-ppvm-tableau-data-GeneralizedTableau">GeneralizedTableau</a></span><span class="path">ppvm_tableau::data::GeneralizedTableau</span></div><div class="signature">struct GeneralizedTableau&lt;T, IndexType, SparseVectorType&gt;</div><p class="summary">A <a href="#rs-ppvm-tableau-data-Tableau"><code>Tableau</code></a> extended with sparse coefficient tracking to handle
 non-Clifford gates.</p><details><summary>Full docstring</summary><div class="docstring"><div class="doc-prose"><p>A <a href="#rs-ppvm-tableau-data-Tableau"><code>Tableau</code></a> extended with sparse coefficient tracking to handle
 non-Clifford gates.</p>

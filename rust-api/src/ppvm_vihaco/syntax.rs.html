@@ -225,131 +225,132 @@
 <a href=#225 id=225 data-nosnippet>225</a>            S::PauliError =&gt; R::PauliError,
 <a href=#226 id=226 data-nosnippet>226</a>            S::Depolarize2 =&gt; R::Depolarize2,
 <a href=#227 id=227 data-nosnippet>227</a>            S::Depolarize =&gt; R::Depolarize,
-<a href=#228 id=228 data-nosnippet>228</a>        }
-<a href=#229 id=229 data-nosnippet>229</a>    }
-<a href=#230 id=230 data-nosnippet>230</a>}
-<a href=#231 id=231 data-nosnippet>231</a>
-<a href=#232 id=232 data-nosnippet>232</a><span class="kw">impl </span>Resolve&lt;ppvm::syntax::Instruction, SurfaceType, Vec&lt;PPVMHeader&gt;&gt; <span class="kw">for </span>PPVMResolver {
-<a href=#233 id=233 data-nosnippet>233</a>    <span class="kw">type </span>Module = LocalModule&lt;PPVMInstruction, Value, Type, PPVMDeviceInfo&gt;;
-<a href=#234 id=234 data-nosnippet>234</a>
-<a href=#235 id=235 data-nosnippet>235</a>    <span class="kw">fn </span>resolve_module(
-<a href=#236 id=236 data-nosnippet>236</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-<a href=#237 id=237 data-nosnippet>237</a>        parsed: ParsedModule&lt;ppvm::syntax::Instruction, SurfaceType, Vec&lt;PPVMHeader&gt;&gt;,
-<a href=#238 id=238 data-nosnippet>238</a>    ) -&gt; eyre::Result&lt;<span class="self">Self</span>::Module&gt; {
-<a href=#239 id=239 data-nosnippet>239</a>        <span class="kw">let </span><span class="kw-2">mut </span>module = LocalModule::default();
-<a href=#240 id=240 data-nosnippet>240</a>        <span class="kw">for </span>header <span class="kw">in </span>parsed.header {
-<a href=#241 id=241 data-nosnippet>241</a>            <span class="self">Self</span>::apply_header(<span class="kw-2">&amp;mut </span>module.extra, header)<span class="question-mark">?</span>;
-<a href=#242 id=242 data-nosnippet>242</a>        }
-<a href=#243 id=243 data-nosnippet>243</a>
-<a href=#244 id=244 data-nosnippet>244</a>        <span class="kw">let </span><span class="kw-2">mut </span>functions = HashMap::new();
-<a href=#245 id=245 data-nosnippet>245</a>        <span class="kw">let </span><span class="kw-2">mut </span>function_address = <span class="number">0u32</span>;
-<a href=#246 id=246 data-nosnippet>246</a>        <span class="kw">for </span>function <span class="kw">in </span><span class="kw-2">&amp;</span>parsed.functions {
-<a href=#247 id=247 data-nosnippet>247</a>            functions.insert(function.name.as_str().to_owned(), function_address);
-<a href=#248 id=248 data-nosnippet>248</a>            function_address += function
-<a href=#249 id=249 data-nosnippet>249</a>                .body
-<a href=#250 id=250 data-nosnippet>250</a>                .iter()
-<a href=#251 id=251 data-nosnippet>251</a>                .filter(|instruction| {
-<a href=#252 id=252 data-nosnippet>252</a>                    !<span class="macro">matches!</span>(
-<a href=#253 id=253 data-nosnippet>253</a>                        instruction,
-<a href=#254 id=254 data-nosnippet>254</a>                        ppvm::syntax::Instruction::Cpu(CpuSurface::Label(<span class="kw">_</span>))
-<a href=#255 id=255 data-nosnippet>255</a>                    )
-<a href=#256 id=256 data-nosnippet>256</a>                })
-<a href=#257 id=257 data-nosnippet>257</a>                .count() <span class="kw">as </span>u32;
-<a href=#258 id=258 data-nosnippet>258</a>        }
-<a href=#259 id=259 data-nosnippet>259</a>
-<a href=#260 id=260 data-nosnippet>260</a>        <span class="kw">let </span><span class="kw-2">mut </span>labels = HashMap::new();
-<a href=#261 id=261 data-nosnippet>261</a>        <span class="kw">let </span><span class="kw-2">mut </span>address = <span class="number">0u32</span>;
-<a href=#262 id=262 data-nosnippet>262</a>        <span class="kw">for </span>function <span class="kw">in </span><span class="kw-2">&amp;</span>parsed.functions {
-<a href=#263 id=263 data-nosnippet>263</a>            <span class="kw">for </span>instruction <span class="kw">in </span><span class="kw-2">&amp;</span>function.body {
-<a href=#264 id=264 data-nosnippet>264</a>                <span class="kw">if let </span>ppvm::syntax::Instruction::Cpu(CpuSurface::Label(name)) = instruction {
-<a href=#265 id=265 data-nosnippet>265</a>                    labels.insert(name.as_str().to_owned(), address);
-<a href=#266 id=266 data-nosnippet>266</a>                    module.labels.push(LabelInfo {
-<a href=#267 id=267 data-nosnippet>267</a>                        address,
-<a href=#268 id=268 data-nosnippet>268</a>                        name: <span class="self">self</span>.intern(name.as_str()),
-<a href=#269 id=269 data-nosnippet>269</a>                    });
-<a href=#270 id=270 data-nosnippet>270</a>                } <span class="kw">else </span>{
-<a href=#271 id=271 data-nosnippet>271</a>                    address += <span class="number">1</span>;
-<a href=#272 id=272 data-nosnippet>272</a>                }
-<a href=#273 id=273 data-nosnippet>273</a>            }
-<a href=#274 id=274 data-nosnippet>274</a>        }
-<a href=#275 id=275 data-nosnippet>275</a>
-<a href=#276 id=276 data-nosnippet>276</a>        <span class="kw">for </span>function <span class="kw">in </span>parsed.functions {
-<a href=#277 id=277 data-nosnippet>277</a>            <span class="kw">let </span>start_address = module.code.len() <span class="kw">as </span>u32;
-<a href=#278 id=278 data-nosnippet>278</a>            <span class="kw">for </span>instruction <span class="kw">in </span>function.body {
-<a href=#279 id=279 data-nosnippet>279</a>                <span class="kw">let </span>runtime = <span class="kw">match </span>instruction {
-<a href=#280 id=280 data-nosnippet>280</a>                    ppvm::syntax::Instruction::Cpu(cpu) =&gt; <span class="self">self
-<a href=#281 id=281 data-nosnippet>281</a>                        </span>.lower_cpu(cpu, <span class="kw-2">&amp;</span>labels, <span class="kw-2">&amp;</span>functions)<span class="question-mark">?
-<a href=#282 id=282 data-nosnippet>282</a>                        </span>.map(PPVMInstruction::Cpu),
-<a href=#283 id=283 data-nosnippet>283</a>                    ppvm::syntax::Instruction::Circuit(circuit) =&gt; {
-<a href=#284 id=284 data-nosnippet>284</a>                        <span class="prelude-val">Some</span>(PPVMInstruction::Circuit(<span class="self">Self</span>::lower_circuit(circuit)))
-<a href=#285 id=285 data-nosnippet>285</a>                    }
-<a href=#286 id=286 data-nosnippet>286</a>                };
-<a href=#287 id=287 data-nosnippet>287</a>                <span class="kw">if let </span><span class="prelude-val">Some</span>(runtime) = runtime {
-<a href=#288 id=288 data-nosnippet>288</a>                    module.code.push(runtime);
-<a href=#289 id=289 data-nosnippet>289</a>                }
-<a href=#290 id=290 data-nosnippet>290</a>            }
-<a href=#291 id=291 data-nosnippet>291</a>            <span class="kw">let </span>end_address = module.code.len() <span class="kw">as </span>u32;
-<a href=#292 id=292 data-nosnippet>292</a>            module.functions.push(FunctionInfo {
-<a href=#293 id=293 data-nosnippet>293</a>                name: <span class="self">self</span>.intern(function.name.as_str()),
-<a href=#294 id=294 data-nosnippet>294</a>                signature: Signature {
-<a href=#295 id=295 data-nosnippet>295</a>                    params: function
-<a href=#296 id=296 data-nosnippet>296</a>                        .params
-<a href=#297 id=297 data-nosnippet>297</a>                        .into_iter()
-<a href=#298 id=298 data-nosnippet>298</a>                        .map(|Param { name, ty }| Parameter {
-<a href=#299 id=299 data-nosnippet>299</a>                            name: <span class="self">self</span>.intern(name.as_str()),
-<a href=#300 id=300 data-nosnippet>300</a>                            ty: <span class="self">Self</span>::runtime_type(ty),
-<a href=#301 id=301 data-nosnippet>301</a>                        })
-<a href=#302 id=302 data-nosnippet>302</a>                        .collect(),
-<a href=#303 id=303 data-nosnippet>303</a>                    ret: function
-<a href=#304 id=304 data-nosnippet>304</a>                        .return_ty
-<a href=#305 id=305 data-nosnippet>305</a>                        .map(<span class="self">Self</span>::runtime_type)
-<a href=#306 id=306 data-nosnippet>306</a>                        .into_iter()
-<a href=#307 id=307 data-nosnippet>307</a>                        .collect(),
-<a href=#308 id=308 data-nosnippet>308</a>                },
-<a href=#309 id=309 data-nosnippet>309</a>                local_count: <span class="number">0</span>,
-<a href=#310 id=310 data-nosnippet>310</a>                start_address,
-<a href=#311 id=311 data-nosnippet>311</a>                end_address,
-<a href=#312 id=312 data-nosnippet>312</a>                file: <span class="number">0</span>,
-<a href=#313 id=313 data-nosnippet>313</a>            });
-<a href=#314 id=314 data-nosnippet>314</a>        }
-<a href=#315 id=315 data-nosnippet>315</a>        module.main_function = functions.get(<span class="string">"main"</span>).copied();
-<a href=#316 id=316 data-nosnippet>316</a>        module.strings = std::mem::take(<span class="kw-2">&amp;mut </span><span class="self">self</span>.strings);
-<a href=#317 id=317 data-nosnippet>317</a>        <span class="prelude-val">Ok</span>(module)
-<a href=#318 id=318 data-nosnippet>318</a>    }
-<a href=#319 id=319 data-nosnippet>319</a>}
-<a href=#320 id=320 data-nosnippet>320</a>
-<a href=#321 id=321 data-nosnippet>321</a><span class="kw">pub fn </span>parse_headers(source: <span class="kw-2">&amp;</span>str) -&gt; eyre::Result&lt;(Vec&lt;PPVMHeader&gt;, String)&gt; {
-<a href=#322 id=322 data-nosnippet>322</a>    <span class="kw">let </span><span class="kw-2">mut </span>headers = Vec::new();
-<a href=#323 id=323 data-nosnippet>323</a>    <span class="kw">let </span><span class="kw-2">mut </span>body = String::new();
-<a href=#324 id=324 data-nosnippet>324</a>    <span class="kw">for </span>line <span class="kw">in </span>source.lines() {
-<a href=#325 id=325 data-nosnippet>325</a>        <span class="kw">let </span>trimmed = line.trim();
-<a href=#326 id=326 data-nosnippet>326</a>        <span class="kw">if </span>trimmed.starts_with(<span class="string">"device "</span>) {
-<a href=#327 id=327 data-nosnippet>327</a>            <span class="kw">let </span>header = trimmed.strip_suffix(<span class="string">';'</span>).unwrap_or(trimmed);
-<a href=#328 id=328 data-nosnippet>328</a>            <span class="kw">let </span>parsed = PPVMHeader::parser()
-<a href=#329 id=329 data-nosnippet>329</a>                .parse(header)
-<a href=#330 id=330 data-nosnippet>330</a>                .into_result()
-<a href=#331 id=331 data-nosnippet>331</a>                .map_err(|errors| <span class="macro">eyre::eyre!</span>(<span class="string">"invalid device header `{header}`: {errors:?}"</span>))<span class="question-mark">?</span>;
-<a href=#332 id=332 data-nosnippet>332</a>            headers.push(parsed);
-<a href=#333 id=333 data-nosnippet>333</a>        } <span class="kw">else </span>{
-<a href=#334 id=334 data-nosnippet>334</a>            body.push_str(line);
-<a href=#335 id=335 data-nosnippet>335</a>            body.push(<span class="string">'\n'</span>);
-<a href=#336 id=336 data-nosnippet>336</a>        }
-<a href=#337 id=337 data-nosnippet>337</a>    }
-<a href=#338 id=338 data-nosnippet>338</a>    <span class="prelude-val">Ok</span>((headers, body))
-<a href=#339 id=339 data-nosnippet>339</a>}
-<a href=#340 id=340 data-nosnippet>340</a>
-<a href=#341 id=341 data-nosnippet>341</a><span class="kw">pub fn </span>parse_functions(
-<a href=#342 id=342 data-nosnippet>342</a>    source: <span class="kw-2">&amp;</span>str,
-<a href=#343 id=343 data-nosnippet>343</a>) -&gt; eyre::Result&lt;Vec&lt;ParsedFunction&lt;ppvm::syntax::Instruction, SurfaceType&gt;&gt;&gt; {
-<a href=#344 id=344 data-nosnippet>344</a>    skip()
-<a href=#345 id=345 data-nosnippet>345</a>        .ignore_then(
-<a href=#346 id=346 data-nosnippet>346</a>            ParsedFunction::&lt;ppvm::syntax::Instruction, SurfaceType&gt;::parser()
-<a href=#347 id=347 data-nosnippet>347</a>                .repeated()
-<a href=#348 id=348 data-nosnippet>348</a>                .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;(),
-<a href=#349 id=349 data-nosnippet>349</a>        )
-<a href=#350 id=350 data-nosnippet>350</a>        .then_ignore(skip())
-<a href=#351 id=351 data-nosnippet>351</a>        .parse(source)
-<a href=#352 id=352 data-nosnippet>352</a>        .into_result()
-<a href=#353 id=353 data-nosnippet>353</a>        .map_err(|errors| <span class="macro">eyre::eyre!</span>(<span class="string">"parsing functions failed: {errors:?}"</span>))
-<a href=#354 id=354 data-nosnippet>354</a>}
+<a href=#228 id=228 data-nosnippet>228</a>            S::Leakage =&gt; R::Leakage,
+<a href=#229 id=229 data-nosnippet>229</a>        }
+<a href=#230 id=230 data-nosnippet>230</a>    }
+<a href=#231 id=231 data-nosnippet>231</a>}
+<a href=#232 id=232 data-nosnippet>232</a>
+<a href=#233 id=233 data-nosnippet>233</a><span class="kw">impl </span>Resolve&lt;ppvm::syntax::Instruction, SurfaceType, Vec&lt;PPVMHeader&gt;&gt; <span class="kw">for </span>PPVMResolver {
+<a href=#234 id=234 data-nosnippet>234</a>    <span class="kw">type </span>Module = LocalModule&lt;PPVMInstruction, Value, Type, PPVMDeviceInfo&gt;;
+<a href=#235 id=235 data-nosnippet>235</a>
+<a href=#236 id=236 data-nosnippet>236</a>    <span class="kw">fn </span>resolve_module(
+<a href=#237 id=237 data-nosnippet>237</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#238 id=238 data-nosnippet>238</a>        parsed: ParsedModule&lt;ppvm::syntax::Instruction, SurfaceType, Vec&lt;PPVMHeader&gt;&gt;,
+<a href=#239 id=239 data-nosnippet>239</a>    ) -&gt; eyre::Result&lt;<span class="self">Self</span>::Module&gt; {
+<a href=#240 id=240 data-nosnippet>240</a>        <span class="kw">let </span><span class="kw-2">mut </span>module = LocalModule::default();
+<a href=#241 id=241 data-nosnippet>241</a>        <span class="kw">for </span>header <span class="kw">in </span>parsed.header {
+<a href=#242 id=242 data-nosnippet>242</a>            <span class="self">Self</span>::apply_header(<span class="kw-2">&amp;mut </span>module.extra, header)<span class="question-mark">?</span>;
+<a href=#243 id=243 data-nosnippet>243</a>        }
+<a href=#244 id=244 data-nosnippet>244</a>
+<a href=#245 id=245 data-nosnippet>245</a>        <span class="kw">let </span><span class="kw-2">mut </span>functions = HashMap::new();
+<a href=#246 id=246 data-nosnippet>246</a>        <span class="kw">let </span><span class="kw-2">mut </span>function_address = <span class="number">0u32</span>;
+<a href=#247 id=247 data-nosnippet>247</a>        <span class="kw">for </span>function <span class="kw">in </span><span class="kw-2">&amp;</span>parsed.functions {
+<a href=#248 id=248 data-nosnippet>248</a>            functions.insert(function.name.as_str().to_owned(), function_address);
+<a href=#249 id=249 data-nosnippet>249</a>            function_address += function
+<a href=#250 id=250 data-nosnippet>250</a>                .body
+<a href=#251 id=251 data-nosnippet>251</a>                .iter()
+<a href=#252 id=252 data-nosnippet>252</a>                .filter(|instruction| {
+<a href=#253 id=253 data-nosnippet>253</a>                    !<span class="macro">matches!</span>(
+<a href=#254 id=254 data-nosnippet>254</a>                        instruction,
+<a href=#255 id=255 data-nosnippet>255</a>                        ppvm::syntax::Instruction::Cpu(CpuSurface::Label(<span class="kw">_</span>))
+<a href=#256 id=256 data-nosnippet>256</a>                    )
+<a href=#257 id=257 data-nosnippet>257</a>                })
+<a href=#258 id=258 data-nosnippet>258</a>                .count() <span class="kw">as </span>u32;
+<a href=#259 id=259 data-nosnippet>259</a>        }
+<a href=#260 id=260 data-nosnippet>260</a>
+<a href=#261 id=261 data-nosnippet>261</a>        <span class="kw">let </span><span class="kw-2">mut </span>labels = HashMap::new();
+<a href=#262 id=262 data-nosnippet>262</a>        <span class="kw">let </span><span class="kw-2">mut </span>address = <span class="number">0u32</span>;
+<a href=#263 id=263 data-nosnippet>263</a>        <span class="kw">for </span>function <span class="kw">in </span><span class="kw-2">&amp;</span>parsed.functions {
+<a href=#264 id=264 data-nosnippet>264</a>            <span class="kw">for </span>instruction <span class="kw">in </span><span class="kw-2">&amp;</span>function.body {
+<a href=#265 id=265 data-nosnippet>265</a>                <span class="kw">if let </span>ppvm::syntax::Instruction::Cpu(CpuSurface::Label(name)) = instruction {
+<a href=#266 id=266 data-nosnippet>266</a>                    labels.insert(name.as_str().to_owned(), address);
+<a href=#267 id=267 data-nosnippet>267</a>                    module.labels.push(LabelInfo {
+<a href=#268 id=268 data-nosnippet>268</a>                        address,
+<a href=#269 id=269 data-nosnippet>269</a>                        name: <span class="self">self</span>.intern(name.as_str()),
+<a href=#270 id=270 data-nosnippet>270</a>                    });
+<a href=#271 id=271 data-nosnippet>271</a>                } <span class="kw">else </span>{
+<a href=#272 id=272 data-nosnippet>272</a>                    address += <span class="number">1</span>;
+<a href=#273 id=273 data-nosnippet>273</a>                }
+<a href=#274 id=274 data-nosnippet>274</a>            }
+<a href=#275 id=275 data-nosnippet>275</a>        }
+<a href=#276 id=276 data-nosnippet>276</a>
+<a href=#277 id=277 data-nosnippet>277</a>        <span class="kw">for </span>function <span class="kw">in </span>parsed.functions {
+<a href=#278 id=278 data-nosnippet>278</a>            <span class="kw">let </span>start_address = module.code.len() <span class="kw">as </span>u32;
+<a href=#279 id=279 data-nosnippet>279</a>            <span class="kw">for </span>instruction <span class="kw">in </span>function.body {
+<a href=#280 id=280 data-nosnippet>280</a>                <span class="kw">let </span>runtime = <span class="kw">match </span>instruction {
+<a href=#281 id=281 data-nosnippet>281</a>                    ppvm::syntax::Instruction::Cpu(cpu) =&gt; <span class="self">self
+<a href=#282 id=282 data-nosnippet>282</a>                        </span>.lower_cpu(cpu, <span class="kw-2">&amp;</span>labels, <span class="kw-2">&amp;</span>functions)<span class="question-mark">?
+<a href=#283 id=283 data-nosnippet>283</a>                        </span>.map(PPVMInstruction::Cpu),
+<a href=#284 id=284 data-nosnippet>284</a>                    ppvm::syntax::Instruction::Circuit(circuit) =&gt; {
+<a href=#285 id=285 data-nosnippet>285</a>                        <span class="prelude-val">Some</span>(PPVMInstruction::Circuit(<span class="self">Self</span>::lower_circuit(circuit)))
+<a href=#286 id=286 data-nosnippet>286</a>                    }
+<a href=#287 id=287 data-nosnippet>287</a>                };
+<a href=#288 id=288 data-nosnippet>288</a>                <span class="kw">if let </span><span class="prelude-val">Some</span>(runtime) = runtime {
+<a href=#289 id=289 data-nosnippet>289</a>                    module.code.push(runtime);
+<a href=#290 id=290 data-nosnippet>290</a>                }
+<a href=#291 id=291 data-nosnippet>291</a>            }
+<a href=#292 id=292 data-nosnippet>292</a>            <span class="kw">let </span>end_address = module.code.len() <span class="kw">as </span>u32;
+<a href=#293 id=293 data-nosnippet>293</a>            module.functions.push(FunctionInfo {
+<a href=#294 id=294 data-nosnippet>294</a>                name: <span class="self">self</span>.intern(function.name.as_str()),
+<a href=#295 id=295 data-nosnippet>295</a>                signature: Signature {
+<a href=#296 id=296 data-nosnippet>296</a>                    params: function
+<a href=#297 id=297 data-nosnippet>297</a>                        .params
+<a href=#298 id=298 data-nosnippet>298</a>                        .into_iter()
+<a href=#299 id=299 data-nosnippet>299</a>                        .map(|Param { name, ty }| Parameter {
+<a href=#300 id=300 data-nosnippet>300</a>                            name: <span class="self">self</span>.intern(name.as_str()),
+<a href=#301 id=301 data-nosnippet>301</a>                            ty: <span class="self">Self</span>::runtime_type(ty),
+<a href=#302 id=302 data-nosnippet>302</a>                        })
+<a href=#303 id=303 data-nosnippet>303</a>                        .collect(),
+<a href=#304 id=304 data-nosnippet>304</a>                    ret: function
+<a href=#305 id=305 data-nosnippet>305</a>                        .return_ty
+<a href=#306 id=306 data-nosnippet>306</a>                        .map(<span class="self">Self</span>::runtime_type)
+<a href=#307 id=307 data-nosnippet>307</a>                        .into_iter()
+<a href=#308 id=308 data-nosnippet>308</a>                        .collect(),
+<a href=#309 id=309 data-nosnippet>309</a>                },
+<a href=#310 id=310 data-nosnippet>310</a>                local_count: <span class="number">0</span>,
+<a href=#311 id=311 data-nosnippet>311</a>                start_address,
+<a href=#312 id=312 data-nosnippet>312</a>                end_address,
+<a href=#313 id=313 data-nosnippet>313</a>                file: <span class="number">0</span>,
+<a href=#314 id=314 data-nosnippet>314</a>            });
+<a href=#315 id=315 data-nosnippet>315</a>        }
+<a href=#316 id=316 data-nosnippet>316</a>        module.main_function = functions.get(<span class="string">"main"</span>).copied();
+<a href=#317 id=317 data-nosnippet>317</a>        module.strings = std::mem::take(<span class="kw-2">&amp;mut </span><span class="self">self</span>.strings);
+<a href=#318 id=318 data-nosnippet>318</a>        <span class="prelude-val">Ok</span>(module)
+<a href=#319 id=319 data-nosnippet>319</a>    }
+<a href=#320 id=320 data-nosnippet>320</a>}
+<a href=#321 id=321 data-nosnippet>321</a>
+<a href=#322 id=322 data-nosnippet>322</a><span class="kw">pub fn </span>parse_headers(source: <span class="kw-2">&amp;</span>str) -&gt; eyre::Result&lt;(Vec&lt;PPVMHeader&gt;, String)&gt; {
+<a href=#323 id=323 data-nosnippet>323</a>    <span class="kw">let </span><span class="kw-2">mut </span>headers = Vec::new();
+<a href=#324 id=324 data-nosnippet>324</a>    <span class="kw">let </span><span class="kw-2">mut </span>body = String::new();
+<a href=#325 id=325 data-nosnippet>325</a>    <span class="kw">for </span>line <span class="kw">in </span>source.lines() {
+<a href=#326 id=326 data-nosnippet>326</a>        <span class="kw">let </span>trimmed = line.trim();
+<a href=#327 id=327 data-nosnippet>327</a>        <span class="kw">if </span>trimmed.starts_with(<span class="string">"device "</span>) {
+<a href=#328 id=328 data-nosnippet>328</a>            <span class="kw">let </span>header = trimmed.strip_suffix(<span class="string">';'</span>).unwrap_or(trimmed);
+<a href=#329 id=329 data-nosnippet>329</a>            <span class="kw">let </span>parsed = PPVMHeader::parser()
+<a href=#330 id=330 data-nosnippet>330</a>                .parse(header)
+<a href=#331 id=331 data-nosnippet>331</a>                .into_result()
+<a href=#332 id=332 data-nosnippet>332</a>                .map_err(|errors| <span class="macro">eyre::eyre!</span>(<span class="string">"invalid device header `{header}`: {errors:?}"</span>))<span class="question-mark">?</span>;
+<a href=#333 id=333 data-nosnippet>333</a>            headers.push(parsed);
+<a href=#334 id=334 data-nosnippet>334</a>        } <span class="kw">else </span>{
+<a href=#335 id=335 data-nosnippet>335</a>            body.push_str(line);
+<a href=#336 id=336 data-nosnippet>336</a>            body.push(<span class="string">'\n'</span>);
+<a href=#337 id=337 data-nosnippet>337</a>        }
+<a href=#338 id=338 data-nosnippet>338</a>    }
+<a href=#339 id=339 data-nosnippet>339</a>    <span class="prelude-val">Ok</span>((headers, body))
+<a href=#340 id=340 data-nosnippet>340</a>}
+<a href=#341 id=341 data-nosnippet>341</a>
+<a href=#342 id=342 data-nosnippet>342</a><span class="kw">pub fn </span>parse_functions(
+<a href=#343 id=343 data-nosnippet>343</a>    source: <span class="kw-2">&amp;</span>str,
+<a href=#344 id=344 data-nosnippet>344</a>) -&gt; eyre::Result&lt;Vec&lt;ParsedFunction&lt;ppvm::syntax::Instruction, SurfaceType&gt;&gt;&gt; {
+<a href=#345 id=345 data-nosnippet>345</a>    skip()
+<a href=#346 id=346 data-nosnippet>346</a>        .ignore_then(
+<a href=#347 id=347 data-nosnippet>347</a>            ParsedFunction::&lt;ppvm::syntax::Instruction, SurfaceType&gt;::parser()
+<a href=#348 id=348 data-nosnippet>348</a>                .repeated()
+<a href=#349 id=349 data-nosnippet>349</a>                .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;(),
+<a href=#350 id=350 data-nosnippet>350</a>        )
+<a href=#351 id=351 data-nosnippet>351</a>        .then_ignore(skip())
+<a href=#352 id=352 data-nosnippet>352</a>        .parse(source)
+<a href=#353 id=353 data-nosnippet>353</a>        .into_result()
+<a href=#354 id=354 data-nosnippet>354</a>        .map_err(|errors| <span class="macro">eyre::eyre!</span>(<span class="string">"parsing functions failed: {errors:?}"</span>))
+<a href=#355 id=355 data-nosnippet>355</a>}
 </code></pre></div></section></main></body></html>

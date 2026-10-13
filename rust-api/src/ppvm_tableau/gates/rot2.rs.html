@@ -38,10 +38,10 @@
 <a href=#38 id=38 data-nosnippet>38</a>        <span class="kw">let </span>[axis_b_x, axis_b_z] = axis_b;
 <a href=#39 id=39 data-nosnippet>39</a>        <span class="kw">let </span>pauli_a = PAULIS[(axis_a_z &lt;&lt; <span class="number">1 </span>| axis_a_x) <span class="kw">as </span>usize];
 <a href=#40 id=40 data-nosnippet>40</a>        <span class="kw">let </span>pauli_b = PAULIS[(axis_b_z &lt;&lt; <span class="number">1 </span>| axis_b_x) <span class="kw">as </span>usize];
-<a href=#41 id=41 data-nosnippet>41</a>        <span class="comment">// NOTE: if both qubits are lost, the rot1 will be a no-op
-<a href=#42 id=42 data-nosnippet>42</a>        </span><span class="kw">if </span><span class="self">self</span>.is_lost[a] {
+<a href=#41 id=41 data-nosnippet>41</a>        <span class="comment">// NOTE: if both qubits are lost/leaked, the rot1 will be a no-op
+<a href=#42 id=42 data-nosnippet>42</a>        </span><span class="kw">if </span><span class="self">self</span>.is_inactive(a) {
 <a href=#43 id=43 data-nosnippet>43</a>            <span class="kw">return </span><span class="self">self</span>.rotate_1(pauli_b, b, theta);
-<a href=#44 id=44 data-nosnippet>44</a>        } <span class="kw">else if </span><span class="self">self</span>.is_lost[b] {
+<a href=#44 id=44 data-nosnippet>44</a>        } <span class="kw">else if </span><span class="self">self</span>.is_inactive(b) {
 <a href=#45 id=45 data-nosnippet>45</a>            <span class="kw">return </span><span class="self">self</span>.rotate_1(pauli_a, a, theta);
 <a href=#46 id=46 data-nosnippet>46</a>        }
 <a href=#47 id=47 data-nosnippet>47</a>

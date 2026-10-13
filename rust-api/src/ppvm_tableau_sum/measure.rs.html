@@ -74,7 +74,7 @@
 <a href=#74 id=74 data-nosnippet>74</a>
 <a href=#75 id=75 data-nosnippet>75</a>        <span class="self">self</span>.entries
 <a href=#76 id=76 data-nosnippet>76</a>            .for_each_mut_with_keys(|tab, p_sum, word_fp, phase_loss_fp| {
-<a href=#77 id=77 data-nosnippet>77</a>                <span class="kw">if </span>tab.is_lost[addr0] {
+<a href=#77 id=77 data-nosnippet>77</a>                <span class="kw">if </span>tab.is_lost(addr0) {
 <a href=#78 id=78 data-nosnippet>78</a>                    <span class="comment">// NOTE: deterministically outputs lost, no branching
 <a href=#79 id=79 data-nosnippet>79</a>                    </span><span class="kw">let _ </span>= per_branch(tab, <span class="prelude-val">None</span>, <span class="kw-2">&amp;*</span>p_sum);
 <a href=#80 id=80 data-nosnippet>80</a>                    <span class="kw">return</span>;

@@ -358,102 +358,120 @@
 <a href=#358 id=358 data-nosnippet>358</a>                    <span class="macro">write!</span>(out, <span class="string">" {a} {b}"</span>)<span class="question-mark">?</span>;
 <a href=#359 id=359 data-nosnippet>359</a>                }
 <a href=#360 id=360 data-nosnippet>360</a>            }
-<a href=#361 id=361 data-nosnippet>361</a>            ExtendedInstruction::MPad {
-<a href=#362 id=362 data-nosnippet>362</a>                tag, prob, bits, ..
+<a href=#361 id=361 data-nosnippet>361</a>            ExtendedInstruction::Leakage {
+<a href=#362 id=362 data-nosnippet>362</a>                p0, p1, targets, ..
 <a href=#363 id=363 data-nosnippet>363</a>            } =&gt; {
-<a href=#364 id=364 data-nosnippet>364</a>                out.write_str(<span class="string">"MPAD"</span>)<span class="question-mark">?</span>;
-<a href=#365 id=365 data-nosnippet>365</a>                write_tag(out, tag)<span class="question-mark">?</span>;
-<a href=#366 id=366 data-nosnippet>366</a>                <span class="kw">if let </span><span class="prelude-val">Some</span>(p) = prob {
-<a href=#367 id=367 data-nosnippet>367</a>                    <span class="macro">write!</span>(out, <span class="string">"({})"</span>, FloatLit(<span class="kw-2">*</span>p))<span class="question-mark">?</span>;
-<a href=#368 id=368 data-nosnippet>368</a>                }
-<a href=#369 id=369 data-nosnippet>369</a>                <span class="kw">for </span><span class="kw-2">&amp;</span>bit <span class="kw">in </span>bits {
-<a href=#370 id=370 data-nosnippet>370</a>                    <span class="macro">write!</span>(out, <span class="string">" {}"</span>, u8::from(bit))<span class="question-mark">?</span>;
-<a href=#371 id=371 data-nosnippet>371</a>                }
-<a href=#372 id=372 data-nosnippet>372</a>            }
-<a href=#373 id=373 data-nosnippet>373</a>            ExtendedInstruction::Repeat {
-<a href=#374 id=374 data-nosnippet>374</a>                tag, count, body, ..
-<a href=#375 id=375 data-nosnippet>375</a>            } =&gt; {
-<a href=#376 id=376 data-nosnippet>376</a>                write_repeat_block(out, opts, depth, tag, <span class="kw-2">*</span>count, body)<span class="question-mark">?</span>;
-<a href=#377 id=377 data-nosnippet>377</a>            }
-<a href=#378 id=378 data-nosnippet>378</a>        }
-<a href=#379 id=379 data-nosnippet>379</a>        <span class="macro">writeln!</span>(out)
-<a href=#380 id=380 data-nosnippet>380</a>    }
-<a href=#381 id=381 data-nosnippet>381</a>}
-<a href=#382 id=382 data-nosnippet>382</a>
-<a href=#383 id=383 data-nosnippet>383</a><span class="kw">impl </span>StimPrint <span class="kw">for </span>ExtendedProgram {
-<a href=#384 id=384 data-nosnippet>384</a>    <span class="kw">fn </span>print(<span class="kw-2">&amp;</span><span class="self">self</span>, out: <span class="kw-2">&amp;mut </span><span class="kw">dyn </span>fmt::Write, opts: <span class="kw-2">&amp;</span>PrintOptions, depth: usize) -&gt; fmt::Result {
-<a href=#385 id=385 data-nosnippet>385</a>        <span class="kw">for </span>instr <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.instructions {
-<a href=#386 id=386 data-nosnippet>386</a>            instr.print(out, opts, depth)<span class="question-mark">?</span>;
-<a href=#387 id=387 data-nosnippet>387</a>        }
-<a href=#388 id=388 data-nosnippet>388</a>        <span class="prelude-val">Ok</span>(())
-<a href=#389 id=389 data-nosnippet>389</a>    }
-<a href=#390 id=390 data-nosnippet>390</a>}
-<a href=#391 id=391 data-nosnippet>391</a>
-<a href=#392 id=392 data-nosnippet>392</a><span class="kw">impl </span>fmt::Display <span class="kw">for </span>ExtendedProgram {
-<a href=#393 id=393 data-nosnippet>393</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
-<a href=#394 id=394 data-nosnippet>394</a>        <span class="self">self</span>.print(f, <span class="kw-2">&amp;</span>PrintOptions::default(), <span class="number">0</span>)
-<a href=#395 id=395 data-nosnippet>395</a>    }
-<a href=#396 id=396 data-nosnippet>396</a>}
-<a href=#397 id=397 data-nosnippet>397</a>
-<a href=#398 id=398 data-nosnippet>398</a><span class="comment">// ---------------------------------------------------------------------------
-<a href=#399 id=399 data-nosnippet>399</a>// Tests
-<a href=#400 id=400 data-nosnippet>400</a>// ---------------------------------------------------------------------------
-<a href=#401 id=401 data-nosnippet>401</a>
-<a href=#402 id=402 data-nosnippet>402</a></span><span class="attr">#[cfg(test)]
-<a href=#403 id=403 data-nosnippet>403</a></span><span class="kw">mod </span>tests {
-<a href=#404 id=404 data-nosnippet>404</a>    <span class="kw">use </span><span class="kw">crate</span>::print::StimPrint;
-<a href=#405 id=405 data-nosnippet>405</a>    <span class="kw">use crate</span>::{parse, parse_extended};
-<a href=#406 id=406 data-nosnippet>406</a>
-<a href=#407 id=407 data-nosnippet>407</a>    <span class="attr">#[test]
-<a href=#408 id=408 data-nosnippet>408</a>    </span><span class="kw">fn </span>vanilla_printed_form_is_canonical_shape() {
-<a href=#409 id=409 data-nosnippet>409</a>        <span class="kw">let </span>src = <span class="string">"H 0  # trail\nCX  0   1\nDEPOLARIZE1(0.05) 0 1\nREPEAT 2 { X 0 }\n"</span>;
-<a href=#410 id=410 data-nosnippet>410</a>        <span class="kw">let </span>ast = parse(src).unwrap();
-<a href=#411 id=411 data-nosnippet>411</a>        <span class="kw">let </span>expected = <span class="string">"H 0\nCX 0 1\nDEPOLARIZE1(0.05) 0 1\nREPEAT 2 {\n    X 0\n}\n"</span>;
-<a href=#412 id=412 data-nosnippet>412</a>        <span class="macro">assert_eq!</span>(ast.to_stim(), expected);
-<a href=#413 id=413 data-nosnippet>413</a>        <span class="macro">assert_eq!</span>(<span class="macro">format!</span>(<span class="string">"{ast}"</span>), expected);
-<a href=#414 id=414 data-nosnippet>414</a>    }
-<a href=#415 id=415 data-nosnippet>415</a>
-<a href=#416 id=416 data-nosnippet>416</a>    <span class="attr">#[test]
-<a href=#417 id=417 data-nosnippet>417</a>    </span><span class="kw">fn </span>extended_printed_form_lowers_sugar_into_canonical_stim() {
-<a href=#418 id=418 data-nosnippet>418</a>        <span class="kw">let </span>src = <span class="string">"S[T] 0\nI[R_X(theta=0.25*pi)] 1\nI_ERROR[loss](0.01) 2\n"</span>;
-<a href=#419 id=419 data-nosnippet>419</a>        <span class="kw">let </span>ast = parse_extended(src).unwrap();
-<a href=#420 id=420 data-nosnippet>420</a>        <span class="kw">let </span>expected = <span class="string">"S[T] 0\nI[R_X(theta=0.25*pi)] 1\nI_ERROR[loss](0.01) 2\n"</span>;
-<a href=#421 id=421 data-nosnippet>421</a>        <span class="macro">assert_eq!</span>(ast.to_stim(), expected);
-<a href=#422 id=422 data-nosnippet>422</a>    }
-<a href=#423 id=423 data-nosnippet>423</a>
-<a href=#424 id=424 data-nosnippet>424</a>    <span class="attr">#[test]
-<a href=#425 id=425 data-nosnippet>425</a>    </span><span class="kw">fn </span>rec_and_mpp_targets_round_trip() {
-<a href=#426 id=426 data-nosnippet>426</a>        <span class="comment">// rec[-k] feed-forward control and MPP Pauli products print canonically.
-<a href=#427 id=427 data-nosnippet>427</a>        </span><span class="kw">let </span>ast = parse(<span class="string">"CX rec[-1] 0\nMPP X0*Y1*Z2\n"</span>).unwrap();
-<a href=#428 id=428 data-nosnippet>428</a>        <span class="macro">assert_eq!</span>(ast.to_stim(), <span class="string">"CX rec[-1] 0\nMPP X0*Y1*Z2\n"</span>);
-<a href=#429 id=429 data-nosnippet>429</a>    }
-<a href=#430 id=430 data-nosnippet>430</a>
-<a href=#431 id=431 data-nosnippet>431</a>    <span class="attr">#[test]
-<a href=#432 id=432 data-nosnippet>432</a>    </span><span class="kw">fn </span>rotation_pi_coeff_prints_clean_and_round_trips() {
-<a href=#433 id=433 data-nosnippet>433</a>        <span class="comment">// theta is stored in radians as `c*PI`; printing `c = theta/PI` naively
-<a href=#434 id=434 data-nosnippet>434</a>        // would emit a rounding tail like `0.7599999999999999*pi`. The printer
-<a href=#435 id=435 data-nosnippet>435</a>        // recovers the short coefficient instead — for rotation and U3 tags —
-<a href=#436 id=436 data-nosnippet>436</a>        // and `print → parse → print` stays a fixpoint.
-<a href=#437 id=437 data-nosnippet>437</a>        </span><span class="kw">for </span>(src, expected) <span class="kw">in </span>[
-<a href=#438 id=438 data-nosnippet>438</a>            <span class="comment">// Non-binary-friendly decimals that `theta/PI` mangles.
-<a href=#439 id=439 data-nosnippet>439</a>            </span>(<span class="string">"I[R_Z(theta=0.34*pi)] 0\n"</span>, <span class="string">"I[R_Z(theta=0.34*pi)] 0\n"</span>),
-<a href=#440 id=440 data-nosnippet>440</a>            (<span class="string">"I[R_Y(theta=0.76*pi)] 1\n"</span>, <span class="string">"I[R_Y(theta=0.76*pi)] 1\n"</span>),
-<a href=#441 id=441 data-nosnippet>441</a>            (<span class="string">"I[R_X(theta=-2.78*pi)] 2\n"</span>, <span class="string">"I[R_X(theta=-2.78*pi)] 2\n"</span>),
-<a href=#442 id=442 data-nosnippet>442</a>            (
-<a href=#443 id=443 data-nosnippet>443</a>                <span class="string">"I[U3(theta=0.34*pi, phi=0.91*pi, lambda=0.07*pi)] 0\n"</span>,
-<a href=#444 id=444 data-nosnippet>444</a>                <span class="string">"I[U3(theta=0.34*pi, phi=0.91*pi, lambda=0.07*pi)] 0\n"</span>,
-<a href=#445 id=445 data-nosnippet>445</a>            ),
-<a href=#446 id=446 data-nosnippet>446</a>        ] {
-<a href=#447 id=447 data-nosnippet>447</a>            <span class="kw">let </span>printed = parse_extended(src).unwrap().to_stim();
-<a href=#448 id=448 data-nosnippet>448</a>            <span class="macro">assert_eq!</span>(printed, expected, <span class="string">"first print of {src:?}"</span>);
-<a href=#449 id=449 data-nosnippet>449</a>            <span class="macro">assert!</span>(
-<a href=#450 id=450 data-nosnippet>450</a>                !printed.contains(<span class="string">"999999"</span>) &amp;&amp; !printed.contains(<span class="string">"000000"</span>),
-<a href=#451 id=451 data-nosnippet>451</a>                <span class="string">"coefficient printed with a rounding tail: {printed:?}"
-<a href=#452 id=452 data-nosnippet>452</a>            </span>);
-<a href=#453 id=453 data-nosnippet>453</a>            <span class="comment">// Fixpoint: re-parsing and re-printing reproduces it byte-for-byte.
-<a href=#454 id=454 data-nosnippet>454</a>            </span><span class="kw">let </span>reprinted = parse_extended(<span class="kw-2">&amp;</span>printed).unwrap().to_stim();
-<a href=#455 id=455 data-nosnippet>455</a>            <span class="macro">assert_eq!</span>(reprinted, printed, <span class="string">"printer is not a fixpoint for {src:?}"</span>);
-<a href=#456 id=456 data-nosnippet>456</a>        }
-<a href=#457 id=457 data-nosnippet>457</a>    }
-<a href=#458 id=458 data-nosnippet>458</a>}
+<a href=#364 id=364 data-nosnippet>364</a>                <span class="macro">write!</span>(
+<a href=#365 id=365 data-nosnippet>365</a>                    out,
+<a href=#366 id=366 data-nosnippet>366</a>                    <span class="string">"I_ERROR[leakage]({}, {})"</span>,
+<a href=#367 id=367 data-nosnippet>367</a>                    FloatLit(<span class="kw-2">*</span>p0),
+<a href=#368 id=368 data-nosnippet>368</a>                    FloatLit(<span class="kw-2">*</span>p1)
+<a href=#369 id=369 data-nosnippet>369</a>                )<span class="question-mark">?</span>;
+<a href=#370 id=370 data-nosnippet>370</a>                write_usize_targets(out, targets)<span class="question-mark">?</span>;
+<a href=#371 id=371 data-nosnippet>371</a>            }
+<a href=#372 id=372 data-nosnippet>372</a>            ExtendedInstruction::MPad {
+<a href=#373 id=373 data-nosnippet>373</a>                tag, prob, bits, ..
+<a href=#374 id=374 data-nosnippet>374</a>            } =&gt; {
+<a href=#375 id=375 data-nosnippet>375</a>                out.write_str(<span class="string">"MPAD"</span>)<span class="question-mark">?</span>;
+<a href=#376 id=376 data-nosnippet>376</a>                write_tag(out, tag)<span class="question-mark">?</span>;
+<a href=#377 id=377 data-nosnippet>377</a>                <span class="kw">if let </span><span class="prelude-val">Some</span>(p) = prob {
+<a href=#378 id=378 data-nosnippet>378</a>                    <span class="macro">write!</span>(out, <span class="string">"({})"</span>, FloatLit(<span class="kw-2">*</span>p))<span class="question-mark">?</span>;
+<a href=#379 id=379 data-nosnippet>379</a>                }
+<a href=#380 id=380 data-nosnippet>380</a>                <span class="kw">for </span><span class="kw-2">&amp;</span>bit <span class="kw">in </span>bits {
+<a href=#381 id=381 data-nosnippet>381</a>                    <span class="macro">write!</span>(out, <span class="string">" {}"</span>, u8::from(bit))<span class="question-mark">?</span>;
+<a href=#382 id=382 data-nosnippet>382</a>                }
+<a href=#383 id=383 data-nosnippet>383</a>            }
+<a href=#384 id=384 data-nosnippet>384</a>            ExtendedInstruction::Repeat {
+<a href=#385 id=385 data-nosnippet>385</a>                tag, count, body, ..
+<a href=#386 id=386 data-nosnippet>386</a>            } =&gt; {
+<a href=#387 id=387 data-nosnippet>387</a>                write_repeat_block(out, opts, depth, tag, <span class="kw-2">*</span>count, body)<span class="question-mark">?</span>;
+<a href=#388 id=388 data-nosnippet>388</a>            }
+<a href=#389 id=389 data-nosnippet>389</a>        }
+<a href=#390 id=390 data-nosnippet>390</a>        <span class="macro">writeln!</span>(out)
+<a href=#391 id=391 data-nosnippet>391</a>    }
+<a href=#392 id=392 data-nosnippet>392</a>}
+<a href=#393 id=393 data-nosnippet>393</a>
+<a href=#394 id=394 data-nosnippet>394</a><span class="kw">impl </span>StimPrint <span class="kw">for </span>ExtendedProgram {
+<a href=#395 id=395 data-nosnippet>395</a>    <span class="kw">fn </span>print(<span class="kw-2">&amp;</span><span class="self">self</span>, out: <span class="kw-2">&amp;mut </span><span class="kw">dyn </span>fmt::Write, opts: <span class="kw-2">&amp;</span>PrintOptions, depth: usize) -&gt; fmt::Result {
+<a href=#396 id=396 data-nosnippet>396</a>        <span class="kw">for </span>instr <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.instructions {
+<a href=#397 id=397 data-nosnippet>397</a>            instr.print(out, opts, depth)<span class="question-mark">?</span>;
+<a href=#398 id=398 data-nosnippet>398</a>        }
+<a href=#399 id=399 data-nosnippet>399</a>        <span class="prelude-val">Ok</span>(())
+<a href=#400 id=400 data-nosnippet>400</a>    }
+<a href=#401 id=401 data-nosnippet>401</a>}
+<a href=#402 id=402 data-nosnippet>402</a>
+<a href=#403 id=403 data-nosnippet>403</a><span class="kw">impl </span>fmt::Display <span class="kw">for </span>ExtendedProgram {
+<a href=#404 id=404 data-nosnippet>404</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
+<a href=#405 id=405 data-nosnippet>405</a>        <span class="self">self</span>.print(f, <span class="kw-2">&amp;</span>PrintOptions::default(), <span class="number">0</span>)
+<a href=#406 id=406 data-nosnippet>406</a>    }
+<a href=#407 id=407 data-nosnippet>407</a>}
+<a href=#408 id=408 data-nosnippet>408</a>
+<a href=#409 id=409 data-nosnippet>409</a><span class="comment">// ---------------------------------------------------------------------------
+<a href=#410 id=410 data-nosnippet>410</a>// Tests
+<a href=#411 id=411 data-nosnippet>411</a>// ---------------------------------------------------------------------------
+<a href=#412 id=412 data-nosnippet>412</a>
+<a href=#413 id=413 data-nosnippet>413</a></span><span class="attr">#[cfg(test)]
+<a href=#414 id=414 data-nosnippet>414</a></span><span class="kw">mod </span>tests {
+<a href=#415 id=415 data-nosnippet>415</a>    <span class="kw">use </span><span class="kw">crate</span>::print::StimPrint;
+<a href=#416 id=416 data-nosnippet>416</a>    <span class="kw">use crate</span>::{parse, parse_extended};
+<a href=#417 id=417 data-nosnippet>417</a>
+<a href=#418 id=418 data-nosnippet>418</a>    <span class="attr">#[test]
+<a href=#419 id=419 data-nosnippet>419</a>    </span><span class="kw">fn </span>vanilla_printed_form_is_canonical_shape() {
+<a href=#420 id=420 data-nosnippet>420</a>        <span class="kw">let </span>src = <span class="string">"H 0  # trail\nCX  0   1\nDEPOLARIZE1(0.05) 0 1\nREPEAT 2 { X 0 }\n"</span>;
+<a href=#421 id=421 data-nosnippet>421</a>        <span class="kw">let </span>ast = parse(src).unwrap();
+<a href=#422 id=422 data-nosnippet>422</a>        <span class="kw">let </span>expected = <span class="string">"H 0\nCX 0 1\nDEPOLARIZE1(0.05) 0 1\nREPEAT 2 {\n    X 0\n}\n"</span>;
+<a href=#423 id=423 data-nosnippet>423</a>        <span class="macro">assert_eq!</span>(ast.to_stim(), expected);
+<a href=#424 id=424 data-nosnippet>424</a>        <span class="macro">assert_eq!</span>(<span class="macro">format!</span>(<span class="string">"{ast}"</span>), expected);
+<a href=#425 id=425 data-nosnippet>425</a>    }
+<a href=#426 id=426 data-nosnippet>426</a>
+<a href=#427 id=427 data-nosnippet>427</a>    <span class="attr">#[test]
+<a href=#428 id=428 data-nosnippet>428</a>    </span><span class="kw">fn </span>extended_printed_form_lowers_sugar_into_canonical_stim() {
+<a href=#429 id=429 data-nosnippet>429</a>        <span class="kw">let </span>src = <span class="string">"S[T] 0\nI[R_X(theta=0.25*pi)] 1\nI_ERROR[loss](0.01) 2\n"</span>;
+<a href=#430 id=430 data-nosnippet>430</a>        <span class="kw">let </span>ast = parse_extended(src).unwrap();
+<a href=#431 id=431 data-nosnippet>431</a>        <span class="kw">let </span>expected = <span class="string">"S[T] 0\nI[R_X(theta=0.25*pi)] 1\nI_ERROR[loss](0.01) 2\n"</span>;
+<a href=#432 id=432 data-nosnippet>432</a>        <span class="macro">assert_eq!</span>(ast.to_stim(), expected);
+<a href=#433 id=433 data-nosnippet>433</a>    }
+<a href=#434 id=434 data-nosnippet>434</a>
+<a href=#435 id=435 data-nosnippet>435</a>    <span class="attr">#[test]
+<a href=#436 id=436 data-nosnippet>436</a>    </span><span class="kw">fn </span>leakage_prints_canonically() {
+<a href=#437 id=437 data-nosnippet>437</a>        <span class="kw">let </span>src = <span class="string">"I_ERROR[leakage](0.1, 0.2) 0 1\n"</span>;
+<a href=#438 id=438 data-nosnippet>438</a>        <span class="kw">let </span>ast = parse_extended(src).unwrap();
+<a href=#439 id=439 data-nosnippet>439</a>        <span class="macro">assert_eq!</span>(ast.to_stim(), src);
+<a href=#440 id=440 data-nosnippet>440</a>    }
+<a href=#441 id=441 data-nosnippet>441</a>
+<a href=#442 id=442 data-nosnippet>442</a>    <span class="attr">#[test]
+<a href=#443 id=443 data-nosnippet>443</a>    </span><span class="kw">fn </span>rec_and_mpp_targets_round_trip() {
+<a href=#444 id=444 data-nosnippet>444</a>        <span class="comment">// rec[-k] feed-forward control and MPP Pauli products print canonically.
+<a href=#445 id=445 data-nosnippet>445</a>        </span><span class="kw">let </span>ast = parse(<span class="string">"CX rec[-1] 0\nMPP X0*Y1*Z2\n"</span>).unwrap();
+<a href=#446 id=446 data-nosnippet>446</a>        <span class="macro">assert_eq!</span>(ast.to_stim(), <span class="string">"CX rec[-1] 0\nMPP X0*Y1*Z2\n"</span>);
+<a href=#447 id=447 data-nosnippet>447</a>    }
+<a href=#448 id=448 data-nosnippet>448</a>
+<a href=#449 id=449 data-nosnippet>449</a>    <span class="attr">#[test]
+<a href=#450 id=450 data-nosnippet>450</a>    </span><span class="kw">fn </span>rotation_pi_coeff_prints_clean_and_round_trips() {
+<a href=#451 id=451 data-nosnippet>451</a>        <span class="comment">// theta is stored in radians as `c*PI`; printing `c = theta/PI` naively
+<a href=#452 id=452 data-nosnippet>452</a>        // would emit a rounding tail like `0.7599999999999999*pi`. The printer
+<a href=#453 id=453 data-nosnippet>453</a>        // recovers the short coefficient instead — for rotation and U3 tags —
+<a href=#454 id=454 data-nosnippet>454</a>        // and `print → parse → print` stays a fixpoint.
+<a href=#455 id=455 data-nosnippet>455</a>        </span><span class="kw">for </span>(src, expected) <span class="kw">in </span>[
+<a href=#456 id=456 data-nosnippet>456</a>            <span class="comment">// Non-binary-friendly decimals that `theta/PI` mangles.
+<a href=#457 id=457 data-nosnippet>457</a>            </span>(<span class="string">"I[R_Z(theta=0.34*pi)] 0\n"</span>, <span class="string">"I[R_Z(theta=0.34*pi)] 0\n"</span>),
+<a href=#458 id=458 data-nosnippet>458</a>            (<span class="string">"I[R_Y(theta=0.76*pi)] 1\n"</span>, <span class="string">"I[R_Y(theta=0.76*pi)] 1\n"</span>),
+<a href=#459 id=459 data-nosnippet>459</a>            (<span class="string">"I[R_X(theta=-2.78*pi)] 2\n"</span>, <span class="string">"I[R_X(theta=-2.78*pi)] 2\n"</span>),
+<a href=#460 id=460 data-nosnippet>460</a>            (
+<a href=#461 id=461 data-nosnippet>461</a>                <span class="string">"I[U3(theta=0.34*pi, phi=0.91*pi, lambda=0.07*pi)] 0\n"</span>,
+<a href=#462 id=462 data-nosnippet>462</a>                <span class="string">"I[U3(theta=0.34*pi, phi=0.91*pi, lambda=0.07*pi)] 0\n"</span>,
+<a href=#463 id=463 data-nosnippet>463</a>            ),
+<a href=#464 id=464 data-nosnippet>464</a>        ] {
+<a href=#465 id=465 data-nosnippet>465</a>            <span class="kw">let </span>printed = parse_extended(src).unwrap().to_stim();
+<a href=#466 id=466 data-nosnippet>466</a>            <span class="macro">assert_eq!</span>(printed, expected, <span class="string">"first print of {src:?}"</span>);
+<a href=#467 id=467 data-nosnippet>467</a>            <span class="macro">assert!</span>(
+<a href=#468 id=468 data-nosnippet>468</a>                !printed.contains(<span class="string">"999999"</span>) &amp;&amp; !printed.contains(<span class="string">"000000"</span>),
+<a href=#469 id=469 data-nosnippet>469</a>                <span class="string">"coefficient printed with a rounding tail: {printed:?}"
+<a href=#470 id=470 data-nosnippet>470</a>            </span>);
+<a href=#471 id=471 data-nosnippet>471</a>            <span class="comment">// Fixpoint: re-parsing and re-printing reproduces it byte-for-byte.
+<a href=#472 id=472 data-nosnippet>472</a>            </span><span class="kw">let </span>reprinted = parse_extended(<span class="kw-2">&amp;</span>printed).unwrap().to_stim();
+<a href=#473 id=473 data-nosnippet>473</a>            <span class="macro">assert_eq!</span>(reprinted, printed, <span class="string">"printer is not a fixpoint for {src:?}"</span>);
+<a href=#474 id=474 data-nosnippet>474</a>        }
+<a href=#475 id=475 data-nosnippet>475</a>    }
+<a href=#476 id=476 data-nosnippet>476</a>}
 </code></pre></div></section></main></body></html>

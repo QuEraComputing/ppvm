@@ -112,7 +112,7 @@
 <a href=#112 id=112 data-nosnippet>112</a>        <span class="comment">// Build the per-row mask table once for all entries (every tableau in a
 <a href=#113 id=113 data-nosnippet>113</a>        // sum shares the same qubit count). Skip when there are no entries.
 <a href=#114 id=114 data-nosnippet>114</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>((first, <span class="kw">_</span>)) = <span class="self">self</span>.entries.first() {
-<a href=#115 id=115 data-nosnippet>115</a>            <span class="kw">let </span>masks = RowMasks::new(first.is_lost.len());
+<a href=#115 id=115 data-nosnippet>115</a>            <span class="kw">let </span>masks = RowMasks::new(first.qubit_status.len());
 <a href=#116 id=116 data-nosnippet>116</a>            <span class="kw">for </span>(t, <span class="kw">_</span>) <span class="kw">in </span><span class="self">self</span>.entries.iter() {
 <a href=#117 id=117 data-nosnippet>117</a>                <span class="kw">let </span>wfp = word_fingerprint(t);
 <a href=#118 id=118 data-nosnippet>118</a>                <span class="kw">let </span>plh = phase_loss_hash_with(t, <span class="kw-2">&amp;</span>masks);

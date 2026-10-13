@@ -162,4 +162,24 @@
 <a href=#162 id=162 data-nosnippet>162</a>    /// trajectory approximation used (the survival back-action is omitted).
 <a href=#163 id=163 data-nosnippet>163</a>    </span><span class="kw">fn </span>asymmetric_loss_channel(<span class="kw-2">&amp;mut </span><span class="self">self</span>, addr0: usize, p0: T::Coeff, p1: T::Coeff);
 <a href=#164 id=164 data-nosnippet>164</a>}
+<a href=#165 id=165 data-nosnippet>165</a>
+<a href=#166 id=166 data-nosnippet>166</a><span class="doccomment">/// Single-qubit leakage channel — with probability `p0` the qubit is
+<a href=#167 id=167 data-nosnippet>167</a>/// leaked and pinned to `|0⟩`, with probability `p1` leaked and pinned
+<a href=#168 id=168 data-nosnippet>168</a>/// to `|1⟩`. Unlike [`LossChannel`], a leaked qubit remains measurable
+<a href=#169 id=169 data-nosnippet>169</a>/// and returns the pinned computational bit; gates still skip it.
+<a href=#170 id=170 data-nosnippet>170</a></span><span class="kw">pub trait </span>LeakageChannel&lt;T: Config&gt; {
+<a href=#171 id=171 data-nosnippet>171</a>    <span class="doccomment">/// Apply leakage to qubit `addr0`, with `p0` / `p1` the probabilities
+<a href=#172 id=172 data-nosnippet>172</a>    /// of leaking into `|0⟩` / `|1⟩`.
+<a href=#173 id=173 data-nosnippet>173</a>    </span><span class="kw">fn </span>leakage_channel(<span class="kw-2">&amp;mut </span><span class="self">self</span>, addr0: usize, p0: T::Coeff, p1: T::Coeff);
+<a href=#174 id=174 data-nosnippet>174</a>}
+<a href=#175 id=175 data-nosnippet>175</a>
+<a href=#176 id=176 data-nosnippet>176</a><span class="doccomment">/// Reset leakage on a qubit — used to model a leakage-reduction event
+<a href=#177 id=177 data-nosnippet>177</a>/// that returns a previously-leaked qubit to the computational subspace
+<a href=#178 id=178 data-nosnippet>178</a>/// in `|0⟩`.
+<a href=#179 id=179 data-nosnippet>179</a></span><span class="kw">pub trait </span>ResetLeakageChannel&lt;T: Config&gt; {
+<a href=#180 id=180 data-nosnippet>180</a>    <span class="doccomment">/// Clear leakage at `addr0` and reset the qubit to `|0⟩`.
+<a href=#181 id=181 data-nosnippet>181</a>    ///
+<a href=#182 id=182 data-nosnippet>182</a>    /// No-op if the qubit is live. A lost qubit cannot be recovered this way.
+<a href=#183 id=183 data-nosnippet>183</a>    </span><span class="kw">fn </span>reset_leakage_channel(<span class="kw-2">&amp;mut </span><span class="self">self</span>, addr0: usize);
+<a href=#184 id=184 data-nosnippet>184</a>}
 </code></pre></div></section></main></body></html>

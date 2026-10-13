@@ -38,9 +38,9 @@
 <a href=#38 id=38 data-nosnippet>38</a>        <span class="kw">for </span>(coeff, idx) <span class="kw">in </span><span class="self">self</span>.coefficients.clone().into_iter() {
 <a href=#39 id=39 data-nosnippet>39</a>            <span class="macro">writeln!</span>(f, <span class="string">"    Index {}: {}"</span>, idx, coeff)<span class="question-mark">?</span>;
 <a href=#40 id=40 data-nosnippet>40</a>        }
-<a href=#41 id=41 data-nosnippet>41</a>        <span class="macro">writeln!</span>(f, <span class="string">"  Is Lost: ["</span>)<span class="question-mark">?</span>;
-<a href=#42 id=42 data-nosnippet>42</a>        <span class="kw">for </span>(i, <span class="kw-2">&amp;</span>lost) <span class="kw">in </span><span class="self">self</span>.is_lost.iter().enumerate() {
-<a href=#43 id=43 data-nosnippet>43</a>            <span class="macro">writeln!</span>(f, <span class="string">"    Qubit {}: {}"</span>, i, lost)<span class="question-mark">?</span>;
+<a href=#41 id=41 data-nosnippet>41</a>        <span class="macro">writeln!</span>(f, <span class="string">"  Qubit status: ["</span>)<span class="question-mark">?</span>;
+<a href=#42 id=42 data-nosnippet>42</a>        <span class="kw">for </span>(i, <span class="kw-2">&amp;</span>occ) <span class="kw">in </span><span class="self">self</span>.qubit_status.iter().enumerate() {
+<a href=#43 id=43 data-nosnippet>43</a>            <span class="macro">writeln!</span>(f, <span class="string">"    Qubit {}: {:?}"</span>, i, occ)<span class="question-mark">?</span>;
 <a href=#44 id=44 data-nosnippet>44</a>        }
 <a href=#45 id=45 data-nosnippet>45</a>        <span class="macro">writeln!</span>(f, <span class="string">"  ]"</span>)<span class="question-mark">?</span>;
 <a href=#46 id=46 data-nosnippet>46</a>        <span class="prelude-val">Ok</span>(())

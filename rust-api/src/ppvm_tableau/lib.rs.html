@@ -79,26 +79,30 @@
 <a href=#79 id=79 data-nosnippet>79</a></span><span class="kw">pub mod </span>gates;
 <a href=#80 id=80 data-nosnippet>80</a><span class="doccomment">/// Z-basis measurement, including loss-aware variants.
 <a href=#81 id=81 data-nosnippet>81</a></span><span class="kw">pub mod </span>measure;
-<a href=#82 id=82 data-nosnippet>82</a>
-<a href=#83 id=83 data-nosnippet>83</a><span class="kw">pub mod </span>measure_all;
-<a href=#84 id=84 data-nosnippet>84</a>
-<a href=#85 id=85 data-nosnippet>85</a><span class="doccomment">/// Noise channels: depolarizing, Pauli error, loss.
-<a href=#86 id=86 data-nosnippet>86</a></span><span class="kw">pub mod </span>noise;
-<a href=#87 id=87 data-nosnippet>87</a><span class="doccomment">/// [`SparseVector`](sparsevec::SparseVector) trait and implementations.
-<a href=#88 id=88 data-nosnippet>88</a></span><span class="kw">pub mod </span>sparsevec;
-<a href=#89 id=89 data-nosnippet>89</a><span class="doccomment">/// [`TableauIndex`](tableau_index::TableauIndex) — abstraction over
-<a href=#90 id=90 data-nosnippet>90</a>/// the bitstring index type (`usize`, `u128`, `U256`, …).
-<a href=#91 id=91 data-nosnippet>91</a></span><span class="kw">pub mod </span>tableau_index;
-<a href=#92 id=92 data-nosnippet>92</a><span class="doccomment">/// [`TableauLike`](tableau_like::TableauLike) — shared trait for
-<a href=#93 id=93 data-nosnippet>93</a>/// stabilizer-tableau backends.
-<a href=#94 id=94 data-nosnippet>94</a></span><span class="kw">pub mod </span>tableau_like;
-<a href=#95 id=95 data-nosnippet>95</a>
-<a href=#96 id=96 data-nosnippet>96</a><span class="doccomment">/// Convenience re-exports for downstream code.
-<a href=#97 id=97 data-nosnippet>97</a></span><span class="kw">pub mod </span>prelude {
-<a href=#98 id=98 data-nosnippet>98</a>    <span class="kw">pub use </span><span class="kw">crate</span>::data::{GeneralizedTableau, Tableau};
-<a href=#99 id=99 data-nosnippet>99</a>    <span class="kw">pub use </span><span class="kw">crate</span>::sparsevec::SparseVector;
-<a href=#100 id=100 data-nosnippet>100</a>    <span class="kw">pub use </span><span class="kw">crate</span>::tableau_index::TableauIndex;
-<a href=#101 id=101 data-nosnippet>101</a>    <span class="kw">pub use </span><span class="kw">crate</span>::tableau_like::TableauLike;
-<a href=#102 id=102 data-nosnippet>102</a>    <span class="kw">pub use </span>ppvm_pauli_sum::prelude::<span class="kw-2">*</span>;
-<a href=#103 id=103 data-nosnippet>103</a>}
+<a href=#82 id=82 data-nosnippet>82</a><span class="doccomment">/// Per-qubit [`QubitStatus`](qubit_status::QubitStatus) relative to the
+<a href=#83 id=83 data-nosnippet>83</a>/// computational subspace.
+<a href=#84 id=84 data-nosnippet>84</a></span><span class="kw">pub mod </span>qubit_status;
+<a href=#85 id=85 data-nosnippet>85</a>
+<a href=#86 id=86 data-nosnippet>86</a><span class="kw">pub mod </span>measure_all;
+<a href=#87 id=87 data-nosnippet>87</a>
+<a href=#88 id=88 data-nosnippet>88</a><span class="doccomment">/// Noise channels: depolarizing, Pauli error, loss.
+<a href=#89 id=89 data-nosnippet>89</a></span><span class="kw">pub mod </span>noise;
+<a href=#90 id=90 data-nosnippet>90</a><span class="doccomment">/// [`SparseVector`](sparsevec::SparseVector) trait and implementations.
+<a href=#91 id=91 data-nosnippet>91</a></span><span class="kw">pub mod </span>sparsevec;
+<a href=#92 id=92 data-nosnippet>92</a><span class="doccomment">/// [`TableauIndex`](tableau_index::TableauIndex) — abstraction over
+<a href=#93 id=93 data-nosnippet>93</a>/// the bitstring index type (`usize`, `u128`, `U256`, …).
+<a href=#94 id=94 data-nosnippet>94</a></span><span class="kw">pub mod </span>tableau_index;
+<a href=#95 id=95 data-nosnippet>95</a><span class="doccomment">/// [`TableauLike`](tableau_like::TableauLike) — shared trait for
+<a href=#96 id=96 data-nosnippet>96</a>/// stabilizer-tableau backends.
+<a href=#97 id=97 data-nosnippet>97</a></span><span class="kw">pub mod </span>tableau_like;
+<a href=#98 id=98 data-nosnippet>98</a>
+<a href=#99 id=99 data-nosnippet>99</a><span class="doccomment">/// Convenience re-exports for downstream code.
+<a href=#100 id=100 data-nosnippet>100</a></span><span class="kw">pub mod </span>prelude {
+<a href=#101 id=101 data-nosnippet>101</a>    <span class="kw">pub use </span><span class="kw">crate</span>::data::{GeneralizedTableau, Tableau};
+<a href=#102 id=102 data-nosnippet>102</a>    <span class="kw">pub use </span><span class="kw">crate</span>::qubit_status::QubitStatus;
+<a href=#103 id=103 data-nosnippet>103</a>    <span class="kw">pub use </span><span class="kw">crate</span>::sparsevec::SparseVector;
+<a href=#104 id=104 data-nosnippet>104</a>    <span class="kw">pub use </span><span class="kw">crate</span>::tableau_index::TableauIndex;
+<a href=#105 id=105 data-nosnippet>105</a>    <span class="kw">pub use </span><span class="kw">crate</span>::tableau_like::TableauLike;
+<a href=#106 id=106 data-nosnippet>106</a>    <span class="kw">pub use </span>ppvm_pauli_sum::prelude::<span class="kw-2">*</span>;
+<a href=#107 id=107 data-nosnippet>107</a>}
 </code></pre></div></section></main></body></html>

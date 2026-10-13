@@ -23,7 +23,7 @@
 <a href=#23 id=23 data-nosnippet>23</a>        + Copy,
 <a href=#24 id=24 data-nosnippet>24</a>{
 <a href=#25 id=25 data-nosnippet>25</a>    <span class="kw">fn </span>rotate_1(<span class="kw-2">&amp;mut </span><span class="self">self</span>, axis: Pauli, addr0: usize, theta: &lt;T <span class="kw">as </span>Config&gt;::Coeff) {
-<a href=#26 id=26 data-nosnippet>26</a>        <span class="kw">if </span><span class="self">self</span>.is_lost[addr0] {
+<a href=#26 id=26 data-nosnippet>26</a>        <span class="kw">if </span><span class="self">self</span>.is_inactive(addr0) {
 <a href=#27 id=27 data-nosnippet>27</a>            <span class="kw">return</span>;
 <a href=#28 id=28 data-nosnippet>28</a>        }
 <a href=#29 id=29 data-nosnippet>29</a>        <span class="kw">let </span>(sin, cos) = (theta * <span class="number">0.5</span>.into()).sin_cos();

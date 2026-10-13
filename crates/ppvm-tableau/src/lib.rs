@@ -79,6 +79,9 @@ pub mod expectation;
 pub mod gates;
 /// Z-basis measurement, including loss-aware variants.
 pub mod measure;
+/// Per-qubit [`QubitStatus`](qubit_status::QubitStatus) relative to the
+/// computational subspace.
+pub mod qubit_status;
 
 pub mod measure_all;
 
@@ -96,6 +99,7 @@ pub mod tableau_like;
 /// Convenience re-exports for downstream code.
 pub mod prelude {
     pub use crate::data::{GeneralizedTableau, Tableau};
+    pub use crate::qubit_status::QubitStatus;
     pub use crate::sparsevec::SparseVector;
     pub use crate::tableau_index::TableauIndex;
     pub use crate::tableau_like::TableauLike;

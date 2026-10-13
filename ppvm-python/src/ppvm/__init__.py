@@ -5,6 +5,9 @@ from ._core import StimProgram as StimProgram
 from .generalized_tableau import GeneralizedTableau as GeneralizedTableau
 from .generalized_tableau import MeasurementResult as MeasurementResult
 from .generalized_tableau import sample_stim as sample_stim
+from .lindblad import Lindbladian as Lindbladian
+from .lindblad import sigma_minus as sigma_minus
+from .lindblad import sigma_plus as sigma_plus
 from .paulisum import LossyPauliSum as LossyPauliSum
 from .paulisum import PauliSum as PauliSum
 from .squin_interpreter.device import (
@@ -13,3 +16,7 @@ from .squin_interpreter.device import (
 from .squin_interpreter.device import (
     GeneralizedTableauSimulatorTask as GeneralizedTableauSimulatorTask,
 )
+from .symmetry import TranslationGroup as TranslationGroup
+from .symmetry import canonicalize_basis_arr as canonicalize_basis_arr
+from .symmetry import canonicalize_basis_arr_complex as canonicalize_basis_arr_complex
+from .symmetry import check_momentum_sector_arr as check_momentum_sector_arr

@@ -7,7 +7,8 @@
 //! single- and two-qubit Pauli noise channels (Depolarizing, PauliError,
 //! Depolarizing2, TwoQubitPauliError). New tableau backends only need to
 //! provide [`TableauLike::rng_mut`](crate::tableau_like::TableauLike::rng_mut) and (optionally) override
-//! [`TableauLike::is_qubit_lost`](crate::tableau_like::TableauLike::is_qubit_lost).
+//! [`TableauLike::is_qubit_lost`](crate::tableau_like::TableauLike::is_qubit_lost)
+//! (which reports lost *or* leaked qubits, both skipped by the noise channels).
 
 use num::Zero;
 use rand::{Rng, RngExt};
@@ -48,7 +49,8 @@ pub trait TableauLike: Clifford {
     /// Mutable access to the backend's RNG.
     fn rng_mut(&mut self) -> &mut Self::Rng;
 
-    /// Whether the qubit at `addr` is lost. Default: never lost.
+    /// Whether the qubit at `addr` is inactive (lost or leaked), so the
+    /// Pauli noise channels skip it. Default: never inactive.
     #[inline]
     fn is_qubit_lost(&self, _addr: usize) -> bool {
         false

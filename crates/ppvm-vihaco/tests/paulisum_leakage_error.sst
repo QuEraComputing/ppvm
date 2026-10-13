@@ -1,0 +1,13 @@
+device circuit.n_qubits 1;
+device circuit.backend paulisum;
+device circuit.observable Z;
+
+// Leakage is GeneralizedTableau-only. PauliSum has no leakage_channel,
+// so this program must fail at execute with a backend-rejection error.
+fn @main() {
+    cpu::cpu.const u64, 0
+    cpu::cpu.const f64, 0.0
+    cpu::cpu.const f64, 1.0
+    circuit::circuit.leakage
+    cpu::cpu.ret 0
+}

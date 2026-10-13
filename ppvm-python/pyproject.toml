@@ -58,3 +58,10 @@ dev = [
     "pytest>=9.0.2",
     "pytest-benchmark>=5.2.3",
 ]
+# Optional: only the `demo/` scripts use these (`expm_multiply` for the
+# reference matrix exponential, plus plotting). Runtime ppvm and the test
+# suite depend on neither.
+demo = [
+    "matplotlib>=3.8",
+    "scipy>=1.13",
+]

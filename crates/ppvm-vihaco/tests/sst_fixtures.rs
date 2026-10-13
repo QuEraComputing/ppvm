@@ -83,6 +83,29 @@ fn dumped_rotxy_runs_and_flips_qubit() {
 }
 
 #[test]
+fn tableau_leakage_pins_to_one_and_skips_x() {
+    // `tableau_leakage.sst` leaks q0 with (p0, p1) = (0, 1), pinning |1⟩,
+    // then applies X. A leaked qubit is frozen, so measure still returns 1.
+    let machine = ppvm_vihaco::run_file("tests/tableau_leakage.sst")
+        .unwrap_or_else(|e| panic!("run tableau_leakage.sst: {e:?}"));
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1, "expected exactly one measurement");
+    assert_eq!(
+        record[0].as_slice(),
+        &[MeasurementOutcome::One],
+        "leaked q0 must measure the pinned 1, not LOST, and X must be a no-op"
+    );
+}
+
+#[test]
+fn dumped_tableau_leakage_pins_to_one() {
+    let machine = dump_load_run("tests/tableau_leakage.sst", "ppvm_dump_tableau_leakage.ssb");
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1);
+    assert_eq!(record[0].as_slice(), &[MeasurementOutcome::One]);
+}
+
+#[test]
 fn run_file_via_library_helper() {
     let machine =
         ppvm_vihaco::run_file("tests/bell.sst").unwrap_or_else(|e| panic!("run bell.sst: {e:?}"));
@@ -339,6 +362,22 @@ fn paulisum_measure_returns_unsupported_error() {
     machine
         .load_file("tests/paulisum_measure_error.sst")
         .unwrap_or_else(|e| panic!("load paulisum_measure_error.sst: {e:?}"));
+    let err = machine.run().unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("not supported on the PauliSum backend"),
+        "expected PauliSum-rejection error, got: {msg}"
+    );
+}
+
+#[test]
+fn paulisum_leakage_returns_unsupported_error() {
+    // Leakage is tableau-only. PauliSum must reject it the same way it
+    // rejects Measure — not with a mismatched-argument fallback.
+    let mut machine = PPVM::default();
+    machine
+        .load_file("tests/paulisum_leakage_error.sst")
+        .unwrap_or_else(|e| panic!("load paulisum_leakage_error.sst: {e:?}"));
     let err = machine.run().unwrap_err();
     let msg = err.to_string();
     assert!(

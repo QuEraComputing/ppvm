@@ -180,8 +180,9 @@ ppvm-tableau = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
 ppvm-stim    = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
 ppvm-sym     = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}</code></pre>
         <p class="install-pane-note">
-          Requires Rust edition 2024. On x86, set
-          <code>RUSTFLAGS="-C target-feature=+aes,+sse2"</code> — gxhash needs AES.
+          Requires Rust edition 2024. Set
+          <code>RUSTFLAGS="-C target-feature=+aes"</code> to use the faster
+          gxhash hasher; without AES, ppvm falls back to fxhash.
         </p>
         <a class="install-pane-link" href={`${base}/quickstart/rust`}>Continue to the Rust Quick Start →</a>
       </section>

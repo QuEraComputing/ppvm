@@ -76,6 +76,22 @@ fn parse_loss_tag_with_args() {
 }
 
 #[test]
+fn parse_leakage_tag_with_args() {
+    let p = parse("I_ERROR[leakage](0.1, 0.2) 0").unwrap();
+    match &p.instructions[0] {
+        Instruction::Noise(NoiseOp {
+            name, tag, args, ..
+        }) => {
+            assert_eq!(*name, NoiseName::IError);
+            assert_eq!(tag, "leakage");
+            approx_eq(args[0], 0.1);
+            approx_eq(args[1], 0.2);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn parse_correlated_loss_three_args() {
     let p = parse("I_ERROR[correlated_loss](0.1, 0.2, 0.3) 0 1").unwrap();
     match &p.instructions[0] {

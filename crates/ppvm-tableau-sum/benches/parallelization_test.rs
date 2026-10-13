@@ -89,7 +89,7 @@ fn branch_entry(
     addr0: usize,
 ) -> SmallVec<[(Tableau, f64, u64, u64); 3]> {
     let mut out: SmallVec<[(Tableau, f64, u64, u64); 3]> = SmallVec::new();
-    if tab.is_lost[addr0] {
+    if tab.is_lost(addr0) {
         return out;
     }
     let word_fp = word_fingerprint(tab);

@@ -28,6 +28,11 @@ impl<const N: usize, C: Coefficient + Sync + Send, St: Strategy, W: PauliWordTra
 }
 
 /// `DashMap`-backed concurrent [`Config`] with `[u8; N]` storage and `gxhash`.
+#[cfg(all(
+    feature = "gxhash",
+    target_feature = "aes",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ByteGxHash<
     const N: usize,
@@ -36,6 +41,11 @@ pub struct ByteGxHash<
     W: PauliWordTrait + Sync + Send = PauliWord<[u8; N], gxhash::GxBuildHasher>,
 >(PhantomData<(C, St, W)>);
 
+#[cfg(all(
+    feature = "gxhash",
+    target_feature = "aes",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 impl<const N: usize, C: Coefficient + Sync + Send, St: Strategy, W: PauliWordTrait + Sync + Send>
     Config for ByteGxHash<N, C, St, W>
 {
@@ -50,4 +60,9 @@ impl<const N: usize, C: Coefficient + Sync + Send, St: Strategy, W: PauliWordTra
 /// [`ByteFxHash`] specialised to `f64` coefficients.
 pub type ByteFxHashF64<const N: usize, St = NoStrategy> = ByteFxHash<N, f64, St>;
 /// [`ByteGxHash`] specialised to `f64` coefficients.
+#[cfg(all(
+    feature = "gxhash",
+    target_feature = "aes",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 pub type ByteGxHashF64<const N: usize, St = NoStrategy> = ByteGxHash<N, f64, St>;

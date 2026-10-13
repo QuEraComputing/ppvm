@@ -162,6 +162,7 @@ enum BytecodeCircuit {
     PauliError,
     Depolarize2,
     Depolarize,
+    Leakage,
 }
 
 #[derive(Debug, Clone, vihaco::Instruction)]
@@ -257,6 +258,7 @@ fn encode_instruction(inst: &PPVMInstruction) -> eyre::Result<BytecodeInstructio
             vihaco_circuit_isa::CircuitInstruction::PauliError => BytecodeCircuit::PauliError,
             vihaco_circuit_isa::CircuitInstruction::Depolarize2 => BytecodeCircuit::Depolarize2,
             vihaco_circuit_isa::CircuitInstruction::Depolarize => BytecodeCircuit::Depolarize,
+            vihaco_circuit_isa::CircuitInstruction::Leakage => BytecodeCircuit::Leakage,
         }),
     };
     Ok(encoded)
@@ -344,6 +346,7 @@ fn decode_instruction(inst: BytecodeInstruction) -> PPVMInstruction {
             BytecodeCircuit::PauliError => vihaco_circuit_isa::CircuitInstruction::PauliError,
             BytecodeCircuit::Depolarize2 => vihaco_circuit_isa::CircuitInstruction::Depolarize2,
             BytecodeCircuit::Depolarize => vihaco_circuit_isa::CircuitInstruction::Depolarize,
+            BytecodeCircuit::Leakage => vihaco_circuit_isa::CircuitInstruction::Leakage,
         }),
     }
 }

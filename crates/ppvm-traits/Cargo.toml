@@ -10,16 +10,20 @@ fxhash = "0.2.1"
 num = "0.4.3"
 indexmap = { version = "2.11.4", optional = true }
 
-# Native-only optional deps: gxhash needs AES intrinsics, dashmap/rayon need OS
-# threads, and ahash pulls getrandom — none build on wasm32. They are pruned on
-# wasm, where the matching features go inert (see the `not(target_arch =
-# "wasm32")` code gates), so a wasm build silently drops these acceleration
-# paths. On 64-bit native nothing changes.
+# Native-only optional deps: dashmap/rayon need OS threads and ahash pulls
+# getrandom — none build on wasm32. They are pruned on wasm, where the matching
+# features go inert (see the `not(target_arch = "wasm32")` code gates), so a
+# wasm build silently drops these acceleration paths.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ahash = { version = "0.8.12", optional = true }
 dashmap = { version = "6.1.0", features = ["rayon"], optional = true }
-gxhash = { version = "3.5.0", features = ["deterministic"], optional = true }
 rayon = { version = "1.11.0", optional = true }
+
+# gxhash only compiles with hardware AES enabled (e.g. `-C target-feature=+aes`).
+# Without it the `gxhash` feature goes inert and fxhash is used instead; the
+# same condition gates the code. Keep it in sync across the crates.
+[target.'cfg(all(target_feature = "aes", any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
+gxhash = { version = "3.5.0", features = ["deterministic"], optional = true }
 
 [dev-dependencies]
 insta = { version = "1.43.2", features = ["yaml"] }

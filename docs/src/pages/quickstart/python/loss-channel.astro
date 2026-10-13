@@ -51,15 +51,16 @@ const adjointInline = String.raw`$\langle A \rangle = \operatorname{tr}(A\, \mat
       <h2>Updated Pauli basis</h2>
       <p>
         We can include loss in qubit simulation by adding a third state,
-        which we will call the leakage state $|L\rangle$. In order to
+        which we will call the loss state $|L\rangle$ (not tableau leakage,
+        which pins a qubit to $|0\rangle$/$|1\rangle$). In order to
         include this in Pauli Propagation, we extend the set of Pauli basis
         operators by an additional operator $L = |L\rangle\langle L|$,
-        which is the projector on the leakage state.
+        which is the projector on the loss state.
       </p>
       <p>The complete set of Pauli operators we use to describe any Pauli String is then</p>
       <p>{basisSet}</p>
       <p>
-        Neglecting coherences between the qubit subspace and the leakage
+        Neglecting coherences between the qubit subspace and the loss
         state, this basis fully describes the three-level system.
       </p>
       <p>For clarity, the corresponding matrix definitions are</p>

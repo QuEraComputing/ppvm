@@ -21,9 +21,11 @@ pub mod dashmap;
 pub mod indexmap;
 
 /// Pre-built configs using `gxhash` — fast on platforms with AES
-/// hardware acceleration. Requires the `gxhash` feature.
+/// hardware acceleration. Requires the `gxhash` feature and AES enabled at
+/// compile time (e.g. `-C target-feature=+aes`).
 #[cfg(all(
     feature = "gxhash",
-    any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")
+    target_feature = "aes",
+    any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 pub mod gxhash;

@@ -193,6 +193,13 @@ impl PPVM {
                 let q = self.pop_u64()?;
                 Ok(CircuitMessage::QubitAndFloat(q, theta))
             }
+            Leakage => {
+                // Push order: qubit, p0, p1. Pop reverse.
+                let p1 = self.pop_f64()?;
+                let p0 = self.pop_f64()?;
+                let q = self.pop_u64()?;
+                Ok(CircuitMessage::QubitAndTwoFloats(q, p0, p1))
+            }
             RXX | RYY | RZZ | Depolarize2 => {
                 let theta = self.pop_f64()?;
                 let q1 = self.pop_u64()?;
@@ -938,6 +945,15 @@ mod tests {
         assert_eq!(
             machine.resolve_circuit(&CircuitInstruction::CorrelatedLoss)?,
             CircuitMessage::TwoQubitAndFloatArr3(2, 5, [0.1, 0.2, 0.3])
+        );
+
+        // Leakage: push q=2, p0, p1 — two floats, unlike Loss.
+        machine.cpu.stack_push(Value::U64(2));
+        machine.cpu.stack_push(Value::F64(0.1));
+        machine.cpu.stack_push(Value::F64(0.2));
+        assert_eq!(
+            machine.resolve_circuit(&CircuitInstruction::Leakage)?,
+            CircuitMessage::QubitAndTwoFloats(2, 0.1, 0.2)
         );
         Ok(())
     }

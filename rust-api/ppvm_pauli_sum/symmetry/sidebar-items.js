@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["GroupError","SectorCheckError"],"fn":["canonicalize_pauli_sum","canonicalize_pauli_sum_complex","check_momentum_sector","momentum_merge_pauli_sum_pair","symmetry_merge_pauli_sum"],"struct":["CharacterTable","TranslationGroup"]};

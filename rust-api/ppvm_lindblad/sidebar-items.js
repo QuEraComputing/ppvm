@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CHUNK_BITS","MAX_QUBITS","MAX_SUPPORTED_QUBITS","WIDTHS","W_CHUNKS"],"fn":["build_basis_index","chunks_for","codes_from_word","max_qubits","parse_pauli_string","word_from_codes"],"mod":["config","error","sector"],"struct":["JumpInput","LindbladSpec","PcStepTimings"],"type":["Word"]};

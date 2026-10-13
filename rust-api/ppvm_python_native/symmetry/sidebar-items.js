@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["canonicalize_basis_arr","canonicalize_basis_arr_complex","check_momentum_sector_arr"],"struct":["TranslationGroup"]};

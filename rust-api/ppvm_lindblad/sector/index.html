@@ -1,0 +1,37 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Momentum sectors of a translation group, and the phase-aware canonicalization that drives orbit-representative evolution."><title>ppvm_lindblad::sector - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-1ed95124.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="ppvm_lindblad" data-themes="" data-resource-suffix="" data-rustdoc-version="1.98.0 (88d9e12ae 2026-08-18)" data-channel="1.98.0" data-search-js="search-9944d736.js" data-stringdex-js="stringdex-2da4960a.js" data-settings-js="settings-170eb4bf.js" ><script src="../../static.files/storage-41dd4d93.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../static.files/main-417ebf0a.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-f7c3ffd8.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module sector</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../ppvm_lindblad/index.html">ppvm_<wbr>lindblad</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module sector</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#limitations" title="Limitations">Limitations</a></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"><h2 class="in-crate"><a href="../index.html">In crate ppvm_<wbr>lindblad</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">ppvm_lindblad</a></div><h1>Module <span>sector</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/ppvm_lindblad/sector.rs.html#4-129">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Momentum sectors of a translation group, and the phase-aware
+canonicalization that drives orbit-representative evolution.</p>
+<p>On the orbit-rep path the state lives entirely in <strong>orbit-rep form</strong>
+throughout: the basis contains only canonical translation-orbit
+representatives and the coefficients are complex (one per rep). The
+dynamics <code>L*</code> is computed with <strong>phase-aware action</strong> — for each
+output Pauli <code>q</code>, we canonicalize <code>q</code> to its orbit rep <code>r_q</code> with
+shift counter <code>cnt_q</code>, and accumulate
+<code>χ_k(g_{cnt_q}) · v · c_r · |orbit_r| / |orbit_{r_q}|</code> (where <code>v</code> is
+the matrix element of <code>L*</code> between input rep <code>r</code> and output <code>q</code>).
+<a href="struct.Sector.html#method.canonicalize_phase" title="method ppvm_lindblad::sector::Sector::canonicalize_phase"><code>Sector::canonicalize_phase</code></a> is that step.</p>
+<p>Coefficients are in the <strong>averaged</strong> convention: <code>c_r</code> is the plain
+coefficient of the rep word, as produced by
+<code>canonicalize_pauli_sum_complex</code>. The character-weighted action is
+naturally the generator in the <em>summing</em> convention
+<code>ĉ_r = |orbit_r| · c_r</code>, which is where the orbit-size ratio comes
+from; it is 1 whenever both orbits are free.</p>
+<p>The orbit-rep basis is ~<code>|G|</code>× smaller than the full-basis
+representation, throughout the entire evolution.</p>
+<h3 id="limitations"><a class="doc-anchor" href="#limitations">§</a>Limitations</h3>
+<ul>
+<li>Callers are responsible for ensuring the input basis is in
+orbit-rep form (i.e. each entry is the canonical representative of
+its translation orbit). Use <a href="fn.canonicalize_basis_to_rep.html" title="fn ppvm_lindblad::sector::canonicalize_basis_to_rep"><code>canonicalize_basis_to_rep</code></a> if
+needed.</li>
+<li>A <a href="struct.Sector.html" title="struct ppvm_lindblad::sector::Sector"><code>Sector</code></a> is fixed for the duration of one
+<a href="../struct.LindbladSpec.html#method.pc_step_orbit_rep" title="method ppvm_lindblad::LindbladSpec::pc_step_orbit_rep"><code>LindbladSpec::pc_step_orbit_rep</code></a>
+call. To compute a full site-resolved profile, call it once per
+momentum mode and inverse-Fourier the results.</li>
+</ul>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.Sector.html" title="struct ppvm_lindblad::sector::Sector">Sector</a></dt><dd>A momentum sector of a translation group: the group <code>G</code> together with
+one integer mode index per generator. The wavenumber along generator
+<code>g</code> is <code>2π · k_modes[g] / group.generator_order(g)</code>; <code>k_modes = [0, …]</code>
+is the trivial sector.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.canonicalize_basis_to_rep.html" title="fn ppvm_lindblad::sector::canonicalize_basis_to_rep">canonicalize_<wbr>basis_<wbr>to_<wbr>rep</a></dt><dd>Replace each entry of <code>basis</code> with its canonical orbit
+representative under <code>group</code>. Pure rewrite; coefficients are
+untouched. Useful to enforce the orbit-rep invariant before calling
+<a href="../struct.LindbladSpec.html#method.pc_step_orbit_rep" title="method ppvm_lindblad::LindbladSpec::pc_step_orbit_rep"><code>LindbladSpec::pc_step_orbit_rep</code></a>.</dd></dl></section></div></main></body></html>

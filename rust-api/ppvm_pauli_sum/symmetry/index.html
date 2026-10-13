@@ -1,0 +1,70 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Lattice translation symmetry groups for operator-space Pauli evolution."><title>ppvm_pauli_sum::symmetry - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-1ed95124.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="ppvm_pauli_sum" data-themes="" data-resource-suffix="" data-rustdoc-version="1.98.0 (88d9e12ae 2026-08-18)" data-channel="1.98.0" data-search-js="search-9944d736.js" data-stringdex-js="stringdex-2da4960a.js" data-settings-js="settings-170eb4bf.js" ><script src="../../static.files/storage-41dd4d93.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../static.files/main-417ebf0a.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-f7c3ffd8.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module symmetry</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../ppvm_pauli_sum/index.html">ppvm_<wbr>pauli_<wbr>sum</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module symmetry</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#data-model" title="Data model">Data model</a></li><li><a href="#canonicalization" title="Canonicalization">Canonicalization</a></li><li><a href="#merging" title="Merging">Merging</a></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"><h2 class="in-crate"><a href="../index.html">In crate ppvm_<wbr>pauli_<wbr>sum</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">ppvm_pauli_sum</a></div><h1>Module <span>symmetry</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/ppvm_pauli_sum/symmetry/mod.rs.html#4-83">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Lattice translation symmetry groups for operator-space Pauli evolution.</p>
+<p>A <a href="struct.TranslationGroup.html" title="struct ppvm_pauli_sum::symmetry::TranslationGroup"><code>TranslationGroup</code></a> represents a finite abelian group <code>G</code> acting on
+qubit positions by permutations. Given such a group, every Pauli word
+belongs to a translation orbit, and operator dynamics that commute
+with <code>G</code> can be tracked using <strong>one canonical representative per
+orbit</strong> instead of all <code>|G|</code> orbit members — reducing per-step memory
+and compute by a factor up to <code>|G|</code>.</p>
+<p>Following Teng, Chang, Rudolph, and Holmes (arXiv:2512.12094), this
+module implements <strong>plain (real-coefficient) merging</strong> of Pauli sums
+into orbit-representative form — see <a href="fn.canonicalize_pauli_sum.html" title="fn ppvm_pauli_sum::symmetry::canonicalize_pauli_sum"><code>canonicalize_pauli_sum</code></a> and
+<a href="fn.symmetry_merge_pauli_sum.html" title="fn ppvm_pauli_sum::symmetry::symmetry_merge_pauli_sum"><code>symmetry_merge_pauli_sum</code></a>. This handles observables in the trivial
+(<code>k=0</code>) symmetry sector, e.g. sums of single-Z operators over the
+lattice.</p>
+<p><strong>Non-trivial momentum sectors (<code>k ≠ 0</code>)</strong> fold with the character
+phase <code>χ_k(g)</code> of each translation. Two conventions share one core:
+<a href="fn.canonicalize_pauli_sum_complex.html" title="fn ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex"><code>canonicalize_pauli_sum_complex</code></a> <em>averages</em> over each orbit’s
+distinct members (<code>1/|orbit|</code>), while
+<a href="fn.momentum_merge_pauli_sum_pair.html" title="fn ppvm_pauli_sum::symmetry::momentum_merge_pauli_sum_pair"><code>momentum_merge_pauli_sum_pair</code></a> <em>sums</em> — the convention that is
+idempotent on every orbit and reduces exactly to
+<a href="fn.symmetry_merge_pauli_sum.html" title="fn ppvm_pauli_sum::symmetry::symmetry_merge_pauli_sum"><code>symmetry_merge_pauli_sum</code></a> at <code>k = 0</code>. Note <code>|orbit| = |G|</code> only for
+free orbits, so the two are <strong>not</strong> related by a global <code>|G|</code> factor.
+On the Python side, an operator in sector <code>k</code> is carried as a <em>real
+pair</em> (real + imaginary components, two real <code>PauliSum</code>s) and merged
+via <code>PauliSum.momentum_merge</code> — letting gate-based Trotter evolution
+stay symmetry-compressed in any momentum sector with real
+coefficients throughout.</p>
+<h3 id="data-model"><a class="doc-anchor" href="#data-model">§</a>Data model</h3>
+<p>A <code>TranslationGroup</code> is specified by a list of generator permutations
+and their exact cyclic orders. <a href="struct.TranslationGroup.html#method.order" title="method ppvm_pauli_sum::symmetry::TranslationGroup::order"><code>TranslationGroup::order</code></a> is the
+abstract product of those orders. The combined permutation action need
+not be faithful: different mixed-radix counters can induce the same
+permutation, so the action may have a kernel and
+<a href="struct.TranslationGroup.html#method.orbit" title="method ppvm_pauli_sum::symmetry::TranslationGroup::orbit"><code>TranslationGroup::orbit</code></a> may repeat words. For instance, a 2D
+<code>L × L</code> torus has two generators (translation in x and y) each of
+order <code>L</code>.</p>
+<h3 id="canonicalization"><a class="doc-anchor" href="#canonicalization">§</a>Canonicalization</h3>
+<p><a href="struct.TranslationGroup.html#method.canonicalize" title="method ppvm_pauli_sum::symmetry::TranslationGroup::canonicalize"><code>TranslationGroup::canonicalize</code></a> returns the <strong>lex-minimum</strong> Pauli
+word reachable from the input via group action. The ordering is the
+standard <code>Ord</code> impl on <code>PauliWord</code> (compare <code>xbits</code>, then <code>zbits</code>).
+All orbit members canonicalize to the same representative; orbits are
+disjoint by construction, so the rep uniquely identifies the orbit.</p>
+<h3 id="merging"><a class="doc-anchor" href="#merging">§</a>Merging</h3>
+<p><a href="fn.canonicalize_pauli_sum.html" title="fn ppvm_pauli_sum::symmetry::canonicalize_pauli_sum"><code>canonicalize_pauli_sum</code></a> takes parallel <code>Vec&lt;Word&gt;</code> / <code>Vec&lt;f64&gt;</code>
+buffers (the representation used by ppvm-lindblad’s adaptive
+evolution) and replaces each Pauli by its canonical rep, summing
+coefficients for collisions. The output is an orbit-rep basis with
+coefficients equal to the sum of the input coefficients over each
+orbit’s members. For dynamics that commute with <code>G</code> and initial
+states that are also <code>G</code>-invariant, this preserves the expectation
+value of any <code>G</code>-invariant observable (Theorem 1 of arXiv:2512.12094).
+This real-coefficient merge sums collisions. By contrast, complex
+projection into the trivial (<code>k=0</code>) momentum sector averages over the
+distinct members of each orbit. Non-trivial sectors incompatible with
+an orbit stabilizer project that orbit to zero.</p>
+<p>See the dedicated tests for correctness against full-basis evolution
+on small systems with no truncation.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.CharacterTable.html" title="struct ppvm_pauli_sum::symmetry::CharacterTable">Character<wbr>Table</a></dt><dd>The characters <code>χ_k(g)</code> of one momentum sector for every element of a
+<a href="struct.TranslationGroup.html" title="struct ppvm_pauli_sum::symmetry::TranslationGroup"><code>TranslationGroup</code></a>, indexed by group-element index. Built by
+<a href="struct.TranslationGroup.html#method.character_table" title="method ppvm_pauli_sum::symmetry::TranslationGroup::character_table"><code>TranslationGroup::character_table</code></a>.</dd><dt><a class="struct" href="struct.TranslationGroup.html" title="struct ppvm_pauli_sum::symmetry::TranslationGroup">Translation<wbr>Group</a></dt><dd>A finite abelian symmetry group acting on qubit positions by
+permutations.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.GroupError.html" title="enum ppvm_pauli_sum::symmetry::GroupError">Group<wbr>Error</a></dt><dd>A precondition violation in <a href="struct.TranslationGroup.html#method.try_from_generators" title="associated function ppvm_pauli_sum::symmetry::TranslationGroup::try_from_generators"><code>TranslationGroup::try_from_generators</code></a>.</dd><dt><a class="enum" href="enum.SectorCheckError.html" title="enum ppvm_pauli_sum::symmetry::SectorCheckError">Sector<wbr>Check<wbr>Error</a></dt><dd>Detail report for a failed <a href="fn.check_momentum_sector.html" title="fn ppvm_pauli_sum::symmetry::check_momentum_sector"><code>check_momentum_sector</code></a>.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.canonicalize_pauli_sum.html" title="fn ppvm_pauli_sum::symmetry::canonicalize_pauli_sum">canonicalize_<wbr>pauli_<wbr>sum</a></dt><dd>Replace <code>(basis, coeffs)</code> in-place with the orbit-representative
+form: each Pauli word becomes its canonical rep, and coefficients
+of words that collapse to the same rep are summed.</dd><dt><a class="fn" href="fn.canonicalize_pauli_sum_complex.html" title="fn ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex">canonicalize_<wbr>pauli_<wbr>sum_<wbr>complex</a></dt><dd>Replace <code>(basis, complex_coeffs)</code> in-place with the orbit-rep form
+<strong>projected onto momentum sector <code>k_modes</code></strong>.</dd><dt><a class="fn" href="fn.check_momentum_sector.html" title="fn ppvm_pauli_sum::symmetry::check_momentum_sector">check_<wbr>momentum_<wbr>sector</a></dt><dd>Verify that a <code>(basis, complex_coeffs)</code> Pauli sum lies entirely in
+the momentum sector <code>k_modes</code> under <code>group</code>.</dd><dt><a class="fn" href="fn.momentum_merge_pauli_sum_pair.html" title="fn ppvm_pauli_sum::symmetry::momentum_merge_pauli_sum_pair">momentum_<wbr>merge_<wbr>pauli_<wbr>sum_<wbr>pair</a></dt><dd>Momentum-sector merge of a complex operator carried as a <strong>real
+pair</strong>: <code>re</code> and <code>im</code> are the real and imaginary parts of
+<code>O = re + i·im</code>. Both are overwritten in place with the
+orbit-representative form of <code>O</code> projected onto momentum sector
+<code>k_modes</code>.</dd><dt><a class="fn" href="fn.symmetry_merge_pauli_sum.html" title="fn ppvm_pauli_sum::symmetry::symmetry_merge_pauli_sum">symmetry_<wbr>merge_<wbr>pauli_<wbr>sum</a></dt><dd>Symmetry-merge a <a href="../sum/struct.PauliSum.html" title="struct ppvm_pauli_sum::sum::PauliSum"><code>PauliSum</code></a> in place: each Pauli word becomes its
+canonical orbit representative, and entries collapsing to the same
+rep accumulate coefficients.</dd></dl></section></div></main></body></html>

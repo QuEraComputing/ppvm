@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["canonicalize_basis_to_rep"],"struct":["Sector"]};

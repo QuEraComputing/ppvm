@@ -1,0 +1,298 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/ppvm-lindblad/src/spec.rs`."><title>spec.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-1ed95124.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="ppvm_lindblad" data-themes="" data-resource-suffix="" data-rustdoc-version="1.98.0 (88d9e12ae 2026-08-18)" data-channel="1.98.0" data-search-js="search-9944d736.js" data-stringdex-js="stringdex-2da4960a.js" data-settings-js="settings-170eb4bf.js" ><script src="../../static.files/storage-41dd4d93.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-417ebf0a.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-f7c3ffd8.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">ppvm_lindblad/</div>spec.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="comment">// SPDX-FileCopyrightText: 2026 The PPVM Authors
+<a href=#2 id=2 data-nosnippet>2</a>// SPDX-License-Identifier: Apache-2.0
+<a href=#3 id=3 data-nosnippet>3</a>
+<a href=#4 id=4 data-nosnippet>4</a></span><span class="doccomment">//! Precompiled Lindbladian: construction and the single-Pauli `L*` kernel.
+<a href=#5 id=5 data-nosnippet>5</a>
+<a href=#6 id=6 data-nosnippet>6</a></span><span class="kw">use </span><span class="kw">crate</span>::Error;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><span class="kw">crate</span>::algebra::{
+<a href=#8 id=8 data-nosnippet>8</a>    PauliTerm, anti_commutes, comm_product, pauli_mul, phase_factor, precompute_adag_b,
+<a href=#9 id=9 data-nosnippet>9</a>};
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><span class="kw">crate</span>::kossakowski;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><span class="kw">crate</span>::word::{W_CHUNKS, Word, check_width, parse_pauli_string, word_support};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>fxhash::FxHashMap;
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>num::Complex;
+<a href=#14 id=14 data-nosnippet>14</a>
+<a href=#15 id=15 data-nosnippet>15</a><span class="doccomment">/// Parsed Hamiltonian term.
+<a href=#16 id=16 data-nosnippet>16</a></span><span class="attr">#[derive(Clone)]
+<a href=#17 id=17 data-nosnippet>17</a></span><span class="kw">struct </span>HTerm&lt;<span class="kw">const </span>C: usize = W_CHUNKS&gt; {
+<a href=#18 id=18 data-nosnippet>18</a>    word: Word&lt;C&gt;,
+<a href=#19 id=19 data-nosnippet>19</a>    coeff: f64,
+<a href=#20 id=20 data-nosnippet>20</a>}
+<a href=#21 id=21 data-nosnippet>21</a>
+<a href=#22 id=22 data-nosnippet>22</a><span class="doccomment">/// One entry of the dissipator. `HermitianPauli` and `General` are the
+<a href=#23 id=23 data-nosnippet>23</a>/// jump-operator form (`K` diagonal); `Kossakowski` is one compiled pair of
+<a href=#24 id=24 data-nosnippet>24</a>/// the general form. See [`crate::kossakowski`].
+<a href=#25 id=25 data-nosnippet>25</a></span><span class="kw">enum </span>JumpKind&lt;<span class="kw">const </span>C: usize&gt; {
+<a href=#26 id=26 data-nosnippet>26</a>    HermitianPauli {
+<a href=#27 id=27 data-nosnippet>27</a>        word: Word&lt;C&gt;,
+<a href=#28 id=28 data-nosnippet>28</a>        rate: f64,
+<a href=#29 id=29 data-nosnippet>29</a>    },
+<a href=#30 id=30 data-nosnippet>30</a>    General {
+<a href=#31 id=31 data-nosnippet>31</a>        terms: Vec&lt;PauliTerm&lt;C&gt;&gt;,         <span class="comment">// L = Σ_a λ_a P_a
+<a href=#32 id=32 data-nosnippet>32</a>        </span>dagger_dagger: Vec&lt;PauliTerm&lt;C&gt;&gt;, <span class="comment">// L†L = Σ_c μ_c P_c  (μ_c ∈ ℝ)
+<a href=#33 id=33 data-nosnippet>33</a>        </span>rate: f64,
+<a href=#34 id=34 data-nosnippet>34</a>    },
+<a href=#35 id=35 data-nosnippet>35</a>    Kossakowski(kossakowski::Pair&lt;C&gt;),
+<a href=#36 id=36 data-nosnippet>36</a>}
+<a href=#37 id=37 data-nosnippet>37</a>
+<a href=#38 id=38 data-nosnippet>38</a><span class="doccomment">/// Union of `index[q]` for each `q ∈ p_support`, deduped.
+<a href=#39 id=39 data-nosnippet>39</a></span><span class="attr">#[inline]
+<a href=#40 id=40 data-nosnippet>40</a></span><span class="kw">fn </span>candidate_terms(p_support: <span class="kw-2">&amp;</span>[u32], index: <span class="kw-2">&amp;</span>[Vec&lt;u32&gt;], scratch: <span class="kw-2">&amp;mut </span>Vec&lt;u32&gt;) {
+<a href=#41 id=41 data-nosnippet>41</a>    scratch.clear();
+<a href=#42 id=42 data-nosnippet>42</a>    <span class="kw">for </span><span class="kw-2">&amp;</span>q <span class="kw">in </span>p_support {
+<a href=#43 id=43 data-nosnippet>43</a>        scratch.extend_from_slice(<span class="kw-2">&amp;</span>index[q <span class="kw">as </span>usize]);
+<a href=#44 id=44 data-nosnippet>44</a>    }
+<a href=#45 id=45 data-nosnippet>45</a>    scratch.sort_unstable();
+<a href=#46 id=46 data-nosnippet>46</a>    scratch.dedup();
+<a href=#47 id=47 data-nosnippet>47</a>}
+<a href=#48 id=48 data-nosnippet>48</a>
+<a href=#49 id=49 data-nosnippet>49</a><span class="doccomment">/// Precompiled Lindbladian. Constructed once from string-form Hamiltonian
+<a href=#50 id=50 data-nosnippet>50</a>/// terms + jump operators; reused across many calls to [`Self::action`],
+<a href=#51 id=51 data-nosnippet>51</a>/// [`Self::leakage`], [`Self::generator`]. `L*(p)` is recomputed on every
+<a href=#52 id=52 data-nosnippet>52</a>/// call rather than cached: for sparse-local Hamiltonians a per-word cache
+<a href=#53 id=53 data-nosnippet>53</a>/// costs more than the recompute (hash lookup ≳ recompute) and its several
+<a href=#54 id=54 data-nosnippet>54</a>/// KB per cached word dominate memory at large basis sizes.
+<a href=#55 id=55 data-nosnippet>55</a></span><span class="kw">pub struct </span>LindbladSpec&lt;<span class="kw">const </span>C: usize = W_CHUNKS&gt; {
+<a href=#56 id=56 data-nosnippet>56</a>    n_qubits: usize,
+<a href=#57 id=57 data-nosnippet>57</a>    h_terms: Vec&lt;HTerm&lt;C&gt;&gt;,
+<a href=#58 id=58 data-nosnippet>58</a>    j_kinds: Vec&lt;JumpKind&lt;C&gt;&gt;,
+<a href=#59 id=59 data-nosnippet>59</a>    <span class="doccomment">/// `h_support[q]` = indices of Hamiltonian terms acting on qubit `q`.
+<a href=#60 id=60 data-nosnippet>60</a>    </span>h_support: Vec&lt;Vec&lt;u32&gt;&gt;,
+<a href=#61 id=61 data-nosnippet>61</a>    <span class="doccomment">/// `j_support[q]` = indices of jumps whose support contains qubit `q`.
+<a href=#62 id=62 data-nosnippet>62</a>    </span>j_support: Vec&lt;Vec&lt;u32&gt;&gt;,
+<a href=#63 id=63 data-nosnippet>63</a>}
+<a href=#64 id=64 data-nosnippet>64</a>
+<a href=#65 id=65 data-nosnippet>65</a><span class="doccomment">/// User-facing description of one jump operator: a complex Pauli linear
+<a href=#66 id=66 data-nosnippet>66</a>/// combination together with its rate.
+<a href=#67 id=67 data-nosnippet>67</a></span><span class="attr">#[derive(Clone, Debug)]
+<a href=#68 id=68 data-nosnippet>68</a></span><span class="kw">pub struct </span>JumpInput {
+<a href=#69 id=69 data-nosnippet>69</a>    <span class="doccomment">/// `(pauli_string, λ)` pairs forming `L_k = Σ_a λ_a P_a`.
+<a href=#70 id=70 data-nosnippet>70</a>    </span><span class="kw">pub </span>lincomb: Vec&lt;(String, Complex&lt;f64&gt;)&gt;,
+<a href=#71 id=71 data-nosnippet>71</a>    <span class="doccomment">/// Non-negative GKSL rate `γ_k`.
+<a href=#72 id=72 data-nosnippet>72</a>    </span><span class="kw">pub </span>rate: f64,
+<a href=#73 id=73 data-nosnippet>73</a>}
+<a href=#74 id=74 data-nosnippet>74</a>
+<a href=#75 id=75 data-nosnippet>75</a><span class="kw">impl</span>&lt;<span class="kw">const </span>C: usize&gt; LindbladSpec&lt;C&gt; {
+<a href=#76 id=76 data-nosnippet>76</a>    <span class="doccomment">/// Construct a Lindbladian spec from Hamiltonian terms and jump operators.
+<a href=#77 id=77 data-nosnippet>77</a>    ///
+<a href=#78 id=78 data-nosnippet>78</a>    /// `h_terms` are `(pauli_string, coefficient)` pairs forming the Hermitian
+<a href=#79 id=79 data-nosnippet>79</a>    /// Hamiltonian. Each jump operator is a complex Pauli linear combination;
+<a href=#80 id=80 data-nosnippet>80</a>    /// a length-1 jump with imaginary part `0` is routed to the Hermitian-Pauli
+<a href=#81 id=81 data-nosnippet>81</a>    /// fast path (with rate scaled by the squared real coefficient).
+<a href=#82 id=82 data-nosnippet>82</a>    </span><span class="kw">pub fn </span>new(
+<a href=#83 id=83 data-nosnippet>83</a>        n_qubits: usize,
+<a href=#84 id=84 data-nosnippet>84</a>        h_terms: <span class="kw-2">&amp;</span>[(String, f64)],
+<a href=#85 id=85 data-nosnippet>85</a>        jumps: <span class="kw-2">&amp;</span>[JumpInput],
+<a href=#86 id=86 data-nosnippet>86</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, Error&gt; {
+<a href=#87 id=87 data-nosnippet>87</a>        check_width::&lt;C&gt;(n_qubits)<span class="question-mark">?</span>;
+<a href=#88 id=88 data-nosnippet>88</a>
+<a href=#89 id=89 data-nosnippet>89</a>        <span class="kw">let </span><span class="kw-2">mut </span>h_parsed: Vec&lt;HTerm&lt;C&gt;&gt; = Vec::with_capacity(h_terms.len());
+<a href=#90 id=90 data-nosnippet>90</a>        <span class="kw">let </span><span class="kw-2">mut </span>h_support_idx: Vec&lt;Vec&lt;u32&gt;&gt; = <span class="macro">vec!</span>[Vec::new(); n_qubits];
+<a href=#91 id=91 data-nosnippet>91</a>        <span class="kw">for </span>(i, (s, c)) <span class="kw">in </span>h_terms.iter().enumerate() {
+<a href=#92 id=92 data-nosnippet>92</a>            <span class="kw">let </span>(word, support) = parse_pauli_string(s, n_qubits)<span class="question-mark">?</span>;
+<a href=#93 id=93 data-nosnippet>93</a>            <span class="kw">for </span>q <span class="kw">in </span>support {
+<a href=#94 id=94 data-nosnippet>94</a>                h_support_idx[q <span class="kw">as </span>usize].push(i <span class="kw">as </span>u32);
+<a href=#95 id=95 data-nosnippet>95</a>            }
+<a href=#96 id=96 data-nosnippet>96</a>            h_parsed.push(HTerm { word, coeff: <span class="kw-2">*</span>c });
+<a href=#97 id=97 data-nosnippet>97</a>        }
+<a href=#98 id=98 data-nosnippet>98</a>
+<a href=#99 id=99 data-nosnippet>99</a>        <span class="kw">let </span><span class="kw-2">mut </span>j_kinds: Vec&lt;JumpKind&lt;C&gt;&gt; = Vec::with_capacity(jumps.len());
+<a href=#100 id=100 data-nosnippet>100</a>        <span class="kw">let </span><span class="kw-2">mut </span>j_support_idx: Vec&lt;Vec&lt;u32&gt;&gt; = <span class="macro">vec!</span>[Vec::new(); n_qubits];
+<a href=#101 id=101 data-nosnippet>101</a>        <span class="kw">for </span>(k, jump) <span class="kw">in </span>jumps.iter().enumerate() {
+<a href=#102 id=102 data-nosnippet>102</a>            <span class="kw">if </span>jump.rate &lt; <span class="number">0.0 </span>{
+<a href=#103 id=103 data-nosnippet>103</a>                <span class="kw">return </span><span class="prelude-val">Err</span>(Error::NegativeRate {
+<a href=#104 id=104 data-nosnippet>104</a>                    index: k,
+<a href=#105 id=105 data-nosnippet>105</a>                    rate: jump.rate,
+<a href=#106 id=106 data-nosnippet>106</a>                });
+<a href=#107 id=107 data-nosnippet>107</a>            }
+<a href=#108 id=108 data-nosnippet>108</a>            <span class="kw">if </span>jump.lincomb.is_empty() {
+<a href=#109 id=109 data-nosnippet>109</a>                <span class="kw">return </span><span class="prelude-val">Err</span>(Error::EmptyLincomb { index: k });
+<a href=#110 id=110 data-nosnippet>110</a>            }
+<a href=#111 id=111 data-nosnippet>111</a>
+<a href=#112 id=112 data-nosnippet>112</a>            <span class="comment">// Fast path: single-term, purely real → Hermitian Pauli.
+<a href=#113 id=113 data-nosnippet>113</a>            </span><span class="kw">if </span>jump.lincomb.len() == <span class="number">1 </span>&amp;&amp; jump.lincomb[<span class="number">0</span>].<span class="number">1</span>.im == <span class="number">0.0 </span>{
+<a href=#114 id=114 data-nosnippet>114</a>                <span class="kw">let </span>(s, c) = <span class="kw-2">&amp;</span>jump.lincomb[<span class="number">0</span>];
+<a href=#115 id=115 data-nosnippet>115</a>                <span class="kw">let </span>(word, support) = parse_pauli_string(s, n_qubits)<span class="question-mark">?</span>;
+<a href=#116 id=116 data-nosnippet>116</a>                <span class="kw">for </span>q <span class="kw">in </span>support {
+<a href=#117 id=117 data-nosnippet>117</a>                    j_support_idx[q <span class="kw">as </span>usize].push(k <span class="kw">as </span>u32);
+<a href=#118 id=118 data-nosnippet>118</a>                }
+<a href=#119 id=119 data-nosnippet>119</a>                j_kinds.push(JumpKind::HermitianPauli {
+<a href=#120 id=120 data-nosnippet>120</a>                    word,
+<a href=#121 id=121 data-nosnippet>121</a>                    rate: jump.rate * c.re * c.re,
+<a href=#122 id=122 data-nosnippet>122</a>                });
+<a href=#123 id=123 data-nosnippet>123</a>                <span class="kw">continue</span>;
+<a href=#124 id=124 data-nosnippet>124</a>            }
+<a href=#125 id=125 data-nosnippet>125</a>
+<a href=#126 id=126 data-nosnippet>126</a>            <span class="comment">// General path: parse all terms, precompute L†L, record union support.
+<a href=#127 id=127 data-nosnippet>127</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>terms: Vec&lt;PauliTerm&lt;C&gt;&gt; = Vec::with_capacity(jump.lincomb.len());
+<a href=#128 id=128 data-nosnippet>128</a>            <span class="kw">let </span><span class="kw-2">mut </span>union_support: std::collections::BTreeSet&lt;u32&gt; =
+<a href=#129 id=129 data-nosnippet>129</a>                std::collections::BTreeSet::new();
+<a href=#130 id=130 data-nosnippet>130</a>            <span class="kw">for </span>(s, c) <span class="kw">in </span><span class="kw-2">&amp;</span>jump.lincomb {
+<a href=#131 id=131 data-nosnippet>131</a>                <span class="kw">let </span>(word, support) = parse_pauli_string(s, n_qubits)<span class="question-mark">?</span>;
+<a href=#132 id=132 data-nosnippet>132</a>                <span class="kw">for </span>q <span class="kw">in </span><span class="kw-2">&amp;</span>support {
+<a href=#133 id=133 data-nosnippet>133</a>                    union_support.insert(<span class="kw-2">*</span>q);
+<a href=#134 id=134 data-nosnippet>134</a>                }
+<a href=#135 id=135 data-nosnippet>135</a>                terms.push(PauliTerm { word, coeff: <span class="kw-2">*</span>c });
+<a href=#136 id=136 data-nosnippet>136</a>            }
+<a href=#137 id=137 data-nosnippet>137</a>            <span class="kw">for </span>q <span class="kw">in </span>union_support {
+<a href=#138 id=138 data-nosnippet>138</a>                j_support_idx[q <span class="kw">as </span>usize].push(k <span class="kw">as </span>u32);
+<a href=#139 id=139 data-nosnippet>139</a>            }
+<a href=#140 id=140 data-nosnippet>140</a>            <span class="kw">let </span>dagger_dagger = precompute_adag_b(<span class="kw-2">&amp;</span>terms, <span class="kw-2">&amp;</span>terms);
+<a href=#141 id=141 data-nosnippet>141</a>            j_kinds.push(JumpKind::General {
+<a href=#142 id=142 data-nosnippet>142</a>                terms,
+<a href=#143 id=143 data-nosnippet>143</a>                dagger_dagger,
+<a href=#144 id=144 data-nosnippet>144</a>                rate: jump.rate,
+<a href=#145 id=145 data-nosnippet>145</a>            });
+<a href=#146 id=146 data-nosnippet>146</a>        }
+<a href=#147 id=147 data-nosnippet>147</a>
+<a href=#148 id=148 data-nosnippet>148</a>        <span class="prelude-val">Ok</span>(<span class="self">Self </span>{
+<a href=#149 id=149 data-nosnippet>149</a>            n_qubits,
+<a href=#150 id=150 data-nosnippet>150</a>            h_terms: h_parsed,
+<a href=#151 id=151 data-nosnippet>151</a>            j_kinds,
+<a href=#152 id=152 data-nosnippet>152</a>            h_support: h_support_idx,
+<a href=#153 id=153 data-nosnippet>153</a>            j_support: j_support_idx,
+<a href=#154 id=154 data-nosnippet>154</a>        })
+<a href=#155 id=155 data-nosnippet>155</a>    }
+<a href=#156 id=156 data-nosnippet>156</a>
+<a href=#157 id=157 data-nosnippet>157</a>    <span class="doccomment">/// Add a Kossakowski-form dissipator
+<a href=#158 id=158 data-nosnippet>158</a>    /// `D*(O) = Σ_{n,m} K_nm ( A_n† O A_m − ½ {A_n† A_m, O} )`.
+<a href=#159 id=159 data-nosnippet>159</a>    ///
+<a href=#160 id=160 data-nosnippet>160</a>    /// `ops` lists the operators `A_n` as complex Pauli linear combinations;
+<a href=#161 id=161 data-nosnippet>161</a>    /// `k` is the `n_ops × n_ops` Hermitian pair matrix. Contributions are
+<a href=#162 id=162 data-nosnippet>162</a>    /// added to any jumps already present. See [`crate::kossakowski`] for
+<a href=#163 id=163 data-nosnippet>163</a>    /// how each `(n, m)` entry is compiled.
+<a href=#164 id=164 data-nosnippet>164</a>    </span><span class="kw">pub fn </span>add_kossakowski(
+<a href=#165 id=165 data-nosnippet>165</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#166 id=166 data-nosnippet>166</a>        ops: <span class="kw-2">&amp;</span>[Vec&lt;(String, Complex&lt;f64&gt;)&gt;],
+<a href=#167 id=167 data-nosnippet>167</a>        k: <span class="kw-2">&amp;</span>[Vec&lt;Complex&lt;f64&gt;&gt;],
+<a href=#168 id=168 data-nosnippet>168</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Error&gt; {
+<a href=#169 id=169 data-nosnippet>169</a>        <span class="kw">for </span>(pair, support) <span class="kw">in </span>kossakowski::compile(ops, k, <span class="self">self</span>.n_qubits)<span class="question-mark">? </span>{
+<a href=#170 id=170 data-nosnippet>170</a>            <span class="kw">let </span>idx = <span class="self">self</span>.j_kinds.len() <span class="kw">as </span>u32;
+<a href=#171 id=171 data-nosnippet>171</a>            <span class="self">self</span>.j_kinds.push(JumpKind::Kossakowski(pair));
+<a href=#172 id=172 data-nosnippet>172</a>            <span class="kw">for </span>q <span class="kw">in </span>support {
+<a href=#173 id=173 data-nosnippet>173</a>                <span class="self">self</span>.j_support[q <span class="kw">as </span>usize].push(idx);
+<a href=#174 id=174 data-nosnippet>174</a>            }
+<a href=#175 id=175 data-nosnippet>175</a>        }
+<a href=#176 id=176 data-nosnippet>176</a>        <span class="prelude-val">Ok</span>(())
+<a href=#177 id=177 data-nosnippet>177</a>    }
+<a href=#178 id=178 data-nosnippet>178</a>
+<a href=#179 id=179 data-nosnippet>179</a>    <span class="kw">pub fn </span>n_qubits(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+<a href=#180 id=180 data-nosnippet>180</a>        <span class="self">self</span>.n_qubits
+<a href=#181 id=181 data-nosnippet>181</a>    }
+<a href=#182 id=182 data-nosnippet>182</a>
+<a href=#183 id=183 data-nosnippet>183</a>    <span class="kw">pub fn </span>num_h_terms(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+<a href=#184 id=184 data-nosnippet>184</a>        <span class="self">self</span>.h_terms.len()
+<a href=#185 id=185 data-nosnippet>185</a>    }
+<a href=#186 id=186 data-nosnippet>186</a>
+<a href=#187 id=187 data-nosnippet>187</a>    <span class="kw">pub fn </span>num_jump_terms(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+<a href=#188 id=188 data-nosnippet>188</a>        <span class="self">self</span>.j_kinds.len()
+<a href=#189 id=189 data-nosnippet>189</a>    }
+<a href=#190 id=190 data-nosnippet>190</a>
+<a href=#191 id=191 data-nosnippet>191</a>    <span class="doccomment">/// Apply `L*` to a single Pauli string `p`. Returns the output Pauli
+<a href=#192 id=192 data-nosnippet>192</a>    /// strings and their real coefficients (zero entries omitted).
+<a href=#193 id=193 data-nosnippet>193</a>    </span><span class="kw">pub fn </span>action(<span class="kw-2">&amp;</span><span class="self">self</span>, p: <span class="kw-2">&amp;</span>Word&lt;C&gt;) -&gt; Vec&lt;(Word&lt;C&gt;, f64)&gt; {
+<a href=#194 id=194 data-nosnippet>194</a>        <span class="kw">let </span><span class="kw-2">mut </span>out: FxHashMap&lt;Word&lt;C&gt;, f64&gt; = FxHashMap::default();
+<a href=#195 id=195 data-nosnippet>195</a>        <span class="kw">let </span><span class="kw-2">mut </span>s1 = Vec::new();
+<a href=#196 id=196 data-nosnippet>196</a>        <span class="kw">let </span><span class="kw-2">mut </span>s2 = Vec::new();
+<a href=#197 id=197 data-nosnippet>197</a>        <span class="self">self</span>.accumulate_action(p, <span class="number">1.0</span>, <span class="kw-2">&amp;mut </span>out, <span class="kw-2">&amp;mut </span>s1, <span class="kw-2">&amp;mut </span>s2);
+<a href=#198 id=198 data-nosnippet>198</a>        out.into_iter().filter(|(<span class="kw">_</span>, c)| <span class="kw-2">*</span>c != <span class="number">0.0</span>).collect()
+<a href=#199 id=199 data-nosnippet>199</a>    }
+<a href=#200 id=200 data-nosnippet>200</a>
+<a href=#201 id=201 data-nosnippet>201</a>    <span class="doccomment">/// Compute the unscaled list of `(output, coefficient)` pairs that
+<a href=#202 id=202 data-nosnippet>202</a>    /// `L*(p)` contributes (without the input coefficient).
+<a href=#203 id=203 data-nosnippet>203</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>compute_action_terms(
+<a href=#204 id=204 data-nosnippet>204</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#205 id=205 data-nosnippet>205</a>        p: <span class="kw-2">&amp;</span>Word&lt;C&gt;,
+<a href=#206 id=206 data-nosnippet>206</a>        scratch_support: <span class="kw-2">&amp;mut </span>Vec&lt;u32&gt;,
+<a href=#207 id=207 data-nosnippet>207</a>        scratch_cands: <span class="kw-2">&amp;mut </span>Vec&lt;u32&gt;,
+<a href=#208 id=208 data-nosnippet>208</a>        scratch_local: <span class="kw-2">&amp;mut </span>FxHashMap&lt;Word&lt;C&gt;, Complex&lt;f64&gt;&gt;,
+<a href=#209 id=209 data-nosnippet>209</a>    ) -&gt; Vec&lt;(Word&lt;C&gt;, f64)&gt; {
+<a href=#210 id=210 data-nosnippet>210</a>        word_support(p, scratch_support);
+<a href=#211 id=211 data-nosnippet>211</a>        <span class="kw">let </span>zero = Complex::new(<span class="number">0.0</span>, <span class="number">0.0</span>);
+<a href=#212 id=212 data-nosnippet>212</a>        scratch_local.clear();
+<a href=#213 id=213 data-nosnippet>213</a>        <span class="kw">let </span>local = scratch_local;
+<a href=#214 id=214 data-nosnippet>214</a>
+<a href=#215 id=215 data-nosnippet>215</a>        <span class="comment">// ── i [H, p] ─────────────────────────────────────────────────
+<a href=#216 id=216 data-nosnippet>216</a>        </span>candidate_terms(scratch_support, <span class="kw-2">&amp;</span><span class="self">self</span>.h_support, scratch_cands);
+<a href=#217 id=217 data-nosnippet>217</a>        <span class="kw">for </span><span class="kw-2">&amp;</span>i <span class="kw">in </span>scratch_cands.iter() {
+<a href=#218 id=218 data-nosnippet>218</a>            <span class="kw">let </span>h = <span class="kw-2">&amp;</span><span class="self">self</span>.h_terms[i <span class="kw">as </span>usize];
+<a href=#219 id=219 data-nosnippet>219</a>            <span class="kw">let </span>(r, eps) = comm_product(<span class="kw-2">&amp;</span>h.word, p);
+<a href=#220 id=220 data-nosnippet>220</a>            <span class="kw">if </span>eps != <span class="number">0.0 </span>{
+<a href=#221 id=221 data-nosnippet>221</a>                <span class="kw-2">*</span>local.entry(r).or_insert(zero) += Complex::new(h.coeff * eps, <span class="number">0.0</span>);
+<a href=#222 id=222 data-nosnippet>222</a>            }
+<a href=#223 id=223 data-nosnippet>223</a>        }
+<a href=#224 id=224 data-nosnippet>224</a>
+<a href=#225 id=225 data-nosnippet>225</a>        <span class="comment">// ── dissipator ───────────────────────────────────────────────
+<a href=#226 id=226 data-nosnippet>226</a>        </span>candidate_terms(scratch_support, <span class="kw-2">&amp;</span><span class="self">self</span>.j_support, scratch_cands);
+<a href=#227 id=227 data-nosnippet>227</a>        <span class="kw">for </span><span class="kw-2">&amp;</span>k <span class="kw">in </span>scratch_cands.iter() {
+<a href=#228 id=228 data-nosnippet>228</a>            <span class="kw">match </span><span class="kw-2">&amp;</span><span class="self">self</span>.j_kinds[k <span class="kw">as </span>usize] {
+<a href=#229 id=229 data-nosnippet>229</a>                JumpKind::HermitianPauli { word, rate } =&gt; {
+<a href=#230 id=230 data-nosnippet>230</a>                    <span class="kw">if </span>anti_commutes(word, p) {
+<a href=#231 id=231 data-nosnippet>231</a>                        <span class="kw-2">*</span>local.entry(<span class="kw-2">*</span>p).or_insert(zero) += Complex::new(-<span class="number">2.0 </span>* <span class="kw-2">*</span>rate, <span class="number">0.0</span>);
+<a href=#232 id=232 data-nosnippet>232</a>                    }
+<a href=#233 id=233 data-nosnippet>233</a>                }
+<a href=#234 id=234 data-nosnippet>234</a>                JumpKind::General {
+<a href=#235 id=235 data-nosnippet>235</a>                    terms,
+<a href=#236 id=236 data-nosnippet>236</a>                    dagger_dagger,
+<a href=#237 id=237 data-nosnippet>237</a>                    rate,
+<a href=#238 id=238 data-nosnippet>238</a>                } =&gt; {
+<a href=#239 id=239 data-nosnippet>239</a>                    <span class="kw">let </span>rate_c = Complex::new(<span class="kw-2">*</span>rate, <span class="number">0.0</span>);
+<a href=#240 id=240 data-nosnippet>240</a>                    <span class="comment">// Sandwich: γ Σ_{a,b} λ_a* λ_b P_a p P_b.
+<a href=#241 id=241 data-nosnippet>241</a>                    </span><span class="kw">for </span>a <span class="kw">in </span>terms {
+<a href=#242 id=242 data-nosnippet>242</a>                        <span class="kw">let </span>(r_ap, phi1) = pauli_mul(<span class="kw-2">&amp;</span>a.word, p);
+<a href=#243 id=243 data-nosnippet>243</a>                        <span class="kw">for </span>b <span class="kw">in </span>terms {
+<a href=#244 id=244 data-nosnippet>244</a>                            <span class="kw">let </span>(s, phi2) = pauli_mul(<span class="kw-2">&amp;</span>r_ap, <span class="kw-2">&amp;</span>b.word);
+<a href=#245 id=245 data-nosnippet>245</a>                            <span class="kw">let </span>coeff =
+<a href=#246 id=246 data-nosnippet>246</a>                                a.coeff.conj() * b.coeff * phase_factor(phi1 + phi2) * rate_c;
+<a href=#247 id=247 data-nosnippet>247</a>                            <span class="kw-2">*</span>local.entry(s).or_insert(zero) += coeff;
+<a href=#248 id=248 data-nosnippet>248</a>                        }
+<a href=#249 id=249 data-nosnippet>249</a>                    }
+<a href=#250 id=250 data-nosnippet>250</a>                    <span class="comment">// -1/2 γ {L†L, p}. For Hermitian Pauli P_c and Pauli p,
+<a href=#251 id=251 data-nosnippet>251</a>                    // {P_c, p} = 2·sign·R if they commute (P_c·p = sign·R),
+<a href=#252 id=252 data-nosnippet>252</a>                    //         = 0          if they anti-commute.
+<a href=#253 id=253 data-nosnippet>253</a>                    </span><span class="kw">for </span>c_term <span class="kw">in </span>dagger_dagger {
+<a href=#254 id=254 data-nosnippet>254</a>                        <span class="kw">let </span>(r, phase) = pauli_mul(<span class="kw-2">&amp;</span>c_term.word, p);
+<a href=#255 id=255 data-nosnippet>255</a>                        <span class="kw">if </span>phase &amp; <span class="number">1 </span>== <span class="number">0 </span>{
+<a href=#256 id=256 data-nosnippet>256</a>                            <span class="kw">let </span>sign = <span class="kw">if </span>phase == <span class="number">0 </span>{ <span class="number">1.0 </span>} <span class="kw">else </span>{ -<span class="number">1.0 </span>};
+<a href=#257 id=257 data-nosnippet>257</a>                            <span class="kw">let </span>coeff = -c_term.coeff * rate_c * Complex::new(sign, <span class="number">0.0</span>);
+<a href=#258 id=258 data-nosnippet>258</a>                            <span class="kw-2">*</span>local.entry(r).or_insert(zero) += coeff;
+<a href=#259 id=259 data-nosnippet>259</a>                        }
+<a href=#260 id=260 data-nosnippet>260</a>                    }
+<a href=#261 id=261 data-nosnippet>261</a>                }
+<a href=#262 id=262 data-nosnippet>262</a>                JumpKind::Kossakowski(pair) =&gt; pair.accumulate(p, local),
+<a href=#263 id=263 data-nosnippet>263</a>            }
+<a href=#264 id=264 data-nosnippet>264</a>        }
+<a href=#265 id=265 data-nosnippet>265</a>
+<a href=#266 id=266 data-nosnippet>266</a>        <span class="comment">// L* preserves Hermiticity; imaginary parts must cancel to FP noise.
+<a href=#267 id=267 data-nosnippet>267</a>        // `drain()` empties `scratch_local` so its allocation can be reused
+<a href=#268 id=268 data-nosnippet>268</a>        // by the next call on the same thread (`Vec` keeps capacity).
+<a href=#269 id=269 data-nosnippet>269</a>        </span>local
+<a href=#270 id=270 data-nosnippet>270</a>            .drain()
+<a href=#271 id=271 data-nosnippet>271</a>            .filter_map(|(w, c)| {
+<a href=#272 id=272 data-nosnippet>272</a>                <span class="macro">debug_assert!</span>(
+<a href=#273 id=273 data-nosnippet>273</a>                    c.im.abs() &lt; <span class="number">1e-9</span>,
+<a href=#274 id=274 data-nosnippet>274</a>                    <span class="string">"L*(p) produced non-real coefficient {c}; bug in dissipator"
+<a href=#275 id=275 data-nosnippet>275</a>                </span>);
+<a href=#276 id=276 data-nosnippet>276</a>                <span class="kw">if </span>c.re == <span class="number">0.0 </span>{ <span class="prelude-val">None </span>} <span class="kw">else </span>{ <span class="prelude-val">Some</span>((w, c.re)) }
+<a href=#277 id=277 data-nosnippet>277</a>            })
+<a href=#278 id=278 data-nosnippet>278</a>            .collect()
+<a href=#279 id=279 data-nosnippet>279</a>    }
+<a href=#280 id=280 data-nosnippet>280</a>
+<a href=#281 id=281 data-nosnippet>281</a>    <span class="doccomment">/// Accumulate `scale · L*(p)` into `out`.
+<a href=#282 id=282 data-nosnippet>282</a>    </span><span class="kw">fn </span>accumulate_action(
+<a href=#283 id=283 data-nosnippet>283</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#284 id=284 data-nosnippet>284</a>        p: <span class="kw-2">&amp;</span>Word&lt;C&gt;,
+<a href=#285 id=285 data-nosnippet>285</a>        scale: f64,
+<a href=#286 id=286 data-nosnippet>286</a>        out: <span class="kw-2">&amp;mut </span>FxHashMap&lt;Word&lt;C&gt;, f64&gt;,
+<a href=#287 id=287 data-nosnippet>287</a>        scratch_support: <span class="kw-2">&amp;mut </span>Vec&lt;u32&gt;,
+<a href=#288 id=288 data-nosnippet>288</a>        scratch_cands: <span class="kw-2">&amp;mut </span>Vec&lt;u32&gt;,
+<a href=#289 id=289 data-nosnippet>289</a>    ) {
+<a href=#290 id=290 data-nosnippet>290</a>        <span class="kw">let </span><span class="kw-2">mut </span>scratch_local = FxHashMap::default();
+<a href=#291 id=291 data-nosnippet>291</a>        <span class="kw">let </span>terms =
+<a href=#292 id=292 data-nosnippet>292</a>            <span class="self">self</span>.compute_action_terms(p, scratch_support, scratch_cands, <span class="kw-2">&amp;mut </span>scratch_local);
+<a href=#293 id=293 data-nosnippet>293</a>        <span class="kw">for </span>(w, c) <span class="kw">in </span>terms.iter() {
+<a href=#294 id=294 data-nosnippet>294</a>            <span class="kw-2">*</span>out.entry(<span class="kw-2">*</span>w).or_insert(<span class="number">0.0</span>) += scale * c;
+<a href=#295 id=295 data-nosnippet>295</a>        }
+<a href=#296 id=296 data-nosnippet>296</a>    }
+<a href=#297 id=297 data-nosnippet>297</a>}
+</code></pre></div></section></main></body></html>

@@ -231,6 +231,10 @@ where
     A: PauliStorage,
     H: BuildHasher + Default + HashFinalize,
 {
+    // TODO: in the case that we wish to perform operations on PauliWord
+    // in a hot patch, but don't wish to index it, hashing can be a significant
+    // overhead. If that were to happen, add functionality to support the toggling
+    // for hashing capability.
     #[inline(always)]
     fn x_bit(&self, i: usize) -> bool {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");

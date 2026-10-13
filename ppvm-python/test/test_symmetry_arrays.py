@@ -201,6 +201,14 @@ def test_complex_merge_validates_shapes():
         canonicalize_basis_arr_complex(basis_arr(["ZII"]), np.array([1 + 0j]), g, momentum(0))
 
 
+@pytest.mark.parametrize("bad", [[0.5], [2**40], [-(2**40)]])
+def test_momentum_rejects_fractional_or_out_of_range_modes(bad):
+    g = TranslationGroup.chain_1d(4)
+    words, coeffs = _momentum_seed(4, 1)
+    with pytest.raises(ValueError, match="momentum mode"):
+        canonicalize_basis_arr_complex(words, coeffs, g, bad)
+
+
 # ── check_momentum_sector_arr ────────────────────────────────────────────────
 @pytest.mark.parametrize("k", [0, 1, 2, 3])
 def test_check_momentum_sector_accepts_eigenstate(k):

@@ -5,6 +5,7 @@ representation, physics regression against the exact excitation-cascade
 reference, and leakage coverage.
 """
 
+import os
 import pathlib
 
 import numpy as np
@@ -24,9 +25,8 @@ from ._dissipative_refs import (
 
 BIG = 10_000_000  # uncapped max_basis
 
-FIG11_H5 = pathlib.Path(
-    "/Users/alexschuckert/dev/26_ppvm/CTPP Figures/fig11_superradiant_burst/data.h5"
-)
+# Optional external reference data; set PPVM_FIG11_H5 to its path to enable.
+FIG11_H5 = pathlib.Path(os.environ.get("PPVM_FIG11_H5", ""))
 
 
 def run_steps(lind, obs, n, dt, steps):
@@ -135,7 +135,7 @@ def test_superradiance_physics_regression():
     assert err < 1e-4, f"kossakowski vs exact cascade: max |dR| = {err:.2e}"
 
 
-@pytest.mark.skipif(not FIG11_H5.exists(), reason="fig11 data.h5 not present")
+@pytest.mark.skipif(not FIG11_H5.is_file(), reason="set PPVM_FIG11_H5 to the fig11 data.h5 path")
 def test_superradiance_vs_fig11_reference():
     """Cross-check R(t) against the stored exact reference of the
     superradiant-burst study (same model, N=6, first 1/Gamma_0)."""

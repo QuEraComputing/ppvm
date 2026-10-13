@@ -45,7 +45,7 @@ import numpy as np
 import numpy.typing as npt
 
 from . import _core
-from ._codes import as_pauli_codes
+from ._codes import as_momentum, as_pauli_codes
 from ._core import LindbladSpec as _LindbladSpec
 
 _PAULI_CODE = {"I": 0, "X": 1, "Z": 2, "Y": 3}
@@ -418,7 +418,7 @@ class Lindbladian:
             float(dt),
             int(max_basis),
             group,
-            np.ascontiguousarray(momentum, dtype=np.int32),
+            as_momentum(momentum),
             float(drop_tol),
             as_pauli_codes(protected_arr),
             bool(canonicalize_first),

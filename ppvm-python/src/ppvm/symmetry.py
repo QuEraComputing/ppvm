@@ -30,7 +30,7 @@ import numpy as np
 import numpy.typing as npt
 
 from . import _core
-from ._codes import as_pauli_codes
+from ._codes import as_momentum, as_pauli_codes
 from ._core import TranslationGroup as TranslationGroup
 
 __all__ = [
@@ -42,7 +42,7 @@ __all__ = [
 
 
 def _momentum(momentum: npt.ArrayLike) -> np.ndarray:
-    return np.ascontiguousarray(momentum, dtype=np.int32)
+    return as_momentum(momentum)
 
 
 def _basis(basis_arr: npt.ArrayLike) -> np.ndarray:

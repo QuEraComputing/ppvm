@@ -106,6 +106,13 @@ fn validate_slice(
             | ExtendedInstruction::U3 { .. }
             | ExtendedInstruction::Loss { .. }
             | ExtendedInstruction::CorrelatedLoss { .. } => {}
+            ExtendedInstruction::Leakage { p0, p1, span, .. } => {
+                let line = span.line(line_map);
+                check_probability(*p0, "I_ERROR[leakage]", line)?;
+                check_probability(*p1, "I_ERROR[leakage]", line)?;
+                // p0 + p1 is the total leak probability, so it must be in [0, 1] too.
+                check_probability(*p0 + *p1, "I_ERROR[leakage]", line)?;
+            }
             ExtendedInstruction::MPad {
                 prob, bits, span, ..
             } => {

@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::atomic::{AtomicU64, Ordering}};
+use std::{fmt, marker::PhantomData, sync::atomic::{AtomicU64, Ordering}};
 
 use bitvec::array::BitArray;
 use ppvm_pauli_word_2::{DefaultStorage, PauliStorage};
@@ -183,5 +183,30 @@ impl<A: PauliStorage, H> Clone for LossyPauliWord<A, H> {
             loss_hash_cache: AtomicU64::new(self.loss_hash_cache.load(Ordering::Relaxed)),
             _hasher: PhantomData,
         }
+    }
+}
+
+impl<A: PauliStorage, H> fmt::Display for LossyPauliWord<A, H> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for i in 0..self.nqubits {
+            let c = match self.get(i) {
+                LossySite::Present(Pauli::I) => 'I',
+                LossySite::Present(Pauli::X) => 'X',
+                LossySite::Present(Pauli::Y) => 'Y',
+                LossySite::Present(Pauli::Z) => 'Z',
+                LossySite::Lost => 'L',
+            };
+            f.write_str(c.encode_utf8(&mut [0u8; 1]))?;
+        }
+        Ok(())
+    }
+}
+
+impl<A: PauliStorage, H> fmt::Debug for LossyPauliWord<A, H> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LossyPauliWord")
+            .field("nqubits", &self.nqubits)
+            .field("word", &self.to_string())
+            .finish()
     }
 }

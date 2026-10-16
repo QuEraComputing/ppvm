@@ -25,7 +25,7 @@ pub use gates::{
     ResetLossChannel, RotXY, RotationOne, RotationOneBatch, RotationTwo, RotationTwoBatch, TGate,
     TwoQubitPauliError, U3Gate,
 };
-pub use loss::LossState;
+pub use loss::{LossySite, LossState};
 pub use pauli::{Pauli, PhaseTrack, SymplecticColumns};
 pub use word::{PauliBits, Word};
 

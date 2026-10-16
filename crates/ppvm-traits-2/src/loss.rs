@@ -6,7 +6,7 @@ pub enum LossySite<S> {
     /// A present site carrying `S`
     Present(S),
     /// A lost site - the qubit no longer participates
-    Lost
+    Lost,
 }
 /// Loss state associated with word sites.
 pub trait LossState {

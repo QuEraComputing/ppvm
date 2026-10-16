@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::atomic::AtomicU64};
 
 use bitvec::array::BitArray;
 use ppvm_pauli_word_2::{DefaultStorage, PauliStorage};
-use ppvm_traits_2::{LossState, LossySite, Pauli, PauliBits, Word};
+use ppvm_traits_2::{LossySite, Pauli, PauliBits, Word};
 
 pub struct LossyPauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildHasher> {
     pub(crate) xbits: BitArray<A>,
@@ -27,15 +27,7 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
             "nqubits {nqubits} exceeds the {}-bit backing storage",
             8 * std::mem::size_of::<A>(),
         );
-        Self {
-            xbits: BitArray::ZERO,
-            zbits: BitArray::ZERO,
-            lbits: BitArray::ZERO,
-            nqubits,
-            loss_hash_cache: AtomicU64::new(0),
-            xz_hash_cache: AtomicU64::new(0),
-            _hasher: PhantomData,
-        }
+        Self::from_planes(BitArray::ZERO, BitArray::ZERO, BitArray::ZERO, nqubits)
     }
 
     #[inline]
@@ -101,12 +93,13 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
 
     /// Build the reset-channel branch with `q` marked lost.
     pub fn with_lost(&self, qb: usize) -> Self {
+        debug_assert!(qb < self.nqubits, "qubit {qb} out of bounds");
         let mut xbits = self.xbits;
         let mut zbits = self.zbits;
         let mut lbits = self.lbits;
         xbits.set(qb, false);
         zbits.set(qb, false);
-        lbits.set(qb, false);
+        lbits.set(qb, true);
         Self::from_planes(xbits, zbits, lbits, self.nqubits)
     }
 
@@ -114,10 +107,7 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
         debug_assert!(qb < self.nqubits, "qubit {qb} out of bounds");
         match site {
             LossySite::Present(pauli) => {
-                if self.lbits[qb] {
-                    self.lbits.set(qb, false);
-                    self.invalidate_loss_hash();
-                }
+                self.clear_loss(qb);
                 let (x, z) = match pauli {
                     Pauli::I => (false, false),
                     Pauli::X => (true, false),
@@ -136,5 +126,47 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
     #[inline]
     pub fn loss_weight(&self) -> usize {
         self.lbits.count_ones()
+    }
+}
+
+impl<A: PauliStorage, H> Word for LossyPauliWord<A, H> {
+    type Site = LossySite<Pauli>;
+
+    #[inline]
+    fn n_sites(&self) -> usize {
+        self.nqubits
+    }
+
+    /// Retrieve Pauli type for some index
+    fn get(&self, idx: usize) -> Self::Site {
+        debug_assert!(idx < self.nqubits, "index {idx} out of bounds");
+        if self.lbits[idx] {
+            return LossySite::Lost;
+        }
+        let pauli = match (self.xbits[idx], self.zbits[idx]) {
+            (false, false) => Pauli::I,
+            (true, false) => Pauli::X,
+            (false, true) => Pauli::Z,
+            (true, true) => Pauli::Y,
+        };
+        LossySite::Present(pauli)
+    }
+
+    /// Number of non-identity factors.
+    fn weight(&self) -> usize {
+        let xs = bytemuck::bytes_of(&self.xbits.data);
+        let zs = bytemuck::bytes_of(&self.zbits.data);
+        let ls = bytemuck::bytes_of(&self.lbits.data);
+
+        xs.iter()
+            .zip(zs)
+            .zip(ls)
+            .map(|((&x, &z), &l)| (x | z | l).count_ones() as usize)
+            .sum()
+    }
+
+    #[inline]
+    fn iter(&self) -> impl Iterator<Item = Self::Site> {
+        (0..self.nqubits).map(move |i| self.get(i))
     }
 }

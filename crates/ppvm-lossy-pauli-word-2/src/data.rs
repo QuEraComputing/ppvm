@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::atomic::AtomicU64};
+use std::{marker::PhantomData, sync::atomic::{AtomicU64, Ordering}};
 
 use bitvec::array::BitArray;
 use ppvm_pauli_word_2::{DefaultStorage, PauliStorage};
@@ -168,5 +168,20 @@ impl<A: PauliStorage, H> Word for LossyPauliWord<A, H> {
     #[inline]
     fn iter(&self) -> impl Iterator<Item = Self::Site> {
         (0..self.nqubits).map(move |i| self.get(i))
+    }
+}
+
+impl<A: PauliStorage, H> Clone for LossyPauliWord<A, H> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            xbits: self.xbits,
+            zbits: self.zbits,
+            lbits: self.lbits,
+            nqubits: self.nqubits,
+            xz_hash_cache: AtomicU64::new(self.loss_hash_cache.load(Ordering::Relaxed)),
+            loss_hash_cache: AtomicU64::new(self.loss_hash_cache.load(Ordering::Relaxed)),
+            _hasher: PhantomData,
+        }
     }
 }

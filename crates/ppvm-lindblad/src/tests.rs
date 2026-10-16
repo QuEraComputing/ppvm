@@ -414,3 +414,64 @@ fn pc_step_matches_symmetry_merged_on_small_chain() {
         "with-merging vs without-merging diverged: max |Δc| = {max_diff:e}"
     );
 }
+
+/// A rank-capped evolution must be bit-identical for every rayon thread
+/// count: the cached-generator matvec sums each output entry on one thread
+/// in a fixed order. The cap binds, so the round-off of any
+/// thread-dependent summation would be amplified into different basis
+/// memberships within a few steps.
+#[test]
+fn pc_step_is_bit_identical_across_thread_counts() {
+    // Open XXZ chain (interacting, so the operator space keeps growing)
+    // with Z dephasing on every site.
+    let n = 14usize;
+    let mut h_terms: Vec<(String, f64)> = Vec::new();
+    for j in 0..n - 1 {
+        for (op, coupling) in [('X', 1.0), ('Y', 1.0), ('Z', 0.5)] {
+            let mut s = vec!['I'; n];
+            s[j] = op;
+            s[j + 1] = op;
+            h_terms.push((s.into_iter().collect(), coupling));
+        }
+    }
+    let jumps: Vec<JumpInput> = (0..n)
+        .map(|j| {
+            let mut s = vec!['I'; n];
+            s[j] = 'Z';
+            jump_hpauli(&s.into_iter().collect::<String>(), 0.1)
+        })
+        .collect();
+    let spec = <LindbladSpec>::new(n, &h_terms, &jumps).unwrap();
+    let seed: String = (0..n).map(|j| if j == n / 2 { 'Z' } else { 'I' }).collect();
+    let (z, _) = parse_pauli_string::<W_CHUNKS>(&seed, n).unwrap();
+
+    let run = |threads: usize| {
+        let mut basis = vec![z];
+        let mut coeffs = vec![1.0];
+        let cfg = PcStepConfig {
+            max_basis: 1200,
+            admit_basis: Some(3600),
+            drop_tol: 0.0,
+            num_threads: Some(threads),
+            ..Default::default()
+        };
+        for _ in 0..12 {
+            spec.pc_step(&mut basis, &mut coeffs, 0.1, &[z], &cfg)
+                .unwrap();
+        }
+        (basis, coeffs)
+    };
+    let (basis_1, coeffs_1) = run(1);
+    assert_eq!(basis_1.len(), 1200, "the rank cap must bind");
+    for threads in [2, 3, 8] {
+        let (basis_t, coeffs_t) = run(threads);
+        assert_eq!(basis_t, basis_1, "basis differs at {threads} threads");
+        assert!(
+            coeffs_t
+                .iter()
+                .zip(&coeffs_1)
+                .all(|(a, b)| a.to_bits() == b.to_bits()),
+            "coefficients differ at {threads} threads"
+        );
+    }
+}

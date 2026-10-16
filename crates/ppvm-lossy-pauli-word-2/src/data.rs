@@ -421,3 +421,125 @@ impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
         LossyPauliWord::loss_weight(self)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_word_is_all_identity() {
+        let word = LossyPauliWord::<u8>::new(3);
+
+        assert_eq!(word.n_sites(), 3);
+        assert_eq!(word.to_string(), "III");
+        assert_eq!(word.weight(), 0);
+        assert_eq!(word.loss_weight(), 0);
+    }
+
+    #[test]
+    fn parsing_ignores_separators_and_preserves_site_order() {
+        let word = LossyPauliWord::<u8>::from("_IX_YZ_L_");
+
+        assert_eq!(word.n_sites(), 5);
+        assert_eq!(word.to_string(), "IXYZL");
+        assert_eq!(
+            word.iter().collect::<Vec<_>>(),
+            vec![
+                LossySite::Present(Pauli::I),
+                LossySite::Present(Pauli::X),
+                LossySite::Present(Pauli::Y),
+                LossySite::Present(Pauli::Z),
+                LossySite::Lost,
+            ]
+        );
+    }
+
+    #[test]
+    fn weights_count_nonidentity_and_lost_sites() {
+        let word = LossyPauliWord::<u8>::from("IXYZLLI");
+
+        assert_eq!(word.weight(), 5);
+        assert_eq!(word.loss_weight(), 2);
+    }
+
+    #[test]
+    fn marking_a_site_lost_removes_its_pauli() {
+        let mut word = LossyPauliWord::<u8>::from("XYZ");
+
+        word.set_lost(1);
+
+        assert_eq!(word.to_string(), "XLZ");
+        assert!(word.is_lost(1));
+        assert!(!word.x_bit(1));
+        assert!(!word.z_bit(1));
+    }
+
+    #[test]
+    fn clearing_loss_returns_identity_and_preserves_other_sites() {
+        let mut word = LossyPauliWord::<u8>::from("XLZ");
+
+        word.clear_loss(1);
+        word.clear_loss(0);
+
+        assert_eq!(word.to_string(), "XIZ");
+        assert!(!word.is_lost(1));
+        assert_eq!(word.loss_weight(), 0);
+    }
+
+    #[test]
+    fn setting_a_site_replaces_loss_or_pauli() {
+        let mut word = LossyPauliWord::<u8>::from("LX");
+
+        word.set(0, LossySite::Present(Pauli::Y));
+        word.set(1, LossySite::Lost);
+
+        assert_eq!(word.to_string(), "YL");
+        assert!(!word.is_lost(0));
+        assert!(word.is_lost(1));
+    }
+
+    #[test]
+    fn with_lost_leaves_the_original_unchanged() {
+        let word = LossyPauliWord::<u8>::from("XYZ");
+
+        let branch = word.with_lost(1);
+
+        assert_eq!(branch.to_string(), "XLZ");
+        assert_eq!(word.to_string(), "XYZ");
+    }
+
+    #[test]
+    fn changing_a_clone_leaves_the_original_unchanged() {
+        let word = LossyPauliWord::<u8>::from("XLZ");
+        let mut copy = word.clone();
+        assert_eq!(copy, word);
+
+        copy.clear_loss(1);
+        copy.set(0, LossySite::Present(Pauli::Y));
+
+        assert_eq!(copy.to_string(), "YIZ");
+        assert_eq!(word.to_string(), "XLZ");
+    }
+
+    #[test]
+    fn setting_pauli_bits_restores_lost_sites() {
+        let mut word = LossyPauliWord::<u8>::from("LLL");
+
+        word.set_x_bit(0, true);
+        word.set_z_bit(1, true);
+        word.set_xz_bits(2, true, true);
+
+        assert_eq!(word.to_string(), "XZY");
+        assert_eq!(word.loss_weight(), 0);
+    }
+
+    #[test]
+    fn equality_distinguishes_paulis_loss_and_width() {
+        let word = LossyPauliWord::<u8>::from("XL");
+
+        assert_eq!(word, LossyPauliWord::from(String::from("X_L")));
+        assert_ne!(word, LossyPauliWord::from("ZL"));
+        assert_ne!(word, LossyPauliWord::from("XI"));
+        assert_ne!(word, LossyPauliWord::from("XLI"));
+    }
+}

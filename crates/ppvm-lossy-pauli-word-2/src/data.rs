@@ -2,7 +2,7 @@ use std::{fmt, marker::PhantomData, sync::atomic::{AtomicU64, Ordering}};
 
 use bitvec::array::BitArray;
 use ppvm_pauli_word_2::{DefaultStorage, PauliStorage};
-use ppvm_traits_2::{LossySite, Pauli, PauliBits, Word};
+use ppvm_traits_2::{LossState, LossySite, Pauli, PauliBits, Word};
 
 pub struct LossyPauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildHasher> {
     pub(crate) xbits: BitArray<A>,
@@ -255,5 +255,165 @@ impl<A: PauliStorage, H> From<String> for LossyPauliWord<A, H> {
     #[inline]
     fn from(value: String) -> Self {
         Self::from(value.as_str())
+    }
+}
+
+impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
+    #[inline]
+    fn x_bit(&self, i: usize) -> bool {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        self.xbits[i]
+    }
+
+    #[inline]
+    fn z_bit(&self, i: usize) -> bool {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        self.zbits[i]
+    }
+
+    #[inline]
+    fn set_x_bit(&mut self, i: usize, v: bool) {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        self.xbits.set(i, v);
+        if v && self.lbits[i] {
+            self.lbits.set(i, false);
+            self.invalidate_loss_hash();
+        }
+        self.invalidate_xz_hash();
+    }
+
+    #[inline]
+    fn set_z_bit(&mut self, i: usize, v: bool) {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        self.zbits.set(i, v);
+        if v && self.lbits[i] {
+            self.lbits.set(i, false);
+            self.invalidate_loss_hash();
+        }
+        self.invalidate_xz_hash();
+    }
+
+    #[inline]
+    fn set_xz_bits(&mut self, i: usize, x: bool, z: bool) {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        self.xbits.set(i, x);
+        self.zbits.set(i, z);
+        if (x || z) && self.lbits[i] {
+            self.lbits.set(i, false);
+        }
+        self.invalidate_xz_hash();
+    }
+
+    #[inline]
+    fn set_xz_bits2(&mut self, i: usize, xi: bool, zi: bool, j: usize, xj: bool, zj: bool) {
+        debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
+        self.xbits.set(i, xi);
+        self.zbits.set(i, zi);
+        self.xbits.set(j, xj);
+        self.zbits.set(j, zj);
+        if (xi || zi) && self.lbits[i] {
+            self.lbits.set(i, false);
+        }
+        if (xj || zj) && self.lbits[j] {
+            self.lbits.set(j, false);
+        }
+        self.invalidate_xz_hash();
+    }
+
+    #[inline]
+    fn set_z_bit_pair(&mut self, i: usize, zi: bool, j: usize, zj: bool) {
+        debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
+        self.zbits.set(i, zi);
+        self.zbits.set(j, zj);
+        if zi && self.lbits[i] {
+            self.lbits.set(i, false);
+        }
+        if zj && self.lbits[j] {
+            self.lbits.set(j, false);
+        }
+        self.invalidate_xz_hash();
+    }
+
+    // Build a rotation branch directly from the packed planes.
+    #[inline]
+    fn toggled_bits(&self, i: usize, toggle_x: bool, toggle_z: bool) -> Self
+    where
+        Self: Sized + Clone,
+    {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        let mut xbits = self.xbits;
+        let mut zbits = self.zbits;
+        if toggle_x {
+            let bit = xbits[i];
+            xbits.set(i, !bit);
+        }
+        if toggle_z {
+            let bit = zbits[i];
+            zbits.set(i, !bit);
+        }
+        Self::from_planes(xbits, zbits, self.lbits, self.nqubits)
+    }
+
+    /// Build a two-site rotation branch with one packed-plane copy.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn toggled_bits2(&self, i: usize, toggle_i: [bool; 2], j: usize, toggle_j: [bool; 2]) -> Self {
+        debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
+        let mut xbits = self.xbits;
+        let mut zbits = self.zbits;
+        let toggle_x_i = toggle_i[0];
+        let toggle_x_j = toggle_j[0];
+        let toggle_z_i = toggle_i[1];
+        let toggle_z_j = toggle_j[1];
+        if toggle_x_i {
+            let bit = xbits[i];
+            xbits.set(i, !bit);
+        }
+        if toggle_z_i {
+            let bit = zbits[i];
+            zbits.set(i, !bit);
+        }
+        if toggle_x_j {
+            let bit = xbits[j];
+            xbits.set(j, !bit);
+        }
+        if toggle_z_j {
+            let bit = zbits[j];
+            zbits.set(j, !bit);
+        }
+        Self::from_planes(xbits, zbits, self.lbits, self.nqubits)
+    }
+}
+
+impl<A:PauliStorage, H> LossState for LossyPauliWord<A, H> {
+    #[inline]
+    fn is_lost(&self, i: usize) -> bool {
+        LossyPauliWord::is_lost(self, i)
+    }
+
+    #[inline]
+    fn set_lost(&mut self, i: usize) {
+        LossyPauliWord::set_lost(self, i);
+    }
+
+    #[inline]
+    fn clear_lost(&mut self, i: usize) {
+        LossyPauliWord::clear_loss(self, i);
+    }
+
+    #[inline]
+    fn loss_cleared(&self, i: usize) -> Self
+    where
+        Self: Sized + Clone,
+    {
+        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        let mut lbits = self.lbits;
+        lbits.set(i, false);
+        Self::from_planes(self.xbits, self.zbits, lbits, self.nqubits)
+    }
+
+    #[inline]
+    fn loss_weight(&self) -> usize {
+        LossyPauliWord::loss_weight(self)
     }
 }

@@ -186,7 +186,7 @@ impl<A: PauliStorage, H> Clone for LossyPauliWord<A, H> {
             zbits: self.zbits,
             lbits: self.lbits,
             nqubits: self.nqubits,
-            xz_hash_cache: AtomicU64::new(self.loss_hash_cache.load(Ordering::Relaxed)),
+            xz_hash_cache: AtomicU64::new(self.xz_hash_cache.load(Ordering::Relaxed)),
             loss_hash_cache: AtomicU64::new(self.loss_hash_cache.load(Ordering::Relaxed)),
             _hasher: PhantomData,
         }
@@ -307,6 +307,7 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
         self.zbits.set(i, z);
         if (x || z) && self.lbits[i] {
             self.lbits.set(i, false);
+            self.invalidate_loss_hash();
         }
         self.invalidate_xz_hash();
     }
@@ -320,9 +321,11 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
         self.zbits.set(j, zj);
         if (xi || zi) && self.lbits[i] {
             self.lbits.set(i, false);
+            self.invalidate_loss_hash();
         }
         if (xj || zj) && self.lbits[j] {
             self.lbits.set(j, false);
+            self.invalidate_loss_hash();
         }
         self.invalidate_xz_hash();
     }
@@ -334,9 +337,11 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
         self.zbits.set(j, zj);
         if zi && self.lbits[i] {
             self.lbits.set(i, false);
+            self.invalidate_loss_hash();
         }
         if zj && self.lbits[j] {
             self.lbits.set(j, false);
+            self.invalidate_loss_hash();
         }
         self.invalidate_xz_hash();
     }
@@ -358,7 +363,11 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
             let bit = zbits[i];
             zbits.set(i, !bit);
         }
-        Self::from_planes(xbits, zbits, self.lbits, self.nqubits)
+        let mut lbits = self.lbits;
+        if xbits[i] || zbits[i] {
+            lbits.set(i, false);
+        }
+        Self::from_planes(xbits, zbits, lbits, self.nqubits)
     }
 
     /// Build a two-site rotation branch with one packed-plane copy.
@@ -388,7 +397,14 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
             let bit = zbits[j];
             zbits.set(j, !bit);
         }
-        Self::from_planes(xbits, zbits, self.lbits, self.nqubits)
+        let mut lbits = self.lbits;
+        if xbits[i] || zbits[i] {
+            lbits.set(i, false);
+        }
+        if xbits[j] || zbits[j] {
+            lbits.set(j, false);
+        }
+        Self::from_planes(xbits, zbits, lbits, self.nqubits)
     }
 }
 
@@ -428,6 +444,30 @@ impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toggling_a_lost_site_restores_it_only_when_bits_change() {
+        let word = LossyPauliWord::<u8>::from("LL");
+
+        assert_eq!(word.toggled_bits(0, true, false).to_string(), "XL");
+        assert_eq!(word.toggled_bits(0, false, true).to_string(), "ZL");
+        assert_eq!(word.toggled_bits(0, true, true).to_string(), "YL");
+        assert_eq!(word.toggled_bits(0, false, false), word);
+        assert_eq!(word.to_string(), "LL");
+    }
+
+    #[test]
+    fn toggling_two_sites_clears_only_the_affected_loss_flags() {
+        let word = LossyPauliWord::<u8>::from("LLL");
+
+        let branch = word.toggled_bits2(0, [true, false], 2, [false, true]);
+        assert_eq!(branch.to_string(), "XLZ");
+        assert_eq!(branch.loss_weight(), 1);
+
+        let branch = word.toggled_bits2(0, [false, false], 2, [true, true]);
+        assert_eq!(branch.to_string(), "LLY");
+        assert_eq!(word.to_string(), "LLL");
+    }
 
     #[test]
     fn new_word_is_all_identity() {

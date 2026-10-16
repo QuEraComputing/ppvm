@@ -1,4 +1,8 @@
-use std::{fmt, marker::PhantomData, sync::atomic::{AtomicU64, Ordering}};
+use std::{
+    fmt,
+    marker::PhantomData,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use bitvec::array::BitArray;
 use ppvm_pauli_word_2::{DefaultStorage, PauliStorage};
@@ -385,7 +389,7 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
     }
 }
 
-impl<A:PauliStorage, H> LossState for LossyPauliWord<A, H> {
+impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
     #[inline]
     fn is_lost(&self, i: usize) -> bool {
         LossyPauliWord::is_lost(self, i)

@@ -210,3 +210,15 @@ impl<A: PauliStorage, H> fmt::Debug for LossyPauliWord<A, H> {
             .finish()
     }
 }
+
+impl<A: PauliStorage, H> PartialEq for LossyPauliWord<A, H> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.nqubits == other.nqubits
+            && self.xbits.data == other.xbits.data
+            && self.zbits.data == other.zbits.data
+            && self.lbits.data == other.lbits.data
+    }
+}
+
+impl<A: PauliStorage, H> Eq for LossyPauliWord<A, H> {}

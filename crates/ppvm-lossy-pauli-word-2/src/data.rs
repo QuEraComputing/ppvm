@@ -222,3 +222,38 @@ impl<A: PauliStorage, H> PartialEq for LossyPauliWord<A, H> {
 }
 
 impl<A: PauliStorage, H> Eq for LossyPauliWord<A, H> {}
+
+impl<A: PauliStorage, H> From<&str> for LossyPauliWord<A, H> {
+    /// Parse I/X/Y/Z/L symbols, ignoring underscores.
+    /// Panics on invalid characters or if the backing capacity is exceeded.
+    fn from(value: &str) -> Self {
+        let mut xbits = BitArray::<A>::ZERO;
+        let mut zbits = BitArray::<A>::ZERO;
+        let mut lbits = BitArray::<A>::ZERO;
+
+        let symbols = value.chars().filter(|&ch| ch != '_').collect::<Vec<char>>();
+        for (i, ch) in symbols.iter().enumerate() {
+            match ch {
+                'I' => {}
+                'X' => xbits.set(i, true),
+                'Z' => zbits.set(i, true),
+                'Y' => {
+                    xbits.set(i, true);
+                    zbits.set(i, true);
+                }
+                'L' => lbits.set(i, true),
+                other => panic!("invalid lossy Pauli character: {other}"),
+            }
+        }
+        let nqubits = symbols.len();
+
+        Self::from_planes(xbits, zbits, lbits, nqubits)
+    }
+}
+
+impl<A: PauliStorage, H> From<String> for LossyPauliWord<A, H> {
+    #[inline]
+    fn from(value: String) -> Self {
+        Self::from(value.as_str())
+    }
+}

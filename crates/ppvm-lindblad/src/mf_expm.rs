@@ -5,8 +5,8 @@
 //! crate — for both the real (`f64`) adaptive path and the complex,
 //! phase-aware orbit-rep path.
 //!
-//! Instead of materialising the in-basis-restricted generator as a CSR, the
-//! per-column generator action is computed ONCE per expm call (via
+//! The in-basis-restricted generator's per-column action is computed ONCE
+//! per expm call (via
 //! [`build_mf_cols`] / [`build_orbit_rep_cols`]), stored row-major, and
 //! reused across every Krylov/Taylor matvec
 //! by [`CsrOp`] (a [`quspin_types::LinearOperator`]) fed to
@@ -60,12 +60,12 @@ struct CsrRange<T> {
 }
 
 /// Cached in-basis action in row-major (CSR) form, stored as ranges of
-/// `rows_per_range` consecutive rows.
+/// `1 << range_shift` consecutive rows.
 ///
 /// Row-major storage makes the matvec deterministic: each output entry is
 /// summed by one thread over its row in ascending column order, so `M·x`
 /// is bit-identical for every rayon thread count, with no per-thread
-/// partial vectors and no serial reduction. `rows_per_range` depends on
+/// partial vectors and no serial reduction. `range_shift` depends on
 /// `dim` only.
 ///
 /// One exactly-sized allocation triple per range replaces one `Vec` per
@@ -73,15 +73,20 @@ struct CsrRange<T> {
 /// allocations for the system allocator to retain after the expm call.
 pub(crate) struct BlockCsr<T> {
     ranges: Vec<CsrRange<T>>,
-    rows_per_range: usize,
+    range_shift: u32,
     dim: usize,
 }
 
-/// Rows per [`CsrRange`]: ~256 ranges for load balance, at least 1024 rows
-/// each. A function of `dim` alone, so the layout (and every row's
-/// summation order) is independent of the thread count.
-fn rows_per_range(dim: usize) -> usize {
-    dim.div_ceil(256).max(1024)
+/// `log2` of the rows per [`CsrRange`]: the smallest power of two that
+/// gives at most 256 ranges, and at least 64 rows per range. A function of
+/// `dim` alone, so the layout (and every row's summation order) is
+/// independent of the thread count. A power of two turns the per-entry
+/// range lookup into a shift.
+fn range_shift(dim: usize) -> u32 {
+    dim.div_ceil(256)
+        .max(64)
+        .next_power_of_two()
+        .trailing_zeros()
 }
 
 /// Build the [`BlockCsr`] cache and the per-column `(raw, diag)` data for
@@ -93,9 +98,10 @@ fn rows_per_range(dim: usize) -> usize {
 /// passes. (1) Over column blocks: compute the action and stage each entry
 /// in an exactly-sized bucket of its row range, in column order. (2) Over
 /// row ranges: a stable counting sort of the range's buckets (taken in
-/// block order) into CSR, dropping each bucket once consumed. Staging costs
-/// 16 B/entry for real `T`, against 12 B/entry for the final CSR, and the
-/// cache is never held in both layouts at once.
+/// block order) into CSR, dropping each bucket once consumed. The cache is
+/// never held in both layouts at once, but staging stores the row as well:
+/// 16 B/entry for real `T` and 24 B/entry for complex `T`, against
+/// 12 B/entry and 20 B/entry for the final CSR.
 fn build_block_csr<const C: usize, T, F>(
     spec: &LindbladSpec<C>,
     dim: usize,
@@ -111,8 +117,8 @@ where
     let block = dim
         .div_ceil(16 * rayon::current_num_threads().max(1))
         .clamp(64, 4096);
-    let rpr = rows_per_range(dim);
-    let n_ranges = dim.div_ceil(rpr);
+    let shift = range_shift(dim);
+    let n_ranges = dim.div_ceil(1 << shift);
 
     // Pass 1: `staged[b][k]` holds block `b`'s entries in row range `k`.
     let (staged, per_col): (Vec<Buckets<T>>, Vec<PerCol<T>>) = (0..dim.div_ceil(block))
@@ -129,9 +135,10 @@ where
                     Vec::<u32>::new(),
                     Vec::<T>::new(),
                     Vec::<usize>::new(),
+                    vec![0usize; n_ranges],
                 )
             },
-            |(scratch, rows, vals, ends), b| {
+            |(scratch, rows, vals, ends, counts), b| {
                 let cols = (b * block)..dim.min((b + 1) * block);
                 rows.clear();
                 vals.clear();
@@ -141,16 +148,17 @@ where
                     per_col.push(col(c, scratch, rows, vals));
                     ends.push(rows.len());
                 }
-                let mut counts = vec![0usize; n_ranges];
+                counts.fill(0);
                 for &r in rows.iter() {
-                    counts[r as usize / rpr] += 1;
+                    counts[(r >> shift) as usize] += 1;
                 }
                 let mut buckets: Buckets<T> =
                     counts.iter().map(|&k| Vec::with_capacity(k)).collect();
                 let mut lo = 0;
                 for (c, &hi) in cols.zip(ends.iter()) {
                     for e in lo..hi {
-                        buckets[rows[e] as usize / rpr].push((rows[e], c as u32, vals[e]));
+                        let r = rows[e];
+                        buckets[(r >> shift) as usize].push((r, c as u32, vals[e]));
                     }
                     lo = hi;
                 }
@@ -177,8 +185,12 @@ where
         .into_par_iter()
         .enumerate()
         .map(|(k, buckets)| {
-            let row0 = k * rpr;
-            let nrows = rpr.min(dim - row0);
+            let row0 = k << shift;
+            let nrows = (1usize << shift).min(dim - row0);
+            let nnz: usize = buckets.iter().map(Vec::len).sum();
+            // The per-range offsets are u32; check once so the counts
+            // below cannot wrap.
+            u32::try_from(nnz).expect("CSR row range exceeds u32 entries");
             let mut offsets = vec![0u32; nrows + 1];
             for &(r, _, _) in buckets.iter().flatten() {
                 offsets[r as usize - row0 + 1] += 1;
@@ -186,7 +198,6 @@ where
             for i in 0..nrows {
                 offsets[i + 1] += offsets[i];
             }
-            let nnz = offsets[nrows] as usize;
             let mut cursor = offsets[..nrows].to_vec();
             let mut cols = vec![0u32; nnz];
             let mut vals = vec![T::zero(); nnz];
@@ -209,7 +220,7 @@ where
     (
         BlockCsr {
             ranges,
-            rows_per_range: rpr,
+            range_shift: shift,
             dim,
         },
         per_col,
@@ -219,12 +230,14 @@ where
 /// Per-column in-basis action of the real generator `M`, plus the data the
 /// `(m, s)`/`μ` selection needs — all from ONE action pass over the basis.
 ///
-/// Returns `(cols, per_col)` where `cols[c]` holds `(row, coeff)` for every
-/// action output of `L*(basis[c])` that lands back in `basis` (column
-/// `c` of the cached CSR), and `per_col[c] = (raw, diag)` with `raw = Σ|coeff|` over ALL action
-/// outputs (in- and out-of-basis, an upper bound on the column 1-norm) and
-/// `diag` the coefficient of the output Word equal to the input Word. The
-/// cache is reused by [`CsrOp`] across every Krylov/Taylor matvec.
+/// Returns `(mat, per_col)`. Column `c` of the row-major cache `mat` holds
+/// `M[row, c] = coeff` for every action output of `L*(basis[c])` that lands
+/// back in `basis` at index `row`. `per_col[c] = (raw, diag)`, with
+/// `raw = Σ|coeff|` over ALL action outputs (in- and out-of-basis, an upper
+/// bound on the column 1-norm) and `diag` the coefficient of the output
+/// Word equal to the input Word. Both sums run in the canonical term order
+/// of [`LindbladSpec::compute_action_terms`]. The cache is reused by
+/// [`CsrOp`] across every Krylov/Taylor matvec.
 fn build_mf_cols<const C: usize>(
     spec: &LindbladSpec<C>,
     basis: &[Word<C>],
@@ -253,10 +266,13 @@ fn build_mf_cols<const C: usize>(
 /// generator `M` at momentum `sector`, plus the `(m, s)`/`μ` selection data
 /// — from ONE action pass over the basis.
 ///
-/// `cols[c]` holds `(row, χ_k(g_{cnt_q}) · v_q · |orbit_c| / |orbit_row|)`
-/// for every action output Pauli `q` of `L*(basis[c])` whose orbit rep
-/// `r_q` is in `basis` at index `row`; outputs whose rep is out of basis
-/// are dropped. This is the expensive part of the orbit-rep dynamics
+/// Column `c` of the row-major cache receives
+/// `χ_k(g_{cnt_q}) · v_q · |orbit_c| / |orbit_row|` at row `row` for every
+/// action output Pauli `q` of `L*(basis[c])` whose orbit rep `r_q` is in
+/// `basis` at index `row`; outputs whose rep is out of basis are dropped.
+/// Several outputs can share a rep, so a row can hold the same column more
+/// than once; those duplicates are emitted, and later summed, in the
+/// canonical term order of [`LindbladSpec::compute_action_terms`]. This is the expensive part of the orbit-rep dynamics
 /// (`compute_action_terms`, [`Sector::canonicalize_phase`]).
 ///
 /// The character-weighted sum runs over the *output* orbit's distinct
@@ -349,14 +365,21 @@ where
         // depend on the thread count.
         let m = self.mat;
         output
-            .par_chunks_mut(m.rows_per_range)
+            .par_chunks_mut(1 << m.range_shift)
             .zip(m.ranges.par_iter())
             .for_each(|(y, r)| {
                 for (i, yi) in y.iter_mut().enumerate() {
                     let (lo, hi) = (r.offsets[i] as usize, r.offsets[i + 1] as usize);
                     let mut acc = T::zero();
                     for (&c, &v) in r.cols[lo..hi].iter().zip(&r.vals[lo..hi]) {
-                        acc += v * input[c as usize];
+                        // Skip zero inputs, as the column-wise product did:
+                        // saves the multiply-add for sparse `input`, and
+                        // keeps a non-finite entry of an unused column out
+                        // of `y`.
+                        let xc = input[c as usize];
+                        if xc != T::zero() {
+                            acc += v * xc;
+                        }
                     }
                     if overwrite {
                         *yi = acc;
@@ -424,8 +447,8 @@ where
     }
 }
 
-/// Shared tail of every matrix-free expm: from the cached per-column action
-/// derive the diagonal shift `μ = tr(M)/n` and a bound on the column 1-norm
+/// Shared tail of every matrix-free expm: from the cached action `mat` and
+/// its per-column `(raw, diag)` data derive the diagonal shift `μ = tr(M)/n` and a bound on the column 1-norm
 /// of `M − μ·I` (`raw − |diag| + |diag − μ|` per column), pick the Taylor
 /// partition via `select` from `‖dt·(M−μI)‖₁`, and hand everything to
 /// [`quspin_expm::ExpmOp::from_parts`]. Returns `exp(dt · M) · coeffs`.
@@ -433,7 +456,7 @@ where
 /// `select` maps `‖dt·(M−μI)‖₁` to `(m*, s, backward-error tol)`; the two
 /// call sites differ only in that choice.
 fn expm_apply_cached<T>(
-    cols: &BlockCsr<T>,
+    mat: &BlockCsr<T>,
     per_col: &PerCol<T>,
     dt: f64,
     coeffs: &[T],
@@ -451,7 +474,7 @@ where
         + From<f64>
         + Sum,
 {
-    let n = cols.dim;
+    let n = mat.dim;
     let trace: T = per_col.iter().map(|(_, d)| *d).sum();
     let mu = trace / n as f64;
     let onenorm = per_col
@@ -461,7 +484,7 @@ where
     let (m_star, s, expm_tol) = select(dt.abs() * onenorm);
 
     let mut v = coeffs.to_vec();
-    let op = CsrOp { mat: cols };
+    let op = CsrOp { mat };
     let expm =
         quspin_expm::ExpmOp::from_parts(op, T::from(dt), mu, s as usize, m_star as usize, expm_tol);
     expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
@@ -473,7 +496,7 @@ where
 /// `M`, matrix-free, via `quspin-expm`. Returns a fresh `Vec<f64>` of length
 /// `basis.len()`.
 ///
-/// ONE action pass builds the CSR cache `cols` (reused across every matvec)
+/// ONE action pass builds the CSR cache `mat` (reused across every matvec)
 /// and, in the same pass, the `(raw, diag)` data the `μ`/1-norm selection
 /// needs; [`expm_apply_cached`] does the rest.
 pub(crate) fn expm_apply_mf<const C: usize>(
@@ -487,7 +510,7 @@ pub(crate) fn expm_apply_mf<const C: usize>(
         return Vec::new();
     }
     let index = build_basis_index(basis);
-    let (cols, per_col) = build_mf_cols(spec, basis, &index);
+    let (mat, per_col) = build_mf_cols(spec, basis, &index);
 
     // Pick the Taylor backward-error tolerance to match the basis truncation:
     // when the PC prunes coarsely (drop_tol >= 1e-4) a double-precision exp is
@@ -496,7 +519,7 @@ pub(crate) fn expm_apply_mf<const C: usize>(
     // lower-degree Taylor polynomial and cuts the SpMV count with no effect on
     // the truncated result. At tight/zero drop_tol we keep double precision so
     // the exact-reference paths (orbit-rep / merged) still agree bit-for-bit.
-    expm_apply_cached(&cols, &per_col, dt, coeffs, |t_norm| {
+    expm_apply_cached(&mat, &per_col, dt, coeffs, |t_norm| {
         if drop_tol >= 1e-4 {
             let (m, s) = expm::select_ms_loose(t_norm);
             (m, s, 1e-6)
@@ -525,9 +548,9 @@ pub(crate) fn expm_apply_orbit_rep<const C: usize>(
         return Vec::new();
     }
     let index = build_basis_index(basis);
-    let (cols, per_col) = build_orbit_rep_cols(spec, basis, &index, sector);
+    let (mat, per_col) = build_orbit_rep_cols(spec, basis, &index, sector);
 
-    expm_apply_cached(&cols, &per_col, dt, coeffs, |t_norm| {
+    expm_apply_cached(&mat, &per_col, dt, coeffs, |t_norm| {
         let (m, s) = expm::select_ms(t_norm);
         (m, s, 1e-12)
     })

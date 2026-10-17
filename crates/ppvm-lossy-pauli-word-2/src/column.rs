@@ -369,3 +369,52 @@ where
 {
     type Column = LossyPauliKeyColumn<A, H>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ppvm_traits_2::Indexable;
+
+    #[test]
+    fn push_preserves_words_and_site_bits() {
+        let mut column = LossyPauliKeyColumn::<u16>::default();
+        let word = LossyPauliWord::from("IIIIIIIIXYL");
+        column.push(word.clone());
+
+        assert_eq!(column.len(), 1);
+        assert_eq!(column.get(0), word);
+        assert!(column.x_bit(0, 8));
+        assert!(!column.z_bit(0, 8));
+        assert!(column.x_bit(0, 9));
+        assert!(column.z_bit(0, 9));
+        assert!(column.is_lost(0, 10));
+    }
+
+    #[test]
+    fn gather_selects_rows_in_requested_order() {
+        let mut column = LossyPauliKeyColumn::<u8>::default();
+        column.push(LossyPauliWord::from("XI"));
+        column.push(LossyPauliWord::from("YL"));
+        column.push(LossyPauliWord::from("IZ"));
+
+        let selected = column.gather(&[2, 0, 2]);
+
+        assert_eq!(selected.len(), 3);
+        assert_eq!(selected.get(0).to_string(), "IZ");
+        assert_eq!(selected.get(1).to_string(), "XI");
+        assert_eq!(selected.get(2).to_string(), "IZ");
+        assert_eq!(column.get(1).to_string(), "YL");
+    }
+
+    #[test]
+    fn column_hashes_match_individual_word_hashes() {
+        let mut column = LossyPauliKeyColumn::<u8>::default();
+        column.push(LossyPauliWord::from("XLZ"));
+        column.push(LossyPauliWord::from("YII"));
+        let mut hashes = [0; 2];
+
+        column.hash_into(&mut hashes);
+
+        assert_eq!(hashes, [column.get(0).key_hash(), column.get(1).key_hash()]);
+    }
+}

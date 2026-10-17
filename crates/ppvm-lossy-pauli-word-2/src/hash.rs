@@ -9,6 +9,40 @@ use ppvm_traits_2::Indexable;
 
 use crate::LossyPauliWord;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ppvm_traits_2::{IdentityBuildHasher, LossySite, Pauli};
+    use std::collections::HashMap;
+
+    #[test]
+    fn equal_words_find_the_same_map_entry() {
+        let mut map = HashMap::with_hasher(IdentityBuildHasher);
+        map.insert(LossyPauliWord::<u8>::from("XLZ"), 7);
+
+        assert_eq!(map.get(&LossyPauliWord::from("X_L_Z")), Some(&7));
+        assert_eq!(map.get(&LossyPauliWord::from("XIZ")), None);
+    }
+
+    #[test]
+    fn hashing_after_mutation_matches_a_fresh_word() {
+        let mut word = LossyPauliWord::<u8>::from("XLZ");
+        let _ = word.key_hash();
+
+        word.clear_loss(1);
+        assert_eq!(
+            word.key_hash(),
+            LossyPauliWord::<u8>::from("XIZ").key_hash()
+        );
+
+        word.set(0, LossySite::Present(Pauli::Y));
+        assert_eq!(
+            word.key_hash(),
+            LossyPauliWord::<u8>::from("YIZ").key_hash()
+        );
+    }
+}
+
 #[inline]
 pub(crate) fn structural_hash_lossy<A, H>(x: &A, z: &A, l: &A, _nqubits: usize) -> u64
 where

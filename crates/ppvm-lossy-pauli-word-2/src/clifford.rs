@@ -97,3 +97,49 @@ impl<A: PauliStorage, H> PhaseTrack for LossyPauliWord<A, H> {
     #[inline]
     fn z_phase(&mut self, _q: usize) {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_qubit_operations_transform_present_sites() {
+        let mut word = LossyPauliWord::<u8>::from("XYZL");
+
+        word.swap_xz(0);
+        word.swap_xz(2);
+        assert_eq!(word.to_string(), "ZYXL");
+
+        word.xor_z_from_x(1);
+        word.xor_z_from_x(2);
+        assert_eq!(word.to_string(), "ZXYL");
+    }
+
+    #[test]
+    fn two_qubit_operations_transform_present_sites() {
+        let mut word = LossyPauliWord::<u8>::from("XZ");
+
+        word.xor_x_col(0, 1);
+        word.xor_z_col(1, 0);
+        assert_eq!(word.to_string(), "YY");
+
+        word.cz_bits(0, 1);
+        assert_eq!(word.to_string(), "XX");
+    }
+
+    #[test]
+    fn operations_touching_lost_sites_leave_the_word_unchanged() {
+        for input in ["XL", "LY", "LL"] {
+            let mut word = LossyPauliWord::<u8>::from(input);
+            let lost = if word.is_lost(0) { 0 } else { 1 };
+
+            word.swap_xz(lost);
+            word.xor_z_from_x(lost);
+            word.xor_x_col(0, 1);
+            word.xor_z_col(1, 0);
+            word.cz_bits(0, 1);
+
+            assert_eq!(word, LossyPauliWord::from(input));
+        }
+    }
+}

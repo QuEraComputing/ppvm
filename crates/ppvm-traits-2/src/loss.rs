@@ -1,6 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LossySite<S> {
+    /// A present site carrying `S`
+    Present(S),
+    /// A lost site - the qubit no longer participates
+    Lost,
+}
 /// Loss state associated with word sites.
 pub trait LossState {
     /// Whether site `i` is lost. Lossy words override this.

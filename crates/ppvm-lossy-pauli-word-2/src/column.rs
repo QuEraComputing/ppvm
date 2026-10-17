@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
+
 //! Column storage for [`LossyPauliWord`], with separate X, Z, and loss vectors.
 //! Each vector holds one packed `A` value per word; all words share a qubit width.
 

@@ -2204,6 +2204,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-lossy-pauli-word-2"
+version = "0.1.0"
+dependencies = [
+ "bitvec",
+ "bytemuck",
+ "fxhash",
+ "ppvm-pauli-word-2",
+ "ppvm-traits-2",
+]
+
+[[package]]
 name = "ppvm-pauli-sum"
 version = "0.1.0"
 dependencies = [

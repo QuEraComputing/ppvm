@@ -28,7 +28,7 @@ members = [
     # Built by `cargo build --workspace --all-targets` in CI so the skill
     # can't silently drift away from the public API.
     "crates/ppvm-tui",
-    "skills/ppvm-usage/examples/rust",
+    "skills/ppvm-usage/examples/rust", "crates/ppvm-lossy-pauli-word-2",
 ]
 
 # Keep function names and line numbers in release builds so profilers

@@ -49,14 +49,27 @@ where
     A: PauliStorage,
     H: BuildHasher + Default + HashFinalize,
 {
+    let xz_hash = hash_xz::<A, H>(x, z);
+    let loss_hash = H::default().hash_one(l);
+    combine_hashes::<H>(xz_hash, loss_hash)
+}
+
+#[inline]
+fn hash_xz<A: PauliStorage, H: BuildHasher + Default>(x: &A, z: &A) -> u64 {
     let mut hasher = H::default().build_hasher();
     x.hash(&mut hasher);
     z.hash(&mut hasher);
-    l.hash(&mut hasher);
-    let structural = H::finalize_hash(hasher.finish(), std::mem::size_of::<A>());
-    // Apply the legacy map's index transform before the digest reaches
-    // IdentityBuildHasher, which passes it through without further hashing.
-    H::index_hash(structural)
+    hasher.finish()
+}
+
+/// Combine component hashes identically for individual words and column rows.
+#[inline]
+fn combine_hashes<H: BuildHasher + Default + HashFinalize>(xz_hash: u64, loss_hash: u64) -> u64 {
+    let mut hasher = H::default().build_hasher();
+    hasher.write_u64(xz_hash);
+    hasher.write_u64(loss_hash);
+    let word_hash = H::finalize_hash(hasher.finish(), std::mem::size_of::<[u64; 2]>());
+    H::index_hash(word_hash)
 }
 
 /// Write the finalized word digest as one `u64` for `IdentityHasher`
@@ -84,10 +97,7 @@ where
     fn key_hash(&self) -> u64 {
         let xz_hash = match self.xz_hash_cache.load(Ordering::Relaxed) {
             0 => {
-                let mut hasher = H::default().build_hasher();
-                self.xbits.data.hash(&mut hasher);
-                self.zbits.data.hash(&mut hasher);
-                let digest = hasher.finish();
+                let digest = hash_xz::<A, H>(&self.xbits.data, &self.zbits.data);
                 self.xz_hash_cache.store(digest, Ordering::Relaxed);
                 digest
             }
@@ -103,11 +113,6 @@ where
             cached => cached,
         };
 
-        let mut hasher = H::default().build_hasher();
-        hasher.write_u64(xz_hash);
-        hasher.write_u64(loss_hash);
-
-        let word_hash = H::finalize_hash(hasher.finish(), std::mem::size_of::<[u64; 2]>());
-        H::index_hash(word_hash)
+        combine_hashes::<H>(xz_hash, loss_hash)
     }
 }

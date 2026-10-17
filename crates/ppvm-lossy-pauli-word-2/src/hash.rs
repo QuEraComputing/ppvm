@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::atomic::Ordering;
 
@@ -56,6 +58,7 @@ where
             }
             cached => cached,
         };
+
         let loss_hash = match self.loss_hash_cache.load(Ordering::Relaxed) {
             0 => {
                 let digest = H::default().hash_one(self.lbits.data);
@@ -64,11 +67,12 @@ where
             }
             cached => cached,
         };
+
         let mut hasher = H::default().build_hasher();
         hasher.write_u64(xz_hash);
         hasher.write_u64(loss_hash);
 
-        let digest = H::finalize_hash(hasher.finish(), std::mem::size_of::<[u64; 2]>());
-        H::index_hash(digest)
+        let word_hash = H::finalize_hash(hasher.finish(), std::mem::size_of::<[u64; 2]>());
+        H::index_hash(word_hash)
     }
 }

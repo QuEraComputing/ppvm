@@ -3,4 +3,7 @@
 
 mod data;
 mod hash;
+pub mod column;
+
 pub use data::LossyPauliWord;
+pub use column::LossyPauliKeyColumn;

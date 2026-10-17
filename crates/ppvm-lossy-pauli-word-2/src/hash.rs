@@ -58,9 +58,7 @@ where
         };
         let loss_hash = match self.loss_hash_cache.load(Ordering::Relaxed) {
             0 => {
-                let mut hasher = H::default().build_hasher();
-                self.lbits.data.hash(&mut hasher);
-                let digest = hasher.finish();
+                let digest = H::default().hash_one(self.lbits.data);
                 self.loss_hash_cache.store(digest, Ordering::Relaxed);
                 digest
             }

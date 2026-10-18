@@ -51,7 +51,7 @@ wheels = [
 
 [[package]]
 name = "bloqade-circuit"
-version = "0.14.2"
+version = "0.15.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bloqade-decoders" },
@@ -64,9 +64,9 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/90/07/3cb60f87c45b5b3d6e70cfd4607f534b6dd7447bf84c0cf22135b76f9911/bloqade_circuit-0.14.2.tar.gz", hash = "sha256:f385069887f17b2ba3c40c5ea301baead9e93eaa56e9e7ec71dc679e8ee58d5b", size = 421248, upload-time = "2026-05-12T09:41:52.295Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/16/30dcb54074ce615e6274762b0438424bf29b82673740b0514b0a19ea0742/bloqade_circuit-0.15.3.tar.gz", hash = "sha256:a1f6535086e5ddabccefbe018a4372bfa34668a29c103ef4b82ff15b7ef9fe58", size = 521185, upload-time = "2026-09-28T13:59:06.997Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/f5/67ae94c50f0e502cf30b586cebd3fdb1229d7bfa119d5eef40c0c801a0cd/bloqade_circuit-0.14.2-py3-none-any.whl", hash = "sha256:ad5b0474407a3a5b768eb20240e7bfa2406e6fdbc4658beb077136dbee681286", size = 254764, upload-time = "2026-05-12T09:41:50.802Z" },
+    { url = "https://files.pythonhosted.org/packages/38/a5/e5db6eefae2cafeade34ac1daf9622a4cb6a8d12bde96993022338dc9510/bloqade_circuit-0.15.3-py3-none-any.whl", hash = "sha256:60aed392f09e6149fbfcefa7b43a9f12863f0d9205e58e91eb2d1571d4cde4d6", size = 321913, upload-time = "2026-09-28T13:59:05.075Z" },
 ]
 
 [[package]]
@@ -922,7 +922,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bloqade-circuit", specifier = ">=0.14.1" },
+    { name = "bloqade-circuit", specifier = ">=0.15.0" },
     { name = "kirin-toolchain", specifier = "~=0.22.2" },
     { name = "numpy", specifier = ">=2.2.6" },
 ]

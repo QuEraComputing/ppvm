@@ -71,6 +71,17 @@ def test_basis_state_gates_return_expected_measurements():
     assert _run_kernel(main, 6) == [ZERO, ONE, ONE, ONE, ONE, ONE]
 
 
+def test_is_one_distinguishes_zero_one_and_loss():
+    @squin.kernel
+    def main():
+        q = squin.qalloc(3)
+        squin.x(q[1])
+        squin.qubit_loss(1.0, q[2])
+        return squin.broadcast.is_one(squin.broadcast.measure(q))
+
+    assert _run_kernel(main, 3) == [False, True, False]
+
+
 def test_bell_pair_measurements_are_correlated_after_collapse():
     @squin.kernel
     def main():
@@ -82,10 +93,10 @@ def test_bell_pair_measurements_are_correlated_after_collapse():
         first = squin.measure(q[0])
         second = squin.measure(q[1])
 
-        if first == MeasurementResultValue.One:
+        if squin.is_one(first):
             squin.x(q[2])
 
-        if second == MeasurementResultValue.One:
+        if squin.is_one(second):
             squin.x(q[3])
 
         return squin.broadcast.measure(q)

@@ -1,6 +1,6 @@
 # ppvm-cli
 
-Command-line front-end for the Pauli-propagation virtual machine. Parses,
+Command-line front-end for the Programmable Pauli Virtual Machine. Parses,
 dumps, runs, and steps through `.sst` programs (and their compiled `.ssb`
 bytecode).
 

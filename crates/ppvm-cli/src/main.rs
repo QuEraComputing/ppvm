@@ -9,7 +9,7 @@ mod tui;
 
 #[derive(Parser)]
 #[command(name = "ppvm")]
-#[command(about = "Pauli propagation virtual machine", long_about = None)]
+#[command(about = "Programmable Pauli Virtual Machine", long_about = None)]
 pub struct Cli {
     /// Number of threads for all parallel work (1 = fully serial & deterministic)
     #[arg(short, long, global = true, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]

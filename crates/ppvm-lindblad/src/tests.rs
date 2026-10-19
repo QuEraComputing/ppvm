@@ -414,3 +414,168 @@ fn pc_step_matches_symmetry_merged_on_small_chain() {
         "with-merging vs without-merging diverged: max |Δc| = {max_diff:e}"
     );
 }
+
+/// A rank-capped evolution must be bit-identical for every rayon thread
+/// count: the cached-generator matvec sums each output entry on one thread
+/// in a fixed order. The cap binds, so the round-off of any
+/// thread-dependent summation would be amplified into different basis
+/// memberships within a few steps.
+#[test]
+fn pc_step_is_bit_identical_across_thread_counts() {
+    // Open XXZ chain (interacting, so the operator space keeps growing)
+    // with Z dephasing on every site.
+    let n = 14usize;
+    let mut h_terms: Vec<(String, f64)> = Vec::new();
+    for j in 0..n - 1 {
+        for (op, coupling) in [('X', 1.0), ('Y', 1.0), ('Z', 0.5)] {
+            let mut s = vec!['I'; n];
+            s[j] = op;
+            s[j + 1] = op;
+            h_terms.push((s.into_iter().collect(), coupling));
+        }
+    }
+    let jumps: Vec<JumpInput> = (0..n)
+        .map(|j| {
+            let mut s = vec!['I'; n];
+            s[j] = 'Z';
+            jump_hpauli(&s.into_iter().collect::<String>(), 0.1)
+        })
+        .collect();
+    let spec = <LindbladSpec>::new(n, &h_terms, &jumps).unwrap();
+    let seed: String = (0..n).map(|j| if j == n / 2 { 'Z' } else { 'I' }).collect();
+    let (z, _) = parse_pauli_string::<W_CHUNKS>(&seed, n).unwrap();
+
+    let run = |threads: usize| {
+        let mut basis = vec![z];
+        let mut coeffs = vec![1.0];
+        let cfg = PcStepConfig {
+            max_basis: 1200,
+            admit_basis: Some(3600),
+            drop_tol: 0.0,
+            num_threads: Some(threads),
+            ..Default::default()
+        };
+        for _ in 0..12 {
+            spec.pc_step(&mut basis, &mut coeffs, 0.1, &[z], &cfg)
+                .unwrap();
+        }
+        (basis, coeffs)
+    };
+    let (basis_1, coeffs_1) = run(1);
+    assert_eq!(basis_1.len(), 1200, "the rank cap must bind");
+    for threads in [2, 3, 8] {
+        let (basis_t, coeffs_t) = run(threads);
+        assert_eq!(basis_t, basis_1, "basis differs at {threads} threads");
+        assert!(
+            coeffs_t
+                .iter()
+                .zip(&coeffs_1)
+                .all(|(a, b)| a.to_bits() == b.to_bits()),
+            "coefficients differ at {threads} threads"
+        );
+    }
+}
+
+/// The orbit-rep step must be bit-identical for every rayon thread count
+/// too. Collective decay `L = Σ_j σ⁻_j` gives every rep ~100 action
+/// outputs, many of which share an orbit rep, so cached rows hold
+/// duplicate columns. The cap binds.
+#[test]
+fn pc_step_orbit_rep_is_bit_identical_across_thread_counts() {
+    use ppvm_pauli_sum::symmetry::{TranslationGroup, canonicalize_pauli_sum_complex};
+
+    let n = 12usize;
+    let lincomb: Vec<(String, Complex<f64>)> = (0..n)
+        .flat_map(|j| {
+            [
+                ('X', Complex::new(0.5, 0.0)),
+                ('Y', Complex::new(0.0, -0.5)),
+            ]
+            .map(|(op, c)| {
+                let mut s = vec!['I'; n];
+                s[j] = op;
+                (s.into_iter().collect::<String>(), c)
+            })
+        })
+        .collect();
+    let spec =
+        <LindbladSpec>::new(n, &xy_chain_pbc(n), &[JumpInput { lincomb, rate: 0.2 }]).unwrap();
+    let group = TranslationGroup::chain_1d(n);
+    let sector = Sector::new(&group, &[0]);
+
+    // Seed: the k = 0 rep of Σ_j Z_j Z_{j+1}.
+    let seed: Vec<Word> = (0..n)
+        .map(|j| {
+            let mut s = vec!['I'; n];
+            s[j] = 'Z';
+            s[(j + 1) % n] = 'Z';
+            let st: String = s.into_iter().collect();
+            parse_pauli_string::<W_CHUNKS>(&st, n).unwrap().0
+        })
+        .collect();
+
+    let run = |threads: usize| {
+        let mut basis = seed.clone();
+        let mut coeffs = vec![Complex::new(1.0, 0.0); n];
+        canonicalize_pauli_sum_complex(&mut basis, &mut coeffs, &group, &[0]);
+        let cfg = PcStepConfig {
+            max_basis: 400,
+            admit_basis: Some(1200),
+            drop_tol: 0.0,
+            num_threads: Some(threads),
+            ..Default::default()
+        };
+        for _ in 0..10 {
+            spec.pc_step_orbit_rep(&mut basis, &mut coeffs, 0.1, &[], &sector, &cfg)
+                .unwrap();
+        }
+        (basis, coeffs)
+    };
+    let (basis_1, coeffs_1) = run(1);
+    assert_eq!(basis_1.len(), 400, "the rank cap must bind");
+    let bits = |c: &[Complex<f64>]| -> Vec<(u64, u64)> {
+        c.iter().map(|z| (z.re.to_bits(), z.im.to_bits())).collect()
+    };
+    for threads in [2, 3, 8] {
+        let (basis_t, coeffs_t) = run(threads);
+        assert_eq!(basis_t, basis_1, "basis differs at {threads} threads");
+        assert_eq!(
+            bits(&coeffs_t),
+            bits(&coeffs_1),
+            "coefficients differ at {threads} threads"
+        );
+    }
+}
+
+/// `compute_action_terms` must return its terms in the same order however
+/// far the reused scratch map has grown on earlier calls. Its drain order
+/// follows the map's capacity, which depends on which strings the same
+/// rayon job handled before, hence on the thread count; every caller sums
+/// or inserts in the returned order.
+#[test]
+fn action_term_order_is_independent_of_scratch_capacity() {
+    let n = 12usize;
+    let spec =
+        <LindbladSpec>::new(n, &xy_chain_pbc(n), &[jump_hpauli("ZIIIIIIIIIII", 0.1)]).unwrap();
+    let (p, _) = parse_pauli_string::<W_CHUNKS>("XZYXIZYIXXZY", n).unwrap();
+    let mut s1 = Vec::new();
+    let mut s2 = Vec::new();
+
+    let mut fresh: FxHashMap<Word, Complex<f64>> = FxHashMap::default();
+    let reference = spec.compute_action_terms(&p, &mut s1, &mut s2, &mut fresh);
+    assert!(reference.len() > 8);
+
+    for grow_to in [256usize, 1024, 8192] {
+        let mut grown: FxHashMap<Word, Complex<f64>> =
+            FxHashMap::with_capacity_and_hasher(grow_to, Default::default());
+        let terms = spec.compute_action_terms(&p, &mut s1, &mut s2, &mut grown);
+        let as_bits = |t: &[(Word, f64)]| -> Vec<(Word, u64)> {
+            t.iter().map(|(w, c)| (*w, c.to_bits())).collect()
+        };
+        assert_eq!(
+            as_bits(&terms),
+            as_bits(&reference),
+            "term order changed with scratch capacity {grow_to}"
+        );
+    }
+}

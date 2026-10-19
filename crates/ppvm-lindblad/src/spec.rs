@@ -8,7 +8,7 @@ use crate::algebra::{
     PauliTerm, anti_commutes, comm_product, pauli_mul, phase_factor, precompute_adag_b,
 };
 use crate::kossakowski;
-use crate::word::{W_CHUNKS, Word, check_width, parse_pauli_string, word_support};
+use crate::word::{W_CHUNKS, Word, check_width, parse_pauli_string, word_hash, word_support};
 use fxhash::FxHashMap;
 use num::Complex;
 
@@ -199,7 +199,14 @@ impl<const C: usize> LindbladSpec<C> {
     }
 
     /// Compute the unscaled list of `(output, coefficient)` pairs that
-    /// `L*(p)` contributes (without the input coefficient).
+    /// `L*(p)` contributes (without the input coefficient), in a canonical
+    /// order: ascending [`word_hash`], ties by [`Word`] order.
+    ///
+    /// The order matters because every caller sums or inserts in it. The
+    /// drain order of `scratch_local` would depend on its capacity, which
+    /// carries over from earlier calls on the same rayon job and hence
+    /// depends on the thread count once one string has enough outputs to
+    /// grow the map.
     pub(crate) fn compute_action_terms(
         &self,
         p: &Word<C>,
@@ -266,7 +273,7 @@ impl<const C: usize> LindbladSpec<C> {
         // L* preserves Hermiticity; imaginary parts must cancel to FP noise.
         // `drain()` empties `scratch_local` so its allocation can be reused
         // by the next call on the same thread (`Vec` keeps capacity).
-        local
+        let mut terms: Vec<(Word<C>, f64)> = local
             .drain()
             .filter_map(|(w, c)| {
                 debug_assert!(
@@ -275,7 +282,12 @@ impl<const C: usize> LindbladSpec<C> {
                 );
                 if c.re == 0.0 { None } else { Some((w, c.re)) }
             })
-            .collect()
+            .collect();
+        // Output words are distinct, so any sort gives the same order.
+        terms.sort_unstable_by(|(a, _), (b, _)| {
+            word_hash(a).cmp(&word_hash(b)).then_with(|| a.cmp(b))
+        });
+        terms
     }
 
     /// Accumulate `scale · L*(p)` into `out`.

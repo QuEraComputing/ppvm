@@ -5,13 +5,14 @@
 //! crate — for both the real (`f64`) adaptive path and the complex,
 //! phase-aware orbit-rep path.
 //!
-//! Instead of materialising the in-basis-restricted generator as a CSR, the
-//! per-column generator action is computed ONCE per expm call (via
-//! [`build_mf_cols`] / [`build_orbit_rep_cols`]) and reused, CSC-style,
-//! across every Krylov/Taylor matvec
-//! by [`CscOp`] (a [`quspin_types::LinearOperator`]) fed to
-//! [`quspin_expm::ExpmOp::from_parts`]. Each matvec is then a cheap CSC
-//! scatter; the Pauli-commutator action is never recomputed per matvec.
+//! The in-basis-restricted generator's per-column action is computed ONCE
+//! per expm call (via
+//! [`build_mf_cols`] / [`build_orbit_rep_cols`]), stored row-major, and
+//! reused across every Krylov/Taylor matvec
+//! by [`CsrOp`] (a [`quspin_types::LinearOperator`]) fed to
+//! [`quspin_expm::ExpmOp::from_parts`]. Each matvec is then a cheap,
+//! deterministic CSR product; the Pauli-commutator action is never
+//! recomputed per matvec.
 //! `from_parts` (rather than `ExpmOp::new`) supplies the diagonal shift `μ`,
 //! the partition count `s`, and the truncation order `m*` directly, bypassing
 //! quspin's adaptive parameter selection — so the 1-norm *estimator* and
@@ -42,62 +43,85 @@ type PerCol<T> = Vec<(f64, T)>;
 /// Scratch buffers for [`LindbladSpec::compute_action_terms`].
 type ActionScratch<const C: usize> = (Vec<u32>, Vec<u32>, FxHashMap<Word<C>, Complex<f64>>);
 
-/// Consecutive CSC columns stored flat: local column `j` holds
-/// `rows[offsets[j]..offsets[j + 1]]` and the matching `vals`.
-struct CscBlock<T> {
+/// One `(row, col, val)` entry of the generator, staged between the
+/// column-wise action pass and the row-major layout.
+type Entry<T> = (u32, u32, T);
+
+/// Staged entries indexed by row range (one bucket per [`CsrRange`]).
+type Buckets<T> = Vec<Vec<Entry<T>>>;
+
+/// Consecutive CSR rows stored flat: local row `i` holds
+/// `cols[offsets[i]..offsets[i + 1]]` and the matching `vals`, in
+/// ascending column order.
+struct CsrRange<T> {
     offsets: Vec<u32>,
-    rows: Vec<u32>,
+    cols: Vec<u32>,
     vals: Vec<T>,
 }
 
-/// Cached in-basis action in CSC form, stored as blocks of `block` columns.
+/// Cached in-basis action in row-major (CSR) form, stored as ranges of
+/// `1 << range_shift` consecutive rows.
 ///
-/// One exactly-sized allocation triple per block replaces one `Vec` per
-/// column: at `|basis| ~ 10^6` the per-column layout reserved every `L*`
-/// output (in- and out-of-basis) and left ~10^6 small allocations for the
-/// system allocator to retain after the expm call.
-pub(crate) struct BlockCsc<T> {
-    blocks: Vec<CscBlock<T>>,
-    block: usize,
+/// Row-major storage makes the matvec deterministic: each output entry is
+/// summed by one thread over its row in ascending column order, so `M·x`
+/// is bit-identical for every rayon thread count, with no per-thread
+/// partial vectors and no serial reduction. `range_shift` depends on
+/// `dim` only.
+///
+/// One exactly-sized allocation triple per range replaces one `Vec` per
+/// row: at `|basis| ~ 10^6` a per-row layout would leave ~10^6 small
+/// allocations for the system allocator to retain after the expm call.
+pub(crate) struct BlockCsr<T> {
+    ranges: Vec<CsrRange<T>>,
+    range_shift: u32,
     dim: usize,
 }
 
-impl<T> BlockCsc<T> {
-    /// Visit the columns `range` in order as `(col, rows, vals)`.
-    fn for_each_col(&self, range: std::ops::Range<usize>, mut f: impl FnMut(usize, &[u32], &[T])) {
-        let mut c = range.start;
-        while c < range.end {
-            let b = &self.blocks[c / self.block];
-            let base = (c / self.block) * self.block;
-            let stop = range.end.min(base + b.offsets.len() - 1);
-            for j in (c - base)..(stop - base) {
-                let (lo, hi) = (b.offsets[j] as usize, b.offsets[j + 1] as usize);
-                f(base + j, &b.rows[lo..hi], &b.vals[lo..hi]);
-            }
-            c = stop;
-        }
-    }
+/// `log2` of the rows per [`CsrRange`]: the smallest power of two that
+/// gives at most 256 ranges, and at least 64 rows per range. A function of
+/// `dim` alone, so the layout (and every row's summation order) is
+/// independent of the thread count. A power of two turns the per-entry
+/// range lookup into a shift.
+fn range_shift(dim: usize) -> u32 {
+    dim.div_ceil(256)
+        .max(64)
+        .next_power_of_two()
+        .trailing_zeros()
 }
 
-/// Build the [`BlockCsc`] cache and the per-column `(raw, diag)` data for
-/// a `dim`-column generator in one parallel pass. `col(c, scratch, rows,
-/// vals)` appends the in-basis entries of column `c` to `rows`/`vals` and
-/// returns its `(raw, diag)`.
-fn build_block_csc<const C: usize, T, F>(
+/// Build the [`BlockCsr`] cache and the per-column `(raw, diag)` data for
+/// a `dim`-column generator. `col(c, scratch, rows, vals)` appends the
+/// in-basis entries of column `c` to `rows`/`vals` and returns its
+/// `(raw, diag)`.
+///
+/// The action is naturally column-wise, so the build runs in two parallel
+/// passes. (1) Over column blocks: compute the action and stage each entry
+/// in an exactly-sized bucket of its row range, in column order. (2) Over
+/// row ranges: a stable counting sort of the range's buckets (taken in
+/// block order) into CSR, dropping each bucket once consumed. The cache is
+/// never held in both layouts at once, but staging stores the row as well:
+/// 16 B/entry for real `T` and 24 B/entry for complex `T`, against
+/// 12 B/entry and 20 B/entry for the final CSR.
+fn build_block_csr<const C: usize, T, F>(
     spec: &LindbladSpec<C>,
     dim: usize,
     col: F,
-) -> (BlockCsc<T>, PerCol<T>)
+) -> (BlockCsr<T>, PerCol<T>)
 where
-    T: Copy + Send + Sync,
+    T: Coeff,
     F: Fn(usize, &mut ActionScratch<C>, &mut Vec<u32>, &mut Vec<T>) -> (f64, T) + Sync,
 {
     // ~16 blocks per thread for load balance, but never so small that the
-    // per-block allocations matter.
+    // per-block allocations matter. Block boundaries do not affect the
+    // result: pass 2 restores ascending column order within every row.
     let block = dim
         .div_ceil(16 * rayon::current_num_threads().max(1))
         .clamp(64, 4096);
-    let (blocks, per_col): (Vec<CscBlock<T>>, Vec<PerCol<T>>) = (0..dim.div_ceil(block))
+    let shift = range_shift(dim);
+    let n_ranges = dim.div_ceil(1 << shift);
+
+    // Pass 1: `staged[b][k]` holds block `b`'s entries in row range `k`.
+    let (staged, per_col): (Vec<Buckets<T>>, Vec<PerCol<T>>) = (0..dim.div_ceil(block))
         .into_par_iter()
         .map_init(
             || {
@@ -106,49 +130,120 @@ where
                     Vec::with_capacity(128),
                     FxHashMap::with_capacity_and_hasher(128, FxBuildHasher::default()),
                 );
-                (scratch, Vec::<u32>::new(), Vec::<T>::new())
+                (
+                    scratch,
+                    Vec::<u32>::new(),
+                    Vec::<T>::new(),
+                    Vec::<usize>::new(),
+                    vec![0usize; n_ranges],
+                )
             },
-            |(scratch, rows, vals), b| {
+            |(scratch, rows, vals, ends, counts), b| {
                 let cols = (b * block)..dim.min((b + 1) * block);
                 rows.clear();
                 vals.clear();
-                let mut offsets = Vec::with_capacity(cols.len() + 1);
+                ends.clear();
                 let mut per_col = Vec::with_capacity(cols.len());
-                offsets.push(0);
-                for c in cols {
+                for c in cols.clone() {
                     per_col.push(col(c, scratch, rows, vals));
-                    offsets.push(u32::try_from(rows.len()).expect("CSC block exceeds u32 entries"));
+                    ends.push(rows.len());
                 }
-                // `to_vec` sizes the stored block exactly; the staging
-                // buffers are reused for the next block on this thread.
-                let blk = CscBlock {
-                    offsets,
-                    rows: rows.to_vec(),
-                    vals: vals.to_vec(),
-                };
-                (blk, per_col)
+                counts.fill(0);
+                for &r in rows.iter() {
+                    counts[(r >> shift) as usize] += 1;
+                }
+                let mut buckets: Buckets<T> =
+                    counts.iter().map(|&k| Vec::with_capacity(k)).collect();
+                let mut lo = 0;
+                for (c, &hi) in cols.zip(ends.iter()) {
+                    for e in lo..hi {
+                        let r = rows[e];
+                        buckets[(r >> shift) as usize].push((r, c as u32, vals[e]));
+                    }
+                    lo = hi;
+                }
+                (buckets, per_col)
             },
         )
         .unzip();
     let per_col = per_col.into_iter().flatten().collect();
-    (BlockCsc { blocks, block, dim }, per_col)
+
+    // Regroup the bucket handles by row range (moves `Vec` headers only).
+    let mut by_range: Vec<Buckets<T>> = (0..n_ranges)
+        .map(|_| Vec::with_capacity(staged.len()))
+        .collect();
+    for blk in staged {
+        for (k, bucket) in blk.into_iter().enumerate() {
+            by_range[k].push(bucket);
+        }
+    }
+
+    // Pass 2: stable counting sort by row. Buckets are visited in block
+    // order and each is in column order, so every row ends up in
+    // ascending column order.
+    let ranges = by_range
+        .into_par_iter()
+        .enumerate()
+        .map(|(k, buckets)| {
+            let row0 = k << shift;
+            let nrows = (1usize << shift).min(dim - row0);
+            let nnz: usize = buckets.iter().map(Vec::len).sum();
+            // The per-range offsets are u32; check once so the counts
+            // below cannot wrap.
+            u32::try_from(nnz).expect("CSR row range exceeds u32 entries");
+            let mut offsets = vec![0u32; nrows + 1];
+            for &(r, _, _) in buckets.iter().flatten() {
+                offsets[r as usize - row0 + 1] += 1;
+            }
+            for i in 0..nrows {
+                offsets[i + 1] += offsets[i];
+            }
+            let mut cursor = offsets[..nrows].to_vec();
+            let mut cols = vec![0u32; nnz];
+            let mut vals = vec![T::zero(); nnz];
+            for bucket in buckets {
+                for (r, c, v) in bucket {
+                    let i = r as usize - row0;
+                    let p = cursor[i] as usize;
+                    cols[p] = c;
+                    vals[p] = v;
+                    cursor[i] += 1;
+                }
+            }
+            CsrRange {
+                offsets,
+                cols,
+                vals,
+            }
+        })
+        .collect();
+    (
+        BlockCsr {
+            ranges,
+            range_shift: shift,
+            dim,
+        },
+        per_col,
+    )
 }
 
 /// Per-column in-basis action of the real generator `M`, plus the data the
 /// `(m, s)`/`μ` selection needs — all from ONE action pass over the basis.
 ///
-/// Returns `(cols, per_col)` where `cols[c]` holds `(row, coeff)` for every
-/// action output of `L*(basis[c])` that lands back in `basis` (CSC column
-/// `c`), and `per_col[c] = (raw, diag)` with `raw = Σ|coeff|` over ALL action
-/// outputs (in- and out-of-basis, an upper bound on the column 1-norm) and
-/// `diag` the coefficient of the output Word equal to the input Word. The
-/// cache is reused by [`CscOp`] across every Krylov/Taylor matvec.
+/// Returns `(mat, per_col)`. Column `c` of the row-major cache `mat` holds
+/// `M[row, c] = coeff` for every action output of `L*(basis[c])` that lands
+/// back in `basis` at index `row`. `per_col[c] = (raw, diag)`, with
+/// `raw = Σ|coeff|` over ALL action outputs (in- and out-of-basis, an upper
+/// bound on the column 1-norm) and `diag` the coefficient of the output
+/// Word equal to the input Word. Both sums run in the canonical term order
+/// of [`LindbladSpec::compute_action_terms`]. The cache is reused by
+/// [`CsrOp`] across every Krylov/Taylor matvec.
 fn build_mf_cols<const C: usize>(
     spec: &LindbladSpec<C>,
     basis: &[Word<C>],
     index: &FxHashMap<Word<C>, u32>,
-) -> (BlockCsc<f64>, PerCol<f64>) {
-    build_block_csc(spec, basis.len(), |c, (s1, s2, lm), rows, vals| {
+) -> (BlockCsr<f64>, PerCol<f64>) {
+    build_block_csr(spec, basis.len(), |c, (s1, s2, lm), rows, vals| {
         let p = &basis[c];
         let terms = spec.compute_action_terms(p, s1, s2, lm);
         let mut raw = 0.0;
@@ -171,10 +266,13 @@ fn build_mf_cols<const C: usize>(
 /// generator `M` at momentum `sector`, plus the `(m, s)`/`μ` selection data
 /// — from ONE action pass over the basis.
 ///
-/// `cols[c]` holds `(row, χ_k(g_{cnt_q}) · v_q · |orbit_c| / |orbit_row|)`
-/// for every action output Pauli `q` of `L*(basis[c])` whose orbit rep
-/// `r_q` is in `basis` at index `row`; outputs whose rep is out of basis
-/// are dropped. This is the expensive part of the orbit-rep dynamics
+/// Column `c` of the row-major cache receives
+/// `χ_k(g_{cnt_q}) · v_q · |orbit_c| / |orbit_row|` at row `row` for every
+/// action output Pauli `q` of `L*(basis[c])` whose orbit rep `r_q` is in
+/// `basis` at index `row`; outputs whose rep is out of basis are dropped.
+/// Several outputs can share a rep, so a row can hold the same column more
+/// than once; those duplicates are emitted, and later summed, in the
+/// canonical term order of [`LindbladSpec::compute_action_terms`]. This is the expensive part of the orbit-rep dynamics
 /// (`compute_action_terms`, [`Sector::canonicalize_phase`]).
 ///
 /// The character-weighted sum runs over the *output* orbit's distinct
@@ -197,8 +295,8 @@ fn build_orbit_rep_cols<const C: usize>(
     basis: &[Word<C>],
     index: &FxHashMap<Word<C>, u32>,
     sector: &Sector<'_>,
-) -> (BlockCsc<Complex<f64>>, PerCol<Complex<f64>>) {
-    build_block_csc(spec, basis.len(), |c, (s1, s2, lm), rows, vals| {
+) -> (BlockCsr<Complex<f64>>, PerCol<Complex<f64>>) {
+    build_block_csr(spec, basis.len(), |c, (s1, s2, lm), rows, vals| {
         let r = &basis[c];
         // A rep that cannot carry the sector has coefficient zero
         // identically, so its column is empty.
@@ -226,20 +324,20 @@ fn build_orbit_rep_cols<const C: usize>(
     })
 }
 
-/// Borrowed CSC-style view of an in-basis-restricted generator `M`, backed
-/// by a cached per-column action computed once per expm call
-/// ([`build_mf_cols`]). `dot` performs the CSC matvec `y = M·x` against the cache; the
+/// Borrowed CSR view of an in-basis-restricted generator `M`, backed by a
+/// cached action computed once per expm call ([`build_mf_cols`]). `dot`
+/// performs the row-parallel matvec `y = M·x` against the cache; the
 /// remaining `LinearOperator` entry points are unused on the `from_parts` +
 /// single-vector `apply` path.
 ///
 /// Borrowed, not owned: `quspin-types` provides a blanket `LinearOperator`
-/// impl for `&T`, so `ExpmOp::from_parts(op, ...)` accepts a `CscOp` by
-/// value while it keeps borrowing `cols`.
-pub(crate) struct CscOp<'a, T> {
-    pub(crate) cols: &'a BlockCsc<T>,
+/// impl for `&T`, so `ExpmOp::from_parts(op, ...)` accepts a `CsrOp` by
+/// value while it keeps borrowing `mat`.
+pub(crate) struct CsrOp<'a, T> {
+    pub(crate) mat: &'a BlockCsr<T>,
 }
 
-impl<T> LinearOperator<T> for CscOp<'_, T>
+impl<T> LinearOperator<T> for CsrOp<'_, T>
 where
     T: ExpmComputation
         + Copy
@@ -251,64 +349,56 @@ where
         + Sync,
 {
     fn dim(&self) -> usize {
-        self.cols.dim
+        self.mat.dim
     }
 
     fn parallel_hint(&self) -> bool {
-        // `dot` parallelises internally over column chunks, and we drive the
+        // `dot` parallelises internally over row ranges, and we drive the
         // sequential single-vector `apply` path; never let quspin run its
         // persistent-thread pool on top of our rayon parallelism.
         false
     }
 
     fn dot(&self, overwrite: bool, input: &[T], output: &mut [T]) -> Result<(), QuSpinError> {
-        let n = self.cols.dim;
-        if n == 0 {
-            return Ok(());
-        }
-        let num_threads = rayon::current_num_threads().max(1);
-        let chunk_size = n.div_ceil(num_threads);
-
-        // Parallelise over column chunks; each thread accumulates into a dense
-        // local `y` of length `dim`, reading the cached action; the partials
-        // are reduced into `output` sequentially at the end.
-        let partial_ys: Vec<Vec<T>> = (0..n.div_ceil(chunk_size))
-            .into_par_iter()
-            .map(|chunk_idx| {
-                let cols = (chunk_idx * chunk_size)..n.min((chunk_idx + 1) * chunk_size);
-                let mut y_local = vec![T::zero(); n];
-                self.cols.for_each_col(cols, |c, rows, vals| {
-                    let xc = input[c];
-                    if xc == T::zero() {
-                        return;
+        // Rows in parallel, one range per task; each output entry is summed
+        // by one thread in ascending column order, so the result does not
+        // depend on the thread count.
+        let m = self.mat;
+        output
+            .par_chunks_mut(1 << m.range_shift)
+            .zip(m.ranges.par_iter())
+            .for_each(|(y, r)| {
+                for (i, yi) in y.iter_mut().enumerate() {
+                    let (lo, hi) = (r.offsets[i] as usize, r.offsets[i + 1] as usize);
+                    let mut acc = T::zero();
+                    for (&c, &v) in r.cols[lo..hi].iter().zip(&r.vals[lo..hi]) {
+                        // Skip zero inputs, as the column-wise product did:
+                        // saves the multiply-add for sparse `input`, and
+                        // keeps a non-finite entry of an unused column out
+                        // of `y`.
+                        let xc = input[c as usize];
+                        if xc != T::zero() {
+                            acc += v * xc;
+                        }
                     }
-                    for (&row, &val) in rows.iter().zip(vals) {
-                        y_local[row as usize] += val * xc;
+                    if overwrite {
+                        *yi = acc;
+                    } else {
+                        *yi += acc;
                     }
-                });
-                y_local
-            })
-            .collect();
-
-        if overwrite {
-            output.fill(T::zero());
-        }
-        for partial in &partial_ys {
-            for (oi, &pi) in output.iter_mut().zip(partial.iter()) {
-                *oi += pi;
-            }
-        }
+                }
+            });
         Ok(())
     }
 
     fn trace(&self) -> T {
         // Computed eagerly by the callers; never reached on the
         // `from_parts` + single-vector `apply` path.
-        unreachable!("CscOp::trace not used on the from_parts apply path")
+        unreachable!("CsrOp::trace not used on the from_parts apply path")
     }
 
     fn onenorm(&self, _shift: T) -> <T as ExpmComputation>::Real {
-        unreachable!("CscOp::onenorm not used on the from_parts apply path")
+        unreachable!("CsrOp::onenorm not used on the from_parts apply path")
     }
 
     fn dot_transpose(
@@ -318,7 +408,7 @@ where
         _output: &mut [T],
     ) -> Result<(), QuSpinError> {
         Err(QuSpinError::RuntimeError(
-            "CscOp: dot_transpose not used on the from_parts apply path".into(),
+            "CsrOp: dot_transpose not used on the from_parts apply path".into(),
         ))
     }
 
@@ -329,7 +419,7 @@ where
         _output: ndarray::ArrayViewMut2<'_, T>,
     ) -> Result<(), QuSpinError> {
         Err(QuSpinError::RuntimeError(
-            "CscOp: dot_many not used on the from_parts apply path".into(),
+            "CsrOp: dot_many not used on the from_parts apply path".into(),
         ))
     }
 
@@ -341,7 +431,7 @@ where
         _row_start: usize,
     ) -> Result<(), QuSpinError> {
         Err(QuSpinError::RuntimeError(
-            "CscOp: dot_chunk not used on the from_parts apply path".into(),
+            "CsrOp: dot_chunk not used on the from_parts apply path".into(),
         ))
     }
 
@@ -352,13 +442,13 @@ where
         _rows: std::ops::Range<usize>,
     ) -> Result<(), QuSpinError> {
         Err(QuSpinError::RuntimeError(
-            "CscOp: dot_transpose_chunk not used on the from_parts apply path".into(),
+            "CsrOp: dot_transpose_chunk not used on the from_parts apply path".into(),
         ))
     }
 }
 
-/// Shared tail of every matrix-free expm: from the cached per-column action
-/// derive the diagonal shift `μ = tr(M)/n` and a bound on the column 1-norm
+/// Shared tail of every matrix-free expm: from the cached action `mat` and
+/// its per-column `(raw, diag)` data derive the diagonal shift `μ = tr(M)/n` and a bound on the column 1-norm
 /// of `M − μ·I` (`raw − |diag| + |diag − μ|` per column), pick the Taylor
 /// partition via `select` from `‖dt·(M−μI)‖₁`, and hand everything to
 /// [`quspin_expm::ExpmOp::from_parts`]. Returns `exp(dt · M) · coeffs`.
@@ -366,7 +456,7 @@ where
 /// `select` maps `‖dt·(M−μI)‖₁` to `(m*, s, backward-error tol)`; the two
 /// call sites differ only in that choice.
 fn expm_apply_cached<T>(
-    cols: &BlockCsc<T>,
+    mat: &BlockCsr<T>,
     per_col: &PerCol<T>,
     dt: f64,
     coeffs: &[T],
@@ -384,7 +474,7 @@ where
         + From<f64>
         + Sum,
 {
-    let n = cols.dim;
+    let n = mat.dim;
     let trace: T = per_col.iter().map(|(_, d)| *d).sum();
     let mu = trace / n as f64;
     let onenorm = per_col
@@ -394,7 +484,7 @@ where
     let (m_star, s, expm_tol) = select(dt.abs() * onenorm);
 
     let mut v = coeffs.to_vec();
-    let op = CscOp { cols };
+    let op = CsrOp { mat };
     let expm =
         quspin_expm::ExpmOp::from_parts(op, T::from(dt), mu, s as usize, m_star as usize, expm_tol);
     expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
@@ -406,7 +496,7 @@ where
 /// `M`, matrix-free, via `quspin-expm`. Returns a fresh `Vec<f64>` of length
 /// `basis.len()`.
 ///
-/// ONE action pass builds the CSC cache `cols` (reused across every matvec)
+/// ONE action pass builds the CSR cache `mat` (reused across every matvec)
 /// and, in the same pass, the `(raw, diag)` data the `μ`/1-norm selection
 /// needs; [`expm_apply_cached`] does the rest.
 pub(crate) fn expm_apply_mf<const C: usize>(
@@ -420,7 +510,7 @@ pub(crate) fn expm_apply_mf<const C: usize>(
         return Vec::new();
     }
     let index = build_basis_index(basis);
-    let (cols, per_col) = build_mf_cols(spec, basis, &index);
+    let (mat, per_col) = build_mf_cols(spec, basis, &index);
 
     // Pick the Taylor backward-error tolerance to match the basis truncation:
     // when the PC prunes coarsely (drop_tol >= 1e-4) a double-precision exp is
@@ -429,7 +519,7 @@ pub(crate) fn expm_apply_mf<const C: usize>(
     // lower-degree Taylor polynomial and cuts the SpMV count with no effect on
     // the truncated result. At tight/zero drop_tol we keep double precision so
     // the exact-reference paths (orbit-rep / merged) still agree bit-for-bit.
-    expm_apply_cached(&cols, &per_col, dt, coeffs, |t_norm| {
+    expm_apply_cached(&mat, &per_col, dt, coeffs, |t_norm| {
         if drop_tol >= 1e-4 {
             let (m, s) = expm::select_ms_loose(t_norm);
             (m, s, 1e-6)
@@ -445,7 +535,7 @@ pub(crate) fn expm_apply_mf<const C: usize>(
 /// `Vec<Complex<f64>>` of length `basis.len()`.
 ///
 /// The expensive phase-aware action is computed ONCE here (via
-/// [`build_orbit_rep_cols`]) and reused, CSC-style, across every
+/// [`build_orbit_rep_cols`]) and reused, row-major, across every
 /// Krylov–Taylor matvec, exactly as on the real path.
 pub(crate) fn expm_apply_orbit_rep<const C: usize>(
     spec: &LindbladSpec<C>,
@@ -458,9 +548,9 @@ pub(crate) fn expm_apply_orbit_rep<const C: usize>(
         return Vec::new();
     }
     let index = build_basis_index(basis);
-    let (cols, per_col) = build_orbit_rep_cols(spec, basis, &index, sector);
+    let (mat, per_col) = build_orbit_rep_cols(spec, basis, &index, sector);
 
-    expm_apply_cached(&cols, &per_col, dt, coeffs, |t_norm| {
+    expm_apply_cached(&mat, &per_col, dt, coeffs, |t_norm| {
         let (m, s) = expm::select_ms(t_norm);
         (m, s, 1e-12)
     })

@@ -23,6 +23,14 @@ def test_noise():
     state.two_qubit_pauli_error(0, 1, p=error_probs_list)
 
 
+def test_two_qubit_pauli_error_probabilities():
+    # distinct probability per non-identity two-qubit Pauli, in canonical IX, IY, ..., ZZ order
+    paulis = [a + b for a in "IXYZ" for b in "IXYZ"][1:]
+    error_probs = {pauli: 0.01 * (i + 1) for i, pauli in enumerate(paulis)}
+
+    assert PauliSum.two_qubit_pauli_error_probabilities(error_probs) == list(error_probs.values())
+
+
 def test_large_state():
     n = 200
     weight = 80

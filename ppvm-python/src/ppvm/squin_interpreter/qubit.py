@@ -51,6 +51,16 @@ class QubitMethods(interp.MethodTable):
         results_converted = ilist.IList(list(map(_measurement_result_conversion, results)))
         return (results_converted,)
 
+    @interp.impl(qubit.stmts.IsOne)
+    def is_one(
+        self,
+        interp_: GeneralizedTableauInterpreter,
+        frame: interp.Frame,
+        stmt: qubit.stmts.IsOne,
+    ):
+        measurements = frame.get(stmt.measurements)
+        return (ilist.IList([result == MeasurementResultValue.One for result in measurements]),)
+
     @interp.impl(qubit.stmts.Reset)
     def reset(
         self,

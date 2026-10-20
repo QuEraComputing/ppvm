@@ -28,12 +28,14 @@ pub struct LossyPauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildH
 
 impl<A: PauliStorage, H> LossyPauliWord<A, H> {
     #[inline]
+    fn check_qubit(&self, qubit: usize) {
+        if qubit >= self.nqubits {
+            panic!("qubit {qubit} out of bounds for {} sites", self.nqubits);
+        }
+    }
+
+    #[inline]
     pub fn new(nqubits: usize) -> Self {
-        debug_assert!(
-            nqubits <= 8 * std::mem::size_of::<A>(),
-            "nqubits {nqubits} exceeds the {}-bit backing storage",
-            8 * std::mem::size_of::<A>(),
-        );
         Self::from_planes(BitArray::ZERO, BitArray::ZERO, BitArray::ZERO, nqubits)
     }
 
@@ -44,6 +46,12 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
         lbits: BitArray<A>,
         nqubits: usize,
     ) -> Self {
+        if nqubits > xbits.len() {
+            panic!(
+                "nqubits {nqubits} exceeds the {}-bit backing storage",
+                xbits.len(),
+            );
+        }
         Self {
             xbits,
             zbits,
@@ -69,13 +77,13 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
     /// check for whether a qubit was lost
     #[inline]
     pub fn is_lost(&self, qb: usize) -> bool {
-        debug_assert!(qb < self.nqubits, "qubit {qb} out of bounds");
+        self.check_qubit(qb);
         self.lbits[qb]
     }
 
     #[inline]
     pub fn set_lost(&mut self, qb: usize) {
-        debug_assert!(qb < self.nqubits, "qubit {qb} out of bounds");
+        self.check_qubit(qb);
         if self.xbits[qb] || self.zbits[qb] {
             self.xbits.set(qb, false);
             self.zbits.set(qb, false);
@@ -91,7 +99,7 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
     // is preserved.
     #[inline]
     pub fn clear_loss(&mut self, qb: usize) {
-        debug_assert!(qb < self.nqubits, "qubit {qb} out of bounds");
+        self.check_qubit(qb);
         if self.lbits[qb] {
             self.lbits.set(qb, false);
             self.invalidate_loss_hash();
@@ -100,7 +108,7 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
 
     /// Build the reset-channel branch with `q` marked lost.
     pub fn with_lost(&self, qb: usize) -> Self {
-        debug_assert!(qb < self.nqubits, "qubit {qb} out of bounds");
+        self.check_qubit(qb);
         let mut xbits = self.xbits;
         let mut zbits = self.zbits;
         let mut lbits = self.lbits;
@@ -110,8 +118,9 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
         Self::from_planes(xbits, zbits, lbits, self.nqubits)
     }
 
+    /// Replace a site explicitly; `Present` restores a lost site.
     pub fn set(&mut self, qb: usize, site: LossySite<Pauli>) {
-        debug_assert!(qb < self.nqubits, "qubit {qb} out of bounds");
+        self.check_qubit(qb);
         match site {
             LossySite::Present(pauli) => {
                 self.clear_loss(qb);
@@ -121,9 +130,7 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
                     Pauli::Z => (false, true),
                     Pauli::Y => (true, true),
                 };
-                self.xbits.set(qb, x);
-                self.zbits.set(qb, z);
-                self.invalidate_xz_hash();
+                self.set_xz_bits(qb, x, z);
             }
             LossySite::Lost => self.set_lost(qb),
         }
@@ -146,7 +153,7 @@ impl<A: PauliStorage, H> Word for LossyPauliWord<A, H> {
 
     /// Retrieve Pauli type for some index
     fn get(&self, idx: usize) -> Self::Site {
-        debug_assert!(idx < self.nqubits, "index {idx} out of bounds");
+        self.check_qubit(idx);
         if self.lbits[idx] {
             return LossySite::Lost;
         }
@@ -160,16 +167,42 @@ impl<A: PauliStorage, H> Word for LossyPauliWord<A, H> {
     }
 
     /// Number of non-identity factors.
+    #[inline]
     fn weight(&self) -> usize {
         let xs = bytemuck::bytes_of(&self.xbits.data);
         let zs = bytemuck::bytes_of(&self.zbits.data);
         let ls = bytemuck::bytes_of(&self.lbits.data);
 
-        xs.iter()
-            .zip(zs)
-            .zip(ls)
-            .map(|((&x, &z), &l)| (x | z | l).count_ones() as usize)
-            .sum()
+        let mut total: u32 = 0;
+        let (mut i, n) = (0usize, xs.len());
+
+        // Count 64 qubits at a time, then handle the remaining bytes.
+        while i + 8 <= n {
+            let x = u64::from_ne_bytes(xs[i..i + 8].try_into().unwrap());
+            let z = u64::from_ne_bytes(zs[i..i + 8].try_into().unwrap());
+            let l = u64::from_ne_bytes(ls[i..i + 8].try_into().unwrap());
+            total += (x | z | l).count_ones();
+            i += 8;
+        }
+        if i + 4 <= n {
+            let x = u32::from_ne_bytes(xs[i..i + 4].try_into().unwrap());
+            let z = u32::from_ne_bytes(zs[i..i + 4].try_into().unwrap());
+            let l = u32::from_ne_bytes(ls[i..i + 4].try_into().unwrap());
+            total += (x | z | l).count_ones();
+            i += 4;
+        }
+        if i + 2 <= n {
+            let x = u16::from_ne_bytes(xs[i..i + 2].try_into().unwrap());
+            let z = u16::from_ne_bytes(zs[i..i + 2].try_into().unwrap());
+            let l = u16::from_ne_bytes(ls[i..i + 2].try_into().unwrap());
+            total += (x | z | l).count_ones();
+            i += 2;
+        }
+        if i < n {
+            total += (xs[i] | zs[i] | ls[i]).count_ones();
+        }
+
+        total as usize
     }
 
     #[inline]
@@ -239,6 +272,13 @@ impl<A: PauliStorage, H> From<&str> for LossyPauliWord<A, H> {
         let mut lbits = BitArray::<A>::ZERO;
 
         let symbols = value.chars().filter(|&ch| ch != '_').collect::<Vec<char>>();
+        let nqubits = symbols.len();
+        if nqubits > xbits.len() {
+            panic!(
+                "nqubits {nqubits} exceeds the {}-bit backing storage",
+                xbits.len(),
+            );
+        }
         for (i, ch) in symbols.iter().enumerate() {
             match ch {
                 'I' => {}
@@ -252,8 +292,6 @@ impl<A: PauliStorage, H> From<&str> for LossyPauliWord<A, H> {
                 other => panic!("invalid lossy Pauli character: {other}"),
             }
         }
-        let nqubits = symbols.len();
-
         Self::from_planes(xbits, zbits, lbits, nqubits)
     }
 }
@@ -265,85 +303,113 @@ impl<A: PauliStorage, H> From<String> for LossyPauliWord<A, H> {
     }
 }
 
+/// Bit writes and toggles skip lost sites without changing their loss state.
 impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
     #[inline]
     fn x_bit(&self, i: usize) -> bool {
-        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        self.check_qubit(i);
         self.xbits[i]
     }
 
     #[inline]
     fn z_bit(&self, i: usize) -> bool {
-        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        self.check_qubit(i);
         self.zbits[i]
     }
 
     #[inline]
     fn set_x_bit(&mut self, i: usize, v: bool) {
-        debug_assert!(i < self.nqubits, "index {i} out of bounds");
-        self.xbits.set(i, v);
-        if v && self.lbits[i] {
-            self.lbits.set(i, false);
-            self.invalidate_loss_hash();
+        self.check_qubit(i);
+        if self.lbits[i] {
+            return;
         }
-        self.invalidate_xz_hash();
+        if self.xbits[i] != v {
+            self.xbits.set(i, v);
+            self.invalidate_xz_hash();
+        }
     }
 
     #[inline]
     fn set_z_bit(&mut self, i: usize, v: bool) {
-        debug_assert!(i < self.nqubits, "index {i} out of bounds");
-        self.zbits.set(i, v);
-        if v && self.lbits[i] {
-            self.lbits.set(i, false);
-            self.invalidate_loss_hash();
+        self.check_qubit(i);
+        if self.lbits[i] {
+            return;
         }
-        self.invalidate_xz_hash();
+        if self.zbits[i] != v {
+            self.zbits.set(i, v);
+            self.invalidate_xz_hash();
+        }
     }
 
     #[inline]
     fn set_xz_bits(&mut self, i: usize, x: bool, z: bool) {
-        debug_assert!(i < self.nqubits, "index {i} out of bounds");
-        self.xbits.set(i, x);
-        self.zbits.set(i, z);
-        if (x || z) && self.lbits[i] {
-            self.lbits.set(i, false);
-            self.invalidate_loss_hash();
+        self.check_qubit(i);
+        if self.lbits[i] {
+            return;
         }
-        self.invalidate_xz_hash();
+        if self.xbits[i] != x || self.zbits[i] != z {
+            self.xbits.set(i, x);
+            self.zbits.set(i, z);
+            self.invalidate_xz_hash();
+        }
     }
 
     #[inline]
     fn set_xz_bits2(&mut self, i: usize, xi: bool, zi: bool, j: usize, xj: bool, zj: bool) {
-        debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
-        self.xbits.set(i, xi);
-        self.zbits.set(i, zi);
-        self.xbits.set(j, xj);
-        self.zbits.set(j, zj);
-        if (xi || zi) && self.lbits[i] {
-            self.lbits.set(i, false);
-            self.invalidate_loss_hash();
+        self.check_qubit(i);
+        self.check_qubit(j);
+        if i == j {
+            self.set_xz_bits(j, xj, zj);
+            return;
         }
-        if (xj || zj) && self.lbits[j] {
-            self.lbits.set(j, false);
-            self.invalidate_loss_hash();
-        }
-        self.invalidate_xz_hash();
+        self.set_xz_bits(i, xi, zi);
+        self.set_xz_bits(j, xj, zj);
     }
 
     #[inline]
     fn set_z_bit_pair(&mut self, i: usize, zi: bool, j: usize, zj: bool) {
-        debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
-        self.zbits.set(i, zi);
-        self.zbits.set(j, zj);
-        if zi && self.lbits[i] {
-            self.lbits.set(i, false);
-            self.invalidate_loss_hash();
+        self.check_qubit(i);
+        self.check_qubit(j);
+        if i == j {
+            self.set_z_bit(j, zj);
+            return;
         }
-        if zj && self.lbits[j] {
-            self.lbits.set(j, false);
-            self.invalidate_loss_hash();
+        self.set_z_bit(i, zi);
+        self.set_z_bit(j, zj);
+    }
+
+    #[inline]
+    fn set_x_bit_and_z_bit(&mut self, x_i: usize, x: bool, z_i: usize, z: bool) {
+        self.check_qubit(x_i);
+        self.check_qubit(z_i);
+        self.set_x_bit(x_i, x);
+        self.set_z_bit(z_i, z);
+    }
+
+    #[inline]
+    fn into_toggled_bits(mut self, i: usize, toggle: [bool; 2]) -> Self {
+        self.check_qubit(i);
+        if toggle[0] {
+            self.set_x_bit(i, !self.x_bit(i));
         }
-        self.invalidate_xz_hash();
+        if toggle[1] {
+            self.set_z_bit(i, !self.z_bit(i));
+        }
+        self
+    }
+
+    #[inline]
+    fn into_toggled_bits2(
+        self,
+        i: usize,
+        toggle_i: [bool; 2],
+        j: usize,
+        toggle_j: [bool; 2],
+    ) -> Self {
+        self.check_qubit(i);
+        self.check_qubit(j);
+        self.into_toggled_bits(i, toggle_i)
+            .into_toggled_bits(j, toggle_j)
     }
 
     // Build a rotation branch directly from the packed planes.
@@ -352,59 +418,49 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
     where
         Self: Sized + Clone,
     {
-        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        self.check_qubit(i);
         let mut xbits = self.xbits;
         let mut zbits = self.zbits;
-        if toggle_x {
+        if toggle_x && !self.lbits[i] {
             let bit = xbits[i];
             xbits.set(i, !bit);
         }
-        if toggle_z {
+        if toggle_z && !self.lbits[i] {
             let bit = zbits[i];
             zbits.set(i, !bit);
         }
-        let mut lbits = self.lbits;
-        if xbits[i] || zbits[i] {
-            lbits.set(i, false);
-        }
-        Self::from_planes(xbits, zbits, lbits, self.nqubits)
+        Self::from_planes(xbits, zbits, self.lbits, self.nqubits)
     }
 
     /// Build a two-site rotation branch with one packed-plane copy.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     fn toggled_bits2(&self, i: usize, toggle_i: [bool; 2], j: usize, toggle_j: [bool; 2]) -> Self {
-        debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
+        self.check_qubit(i);
+        self.check_qubit(j);
         let mut xbits = self.xbits;
         let mut zbits = self.zbits;
         let toggle_x_i = toggle_i[0];
         let toggle_x_j = toggle_j[0];
         let toggle_z_i = toggle_i[1];
         let toggle_z_j = toggle_j[1];
-        if toggle_x_i {
+        if toggle_x_i && !self.lbits[i] {
             let bit = xbits[i];
             xbits.set(i, !bit);
         }
-        if toggle_z_i {
+        if toggle_z_i && !self.lbits[i] {
             let bit = zbits[i];
             zbits.set(i, !bit);
         }
-        if toggle_x_j {
+        if toggle_x_j && !self.lbits[j] {
             let bit = xbits[j];
             xbits.set(j, !bit);
         }
-        if toggle_z_j {
+        if toggle_z_j && !self.lbits[j] {
             let bit = zbits[j];
             zbits.set(j, !bit);
         }
-        let mut lbits = self.lbits;
-        if xbits[i] || zbits[i] {
-            lbits.set(i, false);
-        }
-        if xbits[j] || zbits[j] {
-            lbits.set(j, false);
-        }
-        Self::from_planes(xbits, zbits, lbits, self.nqubits)
+        Self::from_planes(xbits, zbits, self.lbits, self.nqubits)
     }
 }
 
@@ -429,7 +485,7 @@ impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
     where
         Self: Sized + Clone,
     {
-        debug_assert!(i < self.nqubits, "index {i} out of bounds");
+        self.check_qubit(i);
         let mut lbits = self.lbits;
         lbits.set(i, false);
         Self::from_planes(self.xbits, self.zbits, lbits, self.nqubits)
@@ -446,26 +502,306 @@ mod tests {
     use super::*;
 
     #[test]
-    fn toggling_a_lost_site_restores_it_only_when_bits_change() {
+    fn bit_setters_skip_lost_sites_and_preserve_the_loss_cache() {
+        let setters: [fn(&mut LossyPauliWord<u8>); 6] = [
+            |w| w.set_x_bit(0, true),
+            |w| w.set_z_bit(0, true),
+            |w| w.set_xz_bits(0, true, true),
+            |w| w.set_xz_bits2(0, true, true, 1, true, true),
+            |w| w.set_z_bit_pair(0, true, 1, true),
+            |w| w.set_x_bit_and_z_bit(0, true, 1, true),
+        ];
+        for setter in setters {
+            let mut word = LossyPauliWord::<u8>::from("LL");
+            *word.xz_hash_cache.get_mut() = 11;
+            *word.loss_hash_cache.get_mut() = 22;
+
+            setter(&mut word);
+
+            assert_eq!(word, LossyPauliWord::from("LL"));
+            assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+            assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+        }
+        for input in ["LI", "IL"] {
+            for setter in &setters[3..] {
+                let mut word = LossyPauliWord::<u8>::from(input);
+                *word.loss_hash_cache.get_mut() = 22;
+                setter(&mut word);
+                let lost = if input == "LI" { 0 } else { 1 };
+                assert_eq!(word.get(lost), LossySite::Lost);
+                assert!(!word.x_bit(lost) && !word.z_bit(lost));
+                assert_ne!(word.get(1 - lost), LossySite::Present(Pauli::I));
+                assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+            }
+        }
+    }
+
+    #[test]
+    fn owned_and_borrowed_toggles_preserve_loss_and_agree() {
+        let masks = [[false, false], [true, false], [false, true], [true, true]];
+        for input in ["LI", "IL", "LL", "XY"] {
+            let word = LossyPauliWord::<u8>::from(input);
+            for mask_i in masks {
+                for mask_j in masks {
+                    for j in [0, 1] {
+                        let branch = word.toggled_bits2(0, mask_i, j, mask_j);
+                        assert_eq!(
+                            branch,
+                            word.clone().into_toggled_bits2(0, mask_i, j, mask_j)
+                        );
+                        for q in 0..2 {
+                            assert_eq!(branch.is_lost(q), word.is_lost(q));
+                            if word.is_lost(q) {
+                                assert!(!branch.x_bit(q) && !branch.z_bit(q));
+                            }
+                        }
+                    }
+                }
+                assert_eq!(
+                    word.toggled_bits(0, mask_i[0], mask_i[1]),
+                    word.clone().into_toggled_bits(0, mask_i)
+                );
+            }
+            assert_eq!(word.to_string(), input);
+        }
+        let word = LossyPauliWord::<u8>::from("LI");
+        assert_eq!(
+            word.toggled_bits2(0, [true, true], 1, [true, false])
+                .to_string(),
+            "LX"
+        );
+    }
+
+    #[test]
+    fn invalid_single_site_operations_panic_without_mutation() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        let operations: [fn(&mut LossyPauliWord<u8>, usize); 14] = [
+            |w, i| {
+                w.get(i);
+            },
+            |w, i| {
+                w.is_lost(i);
+            },
+            |w, i| {
+                w.x_bit(i);
+            },
+            |w, i| {
+                w.z_bit(i);
+            },
+            |w, i| w.set(i, LossySite::Present(Pauli::X)),
+            |w, i| w.set_lost(i),
+            |w, i| w.clear_loss(i),
+            |w, i| w.set_x_bit(i, true),
+            |w, i| w.set_z_bit(i, true),
+            |w, i| w.set_xz_bits(i, true, true),
+            |w, i| {
+                w.with_lost(i);
+            },
+            |w, i| {
+                w.loss_cleared(i);
+            },
+            |w, i| {
+                w.toggled_bits(i, false, false);
+            },
+            |w, i| {
+                w.clone().into_toggled_bits(i, [false, false]);
+            },
+        ];
+        for input in ["", "I", "L"] {
+            for index in [input.len(), 7, 8] {
+                for operation in operations {
+                    let mut word = LossyPauliWord::<u8>::from(input);
+                    *word.xz_hash_cache.get_mut() = 11;
+                    *word.loss_hash_cache.get_mut() = 22;
+                    let original = word.clone();
+
+                    assert!(
+                        catch_unwind(AssertUnwindSafe(|| operation(&mut word, index))).is_err()
+                    );
+                    assert_eq!(word, original);
+                    assert_eq!(word.weight(), original.weight());
+                    assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+                    assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn two_site_operations_check_both_indices_before_mutating() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        let operations: [fn(&mut LossyPauliWord<u8>, usize, usize); 5] = [
+            |w, i, j| w.set_xz_bits2(i, true, true, j, true, true),
+            |w, i, j| w.set_z_bit_pair(i, true, j, true),
+            |w, i, j| w.set_x_bit_and_z_bit(i, true, j, true),
+            |w, i, j| {
+                w.toggled_bits2(i, [false, false], j, [false, false]);
+            },
+            |w, i, j| {
+                w.clone()
+                    .into_toggled_bits2(i, [false, false], j, [false, false]);
+            },
+        ];
+        for (i, j) in [(0, 1), (1, 0), (0, 7), (7, 0)] {
+            for operation in operations {
+                let mut word = LossyPauliWord::<u8>::from("I");
+                *word.xz_hash_cache.get_mut() = 11;
+                *word.loss_hash_cache.get_mut() = 22;
+                let original = word.clone();
+
+                assert!(catch_unwind(AssertUnwindSafe(|| operation(&mut word, i, j))).is_err());
+                assert_eq!(word, original);
+                assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+                assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+            }
+        }
+    }
+
+    #[test]
+    fn parsing_rejects_words_exceeding_storage_capacity() {
+        for input in ["IIIIIIIII", "XXXXXXXXI", "XXXXXXXXX", "IIII_IIIII"] {
+            assert!(
+                std::panic::catch_unwind(|| LossyPauliWord::<u8>::from(input)).is_err(),
+                "accepted oversized input: {input}"
+            );
+            assert!(
+                std::panic::catch_unwind(|| LossyPauliWord::<u8>::from(input.to_owned())).is_err()
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds the 8-bit backing storage")]
+    fn new_rejects_width_exceeding_storage_capacity() {
+        LossyPauliWord::<u8>::new(9);
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds the 8-bit backing storage")]
+    fn from_planes_rejects_width_exceeding_storage_capacity() {
+        LossyPauliWord::<u8>::from_planes(BitArray::ZERO, BitArray::ZERO, BitArray::ZERO, 9);
+    }
+
+    #[test]
+    fn parsing_accepts_exact_capacity_and_ignores_separators() {
+        for input in ["IIIIIIII", "XXXXXXXI", "_IIII_IIII_", "", "___"] {
+            let word = LossyPauliWord::<u8>::from(input);
+            let expected = input.replace('_', "");
+
+            assert_eq!(word.n_sites(), expected.len());
+            assert_eq!(word.to_string(), expected);
+            assert_eq!(word.iter().count(), expected.len());
+        }
+    }
+
+    #[test]
+    fn unchanged_setters_preserve_both_caches() {
+        let mut word = LossyPauliWord::<u8>::from("YZL");
+        // Seed nonzero cache values to observe invalidation without hashing.
+        *word.xz_hash_cache.get_mut() = 11;
+        *word.loss_hash_cache.get_mut() = 22;
+
+        word.set(0, LossySite::Present(Pauli::Y));
+        word.set_x_bit(0, true);
+        word.set_z_bit(0, true);
+        word.set_xz_bits(0, true, true);
+        word.set_xz_bits2(0, true, true, 1, false, true);
+        word.set_z_bit_pair(0, true, 1, true);
+        word.set_x_bit_and_z_bit(0, true, 1, true);
+        word.set_xz_bits(2, false, false);
+        word.set_lost(2);
+        word.clear_loss(0);
+
+        assert_eq!(word.to_string(), "YZL");
+        assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+        assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+    }
+
+    #[test]
+    fn changed_setters_invalidate_only_affected_components() {
+        let setters: [fn(&mut LossyPauliWord<u8>); 6] = [
+            |w| w.set(0, LossySite::Present(Pauli::Y)),
+            |w| w.set_x_bit(0, true),
+            |w| w.set_z_bit(0, true),
+            |w| w.set_xz_bits(0, true, true),
+            |w| w.set_xz_bits2(0, true, true, 1, false, true),
+            |w| w.set_z_bit_pair(0, true, 1, true),
+        ];
+        for setter in setters {
+            let mut word = LossyPauliWord::<u8>::from("II");
+            *word.xz_hash_cache.get_mut() = 11;
+            *word.loss_hash_cache.get_mut() = 22;
+
+            setter(&mut word);
+
+            assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 0);
+            assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+        }
+        let mut word = LossyPauliWord::<u8>::from("L");
+        *word.xz_hash_cache.get_mut() = 11;
+        *word.loss_hash_cache.get_mut() = 22;
+        word.set(0, LossySite::Present(Pauli::I));
+        assert_eq!(word.to_string(), "I");
+        assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+        assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn repeated_indices_preserve_cache_when_final_bits_are_unchanged() {
+        let mut word = LossyPauliWord::<u8>::from("I");
+        *word.xz_hash_cache.get_mut() = 11;
+
+        word.set_xz_bits2(0, true, true, 0, false, false);
+        word.set_z_bit_pair(0, true, 0, false);
+
+        assert_eq!(word.to_string(), "I");
+        assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+    }
+
+    #[test]
+    fn weight_counts_correctly_across_storage_and_chunk_boundaries() {
+        fn check<const N: usize>() {
+            for width in 0..=N * 8 {
+                let input: String = "IXYZL".chars().cycle().take(width).collect();
+                let word = LossyPauliWord::<[u8; N]>::from(input.as_str());
+                let expected = input.chars().filter(|&ch| ch != 'I').count();
+
+                assert_eq!(word.weight(), expected, "storage={N}, width={width}");
+            }
+        }
+
+        check::<1>();
+        check::<2>();
+        check::<4>();
+        check::<8>();
+        check::<15>();
+        check::<16>();
+        check::<17>();
+    }
+
+    #[test]
+    fn toggling_a_lost_site_preserves_loss() {
         let word = LossyPauliWord::<u8>::from("LL");
 
-        assert_eq!(word.toggled_bits(0, true, false).to_string(), "XL");
-        assert_eq!(word.toggled_bits(0, false, true).to_string(), "ZL");
-        assert_eq!(word.toggled_bits(0, true, true).to_string(), "YL");
+        assert_eq!(word.toggled_bits(0, true, false).to_string(), "LL");
+        assert_eq!(word.toggled_bits(0, false, true).to_string(), "LL");
+        assert_eq!(word.toggled_bits(0, true, true).to_string(), "LL");
         assert_eq!(word.toggled_bits(0, false, false), word);
         assert_eq!(word.to_string(), "LL");
     }
 
     #[test]
-    fn toggling_two_sites_clears_only_the_affected_loss_flags() {
+    fn toggling_two_sites_preserves_loss() {
         let word = LossyPauliWord::<u8>::from("LLL");
 
         let branch = word.toggled_bits2(0, [true, false], 2, [false, true]);
-        assert_eq!(branch.to_string(), "XLZ");
-        assert_eq!(branch.loss_weight(), 1);
+        assert_eq!(branch.to_string(), "LLL");
+        assert_eq!(branch.loss_weight(), 3);
 
         let branch = word.toggled_bits2(0, [false, false], 2, [true, true]);
-        assert_eq!(branch.to_string(), "LLY");
+        assert_eq!(branch.to_string(), "LLL");
         assert_eq!(word.to_string(), "LLL");
     }
 
@@ -565,15 +901,15 @@ mod tests {
     }
 
     #[test]
-    fn setting_pauli_bits_restores_lost_sites() {
+    fn setting_pauli_bits_preserves_lost_sites() {
         let mut word = LossyPauliWord::<u8>::from("LLL");
 
         word.set_x_bit(0, true);
         word.set_z_bit(1, true);
         word.set_xz_bits(2, true, true);
 
-        assert_eq!(word.to_string(), "XZY");
-        assert_eq!(word.loss_weight(), 0);
+        assert_eq!(word.to_string(), "LLL");
+        assert_eq!(word.loss_weight(), 3);
     }
 
     #[test]

@@ -121,9 +121,7 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
                     Pauli::Z => (false, true),
                     Pauli::Y => (true, true),
                 };
-                self.xbits.set(qb, x);
-                self.zbits.set(qb, z);
-                self.invalidate_xz_hash();
+                self.set_xz_bits(qb, x, z);
             }
             LossySite::Lost => self.set_lost(qb),
         }
@@ -307,44 +305,58 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
     #[inline]
     fn set_x_bit(&mut self, i: usize, v: bool) {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");
-        self.xbits.set(i, v);
+        if self.xbits[i] != v {
+            self.xbits.set(i, v);
+            self.invalidate_xz_hash();
+        }
         if v && self.lbits[i] {
             self.lbits.set(i, false);
             self.invalidate_loss_hash();
         }
-        self.invalidate_xz_hash();
     }
 
     #[inline]
     fn set_z_bit(&mut self, i: usize, v: bool) {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");
-        self.zbits.set(i, v);
+        if self.zbits[i] != v {
+            self.zbits.set(i, v);
+            self.invalidate_xz_hash();
+        }
         if v && self.lbits[i] {
             self.lbits.set(i, false);
             self.invalidate_loss_hash();
         }
-        self.invalidate_xz_hash();
     }
 
     #[inline]
     fn set_xz_bits(&mut self, i: usize, x: bool, z: bool) {
         debug_assert!(i < self.nqubits, "index {i} out of bounds");
-        self.xbits.set(i, x);
-        self.zbits.set(i, z);
+        if self.xbits[i] != x || self.zbits[i] != z {
+            self.xbits.set(i, x);
+            self.zbits.set(i, z);
+            self.invalidate_xz_hash();
+        }
         if (x || z) && self.lbits[i] {
             self.lbits.set(i, false);
             self.invalidate_loss_hash();
         }
-        self.invalidate_xz_hash();
     }
 
     #[inline]
     fn set_xz_bits2(&mut self, i: usize, xi: bool, zi: bool, j: usize, xj: bool, zj: bool) {
         debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
-        self.xbits.set(i, xi);
-        self.zbits.set(i, zi);
-        self.xbits.set(j, xj);
-        self.zbits.set(j, zj);
+        let xz_changed = if i == j {
+            self.xbits[j] != xj || self.zbits[j] != zj
+        } else {
+            self.xbits[i] != xi || self.zbits[i] != zi || self.xbits[j] != xj || self.zbits[j] != zj
+        };
+        if xz_changed {
+            self.xbits.set(i, xi);
+            self.zbits.set(i, zi);
+            self.xbits.set(j, xj);
+            self.zbits.set(j, zj);
+            self.invalidate_xz_hash();
+        }
         if (xi || zi) && self.lbits[i] {
             self.lbits.set(i, false);
             self.invalidate_loss_hash();
@@ -353,14 +365,21 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
             self.lbits.set(j, false);
             self.invalidate_loss_hash();
         }
-        self.invalidate_xz_hash();
     }
 
     #[inline]
     fn set_z_bit_pair(&mut self, i: usize, zi: bool, j: usize, zj: bool) {
         debug_assert!(i < self.nqubits && j < self.nqubits, "index out of bounds");
-        self.zbits.set(i, zi);
-        self.zbits.set(j, zj);
+        let z_changed = if i == j {
+            self.zbits[j] != zj
+        } else {
+            self.zbits[i] != zi || self.zbits[j] != zj
+        };
+        if z_changed {
+            self.zbits.set(i, zi);
+            self.zbits.set(j, zj);
+            self.invalidate_xz_hash();
+        }
         if zi && self.lbits[i] {
             self.lbits.set(i, false);
             self.invalidate_loss_hash();
@@ -369,7 +388,6 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
             self.lbits.set(j, false);
             self.invalidate_loss_hash();
         }
-        self.invalidate_xz_hash();
     }
 
     // Build a rotation branch directly from the packed planes.
@@ -470,6 +488,76 @@ impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unchanged_setters_preserve_both_caches() {
+        let mut word = LossyPauliWord::<u8>::from("YZL");
+        // Seed nonzero cache values to observe invalidation without hashing.
+        *word.xz_hash_cache.get_mut() = 11;
+        *word.loss_hash_cache.get_mut() = 22;
+
+        word.set(0, LossySite::Present(Pauli::Y));
+        word.set_x_bit(0, true);
+        word.set_z_bit(0, true);
+        word.set_xz_bits(0, true, true);
+        word.set_xz_bits2(0, true, true, 1, false, true);
+        word.set_z_bit_pair(0, true, 1, true);
+        word.set_x_bit_and_z_bit(0, true, 1, true);
+        word.set_xz_bits(2, false, false);
+        word.set_lost(2);
+        word.clear_loss(0);
+
+        assert_eq!(word.to_string(), "YZL");
+        assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+        assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+    }
+
+    #[test]
+    fn changed_setters_invalidate_only_affected_components() {
+        let setters: [fn(&mut LossyPauliWord<u8>); 6] = [
+            |w| w.set(0, LossySite::Present(Pauli::Y)),
+            |w| w.set_x_bit(0, true),
+            |w| w.set_z_bit(0, true),
+            |w| w.set_xz_bits(0, true, true),
+            |w| w.set_xz_bits2(0, true, true, 1, false, true),
+            |w| w.set_z_bit_pair(0, true, 1, true),
+        ];
+        for setter in setters {
+            for input in ["II", "LL"] {
+                let mut word = LossyPauliWord::<u8>::from(input);
+                *word.xz_hash_cache.get_mut() = 11;
+                *word.loss_hash_cache.get_mut() = 22;
+
+                setter(&mut word);
+
+                assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 0);
+                let expected_loss_cache = if input == "LL" { 0 } else { 22 };
+                assert_eq!(
+                    word.loss_hash_cache.load(Ordering::Relaxed),
+                    expected_loss_cache
+                );
+            }
+        }
+        let mut word = LossyPauliWord::<u8>::from("L");
+        *word.xz_hash_cache.get_mut() = 11;
+        *word.loss_hash_cache.get_mut() = 22;
+        word.set(0, LossySite::Present(Pauli::I));
+        assert_eq!(word.to_string(), "I");
+        assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+        assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn repeated_indices_preserve_cache_when_final_bits_are_unchanged() {
+        let mut word = LossyPauliWord::<u8>::from("I");
+        *word.xz_hash_cache.get_mut() = 11;
+
+        word.set_xz_bits2(0, true, true, 0, false, false);
+        word.set_z_bit_pair(0, true, 0, false);
+
+        assert_eq!(word.to_string(), "I");
+        assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+    }
 
     #[test]
     fn weight_counts_correctly_across_storage_and_chunk_boundaries() {

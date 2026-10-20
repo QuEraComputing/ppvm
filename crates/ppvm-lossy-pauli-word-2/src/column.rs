@@ -41,15 +41,33 @@ impl<A: PauliStorage, H> LossyPauliKeyColumn<A, H> {
         }
     }
 
+    /// Flip one bit in a packed plane; callers handle bounds and loss.
+    #[inline]
+    fn toggle_plane_bit(plane: &mut A, qubit: usize) {
+        #[cfg(target_endian = "little")]
+        {
+            let byte_index = qubit / 8;
+            let bit_index = qubit % 8;
+            let bit_mask = 1u8 << bit_index;
+            bytemuck::bytes_of_mut(plane)[byte_index] ^= bit_mask;
+        }
+        #[cfg(target_endian = "big")]
+        {
+            let mut bits = BitArray::<A>::new(*plane);
+            let toggled = !bits[qubit];
+            bits.set(qubit, toggled);
+            *plane = bits.data;
+        }
+    }
+
     #[inline]
     fn reconstruct(&self, i: usize) -> LossyPauliWord<A, H> {
-        let mut x = BitArray::<A>::ZERO;
-        let mut z = BitArray::<A>::ZERO;
-        let mut l = BitArray::<A>::ZERO;
-        x.data = self.xplanes[i];
-        z.data = self.zplanes[i];
-        l.data = self.lplanes[i];
-        LossyPauliWord::from_planes(x, z, l, self.nqubits)
+        LossyPauliWord::from_planes(
+            BitArray::new(self.xplanes[i]),
+            BitArray::new(self.zplanes[i]),
+            BitArray::new(self.lplanes[i]),
+            self.nqubits,
+        )
     }
 }
 
@@ -103,12 +121,8 @@ where
     fn hash_into(&self, out: &mut [u64]) {
         debug_assert_eq!(out.len(), self.len(), "hash column length mismatch");
         for (i, slot) in out.iter_mut().enumerate() {
-            *slot = structural_hash_lossy::<A, H>(
-                &self.xplanes[i],
-                &self.zplanes[i],
-                &self.lplanes[i],
-                self.nqubits,
-            );
+            *slot =
+                structural_hash_lossy::<A, H>(&self.xplanes[i], &self.zplanes[i], &self.lplanes[i]);
         }
     }
 
@@ -171,8 +185,7 @@ where
         self.lplanes.push(key.lbits.data);
     }
 
-    // Pre-size all three plane blocks — one reallocation instead of a doubling
-    /// chain when the caller knows how many keys are about to be
+    /// Reserve space for additional words in all three planes.
     #[inline]
     fn reserve(&mut self, additional: usize) {
         self.xplanes.reserve(additional);
@@ -236,39 +249,20 @@ where
 
     #[inline]
     fn toggled_bits(&self, row: usize, qubit: usize, toggle_x: bool, toggle_z: bool) -> Self::Key {
+        if qubit >= self.nqubits {
+            panic!("qubit {qubit} out of bounds");
+        }
+        let lost = Self::plane_bit(&self.lplanes[row], qubit);
+        let toggle_x = toggle_x && !lost;
+        let toggle_z = toggle_z && !lost;
         let mut x = self.xplanes[row];
         let mut z = self.zplanes[row];
 
-        #[cfg(target_endian = "little")]
-        {
-            let byte_index = qubit / 8;
-            let bit_index = qubit % 8;
-            let bit_mask = 1u8 << bit_index;
-
-            if toggle_x {
-                bytemuck::bytes_of_mut(&mut x)[byte_index] ^= bit_mask;
-            }
-            if toggle_z {
-                bytemuck::bytes_of_mut(&mut z)[byte_index] ^= bit_mask;
-            }
+        if toggle_x {
+            Self::toggle_plane_bit(&mut x, qubit);
         }
-
-        #[cfg(target_endian = "big")]
-        {
-            let mut x_bits = BitArray::<A>::new(x);
-            let mut z_bits = BitArray::<A>::new(z);
-
-            if toggle_x {
-                let toggled = !x_bits[qubit];
-                x_bits.set(qubit, toggled);
-            }
-            if toggle_z {
-                let toggled = !z_bits[qubit];
-                z_bits.set(qubit, toggled);
-            }
-
-            x = x_bits.data;
-            z = z_bits.data;
+        if toggle_z {
+            Self::toggle_plane_bit(&mut z, qubit);
         }
 
         LossyPauliWord::from_planes(
@@ -288,58 +282,29 @@ where
         j: usize,
         toggle_j: [bool; 2],
     ) -> Self::Key {
+        if i >= self.nqubits || j >= self.nqubits {
+            panic!("qubit index out of bounds");
+        }
+        let lost_i = Self::plane_bit(&self.lplanes[row], i);
+        let lost_j = Self::plane_bit(&self.lplanes[row], j);
         let mut x = self.xplanes[row];
         let mut z = self.zplanes[row];
-        let [toggle_x_i, toggle_z_i] = toggle_i;
-        let [toggle_x_j, toggle_z_j] = toggle_j;
+        let toggle_x_i = toggle_i[0] && !lost_i;
+        let toggle_z_i = toggle_i[1] && !lost_i;
+        let toggle_x_j = toggle_j[0] && !lost_j;
+        let toggle_z_j = toggle_j[1] && !lost_j;
 
-        #[cfg(target_endian = "little")]
-        {
-            let byte_index_i = i / 8;
-            let bit_index_i = i % 8;
-            let bit_mask_i = 1u8 << bit_index_i;
-            let byte_index_j = j / 8;
-            let bit_index_j = j % 8;
-            let bit_mask_j = 1u8 << bit_index_j;
-
-            if toggle_x_i {
-                bytemuck::bytes_of_mut(&mut x)[byte_index_i] ^= bit_mask_i;
-            }
-            if toggle_z_i {
-                bytemuck::bytes_of_mut(&mut z)[byte_index_i] ^= bit_mask_i;
-            }
-            if toggle_x_j {
-                bytemuck::bytes_of_mut(&mut x)[byte_index_j] ^= bit_mask_j;
-            }
-            if toggle_z_j {
-                bytemuck::bytes_of_mut(&mut z)[byte_index_j] ^= bit_mask_j;
-            }
+        if toggle_x_i {
+            Self::toggle_plane_bit(&mut x, i);
         }
-
-        #[cfg(target_endian = "big")]
-        {
-            let mut x_bits = BitArray::<A>::new(x);
-            let mut z_bits = BitArray::<A>::new(z);
-
-            if toggle_x_i {
-                let toggled = !x_bits[i];
-                x_bits.set(i, toggled);
-            }
-            if toggle_z_i {
-                let toggled = !z_bits[i];
-                z_bits.set(i, toggled);
-            }
-            if toggle_x_j {
-                let toggled = !x_bits[j];
-                x_bits.set(j, toggled);
-            }
-            if toggle_z_j {
-                let toggled = !z_bits[j];
-                z_bits.set(j, toggled);
-            }
-
-            x = x_bits.data;
-            z = z_bits.data;
+        if toggle_z_i {
+            Self::toggle_plane_bit(&mut z, i);
+        }
+        if toggle_x_j {
+            Self::toggle_plane_bit(&mut x, j);
+        }
+        if toggle_z_j {
+            Self::toggle_plane_bit(&mut z, j);
         }
 
         LossyPauliWord::from_planes(
@@ -373,7 +338,64 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_traits_2::Indexable;
+    use ppvm_traits_2::{Indexable, PauliBits};
+
+    #[test]
+    fn column_toggles_match_scalar_toggles_and_preserve_loss() {
+        let masks = [[false, false], [true, false], [false, true], [true, true]];
+        for input in ["LL", "LI", "IL", "XY"] {
+            let word = LossyPauliWord::<u8>::from(input);
+            let mut column = LossyPauliKeyColumn::<u8>::default();
+            column.push(word.clone());
+
+            for i in 0..2 {
+                for mask_i in masks {
+                    assert_eq!(
+                        column.toggled_bits(0, i, mask_i[0], mask_i[1]),
+                        word.toggled_bits(i, mask_i[0], mask_i[1])
+                    );
+                    for j in 0..2 {
+                        for mask_j in masks {
+                            let branch = column.toggled_bits2(0, i, mask_i, j, mask_j);
+                            assert_eq!(branch, word.toggled_bits2(i, mask_i, j, mask_j));
+                            for q in 0..2 {
+                                assert_eq!(branch.is_lost(q), word.is_lost(q));
+                                if word.is_lost(q) {
+                                    assert!(!branch.x_bit(q) && !branch.z_bit(q));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            assert_eq!(column.get(0), word);
+        }
+    }
+
+    #[test]
+    fn column_toggles_reject_indices_outside_logical_width() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        let mut column = LossyPauliKeyColumn::<u8>::default();
+        column.push(LossyPauliWord::from("I"));
+        for invalid in [1, 7, 8] {
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    column.toggled_bits(0, invalid, false, false)
+                }))
+                .is_err()
+            );
+            for (i, j) in [(0, invalid), (invalid, 0)] {
+                assert!(
+                    catch_unwind(AssertUnwindSafe(|| {
+                        column.toggled_bits2(0, i, [true, true], j, [false, false])
+                    }))
+                    .is_err()
+                );
+            }
+        }
+        assert_eq!(column.get(0).to_string(), "I");
+    }
 
     #[test]
     fn push_preserves_words_and_site_bits() {

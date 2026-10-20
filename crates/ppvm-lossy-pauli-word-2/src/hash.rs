@@ -10,7 +10,7 @@ use ppvm_traits_2::Indexable;
 use crate::LossyPauliWord;
 
 #[inline]
-pub(crate) fn structural_hash_lossy<A, H>(x: &A, z: &A, l: &A, _nqubits: usize) -> u64
+pub(crate) fn structural_hash_lossy<A, H>(x: &A, z: &A, l: &A) -> u64
 where
     A: PauliStorage,
     H: BuildHasher + Default + HashFinalize,

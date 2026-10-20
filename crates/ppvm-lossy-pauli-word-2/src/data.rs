@@ -160,16 +160,42 @@ impl<A: PauliStorage, H> Word for LossyPauliWord<A, H> {
     }
 
     /// Number of non-identity factors.
+    #[inline]
     fn weight(&self) -> usize {
         let xs = bytemuck::bytes_of(&self.xbits.data);
         let zs = bytemuck::bytes_of(&self.zbits.data);
         let ls = bytemuck::bytes_of(&self.lbits.data);
 
-        xs.iter()
-            .zip(zs)
-            .zip(ls)
-            .map(|((&x, &z), &l)| (x | z | l).count_ones() as usize)
-            .sum()
+        let mut total: u32 = 0;
+        let (mut i, n) = (0usize, xs.len());
+
+        // Count 64 qubits at a time, then handle the remaining bytes.
+        while i + 8 <= n {
+            let x = u64::from_ne_bytes(xs[i..i + 8].try_into().unwrap());
+            let z = u64::from_ne_bytes(zs[i..i + 8].try_into().unwrap());
+            let l = u64::from_ne_bytes(ls[i..i + 8].try_into().unwrap());
+            total += (x | z | l).count_ones();
+            i += 8;
+        }
+        if i + 4 <= n {
+            let x = u32::from_ne_bytes(xs[i..i + 4].try_into().unwrap());
+            let z = u32::from_ne_bytes(zs[i..i + 4].try_into().unwrap());
+            let l = u32::from_ne_bytes(ls[i..i + 4].try_into().unwrap());
+            total += (x | z | l).count_ones();
+            i += 4;
+        }
+        if i + 2 <= n {
+            let x = u16::from_ne_bytes(xs[i..i + 2].try_into().unwrap());
+            let z = u16::from_ne_bytes(zs[i..i + 2].try_into().unwrap());
+            let l = u16::from_ne_bytes(ls[i..i + 2].try_into().unwrap());
+            total += (x | z | l).count_ones();
+            i += 2;
+        }
+        if i < n {
+            total += (xs[i] | zs[i] | ls[i]).count_ones();
+        }
+
+        total as usize
     }
 
     #[inline]
@@ -444,6 +470,27 @@ impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn weight_counts_correctly_across_storage_and_chunk_boundaries() {
+        fn check<const N: usize>() {
+            for width in 0..=N * 8 {
+                let input: String = "IXYZL".chars().cycle().take(width).collect();
+                let word = LossyPauliWord::<[u8; N]>::from(input.as_str());
+                let expected = input.chars().filter(|&ch| ch != 'I').count();
+
+                assert_eq!(word.weight(), expected, "storage={N}, width={width}");
+            }
+        }
+
+        check::<1>();
+        check::<2>();
+        check::<4>();
+        check::<8>();
+        check::<15>();
+        check::<16>();
+        check::<17>();
+    }
 
     #[test]
     fn toggling_a_lost_site_restores_it_only_when_bits_change() {

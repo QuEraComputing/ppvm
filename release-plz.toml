@@ -14,6 +14,9 @@ git_release_name = "v{{ version }}"
 git_tag_enable = false
 git_release_enable = false
 changelog_update = false
+# Allowlist: release-plz ignores any crate without `release = true` below,
+# so new crates (e.g. the experimental `*-2` ones) are never published by accident.
+release = false
 
 # Tag owner. Must be a published crate in the version group, or no tag is
 # ever created. Published last, as it depends on most other crates.
@@ -24,7 +27,8 @@ git_release_enable = true
 changelog_update = true
 changelog_path = "CHANGELOG.md"
 # Without this, commits touching only another crate miss the release notes.
-# A new published crate must be added here and given a [[package]] entry.
+# A new published crate must be added here and given a [[package]] entry
+# with `release = true`.
 changelog_include = [
     "ppvm-traits",
     "ppvm-pauli-word",
@@ -39,48 +43,60 @@ changelog_include = [
     "ppvm-tui",
 ]
 version_group = "workspace"
+release = true
 
-# Every published crate joins the group so they all bump together.
+# Every published crate opts in and joins the group so they all bump together.
 [[package]]
 name = "ppvm-traits"
 version_group = "workspace"
+release = true
 
 [[package]]
 name = "ppvm-pauli-word"
 version_group = "workspace"
+release = true
 
 [[package]]
 name = "ppvm-pauli-sum"
 version_group = "workspace"
+release = true
 
 [[package]]
 name = "ppvm-sym"
 version_group = "workspace"
+release = true
 
 [[package]]
 name = "ppvm-tableau"
 version_group = "workspace"
+release = true
 
 [[package]]
 name = "ppvm-tableau-sum"
 version_group = "workspace"
+release = true
 
 [[package]]
 name = "ppvm-stim"
 version_group = "workspace"
+release = true
 
 [[package]]
 name = "stim-parser"
 version_group = "workspace"
+release = true
 
 [[package]]
 name = "vihaco-circuit-isa"
 version_group = "workspace"
+release = true
 
 [[package]]
 name = "ppvm-vihaco"
 version_group = "workspace"
+release = true
 
 [[package]]
 name = "ppvm-tui"
 version_group = "workspace"
+release = true

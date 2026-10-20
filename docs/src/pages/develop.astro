@@ -856,7 +856,7 @@ chore: restore lockfile consistency</code></pre>
     <h3>8.5 Adding a published crate</h3>
     <ol>
       <li>Inherit <code>version</code>, <code>edition</code>, <code>license</code> and <code>repository</code> from the workspace, add a <code>description</code>, and symlink <code>LICENSE</code> and <code>NOTICE</code> into the crate directory (<code>ln -s ../../LICENSE</code>). Internal-only crates get <code>publish = false</code> instead.</li>
-      <li>In <code>release-plz.toml</code>, give it a <code>[[package]]</code> entry with <code>version_group = "workspace"</code> <em>and</em> add it to <code>ppvm-cli</code>'s <code>changelog_include</code>. Neither omission fails loudly: the crate would version on its own, or its commits would be missing from the release notes.</li>
+      <li>In <code>release-plz.toml</code>, give it a <code>[[package]]</code> entry with <code>release = true</code> and <code>version_group = "workspace"</code> <em>and</em> add it to <code>ppvm-cli</code>'s <code>changelog_include</code>. None of these omissions fails loudly: release-plz would silently skip the crate (the workspace sets <code>release = false</code>), version it on its own, or leave its commits out of the release notes.</li>
       <li>Trusted publishing only works for crates that already exist, so a crate owner publishes the first version by hand (<code>cargo publish -p &lt;crate&gt;</code>) and then configures its trusted publisher.</li>
     </ol>
 

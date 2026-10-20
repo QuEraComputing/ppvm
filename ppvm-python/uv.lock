@@ -92,6 +92,7 @@ dependencies = [
     { name = "bloqade-circuit" },
     { name = "kirin-toolchain" },
     { name = "numpy" },
+    { name = "typing-extensions" },
 ]
 
 [package.dev-dependencies]
@@ -110,6 +111,7 @@ requires-dist = [
     { name = "bloqade-circuit", specifier = ">=0.15.0" },
     { name = "kirin-toolchain", specifier = "~=0.22.2" },
     { name = "numpy", specifier = ">=2.2.6" },
+    { name = "typing-extensions", specifier = ">=4.0" },
 ]
 
 [package.metadata.requires-dev]

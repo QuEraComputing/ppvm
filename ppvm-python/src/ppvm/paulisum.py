@@ -5,7 +5,9 @@ import math
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Self, Union
+from typing import Union
+
+from typing_extensions import Self
 
 from . import _core
 from .mixins import (

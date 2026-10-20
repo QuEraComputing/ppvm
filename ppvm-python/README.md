@@ -2,7 +2,7 @@
 
 # ppvm (Python)
 
-**ppvm** (Pauli Propagation and Virtual Machine) is a fast quantum circuit simulator with Python bindings backed by a high-performance Rust core.
+**ppvm** (Programmable Pauli Virtual Machine) is a fast quantum circuit simulator with Python bindings backed by a high-performance Rust core.
 
 ## Installation
 

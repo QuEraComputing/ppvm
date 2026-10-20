@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
 ]
 dependencies = [
-    "bloqade-circuit>=0.14.1",
+    "bloqade-circuit>=0.15.0",
     "kirin-toolchain~=0.22.2",
     "numpy>=2.2.6",
 ]
@@ -73,4 +73,11 @@ addopts = "--benchmark-disable"
 dev = [
     "pytest>=9.0.2",
     "pytest-benchmark>=5.2.3",
+]
+# Optional: only the `demo/` scripts use these (`expm_multiply` for the
+# reference matrix exponential, plus plotting). Runtime ppvm and the test
+# suite depend on neither.
+demo = [
+    "matplotlib>=3.8",
+    "scipy>=1.13",
 ]

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, "..", "..");
-const CRATES = ["ppvm-traits", "ppvm-pauli-word", "ppvm-pauli-sum", "ppvm-tableau", "ppvm-sym"];
+const CRATES = ["ppvm-traits", "ppvm-pauli-word", "ppvm-pauli-sum", "ppvm-tableau", "ppvm-sym", "ppvm-lindblad"];
 
 const CRATE_BLURB = {
   "ppvm-traits": "Trait system, the `Config` bundle, the `Pauli` alphabet, and map impls.",
@@ -17,6 +17,7 @@ const CRATE_BLURB = {
   "ppvm-pauli-sum": "The `PauliSum` engine, truncation strategies, and concrete config bundles.",
   "ppvm-tableau": "Generalized stabilizer tableau simulator (Clifford + non-Clifford).",
   "ppvm-sym": "Symbolic, parametric Pauli propagation.",
+  "ppvm-lindblad": "Adaptive Heisenberg-picture Lindbladian evolution on a truncated Pauli-string basis.",
 };
 
 const KIND_ORDER = ["module", "struct", "enum", "trait", "type_alias", "function", "macro"];

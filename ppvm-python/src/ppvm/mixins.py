@@ -395,7 +395,7 @@ class NoiseMixin:
         """
         keys = (
             "IX",
-            "IT",
+            "IY",
             "IZ",
             "XI",
             "XX",

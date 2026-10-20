@@ -69,6 +69,26 @@ jobs:
       - name: Run ppvm-stim tests with rayon feature
         run: cargo test -p ppvm-stim --features rayon
 
+  # The portable job above only builds the fxhash fallback. Enable AES so the
+  # gxhash code paths and their tests run too.
+  rust-tests-gxhash:
+    name: Rust tests (gxhash)
+    needs: pre-commit
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-C target-feature=+aes,+sse2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.98.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run tests of the crates with gxhash code paths
+        run: >-
+          cargo test -p ppvm-traits -p ppvm-pauli-word -p ppvm-pauli-sum
+          -p ppvm-tableau-sum
+
   # Cross-compile the whole workspace for browser wasm so a wasm regression
   # surfaces in CI. Three crates are never browser-wasm targets and are
   # excluded: `ppvm-python-native` (a CPython extension), `ppvm-cli` (a terminal

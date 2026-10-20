@@ -29,11 +29,6 @@ pub struct LossyPauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildH
 impl<A: PauliStorage, H> LossyPauliWord<A, H> {
     #[inline]
     pub fn new(nqubits: usize) -> Self {
-        debug_assert!(
-            nqubits <= 8 * std::mem::size_of::<A>(),
-            "nqubits {nqubits} exceeds the {}-bit backing storage",
-            8 * std::mem::size_of::<A>(),
-        );
         Self::from_planes(BitArray::ZERO, BitArray::ZERO, BitArray::ZERO, nqubits)
     }
 
@@ -44,6 +39,12 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
         lbits: BitArray<A>,
         nqubits: usize,
     ) -> Self {
+        if nqubits > xbits.len() {
+            panic!(
+                "nqubits {nqubits} exceeds the {}-bit backing storage",
+                xbits.len(),
+            );
+        }
         Self {
             xbits,
             zbits,
@@ -263,6 +264,13 @@ impl<A: PauliStorage, H> From<&str> for LossyPauliWord<A, H> {
         let mut lbits = BitArray::<A>::ZERO;
 
         let symbols = value.chars().filter(|&ch| ch != '_').collect::<Vec<char>>();
+        let nqubits = symbols.len();
+        if nqubits > xbits.len() {
+            panic!(
+                "nqubits {nqubits} exceeds the {}-bit backing storage",
+                xbits.len(),
+            );
+        }
         for (i, ch) in symbols.iter().enumerate() {
             match ch {
                 'I' => {}
@@ -276,8 +284,6 @@ impl<A: PauliStorage, H> From<&str> for LossyPauliWord<A, H> {
                 other => panic!("invalid lossy Pauli character: {other}"),
             }
         }
-        let nqubits = symbols.len();
-
         Self::from_planes(xbits, zbits, lbits, nqubits)
     }
 }
@@ -488,6 +494,43 @@ impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parsing_rejects_words_exceeding_storage_capacity() {
+        for input in ["IIIIIIIII", "XXXXXXXXI", "XXXXXXXXX", "IIII_IIIII"] {
+            assert!(
+                std::panic::catch_unwind(|| LossyPauliWord::<u8>::from(input)).is_err(),
+                "accepted oversized input: {input}"
+            );
+            assert!(
+                std::panic::catch_unwind(|| LossyPauliWord::<u8>::from(input.to_owned())).is_err()
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds the 8-bit backing storage")]
+    fn new_rejects_width_exceeding_storage_capacity() {
+        LossyPauliWord::<u8>::new(9);
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds the 8-bit backing storage")]
+    fn from_planes_rejects_width_exceeding_storage_capacity() {
+        LossyPauliWord::<u8>::from_planes(BitArray::ZERO, BitArray::ZERO, BitArray::ZERO, 9);
+    }
+
+    #[test]
+    fn parsing_accepts_exact_capacity_and_ignores_separators() {
+        for input in ["IIIIIIII", "XXXXXXXI", "_IIII_IIII_", "", "___"] {
+            let word = LossyPauliWord::<u8>::from(input);
+            let expected = input.replace('_', "");
+
+            assert_eq!(word.n_sites(), expected.len());
+            assert_eq!(word.to_string(), expected);
+            assert_eq!(word.iter().count(), expected.len());
+        }
+    }
 
     #[test]
     fn unchanged_setters_preserve_both_caches() {

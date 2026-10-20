@@ -136,11 +136,11 @@ ppvm-stim      = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}
 ppvm-sym       = {`{ git = "https://github.com/QuEraComputing/ppvm" }`}</code></pre>
 
     <p>
-      On x86_64, set <code>RUSTFLAGS="-C target-feature=+aes,+sse2"</code> —
-      gxhash, used by the default <code>Config</code> bundles, needs the AES
-      instruction set. CI sets this automatically. On targets without AES, build
-      with <code>--no-default-features --features=indexmap,ahash</code> to drop
-      gxhash.
+      No extra flags are needed. The default <code>Config</code> bundles use
+      gxhash when the target enables AES (e.g. Apple Silicon) and fall back to
+      fxhash otherwise. On an x86_64 machine with AES, opt into gxhash with
+      <code>RUSTFLAGS="-C target-feature=+aes,+sse2"</code>; keep that flag out
+      of binaries you distribute.
     </p>
 
     <h2 id="runtime"><span class="sec-num">§ 4</span><code>ppvm-pauli-sum</code> — Pauli propagation</h2>

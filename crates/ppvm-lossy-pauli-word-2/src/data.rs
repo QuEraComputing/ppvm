@@ -52,6 +52,10 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
                 xbits.len(),
             );
         }
+        debug_assert!(
+            lbits.iter_ones().all(|i| !xbits[i] && !zbits[i]),
+            "lost sites must have both X and Z bits cleared",
+        );
         Self {
             xbits,
             zbits,
@@ -682,6 +686,24 @@ mod tests {
     #[should_panic(expected = "exceeds the 8-bit backing storage")]
     fn from_planes_rejects_width_exceeding_storage_capacity() {
         LossyPauliWord::<u8>::from_planes(BitArray::ZERO, BitArray::ZERO, BitArray::ZERO, 9);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn from_planes_rejects_pauli_bits_at_lost_sites() {
+        for (x, z) in [(1u8, 0u8), (0, 1), (1, 1)] {
+            assert!(
+                std::panic::catch_unwind(|| {
+                    LossyPauliWord::<u8>::from_planes(
+                        BitArray::new(x),
+                        BitArray::new(z),
+                        BitArray::new(1),
+                        1,
+                    )
+                })
+                .is_err()
+            );
+        }
     }
 
     #[test]

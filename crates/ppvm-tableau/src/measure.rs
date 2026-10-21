@@ -174,14 +174,16 @@ where
 
             // Compute overlap directly on self.coefficients without draining.
             let mut z_overlap_re = 0.0f64;
+            let mut norm_sqr = 0.0f64;
             for &(coeff, idx) in self.coefficients.iter() {
+                let norm_sq = coeff.norm_sqr().to_f64().unwrap_or(0.0);
+                norm_sqr += norm_sq;
                 let phase = (phase_decomp
                     + (2 * symplectic_inner(destab_anticomm_bits, idx) as u8) % 4)
                     % 4;
                 if !phase.is_multiple_of(2) {
                     continue;
                 }
-                let norm_sq = coeff.norm_sqr().to_f64().unwrap_or(0.0);
                 if phase == 0 {
                     z_overlap_re += norm_sq;
                 } else {
@@ -189,7 +191,9 @@ where
                 }
             }
 
-            let prob_1 = 0.5 - 0.5 * z_overlap_re;
+            // Gate-time truncation drops branches without renormalizing, so
+            // divide by ⟨ψ|ψ⟩ rather than assuming it is 1.
+            let prob_1 = 0.5 - 0.5 * z_overlap_re / norm_sqr;
             let outcome = self.tableau.rng.random::<f64>() < prob_1;
 
             debug_assert!(
@@ -291,7 +295,12 @@ where
                 }
             }
 
-            let prob_1 = 0.5 - 0.5 * z_overlap_re;
+            // See case b: the state is not necessarily normalized.
+            let norm_sqr: f64 = by_idx
+                .iter()
+                .map(|(_, c)| c.norm_sqr().to_f64().unwrap_or(0.0))
+                .sum();
+            let prob_1 = 0.5 - 0.5 * z_overlap_re / norm_sqr;
             let outcome = self.tableau.rng.random::<f64>() < prob_1;
 
             // PROJECTION: partition A (k-bit=0) and B (k-bit=1), transform B, merge.
@@ -595,31 +604,35 @@ where
     }
 
     /// Case_b overlap: self-pairing (branch_index = idx), so overlap = ±|c|^2.
-    /// Only even phases contribute to the real part.
+    /// Only even phases contribute to the real part. Divided by ⟨ψ|ψ⟩, since
+    /// gate-time truncation leaves the state unnormalized.
     pub fn compute_overlap_case_b(
         entries: &[(Complex<T::Coeff>, I)],
         phase_decomp: u8,
         destab_anticomm_bits: I,
     ) -> f64 {
         let mut z_overlap_re = 0.0f64;
+        let mut norm_sqr = 0.0f64;
         for &(coeff, idx) in entries {
+            let norm_sq = coeff.norm_sqr().to_f64().unwrap_or(0.0);
+            norm_sqr += norm_sq;
             let phase =
                 (phase_decomp + (2 * symplectic_inner(destab_anticomm_bits, idx) as u8) % 4) % 4;
             if !phase.is_multiple_of(2) {
                 continue;
             }
-            let norm_sq = coeff.norm_sqr().to_f64().unwrap_or(0.0);
             if phase == 0 {
                 z_overlap_re += norm_sq;
             } else {
                 z_overlap_re -= norm_sq;
             }
         }
-        z_overlap_re
+        z_overlap_re / norm_sqr
     }
 
     /// Case_a overlap: cross-index pairing via HashMap lookup.
-    /// Accumulates only the real part of z_overlap.
+    /// Accumulates only the real part of z_overlap. Divided by ⟨ψ|ψ⟩, since
+    /// gate-time truncation leaves the state unnormalized.
     pub fn compute_overlap_case_a(
         coeff_map: &HashMap<I, Complex<T::Coeff>>,
         phase_decomp: u8,
@@ -628,7 +641,9 @@ where
         odd_phase_mask: I,
     ) -> f64 {
         let mut z_overlap_re = 0.0f64;
+        let mut norm_sqr = 0.0f64;
         for (&idx, coeff) in coeff_map {
+            norm_sqr += coeff.norm_sqr().to_f64().unwrap_or(0.0);
             let branch_index = idx ^ stab_anticomm_bits;
             let phase = (phase_decomp
                 + compute_phase_with_mask_static(
@@ -655,7 +670,7 @@ where
                 _ => unreachable!(),
             }
         }
-        z_overlap_re
+        z_overlap_re / norm_sqr
     }
 
     /// Merge B entries (k-bit=1) into their A counterparts in coeff_map.

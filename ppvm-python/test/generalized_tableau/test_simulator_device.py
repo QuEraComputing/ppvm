@@ -1,5 +1,6 @@
 import math
 
+import pytest
 from bloqade import squin
 from bloqade.decoders.dialects.annotate.types import MeasurementResultValue
 from kirin.dialects import ilist
@@ -208,6 +209,63 @@ def test_controlled_y_and_z_gates():
         return squin.broadcast.measure(q)
 
     assert _run_kernel(main, 6) == [ONE, ONE, ONE, ZERO, ONE, ONE]
+
+
+def test_broadcast_ccz_as_toffoli():
+    @squin.kernel
+    def main():
+        q = squin.qalloc(12)
+        a = q[:4]
+        b = q[4:8]
+        target = q[8:12]
+
+        # The four control pairs are 00, 01, 10, 11.
+        squin.x(a[2])
+        squin.x(a[3])
+        squin.x(b[1])
+        squin.x(b[3])
+        squin.broadcast.h(target)
+        squin.broadcast.ccz(a, b, target)
+        squin.broadcast.h(target)
+        return squin.broadcast.measure(q)
+
+    result = _run_kernel(main, 12)
+    assert result[:4] == [ZERO, ZERO, ONE, ONE]  # a
+    assert result[4:8] == [ZERO, ONE, ZERO, ONE]  # b
+    assert result[8:12] == [ZERO, ZERO, ZERO, ONE]  # a AND b
+
+
+def test_ccz_changes_the_relative_phase_of_ghz():
+    @squin.kernel
+    def main():
+        q = squin.qalloc(3)
+        squin.h(q[0])
+        squin.cx(q[0], q[1])
+        squin.cx(q[0], q[2])
+        squin.ccz(q[0], q[1], q[2])
+        # Undo GHZ preparation: its minus sign becomes a deterministic one.
+        squin.cx(q[0], q[2])
+        squin.cx(q[0], q[1])
+        squin.h(q[0])
+        return squin.broadcast.measure(q)
+
+    assert _run_kernel(main, 3) == [ONE, ZERO, ZERO]
+
+
+@pytest.mark.parametrize("lost", range(3))
+def test_ccz_with_a_lost_operand_preserves_the_other_qubits(lost):
+    @squin.kernel
+    def main():
+        q = squin.qalloc(3)
+        squin.broadcast.h(q)
+        squin.qubit_loss(1.0, q[lost])
+        squin.ccz(q[0], q[1], q[2])
+        squin.broadcast.h(q)
+        return squin.broadcast.measure(q)
+
+    expected = [ZERO, ZERO, ZERO]
+    expected[lost] = LOST
+    assert _run_kernel(main, 3) == expected
 
 
 def test_u3_and_phased_xz_gates():

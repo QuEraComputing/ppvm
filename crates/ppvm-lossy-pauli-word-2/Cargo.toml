@@ -2,6 +2,8 @@
 name = "ppvm-lossy-pauli-word-2"
 version = "0.1.0"
 edition = "2024"
+publish = false
+
 
 [dependencies]
 bytemuck = { version = "1", features = ["min_const_generics"] }

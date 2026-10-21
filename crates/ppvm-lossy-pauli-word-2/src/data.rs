@@ -4,7 +4,7 @@
 use std::{
     fmt,
     marker::PhantomData,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use bitvec::array::BitArray;
@@ -20,8 +20,12 @@ pub struct LossyPauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildH
     pub(crate) nqubits: usize,
     /// Lazy cache for the lossy structural digest.
     pub(crate) loss_hash_cache: AtomicU64,
+    /// Whether the cached digest is valid, including a digest of zero.
+    pub(crate) loss_hash_valid: AtomicBool,
     /// Lazy cache for the x/z structure digest.
     pub(crate) xz_hash_cache: AtomicU64,
+    /// Whether the cached digest is valid, including a digest of zero.
+    pub(crate) xz_hash_valid: AtomicBool,
     /// The private internal digest algorithm; `fn() -> H` keeps `Send + Sync`.
     pub(crate) _hasher: PhantomData<fn() -> H>,
 }
@@ -52,26 +56,32 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
                 xbits.len(),
             );
         }
+        debug_assert!(
+            lbits.iter_ones().all(|i| !xbits[i] && !zbits[i]),
+            "lost sites must have both X and Z bits cleared",
+        );
         Self {
             xbits,
             zbits,
             lbits,
             nqubits,
             loss_hash_cache: AtomicU64::new(0),
+            loss_hash_valid: AtomicBool::new(false),
             xz_hash_cache: AtomicU64::new(0),
+            xz_hash_valid: AtomicBool::new(false),
             _hasher: PhantomData,
         }
     }
 
-    // /// clear the structural digest after word mutation
+    /// Mark the X/Z digest invalid after its bits change.
     #[inline]
     pub(crate) fn invalidate_xz_hash(&mut self) {
-        *self.xz_hash_cache.get_mut() = 0;
+        *self.xz_hash_valid.get_mut() = false;
     }
 
     #[inline]
     pub(crate) fn invalidate_loss_hash(&mut self) {
-        *self.loss_hash_cache.get_mut() = 0;
+        *self.loss_hash_valid.get_mut() = false;
     }
 
     /// check for whether a qubit was lost
@@ -214,13 +224,17 @@ impl<A: PauliStorage, H> Word for LossyPauliWord<A, H> {
 impl<A: PauliStorage, H> Clone for LossyPauliWord<A, H> {
     #[inline]
     fn clone(&self) -> Self {
+        let xz_hash_valid = self.xz_hash_valid.load(Ordering::Acquire);
+        let loss_hash_valid = self.loss_hash_valid.load(Ordering::Acquire);
         Self {
             xbits: self.xbits,
             zbits: self.zbits,
             lbits: self.lbits,
             nqubits: self.nqubits,
             xz_hash_cache: AtomicU64::new(self.xz_hash_cache.load(Ordering::Relaxed)),
+            xz_hash_valid: AtomicBool::new(xz_hash_valid),
             loss_hash_cache: AtomicU64::new(self.loss_hash_cache.load(Ordering::Relaxed)),
+            loss_hash_valid: AtomicBool::new(loss_hash_valid),
             _hasher: PhantomData,
         }
     }
@@ -499,6 +513,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn zero_hash_validity_survives_cloning_and_invalidates_independently() {
+        let mut word = LossyPauliWord::<u8>::from("II");
+        assert!(!word.xz_hash_valid.load(Ordering::Relaxed));
+        assert!(!word.loss_hash_valid.load(Ordering::Relaxed));
+        *word.xz_hash_valid.get_mut() = true;
+        *word.loss_hash_valid.get_mut() = true;
+
+        let mut cloned = word.clone();
+        assert!(cloned.xz_hash_valid.load(Ordering::Relaxed));
+        assert!(cloned.loss_hash_valid.load(Ordering::Relaxed));
+        assert_eq!(cloned.xz_hash_cache.load(Ordering::Relaxed), 0);
+        assert_eq!(cloned.loss_hash_cache.load(Ordering::Relaxed), 0);
+
+        cloned.set_x_bit(0, true);
+        assert!(!cloned.xz_hash_valid.load(Ordering::Relaxed));
+        assert!(cloned.loss_hash_valid.load(Ordering::Relaxed));
+        cloned.set_lost(1);
+        assert!(!cloned.loss_hash_valid.load(Ordering::Relaxed));
+        assert!(word.xz_hash_valid.load(Ordering::Relaxed));
+        assert!(word.loss_hash_valid.load(Ordering::Relaxed));
+    }
+
+    #[test]
     fn bit_setters_skip_lost_sites_and_preserve_the_loss_cache() {
         let setters: [fn(&mut LossyPauliWord<u8>); 6] = [
             |w| w.set_x_bit(0, true),
@@ -511,24 +548,30 @@ mod tests {
         for setter in setters {
             let mut word = LossyPauliWord::<u8>::from("LL");
             *word.xz_hash_cache.get_mut() = 11;
+            *word.xz_hash_valid.get_mut() = true;
             *word.loss_hash_cache.get_mut() = 22;
+            *word.loss_hash_valid.get_mut() = true;
 
             setter(&mut word);
 
             assert_eq!(word, LossyPauliWord::from("LL"));
             assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+            assert!(word.xz_hash_valid.load(Ordering::Relaxed));
             assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+            assert!(word.loss_hash_valid.load(Ordering::Relaxed));
         }
         for input in ["LI", "IL"] {
             for setter in &setters[3..] {
                 let mut word = LossyPauliWord::<u8>::from(input);
                 *word.loss_hash_cache.get_mut() = 22;
+                *word.loss_hash_valid.get_mut() = true;
                 setter(&mut word);
                 let lost = if input == "LI" { 0 } else { 1 };
                 assert_eq!(word.get(lost), LossySite::Lost);
                 assert!(!word.x_bit(lost) && !word.z_bit(lost));
                 assert_ne!(word.get(1 - lost), LossySite::Present(Pauli::I));
                 assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+                assert!(word.loss_hash_valid.load(Ordering::Relaxed));
             }
         }
     }
@@ -610,7 +653,9 @@ mod tests {
                 for operation in operations {
                     let mut word = LossyPauliWord::<u8>::from(input);
                     *word.xz_hash_cache.get_mut() = 11;
+                    *word.xz_hash_valid.get_mut() = true;
                     *word.loss_hash_cache.get_mut() = 22;
+                    *word.loss_hash_valid.get_mut() = true;
                     let original = word.clone();
 
                     assert!(
@@ -619,7 +664,9 @@ mod tests {
                     assert_eq!(word, original);
                     assert_eq!(word.weight(), original.weight());
                     assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+                    assert!(word.xz_hash_valid.load(Ordering::Relaxed));
                     assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+                    assert!(word.loss_hash_valid.load(Ordering::Relaxed));
                 }
             }
         }
@@ -645,13 +692,17 @@ mod tests {
             for operation in operations {
                 let mut word = LossyPauliWord::<u8>::from("I");
                 *word.xz_hash_cache.get_mut() = 11;
+                *word.xz_hash_valid.get_mut() = true;
                 *word.loss_hash_cache.get_mut() = 22;
+                *word.loss_hash_valid.get_mut() = true;
                 let original = word.clone();
 
                 assert!(catch_unwind(AssertUnwindSafe(|| operation(&mut word, i, j))).is_err());
                 assert_eq!(word, original);
                 assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+                assert!(word.xz_hash_valid.load(Ordering::Relaxed));
                 assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+                assert!(word.loss_hash_valid.load(Ordering::Relaxed));
             }
         }
     }
@@ -682,6 +733,24 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
+    fn from_planes_rejects_pauli_bits_at_lost_sites() {
+        for (x, z) in [(1u8, 0u8), (0, 1), (1, 1)] {
+            assert!(
+                std::panic::catch_unwind(|| {
+                    LossyPauliWord::<u8>::from_planes(
+                        BitArray::new(x),
+                        BitArray::new(z),
+                        BitArray::new(1),
+                        1,
+                    )
+                })
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn parsing_accepts_exact_capacity_and_ignores_separators() {
         for input in ["IIIIIIII", "XXXXXXXI", "_IIII_IIII_", "", "___"] {
             let word = LossyPauliWord::<u8>::from(input);
@@ -698,7 +767,9 @@ mod tests {
         let mut word = LossyPauliWord::<u8>::from("YZL");
         // Seed nonzero cache values to observe invalidation without hashing.
         *word.xz_hash_cache.get_mut() = 11;
+        *word.xz_hash_valid.get_mut() = true;
         *word.loss_hash_cache.get_mut() = 22;
+        *word.loss_hash_valid.get_mut() = true;
 
         word.set(0, LossySite::Present(Pauli::Y));
         word.set_x_bit(0, true);
@@ -713,7 +784,9 @@ mod tests {
 
         assert_eq!(word.to_string(), "YZL");
         assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+        assert!(word.xz_hash_valid.load(Ordering::Relaxed));
         assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+        assert!(word.loss_hash_valid.load(Ordering::Relaxed));
     }
 
     #[test]
@@ -729,32 +802,40 @@ mod tests {
         for setter in setters {
             let mut word = LossyPauliWord::<u8>::from("II");
             *word.xz_hash_cache.get_mut() = 11;
+            *word.xz_hash_valid.get_mut() = true;
             *word.loss_hash_cache.get_mut() = 22;
+            *word.loss_hash_valid.get_mut() = true;
 
             setter(&mut word);
 
-            assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 0);
+            assert!(!word.xz_hash_valid.load(Ordering::Relaxed));
             assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 22);
+            assert!(word.loss_hash_valid.load(Ordering::Relaxed));
         }
         let mut word = LossyPauliWord::<u8>::from("L");
         *word.xz_hash_cache.get_mut() = 11;
+        *word.xz_hash_valid.get_mut() = true;
         *word.loss_hash_cache.get_mut() = 22;
+        *word.loss_hash_valid.get_mut() = true;
         word.set(0, LossySite::Present(Pauli::I));
         assert_eq!(word.to_string(), "I");
         assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
-        assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 0);
+        assert!(word.xz_hash_valid.load(Ordering::Relaxed));
+        assert!(!word.loss_hash_valid.load(Ordering::Relaxed));
     }
 
     #[test]
     fn repeated_indices_preserve_cache_when_final_bits_are_unchanged() {
         let mut word = LossyPauliWord::<u8>::from("I");
         *word.xz_hash_cache.get_mut() = 11;
+        *word.xz_hash_valid.get_mut() = true;
 
         word.set_xz_bits2(0, true, true, 0, false, false);
         word.set_z_bit_pair(0, true, 0, false);
 
         assert_eq!(word.to_string(), "I");
         assert_eq!(word.xz_hash_cache.load(Ordering::Relaxed), 11);
+        assert!(word.xz_hash_valid.load(Ordering::Relaxed));
     }
 
     #[test]

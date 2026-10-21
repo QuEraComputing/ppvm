@@ -53,7 +53,7 @@ where
 
 /// Cache the X/Z and loss digests independently, computing each on demand.
 /// Combine both digests and finalize the word hash on every call.
-/// Zero marks an empty cache; a zero digest is recomputed on the next call.
+/// Validity flags distinguish an empty cache from a cached zero digest.
 impl<A, H> Indexable for LossyPauliWord<A, H>
 where
     A: PauliStorage,
@@ -61,22 +61,22 @@ where
 {
     #[inline]
     fn key_hash(&self) -> u64 {
-        let xz_hash = match self.xz_hash_cache.load(Ordering::Relaxed) {
-            0 => {
-                let digest = hash_xz::<A, H>(&self.xbits.data, &self.zbits.data);
-                self.xz_hash_cache.store(digest, Ordering::Relaxed);
-                digest
-            }
-            cached => cached,
+        let xz_hash = if self.xz_hash_valid.load(Ordering::Acquire) {
+            self.xz_hash_cache.load(Ordering::Relaxed)
+        } else {
+            let digest = hash_xz::<A, H>(&self.xbits.data, &self.zbits.data);
+            self.xz_hash_cache.store(digest, Ordering::Relaxed);
+            self.xz_hash_valid.store(true, Ordering::Release);
+            digest
         };
 
-        let loss_hash = match self.loss_hash_cache.load(Ordering::Relaxed) {
-            0 => {
-                let digest = H::default().hash_one(self.lbits.data);
-                self.loss_hash_cache.store(digest, Ordering::Relaxed);
-                digest
-            }
-            cached => cached,
+        let loss_hash = if self.loss_hash_valid.load(Ordering::Acquire) {
+            self.loss_hash_cache.load(Ordering::Relaxed)
+        } else {
+            let digest = H::default().hash_one(self.lbits.data);
+            self.loss_hash_cache.store(digest, Ordering::Relaxed);
+            self.loss_hash_valid.store(true, Ordering::Release);
+            digest
         };
 
         combine_hashes::<H>(xz_hash, loss_hash)
@@ -86,8 +86,66 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ppvm_traits_2::{IdentityBuildHasher, LossySite, Pauli};
+    use ppvm_traits_2::{IdentityBuildHasher, LossySite, Pauli, PauliBits};
     use std::collections::HashMap;
+
+    #[test]
+    fn zero_hashes_are_cached_and_reused() {
+        use std::cell::Cell;
+
+        thread_local! {
+            static BUILDS: Cell<usize> = const { Cell::new(0) };
+        }
+        #[derive(Default)]
+        struct ZeroBuildHasher;
+        struct ZeroHasher;
+
+        impl Hasher for ZeroHasher {
+            fn write(&mut self, _: &[u8]) {}
+            fn finish(&self) -> u64 {
+                0
+            }
+        }
+        impl BuildHasher for ZeroBuildHasher {
+            type Hasher = ZeroHasher;
+            fn build_hasher(&self) -> ZeroHasher {
+                BUILDS.with(|count| count.set(count.get() + 1));
+                ZeroHasher
+            }
+        }
+        impl HashFinalize for ZeroBuildHasher {
+            fn index_hash(raw: u64) -> u64 {
+                raw
+            }
+        }
+
+        let mut word = LossyPauliWord::<u8, ZeroBuildHasher>::from("II");
+        BUILDS.with(|count| count.set(0));
+        assert_eq!(word.key_hash(), 0);
+        assert!(word.xz_hash_valid.load(Ordering::Acquire));
+        assert!(word.loss_hash_valid.load(Ordering::Acquire));
+        BUILDS.with(|count| assert_eq!(count.get(), 3));
+
+        assert_eq!(word.key_hash(), 0);
+        BUILDS.with(|count| assert_eq!(count.get(), 4)); // Only combine cached hashes.
+        assert_eq!(word.clone().key_hash(), 0);
+        BUILDS.with(|count| assert_eq!(count.get(), 5));
+
+        word.set_lost(0);
+        assert_eq!(word.key_hash(), 0);
+        BUILDS.with(|count| assert_eq!(count.get(), 7)); // Recompute loss and combine.
+        word.set_x_bit(1, true);
+        assert_eq!(word.key_hash(), 0);
+        BUILDS.with(|count| assert_eq!(count.get(), 9)); // Recompute X/Z and combine.
+    }
+
+    #[test]
+    fn no_loss_fxhash_is_valid_even_when_zero() {
+        let word = LossyPauliWord::<u8>::from("XI");
+        word.key_hash();
+        assert!(word.loss_hash_valid.load(Ordering::Acquire));
+        assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 0);
+    }
 
     #[test]
     fn equal_words_find_the_same_map_entry() {

@@ -454,10 +454,8 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
         self.check_qubit(j);
         let mut xbits = self.xbits;
         let mut zbits = self.zbits;
-        let toggle_x_i = toggle_i[0];
-        let toggle_x_j = toggle_j[0];
-        let toggle_z_i = toggle_i[1];
-        let toggle_z_j = toggle_j[1];
+        let [toggle_x_i, toggle_z_i] = toggle_i;
+        let [toggle_x_j, toggle_z_j] = toggle_j;
         if toggle_x_i && !self.lbits[i] {
             let bit = xbits[i];
             xbits.set(i, !bit);

@@ -657,3 +657,37 @@ fn i_error_reset_leakage_with_args_errors() {
         Some("invalid-tag")
     );
 }
+
+#[test]
+fn i_error_leak_loss_joint_promotes_and_pairs_targets() {
+    let p = parse_ok(
+        "I_ERROR[leak_loss_joint](0.1,0.2,0.3,0,0,0,0,0,0.01,0.02,0.03,0.04,0.5) 0 1 2 3\n",
+    );
+    match &p.instructions[0] {
+        ExtendedInstruction::LeakLossJoint { ps, targets, .. } => {
+            approx_eq(ps[0], 0.1);
+            approx_eq(ps[8], 0.01);
+            approx_eq(ps[11], 0.04);
+            approx_eq(ps[12], 0.5);
+            assert_eq!(targets, &vec![(0, 1), (2, 3)]);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn i_error_leak_loss_joint_wrong_arg_count_errors() {
+    assert_eq!(
+        err_code("I_ERROR[leak_loss_joint](0.1, 0.2) 0 1\n"),
+        Some("invalid-tag")
+    );
+}
+
+#[test]
+fn i_error_leak_loss_joint_odd_targets_errors() {
+    let ps = ["0"; 13].join(", ");
+    assert_eq!(
+        err_code(&format!("I_ERROR[leak_loss_joint]({ps}) 0 1 2\n")),
+        Some("invalid-tag")
+    );
+}

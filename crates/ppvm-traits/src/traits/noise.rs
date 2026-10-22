@@ -182,3 +182,31 @@ pub trait ResetLeakageChannel<T: Config> {
     /// No-op if the qubit is live. A lost qubit cannot be recovered this way.
     fn reset_leakage_channel(&mut self, addr0: usize);
 }
+
+/// Joint leak/loss channel on a qubit pair, for two-qubit gates whose
+/// leakage and loss events are correlated.
+///
+/// Each qubit ends the channel in the qubit subspace (`q`), leaked (`k`) or
+/// lost (`l`). A qubit that leaks is handled as by [`LeakageChannel`] and one
+/// that is lost as by [`LossChannel`]. Unlike [`CorrelatedLossChannel`], a
+/// leaked partner counts as gone, the same as a lost one. If neither qubit is
+/// in the qubit subspace the channel is a no-op and draws no random number.
+///
+/// The channel is admissible when every `p[i]` is in `[0, 1]`,
+/// `p[0] + … + p[7] <= 1`, `p[8] + p[9] <= 1` and `p[10] + p[11] <= 1`; the
+/// tableau backend `debug_assert`s that region and that `addr0 != addr1`.
+pub trait LeakLossJointChannel<T: Config> {
+    /// Apply a joint leak/loss channel to qubits at `addr0` and `addr1`.
+    ///
+    /// The thirteen probabilities are:
+    /// * `p[0..8]`: when both qubits are in the qubit subspace, the probability
+    ///   of each joint outcome, in the order `{qk, ql, kq, kk, kl, lq, lk, ll}`
+    ///   (first letter for `addr0`). Both stay with probability
+    ///   `1 − p[0] − … − p[7]`.
+    /// * `p[8]`, `p[9]`: the probabilities that `addr0` leaks or is lost when
+    ///   `addr1` is already leaked or lost.
+    /// * `p[10]`, `p[11]`: the same for `addr1` when `addr0` is gone.
+    /// * `p[12]`: the probability that a qubit leaking here is pinned to `|1⟩`
+    ///   rather than `|0⟩`.
+    fn leak_loss_joint_channel(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 13]);
+}

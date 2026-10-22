@@ -280,6 +280,7 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 | `reset_loss_channel(q)`                                                     | ✓ | ✓\* | ✓   |
 | `leakage_channel(q, p0, p1)` (pin to 0/1; total `p0+p1`)                     | † | —   | ✓   |
 | `reset_leakage_channel(q)`                                                  | † | —   | ✓   |
+| `leak_loss_joint_channel(q0, q1, p[13])` (Stim: `I_ERROR[leak_loss_joint]`) | † | —   | —   |
 | `is_leaked(q)`, `leakage_values()`                                          | † | —   | ✓   |
 
 \* Python side: loss methods live on `LossyPauliSum`, not the plain `PauliSum`.
@@ -289,7 +290,8 @@ probabilities of leaking *into* a pinned `|0⟩`/`|1⟩` (sum is the leak rate).
 Do not confuse with `asymmetric_loss_channel(q, p0, p1)`, whose `p0`/`p1` are
 loss *from* `|0⟩`/`|1⟩` and whose total depends on `⟨Z⟩`. Stim:
 `I_ERROR[leakage](p0, p1)` and `I_ERROR[reset_leakage]`. A leaked
-qubit measures the pinned `ZERO`/`ONE`, not `LOST`.
+qubit measures the pinned `ZERO`/`ONE`, not `LOST`. `LeakLossJointChannel` draws the joint
+leak/loss fate of a qubit pair in one draw (13 probabilities, see its docs).
 
 ### Naming traps
 

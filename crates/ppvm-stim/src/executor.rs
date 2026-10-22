@@ -751,6 +751,12 @@ pub fn execute_validated<T, I, C>(
                     tab.reset_leakage_channel(q);
                 }
             }
+            ExtendedInstruction::LeakLossJoint { ps, targets, .. } => {
+                let ps: [T::Coeff; 13] = (**ps).map(Into::into);
+                for &(a, b) in targets {
+                    tab.leak_loss_joint_channel(a, b, ps.clone());
+                }
+            }
             ExtendedInstruction::Measure(MeasureOp {
                 name,
                 args,

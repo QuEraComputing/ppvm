@@ -365,18 +365,46 @@ fn lower_noise(
             }
             Ok(Some(ExtendedInstruction::ResetLeakage { targets, span }))
         }
+        (IError, "leak_loss_joint") => {
+            if targets.is_empty() || !targets.len().is_multiple_of(2) {
+                return invalid_tag(
+                    "leak_loss_joint",
+                    name.canonical_name(),
+                    span,
+                    format!(
+                        "[leak_loss_joint] expects a nonzero even target count, got {}",
+                        targets.len()
+                    ),
+                    sink,
+                );
+            }
+            let Ok(ps) = <[f64; 13]>::try_from(args.as_slice()) else {
+                return invalid_tag(
+                    "leak_loss_joint",
+                    name.canonical_name(),
+                    span,
+                    format!("[leak_loss_joint] expects 13 args, got {}", args.len()),
+                    sink,
+                );
+            };
+            Ok(Some(ExtendedInstruction::LeakLossJoint {
+                ps: Box::new(ps),
+                targets: pair_targets(&targets),
+                span,
+            }))
+        }
         (IError, "") => invalid_tag(
             "<missing>",
             name.canonical_name(),
             span,
-            "I_ERROR requires a [loss], [correlated_loss], [leakage], or [reset_leakage] tag",
+            "I_ERROR requires a [loss], [correlated_loss], [leakage], [reset_leakage], or [leak_loss_joint] tag",
             sink,
         ),
         (IError, other) => invalid_tag(
             other,
             name.canonical_name(),
             span,
-            "expected [loss], [correlated_loss], [leakage], or [reset_leakage]",
+            "expected [loss], [correlated_loss], [leakage], [reset_leakage], or [leak_loss_joint]",
             sink,
         ),
         _ => Ok(Some(ExtendedInstruction::Noise(NoiseOp {

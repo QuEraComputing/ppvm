@@ -544,3 +544,21 @@ fn plain_reset_still_does_not_repump() {
     assert!(tab.is_leaked(0));
     assert_eq!(r, vec![Some(true)]);
 }
+
+#[test]
+fn leak_loss_joint_applies_cells_and_lone_rates_per_pair() {
+    // Cell kl on pairs (0, 1) and (2, 3), pinned to |1⟩.
+    let (_, mut tab) = run(
+        "I_ERROR[leak_loss_joint](0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1) 0 1 2 3",
+        4,
+    );
+    assert!(tab.is_leaked(0) && tab.is_lost(1) && tab.is_leaked(2) && tab.is_lost(3));
+    assert_eq!(tab.measure(0), Some(true));
+
+    // Lone rates: p[8] (first qubit leaks) and p[11] (second qubit is lost).
+    let (_, tab) = run(
+        "I_ERROR[loss](1) 1 2\nI_ERROR[leak_loss_joint](0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0) 0 1 2 3",
+        4,
+    );
+    assert!(tab.is_leaked(0) && tab.is_lost(3));
+}

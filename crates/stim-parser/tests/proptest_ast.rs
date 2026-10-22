@@ -423,6 +423,15 @@ fn ext_flat() -> impl Strategy<Value = ExtendedInstruction> {
             targets,
             span: span0(),
         }),
+        (
+            prop::array::uniform13(prob_lit()),
+            prop::collection::vec((qubit(), qubit()), 1..3),
+        )
+            .prop_map(|(ps, targets)| ExtendedInstruction::LeakLossJoint {
+                ps: Box::new(ps),
+                targets,
+                span: span0(),
+            }),
         one_q_targets().prop_map(|targets| ExtendedInstruction::ResetLeakage {
             targets,
             span: span0(),
@@ -515,6 +524,7 @@ fn zero_spans_ext(instrs: &mut [ExtendedInstruction]) {
             | ExtendedInstruction::Loss { span, .. }
             | ExtendedInstruction::CorrelatedLoss { span, .. }
             | ExtendedInstruction::Leakage { span, .. }
+            | ExtendedInstruction::LeakLossJoint { span, .. }
             | ExtendedInstruction::ResetLeakage { span, .. }
             | ExtendedInstruction::MPad { span, .. } => *span = span0(),
             ExtendedInstruction::Repeat { body, span, .. } => {

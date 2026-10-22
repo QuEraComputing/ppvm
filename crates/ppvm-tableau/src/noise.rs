@@ -442,6 +442,106 @@ where
     }
 }
 
+impl<T: Config, I: TableauIndex + Send + Sync, C: SparseVector<Complex<T::Coeff>, I>>
+    LeakLossJointChannel<T> for GeneralizedTableau<T, I, C>
+where
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    C: std::fmt::Debug,
+    T::Coeff: PartialOrd<f64>
+        + PartialOrd
+        + One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    I: Debug,
+{
+    fn leak_loss_joint_channel(&mut self, addr0: usize, addr1: usize, p: [T::Coeff; 13]) {
+        use QubitStatus::{Leaked, Live, Lost};
+        // Joint outcomes of `p[0..8]`, in the order `{qk, ql, kq, kk, kl, lq, lk, ll}`.
+        const CELLS: [(QubitStatus, QubitStatus); 8] = [
+            (Live, Leaked),
+            (Live, Lost),
+            (Leaked, Live),
+            (Leaked, Leaked),
+            (Leaked, Lost),
+            (Lost, Live),
+            (Lost, Leaked),
+            (Lost, Lost),
+        ];
+
+        debug_assert_ne!(addr0, addr1, "joint leak/loss needs two distinct qubits");
+        debug_assert!(
+            p.iter().all(|p_i| *p_i >= 0.0 && *p_i <= 1.0)
+                && p[..8]
+                    .iter()
+                    .fold(T::Coeff::zero(), |s, p_i| s + p_i.clone())
+                    <= 1.0
+                && p[8].clone() + p[9].clone() <= 1.0
+                && p[10].clone() + p[11].clone() <= 1.0,
+            "joint leak/loss needs every p in [0, 1], sum(p[0..8]) <= 1, \
+             p[8] + p[9] <= 1 and p[10] + p[11] <= 1; got {p:?}"
+        );
+
+        let gone0 = self.is_inactive(addr0);
+        let gone1 = self.is_inactive(addr1);
+        if gone0 && gone1 {
+            return;
+        }
+
+        // One draw picks the fate of both qubits.
+        let r = self.tableau.rng.random::<f64>();
+        let alone = |leak: &T::Coeff, loss: &T::Coeff| {
+            if *leak > r {
+                Leaked
+            } else if leak.clone() + loss.clone() > r {
+                Lost
+            } else {
+                Live
+            }
+        };
+        let fates = if gone1 {
+            (alone(&p[8], &p[9]), Live)
+        } else if gone0 {
+            (Live, alone(&p[10], &p[11]))
+        } else {
+            let mut cumulative = T::Coeff::zero();
+            let mut fates = (Live, Live);
+            for (p_i, cell) in p[..8].iter().zip(CELLS) {
+                cumulative += p_i.clone();
+                if cumulative > r {
+                    fates = cell;
+                    break;
+                }
+            }
+            fates
+        };
+
+        // Apply each fate with certainty through the single-qubit channels, so
+        // the collapse, pinning and measurement-record handling are theirs.
+        let p_one = p[12].clone();
+        for (addr, fate) in [(addr0, fates.0), (addr1, fates.1)] {
+            match fate {
+                Leaked => {
+                    self.leakage_channel(addr, T::Coeff::one() - p_one.clone(), p_one.clone())
+                }
+                Lost => self.loss_channel(addr, T::Coeff::one()),
+                Live => {}
+            }
+        }
+    }
+}
+
 impl<T, I, C> ResetLeakageChannel<T> for GeneralizedTableau<T, I, C>
 where
     T: Config,
@@ -1543,5 +1643,146 @@ mod tests {
         t.reset_leakage_channel(0);
         assert!(!t.is_leaked(0));
         assert_eq!(t.measure(0), Some(true)); // unchanged, still |1⟩
+    }
+
+    // === LeakLossJointChannel ===
+
+    /// Joint parameters with only `p[i]` set to 1 and the pin probability `p_one`.
+    fn joint_only(i: usize, p_one: f64) -> [f64; 13] {
+        let mut p = [0.0; 13];
+        p[i] = 1.0;
+        p[12] = p_one;
+        p
+    }
+
+    #[test]
+    fn leak_loss_joint_cells_set_both_qubits() {
+        let status = |c| match c {
+            'q' => QubitStatus::Live,
+            'k' => QubitStatus::Leaked,
+            _ => QubitStatus::Lost,
+        };
+        for (i, cell) in ["qk", "ql", "kq", "kk", "kl", "lq", "lk", "ll"]
+            .iter()
+            .enumerate()
+        {
+            let mut t = tab(2);
+            t.leak_loss_joint_channel(0, 1, joint_only(i, 0.0));
+            let mut expected = cell.chars().map(status);
+            assert_eq!(Some(t.qubit_status[0]), expected.next(), "cell {cell}");
+            assert_eq!(Some(t.qubit_status[1]), expected.next(), "cell {cell}");
+        }
+    }
+
+    #[test]
+    fn leak_loss_joint_pins_leaked_qubits_with_p_one() {
+        // Cell kk; start in |10⟩ so each pin must overwrite the collapsed bit.
+        for (p_one, bit) in [(0.0, false), (1.0, true)] {
+            let mut t = tab(2);
+            t.x(0);
+            t.leak_loss_joint_channel(0, 1, joint_only(3, p_one));
+            assert_eq!(t.measure(0), Some(bit));
+            assert_eq!(t.measure(1), Some(bit));
+        }
+    }
+
+    #[test]
+    fn leak_loss_joint_lone_qubit_takes_its_own_rates() {
+        // `addr1` lost or leaked: `addr0` leaks with p[8] = 1 and the cells
+        // (here ll = 1) are ignored.
+        for gone in [QubitStatus::Lost, QubitStatus::Leaked] {
+            let mut p = joint_only(7, 0.0);
+            p[8] = 1.0;
+            let mut t = tab(2);
+            t.qubit_status[1] = gone;
+            t.leak_loss_joint_channel(0, 1, p);
+            assert!(t.is_leaked(0));
+            assert_eq!(t.qubit_status[1], gone);
+        }
+        // `addr0` lost: `addr1` is lost with p[11] = 1.
+        let mut p = joint_only(7, 0.0);
+        p[11] = 1.0;
+        let mut t = tab(2);
+        t.qubit_status[0] = QubitStatus::Lost;
+        t.leak_loss_joint_channel(0, 1, p);
+        assert!(t.is_lost(1));
+    }
+
+    #[test]
+    fn leak_loss_joint_both_gone_is_noop_without_rng() {
+        let seed = 42u64;
+        let mut t = tab(2);
+        t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+        t.qubit_status[0] = QubitStatus::Lost;
+        t.qubit_status[1] = QubitStatus::Leaked;
+        let mut p = joint_only(3, 0.5);
+        p[8] = 1.0;
+        p[10] = 1.0;
+        t.leak_loss_joint_channel(0, 1, p);
+        let next: f64 = t.tableau.rng.random();
+
+        let mut fresh = tab(2);
+        fresh.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+        let expected: f64 = fresh.tableau.rng.random();
+
+        assert_eq!(next, expected);
+        assert!(t.is_lost(0) && t.is_leaked(1));
+    }
+
+    #[test]
+    fn leak_loss_joint_statistics() {
+        // Both present: P(kl) = p[4]. `addr0` lost: P(`addr1` lost) = p[11],
+        // which differs from p[9] so swapped lone rates would fail.
+        let mut p = [0.0; 13];
+        p[0] = 0.1;
+        p[4] = 0.3;
+        p[7] = 0.2;
+        p[9] = 0.1;
+        p[11] = 0.4;
+        let trials = 1000u64;
+        let (mut kl, mut lone_lost) = (0u64, 0u64);
+        for seed in 0..trials {
+            let mut t = tab(2);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.leak_loss_joint_channel(0, 1, p);
+            if t.is_leaked(0) && t.is_lost(1) {
+                kl += 1;
+            }
+
+            let mut t = tab(2);
+            t.tableau.rng = rand::SeedableRng::seed_from_u64(seed);
+            t.qubit_status[0] = QubitStatus::Lost;
+            t.leak_loss_joint_channel(0, 1, p);
+            if t.is_lost(1) {
+                lone_lost += 1;
+            }
+        }
+        // 5σ tolerance: σ = sqrt(0.3*0.7/1000) ≈ 0.014, sqrt(0.4*0.6/1000) ≈ 0.015
+        for (count, expected) in [(kl, p[4]), (lone_lost, p[11])] {
+            let fraction = count as f64 / trials as f64;
+            assert!(
+                (fraction - expected).abs() < 0.075,
+                "Expected ~{expected:.2}, got {fraction:.3}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "sum(p[0..8]) <= 1")]
+    fn leak_loss_joint_rejects_inadmissible_probabilities() {
+        let mut p = [0.0; 13];
+        p[0] = 0.6;
+        p[1] = 0.6;
+        let mut t = tab(2);
+        t.leak_loss_joint_channel(0, 1, p);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "two distinct qubits")]
+    fn leak_loss_joint_rejects_same_qubit() {
+        let mut t = tab(2);
+        t.leak_loss_joint_channel(1, 1, [0.0; 13]);
     }
 }

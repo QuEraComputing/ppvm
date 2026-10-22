@@ -114,6 +114,17 @@ fn validate_slice(
                 // p0 + p1 is the total leak probability, so it must be in [0, 1] too.
                 check_probability(*p0 + *p1, "I_ERROR[leakage]", line)?;
             }
+            ExtendedInstruction::LeakLossJoint { ps, span, .. } => {
+                let line = span.line(line_map);
+                for &p in ps.iter() {
+                    check_probability(p, "I_ERROR[leak_loss_joint]", line)?;
+                }
+                // The joint cells, and each lone qubit's leak + loss, are events
+                // of one draw, so their sums must be in [0, 1] too.
+                check_probability(ps[..8].iter().sum(), "I_ERROR[leak_loss_joint]", line)?;
+                check_probability(ps[8] + ps[9], "I_ERROR[leak_loss_joint]", line)?;
+                check_probability(ps[10] + ps[11], "I_ERROR[leak_loss_joint]", line)?;
+            }
             ExtendedInstruction::MPad {
                 prob, bits, span, ..
             } => {

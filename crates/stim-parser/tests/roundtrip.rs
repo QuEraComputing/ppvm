@@ -87,6 +87,10 @@ const EXTENDED_CORPUS: &[(&str, &str)] = &[
     ),
     ("leakage", "I_ERROR[leakage](0.1, 0.2) 0 1\n"),
     ("reset_leakage", "I_ERROR[reset_leakage] 0 1\n"),
+    (
+        "leak_loss_joint",
+        "I_ERROR[leak_loss_joint](0.1, 0.2, 0.3, 0, 0, 0, 0, 0, 0.01, 0.02, 0.03, 0.04, 0.5) 0 1 2 3\n",
+    ),
     ("mpad_bits", "MPAD 0 1 0\nMPAD(0.01) 1 1 0 0\n"),
     (
         "extended_in_repeat",

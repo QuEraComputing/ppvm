@@ -373,6 +373,13 @@ impl StimPrint for ExtendedInstruction {
                 out.write_str("I_ERROR[reset_leakage]")?;
                 write_usize_targets(out, targets)?;
             }
+            ExtendedInstruction::LeakLossJoint { ps, targets, .. } => {
+                out.write_str("I_ERROR[leak_loss_joint]")?;
+                write_args(out, &ps[..])?;
+                for &(a, b) in targets {
+                    write!(out, " {a} {b}")?;
+                }
+            }
             ExtendedInstruction::MPad {
                 tag, prob, bits, ..
             } => {
@@ -439,6 +446,13 @@ mod tests {
     #[test]
     fn leakage_prints_canonically() {
         let src = "I_ERROR[leakage](0.1, 0.2) 0 1\n";
+        let ast = parse_extended(src).unwrap();
+        assert_eq!(ast.to_stim(), src);
+    }
+
+    #[test]
+    fn leak_loss_joint_prints_canonically() {
+        let src = "I_ERROR[leak_loss_joint](0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.01, 0.02, 0.03, 0.04, 0.5) 0 1 2 3\n";
         let ast = parse_extended(src).unwrap();
         assert_eq!(ast.to_stim(), src);
     }

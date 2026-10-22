@@ -214,3 +214,44 @@ fn valid_leakage_accepted() {
     let prog = parse_extended("I_ERROR[leakage](0.5, 0.5) 0").expect("parse_extended");
     assert_eq!(validate(&prog), Ok(()));
 }
+
+#[test]
+fn invalid_leak_loss_joint_probability_rejected() {
+    let ExecError::InvalidProbability { name, line, value } =
+        err_from_src("I_ERROR[leak_loss_joint](0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.5) 0 1")
+    else {
+        panic!("expected ExecError::InvalidProbability");
+    };
+    assert_eq!(name, "I_ERROR[leak_loss_joint]");
+    assert_eq!(line, 1);
+    assert_eq!(value, 1.5);
+}
+
+#[test]
+fn leak_loss_joint_cell_sum_above_one_rejected() {
+    let ExecError::InvalidProbability { value, .. } =
+        err_from_src("I_ERROR[leak_loss_joint](0.6, 0.6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) 0 1")
+    else {
+        panic!("expected ExecError::InvalidProbability");
+    };
+    assert_eq!(value, 1.2);
+}
+
+#[test]
+fn leak_loss_joint_lone_sum_above_one_rejected() {
+    let ExecError::InvalidProbability { value, .. } =
+        err_from_src("I_ERROR[leak_loss_joint](0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.7, 0.7, 0) 0 1")
+    else {
+        panic!("expected ExecError::InvalidProbability");
+    };
+    assert_eq!(value, 1.4);
+}
+
+#[test]
+fn valid_leak_loss_joint_accepted() {
+    let prog = parse_extended(
+        "I_ERROR[leak_loss_joint](0.1, 0, 0, 0, 0.1, 0, 0, 0.1, 0.5, 0.5, 0.5, 0.5, 0.5) 0 1",
+    )
+    .expect("parse_extended");
+    assert_eq!(validate(&prog), Ok(()));
+}

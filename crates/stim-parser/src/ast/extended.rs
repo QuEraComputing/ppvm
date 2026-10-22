@@ -60,6 +60,12 @@ pub enum ExtendedInstruction {
         targets: Vec<usize>,
         span: Span,
     },
+    LeakLossJoint {
+        // Boxed so the 13 probabilities do not grow every instruction.
+        ps: Box<[f64; 13]>,
+        targets: Vec<(usize, usize)>,
+        span: Span,
+    },
     MPad {
         tag: String,
         prob: Option<f64>,
@@ -122,7 +128,8 @@ fn max_qubit_in_slice(instructions: &[ExtendedInstruction]) -> Option<usize> {
             | ExtendedInstruction::Loss { targets, .. }
             | ExtendedInstruction::Leakage { targets, .. }
             | ExtendedInstruction::ResetLeakage { targets, .. } => targets.iter().copied().max(),
-            ExtendedInstruction::CorrelatedLoss { targets, .. } => {
+            ExtendedInstruction::CorrelatedLoss { targets, .. }
+            | ExtendedInstruction::LeakLossJoint { targets, .. } => {
                 targets.iter().flat_map(|&(a, b)| [a, b]).max()
             }
             ExtendedInstruction::Repeat { body, .. } => max_qubit_in_slice(body),
@@ -159,6 +166,7 @@ fn count_in_slice(instructions: &[ExtendedInstruction], factor: u64) -> usize {
             | ExtendedInstruction::U3 { .. }
             | ExtendedInstruction::Loss { .. }
             | ExtendedInstruction::CorrelatedLoss { .. }
+            | ExtendedInstruction::LeakLossJoint { .. }
             | ExtendedInstruction::Leakage { .. }
             | ExtendedInstruction::ResetLeakage { .. } => {}
         }

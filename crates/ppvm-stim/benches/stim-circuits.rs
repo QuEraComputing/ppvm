@@ -84,7 +84,8 @@ fn required_qubits(program: &ExtendedProgram) -> usize {
                         bump(q);
                     }
                 }
-                ExtendedInstruction::CorrelatedLoss { targets, .. } => {
+                ExtendedInstruction::CorrelatedLoss { targets, .. }
+                | ExtendedInstruction::LeakLossJoint { targets, .. } => {
                     for &(a, b) in targets {
                         bump(a);
                         bump(b);

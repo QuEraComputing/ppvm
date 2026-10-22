@@ -2,6 +2,8 @@
 
 Packed Pauli-string types for the ppvm simulators: `PauliWord`, `PhasedPauliWord`, `LossyPauliWord` and `PauliPattern`.
 
+`PhasedPauliWord` carries a phase alongside the word. `LossyPauliWord` adds an `L` symbol for a lost qubit. `PauliPattern` matches sets of words; for example, `Z?` matches any word made of `I` and `Z`.
+
 Part of [ppvm](https://github.com/QuEraComputing/ppvm), the Programmable Pauli Virtual Machine.
 
 ## Usage

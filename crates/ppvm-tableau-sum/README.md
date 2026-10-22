@@ -1,6 +1,8 @@
 # ppvm-tableau-sum
 
-Sums of generalized stabilizer tableaux for ppvm, with gates, measurement, noise and sampling.
+Sums of generalized stabilizer tableaux for ppvm.
+
+`GeneralizedTableauSum` represents a state as a weighted sum of `GeneralizedTableau`s. Measurement and noise split the state into branches; matching branches are merged and branches below a weight cutoff are dropped. Includes gates, measurement, noise channels and a `Sampler` for drawing shots.
 
 Part of [ppvm](https://github.com/QuEraComputing/ppvm), the Programmable Pauli Virtual Machine.
 

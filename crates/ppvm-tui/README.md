@@ -1,6 +1,8 @@
 # ppvm-tui
 
-Ratatui components and app state for the `ppvm` terminal UI. The crate does not own a terminal or run an event loop, so the components can be embedded in another ratatui app. The `ppvm` binary itself is in `ppvm-cli`.
+Ratatui components and app state for the `ppvm` terminal UI.
+
+It provides widgets for the program listing, simulator state, measurement record and command line, plus a line editor. The crate does not own a terminal or run an event loop, so the components can be embedded in another ratatui app. The `ppvm` binary itself is in `ppvm-cli`.
 
 Part of [ppvm](https://github.com/QuEraComputing/ppvm), the Programmable Pauli Virtual Machine.
 

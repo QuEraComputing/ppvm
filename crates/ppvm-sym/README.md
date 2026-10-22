@@ -1,6 +1,8 @@
 # ppvm-sym
 
-Symbolic, parametric Pauli propagation for ppvm. Coefficients are polynomials in sines and cosines of symbolic parameters, so a parametric circuit can be propagated once and evaluated at concrete angles later.
+Symbolic, parametric Pauli propagation for ppvm.
+
+Coefficients are `Term`s: polynomials in sines and cosines of symbolic parameters. A parametric circuit, such as a variational ansatz, can be propagated once and then evaluated at many concrete angles.
 
 Part of [ppvm](https://github.com/QuEraComputing/ppvm), the Programmable Pauli Virtual Machine.
 

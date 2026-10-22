@@ -1,6 +1,8 @@
 # ppvm-vihaco
 
-Run [vihaco](https://crates.io/crates/vihaco) circuit programs on the ppvm simulators. Parses, compiles and executes `.sst` programs and their `.ssb` bytecode.
+Run [vihaco](https://crates.io/crates/vihaco) circuit programs on the ppvm simulators.
+
+It parses and compiles `.sst` programs to `.ssb` bytecode, and runs either form. `run_shots` runs many independent shots of a compiled program; with the optional `rayon` feature the shots run in parallel. This is the library behind the `ppvm` command-line tool in `ppvm-cli`.
 
 Part of [ppvm](https://github.com/QuEraComputing/ppvm), the Programmable Pauli Virtual Machine.
 

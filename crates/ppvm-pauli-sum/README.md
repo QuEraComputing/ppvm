@@ -2,7 +2,7 @@
 
 Pauli-propagation engine for ppvm: `PauliSum` and `LossyPauliSum`, truncation strategies, and ready-made `Config` bundles.
 
-Propagation runs in the Heisenberg picture, so gates are applied in reverse circuit order.
+You start from an observable and apply the circuit's gates to it in reverse order (Heisenberg picture), then evaluate the result against an initial state. The number of terms can grow quickly, so truncation strategies such as `MaxPauliWeight`, `CoefficientThreshold` and `MaxLossWeight` drop terms as you go. `CombinedStrategy` applies two of them in sequence.
 
 Part of [ppvm](https://github.com/QuEraComputing/ppvm), the Programmable Pauli Virtual Machine.
 

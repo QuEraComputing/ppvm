@@ -2,6 +2,8 @@
 
 Core traits shared by the ppvm crates: the `Config` trait, the single-qubit `Pauli` alphabet, and the `ACMap`/`Trace` map implementations.
 
+`Config` is a compile-time bundle that fixes the storage, coefficient type, truncation strategy, hasher, Pauli-word representation and map for one `PauliSum` type. The other ppvm crates are generic over it, so choosing a configuration costs nothing at runtime.
+
 Most users will want a higher-level crate such as `ppvm-pauli-sum` or `ppvm-tableau` instead.
 
 Part of [ppvm](https://github.com/QuEraComputing/ppvm), the Programmable Pauli Virtual Machine.

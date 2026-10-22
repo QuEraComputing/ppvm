@@ -448,6 +448,7 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
 
     /// Build a two-site rotation branch with one packed-plane copy.
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     fn toggled_bits2(&self, i: usize, toggle_i: [bool; 2], j: usize, toggle_j: [bool; 2]) -> Self {
         self.check_qubit(i);
         self.check_qubit(j);

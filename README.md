@@ -53,6 +53,23 @@ print(f"Qubit 0: {r0}, Qubit 1: {r1}")  # always correlated
 
 See the [documentation](https://queracomputing.github.io/ppvm/) for the Rust API, Stim integration, and symbolic propagation.
 
+## Citation
+
+If you use PPVM in your research, please cite [arXiv:2610.18225](https://arxiv.org/abs/2610.18225)
+(BibTeX also in [`CITATION.bib`](CITATION.bib)):
+
+```bibtex
+@misc{luo2026ppvmcircuitsimulationframework,
+      title={PPVM: A Circuit Simulation Framework for Digital Twins of Quantum Processors},
+      author={Xiu-Zhe Luo and David Plankensteiner and Kai-Hsin Wu and Rob Patterson and Alexander Schuckert and Oriol Rubies-Bigorda and Refaat Ismail and Jonhas Colina and Neelay Fruitwala and Danylo Lykov and Tyson Jones and Stefan Krastanov and Rafael Haenel and Stefan Ostermann and Sheng-Tao Wang},
+      year={2026},
+      eprint={2610.18225},
+      archivePrefix={arXiv},
+      primaryClass={quant-ph},
+      url={https://arxiv.org/abs/2610.18225},
+}
+```
+
 ## License & contributing
 
 Licensed under [Apache 2.0](LICENSE); see [NOTICE](NOTICE) for attribution. Contributions are welcome — read [`CONTRIBUTING.md`](CONTRIBUTING.md) and the [CLA](CLA.md) before opening a pull request.

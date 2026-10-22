@@ -464,3 +464,13 @@ def test_run_stim_mpp_multiple_products():
     tab = GeneralizedTableau(2)
     results = tab.run(StimProgram.parse("X 0\nMPP Z0 Z1"))
     assert results == [MeasurementResult.ONE, MeasurementResult.ZERO]
+
+
+def test_run_stim_string_reset_leakage_repumps_to_zero():
+    # I_ERROR[reset_leakage] returns a leaked qubit to the qubit space in |0>,
+    # and gates act on it again (R would leave it leaked and reading ONE).
+    tab = GeneralizedTableau(1)
+    results = tab.run(
+        StimProgram.parse("I_ERROR[leakage](0.0, 1.0) 0\nI_ERROR[reset_leakage] 0\nM 0\nX 0\nM 0")
+    )
+    assert results == [MeasurementResult.ZERO, MeasurementResult.ONE]

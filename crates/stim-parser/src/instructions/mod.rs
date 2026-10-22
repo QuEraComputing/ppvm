@@ -74,9 +74,10 @@ pub enum NoiseName {
     ZError,
     /// `I_ERROR` — accepted at the raw-parse layer regardless of tag (its
     /// arg count is [`ArgCount::Deferred`]). The lowering pass then promotes
-    /// `I_ERROR[loss]` / `I_ERROR[correlated_loss]` to typed loss instructions
-    /// and rejects every other tag combination (including untagged) by emitting
-    /// an `"invalid-tag"` diagnostic.
+    /// `I_ERROR[loss]` / `I_ERROR[correlated_loss]` / `I_ERROR[leakage]` /
+    /// `I_ERROR[reset_leakage]` to typed noise instructions and rejects every
+    /// other tag combination (including untagged) by emitting an
+    /// `"invalid-tag"` diagnostic.
     IError,
     // Unsupported
     HeraldedErase,
@@ -305,7 +306,8 @@ const TABLE: &[(&str, TableEntry)] = &[
     ("X_ERROR", noise(N::XError, Exact(1), AtLeastOne, "X_ERROR")),
     ("Y_ERROR", noise(N::YError, Exact(1), AtLeastOne, "Y_ERROR")),
     ("Z_ERROR", noise(N::ZError, Exact(1), AtLeastOne, "Z_ERROR")),
-    // I_ERROR's arg count varies by tag (`[loss]` => 1, `[correlated_loss]` => 1 or 3).
+    // I_ERROR's arg count varies by tag (`[loss]` => 1, `[correlated_loss]` => 1 or 3,
+    // `[leakage]` => 2, `[reset_leakage]` => 0).
     // The extended-dialect layer enforces the tag-specific count.
     (
         "I_ERROR",

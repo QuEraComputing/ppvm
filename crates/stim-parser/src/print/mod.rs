@@ -369,6 +369,10 @@ impl StimPrint for ExtendedInstruction {
                 )?;
                 write_usize_targets(out, targets)?;
             }
+            ExtendedInstruction::ResetLeakage { targets, .. } => {
+                out.write_str("I_ERROR[reset_leakage]")?;
+                write_usize_targets(out, targets)?;
+            }
             ExtendedInstruction::MPad {
                 tag, prob, bits, ..
             } => {

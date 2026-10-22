@@ -526,3 +526,21 @@ fn sample_parallel_matches_sample_serial_for_seeded_factory() {
     let parallel = sample_parallel::<_, _, _, _>(&prog, n, factory).unwrap();
     assert_eq!(serial, parallel);
 }
+
+#[test]
+fn reset_leakage_repumps_leaked_qubit_to_zero_and_gates_act_again() {
+    let (r, tab) = run(
+        "I_ERROR[leakage](0.0, 1.0) 0\nI_ERROR[reset_leakage] 0\nM 0\nX 0\nM 0",
+        1,
+    );
+    assert!(!tab.is_leaked(0));
+    assert_eq!(r, vec![Some(false), Some(true)]);
+}
+
+#[test]
+fn plain_reset_still_does_not_repump() {
+    // Regression guard: R skips a leaked qubit.
+    let (r, tab) = run("I_ERROR[leakage](0.0, 1.0) 0\nR 0\nM 0", 1);
+    assert!(tab.is_leaked(0));
+    assert_eq!(r, vec![Some(true)]);
+}

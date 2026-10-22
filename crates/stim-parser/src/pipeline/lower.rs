@@ -353,18 +353,30 @@ fn lower_noise(
                 span,
             }))
         }
+        (IError, "reset_leakage") => {
+            if !args.is_empty() {
+                return invalid_tag(
+                    "reset_leakage",
+                    name.canonical_name(),
+                    span,
+                    format!("[reset_leakage] expects 0 args, got {}", args.len()),
+                    sink,
+                );
+            }
+            Ok(Some(ExtendedInstruction::ResetLeakage { targets, span }))
+        }
         (IError, "") => invalid_tag(
             "<missing>",
             name.canonical_name(),
             span,
-            "I_ERROR requires a [loss], [correlated_loss], or [leakage] tag",
+            "I_ERROR requires a [loss], [correlated_loss], [leakage], or [reset_leakage] tag",
             sink,
         ),
         (IError, other) => invalid_tag(
             other,
             name.canonical_name(),
             span,
-            "expected [loss], [correlated_loss], or [leakage]",
+            "expected [loss], [correlated_loss], [leakage], or [reset_leakage]",
             sink,
         ),
         _ => Ok(Some(ExtendedInstruction::Noise(NoiseOp {

@@ -640,3 +640,20 @@ fn rec_target_on_tagged_identity_rotation_is_rejected() {
         Some("record-target-not-allowed")
     );
 }
+
+#[test]
+fn i_error_reset_leakage_promotes() {
+    let p = parse_ok("I_ERROR[reset_leakage] 0 2\n");
+    match &p.instructions[0] {
+        ExtendedInstruction::ResetLeakage { targets, .. } => assert_eq!(targets, &vec![0, 2]),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn i_error_reset_leakage_with_args_errors() {
+    assert_eq!(
+        err_code("I_ERROR[reset_leakage](0.1) 0\n"),
+        Some("invalid-tag")
+    );
+}

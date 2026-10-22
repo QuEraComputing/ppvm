@@ -7,10 +7,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # gxhash's AES/SSE2 target features are set arch-scoped in `.cargo/config.toml`
-  # (`cfg(target_arch = "x86_64")`), so we do NOT set a global RUSTFLAGS here:
-  # `-C target-feature=+aes,+sse2` is invalid on aarch64 (macos-latest) and
-  # would break that runner. The config applies the flags only on x86_64.
+  # Use each target's baseline CPU features so CI exercises the portable
+  # hashing fallback used by Linux/Windows wheels and crates.io consumers.
 
 # The `pre-commit` job runs the full prek hook suite (rustfmt, clippy,
 # cargo check, ruff, ty, hawkeye, and the file hygiene hooks). Every other
@@ -70,6 +68,26 @@ jobs:
 
       - name: Run ppvm-stim tests with rayon feature
         run: cargo test -p ppvm-stim --features rayon
+
+  # The portable job above only builds the fxhash fallback. Enable AES so the
+  # gxhash code paths and their tests run too.
+  rust-tests-gxhash:
+    name: Rust tests (gxhash)
+    needs: pre-commit
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-C target-feature=+aes,+sse2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.98.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run tests of the crates with gxhash code paths
+        run: >-
+          cargo test -p ppvm-traits -p ppvm-pauli-word -p ppvm-pauli-sum
+          -p ppvm-tableau-sum
 
   # Cross-compile the whole workspace for browser wasm so a wasm regression
   # surfaces in CI. Three crates are never browser-wasm targets and are

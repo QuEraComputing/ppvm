@@ -65,11 +65,26 @@ pub fn random_circuit_benchmarks(c: &mut Criterion) {
         .build_global()
         .unwrap();
     println!("Using {} threads", current_num_threads());
+    #[cfg(all(
+        feature = "gxhash",
+        target_feature = "aes",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     benchmark_suite_random_circuit::<config::gxhash::ByteF64<2>>(c, "ByteF64GxHashMap<2>");
     benchmark_suite_random_circuit::<config::fxhash::ByteF64<2>>(c, "ByteF64FxHashMap<2>");
     benchmark_suite_random_circuit::<config::dashmap::ByteFxHashF64<2>>(c, "ByteF64FxDashMap<2>");
+    #[cfg(all(
+        feature = "gxhash",
+        target_feature = "aes",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     benchmark_suite_random_circuit::<config::dashmap::ByteGxHashF64<2>>(c, "ByteF64GxDashMap<2>");
     benchmark_suite_random_circuit::<config::indexmap::ByteFxHashF64<2>>(c, "ByteF64FxIndexMap<2>");
+    #[cfg(all(
+        feature = "gxhash",
+        target_feature = "aes",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     benchmark_suite_random_circuit::<config::indexmap::ByteGxHashF64<2>>(c, "ByteF64GxIndexMap<2>");
 }
 

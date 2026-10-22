@@ -281,6 +281,14 @@ macro_rules! create_interface {
                 if truncate { self.inner.truncate(); }
             }
 
+            #[pyo3(signature = (targets, truncate = true))]
+            pub fn ccz(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {
+                let triples = crate::flat_triples(&targets, self.inner.n_qubits())?;
+                self.inner.ccz_many(&triples);
+                if truncate { self.inner.truncate(); }
+                Ok(())
+            }
+
             // two-qubit clifford (+ stim aliases)
             #[pyo3(signature = (targets, truncate = true))]
             pub fn cnot(&mut self, targets: Vec<usize>, truncate: bool) -> PyResult<()> {

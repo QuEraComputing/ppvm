@@ -1280,6 +1280,23 @@ where
         if self.is_inactive(addr0) {
             return;
         }
+        self.compute_coefficients_after_pauli_apply_untruncated(coefficients, addr0, pauli);
+        let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
+        coefficients.retain(|(coeff, _)| coeff.norm_sqr() > cutoff_sq);
+    }
+
+    /// Apply a Pauli without truncating intermediate terms of a larger gate.
+    pub(crate) fn compute_coefficients_after_pauli_apply_untruncated(
+        &self,
+        coefficients: &mut C,
+        addr0: usize,
+        pauli: Pauli,
+    ) where
+        <<T as Config>::Storage as BitView>::Store: PrimInt,
+    {
+        if self.is_inactive(addr0) {
+            return;
+        }
 
         let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
             self.compute_decomposition(addr0, pauli);
@@ -1319,12 +1336,9 @@ where
             phase_decomp,
         );
 
-        let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
         coefficients.reserve(new_coefficients.len());
         for (idx, coeff) in new_coefficients {
-            if coeff.norm_sqr() > cutoff_sq {
-                coefficients.unsafe_insert(idx, coeff);
-            }
+            coefficients.unsafe_insert(idx, coeff);
         }
     }
 }

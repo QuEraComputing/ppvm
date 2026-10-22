@@ -1,8 +1,9 @@
 # ppvm docs site
 
 Astro site for the ppvm documentation. Deployed to gh-pages root by
-`.github/workflows/docs.yml`; PRs that touch this directory get a
-per-PR preview deploy.
+`.github/workflows/docs.yml`; PRs that touch this directory get a docs build.
+PRs from branches in this repository also get a preview deploy; fork PRs
+keep the build as an artifact.
 
 ## Quick reference
 
@@ -61,8 +62,10 @@ every CI run via `npm run extract`.
 
 `.github/workflows/docs.yml` builds the site via `npm run build` on
 every PR that touches `docs/`, `crates/`, `ppvm-python/`, or itself.
-PR previews land at `gh-pages/pr-preview/pr-<N>/`; the main deploy
-publishes to `gh-pages` root on every push to `main`.
+Previews for PRs from branches in this repository land at
+`gh-pages/pr-preview/pr-<N>/`. Fork PRs build and upload the `docs-dist`
+artifact but skip publishing because their Actions token is read-only.
+The main deploy publishes to `gh-pages` root on every push to `main`.
 
 ## Prerequisites
 

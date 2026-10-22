@@ -98,6 +98,17 @@ pub fn benchmark_suite<T: Config<Strategy = CoefficientThreshold>>(
         );
     });
 
+    group.bench_function("ccz", |b| {
+        b.iter_batched_ref(
+            || state.clone(),
+            |state| {
+                state.ccz(0, 1, 2);
+                state.truncate();
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+
     group.bench_function("rx", |b| {
         b.iter_batched_ref(
             || state.clone(),

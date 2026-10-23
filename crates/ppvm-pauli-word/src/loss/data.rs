@@ -90,14 +90,16 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> PauliWord
     for LossyPauliWord<A, S>
 {
     fn new(nqubits: usize) -> Self {
-        Self {
+        let mut word = Self {
             xbits: BitArray::ZERO,
             zbits: BitArray::ZERO,
             lbits: BitArray::ZERO,
             nqubits,
             hash_cache: 0,
             _phantom: std::marker::PhantomData,
-        }
+        };
+        word.rehash();
+        word
     }
 
     fn n_qubits(&self) -> usize {
@@ -202,15 +204,14 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> PauliWord
     }
 
     fn rehash(&mut self) {
-        use std::hash::Hasher;
-        let mut hasher = S::default().build_hasher();
-        self.xbits.data.hash(&mut hasher);
-        self.zbits.data.hash(&mut hasher);
-        self.lbits.data.hash(&mut hasher);
-        // Defer to the hasher's finalizer (fxhash folds narrow keys, gxhash is
-        // the identity) so the lossy words share the one policy. See
-        // `HashFinalize`.
-        self.hash_cache = S::finalize_hash(hasher.finish(), std::mem::size_of::<A>());
+        self.hash_cache = S::word_hash(
+            &[
+                bytemuck::bytes_of(&self.xbits.data),
+                bytemuck::bytes_of(&self.zbits.data),
+                bytemuck::bytes_of(&self.lbits.data),
+            ],
+            std::mem::size_of::<A>(),
+        );
     }
 
     #[inline(always)]
@@ -420,6 +421,21 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> std::fmt:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identity_map_lookup_is_independent_of_construction() {
+        type Word = LossyPauliWord<[u64; 4]>;
+        let identity = Word::new(4);
+        let parsed: Word = "IIII".into();
+        let mutated = Word::new(4).set_new(0, Pauli::X).set_new(0, Pauli::I);
+        assert_eq!(identity, parsed);
+        assert_eq!(identity, mutated);
+
+        let mut map = fxhash::FxHashMap::default();
+        map.insert(identity, 1);
+        assert_eq!(map.get(&parsed), Some(&1));
+        assert_eq!(map.get(&mutated), Some(&1));
+    }
 
     #[test]
     fn test_pauli_string_creation() {

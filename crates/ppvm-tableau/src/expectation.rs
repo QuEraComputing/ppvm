@@ -20,11 +20,11 @@
 use crate::data::GeneralizedTableau;
 use crate::prelude::*;
 use bitvec::view::BitView;
-use fxhash::FxHashMap as HashMap;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 use ppvm_pauli_word::pattern::PauliPattern;
+use ppvm_traits::FastHashMap as HashMap;
 use std::fmt::Debug;
 
 impl<T, I, C> GeneralizedTableau<T, I, C>

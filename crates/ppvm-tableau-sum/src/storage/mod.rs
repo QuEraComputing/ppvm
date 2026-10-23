@@ -6,21 +6,12 @@ pub mod map;
 pub mod vec;
 
 pub use entry_store::{Branch, EntryStore};
-use fxhash::FxHashMap;
+use ppvm_traits::FastHashMap;
 use ppvm_traits::traits::Clifford;
 
-// Hasher for the structural `word_fingerprint`. gxhash (AES-based) is fastest and
-// exposes a `gxhash64` bulk free function, but it only compiles with hardware AES
-// enabled (never on wasm32), so fall back to fxhash otherwise. The fingerprint is
-// a transient in-memory dedup key — collisions are resolved by
-// `structurally_equal`, and it is never persisted or compared across builds — so
-// the hasher may differ per target without affecting results.
+// Fingerprints use gxhash when AES is available and foldhash otherwise.
+// Collisions are resolved by `structurally_equal`; hashes are not persisted.
 use bitvec::view::{BitView, BitViewSized};
-#[cfg(not(all(
-    target_feature = "aes",
-    any(target_arch = "x86_64", target_arch = "aarch64")
-)))]
-use fxhash::FxHasher as FingerprintHasher;
 use num::{
     Complex, One, PrimInt, Zero,
     complex::{Complex64, ComplexFloat},
@@ -31,12 +22,17 @@ use ppvm_tableau::{
     sparsevec::SparseVector,
     tableau_index::TableauIndex,
 };
+#[cfg(not(all(
+    target_feature = "aes",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+)))]
+use ppvm_traits::FastBuildHasher;
 use ppvm_traits::config::Config;
 #[cfg(not(all(
     target_feature = "aes",
     any(target_arch = "x86_64", target_arch = "aarch64")
 )))]
-use std::hash::Hasher;
+use std::hash::{BuildHasher, Hasher};
 use std::ops::AddAssign;
 
 // Reusable per-thread scratch buffer for `word_fingerprint`. Gathering every
@@ -95,7 +91,7 @@ where
             any(target_arch = "x86_64", target_arch = "aarch64")
         )))]
         {
-            let mut hasher = FingerprintHasher::default();
+            let mut hasher = FastBuildHasher::default().build_hasher();
             hasher.write(&buf);
             hasher.finish()
         }
@@ -246,7 +242,7 @@ where
 pub(crate) fn structurally_equal<T, I, C>(
     tab0: &GeneralizedTableau<T, I, C>,
     tab1: &GeneralizedTableau<T, I, C>,
-    scratch: &mut FxHashMap<I, Complex<T::Coeff>>,
+    scratch: &mut FastHashMap<I, Complex<T::Coeff>>,
 ) -> bool
 where
     T: Config,
@@ -344,7 +340,7 @@ pub(crate) fn structurally_equal_mutated<T, I, C>(
     existing: &GeneralizedTableau<T, I, C>,
     parent: &GeneralizedTableau<T, I, C>,
     m: BranchMutation,
-    scratch: &mut FxHashMap<I, Complex<T::Coeff>>,
+    scratch: &mut FastHashMap<I, Complex<T::Coeff>>,
 ) -> bool
 where
     T: Config,

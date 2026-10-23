@@ -2245,6 +2245,7 @@ version = "0.1.0"
 dependencies = [
  "bitvec",
  "bytemuck",
+ "foldhash",
  "fxhash",
  "num",
  "ppvm-traits-2",
@@ -2354,6 +2355,7 @@ dependencies = [
  "bitvec",
  "bytemuck",
  "dashmap",
+ "foldhash",
  "fxhash",
  "gxhash",
  "indexmap 2.11.4",

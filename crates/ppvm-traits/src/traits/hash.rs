@@ -1,70 +1,56 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Per-hasher finalization of a Pauli word's cached key hash.
+//! Hashers for internal maps and cached Pauli-word hashes.
 
-/// Post-processing that a `PauliWord`'s hasher
-/// applies to its raw 64-bit digest before it is cached as the map-key hash.
-///
-/// The cached value is what `hashbrown` ultimately splits into a bucket index
-/// (low bits) and a control-byte tag (top 7 bits). Whether the raw digest is
-/// good enough for that split is a property of the **hasher**, not of the
-/// Pauli word: an AES-based hasher such as `gxhash` avalanches well even for an
-/// 8-byte key, whereas `FxHasher` — a couple of multiply-rotate rounds — leaves
-/// the low bits of a short key highly correlated and needs a fold to fix them.
-///
-/// Keeping this on the hasher is what makes the abstraction correct. An earlier
-/// version folded based on storage width alone, which conflated "narrow
-/// storage" with "weak hasher" and so wrongly folded `gxhash` too. Here each
-/// hasher declares how (if at all) its output must be adjusted, and
-/// `PauliWord::rehash` just defers to it. The default
-/// is the identity — the right choice for any hasher that already distributes
-/// its low bits well — so a custom hasher opts in with a bare
-/// `impl HashFinalize for MyHasher {}`.
+use std::collections::HashMap;
+use std::hash::{BuildHasher, Hasher};
+
+/// Fast hasher for internal maps and word hashes, with a fixed seed.
+/// Iteration is reproducible for the same build and insertion order.
+pub type FastBuildHasher = foldhash::fast::FixedState;
+
+/// A [`HashMap`] using [`FastBuildHasher`].
+pub type FastHashMap<K, V> = HashMap<K, V, FastBuildHasher>;
+
+/// Computes and finalizes cached Pauli-word hashes.
+/// Custom hashers can use the defaults with an empty implementation.
 pub trait HashFinalize {
-    /// Finalize `raw` (the value returned by `Hasher::finish`) for a key whose
-    /// backing storage is `storage_bytes` wide per bit-array.
-    ///
-    /// The width is supplied so a hasher can fold only for the short keys that
-    /// actually need it and pass wider keys through. It is a compile-time
-    /// constant at every call site (`size_of` of the storage), so any branch
-    /// on it is monomorphized away.
+    /// Hash a Pauli word given its bit arrays as byte slices (X, Z, and for
+    /// lossy words the loss bits), each `storage_bytes` long.
     #[inline(always)]
-    fn finalize_hash(raw: u64, storage_bytes: usize) -> u64 {
-        let _ = storage_bytes;
+    fn word_hash(parts: &[&[u8]], storage_bytes: usize) -> u64
+    where
+        Self: BuildHasher + Default,
+    {
+        let mut hasher = Self::default().build_hasher();
+        for part in parts {
+            hasher.write(part);
+        }
+        Self::finalize_hash(hasher.finish(), storage_bytes)
+    }
+
+    /// Adjust the raw digest computed by the default
+    /// [`word_hash`](Self::word_hash). The default returns it unchanged.
+    #[inline(always)]
+    fn finalize_hash(raw: u64, _storage_bytes: usize) -> u64 {
         raw
     }
 }
 
 impl HashFinalize for fxhash::FxBuildHasher {
-    /// `FxHasher` consumes one `u64` word at a time and its avalanche is weak
-    /// for short inputs: when a word fits in a single `u64` per bit-array
-    /// (`[u8; 8]` and narrower) it goes through only a couple of
-    /// multiply-rotate rounds, leaving the low bits — the ones `hashbrown`
-    /// uses to choose a bucket — correlated. At high fill that clusters
-    /// distinct words into a few oversized buckets and the `insert_unique`
-    /// probe length explodes (~7x at 64 qubits in `[u8; 8]`; max bucket 2257
-    /// vs an ideal of ~6 — see `examples/trotter_storage_cliff.rs`). Folding
-    /// the high half into the low half decorrelates them.
-    ///
-    /// Wider storage gets enough rounds to distribute the low bits already, so
-    /// it is passed through: folding there would only mix the top bits (which
-    /// `hashbrown` reserves for its tag) back into the bucket index, coupling
-    /// two values it wants independent (~4-6% slower in the same benchmark).
+    // FxHash can collapse distinct X/Z planes to the same digest; use foldhash
+    // for the word's cached hash while retaining FxHash for map lookup.
     #[inline(always)]
-    fn finalize_hash(raw: u64, storage_bytes: usize) -> u64 {
-        if storage_bytes <= std::mem::size_of::<u64>() {
-            raw ^ (raw >> 32)
-        } else {
-            raw
+    fn word_hash(parts: &[&[u8]], _storage_bytes: usize) -> u64 {
+        let mut hasher = FastBuildHasher::default().build_hasher();
+        for part in parts {
+            hasher.write(part);
         }
+        hasher.finish()
     }
 }
 
-// `gxhash` is AES-based and avalanches well even for an 8-byte key (measured
-// max bucket 6, essentially ideal, vs fxhash's 2257 at 64 qubits), so the
-// identity default is exactly right — folding would only pay the tag/bucket
-// coupling cost above with no distribution benefit.
 #[cfg(all(
     feature = "gxhash",
     target_feature = "aes",
@@ -75,49 +61,42 @@ impl HashFinalize for gxhash::GxBuildHasher {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
-    // A digest whose high and low halves differ, so a fold is observable.
-    const RAW: u64 = 0xDEAD_BEEF_0000_0001;
+    const KEYS: u64 = 1 << 14;
 
-    #[test]
-    fn fxhash_folds_narrow_storage() {
-        // `[u8; 8]` and narrower fit in one u64 per bit-array → fold.
-        for width in [1, 2, 4, 8] {
-            assert_eq!(
-                <fxhash::FxBuildHasher as HashFinalize>::finalize_hash(RAW, width),
-                RAW ^ (RAW >> 32),
-                "fxhash should fold at width {width}"
-            );
-        }
+    /// Distinct values among the low 16 bits, which a hash map uses as the bucket.
+    fn buckets(hashes: impl Iterator<Item = u64>) -> usize {
+        hashes.map(|h| h & 0xFFFF).collect::<HashSet<_>>().len()
     }
 
     #[test]
-    fn fxhash_passes_wide_storage_through() {
-        // `[u8; 16]` and up are already well distributed → identity.
-        for width in [16, 32, 64] {
-            assert_eq!(
-                <fxhash::FxBuildHasher as HashFinalize>::finalize_hash(RAW, width),
-                RAW,
-                "fxhash should not fold at width {width}"
-            );
-        }
+    fn fast_build_hasher_spreads_high_bit_keys() {
+        let fast = FastBuildHasher::default();
+        let usize_keys = (0..KEYS).map(|k| fast.hash_one((k as usize) << (usize::BITS - 14)));
+        let u128_keys = (0..KEYS).map(|k| fast.hash_one(u128::from(k) << 114));
+        assert!(buckets(usize_keys) > KEYS as usize / 2);
+        assert!(buckets(u128_keys) > KEYS as usize / 2);
     }
 
-    #[cfg(all(
-        feature = "gxhash",
-        target_feature = "aes",
-        any(target_arch = "x86_64", target_arch = "aarch64")
-    ))]
+    // Every Pauli string on the top 7 qubits, hashed the way a map with FxHash
+    // sees a word: FxHash over the cached word hash.
     #[test]
-    fn gxhash_never_folds() {
-        // gxhash already distributes its low bits, so it is the identity at
-        // every width — including the narrow ones where fxhash folds.
-        for width in [1, 2, 4, 8, 16, 32, 64] {
-            assert_eq!(
-                <gxhash::GxBuildHasher as HashFinalize>::finalize_hash(RAW, width),
-                RAW,
-                "gxhash should never fold (width {width})"
-            );
+    fn fxhash_word_hash_spreads_top_qubit_words() {
+        let fx = fxhash::FxBuildHasher::default();
+        for bytes in [8, 16, 64] {
+            let n_qubits = 8 * bytes;
+            let hashes = (0..KEYS).map(|code| {
+                let (mut x, mut z) = (vec![0u8; bytes], vec![0u8; bytes]);
+                for j in 0..7 {
+                    let (q, pauli) = (n_qubits - 7 + j, (code >> (2 * j)) & 3);
+                    x[q / 8] |= ((pauli & 1) as u8) << (q % 8);
+                    z[q / 8] |= ((pauli >> 1) as u8) << (q % 8);
+                }
+                let cached = <fxhash::FxBuildHasher as HashFinalize>::word_hash(&[&x, &z], bytes);
+                fx.hash_one(cached)
+            });
+            assert!(buckets(hashes) > KEYS as usize / 2, "{n_qubits} qubits");
         }
     }
 }

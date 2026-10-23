@@ -3,10 +3,9 @@
 
 use std::{fmt::Debug, marker::PhantomData};
 
-// Only the rayon branch-coefficient helpers coalesce into a map now; the apply
-// path and the default-feature branch path both use flat-Vec sort-merge/relabel.
+// Rayon branch-coefficient helpers coalesce terms by branch index.
 #[cfg(feature = "rayon")]
-use fxhash::FxHashMap as HashMap;
+use ppvm_traits::FastHashMap as HashMap;
 
 use bitvec::array::BitArray;
 use bitvec::view::{BitView, BitViewSized};

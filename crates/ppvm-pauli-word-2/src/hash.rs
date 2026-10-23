@@ -9,10 +9,24 @@ use ppvm_traits_2::Indexable;
 
 use crate::{PauliStorage, PauliWord};
 
-/// Adjusts a structural hash for hash-table lookup according to hasher and width.
+/// How a hasher computes a word's structural hash and its map-lookup hash.
 /// `hashbrown` uses low bits for buckets and the top seven bits for control tags.
-/// The default leaves the digest unchanged; hashers can override mixing as needed.
+/// The defaults hash with the hasher itself; hashers can override as needed.
 pub trait HashFinalize {
+    /// Hashes a word given its bit planes as byte slices, each `storage_bytes`
+    /// long. The default feeds them to this hasher and applies `finalize_hash`.
+    #[inline(always)]
+    fn word_hash(parts: &[&[u8]], storage_bytes: usize) -> u64
+    where
+        Self: BuildHasher + Default,
+    {
+        let mut hasher = Self::default().build_hasher();
+        for part in parts {
+            hasher.write(part);
+        }
+        Self::finalize_hash(hasher.finish(), storage_bytes)
+    }
+
     /// Finalizes `Hasher::finish()` using the storage size in bytes per bit plane.
     /// Callers supply a compile-time size, allowing width-dependent branches to fold away.
     #[inline(always)]
@@ -33,15 +47,14 @@ pub trait HashFinalize {
 }
 
 impl HashFinalize for fxhash::FxBuildHasher {
-    /// For planes up to eight bytes, folds high bits into weakly mixed low bits.
-    /// Wider inputs pass through to avoid coupling control-tag bits into bucket bits.
+    // FxHash can collapse distinct X/Z planes to the same digest.
     #[inline(always)]
-    fn finalize_hash(raw: u64, storage_bytes: usize) -> u64 {
-        if storage_bytes <= std::mem::size_of::<u64>() {
-            raw ^ (raw >> 32)
-        } else {
-            raw
+    fn word_hash(parts: &[&[u8]], _storage_bytes: usize) -> u64 {
+        let mut hasher = foldhash::fast::FixedState::default().build_hasher();
+        for part in parts {
+            hasher.write(part);
         }
+        hasher.finish()
     }
 
     #[cfg(target_pointer_width = "64")]
@@ -51,7 +64,7 @@ impl HashFinalize for fxhash::FxBuildHasher {
     }
 }
 
-/// Hashes the X/Z planes, then applies width-specific mixing and map indexing.
+/// Hashes the X/Z planes and applies the map-lookup transform.
 /// Shared by scalar and column storage so equal words receive identical digests.
 #[inline(always)]
 pub(crate) fn structural_hash<A, H>(x: &A, z: &A, _nqubits: usize) -> u64
@@ -59,14 +72,12 @@ where
     A: PauliStorage,
     H: BuildHasher + Default + HashFinalize,
 {
-    let mut hasher = H::default().build_hasher();
-    // Width is deliberately omitted, matching the legacy digest. Equality still
-    // checks it, so cross-width words merely collide; sums already require one
-    // common width.
-    hasher.write(bytemuck::bytes_of(x));
-    hasher.write(bytemuck::bytes_of(z));
-    let structural = H::finalize_hash(hasher.finish(), std::mem::size_of::<A>());
-    // Preserve the legacy map’s extra hash transform before direct bucket lookup.
+    // Qubit count is omitted because each sum uses a common width.
+    let structural = H::word_hash(
+        &[bytemuck::bytes_of(x), bytemuck::bytes_of(z)],
+        std::mem::size_of::<A>(),
+    );
+    // Direct bucket lookup requires the same transform as hashing a cached digest.
     H::index_hash(structural)
 }
 
@@ -155,27 +166,26 @@ mod tests {
         assert!(buckets.len() >= 12, "low bits collapsed: {}", buckets.len());
     }
 
+    // Every Pauli string on the top 7 of 64 qubits. Maps use the cached hash
+    // directly, so its low bits must spread these words.
+    #[test]
+    fn top_qubit_words_spread() {
+        use std::collections::HashSet;
+        let buckets: HashSet<u64> = (0..1usize << 14)
+            .map(|code| {
+                let mut w: PauliWord<u64> = PauliWord::new(64);
+                for j in 0..7 {
+                    let pauli = (code >> (2 * j)) & 3;
+                    w.set_x_bit(57 + j, pauli & 1 != 0);
+                    w.set_z_bit(57 + j, pauli & 2 != 0);
+                }
+                IdentityBuildHasher.hash_one(w) & 0xFFFF
+            })
+            .collect();
+        assert!(buckets.len() > 1 << 13, "{} buckets", buckets.len());
+    }
+
     const RAW: u64 = 0xDEAD_BEEF_0000_0001;
-
-    #[test]
-    fn fxhash_folds_narrow_storage() {
-        for width in [1, 2, 4, 8] {
-            assert_eq!(
-                <fxhash::FxBuildHasher as HashFinalize>::finalize_hash(RAW, width),
-                RAW ^ (RAW >> 32),
-            );
-        }
-    }
-
-    #[test]
-    fn fxhash_passes_wide_storage_through() {
-        for width in [16, 32, 64] {
-            assert_eq!(
-                <fxhash::FxBuildHasher as HashFinalize>::finalize_hash(RAW, width),
-                RAW,
-            );
-        }
-    }
 
     #[test]
     fn fxhash_index_fast_path_matches_hasher() {

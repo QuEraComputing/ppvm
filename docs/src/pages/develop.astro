@@ -201,7 +201,7 @@ cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-na
       64-bit, <code>u32</code> on wasm) since <code>bitvec</code> only implements
       <code>BitStore</code> for <code>u64</code> on 64-bit pointer widths.
       <code>ppvm-tableau-sum</code>'s structural fingerprint falls back from
-      <code>gxhash</code> to <code>fxhash</code> whenever AES is unavailable.
+      <code>gxhash</code> to <code>foldhash</code> whenever AES is unavailable.
     </p>
 
     <p>

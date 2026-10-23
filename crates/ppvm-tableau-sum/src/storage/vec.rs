@@ -11,6 +11,7 @@ use num::{
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
+use ppvm_traits::FoldHashMap;
 use ppvm_traits::config::Config;
 
 use crate::storage::{
@@ -36,7 +37,7 @@ pub struct VecStorage<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coe
     pub dirty: bool,
     /// Reusable scratch buffer for `structurally_equal`'s coefficient lookup
     /// map. Cleared and refilled per call; keeps its capacity across calls.
-    scratch: FxHashMap<I, Complex<T::Coeff>>,
+    scratch: FoldHashMap<I, Complex<T::Coeff>>,
 }
 
 impl<T, I, C> VecStorage<T, I, C>
@@ -146,7 +147,7 @@ where
             word_fingerprints: Vec::with_capacity(cap),
             phase_loss_hashes: Vec::with_capacity(cap),
             dirty: false,
-            scratch: FxHashMap::default(),
+            scratch: FoldHashMap::default(),
         }
     }
 

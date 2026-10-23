@@ -9,6 +9,8 @@
 //! A width bug (mask truncation, a stray `W_CHUNKS`, a wrong support index)
 //! breaks that immediately.
 
+use std::collections::BTreeMap;
+
 use num::Complex;
 use ppvm_lindblad::{
     CHUNK_BITS, JumpInput, LindbladSpec, MAX_SUPPORTED_QUBITS, PcStepConfig, Sector, W_CHUNKS,
@@ -251,19 +253,26 @@ fn same_width_different_register_size_agrees() {
 
 #[test]
 fn orbit_rep_step_is_width_independent() {
-    // The momentum-orbit path (canonicalization, masked-shift generators,
-    // character table) on the same ring stored in 128- and 512-qubit words.
-    // Untruncated, so both widths hold the same reps; basis *order* follows
-    // hash-map iteration (width-dependent), so coefficients agree to rounding.
+    // Storage width changes summation order. Rounding during basis enrichment
+    // can admit near-zero terms at only one width.
     for (n, k, steps) in [(12, 0, 3), (12, 1, 3), (100, 0, 2)] {
         let narrow = evolve_orbit::<W128>(n, k, steps);
-        let wide = evolve_orbit::<W512>(n, k, steps);
+        let mut wide: BTreeMap<_, _> = evolve_orbit::<W512>(n, k, steps).into_iter().collect();
         assert!(narrow.len() > 10, "basis did not grow");
-        assert_eq!(narrow.len(), wide.len(), "n={n}, k={k}");
-        for ((wa, ca), (wb, cb)) in narrow.iter().zip(&wide) {
-            assert_eq!(wa, wb, "n={n}, k={k}: rep sets differ");
-            assert!((ca - cb).norm() <= 1e-12, "n={n}, k={k}: {ca} vs {cb}");
+        for (word, ca) in narrow {
+            match wide.remove(&word) {
+                Some(cb) => {
+                    assert!((ca - cb).norm() <= 1e-10, "n={n}, k={k}: {ca} vs {cb}");
+                }
+                None => {
+                    assert!(ca.norm() <= 1e-8, "n={n}, k={k}: one-width element {ca}");
+                }
+            }
         }
+        assert!(
+            wide.values().all(|c| c.norm() <= 1e-8),
+            "n={n}, k={k}: unmatched wide coefficients {wide:?}"
+        );
     }
 }
 

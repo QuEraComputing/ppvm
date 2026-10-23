@@ -1,7 +1,10 @@
 [package]
 name = "ppvm-pauli-word-2"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
 
 [dependencies]
 ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2"}

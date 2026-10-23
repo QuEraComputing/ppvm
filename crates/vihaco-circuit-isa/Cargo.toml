@@ -1,7 +1,10 @@
 [package]
 name = "vihaco-circuit-isa"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Quantum-circuit instruction set for the vihaco virtual machine, used by ppvm."
 
 [dependencies]
 chumsky = "0.10"

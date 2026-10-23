@@ -838,3 +838,27 @@ fn test_seed_reproducibility() {
         );
     }
 }
+
+#[test]
+fn test_measure_after_truncation_divides_by_norm() {
+    // |sin(θ/2)| = 0.25 < cutoff 0.3: rx drops the branch without renormalizing
+    // (‖ψ‖² = 0.9375), but the measured qubit is still exactly |0⟩.
+    let theta = 2.0 * 0.25f64.asin();
+    for seed in 0..500 {
+        // Case b: Z_0 is a stabilizer.
+        let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+            GeneralizedTableau::new_with_seed(1, 0.3, seed);
+        tab.rx(0, theta);
+        assert!((tab.z_expectation(0) - 1.0).abs() < 1e-12);
+        assert_eq!(tab.measure(0), Some(false));
+
+        // Case a: qubit 0 is |0⟩ carried in branches (stabilizer X).
+        let mut tab: GeneralizedTableau<ByteFxHashF64<1>, usize> =
+            GeneralizedTableau::new_with_seed(2, 0.3, seed);
+        tab.h(0);
+        tab.ry(0, -FRAC_PI_2);
+        tab.rx(1, theta);
+        assert!((tab.z_expectation(0) - 1.0).abs() < 1e-12);
+        assert_eq!(tab.measure(0), Some(false));
+    }
+}

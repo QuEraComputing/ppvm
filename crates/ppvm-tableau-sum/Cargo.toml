@@ -11,12 +11,12 @@ bitvec = "1.0.1"
 bytemuck = { version = "1", features = ["min_const_generics"] }
 fxhash = "0.2.1"
 num = "0.4.3"
-ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
-ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
-ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+ppvm-traits = { version = "0.1.1", path = "../ppvm-traits" }
+ppvm-pauli-sum = { version = "0.1.1", path = "../ppvm-pauli-sum" }
+ppvm-tableau = { version = "0.1.1", path = "../ppvm-tableau" }
 rand = "0.10.1"
 smallvec = "1.15"
-ppvm-pauli-word = { version = "0.1.0", path = "../ppvm-pauli-word" }
+ppvm-pauli-word = { version = "0.1.1", path = "../ppvm-pauli-word" }
 
 # Native-only dep: rayon (OS threads). Pruned on wasm32.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

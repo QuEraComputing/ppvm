@@ -12,4 +12,4 @@ eyre = "0.6.12"
 # don't declare it directly — that keeps a single crossterm version in the tree
 # and unifies event types with any host ratatui app.
 ratatui = "0.29.0"
-ppvm-vihaco = { version = "0.1.0", path = "../ppvm-vihaco" }
+ppvm-vihaco = { version = "0.1.1", path = "../ppvm-vihaco" }

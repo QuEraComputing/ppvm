@@ -12,14 +12,14 @@ default = []
 rayon = ["dep:rayon"]
 
 [dependencies]
-ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum" }
-ppvm-tableau = { version = "0.1.0", path = "../ppvm-tableau" }
+ppvm-pauli-sum = { version = "0.1.1", path = "../ppvm-pauli-sum" }
+ppvm-tableau = { version = "0.1.1", path = "../ppvm-tableau" }
 bitvec = "1.0.1"
 itertools = "0.14"
 num = "0.4.3"
 smallvec = "1.15"
 thiserror = "2"
-stim-parser = { version = "0.1.0", path = "../stim-parser" }
+stim-parser = { version = "0.1.1", path = "../stim-parser" }
 
 # rayon needs OS threads — native only.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

@@ -16,3 +16,10 @@ from .squin_interpreter.device import (
 from .squin_interpreter.device import (
     GeneralizedTableauSimulatorTask as GeneralizedTableauSimulatorTask,
 )
+
+try:
+    from importlib.metadata import version as _dist_version
+
+    __version__ = _dist_version("ppvm")
+except Exception:  # pragma: no cover - not installed as a distribution
+    __version__ = "unknown"

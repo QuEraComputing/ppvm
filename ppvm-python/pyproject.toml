@@ -1,6 +1,6 @@
 [project]
 name = "ppvm"
-version = "0.1.0"
+version = "0.1.0+hcoeffs"
 description = "Add your description here"
 readme = "README.md"
 authors = [

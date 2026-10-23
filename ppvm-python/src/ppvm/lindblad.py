@@ -242,6 +242,31 @@ class Lindbladian:
     def num_jump_terms(self) -> int:
         return self._spec.num_jump_terms
 
+    @property
+    def h_coeffs(self) -> np.ndarray:
+        """Current Hamiltonian coefficients, shape ``(num_h_terms,)`` float64.
+
+        Returns a copy; mutating it does not change the Lindbladian.
+        """
+        return self._spec.h_coeffs
+
+    def set_h_coeffs(self, coeffs) -> None:
+        """Overwrite the Hamiltonian coefficients in place.
+
+        ``coeffs`` is converted to a 1-D float64 array that must have length
+        ``num_h_terms`` (same order as the ``h_terms`` given at construction);
+        otherwise ``ValueError``. The Pauli words, jump operators and the
+        Kossakowski block are left untouched (no PSD re-check). Cost is
+        ``O(num_h_terms)``; afterwards every method gives results
+        bit-identical to a freshly built ``Lindbladian`` with ``coeffs``.
+        """
+        arr = np.ascontiguousarray(coeffs, dtype=np.float64)
+        if arr.ndim != 1 or arr.shape[0] != self._spec.num_h_terms:
+            raise ValueError(
+                f"set_h_coeffs: expected shape ({self._spec.num_h_terms},), got {arr.shape}"
+            )
+        self._spec.set_h_coeffs(arr)
+
     # ── Pure-ndarray hot path ──
 
     def action_arr(self, p: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

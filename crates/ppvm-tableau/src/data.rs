@@ -5,7 +5,7 @@ use std::{fmt::Debug, marker::PhantomData};
 
 // Rayon branch-coefficient helpers coalesce terms by branch index.
 #[cfg(feature = "rayon")]
-use ppvm_traits::FastHashMap as HashMap;
+use ppvm_traits::FoldHashMap as HashMap;
 
 use bitvec::array::BitArray;
 use bitvec::view::{BitView, BitViewSized};

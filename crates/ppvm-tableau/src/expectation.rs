@@ -24,7 +24,7 @@ use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
 use ppvm_pauli_word::pattern::PauliPattern;
-use ppvm_traits::FastHashMap as HashMap;
+use ppvm_traits::FoldHashMap as HashMap;
 use std::fmt::Debug;
 
 impl<T, I, C> GeneralizedTableau<T, I, C>

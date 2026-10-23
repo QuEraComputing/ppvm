@@ -11,7 +11,7 @@ use num::{
 use ppvm_tableau::{
     data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex,
 };
-use ppvm_traits::FastHashMap;
+use ppvm_traits::FoldHashMap;
 use ppvm_traits::config::Config;
 use smallvec::SmallVec;
 
@@ -31,7 +31,7 @@ pub struct MapStorage<T: Config, I: TableauIndex, C: SparseVector<Complex<T::Coe
     pub dirty: bool,
     /// Reusable scratch buffer for `structurally_equal`'s coefficient lookup
     /// map. Cleared and refilled per call; keeps its capacity across calls.
-    scratch: FastHashMap<I, Complex<T::Coeff>>,
+    scratch: FoldHashMap<I, Complex<T::Coeff>>,
 }
 
 impl<T, I, C> MapStorage<T, I, C>
@@ -87,7 +87,7 @@ where
         Self {
             buckets: FxHashMap::with_capacity_and_hasher(cap, Default::default()),
             dirty: false,
-            scratch: FastHashMap::default(),
+            scratch: FoldHashMap::default(),
         }
     }
 

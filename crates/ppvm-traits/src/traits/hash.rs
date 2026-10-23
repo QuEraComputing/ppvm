@@ -8,10 +8,10 @@ use std::hash::{BuildHasher, Hasher};
 
 /// Fast hasher for internal maps and word hashes, with a fixed seed.
 /// Iteration is reproducible for the same build and insertion order.
-pub type FastBuildHasher = foldhash::fast::FixedState;
+pub type FoldBuildHasher = foldhash::fast::FixedState;
 
-/// A [`HashMap`] using [`FastBuildHasher`].
-pub type FastHashMap<K, V> = HashMap<K, V, FastBuildHasher>;
+/// A [`HashMap`] using [`FoldBuildHasher`].
+pub type FoldHashMap<K, V> = HashMap<K, V, FoldBuildHasher>;
 
 /// Computes and finalizes cached Pauli-word hashes.
 /// Custom hashers can use the defaults with an empty implementation.
@@ -43,7 +43,7 @@ impl HashFinalize for fxhash::FxBuildHasher {
     // for the word's cached hash while retaining FxHash for map lookup.
     #[inline(always)]
     fn word_hash(parts: &[&[u8]], _storage_bytes: usize) -> u64 {
-        let mut hasher = FastBuildHasher::default().build_hasher();
+        let mut hasher = FoldBuildHasher::default().build_hasher();
         for part in parts {
             hasher.write(part);
         }
@@ -71,10 +71,10 @@ mod tests {
     }
 
     #[test]
-    fn fast_build_hasher_spreads_high_bit_keys() {
-        let fast = FastBuildHasher::default();
-        let usize_keys = (0..KEYS).map(|k| fast.hash_one((k as usize) << (usize::BITS - 14)));
-        let u128_keys = (0..KEYS).map(|k| fast.hash_one(u128::from(k) << 114));
+    fn fold_build_hasher_spreads_high_bit_keys() {
+        let fold = FoldBuildHasher::default();
+        let usize_keys = (0..KEYS).map(|k| fold.hash_one((k as usize) << (usize::BITS - 14)));
+        let u128_keys = (0..KEYS).map(|k| fold.hash_one(u128::from(k) << 114));
         assert!(buckets(usize_keys) > KEYS as usize / 2);
         assert!(buckets(u128_keys) > KEYS as usize / 2);
     }

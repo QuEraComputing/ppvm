@@ -1,6 +1,6 @@
 # ppvm-pauli-sum
 
-Pauli-propagation engine for ppvm: `PauliSum` and `LossyPauliSum`, truncation strategies, and ready-made `Config` bundles.
+Pauli-propagation engine for ppvm: `PauliSum`, truncation strategies, and ready-made `Config` bundles. A `Config` built on `LossyPauliWord` makes `PauliSum` track qubit loss.
 
 You start from an observable and apply the circuit's gates to it in reverse order (Heisenberg picture), then evaluate the result against an initial state. The number of terms can grow quickly, so truncation strategies such as `MaxPauliWeight`, `CoefficientThreshold` and `MaxLossWeight` drop terms as you go. `CombinedStrategy` applies two of them in sequence.
 

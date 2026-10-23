@@ -7,7 +7,7 @@ repository.workspace = true
 description = "Packed Pauli-string types (plain, phased, lossy and pattern) for the ppvm simulators."
 
 [dependencies]
-ppvm-traits = { version = "0.1.0", path = "../ppvm-traits" }
+ppvm-traits = { version = "0.1.1", path = "../ppvm-traits" }
 bitvec = "1.0.1"
 bytemuck = { version = "1", features = ["min_const_generics"] }
 fxhash = "0.2.1"

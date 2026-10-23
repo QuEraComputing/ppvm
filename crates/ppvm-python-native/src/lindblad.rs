@@ -180,6 +180,40 @@ impl LindbladSpec {
         self.inner.num_jump_terms()
     }
 
+    /// Current Hamiltonian coefficients, shape `(num_h_terms,)` float64 (a copy).
+    #[getter]
+    fn h_coeffs<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        self.inner.h_coeffs().into_pyarray(py)
+    }
+
+    /// Overwrite the Hamiltonian coefficients in place (`O(num_h_terms)`).
+    ///
+    /// `coeffs` must be a 1-D float64 array of length `num_h_terms`;
+    /// otherwise `ValueError`. Pauli words, jump operators and the
+    /// Kossakowski block are untouched (no PSD re-check).
+    fn set_h_coeffs(&mut self, coeffs: &Bound<'_, PyAny>) -> PyResult<()> {
+        let n = self.inner.num_h_terms();
+        let coeffs: PyReadonlyArray1<'_, f64> = coeffs.extract().map_err(|_| {
+            PyValueError::new_err(format!(
+                "set_h_coeffs: expected a 1-D float64 ndarray of shape ({n},)"
+            ))
+        })?;
+        let got = coeffs.len()?;
+        if got != n {
+            return Err(PyValueError::new_err(format!(
+                "set_h_coeffs: expected {n} coefficients (num_h_terms), got {got}"
+            )));
+        }
+        // `as_slice` fails on non-contiguous views; fall back to a copy.
+        match coeffs.as_slice() {
+            Ok(sl) => self.inner.set_h_coeffs(sl).map_err(map_err),
+            Err(_) => {
+                let v: Vec<f64> = coeffs.as_array().iter().copied().collect();
+                self.inner.set_h_coeffs(&v).map_err(map_err)
+            }
+        }
+    }
+
     /// Apply `L*` to a single Pauli string `p`.
     fn action<'py>(
         &self,

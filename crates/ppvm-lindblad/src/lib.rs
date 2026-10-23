@@ -629,6 +629,35 @@ impl LindbladSpec {
         self.h_terms.len()
     }
 
+    /// Current Hamiltonian coefficients `c_i` of `H = Σ_i c_i P_i`, in
+    /// construction order.
+    pub fn h_coeffs(&self) -> Vec<f64> {
+        self.h_terms.iter().map(|h| h.coeff).collect()
+    }
+
+    /// Overwrite the Hamiltonian coefficients in place, keeping the Pauli
+    /// words, the per-qubit support index and all jump / Kossakowski data.
+    ///
+    /// The coefficients are read directly by the commutator loop of the
+    /// action (no table folds them in), so this is an `O(num_h_terms)` copy
+    /// and every subsequent `action` / `leakage` / `generator` / `pc_step`
+    /// is bit-identical to a spec freshly built with `coeffs`. The support
+    /// index does not depend on coefficient values (zero coefficients are
+    /// kept as terms by [`Self::new`] too), so it needs no rebuild.
+    pub fn set_h_coeffs(&mut self, coeffs: &[f64]) -> Result<(), Error> {
+        if coeffs.len() != self.h_terms.len() {
+            return Err(Error::LengthMismatch {
+                what: "set_h_coeffs: num_h_terms vs coeffs",
+                a: self.h_terms.len(),
+                b: coeffs.len(),
+            });
+        }
+        for (h, &c) in self.h_terms.iter_mut().zip(coeffs) {
+            h.coeff = c;
+        }
+        Ok(())
+    }
+
     pub fn num_jump_terms(&self) -> usize {
         self.j_kinds.len()
     }

@@ -16,25 +16,21 @@ where
     H: BuildHasher + Default + HashFinalize,
 {
     let xz_hash = hash_xz::<A, H>(x, z);
-    let loss_hash = H::default().hash_one(l);
+    let loss_hash = H::word_hash(&[bytemuck::bytes_of(l)], size_of::<A>());
     combine_hashes::<H>(xz_hash, loss_hash)
 }
 
 #[inline]
-fn hash_xz<A: PauliStorage, H: BuildHasher + Default>(x: &A, z: &A) -> u64 {
-    let mut hasher = H::default().build_hasher();
-    x.hash(&mut hasher);
-    z.hash(&mut hasher);
-    hasher.finish()
+fn hash_xz<A: PauliStorage, H: HashFinalize + BuildHasher + Default>(x: &A, z: &A) -> u64 {
+    let x_bytes = bytemuck::bytes_of(x);
+    let z_bytes = bytemuck::bytes_of(z);
+    H::word_hash(&[x_bytes, z_bytes], size_of::<A>())
 }
 
 /// Combine component hashes identically for individual words and column rows.
 #[inline]
 fn combine_hashes<H: BuildHasher + Default + HashFinalize>(xz_hash: u64, loss_hash: u64) -> u64 {
-    let mut hasher = H::default().build_hasher();
-    hasher.write_u64(xz_hash);
-    hasher.write_u64(loss_hash);
-    let word_hash = H::finalize_hash(hasher.finish(), std::mem::size_of::<[u64; 2]>());
+    let word_hash = H::word_hash(&[&xz_hash.to_le_bytes(), &loss_hash.to_le_bytes()], 8);
     H::index_hash(word_hash)
 }
 
@@ -73,7 +69,7 @@ where
         let loss_hash = if self.loss_hash_valid.load(Ordering::Acquire) {
             self.loss_hash_cache.load(Ordering::Relaxed)
         } else {
-            let digest = H::default().hash_one(self.lbits.data);
+            let digest = H::word_hash(&[bytemuck::bytes_of(&self.lbits.data)], size_of::<A>());
             self.loss_hash_cache.store(digest, Ordering::Relaxed);
             self.loss_hash_valid.store(true, Ordering::Release);
             digest

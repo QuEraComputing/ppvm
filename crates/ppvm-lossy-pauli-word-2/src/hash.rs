@@ -136,11 +136,12 @@ mod tests {
     }
 
     #[test]
-    fn no_loss_fxhash_is_valid_even_when_zero() {
+    fn no_loss_hash_is_cached() {
         let word = LossyPauliWord::<u8>::from("XI");
         word.key_hash();
         assert!(word.loss_hash_valid.load(Ordering::Acquire));
-        assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), 0);
+        let expected = fxhash::FxBuildHasher::word_hash(&[&[0u8]], 1);
+        assert_eq!(word.loss_hash_cache.load(Ordering::Relaxed), expected);
     }
 
     #[test]

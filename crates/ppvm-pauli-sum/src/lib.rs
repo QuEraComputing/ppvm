@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `PauliSum` / `LossyPauliSum` Pauli-propagation engine, truncation
+//! `PauliSum` Pauli-propagation engine, truncation
 //! strategies, and pre-built `Config` bundles. Built on `ppvm-traits` and
 //! `ppvm-pauli-word`.
 pub mod config;

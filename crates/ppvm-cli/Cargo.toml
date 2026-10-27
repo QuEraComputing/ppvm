@@ -9,8 +9,8 @@ description = "Command-line tool and TUI for parsing, running and stepping throu
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
 eyre = "0.6.12"
-ppvm-tui = { version = "0.1.0", path = "../ppvm-tui" }
-ppvm-vihaco = { version = "0.1.0", path = "../ppvm-vihaco", features = ["rayon"] }
+ppvm-tui = { version = "0.1.1", path = "../ppvm-tui" }
+ppvm-vihaco = { version = "0.1.1", path = "../ppvm-vihaco", features = ["rayon"] }
 ratatui = "0.29.0"
 
 [[bin]]

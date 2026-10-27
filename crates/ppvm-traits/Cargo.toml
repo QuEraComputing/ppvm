@@ -9,6 +9,7 @@ description = "Core traits, the `Config` bundle and the single-qubit Pauli alpha
 [dependencies]
 bitvec = "1.0.1"
 bytemuck = { version = "1", features = ["min_const_generics"] }
+foldhash = "0.1.5"
 fxhash = "0.2.1"
 num = "0.4.3"
 indexmap = { version = "2.11.4", optional = true }

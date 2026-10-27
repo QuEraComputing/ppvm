@@ -6,9 +6,9 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-ppvm-pauli-sum = { version = "0.1.0", path = "crates/ppvm-pauli-sum" }
-ppvm-tableau = { version = "0.1.0", path = "crates/ppvm-tableau" }
-ppvm-sym = { version = "0.1.0", path = "crates/ppvm-sym" }
+ppvm-pauli-sum = { version = "0.1.1", path = "crates/ppvm-pauli-sum" }
+ppvm-tableau = { version = "0.1.1", path = "crates/ppvm-tableau" }
+ppvm-sym = { version = "0.1.1", path = "crates/ppvm-sym" }
 
 [workspace]
 members = [
@@ -36,7 +36,7 @@ members = [
 # Single version for every crate and the `bloqade-ppvm` Python package
 # (via ppvm-python-native); bumped by release-plz.
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/QuEraComputing/ppvm"

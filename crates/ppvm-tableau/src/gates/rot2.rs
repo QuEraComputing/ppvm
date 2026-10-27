@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashMap;
+use ppvm_traits::FoldHashMap as HashMap;
 
 use bitvec::view::BitView;
 use num::PrimInt;
@@ -62,7 +62,7 @@ where
         self.compute_coefficients_after_pauli_apply(&mut branch_coefficients, a, pauli_a);
 
         let old_coefficients = std::mem::replace(&mut self.coefficients, C::new());
-        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::new();
+        let mut new_coefficients: HashMap<I, Complex<T::Coeff>> = HashMap::default();
 
         for (coeff, idx) in old_coefficients {
             *new_coefficients.entry(idx).or_insert(Complex::zero()) += complex_cos * coeff;

@@ -4,10 +4,10 @@
 use super::data::{compute_phase_with_mask_static, symplectic_inner};
 use crate::prelude::*;
 use bitvec::view::BitView;
-use fxhash::FxHashMap as HashMap;
 use num::PrimInt;
 use num::complex::{Complex, Complex64, ComplexFloat};
 use num::traits::{One, ToPrimitive, Zero};
+use ppvm_traits::FoldHashMap as HashMap;
 use rand::RngExt;
 use std::fmt::Debug;
 

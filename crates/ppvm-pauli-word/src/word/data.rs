@@ -100,13 +100,15 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REH
     PauliWordTrait for PauliWord<A, S, REHASH>
 {
     fn new(nqubits: usize) -> Self {
-        Self {
+        let mut word = Self {
             xbits: BitArray::ZERO,
             zbits: BitArray::ZERO,
             nqubits,
             hash_cache: 0,
             _phantom: std::marker::PhantomData,
-        }
+        };
+        word.rehash();
+        word
     }
 
     fn n_qubits(&self) -> usize {
@@ -183,19 +185,13 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REH
 
     fn rehash(&mut self) {
         if REHASH {
-            use std::hash::Hasher;
-            let mut hasher = S::default().build_hasher();
-            // Feed the raw storage bytes through the Hasher's byte-slice path
-            // so FxHasher consumes 8 bytes per round instead of one byte at a
-            // time. `A: bytemuck::Pod` (via the `PauliStorage` bound) makes
-            // the `&[u8]` view safe — no padding, all bytes initialized.
-            hasher.write(bytemuck::bytes_of(&self.xbits.data));
-            hasher.write(bytemuck::bytes_of(&self.zbits.data));
-            // Let the hasher finalize its own digest, told how wide the key is.
-            // fxhash folds for narrow storage (its low bits correlate and
-            // cluster hashbrown's buckets at high fill); strong hashers like
-            // gxhash use the identity default. See `HashFinalize`.
-            self.hash_cache = S::finalize_hash(hasher.finish(), std::mem::size_of::<A>());
+            self.hash_cache = S::word_hash(
+                &[
+                    bytemuck::bytes_of(&self.xbits.data),
+                    bytemuck::bytes_of(&self.zbits.data),
+                ],
+                std::mem::size_of::<A>(),
+            );
         }
     }
 
@@ -396,6 +392,21 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REH
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identity_map_lookup_is_independent_of_construction() {
+        type Word = PauliWord<[u64; 4]>;
+        let identity = Word::new(4);
+        let parsed: Word = "IIII".into();
+        let mutated = Word::new(4).set_new(0, Pauli::X).set_new(0, Pauli::I);
+        assert_eq!(identity, parsed);
+        assert_eq!(identity, mutated);
+
+        let mut map = fxhash::FxHashMap::default();
+        map.insert(identity, 1);
+        assert_eq!(map.get(&parsed), Some(&1));
+        assert_eq!(map.get(&mutated), Some(&1));
+    }
 
     #[test]
     fn test_pauli_string_creation() {

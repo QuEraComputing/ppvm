@@ -10,5 +10,6 @@ publish = false
 ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2"}
 bitvec = "1.0.1"
 bytemuck = { version = "1", features = ["min_const_generics"] }
+foldhash = "0.1.5"
 fxhash = "0.2.1"
 num = "0.4.3"

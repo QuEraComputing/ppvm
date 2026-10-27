@@ -10,5 +10,5 @@ description = "Symbolic, parametric Pauli propagation for ppvm."
 anyhow = "1.0.100"
 fxhash = "0.2.1"
 num = "0.4.3"
-ppvm-traits = { version = "0.1.0", path = "../ppvm-traits", default-features = false }
-ppvm-pauli-sum = { version = "0.1.0", path = "../ppvm-pauli-sum", default-features = false }
+ppvm-traits = { version = "0.1.1", path = "../ppvm-traits", default-features = false }
+ppvm-pauli-sum = { version = "0.1.1", path = "../ppvm-pauli-sum", default-features = false }

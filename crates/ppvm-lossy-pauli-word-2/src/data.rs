@@ -118,14 +118,9 @@ impl<A: PauliStorage, H> LossyPauliWord<A, H> {
 
     /// Build the reset-channel branch with `q` marked lost.
     pub fn with_lost(&self, qb: usize) -> Self {
-        self.check_qubit(qb);
-        let mut xbits = self.xbits;
-        let mut zbits = self.zbits;
-        let mut lbits = self.lbits;
-        xbits.set(qb, false);
-        zbits.set(qb, false);
-        lbits.set(qb, true);
-        Self::from_planes(xbits, zbits, lbits, self.nqubits)
+        let mut branch = self.clone();
+        branch.set_lost(qb);
+        branch
     }
 
     /// Replace a site explicitly; `Present` restores a lost site.
@@ -422,57 +417,12 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
     ) -> Self {
         self.check_qubit(i);
         self.check_qubit(j);
+        if i == j {
+            return self
+                .into_toggled_bits(i, [toggle_i[0] ^ toggle_j[0], toggle_i[1] ^ toggle_j[1]]);
+        }
         self.into_toggled_bits(i, toggle_i)
             .into_toggled_bits(j, toggle_j)
-    }
-
-    // Build a rotation branch directly from the packed planes.
-    #[inline]
-    fn toggled_bits(&self, i: usize, toggle_x: bool, toggle_z: bool) -> Self
-    where
-        Self: Sized + Clone,
-    {
-        self.check_qubit(i);
-        let mut xbits = self.xbits;
-        let mut zbits = self.zbits;
-        if toggle_x && !self.lbits[i] {
-            let bit = xbits[i];
-            xbits.set(i, !bit);
-        }
-        if toggle_z && !self.lbits[i] {
-            let bit = zbits[i];
-            zbits.set(i, !bit);
-        }
-        Self::from_planes(xbits, zbits, self.lbits, self.nqubits)
-    }
-
-    /// Build a two-site rotation branch with one packed-plane copy.
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    fn toggled_bits2(&self, i: usize, toggle_i: [bool; 2], j: usize, toggle_j: [bool; 2]) -> Self {
-        self.check_qubit(i);
-        self.check_qubit(j);
-        let mut xbits = self.xbits;
-        let mut zbits = self.zbits;
-        let [toggle_x_i, toggle_z_i] = toggle_i;
-        let [toggle_x_j, toggle_z_j] = toggle_j;
-        if toggle_x_i && !self.lbits[i] {
-            let bit = xbits[i];
-            xbits.set(i, !bit);
-        }
-        if toggle_z_i && !self.lbits[i] {
-            let bit = zbits[i];
-            zbits.set(i, !bit);
-        }
-        if toggle_x_j && !self.lbits[j] {
-            let bit = xbits[j];
-            xbits.set(j, !bit);
-        }
-        if toggle_z_j && !self.lbits[j] {
-            let bit = zbits[j];
-            zbits.set(j, !bit);
-        }
-        Self::from_planes(xbits, zbits, self.lbits, self.nqubits)
     }
 }
 
@@ -497,10 +447,9 @@ impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
     where
         Self: Sized + Clone,
     {
-        self.check_qubit(i);
-        let mut lbits = self.lbits;
-        lbits.set(i, false);
-        Self::from_planes(self.xbits, self.zbits, lbits, self.nqubits)
+        let mut branch = self.clone();
+        branch.clear_loss(i);
+        branch
     }
 
     #[inline]
@@ -512,6 +461,64 @@ impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ppvm_traits_2::Indexable;
+
+    #[test]
+    fn branch_helpers_invalidate_only_changed_components() {
+        let masks = [[false, false], [true, false], [false, true], [true, true]];
+        for input in ["IL", "LI", "LL", "XY"] {
+            for warm_cache in [false, true] {
+                let word = LossyPauliWord::<u8>::from(input);
+                if warm_cache {
+                    word.key_hash();
+                }
+                let mut branches = Vec::new();
+                for i in 0..2 {
+                    branches.push(word.with_lost(i));
+                    branches.push(word.loss_cleared(i));
+                    for mask_i in masks {
+                        branches.push(word.toggled_bits(i, mask_i[0], mask_i[1]));
+                        for j in 0..2 {
+                            for mask_j in masks {
+                                branches.push(word.toggled_bits2(i, mask_i, j, mask_j));
+                                branches
+                                    .push(word.clone().into_toggled_bits2(i, mask_i, j, mask_j));
+                            }
+                        }
+                    }
+                }
+                for branch in branches {
+                    let xz_unchanged = branch.xbits == word.xbits && branch.zbits == word.zbits;
+                    let loss_unchanged = branch.lbits == word.lbits;
+                    assert_eq!(
+                        branch.xz_hash_valid.load(Ordering::Relaxed),
+                        warm_cache && xz_unchanged,
+                    );
+                    assert_eq!(
+                        branch.loss_hash_valid.load(Ordering::Relaxed),
+                        warm_cache && loss_unchanged,
+                    );
+                    if warm_cache && xz_unchanged {
+                        assert_eq!(
+                            branch.xz_hash_cache.load(Ordering::Relaxed),
+                            word.xz_hash_cache.load(Ordering::Relaxed),
+                        );
+                    }
+                    if warm_cache && loss_unchanged {
+                        assert_eq!(
+                            branch.loss_hash_cache.load(Ordering::Relaxed),
+                            word.loss_hash_cache.load(Ordering::Relaxed),
+                        );
+                    }
+                    let fresh = LossyPauliWord::<u8>::from(branch.to_string());
+                    assert_eq!(branch.key_hash(), fresh.key_hash());
+                }
+                assert_eq!(word.to_string(), input);
+                assert_eq!(word.xz_hash_valid.load(Ordering::Relaxed), warm_cache);
+                assert_eq!(word.loss_hash_valid.load(Ordering::Relaxed), warm_cache);
+            }
+        }
+    }
 
     #[test]
     fn zero_hash_validity_survives_cloning_and_invalidates_independently() {

@@ -41,6 +41,15 @@ impl<const C: usize> IndexedCandidates<C> {
         ]
     }
 
+    pub(crate) fn take_numeric(&mut self) -> Vec<f64> {
+        std::mem::take(&mut self.rates)
+    }
+
+    pub(crate) fn set_numeric(&mut self, mut numeric: Vec<f64>) {
+        numeric.clear();
+        self.rates = numeric;
+    }
+
     pub(crate) fn reset(&mut self) {
         self.words.clear();
         self.prefix = 0;
@@ -95,7 +104,7 @@ impl<const C: usize> IndexedCandidates<C> {
         });
     }
 
-    pub(crate) fn cap(&mut self, room: usize, bits: &mut Vec<u64>) {
+    pub(crate) fn cap(&mut self, room: usize) {
         if self.table.len() <= room {
             return;
         }
@@ -107,22 +116,23 @@ impl<const C: usize> IndexedCandidates<C> {
             self.free.clear();
             return;
         }
-        bits.clear();
-        if bits.capacity() < self.table.len() {
-            bits.reserve_exact(self.table.len());
+        let count = self.rates.len();
+        self.rates.reserve_exact(self.table.len());
+        // The rate prefix remains live while the tail holds nonnegative ranking keys.
+        for index in 0..count {
+            if self.state[index] != 0 {
+                self.rates.push(self.rates[index].abs());
+            }
         }
-        // Sequential rate scans avoid fetching whole words in hash-table visitation order.
-        bits.extend(
-            self.rates
-                .iter()
-                .zip(&self.state)
-                .filter_map(|(rate, &state)| (state != 0).then_some(rate.abs().to_bits())),
-        );
-        let position = bits.len() - room;
-        let cutoff = *bits.select_nth_unstable(position).1;
-        let above = bits.iter().filter(|&&value| value > cutoff).count();
+        let (rates, keys) = self.rates.split_at_mut(count);
+        let position = keys.len() - room;
+        let cutoff = keys
+            .select_nth_unstable_by_key(position, |v| v.to_bits())
+            .1
+            .to_bits();
+        let above = keys.iter().filter(|v| v.to_bits() > cutoff).count();
         let mut ties = room - above;
-        for (rate, state) in self.rates.iter().zip(&mut self.state) {
+        for (rate, state) in rates.iter().zip(&mut self.state) {
             if *state != 0 {
                 let magnitude = rate.abs().to_bits();
                 *state = if magnitude > cutoff {
@@ -147,6 +157,7 @@ impl<const C: usize> IndexedCandidates<C> {
             }
             keep
         });
+        self.rates.truncate(count);
     }
 
     pub(crate) fn into_vec(self, threshold: f64) -> Vec<(Word<C>, f64)> {
@@ -174,7 +185,8 @@ impl<const C: usize> IndexedCandidates<C> {
             let mut labels = positions.clone();
             let mut count = 0;
             for &original in &self.table {
-                if self.rates[original as usize].abs() <= threshold {
+                let admitted = self.rates[original as usize].abs() > threshold;
+                if !admitted {
                     continue;
                 }
                 let source = positions[original as usize] as usize;
@@ -209,6 +221,20 @@ mod tests {
     use fxhash::FxHashMap;
 
     #[test]
+    fn tail_admission_preserves_nonfinite_threshold_rejection() {
+        let seed = word_from_codes::<2>(&[1, 0]).unwrap();
+        let candidate = word_from_codes::<2>(&[0, 2]).unwrap();
+        let mut tail = IndexedCandidates::new();
+        tail.attach_basis(vec![seed]);
+        tail.add(candidate, 0.5);
+        let mut basis = Vec::new();
+        let mut coeffs = vec![1.0];
+        tail.admit(&mut basis, &mut coeffs, 10, f64::NAN);
+        assert_eq!(basis, vec![seed]);
+        assert_eq!(coeffs, vec![1.0]);
+    }
+
+    #[test]
     fn indexed_payload_preserves_reference_caps_and_visitation() {
         let mut reference = FxHashMap::default();
         let mut indexed = IndexedCandidates::new();
@@ -230,8 +256,8 @@ mod tests {
                 tail.add(word, value);
             }
             cap_map_to_room(&mut reference, 300);
-            indexed.cap(300, &mut Vec::new());
-            tail.cap(300, &mut Vec::new());
+            indexed.cap(300);
+            tail.cap(300);
         }
         let expected: Vec<_> = reference
             .into_iter()

@@ -176,7 +176,7 @@ impl<const C: usize> LindbladSpec<C> {
         let p = Phase::start(timed);
         let reusable = leak.admit(basis, coeffs, admit);
         if let Some(workspace) = workspace.as_mut() {
-            workspace.candidates = reusable;
+            workspace.recycle_candidates(reusable);
         }
         p.stop(&mut t.expand1_us);
 
@@ -208,7 +208,7 @@ impl<const C: usize> LindbladSpec<C> {
             let p = Phase::start(timed);
             let reusable = leak2.admit(basis, coeffs, admit);
             if let Some(workspace) = workspace.as_mut() {
-                workspace.candidates = reusable;
+                workspace.recycle_candidates(reusable);
             }
             p.stop(&mut t.expand2_us);
         }

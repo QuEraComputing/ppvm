@@ -332,6 +332,7 @@ mod tests {
             ExpmBackend::Packed,
             ExpmBackend::PackedUpper,
             ExpmBackend::PackedBatched,
+            ExpmBackend::PackedSegmented,
         ] {
             let cached = LindbladSpec::<2>::new(3, &h, &jumps).unwrap();
             let optimized = LindbladSpec::<2>::new(3, &h, &jumps)

@@ -144,11 +144,11 @@ impl<const C: usize> LindbladSpec<C> {
         // We rely on `coeffs` itself as the pre-step buffer for the corrector
         // — no `.clone()` is needed because `expm_step` only borrows it.
         let p = Phase::start(timed);
-        let leak = self.leakage_with_prune(basis, coeffs, protected, admit, tau_add)?;
+        let leak = self.leakage_for_step(basis, coeffs, protected, admit, tau_add)?;
         p.stop(&mut t.leakage1_us);
 
         let p = Phase::start(timed);
-        add_leakage_capped(basis, coeffs, leak, admit);
+        leak.admit(basis, coeffs, admit);
         p.stop(&mut t.expand1_us);
 
         // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
@@ -166,12 +166,11 @@ impl<const C: usize> LindbladSpec<C> {
         let n_predict = basis.len();
         if admit > n_predict {
             let p = Phase::start(timed);
-            let leak2 =
-                self.leakage_with_prune(basis, &coeffs_predict, protected, admit, tau_add)?;
+            let leak2 = self.leakage_for_step(basis, &coeffs_predict, protected, admit, tau_add)?;
             p.stop(&mut t.leakage2_us);
 
             let p = Phase::start(timed);
-            add_leakage_capped(basis, coeffs, leak2, admit);
+            leak2.admit(basis, coeffs, admit);
             p.stop(&mut t.expand2_us);
         }
 

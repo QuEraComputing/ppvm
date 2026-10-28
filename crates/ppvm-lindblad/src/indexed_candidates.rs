@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Candidate payload stored once, with a Swiss-table index of u32 positions.
+//! Split candidate words and rates with stable Swiss-table position indices.
 
 use crate::word::{Word, word_hash};
 use hashbrown::HashTable;
 
 pub(crate) struct IndexedCandidates<const C: usize> {
-    entries: Vec<(Word<C>, f64)>,
+    words: Vec<Word<C>>,
+    rates: Vec<f64>,
+    state: Vec<u8>,
     table: HashTable<u32>,
     free: Vec<u32>,
 }
@@ -15,7 +17,9 @@ pub(crate) struct IndexedCandidates<const C: usize> {
 impl<const C: usize> IndexedCandidates<C> {
     pub(crate) fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            words: Vec::new(),
+            rates: Vec::new(),
+            state: Vec::new(),
             table: HashTable::new(),
             free: Vec::new(),
         }
@@ -25,26 +29,33 @@ impl<const C: usize> IndexedCandidates<C> {
         let hash = word_hash(&word);
         if let Some(&index) = self
             .table
-            .find(hash, |&index| self.entries[index as usize].0 == word)
+            .find(hash, |&index| self.words[index as usize] == word)
         {
-            self.entries[index as usize].1 += value;
+            self.rates[index as usize] += value;
             return;
         }
         let index = if let Some(index) = self.free.pop() {
-            self.entries[index as usize] = (word, 0.0 + value);
+            self.words[index as usize] = word;
+            self.rates[index as usize] = 0.0 + value;
+            self.state[index as usize] = 1;
             index
         } else {
-            if self.entries.len() == self.entries.capacity() {
-                self.entries
-                    .reserve_exact((self.entries.capacity() / 4).max(32));
+            if self.words.len() == self.words.capacity() {
+                self.words
+                    .reserve_exact((self.words.capacity() / 4).max(32));
+                self.rates
+                    .reserve_exact(self.words.capacity() - self.rates.len());
+                self.state
+                    .reserve_exact(self.words.capacity() - self.state.len());
             }
-            let index = u32::try_from(self.entries.len()).expect("candidate count exceeds u32");
-            self.entries.push((word, 0.0 + value));
+            let index = u32::try_from(self.words.len()).expect("candidate count exceeds u32");
+            self.words.push(word);
+            self.rates.push(0.0 + value);
+            self.state.push(1);
             index
         };
-        self.table.insert_unique(hash, index, |&index| {
-            word_hash(&self.entries[index as usize].0)
-        });
+        self.table
+            .insert_unique(hash, index, |&index| word_hash(&self.words[index as usize]));
     }
 
     pub(crate) fn cap(&mut self, room: usize, bits: &mut Vec<u64>) {
@@ -52,7 +63,9 @@ impl<const C: usize> IndexedCandidates<C> {
             return;
         }
         if room == 0 {
-            self.entries.clear();
+            self.words.clear();
+            self.rates.clear();
+            self.state.clear();
             self.table.clear();
             self.free.clear();
             return;
@@ -61,23 +74,39 @@ impl<const C: usize> IndexedCandidates<C> {
         if bits.capacity() < self.table.len() {
             bits.reserve_exact(self.table.len());
         }
+        // Sequential rate scans avoid fetching whole words in hash-table visitation order.
         bits.extend(
-            self.table
+            self.rates
                 .iter()
-                .map(|&index| self.entries[index as usize].1.abs().to_bits()),
+                .zip(&self.state)
+                .filter_map(|(rate, &state)| (state != 0).then_some(rate.abs().to_bits())),
         );
+        debug_assert_eq!(bits.len(), self.table.len());
         let position = bits.len() - room;
         let cutoff = *bits.select_nth_unstable(position).1;
         let above = bits.iter().filter(|&&value| value > cutoff).count();
         let mut ties = room - above;
+        for (rate, state) in self.rates.iter().zip(&mut self.state) {
+            if *state != 0 {
+                let magnitude = rate.abs().to_bits();
+                *state = if magnitude > cutoff {
+                    3
+                } else if magnitude == cutoff {
+                    2
+                } else {
+                    1
+                };
+            }
+        }
         self.table.retain(|index| {
-            let magnitude = self.entries[*index as usize].1.abs().to_bits();
-            if magnitude > cutoff {
+            let state = &mut self.state[*index as usize];
+            if *state == 3 {
                 return true;
             }
-            let keep = magnitude == cutoff && ties > 0;
+            let keep = *state == 2 && ties > 0;
             ties -= keep as usize;
             if !keep {
+                *state = 0;
                 self.free.push(*index);
             }
             keep
@@ -85,38 +114,31 @@ impl<const C: usize> IndexedCandidates<C> {
     }
 
     pub(crate) fn into_vec(self, threshold: f64) -> Vec<(Word<C>, f64)> {
-        let Self {
-            mut entries,
-            table,
-            free,
-        } = self;
-        let live = table.len();
-        let mut order = Vec::with_capacity(entries.len());
-        order.extend(table.iter().copied());
-        drop(table);
-        order.extend(free);
-        assert_eq!(order.len(), entries.len());
-        // Apply the table's visitation permutation without a second payload vector.
-        for start in 0..order.len() {
-            if order[start] as usize == start {
-                continue;
-            }
-            let saved = entries[start];
-            let mut destination = start;
-            loop {
-                let source = order[destination] as usize;
-                order[destination] = destination as u32;
-                if source == start {
-                    entries[destination] = saved;
-                    break;
-                }
-                entries[destination] = entries[source];
-                destination = source;
+        self.table
+            .iter()
+            .filter_map(|&index| {
+                let index = index as usize;
+                (self.rates[index].abs() > threshold)
+                    .then_some((self.words[index], self.rates[index]))
+            })
+            .collect()
+    }
+
+    pub(crate) fn admit(
+        self,
+        basis: &mut Vec<Word<C>>,
+        coefficients: &mut Vec<f64>,
+        maximum: usize,
+        threshold: f64,
+    ) {
+        assert!(self.table.len() <= maximum.saturating_sub(basis.len()));
+        for &index in &self.table {
+            let index = index as usize;
+            if self.rates[index].abs() > threshold {
+                basis.push(self.words[index]);
+                coefficients.push(0.0);
             }
         }
-        entries.truncate(live);
-        entries.retain(|(_, value)| value.abs() > threshold);
-        entries
     }
 }
 

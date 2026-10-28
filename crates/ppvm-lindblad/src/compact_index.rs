@@ -16,7 +16,13 @@ impl<'a, const C: usize> CompactBasisIndex<'a, C> {
             basis.len() < u32::MAX as usize,
             "basis exceeds u32 positions"
         );
-        let capacity = basis.len().saturating_mul(2).max(2).next_power_of_two();
+        // Keep an empty probe terminator with at most three quarters of slots occupied.
+        let capacity = basis
+            .len()
+            .saturating_mul(4)
+            .div_ceil(3)
+            .max(2)
+            .next_power_of_two();
         let mut index = Self {
             basis,
             slots: vec![0; capacity],

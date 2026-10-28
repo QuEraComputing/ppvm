@@ -344,6 +344,10 @@ mod tests {
             let mut b = a.clone();
             let mut ca = vec![1.0];
             let mut cb = ca.clone();
+            b.reserve_exact(64 - b.len());
+            cb.reserve_exact(64 - cb.len());
+            let basis_storage = b.as_ptr();
+            let coefficient_storage = cb.as_ptr();
             let mut workspace = crate::PcStepWorkspace::default();
             for step in 0..12 {
                 let cfg = PcStepConfig {
@@ -356,6 +360,8 @@ mod tests {
                 optimized
                     .pc_step_with_workspace(&mut b, &mut cb, 0.1, &[seed], &cfg, &mut workspace)
                     .unwrap();
+                assert_eq!(b.as_ptr(), basis_storage);
+                assert_eq!(cb.as_ptr(), coefficient_storage);
                 assert_eq!(a, b);
                 assert_eq!(ca, cb);
             }

@@ -128,7 +128,7 @@ impl<const C: usize> LindbladSpec<C> {
                 b: coeffs.len(),
             });
         }
-        if self.leakage_backend == crate::LeakageBackend::Buffered {
+        if self.leakage_backend != crate::LeakageBackend::Reference {
             return self.leakage_buffered(basis, coeffs, protected, max_basis, tau_add);
         }
         // Hash-only membership tables: storing 8-byte `u64` keys instead
@@ -203,6 +203,7 @@ impl<const C: usize> LindbladSpec<C> {
         let room = max_basis.saturating_sub(basis.len());
         let mut merged = FxHashMap::default();
         let mut magnitudes = Vec::new();
+        let mut magnitude_bits = Vec::new();
         let mut outputs: Vec<Vec<(Word<C>, f64)>> =
             (0..CHUNK_SIZE.div_ceil(64)).map(|_| Vec::new()).collect();
         for chunk in order.chunks(CHUNK_SIZE) {
@@ -232,7 +233,16 @@ impl<const C: usize> LindbladSpec<C> {
                     *merged.entry(word).or_insert(0.0) += value;
                 }
             }
-            crate::truncate::cap_real_map_with_scratch(&mut merged, room, &mut magnitudes);
+            if self.leakage_backend == crate::LeakageBackend::RankBits {
+                crate::truncate::cap_real_map_bits(
+                    &mut merged,
+                    room,
+                    &mut magnitude_bits,
+                    &mut magnitudes,
+                );
+            } else {
+                crate::truncate::cap_real_map_with_scratch(&mut merged, room, &mut magnitudes);
+            }
         }
         Ok(merged
             .into_iter()

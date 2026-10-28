@@ -43,6 +43,7 @@ pub mod config;
 mod direct_expm;
 pub mod error;
 pub(crate) mod expm;
+mod indexed_candidates;
 mod kossakowski;
 mod packed_expm;
 mod pauli_plan;

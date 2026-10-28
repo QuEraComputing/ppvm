@@ -535,7 +535,7 @@ pub(crate) fn expm_apply_mf<const C: usize>(
     if basis.is_empty() {
         return Vec::new();
     }
-    if spec.expm_backend == crate::ExpmBackend::MatrixFree && spec.supports_row_gather() {
+    if spec.expm_backend != crate::ExpmBackend::Cached && spec.supports_row_gather() {
         let op = crate::direct_expm::DirectOp {
             spec,
             basis,

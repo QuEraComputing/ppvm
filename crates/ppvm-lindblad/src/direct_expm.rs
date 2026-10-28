@@ -5,7 +5,7 @@
 
 use crate::compact_index::CompactBasisIndex;
 use crate::{LindbladSpec, Word};
-use fxhash::{FxBuildHasher, FxHashMap};
+use fxhash::FxHashMap;
 use num::Complex;
 use quspin_types::{LinearOperator, QuSpinError};
 use rayon::prelude::*;
@@ -124,33 +124,65 @@ mod tests {
     }
 }
 
+struct ActionScratch<const C: usize> {
+    support: Vec<u32>,
+    candidates: Vec<u32>,
+    local: FxHashMap<Word<C>, Complex<f64>>,
+    active: Vec<u64>,
+    terms: Vec<(Word<C>, f64)>,
+    row: Vec<(u32, f64)>,
+}
+
+impl<const C: usize> ActionScratch<C> {
+    fn new() -> Self {
+        Self {
+            support: Vec::new(),
+            candidates: Vec::new(),
+            local: FxHashMap::default(),
+            active: Vec::new(),
+            terms: Vec::new(),
+            row: Vec::new(),
+        }
+    }
+    fn fill(&mut self, spec: &LindbladSpec<C>, word: &Word<C>, canonical: bool) {
+        if spec.expm_backend != crate::ExpmBackend::MatrixFreeGeneric {
+            if let Some(plan) = &spec.pauli_plan {
+                plan.fill(word, &mut self.active, &mut self.terms);
+                if canonical {
+                    self.terms.sort_unstable_by(|(a, _), (b, _)| {
+                        crate::word::word_hash(a)
+                            .cmp(&crate::word::word_hash(b))
+                            .then_with(|| a.cmp(b))
+                    });
+                }
+                return;
+            }
+        }
+        self.terms = spec.compute_action_terms(
+            word,
+            &mut self.support,
+            &mut self.candidates,
+            &mut self.local,
+        );
+    }
+}
+
 impl<const C: usize> DirectOp<'_, C> {
     pub(crate) fn per_col(&self) -> Vec<(f64, f64)> {
         self.basis
             .par_iter()
-            .map_init(
-                || {
-                    (
-                        Vec::new(),
-                        Vec::new(),
-                        FxHashMap::with_hasher(FxBuildHasher::default()),
-                    )
-                },
-                |(support, candidates, local), word| {
-                    let terms = self
-                        .spec
-                        .compute_action_terms(word, support, candidates, local);
-                    let mut raw = 0.0;
-                    let mut diag = 0.0;
-                    for (output, value) in terms {
-                        raw += value.abs();
-                        if output == *word {
-                            diag = value;
-                        }
+            .map_init(ActionScratch::new, |scratch, word| {
+                scratch.fill(self.spec, word, true);
+                let mut raw = 0.0;
+                let mut diag = 0.0;
+                for &(output, value) in &scratch.terms {
+                    raw += value.abs();
+                    if output == *word {
+                        diag = value;
                     }
-                    (raw, diag)
-                },
-            )
+                }
+                (raw, diag)
+            })
             .collect()
     }
 }
@@ -171,30 +203,23 @@ impl<const C: usize> LinearOperator<f64> for DirectOp<'_, C> {
 
     fn dot(&self, overwrite: bool, input: &[f64], output: &mut [f64]) -> Result<(), QuSpinError> {
         output.par_iter_mut().enumerate().for_each_init(
-            || {
-                (
-                    Vec::new(),
-                    Vec::new(),
-                    FxHashMap::<Word<C>, Complex<f64>>::with_hasher(FxBuildHasher::default()),
-                    Vec::<(u32, f64)>::new(),
-                )
-            },
-            |(support, candidates, local, row), (position, result)| {
+            ActionScratch::new,
+            |scratch, (position, result)| {
                 let word = &self.basis[position];
-                let terms = self
-                    .spec
-                    .compute_action_terms(word, support, candidates, local);
-                row.clear();
-                for (parent, value) in terms {
+                scratch.fill(self.spec, word, false);
+                scratch.row.clear();
+                for &(parent, value) in &scratch.terms {
                     if let Some(column) = self.index.get(&parent) {
                         // Hamiltonian rows are negative columns; Pauli dissipators are diagonal.
-                        row.push((column, if parent == *word { value } else { -value }));
+                        scratch
+                            .row
+                            .push((column, if parent == *word { value } else { -value }));
                     }
                 }
                 // Match the cached generator's accumulation order across thread counts.
-                row.sort_unstable_by_key(|entry| entry.0);
+                scratch.row.sort_unstable_by_key(|entry| entry.0);
                 let mut sum = 0.0;
-                for &(column, value) in row.iter() {
+                for &(column, value) in &scratch.row {
                     if input[column as usize] != 0.0 {
                         sum += value * input[column as usize];
                     }

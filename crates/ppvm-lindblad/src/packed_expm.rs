@@ -13,6 +13,7 @@ struct Range {
     start: usize,
     ends: Vec<u32>,
     diagonal: Vec<f64>,
+    entries: Vec<i32>,
 }
 
 pub(crate) enum Norm {
@@ -37,7 +38,11 @@ impl PackedOp {
             + self
                 .ranges
                 .iter()
-                .map(|r| (r.offsets.capacity() + r.ends.capacity()) * 4 + r.diagonal.capacity() * 8)
+                .map(|r| {
+                    (r.offsets.capacity() + r.ends.capacity()) * 4
+                        + r.diagonal.capacity() * 8
+                        + r.entries.capacity() * 4
+                })
                 .sum::<usize>()
     }
 
@@ -46,6 +51,9 @@ impl PackedOp {
         scale: f64,
         previous: Option<Self>,
     ) -> (Self, Norm) {
+        if direct.spec.expm_backend == crate::ExpmBackend::PackedSegmented {
+            return Self::build_segmented(direct, scale, previous);
+        }
         if direct.spec.expm_backend == crate::ExpmBackend::PackedBatched {
             return Self::build_batched(direct, scale, previous);
         }
@@ -103,6 +111,7 @@ impl PackedOp {
                         first,
                         offsets,
                         start: 0,
+                        entries: Vec::new(),
                         ends: if upper {
                             vec![0; words.len()]
                         } else {
@@ -261,6 +270,7 @@ impl PackedOp {
                             first,
                             offsets,
                             start: 0,
+                            entries: Vec::new(),
                             ends: Vec::new(),
                             diagonal,
                         },
@@ -305,6 +315,110 @@ impl PackedOp {
             },
         )
     }
+    fn build_segmented<const C: usize>(
+        direct: &DirectOp<'_, C>,
+        scale: f64,
+        previous: Option<Self>,
+    ) -> (Self, Norm) {
+        let dimension = direct.basis.len();
+        assert!(dimension < i32::MAX as usize);
+        let shift = dimension
+            .div_ceil(256)
+            .max(64)
+            .next_power_of_two()
+            .trailing_zeros();
+        let rows = 1 << shift;
+        let noisy = direct
+            .spec
+            .pauli_plan
+            .as_ref()
+            .unwrap()
+            .has_diagonal_noise();
+        let mut ranges = previous.map(|p| p.ranges).unwrap_or_default();
+        ranges.resize_with(dimension.div_ceil(rows), || Range {
+            first: 0,
+            start: 0,
+            offsets: Vec::new(),
+            ends: Vec::new(),
+            diagonal: Vec::new(),
+            entries: Vec::new(),
+        });
+        let metadata: Vec<_> = ranges
+            .par_iter_mut()
+            .enumerate()
+            .map_init(ActionScratch::new, |scratch, (block, range)| {
+                let first = block * rows;
+                let length = rows.min(dimension - first);
+                range.first = first;
+                range.start = 0;
+                range.ends.clear();
+                range.entries.clear();
+                range.offsets.clear();
+                range.offsets.reserve_exact(length + 1);
+                range.offsets.push(0);
+                let mut per_col = if noisy {
+                    Vec::with_capacity(length)
+                } else {
+                    Vec::new()
+                };
+                let mut bound = 0.0_f64;
+                for row in first..first + length {
+                    let value = direct.gather_row(row, scratch, noisy);
+                    bound = bound.max(value.0);
+                    if noisy {
+                        per_col.push(value);
+                    }
+                    if range.entries.len() + scratch.row.len() > range.entries.capacity() {
+                        range
+                            .entries
+                            .reserve_exact(scratch.row.len().max(range.entries.capacity() / 8));
+                    }
+                    for &(column, value) in &scratch.row {
+                        range.entries.push(if column as usize == row {
+                            0
+                        } else {
+                            assert!(value.abs() == scale);
+                            let parent = column as i32 + 1;
+                            if value < 0.0 { -parent } else { parent }
+                        });
+                    }
+                    range.offsets.push(
+                        u32::try_from(range.entries.len()).expect("range exceeds u32 entries"),
+                    );
+                }
+                range.diagonal.clear();
+                if per_col.iter().any(|(_, v)| *v != 0.0) {
+                    range.diagonal.extend(per_col.iter().map(|(_, v)| *v));
+                }
+                (per_col, bound)
+            })
+            .collect();
+        let mut per_col = if noisy {
+            Vec::with_capacity(dimension)
+        } else {
+            Vec::new()
+        };
+        let mut norm = 0.0_f64;
+        for (data, bound) in metadata {
+            per_col.extend(data);
+            norm = norm.max(bound);
+        }
+        (
+            Self {
+                ranges,
+                entries: Vec::new(),
+                staging: Vec::new(),
+                shift,
+                dimension,
+                scale,
+            },
+            if noisy {
+                Norm::Columns(per_col)
+            } else {
+                Norm::Uniform(norm)
+            },
+        )
+    }
 }
 
 impl LinearOperator<f64> for PackedOp {
@@ -326,15 +440,19 @@ impl LinearOperator<f64> for PackedOp {
             .par_chunks_mut(1 << self.shift)
             .zip(self.ranges.par_iter())
             .for_each(|(output, range)| {
+                let entries = if self.entries.is_empty() {
+                    &range.entries[..]
+                } else {
+                    &self.entries[range.start..]
+                };
                 for (row, result) in output.iter_mut().enumerate() {
                     let mut sum = 0.0;
-                    for &entry in &self.entries[range.start + range.offsets[row] as usize
-                        ..range.start
-                            + if range.ends.is_empty() {
-                                range.offsets[row + 1]
-                            } else {
-                                range.ends[row]
-                            } as usize]
+                    for &entry in &entries[range.offsets[row] as usize..if range.ends.is_empty() {
+                        range.offsets[row + 1]
+                    } else {
+                        range.ends[row]
+                    }
+                        as usize]
                     {
                         let (column, value) = if entry == 0 {
                             (range.first + row, range.diagonal[row])
@@ -440,6 +558,7 @@ mod tests {
             ExpmBackend::Packed,
             ExpmBackend::PackedUpper,
             ExpmBackend::PackedBatched,
+            ExpmBackend::PackedSegmented,
         ] {
             let spec = LindbladSpec::<2>::new(4, &h, &jumps)
                 .unwrap()

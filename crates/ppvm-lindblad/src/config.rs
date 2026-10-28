@@ -18,6 +18,8 @@ pub enum ExpmBackend {
     PackedUpper,
     /// Build exact signed rows once in bounded reusable batches.
     PackedBatched,
+    /// Reuse exact signed rows in independent range buffers.
+    PackedSegmented,
 }
 
 /// Allocation policy for real-coefficient leakage accumulation.

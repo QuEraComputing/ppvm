@@ -100,6 +100,7 @@ impl<const C: usize> LindbladSpec<C> {
     /// Adaptive step with retained candidate and generation buffers.
     ///
     /// The workspace belongs to one trajectory and may be reused across its steps.
+    /// Finite caps reserve numeric scratch; uncapped trajectories grow on demand.
     /// Numerical ordering is identical to [`Self::pc_step_timed`].
     pub fn pc_step_with_workspace(
         &self,
@@ -110,13 +111,16 @@ impl<const C: usize> LindbladSpec<C> {
         cfg: &PcStepConfig,
         workspace: &mut PcStepWorkspace<C>,
     ) -> Result<PcStepTimings, Error> {
-        if matches!(
-            self.leakage_backend,
-            crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
-        ) {
-            let dimension = 1usize
-                .checked_shl((2 * self.n_qubits()) as u32)
-                .unwrap_or(usize::MAX);
+        let dimension = 1usize
+            .checked_shl((2 * self.n_qubits()) as u32)
+            .unwrap_or(usize::MAX);
+        if cfg.max_basis != usize::MAX
+            && cfg.admit_basis != Some(usize::MAX)
+            && matches!(
+                self.leakage_backend,
+                crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
+            )
+        {
             let bound = cfg
                 .admit_basis
                 .unwrap_or(cfg.max_basis)
@@ -131,6 +135,16 @@ impl<const C: usize> LindbladSpec<C> {
                     .reserve_exact(required - workspace.taylor.len());
             }
         }
+        let backup_bound = cfg.max_basis.min(dimension);
+        if mf_expm::packed_scale(self, basis.len()).is_some()
+            && cfg.max_basis != usize::MAX
+            && workspace.coefficient_auxiliary.capacity() < backup_bound
+        {
+            workspace
+                .coefficient_auxiliary
+                .reserve_exact(backup_bound - workspace.coefficient_auxiliary.len());
+        }
+
         self.run_in_pool(cfg, |this| {
             this.pc_step_inner(basis, coeffs, dt, protected, cfg, (true, Some(workspace)))
         })
@@ -179,10 +193,16 @@ impl<const C: usize> LindbladSpec<C> {
         let tau_add = tau_add.unwrap_or(0.0);
         let mut t = PcStepTimings::default();
 
-        // 1. First-hop expansion. After this, `coeffs` contains the pre-step
-        // coefficients followed by zeros for the newly-added leakage strings.
-        // We rely on `coeffs` itself as the pre-step buffer for the corrector
-        // — no `.clone()` is needed because `expm_step` only borrows it.
+        let inplace = workspace.is_some() && mf_expm::packed_scale(self, basis.len()).is_some();
+        if inplace {
+            let workspace = workspace.as_deref_mut().unwrap();
+            workspace.coefficient_auxiliary.clear();
+            workspace.coefficient_auxiliary.extend_from_slice(coeffs);
+        }
+
+        // No basis permutation occurs before final truncation, so a saved
+        // coefficient prefix retains the original word positions for correction.
+        // 1. First-hop expansion appends zero coefficients for admitted words.
         let p = Phase::start(timed);
         let leak = self.leakage_for_step(
             basis,
@@ -201,24 +221,32 @@ impl<const C: usize> LindbladSpec<C> {
         }
         p.stop(&mut t.expand1_us);
 
-        // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
-        // new owned vector with the predicted state.
+        // 2. The packed workspace path evolves the main coefficients in place.
         let p = Phase::start(timed);
-        let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol, workspace.as_deref_mut());
+        let coeffs_predict = if inplace {
+            mf_expm::expm_apply_packed_inplace(
+                self,
+                basis,
+                dt,
+                coeffs,
+                drop_tol,
+                workspace.as_deref_mut().unwrap(),
+            );
+            None
+        } else {
+            Some(self.expm_step(basis, dt, coeffs, drop_tol, workspace.as_deref_mut()))
+        };
         p.stop(&mut t.expm1_us);
 
-        // 3. Second-hop expansion from the predicted state. Extend `coeffs`
-        // with zeros for any newly-added second-hop strings so it remains a
-        // valid input (pre-step state) for the corrector. Once the basis is
-        // full, the first hop usually fills the whole admission room; with
-        // `room = 0` the second hop can admit nothing, so its leakage pass
-        // is skipped.
+        // 3. Second-hop expansion uses the predicted state. A packed workspace
+        // keeps the pre-step coefficients in its saved prefix; the owned-output
+        // path keeps them in `coeffs`. A full admission room skips this phase.
         let n_predict = basis.len();
         if admit > n_predict {
             let p = Phase::start(timed);
             let leak2 = self.leakage_for_step(
                 basis,
-                &coeffs_predict,
+                coeffs_predict.as_deref().unwrap_or(coeffs),
                 protected,
                 admit,
                 tau_add,
@@ -237,24 +265,37 @@ impl<const C: usize> LindbladSpec<C> {
         // 4. Corrector: redo from pre-step state on the doubly-enlarged basis.
         // If the second hop admitted nothing, the corrector would repeat the
         // predictor's computation exactly, so the predicted state is kept.
-        if basis.len() == n_predict {
-            let previous = std::mem::replace(coeffs, coeffs_predict);
-            if let Some(workspace) = workspace.as_mut() {
-                workspace.exponential_output = previous;
+        if inplace {
+            if basis.len() != n_predict {
+                let p = Phase::start(timed);
+                let workspace = workspace.as_deref_mut().unwrap();
+                coeffs.clear();
+                coeffs.extend_from_slice(&workspace.coefficient_auxiliary);
+                coeffs.resize(basis.len(), 0.0);
+                mf_expm::expm_apply_packed_inplace(self, basis, dt, coeffs, drop_tol, workspace);
+                p.stop(&mut t.expm2_us);
             }
         } else {
-            if let Some(workspace) = workspace.as_mut() {
-                workspace.exponential_output = coeffs_predict;
+            let coeffs_predict = coeffs_predict.unwrap();
+            if basis.len() == n_predict {
+                let previous = std::mem::replace(coeffs, coeffs_predict);
+                if let Some(workspace) = workspace.as_mut() {
+                    workspace.coefficient_auxiliary = previous;
+                }
             } else {
-                drop(coeffs_predict);
+                if let Some(workspace) = workspace.as_mut() {
+                    workspace.coefficient_auxiliary = coeffs_predict;
+                } else {
+                    drop(coeffs_predict);
+                }
+                let p = Phase::start(timed);
+                let result = self.expm_step(basis, dt, coeffs, drop_tol, workspace.as_deref_mut());
+                let previous = std::mem::replace(coeffs, result);
+                if let Some(workspace) = workspace.as_mut() {
+                    workspace.coefficient_auxiliary = previous;
+                }
+                p.stop(&mut t.expm2_us);
             }
-            let p = Phase::start(timed);
-            let result = self.expm_step(basis, dt, coeffs, drop_tol, workspace.as_deref_mut());
-            let previous = std::mem::replace(coeffs, result);
-            if let Some(workspace) = workspace.as_mut() {
-                workspace.exponential_output = previous;
-            }
-            p.stop(&mut t.expm2_us);
         }
 
         // 5. Prune basis entries below `drop_tol` (protected words never dropped).

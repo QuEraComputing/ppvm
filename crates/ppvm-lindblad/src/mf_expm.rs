@@ -543,13 +543,86 @@ where
     v
 }
 
-/// Compute `exp(dt · M) · coeffs` for the in-basis-restricted generator
-/// `M`, matrix-free, via `quspin-expm`. Returns a fresh `Vec<f64>` of length
-/// `basis.len()`.
-///
-/// ONE action pass builds the CSR cache `mat` (reused across every matvec)
-/// and, in the same pass, the `(raw, diag)` data the `μ`/1-norm selection
-/// needs; [`expm_apply_cached`] does the rest.
+pub(crate) fn packed_scale<const C: usize>(
+    spec: &LindbladSpec<C>,
+    dimension: usize,
+) -> Option<f64> {
+    if dimension == 0
+        || dimension >= i32::MAX as usize
+        || !spec.supports_row_gather()
+        || !matches!(
+            spec.expm_backend,
+            crate::ExpmBackend::Packed
+                | crate::ExpmBackend::PackedUpper
+                | crate::ExpmBackend::PackedBatched
+                | crate::ExpmBackend::PackedSegmented
+        )
+    {
+        return None;
+    }
+    spec.pauli_plan
+        .as_ref()
+        .and_then(|plan| plan.uniform_scale())
+}
+
+fn packed_bounds(norm: crate::packed_expm::Norm, dimension: usize) -> (f64, f64) {
+    match norm {
+        crate::packed_expm::Norm::Uniform(bound) => (0.0, bound),
+        crate::packed_expm::Norm::Columns(per_col) => {
+            let trace: f64 = per_col.iter().map(|(_, d)| *d).sum();
+            let mu = trace / dimension as f64;
+            let bound = per_col
+                .iter()
+                .map(|&(raw, diag)| raw - diag.abs() + (diag - mu).abs())
+                .fold(0.0_f64, f64::max);
+            (mu, bound)
+        }
+    }
+}
+
+fn select_real_expm(t_norm: f64, drop_tol: f64) -> (u32, u32, f64) {
+    if drop_tol >= 1e-4 {
+        let (m, s) = expm::select_ms_loose(t_norm);
+        (m, s, 1e-6)
+    } else {
+        let (m, s) = expm::select_ms(t_norm);
+        (m, s, 1e-12)
+    }
+}
+
+/// Apply a compatible packed exponential directly to the main coefficients.
+pub(crate) fn expm_apply_packed_inplace<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
+    dt: f64,
+    coefficients: &mut [f64],
+    drop_tol: f64,
+    workspace: &mut crate::PcStepWorkspace<C>,
+) {
+    let scale = packed_scale(spec, basis.len()).expect("packed-compatible model");
+    let direct = crate::direct_expm::DirectOp {
+        spec,
+        basis,
+        index: crate::compact_index::CompactBasisIndex::new(basis),
+    };
+    let (packed, norm) =
+        crate::packed_expm::PackedOp::build(&direct, scale, workspace.packed.take());
+    drop(direct);
+    let (mu, bound) = packed_bounds(norm, basis.len());
+    let (m, s, tol) = select_real_expm(dt.abs() * bound, drop_tol);
+    workspace.taylor.resize(2 * basis.len(), 0.0);
+    quspin_expm::ExpmOp::from_parts(&packed, dt, mu, s as usize, m as usize, tol)
+        .apply_into(
+            ndarray::ArrayViewMut1::from(coefficients),
+            &mut workspace.taylor,
+        )
+        .expect("expm apply");
+    workspace.packed = Some(packed);
+}
+
+/// Compute the restricted exponential using the selected generator storage.
+/// A borrowed input yields an owned output; compatible workspace steps can use
+/// [`expm_apply_packed_inplace`] with a saved pre-step coefficient prefix.
 pub(crate) fn expm_apply_mf<const C: usize>(
     spec: &LindbladSpec<C>,
     basis: &[Word<C>],
@@ -567,45 +640,15 @@ pub(crate) fn expm_apply_mf<const C: usize>(
             basis,
             index: crate::compact_index::CompactBasisIndex::new(basis),
         };
-        if matches!(
-            spec.expm_backend,
-            crate::ExpmBackend::Packed
-                | crate::ExpmBackend::PackedUpper
-                | crate::ExpmBackend::PackedBatched
-                | crate::ExpmBackend::PackedSegmented
-        ) && let Some(scale) = spec
-            .pauli_plan
-            .as_ref()
-            .and_then(|plan| plan.uniform_scale())
-            && basis.len() < i32::MAX as usize
-        {
+        if let Some(scale) = packed_scale(spec, basis.len()) {
             let previous = workspace.as_mut().and_then(|w| w.packed.take());
             let (packed, norm) = crate::packed_expm::PackedOp::build(&op, scale, previous);
             drop(op);
-            let select = |t_norm| {
-                if drop_tol >= 1e-4 {
-                    let (m, s) = expm::select_ms_loose(t_norm);
-                    (m, s, 1e-6)
-                } else {
-                    let (m, s) = expm::select_ms(t_norm);
-                    (m, s, 1e-12)
-                }
-            };
-            let (mu, bound) = match norm {
-                crate::packed_expm::Norm::Uniform(bound) => (0.0, bound),
-                crate::packed_expm::Norm::Columns(per_col) => {
-                    let trace: f64 = per_col.iter().map(|(_, d)| *d).sum();
-                    let mu = trace / basis.len() as f64;
-                    let bound = per_col
-                        .iter()
-                        .map(|&(raw, diag)| raw - diag.abs() + (diag - mu).abs())
-                        .fold(0.0_f64, f64::max);
-                    (mu, bound)
-                }
-            };
+            let select = |t_norm| select_real_expm(t_norm, drop_tol);
+            let (mu, bound) = packed_bounds(norm, basis.len());
             let output = workspace
                 .as_mut()
-                .map(|w| std::mem::take(&mut w.exponential_output))
+                .map(|w| std::mem::take(&mut w.coefficient_auxiliary))
                 .unwrap_or_default();
             let work = workspace.as_mut().map(|w| &mut w.taylor);
             let result =

@@ -27,7 +27,7 @@ pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
     outputs: Vec<Vec<(Word<C>, f64)>>,
     pub(crate) packed: Option<crate::packed_expm::PackedOp>,
     pub(crate) taylor: Vec<f64>,
-    pub(crate) exponential_output: Vec<f64>,
+    pub(crate) coefficient_auxiliary: Vec<f64>,
 }
 
 impl<const C: usize> PcStepWorkspace<C> {
@@ -61,7 +61,10 @@ impl<const C: usize> PcStepWorkspace<C> {
                 self.packed.as_ref().map_or(0, |p| p.allocation_bytes()),
             ),
             ("numeric_scratch", self.taylor.capacity() * 8),
-            ("exponential_output", self.exponential_output.capacity() * 8),
+            (
+                "coefficient_auxiliary",
+                self.coefficient_auxiliary.capacity() * 8,
+            ),
         ];
         if let Some(candidates) = &self.candidates {
             bytes[..4].copy_from_slice(&candidates.allocation_bytes());

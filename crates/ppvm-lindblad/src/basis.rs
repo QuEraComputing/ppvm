@@ -16,6 +16,35 @@ use rayon::prelude::*;
 /// into the live map (and the room-cap applied) once per chunk.
 const CHUNK_SIZE: usize = 4096;
 
+pub(crate) enum LeakageCandidates<const C: usize> {
+    Pairs(Vec<(Word<C>, f64)>),
+    Indexed(crate::indexed_candidates::IndexedCandidates<C>, f64),
+}
+
+impl<const C: usize> LeakageCandidates<C> {
+    fn into_vec(self) -> Vec<(Word<C>, f64)> {
+        match self {
+            Self::Pairs(pairs) => pairs,
+            Self::Indexed(indexed, threshold) => indexed.into_vec(threshold),
+        }
+    }
+    pub(crate) fn admit(
+        self,
+        basis: &mut Vec<Word<C>>,
+        coefficients: &mut Vec<f64>,
+        maximum: usize,
+    ) {
+        match self {
+            Self::Pairs(pairs) => {
+                crate::truncate::add_leakage_capped(basis, coefficients, pairs, maximum)
+            }
+            Self::Indexed(indexed, threshold) => {
+                indexed.admit(basis, coefficients, maximum, threshold)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod buffered_tests {
     use super::*;
@@ -149,7 +178,9 @@ impl<const C: usize> LindbladSpec<C> {
             });
         }
         if self.leakage_backend != crate::LeakageBackend::Reference {
-            return self.leakage_buffered(basis, coeffs, protected, max_basis, tau_add);
+            return self
+                .leakage_buffered(basis, coeffs, protected, max_basis, tau_add)
+                .map(LeakageCandidates::into_vec);
         }
         // Hash-only membership tables: storing 8-byte `u64` keys instead
         // of 48-byte Words shrinks the in-basis structure ~6×, keeping it
@@ -208,6 +239,29 @@ impl<const C: usize> LindbladSpec<C> {
             .collect())
     }
 
+    pub(crate) fn leakage_for_step(
+        &self,
+        basis: &[Word<C>],
+        coefficients: &[f64],
+        protected: &[Word<C>],
+        maximum: usize,
+        threshold: f64,
+    ) -> Result<LeakageCandidates<C>, Error> {
+        if self.leakage_backend != crate::LeakageBackend::Indexed {
+            return self
+                .leakage_with_prune(basis, coefficients, protected, maximum, threshold)
+                .map(LeakageCandidates::Pairs);
+        }
+        if basis.len() != coefficients.len() {
+            return Err(Error::LengthMismatch {
+                what: "basis and coeffs",
+                a: basis.len(),
+                b: coefficients.len(),
+            });
+        }
+        self.leakage_buffered(basis, coefficients, protected, maximum, threshold)
+    }
+
     fn leakage_buffered(
         &self,
         basis: &[Word<C>],
@@ -215,7 +269,7 @@ impl<const C: usize> LindbladSpec<C> {
         protected: &[Word<C>],
         max_basis: usize,
         tau_add: f64,
-    ) -> Result<Vec<(Word<C>, f64)>, Error> {
+    ) -> Result<LeakageCandidates<C>, Error> {
         let in_basis: FxHashMap<u64, ()> = basis.iter().map(|w| (word_hash(w), ())).collect();
         let protected_set: FxHashMap<u64, ()> =
             protected.iter().map(|w| (word_hash(w), ())).collect();
@@ -279,12 +333,14 @@ impl<const C: usize> LindbladSpec<C> {
         drop(in_basis);
         drop(protected_set);
         if self.leakage_backend == crate::LeakageBackend::Indexed {
-            return Ok(indexed.into_vec(tau_add));
+            return Ok(LeakageCandidates::Indexed(indexed, tau_add));
         }
-        Ok(merged
-            .into_iter()
-            .filter(|(_, value)| value.abs() > tau_add)
-            .collect())
+        Ok(LeakageCandidates::Pairs(
+            merged
+                .into_iter()
+                .filter(|(_, value)| value.abs() > tau_add)
+                .collect(),
+        ))
     }
 
     /// Sparse generator matrix in COO form: returns `(row, col, val)`

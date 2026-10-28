@@ -346,8 +346,8 @@ mod tests {
             let mut workspace = crate::PcStepWorkspace::default();
             for step in 0..12 {
                 let cfg = PcStepConfig {
-                    max_basis: 8 + step % 3,
-                    admit_basis: Some(24 + step % 4),
+                    max_basis: if step == 0 { usize::MAX } else { 8 + step % 3 },
+                    admit_basis: if step == 0 { None } else { Some(24 + step % 4) },
                     num_threads: Some(2),
                     ..Default::default()
                 };

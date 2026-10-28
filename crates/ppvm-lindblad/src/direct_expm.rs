@@ -1,0 +1,234 @@
+// SPDX-FileCopyrightText: 2026 The PPVM Authors
+// SPDX-License-Identifier: Apache-2.0
+
+//! Row-gather action for a Hamiltonian plus diagonal Pauli dissipators.
+
+use crate::compact_index::CompactBasisIndex;
+use crate::{LindbladSpec, Word};
+use fxhash::{FxBuildHasher, FxHashMap};
+use num::Complex;
+use quspin_types::{LinearOperator, QuSpinError};
+use rayon::prelude::*;
+
+pub(crate) struct DirectOp<'a, const C: usize> {
+    pub(crate) spec: &'a LindbladSpec<C>,
+    pub(crate) basis: &'a [Word<C>],
+    pub(crate) index: CompactBasisIndex<'a, C>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ExpmBackend, JumpInput, PcStepConfig, word_from_codes};
+
+    #[test]
+    fn row_gather_matches_projected_signed_generator_across_threads() {
+        let h = vec![
+            ("XXII".into(), 0.3),
+            ("IYYI".into(), -0.7),
+            ("ZIIX".into(), 0.2),
+            ("XXII".into(), -0.1),
+        ];
+        let jumps = vec![JumpInput {
+            lincomb: vec![("IZII".into(), Complex::new(1.0, 0.0))],
+            rate: 0.4,
+        }];
+        let spec = LindbladSpec::<2>::new(4, &h, &jumps).unwrap();
+        let basis: Vec<_> = (0..256usize)
+            .filter(|i| i % 3 != 0)
+            .map(|i| {
+                word_from_codes::<2>(
+                    &(0..4)
+                        .map(|q| ((i >> (2 * q)) & 3) as u8)
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap()
+            })
+            .collect();
+        let input: Vec<f64> = (0..basis.len())
+            .map(|i| if i % 7 == 0 { 0.0 } else { (i as f64).sin() })
+            .collect();
+        let mut expected = vec![0.0; basis.len()];
+        for (row, col, value) in spec.generator(&basis) {
+            if input[col] != 0.0 {
+                expected[row] += value * input[col];
+            }
+        }
+        let op = DirectOp {
+            spec: &spec,
+            basis: &basis,
+            index: CompactBasisIndex::new(&basis),
+        };
+        for threads in [1, 2, 6] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            let mut actual = vec![0.0; basis.len()];
+            pool.install(|| op.dot(true, &input, &mut actual)).unwrap();
+            assert_eq!(actual, expected, "thread count {threads}");
+            pool.install(|| op.dot(false, &input, &mut actual)).unwrap();
+            assert_eq!(actual, expected.iter().map(|v| v + v).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn direct_exponential_preserves_adaptive_steps() {
+        let h = vec![
+            ("XXI".into(), 0.3),
+            ("IYY".into(), 0.7),
+            ("ZII".into(), -0.2),
+        ];
+        let cached = LindbladSpec::<2>::new(3, &h, &[]).unwrap();
+        let direct = LindbladSpec::<2>::new(3, &h, &[])
+            .unwrap()
+            .with_expm_backend(ExpmBackend::MatrixFree);
+        let seed = word_from_codes::<2>(&[3, 0, 0]).unwrap();
+        let mut a = vec![seed];
+        let mut b = a.clone();
+        let mut ca = vec![1.0];
+        let mut cb = ca.clone();
+        let cfg = PcStepConfig {
+            max_basis: 8,
+            admit_basis: Some(24),
+            num_threads: Some(2),
+            ..Default::default()
+        };
+        for _ in 0..10 {
+            cached.pc_step(&mut a, &mut ca, 0.1, &[seed], &cfg).unwrap();
+            direct.pc_step(&mut b, &mut cb, 0.1, &[seed], &cfg).unwrap();
+            assert_eq!(a, b);
+            assert_eq!(ca, cb);
+        }
+    }
+
+    #[test]
+    fn compact_lookup_checks_words_and_wide_registers() {
+        let basis: Vec<_> = (0..128)
+            .map(|site| {
+                let mut codes = vec![0; 128];
+                codes[site] = 1;
+                word_from_codes::<2>(&codes).unwrap()
+            })
+            .collect();
+        let index = CompactBasisIndex::new(&basis);
+        for (i, word) in basis.iter().enumerate() {
+            assert_eq!(index.get(word), Some(i as u32));
+        }
+        assert_eq!(
+            index.get(&word_from_codes::<2>(&vec![2; 128]).unwrap()),
+            None
+        );
+        let wide = vec![word_from_codes::<8>(&vec![1; 512]).unwrap()];
+        assert_eq!(CompactBasisIndex::new(&wide).get(&wide[0]), Some(0));
+    }
+}
+
+impl<const C: usize> DirectOp<'_, C> {
+    pub(crate) fn per_col(&self) -> Vec<(f64, f64)> {
+        self.basis
+            .par_iter()
+            .map_init(
+                || {
+                    (
+                        Vec::new(),
+                        Vec::new(),
+                        FxHashMap::with_hasher(FxBuildHasher::default()),
+                    )
+                },
+                |(support, candidates, local), word| {
+                    let terms = self
+                        .spec
+                        .compute_action_terms(word, support, candidates, local);
+                    let mut raw = 0.0;
+                    let mut diag = 0.0;
+                    for (output, value) in terms {
+                        raw += value.abs();
+                        if output == *word {
+                            diag = value;
+                        }
+                    }
+                    (raw, diag)
+                },
+            )
+            .collect()
+    }
+}
+
+impl<const C: usize> LinearOperator<f64> for DirectOp<'_, C> {
+    fn dim(&self) -> usize {
+        self.basis.len()
+    }
+    fn parallel_hint(&self) -> bool {
+        false
+    }
+    fn trace(&self) -> f64 {
+        unreachable!("trace supplied to exponential")
+    }
+    fn onenorm(&self, _: f64) -> f64 {
+        unreachable!("norm supplied to exponential")
+    }
+
+    fn dot(&self, overwrite: bool, input: &[f64], output: &mut [f64]) -> Result<(), QuSpinError> {
+        output.par_iter_mut().enumerate().for_each_init(
+            || {
+                (
+                    Vec::new(),
+                    Vec::new(),
+                    FxHashMap::<Word<C>, Complex<f64>>::with_hasher(FxBuildHasher::default()),
+                    Vec::<(u32, f64)>::new(),
+                )
+            },
+            |(support, candidates, local, row), (position, result)| {
+                let word = &self.basis[position];
+                let terms = self
+                    .spec
+                    .compute_action_terms(word, support, candidates, local);
+                row.clear();
+                for (parent, value) in terms {
+                    if let Some(column) = self.index.get(&parent) {
+                        // Hamiltonian rows are negative columns; Pauli dissipators are diagonal.
+                        row.push((column, if parent == *word { value } else { -value }));
+                    }
+                }
+                // Match the cached generator's accumulation order across thread counts.
+                row.sort_unstable_by_key(|entry| entry.0);
+                let mut sum = 0.0;
+                for &(column, value) in row.iter() {
+                    if input[column as usize] != 0.0 {
+                        sum += value * input[column as usize];
+                    }
+                }
+                if overwrite {
+                    *result = sum;
+                } else {
+                    *result += sum;
+                }
+            },
+        );
+        Ok(())
+    }
+
+    fn dot_transpose(&self, _: bool, _: &[f64], _: &mut [f64]) -> Result<(), QuSpinError> {
+        unreachable!("transpose unused by single-vector exponential")
+    }
+    fn dot_many(
+        &self,
+        _: bool,
+        _: ndarray::ArrayView2<'_, f64>,
+        _: ndarray::ArrayViewMut2<'_, f64>,
+    ) -> Result<(), QuSpinError> {
+        unreachable!("multiple vectors unused by single-vector exponential")
+    }
+    fn dot_chunk(&self, _: bool, _: &[f64], _: &mut [f64], _: usize) -> Result<(), QuSpinError> {
+        unreachable!("chunk products unused by single-vector exponential")
+    }
+    fn dot_transpose_chunk(
+        &self,
+        _: &[f64],
+        _: &[<f64 as quspin_types::ExpmComputation>::Atomic],
+        _: std::ops::Range<usize>,
+    ) -> Result<(), QuSpinError> {
+        unreachable!("transpose chunks unused by single-vector exponential")
+    }
+}

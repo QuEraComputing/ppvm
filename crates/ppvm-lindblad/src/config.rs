@@ -3,6 +3,17 @@
 
 //! Configuration objects for the predictor-corrector stepper.
 
+/// Storage policy for the real-coefficient exponential action.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ExpmBackend {
+    /// Cache the restricted sparse generator for repeated products.
+    #[default]
+    Cached,
+    /// Recompute rows for Hamiltonian and Hermitian-Pauli-jump models.
+    /// General dissipators retain the cached implementation.
+    MatrixFree,
+}
+
 /// Truncation and execution policy for a single predictor-corrector step
 /// ([`crate::LindbladSpec::pc_step`], [`crate::LindbladSpec::pc_step_timed`]).
 ///

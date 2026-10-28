@@ -25,6 +25,10 @@
 //! picked with the tolerance-matched tables in [`crate::expm`]: a relaxed
 //! `tol=1e-6` table when the PC prunes coarsely (`drop_tol ≥ 1e-4`), else the
 //! double-precision table (keeping the exact-reference test paths bit-exact).
+//!
+//! The selectable direct backend recomputes rows for Hamiltonians with
+//! diagonal Hermitian-Pauli dissipators. It uses a compact position lookup
+//! and preserves column summation order without storing generator edges.
 
 use crate::scalar::Coeff;
 use crate::sector::Sector;
@@ -474,7 +478,30 @@ where
         + From<f64>
         + Sum,
 {
-    let n = mat.dim;
+    expm_apply_operator(CsrOp { mat }, mat.dim, per_col, dt, coeffs, select)
+}
+
+pub(crate) fn expm_apply_operator<T, O>(
+    op: O,
+    n: usize,
+    per_col: &PerCol<T>,
+    dt: f64,
+    coeffs: &[T],
+    select: impl FnOnce(f64) -> (u32, u32, f64),
+) -> Vec<T>
+where
+    O: LinearOperator<T>,
+    T: ExpmComputation<Real = f64>
+        + Coeff
+        + PartialEq
+        + num::Zero
+        + AddAssign
+        + Mul<Output = T>
+        + Sub<Output = T>
+        + Div<f64, Output = T>
+        + From<f64>
+        + Sum,
+{
     let trace: T = per_col.iter().map(|(_, d)| *d).sum();
     let mu = trace / n as f64;
     let onenorm = per_col
@@ -484,7 +511,6 @@ where
     let (m_star, s, expm_tol) = select(dt.abs() * onenorm);
 
     let mut v = coeffs.to_vec();
-    let op = CsrOp { mat };
     let expm =
         quspin_expm::ExpmOp::from_parts(op, T::from(dt), mu, s as usize, m_star as usize, expm_tol);
     expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
@@ -508,6 +534,23 @@ pub(crate) fn expm_apply_mf<const C: usize>(
 ) -> Vec<f64> {
     if basis.is_empty() {
         return Vec::new();
+    }
+    if spec.expm_backend == crate::ExpmBackend::MatrixFree && spec.supports_row_gather() {
+        let op = crate::direct_expm::DirectOp {
+            spec,
+            basis,
+            index: crate::compact_index::CompactBasisIndex::new(basis),
+        };
+        let per_col = op.per_col();
+        return expm_apply_operator(op, basis.len(), &per_col, dt, coeffs, |t_norm| {
+            if drop_tol >= 1e-4 {
+                let (m, s) = expm::select_ms_loose(t_norm);
+                (m, s, 1e-6)
+            } else {
+                let (m, s) = expm::select_ms(t_norm);
+                (m, s, 1e-12)
+            }
+        });
     }
     let index = build_basis_index(basis);
     let (mat, per_col) = build_mf_cols(spec, basis, &index);

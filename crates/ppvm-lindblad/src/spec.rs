@@ -53,6 +53,7 @@ fn candidate_terms(p_support: &[u32], index: &[Vec<u32>], scratch: &mut Vec<u32>
 /// costs more than the recompute (hash lookup ≳ recompute) and its several
 /// KB per cached word dominate memory at large basis sizes.
 pub struct LindbladSpec<const C: usize = W_CHUNKS> {
+    pub(crate) expm_backend: crate::ExpmBackend,
     n_qubits: usize,
     h_terms: Vec<HTerm<C>>,
     j_kinds: Vec<JumpKind<C>>,
@@ -146,12 +147,26 @@ impl<const C: usize> LindbladSpec<C> {
         }
 
         Ok(Self {
+            expm_backend: crate::ExpmBackend::default(),
             n_qubits,
             h_terms: h_parsed,
             j_kinds,
             h_support: h_support_idx,
             j_support: j_support_idx,
         })
+    }
+
+    /// Select how real-coefficient exponentials store their generator action.
+    pub fn with_expm_backend(mut self, backend: crate::ExpmBackend) -> Self {
+        self.expm_backend = backend;
+        self
+    }
+
+    /// Whether the off-diagonal action is purely Hamiltonian and skew symmetric.
+    pub(crate) fn supports_row_gather(&self) -> bool {
+        self.j_kinds
+            .iter()
+            .all(|jump| matches!(jump, JumpKind::HermitianPauli { .. }))
     }
 
     /// Add a Kossakowski-form dissipator

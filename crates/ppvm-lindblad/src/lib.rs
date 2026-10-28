@@ -38,7 +38,9 @@
 
 mod algebra;
 mod basis;
+mod compact_index;
 pub mod config;
+mod direct_expm;
 pub mod error;
 pub(crate) mod expm;
 mod kossakowski;
@@ -53,7 +55,7 @@ mod word;
 pub(crate) mod mf_expm;
 
 pub use basis::build_basis_index;
-pub use config::PcStepConfig;
+pub use config::{ExpmBackend, PcStepConfig};
 pub use error::Error;
 pub use sector::{Sector, canonicalize_basis_to_rep};
 pub use spec::{JumpInput, LindbladSpec};

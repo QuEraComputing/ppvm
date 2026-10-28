@@ -15,7 +15,7 @@ use rayon::prelude::*;
 /// Chunk size for the leakage accumulation loops: candidates are folded
 /// into the live map (and the room-cap applied) once per chunk.
 const CHUNK_SIZE: usize = 4096;
-const GENERATION_BATCH: usize = 512;
+const GENERATION_BATCH: usize = 2048;
 
 /// Reusable scratch for adaptive real-coefficient evolution.
 ///

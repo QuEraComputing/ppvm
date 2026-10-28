@@ -12,6 +12,8 @@ pub enum ExpmBackend {
     /// Recompute rows for Hamiltonian and Hermitian-Pauli-jump models.
     /// General dissipators retain the cached implementation.
     MatrixFree,
+    /// Recompute rows with the general single-string action kernel.
+    MatrixFreeGeneric,
 }
 
 /// Truncation and execution policy for a single predictor-corrector step

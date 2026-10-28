@@ -54,6 +54,7 @@ fn candidate_terms(p_support: &[u32], index: &[Vec<u32>], scratch: &mut Vec<u32>
 /// KB per cached word dominate memory at large basis sizes.
 pub struct LindbladSpec<const C: usize = W_CHUNKS> {
     pub(crate) expm_backend: crate::ExpmBackend,
+    pub(crate) pauli_plan: Option<crate::pauli_plan::PauliActionPlan<C>>,
     n_qubits: usize,
     h_terms: Vec<HTerm<C>>,
     j_kinds: Vec<JumpKind<C>>,
@@ -146,8 +147,25 @@ impl<const C: usize> LindbladSpec<C> {
             });
         }
 
+        let pauli_plan = if j_kinds
+            .iter()
+            .all(|j| matches!(j, JumpKind::HermitianPauli { .. }))
+        {
+            let h: Vec<_> = h_parsed.iter().map(|h| (h.word, h.coeff)).collect();
+            let jumps: Vec<_> = j_kinds
+                .iter()
+                .map(|j| match j {
+                    JumpKind::HermitianPauli { word, rate } => (*word, *rate),
+                    _ => unreachable!(),
+                })
+                .collect();
+            crate::pauli_plan::PauliActionPlan::new(n_qubits, &h, &jumps)
+        } else {
+            None
+        };
         Ok(Self {
             expm_backend: crate::ExpmBackend::default(),
+            pauli_plan,
             n_qubits,
             h_terms: h_parsed,
             j_kinds,
@@ -181,6 +199,7 @@ impl<const C: usize> LindbladSpec<C> {
         ops: &[Vec<(String, Complex<f64>)>],
         k: &[Vec<Complex<f64>>],
     ) -> Result<(), Error> {
+        self.pauli_plan = None;
         for (pair, support) in kossakowski::compile(ops, k, self.n_qubits)? {
             let idx = self.j_kinds.len() as u32;
             self.j_kinds.push(JumpKind::Kossakowski(pair));

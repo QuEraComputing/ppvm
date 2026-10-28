@@ -23,6 +23,7 @@ pub(crate) enum Norm {
 pub(crate) struct PackedOp {
     ranges: Vec<Range>,
     entries: Vec<i32>,
+    staging: Vec<Vec<i32>>,
     shift: u32,
     dimension: usize,
     scale: f64,
@@ -30,7 +31,8 @@ pub(crate) struct PackedOp {
 
 impl PackedOp {
     pub(crate) fn allocation_bytes(&self) -> usize {
-        self.entries.capacity() * 4
+        self.staging.iter().map(|v| v.capacity() * 4).sum::<usize>()
+            + self.entries.capacity() * 4
             + self.ranges.capacity() * std::mem::size_of::<Range>()
             + self
                 .ranges
@@ -44,6 +46,9 @@ impl PackedOp {
         scale: f64,
         previous: Option<Self>,
     ) -> (Self, Norm) {
+        if direct.spec.expm_backend == crate::ExpmBackend::PackedBatched {
+            return Self::build_batched(direct, scale, previous);
+        }
         let dimension = direct.basis.len();
         assert!(dimension < i32::MAX as usize);
         let shift = dimension
@@ -170,6 +175,125 @@ impl PackedOp {
             Self {
                 ranges,
                 entries,
+                staging: Vec::new(),
+                shift,
+                dimension,
+                scale,
+            },
+            if noisy {
+                Norm::Columns(per_col)
+            } else {
+                Norm::Uniform(norm)
+            },
+        )
+    }
+    fn build_batched<const C: usize>(
+        direct: &DirectOp<'_, C>,
+        scale: f64,
+        previous: Option<Self>,
+    ) -> (Self, Norm) {
+        let dimension = direct.basis.len();
+        assert!(dimension < i32::MAX as usize);
+        let shift = dimension
+            .div_ceil(256)
+            .max(64)
+            .next_power_of_two()
+            .trailing_zeros();
+        let rows = 1 << shift;
+        let noisy = direct
+            .spec
+            .pauli_plan
+            .as_ref()
+            .unwrap()
+            .has_diagonal_noise();
+        let (mut entries, mut staging) =
+            previous.map(|p| (p.entries, p.staging)).unwrap_or_default();
+        entries.clear();
+        staging.resize_with(16, Vec::new);
+        let mut ranges = Vec::with_capacity(dimension.div_ceil(rows));
+        let mut per_col = if noisy {
+            Vec::with_capacity(dimension)
+        } else {
+            Vec::new()
+        };
+        let mut norm = 0.0_f64;
+        for (batch, words) in direct.basis.chunks(rows * 16).enumerate() {
+            let built: Vec<_> = words
+                .par_chunks(rows)
+                .zip(staging.par_iter_mut())
+                .enumerate()
+                .map_init(ActionScratch::new, |scratch, (block, (words, stage))| {
+                    let first = (batch * 16 + block) * rows;
+                    stage.clear();
+                    let mut offsets = Vec::with_capacity(words.len() + 1);
+                    offsets.push(0u32);
+                    let mut metadata = if noisy {
+                        Vec::with_capacity(words.len())
+                    } else {
+                        Vec::new()
+                    };
+                    let mut bound = 0.0_f64;
+                    for row in first..first + words.len() {
+                        let value = direct.gather_row(row, scratch, noisy);
+                        bound = bound.max(value.0);
+                        if noisy {
+                            metadata.push(value);
+                        }
+                        for &(column, value) in &scratch.row {
+                            stage.push(if column as usize == row {
+                                0
+                            } else {
+                                assert!(value.abs() == scale);
+                                let parent = column as i32 + 1;
+                                if value < 0.0 { -parent } else { parent }
+                            });
+                        }
+                        offsets
+                            .push(u32::try_from(stage.len()).expect("range exceeds u32 entries"));
+                    }
+                    let diagonal = if metadata.iter().any(|(_, v)| *v != 0.0) {
+                        metadata.iter().map(|(_, v)| *v).collect()
+                    } else {
+                        Vec::new()
+                    };
+                    (
+                        Range {
+                            first,
+                            offsets,
+                            start: 0,
+                            ends: Vec::new(),
+                            diagonal,
+                        },
+                        metadata,
+                        bound,
+                    )
+                })
+                .collect();
+            let required = entries.len()
+                + staging
+                    .iter()
+                    .take(built.len())
+                    .map(Vec::len)
+                    .sum::<usize>();
+            if required > entries.capacity() {
+                entries.reserve_exact((required - entries.len()).max(entries.capacity() / 4));
+            }
+            for ((mut range, metadata, bound), stage) in built.into_iter().zip(&staging) {
+                range.start = entries.len();
+                entries.extend_from_slice(stage);
+                ranges.push(range);
+                per_col.extend(metadata);
+                norm = norm.max(bound);
+            }
+        }
+        for stage in &mut staging {
+            stage.clear();
+        }
+        (
+            Self {
+                ranges,
+                entries,
+                staging,
                 shift,
                 dimension,
                 scale,
@@ -312,7 +436,11 @@ mod tests {
             lincomb: vec![("IZII".into(), Complex::new(1.0, 0.0))],
             rate: 0.3,
         }];
-        for backend in [ExpmBackend::Packed, ExpmBackend::PackedUpper] {
+        for backend in [
+            ExpmBackend::Packed,
+            ExpmBackend::PackedUpper,
+            ExpmBackend::PackedBatched,
+        ] {
             let spec = LindbladSpec::<2>::new(4, &h, &jumps)
                 .unwrap()
                 .with_expm_backend(backend);

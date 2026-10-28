@@ -29,6 +29,16 @@ pub(crate) struct PackedOp {
 }
 
 impl PackedOp {
+    pub(crate) fn allocation_bytes(&self) -> usize {
+        self.entries.capacity() * 4
+            + self.ranges.capacity() * std::mem::size_of::<Range>()
+            + self
+                .ranges
+                .iter()
+                .map(|r| (r.offsets.capacity() + r.ends.capacity()) * 4 + r.diagonal.capacity() * 8)
+                .sum::<usize>()
+    }
+
     pub(crate) fn build<const C: usize>(
         direct: &DirectOp<'_, C>,
         scale: f64,
@@ -118,6 +128,9 @@ impl PackedOp {
             count += *range.offsets.last().unwrap() as usize;
         }
         let mut entries = previous.map(|packed| packed.entries).unwrap_or_default();
+        if count > entries.capacity() {
+            entries.reserve_exact(count - entries.len());
+        }
         entries.resize(count, 0);
         let mut remaining = entries.as_mut_slice();
         let chunks: Vec<_> = ranges

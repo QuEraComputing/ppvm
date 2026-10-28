@@ -29,6 +29,18 @@ impl<const C: usize> IndexedCandidates<C> {
         }
     }
 
+    pub(crate) fn allocation_bytes(&self) -> [(&'static str, usize); 4] {
+        [
+            (
+                "candidate_words",
+                self.words.capacity() * std::mem::size_of::<Word<C>>(),
+            ),
+            ("candidate_rates", self.rates.capacity() * 8),
+            ("candidate_state", self.state.capacity()),
+            ("candidate_free", self.free.capacity() * 4),
+        ]
+    }
+
     pub(crate) fn reset(&mut self) {
         self.words.clear();
         self.prefix = 0;

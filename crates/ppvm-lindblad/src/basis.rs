@@ -30,6 +30,36 @@ pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
     pub(crate) exponential_output: Vec<f64>,
 }
 
+impl<const C: usize> PcStepWorkspace<C> {
+    /// Requested backing capacity retained between steps, excluding the main state.
+    pub fn allocation_bytes(&self) -> [(&'static str, usize); 9] {
+        let mut bytes = [
+            ("candidate_words", 0),
+            ("candidate_rates", 0),
+            ("candidate_state", 0),
+            ("candidate_free", 0),
+            ("candidate_rank", self.magnitude_bits.capacity() * 8),
+            (
+                "generation",
+                self.outputs
+                    .iter()
+                    .map(|v| v.capacity() * std::mem::size_of::<(Word<C>, f64)>())
+                    .sum(),
+            ),
+            (
+                "packed",
+                self.packed.as_ref().map_or(0, |p| p.allocation_bytes()),
+            ),
+            ("taylor", self.taylor.capacity() * 8),
+            ("exponential_output", self.exponential_output.capacity() * 8),
+        ];
+        if let Some(candidates) = &self.candidates {
+            bytes[..4].copy_from_slice(&candidates.allocation_bytes());
+        }
+        bytes
+    }
+}
+
 pub(crate) enum LeakageCandidates<const C: usize> {
     Pairs(Vec<(Word<C>, f64)>),
     Indexed(crate::indexed_candidates::IndexedCandidates<C>, f64),

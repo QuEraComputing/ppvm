@@ -37,6 +37,12 @@ mod buffered_tests {
         let buffered = LindbladSpec::<2>::new(n, &h, &[])
             .unwrap()
             .with_leakage_backend(LeakageBackend::Buffered);
+        let indexed = LindbladSpec::<2>::new(n, &h, &[])
+            .unwrap()
+            .with_leakage_backend(LeakageBackend::Indexed);
+        let ranked = LindbladSpec::<2>::new(n, &h, &[])
+            .unwrap()
+            .with_leakage_backend(LeakageBackend::RankBits);
         let basis: Vec<_> = (0..14000)
             .filter(|i| i % 3 != 0)
             .map(|i| {
@@ -70,6 +76,20 @@ mod buffered_tests {
                     })
                     .unwrap();
                 assert_eq!(actual, expected, "room={room}, threads={threads}");
+                for implementation in [&indexed, &ranked] {
+                    let actual = pool
+                        .install(|| {
+                            implementation.leakage_with_prune(
+                                &basis,
+                                &coefficients,
+                                &[],
+                                basis.len() + room,
+                                0.0,
+                            )
+                        })
+                        .unwrap();
+                    assert_eq!(actual, expected, "room={room}, threads={threads}");
+                }
             }
         }
     }
@@ -202,6 +222,7 @@ impl<const C: usize> LindbladSpec<C> {
         let order = order_by_desc_mag(coeffs);
         let room = max_basis.saturating_sub(basis.len());
         let mut merged = FxHashMap::default();
+        let mut indexed = crate::indexed_candidates::IndexedCandidates::new();
         let mut magnitudes = Vec::new();
         let mut magnitude_bits = Vec::new();
         let mut outputs: Vec<Vec<(Word<C>, f64)>> =
@@ -230,10 +251,16 @@ impl<const C: usize> LindbladSpec<C> {
             // Serial source order preserves coherent sums and the reference map's tie ordering.
             for output in outputs.iter().take(chunk.len().div_ceil(64)) {
                 for &(word, value) in output {
-                    *merged.entry(word).or_insert(0.0) += value;
+                    if self.leakage_backend == crate::LeakageBackend::Indexed {
+                        indexed.add(word, value);
+                    } else {
+                        *merged.entry(word).or_insert(0.0) += value;
+                    }
                 }
             }
-            if self.leakage_backend == crate::LeakageBackend::RankBits {
+            if self.leakage_backend == crate::LeakageBackend::Indexed {
+                indexed.cap(room, &mut magnitude_bits);
+            } else if self.leakage_backend == crate::LeakageBackend::RankBits {
                 crate::truncate::cap_real_map_bits(
                     &mut merged,
                     room,
@@ -243,6 +270,16 @@ impl<const C: usize> LindbladSpec<C> {
             } else {
                 crate::truncate::cap_real_map_with_scratch(&mut merged, room, &mut magnitudes);
             }
+        }
+        // Generation buffers are dead before the admission vector is materialized.
+        drop(outputs);
+        drop(magnitudes);
+        drop(magnitude_bits);
+        drop(order);
+        drop(in_basis);
+        drop(protected_set);
+        if self.leakage_backend == crate::LeakageBackend::Indexed {
+            return Ok(indexed.into_vec(tau_add));
         }
         Ok(merged
             .into_iter()

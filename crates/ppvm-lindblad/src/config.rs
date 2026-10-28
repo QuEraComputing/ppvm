@@ -28,6 +28,8 @@ pub enum LeakageBackend {
     Buffered,
     /// Reusable block outputs with exact integer selection of finite magnitudes.
     RankBits,
+    /// Keep candidate payload in one vector and hash only its positions.
+    Indexed,
 }
 
 /// Truncation and execution policy for a single predictor-corrector step

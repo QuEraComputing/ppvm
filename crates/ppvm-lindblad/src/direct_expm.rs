@@ -59,28 +59,6 @@ impl<const C: usize> ActionScratch<C> {
 }
 
 impl<const C: usize> DirectOp<'_, C> {
-    pub(crate) fn count_row(
-        &self,
-        position: usize,
-        scratch: &mut ActionScratch<C>,
-        canonical: bool,
-        lookup: bool,
-    ) -> ((f64, f64), usize) {
-        let word = &self.basis[position];
-        scratch.fill(self.spec, word, canonical);
-        let mut raw = 0.0;
-        let mut diagonal = 0.0;
-        let mut count = 0;
-        for &(parent, value) in &scratch.terms {
-            raw += value.abs();
-            if parent == *word {
-                diagonal = value;
-            }
-            count += usize::from(!lookup || self.index.get(&parent).is_some());
-        }
-        ((raw, diagonal), count)
-    }
-
     pub(crate) fn gather_row(
         &self,
         position: usize,
@@ -328,43 +306,87 @@ mod tests {
             lincomb: vec![("IZI".into(), Complex::new(1.0, 0.0))],
             rate: 0.2,
         }];
-        for backend in [
-            ExpmBackend::Packed,
-            ExpmBackend::PackedUpper,
-            ExpmBackend::PackedBatched,
-            ExpmBackend::PackedSegmented,
-        ] {
-            let cached = LindbladSpec::<2>::new(3, &h, &jumps).unwrap();
-            let optimized = LindbladSpec::<2>::new(3, &h, &jumps)
-                .unwrap()
-                .with_expm_backend(backend)
-                .with_leakage_backend(crate::LeakageBackend::Tail);
-            let seed = word_from_codes::<2>(&[3, 0, 0]).unwrap();
-            let mut a = vec![seed];
-            let mut b = a.clone();
-            let mut ca = vec![1.0];
-            let mut cb = ca.clone();
-            b.reserve_exact(64 - b.len());
-            cb.reserve_exact(64 - cb.len());
-            let basis_storage = b.as_ptr();
-            let coefficient_storage = cb.as_ptr();
-            let mut workspace = crate::PcStepWorkspace::default();
-            for step in 0..12 {
-                let cfg = PcStepConfig {
-                    max_basis: if step == 0 { usize::MAX } else { 8 + step % 3 },
-                    admit_basis: if step == 0 { None } else { Some(24 + step % 4) },
-                    num_threads: Some(2),
-                    ..Default::default()
-                };
-                cached.pc_step(&mut a, &mut ca, 0.1, &[seed], &cfg).unwrap();
-                optimized
-                    .pc_step_with_workspace(&mut b, &mut cb, 0.1, &[seed], &cfg, &mut workspace)
-                    .unwrap();
-                assert_eq!(b.as_ptr(), basis_storage);
-                assert_eq!(cb.as_ptr(), coefficient_storage);
-                assert_eq!(a, b);
-                assert_eq!(ca, cb);
+
+        let cached = LindbladSpec::<2>::new(3, &h, &jumps).unwrap();
+        let optimized = LindbladSpec::<2>::new(3, &h, &jumps)
+            .unwrap()
+            .with_expm_backend(ExpmBackend::Packed)
+            .with_leakage_backend(crate::LeakageBackend::Tail);
+        let seed = word_from_codes::<2>(&[3, 0, 0]).unwrap();
+        let mut a = vec![seed];
+        let mut b = a.clone();
+        let mut ca = vec![1.0];
+        let mut cb = ca.clone();
+        b.reserve_exact(64 - b.len());
+        cb.reserve_exact(64 - cb.len());
+        let basis_storage = b.as_ptr();
+        let coefficient_storage = cb.as_ptr();
+        let mut workspace = crate::PcStepWorkspace::default();
+        for step in 0..12 {
+            let cfg = PcStepConfig {
+                max_basis: if step == 0 { usize::MAX } else { 8 + step % 3 },
+                admit_basis: if step == 0 { None } else { Some(24 + step % 4) },
+                num_threads: Some(2),
+                ..Default::default()
+            };
+            cached.pc_step(&mut a, &mut ca, 0.1, &[seed], &cfg).unwrap();
+            optimized
+                .pc_step_with_workspace(&mut b, &mut cb, 0.1, &[seed], &cfg, &mut workspace)
+                .unwrap();
+            assert_eq!(b.as_ptr(), basis_storage);
+            assert_eq!(cb.as_ptr(), coefficient_storage);
+            assert_eq!(a, b);
+            assert_eq!(ca, cb);
+        }
+    }
+
+    #[test]
+    fn packed_workspace_matches_cached_beyond_one_hundred_twenty_eight_qubits() {
+        let n = 129;
+        let term = |symbol: char, sites: &[usize]| {
+            let mut symbols = vec!['I'; n];
+            for &site in sites {
+                symbols[site] = symbol;
             }
+            symbols.into_iter().collect::<String>()
+        };
+        let h = vec![
+            (term('X', &[0, 128]), 0.25),
+            (term('Y', &[64, 128]), -0.25),
+            (term('Z', &[0]), 0.25),
+        ];
+        let jumps = vec![JumpInput {
+            lincomb: vec![(term('Z', &[64]), Complex::new(1.0, 0.0))],
+            rate: 0.2,
+        }];
+        let reference = LindbladSpec::<4>::new(n, &h, &jumps).unwrap();
+        let packed = LindbladSpec::<4>::new(n, &h, &jumps)
+            .unwrap()
+            .with_expm_backend(ExpmBackend::Packed)
+            .with_leakage_backend(crate::LeakageBackend::Tail);
+        let mut codes = vec![0; n];
+        codes[128] = 2;
+        let seed = word_from_codes::<4>(&codes).unwrap();
+        let mut a = vec![seed];
+        let mut b = a.clone();
+        let mut ca = vec![1.0];
+        let mut cb = ca.clone();
+        let mut workspace = crate::PcStepWorkspace::default();
+        let cfg = PcStepConfig {
+            max_basis: 16,
+            admit_basis: Some(48),
+            num_threads: Some(2),
+            ..Default::default()
+        };
+        for _ in 0..8 {
+            reference
+                .pc_step(&mut a, &mut ca, 0.1, &[seed], &cfg)
+                .unwrap();
+            packed
+                .pc_step_with_workspace(&mut b, &mut cb, 0.1, &[seed], &cfg, &mut workspace)
+                .unwrap();
+            assert_eq!(a, b);
+            assert_eq!(ca, cb);
         }
     }
 

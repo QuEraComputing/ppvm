@@ -550,13 +550,7 @@ pub(crate) fn packed_scale<const C: usize>(
     if dimension == 0
         || dimension >= i32::MAX as usize
         || !spec.supports_row_gather()
-        || !matches!(
-            spec.expm_backend,
-            crate::ExpmBackend::Packed
-                | crate::ExpmBackend::PackedUpper
-                | crate::ExpmBackend::PackedBatched
-                | crate::ExpmBackend::PackedSegmented
-        )
+        || spec.expm_backend != crate::ExpmBackend::Packed
     {
         return None;
     }

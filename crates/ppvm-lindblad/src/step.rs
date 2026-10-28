@@ -110,6 +110,27 @@ impl<const C: usize> LindbladSpec<C> {
         cfg: &PcStepConfig,
         workspace: &mut PcStepWorkspace<C>,
     ) -> Result<PcStepTimings, Error> {
+        if matches!(
+            self.leakage_backend,
+            crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
+        ) {
+            let dimension = 1usize
+                .checked_shl((2 * self.n_qubits()) as u32)
+                .unwrap_or(usize::MAX);
+            let bound = cfg
+                .admit_basis
+                .unwrap_or(cfg.max_basis)
+                .max(cfg.max_basis)
+                .min(dimension);
+            // Rate/rank keys and Taylor work share storage in disjoint phases.
+            if let Some(required) = bound.checked_mul(2)
+                && workspace.taylor.capacity() < required
+            {
+                workspace
+                    .taylor
+                    .reserve_exact(required - workspace.taylor.len());
+            }
+        }
         self.run_in_pool(cfg, |this| {
             this.pc_step_inner(basis, coeffs, dt, protected, cfg, (true, Some(workspace)))
         })

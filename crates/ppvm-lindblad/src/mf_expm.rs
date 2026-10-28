@@ -575,10 +575,12 @@ pub(crate) fn expm_apply_mf<const C: usize>(
                         }
                     };
                     return match norm {
-                        crate::packed_expm::Norm::Uniform(bound) =>
-                            expm_apply_operator_bounds(packed, dt, coeffs, 0.0, bound, select),
-                        crate::packed_expm::Norm::Columns(per_col) =>
-                            expm_apply_operator(packed, basis.len(), &per_col, dt, coeffs, select),
+                        crate::packed_expm::Norm::Uniform(bound) => {
+                            expm_apply_operator_bounds(packed, dt, coeffs, 0.0, bound, select)
+                        }
+                        crate::packed_expm::Norm::Columns(per_col) => {
+                            expm_apply_operator(packed, basis.len(), &per_col, dt, coeffs, select)
+                        }
                     };
                 }
             }

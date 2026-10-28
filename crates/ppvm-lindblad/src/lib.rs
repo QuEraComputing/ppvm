@@ -57,7 +57,7 @@ mod word;
 /// Matrix-free / quspin-expm-backed `exp(dt·L*)·b` engine. See module docs.
 pub(crate) mod mf_expm;
 
-pub use basis::build_basis_index;
+pub use basis::{PcStepWorkspace, build_basis_index};
 pub use config::{ExpmBackend, LeakageBackend, PcStepConfig};
 pub use error::Error;
 pub use sector::{Sector, canonicalize_basis_to_rep};

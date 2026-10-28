@@ -26,6 +26,8 @@ pub enum LeakageBackend {
     Buffered,
     /// Keep candidate payload in one vector and hash only its positions.
     Indexed,
+    /// Accumulate candidate words in the spare tail of the main basis vector.
+    Tail,
 }
 
 /// Truncation and execution policy for a single predictor-corrector step

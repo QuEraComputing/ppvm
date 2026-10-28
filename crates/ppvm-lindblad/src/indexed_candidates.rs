@@ -12,6 +12,8 @@ pub(crate) struct IndexedCandidates<const C: usize> {
     state: Vec<u8>,
     table: HashTable<u32>,
     free: Vec<u32>,
+    prefix: usize,
+    tail: bool,
 }
 
 impl<const C: usize> IndexedCandidates<C> {
@@ -22,11 +24,15 @@ impl<const C: usize> IndexedCandidates<C> {
             state: Vec::new(),
             table: HashTable::new(),
             free: Vec::new(),
+            prefix: 0,
+            tail: false,
         }
     }
 
     pub(crate) fn reset(&mut self) {
         self.words.clear();
+        self.prefix = 0;
+        self.tail = false;
         self.rates.clear();
         self.state.clear();
         self.free.clear();
@@ -34,17 +40,26 @@ impl<const C: usize> IndexedCandidates<C> {
         self.table = HashTable::new();
     }
 
+    pub(crate) fn attach_basis(&mut self, basis: Vec<Word<C>>) {
+        self.prefix = basis.len();
+        self.words = basis;
+        self.tail = true;
+    }
+
+    pub(crate) fn source_basis(&self) -> &[Word<C>] {
+        &self.words[..self.prefix]
+    }
+
     pub(crate) fn add(&mut self, word: Word<C>, value: f64) {
         let hash = word_hash(&word);
-        if let Some(&index) = self
-            .table
-            .find(hash, |&index| self.words[index as usize] == word)
-        {
+        if let Some(&index) = self.table.find(hash, |&index| {
+            self.words[self.prefix + index as usize] == word
+        }) {
             self.rates[index as usize] += value;
             return;
         }
         let index = if let Some(index) = self.free.pop() {
-            self.words[index as usize] = word;
+            self.words[self.prefix + index as usize] = word;
             self.rates[index as usize] = 0.0 + value;
             self.state[index as usize] = 1;
             index
@@ -53,18 +68,19 @@ impl<const C: usize> IndexedCandidates<C> {
                 self.words
                     .reserve_exact((self.words.capacity() / 4).max(32));
                 self.rates
-                    .reserve_exact(self.words.capacity() - self.rates.len());
+                    .reserve_exact(self.words.capacity() - self.prefix - self.rates.len());
                 self.state
-                    .reserve_exact(self.words.capacity() - self.state.len());
+                    .reserve_exact(self.words.capacity() - self.prefix - self.state.len());
             }
-            let index = u32::try_from(self.words.len()).expect("candidate count exceeds u32");
+            let index = u32::try_from(self.rates.len()).expect("candidate count exceeds u32");
             self.words.push(word);
             self.rates.push(0.0 + value);
             self.state.push(1);
             index
         };
-        self.table
-            .insert_unique(hash, index, |&index| word_hash(&self.words[index as usize]));
+        self.table.insert_unique(hash, index, |&index| {
+            word_hash(&self.words[self.prefix + index as usize])
+        });
     }
 
     pub(crate) fn cap(&mut self, room: usize, bits: &mut Vec<u64>) {
@@ -72,7 +88,7 @@ impl<const C: usize> IndexedCandidates<C> {
             return;
         }
         if room == 0 {
-            self.words.clear();
+            self.words.truncate(self.prefix);
             self.rates.clear();
             self.state.clear();
             self.table.clear();
@@ -116,24 +132,47 @@ impl<const C: usize> IndexedCandidates<C> {
             .filter_map(|&index| {
                 let index = index as usize;
                 (self.rates[index].abs() > threshold)
-                    .then_some((self.words[index], self.rates[index]))
+                    .then_some((self.words[self.prefix + index], self.rates[index]))
             })
             .collect()
     }
 
     pub(crate) fn admit(
-        &self,
+        &mut self,
         basis: &mut Vec<Word<C>>,
         coefficients: &mut Vec<f64>,
         maximum: usize,
         threshold: f64,
     ) {
-        assert!(self.table.len() <= maximum.saturating_sub(basis.len()));
-        for &index in &self.table {
-            let index = index as usize;
-            if self.rates[index].abs() > threshold {
-                basis.push(self.words[index]);
-                coefficients.push(0.0);
+        let retained = if self.tail { self.prefix } else { basis.len() };
+        assert!(self.table.len() <= maximum.saturating_sub(retained));
+        if self.tail {
+            let mut positions: Vec<u32> = (0..self.rates.len() as u32).collect();
+            let mut labels = positions.clone();
+            let mut count = 0;
+            for &original in &self.table {
+                if self.rates[original as usize].abs() <= threshold {
+                    continue;
+                }
+                let source = positions[original as usize] as usize;
+                self.words.swap(self.prefix + count, self.prefix + source);
+                let displaced = labels[count];
+                positions[displaced as usize] = source as u32;
+                labels[source] = displaced;
+                positions[original as usize] = count as u32;
+                labels[count] = original;
+                count += 1;
+            }
+            self.words.truncate(self.prefix + count);
+            *basis = std::mem::take(&mut self.words);
+            coefficients.resize(basis.len(), 0.0);
+        } else {
+            for &index in &self.table {
+                let index = index as usize;
+                if self.rates[index].abs() > threshold {
+                    basis.push(self.words[index]);
+                    coefficients.push(0.0);
+                }
             }
         }
     }
@@ -150,6 +189,9 @@ mod tests {
     fn indexed_payload_preserves_reference_caps_and_visitation() {
         let mut reference = FxHashMap::default();
         let mut indexed = IndexedCandidates::new();
+        let mut tail = IndexedCandidates::new();
+        let seed = word_from_codes::<2>(&[1; 6]).unwrap();
+        tail.attach_basis(vec![seed]);
         for chunk in 0..12 {
             for i in 0..500 {
                 let code = (i * 37 + chunk * 11) % 4096;
@@ -162,14 +204,32 @@ mod tests {
                 let value = ((i + chunk) % 9) as f64 - 4.0;
                 *reference.entry(word).or_insert(0.0) += value;
                 indexed.add(word, value);
+                tail.add(word, value);
             }
             cap_map_to_room(&mut reference, 300);
             indexed.cap(300, &mut Vec::new());
+            tail.cap(300, &mut Vec::new());
         }
         let expected: Vec<_> = reference
             .into_iter()
             .filter(|(_, value)| value.abs() > 0.0)
             .collect();
+        let mut basis = Vec::new();
+        let mut coefficients = vec![0.5];
+        tail.admit(&mut basis, &mut coefficients, 301, 1.5);
+        assert_eq!(
+            basis,
+            std::iter::once(seed)
+                .chain(
+                    expected
+                        .iter()
+                        .filter(|(_, v)| v.abs() > 1.5)
+                        .map(|(w, _)| *w)
+                )
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(coefficients[0], 0.5);
+        assert!(coefficients[1..].iter().all(|v| *v == 0.0));
         assert_eq!(indexed.into_vec(0.0), expected);
     }
 }

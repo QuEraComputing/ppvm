@@ -15,6 +15,7 @@ use rayon::prelude::*;
 /// Chunk size for the leakage accumulation loops: candidates are folded
 /// into the live map (and the room-cap applied) once per chunk.
 const CHUNK_SIZE: usize = 4096;
+const GENERATION_BATCH: usize = 512;
 
 /// Reusable scratch for adaptive real-coefficient evolution.
 ///
@@ -289,39 +290,42 @@ impl<const C: usize> LindbladSpec<C> {
             .as_mut()
             .map(|w| std::mem::take(&mut w.outputs))
             .unwrap_or_default();
-        outputs.resize_with(CHUNK_SIZE.div_ceil(64), Vec::new);
+        outputs.resize_with(GENERATION_BATCH.div_ceil(64), Vec::new);
         for chunk in order.chunks(CHUNK_SIZE) {
-            let basis = if tail { indexed.source_basis() } else { basis };
-            outputs
-                .par_iter_mut()
-                .zip(chunk.par_chunks(64))
-                .for_each_init(
-                    crate::direct_expm::ActionScratch::new,
-                    |scratch, (output, indices)| {
-                        output.clear();
-                        for &index in indices {
-                            scratch.fill(self, &basis[index], true);
-                            for &(word, value) in &scratch.terms {
-                                let hash = word_hash(&word);
-                                if !in_basis.contains_key(&hash)
-                                    && !protected_set.contains_key(&hash)
-                                {
-                                    output.push((word, coeffs[index] * value));
+            // Bound temporary words while preserving the full source chunk's pruning cadence.
+            for sources in chunk.chunks(GENERATION_BATCH) {
+                let basis = if tail { indexed.source_basis() } else { basis };
+                outputs
+                    .par_iter_mut()
+                    .zip(sources.par_chunks(64))
+                    .for_each_init(
+                        crate::direct_expm::ActionScratch::new,
+                        |scratch, (output, indices)| {
+                            output.clear();
+                            for &index in indices {
+                                scratch.fill(self, &basis[index], true);
+                                for &(word, value) in &scratch.terms {
+                                    let hash = word_hash(&word);
+                                    if !in_basis.contains_key(&hash)
+                                        && !protected_set.contains_key(&hash)
+                                    {
+                                        output.push((word, coeffs[index] * value));
+                                    }
                                 }
                             }
+                        },
+                    );
+                // Serial source order preserves coherent sums and the reference map's tie ordering.
+                for output in outputs.iter().take(sources.len().div_ceil(64)) {
+                    for &(word, value) in output {
+                        if matches!(
+                            self.leakage_backend,
+                            crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
+                        ) {
+                            indexed.add(word, value);
+                        } else {
+                            *merged.entry(word).or_insert(0.0) += value;
                         }
-                    },
-                );
-            // Serial source order preserves coherent sums and the reference map's tie ordering.
-            for output in outputs.iter().take(chunk.len().div_ceil(64)) {
-                for &(word, value) in output {
-                    if matches!(
-                        self.leakage_backend,
-                        crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
-                    ) {
-                        indexed.add(word, value);
-                    } else {
-                        *merged.entry(word).or_insert(0.0) += value;
                     }
                 }
             }

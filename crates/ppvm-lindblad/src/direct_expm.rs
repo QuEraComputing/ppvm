@@ -92,6 +92,13 @@ mod tests {
         let mut reused_basis = a.clone();
         let mut reused_coeffs = ca.clone();
         let mut workspace = crate::PcStepWorkspace::default();
+        let tail = LindbladSpec::<2>::new(3, &h, &[])
+            .unwrap()
+            .with_expm_backend(ExpmBackend::MatrixFree)
+            .with_leakage_backend(crate::LeakageBackend::Tail);
+        let mut tail_basis = a.clone();
+        let mut tail_coeffs = ca.clone();
+        let mut tail_workspace = crate::PcStepWorkspace::default();
         let cfg = PcStepConfig {
             max_basis: 8,
             admit_basis: Some(24),
@@ -111,6 +118,17 @@ mod tests {
                     &mut workspace,
                 )
                 .unwrap();
+            tail.pc_step_with_workspace(
+                &mut tail_basis,
+                &mut tail_coeffs,
+                0.1,
+                &[seed],
+                &cfg,
+                &mut tail_workspace,
+            )
+            .unwrap();
+            assert_eq!(a, tail_basis);
+            assert_eq!(ca, tail_coeffs);
             assert_eq!(a, reused_basis);
             assert_eq!(ca, reused_coeffs);
             assert_eq!(a, b);

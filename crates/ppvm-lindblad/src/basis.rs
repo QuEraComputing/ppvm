@@ -190,7 +190,7 @@ impl<const C: usize> LindbladSpec<C> {
         }
         if self.leakage_backend != crate::LeakageBackend::Reference {
             return self
-                .leakage_buffered(basis, coeffs, protected, max_basis, tau_add, None)
+                .leakage_buffered(basis, coeffs, protected, max_basis, tau_add, None, None)
                 .map(LeakageCandidates::into_vec);
         }
         // Hash-only membership tables: storing 8-byte `u64` keys instead
@@ -252,14 +252,17 @@ impl<const C: usize> LindbladSpec<C> {
 
     pub(crate) fn leakage_for_step(
         &self,
-        basis: &[Word<C>],
+        basis: &mut Vec<Word<C>>,
         coefficients: &[f64],
         protected: &[Word<C>],
         maximum: usize,
         threshold: f64,
         workspace: Option<&mut PcStepWorkspace<C>>,
     ) -> Result<LeakageCandidates<C>, Error> {
-        if self.leakage_backend != crate::LeakageBackend::Indexed {
+        if !matches!(
+            self.leakage_backend,
+            crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
+        ) {
             return self
                 .leakage_with_prune(basis, coefficients, protected, maximum, threshold)
                 .map(LeakageCandidates::Pairs);
@@ -271,6 +274,8 @@ impl<const C: usize> LindbladSpec<C> {
                 b: coefficients.len(),
             });
         }
+        let owned =
+            (self.leakage_backend == crate::LeakageBackend::Tail).then(|| std::mem::take(basis));
         self.leakage_buffered(
             basis,
             coefficients,
@@ -278,6 +283,7 @@ impl<const C: usize> LindbladSpec<C> {
             maximum,
             threshold,
             workspace,
+            owned,
         )
     }
 
@@ -289,17 +295,23 @@ impl<const C: usize> LindbladSpec<C> {
         max_basis: usize,
         tau_add: f64,
         mut workspace: Option<&mut PcStepWorkspace<C>>,
+        owned_basis: Option<Vec<Word<C>>>,
     ) -> Result<LeakageCandidates<C>, Error> {
-        let in_basis: FxHashMap<u64, ()> = basis.iter().map(|w| (word_hash(w), ())).collect();
+        let tail = owned_basis.is_some();
+        let source = owned_basis.as_deref().unwrap_or(basis);
+        let in_basis: FxHashMap<u64, ()> = source.iter().map(|w| (word_hash(w), ())).collect();
         let protected_set: FxHashMap<u64, ()> =
             protected.iter().map(|w| (word_hash(w), ())).collect();
         let order = order_by_desc_mag(coeffs);
-        let room = max_basis.saturating_sub(basis.len());
+        let room = max_basis.saturating_sub(source.len());
         let mut merged = FxHashMap::default();
         let mut indexed = workspace
             .as_mut()
             .and_then(|w| w.candidates.take())
             .unwrap_or_else(crate::indexed_candidates::IndexedCandidates::new);
+        if let Some(owned) = owned_basis {
+            indexed.attach_basis(owned);
+        }
         let mut magnitudes = Vec::new();
         let mut magnitude_bits = workspace
             .as_mut()
@@ -311,6 +323,7 @@ impl<const C: usize> LindbladSpec<C> {
             .unwrap_or_default();
         outputs.resize_with(CHUNK_SIZE.div_ceil(64), Vec::new);
         for chunk in order.chunks(CHUNK_SIZE) {
+            let basis = if tail { indexed.source_basis() } else { basis };
             outputs
                 .par_iter_mut()
                 .zip(chunk.par_chunks(64))
@@ -334,14 +347,20 @@ impl<const C: usize> LindbladSpec<C> {
             // Serial source order preserves coherent sums and the reference map's tie ordering.
             for output in outputs.iter().take(chunk.len().div_ceil(64)) {
                 for &(word, value) in output {
-                    if self.leakage_backend == crate::LeakageBackend::Indexed {
+                    if matches!(
+                        self.leakage_backend,
+                        crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
+                    ) {
                         indexed.add(word, value);
                     } else {
                         *merged.entry(word).or_insert(0.0) += value;
                     }
                 }
             }
-            if self.leakage_backend == crate::LeakageBackend::Indexed {
+            if matches!(
+                self.leakage_backend,
+                crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
+            ) {
                 indexed.cap(room, &mut magnitude_bits);
             } else {
                 crate::truncate::cap_real_map_with_scratch(&mut merged, room, &mut magnitudes);
@@ -360,7 +379,10 @@ impl<const C: usize> LindbladSpec<C> {
         drop(order);
         drop(in_basis);
         drop(protected_set);
-        if self.leakage_backend == crate::LeakageBackend::Indexed {
+        if matches!(
+            self.leakage_backend,
+            crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
+        ) {
             return Ok(LeakageCandidates::Indexed(indexed, tau_add));
         }
         Ok(LeakageCandidates::Pairs(

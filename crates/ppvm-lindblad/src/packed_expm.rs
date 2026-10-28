@@ -10,7 +10,7 @@ use rayon::prelude::*;
 struct Range {
     first: usize,
     offsets: Vec<u32>,
-    entries: Vec<i32>,
+    start: usize,
     diagonal: Vec<f64>,
 }
 
@@ -123,6 +123,7 @@ pub(crate) enum Norm {
 
 pub(crate) struct PackedOp {
     ranges: Vec<Range>,
+    entries: Vec<i32>,
     shift: u32,
     dimension: usize,
     scale: f64,
@@ -173,23 +174,6 @@ impl PackedOp {
                             .expect("range exceeds u32 entries"),
                     );
                 }
-                let mut entries = vec![0; *offsets.last().unwrap() as usize];
-                for row in 0..words.len() {
-                    direct.gather_row(first + row, &mut scratch, false);
-                    let start = offsets[row] as usize;
-                    for (slot, &(column, value)) in entries[start..offsets[row + 1] as usize]
-                        .iter_mut()
-                        .zip(&scratch.row)
-                    {
-                        *slot = if column as usize == first + row {
-                            0
-                        } else {
-                            assert!(value.abs() == scale);
-                            let parent = column as i32 + 1;
-                            if value < 0.0 { -parent } else { parent }
-                        };
-                    }
-                }
                 let diagonal = if per_col.iter().any(|(_, value)| *value != 0.0) {
                     per_col.iter().map(|(_, value)| *value).collect()
                 } else {
@@ -199,7 +183,7 @@ impl PackedOp {
                     Range {
                         first,
                         offsets,
-                        entries,
+                        start: 0,
                         diagonal,
                     },
                     per_col,
@@ -219,9 +203,47 @@ impl PackedOp {
             per_col.extend(metadata);
             norm = norm.max(bound);
         }
+        let mut count = 0;
+        for range in &mut ranges {
+            range.start = count;
+            count += *range.offsets.last().unwrap() as usize;
+        }
+        let mut entries = vec![0; count];
+        let mut remaining = entries.as_mut_slice();
+        let chunks: Vec<_> = ranges
+            .iter()
+            .map(|range| {
+                let (chunk, tail) = std::mem::take(&mut remaining)
+                    .split_at_mut(*range.offsets.last().unwrap() as usize);
+                remaining = tail;
+                chunk
+            })
+            .collect();
+        chunks.into_par_iter().zip(ranges.par_iter()).for_each_init(
+            ActionScratch::new,
+            |scratch, (entries, range)| {
+                for row in 0..range.offsets.len() - 1 {
+                    direct.gather_row(range.first + row, scratch, false);
+                    let start = range.offsets[row] as usize;
+                    for (slot, &(column, value)) in entries[start..range.offsets[row + 1] as usize]
+                        .iter_mut()
+                        .zip(&scratch.row)
+                    {
+                        *slot = if column as usize == range.first + row {
+                            0
+                        } else {
+                            assert!(value.abs() == scale);
+                            let parent = column as i32 + 1;
+                            if value < 0.0 { -parent } else { parent }
+                        };
+                    }
+                }
+            },
+        );
         (
             Self {
                 ranges,
+                entries,
                 shift,
                 dimension,
                 scale,
@@ -256,8 +278,8 @@ impl LinearOperator<f64> for PackedOp {
             .for_each(|(output, range)| {
                 for (row, result) in output.iter_mut().enumerate() {
                     let mut sum = 0.0;
-                    for &entry in
-                        &range.entries[range.offsets[row] as usize..range.offsets[row + 1] as usize]
+                    for &entry in &self.entries[range.start + range.offsets[row] as usize
+                        ..range.start + range.offsets[row + 1] as usize]
                     {
                         let (column, value) = if entry == 0 {
                             (range.first + row, range.diagonal[row])

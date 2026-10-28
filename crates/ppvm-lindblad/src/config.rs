@@ -12,8 +12,6 @@ pub enum ExpmBackend {
     /// Recompute rows for Hamiltonian and Hermitian-Pauli-jump models.
     /// General dissipators retain the cached implementation.
     MatrixFree,
-    /// Recompute rows with the general single-string action kernel.
-    MatrixFreeGeneric,
     /// Store signed parent positions for uniform-magnitude Pauli Hamiltonians.
     Packed,
 }
@@ -26,8 +24,6 @@ pub enum LeakageBackend {
     Reference,
     /// Reusable block outputs and canonical compiled Pauli actions.
     Buffered,
-    /// Reusable block outputs with exact integer selection of finite magnitudes.
-    RankBits,
     /// Keep candidate payload in one vector and hash only its positions.
     Indexed,
 }

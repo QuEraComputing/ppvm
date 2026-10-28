@@ -146,19 +146,18 @@ impl<const C: usize> ActionScratch<C> {
         }
     }
     pub(crate) fn fill(&mut self, spec: &LindbladSpec<C>, word: &Word<C>, canonical: bool) {
-        if spec.expm_backend != crate::ExpmBackend::MatrixFreeGeneric {
-            if let Some(plan) = &spec.pauli_plan {
-                plan.fill(word, &mut self.active, &mut self.terms);
-                if canonical {
-                    self.terms.sort_unstable_by(|(a, _), (b, _)| {
-                        crate::word::word_hash(a)
-                            .cmp(&crate::word::word_hash(b))
-                            .then_with(|| a.cmp(b))
-                    });
-                }
-                return;
+        if let Some(plan) = &spec.pauli_plan {
+            plan.fill(word, &mut self.active, &mut self.terms);
+            if canonical {
+                self.terms.sort_unstable_by(|(a, _), (b, _)| {
+                    crate::word::word_hash(a)
+                        .cmp(&crate::word::word_hash(b))
+                        .then_with(|| a.cmp(b))
+                });
             }
+            return;
         }
+
         self.terms = spec.compute_action_terms(
             word,
             &mut self.support,

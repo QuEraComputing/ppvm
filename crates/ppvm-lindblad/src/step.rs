@@ -7,7 +7,7 @@ use crate::sector::Sector;
 use crate::spec::LindbladSpec;
 use crate::truncate::{add_leakage_capped, cap_basis, prune_basis};
 use crate::word::Word;
-use crate::{Error, PcStepConfig, mf_expm};
+use crate::{Error, PcStepConfig, PcStepWorkspace, mf_expm};
 use num::Complex;
 use std::time::Instant;
 
@@ -76,7 +76,7 @@ impl<const C: usize> LindbladSpec<C> {
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
         self.run_in_pool(cfg, |this| {
-            this.pc_step_inner(basis, coeffs, dt, protected, cfg, false)
+            this.pc_step_inner(basis, coeffs, dt, protected, cfg, false, None)
                 .map(|_| ())
         })
     }
@@ -93,7 +93,25 @@ impl<const C: usize> LindbladSpec<C> {
         cfg: &PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
         self.run_in_pool(cfg, |this| {
-            this.pc_step_inner(basis, coeffs, dt, protected, cfg, true)
+            this.pc_step_inner(basis, coeffs, dt, protected, cfg, true, None)
+        })
+    }
+
+    /// Adaptive step with retained candidate and generation buffers.
+    ///
+    /// The workspace belongs to one trajectory and may be reused across its steps.
+    /// Numerical ordering is identical to [`Self::pc_step_timed`].
+    pub fn pc_step_with_workspace(
+        &self,
+        basis: &mut Vec<Word<C>>,
+        coeffs: &mut Vec<f64>,
+        dt: f64,
+        protected: &[Word<C>],
+        cfg: &PcStepConfig,
+        workspace: &mut PcStepWorkspace<C>,
+    ) -> Result<PcStepTimings, Error> {
+        self.run_in_pool(cfg, |this| {
+            this.pc_step_inner(basis, coeffs, dt, protected, cfg, true, Some(workspace))
         })
     }
 
@@ -121,6 +139,7 @@ impl<const C: usize> LindbladSpec<C> {
         protected: &[Word<C>],
         cfg: &PcStepConfig,
         timed: bool,
+        mut workspace: Option<&mut PcStepWorkspace<C>>,
     ) -> Result<PcStepTimings, Error> {
         let PcStepConfig {
             max_basis,
@@ -144,11 +163,21 @@ impl<const C: usize> LindbladSpec<C> {
         // We rely on `coeffs` itself as the pre-step buffer for the corrector
         // — no `.clone()` is needed because `expm_step` only borrows it.
         let p = Phase::start(timed);
-        let leak = self.leakage_for_step(basis, coeffs, protected, admit, tau_add)?;
+        let leak = self.leakage_for_step(
+            basis,
+            coeffs,
+            protected,
+            admit,
+            tau_add,
+            workspace.as_deref_mut(),
+        )?;
         p.stop(&mut t.leakage1_us);
 
         let p = Phase::start(timed);
-        leak.admit(basis, coeffs, admit);
+        let reusable = leak.admit(basis, coeffs, admit);
+        if let Some(workspace) = workspace.as_mut() {
+            workspace.candidates = reusable;
+        }
         p.stop(&mut t.expand1_us);
 
         // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
@@ -166,11 +195,21 @@ impl<const C: usize> LindbladSpec<C> {
         let n_predict = basis.len();
         if admit > n_predict {
             let p = Phase::start(timed);
-            let leak2 = self.leakage_for_step(basis, &coeffs_predict, protected, admit, tau_add)?;
+            let leak2 = self.leakage_for_step(
+                basis,
+                &coeffs_predict,
+                protected,
+                admit,
+                tau_add,
+                workspace.as_deref_mut(),
+            )?;
             p.stop(&mut t.leakage2_us);
 
             let p = Phase::start(timed);
-            leak2.admit(basis, coeffs, admit);
+            let reusable = leak2.admit(basis, coeffs, admit);
+            if let Some(workspace) = workspace.as_mut() {
+                workspace.candidates = reusable;
+            }
             p.stop(&mut t.expand2_us);
         }
 

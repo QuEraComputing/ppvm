@@ -23,14 +23,38 @@ mod tests {
 
     #[test]
     fn uniform_bound_matches_canonical_metadata_without_noise() {
-        let h = vec![("XXII".into(), 0.1), ("IYYI".into(), -0.1), ("ZIIX".into(), 0.1)];
+        let h = vec![
+            ("XXII".into(), 0.1),
+            ("IYYI".into(), -0.1),
+            ("ZIIX".into(), 0.1),
+        ];
         let spec = LindbladSpec::<2>::new(4, &h, &[]).unwrap();
-        let basis: Vec<_> = (0..256).map(|i| word_from_codes::<2>(
-            &(0..4).map(|q| ((i >> (2*q)) & 3) as u8).collect::<Vec<_>>()
-        ).unwrap()).collect();
-        let direct = DirectOp { spec: &spec, basis: &basis, index: CompactBasisIndex::new(&basis) };
-        let (_, Norm::Uniform(bound)) = PackedOp::build(&direct, 0.2) else { panic!("Hamiltonian has zero diagonal"); };
-        assert_eq!(bound, direct.per_col().iter().map(|(raw, _)| *raw).fold(0.0_f64, f64::max));
+        let basis: Vec<_> = (0..256)
+            .map(|i| {
+                word_from_codes::<2>(
+                    &(0..4)
+                        .map(|q| ((i >> (2 * q)) & 3) as u8)
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap()
+            })
+            .collect();
+        let direct = DirectOp {
+            spec: &spec,
+            basis: &basis,
+            index: CompactBasisIndex::new(&basis),
+        };
+        let (_, Norm::Uniform(bound)) = PackedOp::build(&direct, 0.2) else {
+            panic!("Hamiltonian has zero diagonal");
+        };
+        assert_eq!(
+            bound,
+            direct
+                .per_col()
+                .iter()
+                .map(|(raw, _)| *raw)
+                .fold(0.0_f64, f64::max)
+        );
     }
 
     #[test]
@@ -63,7 +87,9 @@ mod tests {
             basis: &basis,
             index: CompactBasisIndex::new(&basis),
         };
-        let (packed, Norm::Columns(metadata)) = PackedOp::build(&direct, 0.5) else { panic!("noise requires column bounds"); };
+        let (packed, Norm::Columns(metadata)) = PackedOp::build(&direct, 0.5) else {
+            panic!("noise requires column bounds");
+        };
         assert_eq!(metadata, direct.per_col());
         let input: Vec<_> = (0..basis.len())
             .map(|i| if i % 7 == 0 { 0.0 } else { (i as f64).cos() })
@@ -103,10 +129,7 @@ pub(crate) struct PackedOp {
 }
 
 impl PackedOp {
-    pub(crate) fn build<const C: usize>(
-        direct: &DirectOp<'_, C>,
-        scale: f64,
-    ) -> (Self, Norm) {
+    pub(crate) fn build<const C: usize>(direct: &DirectOp<'_, C>, scale: f64) -> (Self, Norm) {
         let dimension = direct.basis.len();
         assert!(dimension < i32::MAX as usize);
         let shift = dimension
@@ -114,7 +137,12 @@ impl PackedOp {
             .max(64)
             .next_power_of_two()
             .trailing_zeros();
-        let noisy = direct.spec.pauli_plan.as_ref().unwrap().has_diagonal_noise();
+        let noisy = direct
+            .spec
+            .pauli_plan
+            .as_ref()
+            .unwrap()
+            .has_diagonal_noise();
         let built: Vec<_> = direct
             .basis
             .par_chunks(1 << shift)
@@ -124,11 +152,17 @@ impl PackedOp {
                 let mut scratch = ActionScratch::new();
                 let mut offsets = Vec::with_capacity(words.len() + 1);
                 offsets.push(0u32);
-                let mut per_col = if noisy { Vec::with_capacity(words.len()) } else { Vec::new() };
+                let mut per_col = if noisy {
+                    Vec::with_capacity(words.len())
+                } else {
+                    Vec::new()
+                };
                 let mut norm = 0.0_f64;
                 for row in first..first + words.len() {
                     let (metadata, count) = direct.count_row(row, &mut scratch, noisy);
-                    if noisy { per_col.push(metadata); }
+                    if noisy {
+                        per_col.push(metadata);
+                    }
                     norm = norm.max(metadata.0);
                     let count = u32::try_from(count).expect("row exceeds u32 entries");
                     offsets.push(
@@ -174,7 +208,11 @@ impl PackedOp {
             })
             .collect();
         let mut ranges = Vec::with_capacity(built.len());
-        let mut per_col = if noisy { Vec::with_capacity(dimension) } else { Vec::new() };
+        let mut per_col = if noisy {
+            Vec::with_capacity(dimension)
+        } else {
+            Vec::new()
+        };
         let mut norm = 0.0_f64;
         for (range, metadata, bound) in built {
             ranges.push(range);
@@ -188,7 +226,11 @@ impl PackedOp {
                 dimension,
                 scale,
             },
-            if noisy { Norm::Columns(per_col) } else { Norm::Uniform(norm) },
+            if noisy {
+                Norm::Columns(per_col)
+            } else {
+                Norm::Uniform(norm)
+            },
         )
     }
 }

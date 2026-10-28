@@ -89,6 +89,9 @@ mod tests {
         let mut b = a.clone();
         let mut ca = vec![1.0];
         let mut cb = ca.clone();
+        let mut reused_basis = a.clone();
+        let mut reused_coeffs = ca.clone();
+        let mut workspace = crate::PcStepWorkspace::default();
         let cfg = PcStepConfig {
             max_basis: 8,
             admit_basis: Some(24),
@@ -98,6 +101,18 @@ mod tests {
         for _ in 0..10 {
             cached.pc_step(&mut a, &mut ca, 0.1, &[seed], &cfg).unwrap();
             direct.pc_step(&mut b, &mut cb, 0.1, &[seed], &cfg).unwrap();
+            direct
+                .pc_step_with_workspace(
+                    &mut reused_basis,
+                    &mut reused_coeffs,
+                    0.1,
+                    &[seed],
+                    &cfg,
+                    &mut workspace,
+                )
+                .unwrap();
+            assert_eq!(a, reused_basis);
+            assert_eq!(ca, reused_coeffs);
             assert_eq!(a, b);
             assert_eq!(ca, cb);
         }
@@ -168,7 +183,12 @@ impl<const C: usize> ActionScratch<C> {
 }
 
 impl<const C: usize> DirectOp<'_, C> {
-    pub(crate) fn count_row(&self, position: usize, scratch: &mut ActionScratch<C>, canonical: bool) -> ((f64, f64), usize) {
+    pub(crate) fn count_row(
+        &self,
+        position: usize,
+        scratch: &mut ActionScratch<C>,
+        canonical: bool,
+    ) -> ((f64, f64), usize) {
         let word = &self.basis[position];
         scratch.fill(self.spec, word, canonical);
         let mut raw = 0.0;
@@ -176,7 +196,9 @@ impl<const C: usize> DirectOp<'_, C> {
         let mut count = 0;
         for &(parent, value) in &scratch.terms {
             raw += value.abs();
-            if parent == *word { diagonal = value; }
+            if parent == *word {
+                diagonal = value;
+            }
             count += usize::from(self.index.get(&parent).is_some());
         }
         ((raw, diagonal), count)

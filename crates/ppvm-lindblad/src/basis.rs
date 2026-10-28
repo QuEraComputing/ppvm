@@ -16,6 +16,17 @@ use rayon::prelude::*;
 /// into the live map (and the room-cap applied) once per chunk.
 const CHUNK_SIZE: usize = 4096;
 
+/// Reusable scratch for adaptive real-coefficient evolution.
+///
+/// Keep one workspace per trajectory. It retains candidate payload and generation
+/// buffers; hash-table growth starts from an empty allocation to preserve ordering.
+#[derive(Default)]
+pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
+    pub(crate) candidates: Option<crate::indexed_candidates::IndexedCandidates<C>>,
+    outputs: Vec<Vec<(Word<C>, f64)>>,
+    magnitude_bits: Vec<u64>,
+}
+
 pub(crate) enum LeakageCandidates<const C: usize> {
     Pairs(Vec<(Word<C>, f64)>),
     Indexed(crate::indexed_candidates::IndexedCandidates<C>, f64),
@@ -33,13 +44,16 @@ impl<const C: usize> LeakageCandidates<C> {
         basis: &mut Vec<Word<C>>,
         coefficients: &mut Vec<f64>,
         maximum: usize,
-    ) {
+    ) -> Option<crate::indexed_candidates::IndexedCandidates<C>> {
         match self {
             Self::Pairs(pairs) => {
-                crate::truncate::add_leakage_capped(basis, coefficients, pairs, maximum)
+                crate::truncate::add_leakage_capped(basis, coefficients, pairs, maximum);
+                None
             }
-            Self::Indexed(indexed, threshold) => {
-                indexed.admit(basis, coefficients, maximum, threshold)
+            Self::Indexed(mut indexed, threshold) => {
+                indexed.admit(basis, coefficients, maximum, threshold);
+                indexed.reset();
+                Some(indexed)
             }
         }
     }
@@ -176,7 +190,7 @@ impl<const C: usize> LindbladSpec<C> {
         }
         if self.leakage_backend != crate::LeakageBackend::Reference {
             return self
-                .leakage_buffered(basis, coeffs, protected, max_basis, tau_add)
+                .leakage_buffered(basis, coeffs, protected, max_basis, tau_add, None)
                 .map(LeakageCandidates::into_vec);
         }
         // Hash-only membership tables: storing 8-byte `u64` keys instead
@@ -243,6 +257,7 @@ impl<const C: usize> LindbladSpec<C> {
         protected: &[Word<C>],
         maximum: usize,
         threshold: f64,
+        workspace: Option<&mut PcStepWorkspace<C>>,
     ) -> Result<LeakageCandidates<C>, Error> {
         if self.leakage_backend != crate::LeakageBackend::Indexed {
             return self
@@ -256,7 +271,14 @@ impl<const C: usize> LindbladSpec<C> {
                 b: coefficients.len(),
             });
         }
-        self.leakage_buffered(basis, coefficients, protected, maximum, threshold)
+        self.leakage_buffered(
+            basis,
+            coefficients,
+            protected,
+            maximum,
+            threshold,
+            workspace,
+        )
     }
 
     fn leakage_buffered(
@@ -266,6 +288,7 @@ impl<const C: usize> LindbladSpec<C> {
         protected: &[Word<C>],
         max_basis: usize,
         tau_add: f64,
+        mut workspace: Option<&mut PcStepWorkspace<C>>,
     ) -> Result<LeakageCandidates<C>, Error> {
         let in_basis: FxHashMap<u64, ()> = basis.iter().map(|w| (word_hash(w), ())).collect();
         let protected_set: FxHashMap<u64, ()> =
@@ -273,11 +296,20 @@ impl<const C: usize> LindbladSpec<C> {
         let order = order_by_desc_mag(coeffs);
         let room = max_basis.saturating_sub(basis.len());
         let mut merged = FxHashMap::default();
-        let mut indexed = crate::indexed_candidates::IndexedCandidates::new();
+        let mut indexed = workspace
+            .as_mut()
+            .and_then(|w| w.candidates.take())
+            .unwrap_or_else(crate::indexed_candidates::IndexedCandidates::new);
         let mut magnitudes = Vec::new();
-        let mut magnitude_bits = Vec::new();
-        let mut outputs: Vec<Vec<(Word<C>, f64)>> =
-            (0..CHUNK_SIZE.div_ceil(64)).map(|_| Vec::new()).collect();
+        let mut magnitude_bits = workspace
+            .as_mut()
+            .map(|w| std::mem::take(&mut w.magnitude_bits))
+            .unwrap_or_default();
+        let mut outputs = workspace
+            .as_mut()
+            .map(|w| std::mem::take(&mut w.outputs))
+            .unwrap_or_default();
+        outputs.resize_with(CHUNK_SIZE.div_ceil(64), Vec::new);
         for chunk in order.chunks(CHUNK_SIZE) {
             outputs
                 .par_iter_mut()
@@ -316,9 +348,15 @@ impl<const C: usize> LindbladSpec<C> {
             }
         }
         // Generation buffers are dead before the admission vector is materialized.
-        drop(outputs);
+        if let Some(workspace) = workspace {
+            for output in &mut outputs {
+                output.clear();
+            }
+            workspace.outputs = outputs;
+            magnitude_bits.clear();
+            workspace.magnitude_bits = magnitude_bits;
+        }
         drop(magnitudes);
-        drop(magnitude_bits);
         drop(order);
         drop(in_basis);
         drop(protected_set);

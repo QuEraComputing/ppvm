@@ -25,6 +25,15 @@ impl<const C: usize> IndexedCandidates<C> {
         }
     }
 
+    pub(crate) fn reset(&mut self) {
+        self.words.clear();
+        self.rates.clear();
+        self.state.clear();
+        self.free.clear();
+        // Table growth history determines admission order, including magnitude ties.
+        self.table = HashTable::new();
+    }
+
     pub(crate) fn add(&mut self, word: Word<C>, value: f64) {
         let hash = word_hash(&word);
         if let Some(&index) = self
@@ -113,7 +122,7 @@ impl<const C: usize> IndexedCandidates<C> {
     }
 
     pub(crate) fn admit(
-        self,
+        &self,
         basis: &mut Vec<Word<C>>,
         coefficients: &mut Vec<f64>,
         maximum: usize,

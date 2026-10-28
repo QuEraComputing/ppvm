@@ -62,48 +62,6 @@ pub(crate) fn cap_real_map_with_scratch<const C: usize>(
     merged.retain(|_, value| keep(value.abs()));
 }
 
-/// Rank finite absolute f64 values by their monotone unsigned IEEE representation.
-pub(crate) fn cap_real_map_bits<const C: usize>(
-    merged: &mut FxHashMap<Word<C>, f64>,
-    room: usize,
-    bits: &mut Vec<u64>,
-    floating: &mut Vec<f64>,
-) {
-    if merged.len() <= room {
-        return;
-    }
-    if room == 0 {
-        merged.clear();
-        return;
-    }
-    bits.clear();
-    if bits.capacity() < merged.len() {
-        bits.reserve_exact(merged.len());
-    }
-    let mut finite = true;
-    for value in merged.values() {
-        finite &= value.is_finite();
-        bits.push(value.abs().to_bits());
-    }
-    if !finite {
-        cap_real_map_with_scratch(merged, room, floating);
-        return;
-    }
-    let position = bits.len() - room;
-    let cutoff = *bits.select_nth_unstable(position).1;
-    let above = bits.iter().filter(|&&value| value > cutoff).count();
-    let mut ties = room - above;
-    merged.retain(|_, value| {
-        let magnitude = value.abs().to_bits();
-        if magnitude > cutoff {
-            return true;
-        }
-        let keep = magnitude == cutoff && ties > 0;
-        ties -= keep as usize;
-        keep
-    });
-}
-
 /// Compact `basis` / `coeffs` in place: drop entries whose coefficient
 /// magnitude is below `drop_tol` unless the word appears in `protected`.
 /// No-op when `drop_tol ≤ 0`.
@@ -249,23 +207,6 @@ mod tests {
                 word_from_codes(&codes).unwrap()
             })
             .collect()
-    }
-
-    #[test]
-    fn unsigned_rank_selection_matches_float_cutoffs_and_ties() {
-        let basis = words(80);
-        let input: FxHashMap<_, f64> = basis
-            .iter()
-            .enumerate()
-            .map(|(i, &word)| (word, (i % 7) as f64 - 3.0))
-            .collect();
-        for room in [0, 1, 7, 30, 79] {
-            let mut expected = input.clone();
-            let mut actual = input.clone();
-            cap_map_to_room(&mut expected, room);
-            cap_real_map_bits(&mut actual, room, &mut Vec::new(), &mut Vec::new());
-            assert_eq!(actual, expected);
-        }
     }
 
     #[test]

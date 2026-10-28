@@ -69,9 +69,6 @@ mod buffered_tests {
         let indexed = LindbladSpec::<2>::new(n, &h, &[])
             .unwrap()
             .with_leakage_backend(LeakageBackend::Indexed);
-        let ranked = LindbladSpec::<2>::new(n, &h, &[])
-            .unwrap()
-            .with_leakage_backend(LeakageBackend::RankBits);
         let basis: Vec<_> = (0..14000)
             .filter(|i| i % 3 != 0)
             .map(|i| {
@@ -105,7 +102,7 @@ mod buffered_tests {
                     })
                     .unwrap();
                 assert_eq!(actual, expected, "room={room}, threads={threads}");
-                for implementation in [&indexed, &ranked] {
+                for implementation in [&indexed] {
                     let actual = pool
                         .install(|| {
                             implementation.leakage_with_prune(
@@ -314,13 +311,6 @@ impl<const C: usize> LindbladSpec<C> {
             }
             if self.leakage_backend == crate::LeakageBackend::Indexed {
                 indexed.cap(room, &mut magnitude_bits);
-            } else if self.leakage_backend == crate::LeakageBackend::RankBits {
-                crate::truncate::cap_real_map_bits(
-                    &mut merged,
-                    room,
-                    &mut magnitude_bits,
-                    &mut magnitudes,
-                );
             } else {
                 crate::truncate::cap_real_map_with_scratch(&mut merged, room, &mut magnitudes);
             }

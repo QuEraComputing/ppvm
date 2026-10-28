@@ -508,28 +508,38 @@ where
         .iter()
         .map(|&(raw, diag)| raw - diag.mag() + (diag - mu).mag())
         .fold(0.0_f64, f64::max);
-    expm_apply_operator_bounds(op, dt, coeffs, mu, onenorm, select)
+    expm_apply_operator_bounds(op, dt, coeffs, (mu, onenorm), select, None, Vec::new())
 }
 
 fn expm_apply_operator_bounds<T, O>(
     op: O,
     dt: f64,
     coeffs: &[T],
-    mu: T,
-    onenorm: f64,
+    bounds: (T, f64),
     select: impl FnOnce(f64) -> (u32, u32, f64),
+    work: Option<&mut Vec<T>>,
+    mut output: Vec<T>,
 ) -> Vec<T>
 where
     O: LinearOperator<T>,
     T: ExpmComputation<Real = f64> + Coeff + From<f64>,
 {
+    let (mu, onenorm) = bounds;
     let (m_star, s, expm_tol) = select(dt.abs() * onenorm);
 
-    let mut v = coeffs.to_vec();
+    output.clear();
+    output.extend_from_slice(coeffs);
+    let mut v = output;
     let expm =
         quspin_expm::ExpmOp::from_parts(op, T::from(dt), mu, s as usize, m_star as usize, expm_tol);
-    expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
-        .expect("expm apply");
+    if let Some(work) = work {
+        work.resize(2 * coeffs.len(), T::default());
+        expm.apply_into(ndarray::ArrayViewMut1::from(v.as_mut_slice()), work)
+            .expect("expm apply");
+    } else {
+        expm.apply(ndarray::ArrayViewMut1::from(v.as_mut_slice()))
+            .expect("expm apply");
+    }
     v
 }
 
@@ -546,6 +556,7 @@ pub(crate) fn expm_apply_mf<const C: usize>(
     dt: f64,
     coeffs: &[f64],
     drop_tol: f64,
+    mut workspace: Option<&mut crate::PcStepWorkspace<C>>,
 ) -> Vec<f64> {
     if basis.is_empty() {
         return Vec::new();
@@ -559,34 +570,47 @@ pub(crate) fn expm_apply_mf<const C: usize>(
         if matches!(
             spec.expm_backend,
             crate::ExpmBackend::Packed | crate::ExpmBackend::PackedUpper
-        ) {
-            if let Some(scale) = spec
-                .pauli_plan
-                .as_ref()
-                .and_then(|plan| plan.uniform_scale())
-            {
-                if basis.len() < i32::MAX as usize {
-                    let (packed, norm) = crate::packed_expm::PackedOp::build(&op, scale);
-                    drop(op);
-                    let select = |t_norm| {
-                        if drop_tol >= 1e-4 {
-                            let (m, s) = expm::select_ms_loose(t_norm);
-                            (m, s, 1e-6)
-                        } else {
-                            let (m, s) = expm::select_ms(t_norm);
-                            (m, s, 1e-12)
-                        }
-                    };
-                    return match norm {
-                        crate::packed_expm::Norm::Uniform(bound) => {
-                            expm_apply_operator_bounds(packed, dt, coeffs, 0.0, bound, select)
-                        }
-                        crate::packed_expm::Norm::Columns(per_col) => {
-                            expm_apply_operator(packed, basis.len(), &per_col, dt, coeffs, select)
-                        }
-                    };
+        ) && let Some(scale) = spec
+            .pauli_plan
+            .as_ref()
+            .and_then(|plan| plan.uniform_scale())
+            && basis.len() < i32::MAX as usize
+        {
+            let previous = workspace.as_mut().and_then(|w| w.packed.take());
+            let (packed, norm) = crate::packed_expm::PackedOp::build(&op, scale, previous);
+            drop(op);
+            let select = |t_norm| {
+                if drop_tol >= 1e-4 {
+                    let (m, s) = expm::select_ms_loose(t_norm);
+                    (m, s, 1e-6)
+                } else {
+                    let (m, s) = expm::select_ms(t_norm);
+                    (m, s, 1e-12)
                 }
+            };
+            let (mu, bound) = match norm {
+                crate::packed_expm::Norm::Uniform(bound) => (0.0, bound),
+                crate::packed_expm::Norm::Columns(per_col) => {
+                    let trace: f64 = per_col.iter().map(|(_, d)| *d).sum();
+                    let mu = trace / basis.len() as f64;
+                    let bound = per_col
+                        .iter()
+                        .map(|&(raw, diag)| raw - diag.abs() + (diag - mu).abs())
+                        .fold(0.0_f64, f64::max);
+                    (mu, bound)
+                }
+            };
+            let output = workspace
+                .as_mut()
+                .map(|w| std::mem::take(&mut w.exponential_output))
+                .unwrap_or_default();
+            let work = workspace.as_mut().map(|w| &mut w.taylor);
+            let result =
+                expm_apply_operator_bounds(&packed, dt, coeffs, (mu, bound), select, work, output);
+            if let Some(workspace) = workspace {
+                workspace.packed = Some(packed);
             }
+            return result;
         }
         let per_col = op.per_col();
         return expm_apply_operator(op, basis.len(), &per_col, dt, coeffs, |t_norm| {
@@ -666,8 +690,8 @@ pub(crate) fn expm_apply_mf_cxvec(
     }
     let re: Vec<f64> = b.iter().map(|z| z.re).collect();
     let im: Vec<f64> = b.iter().map(|z| z.im).collect();
-    let re_out = expm_apply_mf(spec, basis, dt, &re, drop_tol);
-    let im_out = expm_apply_mf(spec, basis, dt, &im, drop_tol);
+    let re_out = expm_apply_mf(spec, basis, dt, &re, drop_tol, None);
+    let im_out = expm_apply_mf(spec, basis, dt, &im, drop_tol, None);
     re_out
         .into_iter()
         .zip(im_out)

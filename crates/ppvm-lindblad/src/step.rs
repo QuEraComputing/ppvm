@@ -76,7 +76,7 @@ impl<const C: usize> LindbladSpec<C> {
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
         self.run_in_pool(cfg, |this| {
-            this.pc_step_inner(basis, coeffs, dt, protected, cfg, false, None)
+            this.pc_step_inner(basis, coeffs, dt, protected, cfg, (false, None))
                 .map(|_| ())
         })
     }
@@ -93,7 +93,7 @@ impl<const C: usize> LindbladSpec<C> {
         cfg: &PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
         self.run_in_pool(cfg, |this| {
-            this.pc_step_inner(basis, coeffs, dt, protected, cfg, true, None)
+            this.pc_step_inner(basis, coeffs, dt, protected, cfg, (true, None))
         })
     }
 
@@ -111,7 +111,7 @@ impl<const C: usize> LindbladSpec<C> {
         workspace: &mut PcStepWorkspace<C>,
     ) -> Result<PcStepTimings, Error> {
         self.run_in_pool(cfg, |this| {
-            this.pc_step_inner(basis, coeffs, dt, protected, cfg, true, Some(workspace))
+            this.pc_step_inner(basis, coeffs, dt, protected, cfg, (true, Some(workspace)))
         })
     }
 
@@ -138,9 +138,9 @@ impl<const C: usize> LindbladSpec<C> {
         dt: f64,
         protected: &[Word<C>],
         cfg: &PcStepConfig,
-        timed: bool,
-        mut workspace: Option<&mut PcStepWorkspace<C>>,
+        execution: (bool, Option<&mut PcStepWorkspace<C>>),
     ) -> Result<PcStepTimings, Error> {
+        let (timed, mut workspace) = execution;
         let PcStepConfig {
             max_basis,
             admit_basis,
@@ -183,7 +183,7 @@ impl<const C: usize> LindbladSpec<C> {
         // 2. Predictor: `expm_step` reads `coeffs` immutably and returns a
         // new owned vector with the predicted state.
         let p = Phase::start(timed);
-        let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol);
+        let coeffs_predict = self.expm_step(basis, dt, coeffs, drop_tol, workspace.as_deref_mut());
         p.stop(&mut t.expm1_us);
 
         // 3. Second-hop expansion from the predicted state. Extend `coeffs`
@@ -217,11 +217,22 @@ impl<const C: usize> LindbladSpec<C> {
         // If the second hop admitted nothing, the corrector would repeat the
         // predictor's computation exactly, so the predicted state is kept.
         if basis.len() == n_predict {
-            *coeffs = coeffs_predict;
+            let previous = std::mem::replace(coeffs, coeffs_predict);
+            if let Some(workspace) = workspace.as_mut() {
+                workspace.exponential_output = previous;
+            }
         } else {
-            drop(coeffs_predict);
+            if let Some(workspace) = workspace.as_mut() {
+                workspace.exponential_output = coeffs_predict;
+            } else {
+                drop(coeffs_predict);
+            }
             let p = Phase::start(timed);
-            *coeffs = self.expm_step(basis, dt, coeffs, drop_tol);
+            let result = self.expm_step(basis, dt, coeffs, drop_tol, workspace.as_deref_mut());
+            let previous = std::mem::replace(coeffs, result);
+            if let Some(workspace) = workspace.as_mut() {
+                workspace.exponential_output = previous;
+            }
             p.stop(&mut t.expm2_us);
         }
 
@@ -233,8 +244,15 @@ impl<const C: usize> LindbladSpec<C> {
 
     /// Compute `exp(dt · M) · b` for the in-basis-restricted generator
     /// `M`, matrix-free, via `quspin-expm` (see [`crate::mf_expm`]).
-    fn expm_step(&self, basis: &[Word<C>], dt: f64, b: &[f64], drop_tol: f64) -> Vec<f64> {
-        mf_expm::expm_apply_mf(self, basis, dt, b, drop_tol)
+    fn expm_step(
+        &self,
+        basis: &[Word<C>],
+        dt: f64,
+        b: &[f64],
+        drop_tol: f64,
+        workspace: Option<&mut PcStepWorkspace<C>>,
+    ) -> Vec<f64> {
+        mf_expm::expm_apply_mf(self, basis, dt, b, drop_tol, workspace)
     }
 
     /// One predictor-corrector step in **orbit-rep form** at momentum

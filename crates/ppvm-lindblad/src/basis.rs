@@ -19,12 +19,15 @@ const CHUNK_SIZE: usize = 4096;
 /// Reusable scratch for adaptive real-coefficient evolution.
 ///
 /// Keep one workspace per trajectory. It retains candidate payload and generation
-/// buffers; hash-table growth starts from an empty allocation to preserve ordering.
+/// buffers, packed transitions and exponential scratch; hash-table growth starts from an empty allocation to preserve ordering.
 #[derive(Default)]
 pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
     pub(crate) candidates: Option<crate::indexed_candidates::IndexedCandidates<C>>,
     outputs: Vec<Vec<(Word<C>, f64)>>,
     magnitude_bits: Vec<u64>,
+    pub(crate) packed: Option<crate::packed_expm::PackedOp>,
+    pub(crate) taylor: Vec<f64>,
+    pub(crate) exponential_output: Vec<f64>,
 }
 
 pub(crate) enum LeakageCandidates<const C: usize> {
@@ -54,82 +57,6 @@ impl<const C: usize> LeakageCandidates<C> {
                 indexed.admit(basis, coefficients, maximum, threshold);
                 indexed.reset();
                 Some(indexed)
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod buffered_tests {
-    use super::*;
-    use crate::{LeakageBackend, word_from_codes};
-
-    #[test]
-    fn buffered_leakage_preserves_multiple_chunk_caps_and_source_order() {
-        let n = 7;
-        let mut h = Vec::new();
-        for site in 0..n - 1 {
-            for symbol in ['X', 'Y'] {
-                let mut term = vec!['I'; n];
-                term[site] = symbol;
-                term[site + 1] = symbol;
-                h.push((term.into_iter().collect(), 0.3));
-            }
-        }
-        let reference = LindbladSpec::<2>::new(n, &h, &[]).unwrap();
-        let buffered = LindbladSpec::<2>::new(n, &h, &[])
-            .unwrap()
-            .with_leakage_backend(LeakageBackend::Buffered);
-        let indexed = LindbladSpec::<2>::new(n, &h, &[])
-            .unwrap()
-            .with_leakage_backend(LeakageBackend::Indexed);
-        let basis: Vec<_> = (0..14000)
-            .filter(|i| i % 3 != 0)
-            .map(|i| {
-                word_from_codes::<2>(
-                    &(0..n)
-                        .map(|q| ((i >> (2 * q)) & 3) as u8)
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap()
-            })
-            .collect();
-        let coefficients: Vec<_> = (0..basis.len()).map(|i| (i as f64).sin()).collect();
-        for room in [0, 100, 2000] {
-            let expected = reference
-                .leakage_with_prune(&basis, &coefficients, &[], basis.len() + room, 0.0)
-                .unwrap();
-            for threads in [1, 2, 6] {
-                let pool = rayon::ThreadPoolBuilder::new()
-                    .num_threads(threads)
-                    .build()
-                    .unwrap();
-                let actual = pool
-                    .install(|| {
-                        buffered.leakage_with_prune(
-                            &basis,
-                            &coefficients,
-                            &[],
-                            basis.len() + room,
-                            0.0,
-                        )
-                    })
-                    .unwrap();
-                assert_eq!(actual, expected, "room={room}, threads={threads}");
-                for implementation in [&indexed] {
-                    let actual = pool
-                        .install(|| {
-                            implementation.leakage_with_prune(
-                                &basis,
-                                &coefficients,
-                                &[],
-                                basis.len() + room,
-                                0.0,
-                            )
-                        })
-                        .unwrap();
-                    assert_eq!(actual, expected, "room={room}, threads={threads}");
-                }
             }
         }
     }
@@ -190,7 +117,7 @@ impl<const C: usize> LindbladSpec<C> {
         }
         if self.leakage_backend != crate::LeakageBackend::Reference {
             return self
-                .leakage_buffered(basis, coeffs, protected, max_basis, tau_add, None, None)
+                .leakage_buffered(basis, coeffs, protected, (max_basis, tau_add), None, None)
                 .map(LeakageCandidates::into_vec);
         }
         // Hash-only membership tables: storing 8-byte `u64` keys instead
@@ -280,8 +207,7 @@ impl<const C: usize> LindbladSpec<C> {
             basis,
             coefficients,
             protected,
-            maximum,
-            threshold,
+            (maximum, threshold),
             workspace,
             owned,
         )
@@ -292,11 +218,11 @@ impl<const C: usize> LindbladSpec<C> {
         basis: &[Word<C>],
         coeffs: &[f64],
         protected: &[Word<C>],
-        max_basis: usize,
-        tau_add: f64,
+        limits: (usize, f64),
         mut workspace: Option<&mut PcStepWorkspace<C>>,
         owned_basis: Option<Vec<Word<C>>>,
     ) -> Result<LeakageCandidates<C>, Error> {
+        let (max_basis, tau_add) = limits;
         let tail = owned_basis.is_some();
         let source = owned_basis.as_deref().unwrap_or(basis);
         let in_basis: FxHashMap<u64, ()> = source.iter().map(|w| (word_hash(w), ())).collect();
@@ -594,5 +520,84 @@ impl<const C: usize> LindbladSpec<C> {
             cap_map_to_room(&mut merged, room);
         }
         Ok(merged.into_iter().filter(|(_, c)| c.norm() > 0.0).collect())
+    }
+}
+
+#[cfg(test)]
+mod buffered_tests {
+    use super::*;
+    use crate::{LeakageBackend, word_from_codes};
+
+    #[test]
+    fn buffered_leakage_preserves_multiple_chunk_caps_and_source_order() {
+        let n = 7;
+        let mut h = Vec::new();
+        for site in 0..n - 1 {
+            for symbol in ['X', 'Y'] {
+                let mut term = vec!['I'; n];
+                term[site] = symbol;
+                term[site + 1] = symbol;
+                h.push((term.into_iter().collect(), 0.3));
+            }
+        }
+        let reference = LindbladSpec::<2>::new(n, &h, &[]).unwrap();
+        let buffered = LindbladSpec::<2>::new(n, &h, &[])
+            .unwrap()
+            .with_leakage_backend(LeakageBackend::Buffered);
+        let indexed = LindbladSpec::<2>::new(n, &h, &[])
+            .unwrap()
+            .with_leakage_backend(LeakageBackend::Indexed);
+        let tail = LindbladSpec::<2>::new(n, &h, &[])
+            .unwrap()
+            .with_leakage_backend(LeakageBackend::Tail);
+        let basis: Vec<_> = (0..14000)
+            .filter(|i| i % 3 != 0)
+            .map(|i| {
+                word_from_codes::<2>(
+                    &(0..n)
+                        .map(|q| ((i >> (2 * q)) & 3) as u8)
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap()
+            })
+            .collect();
+        let coefficients: Vec<_> = (0..basis.len()).map(|i| (i as f64).sin()).collect();
+        for room in [0, 100, 2000] {
+            let expected = reference
+                .leakage_with_prune(&basis, &coefficients, &[], basis.len() + room, 0.0)
+                .unwrap();
+            for threads in [1, 2, 6] {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()
+                    .unwrap();
+                let actual = pool
+                    .install(|| {
+                        buffered.leakage_with_prune(
+                            &basis,
+                            &coefficients,
+                            &[],
+                            basis.len() + room,
+                            0.0,
+                        )
+                    })
+                    .unwrap();
+                assert_eq!(actual, expected, "room={room}, threads={threads}");
+                for implementation in [&indexed, &tail] {
+                    let actual = pool
+                        .install(|| {
+                            implementation.leakage_with_prune(
+                                &basis,
+                                &coefficients,
+                                &[],
+                                basis.len() + room,
+                                0.0,
+                            )
+                        })
+                        .unwrap();
+                    assert_eq!(actual, expected, "room={room}, threads={threads}");
+                }
+            }
+        }
     }
 }

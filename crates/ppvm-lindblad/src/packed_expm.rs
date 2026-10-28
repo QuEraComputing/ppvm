@@ -15,110 +15,6 @@ struct Range {
     diagonal: Vec<f64>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::compact_index::CompactBasisIndex;
-    use crate::{ExpmBackend, JumpInput, LindbladSpec, word_from_codes};
-    use num::Complex;
-
-    #[test]
-    fn uniform_bound_matches_canonical_metadata_without_noise() {
-        let h = vec![
-            ("XXII".into(), 0.1),
-            ("IYYI".into(), -0.1),
-            ("ZIIX".into(), 0.1),
-        ];
-        let spec = LindbladSpec::<2>::new(4, &h, &[]).unwrap();
-        let basis: Vec<_> = (0..256)
-            .map(|i| {
-                word_from_codes::<2>(
-                    &(0..4)
-                        .map(|q| ((i >> (2 * q)) & 3) as u8)
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap()
-            })
-            .collect();
-        let direct = DirectOp {
-            spec: &spec,
-            basis: &basis,
-            index: CompactBasisIndex::new(&basis),
-        };
-        let (_, Norm::Uniform(bound)) = PackedOp::build(&direct, 0.2) else {
-            panic!("Hamiltonian has zero diagonal");
-        };
-        assert_eq!(
-            bound,
-            direct
-                .per_col()
-                .iter()
-                .map(|(raw, _)| *raw)
-                .fold(0.0_f64, f64::max)
-        );
-    }
-
-    #[test]
-    fn signed_rows_match_projection_with_diagonal_noise_and_negative_couplings() {
-        let h = vec![
-            ("XXII".into(), 0.25),
-            ("IYYI".into(), -0.25),
-            ("ZIIX".into(), 0.25),
-        ];
-        let jumps = vec![JumpInput {
-            lincomb: vec![("IZII".into(), Complex::new(1.0, 0.0))],
-            rate: 0.3,
-        }];
-        for backend in [ExpmBackend::Packed, ExpmBackend::PackedUpper] {
-            let spec = LindbladSpec::<2>::new(4, &h, &jumps)
-                .unwrap()
-                .with_expm_backend(backend);
-            let basis: Vec<_> = (0..256)
-                .filter(|i| i % 3 != 0)
-                .map(|i| {
-                    word_from_codes::<2>(
-                        &(0..4)
-                            .map(|q| ((i >> (2 * q)) & 3) as u8)
-                            .collect::<Vec<_>>(),
-                    )
-                    .unwrap()
-                })
-                .collect();
-            let direct = DirectOp {
-                spec: &spec,
-                basis: &basis,
-                index: CompactBasisIndex::new(&basis),
-            };
-            let (packed, Norm::Columns(metadata)) = PackedOp::build(&direct, 0.5) else {
-                panic!("noise requires column bounds");
-            };
-            assert_eq!(metadata, direct.per_col());
-            let input: Vec<_> = (0..basis.len())
-                .map(|i| if i % 7 == 0 { 0.0 } else { (i as f64).cos() })
-                .collect();
-            let mut expected = vec![0.0; basis.len()];
-            for (row, col, value) in spec.generator(&basis) {
-                if input[col] != 0.0 {
-                    expected[row] += value * input[col];
-                }
-            }
-            for threads in [1, 2, 6] {
-                let pool = rayon::ThreadPoolBuilder::new()
-                    .num_threads(threads)
-                    .build()
-                    .unwrap();
-                let mut actual = vec![0.0; basis.len()];
-                pool.install(|| packed.dot(true, &input, &mut actual))
-                    .unwrap();
-                assert_eq!(actual, expected);
-                pool.install(|| packed.dot(false, &input, &mut actual))
-                    .unwrap();
-                assert_eq!(actual, expected.iter().map(|v| v + v).collect::<Vec<_>>());
-            }
-        }
-    }
-}
-
 pub(crate) enum Norm {
     Columns(Vec<(f64, f64)>),
     Uniform(f64),
@@ -133,7 +29,11 @@ pub(crate) struct PackedOp {
 }
 
 impl PackedOp {
-    pub(crate) fn build<const C: usize>(direct: &DirectOp<'_, C>, scale: f64) -> (Self, Norm) {
+    pub(crate) fn build<const C: usize>(
+        direct: &DirectOp<'_, C>,
+        scale: f64,
+        previous: Option<Self>,
+    ) -> (Self, Norm) {
         let dimension = direct.basis.len();
         assert!(dimension < i32::MAX as usize);
         let shift = dimension
@@ -217,7 +117,8 @@ impl PackedOp {
             range.start = count;
             count += *range.offsets.last().unwrap() as usize;
         }
-        let mut entries = vec![0; count];
+        let mut entries = previous.map(|packed| packed.entries).unwrap_or_default();
+        entries.resize(count, 0);
         let mut remaining = entries.as_mut_slice();
         let chunks: Vec<_> = ranges
             .iter()
@@ -341,5 +242,109 @@ impl LinearOperator<f64> for PackedOp {
         _: std::ops::Range<usize>,
     ) -> Result<(), QuSpinError> {
         unreachable!("transpose chunks unused by single-vector exponential")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compact_index::CompactBasisIndex;
+    use crate::{ExpmBackend, JumpInput, LindbladSpec, word_from_codes};
+    use num::Complex;
+
+    #[test]
+    fn uniform_bound_matches_canonical_metadata_without_noise() {
+        let h = vec![
+            ("XXII".into(), 0.1),
+            ("IYYI".into(), -0.1),
+            ("ZIIX".into(), 0.1),
+        ];
+        let spec = LindbladSpec::<2>::new(4, &h, &[]).unwrap();
+        let basis: Vec<_> = (0..256)
+            .map(|i| {
+                word_from_codes::<2>(
+                    &(0..4)
+                        .map(|q| ((i >> (2 * q)) & 3) as u8)
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap()
+            })
+            .collect();
+        let direct = DirectOp {
+            spec: &spec,
+            basis: &basis,
+            index: CompactBasisIndex::new(&basis),
+        };
+        let (_, Norm::Uniform(bound)) = PackedOp::build(&direct, 0.2, None) else {
+            panic!("Hamiltonian has zero diagonal");
+        };
+        assert_eq!(
+            bound,
+            direct
+                .per_col()
+                .iter()
+                .map(|(raw, _)| *raw)
+                .fold(0.0_f64, f64::max)
+        );
+    }
+
+    #[test]
+    fn signed_rows_match_projection_with_diagonal_noise_and_negative_couplings() {
+        let h = vec![
+            ("XXII".into(), 0.25),
+            ("IYYI".into(), -0.25),
+            ("ZIIX".into(), 0.25),
+        ];
+        let jumps = vec![JumpInput {
+            lincomb: vec![("IZII".into(), Complex::new(1.0, 0.0))],
+            rate: 0.3,
+        }];
+        for backend in [ExpmBackend::Packed, ExpmBackend::PackedUpper] {
+            let spec = LindbladSpec::<2>::new(4, &h, &jumps)
+                .unwrap()
+                .with_expm_backend(backend);
+            let basis: Vec<_> = (0..256)
+                .filter(|i| i % 3 != 0)
+                .map(|i| {
+                    word_from_codes::<2>(
+                        &(0..4)
+                            .map(|q| ((i >> (2 * q)) & 3) as u8)
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap()
+                })
+                .collect();
+            let direct = DirectOp {
+                spec: &spec,
+                basis: &basis,
+                index: CompactBasisIndex::new(&basis),
+            };
+            let (packed, Norm::Columns(metadata)) = PackedOp::build(&direct, 0.5, None) else {
+                panic!("noise requires column bounds");
+            };
+            assert_eq!(metadata, direct.per_col());
+            let input: Vec<_> = (0..basis.len())
+                .map(|i| if i % 7 == 0 { 0.0 } else { (i as f64).cos() })
+                .collect();
+            let mut expected = vec![0.0; basis.len()];
+            for (row, col, value) in spec.generator(&basis) {
+                if input[col] != 0.0 {
+                    expected[row] += value * input[col];
+                }
+            }
+            for threads in [1, 2, 6] {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()
+                    .unwrap();
+                let mut actual = vec![0.0; basis.len()];
+                pool.install(|| packed.dot(true, &input, &mut actual))
+                    .unwrap();
+                assert_eq!(actual, expected);
+                pool.install(|| packed.dot(false, &input, &mut actual))
+                    .unwrap();
+                assert_eq!(actual, expected.iter().map(|v| v + v).collect::<Vec<_>>());
+            }
+        }
     }
 }

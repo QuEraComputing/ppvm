@@ -24,13 +24,22 @@ const CHUNK_SIZE: usize = 4096;
 pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
     pub(crate) candidates: Option<crate::indexed_candidates::IndexedCandidates<C>>,
     outputs: Vec<Vec<(Word<C>, f64)>>,
-    magnitude_bits: Vec<u64>,
     pub(crate) packed: Option<crate::packed_expm::PackedOp>,
     pub(crate) taylor: Vec<f64>,
     pub(crate) exponential_output: Vec<f64>,
 }
 
 impl<const C: usize> PcStepWorkspace<C> {
+    pub(crate) fn recycle_candidates(
+        &mut self,
+        candidates: Option<crate::indexed_candidates::IndexedCandidates<C>>,
+    ) {
+        if let Some(mut candidates) = candidates {
+            self.taylor = candidates.take_numeric();
+            self.candidates = Some(candidates);
+        }
+    }
+
     /// Requested backing capacity retained between steps, excluding the main state.
     pub fn allocation_bytes(&self) -> [(&'static str, usize); 9] {
         let mut bytes = [
@@ -38,7 +47,7 @@ impl<const C: usize> PcStepWorkspace<C> {
             ("candidate_rates", 0),
             ("candidate_state", 0),
             ("candidate_free", 0),
-            ("candidate_rank", self.magnitude_bits.capacity() * 8),
+            ("candidate_rank", 0),
             (
                 "generation",
                 self.outputs
@@ -50,7 +59,7 @@ impl<const C: usize> PcStepWorkspace<C> {
                 "packed",
                 self.packed.as_ref().map_or(0, |p| p.allocation_bytes()),
             ),
-            ("taylor", self.taylor.capacity() * 8),
+            ("numeric_scratch", self.taylor.capacity() * 8),
             ("exponential_output", self.exponential_output.capacity() * 8),
         ];
         if let Some(candidates) = &self.candidates {
@@ -269,10 +278,13 @@ impl<const C: usize> LindbladSpec<C> {
             indexed.attach_basis(owned);
         }
         let mut magnitudes = Vec::new();
-        let mut magnitude_bits = workspace
-            .as_mut()
-            .map(|w| std::mem::take(&mut w.magnitude_bits))
-            .unwrap_or_default();
+        if matches!(
+            self.leakage_backend,
+            crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
+        ) && let Some(workspace) = workspace.as_mut()
+        {
+            indexed.set_numeric(std::mem::take(&mut workspace.taylor));
+        }
         let mut outputs = workspace
             .as_mut()
             .map(|w| std::mem::take(&mut w.outputs))
@@ -317,7 +329,7 @@ impl<const C: usize> LindbladSpec<C> {
                 self.leakage_backend,
                 crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
             ) {
-                indexed.cap(room, &mut magnitude_bits);
+                indexed.cap(room);
             } else {
                 crate::truncate::cap_real_map_with_scratch(&mut merged, room, &mut magnitudes);
             }
@@ -328,8 +340,6 @@ impl<const C: usize> LindbladSpec<C> {
                 output.clear();
             }
             workspace.outputs = outputs;
-            magnitude_bits.clear();
-            workspace.magnitude_bits = magnitude_bits;
         }
         drop(magnitudes);
         drop(order);

@@ -14,12 +14,6 @@ pub enum ExpmBackend {
     MatrixFree,
     /// Store signed parent positions for uniform-magnitude Pauli Hamiltonians.
     Packed,
-    /// Reserve all active actions, then resolve basis membership in one pass.
-    PackedUpper,
-    /// Build exact signed rows once in bounded reusable batches.
-    PackedBatched,
-    /// Reuse exact signed rows in independent range buffers.
-    PackedSegmented,
 }
 
 /// Allocation policy for real-coefficient leakage accumulation.
@@ -30,7 +24,7 @@ pub enum LeakageBackend {
     Reference,
     /// Reusable block outputs and canonical compiled Pauli actions.
     Buffered,
-    /// Keep candidate payload in one vector and hash only its positions.
+    /// Keep words and rates in separate arrays and hash only their positions.
     Indexed,
     /// Accumulate candidate words in the spare tail of the main basis vector.
     Tail,

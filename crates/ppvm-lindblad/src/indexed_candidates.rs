@@ -71,32 +71,19 @@ impl<const C: usize> IndexedCandidates<C> {
             return;
         }
         bits.clear();
-        if bits.capacity() < self.table.len() {
-            bits.reserve_exact(self.table.len());
+        if bits.capacity() < self.rates.len() {
+            bits.reserve_exact(self.rates.len());
         }
         // Sequential rate scans avoid fetching whole words in hash-table visitation order.
-        bits.extend(
-            self.rates
-                .iter()
-                .zip(&self.state)
-                .filter_map(|(rate, &state)| (state != 0).then_some(rate.abs().to_bits())),
-        );
-        debug_assert_eq!(bits.len(), self.table.len());
+        // Vacant slots have zero rates and cannot raise a nonnegative top-k cutoff.
+        bits.extend(self.rates.iter().map(|rate| rate.abs().to_bits()));
         let position = bits.len() - room;
         let cutoff = *bits.select_nth_unstable(position).1;
         let above = bits.iter().filter(|&&value| value > cutoff).count();
         let mut ties = room - above;
         for (rate, state) in self.rates.iter().zip(&mut self.state) {
-            if *state != 0 {
-                let magnitude = rate.abs().to_bits();
-                *state = if magnitude > cutoff {
-                    3
-                } else if magnitude == cutoff {
-                    2
-                } else {
-                    1
-                };
-            }
+            let magnitude = rate.abs().to_bits();
+            *state = 1 + u8::from(magnitude >= cutoff) + u8::from(magnitude > cutoff);
         }
         self.table.retain(|index| {
             let state = &mut self.state[*index as usize];
@@ -107,6 +94,7 @@ impl<const C: usize> IndexedCandidates<C> {
             ties -= keep as usize;
             if !keep {
                 *state = 0;
+                self.rates[*index as usize] = 0.0;
                 self.free.push(*index);
             }
             keep

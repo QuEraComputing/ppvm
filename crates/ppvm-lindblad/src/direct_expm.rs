@@ -363,10 +363,10 @@ mod tests {
 
     #[test]
     fn compact_lookup_checks_words_and_wide_registers() {
-        let basis: Vec<_> = (0..128)
+        let basis: Vec<_> = (0..192)
             .map(|site| {
                 let mut codes = vec![0; 128];
-                codes[site] = 1;
+                codes[site / 3] = (site % 3 + 1) as u8;
                 word_from_codes::<2>(&codes).unwrap()
             })
             .collect();

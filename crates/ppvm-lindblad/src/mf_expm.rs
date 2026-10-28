@@ -556,7 +556,10 @@ pub(crate) fn expm_apply_mf<const C: usize>(
             basis,
             index: crate::compact_index::CompactBasisIndex::new(basis),
         };
-        if spec.expm_backend == crate::ExpmBackend::Packed {
+        if matches!(
+            spec.expm_backend,
+            crate::ExpmBackend::Packed | crate::ExpmBackend::PackedUpper
+        ) {
             if let Some(scale) = spec
                 .pauli_plan
                 .as_ref()

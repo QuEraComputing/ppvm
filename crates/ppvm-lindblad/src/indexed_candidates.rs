@@ -181,21 +181,31 @@ impl<const C: usize> IndexedCandidates<C> {
         let retained = if self.tail { self.prefix } else { basis.len() };
         assert!(self.table.len() <= maximum.saturating_sub(retained));
         if self.tail {
-            let mut positions: Vec<u32> = (0..self.rates.len() as u32).collect();
-            let mut labels = positions.clone();
+            self.table
+                .retain(|index| self.rates[*index as usize].abs() > threshold);
+            let slots = self.rates.len();
+            self.rates.clear();
+            self.rates.resize(2 * slots, 0.0);
+            let (positions, labels) = self.rates.split_at_mut(slots);
+            // Integer positions use lossless bit patterns in the shared numeric buffer.
+            // No floating arithmetic reads these temporary permutation entries.
+            for index in 0..slots {
+                let code = f64::from_bits(index as u64);
+                positions[index] = code;
+                labels[index] = code;
+            }
             let mut count = 0;
             for &original in &self.table {
-                let admitted = self.rates[original as usize].abs() > threshold;
-                if !admitted {
+                if self.state[original as usize] == 0 {
                     continue;
                 }
-                let source = positions[original as usize] as usize;
+                let source = positions[original as usize].to_bits() as usize;
                 self.words.swap(self.prefix + count, self.prefix + source);
-                let displaced = labels[count];
-                positions[displaced as usize] = source as u32;
-                labels[source] = displaced;
-                positions[original as usize] = count as u32;
-                labels[count] = original;
+                let displaced = labels[count].to_bits() as usize;
+                positions[displaced] = f64::from_bits(source as u64);
+                labels[source] = f64::from_bits(displaced as u64);
+                positions[original as usize] = f64::from_bits(count as u64);
+                labels[count] = f64::from_bits(original as u64);
                 count += 1;
             }
             self.words.truncate(self.prefix + count);

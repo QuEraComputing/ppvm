@@ -30,6 +30,10 @@ fn label<const C: usize>(word: &Word<C>, site: usize) -> usize {
 }
 
 impl<const C: usize> PauliActionPlan<C> {
+    pub(crate) fn has_diagonal_noise(&self) -> bool {
+        self.jumps.iter().any(|rate| *rate != 0.0)
+    }
+
     pub(crate) fn uniform_scale(&self) -> Option<f64> {
         let magnitude = self
             .terms

@@ -168,6 +168,20 @@ impl<const C: usize> ActionScratch<C> {
 }
 
 impl<const C: usize> DirectOp<'_, C> {
+    pub(crate) fn count_row(&self, position: usize, scratch: &mut ActionScratch<C>, canonical: bool) -> ((f64, f64), usize) {
+        let word = &self.basis[position];
+        scratch.fill(self.spec, word, canonical);
+        let mut raw = 0.0;
+        let mut diagonal = 0.0;
+        let mut count = 0;
+        for &(parent, value) in &scratch.terms {
+            raw += value.abs();
+            if parent == *word { diagonal = value; }
+            count += usize::from(self.index.get(&parent).is_some());
+        }
+        ((raw, diagonal), count)
+    }
+
     pub(crate) fn gather_row(
         &self,
         position: usize,

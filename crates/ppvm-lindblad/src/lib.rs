@@ -44,6 +44,7 @@ mod direct_expm;
 pub mod error;
 pub(crate) mod expm;
 mod kossakowski;
+mod packed_expm;
 mod pauli_plan;
 mod scalar;
 pub mod sector;

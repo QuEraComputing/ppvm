@@ -26,6 +26,8 @@ pub enum LeakageBackend {
     Reference,
     /// Reusable block outputs and canonical compiled Pauli actions.
     Buffered,
+    /// Reusable block outputs with exact integer selection of finite magnitudes.
+    RankBits,
 }
 
 /// Truncation and execution policy for a single predictor-corrector step

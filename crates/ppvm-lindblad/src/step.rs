@@ -194,11 +194,7 @@ impl<const C: usize> LindbladSpec<C> {
         let mut t = PcStepTimings::default();
 
         let inplace = workspace.is_some() && mf_expm::packed_scale(self, basis.len()).is_some();
-        if inplace {
-            let workspace = workspace.as_deref_mut().unwrap();
-            workspace.coefficient_auxiliary.clear();
-            workspace.coefficient_auxiliary.extend_from_slice(coeffs);
-        }
+        let original_terms = basis.len();
 
         // No basis permutation occurs before final truncation, so a saved
         // coefficient prefix retains the original word positions for correction.
@@ -220,6 +216,14 @@ impl<const C: usize> LindbladSpec<C> {
             workspace.recycle_candidates(reusable);
         }
         p.stop(&mut t.expand1_us);
+
+        if inplace && basis.len() < admit {
+            let workspace = workspace.as_deref_mut().unwrap();
+            workspace.coefficient_auxiliary.clear();
+            workspace
+                .coefficient_auxiliary
+                .extend_from_slice(&coeffs[..original_terms]);
+        }
 
         // 2. The packed workspace path evolves the main coefficients in place.
         let p = Phase::start(timed);

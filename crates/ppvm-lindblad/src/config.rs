@@ -14,6 +14,8 @@ pub enum ExpmBackend {
     MatrixFree,
     /// Store signed parent positions for uniform-magnitude Pauli Hamiltonians.
     Packed,
+    /// Reserve all active actions, then resolve basis membership in one pass.
+    PackedUpper,
 }
 
 /// Allocation policy for real-coefficient leakage accumulation.

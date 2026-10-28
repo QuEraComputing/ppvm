@@ -11,6 +11,7 @@ struct Range {
     first: usize,
     offsets: Vec<u32>,
     start: usize,
+    ends: Vec<u32>,
     diagonal: Vec<f64>,
 }
 
@@ -68,50 +69,52 @@ mod tests {
             lincomb: vec![("IZII".into(), Complex::new(1.0, 0.0))],
             rate: 0.3,
         }];
-        let spec = LindbladSpec::<2>::new(4, &h, &jumps)
-            .unwrap()
-            .with_expm_backend(ExpmBackend::Packed);
-        let basis: Vec<_> = (0..256)
-            .filter(|i| i % 3 != 0)
-            .map(|i| {
-                word_from_codes::<2>(
-                    &(0..4)
-                        .map(|q| ((i >> (2 * q)) & 3) as u8)
-                        .collect::<Vec<_>>(),
-                )
+        for backend in [ExpmBackend::Packed, ExpmBackend::PackedUpper] {
+            let spec = LindbladSpec::<2>::new(4, &h, &jumps)
                 .unwrap()
-            })
-            .collect();
-        let direct = DirectOp {
-            spec: &spec,
-            basis: &basis,
-            index: CompactBasisIndex::new(&basis),
-        };
-        let (packed, Norm::Columns(metadata)) = PackedOp::build(&direct, 0.5) else {
-            panic!("noise requires column bounds");
-        };
-        assert_eq!(metadata, direct.per_col());
-        let input: Vec<_> = (0..basis.len())
-            .map(|i| if i % 7 == 0 { 0.0 } else { (i as f64).cos() })
-            .collect();
-        let mut expected = vec![0.0; basis.len()];
-        for (row, col, value) in spec.generator(&basis) {
-            if input[col] != 0.0 {
-                expected[row] += value * input[col];
+                .with_expm_backend(backend);
+            let basis: Vec<_> = (0..256)
+                .filter(|i| i % 3 != 0)
+                .map(|i| {
+                    word_from_codes::<2>(
+                        &(0..4)
+                            .map(|q| ((i >> (2 * q)) & 3) as u8)
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap()
+                })
+                .collect();
+            let direct = DirectOp {
+                spec: &spec,
+                basis: &basis,
+                index: CompactBasisIndex::new(&basis),
+            };
+            let (packed, Norm::Columns(metadata)) = PackedOp::build(&direct, 0.5) else {
+                panic!("noise requires column bounds");
+            };
+            assert_eq!(metadata, direct.per_col());
+            let input: Vec<_> = (0..basis.len())
+                .map(|i| if i % 7 == 0 { 0.0 } else { (i as f64).cos() })
+                .collect();
+            let mut expected = vec![0.0; basis.len()];
+            for (row, col, value) in spec.generator(&basis) {
+                if input[col] != 0.0 {
+                    expected[row] += value * input[col];
+                }
             }
-        }
-        for threads in [1, 2, 6] {
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(threads)
-                .build()
-                .unwrap();
-            let mut actual = vec![0.0; basis.len()];
-            pool.install(|| packed.dot(true, &input, &mut actual))
-                .unwrap();
-            assert_eq!(actual, expected);
-            pool.install(|| packed.dot(false, &input, &mut actual))
-                .unwrap();
-            assert_eq!(actual, expected.iter().map(|v| v + v).collect::<Vec<_>>());
+            for threads in [1, 2, 6] {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()
+                    .unwrap();
+                let mut actual = vec![0.0; basis.len()];
+                pool.install(|| packed.dot(true, &input, &mut actual))
+                    .unwrap();
+                assert_eq!(actual, expected);
+                pool.install(|| packed.dot(false, &input, &mut actual))
+                    .unwrap();
+                assert_eq!(actual, expected.iter().map(|v| v + v).collect::<Vec<_>>());
+            }
         }
     }
 }
@@ -138,6 +141,7 @@ impl PackedOp {
             .max(64)
             .next_power_of_two()
             .trailing_zeros();
+        let upper = direct.spec.expm_backend == crate::ExpmBackend::PackedUpper;
         let noisy = direct
             .spec
             .pauli_plan
@@ -160,7 +164,7 @@ impl PackedOp {
                 };
                 let mut norm = 0.0_f64;
                 for row in first..first + words.len() {
-                    let (metadata, count) = direct.count_row(row, &mut scratch, noisy);
+                    let (metadata, count) = direct.count_row(row, &mut scratch, noisy, !upper);
                     if noisy {
                         per_col.push(metadata);
                     }
@@ -184,6 +188,11 @@ impl PackedOp {
                         first,
                         offsets,
                         start: 0,
+                        ends: if upper {
+                            vec![0; words.len()]
+                        } else {
+                            Vec::new()
+                        },
                         diagonal,
                     },
                     per_col,
@@ -219,15 +228,19 @@ impl PackedOp {
                 chunk
             })
             .collect();
-        chunks.into_par_iter().zip(ranges.par_iter()).for_each_init(
-            ActionScratch::new,
-            |scratch, (entries, range)| {
+        chunks
+            .into_par_iter()
+            .zip(ranges.par_iter_mut())
+            .for_each_init(ActionScratch::new, |scratch, (entries, range)| {
                 for row in 0..range.offsets.len() - 1 {
                     direct.gather_row(range.first + row, scratch, false);
                     let start = range.offsets[row] as usize;
-                    for (slot, &(column, value)) in entries[start..range.offsets[row + 1] as usize]
-                        .iter_mut()
-                        .zip(&scratch.row)
+                    let end = start + scratch.row.len();
+                    assert!(end <= range.offsets[row + 1] as usize);
+                    if upper {
+                        range.ends[row] = end as u32;
+                    }
+                    for (slot, &(column, value)) in entries[start..end].iter_mut().zip(&scratch.row)
                     {
                         *slot = if column as usize == range.first + row {
                             0
@@ -238,8 +251,7 @@ impl PackedOp {
                         };
                     }
                 }
-            },
-        );
+            });
         (
             Self {
                 ranges,
@@ -279,7 +291,12 @@ impl LinearOperator<f64> for PackedOp {
                 for (row, result) in output.iter_mut().enumerate() {
                     let mut sum = 0.0;
                     for &entry in &self.entries[range.start + range.offsets[row] as usize
-                        ..range.start + range.offsets[row + 1] as usize]
+                        ..range.start
+                            + if range.ends.is_empty() {
+                                range.offsets[row + 1]
+                            } else {
+                                range.ends[row]
+                            } as usize]
                     {
                         let (column, value) = if entry == 0 {
                             (range.first + row, range.diagonal[row])

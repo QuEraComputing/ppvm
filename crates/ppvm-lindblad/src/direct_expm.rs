@@ -206,6 +206,7 @@ impl<const C: usize> DirectOp<'_, C> {
         position: usize,
         scratch: &mut ActionScratch<C>,
         canonical: bool,
+        lookup: bool,
     ) -> ((f64, f64), usize) {
         let word = &self.basis[position];
         scratch.fill(self.spec, word, canonical);
@@ -217,7 +218,7 @@ impl<const C: usize> DirectOp<'_, C> {
             if parent == *word {
                 diagonal = value;
             }
-            count += usize::from(self.index.get(&parent).is_some());
+            count += usize::from(!lookup || self.index.get(&parent).is_some());
         }
         ((raw, diagonal), count)
     }

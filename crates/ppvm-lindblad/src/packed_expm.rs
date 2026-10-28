@@ -369,9 +369,9 @@ impl PackedOp {
                         per_col.push(value);
                     }
                     if range.entries.len() + scratch.row.len() > range.entries.capacity() {
-                        range
-                            .entries
-                            .reserve_exact(scratch.row.len().max(range.entries.capacity() / 8));
+                        let capacity =
+                            (range.entries.len() + scratch.row.len()).next_power_of_two();
+                        range.entries.reserve_exact(capacity - range.entries.len());
                     }
                     for &(column, value) in &scratch.row {
                         range.entries.push(if column as usize == row {

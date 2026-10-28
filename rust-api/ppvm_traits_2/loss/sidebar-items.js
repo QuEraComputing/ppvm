@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["LossState"]};
+window.SIDEBAR_ITEMS = {"enum":["LossySite"],"trait":["LossState"]};

@@ -14,6 +14,8 @@ pub enum ExpmBackend {
     MatrixFree,
     /// Recompute rows with the general single-string action kernel.
     MatrixFreeGeneric,
+    /// Store signed parent positions for uniform-magnitude Pauli Hamiltonians.
+    Packed,
 }
 
 /// Truncation and execution policy for a single predictor-corrector step

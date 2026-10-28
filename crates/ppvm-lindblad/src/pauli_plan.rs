@@ -30,6 +30,23 @@ fn label<const C: usize>(word: &Word<C>, site: usize) -> usize {
 }
 
 impl<const C: usize> PauliActionPlan<C> {
+    pub(crate) fn uniform_scale(&self) -> Option<f64> {
+        let magnitude = self
+            .terms
+            .iter()
+            .find(|term| term.coefficient != 0.0)
+            .map_or(0.5, |term| term.coefficient.abs());
+        if !magnitude.is_finite()
+            || !self
+                .terms
+                .iter()
+                .all(|term| term.coefficient == 0.0 || term.coefficient.abs() == magnitude)
+        {
+            return None;
+        }
+        Some(2.0 * magnitude)
+    }
+
     pub(crate) fn new(n: usize, h: &[(Word<C>, f64)], jumps: &[(Word<C>, f64)]) -> Option<Self> {
         let mut seen = FxHashSet::default();
         if h.iter().any(|(word, _)| !seen.insert(*word)) {

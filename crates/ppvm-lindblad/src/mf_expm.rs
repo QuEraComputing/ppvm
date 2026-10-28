@@ -541,6 +541,34 @@ pub(crate) fn expm_apply_mf<const C: usize>(
             basis,
             index: crate::compact_index::CompactBasisIndex::new(basis),
         };
+        if spec.expm_backend == crate::ExpmBackend::Packed {
+            if let Some(scale) = spec
+                .pauli_plan
+                .as_ref()
+                .and_then(|plan| plan.uniform_scale())
+            {
+                if basis.len() < i32::MAX as usize {
+                    let (packed, per_col) = crate::packed_expm::PackedOp::build(&op, scale);
+                    drop(op);
+                    return expm_apply_operator(
+                        packed,
+                        basis.len(),
+                        &per_col,
+                        dt,
+                        coeffs,
+                        |t_norm| {
+                            if drop_tol >= 1e-4 {
+                                let (m, s) = expm::select_ms_loose(t_norm);
+                                (m, s, 1e-6)
+                            } else {
+                                let (m, s) = expm::select_ms(t_norm);
+                                (m, s, 1e-12)
+                            }
+                        },
+                    );
+                }
+            }
+        }
         let per_col = op.per_col();
         return expm_apply_operator(op, basis.len(), &per_col, dt, coeffs, |t_norm| {
             if drop_tol >= 1e-4 {

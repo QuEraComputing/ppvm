@@ -124,17 +124,17 @@ mod tests {
     }
 }
 
-struct ActionScratch<const C: usize> {
+pub(crate) struct ActionScratch<const C: usize> {
     support: Vec<u32>,
     candidates: Vec<u32>,
     local: FxHashMap<Word<C>, Complex<f64>>,
     active: Vec<u64>,
     terms: Vec<(Word<C>, f64)>,
-    row: Vec<(u32, f64)>,
+    pub(crate) row: Vec<(u32, f64)>,
 }
 
 impl<const C: usize> ActionScratch<C> {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             support: Vec::new(),
             candidates: Vec::new(),
@@ -168,6 +168,32 @@ impl<const C: usize> ActionScratch<C> {
 }
 
 impl<const C: usize> DirectOp<'_, C> {
+    pub(crate) fn gather_row(
+        &self,
+        position: usize,
+        scratch: &mut ActionScratch<C>,
+        canonical: bool,
+    ) -> (f64, f64) {
+        let word = &self.basis[position];
+        scratch.fill(self.spec, word, canonical);
+        scratch.row.clear();
+        let mut raw = 0.0;
+        let mut diagonal = 0.0;
+        for &(parent, value) in &scratch.terms {
+            raw += value.abs();
+            if parent == *word {
+                diagonal = value;
+            }
+            if let Some(column) = self.index.get(&parent) {
+                scratch
+                    .row
+                    .push((column, if parent == *word { value } else { -value }));
+            }
+        }
+        scratch.row.sort_unstable_by_key(|entry| entry.0);
+        (raw, diagonal)
+    }
+
     pub(crate) fn per_col(&self) -> Vec<(f64, f64)> {
         self.basis
             .par_iter()

@@ -40,6 +40,28 @@ pub(crate) fn cap_map_to_room<const C: usize, T: Coeff>(
     merged.retain(|_, v| keep(v.mag()));
 }
 
+/// Apply the reference floating-point rank cap using reusable magnitude storage.
+pub(crate) fn cap_real_map_with_scratch<const C: usize>(
+    merged: &mut FxHashMap<Word<C>, f64>,
+    room: usize,
+    magnitudes: &mut Vec<f64>,
+) {
+    if merged.len() <= room {
+        return;
+    }
+    if room == 0 {
+        merged.clear();
+        return;
+    }
+    magnitudes.clear();
+    if magnitudes.capacity() < merged.len() {
+        magnitudes.reserve_exact(merged.len());
+    }
+    magnitudes.extend(merged.values().map(|value| value.abs()));
+    let mut keep = top_k_keeper(magnitudes, room);
+    merged.retain(|_, value| keep(value.abs()));
+}
+
 /// Compact `basis` / `coeffs` in place: drop entries whose coefficient
 /// magnitude is below `drop_tol` unless the word appears in `protected`.
 /// No-op when `drop_tol ≤ 0`.

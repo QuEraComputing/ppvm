@@ -57,7 +57,7 @@ mod word;
 pub(crate) mod mf_expm;
 
 pub use basis::build_basis_index;
-pub use config::{ExpmBackend, PcStepConfig};
+pub use config::{ExpmBackend, LeakageBackend, PcStepConfig};
 pub use error::Error;
 pub use sector::{Sector, canonicalize_basis_to_rep};
 pub use spec::{JumpInput, LindbladSpec};

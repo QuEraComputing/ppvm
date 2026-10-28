@@ -129,7 +129,7 @@ pub(crate) struct ActionScratch<const C: usize> {
     candidates: Vec<u32>,
     local: FxHashMap<Word<C>, Complex<f64>>,
     active: Vec<u64>,
-    terms: Vec<(Word<C>, f64)>,
+    pub(crate) terms: Vec<(Word<C>, f64)>,
     pub(crate) row: Vec<(u32, f64)>,
 }
 
@@ -144,7 +144,7 @@ impl<const C: usize> ActionScratch<C> {
             row: Vec::new(),
         }
     }
-    fn fill(&mut self, spec: &LindbladSpec<C>, word: &Word<C>, canonical: bool) {
+    pub(crate) fn fill(&mut self, spec: &LindbladSpec<C>, word: &Word<C>, canonical: bool) {
         if spec.expm_backend != crate::ExpmBackend::MatrixFreeGeneric {
             if let Some(plan) = &spec.pauli_plan {
                 plan.fill(word, &mut self.active, &mut self.terms);

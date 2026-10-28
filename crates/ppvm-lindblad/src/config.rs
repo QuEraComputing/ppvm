@@ -18,6 +18,16 @@ pub enum ExpmBackend {
     Packed,
 }
 
+/// Allocation policy for real-coefficient leakage accumulation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LeakageBackend {
+    /// Per-source output vectors and the reference chunk cap.
+    #[default]
+    Reference,
+    /// Reusable block outputs and canonical compiled Pauli actions.
+    Buffered,
+}
+
 /// Truncation and execution policy for a single predictor-corrector step
 /// ([`crate::LindbladSpec::pc_step`], [`crate::LindbladSpec::pc_step_timed`]).
 ///

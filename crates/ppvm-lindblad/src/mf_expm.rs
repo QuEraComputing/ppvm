@@ -508,6 +508,21 @@ where
         .iter()
         .map(|&(raw, diag)| raw - diag.mag() + (diag - mu).mag())
         .fold(0.0_f64, f64::max);
+    expm_apply_operator_bounds(op, dt, coeffs, mu, onenorm, select)
+}
+
+fn expm_apply_operator_bounds<T, O>(
+    op: O,
+    dt: f64,
+    coeffs: &[T],
+    mu: T,
+    onenorm: f64,
+    select: impl FnOnce(f64) -> (u32, u32, f64),
+) -> Vec<T>
+where
+    O: LinearOperator<T>,
+    T: ExpmComputation<Real = f64> + Coeff + From<f64>,
+{
     let (m_star, s, expm_tol) = select(dt.abs() * onenorm);
 
     let mut v = coeffs.to_vec();
@@ -548,24 +563,23 @@ pub(crate) fn expm_apply_mf<const C: usize>(
                 .and_then(|plan| plan.uniform_scale())
             {
                 if basis.len() < i32::MAX as usize {
-                    let (packed, per_col) = crate::packed_expm::PackedOp::build(&op, scale);
+                    let (packed, norm) = crate::packed_expm::PackedOp::build(&op, scale);
                     drop(op);
-                    return expm_apply_operator(
-                        packed,
-                        basis.len(),
-                        &per_col,
-                        dt,
-                        coeffs,
-                        |t_norm| {
-                            if drop_tol >= 1e-4 {
-                                let (m, s) = expm::select_ms_loose(t_norm);
-                                (m, s, 1e-6)
-                            } else {
-                                let (m, s) = expm::select_ms(t_norm);
-                                (m, s, 1e-12)
-                            }
-                        },
-                    );
+                    let select = |t_norm| {
+                        if drop_tol >= 1e-4 {
+                            let (m, s) = expm::select_ms_loose(t_norm);
+                            (m, s, 1e-6)
+                        } else {
+                            let (m, s) = expm::select_ms(t_norm);
+                            (m, s, 1e-12)
+                        }
+                    };
+                    return match norm {
+                        crate::packed_expm::Norm::Uniform(bound) =>
+                            expm_apply_operator_bounds(packed, dt, coeffs, 0.0, bound, select),
+                        crate::packed_expm::Norm::Columns(per_col) =>
+                            expm_apply_operator(packed, basis.len(), &per_col, dt, coeffs, select),
+                    };
                 }
             }
         }

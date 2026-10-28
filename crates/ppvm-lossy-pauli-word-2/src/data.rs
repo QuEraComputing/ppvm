@@ -443,16 +443,6 @@ impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
     }
 
     #[inline]
-    fn loss_cleared(&self, i: usize) -> Self
-    where
-        Self: Sized + Clone,
-    {
-        let mut branch = self.clone();
-        branch.clear_loss(i);
-        branch
-    }
-
-    #[inline]
     fn loss_weight(&self) -> usize {
         LossyPauliWord::loss_weight(self)
     }

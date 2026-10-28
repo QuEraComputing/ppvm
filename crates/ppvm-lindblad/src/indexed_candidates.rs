@@ -9,8 +9,7 @@ use hashbrown::HashTable;
 pub(crate) struct IndexedCandidates<const C: usize> {
     entries: Vec<(Word<C>, f64)>,
     table: HashTable<u32>,
-    removed: Vec<u32>,
-    removed_bits: Vec<u64>,
+    free: Vec<u32>,
 }
 
 impl<const C: usize> IndexedCandidates<C> {
@@ -18,8 +17,7 @@ impl<const C: usize> IndexedCandidates<C> {
         Self {
             entries: Vec::new(),
             table: HashTable::new(),
-            removed: Vec::new(),
-            removed_bits: Vec::new(),
+            free: Vec::new(),
         }
     }
 
@@ -32,29 +30,36 @@ impl<const C: usize> IndexedCandidates<C> {
             self.entries[index as usize].1 += value;
             return;
         }
-        if self.entries.len() == self.entries.capacity() {
-            self.entries
-                .reserve_exact((self.entries.capacity() / 4).max(32));
-        }
-        let index = u32::try_from(self.entries.len()).expect("candidate count exceeds u32");
-        self.entries.push((word, value));
+        let index = if let Some(index) = self.free.pop() {
+            self.entries[index as usize] = (word, 0.0 + value);
+            index
+        } else {
+            if self.entries.len() == self.entries.capacity() {
+                self.entries
+                    .reserve_exact((self.entries.capacity() / 4).max(32));
+            }
+            let index = u32::try_from(self.entries.len()).expect("candidate count exceeds u32");
+            self.entries.push((word, 0.0 + value));
+            index
+        };
         self.table.insert_unique(hash, index, |&index| {
             word_hash(&self.entries[index as usize].0)
         });
     }
 
     pub(crate) fn cap(&mut self, room: usize, bits: &mut Vec<u64>) {
-        if self.entries.len() <= room {
+        if self.table.len() <= room {
             return;
         }
         if room == 0 {
             self.entries.clear();
             self.table.clear();
+            self.free.clear();
             return;
         }
         bits.clear();
-        if bits.capacity() < self.entries.len() {
-            bits.reserve_exact(self.entries.len());
+        if bits.capacity() < self.table.len() {
+            bits.reserve_exact(self.table.len());
         }
         bits.extend(
             self.table
@@ -65,9 +70,6 @@ impl<const C: usize> IndexedCandidates<C> {
         let cutoff = *bits.select_nth_unstable(position).1;
         let above = bits.iter().filter(|&&value| value > cutoff).count();
         let mut ties = room - above;
-        self.removed.clear();
-        self.removed_bits.clear();
-        self.removed_bits.resize(self.entries.len().div_ceil(64), 0);
         self.table.retain(|index| {
             let magnitude = self.entries[*index as usize].1.abs().to_bits();
             if magnitude > cutoff {
@@ -76,43 +78,24 @@ impl<const C: usize> IndexedCandidates<C> {
             let keep = magnitude == cutoff && ties > 0;
             ties -= keep as usize;
             if !keep {
-                self.removed.push(*index);
-                self.removed_bits[*index as usize / 64] |= 1 << (*index as usize % 64);
+                self.free.push(*index);
             }
             keep
         });
-        for &index in &self.removed {
-            while let Some(last) = self.entries.len().checked_sub(1) {
-                if self.removed_bits[last / 64] & (1 << (last % 64)) == 0 {
-                    break;
-                }
-                self.entries.pop();
-            }
-            if index as usize >= self.entries.len() {
-                continue;
-            }
-            if self.removed_bits[index as usize / 64] & (1 << (index as usize % 64)) == 0 {
-                continue;
-            }
-            let last = self.entries.len() - 1;
-            self.entries.swap_remove(index as usize);
-            self.removed_bits[index as usize / 64] &= !(1 << (index as usize % 64));
-            if index as usize != last {
-                let word = &self.entries[index as usize].0;
-                *self
-                    .table
-                    .find_mut(word_hash(word), |&candidate| candidate as usize == last)
-                    .expect("moved candidate must remain indexed") = index;
-            }
-        }
     }
 
     pub(crate) fn into_vec(self, threshold: f64) -> Vec<(Word<C>, f64)> {
         let Self {
-            mut entries, table, ..
+            mut entries,
+            table,
+            free,
         } = self;
-        let mut order: Vec<u32> = table.iter().copied().collect();
+        let live = table.len();
+        let mut order = Vec::with_capacity(entries.len());
+        order.extend(table.iter().copied());
         drop(table);
+        order.extend(free);
+        assert_eq!(order.len(), entries.len());
         // Apply the table's visitation permutation without a second payload vector.
         for start in 0..order.len() {
             if order[start] as usize == start {
@@ -131,6 +114,7 @@ impl<const C: usize> IndexedCandidates<C> {
                 destination = source;
             }
         }
+        entries.truncate(live);
         entries.retain(|(_, value)| value.abs() > threshold);
         entries
     }

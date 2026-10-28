@@ -328,7 +328,11 @@ mod tests {
             lincomb: vec![("IZI".into(), Complex::new(1.0, 0.0))],
             rate: 0.2,
         }];
-        for backend in [ExpmBackend::Packed, ExpmBackend::PackedUpper] {
+        for backend in [
+            ExpmBackend::Packed,
+            ExpmBackend::PackedUpper,
+            ExpmBackend::PackedBatched,
+        ] {
             let cached = LindbladSpec::<2>::new(3, &h, &jumps).unwrap();
             let optimized = LindbladSpec::<2>::new(3, &h, &jumps)
                 .unwrap()

@@ -16,6 +16,8 @@ pub enum ExpmBackend {
     Packed,
     /// Reserve all active actions, then resolve basis membership in one pass.
     PackedUpper,
+    /// Build exact signed rows once in bounded reusable batches.
+    PackedBatched,
 }
 
 /// Allocation policy for real-coefficient leakage accumulation.

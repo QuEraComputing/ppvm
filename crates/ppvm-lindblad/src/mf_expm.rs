@@ -569,7 +569,9 @@ pub(crate) fn expm_apply_mf<const C: usize>(
         };
         if matches!(
             spec.expm_backend,
-            crate::ExpmBackend::Packed | crate::ExpmBackend::PackedUpper
+            crate::ExpmBackend::Packed
+                | crate::ExpmBackend::PackedUpper
+                | crate::ExpmBackend::PackedBatched
         ) && let Some(scale) = spec
             .pauli_plan
             .as_ref()

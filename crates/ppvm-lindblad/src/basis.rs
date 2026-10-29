@@ -229,10 +229,7 @@ impl<const C: usize> LindbladSpec<C> {
         threshold: f64,
         workspace: Option<&mut PcStepWorkspace<C>>,
     ) -> Result<LeakageCandidates<C>, Error> {
-        if !matches!(
-            self.leakage_backend,
-            crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
-        ) {
+        if self.leakage_backend == crate::LeakageBackend::Reference {
             return self
                 .leakage_with_prune(basis, coefficients, protected, maximum, threshold)
                 .map(LeakageCandidates::Pairs);
@@ -244,8 +241,7 @@ impl<const C: usize> LindbladSpec<C> {
                 b: coefficients.len(),
             });
         }
-        let owned =
-            (self.leakage_backend == crate::LeakageBackend::Tail).then(|| std::mem::take(basis));
+        let owned = Some(std::mem::take(basis));
         self.leakage_buffered(
             basis,
             coefficients,
@@ -273,7 +269,6 @@ impl<const C: usize> LindbladSpec<C> {
             protected.iter().map(|w| (word_hash(w), ())).collect();
         let order = order_by_desc_mag(coeffs);
         let room = max_basis.saturating_sub(source.len());
-        let mut merged = FxHashMap::default();
         let mut indexed = workspace
             .as_mut()
             .and_then(|w| w.candidates.take())
@@ -281,12 +276,7 @@ impl<const C: usize> LindbladSpec<C> {
         if let Some(owned) = owned_basis {
             indexed.attach_basis(owned);
         }
-        let mut magnitudes = Vec::new();
-        if matches!(
-            self.leakage_backend,
-            crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
-        ) && let Some(workspace) = workspace.as_mut()
-        {
+        if let Some(workspace) = workspace.as_mut() {
             indexed.set_numeric(std::mem::take(&mut workspace.taylor));
         }
         let mut outputs = workspace
@@ -321,25 +311,11 @@ impl<const C: usize> LindbladSpec<C> {
                 // Serial source order preserves coherent sums and the reference map's tie ordering.
                 for output in outputs.iter().take(sources.len().div_ceil(64)) {
                     for &(word, value) in output {
-                        if matches!(
-                            self.leakage_backend,
-                            crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
-                        ) {
-                            indexed.add(word, value);
-                        } else {
-                            *merged.entry(word).or_insert(0.0) += value;
-                        }
+                        indexed.add(word, value);
                     }
                 }
             }
-            if matches!(
-                self.leakage_backend,
-                crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
-            ) {
-                indexed.cap(room);
-            } else {
-                crate::truncate::cap_real_map_with_scratch(&mut merged, room, &mut magnitudes);
-            }
+            indexed.cap(room);
         }
         // Generation buffers are dead before the admission vector is materialized.
         if let Some(workspace) = workspace {
@@ -348,22 +324,10 @@ impl<const C: usize> LindbladSpec<C> {
             }
             workspace.outputs = outputs;
         }
-        drop(magnitudes);
         drop(order);
         drop(in_basis);
         drop(protected_set);
-        if matches!(
-            self.leakage_backend,
-            crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
-        ) {
-            return Ok(LeakageCandidates::Indexed(indexed, tau_add));
-        }
-        Ok(LeakageCandidates::Pairs(
-            merged
-                .into_iter()
-                .filter(|(_, value)| value.abs() > tau_add)
-                .collect(),
-        ))
+        Ok(LeakageCandidates::Indexed(indexed, tau_add))
     }
 
     /// Sparse generator matrix in COO form: returns `(row, col, val)`
@@ -571,12 +535,12 @@ impl<const C: usize> LindbladSpec<C> {
 }
 
 #[cfg(test)]
-mod buffered_tests {
+mod tail_tests {
     use super::*;
     use crate::{LeakageBackend, word_from_codes};
 
     #[test]
-    fn buffered_leakage_preserves_multiple_chunk_caps_and_source_order() {
+    fn tail_leakage_preserves_multiple_chunk_caps_and_source_order() {
         let n = 7;
         let mut h = Vec::new();
         for site in 0..n - 1 {
@@ -588,12 +552,6 @@ mod buffered_tests {
             }
         }
         let reference = LindbladSpec::<2>::new(n, &h, &[]).unwrap();
-        let buffered = LindbladSpec::<2>::new(n, &h, &[])
-            .unwrap()
-            .with_leakage_backend(LeakageBackend::Buffered);
-        let indexed = LindbladSpec::<2>::new(n, &h, &[])
-            .unwrap()
-            .with_leakage_backend(LeakageBackend::Indexed);
         let tail = LindbladSpec::<2>::new(n, &h, &[])
             .unwrap()
             .with_leakage_backend(LeakageBackend::Tail);
@@ -620,30 +578,10 @@ mod buffered_tests {
                     .unwrap();
                 let actual = pool
                     .install(|| {
-                        buffered.leakage_with_prune(
-                            &basis,
-                            &coefficients,
-                            &[],
-                            basis.len() + room,
-                            0.0,
-                        )
+                        tail.leakage_with_prune(&basis, &coefficients, &[], basis.len() + room, 0.0)
                     })
                     .unwrap();
                 assert_eq!(actual, expected, "room={room}, threads={threads}");
-                for implementation in [&indexed, &tail] {
-                    let actual = pool
-                        .install(|| {
-                            implementation.leakage_with_prune(
-                                &basis,
-                                &coefficients,
-                                &[],
-                                basis.len() + room,
-                                0.0,
-                            )
-                        })
-                        .unwrap();
-                    assert_eq!(actual, expected, "room={room}, threads={threads}");
-                }
             }
         }
     }

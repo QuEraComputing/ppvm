@@ -235,7 +235,7 @@ impl<const C: usize> LindbladSpec<C> {
             );
             None
         } else {
-            Some(self.expm_step(basis, dt, coeffs, drop_tol, workspace.as_deref_mut()))
+            Some(self.expm_step(basis, dt, coeffs, drop_tol))
         };
         p.stop(&mut t.expm1_us);
 
@@ -279,22 +279,11 @@ impl<const C: usize> LindbladSpec<C> {
         } else {
             let coeffs_predict = coeffs_predict.unwrap();
             if basis.len() == n_predict {
-                let previous = std::mem::replace(coeffs, coeffs_predict);
-                if let Some(workspace) = workspace.as_mut() {
-                    workspace.coefficient_auxiliary = previous;
-                }
+                *coeffs = coeffs_predict;
             } else {
-                if let Some(workspace) = workspace.as_mut() {
-                    workspace.coefficient_auxiliary = coeffs_predict;
-                } else {
-                    drop(coeffs_predict);
-                }
+                drop(coeffs_predict);
                 let p = Phase::start(timed);
-                let result = self.expm_step(basis, dt, coeffs, drop_tol, workspace.as_deref_mut());
-                let previous = std::mem::replace(coeffs, result);
-                if let Some(workspace) = workspace.as_mut() {
-                    workspace.coefficient_auxiliary = previous;
-                }
+                *coeffs = self.expm_step(basis, dt, coeffs, drop_tol);
                 p.stop(&mut t.expm2_us);
             }
         }
@@ -307,15 +296,8 @@ impl<const C: usize> LindbladSpec<C> {
 
     /// Compute `exp(dt · M) · b` for the in-basis-restricted generator
     /// `M`, matrix-free, via `quspin-expm` (see [`crate::mf_expm`]).
-    fn expm_step(
-        &self,
-        basis: &[Word<C>],
-        dt: f64,
-        b: &[f64],
-        drop_tol: f64,
-        workspace: Option<&mut PcStepWorkspace<C>>,
-    ) -> Vec<f64> {
-        mf_expm::expm_apply_mf(self, basis, dt, b, drop_tol, workspace)
+    fn expm_step(&self, basis: &[Word<C>], dt: f64, b: &[f64], drop_tol: f64) -> Vec<f64> {
+        mf_expm::expm_apply_mf(self, basis, dt, b, drop_tol)
     }
 
     /// One predictor-corrector step in **orbit-rep form** at momentum

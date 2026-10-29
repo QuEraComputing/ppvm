@@ -3,29 +3,6 @@
 
 //! Configuration objects for the predictor-corrector stepper.
 
-/// Storage policy for the real-coefficient exponential action.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ExpmBackend {
-    /// Cache the restricted sparse generator for repeated products.
-    #[default]
-    Cached,
-    /// Recompute rows for Hamiltonian and Hermitian-Pauli-jump models.
-    /// General dissipators retain the cached implementation.
-    MatrixFree,
-    /// Store signed parent positions for uniform-magnitude Pauli Hamiltonians.
-    Packed,
-}
-
-/// Allocation policy for real-coefficient leakage accumulation.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum LeakageBackend {
-    /// Per-source output vectors and the reference chunk cap.
-    #[default]
-    Reference,
-    /// Accumulate candidate words in the spare tail of the main basis vector.
-    Tail,
-}
-
 /// Truncation and execution policy for a single predictor-corrector step
 /// ([`crate::LindbladSpec::pc_step`], [`crate::LindbladSpec::pc_step_timed`]).
 ///

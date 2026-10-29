@@ -53,8 +53,7 @@ fn candidate_terms(p_support: &[u32], index: &[Vec<u32>], scratch: &mut Vec<u32>
 /// costs more than the recompute (hash lookup ≳ recompute) and its several
 /// KB per cached word dominate memory at large basis sizes.
 pub struct LindbladSpec<const C: usize = W_CHUNKS> {
-    pub(crate) expm_backend: crate::ExpmBackend,
-    pub(crate) leakage_backend: crate::LeakageBackend,
+    pub(crate) workspaces: std::sync::Mutex<Vec<crate::PcStepWorkspace<C>>>,
     pub(crate) pauli_plan: Option<crate::pauli_plan::PauliActionPlan<C>>,
     n_qubits: usize,
     h_terms: Vec<HTerm<C>>,
@@ -165,8 +164,7 @@ impl<const C: usize> LindbladSpec<C> {
             None
         };
         Ok(Self {
-            expm_backend: crate::ExpmBackend::default(),
-            leakage_backend: crate::LeakageBackend::default(),
+            workspaces: std::sync::Mutex::new(Vec::new()),
             pauli_plan,
             n_qubits,
             h_terms: h_parsed,
@@ -174,18 +172,6 @@ impl<const C: usize> LindbladSpec<C> {
             h_support: h_support_idx,
             j_support: j_support_idx,
         })
-    }
-
-    /// Select how real-coefficient exponentials store their generator action.
-    pub fn with_expm_backend(mut self, backend: crate::ExpmBackend) -> Self {
-        self.expm_backend = backend;
-        self
-    }
-
-    /// Select reusable buffers for real leakage without changing chunk boundaries.
-    pub fn with_leakage_backend(mut self, backend: crate::LeakageBackend) -> Self {
-        self.leakage_backend = backend;
-        self
     }
 
     /// Whether the off-diagonal action is purely Hamiltonian and skew symmetric.

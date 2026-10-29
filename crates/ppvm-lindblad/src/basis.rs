@@ -20,12 +20,13 @@ const GENERATION_BATCH: usize = 2048;
 /// Reusable scratch for adaptive real-coefficient evolution.
 ///
 /// Keep one workspace per trajectory. It retains candidate payload and generation
-/// buffers, packed transitions and exponential scratch; hash-table growth starts from an empty allocation to preserve ordering.
+/// buffers, explicit generator coefficients and exponential scratch. Hash-table
+/// growth starts from an empty allocation to preserve ordering.
 #[derive(Default)]
 pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
     pub(crate) candidates: Option<crate::indexed_candidates::IndexedCandidates<C>>,
     outputs: Vec<Vec<(Word<C>, f64)>>,
-    pub(crate) packed: Option<crate::packed_expm::PackedOp>,
+    pub(crate) generator: Option<crate::mf_expm::BlockCsr<f64>>,
     pub(crate) taylor: Vec<f64>,
     pub(crate) coefficient_auxiliary: Vec<f64>,
 }
@@ -33,12 +34,10 @@ pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
 impl<const C: usize> PcStepWorkspace<C> {
     pub(crate) fn recycle_candidates(
         &mut self,
-        candidates: Option<crate::indexed_candidates::IndexedCandidates<C>>,
+        mut candidates: crate::indexed_candidates::IndexedCandidates<C>,
     ) {
-        if let Some(mut candidates) = candidates {
-            self.taylor = candidates.take_numeric();
-            self.candidates = Some(candidates);
-        }
+        self.taylor = candidates.take_numeric();
+        self.candidates = Some(candidates);
     }
 
     /// Requested backing capacity retained between steps, excluding the main state.
@@ -57,8 +56,8 @@ impl<const C: usize> PcStepWorkspace<C> {
                     .sum(),
             ),
             (
-                "packed",
-                self.packed.as_ref().map_or(0, |p| p.allocation_bytes()),
+                "generator",
+                self.generator.as_ref().map_or(0, |p| p.allocation_bytes()),
             ),
             ("numeric_scratch", self.taylor.capacity() * 8),
             (
@@ -70,38 +69,6 @@ impl<const C: usize> PcStepWorkspace<C> {
             bytes[..4].copy_from_slice(&candidates.allocation_bytes());
         }
         bytes
-    }
-}
-
-pub(crate) enum LeakageCandidates<const C: usize> {
-    Pairs(Vec<(Word<C>, f64)>),
-    Indexed(crate::indexed_candidates::IndexedCandidates<C>, f64),
-}
-
-impl<const C: usize> LeakageCandidates<C> {
-    fn into_vec(self) -> Vec<(Word<C>, f64)> {
-        match self {
-            Self::Pairs(pairs) => pairs,
-            Self::Indexed(indexed, threshold) => indexed.into_vec(threshold),
-        }
-    }
-    pub(crate) fn admit(
-        self,
-        basis: &mut Vec<Word<C>>,
-        coefficients: &mut Vec<f64>,
-        maximum: usize,
-    ) -> Option<crate::indexed_candidates::IndexedCandidates<C>> {
-        match self {
-            Self::Pairs(pairs) => {
-                crate::truncate::add_leakage_capped(basis, coefficients, pairs, maximum);
-                None
-            }
-            Self::Indexed(mut indexed, threshold) => {
-                indexed.admit(basis, coefficients, maximum, threshold);
-                indexed.reset();
-                Some(indexed)
-            }
-        }
     }
 }
 
@@ -158,66 +125,8 @@ impl<const C: usize> LindbladSpec<C> {
                 b: coeffs.len(),
             });
         }
-        if self.leakage_backend != crate::LeakageBackend::Reference {
-            return self
-                .leakage_buffered(basis, coeffs, protected, (max_basis, tau_add), None, None)
-                .map(LeakageCandidates::into_vec);
-        }
-        // Hash-only membership tables: storing 8-byte `u64` keys instead
-        // of 48-byte Words shrinks the in-basis structure ~6×, keeping it
-        // in L3 (and often L2) at basis sizes where the full-Word version
-        // would spill to DRAM.
-        let in_basis: FxHashMap<u64, ()> = basis.iter().map(|w| (word_hash(w), ())).collect();
-        let protected_set: FxHashMap<u64, ()> =
-            protected.iter().map(|w| (word_hash(w), ())).collect();
-
-        let order = order_by_desc_mag(coeffs);
-        let room = max_basis.saturating_sub(basis.len());
-        let n_qubits = self.n_qubits();
-        let mut merged: FxHashMap<Word<C>, f64> = FxHashMap::default();
-        for chunk_indices in order.chunks(CHUNK_SIZE) {
-            let local: Vec<Vec<(Word<C>, f64)>> = chunk_indices
-                .par_iter()
-                .map_init(
-                    || {
-                        (
-                            Vec::<u32>::with_capacity(n_qubits),
-                            Vec::<u32>::with_capacity(128),
-                            FxHashMap::<Word<C>, Complex<f64>>::with_capacity_and_hasher(
-                                128,
-                                FxBuildHasher::default(),
-                            ),
-                        )
-                    },
-                    |(s1, s2, lm), &i| {
-                        let p = &basis[i];
-                        let c = coeffs[i];
-                        let terms = self.compute_action_terms(p, s1, s2, lm);
-                        let mut out = Vec::with_capacity(terms.len());
-                        for (w, v) in terms.iter() {
-                            let h = word_hash(w);
-                            if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
-                                out.push((*w, c * *v));
-                            }
-                        }
-                        out
-                    },
-                )
-                .collect();
-            for v in local {
-                for (k, val) in v {
-                    *merged.entry(k).or_insert(0.0) += val;
-                }
-            }
-            cap_map_to_room(&mut merged, room);
-        }
-        // Rate-based admission: keep only candidates whose leakage rate
-        // exceeds `tau_add`. `tau_add = 0` admits everything except exact
-        // zeros.
-        Ok(merged
-            .into_iter()
-            .filter(|(_, c)| c.abs() > tau_add)
-            .collect())
+        self.leakage_buffered(basis, coeffs, protected, max_basis, None, None)
+            .map(|candidates| candidates.into_vec(tau_add))
     }
 
     pub(crate) fn leakage_for_step(
@@ -226,14 +135,8 @@ impl<const C: usize> LindbladSpec<C> {
         coefficients: &[f64],
         protected: &[Word<C>],
         maximum: usize,
-        threshold: f64,
-        workspace: Option<&mut PcStepWorkspace<C>>,
-    ) -> Result<LeakageCandidates<C>, Error> {
-        if self.leakage_backend == crate::LeakageBackend::Reference {
-            return self
-                .leakage_with_prune(basis, coefficients, protected, maximum, threshold)
-                .map(LeakageCandidates::Pairs);
-        }
+        workspace: &mut PcStepWorkspace<C>,
+    ) -> Result<crate::indexed_candidates::IndexedCandidates<C>, Error> {
         if basis.len() != coefficients.len() {
             return Err(Error::LengthMismatch {
                 what: "basis and coeffs",
@@ -246,8 +149,8 @@ impl<const C: usize> LindbladSpec<C> {
             basis,
             coefficients,
             protected,
-            (maximum, threshold),
-            workspace,
+            maximum,
+            Some(workspace),
             owned,
         )
     }
@@ -257,11 +160,10 @@ impl<const C: usize> LindbladSpec<C> {
         basis: &[Word<C>],
         coeffs: &[f64],
         protected: &[Word<C>],
-        limits: (usize, f64),
+        max_basis: usize,
         mut workspace: Option<&mut PcStepWorkspace<C>>,
         owned_basis: Option<Vec<Word<C>>>,
-    ) -> Result<LeakageCandidates<C>, Error> {
-        let (max_basis, tau_add) = limits;
+    ) -> Result<crate::indexed_candidates::IndexedCandidates<C>, Error> {
         let tail = owned_basis.is_some();
         let source = owned_basis.as_deref().unwrap_or(basis);
         let in_basis: FxHashMap<u64, ()> = source.iter().map(|w| (word_hash(w), ())).collect();
@@ -327,7 +229,7 @@ impl<const C: usize> LindbladSpec<C> {
         drop(order);
         drop(in_basis);
         drop(protected_set);
-        Ok(LeakageCandidates::Indexed(indexed, tau_add))
+        Ok(indexed)
     }
 
     /// Sparse generator matrix in COO form: returns `(row, col, val)`
@@ -537,7 +439,7 @@ impl<const C: usize> LindbladSpec<C> {
 #[cfg(test)]
 mod tail_tests {
     use super::*;
-    use crate::{LeakageBackend, word_from_codes};
+    use crate::word_from_codes;
 
     #[test]
     fn tail_leakage_preserves_multiple_chunk_caps_and_source_order() {
@@ -552,9 +454,7 @@ mod tail_tests {
             }
         }
         let reference = LindbladSpec::<2>::new(n, &h, &[]).unwrap();
-        let tail = LindbladSpec::<2>::new(n, &h, &[])
-            .unwrap()
-            .with_leakage_backend(LeakageBackend::Tail);
+        let tail = LindbladSpec::<2>::new(n, &h, &[]).unwrap();
         let basis: Vec<_> = (0..14000)
             .filter(|i| i % 3 != 0)
             .map(|i| {
@@ -569,7 +469,7 @@ mod tail_tests {
         let coefficients: Vec<_> = (0..basis.len()).map(|i| (i as f64).sin()).collect();
         for room in [0, 100, 2000] {
             let expected = reference
-                .leakage_with_prune(&basis, &coefficients, &[], basis.len() + room, 0.0)
+                .leakage_reference_with_prune(&basis, &coefficients, &[], basis.len() + room, 0.0)
                 .unwrap();
             for threads in [1, 2, 6] {
                 let pool = rayon::ThreadPoolBuilder::new()

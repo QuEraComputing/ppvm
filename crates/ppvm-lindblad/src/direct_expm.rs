@@ -7,8 +7,6 @@ use crate::compact_index::CompactBasisIndex;
 use crate::{LindbladSpec, Word};
 use fxhash::FxHashMap;
 use num::Complex;
-use quspin_types::{LinearOperator, QuSpinError};
-use rayon::prelude::*;
 
 pub(crate) struct DirectOp<'a, const C: usize> {
     pub(crate) spec: &'a LindbladSpec<C>,
@@ -84,101 +82,13 @@ impl<const C: usize> DirectOp<'_, C> {
         scratch.row.sort_unstable_by_key(|entry| entry.0);
         (raw, diagonal)
     }
-
-    pub(crate) fn per_col(&self) -> Vec<(f64, f64)> {
-        self.basis
-            .par_iter()
-            .map_init(ActionScratch::new, |scratch, word| {
-                scratch.fill(self.spec, word, true);
-                let mut raw = 0.0;
-                let mut diag = 0.0;
-                for &(output, value) in &scratch.terms {
-                    raw += value.abs();
-                    if output == *word {
-                        diag = value;
-                    }
-                }
-                (raw, diag)
-            })
-            .collect()
-    }
-}
-
-impl<const C: usize> LinearOperator<f64> for DirectOp<'_, C> {
-    fn dim(&self) -> usize {
-        self.basis.len()
-    }
-    fn parallel_hint(&self) -> bool {
-        false
-    }
-    fn trace(&self) -> f64 {
-        unreachable!("trace supplied to exponential")
-    }
-    fn onenorm(&self, _: f64) -> f64 {
-        unreachable!("norm supplied to exponential")
-    }
-
-    fn dot(&self, overwrite: bool, input: &[f64], output: &mut [f64]) -> Result<(), QuSpinError> {
-        output.par_iter_mut().enumerate().for_each_init(
-            ActionScratch::new,
-            |scratch, (position, result)| {
-                let word = &self.basis[position];
-                scratch.fill(self.spec, word, false);
-                scratch.row.clear();
-                for &(parent, value) in &scratch.terms {
-                    if let Some(column) = self.index.get(&parent) {
-                        // Hamiltonian rows are negative columns; Pauli dissipators are diagonal.
-                        scratch
-                            .row
-                            .push((column, if parent == *word { value } else { -value }));
-                    }
-                }
-                // Match the cached generator's accumulation order across thread counts.
-                scratch.row.sort_unstable_by_key(|entry| entry.0);
-                let mut sum = 0.0;
-                for &(column, value) in &scratch.row {
-                    if input[column as usize] != 0.0 {
-                        sum += value * input[column as usize];
-                    }
-                }
-                if overwrite {
-                    *result = sum;
-                } else {
-                    *result += sum;
-                }
-            },
-        );
-        Ok(())
-    }
-
-    fn dot_transpose(&self, _: bool, _: &[f64], _: &mut [f64]) -> Result<(), QuSpinError> {
-        unreachable!("transpose unused by single-vector exponential")
-    }
-    fn dot_many(
-        &self,
-        _: bool,
-        _: ndarray::ArrayView2<'_, f64>,
-        _: ndarray::ArrayViewMut2<'_, f64>,
-    ) -> Result<(), QuSpinError> {
-        unreachable!("multiple vectors unused by single-vector exponential")
-    }
-    fn dot_chunk(&self, _: bool, _: &[f64], _: &mut [f64], _: usize) -> Result<(), QuSpinError> {
-        unreachable!("chunk products unused by single-vector exponential")
-    }
-    fn dot_transpose_chunk(
-        &self,
-        _: &[f64],
-        _: &[<f64 as quspin_types::ExpmComputation>::Atomic],
-        _: std::ops::Range<usize>,
-    ) -> Result<(), QuSpinError> {
-        unreachable!("transpose chunks unused by single-vector exponential")
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ExpmBackend, JumpInput, PcStepConfig, word_from_codes};
+    use crate::{JumpInput, PcStepConfig, word_from_codes};
+    use quspin_types::LinearOperator;
 
     #[test]
     fn row_gather_matches_projected_signed_generator_across_threads() {
@@ -213,11 +123,8 @@ mod tests {
                 expected[row] += value * input[col];
             }
         }
-        let op = DirectOp {
-            spec: &spec,
-            basis: &basis,
-            index: CompactBasisIndex::new(&basis),
-        };
+        let (mat, _) = crate::mf_expm::build_row_cache(&spec, &basis, None);
+        let op = crate::mf_expm::CsrOp { mat: &mat };
         for threads in [1, 2, 6] {
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(threads)
@@ -232,17 +139,14 @@ mod tests {
     }
 
     #[test]
-    fn direct_exponential_preserves_adaptive_steps() {
+    fn default_exponential_preserves_nonuniform_adaptive_steps() {
         let h = vec![
             ("XXI".into(), 0.3),
             ("IYY".into(), 0.7),
             ("ZII".into(), -0.2),
         ];
         let cached = LindbladSpec::<2>::new(3, &h, &[]).unwrap();
-        let direct = LindbladSpec::<2>::new(3, &h, &[])
-            .unwrap()
-            .with_expm_backend(ExpmBackend::MatrixFree)
-            .with_leakage_backend(crate::LeakageBackend::Reference);
+        let direct = LindbladSpec::<2>::new(3, &h, &[]).unwrap();
         let seed = word_from_codes::<2>(&[3, 0, 0]).unwrap();
         let mut a = vec![seed];
         let mut b = a.clone();
@@ -251,10 +155,7 @@ mod tests {
         let mut reused_basis = a.clone();
         let mut reused_coeffs = ca.clone();
         let mut workspace = crate::PcStepWorkspace::default();
-        let tail = LindbladSpec::<2>::new(3, &h, &[])
-            .unwrap()
-            .with_expm_backend(ExpmBackend::MatrixFree)
-            .with_leakage_backend(crate::LeakageBackend::Tail);
+        let tail = LindbladSpec::<2>::new(3, &h, &[]).unwrap();
         let mut tail_basis = a.clone();
         let mut tail_coeffs = ca.clone();
         let mut tail_workspace = crate::PcStepWorkspace::default();
@@ -265,7 +166,9 @@ mod tests {
             ..Default::default()
         };
         for _ in 0..10 {
-            cached.pc_step(&mut a, &mut ca, 0.1, &[seed], &cfg).unwrap();
+            cached
+                .pc_step_reference(&mut a, &mut ca, 0.1, &[seed], &cfg)
+                .unwrap();
             direct.pc_step(&mut b, &mut cb, 0.1, &[seed], &cfg).unwrap();
             direct
                 .pc_step_with_workspace(
@@ -296,7 +199,7 @@ mod tests {
     }
 
     #[test]
-    fn packed_workspace_preserves_predictor_corrector_and_noise() {
+    fn default_workspace_preserves_predictor_corrector_and_noise() {
         let h = vec![
             ("XXI".into(), 0.3),
             ("IYY".into(), -0.3),
@@ -308,10 +211,7 @@ mod tests {
         }];
 
         let cached = LindbladSpec::<2>::new(3, &h, &jumps).unwrap();
-        let optimized = LindbladSpec::<2>::new(3, &h, &jumps)
-            .unwrap()
-            .with_expm_backend(ExpmBackend::Packed)
-            .with_leakage_backend(crate::LeakageBackend::Tail);
+        let optimized = LindbladSpec::<2>::new(3, &h, &jumps).unwrap();
         let seed = word_from_codes::<2>(&[3, 0, 0]).unwrap();
         let mut a = vec![seed];
         let mut b = a.clone();
@@ -321,7 +221,6 @@ mod tests {
         cb.reserve_exact(64 - cb.len());
         let basis_storage = b.as_ptr();
         let coefficient_storage = cb.as_ptr();
-        let mut workspace = crate::PcStepWorkspace::default();
         for step in 0..12 {
             let cfg = PcStepConfig {
                 max_basis: if step == 0 { usize::MAX } else { 8 + step % 3 },
@@ -329,9 +228,11 @@ mod tests {
                 num_threads: Some(2),
                 ..Default::default()
             };
-            cached.pc_step(&mut a, &mut ca, 0.1, &[seed], &cfg).unwrap();
+            cached
+                .pc_step_reference(&mut a, &mut ca, 0.1, &[seed], &cfg)
+                .unwrap();
             optimized
-                .pc_step_with_workspace(&mut b, &mut cb, 0.1, &[seed], &cfg, &mut workspace)
+                .pc_step(&mut b, &mut cb, 0.1, &[seed], &cfg)
                 .unwrap();
             assert_eq!(b.as_ptr(), basis_storage);
             assert_eq!(cb.as_ptr(), coefficient_storage);
@@ -341,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn packed_workspace_matches_cached_beyond_one_hundred_twenty_eight_qubits() {
+    fn default_workspace_matches_reference_beyond_one_hundred_twenty_eight_qubits() {
         let n = 129;
         let term = |symbol: char, sites: &[usize]| {
             let mut symbols = vec!['I'; n];
@@ -360,10 +261,7 @@ mod tests {
             rate: 0.2,
         }];
         let reference = LindbladSpec::<4>::new(n, &h, &jumps).unwrap();
-        let packed = LindbladSpec::<4>::new(n, &h, &jumps)
-            .unwrap()
-            .with_expm_backend(ExpmBackend::Packed)
-            .with_leakage_backend(crate::LeakageBackend::Tail);
+        let optimized = LindbladSpec::<4>::new(n, &h, &jumps).unwrap();
         let mut codes = vec![0; n];
         codes[128] = 2;
         let seed = word_from_codes::<4>(&codes).unwrap();
@@ -380,9 +278,9 @@ mod tests {
         };
         for _ in 0..8 {
             reference
-                .pc_step(&mut a, &mut ca, 0.1, &[seed], &cfg)
+                .pc_step_reference(&mut a, &mut ca, 0.1, &[seed], &cfg)
                 .unwrap();
-            packed
+            optimized
                 .pc_step_with_workspace(&mut b, &mut cb, 0.1, &[seed], &cfg, &mut workspace)
                 .unwrap();
             assert_eq!(a, b);

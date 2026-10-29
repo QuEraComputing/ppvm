@@ -335,9 +335,9 @@ impl LindbladSpec {
                 )
                 .map_err(map_err)?;
 
-            // Pack output. Basis may have grown; coeffs has the same new length.
-            let pairs: Vec<(Word<C>, f64)> = basis_words.into_iter().zip(coeffs_vec).collect();
-            pack_pauli_map(py, pairs, n_q)
+            let basis_arr = encode_basis(py, &basis_words, n_q)?;
+            coeffs_vec.shrink_to_fit();
+            Ok((basis_arr, coeffs_vec.into_pyarray(py)))
         })
     }
 
@@ -393,8 +393,9 @@ impl LindbladSpec {
                 )
                 .map_err(map_err)?;
 
-            let pairs: Vec<(Word<C>, f64)> = basis_words.into_iter().zip(coeffs_vec).collect();
-            let map = pack_pauli_map(py, pairs, n_q)?;
+            let basis_arr = encode_basis(py, &basis_words, n_q)?;
+            coeffs_vec.shrink_to_fit();
+            let map = (basis_arr, coeffs_vec.into_pyarray(py));
             let d = pyo3::types::PyDict::new(py);
             d.set_item("leakage1_us", timings.leakage1_us)?;
             d.set_item("expand1_us", timings.expand1_us)?;

@@ -45,8 +45,9 @@ pub mod error;
 pub(crate) mod expm;
 mod indexed_candidates;
 mod kossakowski;
-mod packed_expm;
 mod pauli_plan;
+#[cfg(test)]
+mod reference;
 mod scalar;
 pub mod sector;
 mod spec;
@@ -58,7 +59,7 @@ mod word;
 pub(crate) mod mf_expm;
 
 pub use basis::{PcStepWorkspace, build_basis_index};
-pub use config::{ExpmBackend, LeakageBackend, PcStepConfig};
+pub use config::PcStepConfig;
 pub use error::Error;
 pub use sector::{Sector, canonicalize_basis_to_rep};
 pub use spec::{JumpInput, LindbladSpec};

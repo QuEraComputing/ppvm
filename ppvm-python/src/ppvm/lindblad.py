@@ -310,8 +310,9 @@ class Lindbladian:
 
         All work — leakage expansion, matrix-exponential step, second-hop
         re-expansion, corrector — runs in Rust; SciPy is not required.
-        The matrix-exponential action is computed matrix-free via the
-        external ``quspin-expm`` crate.
+        The matrix-exponential action uses sparse generator rows and the
+        external ``quspin-expm`` crate. Repeated calls on this model reuse
+        temporary buffers automatically. Couplings may have arbitrary strengths.
 
         Truncation. ``max_basis`` is a hard rank cap on the live basis:
         enrichment adds at most ``max_basis - len(basis)`` of the largest

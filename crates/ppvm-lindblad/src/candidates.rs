@@ -27,7 +27,12 @@ pub struct CandidateBuffer<'a, const C: usize = { crate::W_CHUNKS }> {
 }
 
 impl<'a, const C: usize> CandidateBuffer<'a, C> {
-    pub(crate) fn new(
+    /// View the active sum and use its spare word capacity for candidates.
+    /// Numeric scratch is cleared while retaining its allocation.
+    ///
+    /// # Panics
+    /// Panics when the active word and coefficient lengths differ.
+    pub fn new(
         words: &'a mut Vec<Word<C>>,
         coefficients: &'a [f64],
         numeric: &'a mut Vec<f64>,
@@ -96,6 +101,16 @@ impl<'a, const C: usize> CandidateBuffer<'a, C> {
     /// Its contents have no meaning after the proposal has been admitted.
     pub fn numeric_scratch(&mut self) -> &mut Vec<f64> {
         self.numeric
+    }
+
+    pub(crate) fn scoring_parts(&mut self) -> (&[Word<C>], &[Word<C>], &[f64], &mut Vec<f64>) {
+        let (basis, candidates) = self.words.split_at(self.prefix);
+        (
+            self.source.unwrap_or(basis),
+            candidates,
+            self.coefficients,
+            self.numeric,
+        )
     }
 
     pub(crate) fn finish(mut self, count: usize) {

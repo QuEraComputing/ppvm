@@ -181,6 +181,10 @@ impl<const C: usize> LindbladSpec<C> {
             .all(|jump| matches!(jump, JumpKind::HermitianPauli { .. }))
     }
 
+    pub(crate) fn hamiltonian_terms(&self) -> impl Iterator<Item = (Word<C>, f64)> + '_ {
+        self.h_terms.iter().map(|term| (term.word, term.coeff))
+    }
+
     /// Add a Kossakowski-form dissipator
     /// `D*(O) = Σ_{n,m} K_nm ( A_n† O A_m − ½ {A_n† A_m, O} )`.
     ///

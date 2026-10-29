@@ -38,6 +38,7 @@
 
 mod algebra;
 mod basis;
+mod candidate_strategies;
 mod candidates;
 mod compact_index;
 pub mod config;
@@ -61,6 +62,9 @@ mod word;
 pub(crate) mod mf_expm;
 
 pub use basis::{PcStepWorkspace, build_basis_index};
+pub use candidate_strategies::{
+    BatchedProposer, DeferredPruningProposer, GreedyProposer, RefinedGreedyProposer,
+};
 pub use candidates::{CandidateBuffer, CandidateProposer, StreamingProposer};
 pub use config::PcStepConfig;
 pub use error::Error;

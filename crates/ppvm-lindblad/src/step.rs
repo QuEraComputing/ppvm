@@ -165,7 +165,7 @@ impl<const C: usize> LindbladSpec<C> {
     ///
     /// The strategy receives a borrowed view of the active sum and its spare word
     /// storage. The stepper initializes admitted coefficients, evolves the state,
-    /// and applies final truncation. Ordinary step calls use [`crate::StreamingProposer`].
+    /// and applies final truncation. Ordinary step calls use [`crate::ShortlistScoreProposer`].
     #[allow(clippy::too_many_arguments)]
     pub fn pc_step_with_proposer<P: CandidateProposer<C>>(
         &self,

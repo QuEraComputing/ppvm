@@ -1,11 +1,10 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded-memory alternatives to chunk-capped signed leakage accumulation.
+//! Bounded candidate shortlisting followed by complete signed leakage scoring.
 
 use crate::algebra::{anti_commutes, comm_product};
 use crate::direct_expm::ActionScratch;
-use crate::indexed_candidates::IndexedCandidates;
 use crate::word::word_hash;
 use crate::{CandidateBuffer, CandidateProposer, Error, LindbladSpec, StreamingProposer, Word};
 use fxhash::FxHashSet;
@@ -178,25 +177,16 @@ impl ScoreHeap {
     }
 }
 
-/// Select distinct external strings by their largest individual `|h_i c_j|`.
-///
-/// A bounded minimum heap keeps the largest individual contribution per destination.
-/// Sorted-product upper bounds skip pairs below its cutoff. Duplicate amplitudes
-/// are never summed. Equal scores have deterministic, unspecified tie order.
-/// Pauli-noise jumps are diagonal and create no external candidates. General
-/// dissipators use the streaming proposer to retain support for those models.
 #[derive(Default)]
-pub struct GreedyProposer<const C: usize = { crate::W_CHUNKS }> {
+struct Shortlist<const C: usize = { crate::W_CHUNKS }> {
     h: Vec<(Word<C>, f64)>,
     order: Vec<usize>,
     heap: ScoreHeap,
     positions: Positions,
     protected: FxHashSet<Word<C>>,
-    fallback: StreamingProposer<C>,
-    use_fallback: bool,
 }
 
-impl<const C: usize> GreedyProposer<C> {
+impl<const C: usize> Shortlist<C> {
     fn prepare(
         &mut self,
         model: &LindbladSpec<C>,
@@ -215,20 +205,13 @@ impl<const C: usize> GreedyProposer<C> {
         self.protected.extend(protected.iter().copied());
     }
 
-    fn take_range(
-        &mut self,
-        buffer: &mut CandidateBuffer<'_, C>,
-        start: usize,
-        end: usize,
-        budget: usize,
-    ) {
-        if budget == 0 || start == end {
+    fn build(&mut self, buffer: &mut CandidateBuffer<'_, C>, budget: usize) {
+        if budget == 0 || self.order.is_empty() {
             return;
         }
         self.heap.len = 0;
-        let base = buffer.candidates().len();
-        self.heap.limit = base.saturating_add(budget);
-        for source_rank in start..end {
+        self.heap.limit = budget;
+        for source_rank in 0..self.order.len() {
             let source = self.order[source_rank];
             let coefficient = buffer.coefficients()[source];
             for &(h_word, h_coefficient) in &self.h {
@@ -249,7 +232,7 @@ impl<const C: usize> GreedyProposer<C> {
                 let rate = h_coefficient * sign * coefficient;
                 if let Some(position) = self.positions.get(buffer, &word) {
                     let position = position as usize;
-                    if position < buffer.basis().len() + base {
+                    if position < buffer.basis().len() {
                         continue;
                     }
                     let slot = position - buffer.basis().len();
@@ -277,7 +260,7 @@ impl<const C: usize> GreedyProposer<C> {
             }
             if let Some((_, h_coefficient)) = self.h.first()
                 && self.heap.len == budget
-                && source_rank + 1 < end
+                && source_rank + 1 < self.order.len()
                 && 2.0
                     * h_coefficient.abs()
                     * buffer.coefficients()[self.order[source_rank + 1]].abs()
@@ -303,121 +286,42 @@ fn compact_threshold<const C: usize>(buffer: &mut CandidateBuffer<'_, C>, thresh
     write
 }
 
-impl<const C: usize> CandidateProposer<C> for GreedyProposer<C> {
-    fn propose(
-        &mut self,
-        model: &LindbladSpec<C>,
-        buffer: &mut CandidateBuffer<'_, C>,
-        protected: &[Word<C>],
-        maximum: usize,
-    ) -> Result<(), Error> {
-        self.use_fallback = !model.supports_row_gather();
-        if self.use_fallback {
-            return self.fallback.propose(model, buffer, protected, maximum);
-        }
-        let room = maximum.saturating_sub(buffer.basis().len());
-        if room == 0 {
-            return Ok(());
-        }
-        self.prepare(model, buffer, protected);
-        self.take_range(buffer, 0, self.order.len(), room);
-        Ok(())
-    }
-
-    fn select(&mut self, buffer: &mut CandidateBuffer<'_, C>, threshold: f64) -> usize {
-        if self.use_fallback {
-            self.fallback.select(buffer, threshold)
-        } else {
-            buffer.numeric.truncate(buffer.candidates().len());
-            compact_threshold(buffer, threshold)
-        }
-    }
-}
-
-/// Divide the remaining candidate budget across remaining source batches.
-///
-/// Sources are sorted by coefficient magnitude. Each batch selects the largest
-/// individual Hamiltonian/source contributions for distinct destinations. Words
-/// already admitted by earlier batches are skipped without merging amplitudes.
-pub struct BatchedProposer<const C: usize = { crate::W_CHUNKS }> {
-    batches: usize,
-    greedy: GreedyProposer<C>,
-}
-
-impl<const C: usize> BatchedProposer<C> {
-    /// Use `batches` source partitions, clamped to at least one.
-    pub fn new(batches: usize) -> Self {
-        Self {
-            batches: batches.max(1),
-            greedy: GreedyProposer::default(),
-        }
-    }
-}
-impl<const C: usize> Default for BatchedProposer<C> {
-    fn default() -> Self {
-        Self::new(32)
-    }
-}
-impl<const C: usize> CandidateProposer<C> for BatchedProposer<C> {
-    fn propose(
-        &mut self,
-        model: &LindbladSpec<C>,
-        buffer: &mut CandidateBuffer<'_, C>,
-        protected: &[Word<C>],
-        maximum: usize,
-    ) -> Result<(), Error> {
-        self.greedy.use_fallback = !model.supports_row_gather();
-        if self.greedy.use_fallback {
-            return self
-                .greedy
-                .fallback
-                .propose(model, buffer, protected, maximum);
-        }
-        let room = maximum.saturating_sub(buffer.basis().len());
-        if room == 0 || buffer.basis().is_empty() {
-            return Ok(());
-        }
-        self.greedy.prepare(model, buffer, protected);
-        let sources = self.greedy.order.len();
-        let batches = self.batches.min(sources);
-        for batch in 0..batches {
-            let remaining = room - buffer.candidates().len();
-            let budget = remaining / (batches - batch);
-            self.greedy.take_range(
-                buffer,
-                sources * batch / batches,
-                sources * (batch + 1) / batches,
-                budget,
-            );
-        }
-        Ok(())
-    }
-    fn select(&mut self, buffer: &mut CandidateBuffer<'_, C>, threshold: f64) -> usize {
-        self.greedy.select(buffer, threshold)
-    }
-}
-
-/// Build a greedy shortlist, compute its exact signed leakage, then rank it.
+/// Shortlist external strings by individual contributions, then score signed leakage.
 ///
 /// Exact scores use reverse Hamiltonian actions and a basis-position lookup,
 /// including all contributions and cancellations for each shortlisted word.
 /// Selection is exact within the shortlist, not over all external words.
-pub struct RefinedGreedyProposer<const C: usize = { crate::W_CHUNKS }> {
+/// The default shortlist is 1.5 times the available admission slots. General
+/// dissipators use [`StreamingProposer`] because their action need not be
+/// skew-symmetric; Hamiltonians with Pauli noise use reverse-action scoring.
+pub struct ShortlistScoreProposer<const C: usize = { crate::W_CHUNKS }> {
     extra_percent: usize,
     room: usize,
-    greedy: GreedyProposer<C>,
+    shortlist: Shortlist<C>,
+    pub(crate) streaming: StreamingProposer<C>,
+    use_fallback: bool,
 }
-impl<const C: usize> RefinedGreedyProposer<C> {
+impl<const C: usize> ShortlistScoreProposer<C> {
+    pub(crate) fn allocation_bytes(&self) -> [usize; 3] {
+        [
+            self.shortlist.h.capacity() * std::mem::size_of::<(Word<C>, f64)>(),
+            self.shortlist.order.capacity() * std::mem::size_of::<usize>(),
+            self.shortlist.positions.table.allocation_size(),
+        ]
+    }
+
     /// Oversample the admission budget by `extra_percent` before exact scoring.
     pub fn new(extra_percent: usize) -> Self {
         Self {
             extra_percent,
             room: 0,
-            greedy: GreedyProposer::default(),
+            shortlist: Shortlist::default(),
+            streaming: StreamingProposer::default(),
+            use_fallback: false,
         }
     }
 }
-impl<const C: usize> Default for RefinedGreedyProposer<C> {
+impl<const C: usize> Default for ShortlistScoreProposer<C> {
     fn default() -> Self {
         Self::new(50)
     }
@@ -461,7 +365,7 @@ fn select_largest<const C: usize>(
     write
 }
 
-impl<const C: usize> CandidateProposer<C> for RefinedGreedyProposer<C> {
+impl<const C: usize> CandidateProposer<C> for ShortlistScoreProposer<C> {
     fn propose(
         &mut self,
         model: &LindbladSpec<C>,
@@ -470,26 +374,22 @@ impl<const C: usize> CandidateProposer<C> for RefinedGreedyProposer<C> {
         maximum: usize,
     ) -> Result<(), Error> {
         self.room = maximum.saturating_sub(buffer.basis().len());
-        self.greedy.use_fallback = !model.supports_row_gather();
-        if self.greedy.use_fallback {
-            return self
-                .greedy
-                .fallback
-                .propose(model, buffer, protected, maximum);
+        self.use_fallback = !model.supports_row_gather();
+        if self.use_fallback {
+            return self.streaming.propose(model, buffer, protected, maximum);
         }
         if self.room == 0 {
             return Ok(());
         }
-        self.greedy.prepare(model, buffer, protected);
+        self.shortlist.prepare(model, buffer, protected);
         let shortlist = self
             .room
             .saturating_add(self.room.saturating_mul(self.extra_percent) / 100);
-        self.greedy
-            .take_range(buffer, 0, self.greedy.order.len(), shortlist);
+        self.shortlist.build(buffer, shortlist);
         buffer.numeric.truncate(buffer.candidates().len());
         let (basis, words, coefficients, numeric) = buffer.scoring_parts();
         let n = basis.len();
-        let positions = &self.greedy.positions;
+        let positions = &self.shortlist.positions;
         // The position table contains basis and shortlist entries. Only the
         // original basis has nonzero coefficients in the leakage calculation.
         let table = &positions.table;
@@ -517,130 +417,11 @@ impl<const C: usize> CandidateProposer<C> for RefinedGreedyProposer<C> {
     }
 
     fn select(&mut self, buffer: &mut CandidateBuffer<'_, C>, threshold: f64) -> usize {
-        if self.greedy.use_fallback {
-            self.greedy.fallback.select(buffer, threshold)
+        if self.use_fallback {
+            self.streaming.select(buffer, threshold)
         } else {
             select_largest(buffer, self.room, threshold)
         }
-    }
-}
-
-/// Merge signed leakage and prune only when the candidate pool exceeds headroom.
-///
-/// Small parallel source batches feed signed sums in source order. The default 25% headroom reduces whole-pool scans while fitting
-/// N + 1.25 A candidate words into the usual 4B reservation when N=B and A=2B.
-pub struct DeferredPruningProposer<const C: usize = { crate::W_CHUNKS }> {
-    extra_percent: usize,
-    indexed: IndexedCandidates,
-    positions: Positions,
-    protected: FxHashSet<Word<C>>,
-    order: Vec<usize>,
-    scratch: ActionScratch<C>,
-    generation_batch: usize,
-    outputs: Vec<Vec<(Word<C>, f64)>>,
-}
-impl<const C: usize> DeferredPruningProposer<C> {
-    /// Allow `extra_percent` additional live candidates between pruning passes.
-    pub fn new(extra_percent: usize) -> Self {
-        Self {
-            extra_percent,
-            indexed: IndexedCandidates::default(),
-            positions: Positions::default(),
-            protected: FxHashSet::default(),
-            order: Vec::new(),
-            scratch: ActionScratch::new(),
-            generation_batch: 256,
-            outputs: Vec::new(),
-        }
-    }
-}
-impl<const C: usize> DeferredPruningProposer<C> {
-    /// Bound parallel generation by `batch_sources`; one selects serial generation.
-    pub fn with_generation_batch(extra_percent: usize, batch_sources: usize) -> Self {
-        Self {
-            generation_batch: batch_sources.max(1),
-            ..Self::new(extra_percent)
-        }
-    }
-}
-impl<const C: usize> Default for DeferredPruningProposer<C> {
-    fn default() -> Self {
-        Self::new(25)
-    }
-}
-impl<const C: usize> CandidateProposer<C> for DeferredPruningProposer<C> {
-    fn propose(
-        &mut self,
-        model: &LindbladSpec<C>,
-        buffer: &mut CandidateBuffer<'_, C>,
-        protected: &[Word<C>],
-        maximum: usize,
-    ) -> Result<(), Error> {
-        self.indexed.reset_reusing_table();
-        let room = maximum.saturating_sub(buffer.basis().len());
-        if room == 0 {
-            return Ok(());
-        }
-        let watermark = room.saturating_add((room.saturating_mul(self.extra_percent) / 100).max(1));
-        self.positions.reset(buffer);
-        self.protected.clear();
-        self.protected.extend(protected.iter().copied());
-        source_order(&mut self.order, buffer.coefficients());
-        if self.generation_batch == 1 {
-            for &index in &self.order {
-                let source = buffer.basis()[index];
-                let coefficient = buffer.coefficients()[index];
-                self.scratch.fill(model, &source, true);
-                for &(word, value) in &self.scratch.terms {
-                    if !self.protected.contains(&word)
-                        && self.positions.get(buffer, &word).is_none()
-                    {
-                        self.indexed.add(buffer, word, coefficient * value);
-                    }
-                }
-                if self.indexed.len() > watermark {
-                    self.indexed.cap(buffer, room);
-                }
-            }
-        } else {
-            self.outputs.resize_with(self.generation_batch, Vec::new);
-            for sources in self.order.chunks(self.generation_batch) {
-                let positions = &self.positions;
-                let protected = &self.protected;
-                let coefficients = buffer.coefficients();
-                let view = &*buffer;
-                self.outputs
-                    .par_iter_mut()
-                    .zip(sources.par_iter())
-                    .for_each_init(ActionScratch::new, |scratch, (output, &index)| {
-                        output.clear();
-                        scratch.fill(model, &view.basis()[index], true);
-                        for &(word, value) in &scratch.terms {
-                            if !protected.contains(&word) && positions.get(view, &word).is_none() {
-                                output.push((word, coefficients[index] * value));
-                            }
-                        }
-                    });
-                for output in self.outputs.iter().take(sources.len()) {
-                    for &(word, value) in output {
-                        self.indexed.add(buffer, word, value);
-                    }
-                    if self.indexed.len() > watermark {
-                        self.indexed.cap(buffer, room);
-                    }
-                }
-            }
-            for output in &mut self.outputs {
-                output.clear();
-            }
-        }
-        self.indexed.cap(buffer, room);
-        Ok(())
-    }
-    fn select(&mut self, buffer: &mut CandidateBuffer<'_, C>, threshold: f64) -> usize {
-        let count = self.indexed.select(buffer, threshold);
-        self.indexed.reset_reusing_table();
-        count
     }
 }
 
@@ -650,6 +431,26 @@ mod tests {
     use crate::{JumpInput, parse_pauli_string, word_from_codes};
     use fxhash::FxHashMap;
     use num::Complex;
+
+    impl<const C: usize> CandidateProposer<C> for Shortlist<C> {
+        fn propose(
+            &mut self,
+            model: &LindbladSpec<C>,
+            buffer: &mut CandidateBuffer<'_, C>,
+            protected: &[Word<C>],
+            maximum: usize,
+        ) -> Result<(), Error> {
+            let room = maximum.saturating_sub(buffer.basis().len());
+            if room > 0 {
+                self.prepare(model, buffer, protected);
+                self.build(buffer, room);
+            }
+            Ok(())
+        }
+        fn select(&mut self, buffer: &mut CandidateBuffer<'_, C>, threshold: f64) -> usize {
+            compact_threshold(buffer, threshold)
+        }
+    }
 
     fn selected<const C: usize, P: CandidateProposer<C>>(
         model: &LindbladSpec<C>,
@@ -730,7 +531,7 @@ mod tests {
                 expected.push(word);
             }
         }
-        let mut greedy = GreedyProposer::default();
+        let mut greedy = Shortlist::default();
         for room in [0, 1, 3, 100] {
             let result = selected(&model, &words, &coefficients, &[], room, 0.0, &mut greedy);
             let mut actual = result.clone();
@@ -738,49 +539,12 @@ mod tests {
             let mut wanted = expected[..room.min(expected.len())].to_vec();
             wanted.sort_unstable();
             assert_eq!(actual, wanted);
-            assert_eq!(
-                result,
-                selected(
-                    &model,
-                    &words,
-                    &coefficients,
-                    &[],
-                    room,
-                    0.0,
-                    &mut BatchedProposer::new(1)
-                )
-            );
         }
     }
 
     #[test]
-    fn batch_budget_carries_unspent_slots_forward() {
-        let model = LindbladSpec::<2>::new(3, &[("ZII".into(), 1.0)], &[]).unwrap();
-        let words: Vec<_> = ["IZI", "IIZ", "XZI", "XIZ"]
-            .iter()
-            .map(|s| parse_pauli_string(s, 3).unwrap().0)
-            .collect();
-        let result = selected(
-            &model,
-            &words,
-            &[8.0, 7.0, 2.0, 1.0],
-            &[],
-            2,
-            0.0,
-            &mut BatchedProposer::new(2),
-        );
-        assert_eq!(
-            result,
-            ["YZI", "YIZ"]
-                .iter()
-                .map(|s| parse_pauli_string(s, 3).unwrap().0)
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
     fn bounded_greedy_matches_exhaustive_max_contributions_across_replacements_and_ties() {
-        let mut proposer = GreedyProposer::<2>::default();
+        let mut proposer = Shortlist::<2>::default();
         for trial in 0..20 {
             let h: Vec<_> = (0..12)
                 .map(|i| {
@@ -844,57 +608,6 @@ mod tests {
     }
 
     #[test]
-    fn deferred_parallel_batches_preserve_serial_selection() {
-        let model = LindbladSpec::<2>::new(
-            5,
-            &[
-                ("XXIII".into(), 0.3),
-                ("IYYII".into(), -0.7),
-                ("IIXXI".into(), 0.6),
-                ("IIIYY".into(), 0.5),
-            ],
-            &[],
-        )
-        .unwrap();
-        let words: Vec<_> = (0..512)
-            .map(|i| {
-                word_from_codes(
-                    &(0..5)
-                        .map(|q| (((i * 37) >> (2 * q)) & 3) as u8)
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap()
-            })
-            .collect();
-        let coefficients: Vec<_> = (0..512).map(|i| (i as f64 * 1.17).sin()).collect();
-        for room in [8, 32, 100] {
-            let serial = selected(
-                &model,
-                &words,
-                &coefficients,
-                &[],
-                room,
-                0.0,
-                &mut DeferredPruningProposer::with_generation_batch(25, 1),
-            );
-            for batch in [32, 64, 256] {
-                assert_eq!(
-                    serial,
-                    selected(
-                        &model,
-                        &words,
-                        &coefficients,
-                        &[],
-                        room,
-                        0.0,
-                        &mut DeferredPruningProposer::with_generation_batch(25, batch)
-                    )
-                );
-            }
-        }
-    }
-
-    #[test]
     fn exact_shortlist_scoring_detects_complete_cancellation() {
         let model =
             LindbladSpec::<2>::new(2, &[("XI".into(), 1.0), ("IX".into(), 1.0)], &[]).unwrap();
@@ -910,7 +623,7 @@ mod tests {
                 &[],
                 2,
                 0.0,
-                &mut GreedyProposer::default()
+                &mut Shortlist::default()
             )
             .len(),
             2
@@ -923,19 +636,7 @@ mod tests {
                 &[],
                 2,
                 0.0,
-                &mut RefinedGreedyProposer::default()
-            )
-            .is_empty()
-        );
-        assert!(
-            selected(
-                &model,
-                &words,
-                &[1.0, -1.0],
-                &[],
-                2,
-                0.0,
-                &mut DeferredPruningProposer::default()
+                &mut ShortlistScoreProposer::default()
             )
             .is_empty()
         );
@@ -988,7 +689,7 @@ mod tests {
                     &[],
                     5,
                     0.0,
-                    &mut RefinedGreedyProposer::new(100_000),
+                    &mut ShortlistScoreProposer::new(100_000),
                 )
             });
             let power: f64 = result.iter().map(|word| exact[word].powi(2)).sum();
@@ -997,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn hamiltonian_proposers_preserve_general_jump_leakage_by_fallback() {
+    fn shortlist_scoring_preserves_general_jump_leakage_by_fallback() {
         let jump = JumpInput {
             lincomb: vec![
                 ("XI".into(), Complex::new(0.5, 0.0)),
@@ -1026,31 +727,7 @@ mod tests {
                 &[],
                 8,
                 0.0,
-                &mut GreedyProposer::default()
-            )
-        );
-        assert_eq!(
-            expected,
-            selected(
-                &model,
-                &words,
-                &[1.0],
-                &[],
-                8,
-                0.0,
-                &mut BatchedProposer::default()
-            )
-        );
-        assert_eq!(
-            expected,
-            selected(
-                &model,
-                &words,
-                &[1.0],
-                &[],
-                8,
-                0.0,
-                &mut RefinedGreedyProposer::default()
+                &mut ShortlistScoreProposer::default()
             )
         );
     }
@@ -1087,7 +764,7 @@ mod tests {
                 &[],
                 8,
                 0.0,
-                &mut GreedyProposer::default()
+                &mut Shortlist::default()
             )
         );
         assert_eq!(
@@ -1099,31 +776,7 @@ mod tests {
                 &[],
                 8,
                 0.0,
-                &mut BatchedProposer::default()
-            )
-        );
-        assert_eq!(
-            expected,
-            selected(
-                &model,
-                &words,
-                &[1.0],
-                &[],
-                8,
-                0.0,
-                &mut RefinedGreedyProposer::default()
-            )
-        );
-        assert_eq!(
-            expected,
-            selected(
-                &model,
-                &words,
-                &[1.0],
-                &[],
-                8,
-                0.0,
-                &mut DeferredPruningProposer::default()
+                &mut ShortlistScoreProposer::default()
             )
         );
         assert!(
@@ -1134,7 +787,7 @@ mod tests {
                 &expected,
                 8,
                 0.0,
-                &mut GreedyProposer::default()
+                &mut Shortlist::default()
             )
             .is_empty()
         );

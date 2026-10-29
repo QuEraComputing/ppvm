@@ -15,16 +15,6 @@ pub(crate) struct IndexedCandidates {
 }
 
 impl IndexedCandidates {
-    pub(crate) fn len(&self) -> usize {
-        self.table.len()
-    }
-
-    pub(crate) fn reset_reusing_table(&mut self) {
-        self.state.clear();
-        self.free.clear();
-        self.table.clear();
-    }
-
     pub(crate) fn reset(&mut self) {
         self.state.clear();
         self.free.clear();

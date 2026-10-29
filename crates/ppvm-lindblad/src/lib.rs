@@ -35,10 +35,14 @@
 //! for a register. The hot-path commutator/
 //! product loops bypass the higher-level word API and operate directly on
 //! the raw chunks for speed.
+//!
+//! Real predictor-corrector steps use [`ShortlistScoreProposer`]: shortlist
+//! external words by individual Hamiltonian contributions, then rank their
+//! complete signed leakage. [`StreamingProposer`] remains available through
+//! [`LindbladSpec::pc_step_with_proposer`] and handles general dissipators.
 
 mod algebra;
 mod basis;
-mod candidate_strategies;
 mod candidates;
 mod compact_index;
 pub mod config;
@@ -52,6 +56,7 @@ mod pauli_plan;
 mod reference;
 mod scalar;
 pub mod sector;
+mod shortlist;
 mod spec;
 mod step;
 mod truncate;
@@ -62,13 +67,11 @@ mod word;
 pub(crate) mod mf_expm;
 
 pub use basis::{PcStepWorkspace, build_basis_index};
-pub use candidate_strategies::{
-    BatchedProposer, DeferredPruningProposer, GreedyProposer, RefinedGreedyProposer,
-};
 pub use candidates::{CandidateBuffer, CandidateProposer, StreamingProposer};
 pub use config::PcStepConfig;
 pub use error::Error;
 pub use sector::{Sector, canonicalize_basis_to_rep};
+pub use shortlist::ShortlistScoreProposer;
 pub use spec::{JumpInput, LindbladSpec};
 pub use step::PcStepTimings;
 pub use word::{

@@ -283,8 +283,15 @@ mod tests {
             optimized
                 .pc_step_with_workspace(&mut b, &mut cb, 0.1, &[seed], &cfg, &mut workspace)
                 .unwrap();
-            assert_eq!(a, b);
-            assert_eq!(ca, cb);
+            let mut expected: Vec<_> = a.iter().copied().zip(ca.iter().copied()).collect();
+            let mut actual: Vec<_> = b.iter().copied().zip(cb.iter().copied()).collect();
+            expected.sort_unstable_by_key(|entry| entry.0);
+            actual.sort_unstable_by_key(|entry| entry.0);
+            assert_eq!(expected.len(), actual.len());
+            for ((word_a, value_a), (word_b, value_b)) in expected.iter().zip(&actual) {
+                assert_eq!(word_a, word_b);
+                assert!((value_a - value_b).abs() < 2e-13);
+            }
         }
     }
 

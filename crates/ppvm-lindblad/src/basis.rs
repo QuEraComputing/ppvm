@@ -3,12 +3,12 @@
 
 //! Basis-level `L*` operators: in-basis generator and off-basis leakage.
 
-use crate::Error;
 use crate::candidates::{CandidateBuffer, CandidateProposer, StreamingProposer};
 use crate::sector::Sector;
 use crate::spec::LindbladSpec;
 use crate::truncate::{cap_map_to_room, order_by_desc_mag};
 use crate::word::{Word, word_hash};
+use crate::{Error, ShortlistScoreProposer};
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use num::Complex;
 use rayon::prelude::*;
@@ -19,30 +19,42 @@ const CHUNK_SIZE: usize = 4096;
 
 /// Reusable scratch for adaptive real-coefficient evolution.
 ///
-/// Keep one workspace per trajectory. It retains candidate payload and generation
-/// buffers, generator connections and exponential scratch. Hash-table
-/// growth starts from an empty allocation to preserve ordering.
+/// Keep one workspace per trajectory. It retains candidate lookup and source-order
+/// storage, generator connections and exponential scratch. Candidate words occupy
+/// the main state array's tail; streaming fallback retains its generation buffers.
 #[derive(Default)]
 pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
-    pub(crate) proposer: StreamingProposer<C>,
+    pub(crate) proposer: ShortlistScoreProposer<C>,
     pub(crate) generator: Option<crate::mf_expm::RealCache>,
     pub(crate) taylor: Vec<f64>,
     pub(crate) coefficient_auxiliary: Vec<f64>,
 }
 
 impl<const C: usize> PcStepWorkspace<C> {
-    /// Requested backing capacity retained between steps, excluding the main state
-    /// and metadata owned by a separately supplied candidate proposer.
-    pub fn allocation_bytes(&self) -> [(&'static str, usize); 9] {
+    /// Requested vector, shortlist-index and generator capacities retained between
+    /// steps. Excludes the main state, the protected-word hash set, and metadata
+    /// owned by a separately supplied candidate proposer.
+    pub fn allocation_bytes(&self) -> [(&'static str, usize); 12] {
+        let [terms, order, index] = self.proposer.allocation_bytes();
         [
+            ("shortlist_terms", terms),
+            ("source_order", order),
+            ("shortlist_index", index),
             ("candidate_words", 0),
             ("candidate_rates", 0),
-            ("candidate_state", self.proposer.indexed.state.capacity()),
-            ("candidate_free", self.proposer.indexed.free.capacity() * 4),
+            (
+                "candidate_state",
+                self.proposer.streaming.indexed.state.capacity(),
+            ),
+            (
+                "candidate_free",
+                self.proposer.streaming.indexed.free.capacity() * 4,
+            ),
             ("candidate_rank", 0),
             (
                 "generation",
                 self.proposer
+                    .streaming
                     .outputs
                     .iter()
                     .map(|v| v.capacity() * std::mem::size_of::<(Word<C>, f64)>())

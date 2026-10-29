@@ -5,12 +5,12 @@
 
 use ppvm_lindblad::{
     CandidateBuffer, CandidateProposer, Error, LindbladSpec, PcStepConfig, PcStepWorkspace,
-    StreamingProposer, Word, word_from_codes,
+    ShortlistScoreProposer, Word, word_from_codes,
 };
 
 #[derive(Default)]
 struct DelegatingProposer {
-    streaming: StreamingProposer,
+    shortlist: ShortlistScoreProposer,
     calls: usize,
     selections: Vec<usize>,
 }
@@ -26,11 +26,11 @@ impl CandidateProposer for DelegatingProposer {
         self.calls += 1;
         assert_eq!(buffer.basis().len(), buffer.coefficients().len());
         assert!(buffer.candidates().is_empty());
-        self.streaming.propose(model, buffer, protected, maximum)
+        self.shortlist.propose(model, buffer, protected, maximum)
     }
 
     fn select(&mut self, buffer: &mut CandidateBuffer<'_>, threshold: f64) -> usize {
-        let count = self.streaming.select(buffer, threshold);
+        let count = self.shortlist.select(buffer, threshold);
         self.selections.push(count);
         count
     }

@@ -4,6 +4,7 @@
 //! Basis-level `L*` operators: in-basis generator and off-basis leakage.
 
 use crate::Error;
+use crate::candidates::{CandidateBuffer, CandidateProposer, StreamingProposer};
 use crate::sector::Sector;
 use crate::spec::LindbladSpec;
 use crate::truncate::{cap_map_to_room, order_by_desc_mag};
@@ -15,42 +16,34 @@ use rayon::prelude::*;
 /// Chunk size for the leakage accumulation loops: candidates are folded
 /// into the live map (and the room-cap applied) once per chunk.
 const CHUNK_SIZE: usize = 4096;
-const GENERATION_BATCH: usize = 2048;
 
 /// Reusable scratch for adaptive real-coefficient evolution.
 ///
 /// Keep one workspace per trajectory. It retains candidate payload and generation
-/// buffers, explicit generator coefficients and exponential scratch. Hash-table
+/// buffers, generator connections and exponential scratch. Hash-table
 /// growth starts from an empty allocation to preserve ordering.
 #[derive(Default)]
 pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
-    pub(crate) candidates: Option<crate::indexed_candidates::IndexedCandidates<C>>,
-    outputs: Vec<Vec<(Word<C>, f64)>>,
+    pub(crate) proposer: StreamingProposer<C>,
     pub(crate) generator: Option<crate::mf_expm::RealCache>,
     pub(crate) taylor: Vec<f64>,
     pub(crate) coefficient_auxiliary: Vec<f64>,
 }
 
 impl<const C: usize> PcStepWorkspace<C> {
-    pub(crate) fn recycle_candidates(
-        &mut self,
-        mut candidates: crate::indexed_candidates::IndexedCandidates<C>,
-    ) {
-        self.taylor = candidates.take_numeric();
-        self.candidates = Some(candidates);
-    }
-
-    /// Requested backing capacity retained between steps, excluding the main state.
+    /// Requested backing capacity retained between steps, excluding the main state
+    /// and metadata owned by a separately supplied candidate proposer.
     pub fn allocation_bytes(&self) -> [(&'static str, usize); 9] {
-        let mut bytes = [
+        [
             ("candidate_words", 0),
             ("candidate_rates", 0),
-            ("candidate_state", 0),
-            ("candidate_free", 0),
+            ("candidate_state", self.proposer.indexed.state.capacity()),
+            ("candidate_free", self.proposer.indexed.free.capacity() * 4),
             ("candidate_rank", 0),
             (
                 "generation",
-                self.outputs
+                self.proposer
+                    .outputs
                     .iter()
                     .map(|v| v.capacity() * std::mem::size_of::<(Word<C>, f64)>())
                     .sum(),
@@ -64,11 +57,7 @@ impl<const C: usize> PcStepWorkspace<C> {
                 "coefficient_auxiliary",
                 self.coefficient_auxiliary.capacity() * 8,
             ),
-        ];
-        if let Some(candidates) = &self.candidates {
-            bytes[..4].copy_from_slice(&candidates.allocation_bytes());
-        }
-        bytes
+        ]
     }
 }
 
@@ -125,111 +114,12 @@ impl<const C: usize> LindbladSpec<C> {
                 b: coeffs.len(),
             });
         }
-        self.leakage_buffered(basis, coeffs, protected, max_basis, None, None)
-            .map(|candidates| candidates.into_vec(tau_add))
-    }
-
-    pub(crate) fn leakage_for_step(
-        &self,
-        basis: &mut Vec<Word<C>>,
-        coefficients: &[f64],
-        protected: &[Word<C>],
-        maximum: usize,
-        workspace: &mut PcStepWorkspace<C>,
-    ) -> Result<crate::indexed_candidates::IndexedCandidates<C>, Error> {
-        if basis.len() != coefficients.len() {
-            return Err(Error::LengthMismatch {
-                what: "basis and coeffs",
-                a: basis.len(),
-                b: coefficients.len(),
-            });
-        }
-        let owned = Some(std::mem::take(basis));
-        self.leakage_buffered(
-            basis,
-            coefficients,
-            protected,
-            maximum,
-            Some(workspace),
-            owned,
-        )
-    }
-
-    fn leakage_buffered(
-        &self,
-        basis: &[Word<C>],
-        coeffs: &[f64],
-        protected: &[Word<C>],
-        max_basis: usize,
-        mut workspace: Option<&mut PcStepWorkspace<C>>,
-        owned_basis: Option<Vec<Word<C>>>,
-    ) -> Result<crate::indexed_candidates::IndexedCandidates<C>, Error> {
-        let tail = owned_basis.is_some();
-        let source = owned_basis.as_deref().unwrap_or(basis);
-        let in_basis: FxHashMap<u64, ()> = source.iter().map(|w| (word_hash(w), ())).collect();
-        let protected_set: FxHashMap<u64, ()> =
-            protected.iter().map(|w| (word_hash(w), ())).collect();
-        let order = order_by_desc_mag(coeffs);
-        let room = max_basis.saturating_sub(source.len());
-        let mut indexed = workspace
-            .as_mut()
-            .and_then(|w| w.candidates.take())
-            .unwrap_or_else(crate::indexed_candidates::IndexedCandidates::new);
-        if let Some(owned) = owned_basis {
-            indexed.attach_basis(owned);
-        }
-        if let Some(workspace) = workspace.as_mut() {
-            indexed.set_numeric(std::mem::take(&mut workspace.taylor));
-        }
-        let mut outputs = workspace
-            .as_mut()
-            .map(|w| std::mem::take(&mut w.outputs))
-            .unwrap_or_default();
-        outputs.resize_with(GENERATION_BATCH.div_ceil(64), Vec::new);
-        for chunk in order.chunks(CHUNK_SIZE) {
-            // Bound temporary words while preserving the full source chunk's pruning cadence.
-            for sources in chunk.chunks(GENERATION_BATCH) {
-                let basis = if tail { indexed.source_basis() } else { basis };
-                outputs
-                    .par_iter_mut()
-                    .zip(sources.par_chunks(64))
-                    .for_each_init(
-                        crate::direct_expm::ActionScratch::new,
-                        |scratch, (output, indices)| {
-                            output.clear();
-                            for &index in indices {
-                                scratch.fill(self, &basis[index], true);
-                                for &(word, value) in &scratch.terms {
-                                    let hash = word_hash(&word);
-                                    if !in_basis.contains_key(&hash)
-                                        && !protected_set.contains_key(&hash)
-                                    {
-                                        output.push((word, coeffs[index] * value));
-                                    }
-                                }
-                            }
-                        },
-                    );
-                // Serial source order preserves coherent sums and the reference map's tie ordering.
-                for output in outputs.iter().take(sources.len().div_ceil(64)) {
-                    for &(word, value) in output {
-                        indexed.add(word, value);
-                    }
-                }
-            }
-            indexed.cap(room);
-        }
-        // Generation buffers are dead before the admission vector is materialized.
-        if let Some(workspace) = workspace {
-            for output in &mut outputs {
-                output.clear();
-            }
-            workspace.outputs = outputs;
-        }
-        drop(order);
-        drop(in_basis);
-        drop(protected_set);
-        Ok(indexed)
+        let mut words = Vec::new();
+        let mut numeric = Vec::new();
+        let mut buffer = CandidateBuffer::separate(basis, coeffs, &mut words, &mut numeric);
+        let mut proposer = StreamingProposer::default();
+        proposer.propose(self, &mut buffer, protected, max_basis)?;
+        Ok(proposer.indexed.selected_rates(&buffer, tau_add).collect())
     }
 
     /// Sparse generator matrix in COO form: returns `(row, col, val)`

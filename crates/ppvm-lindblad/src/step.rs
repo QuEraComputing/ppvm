@@ -7,7 +7,7 @@ use crate::sector::Sector;
 use crate::spec::LindbladSpec;
 use crate::truncate::{add_leakage_capped, cap_basis, prune_basis};
 use crate::word::Word;
-use crate::{Error, PcStepConfig, PcStepWorkspace, mf_expm};
+use crate::{CandidateBuffer, CandidateProposer, Error, PcStepConfig, PcStepWorkspace, mf_expm};
 use num::Complex;
 use std::time::Instant;
 
@@ -146,6 +146,54 @@ impl<const C: usize> LindbladSpec<C> {
         timed: bool,
         workspace: &mut PcStepWorkspace<C>,
     ) -> Result<PcStepTimings, Error> {
+        let mut proposer = std::mem::take(&mut workspace.proposer);
+        let result = self.pc_step_execute_with_proposer(
+            basis,
+            coeffs,
+            dt,
+            protected,
+            cfg,
+            timed,
+            workspace,
+            &mut proposer,
+        );
+        workspace.proposer = proposer;
+        result
+    }
+
+    /// Adaptive step with a caller-owned candidate strategy and reusable workspace.
+    ///
+    /// The strategy receives a borrowed view of the active sum and its spare word
+    /// storage. The stepper initializes admitted coefficients, evolves the state,
+    /// and applies final truncation. Ordinary step calls use [`crate::StreamingProposer`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn pc_step_with_proposer<P: CandidateProposer<C>>(
+        &self,
+        basis: &mut Vec<Word<C>>,
+        coeffs: &mut Vec<f64>,
+        dt: f64,
+        protected: &[Word<C>],
+        cfg: &PcStepConfig,
+        workspace: &mut PcStepWorkspace<C>,
+        proposer: &mut P,
+    ) -> Result<PcStepTimings, Error> {
+        self.pc_step_execute_with_proposer(
+            basis, coeffs, dt, protected, cfg, true, workspace, proposer,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn pc_step_execute_with_proposer<P: CandidateProposer<C>>(
+        &self,
+        basis: &mut Vec<Word<C>>,
+        coeffs: &mut Vec<f64>,
+        dt: f64,
+        protected: &[Word<C>],
+        cfg: &PcStepConfig,
+        timed: bool,
+        workspace: &mut PcStepWorkspace<C>,
+        proposer: &mut P,
+    ) -> Result<PcStepTimings, Error> {
         if basis.len() != coeffs.len() {
             return Err(Error::LengthMismatch {
                 what: "basis and coeffs",
@@ -179,7 +227,9 @@ impl<const C: usize> LindbladSpec<C> {
             }
         }
         self.run_in_pool(cfg, |this| {
-            this.pc_step_inner(basis, coeffs, dt, protected, cfg, timed, workspace)
+            this.pc_step_inner(
+                basis, coeffs, dt, protected, cfg, timed, workspace, proposer,
+            )
         })
     }
 
@@ -200,7 +250,7 @@ impl<const C: usize> LindbladSpec<C> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn pc_step_inner(
+    fn pc_step_inner<P: CandidateProposer<C>>(
         &self,
         basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<f64>,
@@ -209,6 +259,7 @@ impl<const C: usize> LindbladSpec<C> {
         cfg: &PcStepConfig,
         timed: bool,
         workspace: &mut PcStepWorkspace<C>,
+        proposer: &mut P,
     ) -> Result<PcStepTimings, Error> {
         let PcStepConfig {
             max_basis,
@@ -233,13 +284,15 @@ impl<const C: usize> LindbladSpec<C> {
         // coefficient prefix retains the original word positions for correction.
         // 1. First-hop expansion appends zero coefficients for admitted words.
         let p = Phase::start(timed);
-        let mut leak = self.leakage_for_step(basis, coeffs, protected, admit, workspace)?;
+        let mut buffer = CandidateBuffer::new(basis, coeffs, &mut workspace.taylor);
+        proposer.propose(self, &mut buffer, protected, admit)?;
         p.stop(&mut t.leakage1_us);
 
         let p = Phase::start(timed);
-        leak.admit(basis, coeffs, admit, tau_add);
-        leak.reset();
-        workspace.recycle_candidates(leak);
+        let count = proposer.select(&mut buffer, tau_add);
+        assert!(count <= admit.saturating_sub(buffer.basis().len()));
+        buffer.finish(count);
+        coeffs.resize(basis.len(), 0.0);
         p.stop(&mut t.expand1_us);
 
         if basis.len() < admit {
@@ -257,12 +310,14 @@ impl<const C: usize> LindbladSpec<C> {
         let n_predict = basis.len();
         if admit > n_predict {
             let p = Phase::start(timed);
-            let mut leak = self.leakage_for_step(basis, coeffs, protected, admit, workspace)?;
+            let mut buffer = CandidateBuffer::new(basis, coeffs, &mut workspace.taylor);
+            proposer.propose(self, &mut buffer, protected, admit)?;
             p.stop(&mut t.leakage2_us);
             let p = Phase::start(timed);
-            leak.admit(basis, coeffs, admit, tau_add);
-            leak.reset();
-            workspace.recycle_candidates(leak);
+            let count = proposer.select(&mut buffer, tau_add);
+            assert!(count <= admit.saturating_sub(buffer.basis().len()));
+            buffer.finish(count);
+            coeffs.resize(basis.len(), 0.0);
             p.stop(&mut t.expand2_us);
         }
 

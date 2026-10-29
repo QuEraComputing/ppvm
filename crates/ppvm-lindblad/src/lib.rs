@@ -38,6 +38,7 @@
 
 mod algebra;
 mod basis;
+mod candidates;
 mod compact_index;
 pub mod config;
 mod direct_expm;
@@ -60,6 +61,7 @@ mod word;
 pub(crate) mod mf_expm;
 
 pub use basis::{PcStepWorkspace, build_basis_index};
+pub use candidates::{CandidateBuffer, CandidateProposer, StreamingProposer};
 pub use config::PcStepConfig;
 pub use error::Error;
 pub use sector::{Sector, canonicalize_basis_to_rep};

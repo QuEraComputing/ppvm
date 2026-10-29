@@ -269,7 +269,7 @@ impl<const C: usize> LindbladSpec<C> {
         if inplace {
             if basis.len() != n_predict {
                 let p = Phase::start(timed);
-                let workspace = workspace.as_deref_mut().unwrap();
+                let workspace = workspace.unwrap();
                 coeffs.clear();
                 coeffs.extend_from_slice(&workspace.coefficient_auxiliary);
                 coeffs.resize(basis.len(), 0.0);

@@ -116,10 +116,7 @@ impl<const C: usize> LindbladSpec<C> {
             .unwrap_or(usize::MAX);
         if cfg.max_basis != usize::MAX
             && cfg.admit_basis != Some(usize::MAX)
-            && matches!(
-                self.leakage_backend,
-                crate::LeakageBackend::Indexed | crate::LeakageBackend::Tail
-            )
+            && self.leakage_backend == crate::LeakageBackend::Tail
         {
             let bound = cfg
                 .admit_basis

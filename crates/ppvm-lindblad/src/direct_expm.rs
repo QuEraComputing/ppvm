@@ -242,7 +242,7 @@ mod tests {
         let direct = LindbladSpec::<2>::new(3, &h, &[])
             .unwrap()
             .with_expm_backend(ExpmBackend::MatrixFree)
-            .with_leakage_backend(crate::LeakageBackend::Indexed);
+            .with_leakage_backend(crate::LeakageBackend::Reference);
         let seed = word_from_codes::<2>(&[3, 0, 0]).unwrap();
         let mut a = vec![seed];
         let mut b = a.clone();

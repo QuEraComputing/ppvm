@@ -22,10 +22,6 @@ pub enum LeakageBackend {
     /// Per-source output vectors and the reference chunk cap.
     #[default]
     Reference,
-    /// Reusable block outputs and canonical compiled Pauli actions.
-    Buffered,
-    /// Keep words and rates in separate arrays and hash only their positions.
-    Indexed,
     /// Accumulate candidate words in the spare tail of the main basis vector.
     Tail,
 }

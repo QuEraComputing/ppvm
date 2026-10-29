@@ -26,7 +26,7 @@ const GENERATION_BATCH: usize = 2048;
 pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
     pub(crate) candidates: Option<crate::indexed_candidates::IndexedCandidates<C>>,
     outputs: Vec<Vec<(Word<C>, f64)>>,
-    pub(crate) generator: Option<crate::mf_expm::BlockCsr<f64>>,
+    pub(crate) generator: Option<crate::mf_expm::RealCache>,
     pub(crate) taylor: Vec<f64>,
     pub(crate) coefficient_auxiliary: Vec<f64>,
 }

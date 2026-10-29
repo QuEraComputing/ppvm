@@ -10,13 +10,19 @@ use ppvm_traits::PauliWordTrait;
 
 struct Term<const C: usize> {
     word: Word<C>,
-    coefficient: f64,
     sites: Option<[usize; 2]>,
     signs: [i8; 16],
 }
 
+pub(crate) struct UnitAction<const C: usize> {
+    pub(crate) word: Word<C>,
+    pub(crate) value: f64,
+    pub(crate) unit: i32,
+}
+
 pub(crate) struct PauliActionPlan<const C: usize> {
     terms: Vec<Term<C>>,
+    coefficients: Vec<f64>,
     jumps: Vec<f64>,
     words: usize,
     tables: Vec<u64>,
@@ -36,7 +42,7 @@ impl<const C: usize> PauliActionPlan<C> {
 
     pub(crate) fn new(n: usize, h: &[(Word<C>, f64)], jumps: &[(Word<C>, f64)]) -> Option<Self> {
         let mut seen = FxHashSet::default();
-        if h.iter().any(|(word, _)| !seen.insert(*word)) {
+        if h.len() >= i32::MAX as usize || h.iter().any(|(word, _)| !seen.insert(*word)) {
             return None;
         }
         let words = (h.len() + jumps.len()).div_ceil(64);
@@ -53,7 +59,7 @@ impl<const C: usize> PauliActionPlan<C> {
         }
         let terms = h
             .iter()
-            .map(|&(word, coefficient)| {
+            .map(|&(word, _)| {
                 let mut support = Vec::new();
                 word_support(&word, &mut support);
                 let sites = if (1..=2).contains(&support.len()) {
@@ -72,16 +78,12 @@ impl<const C: usize> PauliActionPlan<C> {
                         *sign = comm_product(&word, &word_from_codes::<C>(&codes).unwrap()).1 as i8;
                     }
                 }
-                Term {
-                    word,
-                    coefficient,
-                    sites,
-                    signs,
-                }
+                Term { word, sites, signs }
             })
             .collect();
         Some(Self {
             terms,
+            coefficients: h.iter().map(|(_, coefficient)| *coefficient).collect(),
             jumps: jumps.iter().map(|(_, rate)| *rate).collect(),
             words,
             tables,
@@ -93,6 +95,36 @@ impl<const C: usize> PauliActionPlan<C> {
         word: &Word<C>,
         active: &mut Vec<u64>,
         output: &mut Vec<(Word<C>, f64)>,
+    ) {
+        output.clear();
+        self.visit(word, active, |word, value, _| output.push((word, value)));
+    }
+
+    pub(crate) fn fill_units(
+        &self,
+        word: &Word<C>,
+        active: &mut Vec<u64>,
+        output: &mut Vec<UnitAction<C>>,
+    ) {
+        output.clear();
+        self.visit(word, active, |word, value, unit| {
+            output.push(UnitAction { word, value, unit })
+        });
+    }
+
+    #[inline]
+    pub(crate) fn row_coefficient(&self, unit: i32) -> f64 {
+        let coefficient = self.coefficients[unit.unsigned_abs() as usize - 1];
+        coefficient * if unit > 0 { 2.0 } else { -2.0 }
+    }
+
+    // Hamiltonian codes identify the original model term and its row-action sign.
+    // A zero code denotes the separately accumulated Pauli-noise diagonal.
+    fn visit(
+        &self,
+        word: &Word<C>,
+        active: &mut Vec<u64>,
+        mut emit: impl FnMut(Word<C>, f64, i32),
     ) {
         active.clear();
         active.resize(self.words, 0);
@@ -110,7 +142,6 @@ impl<const C: usize> PauliActionPlan<C> {
                 }
             }
         }
-        output.clear();
         let mut diagonal = 0.0;
         for (block, &initial) in active.iter().enumerate() {
             let mut bits = initial;
@@ -134,14 +165,15 @@ impl<const C: usize> PauliActionPlan<C> {
                 } else {
                     comm_product(&term.word, word)
                 };
-                let value = term.coefficient * sign;
+                let value = self.coefficients[index] * sign;
                 if value != 0.0 {
-                    output.push((result, value));
+                    let term = index as i32 + 1;
+                    emit(result, value, if sign > 0.0 { -term } else { term });
                 }
             }
         }
         if diagonal != 0.0 {
-            output.push((*word, diagonal));
+            emit(*word, diagonal, 0);
         }
     }
 }

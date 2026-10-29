@@ -53,6 +53,7 @@ pub mod sector;
 mod spec;
 mod step;
 mod truncate;
+mod unit_expm;
 mod word;
 
 /// Matrix-free / quspin-expm-backed `exp(dt·L*)·b` engine. See module docs.

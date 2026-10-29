@@ -497,6 +497,20 @@ where
     v
 }
 
+pub(crate) enum RealCache {
+    Coefficients(BlockCsr<f64>),
+    Units(crate::unit_expm::UnitCache),
+}
+
+impl RealCache {
+    pub(crate) fn allocation_bytes(&self) -> usize {
+        match self {
+            Self::Coefficients(cache) => cache.allocation_bytes(),
+            Self::Units(cache) => cache.allocation_bytes(),
+        }
+    }
+}
+
 impl BlockCsr<f64> {
     pub(crate) fn allocation_bytes(&self) -> usize {
         self.ranges.capacity() * std::mem::size_of::<CsrRange<f64>>()
@@ -508,7 +522,7 @@ impl BlockCsr<f64> {
     }
 }
 
-fn real_bounds(per_col: &[(f64, f64)]) -> (f64, f64) {
+pub(crate) fn real_bounds(per_col: &[(f64, f64)]) -> (f64, f64) {
     let mu = per_col.iter().map(|(_, diagonal)| *diagonal).sum::<f64>() / per_col.len() as f64;
     let norm = per_col
         .iter()
@@ -628,9 +642,44 @@ pub(crate) fn expm_apply_inplace<const C: usize>(
     if basis.is_empty() {
         return;
     }
+    if let Some(plan) = &spec.pauli_plan {
+        let previous = match workspace.generator.take() {
+            Some(RealCache::Units(cache)) => Some(cache),
+            _ => None,
+        };
+        let (cache, bounds) = crate::unit_expm::UnitCache::build(plan, basis, previous);
+        let (mu, bound) = bounds;
+        let (m, s, tol) = select_real_expm(dt.abs() * bound, drop_tol);
+        workspace.taylor.resize(2 * basis.len(), 0.0);
+        quspin_expm::ExpmOp::from_parts(
+            crate::unit_expm::UnitOp {
+                cache: &cache,
+                plan,
+            },
+            dt,
+            mu,
+            s as usize,
+            m as usize,
+            tol,
+        )
+        .apply_into(
+            ndarray::ArrayViewMut1::from(coefficients),
+            &mut workspace.taylor,
+        )
+        .expect("expm apply");
+        workspace.generator = Some(RealCache::Units(cache));
+        return;
+    }
     let reusable_rows = spec.supports_row_gather();
     let (mat, bounds) = if reusable_rows {
-        build_row_cache(spec, basis, workspace.generator.take())
+        build_row_cache(
+            spec,
+            basis,
+            match workspace.generator.take() {
+                Some(RealCache::Coefficients(cache)) => Some(cache),
+                _ => None,
+            },
+        )
     } else {
         // General jump actions need column assembly; stale row buffers have no consumer in that build.
         workspace.generator = None;
@@ -648,7 +697,7 @@ pub(crate) fn expm_apply_inplace<const C: usize>(
         )
         .expect("expm apply");
     if reusable_rows {
-        workspace.generator = Some(mat);
+        workspace.generator = Some(RealCache::Coefficients(mat));
     }
 }
 
